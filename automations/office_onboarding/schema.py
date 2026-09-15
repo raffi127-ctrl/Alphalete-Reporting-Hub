@@ -532,14 +532,34 @@ def validate_request(rec: OnboardingRecord) -> List[str]:
         problems.append("Your email is required.")
     elif "@" not in rec.owner_email:
         problems.append("That email doesn't look valid.")
-    # Per-channel plans: each named channel needs at least one metric.
+    # DELIVERY — a channel OR an inbox, and the owner has already said which.
+    # Almost every owner reads the boards in a Slack channel; a few have no
+    # Slack account at all, and for them the destination is an inbox: the same
+    # boards, in the same order, as ONE email a day (Joseph Logan / Logan Legacy
+    # Group, Megan 2026-09-13) [[project_email_only_offices]].
+    #
+    # This branch is why the email answer is worth anything. While the request
+    # form only knew about channels, an owner with no Slack had to INVENT one to
+    # get past this check — Christian Esposito filled in a channel he could not
+    # read (2026-09-07) and his sign-up sat un-wireable. A form that refuses the
+    # truthful answer collects a false one.
+    _mails = [a.strip() for a in (rec.email_to or []) if (a or "").strip()]
     plans = rec.channel_plans or []
-    if not any(p.channel_name.strip() for p in plans):
-        problems.append("Add at least one Slack channel and pick its metrics.")
-    for i, p in enumerate(plans):
-        if not p.channel_name.strip():
-            continue                       # blank block is just ignored
-        if not p.report_keys:
-            problems.append(f"{p.channel_name.strip()} has no metrics checked — "
-                            "pick at least one, or clear the channel name.")
+    if _mails:
+        for a in _mails:
+            if "@" not in a or a.startswith("@") or a.endswith("@"):
+                problems.append(f"{a} doesn't look like an email address.")
+        # No channel to hang the metrics off, so the enrolment on the record
+        # itself is what has to be non-empty.
+        if not rec.reports:
+            problems.append("Pick at least one metric to email you.")
+    else:
+        if not any(p.channel_name.strip() for p in plans):
+            problems.append("Add at least one Slack channel and pick its metrics.")
+        for p in plans:
+            if not p.channel_name.strip():
+                continue                   # blank block is just ignored
+            if not p.report_keys:
+                problems.append(f"{p.channel_name.strip()} has no metrics checked — "
+                                "pick at least one, or clear the channel name.")
     return problems

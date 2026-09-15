@@ -133,21 +133,77 @@ def form_view() -> None:
         st.info("👆 Pick your campaign in step 1 to see the metrics we can "
                 "post for you.")
         return
-    st.markdown("### 3. Where should we post — and what goes where?")
-    st.caption("Check what each channel gets. Most offices use one channel "
-               "for everything. If you want certain metrics going somewhere "
-               "else too — like a leaders-only channel — add a second "
-               "channel and check just those.")
-    st.info("**Important:** **Megan Hidalgo** must be added to **EACH** Slack "
-            "channel you want the metrics posted in — she'll add Lucy (the "
-            "bot that posts them) from there.")
+    st.markdown("### 3. Where should we send your metrics?")
+    # ONE question, two answers. Most owners read the boards in their team's
+    # Slack; a few have no Slack account at all, and for them the destination is
+    # an inbox — the SAME boards, in the same order, as one email a morning
+    # (Joseph Logan / Logan Legacy Group, Megan 2026-09-13)
+    # [[project_email_only_offices]].
+    #
+    # WHY THIS QUESTION EXISTS AT ALL. Until now the form only knew about
+    # channels, so "I don't use Slack" was not a sayable answer and an owner in
+    # that position had to invent one to reach the submit button. Christian
+    # Esposito did exactly that on 2026-09-07 — a channel he could not read —
+    # and his sign-up then could not be wired as what it actually was. A form
+    # that refuses the truthful answer collects a false one.
+    _DELIVERY = ["💬 Post them in my team's Slack",
+                 "✉️ Email them to me (I don't use Slack)"]
+    delivery = st.radio(
+        "Choose one:", _DELIVERY, key="_delivery",
+        help="Either way you get the same boards, in the same order, every "
+             "morning. Pick email if you don't have a Slack account.")
+    by_email = delivery == _DELIVERY[1]
 
-    n_chan = int(st.number_input(
-        "How many Slack channels do you want to post in?",
-        min_value=1, max_value=8, value=1, step=1, key="_chan_count",
-        help="Most offices use 1. Pick more only if you want different metrics in "
-             "different channels (e.g. a leaders channel that gets only cancels)."))
     plans: list = []
+    email_to: list = []
+    email_keys: list = []
+
+    if by_email:
+        st.caption("Your boards arrive as **one email every morning**, sent "
+                   "from **alphaletereporting@gmail.com** — the same boards, in "
+                   "the same order, as the Slack version. Nothing to install "
+                   "and no Slack account needed.")
+        _raw = st.text_input(
+            "Who should get the email? *", key="_email_to",
+            placeholder="you@yourcompany.com",
+            help="More than one person? Separate the addresses with commas — "
+                 "everyone on the line gets the same single email.")
+        email_to = [a.strip() for a in _raw.replace(";", ",").split(",")
+                    if a.strip()]
+        _bad = [a for a in email_to if "@" not in a]
+        if _bad:
+            st.error("⚠️ That doesn't look like an email address: "
+                     + ", ".join(f"`{a}`" for a in _bad))
+        elif len(email_to) > 1:
+            st.caption(f"→ {len(email_to)} people on one email: "
+                       + ", ".join(f"`{a}`" for a in email_to))
+        st.caption("Metrics to send every morning:")
+        for rk in fam_reports:
+            st.session_state.setdefault(f"email_met_{rk.key}", rk.default_on)
+            on = st.checkbox(rk.label, key=f"email_met_{rk.key}")
+            if rk.blurb:
+                st.caption(rk.blurb)
+            pv = _preview_path(campaign, rk.key)
+            if pv is not None:
+                with st.expander("View preview"):
+                    st.image(str(pv), use_container_width=True)
+            if on:
+                email_keys.append(rk.key)
+        n_chan = 0
+    else:
+        st.caption("Check what each channel gets. Most offices use one channel "
+                   "for everything. If you want certain metrics going somewhere "
+                   "else too — like a leaders-only channel — add a second "
+                   "channel and check just those.")
+        st.info("**Important:** **Megan Hidalgo** must be added to **EACH** Slack "
+                "channel you want the metrics posted in — she'll add Lucy (the "
+                "bot that posts them) from there.")
+
+        n_chan = int(st.number_input(
+            "How many Slack channels do you want to post in?",
+            min_value=1, max_value=8, value=1, step=1, key="_chan_count",
+            help="Most offices use 1. Pick more only if you want different metrics in "
+                 "different channels (e.g. a leaders channel that gets only cancels)."))
     for i in range(n_chan):
         with st.container(border=True):
             cname = st.text_input(
@@ -184,13 +240,18 @@ def form_view() -> None:
     rev = {v: k for k, v in labels.items()}
     # union of every metric asked for across all channels, in report order
     picked_union = [rk.key for rk in fam_reports
-                    if any(rk.key in p.report_keys for p in plans)]
+                    if (rk.key in email_keys if by_email
+                        else any(rk.key in p.report_keys for p in plans))]
     if picked_union and _HAS_SORT:
-        st.caption("This is the order the metrics will post in each morning, "
-                   "in every channel — drag to rearrange, top posts first. "
-                   "If a metric isn't checked in one of your channels, that "
-                   "channel simply skips it; the rest still post in this "
-                   "order.")
+        st.caption(
+            "This is the order your metrics arrive in each morning — drag to "
+            "rearrange, top comes first."
+            if by_email else
+            "This is the order the metrics will post in each morning, "
+            "in every channel — drag to rearrange, top posts first. "
+            "If a metric isn't checked in one of your channels, that "
+            "channel simply skips it; the rest still post in this "
+            "order.")
         # key includes the picked set so the drag list rebuilds when it changes
         sorted_labels = sort_items(
             [labels[k] for k in picked_union], direction="vertical",
@@ -204,8 +265,11 @@ def form_view() -> None:
     st.divider()
     named_plans = [p for p in plans if p.channel_name]
     channels = [p.channel_name for p in named_plans]
-    union = [k for k in picked_union
-             if any(k in p.report_keys for p in named_plans)]
+    # In email mode there is no channel to filter the picks through — the
+    # checklist IS the enrolment.
+    union = (list(picked_union) if by_email else
+             [k for k in picked_union
+              if any(k in p.report_keys for p in named_plans)])
     enrolled = [S.EnrolledReport(key=k, order=idx + 1)
                 for idx, k in enumerate(union)]
     rec = S.OnboardingRecord(
@@ -217,11 +281,15 @@ def form_view() -> None:
         sheet_id="", family=family, channels=channels,
         channel_plans=named_plans, ov_account=ov_account.strip(),
         owner_email=owner_email.strip(), pay_code="",
+        # Never both — an office with a channel AND addresses gives two
+        # half-answers to "did today go out?", and the record refuses it.
+        email_to=(email_to if by_email else []),
         reports=enrolled, campaign=campaign)
 
-    st.info("🔔 **Reminder:** add **Megan Hidalgo** to each Slack channel you "
-            "listed above **BEFORE HITTING SUBMIT** — we can't start your "
-            "posting without it!")
+    if not by_email:
+        st.info("🔔 **Reminder:** add **Megan Hidalgo** to each Slack channel you "
+                "listed above **BEFORE HITTING SUBMIT** — we can't start your "
+                "posting without it!")
     # The button stays OFF until every required field is filled, with a live
     # list of what's still needed — same gate as the tracker sign-up.
     missing: list = []
@@ -237,14 +305,22 @@ def form_view() -> None:
         missing.append("website")
     if not owner_email.strip():
         missing.append("your email")
-    for i, p in enumerate(plans):
-        tag = "" if len(plans) == 1 else f" (channel {i + 1})"
-        if not p.channel_name:
-            missing.append(f"Slack channel name{tag}")
-        if not p.channel_id:
-            missing.append(f"Slack Channel ID{tag}")
-        if not p.report_keys:
-            missing.append(f"at least one metric{tag}")
+    if by_email:
+        if not email_to:
+            missing.append("who the email should go to")
+        elif any("@" not in a for a in email_to):
+            missing.append("a valid email address")
+        if not union:
+            missing.append("at least one metric")
+    else:
+        for i, p in enumerate(plans):
+            tag = "" if len(plans) == 1 else f" (channel {i + 1})"
+            if not p.channel_name:
+                missing.append(f"Slack channel name{tag}")
+            if not p.channel_id:
+                missing.append(f"Slack Channel ID{tag}")
+            if not p.report_keys:
+                missing.append(f"at least one metric{tag}")
     if missing:
         st.warning("⚠️ **Still needed before you can submit:** "
                    + ", ".join(missing) + ".")
@@ -294,7 +370,10 @@ def form_view() -> None:
             st.session_state["_req_done"] = {
                 "owner": rec.owner, "business": rec.business_name,
                 "goes_by": requested_by.strip(), "lucy": lucy_all,
-                "summary": summary, "where": where, "alerted": alerted}
+                "summary": summary, "where": where, "alerted": alerted,
+                "email_to": list(rec.email_to),
+                "email_labels": [S.REPORTS_BY_KEY[k].label for k in union
+                                 if k in S.REPORTS_BY_KEY]}
         st.rerun()
 
 
@@ -303,6 +382,39 @@ def _done_view() -> None:
     st.markdown("## ✅ Request sent!")
     goes_by = d.get("goes_by") or d.get("owner") or "there"
     first = goes_by.split()[0]
+    # An owner who asked for email never had a channel, so every channel-shaped
+    # sentence on this page — the count, the Lucy check, the "add Megan" reminder
+    # — is a confusing instruction for something they don't have. They get the
+    # same page written for an inbox [[project_email_only_offices]].
+    _emails = d.get("email_to") or []
+    if _emails:
+        st.success(f"Thanks, {first}! Your metrics will be **emailed to "
+                   f"{', '.join(_emails)}** every morning.")
+        st.markdown("**You'll get, every morning:**")
+        st.markdown("\n".join(f"- {l}" for l in (d.get("email_labels") or []))
+                    or "- (no metrics)")
+        st.markdown(
+            "\nHere's what happens next:\n"
+            "1. Our team sets up your office's report sheet and wires it in.\n"
+            "2. Your boards start arriving as one email every morning, from "
+            "**alphaletereporting@gmail.com**.\n"
+            "3. You'll get a welcome email with how to set your commission "
+            "payouts.\n\n"
+            "One tip: add **alphaletereporting@gmail.com** to your contacts so "
+            "the first one doesn't land in spam. You don't need to do anything "
+            "else. 🎉")
+    else:
+        _channel_done_view(d, first)
+    if d["where"] == "sheet" and not d["alerted"][0]:
+        # Owner-facing reassurance + a diagnostic line for the team, shown only on a
+        # ping failure (the request still saved to the tab).
+        st.caption("(Saved — our team will pick it up.)")
+        st.caption("⚙️ team note: notification didn't send — {}".format(
+            d["alerted"][1]))
+
+
+def _channel_done_view(d: dict, first: str) -> None:
+    """The confirmation page for an owner who asked for Slack."""
     n_ch = len(d.get("summary") or [])
     st.success(f"Thanks, {first}! We got your request for "
                f"**{n_ch} channel{'s' if n_ch != 1 else ''}**.")
@@ -324,12 +436,6 @@ def _done_view() -> None:
         "3. You'll get a welcome email with how to set your commission payouts.\n\n"
         "One reminder: make sure **Megan Hidalgo** is added to each **Slack** "
         "channel above. You don't need to do anything else. 🎉")
-    if d["where"] == "sheet" and not d["alerted"][0]:
-        # Owner-facing reassurance + a diagnostic line for the team, shown only on a
-        # ping failure (the request still saved to the tab).
-        st.caption("(Saved — our team will pick it up.)")
-        st.caption("⚙️ team note: notification didn't send — {}".format(
-            d["alerted"][1]))
 
 
 # --------------------------------------------------------------------------

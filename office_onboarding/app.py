@@ -47,6 +47,12 @@ except Exception:                                    # noqa: BLE001
 st.set_page_config(page_title="Metrics Onboarding", page_icon="🏢",
                    layout="centered")
 
+# The delivery radio's two answers. Module scope because _seed_from_request has
+# to be able to PRE-SELECT one from the owner's request — an email request that
+# opened on the Slack default would quietly ask Megan for a channel the owner
+# explicitly said they don't have.
+DELIVERY_CHOICES = ["💬 A Slack channel", "✉️ Email (this owner has no Slack)"]
+
 
 # --------------------------------------------------------------------------
 # Google client (only needed to write the live master sheet; absent = local JSON)
@@ -244,6 +250,13 @@ def _seed_from_request(d: dict) -> None:
     ss["on_knocks"] = r.knocks_office or r.owner
     ss["on_business"] = r.business_name
     ss["on_website"] = r.website
+    # DELIVERY, as the owner asked for it. An email request carries addresses
+    # and no channel; seeding the radio is what makes the finalize form open on
+    # the same answer instead of demanding a channel id
+    # [[project_email_only_offices]].
+    _mails = [a.strip() for a in (r.email_to or []) if (a or "").strip()]
+    ss["on_delivery"] = DELIVERY_CHOICES[1] if _mails else DELIVERY_CHOICES[0]
+    ss["on_email_to"] = ", ".join(_mails)
     ss["on_channel_id"] = r.channel_id
     ss["on_channel_name"] = r.channel_name
     # Per-channel plan the owner asked for. Carry the full spec (name, metric keys,
@@ -460,13 +473,12 @@ def form_view() -> None:
     # actually went.
     st.divider()
     st.markdown("### 3. Where does this office read its metrics?")
-    _DELIVERY = ["💬 A Slack channel", "✉️ Email (this owner has no Slack)"]
-    delivery = st.radio("Delivery", _DELIVERY, key="on_delivery",
+    delivery = st.radio("Delivery", DELIVERY_CHOICES, key="on_delivery",
                         horizontal=True, label_visibility="collapsed",
                         help="Slack is the normal answer. Pick email only when "
                              "the owner genuinely has no Slack account — the "
                              "boards are identical either way.")
-    by_email = delivery == _DELIVERY[1]
+    by_email = delivery == DELIVERY_CHOICES[1]
 
     email_to: list = []
     if by_email:
