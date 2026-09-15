@@ -74,14 +74,18 @@ def ensure_local_oauth(log=None):
 
     Returns rather than raises: a page that cannot authenticate should say so
     in its own words, not crash with a traceback a reader cannot act on."""
-    # HOSTED IS A FACT ABOUT THE HOST, NOT ABOUT THE DISK. Deciding it from
-    # "did we have to write the files" was wrong and briefly left the board
-    # ungated on a public URL: the first run writes them into the container,
-    # every rerun after that sees them on disk and concludes it is a Mac in
-    # the office. Ask the host instead — a machine in the office has no
-    # secrets store with our Google credential in it.
-    secret_tok = _gcp_oauth() or _json_secret("GOOGLE_OAUTH_TOKEN")
-    hosted = bool(secret_tok)
+    # FAIL CLOSED, ON A MARKER A HOST CANNOT HAVE.
+    #
+    # Two tries at inferring this were both wrong, and both failed OPEN on a
+    # public URL: first "did we write the files this run" (the container keeps
+    # them, so every rerun after the first looked local), then "does the host
+    # have the secret" (came back False on Cloud anyway). A guess that fails
+    # open is not a guess worth making.
+    #
+    # config.json sits in ~/.config/recruiting-report on every machine we run
+    # on, is part of the local setup, and is never written by this module. No
+    # marker means treat it as hosted — the safe direction.
+    hosted = not (_DIR / "config.json").exists()
 
     token_p, client_p = _DIR / "oauth-token.json", _DIR / "oauth-client.json"
     if token_p.exists() and client_p.exists():
