@@ -2830,21 +2830,60 @@ _LOGTAIL_ERR_RE = re.compile(
     r"traceback|error|exception|failed|timeout|✗|❌|skip-retail|HTTP \d", re.I)
 
 
+# The queue's Result cell in practice holds ~470 chars; reserve a little of it
+# for the "there is more" footer so the notice itself can never be the thing
+# that gets cut off.
+_LOGTAIL_CELL = 470
+_LOGTAIL_FOOTER = 150
+
+
+def _paginate(lines: list, budget: int) -> list:
+    """Split already-rendered lines into cell-sized pages, never mid-line.
+
+    A page always carries at least one line even when that single line is
+    longer than the budget — otherwise a log of long lines would paginate into
+    infinitely many empty pages and show nothing at all.
+    """
+    budget = max(80, int(budget))
+    pages, cur, used = [], [], 0
+    for l in lines:
+        cost = len(l) + (1 if cur else 0)
+        if cur and used + cost > budget:
+            pages.append(cur)
+            cur, used = [l], len(l)
+        else:
+            cur.append(l)
+            used += cost
+    if cur:
+        pages.append(cur)
+    return pages
+
+
 def _action_logtail(args: str) -> tuple[bool, str]:
     """Read a log under output/logs/ and return its most relevant tail — the ONE
     way to see a mini-only log from the laptop (no SSH, no arbitrary shell). READ
     ONLY: it never runs or changes anything.
 
-      logtail <name> [grep] [n]
+      logtail <name> [grep] [n] [page]
         name  a bare filename OR substring of one in output/logs (NO path
               separators); newest match wins. '.log' optional. e.g.
               `orch-2026-07-06-alphalete_org_focus`.
         grep  optional case-insensitive substring — only matching lines return.
               Omit to auto-pick error/traceback lines (falls back to plain tail).
         n     max lines to return (default 15, cap 60).
+        page  1-based page when the picked lines don't fit the result cell
+              (default 1). The footer tells you when there is a page 2.
 
-    The result cell holds ~470 chars, so a big log is paged 470 chars at a time:
-    re-run with a narrower `grep` (e.g. the exception type) to walk it."""
+    THE CELL IS ~470 CHARS AND THAT USED TO BE INVISIBLE (Megan 2026-09-15).
+    The old code ended `(head + body)[:470]` — a cut mid-WORD with nothing said
+    about it, so a 13-line answer arrived looking like a 4-line log that simply
+    stopped. On 2026-09-15 that cost three round-trips and produced a confident
+    WRONG reading of owner_chat_texts_trackers ("no completion line, so it may
+    have sent nothing") when the delivery line was sitting in the log the whole
+    time, just past the cut. A silent truncation is worse than a short answer:
+    it is indistinguishable from evidence.
+    Now the cut lands on a LINE boundary and always says what it withheld, and
+    `page` walks the rest deterministically instead of re-guessing greps."""
     import glob
     import shlex
     try:
@@ -2859,6 +2898,11 @@ def _action_logtail(args: str) -> tuple[bool, str]:
     except ValueError:
         n = 15
     n = max(1, min(n, 60))
+    try:
+        page = int(parts[3]) if len(parts) > 3 else 1
+    except ValueError:
+        page = 1
+    page = max(1, page)
     # Path safety: bare filename only, and the resolved path MUST stay inside
     # output/logs (defense-in-depth against a crafted glob).
     if "/" in name or "\\" in name or ".." in name:
@@ -2886,8 +2930,35 @@ def _action_logtail(args: str) -> tuple[bool, str]:
     picked = matched[-n:]
     head = (f"{path.name} · {len(matched)} match/{len(lines)} lines · "
             f"last {len(picked)}:\n")
-    body = "\n".join(l.strip()[:200] for l in picked)
-    return True, (head + body)[:470]
+    # A long line is cut too — say so on the line itself, or the reader takes a
+    # half-sentence for the whole one.
+    rendered = []
+    for l in picked:
+        t = l.strip()
+        rendered.append(t[:200] + " …[+%d chars]" % (len(t) - 200)
+                        if len(t) > 200 else t)
+    pages = _paginate(rendered, _LOGTAIL_CELL - len(head) - _LOGTAIL_FOOTER)
+    if not pages:
+        return True, head.rstrip(":\n") + " · (nothing to show)"
+    # PAGE 1 IS THE NEWEST PAGE. This is `logtail` — the caller asked for the
+    # END of a log, so the end is what page 1 must hold. Paging forward from the
+    # oldest picked line put the answer on the LAST page: on 2026-09-15 the one
+    # line that mattered ("TEXTED trackers_pdf -> Alphalete Owners, 27
+    # participants") was the final line of a 13-line log, i.e. exactly the line
+    # a tail is for, and exactly the line the first page didn't show. Page 2 and
+    # up walk BACKWARDS into older lines.
+    idx = len(pages) - min(page, len(pages))
+    body = "\n".join(pages[idx])
+    foot = ""
+    if len(pages) > 1:
+        cur = len(pages) - idx
+        older = sum(len(pg) for pg in pages[:idx])
+        foot = ("\n… page {}/{} (newest first) — {} older line(s) not shown. "
+                "Re-run with page {} (`logtail {} {} {} {}`) for older, or a "
+                "narrower grep.".format(
+                    cur, len(pages), older, min(cur + 1, len(pages)),
+                    name, grep or '""', n, min(cur + 1, len(pages))))
+    return True, head + body + foot
 
 
 # Packages the mini may auto-install into the report venv — an ALLOWLIST, never
