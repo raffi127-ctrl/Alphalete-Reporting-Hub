@@ -65,6 +65,49 @@ def _volume(value) -> int:
     return int(digits) if digits else 0
 
 
+def tally_window(rows: List[Dict], days: List[dt.date]) -> Dict:
+    """{day: {'records':..., 'sales':...}} for SEVERAL days at once.
+
+    A CONTRACT BECOMES A SALE LATER THAN IT IS SOLD. Megan 2026-09-15: "you
+    need to track past days in case status changes here and we need to count
+    something as a sale". A rep sells on Monday, the contract sits at
+    "Awaiting Signature", and on Wednesday it passes TPV -- and it was always
+    Monday's sale. Reading only today would have counted it on Wednesday under
+    whoever happened to be having a good day, or not at all.
+
+    So a sale belongs to its INITIATED date and its status is whatever the
+    status is NOW. Re-reading a window rewrites the days in it, which is what
+    makes a board that fills itself correct rather than merely current.
+    """
+    out = {d: {"records": {}, "sales": {}} for d in days}
+    seen_status: List[str] = []
+    wanted = set(days)
+
+    for row in rows or []:
+        when = initiated_on(row.get(SC.COL_INITIATED))
+        if when not in wanted:
+            continue
+        rep = str(row.get(SC.COL_AGENT) or "").strip()
+        if not rep:
+            continue
+        status = str(row.get(SC.COL_SUBSTATUS) or "").strip()
+        seen_status.append(status)
+        bucket = out[when]
+
+        if SC.is_presale(status):
+            bucket["records"][rep] = bucket["records"].get(rep, 0) + 1
+        elif SC.is_completed(status):
+            got = bucket["sales"].setdefault(rep, {"Sales": 0, "Volume": 0})
+            got["Sales"] += 1
+            got["Volume"] += _volume(row.get("Adjusted Annual Volume"))
+
+    for d in out:
+        out[d]["unknown"] = []
+    if days:
+        out[days[0]]["unknown"] = SC.unknown_statuses(seen_status)
+    return out
+
+
 def tally(rows: List[Dict], day: dt.date) -> Dict:
     """{'records': {...}, 'sales': {...}, 'unknown': [...]} for ONE day.
 
@@ -116,26 +159,28 @@ def _context(p, headless: bool):
         str(C.SC_PROFILE_DIR), headless=headless, args=["--disable-sync"])
 
 
-def _grid_rows(page) -> List[Dict]:
-    """The contracts grid as {column name: cell}, matched BY NAME.
-
-    By name because the grid has a column chooser: Agent and Initiated Date
-    were both hidden when it was first looked at, and an index would silently
-    read a neighbour the first time somebody toggles one.
-    """
-    return page.evaluate("""() => {
-        const t = document.querySelector('table');
-        if (!t) return [];
-        const head = [...t.querySelectorAll('thead th')]
-            .map(th => (th.innerText || '').trim());
-        return [...t.querySelectorAll('tbody tr')].map(tr => {
-            const cells = [...tr.querySelectorAll('td')]
-                .map(td => (td.innerText || '').trim());
-            const row = {};
-            head.forEach((h, i) => { if (h) row[h] = cells[i] || ''; });
-            return row;
-        });
-    }""")
+# HOW THE ROWS ARE ACTUALLY FETCHED IS NOT SETTLED, and the first look at the
+# live page ruled out the obvious way. Run against Megan's own signed-in
+# browser on 2026-09-15:
+#
+#   * The grid is a DevExtreme DataGrid, split across FOUR tables -- frozen
+#     columns and scrollable columns each have their own header table and
+#     body table, so a row is two <tr>s joined by position. There is no
+#     <thead>; the header lives in a tbody row.
+#   * It is VIRTUALISED. 18 of the page's 50 rows existed in the DOM. A
+#     reader that scraped what was there would have quietly missed most of
+#     every page -- and read LOW, which is the failure shape this whole
+#     module is written against.
+#   * The data comes from a GraphQL endpoint:
+#         https://api.myservicecloud.net/gql/secured/v2
+#     which is where a read should go. It answers the paging problem, the
+#     virtualisation problem and the "one day among many" problem at once,
+#     and it does not move when somebody toggles a column.
+#
+# The query shape is not known yet, so this is deliberately NOT implemented
+# from a guess. A scraper written against the DOM would have to be thrown away
+# the moment the API work lands, and would be wrong in the meantime.
+GRAPHQL_URL = "https://api.myservicecloud.net/gql/secured/v2"
 
 
 def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
@@ -166,8 +211,11 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
                     "sales can be read until somebody signs in again with "
                     "the authenticator code. Nothing is lost -- the contracts "
                     "are still there, we just cannot see them.")
-            rows = _grid_rows(page)
-            log("contracts grid: %d row(s) on screen" % len(rows))
+            raise AccountProblem(
+                "The contracts read is not built yet. The grid is "
+                "virtualised, so only part of a page exists on screen; the "
+                "numbers come from %s and that query is not written."
+                % GRAPHQL_URL)
         finally:
             ctx.close()
 

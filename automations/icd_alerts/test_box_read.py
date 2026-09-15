@@ -130,3 +130,61 @@ class TheShapeMatchesWhatEverythingElseReads(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AContractBecomesASaleAfterTheDayItWasSold(unittest.TestCase):
+    """Megan 2026-09-15: "you need to track past days in case status changes
+    here and we need to count something as a sale".
+
+    A rep sells on Monday, the contract sits at "Awaiting Signature", and on
+    Wednesday it passes TPV. It was always MONDAY's sale. Reading only today
+    would count it on Wednesday under whoever happened to be having a good
+    day, or lose it entirely.
+    """
+
+    MON = dt.date(2026, 9, 14)
+    TUE = dt.date(2026, 9, 15)
+
+    def test_a_sale_belongs_to_the_day_it_was_initiated(self):
+        # Initiated Monday, and NOW reads as sold.
+        rows = [_row("Max Allen", "TPV Passed", when="09/14/2026 04:43 PM")]
+        out = B.tally_window(rows, [self.MON, self.TUE])
+        self.assertEqual(out[self.MON]["sales"]["Max Allen"]["Sales"], 1)
+        self.assertEqual(out[self.TUE]["sales"], {},
+                         "a Monday sale landed on Tuesday's board")
+
+    def test_rereading_moves_it_from_presale_to_sold_on_its_own_day(self):
+        mon_row = _row("Max Allen", "Awaiting Signature",
+                       when="09/14/2026 04:43 PM")
+        first = B.tally_window([mon_row], [self.MON, self.TUE])
+        self.assertEqual(first[self.MON]["records"]["Max Allen"], 1)
+        self.assertEqual(first[self.MON]["sales"], {})
+
+        # Wednesday's read: same contract, status has moved on.
+        mon_row["Contract Substatus"] = "TPV Passed"
+        second = B.tally_window([mon_row], [self.MON, self.TUE])
+        self.assertEqual(second[self.MON]["sales"]["Max Allen"]["Sales"], 1)
+        self.assertEqual(second[self.MON]["records"], {},
+                         "it is still counted as awaiting signature as well")
+
+    def test_each_day_is_its_own_bucket(self):
+        rows = [_row("Max Allen", "TPV Passed", when="09/14/2026 01:00 PM"),
+                _row("Max Allen", "TPV Passed", when="09/15/2026 01:00 PM"),
+                _row("Max Allen", "TPV Passed", when="09/15/2026 02:00 PM")]
+        out = B.tally_window(rows, [self.MON, self.TUE])
+        self.assertEqual(out[self.MON]["sales"]["Max Allen"]["Sales"], 1)
+        self.assertEqual(out[self.TUE]["sales"]["Max Allen"]["Sales"], 2)
+
+    def test_a_day_outside_the_window_is_ignored(self):
+        rows = [_row("Max Allen", "TPV Passed", when="09/01/2026 01:00 PM")]
+        out = B.tally_window(rows, [self.MON, self.TUE])
+        self.assertEqual(out[self.MON]["sales"], {})
+        self.assertEqual(out[self.TUE]["sales"], {})
+
+    def test_an_empty_window_day_is_present_not_missing(self):
+        # A board needs to know a day was READ and was empty, which is not the
+        # same as a day nobody looked at.
+        out = B.tally_window([], [self.MON, self.TUE])
+        self.assertEqual(sorted(out), [self.MON, self.TUE])
+        self.assertEqual(out[self.MON], {"records": {}, "sales": {},
+                                         "unknown": []})
