@@ -3873,10 +3873,10 @@
       "base_args": [
         "--post"
       ],
+      "hand_run_only": true,
+      "_hand_run_only_note": "2026-09-15: the watcher posted 'didn't run today on the mini · usually starts ~8:00' for this handle on a Tuesday the rule HAD run inside the rollover. Hand reruns on past Tuesdays taught _historical_expected a schedule that does not exist. hand_run_only is honoured only while cadence.weekdays is [] — the stale weekdays:[1] had to go too, or the flag does nothing (on_scheduler:false already meant nothing fired it). Pinned by machine_digest/test_zero_streak_handle_not_watched.py.",
       "cadence": {
-        "weekdays": [
-          1
-        ]
+        "weekdays": []
       },
       "priority": "P3",
       "freshness_target": null,
