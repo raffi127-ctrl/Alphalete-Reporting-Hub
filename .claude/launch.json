@@ -1,0 +1,124 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "icd-sales-board-site",
+      "runtimeExecutable": ".venv/bin/streamlit",
+      "runtimeArgs": [
+        "run",
+        "automations/icd_sales_board/site.py",
+        "--server.port",
+        "8511",
+        "--server.headless",
+        "true",
+        "--server.fileWatcherType",
+        "none",
+        "--browser.gatherUsageStats",
+        "false"
+      ],
+      "port": 8511
+    },
+    {
+      "name": "icd-sales-board-alt",
+      "runtimeExecutable": ".venv/bin/streamlit",
+      "runtimeArgs": [
+        "run",
+        "automations/icd_sales_board/site.py",
+        "--server.port",
+        "8512",
+        "--server.headless",
+        "true",
+        "--server.fileWatcherType",
+        "none",
+        "--browser.gatherUsageStats",
+        "false"
+      ],
+      "port": 8512
+    },
+    {
+      "name": "office-onboarding",
+      "runtimeExecutable": ".venv/bin/streamlit",
+      "runtimeArgs": [
+        "run",
+        "office_onboarding/app.py",
+        "--server.port",
+        "8531",
+        "--server.headless",
+        "true"
+      ],
+      "port": 8531,
+      "env": {
+        "OFFICE_ONBOARDING_LOCAL_ONLY": "1",
+        "TRACKER_ONBOARDING_LOCAL_ONLY": "1"
+      }
+    },
+    {
+      "name": "tracker-onboarding",
+      "runtimeExecutable": ".venv/bin/streamlit",
+      "runtimeArgs": [
+        "run",
+        "tracker_onboarding/app.py",
+        "--server.port",
+        "8532",
+        "--server.headless",
+        "true"
+      ],
+      "port": 8532,
+      "env": {
+        "OFFICE_ONBOARDING_LOCAL_ONLY": "1",
+        "TRACKER_ONBOARDING_LOCAL_ONLY": "1"
+      }
+    },
+    {
+      "name": "metric-request",
+      "runtimeExecutable": ".venv/bin/streamlit",
+      "runtimeArgs": [
+        "run",
+        "metric_request/app.py",
+        "--server.port",
+        "8533",
+        "--server.headless",
+        "true"
+      ],
+      "port": 8533
+    },
+    {
+      "name": "icd-signup",
+      "runtimeExecutable": ".venv/bin/streamlit",
+      "runtimeArgs": [
+        "run",
+        "icd_signup/app.py",
+        "--server.port",
+        "8544",
+        "--server.headless",
+        "true"
+      ],
+      "port": 8544
+    },
+    {
+      "name": "setup-page",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8546",
+        "--directory",
+        "docs"
+      ],
+      "port": 8546
+    },
+    {
+      "name": "alphalete-tools",
+      "runtimeExecutable": ".venv/bin/streamlit",
+      "runtimeArgs": [
+        "run",
+        "streamlit_app.py",
+        "--server.port",
+        "8548",
+        "--server.headless",
+        "true"
+      ],
+      "port": 8548
+    }
+  ]
+}
