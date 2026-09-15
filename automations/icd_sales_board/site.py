@@ -1918,8 +1918,15 @@ def _rep_editor(office_key: str, week_ending, rows: list,
             "Days worked": str(r.get("Days worked") or "")} for r in rows]
     if not src:
         return
+    # TEAMS AN OWNER HAS NOT MADE YET. The options come from teams already on
+    # the roster, so a brand new team could not be picked — there was no way
+    # to make one (Megan 2026-09-15). Names added here join the dropdown for
+    # this session; assigning one to a rep and saving is what makes it real,
+    # so an abandoned name leaves nothing behind.
+    new_key = f"newteams_{office_key}"
     teams = sorted({(r.team or "").strip() for r in roster.values()
-                    if (r.team or "").strip()})
+                    if (r.team or "").strip()}
+                   | set(st.session_state.get(new_key, [])))
     # Pushed down so its single header row sits level with the board's two,
     # and locked to the same row height — this is what makes the two tables
     # read as one across the join.
@@ -1946,6 +1953,20 @@ def _rep_editor(office_key: str, week_ending, rows: list,
                      "is not a work day on this board. Tenure, not days "
                      "worked this week."),
         })
+    # BELOW the grid, deliberately: anything above it would push the rows out
+    # of line with the board beside them, which is the whole point of the
+    # layout.
+    c_new, c_add = st.columns([3, 1])
+    fresh = c_new.text_input(
+        "Add a team", key=f"newteam_{office_key}",
+        placeholder="New team name", label_visibility="collapsed")
+    if c_add.button("Add team", key=f"addteam_{office_key}"):
+        name = (fresh or "").strip()
+        if name and name.lower() not in {t.lower() for t in teams}:
+            st.session_state[new_key] = \
+                list(st.session_state.get(new_key, [])) + [name]
+            st.rerun()
+
     c_save, c_disc, _ = st.columns([1, 1, 4])
     with c_disc:
         if st.button("Discard", key=f"repdisc_{office_key}"):
