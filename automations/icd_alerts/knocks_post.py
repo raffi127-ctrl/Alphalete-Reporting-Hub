@@ -189,8 +189,15 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         # fail to take and still serve a grid -- Calvin's board came back
         # Box-shaped under an ENERGYWELL heading and published, and nobody
         # reading it could have told (2026-09-02).
-        why = campaign_guard.check(getattr(office, "campaign", "") or "", 
-                                   rows_for_board)
+        # THE RELAYED GRID, NOT THE MAPPED ROWS. to_rows() normalises a
+        # campaign's own columns into the shared board vocabulary -- B2B
+        # AT&T's "corp/franchise - no opp" becomes "Sale" and
+        # "Talked To - Not Interested" -- so by then the very thing that
+        # identifies a campaign is gone. Checking the mapped rows refused
+        # Carlos's B2B AT&T board on 2026-09-15 with "none of the campaign
+        # signatures we know", while the grid his machine actually sent
+        # carried the signature perfectly. It passed for Box only by luck.
+        why = campaign_guard.check(getattr(office, "campaign", "") or "", raw)
         if why:
             log("%-10s NOT DRAWN — %s" % (key, why))
             try:

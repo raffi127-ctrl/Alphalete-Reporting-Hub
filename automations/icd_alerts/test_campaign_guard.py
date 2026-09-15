@@ -75,3 +75,38 @@ class TheBoardIsActuallyWithheld(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheGuardChecksTheRELAYEDGrid(unittest.TestCase):
+    """to_rows() normalises a campaign's own columns into the shared board
+    vocabulary, so by then the thing that identifies a campaign is gone.
+
+    Checking the mapped rows refused Carlos's B2B AT&T board on 2026-09-15 with
+    "none of the campaign signatures we know", while the grid his machine
+    actually sent carried the signature perfectly. It passed for Box only by
+    luck -- that campaign's marker column happens to survive the mapping.
+    """
+
+    def test_knocks_post_passes_the_raw_rows(self):
+        import inspect
+        from automations.icd_alerts import knocks_post as KP
+        src = inspect.getsource(KP.run)
+        i = src.index("campaign_guard.check(")
+        call = src[i:i + 120]
+        self.assertIn("raw", call,
+                      "the guard is fed the mapped rows, which no longer "
+                      "carry the campaign's own columns")
+        self.assertNotIn("rows_for_board", call)
+
+    def test_a_b2b_att_grid_passes_its_own_signature(self):
+        from automations.icd_alerts import campaign_guard as G
+        relayed = [{"corp/franchise - no opp": 1, "corp/franchise - local": 2,
+                    "rep": "A", "first knock": "9:00"}]
+        self.assertIsNone(G.check("b2b_att", relayed),
+                          "a real B2B AT&T grid is being refused")
+
+    def test_the_mapped_shape_would_have_failed(self):
+        # Proof the distinction is real, not theoretical.
+        from automations.icd_alerts import campaign_guard as G
+        mapped = [{"Sale": 1, "Talked To - Not Interested": 2, "Rep": "A"}]
+        self.assertIsNotNone(G.check("b2b_att", mapped))

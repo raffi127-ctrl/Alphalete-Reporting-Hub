@@ -70,6 +70,16 @@ def approve(office_key: str, *, do_push: bool = True, log=print) -> int:
         log("  %s campaign — no credit checks or sales, so no alert channel."
             % rec.campaign)
         rc = 0
+    elif not rec.alert_channels:
+        # NOTHING NAMED IS NOT A FAILURE TO APPROVE. Carlos's second campaign
+        # left this blank -- "not sure yet" is an answer the form allows -- and
+        # treating it as a refusal bailed out of the whole approval BEFORE his
+        # knocks board, which he had named two channels for. One missing piece
+        # blocked an unrelated one that was ready.
+        log("  They have not named a channel for credit checks and sales yet, "
+            "so there is nothing to approve there.")
+        log("  Their knocks board is separate and carries on below.")
+        rc = 0
     else:
         # THE GATE: the channels they asked for. icd_alerts.approve resolves
         # the room, checks Lucy is in it, and writes the sign-off.
@@ -125,6 +135,11 @@ def approve(office_key: str, *, do_push: bool = True, log=print) -> int:
     if knocks_ok:
         log("%s is live. Their numbers start appearing within a few minutes "
             "of their laptop's next check-in." % rec.owner)
+        if uses_saraplus(rec.campaign) and not rec.alert_channels:
+            log("")
+            log("NOTE: their board is on, but nothing is set up for credit "
+                "checks and sales — they never named a channel. Their machine "
+                "will read those and have nowhere to post them.")
     else:
         # A SaraPlus office keeps its alerts; say which half is missing
         # rather than claiming the whole thing works.
