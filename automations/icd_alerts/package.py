@@ -52,6 +52,9 @@ AGENT_FILES = [
     # file would be answering a question we are no longer asking.
     "automations/icd_alerts/stay_awake.py",
     "automations/icd_alerts/sara_read.py",
+    # The Box half of the same job. Ships for the same reason sara_read does:
+    # the read happens on the office's own machine, against their own account.
+    "automations/icd_alerts/box_read.py",
     "automations/icd_alerts/state.py",
     "automations/icd_alerts/run.py",
     "automations/icd_alerts/dialogs.py",

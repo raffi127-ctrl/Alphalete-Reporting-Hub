@@ -26,6 +26,13 @@ OV_CREDS_PATH = APP_DIR / "ownerville-creds.json"
 # Same contract as the other two -- written on the office's own machine, never
 # sent anywhere.
 SC_CREDS_PATH = APP_DIR / "servicecloud-creds.json"
+# ITS OWN PROFILE, and one that must NEVER be rotated away automatically.
+# sara_read throws a wedged SaraPlus profile out and signs in again, because a
+# SaraPlus login needs only an email and a password. This profile IS the
+# two-factor session: discarding it does not cost a retry, it costs the office
+# owner standing at their Mac with an authenticator. A dead session here has
+# to ASK, not self-heal.
+SC_PROFILE_DIR = APP_DIR / "chrome-profile-sc"
 INSTALL_PATH = APP_DIR / "install.json"
 STATE_PATH = APP_DIR / "state.json"
 PROFILE_DIR = APP_DIR / "chrome-profile"

@@ -7,6 +7,7 @@ automations/icd_alerts/selfupdate.py
 automations/icd_alerts/sweep_cadence.py
 automations/icd_alerts/stay_awake.py
 automations/icd_alerts/sara_read.py
+automations/icd_alerts/box_read.py
 automations/icd_alerts/state.py
 automations/icd_alerts/run.py
 automations/icd_alerts/dialogs.py
