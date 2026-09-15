@@ -47,6 +47,10 @@ AGENT_FILES = [
     # Ships with selfupdate, which calls it: an office that does not have this
     # file keeps the cadence its installer wrote and nothing says so.
     "automations/icd_alerts/sweep_cadence.py",
+    # Ships with the agent so the awake status in every relay is read by the
+    # SAME code that set it. A machine reporting from an older copy of this
+    # file would be answering a question we are no longer asking.
+    "automations/icd_alerts/stay_awake.py",
     "automations/icd_alerts/sara_read.py",
     "automations/icd_alerts/state.py",
     "automations/icd_alerts/run.py",

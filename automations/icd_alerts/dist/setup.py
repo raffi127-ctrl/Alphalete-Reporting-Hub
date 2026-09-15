@@ -839,7 +839,7 @@ def main() -> int:
     if not require_desktop():
         return 1
 
-    total = 9
+    total = 10
     step(1, total, "Copying the program onto this computer")
     copy_app()
 
@@ -885,15 +885,36 @@ def main() -> int:
         schedule_mac()
     say("      it will check every %d minutes, 10am to 9:30pm "
         "(4pm Saturdays), and never on Sunday." % EVERY_MINUTES)
+
+    # A SCHEDULE IS WORTH NOTHING ON A SLEEPING MACHINE. The step above just
+    # promised a check every few minutes; this is what makes that true at
+    # 20:00 with nobody sitting at the desk (Megan 2026-09-15: "the install
+    # code should also set up their machine to always be on / never sleep").
+    step(10, total, "Stopping this computer going to sleep")
+    awake = {}
+    try:
+        from automations.icd_alerts import stay_awake as _awake
+        awake = _awake.apply(log=say)
+    except Exception as e:  # noqa: BLE001 — never fail an install over this
+        say("      could not set this up (%s)" % type(e).__name__)
     if ok:
         first_run()
 
     say("")
     say("  %s%s%s" % (RED, "\u2501" * 58, OFF))
     if ok:
+        leave_on = ("Just leave this computer on and connected to the "
+                    "internet during selling hours.\n\n")
+        if awake and not awake.get("never_sleeps"):
+            # SAYING "ALL SET" OVER A MACHINE THAT STILL SLEEPS is the same
+            # silence this whole step exists to prevent -- they would leave it
+            # on, believing that was enough, and the channel would still stop.
+            leave_on = ("This computer can still go to sleep, and your alerts "
+                        "stop while it does. Please set it to never sleep in "
+                        "System Settings > Lock Screen, or ask whoever looks "
+                        "after your computers.\n\n")
         done = ("All set — you do not need to do anything else.\n\n"
-                "Just leave this computer on and connected to the internet "
-                "during selling hours.\n\n"
+                + leave_on +
                 "The reporting team will confirm which Slack channel your "
                 "alerts go to, and they will start appearing there.\n\n"
                 "You can close the window behind this box.")

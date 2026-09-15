@@ -163,6 +163,21 @@ def is_desktop() -> bool:
         return True
 
 
+def _never_sleeps() -> Optional[bool]:
+    """True/False, or None from an agent that cannot answer yet.
+
+    None is not False. Every office installed before this existed would
+    otherwise report as "sleeps", which is the same mistake the laptop check
+    made: an office that was never asked must not look like an office that
+    answered badly.
+    """
+    try:
+        from automations.icd_alerts import stay_awake
+        return bool(stay_awake.status().get("never_sleeps"))
+    except Exception:  # noqa: BLE001 — older agent, odd machine, slow probe
+        return None
+
+
 def machine_label() -> str:
     """Something a person can recognise in a list. The computer's own name is
     what an owner would use to tell two of their machines apart, and it is not
@@ -197,6 +212,12 @@ def payload(records: Dict[str, int], day: dt.date,
         # installed BEFORE that rule existed are otherwise invisible, and a
         # laptop is the single most likely reason a channel goes quiet.
         "desktop": is_desktop(),
+        # CAN THIS MACHINE STILL GO TO SLEEP? Asked of the machine on every
+        # relay, not remembered from install day: a declined password, an MDM
+        # profile that puts the sleep timer back, or somebody turning it off
+        # in System Settings all look identical from here otherwise. False is
+        # the single best predictor of a channel about to go quiet.
+        "never_sleeps": _never_sleeps(),
         # Mac or Windows, answered by the machine rather than by an owner
         # ticking a box about their own office. Windows has never been
         # exercised for real, so the first office that is actually on one is

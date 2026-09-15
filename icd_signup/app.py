@@ -94,7 +94,7 @@ if _approve_for:
         st.stop()
 
     _typed = st.text_input("Access code", type="password")
-    _ok = st.checkbox("Lucy is in every channel listed above")
+    _ok = st.checkbox("Lucy is in every Slack channel listed above")
     if st.button("Approve this office", type="primary",
                  disabled=not _ok):
         if _typed != _code:
@@ -128,22 +128,6 @@ if st.query_params.get("debug") == "1":
 # a link by somebody and has no idea what they are being offered -- the page
 # used to open on "get your sales in Slack", which reads like a product they
 # have to evaluate rather than the reporting they already half know about.
-st.markdown("**What your office gets**")
-c1, c2, c3 = st.columns(3)
-c1.markdown("🔍 **Credit checks**")
-c2.markdown("💰 **Sales**")
-c3.markdown("🚪 **Knocks & dispositions**")
-st.write("")
-
-st.warning(
-    "**NOTHING POSTS while your computer is off.** Lucy reads your numbers "
-    "from the machine in your office, so it has to be **on, awake and on "
-    "wifi** during your selling hours. A laptop that is shut or asleep means "
-    "your channel goes quiet until it wakes up.\n\n"
-    "Nothing is lost when that happens — SaraPlus and OwnerVille keep "
-    "counting, and the first check-in after it wakes hands over the whole "
-    "day. It arrives late, not missing.")
-
 st.divider()
 
 # NOT st.form, deliberately. A form batches every widget until submit, so the
@@ -191,9 +175,7 @@ with st.container(border=True):
     st.error(
         "**This only works on a stationary computer.** An iMac, a Mac mini or "
         "a Mac Studio — something that sits on a desk and stays on.\n\n"
-        "**The installer will refuse to run on a laptop.** A closed lid means "
-        "your channel goes quiet, and that is the problem this has hit more "
-        "than any other.")
+        "**The installer will refuse to run on a laptop.**")
     # Corrected from what the machine reports on its first relay.
     platform = "mac"
 
@@ -233,8 +215,6 @@ with st.container(border=True):
     alert_channels = []
     if S.uses_saraplus(campaign):
         st.subheader("Where your credit checks and sales should post")
-        st.caption("Most offices pick one channel. Add a second if the "
-                   "owners' room and the rep channel should both get them.")
         st.caption("A channel **ID** is safest — in Slack, click the channel "
                    "name at the top, scroll to the bottom of the About tab, "
                    "and copy the ID (it looks like C09AVM17PAR). A #name "
@@ -243,39 +223,49 @@ with st.container(border=True):
         # twice so they actually read it"). Here, while they are choosing the
         # room, and again above Send where it is the thing to go and do.
         st.info(
-            "**Add Megan and Eve to any channel you name here.** They cannot "
-            "switch your reports on for a channel they are not in.")
+            "**Add Megan and Eve to any Slack channel you name here.** They "
+            "cannot switch your reports on for a Slack channel they are "
+            "not in.")
         for i in range(MAX_CHANNELS):
-            label = ("Channel for alerts" if i == 0
-                     else "Another channel (optional)")
+            label = ("Slack channel for alerts" if i == 0
+                     else "Another Slack channel (optional)")
             val = st.text_input(label, key="alert_ch_%d" % i,
                                 placeholder="C09AVM17PAR  or  #palace-sales")
             alert_channels.append(val.strip())
 
     st.subheader("Your knocks and dispositions board")
     st.caption("This is the board showing who is out, who is knocking and who "
-               "has gone quiet. Each channel can post on its own schedule.")
+               "has gone quiet.")
+    # ASKED, NOT INFERRED. Wanting no board used to mean leaving three boxes
+    # blank and trusting a caption that said so -- which reads as a thing you
+    # have skipped rather than a thing you have chosen (Megan 2026-09-15:
+    # "they shouldn't be mandatory").
+    want_knocks = st.radio(
+        "Do you want this board?", ["Yes", "No"], index=0, horizontal=True,
+        key="want_knocks", label_visibility="collapsed")
     knocks = []
-    for i in range(MAX_KNOCKS):
-        c1, c2 = st.columns([3, 2])
-        label = ("Channel for the board" if i == 0
-                 else "Another channel (optional)")
-        ch = c1.text_input(label, key="kn_ch_%d" % i,
-                           placeholder="Leave blank if not needed"
-                           if i else "C09AVM17PAR  or  #palace-sales")
-        cad = c2.selectbox("How often?", key="kn_cad_%d" % i,
-                           options=[c[0] for c in S.KNOCKS_CHOICES if c[0] != -1],
-                           format_func=lambda v: dict(S.KNOCKS_CHOICES)[v],
-                           index=1)
-        knocks.append((ch.strip(), int(cad)))
-    st.caption("Do not want this board at all? Leave every channel above "
-               "blank.")
+    if want_knocks == "Yes":
+        st.caption("Each channel can post on its own schedule.")
+        for i in range(MAX_KNOCKS):
+            c1, c2 = st.columns([3, 2])
+            label = ("Slack channel for the board" if i == 0
+                     else "Another Slack channel (optional)")
+            ch = c1.text_input(label, key="kn_ch_%d" % i,
+                               placeholder="Leave blank if not needed"
+                               if i else "C09AVM17PAR  or  #palace-sales")
+            cad = c2.selectbox("How often?", key="kn_cad_%d" % i,
+                               options=[c[0] for c in S.KNOCKS_CHOICES
+                                        if c[0] != -1],
+                               format_func=lambda v: dict(S.KNOCKS_CHOICES)[v],
+                               index=1)
+            knocks.append((ch.strip(), int(cad)))
     if not S.uses_saraplus(campaign):
         # A knocks-only office never sees the alerts block, where this is
         # otherwise said first.
         st.info(
-            "**Add Megan and Eve to any channel you name here.** They cannot "
-            "switch your reports on for a channel they are not in.")
+            "**Add Megan and Eve to any Slack channel you name here.** They "
+            "cannot switch your reports on for a Slack channel they are "
+            "not in.")
 
     # TEXTING. Some owners want the board in a group text rather than in
     # Slack -- Carlos asked for exactly that (2026-09-15). WE send it, from
@@ -286,25 +276,33 @@ with st.container(border=True):
     # not fail -- macOS reports the send as fine and delivers it nowhere, so
     # a typo here is silence that looks like success on both ends. Hence the
     # insistence on copying it rather than describing it.
-    st.subheader("Want the board as a text instead?")
-    st.caption("Optional — most offices skip this. Leave it blank and "
-               "everything stays in Slack.")
-    st.info(
-        "**First, add `%s` to the group chat.** That is Lucy. She cannot "
-        "post into a chat she is not in, and this is the step that gets "
-        "missed." % S.LUCY_IMESSAGE)
+    st.subheader("Get the board as a group text too")
+    st.caption("The same board, sent to a group chat as well as Slack.")
+    want_texts = st.radio(
+        "Do you want it texted?", ["Yes", "No"], index=1, horizontal=True,
+        key="want_texts", label_visibility="collapsed")
     text_groups = []
-    for i in range(MAX_TEXT_GROUPS):
-        label = ("Name of the group chat" if i == 0
-                 else "Another group chat (optional)")
-        val = st.text_input(
-            label, key="text_grp_%d" % i,
-            placeholder="Leave blank if not needed" if i
-            else "B2B Box Dispositions")
-        text_groups.append(val.strip())
-    st.caption("Type the name **exactly** as it appears at the top of the "
-               "chat in Messages — capitals, spaces and all. A name that "
-               "does not match sends to nobody, and nothing will tell you.")
+    if want_texts == "Yes":
+        st.info(
+            "**First, add Lucy to the group chat.** She cannot post into a "
+            "chat she is not in.")
+        # ITS OWN BLOCK, NOT INLINE CODE. Set in a sentence it rendered as
+        # small grey monospace and was hard to read (Megan 2026-09-15) -- on
+        # an address they have to reproduce exactly into Messages. st.code
+        # also gives them a copy button, so it need not be retyped at all.
+        st.code(S.LUCY_IMESSAGE, language=None)
+        st.caption("Add that address to the chat like you would add a person.")
+        for i in range(MAX_TEXT_GROUPS):
+            label = ("Name of the group chat" if i == 0
+                     else "Another group chat (optional)")
+            val = st.text_input(
+                label, key="text_grp_%d" % i,
+                placeholder="Leave blank if not needed" if i
+                else "B2B Box Dispositions")
+            text_groups.append(val.strip())
+        st.caption("Type the name **exactly** as it appears at the top of the "
+                   "chat in Messages — capitals, spaces, emojis and all. A "
+                   "name that does not match sends to nobody.")
 
     # LAST THING BEFORE THEY SEND, because it is the one action of theirs
     # that has to happen OUTSIDE this page -- sitting up beside the channel
@@ -314,9 +312,10 @@ with st.container(border=True):
     # is ours (Megan 2026-09-13: "this reads like they need to add lucy which
     # isn't the case").
     st.info(
-        "**Before you send this — add Megan and Eve to every channel you "
-        "named above.** They cannot switch your alerts on for a channel they "
-        "are not in, and that is the most common reason a sign-up stalls.")
+        "**Before you send this — add Megan and Eve to every Slack channel "
+        "you named above.** They cannot switch your alerts on for a "
+        "Slack channel they are not in, and that is the most common "
+        "reason a sign-up stalls.")
 
     submitted = st.button("Send my sign-up", type="primary")
 
@@ -417,8 +416,9 @@ if submitted:
                 "and its own board.")
             st.markdown("**Two things to do now:**")
             st.markdown(
-                "1. **Add Megan and Eve** to every channel you named — "
-                "they cannot switch it on for a room they are not in.\n"
+                "1. **Add Megan and Eve** to every Slack channel you "
+                "named — they cannot switch it on for a room they are "
+                "not in.\n"
                 "2. **Leave that desktop on and awake** during selling "
                 "hours — plugged in and on wifi. Nothing posts while it is "
                 "asleep.")
