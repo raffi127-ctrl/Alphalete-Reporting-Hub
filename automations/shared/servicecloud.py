@@ -260,8 +260,23 @@ def sign_in(page, email: str, password: str, *,
 # constant. That is a small change and NOT one to make blind -- it decides
 # what every AT&T office's sale line says.
 #
-# WHAT A BOX METRIC IS, still open. A contract is one sale; the grid also
-# carries Commodity (Electricity so far) and Adjusted Annual Volume. Whether
-# a Box office wants one number, a split by commodity, or volume alongside
-# the count is a question for an office that sells them, not a guess from
-# here.
+# AND IT FEEDS THE LIVE SALES BOARD, not only Slack (Megan 2026-09-15: "we're
+# building live sales boards for the ICDS - this is what will feed the box
+# ones").
+#
+# icd_sales_board/relay_read.py puts it plainly: "the shape on the wire IS the
+# shape of the board". The AT&T agent returns
+# {'sales': {REP: {Int, Int Up, DTV, NL}}}, the relay lands it in the Sales
+# JSON column, and the board draws those four columns per rep. Nothing pulls,
+# nothing maps.
+#
+# So a Box read returning {'sales': {REP: {...}}} needs NO new pipeline: the
+# relay, the board and the Slack alerts all already consume that shape. What
+# it returns per rep IS what the Box board's columns will be.
+#
+# WHICH MAKES THE ONE OPEN QUESTION CONCRETE: what are the Box board's
+# columns? AT&T has four. A Box contract is one sale, and the grid also
+# carries Commodity (Electricity so far) and Adjusted Annual Volume -- so the
+# candidates are a single count, a split by commodity, or a count plus
+# volume. That is a decision for an office that sells them, and it is the
+# last thing between here and a working board.
