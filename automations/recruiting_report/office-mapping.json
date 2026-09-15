@@ -1,7 +1,7 @@
 {
   "confirmed_count": 54,
   "needs_review_count": 0,
-  "skip_count": 33,
+  "skip_count": 34,
   "confirmed": [
     {
       "sheet_tab": "Raf Hidalgo",
@@ -425,6 +425,11 @@
       "retired": "2026-09-14"
     },
     {
+      "sheet_tab": "Jesus Hawthorne",
+      "reason": "sale de todos lados — fuera de todas las distros (2026-08-24) y de la capitanía de Pat (2026-09-07). Tab BORRADA 2026-09-14 a pedido de Eve; backup en output/focus_report_deleted_tabs_2026-09-14/. Antes estaba en sales_only (Eve, 2026-09-14)",
+      "retired": "2026-09-14"
+    },
+    {
       "sheet_tab": "Eric Martinez",
       "office_id": "20721",
       "reason": "oficina cerrada — Spartan Capital, Inc. Megan avisó la baja el 2026-09-10 (\"is shut down\"). Esa misma mañana knocks_access_watch posteó Office Access LOST: salió del knock board de la capitanía de Chan Park, era alcanzable como 20721 y pasó a 'not on the list'. Está en la pestaña 'Terminated ICDs' del AUTOMATION MASTER con fecha 2026-09-10 (Megan, 2026-09-10)",
@@ -566,10 +571,6 @@
       "reason": "no AppStream office (sales-only, no recruiting)"
     },
     {
-      "sheet_tab": "Jesus Hawthorne",
-      "reason": "no AppStream office (sales-only, no recruiting) \u2014 present in the Tableau ATT/INT/Metrics views as 'Jesus Hawthorne', so the OPT half fills; added 2026-07-27 after his tab sat untargeted"
-    },
-    {
       "sheet_tab": "Christian Esposito",
       "as_owner": "Christian Esposito",
       "reason": "tab added by Eve 2026-09-01. No AppStream office \u2014 the knocks access sweep classified him as not in the office directory (output/knocks-ownerville-access-2026-08-24.md) and all-offices.json has no match, so rows 2-23 (recruiting) cannot fill. Present in Tableau's ATT/INT/Metrics/PRODUCT SALES views as 'Christian Esposito' (Wayne's captainship, fiber), so the OPT + metrics half fills. 2026-09-14: AppStream shows office 23783 'Resound, Inc. 2nd' under his name, but it has been EMPTY since AS week 8/16 (Eve checked by hand) — his real office is 23038, access requested that day. Promotion is PINNED to 23038 (promote_office_id) so 23783 is never used again, and replace_zeros_only makes the promotion backfill overwrite only the blank/0 cells that 23783 left (Sheet WE 8/16 → 9/13), never the real July data.",
@@ -584,5 +585,5 @@
       "promote_when_visible": true
     }
   ],
-  "sales_only_count": 4
+  "sales_only_count": 3
 }
