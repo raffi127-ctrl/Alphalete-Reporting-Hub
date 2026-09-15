@@ -99,6 +99,15 @@ def rosters(grid=None, *, is_terminated=None
                 continue
             seen.add(k)
             names.append(name)
+        # Owners boarded with this captainship without being in its block
+        # (config.EXTRA_KNOCK_OWNERS — Nuri Burgos under Raf, 2026-09-14).
+        # The report pulls them, so the watch must say when their access lands.
+        from automations.captainship_drafts import config as _cfg
+        for extra in (getattr(_cfg, "EXTRA_KNOCK_OWNERS", {}) or {}).get(key, ()):
+            k = " ".join(str(extra).lower().split())
+            if k and k not in seen:
+                seen.add(k)
+                names.append(extra)
         out[key] = (title, KD.drop_terminated(names, is_terminated))
     return out
 

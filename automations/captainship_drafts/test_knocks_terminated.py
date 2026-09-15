@@ -93,6 +93,16 @@ class RostersSkipTerminatedTests(unittest.TestCase):
                 grid=[], is_terminated=_lookup("Eric Martinez")))
         self.assertEqual(got["chan"][1], ["Chan Park", "Carissa Ng"])
 
+    def test_access_watch_counts_the_extra_owner(self):
+        # Nuri Burgos rides with Raf's boards; the watch must see her office too.
+        from automations.knocks_access_watch import audit as A
+        from automations.captainship_drafts import config
+        with mock.patch.object(A, "CAPTAINS", ("chan",)), \
+                mock.patch.object(config, "EXTRA_KNOCK_OWNERS",
+                                  {"chan": ("Nuri Burgos",)}):
+            got = self._run(lambda: A.rosters(grid=[], is_terminated=_lookup()))
+        self.assertEqual(got["chan"][1][-1], "Nuri Burgos")
+
 
 if __name__ == "__main__":
     unittest.main()
