@@ -1852,8 +1852,8 @@ _SB_CSS = """
    enough to read across a row. */
 .sb{border-collapse:collapse;font-size:.82rem;width:auto;
     border:2px solid #000}
-.sb th,.sb td{padding:2px 6px;text-align:center;white-space:nowrap;
-              border:1px solid #000}
+.sb th,.sb td{padding:0 6px;text-align:center;white-space:nowrap;
+              border:1px solid #000;height:35px;box-sizing:border-box}
 .sb thead th{position:sticky;top:0;background:#FAFAF8;z-index:3;
              font-weight:600}
 .sb .grp{border-left:2px solid #000;
@@ -1875,32 +1875,44 @@ _SB_CSS = """
 """
 
 
+# The board's two header rows, so the editor's single header can be pushed
+# down to sit level with it. Measured against _SB_CSS, not guessed.
+_REP_HEAD_PAD = 37
+
+
 def _rep_editor(office_key: str, week_ending, rows: list,
                 roster: dict) -> None:
-    """Team / Leadership / Status for every rep, always on, with Save.
+    """The REP section — Team / Leadership / Status — EDITABLE, on the right.
 
-    The board above is a hand-built table so each day can SPAN its own
-    columns, and an HTML table cannot be typed into — Streamlit only edits its
-    own grid. So the three columns an owner actually changes sit directly
-    under it.
+    Megan 2026-09-14: "I want to be able to edit it right here." Streamlit
+    cannot put a dropdown inside a hand-built HTML table, and the board has to
+    be one so that each day can SPAN its own columns. So the rep section is a
+    real Streamlit grid sitting flush against the board's right edge, sharing
+    its row height — one table to read across, and the half that gets changed
+    is the half you can click.
 
-    No toggle (Megan 2026-09-14): they are columns on Raf's sheet, so they are
-    simply there. Save / Discard, the same as everywhere else on the site —
-    nothing is written on a keystroke."""
+    The rep's NAME is repeated as a locked first column. It is redundant when
+    the rows line up and it is the thing that stops an owner editing the wrong
+    person when they do not — worth the column.
+
+    Save / Discard, like everywhere else: nothing is written on a keystroke."""
     key = f"repedit_{office_key}_{week_ending}"
     src = [{"Rep": r["Rep"],
             "Team": r.get("Team") or BLANK_OPTION,
             "Leadership": r.get("Leadership") or BLANK_OPTION,
-            "Status": r.get("Status") or BLANK_OPTION} for r in rows]
+            "Status": r.get("Status") or BLANK_OPTION,
+            "Start date": r.get("Start date") or "",
+            "Days worked": r.get("Days worked") or ""} for r in rows]
     if not src:
         return
     teams = sorted({(r.team or "").strip() for r in roster.values()
                     if (r.team or "").strip()})
-    st.markdown("###### Rep details")
+    st.markdown(f"<div style='height:{_REP_HEAD_PAD}px'></div>",
+                unsafe_allow_html=True)
     edited = st.data_editor(
         pd.DataFrame(src).astype("string").fillna(""),
         use_container_width=True, hide_index=True, num_rows="fixed",
-        height=_grid_height(len(src)), key=key,
+        row_height=35, height=(len(src) + 1) * 35 + 3, key=key,
         column_config={
             "Rep": st.column_config.TextColumn("Rep", disabled=True),
             "Team": st.column_config.SelectboxColumn(
@@ -1911,6 +1923,15 @@ def _rep_editor(office_key: str, week_ending, rows: list,
                 options=[BLANK_OPTION] + list(R.STATUSES), required=False,
                 help="Terminate a rep here; set them back to Active to "
                      "reinstate."),
+            # Read-only: these come from the AppStream start-date harvest, not
+            # from anybody typing.
+            "Start date": st.column_config.TextColumn(
+                "Start date", disabled=True),
+            "Days worked": st.column_config.TextColumn(
+                "Days worked", disabled=True,
+                help="Days worked SINCE THEIR START DATE, on a six-day week — "
+                     "Sunday is not a work day on this board. It is tenure, "
+                     "not days worked this week."),
         })
     c_save, c_disc, _ = st.columns([1, 1, 4])
     with c_disc:
@@ -2454,12 +2475,15 @@ def relay_board(icd: str, office_key: str) -> None:
                 f"{d:%a} {d.day}",
                 [(c, f"{lab} {c}", "day" if c == "Apps" else "",
                   d in reported_days) for c in ["Apps"] + shown]))
-        # The rep's own details close the board, as they do on his sheet.
-        groups.append(("Rep", [(c, c, "", True) for c in
-                               ["Team", "Leadership", "Status",
-                                "Start date", "Days worked"]]))
-        st.markdown(_grouped_board(grid, groups), unsafe_allow_html=True)
-        _rep_editor(office_key, week_ending, rows, roster)
+        # THE REP SECTION IS THE EDITOR, and it sits where it always sat —
+        # flush against the board's right edge, same row height, one table to
+        # read across. It is not part of the HTML because Streamlit cannot put
+        # a dropdown inside one, and the day blocks need the HTML to span.
+        c_board, c_rep = st.columns([7, 3], gap="small")
+        with c_board:
+            st.markdown(_grouped_board(grid, groups), unsafe_allow_html=True)
+        with c_rep:
+            _rep_editor(office_key, week_ending, rows, roster)
         relay_wow(office_key)
         return
 
