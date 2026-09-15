@@ -677,13 +677,15 @@ if _mgrp not in ("Org", "Captainship"):
     _mgrp = "Org"
 values.append({"range": "'Manager Matrix'!D1", "values": [["GROUP:", _mgrp]]})
 # Hide the unused matrix rows for the preserved group (same fix as the board).
+# F doesn't exist yet at this point in the module — park the requests and
+# F.extend them right after F is defined below.
 _mx_used = (len(CAPTAINSHIP_NAMES) if _mgrp == "Captainship" else len(ORG_NAMES))
-F.append({"updateDimensionProperties": {"range": {
+_MX_DIM_REQS = [{"updateDimensionProperties": {"range": {
     "sheetId": MATRIX, "dimension": "ROWS",
     "startIndex": MX_M0 - 1, "endIndex": MX_M0 - 1 + _mx_used},
-    "properties": {"hiddenByUser": False}, "fields": "hiddenByUser"}})
+    "properties": {"hiddenByUser": False}, "fields": "hiddenByUser"}}]
 if _mx_used < MX_MAXR:
-    F.append({"updateDimensionProperties": {"range": {
+    _MX_DIM_REQS.append({"updateDimensionProperties": {"range": {
         "sheetId": MATRIX, "dimension": "ROWS",
         "startIndex": MX_M0 - 1 + _mx_used, "endIndex": MX_M0 - 1 + MX_MAXR},
         "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}})
@@ -721,6 +723,7 @@ def fmt(s, r0, r1, c0, c1, cf, fields):
 
 
 F = []
+F.extend(_MX_DIM_REQS)   # matrix group-row visibility, parked above
 LEGEND_VALUES = []
 # ---- centring + weight, emitted per tab by the builders above.
 # Scoped to single fields so they can't disturb the colours, fonts or borders
