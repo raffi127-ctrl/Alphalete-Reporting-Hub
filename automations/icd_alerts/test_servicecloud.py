@@ -182,17 +182,24 @@ class WhatTheLiveGridShowedThatTheDescriptionDidNot(unittest.TestCase):
     LIVE = ["TPV Passed", "Submitted to Supplier", "PDF Generated",
             "Cancelled by Supplier", "TPV Sent", "Accepted by Supplier"]
 
-    def test_the_undecided_ones_are_not_silently_counted(self):
-        for s in SC.SEEN_BUT_UNDECIDED:
+    def test_the_ones_ruled_out_are_not_counted(self):
+        """Megan 2026-09-15: "whatever Ryan said counts as a sale is a sale -
+        the rest we aren't going to count for anything right now"."""
+        for s in ("Accepted by Supplier", "PDF Generated", "TPV Sent"):
             self.assertFalse(SC.is_completed(s),
-                             "%r was guessed into the sales count" % s)
+                             "%r was counted against the decision" % s)
 
-    def test_they_are_reported_rather_than_dropped(self):
-        flagged = SC.unknown_statuses(self.LIVE)
-        for s in SC.SEEN_BUT_UNDECIDED:
-            self.assertIn(s, flagged,
-                          "%r would vanish from the count with nothing said"
-                          % s)
+    def test_a_decision_is_silent_rather_than_reported_daily(self):
+        # They were flagged while undecided. Reporting a settled question
+        # every day is how the report that matters gets skimmed past.
+        self.assertEqual(SC.unknown_statuses(self.LIVE), [],
+                         "a ruled-on status is still being reported")
+
+    def test_a_genuinely_NEW_status_is_still_loud(self):
+        # Box adding one would otherwise drop those contracts out of every
+        # Box office's number with nothing to say why.
+        self.assertEqual(SC.unknown_statuses(self.LIVE + ["Awaiting QC"]),
+                         ["Awaiting QC"])
 
     def test_the_five_we_were_told_still_count(self):
         for s in ("TPV Passed", "Ready for booking", "In Progress",
@@ -201,6 +208,13 @@ class WhatTheLiveGridShowedThatTheDescriptionDidNot(unittest.TestCase):
 
     def test_a_cancelled_contract_is_never_a_sale(self):
         self.assertFalse(SC.is_completed("Cancelled by Supplier"))
+
+    def test_accepted_by_supplier_is_a_deliberate_call(self):
+        """It reads as MORE complete than "Submitted to supplier", which DOES
+        count. Worth remembering if a Box number ever looks low -- it is a
+        decision, not an oversight."""
+        self.assertIn("accepted by supplier", SC.KNOWN_NOT_COUNTED)
+        self.assertTrue(SC.is_completed("Submitted to supplier"))
 
     def test_the_columns_a_read_needs_are_named(self):
         """I first recorded the Agent and Initiated Date columns as MISSING.

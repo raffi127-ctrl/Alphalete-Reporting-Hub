@@ -90,23 +90,29 @@ ROWS_PER_PAGE_MAX_SEEN = 50
 #
 # Kept as a set of exact strings because a near-miss is the dangerous failure:
 # a status we do not recognise is silently NOT counted, and an office's sales
-# number comes out low with nothing to say why. See unknown_statuses().
+# number comes out low with nothing to say why. unknown_statuses() reports the
+# ones nobody has ruled on -- and only those, so a decision stays quiet.
 # THE COLUMN IS "Contract Substatus", confirmed on screen 2026-09-15.
 SEL_SUBSTATUS_COLUMN = "Contract Substatus"
 
-# SUBSTATUSES SEEN ON THE LIVE GRID that Ryan's list did not mention. Recorded
-# rather than decided: "Accepted by Supplier" reads as MORE complete than
-# "Submitted to supplier", and if it is a sale and we do not count it then
-# every Box office's number comes out low with nothing to say why.
+# SEEN ON THE GRID AND DELIBERATELY NOT COUNTED. Megan 2026-09-15: "whatever
+# Ryan said counts as a sale is a sale - the rest we aren't going to count for
+# anything right now".
 #
-# NOT added to COMPLETED_STATUSES until somebody who sells these says so.
-# Guessing in the generous direction inflates a number people are paid on;
-# guessing in the strict direction hides sales. Neither is ours to pick.
-SEEN_BUT_UNDECIDED = (
-    "Accepted by Supplier",
-    "PDF Generated",
-    "TPV Sent",
-)
+# Listed rather than ignored so they are SILENT rather than merely absent: a
+# status nobody has ruled on is worth reporting, and one that has been ruled
+# on is noise. Reporting these every day is how the report that matters gets
+# skimmed past.
+#
+# "Accepted by Supplier" is the one worth remembering if the number ever looks
+# low -- it reads as MORE complete than "Submitted to supplier", which does
+# count. That is a deliberate call, not an oversight.
+KNOWN_NOT_COUNTED = frozenset({
+    "accepted by supplier",
+    "pdf generated",
+    "tpv sent",
+    "cancelled by supplier",
+})
 
 COMPLETED_STATUSES = frozenset({
     "tpv passed",
@@ -133,7 +139,8 @@ def unknown_statuses(statuses) -> list:
     seen, out = set(), []
     for s in statuses or []:
         low = (s or "").strip().lower()
-        if not low or low in COMPLETED_STATUSES or low in seen:
+        if (not low or low in COMPLETED_STATUSES
+                or low in KNOWN_NOT_COUNTED or low in seen):
             continue
         seen.add(low)
         out.append(s.strip())
