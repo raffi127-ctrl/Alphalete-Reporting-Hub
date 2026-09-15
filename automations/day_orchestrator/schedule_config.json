@@ -116,7 +116,7 @@
       }
     },
     "slack:headcount_tracker_pngs": {
-      "label": "The 4 Country tracker PNGs the headcount daily reads (Fiber, NDS, B2B AT&T, BOX) — posted in today's #alphalete-sales thread",
+      "label": "The 4 Country tracker PNGs the headcount daily reads (Fiber, NDS, B2B AT&T, BOX) \u2014 posted in today's #alphalete-sales thread",
       "_note": "Eve 2026-09-14. Same probe as slack:owner_tracker_pngs, limited to the 4 trackers org_active_headcount_daily opens. The full gate waits for EVERY routed tracker or 09:00: on 9/14 these 4 were in by 06:57 CT but the run only started 09:15, so Sunday was not on the tab at 7:40. These 4 landed 05:30-07:13 CT on 9/11-9/14. Still opens at 09:00 if one is missing; the daily leaves that board's cells empty and the next day's run fills them.",
       "probe": {
         "type": "owner_tracker_thread",
@@ -1081,7 +1081,7 @@
         0
       ],
       "_standalone_weekdays_note": "Python weekday(): Monday. The REAL schedule is com.alphalete.vantura-week-roll-mon (plist Weekday 1 = Mon, 11:30 machine-local; Lucy 2 is Central). Declared here so machine_digest's error watcher stops guessing this report's cadence from the Activity log. Keep in sync with the plist's Weekday if the day ever moves.",
-      "_note": "Vantura Sales Board WEEK ROLL (Carlos). on_scheduler:false = the 4am orchestrator NEVER runs it - its real schedule is the Monday 08:20am CT launchd job (com.alphalete.vantura-week-roll-mon, wrapper deploy/vantura_week_roll_mon.sh) on Lucy 2 — moved earlier from 11:30 on 2026-09-14 so the new board is up super early. The WRAPPER passes --apply; the module is dry-run by default, so `lucy rerun vantura_week_roll` PREVIEWS and writes nothing. The board holds one week at a time and nothing else rolls it: archive the closing week into WeekData, 'Last Wk' per rep and per campaign, day cells back to the INDEX formula, then flip the gold cell + WeekData!J:K + its dropdown + Stations!S2. Hand-rolling is what broke 2026-08-17 (picked the week below the right one, everything held to Wednesday) and 2026-08-24 (the pick stored 8.3, not 8.30). WINDOW, bounded on both sides: com.alphalete.sales-boards posts yesterday's production from 05:10 with retries to ~08:05 and HOLDS unless the gold cell still shows the week that just closed, so the roll must come after it; car-rides-cleanup runs 08:30-11:15 over the Stations tab whose Q2 this rewrites, so the roll must come before 08:30; and vantura_slack_sales fills MONDAY at 16:00 and holds all evening if the board is still on the old week. 08:20 is the first safe minute of the 08:05-08:30 gap (going earlier than ~08:05 would need the roll to GATE on the production post, not race the clock). IF IT FAILS nothing new alerts - the 16:00 fill holds and sales_boards' WE-cell alert already names the week the board is really showing. Pure Sheets API: no browser, no Chrome profile contention. Exit codes: 0 rolled or already healthy, 2 refused to guess, 3 stopped before the flip (nothing lost), 4 the board was flipped by hand from the dropdown and needs the old week typed back first.",
+      "_note": "Vantura Sales Board WEEK ROLL (Carlos). on_scheduler:false = the 4am orchestrator NEVER runs it - its real schedule is the Monday 08:20am CT launchd job (com.alphalete.vantura-week-roll-mon, wrapper deploy/vantura_week_roll_mon.sh) on Lucy 2 \u2014 moved earlier from 11:30 on 2026-09-14 so the new board is up super early. The WRAPPER passes --apply; the module is dry-run by default, so `lucy rerun vantura_week_roll` PREVIEWS and writes nothing. The board holds one week at a time and nothing else rolls it: archive the closing week into WeekData, 'Last Wk' per rep and per campaign, day cells back to the INDEX formula, then flip the gold cell + WeekData!J:K + its dropdown + Stations!S2. Hand-rolling is what broke 2026-08-17 (picked the week below the right one, everything held to Wednesday) and 2026-08-24 (the pick stored 8.3, not 8.30). WINDOW, bounded on both sides: com.alphalete.sales-boards posts yesterday's production from 05:10 with retries to ~08:05 and HOLDS unless the gold cell still shows the week that just closed, so the roll must come after it; car-rides-cleanup runs 08:30-11:15 over the Stations tab whose Q2 this rewrites, so the roll must come before 08:30; and vantura_slack_sales fills MONDAY at 16:00 and holds all evening if the board is still on the old week. 08:20 is the first safe minute of the 08:05-08:30 gap (going earlier than ~08:05 would need the roll to GATE on the production post, not race the clock). IF IT FAILS nothing new alerts - the 16:00 fill holds and sales_boards' WE-cell alert already names the week the board is really showing. Pure Sheets API: no browser, no Chrome profile contention. Exit codes: 0 rolled or already healthy, 2 refused to guess, 3 stopped before the flip (nothing lost), 4 the board was flipped by hand from the dropdown and needs the old week typed back first.",
       "display_name": "Vantura Week Roll (Mon 11:30am)",
       "source_type": "sheet",
       "data_sources": [],
@@ -1260,7 +1260,7 @@
     "org_campaign_metrics": {
       "on_scheduler": false,
       "machine": "Lucy 2",
-      "_note": "Org Focus Report campaign-metrics stamper (built 8/23; b2b COMPUTED per captainship owner + Carlos since 9/7 — see org_campaign_metrics/pull_b2b.py). Fills the hidden 'Campaign Log' of the Alphalete Recruiting Dashboard: b2b from the ATT ORDERLOG + activation/churn crosstabs, BOX (Ryan/Roshan), NDS (Khalil/Max). DRY-RUN default; the 8:30 AM Report Library card runs --write (after the Box extract lands ~7-8am). REGISTERED 2026-09-14: the card existed since 8/23 but this id was never in the registry, so card_scheduler silently never fired it — every stamp until now was manual from the mini. `lucy rerun org_campaign_metrics` = dry preview.",
+      "_note": "Org Focus Report campaign-metrics stamper (built 8/23; b2b COMPUTED per captainship owner + Carlos since 9/7 \u2014 see org_campaign_metrics/pull_b2b.py). Fills the hidden 'Campaign Log' of the Alphalete Recruiting Dashboard: b2b from the ATT ORDERLOG + activation/churn crosstabs, BOX (Ryan/Roshan), NDS (Khalil/Max). DRY-RUN default; the 8:30 AM Report Library card runs --write (after the Box extract lands ~7-8am). REGISTERED 2026-09-14: the card existed since 8/23 but this id was never in the registry, so card_scheduler silently never fired it \u2014 every stamp until now was manual from the mini. `lucy rerun org_campaign_metrics` = dry preview.",
       "display_name": "Org Focus Report Campaign Metrics",
       "source_type": "tableau",
       "data_sources": [],
@@ -1767,7 +1767,7 @@
     "weekly_knocks_focus": {
       "on_scheduler": false,
       "_off_scheduler_note": "PREVIEW (Eve 2026-09-14, Rafael's ask): writes an office's Weekly Knock Dispositions OFFICE TOTALS into the 'WEEKLY KNOCKS DATA' box of its ATT Program - Focus Report tab and shows the board PNG under everything on that tab: uploaded to alphaletereporting's Drive (review_gate's drive.file token), shared anyone-with-link like the Focus Report itself, drawn with =IMAGE() in a merged block found by the 'WEEKLY KNOCKS BOARD' marker in column A (one picture per tab, last week's file trashed). No pull: reads the PNG + totals json the Sunday weekly_knock_dispositions run leaves in output/, so it MUST run on the same machine (Lucy 1). DRY-RUN by default; --live only writes to the preview tab until ROLLOUT flips in run.py. `lucy rerun weekly_knocks_focus --office \"Akashdeep Rai\" --tab \"Kash Rai - Test Eve\"` (add --live to write). Off the scheduler until Eve says roll out.",
-      "display_name": "Weekly Knocks → Focus Report (box + board image)",
+      "display_name": "Weekly Knocks \u2192 Focus Report (box + board image)",
       "source_type": "local",
       "data_sources": [],
       "command": [
@@ -6867,7 +6867,7 @@
     "ps_week_backfill": {
       "on_scheduler": true,
       "_note": "MANUAL-ONLY (weekdays [] -> never auto-runs). Backfills ONE tab's weekly sale rows (NI/UG/DTV/NL/headcount/Personal Production) for OLD weeks from the week-pinned PRODUCT SALES crosstab, downloading it HERE because Tableau's SSO goes through ownerville and Windows must not open it. Dry run by default: lucy rerun ps_week_backfill --tab \"Nuri Burgos\" --week 2026-09-06  then add --write. Never overwrites a filled cell. Added 2026-09-14 for Nuri Burgos's new tab.",
-      "display_name": "Focus — sales backfill for an old week (one tab)",
+      "display_name": "Focus \u2014 sales backfill for an old week (one tab)",
       "source_type": "tableau",
       "data_sources": [],
       "command": [
@@ -6885,7 +6885,7 @@
     "production_breakdown": {
       "on_scheduler": true,
       "_note": "MANUAL-ONLY (weekdays [] -> never auto-runs; the weekly OPT phase already runs it for every tab). Fills the Production Breakdown chart from the PRODUCT SALES crosstab the last OPT run left on THIS machine. For one new tab: lucy rerun production_breakdown --only \"Nuri Burgos\". Added 2026-09-14.",
-      "display_name": "Focus — Production Breakdown chart (refill)",
+      "display_name": "Focus \u2014 Production Breakdown chart (refill)",
       "source_type": "local",
       "data_sources": [],
       "command": [
@@ -9721,7 +9721,7 @@
       "on_scheduler": false,
       "_off_scheduler_note": "EDIT-IN-PLACE repair for the Digi Docs office thread (Megan 2026-09-14: \"update/edit the slack post to be correct on what's needed\"). Fifteen people who could not be ADDED to OwnerVille were announced as 'could not send' ninety minutes before the first bundle was due, and none of the posts told the three tagged people what to do about it. slack_post.headline_and_need fixes the wording for the NEXT post; this applies the same words to the ones already sitting in the channel. It MUST run on the machine holding the POSTING identity -- chat.update only works for the identity that wrote the message, so from a laptop it returns cant_update_message. Edits existing messages only: posts nothing, sends nothing, adds nobody. DRY BY DEFAULT; pass --live to apply. weekdays [] so the batch never runs it.",
       "machine": "Lucy 3",
-      "display_name": "Digi Docs — re-word today's thread (edit in place)",
+      "display_name": "Digi Docs \u2014 re-word today's thread (edit in place)",
       "source_type": "slack",
       "data_sources": [],
       "command": [
@@ -9733,11 +9733,11 @@
       },
       "priority": "P3"
     },
-      "digi_docs_new_reps": {
+    "digi_docs_new_reps": {
       "on_scheduler": false,
       "_off_scheduler_note": "CREATE the OwnerVille employee record for a new start who has none (Megan 2026-09-14: 'you need to be able to learn how to add the missing people from OV so that you can fully send to everyone on time for next week'). Fifteen of forty-eight were missing that Monday and nothing in this repo could create them: ownerville.add_sales_rep puts an EXISTING employee on a campaign, and its picker only offers people who already exist. TWO PAGES SHARE THE BUTTON NAME -- View Progress (p=201) 'Add Sales Rep' puts someone on a campaign; Sales Reps (p=20) '+ Add Sales Rep' creates the person. This is the second. Looks people up BY EMAIL, never by name: 9/14 was name matching failing all day, and here a wrong match creates a SECOND record for someone who already has one. Refuses anyone with no email or phone rather than creating them incomplete, and reads the form's own validation before submitting. DRY BY DEFAULT; --live writes. Start with --only for one person before any batch. weekdays [] so the batch never runs it.",
       "machine": "Lucy 3",
-      "display_name": "Digi Docs — create missing OwnerVille reps",
+      "display_name": "Digi Docs \u2014 create missing OwnerVille reps",
       "source_type": "browser",
       "data_sources": [],
       "command": [
@@ -10740,7 +10740,14 @@
         "6"
       ],
       "cadence": {
-        "weekdays": [0, 1, 2, 3, 4, 5]
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
       },
       "priority": "P2",
       "freshness_target": null,
@@ -10810,6 +10817,26 @@
       },
       "_note": "Office metrics for joseph -> email: joseph@loganlegacygroup.com. Onboarded via office_onboarding on 2026-09-11 16:45 UTC. Machine Lucy 1 (view owners). RE-ADDED by tracker_onboarding.auto_commit schedule self-heal: the entry was missing from the committed schedule (never committed, or wiped by a pull).",
       "_onboarded": true
+    },
+    "second_rounds_tomorrow": {
+      "on_scheduler": false,
+      "_note": "One-shot/manual: per-office count of SECOND interviews scheduled for TOMORROW off the p=105 Weekly Calendar; writes control-sheet tab 'SR Tomorrow' for the mini to render (Carlos 2026-09-14). Read-only on AppStream. `lucy rerun second_rounds_tomorrow`; --date MM-DD-YYYY / --office <id> to scope.",
+      "display_name": "Second rounds booked for tomorrow",
+      "source_type": "appstream",
+      "data_sources": [],
+      "command": [
+        "automations.second_rounds_tomorrow.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 30,
+      "machine": "Lucy 2"
     }
   },
   "read_only_standalone": {
