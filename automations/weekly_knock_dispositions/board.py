@@ -35,7 +35,8 @@ from automations.total_knocks.pull import (
     COL_REP,
 )
 from automations.weekly_knock_dispositions.pull import (
-    K_DAILY_GAP_MIN, K_DAILY_KNOCKS, K_DAILY_LEADS, K_DAILY_TALK_TO,
+    K_DAILY_GAP_MIN, K_DAILY_KNOCKS, K_DAILY_LEADS, K_DAILY_SPAN_MIN,
+    K_DAILY_TALK_TO,
     K_GAP_MIN, K_SAT_FIRST, K_SAT_LAST,
     K_TALK_TO, K_TOTAL_KNOCKS, K_TOTAL_LEADS, K_TT_DAYS)
 from automations.weekly_knock_dispositions.teams import UNASSIGNED
@@ -130,6 +131,15 @@ COL_SAT_CLOCKED = "Sat Clocked In"
 # Saturday now answers for itself in COL_SAT_DOORS_PER_DAY instead of being
 # blended away — which is the point of splitting them.
 COL_DOORS_PER_DAY = "Mon\u2013Fri Avg Doors / Day"
+# The daily boards' "Avg Knocks / Hr", for the week (Raf 2026-09-15: "for the
+# weekly disposition NDS and Fiber are missing 'daily knocks per hour'"). One
+# rep's cell is the MEAN of their own daily rates \u2014 that day's doors over that
+# day's first\u2192last span, the raw span the daily column uses (Raf and Megan
+# 2026-08-28) \u2014 over the same weekdays COL_DOORS_PER_DAY divides by: the ones
+# they cleared the "over 20" bar. The summary row is the mean of the reps'
+# rates, exactly what the daily board's OFFICE TOTAL line does. Mon\u2013Fri for the
+# reason the doors column is: Saturday is a different shift.
+COL_KNOCKS_PER_HR = "Mon\u2013Fri Avg Knocks / Hr"
 # Saturday's own doors-per-day (Raf 2026-09-13, same Loom at 1:52: "there can
 # be a column here … Saturday average doors knocked per day", cursor parked on
 # Sat First Knock — so it belongs in the SATURDAY block, not beside the weekday
@@ -205,7 +215,7 @@ HEADERS = [
     # whole question that started this ("is this Monday–Saturday or just
     # Monday–Friday?") was asked about a header that didn't say.
     COL_MF_LEADS, COL_MF_KNOCKS,
-    COL_DOORS_PER_DAY,
+    COL_DOORS_PER_DAY, COL_KNOCKS_PER_HR,
     # "% Talk To's per Knocks" sits right after the Total Talk To it divides,
     # the same place and the same spelling the DAILY board gives it — the two
     # land in one email in front of one reader. It is Mon–Fri because the
@@ -247,7 +257,10 @@ HEADERS = [
 # optional — they come off K_DAILY_KNOCKS, which every pull since 2026-08-30
 # already carries; COL_TALK_TO and COL_PCT are Mon–Sat week totals, which every
 # pull has always carried.)
-OPTIONAL_COLUMNS = {COL_SAT_CLOCKED, COL_MF_LEADS, COL_SAT_TALK_PER_DAY}
+# COL_KNOCKS_PER_HR joins 2026-09-15 for the same reason: it needs
+# K_DAILY_SPAN_MIN, which only pulls from that date carry.
+OPTIONAL_COLUMNS = {COL_SAT_CLOCKED, COL_MF_LEADS, COL_SAT_TALK_PER_DAY,
+                    COL_KNOCKS_PER_HR}
 
 # After the summary columns comes the full disposition breakdown (Raf
 # 2026-08-22 — his sheet's green columns; the aggregate red ones stay off).
@@ -495,6 +508,24 @@ def _doors_per_day(rec: dict) -> str:
     return "" if mf is None or not days else _num(mf / days)
 
 
+def _knocks_per_hr(rec: dict) -> float | None:
+    """One rep's Mon–Fri average knocks per hour (COL_KNOCKS_PER_HR): the mean
+    of that day's doors over that day's first→last span, over the weekdays the
+    rep cleared the doors bar. None — a blank cell, never a 0 — when the pull
+    carried no per-day spans (anything pulled before 2026-09-15) or no weekday
+    qualifies."""
+    daily = rec.get(K_DAILY_KNOCKS)
+    spans = rec.get(K_DAILY_SPAN_MIN)
+    if not isinstance(daily, (list, tuple)) or not isinstance(spans, (list, tuple)):
+        return None
+    rates = []
+    for i in range(min(WEEKDAYS, len(daily), len(spans))):
+        doors, span = int(daily[i] or 0), int(spans[i] or 0)
+        if doors >= MIN_KNOCKS_PER_DAY and span > 0:
+            rates.append(doors / (span / 60.0))
+    return sum(rates) / len(rates) if rates else None
+
+
 def _sat_cell(rec: dict, key: str) -> str:
     """One rep's Saturday number from a per-day list — doors or talk-to's.
 
@@ -678,6 +709,7 @@ def compute_rows(ov_rows: list[dict], apps: dict[str, int] | None,
             ("" if leads is None else str(int(leads))),
             ("" if knocks is None else str(int(knocks))),
             _doors_per_day(r),
+            ("" if _knocks_per_hr(r) is None else _num(_knocks_per_hr(r))),
             str(talk),
             _pct(talk, r.get(K_TOTAL_KNOCKS)),
             _num(avg_day),
@@ -774,6 +806,7 @@ def totals_row(ov_rows: list[dict], apps: dict[str, int] | None,
     _mf_gaps = [g for g in (_monfri_gap_per_day(r) for r in ov_rows)
                 if g is not None]
     _sat_gaps = [g for g in (_sat_gap(r) for r in ov_rows) if g is not None]
+    _kph = [x for x in (_knocks_per_hr(r) for r in ov_rows) if x is not None]
     return ([
         # "K of N" — reps who COUNT AS KNOCKING, out of the reps LISTED above
         # (Raf 2026-08-30: "have the total at the top and bottom headers").
@@ -799,6 +832,8 @@ def totals_row(ov_rows: list[dict], apps: dict[str, int] | None,
         # Mon–Fri makes this cell the same average his five dailies showed —
         # dividing by 5 x every rep counted a missed day as a day of 0 doors.
         (_num(_tot_doors / _knock_days) if _knock_days else ""),
+        # The mean of the reps' own rates — the daily OFFICE TOTAL's rule.
+        (_num(sum(_kph) / len(_kph)) if _kph else ""),
         str(tot_talk),
         # Mon–Sat over Mon–Sat: both halves of the ratio are the same span.
         (_pct(tot_talk, _tot_ms_doors) if _ms_door_reps else ""),

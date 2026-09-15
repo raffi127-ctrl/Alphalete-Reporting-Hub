@@ -222,7 +222,11 @@ def _jsonable(v: Any) -> Any:
 # would drop them entirely). Exactly the 2026-08-30 failure the schema exists
 # to stop — bumped in the same commit that added the fields, not the morning
 # after somebody spots it on a board.
-SCHEMA = 6
+# 7 (2026-09-15): K_DAILY_SPAN_MIN — each day's first→last knock span — for
+# Raf's "daily knocks per hour" column (board.COL_KNOCKS_PER_HR). A schema-6 row
+# kept only the AVERAGE first/last knock, and the day's own span cannot be
+# recovered from an average, so the column would drop off every cached week.
+SCHEMA = 7
 
 
 def get(office: str, saturday, *,

@@ -82,6 +82,13 @@ K_TOTAL_LEADS = "Week Total Leads Knocked"
 K_DAILY_LEADS = "Daily Leads Knocked"
 K_DAILY_TALK_TO = "Daily Talk To's"
 K_DAILY_GAP_MIN = "Daily Gap Minutes"
+# Each day's own knocking SPAN — last knock minus first knock, in minutes, 0
+# for a day with no usable pair (Raf 2026-09-15: "for the weekly disposition
+# NDS and Fiber are missing 'daily knocks per hour'"). The week only kept the
+# AVERAGE first/last knock, and a rate built from averaged times is not the
+# average of the daily rates the daily boards print — the kind of mismatch he
+# already caught once between the weekly doors column and his dailies.
+K_DAILY_SPAN_MIN = "Daily Knock Span Minutes"
 # Which days the rep had a Time Tracker record AT ALL, Mon..Sat — 1 = clocked
 # into TeleMapper that day. Raf 2026-08-30 (Loom, 12:59): "I should get a
 # column that says reps clocked into TeleMapper on Saturday. Because Saturday,
@@ -109,6 +116,21 @@ def _daily_list(entries, monday, n_days: int = 6):
         i = (d - monday).days
         if 0 <= i < n_days:
             out[i] = int(m or 0)
+    return out
+
+
+def _daily_spans(firsts, lasts, monday, n_days: int = 6):
+    """[(day, first min)], [(day, last min)] → a Mon..Sat list of each day's
+    knocking span in minutes (last − first), 0 for a day without both times or
+    with last not after first. Positional like _daily_list. Pure."""
+    first = {d: m for d, m in firsts}
+    last = {d: m for d, m in lasts}
+    out = [0] * n_days
+    for d, f in first.items():
+        l = last.get(d)
+        i = (d - monday).days
+        if l is not None and l > f and 0 <= i < n_days:
+            out[i] = int(l - f)
     return out
 
 
@@ -456,6 +478,9 @@ def pull_office_week(page, cfg: dict, aliases_raw, monday: dt.date,
             a[K_SAT_LAST] = _sat_time(ls)
             if K_DAILY_KNOCKS in a:
                 a[K_TOTAL_KNOCKS] = sum(a[K_DAILY_KNOCKS])
+                # Each day's first→last span, so the board can average the
+                # DAILY knocks-per-hour rates (K_DAILY_SPAN_MIN).
+                a[K_DAILY_SPAN_MIN] = _daily_spans(fs, ls, monday, n_days)
         if verbose:
             print(f"[wkd] {len(rows)} rep(s) across the week; talk-to = "
                   "sum of: " + ", ".join(talk_to_cols), flush=True)
