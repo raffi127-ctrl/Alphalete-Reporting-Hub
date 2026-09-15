@@ -139,3 +139,29 @@ class TheAgentSaysSoToo(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AKnocksOnlyOfficeCanBeApproved(unittest.TestCase):
+    """The Office Channels request columns are written by the relay when a
+    machine posts its RECORDS. A Box, Energy Wells or NDS office never posts
+    records -- it has no SaraPlus -- so it relayed its board all day and still
+    had no row there. No row meant it could not be approved, and an office
+    that cannot be approved can never post. Carlos, 2026-09-15.
+    """
+
+    APPROVE = (HERE / "approve.py").read_text()
+
+    def test_cmd_knocks_falls_back_to_the_signup(self):
+        i = self.APPROVE.index("def cmd_knocks(")
+        body = self.APPROVE[i:i + 2500]
+        self.assertIn("signup_store", body,
+                      "a knocks-only office with no relayed row is still "
+                      "refused")
+
+    def test_the_approval_creates_the_row_rather_than_refusing(self):
+        i = self.APPROVE.index("def _write_knocks_approval(")
+        body = self.APPROVE[i:i + 1800]
+        self.assertIn("append_row", body)
+        self.assertNotIn("raise SystemExit", body,
+                         "it still refuses when the office has no row, which "
+                         "is exactly the office that needs one made")

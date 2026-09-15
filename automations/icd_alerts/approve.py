@@ -165,9 +165,24 @@ def cmd_knocks(office_key: str) -> int:
     row = next((r for r in P.pending_knocks() if r["office"].lower() == office_key),
                None)
     if not row:
-        print("%s has no knocks request waiting. `approve --list` shows what does."
-              % office_key)
-        return 1
+        # FALL BACK TO THE SIGN-UP. The Office Channels request columns are
+        # written by the relay when a machine posts its RECORDS -- and a Box,
+        # Energy Wells or NDS office never posts records, because it has no
+        # SaraPlus. So a knocks-only office relayed its board all day and
+        # still had no row here, which made it impossible to approve and its
+        # board impossible to post. Carlos, 2026-09-15.
+        #
+        # Reading the sign-up directly is also just better: they typed this on
+        # OUR form, and needing their laptop to tell us what they told us was
+        # always a detour.
+        from automations.icd_signup import store as signup_store
+        rec = signup_store.get(office_key)
+        asked = list(rec.knocks_destinations) if rec else []
+        if not asked:
+            print("%s has no knocks request waiting. `approve --list` shows "
+                  "what does." % office_key)
+            return 1
+        row = {"office": office_key, "asked": asked, "hours": ""}
     if not row["asked"]:
         print("%s asked for a knocks board but named no channel." % office_key)
         return 1
@@ -224,8 +239,20 @@ def _write_knocks_approval(office_key: str, resolved) -> None:
             tab.update(values=[[json.dumps(resolved), "TRUE"]],
                        range_name="K%d:L%d" % (i, i))
             return
-    raise SystemExit("no row for %r on the '%s' tab"
-                     % (office_key, P.CHANNELS_TAB))
+    # CREATE IT RATHER THAN REFUSING. A knocks-only office has no row here at
+    # all -- the relay only writes one when a machine posts records, which
+    # these offices never do. Refusing left them permanently unapprovable.
+    office = O.get(office_key)
+    new_row = [""] * (P.CH_KN_APPROVED + 1)
+    new_row[P.CH_OFFICE] = office_key
+    new_row[P.CH_OWNER] = office.owner if office else ""
+    new_row[P.CH_KN_WANTED] = ", ".join(
+        "%s %s" % (d.get("channel_name") or d.get("channel_id"),
+                   d.get("cadence_min")) for d in resolved)
+    new_row[P.CH_KN_JSON] = json.dumps(resolved)
+    new_row[P.CH_KN_APPROVED_JSON] = json.dumps(resolved)
+    new_row[P.CH_KN_APPROVED] = "TRUE"
+    tab.append_row(new_row)
 
 
 def ensure_text_columns(tab) -> None:
