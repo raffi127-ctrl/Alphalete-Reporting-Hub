@@ -745,50 +745,117 @@ def _once_a_day(path: Path, key: str, day: dt.date) -> bool:
 SIGNIN_WARNED_PATH = (Path.home() / ".config" / "recruiting-report"
                       / "icd_signin_asked.json")
 
-# WHAT THE OFFICE IS TOLD. Not "an exception occurred": the only person who
-# can fix this is the owner, standing at their own Mac with their phone.
+# WHAT THE OFFICE IS TOLD, and WHERE. A DM to the owner, Megan and Eve --
+# never the team channel (Megan 2026-09-15: "it should DM to the ICD, Eve, and
+# I NOT the entire team channel"). A signed-out session is not the sales
+# floor's business, and putting it in their channel is noise in the one room
+# the boards are meant to own.
+#
+# IT NAMES THE MACHINE. Signing in anywhere else does nothing: Lucy keeps her
+# own Chrome profile on purpose (config.py), so a session in Safari or in
+# their everyday Chrome is invisible to her. They could sign in ten times and
+# the sales would stay stopped -- and they would have no way to know why.
 SIGNIN_ASK = (
-    ":lock: *%s — Lucy has been signed out of My Service Cloud.*\n"
-    "Your sales stopped updating at %s. Nothing is lost — the contracts are "
-    "still there, we just cannot see them.\n"
-    "*To fix it:* open My Service Cloud on the office computer and sign in "
-    "with your authenticator code. That is all — it picks up by itself "
-    "within a few minutes.")
+    ":lock: *%s — Lucy cannot sign into %s.*\n"
+    "%s stopped updating at %s. Nothing is lost — the numbers are still "
+    "there, we just cannot see them.\n\n"
+    "*This has to be done on the office computer running Lucy* — the same one "
+    "you set up. %s\n\n"
+    "%s")
+
+SIGNIN_PAGE = ("https://raffi127-ctrl.github.io/"
+               "Alphalete-Reporting-Hub/signin.html")
+INSTALL_PAGE = "https://raffi127-ctrl.github.io/Alphalete-Reporting-Hub/"
+
+# THE FIX IS NOT THE SAME FOR ALL THREE, so the message must not pretend it
+# is (Megan 2026-09-15: "we should build this alert message for sara+ and OV
+# as well").
+#
+#   My Service Cloud has an authenticator. Nobody can type a code for them, so
+#   a PERSON has to sign in inside Lucy's own browser -- and only there,
+#   because she keeps her own Chrome profile (config.py). A session in Safari
+#   is invisible to her.
+#
+#   SaraPlus and OwnerVille have no second factor. Lucy signs in fresh every
+#   sweep with the saved password, so a failure means the PASSWORD is wrong or
+#   changed -- and the fix is to run the installer again, which asks for it.
+#   Sending them to sign in inside a browser would fix nothing.
+SYSTEMS = {
+    "servicecloud": {
+        "name": "My Service Cloud",
+        "what": "Sales",
+        # SAY WHAT THEY NEED BEFORE THEY WALK OVER. A message that sends
+        # somebody to the office computer without mentioning the
+        # authenticator sends them there twice.
+        "why": "Have your authenticator to hand. Signing in on your phone or "
+               "your own browser will not reach her.",
+        "how": "Open this on that computer and press the button:\n" + SIGNIN_PAGE,
+    },
+    "saraplus": {
+        "name": "SaraPlus",
+        "what": "Credit checks and sales",
+        "why": "The saved password is not being accepted — it has probably "
+               "changed.",
+        "how": "Open this on that computer and run it again; it will ask for "
+               "the new password:\n" + INSTALL_PAGE,
+    },
+    "ownerville": {
+        "name": "OwnerVille",
+        "what": "Your knocks board",
+        "why": "The saved password is not being accepted — it has probably "
+               "changed.",
+        "how": "Open this on that computer and run it again; it will ask for "
+               "the new password:\n" + INSTALL_PAGE,
+    },
+}
 
 
 def ask_office_to_sign_in(office_key: str, when: str = "", *,
+                          system: str = "servicecloud",
                           send: bool = False, book=None, log=print) -> bool:
-    """Tell the OFFICE their Service Cloud session has gone.
+    """DM the owner, Megan and Eve that Lucy cannot sign into something.
 
     Ryan McSpadden on how often the authenticator is needed: "It saves
     typically, but it feels random when it logs me out" (2026-09-15). So this
     is not an edge case -- it will happen, and the office will not know. Their
     sales simply stop, which looks exactly like a slow week.
 
-    IT GOES TO THEM, NOT TO US. Every other fault in this module is ours to
-    chase; this is the one only the owner can act on. Posting it to
-    #claudecorrections would tell the people who cannot fix it.
-
     ONCE A DAY. The sweep runs every couple of minutes and a session stays
-    gone until somebody walks over to the computer.
+    gone until somebody walks over to that computer.
     """
+    spec = SYSTEMS.get(system) or SYSTEMS["servicecloud"]
     day = dt.date.today()
-    if _once_a_day(SIGNIN_WARNED_PATH, "signin|%s" % office_key, day):
+    # KEYED ON THE SYSTEM TOO. An office whose OwnerVille password changed and
+    # whose Service Cloud then dropped has two different problems and two
+    # different fixes; one telling the other to stay quiet would leave half
+    # its numbers missing with nothing said.
+    if _once_a_day(SIGNIN_WARNED_PATH, "signin|%s|%s" % (office_key, system),
+                   day):
         return False
     office = O.get(office_key)
     label = getattr(office, "label", None) or office_key
-    text = SIGNIN_ASK % (label, when or "the last check-in")
+    text = SIGNIN_ASK % (label, spec["name"], spec["what"],
+                         when or "the last check-in", spec["why"], spec["how"])
     log(text)
     if not send:
         return False
-    for chan in (approved_channels(book) or {}).get(office_key, []):
-        cid = getattr(chan, "id", None) or getattr(chan, "channel_id", None)
-        if cid:
-            _slack(cid, text)
-    # And us, so nobody is waiting on an office that cannot report.
-    _slack(O.OPS_CHANNEL,
-           ":lock: *%s* (`%s`) has been signed out of My Service Cloud and "
-           "has been asked to sign in again." % (label, office_key))
+
+    # The owner first -- they are the one who can fix it -- then us.
+    owner = getattr(office, "slack_user_id", "") or ""
+    sent_to = []
+    for uid in [owner] + list(O.APPROVERS):
+        if not uid or uid in sent_to:
+            continue
+        try:
+            _dm(uid, text)
+            sent_to.append(uid)
+        except Exception as e:  # noqa: BLE001 — one failed DM must not stop
+            log("could not DM %s: %s" % (uid, type(e).__name__))
+    if not owner:
+        # WORTH SAYING. Without the owner's Slack id this reached us and not
+        # the person who has to walk to the machine.
+        log("no slack id on record for %s — only Megan and Eve were told"
+            % office_key)
     return True
 
 

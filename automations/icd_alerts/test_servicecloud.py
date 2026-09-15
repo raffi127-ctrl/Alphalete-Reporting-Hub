@@ -406,3 +406,70 @@ class SignInNeededIsItsOwnKindOfFault(unittest.TestCase):
         import inspect
         src = inspect.getsource(B.read_day)
         self.assertIn("SignInNeeded", src)
+
+
+class TheFixIsDifferentForEachSystem(unittest.TestCase):
+    """Megan 2026-09-15: "we should build this alert message for sara+ and OV
+    as well". The DETECTION generalises; the remedy does not.
+
+    Service Cloud has an authenticator, so a person must sign in inside
+    Lucy's own browser. SaraPlus and OwnerVille have no second factor -- Lucy
+    signs in fresh each sweep -- so a failure means the password changed, and
+    sending them to a browser would fix nothing.
+    """
+
+    def setUp(self):
+        import tempfile, pathlib as _p
+        from automations.icd_alerts import post as P
+        self.P = P
+        self._orig = P.SIGNIN_WARNED_PATH
+        P.SIGNIN_WARNED_PATH = _p.Path(tempfile.mkdtemp()) / "asked.json"
+
+    def tearDown(self):
+        self.P.SIGNIN_WARNED_PATH = self._orig
+
+    def _msg(self, system):
+        said = []
+        self.P.ask_office_to_sign_in("ryan", "4:12 PM", system=system,
+                                     send=False, log=said.append)
+        return " ".join(said)
+
+    def test_service_cloud_sends_them_to_sign_in(self):
+        m = self._msg("servicecloud")
+        self.assertIn("signin.html", m)
+        self.assertNotIn("new password", m,
+                         "it tells them to change a password they cannot fix")
+
+    def test_saraplus_sends_them_to_the_installer(self):
+        m = self._msg("saraplus")
+        self.assertIn("new password", m)
+        self.assertNotIn("signin.html", m,
+                         "a browser sign-in fixes nothing for SaraPlus")
+
+    def test_ownerville_names_the_board_not_the_sales(self):
+        m = self._msg("ownerville")
+        self.assertIn("knocks board", m)
+
+    def test_every_message_names_the_machine(self):
+        for system in ("servicecloud", "saraplus", "ownerville"):
+            self.assertIn("office computer running Lucy", self._msg(system),
+                          "%s does not say WHERE, so they would sign in "
+                          "somewhere Lucy cannot see" % system)
+
+    def test_every_message_says_nothing_is_lost(self):
+        for system in ("servicecloud", "saraplus", "ownerville"):
+            self.assertIn("Nothing is lost", self._msg(system))
+
+    def test_two_systems_failing_are_two_separate_asks(self):
+        # One telling the other to stay quiet would leave half an office's
+        # numbers missing with nothing said.
+        first = self._msg("saraplus")
+        second = self._msg("servicecloud")
+        self.assertTrue(first)
+        self.assertTrue(second)
+
+    def test_the_same_system_is_asked_once_a_day(self):
+        self._msg("saraplus")
+        again = self.P.ask_office_to_sign_in("ryan", system="saraplus",
+                                             send=False, log=lambda *_: None)
+        self.assertFalse(again)
