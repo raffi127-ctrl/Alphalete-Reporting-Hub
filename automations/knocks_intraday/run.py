@@ -109,8 +109,13 @@ def first_name(owner: str) -> str:
     so the full ICD name in the header is saying what the channel already says
     (Megan 2026-08-25). The first name stays because two offices SHARE
     #elite-prime-sales — Hammad and Salik — and with no name at all their two
-    boards are indistinguishable sitting next to each other."""
-    return (owner or "").strip().split()[0] if (owner or "").strip() else ""
+    boards are indistinguishable sitting next to each other.
+
+    Capitalize the leading letter so an owner stored lowercase for matching
+    (trang's Tableau match-key is 'trang canavan') still reads 'Trang' in the
+    caption. Only the first letter — 'DeShawn'/'McCoy' keep their inner caps."""
+    first = (owner or "").strip().split()[0] if (owner or "").strip() else ""
+    return first[:1].upper() + first[1:] if first else ""
 
 
 def _date_text(day: dt.date) -> str:
