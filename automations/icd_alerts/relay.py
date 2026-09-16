@@ -507,7 +507,8 @@ def _scrub(text: str, rec: Optional[Dict] = None) -> str:
 
 
 def report_fault(stage: str, summary: str, detail: str = "",
-                 day: Optional[dt.date] = None, log=None) -> bool:
+                 day: Optional[dt.date] = None, log=None,
+                 office_key: str = "") -> bool:
     """Tell us something broke here. BEST EFFORT, and NEVER raises.
 
     This runs inside exception handlers and at the end of a failed install.
@@ -524,7 +525,13 @@ def report_fault(stage: str, summary: str, detail: str = "",
     on it.
     """
     try:
-        rec = _endpoint()
+        # WHOSE FAULT IS THIS? On a machine running two campaigns, _endpoint()
+        # with no key returns the FIRST enrollment -- so Carlos's SaraPlus
+        # failure was filed against his BOX office and posted as "carlos's
+        # Local Office - something broke sales" (2026-09-16). Wrong office,
+        # wrong product, and the one person who could act on it reading about
+        # a campaign that has no SaraPlus at all.
+        rec = _endpoint(office_key)
     except Exception:  # noqa: BLE001 — not enrolled yet; nothing to report to
         return False
     try:

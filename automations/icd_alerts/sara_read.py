@@ -257,9 +257,31 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
                 # checking at all: a change to it is not one office's
                 # problem, it is every office at once, and a grid we cannot
                 # parse reads as a day with no sales rather than as a fault.
+                #
+                # ASKED TWICE BEFORE IT IS BELIEVED. The first thing this
+                # ever caught was Carlos's grid coming back as nine rows all
+                # marked History, with no Company, Location or Agent rows at
+                # all (2026-09-16) -- which is not a layout that exists, it
+                # is a page that had not finished rendering. SaraPlus is slow
+                # enough that _run_report already retries its own timeouts
+                # for exactly this reason.
+                #
+                # A half-rendered grid and a moved column look identical from
+                # here, and only one of them is worth waking somebody for. So
+                # re-read once: a transient will not survive it, and a real
+                # change will.
                 problem = S.att_shape_problem(att_rows)
                 if problem:
-                    _report_sales_fault(problem, log=log)
+                    log("sales grid looks wrong (%s) — reading it again"
+                        % problem[:60])
+                    att_rows = S._run_report(page, base, day, "AT&T",
+                                             S.GRID_ATT, log=log)
+                    problem = S.att_shape_problem(att_rows)
+                    if problem:
+                        _report_sales_fault(problem, log=log)
+                    else:
+                        log("second read was fine — the first was still "
+                            "rendering, not a fault")
                 agents = S.parse_att(att_rows)
                 log("AT&T pass: %d rep(s)" % len(agents))
                 dtv = S.parse_dtv(

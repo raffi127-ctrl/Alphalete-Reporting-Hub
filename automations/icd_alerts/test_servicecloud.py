@@ -804,3 +804,63 @@ class ASignedInMachineIsNotBlockedByAMissingPassword(unittest.TestCase):
         body = inspect.getsource(B._context).split('"""')[-1]
         self.assertNotIn("password", body)
         self.assertNotIn("sc_creds", body)
+
+
+class TheGridCanaryConfirmsBeforeItCriesWolf(unittest.TestCase):
+    """The first thing it ever caught was Carlos's grid coming back as nine
+    rows all marked History, with no Company, Location or Agent rows at all
+    (2026-09-16) -- posted as "carlos's Local Office - something broke
+    sales".
+
+    That is not a layout that exists. It is a page that had not finished
+    rendering, and SaraPlus is slow enough that _run_report already retries
+    its own timeouts for exactly that reason. A half-rendered grid and a
+    moved column look identical from here, and only one is worth waking
+    somebody for.
+    """
+
+    def test_it_re_reads_before_reporting(self):
+        import inspect
+        from automations.icd_alerts import sara_read as SR
+        src = inspect.getsource(SR.read_day)
+        body = src[src.index("att_shape_problem"):]
+        self.assertEqual(body.count("att_shape_problem"), 2,
+                         "it must ask a second time before reporting")
+        self.assertLess(body.index("reading it again"),
+                        body.index("_report_sales_fault"),
+                        "it reported before re-reading")
+
+    def test_a_history_only_grid_is_what_triggered_it(self):
+        from automations.shared import saraplus as S
+        rows = [["", "6_History", "an order"] + ["0"] * 15 for _ in range(9)]
+        said = S.att_shape_problem(rows)
+        self.assertTrue(said, "this is still worth noticing")
+        self.assertIn("6_History", said, "it must say what it actually saw")
+
+
+class AFaultNamesTheOfficeItBelongsTo(unittest.TestCase):
+    """Carlos's machine runs two campaigns. _endpoint() with no key returns
+    the FIRST enrollment, so his SaraPlus failure was filed against his BOX
+    office and posted as "carlos's Local Office - something broke sales" --
+    wrong office, wrong product, and the one person who could act on it
+    reading about a campaign that has no SaraPlus at all.
+    """
+
+    def test_report_fault_accepts_an_office_key(self):
+        import inspect
+        from automations.icd_alerts import relay as R
+        self.assertIn("office_key",
+                      inspect.signature(R.report_fault).parameters)
+
+    def test_the_saraplus_sweep_names_its_att_enrollment(self):
+        import inspect
+        from automations.icd_alerts import run as RUN
+        src = inspect.getsource(RUN.cmd_once)
+        self.assertNotIn('_report("sweep", e)\n', src,
+                         "an unattributed sweep fault lands on the wrong office")
+        self.assertIn("office_key=att_key", src)
+
+    def test_the_box_sweep_names_its_own(self):
+        import inspect
+        from automations.icd_alerts import run as RUN
+        self.assertIn("_box_key", inspect.getsource(RUN.cmd_box))

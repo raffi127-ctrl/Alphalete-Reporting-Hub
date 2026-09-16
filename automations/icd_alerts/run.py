@@ -129,17 +129,23 @@ def cmd_check(headless: bool) -> int:
     return 0 if result["ok"] else 1
 
 
-def _report(stage: str, e: Exception, detail: str = "") -> None:
+def _report(stage: str, e: Exception, detail: str = "",
+            office_key: str = "") -> None:
     """Tell us what broke here. Never makes the failure worse.
 
     NOT FOR A RelayError. When the relay itself is what failed, reporting to
     the relay is a second failed call and tells nobody anything -- the quiet
     nudge already covers "this laptop stopped talking to us".
+
+    NAME THE OFFICE. A machine can hold two campaigns, and without a key the
+    relay files the fault against whichever enrolled first -- which put a
+    SaraPlus failure on Carlos's Box office (2026-09-16).
     """
     if isinstance(e, R.RelayError):
         return
     R.report_fault(stage, "%s: %s" % (type(e).__name__, str(e)[:200]),
-                   detail or traceback.format_exc(), log=_log)
+                   detail or traceback.format_exc(), log=_log,
+                   office_key=office_key)
 
 
 def cmd_once(headless: bool, dry_run: bool, day: dt.date) -> int:
@@ -177,11 +183,11 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date) -> int:
         current, sales = read["records"], read["sales"]
     except sara_read.AccountProblem as e:
         print("\n%s" % e)
-        _report("sweep", e)
+        _report("sweep", e, office_key=att_key)
         return 1
     except RuntimeError as e:
         print("\n%s" % e)
-        _report("sweep", e)
+        _report("sweep", e, office_key=att_key)
         return 1
     except Exception as e:  # noqa: BLE001
         # THE ONE THAT USED TO VANISH. An unexpected crash printed a traceback
@@ -189,7 +195,7 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date) -> int:
         # all; the office simply went quiet and we guessed. Now the traceback
         # comes to us.
         _log("unexpected failure: %s" % traceback.format_exc())
-        _report("sweep", e)
+        _report("sweep", e, office_key=att_key)
         return 1
 
     data = St.load()
@@ -222,6 +228,14 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date) -> int:
 
     St.save(St.remember(data, day, current))
     return 0
+
+
+def _box_key(boxes) -> str:
+    """The office key a Service Cloud fault belongs to. One key when there is
+    one Box campaign, which is every office so far; blank if somehow two, so
+    the relay falls back rather than blaming the wrong one."""
+    keys = [str(r.get("office_key") or "") for r in (boxes or [])]
+    return keys[0] if len(keys) == 1 else ""
 
 
 def cmd_box(headless: bool, dry_run: bool, day: dt.date) -> int:
@@ -257,19 +271,19 @@ def cmd_box(headless: bool, dry_run: bool, day: dt.date) -> int:
         # The stage names the SYSTEM. post.notify_faults reads it to send the
         # sign-in DM -- to the owner, Megan and Eve -- rather than posting a
         # laptop fault nobody can act on.
-        _report("signin-servicecloud", e)
+        _report("signin-servicecloud", e, office_key=_box_key(boxes))
         return 1
     except box_read.AccountProblem as e:
         print("\n%s" % e)
-        _report("box", e)
+        _report("box", e, office_key=_box_key(boxes))
         return 1
     except RuntimeError as e:
         print("\n%s" % e)
-        _report("box", e)
+        _report("box", e, office_key=_box_key(boxes))
         return 1
     except Exception as e:  # noqa: BLE001 — see cmd_once
         _log("unexpected failure: %s" % traceback.format_exc())
-        _report("box", e)
+        _report("box", e, office_key=_box_key(boxes))
         return 1
 
     if read.get("unknown"):
@@ -279,7 +293,8 @@ def cmd_box(headless: bool, dry_run: bool, day: dt.date) -> int:
         _report("box", RuntimeError(
             "My Service Cloud has substatuses nobody has ruled on: %s. Sales "
             "in them are being counted as nothing until somebody says what "
-            "they are." % ", ".join(read["unknown"])))
+            "they are." % ", ".join(read["unknown"])),
+                office_key=_box_key(boxes))
 
     worst = 0
     for rec in boxes:
@@ -343,17 +358,17 @@ def cmd_knocks(headless: bool, dry_run: bool, day: dt.date) -> int:
             rows, tracker = payload["rows"], payload["time_tracker"]
         except ov_read.KnocksProblem as e:
             print("\n%s" % e)
-            _report("knocks", e)
+            _report("knocks", e, office_key=key)
             worst = 1
             continue
         except RuntimeError as e:
             print("\n%s" % e)
-            _report("knocks", e)
+            _report("knocks", e, office_key=key)
             worst = 1
             continue
         except Exception as e:  # noqa: BLE001 — see cmd_once
             _log("unexpected failure: %s" % traceback.format_exc())
-            _report("knocks", e)
+            _report("knocks", e, office_key=key)
             worst = 1
             continue
 
