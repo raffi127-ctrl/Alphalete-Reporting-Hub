@@ -114,6 +114,24 @@ def _pull(dest: Path, verbose: bool = True, view_url: str = "",
         return out, tier_png, tier_note
 
 
+def _probe_filters(url: str) -> int:
+    """See --probe-filters. Same session the pull uses, so it sees exactly
+    the view state the 7:00 pass sees."""
+    from automations.shared.tableau_patchright import tableau_session
+    from . import window
+    print("-> probing filters on {}".format(url), flush=True)
+    with tableau_session(verbose=True) as page:
+        page.goto(url, wait_until="domcontentloaded")
+        viz = page.frame_locator('iframe[title="Data Visualization"]')
+        viz.locator(
+            '[data-tb-test-id="viz-viewer-toolbar-button-download"]'
+        ).wait_for(state="visible", timeout=120_000)
+        page.wait_for_timeout(25_000)
+        print(window.describe_filters(page, viz), flush=True)
+        print(window.describe_open_menus(page, viz), flush=True)
+    return 0
+
+
 REVENUE_LINE = ":moneybag: BOX Revenue by Status"
 REVENUE_SUBTITLE = ("Dollars on the New Compensation grid (base by BF tier + "
                     "term + kWh). Accepted INCLUDES the weekly Volume bonus "
@@ -459,7 +477,14 @@ def main(argv: Optional[list] = None) -> int:
                          "activation rates — accepted by supplier / all sales). Per-office enrollment subsets from the "
                          "onboarding form pass this; default = the full "
                          "thread.")
+    ap.add_argument("--probe-filters", action="store_true",
+                    help="READ-ONLY diagnostic: open the view, dump its filter "
+                         "controls and what each Contract ID / Account Id "
+                         "menu shows when opened, then exit. No export, no "
+                         "sheet, no post.")
     args = ap.parse_args(argv)
+    if args.probe_filters:
+        return _probe_filters(args.view_url or VIEW_URL)
     sections = {s.strip() for s in args.sections.split(",") if s.strip()}
 
     # Carlos's run (no --owner-office) gets the board by default; every other

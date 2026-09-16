@@ -595,6 +595,76 @@ def describe_filters(page, viz, limit: int = 25) -> str:
     return "\n".join(lines)
 
 
+def _describe_node(loc) -> str:
+    """One menu node as 'text | role | class | aria-checked', for the log."""
+    try:
+        return "{!r} | role={} | class={} | checked={}".format(
+            _text(loc, timeout_ms=1_500)[:60],
+            loc.get_attribute("role", timeout=1_500),
+            (loc.get_attribute("class", timeout=1_500) or "")[:60],
+            loc.get_attribute("aria-checked", timeout=1_500))
+    except Exception as exc:                                # noqa: BLE001
+        return "<node probe failed: {!r}>".format(exc)
+
+
+def describe_open_menus(page, viz, limit: int = 15) -> str:
+    """Open each pinned field's dropdown and dump what the OPEN menu holds.
+
+    WHY (2026-09-16): both fields read '(None)' and every opener "opened no
+    (All) item", on the 7:00 pass and on a rerun. describe_filters only sees the
+    collapsed box, so it can't say whether the menu opened at all, whether it
+    lists values without an (All) row, or whether its items use a markup none
+    of _MENU_ITEMS match. This answers that from the live view. Read-only: it
+    ticks nothing, and closes each menu with Escape.
+    """
+    lines = ["--- open-menu probe ---"]
+    for field in PINNED_ID_FILTERS:
+        combo, how = _field_combo(viz, field)
+        if combo is None:
+            lines.append("{}: no dropdown ({})".format(field, how))
+            continue
+        lines.append("{}: dropdown reads {!r} (found by {})".format(
+            field, _text(combo), how))
+        for opener in _COMBO_OPENERS:
+            try:
+                target = (combo if opener == _COMBO
+                          else combo.locator(opener).first)
+                if not target.count():
+                    lines.append("  {}: not inside the combo".format(opener))
+                    continue
+                target.click(timeout=15_000)
+            except Exception as exc:                        # noqa: BLE001
+                lines.append("  {}: click failed ({!r})".format(opener, exc))
+                continue
+            page.wait_for_timeout(3_000)
+            lines.append("  after clicking {}: combo aria-expanded={}".format(
+                opener, combo.get_attribute("aria-expanded", timeout=1_500)))
+            for sel in _MENU_ITEMS + ('[role="listbox"]', ".tabMenu",
+                                      ".tab-glass", ".tabDropdown",
+                                      'input[type="text"]',
+                                      'input[type="checkbox"]'):
+                for scope_name, scope in (("viz", viz), ("page", page)):
+                    try:
+                        items = scope.locator(sel)
+                        n = items.count()
+                    except Exception:                       # noqa: BLE001
+                        continue
+                    if not n:
+                        continue
+                    lines.append("  {} {} -> {} node(s)".format(
+                        scope_name, sel, n))
+                    for j in range(min(n, limit)):
+                        lines.append("      " + _describe_node(items.nth(j)))
+            try:
+                page.keyboard.press("Escape")
+            except Exception:                               # noqa: BLE001
+                pass
+            page.wait_for_timeout(1_500)
+            break                   # one opener that clicked is enough
+    lines.append("--- end open-menu probe ---")
+    return "\n".join(lines)
+
+
 def capped_pull_warning(newest: Optional[dt.date],
                         today: Optional[dt.date] = None,
                         tolerance_days: int = 2) -> str:
