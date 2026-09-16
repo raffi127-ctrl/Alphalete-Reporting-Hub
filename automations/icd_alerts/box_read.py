@@ -343,13 +343,24 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
 
     day = day or C.today()
     days = [day - dt.timedelta(days=n) for n in range(back_days, -1, -1)]
-    cr = C.sc_creds()
-    if not cr.get("email"):
-        raise SignInNeeded(
-            "No My Service Cloud login is saved on this computer, so this "
-            "office's sales cannot be read. Run the installer again and it "
-            "will ask for it.")
-
+    # NO CREDENTIAL CHECK HERE, DELIBERATELY. There used to be one, and it
+    # refused to read anything unless a My Service Cloud password was saved
+    # on the machine.
+    #
+    # THE PASSWORD CANNOT LOG ANYONE IN. My Service Cloud has two-factor, so
+    # nothing here ever submits it -- _context opens the browser profile, and
+    # THAT is the session. The saved password is used for exactly one thing:
+    # showing the office which account to sign in as. It is a note, not a key.
+    #
+    # Ryan McSpadden, 2026-09-16: he ran the sign-in, and his machine still
+    # reported "No My Service Cloud login is saved on this computer, so this
+    # office's sales cannot be read". A signed-in computer, blocked from
+    # reading by the absence of a string it never needed -- and the remedy it
+    # printed told him to do the thing he had just done.
+    #
+    # The honest check is whether the SESSION is alive, and it is four lines
+    # below. It gives the right answer whether or not a password was ever
+    # typed.
     with sync_playwright() as p:
         ctx = _context(p, headless)
         try:

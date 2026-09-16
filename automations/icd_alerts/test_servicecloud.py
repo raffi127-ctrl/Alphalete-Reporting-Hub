@@ -761,3 +761,46 @@ class NdsTiersOnLinesBecauseThatIsAllTheySell(unittest.TestCase):
         self.assertEqual(got["name"], "Jevon Wiley")
         self.assertEqual(got["wireless_lines_sold"], 4)
         self.assertEqual(got["internet_sales"], 0)
+
+
+class ASignedInMachineIsNotBlockedByAMissingPassword(unittest.TestCase):
+    """Ryan McSpadden, 2026-09-16. He ran the sign-in and his machine still
+    reported "No My Service Cloud login is saved on this computer, so this
+    office's sales cannot be read" -- and the remedy it printed told him to
+    do the thing he had just done.
+
+    THE PASSWORD CANNOT LOG ANYONE IN. My Service Cloud has two-factor, so
+    nothing ever submits it: the browser profile IS the session. The saved
+    password does exactly one job, telling the office which account to sign
+    in as. Gating the read on it blocked a working machine on the absence of
+    a string it never needed.
+    """
+
+    def test_read_day_does_not_demand_saved_credentials(self):
+        import inspect
+        from automations.icd_alerts import box_read as B
+        src = inspect.getsource(B.read_day)
+        self.assertNotIn('cr.get("email")', src,
+                         "a signed-in machine is refused over a saved string")
+
+    def test_the_session_is_what_is_actually_checked(self):
+        import inspect
+        from automations.icd_alerts import box_read as B
+        src = inspect.getsource(B.read_day)
+        self.assertIn("session_lost", src)
+        # And a lost session must still raise the alert that asks a human to
+        # go and sign in -- that is the whole point of the module.
+        self.assertIn("SignInNeeded", src)
+
+    def test_nothing_else_ever_used_the_password(self):
+        """If some future code signs in with it, this test should fail and be
+        thought about rather than deleted.
+
+        The BODY, not the docstring -- which talks about passwords at length
+        and would have made this pass for the wrong reason.
+        """
+        import inspect
+        from automations.icd_alerts import box_read as B
+        body = inspect.getsource(B._context).split('"""')[-1]
+        self.assertNotIn("password", body)
+        self.assertNotIn("sc_creds", body)
