@@ -625,6 +625,10 @@ RECIPIENTS: dict = {
         "gregoryahalstead@gmail.com",
         "maudmiller4@gmail.com", "raffi127@gmail.com",
         "shalonda@dime-llc.com", "valeriatristan.amg@gmail.com",
+        # IN 2026-09-16 (Eve): Nickolas Oramas-Pereira joins Eveliz's distro
+        # (added to the live "Eveliz's Captainship" group the same day). Has to
+        # be here too or seed_groups takes him back out.
+        "nickopereira98@gmail.com",
     ],
     "luis": [
         # OUT 2026-09-15 (Eve): maxpowell145@ — Max Powell, two-week zero rule
