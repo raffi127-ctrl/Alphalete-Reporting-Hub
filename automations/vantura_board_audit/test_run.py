@@ -1109,5 +1109,39 @@ class StationsNameHygiene(unittest.TestCase):
         self.assertTrue(any("New Tyler Smith" in f for f in found), found)
 
 
+class StationsRollFilters(unittest.TestCase):
+    """Only a formula filtering on "New Start" is a new-start list. The hidden
+    TERMINATED source (T5) also reads 'Roll Call'!$D$ — from row 14, on
+    purpose — and was reported as 'drifted' every day (2026-09-16)."""
+
+    NEW_START = ('=IFERROR(FILTER(INDIRECT("\'Roll Call\'!$D$3:$D$1046"),'
+                 'INDIRECT("\'Roll Call\'!$B$3:$B$1046")="New Start",'
+                 'INDIRECT("\'Roll Call\'!$A$3:$A$1046")&""=\'Sales Board\'!$B$2&""),"")')
+    TERMINATED = ('=IFERROR(UNIQUE(TOCOL(VSTACK(IFERROR(FILTER(\'Roll Call\'!$D$14:$D$470,'
+                  '(\'Roll Call\'!$B$14:$B$470="Terminated")>0),""),'
+                  'IFERROR(FILTER(\'Sales Board\'!$B$5:$B$46,'
+                  '\'Sales Board\'!$P$5:$P$46="Terminated"),"")),1)),"")')
+
+    def _findings(self, cells):
+        rows = [[""] * 30 for _ in range(6)]
+        form = [[""] * 30 for _ in range(6)]
+        for col, f in cells.items():
+            form[4][col] = f
+        sheet = _FakeSheet({"Stations": _FakeWS(rows, form),
+                            "Sales Board": _FakeWS([], [], b2="")})
+        return audit_run.audit_stations(sheet, 5, [(5, "Casey Rep")], [],
+                                        log=lambda *a: None)
+
+    def test_terminated_source_is_not_a_new_start_list(self):
+        self.assertEqual(self._findings({19: self.TERMINATED,
+                                         22: self.NEW_START}), [])
+
+    def test_a_drifted_new_start_list_is_still_caught(self):
+        bad = self.NEW_START.replace("$D$3:", "$D$14:")
+        found = self._findings({22: bad})
+        self.assertTrue(any("new-start list W5 formula drifted" in f
+                            for f in found), found)
+
+
 if __name__ == "__main__":
     unittest.main()

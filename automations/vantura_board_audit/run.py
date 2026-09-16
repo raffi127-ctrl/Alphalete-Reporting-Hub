@@ -1104,7 +1104,11 @@ def audit_stations(sh, last_rep: int, reps, roll, log=_log, alias=None,
                     out.append(f"STATIONS: board list {at} starts at row "
                                f"{'/'.join(bad)} instead of 5 — top reps are "
                                "being dropped again.")
-            if "'Roll Call'!$D$" in c:
+            # only a formula that filters on "New Start" IS a new-start list.
+            # Reading 'Roll Call'!$D$ alone also matched the hidden TERMINATED
+            # source (T5, added by hand ~2026-09-15, reads $D$14:$D$470 on
+            # purpose) and called a healthy helper "drifted" every day.
+            if "'Roll Call'!$D$" in c and '"New Start"' in c:
                 n_roll += 1
                 if "$D$3:" not in c or "#REF" in c:
                     out.append(f"STATIONS: new-start list {at} formula drifted "
