@@ -255,7 +255,9 @@ _NDS_ORDERLOG_SRC = {
     "Package": ("package",),
     "spe.Status": ("spe.status",),
     "spe.Install Date": ("spe.install date",),
-    "Rep Tier Bonus Amount": ("rep tier bonus amount", "rep tier bonus"),
+    # The Tableau field is "Bonus Eligible $" (Raf 2026-09-16).
+    "Rep Tier Bonus Amount": ("bonus eligible $", "rep tier bonus amount",
+                              "bonus eligible", "tier bonus"),
 }
 
 

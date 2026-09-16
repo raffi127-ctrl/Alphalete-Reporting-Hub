@@ -1354,6 +1354,37 @@ def _display_next_up(product_type, next_up) -> str:
     return "Next Up" if v == "NEXT UP" else "No Next Up"
 
 
+_TIER_BONUS_RAW = "Rep Tier Bonus Amount"
+
+
+def _is_tier_bonus_header(name: str) -> bool:
+    low = str(name).lower()
+    return "bonus eligible" in low or ("tier" in low and "bonus" in low)
+
+
+def _resolve_tier_bonus_column(df: pd.DataFrame) -> None:
+    """Point whatever the source calls the tier bonus at _TIER_BONUS_RAW.
+
+    Raf 2026-09-16: the Tier Bonus $ column rode blank on every Order Log
+    because the Tableau field is "Bonus Eligible $" ($20 / $35 per line), not
+    "Rep Tier Bonus Amount" — and an OPTIONAL column that isn't found is
+    backfilled blank without a word. So match by meaning, blank Tableau's
+    "Null", and when there is no such column say so with the headers we DID
+    get."""
+    if _TIER_BONUS_RAW not in df.columns:
+        hits = [c for c in df.columns if _is_tier_bonus_header(c)]
+        if hits:
+            df.rename(columns={hits[0]: _TIER_BONUS_RAW}, inplace=True)
+        else:
+            if "Rep" in df.columns:
+                print("  ⚠ no tier bonus column in this export — Tier Bonus $ "
+                      f"will be blank. Headers: {list(df.columns)}")
+            return
+    col = df[_TIER_BONUS_RAW]
+    df[_TIER_BONUS_RAW] = col.where(
+        ~col.astype(str).str.strip().str.lower().isin({"null", "nan", ""}), "")
+
+
 def _load_and_clean(csv_path: Path) -> pd.DataFrame:
     # Tableau exports UTF-16 LE with tab separators despite the .csv name.
     # 2026-05-30: the ORDER LOG view now prepends a title/caption line
@@ -1383,6 +1414,7 @@ def _load_and_clean(csv_path: Path) -> pd.DataFrame:
     # Tableau pads some header cells ("Next Up " with a trailing space in the
     # live ORDER LOG export) — normalize so name-based selection can't miss.
     df.columns = [str(c).strip() for c in df.columns]
+    _resolve_tier_bonus_column(df)
 
     rep_blank = df["Rep"].isna() | (df["Rep"].astype(str).str.strip() == "")
     df = df.loc[~rep_blank].copy()
