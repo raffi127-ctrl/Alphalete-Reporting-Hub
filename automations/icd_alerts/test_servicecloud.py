@@ -1131,3 +1131,78 @@ class TheMachineComesBackWithoutAnybodyTouchingIt(unittest.TestCase):
         listing = (root / "automations" / "icd_alerts"
                    / "agent_files.txt").read_text()
         self.assertIn("automations/icd_alerts/boot_schedule.py", listing)
+
+
+class OneLinkThatDoesWhateverIsMissing(unittest.TestCase):
+    """Megan 2026-09-16: "I can't keep going back to all the owners and
+    having them run a million things."
+
+    CODE reaches the machines by itself -- selfupdate pulls it daily and
+    nobody is asked anything. Anything the INSTALLER does cannot, because
+    setup.py is not shipped and half of it needs an administrator password or
+    somebody holding an authenticator. So each such change had meant a new
+    page, a new paste, and another round of messages.
+
+    finish_setup is the one link. A new requirement becomes a step inside it,
+    carried to every machine by the next daily update, and the link never
+    changes.
+    """
+
+    def setUp(self):
+        from automations.icd_alerts import finish_setup
+        self.F = finish_setup
+
+    def test_it_is_safe_to_run_when_nothing_is_missing(self):
+        """It is sent to people who may already have run it -- that is the
+        point of having one link. Every step must skip itself."""
+        said = []
+        with mock.patch.object(self.F, "_update", lambda log: "up to date"), \
+             mock.patch.object(self.F, "_boot_job", lambda log: "already done"), \
+             mock.patch.object(self.F, "_service_cloud",
+                               lambda log: "not needed for this office"):
+            rc = self.F.run(log=said.append)
+        self.assertEqual(rc, 0)
+        self.assertTrue(any("All set" in s for s in said))
+
+    def test_one_failing_step_does_not_cost_the_others(self):
+        """A machine needing two things fixed that gets one would look
+        fixed, and the second would be found the slow way."""
+        reached = []
+
+        def boom(log):
+            raise RuntimeError("nope")
+
+        with mock.patch.object(self.F, "_update", lambda log: "up to date"), \
+             mock.patch.object(self.F, "_boot_job", boom), \
+             mock.patch.object(self.F, "_service_cloud",
+                               lambda log: reached.append(1) or "done"):
+            rc = self.F.run(log=lambda *_a: None)
+        self.assertEqual(reached, [1], "it stopped at the failure")
+        self.assertEqual(rc, 1, "an unfinished machine must not report success")
+
+    def test_it_says_so_when_something_still_needs_doing(self):
+        said = []
+        with mock.patch.object(self.F, "_update", lambda log: "up to date"), \
+             mock.patch.object(self.F, "_boot_job", lambda log: "skipped"), \
+             mock.patch.object(self.F, "_service_cloud", lambda log: "done"):
+            rc = self.F.run(log=said.append)
+        self.assertEqual(rc, 1)
+        self.assertFalse(any("All set" in s for s in said))
+
+    def test_the_update_runs_before_anything_decides_what_is_missing(self):
+        """The steps are only as current as the files on the machine."""
+        import inspect
+        src = inspect.getsource(self.F.run)
+        self.assertLess(src.index("_update"), src.index("_boot_job"))
+
+    def test_service_cloud_is_skipped_for_offices_that_do_not_use_it(self):
+        from automations.icd_alerts import config as C
+        with mock.patch.object(C, "uses_servicecloud", lambda: False):
+            self.assertIn("not needed", self.F._service_cloud(lambda *_a: None))
+
+    def test_it_ships(self):
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[2]
+        listing = (root / "automations" / "icd_alerts"
+                   / "agent_files.txt").read_text()
+        self.assertIn("automations/icd_alerts/finish_setup.py", listing)

@@ -1,0 +1,92 @@
+<title>Finish setting up LucyECO</title>
+<meta name="description" content="One line that brings the office computer fully up to date, whatever it is missing.">
+<style>
+  :root { color-scheme: light dark; --gold:#B4975A; --line:#8884; }
+  body { font:17px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+         margin:0; padding:40px 22px; }
+  .wrap { max-width:36rem; margin:0 auto; }
+  h1 { font-size:1.5rem; margin:0 0 .3rem; }
+  .who { opacity:.75; margin:0 0 1.8rem; }
+  .step { display:flex; gap:14px; margin:0 0 1.6rem; }
+  .num { flex:0 0 auto; width:1.7rem; height:1.7rem; border-radius:50%;
+         background:var(--gold); color:#fff; font-weight:700; font-size:.85rem;
+         display:flex; align-items:center; justify-content:center; }
+  .cmd { font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
+         background:#8881; border:1px solid var(--line); border-radius:8px;
+         padding:12px 14px; overflow-x:auto; white-space:pre-wrap;
+         word-break:break-all; margin:.6rem 0; }
+  button { font:inherit; font-weight:600; padding:11px 20px; border:0;
+           border-radius:9px; background:var(--gold); color:#fff; cursor:pointer; }
+  button.done { background:#2e7d32; }
+  .note { border:1px solid var(--line); border-radius:10px; padding:14px 16px;
+          margin-top:1.8rem; font-size:.95rem; }
+</style>
+<div class="wrap">
+  <h1>Finish setting up LucyECO</h1>
+  <p class="who">One line. It does whatever your computer is missing and skips
+  anything already done — so it is always safe to run, even if you just did.</p>
+
+  <div class="step"><div class="num">1</div><div>
+    <b>Do this on the office computer that runs LucyECO</b> — the one you set up.
+  </div></div>
+
+  <div class="step"><div class="num">2</div><div>
+    Open <b>Terminal</b>: hold <b>Command</b> and tap <b>Space</b>, type
+    <b>terminal</b>, press Return.
+  </div></div>
+
+  <div class="step"><div class="num">3</div><div>
+    Press the button, then paste into that window and press Return.
+    <div class="cmd" id="cmd">loading&#8230;</div>
+    <button id="copy">Copy the command</button>
+  </div></div>
+
+  <div class="step"><div class="num">4</div><div>
+    Follow whatever it asks for. It may want <b>your Mac password</b> (the
+    normal Mac box — the Mac handles it, nothing here sees it), or for you to
+    <b>sign into My Service Cloud</b> with your authenticator. If it asks for
+    neither, you are already set up.
+  </div></div>
+
+  <div class="step"><div class="num">5</div><div>
+    It finishes with a short list of what it did. If anything still needs
+    doing, it says so — send that screen to the reporting team.
+  </div></div>
+
+  <div class="note">
+    <b>This is the only link you should ever need.</b> Bookmark it. When
+    something new is needed it gets added here, so you never have to hunt for
+    a different page or a different command.
+  </div>
+</div>
+<script>
+  // The whole command, so nothing has to survive being selected out of a
+  // message. iMessage turns a bare URL into a link and the copy loses the
+  // pieces either side of it.
+  //
+  // IT PULLS THE NEW CODE FIRST -- finish_setup itself only reached the
+  // offices on 2026-09-16, so on a machine that has not had its daily update
+  // the bare command fails with a module error. Deleting the once-a-day
+  // stamp forces the pull, using the code ALREADY on the machine; anything
+  // that needed the new code in order to fetch the new code could never run.
+  //
+  // ABSOLUTE PATH TO THE INTERPRETER. The installer puts `app` and `venv`
+  // SIDE BY SIDE under ~/.lucy-reports, so "./venv/bin/python" from inside
+  // app/ does not exist -- Ryan pasted that twice and got "no such file or
+  // directory" both times.
+  var PY = "~/.lucy-reports/venv/bin/python";
+  var CMD = "cd ~/.lucy-reports/app"
+          + " && rm -f ~/.config/lucy-reports/last-selfupdate.txt"
+          + " && " + PY + " -c \"from automations.icd_alerts import selfupdate as s; s.run()\""
+          + " && " + PY + " -m automations.icd_alerts.finish_setup";
+  document.getElementById("cmd").textContent = CMD;
+  var btn = document.getElementById("copy");
+  btn.addEventListener("click", function () {
+    function ok() { btn.textContent = "Copied — paste it into Terminal"; btn.className = "done"; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(CMD).then(ok, function () {
+        btn.textContent = "Select the line above and copy it";
+      });
+    } else { btn.textContent = "Select the line above and copy it"; }
+  });
+</script>
