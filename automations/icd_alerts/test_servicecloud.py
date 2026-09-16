@@ -512,3 +512,59 @@ class MissingContractDataIsASale(unittest.TestCase):
                    and s.lower() not in SC.NOT_LOGGED]
         self.assertEqual(unruled, [],
                          "a status nobody has ruled on is still in play")
+
+
+class TheSignInToolAsksForTheLoginItself(unittest.TestCase):
+    """Megan 2026-09-15: "what they run should prompt them for the login to
+    the service cloud account right?"
+
+    Yes -- and only this can. An office enrolled before Box sales existed has
+    no My Service Cloud login saved, and the only thing that asked for one
+    was a full re-run of setup, which needs the original enrolment code. That
+    is the one thing they no longer have to hand, so sending them to find it
+    turns a five-minute job into next week.
+    """
+
+    def _signin(self):
+        from automations.icd_alerts import box_signin
+        return box_signin
+
+    def test_it_asks_when_nothing_is_saved_and_saves_the_answer(self):
+        B = self._signin()
+        saved = {}
+        fake = mock.MagicMock()
+        fake.text.return_value = "ryan@boxenergy.com"
+        fake.password.return_value = "hunter2"
+        fake.Cancelled = RuntimeError
+        with mock.patch.object(B.C, "sc_creds", lambda: {}), \
+             mock.patch.object(B.C, "save_sc_creds",
+                               lambda e, p: saved.update(email=e, password=p)), \
+             mock.patch.dict("sys.modules",
+                             {"automations.icd_alerts.dialogs": fake}):
+            got = B._login(log=lambda *a: None)
+        self.assertEqual(saved["email"], "ryan@boxenergy.com")
+        self.assertEqual(got["email"], "ryan@boxenergy.com")
+
+    def test_an_already_saved_login_is_not_asked_for_again(self):
+        B = self._signin()
+        fake = mock.MagicMock()
+        with mock.patch.object(B.C, "sc_creds",
+                               lambda: {"email": "a@b.c", "password": "x"}), \
+             mock.patch.dict("sys.modules",
+                             {"automations.icd_alerts.dialogs": fake}):
+            got = B._login(log=lambda *a: None)
+        self.assertEqual(got["email"], "a@b.c")
+        fake.text.assert_not_called()
+
+    def test_cancelling_still_opens_the_browser(self):
+        """They may not have the password on them. Refusing to open the
+        window would leave them with no way to sign in at all."""
+        B = self._signin()
+        fake = mock.MagicMock()
+        fake.Cancelled = RuntimeError
+        fake.text.side_effect = RuntimeError()
+        with mock.patch.object(B.C, "sc_creds", lambda: {}), \
+             mock.patch.dict("sys.modules",
+                             {"automations.icd_alerts.dialogs": fake}):
+            got = B._login(log=lambda *a: None)
+        self.assertEqual(got, {}, "no login, but no crash either")

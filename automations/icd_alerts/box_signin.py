@@ -36,10 +36,55 @@ WAIT_SECONDS = 300
 POLL_SECONDS = 3
 
 
+def _login(log=print) -> dict:
+    """The saved My Service Cloud login, ASKING FOR IT if there is none.
+
+    WHY THIS BELONGS HERE AND NOT ONLY IN THE INSTALLER. An office already
+    enrolled before Box sales existed has no My Service Cloud login saved,
+    and the only thing that asked for one was a full re-run of setup --
+    which needs their original enrolment code, which is the one thing they
+    no longer have to hand. Sending somebody hunting for a code to fix a
+    login is how a five-minute job becomes next week.
+
+    The reader refuses to run without a saved login (box_read.read_day), so
+    signing in here and skipping this would leave the session live and the
+    sweep still reporting that it cannot read anything -- fixed, and still
+    broken, which is the worst of the three states.
+
+    CANCELLING IS ALLOWED. They may not have the password on them. The
+    browser still opens, they can still sign in, and the next sweep will ask
+    again -- rather than this refusing to open the window at all.
+    """
+    cr = C.sc_creds()
+    if cr.get("email"):
+        return cr
+    from automations.icd_alerts import dialogs as ask
+    log("")
+    log("  No My Service Cloud login is saved on this computer yet.")
+    log("  Look for the pop-up box.")
+    try:
+        email = ask.text("Your My Service Cloud email:").strip()
+        if not email:
+            raise ask.Cancelled()
+        password = ask.password("Your My Service Cloud password:")
+        if not password:
+            raise ask.Cancelled()
+    except ask.Cancelled:
+        log("  Skipped. You can still sign in below, but the computer will")
+        log("  ask for this again.")
+        return {}
+    except Exception as e:  # noqa: BLE001 — a dialog failure is not fatal here
+        log("  Could not show the box (%s). Carrying on." % type(e).__name__)
+        return {}
+    C.save_sc_creds(email, password)
+    log("  Saved.")
+    return {"email": email, "password": password}
+
+
 def run(log=print) -> int:
     from patchright.sync_api import sync_playwright
 
-    cr = C.sc_creds()
+    cr = _login(log)
     log("")
     log("  Opening My Service Cloud in Lucy's browser.")
     log("")
