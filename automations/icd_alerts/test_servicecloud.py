@@ -1945,6 +1945,24 @@ class TheSaleLinesSoundLikeTheCompany(unittest.TestCase):
                     hits = sum(1 for l in pool if emoji in l)
                     self.assertLess(hits, len(pool), "%s everywhere" % emoji)
 
+    def test_the_ribbing_lands_on_ordinary_days_only(self):
+        """Megan 2026-09-16: "joke about not getting complacent".
+
+        It is funny after one sale and sour after somebody's best day of the
+        month -- so the top tier stays pure celebration and the joke sits
+        where the day is ordinary.
+        """
+        for campaign in ("att", "b2b_box"):
+            regular, large, super_ = self._pools(campaign)
+            ribbed = [l for l in regular
+                      if any(w in l.lower() for w in
+                             ("comfortable", "comfy", "complacen",
+                              "go find some more"))]
+            self.assertTrue(ribbed, campaign)
+            for line in super_:
+                self.assertNotIn("comfort", line.lower())
+                self.assertNotIn("complacen", line.lower())
+
     def test_the_house_phrases_are_in_there(self):
         for campaign in ("att", "b2b_box"):
             joined = " ".join(sum(self._pools(campaign), ())).lower()
