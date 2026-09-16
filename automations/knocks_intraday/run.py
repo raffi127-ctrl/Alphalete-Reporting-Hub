@@ -195,7 +195,9 @@ def build(slot, jobs_in, *, logfn=print) -> List[dict]:
         rec = {"office": o.knocks_office, "key": o.key, "day": day,
                "abbr": zone_abbr(o),
                "label": o.header_label or o.owner,
-               "channel_id": o.channel_id, "channel_name": o.channel_name,
+               # channel_for() overrides an HOURLY office to its own channel
+               # (trang -> #freshsuccess-team); everyone else = o.channel_id.
+               "channel_id": roster.channel_for(o), "channel_name": o.channel_name,
                # Only set where two offices SHARE a channel (Hammad + Salik →
                # #elite-prime-sales), so each board is attributable.
                "header_label": o.header_label,
@@ -522,8 +524,9 @@ def main() -> int:
         description="Intraday knock boards, on each office's own clock.")
     ap.add_argument("--tick", action="store_true",
                     help="post whatever is due RIGHT NOW (what launchd runs)")
-    ap.add_argument("--slot", choices=[s.key for s in S.SLOTS],
-                    help="run one slot explicitly, ignoring the clock")
+    ap.add_argument("--slot", choices=[s.key for s in S.ALL_SLOTS],
+                    help="run one slot explicitly, ignoring the clock "
+                         "(h12…h21 are the hourly slots)")
     ap.add_argument("--send", action="store_true",
                     help="actually post to Slack (default: dry-run)")
     ap.add_argument("--dry-run", action="store_true",
@@ -554,7 +557,7 @@ def main() -> int:
         now = dt.datetime.now(dt.timezone.utc)
         markers = load_markers()
         rc = did = 0
-        for slot in S.SLOTS:
+        for slot in S.ALL_SLOTS:
             offices = _for(slot.key)
             jobs = [(d.office, d.local_date)
                     for d in S.due(now, offices, done=markers)
@@ -567,7 +570,7 @@ def main() -> int:
             rc |= run_slot(slot, jobs, dry_run=dry)
         if not did:
             def _slots_for(office):
-                return [s for s in S.SLOTS
+                return [s for s in S.ALL_SLOTS
                         if office.key in {o.key
                                           for o in roster.enrolled(s.key)}]
 

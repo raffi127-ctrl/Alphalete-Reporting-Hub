@@ -47,7 +47,40 @@ SLOTS = (
     Slot("eod",   21, 0,  "End of Day"),
 )
 
-SLOTS_BY_KEY = {s.key: s for s in SLOTS}
+
+def _hour_label(h: int) -> str:
+    return f"{h % 12 or 12} {'AM' if h < 12 else 'PM'}"
+
+
+# HOURLY offices (roster.HOURLY — trang, for now) get the same full-day board as
+# Raf's 9 PM End-of-Day view, but every hour of the working day instead of the
+# three fixed moments (Megan 2026-09-16: "match Raf's but only every hour").
+# One Slot per hour reuses is_due/slot_window/markers EXACTLY — each hour fires
+# once and dedups on its own marker. 12 PM–9 PM office-local: the 9 PM tick IS
+# the end-of-day board, so an hourly office is dropped from the shared `eod`
+# slot (roster.enrolled) and never double-posts. Marker keys stay unique
+# (h12…h21) so they can't collide with first/money/eod.
+HOURLY_SLOTS = tuple(Slot(f"h{h:02d}", h, 0, _hour_label(h))
+                     for h in range(12, 22))   # 12:00 … 21:00 inclusive
+
+# Every slot the module can fire — standard three + the hourly set. --tick walks
+# this; the fixed CLI --slot still lists only the named three.
+ALL_SLOTS = SLOTS + HOURLY_SLOTS
+
+SLOTS_BY_KEY = {s.key: s for s in ALL_SLOTS}
+
+
+def slots_for(office) -> tuple:
+    """The slot set THIS office actually rides. An HOURLY office (roster.HOURLY —
+    trang) rides the hourly slots INSTEAD of the fixed three, so `due` never
+    fires a standard slot for it (that's what keeps its 9 PM board single). Every
+    other office rides the standard three. Lazy import to avoid a load-order
+    cycle (roster imports office_metrics, not this module)."""
+    try:
+        from automations.knocks_intraday.roster import HOURLY
+    except Exception:      # noqa: BLE001 — a broken import must not stop the fixed slots
+        return SLOTS
+    return HOURLY_SLOTS if getattr(office, "key", "") in HOURLY else SLOTS
 
 # How late a slot may still fire. Covers the launchd tick interval plus a busy
 # box. MUST be >= the tick, or a slot can fall between two passes and never run
@@ -140,7 +173,7 @@ def due(now: dt.datetime, offices: Iterable, done: Optional[Set[str]] = None
     browser to discover there is nothing to do."""
     out: List[Due] = []
     for office in offices:
-        for slot in SLOTS:
+        for slot in slots_for(office):
             if is_due(office, slot, now, done):
                 here = local_now(office, now)
                 out.append(Due(office=office, slot=slot,

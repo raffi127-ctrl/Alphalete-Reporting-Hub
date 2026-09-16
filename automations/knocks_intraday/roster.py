@@ -36,6 +36,16 @@ from automations.office_metrics.offices import OFFICES, Office
 # multi-office, because the 9 PM slot exercises that path every night.
 INTRADAY_KEYS = ("cody",)
 
+# HOURLY offices: instead of the three fixed slots, they get the full-day board
+# EVERY HOUR of the working day (schedule.HOURLY_SLOTS, 12 PM–9 PM office-local),
+# posted to the channel named here — which may differ from the office's metrics
+# channel. Megan 2026-09-16: trang wants "Raf's board but every hour" in her
+# C07QS80KJL8 (#freshsuccess-team) channel, separate from her metrics thread.
+# An HOURLY office is DROPPED from the shared eod/first/money slots (see
+# `enrolled`) so the 9 PM hourly tick is her only end-of-day board — no
+# duplicate. TEMPORARY: she moves to LucyECO soon. [[project_trang_fresh_success]]
+HOURLY: dict = {"trang": "C07QS80KJL8"}
+
 # HAMMAD AND SALIK STAY TWO BOARDS — do not merge them (Megan 2026-08-25,
 # asked directly). They sit in the same office and share #elite-prime-sales, so
 # the channel gets two images seconds apart and it looks like a mistake. It
@@ -243,14 +253,27 @@ def enrolled(slot_key: str) -> List[Office]:
     if slot_key == "eod":
         # Raf rides the 9 PM slot only, and is appended rather than merged into
         # OFFICES so nothing else in the codebase inherits him. See RAF_OFFICE.
+        # HOURLY offices are excluded — their 9 PM hourly tick IS their eod board,
+        # so riding this slot too would double-post (Megan 2026-09-16).
         return _drop_enrolled(_has_channel(
-            [OFFICES[k] for k in OFFICES if k not in BLOCKED] + [RAF_OFFICE]))
+            [OFFICES[k] for k in OFFICES if k not in BLOCKED and k not in HOURLY]
+            + [RAF_OFFICE]))
     elif slot_key in ("first", "money"):
-        keys = list(INTRADAY_KEYS)
+        keys = [k for k in INTRADAY_KEYS if k not in HOURLY]
+    elif slot_key.startswith("h"):
+        # An hourly slot (h12…h21): HOURLY offices only.
+        keys = [k for k in HOURLY if k in OFFICES and k not in BLOCKED]
     else:
         return []
     return _drop_enrolled(_has_channel([OFFICES[k] for k in keys
                                         if k in OFFICES and k not in BLOCKED]))
+
+
+def channel_for(office) -> str:
+    """The Slack channel THIS office's board posts to. An HOURLY office overrides
+    to its own channel (trang's hourly board goes to #freshsuccess-team, not her
+    metrics thread); every other office posts to its office.channel_id."""
+    return HOURLY.get(getattr(office, "key", ""), office.channel_id)
 
 
 def everyone() -> List[Office]:
@@ -261,13 +284,19 @@ def everyone() -> List[Office]:
             if o.key not in seen:
                 seen.add(o.key)
                 out.append(o)
+    # HOURLY offices ride only the hourly slots, so they're not covered above.
+    for k in HOURLY:
+        if k in OFFICES and k not in seen and k not in BLOCKED:
+            seen.add(k)
+            out.append(OFFICES[k])
     return out
 
 
 def unknown_keys() -> List[str]:
     """Enrolled keys that are not real offices — a typo here would otherwise be
     an office that silently never posts."""
-    return sorted(k for k in INTRADAY_KEYS if k not in OFFICES)
+    return sorted(k for k in set(INTRADAY_KEYS) | set(HOURLY)
+                  if k not in OFFICES)
 
 
 def blocked_lines() -> List[str]:
