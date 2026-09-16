@@ -1,0 +1,91 @@
+<title>Start without logging in</title>
+<meta name="description" content="One line so the reporting computer starts by itself after a restart.">
+<style>
+  :root { color-scheme: light dark; --gold:#B4975A; --line:#8884; }
+  body { font:17px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+         margin:0; padding:40px 22px; }
+  .wrap { max-width:36rem; margin:0 auto; }
+  h1 { font-size:1.5rem; margin:0 0 .3rem; }
+  .who { opacity:.75; margin:0 0 1.8rem; }
+  .step { display:flex; gap:14px; margin:0 0 1.6rem; }
+  .num { flex:0 0 auto; width:1.7rem; height:1.7rem; border-radius:50%;
+         background:var(--gold); color:#fff; font-weight:700; font-size:.85rem;
+         display:flex; align-items:center; justify-content:center; }
+  .cmd { font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
+         background:#8881; border:1px solid var(--line); border-radius:8px;
+         padding:12px 14px; overflow-x:auto; white-space:pre-wrap;
+         word-break:break-all; margin:.6rem 0; }
+  button { font:inherit; font-weight:600; padding:11px 20px; border:0;
+           border-radius:9px; background:var(--gold); color:#fff; cursor:pointer; }
+  button.done { background:#2e7d32; }
+  .note { border:1px solid var(--line); border-radius:10px; padding:14px 16px;
+          margin-top:1.8rem; font-size:.95rem; }
+</style>
+<div class="wrap">
+  <h1>Start without logging in</h1>
+  <p class="who">About a minute, once. After this the reporting computer picks
+  itself back up after a restart, with nobody touching it.</p>
+
+  <div class="step"><div class="num">1</div><div>
+    <b>Do this on the office computer that runs LucyECO</b> — the one you set up.
+  </div></div>
+
+  <div class="step"><div class="num">2</div><div>
+    Open <b>Terminal</b>: hold <b>Command</b> and tap <b>Space</b>, type
+    <b>terminal</b>, press Return.
+  </div></div>
+
+  <div class="step"><div class="num">3</div><div>
+    Press the button, then paste into that window and press Return.
+    <div class="cmd" id="cmd">loading&#8230;</div>
+    <button id="copy">Copy the command</button>
+  </div></div>
+
+  <div class="step"><div class="num">4</div><div>
+    A <b>Mac password box</b> appears — the normal one. Type the password you
+    use to log into this computer. The Mac handles it; nothing here sees it.
+  </div></div>
+
+  <div class="step"><div class="num">5</div><div>
+    It says <b>"Done"</b> when it worked. If you skip the password nothing
+    breaks — the computer just keeps needing someone to log in after it
+    restarts, exactly as it does today.
+  </div></div>
+
+  <div class="note">
+    <b>What this changes.</b> Right now the reports only run once somebody has
+    logged into this Mac. If it restarts overnight it waits at the login
+    screen, looking switched on, doing nothing. After this it starts on its
+    own at boot.
+  </div>
+</div>
+<script>
+  // The whole command, so nothing has to survive being selected out of a
+  // message. iMessage turns a bare URL into a link and the copy loses the
+  // pieces either side of it.
+  //
+  // IT PULLS THE NEW CODE FIRST. boot_schedule.py only reached the offices on
+  // 2026-09-16, so on a machine that has not had its daily update yet the
+  // bare command fails with a module error. Deleting the once-a-day stamp
+  // forces the pull, through the code ALREADY on their machine.
+  //
+  // ABSOLUTE PATH TO THE INTERPRETER. The installer puts `app` and `venv`
+  // SIDE BY SIDE under ~/.lucy-reports, so "./venv/bin/python" from inside
+  // app/ does not exist -- Ryan pasted that twice and got "no such file or
+  // directory" both times.
+  var PY = "~/.lucy-reports/venv/bin/python";
+  var CMD = "cd ~/.lucy-reports/app"
+          + " && rm -f ~/.config/lucy-reports/last-selfupdate.txt"
+          + " && " + PY + " -c \"from automations.icd_alerts import selfupdate as s; s.run()\""
+          + " && " + PY + " -m automations.icd_alerts.boot_schedule";
+  document.getElementById("cmd").textContent = CMD;
+  var btn = document.getElementById("copy");
+  btn.addEventListener("click", function () {
+    function ok() { btn.textContent = "Copied — paste it into Terminal"; btn.className = "done"; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(CMD).then(ok, function () {
+        btn.textContent = "Select the line above and copy it";
+      });
+    } else { btn.textContent = "Select the line above and copy it"; }
+  });
+</script>

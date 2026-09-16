@@ -831,111 +831,14 @@ def check_account() -> bool:
 # stay_awake already uses for pmset -- the dialog they know, handled by macOS,
 # never seen by this code. Declining is an ordinary outcome: it falls back to
 # the LaunchAgent, which is what every office runs today.
-DAEMON_LABEL = PLIST_LABEL + ".boot"
-
-
-def _daemon_plist_text() -> str:
-    """The boot job.
-
-    HOME IS SET EXPLICITLY. launchd does not reliably hand a UserName job the
-    user's HOME, and every path this agent uses -- install.json, the SaraPlus
-    and Service Cloud browser profiles, the logs -- hangs off it. Left to
-    default, the daemon would run as the right user against the wrong home
-    and behave exactly like a machine that had never been set up.
-    """
-    import getpass
-    return """<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
- "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>{label}</string>
-  <key>UserName</key><string>{user}</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>{python}</string>
-    <string>-m</string>
-    <string>automations.icd_alerts.run</string>
-    <string>--once</string>
-    <string>--if-due</string>
-  </array>
-  <key>WorkingDirectory</key><string>{cwd}</string>
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>HOME</key><string>{home}</string>
-  </dict>
-  <key>StartInterval</key><integer>{seconds}</integer>
-  <key>RunAtLoad</key><true/>
-  <key>StandardOutPath</key><string>{log}</string>
-  <key>StandardErrorPath</key><string>{log}</string>
-</dict>
-</plist>
-""".format(label=DAEMON_LABEL, user=getpass.getuser(), python=venv_python(),
-           cwd=APP_DIR, home=HOME, seconds=EVERY_MINUTES * 60,
-           log=CONFIG_DIR / "agent.log")
-
-
-def daemon_loaded() -> bool:
-    """Is it actually registered with launchd? ASKED, not assumed.
-
-    A plist written into /Library/LaunchDaemons that launchd never accepted
-    is the worst outcome here: the install says "it will run by itself", the
-    LaunchAgent has been removed, and the machine is quieter than before.
-    """
-    try:
-        out = subprocess.run(["launchctl", "print", "system/" + DAEMON_LABEL],
-                             stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL, timeout=20)
-        return out.returncode == 0
-    except Exception:  # noqa: BLE001
-        return False
-
-
-def schedule_mac_at_boot() -> bool:
-    """Install the boot-time job. True only if launchd really took it."""
-    if IS_WINDOWS:
-        return False
-    import shlex
-    tmp = CONFIG_DIR / "boot.plist"
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    tmp.write_text(_daemon_plist_text())
-    dest = "/Library/LaunchDaemons/%s.plist" % DAEMON_LABEL
-    cmd = " && ".join([
-        "cp %s %s" % (shlex.quote(str(tmp)), shlex.quote(dest)),
-        "chown root:wheel %s" % shlex.quote(dest),
-        "chmod 644 %s" % shlex.quote(dest),
-        "launchctl bootout system/%s 2>/dev/null; "
-        "launchctl bootstrap system %s" % (DAEMON_LABEL, shlex.quote(dest)),
-    ])
-    script = ('do shell script "%s" with administrator privileges'
-              % cmd.replace("\\", "\\\\").replace('"', '\\"'))
-    try:
-        subprocess.run(["osascript", "-e", script], stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL, timeout=180)
-    except Exception:  # noqa: BLE001 — declining is ordinary
-        return False
-    finally:
-        try:
-            tmp.unlink()
-        except OSError:
-            pass
-    return daemon_loaded()
-
-
-def unload_login_agent() -> None:
-    """Drop the old per-login job, so the machine does not sweep twice.
-
-    ONLY EVER CALLED AFTER daemon_loaded() SAYS YES. Removing it first and
-    failing to install the daemon would leave the office with no schedule at
-    all -- a worse machine than the one they started the day with.
-    """
-    plist = HOME / "Library" / "LaunchAgents" / ("%s.plist" % PLIST_LABEL)
-    subprocess.run(["launchctl", "unload", str(plist)],
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    try:
-        plist.unlink()
-    except OSError:
-        pass
+# ONE DEFINITION OF THE BOOT JOB, and it is not here. It lives in
+# automations/icd_alerts/boot_schedule.py, which SHIPS to the machines --
+# setup.py does not. An office already enrolled would otherwise have needed a
+# full re-install to get it, which needs the enrolment code they no longer
+# have to hand: exactly the trap the Service Cloud login fell into.
+#
+# Keeping a second copy here is how the installer and the agent end up
+# disagreeing about a plist nobody can see.
 
 
 def schedule_mac():
@@ -1260,10 +1163,17 @@ def main() -> int:
         say("      you will see the normal Mac password box. Skipping is")
         say("      fine; it just means somebody has to log in after the")
         say("      computer restarts.")
-        if schedule_mac_at_boot():
-            # VERIFIED with launchctl, not assumed from a zero exit. Only
-            # now is it safe to drop the per-login job, or it sweeps twice.
-            unload_login_agent()
+        try:
+            from automations.icd_alerts import boot_schedule
+            ok = boot_schedule.install(log=lambda m: say("      " + m.strip()))
+        except Exception as e:  # noqa: BLE001 — never lose the install to it
+            say("      could not set that up (%s)." % type(e).__name__)
+            ok = False
+        if ok:
+            # VERIFIED with launchctl inside install(), not assumed from a
+            # zero exit. Only now is it safe to drop the per-login job, or
+            # the machine sweeps twice.
+            boot_schedule.unload_login_agent()
             say("      done — it starts on its own when the computer boots,")
             say("      with nobody logged in.")
         else:

@@ -51,6 +51,10 @@ AGENT_FILES = [
     # SAME code that set it. A machine reporting from an older copy of this
     # file would be answering a question we are no longer asking.
     "automations/icd_alerts/stay_awake.py",
+    # Makes the machine start at BOOT instead of at login. Ships because
+    # setup.py does NOT: an office already enrolled would otherwise need a
+    # full re-install, which needs the enrolment code they no longer have.
+    "automations/icd_alerts/boot_schedule.py",
     "automations/icd_alerts/sara_read.py",
     # The Box half of the same job. Ships for the same reason sara_read does:
     # the read happens on the office's own machine, against their own account.

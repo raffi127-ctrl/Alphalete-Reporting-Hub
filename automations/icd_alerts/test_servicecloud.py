@@ -928,6 +928,7 @@ class ThePastedCommandUsesPathsThatExist(unittest.TestCase):
         from pathlib import Path
         root = Path(__file__).resolve().parents[2]
         self.page = (root / "docs" / "signin.html").read_text()
+        self.startup = (root / "docs" / "startup.html").read_text()
         self.setup = (root / "automations" / "icd_alerts" / "dist"
                       / "setup.py").read_text()
 
@@ -955,6 +956,16 @@ class ThePastedCommandUsesPathsThatExist(unittest.TestCase):
 
     def test_the_page_points_at_the_installers_actual_venv(self):
         self.assertIn("~/.lucy-reports/venv/bin/python", self._code())
+
+    def test_the_startup_page_uses_the_same_real_paths(self):
+        """A second page typing the same paths is a second chance to type
+        them wrong."""
+        code = "\n".join(l for l in self.startup.splitlines()
+                         if not l.strip().startswith("//"))
+        self.assertNotIn("./venv/bin/python", code)
+        self.assertIn("~/.lucy-reports/venv/bin/python", code)
+        self.assertIn("~/.config/lucy-reports/last-selfupdate.txt", code)
+        self.assertIn("automations.icd_alerts.boot_schedule", code)
 
     def test_the_config_directory_is_the_installers_one(self):
         # The stamp deletion has to hit the real file or the update is not
@@ -1041,42 +1052,82 @@ class TheMachineComesBackWithoutAnybodyTouchingIt(unittest.TestCase):
 
     def setUp(self):
         from pathlib import Path
+        from automations.icd_alerts import boot_schedule
+        self.B = boot_schedule
         root = Path(__file__).resolve().parents[2]
-        self.src = (root / "automations" / "icd_alerts" / "dist"
-                    / "setup.py").read_text()
+        self.setup_src = (root / "automations" / "icd_alerts" / "dist"
+                          / "setup.py").read_text()
 
     def test_the_boot_job_runs_as_the_office_user_not_root(self):
         """Running as root would put every path -- install.json, both browser
         profiles, the logs -- under /var/root, and the daemon would behave
         like a machine that had never been set up."""
-        self.assertIn("<key>UserName</key>", self.src)
+        import getpass
+        text = self.B.plist_text(120)
+        self.assertIn("<key>UserName</key>", text)
+        self.assertIn("<string>%s</string>" % getpass.getuser(), text)
 
     def test_it_sets_home_explicitly(self):
         """launchd does not reliably hand a UserName job the user's HOME."""
-        self.assertIn("<key>HOME</key>", self.src)
+        from pathlib import Path
+        text = self.B.plist_text(120)
+        self.assertIn("<key>HOME</key>", text)
+        self.assertIn("<string>%s</string>" % Path.home(), text)
 
-    def test_the_login_job_is_installed_first(self):
-        """It needs no password and cannot be declined, so the machine has a
-        working schedule before anything a person can say no to. The other
-        order leaves a declined prompt with no schedule at all."""
-        step = self.src[self.src.index('step(9, total,'):]
-        step = step[:step.index("def ")] if "def " in step else step
-        self.assertLess(step.index("schedule_mac()"),
-                        step.index("schedule_mac_at_boot()"))
+    def test_it_keeps_the_cadence_the_machine_already_had(self):
+        """Offices do not all sweep at the same interval -- Cyrus is slower
+        on purpose -- and a migration that silently reset everyone would
+        change how often two offices post without anybody asking."""
+        self.assertIn("<key>StartInterval</key><integer>900</integer>",
+                      self.B.plist_text(900))
 
-    def test_the_login_job_is_only_dropped_after_the_daemon_is_verified(self):
-        """Removing it and failing to install the daemon would leave the
-        office with no schedule -- a worse machine than they started with."""
-        step = self.src[self.src.index('step(9, total,'):]
-        self.assertLess(step.index("schedule_mac_at_boot()"),
-                        step.index("unload_login_agent()"))
+    def test_the_interpreter_is_not_a_hand_written_path(self):
+        """"./venv/bin/python" is what stopped Ryan twice on 2026-09-16."""
+        import sys
+        self.assertIn("<string>%s</string>" % sys.executable,
+                      self.B.plist_text(120))
 
     def test_loaded_is_asked_of_launchctl_not_assumed(self):
         """A plist copied into /Library/LaunchDaemons that launchd never
-        accepted is the worst outcome: the install claims it runs by itself,
-        the LaunchAgent is gone, and the machine is quieter than before."""
-        self.assertIn('launchctl", "print", "system/"', self.src)
+        accepted is the worst outcome: the machine reports success, the
+        per-login job is removed, and the office is quieter than before."""
+        import inspect
+        self.assertIn("launchctl", inspect.getsource(self.B.loaded))
+        self.assertIn("print", inspect.getsource(self.B.loaded))
 
-    def test_declining_the_password_is_an_ordinary_outcome(self):
-        self.assertIn("skipped — it will start when somebody logs in",
-                      self.src)
+    def test_install_returns_what_launchd_actually_did(self):
+        import inspect
+        src = inspect.getsource(self.B.install)
+        self.assertTrue(src.rstrip().endswith("return loaded()"),
+                        "install must report the verified state, not the "
+                        "exit code of an osascript the user may have "
+                        "cancelled")
+
+    def test_the_login_job_is_installed_first(self):
+        """It needs no password and cannot be declined, so the machine has a
+        working schedule before anything a person can say no to."""
+        step = self.setup_src[self.setup_src.index("step(9, total,"):]
+        self.assertLess(step.index("schedule_mac()"),
+                        step.index("boot_schedule.install("))
+
+    def test_the_login_job_is_only_dropped_after_the_daemon_is_verified(self):
+        """Removing it and then failing to install the daemon would leave the
+        office with no schedule at all."""
+        step = self.setup_src[self.setup_src.index("step(9, total,"):]
+        self.assertLess(step.index("boot_schedule.install("),
+                        step.index("unload_login_agent()"))
+
+    def test_the_installer_does_not_keep_its_own_copy(self):
+        """Two definitions is how the installer and the agent end up
+        disagreeing about a plist nobody can see."""
+        self.assertNotIn("<key>UserName</key>", self.setup_src)
+
+    def test_it_ships_to_the_machines(self):
+        """setup.py does NOT ship. Without this in the bundle an enrolled
+        office would need a full re-install, which needs the enrolment code
+        they no longer have -- the Service Cloud trap again."""
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[2]
+        listing = (root / "automations" / "icd_alerts"
+                   / "agent_files.txt").read_text()
+        self.assertIn("automations/icd_alerts/boot_schedule.py", listing)
