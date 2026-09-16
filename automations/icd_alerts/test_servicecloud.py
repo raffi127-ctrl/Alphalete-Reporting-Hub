@@ -1023,3 +1023,60 @@ class BeingPastTheLoginFormIsNotBeingSignedIn(unittest.TestCase):
         src = inspect.getsource(B.run)
         self.assertIn("CONTRACTS_PATH", src)
         self.assertIn("on_mfa_setup", src)
+
+
+class TheMachineComesBackWithoutAnybodyTouchingIt(unittest.TestCase):
+    """Kash's iMac restarted overnight on 2026-09-16, came back to the login
+    screen, and sat there powered on running nothing until noon. No error,
+    because there is nothing to error: a LaunchAgent lives in the user's own
+    folder and only starts once somebody logs in.
+
+    Megan: "we need to make it where they don't need to keep doing something
+    for this to work."
+
+    A LaunchDaemon loads at BOOT and its UserName key runs it as the office's
+    own account -- so no auto-login, no macOS password written to
+    /etc/kcpassword where it can be read back, and FileVault can stay on.
+    """
+
+    def setUp(self):
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[2]
+        self.src = (root / "automations" / "icd_alerts" / "dist"
+                    / "setup.py").read_text()
+
+    def test_the_boot_job_runs_as_the_office_user_not_root(self):
+        """Running as root would put every path -- install.json, both browser
+        profiles, the logs -- under /var/root, and the daemon would behave
+        like a machine that had never been set up."""
+        self.assertIn("<key>UserName</key>", self.src)
+
+    def test_it_sets_home_explicitly(self):
+        """launchd does not reliably hand a UserName job the user's HOME."""
+        self.assertIn("<key>HOME</key>", self.src)
+
+    def test_the_login_job_is_installed_first(self):
+        """It needs no password and cannot be declined, so the machine has a
+        working schedule before anything a person can say no to. The other
+        order leaves a declined prompt with no schedule at all."""
+        step = self.src[self.src.index('step(9, total,'):]
+        step = step[:step.index("def ")] if "def " in step else step
+        self.assertLess(step.index("schedule_mac()"),
+                        step.index("schedule_mac_at_boot()"))
+
+    def test_the_login_job_is_only_dropped_after_the_daemon_is_verified(self):
+        """Removing it and failing to install the daemon would leave the
+        office with no schedule -- a worse machine than they started with."""
+        step = self.src[self.src.index('step(9, total,'):]
+        self.assertLess(step.index("schedule_mac_at_boot()"),
+                        step.index("unload_login_agent()"))
+
+    def test_loaded_is_asked_of_launchctl_not_assumed(self):
+        """A plist copied into /Library/LaunchDaemons that launchd never
+        accepted is the worst outcome: the install claims it runs by itself,
+        the LaunchAgent is gone, and the machine is quieter than before."""
+        self.assertIn('launchctl", "print", "system/"', self.src)
+
+    def test_declining_the_password_is_an_ordinary_outcome(self):
+        self.assertIn("skipped — it will start when somebody logs in",
+                      self.src)

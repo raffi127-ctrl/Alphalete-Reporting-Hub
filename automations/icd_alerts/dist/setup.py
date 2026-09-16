@@ -813,6 +813,131 @@ def check_account() -> bool:
 
 
 # --- scheduling -------------------------------------------------------------
+# A LaunchAGENT lives in the user's own folder and only starts once somebody
+# has logged in at the keyboard. That is the gap Kash's iMac fell through on
+# 2026-09-16: it restarted overnight, came back to the login screen, and sat
+# there powered on and running nothing until noon -- no error, because there
+# is nothing to error.
+#
+# Megan, the same day: "we need to make it where they don't need to keep doing
+# something for this to work."
+#
+# A LaunchDAEMON loads at BOOT, before anyone logs in, and its UserName key
+# runs it as the office's own account so every path and browser profile stays
+# exactly where it was. No auto-login, so no macOS password written to
+# /etc/kcpassword where it can be read back, and FileVault can stay on.
+#
+# IT COSTS ONE ADMINISTRATOR PROMPT at install, through the same system box
+# stay_awake already uses for pmset -- the dialog they know, handled by macOS,
+# never seen by this code. Declining is an ordinary outcome: it falls back to
+# the LaunchAgent, which is what every office runs today.
+DAEMON_LABEL = PLIST_LABEL + ".boot"
+
+
+def _daemon_plist_text() -> str:
+    """The boot job.
+
+    HOME IS SET EXPLICITLY. launchd does not reliably hand a UserName job the
+    user's HOME, and every path this agent uses -- install.json, the SaraPlus
+    and Service Cloud browser profiles, the logs -- hangs off it. Left to
+    default, the daemon would run as the right user against the wrong home
+    and behave exactly like a machine that had never been set up.
+    """
+    import getpass
+    return """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+ "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>{label}</string>
+  <key>UserName</key><string>{user}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{python}</string>
+    <string>-m</string>
+    <string>automations.icd_alerts.run</string>
+    <string>--once</string>
+    <string>--if-due</string>
+  </array>
+  <key>WorkingDirectory</key><string>{cwd}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>{home}</string>
+  </dict>
+  <key>StartInterval</key><integer>{seconds}</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>{log}</string>
+  <key>StandardErrorPath</key><string>{log}</string>
+</dict>
+</plist>
+""".format(label=DAEMON_LABEL, user=getpass.getuser(), python=venv_python(),
+           cwd=APP_DIR, home=HOME, seconds=EVERY_MINUTES * 60,
+           log=CONFIG_DIR / "agent.log")
+
+
+def daemon_loaded() -> bool:
+    """Is it actually registered with launchd? ASKED, not assumed.
+
+    A plist written into /Library/LaunchDaemons that launchd never accepted
+    is the worst outcome here: the install says "it will run by itself", the
+    LaunchAgent has been removed, and the machine is quieter than before.
+    """
+    try:
+        out = subprocess.run(["launchctl", "print", "system/" + DAEMON_LABEL],
+                             stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, timeout=20)
+        return out.returncode == 0
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def schedule_mac_at_boot() -> bool:
+    """Install the boot-time job. True only if launchd really took it."""
+    if IS_WINDOWS:
+        return False
+    import shlex
+    tmp = CONFIG_DIR / "boot.plist"
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    tmp.write_text(_daemon_plist_text())
+    dest = "/Library/LaunchDaemons/%s.plist" % DAEMON_LABEL
+    cmd = " && ".join([
+        "cp %s %s" % (shlex.quote(str(tmp)), shlex.quote(dest)),
+        "chown root:wheel %s" % shlex.quote(dest),
+        "chmod 644 %s" % shlex.quote(dest),
+        "launchctl bootout system/%s 2>/dev/null; "
+        "launchctl bootstrap system %s" % (DAEMON_LABEL, shlex.quote(dest)),
+    ])
+    script = ('do shell script "%s" with administrator privileges'
+              % cmd.replace("\\", "\\\\").replace('"', '\\"'))
+    try:
+        subprocess.run(["osascript", "-e", script], stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=180)
+    except Exception:  # noqa: BLE001 — declining is ordinary
+        return False
+    finally:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+    return daemon_loaded()
+
+
+def unload_login_agent() -> None:
+    """Drop the old per-login job, so the machine does not sweep twice.
+
+    ONLY EVER CALLED AFTER daemon_loaded() SAYS YES. Removing it first and
+    failing to install the daemon would leave the office with no schedule at
+    all -- a worse machine than the one they started the day with.
+    """
+    plist = HOME / "Library" / "LaunchAgents" / ("%s.plist" % PLIST_LABEL)
+    subprocess.run(["launchctl", "unload", str(plist)],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        plist.unlink()
+    except OSError:
+        pass
+
+
 def schedule_mac():
     plist = HOME / "Library" / "LaunchAgents" / ("%s.plist" % PLIST_LABEL)
     plist.parent.mkdir(parents=True, exist_ok=True)
@@ -1126,7 +1251,23 @@ def main() -> int:
     if IS_WINDOWS:
         schedule_windows()
     else:
+        # THE PER-LOGIN JOB FIRST, ALWAYS. It needs no password and cannot be
+        # declined, so the machine has a working schedule before anything is
+        # attempted that a person can say no to. The other order is how a
+        # declined prompt leaves an office with no schedule at all.
         schedule_mac()
+        say("      asking to let it start by itself after a restart —")
+        say("      you will see the normal Mac password box. Skipping is")
+        say("      fine; it just means somebody has to log in after the")
+        say("      computer restarts.")
+        if schedule_mac_at_boot():
+            # VERIFIED with launchctl, not assumed from a zero exit. Only
+            # now is it safe to drop the per-login job, or it sweeps twice.
+            unload_login_agent()
+            say("      done — it starts on its own when the computer boots,")
+            say("      with nobody logged in.")
+        else:
+            say("      skipped — it will start when somebody logs in.")
     say("      it will check every %d minutes, 10am to 9:30pm "
         "(4pm Saturdays), and never on Sunday." % EVERY_MINUTES)
 

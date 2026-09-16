@@ -26,6 +26,7 @@ import datetime as dt
 import json
 import platform
 import re
+import subprocess
 import ssl
 import urllib.error
 import urllib.parse
@@ -205,6 +206,54 @@ def _never_sleeps() -> Optional[bool]:
         return None
 
 
+def _auto_login() -> Optional[bool]:
+    """Does this Mac log itself back in after a restart?
+
+    THE FAILURE THIS MAKES VISIBLE. The agent installs as a LaunchAgent,
+    which lives in the user's own folder and only starts once that user has a
+    desktop session. A Mac that restarts overnight -- a macOS update, a power
+    blip -- comes back to the LOGIN SCREEN: powered on, fans running, and
+    nothing scheduled running at all. Kash's iMac went quiet at 21:31 and was
+    still quiet at noon the next day, with no error, because there is nothing
+    to error (2026-09-16).
+
+    Megan, the same day: "He can't just have to login all the time and us
+    never knowing it until no postings happen." So the machine answers this
+    every relay, and we know which offices are one restart from going dark
+    BEFORE it happens rather than after.
+
+    FILEVAULT MAKES IT IMPOSSIBLE, not merely off. With the disk encrypted,
+    the password at boot IS the login, and macOS will not auto-login at all --
+    so an office that says "turn auto-login on" and cannot find the setting
+    is not being careless. Reported separately so the advice can differ.
+
+    None means "could not tell", never False: an office that was never asked
+    must not look like one that answered badly.
+    """
+    if platform.system() != "Darwin":
+        return None
+    try:
+        out = subprocess.run(
+            ["defaults", "read", "/Library/Preferences/com.apple.loginwindow",
+             "autoLoginUser"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=10)
+        return bool((out.stdout or b"").strip())
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _filevault() -> Optional[bool]:
+    """Is the disk encrypted? If so, auto-login cannot be turned on."""
+    if platform.system() != "Darwin":
+        return None
+    try:
+        out = subprocess.run(["fdesetup", "status"], stdout=subprocess.PIPE,
+                             stderr=subprocess.DEVNULL, timeout=10)
+        return b"FileVault is On" in (out.stdout or b"")
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def battery_bytes() -> int:
     """How much the battery probe saw. For DIAGNOSTICS only.
 
@@ -295,6 +344,12 @@ def payload(records: Dict[str, int], day: dt.date,
         # The laptop's own clock, so a machine that has been asleep is visible
         # as a stale reading rather than looking like a quiet office.
         "local_time": dt.datetime.now().isoformat(timespec="seconds"),
+        # WILL THIS MACHINE COME BACK BY ITSELF? A LaunchAgent needs a
+        # desktop session, so a Mac that restarts and stops at the login
+        # screen runs nothing and cannot say so. Answered every relay, so an
+        # office one restart from going dark is known in advance.
+        "auto_login": _auto_login(),
+        "filevault": _filevault(),
     }
     # Where the owner ASKED for their alerts. Sent every sweep, not once, so
     # re-running the installer is how somebody changes their mind -- there is
