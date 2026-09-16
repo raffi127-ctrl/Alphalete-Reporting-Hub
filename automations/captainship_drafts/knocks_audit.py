@@ -99,10 +99,13 @@ def short_read_findings(records: Iterable[dict]) -> list[dict]:
                 "detail": (f"board published {rows} rep(s), Time Tracker had "
                            f"{tt} out ({gap} short)"),
             })
-        elif r.get("reread"):
+        elif r.get("reread") and rows > first:
             # Recovered — but the grid WAS read mid-fill, which is the failure
             # mode that mailed 2 reps of 22. Worth seeing while it is still
-            # cheap to see.
+            # cheap to see. A re-read that gave the SAME count was not
+            # mid-fill: the first gate re-reads on a 1-rep gap, so that is
+            # just a rep who clocked in and knocked nothing (Gabe Perez 9/15,
+            # 14 then 14 against 15 — a false alarm).
             out.append({
                 "office": office, "date": day, "kind": "reread",
                 "detail": (f"first read gave {first} rep(s) against {tt} on "

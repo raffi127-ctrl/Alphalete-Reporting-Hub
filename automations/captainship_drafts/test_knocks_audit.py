@@ -77,6 +77,13 @@ class QuietDaysMustStaySilent(unittest.TestCase):
         nothing to say."""
         self.assertEqual(A.short_read_findings([_rec("Normal", 11, 12)]), [])
 
+    def test_a_reread_that_changed_nothing_is_not_a_finding(self):
+        """The first gate re-reads on a 1-rep gap, so the walk-on rep above
+        usually DOES get a re-read. Same count twice = the grid was full, not
+        mid-fill (Gabe Perez 2026-09-15: 14, re-read 14, Time Tracker 15)."""
+        self.assertEqual(A.short_read_findings(
+            [_rec("Gabe Perez", 14, 15, first=14, reread=True)]), [])
+
     def test_more_rows_than_the_tracker_is_not_a_finding(self):
         """A rep who knocked without a Time Tracker row makes rows > tt. That
         is not a short read in any direction."""
