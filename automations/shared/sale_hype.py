@@ -27,12 +27,42 @@ METRICS = ("Int", "Int Up", "DTV", "NL")
 COUNTED = ("Int", "Int Up", "DTV", "NL")
 METRIC_LABEL = {"Int": "Int", "Int Up": "Up", "DTV": "DTV", "NL": "NL"}
 
+# THE HOUSE VOICE. "Heck yeah", "found the money" and "Snicklepop" are what
+# this company's channels already say when somebody sells (Megan, 2026-09-16)
+# -- so the alerts say it too, rather than sounding like a system that showed
+# up and started narrating.
 HYPE_REGULAR = (
+    "Heck yeah! {first} is on the board :fire:",
+    "Snicklepop!! {first} is on the board :zap:",
+    "{first} found the money! :moneybag:",
+    "{first} found the money! :fries:",
+    "Heck yeah {first} :paw_prints:",
     "{first} just put one on the board! :fire:",
     "{first} is on it :moneybag:",
     "Another one for {first} :fire:",
     "{first} keeps going :chart_with_upwards_trend:",
     "{first} on the board :dart:",
+)
+
+# LOUD, AND MORE THAN ONE OF THEM. These used to be a single line each, and
+# they are the ones people see MOST -- on Box roughly two sales in three land
+# here -- so one wording was the fastest thing in the system to go stale.
+HYPE_LARGE = (
+    "{first}, TELL US!! :fire::moneybag::fire:",
+    "Heck YEAH {first}!! :fire::fire:",
+    "{first} FOUND THE MONEY!! :moneybag::fries:",
+    "Snicklepop!! {first} found the money :zap::moneybag:",
+    "{first}, TELL US!! :paw_prints::fire:",
+)
+
+# The top tier SHOUTS THE NAME, which is the one bit of the old wording that
+# was doing real work -- a rep's name in caps reads differently in a channel.
+HYPE_SUPER = (
+    "{first}, PLEASE TELL US!!!! :money_mouth_face::fire:",
+    "SNICKLEPOP!!! {first} IS ON THE BOARD :zap::fire:",
+    "HECK YEAH {first}!!! :fire::money_mouth_face::fire:",
+    "{first} FOUND THE MONEY!!! :moneybag::fries::moneybag:",
+    "{first} FOUND THE MONEY!!! :paw_prints::money_mouth_face:",
 )
 
 
@@ -55,9 +85,11 @@ class Shape:
     # actually watch. Not every system counts that cleanly -- see _Box.
     presale_ping = True
 
-    # The lines a normal sale gets. AT&T's talk about "the board"; a campaign
-    # whose product is not board-shaped says it its own way.
+    # The lines a sale gets, per loudness. AT&T's talk about "the board"; a
+    # campaign whose product is not board-shaped says it its own way.
     regular_lines = HYPE_REGULAR
+    large_lines = HYPE_LARGE
+    super_lines = HYPE_SUPER
 
     def __init__(self, metrics, counted, label, money=()):
         self.metrics = tuple(metrics)
@@ -167,6 +199,11 @@ class _Box(Shape):
     # have it say "Omar just finished a contract!"'. Box sells contracts; the
     # board language is AT&T's.
     regular_lines = (
+        "Heck yeah! {first} closed one :fire:",
+        "Snicklepop!! {first} got a contract done :zap:",
+        "{first} found the money! :moneybag:",
+        "{first} found the money! :fries:",
+        "Heck yeah {first} :paw_prints:",
         "{first} just finished a contract! :fire:",
         "{first} just closed one :moneybag:",
         "Another contract for {first} :fire:",
@@ -276,13 +313,17 @@ def hype(name: str, metrics: Dict[str, int], day: dt.date,
     t = sh.tier(metrics)
     first = _first(name)
     if t == "super":
-        return "%s, PLEASE TELL US!!!! :money_mouth_face::fire:" % first.upper()
-    if t == "large":
-        return "%s, TELL US!! :fire::moneybag::fire:" % first
+        pool, who = sh.super_lines or HYPE_SUPER, first.upper()
+    elif t == "large":
+        pool, who = sh.large_lines or HYPE_LARGE, first
+    else:
+        pool, who = sh.regular_lines or HYPE_REGULAR, first
+    # THE SAME SALE ALWAYS GETS THE SAME WORDS. Hashed on (rep, day, count),
+    # never random -- a sweep that has to be re-run then repeats itself
+    # instead of announcing one sale twice in two different voices.
     seed = "%s|%s|%d" % (name, day.isoformat(), sh.total(metrics))
-    pool = sh.regular_lines or HYPE_REGULAR
     idx = zlib.crc32(seed.encode("utf-8")) % len(pool)
-    return pool[idx].format(first=first)
+    return pool[idx].format(first=who)
 
 
 def breakdown(metrics: Dict[str, int], campaign=None) -> str:

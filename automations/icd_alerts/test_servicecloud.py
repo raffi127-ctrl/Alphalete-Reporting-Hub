@@ -1537,13 +1537,21 @@ class BoxDoesNotAnnounceTheStepBeforeASale(unittest.TestCase):
 
     def test_the_loud_tiers_still_fire_for_box(self):
         """Carlos's escalation is a separate ask from Ryan's wording one, and
-        rewording must not quietly drop it."""
+        rewording must not quietly drop it.
+
+        THE TIER, NOT THE WORDS. This used to assert the literal "TELL US",
+        which broke the moment that tier gained a second wording -- pinning
+        the copy is how a test blocks the next copy change (2026-09-16).
+        """
         from automations.shared import sale_hype as H
         import datetime as _dt
-        loud = H.hype("Omar Sanchez",
-                      {"Sales": 2, "Volume": 138240, "Big": 2, "Huge": 2},
-                      _dt.date(2026, 9, 16), "b2b_box")
-        self.assertIn("TELL US", loud)
+        big = {"Sales": 2, "Volume": 138240, "Big": 2, "Huge": 2}
+        small = {"Sales": 1, "Volume": 900, "Big": 0, "Huge": 0}
+        self.assertEqual(H.tier(big, "b2b_box"), "super")
+        loud = H.hype("Omar Sanchez", big, _dt.date(2026, 9, 16), "b2b_box")
+        quiet = H.hype("Omar Sanchez", small, _dt.date(2026, 9, 16), "b2b_box")
+        self.assertNotEqual(loud, quiet)
+        self.assertIn("OMAR", loud, "the top tier shouts the name")
 
 
 class BoxSaleCountsAreNotDeduplicated(unittest.TestCase):
@@ -1899,3 +1907,81 @@ class NoTestMayRaiseARealDialog(unittest.TestCase):
         self.assertEqual(missing, [],
                          "unpatched in the run() tests, so it executes for "
                          "real: %s" % missing)
+
+
+class TheSaleLinesSoundLikeTheCompany(unittest.TestCase):
+    """Megan 2026-09-16, on what the channels already say: "Heck Yeah",
+    "x Found the Money!", "Snicklepop,!! x is on the board!".
+
+    An alert that does not sound like the room it posts in reads as a system
+    narrating over people, which is the fastest way to be scrolled past.
+    """
+
+    def _pools(self, campaign):
+        from automations.shared import sale_hype as H
+        sh = H.shape(campaign)
+        return sh.regular_lines, sh.large_lines, sh.super_lines
+
+    def test_every_tier_has_more_than_one_wording(self):
+        """The loud two used to be ONE line each -- and they are the ones
+        people see most: on Box roughly two sales in three land there."""
+        for campaign in ("att", "nds", "b2b_box"):
+            for pool in self._pools(campaign):
+                self.assertGreater(len(pool), 1, campaign)
+
+    def test_the_popular_emoji_are_in_there(self):
+        """Megan 2026-09-16: fries and paw prints are what the channels are
+        using at the moment. Sprinkled, not on every line -- an emoji on
+        everything stops being a signal."""
+        for campaign in ("att", "b2b_box"):
+            joined = " ".join(sum(self._pools(campaign), ()))
+            for emoji in (":fries:", ":paw_prints:"):
+                self.assertIn(emoji, joined, "%s / %s" % (campaign, emoji))
+
+    def test_no_emoji_is_on_every_single_line(self):
+        for campaign in ("att", "b2b_box"):
+            for pool in self._pools(campaign):
+                for emoji in (":fries:", ":paw_prints:"):
+                    hits = sum(1 for l in pool if emoji in l)
+                    self.assertLess(hits, len(pool), "%s everywhere" % emoji)
+
+    def test_the_house_phrases_are_in_there(self):
+        for campaign in ("att", "b2b_box"):
+            joined = " ".join(sum(self._pools(campaign), ())).lower()
+            for phrase in ("heck yeah", "found the money", "snicklepop"):
+                self.assertIn(phrase, joined, "%s / %s" % (campaign, phrase))
+
+    def test_the_top_tier_shouts_the_name(self):
+        """A rep's name in caps reads differently in a channel, and it is the
+        one part of the old wording doing real work."""
+        from automations.shared import sale_hype as H
+        import datetime as _dt
+        seen = {H.hype("Max Allen", {"Int": 1, "NL": 5},
+                       _dt.date(2026, 9, n % 28 + 1), "att")
+                for n in range(1, 60)}
+        self.assertTrue(all("MAX" in line for line in seen), seen)
+
+    def test_box_still_says_contract_not_board_at_the_regular_tier(self):
+        regular, _l, _s = self._pools("b2b_box")
+        joined = " ".join(regular).lower()
+        self.assertIn("contract", joined)
+        self.assertNotIn("on the board", joined)
+
+    def test_the_same_sale_always_gets_the_same_words(self):
+        """Hashed, never random: a sweep that has to be re-run repeats itself
+        instead of announcing one sale twice in two different voices."""
+        from automations.shared import sale_hype as H
+        import datetime as _dt
+        m = {"Int": 1, "NL": 3}
+        first = H.hype("Max Allen", m, _dt.date(2026, 9, 16), "att")
+        for _ in range(20):
+            self.assertEqual(
+                H.hype("Max Allen", m, _dt.date(2026, 9, 16), "att"), first)
+
+    def test_every_line_renders_without_a_stray_placeholder(self):
+        """A line with the wrong field name posts the braces verbatim."""
+        for campaign in ("att", "nds", "b2b_box"):
+            for pool in self._pools(campaign):
+                for line in pool:
+                    got = line.format(first="Max")
+                    self.assertNotIn("{", got, line)
