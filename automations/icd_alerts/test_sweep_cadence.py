@@ -74,8 +74,13 @@ class TheMacRetime(unittest.TestCase):
         # stops running.
         self.assertIn("/Users/kash/.lucy-reports/venv/bin/python", after)
         self.assertEqual(after.count("<key>"), PLIST.count("<key>"))
-        self.assertEqual([c.args[0][0] for c in run.call_args_list],
-                         ["launchctl", "launchctl"])
+        # THE RELOAD IS NOT RUN INLINE ANY MORE, and that is the point.
+        # `launchctl unload` kills the job's running processes -- which is
+        # this one -- so the load on the next line never ran and the agent
+        # was left unloaded with no error anywhere. Kash's iMac and Cyrus's
+        # laptop both stopped that way (2026-09-16).
+        self.assertEqual(run.call_args_list, [],
+                         "unloading inline kills the sweep doing it")
 
     def test_already_right_does_nothing(self):
         path = self._with_plist(
@@ -162,3 +167,74 @@ class TheWindowsRetime(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheRetimeMustNotKillTheSweepDoingIt(unittest.TestCase):
+    """Kash's iMac and Cyrus's laptop both stopped dead on 2026-09-14 and
+    nobody knew until 2026-09-16.
+
+    `launchctl unload` terminates the job's running processes -- and this code
+    runs AS that job. So the unload killed the sweep mid-flight, the `load` on
+    the very next line never executed, and the LaunchAgent was left unloaded:
+    no traceback, no fault, nothing in the log after "self-update: updated N
+    file(s)". A desktop that simply stopped.
+
+    Three things had to line up and did: an office on the older cadence, a
+    self-update carrying EVERY_MINUTES 3 -> 2, and this running inside the
+    job.
+    """
+
+    PLIST = ('<plist><dict><key>Label</key><string>x</string>'
+             '<key>StartInterval</key><integer>180</integer>'
+             '<key>ProgramArguments</key>'
+             '<array><string>/Users/kash/.lucy-reports/venv/bin/python'
+             '</string></array></dict></plist>')
+
+    def _plist(self):
+        import pathlib, tempfile
+        d = pathlib.Path(tempfile.mkdtemp())
+        path = d / "com.alphalete.lucy-reports.plist"
+        path.write_text(self.PLIST)
+        return path
+
+    def test_the_unload_is_never_run_inline(self):
+        path = self._plist()
+        with mock.patch.object(SC, "_plist_path", return_value=path), \
+                mock.patch.object(SC.subprocess, "run") as run, \
+                mock.patch.object(SC.subprocess, "Popen"):
+            SC.ensure(log=lambda *_a: None)
+        self.assertEqual(run.call_args_list, [],
+                         "this is the call that killed the two machines")
+
+    def test_the_reload_is_detached_from_this_job(self):
+        """start_new_session puts it in its own session, so launchd taking
+        down this job does not take it with it."""
+        path = self._plist()
+        with mock.patch.object(SC, "_plist_path", return_value=path), \
+                mock.patch.object(SC.subprocess, "Popen") as popen:
+            SC.ensure(log=lambda *_a: None)
+        self.assertTrue(popen.call_args.kwargs.get("start_new_session"))
+
+    def test_unload_and_load_are_one_command(self):
+        """So there is no window in which a second process has to survive
+        between them -- that window is how a machine ends up unloaded."""
+        path = self._plist()
+        with mock.patch.object(SC, "_plist_path", return_value=path), \
+                mock.patch.object(SC.subprocess, "Popen") as popen:
+            SC.ensure(log=lambda *_a: None)
+        shell = popen.call_args.args[0][-1]
+        self.assertIn("unload", shell)
+        self.assertIn("load", shell)
+        self.assertLess(shell.index("unload"), shell.index("; launchctl load"))
+
+    def test_the_plist_is_correct_even_if_the_reload_never_happens(self):
+        """Then the new cadence takes effect at the next login or boot, and
+        the machine keeps sweeping on the old one until then. The failure
+        mode has to be 'slower than intended', never 'stopped'."""
+        path = self._plist()
+        with mock.patch.object(SC, "_plist_path", return_value=path), \
+                mock.patch.object(SC.subprocess, "Popen",
+                                  side_effect=OSError("no")):
+            self.assertTrue(SC.ensure(log=lambda *_a: None))
+        self.assertIn("<integer>%d</integer>" % (SC.EVERY_MINUTES * 60),
+                      path.read_text())

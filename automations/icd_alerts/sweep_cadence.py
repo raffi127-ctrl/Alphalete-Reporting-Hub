@@ -54,6 +54,13 @@ def _plist_path() -> Path:
     return Path.home() / "Library" / "LaunchAgents" / ("%s.plist" % PLIST_LABEL)
 
 
+def _q(path: str) -> str:
+    """Quote a path for the reload shell. The app lives under a home folder
+    whose name we do not choose."""
+    import shlex
+    return shlex.quote(path)
+
+
 def _ensure_mac(log) -> bool:
     plist = _plist_path()
     if not plist.is_file():
@@ -69,10 +76,41 @@ def _ensure_mac(log) -> bool:
     if int(m.group(2)) == want:
         return False
     plist.write_text(text[:m.start(2)] + str(want) + text[m.end(2):])
-    subprocess.run(["launchctl", "unload", str(plist)],
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(["launchctl", "load", str(plist)],
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    # THIS CODE IS RUNNING *AS* THE JOB IT IS ABOUT TO UNLOAD.
+    #
+    # `launchctl unload` terminates the job's running processes -- which is
+    # this one. So the unload killed the sweep mid-flight and the load on the
+    # next line NEVER RAN, leaving the agent unloaded with no error anywhere:
+    # no traceback, no fault, nothing in the log after "self-update: updated
+    # N file(s)". A desktop that simply stopped.
+    #
+    # It needed three things to line up, and on 2026-09-14 they did: an office
+    # on an older cadence, a self-update that brought EVERY_MINUTES 3 -> 2,
+    # and this running inside the job. Kash's iMac went silent at 21:31 that
+    # evening and was still silent at noon two days later; Cyrus the same.
+    #
+    # SO THE RELOAD IS HANDED TO A PROCESS LAUNCHD IS NOT ABOUT TO KILL.
+    # start_new_session detaches it from this job's session, and the sleep
+    # lets this sweep finish and exit first. Both launchctl calls are in ONE
+    # shell command so there is no window where a second process has to
+    # survive between the unload and the load.
+    #
+    # AND IF THE HELPER NEVER RUNS, NOTHING IS BROKEN: the plist on disk is
+    # already correct, so the new cadence takes effect at the next load --
+    # login or boot -- and the machine keeps sweeping on the old one until
+    # then. The failure mode is "slower than intended", not "stopped".
+    try:
+        subprocess.Popen(
+            ["/bin/sh", "-c",
+             "sleep 20; launchctl unload %s; launchctl load %s"
+             % (_q(str(plist)), _q(str(plist)))],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True)
+    except Exception as e:  # noqa: BLE001 — the plist is already right
+        log("cadence: rewrote the schedule but could not reload it (%s); it "
+            "takes effect next time this Mac starts" % type(e).__name__)
+        return True
     log("cadence: sweep every %d min (was %s min)"
         % (EVERY_MINUTES, int(m.group(2)) // 60))
     return True

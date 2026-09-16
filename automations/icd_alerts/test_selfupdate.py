@@ -31,9 +31,16 @@ class OnceADay(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp()) / "stamp.txt"
         self.p = mock.patch.object(U, "STAMP", self.tmp)
         self.p.start()
+        # due() ASKS GITHUB NOW, for the published release (2026-09-16).
+        # Left live these tests would pass or fail on a network call and on
+        # whatever is in main -- so the daily rule is tested on its own here,
+        # and the release rule has its own tests.
+        self.r = mock.patch.object(U, "published_release", lambda: None)
+        self.r.start()
 
     def tearDown(self):
         self.p.stop()
+        self.r.stop()
 
     def test_due_when_never_run(self):
         self.assertTrue(U.due(DAY))
@@ -60,8 +67,13 @@ class NothingIsReplacedUntilItIsProven(unittest.TestCase):
         live.mkdir(parents=True)
         (live / "run.py").write_text("ORIGINAL")
         self.stamp = Path(tempfile.mkdtemp()) / "stamp.txt"
+        # APPLIED TOO. _stamp() records the release beside the date, and left
+        # unpatched these tests write into the real ~/.config/lucy-reports on
+        # whoever's machine is running them.
+        self.applied = Path(tempfile.mkdtemp()) / "release.txt"
         self.patches = [
             mock.patch.object(U, "STAMP", self.stamp),
+            mock.patch.object(U, "APPLIED", self.applied),
             mock.patch.object(U, "_app_root", return_value=self.root),
             mock.patch.object(U, "_report"),
         ]
@@ -108,12 +120,16 @@ class NothingIsReplacedUntilItIsProven(unittest.TestCase):
 
     def test_a_bad_push_is_not_retried_all_day(self):
         # Otherwise every machine hammers GitHub every few minutes for a file
-        # that will not work.
+        # that will not work. Now that a release can also make it due, the
+        # rollback records the release too -- so this checks BOTH reasons are
+        # settled, not just the stamp.
         with mock.patch.object(U, "_fetch",
                                self._fetch("automations/icd_alerts/run.py\n")), \
-             mock.patch.object(U, "_verify", return_value=False):
+             mock.patch.object(U, "_verify", return_value=False), \
+             mock.patch.object(U, "published_release", lambda: "r1"):
             U.run(log=lambda *a: None, today=DAY)
-        self.assertFalse(U.due(DAY))
+        with mock.patch.object(U, "published_release", lambda: "r1"):
+            self.assertFalse(U.due(DAY))
 
     def test_a_bad_push_is_reported_upstream(self):
         # Silence would leave us believing every office is current.
