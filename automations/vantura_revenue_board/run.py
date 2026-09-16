@@ -85,10 +85,26 @@ def box_tier_for(count: int):
     return "—", 0
 
 
-def newest_box_csv():
-    d = Path(__file__).resolve().parents[2] / "output"
-    c = sorted(d.glob("box_order_log_*.csv"))
-    return c[-1] if c else None
+def newest_box_csv(d: Path = None):
+    """Carlos's newest BOX pull, by the DATE in the name.
+
+    A plain name sort put 'box_order_log_all_2026-09-14.csv' (the org-wide
+    pull other reports leave behind) after 'box_order_log_2026-09-16.csv' —
+    '_a' sorts after '_2' — so the board priced a stale file on 2026-09-16
+    and held for a day it already had. Newest date wins; on a tie, Carlos's
+    own file beats the org-wide one."""
+    import re
+    d = d or Path(__file__).resolve().parents[2] / "output"
+    best = None
+    for p in d.glob("box_order_log_*.csv"):
+        m = re.fullmatch(r"box_order_log_(all_)?(\d{4}-\d{2}-\d{2})\.csv",
+                         p.name)
+        if not m:
+            continue
+        key = (m.group(2), m.group(1) is None)
+        if best is None or key > best[0]:
+            best = (key, p)
+    return best[1] if best else None
 
 
 def board_box_reps():
