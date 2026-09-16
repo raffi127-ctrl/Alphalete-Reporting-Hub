@@ -83,44 +83,25 @@ class _Att(Shape):
         return "regular"
 
 
-class _Nds(_Att):
-    """NDS sells AT&T wireless and phones -- no Internet, ever.
-
-    SO AT&T'S RULE CANNOT FIRE FOR THEM. Both of its loud tiers require
-    Int > 0, and an NDS rep's Int is structurally zero, so a rep putting up
-    eight lines in a day would read exactly like one putting up a single
-    phone. That is the same flat-channel failure Box had, in a third
-    campaign, and it would have arrived the moment NDS got a SaraPlus login
-    (2026-09-15).
-
-    THE THRESHOLDS ARE NOT AT&T'S, BECAUSE AT&T'S DO NOT FIT. Borrowing them
-    (5 super, 2 large) was the first guess, made with no NDS office live to
-    check against. Khalil Mansour's own grid, read 2026-09-15 the night
-    before he enrolled, shows why it fails: his seven reps put up 2, 3, 3, 4,
-    4, 5 and 7 lines that day, so a bar of two makes EVERY rep loud and
-    nothing ordinary. A line that fires on every sale is the flat channel
-    again, just with more shouting -- the alert stops carrying information on
-    day one.
-
-    A wireless sale carries 2+ lines by nature, so the floor has to sit above
-    a typical one. Against that day: 4+ is "large" (3 of 7) and 7+ is "super"
-    (1 of 7), leaving 3 ordinary.
-
-    ONE DAY, ONE OFFICE, SEVEN REPS -- thin, and said plainly rather than
-    dressed up. It is a better starting point than a bar every sale clears,
-    and Khalil is the person to confirm it once he has been live a week.
-    """
-
-    LOUD_LINES = 4
-    LOUDER_LINES = 7
-
-    def tier(self, metrics):
-        lines = int(metrics.get("NL", 0) or 0)
-        if lines >= self.LOUDER_LINES:
-            return "super"
-        if lines >= self.LOUD_LINES:
-            return "large"
-        return "regular"
+# NDS USES AT&T'S RULE, LIKE EVERY OTHER OFFICE (Megan, 2026-09-15: "it needs
+# to stay the same as all the other offices").
+#
+# It had its own shape for a few hours. The argument for one was that both of
+# AT&T's loud tiers require Int > 0, which an NDS rep structurally cannot
+# have -- against Khalil Mansour's real 2026-09-15 grid, six of his seven reps
+# read "regular" while putting up 2 to 5 wireless lines each.
+#
+# THE ARGUMENT AGAINST IT WON, and it is not a close call once said out loud:
+# one company, one rule. A per-campaign bar means two offices doing the same
+# work hear different words for it, and the numbers would then need tuning
+# per campaign forever, off one day of one office's data. Box gets its own
+# tier because a Box sale has no metric in common with an AT&T one -- there
+# is nothing to be consistent WITH. NDS sells the same four things, mostly
+# zeroes.
+#
+# So an NDS channel will be quieter than an AT&T one. That is the rule
+# applied evenly, not a bug, and it is worth revisiting with Khalil once he
+# has been live a week rather than guessing at it tonight.
 
 
 class _Box(Shape):
@@ -169,11 +150,9 @@ BOX = _Box(("Sales", "Volume", "Big", "Huge"), ("Sales",),
            {"Sales": "Sales", "Volume": "Volume",
             "Big": "Big", "Huge": "Huge"})
 
-NDS = _Nds(METRICS, COUNTED, METRIC_LABEL)
-
 # Keyed by the campaign name the office record carries. An office enrolled
 # before campaigns existed has none, and AT&T is what it was.
-SHAPES = {"b2b_box": BOX, "nds": NDS}
+SHAPES = {"b2b_box": BOX}
 
 
 def shape(campaign=None) -> Shape:
