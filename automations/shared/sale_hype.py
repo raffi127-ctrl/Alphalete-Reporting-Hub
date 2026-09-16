@@ -83,25 +83,35 @@ class _Att(Shape):
         return "regular"
 
 
-# NDS USES AT&T'S RULE, LIKE EVERY OTHER OFFICE (Megan, 2026-09-15: "it needs
-# to stay the same as all the other offices").
-#
-# It had its own shape for a few hours. The argument for one was that both of
-# AT&T's loud tiers require Int > 0, which an NDS rep structurally cannot
-# have -- against Khalil Mansour's real 2026-09-15 grid, six of his seven reps
-# read "regular" while putting up 2 to 5 wireless lines each.
-#
-# THE ARGUMENT AGAINST IT WON, and it is not a close call once said out loud:
-# one company, one rule. A per-campaign bar means two offices doing the same
-# work hear different words for it, and the numbers would then need tuning
-# per campaign forever, off one day of one office's data. Box gets its own
-# tier because a Box sale has no metric in common with an AT&T one -- there
-# is nothing to be consistent WITH. NDS sells the same four things, mostly
-# zeroes.
-#
-# So an NDS channel will be quieter than an AT&T one. That is the rule
-# applied evenly, not a bug, and it is worth revisiting with Khalil once he
-# has been live a week rather than guessing at it tonight.
+class _Nds(_Att):
+    """NDS sells AT&T wireless and phones -- no Internet, ever.
+
+    SAME THRESHOLDS AS EVERY OTHER OFFICE, minus the part NDS structurally
+    cannot meet. Five lines is "super" and two is "large" on AT&T too; all
+    that is dropped is the requirement that an Internet sale came with them,
+    which an NDS rep can never have. One company, one bar -- read off the
+    only metric they actually sell (Megan, 2026-09-15).
+
+    WITHOUT THIS, EVERY NDS SALE IS "regular". Both of AT&T's loud tiers gate
+    on Int > 0. Against Khalil Mansour's real grid, six of his seven reps
+    came out ordinary while putting up 2 to 5 wireless lines each -- the same
+    flat channel Box had, where a rep's best day sounds exactly like their
+    quietest.
+
+    WORTH WATCHING, said plainly: on that day all seven reps clear two lines,
+    so all seven would be loud and none ordinary. A wireless sale tends to
+    carry 2+ lines by nature. If his channel reads as wall-to-wall shouting
+    after a week, the bar is the thing to move -- and it moves here, in one
+    place, for one campaign.
+    """
+
+    def tier(self, metrics):
+        lines = int(metrics.get("NL", 0) or 0)
+        if lines >= 5:
+            return "super"
+        if lines >= 2:
+            return "large"
+        return "regular"
 
 
 class _Box(Shape):
@@ -152,7 +162,9 @@ BOX = _Box(("Sales", "Volume", "Big", "Huge"), ("Sales",),
 
 # Keyed by the campaign name the office record carries. An office enrolled
 # before campaigns existed has none, and AT&T is what it was.
-SHAPES = {"b2b_box": BOX}
+NDS = _Nds(METRICS, COUNTED, METRIC_LABEL)
+
+SHAPES = {"b2b_box": BOX, "nds": NDS}
 
 
 def shape(campaign=None) -> Shape:
