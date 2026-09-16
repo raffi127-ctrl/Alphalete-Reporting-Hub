@@ -19,11 +19,13 @@ TRAPS on this view (see alphalete_org_report/opt_box_daily.py for the long
 version):
   * `Owner Name` is an EXCLUSIVE filter — never slice by URL; pull the whole
     grid and keep Carlos's rows here.
-  * `Sale Date Weekending` can't be pinned, and the saved default is not
-    stable (the same URL opened on WE 9/20 and then on WE 9/13, minutes
-    apart). So the dates come from the export's own day headers, never from
-    today — a pull that landed on last week simply doesn't cover yesterday,
-    and the reader treats that as "no back-up", not as zero.
+  * `Sale Date Weekending` can't be pinned by URL, and the saved default is
+    not stable (the same URL opened on WE 9/20 and then on WE 9/13, minutes
+    apart; Lucy 2's first pull landed on 9/13). So the pull drives the
+    dropdown to the week holding YESTERDAY (b2b_metrics' _select_week), and
+    the dates still come from the export's own day headers — a pick that
+    didn't take just doesn't cover yesterday, and the reader treats that as
+    "no back-up", not as zero.
   * The day headers carry no year: 'Mon (09-14)'.
 
     python -m automations.box_order_log.tracker_backup              # dry-run
@@ -145,12 +147,22 @@ def merge(existing: List[List[str]], counts: Dict[Tuple[str, dt.date], int],
     return [HEADER] + sorted(keep + new, key=key)
 
 
-def pull(dest: Path, verbose: bool = True) -> Path:
+def week_for(day: dt.date) -> dt.date:
+    """The Sunday closing `day`'s BOX week (Mon-Sun)."""
+    return day + dt.timedelta(days=6 - day.weekday())
+
+
+def pull(dest: Path, week: dt.date, verbose: bool = True) -> Path:
     from automations.shared.tableau_patchright import tableau_session
     from automations.recruiting_report.opt_phase import drive_crosstab_dialog
+
+    def pick_week(page, _viz):
+        from automations.b2b_metrics.capture import _select_week
+        _select_week(page, week, log=lambda m: print(m, flush=True))
+
     with tableau_session(verbose=verbose) as page:
         drive_crosstab_dialog(page, VIEW_URL, CROSSTAB_SHEET, dest,
-                              verbose=verbose)
+                              verbose=verbose, pre_export=pick_week)
     return dest
 
 
@@ -198,11 +210,12 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
 
     today = dt.date.today()
+    target = today - dt.timedelta(days=1)
     if a.from_file:
         src = Path(a.from_file)
     else:
         src = pull(OUTPUT_DIR / "box_tracker_replvl_{}.csv".format(
-            today.isoformat()))
+            today.isoformat()), week_for(target))
     from automations.alphalete_org_report.opt_nds import _read_tab_csv
     counts, days = parse(_read_tab_csv(src), today)
     if not days:
@@ -211,6 +224,10 @@ def main(argv=None) -> int:
         return 1
     print("tracker back-up: export covers {} .. {}; {} sale(s) for Carlos"
           .format(days[0], days[-1], sum(counts.values())), flush=True)
+    if target not in days:
+        print("tracker back-up: yesterday ({}) is NOT in the export — the "
+              "week pick didn't take or the day hasn't landed".format(target),
+              flush=True)
     for (rep, d), n in sorted(counts.items(), key=lambda kv: (kv[0][1],
                                                               kv[0][0])):
         print("  {}  {:<32} {}".format(_mdy(d), rep, n), flush=True)

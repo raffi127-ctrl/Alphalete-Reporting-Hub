@@ -51,6 +51,15 @@ class ParseTest(unittest.TestCase):
                          ({}, []))
 
 
+class WeekForTest(unittest.TestCase):
+    def test_box_weeks_close_on_sunday(self):
+        self.assertEqual(tb.week_for(dt.date(2026, 9, 15)),
+                         dt.date(2026, 9, 20))
+        # Monday's "yesterday" is Sunday: last week, not this one.
+        self.assertEqual(tb.week_for(dt.date(2026, 9, 13)),
+                         dt.date(2026, 9, 13))
+
+
 class MergeTest(unittest.TestCase):
     def test_covered_days_replaced_older_kept_and_marked(self):
         old = [tb.HEADER, ["Gary Van Whitaker", "9/12/2026", "2"],
