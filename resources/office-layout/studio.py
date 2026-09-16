@@ -324,7 +324,7 @@ def furnish(kind, R, key=None):
             _wwin(_my-0.10,_my+0.10,0.36,2.5,7.4,"#59616e",nudge=0.12)
         _wwin(2.6,17.4,0.62,1.95,2.2,"#aeb4bd",nudge=0.12)          # sill
         # caption on the open floor beside it — the window is near full-height, no clear wall above
-    elif kind=="megan":     # Megan's office — window wall, 4 screens, standing desk + walking pad
+    elif kind=="megan":     # Megan's office — window wall, 6 screens, standing desk + walking pad
         import math as _m
         NWD=(0-0.5+w+0)/2                    # north-wall depth
         WWD=(-0.5+0+0+d)/2                   # west-wall depth
@@ -345,11 +345,12 @@ def furnish(kind, R, key=None):
             _onN(_mx-0.07,_mx+0.07,0.30,_WB0,_WB1,"#9aa2ad",nudge=0.14)     # vertical mullions
         for _mz in (_WB0+1.53,_WB0+3.07):
             _onN(0.4,10.27,0.30,_mz-0.05,_mz+0.05,"#9aa2ad",nudge=0.14)     # horizontal mullions
-        # LEFT (west) wall = solid: 2 × 2 screen array, generously spaced
-        for _sy in (2.35,6.10):
+        # LEFT (west) wall = solid: 3 × 2 screen array (six screens), fitted between the
+        # two wall planters at cy 1.15 / 9.5 with even gaps
+        for _sy in (1.98,4.32,6.68):
             for _sz in (2.80,4.75):
-                _onW(_sy,_sy+2.25,0.16,_sz,_sz+1.35,"#59616e",nudge=0.06)             # bezel
-                _onW(_sy+0.09,_sy+2.16,0.22,_sz+0.09,_sz+1.26,"#222833",nudge=0.12)   # panel
+                _onW(_sy,_sy+2.05,0.16,_sz,_sz+1.35,"#59616e",nudge=0.06)             # bezel
+                _onW(_sy+0.09,_sy+1.96,0.22,_sz+0.09,_sz+1.26,"#222833",nudge=0.12)   # panel
         # wall planters — kept outboard of the screen array; they sit proud of the screens
         # so anything between the columns overlaps them
         def _wplant(cy,z0):
@@ -1053,7 +1054,7 @@ CATALOG=[
   ("w-4","Maud's Office (corner)","10'5\" × 17'5\"","maud",10.42,17.42,"Maud's corner office","L-desk · 2 guest · play pen · rocking chair · TV",False),
   ("n-large","Raf's Office","20' × 20'","raf",20.0,20.0,"Raf's office","L-desk · iMac · walking pad · 2 guest · bookcase · mini fridge · oval table",False),
   ("e-1","Twaddle's Office","10'8\" × 10'8\"","twaddle",10.67,10.67,"Twaddle's office","L-desk · 2 guest chairs · TV · glass entrance",False),
-  ("e-2","Claude Room / Megan's","10'8\" × 10'8\"","megan",10.67,10.67,"Megan's office / Claude room","4 screens · standing desk · walking pad · window wall",False),
+  ("e-2","Claude Room / Megan's","10'8\" × 10'8\"","megan",10.67,10.67,"Megan's office / Claude room","6 screens · standing desk · walking pad · window wall",False),
   ("s-1","South · Office 1","12' × 10'6\"","interview",12.0,10.5,"Interview office","Straight desk · iMac · 2 guest · TV · open shelf · glass front",False),
   ("s-2","South · Office 2","12' × 10'6\"","interview",12.0,10.5,"Interview office","Straight desk · iMac · 2 guest · TV · open shelf · glass front",False),
   ("s-3","Bas's office","12' × 10'","bas",12.0,10.0,"Bas's office","L-desk · iMac · 2 guest · TV · bookcase · credenza · glass front",False),
@@ -1403,7 +1404,7 @@ FURN_BY_KIND={
  'interview':'Straight desk · iMac · 2 guest chairs · TV · open shelf · glass front (no credenza)',
  'long':'Classroom · screen + whiteboards (wall 1) · credenza · 12 chairs · posters (wall 2) · glass front','wide':'Classroom · screen · credenza · 12 chairs · window wall · glass front',
  'large':'Large office · shell + door','conference':'Boardroom · 14 seats · TV wall · whiteboards · built-in counter',
- 'megan':'4 screens · standing desk · laptop · walking pad · florals · window wall',
+ 'megan':'6 screens · standing desk · laptop · walking pad · florals · window wall',
  'twaddle':'L-desk · 2 guest · TV · tablet cabinet · window wall · glass entrance',
  'jd':'L-desk · 2 guest · TV · open shelving · credenza under the windows · glass front',
  'bas':'L-desk · iMac · 2 bright guest chairs · TV · Lego mosaic · brick builds · open shelving · glass front',

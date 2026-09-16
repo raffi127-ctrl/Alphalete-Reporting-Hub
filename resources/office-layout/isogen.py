@@ -397,10 +397,10 @@ tv(19.875,58.0,'W')                   # 8 · interview (west wall)
 tv(47.0,5.7,'N')                      # 3 · Maud (TV on wall 2 -> north wall)
 tv(18.0,97.0,'N',db=2.6)              # 5 · Twaddle (north wall; extra bias to clear the desk)
 tv(50.0,11.5,'W')                      # 4 · Raf (TV on the west wall toward the sitting table)
-for _mgx in (95.7,98.3):              # 6 · Megan — a 2x2 array of FOUR distinct screens (north wall y29)
+for _mgx in (95.0,97.5,100.0):        # 6 · Megan — a 3x2 array of SIX distinct screens (north wall y29)
     for _mgz in (1.55,2.75):
-        box(_mgx-0.55,29.26,_mgx+0.55,29.42,FLR_Z+_mgz-0.36,FLR_Z+_mgz+0.36,"#454b54",db=15.0)  # bezel
-        box(_mgx-0.48,29.28,_mgx+0.48,29.44,FLR_Z+_mgz-0.28,FLR_Z+_mgz+0.28,"#20252b",db=15.01) # screen
+        box(_mgx-0.52,29.26,_mgx+0.52,29.42,FLR_Z+_mgz-0.36,FLR_Z+_mgz+0.36,"#454b54",db=15.0)  # bezel
+        box(_mgx-0.45,29.28,_mgx+0.45,29.44,FLR_Z+_mgz-0.28,FLR_Z+_mgz+0.28,"#20252b",db=15.01) # screen
 tv(0.0,87.0,'N',w=6.0)                # 13 · conference (north wall, y0)
 tv(0.0,27.5,'W',w=5.0,db=2.2)           # 1 · training screen on wall 1 (db clears the perimeter wall)
 # 1 · the whiteboards either side of that screen. Studio y0.80-5.00 and 15.00-19.20 map
