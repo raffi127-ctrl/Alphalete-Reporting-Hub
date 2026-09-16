@@ -92,11 +92,22 @@ class ALoginThatLandsOnTheResetPageIsNotALogin(unittest.TestCase):
         page.query_selector.return_value = object()      # password box present
         self.assertFalse(SC.signed_in(page))
 
-    def test_signed_in_is_true_once_it_is_gone(self):
+    def test_signed_in_is_true_on_the_apps_own_routes(self):
         page = mock.MagicMock()
-        page.url = "https://myservicecloud.net/dashboard"
+        page.url = "https://myservicecloud.net/spa/contracts"
         page.query_selector.return_value = None
         self.assertTrue(SC.signed_in(page))
+
+    def test_a_page_with_no_password_box_is_not_enough(self):
+        """THIS TEST USED TO ASSERT THE OPPOSITE, and that is how Ryan got
+        told he was signed in while sitting on the authenticator enrolment
+        screen (2026-09-16). "No password field" describes the enrolment
+        page, the reset page and an error page just as well as it describes
+        the app."""
+        page = mock.MagicMock()
+        page.url = "https://myservicecloud.net/user/register"
+        page.query_selector.return_value = None
+        self.assertFalse(SC.signed_in(page))
 
     def test_a_refused_login_says_what_the_office_can_do(self):
         page = mock.MagicMock()
@@ -951,3 +962,64 @@ class ThePastedCommandUsesPathsThatExist(unittest.TestCase):
         self.assertIn('CONFIG_DIR = HOME / ".config" / "lucy-reports"',
                       self.setup)
         self.assertIn("~/.config/lucy-reports/last-selfupdate.txt", self.page)
+
+
+class BeingPastTheLoginFormIsNotBeingSignedIn(unittest.TestCase):
+    """Ryan McSpadden, 2026-09-16, 10:50. He signed in, My Service Cloud
+    showed him its AUTHENTICATOR ENROLMENT screen -- a QR code, a manual key
+    and a box for six digits -- and the tool told him "Signed in. Lucy can
+    see your sales again."
+
+    He stopped there, reasonably. The sweep went on reporting his account
+    signed out, correctly, forty-seven times.
+
+    The check was `page.query_selector(password) is None` -- an ABSENCE. The
+    enrolment page has no password field either. A false success is worse
+    than a false failure here: it ends with the office believing they are
+    done and nobody looking again.
+    """
+
+    class _Page:
+        def __init__(self, url, pw=None, text=""):
+            self.url, self._pw, self._t = url, pw, text
+
+        def query_selector(self, _sel):
+            return self._pw
+
+        def inner_text(self, _sel):
+            return self._t
+
+    def test_the_mfa_page_is_not_signed_in(self):
+        from automations.shared import servicecloud as SC
+        page = self._Page("https://myservicecloud.net/user/register",
+                          text="Register My Service Cloud — Google "
+                               "Authenticator — enter a code")
+        self.assertFalse(SC.signed_in(page), "this is the exact false 'done'")
+
+    def test_the_mfa_page_is_named_so_the_message_can_help(self):
+        from automations.shared import servicecloud as SC
+        page = self._Page("https://myservicecloud.net/user/register",
+                          text="Register My Service Cloud / google authenticator")
+        self.assertTrue(SC.on_mfa_setup(page))
+
+    def test_the_app_itself_is_signed_in(self):
+        from automations.shared import servicecloud as SC
+        self.assertTrue(SC.signed_in(
+            self._Page("https://myservicecloud.net/spa/contracts")))
+
+    def test_the_login_form_and_reset_page_are_not(self):
+        from automations.shared import servicecloud as SC
+        self.assertFalse(SC.signed_in(
+            self._Page("https://myservicecloud.net/sign-in", pw=object())))
+        self.assertFalse(SC.signed_in(
+            self._Page("https://myservicecloud.net"
+                       "/user/index/request-password-reset")))
+
+    def test_signin_confirms_against_the_contracts_page(self):
+        """Being past the login form is not the same as being able to read
+        contracts, and contracts are the only thing this exists for."""
+        import inspect
+        from automations.icd_alerts import box_signin as B
+        src = inspect.getsource(B.run)
+        self.assertIn("CONTRACTS_PATH", src)
+        self.assertIn("on_mfa_setup", src)

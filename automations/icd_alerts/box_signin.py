@@ -102,6 +102,7 @@ def run(log=print) -> int:
             str(C.SC_PROFILE_DIR), headless=False, args=["--disable-sync"])
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            base = SC.LOGIN_URL.rsplit("/", 1)[0]
             page.goto(SC.LOGIN_URL, timeout=SC.LOGIN_TIMEOUT_MS)
 
             if not SC.session_lost(page):
@@ -109,16 +110,36 @@ def run(log=print) -> int:
                 return 0
 
             waited = 0
+            said_mfa = False
             while waited < WAIT_SECONDS:
                 time.sleep(POLL_SECONDS)
                 waited += POLL_SECONDS
                 try:
-                    if not SC.session_lost(page):
-                        # VERIFIED, not assumed. A closed window and a live
-                        # session are different things.
+                    # SAY WHERE THEY ACTUALLY ARE. Ryan reached the
+                    # authenticator enrolment screen and was told he was
+                    # finished, because that page has no password box on it.
+                    # Being told "done" is why somebody stops.
+                    if SC.on_mfa_setup(page) and not said_mfa:
+                        said_mfa = True
                         log("")
-                        log("  Signed in. Lucy can see your sales again —")
-                        log("  they start updating within a few minutes.")
+                        log("  My Service Cloud wants you to set up your")
+                        log("  authenticator first — scan the code with the")
+                        log("  app, then enter the six digits. Keep going;")
+                        log("  this is still waiting.")
+                        continue
+                    if not SC.session_lost(page):
+                        # PROVE IT THE WAY THE SWEEP WILL USE IT. Being past
+                        # the login form is not the same as being able to
+                        # read contracts, and the contracts page is the only
+                        # thing that matters here.
+                        page.goto(base + SC.CONTRACTS_PATH,
+                                  timeout=SC.LOGIN_TIMEOUT_MS)
+                        if SC.session_lost(page):
+                            continue
+                        log("")
+                        log("  Signed in — checked by opening your contracts.")
+                        log("  Lucy can see your sales again; they start")
+                        log("  updating within a few minutes.")
                         return 0
                 except Exception:  # noqa: BLE001 — they may be mid-navigation
                     pass

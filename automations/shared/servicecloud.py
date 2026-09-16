@@ -294,16 +294,58 @@ def _is_password_reset(url: str) -> bool:
     return PASSWORD_RESET_PATH in (url or "").lower()
 
 
-def signed_in(page) -> bool:
-    """Are we past the login form?
+# The app's own routes. Being signed in means being HERE -- everything else
+# (the login form, the reset page, the authenticator setup) is somewhere the
+# app sends you when you are not.
+APP_PATH_MARKER = "/spa/"
 
-    Asked of the page rather than assumed from a click: the sign-in button
-    submitting is not the same as the credentials being accepted.
+# The two-factor enrolment screen: a QR code, a manual key, and a box for six
+# digits. It has NO password field, which is the whole problem below.
+MFA_MARKERS = ("register my service cloud", "google authenticator",
+               "authentication app", "one-time verification code")
+
+
+def on_mfa_setup(page) -> bool:
+    """Is the browser sitting on the authenticator enrolment page?
+
+    Worth naming rather than lumping in with "signed out", because the person
+    reading the message is mid-way through something and telling them to
+    "sign in again" would send them back to the start of it.
     """
     try:
-        if _is_password_reset(page.url):
+        if page.query_selector(SEL_PASSWORD) is not None:
             return False
-        return page.query_selector(SEL_PASSWORD) is None
+        text = (page.inner_text("body") or "").lower()
+        return any(m in text for m in MFA_MARKERS)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def signed_in(page) -> bool:
+    """Are we actually IN the app?
+
+    POSITIVE EVIDENCE, NOT AN ABSENCE. This used to be "there is no password
+    field on this page", and a page with no password field is not the same
+    thing as a session.
+
+    Ryan McSpadden, 2026-09-16: he signed in, My Service Cloud showed him its
+    authenticator ENROLMENT screen -- a QR code and a box for six digits, and
+    no password field anywhere -- and this told him "Signed in. Lucy can see
+    your sales again." He stopped there, reasonably. The sweep meanwhile went
+    on reporting the account signed out, correctly, forty-seven times.
+
+    A false success is far worse than a false failure here: it ends with the
+    office believing they are done and nobody looking again. So being signed
+    in now means being on one of the app's own routes, which the login form,
+    the reset page and the enrolment screen are all NOT.
+    """
+    try:
+        url = (page.url or "").lower()
+        if _is_password_reset(url):
+            return False
+        if page.query_selector(SEL_PASSWORD) is not None:
+            return False
+        return APP_PATH_MARKER in url
     except Exception:  # noqa: BLE001
         return False
 
