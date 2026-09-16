@@ -30,7 +30,11 @@ METRIC_LABEL = {"Int": "Int", "Int Up": "Up", "DTV": "DTV", "NL": "NL"}
 # THE HOUSE VOICE. "Heck yeah", "found the money", "Snicklepop", "Closers!!"
 # and "WINNER" are what this company's channels already say when somebody
 # sells, with the fries and paw-print emoji currently doing the rounds
-# (Megan, 2026-09-16)
+# (Megan, 2026-09-16).
+#
+# "CLOSER", SINGULAR -- Megan was explicit. The line is about the one rep who
+# just sold, not the room; the plural reads like a greeting to everybody and
+# loses the point of naming somebody
 # -- so the alerts say it too, rather than sounding like a system that showed
 # up and started narrating.
 HYPE_REGULAR = (
@@ -39,10 +43,11 @@ HYPE_REGULAR = (
     "{first} found the money! :moneybag:",
     "{first} found the money! :fries:",
     "Heck yeah {first} :paw_prints:",
-    "Closers!! {first} is on the board :fire:",
+    "Closer!! {first} is on the board :fire:",
     "WINNER!! {first} is on the board :fire:",
     "We got a WINNER -- {first} found the money :moneybag:",
     "{first} on the board. No complacency :eyes:",
+    "{first} is on the board! Who's next :eyes::eyes::eyes:",
     "{first} just put one on the board! :fire:",
     "{first} is on it :moneybag:",
     "Another one for {first} :fire:",
@@ -59,8 +64,9 @@ HYPE_LARGE = (
     "{first} FOUND THE MONEY!! :moneybag::fries:",
     "Snicklepop!! {first} found the money :zap::moneybag:",
     "{first}, TELL US!! :paw_prints::fire:",
-    "CLOSERS!! {first} found the money :fire::moneybag:",
+    "CLOSER!! {first} found the money :fire::moneybag:",
     "{first}, TELL US!! No complacency :fire::moneybag:",
+    "{first}, TELL US!! Who's next :eyes::eyes::eyes:",
     "WINNER!! {first}, TELL US!! :fire::moneybag:",
 )
 
@@ -71,6 +77,10 @@ HYPE_LARGE = (
 # (2026-09-16). It is the one the offices actually say, and a near-synonym in
 # a line meant to sound like them is the whole difference between borrowed
 # and invented.
+#
+# "WHO'S NEXT" IS THE SAME IDEA IN THEIR WORDS, and it does the job better
+# than the version written for them: it needles the rest of the room instead
+# of the person who just sold, which is the half that actually moves anybody.
 #
 # AND IT IS SAID ONCE PER TIER, SHORT. The first pass wrote six versions of
 # the same joke and Megan called them "too long / too redundant" -- which is
@@ -86,7 +96,7 @@ HYPE_SUPER = (
     "HECK YEAH {first}!!! :fire::money_mouth_face::fire:",
     "{first} FOUND THE MONEY!!! :moneybag::fries::moneybag:",
     "{first} FOUND THE MONEY!!! :paw_prints::money_mouth_face:",
-    "CLOSERS!!! {first} PLEASE TELL US :fire::money_mouth_face::fire:",
+    "CLOSER!!! {first} PLEASE TELL US :fire::money_mouth_face::fire:",
     "WINNER!!! {first} FOUND THE MONEY :fire::money_mouth_face::fire:",
 )
 
@@ -229,10 +239,11 @@ class _Box(Shape):
         "{first} found the money! :moneybag:",
         "{first} found the money! :fries:",
         "Heck yeah {first} :paw_prints:",
-        "Closers!! {first} closed one :fire:",
+        "Closer!! {first} closed one :fire:",
         "WINNER!! {first} closed one :fire:",
         "We got a WINNER -- {first} found the money :moneybag:",
         "{first} closed one. No complacency :eyes:",
+        "{first} got one done! Who's next :eyes::eyes::eyes:",
         "{first} just finished a contract! :fire:",
         "{first} just closed one :moneybag:",
         "Another contract for {first} :fire:",

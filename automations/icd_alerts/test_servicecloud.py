@@ -1959,6 +1959,16 @@ class TheSaleLinesSoundLikeTheCompany(unittest.TestCase):
             for line in super_:
                 self.assertNotIn("complacen", line.lower())
 
+    def test_closer_is_singular(self):
+        """Megan was explicit (2026-09-16). The line is about the one rep who
+        just sold, not the room -- the plural reads like a greeting to
+        everybody and loses the point of naming somebody."""
+        for campaign in ("att", "b2b_box"):
+            joined = " ".join(sum(self._pools(campaign), ()))
+            self.assertIn("loser", joined.lower())
+            self.assertNotIn("closers", joined.lower())
+            self.assertNotIn("CLOSERS", joined)
+
     def test_the_word_is_complacent_not_a_synonym(self):
         """Megan was specific (2026-09-16). It is the word the offices
         actually use, and a near-synonym in a line meant to sound like them
@@ -1973,7 +1983,7 @@ class TheSaleLinesSoundLikeTheCompany(unittest.TestCase):
         for campaign in ("att", "b2b_box"):
             joined = " ".join(sum(self._pools(campaign), ())).lower()
             for phrase in ("heck yeah", "found the money", "snicklepop",
-                           "closers", "winner"):
+                           "closer", "winner"):
                 self.assertIn(phrase, joined, "%s / %s" % (campaign, phrase))
 
     def test_the_top_tier_shouts_the_name(self):
@@ -1986,11 +1996,18 @@ class TheSaleLinesSoundLikeTheCompany(unittest.TestCase):
                 for n in range(1, 60)}
         self.assertTrue(all("MAX" in line for line in seen), seen)
 
-    def test_box_still_says_contract_not_board_at_the_regular_tier(self):
-        regular, _l, _s = self._pools("b2b_box")
-        joined = " ".join(regular).lower()
-        self.assertIn("contract", joined)
-        self.assertNotIn("on the board", joined)
+    def test_box_never_says_on_the_board(self):
+        """Box sells contracts. "On the board" is AT&T's word, and the BIG
+        and HUGE pools are shared by every campaign -- so a line added there
+        has to work for a product that is not board-shaped.
+
+        Caught when "is on the board!! Who's next" went into the shared pool
+        and turned up in Box's channel (2026-09-16).
+        """
+        regular, large, _super = self._pools("b2b_box")
+        self.assertIn("contract", " ".join(regular).lower())
+        for pool, where in ((regular, "regular"), (large, "large")):
+            self.assertNotIn("on the board", " ".join(pool).lower(), where)
 
     def test_the_same_sale_always_gets_the_same_words(self):
         """Hashed, never random: a sweep that has to be re-run repeats itself
