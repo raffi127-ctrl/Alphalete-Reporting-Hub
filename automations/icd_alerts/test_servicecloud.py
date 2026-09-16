@@ -568,3 +568,37 @@ class TheSignInToolAsksForTheLoginItself(unittest.TestCase):
                              {"automations.icd_alerts.dialogs": fake}):
             got = B._login(log=lambda *a: None)
         self.assertEqual(got, {}, "no login, but no crash either")
+
+
+class ABoxOfficeIsChasedForItsChannel(unittest.TestCase):
+    """Megan 2026-09-15: "then they also need to just tell us what channels
+    they want them posted in right?"
+
+    They do, and they already answered at install -- ask_for_channel() runs
+    for every office. What was missing was the other half: the guard that
+    builds Megan's pending-approval list dropped any office with no SaraPlus,
+    because when it was written such an office had no sales at all. Box has
+    sales now, so their answer would have sat unapproved forever with nobody
+    ever shown it.
+    """
+
+    def _has_alerts(self, campaign):
+        from automations.icd_alerts import post as P
+        from automations.icd_signup import store as _st
+        rec = mock.MagicMock()
+        rec.campaign = campaign
+        with mock.patch.object(_st, "get", lambda k: rec):
+            return P._campaign_has_alerts("someoffice")
+
+    def test_a_box_office_is_on_the_list(self):
+        self.assertTrue(self._has_alerts("b2b_box"),
+                        "their channel request would never be shown to anyone")
+
+    def test_an_att_office_still_is(self):
+        self.assertTrue(self._has_alerts("att"))
+
+    def test_a_campaign_with_no_sales_anywhere_still_is_not(self):
+        """Chasing an approval for something that can never post is how the
+        real ones get skimmed past."""
+        self.assertFalse(self._has_alerts("nds"))
+        self.assertFalse(self._has_alerts("energy"))

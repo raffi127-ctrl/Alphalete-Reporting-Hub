@@ -1210,7 +1210,16 @@ SIGNUPS_SEEN_PATH = (Path.home() / ".config" / "recruiting-report"
 
 
 def _campaign_has_alerts(office_key: str) -> bool:
-    """Does this office's campaign produce credit checks and sales at all?
+    """Does this office's campaign produce credit checks or sales at all?
+
+    SARAPLUS IS NO LONGER THE ONLY ANSWER. This was written when an office
+    with no SaraPlus had no sales full stop, so asking Megan to approve their
+    alerts channel was chasing an approval for something that could never
+    post. Box sells through My Service Cloud (2026-09-15), so a Box office
+    now has sales, has hype lines, and needs a room for them -- and this
+    guard would have kept their request off the pending list forever, with
+    the office having answered the question at install and simply never
+    hearing back.
 
     Unknown counts as YES: an office we cannot place should still be chased
     rather than silently dropped off the list.
@@ -1219,7 +1228,11 @@ def _campaign_has_alerts(office_key: str) -> bool:
         from automations.icd_signup import store as _st
         from automations.icd_signup.schema import uses_saraplus
         rec = _st.get((office_key or "").strip().lower())
-        return uses_saraplus(rec.campaign) if rec else True
+        if not rec:
+            return True
+        campaign = str(rec.campaign or "").strip().lower()
+        from automations.icd_alerts.config import SERVICECLOUD_CAMPAIGNS
+        return uses_saraplus(campaign) or campaign in SERVICECLOUD_CAMPAIGNS
     except Exception:  # noqa: BLE001
         return True
 

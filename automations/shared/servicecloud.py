@@ -362,12 +362,13 @@ def sign_in(page, email: str, password: str, *,
 # second alert path would mean rediscovering each of those rules with a real
 # office's board as the test.
 #
-# THE ONE SEAM THAT IS AT&T-SHAPED: relay.SALE_METRICS and
-# shared.sale_hype.METRICS are both hardcoded ("Int", "Int Up", "DTV", "NL"),
-# and the hype wording and tiers are written around them. Box needs its own
-# metric names, and those two need to become campaign-aware rather than
-# constant. That is a small change and NOT one to make blind -- it decides
-# what every AT&T office's sale line says.
+# THAT SEAM IS CLOSED (2026-09-15). relay.SALE_METRICS and sale_hype.METRICS
+# were both hardcoded to ("Int", "Int Up", "DTV", "NL"), so a Box payload was
+# filtered down to nothing on its way over the wire and compared against four
+# names it does not have on arrival -- found, sent, and silently emptied
+# twice. The metric names are now a property of the CAMPAIGN:
+# sale_hype.shape(campaign) answers with the names, what may be summed, how
+# the line reads, and how loud it gets.
 #
 # AND IT FEEDS THE LIVE SALES BOARD, not only Slack (Megan 2026-09-15: "we're
 # building live sales boards for the ICDS - this is what will feed the box

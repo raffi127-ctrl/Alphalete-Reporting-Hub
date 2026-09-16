@@ -240,15 +240,23 @@ class ChangingCadenceMustNotUnapproveAnOffice(unittest.TestCase):
 
 
 class WeDoNotChaseAnApprovalThatCannotExist(unittest.TestCase):
-    """Box, Energy Wells and NDS have no SaraPlus, so the form never asks them
-    where credit checks should post. The pending notice told Megan that
+    """Energy Wells and NDS have no sales anywhere, so the pending notice
+    must not ask Megan to approve a room for them. It once told her that
     "carlos hidalgo (carlos) asked for their credit-check alerts in Not sure
     yet" and handed her a command that cannot do anything. Chasing approvals
-    that do not exist is how the real ones get skimmed past."""
+    that do not exist is how the real ones get skimmed past.
 
-    def test_a_box_office_is_not_chased_for_alerts(self):
-        self.assertFalse(P._campaign_has_alerts("carlos"))
-        self.assertFalse(P._campaign_has_alerts("ryan"))
+    BOX USED TO BE ON THAT LIST AND IS NOT ANY MORE (2026-09-15). It had no
+    SaraPlus, which at the time meant no sales at all. It now sells through
+    My Service Cloud, so a Box office has sales, has hype lines and needs a
+    room for them -- and leaving it excluded would have kept Ryan's and
+    Carlos's answers off the pending list forever, with each of them having
+    answered at install and simply never hearing back.
+    """
+
+    def test_a_box_office_is_chased_now_that_it_has_sales(self):
+        self.assertTrue(P._campaign_has_alerts("carlos"))
+        self.assertTrue(P._campaign_has_alerts("ryan"))
 
     def test_an_att_campaign_still_is(self):
         self.assertTrue(P._campaign_has_alerts("carlos-b2batt"))
