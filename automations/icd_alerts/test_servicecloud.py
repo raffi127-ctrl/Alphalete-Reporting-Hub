@@ -1648,3 +1648,37 @@ class TheSweepYieldsWhileSomebodyIsSigningIn(unittest.TestCase):
         src = inspect.getsource(B.run)
         self.assertIn("finally", src)
         self.assertIn("unlink", src)
+
+
+class NotTriedIsNotTheSameAsFailed(unittest.TestCase):
+    """Khalil Mansour's install, 2026-09-16. His SaraPlus password had
+    genuinely expired, so the installer never got as far as testing
+    OwnerVille -- and recorded that as a FAILURE.
+
+    The closing dialog told him "the OwnerVille login did not work, so the
+    knocks board will not post yet" while his knocks were relaying: 13 reps,
+    read and sent, four minutes later.
+
+    Claiming a failure that did not happen sends somebody to fix a working
+    thing, and it costs every other message in that dialog its weight.
+    """
+
+    def setUp(self):
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[2]
+        self.src = (root / "automations" / "icd_alerts" / "dist"
+                    / "setup.py").read_text()
+
+    def test_untested_ownerville_is_none_not_false(self):
+        self.assertIn("ov_ok = ownerville_until_it_works() if ok else None",
+                      self.src)
+
+    def test_the_warning_only_fires_on_a_real_failure(self):
+        """`not ov_ok` is true for None as well, which is exactly the bug."""
+        self.assertNotIn("if not ov_ok and", self.src)
+        self.assertIn("if ov_ok is False and", self.src)
+
+    def test_the_upstream_fault_is_gated_the_same_way(self):
+        """A fault filed for an untested login is a ticket about nothing."""
+        self.assertIn("elif ov_ok is False and", self.src)
+        self.assertNotIn("elif not ov_ok and", self.src)

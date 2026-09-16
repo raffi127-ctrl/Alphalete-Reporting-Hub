@@ -1141,7 +1141,19 @@ def main() -> int:
         ask_for_servicecloud()
         # AND SIGN IN NOW, while somebody with the authenticator is here.
         check_servicecloud()
-    ov_ok = ownerville_until_it_works() if ok else False
+    # THREE STATES, NOT TWO: worked, failed, and NEVER TRIED.
+    #
+    # This was `ownerville_until_it_works() if ok else False`, and `ok` is the
+    # SARAPLUS result -- so an office whose SaraPlus password had expired was
+    # recorded as having a broken OwnerVille login that nobody had tested.
+    # The closing dialog then told them "the OwnerVille login did not work, so
+    # the knocks board will not post yet".
+    #
+    # Khalil Mansour, 2026-09-16: it said exactly that while his knocks were
+    # relaying -- 13 reps, read and sent, four minutes later. Claiming a
+    # failure that did not happen sends somebody to fix a working thing, and
+    # it is the sort of wrongness that costs every other message its weight.
+    ov_ok = ownerville_until_it_works() if ok else None
 
     step(7, total, "Where your alerts should go")
     ask_for_ov_name()
@@ -1209,7 +1221,10 @@ def main() -> int:
                         "System Settings > Lock Screen, or ask whoever looks "
                         "after your computers.\n\n")
         blocking, notes = install_problems(awake)
-        if not ov_ok and (CONFIG_DIR / "ownerville-creds.json").exists():
+        # `is False`, NOT falsy. None means it was never tried -- see ov_ok
+        # above -- and saying a login failed when nobody tested it is how an
+        # office goes looking for a fault in something that works.
+        if ov_ok is False and (CONFIG_DIR / "ownerville-creds.json").exists():
             notes.append("the OwnerVille login did not work, so the knocks "
                          "board will not post yet")
         if blocking:
@@ -1253,7 +1268,7 @@ def main() -> int:
         report_fault("install", "SaraPlus did not verify during setup",
                      "The installer completed but could not sign in to "
                      "SaraPlus, so no alerts will be sent from this machine.")
-    elif not ov_ok and (CONFIG_DIR / "ownerville-creds.json").exists():
+    elif ov_ok is False and (CONFIG_DIR / "ownerville-creds.json").exists():
         report_fault("install", "OwnerVille did not verify during setup",
                      "Credit-check alerts are working. The OwnerVille login "
                      "failed, so no knocks/dispositions board will post.")

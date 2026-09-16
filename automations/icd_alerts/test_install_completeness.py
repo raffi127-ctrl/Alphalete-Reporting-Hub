@@ -106,11 +106,26 @@ class EveryCampaignIsCheckedForWhatItActuallyNeeds(unittest.TestCase):
 class TheFinalMessageIsDerivedNotRemembered(unittest.TestCase):
 
     def test_all_set_is_behind_the_check(self):
-        i = SETUP.index('say("  %s%sAll set.%s"')
-        before = SETUP[max(0, i - 1500):i]
-        self.assertIn("install_problems", before,
-                      "\"All set\" is still printed without asking whether "
-                      "the install can work")
+        """"All set" must never be printed without first asking whether the
+        install can actually work.
+
+        ORDERING, NOT A CHARACTER WINDOW. This used to look back 1500 bytes
+        from the "All set" line, which made it fail the moment a comment was
+        added above it (2026-09-16) -- a test that breaks on prose is a test
+        people learn to edit rather than read.
+        """
+        said = SETUP.index('say("  %s%sAll set.%s"')
+        checked = SETUP.index("install_problems(")
+        self.assertLess(checked, said,
+                        '"All set" is printed without asking whether the '
+                        "install can work")
+
+    def test_the_all_set_line_is_reached_through_the_check(self):
+        """And the answer has to be USED, not merely computed."""
+        said = SETUP.index('say("  %s%sAll set.%s"')
+        between = SETUP[SETUP.index("install_problems("):said]
+        self.assertIn("blocking", between,
+                      "install_problems runs and its answer is dropped")
 
     def test_an_unworkable_install_reports_itself(self):
         self.assertIn("_report_setup_incomplete", SETUP)
