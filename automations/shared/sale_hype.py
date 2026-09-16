@@ -27,8 +27,8 @@ METRICS = ("Int", "Int Up", "DTV", "NL")
 COUNTED = ("Int", "Int Up", "DTV", "NL")
 METRIC_LABEL = {"Int": "Int", "Int Up": "Up", "DTV": "DTV", "NL": "NL"}
 
-# THE HOUSE VOICE. "Heck yeah", "found the money", "Snicklepop" and
-# "Closers!!" are what this company's channels already say when somebody
+# THE HOUSE VOICE. "Heck yeah", "found the money", "Snicklepop", "Closers!!"
+# and "WINNER" are what this company's channels already say when somebody
 # sells, with the fries and paw-print emoji currently doing the rounds
 # (Megan, 2026-09-16)
 # -- so the alerts say it too, rather than sounding like a system that showed
@@ -40,10 +40,9 @@ HYPE_REGULAR = (
     "{first} found the money! :fries:",
     "Heck yeah {first} :paw_prints:",
     "Closers!! {first} is on the board :fire:",
-    "{first} is on the board -- don't get complacent :eyes:",
-    "One for {first}. No complacency :fire:",
-    "{first} found the money! Don't get complacent now :moneybag:",
-    "{first} on the board -- complacency is the real competition :dart:",
+    "WINNER!! {first} is on the board :fire:",
+    "We got a WINNER -- {first} found the money :moneybag:",
+    "{first} on the board. No complacency :eyes:",
     "{first} just put one on the board! :fire:",
     "{first} is on it :moneybag:",
     "Another one for {first} :fire:",
@@ -61,8 +60,8 @@ HYPE_LARGE = (
     "Snicklepop!! {first} found the money :zap::moneybag:",
     "{first}, TELL US!! :paw_prints::fire:",
     "CLOSERS!! {first} found the money :fire::moneybag:",
-    "Heck YEAH {first}!! Don't get complacent :fire::fire:",
-    "{first}, TELL US!! And no complacency :fire::moneybag:",
+    "{first}, TELL US!! No complacency :fire::moneybag:",
+    "WINNER!! {first}, TELL US!! :fire::moneybag:",
 )
 
 # The top tier SHOUTS THE NAME, which is the one bit of the old wording that
@@ -72,6 +71,11 @@ HYPE_LARGE = (
 # (2026-09-16). It is the one the offices actually say, and a near-synonym in
 # a line meant to sound like them is the whole difference between borrowed
 # and invented.
+#
+# AND IT IS SAID ONCE PER TIER, SHORT. The first pass wrote six versions of
+# the same joke and Megan called them "too long / too redundant" -- which is
+# what a pool does to a gag: rotation makes the repetition visible in a way
+# one good line never is. A short one that lands beats four that explain.
 #
 # AND THIS IS THE ONE TIER WITH NO RIBBING IN IT. "Don't get complacent" is
 # funny after one sale and sour after somebody's best day of the month; the
@@ -83,6 +87,7 @@ HYPE_SUPER = (
     "{first} FOUND THE MONEY!!! :moneybag::fries::moneybag:",
     "{first} FOUND THE MONEY!!! :paw_prints::money_mouth_face:",
     "CLOSERS!!! {first} PLEASE TELL US :fire::money_mouth_face::fire:",
+    "WINNER!!! {first} FOUND THE MONEY :fire::money_mouth_face::fire:",
 )
 
 
@@ -225,9 +230,9 @@ class _Box(Shape):
         "{first} found the money! :fries:",
         "Heck yeah {first} :paw_prints:",
         "Closers!! {first} closed one :fire:",
-        "{first} closed one -- don't get complacent :eyes:",
-        "One for {first}. No complacency :fire:",
-        "{first} found the money! Don't get complacent now :moneybag:",
+        "WINNER!! {first} closed one :fire:",
+        "We got a WINNER -- {first} found the money :moneybag:",
+        "{first} closed one. No complacency :eyes:",
         "{first} just finished a contract! :fire:",
         "{first} just closed one :moneybag:",
         "Another contract for {first} :fire:",

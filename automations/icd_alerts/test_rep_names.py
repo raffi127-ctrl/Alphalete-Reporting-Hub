@@ -97,11 +97,21 @@ class WhatGoesOut(unittest.TestCase):
         self.assertNotIn("CALEB RICHARDS", lines[0])
 
     def test_the_hype_line_uses_it_too(self):
+        """The CORRECTED, CASED name has to reach the line -- not the raw
+        SaraPlus one, which arrives shouting.
+
+        IT NO LONGER HAS TO BE THE FIRST WORD. This asserted startswith(),
+        which pinned the sentence shape rather than the name, and broke the
+        moment a line began "WINNER!!" or "One for" (2026-09-16). What
+        matters is that Callista is named and CALLISA is not.
+        """
         from automations.shared import sale_hype as H
-        said = H.hype(self._show()("CALLISA FLYTHE"),
-                      {"Int": 1, "Int Up": 0, "DTV": 0, "NL": 0},
-                      dt.date(2026, 9, 14))
-        self.assertTrue(said.startswith("Callista "), said)
+        for day in range(1, 29):
+            said = H.hype(self._show()("CALLISA FLYTHE"),
+                          {"Int": 1, "Int Up": 0, "DTV": 0, "NL": 0},
+                          dt.date(2026, 9, day))
+            self.assertIn("Callista", said)
+            self.assertNotIn("CALLISA", said)
 
     def test_no_resolver_behaves_exactly_as_before(self):
         self.assertEqual(post.decide({"A B": 2}, {"A B": 1}),
