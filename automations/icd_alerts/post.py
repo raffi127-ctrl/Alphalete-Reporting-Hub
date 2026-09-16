@@ -164,8 +164,8 @@ def decide(records: Dict[str, int],
     return lines, merged, False
 
 
-def decide_sales(sales: Dict, last_posted: Optional[Dict]
-                 ) -> Tuple[List[str], Dict, bool]:
+def decide_sales(sales: Dict, last_posted: Optional[Dict],
+                 campaign=None) -> Tuple[List[str], Dict, bool]:
     """(hype lines, what to record as posted, was this a baseline).
 
     Same two rules the credit checks follow, for the same reasons. BASELINE:
@@ -180,7 +180,11 @@ def decide_sales(sales: Dict, last_posted: Optional[Dict]
     """
     from automations.shared import sale_hype as H
 
-    sales = {str(k): {m: int(v.get(m, 0) or 0) for m in H.METRICS}
+    # THE CAMPAIGN'S OWN METRIC NAMES, not AT&T's. Comparing a Box payload
+    # against ("Int", "Int Up", "DTV", "NL") read every rep as all-zero, so
+    # nothing ever "moved" and the channel stayed quiet with no error.
+    names = H.shape(campaign).metrics
+    sales = {str(k): {m: int(v.get(m, 0) or 0) for m in names}
              for k, v in (sales or {}).items()}
     if last_posted is None:
         return [], sales, True
@@ -200,15 +204,15 @@ def decide_sales(sales: Dict, last_posted: Optional[Dict]
                                 if any(m.values())]) > 1:
         return [], sales, True
 
-    prev = {str(k): {m: int(v.get(m, 0) or 0) for m in H.METRICS}
+    prev = {str(k): {m: int(v.get(m, 0) or 0) for m in names}
             for k, v in last_posted.items()}
     merged = {k: dict(v) for k, v in prev.items()}
     moved = []
     for rep, now_m in sorted(sales.items()):
-        was = prev.get(rep) or {m: 0 for m in H.METRICS}
-        if any(now_m.get(m, 0) > was.get(m, 0) for m in H.METRICS):
+        was = prev.get(rep) or {m: 0 for m in names}
+        if any(now_m.get(m, 0) > was.get(m, 0) for m in names):
             moved.append(rep)
-        merged[rep] = {m: max(now_m.get(m, 0), was.get(m, 0)) for m in H.METRICS}
+        merged[rep] = {m: max(now_m.get(m, 0), was.get(m, 0)) for m in names}
     return moved, merged, False
 
 
@@ -648,12 +652,14 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         sales = _loads(row[COL_SALES] if len(row) > COL_SALES else "") or {}
         last_sales = _loads(row[COL_LAST_POSTED_SALES]
                             if len(row) > COL_LAST_POSTED_SALES else "")
-        sold, merged_sales, sales_baseline = decide_sales(sales, last_sales)
+        sold, merged_sales, sales_baseline = decide_sales(
+            sales, last_sales, office.campaign)
         hype_lines = []
         if sold:
             from automations.shared import sale_hype as H
             hype_lines = [H.hype(show(rep) if show else rep,
-                                 sales.get(rep) or {}, day) for rep in sold]
+                                 sales.get(rep) or {}, day, office.campaign)
+                          for rep in sold]
 
         if baseline:
             log("%-10s first relay of %s -- recording %d rep(s), posting nothing"
@@ -1044,6 +1050,11 @@ FAULT_THREADS_PATH = (Path.home() / ".config" / "recruiting-report"
 # How a stage reads in a channel. The laptop sends the short word; nobody
 # reading #claudecorrections should have to know our module names.
 FAULT_STAGE_LABEL = {
+    # Not posted in the ops room at all -- see notify_faults. Here so a stage
+    # that somehow reaches the generic path still reads as English.
+    "signin-servicecloud": "signing into My Service Cloud",
+    "signin-saraplus": "signing into SaraPlus",
+    "signin-ownerville": "signing into OwnerVille",
     "install": "during setup",
     "sweep": "reading SaraPlus",
     "knocks": "reading OwnerVille",
@@ -1129,6 +1140,27 @@ def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
     stamp = dt.datetime.now().isoformat(timespec="seconds")
 
     for f in faults:
+        # A LOST SESSION IS NOT A LAPTOP FAULT. It is the one failure here
+        # that needs a person to walk to a specific computer, and posting it
+        # in the ops room puts it in front of everyone except them. The
+        # laptop names the system in its stage -- "signin-servicecloud" --
+        # and this sends the DM that asks the owner, Megan and Eve instead.
+        #
+        # ask_office_to_sign_in existed from 2026-09-15 and NOTHING CALLED
+        # IT, which is the same way the laptop and silent-machine detectors
+        # sat dead: written, tested, shipped, never reached. This is the call.
+        if str(f["stage"] or "").startswith("signin-"):
+            system = f["stage"].split("-", 1)[1]
+            try:
+                ask_office_to_sign_in(f["office"], f.get("first") or "",
+                                      system=system, send=True, book=book,
+                                      log=log)
+                tab.update_cell(f["rownum"], F_POSTED + 1, stamp)
+            except Exception as e:  # noqa: BLE001 — one must not stop the rest
+                log("could not ask %s to sign in: %s: %s"
+                    % (f["office"], type(e).__name__, str(e)[:100]))
+            continue
+
         office = O.get(f["office"])
         label = office.label if office else f["office"]
         where = FAULT_STAGE_LABEL.get(f["stage"], f["stage"] or "on the laptop")

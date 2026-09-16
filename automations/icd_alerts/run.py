@@ -27,7 +27,8 @@ import traceback
 import sys
 
 from automations.icd_alerts import config as C
-from automations.icd_alerts import ov_read, relay as R, sara_read, state as St
+from automations.icd_alerts import (box_read, ov_read, relay as R,
+                                    sara_read, state as St)
 
 
 def _log(msg: str) -> None:
@@ -163,7 +164,7 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date) -> int:
                 if str(r.get("campaign") or "att").lower()
                 not in ("nds", "energy", "b2b_box")), None)
     if att is None and C.enrollments():
-        _log("no AT&T campaign on this machine — knocks only")
+        _log("no SaraPlus campaign on this machine — sales come from elsewhere")
         return 0
     att_key = str((att or {}).get("office_key") or "")
 
@@ -217,6 +218,79 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date) -> int:
 
     St.save(St.remember(data, day, current))
     return 0
+
+
+def cmd_box(headless: bool, dry_run: bool, day: dt.date) -> int:
+    """Hand over today's Box sales, read from My Service Cloud.
+
+    THE HALF THAT EXISTED AND NEVER RAN. box_read was written, tested and
+    shipped in the package on 2026-09-15 and nothing called it -- so a Box
+    office's agent ticked all day, reported success, and relayed no sales at
+    all. Its own knocks board kept filling, which is what would have made it
+    look fine.
+
+    ONE READ PER SERVICE CLOUD ENROLLMENT. Like SaraPlus this is one signed-in
+    session per machine, but unlike SaraPlus a machine could hold two Box
+    campaigns, so each relays under its own key off the one read.
+
+    A LOST SESSION IS ITS OWN FAULT, not a sweep failure. It is the one thing
+    here that needs a person to walk to that computer, and it is reported as
+    such so the DM that asks them to goes out instead of a generic "something
+    broke on the laptop".
+    """
+    if not C.uses_servicecloud():
+        return 0
+    boxes = [r for r in C.enrollments()
+             if str(r.get("campaign") or "att").strip().lower()
+             in C.SERVICECLOUD_CAMPAIGNS]
+    if not boxes:
+        return 0
+
+    try:
+        read = box_read.read_day(day, headless=headless, log=_log)
+    except box_read.SignInNeeded as e:
+        print("\n%s" % e)
+        # The stage names the SYSTEM. post.notify_faults reads it to send the
+        # sign-in DM -- to the owner, Megan and Eve -- rather than posting a
+        # laptop fault nobody can act on.
+        _report("signin-servicecloud", e)
+        return 1
+    except box_read.AccountProblem as e:
+        print("\n%s" % e)
+        _report("box", e)
+        return 1
+    except RuntimeError as e:
+        print("\n%s" % e)
+        _report("box", e)
+        return 1
+    except Exception as e:  # noqa: BLE001 — see cmd_once
+        _log("unexpected failure: %s" % traceback.format_exc())
+        _report("box", e)
+        return 1
+
+    if read.get("unknown"):
+        # NOT FATAL, BUT NOT SILENT. Box adding a substatus we have no rule
+        # for would otherwise drop those contracts out of every Box number
+        # with nothing to show for it.
+        _report("box", RuntimeError(
+            "My Service Cloud has substatuses nobody has ruled on: %s. Sales "
+            "in them are being counted as nothing until somebody says what "
+            "they are." % ", ".join(read["unknown"])))
+
+    worst = 0
+    for rec in boxes:
+        key = str(rec.get("office_key") or "")
+        if len(boxes) > 1:
+            _log("--- %s ---" % (key or "this office"))
+        try:
+            R.send(read["records"], day, sales=read["sales"], dry_run=dry_run,
+                   office_key=key, log=_log)
+        except R.RelayError as e:
+            # Not fatal: the window is re-read every sweep, so the next one
+            # hands over the whole of it again.
+            _log("could not send the sales this time: %s" % e)
+            worst = 1
+    return worst
 
 
 def cmd_knocks(headless: bool, dry_run: bool, day: dt.date) -> int:
@@ -304,6 +378,8 @@ def main(argv=None) -> int:
                     help="run one sweep: credit checks, then knocks")
     ap.add_argument("--knocks", action="store_true",
                     help="hand over today's knocks only")
+    ap.add_argument("--box", action="store_true",
+                    help="hand over today's My Service Cloud sales only")
     ap.add_argument("--dry-run", action="store_true",
                     help="with --once: read and show, change nothing")
     ap.add_argument("--headful", action="store_true",
@@ -324,6 +400,8 @@ def main(argv=None) -> int:
         return cmd_check(headless)
     if args.knocks:
         return cmd_knocks(headless, args.dry_run, day)
+    if args.box:
+        return cmd_box(headless, args.dry_run, day)
     if args.once:
         if args.if_due and not C.in_selling_window():
             # Quiet on purpose. This fires every 15 minutes on somebody's
@@ -333,9 +411,14 @@ def main(argv=None) -> int:
         # with different outages, and a credit-check sweep that worked must not
         # be thrown away because OwnerVille was slow -- nor the reverse. Each
         # reports its own failure and the run ends unhappy if either did.
+        # THREE SYSTEMS, INDEPENDENTLY. SaraPlus, My Service Cloud and
+        # OwnerVille have different outages, and a read that worked must not
+        # be thrown away because another was slow. Each reports its own
+        # failure and the run ends unhappy if any did.
         rc = cmd_once(headless, args.dry_run, day)
+        rb = cmd_box(headless, args.dry_run, day)
         rk = cmd_knocks(headless, args.dry_run, day)
-        return rc or rk
+        return rc or rb or rk
     ap.print_help()
     return 2
 

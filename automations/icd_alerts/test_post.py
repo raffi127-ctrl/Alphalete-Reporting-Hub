@@ -616,6 +616,39 @@ class FaultReporting(unittest.TestCase):
         self.assertEqual(len(tops), 1, "one top-level post per office")
         self.assertIn("Also reading OwnerVille", posts[-1][0])
 
+    def test_a_lost_session_asks_the_office_instead_of_posting_to_ops(self):
+        """ask_office_to_sign_in was written, tested and shipped on
+        2026-09-15 and NOTHING CALLED IT -- the same way the laptop and
+        silent-machine detectors sat dead. This drives the real path so the
+        wiring cannot rot out again.
+
+        It must not reach the ops room: the one person who can fix it is the
+        one standing next to that computer, and OPS_CHANNEL is everyone else.
+        """
+        asked = []
+        with mock.patch.object(P, "ask_office_to_sign_in",
+                               lambda *a, **k: asked.append((a, k))):
+            _out, posts, tab = self._run(
+                [self._row(stage="signin-servicecloud",
+                           summary="signed out", detail="")])
+        self.assertEqual(len(asked), 1, "nothing asked the office to sign in")
+        self.assertEqual(asked[0][0][0], "kash")
+        self.assertEqual(asked[0][1]["system"], "servicecloud",
+                         "the DM has to name the right system to be actionable")
+        self.assertTrue(asked[0][1]["send"])
+        self.assertEqual(posts, [], "a lost session is not ops-room news")
+        tab.update_cell.assert_called_once()
+
+    def test_each_system_carries_its_own_remedy_through(self):
+        for stage, system in (("signin-saraplus", "saraplus"),
+                              ("signin-ownerville", "ownerville")):
+            asked = []
+            with mock.patch.object(P, "ask_office_to_sign_in",
+                                   lambda *a, **k: asked.append(k)):
+                self._run([self._row(stage=stage, detail="")])
+            self.assertEqual(asked[0]["system"], system, stage)
+            self.assertIn(system, P.SYSTEMS, "no remedy text for " + system)
+
     def test_the_row_is_marked_so_it_is_not_repeated(self):
         _out, _posts, tab = self._run([self._row()])
         tab.update_cell.assert_called_once()

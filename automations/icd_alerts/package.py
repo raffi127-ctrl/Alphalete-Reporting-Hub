@@ -55,6 +55,12 @@ AGENT_FILES = [
     # The Box half of the same job. Ships for the same reason sara_read does:
     # the read happens on the office's own machine, against their own account.
     "automations/icd_alerts/box_read.py",
+    # THE REMEDY ITSELF. The sign-in DM tells the office to open Lucy's own
+    # browser on that computer and sign in -- and without this file the one
+    # instruction we give them fails on arrival, at the exact moment their
+    # sales have stopped. It was left out of the bundle when it was written
+    # (2026-09-15).
+    "automations/icd_alerts/box_signin.py",
     "automations/icd_alerts/state.py",
     "automations/icd_alerts/run.py",
     "automations/icd_alerts/dialogs.py",

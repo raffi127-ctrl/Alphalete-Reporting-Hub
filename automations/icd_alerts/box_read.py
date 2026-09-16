@@ -122,9 +122,23 @@ def tally_window(rows: List[Dict], days: List[dt.date]) -> Dict:
         if SC.is_logged(status):
             bucket["records"][rep] = bucket["records"].get(rep, 0) + 1
         if SC.is_completed(status):
-            got = bucket["sales"].setdefault(rep, {"Sales": 0, "Volume": 0})
+            got = bucket["sales"].setdefault(
+                rep, {"Sales": 0, "Volume": 0, "Big": 0, "Huge": 0})
             got["Sales"] += 1
             got["Volume"] += _volume(row.get("Adjusted Annual Volume"))
+            # HOW LOUD, decided per CONTRACT and carried as counts. The bar is
+            # one contract's term and volume, not the rep's day, so it cannot
+            # be worked out from the totals afterwards.
+            #
+            # A HUGE CONTRACT IS ALSO A BIG ONE -- it meets the term rule and
+            # then some. Making them exclusive would drop a rep's Big count as
+            # their contracts got larger, the same trap as working-vs-sold.
+            loud = SC.contract_tier(row.get(SC.COL_TERM),
+                                    row.get("Adjusted Annual Volume"))
+            if loud:
+                got["Big"] += 1
+            if loud == "huge":
+                got["Huge"] += 1
 
     for d in out:
         out[d]["unknown"] = []
@@ -143,31 +157,14 @@ def tally(rows: List[Dict], day: dt.date) -> Dict:
     A rep with no name is skipped rather than bucketed under "". An unnamed
     row is a grid problem; inventing a rep out of it would put sales on a
     board under a blank heading.
+
+    ONE DAY IS A WINDOW OF ONE. This used to be its own copy of the loop
+    below, and the two drifted the moment a rule changed: "Big" was added to
+    the window's sale and not to this one, so a single-day read would have
+    reported every sale as ordinary (2026-09-15). There is now one rule and
+    one place to change it.
     """
-    records: Dict[str, int] = {}
-    sales: Dict[str, Dict[str, int]] = {}
-    seen_status: List[str] = []
-
-    for row in rows or []:
-        if initiated_on(row.get(SC.COL_INITIATED)) != day:
-            continue
-        rep = str(row.get(SC.COL_AGENT) or "").strip()
-        if not rep:
-            continue
-        status = str(row.get(SC.COL_SUBSTATUS) or "").strip()
-        seen_status.append(status)
-
-        if SC.is_logged(status):
-            records[rep] = records.get(rep, 0) + 1
-        if SC.is_completed(status):
-            got = sales.setdefault(rep, {"Sales": 0, "Volume": 0})
-            got["Sales"] += 1
-            got["Volume"] += _volume(row.get("Adjusted Annual Volume"))
-
-    return {"records": records, "sales": sales,
-            # A substatus nobody has ruled on. Reported so Box adding one
-            # cannot quietly drop those contracts out of every Box number.
-            "unknown": SC.unknown_statuses(seen_status)}
+    return tally_window(rows, [day])[day]
 
 
 def _context(p, headless: bool):
@@ -202,6 +199,11 @@ def row_from_edge(edge: Dict) -> Dict:
         SC.COL_INITIATED: edge.get(SC.FIELD_INITIATED) or "",
         SC.COL_SUBSTATUS: (sub or {}).get("substatus") or "",
         "Adjusted Annual Volume": edge.get(SC.FIELD_VOLUME) or 0,
+        # MONTHS. Half of what makes a sale worth shouting about, and absent
+        # from this reader until 2026-09-15 -- see SC.is_big. Missing is kept
+        # as "" rather than 0 so is_big can tell "no term on the wire" apart
+        # from "a term of zero".
+        SC.COL_TERM: edge.get(SC.FIELD_TERM, ""),
         SC.COL_BUSINESS: edge.get(SC.FIELD_BUSINESS) or "",
     }
 

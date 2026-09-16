@@ -35,11 +35,20 @@ from typing import Dict, Optional
 from automations.icd_alerts import config as C
 
 TIMEOUT_SECONDS = 30
-AGENT_VERSION = "icd_alerts/3"          # 2 = sales, 3 = names its machine
+AGENT_VERSION = "icd_alerts/4"   # 2 = sales, 3 = names its machine,
+                                 # 4 = reads Box sales at all
 # THE VERSION IS HOW WE SEE WHO HAS UPDATED, from the relay row, without
 # asking anybody. Kash sat on /1 for a day with no sales and it was only
 # visible because somebody went looking at the right column.
+# AT&T's four, kept as the name older code imports. The campaign's own shape
+# is what payload() actually sends -- see _sale_metrics.
 SALE_METRICS = ("Int", "Int Up", "DTV", "NL")
+
+
+def _sale_metrics(rec: Optional[Dict] = None):
+    """The metric names this enrollment's sales come in."""
+    from automations.shared import sale_hype as H
+    return H.shape((rec or {}).get("campaign")).metrics
 MAX_REDIRECTS = 5
 
 
@@ -252,10 +261,15 @@ def payload(records: Dict[str, int], day: dt.date,
         "key": rec["relay_key"],
         "day": day.isoformat(),
         "records": {str(k): int(v) for k, v in sorted(records.items())},
-        # {REP: {Int, Int Up, DTV, NL}} -- the same four numbers the AO board
-        # keeps. Sent as the totals so far today, like the credit checks: what
-        # is NEW is worked out on our side, where the last-posted state lives.
-        "sales": {str(k): {m: int(v.get(m, 0) or 0) for m in SALE_METRICS}
+        # {REP: {...}} -- the metric names THIS CAMPAIGN's sales come in. On
+        # AT&T that is the same four the AO board keeps; on Box it is Sales
+        # and Volume. Filtering to a fixed four was silently emptying every
+        # Box payload: the reader found the sales, the wire threw them away,
+        # and nothing anywhere reported a fault (2026-09-15).
+        #
+        # Sent as the totals so far today, like the credit checks: what is NEW
+        # is worked out on our side, where the last-posted state lives.
+        "sales": {str(k): {m: int(v.get(m, 0) or 0) for m in _sale_metrics(rec)}
                   for k, v in sorted((sales or {}).items())},
         "agent": AGENT_VERSION,
         # WHICH computer this came from. An older relay ignores the key, so an

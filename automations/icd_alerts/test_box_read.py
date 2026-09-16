@@ -13,6 +13,7 @@ import datetime as dt
 import unittest
 
 from automations.icd_alerts import box_read as B
+from automations.shared import servicecloud as SC
 
 DAY = dt.date(2026, 9, 15)
 
@@ -81,7 +82,7 @@ class WorkingCountsEveryLiveContract(unittest.TestCase):
         self.assertEqual(out["records"]["Sohaib Hafeez"], 3,
                          "three live contracts; the cancelled one is not work")
         self.assertEqual(out["sales"]["Sohaib Hafeez"],
-                         {"Sales": 1, "Volume": 10099})
+                         {"Sales": 1, "Volume": 10099, "Big": 1, "Huge": 0})
 
 
 class OnlyTodaysRows(unittest.TestCase):
@@ -117,7 +118,7 @@ class BadRowsDoNotBecomeBadNumbers(unittest.TestCase):
     def test_an_unreadable_volume_is_zero_not_a_guess(self):
         out = B.tally([_row("Max Allen", "TPV Passed", volume="—")], DAY)
         self.assertEqual(out["sales"]["Max Allen"],
-                         {"Sales": 1, "Volume": 0})
+                         {"Sales": 1, "Volume": 0, "Big": 1, "Huge": 0})
 
     def test_a_status_nobody_ruled_on_is_reported(self):
         out = B.tally([_row("Max Allen", "Awaiting QC")], DAY)
@@ -245,7 +246,7 @@ class TheApiNamesAreNotTheScreenNames(unittest.TestCase):
     def test_it_feeds_straight_into_tally(self):
         out = B.tally([B.row_from_edge(self.EDGE)], DAY)
         self.assertEqual(out["sales"]["Max Allen"],
-                         {"Sales": 1, "Volume": 51000})
+                         {"Sales": 1, "Volume": 51000, "Big": 1, "Huge": 1})
 
     def test_a_missing_agent_does_not_invent_a_rep(self):
         edge = dict(self.EDGE, agent=None)
@@ -309,7 +310,75 @@ class TheScreenAndTheWireDisagreeAboutDates(unittest.TestCase):
             "adjusted_annual_volume": 51000})]
         out = B.tally(rows, DAY)
         self.assertEqual(out["sales"]["Max Allen"],
-                         {"Sales": 1, "Volume": 51000})
+                         {"Sales": 1, "Volume": 51000, "Big": 1, "Huge": 1})
 
     def test_a_service_start_still_does_not_parse(self):
         self.assertIsNone(B.initiated_on("APR 2027"))
+
+
+class HowLoudIsDecidedPerContract(unittest.TestCase):
+    """Carlos Hidalgo, 2026-09-15, asked what makes a Box sale worth shouting
+    about:
+
+        Normal: any sale
+        Big:    24 month contract
+        Huge:   24 month contract, 20k KWH +
+
+    Two things in that had been got wrong here. The volume is ENERGY -- the
+    order log's column is "Sales (All) kWH+Therms" -- and a contract has a
+    TERM in months, which this reader was not reading at all.
+    """
+
+    def _one(self, term, volume):
+        rows = [_row("Max Allen", "TPV Passed", volume=volume)]
+        rows[0][SC.COL_TERM] = term
+        return B.tally(rows, DAY)["sales"]["Max Allen"]
+
+    def test_long_term_and_big_volume_is_huge(self):
+        got = self._one(36, "51,000")
+        self.assertEqual((got["Big"], got["Huge"]), (1, 1))
+
+    def test_long_term_alone_is_big(self):
+        got = self._one(36, "900")
+        self.assertEqual((got["Big"], got["Huge"]), (1, 0))
+
+    def test_a_short_contract_is_neither_however_large(self):
+        got = self._one(12, "99,000")
+        self.assertEqual((got["Big"], got["Huge"]), (0, 0))
+        self.assertEqual(got["Sales"], 1, "it is still a sale")
+
+    def test_twenty_four_months_is_the_bar_itself(self):
+        self.assertEqual(self._one(24, "20,000")["Huge"], 1)
+        self.assertEqual(self._one(23, "20,000")["Big"], 0)
+
+    def test_a_missing_term_stays_loud_rather_than_going_quiet(self):
+        """If the API stops sending a term, failing every contract would read
+        as ordinary and the channel would flatten with nothing reporting a
+        fault. Too loud is visible; too quiet is not."""
+        rows = [_row("Max Allen", "TPV Passed", volume="51,000")]
+        rows[0].pop(SC.COL_TERM, None)
+        self.assertEqual(B.tally(rows, DAY)["sales"]["Max Allen"]["Huge"], 1)
+
+    def test_volume_is_never_added_to_a_count(self):
+        from automations.shared import sale_hype as H
+        m = {"Sales": 2, "Volume": 69248, "Big": 2, "Huge": 1}
+        self.assertEqual(H.rep_total(m, "b2b_box"), 2,
+                         "a rep just scored sixty-nine thousand sales")
+
+    def test_the_line_gets_louder_by_carloss_rule(self):
+        from automations.shared import sale_hype as H
+        say = lambda m: H.tier(m, "b2b_box")
+        self.assertEqual(say({"Sales": 1, "Volume": 900, "Big": 0, "Huge": 0}),
+                         "regular")
+        self.assertEqual(say({"Sales": 1, "Volume": 900, "Big": 1, "Huge": 0}),
+                         "large")
+        self.assertEqual(say({"Sales": 1, "Volume": 51000, "Big": 1, "Huge": 1}),
+                         "super")
+
+    def test_the_breakdown_says_kwh_not_dollars(self):
+        from automations.shared import sale_hype as H
+        said = H.breakdown({"Sales": 1, "Volume": 51000, "Big": 1, "Huge": 1},
+                           "b2b_box")
+        self.assertIn("51,000", said)
+        self.assertIn("kWh", said)
+        self.assertNotIn("$", said)

@@ -70,6 +70,7 @@ COL_BUSINESS = "Business Name"
 COL_AGENT = "Agent"               # the REP. per-rep boards are possible.
 COL_INITIATED = "Initiated Date"  # when it was SOLD -- "09/15/2026 06:13 PM"
 COL_COMMODITY = "Commodity"       # Electricity, so far
+COL_TERM = "Term"                 # months
 COL_SUBSTATUS = "Contract Substatus"
 
 # NOT the sale date: "Start Date" is when the SERVICE starts (APR 2027, JUN
@@ -417,8 +418,70 @@ def sign_in(page, email: str, password: str, *,
 # So Box needs its own tier rule before the alerts are worth switching on, and
 # what makes a Box sale loud -- a big single contract, several in a day, a
 # volume threshold -- is a question for somebody who sells them.
-BOX_METRICS = ("Sales", "Volume")
-BOX_COUNTED = ("Sales",)      # what a total may sum. NOT Volume.
+BOX_METRICS = ("Sales", "Volume", "Big", "Huge")
+BOX_COUNTED = ("Sales",)   # what a total may sum. NOT Volume, NOT the tiers.
+
+# --- WHAT MAKES A BOX SALE LOUD ---------------------------------------------
+#
+# ANSWERED BY CARLOS HIDALGO, 2026-09-15, against the suggested rule:
+#
+#     Normal: any sale
+#     Big:    24 month contract
+#     Huge:   24 month contract, 20k KWH +
+#
+# TWO THINGS THAT ANSWER SETTLED BEYOND THE NUMBERS. First, the volume is
+# ENERGY, not money: the order log's column is "Sales (All) kWH+Therms" and
+# Box is an energy broker -- which is also why its statuses are TPV, supplier
+# and broker. Rendering it with a dollar sign would have been wrong on every
+# line. Second, a contract has a TERM, which nothing here was reading.
+#
+# THE TERM IS IN MONTHS, so "24 month" is the literal value. In the order log
+# it is 36 on 5,015 of 6,514 contracts and 24 on 902.
+#
+# IT IS DECIDED PER CONTRACT, NOT PER REP-DAY. AT&T's tier reads the shape of
+# a rep's whole day; this reads one contract, which cannot be recovered from a
+# day's totals afterwards. So the reader counts qualifying contracts as it
+# goes and sends the counts.
+#
+# WHAT THIS ACTUALLY FIRES ON, measured against 3,627 real sold contracts
+# (output/box_order_log_base_2026-08-19.csv): 94% are 24 months or longer and
+# 68% also clear 20k kWh. So on these numbers almost every sale is at least
+# "Big" and two in three are "Huge". That may be exactly right for Box, where
+# a day is a handful of large contracts rather than AT&T's steady stream --
+# but it is the opposite of how AT&T's tiers behave, and it is Megan's call
+# rather than something to quietly adjust. Both numbers are one edit here.
+BIG_TERM_MONTHS = 24
+HUGE_VOLUME_KWH = 20000
+VOLUME_UNIT = "kWh"
+
+
+def _months(term) -> int:
+    try:
+        return int(float(str(term).strip() or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _kwh(volume) -> float:
+    try:
+        return float(str(volume).replace(",", "").strip() or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def contract_tier(term, volume) -> str:
+    """'huge', 'big' or '' for ONE contract.
+
+    A TERM WE CANNOT READ COUNTS AS LONG ENOUGH rather than as too short. If
+    the API stops returning one, treating it as 0 would fail every contract,
+    every sale would come out ordinary, and the channel would flatten with
+    nothing anywhere reporting a fault -- the exact silent failure this whole
+    module keeps running into. Too loud is visible; too quiet is not.
+    """
+    months = _months(term)
+    if months and months < BIG_TERM_MONTHS:
+        return ""
+    return "huge" if _kwh(volume) >= HUGE_VOLUME_KWH else "big"
 
 
 # --- THE API BEHIND THE GRID ------------------------------------------------
@@ -441,6 +504,7 @@ FIELD_AGENT = "agent"                 # {name: {first_name, last_name}, email}
 FIELD_INITIATED = "created_date"      # the UI's "Initiated Date" -- the SALE date
 FIELD_SUBSTATUS = "contract_substatus"   # {substatus, substatus_alias, ...}
 FIELD_VOLUME = "adjusted_annual_volume"
+FIELD_TERM = "term"                   # MONTHS (36, 24, 12...), not years
 FIELD_CONTRACT_ID = "contract_id"
 FIELD_BUSINESS = "business_name"
 #
