@@ -165,6 +165,24 @@ OFFICES: Dict[str, AlertOffice] = {
         day_start="13:30", day_end="20:30",
         sat_start="11:15", sat_end="16:00",
     ),
+    # A STRAY FROM A FIRST SIGN-UP ATTEMPT, switched off (Megan, 2026-09-16).
+    # Khalil enrolled twice and installed as "khalil-nds", which is the live
+    # office; this key has never relayed and never will. Left active it would
+    # have reported itself as a quiet office every morning forever, and a
+    # standing false alarm is how the real ones stop being read.
+    #
+    # `active` is the revoke switch and the code table wins over the sign-up
+    # tab, so this needs no edit to anybody's sheet. The row is otherwise a
+    # copy of what he filled in, so nothing here contradicts the form.
+    "khalil": AlertOffice(
+        key="khalil", owner="Khalil Mansour", label="Khalil's Local Office",
+        channels=(),
+        timezone="America/Chicago", active=False, platform="mac",
+        slack_user_id="U045F9JCPJT",     # Khalil Mansour
+        day_start="13:30", day_end="21:00",
+        sat_start="10:45", sat_end="20:00", saturday=True,
+        campaign="nds",
+    ),
 }
 
 
