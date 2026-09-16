@@ -31,6 +31,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from automations.icd_alerts import offices as O
 from automations.shared.credit_check_line import records_line
+from automations.shared.sale_hype import shape as H_SHAPE
 from automations.icd_alerts import rep_names as RN
 
 # The relay workbook: 'Lucy Access App' (Megan supplied it 2026-09-11). The
@@ -646,6 +647,14 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         last = _loads(row[COL_LAST_POSTED] if len(row) > COL_LAST_POSTED else "")
         show = RN.resolver(name_fixes, key)
         lines, merged, baseline = decide(records, last, show)
+        # DOES THE PRE-SALE STEP COUNT ANYTHING REAL FOR THIS CAMPAIGN? On
+        # Box it does not: one deal can leave several draft contracts behind
+        # it, so the number would be wrong every time (Ryan McSpadden,
+        # 2026-09-16). The state is still RECORDED -- `merged` goes to the
+        # sheet either way -- so turning it back on announces what is new
+        # from that moment rather than replaying the day.
+        if not H_SHAPE(office.campaign).presale_ping:
+            lines = []
 
         # Sales ride the same row and the same rules. An office still on the
         # older agent sends none, and this stays empty rather than erroring.

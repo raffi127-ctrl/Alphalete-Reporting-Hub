@@ -50,6 +50,15 @@ HYPE_REGULAR = (
 class Shape:
     """The metric names one campaign's sales come in, and how to say them."""
 
+    # DOES THE STEP BEFORE A SALE MEAN ANYTHING FOR THIS CAMPAIGN? On AT&T a
+    # credit check is one customer, one event, and the fast ping people
+    # actually watch. Not every system counts that cleanly -- see _Box.
+    presale_ping = True
+
+    # The lines a normal sale gets. AT&T's talk about "the board"; a campaign
+    # whose product is not board-shaped says it its own way.
+    regular_lines = HYPE_REGULAR
+
     def __init__(self, metrics, counted, label, money=()):
         self.metrics = tuple(metrics)
         self.counted = tuple(counted)   # what "how many sales" adds up
@@ -132,6 +141,30 @@ class _Box(Shape):
     qualifying contracts as it goes and sends the counts. See
     servicecloud.contract_tier for the bar and for what it fires on.
     """
+
+    # RYAN McSPADDEN, 2026-09-16: "Can we hold off on the before sale posts?
+    # Box has a glitch where it makes us generate multiple contracts so the
+    # posts would be way off."
+    #
+    # So the pre-sale count counts nothing real on Box -- one deal can leave
+    # several draft contracts behind it. An alert whose number is wrong is
+    # worse than no alert, because it costs the ones that are right their
+    # credibility. Off for the CAMPAIGN, not just his office: the glitch is
+    # Box's and Carlos sells the same product.
+    #
+    # THE SALE PING STAYS. A contract that reaches TPV is one real thing.
+    presale_ping = False
+
+    # "finished a contract", not "put one on the board" -- Ryan again: 'just
+    # have it say "Omar just finished a contract!"'. Box sells contracts; the
+    # board language is AT&T's.
+    regular_lines = (
+        "{first} just finished a contract! :fire:",
+        "{first} just closed one :moneybag:",
+        "Another contract for {first} :fire:",
+        "{first} keeps going :chart_with_upwards_trend:",
+        "{first} got one done :dart:",
+    )
 
     def tier(self, metrics):
         if int(metrics.get("Huge", 0) or 0) >= 1:
@@ -239,8 +272,9 @@ def hype(name: str, metrics: Dict[str, int], day: dt.date,
     if t == "large":
         return "%s, TELL US!! :fire::moneybag::fire:" % first
     seed = "%s|%s|%d" % (name, day.isoformat(), sh.total(metrics))
-    idx = zlib.crc32(seed.encode("utf-8")) % len(HYPE_REGULAR)
-    return HYPE_REGULAR[idx].format(first=first)
+    pool = sh.regular_lines or HYPE_REGULAR
+    idx = zlib.crc32(seed.encode("utf-8")) % len(pool)
+    return pool[idx].format(first=first)
 
 
 def breakdown(metrics: Dict[str, int], campaign=None) -> str:

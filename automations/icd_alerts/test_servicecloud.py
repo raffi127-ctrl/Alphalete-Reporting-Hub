@@ -1464,3 +1464,74 @@ class TheAuthIsBorrowedWhereTheBrowserActuallySendsIt(unittest.TestCase):
         self.assertIn("term", B.GRAPHQL_QUERY)
         self.assertIn("adjusted_annual_volume", B.GRAPHQL_QUERY)
         self.assertIn("contract_substatus", B.GRAPHQL_QUERY)
+
+
+class BoxDoesNotAnnounceTheStepBeforeASale(unittest.TestCase):
+    """Ryan McSpadden, 2026-09-16, after seeing his first day of real Box
+    data: "Can we hold off on the before sale posts? Box has a glitch where
+    it makes us generate multiple contracts so the posts would be way off."
+
+    So the pre-sale count counts nothing real on Box -- one deal can leave
+    several draft contracts behind it. An alert whose number is wrong is
+    worse than no alert, because it costs the ones that are right their
+    credibility.
+    """
+
+    def test_box_suppresses_the_presale_ping(self):
+        from automations.shared import sale_hype as H
+        self.assertFalse(H.shape("b2b_box").presale_ping)
+
+    def test_att_and_nds_still_have_theirs(self):
+        """A credit check is one customer and one event -- it is the fast
+        ping those offices actually watch."""
+        from automations.shared import sale_hype as H
+        self.assertTrue(H.shape("att").presale_ping)
+        self.assertTrue(H.shape("nds").presale_ping)
+
+    def test_the_poster_honours_it(self):
+        import inspect
+        from automations.icd_alerts import post as P
+        src = inspect.getsource(P.run)
+        self.assertIn("presale_ping", src)
+
+    def test_the_state_is_still_recorded_while_it_is_off(self):
+        """`merged` must reach the sheet either way, or turning it back on
+        would replay the whole day as though it had just happened."""
+        import inspect
+        from automations.icd_alerts import post as P
+        src = inspect.getsource(P.run)
+        cut = src[src.index("presale_ping"):]
+        self.assertNotIn("merged = {}", cut[:200],
+                         "clearing the state is what causes a replay")
+
+    def test_the_sale_line_speaks_box_not_board(self):
+        """'just have it say "Omar just finished a contract!"' -- Box sells
+        contracts; "on the board" is AT&T's word."""
+        from automations.shared import sale_hype as H
+        import datetime as _dt
+        seen = set()
+        for n in range(1, 40):
+            seen.add(H.hype("Omar Sanchez",
+                            {"Sales": 1, "Volume": 900, "Big": 0, "Huge": 0},
+                            _dt.date(2026, 9, n % 28 + 1), "b2b_box"))
+        joined = " ".join(seen).lower()
+        self.assertIn("contract", joined)
+        self.assertNotIn("on the board", joined)
+
+    def test_att_wording_is_untouched(self):
+        from automations.shared import sale_hype as H
+        import datetime as _dt
+        seen = " ".join(
+            H.hype("Max Allen", {"Int": 1, "Int Up": 0, "DTV": 0, "NL": 0},
+                   _dt.date(2026, 9, n % 28 + 1), "att") for n in range(1, 40))
+        self.assertIn("board", seen.lower())
+
+    def test_the_loud_tiers_still_fire_for_box(self):
+        """Carlos's escalation is a separate ask from Ryan's wording one, and
+        rewording must not quietly drop it."""
+        from automations.shared import sale_hype as H
+        import datetime as _dt
+        loud = H.hype("Omar Sanchez",
+                      {"Sales": 2, "Volume": 138240, "Big": 2, "Huge": 2},
+                      _dt.date(2026, 9, 16), "b2b_box")
+        self.assertIn("TELL US", loud)
