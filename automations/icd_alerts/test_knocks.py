@@ -624,3 +624,51 @@ class ChanComparisonTests(unittest.TestCase):
     def test_warming_is_its_own_command(self):
         from automations.icd_alerts import chan
         self.assertTrue(callable(chan.warm))
+
+
+class AFrozenBoardMustNotKeepPosting(unittest.TestCase):
+    """Khalil Mansour, 2026-09-16: his agent died at 16:58 and his 5:12 board
+    and 5:20 text both went out carrying 16:58's knocks, with a fresh
+    timestamp in the title. Nobody reading them could have known.
+
+    Nothing here ever asked how old the relayed row was.
+    """
+
+    def _stamp(self, minutes_ago, fmt="%m/%d/%Y %H:%M:%S"):
+        import datetime as _dt
+        return (_dt.datetime.now()
+                - _dt.timedelta(minutes=minutes_ago)).strftime(fmt)
+
+    def test_a_fresh_reading_draws_a_board(self):
+        from automations.icd_alerts import knocks_post as K
+        self.assertFalse(K._too_old(self._stamp(3)))
+
+    def test_a_reading_from_a_stopped_machine_does_not(self):
+        from automations.icd_alerts import knocks_post as K
+        self.assertTrue(K._too_old(self._stamp(40)))
+
+    def test_the_sheets_date_format_is_the_one_it_parses(self):
+        """THE BUG THIS TEST EXISTS FOR. The first version read ISO only, so
+        every 'Received At' came back unparseable -- and with the check
+        below that silenced EVERY office's board at once, not just a stale
+        one. Caught by asking what the column actually contains."""
+        from automations.icd_alerts import knocks_post as K
+        self.assertIsNotNone(K._received_at("9/16/2026 16:58:01"))
+
+    def test_the_machines_own_iso_clock_also_parses(self):
+        from automations.icd_alerts import knocks_post as K
+        self.assertIsNotNone(K._received_at("2026-09-16T16:57:58"))
+
+    def test_an_unreadable_stamp_carries_on_rather_than_silencing(self):
+        """The costs are not symmetric: a board that might be slightly old is
+        recoverable, and silencing every office because of a date format is
+        not. The quiet-machine nudge still reports a machine that stopped."""
+        from automations.icd_alerts import knocks_post as K
+        for bad in ("", "garbage", "not a date"):
+            self.assertFalse(K._too_old(bad), bad)
+
+    def test_the_threshold_is_below_the_quiet_office_one(self):
+        """The board should go silent BEFORE we start telling people an
+        office is down, not after."""
+        from automations.icd_alerts import knocks_post as K, post as P
+        self.assertLess(K.STALE_MINUTES, P.STALE_MINUTES)

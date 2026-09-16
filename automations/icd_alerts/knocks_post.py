@@ -30,6 +30,13 @@ KNOCKS_TAB = "ICD Knocks"
 KN_OFFICE, KN_DAY, KN_ROWS, KN_TRACKER, KN_COUNT = 0, 1, 2, 3, 4
 KN_RECEIVED, KN_LOCAL, KN_POSTED = 5, 6, 7
 
+# HOW OLD A READING MAY BE AND STILL BE WORTH DRAWING. The agent relays every
+# couple of minutes, so twenty-five is a dozen missed sweeps -- not a slow
+# tick, a machine that has stopped. Below the 45 that marks an office QUIET,
+# deliberately: the board should go silent before we start telling people an
+# office is down, not after.
+STALE_MINUTES = 25
+
 GAP_THRESHOLD_MIN = 15
 OUT_DIR = Path.home() / ".config" / "recruiting-report" / "icd_knocks_cards"
 
@@ -101,6 +108,42 @@ def _parse_when(text: str) -> Optional[dt.datetime]:
     return None
 
 
+def _received_at(text: str) -> Optional[dt.datetime]:
+    """When the relay took this row in. None when it cannot be read.
+
+    TWO FORMATS, BECAUSE THE SHEET WRITES ONE AND THE MACHINE WRITES THE
+    OTHER. 'Received At' comes back from Sheets as 9/16/2026 16:58:01 and the
+    machine's own clock column is ISO. Reading only ISO -- which is what the
+    first version of this did -- makes every row unparseable, and with the
+    staleness check below that silences EVERY office's board at once. Caught
+    before it shipped, on 2026-09-16, by asking what the column actually
+    contains rather than assuming.
+    """
+    text = (text or "").strip()
+    for fmt in ("%m/%d/%Y %H:%M:%S", "%m/%d/%Y %H:%M",
+                "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return dt.datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _too_old(text: str) -> bool:
+    """Is this reading too old to draw a board from?
+
+    UNREADABLE MEANS CARRY ON, not stop. A format we cannot parse is our
+    problem, and the cost of guessing wrong in each direction is not
+    symmetric: posting a board that might be slightly old is recoverable, and
+    silencing every office at once because of a date format is not. The
+    quiet-machine nudge still reports a machine that has actually stopped.
+    """
+    when = _received_at(text)
+    if when is None:
+        return False
+    return P.is_stale(when, minutes=STALE_MINUTES)
+
+
 def _posted_map(cell: str) -> Dict[str, dt.datetime]:
     try:
         raw = json.loads(cell or "{}")
@@ -147,6 +190,27 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         office = O.get(key)
         if not office or not O.is_enrolled(key):
             log("%-10s relayed knocks but is not enrolled -- ignored" % key)
+            continue
+
+        # A BOARD BUILT ON FROZEN NUMBERS IS WORSE THAN NO BOARD.
+        #
+        # The row is the last thing that machine relayed, and nothing here
+        # ever asked how old it was -- so an office whose agent had stopped
+        # kept getting its last good reading re-rendered and re-sent, with a
+        # fresh timestamp in the title every time. Confidently wrong, on a
+        # cadence.
+        #
+        # Khalil Mansour, 2026-09-16: his agent died at 16:58 and his 5:12
+        # board and 5:20 text both went out carrying 16:58's knocks. Nobody
+        # reading them could have known.
+        #
+        # THE QUIET-MACHINE NUDGE ALREADY COVERS THE GAP, so stopping here
+        # loses nobody any visibility -- it only stops us asserting a number
+        # we cannot stand behind. The agent relays every couple of minutes,
+        # so anything this old means it is not running at all.
+        if _too_old(row[KN_RECEIVED]):
+            log("%-10s last relayed at %s -- too old to post a board from"
+                % (key, row[KN_RECEIVED] or "?"))
             continue
 
         dests = list(approved.get(key) or [])
