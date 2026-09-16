@@ -18,21 +18,35 @@ PLATFORMS = ("mac", "windows")
 
 # WHICH CAMPAIGN AN OFFICE RUNS DECIDES WHAT THE AGENT CAN EVEN READ.
 #
-# AT&T is the only campaign on SaraPlus (Megan 2026-09-15). Credit checks and
-# sales come from SaraPlus, so they exist for AT&T offices and for nobody
-# else -- an Energy or NDS or Box office has no SaraPlus account to sign into,
-# and asking one for a login it does not have is how an install dies at step 6
-# with the owner certain they typed it right.
+# THE SALES SYSTEM IS PER CAMPAIGN, and there are two of them (2026-09-15):
 #
-# Knocks and dispositions come from OwnerVille, which every campaign uses. So
-# a non-AT&T office gets a knocks board and nothing else, and is never asked
-# for a SaraPlus login at all.
+#   SaraPlus       att, nds, b2b_att   -- the AT&T campaigns. NDS is one of
+#                                         them: its Tableau workbook is
+#                                         NDS-SNRES-ATT-OOFWorkbook.
+#   Service Cloud  b2b_box             -- Box is an energy broker and sells
+#                                         through myservicecloud.net.
+#   nothing yet    energy              -- Energy Wells gets a knocks board
+#                                         and nothing else.
+#
+# Asking an office for a login it does not have is how an install dies at
+# step 6 with the owner certain they typed it right -- and NOT asking one
+# that does have it is worse, because nothing reports that either. Both
+# happened: Carlos was never asked for SaraPlus, and no NDS office was ever
+# asked at all.
+#
+# Knocks and dispositions come from OwnerVille, which every campaign uses, so
+# every office gets a board whatever else it does or does not get.
 #
 # The keys and OwnerVille ids match disposition_signup.CAMPAIGNS deliberately:
 # the two intake forms must not disagree about what this company sells.
 CAMPAIGNS = (
     ("att", "AT&T Fiber — Internet & Phones", True),
-    ("nds", "NDS — Wireless & Phones", True),   # AT&T; Megan 2026-09-15
+    # "Wireless" alone: on NDS the phones ARE the wireless (Megan
+    # 2026-09-01). "Wireless & Phones" reads as two products to an owner
+    # picking one, which is the exact wording disposition_signup already
+    # dropped for the same reason -- and these two forms are supposed to
+    # agree about what this company sells.
+    ("nds", "NDS — Wireless", True),           # AT&T; Megan 2026-09-15
     ("energy", "Energy Wells", False),
     ("b2b_att", "B2B — AT&T", True),
     ("b2b_box", "B2B — Box Energy", False),

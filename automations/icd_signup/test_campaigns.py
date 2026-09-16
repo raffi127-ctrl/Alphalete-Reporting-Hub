@@ -31,8 +31,16 @@ class WhoIsOnSaraPlus(unittest.TestCase):
         self.assertTrue(S.uses_saraplus("att"))
         self.assertTrue(S.uses_saraplus("b2b_att"))
 
-    def test_box_energy_and_nds_are_not(self):
-        for key in ("b2b_box", "energy", "nds"):
+    def test_nds_is_an_att_campaign(self):
+        """It sat on the no-SaraPlus list because it is not the FIBER
+        campaign, and "not fiber" was read as "not AT&T" -- its own Tableau
+        workbook is NDS-SNRES-ATT-OOFWorkbook (Megan 2026-09-15). An NDS
+        office was never asked for a login and could never have had a credit
+        check or a sale read, with nothing reporting a fault."""
+        self.assertTrue(S.uses_saraplus("nds"))
+
+    def test_box_and_energy_are_not(self):
+        for key in ("b2b_box", "energy"):
             self.assertFalse(S.uses_saraplus(key), key)
 
     def test_an_unknown_campaign_asks_rather_than_skipping(self):
@@ -78,12 +86,18 @@ class TheyAreNeverAskedForWhatTheyCannotHave(unittest.TestCase):
         when an office could run two campaigns, and the old assertion pinned
         the implementation rather than the rule.
         """
-        self.assertIn("knocks only", RUN)
-        # It must find an AT&T enrollment before reading anything...
-        self.assertLess(RUN.index('not in ("nds", "energy", "b2b_box")'),
+        marker = "sales come from elsewhere"
+        self.assertIn(marker, RUN)
+        # It must find a SaraPlus enrollment before reading anything...
+        self.assertLess(RUN.index("C.NO_SARAPLUS"),
                         RUN.index("sara_read.read_day"))
+        # ...OFF THE SHARED LIST, never a second copy of it. run.py used to
+        # spell the exclusions out inline, so moving NDS onto SaraPlus in
+        # config.py would have left the sweep still skipping it: the office
+        # asked for a login, saved it, and it was never used (2026-09-15).
+        self.assertNotIn('("nds", "energy", "b2b_box")', RUN)
         # ...and returning clean, not as a failure: nothing is wrong.
-        after = RUN[RUN.index("knocks only"):]
+        after = RUN[RUN.index(marker):]
         self.assertIn("return 0", after[:200])
 
     def test_the_campaign_reaches_the_installer(self):
