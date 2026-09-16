@@ -1386,3 +1386,81 @@ class EnrollCannotSilentlyMakeAnOfficeAttAnyMore(unittest.TestCase):
                 ("13:30", "20:30"), ("10:45", "17:00"), True, "mac", False,
                 key)
             self.assertIn('campaign="%s"' % key, row)
+
+
+class TheAuthIsBorrowedWhereTheBrowserActuallySendsIt(unittest.TestCase):
+    """Ryan's machine, 2026-09-16 13:54 -- minutes after his sign-in finally
+    worked: "Page.evaluate: TypeError: Failed to fetch".
+
+    The old code monkey-patched window.fetch from inside the page to borrow
+    the app's Authorization header. patchright runs page.evaluate in an
+    ISOLATED WORLD, so the patch landed on a different `window` than the
+    app's: the real request went past unseen, the header was never captured,
+    and the forged cross-origin POST went out unauthorised and died at the
+    network layer.
+
+    It looked right when written because it was tried in a browser console --
+    which IS the main world. That difference does not show up until the code
+    is on somebody else's computer.
+    """
+
+    class _Req:
+        def __init__(self, url, method="POST", headers=None):
+            self.url, self.method = url, method
+            self.headers = headers or {}
+
+    def _borrowed(self):
+        from automations.icd_alerts import box_read as B
+        return B._Borrowed()
+
+    def test_it_takes_the_headers_off_the_real_request(self):
+        b = self._borrowed()
+        b._seen(self._Req("https://api.myservicecloud.net/gql/secured/v2",
+                          headers={"Authorization": "Bearer abc",
+                                   "Content-Type": "application/json"}))
+        self.assertEqual(b.headers.get("authorization"), "Bearer abc")
+        self.assertTrue(b.ready())
+
+    def test_hop_by_hop_headers_are_dropped(self):
+        """Replaying a captured content-length against a different body is a
+        request the server is right to reject."""
+        b = self._borrowed()
+        b._seen(self._Req("https://api.myservicecloud.net/gql",
+                          headers={"Authorization": "x", "Content-Length": "99",
+                                   "Host": "api.myservicecloud.net"}))
+        self.assertNotIn("content-length", b.headers)
+        self.assertNotIn("host", b.headers)
+
+    def test_unrelated_requests_are_ignored(self):
+        b = self._borrowed()
+        b._seen(self._Req("https://myservicecloud.net/spa/contracts",
+                          method="GET", headers={"Authorization": "nope"}))
+        self.assertFalse(b.ready())
+
+    def test_content_type_alone_is_not_ready(self):
+        """That is what we would have invented ourselves -- it proves nothing
+        was borrowed, which is the state the old sniffer was silently in."""
+        b = self._borrowed()
+        b._seen(self._Req("https://api.myservicecloud.net/gql",
+                          headers={"Content-Type": "application/json"}))
+        self.assertFalse(b.ready())
+
+    def test_a_listener_that_throws_never_breaks_the_read(self):
+        b = self._borrowed()
+        b._seen(object())          # nothing like a request at all
+        self.assertEqual(b.headers, {})
+
+    def test_the_in_page_fetch_is_gone(self):
+        from automations.icd_alerts import box_read as B
+        self.assertFalse(hasattr(B, "_FETCH_JS"),
+                         "a fetch from inside the page is cross-origin, "
+                         "unauthorised, and in the wrong world")
+        self.assertFalse(hasattr(B, "_SNIFF_JS"))
+
+    def test_the_query_still_asks_for_term(self):
+        """Carlos's tiers are read off it; losing it in the rewrite would
+        quietly flatten every Box sale line."""
+        from automations.icd_alerts import box_read as B
+        self.assertIn("term", B.GRAPHQL_QUERY)
+        self.assertIn("adjusted_annual_volume", B.GRAPHQL_QUERY)
+        self.assertIn("contract_substatus", B.GRAPHQL_QUERY)

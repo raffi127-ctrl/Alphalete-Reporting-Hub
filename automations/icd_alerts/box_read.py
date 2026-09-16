@@ -243,67 +243,105 @@ PER_PAGE = 100
 MAX_PAGES = 40          # 4000 contracts. A stop, not an expectation.
 
 
-_FETCH_JS = """
-async (args) => {
-  const [url, page, perPage] = args;
-  const query = `query ($input: ContractsListQueryInput) {
-    contractsList(input: $input) {
-      edges {
-        contract_id
-        business_name
-        adjusted_annual_volume
-        created_date
-        agent { name { first_name last_name } email }
-        contract_substatus { substatus }
-      }
-      errors { error_message }
+# The query itself, captured from the app's own call on 2026-09-15 rather
+# than guessed: the API's field names are not the grid's column headings, and
+# a reader written off the headings would have found neither the agent nor the
+# sale date.
+GRAPHQL_QUERY = """query ($input: ContractsListQueryInput) {
+  contractsList(input: $input) {
+    edges {
+      contract_id
+      business_name
+      adjusted_annual_volume
+      created_date
+      term
+      agent { name { first_name last_name } email }
+      contract_substatus { substatus }
     }
-  }`;
-  const res = await fetch(url, {
-    method: 'POST',
-    credentials: 'include',
-    headers: window.__lucyHeaders || {'content-type': 'application/json'},
-    body: JSON.stringify({query, variables: {input: {
-      page: page, per_page: perPage, search: '',
-      sorting: [{name: 'id', direction: 'DESCENDING'}]}}}),
-  });
-  return await res.json();
-}
-"""
-
-# The app's own request goes past first, so its headers -- including the ones
-# we must never store -- are borrowed for the calls above and then dropped
-# with the browser context.
-_SNIFF_JS = """
-() => {
-  if (window.__lucySniffing) return true;
-  window.__lucySniffing = true;
-  const orig = window.fetch;
-  window.fetch = function (input, init) {
-    try {
-      const u = typeof input === 'string' ? input : (input && input.url) || '';
-      if (/gql/i.test(u) && init && init.headers) {
-        const h = {};
-        const src = init.headers;
-        if (typeof src.forEach === 'function') src.forEach((v, k) => h[k] = v);
-        else Object.keys(src).forEach(k => h[k] = src[k]);
-        window.__lucyHeaders = h;
-      }
-    } catch (e) {}
-    return orig.apply(this, arguments);
-  };
-  return true;
-}
-"""
+    errors { error_message }
+  }
+}"""
 
 
-def _fetch_page(page, n: int) -> List[Dict]:
-    """One page of contracts, through the app's own fetch."""
-    payload = page.evaluate(_FETCH_JS, [GRAPHQL_URL, n, PER_PAGE])
-    return rows_from_response(payload)
+# HOW THE APP'S OWN AUTH IS BORROWED.
+#
+# THIS USED TO MONKEY-PATCH window.fetch FROM INSIDE THE PAGE, and it could
+# never have worked here. patchright runs page.evaluate in an ISOLATED WORLD,
+# so the patch landed on a different `window` than the app's: the real request
+# went past unseen, __lucyHeaders stayed undefined, and the forged call below
+# went out with no Authorization at all. Cross-origin, unauthorised, it failed
+# at the network layer -- "TypeError: Failed to fetch", which is what Ryan's
+# machine reported at 13:54 on 2026-09-16, minutes after his sign-in finally
+# worked.
+#
+# It looked right when it was written because it was tried in a browser
+# console, which IS the main world. The isolated world is exactly the kind of
+# difference that does not show up until it is on somebody else's computer.
+#
+# So the headers are taken at the PLAYWRIGHT level instead, where there is no
+# main world and no isolated one -- just the request, as the browser actually
+# sent it. Nothing is stored: they live on this object and die with the
+# context, same as before.
+class _Borrowed:
+    """The auth headers from the app's own GraphQL call."""
+
+    SKIP = {"content-length", "host", "connection", "accept-encoding"}
+
+    def __init__(self):
+        self.headers = {}
+
+    def watch(self, page) -> None:
+        page.on("request", self._seen)
+
+    def _seen(self, request) -> None:
+        try:
+            if "gql" not in (request.url or "").lower():
+                return
+            if (request.method or "").upper() != "POST":
+                return
+            got = {k.lower(): v for k, v in (request.headers or {}).items()
+                   if k.lower() not in self.SKIP}
+            if got:
+                self.headers = got
+        except Exception:  # noqa: BLE001 — a listener must never break a read
+            pass
+
+    def ready(self) -> bool:
+        """Did we actually see one? An Authorization header is the point; a
+        content-type alone is what we would have invented ourselves."""
+        return any(k in self.headers
+                   for k in ("authorization", "x-auth-token", "cookie"))
 
 
-def fetch_rows(page, days: List[dt.date], log=print) -> List[Dict]:
+def _body(n: int) -> Dict:
+    return {"query": GRAPHQL_QUERY,
+            "variables": {"input": {
+                "page": n, "per_page": PER_PAGE, "search": "",
+                "sorting": [{"name": "id", "direction": "DESCENDING"}]}}}
+
+
+def _fetch_page(page, n: int, borrowed=None) -> List[Dict]:
+    """One page of contracts, through the CONTEXT's own request API.
+
+    NOT page.evaluate. A fetch issued from inside the page is a cross-origin
+    call subject to CORS, made from an isolated world that does not carry the
+    app's credentials -- which is precisely how this failed. page.request goes
+    through the browser's network stack with the context's cookie jar and no
+    CORS preflight at all.
+    """
+    headers = dict((borrowed.headers if borrowed else None) or {})
+    headers.setdefault("content-type", "application/json")
+    res = page.request.post(GRAPHQL_URL, headers=headers, data=_body(n))
+    if not res.ok:
+        raise AccountProblem(
+            "My Service Cloud refused the request for this office's sales "
+            "(HTTP %d). Nothing is wrong with the numbers -- we could not "
+            "ask for them." % res.status)
+    return rows_from_response(res.json())
+
+
+def fetch_rows(page, days: List[dt.date], log=print,
+               borrowed=None) -> List[Dict]:
     """Every contract initiated on any of `days`, newest first.
 
     STOPS WHEN IT HAS PASSED THE WINDOW, not when it finds nothing. The grid
@@ -317,7 +355,7 @@ def fetch_rows(page, days: List[dt.date], log=print) -> List[Dict]:
     oldest = min(days)
     out: List[Dict] = []
     for n in range(1, MAX_PAGES + 1):
-        rows = _fetch_page(page, n)
+        rows = _fetch_page(page, n, borrowed)
         if not rows:
             break
         out.extend(rows)
@@ -379,11 +417,20 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
                     "are still there, we just cannot see them.")
             # Let the app make one call of its own, so its headers can be
             # borrowed for ours. Re-entering the route is enough.
-            page.evaluate(_SNIFF_JS)
+            borrowed = _Borrowed()
+            borrowed.watch(page)
             page.goto(base + SC.CUSTOMERS_PATH, timeout=SC.LOGIN_TIMEOUT_MS)
             page.goto(base + SC.CONTRACTS_PATH, timeout=SC.LOGIN_TIMEOUT_MS)
             page.wait_for_timeout(4000)
-            rows = fetch_rows(page, days, log=log)
+            if not borrowed.ready():
+                # SAY IT, rather than sending an unauthorised request and
+                # reporting whatever the API says about it. This is the exact
+                # state the old in-page sniffer was silently in for every
+                # office: no headers, a forged call, and an error that named
+                # the network instead of the cause.
+                log("no authorised call seen from the app yet — asking anyway,"
+                    " on the session cookies alone")
+            rows = fetch_rows(page, days, log=log, borrowed=borrowed)
             log("contracts fetched: %d row(s) across the window" % len(rows))
         finally:
             ctx.close()
