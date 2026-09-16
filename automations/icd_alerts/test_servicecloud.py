@@ -2060,3 +2060,46 @@ class TheSaleLinesSoundLikeTheCompany(unittest.TestCase):
                 for line in pool:
                     got = line.format(first="Max")
                     self.assertNotIn("{", got, line)
+
+
+class TheAoBoardSaysTheSameThingAsAnIcdOffice(unittest.TestCase):
+    """sale_hype was LIFTED OUT of alphalete_sales_board so an ICD's channel
+    would say the same thing the AO channel says -- and a copy was left
+    behind, which is exactly what that move existed to prevent.
+
+    On 2026-09-16 the pool went from five lines to twenty-eight in the house
+    voice and the AO board did not move: Raf's workspace would have carried
+    on with the old five while every ICD office got the new ones.
+    """
+
+    def test_the_ao_board_uses_the_shared_pool_object(self):
+        from automations.alphalete_sales_board import notify as N
+        from automations.shared import sale_hype as H
+        self.assertIs(N.HYPE_REGULAR, H.HYPE_REGULAR)
+
+    def test_the_same_sale_reads_the_same_in_both(self):
+        import datetime as _dt
+        from automations.alphalete_sales_board import notify as N
+        from automations.shared import sale_hype as H
+        day = _dt.date(2026, 9, 16)
+        for m in ({"Int": 1}, {"Int": 1, "NL": 2}, {"Int": 1, "NL": 5}):
+            self.assertEqual(N.hype("Callisa Flythe", m, day),
+                             H.hype("Callisa Flythe", m, day))
+
+    def test_the_ao_board_keeps_no_wording_of_its_own(self):
+        """A second literal here is a second place to edit, and the one that
+        gets forgotten."""
+        import inspect
+        from automations.alphalete_sales_board import notify as N
+        src = inspect.getsource(N)
+        body = src[src.index("HYPE_REGULAR"):]
+        self.assertNotIn("put one on the board!", body,
+                         "the AO board has its own copy of the lines again")
+        self.assertNotIn("PLEASE TELL US", body)
+
+    def test_the_tiers_match_too(self):
+        from automations.alphalete_sales_board import notify as N
+        from automations.shared import sale_hype as H
+        for m in ({"Int": 1}, {"Int": 1, "NL": 2}, {"Int": 1, "NL": 5},
+                  {"Int": 0, "NL": 9}):
+            self.assertEqual(N.tier(m), H.tier(m), m)

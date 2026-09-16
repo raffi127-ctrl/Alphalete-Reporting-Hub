@@ -32,6 +32,7 @@ from typing import Dict, List, Optional, Sequence
 
 from automations.alphalete_sales_board import config as C
 from automations.shared import name_case
+from automations.shared import sale_hype as _H
 # The wording lives in ONE place -- icd_alerts posts the same sentence.
 from automations.shared.credit_check_line import records_line  # noqa: F401
 
@@ -48,13 +49,18 @@ COUNTED = ("Int", "Int Up", "DTV", "NL")
 FIRE = "\U0001F525"      # the real emoji, not ':fire:' -- iMessage shows text
 TROPHY = "\U0001F3C6"
 
-HYPE_REGULAR = (
-    "{first} just put one on the board! :fire:",
-    "{first} is on it :moneybag:",
-    "Another one for {first} :fire:",
-    "{first} keeps going :chart_with_upwards_trend:",
-    "{first} on the board :dart:",
-)
+# THE LINES LIVE IN shared/sale_hype.py, NOT HERE.
+#
+# They were lifted out of this file so an ICD's channel would say the same
+# thing the AO channel says -- and then a copy was left behind, which is
+# exactly what that move was meant to prevent. On 2026-09-16 the pool went
+# from five lines to twenty-eight in the house voice, and this file did not
+# move: the AO board would have carried on with the old five while every ICD
+# office got the new ones.
+#
+# Re-exported rather than deleted so anything importing N.HYPE_REGULAR still
+# works, and so there is one place to change the wording.
+HYPE_REGULAR = _H.HYPE_REGULAR
 
 
 def _first(name: str) -> str:
@@ -65,27 +71,21 @@ def _first(name: str) -> str:
 
 
 def rep_total(metrics: Dict[str, int]) -> int:
-    return sum(int(metrics.get(m, 0)) for m in COUNTED)
+    return _H.rep_total(metrics)
 
 
 def tier(metrics: Dict[str, int]) -> str:
-    if int(metrics.get("Int", 0)) > 0 and int(metrics.get("NL", 0)) >= 5:
-        return "super"
-    if int(metrics.get("Int", 0)) > 0 and int(metrics.get("NL", 0)) >= 2:
-        return "large"
-    return "regular"
+    return _H.tier(metrics)
 
 
 def hype(name: str, metrics: Dict[str, int], day: dt.date) -> str:
-    t = tier(metrics)
-    first = _first(name)
-    if t == "super":
-        return "%s, PLEASE TELL US!!!! :money_mouth_face::fire:" % first.upper()
-    if t == "large":
-        return "%s, TELL US!! :fire::moneybag::fire:" % first
-    seed = "%s|%s|%d" % (name, day.isoformat(), rep_total(metrics))
-    idx = zlib.crc32(seed.encode("utf-8")) % len(HYPE_REGULAR)
-    return HYPE_REGULAR[idx].format(first=first)
+    """One rep's new sale, in the company's words.
+
+    THE AO BOARD IS AT&T, so it takes the default campaign -- the same lines
+    Kash's and Cyrus's offices get. Box's contract wording is chosen by the
+    campaign, not by which file asked.
+    """
+    return _H.hype(name, metrics, day)
 
 
 def short_name(name: str) -> str:
