@@ -649,10 +649,13 @@ class AWirelessOfficesDayIsNotFlat(unittest.TestCase):
         from automations.shared import sale_hype as H
         return H.tier({"Int": 0, "Int Up": 0, "DTV": 0, "NL": lines}, campaign)
 
-    def test_a_big_wireless_day_is_loud(self):
+    def test_a_big_wireless_day_is_loud_and_a_small_one_is_not(self):
+        # The bar is NOT AT&T's two lines: a wireless sale carries 2+ by
+        # nature, so that made every rep on Khalil's grid loud and nothing
+        # ordinary. See KhalilsRealGridSaysTheTiersWork.
         self.assertEqual(self._say(8, "nds"), "super")
-        self.assertEqual(self._say(2, "nds"), "large")
-        self.assertEqual(self._say(1, "nds"), "regular")
+        self.assertEqual(self._say(4, "nds"), "large")
+        self.assertEqual(self._say(2, "nds"), "regular")
 
     def test_the_att_rule_is_untouched(self):
         from automations.shared import sale_hype as H
@@ -728,3 +731,69 @@ class ASaraPlusLayoutChangeMustNotReadAsAQuietDay(unittest.TestCase):
         self.assertIn("att_shape_problem", src)
         # And it must NOT take the credit checks down with it.
         self.assertIn("credit checks", src)
+
+
+class KhalilsRealGridSaysTheTiersWork(unittest.TestCase):
+    """Read off Khalil Mansour's own SaraPlus account, 2026-09-15 -- the
+    night before he enrolled as the first NDS office.
+
+    THE COLUMN INDICES ARE RIGHT. His agent rows are 19 cells wide and land
+    exactly where COL_ATT says: name at 2, internet_sales at 9, upgrades at
+    10, AIA at 11, wireless lines at 14. Megan was right that every SaraPlus
+    account has the same layout, so no NDS-specific reader is needed.
+
+    THE TIER IS THE PART THAT NEEDED HIM. Seven reps, 2 to 7 lines each.
+    """
+
+    # (rep, internet_sales, internet_upgrades, aia, wireless_lines_sold)
+    REAL = [("Jevon Wiley", 0, 0, 0, 4), ("Mohammad Razzaq", 2, 0, 0, 7),
+            ("Carlos Escobedo", 1, 0, 1, 3), ("Cristian Silva", 1, 0, 1, 3),
+            ("Amet Shemo", 0, 0, 0, 5), ("Mohammed Abudaqqa", 0, 0, 0, 4),
+            ("Orlando Keenan", 1, 0, 1, 2)]
+
+    def _tiers(self, campaign):
+        from automations.shared import sale_hype as H
+        out = []
+        for _rep, i, u, a, nl in self.REAL:
+            m = H.metrics_for({"internet_sales": i, "internet_upgrades": u,
+                               "aia_sales": a, "wireless_lines_sold": nl,
+                               "dtv_streaming": 0})
+            out.append(H.tier(m, campaign))
+        return out
+
+    def test_the_att_rule_would_have_flattened_his_channel(self):
+        """Six of seven read "regular" while putting up 2-5 lines each. Only
+        the one rep who happened to sell Internet escaped."""
+        self.assertEqual(self._tiers("att").count("regular"), 6)
+
+    def test_the_nds_rule_does_not_shout_at_everything_either(self):
+        """The first guess borrowed AT&T's bar of two lines, which every
+        wireless sale clears by nature -- every rep loud and nothing
+        ordinary is the flat channel again, just louder."""
+        got = self._tiers("nds")
+        self.assertGreater(got.count("regular"), 0, "nothing is ordinary")
+        self.assertGreater(got.count("large") + got.count("super"), 0,
+                           "nothing is loud")
+
+    def test_his_best_rep_is_the_loudest(self):
+        from automations.shared import sale_hype as H
+        best = H.metrics_for({"internet_sales": 2, "internet_upgrades": 0,
+                              "aia_sales": 0, "wireless_lines_sold": 7,
+                              "dtv_streaming": 0})
+        worst = H.metrics_for({"internet_sales": 1, "internet_upgrades": 0,
+                               "aia_sales": 1, "wireless_lines_sold": 2,
+                               "dtv_streaming": 0})
+        self.assertEqual(H.tier(best, "nds"), "super")
+        self.assertEqual(H.tier(worst, "nds"), "regular")
+
+    def test_a_real_agent_row_parses_at_the_hardcoded_indices(self):
+        """Jevon Wiley's actual row, cell for cell."""
+        from automations.shared import saraplus as S
+        row = ["", S.AGENT_ROW, "Jevon Wiley", "2", "", "2", "0", "0", "0",
+               "0", "0", "0", "0", "2", "4", "0", "4", "0", "0"]
+        self.assertEqual(S.att_shape_problem([row]), "",
+                         "his grid is the shape we already read")
+        got = S.parse_att([row])[0]
+        self.assertEqual(got["name"], "Jevon Wiley")
+        self.assertEqual(got["wireless_lines_sold"], 4)
+        self.assertEqual(got["internet_sales"], 0)

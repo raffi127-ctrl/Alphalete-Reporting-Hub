@@ -93,18 +93,32 @@ class _Nds(_Att):
     campaign, and it would have arrived the moment NDS got a SaraPlus login
     (2026-09-15).
 
-    THE THRESHOLDS ARE AT&T'S, MINUS THE PART THEY CANNOT MEET. Five lines is
-    "super" and two is "large" over there too; all that is dropped is the
-    Internet sale that came with them. Inventing different numbers would be
-    guessing at a wireless office's day with no NDS office live yet to check
-    against -- this at least keeps one rule for one company.
+    THE THRESHOLDS ARE NOT AT&T'S, BECAUSE AT&T'S DO NOT FIT. Borrowing them
+    (5 super, 2 large) was the first guess, made with no NDS office live to
+    check against. Khalil Mansour's own grid, read 2026-09-15 the night
+    before he enrolled, shows why it fails: his seven reps put up 2, 3, 3, 4,
+    4, 5 and 7 lines that day, so a bar of two makes EVERY rep loud and
+    nothing ordinary. A line that fires on every sale is the flat channel
+    again, just with more shouting -- the alert stops carrying information on
+    day one.
+
+    A wireless sale carries 2+ lines by nature, so the floor has to sit above
+    a typical one. Against that day: 4+ is "large" (3 of 7) and 7+ is "super"
+    (1 of 7), leaving 3 ordinary.
+
+    ONE DAY, ONE OFFICE, SEVEN REPS -- thin, and said plainly rather than
+    dressed up. It is a better starting point than a bar every sale clears,
+    and Khalil is the person to confirm it once he has been live a week.
     """
+
+    LOUD_LINES = 4
+    LOUDER_LINES = 7
 
     def tier(self, metrics):
         lines = int(metrics.get("NL", 0) or 0)
-        if lines >= 5:
+        if lines >= self.LOUDER_LINES:
             return "super"
-        if lines >= 2:
+        if lines >= self.LOUD_LINES:
             return "large"
         return "regular"
 
