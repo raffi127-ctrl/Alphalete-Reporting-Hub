@@ -328,6 +328,46 @@ def ask_for_servicecloud(replace=False, required=True):
                     "email", "password", required=required, replace=replace)
 
 
+def check_servicecloud() -> bool:
+    """Sign in to My Service Cloud for real, WHILE THEY ARE SITTING THERE.
+
+    THE PASSWORD IS NOT THE LOGIN. Every other account here is an email and a
+    password, so saving one is the whole job. My Service Cloud has two-factor:
+    the saved password gets as far as a box asking for a code from their
+    authenticator, and only a human holding that phone gets past it. Storing
+    the password and moving on would leave a machine that is configured and
+    signed out -- and a Box office's sales live there and nowhere else, so
+    the install would say "All set" to somebody who will never see a sale.
+
+    That is exactly what check_ownerville was written for after Kash's
+    install passed on an untested password (2026-09-12). Same lesson, worse
+    consequence: this one cannot be fixed remotely at all, only by a person
+    at that keyboard -- which is the person standing here right now.
+
+    NOT FATAL IF THEY WALK AWAY. They may not have their phone on them. The
+    sweep asks for it by DM the first time it needs it, so a skipped sign-in
+    costs a message and not the install -- but it is reported, not silent.
+    """
+    if not (CONFIG_DIR / "servicecloud-creds.json").exists():
+        return False
+    say("      opening My Service Cloud so you can sign in.")
+    say("      you will need your authenticator code. It has to be THIS")
+    say("      window -- signing in on your phone or your own browser does")
+    say("      not reach Lucy.")
+    try:
+        from automations.icd_alerts import box_signin
+        ok = box_signin.run(log=say) == 0
+    except Exception as e:  # noqa: BLE001 — never lose the install to this
+        say("      could not open the sign-in window (%s)." % type(e).__name__)
+        return False
+    if ok:
+        say("      My Service Cloud is signed in.")
+    else:
+        say("      nobody signed in, so sales cannot be read yet. You will")
+        say("      get a message asking for it -- nothing else is affected.")
+    return ok
+
+
 def ask_for_ownerville(replace=False, required=False):
     """The OwnerVille login, on its own.
 
@@ -1071,6 +1111,8 @@ def main() -> int:
         say("      %s sells through My Service Cloud — asking for that login "
             "too." % this_campaign)
         ask_for_servicecloud()
+        # AND SIGN IN NOW, while somebody with the authenticator is here.
+        check_servicecloud()
     ov_ok = ownerville_until_it_works() if ok else False
 
     step(7, total, "Where your alerts should go")
