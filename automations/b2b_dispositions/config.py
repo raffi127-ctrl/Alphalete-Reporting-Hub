@@ -118,13 +118,29 @@ TEXT_GROUP_ALL = "NEW A Players"
 POST_HOURLY = "hourly"              # activity + time gaps, every hour
 POST_DISPOSITIONS = "dispositions"  # territory stats, once a day at 6:30
 
-# (campaign, post-type) -> the groups that get it. All four pairs are live.
+# (campaign, post-type) -> the groups that get it.
 # Emptying a list is how you stop texting that pair — nothing else changes.
+#
+# ALL FOUR ARE OFF (Carlos 2026-09-16, #l10-alphalete: "can we stop both of
+# these text message automations"; Megan the same day: "remove the hourly and
+# territory posts - keep all trackers"). Between the hourly runs and the 7pm
+# per-territory images, these four routes were the bulk of what landed in the
+# groups — "NEW A Players" sat on every one of them, so it got both campaigns
+# every hour on top of everything else it receives.
+#
+# What did NOT stop: the Slack posts (CHANNELS above) still run unchanged, and
+# the Tableau country trackers still text — those live in tracker_texts.ROUTES
+# and are deliberately a separate module. See automations/tracker_texts/.
+#
+# The group-name constants stay defined because tracker_texts imports them; do
+# not delete them to "clean up" or the trackers lose their routing.
+#
+# To turn a pair back on, put its groups back in its list. Nothing else moved.
 TEXT_ROUTES = {
-    (CAMPAIGN_ATT, POST_HOURLY): [TEXT_GROUP_ATT, TEXT_GROUP_ALL],
-    (CAMPAIGN_ATT, POST_DISPOSITIONS): [TEXT_GROUP_ATT, TEXT_GROUP_ALL],
-    (CAMPAIGN_BOX, POST_HOURLY): [TEXT_GROUP_BOX, TEXT_GROUP_ALL],
-    (CAMPAIGN_BOX, POST_DISPOSITIONS): [TEXT_GROUP_BOX, TEXT_GROUP_ALL],
+    (CAMPAIGN_ATT, POST_HOURLY): [],
+    (CAMPAIGN_ATT, POST_DISPOSITIONS): [],
+    (CAMPAIGN_BOX, POST_HOURLY): [],
+    (CAMPAIGN_BOX, POST_DISPOSITIONS): [],
 }
 
 # Seconds to wait after handing Messages an image. TdB proved a group image send

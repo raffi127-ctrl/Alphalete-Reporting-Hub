@@ -404,6 +404,10 @@ def _report_text(specs: List[Dict], out_dir: Path, slot: str) -> bool:
     print("\nTEXT (dry-run — resolving groups, sending nothing)", flush=True)
     ok = True
     for spec in specs:
+        if not tp.spec_has_routes(spec):
+            print(f"  {spec.get('title') or spec.get('kind')}: TEXTING OFF "
+                  "(no groups routed in config.TEXT_ROUTES)", flush=True)
+            continue
         try:
             mp = tp.write_manifest(spec, out_dir, slot)
             print(f"  manifest    : {mp}", flush=True)
@@ -434,6 +438,11 @@ def _handoff_text(specs: List[Dict], out_dir: Path, slot: str) -> bool:
           "already has Messages permission)", flush=True)
     ok = True
     for spec in specs:
+        if not tp.spec_has_routes(spec):
+            print(f"  {spec.get('title') or spec.get('kind')}: TEXTING OFF "
+                  "(no groups routed in config.TEXT_ROUTES) — nothing queued",
+                  flush=True)
+            continue
         try:
             mp = tp.write_manifest(spec, out_dir, slot)
             from automations.day_orchestrator import mini_control as mc

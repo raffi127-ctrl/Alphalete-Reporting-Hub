@@ -265,6 +265,21 @@ def send_text_to_group(name: str, text: str, *, dry_run: bool = True) -> Dict:
     return result
 
 
+def spec_has_routes(spec: Dict) -> bool:
+    """True if ANY campaign in this spec still has somewhere to text.
+
+    Emptying a pair in config.TEXT_ROUTES stops the send itself (send_specs
+    skips it as "no route"), but the caller would still write a manifest and
+    queue a `text_dispositions` row every run — work the poller picks up only to
+    find nothing to do. Worse, the run log would keep printing "queued
+    text_dispositions ...", which reads exactly like texting is still live. So
+    the callers check here first and say plainly that texting is off.
+    """
+    kind = spec.get("kind") or ""
+    return any(cfg.TEXT_ROUTES.get((campaign, kind))
+               for campaign in (spec.get("by_campaign") or {}))
+
+
 def send_specs(specs: List[Dict], *, dry_run: bool = True) -> Dict:
     """Route every captured spec to its group and send.
 
