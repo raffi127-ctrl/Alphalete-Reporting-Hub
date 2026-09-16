@@ -485,11 +485,23 @@ def main(argv=None) -> int:
     ap.add_argument("--knocks", action="store_true",
                     help="approve the KNOCKS board destinations instead of "
                          "the credit-check channel")
+    # cmd_texts EXISTED WITH NO WAY TO RUN IT. Khalil asked to be texted on
+    # the sign-up form, his request sat in his record, and there was no flag
+    # that would approve it -- so the one thing he was waiting for could not
+    # be done at all (2026-09-16). Written, tested, shipped, unreachable: the
+    # same shape as ask_office_to_sign_in and the laptop detectors.
+    ap.add_argument("--texts", action="store_true",
+                    help="approve the iMessage GROUPS this office asked to be "
+                         "texted, instead of a Slack channel")
     args = ap.parse_args(argv)
     if not args.office:
         return cmd_list()
-    rc = cmd_knocks(args.office) if args.knocks \
-        else cmd_approve(args.office, args.channel)
+    if args.texts:
+        rc = cmd_texts(args.office)
+    elif args.knocks:
+        rc = cmd_knocks(args.office)
+    else:
+        rc = cmd_approve(args.office, args.channel)
     if rc == 0:
         # THE HUB CARD READS A CACHE, NOT THE SHEET (a Sheets read at Hub
         # import hung the whole app). Approving is the only moment an office's

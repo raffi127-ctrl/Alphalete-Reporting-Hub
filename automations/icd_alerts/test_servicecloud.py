@@ -1682,3 +1682,36 @@ class NotTriedIsNotTheSameAsFailed(unittest.TestCase):
         """A fault filed for an untested login is a ticket about nothing."""
         self.assertIn("elif ov_ok is False and", self.src)
         self.assertNotIn("elif not ov_ok and", self.src)
+
+
+class TheTextApprovalCanActuallyBeRun(unittest.TestCase):
+    """cmd_texts existed with no way to run it. Khalil asked to be texted on
+    the sign-up form on 2026-09-16, his request sat in his record as
+    ('Reporting', 15), and no flag would approve it -- so the one thing he
+    was waiting for could not be done at all.
+
+    Written, tested, shipped, unreachable: the same shape as
+    ask_office_to_sign_in and the laptop detectors before them.
+    """
+
+    def setUp(self):
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[2]
+        self.src = (root / "automations" / "icd_alerts"
+                    / "approve.py").read_text()
+
+    def test_there_is_a_texts_flag(self):
+        self.assertIn('"--texts"', self.src)
+
+    def test_the_flag_reaches_cmd_texts(self):
+        """A flag that parses and routes nowhere is the same bug wearing a
+        command-line argument."""
+        self.assertIn("cmd_texts(args.office)", self.src)
+
+    def test_every_approval_path_is_reachable(self):
+        """If a fourth kind of destination is added, it belongs here too."""
+        import inspect
+        from automations.icd_alerts import approve as A
+        main_src = inspect.getsource(A.main)
+        for fn in ("cmd_texts", "cmd_knocks", "cmd_approve"):
+            self.assertIn(fn + "(", main_src, fn + " cannot be run")
