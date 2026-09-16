@@ -426,12 +426,28 @@ def att_shape_problem(rows: List[List[str]]) -> str:
         # only groups and territories, or the marker itself has changed --
         # and the AT&T Internet grid already proves two markers exist
         # (6_Agent, not 5_Agent), so it is not a far-fetched thing to move.
-        kinds = sorted({r[COL_ROWTYPE].strip() for r in rows
-                        if len(r) > COL_ROWTYPE and r[COL_ROWTYPE].strip()})
-        if kinds and AGENT_ROW not in kinds:
-            return ("the sales grid has %d row(s) but none are marked %r -- "
-                    "it marks them %s. No sale can be read from it."
-                    % (len(rows), AGENT_ROW, ", ".join(repr(k) for k in kinds)))
+        kinds = {r[COL_ROWTYPE].strip() for r in rows
+                 if len(r) > COL_ROWTYPE and r[COL_ROWTYPE].strip()}
+        # POSITIVE EVIDENCE, NOT JUST AN ABSENCE. "No agent rows" on its own
+        # is the ordinary state of a morning before anybody has sold: the
+        # grid still carries history rows from earlier orders, and Carlos's
+        # fired four times in fourteen minutes on 2026-09-16 saying his sales
+        # were unreadable when the honest answer was that he had not made one
+        # yet.
+        #
+        # The grid is a hierarchy -- Company > Location > Lead Rep > Campaign
+        # > Agent > History. A change to the AGENT marker shows up as those
+        # OUTER levels being present and rendered while the agent level is
+        # missing. That is a thing worth waking somebody for. History rows
+        # with no hierarchy above them are not a layout at all; they are a
+        # read that caught the page mid-render or a view we do not recognise,
+        # and neither is worth an alarm that will land every quiet morning.
+        structural = {"1_Company", "2_Location", "3_Lead Rep", "4_Campaign"}
+        if kinds & structural and AGENT_ROW not in kinds:
+            return ("the sales grid is fully drawn -- %s -- but nothing is "
+                    "marked %r. The agent rows are where every sale is read "
+                    "from, so none can be."
+                    % (", ".join(sorted(kinds & structural)), AGENT_ROW))
         return ""
     widest = max(len(r) for r in marker_rows)
     if widest <= max(COL_ATT.values()):

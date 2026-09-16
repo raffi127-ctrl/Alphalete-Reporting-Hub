@@ -664,10 +664,22 @@ class ASaraPlusLayoutChangeMustNotReadAsAQuietDay(unittest.TestCase):
 
     def test_a_differently_marked_grid_is_also_caught(self):
         """The AT&T Internet grid already proves a grid can mark its reps
-        another way -- 6_Agent, not 5_Agent."""
+        another way -- 6_Agent, not 5_Agent.
+
+        WITH THE HIERARCHY PRESENT, which is what makes it evidence. A lone
+        marker row and nothing above it is a half-read page, not a changed
+        layout, and alarming on that is what fired at Carlos four times in
+        fourteen minutes on a morning he simply had not sold yet.
+        """
         from automations.shared import saraplus as S
-        rows = [["", "6_Agent", "A Rep"] + ["0"] * 15]
+        rows = [["", "1_Company", "ACME"] + ["0"] * 15,
+                ["", "4_Campaign", "Internal"] + ["0"] * 15,
+                ["", "6_Agent", "A Rep"] + ["0"] * 15]
         self.assertTrue(S.att_shape_problem(rows))
+
+    def test_a_lone_marker_row_with_no_hierarchy_is_not(self):
+        from automations.shared import saraplus as S
+        self.assertEqual(S.att_shape_problem([["", "6_Agent", "A Rep"]]), "")
 
     def test_a_normal_grid_says_nothing(self):
         from automations.shared import saraplus as S
@@ -830,12 +842,32 @@ class TheGridCanaryConfirmsBeforeItCriesWolf(unittest.TestCase):
                         body.index("_report_sales_fault"),
                         "it reported before re-reading")
 
-    def test_a_history_only_grid_is_what_triggered_it(self):
+    def test_a_history_only_grid_is_a_quiet_morning_not_a_fault(self):
+        """What actually fired on Carlos: nine history rows, no hierarchy
+        above them, four times in fourteen minutes -- while the honest answer
+        was that nobody had sold yet. An alarm that lands every quiet morning
+        is one people learn to scroll past."""
         from automations.shared import saraplus as S
         rows = [["", "6_History", "an order"] + ["0"] * 15 for _ in range(9)]
+        self.assertEqual(S.att_shape_problem(rows), "")
+
+    def test_a_drawn_grid_missing_its_agent_marker_still_is_one(self):
+        """The grid is a hierarchy. If the OUTER levels rendered and the
+        agent level did not, the marker moved -- and every sale is read from
+        agent rows."""
+        from automations.shared import saraplus as S
+        rows = [["", "1_Company", "ACME"] + ["0"] * 15,
+                ["", "2_Location", "TX"] + ["0"] * 15,
+                ["", "7_Rep", "A Rep"] + ["0"] * 15]
         said = S.att_shape_problem(rows)
-        self.assertTrue(said, "this is still worth noticing")
-        self.assertIn("6_History", said, "it must say what it actually saw")
+        self.assertTrue(said)
+        self.assertIn("5_Agent", said)
+
+    def test_an_ordinary_grid_says_nothing(self):
+        from automations.shared import saraplus as S
+        rows = [["", "1_Company", "ACME"] + ["0"] * 15,
+                ["", S.AGENT_ROW, "A Rep"] + ["0"] * 15]
+        self.assertEqual(S.att_shape_problem(rows), "")
 
 
 class AFaultNamesTheOfficeItBelongsTo(unittest.TestCase):
