@@ -94,6 +94,23 @@ def current_seconds() -> int:
         return DEFAULT_SECONDS
 
 
+def venv_python(root: Optional[Path] = None) -> Path:
+    """The interpreter that actually has this agent's packages.
+
+    The installer lays the tree out as ~/.lucy-reports/{app,venv} -- SIBLINGS
+    -- so the venv is found from the app directory rather than guessed at or
+    taken from whoever happens to be running this.
+
+    Falls back to sys.executable only when that is not there, which is the
+    case for a checkout being tested by hand.
+    """
+    root = root or app_root() or Path.cwd()
+    here = ("Scripts/python.exe" if platform.system() == "Windows"
+            else "bin/python")
+    got = root.parent / "venv" / here
+    return got if got.exists() else Path(sys.executable)
+
+
 def plist_text(seconds: Optional[int] = None) -> str:
     """The boot job.
 
@@ -103,13 +120,22 @@ def plist_text(seconds: Optional[int] = None) -> str:
     default it would run as the right user against the wrong home, and behave
     exactly like a machine that had never been set up.
 
-    THE INTERPRETER IS sys.executable, which is the venv python whenever this
-    is run the way it is meant to be. Spelling a path out here is what put
-    "./venv/bin/python" in front of Ryan twice on 2026-09-16.
+    THE INTERPRETER IS THE VENV'S, DERIVED -- never sys.executable.
+    install.sh finds whatever system Python the Mac has and runs setup.py
+    under it, so during an install sys.executable is NOT the venv: it is a
+    Python with no patchright in it. The boot job then launches the agent
+    with that, and every sweep dies on ModuleNotFoundError.
+    
+    Khalil Mansour was the first office to install with a boot job, on
+    2026-09-16, and that is exactly what happened -- twelve failed sweeps
+    before anybody looked. The docstring here previously asserted that
+    sys.executable "is the venv python whenever this is run the way it is
+    meant to be", which was wrong about the single most common way it runs.
     """
     root = app_root() or Path.cwd()
     home = Path.home()
     log = home / ".config" / "lucy-reports" / "agent.log"
+    python = venv_python(root)
     return """<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -136,7 +162,7 @@ def plist_text(seconds: Optional[int] = None) -> str:
   <key>StandardErrorPath</key><string>{log}</string>
 </dict>
 </plist>
-""".format(label=LABEL, user=getpass.getuser(), python=sys.executable,
+""".format(label=LABEL, user=getpass.getuser(), python=python,
            cwd=root, home=home,
            seconds=seconds or current_seconds(), log=log)
 

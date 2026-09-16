@@ -1715,3 +1715,60 @@ class TheTextApprovalCanActuallyBeRun(unittest.TestCase):
         main_src = inspect.getsource(A.main)
         for fn in ("cmd_texts", "cmd_knocks", "cmd_approve"):
             self.assertIn(fn + "(", main_src, fn + " cannot be run")
+
+
+class TheBootJobRunsTheVenvPython(unittest.TestCase):
+    """Khalil Mansour was the first office to install with a boot job, on
+    2026-09-16. Twelve sweeps died on `ModuleNotFoundError: No module named
+    'patchright'` before anybody looked.
+
+    install.sh finds whatever system Python the Mac has and runs setup.py
+    under it -- so during an install `sys.executable` is NOT the venv, it is
+    a Python with none of this agent's packages. The boot job launched the
+    agent with that.
+
+    The docstring previously asserted sys.executable "is the venv python
+    whenever this is run the way it is meant to be", which was wrong about
+    the single most common way it runs.
+    """
+
+    def _tree(self):
+        import pathlib, tempfile
+        base = pathlib.Path(tempfile.mkdtemp())
+        (base / "app" / "automations" / "icd_alerts").mkdir(parents=True)
+        (base / "app" / "automations" / "icd_alerts" / "run.py").touch()
+        (base / "venv" / "bin").mkdir(parents=True)
+        (base / "venv" / "bin" / "python").touch()
+        return base
+
+    def test_it_finds_the_sibling_venv_not_the_running_interpreter(self):
+        from automations.icd_alerts import boot_schedule as B
+        base = self._tree()
+        self.assertEqual(B.venv_python(base / "app"),
+                         base / "venv" / "bin" / "python")
+
+    def test_it_does_not_simply_take_sys_executable(self):
+        import sys
+        from automations.icd_alerts import boot_schedule as B
+        base = self._tree()
+        self.assertNotEqual(str(B.venv_python(base / "app")), sys.executable)
+
+    def test_a_tree_with_no_venv_falls_back_rather_than_breaking(self):
+        """A checkout being tested by hand has no sibling venv, and this must
+        still produce something runnable."""
+        import pathlib, tempfile, sys
+        from automations.icd_alerts import boot_schedule as B
+        bare = pathlib.Path(tempfile.mkdtemp()) / "app"
+        bare.mkdir()
+        self.assertEqual(str(B.venv_python(bare)), sys.executable)
+
+    def test_the_plist_never_hardcodes_the_installer_python(self):
+        """The BODY, not the docstring -- which explains sys.executable at
+        length and would match for the wrong reason. Three tests today have
+        gone green or red on prose rather than code."""
+        from automations.icd_alerts import boot_schedule as B
+        import inspect
+        body = inspect.getsource(B.plist_text).split('"""')[-1]
+        self.assertNotIn("sys.executable", body,
+                         "the boot job would run whatever launched setup.py")
+        self.assertIn("venv_python(", body)
