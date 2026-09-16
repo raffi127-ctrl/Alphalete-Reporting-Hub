@@ -217,9 +217,20 @@ def match_rep(log_key: str, rows: dict[str, int]):
 
 
 # ------------------------------------------------------------------ run --
-def run_campaign(sh, g, day: dt.date, campaign: str) -> dict:
+def counts_box_tracker(sh, day: dt.date) -> dict[str, float]:
+    """BACK-UP BOX counts off the Rep Lvl tracker tab (box_order_log.
+    tracker_backup), keyed like counts_box. Only used when the order log
+    doesn't reach the day — and then raise-only (see main)."""
+    from automations.box_order_log import tracker_backup as tb
+    out: dict[str, float] = collections.defaultdict(float)
+    for rep, n in tb.counts_for(tb.read_tab(sh), day).items():
+        out[_alias(_norm(rep))] += n
+    return out
+
+
+def run_campaign(sh, g, day: dt.date, campaign: str, counts_fn=None) -> dict:
     rows = campaign_rows(g, campaign)
-    counts = dict(CAMPAIGNS[campaign](sh, day))
+    counts = dict((counts_fn or CAMPAIGNS[campaign])(sh, day))
     for key in [k for k in counts
                 if HOME_CAMPAIGN.get(k, campaign) != campaign]:
         del counts[key]                       # filled by its home pass
@@ -381,7 +392,22 @@ def main(argv=None) -> int:
                  f"(retries until {FAILOPEN[c]:%H:%M}, then fail-open)")
     campaigns = ready
 
-    results = [run_campaign(sh, g, d, c) for d in days for c in campaigns]
+    # BACK-UP (Eve 2026-09-16): when the BOX order log doesn't reach the day
+    # but the Rep Lvl tracker does, count off the tracker. Still raise-only —
+    # the tracker is a stand-in, not the authority that may clear a cell.
+    backup = {}
+    if "BOX" in uncovered:
+        from automations.box_order_log import tracker_backup as tb
+        if tb.covers(tb.read_tab(sh), days[-1]):
+            backup["BOX"] = counts_box_tracker
+            _log(f"BOX: using the Rep Lvl tracker back-up for {days[-1]} "
+                 "(the order log doesn't reach it) — raise-only")
+        else:
+            _log(f"BOX: the tracker back-up doesn't cover {days[-1]} either")
+
+    results = [run_campaign(sh, g, d, c,
+                            backup.get(c) if d == days[-1] else None)
+               for d in days for c in campaigns]
     for res in results:
         res["covered"] = not (res["campaign"] in uncovered
                               and res["day"] == days[-1])

@@ -8093,6 +8093,26 @@
       "timeout_minutes": 45,
       "verify": null
     },
+    "box_tracker_backup": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "BACK-UP BOX counts for the Vantura Sales Board (Eve 2026-09-16). Pulls B2BBOXEnergyTracker/BoxDailyTracker-RepLvl (worksheet 'Daily Tracker Sales - Rep Lvl'), keeps Carlos Hidalgo's rows, and writes rep x day counts to the hidden 'Lucy Box Tracker' tab. deploy/box_order_log.sh runs it with --write whenever the order log pass exits non-zero; vantura_orderlog_sales falls back to it (raise-only) when 'Lucy Box Data' lacks the day. DRY by default here; add --write to fill the tab. MUST run on Lucy 2 (Carlos's Tableau session). Registered 2026-09-16.",
+      "display_name": "BOX Rep Lvl tracker back-up (Vantura)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.box_order_log.tracker_backup"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 20,
+      "verify": null,
+      "machine": "Lucy 2"
+    },
     "box_order_log_per_office": {
       "on_scheduler": false,
       "_off_scheduler_note": "PER-ICD BOX Order Log for onboarded B2B offices that enrolled 'Box Order Log' in Metrics Onboarding -> each posts its OWN Slack thread in its office channel. ONBOARDING-DRIVEN SLACK sibling of box_order_log_roshan (which EMAILS specific owners from a manual registry). Runs automations.box_order_log.per_office: pulls the TEAM ALLEXPORDERLOG view (B2BBOXEnergyTracker/BoxOrderLog/ALLEXPORDERLOG) ONCE, then for each onboarded office with Box enrolled filters the export to that office's exact 'Owner & Office' value (clean.filter_to_owner \u2014 verified against Megan's real ALLEXP export 2026-07-29: Carlos 127 / Roshan 794 / Abel 14 sales, unknown owner => 0 rows, case/whitespace tolerant) and posts its thread via box_order_log.run --owner-office/--channel. Carlos's standalone box_order_log post is byte-identical/untouched. --post ENABLED 2026-07-29 (Megan). SCOPE VERIFIED on the mini: `lucy rerun box_order_log_per_office --probe` pulled ALLEXPORDERLOG through the mini's session and returned ALL 4 offices (ROSHAN 3264 / RYAN 1438 / CARLOS 485 / ABEL 54), matching Megan's export; clean.filter_to_owner isolates each (unknown => 0 rows). So the MINI is the correct machine (Carlos's Lucy 2 session is self-scoped and would return only Carlos). NO-OP until an office enrolls Box (box_offices() returns [] -> 'nothing to do'). Runs via `lucy rerun`; a daily 7-8am LaunchAgent on the mini is the remaining install step (mirrors box_order_log_roshan) once the first Box office is live. Cadence rides the 7-8am window (Box extract lands ~7-8am). Present so `lucy rerun box_order_log_per_office` works (dry). Posting schedule is a STANDALONE LaunchAgent to install once Megan verifies a live per-office post. Registered 2026-07-29.",

@@ -69,6 +69,16 @@ echo "[$(date)] box-order-log starting (mode: ${MODE:-dry-run})" > "$LOG_FILE"
 "$VENV_PY" -u -m automations.box_order_log.run $MODE >> "$LOG_FILE" 2>&1
 ST=$?
 
+# BACK-UP (2026-09-16): the order log didn't come through clean, so pull the
+# BoxDailyTracker-RepLvl counts into the hidden "Lucy Box Tracker" tab. The
+# Vantura board's 09:30 BOX pass falls back to it (raise-only) when the log
+# doesn't reach the day. Best-effort: its failure never changes this run's
+# exit or the marker logic below.
+if [ "$ST" -ne 0 ] && [ "${1:-}" != "--dry" ]; then
+    echo "[$(date)] order log not clean (exit $ST) — pulling the Rep Lvl"          "tracker back-up" >> "$LOG_FILE"
+    "$VENV_PY" -u -m automations.box_order_log.tracker_backup --write         >> "$LOG_FILE" 2>&1         || echo "[$(date)] tracker back-up FAILED (exit $?)" >> "$LOG_FILE"
+fi
+
 # Only claim the day once the posting run actually succeeded, so a failure
 # leaves the later pass free to post.
 case "$MODE" in
