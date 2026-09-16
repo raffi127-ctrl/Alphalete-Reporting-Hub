@@ -122,6 +122,11 @@ class AlertOffice(NamedTuple):
         return "%s (%s)" % (self.label, where)
 
 
+# CARLOS'S TWO CAMPAIGNS SHARE ONE ROOM, ON PURPOSE (Megan, 2026-09-16:
+# "keep it shared"). Box and B2B AT&T both post to #alphalete-gp-sales. It
+# looks like a routing mistake and is not one -- the board header names the
+# campaign, and he wants them together. Do not "fix" it.
+#
 # Kash is the pilot (Megan 2026-09-10). Everything about him was already wired
 # by office_metrics -- office key, owner, channel, timezone -- so the only new
 # thing in his rollout is the laptop agent.
@@ -182,6 +187,15 @@ OFFICES: Dict[str, AlertOffice] = {
         day_start="13:30", day_end="21:00",
         sat_start="10:45", sat_end="20:00", saturday=True,
         campaign="nds",
+    ),
+    # NEVER RELAYED, NOT ONCE, and switched off for it (Megan 2026-09-16).
+    # A test enrolment that stayed on the books: left active it reported
+    # itself as a quiet office every morning, which is a standing false alarm
+    # of exactly the kind that teaches people to skim the real ones.
+    "ztest": AlertOffice(
+        key="ztest", owner="Test Office", label="Test Office",
+        channels=(), timezone="America/Chicago", active=False,
+        platform="mac", campaign="b2b_box",
     ),
 }
 

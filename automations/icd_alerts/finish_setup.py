@@ -17,6 +17,7 @@ it does whatever that machine is missing, today or in a year:
 
   * pulls the newest code first, so the steps below are the current ones
   * installs the boot job, if this Mac still starts only at login
+  * takes a new SaraPlus password, if that account has rotated one
   * signs into My Service Cloud, if this office sells Box and the session
     has gone
 
@@ -87,6 +88,45 @@ def _boot_job(log) -> str:
     return "skipped — someone will need to log in after a restart"
 
 
+def _saraplus(log) -> str:
+    """Only when this machine reads SaraPlus, and only when it cannot.
+
+    WHY THIS IS HERE AT ALL. SaraPlus rotates passwords every few weeks, so
+    this is not a setup-time question -- it is the thing an office hits months
+    later when their alerts go quiet. Khalil hit it on his first afternoon
+    (2026-09-16) and needed a SECOND command pasted after this link, which is
+    exactly the "one more thing" this module exists to stop.
+
+    IT ASKS ONLY WHEN THE ANSWER IS NO. Prompting a working office for a
+    password is how somebody changes one that was fine -- and our own notes
+    record two unnecessary password changes from precisely that.
+    """
+    try:
+        if not C.uses_saraplus():
+            return "not needed for this office"
+    except Exception:  # noqa: BLE001
+        return "not needed for this office"
+    try:
+        from automations.icd_alerts import run as _run, sara_read
+    except Exception:  # noqa: BLE001
+        return "not available yet"
+
+    log("")
+    log("  Checking your SaraPlus sign-in.")
+    try:
+        got = sara_read.check_account(headless=True, log=lambda *_a: None)
+        if got.get("ok"):
+            return "already working"
+    except Exception as e:  # noqa: BLE001 — any failure means ASK
+        log("  %s" % str(e)[:200])
+
+    log("")
+    log("  SaraPlus is not letting this computer in. If you have just set a")
+    log("  new password, enter it now and it will be checked for real.")
+    return "done" if _run.cmd_set_login(headless=True) == 0 \
+        else "still needs a working SaraPlus password"
+
+
 def _service_cloud(log) -> str:
     """Only for the offices that sell through it, and only when it is out."""
     try:
@@ -111,6 +151,7 @@ def run(log=print) -> int:
 
     steps: List = [("Latest version", _update),
                    ("Starts on its own", _boot_job),
+                   ("SaraPlus sign-in", _saraplus),
                    ("Box sales sign-in", _service_cloud)]
     results = []
     for name, fn in steps:

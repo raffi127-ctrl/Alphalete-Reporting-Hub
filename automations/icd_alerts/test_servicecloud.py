@@ -11,6 +11,7 @@ that is required being treated as optional.
 from __future__ import annotations
 
 import pathlib
+import re
 import unittest
 from unittest import mock
 
@@ -1163,6 +1164,7 @@ class OneLinkThatDoesWhateverIsMissing(unittest.TestCase):
         said = []
         with mock.patch.object(self.F, "_update", lambda log: "up to date"), \
              mock.patch.object(self.F, "_boot_job", lambda log: "already done"), \
+             mock.patch.object(self.F, "_saraplus", lambda log: "already working"), \
              mock.patch.object(self.F, "_service_cloud",
                                lambda log: "not needed for this office"):
             rc = self.F.run(log=said.append)
@@ -1179,6 +1181,7 @@ class OneLinkThatDoesWhateverIsMissing(unittest.TestCase):
 
         with mock.patch.object(self.F, "_update", lambda log: "up to date"), \
              mock.patch.object(self.F, "_boot_job", boom), \
+             mock.patch.object(self.F, "_saraplus", lambda log: "already working"), \
              mock.patch.object(self.F, "_service_cloud",
                                lambda log: reached.append(1) or "done"):
             rc = self.F.run(log=lambda *_a: None)
@@ -1189,6 +1192,7 @@ class OneLinkThatDoesWhateverIsMissing(unittest.TestCase):
         said = []
         with mock.patch.object(self.F, "_update", lambda log: "up to date"), \
              mock.patch.object(self.F, "_boot_job", lambda log: "skipped"), \
+             mock.patch.object(self.F, "_saraplus", lambda log: "already working"), \
              mock.patch.object(self.F, "_service_cloud", lambda log: "done"):
             rc = self.F.run(log=said.append)
         self.assertEqual(rc, 1)
@@ -1822,3 +1826,76 @@ class ALoadedBootJobIsNotNecessarilyAWorkingOne(unittest.TestCase):
         src = inspect.getsource(F._boot_job)
         self.assertIn("runs_the_right_python", src,
                       '"loaded" alone would report already done')
+
+
+class TheOneLinkAlsoFixesASaraPlusPassword(unittest.TestCase):
+    """Khalil hit a rotated SaraPlus password on his first afternoon
+    (2026-09-16) and needed a SECOND command pasted after the link -- which
+    is exactly the "one more thing" finish_setup exists to stop.
+
+    SaraPlus rotates every few weeks, so this is not a setup-time question:
+    it is what an office hits months later when their alerts go quiet.
+    """
+
+    def setUp(self):
+        from automations.icd_alerts import finish_setup
+        self.F = finish_setup
+
+    def test_saraplus_is_one_of_the_steps(self):
+        import inspect
+        self.assertIn("_saraplus", inspect.getsource(self.F.run))
+
+    def test_it_is_skipped_for_an_office_with_no_saraplus(self):
+        from automations.icd_alerts import config as C
+        with mock.patch.object(C, "uses_saraplus", lambda: False):
+            self.assertIn("not needed",
+                          self.F._saraplus(lambda *_a: None))
+
+    def test_a_working_login_is_never_asked_to_change(self):
+        """Prompting a working office for a password is how somebody changes
+        one that was fine -- our notes record two unnecessary changes from
+        exactly that."""
+        from automations.icd_alerts import config as C, sara_read
+        with mock.patch.object(C, "uses_saraplus", lambda: True), \
+             mock.patch.object(sara_read, "check_account",
+                               lambda **k: {"ok": True}):
+            self.assertEqual(self.F._saraplus(lambda *_a: None),
+                             "already working")
+
+    def test_a_broken_login_is_asked_for(self):
+        from automations.icd_alerts import config as C, sara_read, run as R
+        with mock.patch.object(C, "uses_saraplus", lambda: True), \
+             mock.patch.object(sara_read, "check_account",
+                               lambda **k: {"ok": False}), \
+             mock.patch.object(R, "cmd_set_login", lambda **k: 0):
+            self.assertEqual(self.F._saraplus(lambda *_a: None), "done")
+
+    def test_the_update_still_runs_before_every_other_step(self):
+        import inspect
+        src = inspect.getsource(self.F.run)
+        self.assertLess(src.index("_update"), src.index("_saraplus"))
+
+
+class NoTestMayRaiseARealDialog(unittest.TestCase):
+    """A test of finish_setup.run() that leaves one step unpatched RUNS that
+    step -- and on 2026-09-16 that put a real SaraPlus password box on
+    Megan's screen, mid-conversation, three times.
+
+    [[feedback_no_blind_test_sweeps]] says some test_*.py do things for real.
+    This is the shape of that: not a send, but a prompt.
+    """
+
+    def test_every_step_in_run_is_named_here(self):
+        """If a step is added to run() it must be added to the patch lists in
+        OneLinkThatDoesWhateverIsMissing too. This fails loudly when it is
+        not, instead of the step quietly executing against the machine
+        running the tests."""
+        import inspect
+        from automations.icd_alerts import finish_setup as F
+        steps = set(re.findall(r'\("[^"]+", (_\w+)\)',
+                               inspect.getsource(F.run)))
+        guarded = inspect.getsource(OneLinkThatDoesWhateverIsMissing)
+        missing = [s for s in steps if s not in guarded]
+        self.assertEqual(missing, [],
+                         "unpatched in the run() tests, so it executes for "
+                         "real: %s" % missing)
