@@ -197,6 +197,23 @@ OFFICES: Dict[str, AlertOffice] = {
         channels=(), timezone="America/Chicago", active=False,
         platform="mac", campaign="b2b_box",
     ),
+    # Her sign-up came through as "Roshan Amin  ahmad" -- a double space and a
+    # lowercase surname, which is what a form field gives you. It shows in the
+    # quiet-machine nudge and on her Hub card, so it is spelled properly here.
+    # OwnerVille already has it right ("Roshan Amin Ahmad").
+    #
+    # Everything else is HER form answer, copied rather than defaulted: the
+    # 10:30-18:30 day is a B2B office's, not a typo for a D2D one.
+    "roshan": AlertOffice(
+        key="roshan", owner="Roshan Amin Ahmad",
+        label="Roshan's Local Office",
+        channels=(),
+        timezone="America/Chicago", active=True, platform="mac",
+        slack_user_id="",
+        day_start="10:30", day_end="18:30",
+        sat_start="10:30", sat_end="17:00", saturday=True,
+        campaign="b2b_box",
+    ),
 }
 
 
