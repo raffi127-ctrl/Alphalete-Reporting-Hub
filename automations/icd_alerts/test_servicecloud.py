@@ -664,19 +664,23 @@ class AWirelessOfficesDayIsNotFlat(unittest.TestCase):
                          "a wireless office -- do not quietly relabel it")
 
 
-class TheFirstNdsOfficeMustNotFailQuietly(unittest.TestCase):
-    """Khalil Mansour enrolls 2026-09-16 as the first NDS office ever.
+class ASaraPlusLayoutChangeMustNotReadAsAQuietDay(unittest.TestCase):
+    """Every SaraPlus account has the SAME layout (Megan, 2026-09-15).
 
-    Every SaraPlus sales column is a fixed INDEX read off the AT&T fiber
-    dashboard -- internet_sales is 9, wireless lines is 14. NDS is AT&T too
-    but sells wireless and phones, and nobody has looked at its dashboard.
-    A narrower grid makes parse_att skip every rep and return [], which is
-    indistinguishable from an office that has not sold anything yet.
+    That is what makes this worth pinning. The sales columns are fixed
+    indices -- internet_sales is 9, wireless lines is 14 -- so if SaraPlus
+    ever moves one, it is not one office's problem: parse_att skips every
+    row shorter than column 14 and returns [], and EVERY office at once
+    reads as a day when nobody sold anything.
+
+    (Written worrying NDS might have its own narrower dashboard, since
+    Khalil enrols 2026-09-16 as the first NDS office. It does not -- same
+    layout as anyone's. The check earns its keep on the company-wide case.)
     """
 
     def test_a_narrow_grid_is_a_fault_not_a_quiet_day(self):
         from automations.shared import saraplus as S
-        rows = [["", S.AGENT_ROW, "Khalil Mansour", "3", "1"]]
+        rows = [["", S.AGENT_ROW, "A Rep", "3", "1"]]
         self.assertEqual(S.parse_att(rows), [],
                          "the silent behaviour this exists to catch")
         said = S.att_shape_problem(rows)
@@ -687,12 +691,12 @@ class TheFirstNdsOfficeMustNotFailQuietly(unittest.TestCase):
         """The AT&T Internet grid already proves a grid can mark its reps
         another way -- 6_Agent, not 5_Agent."""
         from automations.shared import saraplus as S
-        rows = [["", "6_Agent", "Khalil Mansour"] + ["0"] * 15]
+        rows = [["", "6_Agent", "A Rep"] + ["0"] * 15]
         self.assertTrue(S.att_shape_problem(rows))
 
     def test_a_normal_grid_says_nothing(self):
         from automations.shared import saraplus as S
-        rows = [["", S.AGENT_ROW, "Khalil Mansour"] + ["0"] * 15]
+        rows = [["", S.AGENT_ROW, "A Rep"] + ["0"] * 15]
         self.assertEqual(S.att_shape_problem(rows), "")
 
     def test_an_empty_grid_is_not_a_fault(self):
@@ -700,6 +704,18 @@ class TheFirstNdsOfficeMustNotFailQuietly(unittest.TestCase):
         alert stops being read."""
         from automations.shared import saraplus as S
         self.assertEqual(S.att_shape_problem([]), "")
+
+    def test_a_normal_nds_account_parses_like_any_other(self):
+        """Same layout means Khalil needs no special handling at all -- the
+        only thing NDS genuinely needs is its own hype tier, because an NDS
+        rep's Int is structurally zero."""
+        from automations.shared import saraplus as S
+        row = ["", S.AGENT_ROW, "Khalil Mansour"] + ["0"] * 6 + ["0", "0", "0"]
+        row += ["0", "0", "4"]            # wireless lines at column 14
+        got = S.parse_att([row])
+        self.assertEqual(len(got), 1)
+        self.assertEqual(got[0]["wireless_lines_sold"], 4)
+        self.assertEqual(got[0]["internet_sales"], 0)
 
     def test_the_sweep_reports_a_broken_sales_half(self):
         """It used to write one line into a log file on a laptop in another

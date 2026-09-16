@@ -251,14 +251,12 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
             try:
                 att_rows = S._run_report(page, base, day, "AT&T",
                                          S.GRID_ATT, log=log)
-                # IS THIS GRID THE SHAPE WE READ? Every column below is a
-                # fixed index taken off the AT&T fiber dashboard. NDS is AT&T
-                # too but sells wireless and phones, and its dashboard has
-                # never been looked at -- so a narrower or differently-marked
-                # grid would skip every rep and read as a day with no sales.
-                # Khalil is the first NDS office (2026-09-16); this is the
-                # difference between finding that out tomorrow and finding it
-                # out whenever somebody wonders why he never sells anything.
+                # IS THIS GRID STILL THE SHAPE WE READ? Every column below
+                # is a fixed index. Every SaraPlus account has the same
+                # layout (Megan 2026-09-15), which is what makes this worth
+                # checking at all: a change to it is not one office's
+                # problem, it is every office at once, and a grid we cannot
+                # parse reads as a day with no sales rather than as a fault.
                 problem = S.att_shape_problem(att_rows)
                 if problem:
                     _report_sales_fault(problem, log=log)

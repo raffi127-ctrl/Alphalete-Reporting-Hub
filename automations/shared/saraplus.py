@@ -400,30 +400,32 @@ def parse_att(rows: List[List[str]]) -> List[Dict]:
 def att_shape_problem(rows: List[List[str]]) -> str:
     """Why a grid that HAS rows yielded no reps. "" when there is no problem.
 
-    WRITTEN FOR THE FIRST NDS OFFICE (Khalil, enrolling 2026-09-16). Every
-    column here is a fixed INDEX -- internet_sales is 9, wireless lines is
-    14 -- read off the AT&T fiber grid, which is the only grid this has ever
-    seen. NDS is AT&T too but sells wireless and phones, and nobody has
-    looked at its dashboard.
+    EVERY SARAPLUS ACCOUNT HAS THE SAME LAYOUT (Megan, 2026-09-15), so this
+    should never fire. It was written worrying that NDS -- AT&T, but wireless
+    and phones rather than fiber -- might have a narrower dashboard than the
+    fiber grid these fixed indices were read off. It does not. Khalil's
+    account will parse like anyone's.
 
-    If its grid is narrower, parse_att skips every row on the length check
-    and returns [], which is indistinguishable from an office that has not
-    sold anything yet. Khalil would have got credit checks, never a single
-    sale, and a channel that looked merely quiet. If it is merely DIFFERENT,
-    the numbers come out plausible and wrong, which is worse.
+    IT IS WORTH KEEPING FOR THE OPPOSITE REASON. Because the layout is the
+    same everywhere, a change to it is not one office's problem -- it is
+    every office at once, silently. parse_att skips any row shorter than
+    column 14 and returns [], which is indistinguishable from a day nobody
+    sold anything; the whole company would read as quiet and nothing would
+    say why.
 
-    This cannot tell a narrow grid from a shifted one -- only a person
-    looking at his dashboard can. What it can do is refuse to let "no reps
-    parsed out of a grid full of reps" pass as a quiet day.
+    So: not an NDS check. A canary for the day SaraPlus moves a column. It
+    cannot say WHICH column moved -- only a person looking at the dashboard
+    can -- but it refuses to let "no reps parsed out of a grid full of reps"
+    pass as a quiet day.
     """
     marker_rows = agent_rows(rows, AGENT_ROW)
     if not marker_rows:
         if not rows:
             return ""
         # Rows, but none of them are rep rows. Either the grid is genuinely
-        # only groups and territories, or this grid marks its reps some other
-        # way -- and the AT&T Internet grid already proves that happens
-        # (6_Agent, not 5_Agent).
+        # only groups and territories, or the marker itself has changed --
+        # and the AT&T Internet grid already proves two markers exist
+        # (6_Agent, not 5_Agent), so it is not a far-fetched thing to move.
         kinds = sorted({r[COL_ROWTYPE].strip() for r in rows
                         if len(r) > COL_ROWTYPE and r[COL_ROWTYPE].strip()})
         if kinds and AGENT_ROW not in kinds:
