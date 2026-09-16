@@ -1206,3 +1206,83 @@ class OneLinkThatDoesWhateverIsMissing(unittest.TestCase):
         listing = (root / "automations" / "icd_alerts"
                    / "agent_files.txt").read_text()
         self.assertIn("automations/icd_alerts/finish_setup.py", listing)
+
+
+class AFixReachesTheOfficesWhenWePublishIt(unittest.TestCase):
+    """Megan 2026-09-16: "we need it where we can push the updates we make to
+    their machines."
+
+    Code already reached them on its own, but once a day -- so this morning's
+    correction to the sign-in command sat in main while Ryan pasted the
+    broken one twice.
+
+    The agent now reads ONE small file each sweep and pulls nothing unless
+    its release number moved. That keeps main free for work in progress: a
+    commit reaches nobody until the number is raised deliberately.
+    """
+
+    def setUp(self):
+        import datetime
+        from automations.icd_alerts import selfupdate
+        self.S = selfupdate
+        self.DAY = datetime.date(2026, 9, 16)
+
+    def test_a_new_release_is_due_immediately_not_tomorrow(self):
+        with mock.patch.object(self.S, "published_release", lambda: "9.9.9"), \
+             mock.patch.object(self.S, "applied_release", lambda: "9.9.8"):
+            self.assertTrue(self.S.due(self.DAY))
+
+    def test_an_unchanged_release_does_not_pull(self):
+        """Otherwise every office re-downloads the bundle every two minutes
+        for a tree that changes a few times a week."""
+        stamp = mock.MagicMock()
+        stamp.read_text.return_value = "2026-09-16"
+        with mock.patch.object(self.S, "published_release", lambda: "9.9.9"), \
+             mock.patch.object(self.S, "applied_release", lambda: "9.9.9"), \
+             mock.patch.object(self.S, "STAMP", stamp):
+            self.assertFalse(self.S.due(self.DAY))
+
+    def test_being_unable_to_ask_falls_back_to_the_daily_rule(self):
+        """A flaky connection must not either update on nothing or decide the
+        machine is current -- both end with a fleet that quietly stops
+        tracking main."""
+        stamp = mock.MagicMock()
+        stamp.read_text.return_value = "2026-09-15"      # yesterday
+        with mock.patch.object(self.S, "published_release", lambda: None), \
+             mock.patch.object(self.S, "STAMP", stamp):
+            self.assertTrue(self.S.due(self.DAY))
+        stamp.read_text.return_value = "2026-09-16"      # already done today
+        with mock.patch.object(self.S, "published_release", lambda: None), \
+             mock.patch.object(self.S, "STAMP", stamp):
+            self.assertFalse(self.S.due(self.DAY))
+
+    def test_an_error_page_is_not_a_version(self):
+        with mock.patch.object(self.S, "_fetch",
+                               lambda *_a: b"<html>404 not found</html>\n<b>x"):
+            self.assertIsNone(self.S.published_release())
+
+    def test_a_bad_push_is_not_retried_every_two_minutes(self):
+        """A rollback records the release too. Otherwise a machine nobody can
+        reach would loop on download, failed import and rollback all day."""
+        import inspect
+        src = inspect.getsource(self.S.run)
+        self.assertNotIn("_stamp(today)\n", src,
+                         "an exit path forgets the release and will re-pull")
+        self.assertIn("_stamp(today, release)", src)
+
+    def test_the_release_is_read_once_before_the_files_land(self):
+        """Asking again afterwards could record a release we did not install
+        -- and the machine would then believe it was current."""
+        import inspect
+        src = inspect.getsource(self.S.run)
+        self.assertLess(src.index("release = published_release()"),
+                        src.index("_stamp(today, release)"))
+
+    def test_the_published_file_exists_and_is_a_short_token(self):
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[2]
+        text = (root / "automations" / "icd_alerts"
+                / "agent_release.txt").read_text().strip()
+        self.assertTrue(text)
+        self.assertLessEqual(len(text), 40)
+        self.assertNotIn("\n", text)

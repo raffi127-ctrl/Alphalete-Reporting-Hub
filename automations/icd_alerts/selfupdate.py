@@ -14,9 +14,12 @@ alerts for an afternoon -- it breaks them until somebody drives there, and it
 would do it to every office at once, because they all pull the same code.
 So:
 
-  * ONCE A DAY, not every tick. The agent runs every few minutes; pulling that
-    often is pointless traffic and multiplies the chance of catching a half-
-    pushed tree.
+  * ONLY WHEN WE SAY SO. The agent reads one small file each sweep and pulls
+    nothing unless its release number has moved, so work can land in main
+    without reaching anybody -- and a fix we HAVE published arrives within a
+    sweep rather than the next morning (Megan 2026-09-16: "we need it where
+    we can push the updates we make to their machines"). A daily check stays
+    underneath it as the floor.
   * DOWNLOADED TO ONE SIDE, verified, and only then swapped in. The new code
     has to import in a subprocess before it is allowed to replace anything.
   * THE OLD COPY IS KEPT until the new one has proved itself in place, and
@@ -45,6 +48,31 @@ LIST_PATH = "automations/icd_alerts/agent_files.txt"
 STAMP = C.APP_DIR / "last-selfupdate.txt"
 TIMEOUT = 30
 
+# --- PUSHING A FIX, RATHER THAN WAITING A DAY FOR IT ------------------------
+#
+# Megan, 2026-09-16: "we need it where we can push the updates we make to their
+# machines."
+#
+# Code already reaches the offices on its own -- but once a day, so a fix made
+# at ten in the morning landed the following morning. Today that meant Ryan
+# pasting a broken command twice while the correction sat in main.
+#
+# WHAT THIS IS NOT: a poll of the whole bundle every couple of minutes. That
+# is twenty-odd files per office per sweep for a tree that changes a few times
+# a week, and it multiplies the chance of catching a half-pushed one.
+#
+# Instead the agent reads ONE SMALL FILE each sweep. If its contents match
+# what this machine already applied, nothing else happens -- one request, a
+# few bytes. If they differ, the full verified update runs immediately.
+#
+# THE NUMBER IS BUMPED DELIBERATELY, NOT BY EVERY COMMIT. That is the part
+# that makes this a push rather than a race: work lands in main as usual and
+# reaches nobody, and when a change is actually ready to go out, RELEASE is
+# raised and every office picks it up within one sweep. A tree caught
+# mid-push carries the old number and is ignored.
+RELEASE_PATH = "automations/icd_alerts/agent_release.txt"
+APPLIED = C.APP_DIR / "agent-release.txt"
+
 
 def _app_root() -> Optional[Path]:
     """Where the installed package lives -- the directory holding
@@ -57,10 +85,45 @@ def _app_root() -> Optional[Path]:
     return None
 
 
+def applied_release() -> str:
+    try:
+        return APPLIED.read_text().strip()
+    except OSError:
+        return ""
+
+
+def published_release() -> Optional[str]:
+    """What we have asked the offices to be on, or None if we cannot tell.
+
+    None is not "no update". A machine that cannot reach GitHub must fall
+    back to the daily rule rather than either updating on nothing or deciding
+    it is current -- both of those turn a flaky connection into a fleet that
+    silently stops tracking main.
+    """
+    try:
+        got = _fetch(RELEASE_PATH, dt.datetime.now().strftime("%Y%m%d%H%M%S"))
+        text = got.decode("utf-8", "replace").strip()
+        # A whole HTML error page is not a version. Anything that is not a
+        # short token is treated as "could not tell".
+        return text if text and len(text) <= 40 and "\n" not in text else None
+    except Exception:  # noqa: BLE001 — offline, rate-limited, slow
+        return None
+
+
 def due(today: Optional[dt.date] = None) -> bool:
-    """Once a day. A stamp rather than a timer: the machine sleeps, and a
-    timer that counted uptime would pull three times on a Monday and none on
-    a Friday."""
+    """Is there anything to pull?
+
+    TWO REASONS, and the fast one first. A published release this machine has
+    not applied means a fix is waiting, and waiting is the thing this exists
+    to stop -- so it pulls on the next sweep rather than the next morning.
+
+    The daily stamp stays as the floor: it is what catches a machine whose
+    release check cannot reach GitHub, and what every office ran on before
+    releases existed.
+    """
+    published = published_release()
+    if published and published != applied_release():
+        return True
     today = today or C.today()
     try:
         return STAMP.read_text().strip() != today.isoformat()
@@ -68,10 +131,22 @@ def due(today: Optional[dt.date] = None) -> bool:
         return True
 
 
-def _stamp(today: Optional[dt.date] = None) -> None:
+def _stamp(today: Optional[dt.date] = None,
+           release: Optional[str] = None) -> None:
+    """Record that this machine has dealt with today, and with this release.
+
+    THE RELEASE IS RECORDED ON FAILURE TOO, deliberately -- every caller here
+    passes it, including the rollback path. A bad push that left the machine
+    on its old code must not be retried every two minutes for the rest of the
+    day: it would be a loop of downloads, failed imports and rollbacks on a
+    computer nobody can reach, and the fault it reports is already on its way
+    to us. The daily rule still retries it tomorrow.
+    """
     try:
         STAMP.parent.mkdir(parents=True, exist_ok=True)
         STAMP.write_text((today or C.today()).isoformat())
+        if release:
+            APPLIED.write_text(release)
     except OSError:
         pass
 
@@ -114,6 +189,11 @@ def run(log=print, today: Optional[dt.date] = None) -> bool:
         log("self-update: cannot find the installed copy; skipping")
         return False
 
+    # READ ONCE, at the top. Asking again after the files are in would risk
+    # recording a release we did not actually install -- somebody could
+    # publish a second one in the seconds between -- and this machine would
+    # then believe it was current and stop pulling.
+    release = published_release()
     bust = dt.datetime.now().strftime("%Y%m%d%H%M%S")
     try:
         listing = _fetch(LIST_PATH, bust).decode("utf-8", "replace")
@@ -154,7 +234,7 @@ def run(log=print, today: Optional[dt.date] = None) -> bool:
             log("self-update: the new code did not import -- NOT installing "
                 "it. This office stays on the version it has.")
             _report("downloaded update did not import; not installed")
-            _stamp(today)          # do not retry the same bad push all day
+            _stamp(today, release)          # do not retry the same bad push all day
             return False
 
         # Keep the current copy until the new one has proved itself in place.
@@ -176,10 +256,10 @@ def run(log=print, today: Optional[dt.date] = None) -> bool:
                 if saved.exists():
                     shutil.copy2(saved, root / rel)
             _report("update installed but would not import; rolled back")
-            _stamp(today)
+            _stamp(today, release)
             return False
 
-        _stamp(today)
+        _stamp(today, release)
         log("self-update: updated %d file(s). The next run uses them."
             % replaced)
         # AND THE SCHEDULE, which is code's blind spot: setup.py wrote the
