@@ -92,7 +92,17 @@ FAILOPEN = {"B2B": B2B_FAILOPEN, "BOX": BOX_FAILOPEN}
 FIRST_NAME_ALIASES = {
     "william": "will",
     "nicholas": "nick",
+    "nicolas": "nico",
     "jeffrey": "jeff",
+}
+
+# Reps whose every order-log sale lands on ONE board row, whatever campaign
+# the log files it under. Nico runs the office, sits on a BOX row and sells a
+# B2B now and then — those go on his BOX row too (Eve 2026-09-16). The other
+# campaign's pass leaves him alone, so the authoritative BOX pass never clears
+# what it wrote.
+HOME_CAMPAIGN = {
+    "nico murrugarra": "BOX",
 }
 
 # ------------------------------------------------------------- BOX gate --
@@ -209,7 +219,17 @@ def match_rep(log_key: str, rows: dict[str, int]):
 # ------------------------------------------------------------------ run --
 def run_campaign(sh, g, day: dt.date, campaign: str) -> dict:
     rows = campaign_rows(g, campaign)
-    counts = CAMPAIGNS[campaign](sh, day)
+    counts = dict(CAMPAIGNS[campaign](sh, day))
+    for key in [k for k in counts
+                if HOME_CAMPAIGN.get(k, campaign) != campaign]:
+        del counts[key]                       # filled by its home pass
+    if campaign in HOME_CAMPAIGN.values():
+        for other, fn in CAMPAIGNS.items():
+            if other == campaign:
+                continue
+            for key, n in fn(sh, day).items():
+                if HOME_CAMPAIGN.get(key) == campaign:
+                    counts[key] = counts.get(key, 0) + n
     col = day_column(g, day)
 
     matched, unmatched = {}, []
