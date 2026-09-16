@@ -71,10 +71,21 @@
   // Deleting the once-a-day stamp is what forces the pull, and it works
   // through the code ALREADY on their machine. Anything that needed the new
   // code in order to fetch the new code could never run at all.
+  // ABSOLUTE PATH TO THE INTERPRETER. It was "./venv/bin/python", and the
+  // installer puts `app` and `venv` SIDE BY SIDE under ~/.lucy-reports --
+  // so from inside app/ that path does not exist. Ryan McSpadden pasted it
+  // twice and got "zsh: no such file or directory" both times (2026-09-16),
+  // on the one instruction we had given him to fix his own office.
+  //
+  // It went unnoticed because nothing else types this path: the LaunchAgent
+  // that runs every sweep is written by the installer from venv_python(),
+  // so the scheduled runs were always fine. Only the line a human pastes
+  // was wrong. Spelling it out in full means the cd cannot matter either.
+  var PY = "~/.lucy-reports/venv/bin/python";
   var CMD = "cd ~/.lucy-reports/app"
           + " && rm -f ~/.config/lucy-reports/last-selfupdate.txt"
-          + " && ./venv/bin/python -c \"from automations.icd_alerts import selfupdate as s; s.run()\""
-          + " && ./venv/bin/python -m automations.icd_alerts.box_signin";
+          + " && " + PY + " -c \"from automations.icd_alerts import selfupdate as s; s.run()\""
+          + " && " + PY + " -m automations.icd_alerts.box_signin";
   document.getElementById("cmd").textContent = CMD;
   var btn = document.getElementById("copy");
   btn.addEventListener("click", function () {

@@ -864,3 +864,58 @@ class AFaultNamesTheOfficeItBelongsTo(unittest.TestCase):
         import inspect
         from automations.icd_alerts import run as RUN
         self.assertIn("_box_key", inspect.getsource(RUN.cmd_box))
+
+
+class ThePastedCommandUsesPathsThatExist(unittest.TestCase):
+    """Ryan McSpadden pasted the sign-in command twice on 2026-09-16 and got
+    "zsh: no such file or directory: ./venv/bin/python" both times -- on the
+    one instruction we had given him to fix his own office.
+
+    The installer puts `app` and `venv` SIDE BY SIDE under ~/.lucy-reports,
+    so from inside app/ there is no ./venv. It went unnoticed because nothing
+    else types this path: the LaunchAgent that runs every sweep is written
+    from venv_python(), so scheduled runs were always fine and only the line
+    a human pastes was broken.
+
+    This test reads the page and the installer together so they cannot drift
+    apart again.
+    """
+
+    def setUp(self):
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[2]
+        self.page = (root / "docs" / "signin.html").read_text()
+        self.setup = (root / "automations" / "icd_alerts" / "dist"
+                      / "setup.py").read_text()
+
+    def test_app_and_venv_really_are_siblings(self):
+        """If the installer ever nests them, this test should fail and the
+        page should be changed WITH it."""
+        self.assertIn('APP_DIR = BASE / "app"', self.setup)
+        self.assertIn('VENV_DIR = BASE / "venv"', self.setup)
+        self.assertIn('BASE = HOME / ".lucy-reports"', self.setup)
+
+    def _code(self):
+        """The page's JS with // comments stripped -- the comments EXPLAIN
+        the old broken path, and matching those instead of the real command
+        is how this test passes while the page is still wrong."""
+        out = []
+        for line in self.page.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("//"):
+                continue
+            out.append(line)
+        return "\n".join(out)
+
+    def test_the_page_does_not_look_for_a_venv_inside_app(self):
+        self.assertNotIn("./venv/bin/python", self._code())
+
+    def test_the_page_points_at_the_installers_actual_venv(self):
+        self.assertIn("~/.lucy-reports/venv/bin/python", self._code())
+
+    def test_the_config_directory_is_the_installers_one(self):
+        # The stamp deletion has to hit the real file or the update is not
+        # forced and the whole command is pointless.
+        self.assertIn('CONFIG_DIR = HOME / ".config" / "lucy-reports"',
+                      self.setup)
+        self.assertIn("~/.config/lucy-reports/last-selfupdate.txt", self.page)
