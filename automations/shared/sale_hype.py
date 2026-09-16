@@ -41,18 +41,16 @@ HYPE_REGULAR = (
     "Heck yeah! {first} is on the board :fire:",
     "Snicklepop!! {first} is on the board :zap:",
     "{first} found the money! :moneybag:",
-    "{first} found the money! :fries:",
-    "Heck yeah {first} :paw_prints:",
     "Closer!! {first} is on the board :fire:",
     "WINNER!! {first} is on the board :fire:",
-    "We got a WINNER -- {first} found the money :moneybag:",
-    "{first} on the board. No complacency :eyes:",
     "{first} is on the board! Who's next :eyes::eyes::eyes:",
-    "{first} just put one on the board! :fire:",
-    "{first} is on it :moneybag:",
+    "{first} on the board. No complacency :eyes:",
+    "That's {first} on the board :fries:",
+    "{first} came to play :paw_prints:",
     "Another one for {first} :fire:",
     "{first} keeps going :chart_with_upwards_trend:",
-    "{first} on the board :dart:",
+    "{first} is on it :moneybag:",
+    "{first} just put one on the board! :fire:",
 )
 
 # LOUD, AND MORE THAN ONE OF THEM. These used to be a single line each, and
@@ -62,42 +60,27 @@ HYPE_LARGE = (
     "{first}, TELL US!! :fire::moneybag::fire:",
     "Heck YEAH {first}!! :fire::fire:",
     "{first} FOUND THE MONEY!! :moneybag::fries:",
-    "Snicklepop!! {first} found the money :zap::moneybag:",
-    "{first}, TELL US!! :paw_prints::fire:",
-    "CLOSER!! {first} found the money :fire::moneybag:",
-    "{first}, TELL US!! No complacency :fire::moneybag:",
-    "{first}, TELL US!! Who's next :eyes::eyes::eyes:",
-    "WINNER!! {first}, TELL US!! :fire::moneybag:",
+    "Snicklepop!! {first} is rolling :zap::moneybag:",
+    "CLOSER!! {first} :fire::moneybag:",
+    "WINNER!! {first} :paw_prints::fire:",
+    "{first}!! Who's next :eyes::eyes::eyes:",
+    "{first}!! No complacency :fire::moneybag:",
 )
 
 # The top tier SHOUTS THE NAME, which is the one bit of the old wording that
 # was doing real work -- a rep's name in caps reads differently in a channel.
 #
-# THE WORD IS "COMPLACENT", not "comfortable" -- Megan was specific about it
-# (2026-09-16). It is the one the offices actually say, and a near-synonym in
-# a line meant to sound like them is the whole difference between borrowed
-# and invented.
-#
-# "WHO'S NEXT" IS THE SAME IDEA IN THEIR WORDS, and it does the job better
-# than the version written for them: it needles the rest of the room instead
-# of the person who just sold, which is the half that actually moves anybody.
-#
-# AND IT IS SAID ONCE PER TIER, SHORT. The first pass wrote six versions of
-# the same joke and Megan called them "too long / too redundant" -- which is
-# what a pool does to a gag: rotation makes the repetition visible in a way
-# one good line never is. A short one that lands beats four that explain.
-#
-# AND THIS IS THE ONE TIER WITH NO RIBBING IN IT. "Don't get complacent" is
-# funny after one sale and sour after somebody's best day of the month; the
-# joke belongs where the day is ordinary, which is exactly where it lands.
+# THIS IS THE ONE TIER WITH NO RIBBING IN IT. "Don't get complacent" is funny
+# after one sale and sour after somebody's best day of the month; the joke
+# belongs where the day is ordinary, which is exactly where it lands.
 HYPE_SUPER = (
     "{first}, PLEASE TELL US!!!! :money_mouth_face::fire:",
-    "SNICKLEPOP!!! {first} IS ON THE BOARD :zap::fire:",
+    "SNICKLEPOP!!! {first}!!! :zap::fire:",
     "HECK YEAH {first}!!! :fire::money_mouth_face::fire:",
     "{first} FOUND THE MONEY!!! :moneybag::fries::moneybag:",
-    "{first} FOUND THE MONEY!!! :paw_prints::money_mouth_face:",
-    "CLOSER!!! {first} PLEASE TELL US :fire::money_mouth_face::fire:",
-    "WINNER!!! {first} FOUND THE MONEY :fire::money_mouth_face::fire:",
+    "CLOSER!!! {first}!!! :fire::money_mouth_face::fire:",
+    "WINNER!!! WINNER!!! {first} :paw_prints::money_mouth_face:",
+    "{first}!!! WHO'S NEXT :eyes::eyes::eyes:",
 )
 
 
@@ -235,20 +218,17 @@ class _Box(Shape):
     # board language is AT&T's.
     regular_lines = (
         "Heck yeah! {first} closed one :fire:",
-        "Snicklepop!! {first} got a contract done :zap:",
+        "Snicklepop!! {first} got one done :zap:",
         "{first} found the money! :moneybag:",
-        "{first} found the money! :fries:",
-        "Heck yeah {first} :paw_prints:",
         "Closer!! {first} closed one :fire:",
         "WINNER!! {first} closed one :fire:",
-        "We got a WINNER -- {first} found the money :moneybag:",
+        "{first} closed one! Who's next :eyes::eyes::eyes:",
         "{first} closed one. No complacency :eyes:",
-        "{first} got one done! Who's next :eyes::eyes::eyes:",
-        "{first} just finished a contract! :fire:",
-        "{first} just closed one :moneybag:",
+        "That's another for {first} :fries:",
+        "{first} came to play :paw_prints:",
         "Another contract for {first} :fire:",
         "{first} keeps going :chart_with_upwards_trend:",
-        "{first} got one done :dart:",
+        "{first} just closed one :moneybag:",
     )
 
     def tier(self, metrics):

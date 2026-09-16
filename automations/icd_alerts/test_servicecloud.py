@@ -1979,6 +1979,39 @@ class TheSaleLinesSoundLikeTheCompany(unittest.TestCase):
             for near in ("comfortable", "comfy", "coasting"):
                 self.assertNotIn(near, joined, near)
 
+    def test_no_phrase_is_used_twice_in_one_pool(self):
+        """THE BUG THIS EXISTS FOR. Three of the seven loudest lines said
+        "FOUND THE MONEY" and five of nine said "TELL US" -- varied by emoji,
+        which is not varied at all. It posted "MAX FOUND THE MONEY!!!" and
+        "PEDRO FOUND THE MONEY!!!" back to back in Ryan's channel within
+        twelve minutes of going live (2026-09-16).
+
+        A pool only adds variety if its ENTRIES differ. Swapping the
+        decoration on one sentence hides the repetition from whoever wrote
+        it, not from the room reading it.
+        """
+        phrases = ("heck yeah", "snicklepop", "found the money", "closer",
+                   "winner", "who's next", "complacen", "tell us")
+        for campaign in ("att", "nds", "b2b_box"):
+            for pool in self._pools(campaign):
+                for phrase in phrases:
+                    used = [l for l in pool if phrase in l.lower()]
+                    self.assertLessEqual(
+                        len(used), 1,
+                        "%s: %r appears %d times -- %s"
+                        % (campaign, phrase, len(used), used))
+
+    def test_no_line_is_long(self):
+        """Megan 2026-09-16: "just don't make these too long". A sale line is
+        a shout in a busy channel, not a sentence."""
+        import re as _re
+        bare = _re.compile(r":[a-z_]+:")
+        for campaign in ("att", "b2b_box"):
+            for pool in self._pools(campaign):
+                for line in pool:
+                    words = bare.sub("", line.format(first="Max")).strip()
+                    self.assertLessEqual(len(words), 40, line)
+
     def test_the_house_phrases_are_in_there(self):
         for campaign in ("att", "b2b_box"):
             joined = " ".join(sum(self._pools(campaign), ())).lower()
