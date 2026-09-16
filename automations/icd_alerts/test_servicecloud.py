@@ -1326,3 +1326,63 @@ class ThePasswordBoxSaysWhoIsAsking(unittest.TestCase):
             src = inspect.getsource(fn)
             self.assertIn("with prompt", src, fn.__name__)
             self.assertIn("PROMPT", src, fn.__name__)
+
+
+class EnrollCannotSilentlyMakeAnOfficeAttAnyMore(unittest.TestCase):
+    """enroll.py was written when every office was AT&T fiber and defaulted to
+    it with no way to say otherwise. Running it for the first NDS office
+    (Khalil, 2026-09-16) would have pinned OwnerVille to campaign id 3 instead
+    of 1, read the wrong grid for their knocks board, and handed them the AT&T
+    hype tier -- on which an NDS rep's Int is structurally zero, so EVERY sale
+    they ever make reads "regular".
+
+    None of those three raise. They are silent wrongnesses on a machine nobody
+    can reach.
+    """
+
+    def setUp(self):
+        from automations.icd_alerts import enroll
+        self.E = enroll
+
+    def test_the_row_it_writes_carries_the_campaign(self):
+        row = self.E.entry_text(
+            "khalil", "Khalil Mansour", "Khalil's Local Office",
+            "America/Chicago", "U045F9JCPJT", ("13:30", "20:30"),
+            ("10:45", "17:00"), True, "mac", False, "nds")
+        self.assertIn('campaign="nds"', row)
+
+    def test_att_is_written_out_rather_than_left_to_the_default(self):
+        """So the next person reading the file does not have to know what the
+        default is to know what the office sells."""
+        row = self.E.entry_text(
+            "someone", "Some One", "Some One's Local Office",
+            "America/Chicago", "", ("13:30", "20:30"), ("10:45", "17:00"),
+            True)
+        self.assertIn('campaign="att"', row)
+
+    def test_the_row_it_writes_is_valid_python(self):
+        """It is spliced into offices.py, and a roster that will not import
+        takes down every office rather than one."""
+        import ast
+        row = self.E.entry_text(
+            "khalil", "Khalil Mansour", "Khalil's Local Office",
+            "America/Chicago", "U045F9JCPJT", ("13:30", "20:30"),
+            ("10:45", "17:00"), True, "mac", False, "nds")
+        ast.parse("D = {\n%s}\n" % row)
+
+    def test_an_unknown_campaign_stops_the_enrolment(self):
+        """A typo must not become a default. Checked against the sign-up
+        form's own list so the two cannot drift."""
+        with self.assertRaises(SystemExit) as e:
+            self.E.enroll("Nobody Real", campaign="ndss", do_push=False,
+                          log=lambda *_a: None)
+        self.assertIn("do not know the campaign", str(e.exception))
+
+    def test_every_campaign_the_form_offers_is_accepted(self):
+        from automations.icd_signup.schema import CAMPAIGNS
+        for key, _label, _sara in CAMPAIGNS:
+            row = self.E.entry_text(
+                "x", "X Y", "X's Local Office", "America/Chicago", "",
+                ("13:30", "20:30"), ("10:45", "17:00"), True, "mac", False,
+                key)
+            self.assertIn('campaign="%s"' % key, row)

@@ -103,11 +103,19 @@ def find_slack_id(name: str, log=print) -> str:
 
 def entry_text(key: str, owner: str, label: str, tz: str, slack_id: str,
                day, sat, saturday: bool, platform: str = "mac",
-               hours_known: bool = False) -> str:
+               hours_known: bool = False, campaign: str = "att") -> str:
     note = ("        # Their OWN hours, as they gave them on the sign-up form.\n"
             if hours_known else
             "        # Hours are the ORG DEFAULT, not this owner's own -- nobody\n"
             "        # has told us theirs yet. Correct them here when they do.\n")
+    # WHAT AN OFFICE SELLS DECIDES WHAT CAN BE READ FOR THEM, so the row says
+    # it out loud rather than leaning on the default. Written for the first
+    # NDS office, 2026-09-16.
+    camp = (
+        '        campaign="%s",\n' % campaign if campaign != "att" else
+        '        # AT&T fiber, which is also the default -- said plainly so the\n'
+        '        # next person does not have to know what the default is.\n'
+        '        campaign="att",\n')
     return (
         '    "%s": AlertOffice(\n'
         '        key="%s", owner="%s", label="%s",\n'
@@ -119,9 +127,10 @@ def entry_text(key: str, owner: str, label: str, tz: str, slack_id: str,
         '%s'
         '        day_start="%s", day_end="%s",\n'
         '        sat_start="%s", sat_end="%s", saturday=%s,\n'
+        '%s'
         '    ),\n'
         % (key, key, owner, label, tz, platform, slack_id, note,
-           day[0], day[1], sat[0], sat[1], saturday))
+           day[0], day[1], sat[0], sat[1], saturday, camp))
 
 
 def add_to_offices_py(text: str) -> None:
@@ -204,9 +213,29 @@ def enroll(name: str, *, office: Optional[str] = None, tz: str = DEFAULT_TZ,
            day=DEFAULT_DAY, sat=DEFAULT_SAT, saturday: bool = True,
            slack_id: Optional[str] = None, do_push: bool = True,
            platform: str = "mac", label: Optional[str] = None,
-           hours_known: bool = False,
+           hours_known: bool = False, campaign: str = "att",
            log=print) -> int:
     from automations.icd_alerts import offices as O
+
+    # WHAT THEY SELL, CHECKED AGAINST THE REAL LIST. This command was written
+    # when every office was AT&T fiber and quietly defaulted to it -- so
+    # enrolling the first NDS office through it would have pinned OwnerVille
+    # to campaign id 3 instead of 1, read the wrong grid for their knocks
+    # board, and handed them the AT&T hype tier, on which an NDS rep's Int is
+    # structurally zero and EVERY sale they ever make reads "regular".
+    #
+    # None of that raises. It is three silent wrongnesses on a machine nobody
+    # can reach, which is why a typo here has to stop the enrolment rather
+    # than become a default.
+    campaign = (campaign or "att").strip().lower()
+    from automations.icd_signup.schema import CAMPAIGNS
+    known = [c[0] for c in CAMPAIGNS]
+    if campaign not in known:
+        raise SystemExit(
+            "I do not know the campaign %r. It has to be one of: %s\n"
+            "This decides which grid is read and how their sales are "
+            "announced, so guessing it is worse than stopping."
+            % (campaign, ", ".join(known)))
 
     owner = " ".join((name or "").split())
     if not owner:
@@ -220,13 +249,13 @@ def enroll(name: str, *, office: Optional[str] = None, tz: str = DEFAULT_TZ,
             "  python -m automations.icd_alerts.invite %s" % (key, key))
 
     label = label or label_for(owner)
-    log("\nEnrolling %s as '%s'" % (owner, key))
+    log("\nEnrolling %s as '%s' on %s" % (owner, key, campaign))
     if slack_id is None:
         slack_id = find_slack_id(owner, log=log)
 
     relay_key = mint_key(key)
     add_to_offices_py(entry_text(key, owner, label, tz, slack_id, day, sat,
-                                 saturday, platform, hours_known))
+                                 saturday, platform, hours_known, campaign))
     add_to_public_json(key, owner, label, tz, day, sat, saturday)
     log("  roster + public record written")
 
@@ -265,6 +294,12 @@ def main(argv=None) -> int:
     ap.add_argument("--hours", help="M-F, like 13:30-20:30")
     ap.add_argument("--saturday", help="like 10:45-17:00, or 'none'")
     ap.add_argument("--slack-id", help="skip the lookup and use this id")
+    ap.add_argument("--campaign", default="att",
+                    help="what this office sells: att (default), nds, "
+                         "b2b_att, b2b_box, energy. It decides which "
+                         "OwnerVille campaign their board reads and how their "
+                         "sales are announced -- wrong is silent, so it is "
+                         "checked against the real list.")
     ap.add_argument("--no-push", action="store_true",
                     help="write everything but do not push (their install "
                          "cannot work until you do)")
@@ -275,7 +310,7 @@ def main(argv=None) -> int:
         day=_hours(a.hours, DEFAULT_DAY),
         sat=DEFAULT_SAT if sat_text in ("", "none") else _hours(a.saturday, DEFAULT_SAT),
         saturday=sat_text != "none",
-        slack_id=a.slack_id, do_push=not a.no_push)
+        slack_id=a.slack_id, do_push=not a.no_push, campaign=a.campaign)
 
 
 if __name__ == "__main__":
