@@ -662,3 +662,53 @@ class AWirelessOfficesDayIsNotFlat(unittest.TestCase):
         self.assertEqual(H.tier({"Int": 0, "NL": 8}, "att"), "regular",
                          "an AT&T office with no Int is a data problem, not "
                          "a wireless office -- do not quietly relabel it")
+
+
+class TheFirstNdsOfficeMustNotFailQuietly(unittest.TestCase):
+    """Khalil Mansour enrolls 2026-09-16 as the first NDS office ever.
+
+    Every SaraPlus sales column is a fixed INDEX read off the AT&T fiber
+    dashboard -- internet_sales is 9, wireless lines is 14. NDS is AT&T too
+    but sells wireless and phones, and nobody has looked at its dashboard.
+    A narrower grid makes parse_att skip every rep and return [], which is
+    indistinguishable from an office that has not sold anything yet.
+    """
+
+    def test_a_narrow_grid_is_a_fault_not_a_quiet_day(self):
+        from automations.shared import saraplus as S
+        rows = [["", S.AGENT_ROW, "Khalil Mansour", "3", "1"]]
+        self.assertEqual(S.parse_att(rows), [],
+                         "the silent behaviour this exists to catch")
+        said = S.att_shape_problem(rows)
+        self.assertTrue(said)
+        self.assertIn("no sales", said, "it must name the consequence")
+
+    def test_a_differently_marked_grid_is_also_caught(self):
+        """The AT&T Internet grid already proves a grid can mark its reps
+        another way -- 6_Agent, not 5_Agent."""
+        from automations.shared import saraplus as S
+        rows = [["", "6_Agent", "Khalil Mansour"] + ["0"] * 15]
+        self.assertTrue(S.att_shape_problem(rows))
+
+    def test_a_normal_grid_says_nothing(self):
+        from automations.shared import saraplus as S
+        rows = [["", S.AGENT_ROW, "Khalil Mansour"] + ["0"] * 15]
+        self.assertEqual(S.att_shape_problem(rows), "")
+
+    def test_an_empty_grid_is_not_a_fault(self):
+        """Nobody has sold yet today. Crying wolf every morning is how a real
+        alert stops being read."""
+        from automations.shared import saraplus as S
+        self.assertEqual(S.att_shape_problem([]), "")
+
+    def test_the_sweep_reports_a_broken_sales_half(self):
+        """It used to write one line into a log file on a laptop in another
+        state. An office whose sales half never worked looked exactly like an
+        office having a slow week."""
+        import inspect
+        from automations.icd_alerts import sara_read as SR
+        src = inspect.getsource(SR.read_day)
+        self.assertIn("_report_sales_fault", src)
+        self.assertIn("att_shape_problem", src)
+        # And it must NOT take the credit checks down with it.
+        self.assertIn("credit checks", src)

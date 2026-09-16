@@ -25,8 +25,12 @@ PLATFORMS = ("mac", "windows")
 #                                         NDS-SNRES-ATT-OOFWorkbook.
 #   Service Cloud  b2b_box             -- Box is an energy broker and sells
 #                                         through myservicecloud.net.
-#   nothing yet    energy              -- Energy Wells gets a knocks board
-#                                         and nothing else.
+#   nothing        energy              -- Energy Wells gets a knocks board
+#                                         and nothing else, ON PURPOSE. It is
+#                                         a test campaign and does not want
+#                                         the reporting yet (Megan
+#                                         2026-09-15). This is a decision,
+#                                         not a gap -- do not "finish" it.
 #
 # Asking an office for a login it does not have is how an install dies at
 # step 6 with the owner certain they typed it right -- and NOT asking one

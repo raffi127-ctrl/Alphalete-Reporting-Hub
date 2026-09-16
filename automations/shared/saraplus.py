@@ -397,6 +397,49 @@ def parse_att(rows: List[List[str]]) -> List[Dict]:
     return out
 
 
+def att_shape_problem(rows: List[List[str]]) -> str:
+    """Why a grid that HAS rows yielded no reps. "" when there is no problem.
+
+    WRITTEN FOR THE FIRST NDS OFFICE (Khalil, enrolling 2026-09-16). Every
+    column here is a fixed INDEX -- internet_sales is 9, wireless lines is
+    14 -- read off the AT&T fiber grid, which is the only grid this has ever
+    seen. NDS is AT&T too but sells wireless and phones, and nobody has
+    looked at its dashboard.
+
+    If its grid is narrower, parse_att skips every row on the length check
+    and returns [], which is indistinguishable from an office that has not
+    sold anything yet. Khalil would have got credit checks, never a single
+    sale, and a channel that looked merely quiet. If it is merely DIFFERENT,
+    the numbers come out plausible and wrong, which is worse.
+
+    This cannot tell a narrow grid from a shifted one -- only a person
+    looking at his dashboard can. What it can do is refuse to let "no reps
+    parsed out of a grid full of reps" pass as a quiet day.
+    """
+    marker_rows = agent_rows(rows, AGENT_ROW)
+    if not marker_rows:
+        if not rows:
+            return ""
+        # Rows, but none of them are rep rows. Either the grid is genuinely
+        # only groups and territories, or this grid marks its reps some other
+        # way -- and the AT&T Internet grid already proves that happens
+        # (6_Agent, not 5_Agent).
+        kinds = sorted({r[COL_ROWTYPE].strip() for r in rows
+                        if len(r) > COL_ROWTYPE and r[COL_ROWTYPE].strip()})
+        if kinds and AGENT_ROW not in kinds:
+            return ("the sales grid has %d row(s) but none are marked %r -- "
+                    "it marks them %s. No sale can be read from it."
+                    % (len(rows), AGENT_ROW, ", ".join(repr(k) for k in kinds)))
+        return ""
+    widest = max(len(r) for r in marker_rows)
+    if widest <= max(COL_ATT.values()):
+        return ("the sales grid has %d rep row(s) but only %d column(s); the "
+                "numbers are read from column %d. Every rep was skipped, so "
+                "this reads as a day with no sales."
+                % (len(marker_rows), widest, max(COL_ATT.values())))
+    return ""
+
+
 def parse_dtv(rows: List[List[str]]) -> Dict[str, int]:
     """{UPPERCASE NAME: dtv}. Keyed uppercase because this grid's names carry
     the office code and the AT&T grid's do not."""

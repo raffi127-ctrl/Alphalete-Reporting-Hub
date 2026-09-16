@@ -211,6 +211,20 @@ def check_account(*, headless: bool = True, log=print,
                 pass
 
 
+def _report_sales_fault(summary: str, log=print) -> None:
+    """Tell us the sales half is broken. Best effort, never raises.
+
+    Separate from the sweep's own error path because this is NOT a failed
+    run: the credit checks came back and the office keeps its alerts. It is
+    a half-outage, and the whole point is that a half-outage is invisible.
+    """
+    try:
+        from automations.icd_alerts import relay as R
+        R.report_fault("sales", summary, log=log)
+    except Exception:  # noqa: BLE001 — a reporter that throws is worse
+        log("could not report the sales fault")
+
+
 def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
              log=print) -> Dict:
     """{'records': {REP: credit checks}, 'sales': {REP: {Int, Int Up, DTV, NL}}}.
@@ -235,8 +249,20 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
 
             sales = {}
             try:
-                agents = S.parse_att(
-                    S._run_report(page, base, day, "AT&T", S.GRID_ATT, log=log))
+                att_rows = S._run_report(page, base, day, "AT&T",
+                                         S.GRID_ATT, log=log)
+                # IS THIS GRID THE SHAPE WE READ? Every column below is a
+                # fixed index taken off the AT&T fiber dashboard. NDS is AT&T
+                # too but sells wireless and phones, and its dashboard has
+                # never been looked at -- so a narrower or differently-marked
+                # grid would skip every rep and read as a day with no sales.
+                # Khalil is the first NDS office (2026-09-16); this is the
+                # difference between finding that out tomorrow and finding it
+                # out whenever somebody wonders why he never sells anything.
+                problem = S.att_shape_problem(att_rows)
+                if problem:
+                    _report_sales_fault(problem, log=log)
+                agents = S.parse_att(att_rows)
                 log("AT&T pass: %d rep(s)" % len(agents))
                 dtv = S.parse_dtv(
                     S._run_report(page, base, day, "All", S.GRID_ALL, log=log))
@@ -246,8 +272,18 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
                     if name:
                         sales[name] = H.metrics_for(a)
             except Exception as e:  # noqa: BLE001 — credit checks still stand
+                # LOGGED IS NOT REPORTED. This wrote one line into a log file
+                # on a laptop in another state and told us nothing, so an
+                # office whose sales half never worked looked exactly like an
+                # office having a slow week -- for as long as it took somebody
+                # to wonder. The credit checks genuinely are unaffected, which
+                # is why this is not fatal; it is still a fault.
                 log("sales passes failed (%s) — credit checks are unaffected"
                     % type(e).__name__)
+                _report_sales_fault(
+                    "the sales half of the SaraPlus read failed (%s: %s). "
+                    "Credit checks are still working."
+                    % (type(e).__name__, str(e)[:160]), log=log)
 
             return {"records": records, "sales": sales}
         finally:
