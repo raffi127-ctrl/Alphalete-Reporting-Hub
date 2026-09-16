@@ -184,6 +184,25 @@ def loaded() -> bool:
         return False
 
 
+def runs_the_right_python() -> bool:
+    """Is the INSTALLED boot job pointing at an interpreter that works?
+
+    `loaded()` only asks whether launchd accepted the job -- and a job can be
+    perfectly loaded and perfectly useless. Khalil's was: installed, running
+    every two minutes, and dying on ModuleNotFoundError because it named the
+    system Python that ran the installer rather than the venv (2026-09-16).
+    
+    Without this, finish_setup sees "already done" and skips the very repair
+    the office ran it for.
+    """
+    try:
+        with open(DAEMON_PATH, "rb") as fh:
+            args = plistlib.load(fh).get("ProgramArguments") or []
+    except Exception:  # noqa: BLE001 — not installed, or unreadable
+        return False
+    return bool(args) and str(args[0]) == str(venv_python())
+
+
 def install(seconds: Optional[int] = None, log=print) -> bool:
     """Ask for the administrator password ONCE and install the boot job.
 

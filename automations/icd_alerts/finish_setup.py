@@ -63,9 +63,17 @@ def _boot_job(log) -> str:
         from automations.icd_alerts import boot_schedule
     except Exception:  # noqa: BLE001 — older copy, update failed
         return "not available yet"
-    if boot_schedule.loaded():
+    if boot_schedule.loaded() and boot_schedule.runs_the_right_python():
         boot_schedule.unload_login_agent()
         return "already done"
+    if boot_schedule.loaded():
+        # LOADED IS NOT WORKING. Khalil's boot job was installed, running
+        # every two minutes, and dying every time because it named the system
+        # Python that ran the installer instead of the venv. Treating "loaded"
+        # as "done" would skip the very repair he ran this for.
+        log("")
+        log("  The startup job on this computer is pointing at the wrong")
+        log("  Python, so it has not been able to run. Reinstalling it.")
     log("")
     log("  This computer only starts the reports once somebody logs in.")
     log("  Letting it start on its own means a restart can't quietly stop")

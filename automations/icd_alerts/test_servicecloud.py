@@ -1776,3 +1776,49 @@ class TheBootJobRunsTheVenvPython(unittest.TestCase):
         self.assertIn("<string>%s</string>" % want, plist)
         self.assertNotIn("<string>%s</string>" % sys.executable, plist,
                          "the boot job would run whatever launched setup.py")
+
+
+class ALoadedBootJobIsNotNecessarilyAWorkingOne(unittest.TestCase):
+    """Khalil's was installed, accepted by launchd, running every two minutes
+    -- and dying every time on ModuleNotFoundError, because it named the
+    system Python that ran the installer instead of the venv.
+
+    finish_setup asked only `loaded()`, so re-running the link would have
+    reported "already done" and skipped the very repair he ran it for.
+    """
+
+    def _plist(self, interpreter):
+        import plistlib, pathlib, tempfile
+        path = pathlib.Path(tempfile.mkdtemp()) / "boot.plist"
+        with path.open("wb") as fh:
+            plistlib.dump({"Label": "x",
+                           "ProgramArguments": [interpreter, "-m", "x"]}, fh)
+        return path
+
+    def test_a_job_naming_the_wrong_python_is_not_right(self):
+        from automations.icd_alerts import boot_schedule as B
+        path = self._plist("/usr/bin/python3")
+        with mock.patch.object(B, "DAEMON_PATH", str(path)), \
+             mock.patch.object(B, "venv_python",
+                               lambda *_a: "/home/.lucy-reports/venv/bin/python"):
+            self.assertFalse(B.runs_the_right_python())
+
+    def test_a_job_naming_the_venv_is_right(self):
+        from automations.icd_alerts import boot_schedule as B
+        want = "/home/.lucy-reports/venv/bin/python"
+        path = self._plist(want)
+        with mock.patch.object(B, "DAEMON_PATH", str(path)), \
+             mock.patch.object(B, "venv_python", lambda *_a: want):
+            self.assertTrue(B.runs_the_right_python())
+
+    def test_a_missing_plist_is_not_right(self):
+        from automations.icd_alerts import boot_schedule as B
+        with mock.patch.object(B, "DAEMON_PATH", "/nowhere/at/all.plist"):
+            self.assertFalse(B.runs_the_right_python())
+
+    def test_finish_setup_repairs_rather_than_skipping(self):
+        import inspect
+        from automations.icd_alerts import finish_setup as F
+        src = inspect.getsource(F._boot_job)
+        self.assertIn("runs_the_right_python", src,
+                      '"loaded" alone would report already done')
