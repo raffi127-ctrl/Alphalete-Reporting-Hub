@@ -282,13 +282,19 @@ def fill_plan(g, result):
     count, lowering or clearing included (Carlos 2026-08-30 evening: the order
     log confirms/corrects what Slack filled live). A hand-typed marker (T/X/F)
     is kept unless the log shows sales; a log count of 0 writes a BLANK (the
-    board's convention: blank = none)."""
+    board's convention: blank = none).
+
+    Authoritative ONLY when the log tab actually holds the day. A fail-open
+    pass (no rows for the day) is raise-only like B2B: on 2026-09-16 the 09:30
+    floor ran with Tableau still short of Tuesday and blanked eight BOX sales
+    Slack had filled — an empty log is "not there yet", never "zero sales"."""
     from gspread.utils import rowcol_to_a1
     col = result["col"]
     if not col:
         return []
     plan = []
-    authoritative = result["campaign"] == "BOX"
+    authoritative = (result["campaign"] == "BOX"
+                     and result.get("covered", True))
     keys = result["rows"] if authoritative else result["matched"]
     for key in keys:
         row = result["rows"][key]
@@ -358,14 +364,17 @@ def main(argv=None) -> int:
     # target day — with --week the earlier days are already-covered history.
     held_fresh = False
     ready = []
+    uncovered = set()
     for c in campaigns:
         if covers(sh, c, days[-1]):
             ready.append(c)
         elif now_t >= FAILOPEN[c]:
             _log(f"{c}: no {days[-1]} rows in the log tab but past the "
                  f"{FAILOPEN[c]:%H:%M} fail-open floor — proceeding with "
-                 "what's there (a gate never skips a report)")
+                 "what's there (a gate never skips a report) — RAISE-ONLY, "
+                 "an empty day never clears the board")
             ready.append(c)
+            uncovered.add(c)
         else:
             held_fresh = True
             _log(f"{c}: log tab has NO rows for {days[-1]} yet — HOLDING "
@@ -373,6 +382,9 @@ def main(argv=None) -> int:
     campaigns = ready
 
     results = [run_campaign(sh, g, d, c) for d in days for c in campaigns]
+    for res in results:
+        res["covered"] = not (res["campaign"] in uncovered
+                              and res["day"] == days[-1])
 
     if not a.fill:
         return 75 if held_fresh else 0
