@@ -1535,3 +1535,41 @@ class BoxDoesNotAnnounceTheStepBeforeASale(unittest.TestCase):
                       {"Sales": 2, "Volume": 138240, "Big": 2, "Huge": 2},
                       _dt.date(2026, 9, 16), "b2b_box")
         self.assertIn("TELL US", loud)
+
+
+class BoxSaleCountsAreNotDeduplicated(unittest.TestCase):
+    """Box's duplicate-contract glitch was the reason the pre-sale ping went
+    off. The natural next worry is whether duplicates also reach the SOLD
+    statuses and double a rep's count.
+
+    Asked rather than assumed -- Ryan McSpadden, 2026-09-16: "No only one
+    will go TPV passed thankfully". So the counts stand, and nothing should
+    start collapsing them: two contracts in a day for one rep are two sales,
+    and de-duplicating on a resemblance would cost somebody a real one.
+    """
+
+    DAY = __import__("datetime").date(2026, 9, 15)
+
+    def _row(self, agent, status, volume):
+        from automations.shared import servicecloud as _SC
+        return {_SC.COL_AGENT: agent, _SC.COL_SUBSTATUS: status,
+                _SC.COL_INITIATED: "09/15/2026 06:13 PM",
+                "Adjusted Annual Volume": volume, _SC.COL_TERM: 36,
+                _SC.COL_BUSINESS: "Somewhere LLC"}
+
+    def test_two_sold_contracts_for_one_rep_count_twice(self):
+        from automations.icd_alerts import box_read as B
+        rows = [self._row("Tiffany Palmer", "TPV Passed", "69,120"),
+                self._row("Tiffany Palmer", "Accepted by Supplier", "69,120")]
+        got = B.tally(rows, self.DAY)["sales"]["Tiffany Palmer"]
+        self.assertEqual(got["Sales"], 2)
+        self.assertEqual(got["Volume"], 138240)
+
+    def test_identical_looking_contracts_are_still_two(self):
+        """Same rep, same volume, same status, same day -- which is exactly
+        what a de-duplicating reader would throw away."""
+        from automations.icd_alerts import box_read as B
+        rows = [self._row("Omar Sanchez", "TPV Passed", "20,000"),
+                self._row("Omar Sanchez", "TPV Passed", "20,000")]
+        got = B.tally(rows, self.DAY)["sales"]["Omar Sanchez"]
+        self.assertEqual(got["Sales"], 2)

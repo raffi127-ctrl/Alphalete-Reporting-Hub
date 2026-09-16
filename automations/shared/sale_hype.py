@@ -152,7 +152,15 @@ class _Box(Shape):
     # credibility. Off for the CAMPAIGN, not just his office: the glitch is
     # Box's and Carlos sells the same product.
     #
-    # THE SALE PING STAYS. A contract that reaches TPV is one real thing.
+    # THE SALE PING STAYS, and that is CONFIRMED rather than assumed. The
+    # obvious worry was that duplicates reach the sold statuses too, which
+    # would double a rep's count and inherit the same problem one step later.
+    # Asked, 2026-09-16 -- Ryan: "No only one will go TPV passed thankfully".
+    #
+    # So a Box sale count is trustworthy as it stands, and nothing here should
+    # start de-duplicating them: two contracts on one day for one rep are two
+    # sales, and collapsing them on a resemblance would quietly cost somebody
+    # a real one.
     presale_ping = False
 
     # "finished a contract", not "put one on the board" -- Ryan again: 'just
