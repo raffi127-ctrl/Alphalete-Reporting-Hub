@@ -160,9 +160,13 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date) -> int:
     # only campaign on it, so a machine has at most ONE enrollment that reads
     # it. Find that one and relay under its key; if there is none, this half
     # of the agent is not this office's at all.
+    # ONE LIST, NOT A SECOND COPY OF IT. This spelled the exclusions out
+    # inline, so moving NDS onto SaraPlus in config.py would have left this
+    # still skipping it -- the office asked for a login, saved it, and the
+    # sweep quietly never used it.
     att = next((r for r in C.enrollments()
-                if str(r.get("campaign") or "att").lower()
-                not in ("nds", "energy", "b2b_box")), None)
+                if str(r.get("campaign") or "att").strip().lower()
+                not in C.NO_SARAPLUS), None)
     if att is None and C.enrollments():
         _log("no SaraPlus campaign on this machine — sales come from elsewhere")
         return 0

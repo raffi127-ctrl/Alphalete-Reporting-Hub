@@ -32,7 +32,7 @@ PLATFORMS = ("mac", "windows")
 # the two intake forms must not disagree about what this company sells.
 CAMPAIGNS = (
     ("att", "AT&T Fiber — Internet & Phones", True),
-    ("nds", "NDS — Wireless & Phones", False),
+    ("nds", "NDS — Wireless & Phones", True),   # AT&T; Megan 2026-09-15
     ("energy", "Energy Wells", False),
     ("b2b_att", "B2B — AT&T", True),
     ("b2b_box", "B2B — Box Energy", False),

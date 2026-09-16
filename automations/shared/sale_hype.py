@@ -83,6 +83,32 @@ class _Att(Shape):
         return "regular"
 
 
+class _Nds(_Att):
+    """NDS sells AT&T wireless and phones -- no Internet, ever.
+
+    SO AT&T'S RULE CANNOT FIRE FOR THEM. Both of its loud tiers require
+    Int > 0, and an NDS rep's Int is structurally zero, so a rep putting up
+    eight lines in a day would read exactly like one putting up a single
+    phone. That is the same flat-channel failure Box had, in a third
+    campaign, and it would have arrived the moment NDS got a SaraPlus login
+    (2026-09-15).
+
+    THE THRESHOLDS ARE AT&T'S, MINUS THE PART THEY CANNOT MEET. Five lines is
+    "super" and two is "large" over there too; all that is dropped is the
+    Internet sale that came with them. Inventing different numbers would be
+    guessing at a wireless office's day with no NDS office live yet to check
+    against -- this at least keeps one rule for one company.
+    """
+
+    def tier(self, metrics):
+        lines = int(metrics.get("NL", 0) or 0)
+        if lines >= 5:
+            return "super"
+        if lines >= 2:
+            return "large"
+        return "regular"
+
+
 class _Box(Shape):
     """Box sells energy contracts: a count, an annual volume in kWh, and a
     term in months. No Int and no wireless lines, so AT&T's rule reads every
@@ -129,9 +155,11 @@ BOX = _Box(("Sales", "Volume", "Big", "Huge"), ("Sales",),
            {"Sales": "Sales", "Volume": "Volume",
             "Big": "Big", "Huge": "Huge"})
 
+NDS = _Nds(METRICS, COUNTED, METRIC_LABEL)
+
 # Keyed by the campaign name the office record carries. An office enrolled
 # before campaigns existed has none, and AT&T is what it was.
-SHAPES = {"b2b_box": BOX}
+SHAPES = {"b2b_box": BOX, "nds": NDS}
 
 
 def shape(campaign=None) -> Shape:

@@ -40,8 +40,16 @@ class AnyCampaignOnTheMachineCounts(unittest.TestCase):
             self.assertTrue(C.uses_saraplus())
 
     def test_two_campaigns_neither_on_saraplus(self):
-        with self._with(["b2b_box", "nds"]):
+        # NDS used to be the second example here and is now AT&T (Megan,
+        # 2026-09-15), so Energy Wells is the only campaign left with no
+        # sales system behind it at all.
+        with self._with(["b2b_box", "energy"]):
             self.assertFalse(C.uses_saraplus())
+
+    def test_an_nds_campaign_puts_the_machine_on_saraplus(self):
+        with self._with(["b2b_box", "nds"]):
+            self.assertTrue(C.uses_saraplus(),
+                            "an NDS office would never be asked for a login")
 
     def test_a_single_box_office_is_unchanged(self):
         with self._with(["b2b_box"]):

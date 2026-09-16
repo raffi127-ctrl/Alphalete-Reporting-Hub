@@ -599,6 +599,66 @@ class ABoxOfficeIsChasedForItsChannel(unittest.TestCase):
 
     def test_a_campaign_with_no_sales_anywhere_still_is_not(self):
         """Chasing an approval for something that can never post is how the
-        real ones get skimmed past."""
-        self.assertFalse(self._has_alerts("nds"))
+        real ones get skimmed past. Energy Wells is now the only one."""
         self.assertFalse(self._has_alerts("energy"))
+
+    def test_an_nds_office_is_chased_because_nds_is_att(self):
+        self.assertTrue(self._has_alerts("nds"))
+
+
+class NdsIsAttAndSellsWirelessOnly(unittest.TestCase):
+    """Megan 2026-09-15: "NDS is at&t so they should get the sara+ login
+    prompt right?"
+
+    Right. NDS sat on the no-SaraPlus list because it is not the FIBER
+    campaign, and "not fiber" was read as "not AT&T" -- its own Tableau
+    workbook is NDS-SNRES-ATT-OOFWorkbook and its board is "ATT NDS Team".
+    An NDS office enrolling was never asked for a login and could never have
+    had a credit check or a sale read, with nothing reporting a fault.
+    """
+
+    def test_an_nds_office_is_asked_for_saraplus(self):
+        from automations.icd_signup.schema import uses_saraplus
+        self.assertTrue(uses_saraplus("nds"))
+
+    def test_the_sweep_finds_the_nds_enrollment(self):
+        """config and run.py each had their own copy of the exclusion list,
+        so moving NDS in one would have left the sweep still skipping it --
+        the office asked for a login, saved it, and it was never used."""
+        import inspect
+        from automations.icd_alerts import run as R
+        src = inspect.getsource(R.cmd_once)
+        self.assertIn("C.NO_SARAPLUS", src)
+        self.assertNotIn('("nds", "energy", "b2b_box")', src)
+
+    def test_energy_wells_is_still_the_one_with_no_sales(self):
+        from automations.icd_alerts import config as C
+        from automations.icd_signup.schema import uses_saraplus
+        stranded = [c for c in ("att", "b2b_att", "nds", "b2b_box", "energy")
+                    if not uses_saraplus(c) and c not in C.SERVICECLOUD_CAMPAIGNS]
+        self.assertEqual(stranded, ["energy"])
+
+
+class AWirelessOfficesDayIsNotFlat(unittest.TestCase):
+    """AT&T's loud tiers both require Int > 0. An NDS rep's Int is
+    structurally zero, so eight lines in a day would have read exactly like
+    one phone -- the same flat-channel failure Box had, in a third campaign,
+    arriving the moment NDS got a login."""
+
+    def _say(self, lines, campaign):
+        from automations.shared import sale_hype as H
+        return H.tier({"Int": 0, "Int Up": 0, "DTV": 0, "NL": lines}, campaign)
+
+    def test_a_big_wireless_day_is_loud(self):
+        self.assertEqual(self._say(8, "nds"), "super")
+        self.assertEqual(self._say(2, "nds"), "large")
+        self.assertEqual(self._say(1, "nds"), "regular")
+
+    def test_the_att_rule_is_untouched(self):
+        from automations.shared import sale_hype as H
+        self.assertEqual(H.tier({"Int": 1, "NL": 5}, "att"), "super")
+        self.assertEqual(H.tier({"Int": 1, "NL": 2}, "att"), "large")
+        self.assertEqual(H.tier({"Int": 1, "NL": 0}, "att"), "regular")
+        self.assertEqual(H.tier({"Int": 0, "NL": 8}, "att"), "regular",
+                         "an AT&T office with no Int is a data problem, not "
+                         "a wireless office -- do not quietly relabel it")

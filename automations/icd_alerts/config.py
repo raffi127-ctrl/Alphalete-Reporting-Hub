@@ -83,7 +83,13 @@ def campaign_id() -> str:
     return CAMPAIGN_IDS.get(campaign(), "")
 
 
-NO_SARAPLUS = ("nds", "energy", "b2b_box")
+# NDS IS AT&T (Megan, 2026-09-15), so it has a SaraPlus account like any
+# other AT&T campaign. It sat here because it is not the fiber campaign, and
+# "not fiber" got read as "not AT&T" -- its own Tableau workbook is called
+# NDS-SNRES-ATT-OOFWorkbook and its board is "ATT NDS Team". An NDS office
+# enrolling was never asked for a SaraPlus login and could never have had a
+# credit check or a sale read, with nothing reporting a fault.
+NO_SARAPLUS = ("energy", "b2b_box")
 
 # WHO USES MY SERVICE CLOUD. Box only, for now -- Megan 2026-09-15, from
 # Ryan's own screenshot. Energy Wells and NDS are still board-only, and
