@@ -27,8 +27,10 @@ METRICS = ("Int", "Int Up", "DTV", "NL")
 COUNTED = ("Int", "Int Up", "DTV", "NL")
 METRIC_LABEL = {"Int": "Int", "Int Up": "Up", "DTV": "DTV", "NL": "NL"}
 
-# THE HOUSE VOICE. "Heck yeah", "found the money" and "Snicklepop" are what
-# this company's channels already say when somebody sells (Megan, 2026-09-16)
+# THE HOUSE VOICE. "Heck yeah", "found the money", "Snicklepop" and
+# "Closers!!" are what this company's channels already say when somebody
+# sells, with the fries and paw-print emoji currently doing the rounds
+# (Megan, 2026-09-16)
 # -- so the alerts say it too, rather than sounding like a system that showed
 # up and started narrating.
 HYPE_REGULAR = (
@@ -37,6 +39,7 @@ HYPE_REGULAR = (
     "{first} found the money! :moneybag:",
     "{first} found the money! :fries:",
     "Heck yeah {first} :paw_prints:",
+    "Closers!! {first} is on the board :fire:",
     "{first} just put one on the board! :fire:",
     "{first} is on it :moneybag:",
     "Another one for {first} :fire:",
@@ -53,6 +56,7 @@ HYPE_LARGE = (
     "{first} FOUND THE MONEY!! :moneybag::fries:",
     "Snicklepop!! {first} found the money :zap::moneybag:",
     "{first}, TELL US!! :paw_prints::fire:",
+    "CLOSERS!! {first} found the money :fire::moneybag:",
 )
 
 # The top tier SHOUTS THE NAME, which is the one bit of the old wording that
@@ -63,6 +67,7 @@ HYPE_SUPER = (
     "HECK YEAH {first}!!! :fire::money_mouth_face::fire:",
     "{first} FOUND THE MONEY!!! :moneybag::fries::moneybag:",
     "{first} FOUND THE MONEY!!! :paw_prints::money_mouth_face:",
+    "CLOSERS!!! {first} PLEASE TELL US :fire::money_mouth_face::fire:",
 )
 
 
@@ -204,6 +209,7 @@ class _Box(Shape):
         "{first} found the money! :moneybag:",
         "{first} found the money! :fries:",
         "Heck yeah {first} :paw_prints:",
+        "Closers!! {first} closed one :fire:",
         "{first} just finished a contract! :fire:",
         "{first} just closed one :moneybag:",
         "Another contract for {first} :fire:",

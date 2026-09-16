@@ -1948,7 +1948,8 @@ class TheSaleLinesSoundLikeTheCompany(unittest.TestCase):
     def test_the_house_phrases_are_in_there(self):
         for campaign in ("att", "b2b_box"):
             joined = " ".join(sum(self._pools(campaign), ())).lower()
-            for phrase in ("heck yeah", "found the money", "snicklepop"):
+            for phrase in ("heck yeah", "found the money", "snicklepop",
+                           "closers"):
                 self.assertIn(phrase, joined, "%s / %s" % (campaign, phrase))
 
     def test_the_top_tier_shouts_the_name(self):
