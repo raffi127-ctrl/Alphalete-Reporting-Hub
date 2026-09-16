@@ -23,7 +23,7 @@
 </style>
 <div class="wrap">
   <h1>Sign Lucy back in</h1>
-  <p class="who">Takes about a minute. You will need your authenticator.</p>
+  <p class="who">Takes about a minute. You will need your My Service Cloud password and your authenticator.</p>
 
   <div class="step"><div class="num">1</div><div>
     <b>Do this on the office computer that runs LucyECO</b> — the one you set up.
@@ -42,6 +42,11 @@
   </div></div>
 
   <div class="step"><div class="num">4</div><div>
+    <b>If a box asks for your My Service Cloud email and password, fill it
+    in.</b> That only happens the first time.
+  </div></div>
+
+  <div class="step"><div class="num">5</div><div>
     A browser window opens on My Service Cloud. <b>Sign in there</b> with your
     authenticator code. It closes by itself and tells you it worked.
   </div></div>
@@ -57,7 +62,19 @@
   // message. iMessage turns a bare URL into a link and the copy loses the
   // `curl` in front and the `| bash` behind -- which is how three updates
   // failed on 2026-09-15 before this pattern was used.
-  var CMD = "cd ~/.lucy-reports/app && ./venv/bin/python -m automations.icd_alerts.box_signin";
+  // IT PULLS THE NEW CODE FIRST. box_signin.py only reached the offices on
+  // 2026-09-15, so on a machine that has not had its daily update yet the
+  // bare command fails with a module error -- a frightening wall of red for
+  // somebody whose sales have just stopped, and the first thing they would
+  // see after being told this was the fix.
+  //
+  // Deleting the once-a-day stamp is what forces the pull, and it works
+  // through the code ALREADY on their machine. Anything that needed the new
+  // code in order to fetch the new code could never run at all.
+  var CMD = "cd ~/.lucy-reports/app"
+          + " && rm -f ~/.config/lucy-reports/last-selfupdate.txt"
+          + " && ./venv/bin/python -c \"from automations.icd_alerts import selfupdate as s; s.run()\""
+          + " && ./venv/bin/python -m automations.icd_alerts.box_signin";
   document.getElementById("cmd").textContent = CMD;
   var btn = document.getElementById("copy");
   btn.addEventListener("click", function () {
