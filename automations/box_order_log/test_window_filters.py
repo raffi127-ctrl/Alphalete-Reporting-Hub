@@ -295,5 +295,54 @@ class DropdownReleaseTest(unittest.TestCase):
         self.assertEqual(viz.combo.text, "(All)")
 
 
+
+class HookOrderTest(unittest.TestCase):
+    """2026-09-16: the saved window (12/9-20/9) held no sales, so the ID
+    dropdowns listed nothing — no (All) to tick — and every pull aborted before
+    the dates were ever widened. The dates must move first."""
+
+    def test_dates_are_widened_before_the_id_filters_are_released(self):
+        import datetime as dt
+        from unittest import mock
+
+        steps = []
+
+        class Box:
+            def __init__(self, label):
+                self.label = label
+                self.first = self
+
+            def wait_for(self, **_):
+                pass
+
+            def click(self, **_):
+                pass
+
+            def fill(self, value):
+                steps.append(("date", self.label))
+
+            def press(self, _key):
+                pass
+
+        class HookViz:
+            def locator(self, sel):
+                return Box(re.search(r'aria-label="([^"]+)"', sel).group(1))
+
+        class HookPage:
+            def wait_for_timeout(self, _ms):
+                pass
+
+        def release(*_a, **_k):
+            steps.append(("release",))
+            return {}
+
+        with mock.patch.object(window, "release_pinned_filters", release),                 mock.patch.object(window, "confirm_release", lambda *a, **k: True):
+            window.date_window_hook(dt.date(2026, 7, 7), dt.date(2026, 9, 16),
+                                    verbose=False)(HookPage(), HookViz())
+
+        self.assertEqual(steps, [("date", "Start Date"), ("date", "End Date"),
+                                 ("release",)])
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

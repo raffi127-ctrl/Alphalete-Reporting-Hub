@@ -834,9 +834,27 @@ def date_window_hook(start: dt.date, end: dt.date, verbose: bool = True):
     cache (cacheable = pre_export is None), which is what we want: never serve
     a cached truncated pull."""
     def _hook(page, viz) -> None:
-        # Release the pinned Contract ID / Account Id lists FIRST: the saved
-        # date range is narrow, so the expensive all-contracts requery runs
-        # against a small window before we widen it below.
+        # Widen the dates FIRST, then release the ID lists. The ID dropdowns
+        # only list values that exist inside the current window, so a saved
+        # range with no sales in it (12/9-20/9 on 2026-09-16, source newest
+        # 9/10) shows '(None)' with no (All) item at all — every pull aborted
+        # and a rerun could never fix it, because the dates were only widened
+        # after the release. Releasing first was a speed choice; this is the
+        # only order that works whatever window SCI leaves saved.
+        if verbose:
+            print("-> Forcing BOX date range: {} → {}".format(
+                _fmt(start), _fmt(end)), flush=True)
+        for label, d in (("Start Date", start), ("End Date", end)):
+            box = viz.locator('textarea[aria-label="{}"]'.format(label)).first
+            box.wait_for(state="visible", timeout=15_000)
+            # force=True bypasses Tableau's transparent click-capture overlay.
+            box.click(force=True)
+            box.fill(_fmt(d))
+            box.press("Enter")
+            page.wait_for_timeout(1200)
+        # Let the viz recompute against the new window before the dropdowns
+        # are read.
+        page.wait_for_timeout(6000)
         # CONFIRM, don't assume. The release is best-effort by design, but its
         # verdict is now checked: anything short of "we saw (All) checked" is
         # said out loud once a day instead of scrolling past in a log. This is
@@ -865,17 +883,6 @@ def date_window_hook(start: dt.date, end: dt.date, verbose: bool = True):
                 "a stale ID list. Refusing to build numbers from it. Set "
                 "ALPHALETE_BOX_ALLOW_UNCONFIRMED=1 to pull anyway (and see the "
                 "alert in #claudecorrections-and-requests).")
-        if verbose:
-            print("-> Forcing BOX date range: {} → {}".format(
-                _fmt(start), _fmt(end)), flush=True)
-        for label, d in (("Start Date", start), ("End Date", end)):
-            box = viz.locator('textarea[aria-label="{}"]'.format(label)).first
-            box.wait_for(state="visible", timeout=15_000)
-            # force=True bypasses Tableau's transparent click-capture overlay.
-            box.click(force=True)
-            box.fill(_fmt(d))
-            box.press("Enter")
-            page.wait_for_timeout(1200)
-        # Let the viz recompute against the new window before the export reads it.
+        # Let the release requery settle before the export reads it.
         page.wait_for_timeout(6000)
     return _hook
