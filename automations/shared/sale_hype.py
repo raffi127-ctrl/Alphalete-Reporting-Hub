@@ -40,9 +40,9 @@ HYPE_REGULAR = (
     "{first} found the money! :fries:",
     "Heck yeah {first} :paw_prints:",
     "Closers!! {first} is on the board :fire:",
-    "{first} is on the board -- no getting comfortable now :eyes:",
-    "One for {first}. Don't go getting comfy :fire:",
-    "{first} found the money! Now go find some more :moneybag:",
+    "{first} is on the board -- don't get complacent :eyes:",
+    "One for {first}. No complacency :fire:",
+    "{first} found the money! Don't get complacent now :moneybag:",
     "{first} on the board -- complacency is the real competition :dart:",
     "{first} just put one on the board! :fire:",
     "{first} is on it :moneybag:",
@@ -61,14 +61,19 @@ HYPE_LARGE = (
     "Snicklepop!! {first} found the money :zap::moneybag:",
     "{first}, TELL US!! :paw_prints::fire:",
     "CLOSERS!! {first} found the money :fire::moneybag:",
-    "Heck YEAH {first}!! And no coasting :fire::fire:",
-    "{first}, TELL US!! Then go again :fire::moneybag:",
+    "Heck YEAH {first}!! Don't get complacent :fire::fire:",
+    "{first}, TELL US!! And no complacency :fire::moneybag:",
 )
 
 # The top tier SHOUTS THE NAME, which is the one bit of the old wording that
 # was doing real work -- a rep's name in caps reads differently in a channel.
 #
-# AND IT IS THE ONE TIER WITH NO RIBBING IN IT. "Don't get comfortable" is
+# THE WORD IS "COMPLACENT", not "comfortable" -- Megan was specific about it
+# (2026-09-16). It is the one the offices actually say, and a near-synonym in
+# a line meant to sound like them is the whole difference between borrowed
+# and invented.
+#
+# AND THIS IS THE ONE TIER WITH NO RIBBING IN IT. "Don't get complacent" is
 # funny after one sale and sour after somebody's best day of the month; the
 # joke belongs where the day is ordinary, which is exactly where it lands.
 HYPE_SUPER = (
@@ -220,9 +225,9 @@ class _Box(Shape):
         "{first} found the money! :fries:",
         "Heck yeah {first} :paw_prints:",
         "Closers!! {first} closed one :fire:",
-        "{first} closed one -- no getting comfortable now :eyes:",
-        "One for {first}. Don't go getting comfy :fire:",
-        "{first} found the money! Now go find some more :moneybag:",
+        "{first} closed one -- don't get complacent :eyes:",
+        "One for {first}. No complacency :fire:",
+        "{first} found the money! Don't get complacent now :moneybag:",
         "{first} just finished a contract! :fire:",
         "{first} just closed one :moneybag:",
         "Another contract for {first} :fire:",

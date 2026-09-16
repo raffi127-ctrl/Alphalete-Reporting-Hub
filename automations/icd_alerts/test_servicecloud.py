@@ -1953,15 +1953,21 @@ class TheSaleLinesSoundLikeTheCompany(unittest.TestCase):
         where the day is ordinary.
         """
         for campaign in ("att", "b2b_box"):
-            regular, large, super_ = self._pools(campaign)
-            ribbed = [l for l in regular
-                      if any(w in l.lower() for w in
-                             ("comfortable", "comfy", "complacen",
-                              "go find some more"))]
+            regular, _large, super_ = self._pools(campaign)
+            ribbed = [l for l in regular if "complacen" in l.lower()]
             self.assertTrue(ribbed, campaign)
             for line in super_:
-                self.assertNotIn("comfort", line.lower())
                 self.assertNotIn("complacen", line.lower())
+
+    def test_the_word_is_complacent_not_a_synonym(self):
+        """Megan was specific (2026-09-16). It is the word the offices
+        actually use, and a near-synonym in a line meant to sound like them
+        is the whole difference between borrowed and invented."""
+        for campaign in ("att", "b2b_box"):
+            joined = " ".join(sum(self._pools(campaign), ())).lower()
+            self.assertIn("complacen", joined)
+            for near in ("comfortable", "comfy", "coasting"):
+                self.assertNotIn(near, joined, near)
 
     def test_the_house_phrases_are_in_there(self):
         for campaign in ("att", "b2b_box"):
