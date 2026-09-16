@@ -1286,3 +1286,43 @@ class AFixReachesTheOfficesWhenWePublishIt(unittest.TestCase):
         self.assertTrue(text)
         self.assertLessEqual(len(text), 40)
         self.assertNotIn("\n", text)
+
+
+class ThePasswordBoxSaysWhoIsAsking(unittest.TestCase):
+    """Kash's office, 2026-09-16: "It's asking for osascript password. Idk
+    what that is."
+
+    Without `with prompt`, macOS labels the dialog with the name of the tool
+    that raised it -- osascript -- which nobody outside this trade has heard
+    of. Being asked for your password by something you do not recognise is a
+    thing people are RIGHT to refuse, and our explanation was in the Terminal
+    window BEHIND the dialog, where it does no good.
+    """
+
+    def _prompts(self):
+        from automations.icd_alerts import boot_schedule, stay_awake
+        return {"boot": boot_schedule.PROMPT, "sleep": stay_awake.PROMPT}
+
+    def test_both_dialogs_name_us_rather_than_osascript(self):
+        for where, text in self._prompts().items():
+            self.assertIn("Lucy Reports", text, where)
+
+    def test_both_say_which_password(self):
+        """"Your password" is ambiguous on a Mac -- there is the login one,
+        the Apple ID, and whatever they use for SaraPlus."""
+        for where, text in self._prompts().items():
+            self.assertIn("log in to this computer", text, where)
+
+    def test_both_say_what_it_is_for(self):
+        """A reason is what turns "some program wants my password" into a
+        decision somebody can actually make."""
+        self.assertIn("after this Mac restarts", self._prompts()["boot"])
+        self.assertIn("going to sleep", self._prompts()["sleep"])
+
+    def test_the_prompt_actually_reaches_the_dialog(self):
+        import inspect
+        from automations.icd_alerts import boot_schedule, stay_awake
+        for fn in (boot_schedule.install, stay_awake.apply_pmset):
+            src = inspect.getsource(fn)
+            self.assertIn("with prompt", src, fn.__name__)
+            self.assertIn("PROMPT", src, fn.__name__)

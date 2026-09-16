@@ -47,6 +47,14 @@ CAFFEINATE_ARGS = ["-d", "-i", "-m"]
 PMSET_WANTED = {"sleep": "0", "displaysleep": "0", "disksleep": "0"}
 
 
+# NAMED, for the same reason boot_schedule's is: macOS labels an unprompted
+# dialog "osascript", and being asked for your password by something you do
+# not recognise is a thing people are right to refuse.
+PROMPT = ("Lucy Reports needs permission to stop this Mac going to sleep, so "
+          "your numbers keep posting.\n\nEnter the password you use to log "
+          "in to this computer.")
+
+
 def _run(cmd: List[str], timeout: int = 20) -> "subprocess.CompletedProcess":
     return subprocess.run(cmd, capture_output=True, timeout=timeout)
 
@@ -144,8 +152,8 @@ def apply_pmset(ask: bool = True) -> bool:
     """
     if platform.system() != "Darwin" or not ask:
         return False
-    script = ('do shell script "%s" with administrator privileges'
-              % pmset_command())
+    script = ('do shell script "%s" with administrator privileges '
+              'with prompt "%s"' % (pmset_command(), PROMPT))
     try:
         proc = _run(["osascript", "-e", script], timeout=180)
         return proc.returncode == 0

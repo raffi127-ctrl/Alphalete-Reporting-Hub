@@ -46,6 +46,20 @@ AGENT_LABEL = "com.alphalete.lucy-reports"
 LABEL = AGENT_LABEL + ".boot"
 
 DAEMON_PATH = "/Library/LaunchDaemons/%s.plist" % LABEL
+
+# WHAT THE PASSWORD BOX SAYS. Without `with prompt`, macOS labels the dialog
+# with the name of the tool that raised it -- osascript -- which nobody
+# outside this trade has heard of. Kash's office, 2026-09-16: "It's asking for
+# osascript password. Idk what that is."
+#
+# Being asked for your password by something you do not recognise is a thing
+# people are RIGHT to refuse, and our explanation was in the Terminal window
+# BEHIND the dialog, where it does no good.
+#
+# "Your password" is also ambiguous on a Mac -- there is the login one, the
+# Apple ID, and whatever they use for SaraPlus -- so it names which.
+PROMPT = ("Lucy Reports needs permission to start by itself after this Mac "
+          "restarts.\n\nEnter the password you use to log in to this computer.")
 DEFAULT_SECONDS = 120
 
 
@@ -168,8 +182,9 @@ def install(seconds: Optional[int] = None, log=print) -> bool:
         "launchctl bootout system/%s 2>/dev/null; launchctl bootstrap system %s"
         % (LABEL, shlex.quote(DAEMON_PATH)),
     ])
-    script = 'do shell script "%s" with administrator privileges' % (
-        cmd.replace("\\", "\\\\").replace('"', '\\"'))
+    script = ('do shell script "%s" with administrator privileges '
+              'with prompt "%s"'
+              % (cmd.replace("\\", "\\\\").replace('"', '\\"'), PROMPT))
     try:
         subprocess.run(["osascript", "-e", script], stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL, timeout=300)
