@@ -1762,13 +1762,17 @@ class TheBootJobRunsTheVenvPython(unittest.TestCase):
         bare.mkdir()
         self.assertEqual(str(B.venv_python(bare)), sys.executable)
 
-    def test_the_plist_never_hardcodes_the_installer_python(self):
-        """The BODY, not the docstring -- which explains sys.executable at
-        length and would match for the wrong reason. Three tests today have
-        gone green or red on prose rather than code."""
+    def test_the_plist_names_the_venv_python_for_a_real_install(self):
+        """BEHAVIOUR, NOT SOURCE TEXT. Three attempts at this today matched
+        my own prose instead of the code -- once passing a check it had not
+        performed. What matters is the interpreter the plist actually names.
+        """
+        import sys
         from automations.icd_alerts import boot_schedule as B
-        import inspect
-        body = inspect.getsource(B.plist_text).split('"""')[-1]
-        self.assertNotIn("sys.executable", body,
+        base = self._tree()
+        with mock.patch.object(B, "app_root", lambda: base / "app"):
+            plist = B.plist_text(120)
+        want = str(base / "venv" / "bin" / "python")
+        self.assertIn("<string>%s</string>" % want, plist)
+        self.assertNotIn("<string>%s</string>" % sys.executable, plist,
                          "the boot job would run whatever launched setup.py")
-        self.assertIn("venv_python(", body)
