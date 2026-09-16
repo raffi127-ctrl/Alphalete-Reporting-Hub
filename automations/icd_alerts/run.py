@@ -266,6 +266,11 @@ def cmd_box(headless: bool, dry_run: bool, day: dt.date) -> int:
 
     try:
         read = box_read.read_day(day, headless=headless, log=_log)
+    except box_read.SignInInProgress:
+        # Somebody is at that keyboard finishing a sign-in. Not a failure,
+        # and reporting it would alert on the exact minute they are doing
+        # what we asked them to.
+        return 0
     except box_read.SignInNeeded as e:
         print("\n%s" % e)
         # The stage names the SYSTEM. post.notify_faults reads it to send the

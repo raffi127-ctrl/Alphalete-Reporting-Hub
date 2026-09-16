@@ -33,6 +33,21 @@ SC_CREDS_PATH = APP_DIR / "servicecloud-creds.json"
 # owner standing at their Mac with an authenticator. A dead session here has
 # to ASK, not self-heal.
 SC_PROFILE_DIR = APP_DIR / "chrome-profile-sc"
+# HELD WHILE SOMEBODY IS SIGNING IN AT THE KEYBOARD.
+#
+# Chromium will not open one profile twice, and the sweep opens this exact
+# directory every two minutes. So a sign-in window sitting open while its
+# owner finds their phone and types six digits is racing the sweep -- and
+# whichever loses, the office is told nothing useful. Carlos ran the link on
+# 2026-09-16 and his session still came back signed out.
+#
+# The sweep is the one that yields: it runs again in two minutes and has
+# nothing to lose, whereas the person at the keyboard has an authenticator
+# code that expires.
+SC_SIGNIN_LOCK = APP_DIR / "sc-signin.lock"
+# Long enough for a phone to be found and a code typed, short enough that a
+# crashed sign-in cannot mute the sweep for the afternoon.
+SC_SIGNIN_LOCK_MINUTES = 10
 INSTALL_PATH = APP_DIR / "install.json"
 STATE_PATH = APP_DIR / "state.json"
 PROFILE_DIR = APP_DIR / "chrome-profile"

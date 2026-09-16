@@ -1028,10 +1028,15 @@ class BeingPastTheLoginFormIsNotBeingSignedIn(unittest.TestCase):
 
     def test_signin_confirms_against_the_contracts_page(self):
         """Being past the login form is not the same as being able to read
-        contracts, and contracts are the only thing this exists for."""
+        contracts, and contracts are the only thing this exists for.
+
+        Read off the MODULE, not one function: the window moved into a helper
+        when the sign-in lock was added, and a test pinned to run() went green
+        while checking nothing.
+        """
         import inspect
         from automations.icd_alerts import box_signin as B
-        src = inspect.getsource(B.run)
+        src = inspect.getsource(B)
         self.assertIn("CONTRACTS_PATH", src)
         self.assertIn("on_mfa_setup", src)
 
@@ -1573,3 +1578,73 @@ class BoxSaleCountsAreNotDeduplicated(unittest.TestCase):
                 self._row("Omar Sanchez", "TPV Passed", "20,000")]
         got = B.tally(rows, self.DAY)["sales"]["Omar Sanchez"]
         self.assertEqual(got["Sales"], 2)
+
+
+class TheSweepYieldsWhileSomebodyIsSigningIn(unittest.TestCase):
+    """Chromium will not open one profile twice, and the sweep opens the SAME
+    Service Cloud profile every two minutes. So a sign-in window sitting open
+    while its owner finds their phone and types six digits is racing a
+    background job for that directory -- and whichever loses, the office is
+    told nothing useful.
+
+    Carlos ran the link on 2026-09-16 and his session still came back signed
+    out. Ryan took three goes.
+    """
+
+    def setUp(self):
+        import tempfile, pathlib
+        from automations.icd_alerts import config as C
+        self.lock = pathlib.Path(tempfile.mkdtemp()) / "sc-signin.lock"
+        self.p = mock.patch.object(C, "SC_SIGNIN_LOCK", self.lock)
+        self.p.start()
+
+    def tearDown(self):
+        self.p.stop()
+
+    def test_no_lock_means_carry_on(self):
+        from automations.icd_alerts import box_read as B
+        self.assertFalse(B.signin_in_progress())
+
+    def test_a_fresh_lock_holds_the_sweep_off(self):
+        import datetime as _dt
+        from automations.icd_alerts import box_read as B
+        self.lock.write_text(_dt.datetime.now().isoformat())
+        self.assertTrue(B.signin_in_progress())
+
+    def test_a_stale_lock_is_ignored(self):
+        """A crashed sign-in must not mute an office's sales for the rest of
+        the afternoon. The failure mode of a forgotten lock has to be noise,
+        never silence."""
+        import datetime as _dt
+        from automations.icd_alerts import box_read as B
+        self.lock.write_text(
+            (_dt.datetime.now() - _dt.timedelta(hours=3)).isoformat())
+        self.assertFalse(B.signin_in_progress())
+
+    def test_a_corrupt_lock_is_ignored(self):
+        from automations.icd_alerts import box_read as B
+        self.lock.write_text("not a date at all")
+        self.assertFalse(B.signin_in_progress())
+
+    def test_yielding_is_not_a_fault(self):
+        """Reporting it would alert on the exact minute the office is doing
+        what we asked them to."""
+        from automations.icd_alerts import box_read as B
+        self.assertFalse(issubclass(B.SignInInProgress, B.AccountProblem))
+
+    def test_the_sweep_returns_clean_rather_than_reporting(self):
+        import inspect
+        from automations.icd_alerts import run as RUN
+        src = inspect.getsource(RUN.cmd_box)
+        cut = src[src.index("SignInInProgress"):]
+        self.assertLess(cut.index("return 0"), cut.index("_report"),
+                        "a sign-in in progress must not file a fault")
+
+    def test_the_sign_in_always_releases_it(self):
+        """Held through a crash, it would silence the office it was meant to
+        help."""
+        import inspect
+        from automations.icd_alerts import box_signin as B
+        src = inspect.getsource(B.run)
+        self.assertIn("finally", src)
+        self.assertIn("unlink", src)

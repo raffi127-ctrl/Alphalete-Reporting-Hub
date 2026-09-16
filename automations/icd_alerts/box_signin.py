@@ -23,6 +23,7 @@ This checks the page and says plainly which happened.
 """
 from __future__ import annotations
 
+import datetime as dt
 import sys
 import time
 
@@ -96,7 +97,28 @@ def run(log=print) -> int:
         log("  The account is %s." % cr["email"])
     log("")
 
+    # TELL THE SWEEP TO STAND BACK. It opens this same Chrome profile every
+    # couple of minutes, and Chromium will not open one twice -- so without
+    # this, the window below is racing a background job for the profile while
+    # somebody is mid-authenticator.
     C.SC_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    C.SC_SIGNIN_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        C.SC_SIGNIN_LOCK.write_text(dt.datetime.now().isoformat())
+    except OSError:
+        pass          # not being able to say so must not stop them signing in
+    try:
+        return _sign_in_window(cr, log=log)
+    finally:
+        try:
+            C.SC_SIGNIN_LOCK.unlink()
+        except OSError:
+            pass
+
+
+def _sign_in_window(cr, log=print) -> int:
+    from patchright.sync_api import sync_playwright
+
     with sync_playwright() as p:
         ctx = p.chromium.launch_persistent_context(
             str(C.SC_PROFILE_DIR), headless=False, args=["--disable-sync"])

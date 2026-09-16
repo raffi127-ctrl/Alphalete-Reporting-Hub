@@ -38,6 +38,30 @@ class AccountProblem(RuntimeError):
     """Something the office can fix, phrased for the office."""
 
 
+class SignInInProgress(RuntimeError):
+    """Somebody is signing in at the keyboard this very moment.
+
+    Deliberately NOT an AccountProblem: nothing is wrong, and reporting it
+    would alert on the exact minute the office is doing what we asked.
+    """
+
+
+def signin_in_progress() -> bool:
+    """Is a sign-in window open right now?
+
+    A STALE LOCK IS IGNORED. A crashed sign-in must not be able to mute this
+    office's sales for the rest of the afternoon -- the failure mode of a
+    forgotten lock has to be noise, never silence.
+    """
+    try:
+        held = dt.datetime.fromisoformat(
+            C.SC_SIGNIN_LOCK.read_text().strip())
+    except (OSError, ValueError):
+        return False
+    age = dt.datetime.now() - held
+    return age < dt.timedelta(minutes=C.SC_SIGNIN_LOCK_MINUTES)
+
+
 class SignInNeeded(AccountProblem):
     """The session is gone and only a person with the authenticator can fix it.
 
@@ -399,6 +423,14 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
     # The honest check is whether the SESSION is alive, and it is four lines
     # below. It gives the right answer whether or not a password was ever
     # typed.
+    if signin_in_progress():
+        # NOT A FAULT, AND NOT AN EMPTY DAY. Somebody is at the keyboard with
+        # an authenticator open right now; barging in would take the profile
+        # out from under them. This runs again in two minutes.
+        log("somebody is signing in at the machine — leaving the browser "
+            "alone this tick")
+        raise SignInInProgress("a sign-in is happening at the machine")
+
     with sync_playwright() as p:
         ctx = _context(p, headless)
         try:
