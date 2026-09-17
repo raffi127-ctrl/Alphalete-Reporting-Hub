@@ -2625,3 +2625,28 @@ def test_it_does_not_ask_for_a_social_it_already_has(page, tmp_path):
     page.evaluate("""() => { window.__ansSSN['dylan poston'] = '123456789'; }""")
     page.evaluate(js)
     assert page.locator("#ansssn").count() == 0, "and not when it has one"
+
+
+def test_a_failed_save_reports_the_shape_of_the_named_field(page, tmp_path):
+    """Third round on Marital Status: the words go in, the API still answers
+    MaritalStatusID is required. A save that names a field should report what
+    that control is MADE of, so the next round is not another guess
+    (Megan, 2026-09-17)."""
+    f = tmp_path / "bank-info.html"
+    f.write_text("""<h1>Tax</h1>
+      <div class="form-group">
+        <label for="ms">Marital Status</label>
+        <input type="hidden" id="ms" ng-model="vm.bank.MaritalStatus">
+        <input type="hidden" ng-model="vm.bank.MaritalStatusID" value="">
+        <span class="k-widget k-dropdown"><span class="k-input">Married</span></span>
+      </div>""")
+    page.goto(f.as_uri())
+    page.evaluate(filler.build_js(
+        [{"name": "Dylan Poston", "find": "Poston", "pages": {}}],
+        "WE 9.20")[len("javascript:"):])
+
+    shape = page.evaluate("() => window.__ansShape('Marital Status')")
+    assert "Marital Status:" in shape
+    assert "kw=" in shape, "says whether Kendo answered for it"
+    assert "MaritalStatusID" in shape, "and names the bound id input"
+    assert "widgetSpan=" in shape

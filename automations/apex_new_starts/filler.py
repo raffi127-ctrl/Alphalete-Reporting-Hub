@@ -754,6 +754,39 @@ _JS = r"""
    }
    return false;
  }
+ function fieldShape(label){
+   /* What a control is actually MADE of, for when setting it looks fine and
+      the save says the field is empty. Third round on Marital Status: the
+      words go in, the API still answers MaritalStatusID is required, so stop
+      guessing and read the page (Megan, 2026-09-17). */
+   var el=fieldFor(label);
+   if(!el) return label+': no box found';
+   var bits=[label+': '+el.tagName.toLowerCase()+
+             (el.id?'#'+el.id:'')+'[type='+(el.type||'')+']'];
+   bits.push('kw='+(kw(el)?'yes':'NO'));
+   var sp=widgetSpan(el);
+   bits.push('widgetSpan='+(sp?(sp.className||'yes'):'no'));
+   var box=el, d=0;
+   while(box&&d<5){
+     if(box.querySelectorAll&&box.querySelectorAll('[ng-model]').length>1) break;
+     box=box.parentElement; d++;
+   }
+   var ins=(box&&box.querySelectorAll)?box.querySelectorAll('[ng-model]'):[], i;
+   bits.push('bound in '+d+' up: '+(ins.length||0));
+   for(i=0;i<ins.length&&i<8;i++){
+     bits.push('  '+ins[i].tagName.toLowerCase()+' ng-model='+
+               (ins[i].getAttribute('ng-model')||'')+' value='+
+               JSON.stringify(String(ins[i].value===undefined?'':ins[i].value).slice(0,24)));
+   }
+   if(el.parentElement){
+     var sel=el.parentElement.querySelector('select');
+     if(sel) bits.push('sibling select: '+(sel.getAttribute('k-ng-model')||
+                       sel.getAttribute('ng-model')||'(no model)')+
+                       ' value='+JSON.stringify(String(sel.value||'')));
+   }
+   return bits.join(' ;; ');
+ }
+ window.__ansShape=fieldShape;
  function roleShape(){
    /* What the Security Roles list is actually made of, for when none of the
       above works. One screenshot instead of another round of guessing. */
@@ -1496,8 +1529,23 @@ _JS = r"""
        }
        continue;
      }
-     if(err){ say(p.name+' · '+tabs[t][0]+': '+err+
-                  (r.miss.length?' — missed '+r.miss.join(', '):''));
+     if(err){
+       /* A save that names a field is worth reporting the SHAPE of that
+          field for -- otherwise the next round is another guess. */
+       var shape='';
+       try{
+         var L=window.__ansNet&&window.__ansNet.last;
+         var body=L&&L.body?String(L.body):'';
+         var m2=body.match(/([A-Za-z]+)ID/);
+         if(m2){
+           var human=m2[1].replace(/([a-z])([A-Z])/g,'$1 $2');
+           shape=fieldShape(human);
+         }
+       }catch(e2){}
+       say(p.name+' · '+tabs[t][0]+': '+err+
+                  (r.miss.length?' — missed '+r.miss.join(', '):'')+
+                  (shape?'<div style="font-size:11px;margin-top:4px;'+
+                         'background:#f6f6f6;padding:4px">'+shape+'</div>':''));
        REPORT.push({name:p.name,ok:false,why:tabs[t][0]+': '+err,
                     miss:seen.concat(r.miss)});
        return false; }
