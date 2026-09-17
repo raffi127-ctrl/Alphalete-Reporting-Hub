@@ -220,12 +220,17 @@ OFFICES: Dict[str, AlertOffice] = {
         # UNROUTED on purpose: the installer asks them where they want
         # their alerts, and a human approves it. Nothing posts until then.
         channels=(),
-        timezone="America/Indiana/Indianapolis", active=True, platform="mac",
+        timezone="America/New_York", active=True, platform="mac",
         slack_user_id="U07QGLA10EN",
-        # Hours are the ORG DEFAULT, not this owner's own -- nobody
-        # has told us theirs yet. Correct them here when they do.
-        day_start="13:30", day_end="20:30",
-        sat_start="10:45", sat_end="17:00", saturday=True,
+        # HER OWN ANSWERS, off the sign-up form (2026-09-17) -- not the org
+        # default. They have to be copied here because all_offices() merges
+        # the sign-up tab and then the code table, CODE WINNING, so a row
+        # here silently overrides whatever the owner typed into the form.
+        # Left at the default it cost her the last hour of Saturday (she
+        # sells to 18:00, the default stops at 17:00) and the first half hour
+        # of every weekday.
+        day_start="13:00", day_end="20:30",
+        sat_start="11:00", sat_end="18:00", saturday=True,
         # AT&T fiber, which is also the default -- said plainly so the
         # next person does not have to know what the default is.
         campaign="att",
@@ -538,6 +543,42 @@ def all_offices() -> Dict[str, AlertOffice]:
     merged = dict(sheet_offices())
     merged.update(OFFICES)
     return merged
+
+
+# The fields an OWNER chooses for themselves on the sign-up form. A code row
+# that disagrees with one of these is overriding a person's own answer.
+OWNER_CHOSEN = ("campaign", "timezone", "day_start", "day_end",
+                "sat_start", "sat_end", "saturday")
+
+
+def shadowed(sheet=None) -> Dict[str, Dict]:
+    """Offices whose code row contradicts what they typed into the form.
+
+    all_offices() merges the sign-up tab and then the code table, CODE
+    WINNING -- which is right for an office that predates the form, and wrong
+    the moment the owner answers for themselves. The override is SILENT: the
+    form accepts their hours, shows them as saved, and something else is
+    served.
+
+    It cost Aya the last hour of her Saturday on 2026-09-17 (she sells to
+    18:00; the org default in her code row stopped at 17:00) and nobody would
+    have found it from either side alone -- the form says 18:00 and the code
+    says 17:00 and neither is aware of the other.
+
+    Returns {office_key: {field: (form_value, code_value)}}. Empty is good.
+    """
+    rows = sheet if sheet is not None else sheet_offices()
+    out: Dict[str, Dict] = {}
+    for key, signed in rows.items():
+        coded = OFFICES.get(key)
+        if not coded:
+            continue
+        diff = {f: (getattr(signed, f, None), getattr(coded, f, None))
+                for f in OWNER_CHOSEN
+                if getattr(signed, f, None) != getattr(coded, f, None)}
+        if diff:
+            out[key] = diff
+    return out
 
 
 def get(key: str) -> Optional[AlertOffice]:
