@@ -396,6 +396,32 @@ def _file_manifest(posted, failed=(), note: str = "") -> None:
     except Exception:                                       # noqa: BLE001
         pass
 
+def _file_marker_manifest(today, note: str) -> None:
+    """A pass that found the day already claimed files the same clean answer —
+    UNLESS today's manifest already records a room that never got the thread.
+
+    THE HOLE THIS CLOSES, found on its first live run (2026-09-17): the
+    day-marker is set as soon as ONE channel has a thread, so "a thread is live"
+    is NOT "every room got it". That morning's post reached
+    #alphalete-gp-sales and lost #a-players-b2b to a Slack upload error; the
+    very next pass — the 8:30 sheet refresh, or any second --post — would have
+    overwritten that record with a clean one and closed the incident while a
+    channel still had nothing in it. A partial delivery has to stay partial
+    until someone actually delivers the missing half.
+    """
+    try:
+        from automations.shared import run_manifest
+        m = run_manifest.read_manifest(MANIFEST_ID) or {}
+        if str(m.get("run_ts", "")).startswith(today.isoformat()) and (
+                m.get("failed") or []):
+            print("  -> leaving today's manifest as it stands: it records {} "
+                  "channel(s) that did NOT get the thread".format(
+                      len(m["failed"])), flush=True)
+            return
+    except Exception:                                       # noqa: BLE001
+        pass
+    _file_manifest(["today's thread (posted by an earlier pass)"], note=note)
+
 def main(argv: Optional[list] = None) -> int:
     from . import tier_bonus          # names the default owner in --help
     ap = argparse.ArgumentParser(description="BOX Order Log -> #alphalete-gp-sales")
@@ -992,8 +1018,8 @@ def main(argv: Optional[list] = None) -> int:
         # so, or delivery_check reads the last pass of a morning that went fine
         # as UNKNOWN and holds the ticket open all day.
         if day_marker.already_done(day_marker.POST_STEM, today):
-            _file_manifest(["today's thread (posted by an earlier pass)"],
-                           note="sheet refresh; the thread was already live")
+            _file_marker_manifest(
+                today, "sheet refresh; the thread was already live")
         if verbose:
             print("\n  Not posted to Slack. To post the PDF to {}:".format(
                 chan_name))
@@ -1020,8 +1046,8 @@ def main(argv: Optional[list] = None) -> int:
         # A deliberate no-op is a completed pass: tell the Hub it ran, same rule
         # the 7:00 deferral follows, so the card doesn't sit amber for the day.
         _report_to_hub(started_at, verbose)
-        _file_manifest(["today's thread (posted by an earlier pass)"],
-                       note="second --post of the day; the thread was already live")
+        _file_marker_manifest(
+            today, "second --post of the day; the thread was already live")
         return 0
 
     # HARD GATE (2026-08-12): don't POST a clearly-capped pull. The filter

@@ -107,5 +107,44 @@ class ManifestWrite(unittest.TestCase):
         self.assertFalse(res.unknown)
 
 
+class MarkerPassNeverClobbersAPartialDay(unittest.TestCase):
+    """The day-marker is set when ONE channel has a thread, not when every room
+    got it — so a later pass finding the day 'already live' must not overwrite a
+    recorded drop with a clean answer. 2026-09-17: the first live run posted to
+    #alphalete-gp-sales and lost #a-players-b2b to a Slack upload error."""
+
+    def _run(self, existing):
+        wrote = []
+        with mock.patch("automations.shared.run_manifest.read_manifest",
+                        return_value=existing), \
+             mock.patch.object(box_run, "_file_manifest",
+                               lambda *a, **k: wrote.append((a, k))):
+            box_run._file_marker_manifest(dt.date.today(), "a later pass")
+        return wrote
+
+    def _manifest(self, failed, day=None):
+        day = day or dt.date.today()
+        return {"run_ts": dt.datetime.combine(
+                    day, dt.time(7, 1)).isoformat(timespec="seconds"),
+                "failed": failed, "ok": not failed}
+
+    def test_a_recorded_drop_from_today_is_left_standing(self):
+        self.assertEqual(
+            self._run(self._manifest(["#a-players-b2b — SlackApiError"])), [])
+
+    def test_a_clean_day_still_gets_its_confirmation(self):
+        self.assertEqual(len(self._run(self._manifest([]))), 1)
+
+    def test_yesterdays_drop_does_not_mute_today(self):
+        """The freshness rule cuts both ways: a stale failure is not evidence
+        about today, and treating it as one would hold the ticket open forever."""
+        stale = self._manifest(["#a-players-b2b — SlackApiError"],
+                               dt.date.today() - dt.timedelta(days=1))
+        self.assertEqual(len(self._run(stale)), 1)
+
+    def test_no_manifest_at_all_still_files_one(self):
+        self.assertEqual(len(self._run(None)), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
