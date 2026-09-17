@@ -385,6 +385,38 @@
         "saturday": true,
         "tz": "America/Detroit"
       }
+    },
+    "trang": {
+      "office_key": "trang",
+      "owner": "Trang Canavan",
+      "label": "Trang's Local Office",
+      "timezone": "America/Chicago",
+      "knocks_picker": [
+        {
+          "value": 15,
+          "label": "Every 15 minutes"
+        },
+        {
+          "value": 30,
+          "label": "Every 30 minutes"
+        },
+        {
+          "value": 60,
+          "label": "Once an hour"
+        },
+        {
+          "value": 0,
+          "label": "Set times \u2014 First Knocks 2:00 PM \u00b7 Money Lap 5:15 PM \u00b7 End of Day 9:00 PM"
+        }
+      ],
+      "knocks_default_hours": {
+        "day_start": "13:30",
+        "day_end": "20:30",
+        "sat_start": "10:45",
+        "sat_end": "17:00",
+        "saturday": true,
+        "tz": "America/Chicago"
+      }
     }
   }
 }
