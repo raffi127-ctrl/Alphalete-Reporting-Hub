@@ -30,19 +30,23 @@ import json
 import os
 from typing import Dict, List, Optional
 
-# WHICH OFFICES READ THE RELAY. One office first, then widen once a full day
-# has been watched -- the same canary shape as _HARVEST_ORDER_LOG_OFFICES in
-# the office_metrics runner, and for the same reason: this changes where a
-# published number comes from, and the way to find out it is wrong is to be
-# watching one board, not seven.
+# WHICH OFFICES READ THE RELAY: every enrolled office, automatically, the
+# moment its machine relays a finished day (Megan 2026-09-17 — "add it to the
+# routines here"). An office moving onto Lucy ECO needs no code change and
+# nobody to remember it; that is the whole point of the direction.
 #
-# Kash is the pilot: he is one of only two metrics offices enrolled in ECO,
-# and his machine has relayed a complete day every day this week.
+# NOT A BLIND SWITCH. Enrolment alone changes nothing -- relayed_rows below
+# still has to be satisfied on every count (the office is active, its key
+# really names that ownerville office, the day is FINISHED, the grid is the
+# campaign it is enrolled as, and there is something to draw). Any one of
+# those failing is a scrape, exactly as before. What this removes is the
+# hand-maintained list, not the checks.
 #
 # Override with KNOCKS_RELAY_OFFICES:
-#     "kash,cyrus"  those offices        "all"  every enrolled office
+#     "kash,cyrus"  hold it to those offices only
+#     "all"         the default, said explicitly
 #     ""            FULL ROLLBACK to the scrape for everyone
-ROLLOUT_OFFICES = {"kash"}
+ROLLOUT_OFFICES = None            # None = every enrolled office
 ROLLOUT_ENV = "KNOCKS_RELAY_OFFICES"
 
 # HOW LATE THE LAST RELAY MAY BE AND THE DAY STILL COUNT AS FINISHED.
@@ -70,7 +74,7 @@ def _rollout() -> Optional[set]:
     """The enrolled offices allowed to read the relay. None means 'all'."""
     raw = os.environ.get(ROLLOUT_ENV)
     if raw is None:
-        return set(ROLLOUT_OFFICES)
+        return None if ROLLOUT_OFFICES is None else set(ROLLOUT_OFFICES)
     raw = raw.strip()
     if raw.lower() == "all":
         return None

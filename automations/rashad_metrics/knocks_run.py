@@ -175,6 +175,10 @@ def _pull(office_name: str, extras: list, target):
         if err0 is not None:
             raise err0
         extra_totals = _fiber_totals(pulled[1:])
+        # Warm the shared cache: an office that still scrapes pays for Chan
+        # anyway, and every relay-backed office behind it now reads the file
+        # instead of opening its own session.
+        _write_extra_cache(target, extra_totals)
     else:
         target, rows = pull_office_knocks(office_name, target)
         extra_totals = []
@@ -230,22 +234,87 @@ def _fiber_totals(pulled: list) -> list:
     return out
 
 
+# CHAN'S TOTALS, PULLED ONCE A DAY FOR THE WHOLE ORG.
+#
+# His line rides above every office's fiber board (Raf 2026-08-23), and it is
+# the SAME line on all of them -- one office's numbers, not a per-office
+# figure. On the scrape path that cost nothing extra: he was impersonated
+# inside the session the office was already paying for.
+#
+# The relay path has no such session. Pulling him per office would have opened
+# a fresh ownerville session for each one, which is a Lucy doing work we
+# already have the answer to -- the exact thing moving knocks onto the ICD
+# machines is meant to stop (Megan 2026-09-17: "our Lucys shouldn't be doing
+# extra work if we have the relay machine's info").
+#
+# So: whichever office reaches him first pays, and every office after that
+# reads the file. A COMPLETED day is frozen, so this can only ever return what
+# the first pull returned -- the same reasoning as knock_week_cache, which
+# caches completed weeks and deliberately does not cache live intraday days.
+# The scrape path writes to it too, so an office that still scrapes warms the
+# cache for the relay-backed ones behind it.
+EXTRA_CACHE_DIR = Path("output") / "knocks_extra_totals"
+
+
+def _extra_cache_path(target) -> Path:
+    return EXTRA_CACHE_DIR / ("%s.json" % target.isoformat())
+
+
+def _read_extra_cache(target) -> dict:
+    """{office name: rows} already pulled for this day. Never raises."""
+    try:
+        import json
+        return json.loads(_extra_cache_path(target).read_text())
+    except Exception:                             # noqa: BLE001
+        return {}
+
+
+def _write_extra_cache(target, pairs: list) -> None:
+    """Remember these offices' rows for the rest of the day. Never raises --
+    a cache that cannot be written is a slower run, not a failed one."""
+    if not pairs:
+        return
+    try:
+        import json
+        held = _read_extra_cache(target)
+        held.update({name: rows for name, rows in pairs})
+        EXTRA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        _extra_cache_path(target).write_text(json.dumps(held))
+    except Exception as e:                        # noqa: BLE001
+        print(f"   extra totals cache: SKIPPED ({type(e).__name__}: {e})",
+              flush=True)
+
+
 def _extra_totals(extras: list, target) -> list:
     """Chan's totals line when this office's own rows came from the relay.
 
-    NEVER RAISES. On the scrape path an extra office's failure was already
-    only worth a missing line; here the office's board is already in hand, so
-    there is even less reason to let this take it down.
+    NEVER RAISES, and never opens an ownerville session for a day it has
+    already been told about. On the scrape path an extra office's failure was
+    only ever worth a missing line; here the office's board is already in
+    hand, so there is even less reason to let this take it down.
     """
     if not extras:
         return []
-    try:
-        _, pulled = pull_offices_knocks(extras, target)
-    except Exception as e:                        # noqa: BLE001
-        print(f"[rashad_knocks] ⚠ totals pull for {', '.join(extras)} failed "
-              f"({type(e).__name__}) — posting without that line.", flush=True)
-        return []
-    return _fiber_totals(pulled)
+    cached = _read_extra_cache(target)
+    have = [(n, cached[n]) for n in extras if cached.get(n)]
+    missing = [n for n in extras if not cached.get(n)]
+    if have:
+        print(f"[rashad_knocks] totals for {', '.join(n for n, _ in have)} "
+              f"read from today's cache — no ownerville session needed.",
+              flush=True)
+    if missing:
+        try:
+            _, pulled = pull_offices_knocks(missing, target)
+        except Exception as e:                    # noqa: BLE001
+            print(f"[rashad_knocks] ⚠ totals pull for {', '.join(missing)} "
+                  f"failed ({type(e).__name__}) — posting without that line.",
+                  flush=True)
+            pulled = []
+        fresh = _fiber_totals(pulled)
+        have += fresh
+        _write_extra_cache(target, fresh)
+    return [(n, rows) for n, rows in have
+            if rows and COL_TOTAL_KNOCKS in rows[0]]
 
 def _render_and_post(office_name: str, target, rows: list, extra_totals: list,
                      *, dry_run: bool) -> int:

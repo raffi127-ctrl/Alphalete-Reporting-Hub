@@ -131,7 +131,8 @@ class KeyJoin(unittest.TestCase):
 
 
 class Rollout(unittest.TestCase):
-    """One office first, and an env that can roll the whole thing back."""
+    """Every enrolled office, automatically — and an env that can pin it back
+    to a few or roll it back entirely."""
 
     def setUp(self):
         import os
@@ -144,8 +145,12 @@ class Rollout(unittest.TestCase):
         else:
             os.environ[KR.ROLLOUT_ENV] = self._env
 
-    def test_default_is_the_canary_set(self):
-        self.assertEqual(KR._rollout(), set(KR.ROLLOUT_OFFICES))
+    def test_default_is_every_enrolled_office(self):
+        """An office moving onto Lucy ECO must not need a code change or
+        anybody to remember it. The checks in relayed_rows are what keep this
+        safe, not a hand-kept list."""
+        self.assertIsNone(KR._rollout())
+        self.assertIsNone(KR.ROLLOUT_OFFICES)
 
     def test_empty_env_is_a_full_rollback(self):
         import os
@@ -273,3 +278,126 @@ class RunnerSourceParity(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExtraTotalsCache(unittest.TestCase):
+    """Chan's line is the SAME line on every office's board, so pulling it per
+    office would open an ownerville session per office for an answer we
+    already have -- the Lucy busywork this whole change exists to stop."""
+
+    def setUp(self):
+        import tempfile
+        from automations.rashad_metrics import knocks_run as KRUN
+        self.KRUN = KRUN
+        self._dir = KRUN.EXTRA_CACHE_DIR
+        self._tmp = tempfile.TemporaryDirectory()
+        KRUN.EXTRA_CACHE_DIR = __import__("pathlib").Path(self._tmp.name)
+
+    def tearDown(self):
+        self.KRUN.EXTRA_CACHE_DIR = self._dir
+        self._tmp.cleanup()
+
+    def test_a_cached_day_never_opens_a_session(self):
+        day = dt.date(2026, 9, 16)
+        rows = [{"Rep": "Chan", "Total Knocks": 12}]
+        self.KRUN._write_extra_cache(day, [("Chan Park", rows)])
+
+        def _boom(*a, **k):
+            raise AssertionError("opened ownerville for a day already cached")
+
+        orig = self.KRUN.pull_offices_knocks
+        self.KRUN.pull_offices_knocks = _boom
+        try:
+            got = self.KRUN._extra_totals(["Chan Park"], day)
+        finally:
+            self.KRUN.pull_offices_knocks = orig
+        self.assertEqual(got, [("Chan Park", rows)])
+
+    def test_the_cache_is_per_day(self):
+        rows = [{"Rep": "Chan", "Total Knocks": 12}]
+        self.KRUN._write_extra_cache(dt.date(2026, 9, 16), [("Chan Park", rows)])
+        self.assertEqual(self.KRUN._read_extra_cache(dt.date(2026, 9, 15)), {},
+                         "yesterday's cache must not answer for another day")
+
+    def test_a_failed_pull_costs_the_line_and_nothing_else(self):
+        def _boom(*a, **k):
+            raise RuntimeError("ownerville timed out")
+
+        orig = self.KRUN.pull_offices_knocks
+        self.KRUN.pull_offices_knocks = _boom
+        try:
+            got = self.KRUN._extra_totals(["Chan Park"], dt.date(2026, 9, 16))
+        finally:
+            self.KRUN.pull_offices_knocks = orig
+        self.assertEqual(got, [], "a totals failure must never raise")
+
+    def test_no_extras_asked_for_means_no_work(self):
+        self.assertEqual(
+            self.KRUN._extra_totals([], dt.date(2026, 9, 16)), [])
+
+    def test_an_unreadable_cache_is_not_fatal(self):
+        day = dt.date(2026, 9, 16)
+        self.KRUN.EXTRA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        self.KRUN._extra_cache_path(day).write_text("{not json")
+        self.assertEqual(self.KRUN._read_extra_cache(day), {})
+
+
+class RelayMeansNoScrape(unittest.TestCase):
+    """The two sources are EXCLUSIVE, and one board comes out either way.
+
+    Two things have to stay true as offices move onto Lucy ECO (Megan
+    2026-09-17). A Lucy must not scrape ownerville for an office whose own
+    machine already relayed the answer -- and the office must not end up with
+    the board twice because both sources ran.
+    """
+
+    def setUp(self):
+        from automations.rashad_metrics import knocks_run as KRUN
+        self.KRUN = KRUN
+        self._saved = (KRUN.knocks_relay.relayed_rows,
+                       KRUN.pull_office_knocks, KRUN.pull_offices_knocks,
+                       KRUN._log_day)
+
+    def tearDown(self):
+        (self.KRUN.knocks_relay.relayed_rows, self.KRUN.pull_office_knocks,
+         self.KRUN.pull_offices_knocks, self.KRUN._log_day) = self._saved
+
+    def _no_scrape(self, *a, **k):
+        raise AssertionError("scraped ownerville for a relayed office")
+
+    def test_relayed_rows_are_used_and_ownerville_is_never_touched(self):
+        rows = [{"Rep": "A", "Total Knocks": 5}]
+        self.KRUN.knocks_relay.relayed_rows = lambda *a, **k: rows
+        self.KRUN.pull_office_knocks = self._no_scrape
+        self.KRUN.pull_offices_knocks = self._no_scrape
+        self.KRUN._log_day = lambda *a, **k: None
+        got, extras, target = self.KRUN._pull("Akashdeep Rai", [], WED)
+        self.assertEqual(got, rows)
+        self.assertEqual(extras, [])
+        self.assertEqual(target, WED)
+
+    def test_a_refusal_falls_through_to_the_scrape(self):
+        scraped = [{"Rep": "B", "Total Knocks": 9}]
+        self.KRUN.knocks_relay.relayed_rows = lambda *a, **k: None
+        self.KRUN.pull_office_knocks = lambda name, target: (target, scraped)
+        self.KRUN.pull_offices_knocks = self._no_scrape
+        self.KRUN._log_day = lambda *a, **k: None
+        got, _, target = self.KRUN._pull("Akashdeep Rai", [], WED)
+        self.assertEqual(got, scraped)
+        self.assertEqual(target, WED)
+
+    def test_the_day_is_logged_on_both_paths(self):
+        """Otherwise the knocks history quietly stops gaining days for exactly
+        the offices that moved onto the better source."""
+        seen = []
+        self.KRUN._log_day = lambda t, o, r: seen.append(o)
+        self.KRUN.pull_offices_knocks = self._no_scrape
+
+        self.KRUN.knocks_relay.relayed_rows = lambda *a, **k: [{"Rep": "A"}]
+        self.KRUN._pull("Akashdeep Rai", [], WED)
+
+        self.KRUN.knocks_relay.relayed_rows = lambda *a, **k: None
+        self.KRUN.pull_office_knocks = lambda n, t: (t, [{"Rep": "B"}])
+        self.KRUN._pull("Akashdeep Rai", [], WED)
+
+        self.assertEqual(seen, ["Akashdeep Rai", "Akashdeep Rai"])
