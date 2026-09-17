@@ -1530,7 +1530,12 @@ _JS = r"""
  var box=document.createElement('div'); box.id='anspanel';
  box.style.cssText='position:fixed;top:14px;right:14px;z-index:2147483647;background:#fff;border:2px solid #0F766E;border-radius:10px;padding:14px 16px;font:14px -apple-system,Helvetica,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.25);max-width:330px';
  var found=learnIds();
- var ssn=ssnBoxes(), gnd=needGender(p), nav=idFor(p);
+ /* Only ask for a Social we do not already have. This box predates the setup
+    table and asked regardless, so the panel sat there saying "17 Socials held
+    in this tab" above an empty Social box for one of the seventeen
+    (Megan, 2026-09-17). */
+ var ssn=(ssnBoxes()&&!window.__ansSSN[norm(p.name)])?ssnBoxes():null;
+ var gnd=needGender(p), nav=idFor(p);
  /* On somebody's record, name them. On the roster -- which is where the
     whole-week run is started from -- naming one person reads as though the
     button is about to do only them (Megan, 2026-09-10). */

@@ -2602,3 +2602,26 @@ def test_it_says_how_many_socials_it_is_holding(page, tmp_path):
     page.evaluate(js)
     assert page.evaluate(
         "() => window.__ansSSN['dylan poston']") == "123456789"
+
+
+def test_it_does_not_ask_for_a_social_it_already_has(page, tmp_path):
+    """Megan, 2026-09-17: "why is it asking for a social here?" The panel was
+    saying "17 Socials held in this tab" directly above an empty Social box
+    for one of those seventeen. The inline box predates the setup table and
+    asked regardless."""
+    f = tmp_path / "bank-info.html"
+    f.write_text("<h1>Tax</h1>"
+                 "<label for='s1'>SSN</label><input id='s1'>"
+                 "<label for='s2'>Confirm SSN</label><input id='s2'>")
+    page.goto(f.as_uri())
+    page.evaluate("() => localStorage.clear()")
+    js = filler.build_js(
+        [{"name": "Dylan Poston", "find": "Poston", "pages": {}}],
+        "WE 9.20")[len("javascript:"):]
+
+    page.evaluate(js)
+    assert page.locator("#ansssn").count() == 1, "asks when it has none"
+
+    page.evaluate("""() => { window.__ansSSN['dylan poston'] = '123456789'; }""")
+    page.evaluate(js)
+    assert page.locator("#ansssn").count() == 0, "and not when it has one"
