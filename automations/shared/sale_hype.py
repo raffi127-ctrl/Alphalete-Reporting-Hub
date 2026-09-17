@@ -257,6 +257,20 @@ class _Nds(_Att):
     place, for one campaign.
     """
 
+    # THE GIF BAR, ITS OWN, for the same reason the tier is. _Att offers two
+    # routes -- twelve lines, OR four Internet sales alongside five lines --
+    # and the second can NEVER fire for an NDS rep, whose Int is structurally
+    # zero. Inherited, it quietly gave Khalil's office ONE route where every
+    # AT&T office has two.
+    #
+    # Twelve lines either way: his best rep on 2026-09-16 put up seven, and
+    # the best AT&T day in the whole company that day was six -- so the two
+    # campaigns are being asked for a comparable thing.
+    LEGEND_LINES = 12
+
+    def above_top(self, metrics):
+        return int(metrics.get("NL", 0) or 0) >= self.LEGEND_LINES
+
     def tier(self, metrics):
         lines = int(metrics.get("NL", 0) or 0)
         if lines >= 5:

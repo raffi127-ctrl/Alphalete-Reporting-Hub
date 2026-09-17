@@ -2311,3 +2311,35 @@ class AChannelSeesAtMostThreeGifsADay(unittest.TestCase):
 
     def test_a_missing_file_is_a_full_allowance(self):
         self.assertEqual(self.P._gifs_sent(self.DAY, "nobody"), 0)
+
+
+class EveryCampaignsGifBarIsItsOwn(unittest.TestCase):
+    """_Att offers two routes to a gif -- twelve wireless lines, OR four
+    Internet sales alongside five lines. The second can NEVER fire for an NDS
+    rep, whose Int is structurally zero.
+
+    Inherited, it quietly gave Khalil's office one route where every AT&T
+    office has two. Same shape as the tier inheritance caught this morning.
+    """
+
+    def test_nds_does_not_inherit_a_route_it_cannot_take(self):
+        from automations.shared import sale_hype as H
+        self.assertFalse(H.shape("nds").above_top({"Int": 4, "NL": 5}))
+        self.assertTrue(H.shape("att").above_top({"Int": 4, "NL": 5}))
+
+    def test_nds_can_still_earn_one_on_lines_alone(self):
+        from automations.shared import sale_hype as H
+        self.assertTrue(H.shape("nds").above_top({"Int": 0, "NL": 12}))
+
+    def test_a_real_nds_day_does_not_clear_it(self):
+        """Khalil's best rep on 2026-09-16 put up seven lines."""
+        from automations.shared import sale_hype as H
+        self.assertFalse(H.shape("nds").above_top({"Int": 0, "NL": 7}))
+
+    def test_every_campaign_answers_for_itself(self):
+        """A campaign must not inherit somebody else's idea of enormous."""
+        from automations.shared import sale_hype as H
+        for camp in ("att", "nds", "b2b_box"):
+            sh = H.shape(camp)
+            self.assertIn("above_top", type(sh).__dict__,
+                          "%s uses another campaign's bar" % camp)
