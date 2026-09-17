@@ -849,8 +849,11 @@ def start_watch() -> bool:
     WATCH_LOG.parent.mkdir(parents=True, exist_ok=True)
     try:
         proc = subprocess.Popen(
-            [sys.executable, "-m", "automations.apex_new_starts.run",
-             "--watch-obcl"],
+            # Its OWN module, not this one. The Hub scans the process list
+            # for "-m <a card's action module>" to find runs it did not start,
+            # so a watcher launched as run.py made the card read RUNNING NOW
+            # for two hours and disabled its own button (Megan, 2026-09-17).
+            [sys.executable, "-m", "automations.apex_new_starts.obcl_watch"],
             cwd=str(REPO_ROOT), start_new_session=True,
             stdout=open(WATCH_LOG, "a"), stderr=subprocess.STDOUT)
     except Exception:
@@ -948,9 +951,6 @@ def main(argv=None) -> int:
     mode.add_argument("--mark-obcl", action="store_true",
                       help="tick 'Added to APEX' on the OBCL from the run's "
                            "result (left on the clipboard by the panel)")
-    mode.add_argument("--watch-obcl", action="store_true",
-                      help="wait for a run to finish, then mark the OBCL "
-                           "(started for you by --button; exits on its own)")
     mode.add_argument("--explore", action="store_true",
                       help="inventory the Apex new-employee screen")
     ap.add_argument("--any-day", action="store_true",
@@ -982,8 +982,6 @@ def main(argv=None) -> int:
         return make_button(today, tab=args.tab, include_ona=include_ona)
     if args.mark_obcl:
         return mark_obcl(dry_run=args.no_write)
-    if args.watch_obcl:
-        return watch_obcl()
     if args.explore:
         return explore(today)
     if not check_day(today, args.any_day):

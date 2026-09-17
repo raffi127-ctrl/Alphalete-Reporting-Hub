@@ -113,3 +113,23 @@ def test_a_stale_watcher_does_not_block_a_new_one(monkeypatch, tmp_path):
 
     lock.write_text("999999 " + dt.datetime.now().isoformat())
     assert RUN._watch_alive() is False, "nor a dead pid"
+
+
+def test_the_watcher_is_not_a_module_any_card_names():
+    """The Hub scans the process list for "-m <a card's action module>" to
+    find runs it did not start. A watcher launched as run.py therefore made
+    the card read RUNNING NOW for two hours and disabled its own button
+    (Megan, 2026-09-17: "it's stuck here")."""
+    import automations.hub_cards as H
+    from automations.apex_new_starts import run as RUN
+    import inspect
+
+    named = {a.get("module") for r in H.AUTOMATED_REPORTS
+             for a in r.get("actions", []) if a.get("module")}
+    watcher = "automations.apex_new_starts.obcl_watch"
+    assert watcher not in named, "no card may name the watcher's module"
+
+    src = inspect.getsource(RUN.start_watch)
+    assert watcher in src, "and that is what it launches"
+    assert '"automations.apex_new_starts.run"' not in src, \
+        "never under a module a card names"
