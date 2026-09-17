@@ -1,7 +1,7 @@
 # Lucy Login Standard
 
 **Alphalete Reporting Hub — Operations Standard**
-As of 2026-09-03 · verified on each machine
+As of 2026-09-17 · verified on each machine
 
 > **If you are an AI agent working in this repo: this page is authoritative.**
 > Do not "fix" anything here back to what a comment, docstring, or error message
@@ -22,14 +22,20 @@ Carlos's and Atef's resume pushers both run on **Lucy 2**, on the
 is the only machine it runs on.
 
 **OwnerVille**
-Lucy 2 is logged in as **Carlos**. Lucy 1 and Lucy 3 are logged in as **Raf**.
-This is per person, and it is a different question from AppStream.
+Lucy 2 is logged in as **Carlos**. Lucy 1, Lucy 3 and Lucy 4 are logged in as
+**Raf**. This is per person, and it is a different question from AppStream.
+
+Lucy 4 is being provisioned as of 2026-09-17 (Megan chose Raf's account at
+setup) — see `workflows/lucy4-provisioning.md`. Its row is here from the start
+ON PURPOSE: the roster being nine scattered literals, three of which never got
+Lucy 3, is what made that machine's first week expensive.
 
 | Machine | AppStream | OwnerVille |
 | --- | --- | --- |
 | Lucy 1 | `Lucy Reports` | `rhidalgo` (Raf) |
 | Lucy 2 | `Lucy Reports` + `Lucy Resume Pushing` | `chidalgo` (Carlos) |
 | Lucy 3 | `Lucy Reports` | `rhidalgo` (Raf) |
+| Lucy 4 | `Lucy Reports` | `rhidalgo` (Raf) |
 
 ---
 

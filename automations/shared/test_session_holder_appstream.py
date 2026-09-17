@@ -32,7 +32,7 @@ from automations.shared import session_holder as sh
 class HoldMachines(unittest.TestCase):
 
     def test_every_lucy_that_runs_appstream_holds_it(self):
-        for m in ("Lucy 1", "Lucy 2", "Lucy 3"):
+        for m in ("Lucy 1", "Lucy 2", "Lucy 3", "Lucy 4"):
             with self.subTest(machine=m):
                 self.assertIn(m, sh.APPSTREAM_HOLD_MACHINES)
 
@@ -44,7 +44,10 @@ class HoldMachines(unittest.TestCase):
         self.assertNotIn(None, sh.APPSTREAM_HOLD_MACHINES)
 
     def test_a_laptop_or_unknown_box_does_not_hold(self):
-        for m in ("Megan laptop", "Lucy 4", "unknown"):
+        # "Lucy 4" USED to be the example here, and became a real runner on
+        # 2026-09-17 — a placeholder named after the next machine expires the
+        # day that machine is built. Use names nothing will ever be called.
+        for m in ("Megan laptop", "some-random-mac", "unknown"):
             with self.subTest(machine=m):
                 self.assertNotIn(m, sh.APPSTREAM_HOLD_MACHINES)
 

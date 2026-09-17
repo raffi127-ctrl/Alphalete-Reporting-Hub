@@ -70,6 +70,7 @@ EXPECTED_OWNERVILLE_ACCOUNT = {
     "Lucy 1": "rhidalgo",   # Raf
     "Lucy 2": "chidalgo",   # Carlos
     "Lucy 3": "rhidalgo",   # Raf
+    "Lucy 4": "rhidalgo",   # Raf (Megan 2026-09-17, at provisioning)
 }
 
 

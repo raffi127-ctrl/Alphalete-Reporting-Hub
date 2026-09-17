@@ -22,7 +22,10 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CONFIG = _REPO_ROOT / "automations" / "day_orchestrator" / "schedule_config.json"
 
-_LUCY = {"Lucy 1", "Lucy 2"}
+# Every runner. This set went stale at Lucy 2 and silently reported "no
+# schedule" for every Lucy 3 card until 2026-09-17 — keep it in step with
+# mini_control._KNOWN_RUNNERS.
+_LUCY = {"Lucy 1", "Lucy 2", "Lucy 3", "Lucy 4"}
 _DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
          "Saturday", "Sunday"]
 

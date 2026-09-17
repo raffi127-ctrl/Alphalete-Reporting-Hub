@@ -144,7 +144,7 @@ _MACHINE_MARKER = Path(__file__).resolve().parents[2] / ".machine-profile"
 # making two machines depend on a third. Until every Lucy has its own account,
 # expect some token churn here — that is the known cost of this trade, and it is
 # strictly better than a machine that cannot recover on its own.
-APPSTREAM_HOLD_MACHINES = ("Lucy 1", "Lucy 2", "Lucy 3")
+APPSTREAM_HOLD_MACHINES = ("Lucy 1", "Lucy 2", "Lucy 3", "Lucy 4")
 # Back-compat for anything importing the old singular name.
 APPSTREAM_HOLD_MACHINE = APPSTREAM_HOLD_MACHINES[0]
 
@@ -152,7 +152,7 @@ APPSTREAM_HOLD_MACHINE = APPSTREAM_HOLD_MACHINES[0]
 # which is all three. Deliberately separate from who HOLDS one: consuming a
 # donated session costs nothing and is what keeps Lucy 1 and Lucy 3 alive;
 # holding a competing console is what broke them.
-APPSTREAM_FLEET_MACHINES = ("Lucy 1", "Lucy 2", "Lucy 3")
+APPSTREAM_FLEET_MACHINES = ("Lucy 1", "Lucy 2", "Lucy 3", "Lucy 4")
 
 # RE-MINT THE rqst TOKEN BEFORE IT DIES, not after (Megan 2026-08-27).
 #

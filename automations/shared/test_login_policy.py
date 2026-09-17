@@ -325,7 +325,7 @@ class BothLoginsAreCheckedSeparately(unittest.TestCase):
         credential: present" passes that run."""
         self.assertEqual(lc.EXPECTED_OWNERVILLE_ACCOUNT,
                          {"Lucy 1": "rhidalgo", "Lucy 2": "chidalgo",
-                          "Lucy 3": "rhidalgo"})
+                          "Lucy 3": "rhidalgo", "Lucy 4": "rhidalgo"})
         with mock.patch.object(lc, "_expected_ownerville_account",
                                return_value="rhidalgo"), \
              mock.patch.object(creds, "ownerville_username",

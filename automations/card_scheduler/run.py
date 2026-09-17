@@ -42,9 +42,6 @@ GRACE_MIN = 20
 # Per-machine "already ran today" marker (never committed).
 _STATE = Path.home() / ".config" / "recruiting-report" / "card-scheduler-ran.json"
 
-_LUCY = {"Lucy 1", "Lucy 2"}
-
-
 def _machine() -> str:
     from automations.shared import hub_identity
     return hub_identity.machine_name()
