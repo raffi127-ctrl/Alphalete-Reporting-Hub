@@ -140,8 +140,15 @@ BOX_SUPER = _as_contracts(HYPE_SUPER)
 # a gif is just a link under the sale -- no upload, no new permission. An
 # EMPTY pool posts no gif at all, which is what ships until somebody chooses
 # them: a placeholder link would post something nobody picked.
+# STRIPPED TO THE STABLE FORM. Giphy hands out links carrying a v1.<token>
+# segment from the browser session that copied them; the same gif serves
+# identically without it, and the short form is the one that will still work
+# in a year. Verified byte-for-byte before going in (767,721 either way).
 HYPE_GIFS: tuple = (
-    # "https://giphy.com/gifs/...",
+    # Megan's picks, 2026-09-16. Elmo rise (aka Hellmo) first.
+    "https://media.giphy.com/media/11qCjC856PSmnm/giphy.gif",
+    "https://media.giphy.com/media/cNDDYP4TXmZ6WeAkgE/giphy.gif",
+    "https://media.giphy.com/media/D5HM5xygFanAJDUNVq/giphy.gif",
 )
 
 

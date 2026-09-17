@@ -2156,13 +2156,26 @@ class TheGifIsForADayAboveTheTopTier(unittest.TestCase):
     DAY = __import__("datetime").date(2026, 9, 16)
 
     def test_an_empty_pool_posts_no_gif(self):
-        """What ships until somebody chooses them. A placeholder link would
-        post something nobody picked."""
+        """What shipped until Megan chose them -- and still the behaviour if
+        the pool is ever emptied. A placeholder link would have posted
+        something nobody picked."""
         from automations.shared import sale_hype as H
-        said = H.hype("Brianna Scott",
-                      {"Sales": 6, "Volume": 610000, "Big": 4, "Huge": 4},
-                      self.DAY, "b2b_box")
+        with mock.patch.object(H, "HYPE_GIFS", ()):
+            said = H.hype("Brianna Scott",
+                          {"Sales": 6, "Volume": 610000, "Big": 4, "Huge": 4},
+                          self.DAY, "b2b_box")
         self.assertNotIn("\n", said)
+
+    def test_every_gif_in_the_pool_is_a_stable_link(self):
+        """Giphy hands out links carrying a v1.<token> segment from the
+        browser session that copied them. The same gif serves identically
+        without it, and the short form is the one still working in a year."""
+        from automations.shared import sale_hype as H
+        for url in H.HYPE_GIFS:
+            self.assertNotIn("v1.", url, url)
+            self.assertTrue(url.startswith("https://media.giphy.com/media/"),
+                            url)
+            self.assertTrue(url.endswith(".gif"), url)
 
     def test_a_huge_day_alone_does_not_earn_one(self):
         """Tiffany's single 69,120 kWh contract is Huge and still ordinary
