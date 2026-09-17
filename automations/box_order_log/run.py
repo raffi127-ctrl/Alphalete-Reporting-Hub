@@ -129,6 +129,7 @@ def _probe_filters(url: str) -> int:
         page.wait_for_timeout(25_000)
         print(window.describe_filters(page, viz), flush=True)
         print(window.describe_open_menus(page, viz), flush=True)
+        print(window.describe_text_boxes(viz), flush=True)
     return 0
 
 

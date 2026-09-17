@@ -280,6 +280,34 @@ def _release_text(page, field: str, box, verbose: bool) -> str:
     return "stuck"
 
 
+def describe_text_boxes(viz, fields: Sequence = PINNED_ID_FILTERS) -> str:
+    """Read-only, for --probe-filters: every type-in box on the view as
+    label=value, then what the release would decide for each pinned field."""
+    lines = ["--- text boxes ---"]
+    for sel in ('textarea[aria-label]', 'input[aria-label]'):
+        try:
+            boxes = viz.locator(sel)
+            for i in range(min(boxes.count(), 25)):
+                box = boxes.nth(i)
+                lines.append("· {} {}={!r}".format(
+                    sel.split("[")[0], box.get_attribute("aria-label"),
+                    box.input_value(timeout=4_000)))
+        except Exception as exc:                            # noqa: BLE001
+            lines.append("· {} probe failed: {!r}".format(sel, exc))
+    for field in fields:
+        box = _text_filter(viz, field)
+        if box is None:
+            lines.append("{}: no text box".format(field))
+            continue
+        try:
+            value = (box.input_value(timeout=4_000) or "").strip()
+        except Exception as exc:                            # noqa: BLE001
+            value = "<unreadable {!r}>".format(exc)
+        lines.append("{}: text box, {}".format(
+            field, "EMPTY — unpinned" if not value else "holds {!r}".format(value)))
+    return "\n".join(lines)
+
+
 def _release_dropdown(page, viz, field: str, verbose: bool,
                       settle_ms: int = 15_000) -> str:
     """Open `field`'s dropdown and tick '(All)'.
