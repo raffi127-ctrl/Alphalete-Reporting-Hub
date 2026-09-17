@@ -1,0 +1,101 @@
+<title>Clear the SaraPlus code check</title>
+<meta name="description" content="One line to clear SaraPlus's emailed-code check in Lucy's own browser.">
+<style>
+  :root { color-scheme: light dark; --gold:#B4975A; --line:#8884; }
+  body { font:17px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+         margin:0; padding:40px 22px; }
+  .wrap { max-width:36rem; margin:0 auto; }
+  h1 { font-size:1.5rem; margin:0 0 .3rem; }
+  .who { opacity:.75; margin:0 0 1.8rem; }
+  .step { display:flex; gap:14px; margin:0 0 1.6rem; }
+  .num { flex:0 0 auto; width:1.7rem; height:1.7rem; border-radius:50%;
+         background:var(--gold); color:#fff; font-weight:700; font-size:.85rem;
+         display:flex; align-items:center; justify-content:center; }
+  .cmd { font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
+         background:#8881; border:1px solid var(--line); border-radius:8px;
+         padding:12px 14px; overflow-x:auto; white-space:pre-wrap;
+         word-break:break-all; margin:.6rem 0; }
+  button { font:inherit; font-weight:600; padding:11px 20px; border:0;
+           border-radius:9px; background:var(--gold); color:#fff; cursor:pointer; }
+  button.done { background:#2e7d32; }
+  .note { border:1px solid var(--line); border-radius:10px; padding:14px 16px;
+          margin-top:1.8rem; font-size:.95rem; }
+</style>
+<div class="wrap">
+  <h1>Clear the SaraPlus code check</h1>
+  <p class="who">Takes about a minute. You will need your usual SaraPlus password, and the inbox that receives SaraPlus's emailed code.</p>
+
+  <div class="step"><div class="num">1</div><div>
+    <b>Do this on the office computer that runs LucyECO</b> — the one you set up.
+    Signing in on your phone, or in your own browser, will not reach her.
+  </div></div>
+
+  <div class="step"><div class="num">2</div><div>
+    Open <b>Terminal</b>: hold <b>Command</b> and tap <b>Space</b>, type
+    <b>terminal</b>, press Return.
+  </div></div>
+
+  <div class="step"><div class="num">3</div><div>
+    Press the button, then paste into that window and press Return.
+    <div class="cmd" id="cmd">loading&#8230;</div>
+    <button id="copy">Copy the command</button>
+  </div></div>
+
+  <div class="step"><div class="num">4</div><div>
+    <b>Your SaraPlus password is not being changed and does not need to
+    be.</b> Use the one you already sign in with.
+  </div></div>
+
+  <div class="step"><div class="num">5</div><div>
+    A browser window opens on SaraPlus. <b>Sign in there</b>, then enter the
+    code SaraPlus emails you. It closes by itself and tells you it worked.
+  </div></div>
+
+  <div class="note">
+    <b>This is not a password problem.</b> SaraPlus accepted the password
+    and is checking the <i>browser</i> — it does that when it sees a new
+    computer. Changing the password does not clear it, and the code has to be
+    typed into the window this opens: signing in with your own browser, or on
+    your phone, does not reach Lucy.
+  </div>
+</div>
+<script>
+  // The whole command, so nothing has to survive being selected out of a
+  // message. iMessage turns a bare URL into a link and the copy loses the
+  // `curl` in front and the `| bash` behind -- which is how three updates
+  // failed on 2026-09-15 before this pattern was used.
+  // IT PULLS THE NEW CODE FIRST. sara_signin.py only reached the offices on
+  // 2026-09-17, so on a machine that has not had its daily update yet the
+  // bare command fails with a module error -- a frightening wall of red for
+  // somebody whose sales have just stopped, and the first thing they would
+  // see after being told this was the fix.
+  //
+  // Deleting the once-a-day stamp is what forces the pull, and it works
+  // through the code ALREADY on their machine. Anything that needed the new
+  // code in order to fetch the new code could never run at all.
+  // ABSOLUTE PATH TO THE INTERPRETER. It was "./venv/bin/python", and the
+  // installer puts `app` and `venv` SIDE BY SIDE under ~/.lucy-reports --
+  // so from inside app/ that path does not exist. Ryan McSpadden pasted it
+  // twice and got "zsh: no such file or directory" both times (2026-09-16),
+  // on the one instruction we had given him to fix his own office.
+  //
+  // It went unnoticed because nothing else types this path: the LaunchAgent
+  // that runs every sweep is written by the installer from venv_python(),
+  // so the scheduled runs were always fine. Only the line a human pastes
+  // was wrong. Spelling it out in full means the cd cannot matter either.
+  var PY = "~/.lucy-reports/venv/bin/python";
+  var CMD = "cd ~/.lucy-reports/app"
+          + " && rm -f ~/.config/lucy-reports/last-selfupdate.txt"
+          + " && " + PY + " -c \"from automations.icd_alerts import selfupdate as s; s.run()\""
+          + " && " + PY + " -m automations.icd_alerts.sara_signin";
+  document.getElementById("cmd").textContent = CMD;
+  var btn = document.getElementById("copy");
+  btn.addEventListener("click", function () {
+    function ok() { btn.textContent = "Copied — paste it into Terminal"; btn.className = "done"; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(CMD).then(ok, function () {
+        btn.textContent = "Select the line above and copy it";
+      });
+    } else { btn.textContent = "Select the line above and copy it"; }
+  });
+</script>
