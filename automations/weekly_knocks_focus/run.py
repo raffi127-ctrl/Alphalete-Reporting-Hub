@@ -67,6 +67,11 @@ ROLLOUT = True
 # than this many source pixels for a picture shown PL.DISPLAY_W wide.
 MAX_UPLOAD_W = 2400
 DRIVE_FOLDER = "Weekly Knocks Boards - Focus Report"
+# Drive answers a 5xx now and then (a 502 on the upload killed the first
+# captainship sweep on 2026-09-17, one office in). googleapiclient backs off and
+# retries 5xx/429 itself when asked to. A retried create that had in fact
+# landed leaves a twin file; _upload trashes every other file of the tab anyway.
+DRIVE_RETRIES = 4
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BOARD_DIR = REPO_ROOT / "output" / "weekly_knock_dispositions"
 
@@ -148,19 +153,19 @@ def _upload(tab: str, week_sunday: dt.date, png_bytes: bytes) -> str:
     found = svc.files().list(
         q=(f"name = '{DRIVE_FOLDER}' and mimeType = '{folder_mime}' "
            "and trashed = false"),
-        spaces="drive", fields="files(id)").execute().get("files", [])
+        spaces="drive", fields="files(id)").execute(num_retries=DRIVE_RETRIES).get("files", [])
     folder = (found[0]["id"] if found else svc.files().create(
         body={"name": DRIVE_FOLDER, "mimeType": folder_mime},
-        fields="id").execute()["id"])
+        fields="id").execute(num_retries=DRIVE_RETRIES)["id"])
 
     prefix = f"{tab} - WE "
     name = f"{prefix}{week_sunday.isoformat()}.png"
     media = MediaIoBaseUpload(io.BytesIO(png_bytes), mimetype="image/png",
                               resumable=False)
     file_id = svc.files().create(body={"name": name, "parents": [folder]},
-                                 media_body=media, fields="id").execute()["id"]
+                                 media_body=media, fields="id").execute(num_retries=DRIVE_RETRIES)["id"]
     svc.permissions().create(fileId=file_id,
-                             body={"type": "anyone", "role": "reader"}).execute()
+                             body={"type": "anyone", "role": "reader"}).execute(num_retries=DRIVE_RETRIES)
 
     # ONE picture per tab: every other file of this tab goes to the trash —
     # including an earlier upload of the SAME week, since a re-run gets a new
@@ -169,10 +174,10 @@ def _upload(tab: str, week_sunday: dt.date, png_bytes: bytes) -> str:
     old = svc.files().list(
         q=(f"'{folder}' in parents and trashed = false "
            f"and name contains '{safe}'"),
-        spaces="drive", fields="files(id,name)").execute().get("files", [])
+        spaces="drive", fields="files(id,name)").execute(num_retries=DRIVE_RETRIES).get("files", [])
     for f in old:
         if f["id"] != file_id and f["name"].startswith(prefix):
-            svc.files().update(fileId=f["id"], body={"trashed": True}).execute()
+            svc.files().update(fileId=f["id"], body={"trashed": True}).execute(num_retries=DRIVE_RETRIES)
             print(f"    trashed last picture: {f['name']}", flush=True)
     return file_id
 
@@ -448,9 +453,19 @@ def main(argv: Optional[List[str]] = None) -> int:
         wanted = [(c["name"], c.get("pss_owner"), None, True) for c in enabled(None)]
     else:
         ap.error("pass --office NAME, --all or --captainships")
-    results = {name: run_office(name, saturday, tab, live, pss_owner=pss_owner,
-                                skip_missing=skip, source=source)
-               for name, pss_owner, tab, skip in wanted}
+    # One office's error is that office's failure, never the sweep's: on
+    # 2026-09-17 an uncaught Drive 502 on the FIRST office ended the run and
+    # the other 35 were never tried.
+    results = {}
+    for name, pss_owner, tab, skip in wanted:
+        try:
+            results[name] = run_office(name, saturday, tab, live,
+                                       pss_owner=pss_owner,
+                                       skip_missing=skip, source=source)
+        except Exception as e:  # noqa: BLE001 - one office != the run
+            print(f"[wkf] ❌ {name}: {type(e).__name__}: {str(e)[:200]}",
+                  flush=True)
+            results[name] = False
     failed = [n for n, ok in results.items() if not ok]
     print(f"[wkf] {'⚠' if failed else '✅'} {'LIVE' if live else 'DRY-RUN'} done — "
           f"{len(results) - len(failed)}/{len(results)} ok"
