@@ -5,7 +5,9 @@ have already rolled past the target week (see test_week_roll_hold). It has to
 produce EXACTLY what the live section would have: the campaign's own owner
 filter, its own threshold, sorted desc.
 """
+import datetime as dt
 import unittest
+from unittest import mock
 
 from automations.leaders_call import run as lc
 
@@ -122,6 +124,36 @@ NDS_MULTIWEEK = [
 
 
 class NDSMultiweekTest(unittest.TestCase):
+    """THE TARGET WEEK IS PINNED, because the fixture's dates are the point.
+
+    `parse_product_sales_multiweek` chooses its columns by comparing row 0's
+    week-ending dates against `_target_week()`, which is derived from TODAY. The
+    fixture hardcodes 9/6 (finished) beside 9/13 (in progress), so these tests
+    passed the week they were written and then failed every day after 2026-09-14
+    — the calendar rolled, 9/13 BECAME the finished week, and the parser
+    correctly read the block the fixture calls "in progress". Four red tests,
+    for a parser that was doing exactly the right thing.
+
+    A test that silently expires on a date is worse than no test: it goes red
+    for a reason nobody can act on, and people learn to skim the suite. So pin
+    the week through the real `--week` override rather than dating the fixture,
+    and the literal dates below keep meaning what they say forever.
+
+    NOTE the pin goes through `_WEEK_END_OVERRIDE`, not a stubbed
+    `_target_week` — that way this still exercises the override branch the
+    `--week` flag actually uses."""
+
+    #: The finished week the fixture describes. Sunday, per _target_week().
+    WEEK_END = dt.date(2026, 9, 6)
+
+    def setUp(self):
+        patcher = mock.patch.object(lc, "_WEEK_END_OVERRIDE", self.WEEK_END)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.assertEqual(lc._target_week()[1], self.WEEK_END,
+                         "the pin did not take — every assert below would be "
+                         "about whatever week it happens to be today")
+
     def _camp(self):
         return _camp(key="nds", section_title="NDS",
                      owners=["Khalil Mansour", "Maxamad Aden"])

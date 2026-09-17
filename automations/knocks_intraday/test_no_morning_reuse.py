@@ -69,8 +69,15 @@ class NoMorningReuse(unittest.TestCase):
     def setUp(self):
         self.wrote = []          # every path the renderer was asked to write
 
+        # **_extra ON PURPOSE (2026-09-17). render_knocks_boards gained a
+        # `teams` kwarg, which knocks_intraday passes — this stub did not accept
+        # it, so every office died on TypeError inside build()'s per-office
+        # try/except and the only symptom was "the renderer was never called".
+        # A stub that mirrors a signature exactly turns any ADDED argument into
+        # a failure that points at the wrong thing; absorbing extras keeps the
+        # drift visible through _assert_no_office_errored below instead.
         def fake_render(day, *, rows, out_dir, title_suffix="", end=None,
-                        date_text="", extra_totals=None):
+                        date_text="", extra_totals=None, teams=None, **_extra):
             self.wrote.append(Path(out_dir))
             return ([Path(out_dir) / f"total_knocks_{day}.png"], "house")
 
@@ -90,12 +97,21 @@ class NoMorningReuse(unittest.TestCase):
         p.start()
         self.addCleanup(p.stop)
 
+    def _assert_no_office_errored(self, recs):
+        """build() swallows a per-office failure by design — one dark office must
+        not cost the other ten their board. That is right in production and
+        blinding in a test: the assert downstream just says the renderer never
+        ran. Surface the real exception instead."""
+        bad = [(r.get("label"), r.get("error")) for r in recs if r.get("error")]
+        self.assertEqual(bad, [], "build() caught a per-office error: %s" % bad)
+
     def test_it_never_writes_into_the_captainship_sidecar_tree(self):
         """`service.cached_rows` globs that tree for `daily_knocks_*`. A PNG of
         ours landing there would be read tomorrow as a finished pull."""
         from automations.knocks_request.service import _build_render_dir
         build_tree = _build_render_dir().resolve()
-        intraday.build(EOD, cody_jobs(), logfn=lambda m: None)
+        recs = intraday.build(EOD, cody_jobs(), logfn=lambda m: None)
+        self._assert_no_office_errored(recs)
         self.assertTrue(self.wrote, "the renderer was never called")
         for path in self.wrote:
             self.assertNotIn(build_tree, path.resolve().parents,
@@ -401,13 +417,43 @@ class TheRoster(unittest.TestCase):
 
         MINUS offices with no Slack channel (2026-09-15): Joseph Logan has no
         Slack account, so his board had nowhere to land and failed the 9/14
-        run. See roster._has_channel."""
+        run. See roster._has_channel.
+
+        MINUS the two anti-DOUBLE-POST rules, both added after this test was
+        first written — which is exactly why it went red, naming four offices
+        that are excluded on purpose:
+
+          * HOURLY offices (Megan 2026-09-16) — their 9 PM hourly tick IS their
+            eod board, so riding this slot too posts twice;
+          * offices whose OWN channel already receives a dispositions board
+            (roster._drop_enrolled) — the room, not the office, is what would
+            get two boards. #alphalete-lvl1-chat got both four minutes apart on
+            9/3 before this existed.
+
+        The second assert is the one that matters going forward: it fails if an
+        office ever drops off the 9 PM slot for a THIRD reason nobody wrote
+        down, which is the failure this test exists to catch."""
         from automations.office_metrics.offices import OFFICES
         no_channel = {k for k, o in OFFICES.items()
                       if not (o.channel_id or "").strip()}
+        taken = roster.disposition_channels()
+        already_served = {k for k, o in OFFICES.items()
+                          if (o.channel_id or "").strip() in taken}
+        eligible = set(OFFICES) - set(roster.BLOCKED) - no_channel
+        excused = set(roster.HOURLY) | already_served
+
         self.assertEqual({o.key for o in roster.enrolled("eod")},
-                         (set(OFFICES) - set(roster.BLOCKED) - no_channel)
-                         | {"raf"})
+                         (eligible - excused) | {"raf"})
+
+        self.assertEqual(
+            eligible - {o.key for o in roster.enrolled("eod")}, excused & eligible,
+            "an office fell off the 9 PM slot for a reason this test does not "
+            "know about — every office is owed that board unless it is HOURLY "
+            "or its channel already gets a dispositions board")
+
+        # Neither rule may quietly become a no-op and pass by emptiness.
+        self.assertTrue(roster.HOURLY, "the HOURLY rule matches nothing")
+        self.assertTrue(already_served, "the dispositions-dedupe rule matches nothing")
 
     def test_an_unknown_slot_is_quiet_not_fatal(self):
         self.assertEqual(roster.enrolled("brunch"), [])

@@ -41,15 +41,32 @@ class DedupeSeesBothHalves(unittest.TestCase):
             self.assertIn(LVL1, R.disposition_channels())
 
     def test_a_disabled_office_does_not_claim_its_channel(self):
-        """Calvin and Jay are wired but enabled=False — not posting, so this
-        module must keep covering their rooms until someone switches them on."""
+        """A wired-but-off office is not posting, so this module must keep
+        covering its room until someone switches it on.
+
+        THE DISABLED OFFICE IS SYNTHESIZED (2026-09-17). This used to scan the
+        LIVE gap_alerts table for `enabled=False` and guard with "expected at
+        least one disabled office to exist" — Calvin and Jay were off at the
+        time. They were switched back on in 55b1c68 ("Calvin and Jay back in
+        rotation — the switcher is fixed"), every office became enabled, and the
+        guard that existed to stop a vacuous pass turned into a failing test
+        about nothing. The guard was the right instinct and the wrong subject:
+        borrowing a fact from production data means the test expires whenever
+        somebody legitimately changes that data. Build the case instead."""
         from automations.gap_alerts import config as gap
-        off = [c for c in gap.OFFICES if not c.get("enabled", True)]
-        self.assertTrue(off, "expected at least one disabled office to exist")
-        for cfg in off:
-            for d in gap.destinations(cfg):
-                if d.get("kind") == "slack" and d.get("channel_id"):
-                    self.assertNotIn(d["channel_id"], R.disposition_channels())
+        parked = dict(gap.OFFICES[0])
+        parked.update(key="parked-office", name="Parked Office", enabled=False,
+                      destinations=[{"kind": "slack",
+                                     "channel_id": "C0PARKEDROOM"}])
+        with mock.patch.object(gap, "OFFICES", list(gap.OFFICES) + [parked]):
+            claimed = R.disposition_channels()
+            self.assertNotIn(
+                "C0PARKEDROOM", claimed,
+                "a wired-but-OFF office claimed its channel — this module would "
+                "stop covering a room that is getting no board at all")
+            # and the rule is narrow: enabling it hands the room over.
+            parked["enabled"] = True
+            self.assertIn("C0PARKEDROOM", R.disposition_channels())
 
     def test_a_mirror_collision_is_reported_but_never_dropped(self):
         """Raf's board goes to #alphalete-sales and gap_alerts' to lvl1, which
