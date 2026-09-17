@@ -596,7 +596,7 @@ def page1(d):
     weeks = d["weeks"]
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <style>{_css()}</style></head><body>
-{_head("ORGANIZATION BULLETIN", f"Week Ending {weeks[0] if weeks else ''}")}
+{_head("ALPHALETE ORG BULLETIN", f"Week Ending {weeks[0] if weeks else ''}")}
 <div class="hero"><div class="k">Organization Total DD</div>
   <div class="v">{_fmt(d["headline"])}</div></div>
 {_credico_note(d)}

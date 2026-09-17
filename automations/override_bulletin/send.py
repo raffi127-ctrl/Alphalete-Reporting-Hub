@@ -357,7 +357,7 @@ def dd_subject(week_label):
     alphaletereporting@gmail.com on 2026-07-23: 'Alphalete Organization Bulletin
     WE 7.19' — no year, same WE m.d shape as the override subject."""
     md = ".".join((week_label or "").split(".")[:2])
-    return "Alphalete Organization Bulletin WE {}".format(md)
+    return "Alphalete Org Bulletin WE {}".format(md)
 
 
 def dd_caption(week_label):
@@ -501,7 +501,7 @@ def send_dd(*, do_send=False, preview=False, test=False, force=False,
             "test" if test else "preview"))
 
     send_email(build_email(png_paths, week_label, to_addrs, subject=subject,
-                           title="Alphalete Organization Bulletin",
+                           title="Alphalete Org Bulletin",
                            note=dd_one_off_note(week_label)))
     print("emailed {} recipient(s): {}".format(len(to_addrs), subject))
     if do_send and not to:                 # a custom `to` is a one-off — don't
