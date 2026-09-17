@@ -69,8 +69,7 @@ def append_day(day: dt.date, office: str, records: list,
 
         out = []
         for rec in records:
-            out.append([key_day, key_office]
-                       + [str(rec.get(c, "") or "") for c in cols[2:]])
+            out.append([key_day, key_office] + [_cell(rec, c) for c in cols[2:]])
         _retry(ws.append_rows, out, value_input_option="USER_ENTERED")
         if verbose:
             print(f"   knocks log: +{len(out)} rows for {key_office} {key_day}")
@@ -80,6 +79,39 @@ def append_day(day: dt.date, office: str, records: list,
             print(f"   knocks log: SKIPPED ({type(e).__name__}: {e})")
         return 0
 
+
+def _cell(rec: dict, col: str) -> str:
+    """One cell's text, with a real zero kept AS a zero.
+
+    THIS USED TO BE `str(rec.get(col, "") or "")`, and the `or ""` turned
+    every falsy value into a blank -- so an integer 0 was written as an empty
+    cell. Across 2540 logged rows the string "0" appeared exactly nowhere,
+    while blanks were everywhere: Do Not Knock 2027, Sale 1370, Come Back
+    1133, Gaps 147, even Total Knocks 10.
+
+    WHY THAT MATTERS: the pull's own convention is that COUNT_COLUMNS are ints
+    where blank means 0, while the Time Tracker pair (Gaps, Total Gaps) stay
+    BLANK when a rep has no tracker row at all -- deliberately, per Eve, since
+    "did not clock in" and "stood still for zero minutes" are different facts
+    the board draws differently. Blanking every zero collapsed exactly that
+    distinction: a rep with a tracker row showing 0 gaps became
+    indistinguishable from one who never clocked in.
+
+    It also produced a false mismatch when relayed and scraped rows were
+    diffed on 2026-09-17 -- kash's Ameer Almutairy read Gaps=0 from the relay
+    and Gaps=blank from this log, purely because of this.
+
+    ABSENT STILL MEANS BLANK. Only the value that is genuinely not in the
+    record produces an empty cell now.
+
+    ROWS WRITTEN BEFORE 2026-09-17 CANNOT BE REPAIRED -- the information is
+    gone, and a day already logged is skipped rather than rewritten. Readers
+    here already coerce a blank to 0 (`activity_from._n`), so both
+    conventions read alike; anything new that cares about the difference must
+    only trust rows from this date on.
+    """
+    value = rec.get(col)
+    return "" if value is None else str(value)
 
 def roster_for(office: str, start=None, end=None,
                sheet_id: str = SHEET_ID) -> set:
