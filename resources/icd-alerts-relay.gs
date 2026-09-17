@@ -201,6 +201,12 @@ function doGet(e) {
       owner: owner,
       requested_channels: jlist('alert_channels_json'),
       requested_knocks_destinations: jlist('knocks_json'),
+      // AND THE TEXT GROUPS, for the same reason the hours are here. Aya
+      // picked hers on the form on 2026-09-17 and the installer asked her
+      // again minutes later, because this was the only thing the form
+      // captured that never came back out. Megan: "she filled it out fully.
+      // and then was asked the same questions again on the installer."
+      requested_text_groups: jlist('text_groups_json'),
       ov_name: v('ov_name', ''),
       // WITHOUT THIS every office installs as AT&T and a Box machine spends
       // its life trying to sign into a SaraPlus account that does not exist.
@@ -364,8 +370,25 @@ function _recordRequests(office, body) {
       hours: String(body.requested_knocks_hours_note || '').trim()
     };
   }
-  if (asked || knocks) {
-    _recordChannelRequest(office, String(body.owner || ''), asked, knocks);
+  // THE TEXTS ANSWER, which used to stop at the sign-up tab. 'Office
+  // Channels' has had the four Texts columns all along and nothing ever
+  // wrote them, so an office that asked to be texted looked, from the
+  // approval side, like an office that had never been asked.
+  var groups = body.requested_text_groups;
+  var texts = null;
+  if (groups !== null && groups !== undefined) {
+    texts = {
+      wanted: groups.length
+        ? groups.map(function (t) {
+            return String(t.group || '?') + ' - ' + String(t.label || '?');
+          }).join('; ')
+        : 'No texts',
+      json: JSON.stringify(groups)
+    };
+  }
+  if (asked || knocks || texts) {
+    _recordChannelRequest(office, String(body.owner || ''), asked, knocks,
+                          texts);
   }
 }
 
@@ -384,7 +407,7 @@ function _recordOvName(office, ovName) {
   }
 }
 
-function _recordChannelRequest(office, owner, asked, knocks) {
+function _recordChannelRequest(office, owner, asked, knocks, texts) {
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
@@ -406,7 +429,10 @@ function _recordChannelRequest(office, owner, asked, knocks) {
                           _sameRooms(String(rows[i][8] || ''), knocks.json);
         var sameRoomsCh = !asked ||
                           _sameRooms(String(rows[i][3] || ''), asked.json);
-        if (sameCh && sameKn) return;              // nothing changed
+        var sameTx = !texts ||
+                     (String(rows[i][13] || '').trim() === texts.wanted &&
+                      String(rows[i][14] || '').trim() === texts.json);
+        if (sameCh && sameKn && sameTx) return;    // nothing changed
         // Columns 3-4 and 8-9 only. Every *Channel ID*, *Channel Name* and
         // *Approved* column is OURS -- an owner asks, a human decides.
         if (!sameCh) {
@@ -426,6 +452,17 @@ function _recordChannelRequest(office, owner, asked, knocks) {
             sh.getRange(i + 1, 11, 1, 2).setValues([['', '']]);
           }
         }
+        if (!sameTx) {
+          _ensureCols(sh, 17);
+          // Columns 14-15 only: 'Texts Approved JSON' and 'Texts Approved'
+          // are ours, same rule as the other two -- an owner asks, a human
+          // decides. And only a change of GROUPS un-approves, not a change
+          // of cadence or of our own wording.
+          sh.getRange(i + 1, 14, 1, 2).setValues([[texts.wanted, texts.json]]);
+          if (!_sameRooms(String(rows[i][14] || ''), texts.json)) {
+            sh.getRange(i + 1, 16, 1, 2).setValues([['', '']]);
+          }
+        }
         return;
       }
     }
@@ -433,7 +470,9 @@ function _recordChannelRequest(office, owner, asked, knocks) {
                   asked ? asked.wanted : '', asked ? asked.json : '', now,
                   '', '',
                   knocks ? knocks.wanted : '', knocks ? knocks.json : '',
-                  knocks ? knocks.hours : '', '', '']);
+                  knocks ? knocks.hours : '', '', '', '',
+                  texts ? texts.wanted : '', texts ? texts.json : '',
+                  '', '']);
   } finally {
     lock.releaseLock();
   }

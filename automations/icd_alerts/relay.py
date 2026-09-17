@@ -388,7 +388,17 @@ def _add_requests(body: Dict, rec: Dict) -> Dict:
     if rec.get("requested_knocks_destinations") is not None:
         body["requested_knocks_destinations"] = rec["requested_knocks_destinations"]
         body["requested_knocks_hours_note"] = rec.get("requested_knocks_hours_note", "")
-    if any(k in body for k in ("requested_channels", "requested_knocks_destinations")):
+    # THE TEXT GROUPS, re-sent like the rest so re-running the installer is
+    # still how an owner changes their mind. This was the one answer the
+    # sign-up form collected that never travelled: it sat on the sign-up tab,
+    # never reached 'Office Channels', and so could not be approved from the
+    # tab built for approving it. Aya asked to be texted on 2026-09-17 and the
+    # installer asked her the same question again minutes later.
+    if rec.get("requested_text_groups") is not None:
+        body["requested_text_groups"] = rec["requested_text_groups"]
+    if any(k in body for k in ("requested_channels",
+                               "requested_knocks_destinations",
+                               "requested_text_groups")):
         body["owner"] = rec.get("owner", "")
         # How OwnerVille spells them, in their own words. OwnerVille disagrees
         # with every other list we keep -- Kash Rai is "Akashdeep Rai" there --
