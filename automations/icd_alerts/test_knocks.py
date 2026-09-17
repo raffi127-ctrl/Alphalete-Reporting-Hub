@@ -328,20 +328,47 @@ class PerOfficeHoursTests(unittest.TestCase):
         from automations.icd_alerts import offices as O
         self.O, self.kash, self.cyrus = O, O.get("kash"), O.get("cyrus")
 
-    def test_weekday_window_is_shared_and_ends_at_830(self):
+    # DERIVED FROM THE ROW, NOT TYPED IN AGAIN. These used to assert the
+    # literal 13:30-20:30 Megan relayed on 2026-09-12, so correcting an
+    # office's hours to what its reps actually work broke four tests that
+    # were not about the change at all. The behaviour worth pinning is that
+    # each office's OWN window is the one honoured -- that survives every
+    # legitimate correction, which is the point.
+    @staticmethod
+    def _at(day: dt.date, hhmm: str, plus: int = 0):
+        h, m = (int(x) for x in hhmm.split(":"))
+        return dt.datetime.combine(day, dt.time(h, m)) + dt.timedelta(minutes=plus)
+
+    def test_each_office_gets_its_own_weekday_window(self):
+        friday = dt.date(2026, 9, 11)
         for o in (self.kash, self.cyrus):
-            self.assertTrue(self.O.in_field_hours(o, dt.datetime(2026, 9, 11, 13, 30)))
-            self.assertTrue(self.O.in_field_hours(o, dt.datetime(2026, 9, 11, 20, 30)))
-            self.assertFalse(self.O.in_field_hours(o, dt.datetime(2026, 9, 11, 20, 31)))
-            self.assertFalse(self.O.in_field_hours(o, dt.datetime(2026, 9, 11, 13, 29)))
+            self.assertTrue(self.O.in_field_hours(o, self._at(friday, o.day_start)),
+                            "%s is out at its own start" % o.key)
+            self.assertTrue(self.O.in_field_hours(o, self._at(friday, o.day_end)),
+                            "%s is out at its own end" % o.key)
+            self.assertFalse(self.O.in_field_hours(o, self._at(friday, o.day_end, 1)))
+            self.assertFalse(self.O.in_field_hours(o, self._at(friday, o.day_start, -1)))
+
+    def test_each_office_gets_its_own_saturday_window(self):
+        sat = dt.date(2026, 9, 12)
+        for o in (self.kash, self.cyrus):
+            self.assertTrue(self.O.in_field_hours(o, self._at(sat, o.sat_start)))
+            self.assertTrue(self.O.in_field_hours(o, self._at(sat, o.sat_end)))
+            self.assertFalse(self.O.in_field_hours(o, self._at(sat, o.sat_end, 1)))
+            self.assertFalse(self.O.in_field_hours(o, self._at(sat, o.sat_start, -1)))
 
     def test_saturdays_genuinely_differ(self):
-        early = dt.datetime(2026, 9, 12, 10, 30)      # Kash in, Cyrus not yet
-        late = dt.datetime(2026, 9, 12, 16, 30)       # Kash in, Cyrus done
-        self.assertTrue(self.O.in_field_hours(self.kash, early))
-        self.assertFalse(self.O.in_field_hours(self.cyrus, early))
-        self.assertTrue(self.O.in_field_hours(self.kash, late))
-        self.assertFalse(self.O.in_field_hours(self.cyrus, late))
+        """The reason the window is per-office at all. If these ever converge,
+        one shared Saturday would do and this whole field is overhead."""
+        self.assertNotEqual((self.kash.sat_start, self.kash.sat_end),
+                            (self.cyrus.sat_start, self.cyrus.sat_end))
+        # And the difference is real at the boundary, not just on paper.
+        sat = dt.date(2026, 9, 12)
+        earliest = min(self.kash.sat_start, self.cyrus.sat_start)
+        first_out = (self.cyrus if self.kash.sat_start == earliest else self.kash)
+        first_in = self.kash if first_out is self.cyrus else self.cyrus
+        self.assertTrue(self.O.in_field_hours(first_in, self._at(sat, earliest)))
+        self.assertFalse(self.O.in_field_hours(first_out, self._at(sat, earliest)))
 
     def test_sunday_is_off_for_everyone(self):
         for o in (self.kash, self.cyrus):
@@ -369,16 +396,32 @@ class FirstKnockGreenTests(unittest.TestCase):
         self.R, self.O = R, O
         self.sat, self.fri = dt.date(2026, 9, 12), dt.date(2026, 9, 11)
 
+    @staticmethod
+    def _minutes(hhmm: str) -> int:
+        h, m = (int(x) for x in hhmm.split(":"))
+        return h * 60 + m
+
     def test_saturday_uses_the_saturday_start(self):
-        self.assertEqual(self.R.first_knock_target(self.O.get("kash"), self.sat),
-                         10 * 60 + 30)
-        self.assertEqual(self.R.first_knock_target(self.O.get("cyrus"), self.sat),
-                         11 * 60 + 15)
+        for key in ("kash", "cyrus"):
+            o = self.O.get(key)
+            self.assertEqual(self.R.first_knock_target(o, self.sat),
+                             self._minutes(o.sat_start),
+                             "%s's Saturday target is not its Saturday start"
+                             % key)
 
     def test_weekdays_use_the_weekday_start(self):
         for key in ("kash", "cyrus"):
-            self.assertEqual(
-                self.R.first_knock_target(self.O.get(key), self.fri), 13 * 60 + 30)
+            o = self.O.get(key)
+            self.assertEqual(self.R.first_knock_target(o, self.fri),
+                             self._minutes(o.day_start))
+
+    def test_saturday_and_weekday_targets_are_not_the_same(self):
+        """The bug this class exists for: a flat 1:30pm target greened every
+        Saturday first knock on every board."""
+        for key in ("kash", "cyrus"):
+            o = self.O.get(key)
+            self.assertNotEqual(self.R.first_knock_target(o, self.sat),
+                                self.R.first_knock_target(o, self.fri))
 
     def test_an_office_with_no_hours_keeps_the_old_flat_target(self):
         """Every board we do not hold hours for must be unchanged."""

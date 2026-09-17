@@ -65,9 +65,20 @@ ROLLOUT_ENV = "KNOCKS_RELAY_OFFICES"
 # day, published as the day, that nobody can tell from the real thing.
 END_GRACE_MIN = 20
 
-# And an upper bound, because a row that was written long after the day it is
-# keyed to is a re-push we cannot account for. Scrape instead of guessing.
-END_WINDOW_H = 12
+# THERE IS DELIBERATELY NO UPPER BOUND ON HOW LATE A READING MAY BE.
+#
+# The first version had one -- twelve hours -- on the reasoning that a row
+# written long after the day it is keyed to is a re-push we cannot account
+# for. That was wrong, and the close-out proved it within minutes of shipping:
+# every machine re-read 2026-09-16 at 16:07 the NEXT day, which is exactly
+# what it is supposed to do, and this gate refused all eight rows as "long
+# after the day ended" and sent the whole org back to scraping.
+#
+# The reasoning was backwards. A relay row is keyed by the day it describes,
+# so a LATER read of a finished day is strictly better than an earlier one:
+# the day cannot gain knocks after it is over, and a machine that stopped at
+# lunchtime is corrected only by reading it again afterwards. Late is the
+# signal we want, not the one to refuse.
 
 
 def _rollout() -> Optional[set]:
@@ -183,9 +194,6 @@ def day_is_complete(office, day: dt.date, received: Optional[dt.datetime],
     if received < closes - dt.timedelta(minutes=END_GRACE_MIN):
         return False, ("machine stopped at %s, before the day ended at %s"
                        % (received.strftime("%H:%M"), end))
-    if received > closes + dt.timedelta(hours=END_WINDOW_H):
-        return False, ("relayed %s, long after the day ended at %s"
-                       % (received.strftime("%Y-%m-%d %H:%M"), end))
     return True, ""
 
 

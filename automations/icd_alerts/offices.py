@@ -143,8 +143,29 @@ OFFICES: Dict[str, AlertOffice] = {
         channels=(),
         timezone="America/Chicago", active=True, platform="mac",
         slack_user_id="U046XBPN0G2",     # Kash Rai, @palace.kash
-        # Megan 2026-09-12, from Kash.
-        day_start="13:30", day_end="20:30",
+        # WHAT HIS OFFICE ACTUALLY WORKS, read off his own relayed Time
+        # Tracker rather than asked for again (Megan 2026-09-17: "fix kash
+        # and cyrus's hours to their real ones"). He gave 13:30-20:30 on
+        # 2026-09-12 and his reps do not work it: across 09-14, 09-15 and
+        # 09-16 the first knock landed 1:14-1:24pm and the LAST landed
+        # 9:02-9:09pm, better than half an hour past the recorded close.
+        #
+        # That half hour was not cosmetic. in_field_hours gates the knocks
+        # board, so his last board of the day went out at 20:09 while 14 of
+        # his 18 reps were still knocking -- and the close-out gate judges a
+        # day finished against day_end, so a too-early one calls a short day
+        # complete. Ends 21:15, which covers the observed 9:09pm and still
+        # sits inside the agent's own 21:30 window.
+        #
+        # 13:00, not 13:15: his earliest observed first knock is 1:14pm and
+        # a window that opens a minute before it is a window that will be
+        # wrong the first time somebody starts early. Opening too early costs
+        # nothing -- there is simply no data to draw yet.
+        #
+        # SATURDAY IS LEFT ALONE: 10:40am-4:57pm observed on 09-12 fits the
+        # 10:30-17:00 already recorded. One Saturday of data, so it is not
+        # worth moving on.
+        day_start="13:00", day_end="21:15",
         sat_start="10:30", sat_end="17:00",
     ),
     "cyrus": AlertOffice(
@@ -165,10 +186,26 @@ OFFICES: Dict[str, AlertOffice] = {
         # this id is a DM recipient, and the cost of the wrong one is a
         # message to a stranger about a machine they do not own.
         slack_user_id="U06A1QA642X",     # Cy Wade, @wadebusiness7
-        # Megan 2026-09-12, from Cyrus. Saturday starts 45 minutes later than
-        # Kash's and ends an hour earlier.
-        day_start="13:30", day_end="20:30",
-        sat_start="11:15", sat_end="16:00",
+        # HIS REAL HOURS, from his own relayed Time Tracker (Megan
+        # 2026-09-17). What he gave on 2026-09-12 was wrong at both ends of
+        # both windows:
+        #   weekday  13:30-20:30 recorded; observed first knock 12:47pm
+        #            (09-14) and 1:10pm (09-16), last knock 9:11pm and
+        #            9:09pm. 09-15 is excluded -- his agent died at 14:52,
+        #            so that day's end time is an artefact, not an early
+        #            finish.
+        #   Saturday 11:15-16:00 recorded; observed 11:11am to 5:00pm on
+        #            09-12. A FULL HOUR past the recorded close, so his
+        #            Saturday board stopped while the office was still out.
+        #
+        # One Saturday of data, so 17:15 is a margin on a single reading
+        # rather than a settled fact; worth re-checking once a few more
+        # Saturdays have relayed.
+        # 11:30, not 12:45: his 09-15 first knock was 11:47am, a full hour
+        # before the other days. Opening early costs nothing; opening after
+        # the office has started means no board while they work.
+        day_start="11:30", day_end="21:15",
+        sat_start="11:00", sat_end="17:15",
     ),
     # A STRAY FROM A FIRST SIGN-UP ATTEMPT, switched off (Megan, 2026-09-16).
     # Khalil enrolled twice and installed as "khalil-nds", which is the live

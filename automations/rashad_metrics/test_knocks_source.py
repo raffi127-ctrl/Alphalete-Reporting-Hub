@@ -99,11 +99,27 @@ class DayIsComplete(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("Received At", why)
 
-    def test_a_re_push_days_later_is_refused(self):
+    def test_a_close_out_read_the_next_day_is_ACCEPTED(self):
+        """The close-out re-reads a finished day from the office's own machine
+        the following day, so "relayed long after the day ended" is the good
+        case, not the suspicious one.
+
+        This gate used to cap it at twelve hours. Minutes after the close-out
+        shipped on 2026-09-17 every machine re-read 09-16 at 16:07 the next
+        day -- precisely its job -- and the cap refused all eight rows and
+        sent the whole org back to scraping. A day cannot gain knocks after it
+        is over, so a later read can only be more complete.
+        """
         ok, why = KR.day_is_complete(_Office(), WED,
-                                     KR._received_at("9/18/2026 10:00:00"))
-        self.assertFalse(ok)
-        self.assertIn("long after", why)
+                                     KR._received_at("9/18/2026 16:07:00"))
+        self.assertTrue(ok, why)
+
+    def test_a_much_later_close_out_is_still_accepted(self):
+        """A machine that was off for a week and then caught up is still
+        reading a finished day out of OwnerVille, not inventing one."""
+        ok, why = KR.day_is_complete(_Office(), WED,
+                                     KR._received_at("9/30/2026 09:00:00"))
+        self.assertTrue(ok, why)
 
 
 class KeyJoin(unittest.TestCase):
