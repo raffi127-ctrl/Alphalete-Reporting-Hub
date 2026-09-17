@@ -523,16 +523,24 @@ _JS = r"""
      return;
    }
  }
- function kendoSet(el,v){
+ async function kendoSet(el,v){
    var w=kw(el); if(!w) return false;
-   /* A COMBOBOX over a plain list has no id to give: w.value() returns the
-      text, and the ...ID beside it is filled by Apex's own handler when a
-      person picks from the list. So do not set it programmatically at all --
-      let the click path do it, which is what makes Apex populate the id
-      (Megan, 2026-09-17: three rounds of "Marital Status is Required" over a
-      box reading "Married filing jointly"). */
-   var sp0=widgetSpan(el);
-   if(sp0&&/k-combobox/.test(sp0.className||'')) return false;
+   /* The list DOES carry ids -- dataTextField=Name,
+      dataValueField=MaritalStatusID, item0={"MaritalStatusID":4,...}. What
+      was wrong is that nothing was SELECTED: dataItem() came back null while
+      the box showed text, so Apex copied the TEXT into the ...ID. Typing into
+      a ComboBox sets its text; only picking sets the item.
+
+      And a widget whose list has not arrived yet cannot be picked from -- the
+      first pass lands before it does, which is why dataValueField read as
+      undefined and the "value" was the words. Give the list a moment
+      (Megan, 2026-09-17). */
+   if(w.dataSource&&w.dataSource.data){
+     var tries=0;
+     while(tries<12&&!((w.dataSource.data()||[]).length)){
+       await sleep(250); tries++;
+     }
+   }
    if(w.dataSource&&w.dataSource.data&&w.options&&w.value){
      var d=w.dataSource.data()||[], want=norm(v),
          tf=w.options.dataTextField, vf=w.options.dataValueField, i, t;
@@ -544,6 +552,15 @@ _JS = r"""
                       :(d[i].value!==undefined?d[i].value:d[i]));
          w.value(picked);
          w.trigger('change'); settle(el); putIdBeside(el,picked);
+         /* Text in the box is not a selection. If nothing got selected, say
+            so and let the click path have it -- that is the path that makes
+            Apex fill the id itself. */
+         var item=null;
+         try{ item=w.dataItem?w.dataItem():null; }catch(e){}
+         if(!item&&!/^[0-9]+$/.test(String(picked))){
+           TRACE.push('value set but dataItem is null');
+           return false;
+         }
          if(!bindingLooksReal(el,v)){ TRACE.push('widget set but binding empty'); return false; }
          return true;
        }
@@ -647,7 +664,7 @@ _JS = r"""
    return null;
  }
  async function setVal(el,v){
-   if(kendoSet(el,v)) return true;
+   if(await kendoSet(el,v)) return true;
    /* A <select> that Kendo has taken over is hidden and driven by the widget.
       Setting its .value directly moves the select and nothing else -- the
       widget never fires, so whatever ng-blur was supposed to copy across never

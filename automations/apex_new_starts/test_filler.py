@@ -2706,11 +2706,11 @@ def test_an_id_box_never_gets_the_words(page, tmp_path):
     assert page.input_value("#msid") == "12", "a real id goes in"
 
 
-def test_a_combobox_is_left_for_the_click_path(page, tmp_path):
-    """A ComboBox has no id to give -- the ...ID beside it is filled by Apex's
-    own handler when somebody picks from the list. Setting it through the
-    widget API cannot produce that, so kendoSet declines and the click path
-    takes it."""
+def test_a_combobox_without_a_selection_falls_back_to_clicking(page, tmp_path):
+    """Typing into a ComboBox sets its text; only picking sets the item. The
+    live page showed text in the box with dataItem() null, so Apex copied the
+    WORDS into MaritalStatusID. If nothing got selected, say so and let the
+    click path have it (Megan, 2026-09-17)."""
     f = tmp_path / "bank-info.html"
     f.write_text("""<h1>Tax</h1>
       <div class="form-group">
@@ -2721,7 +2721,10 @@ def test_a_combobox_is_left_for_the_click_path(page, tmp_path):
     page.goto(f.as_uri())
     page.evaluate("""() => {
       window.jQuery = (el) => ({data: () => null, 0: el, length: 1});
-      const w = {value: () => 'x', trigger: () => {}, options: {}};
+      // plain strings: no id to be had, and nothing selectable
+      const w = {options: {}, dataSource: {data: () => ['Single', 'Married']},
+                 value: () => 'Married', trigger: () => {},
+                 dataItem: () => null};
       window.kendo = {widgetInstance: () => w};
     }""")
     page.evaluate(filler.build_js(
@@ -2729,5 +2732,46 @@ def test_a_combobox_is_left_for_the_click_path(page, tmp_path):
         "WE 9.20")[len("javascript:"):])
 
     assert page.evaluate(
-        """() => window.__ansKendoSet(document.getElementById('ms'), 'Single')"""
-    ) is False, "declined, so the click path gets it"
+        """async () => await window.__ansKendoSet(
+             document.getElementById('ms'), 'Married')""") is False, \
+        "declined, so the click path gets it"
+
+
+def test_a_combobox_with_ids_is_selected_by_value(page, tmp_path):
+    """dataTextField=Name, dataValueField=MaritalStatusID, and the items carry
+    the number. Picked by VALUE the widget really selects the row, and the id
+    that goes into the form is the number rather than the words."""
+    f = tmp_path / "bank-info.html"
+    f.write_text("""<h1>Tax</h1>
+      <div class="form-group">
+        <label for="ms">Marital Status</label>
+        <input type="text" id="ms">
+        <input type="hidden" ng-model="vm.bank.MaritalStatusID" id="msid">
+        <span class="k-widget k-combobox"><input class="k-input"></span>
+      </div>""")
+    page.goto(f.as_uri())
+    page.evaluate("""() => {
+      window.jQuery = (el) => ({data: () => null, 0: el, length: 1});
+      const items = [{MaritalStatusID: 4, Name: 'Single or Married filing separately'},
+                     {MaritalStatusID: 12, Name: 'Married filing jointly'}];
+      let chosen = null;
+      const w = {
+        options: {dataTextField: 'Name', dataValueField: 'MaritalStatusID'},
+        dataSource: {data: () => items},
+        value: (v) => { if (v !== undefined) chosen =
+            items.find(i => String(i.MaritalStatusID) === String(v)) || null;
+          return chosen ? chosen.MaritalStatusID : null; },
+        dataItem: () => chosen,
+        trigger: () => {},
+      };
+      window.kendo = {widgetInstance: () => w};
+      window.angular = {element: () => ({scope: () => ({$eval(){}, $applyAsync(){}})})};
+    }""")
+    page.evaluate(filler.build_js(
+        [{"name": "Dylan Poston", "find": "Poston", "pages": {}}],
+        "WE 9.20")[len("javascript:"):])
+
+    assert page.evaluate(
+        """async () => await window.__ansKendoSet(
+             document.getElementById('ms'), 'Married filing jointly')""") is True
+    assert page.input_value("#msid") == "12", "the NUMBER, not the words"
