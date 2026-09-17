@@ -27,7 +27,7 @@ import traceback
 import sys
 
 from automations.icd_alerts import config as C
-from automations.icd_alerts import (box_read, ov_read, relay as R,
+from automations.icd_alerts import (box_read, closeout, ov_read, relay as R,
                                     sara_read, state as St)
 
 
@@ -447,6 +447,21 @@ def main(argv=None) -> int:
     if args.box:
         return cmd_box(headless, args.dry_run, day)
     if args.once:
+        # YESTERDAY FIRST, AND BEFORE THE GATE BELOW -- which is the whole
+        # point. The selling window starts at 10:00 local, and the metrics
+        # thread reads this office's knocks at about 06:50 Central, so
+        # anything that waits for the window is already too late to be the
+        # number people see. Once the local date has flipped, the previous day
+        # is finished and OwnerVille has its real total no matter when this
+        # machine stopped relaying.
+        #
+        # Cheap when there is nothing owed: a small JSON read, no browser.
+        try:
+            closeout.maybe_run(
+                lambda d: cmd_knocks(headless, args.dry_run, d), log=_log)
+        except Exception as e:  # noqa: BLE001 — never lose a sweep to this
+            _log("close-out skipped: %s" % type(e).__name__)
+
         if args.if_due and not C.in_selling_window():
             # Quiet on purpose. This fires every 15 minutes on somebody's
             # laptop; a line per skip would be the only thing in the log.

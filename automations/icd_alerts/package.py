@@ -73,6 +73,12 @@ AGENT_FILES = [
     "automations/icd_alerts/presence.py",
     "automations/icd_alerts/autoprompt.py",
     "automations/icd_alerts/state.py",
+    # SHIPS WITH run.py, WHICH IMPORTS IT AT MODULE LEVEL. Leaving it out does
+    # not degrade the close-out, it stops the agent dead: the next self-update
+    # would hand every office a run.py that cannot import, on a machine nobody
+    # can reach. The manifest test compares this list against agent_files.txt
+    # and passes happily when BOTH are missing a file, so it is no guard here.
+    "automations/icd_alerts/closeout.py",
     "automations/icd_alerts/run.py",
     "automations/icd_alerts/dialogs.py",
     "automations/icd_alerts/ov_read.py",
