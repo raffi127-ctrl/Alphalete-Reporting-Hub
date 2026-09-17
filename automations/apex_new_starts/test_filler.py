@@ -2338,8 +2338,8 @@ def test_a_saved_setup_says_it_is_the_saved_one(page, tmp_path):
     page.evaluate(js)
     assert page.locator("#anspanel").count() == 1, "it still runs"
     warn = page.locator("#anssrc").inner_text()
-    assert "clipboard did not have" in warn
-    assert "saved on this computer" in warn
+    assert "OLD LIST" in warn, "blunt, not a paragraph to read past"
+    assert "Get this week" in warn, "and what to do about it"
 
 
 def test_unticking_somebody_leaves_them_out(page, tmp_path):
@@ -2572,3 +2572,33 @@ def test_the_id_is_written_beside_the_words(page, tmp_path):
     assert page.locator("#sent").inner_text() == "widget=12", "the widget took it"
     assert page.input_value("#msid") == "12", \
         "and the id the form submits was written too"
+
+
+def test_it_says_how_many_socials_it_is_holding(page, tmp_path):
+    """Megan, 2026-09-17: "This is the 2nd time I've had to put in the
+    socials." They live in the tab and are never written down, so a reload
+    loses them -- but loading a new setup does not, and the panel should say
+    which is which."""
+    f = tmp_path / "user-profile.html"
+    f.write_text("<h1>x</h1>")
+    page.goto(f.as_uri())
+    page.evaluate("() => localStorage.clear()")
+    js = filler.build_js(
+        [{"name": "Dylan Poston", "find": "Poston", "pages": {}}],
+        "WE 9.20")[len("javascript:"):]
+    page.evaluate(js)
+    assert page.locator("#anshold").inner_text() == "", "nothing held yet"
+
+    page.evaluate("""() => { window.__ansSSN['dylan poston'] = '123456789'; }""")
+    page.wait_for_function(
+        "() => document.getElementById('anshold').innerText.includes('held')",
+        timeout=5000)
+    out = page.locator("#anshold").inner_text()
+    assert "1 Social held in this tab" in out
+    assert "do not reload" in out
+    assert "Loading a new setup is fine" in out
+
+    # and loading a new setup really does keep them
+    page.evaluate(js)
+    assert page.evaluate(
+        "() => window.__ansSSN['dylan poston']") == "123456789"

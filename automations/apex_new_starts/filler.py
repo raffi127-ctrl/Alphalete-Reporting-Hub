@@ -1543,6 +1543,7 @@ _JS = r"""
    '<div id="ansub" style="color:#555;margin:2px 0 4px"></div>'+
    '<div id="ansage" style="font-size:12px;font-weight:600"></div>'+
    '<div id="anssrc" style="font-size:12px;font-weight:600;color:#a56a00"></div>'+
+   '<div id="anshold" style="font-size:11px;font-weight:600;color:#0F766E"></div>'+
    (NOTICE? '<div style="font-size:12px;font-weight:700;color:#b00;margin:6px 0;'+
             'background:#fff4f4;border-left:3px solid #b00;padding:6px 8px">'+
             NOTICE+'</div>':'')+
@@ -1648,13 +1649,27 @@ _JS = r"""
       that is old enough to matter (Megan, 2026-09-10). */
    var src=document.getElementById('anssrc');
    if(src){
+     /* One blunt line. Five lines of amber at the moment somebody is trying
+        to get on with a run is a paragraph to read past, and it was
+        (Megan, 2026-09-17). */
      var m=(window.__ansSetupFrom==='saved')
-       ? 'Your clipboard did not have this week\u0027s list, so this is the one '+
-         'saved on this computer \u2014 read off the board '+BUILD+'. If that '+
-         'is not the week you want, press Get this week\u0027s setup on the Hub '+
-         'and click this again.'
+       ? 'OLD LIST \u2014 saved here, read '+BUILD+'. Press Get this week\u0027s '+
+         'setup on the Hub, then click this again.'
        : '';
      if(src.textContent!==m){ src.textContent=m; src.style.margin=m?'6px 0':''; }
+   }
+   /* How many Socials are held, and the one thing that throws them away.
+      They live in this tab and are never written down, so a reload loses
+      them -- she typed seventeen twice (Megan, 2026-09-17). Loading a new
+      setup does NOT: same page, same memory. */
+   var held=document.getElementById('anshold');
+   if(held){
+     var hn=0, hk;
+     for(hk in (window.__ansSSN||{})) if(window.__ansSSN[hk]) hn++;
+     var hm=hn? hn+' Social'+(hn===1?'':'s')+' held in this tab \u2014 do not '+
+                'reload the page. Loading a new setup is fine.' : '';
+     if(held.textContent!==hm){ held.textContent=hm;
+       held.style.margin=hm?'6px 0':''; }
    }
    var age=document.getElementById('ansage');
    if(age){
