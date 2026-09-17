@@ -250,11 +250,18 @@ def _text_filter(viz, field: str):
             boxes = viz.locator(sel)
             for i in range(min(boxes.count(), 25)):
                 box = boxes.nth(i)
-                if _fold(_box_label(box)) == _fold(field):
+                if _bare_field(_box_label(box)) == _fold(field):
                     return box
         except Exception:                                   # noqa: BLE001
             continue
     return None
+
+
+def _bare_field(label: str) -> str:
+    """Folded field name with Tableau's quick-filter wrapper removed. The 09:25
+    probe read the Account Id box as `textarea.QueryBox` labelled
+    'Filter Account Id Inclusive' — an exact match on 'Account Id' missed it."""
+    return re.sub(r"^filter|(?:in|ex)clusive$", "", _fold(label))
 
 
 # The 09:16 probe found ONLY the two date textareas carrying an aria-label —
