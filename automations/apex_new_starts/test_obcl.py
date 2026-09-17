@@ -133,3 +133,55 @@ def test_the_watcher_is_not_a_module_any_card_names():
     assert watcher in src, "and that is what it launches"
     assert '"automations.apex_new_starts.run"' not in src, \
         "never under a module a card names"
+
+
+def test_a_ticked_row_is_green_too():
+    """Megan, 2026-09-17: "it's now checked but not green. We can just make it
+    green too please." Same rows as the tick -- a checkbox is easy to miss
+    down a column of empty ones."""
+    import datetime as dt
+
+    calls = {"batch": [], "format": []}
+
+    class _WS:
+        title = "D2D OBCL 9.14"
+        def get_all_values(self): return GRID
+        def batch_update(self, data): calls["batch"] = data
+        def format(self, ranges, fmt): calls["format"] = (ranges, fmt)
+
+    class _SH:
+        def worksheets(self): return [_WS()]
+        def worksheet(self, t): return _WS()
+
+    import automations.apex_new_starts.obcl as OB
+    real = OB.open_by_key
+    OB.open_by_key = lambda *a, **k: _SH()
+    try:
+        assert OB.mark(dt.date(2026, 9, 14), ["Billy Garvin"]) == 1
+    finally:
+        OB.open_by_key = real
+
+    assert calls["batch"] == [{"range": "F3", "values": [[True]]}]
+    assert calls["format"][0] == ["F3"]
+    assert calls["format"][1] == {"backgroundColor": OB.GREEN}
+
+
+def test_names_is_the_fallback_when_the_clipboard_lost_it():
+    """The clipboard is the only channel a browser has, so anything copied
+    between the run ending and Mark the OBCL being pressed loses the result --
+    which is what happened on the first live run (2026-09-17)."""
+    from automations.apex_new_starts import run as RUN
+    import datetime as dt
+
+    seen = {}
+    real = RUN.__dict__.get("_this_monday")
+    import automations.apex_new_starts.obcl as OB
+    real_mark = OB.mark
+    OB.mark = lambda start, added, **k: seen.update(start=start, added=list(added)) or 1
+    try:
+        assert RUN.mark_obcl(names="Paris Carroll, Bailey Soda") == 0
+    finally:
+        OB.mark = real_mark
+
+    assert seen["added"] == ["Paris Carroll", "Bailey Soda"]
+    assert seen["start"].weekday() == 0, "the Monday of the board week"

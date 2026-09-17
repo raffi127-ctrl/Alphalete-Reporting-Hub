@@ -129,7 +129,7 @@ def check_apex() -> bool:
 
 
 def preflight(today: dt.date, *, any_day: bool, skip_apex: bool = False,
-              tab=None, include_ona=True) -> int:
+              tab=None, include_ona=True, watch: bool = True) -> int:
     """Check, then fetch — one button (Megan, 2026-09-13).
 
     Checking and then making somebody find a second button to actually get the
@@ -161,7 +161,7 @@ def preflight(today: dt.date, *, any_day: bool, skip_apex: bool = False,
         return 1
     _log("Getting this week's list…")
     _log()
-    code = make_button(today, tab=tab, include_ona=include_ona)
+    code = make_button(today, tab=tab, include_ona=include_ona, watch=watch)
     if code == 0 and not apex_ready:
         _log()
         _log("⚠️  The list is ready, but Apex is not signed in on this "
@@ -629,7 +629,8 @@ def _started(c, cohort: Optional[dt.date]) -> str:
     return when.strftime("%m/%d/%Y") if when else ""
 
 
-def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
+def make_button(today: dt.date, *, tab=None, include_ona=True,
+                watch: bool = True) -> int:
     """Write the 'Fill Apex' page: one button that fills the form in the
     person's own signed-in browser.
 
@@ -758,9 +759,9 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
     if _to_clipboard(setup[len("javascript:"):]):
         _log("This week's setup is on your clipboard.")
         _log("Open Apex, then click your Fill Apex bookmark. That is all.")
-        if start_watch():
+        if watch and start_watch():
             _log("The OBCL will be ticked on its own when the run finishes.")
-        elif _watch_alive():
+        elif watch and _watch_alive():
             _log("A watcher from an earlier click is still waiting "
                  "\u2014 the OBCL will still be ticked.")
     else:
@@ -771,6 +772,12 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
     # over a log that plainly said it had worked (Megan, 2026-09-13).
     _log("=== done ===")
     return 0
+
+
+def _this_monday(today: dt.date = None) -> dt.date:
+    """The Monday of the current board week, for --names."""
+    today = today or dt.date.today()
+    return today - dt.timedelta(days=today.weekday())
 
 
 def _from_clipboard() -> str:
@@ -785,10 +792,27 @@ def _from_clipboard() -> str:
         return ""
 
 
-def mark_obcl(dry_run: bool = False) -> int:
-    """Tick 'Added to APEX' from the result the run left on the clipboard."""
+def mark_obcl(dry_run: bool = False, names: str = None) -> int:
+    """Tick 'Added to APEX' from the result the run left on the clipboard.
+
+    `names` is the escape hatch. The clipboard is the only channel a browser
+    has, so anything copied between the run ending and this being pressed
+    loses the result -- which is exactly what happened on the first live run:
+    Paris Carroll went into Apex and her tick had to be done by hand
+    (2026-09-17).
+    """
     import json as _json
     from automations.apex_new_starts import obcl as OB
+
+    if names:
+        want = [n.strip() for n in names.split(",") if n.strip()]
+        if not want:
+            _log("Nothing in --names.")
+            return 1
+        _log(f"Ticking by name: {', '.join(want)}")
+        OB.mark(_this_monday(), want, dry_run=dry_run, log=_log)
+        _log("=== done ===")
+        return 0
 
     raw = _from_clipboard().strip()
     if not raw.startswith("APEX-OBCL "):
@@ -968,6 +992,16 @@ def main(argv=None) -> int:
     ap.add_argument("--skip-ona", action="store_true",
                     help="leave out anyone marked O-NA this week")
     ap.add_argument("--tab", help="a specific week tab, e.g. '9.6'")
+    ap.add_argument("--no-watch", action="store_true",
+                    help="build the setup but start no OBCL watcher \u2014 for "
+                         "rebuilding from a terminal without leaving a process "
+                         "somebody then has to kill. Killing them wholesale is "
+                         "how an operator's own watcher got taken out mid-run "
+                         "(2026-09-17)")
+    ap.add_argument("--names",
+                    help="with --mark-obcl: tick these names instead of "
+                         "reading the run's result off the clipboard, comma "
+                         "separated")
     ap.add_argument("--no-write", action="store_true",
                     help="with --mark-obcl: say what it would tick, write "
                          "nothing")
@@ -987,11 +1021,13 @@ def main(argv=None) -> int:
     if args.preflight:
         return preflight(today, any_day=args.any_day,
                          skip_apex=args.no_apex_check,
-                         tab=args.tab, include_ona=include_ona)
+                         tab=args.tab, include_ona=include_ona,
+                         watch=not args.no_watch)
     if args.button:
-        return make_button(today, tab=args.tab, include_ona=include_ona)
+        return make_button(today, tab=args.tab, include_ona=include_ona,
+                           watch=not args.no_watch)
     if args.mark_obcl:
-        return mark_obcl(dry_run=args.no_write)
+        return mark_obcl(dry_run=args.no_write, names=args.names)
     if args.explore:
         return explore(today)
     if not check_day(today, args.any_day):

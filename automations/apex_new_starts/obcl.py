@@ -7,13 +7,16 @@ The filling happens in a browser and a bookmarklet cannot reach Google Sheets,
 so the run's outcome comes back the way the setup went out: through the
 clipboard, on the same machine. This module is the half that writes.
 
-ONE STATE. The column is called "Added to APEX", so it is a tick or nothing:
-all three pages saved and Apex flipped them to Active. There was a green-for-
-"found" as well, and it earned its way out (Megan, 2026-09-17: "we don't really
-need it to say 'of everyone found'") -- a colour that meant "we got as far as
-attempting them" is not something anybody would look at, and it had already
-drifted to include people the run could not find at all. Whoever did not make
-it is named in the panel, which is where a person actually looks.
+ONE STATE, shown two ways. The column is called "Added to APEX": all three
+pages saved and Apex flipped them to Active. Those rows get the checkbox AND
+the cell goes green (Megan, 2026-09-17: "it's now checked but not green. We can
+just make it green too please").
+
+There was a green for "found" as well, once, and it earned its way out: a
+colour meaning "we got as far as attempting them" is not something anybody
+would look at, and it had drifted to include people the run could not find at
+all. Green means the same as the tick now. Whoever did not make it is named in
+the panel, which is where a person actually looks.
 
 Nothing else on the tab is touched. The OBCL is hand-maintained by the
 recruiting team: this writes one column, on rows it can match by name, and
@@ -34,6 +37,8 @@ from automations.recruiting_report.fill import open_by_key
 COL_FIRST = "name"
 COL_LAST = "last name"
 COL_APEX = "added to apex"
+
+GREEN = {"red": 0.71, "green": 0.87, "blue": 0.66}   # the sheet's own pass-green
 
 
 def _fold(text: str) -> str:
@@ -151,6 +156,10 @@ def mark(week_start: dt.date, added: Iterable[str],
     if ticks:
         ws.batch_update([{"range": f"{_a1(col)}{r}", "values": [[True]]}
                          for r in ticks])
+        # Same rows, green as well: the tick is easy to miss down a column of
+        # empty boxes.
+        ws.format([f"{_a1(col)}{r}" for r in ticks],
+                  {"backgroundColor": GREEN})
     return len(ticks)
 
 
