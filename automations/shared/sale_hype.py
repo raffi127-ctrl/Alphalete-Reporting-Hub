@@ -82,7 +82,7 @@ HYPE_LARGE = (
     "WINNER!! {first} :paw_prints::fire:",
     "{first}!! Who's next :eyes::eyes::eyes:",
     "{first}!! No complacency :fire::heavy_dollar_sign:",
-    "{first} is a DAWGGGG :dog:",
+    "BIG DAWG {first} on the board!! :dog::fire:",
     "{first} is SPICY!! :hot_pepper::fire:",
 )
 
@@ -102,6 +102,25 @@ HYPE_SUPER = (
     "{first}!!! WHO'S NEXT :eyes::eyes::eyes:",
     "{first} IS A DAWGGGG :dog::fire:",
 )
+
+
+# BOX SELLS CONTRACTS, NOT BOARD POSITIONS -- and the loud pools are shared by
+# every campaign, so a line written for AT&T leaks into Box's channel. It
+# happened twice in one evening: "is on the board!! Who's next" and then "BIG
+# DAWG x on the board!!" (2026-09-16).
+#
+# DERIVED, NOT A SECOND COPY. A Box pool written out by hand is a second place
+# to add every future line and the one that gets forgotten -- which is exactly
+# how the AO board ended up a day behind this file. This rewrites the one
+# phrase that does not travel, so anything added above reaches Box already
+# saying the right thing.
+def _as_contracts(lines: tuple) -> tuple:
+    return tuple(l.replace("on the board", "closed one")
+                  .replace("ON THE BOARD", "CLOSED ONE") for l in lines)
+
+
+BOX_LARGE = _as_contracts(HYPE_LARGE)
+BOX_SUPER = _as_contracts(HYPE_SUPER)
 
 
 # --- THE GIF, FOR A DAY THAT IS ABOVE THE TOP TIER --------------------------
@@ -286,6 +305,8 @@ class _Box(Shape):
     # sales, and collapsing them on a resemblance would quietly cost somebody
     # a real one.
     presale_ping = False
+    large_lines = BOX_LARGE
+    super_lines = BOX_SUPER
 
     # "finished a contract", not "put one on the board" -- Ryan again: 'just
     # have it say "Omar just finished a contract!"'. Box sells contracts; the

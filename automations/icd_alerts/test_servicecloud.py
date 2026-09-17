@@ -2063,10 +2063,23 @@ class TheSaleLinesSoundLikeTheCompany(unittest.TestCase):
         Caught when "is on the board!! Who's next" went into the shared pool
         and turned up in Box's channel (2026-09-16).
         """
-        regular, large, _super = self._pools("b2b_box")
+        regular, large, super_ = self._pools("b2b_box")
         self.assertIn("contract", " ".join(regular).lower())
-        for pool, where in ((regular, "regular"), (large, "large")):
+        for pool, where in ((regular, "regular"), (large, "large"),
+                            (super_, "super")):
             self.assertNotIn("on the board", " ".join(pool).lower(), where)
+
+    def test_box_derives_its_loud_pools_rather_than_copying_them(self):
+        """A hand-written Box pool is a second place to add every future line
+        and the one that gets forgotten -- which is how the AO board ended up
+        a day behind this file. Deriving means a line added for AT&T reaches
+        Box already saying the right thing."""
+        from automations.shared import sale_hype as H
+        self.assertEqual(len(H.BOX_LARGE), len(H.HYPE_LARGE))
+        self.assertEqual(len(H.BOX_SUPER), len(H.HYPE_SUPER))
+        self.assertEqual(
+            H._as_contracts(("x on the board!!", "Y ON THE BOARD")),
+            ("x closed one!!", "Y CLOSED ONE"))
 
     def test_the_same_sale_always_gets_the_same_words(self):
         """Hashed, never random: a sweep that has to be re-run repeats itself
