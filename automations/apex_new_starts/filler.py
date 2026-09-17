@@ -487,6 +487,32 @@ _JS = r"""
    if(!String(b).trim()) return false;
    return norm(b)!==norm(v);
  }
+ function putIdBeside(el,id){
+   /* Apex submits an ...ID, and the widget only holds the object. ng-blur is
+      meant to copy one into the other; when it does not, the box reads
+      "Married filing jointly" and the API answers
+      MaritalStatusID: "Marital Status is Required" -- which is what stopped
+      the run on Dylan Poston (Megan, 2026-09-17). So write the id in as well,
+      into whichever input in this field is bound to a name ending ID. */
+   if(id===undefined||id===null||id==='') return;
+   var box=el, d=0;
+   while(box&&d<4&&!(box.querySelector&&box.querySelector('input[ng-model]'))){
+     box=box.parentElement; d++;
+   }
+   if(!box||!box.querySelectorAll) return;
+   var ins=box.querySelectorAll('input[ng-model]'), i, m;
+   for(i=0;i<ins.length;i++){
+     m=ins[i].getAttribute('ng-model')||'';
+     if(!/id$/i.test(m)) continue;
+     if(String(ins[i].value||'')===String(id)) return;   /* already right */
+     ins[i].value=id;
+     ins[i].dispatchEvent(new Event('input',{bubbles:true}));
+     ins[i].dispatchEvent(new Event('change',{bubbles:true}));
+     ngApply(ins[i]);
+     TRACE.push('wrote id '+id+' into '+m);
+     return;
+   }
+ }
  function kendoSet(el,v){
    var w=kw(el); if(!w) return false;
    if(w.dataSource&&w.dataSource.data&&w.options&&w.value){
@@ -495,8 +521,11 @@ _JS = r"""
      for(i=0;i<d.length;i++){
        t=norm(tf&&d[i][tf]!==undefined?d[i][tf]:(d[i].Text||d[i].text||d[i]));
        if(t===want||(t&&(t.indexOf(want)===0||want.indexOf(t)===0))){
-         w.value(vf&&d[i][vf]!==undefined?d[i][vf]:(d[i].Value||d[i].value||d[i]));
-         w.trigger('change'); settle(el);
+         var picked=(vf&&d[i][vf]!==undefined)?d[i][vf]
+                    :(d[i].Value!==undefined?d[i].Value
+                      :(d[i].value!==undefined?d[i].value:d[i]));
+         w.value(picked);
+         w.trigger('change'); settle(el); putIdBeside(el,picked);
          if(!bindingLooksReal(el,v)){ TRACE.push('widget set but binding empty'); return false; }
          return true;
        }
@@ -1594,8 +1623,13 @@ _JS = r"""
        if(bar.textContent!==txt) bar.textContent=txt;
      }
    }
+   /* `p` was captured when the panel was built, so after the run moved on the
+      header still said the FIRST person over a page showing the fourth
+      (Megan, 2026-09-17). Whoever the count points at NOW. */
+   var atNow=D[Math.min(I,D.length-1)];
    var head=(RUNNING||(now&&now.running))? 'Running the week \u00b7 %(week)s'
-     : (here? 'Ready to run \u00b7 %(week)s' : p.name);
+     : (here? 'Ready to run \u00b7 %(week)s'
+            : ((now&&now.name)||(atNow&&atNow.name)||p.name));
    if(h.textContent!==head) h.textContent=head;
    /* Which setup is loaded, in the one place it will be looked at. The
       bookmark runs whatever was last pasted, so "is this this week's list?"

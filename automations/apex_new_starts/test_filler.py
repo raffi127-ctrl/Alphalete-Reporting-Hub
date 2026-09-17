@@ -2514,3 +2514,61 @@ def test_a_banner_warns_not_to_type_while_it_runs(page, tmp_path):
     page.evaluate("() => { window.__ansNow = null; }")
     page.wait_for_function(
         "() => !document.getElementById('ansblock')", timeout=5000)
+
+
+KENDO_TWO_HALVES = """
+<!doctype html><html><body>
+<h1>Tax</h1>
+<div class="form-group" id="ms">
+  <label for="msel">Marital Status</label>
+  <select id="msel" class="k-widget"></select>
+  <input type="hidden" ng-model="vm.employeeBankInfo.MaritalStatusID" id="msid">
+</div>
+<div id="sent"></div>
+</body></html>
+"""
+
+KENDO_ID_STUB = """() => {
+  /* the slice of Kendo this relies on: a widget holding an OBJECT, with the
+     id the form submits living in a separate input beside it — and nothing
+     copying one into the other, which is the bug */
+  const items = [
+    {Text: 'Single or Married filing separately', Value: 11},
+    {Text: 'Married filing jointly or Qualifying surviving spouse', Value: 12},
+  ];
+  let current = null;
+  const widget = {
+    options: {dataTextField: 'Text', dataValueField: 'Value'},
+    dataSource: {data: () => items},
+    value: (v) => { if (v !== undefined) { current = v;
+        document.getElementById('sent').textContent = 'widget=' + v; }
+        return current; },
+    text: () => (items.find(i => i.Value === current) || {}).Text || '',
+    trigger: () => {},
+  };
+  // kw() goes through jQuery first and gives up without it
+  window.jQuery = (el) => ({data: () => null, 0: el, length: 1});
+  window.kendo = {widgetInstance: (e) => (e && e[0] && e[0].id === 'msel'
+                                          ? widget : null)};
+  window.angular = {element: () => ({scope: () => ({$eval(){}, $applyAsync(){}})})};
+}"""
+
+
+def test_the_id_is_written_beside_the_words(page, tmp_path):
+    """Apex submits an ...ID and the widget only holds the object. When
+    ng-blur does not copy one into the other, the box reads "Married filing
+    jointly" and the API answers MaritalStatusID: "Marital Status is
+    Required" -- which stopped the run on Dylan Poston (Megan, 2026-09-17)."""
+    f = tmp_path / "bank-info.html"
+    f.write_text(KENDO_TWO_HALVES)
+    page.goto(f.as_uri())
+    page.evaluate(KENDO_ID_STUB)
+    person = {"name": "Dylan Poston", "find": "Poston", "pages": {"tax": {
+        "Marital Status":
+            "Married filing jointly or Qualifying surviving spouse"}}}
+    page.evaluate(filler.build_js([person], "WE 9.20")[len("javascript:"):])
+
+    page.evaluate("""async (p) => await window.__ansDoPage(p, 'tax')""", person)
+    assert page.locator("#sent").inner_text() == "widget=12", "the widget took it"
+    assert page.input_value("#msid") == "12", \
+        "and the id the form submits was written too"
