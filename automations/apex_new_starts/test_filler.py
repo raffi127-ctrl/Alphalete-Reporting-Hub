@@ -2484,3 +2484,33 @@ def test_a_genuinely_absent_person_is_created_and_saved(page, tmp_path):
     assert page.input_value("#hd") == "09/14/2026", "and the hire date"
     assert "created and saved" in out, "it saved and carried on"
     assert "now on Pending" in out, "which is what makes the run able to find them"
+
+
+def test_a_banner_warns_not_to_type_while_it_runs(page, tmp_path):
+    """Megan, 2026-09-17: "DO NOT TYPE IN THIS SCREEN- LUCY IS WORKING". The
+    run fills the same boxes a person would, so a keystroke landing in the
+    middle of it goes into whatever field it is on."""
+    f = tmp_path / "user-profile.html"
+    f.write_text("<h1>x</h1>")
+    page.goto(f.as_uri())
+    page.evaluate("() => localStorage.clear()")
+    page.evaluate(filler.build_js(
+        [{"name": "Bailey Soda", "find": "Soda", "pages": {}}],
+        "WE 9.20")[len("javascript:"):])
+
+    assert page.locator("#ansblock").count() == 0, "nothing while idle"
+
+    page.evaluate("""() => { window.__ansNow =
+        {running: true, name: 'Bailey Soda', at: 2}; }""")
+    page.wait_for_selector("#ansblock", timeout=5000)
+    bar = page.locator("#ansblock")
+    assert "DO NOT TYPE" in bar.inner_text()
+    assert "LUCY IS WORKING" in bar.inner_text()
+    assert "Bailey Soda" in bar.inner_text(), "and who it is on"
+    assert page.evaluate(
+        "() => getComputedStyle(document.getElementById('ansblock'))"
+        ".pointerEvents") == "none", "it must never swallow a click"
+
+    page.evaluate("() => { window.__ansNow = null; }")
+    page.wait_for_function(
+        "() => !document.getElementById('ansblock')", timeout=5000)

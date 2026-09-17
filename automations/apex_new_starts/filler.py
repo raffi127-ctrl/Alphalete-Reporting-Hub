@@ -1570,6 +1570,30 @@ _JS = r"""
       (Megan, 2026-09-10). Whoever is actually being filled says so here, and
       every instance reads the same note. */
    var now=window.__ansNow;
+   /* A banner across the top while it is typing. The run fills the same boxes
+      a person would, so a keystroke landing in the middle of it goes into
+      whatever field it is on (Megan, 2026-09-17). Pointer events off, so it
+      never swallows a click meant for the page underneath. */
+   var busy=!!(RUNNING||(now&&now.running));
+   var bar=document.getElementById('ansblock');
+   if(busy&&!bar){
+     bar=document.createElement('div'); bar.id='ansblock';
+     bar.style.cssText='position:fixed;top:0;left:0;right:0;z-index:2147483646;'+
+       'background:#b00020;color:#fff;font:700 20px/1.3 -apple-system,'+
+       'Helvetica,sans-serif;text-align:center;padding:14px 16px;'+
+       'letter-spacing:.02em;pointer-events:none;'+
+       'box-shadow:0 2px 12px rgba(0,0,0,.35)';
+     document.body.appendChild(bar);
+   }
+   if(bar){
+     if(!busy){ bar.remove(); }
+     else {
+       var who=(now&&now.name)? now.name : '';
+       var txt='DO NOT TYPE IN THIS SCREEN \u2014 LUCY IS WORKING'+
+               (who? '  \u00b7  '+who+' ('+now.at+' of '+D.length+')':'');
+       if(bar.textContent!==txt) bar.textContent=txt;
+     }
+   }
    var head=(RUNNING||(now&&now.running))? 'Running the week \u00b7 %(week)s'
      : (here? 'Ready to run \u00b7 %(week)s' : p.name);
    if(h.textContent!==head) h.textContent=head;
