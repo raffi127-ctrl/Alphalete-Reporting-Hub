@@ -290,6 +290,19 @@ OFFICES: Dict[str, AlertOffice] = {
         # next person does not have to know what the default is.
         campaign="att",
     ),
+    "isaiah": AlertOffice(
+        key="isaiah", owner="Isaiah Revelle", label="Isaiah's Local Office",
+        # UNROUTED on purpose: the installer asks them where they want
+        # their alerts, and a human approves it. Nothing posts until then.
+        channels=(),
+        timezone="America/Chicago", active=True, platform="mac",
+        slack_user_id="U05TRK2LV33",
+        # Hours are the ORG DEFAULT, not this owner's own -- nobody
+        # has told us theirs yet. Correct them here when they do.
+        day_start="13:30", day_end="20:30",
+        sat_start="10:45", sat_end="17:00", saturday=True,
+        campaign="nds",
+    ),
 }
 
 
