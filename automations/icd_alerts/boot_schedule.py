@@ -68,12 +68,43 @@ def agent_plist() -> Path:
             / ("%s.plist" % AGENT_LABEL))
 
 
+# Where the installer always puts the agent. install.sh lays out
+# ~/.lucy-reports/{app,venv}, and the boot job has to name THAT tree whatever
+# copy of this file happens to be asking.
+INSTALLED_ROOT = Path.home() / ".lucy-reports" / "app"
+
+
+def _is_app(root: Path) -> bool:
+    return (root / "automations" / "icd_alerts" / "run.py").is_file()
+
+
 def app_root() -> Optional[Path]:
-    """The directory holding `automations/`, derived from this file so it is
-    right wherever the office put it."""
+    """The installed tree, NOT whichever copy of this file is running.
+
+    THE INSTALLED ONE WINS, and that is the whole point. install.sh downloads
+    the agent into a mktemp directory and runs setup.py from there under
+    whatever system Python the Mac has. Derived from __file__, every answer
+    here was then about the TEMPORARY copy:
+
+        root   = /var/folders/.../T/tmp.XXXX          (deleted minutes later)
+        python = tmp.XXXX/../venv/bin/python          (never existed)
+                 -> falls back to sys.executable      = system python3.9
+
+    So the boot job was written naming a directory that was about to be
+    deleted and a Python with no patchright in it, and then ran every two
+    minutes for hours doing nothing. Khalil 131 times on 2026-09-16, Aya 7
+    times on 2026-09-17 before anybody looked, and both needed a person to
+    run a repair command afterwards. Megan, 2026-09-17: "this shouldn't be
+    another step moving forward. we need the install to just work."
+
+    Falling back to __file__ keeps a hand-run checkout working, which is the
+    only case that is not an install.
+    """
+    if _is_app(INSTALLED_ROOT):
+        return INSTALLED_ROOT
     here = Path(__file__).resolve()
     for parent in here.parents:
-        if (parent / "automations" / "icd_alerts" / "run.py").is_file():
+        if _is_app(parent):
             return parent
     return None
 
