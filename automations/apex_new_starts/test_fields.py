@@ -444,3 +444,34 @@ def test_an_unsigned_apex_does_not_withhold_the_list(monkeypatch):
         assert RUN.preflight(dt.date(2026, 9, 13), any_day=True) == 0
     assert calls, "the list was still fetched"
     assert "Apex is not signed in" in out.getvalue(), "and it says so plainly"
+
+
+def test_nobody_marked_cr_is_said_once(monkeypatch, tmp_path):
+    """Megan's board on WE 9.20 had an empty Monday column, so all 25 people
+    carried the same "nothing marked CR" note and it buried the one that
+    needed a person: a missing Blue Ink packet. It is a fact about the tab."""
+    from automations.apex_new_starts import run as RUN
+    import datetime as dt, io, contextlib
+
+    cands = [_cand(), _cand()]
+    for n, c in enumerate(cands):
+        c.name = f"Person {n}"
+        c.roll = {0: "", 1: "Hwk1C"}
+        c.week_start = dt.date(2026, 9, 14)
+    hires = {c.name: BID.NewHire(name=c.name, values={
+        "first": "A", "last": "B", "filing_single": "True"}) for c in cands}
+    monkeypatch.setattr(RUN, "gather",
+                        lambda *a, **k: ("Sales Board WE 9.20", cands, [], hires))
+    monkeypatch.setattr(RUN.BID, "signed_pdf_url", lambda *a, **k: "")
+    monkeypatch.setattr(RUN, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(RUN, "_to_clipboard", lambda text: True)
+
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        assert RUN.make_button(dt.date(2026, 9, 17)) == 0
+    text = out.getvalue()
+    assert text.count("marked CR") == 1, "once, not once per person"
+    assert "Monday column is empty" in text
+
+    page = next(tmp_path.glob("fill-apex-*.html")).read_text()
+    assert "nothing marked CR" not in page, "and not beside every name"

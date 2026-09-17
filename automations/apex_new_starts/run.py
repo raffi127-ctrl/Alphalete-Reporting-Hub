@@ -594,6 +594,12 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
     title, add, _skipped, hires = gather(today, tab=tab,
                                          include_ona=include_ona)
     people, notes = [], {}
+    # NOBODY marked CR is a fact about the tab, not about 25 separate people.
+    # On WE 9.20 the whole Monday column was empty, so every single person
+    # carried the same warning and it buried the one that actually needed
+    # somebody: a missing Blue Ink packet. Said once instead
+    # (Megan, 2026-09-17).
+    _whole_week_uncr = bool(add) and all(c.hire_assumed for c in add)
     for c in add:
         hire = hires.get(c.name)
         if hire is None or hire.missing_packet:
@@ -628,7 +634,7 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
                 if str(hire.values.get(f) or "").strip().lower() == "true"]:
             said.append("W-4 Step 1(c) blank \u2014 filled as Single, "
                         "no dependents")
-        if c.hire_assumed:
+        if c.hire_assumed and not _whole_week_uncr:
             said.append("nothing marked CR \u2014 hire date taken as that "
                         "Monday")
         if said:
@@ -640,6 +646,11 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
         today.strftime("%B %-d, %Y") if os.name != "nt"
         else today.strftime("%B %d, %Y"), notes))
     _log(f"{title}: {len(people)} record(s) in the button")
+    if _whole_week_uncr:
+        _log("  \u2139  Nobody on this tab is marked CR \u2014 the Monday "
+             "column is empty and everyone starts Tuesday. Hire dates read as "
+             "that Monday. Apex holds the real one; this report never types "
+             "it.")
     for name, why in notes.items():
         _log(f"  ⚠️ {name}: {why}")
     _log("")
