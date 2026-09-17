@@ -77,6 +77,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 from pathlib import Path
 from typing import Optional, Sequence, Tuple
 
@@ -182,6 +183,15 @@ def _combo_label(viz, combo) -> str:
     return _text(combo.locator("xpath=../.."), timeout_ms=2_000)
 
 
+def _fold(text: str) -> str:
+    """Label text for COMPARISON only: casefolded, invisible characters and all
+    whitespace dropped. On 2026-09-16 the live label read 'Filter \ufeffContract
+    ID' after an SCI re-publish; a BOM / zero-width / no-break space anywhere in
+    the name must not turn a present filter into an 'absent' one."""
+    return re.sub(r"[\s\u200b-\u200f\u2060\ufeff\xa0]+", "",
+                  text or "").casefold()
+
+
 def _field_combo(viz, field: str):
     """(locator, how) for `field`'s collapsed dropdown, or (None, reason).
 
@@ -203,7 +213,7 @@ def _field_combo(viz, field: str):
         combos = viz.locator(_COMBO)
         for i in range(min(combos.count(), 25)):
             combo = combos.nth(i)
-            if field.casefold() in _combo_label(viz, combo).casefold():
+            if _fold(field) in _fold(_combo_label(viz, combo)):
                 return combo, "label"
     except Exception:                                       # noqa: BLE001
         pass
@@ -223,7 +233,9 @@ def _describe_combos(viz, limit: int = 12) -> str:
                 _combo_label(viz, combo) or "?", _text(combo)))
     except Exception as exc:                                # noqa: BLE001
         return "<combo probe failed: {!r}>".format(exc)
-    return " | ".join(out) or "(no dropdowns)"
+    # One per line: logtail cuts every line at 200 chars, and on 2026-09-17 the
+    # one list that explained an 'absent' filter was past the cut.
+    return "".join("\n       · " + o for o in out) or "(no dropdowns)"
 
 
 def _release_dropdown(page, viz, field: str, verbose: bool,

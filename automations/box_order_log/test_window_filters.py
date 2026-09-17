@@ -344,5 +344,24 @@ class HookOrderTest(unittest.TestCase):
                                  ("release",)])
 
 
+class LabelFoldTest(unittest.TestCase):
+    """2026-09-16/17: an SCI re-publish put an invisible character in the filter
+    label, and a present filter must not read as 'absent' because of it."""
+
+    def test_invisible_characters_do_not_hide_a_filter(self):
+        from automations.box_order_log import window as w
+        for label in ("Filter ﻿Contract ID Inclusive (All)",
+                      "Filter Contract ID Inclusive",
+                      "Filter Contract​ ID",
+                      "Filter ACCOUNT ID"):
+            field = "Account Id" if "ACCOUNT" in label else "Contract ID"
+            self.assertIn(w._fold(field), w._fold(label), label)
+
+    def test_a_different_field_still_does_not_match(self):
+        from automations.box_order_log import window as w
+        self.assertNotIn(w._fold("Contract ID"),
+                         w._fold("Filter Owner & Office Inclusive"))
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

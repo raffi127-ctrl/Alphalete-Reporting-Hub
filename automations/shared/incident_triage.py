@@ -233,6 +233,20 @@ _STALE_ALREADY_SENT_LINE = (
     "old numbers. The feed catching up does NOT fix what was already "
     "delivered; only re-sending does. Check what those reports posted or "
     "texted today and re-send the ones that matter.")
+# A PINNED-FILTER NOTICE SHIPPED NOTHING (2026-09-16, again 09-17). The same
+# `drop-tableau-stale-…-filters` key also carries box_order_log's "could not
+# confirm the view is unpinned" alert (state kind `unconfirmed-filter`). Its
+# "hit by:" list names reports that ABORTED before exporting — window._hook
+# raises unless ALPHALETE_BOX_ALLOW_UNCONFIRMED is set — so the re-send line
+# above told people to re-send something that never went out, under a parent
+# post that says "nothing was sent". It still needs a person: the saved view has
+# to be opened and fixed, and re-running alone repeats the same abort.
+_PINNED_FILTER_LINE = (
+    "*Needs one of you.* The pull stopped before exporting because the view's "
+    "ID filters could not be confirmed as (All) — so nothing went out and "
+    "there is nothing to re-send. Someone has to open the saved view, check "
+    "the date range has rows and both ID filters read (All), save it, then "
+    "re-run {reports}.")
 
 # INCIDENTS THAT ARE FINDINGS, NOT FAILURES (Megan 2026-09-02). A `finding-` key
 # means the run did its WHOLE job and is reporting what it noticed on the board —
@@ -428,6 +442,23 @@ def reruns_itself(rid: str, *, partial: bool = False) -> bool:
     return partial and (r.get("verify") or {}).get("type") == "manifest"
 
 
+def _stale_state(key: str, day: dt.date) -> dict:
+    """Today's tableau_freshness state for a `drop-tableau-stale-` key, or {}."""
+    for prefix in _NO_ACTION_PREFIXES:
+        if key.startswith(prefix):
+            slug = key[len(prefix):]
+            break
+    else:
+        return {}
+    try:
+        from automations.shared import tableau_freshness as _tf
+        path = _tf.STATE_DIR / "{}-{}.json".format(slug, day.isoformat())
+        state = json.loads(path.read_text())
+    except Exception:  # noqa: BLE001 — triage must never raise on a bad read
+        return {}
+    return state if isinstance(state, dict) else {}
+
+
 def _stale_hit_reports(key: str, day: dt.date) -> list:
     """Which reports already PULLED off a stale source today, newest state wins.
 
@@ -440,19 +471,7 @@ def _stale_hit_reports(key: str, day: dt.date) -> list:
     Best-effort on purpose. This decides WORDING, so a missing or unreadable
     state file must degrade to the quiet verdict, never raise inside triage.
     """
-    for prefix in _NO_ACTION_PREFIXES:
-        if key.startswith(prefix):
-            slug = key[len(prefix):]
-            break
-    else:
-        return []
-    try:
-        from automations.shared import tableau_freshness as _tf
-        path = _tf.STATE_DIR / "{}-{}.json".format(slug, day.isoformat())
-        state = json.loads(path.read_text())
-    except Exception:  # noqa: BLE001 — triage must never raise on a bad read
-        return []
-    reports = state.get("reports") or []
+    reports = _stale_state(key, day).get("reports") or []
     return sorted(str(r) for r in reports if r)
 
 
@@ -499,6 +518,12 @@ def classify(key: str, *, day: Optional[dt.date] = None,
     #    by their nature, and nothing on our side can close them.
     if key.startswith(_NO_ACTION_PREFIXES):
         hits = _stale_hit_reports(key, day)
+        if _stale_state(key, day).get("kind") == "unconfirmed-filter":
+            return Verdict(
+                key, NEEDS_YOU,
+                "A pinned-filter check aborted the pull; nothing was sent.",
+                line=_PINNED_FILTER_LINE.format(reports=", ".join(
+                    "`{}`".format(h) for h in hits) or "the report"))
         if hits:
             return Verdict(
                 key, NEEDS_YOU,
