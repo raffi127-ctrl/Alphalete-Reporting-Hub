@@ -417,3 +417,83 @@ class RelayMeansNoScrape(unittest.TestCase):
         self.KRUN._pull("Akashdeep Rai", [], WED)
 
         self.assertEqual(seen, ["Akashdeep Rai", "Akashdeep Rai"])
+
+
+class MorningSourceCheck(unittest.TestCase):
+    """The morning check Megan asked for: where did each metrics thread's
+    knocks board actually come from?
+
+    THE POINT IS THE DISTINCTION IT DRAWS. A machine that never closed the day
+    out is not a fault -- Cyrus's is the fleet's only laptop and a shut laptop
+    sleeps whatever we assert, the scrape covers it, and a standing alarm
+    every morning about that is how the real ones stop being read. A day that
+    WAS closed out and still got scraped is ours, and fails.
+    """
+
+    HEADER = ["Office", "Day", "Rows JSON", "Tracker JSON", "Rep Count",
+              "Received At", "Local Time", "Last Posted At", "Agent",
+              "Machines"]
+
+    def setUp(self):
+        from automations.rashad_metrics import knocks_source_check as C
+        self.C = C
+
+    def _row(self, key, day, received, rows_json='[{"rep":"A"}]'):
+        return [key, day, rows_json, "[]", "1", received, "", "", "", ""]
+
+    def test_monday_looks_back_to_saturday(self):
+        """Sunday is nobody's selling day, so Monday's 'day prior' is not it."""
+        monday = dt.date(2026, 9, 14)
+        self.assertEqual(self.C._last_selling_day(monday), dt.date(2026, 9, 12))
+
+    def test_an_ordinary_day_looks_back_one(self):
+        self.assertEqual(self.C._last_selling_day(dt.date(2026, 9, 17)),
+                         dt.date(2026, 9, 16))
+
+    def test_a_day_never_relayed_is_reported_without_blame(self):
+        office = _Office(key="kash")
+        got = self.C.check_office(office, _Metrics(), WED,
+                                  values=[self.HEADER])
+        self.assertFalse(got["relayed"])
+        self.assertFalse(got["fault"], "an absent day is not our bug")
+        self.assertIn("relayed nothing", got["why"])
+
+    def test_a_machine_that_stopped_early_is_not_a_fault(self):
+        office = _Office(key="kash", day_end="20:30")
+        values = [self.HEADER,
+                  self._row("kash", "2026-09-16", "9/16/2026 14:52:00")]
+        got = self.C.check_office(office, _Metrics(), WED, values=values)
+        self.assertFalse(got["closed_out"])
+        self.assertFalse(got["fault"])
+        self.assertIn("before the day ended", got["why"])
+
+    def test_a_closed_out_day_that_still_scraped_IS_a_fault(self):
+        """The data was sitting there and we did not use it."""
+        from automations.rashad_metrics import knocks_relay as KR
+        office = _Office(key="kash")
+        values = [self.HEADER,
+                  self._row("kash", "2026-09-16", "9/16/2026 21:31:00")]
+        orig = KR.relayed_rows
+        KR.relayed_rows = lambda *a, **k: None
+        try:
+            got = self.C.check_office(office, _Metrics(), WED, values=values)
+        finally:
+            KR.relayed_rows = orig
+        self.assertTrue(got["closed_out"])
+        self.assertFalse(got["relayed"])
+        self.assertTrue(got["fault"])
+
+    def test_only_offices_on_both_sides_are_checked(self):
+        """An office with no metrics thread has no board for this to be
+        about, and one not on ECO has nothing to relay."""
+        from automations.icd_alerts import offices as O
+        from automations.office_metrics import offices as OM
+        metrics, eco = dict(OM.OFFICES), {o.key for o in O.active()}
+        expected = {k for k in metrics if k in eco}
+        self.assertEqual({o.key for o, _ in self.C.offices_to_check()},
+                         expected)
+
+
+class _Metrics:
+    knocks_office = "Akashdeep Rai"
+    key = "kash"
