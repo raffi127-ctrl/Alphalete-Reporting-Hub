@@ -2400,6 +2400,7 @@ ROSTER_WITH_TABS = """
 <!doctype html><html><body>
 <h1>USER LISTING</h1>
 <button id="addbtn">+ Add Employee</button>
+<button id="savebtn">Save</button>
 <ul><li><a href="#">Active</a></li><li><a href="#">Pending</a></li>
     <li><a href="#" id="alltab">All Employees</a></li></ul>
 <table><thead><tr><th>First Name</th><th>Last Name</th></tr>
@@ -2427,6 +2428,8 @@ window.__render = () => {
 document.getElementById('apply').addEventListener('click', window.__render);
 document.getElementById('addbtn').addEventListener('click',
   () => { document.getElementById('made').textContent = 'form opened'; });
+document.getElementById('savebtn').addEventListener('click',
+  () => { document.getElementById('made').textContent += ' + saved'; });
 window.__render();
 </script>
 </body></html>
@@ -2455,9 +2458,10 @@ def test_somebody_already_in_apex_is_not_created_again(page, tmp_path):
     assert page.locator("#made").inner_text() == "", "the form never opened"
 
 
-def test_a_genuinely_absent_person_gets_the_form_filled_and_stops(page, tmp_path):
-    """The only thing in here that CREATES a payroll record, so the first one
-    stops before Save to be looked at."""
+def test_a_genuinely_absent_person_is_created_and_saved(page, tmp_path):
+    """Saving is what moves them onto the Pending tab, which is how the run
+    finds them later (Megan, 2026-09-17: "I had to hit save on Eric for him to
+    then move to the pending tab")."""
     f = tmp_path / "roster.html"
     f.write_text(ROSTER_WITH_TABS)
     page.goto(f.as_uri())
@@ -2474,7 +2478,9 @@ def test_a_genuinely_absent_person_gets_the_form_filled_and_stops(page, tmp_path
       await window.__ansAddMissing([p], m => said.push(m));
       return said.join(' | ');
     }""", person)
-    assert page.locator("#made").inner_text() == "form opened"
+    assert "form opened" in page.locator("#made").inner_text()
+    assert "saved" in page.locator("#made").inner_text(), "it pressed Save"
     assert page.input_value("#un") == "erickpullins", "the user name was typed"
     assert page.input_value("#hd") == "09/14/2026", "and the hire date"
-    assert "press Save in Apex yourself" in out, "it stopped before saving"
+    assert "created and saved" in out, "it saved and carried on"
+    assert "now on Pending" in out, "which is what makes the run able to find them"

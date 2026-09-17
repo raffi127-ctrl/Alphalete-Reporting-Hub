@@ -1041,26 +1041,39 @@ _JS = r"""
      add.click();
      await sleep(1500);
      var r=await doPage(p,'new');
+     /* The office block (Position, State Working In, Basis of Pay, Pay
+        Frequency, Department) renders after the account fields, so a single
+        pass called them missing on a form that had them a second later.
+        Try again before saying anything (Megan, 2026-09-17). */
      if(r.miss.length){
-       say('<span style="color:#b00">'+p.name+': the form is missing '+
-           r.miss.join(', ')+' \u2014 filled the rest and STOPPED. Finish it '+
-           'by hand and Save, or screenshot this.</span>');
-       return made;
+       await sleep(1800);
+       var again=await doPage(p,'new');
+       r={done:r.done.concat(again.done), miss:again.miss};
      }
-     say(p.name+': form filled \u2014 '+r.done.join(', '));
-     if(made===0){
-       say('<b>Look at it, then press Save in Apex yourself.</b> Once that '+
-           'record is right, press this again for the rest.');
-       return made+1;
+     say(p.name+': filled \u2014 '+(r.done.join(', ')||'nothing'));
+     if(r.miss.length){
+       /* NOT fatal. Apex sets the office block itself on a new record -- the
+          one we watched saved clean with these untouched -- so say it and
+          carry on rather than leaving half a form and stopping the lot. */
+       say('<span style="color:#a56a00">'+p.name+': Apex filled these itself '+
+           '\u2014 '+r.miss.join(', ')+'. Check them on the record.</span>');
      }
      var err=await saveHere();
      if(err){
        say('<span style="color:#b00">'+p.name+': Apex refused it \u2014 '+err+
-           '</span>');
+           '. Nothing after this was touched.</span>');
        return made;
      }
-     say('<b>'+p.name+': created.</b>');
+     /* Saving is what moves them onto the Pending tab, which is how the run
+        finds them later (Megan, 2026-09-17: "I had to hit save on Eric for
+        him to then move to the pending tab"). */
+     say('<b>'+p.name+': created and saved \u2014 now on Pending.</b>');
      made++;
+     if(i+1<people.length){
+       if(!(await goSpa('/roster'))) { say('Open Roster \u2192 Employees to '+
+         'carry on with the rest.'); return made; }
+       await sleep(1200);
+     }
    }
    return made;
  }
@@ -1101,9 +1114,14 @@ _JS = r"""
    if(!still.length){ say('<b>All '+D.length+' found.</b> Ready to run the week.'); return; }
    say('<b style="color:#b00">Not on the Pending tab ('+still.length+'):</b><br>'+
        still.join('<br>')+
-       '<div style="margin-top:6px"><a href="#" id="ansaddmiss"><b>add '+
-       (still.length===1?'this one':'these '+still.length)+' in Apex</b></a>'+
-       ' · <a href="#" id="ansagain">look again</a></div>');
+       /* A button, not a link. It is the thing to do next and it was a
+          line of small blue text (Megan, 2026-09-17). */
+       '<button id="ansaddmiss" style="background:#0F766E;color:#fff;border:0;'+
+       'border-radius:6px;padding:10px 14px;font-size:14px;font-weight:700;'+
+       'cursor:pointer;width:100%%;margin:8px 0 4px">Add '+
+       (still.length===1?'this one':'these '+still.length)+' in Apex</button>'+
+       '<div><a href="#" id="ansagain" style="font-size:11px;color:#888">'+
+       'look again</a></div>');
    var again=document.getElementById('ansagain');
    if(again) again.onclick=function(e){ e.preventDefault(); findEveryone(say); };
    var addm=document.getElementById('ansaddmiss');
