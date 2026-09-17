@@ -32,6 +32,16 @@ METRIC_LABEL = {"Int": "Int", "Int Up": "Up", "DTV": "DTV", "NL": "NL"}
 # sells, with the paw-print emoji currently doing the rounds (Megan,
 # 2026-09-16).
 #
+# "x is a DAWGGGG" and the chilli are Megan's too (2026-09-16). The dawg line
+# sits in the loud tiers where it belongs -- it is high praise, not a
+# description of an ordinary Tuesday -- and once in the ordinary pool so a
+# good day can still earn it.
+#
+# THE MONEY SET -- :moneybag: :dollar: :money_with_wings: :heavy_dollar_sign:
+# :money_mouth_face: -- is spread ACROSS the pools rather than stacked on any
+# one line. Megan offered them on 2026-09-16; the point of more emoji is more
+# variety, not more decoration per message.
+#
 # NO FRIES. It went in with the paws and came straight back out -- it carries
 # a meaning in current slang that nobody wants attached to a rep's name, and
 # neither we nor they would be there to explain it. Not a close call, and not
@@ -45,16 +55,18 @@ METRIC_LABEL = {"Int": "Int", "Int Up": "Up", "DTV": "DTV", "NL": "NL"}
 HYPE_REGULAR = (
     "Heck yeah! {first} is on the board :fire:",
     "Snicklepop!! {first} is on the board :zap:",
-    "{first} found the money! :moneybag:",
+    "{first} found the money! :dollar:",
     "Closer!! {first} is on the board :fire:",
-    "WINNER!! {first} is on the board :fire:",
+    "WINNER!! {first} is on the board :money_with_wings:",
     "{first} is on the board! Who's next :eyes::eyes::eyes:",
     "{first} on the board. No complacency :eyes:",
     "That's {first} on the board :100:",
     "{first} came to play :paw_prints:",
+    "{first} is a DAWGGGG :dog:",
+    "{first} is spicy :hot_pepper:",
     "Another one for {first} :fire:",
     "{first} keeps going :chart_with_upwards_trend:",
-    "{first} is on it :moneybag:",
+    "{first} is on it :heavy_dollar_sign:",
     "{first} just put one on the board! :fire:",
 )
 
@@ -65,11 +77,13 @@ HYPE_LARGE = (
     "{first}, TELL US!! :fire::moneybag::fire:",
     "Heck YEAH {first}!! :fire::fire:",
     "{first} FOUND THE MONEY!! :moneybag::moneybag:",
-    "Snicklepop!! {first} is rolling :zap::moneybag:",
-    "CLOSER!! {first} :fire::moneybag:",
+    "Snicklepop!! {first} is rolling :zap::dollar:",
+    "CLOSER!! {first} :fire::money_with_wings:",
     "WINNER!! {first} :paw_prints::fire:",
     "{first}!! Who's next :eyes::eyes::eyes:",
-    "{first}!! No complacency :fire::moneybag:",
+    "{first}!! No complacency :fire::heavy_dollar_sign:",
+    "{first} is a DAWGGGG :dog:",
+    "{first} is SPICY!! :hot_pepper::fire:",
 )
 
 # The top tier SHOUTS THE NAME, which is the one bit of the old wording that
@@ -83,9 +97,10 @@ HYPE_SUPER = (
     "SNICKLEPOP!!! {first}!!! :zap::fire:",
     "HECK YEAH {first}!!! :fire::money_mouth_face::fire:",
     "{first} FOUND THE MONEY!!! :moneybag::100::moneybag:",
-    "CLOSER!!! {first}!!! :fire::money_mouth_face::fire:",
+    "CLOSER!!! {first}!!! :money_with_wings::money_mouth_face::fire:",
     "WINNER!!! WINNER!!! {first} :paw_prints::money_mouth_face:",
     "{first}!!! WHO'S NEXT :eyes::eyes::eyes:",
+    "{first} IS A DAWGGGG :dog::fire:",
 )
 
 
@@ -280,14 +295,16 @@ class _Box(Shape):
         "Snicklepop!! {first} got one done :zap:",
         "{first} found the money! :moneybag:",
         "Closer!! {first} closed one :fire:",
-        "WINNER!! {first} closed one :fire:",
+        "WINNER!! {first} closed one :money_with_wings:",
         "{first} closed one! Who's next :eyes::eyes::eyes:",
         "{first} closed one. No complacency :eyes:",
         "That's another for {first} :100:",
         "{first} came to play :paw_prints:",
+        "{first} is a DAWGGGG :dog:",
+        "{first} is spicy :hot_pepper:",
         "Another contract for {first} :fire:",
         "{first} keeps going :chart_with_upwards_trend:",
-        "{first} just closed one :moneybag:",
+        "{first} just closed one :heavy_dollar_sign:",
     )
 
     # THE GIF BAR. NOT a fourth tier -- Box has three, which is Carlos's rule

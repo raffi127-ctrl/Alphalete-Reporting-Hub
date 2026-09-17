@@ -1937,6 +1937,23 @@ class TheSaleLinesSoundLikeTheCompany(unittest.TestCase):
             joined = " ".join(sum(self._pools(campaign), ()))
             self.assertIn(":paw_prints:", joined, campaign)
 
+    def test_the_money_set_is_spread_not_stacked(self):
+        """Megan offered 💸 💵 💲 on 2026-09-16. The point of more emoji is
+        more variety, not more decoration per message -- so they appear
+        across the pools and no single line carries a pile of them."""
+        money = (":moneybag:", ":dollar:", ":money_with_wings:",
+                 ":heavy_dollar_sign:", ":money_mouth_face:")
+        for campaign in ("att", "b2b_box"):
+            pools = self._pools(campaign)
+            joined = " ".join(sum(pools, ()))
+            seen = [m for m in money if m in joined]
+            self.assertGreaterEqual(len(seen), 4, "%s only uses %s"
+                                    % (campaign, seen))
+            for pool in pools:
+                for line in pool:
+                    n = sum(line.count(m) for m in money)
+                    self.assertLessEqual(n, 3, line)
+
     def test_the_fries_emoji_never_comes_back(self):
         """It went in with the paws and came straight back out (Megan,
         2026-09-16). It carries a meaning in current slang that nobody wants
@@ -1999,7 +2016,8 @@ class TheSaleLinesSoundLikeTheCompany(unittest.TestCase):
         it, not from the room reading it.
         """
         phrases = ("heck yeah", "snicklepop", "found the money", "closer",
-                   "winner", "who's next", "complacen", "tell us")
+                   "winner", "who's next", "complacen", "tell us", "dawg",
+                   "spicy")
         for campaign in ("att", "nds", "b2b_box"):
             for pool in self._pools(campaign):
                 for phrase in phrases:
@@ -2024,7 +2042,7 @@ class TheSaleLinesSoundLikeTheCompany(unittest.TestCase):
         for campaign in ("att", "b2b_box"):
             joined = " ".join(sum(self._pools(campaign), ())).lower()
             for phrase in ("heck yeah", "found the money", "snicklepop",
-                           "closer", "winner"):
+                           "closer", "winner", "dawg"):
                 self.assertIn(phrase, joined, "%s / %s" % (campaign, phrase))
 
     def test_the_top_tier_shouts_the_name(self):
