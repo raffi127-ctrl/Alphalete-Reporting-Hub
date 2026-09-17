@@ -2016,8 +2016,7 @@ class TheSaleLinesSoundLikeTheCompany(unittest.TestCase):
         it, not from the room reading it.
         """
         phrases = ("heck yeah", "snicklepop", "found the money", "closer",
-                   "winner", "who's next", "complacen", "tell us", "dawg",
-                   "spicy")
+                   "winner", "who's next", "complacen", "tell us", "dawg")
         for campaign in ("att", "nds", "b2b_box"):
             for pool in self._pools(campaign):
                 for phrase in phrases:
@@ -2026,6 +2025,18 @@ class TheSaleLinesSoundLikeTheCompany(unittest.TestCase):
                         len(used), 1,
                         "%s: %r appears %d times -- %s"
                         % (campaign, phrase, len(used), used))
+
+    def test_no_line_describes_the_rep_instead_of_the_sale(self):
+        """"{first} is spicy" posted "Paris is spicy" into a live channel
+        (2026-09-16) -- a remark about Paris, saying nothing about a sale.
+
+        Megan offered the chilli as an EMOJI. An emoji is not a phrase, and
+        turning one into a phrase is how an alert stops sounding like the
+        room it posts in.
+        """
+        for campaign in ("att", "b2b_box"):
+            joined = " ".join(sum(self._pools(campaign), ())).lower()
+            self.assertNotIn("is spicy", joined)
 
     def test_no_line_is_long(self):
         """Megan 2026-09-16: "just don't make these too long". A sale line is

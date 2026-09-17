@@ -39,6 +39,13 @@ METRIC_LABEL = {"Int": "Int", "Int Up": "Up", "DTV": "DTV", "NL": "NL"}
 # description of an ordinary Tuesday -- and once in the ordinary pool so a
 # good day can still earn it.
 #
+# THE CHILLI IS DECORATION, NOT A SENTENCE. It first went in as "{first} is
+# spicy", which is a line I wrote rather than one they say -- and it posted
+# "Paris is spicy" into a live channel, where it reads as a remark about
+# Paris rather than anything to do with a sale. Megan offered an EMOJI; an
+# emoji is not a phrase, and turning one into a phrase is how an alert stops
+# sounding like the room.
+#
 # THE MONEY SET -- :moneybag: :dollar: :money_with_wings: :heavy_dollar_sign:
 # :money_mouth_face: -- is spread ACROSS the pools rather than stacked on any
 # one line. Megan offered them on 2026-09-16; the point of more emoji is more
@@ -63,9 +70,8 @@ HYPE_REGULAR = (
     "{first} is on the board! Who's next :eyes::eyes::eyes:",
     "{first} on the board. No complacency :eyes:",
     "That's {first} on the board :100:",
-    "{first} came to play :paw_prints:",
+    "{first} came to play :hot_pepper:",
     "{first} is a DAWGGGG :dog:",
-    "{first} is spicy :hot_pepper:",
     "Another one for {first} :fire:",
     "{first} keeps going :chart_with_upwards_trend:",
     "{first} is on it :heavy_dollar_sign:",
@@ -77,7 +83,7 @@ HYPE_REGULAR = (
 # here -- so one wording was the fastest thing in the system to go stale.
 HYPE_LARGE = (
     "{first}, TELL US!! :fire::moneybag::fire:",
-    "Heck YEAH {first}!! :fire::fire:",
+    "Heck YEAH {first}!! :hot_pepper::fire:",
     "{first} FOUND THE MONEY!! :moneybag::moneybag:",
     "Snicklepop!! {first} is rolling :zap::dollar:",
     "CLOSER!! {first} :fire::money_with_wings:",
@@ -85,7 +91,6 @@ HYPE_LARGE = (
     "{first}!! Who's next :eyes::eyes::eyes:",
     "{first}!! No complacency :fire::heavy_dollar_sign:",
     "BIG DAWG {first} on the board!! :dog::fire:",
-    "{first} is SPICY!! :hot_pepper::fire:",
 )
 
 # The top tier SHOUTS THE NAME, which is the one bit of the old wording that
@@ -408,9 +413,8 @@ class _Box(Shape):
         "{first} closed one! Who's next :eyes::eyes::eyes:",
         "{first} closed one. No complacency :eyes:",
         "That's another for {first} :100:",
-        "{first} came to play :paw_prints:",
+        "{first} came to play :hot_pepper:",
         "{first} is a DAWGGGG :dog:",
-        "{first} is spicy :hot_pepper:",
         "Another contract for {first} :fire:",
         "{first} keeps going :chart_with_upwards_trend:",
         "{first} just closed one :heavy_dollar_sign:",
