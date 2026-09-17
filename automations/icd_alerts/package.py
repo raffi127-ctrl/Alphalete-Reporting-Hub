@@ -69,6 +69,7 @@ AGENT_FILES = [
     # sales have stopped. It was left out of the bundle when it was written
     # (2026-09-15).
     "automations/icd_alerts/box_signin.py",
+    "automations/icd_alerts/sara_signin.py",
     "automations/icd_alerts/state.py",
     "automations/icd_alerts/run.py",
     "automations/icd_alerts/dialogs.py",
