@@ -156,6 +156,8 @@ HYPE_GIFS: tuple = (
     "https://media.giphy.com/media/D5HM5xygFanAJDUNVq/giphy.gif",
     "https://media.giphy.com/media/9mZoOe2CWoeha/giphy.gif",
     "https://media.giphy.com/media/8MyXEVgue4ucw/giphy.gif",
+    "https://media.giphy.com/media/sIV0wFDrsKNxe/giphy.gif",
+    "https://media.giphy.com/media/3o85xC7kME8U5mXZpm/giphy.gif",
 )
 
 
