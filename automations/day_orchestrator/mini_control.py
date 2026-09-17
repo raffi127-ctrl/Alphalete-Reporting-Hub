@@ -3415,7 +3415,9 @@ def _action_git_diff(args: str) -> tuple[bool, str]:
                   "\n· full: lucy logtail git-diff")
 
 
-_KNOWN_RUNNERS = ("Lucy 1", "Lucy 2", "Lucy 3", "Lucy 4")
+# Every runner, from the one roster (automations/shared/fleet.py).
+from automations.shared import fleet as _fleet
+_KNOWN_RUNNERS = _fleet.RUNNERS
 
 
 def _action_set_machine_profile(args: str) -> tuple[bool, str]:

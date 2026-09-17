@@ -65,6 +65,7 @@ from typing import Dict, List, Optional
 
 # window.py imports nothing but the stdlib on purpose, so this stays cheap and
 # cannot drag a browser stack into the watchdog.
+from automations.shared import fleet as _fleet
 from automations.applicant_push.window import quiet_window as _push_quiet_window
 
 SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"   # same book as Hub Activity
@@ -184,7 +185,14 @@ JOBS: Dict[str, dict] = {
 # show the 06:00 one: the row holds the LAST beat, not the first. first_by covers
 # the 04:20 pass, which is the one that matters — 06:00 is already too late to be
 # a warning about a 04:00 batch, it is just a second chance to record the beat.
-for _hb_machine in ("Lucy 1", "Lucy 2", "Lucy 3"):
+# DERIVED FROM THE ROSTER (2026-09-17). Only machines actually ON the 4am clock
+# get a heartbeat job — arming the watch on a box that was never given a batch
+# pages every single morning about nothing, which is how a watchdog gets muted
+# and then ignored when it is finally right. A machine joins by gaining a
+# `morning_clock_since` date in automations/shared/fleet.py, and that same date
+# becomes its `watch_from` below, so a newly-armed box gets one clean 04:20
+# cycle to prove the wrapper landed before it can alert.
+for _hb_machine in _fleet.MORNING_CLOCK_MACHINES:
     JOBS["orchestrator_heartbeat_%s" % _hb_machine.lower().replace(" ", "_")] = {
         "name": "Orchestrator heartbeat (%s)" % _hb_machine,
         "machine": _hb_machine,
@@ -193,10 +201,11 @@ for _hb_machine in ("Lucy 1", "Lucy 2", "Lucy 3"):
         "active_until": None,
         "weekdays": None,          # the batch runs every day, so this does too
         # Grace: the beat line ships in deploy/orchestrator_heartbeat.sh, which
-        # every machine has to PULL. Armed 8/29 so all three have a full day to
-        # take it and one clean 04:20 cycle to prove it, rather than alerting
-        # tomorrow about a wrapper that simply had not landed yet.
-        "watch_from": "2026-08-29",
+        # every machine has to PULL. Each machine's own arm date, so a box added
+        # later gets its own full day to take the wrapper and one clean 04:20
+        # cycle to prove it, rather than alerting tomorrow about code that simply
+        # had not landed yet.
+        "watch_from": _fleet.heartbeat_watch_from(_hb_machine),
         "means": ("nothing is watching whether %s's 4am batch actually STARTED. "
                   "Reports are not necessarily broken — but if the batch dies "
                   "the way it did on 2026-08-27, the morning will look exactly "

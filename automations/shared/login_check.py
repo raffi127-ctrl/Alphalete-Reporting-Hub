@@ -45,6 +45,8 @@ import datetime as dt
 import json
 import sys
 
+from automations.shared import fleet as _fleet
+
 # A token with less than this left will not survive the 4am batch, so it counts
 # as dead NOW rather than dying halfway through the reports. Same threshold the
 # pre-batch self-heal uses, deliberately — two probes that disagree about what
@@ -66,12 +68,9 @@ MIN_MINUTES_FOR_BATCH = 90.0
 # re-logged in by hand three times while the holder put the file's account back
 # minutes later. A check that says "ownerville credential: present" would have
 # passed every one of those runs. Presence was never the question.
-EXPECTED_OWNERVILLE_ACCOUNT = {
-    "Lucy 1": "rhidalgo",   # Raf
-    "Lucy 2": "chidalgo",   # Carlos
-    "Lucy 3": "rhidalgo",   # Raf
-    "Lucy 4": "rhidalgo",   # Raf (Megan 2026-09-17, at provisioning)
-}
+# Moved into automations/shared/fleet.py on 2026-09-17 — same map, one place.
+# The reasoning above is why it is ASSERTED; fleet.py is where it is WRITTEN.
+EXPECTED_OWNERVILLE_ACCOUNT = _fleet.EXPECTED_OWNERVILLE_ACCOUNT
 
 
 def _machine() -> str:

@@ -172,34 +172,58 @@ lucy install_pinned_chrome --machine "Lucy 4"   # a box with no SSH needs this a
 
 ---
 
-## 3. 🩹 Register Lucy 4 in the code — the step that broke everything last time
+## 3. ✅ Register Lucy 4 in the code — now ONE file
 
-The fleet roster is **not one list**. It is nine literals in eight files, and
-three of them never got Lucy 3 — which is the proof that this section is the
-real risk, not the hardware. Every one of these fails silently when a machine is
-missing from it.
+**This used to be the step that broke everything.** The roster was eleven
+hand-maintained literals across nine files; every one fails silently when a
+machine is missing from it, and four had gone stale unnoticed —
+`hub_schedule_status._LUCY` (four weeks of Lucy 3 cards reporting "no
+schedule"), `office_onboarding.MACHINES`, a dead `card_scheduler._LUCY`, and
+`gap_alerts.MACHINE_OWNER` (no Lucy 3, so the "who is logged in here" line said
+"this machine's owner" on the box most likely to be mid-rerun).
 
-**Done 2026-09-17, before the machine exists** (tests green, `check_py39` clean):
+**As of 2026-09-17 there is one roster: `automations/shared/fleet.py`.**
+Lucy 4 is already in it. Adding **Lucy 5** is two edits:
 
-| File | Change |
+1. append a `Machine(...)` to `fleet.MACHINES`;
+2. add its `MEMBERS` entry in `automations/dashboard.py` (display only — colour
+   and badge; `test_fleet` fails if you forget).
+
+Everything else derives: `RUNNERS`, `APPSTREAM_HOLD_MACHINES`,
+`APPSTREAM_FLEET_MACHINES`, `MORNING_CLOCK_MACHINES`,
+`EXPECTED_OWNERVILLE_ACCOUNT`, `OFFICE_ONBOARDING_MACHINES`,
+`TEXTING_MACHINES`, `MACHINE_OWNER`, `HOSTNAMES`.
+
+**Capabilities are FLAGS, not membership**, and they flip at **go-live**, never
+at provisioning — `holds_appstream` / `runs_appstream` when the first AppStream
+report is routed there, `morning_clock_since` when it joins the 4am batch (that
+date doubles as the heartbeat's `watch_from`, so a new box gets one clean 04:20
+cycle before it can page), `can_text` only after
+`grant_orchestrator_messages.sh` has run ON it and a real line AND image were
+seen to arrive.
+
+`automations/shared/test_fleet.py` is the guard, and it was proven to fire
+rather than assumed — each of these was simulated against a deliberately
+wrong Lucy 5:
+
+| Mistake | Caught by |
 |---|---|
-| `day_orchestrator/mini_control.py` `_KNOWN_RUNNERS` | + Lucy 4 — `set_machine_profile` now accepts it |
-| `shared/login_check.py` `EXPECTED_OWNERVILLE_ACCOUNT` | + `"Lucy 4": "rhidalgo"` |
-| `shared/test_login_policy.py` | pins the map above |
-| `shared/test_session_holder_appstream.py` | 🩹 it used **"Lucy 4" itself** as the example of a box that must never hold a session — a placeholder named after the next machine expires the day that machine is built. Swapped for `some-random-mac` |
-| `shared/hub_schedule_status.py` `_LUCY` | ❌ was stale at Lucy 2 — every **Lucy 3** card reported "no schedule" in the change-notification email. Now all four |
-| `card_scheduler/run.py` `_LUCY` | stale *and unused* — deleted |
-| `resources/lucy-login-standard.md` | Lucy 4 row added to the authoritative table |
+| in the roster, no Hub profile card | `test_every_runner_has_a_profile_card` |
+| a consumer left out of step | `ConsumersAgreeWithTheRoster` (6 consumers) |
+| a NEW hand-rolled machine list anywhere under `automations/` | `test_no_new_hand_maintained_machine_list` |
+| holds an AppStream console it never reads | `test_a_holder_also_runs_appstream` |
+| a box off the 4am clock given a heartbeat | `test_a_machine_off_the_clock_has_no_heartbeat` |
 
-**Deliberately NOT done yet** — each would misfire on a machine that doesn't
-exist:
+Still separate, once real work moves (§6):
+`day_orchestrator/schedule_config.json` → `"machine": "Lucy 4"`,
+`library_assignments.json`, and each Hub card's `assignees` / `run_machine`
+in `automations/hub_cards.py` — those are per-REPORT routing, not roster.
 
-| File | When |
-|---|---|
-| `shared/silent_job_watch.py:187` heartbeat loop | at go-live (§6) — arming it now pages every morning about a batch Lucy 4 was never given. Set `watch_from` to the day *after* the first report lands, exactly as Lucy 3 did |
-| `automations/dashboard.py:1206` `MEMBERS` + `:7954` Pack layout | **⚠️ Megan-owned — needs her yes.** `_top` holds exactly three Lucys and `PACK_COLS = 3`, so a 4th silently drops to the bottom row. The Pack needs a layout decision (2×2? a row of four?), not just a MEMBERS entry |
-| `office_onboarding/schema.py:140` `MACHINES` | ❌ also stale (no Lucy 3). Adding Lucy 4 to the ICD-facing dropdown before it is live lets someone pin an office to a machine that can't run it. Fix the Lucy 3 gap and add Lucy 4 together, at go-live |
-| `shared/session_holder.py` `APPSTREAM_HOLD_MACHINES` + `APPSTREAM_FLEET_MACHINES` | **the one that would hurt the live fleet.** See below — pinned by `test_lucy_4_is_not_a_holder_yet`, delete that test at go-live |
+`machine_digest.run._machine_label()` resolves a run's hostname to a label and
+takes its Lucy-2 hosts as a CLI argument; `fleet.HOSTNAMES` now carries the
+hostname map for when that is unified. An unknown host still prints RAW on
+purpose — "Lucys-Mac-mini.local" is Lucy 3 and "Lucys-MacBook-Neo" is Lucy 2, so
+any "lucy in the hostname → Lucy 1" shortcut names the wrong box.
 
 ### 🩹 Why Lucy 4 does NOT warm AppStream on day one
 
@@ -390,19 +414,22 @@ Reasons a report is pinned where it is. Check before routing anything to Lucy 4.
 [ ] lucy rerun probe_readiness              → READY: all sources ready
 [ ] lucy update                             → done + a diffstat matching the commit
 [ ] a remote reboot round-trips: machine comes back, auto-login, agents reload
-[ ] the §3 "done" roster edits are on the machine (lucy update landed them)
+[ ] fleet.py names Lucy 4 and the machine has pulled it (lucy update)
+[ ] python -m unittest automations.shared.test_fleet  -> 18 tests, OK
 [ ] one real report ran end to end AND published its Hub card
 ```
 
 At GO-LIVE (§6), three more — none of them before the first report is routed:
 
 ```
-[ ] heartbeat entry added, watch_from = tomorrow, and it stamped one real 04:20 beat
+[ ] morning_clock_since set in fleet.py to TOMORROW's date (it becomes the
+    heartbeat's watch_from), and it stamped one real 04:20 beat
 [ ] Hub Pack card + MEMBERS entry (Megan's layout call — 4 Lucys break the row of 3)
-[ ] office_onboarding MACHINES gains Lucy 3 AND Lucy 4 together
-[ ] Lucy 4 added to APPSTREAM_HOLD_MACHINES + APPSTREAM_FLEET_MACHINES, and
-    test_lucy_4_is_not_a_holder_yet deleted — then watch Lucy 1/2/3 for one
-    morning, because this is the change that can cost the live fleet
+[ ] office_onboarding_choice flipped in fleet.py (Lucy 3 too — still False)
+[ ] holds_appstream + runs_appstream flipped in fleet.py, and both
+    test_lucy_4_is_not_a_holder_yet and test_fleet's
+    test_lucy_4_is_provisioned_but_not_yet_live deleted — then watch
+    Lucy 1/2/3 for one morning: this is the change that can cost the live fleet
 ```
 
 **Green means delivered.** Exit 0 is not green, a rendered console is not a

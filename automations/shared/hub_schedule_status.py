@@ -23,9 +23,11 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CONFIG = _REPO_ROOT / "automations" / "day_orchestrator" / "schedule_config.json"
 
 # Every runner. This set went stale at Lucy 2 and silently reported "no
-# schedule" for every Lucy 3 card until 2026-09-17 — keep it in step with
-# mini_control._KNOWN_RUNNERS.
-_LUCY = {"Lucy 1", "Lucy 2", "Lucy 3", "Lucy 4"}
+# schedule" for every Lucy 3 card for four weeks — which is precisely why the
+# names are no longer written here.
+from automations.shared import fleet as _fleet
+
+_LUCY = set(_fleet.RUNNERS)
 _DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
          "Saturday", "Sunday"]
 

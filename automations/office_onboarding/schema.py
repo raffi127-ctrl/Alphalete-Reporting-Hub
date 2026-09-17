@@ -137,7 +137,14 @@ def campaign_reports(campaign_key: str) -> "List[ReportKind]":
 # directly (Lucy 1 / Lucy 2) rather than the person logged into it — Lucy 1 is
 # the D2D login, Lucy 2 the B2B login. A view that renders on the other machine
 # than the campaign's default flips the office to that machine.
-MACHINES = ("Lucy 1", "Lucy 2")
+# From the one roster. NARROW ON PURPOSE and unchanged in effect: only Lucy 1
+# and Lucy 2 carry `office_onboarding_choice` today, because pinning an office to
+# a machine that cannot run its campaign produces a silently blank board rather
+# than an error. A machine becomes offerable by flipping that flag in
+# automations/shared/fleet.py, not by editing this line.
+from automations.shared import fleet as _fleet
+
+MACHINES = _fleet.OFFICE_ONBOARDING_MACHINES
 FAMILY_DEFAULT_MACHINE = {"d2d": "Lucy 1", "b2b": "Lucy 2"}
 
 # Color thresholds are UNIVERSAL (the house standard), not set per office — the

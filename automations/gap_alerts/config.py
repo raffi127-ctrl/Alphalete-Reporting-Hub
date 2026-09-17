@@ -17,6 +17,8 @@ import datetime as dt
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from automations.shared import fleet as _fleet
+
 # --- OwnerVille ---------------------------------------------------------------
 # Same JSON endpoint b2b_dispositions and total_knocks read: p=510's
 # report_timeTracker.cfc?method=getTimeTrackingData. The live card WIDGET does
@@ -410,7 +412,10 @@ def dest_label(dest: Dict) -> str:
 # actually logged in, so Raf's board was pulled from Carlos's office and came
 # back empty, and every impersonation target vanished because Carlos's Office
 # Access list is not Raf's. Boards silently stopped for 40 minutes.
-MACHINE_OWNER = {"Lucy 1": "Rafael Hidalgo", "Lucy 2": "Carlos Hidalgo"}
+# From the one roster (automations/shared/fleet.py). Lucy 3 and Lucy 4 were
+# MISSING here, so `expected_owner()` returned "" on the box most likely to be
+# mid-rerun and the line fell back to "this machine's owner".
+MACHINE_OWNER = _fleet.MACHINE_OWNER
 
 
 def expected_owner(machine: str = "") -> str:
@@ -469,7 +474,11 @@ def this_machine() -> str:
 #
 # For the next machine: run that script on it, click Allow, see both the line
 # and the image arrive, and only then add it below.
-TEXTING_MACHINES = {"Lucy 1", "Lucy 3"}
+# From the one roster. The instruction just above still stands and is now
+# written where the code reads it: flip `can_text` in fleet.py for the next
+# machine only after running that script ON it and seeing both the line and
+# the image arrive.
+TEXTING_MACHINES = set(_fleet.TEXTING_MACHINES)
 
 
 def can_text(machine: str = "") -> bool:
