@@ -24,9 +24,16 @@ way, so the picture exposes nothing the tab doesn't. The Apps Script route
 (no public link) needed an interactive Google authorization nobody could give.
 Last week's file for the tab is trashed when the new one goes in.
 
-PREVIEW ONLY for now (CLAUDE.md: one preview tab before rollout). --live writes
-only to PREVIEW_TABS until ROLLOUT flips, so nothing lands on a real owner tab
-by accident. Dry-run is the default.
+TWO SOURCES, ONE BOARD PER OFFICE (Eve 2026-09-17: "todas las oficinas que
+faltan"). The Sunday report covers ~14 offices (--all, Lucy 1). Every other
+office we make a knocks report for is an owner of a captainship with a weekly
+knock board (Jacob Dover, Nuri Burgos, the fiber owners...): Lucy 3's
+captainship_knocks capture draws that owner's Mon-Sat board on Sun/Mon and
+parks its rows next to it (knock_dispo_images._write_rows). --captainships
+reads THOSE, on Lucy 3, and leaves alone any tab the Sunday report already
+feeds, so a tab never gets two writers.
+
+--live wrote only to PREVIEW_TABS while ROLLOUT was off. Dry-run is the default.
 """
 from __future__ import annotations
 
@@ -52,8 +59,10 @@ PREVIEW_TABS = {"Kash Rai - Test Eve"}
 # el focus report y hagamos knocks report". --all walks every office the
 # weekly knocks report covers; one without a tab or without the box is skipped.
 # ON HOLD the same night: 'Kash Rai - Test Eve' is where RAFAEL approves before
-# anything reaches the other tabs, and he hasn't yet. Back to True with his OK.
-ROLLOUT = False
+# anything reaches the other tabs, and he hasn't yet.
+# ON again 2026-09-17 (Eve): "raf todavia no aprobo, pero avancemos con todas
+# las oficinas que faltan, si quiere cambios, lo dira".
+ROLLOUT = True
 # The board is drawn at 2x (total_knocks.render.SCALE); no reader needs more
 # than this many source pixels for a picture shown PL.DISPLAY_W wide.
 MAX_UPLOAD_W = 2400
@@ -74,17 +83,35 @@ def _saturday(anchor: Optional[dt.date]) -> dt.date:
     return sunday - dt.timedelta(days=1)
 
 
+_ALIASES = None
+
+
+def _alias(name: str) -> Optional[str]:
+    """The ICD Aliases sheet's canonical name ('John Richard Young' ->
+    'JR Young'), read once per process. None when it can't be read."""
+    global _ALIASES
+    try:
+        from automations.focus_office_att.aliases import (alias_to_canonical,
+                                                          load_aliases)
+        if _ALIASES is None:
+            _ALIASES = load_aliases()
+        return alias_to_canonical(name, _ALIASES)
+    except Exception:  # noqa: BLE001 - the mapping lookup still runs
+        return None
+
+
 def _tab_for(office: str, pss_owner: Optional[str] = None) -> Optional[str]:
     """Office -> Focus Report tab, via office-mapping.json (confirmed and
     sales_only entries). Tried in order: the ownerville office name against
     as_owner / sheet_tab ('Akashdeep Rai' is as_owner of 'Kash Rai'), then the
     board's PSS owner, which is the name the Focus Report knows the office by
     when ownerville's differs ('Muhammad Waqar' sells as 'Salik Mallick';
-    'Next Horizon Group, Inc. Nii Tagoe' as 'Nii Tagoe')."""
+    'Next Horizon Group, Inc. Nii Tagoe' as 'Nii Tagoe'), then the ICD Aliases
+    canonical (captainship rosters say 'John Richard Young')."""
     from automations.recruiting_report import fill
     mapping = fill.load_mapping()
     entries = mapping.get("confirmed", []) + mapping.get("sales_only", [])
-    for name in (office, pss_owner):
+    for name in (office, pss_owner, _alias(office)):
         want = str(name or "").strip().lower()
         if not want:
             continue
@@ -231,9 +258,62 @@ def _place_picture(ws, week_sunday: dt.date, week_col: int, png: Path,
     return True
 
 
+def _captainship_board(office: str, saturday: dt.date
+                       ) -> Tuple[Optional[dict], Optional[Path]]:
+    """(headers/totals, png) of `office`'s weekly board as Lucy 3's
+    captainship capture drew it, or (None, None). The capture leaves no totals
+    file - its sidecar carries the pull's rows - so the OFFICE TOTALS row is
+    re-computed from them with the same board code that drew the PNG (the
+    owner's own reps only: the Chan comparison line on the picture is not in
+    the sidecar)."""
+    from automations.captainship_drafts import config as CC
+    from automations.weekly_knock_dispositions import board as B
+    name = f"weekly_knock_dispositions_{saturday.isoformat()}.png"
+    for png in sorted(Path(CC.RENDER_DIR).glob(
+            f"knock_dispo_*/{_slug(office)}/{name}")):
+        side = png.parent / f"rows_{png.stem}.json"
+        if not side.exists():
+            continue
+        prev = json.loads(side.read_text(encoding="utf-8"))
+        ov_rows = prev.get("ov_rows") or []
+        if not ov_rows:
+            continue
+        cols = prev.get("dispo_cols") or []
+        rows = B.compute_rows(ov_rows, prev.get("apps"), cols)
+        totals = next((r for r in rows if len(r) > 1
+                       and r[1] == B.TOTALS_LABEL), None)
+        if totals is None:
+            continue
+        return ({"office": office,
+                 "headers": B.headers_for(cols, B.is_gaps_only(ov_rows)),
+                 "totals": totals}, png)
+    return None, None
+
+
+def captainship_offices(saturday: dt.date) -> List[str]:
+    """Every owner of a captainship whose emails carry the weekly knock board
+    for this week, de-duped, in config order."""
+    from automations.captainship_drafts import knock_dispo_images as KD
+    from automations.captainship_drafts.knocks_capture import captains_for
+    monday_after = saturday + dt.timedelta(days=2)  # a day the board shows
+    names: List[str] = []
+    for captain, _wants in captains_for(monday_after, only_section="weekly"):
+        try:
+            owners = KD.owner_names(captain.key)
+        except Exception as e:  # noqa: BLE001 - one roster != the sweep
+            print(f"[wkf] ⚠ {captain.key}: roster unreadable "
+                  f"({type(e).__name__}: {str(e)[:120]})", flush=True)
+            continue
+        for n in owners:
+            if n.lower() not in {x.lower() for x in names}:
+                names.append(n)
+    return names
+
+
 def run_office(office: str, saturday: dt.date, tab: Optional[str],
                live: bool, pss_owner: Optional[str] = None,
-               skip_missing: bool = False) -> bool:
+               skip_missing: bool = False,
+               source: str = "sunday") -> bool:
     """True when the office's box + picture landed (or would, dry-run).
 
     `skip_missing` (the --all sweep): an office with no Focus Report tab, or a
@@ -253,14 +333,24 @@ def run_office(office: str, saturday: dt.date, tab: Optional[str],
         return skip_missing
 
     stem = f"weekly_knock_dispositions_{saturday.isoformat()}"
-    board_json = BOARD_DIR / _slug(office) / f"{stem}.json"
-    png = BOARD_DIR / _slug(office) / f"{stem}.png"
-    if not board_json.exists():
-        print(f"[wkf] ❌ {office}: no {board_json.name} — the weekly_knock_"
-              "dispositions run for that week didn't render this office on "
-              "this machine.", flush=True)
-        return False
-    data = json.loads(board_json.read_text(encoding="utf-8"))
+    if source == "captainship":
+        data, png = _captainship_board(office, saturday)
+        if data is None:
+            print(f"[wkf] ❌ {office}: no captainship weekly board for "
+                  f"{saturday} on this machine (knock_dispo_*/{_slug(office)}"
+                  f"/{stem}.png + its rows file) — the captainship_knocks "
+                  "capture didn't draw it, or drew it with no reps.",
+                  flush=True)
+            return False
+    else:
+        board_json = BOARD_DIR / _slug(office) / f"{stem}.json"
+        png = BOARD_DIR / _slug(office) / f"{stem}.png"
+        if not board_json.exists():
+            print(f"[wkf] ❌ {office}: no {board_json.name} — the weekly_knock_"
+                  "dispositions run for that week didn't render this office "
+                  "on this machine.", flush=True)
+            return False
+        data = json.loads(board_json.read_text(encoding="utf-8"))
     if live and not ROLLOUT and tab not in PREVIEW_TABS:
         print(f"[wkf] ❌ {office}: '{tab}' is not a preview tab and the "
               f"rollout isn't on — preview tabs: {sorted(PREVIEW_TABS)}.",
@@ -321,6 +411,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--all", action="store_true",
                     help="every office weekly_knock_dispositions covers; "
                          "offices without a Focus Report tab or box are skipped")
+    ap.add_argument("--captainships", action="store_true",
+                    help="every owner of a captainship with a weekly knock "
+                         "board, from Lucy 3's capture; tabs the Sunday "
+                         "report feeds (--all) are left to it")
     ap.add_argument("--tab", default=None,
                     help="write to THIS tab instead of the office's own "
                          "(the preview tab); only with --office")
@@ -333,16 +427,29 @@ def main(argv: Optional[List[str]] = None) -> int:
     saturday = _saturday(anchor)
 
     from automations.weekly_knock_dispositions.offices import enabled
+    source = "captainship" if args.captainships else "sunday"
     if args.office:
         wanted = [(o, None, args.tab, False) for o in args.office]
         pss = {c["name"]: c.get("pss_owner") for c in enabled(None)}
         wanted = [(o, pss.get(o), t, s) for o, _p, t, s in wanted]
+    elif args.captainships:
+        # A tab the Sunday report feeds stays ITS tab (Kash Rai is also a Raf
+        # captainship owner): one writer per tab per week.
+        sunday_tabs = {_tab_for(c["name"], c.get("pss_owner"))
+                       for c in enabled(None)} - {None}
+        wanted = []
+        for name in captainship_offices(saturday):
+            if _tab_for(name) in sunday_tabs:
+                print(f"[wkf] ⤳ {name}: '{_tab_for(name)}' comes from the "
+                      "Sunday report — skipped.", flush=True)
+                continue
+            wanted.append((name, None, None, True))
     elif args.all:
         wanted = [(c["name"], c.get("pss_owner"), None, True) for c in enabled(None)]
     else:
-        ap.error("pass --office NAME or --all")
+        ap.error("pass --office NAME, --all or --captainships")
     results = {name: run_office(name, saturday, tab, live, pss_owner=pss_owner,
-                                skip_missing=skip)
+                                skip_missing=skip, source=source)
                for name, pss_owner, tab, skip in wanted}
     failed = [n for n, ok in results.items() if not ok]
     print(f"[wkf] {'⚠' if failed else '✅'} {'LIVE' if live else 'DRY-RUN'} done — "

@@ -1790,8 +1790,9 @@
       "verify": null
     },
     "weekly_knocks_focus": {
-      "on_scheduler": false,
-      "_hold_note": "ON HOLD 2026-09-14 ~22:30 CT (Eve): waiting for RAFAEL's approval on the preview tab 'Kash Rai - Test Eve' before any office tab gets numbers or pictures. run.py ROLLOUT is False too, so a manual --live can only write the preview tab. The empty boxes already inserted in the office tabs + Template Fiber stay. To resume: ROLLOUT True + on_scheduler true.",
+      "on_scheduler": true,
+      "_resumed_note": "BACK ON 2026-09-17 (Eve): \"raf todavia no aprobo, pero avancemos con todas las oficinas que faltan, si quiere cambios, lo dira\". run.py ROLLOUT is True again and this entry is back on the Monday schedule. The owners of captainships with a weekly knock board that the Sunday report does not cover (Jacob Dover, Nuri Burgos, the fiber owners) are filled by weekly_knocks_focus_captainships on Lucy 3.",
+      "_hold_note": "WAS ON HOLD 2026-09-14 ~22:30 CT (Eve): waiting for RAFAEL's approval on the preview tab 'Kash Rai - Test Eve' before any office tab gets numbers or pictures. run.py ROLLOUT is False too, so a manual --live can only write the preview tab. The empty boxes already inserted in the office tabs + Template Fiber stay. To resume: ROLLOUT True + on_scheduler true.",
       "_on_scheduler_note": "ROLLED OUT 2026-09-14 (Eve: 'roll out para todas las oficinas de las que tengamos tab en el focus report y hagamos knocks report'). Mondays, --all --live: every office weekly_knock_dispositions covers that has a Focus Report tab with the box; the rest are skipped with a line, never a failure. An office with a tab but no Sunday board IS a failure (exit 1). Preview history below.",
       "_off_scheduler_note": "PREVIEW (Eve 2026-09-14, Rafael's ask): writes an office's Weekly Knock Dispositions OFFICE TOTALS into the 'WEEKLY KNOCKS DATA' box of its ATT Program - Focus Report tab and shows the board PNG under everything on that tab: uploaded to alphaletereporting's Drive (review_gate's drive.file token), shared anyone-with-link like the Focus Report itself, drawn with =IMAGE() in a merged block found by the 'WEEKLY KNOCKS BOARD' marker in column A (one picture per tab, last week's file trashed). No pull: reads the PNG + totals json the Sunday weekly_knock_dispositions run leaves in output/, so it MUST run on the same machine (Lucy 1). DRY-RUN by default; --live only writes to the preview tab until ROLLOUT flips in run.py. `lucy rerun weekly_knocks_focus --office \"Akashdeep Rai\" --tab \"Kash Rai - Test Eve\"` (add --live to write). Off the scheduler until Eve says roll out.",
       "display_name": "Weekly Knocks \u2192 Focus Report (box + board image)",
@@ -1821,6 +1822,37 @@
       "verify": null,
       "close_on": "exit_zero",
       "machine": "Lucy 1"
+    },
+    "weekly_knocks_focus_captainships": {
+      "on_scheduler": true,
+      "_note": "ADDED 2026-09-17 (Eve: 'todas las oficinas que faltan'). The same box + board picture as weekly_knocks_focus, for every owner of a captainship with a weekly knock board whose Focus Report tab the Sunday report does NOT feed (Jacob Dover, Nuri Burgos, the Pat/Jess/Tony/Chan/Starr/Sahil/Wayne owners). Source: the board Lucy 3's captainship_knocks capture draws on Monday for the completed Mon-Sat week, plus the rows file it leaves next to it (OFFICE TOTALS are recomputed from those rows with the same board code). That is why this runs on LUCY 3, after the capture AND after captainship_drafts (order 1.1): its 15-25 min must never push the drafts past their 07:15 review link. A tab the Sunday report feeds (Kash Rai, Chan Park...) is skipped so a tab never has two writers. An owner with a tab but no board is a failure (exit 1); an owner with no Focus Report tab is skipped with a line.",
+      "display_name": "Weekly Knocks \u2192 Focus Report (captainship owners)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.weekly_knocks_focus.run"
+      ],
+      "base_args": [
+        "--captainships",
+        "--live"
+      ],
+      "cadence": {
+        "weekdays": [
+          0
+        ]
+      },
+      "order": 1.2,
+      "priority": "P3",
+      "freshness_target": null,
+      "after": [
+        "captainship_knocks",
+        "captainship_drafts"
+      ],
+      "depends_on": [],
+      "timeout_minutes": 60,
+      "verify": null,
+      "close_on": "exit_zero",
+      "machine": "Lucy 3"
     },
     "org_board_slack": {
       "on_scheduler": false,
