@@ -3482,6 +3482,38 @@ def _action_set_machine_profile(args: str) -> tuple[bool, str]:
                       f"{type(e).__name__})")
 
 
+def _action_icd_board(args: str) -> tuple[bool, str]:
+    """Post ONE office's knocks board right now, outside its field hours.
+
+    WHY THIS EXISTS. The board only posts while that office's reps are out --
+    a board at 7pm about a day that finished at 6:30 is a report on a finished
+    day. That is right almost always, and wrong on the one evening an office
+    has just been set up and wants to see the thing work before tomorrow
+    morning (Roshan, 2026-09-16).
+
+    LUCY 3 IS THE ONLY MACHINE THAT CAN. It holds Lucy Reporting's Slack
+    token, refuses SSH, and the ICD poster runs from a LaunchAgent rather than
+    the orchestrator -- so there was no way to ask for this at all short of
+    sitting at the machine.
+
+    ONE OFFICE, NAMED. It will not run for everybody: forcing the fleet
+    outside hours would put a board in front of every team at whatever hour
+    somebody typed this.
+
+    STILL REFUSES A STALE RELAY. --force overrides the clock, never the
+    freshness check -- posting a board built on numbers from hours ago is the
+    thing that made the guard necessary.
+    """
+    office = (args or "").strip().split()[0] if args else ""
+    if not office:
+        return False, ('name the office, e.g. `lucy icd_board roshan` -- it '
+                       'posts one office, never the fleet')
+    return _run_cmd([sys.executable, "-m",
+                     "automations.icd_alerts.knocks_post",
+                     "--office", office, "--force", "--send"],
+                    timeout_s=600, log_name="icd_board-%s.log" % office)
+
+
 def _action_purge_login_test_profile(args: str) -> tuple[bool, str]:
     """Delete the throwaway ownerville login-test profile from THIS runner.
 
@@ -7710,6 +7742,7 @@ ACTIONS = {
     "git_recover": _action_git_recover,
     "cherry_pick": _action_cherry_pick,
     "set_machine_profile": _action_set_machine_profile,
+    "icd_board": _action_icd_board,
     "purge_login_test_profile": _action_purge_login_test_profile,
     "set_meta_token": _action_set_meta_token,
     "set_doubleentry_creds": _action_set_doubleentry_creds,
@@ -8303,6 +8336,10 @@ def print_help() -> None:
         "  lucy cherry_pick <sha>    take ONE already-pushed commit onto this\n"
         "                            machine without pulling everything else\n"
         "                            (the commit must be on origin/main first)\n"
+        "  lucy icd_board <office>   post ONE office's knocks board now,\n"
+        "                            outside its field hours (Lucy 3 only --\n"
+        "                            it holds Lucy's Slack token). Still\n"
+        "                            refuses a stale relay.\n"
         "  lucy purge_login_test_profile\n"
         "                            delete the leftover .ov_login_test profile\n"
         "  lucy restart_holder       restart the session keep-alive\n"
