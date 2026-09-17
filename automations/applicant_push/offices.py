@@ -50,8 +50,8 @@ OFFICES = {
         "account": "lucyresume",
         # EMPTY = Carlos's existing filenames stay byte-identical. Do not change.
         "suffix": "",
-        "cdp_profile": "/tmp/rp_cdp_profile",
-        "cdp_port": "9245",
+        "cdp_profile": "/tmp/rp_cdp_11901",  # TEMP 9/17: borrow Khalil's cleared CF profile
+        "cdp_port": "9254",  # TEMP
         "cdp_kill_pat": "rp_cdp_profile",
         "walk_diag_tab": "OAT Walk Diag",
         "push_diag_tab": "Applicant Push Diag",
