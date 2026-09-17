@@ -84,6 +84,38 @@ HYPE_SUPER = (
 )
 
 
+# --- THE GIF, FOR A DAY THAT IS ABOVE THE TOP TIER --------------------------
+#
+# Megan, 2026-09-16: "it should be for someone who goes ABOVE top tier only",
+# and "I want to give you like 10 to cycle through".
+#
+# WHY NOT ON EVERY LOUD SALE. On Roshan's office nearly every contract clears
+# the Huge bar -- Brianna alone put up six. A gif on each of those is Elmo on
+# fire fifteen times before lunch, and it stops being funny at about the
+# fourth. Above the top tier it fires for 3 reps out of 27 on a real day,
+# which is the rate that keeps it an event.
+#
+# PASTE THE LINKS BELOW. Slack unfurls a giphy/tenor URL on its own line, so
+# a gif is just a link under the sale -- no upload, no new permission. An
+# EMPTY pool posts no gif at all, which is what ships until somebody chooses
+# them: a placeholder link would post something nobody picked.
+HYPE_GIFS: tuple = (
+    # "https://giphy.com/gifs/...",
+)
+
+
+def gif_for(name: str, day: dt.date, total: int) -> str:
+    """One gif from the pool, chosen the same way the words are.
+
+    Hashed on (rep, day, count) like the line above it, so a re-run repeats
+    itself rather than showing a second gif for one sale. Empty pool -> "".
+    """
+    if not HYPE_GIFS:
+        return ""
+    seed = "gif|%s|%s|%d" % (name, day.isoformat(), total)
+    return HYPE_GIFS[zlib.crc32(seed.encode("utf-8")) % len(HYPE_GIFS)]
+
+
 # --- what a sale is MADE OF, per campaign -----------------------------------
 # Every layer below used to read the four names above as if they were the only
 # ones there are: the relay filtered its payload to them, post.py compared on
@@ -109,6 +141,15 @@ class Shape:
     large_lines = HYPE_LARGE
     super_lines = HYPE_SUPER
 
+    def above_top(self, metrics: Dict[str, int]) -> bool:
+        """A day so far past the top tier that it earns a gif.
+
+        Each campaign answers for itself; the default is "never", so a
+        campaign nobody has set a bar for simply never fires one rather than
+        inheriting somebody else's idea of enormous.
+        """
+        return False
+
     def __init__(self, metrics, counted, label, money=()):
         self.metrics = tuple(metrics)
         self.counted = tuple(counted)   # what "how many sales" adds up
@@ -133,6 +174,17 @@ class Shape:
 
 
 class _Att(Shape):
+    # Above the top tier for AT&T: ten lines, or three Internet sales with
+    # the five that already make it "super". The top tier is Int + 5 NL, so
+    # this is a day roughly twice that.
+    LEGEND_LINES = 10
+    LEGEND_INT = 3
+
+    def above_top(self, metrics):
+        nl = int(metrics.get("NL", 0) or 0)
+        return nl >= self.LEGEND_LINES or (
+            int(metrics.get("Int", 0) or 0) >= self.LEGEND_INT and nl >= 5)
+
     def tier(self, metrics):
         """How loud this sale is, off its SHAPE rather than at random."""
         if int(metrics.get("Int", 0) or 0) > 0 and int(metrics.get("NL", 0) or 0) >= 5:
@@ -230,6 +282,17 @@ class _Box(Shape):
         "{first} keeps going :chart_with_upwards_trend:",
         "{first} just closed one :moneybag:",
     )
+
+    # ABOVE THE TOP TIER, measured against a real day (2026-09-16): across
+    # Ryan's, Carlos's and Roshan's offices, 3 reps of 27 clear this. Brianna
+    # Scott's six sales and 610,000 kWh do; Erendira's four sales and 170,000
+    # do not, which is about where "enormous" should sit.
+    LEGEND_VOLUME = 250000
+    LEGEND_HUGE = 3
+
+    def above_top(self, metrics):
+        return (int(metrics.get("Volume", 0) or 0) >= self.LEGEND_VOLUME
+                or int(metrics.get("Huge", 0) or 0) >= self.LEGEND_HUGE)
 
     def tier(self, metrics):
         if int(metrics.get("Huge", 0) or 0) >= 1:
@@ -343,7 +406,13 @@ def hype(name: str, metrics: Dict[str, int], day: dt.date,
     # instead of announcing one sale twice in two different voices.
     seed = "%s|%s|%d" % (name, day.isoformat(), sh.total(metrics))
     idx = zlib.crc32(seed.encode("utf-8")) % len(pool)
-    return pool[idx].format(first=who)
+    line = pool[idx].format(first=who)
+    # THE GIF RIDES UNDER THE TOP LINE, and only for a day past even that.
+    if t == "super" and sh.above_top(metrics):
+        gif = gif_for(name, day, sh.total(metrics))
+        if gif:
+            return "%s\n%s" % (line, gif)
+    return line
 
 
 def breakdown(metrics: Dict[str, int], campaign=None) -> str:

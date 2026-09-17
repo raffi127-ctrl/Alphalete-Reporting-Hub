@@ -2103,3 +2103,75 @@ class TheAoBoardSaysTheSameThingAsAnIcdOffice(unittest.TestCase):
         for m in ({"Int": 1}, {"Int": 1, "NL": 2}, {"Int": 1, "NL": 5},
                   {"Int": 0, "NL": 9}):
             self.assertEqual(N.tier(m), H.tier(m), m)
+
+
+class TheGifIsForADayAboveTheTopTier(unittest.TestCase):
+    """Megan 2026-09-16: "it should be for someone who goes ABOVE top tier
+    only", and "I want to give you like 10 to cycle through".
+
+    On Roshan's office nearly every contract clears the Huge bar -- Brianna
+    alone put up six. A gif on each of those is Elmo on fire fifteen times
+    before lunch, and it stops being funny at about the fourth.
+    """
+
+    DAY = __import__("datetime").date(2026, 9, 16)
+
+    def test_an_empty_pool_posts_no_gif(self):
+        """What ships until somebody chooses them. A placeholder link would
+        post something nobody picked."""
+        from automations.shared import sale_hype as H
+        said = H.hype("Brianna Scott",
+                      {"Sales": 6, "Volume": 610000, "Big": 4, "Huge": 4},
+                      self.DAY, "b2b_box")
+        self.assertNotIn("\n", said)
+
+    def test_a_huge_day_alone_does_not_earn_one(self):
+        """Tiffany's single 69,120 kWh contract is Huge and still ordinary
+        for this crowd."""
+        from automations.shared import sale_hype as H
+        sh = H.shape("b2b_box")
+        m = {"Sales": 1, "Volume": 69120, "Big": 1, "Huge": 1}
+        self.assertEqual(sh.tier(m), "super")
+        self.assertFalse(sh.above_top(m))
+
+    def test_a_genuinely_enormous_day_does(self):
+        from automations.shared import sale_hype as H
+        sh = H.shape("b2b_box")
+        self.assertTrue(sh.above_top(
+            {"Sales": 6, "Volume": 610000, "Big": 4, "Huge": 4}))
+        self.assertTrue(sh.above_top(
+            {"Sales": 1, "Volume": 320000, "Big": 1, "Huge": 1}))
+
+    def test_it_is_rare_on_a_real_day(self):
+        """Three of these twenty-seven reps, measured 2026-09-16 across
+        Ryan's, Carlos's and Roshan's offices."""
+        from automations.shared import sale_hype as H
+        sh = H.shape("b2b_box")
+        real = [610000, 424272, 320000, 215600, 170000, 107412, 87864, 75000,
+                69120, 65000, 65000, 40000, 36000, 33650, 30000, 30000, 30000,
+                25000, 25000, 19716, 17520, 17500, 16308, 15576, 14000, 10000,
+                4392]
+        hit = sum(1 for v in real if sh.above_top({"Volume": v, "Huge": 1}))
+        self.assertEqual(hit, 3)
+
+    def test_a_campaign_with_no_bar_never_fires_one(self):
+        """Rather than inheriting somebody else's idea of enormous."""
+        from automations.shared import sale_hype as H
+        self.assertFalse(H.Shape((), (), {}).above_top({"Volume": 10 ** 9}))
+
+    def test_the_gif_is_chosen_the_same_way_the_words_are(self):
+        """Hashed, so a re-run repeats itself instead of showing a second gif
+        for one sale."""
+        from automations.shared import sale_hype as H
+        with mock.patch.object(H, "HYPE_GIFS", ("A", "B", "C")):
+            first = H.gif_for("Brianna Scott", self.DAY, 6)
+            for _ in range(20):
+                self.assertEqual(H.gif_for("Brianna Scott", self.DAY, 6), first)
+
+    def test_a_filled_pool_hangs_the_gif_under_the_line(self):
+        from automations.shared import sale_hype as H
+        with mock.patch.object(H, "HYPE_GIFS", ("https://giphy.com/x",)):
+            said = H.hype("Brianna Scott",
+                          {"Sales": 6, "Volume": 610000, "Big": 4, "Huge": 4},
+                          self.DAY, "b2b_box")
+        self.assertIn("\nhttps://giphy.com/x", said)
