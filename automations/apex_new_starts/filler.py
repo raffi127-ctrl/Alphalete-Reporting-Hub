@@ -84,6 +84,7 @@ _JS = r"""
     saved three fixes ago is to have it say so out loud. */
  var BUILD='%(build)s', BUILT_AT=%(built_at)s;
  var NOTICE=%(notice)s;
+ var START='%(start)s';
  /* The week's people live in this browser, not inside the button. Carrying
     them meant a saved bookmark froze that week's data AND that day's code, so
     every change cost a delete, a copy and a re-drag. Saved once now; a new
@@ -1756,7 +1757,21 @@ _JS = r"""
      }
      window.__ansNow=null;
      if(REPORT.length){
-       out.innerHTML=rundown();
+       /* Back to the machine, so the OBCL gets marked without anybody
+          re-typing what just happened (Megan, 2026-09-17). Same hand-off as
+          the setup, in the other direction. */
+       var fnd=[], add=[], ri;
+       for(ri=0;ri<REPORT.length;ri++){
+         fnd.push(REPORT[ri].name);
+         if(REPORT[ri].ok&&REPORT[ri].status!=='pending') add.push(REPORT[ri].name);
+       }
+       var blob='APEX-OBCL '+JSON.stringify({week:'%(week)s',start:START,
+                                             found:fnd,added:add});
+       try{ navigator.clipboard.writeText(blob); }catch(e){}
+       out.innerHTML=rundown()+
+         '<div style="margin-top:8px;background:#effaf7;border-left:3px solid '+
+         '#0F766E;padding:6px 8px;font-weight:700">On the Hub, press '+
+         '<b>Mark the OBCL</b> \u2014 the result is on your clipboard.</div>';
        var cp=document.getElementById('anscopy');
        if(cp) cp.onclick=function(e){ e.preventDefault();
          var txt=out.innerText.replace(/\ncopy this$/,'');
@@ -2024,7 +2039,7 @@ def build_stub() -> str:
 
 
 def build_js(people=None, week: str = "", build: str = "",
-             notice: str = "") -> str:
+             notice: str = "", start: str = "") -> str:
     """The bookmarklet.
 
     With `people` it embeds them (what the tests use). Without, it is CODE ONLY
@@ -2038,6 +2053,7 @@ def build_js(people=None, week: str = "", build: str = "",
                 "week": week.replace("'", ""),
                 "build": (build or _now_stamp()).replace("'", ""),
                 "notice": json.dumps(notice) if notice else "null",
+                "start": str(start or "").replace("'", ""),
                 "built_at": str(int(_now_ms())),
                 "role": json.dumps(SECURITY_ROLE_LABEL.lower())}
     return _guard("javascript:" + " ".join(js.split()))
@@ -2158,7 +2174,7 @@ the tab you type them into, for that run only.</p>
 
 
 def build_page(people, week: str, stamp: str, notes=None,
-               notice: str = "") -> str:
+               notice: str = "", start: str = "") -> str:
     """The whole page: the draggable button, the steps, and who is in it."""
     notes = notes or {}
     rows = []
@@ -2184,7 +2200,7 @@ def build_page(people, week: str, stamp: str, notes=None,
         js=build_stub().replace('"', "&quot;"),
         # & FIRST, then < -- the other order turns "&lt;" into "&amp;lt;"
         # and the textarea hands back the wrong characters.
-        data=build_js(people, week, build, notice)[len("javascript:"):]
+        data=build_js(people, week, build, notice, start)[len("javascript:"):]
              .replace("&", "&amp;").replace("<", "&lt;"),
         rows="\n".join(rows), stamp=stamp,
         # "Nothing happens when I click it" has cost us two rounds now. A

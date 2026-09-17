@@ -6203,6 +6203,17 @@ AUTOMATED_REPORTS = [
                 "args_fn": lambda: ["--preflight", "--any-day",
                                     "--no-apex-check"],
             },
+            {
+                # The other end of the same hand-off: the panel puts the run's
+                # result on the clipboard, this writes it to the OBCL. The
+                # browser cannot reach a Google sheet, and nobody should be
+                # re-typing what just happened (Megan, 2026-09-17).
+                "label": "Mark the OBCL",
+                "icon": "\u2705",
+                "help": "After a run: ticks 'Added to APEX' on this week's OBCL tab for everyone who went Active, and colours the cell green for everyone it found. Reads the result the panel left on your clipboard.",
+                "module": "automations.apex_new_starts.run",
+                "args_fn": lambda: ["--mark-obcl"],
+            },
         ],
     },
     {

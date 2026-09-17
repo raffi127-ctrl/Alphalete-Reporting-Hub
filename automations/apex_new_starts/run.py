@@ -724,7 +724,8 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
     out.write_text(filler.build_page(
         people, title.replace("Sales Board ", ""),
         today.strftime("%B %-d, %Y") if os.name != "nt"
-        else today.strftime("%B %d, %Y"), notes, _notice))
+        else today.strftime("%B %d, %Y"), notes, _notice,
+        add[0].week_start.isoformat() if add and add[0].week_start else ""))
     _log(f"{title}: {len(people)} record(s) in the button")
     if _notice:
         _log("  \u26a0\ufe0f  " + _notice)
@@ -734,8 +735,9 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
     # Put the setup straight on the clipboard, so nobody has to find the page,
     # scroll it and click Copy before they can start. The button reads it from
     # there (Megan, 2026-09-13: "still too complex/glitchy for a 7 year old").
-    setup = filler.build_js(people, title.replace("Sales Board ", ""),
-                            notice=_notice)
+    setup = filler.build_js(
+        people, title.replace("Sales Board ", ""), notice=_notice,
+        start=add[0].week_start.isoformat() if add and add[0].week_start else "")
     if _to_clipboard(setup[len("javascript:"):]):
         _log("This week's setup is on your clipboard.")
         _log("Open Apex, then click your Fill Apex bookmark. That is all.")
@@ -745,6 +747,44 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
     # The Hub reads success off this marker, not off the exit code. Without it
     # every clean run was recorded "unknown" and the card printed "Run failed"
     # over a log that plainly said it had worked (Megan, 2026-09-13).
+    _log("=== done ===")
+    return 0
+
+
+def _from_clipboard() -> str:
+    """Whatever is on the clipboard, or "" — the other half of _to_clipboard."""
+    import subprocess
+    get = ["pbpaste"] if os.name != "nt" else [
+        "powershell", "-NoProfile", "-Command", "Get-Clipboard -Raw"]
+    try:
+        back = subprocess.run(get, capture_output=True, timeout=20)
+        return back.stdout.decode("utf-8", "replace") if back.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+def mark_obcl(dry_run: bool = False) -> int:
+    """Tick 'Added to APEX' from the result the run left on the clipboard."""
+    import json as _json
+    from automations.apex_new_starts import obcl as OB
+
+    raw = _from_clipboard().strip()
+    if not raw.startswith("APEX-OBCL "):
+        _log("❌ The run's result isn't on the clipboard.")
+        _log("   Finish a run in Apex first — the panel puts it there and says "
+             "so. If you copied something else in between, press Run the whole "
+             "week again; anyone already done is skipped.")
+        return 1
+    try:
+        data = _json.loads(raw[len("APEX-OBCL "):])
+        start = dt.date.fromisoformat(data["start"])
+    except Exception as err:                                  # noqa: BLE001
+        _log(f"❌ Could not read the run's result: {err}")
+        return 1
+
+    found, added = data.get("found") or [], data.get("added") or []
+    _log(f"{data.get('week', '')}: {len(added)} added, {len(found)} found")
+    OB.mark(start, found, added, dry_run=dry_run, log=_log)
     _log("=== done ===")
     return 0
 
@@ -809,6 +849,9 @@ def main(argv=None) -> int:
                       help="fill each record for real (you add the SSN and save)")
     mode.add_argument("--button", action="store_true",
                       help="make the 'Fill Apex' page for this week")
+    mode.add_argument("--mark-obcl", action="store_true",
+                      help="tick 'Added to APEX' on the OBCL from the run's "
+                           "result (left on the clipboard by the panel)")
     mode.add_argument("--explore", action="store_true",
                       help="inventory the Apex new-employee screen")
     ap.add_argument("--any-day", action="store_true",
@@ -816,6 +859,9 @@ def main(argv=None) -> int:
     ap.add_argument("--skip-ona", action="store_true",
                     help="leave out anyone marked O-NA this week")
     ap.add_argument("--tab", help="a specific week tab, e.g. '9.6'")
+    ap.add_argument("--no-write", action="store_true",
+                    help="with --mark-obcl: say what it would tick, write "
+                         "nothing")
     ap.add_argument("--no-apex-check", action="store_true",
                     help="preflight only: skip the Apex login check")
     ap.add_argument("--slack", action="store_true",
@@ -835,6 +881,8 @@ def main(argv=None) -> int:
                          tab=args.tab, include_ona=include_ona)
     if args.button:
         return make_button(today, tab=args.tab, include_ona=include_ona)
+    if args.mark_obcl:
+        return mark_obcl(dry_run=args.no_write)
     if args.explore:
         return explore(today)
     if not check_day(today, args.any_day):
