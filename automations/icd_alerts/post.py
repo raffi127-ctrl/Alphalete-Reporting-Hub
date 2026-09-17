@@ -1930,19 +1930,23 @@ def main(argv=None) -> int:
                 assert_posting_as_lucy()
             run(day, send=args.send, only=args.office)
             if args.watch:
-                # NOT WIRED. The metrics thread ALREADY carries yesterday's
-                # knocks board: rashad_metrics.knocks_run defaults to
-                # yesterday and posts into today's thread. Running this too
-                # would put the same board in the same thread twice (Megan
-                # spotted it before it ever fired, 2026-09-15).
+                # NO MORNING RECAP HERE, AND THERE NEVER WILL BE. The metrics
+                # thread ALREADY carries yesterday's knocks board:
+                # rashad_metrics.knocks_run defaults to yesterday and posts
+                # into today's thread. A recap posted from this side would put
+                # the same board in the same thread twice (Megan spotted it
+                # before it ever fired, 2026-09-15).
                 #
-                # morning_recap is kept because the USEFUL version of this is
-                # the other direction: for an office already relaying its own
-                # knocks, render the metrics board from those rows instead of
-                # impersonating them in ownerville. Same board, minus a scrape
-                # that "intermittently times out and drops BOTH Knocks + Time
-                # Gaps at once with no auto-retry" (runner.py, on 4/7 offices
-                # losing both on 2026-07-21).
+                # A morning_recap.py sat next to this file unwired for two
+                # days, kept on the note that the USEFUL version was the other
+                # direction -- for an office already relaying its own knocks,
+                # render the metrics board from those rows instead of
+                # impersonating them in ownerville. THAT IS BUILT AND LIVE:
+                # rashad_metrics.knocks_relay, since 2026-09-17, with
+                # icd_alerts.closeout re-reading the finished day on the
+                # office's own machine first. The module was deleted rather
+                # than left looking like an unfinished feature somebody might
+                # helpfully finish.
                 run_requested_approvals(send=args.send)
                 notify_new_signups(send=args.send)
                 notify_pending(send=args.send)
