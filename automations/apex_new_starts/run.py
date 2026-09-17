@@ -720,6 +720,7 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
         if said:
             notes[c.name] = "; ".join(said)
     OUTPUT_DIR.mkdir(exist_ok=True)
+    build = filler._now_stamp()
     out = OUTPUT_DIR / f"fill-apex-{today.isoformat()}.html"
     out.write_text(filler.build_page(
         people, title.replace("Sales Board ", ""),
@@ -742,9 +743,14 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
     # Put the setup straight on the clipboard, so nobody has to find the page,
     # scroll it and click Copy before they can start. The button reads it from
     # there (Megan, 2026-09-13: "still too complex/glitchy for a 7 year old").
-    setup = filler.build_js(
-        people, title.replace("Sales Board ", ""), notice=_notice,
-        start=add[0].week_start.isoformat() if add and add[0].week_start else "")
+    _week = title.replace("Sales Board ", "")
+    _start = add[0].week_start.isoformat() if add and add[0].week_start else ""
+    setup = filler.build_js(people, _week, notice=_notice, start=_start)
+    # Kept on disk so the card can list them and untick one without paying for
+    # the board and Blue Ink again (Megan, 2026-09-17).
+    from automations.apex_new_starts import batch as BATCH
+    BATCH.save(week=_week, build=build, notice=_notice, start=_start,
+               people=people)
     if _to_clipboard(setup[len("javascript:"):]):
         _log("This week's setup is on your clipboard.")
         _log("Open Apex, then click your Fill Apex bookmark. That is all.")

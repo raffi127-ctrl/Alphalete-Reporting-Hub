@@ -3580,6 +3580,50 @@ def _this_week_strip(today: dt.date, my_reports: list[dict], user_name: str) -> 
                 )
 
 
+def _render_batch_picker(report: dict) -> None:
+    """The batch this card last fetched, each name with a tick.
+
+    Everything about the batch lives in the report's own module; this only
+    draws it and says what was copied.
+    """
+    try:
+        from automations.apex_new_starts import batch as _batch
+    except Exception:
+        return
+    got = _batch.load()
+    people = (got or {}).get("people") or []
+    if not people:
+        return
+    skey = f"batch_skip_{report['id']}"
+    skip = set(st.session_state.get(skey, ()))
+    st.caption(f"**{len(people) - len(skip)} of {len(people)}** will be "
+               "entered. Untick anybody who should not go in, then copy again.")
+    for i, person in enumerate(people):
+        name = person.get("name", "")
+        hire = person.get("hire") or ""
+        on = st.checkbox(f"{name}" + (f" — {hire}" if hire else ""),
+                         value=name not in skip,
+                         key=f"{skey}_{i}")
+        if on:
+            skip.discard(name)
+        else:
+            skip.add(name)
+    st.session_state[skey] = sorted(skip)
+    if skip:
+        if st.button(f"📋 Copy the {len(people) - len(skip)} ticked",
+                     key=f"batch_copy_{report['id']}",
+                     type="primary", use_container_width=True):
+            from automations.apex_new_starts import run as _run
+            text = _batch.setup_for(skip)
+            if text and _run._to_clipboard(text):
+                st.success(f"✅ Copied {len(people) - len(skip)} — "
+                           f"leaving out {', '.join(sorted(skip))}. "
+                           "Now click your Fill Apex bookmark.")
+            else:
+                st.error("Could not put it on the clipboard. Press Get this "
+                         "week's setup again.")
+
+
 def _render_report_screenshot(report: dict) -> None:
     """Right-column content on a report's Library page: the report's
     screenshot in a fixed-height frame so it lines up with the run card.
@@ -4352,6 +4396,13 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                         # This path showed no log at all, so the names were
                         # nowhere on the card (Megan, 2026-09-17: "still not
                         # showing me the list here").
+                        # WHO was pulled, with a tick each, on the card.
+                        # Unticking rebuilds the clipboard from the batch that
+                        # was saved when it fetched -- no second read of the
+                        # board or Blue Ink (Megan, 2026-09-17, asked twice:
+                        # "still no option to uncheck").
+                        if post_run_cfg.get("batch_picker"):
+                            _render_batch_picker(report)
                         _show_log = post_run_cfg.get("show_log")
                         if _show_log:
                             _p = ACTIVE_RUNS_LOG_DIR / f"{report['id']}.log"
