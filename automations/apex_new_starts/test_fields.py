@@ -471,7 +471,48 @@ def test_nobody_marked_cr_is_said_once(monkeypatch, tmp_path):
         assert RUN.make_button(dt.date(2026, 9, 17)) == 0
     text = out.getvalue()
     assert text.count("marked CR") == 1, "once, not once per person"
-    assert "Monday column is empty" in text
+    assert "Start date taken" in text
 
     page = next(tmp_path.glob("fill-apex-*.html")).read_text()
     assert "nothing marked CR" not in page, "and not beside every name"
+
+
+def test_the_start_date_comes_off_the_obcl_tab_label(monkeypatch):
+    """Megan, 2026-09-17: "You can see the start date for everyone on the
+    OBCL - it's the tab label". A stated date beats the week's Monday
+    inferred from an empty CR column."""
+    from automations.apex_new_starts import run as RUN
+    import datetime as dt
+
+    class _WS:
+        def __init__(self, t): self.title = t
+
+    class _SH:
+        def worksheets(self):
+            return [_WS("D2D OBCL"), _WS("D2D OBCL 9.7"), _WS("D2D OBCL 9.14"),
+                    _WS("Blue Ink Log")]
+
+    monkeypatch.setattr("automations.recruiting_report.fill.open_by_key",
+                        lambda *a, **k: _SH())
+    assert RUN.obcl_start(dt.date(2026, 9, 14)) == dt.date(2026, 9, 14)
+    assert RUN.obcl_start(dt.date(2026, 9, 7)) == dt.date(2026, 9, 7)
+    assert RUN.obcl_start(dt.date(2026, 9, 21)) is None, \
+        "no dated tab inside that week, so the caller keeps the Monday"
+
+
+def test_a_cr_beats_the_cohort_date():
+    """A CR is that person's own first day. Somebody who joined the cohort on
+    the Wednesday keeps the Wednesday."""
+    from automations.apex_new_starts import run as RUN
+    import datetime as dt
+
+    late = _cand()
+    late.roll = {0: "", 1: "", 2: "CR"}
+    late.week_start = dt.date(2026, 9, 14)
+    assert RUN._started(late, dt.date(2026, 9, 14)) == "09/16/2026"
+
+    plain = _cand()
+    plain.roll = {0: "", 1: "Hwk1C"}
+    plain.week_start = dt.date(2026, 9, 14)
+    assert RUN._started(plain, dt.date(2026, 9, 15)) == "09/15/2026", \
+        "no CR of their own, so the cohort's date"

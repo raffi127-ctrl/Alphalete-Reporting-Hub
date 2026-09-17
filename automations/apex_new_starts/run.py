@@ -39,6 +39,7 @@ import datetime as dt
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 
 from automations.apex_new_starts import board as BRD
 from automations.apex_new_starts import blueink_data as BID
@@ -579,6 +580,51 @@ def fill_people(today: dt.date, *, tab=None, include_ona=True,
     return 0
 
 
+def obcl_start(week_start: dt.date) -> Optional[dt.date]:
+    """The cohort's start date, read off the OBCL tab LABEL.
+
+    Megan, 2026-09-17: "You can see the start date for everyone on the OBCL —
+    it's the tab label". `D2D OBCL 9.14` is the fourteenth of September, and
+    that is the lineup that started that week — a stated date rather than the
+    week's Monday inferred from an empty CR column.
+
+    Only used for people the board does NOT mark CR: a CR is that person's own
+    first day and beats a cohort-wide date. Returns None if no dated tab lands
+    inside this board week, and the caller keeps the Monday.
+    """
+    import re as _re
+    from automations.blueink_docs import config as _C
+    from automations.recruiting_report.fill import open_by_key as _open
+    try:
+        titles = [ws.title for ws in _open(_C.SHEET_ID).worksheets()]
+    except Exception:
+        return None
+    best = None
+    for t in titles:
+        m = _re.match(r"^\s*" + _re.escape(_C.DATED_TAB_PREFIX) +
+                      r"\s+(\d{1,2})\.(\d{1,2})\s*$", t, _re.I)
+        if not m:
+            continue
+        month, day = int(m.group(1)), int(m.group(2))
+        # The tab carries no year. Try this board week's year, and the one
+        # before it for a tab written across New Year.
+        for year in (week_start.year, week_start.year - 1):
+            try:
+                when = dt.date(year, month, day)
+            except ValueError:
+                continue
+            if week_start <= when <= week_start + dt.timedelta(days=6):
+                if best is None or when < best:
+                    best = when
+    return best
+
+
+def _started(c, cohort: Optional[dt.date]) -> str:
+    """Their first day as m/d/Y: the CR cell, else the OBCL tab's date."""
+    when = cohort if (c.hire_assumed and cohort) else c.hire_date
+    return when.strftime("%m/%d/%Y") if when else ""
+
+
 def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
     """Write the 'Fill Apex' page: one button that fills the form in the
     person's own signed-in browser.
@@ -600,6 +646,11 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
     # somebody: a missing Blue Ink packet. Said once instead
     # (Megan, 2026-09-17).
     _whole_week_uncr = bool(add) and all(c.hire_assumed for c in add)
+    # Nobody marked CR? Ask the OBCL what day this lineup started, instead of
+    # assuming the Monday.
+    _cohort = (obcl_start(add[0].week_start)
+               if add and add[0].week_start and any(c.hire_assumed for c in add)
+               else None)
     for c in add:
         hire = hires.get(c.name)
         if hire is None or hire.missing_packet:
@@ -612,8 +663,7 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
         people.append({"name": c.name, "pages": pages,
                        # shown in the page's table only -- Apex holds the hire
                        # date already and it is read-only there
-                       "hire": c.hire_date.strftime("%m/%d/%Y")
-                               if c.hire_date else "",
+                       "hire": _started(c, _cohort),
                        # A direct link to their signed W-4, so the document and
                        # the box to type the Social into can sit side by side
                        # instead of a search to click through. These are Blue
@@ -647,10 +697,11 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
         else today.strftime("%B %d, %Y"), notes))
     _log(f"{title}: {len(people)} record(s) in the button")
     if _whole_week_uncr:
-        _log("  \u2139  Nobody on this tab is marked CR \u2014 the Monday "
-             "column is empty and everyone starts Tuesday. Hire dates read as "
-             "that Monday. Apex holds the real one; this report never types "
-             "it.")
+        _log("  \u2139  Nobody on this tab is marked CR. Start date taken "
+             + (f"from the OBCL tab: {_cohort.strftime('%m/%d/%Y')}."
+                if _cohort else
+                "as that Monday \u2014 no dated OBCL tab for this week.")
+             + " Apex holds the real one; this report never types it.")
     for name, why in notes.items():
         _log(f"  ⚠️ {name}: {why}")
     _log("")
