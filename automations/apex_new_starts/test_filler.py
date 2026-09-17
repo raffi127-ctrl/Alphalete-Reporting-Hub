@@ -2679,3 +2679,55 @@ def test_what_did_apex_say_also_shows_the_field_shape(page, tmp_path):
     assert "400" in out and "Marital Status is Required" in out
     assert "kw=" in out, "and the shape of the control it named"
     assert "MaritalStatusID" in out
+
+
+def test_an_id_box_never_gets_the_words(page, tmp_path):
+    """The live page showed MaritalStatusID value="Married filing jointly
+    or..." -- my own doing. A ComboBox over a plain string list hands back the
+    string as its "value", and writing that into an ...ID is worse than
+    leaving it empty (Megan, 2026-09-17)."""
+    f = tmp_path / "bank-info.html"
+    f.write_text("""<h1>Tax</h1>
+      <div class="form-group">
+        <label for="ms">Marital Status</label>
+        <input type="text" id="ms">
+        <input type="hidden" ng-model="vm.bank.MaritalStatusID" id="msid" value="">
+      </div>""")
+    page.goto(f.as_uri())
+    page.evaluate(filler.build_js(
+        [{"name": "Dylan Poston", "find": "Poston", "pages": {}}],
+        "WE 9.20")[len("javascript:"):])
+
+    page.evaluate("""() => window.__ansPutId(document.getElementById('ms'),
+                                             'Married filing jointly')""")
+    assert page.input_value("#msid") == "", "words refused"
+
+    page.evaluate("""() => window.__ansPutId(document.getElementById('ms'), 12)""")
+    assert page.input_value("#msid") == "12", "a real id goes in"
+
+
+def test_a_combobox_is_left_for_the_click_path(page, tmp_path):
+    """A ComboBox has no id to give -- the ...ID beside it is filled by Apex's
+    own handler when somebody picks from the list. Setting it through the
+    widget API cannot produce that, so kendoSet declines and the click path
+    takes it."""
+    f = tmp_path / "bank-info.html"
+    f.write_text("""<h1>Tax</h1>
+      <div class="form-group">
+        <label for="ms">Marital Status</label>
+        <input type="text" id="ms">
+        <span class="k-widget k-combobox"><input class="k-input"></span>
+      </div>""")
+    page.goto(f.as_uri())
+    page.evaluate("""() => {
+      window.jQuery = (el) => ({data: () => null, 0: el, length: 1});
+      const w = {value: () => 'x', trigger: () => {}, options: {}};
+      window.kendo = {widgetInstance: () => w};
+    }""")
+    page.evaluate(filler.build_js(
+        [{"name": "Dylan Poston", "find": "Poston", "pages": {}}],
+        "WE 9.20")[len("javascript:"):])
+
+    assert page.evaluate(
+        """() => window.__ansKendoSet(document.getElementById('ms'), 'Single')"""
+    ) is False, "declined, so the click path gets it"

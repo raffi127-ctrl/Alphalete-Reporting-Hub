@@ -495,6 +495,16 @@ _JS = r"""
       the run on Dylan Poston (Megan, 2026-09-17). So write the id in as well,
       into whichever input in this field is bound to a name ending ID. */
    if(id===undefined||id===null||id==='') return;
+   /* An ...ID takes an ID. This wrote the WORDS in instead -- the live page
+      showed MaritalStatusID value="Married filing jointly or..." -- because a
+      ComboBox over a plain string list hands back the string as its "value".
+      Writing that is worse than leaving it empty (Megan, 2026-09-17). */
+   if(!/^[0-9]+$/.test(String(id))&&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}/i.test(String(id))){
+     TRACE.push('refused to put '+JSON.stringify(String(id).slice(0,20))+
+                ' in an ID box');
+     return;
+   }
    var box=el, d=0;
    while(box&&d<4&&!(box.querySelector&&box.querySelector('input[ng-model]'))){
      box=box.parentElement; d++;
@@ -515,6 +525,14 @@ _JS = r"""
  }
  function kendoSet(el,v){
    var w=kw(el); if(!w) return false;
+   /* A COMBOBOX over a plain list has no id to give: w.value() returns the
+      text, and the ...ID beside it is filled by Apex's own handler when a
+      person picks from the list. So do not set it programmatically at all --
+      let the click path do it, which is what makes Apex populate the id
+      (Megan, 2026-09-17: three rounds of "Marital Status is Required" over a
+      box reading "Married filing jointly"). */
+   var sp0=widgetSpan(el);
+   if(sp0&&/k-combobox/.test(sp0.className||'')) return false;
    if(w.dataSource&&w.dataSource.data&&w.options&&w.value){
      var d=w.dataSource.data()||[], want=norm(v),
          tf=w.options.dataTextField, vf=w.options.dataValueField, i, t;
@@ -766,6 +784,17 @@ _JS = r"""
    bits.push('kw='+(kw(el)?'yes':'NO'));
    var sp=widgetSpan(el);
    bits.push('widgetSpan='+(sp?(sp.className||'yes'):'no'));
+   var w0=kw(el);
+   if(w0){
+     try{
+       var ds=(w0.dataSource&&w0.dataSource.data)?w0.dataSource.data():null;
+       bits.push('dataTextField='+(w0.options&&w0.options.dataTextField)+
+                 ' dataValueField='+(w0.options&&w0.options.dataValueField));
+       if(ds&&ds.length) bits.push('item0='+JSON.stringify(ds[0]).slice(0,90));
+       if(w0.dataItem) bits.push('dataItem='+
+         JSON.stringify(w0.dataItem()||null).slice(0,90));
+     }catch(e3){ bits.push('datasource unreadable: '+e3.message); }
+   }
    var box=el, d=0;
    while(box&&d<5){
      if(box.querySelectorAll&&box.querySelectorAll('[ng-model]').length>1) break;
@@ -787,6 +816,8 @@ _JS = r"""
    return bits.join(' ;; ');
  }
  window.__ansShape=fieldShape;
+ window.__ansPutId=putIdBeside;
+ window.__ansKendoSet=kendoSet;
  function roleShape(){
    /* What the Security Roles list is actually made of, for when none of the
       above works. One screenshot instead of another round of guessing. */
