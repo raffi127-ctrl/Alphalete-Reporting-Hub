@@ -4088,25 +4088,31 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                 # to be signed into, nothing else can check it, and starting
                 # without asking wastes the run (Megan, 2026-09-17).
                 _ask = report.get("confirm_before")
-                if recent:
+                if recent or _ask:
+                    # BOTH, when both apply. Keying one off the other meant a
+                    # card that had already run today showed the rerun banner
+                    # and swallowed its own question, so on a second run of the
+                    # day nobody was ever asked (Megan, 2026-09-17).
                     st.session_state[confirm_key] = True
-                    st.session_state[confirm_meta_key] = (recent_user, recent_time)
-                    st.rerun()
-                elif _ask:
-                    st.session_state[confirm_key] = True
-                    st.session_state[confirm_meta_key] = (None, _ask)
+                    st.session_state[confirm_meta_key] = (
+                        (recent_user, recent_time) if recent else (None, None))
+                    st.session_state[f"confirm_ask_{report['id']}"] = _ask or ""
                     st.rerun()
                 else:
                     _execute_action(report, primary, picked, chrome_ok)
 
             if st.session_state.get(confirm_key):
                 ru, rt = st.session_state.get(confirm_meta_key, ("someone", "earlier today"))
+                _ask_text = st.session_state.get(f"confirm_ask_{report['id']}", "")
                 with st.container(border=True):
-                    # ru is None when the card asked its own question rather
-                    # than this being a second run today.
-                    st.warning(rt if ru is None else
-                               f"⚠️ **{ru}** already ran this at **{rt}** today. "
-                               f"Run it again anyway?")
+                    _lines = []
+                    if ru is not None:
+                        _lines.append(
+                            f"⚠️ **{ru}** already ran this at **{rt}** today. "
+                            f"Run it again anyway?")
+                    if _ask_text:
+                        _lines.append(_ask_text)
+                    st.warning("\n\n".join(_lines))
                     cc = st.columns([1, 1])
                     with cc[0]:
                         if st.button("✅ Yes, go" if ru is None
@@ -4115,6 +4121,7 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                                      type="primary", use_container_width=True):
                             st.session_state.pop(confirm_key, None)
                             st.session_state.pop(confirm_meta_key, None)
+                            st.session_state.pop(f"confirm_ask_{report['id']}", None)
                             _execute_action(report, primary, picked, chrome_ok)
                             st.rerun()
                     with cc[1]:
@@ -4122,6 +4129,7 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                                      use_container_width=True):
                             st.session_state.pop(confirm_key, None)
                             st.session_state.pop(confirm_meta_key, None)
+                            st.session_state.pop(f"confirm_ask_{report['id']}", None)
                             st.rerun()
 
         # Post-run callout (appears after a run completes; persists 24h)
