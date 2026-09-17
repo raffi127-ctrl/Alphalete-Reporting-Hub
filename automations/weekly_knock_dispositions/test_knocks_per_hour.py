@@ -1,9 +1,10 @@
-"""Mon–Fri Avg Knocks / Hr on the weekly board, offline.
+"""Mon–Sat Avg Knocks / Hr on the weekly board, offline.
 
 Raf 2026-09-15: "for the weekly disposition NDS and Fiber are missing 'daily
 knocks per hour'". The cell is the MEAN of the rep's own daily rates (that
-day's doors over that day's first→last span), over the weekdays they cleared
-the doors bar — the same days Mon–Fri Avg Doors / Day divides by.
+day's doors over that day's first→last span), over the days they cleared the
+doors bar. Mon–Sat since 2026-09-17 (Raf): a Saturday that clears the bar
+counts like any other day.
 
     python -m unittest automations.weekly_knock_dispositions.test_knocks_per_hour
 """
@@ -27,8 +28,8 @@ def _rep(name, daily, spans=None):
     return rec
 
 
-# Mon 120 doors over 4h = 30/hr, Tue 100 over 5h = 20/hr → 25. Saturday's 50
-# over 2h stays out, and so does the walk-on day.
+# Mon 120 doors over 4h = 30/hr, Tue 100 over 5h = 20/hr, Sat 50 over 2h =
+# 25/hr → 25. The walk-on Wednesday (15 doors) stays out.
 TWO_DAYS = _rep("Two Days", [120, 100, 15, 0, 0, 50],
                 [240, 300, 60, 0, 0, 120])
 STEADY = _rep("Steady", [90, 90, 90, 90, 90, 0],
@@ -41,9 +42,13 @@ class RepCell(unittest.TestCase):
     def test_mean_of_the_days_own_rates(self):
         self.assertAlmostEqual(B._knocks_per_hr(TWO_DAYS), 25.0)
 
-    def test_saturday_and_walk_on_days_stay_out(self):
+    def test_saturday_counts_like_any_other_day(self):
         rec = _rep("Sat Only", [0, 0, 0, 0, 0, 200], [0, 0, 0, 0, 0, 240])
-        self.assertIsNone(B._knocks_per_hr(rec))
+        self.assertAlmostEqual(B._knocks_per_hr(rec), 50.0)
+
+    def test_a_walk_on_saturday_stays_out(self):
+        rec = _rep("Sat Walk-on", [120, 0, 0, 0, 0, 20], [240, 0, 0, 0, 0, 60])
+        self.assertAlmostEqual(B._knocks_per_hr(rec), 30.0)
 
     def test_a_day_without_a_span_is_skipped_not_divided_by_zero(self):
         rec = _rep("No Span Tue", [120, 100, 0, 0, 0, 0],
