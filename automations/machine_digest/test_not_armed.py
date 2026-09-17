@@ -185,17 +185,30 @@ class TheSecondDoorIsShutToo(unittest.TestCase):
 
 class TheLiveRegistryAgrees(unittest.TestCase):
 
-    def test_rc_contact_sync_is_declared_and_is_the_only_one(self):
-        raw = json.loads(CONFIG.read_text(encoding="utf-8"))["reports"]
-        flagged = sorted(k for k, v in raw.items() if v.get("not_armed"))
-        self.assertEqual(flagged, ["rc_contact_sync"])
+    def test_every_flag_carries_its_removal_instruction(self):
+        """A flag left on a live report is a report that has gone quiet, so each
+        one has to say that deleting it is part of arming.
 
-    def test_the_flag_carries_its_removal_instruction(self):
-        """A flag left on a live report is a report that has gone quiet, so the
-        note has to say that deleting it is part of arming."""
+        NAME-AGNOSTIC ON PURPOSE (2026-09-17). This pair used to assert the
+        flagged set was exactly ["rc_contact_sync"] and then index that key
+        directly. `not_armed` is a BUILD-TIME flag — removing it is the last step
+        of arming a report — so pinning a specific report's name meant the test
+        was guaranteed to go red the day that report went live. It duly did:
+        rc_contact_sync armed on 2026-09-09 (Lucy 2, on_scheduler) and this sat
+        failing ever since, which is worse than useless — a red test nobody can
+        act on teaches people to skim past the suite.
+
+        Zero flagged reports is a PASSING state: it means nothing is muted."""
         raw = json.loads(CONFIG.read_text(encoding="utf-8"))["reports"]
-        note = raw["rc_contact_sync"].get("_not_armed_note", "")
-        self.assertIn("DELETE THIS LINE", note)
+        for key, cfg in raw.items():
+            if not cfg.get("not_armed"):
+                continue
+            with self.subTest(report=key):
+                self.assertIn(
+                    "DELETE THIS LINE", cfg.get("_not_armed_note", ""),
+                    f"{key} is muted by not_armed but its note doesn't say to "
+                    f"delete the flag when arming — that is how a finished "
+                    f"report stays silent forever")
 
 
 if __name__ == "__main__":
