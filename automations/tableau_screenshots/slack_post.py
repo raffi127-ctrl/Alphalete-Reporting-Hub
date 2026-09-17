@@ -19,8 +19,12 @@ member or files_upload_v2 there fails with not_in_channel.
 from __future__ import annotations
 
 import datetime as dt
+import http.client
 import os
+import socket
+import ssl
 import time
+import urllib.error
 from pathlib import Path
 
 from automations.shared import slack_metrics_post as smp
@@ -567,20 +571,59 @@ def _slack_err(e) -> str:
     return f"{code} ({', '.join(bits[1:])})" if len(bits) > 1 else code
 
 
+# Transport-level failures: the request never reached Slack, so there is no
+# error code and nothing was read. A TLS handshake timeout, a dropped
+# connection, a DNS blip — none of them say anything about the CHANNEL, and the
+# next attempt seconds later normally just works. 2026-09-17: #palace-sales
+# dropped out of the settle passes on
+# `URLError: <urlopen error _ssl.c:1112: The handshake operation timed out>`,
+# and the run skipped the channel exactly as if Lucy had been thrown out of it.
+_TRANSIENT_TRANSPORT = (urllib.error.URLError,   # the ssl handshake timeout
+                        socket.timeout,
+                        TimeoutError,
+                        ConnectionError,
+                        ssl.SSLError,
+                        http.client.HTTPException)
+
+# Waiting out a DEAD network 18 channels deep would blow the run's 45-minute
+# timeout and get the run KILLED mid-thread — strictly worse than today's fast,
+# clean soft miss. So the whole process shares one small budget: enough for a
+# handful of blips, never enough to sit out an outage. Spent, transport errors
+# degrade to a soft miss immediately, exactly as they did before.
+TRANSPORT_RETRY_BUDGET = 8
+TRANSPORT_BACKOFF_S = (3, 8)         # one pause per extra attempt
+
+_transport_retries_left = TRANSPORT_RETRY_BUDGET
+
+
+def reset_transport_budget():
+    """Fresh budget — called at the start of a run (and by the tests)."""
+    global _transport_retries_left
+    _transport_retries_left = TRANSPORT_RETRY_BUDGET
+
+
 def _read_with_retry(call, chan: str, method: str, **kwargs):
-    """Run a Slack READ (history/replies), retrying ONCE on `ratelimited`.
+    """Run a Slack READ (history/replies), retrying a `ratelimited` answer ONCE
+    and a TRANSPORT failure up to twice.
 
     Slack's own Retry-After is honored (capped at 30s so a rate-limited channel
-    can't stall the whole run). Anything else — or a second 429 — becomes a
-    DedupReadUnavailable naming the exact Slack error code, so the caller can
-    degrade that ONE channel instead of failing the run."""
-    for attempt in (1, 2):
+    can't stall the whole run). A transport failure — no Slack error code,
+    because the call never got an answer — backs off a few seconds and tries
+    again, while the run-wide budget lasts.
+
+    Anything else (a real Slack code: not_in_channel, channel_not_found), a
+    second 429, a third transport failure, or an exhausted budget becomes a
+    DedupReadUnavailable naming the exact error, so the caller can degrade that
+    ONE channel instead of failing the run."""
+    global _transport_retries_left
+    attempt = 0
+    while True:
+        attempt += 1
         try:
             return call(**kwargs)
         except Exception as e:                              # noqa: BLE001
             err = _slack_err(e)
             resp = getattr(e, "response", None)
-            retry_after = 0
             if attempt == 1 and err.startswith("ratelimited"):
                 try:
                     retry_after = int(
@@ -591,6 +634,21 @@ def _read_with_retry(call, chan: str, method: str, **kwargs):
                 print(f"  {chan}: {method} rate-limited — waiting "
                       f"{retry_after}s and retrying once", flush=True)
                 time.sleep(retry_after)
+                continue
+            # A Slack API error carries a code and is NOT retried here: an
+            # answer from Slack is an answer, and repeating it wastes the run's
+            # clock. Only a call that never landed gets another go.
+            if (resp is None
+                    and isinstance(e, _TRANSIENT_TRANSPORT)
+                    and attempt <= len(TRANSPORT_BACKOFF_S)
+                    and _transport_retries_left > 0):
+                _transport_retries_left -= 1
+                pause = TRANSPORT_BACKOFF_S[attempt - 1]
+                print(f"  {chan}: {method} never reached Slack ({err}) — "
+                      f"waiting {pause}s and retrying "
+                      f"({_transport_retries_left} retries left this run)",
+                      flush=True)
+                time.sleep(pause)
                 continue
             raise DedupReadUnavailable(chan, err, method) from e
 

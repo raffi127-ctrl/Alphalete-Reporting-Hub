@@ -20,11 +20,23 @@ Three things have to stay true:
 Plus: the logged error names the Slack CODE (`not_in_channel`), because the
 original failure was undiagnosable — our own str(e)[:120] cut the message off at
 `{'ok'...`, before the one word that says which fix is needed.
+
+SECOND HALF (2026-09-17). #palace-sales dropped out of the settle passes on
+`URLError: <urlopen error _ssl.c:1112: The handshake operation timed out>` — a
+TLS handshake that never completed. The read never reached Slack, so there was
+no answer about the channel at all, and yet the run degraded it exactly as if
+Lucy had been removed from it: skipped, nothing posted, report INCOMPLETE. Only
+`ratelimited` was ever retried. Now a read that never landed backs off and goes
+again, on a run-wide budget — because waiting out a DEAD network 18 channels
+deep would blow the 45-minute timeout and get the run KILLED mid-thread, which
+is strictly worse than the fast soft miss it replaced.
 """
 from __future__ import annotations
 
 import datetime as dt
+import ssl
 import unittest
+import urllib.error
 
 from automations.tableau_screenshots import slack_post as sp
 from automations.tableau_screenshots import pages as pg
@@ -52,14 +64,24 @@ class _Client:
     """Minimal Slack stub. `history_errors[channel]` = the error code that
     channel's conversations.history raises; every other call succeeds."""
 
-    def __init__(self, history_errors=None, ratelimit_once=()):
+    def __init__(self, history_errors=None, ratelimit_once=(),
+                 transport_fails=None):
         self.history_errors = history_errors or {}
         self.ratelimit_once = set(ratelimit_once)
+        # channel -> how many leading history reads die at the socket, before
+        # Slack ever answers. `None` = every read, forever.
+        self.transport_fails = dict(transport_fails or {})
         self.posted = []          # (channel, kind)
         self.history_calls = 0
 
     def conversations_history(self, channel, **kw):
         self.history_calls += 1
+        left = self.transport_fails.get(channel)
+        if left is None and channel in self.transport_fails:
+            raise _handshake_timeout()
+        if left:
+            self.transport_fails[channel] = left - 1
+            raise _handshake_timeout()
         if channel in self.ratelimit_once:
             self.ratelimit_once.discard(channel)
             raise _ApiError(_Resp("ratelimited", 429))
@@ -83,6 +105,14 @@ class _Client:
 
     def chat_update(self, **kw):
         return {"ok": True}
+
+
+def _handshake_timeout():
+    """The real 2026-09-17 exception, shape and all: urllib's URLError wrapping
+    an ssl timeout. No `.response`, so no Slack error code — that absence is
+    exactly what tells a transport failure from an answer."""
+    return urllib.error.URLError(
+        ssl.SSLError(1, "_ssl.c:1112: The handshake operation timed out"))
 
 
 def _caps():
@@ -164,6 +194,86 @@ class DedupReadFailureTest(unittest.TestCase):
                           org=self._org_with(self.DREW))
         self.assertTrue(res["ok"], "a single 429 should be waited out, not fatal")
         self.assertEqual(client.history_calls, 2)
+
+    # ---- transport failures: the read that never reached Slack (2026-09-17)
+
+    PALACE = "C09AVM17PAR"         # #palace-sales
+
+    def _fresh_budget(self):
+        sp.reset_transport_budget()
+        self.addCleanup(sp.reset_transport_budget)
+
+    def test_handshake_timeout_retries_and_then_posts(self):
+        """The actual #palace-sales failure. One blip, then the channel posts —
+        it must NOT be skipped like a channel Lucy was thrown out of."""
+        self._fresh_budget()
+        client = _Client(transport_fails={self.PALACE: 1})
+        self._use(client)
+        res = sp.post_all(_caps(), pg.PAGES, self.TODAY,
+                          org=self._org_with(self.PALACE))
+        self.assertTrue(res["ok"], "a one-off handshake timeout is not an answer "
+                                   "about the channel — try the read again")
+        self.assertEqual(client.history_calls, 2)
+        self.assertIn((self.PALACE, "parent"), client.posted)
+
+    def test_two_timeouts_then_posts(self):
+        """The budget allows a second go; a slow network is not a dead one."""
+        self._fresh_budget()
+        client = _Client(transport_fails={self.PALACE: 2})
+        self._use(client)
+        res = sp.post_all(_caps(), pg.PAGES, self.TODAY,
+                          org=self._org_with(self.PALACE))
+        self.assertTrue(res["ok"])
+        self.assertEqual(client.history_calls, 3)
+
+    def test_network_really_down_is_still_a_soft_miss(self):
+        """Retries are a second chance, not a cure. When every attempt dies at
+        the socket the channel still degrades to SOFT with nothing posted —
+        the duplicate-thread guard is untouched."""
+        self._fresh_budget()
+        client = _Client(transport_fails={self.PALACE: None})
+        self._use(client)
+        res = sp.post_all(_caps(), pg.PAGES, self.TODAY,
+                          org=self._org_with(self.PALACE))
+        self.assertFalse(res["ok"])
+        (ch,) = res["channels"]
+        self.assertTrue(ch["soft"])
+        self.assertIn("URLError", ch["error"])
+        self.assertEqual(client.posted, [])
+        self.assertEqual(client.history_calls, 3,
+                         "one read + two retries, then give up on this channel")
+
+    def test_budget_stops_a_dead_network_from_eating_the_run(self):
+        """18 channels × 3 handshake timeouts each would run the 45-minute
+        timeout out and get the run KILLED mid-thread. Once the run-wide budget
+        is spent, a transport failure is a soft miss on the FIRST try, so the
+        rest of the channels fail fast the way they always did."""
+        self._fresh_budget()
+        client = _Client(transport_fails={self.PALACE: None})
+        self._use(client)
+        for _ in range(6):                      # 6 orgs × 2 retries = the budget
+            sp.post_all(_caps(), pg.PAGES, self.TODAY,
+                        org=self._org_with(self.PALACE))
+        self.assertEqual(sp._transport_retries_left, 0)
+        before = client.history_calls
+        res = sp.post_all(_caps(), pg.PAGES, self.TODAY,
+                          org=self._org_with(self.PALACE))
+        self.assertFalse(res["ok"])
+        self.assertTrue(res["channels"][0]["soft"])
+        self.assertEqual(client.history_calls - before, 1,
+                         "budget spent → no more waiting, straight to the soft miss")
+
+    def test_a_slack_code_is_never_retried(self):
+        """An answer from Slack IS an answer. Retrying `not_in_channel` would
+        just spend the run's clock to be told the same thing again."""
+        self._fresh_budget()
+        client = _Client(history_errors={self.PALACE: "not_in_channel"})
+        self._use(client)
+        sp.post_all(_caps(), pg.PAGES, self.TODAY,
+                    org=self._org_with(self.PALACE))
+        self.assertEqual(client.history_calls, 1)
+        self.assertEqual(sp._transport_retries_left, sp.TRANSPORT_RETRY_BUDGET,
+                         "a Slack error code must not spend the transport budget")
 
     def test_error_text_names_the_slack_code(self):
         """The whole reason 8/13 was undiagnosable: the code never reached the log."""
