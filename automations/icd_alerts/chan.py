@@ -121,31 +121,111 @@ def _week(day: dt.date, *, pull: bool = False,
     return pulled
 
 
-def _average_rows(by_day: Dict[str, List[Dict]], days: List[str]) -> List[Dict]:
-    """ONE synthetic row carrying the Mon-Fri average.
+def _avg_time(values: List[str]) -> str:
+    """The mean of times like '1:26 PM'. Blank when none parse.
 
-    Only the TOTAL of these rows is ever drawn, so a single row holding the
-    averaged numbers renders exactly as an average of the five days -- and
-    keeps the arithmetic here, where it can be read, rather than in the
-    renderer.
+    Averaged, not earliest-or-latest, because the comparison line is a
+    typical day: one rep who started at 8am on one Tuesday should not become
+    Chan's "first knock" for the whole week.
+    """
+    mins = []
+    for v in values:
+        t = str(v or "").strip()
+        if not t:
+            continue
+        for fmt in ("%I:%M %p", "%I:%M%p", "%H:%M"):
+            try:
+                got = dt.datetime.strptime(t.upper(), fmt)
+            except ValueError:
+                continue
+            mins.append(got.hour * 60 + got.minute)
+            break
+    if not mins:
+        return ""
+    avg = int(round(sum(mins) / len(mins)))
+    hh, mm = avg // 60 % 24, avg % 60
+    # BUILT BY HAND, not strftime("%-I"). That flag does not exist on Windows
+    # and this module runs on every ICD machine, some of which are PCs -- it
+    # would raise there and cost the comparison line on exactly the boards
+    # nobody here would see.
+    ampm = "AM" if hh < 12 else "PM"
+    h12 = hh % 12 or 12
+    return "%d:%02d %s" % (h12, mm, ampm)
+
+
+def _average_rows(by_day: Dict[str, List[Dict]], days: List[str]) -> List[Dict]:
+    """Chan's Mon-Fri average, as AS MANY ROWS AS HE AVERAGES REPS.
+
+    NOT ONE ROW, which is what this used to return. The renderer counts ROWS
+    to get "# Reps", and divides the per-rep columns by that count -- so a
+    single synthetic row said Chan ran one rep, and printed his whole week's
+    knocks as that one rep's "Avg Doors / Rep" (6,979 on 2026-09-17). Aya's,
+    Cyrus's and Kash's boards all carried it, identically, because they all
+    read the same cached line.
+
+    AND IT CARRIES MORE THAN COUNTS. Only TP.COUNT_COLUMNS were summed, so
+    every column that is not a plain count came out blank or zero on a row
+    that otherwise looked complete:
+
+        Total Talk to     0        while Talk To - Not Int said 965
+        First/Last Knock  blank
+        Gaps              0
+        Avg Knocks / Hr   blank    (derived from the times above)
+
+    Emitting the averaged reps as separate rows fixes both at once: the
+    renderer's own SUM reproduces the average, and its own row count is
+    Chan's rep count, so every per-rep column divides by the right number
+    without this module knowing how any of them are drawn.
     """
     from automations.total_knocks import pull as TP
 
     present = [d for d in days if by_day.get(d)]
     if not present:
         return []
+    n = len(present)
+
+    # Everything numeric the board draws, not only the dispositions. Gaps and
+    # talk-to are counts in every sense that matters here; they were simply
+    # not on a list written for disposition columns.
+    numeric = set(TP.COUNT_COLUMNS) | {
+        TP.COL_TOTAL_TALK_TO, TP.COL_GAPS, TP.COL_TOTAL_GAPS}
+
     totals: Dict[str, float] = {}
+    firsts: List[str] = []
+    lasts: List[str] = []
+    reps_per_day: List[int] = []
     for d in present:
-        for row in by_day[d]:
+        rows = by_day[d]
+        reps_per_day.append(len(rows))
+        for row in rows:
+            firsts.append(row.get(TP.COL_FIRST_KNOCK, ""))
+            lasts.append(row.get(TP.COL_LAST_KNOCK, ""))
             for col, val in row.items():
-                if col in TP.COUNT_COLUMNS:
+                if col in numeric:
                     try:
                         totals[col] = totals.get(col, 0) + float(
                             str(val).replace(",", "") or 0)
                     except ValueError:
                         continue
-    n = len(present)
-    return [{col: int(round(v / n)) for col, v in totals.items()}]
+
+    reps = max(1, int(round(sum(reps_per_day) / n)))
+    first, last = _avg_time(firsts), _avg_time(lasts)
+
+    out: List[Dict] = []
+    for i in range(reps):
+        row: Dict = {}
+        for col, v in totals.items():
+            # Split the daily average across the reps, giving the remainder to
+            # the earliest rows so the rows still SUM to the average rather
+            # than to a rounded-down version of it.
+            per, rem = divmod(int(round(v / n)), reps)
+            row[col] = per + (1 if i < rem else 0)
+        if first:
+            row[TP.COL_FIRST_KNOCK] = first
+        if last:
+            row[TP.COL_LAST_KNOCK] = last
+        out.append(row)
+    return out
 
 
 def warm(day: Optional[dt.date] = None, log=print) -> bool:
