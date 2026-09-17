@@ -741,6 +741,11 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
     if _to_clipboard(setup[len("javascript:"):]):
         _log("This week's setup is on your clipboard.")
         _log("Open Apex, then click your Fill Apex bookmark. That is all.")
+        if start_watch():
+            _log("The OBCL will be ticked on its own when the run finishes.")
+        elif _watch_alive():
+            _log("A watcher from an earlier click is still waiting "
+                 "\u2014 the OBCL will still be ticked.")
     else:
         _log("Open this and click 'Copy this week's setup':")
         _log(f"  {out}")
@@ -787,6 +792,90 @@ def mark_obcl(dry_run: bool = False) -> int:
     OB.mark(start, found, added, dry_run=dry_run, log=_log)
     _log("=== done ===")
     return 0
+
+
+WATCH_LOCK = OUTPUT_DIR / ".obcl-watch.pid"
+WATCH_LOG = OUTPUT_DIR / "logs" / "apex-obcl-watch.log"
+WATCH_MINUTES = 120
+WATCH_EVERY = 4          # seconds between looks
+
+
+def _watch_alive() -> bool:
+    """Is a watcher from an earlier click still going, and still young?
+
+    The age check matters: a watcher reads the clipboard of whatever session
+    started it, so one left over from somewhere else can sit there holding the
+    lock while never seeing anything. Past its own two hours it does not count,
+    and the next click starts a fresh one.
+    """
+    try:
+        pid_s, _, started = WATCH_LOCK.read_text().strip().partition(" ")
+        pid = int(pid_s)
+    except Exception:
+        return False
+    try:
+        when = dt.datetime.fromisoformat(started) if started else None
+    except ValueError:
+        when = None
+    if when and (dt.datetime.now() - when).total_seconds() > WATCH_MINUTES * 60:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except Exception:
+        return False
+
+
+def start_watch() -> bool:
+    """Leave a watcher running for this run, then let it die on its own.
+
+    Megan, 2026-09-17: "it should just auto mark - not wait on someone to tell
+    it to." A browser cannot reach a Google sheet, so something on the machine
+    has to notice the result. This is that, scoped as tightly as it can be: it
+    exists because somebody clicked to start a run, it looks only for text
+    beginning APEX-OBCL, it keeps nothing else it sees, and it exits the moment
+    it has marked the sheet or after two hours, whichever comes first.
+    """
+    import subprocess
+    if _watch_alive():
+        return False
+    WATCH_LOG.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "automations.apex_new_starts.run",
+             "--watch-obcl"],
+            cwd=str(REPO_ROOT), start_new_session=True,
+            stdout=open(WATCH_LOG, "a"), stderr=subprocess.STDOUT)
+    except Exception:
+        return False
+    try:
+        WATCH_LOCK.write_text(f"{proc.pid} {dt.datetime.now().isoformat()}")
+    except Exception:
+        pass
+    return True
+
+
+def watch_obcl() -> int:
+    """Poll for the run's result, mark the OBCL, stop."""
+    import time
+    stamp = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    _log(f"[{stamp}] watching for a run to finish "
+         f"(up to {WATCH_MINUTES} minutes)")
+    deadline = time.time() + WATCH_MINUTES * 60
+    try:
+        while time.time() < deadline:
+            if _from_clipboard().strip().startswith("APEX-OBCL "):
+                code = mark_obcl()
+                _log("marked." if code == 0 else "could not mark.")
+                return code
+            time.sleep(WATCH_EVERY)
+        _log("no run finished inside the window — stopping.")
+        return 0
+    finally:
+        try:
+            WATCH_LOCK.unlink()
+        except Exception:
+            pass
 
 
 def _to_clipboard(text: str) -> bool:
@@ -852,6 +941,9 @@ def main(argv=None) -> int:
     mode.add_argument("--mark-obcl", action="store_true",
                       help="tick 'Added to APEX' on the OBCL from the run's "
                            "result (left on the clipboard by the panel)")
+    mode.add_argument("--watch-obcl", action="store_true",
+                      help="wait for a run to finish, then mark the OBCL "
+                           "(started for you by --button; exits on its own)")
     mode.add_argument("--explore", action="store_true",
                       help="inventory the Apex new-employee screen")
     ap.add_argument("--any-day", action="store_true",
@@ -883,6 +975,8 @@ def main(argv=None) -> int:
         return make_button(today, tab=args.tab, include_ona=include_ona)
     if args.mark_obcl:
         return mark_obcl(dry_run=args.no_write)
+    if args.watch_obcl:
+        return watch_obcl()
     if args.explore:
         return explore(today)
     if not check_day(today, args.any_day):

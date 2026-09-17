@@ -1770,8 +1770,9 @@ _JS = r"""
        try{ navigator.clipboard.writeText(blob); }catch(e){}
        out.innerHTML=rundown()+
          '<div style="margin-top:8px;background:#effaf7;border-left:3px solid '+
-         '#0F766E;padding:6px 8px;font-weight:700">On the Hub, press '+
-         '<b>Mark the OBCL</b> \u2014 the result is on your clipboard.</div>';
+         '#0F766E;padding:6px 8px;font-weight:700">Ticking these on the OBCL '+
+         'now \u2014 give it a few seconds. (If it does not, press <b>Mark the '+
+         'OBCL</b> on the Hub.)</div>';
        var cp=document.getElementById('anscopy');
        if(cp) cp.onclick=function(e){ e.preventDefault();
          var txt=out.innerText.replace(/\ncopy this$/,'');

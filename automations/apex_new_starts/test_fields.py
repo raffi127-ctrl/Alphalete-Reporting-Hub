@@ -634,4 +634,7 @@ def test_everybody_marked_cr_says_nothing(monkeypatch, tmp_path):
     import datetime as dt
     log, page = _batch(monkeypatch, tmp_path,
                        {"A": {0: "CR"}, "B": {0: "CR"}}, dt.date(2026, 9, 14))
-    assert "NO START DATE" not in log and "OBCL" not in log
+    # "OBCL" now appears in the watcher line on every clean build, so check
+    # the thing this test is actually about: no start-date complaint.
+    assert "NO START DATE" not in log
+    assert "came off the OBCL tab" not in log
