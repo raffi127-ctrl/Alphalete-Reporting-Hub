@@ -299,18 +299,30 @@ class Shape:
 
 
 class _Att(Shape):
-    # THE GIF BAR, and it has to be rare enough to mean something. The best
-    # AT&T day across every office on 2026-09-16 was 6 wireless lines, and
-    # nobody reached 8 -- so twelve lines, or four Internet sales alongside
-    # the five that already make it "super", is a day well beyond anything
-    # this week produced. Same rule as Box's: not a fourth tier, just a gif.
-    LEGEND_LINES = 12
-    LEGEND_INT = 4
+    # THE GIF BAR: EIGHT SALES IN A DAY, counting Internet and wireless
+    # TOGETHER. Set against real numbers on 2026-09-16, twice over.
+    #
+    # It started at twelve lines, reasoned across from Box's kWh bar -- and
+    # kWh spread nothing like wireless lines do. Sixty-one AT&T rep-days on
+    # the relay say the ceiling is a hard SIX lines: six was hit four times,
+    # seven never. So twelve did not mean "hard", it meant never, and kash,
+    # cyrus, carlos-b2batt and Raf's board were all quietly excluded from a
+    # feature that exists.
+    #
+    # Dropping the NUMBER was not enough, because the metric was wrong. A big
+    # AT&T day is spread across both columns, not stacked in one: Callisa
+    # Flythe's 3 Internet and 5 wireless on 2026-09-15 is the biggest day in
+    # the whole file and NO lines-only bar can see it. Counting the day whole
+    # can, and lands at the rarity Box's bar already has -- one rep-day in
+    # sixty-one (1.6%), against Box's one seller in twenty-seven.
+    #
+    # So: Box keeps 500,000 kWh, AT&T counts the day whole. Two campaigns
+    # asked for a comparable thing in the units each actually sells in.
+    LEGEND_TOTAL = 8
 
     def above_top(self, metrics):
-        nl = int(metrics.get("NL", 0) or 0)
-        return nl >= self.LEGEND_LINES or (
-            int(metrics.get("Int", 0) or 0) >= self.LEGEND_INT and nl >= 5)
+        return (int(metrics.get("Int", 0) or 0)
+                + int(metrics.get("NL", 0) or 0)) >= self.LEGEND_TOTAL
 
     def tier(self, metrics):
         """How loud this sale is, off its SHAPE rather than at random."""
@@ -343,19 +355,22 @@ class _Nds(_Att):
     place, for one campaign.
     """
 
-    # THE GIF BAR, ITS OWN, for the same reason the tier is. _Att offers two
-    # routes -- twelve lines, OR four Internet sales alongside five lines --
-    # and the second can NEVER fire for an NDS rep, whose Int is structurally
-    # zero. Inherited, it quietly gave Khalil's office ONE route where every
-    # AT&T office has two.
+    # THE GIF BAR, ITS OWN, for the same reason the tier is. It is kept
+    # explicit rather than inherited so a stray Internet number -- a column
+    # that should always be zero for this campaign -- can never quietly push
+    # an NDS rep over a bar their office cannot actually reach.
     #
-    # Twelve lines either way: his best rep on 2026-09-16 put up seven, and
-    # the best AT&T day in the whole company that day was six -- so the two
-    # campaigns are being asked for a comparable thing.
-    LEGEND_LINES = 12
+    # Eight, matching AT&T's -- and for NDS the two are the same number,
+    # because this campaign counts wireless only, so "the day counted whole"
+    # IS the line count. UNTUNED, honestly: there are zero NDS rep-days of
+    # sales on the relay so far (Khalil enrolled 2026-09-16 and is relaying
+    # knocks only). Revisit once his office has sold for a week -- if their
+    # ceiling sits below AT&T's, this is too high for them by the same
+    # mistake twelve was for everyone.
+    LEGEND_TOTAL = 8
 
     def above_top(self, metrics):
-        return int(metrics.get("NL", 0) or 0) >= self.LEGEND_LINES
+        return int(metrics.get("NL", 0) or 0) >= self.LEGEND_TOTAL
 
     def tier(self, metrics):
         lines = int(metrics.get("NL", 0) or 0)

@@ -2242,8 +2242,11 @@ class TheGifIsForADayAboveTheTopTier(unittest.TestCase):
         wireless lines, and nobody reached eight."""
         from automations.shared import sale_hype as H
         sh = H.shape("att")
-        self.assertFalse(sh.above_top({"Int": 1, "NL": 6}))
-        self.assertTrue(sh.above_top({"Int": 1, "NL": 12}))
+        self.assertFalse(sh.above_top({"Int": 1, "NL": 6}),
+                         "six lines was the whole company's best that day")
+        self.assertTrue(sh.above_top({"Int": 3, "NL": 5}),
+                        "Callisa 2026-09-15 -- the biggest AT&T day on the "
+                        "relay, and invisible to any lines-only bar")
 
     def test_a_campaign_with_no_bar_never_fires_one(self):
         """Rather than inheriting somebody else's idea of enormous."""
@@ -2354,9 +2357,26 @@ class EveryCampaignsGifBarIsItsOwn(unittest.TestCase):
         self.assertFalse(H.shape("nds").above_top({"Int": 4, "NL": 5}))
         self.assertTrue(H.shape("att").above_top({"Int": 4, "NL": 5}))
 
+    def test_a_reachable_bar_for_att(self):
+        """Twelve lines was twice the whole company's ceiling -- four offices
+        and Raf's board were excluded from a feature that exists. The day is
+        counted WHOLE now, because a big AT&T day is spread over both
+        columns rather than stacked in one."""
+        from automations.shared import sale_hype as H
+        self.assertTrue(H.shape("att").above_top({"Int": 0, "NL": 8}))
+        self.assertTrue(H.shape("att").above_top({"Int": 4, "NL": 4}))
+        self.assertFalse(H.shape("att").above_top({"Int": 1, "NL": 6}))
+
+    def test_nds_counts_lines_only_even_at_the_gif_bar(self):
+        """Int is structurally zero for NDS; a stray one must not carry a rep
+        over a bar their office cannot actually reach."""
+        from automations.shared import sale_hype as H
+        self.assertFalse(H.shape("nds").above_top({"Int": 4, "NL": 4}))
+        self.assertTrue(H.shape("nds").above_top({"Int": 0, "NL": 8}))
+
     def test_nds_can_still_earn_one_on_lines_alone(self):
         from automations.shared import sale_hype as H
-        self.assertTrue(H.shape("nds").above_top({"Int": 0, "NL": 12}))
+        self.assertTrue(H.shape("nds").above_top({"Int": 0, "NL": 8}))
 
     def test_a_real_nds_day_does_not_clear_it(self):
         """Khalil's best rep on 2026-09-16 put up seven lines."""
