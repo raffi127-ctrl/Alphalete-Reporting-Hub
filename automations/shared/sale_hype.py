@@ -11,8 +11,10 @@ is what lets it run on an ICD's laptop and on Lucy alike.
 from __future__ import annotations
 
 import datetime as dt
+import json
 import re
 import zlib
+from pathlib import Path
 from typing import Dict
 
 # Imports nothing itself, which is why it is safe on the ICD laptops' hot path.
@@ -153,6 +155,71 @@ def gif_for(name: str, day: dt.date, total: int) -> str:
         return ""
     seed = "gif|%s|%s|%d" % (name, day.isoformat(), total)
     return HYPE_GIFS[zlib.crc32(seed.encode("utf-8")) % len(HYPE_GIFS)]
+
+
+# --- HOW MANY GIFS ONE ROOM MAY SEE IN A DAY --------------------------------
+#
+# Megan, 2026-09-16: "a channel should only see 2-3 gifs a day max."
+#
+# THE THRESHOLD ALONE CANNOT DO THIS. A rep who clears the bar stays above it
+# for the rest of the day, so every later sale of theirs carries another gif.
+# Brianna Scott's six sales would have been six gifs for one standout day.
+#
+# IT LIVES HERE, NOT IN THE ICD POSTER, because Raf's board posts these lines
+# too -- through alphalete_sales_board, on a different machine -- and a cap
+# that only one of them honours is not a cap. That is the same split that let
+# the AO board sit a day behind this file on the wording itself.
+GIF_BUDGET = 3
+GIFS_SENT_PATH = (Path.home() / ".config" / "recruiting-report"
+                  / "icd_gifs_sent.json")
+
+
+def gifs_sent(day: dt.date, room: str) -> int:
+    try:
+        return int(json.loads(GIFS_SENT_PATH.read_text())
+                   .get("%s|%s" % (day.isoformat(), room), 0))
+    except (OSError, ValueError, AttributeError):
+        return 0
+
+
+def record_gifs(day: dt.date, room: str, n: int) -> None:
+    """COUNTED ONLY WHEN ONE ACTUALLY WENT OUT. Counting at render time would
+    spend the budget on a dry run, and a preview would silence the real
+    thing."""
+    if n <= 0:
+        return
+    key = "%s|%s" % (day.isoformat(), room)
+    try:
+        seen = json.loads(GIFS_SENT_PATH.read_text())
+    except (OSError, ValueError):
+        seen = {}
+    seen[key] = int(seen.get(key, 0)) + n
+    today = day.isoformat()
+    seen = {k: v for k, v in seen.items() if k.startswith(today)}
+    try:
+        GIFS_SENT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        GIFS_SENT_PATH.write_text(json.dumps(seen, indent=2, sort_keys=True))
+    except OSError:
+        pass
+
+
+def within_budget(lines, day: dt.date, room: str):
+    """(lines, how many gifs they carry) -- gif stripped past the allowance.
+
+    The LINE always survives. A rep whose sale happens to be the fourth of
+    the day still gets announced.
+    """
+    left = GIF_BUDGET - gifs_sent(day, room)
+    out, used = [], 0
+    for line in lines:
+        if "\n" in line:
+            if left > 0:
+                left -= 1
+                used += 1
+            else:
+                line = line.split("\n", 1)[0]
+        out.append(line)
+    return out, used
 
 
 # --- what a sale is MADE OF, per campaign -----------------------------------

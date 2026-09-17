@@ -518,8 +518,19 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool,
             for group in C.LIVE_GROUPS:
                 N.text_group(group, body, dry_run=not send, log=_log)
         if not baseline:
-            for rep, delta in sorted(gained.items()):
-                N.slack(N.hype(rep, delta, day), dry_run=not send, log=_log)
+            # THE SAME DAILY GIF ALLOWANCE THE ICD OFFICES GET. Raf's board
+            # posts the same lines from shared/sale_hype, and without this it
+            # was the one room with no cap: a rep past the gif bar stays past
+            # it, so every later sale of theirs carried another one.
+            from automations.shared import sale_hype as _SH
+            _hype = [N.hype(rep, delta, day)
+                     for rep, delta in sorted(gained.items())]
+            _hype, _gifs = _SH.within_budget(_hype, day, "ao-board")
+            for _line in _hype:
+                N.slack(_line, dry_run=not send, log=_log)
+            if send:
+                # Recorded AFTER they go out, so a dry run never spends it.
+                _SH.record_gifs(day, "ao-board", _gifs)
             for rep, up in sorted(rec_gained.items()):
                 N.slack(N.records_line(rep, records.get(rep, up), up),
                         dry_run=not send, log=_log)

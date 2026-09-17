@@ -2255,11 +2255,14 @@ class AChannelSeesAtMostThreeGifsADay(unittest.TestCase):
     """
 
     def setUp(self):
-        import datetime as _dt, json, pathlib, tempfile
+        import datetime as _dt, pathlib, tempfile
         from automations.icd_alerts import post as P
+        from automations.shared import sale_hype as H
+        # THE STATE LIVES IN THE SHARED MODULE, because Raf's board shares the
+        # allowance logic -- patch it where it actually is.
         self.P, self.DAY = P, _dt.date(2026, 9, 16)
         self.path = pathlib.Path(tempfile.mkdtemp()) / "gifs.json"
-        self.p = mock.patch.object(P, "GIFS_SENT_PATH", self.path)
+        self.p = mock.patch.object(H, "GIFS_SENT_PATH", self.path)
         self.p.start()
 
     def tearDown(self):
@@ -2343,3 +2346,45 @@ class EveryCampaignsGifBarIsItsOwn(unittest.TestCase):
             sh = H.shape(camp)
             self.assertIn("above_top", type(sh).__dict__,
                           "%s uses another campaign's bar" % camp)
+
+
+class RafsBoardHonoursTheSameGifCap(unittest.TestCase):
+    """Megan, asked where Raf was: his board is alphalete_sales_board, not an
+    ICD office, and it posts the same lines from shared/sale_hype.
+
+    The 3-a-day cap lived in the ICD poster only -- so his was the ONE room
+    with no cap at all. A rep past the gif bar stays past it, so every later
+    sale of theirs carried another gif. That is the same split that let his
+    board sit a day behind this file on the wording itself.
+    """
+
+    def test_the_budget_lives_in_the_shared_module(self):
+        from automations.icd_alerts import post as P
+        from automations.shared import sale_hype as H
+        self.assertIs(P._within_gif_budget, H.within_budget)
+        self.assertIs(P._record_gifs, H.record_gifs)
+
+    def test_the_ao_board_applies_it(self):
+        import inspect
+        from automations.alphalete_sales_board import run as R
+        src = inspect.getsource(R)
+        self.assertIn("within_budget", src)
+        self.assertIn('"ao-board"', src)
+
+    def test_the_ao_board_spends_it_only_on_a_real_send(self):
+        import inspect
+        from automations.alphalete_sales_board import run as R
+        src = inspect.getsource(R)
+        cut = src[src.index("within_budget"):]
+        self.assertLess(cut.index("N.slack(_line"), cut.index("record_gifs"))
+        self.assertIn("if send:", cut[:cut.index("record_gifs")])
+
+    def test_raf_and_an_icd_office_have_separate_allowances(self):
+        import datetime as _dt, pathlib, tempfile
+        from automations.shared import sale_hype as H
+        path = pathlib.Path(tempfile.mkdtemp()) / "g.json"
+        day = _dt.date(2026, 9, 16)
+        with mock.patch.object(H, "GIFS_SENT_PATH", path):
+            H.record_gifs(day, "ao-board", 3)
+            _out, used = H.within_budget(["X\nhttps://g/x"], day, "ryan")
+            self.assertEqual(used, 1, "one room's gifs spent another's")
