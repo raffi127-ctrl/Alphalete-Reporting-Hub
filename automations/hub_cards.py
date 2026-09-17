@@ -6167,6 +6167,18 @@ AUTOMATED_REPORTS = [
         },
         # No checklist. Two ticks in front of a two-click job is a third
         # thing to read (Megan, 2026-09-13).
+        # One question before it starts. Blue Ink it checks itself; the APEX
+        # SESSION it cannot -- that check opens a real browser and can sit for
+        # minutes, so it was taken off the button. Which left nothing asking at
+        # all, and a run that begins without Apex signed in is a wasted one
+        # (Megan, 2026-09-17: "it didn't make me confirm that blue ink and apex
+        # were open and logged in on this machine before starting").
+        "confirm_before": (
+            "\u26a0\ufe0f Before this starts \u2014 is **Apex open and signed in** "
+            "in this machine's normal Chrome, on **Roster \u2192 Employees "
+            "\u2192 Pending**?\n\nBlue Ink is read through its API key, so "
+            "there is nothing to open there. Apex is the one nothing else can "
+            "check for you."),
         # Nothing to photograph: its whole output is a clipboard.
         "screenshot": False,
         # Not tracked to a schedule -- it runs when somebody wants it.

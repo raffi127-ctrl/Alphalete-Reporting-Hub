@@ -34,22 +34,23 @@ def test_a_renamed_column_says_so_rather_than_guessing():
 
 def test_two_word_surnames_and_apostrophes_match():
     """The board carries one name; the OBCL keeps first and last apart."""
-    ticks, greens, unmatched = obcl.plan(
-        GRID, found=[], added=["Emily Flores Castaneda", "Le'derius Arnold"])
+    ticks, unmatched = obcl.plan(
+        GRID, ["Emily Flores Castaneda", "Le'derius Arnold"])
     assert ticks == [4, 5]
     assert unmatched == []
 
 
-def test_found_is_green_and_added_is_ticked():
-    """Two states, because they mean different things."""
-    ticks, greens, unmatched = obcl.plan(
-        GRID, found=["Billy Garvin"], added=["Le'derius Arnold"])
-    assert ticks == [5], "only the one that actually went in"
-    assert greens == [3, 5], "both, since a tick implies it was found"
+def test_only_the_ones_actually_added_are_ticked():
+    """A tick or nothing. The green-for-"found" earned its way out: a colour
+    meaning "we got as far as attempting them" is not something anybody would
+    look at (Megan, 2026-09-17)."""
+    ticks, unmatched = obcl.plan(GRID, ["Le'derius Arnold"])
+    assert ticks == [5]
+    assert unmatched == []
 
 
 def test_somebody_with_no_row_is_named_not_silently_dropped():
-    ticks, greens, unmatched = obcl.plan(GRID, found=[], added=["Ghost Person"])
+    ticks, unmatched = obcl.plan(GRID, ["Ghost Person"])
     assert ticks == [] and unmatched == ["Ghost Person"]
 
 

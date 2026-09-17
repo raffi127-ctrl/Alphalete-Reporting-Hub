@@ -787,9 +787,9 @@ def mark_obcl(dry_run: bool = False) -> int:
         _log(f"❌ Could not read the run's result: {err}")
         return 1
 
-    found, added = data.get("found") or [], data.get("added") or []
-    _log(f"{data.get('week', '')}: {len(added)} added, {len(found)} found")
-    OB.mark(start, found, added, dry_run=dry_run, log=_log)
+    added = data.get("added") or []
+    _log(f"{data.get('week', '')}: {len(added)} added")
+    OB.mark(start, added, dry_run=dry_run, log=_log)
     _log("=== done ===")
     return 0
 

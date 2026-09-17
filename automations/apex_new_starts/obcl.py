@@ -7,11 +7,13 @@ The filling happens in a browser and a bookmarklet cannot reach Google Sheets,
 so the run's outcome comes back the way the setup went out: through the
 clipboard, on the same machine. This module is the half that writes.
 
-TWO STATES, because they mean different things:
-
-    found  -> the cell goes GREEN.  We located them on Apex's Pending tab.
-    added  -> the checkbox is TICKED. All three pages saved and Apex flipped
-              them to Active.
+ONE STATE. The column is called "Added to APEX", so it is a tick or nothing:
+all three pages saved and Apex flipped them to Active. There was a green-for-
+"found" as well, and it earned its way out (Megan, 2026-09-17: "we don't really
+need it to say 'of everyone found'") -- a colour that meant "we got as far as
+attempting them" is not something anybody would look at, and it had already
+drifted to include people the run could not find at all. Whoever did not make
+it is named in the panel, which is where a person actually looks.
 
 Nothing else on the tab is touched. The OBCL is hand-maintained by the
 recruiting team: this writes one column, on rows it can match by name, and
@@ -32,8 +34,6 @@ from automations.recruiting_report.fill import open_by_key
 COL_FIRST = "name"
 COL_LAST = "last name"
 COL_APEX = "added to apex"
-
-GREEN = {"red": 0.82, "green": 0.94, "blue": 0.83}   # the sheet's own pass-green
 
 
 def _fold(text: str) -> str:
@@ -97,11 +97,11 @@ def _layout(grid: List[List[str]]) -> Tuple[int, Dict[str, int]]:
         "a position.")
 
 
-def plan(grid: List[List[str]], found: Iterable[str], added: Iterable[str]):
+def plan(grid: List[List[str]], added: Iterable[str]):
     """What would be written, without writing it.
 
-    Returns (ticks, greens, unmatched) — ticks and greens are 1-based sheet
-    row numbers, unmatched is the names no row carried.
+    Returns (ticks, unmatched) — ticks are 1-based sheet row numbers,
+    unmatched is the names no row carried.
     """
     hdr, cols = _layout(grid)
     rows: Dict[str, int] = {}
@@ -113,28 +113,19 @@ def plan(grid: List[List[str]], found: Iterable[str], added: Iterable[str]):
         if k != "|":
             rows.setdefault(k, r + 1)          # first match wins; 1-based
 
-    added_set = list(added)
-    # Anybody added was necessarily found, so a tick implies the green too.
-    want_green = list(found) + added_set
-    ticks, greens, unmatched = [], [], []
-    for name in added_set:
+    ticks, unmatched = [], []
+    for name in added:
         r = rows.get(_key(*split_name(name)))
-        if r:
+        if r and r not in ticks:
             ticks.append(r)
-        else:
+        elif not r:
             unmatched.append(name)
-    for name in want_green:
-        r = rows.get(_key(*split_name(name)))
-        if r and r not in greens:
-            greens.append(r)
-        elif not r and name not in unmatched:
-            unmatched.append(name)
-    return sorted(ticks), sorted(greens), unmatched
+    return sorted(ticks), unmatched
 
 
-def mark(week_start: dt.date, found: Iterable[str], added: Iterable[str],
+def mark(week_start: dt.date, added: Iterable[str],
          *, dry_run: bool = False, log=print) -> int:
-    """Green for found, ticked for added. Returns how many rows were ticked."""
+    """Tick 'Added to APEX'. Returns how many rows were ticked."""
     sh = open_by_key(C.SHEET_ID)
     title = tab_for(week_start, [ws.title for ws in sh.worksheets()])
     if not title:
@@ -143,10 +134,10 @@ def mark(week_start: dt.date, found: Iterable[str], added: Iterable[str],
     ws = sh.worksheet(title)
     grid = ws.get_all_values()
     hdr, cols = _layout(grid)
-    ticks, greens, unmatched = plan(grid, found, added)
+    ticks, unmatched = plan(grid, added)
     col = cols[COL_APEX] + 1                   # gspread is 1-based
 
-    log(f"  {title}: {len(ticks)} to tick, {len(greens)} to colour"
+    log(f"  {title}: {len(ticks)} to tick"
         + (f", {len(unmatched)} not on the tab" if unmatched else ""))
     for name in unmatched:
         log(f"     ⚠️  no row for {name}")
@@ -160,9 +151,6 @@ def mark(week_start: dt.date, found: Iterable[str], added: Iterable[str],
     if ticks:
         ws.batch_update([{"range": f"{_a1(col)}{r}", "values": [[True]]}
                          for r in ticks])
-    if greens:
-        ws.format([f"{_a1(col)}{r}" for r in greens],
-                  {"backgroundColor": GREEN})
     return len(ticks)
 
 

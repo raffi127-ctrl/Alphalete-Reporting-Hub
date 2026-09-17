@@ -1210,6 +1210,12 @@ MEMBERS = [
     # testing so Lucy 1's 4am flow stops fighting hand-queued work.
     {"name": "Lucy 3", "emoji": "🐶", "color": "#3B82F6", "email": "",
      "badge": "3"},   # bright blue
+    # Lucy 4 — provisioned 2026-09-17 on Raf's accounts
+    # (workflows/lucy4-provisioning.md). Built to run anything, but deliberately
+    # OFF the 4am clock until its first report is routed to it, so an empty
+    # profile card here is the correct state at first, not a fault.
+    {"name": "Lucy 4", "emoji": "🐶", "color": "#EC4899", "email": "",
+     "badge": "4"},   # bright pink
     # Office Operations — a functional profile (not a single person) that holds
     # office-run workflows anyone on staff can pick up: new-hire swag texts,
     # etc. People navigate here to find those cards. (Megan 2026-07-13)
@@ -4077,9 +4083,18 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                 help=run_help,
             ):
                 recent, recent_user, recent_time = _ran_today(report["id"])
+                # A card can insist on one question first: "confirm_before".
+                # For a report that rides a browser session somebody else has
+                # to be signed into, nothing else can check it, and starting
+                # without asking wastes the run (Megan, 2026-09-17).
+                _ask = report.get("confirm_before")
                 if recent:
                     st.session_state[confirm_key] = True
                     st.session_state[confirm_meta_key] = (recent_user, recent_time)
+                    st.rerun()
+                elif _ask:
+                    st.session_state[confirm_key] = True
+                    st.session_state[confirm_meta_key] = (None, _ask)
                     st.rerun()
                 else:
                     _execute_action(report, primary, picked, chrome_ok)
@@ -4087,13 +4102,16 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
             if st.session_state.get(confirm_key):
                 ru, rt = st.session_state.get(confirm_meta_key, ("someone", "earlier today"))
                 with st.container(border=True):
-                    st.warning(
-                        f"⚠️ **{ru}** already ran this at **{rt}** today. "
-                        f"Run it again anyway?"
-                    )
+                    # ru is None when the card asked its own question rather
+                    # than this being a second run today.
+                    st.warning(rt if ru is None else
+                               f"⚠️ **{ru}** already ran this at **{rt}** today. "
+                               f"Run it again anyway?")
                     cc = st.columns([1, 1])
                     with cc[0]:
-                        if st.button("✅ Yes, run it again", key=f"confirm_yes_{report['id']}",
+                        if st.button("✅ Yes, go" if ru is None
+                                     else "✅ Yes, run it again",
+                                     key=f"confirm_yes_{report['id']}",
                                      type="primary", use_container_width=True):
                             st.session_state.pop(confirm_key, None)
                             st.session_state.pop(confirm_meta_key, None)
@@ -7943,18 +7961,25 @@ if st.session_state.view == "home":
         st.markdown("---")
 
     st.markdown("### 🐺 The Pack")
-    # Layout (Megan 2026-08-21): top row = the three Lucys in order; Office
+    # Layout (Megan 2026-08-21): top row = EVERY Lucy, in order; Office
     # Operations gets its own FULL-WIDTH row underneath so the grid stays
     # even. The Unassigned bucket still appears (bottom row) whenever an
     # uploaded report actually lands without an assignee, so those stay
     # reachable. Each row carries its own column count.
+    #
+    # DERIVED FROM MEMBERS, not listed by hand (Megan 2026-09-17, adding Lucy 4).
+    # The top row used to name Lucy 1/2/3 literally and _placed repeated those
+    # three names, so a new machine silently fell through to the BOTTOM row —
+    # present, but no longer one of the Lucys. That is the same shape as the
+    # fleet roster being nine hand-maintained literals, which is what made
+    # Lucy 3's first week expensive. Lucy 5 needs no edit here: add the MEMBERS
+    # entry above and it lands in the top row, in badge order.
     UNASSIGNED_CARD = {"name": "Unassigned", "emoji": "🔍", "is_unassigned": True}
     PACK_COLS = 3
     _by_name = {m["name"]: m for m in MEMBERS}
-    _top = [_by_name.get("Lucy 1"), _by_name.get("Lucy 2"),
-            _by_name.get("Lucy 3")]
-    _top = [c for c in _top if c]
-    _placed = {"Lucy 1", "Lucy 2", "Lucy 3", "Office Operations"}
+    _top = sorted((m for m in MEMBERS if m["name"].startswith("Lucy ")),
+                  key=lambda m: m.get("badge") or m["name"])
+    _placed = {m["name"] for m in _top} | {"Office Operations"}
     _bottom = [m for m in MEMBERS if m["name"] not in _placed]
     if any(not r.get("assignees") for r in AUTOMATED_REPORTS):
         _bottom.append(UNASSIGNED_CARD)
