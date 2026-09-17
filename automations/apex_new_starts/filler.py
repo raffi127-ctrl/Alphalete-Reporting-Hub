@@ -1271,8 +1271,12 @@ _JS = r"""
    }
    var out=['<b style="font-size:14px">'+REPORT.length+' of '+D.length+
             ' run \u00b7 %(week)s</b>'];
+   /* NAMED, not counted. Whoever ran it has the OBCL open beside Apex and
+      ticks "Added to APEX" as they go, so the list of who to tick is the
+      useful thing (Megan, 2026-09-17). */
    if(done.length) out.push('<b style="color:#0F766E">'+done.length+
-     ' now Active, off Pending</b>');
+     ' now Active, off Pending \u2014 tick these on the OBCL:</b><br>'+
+     done.join('<br>'));
    if(pend.length) out.push('<b style="color:#b00">Still Pending ('+pend.length+
      '):</b> '+pend.join(', ')+' \u2014 something on the record is incomplete');
    if(failed.length) out.push('<b style="color:#b00">Did not finish ('+
