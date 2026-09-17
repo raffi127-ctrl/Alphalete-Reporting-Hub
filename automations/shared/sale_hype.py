@@ -29,8 +29,13 @@ METRIC_LABEL = {"Int": "Int", "Int Up": "Up", "DTV": "DTV", "NL": "NL"}
 
 # THE HOUSE VOICE. "Heck yeah", "found the money", "Snicklepop", "Closers!!"
 # and "WINNER" are what this company's channels already say when somebody
-# sells, with the fries and paw-print emoji currently doing the rounds
-# (Megan, 2026-09-16).
+# sells, with the paw-print emoji currently doing the rounds (Megan,
+# 2026-09-16).
+#
+# NO FRIES. It went in with the paws and came straight back out -- it carries
+# a meaning in current slang that nobody wants attached to a rep's name, and
+# neither we nor they would be there to explain it. Not a close call, and not
+# one to relitigate: a test refuses it.
 #
 # "CLOSER", SINGULAR -- Megan was explicit. The line is about the one rep who
 # just sold, not the room; the plural reads like a greeting to everybody and
@@ -45,7 +50,7 @@ HYPE_REGULAR = (
     "WINNER!! {first} is on the board :fire:",
     "{first} is on the board! Who's next :eyes::eyes::eyes:",
     "{first} on the board. No complacency :eyes:",
-    "That's {first} on the board :fries:",
+    "That's {first} on the board :100:",
     "{first} came to play :paw_prints:",
     "Another one for {first} :fire:",
     "{first} keeps going :chart_with_upwards_trend:",
@@ -59,7 +64,7 @@ HYPE_REGULAR = (
 HYPE_LARGE = (
     "{first}, TELL US!! :fire::moneybag::fire:",
     "Heck YEAH {first}!! :fire::fire:",
-    "{first} FOUND THE MONEY!! :moneybag::fries:",
+    "{first} FOUND THE MONEY!! :moneybag::moneybag:",
     "Snicklepop!! {first} is rolling :zap::moneybag:",
     "CLOSER!! {first} :fire::moneybag:",
     "WINNER!! {first} :paw_prints::fire:",
@@ -77,7 +82,7 @@ HYPE_SUPER = (
     "{first}, PLEASE TELL US!!!! :money_mouth_face::fire:",
     "SNICKLEPOP!!! {first}!!! :zap::fire:",
     "HECK YEAH {first}!!! :fire::money_mouth_face::fire:",
-    "{first} FOUND THE MONEY!!! :moneybag::fries::moneybag:",
+    "{first} FOUND THE MONEY!!! :moneybag::100::moneybag:",
     "CLOSER!!! {first}!!! :fire::money_mouth_face::fire:",
     "WINNER!!! WINNER!!! {first} :paw_prints::money_mouth_face:",
     "{first}!!! WHO'S NEXT :eyes::eyes::eyes:",
@@ -278,7 +283,7 @@ class _Box(Shape):
         "WINNER!! {first} closed one :fire:",
         "{first} closed one! Who's next :eyes::eyes::eyes:",
         "{first} closed one. No complacency :eyes:",
-        "That's another for {first} :fries:",
+        "That's another for {first} :100:",
         "{first} came to play :paw_prints:",
         "Another contract for {first} :fire:",
         "{first} keeps going :chart_with_upwards_trend:",

@@ -1935,15 +1935,23 @@ class TheSaleLinesSoundLikeTheCompany(unittest.TestCase):
         everything stops being a signal."""
         for campaign in ("att", "b2b_box"):
             joined = " ".join(sum(self._pools(campaign), ()))
-            for emoji in (":fries:", ":paw_prints:"):
-                self.assertIn(emoji, joined, "%s / %s" % (campaign, emoji))
+            self.assertIn(":paw_prints:", joined, campaign)
+
+    def test_the_fries_emoji_never_comes_back(self):
+        """It went in with the paws and came straight back out (Megan,
+        2026-09-16). It carries a meaning in current slang that nobody wants
+        attached to a rep's name, and neither we nor they would be there to
+        explain it. Not one to relitigate."""
+        for campaign in ("att", "nds", "b2b_box"):
+            joined = " ".join(sum(self._pools(campaign), ()))
+            self.assertNotIn(":fries:", joined, campaign)
+            self.assertNotIn("\U0001F35F", joined, campaign)
 
     def test_no_emoji_is_on_every_single_line(self):
         for campaign in ("att", "b2b_box"):
             for pool in self._pools(campaign):
-                for emoji in (":fries:", ":paw_prints:"):
-                    hits = sum(1 for l in pool if emoji in l)
-                    self.assertLess(hits, len(pool), "%s everywhere" % emoji)
+                hits = sum(1 for l in pool if ":paw_prints:" in l)
+                self.assertLess(hits, len(pool), "paws everywhere")
 
     def test_the_ribbing_lands_on_ordinary_days_only(self):
         """Megan 2026-09-16: "joke about not getting complacent".
