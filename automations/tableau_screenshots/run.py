@@ -794,6 +794,11 @@ def main(argv=None) -> int:
                     help="Where to write PNGs (default: output/tableau_screenshots).")
     args = ap.parse_args(argv)
 
+    # One run, one budget for retrying reads that never reached Slack (see
+    # slack_post.TRANSPORT_RETRY_BUDGET). Module state, so a second main() in
+    # the same process starts fresh instead of inheriting a spent budget.
+    sp.reset_transport_budget()
+
     # --new-thread creates a brand-new parent, so there are no old replies under
     # it to clear — --replace would be a silent no-op, and the pair reads like it
     # means "replace the old thread", which is the opposite of what happens.
