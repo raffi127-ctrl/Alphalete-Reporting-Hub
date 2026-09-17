@@ -22,6 +22,29 @@ if pgrep -f "automations.box_order_log.run_owner" > /dev/null 2>&1; then
     exit 0
 fi
 
+# ---- SELF-UPDATE FROM GITHUB ------------------------------------------------
+# Same block, same reason, as the twin wrapper box_order_log.sh — which got it
+# on 2026-09-17 while THIS one was overlooked, and that is the whole story of
+# that afternoon's ticket. SCI turned the view's Contract ID / Account Id
+# filters into free-text boxes, the release called them 'absent', the strict
+# filter gate aborted both owner pulls at 08:30, and the fix was already on
+# GitHub. Carlos's job pulled it and recovered on its next pass; this one kept
+# running the code the mini booted with, so Roshan and Abel got nothing and the
+# only way back was a human running `lucy update` by hand at 17:30.
+#
+# The Mini Control queue can't be the deploy channel here: it is a
+# single-threaded poller that sits blocked for hours behind one long report, and
+# a 7:00 job must not wait on it to pick up a fix.
+#
+# Best-effort and --ff-only on purpose: a failed pull leaves yesterday's code
+# running rather than skipping the morning. perl alarm = portable timeout (macOS
+# ships no `timeout`); a self-update must never outlive 60s, because a hung pull
+# here would eat the pass before the owner loop below it.
+if [ -d .git ]; then
+  perl -e 'alarm 60; exec @ARGV' git pull --ff-only --autostash --quiet origin main 2>/dev/null || true
+fi
+# -----------------------------------------------------------------------------
+
 VENV_PY=".venv/bin/python3.14"
 [ -x "$VENV_PY" ] || VENV_PY=".venv/bin/python"
 LOG_DIR="output/logs"
