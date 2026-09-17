@@ -461,5 +461,17 @@ class UnlabelledTextBoxTest(unittest.TestCase):
         self.assertIsNone(window._text_filter(viz, "Contract ID"))
 
 
+class QueryBoxLabelTest(unittest.TestCase):
+    """09:25 probe: textarea.QueryBox labelled 'Filter Account Id Inclusive'."""
+
+    def test_wrapped_label_matches(self):
+        T = TextBoxFilterTest
+        box = T.Box("Filter Account Id Inclusive")
+        viz = T.Viz([T.Box("Start Date", "8/1/2026"),
+                     T.Box("Filter Business Name Inclusive"), box])
+        self.assertIs(window._text_filter(viz, "Account Id"), box)
+        self.assertIsNone(window._text_filter(viz, "Contract ID"))
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
