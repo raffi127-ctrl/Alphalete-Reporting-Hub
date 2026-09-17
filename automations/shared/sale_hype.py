@@ -174,11 +174,13 @@ class Shape:
 
 
 class _Att(Shape):
-    # Above the top tier for AT&T: ten lines, or three Internet sales with
-    # the five that already make it "super". The top tier is Int + 5 NL, so
-    # this is a day roughly twice that.
-    LEGEND_LINES = 10
-    LEGEND_INT = 3
+    # THE GIF BAR, and it has to be rare enough to mean something. The best
+    # AT&T day across every office on 2026-09-16 was 6 wireless lines, and
+    # nobody reached 8 -- so twelve lines, or four Internet sales alongside
+    # the five that already make it "super", is a day well beyond anything
+    # this week produced. Same rule as Box's: not a fourth tier, just a gif.
+    LEGEND_LINES = 12
+    LEGEND_INT = 4
 
     def above_top(self, metrics):
         nl = int(metrics.get("NL", 0) or 0)
@@ -283,12 +285,23 @@ class _Box(Shape):
         "{first} just closed one :moneybag:",
     )
 
-    # ABOVE THE TOP TIER, measured against a real day (2026-09-16): across
-    # Ryan's, Carlos's and Roshan's offices, 3 reps of 27 clear this. Brianna
-    # Scott's six sales and 610,000 kWh do; Erendira's four sales and 170,000
-    # do not, which is about where "enormous" should sit.
-    LEGEND_VOLUME = 250000
-    LEGEND_HUGE = 3
+    # THE GIF BAR. NOT a fourth tier -- Box has three, which is Carlos's rule
+    # and stays that way. A rep past this still gets a HUGE line; the only
+    # difference is a gif hangs under it.
+    #
+    # "The gifs should be SUPER HARD to get from lucy" (Megan, 2026-09-16),
+    # and the first bar was not: 250,000 caught 3 reps of 27 on an ordinary
+    # Wednesday. Measured against that same day --
+    #
+    #    250,000 kWh -> 3 reps     500,000 kWh -> 1 rep
+    #    400,000 kWh -> 2 reps     750,000 kWh -> 0 reps
+    #    4 huge      -> 1 rep      5 huge      -> 0 reps
+    #
+    # -- 500,000 in a day is the one that picks out a genuine standout and
+    # nobody else. Brianna Scott's six sales and 610,000 kWh clear it; Kyara
+    # Hurtado's 424,272, second best in the company, does not.
+    LEGEND_VOLUME = 500000
+    LEGEND_HUGE = 5
 
     def above_top(self, metrics):
         return (int(metrics.get("Volume", 0) or 0) >= self.LEGEND_VOLUME

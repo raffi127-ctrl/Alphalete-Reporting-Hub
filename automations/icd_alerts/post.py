@@ -617,6 +617,73 @@ def _loads(cell: str) -> Optional[Dict[str, int]]:
         return None
 
 
+# --- how many gifs one channel may see in a day ------------------------------
+#
+# Megan, 2026-09-16: "a channel should only see 2-3 gifs a day max."
+#
+# THE THRESHOLD ALONE CANNOT DO THIS. A rep who clears the bar stays above it
+# for the rest of the day, so every later sale of theirs would carry another
+# gif -- Brianna Scott's six sales would have been six gifs, all for the same
+# standout day. And two big reps in one office doubles that again.
+#
+# So the bar decides WHO earns one and this decides HOW MANY the room sees.
+# Both are needed: a rare gif posted eight times is not rare.
+GIF_BUDGET = 3
+GIFS_SENT_PATH = (Path.home() / ".config" / "recruiting-report"
+                  / "icd_gifs_sent.json")
+
+
+def _gifs_sent(day: dt.date, office: str) -> int:
+    try:
+        return int(json.loads(GIFS_SENT_PATH.read_text())
+                   .get("%s|%s" % (day.isoformat(), office), 0))
+    except (OSError, ValueError, AttributeError):
+        return 0
+
+
+def _record_gifs(day: dt.date, office: str, n: int) -> None:
+    """COUNTED ONLY WHEN ONE ACTUALLY WENT OUT. Counting at render time would
+    spend the budget on a dry run, and a preview would silence the real
+    thing."""
+    if n <= 0:
+        return
+    key = "%s|%s" % (day.isoformat(), office)
+    try:
+        seen = json.loads(GIFS_SENT_PATH.read_text())
+    except (OSError, ValueError):
+        seen = {}
+    seen[key] = int(seen.get(key, 0)) + n
+    # Only today's rows -- this file must not grow forever on a machine
+    # nobody tidies.
+    today = day.isoformat()
+    seen = {k: v for k, v in seen.items() if k.startswith(today)}
+    try:
+        GIFS_SENT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        GIFS_SENT_PATH.write_text(json.dumps(seen, indent=2, sort_keys=True))
+    except OSError:
+        pass
+
+
+def _within_gif_budget(lines: List[str], day: dt.date,
+                       office: str) -> Tuple[List[str], int]:
+    """Strip the gif off any line past this office's daily allowance.
+
+    The LINE always survives -- only the gif is dropped. A rep whose sale
+    happens to be the fourth of the day still gets announced.
+    """
+    left = GIF_BUDGET - _gifs_sent(day, office)
+    out, used = [], 0
+    for line in lines:
+        if "\n" in line:
+            if left > 0:
+                left -= 1
+                used += 1
+            else:
+                line = line.split("\n", 1)[0]
+        out.append(line)
+    return out, used
+
+
 def run(day: Optional[dt.date] = None, *, send: bool = False,
         only: Optional[str] = None, log=print) -> Dict:
     day = day or dt.date.today()
@@ -663,12 +730,13 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                             if len(row) > COL_LAST_POSTED_SALES else "")
         sold, merged_sales, sales_baseline = decide_sales(
             sales, last_sales, office.campaign)
-        hype_lines = []
+        hype_lines, gifs_used = [], 0
         if sold:
             from automations.shared import sale_hype as H
             hype_lines = [H.hype(show(rep) if show else rep,
                                  sales.get(rep) or {}, day, office.campaign)
                           for rep in sold]
+            hype_lines, gifs_used = _within_gif_budget(hype_lines, day, key)
 
         if baseline:
             log("%-10s first relay of %s -- recording %d rep(s), posting nothing"
@@ -707,6 +775,8 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                 try:
                     _slack(channel.id, text)
                     posted += len(lines)
+                    _record_gifs(day, key, gifs_used)
+                    gifs_used = 0        # one room's worth, not one per room
                 except Exception as e:  # noqa: BLE001
                     log("%-10s FAILED to post to %s: %s: %s"
                         % (key, channel.name, type(e).__name__, str(e)[:120]))

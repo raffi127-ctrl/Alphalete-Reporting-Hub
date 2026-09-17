@@ -2134,17 +2134,25 @@ class TheGifIsForADayAboveTheTopTier(unittest.TestCase):
         self.assertEqual(sh.tier(m), "super")
         self.assertFalse(sh.above_top(m))
 
-    def test_a_genuinely_enormous_day_does(self):
+    def test_only_a_genuinely_enormous_day_does(self):
+        """Brianna's 610,000 clears it. Jonathan's 320,000 -- a single
+        contract bigger than most reps' whole week -- does not, and that is
+        the bar Megan asked for when she said SUPER HARD."""
         from automations.shared import sale_hype as H
         sh = H.shape("b2b_box")
         self.assertTrue(sh.above_top(
             {"Sales": 6, "Volume": 610000, "Big": 4, "Huge": 4}))
-        self.assertTrue(sh.above_top(
+        self.assertFalse(sh.above_top(
             {"Sales": 1, "Volume": 320000, "Big": 1, "Huge": 1}))
 
-    def test_it_is_rare_on_a_real_day(self):
-        """Three of these twenty-seven reps, measured 2026-09-16 across
-        Ryan's, Carlos's and Roshan's offices."""
+    def test_it_is_SUPER_HARD_on_a_real_day(self):
+        """Megan: "the gifs should be SUPER HARD to get from lucy".
+
+        Every Box rep across Ryan's, Carlos's and Roshan's offices on
+        2026-09-16. Exactly ONE clears it -- Brianna Scott's 610,000 kWh.
+        Kyara Hurtado's 424,272, the second best day in the company, does
+        not.
+        """
         from automations.shared import sale_hype as H
         sh = H.shape("b2b_box")
         real = [610000, 424272, 320000, 215600, 170000, 107412, 87864, 75000,
@@ -2152,7 +2160,27 @@ class TheGifIsForADayAboveTheTopTier(unittest.TestCase):
                 25000, 25000, 19716, 17520, 17500, 16308, 15576, 14000, 10000,
                 4392]
         hit = sum(1 for v in real if sh.above_top({"Volume": v, "Huge": 1}))
-        self.assertEqual(hit, 3)
+        self.assertEqual(hit, 1, "a gif nobody struggles for is wallpaper")
+
+    def test_box_still_has_exactly_three_tiers(self):
+        """The gif is NOT a fourth tier. Carlos set three -- any sale, a
+        24-month contract, and one at 20k kWh -- and a rep past the gif bar
+        still gets the same HUGE line, with a gif under it."""
+        from automations.shared import sale_hype as H
+        sh = H.shape("b2b_box")
+        tiers = {sh.tier({"Sales": 1, "Big": 0, "Huge": 0}),
+                 sh.tier({"Sales": 1, "Big": 1, "Huge": 0}),
+                 sh.tier({"Sales": 1, "Big": 1, "Huge": 1}),
+                 sh.tier({"Sales": 6, "Volume": 610000, "Big": 4, "Huge": 4})}
+        self.assertEqual(tiers, {"regular", "large", "super"})
+
+    def test_the_att_bar_is_past_anything_this_week(self):
+        """The best AT&T day across every office on 2026-09-16 was six
+        wireless lines, and nobody reached eight."""
+        from automations.shared import sale_hype as H
+        sh = H.shape("att")
+        self.assertFalse(sh.above_top({"Int": 1, "NL": 6}))
+        self.assertTrue(sh.above_top({"Int": 1, "NL": 12}))
 
     def test_a_campaign_with_no_bar_never_fires_one(self):
         """Rather than inheriting somebody else's idea of enormous."""
@@ -2175,3 +2203,72 @@ class TheGifIsForADayAboveTheTopTier(unittest.TestCase):
                           {"Sales": 6, "Volume": 610000, "Big": 4, "Huge": 4},
                           self.DAY, "b2b_box")
         self.assertIn("\nhttps://giphy.com/x", said)
+
+
+class AChannelSeesAtMostThreeGifsADay(unittest.TestCase):
+    """Megan 2026-09-16: "a channel should only see 2-3 gifs a day max."
+
+    THE THRESHOLD ALONE CANNOT DO THIS. A rep who clears the bar stays above
+    it for the rest of the day, so every later sale of theirs carries another
+    gif -- Brianna Scott's six sales would have been six gifs for one standout
+    day. Two big reps in an office doubles it again. A rare gif posted eight
+    times is not rare.
+    """
+
+    def setUp(self):
+        import datetime as _dt, json, pathlib, tempfile
+        from automations.icd_alerts import post as P
+        self.P, self.DAY = P, _dt.date(2026, 9, 16)
+        self.path = pathlib.Path(tempfile.mkdtemp()) / "gifs.json"
+        self.p = mock.patch.object(P, "GIFS_SENT_PATH", self.path)
+        self.p.start()
+
+    def tearDown(self):
+        self.p.stop()
+
+    def _lines(self, n):
+        return ["WINNER!!! MAX\nhttps://giphy.com/x" for _ in range(n)]
+
+    def test_the_first_three_keep_their_gif(self):
+        out, used = self.P._within_gif_budget(self._lines(3), self.DAY, "ryan")
+        self.assertEqual(used, 3)
+        self.assertTrue(all("\n" in l for l in out))
+
+    def test_the_fourth_loses_the_gif_but_keeps_the_line(self):
+        """A rep whose sale happens to be the fourth of the day still gets
+        announced."""
+        out, used = self.P._within_gif_budget(self._lines(5), self.DAY, "ryan")
+        self.assertEqual(used, 3)
+        self.assertEqual(sum(1 for l in out if "\n" in l), 3)
+        self.assertEqual(len(out), 5, "a line was dropped, not just its gif")
+        self.assertTrue(all(l.startswith("WINNER") for l in out))
+
+    def test_the_budget_carries_across_sweeps(self):
+        """The poster runs every minute; a per-run cap would be no cap."""
+        self.P._record_gifs(self.DAY, "ryan", 3)
+        _out, used = self.P._within_gif_budget(self._lines(2), self.DAY, "ryan")
+        self.assertEqual(used, 0)
+
+    def test_each_office_has_its_own_allowance(self):
+        self.P._record_gifs(self.DAY, "ryan", 3)
+        _out, used = self.P._within_gif_budget(self._lines(1), self.DAY,
+                                               "roshan")
+        self.assertEqual(used, 1)
+
+    def test_it_is_spent_only_when_one_actually_goes_out(self):
+        """Counting at render time would spend the budget on a dry run, and a
+        preview would silence the real thing."""
+        import inspect
+        src = inspect.getsource(self.P.run)
+        self.assertLess(src.index("_slack(channel.id, text)"),
+                        src.index("_record_gifs(day, key, gifs_used)"))
+
+    def test_two_rooms_for_one_office_spend_one_allowance(self):
+        """Carlos posts to two channels. The same sale reaching both is one
+        gif's worth, not two."""
+        import inspect
+        src = inspect.getsource(self.P.run)
+        self.assertIn("gifs_used = 0", src)
+
+    def test_a_missing_file_is_a_full_allowance(self):
+        self.assertEqual(self.P._gifs_sent(self.DAY, "nobody"), 0)
