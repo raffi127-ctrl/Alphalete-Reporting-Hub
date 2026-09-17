@@ -750,7 +750,7 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
     # the board and Blue Ink again (Megan, 2026-09-17).
     from automations.apex_new_starts import batch as BATCH
     BATCH.save(week=_week, build=build, notice=_notice, start=_start,
-               people=people)
+               people=people, out_dir=OUTPUT_DIR)
     if _to_clipboard(setup[len("javascript:"):]):
         _log("This week's setup is on your clipboard.")
         _log("Open Apex, then click your Fill Apex bookmark. That is all.")

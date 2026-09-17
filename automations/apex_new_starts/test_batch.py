@@ -18,6 +18,17 @@ def _write(tmp_path, monkeypatch, people=PEOPLE):
                people=people)
 
 
+def test_the_batch_follows_the_output_directory(tmp_path):
+    """A hardcoded path in a module a test can reach is a path a test will
+    write to: the suite put two people called "A" and "B" into the live batch
+    and they turned up on the card (Megan, 2026-09-17)."""
+    batch.save(week="WE 9.20", build="x", notice="", start="2026-09-14",
+               people=PEOPLE, out_dir=tmp_path)
+    assert (tmp_path / batch.NAME).exists()
+    assert batch.load(tmp_path)["week"] == "WE 9.20"
+    assert batch.names(tmp_path) == ["Paris Carroll", "Bailey Soda"]
+
+
 def test_the_card_can_list_who_was_pulled(tmp_path, monkeypatch):
     _write(tmp_path, monkeypatch)
     assert batch.names() == ["Paris Carroll", "Bailey Soda"]
