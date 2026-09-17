@@ -582,7 +582,26 @@ _JS = r"""
          var picked=(vf&&d[i][vf]!==undefined)?d[i][vf]
                     :(d[i].Value!==undefined?d[i].Value
                       :(d[i].value!==undefined?d[i].value:d[i]));
-         w.value(picked);
+         /* SELECT the row, do not just set a value. On a Kendo ComboBox
+            value() accepts free text and leaves dataItem() null -- which is
+            the whole "Marital Status is Required" saga: the box showed the
+            words, nothing was selected, and Apex copied the words into
+            MaritalStatusID. select() is the call that picks a row
+            (Megan, 2026-09-17). */
+         var chose=false;
+         if(w.select){
+           try{ w.select(i); chose=true; }catch(e){}
+           if(!chose||!(w.dataItem&&w.dataItem())){
+             try{
+               w.select(function(di){
+                 var dt=(tf&&di[tf]!==undefined)?di[tf]:(di.Text||di.text||di);
+                 return norm(dt)===t;
+               });
+               chose=true;
+             }catch(e){}
+           }
+         }
+         if(!(w.dataItem&&w.dataItem())) w.value(picked);
          w.trigger('change'); settle(el); putIdBeside(el,picked);
          /* Text in the box is not a selection. If nothing got selected, say
             so and let the click path have it -- that is the path that makes
@@ -868,6 +887,11 @@ _JS = r"""
  window.__ansShape=fieldShape;
  window.__ansPutId=putIdBeside;
  window.__ansClearBadId=clearBadId;
+ window.__ansSelected=function(){
+   var el=fieldFor('Marital Status'), w=el?kw(el):null, d=null;
+   try{ d=(w&&w.dataItem)?w.dataItem():null; }catch(e){}
+   return d? (d.MaritalStatusID!==undefined?d.MaritalStatusID:d) : null;
+ };
  window.__ansKendoSet=kendoSet;
  function roleShape(){
    /* What the Security Roles list is actually made of, for when none of the
@@ -2089,8 +2113,17 @@ _JS = r"""
        window.__ansNow={running:true,name:D[j].name,at:j+1}; refreshChrome();
        say('<b>'+D[j].name+'</b> ('+(j+1)+' of '+D.length+')…');
        var ok=await runPerson(D[j],say);
-       if(!ok){ say('<b style="color:#b00">Stopped.</b> Fix that one, then press '+
-                    'Run again — it picks up from here.'); break; }
+       if(!ok){
+         /* CARRY ON. One field Apex will not take was stopping all seventeen
+            people, so every attempt at it cost a whole re-run -- which is
+            what made this so miserable (Megan, 2026-09-17). The one that
+            failed is named in the rundown at the end and left for a person;
+            everybody behind them still goes in. */
+         say('<span style="color:#b00">'+D[j].name+' needs a hand \u2014 moving '+
+             'on to the next one.</span>');
+         if(j===I){ I=j+1; try{ localStorage.setItem(KEY,String(I)); }catch(e){} }
+         continue;
+       }
        markDone(D[j]);
        if(j===I){ I=j+1; try{ localStorage.setItem(KEY,String(I)); }catch(e){} }
        /* Trying one person is a check, not a run: say what happened and get

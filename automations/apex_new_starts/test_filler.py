@@ -2800,3 +2800,79 @@ def test_junk_left_in_an_id_box_is_cleared_before_trying_again(page, tmp_path):
     page.evaluate("""() => { document.getElementById('msid').value = '12'; }""")
     page.evaluate("() => window.__ansClearBadId(document.getElementById('ms'))")
     assert page.input_value("#msid") == "12", "a real id is left alone"
+
+
+def test_one_bad_record_does_not_stop_the_week(page, tmp_path):
+    """Megan, 2026-09-17: "we're running into the same error over and over and
+    I just keep having to rerun the same thing". One field Apex would not take
+    was stopping all seventeen people, so every attempt at it cost a whole
+    re-run. The one that failed is named at the end; everybody behind them
+    still goes in."""
+    f = tmp_path / "user-profile.html"
+    f.write_text("<h1>x</h1>")
+    page.goto(f.as_uri())
+    page.evaluate("() => localStorage.clear()")
+    people = [{"name": "Dylan Poston", "find": "Poston", "pages": {}},
+              {"name": "Jessica Mora", "find": "Mora", "pages": {}},
+              {"name": "Noe Rocha", "find": "Rocha", "pages": {}}]
+    page.evaluate(filler.build_js(people, "WE 9.20")[len("javascript:"):])
+
+    page.locator("#ansrun").click()
+    page.locator("#ansgo").click()
+    page.wait_for_function(
+        "() => document.getElementById('ansout').innerText.includes('run \\u00b7')",
+        timeout=25000)
+
+    out = page.locator("#ansout").inner_text()
+    # none can finish on a blank page, but it must have TRIED all three
+    assert "3 of 3 run" in out, "it got to the end of the list"
+    for name in ("Dylan Poston", "Jessica Mora", "Noe Rocha"):
+        assert name in out, f"{name} is accounted for"
+
+
+def test_a_combobox_row_is_selected_not_just_valued(page, tmp_path):
+    """On a Kendo ComboBox, value() accepts free text and leaves dataItem()
+    null -- the box shows the words, nothing is selected, and Apex copies the
+    words into the ...ID. select() is the call that picks a row. Five rounds
+    of "Marital Status is Required" were this (Megan, 2026-09-17)."""
+    f = tmp_path / "bank-info.html"
+    f.write_text("""<h1>Tax</h1>
+      <div class="form-group">
+        <label for="ms">Marital Status</label>
+        <input type="text" id="ms">
+        <input type="hidden" ng-model="vm.bank.MaritalStatusID" id="msid">
+        <span class="k-widget k-combobox"><input class="k-input"></span>
+      </div>""")
+    page.goto(f.as_uri())
+    page.evaluate("""() => {
+      window.jQuery = (el) => ({data: () => null, 0: el, length: 1});
+      const items = [{MaritalStatusID: 4, Name: 'Single or Married filing separately'},
+                     {MaritalStatusID: 12, Name: 'Married filing jointly'}];
+      let selected = null;
+      const w = {
+        options: {dataTextField: 'Name', dataValueField: 'MaritalStatusID'},
+        dataSource: {data: () => items},
+        // value() behaves like the real thing: it takes anything and
+        // selects NOTHING
+        value: () => null,
+        select: (which) => {
+          selected = (typeof which === 'number') ? items[which]
+                    : items.find(which) || null;
+          window.__selectedBy = (typeof which === 'number') ? 'index' : 'predicate';
+        },
+        dataItem: () => selected,
+        trigger: () => {},
+      };
+      window.kendo = {widgetInstance: () => w};
+      window.angular = {element: () => ({scope: () => ({$eval(){}, $applyAsync(){}})})};
+    }""")
+    page.evaluate(filler.build_js(
+        [{"name": "Dylan Poston", "find": "Poston", "pages": {}}],
+        "WE 9.20")[len("javascript:"):])
+
+    ok = page.evaluate("""async () => await window.__ansKendoSet(
+        document.getElementById('ms'), 'Married filing jointly')""")
+    assert ok is True
+    assert page.evaluate("() => window.__ansSelected()") == 12, \
+        "the row itself is selected, so Apex has an id to submit"
+    assert page.input_value("#msid") == "12", "the NUMBER, not the words"
