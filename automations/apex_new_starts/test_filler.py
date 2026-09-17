@@ -2775,3 +2775,28 @@ def test_a_combobox_with_ids_is_selected_by_value(page, tmp_path):
         """async () => await window.__ansKendoSet(
              document.getElementById('ms'), 'Married filing jointly')""") is True
     assert page.input_value("#msid") == "12", "the NUMBER, not the words"
+
+
+def test_junk_left_in_an_id_box_is_cleared_before_trying_again(page, tmp_path):
+    """An ...ID holding WORDS is garbage -- mine, from writing a ComboBox's
+    text into it. It survives on the record and gets submitted again, so it
+    is blanked before a fresh attempt (Megan, 2026-09-17)."""
+    f = tmp_path / "bank-info.html"
+    f.write_text("""<h1>Tax</h1>
+      <div class="form-group">
+        <label for="ms">Marital Status</label>
+        <input type="text" id="ms">
+        <input type="hidden" ng-model="vm.bank.MaritalStatusID" id="msid"
+               value="Married filing jointly or Qualifying">
+      </div>""")
+    page.goto(f.as_uri())
+    page.evaluate(filler.build_js(
+        [{"name": "Dylan Poston", "find": "Poston", "pages": {}}],
+        "WE 9.20")[len("javascript:"):])
+
+    page.evaluate("() => window.__ansClearBadId(document.getElementById('ms'))")
+    assert page.input_value("#msid") == "", "words cleared out"
+
+    page.evaluate("""() => { document.getElementById('msid').value = '12'; }""")
+    page.evaluate("() => window.__ansClearBadId(document.getElementById('ms'))")
+    assert page.input_value("#msid") == "12", "a real id is left alone"

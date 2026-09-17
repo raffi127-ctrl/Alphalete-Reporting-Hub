@@ -388,7 +388,17 @@ _JS = r"""
    var before=openLists();
    /* A combobox takes typing; a dropdown list does not. Try typing first when
       the widget has a real text box inside it. */
-   if(/k-combobox/.test(sp.className||'')&&await typeInto(sp,v,el)) return true;
+   /* Typing into a ComboBox sets its TEXT and selects nothing -- dataItem()
+      stays null and Apex copies the words into the ...ID, which is the whole
+      "Marital Status is Required" saga (Megan, 2026-09-17). So a typed value
+      only counts if something actually got selected; otherwise fall through
+      and click the row like a person. */
+   if(/k-combobox/.test(sp.className||'')&&await typeInto(sp,v,el)){
+     var wt=kw(el), it=null;
+     try{ it=(wt&&wt.dataItem)?wt.dataItem():null; }catch(e){}
+     if(it) return true;
+     TRACE.push('typed but nothing selected — clicking instead');
+   }
    fire(sp,'mousedown'); fire(sp,'mouseup'); fire(sp,'click');
    /* Only lists that appeared BECAUSE of the click. Taking every visible <ul>
       swept up the site's own nav menus -- three of them, present at 0ms -- and
@@ -486,6 +496,28 @@ _JS = r"""
    if(b===null) return true;              /* nothing bound: nothing to check */
    if(!String(b).trim()) return false;
    return norm(b)!==norm(v);
+ }
+ function clearBadId(el){
+   /* An ...ID left holding WORDS is garbage -- my own, from writing a
+      ComboBox's text into it. It survives on the record and gets submitted
+      again, so blank it before a fresh attempt (Megan, 2026-09-17). */
+   var box=el, d=0;
+   while(box&&d<5&&!(box.querySelector&&box.querySelector('input[ng-model]'))){
+     box=box.parentElement; d++;
+   }
+   if(!box||!box.querySelectorAll) return;
+   var ins=box.querySelectorAll('input[ng-model]'), i, m, val;
+   for(i=0;i<ins.length;i++){
+     m=ins[i].getAttribute('ng-model')||'';
+     if(!/id$/i.test(m)) continue;
+     val=String(ins[i].value||'');
+     if(!val||/^[0-9]+$/.test(val)||/^[0-9a-f]{8}-/i.test(val)) continue;
+     ins[i].value='';
+     ins[i].dispatchEvent(new Event('input',{bubbles:true}));
+     ins[i].dispatchEvent(new Event('change',{bubbles:true}));
+     ngApply(ins[i]);
+     TRACE.push('cleared junk out of '+m);
+   }
  }
  function putIdBeside(el,id){
    /* Apex submits an ...ID, and the widget only holds the object. ng-blur is
@@ -664,6 +696,7 @@ _JS = r"""
    return null;
  }
  async function setVal(el,v){
+   clearBadId(el);
    if(await kendoSet(el,v)) return true;
    /* A <select> that Kendo has taken over is hidden and driven by the widget.
       Setting its .value directly moves the select and nothing else -- the
@@ -834,6 +867,7 @@ _JS = r"""
  }
  window.__ansShape=fieldShape;
  window.__ansPutId=putIdBeside;
+ window.__ansClearBadId=clearBadId;
  window.__ansKendoSet=kendoSet;
  function roleShape(){
    /* What the Security Roles list is actually made of, for when none of the
