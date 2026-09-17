@@ -3,11 +3,18 @@
 How to turn a fresh Mac into an autonomous report runner like Lucy 1 (mini) or
 Lucy 2 (laptop). Distilled from the Lucy 2 build (2026-07-07).
 
-**The floor:** only THREE steps truly need a human at the machine — the installer
-paste, the Google sign-in, and the ownerville "verify you're human" clear
-(Cloudflare + OAuth are bot-detection; they can't be remoted). Everything else is
-creds pastes + `install_agent`, and after setup the machine is driven remotely
-with `lucy` / `lucy2` / `--machine "<name>"`.
+> **Superseded for NEW machines by `workflows/lucy4-provisioning.md`
+> (2026-09-17).** Kept for the per-step detail. Every "a human must clear
+> Cloudflare" line below was corrected on 2026-09-02 — see
+> `resources/lucy-login-standard.md`, which is authoritative.
+
+**The floor:** only TWO steps truly need a human at the machine — the installer
+paste and the Google sign-in (OAuth is bot-detection and can't be remoted), plus
+the Messages grant if this box will ever send texts. **The ownerville login is
+NOT one of them:** the code types it, and Cloudflare clears itself as long as the
+20-30s pre-submit pause is left alone. Everything else is creds pastes +
+`install_agent`, and after setup the machine is driven remotely with `lucy` /
+`lucy2` / `--machine "<name>"`.
 
 Order matters only loosely; do 1–3 first (they need a person), then the rest can
 be finished remotely from your laptop once the poller is up.
@@ -63,9 +70,11 @@ printf 'Lucy N' > .machine-profile
 .venv/bin/python -m automations.day_orchestrator.install_agent mini-control
 .venv/bin/python -m automations.day_orchestrator.install_agent day-orchestrator
 ```
-The **session-holder** opens a browser → log into ownerville and clear the
-**"verify you're human"** check once (step that can't be remoted). AppStream
-auto-logs-in (no seed needed).
+The **session-holder** signs into ownerville by itself — no seed, no human, no
+Turnstile to clear. What you must confirm is that it **exported a session file
+and keeps re-exporting it**: `readiness.session_status()` refuses every report on
+the box when that file is missing or over 20 minutes old. Run `lucy diag` twice,
+six minutes apart, and check the age CYCLES rather than merely being present.
 
 ## 5. Don't-sleep (laptops only)
 A laptop sleeps with the lid closed even with caffeinate. One-time:
@@ -96,8 +105,9 @@ double-post. Each machine sends its own `[Lucy N]` summary email of only its
 reports and stays quiet on days it has none.
 
 ## What still needs a human (irreducible)
-- The ownerville **"verify you're human"** clear (step 4) — bot-detection.
 - The **Google sign-in** (step 2) — OAuth.
+- The **Messages grant**, if the box will ever text — and it is per IDENTITY,
+  so granting it to Terminal does not grant the launchd job.
 - **sudo** and **secret files** — never routed through the shared control queue.
 
 Everything else — updates, reruns, restarts, health, sleep (with NOPASSWD),

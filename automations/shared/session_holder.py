@@ -144,7 +144,22 @@ _MACHINE_MARKER = Path(__file__).resolve().parents[2] / ".machine-profile"
 # making two machines depend on a third. Until every Lucy has its own account,
 # expect some token churn here — that is the known cost of this trade, and it is
 # strictly better than a machine that cannot recover on its own.
-APPSTREAM_HOLD_MACHINES = ("Lucy 1", "Lucy 2", "Lucy 3", "Lucy 4")
+# LUCY 4 IS DELIBERATELY ABSENT UNTIL IT HAS APPSTREAM WORK (2026-09-17).
+# Read the paragraph above literally: the mutual-invalidation mechanism is a
+# same-ACCOUNT problem, and it "returns the moment two machines share an account
+# again". The per-person AppStream migration never happened — every Lucy still
+# signs in as `Lucy Reports` (resources/lucy-login-standard.md), so the three
+# live machines already re-hop ONE account every ~6 min and are living with the
+# token churn that costs. A fourth console on that same account raises the churn
+# on Lucy 1/2/3's LIVE 4am batches and buys nothing while Lucy 4 has no AppStream
+# report assigned to it.
+#
+# So this is a GO-LIVE step, not a provisioning step: add "Lucy 4" here the same
+# day its first AppStream report is routed to it, and watch the other three for a
+# morning. Not holding AppStream does NOT keep Lucy 4 idle — the readiness gate
+# reads the OWNERVILLE export, which its holder does keep warm.
+# Pinned by test_session_holder_appstream.test_lucy_4_is_not_a_holder_yet.
+APPSTREAM_HOLD_MACHINES = ("Lucy 1", "Lucy 2", "Lucy 3")
 # Back-compat for anything importing the old singular name.
 APPSTREAM_HOLD_MACHINE = APPSTREAM_HOLD_MACHINES[0]
 
@@ -152,7 +167,7 @@ APPSTREAM_HOLD_MACHINE = APPSTREAM_HOLD_MACHINES[0]
 # which is all three. Deliberately separate from who HOLDS one: consuming a
 # donated session costs nothing and is what keeps Lucy 1 and Lucy 3 alive;
 # holding a competing console is what broke them.
-APPSTREAM_FLEET_MACHINES = ("Lucy 1", "Lucy 2", "Lucy 3", "Lucy 4")
+APPSTREAM_FLEET_MACHINES = ("Lucy 1", "Lucy 2", "Lucy 3")
 
 # RE-MINT THE rqst TOKEN BEFORE IT DIES, not after (Megan 2026-08-27).
 #

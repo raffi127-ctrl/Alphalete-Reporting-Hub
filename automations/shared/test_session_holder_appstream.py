@@ -32,7 +32,7 @@ from automations.shared import session_holder as sh
 class HoldMachines(unittest.TestCase):
 
     def test_every_lucy_that_runs_appstream_holds_it(self):
-        for m in ("Lucy 1", "Lucy 2", "Lucy 3", "Lucy 4"):
+        for m in ("Lucy 1", "Lucy 2", "Lucy 3"):
             with self.subTest(machine=m):
                 self.assertIn(m, sh.APPSTREAM_HOLD_MACHINES)
 
@@ -50,6 +50,20 @@ class HoldMachines(unittest.TestCase):
         for m in ("Megan laptop", "some-random-mac", "unknown"):
             with self.subTest(machine=m):
                 self.assertNotIn(m, sh.APPSTREAM_HOLD_MACHINES)
+
+    def test_lucy_4_is_not_a_holder_yet(self):
+        """Absence with a reason, pinned so nobody "completes" the roster.
+
+        Every Lucy signs in as the SAME `Lucy Reports` AppStream account, and the
+        module docstring is explicit that mutual token invalidation "returns the
+        moment two machines share an account again". Three consoles re-hopping
+        one account already costs churn; a fourth raises it against Lucy 1/2/3's
+        live 4am batches and buys nothing while Lucy 4 has no AppStream report.
+
+        DELETE THIS TEST at go-live, the same day Lucy 4's first AppStream report
+        is routed to it — not before, and not as a tidy-up."""
+        self.assertNotIn("Lucy 4", sh.APPSTREAM_HOLD_MACHINES)
+        self.assertNotIn("Lucy 4", sh.APPSTREAM_FLEET_MACHINES)
 
     def test_the_old_singular_name_still_resolves(self):
         """Back-compat: anything importing APPSTREAM_HOLD_MACHINE keeps working

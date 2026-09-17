@@ -1,5 +1,11 @@
 # Lucy 3 — provisioning runbook
 
+> **HISTORICAL — do not follow this for a new machine.** Use
+> `workflows/lucy4-provisioning.md`. Step 3 below still implies a person must
+> sign in at the screen to clear Cloudflare; that was corrected on 2026-09-02
+> (`resources/lucy-login-standard.md` is authoritative). Kept because the
+> "why Lucy 3 exists" and gotchas sections are still accurate.
+
 Written 2026-08-20, before the machine exists. When it arrives, any Claude
 session can execute this top to bottom. Owner decisions are marked ⚖️.
 

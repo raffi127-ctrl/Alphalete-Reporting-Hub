@@ -9,9 +9,9 @@
 #
 # Usage (from Slack, on the new machine's Terminal — quote-free on purpose so
 # Slack's smart-quotes can't corrupt it):
-#   curl -fsSL https://raw.githubusercontent.com/raffi127-ctrl/Alphalete-Reporting-Hub/main/deploy/setup_lucy_machine.sh -o /tmp/setup_lucy.sh && bash /tmp/setup_lucy.sh Lucy 3
+#   curl -fsSL https://raw.githubusercontent.com/raffi127-ctrl/Alphalete-Reporting-Hub/main/deploy/setup_lucy_machine.sh -o /tmp/setup_lucy.sh && bash /tmp/setup_lucy.sh Lucy 4
 #
-# The machine name is everything after the script name ("Lucy 3" above).
+# The machine name is everything after the script name ("Lucy 4" above).
 # Asks for the Mac password once (sudo) and a GitHub browser sign-in.
 #
 # Auto-login is deliberately NOT scripted: doing it non-interactively means
@@ -25,7 +25,16 @@
 
 set -u
 
-NAME="${*:-Lucy 3}"
+# NO DEFAULT. This used to fall back to "Lucy 3", so a paste that lost its
+# arguments (Slack line-wrapping is the usual way) would silently provision a
+# brand-new box under an EXISTING machine's name — two runners answering to one
+# identity, one .machine-profile marker each, and every per-machine gate
+# believing whichever wrote last. Refuse instead (Megan 2026-09-17).
+NAME="${*:-}"
+if [ -z "$NAME" ]; then
+    echo "Usage: bash setup_lucy.sh Lucy 4     (the machine name is required)"
+    exit 1
+fi
 MANUAL=()
 
 bold() { printf "\n\033[1m%s\033[0m\n" "$1"; }
@@ -84,6 +93,33 @@ bold "[3/7] Disabling sleep"
 if ! sudo pmset -a sleep 0 displaysleep 0 disksleep 0 womp 1 disablesleep 1; then
     MANUAL+=("System Settings → Energy → turn off 'Put hard disks to sleep' / set sleep to Never")
 fi
+
+# ----- Come back by itself after a power cut. A runner nobody is sitting at
+# is only useful if a blip doesn't end its week.
+bold "[3b] Restart automatically after a power failure"
+sudo pmset -a autorestart 1 >/dev/null 2>&1 \
+    || MANUAL+=("System Settings → Energy → 'Start up automatically after a power failure'")
+
+# ----- Passwordless sudo for pmset/shutdown/reboot, so sleep and reboots can be
+# driven through the queue later. Lucy 2 and Lucy 3 both refuse SSH, so a box
+# with no NOPASSWD entry has NO remote path to these at all — and adding one
+# afterwards needs a person back at the machine, which is the thing this script
+# exists to avoid.
+#
+# VALIDATED BEFORE INSTALL. A malformed file in /etc/sudoers.d breaks sudo for
+# every command on the machine, so it is written to a temp file, checked with
+# `visudo -c`, and only then moved into place.
+bold "[4b] Passwordless sudo for pmset / shutdown / reboot"
+_SUDO_TMP="$(mktemp)"
+printf '%s ALL=(ALL) NOPASSWD: /usr/bin/pmset, /sbin/shutdown, /sbin/reboot\n' \
+    "$(whoami)" > "$_SUDO_TMP"
+if sudo visudo -cf "$_SUDO_TMP" >/dev/null 2>&1; then
+    sudo install -m 440 -o root -g wheel "$_SUDO_TMP" /etc/sudoers.d/lucy-nopasswd \
+        || MANUAL+=("couldn't install /etc/sudoers.d/lucy-nopasswd — remote sleep/reboot won't work")
+else
+    MANUAL+=("sudoers snippet failed validation — NOT installed (this is the safe outcome)")
+fi
+rm -f "$_SUDO_TMP"
 
 # ----- SSH (Remote Login)
 bold "[4/7] Turning on SSH (Remote Login)"
@@ -162,21 +198,37 @@ done
 bold "══════════════════════════════════════"
 bold "✅ '$NAME' base setup done."
 echo ""
-bold "⚠️  REQUIRED — SEED OWNERVILLE BEFORE LEAVING THIS MACHINE"
-echo "Installing the holder just opened an ownerville window on this screen."
-echo "Log in there and clear the 'verify you're human' box. Nothing else is"
-echo "needed — no button to press, it detects the session on its own."
+bold "⚠️  DON'T LEAVE YET — CONFIRM THE HOLDER ACTUALLY EXPORTED A SESSION"
+echo "Installing the holder just started an ownerville login on this screen."
 echo ""
-echo "This is NOT optional and NOT 'later': until it's done, this machine will"
-echo "refuse every scheduled report it is given, with no visible error except"
-echo "one line per pass buried in the orchestrator log. Cloudflare's check is"
-echo "interactive, so a person has to do it once — Screen Sharing counts, but"
-echo "it can never be automated. If the window closed, reopen it with:"
-echo "    lucy restart_holder --machine \"$NAME\""
+echo "NOBODY HAS TO CLEAR A 'VERIFY YOU'RE HUMAN' BOX. That was true once and"
+echo "has been false since 2026-09-02 — the login is typed by the code, and"
+echo "Cloudflare clears itself as long as the 20-30s pre-submit pause is left"
+echo "alone. See resources/lucy-login-standard.md, which is authoritative."
+echo ""
+echo "What you ARE checking is that a session file got written, because"
+echo "readiness.session_status() is a MACHINE-GLOBAL gate: no export under 20"
+echo "minutes old means this box refuses EVERY scheduled report it is ever"
+echo "given — including reports that never touch ownerville — with no visible"
+echo "error beyond one line per pass in the orchestrator log. That is exactly"
+echo "how Lucy 3 ran nothing for four hours on its first morning (2026-08-23)."
+echo ""
+echo "Wait ~2 minutes, then from Megan's laptop:"
+echo "    lucy diag --machine \"$NAME\"          # 'OV session: MISSING' must be gone"
+echo "    lucy diag --machine \"$NAME\"          # again 6 min later — the AGE must"
+echo "                                        # CYCLE, not just be present. A"
+echo "                                        # one-shot export reads the same"
+echo "                                        # at minute 0 and dies at minute 20."
+echo "If it never appears:  lucy restart_holder --machine \"$NAME\""
+echo "If that says 'could not find service' or 'Bootstrap failed: 5', the agent"
+echo "is DISABLED, not missing — neither message says so, and it survives"
+echo "reboots:  launchctl enable gui/\$(id -u)/com.alphalete.session-holder"
 echo ""
 echo "Other manual steps (one minute):"
 echo "  • System Settings → Users & Groups → turn ON automatic login (not"
 echo "    scripted on purpose — doing it in code would store your password)."
+echo "  • System Settings → Privacy & Security → FileVault OFF, or a reboot"
+echo "    never reaches the login the agents need."
 for m in "${MANUAL[@]+"${MANUAL[@]}"}"; do
     echo "  • $m"
 done

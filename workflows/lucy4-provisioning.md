@@ -184,8 +184,6 @@ missing from it.
 | File | Change |
 |---|---|
 | `day_orchestrator/mini_control.py` `_KNOWN_RUNNERS` | + Lucy 4 — `set_machine_profile` now accepts it |
-| `shared/session_holder.py` `APPSTREAM_HOLD_MACHINES` | + Lucy 4 — it warms its own AppStream and is never sent someone else's |
-| `shared/session_holder.py` `APPSTREAM_FLEET_MACHINES` | + Lucy 4 |
 | `shared/login_check.py` `EXPECTED_OWNERVILLE_ACCOUNT` | + `"Lucy 4": "rhidalgo"` |
 | `shared/test_login_policy.py` | pins the map above |
 | `shared/test_session_holder_appstream.py` | 🩹 it used **"Lucy 4" itself** as the example of a box that must never hold a session — a placeholder named after the next machine expires the day that machine is built. Swapped for `some-random-mac` |
@@ -201,6 +199,27 @@ exist:
 | `shared/silent_job_watch.py:187` heartbeat loop | at go-live (§6) — arming it now pages every morning about a batch Lucy 4 was never given. Set `watch_from` to the day *after* the first report lands, exactly as Lucy 3 did |
 | `automations/dashboard.py:1206` `MEMBERS` + `:7954` Pack layout | **⚠️ Megan-owned — needs her yes.** `_top` holds exactly three Lucys and `PACK_COLS = 3`, so a 4th silently drops to the bottom row. The Pack needs a layout decision (2×2? a row of four?), not just a MEMBERS entry |
 | `office_onboarding/schema.py:140` `MACHINES` | ❌ also stale (no Lucy 3). Adding Lucy 4 to the ICD-facing dropdown before it is live lets someone pin an office to a machine that can't run it. Fix the Lucy 3 gap and add Lucy 4 together, at go-live |
+| `shared/session_holder.py` `APPSTREAM_HOLD_MACHINES` + `APPSTREAM_FLEET_MACHINES` | **the one that would hurt the live fleet.** See below — pinned by `test_lucy_4_is_not_a_holder_yet`, delete that test at go-live |
+
+### 🩹 Why Lucy 4 does NOT warm AppStream on day one
+
+This was added and then backed out on 2026-09-17, and the reason is the whole
+point of this document.
+
+Every Lucy signs in to AppStream as the **same `Lucy Reports` account** — the
+per-person migration never happened. `session_holder.py`'s own history is
+explicit that mutual token invalidation is a *same-account* problem that
+"returns the moment two machines share an account again": each holder re-hops
+its console every ~6 min, and renewing **invalidates the token every other
+machine is still holding**. Three machines already pay that churn. A fourth
+raises it against Lucy 1, 2 and 3's **live 4am batches**, in exchange for
+warming a session no report on Lucy 4 is waiting for.
+
+So it is a **go-live step**: add Lucy 4 the day its first AppStream report is
+routed there, and watch the other three for a morning afterwards.
+
+This does **not** leave Lucy 4 idle or half-built — the readiness gate reads the
+**OwnerVille** export, which its own holder keeps warm from day one (§4).
 
 Plus the per-report routing, once real work moves (§6):
 `day_orchestrator/schedule_config.json` → `"machine": "Lucy 4"`,
@@ -381,6 +400,9 @@ At GO-LIVE (§6), three more — none of them before the first report is routed:
 [ ] heartbeat entry added, watch_from = tomorrow, and it stamped one real 04:20 beat
 [ ] Hub Pack card + MEMBERS entry (Megan's layout call — 4 Lucys break the row of 3)
 [ ] office_onboarding MACHINES gains Lucy 3 AND Lucy 4 together
+[ ] Lucy 4 added to APPSTREAM_HOLD_MACHINES + APPSTREAM_FLEET_MACHINES, and
+    test_lucy_4_is_not_a_holder_yet deleted — then watch Lucy 1/2/3 for one
+    morning, because this is the change that can cost the live fleet
 ```
 
 **Green means delivered.** Exit 0 is not green, a rendered console is not a

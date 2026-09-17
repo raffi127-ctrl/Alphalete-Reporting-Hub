@@ -258,14 +258,27 @@ class TheRecoveryPathsActuallyCallItTest(unittest.TestCase):
             "the PASSIVE human check must run first — never navigate a tab "
             "someone is mid-login on (the 2026-06-18 bug)")
 
-    def test_the_seed_tries_unattended_before_printing_the_prompt(self):
+    def test_the_seed_tries_unattended_before_falling_back_to_waiting(self):
+        """The unattended login must run BEFORE the wait-and-watch fallback.
+
+        ANCHOR NOTE (2026-09-17). This used to order against the literal string
+        "SEED: log into ownerville" — the prompt the seed printed when it gave
+        up. That phrase was deleted on 2026-09-02 when the holder learned to sign
+        itself in, so this test has been RED ever since, and red for a reason
+        nobody could act on: `test_login_policy.py` BANS that same phrase from
+        session_holder as a line that tells a reader a human is needed. Two tests
+        in the same suite, one requiring the string and one forbidding it.
+
+        Do not re-anchor on a phrase that says a human is needed — that is the
+        thing the other test exists to keep out. Anchor on the fallback's own
+        wording, which is allowed to exist because it says the opposite."""
         seed = self.src.split("--- Seed")[1].split("AppStream warming")[0]
         self.assertIn("_unattended_ownerville_login", seed)
         self.assertLess(
             seed.index("_unattended_ownerville_login"),
-            seed.index("SEED: log into ownerville"),
+            seed.index("unattended seed did not take"),
             "a relaunch onto dead profile cookies must log itself in, not sit "
-            "on the prompt until morning (the 2026-09-01 midnight case)")
+            "watching the tab until morning (the 2026-09-01 midnight case)")
 
 
 if __name__ == "__main__":
