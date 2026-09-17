@@ -426,5 +426,40 @@ class TextBoxFilterTest(unittest.TestCase):
         self.assertIsNone(window._text_filter(viz, "Contract ID"))
 
 
+class UnlabelledTextBoxTest(unittest.TestCase):
+    """09:16 probe: the ID boxes carry no aria-label; the title above names them."""
+
+    class Up:
+        def __init__(self, text):
+            self.text = text
+
+        def inner_text(self, **_):
+            return self.text
+
+    class Box(TextBoxFilterTest.Box):
+        def __init__(self, title, value="", aria=None):
+            super().__init__(aria, value)
+            self.title = title
+
+        def locator(self, sel):
+            return UnlabelledTextBoxTest.Up(
+                self.title if sel == "xpath=../.." else "")
+
+    class Viz(TextBoxFilterTest.Viz):
+        def locator(self, sel):
+            return TextBoxFilterTest.Boxes(
+                [] if sel.startswith("textarea") else self.boxes)
+
+    def test_found_by_the_title_above_it(self):
+        box = self.Box("Contract ID")
+        viz = self.Viz([self.Box("Business Name"), box])
+        self.assertIs(window._text_filter(viz, "Contract ID"), box)
+
+    def test_a_long_container_text_is_not_a_title(self):
+        viz = self.Viz([self.Box("Start Date End Date Owner & Office Rep Name "
+                                 "Contract ID Account Id")])
+        self.assertIsNone(window._text_filter(viz, "Contract ID"))
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

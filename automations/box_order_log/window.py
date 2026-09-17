@@ -245,16 +245,38 @@ def _text_filter(viz, field: str):
     dropdowns but free-text boxes, like Start/End Date. An EMPTY box filters
     nothing, so it is as clean as (All) — but the release only knew checklists
     and dropdowns, called them 'absent', and aborted every BOX pull."""
-    for sel in ('textarea[aria-label]', 'input[aria-label]'):
+    for sel in _TEXT_BOXES:
         try:
             boxes = viz.locator(sel)
             for i in range(min(boxes.count(), 25)):
                 box = boxes.nth(i)
-                if _fold(box.get_attribute("aria-label") or "") == _fold(field):
+                if _fold(_box_label(box)) == _fold(field):
                     return box
         except Exception:                                   # noqa: BLE001
             continue
     return None
+
+
+# The 09:16 probe found ONLY the two date textareas carrying an aria-label —
+# the ID boxes Eve saw carry none, so they are named by the title above them.
+_TEXT_BOXES = ("textarea",
+               "input:not([type]), input[type=text], input[type=search]")
+
+
+def _box_label(box) -> str:
+    """A type-in box's field name: its aria-label, else the nearest ancestor's
+    SHORT text (a long one is a container holding several filters)."""
+    try:
+        lab = box.get_attribute("aria-label")
+    except Exception:                                       # noqa: BLE001
+        lab = None
+    if lab:
+        return lab
+    for up in ("..", "../..", "../../.."):
+        got = _text(box.locator("xpath=" + up), timeout_ms=1_000)
+        if got:
+            return got if len(got) <= 40 else ""
+    return ""
 
 
 def _release_text(page, field: str, box, verbose: bool) -> str:
@@ -284,14 +306,15 @@ def describe_text_boxes(viz, fields: Sequence = PINNED_ID_FILTERS) -> str:
     """Read-only, for --probe-filters: every type-in box on the view as
     label=value, then what the release would decide for each pinned field."""
     lines = ["--- text boxes ---"]
-    for sel in ('textarea[aria-label]', 'input[aria-label]'):
+    for sel in ("textarea", "input"):
         try:
             boxes = viz.locator(sel)
             for i in range(min(boxes.count(), 25)):
                 box = boxes.nth(i)
-                lines.append("· {} {}={!r}".format(
-                    sel.split("[")[0], box.get_attribute("aria-label"),
-                    box.input_value(timeout=4_000)))
+                lines.append("· {} type={} class={} label={!r} value={!r}".format(
+                    sel, box.get_attribute("type"),
+                    (box.get_attribute("class") or "")[:30],
+                    _box_label(box)[:40], box.input_value(timeout=4_000)))
         except Exception as exc:                            # noqa: BLE001
             lines.append("· {} probe failed: {!r}".format(sel, exc))
     for field in fields:
