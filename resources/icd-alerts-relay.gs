@@ -247,8 +247,11 @@ function _upsert(office, day, recordsJson, localTime, agent, salesJson,
     var sh = _book().getSheetByName(RELAY_TAB);
     if (!sh) {
       sh = _book().insertSheet(RELAY_TAB);
+      // ALL ELEVEN. This listed only the first eight, so a freshly created
+      // relay tab was two columns narrower than the very next write to it.
       sh.appendRow(['Office', 'Day', 'Records JSON', 'Received At',
-                    'Local Time', 'Agent', 'Last Posted JSON', 'Posted At']);
+                    'Local Time', 'Agent', 'Last Posted JSON', 'Posted At',
+                    'Sales JSON', 'Last Posted Sales JSON', 'Machines']);
     }
     var rows = sh.getDataRange().getValues();
     var now = new Date();
@@ -264,6 +267,7 @@ function _upsert(office, day, recordsJson, localTime, agent, salesJson,
         // cannot be changed in the same instant. An older script simply never
         // writes column 9, which reads as "this office sends no sales yet"
         // rather than as corruption.
+        _ensureCols(sh, 11);   // column 9 below is past the created header too
         sh.getRange(i + 1, 9).setValue(salesJson || '{}');
         _mergeMachine(sh, i + 1, machine, machineName, desktop, osName);
         return;
@@ -435,11 +439,35 @@ function _recordChannelRequest(office, owner, asked, knocks) {
   }
 }
 
+function _ensureCols(sh, n) {
+  // WIDEN BEFORE WRITING PAST THE HEADER. getRange(row, 9) does not grow a
+  // sheet -- it THROWS "exceeds grid limits" -- and every such write in this
+  // file sits inside doPost's try, so one narrow tab turns into "the relay
+  // rejected the knocks" for every office at once.
+  //
+  // THIS IS NOT HYPOTHETICAL. 'ICD Knocks' was created with eight columns
+  // before the machine columns existed, and the branch that writes the wider
+  // header only runs when the tab is ABSENT -- so it stayed eight wide, the
+  // machine merge could never have run against it, and every knocks-only
+  // office (Khalil) reported no machine at all. Found 2026-09-17.
+  var have = sh.getMaxColumns();
+  if (have < n) { sh.insertColumnsAfter(have, n - have); }
+}
+
+
 function _mergeKnockMachine(sh, rowNum, agent, machine) {
   // Column 9 is the agent version, column 10 a map of machine id -> what it
   // said about itself. Merged rather than replaced, because an office may run
   // the agent on more than one computer and the quiet one is the one worth
   // seeing.
+  _ensureCols(sh, 10);
+  // AND BACKFILL THE HEADER. The wide header is only written when the tab is
+  // created, so a tab that predates these two columns never gets their names
+  // no matter how many times this is redeployed.
+  if (!String(sh.getRange(1, 9).getValue() || '').trim()) {
+    sh.getRange(1, 9).setValue('Agent');
+    sh.getRange(1, 10).setValue('Machines');
+  }
   if (agent) { sh.getRange(rowNum, 9).setValue(agent); }
   if (!machine || !machine.id) { return; }
   var cur = {};
@@ -542,6 +570,7 @@ function _mergeMachine(sh, rowNum, machine, machineName, desktop, osName) {
   // would hide whichever one wrote second. Column 11, appended, so nothing
   // this function already writes shifts position.
   if (!machine) return;
+  _ensureCols(sh, 11);   // never let column 11 throw and fail the whole POST
   var cell = sh.getRange(rowNum, 11);
   var seen = {};
   try {

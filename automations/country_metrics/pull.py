@@ -28,6 +28,7 @@ from urllib.parse import quote
 from automations.recruiting_report import opt_phase
 from automations.focus_office_att import aliases as _aliases
 from automations.shared import captainship_pins as _pins
+from automations.shared import tableau_columns as _tcols
 
 WORKSPACE = Path(__file__).resolve().parent.parent.parent
 OUT = WORKSPACE / "output"
@@ -167,11 +168,11 @@ def _paths() -> dict:
 
 # -------------------------------------------------------------------- parse
 def _col_index(header: list[str], wanted: str) -> Optional[int]:
-    w = wanted.strip().lower()
-    for i, h in enumerate(header):
-        if (h or "").strip().lower() == w:
-            return i
-    return None
+    """Exact header match, falling back to the same name minus a trailing
+    editor tag — the Metrics view's Jep column became 'Jep New Internet Count
+    (4 wk) (current)' on 2026-09-17 and dropped the section. See
+    automations.shared.tableau_columns."""
+    return _tcols.column_index(header, wanted)
 
 
 def _parse_metrics(rows: list[list[str]], alias_raw: dict):

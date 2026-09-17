@@ -44,6 +44,7 @@ from patchright.sync_api import sync_playwright
 from . import fetch_office, fill
 from . import metric_thresholds as _metric_thresholds
 from automations.shared import sheet_flags as _sheet_flags
+from automations.shared import tableau_columns as _tcols
 
 WORKSPACE = Path(__file__).resolve().parent.parent.parent
 
@@ -2119,7 +2120,10 @@ def fill_opt_for_tab(
     if metrics_row:
         mv = metrics_row["values"]
         for sheet_label, csv_col in METRICS_SCRAPED.items():
-            cell = mv.get(_norm(csv_col), "")
+            # tolerant lookup: the Metrics view's Jep column picked up a
+            # trailing '(current)' tag on 2026-09-17 (same field, same
+            # numbers). See automations.shared.tableau_columns.
+            cell = _tcols.value_for(mv, csv_col, _norm)
             if str(cell).strip() != "":
                 _queue(om_rows, sheet_label, cell)
             elif metrics_by_owner and sheet_label in METRICS_NODATA_DASH:
