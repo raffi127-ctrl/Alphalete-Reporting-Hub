@@ -295,6 +295,65 @@ def _captainship_board(office: str, saturday: dt.date
     return None, None
 
 
+# An owner the reporting account has NO Office Access to never gets a board:
+# the captainship capture drops them on purpose and says so in its own log
+# ("8 owner(s) left OUT of the email (no Office Access)"). That is Eve's
+# standing rule, 2026-09-03: "si falta alguien porque no tenemos acceso,
+# descartado hasta que yo te avise". This sweep did not know it, so on
+# 2026-09-17 it ended 69/71 + exit 1 on Austin Eldredge and Nigel Gilbert —
+# two of Pat's eight ungranted owners who happen to have a Focus Report tab —
+# and painted a red card on the channel over a permission nobody is waiting
+# on. It would have done it again every Monday.
+#
+# knocks_access_watch already answers "can we pull this office today", off the
+# SAME ownerville Office Access table, four times a day on this machine. Its
+# snapshot is the check: an owner it calls unreachable is skipped with a line.
+# Everything else still fails — a board that should exist and doesn't is
+# exactly what that ❌ is for, and no snapshot (or a stale one) means we do
+# not know, so the failure stands.
+_ACCESS_SNAPSHOT = None
+_ACCESS_MAX_AGE = dt.timedelta(days=7)   # the watch runs 4x a day; a week of
+                                         # silence means it is not running
+
+
+def _no_office_access(office: str) -> Optional[str]:
+    """Why this owner has no board when the reason is a missing grant, or None.
+
+    None also when the snapshot is absent, unreadable, older than
+    _ACCESS_MAX_AGE, doesn't know this owner, or calls them reachable on any
+    captainship it saw them on — in all of those a missing board is a real
+    failure, the same as before."""
+    global _ACCESS_SNAPSHOT
+    if _ACCESS_SNAPSHOT is None:
+        try:
+            from automations.knocks_access_watch.run import load_state
+            _ACCESS_SNAPSHOT = load_state() or {}
+        except Exception:  # noqa: BLE001 - no snapshot = no opinion
+            _ACCESS_SNAPSHOT = {}
+    statuses = _ACCESS_SNAPSHOT.get("statuses") or {}
+    checked_at = _ACCESS_SNAPSHOT.get("checked_at")
+    if not statuses or not checked_at:
+        return None
+    try:
+        checked = dt.datetime.fromisoformat(str(checked_at))
+    except ValueError:
+        return None
+    if dt.datetime.now() - checked > _ACCESS_MAX_AGE:
+        return None
+    from automations.knocks_access_watch import audit as A
+    # statuses keys are "<captain>/<owner display>" — an owner can sit on two
+    # captainships, and reachable on either one means we can pull them.
+    wanted = " ".join(office.lower().split())
+    seen = [st for key, st in statuses.items()
+            if " ".join(key.split("/", 1)[-1].lower().split()) == wanted]
+    if not seen or any(st in (A.OK, A.MASTER) for st in seen):
+        return None
+    words = {A.PENDING: "Office Access requested, not granted",
+             A.MISSING: "not on the Office Access list"}
+    why = "/".join(sorted({words.get(st, st) for st in seen}))
+    return f"{why} (knocks_access_watch snapshot {checked.date()})"
+
+
 def captainship_offices(saturday: dt.date) -> List[str]:
     """Every owner of a captainship whose emails carry the weekly knock board
     for this week, de-duped, in config order."""
@@ -326,7 +385,9 @@ def run_office(office: str, saturday: dt.date, tab: Optional[str],
     covers every office the weekly knocks report posts, and not all of them
     have a Focus Report tab (Isaiah Revelle) or that layout (Raf's master tab).
     A MISSING BOARD is never skipped: that means Sunday's run didn't render
-    an office it should have."""
+    an office it should have. The ONE exception is an owner the reporting
+    account has no Office Access to (_no_office_access) — nobody ever drew
+    their board and nobody is waiting on it."""
     import gspread
     from automations.recruiting_report import fill
 
@@ -341,6 +402,11 @@ def run_office(office: str, saturday: dt.date, tab: Optional[str],
     if source == "captainship":
         data, png = _captainship_board(office, saturday)
         if data is None:
+            gap = _no_office_access(office)
+            if gap:
+                print(f"[wkf] ⤳ {office}: {gap} — the captainship capture "
+                      "never drew a board for them, skipped.", flush=True)
+                return True
             print(f"[wkf] ❌ {office}: no captainship weekly board for "
                   f"{saturday} on this machine (knock_dispo_*/{_slug(office)}"
                   f"/{stem}.png + its rows file) — the captainship_knocks "
