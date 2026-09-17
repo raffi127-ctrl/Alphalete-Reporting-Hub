@@ -176,7 +176,18 @@ def _nds_metrics(o: Office) -> list[dict]:
              module="automations.rashad_metrics.knocks_run", owner_args=[],
              # KNOCKS_EXTRA_TOTALS="" — an NDS board has no fiber columns, so
              # Chan's fiber totals line (Raf 2026-08-23) is fiber-only.
+             # KNOCKS_OFFICE_KEY rides alongside KNOCKS_OFFICE so knocks_run
+             # can ask the relay for this office's OWN relayed board before it
+             # scrapes. Both halves come from this one registry row, which is
+             # what lets knocks_relay assert the join instead of guessing it:
+             # the relay keys by office key ('kash') and the scrape by the
+             # ownerville name ('Akashdeep Rai'), and four of the thirteen
+             # metrics offices differ that way. SET IN BOTH SECTION
+             # DEFINITIONS -- an NDS office reaching the same knocks_run
+             # through a different dict is exactly how a fix lands in one
+             # place and not its sibling.
              env={"KNOCKS_OFFICE": o.knocks_office,
+                  "KNOCKS_OFFICE_KEY": o.key,
                   "KNOCKS_EXTRA_TOTALS": ""},
              retry_on_fail=1, dry_flag="--dry-run", post_flag="--live"),
         # 📊 Wireless Churn — per-rep, day-over-day. nds_churn slices the shared
@@ -277,15 +288,26 @@ def metrics_for(o: Office) -> list[dict]:
              module="automations.rashad_metrics.knocks_run", owner_args=[],
              # knocks_pull reads KNOCKS_OFFICE first (office-agnostic), then the
              # legacy RASHAD_KNOCKS_OFFICE. Use the agnostic one for every office.
-             env={"KNOCKS_OFFICE": o.knocks_office},
-             # This is the ONLY metric that scrapes ownerville (impersonate →
+             # KNOCKS_OFFICE_KEY: see the NDS knocks_gaps entry above. Same
+             # source selection, same two env vars, deliberately identical --
+             # test_knocks_source_parity pins that these two stay in step.
+             env={"KNOCKS_OFFICE": o.knocks_office,
+                  "KNOCKS_OFFICE_KEY": o.key},
+             # This is the only metric that scrapes ownerville (impersonate →
              # Disposition + Time Tracker). That scrape intermittently times out
              # and, being one subprocess, drops BOTH Knocks + Time Gaps at once
-             # with no auto-retry (2026-07-21: 4/7 offices lost both). Give it one
-             # fresh-subprocess re-attempt in-run so a first-pass flake self-heals
-             # before the thread is finalized. SAFE to retry: knocks_run exits
-             # non-zero ONLY when the pull raises — which is before any Slack post
-             # — so a re-attempt can't double-post an image that already landed.
+             # with no auto-retry (2026-07-21: 4/7 offices lost both).
+             #
+             # AN ECO-ENROLLED OFFICE NO LONGER TAKES THAT RISK: its own laptop
+             # already relayed this exact pair of tables, and knocks_relay
+             # serves them instead — no impersonation happens for that office
+             # at all. The scrape stays for everyone else and for any day the
+             # relay cannot vouch for, so this retry is still the thing that
+             # saves them. One fresh-subprocess re-attempt in-run so a
+             # first-pass flake self-heals before the thread is finalized.
+             # SAFE to retry: knocks_run exits non-zero ONLY when the pull
+             # raises — which is before any Slack post — so a re-attempt can't
+             # double-post an image that already landed.
              retry_on_fail=1,
              dry_flag="--dry-run", post_flag="--live"),
         dict(slug="abp", label="💳 New Internet ABP %",

@@ -53,9 +53,10 @@ from automations.rashad_metrics.knocks_pull import (
     pull_office_knocks,
     pull_offices_knocks,
 )
+from automations.rashad_metrics import knocks_relay
 from automations.total_knocks import render as _render
 from automations.total_knocks.pull import COL_TOTAL_KNOCKS, KnocksPullFailed
-from automations.total_knocks.pull import central_today
+from automations.total_knocks.pull import _yesterday, central_today
 
 # Same two posts, same order, same emoji+title strings as Raf's
 # total_knocks.run (POST_TOTAL_KNOCKS / POST_TIME_GAPS): (comment label,
@@ -143,42 +144,108 @@ def run(target: dt.date | None = None, *, office_name: str | None = None,
 def _pull(office_name: str, extras: list, target):
     """The pull half of run(): this office's rows + any extra offices' totals.
     Raises KnocksPullFailed when THIS office's scrape failed; an extra
-    office's failure only costs its comparison line."""
+    office's failure only costs its comparison line.
+
+    THE OFFICE'S OWN MACHINE FIRST. An ECO-enrolled office has already relayed
+    this exact pair of tables from its own laptop, so for those offices the
+    ownerville impersonation -- the only one left in the whole metrics flow,
+    and its flakiest step -- simply does not happen. knocks_relay answers None
+    for every office and every day it cannot vouch for, and None means the
+    scrape below runs exactly as it always did. Nothing is removed; a second,
+    better source is tried first.
+    """
+    target = target or _yesterday()
+    rows = knocks_relay.relayed_rows(_office_key(office_name), office_name,
+                                     target)
+    if rows is not None:
+        # The comparison line still comes from ownerville, because Chan is not
+        # an ECO office and has nothing to relay. It was never allowed to cost
+        # this office its post and still is not -- but now a flake there
+        # cannot cost the office its NUMBERS either, only the extra line.
+        extra_totals = _extra_totals(extras, target)
+        # AND THE DAY IS STILL LOGGED. Relayed rows are the same rows in the
+        # same vocabulary, so the knocks log must not quietly stop gaining
+        # days for exactly the offices that moved onto the better source.
+        _log_day(target, office_name, rows)
+        return rows, extra_totals, target
+
     if extras:
         target, pulled = pull_offices_knocks([office_name] + extras, target)
         _, rows, err0 = pulled[0]
         if err0 is not None:
             raise err0
-        extra_totals = []
-        for name, x_rows, x_err in pulled[1:]:
-            if x_err is not None:
-                print(f"[rashad_knocks] ⚠ {name} totals pull failed "
-                      f"({type(x_err).__name__}) — posting without it.",
-                      flush=True)
-            elif x_rows and COL_TOTAL_KNOCKS in x_rows[0]:
-                extra_totals.append((name, x_rows))
-            else:
-                print(f"[rashad_knocks] ⚠ {name}: no fiber rows — posting "
-                      "without that totals line.", flush=True)
+        extra_totals = _fiber_totals(pulled[1:])
     else:
         target, rows = pull_office_knocks(office_name, target)
         extra_totals = []
 
-    # Keep the day. This run is otherwise stateless — it renders the PNGs from
-    # these rows, posts them and forgets, so yesterday's numbers survive only
-    # as an image in Slack and nothing can be shown day over day. Writing the
-    # rows we ALREADY have costs no second pull and no extra ownerville
-    # session. Idempotent (a logged day is skipped) and never fatal: a logging
-    # failure must not take down a post that would otherwise go out.
-    if rows:
-        try:
-            from automations.icd_sales_board import knocks_log
-            knocks_log.append_day(target, office_name, rows)
-        except Exception as e:                        # noqa: BLE001
-            print(f"   knocks log: SKIPPED ({type(e).__name__}: {e})",
-                  flush=True)
+    _log_day(target, office_name, rows)
     return rows, extra_totals, target
 
+
+def _log_day(target, office_name: str, rows: list) -> None:
+    """Keep the day. This run is otherwise stateless — it renders the PNGs from
+    these rows, posts them and forgets, so yesterday's numbers survive only as
+    an image in Slack and nothing can be shown day over day. Writing the rows
+    we ALREADY have costs no second pull and no extra ownerville session.
+    Idempotent (a logged day is skipped) and never fatal: a logging failure
+    must not take down a post that would otherwise go out."""
+    if not rows:
+        return
+    try:
+        from automations.icd_sales_board import knocks_log
+        knocks_log.append_day(target, office_name, rows)
+    except Exception as e:                        # noqa: BLE001
+        print(f"   knocks log: SKIPPED ({type(e).__name__}: {e})", flush=True)
+
+
+def _office_key(office_name: str) -> str:
+    """The ECO/office_metrics key for the office we were told to pull.
+
+    THE RUNNER SETS IT (KNOCKS_OFFICE_KEY), straight off the registry row that
+    also supplied KNOCKS_OFFICE, so the two halves of the join come from one
+    place and knocks_relay can ASSERT they still agree. The fallback is for a
+    hand-run -- `python -m ... knocks_run` with only KNOCKS_OFFICE set -- and
+    resolves the key by exact ownerville-name match against that same
+    registry, which is the authoritative join rather than a guess at it.
+    """
+    return (os.environ.get("KNOCKS_OFFICE_KEY", "").strip()
+            or knocks_relay.office_key_for(office_name) or "")
+
+
+def _fiber_totals(pulled: list) -> list:
+    """The extra offices' totals lines, from an already-done multi-office pull.
+    A failure here costs a comparison line and nothing else."""
+    out = []
+    for name, x_rows, x_err in pulled:
+        if x_err is not None:
+            print(f"[rashad_knocks] ⚠ {name} totals pull failed "
+                  f"({type(x_err).__name__}) — posting without it.",
+                  flush=True)
+        elif x_rows and COL_TOTAL_KNOCKS in x_rows[0]:
+            out.append((name, x_rows))
+        else:
+            print(f"[rashad_knocks] ⚠ {name}: no fiber rows — posting "
+                  "without that totals line.", flush=True)
+    return out
+
+
+def _extra_totals(extras: list, target) -> list:
+    """Chan's totals line when this office's own rows came from the relay.
+
+    NEVER RAISES. On the scrape path an extra office's failure was already
+    only worth a missing line; here the office's board is already in hand, so
+    there is even less reason to let this take it down.
+    """
+    if not extras:
+        return []
+    try:
+        _, pulled = pull_offices_knocks(extras, target)
+    except Exception as e:                        # noqa: BLE001
+        print(f"[rashad_knocks] ⚠ totals pull for {', '.join(extras)} failed "
+              f"({type(e).__name__}) — posting without that line.", flush=True)
+        return []
+    return _fiber_totals(pulled)
 
 def _render_and_post(office_name: str, target, rows: list, extra_totals: list,
                      *, dry_run: bool) -> int:
