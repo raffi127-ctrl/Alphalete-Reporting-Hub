@@ -119,6 +119,23 @@
         "true"
       ],
       "port": 8548
+    },
+    {
+      "name": "reporting-hub",
+      "runtimeExecutable": ".venv/bin/streamlit",
+      "runtimeArgs": [
+        "run",
+        "automations/dashboard.py",
+        "--server.port",
+        "8550",
+        "--server.headless",
+        "true",
+        "--server.fileWatcherType",
+        "none",
+        "--browser.gatherUsageStats",
+        "false"
+      ],
+      "port": 8550
     }
   ]
 }
