@@ -573,6 +573,13 @@ _JS = r"""
        await sleep(250); tries++;
      }
    }
+   /* Clear any filter BEFORE reading the list. A ComboBox filters itself as
+      text is typed into it, so a stale filter hides the very row being looked
+      for -- and select(index) then counts rows in the filtered view, picking
+      the wrong one or none. Twelve people went in and the two on "Married
+      filing jointly" did not, which is what that looks like
+      (Megan, 2026-09-17). */
+   try{ if(w.dataSource&&w.dataSource.filter) w.dataSource.filter([]); }catch(e){}
    if(w.dataSource&&w.dataSource.data&&w.options&&w.value){
      var d=w.dataSource.data()||[], want=norm(v),
          tf=w.options.dataTextField, vf=w.options.dataValueField, i, t;
@@ -590,16 +597,16 @@ _JS = r"""
             (Megan, 2026-09-17). */
          var chose=false;
          if(w.select){
-           try{ w.select(i); chose=true; }catch(e){}
-           if(!chose||!(w.dataItem&&w.dataItem())){
-             try{
-               w.select(function(di){
-                 var dt=(tf&&di[tf]!==undefined)?di[tf]:(di.Text||di.text||di);
-                 return norm(dt)===t;
-               });
-               chose=true;
-             }catch(e){}
-           }
+           /* By TEXT first: a predicate does not care what order the list is
+              in, an index does. */
+           try{
+             w.select(function(di){
+               var dt=(tf&&di[tf]!==undefined)?di[tf]:(di.Text||di.text||di);
+               return norm(dt)===t;
+             });
+             chose=!!(w.dataItem&&w.dataItem());
+           }catch(e){}
+           if(!chose){ try{ w.select(i); chose=true; }catch(e){} }
          }
          if(!(w.dataItem&&w.dataItem())) w.value(picked);
          w.trigger('change'); settle(el); putIdBeside(el,picked);

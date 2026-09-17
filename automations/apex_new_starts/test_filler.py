@@ -2876,3 +2876,53 @@ def test_a_combobox_row_is_selected_not_just_valued(page, tmp_path):
     assert page.evaluate("() => window.__ansSelected()") == 12, \
         "the row itself is selected, so Apex has an id to submit"
     assert page.input_value("#msid") == "12", "the NUMBER, not the words"
+
+
+def test_a_filtered_list_does_not_select_the_wrong_row(page, tmp_path):
+    """A ComboBox filters its list as text is typed into it, and select(index)
+    counts rows in the FILTERED view -- so an index taken from the full data
+    picks the wrong row, or none. Twelve people went in and the two on
+    "Married filing jointly" did not (Megan, 2026-09-17)."""
+    f = tmp_path / "bank-info.html"
+    f.write_text("""<h1>Tax</h1>
+      <div class="form-group">
+        <label for="ms">Marital Status</label>
+        <input type="text" id="ms">
+        <input type="hidden" ng-model="vm.bank.MaritalStatusID" id="msid">
+        <span class="k-widget k-combobox"><input class="k-input"></span>
+      </div>""")
+    page.goto(f.as_uri())
+    page.evaluate("""() => {
+      window.jQuery = (el) => ({data: () => null, 0: el, length: 1});
+      const all = [{MaritalStatusID: 4, Name: 'Single or Married filing separately'},
+                   {MaritalStatusID: 12, Name: 'Married filing jointly'},
+                   {MaritalStatusID: 20, Name: 'Head of household'}];
+      let filtered = [all[0]];          // a stale filter from earlier typing
+      let selected = null;
+      const w = {
+        options: {dataTextField: 'Name', dataValueField: 'MaritalStatusID'},
+        dataSource: {data: () => (filtered.length ? filtered : all),
+                     filter: (f) => { if (Array.isArray(f) && !f.length)
+                                        filtered = all.slice(); }},
+        value: () => null,
+        select: (which) => {
+          const view = filtered.length ? filtered : all;
+          selected = (typeof which === 'number') ? (view[which] || null)
+                    : (view.find(which) || null);
+        },
+        dataItem: () => selected,
+        trigger: () => {},
+      };
+      window.kendo = {widgetInstance: () => w};
+      window.angular = {element: () => ({scope: () => ({$eval(){}, $applyAsync(){}})})};
+    }""")
+    page.evaluate(filler.build_js(
+        [{"name": "Dylan Poston", "find": "Poston", "pages": {}}],
+        "WE 9.20")[len("javascript:"):])
+
+    ok = page.evaluate("""async () => await window.__ansKendoSet(
+        document.getElementById('ms'), 'Married filing jointly')""")
+    assert ok is True
+    assert page.evaluate("() => window.__ansSelected()") == 12, \
+        "the right row, not whatever index 1 pointed at"
+    assert page.input_value("#msid") == "12"

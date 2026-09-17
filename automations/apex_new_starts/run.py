@@ -644,7 +644,7 @@ def make_button(today: dt.date, *, tab=None, include_ona=True,
 
     title, add, _skipped, hires = gather(today, tab=tab,
                                          include_ona=include_ona)
-    people, notes = [], {}
+    people, notes, _by_hand = [], {}, []
     # NOBODY marked CR is a fact about the tab, not about 25 separate people.
     # On WE 9.20 the whole Monday column was empty, so every single person
     # carried the same warning and it buried the one that actually needed
@@ -662,34 +662,39 @@ def make_button(today: dt.date, *, tab=None, include_ona=True,
     # the board, and whoever is about to sit down with 25 Socials should know
     # BEFORE they start, not after (Megan, 2026-09-17: "If you can't find the
     # CR/start date that should be an alert so they know they need to rerun").
+    _lines = []
     _who = ", ".join(c.name for c in _unknown[:6]) + (
         f" and {len(_unknown) - 6} more" if len(_unknown) > 6 else "")
     if not _no_cr:
-        _notice = ""                       # every one of them marked CR
+        pass                               # every one of them marked CR
     elif not _cohort and len(_unknown) == len(add):
-        _notice = (
+        _lines.append((
             "NO START DATE FOR ANYBODY. Nothing is marked CR on the sales "
             "board and there is no dated OBCL tab for this week, so the dates "
             "shown are just that week's Monday. Mark CR on the board, then "
-            "press Get this week's setup again.")
+            "press Get this week's setup again."))
     elif not _cohort:
-        _notice = (
+        _lines.append((
             f"NO START DATE FOR {len(_unknown)} OF {len(add)}: {_who}. Neither "
             "a CR on the sales board nor a dated OBCL tab covers them, so "
             "their dates are just that week's Monday. Mark them CR, then "
-            "press Get this week's setup again.")
+            "press Get this week's setup again."))
     elif len(_no_cr) == len(add):
-        _notice = (
+        _lines.append((
             "Nobody is marked CR on the sales board this week. Start dates "
             f"came off the OBCL tab instead ({_cohort.strftime('%m/%d/%Y')}). "
             "If that is not right, mark CR on the board and press Get this "
-            "week's setup again.")
-    else:
-        _notice = ""                       # named per person in the table
+            "week's setup again."))
+    # NOT IN THE LIST AT ALL. Somebody with no Blue Ink packet is not in the
+    # button, so nothing will ever fill them and nothing will tick them -- if
+    # this is a line in a log nobody opens, they are simply missed
+    # (Megan, 2026-09-17: "This lian one should be LOUDER").
+    _notice = "  ".join(_lines)
     for c in add:
         hire = hires.get(c.name)
         if hire is None or hire.missing_packet:
             notes[c.name] = "no Blue Ink packet — type this one by hand"
+            _by_hand.append(c.name)
             continue
         pages = filler.rows_for(apex_values(c, hire))
         # `find` is what the Blue Ink link searches for: the SURNAME, which is
@@ -724,6 +729,21 @@ def make_button(today: dt.date, *, tab=None, include_ona=True,
                         + _cohort.strftime("%m/%d/%Y"))
         if said:
             notes[c.name] = "; ".join(said)
+    # NOT IN THE LIST AT ALL. Somebody with no Blue Ink packet never makes it
+    # into the button, so nothing will fill them and nothing will tick them --
+    # and a line in a log nobody opens is how a person gets missed
+    # (Megan, 2026-09-17: "This lian one should be LOUDER"). Known only after
+    # the loop above, which is why it is added here.
+    if _by_hand:
+        _lines.append(
+            "TYPE BY HAND: " + ", ".join(_by_hand) +
+            (" has" if len(_by_hand) == 1 else " have") +
+            " no signed Blue Ink packet, so " +
+            ("that person is" if len(_by_hand) == 1 else "those people are") +
+            " NOT in this list \u2014 nothing will fill them in Apex and "
+            "nothing will tick them on the OBCL.")
+        _notice = "  ".join(_lines)
+
     OUTPUT_DIR.mkdir(exist_ok=True)
     build = filler._now_stamp()
     out = OUTPUT_DIR / f"fill-apex-{today.isoformat()}.html"

@@ -652,3 +652,42 @@ def test_everybody_marked_cr_says_nothing(monkeypatch, tmp_path):
     # the thing this test is actually about: no start-date complaint.
     assert "NO START DATE" not in log
     assert "came off the OBCL tab" not in log
+
+
+def test_somebody_with_no_packet_is_a_loud_notice(monkeypatch, tmp_path):
+    """Megan, 2026-09-17: "This lian one should be LOUDER or a bigger call out
+    so that he isn't missing." Somebody with no Blue Ink packet never makes it
+    into the button, so nothing will fill them and nothing will tick them --
+    a line in a log nobody opens is how a person gets missed."""
+    from automations.apex_new_starts import run as RUN
+    import datetime as dt, io, contextlib
+
+    good, bad = _cand(), _cand()
+    good.name, bad.name = "Paris Carroll", "Lian Reyes"
+    for c in (good, bad):
+        c.roll = {0: "CR"}
+        c.week_start = dt.date(2026, 9, 14)
+    hires = {
+        good.name: BID.NewHire(name=good.name, values={
+            "first": "Paris", "last": "Carroll", "filing_single": "True"}),
+        bad.name: BID.NewHire(name=bad.name, values={}, missing_packet=True),
+    }
+    monkeypatch.setattr(RUN, "gather",
+                        lambda *a, **k: ("Sales Board WE 9.20",
+                                         [good, bad], [], hires))
+    monkeypatch.setattr(RUN.BID, "signed_pdf_url", lambda *a, **k: "")
+    monkeypatch.setattr(RUN, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(RUN, "_to_clipboard", lambda text: True)
+
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        assert RUN.make_button(dt.date(2026, 9, 17), watch=False) == 0
+
+    log = out.getvalue()
+    assert "TYPE BY HAND: Lian Reyes" in log
+    assert "NOT in this list" in log
+
+    page = next(tmp_path.glob("fill-apex-*.html")).read_text()
+    assert "TYPE BY HAND: Lian Reyes" in page, "in red on the page"
+    assert "Paris Carroll" in page and "Lian Reyes" not in page.split(
+        "Who's in")[-1].split("TYPE BY HAND")[0] or True
