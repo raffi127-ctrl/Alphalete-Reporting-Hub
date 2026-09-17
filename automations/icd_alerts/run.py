@@ -184,6 +184,16 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date) -> int:
     except sara_read.AccountProblem as e:
         print("\n%s" % e)
         _report("sweep", e, office_key=att_key)
+        # SAME AS THE BOX PATH, and for the SAME reason. Khalil's machine hit
+        # SaraPlus's passcode wall 115 times on 2026-09-17 -- five hours of
+        # every-two-minutes failing while people traded screenshots about a
+        # password that was never wrong. Whoever is at the Mac gets the window
+        # that can actually clear it.
+        try:
+            from automations.icd_alerts import autoprompt
+            autoprompt.offer("saraplus", log=_log)
+        except Exception:  # noqa: BLE001 — never cost the fault report
+            pass
         return 1
     except RuntimeError as e:
         print("\n%s" % e)
@@ -277,6 +287,16 @@ def cmd_box(headless: bool, dry_run: bool, day: dt.date) -> int:
         # sign-in DM -- to the owner, Megan and Eve -- rather than posting a
         # laptop fault nobody can act on.
         _report("signin-servicecloud", e, office_key=_box_key(boxes))
+        # AND PUT THE WINDOW ON THEIR SCREEN, if anybody is there to use it.
+        # The DM is the fallback for an empty office, not the plan: Ryan lost
+        # 3.5 hours on 2026-09-16 and Carlos over 5, and both machines knew
+        # within two minutes. Everything after detection was people finding a
+        # message, opening a link and pasting a command.
+        try:
+            from automations.icd_alerts import autoprompt
+            autoprompt.offer("servicecloud", log=_log)
+        except Exception:  # noqa: BLE001 — never cost the fault report
+            pass
         return 1
     except box_read.AccountProblem as e:
         print("\n%s" % e)
