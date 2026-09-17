@@ -356,6 +356,46 @@ def _rep_day(sales, which: str, today, to_tab, week_start="mon",
     return 0
 
 
+# The id every other box-order-log producer already files under — section_drop_alert
+# and hub_activity both use the dashed spelling — and the one declared in
+# schedule_config's `verify` block. delivery_check tries the config key, the
+# declared id and the dashed spelling, so all three land on this one file.
+MANIFEST_ID = "box-order-log"
+
+
+def _file_manifest(posted, failed=(), note: str = "") -> None:
+    """Record which channels the daily thread actually reached.
+
+    WHY (2026-09-17): this report had `verify: null` and wrote no manifest, so
+    every delivery_check verdict came back UNKNOWN — "ran clean, but nothing
+    can confirm it DELIVERED" — and its incident ticket could not close even on
+    a run that posted both threads fine. The thread IS observable (two channels
+    anyone can open), so it gets VERIFIED like everything else, not declared
+    `close_on: exit_zero`. Same call att_order_log already makes.
+
+    A clean write also closes whatever incident thread this report left open
+    (run_manifest calls section_drop_alert.resolved), which is the whole point:
+    the ✅ lands on its own the morning the thread comes back.
+
+    alert=False on the partial case is NOT a seed — the caller has just alerted
+    for itself, naming the exact channel and exception, two lines above every
+    call site. Letting the writer alert too would put a second, vaguer line in
+    the same incident thread for one failure.
+    """
+    try:
+        from automations.shared import run_manifest
+        failed = list(failed)
+        run_manifest.write_manifest(
+            MANIFEST_ID, kind="channel", failed=failed, succeeded=list(posted),
+            # --post alone is the safe repair: if the day never posted it posts
+            # now, and if a thread IS live the day-marker makes it a no-op. A
+            # partial failure (live in one room, missing from the other) needs
+            # `--post --channel <id> --resend` by hand — a blind --resend here
+            # would double-post the channel that worked.
+            retry_args=["--post"], note=note, alert=not failed)
+    except Exception:                                       # noqa: BLE001
+        pass
+
 def main(argv: Optional[list] = None) -> int:
     from . import tier_bonus          # names the default owner in --help
     ap = argparse.ArgumentParser(description="BOX Order Log -> #alphalete-gp-sales")
@@ -947,6 +987,13 @@ def main(argv: Optional[list] = None) -> int:
     contents = "\n".join(attach_lines)
     if not args.post:
         _report_to_hub(started_at, verbose)
+        # A sheet-only pass is still a DELIVERED day when the thread went up
+        # earlier — that is exactly the 8:30 refresh behind the day-marker. Say
+        # so, or delivery_check reads the last pass of a morning that went fine
+        # as UNKNOWN and holds the ticket open all day.
+        if day_marker.already_done(day_marker.POST_STEM, today):
+            _file_manifest(["today's thread (posted by an earlier pass)"],
+                           note="sheet refresh; the thread was already live")
         if verbose:
             print("\n  Not posted to Slack. To post the PDF to {}:".format(
                 chan_name))
@@ -973,6 +1020,8 @@ def main(argv: Optional[list] = None) -> int:
         # A deliberate no-op is a completed pass: tell the Hub it ran, same rule
         # the 7:00 deferral follows, so the card doesn't sit amber for the day.
         _report_to_hub(started_at, verbose)
+        _file_manifest(["today's thread (posted by an earlier pass)"],
+                       note="second --post of the day; the thread was already live")
         return 0
 
     # HARD GATE (2026-08-12): don't POST a clearly-capped pull. The filter
@@ -1096,6 +1145,12 @@ def main(argv: Optional[list] = None) -> int:
                       kind="section", day=today)
         except Exception:
             pass
+    # Which rooms actually got the thread, on the record, so delivery_check
+    # can answer DELIVERED/NOT_DELIVERED instead of UNKNOWN. A preview DM is
+    # not the feed and never counts as the day's delivery.
+    if not args.dm:
+        _file_manifest(posted, failed_channels,
+                       note="posted to {}".format(where))
     print("\n✅ Posted to {}".format(where))
     # Claim the day the moment a thread is live, so the NEXT --post from any
     # entry point no-ops. The wrapper touches this same file on exit 0; whichever

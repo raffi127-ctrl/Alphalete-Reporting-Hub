@@ -28,6 +28,27 @@ if pgrep -f "automations.box_order_log.run" > /dev/null 2>&1; then
     exit 0
 fi
 
+# ---- SELF-UPDATE FROM GITHUB ------------------------------------------------
+# The house pattern (day_orchestrator.sh, ad_sales_board.sh, applicant_push.sh,
+# icd_alerts_poster.sh): GitHub is the deploy channel that always works, and the
+# Mini Control queue is a single-threaded poller that can sit blocked for hours
+# behind one long report — a 7:00 job must not wait on it to pick up a fix.
+#
+# THIS JOB WENT WITHOUT IT UNTIL 2026-09-17, and that is what made that morning
+# cost two passes: SCI turned the view's Contract ID / Account Id filters into
+# free-text boxes, the release called them 'absent', the strict filter gate
+# aborted both the 7:00 and 8:30 pulls, and the fix sat on GitHub while this
+# machine kept running the code it booted with.
+#
+# Best-effort and --ff-only on purpose: a failed pull leaves yesterday's code
+# running rather than skipping the morning. perl alarm = portable timeout (macOS
+# ships no `timeout`); a self-update must never outlive 60s, because a hung pull
+# here would eat the pass before the log line below it (ad_sales_board, 9/3).
+if [ -d .git ]; then
+  perl -e 'alarm 60; exec @ARGV' git pull --ff-only --autostash --quiet origin main 2>/dev/null || true
+fi
+# -----------------------------------------------------------------------------
+
 VENV_PY=".venv/bin/python3.14"
 [ -x "$VENV_PY" ] || VENV_PY=".venv/bin/python"
 LOG_DIR="output/logs"

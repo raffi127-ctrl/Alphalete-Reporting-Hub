@@ -7983,7 +7983,11 @@
       "freshness_target": null,
       "depends_on": [],
       "timeout_minutes": 45,
-      "verify": null
+      "verify": {
+        "type": "manifest",
+        "report_id": "box-order-log"
+      },
+      "_verify_note": "Wired 2026-09-17 (Megan). It was null and the module wrote no manifest, so every delivery_check verdict was UNKNOWN: the ticket said 'ran clean, but nothing can confirm it DELIVERED' and stayed open even on a morning both threads posted fine. NOT close_on: exit_zero \u2014 what this delivers is a thread in #alphalete-gp-sales and #a-players-b2b that anyone can open, so it is checked like everything else. run._file_manifest records the channels that actually got the thread; the sheet-only 8:30 pass files the same clean answer when the day-marker says the 7:00 thread is already live, so the LAST pass of a healthy morning still reads DELIVERED. report_id is the DASHED spelling \u2014 the one section_drop_alert and hub_activity already use \u2014 not this config key."
     },
     "box_tpv_ledger": {
       "on_scheduler": false,
