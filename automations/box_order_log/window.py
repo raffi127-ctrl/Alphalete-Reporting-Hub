@@ -238,6 +238,48 @@ def _describe_combos(viz, limit: int = 12) -> str:
     return "".join("\n       · " + o for o in out) or "(no dropdowns)"
 
 
+def _text_filter(viz, field: str):
+    """`field`'s TYPE-IN box (textarea/input), or None.
+
+    2026-09-17 (Eve, on the live view): Contract ID and Account Id are no longer
+    dropdowns but free-text boxes, like Start/End Date. An EMPTY box filters
+    nothing, so it is as clean as (All) — but the release only knew checklists
+    and dropdowns, called them 'absent', and aborted every BOX pull."""
+    for sel in ('textarea[aria-label]', 'input[aria-label]'):
+        try:
+            boxes = viz.locator(sel)
+            for i in range(min(boxes.count(), 25)):
+                box = boxes.nth(i)
+                if _fold(box.get_attribute("aria-label") or "") == _fold(field):
+                    return box
+        except Exception:                                   # noqa: BLE001
+            continue
+    return None
+
+
+def _release_text(page, field: str, box, verbose: bool) -> str:
+    """'already_all' if the box is empty, 'released' if we emptied it, else
+    'stuck'. A typed value in an ID box is exactly a pin, so it is cleared."""
+    try:
+        value = (box.input_value(timeout=4_000) or "").strip()
+        if not value:
+            if verbose:
+                print("  -> BOX filter {!r} is a text box and it is EMPTY — "
+                      "nothing pinned".format(field), flush=True)
+            return "already_all"
+        if verbose:
+            print("  -> BOX filter {!r} text box holds {!r} — clearing it".format(
+                field, value), flush=True)
+        box.fill("")
+        box.press("Enter")
+        page.wait_for_timeout(3_000)
+        if not (box.input_value(timeout=4_000) or "").strip():
+            return "released"
+    except Exception:                                       # noqa: BLE001
+        pass
+    return "stuck"
+
+
 def _release_dropdown(page, viz, field: str, verbose: bool,
                       settle_ms: int = 15_000) -> str:
     """Open `field`'s dropdown and tick '(All)'.
@@ -404,6 +446,13 @@ def release_pinned_filters(page, viz, fields: Sequence = PINNED_ID_FILTERS,
                 # COLLAPSED dropdown: it renders no items at all until opened,
                 # which is what made 2026-08-13 read this as "SCI deleted the
                 # control" when the filter was alive and capping the export.
+                text_box = _text_filter(viz, field)
+                if text_box is not None:
+                    shape = _release_text(page, field, text_box, verbose)
+                    verdicts[field] = shape
+                    if shape == "stuck":
+                        still_pending.append(field)
+                    continue
                 shape = _release_dropdown(page, viz, field, verbose)
                 if shape == "released":
                     verdicts[field] = "released"

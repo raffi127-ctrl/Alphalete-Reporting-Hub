@@ -363,5 +363,68 @@ class LabelFoldTest(unittest.TestCase):
                          w._fold("Filter Owner & Office Inclusive"))
 
 
+class TextBoxFilterTest(unittest.TestCase):
+    """2026-09-17: Contract ID / Account Id became free-text boxes. Empty is
+    clean; a typed value is a pin and gets cleared; neither is 'absent'."""
+
+    class Box:
+        def __init__(self, label, value=""):
+            self.label, self.value = label, value
+
+        def get_attribute(self, name):
+            return self.label if name == "aria-label" else None
+
+        def input_value(self, **_):
+            return self.value
+
+        def fill(self, value):
+            self.value = value
+
+        def press(self, _key):
+            pass
+
+    class Boxes:
+        def __init__(self, boxes):
+            self.boxes = boxes
+
+        def count(self):
+            return len(self.boxes)
+
+        def nth(self, i):
+            return self.boxes[i]
+
+    class Viz:
+        def __init__(self, boxes):
+            self.boxes = boxes
+
+        def locator(self, sel):
+            return TextBoxFilterTest.Boxes(
+                self.boxes if sel.startswith("textarea") else [])
+
+    class Page:
+        def wait_for_timeout(self, _ms):
+            pass
+
+    def _release(self, value):
+        box = self.Box("Contract﻿ ID", value)
+        viz = self.Viz([self.Box("Start Date", "1/8/2026"), box])
+        found = window._text_filter(viz, "Contract ID")
+        self.assertIs(found, box)
+        return window._release_text(self.Page(), "Contract ID", found, False), box
+
+    def test_empty_box_is_confirmed_clean(self):
+        verdict, _ = self._release("")
+        self.assertIn(verdict, window.CONFIRMED_CLEAN)
+
+    def test_typed_value_is_cleared(self):
+        verdict, box = self._release("289147")
+        self.assertEqual(verdict, "released")
+        self.assertEqual(box.value, "")
+
+    def test_other_boxes_do_not_match(self):
+        viz = self.Viz([self.Box("Start Date"), self.Box("Business Name")])
+        self.assertIsNone(window._text_filter(viz, "Contract ID"))
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
