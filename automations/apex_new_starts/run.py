@@ -651,6 +651,24 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
     _cohort = (obcl_start(add[0].week_start)
                if add and add[0].week_start and any(c.hire_assumed for c in add)
                else None)
+    # A start date nobody can find is worth interrupting for: the fix is on
+    # the board, and whoever is about to sit down with 25 Socials should know
+    # BEFORE they start, not after (Megan, 2026-09-17: "If you can't find the
+    # CR/start date that should be an alert so they know they need to rerun").
+    if not _whole_week_uncr:
+        _notice = ""
+    elif _cohort:
+        _notice = (
+            "Nobody is marked CR on the sales board this week. Start dates "
+            f"came off the OBCL tab instead ({_cohort.strftime('%m/%d/%Y')}). "
+            "If that is not right, mark CR on the board and press Get this "
+            "week's setup again.")
+    else:
+        _notice = (
+            "NO START DATE FOR ANYBODY. Nothing is marked CR on the sales "
+            "board and there is no dated OBCL tab for this week, so the dates "
+            "shown are just that week's Monday. Mark CR on the board, then "
+            "press Get this week's setup again.")
     for c in add:
         hire = hires.get(c.name)
         if hire is None or hire.missing_packet:
@@ -694,21 +712,18 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
     out.write_text(filler.build_page(
         people, title.replace("Sales Board ", ""),
         today.strftime("%B %-d, %Y") if os.name != "nt"
-        else today.strftime("%B %d, %Y"), notes))
+        else today.strftime("%B %d, %Y"), notes, _notice))
     _log(f"{title}: {len(people)} record(s) in the button")
-    if _whole_week_uncr:
-        _log("  \u2139  Nobody on this tab is marked CR. Start date taken "
-             + (f"from the OBCL tab: {_cohort.strftime('%m/%d/%Y')}."
-                if _cohort else
-                "as that Monday \u2014 no dated OBCL tab for this week.")
-             + " Apex holds the real one; this report never types it.")
+    if _notice:
+        _log("  \u26a0\ufe0f  " + _notice)
     for name, why in notes.items():
         _log(f"  ⚠️ {name}: {why}")
     _log("")
     # Put the setup straight on the clipboard, so nobody has to find the page,
     # scroll it and click Copy before they can start. The button reads it from
     # there (Megan, 2026-09-13: "still too complex/glitchy for a 7 year old").
-    setup = filler.build_js(people, title.replace("Sales Board ", ""))
+    setup = filler.build_js(people, title.replace("Sales Board ", ""),
+                            notice=_notice)
     if _to_clipboard(setup[len("javascript:"):]):
         _log("This week's setup is on your clipboard.")
         _log("Open Apex, then click your Fill Apex bookmark. That is all.")

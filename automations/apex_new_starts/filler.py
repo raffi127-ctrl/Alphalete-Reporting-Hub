@@ -83,6 +83,7 @@ _JS = r"""
     whatever was in it, so the only way to tell a fixed button from the one
     saved three fixes ago is to have it say so out loud. */
  var BUILD='%(build)s', BUILT_AT=%(built_at)s;
+ var NOTICE=%(notice)s;
  /* The week's people live in this browser, not inside the button. Carrying
     them meant a saved bookmark froze that week's data AND that day's code, so
     every change cost a delete, a copy and a re-drag. Saved once now; a new
@@ -1381,6 +1382,9 @@ _JS = r"""
    '<div id="ansub" style="color:#555;margin:2px 0 4px"></div>'+
    '<div id="ansage" style="font-size:12px;font-weight:600"></div>'+
    '<div id="anssrc" style="font-size:12px;font-weight:600;color:#a56a00"></div>'+
+   (NOTICE? '<div style="font-size:12px;font-weight:700;color:#b00;margin:6px 0;'+
+            'background:#fff4f4;border-left:3px solid #b00;padding:6px 8px">'+
+            NOTICE+'</div>':'')+
    (gnd?'<div style="margin-bottom:8px"><div style="font-size:12px;color:#555">Gender <span style="color:#b00">(required, not on the board)</span></div>'+
         '<select id="ansgender" style="width:100%%;padding:6px;font-size:15px">'+
         '<option value="">Pick one</option><option>Female</option><option>Male</option></select></div>':'')+
@@ -2015,7 +2019,8 @@ def build_stub() -> str:
     return _guard("javascript:" + " ".join(_STUB.split()))
 
 
-def build_js(people=None, week: str = "", build: str = "") -> str:
+def build_js(people=None, week: str = "", build: str = "",
+             notice: str = "") -> str:
     """The bookmarklet.
 
     With `people` it embeds them (what the tests use). Without, it is CODE ONLY
@@ -2028,6 +2033,7 @@ def build_js(people=None, week: str = "", build: str = "") -> str:
                         if people is not None else "null",
                 "week": week.replace("'", ""),
                 "build": (build or _now_stamp()).replace("'", ""),
+                "notice": json.dumps(notice) if notice else "null",
                 "built_at": str(int(_now_ms())),
                 "role": json.dumps(SECURITY_ROLE_LABEL.lower())}
     return _guard("javascript:" + " ".join(js.split()))
@@ -2069,6 +2075,7 @@ PAGE = """<!doctype html><meta charset="utf-8">
 <h1>Fill Apex — {week}</h1>
 <div class="sub">{n} new start{s} · read off the board {build}</div>
 
+{notice_html}
 <div class="ok">
   <b>This week is already on your clipboard.</b> Open Apex and click your
   <b>Fill Apex</b> bookmark. That is the whole job — there is nothing to copy
@@ -2146,7 +2153,8 @@ the tab you type them into, for that run only.</p>
 """
 
 
-def build_page(people, week: str, stamp: str, notes=None) -> str:
+def build_page(people, week: str, stamp: str, notes=None,
+               notice: str = "") -> str:
     """The whole page: the draggable button, the steps, and who is in it."""
     notes = notes or {}
     rows = []
@@ -2157,7 +2165,12 @@ def build_page(people, week: str, stamp: str, notes=None) -> str:
             % (i, p["name"], p.get("hire") or "—",
                "warn" if gap else "", gap or "—"))
     build = _now_stamp()
+    notice_html = (
+        "<div style='background:#fff4f4;border-left:4px solid #b00;"
+        "padding:14px 18px;margin:24px 0;font-weight:600;color:#7a1414'>"
+        + notice + "</div>") if notice else ""
     return PAGE.format(
+        notice_html=notice_html,
         week=week, n=len(people), s="" if len(people) == 1 else "s", build=build,
         # CODE ONLY -- the people are copied separately, so the saved bookmark
         # never goes stale.
@@ -2167,7 +2180,7 @@ def build_page(people, week: str, stamp: str, notes=None) -> str:
         js=build_stub().replace('"', "&quot;"),
         # & FIRST, then < -- the other order turns "&lt;" into "&amp;lt;"
         # and the textarea hands back the wrong characters.
-        data=build_js(people, week, build)[len("javascript:"):]
+        data=build_js(people, week, build, notice)[len("javascript:"):]
              .replace("&", "&amp;").replace("<", "&lt;"),
         rows="\n".join(rows), stamp=stamp,
         # "Nothing happens when I click it" has cost us two rounds now. A

@@ -471,7 +471,7 @@ def test_nobody_marked_cr_is_said_once(monkeypatch, tmp_path):
         assert RUN.make_button(dt.date(2026, 9, 17)) == 0
     text = out.getvalue()
     assert text.count("marked CR") == 1, "once, not once per person"
-    assert "Start date taken" in text
+    assert "Nobody is marked CR" in text
 
     page = next(tmp_path.glob("fill-apex-*.html")).read_text()
     assert "nothing marked CR" not in page, "and not beside every name"
@@ -516,3 +516,65 @@ def test_a_cr_beats_the_cohort_date():
     plain.week_start = dt.date(2026, 9, 14)
     assert RUN._started(plain, dt.date(2026, 9, 15)) == "09/15/2026", \
         "no CR of their own, so the cohort's date"
+
+
+def test_no_start_date_anywhere_is_an_alert(monkeypatch, tmp_path):
+    """Megan, 2026-09-17: "If you can't find the CR/start date that should be
+    an alert so they know they need to rerun". The fix is on the board, and
+    whoever is about to sit down with 25 Socials should know before they
+    start."""
+    from automations.apex_new_starts import run as RUN
+    import datetime as dt, io, contextlib
+
+    c = _cand()
+    c.roll = {0: "", 1: "Hwk1C"}
+    c.week_start = dt.date(2026, 9, 14)
+    hires = {c.name: BID.NewHire(name=c.name, values={
+        "first": "A", "last": "B", "filing_single": "True"})}
+    monkeypatch.setattr(RUN, "gather",
+                        lambda *a, **k: ("Sales Board WE 9.20", [c], [], hires))
+    monkeypatch.setattr(RUN.BID, "signed_pdf_url", lambda *a, **k: "")
+    monkeypatch.setattr(RUN, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(RUN, "_to_clipboard", lambda text: True)
+    monkeypatch.setattr(RUN, "obcl_start", lambda *a, **k: None)
+
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        assert RUN.make_button(dt.date(2026, 9, 17)) == 0
+
+    assert "NO START DATE FOR ANYBODY" in out.getvalue()
+    page = next(tmp_path.glob("fill-apex-*.html")).read_text()
+    assert "NO START DATE FOR ANYBODY" in page, "on the page"
+    assert "Mark CR on the board" in page
+
+    # and inside the setup the bookmark runs, so it shows in Apex too
+    from automations.apex_new_starts import filler as FILLER
+    setup = FILLER.build_js(
+        [{"name": "A B", "find": "B", "pages": {}}], "WE 9.20",
+        notice="NO START DATE FOR ANYBODY.")
+    assert "NO START DATE FOR ANYBODY." in setup
+
+
+def test_the_obcl_fallback_still_says_so(monkeypatch, tmp_path):
+    """Taking the date off the OBCL tab is a real answer, but it is not what
+    the board said -- so it is still worth a line."""
+    from automations.apex_new_starts import run as RUN
+    import datetime as dt, io, contextlib
+
+    c = _cand()
+    c.roll = {0: "", 1: "Hwk1C"}
+    c.week_start = dt.date(2026, 9, 14)
+    hires = {c.name: BID.NewHire(name=c.name, values={
+        "first": "A", "last": "B", "filing_single": "True"})}
+    monkeypatch.setattr(RUN, "gather",
+                        lambda *a, **k: ("Sales Board WE 9.20", [c], [], hires))
+    monkeypatch.setattr(RUN.BID, "signed_pdf_url", lambda *a, **k: "")
+    monkeypatch.setattr(RUN, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(RUN, "_to_clipboard", lambda text: True)
+    monkeypatch.setattr(RUN, "obcl_start", lambda *a, **k: dt.date(2026, 9, 14))
+
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        RUN.make_button(dt.date(2026, 9, 17))
+    text = out.getvalue()
+    assert "came off the OBCL tab" in text and "09/14/2026" in text
