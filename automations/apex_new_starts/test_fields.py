@@ -578,3 +578,60 @@ def test_the_obcl_fallback_still_says_so(monkeypatch, tmp_path):
         RUN.make_button(dt.date(2026, 9, 17))
     text = out.getvalue()
     assert "came off the OBCL tab" in text and "09/14/2026" in text
+
+
+def _batch(monkeypatch, tmp_path, rolls, cohort):
+    """Build a week from {name: roll dict} and a given OBCL answer."""
+    from automations.apex_new_starts import run as RUN
+    import datetime as dt, io, contextlib
+    cands = []
+    for name, roll in rolls.items():
+        c = _cand(); c.name = name; c.roll = roll
+        c.week_start = dt.date(2026, 9, 14)
+        cands.append(c)
+    hires = {c.name: BID.NewHire(name=c.name, values={
+        "first": "A", "last": "B", "filing_single": "True"}) for c in cands}
+    monkeypatch.setattr(RUN, "gather",
+                        lambda *a, **k: ("Sales Board WE 9.20", cands, [], hires))
+    monkeypatch.setattr(RUN.BID, "signed_pdf_url", lambda *a, **k: "")
+    monkeypatch.setattr(RUN, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(RUN, "_to_clipboard", lambda text: True)
+    monkeypatch.setattr(RUN, "obcl_start", lambda *a, **k: cohort)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        RUN.make_button(dt.date(2026, 9, 17))
+    return out.getvalue(), next(tmp_path.glob("fill-apex-*.html")).read_text()
+
+
+def test_one_person_missing_a_cr_still_gets_the_obcl_date(monkeypatch, tmp_path):
+    """Megan, 2026-09-17: "it could be one or the other or both". Somebody
+    with no CR on a week where everyone else has one still deserves the
+    OBCL's answer -- and it is named beside THEM, not as a week-wide alert."""
+    import datetime as dt
+    log, page = _batch(monkeypatch, tmp_path,
+                       {"Has CR": {0: "CR", 1: "Hwk1C"},
+                        "No CR": {0: "", 1: "Hwk1C"}},
+                       dt.date(2026, 9, 14))
+    assert "NO START DATE" not in log, "the OBCL covered them"
+    assert "start date off the OBCL tab, 09/14/2026" in log
+    # named beside the person who needed it, not as a week-wide notice
+    theirs = [ln for ln in log.splitlines() if ln.strip().startswith("\u26a0")]
+    assert any("No CR" in ln and "OBCL" in ln for ln in theirs)
+    assert not any("Has CR" in ln and "OBCL" in ln for ln in theirs)
+
+
+def test_the_alert_names_only_who_is_uncovered(monkeypatch, tmp_path):
+    """Neither source covers them, but the rest of the week is fine."""
+    log, page = _batch(monkeypatch, tmp_path,
+                       {"Has CR": {0: "CR", 1: "Hwk1C"},
+                        "No CR": {0: "", 1: "Hwk1C"}},
+                       None)
+    assert "NO START DATE FOR 1 OF 2: No CR" in log
+    assert "NO START DATE FOR 1 OF 2: No CR" in page
+
+
+def test_everybody_marked_cr_says_nothing(monkeypatch, tmp_path):
+    import datetime as dt
+    log, page = _batch(monkeypatch, tmp_path,
+                       {"A": {0: "CR"}, "B": {0: "CR"}}, dt.date(2026, 9, 14))
+    assert "NO START DATE" not in log and "OBCL" not in log

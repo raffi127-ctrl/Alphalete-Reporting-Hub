@@ -645,30 +645,42 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
     # carried the same warning and it buried the one that actually needed
     # somebody: a missing Blue Ink packet. Said once instead
     # (Megan, 2026-09-17).
-    _whole_week_uncr = bool(add) and all(c.hire_assumed for c in add)
-    # Nobody marked CR? Ask the OBCL what day this lineup started, instead of
-    # assuming the Monday.
+    # Either source, or both, or neither -- per PERSON, not all-or-nothing
+    # (Megan, 2026-09-17: "it could be one or the other or both"). Somebody
+    # with no CR on a week where everyone else has one still deserves the
+    # OBCL's answer; the alert is for the ones nothing covers.
+    _no_cr = [c for c in add if c.hire_assumed]
     _cohort = (obcl_start(add[0].week_start)
-               if add and add[0].week_start and any(c.hire_assumed for c in add)
-               else None)
+               if _no_cr and add[0].week_start else None)
+    _unknown = _no_cr if not _cohort else []
     # A start date nobody can find is worth interrupting for: the fix is on
     # the board, and whoever is about to sit down with 25 Socials should know
     # BEFORE they start, not after (Megan, 2026-09-17: "If you can't find the
     # CR/start date that should be an alert so they know they need to rerun").
-    if not _whole_week_uncr:
-        _notice = ""
-    elif _cohort:
+    _who = ", ".join(c.name for c in _unknown[:6]) + (
+        f" and {len(_unknown) - 6} more" if len(_unknown) > 6 else "")
+    if not _no_cr:
+        _notice = ""                       # every one of them marked CR
+    elif not _cohort and len(_unknown) == len(add):
+        _notice = (
+            "NO START DATE FOR ANYBODY. Nothing is marked CR on the sales "
+            "board and there is no dated OBCL tab for this week, so the dates "
+            "shown are just that week's Monday. Mark CR on the board, then "
+            "press Get this week's setup again.")
+    elif not _cohort:
+        _notice = (
+            f"NO START DATE FOR {len(_unknown)} OF {len(add)}: {_who}. Neither "
+            "a CR on the sales board nor a dated OBCL tab covers them, so "
+            "their dates are just that week's Monday. Mark them CR, then "
+            "press Get this week's setup again.")
+    elif len(_no_cr) == len(add):
         _notice = (
             "Nobody is marked CR on the sales board this week. Start dates "
             f"came off the OBCL tab instead ({_cohort.strftime('%m/%d/%Y')}). "
             "If that is not right, mark CR on the board and press Get this "
             "week's setup again.")
     else:
-        _notice = (
-            "NO START DATE FOR ANYBODY. Nothing is marked CR on the sales "
-            "board and there is no dated OBCL tab for this week, so the dates "
-            "shown are just that week's Monday. Mark CR on the board, then "
-            "press Get this week's setup again.")
+        _notice = ""                       # named per person in the table
     for c in add:
         hire = hires.get(c.name)
         if hire is None or hire.missing_packet:
@@ -702,9 +714,9 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
                 if str(hire.values.get(f) or "").strip().lower() == "true"]:
             said.append("W-4 Step 1(c) blank \u2014 filled as Single, "
                         "no dependents")
-        if c.hire_assumed and not _whole_week_uncr:
-            said.append("nothing marked CR \u2014 hire date taken as that "
-                        "Monday")
+        if c.hire_assumed and _cohort and len(_no_cr) < len(add):
+            said.append("no CR \u2014 start date off the OBCL tab, "
+                        + _cohort.strftime("%m/%d/%Y"))
         if said:
             notes[c.name] = "; ".join(said)
     OUTPUT_DIR.mkdir(exist_ok=True)
