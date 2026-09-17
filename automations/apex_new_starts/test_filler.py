@@ -2340,3 +2340,57 @@ def test_a_saved_setup_says_it_is_the_saved_one(page, tmp_path):
     warn = page.locator("#anssrc").inner_text()
     assert "clipboard did not have" in warn
     assert "saved on this computer" in warn
+
+
+def test_unticking_somebody_leaves_them_out(page, tmp_path):
+    """Megan, 2026-09-17: "the ability then to uncheck any I don't want to be
+    added". On by default -- the board already decided who is here."""
+    f = tmp_path / "user-profile.html"
+    f.write_text("<h1>x</h1>")
+    page.goto(f.as_uri())
+    page.evaluate("() => localStorage.clear()")
+    people = [{"name": "Aundre Browder", "find": "Browder", "pages": {}},
+              {"name": "Rosa Capel", "find": "Capel", "pages": {}}]
+    js = filler.build_js(people, "WE 9.20")[len("javascript:"):]
+    page.evaluate(js)
+    page.locator("#ansrun").click()
+
+    assert page.locator('[data-add="0"]').is_checked(), "everyone starts in"
+    assert page.locator('[data-add="1"]').is_checked()
+
+    page.uncheck('[data-add="0"]')
+    assert page.evaluate(
+        """() => JSON.parse(localStorage.getItem('apexNewStarts.WE 9.20.skip'))"""
+    ) == {"aundre browder": 1}, "remembered, so reopening the form keeps it"
+
+    # a Social is not asked for from somebody who is not going in
+    page.fill('[data-s="0"]', "12345")
+    assert "Not nine digits" not in page.locator("#anssnwarn").inner_text()
+
+    page.locator("#ansgo").click()
+    page.wait_for_function(
+        "() => document.getElementById('ansout').innerText.includes('run \u00b7')",
+        timeout=20000)
+
+    out = page.locator("#ansout").inner_text()
+    assert "1 of 2 run" in out, "one of the two was left out"
+    assert "Aundre Browder" not in out, "and it was the unticked one"
+    assert "Rosa Capel" in out, "the ticked one was still attempted"
+
+
+def test_an_untick_survives_reopening_the_form(page, tmp_path):
+    f = tmp_path / "user-profile.html"
+    f.write_text("<h1>x</h1>")
+    page.goto(f.as_uri())
+    page.evaluate("() => localStorage.clear()")
+    js = filler.build_js(
+        [{"name": "Aundre Browder", "find": "Browder", "pages": {}}],
+        "WE 9.20")[len("javascript:"):]
+    page.evaluate(js)
+    page.locator("#ansrun").click()
+    page.uncheck('[data-add="0"]')
+    page.locator("#anscancel").click()
+
+    page.evaluate(js)
+    page.locator("#ansrun").click()
+    assert not page.locator('[data-add="0"]').is_checked()

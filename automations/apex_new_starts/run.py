@@ -727,6 +727,13 @@ def make_button(today: dt.date, *, tab=None, include_ona=True) -> int:
         else today.strftime("%B %d, %Y"), notes, _notice,
         add[0].week_start.isoformat() if add and add[0].week_start else ""))
     _log(f"{title}: {len(people)} record(s) in the button")
+    # The names, plainly, so the card shows WHO was pulled rather than just a
+    # count (Megan, 2026-09-17: "I want to be able to see the list of names
+    # here that Lucy pulled"). Unticking somebody happens in the panel, on the
+    # same table you type the Socials into.
+    for n, person in enumerate(people, 1):
+        _log(f"   {n:2}. {person['name']}"
+             + (f"  \u2014 {person['hire']}" if person.get("hire") else ""))
     if _notice:
         _log("  \u26a0\ufe0f  " + _notice)
     for name, why in notes.items():

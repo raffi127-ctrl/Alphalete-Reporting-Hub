@@ -1052,7 +1052,15 @@ _JS = r"""
  /* A gender is not a secret and it is a chore to re-answer, so it is kept.
     A Social is neither kept nor written down anywhere -- it lives in this
     tab, for this run, and goes when the tab does. */
- var GKEY=KEY+'.gender', DONEKEY=KEY+'.done';
+ var GKEY=KEY+'.gender', DONEKEY=KEY+'.done', SKIPKEY=KEY+'.skip';
+ /* Who was unticked, remembered, so it survives the form being reopened. */
+ var SKIP={};
+ try{ SKIP=JSON.parse(localStorage.getItem(SKIPKEY)||'{}')||{}; }catch(e){}
+ function setSkip(nm,off){
+   if(off) SKIP[nm]=1; else delete SKIP[nm];
+   try{ localStorage.setItem(SKIPKEY,JSON.stringify(SKIP)); }catch(e){}
+ }
+ function skipped(p){ return !!SKIP[norm(p.name)]; }
  /* WHO is finished, by name -- not "how far down the list we got". A count
     cannot survive picking somebody out of order, and it re-ran people who
     were already in (Megan, 2026-09-10: "It shouldn't try running an already
@@ -1560,6 +1568,10 @@ _JS = r"""
      var gh=window.__ansGender[norm(D[i].name)]||'';
      var sh=window.__ansSSN[norm(D[i].name)]||window.__ansDraft[norm(D[i].name)]||'';
      rows+='<tr><td style="padding:4px 8px">'+(i+1)+'</td>'+
+       /* Untick anybody who should not go in. On by default: the board has
+          already decided who is here (Megan, 2026-09-17). */
+       '<td style="padding:4px 8px"><input type="checkbox" data-add="'+i+'" '+
+       (SKIP[norm(D[i].name)]?'':'checked')+'></td>'+
        '<td style="padding:4px 8px">'+D[i].name+'</td>'+
        '<td style="padding:4px 8px">'+(needG[i].g?
          '<select data-g="'+i+'"><option value="">\u2014</option>'+
@@ -1582,7 +1594,8 @@ _JS = r"""
      'held in this tab only, for this run, and are never written down -- so '+
      'do not reload the page until the run is done.</div>'+
      '<table style="width:100%%;border-collapse:collapse;font-size:13px">'+
-     '<tr><th></th><th style="text-align:left">Name</th><th style="text-align:left">Gender</th>'+
+     '<tr><th></th><th style="text-align:left">Add?</th>'+
+     '<th style="text-align:left">Name</th><th style="text-align:left">Gender</th>'+
      '<th style="text-align:left">Social</th></tr>'+rows+'</table>'+
      '<div id="anssnwarn" style="margin-top:10px;font-size:13px;color:#b00"></div>'+
      '<div style="margin-top:16px"><button id="ansgo" style="background:#0F766E;color:#fff;border:0;border-radius:8px;padding:11px 22px;font-weight:700;cursor:pointer">Start the run</button> '+
@@ -1633,6 +1646,7 @@ _JS = r"""
      var byVal={}, k, i, out={dups:[], bad:[]};
      for(i=0;i<D.length;i++){
        var nm=norm(D[i].name), v=window.__ansSSN[nm];
+       if(SKIP[nm]) continue;              /* not going in, so not asked for */
        var draft=(window.__ansDraft[nm]||'').replace(/-/g,'');
        if(!v){ if(draft) out.bad.push(D[i].name); continue; }
        (byVal[v]=byVal[v]||[]).push(D[i].name);
@@ -1649,6 +1663,11 @@ _JS = r"""
        bits.push('Not nine digits yet: '+pr.bad.join(', ')+'.');
      box.innerHTML=bits.join('<br>');
    }
+   var keepA=w.querySelectorAll('[data-add]'), ka;
+   for(ka=0;ka<keepA.length;ka++) keepA[ka].onchange=function(){
+     setSkip(norm(D[+this.getAttribute('data-add')].name), !this.checked);
+     showProblems();
+   };
    var keepG=w.querySelectorAll('[data-g]'), keepS=w.querySelectorAll('[data-s]'), kq;
    for(kq=0;kq<keepG.length;kq++) keepG[kq].onchange=function(){
      var nm=norm(D[+this.getAttribute('data-g')].name);
@@ -1731,6 +1750,10 @@ _JS = r"""
         link is still there to check the list before starting, on purpose. */
      RUNNING=true; FLAGGED=[]; REPORT=[]; refreshChrome();
      for(j=from;j<stop;j++){
+       if(skipped(D[j])&&!onlyOne){
+         say(D[j].name+': unticked — left out');
+         continue;
+       }
        if(isDone(D[j])&&!onlyOne){
          say(D[j].name+': already in Apex — skipped');
          if(j===I){ I=j+1; try{ localStorage.setItem(KEY,String(I)); }catch(e){} }
