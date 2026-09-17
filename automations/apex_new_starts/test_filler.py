@@ -2650,3 +2650,32 @@ def test_a_failed_save_reports_the_shape_of_the_named_field(page, tmp_path):
     assert "kw=" in shape, "says whether Kendo answered for it"
     assert "MaritalStatusID" in shape, "and names the bound id input"
     assert "widgetSpan=" in shape
+
+
+def test_what_did_apex_say_also_shows_the_field_shape(page, tmp_path):
+    """The shape was only going into the run's log line, and the end-of-run
+    summary replaces that log -- so it never reached anybody. This is the
+    button people actually press (Megan, 2026-09-17)."""
+    f = tmp_path / "bank-info.html"
+    f.write_text("""<h1>Tax</h1>
+      <div class="form-group">
+        <label for="ms">Marital Status</label>
+        <input type="hidden" id="ms" ng-model="vm.bank.MaritalStatus">
+        <input type="hidden" ng-model="vm.bank.MaritalStatusID" value="">
+        <span class="k-widget k-dropdown"><span class="k-input">Married</span></span>
+      </div>""")
+    page.goto(f.as_uri())
+    page.evaluate(filler.build_js(
+        [{"name": "Dylan Poston", "find": "Poston", "pages": {}}],
+        "WE 9.20")[len("javascript:"):])
+    page.evaluate("""() => { window.__ansNet = {last: {status: 400,
+        url: 'https://apexapi/employees/bankinfo/1',
+        body: '{"Message":"The request is invalid.","ModelState":'
+              + '{"employeeBankInfo.MaritalStatusID":["Marital Status is Required"]}}'}}; }""")
+
+    page.locator("#ansmoretoggle").click()      # it lives behind that link
+    page.locator("#anserr").click()
+    out = page.locator("#ansout").inner_text()
+    assert "400" in out and "Marital Status is Required" in out
+    assert "kw=" in out, "and the shape of the control it named"
+    assert "MaritalStatusID" in out

@@ -2164,12 +2164,33 @@ _JS = r"""
  };
  document.getElementById('anserr').onclick=function(e){ e.preventDefault();
    var L=window.__ansNet&&window.__ansNet.last;
-   document.getElementById('ansout').innerHTML = L
-     ? '<b>'+L.status+'</b> '+String(L.url).slice(0,70)+
-       '<div style="font-size:11px;white-space:pre-wrap;max-height:180px;overflow:auto;'+
-       'background:#f6f6f6;padding:6px;margin-top:4px">'+
-       String(L.body).replace(/</g,'\u0026lt;')+'</div><div style="font-size:11px">screenshot this</div>'
-     : 'Nothing failed yet. Click Save in Apex first, then come back here.';
+   if(!L){
+     document.getElementById('ansout').innerHTML=
+       'Nothing failed yet. Click Save in Apex first, then come back here.';
+     return;
+   }
+   /* The shape of whatever field Apex named goes HERE, not only in the run's
+      log line -- the end-of-run summary replaces that log, so it never
+      reached anybody (Megan, 2026-09-17). This is the button people press. */
+   var extra='';
+   try{
+     var body=String(L.body||''), m=body.match(/([A-Za-z]+?)ID"\s*:/);
+     if(!m) m=body.match(/([A-Za-z]+)ID/);
+     if(m){
+       var human=m[1].replace(/([a-z0-9])([A-Z])/g,'$1 $2')
+                     .replace(/^employee bank info\.?\s*/i,'').trim();
+       extra=fieldShape(human);
+     }
+   }catch(e2){ extra='could not read the shape: '+e2.message; }
+   document.getElementById('ansout').innerHTML=
+     '<b>'+L.status+'</b> '+String(L.url).slice(0,70)+
+     '<div style="font-size:11px;white-space:pre-wrap;max-height:160px;overflow:auto;'+
+     'background:#f6f6f6;padding:6px;margin-top:4px">'+
+     String(L.body).replace(/</g,'\u0026lt;')+'</div>'+
+     (extra?'<div style="font-size:11px;white-space:pre-wrap;max-height:220px;'+
+            'overflow:auto;background:#fff4e6;padding:6px;margin-top:4px">'+
+            String(extra).replace(/</g,'\u0026lt;')+'</div>':'')+
+     '<div style="font-size:11px">screenshot this</div>';
  };
  document.getElementById('ansreset').onclick=function(e){ e.preventDefault();
    if(!confirm('Forget that any of them are done, and start from the top?')) return;
