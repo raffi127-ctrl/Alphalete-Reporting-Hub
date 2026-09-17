@@ -163,11 +163,30 @@ def add_to_public_json(key: str, owner: str, label: str, tz: str,
 
 
 def add_relay_key(key: str, owner: str, relay_key: str, log=print) -> None:
+    """One live key per office, EVER.
+
+    This used to append unconditionally, so running enrol twice for the same
+    office left two live keys on the tab. Aya had exactly that on 2026-09-17:
+    her machine was installed on the first, a second enrol minted another, and
+    switching one off would have revoked nothing.
+
+    icd_signup.store already had this right -- it looks for an existing key
+    and hands the same one back, with the reason written beside it: "two live
+    keys for one office is a revocation that does not revoke". The rule lived
+    in one of the two places that mint keys, which is the whole bug.
+    """
     from automations.icd_alerts import post as P
     from automations.recruiting_report.fill import open_by_key
 
     book = open_by_key(P.RELAY_SPREADSHEET_ID)
     tab = book.worksheet("Relay Keys")
+    for row in tab.get_all_values()[1:]:
+        if row and (row[0] or "").strip().lower() == key:
+            have = (row[1] or "").strip()
+            if have:
+                log("  already has a key on the 'Relay Keys' tab — keeping it, "
+                    "so the machines already installed on it keep working")
+                return
     tab.append_row([key, relay_key, "TRUE", "added by enroll for %s" % owner])
     log("  key written to the 'Relay Keys' tab, Active=TRUE")
 
