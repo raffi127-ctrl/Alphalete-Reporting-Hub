@@ -30,6 +30,26 @@ class AccountProblem(RuntimeError):
     """Something the ICD can fix, phrased for the ICD."""
 
 
+def signin_in_progress() -> bool:
+    """Is somebody at a SaraPlus sign-in window right now?
+
+    They are typing into the SAME Chrome profile the sweep opens, and Chromium
+    will not open one profile twice -- so without this the sweep races a person
+    who is part-way through a passcode challenge and neither of them wins.
+
+    A STALE LOCK IS IGNORED, on the box_read rule: a crashed sign-in must not
+    mute this office for the rest of the afternoon. The failure mode of a
+    forgotten lock has to be noise, never silence.
+    """
+    try:
+        held = dt.datetime.fromisoformat(
+            C.SARA_SIGNIN_LOCK.read_text().strip())
+    except (OSError, ValueError):
+        return False
+    return (dt.datetime.now() - held) < dt.timedelta(
+        minutes=C.SARA_SIGNIN_LOCK_MINUTES)
+
+
 def _context(p, headless: bool):
     C.PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     ctx = p.chromium.launch_persistent_context(
@@ -238,6 +258,12 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
     from automations.shared import sale_hype as H
 
     day = day or C.today()
+    if signin_in_progress():
+        # NOT an error, and nothing is lost: the next tick is two minutes
+        # away. Taking the profile now would close the window under somebody
+        # mid-passcode and leave them certain they had done it wrong.
+        log("someone is signing in to SaraPlus — standing back this pass")
+        return {"records": {}, "sales": {}}
     with sync_playwright() as p:
         ctx, page, base = _heal_and_login(p, headless, log=log)
         try:

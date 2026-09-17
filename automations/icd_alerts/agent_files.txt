@@ -11,6 +11,7 @@ automations/icd_alerts/finish_setup.py
 automations/icd_alerts/sara_read.py
 automations/icd_alerts/box_read.py
 automations/icd_alerts/box_signin.py
+automations/icd_alerts/sara_signin.py
 automations/icd_alerts/state.py
 automations/icd_alerts/run.py
 automations/icd_alerts/dialogs.py

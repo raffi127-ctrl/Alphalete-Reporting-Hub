@@ -45,9 +45,16 @@ SC_PROFILE_DIR = APP_DIR / "chrome-profile-sc"
 # nothing to lose, whereas the person at the keyboard has an authenticator
 # code that expires.
 SC_SIGNIN_LOCK = APP_DIR / "sc-signin.lock"
+
+# THE SAME FOR SARAPLUS. Its Chrome profile is opened by the sweep every
+# couple of minutes, and Chromium will not open one profile twice -- so a
+# person part-way through a passcode challenge is racing a background job
+# for the profile they are typing into.
+SARA_SIGNIN_LOCK = APP_DIR / "sara-signin.lock"
 # Long enough for a phone to be found and a code typed, short enough that a
 # crashed sign-in cannot mute the sweep for the afternoon.
 SC_SIGNIN_LOCK_MINUTES = 10
+SARA_SIGNIN_LOCK_MINUTES = 15   # a passcode has to arrive by email first
 INSTALL_PATH = APP_DIR / "install.json"
 STATE_PATH = APP_DIR / "state.json"
 PROFILE_DIR = APP_DIR / "chrome-profile"
