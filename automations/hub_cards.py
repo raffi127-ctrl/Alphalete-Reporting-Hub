@@ -6187,6 +6187,9 @@ AUTOMATED_REPORTS = [
             # Nothing to run again after a clean fetch, and the next click is
             # not in the Hub at all.
             "again": False,
+            # The names, on the card, open. This card's whole point is WHO it
+            # pulled (Megan, 2026-09-17).
+            "show_log": "\U0001F4CB Who's in this week's list",
             # Written for a Preview button that no longer exists -- it told
             # people to look at a list that was never on the page
             # (Megan, 2026-09-13: "what list above?").

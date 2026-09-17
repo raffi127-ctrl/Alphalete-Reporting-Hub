@@ -4347,6 +4347,27 @@ def _render_report_card(report: dict, today: dt.date, chrome_ok: bool) -> None:
                             st.warning(msg)
                         else:
                             st.success(msg)
+                        # A card whose whole point is WHO it pulled can ask for
+                        # its log on screen: post_run {"show_log": "<title>"}.
+                        # This path showed no log at all, so the names were
+                        # nowhere on the card (Megan, 2026-09-17: "still not
+                        # showing me the list here").
+                        _show_log = post_run_cfg.get("show_log")
+                        if _show_log:
+                            _p = ACTIVE_RUNS_LOG_DIR / f"{report['id']}.log"
+                            _tail = ""
+                            if _p.exists():
+                                try:
+                                    _tail = "\n".join(
+                                        _p.read_text(errors="replace")
+                                        .splitlines()[-60:])
+                                except Exception:
+                                    _tail = ""
+                            if _tail:
+                                with st.expander(
+                                        _show_log if isinstance(_show_log, str)
+                                        else "📜 Run log", expanded=True):
+                                    st.code(_tail, language="log")
                 else:
                     # Read the run log — used both to diagnose the failure
                     # and to show the raw tail.
