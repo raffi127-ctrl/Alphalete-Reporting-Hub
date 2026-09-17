@@ -484,6 +484,47 @@ class StaleFeedThatAlreadyShipped(unittest.TestCase):
         self.assertIn("box_order_log", tri.line_for(v))
 
 
+class PinnedFilterShippedNothing(StaleFeedThatAlreadyShipped):
+    """`kind: unconfirmed-filter` — the "hit by" reports ABORTED before
+    exporting (2026-09-16/17), so the line must not ask anyone to re-send."""
+
+    KEY = "drop-tableau-stale-box-b2bboxenergytracker-boxorderlog-filters"
+
+    def _with_state(self, reports, kind="unconfirmed-filter"):
+        import json as _json
+        import tempfile
+        from pathlib import Path as _Path
+        from automations.shared import tableau_freshness as _tf
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        slug = self.KEY[len("drop-tableau-stale-"):]
+        d = _Path(tmp.name)
+        (d / "{}-{}.json".format(slug, DAY.isoformat())).write_text(
+            _json.dumps({"alerted": True, "reports": reports, "kind": kind}))
+        return mock.patch.object(_tf, "STATE_DIR", d)
+
+    def test_nobody_pulled_yet_is_still_just_a_notice(self):
+        pass  # not applicable: a filter notice always needs the view fixed
+
+    def test_the_line_says_catching_up_will_not_fix_it(self):
+        pass  # the stale-feed wording; replaced below
+
+    def test_abort_is_not_a_resend(self):
+        with self._with_state(["box_order_log"]):
+            v = _classify(key=self.KEY, opened=DAY.isoformat())
+        line = tri.line_for(v)
+        self.assertEqual(v.bucket, tri.NEEDS_YOU)
+        self.assertIn("nothing to re-send", line)
+        self.assertNotIn("already ran off it", line)
+        self.assertIn("(All)", line)
+
+    def test_no_hits_still_names_something_to_rerun(self):
+        with self._with_state([]):
+            v = _classify(key=self.KEY, opened=DAY.isoformat())
+        self.assertEqual(v.bucket, tri.NEEDS_YOU)
+        self.assertIn("re-run the report", tri.line_for(v))
+
+
 class FindingsAreNotFailures(unittest.TestCase):
     """A `finding-` key is a run that did its WHOLE job and is reporting what it
     noticed on the board. notify.py posts it correctly — "the run itself was

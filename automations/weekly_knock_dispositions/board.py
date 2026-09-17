@@ -137,9 +137,13 @@ COL_DOORS_PER_DAY = "Mon\u2013Fri Avg Doors / Day"
 # day's first\u2192last span, the raw span the daily column uses (Raf and Megan
 # 2026-08-28) \u2014 over the same weekdays COL_DOORS_PER_DAY divides by: the ones
 # they cleared the "over 20" bar. The summary row is the mean of the reps'
-# rates, exactly what the daily board's OFFICE TOTAL line does. Mon\u2013Fri for the
-# reason the doors column is: Saturday is a different shift.
-COL_KNOCKS_PER_HR = "Mon\u2013Fri Avg Knocks / Hr"
+# rates, exactly what the daily board's OFFICE TOTAL line does.
+# Mon\u2013SAT since 2026-09-17 (Raf, via Eve). It started Mon\u2013Fri like the doors
+# column, but a RATE doesn't need Saturday split out the way a door COUNT does:
+# Saturday's shorter shift lowers its doors target (140 vs 160), not its 23/hr
+# (render.KNOCKS_PER_HR_TARGET). So a Saturday that cleared the bar is one more
+# day in the mean \u2014 same bar, same raw span.
+COL_KNOCKS_PER_HR = "Mon\u2013Sat Avg Knocks / Hr"
 # Saturday's own doors-per-day (Raf 2026-09-13, same Loom at 1:52: "there can
 # be a column here … Saturday average doors knocked per day", cursor parked on
 # Sat First Knock — so it belongs in the SATURDAY block, not beside the weekday
@@ -509,17 +513,17 @@ def _doors_per_day(rec: dict) -> str:
 
 
 def _knocks_per_hr(rec: dict) -> float | None:
-    """One rep's Mon–Fri average knocks per hour (COL_KNOCKS_PER_HR): the mean
-    of that day's doors over that day's first→last span, over the weekdays the
-    rep cleared the doors bar. None — a blank cell, never a 0 — when the pull
-    carried no per-day spans (anything pulled before 2026-09-15) or no weekday
-    qualifies."""
+    """One rep's Mon–Sat average knocks per hour (COL_KNOCKS_PER_HR): the mean
+    of that day's doors over that day's first→last span, over the days —
+    Saturday included — the rep cleared the doors bar. None — a blank cell,
+    never a 0 — when the pull carried no per-day spans (anything pulled before
+    2026-09-15) or no day qualifies."""
     daily = rec.get(K_DAILY_KNOCKS)
     spans = rec.get(K_DAILY_SPAN_MIN)
     if not isinstance(daily, (list, tuple)) or not isinstance(spans, (list, tuple)):
         return None
     rates = []
-    for i in range(min(WEEKDAYS, len(daily), len(spans))):
+    for i in range(min(DAYS, len(daily), len(spans))):
         doors, span = int(daily[i] or 0), int(spans[i] or 0)
         if doors >= MIN_KNOCKS_PER_DAY and span > 0:
             rates.append(doors / (span / 60.0))
