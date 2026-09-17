@@ -207,6 +207,10 @@ def apex_values(c: BRD.Candidate, hire: BID.NewHire) -> dict:
     email = v.pop("email", "")
     if email:
         v["account_email"] = email
+        # Only needed for somebody being CREATED: the ones already on the
+        # Pending tab have an account and it is not ours to change. Megan,
+        # 2026-09-09: "just use their email but leave off the @gmail.com part".
+        v["username"] = email.split("@")[0]
         # NOT the user name. The new starts are ALREADY in Apex, sitting on the
         # Pending tab with their account created (Megan, 2026-09-09) -- which is
         # also why Apex rejected the email as "already being used": it was this

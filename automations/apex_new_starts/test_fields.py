@@ -179,7 +179,10 @@ def test_the_apex_record_carries_the_office_settings():
         assert v[k] == want, k
     assert v["hire_date"] == "08/31/2026"
     assert v["account_email"] == "ann@example.com"
-    assert "username" not in v          # the account already exists
+    # A User Name is derived now, for somebody being CREATED -- but it must
+    # never reach a record that already has an account, which is what Apex
+    # rejected as "already being used". Proven at the PAGE level below.
+    assert v["username"] == "ann"
     assert "ssn" not in v          # never, in the dict that gets typed
 
 
@@ -322,19 +325,30 @@ def test_somebody_who_signed_weeks_ago_is_not_reported_as_missing():
     assert calls["search"], "the sweep miss should have triggered a lookup"
 
 
-def test_no_user_name_is_ever_set():
-    """The new starts are ALREADY in Apex, on the Pending tab, accounts made
-    (Megan, 2026-09-09). That is also what Apex was complaining about when it
-    called the email "already being used under another Apex account" -- it was
-    this company's own existing record, not a stranger's.
+def test_a_user_name_only_ever_reaches_the_add_employee_form():
+    """It is derived for somebody being CREATED. On a record that already has
+    an account, typing it is what Apex rejected as "already being used" -- so
+    it appears on the "new" page and nowhere else."""
+    from automations.apex_new_starts import filler as F
+    for page, keys in F.PAGE_OF.items():
+        if page == "new":
+            assert "username" in keys
+        else:
+            assert "username" not in keys, page
 
-    So the account fields are never written. Setting a user name on a record
-    that has one is how you break somebody's login."""
+
+def test_a_user_name_is_the_email_without_its_domain():
+    """Megan, 2026-09-09: "just use their email but leave off the @gmail.com
+    part". Needed only for somebody being CREATED -- the ones already on the
+    Pending tab have an account, and writing a user name onto a record that
+    has one is how you break somebody's login. That it can only reach the
+    Add Employee form is pinned by
+    test_a_user_name_only_ever_reaches_the_add_employee_form."""
     from automations.apex_new_starts import run as RUN
     v = RUN.apex_values(_cand(), BID.NewHire(
         name="Aundre Browder",
         values={"email": "aundrebrowder22@gmail.com"}))
-    assert "username" not in v
+    assert v["username"] == "aundrebrowder22"
     assert v["account_email"] == "aundrebrowder22@gmail.com"
 
 

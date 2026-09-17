@@ -46,6 +46,14 @@ from typing import Dict, List
 # "Texas" in the money box beside it. A field is only ever filled on its own
 # page now.
 PAGE_OF = {
+    # The "+ Add Employee" form, for somebody who is not in Apex at all.
+    # Everyone normally IS -- they sit on the Pending tab with an account
+    # already -- so this page is only reached from "add the missing ones"
+    # (Megan, 2026-09-17). Hire Date is typed HERE; on an existing Pending
+    # record it is read-only.
+    "new": ("first", "middle", "last", "username", "account_email",
+            "hire_date", "position", "rate", "pay_state", "pay_basis",
+            "pay_frequency", "department"),
     "employment": ("position", "rate", "pay_state", "pay_basis",
                    "pay_frequency", "department"),
     "profile": ("first", "middle", "last", "account_email", "dob", "gender",
@@ -57,6 +65,7 @@ PAGE_OF = {
 LABEL_FOR = {
     "first": "First Name", "middle": "Middle Name", "last": "Last Name",
     "username": "User Name", "account_email": "Account Email",
+    "hire_date": "Hire Date",
     # Hire Date and User Name are READ-ONLY text on the Edit pages -- already
     # correct on the Pending record, and not ours to change.
     "country": "Country", "pay_frequency": "Pay Frequency",
@@ -971,6 +980,91 @@ _JS = r"""
    await filterTo(f,'',surname);
    return rowFor(p);
  }
+ function allEmployeesTab(){
+   /* The tab strip, so a name can be checked against EVERYBODY and not just
+      the Pending list. */
+   var els=document.querySelectorAll('a,button,li'), i;
+   for(i=0;i<els.length;i++){
+     if(norm(els[i].textContent)==='all employees') return els[i];
+   }
+   return null;
+ }
+ async function existsAnywhere(p){
+   /* "Not on the Pending tab" is NOT "not in Apex" -- the lookup only ever
+      searched Pending. Creating somebody who is already there would make a
+      SECOND payroll record for a real employee, so look at All Employees
+      before offering to add them (Megan, 2026-09-17). Returns true, false,
+      or null when the check could not be made at all. */
+   var tab=allEmployeesTab();
+   if(!tab) return null;
+   tab.click();
+   await sleep(1200);
+   var f=filterBoxes();
+   if(!f) return null;
+   var row=await lookupRow(f,p);
+   return !!row;
+ }
+ function addButton(){
+   var els=document.querySelectorAll('a,button'), i;
+   for(i=0;i<els.length;i++){
+     if(cleanRole(els[i].textContent)==='add employee') return els[i];
+   }
+   return null;
+ }
+ async function addMissing(people,say){
+   /* Fill the "+ Add Employee" form for somebody Apex does not have. Stops
+      before Save on the FIRST one so it can be looked at -- this is the only
+      thing in here that CREATES a payroll record. */
+   var made=0, i;
+   for(i=0;i<people.length;i++){
+     var p=people[i];
+     say('<b>'+p.name+'</b>: checking All Employees first\u2026');
+     var there=await existsAnywhere(p);
+     if(there===null){
+       say('<span style="color:#b00">'+p.name+': could not check All '+
+           'Employees from this page \u2014 open Roster \u2192 Employees and '+
+           'try again. Nothing was created.</span>');
+       return made;
+     }
+     if(there){
+       say('<span style="color:#a56a00">'+p.name+': already in Apex, just not '+
+           'on Pending. Nothing created \u2014 find them on All Employees.'+
+           '</span>');
+       continue;
+     }
+     var add=addButton();
+     if(!add){
+       say('<span style="color:#b00">No "Add Employee" button on this page. '+
+           'Open Roster \u2192 Employees. Nothing was created.</span>');
+       return made;
+     }
+     add.click();
+     await sleep(1500);
+     var r=await doPage(p,'new');
+     if(r.miss.length){
+       say('<span style="color:#b00">'+p.name+': the form is missing '+
+           r.miss.join(', ')+' \u2014 filled the rest and STOPPED. Finish it '+
+           'by hand and Save, or screenshot this.</span>');
+       return made;
+     }
+     say(p.name+': form filled \u2014 '+r.done.join(', '));
+     if(made===0){
+       say('<b>Look at it, then press Save in Apex yourself.</b> Once that '+
+           'record is right, press this again for the rest.');
+       return made+1;
+     }
+     var err=await saveHere();
+     if(err){
+       say('<span style="color:#b00">'+p.name+': Apex refused it \u2014 '+err+
+           '</span>');
+       return made;
+     }
+     say('<b>'+p.name+': created.</b>');
+     made++;
+   }
+   return made;
+ }
+ window.__ansAddMissing=addMissing;
  async function findEveryone(say){
    /* Clicking the button on each page of a five-page list to teach it where
       people are is exactly the kind of chore this is supposed to remove
@@ -1007,10 +1101,17 @@ _JS = r"""
    if(!still.length){ say('<b>All '+D.length+' found.</b> Ready to run the week.'); return; }
    say('<b style="color:#b00">Not on the Pending tab ('+still.length+'):</b><br>'+
        still.join('<br>')+
-       '<div style="margin-top:6px"><a href="#" id="ansagain">look again</a> · '+
-       'or add them in Apex and look again.</div>');
+       '<div style="margin-top:6px"><a href="#" id="ansaddmiss"><b>add '+
+       (still.length===1?'this one':'these '+still.length)+' in Apex</b></a>'+
+       ' · <a href="#" id="ansagain">look again</a></div>');
    var again=document.getElementById('ansagain');
    if(again) again.onclick=function(e){ e.preventDefault(); findEveryone(say); };
+   var addm=document.getElementById('ansaddmiss');
+   if(addm) addm.onclick=async function(e){ e.preventDefault();
+     var want=[], q;
+     for(q=0;q<D.length;q++) if(still.indexOf(D[q].name)>=0) want.push(D[q]);
+     await addMissing(want,say);
+   };
  }
  function idFor(p){
    var map=knownIds(), want=norm(p.name);

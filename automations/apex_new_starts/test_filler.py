@@ -934,7 +934,7 @@ def test_the_button_is_handed_pages_not_a_flat_field_list():
                                "city": "Plano"})
     pages = filler.rows_for(RUN.apex_values(c, hire))
 
-    assert set(pages) <= {"employment", "profile", "tax"}
+    assert set(pages) <= {"new", "employment", "profile", "tax"}
     for page, fields in pages.items():
         for label, value in fields.items():
             assert isinstance(value, str), f"{page}/{label} is not a string"
@@ -2394,3 +2394,87 @@ def test_an_untick_survives_reopening_the_form(page, tmp_path):
     page.evaluate(js)
     page.locator("#ansrun").click()
     assert not page.locator('[data-add="0"]').is_checked()
+
+
+ROSTER_WITH_TABS = """
+<!doctype html><html><body>
+<h1>USER LISTING</h1>
+<button id="addbtn">+ Add Employee</button>
+<ul><li><a href="#">Active</a></li><li><a href="#">Pending</a></li>
+    <li><a href="#" id="alltab">All Employees</a></li></ul>
+<table><thead><tr><th>First Name</th><th>Last Name</th></tr>
+<tr><td><input placeholder="Filter" id="ffirst"></td>
+    <td><input placeholder="Filter" id="lf"></td>
+    <td><button id="apply">Apply Filters</button></td></tr></thead>
+<tbody id="rows"></tbody></table>
+<div id="made"></div>
+<label for="fn">First Name</label><input id="fn">
+<label for="ln">Last Name</label><input id="ln">
+<label for="un">User Name</label><input id="un">
+<label for="ae">Account Email</label><input id="ae">
+<label for="hd">Hire Date</label><input id="hd">
+<script>
+const ALL = [['Gregory','Beamon']];
+window.__render = () => {
+  const l = document.getElementById('lf').value.toLowerCase();
+  const f = document.getElementById('ffirst').value.toLowerCase();
+  const shown = ALL.filter(r => (!l || r[1].toLowerCase().includes(l)) &&
+                                (!f || r[0].toLowerCase().includes(f)));
+  document.getElementById('rows').innerHTML = shown
+    .map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td>
+      <td><button class="ed">Edit</button></td></tr>`).join('');
+};
+document.getElementById('apply').addEventListener('click', window.__render);
+document.getElementById('addbtn').addEventListener('click',
+  () => { document.getElementById('made').textContent = 'form opened'; });
+window.__render();
+</script>
+</body></html>
+"""
+
+
+def test_somebody_already_in_apex_is_not_created_again(page, tmp_path):
+    """"Not on the Pending tab" is NOT "not in Apex" -- the lookup only ever
+    searched Pending. Creating them would make a SECOND payroll record for a
+    real employee (Megan, 2026-09-17)."""
+    f = tmp_path / "roster.html"
+    f.write_text(ROSTER_WITH_TABS)
+    page.goto(f.as_uri())
+    page.evaluate("() => localStorage.clear()")
+    person = {"name": "Gregory Beamon", "find": "Beamon",
+              "pages": {"new": {"First Name": "Gregory"}}}
+    page.evaluate(filler.build_js([person], "WE 9.20")[len("javascript:"):])
+
+    out = page.evaluate("""async (p) => {
+      const said = [];
+      await window.__ansAddMissing([p], m => said.push(m));
+      return said.join(' | ');
+    }""", person)
+    assert "already in Apex" in out
+    assert "Nothing created" in out
+    assert page.locator("#made").inner_text() == "", "the form never opened"
+
+
+def test_a_genuinely_absent_person_gets_the_form_filled_and_stops(page, tmp_path):
+    """The only thing in here that CREATES a payroll record, so the first one
+    stops before Save to be looked at."""
+    f = tmp_path / "roster.html"
+    f.write_text(ROSTER_WITH_TABS)
+    page.goto(f.as_uri())
+    page.evaluate("() => localStorage.clear()")
+    person = {"name": "Erick Pullins", "find": "Pullins",
+              "pages": {"new": {"First Name": "Erick", "Last Name": "Pullins",
+                                "User Name": "erickpullins",
+                                "Account Email": "erickpullins@gmail.com",
+                                "Hire Date": "09/14/2026"}}}
+    page.evaluate(filler.build_js([person], "WE 9.20")[len("javascript:"):])
+
+    out = page.evaluate("""async (p) => {
+      const said = [];
+      await window.__ansAddMissing([p], m => said.push(m));
+      return said.join(' | ');
+    }""", person)
+    assert page.locator("#made").inner_text() == "form opened"
+    assert page.input_value("#un") == "erickpullins", "the user name was typed"
+    assert page.input_value("#hd") == "09/14/2026", "and the hire date"
+    assert "press Save in Apex yourself" in out, "it stopped before saving"
