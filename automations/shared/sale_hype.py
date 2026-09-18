@@ -89,6 +89,7 @@ HYPE_REGULAR = (
     "{first} not waiting on anybody :dollar:",
     "Somebody check on {first}, they're cooking :fire:",
     "{first} doesn't miss :dart:",
+    "{first} sold. Everybody else on break? :eyes:",
 )
 
 # LOUD, AND MORE THAN ONE OF THEM. These used to be a single line each, and
@@ -109,6 +110,10 @@ HYPE_LARGE = (
     "{first} is running away with it :runner::dash:",
     "Whatever {first} had for breakfast, get some :fire:",
     "{first} is in their BAG :moneybag:",
+    "{first} again. Somebody match it :money_with_wings::money_with_wings:",
+    "{first} carrying this whole office :muscle:",
+    "Anybody else knocking? Asking for {first} :eyes:",
+    "{first} lapping the team :runner::dash:",
 )
 
 # The top tier SHOUTS THE NAME, which is the one bit of the old wording that
@@ -130,6 +135,8 @@ HYPE_SUPER = (
     "SOMEBODY STOP {first} :money_with_wings::money_with_wings::money_with_wings:",
     "{first} BROKE THE BOARD :boom:",
     "WHAT IS {first} DOING?!? :hot_pepper::fire:",
+    "{first} ATE. Everybody else picking crumbs :fire:",
+    "REST OF Y'ALL SEEING THIS?? {first} :money_with_wings::money_with_wings:",
 )
 
 
@@ -577,7 +584,7 @@ def short_name(name: str) -> str:
 
 
 def hype(name: str, metrics: Dict[str, int], day: dt.date,
-         campaign=None, avoid=None) -> str:
+         campaign=None, avoid=None, alone: bool = True) -> str:
     """The line that announces one rep's new sale.
 
     The regular line is drawn from the pool by a HASH of (rep, day, count) --
@@ -636,6 +643,8 @@ def hype(name: str, metrics: Dict[str, int], day: dt.date,
             if "family" in wants and fam in taken:
                 continue
             if "shape" in wants and shp in taken:
+                continue
+            if not alone and solo_only(candidate):
                 continue
             hit = (idx + step) % len(pool)
             break
@@ -705,6 +714,29 @@ LINE_FAMILIES = (
 # are different themes and read as one message twice -- Megan: "too similar
 # sounding". Six of the fourteen regular lines end the same way, so the theme
 # check alone was never going to be enough.
+# LINES THAT CLAIM NOBODY ELSE SOLD.
+#
+# Megan cut "{first} out here by themselves" with the reason that generalises
+# to all of them: "won't make sense if posted in a group of sales". A post
+# carrying five reps cannot also say the floor is empty -- it is visibly
+# untrue two lines further down, and the razz lands as a mistake instead of a
+# joke.
+#
+# So they are held back for a post with exactly ONE rep in it, where they are
+# both true and at their sharpest.
+SOLO_ONLY = (
+    "everybody else on break",
+    "carrying this whole office",
+    "anybody else knocking",
+    "everybody else picking crumbs",
+)
+
+
+def solo_only(template: str) -> bool:
+    low = (template or "").lower()
+    return any(c in low for c in SOLO_ONLY)
+
+
 LINE_SHAPES = (
     ("board", ("is on the board", "on the board")),
     ("rolling", ("is rolling", "keeps going", "is on it")),
@@ -805,7 +837,8 @@ def hype_batch(reps, sales, day, campaign=None, show=None,
     for rep in reps:
         metrics = (sales or {}).get(rep) or {}
         name = show(rep) if show else rep
-        line = hype(name, metrics, day, campaign, avoid=used)
+        line = hype(name, metrics, day, campaign, avoid=used,
+                    alone=len(reps) == 1)
         # Record the TEMPLATE, not the formatted line: two different reps
         # filling the same sentence is exactly what this is for.
         t = sh.tier(metrics)
