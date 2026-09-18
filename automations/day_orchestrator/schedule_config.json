@@ -6284,19 +6284,19 @@
       },
       "timeout_minutes": 60
     },
-    "org_active_headcount_dm": {
+    "org_active_headcount_email": {
       "on_scheduler": true,
       "machine": "Lucy 1",
       "order": 58.5,
-      "_note": "Eve 2026-09-18: the daily Slack GROUP DM of the 'Org Active Headcount' tab, as Lucy, to Rafael Hidalgo, Carlos Hidalgo and Evelyn Sobrino. Rafael has not confirmed the tab's changes yet but asked for it to start going out. Two pictures in one message: the board (A1 through PREVIOUS WEEK'S TOTALS, down to the WE history rows) and the delta box cropped to the elapsed days like the Country / All Units boards (rollover.delta_block_range). Order: after the morning fill (depends_on org_active_headcount_daily: a failed fill must not send a stale picture), after the Org Sales Board post (slack:org_board_posted, opens anyway 11:30) and after the tracker thread (slack:owner_tracker_pngs, opens anyway 09:00). Lucy 1 = the mini: the org board post marker is a local file there, and smp._client() is Lucy there (on Windows it is Evelyn).",
-      "display_name": "Org Active Headcount - Slack DM",
+      "_note": "Eve 2026-09-18: the daily EMAIL of the 'Org Active Headcount' tab to Carlos Hidalgo (CarlosHidalgo349@gmail.com), Rafael Hidalgo (raffi127@gmail.com) and Eve Sobrino (eve@alphaletemarketing.com), from alphaletereporting@gmail.com (shared.report_email). It went out as a Slack group DM that morning (org_active_headcount_dm, replaced); Rafael asked for email instead, before confirming the tab's changes. Two pictures in one message: the board (A1 through PREVIOUS WEEK'S TOTALS, down to the WE history rows) and the delta box cropped to the elapsed days like the Country / All Units boards (rollover.delta_block_range). Order: after the morning fill (depends_on org_active_headcount_daily: a failed fill must not send a stale picture), after the Org Sales Board post (slack:org_board_posted, opens anyway 11:30) and after the tracker thread (slack:owner_tracker_pngs, opens anyway 09:00). Lucy 1 = the mini: the org board post marker is a local file there.",
+      "display_name": "Org Active Headcount - Email",
       "source_type": "api",
       "data_sources": [
         "slack:owner_tracker_pngs",
         "slack:org_board_posted"
       ],
       "command": [
-        "automations.org_active_headcount.slack_dm"
+        "automations.org_active_headcount.email_send"
       ],
       "base_args": [
         "--post"
