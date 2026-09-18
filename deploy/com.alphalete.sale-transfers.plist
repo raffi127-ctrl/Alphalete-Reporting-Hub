@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.sale-transfers</string>
+
+    <!-- Path is the laptop placeholder; on Lucy 1, install_agent.py rewrites it
+         to that machine's repo path (lucy rerun install_sale_transfers_agent). -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/sale_transfers.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- EVERY DAY, machine LOCAL time (the mini is Central). 05:00 is the real
+         slot (Eve 2026-09-18: "que corra a las 5"): the sweep closes the day at
+         21:30 and the forms come in overnight (~04:00). 06:00 / 08:00 are a
+         safety net and pick up forms sent after 05:00; the module never
+         moves a sale twice. No Weekday key = all seven days. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/sale-transfers.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/sale-transfers.launchd.err.log</string>
+</dict>
+</plist>

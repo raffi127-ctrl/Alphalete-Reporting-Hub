@@ -5506,7 +5506,8 @@
       "verify": null
     },
     "sales_board_sale_transfers": {
-      "on_scheduler": true,
+      "on_scheduler": false,
+      "_off_scheduler_note": "FUERA de la pasada de las 4am desde 2026-09-18: sin `order` quedaba ULTIMA y el not_before 05:00 es solo un piso -- el 9/18 a las 07:35 CT seguia pending y Eve movio el 9/17 a mano. Ahora corre por reloj: com.alphalete.sale-transfers (deploy/sale_transfers.sh) en Lucy 1 a las 05:00, con 06:00 / 08:00 de red (el modulo nunca mueve una venta dos veces). Instalar/refrescar: `lucy rerun install_sale_transfers_agent`. Esta entrada queda para `lucy rerun sales_board_sale_transfers`.",
       "_note": "Todos los dias, ultimo paso de la Sales Board (Eve 2026-09-18): lee el form 'ATT Sales Transfers' (workbook All in One Local Office - Raf) y mueve SOLO las ventas del DIA ANTERIOR (col D) del login donde quedaron (col C) al rep que las hizo (col B) -- resta en uno y suma en el otro, nunca la fila entera. Bonus ('$20 bonus', 'owners pay') se ignoran. Lo que no cierra (nombre que no esta, FROM sin esa venta, dia con X) NO se mueve y sale como CHECK en el log; ventas cargadas tarde salen como LATE. 05:00 (Eve 2026-09-18): el sweep cierra 21:30 y los forms llegan de madrugada (~04:00); lo cargado despues de las 05:00 sale como LATE al dia siguiente. Lucy 1 porque el registro de 'ya movida' (~/.config/recruiting-report/sale_transfers_state.json) es por maquina: correrlo en otra repetiria el movimiento. Manual: `lucy rerun sales_board_sale_transfers` (--date YYYY-MM-DD para otro dia).",
       "display_name": "Sales Board — transfers de ventas (form)",
       "machine": "Lucy 1",
@@ -5535,6 +5536,29 @@
       "source_type": "local",
       "timeout_minutes": 10,
       "verify": null
+    },
+    "install_sale_transfers_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_sale_transfers_agent` can install/refresh the STANDALONE com.alphalete.sale-transfers LaunchAgent on Lucy 1 (deploy/sale_transfers.sh: 05:00 daily, 06:00 / 08:00 safety net). install_agent only reloads the plist; it touches no Sheet. Re-run this after the plist changes.",
+      "display_name": "Install Sales Board sale-transfers agent (5am)",
+      "machine": "Lucy 1",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "sale-transfers"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
     },
     "sales_board_ref_repair": {
       "on_scheduler": true,
