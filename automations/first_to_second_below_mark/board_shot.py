@@ -39,10 +39,12 @@ from automations.first_to_second_below_mark import run as rep
 
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "below_the_mark"
 
-# The caption bands drawn over each table: the board's own dark band colour.
-CAPTION_BG = (67, 67, 67)
+# The caption bands drawn over each table. Deliberately colours the report uses
+# NOWHERE else (Eve, 2026-09-18): the first try reused the day-band grey and the
+# alert red, and the captions blended into the tables under them.
+CAPTION_BG = (21, 101, 192)         # last week: strong blue   #1565C0
 CAPTION_FG = (255, 255, 255)
-TODAY_BG = (234, 67, 53)            # this week's caption in the alert red
+TODAY_BG = (216, 27, 96)            # this week: fuchsia       #D81B60
 
 
 def find_day(values: List[List], day: str, c0: int) -> Optional[Tuple[int, int, str]]:
