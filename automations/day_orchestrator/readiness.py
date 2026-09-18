@@ -118,6 +118,71 @@ def _box_roll_history(today: dt.date, maxd: dt.date) -> Optional[dt.date]:
         return None
 
 
+# ---------------- Box extract: did it refresh TODAY? ----------------
+#
+# "Has the extract reached yesterday?" is NOT "has the extract refreshed". Box's
+# extract already carries yesterday's rows overnight (a mid-day refresh loads
+# the day so far), and the ~7-8am refresh is the one that brings the FINAL
+# numbers. On 2026-09-17 and 09-18 the 04:46 probe saw yesterday's date, said
+# READY, and the catch-up posted + texted Box's pre-refresh board to every
+# channel (Carlos: "Lucy, for Box, again, posted everything that should have
+# been posted yesterday morning"). The only thing that separates the two is
+# whether the numbers CHANGED since the first read of the morning — so the first
+# probe of the day, taken while the extract is surely still last night's, is
+# the baseline, and the gate opens only once the crosstab differs from it.
+
+# A first read at or after this hour can't be trusted as "before the refresh"
+# (a machine restart mid-morning), so it is no baseline and the old rule applies.
+BOX_BASELINE_BEFORE = (5, 30)
+
+
+def _box_fingerprint_file() -> Path:
+    from automations.day_orchestrator.state import STATE_DIR
+    return STATE_DIR / "box_daily_fingerprint.json"
+
+
+def box_fingerprint(parsed: dict, metric: str) -> str:
+    """Stable text of every owner × day × value in the Box crosstab — any
+    refresh that moves a single number changes it."""
+    cells = sorted(
+        (owner, d.isoformat(), v)
+        for owner, m in (parsed or {}).items()
+        for d, v in ((m or {}).get(metric) or {}).items())
+    return json.dumps(cells)
+
+
+def _box_changed_since_baseline(today: dt.date, fp: str,
+                                now: Optional[dt.datetime] = None) -> Optional[bool]:
+    """True = the crosstab moved since this morning's early baseline (refreshed);
+    False = identical to it (not refreshed yet); None = no usable baseline today
+    (first read came too late, or the state file is unreadable) — the caller
+    keeps the old date-only rule.
+
+    The first call of a new day RECORDS the baseline and, if it is early
+    enough, returns False: the first read of the morning is by definition
+    unrefreshed. Best-effort like _box_roll_history — never raises."""
+    now = now or dt.datetime.now()
+    path = _box_fingerprint_file()
+    try:
+        data = json.loads(path.read_text())
+    except Exception:  # noqa: BLE001 — no file yet is the normal first run
+        data = {}
+    if data.get("date") != today.isoformat():
+        early = (now.hour, now.minute) < BOX_BASELINE_BEFORE
+        data = {"date": today.isoformat(), "baseline": fp if early else None,
+                "baseline_at": now.strftime("%H:%M")}
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(data))
+        except Exception:  # noqa: BLE001 — unwritable = no baseline tomorrow either
+            return None
+        return False if early else None
+    base = data.get("baseline")
+    if base is None:
+        return None
+    return fp != base
+
+
 # ---------------- per-source probe cache (monotonic) ----------------
 
 class ReadinessCache:
@@ -797,6 +862,14 @@ class ReadinessCache:
                                     f"< {min_rows}) — extract not refreshed")
         maxd = max(d for o in owners for d in parsed[o][spec.metric])
         prior = _box_roll_history(self.target_date, maxd)
+        # Reaching the target DATE is not enough — see _box_changed_since_baseline.
+        changed = _box_changed_since_baseline(
+            self.target_date, box_fingerprint(parsed, spec.metric))
+        if changed is False:
+            return Readiness(False, f"Box through {maxd.isoformat()} but the "
+                                    f"numbers haven't changed since this "
+                                    f"morning's first read — extract not "
+                                    f"refreshed yet (lands ~7-8am)")
         if maxd >= target:
             return Readiness(True, f"Box fresh through {maxd.isoformat()} "
                                    f"(need ≥ {target.isoformat()})")

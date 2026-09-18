@@ -126,3 +126,63 @@ class BoxVerdictTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BoxRefreshedTodayTests(unittest.TestCase):
+    """2026-09-17/18: the 04:46 probe saw YESTERDAY'S date in Box's extract, said
+    READY, and the catch-up posted + texted the pre-refresh board everywhere.
+    Reaching the date is not refreshing — the gate now waits for the numbers to
+    change against the first read of the morning.
+
+        python -m unittest automations.day_orchestrator.test_box_daily_gate
+    """
+    DAY = dt.date(2026, 9, 18)
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.path = Path(self._tmp.name) / "box_daily_fingerprint.json"
+        p = mock.patch.object(readiness, "_box_fingerprint_file", lambda: self.path)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def _at(self, hh, mm):
+        return dt.datetime(2026, 9, 18, hh, mm)
+
+    def _fp(self, n):
+        return readiness.box_fingerprint(
+            {"carlos": {"sales": {dt.date(2026, 9, 17): n}}}, "sales")
+
+    def test_first_early_read_is_never_ready(self):
+        """The 9/18 failure: the very first probe (04:46) went straight through."""
+        self.assertIs(readiness._box_changed_since_baseline(
+            self.DAY, self._fp(10), self._at(4, 46)), False)
+
+    def test_same_numbers_later_still_hold(self):
+        readiness._box_changed_since_baseline(self.DAY, self._fp(10), self._at(4, 46))
+        self.assertIs(readiness._box_changed_since_baseline(
+            self.DAY, self._fp(10), self._at(6, 30)), False)
+
+    def test_numbers_moved_means_refreshed(self):
+        readiness._box_changed_since_baseline(self.DAY, self._fp(10), self._at(4, 46))
+        self.assertIs(readiness._box_changed_since_baseline(
+            self.DAY, self._fp(17), self._at(7, 12)), True)
+
+    def test_late_first_read_is_no_baseline(self):
+        """A machine that only starts probing at 07:30 can't tell refreshed from
+        not — it keeps the old date-only rule rather than hold to the floor."""
+        self.assertIsNone(readiness._box_changed_since_baseline(
+            self.DAY, self._fp(10), self._at(7, 30)))
+        self.assertIsNone(readiness._box_changed_since_baseline(
+            self.DAY, self._fp(10), self._at(7, 45)))
+
+    def test_new_day_resets_the_baseline(self):
+        readiness._box_changed_since_baseline(
+            dt.date(2026, 9, 17), self._fp(10), dt.datetime(2026, 9, 17, 4, 40))
+        self.assertIs(readiness._box_changed_since_baseline(
+            self.DAY, self._fp(99), self._at(4, 46)), False)
+
+    def test_corrupt_file_never_raises(self):
+        self.path.write_text("{not json")
+        self.assertIs(readiness._box_changed_since_baseline(
+            self.DAY, self._fp(10), self._at(4, 46)), False)

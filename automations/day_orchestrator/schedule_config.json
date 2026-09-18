@@ -142,7 +142,8 @@
       "probe": {
         "type": "box_daily",
         "min_rows": 5,
-        "fallback_hhmm": "08:00"
+        "_fallback_note": "10:30, not 08:00 (Eve 2026-09-18): the gate now opens only once Box's numbers CHANGE after the first read of the morning (readiness._box_changed_since_baseline). On 9/18 the refresh landed after 8, so an 08:00 floor would still have posted the pre-refresh board.",
+        "fallback_hhmm": "10:30"
       }
     },
     "tableau:tracker_att": {
