@@ -3438,6 +3438,29 @@
       "timeout_minutes": 60,
       "verify": null
     },
+    "below_the_mark_board_dm": {
+      "hand_run_only": true,
+      "on_scheduler": false,
+      "_note": "Sends the two-week board's picture (the same weekday last week on top, today below, each under a dated band) to the SAME group DM the 13:00 / 18:30 passes use (Rafael, Carlos, Camila, Perla, Evelyn) -- that group is where Eve tests changes (2026-09-18). Must run on the mini: on Eve's Windows the Slack token is Evelyn's own. Reads the PREVIEW tab as it stands, so run below_the_mark_board first. `lucy rerun below_the_mark_board_dm`.",
+      "display_name": "1st to 2nd Below the Mark — two-week board DM",
+      "source_type": "sheet",
+      "command": [
+        "automations.first_to_second_below_mark.slack_post"
+      ],
+      "base_args": [
+        "--board",
+        "--post"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "data_sources": [],
+      "depends_on": [],
+      "freshness_target": null,
+      "priority": "P3",
+      "timeout_minutes": 15,
+      "verify": null
+    },
     "install_below_the_mark_agent": {
       "on_scheduler": true,
       "_note": "NOT a report — a one-shot LaunchAgent installer, run via `lucy rerun install_below_the_mark_agent`. Bootstraps com.alphalete.below-the-mark from the committed plist: 13:00 and 18:30 Mon-Fri. Must land on the SAME machine as the Daily Focus passes — the AppStream session lives there.",

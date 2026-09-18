@@ -105,6 +105,9 @@ def main(argv=None) -> int:
                     help="comma-separated Slack user id(s) to send to INSTEAD of "
                          "the full list, for a targeted test")
     ap.add_argument("--tab", default=None, help="screenshot a different tab")
+    ap.add_argument("--board", action="store_true",
+                    help="send the two-week board's picture instead (last week's "
+                         "day on top, today below) -- board_shot.build_png")
     args = ap.parse_args(argv)
     dry = not args.post
 
@@ -113,7 +116,12 @@ def main(argv=None) -> int:
     if args.only:
         print(f"  --only override: sending to {recipients} (test)")
 
-    png, rng, headline = build_png(tab=args.tab)
+    if args.board:
+        from automations.first_to_second_below_mark import board_shot
+        png, headline = board_shot.build_png(**({"tab": args.tab} if args.tab else {}))
+        rng = "two-week board"
+    else:
+        png, rng, headline = build_png(tab=args.tab)
     print(f"screenshot {rng} -> {png} ({png.stat().st_size // 1024} KB)")
     print(f"{'DRY-RUN (no send)' if dry else 'SENDING group DM'} to {recipients}")
     print(f"  comment: {headline}")
