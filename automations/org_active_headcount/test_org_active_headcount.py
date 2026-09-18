@@ -309,5 +309,26 @@ class SummaryRepair(unittest.TestCase):
         self.assertEqual(plan["C3"], "=C15")      # still points at B2B's totals
 
 
+class BoxJoin(unittest.TestCase):
+    """The Box board dropped 'Total Rep Count' on 9/16: Selling fills in (Eve)."""
+
+    def test_selling_when_no_total(self):
+        from automations.org_active_headcount.tracker_readings import box_join
+        sales = [{"owner": "Joy Gray", "grand_total": 112},
+                 {"owner": "Roshan Ahmad", "grand_total": 90}]
+        metrics = [{"rank": 1, "selling_rep_count": 23, "total_rep_count": None,
+                    "sales_ele": 78, "sales_gas": 34},
+                   {"rank": 2, "selling_rep_count": 18, "total_rep_count": None,
+                    "sales_ele": 90, "sales_gas": 0}]
+        self.assertEqual(box_join(sales, metrics), {"Joy Gray": 23, "Roshan Ahmad": 18})
+
+    def test_total_wins_when_printed(self):
+        from automations.org_active_headcount.tracker_readings import box_join
+        got = box_join([{"owner": "Abel Draper", "grand_total": 8}],
+                       [{"rank": 1, "selling_rep_count": 2, "total_rep_count": 3,
+                         "sales_ele": 8, "sales_gas": 0}])
+        self.assertEqual(got, {"Abel Draper": 3})
+
+
 if __name__ == "__main__":
     unittest.main()

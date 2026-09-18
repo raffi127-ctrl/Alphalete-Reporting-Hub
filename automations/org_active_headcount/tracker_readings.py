@@ -147,7 +147,8 @@ _BOX_PROMPT = (
     "row itself.\n"
     "2) metrics: every row of 'Daily Tracker Metrics' — Rank, 'Selling Rep "
     "Count', 'Total Rep Count', 'Sales ELE', 'Sales Gas'. This table has NO "
-    "names; do not invent any. Skip its 'Grand Total' row. A blank cell is null.\n"
+    "names; do not invent any. Skip its 'Grand Total' row. A blank cell is null, "
+    "and a column the table does not have is null in every row.\n"
     "Copy every number exactly as printed; never compute or reorder.")
 
 _SCHEMA = {
@@ -283,7 +284,13 @@ def _ask(images: List[bytes], prompt: str, schema: dict, max_tokens: int = 8000)
 
 
 def box_join(sales: List[dict], metrics: List[dict]) -> Dict[str, Optional[int]]:
-    """{owner as printed: Total Rep Count} — pure, no I/O.
+    """{owner as printed: Total Rep Count, else Selling Rep Count} — pure, no I/O.
+
+    SELLING WHEN THERE IS NO TOTAL (Eve 2026-09-18). From the 9/16 post on, the
+    Box Daily Tracker prints only 'Selling Rep Count' — the 'Total Rep Count'
+    column is gone from both the current- and previous-week metrics tables, so
+    every owner read null and the tab got '-' for BOX (and Carlos) Tue-Thu.
+    Eve: use Selling Rep Count. A board that still prints Total keeps Total.
 
     Each metrics row belongs to the owner whose sales 'Grand Total' equals that
     row's Sales ELE + Sales Gas. Owners sharing a Grand Total are handed out in
@@ -298,7 +305,8 @@ def box_join(sales: List[dict], metrics: List[dict]) -> Dict[str, Optional[int]]
             if i not in used and s.get("grand_total") is not None \
                     and int(s["grand_total"]) == target:
                 used.add(i)
-                out[s["owner"]] = m.get("total_rep_count")
+                total = m.get("total_rep_count")
+                out[s["owner"]] = total if total is not None else m.get("selling_rep_count")
                 break
     return out
 
@@ -308,7 +316,9 @@ def _read_box(png: Path) -> dict:
     ELE+Gas = Grand Total (box_join), keep an owner's Total Rep Count only when a
     majority of the joined reads agree. No majority = null (the fill writes '-').
     Its own cache name, so the two earlier attempts' readings are never reused."""
-    cached = png.with_name(png.stem + ".rank.json")
+    # '.rank-sell' since 2026-09-18: the '.rank.json' reads cached before the
+    # Selling fallback hold nulls for every day the board had no Total column.
+    cached = png.with_name(png.stem + ".rank-sell.json")
     if cached.exists():
         return json.loads(cached.read_text(encoding="utf-8"))
     bands = _bands(png)
@@ -333,7 +343,7 @@ def _read_box(png: Path) -> dict:
         rows.append({"owner": owner, "rep_count": best if ok else None,
                      "votes": votes[" ".join(_tokens(owner))]})
     data = {"dates_printed": reads[0].get("section_dates", ""),
-            "rep_count_header": f"Total Rep Count (rank-join vote x{BOX_VOTES})",
+            "rep_count_header": f"Total Rep Count, else Selling (rank-join vote x{BOX_VOTES})",
             "rows": rows}
     cached.write_text(json.dumps(data, indent=1), encoding="utf-8")
     return data
