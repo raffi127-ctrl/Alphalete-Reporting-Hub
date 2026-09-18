@@ -71,6 +71,15 @@ TITLE_ROW, STATUS_ROW, BANNER_ROW, HEADER_ROW = 1, 2, 3, 4
 FIRST_BODY_ROW = 5
 GAP_COLS = 1                              # blank column between the two weeks
 
+# Eve's hand edits on the PREVIEW (2026-09-18), kept on every rebuild:
+#   - the day bands are taller than the office rows, so the day reads first
+#   - rows 3 and 4 are ONE cell in every column that has no group banner above
+#     it (A-F and R-W): the header sits in a two-row box, and only the
+#     QUALIFIED / ANSWERED groups keep the banner-over-header split.
+DAY_ROW_PX = 31
+ROW_PX = 21
+TITLE_ROW_PX = 36
+
 DAY_BG = {"red": 0.263, "green": 0.263, "blue": 0.263}
 WEEK_BG = {"red": 0.4, "green": 0.4, "blue": 0.4}
 WHITE = {"red": 1.0, "green": 1.0, "blue": 1.0}
@@ -337,7 +346,11 @@ def compare(results: List[WeekResult], prior: PriorFill, headers: List[str]
                         "owner", f"Not on this day's list at the {prior.stamp} check -- "
                                  f"the day's numbers moved since.")
             for owner, was in before.items():
-                if owner not in now_listed:
+                # Only a real number that is now over the mark. A blank then
+                # ("no reading yet") or a blank now (no interviews) is not
+                # someone climbing back.
+                if (owner not in now_listed and isinstance(was, (int, float))
+                        and isinstance(now_all.get(owner), (int, float))):
                     dr.risen.append(f"{owner} ({_pct(was)} -> {_pct(now_all.get(owner))})")
     return notes
 
@@ -455,15 +468,34 @@ def format_requests(sid: int, tsid: int, t_hrow: int, headers: List[str],
 
     # The template's banner and header rows, once per week. Banners start at
     # column C: A of that row holds the live tab's own status line.
+    # Every row back to the plain height first: the days land on different
+    # rows from one run to the next, and a band's tall height would otherwise
+    # stay behind on whatever office row takes its place.
+    reqs.append({"updateDimensionProperties": {
+        "range": {"sheetId": sid, "dimension": "ROWS", "startIndex": 0,
+                  "endIndex": max(layout.last_row + 60, 300)},
+        "properties": {"pixelSize": ROW_PX}, "fields": "pixelSize"}})
+    col = cols.resolve(headers)
+    # The columns before the first group banner get the two-row header box.
+    boxed = col.get("qualified", 0)
     for c0 in starts:
+        if boxed:
+            reqs.append({"copyPaste": {
+                "source": _rng(tsid, t_hrow - 1, t_hrow, 0, boxed),
+                "destination": _rng(sid, BANNER_ROW - 1, BANNER_ROW, c0, c0 + boxed),
+                "pasteType": "PASTE_NORMAL"}})
         reqs.append({"copyPaste": {
-            "source": _rng(tsid, t_hrow - 2, t_hrow - 1, 2, width),
-            "destination": _rng(sid, BANNER_ROW - 1, BANNER_ROW, c0 + 2, c0 + width),
+            "source": _rng(tsid, t_hrow - 2, t_hrow - 1, max(2, boxed), width),
+            "destination": _rng(sid, BANNER_ROW - 1, BANNER_ROW, c0 + max(2, boxed), c0 + width),
             "pasteType": "PASTE_NORMAL"}})
         reqs.append({"copyPaste": {
             "source": _rng(tsid, t_hrow - 1, t_hrow, 0, width),
             "destination": _rng(sid, HEADER_ROW - 1, HEADER_ROW, c0, c0 + width),
             "pasteType": "PASTE_NORMAL"}})
+        if boxed:
+            reqs.append({"mergeCells": {
+                "range": _rng(sid, BANNER_ROW - 1, HEADER_ROW, c0, c0 + boxed),
+                "mergeType": "MERGE_COLUMNS"}})
     # Office rows wear the template's first data row.
     for r, c0 in layout.data_rows:
         reqs.append({"copyPaste": {
@@ -489,6 +521,9 @@ def format_requests(sid: int, tsid: int, t_hrow: int, headers: List[str],
     for r in layout.band_rows:
         for c0 in starts:
             band(r, c0, c0 + width, DAY_BG, 11)
+        reqs.append({"updateDimensionProperties": {
+            "range": {"sheetId": sid, "dimension": "ROWS", "startIndex": r - 1, "endIndex": r},
+            "properties": {"pixelSize": DAY_ROW_PX}, "fields": "pixelSize"}})
     for r, c0 in layout.message_rows:
         reqs.append({"repeatCell": {"range": _rng(sid, r - 1, r, c0, c0 + 1),
             "cell": {"userEnteredFormat": {"wrapStrategy": "OVERFLOW_CELL",
@@ -501,7 +536,6 @@ def format_requests(sid: int, tsid: int, t_hrow: int, headers: List[str],
     # so a blank cell read as a good number. Every real value gets its colour
     # from the conditional rules instead -- each band has a red catch-all, so
     # nothing with a number can stay white.
-    col = cols.resolve(headers)
     cf_cols = [col[f] for f in ("retention", "qualified_ret", "declined_ret",
                                 "booked_ret", "not_contacted_ret") if f in col]
     for r, c0 in layout.data_rows:
@@ -541,7 +575,7 @@ def format_requests(sid: int, tsid: int, t_hrow: int, headers: List[str],
                 "properties": {"pixelSize": 24}, "fields": "pixelSize"}})
     reqs.append({"updateDimensionProperties": {
         "range": {"sheetId": sid, "dimension": "ROWS", "startIndex": 0, "endIndex": 1},
-        "properties": {"pixelSize": 36}, "fields": "pixelSize"}})
+        "properties": {"pixelSize": TITLE_ROW_PX}, "fields": "pixelSize"}})
     reqs.append({"updateSheetProperties": {
         "properties": {"sheetId": sid, "gridProperties": {"frozenRowCount": HEADER_ROW}},
         "fields": "gridProperties.frozenRowCount"}})

@@ -159,5 +159,39 @@ class Colours(unittest.TestCase):
         self.assertTrue(any("ISNUMBER(V5)" in f for f in formulas))
 
 
+class EveLayout(unittest.TestCase):
+    def _reqs(self):
+        wk = week("9/13", dt.date(2026, 9, 13), {"Monday": [row("Ann", 10, 0.3)]},
+                  future_from=dt.date(2026, 9, 19))
+        lay = b.lay_out([wk, week("9/6", dt.date(2026, 9, 6), {})], H, "s", {}, False)
+        return lay, b.format_requests(1, 2, 3, H, lay, 2, [100] * W)
+
+    def test_rows_3_and_4_are_one_box_before_the_group_banners(self):
+        _, reqs = self._reqs()
+        boxes = [r["mergeCells"]["range"] for r in reqs
+                 if "mergeCells" in r and r["mergeCells"]["mergeType"] == "MERGE_COLUMNS"]
+        g = H.index("Disqualified") - 1
+        self.assertEqual([(x["startRowIndex"], x["endRowIndex"], x["startColumnIndex"],
+                           x["endColumnIndex"]) for x in boxes],
+                         [(2, 4, 0, g), (2, 4, W + 1, W + 1 + g)])
+
+    def test_day_bands_are_taller_and_everything_else_resets(self):
+        lay, reqs = self._reqs()
+        sizes = [(r["updateDimensionProperties"]["range"]["startIndex"],
+                  r["updateDimensionProperties"]["properties"]["pixelSize"])
+                 for r in reqs if "updateDimensionProperties" in r
+                 and r["updateDimensionProperties"]["range"]["dimension"] == "ROWS"]
+        self.assertEqual(sizes[0], (0, b.ROW_PX))
+        for band_row in lay.band_rows:
+            self.assertIn((band_row - 1, b.DAY_ROW_PX), sizes)
+
+    def test_blank_before_never_counts_as_back_above(self):
+        wk = week("9/13", dt.date(2026, 9, 13), {"Monday": [row("Ann", 10, 0.5)]})
+        prior = b.PriorFill(stamp="Fri 9/18 07:47",
+                            listed={("9/13", "Monday"): {"Ann": None}})
+        b.compare([wk], prior, H)
+        self.assertEqual(wk.days["Monday"].risen, [])
+
+
 if __name__ == "__main__":
     unittest.main()
