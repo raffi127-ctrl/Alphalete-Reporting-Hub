@@ -47,6 +47,9 @@ sale on any row, so there is nothing to take back:
 ONCE ONLY. Every moved form row is recorded in STATE_PATH, and a second run
 skips it -- a rerun must not move the same sale twice. The state is per machine,
 which is why the scheduled run is pinned to Lucy 1 like the sweep.
+MOVED BY HAND (or from another machine): list the sale's key in HAND_DONE_PATH
+(checked in, so every machine reads it) and no run will move it again. 9/17:
+Eve moved Ana Griffin's three by hand before the 05:00 run got to them.
 ALSO: the sweep's own `--date <past day> --force` rewrites a day straight from
 SaraPlus and would put the FROM sales back. Re-run this with --force after it.
 
@@ -81,6 +84,7 @@ from automations.rep_sales_fill import board as B
 FORM_SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
 FORM_TAB = "ATT Sales Transfers"
 STATE_PATH = Path.home() / ".config" / "recruiting-report" / "sale_transfers_state.json"
+HAND_DONE_PATH = Path(__file__).with_name("sale_transfers_hand_done.json")
 
 # Header text (lower-case, contains) -> field. Found by label, not by letter.
 HEADERS = {
@@ -389,6 +393,11 @@ def load_state(path: Path = STATE_PATH) -> Dict[str, str]:
         return {}
 
 
+def load_hand_done(path: Path = HAND_DONE_PATH) -> Dict[str, str]:
+    """Sales a person already moved on the board -- same shape as the state."""
+    return load_state(path)
+
+
 def save_state(done: Dict[str, str], path: Path = STATE_PATH) -> None:
     # Keep ~2 months: enough to never re-move a sale, small enough to read.
     cutoff = (dt.date.today() - dt.timedelta(days=60)).isoformat()
@@ -416,7 +425,9 @@ def main(argv=None) -> int:
     from automations.recruiting_report.fill import _client
     gc = _client()
 
-    done = {} if a.force else load_state()
+    # --force also drops the hand list: it follows a sweep --force, which
+    # rewrote the day from SaraPlus and wiped the hand moves too.
+    done = {} if a.force else dict(load_hand_done(), **load_state())
     form = gc.open_by_key(FORM_SHEET_ID).worksheet(FORM_TAB).get_all_values()
     todo, notes, late = select(read_form(form), day, done)
     print("Sale transfers for %s (%s): %d to move from the form"
