@@ -11,7 +11,7 @@ nobody mistakes one for the other:
     <header rows 3-4 of the left-hand week>
     <today's band and offices>
 
-Rendered from the PREVIEW tab itself (Sheets PDF export, the exact sheet look),
+Rendered from the board tab itself (Sheets PDF export, the exact sheet look),
 four ranges -- a header and a day for each week -- stitched into one PNG. Only
 the rows of that day are taken, so the picture stays short however long the
 rest of the week is.

@@ -51,7 +51,7 @@ ARGS=("$@")
 
 # THE TWO-WEEK BOARD (Rafael, 2026-09-18): this week on the left, last week on
 # the right, Mon-Fri, every day of both weeks re-pulled each pass. It writes the
-# '1st to 2nd below the mark PREVIEW' tab, and the DM carries the same weekday
+# '1st to 2nd below the mark' tab (production since 2026-09-18), and the DM carries the same weekday
 # last week on top and today below. The one-day tab (module `run`) no longer
 # goes out; `bash deploy/below_the_mark.sh --one-day` still runs it by hand.
 MODE=board

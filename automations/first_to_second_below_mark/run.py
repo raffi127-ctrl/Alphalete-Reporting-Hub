@@ -82,7 +82,10 @@ from automations.first_to_second_below_mark import columns as cols
 from automations.first_to_second_below_mark import source as src
 
 SHEET_ID = "1l4Q0SreuddKZrgXwb9MytF-EdPZH-H1hLsa69epq-n8"   # ARS Management 2.0
-TARGET_TAB = "1st to 2nd below the mark"
+# The ORIGINAL tab, renamed '(old)' on 2026-09-18 when the two-week board took
+# the plain name '1st to 2nd below the mark' (board.BOARD_TAB). It must never
+# point at that name again: `--production` here would overwrite the board.
+TARGET_TAB = "1st to 2nd below the mark (old)"
 # THE LIVE TAB, despite the name. This report is new -- nothing depended on it
 # before -- so Eve made the tab that was being built the real one and kept the
 # SANDBOX suffix on it until Rafael signs off (2026-09-17). It carries her
