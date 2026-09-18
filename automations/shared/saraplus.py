@@ -169,13 +169,33 @@ def strip_office(name: str) -> str:
 
 
 # --- browser ----------------------------------------------------------------
+def _open_login_form(page) -> None:
+    """Get from the landing page to the username form.
+
+    The header LOGIN link is a plain <a href=".../servicepages/login.aspx">.
+    On 2026-09-18 two ICD laptops (Kash 11:53, Cyrus 13:26) found the link but
+    the click sat 30s and timed out -- the element was there, just not
+    clickable yet -- and both recovered on the next tick. So: a short click,
+    and if that stalls, go to the link's own href, which is all the click did.
+    """
+    link = page.locator('a:has-text("LOGIN")').first
+    try:
+        link.click(timeout=10000)
+        return
+    except Exception:  # noqa: BLE001 -- any stall here gets the same fallback
+        href = link.get_attribute("href", timeout=5000)
+        if not href:
+            raise
+    page.goto(href, wait_until="domcontentloaded")
+
+
 def _login(page, email: str, password: str, *, login_url: str = LOGIN_URL,
            creds_hint: str = "the saved SaraPlus login", log=print) -> str:
     """Sign in and return the DealerPages base url. Raises if we land back on
     the login page -- a silent bounce there is how a whole day of sweeps can
     read as 'no sales' instead of 'not logged in'."""
     page.goto(login_url, wait_until="networkidle")
-    page.click('a:has-text("LOGIN")')
+    _open_login_form(page)
     page.fill("#ctl00_MainContent_txtUserName", email)
     page.wait_for_selector("#ctl00_MainContent_txtPassword", state="visible")
     # Typed character by character on purpose: the site is old ASP.NET and its
