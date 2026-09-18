@@ -926,14 +926,23 @@ def watch_obcl() -> int:
     _log(f"[{stamp}] watching for a run to finish "
          f"(up to {WATCH_MINUTES} minutes)")
     deadline = time.time() + WATCH_MINUTES * 60
+    seen = ""
+    marked = 0
     try:
         while time.time() < deadline:
-            if _from_clipboard().strip().startswith("APEX-OBCL "):
+            raw = _from_clipboard().strip()
+            # KEEP WATCHING. It used to stop after the first mark, so a second
+            # run in the same sitting went unticked -- which is exactly what
+            # happened to Benjamin Proctor, done after the batch before him
+            # had already been marked (Megan, 2026-09-17). Only a result it
+            # has not already acted on counts.
+            if raw.startswith("APEX-OBCL ") and raw != seen:
+                seen = raw
                 code = mark_obcl()
-                _log("marked." if code == 0 else "could not mark.")
-                return code
+                marked += 1 if code == 0 else 0
+                _log(f"marked ({marked})." if code == 0 else "could not mark.")
             time.sleep(WATCH_EVERY)
-        _log("no run finished inside the window — stopping.")
+        _log(f"window closed — marked {marked} time(s).")
         return 0
     finally:
         try:

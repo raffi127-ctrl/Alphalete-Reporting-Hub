@@ -82,16 +82,26 @@ def test_the_watcher_only_wakes_for_our_own_marker(monkeypatch):
     assert seen == [], "it acted on none of that"
 
 
-def test_the_watcher_marks_and_stops(monkeypatch):
+def test_the_watcher_keeps_watching_after_it_marks(monkeypatch):
+    """It used to stop after the first mark, so a second run in the same
+    sitting went unticked -- which is what happened to Benjamin Proctor, done
+    after the batch before him had already been marked (Megan, 2026-09-17)."""
     from automations.apex_new_starts import run as RUN
+    import itertools
 
     calls = []
     monkeypatch.setattr(RUN, "mark_obcl", lambda *a, **k: calls.append(1) or 0)
-    monkeypatch.setattr(RUN, "WATCH_MINUTES", 5)
+    monkeypatch.setattr(RUN, "WATCH_MINUTES", 0.02)     # ~1 second
+    monkeypatch.setattr(RUN, "WATCH_EVERY", 0)
+    # the same result, then a NEW one from a second run
+    reads = itertools.chain(
+        ['APEX-OBCL {"added":["A"]}'] * 3,
+        ['APEX-OBCL {"added":["B"]}'] * 3,
+    )
     monkeypatch.setattr(RUN, "_from_clipboard",
-                        lambda: 'APEX-OBCL {"start":"2026-09-14"}')
+                        lambda: next(reads, "something else"))
     assert RUN.watch_obcl() == 0
-    assert calls == [1], "marked once, then returned rather than looping"
+    assert len(calls) == 2, "once per distinct result, not once per look"
 
 
 def test_a_stale_watcher_does_not_block_a_new_one(monkeypatch, tmp_path):
