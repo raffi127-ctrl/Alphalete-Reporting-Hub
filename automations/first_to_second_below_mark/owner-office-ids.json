@@ -1,0 +1,10 @@
+{
+ "_note": "Owner name as 'Interviewers Retention (Interviewer)' writes it -> AppStream office id, for the owners the shared office lists do not reach under that spelling. The office id decides whose numbers land in the row, so only add one you have confirmed. Checked against all-offices.json on 2026-09-17; the last two came from Eve.",
+ "Andre Burton": "22041",
+ "Calvin Ribero": "22162",
+ "JC Pascual": "22976",
+ "Kash Rai": "22177",
+ "José Velazques": "22434",
+ "Tre mitchell": "21182",
+ "Ja Mosley": "23882"
+}

@@ -3396,6 +3396,47 @@
         "report_id": "daily-focus"
       }
     },
+    "below_the_mark": {
+      "hand_run_only": true,
+      "on_scheduler": true,
+      "_note": "THE HR ALERT. Lists the offices at or under 40% on 'Retention first showed up booked second' for the CURRENT DAY, worst first, on the '1st to 2nd below the mark SANDBOX' tab of ARS Management 2.0 (that tab is the LIVE one — the report is new, so nothing was displaced; the suffix stays until Rafael signs off). Runs TWICE: 13:00 and 18:30 Mon-Fri, so HR can see whether a number moved. Deliberately NOT the Daily Focus 4am+18:30 pattern — this report reads the day's own column and at 4am nobody has interviewed yet, so that pass would write an empty tab. weekdays [] + hand_run_only because the real clock is deploy/com.alphalete.below-the-mark.plist (machine-local); this entry exists so `lucy rerun below_the_mark` works and the Hub has a handle. Needs the AppStream session, so it must land on the same machine as the Daily Focus passes.",
+      "display_name": "1st to 2nd Below the Mark — HR alert",
+      "source_type": "appstream",
+      "command": [
+        "automations.first_to_second_below_mark.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "data_sources": [],
+      "depends_on": [],
+      "freshness_target": null,
+      "priority": "P2",
+      "timeout_minutes": 45,
+      "verify": null
+    },
+    "install_below_the_mark_agent": {
+      "on_scheduler": true,
+      "_note": "NOT a report — a one-shot LaunchAgent installer, run via `lucy rerun install_below_the_mark_agent`. Bootstraps com.alphalete.below-the-mark from the committed plist: 13:00 and 18:30 Mon-Fri. Must land on the SAME machine as the Daily Focus passes — the AppStream session lives there.",
+      "display_name": "Install below-the-mark agent",
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "below-the-mark"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "data_sources": [],
+      "depends_on": [],
+      "freshness_target": null,
+      "priority": "P3",
+      "source_type": "local",
+      "timeout_minutes": 5,
+      "verify": null
+    },
     "daily_focus_post": {
       "hand_run_only": true,
       "on_scheduler": true,
