@@ -76,6 +76,19 @@ HYPE_REGULAR = (
     "{first} keeps going :chart_with_upwards_trend:",
     "{first} is on it :heavy_dollar_sign:",
     "{first} just put one on the board! :fire:",
+    # RAZZING THE ROOM, not the seller (Megan, 2026-09-18: "we can Raz people
+    # a little more"). Aimed at everybody else on purpose -- the person who
+    # just sold is never the butt of it.
+    #
+    # And mostly NOT ending in "on the board", which is what made the older
+    # lines sound alike however different their openers were.
+    "{first} eating. Anybody else hungry :eyes:",
+    "{first} went and did it. Rest of y'all good? :money_with_wings:",
+    "Doors don't knock themselves. {first} :eyes:",
+    "{first} said watch this :hot_pepper:",
+    "{first} not waiting on anybody :dollar:",
+    "Somebody check on {first}, they're cooking :fire:",
+    "{first} doesn't miss :dart:",
 )
 
 # LOUD, AND MORE THAN ONE OF THEM. These used to be a single line each, and
@@ -91,6 +104,11 @@ HYPE_LARGE = (
     "{first}!! Who's next :eyes::eyes::eyes:",
     "{first}!! No complacency :fire::heavy_dollar_sign:",
     "BIG DAWG {first} on the board!! :dog::fire:",
+    "{first} is NOT playing today :hot_pepper::fire:",
+    "{first} again?? Give somebody else a turn :money_with_wings::money_with_wings:",
+    "{first} is running away with it :runner::dash:",
+    "Whatever {first} had for breakfast, get some :fire:",
+    "{first} is in their BAG :moneybag:",
 )
 
 # The top tier SHOUTS THE NAME, which is the one bit of the old wording that
@@ -108,6 +126,10 @@ HYPE_SUPER = (
     "WINNER!!! WINNER!!! {first} :paw_prints::money_mouth_face:",
     "{first}!!! WHO'S NEXT :eyes::eyes::eyes:",
     "{first} IS A DAWGGGG :dog::fire:",
+    "{first} IS NOT HUMAN!! WOOF WOOF :dog::fire:",
+    "SOMEBODY STOP {first} :money_with_wings::money_with_wings::money_with_wings:",
+    "{first} BROKE THE BOARD :boom:",
+    "WHAT IS {first} DOING?!? :hot_pepper::fire:",
 )
 
 
@@ -649,7 +671,23 @@ LINE_FAMILIES = (
     ("winner", ("winner",)),
     ("whos-next", ("who's next",)),
     ("comfortable", ("no complacency", "not comfortable", "comfortable")),
-    ("dawg", ("dawg",)),
+    # WOOF belongs with DAWG: two dog lines in one post is the same joke
+    # twice, whichever words carry it.
+    ("dawg", ("dawg", "woof")),
+    ("eating", ("eating", "hungry", "cooking", "breakfast")),
+    ("went-and-did-it", ("went and did it",)),
+    ("doors", ("doors don't knock",)),
+    ("watch-this", ("watch this",)),
+    ("not-waiting", ("not waiting on anybody",)),
+    ("doesnt-miss", ("doesn't miss",)),
+    ("not-playing", ("not playing today",)),
+    ("give-a-turn", ("give somebody else a turn",)),
+    ("running-away", ("running away with it",)),
+    ("in-their-bag", ("in their bag",)),
+    ("not-human", ("not human",)),
+    ("somebody-stop", ("somebody stop",)),
+    ("broke-board", ("broke the board",)),
+    ("what-is-doing", ("doing?!?",)),
     ("came-to-play", ("came to play",)),
     ("another-one", ("another one",)),
     ("keeps-going", ("keeps going",)),
