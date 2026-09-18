@@ -149,7 +149,7 @@ MAX_AUTO_CLOSE = 25
 STORE_TAB = "RollCallData"
 STORE_STATUS_COL = 7                  # RollCallData col H, header 'Status'
 ROLL_HEADERS = {"status": "status", "name": "roll call", "gone": "date gone"}
-ROLL_FALLBACK = {"status": 1, "name": 3, "gone": 12}   # cols B / D / M today
+ROLL_FALLBACK = {"status": 1, "name": 4, "gone": 13}   # cols B / E / N (Leadership at C since 9/17)
 BOARD_DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday",
               "saturday", "sunday"]
 
@@ -719,7 +719,7 @@ def audit(write: bool, log=_log, auto_close: bool = True,
     # strays like the old 'Nico M' row) a campaign — but never the campaign
     # TOTAL rows, which carry a SUMIFS in col C.
     def _is_rep(i, r):
-        if i < 5 or len(r) < 14 or not str(r[1]).strip():
+        if i < 5 or len(r) < 15 or not str(r[1]).strip():
             return False
         cf = str(board_form[i - 1][2]) if len(board_form[i - 1]) > 2 else ""
         if "SUMIFS" in cf.upper():

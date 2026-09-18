@@ -289,7 +289,7 @@ def npa(payload: str) -> dict:
     except Exception:  # noqa: BLE001
         pass
     try:
-        for r in sh.worksheet("Roll Call").get("D3:D400"):
+        for r in sh.worksheet("Roll Call").get("E3:E400"):
             nm = str(r[0]).strip() if r else ""
             if nm:
                 roster.setdefault(_nrm(nm), nm)

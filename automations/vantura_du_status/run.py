@@ -34,8 +34,8 @@ import unicodedata
 SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"   # Vantura Master
 DU_TAB, ROLL_TAB, ALIAS_TAB = "Daily Update", "Roll Call", "Name Aliases"
 FLIP_FROM = ("active", "orientation scheduled")
-R_WEEK, R_STATUS, R_NAME = 0, 1, 3          # Roll Call A/B/D (0-based)
-R_ATT0, R_ATT1 = 6, 12                      # attendance G:L
+R_WEEK, R_STATUS, R_NAME = 0, 1, 4          # Roll Call A/B/E (0-based; Leadership inserted at C 2026-09-17)
+R_ATT0, R_ATT1 = 7, 13                      # attendance H:M (shifted 9/17)
 
 
 def _log(msg: str) -> None:

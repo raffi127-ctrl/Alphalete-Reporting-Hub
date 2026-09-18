@@ -125,8 +125,8 @@ def ensure_campaign_rosters(sh, log=print) -> None:
     week = _cell(gm, 2, 1)                       # board B2 label
     for rr in range(3, len(roll) + 1):
         we, status, camp, name = (_cell(roll, rr, 0), _cell(roll, rr, 1),
-                                  _cell(roll, rr, 2), _cell(roll, rr, 3))
-        trainer = _cell(roll, rr, 5)
+                                  _cell(roll, rr, 3), _cell(roll, rr, 4))
+        trainer = _cell(roll, rr, 6)
         if (we != week or camp != "Verizon" or not name
                 or status not in ("Active", "New Start")):
             continue

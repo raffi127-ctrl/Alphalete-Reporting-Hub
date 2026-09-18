@@ -55,7 +55,7 @@ DU_2ND, DU_ORIENT = 13, 17
 # so the sync stays idempotent and never duplicates or clobbers manual notes.
 NOTE_MARKER = "— Vantura sync —"
 # Roll Call columns: Week Ending A, Status B, Campaign C, Roll Call (name) D.
-R_WEEK, R_STATUS, R_CAMP, R_NAME = 0, 1, 2, 3
+R_WEEK, R_STATUS, R_CAMP, R_NAME = 0, 1, 3, 4  # Leadership inserted at C 2026-09-17
 
 
 def _log(msg: str) -> None:

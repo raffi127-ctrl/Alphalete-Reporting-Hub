@@ -150,16 +150,16 @@ def build(today: dt.date):
     by_norm = {_norm(r.name): r for r in reps}
 
     # ---- Roll Call: this week's surviving new starts -------------------
-    roll = sh.worksheet("Roll Call").get("A1:M400")
+    roll = sh.worksheet("Roll Call").get("A1:N400")
     hdr = next((i for i, r in enumerate(roll)
                 if r and _norm(r[0]) == "week ending"), None)
     unresolved = []
     if hdr is not None:
         for row in roll[hdr + 1:]:
-            row += [""] * (13 - len(row))
-            if _norm(row[1]) != "new start" or row[12].strip():
+            row += [""] * (14 - len(row))
+            if _norm(row[1]) != "new start" or row[13].strip():
                 continue
-            name, camp, trainer = row[3].strip(), row[2].strip().upper(), row[5]
+            name, camp, trainer = row[4].strip(), row[3].strip().upper(), row[6]
             if not name or _norm(name) in by_norm:
                 continue
             ns = Rep(name, "BOX" if camp == "BOX" else "B2B", trainer.strip(),
