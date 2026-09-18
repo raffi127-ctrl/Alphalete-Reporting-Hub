@@ -246,7 +246,12 @@ OFFICES: Dict[str, AlertOffice] = {
         label="Roshan's Local Office",
         channels=(),
         timezone="America/Chicago", active=True, platform="mac",
-        slack_user_id="",
+        # Looked up 2026-09-18. Without it the quiet nudge said "No Slack id
+        # on file -- nudge them yourself", so every alert about her machine
+        # reached Megan and Eve and never the one person who could walk to it.
+        # Slack spells her "Amin Ahmad Roshan"; we spell her the other way
+        # round, which is why a name match alone was not enough to trust.
+        slack_user_id="U066B1ZUT4J",
         day_start="10:30", day_end="18:30",
         sat_start="10:30", sat_end="17:00", saturday=True,
         campaign="b2b_box",
