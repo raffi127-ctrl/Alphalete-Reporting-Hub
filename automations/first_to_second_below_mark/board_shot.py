@@ -106,14 +106,21 @@ def _font(size: int):
         return ImageFont.load_default()
 
 
-def caption(text: str, width: int, bg=CAPTION_BG, height: int = 84):
-    """A full-width dark band with the day written large, as a PIL image."""
+# Band height and text size, in pixels of the ~4400px-wide picture. Raised from
+# 84 / half-height after the first sample: on a phone the day did not read at a
+# glance (Eve, 2026-09-18).
+CAPTION_PX = 150
+CAPTION_TEXT = 0.6          # share of the band's height the letters take
+
+
+def caption(text: str, width: int, bg=CAPTION_BG, height: int = CAPTION_PX):
+    """A full-width band with the day written large, as a PIL image."""
     from PIL import Image, ImageDraw
     im = Image.new("RGB", (width, height), bg)
     d = ImageDraw.Draw(im)
-    f = _font(int(height * 0.5))
+    f = _font(int(height * CAPTION_TEXT))
     box = d.textbbox((0, 0), text, font=f)
-    d.text((24, (height - (box[3] - box[1])) // 2 - box[1]), text, font=f, fill=CAPTION_FG)
+    d.text((40, (height - (box[3] - box[1])) // 2 - box[1]), text, font=f, fill=CAPTION_FG)
     return im
 
 
