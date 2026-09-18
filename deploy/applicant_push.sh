@@ -4,10 +4,12 @@
 # each one works only the offices assigned to it.
 #
 # ONE OFFICE PER TICK, ROUND-ROBIN OVER THE OFFICES THIS MACHINE OWNS. The
-# assignment lives in offices.ROTATION_BY_MACHINE — Lucy 2 works Carlos and Atef;
-# Lucy 3 works Khalil and Raf's 2nd funnel. A box runs its ticks back to back, so
-# every office added to a machine slows every other office on it: all four on
-# Lucy 2 meant a pass every ~25 minutes each, and split two and two it is ~12.
+# assignment lives in offices.ROTATION_BY_MACHINE. The Lucy 3 split is still
+# parked (Lucy 3 cannot hold an AppStream session), so Lucy 2 works all SIX:
+# Carlos, Atef, Khalil and Raf's three streams (11280, 23965, 24065 — Carlos,
+# 2026-09-18). A box runs its ticks back to back, so every office added to a
+# machine slows every other office on it: four on Lucy 2 was a pass every ~25
+# minutes each, six is ~36, and splitting three and three would be ~18.
 # Each office gets a pass every (offices on this machine) x ~6 minutes, and every
 # tick stays ONE warm session.
 #
@@ -177,6 +179,22 @@ case "$OFFICE" in
     HUB_NAME="Applicant Push (Raf 2nd Funnel)"
     POST_TODO=0
     ;;
+  11280)
+    OFFICE_SLUG="-11280"
+    OFFICE_LABEL="office 11280 (Raf, Alphalete Marketing)"
+    HUB_ID="applicant_push_rafael"
+    HUB_NAME="Applicant Push (Rafael)"
+    # Raf has a live recruiting channel (#rafs-office-recruiting-11280) but
+    # nobody has asked for the daily to-do post there — pushing is the ask.
+    POST_TODO=0
+    ;;
+  24065)
+    OFFICE_SLUG="-24065"
+    OFFICE_LABEL="office 24065 (Raf new recruiter test)"
+    HUB_ID="applicant_push_raf_recruiter_test"
+    HUB_NAME="Applicant Push (Raf New Recruiter Test)"
+    POST_TODO=0
+    ;;
   *)
     # An unknown office must SKIP THIS TICK, not kill the agent: on 9/8 this
     # arm was `exit 1` and, because the rotation marker only advances on
@@ -234,6 +252,28 @@ case "$OFFICE" in
     export OAT_OFFICE_SHORT="office 23965, Raf 2nd funnel"
     export OAT_REMOVE_NO_PHONE="0"
     # No Slack channel wired yet — flags stay in the diag tab.
+    ;;
+  11280)
+    export OAT_OFFICE_ID="11280"
+    export OAT_FILE_SUFFIX="-11280"
+    export OAT_WALK_DIAG_TAB="OAT Walk Diag 11280"
+    export OAT_OFFICE_LABEL="office 11280 · Rafael Hidalgo — ALPHALETE MARKETING, INC."
+    export OAT_OFFICE_SHORT="office 11280, Rafael"
+    export OAT_REMOVE_NO_PHONE="0"
+    # #rafs-office-recruiting-11280, Raf's own channel. Exported even with
+    # POST_TODO=0 so that if the post is ever switched on, the separate summary
+    # process cannot fall back to Carlos's #alphaletegp-recruiting default and
+    # name Raf's applicants in Carlos's channel.
+    export OAT_SCORECARD_CHANNEL="C0AUAS88FGW"
+    ;;
+  24065)
+    export OAT_OFFICE_ID="24065"
+    export OAT_FILE_SUFFIX="-24065"
+    export OAT_WALK_DIAG_TAB="OAT Walk Diag 24065"
+    export OAT_OFFICE_LABEL="office 24065 · Rafael Hidalgo — New Recruiter Test"
+    export OAT_OFFICE_SHORT="office 24065, Raf new recruiter test"
+    export OAT_REMOVE_NO_PHONE="0"
+    export OAT_SCORECARD_CHANNEL="C0AUAS88FGW"
     ;;
 esac
 
@@ -355,6 +395,8 @@ if kill -0 "$_RUN_PID" 2>/dev/null; then
     23467) pkill -f rp_cdp_23467   >/dev/null 2>&1 ;;
     11901) pkill -f rp_cdp_11901   >/dev/null 2>&1 ;;
     23965) pkill -f rp_cdp_23965   >/dev/null 2>&1 ;;
+    11280) pkill -f rp_cdp_11280   >/dev/null 2>&1 ;;
+    24065) pkill -f rp_cdp_24065   >/dev/null 2>&1 ;;
   esac
   ST=124
 else

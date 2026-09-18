@@ -228,7 +228,12 @@ def run(live: bool = False, limit: int = None, max_actions: int = None,
 # that you're only pushing resumes for Atef and my office." An audit of another
 # office must say so out loud with --audit-office — and still runs behind the
 # per-click office guard in oat_processing.
-PUSH_ALLOWED = {"11580", "23467", "11901", "23965"}
+# 2026-09-18: Raf's three streams (11280 Alphalete Marketing, 23965 2nd Funnel,
+# 24065 New Recruiter Test) joined after Megan assigned all three to the Lucy
+# Resume Pushing login — Carlos: "push resumes for all three of Raf's applicant
+# streams". This set and that login assignment are the two independent bounds on
+# an irreversible send; keep them in step.
+PUSH_ALLOWED = {"11580", "23467", "11901", "23965", "11280", "24065"}
 
 
 def main(argv=None) -> int:
@@ -258,7 +263,7 @@ def main(argv=None) -> int:
                         "OAT_ONLY_NAMES for the OAT stage.")
     p.add_argument("--audit-office", action="store_true",
                    help="explicit acknowledgement that this live push targets an "
-                        "office OUTSIDE the hard-coded {11580, 23467} allowlist — "
+                        "office OUTSIDE the hard-coded PUSH_ALLOWED allowlist — "
                         "for supervised audit runs only")
     p.add_argument("--recheck-nophone", action="store_true",
                    help="Re-read the resumes of applicants already flagged "

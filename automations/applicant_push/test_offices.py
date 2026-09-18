@@ -163,13 +163,16 @@ check("no office is assigned to two machines",
 check("every ROTATION office has a machine",
       sorted(set(_assigned)), sorted(offices.ROTATION))
 # The Lucy 3 split is PARKED until Lucy 3 can hold an AppStream session, so all
-# four live offices are Lucy 2's. The check that actually protects production is
-# not which box owns what — it is that NOTHING is orphaned, pinned just below.
+# SIX live offices are Lucy 2's — Carlos, Atef, Khalil and Raf's three streams
+# (11280 / 23965 / 24065, added 2026-09-18). The check that actually protects
+# production is not which box owns what — it is that NOTHING is orphaned, pinned
+# just below.
+_LUCY2 = ["11580", "23467", "11901", "23965", "11280", "24065"]
 check("every live office is worked by Lucy 2 while the split is parked",
-      offices.rotation_for("Lucy 2"), ["11580", "23467", "11901", "23965"])
+      offices.rotation_for("Lucy 2"), _LUCY2)
 check("Lucy 3 is assigned nothing yet", offices.rotation_for("Lucy 3"), [])
 check("a marker written in lower case still resolves",
-      offices.rotation_for("lucy 2"), ["11580", "23467", "11901", "23965"])
+      offices.rotation_for("lucy 2"), _LUCY2)
 check("an unknown machine gets no offices at all",
       offices.rotation_for("Megans-MacBook.local"), [])
 check("so does a machine with no name", offices.rotation_for(""), [])
@@ -177,6 +180,65 @@ for _oid in _assigned:
     check("assigned office %s exists" % _oid, _oid in offices.OFFICES, True)
     check("assigned office %s uses the resume login" % _oid,
           offices.OFFICES[_oid]["account"], offices.RESUME_ACCOUNT)
+
+# A scheduled office that run.py would REFUSE to push is worse than one that is
+# missing: the rotation keeps handing it ticks and every one of them dies on the
+# allowlist. 11901 cost hours to a row that was in the rotation but broken; this
+# pins the two lists to each other.
+from automations.applicant_push import run as push_run
+check("every rotation office is on run.py's live allowlist",
+      sorted(set(offices.ROTATION) - push_run.PUSH_ALLOWED), [])
+check("the allowlist holds nothing that nobody rotates",
+      sorted(push_run.PUSH_ALLOWED - set(offices.ROTATION)), [])
+
+# --- Raf's three streams (Carlos, 2026-09-18) -------------------------------
+# All three are HIS offices, and two of them were added on the same day, so the
+# thing to pin is that they did not inherit each other's state or somebody
+# else's Slack channel.
+print("Raf's three streams are live, isolated, and post nowhere")
+for _oid in ("11280", "23965", "24065"):
+    _o = offices.get(_oid)
+    check("%s is Raf's" % _oid, _o["owner"], "Rafael Hidalgo")
+    check("%s is in the rotation" % _oid, _oid in offices.ROTATION, True)
+    # None of Raf's offices has been asked for a daily to-do post, and none of
+    # them may ever text an applicant (only Carlos's 11580 texts).
+    check("%s posts no to-do list" % _oid, _o["post_todo"], False)
+    check("%s never texts an applicant" % _oid, _o["allow_retext"], False)
+    # The channel a to-do WOULD use, if it is ever switched on: Raf's own, never
+    # Carlos's #alphaletegp-recruiting (C09L1S3MQ1E).
+    check_ne("%s does not point at Carlos's channel" % _oid,
+             _o["post_channel"], "C09L1S3MQ1E")
+offices.activate("11580")
+
+# --- the wrapper knows every office the table rotates -----------------------
+# deploy/applicant_push.sh carries three per-office case statements, and a
+# rotation office missing from any of them fails in its own quiet way:
+#   * no label/HUB_ID arm  -> the unknown-office arm skips the tick, forever;
+#   * no OAT env arm       -> the separate summary process reads ANOTHER
+#                             office's suffix, tab and channel;
+#   * no pkill arm         -> a wedge kill leaves Chrome holding that office's
+#                             profile lock and the next tick cannot relaunch
+#                             (this one really happened, to 11901 and 23965).
+# The table is the source of truth, so check the script against it rather than
+# trusting two lists to be edited together.
+print("deploy/applicant_push.sh handles every rotation office")
+import pathlib as _pathlib
+_wrapper = (_pathlib.Path(__file__).resolve().parents[2]
+            / "deploy" / "applicant_push.sh").read_text(encoding="utf-8")
+for _oid in offices.ROTATION:
+    _o = offices.get(_oid)
+    check("%s has a label/HUB_ID arm" % _oid,
+          ('HUB_ID="%s"' % _o["hub_report_id"]) in _wrapper, True)
+    check("%s has a wedge-kill arm" % _oid,
+          ("pkill -f %s " % _o["cdp_kill_pat"]) in _wrapper, True)
+# 11580 is the exception by design: it runs on the module defaults so its files
+# stay unsuffixed, so it exports no OAT_OFFICE_ID.
+for _oid in offices.ROTATION:
+    if _oid == "11580":
+        continue
+    check("%s exports its own OAT day-file suffix" % _oid,
+          ('export OAT_FILE_SUFFIX="%s"' % offices.get(_oid)["suffix"]) in _wrapper,
+          True)
 
 print("%d/%d passed" % (_passed, _passed + _failed))
 raise SystemExit(1 if _failed else 0)

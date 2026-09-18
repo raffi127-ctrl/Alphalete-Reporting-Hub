@@ -275,20 +275,21 @@ OFFICES = {
         "remove_blocked_read": False,
         "remove_no_phone": False,
     },
-    # DIAGNOSTIC ONLY (Carlos, 2026-08-29) — same lazy-removal audit, run ON
-    # LUCY 2 so it can go in parallel with the mini's local runs.
+    # LIVE PUSH OFFICE #5 (Carlos, 2026-09-18: "can you have Lucy2 push resumes
+    # for all three of Raf's applicant streams"). Was a DIAGNOSTIC row from
+    # 2026-08-29 — the lazy-removal audit — and the comment here said the resume
+    # login could not see it. That stopped being true on 9/18: Megan assigned
+    # 11280, 23965 and 24065 to Lucy Resume Pushing in the ApplicantStream admin
+    # (screenshot, "Offices Already Assigned"), which is the permission this job
+    # bounds itself with. Nothing else about the row changes — it kept its own
+    # profile, port, suffix, tabs and log stem from the day it was added, so
+    # going live is a ROTATION entry, not a rename.
     "11280": {
         "office_id": "11280",
         "hint": "RAFAEL HIDALGO",
         "owner": "Rafael Hidalgo",
         "label": "office 11280 · Rafael Hidalgo — ALPHALETE MARKETING, INC.",
         "short": "office 11280, Rafael",
-        # THE RESUME LOGIN, like every other row (Megan 2026-09-02: "the resume
-        # pushing can ONLY HAPPEN on the Resume pushing login"). This said
-        # "primary" because Lucy Resume Pushing cannot SEE this office — but
-        # that is the guarantee working, not a reason to go around it. An
-        # office the resume login cannot see is an office the pusher cannot
-        # push, and send-to-AI is irreversible. The run fails here instead.
         "account": "lucyresume",
         "suffix": "-11280",
         "cdp_profile": "/tmp/rp_cdp_11280",
@@ -299,7 +300,18 @@ OFFICES = {
         "log_stem": "applicant-push-11280",
         "hub_report_id": "applicant_push_rafael",
         "hub_display": "Applicant Push (Rafael)",
-        "post_channel": "C09L1S3MQ1E",
+        # #rafs-office-recruiting-11280 — Raf's OWN live recruiting channel (the
+        # one bg_check_sync and the new-start posts already use; the retired
+        # C06881A7WLV is a different, dead channel). Stated even though posting
+        # is OFF: a blank would let activate() leave whatever channel the last
+        # activated office set, and the module default is Carlos's
+        # #alphaletegp-recruiting — i.e. Raf's applicants named in Carlos's
+        # channel. post_todo is what decides whether anything is sent; this key
+        # only decides WHERE, if it ever is.
+        "post_channel": "C0AUAS88FGW",
+        # OFF until Megan/Carlos ask for it: pushing resumes is what Carlos
+        # asked for on 9/18, a daily to-do post into Raf's channel is not, and a
+        # Slack send is never a side effect of a config flip.
         "post_todo": False,
         "allow_retext": False,
         "remove_blocked_read": False,
@@ -360,7 +372,45 @@ OFFICES = {
         "log_stem": "applicant-push-23965",
         "hub_report_id": "applicant_push_raf_funnel2",
         "hub_display": "Applicant Push (Raf 2nd Funnel)",
-        "post_channel": "",
+        # Was blank until 2026-09-18, which meant activate() left whatever
+        # channel the previously activated office had set and a hand-run summary
+        # would fall back to Carlos's #alphaletegp-recruiting. Now states Raf's
+        # own #rafs-office-recruiting-11280 like his other two offices — posting
+        # is still OFF, this only fixes WHERE it would go.
+        "post_channel": "C0AUAS88FGW",
+        "post_todo": False,
+        "allow_retext": False,
+        "remove_blocked_read": False,
+        "remove_no_phone": False,
+    },
+    # LIVE PUSH OFFICE #6 (Carlos, 2026-09-18) — the third of Raf's streams,
+    # "New Recruiter Test". A separate ApplicantStream office, so it gets the
+    # full isolation set like every other row: its own Chrome profile and port
+    # (9256 — the next free one after 23965's 9255), its own day-file suffix,
+    # its own diag tabs and log stem. Sharing any of those with 11280 would let
+    # two of Raf's own offices overwrite each other's queue state, which is the
+    # single failure this table exists to prevent.
+    "24065": {
+        "office_id": "24065",
+        "account": "lucyresume",
+        "hint": "RAFAEL HIDALGO",
+        "owner": "Rafael Hidalgo",
+        "label": "office 24065 · Rafael Hidalgo — New Recruiter Test",
+        "short": "office 24065, Raf new recruiter test",
+        "suffix": "-24065",
+        "cdp_profile": "/tmp/rp_cdp_24065",
+        "cdp_port": "9256",
+        "cdp_kill_pat": "rp_cdp_24065",
+        "walk_diag_tab": "OAT Walk Diag 24065",
+        "push_diag_tab": "Applicant Push Diag 24065",
+        "log_stem": "applicant-push-24065",
+        "hub_report_id": "applicant_push_raf_recruiter_test",
+        "hub_display": "Applicant Push (Raf New Recruiter Test)",
+        # Raf's own channel, stated for the same reason 11280 states it: with a
+        # blank, a process that already activated another office keeps ITS
+        # channel. Posting stays OFF — this is a test stream and nobody has
+        # asked for its flagged names in Slack.
+        "post_channel": "C0AUAS88FGW",
         "post_todo": False,
         "allow_retext": False,
         "remove_blocked_read": False,
@@ -375,7 +425,7 @@ DEFAULT_OFFICE = "11580"
 # risking the wrapper's hard time cap), and a bad tick for one office cannot
 # starve the other — which running both inside one tick would do, since the first
 # office's wedge burns the cap before the second ever opens a session.
-ROTATION = ["11580", "23467", "11901", "23965"]
+ROTATION = ["11580", "23467", "11901", "23965", "11280", "24065"]
 
 # WHICH MACHINE WORKS WHICH OFFICES (2026-09-13, Megan: "we can move Raf's push
 # to lucy 3 since she's not got a lot on her").
@@ -385,6 +435,13 @@ ROTATION = ["11580", "23467", "11901", "23965"]
 # So an office's wait between passes is simply (offices on that machine) x ~6 min,
 # and every office added to a machine slows down every other office on it. Raf's
 # 23965 joining on 9/12 pushed Carlos, Atef and Khalil from ~19 to ~25 minutes.
+#
+# SIX OFFICES SINCE 2026-09-18 (Carlos: push all three of Raf's streams). 11280
+# and 24065 joined 23965, so one machine now works six and every office waits
+# ~36 minutes between passes — Carlos, Atef and Khalil included. That is the
+# price of Raf's three on one box, and it is the strongest argument yet for
+# finishing the Lucy 3 split below: three and three would put everybody back to
+# ~18. Told Megan the number rather than absorbing it quietly.
 #
 # Splitting across machines is the only lever that changes that number by more
 # than a few percent: Lucy 3 has spare capacity, so Raf's office moves there and
@@ -458,7 +515,7 @@ ROTATION = ["11580", "23467", "11901", "23965"]
 # begin with. That question is still open and still needs Lucy 2 checked
 # immediately after Lucy 3's first successful login.
 ROTATION_BY_MACHINE = {
-    "Lucy 2": ["11580", "23467", "11901", "23965"],
+    "Lucy 2": ["11580", "23467", "11901", "23965", "11280", "24065"],
 }
 
 
