@@ -600,10 +600,25 @@ def hype(name: str, metrics: Dict[str, int], day: dt.date,
     # arrangement of it, and every rep still gets their own hashed line
     # whenever nothing collides.
     taken = set(avoid or ())
-    for step in range(len(pool)):
-        candidate = pool[(idx + step) % len(pool)]
-        if candidate not in taken:
-            idx = (idx + step) % len(pool)
+    # THREE PASSES, degrading on purpose. A five-rep post can exhaust both
+    # axes of a fourteen-line pool, and falling straight back to the hashed
+    # index put "Hector is on it" and "Emily is on it" next to each other --
+    # the exact thing this is for. Giving up the SHAPE first and the theme
+    # only as a last resort means the repeat, when it is unavoidable, is the
+    # least noticeable one available.
+    for wants in (("family", "shape"), ("family",), ()):
+        hit = None
+        for step in range(len(pool)):
+            candidate = pool[(idx + step) % len(pool)]
+            fam, shp = line_key(candidate)
+            if "family" in wants and fam in taken:
+                continue
+            if "shape" in wants and shp in taken:
+                continue
+            hit = (idx + step) % len(pool)
+            break
+        if hit is not None:
+            idx = hit
             break
     line = pool[idx].format(first=who)
     # THE GIF RIDES UNDER THE TOP LINE, and only for a day past even that.
@@ -612,6 +627,73 @@ def hype(name: str, metrics: Dict[str, int], day: dt.date,
         if gif:
             return "%s\n%s" % (line, gif)
     return line
+
+
+# WHAT A LINE IS ABOUT, not which pool it came from.
+#
+# The pools deliberately share phrases across tiers -- "found the money" is in
+# all three, louder each time -- so two reps in one post can read "Abe FOUND
+# THE MONEY!!" and "Hector found the money!" from different pools. Different
+# templates, same sentence, and Megan's word for it was the same as for the
+# other two: "redundant".
+#
+# ORDERED, first match wins: the distinctive phrase has to beat the generic
+# one, because most lines end in "on the board" and that is not what they are
+# about.
+LINE_FAMILIES = (
+    ("found-money", ("found the money",)),
+    ("tell-us", ("tell us",)),
+    ("snicklepop", ("snicklepop",)),
+    ("heck-yeah", ("heck yeah",)),
+    ("closer", ("closer",)),
+    ("winner", ("winner",)),
+    ("whos-next", ("who's next",)),
+    ("comfortable", ("no complacency", "not comfortable", "comfortable")),
+    ("dawg", ("dawg",)),
+    ("came-to-play", ("came to play",)),
+    ("another-one", ("another one",)),
+    ("keeps-going", ("keeps going",)),
+    ("is-on-it", ("is on it",)),
+    ("hundred", (":100:",)),
+    # Last, and on purpose: nearly every line says this, so it is only the
+    # subject when nothing more specific fits.
+    ("on-the-board", ("on the board",)),
+)
+
+
+# AND THE SHAPE OF THE SENTENCE, separately from its theme.
+#
+# "Snicklepop!! Abe is on the board" and "Heck yeah! Caleb is on the board"
+# are different themes and read as one message twice -- Megan: "too similar
+# sounding". Six of the fourteen regular lines end the same way, so the theme
+# check alone was never going to be enough.
+LINE_SHAPES = (
+    ("board", ("is on the board", "on the board")),
+    ("rolling", ("is rolling", "keeps going", "is on it")),
+)
+
+
+def line_shape(template: str) -> str:
+    """The skeleton of a line, ignoring which words open it."""
+    low = (template or "").lower()
+    for shape_name, cues in LINE_SHAPES:
+        if any(c in low for c in cues):
+            return shape_name
+    return "plain"
+
+
+def line_key(template: str) -> tuple:
+    """What makes two lines feel like the same line: theme AND shape."""
+    return (line_family(template), line_shape(template))
+
+
+def line_family(template: str) -> str:
+    """The theme of a line, for deciding whether two say the same thing."""
+    low = (template or "").lower()
+    for family, cues in LINE_FAMILIES:
+        if any(c in low for c in cues):
+            return family
+    return low.strip()[:24] or "other"
 
 
 RECENT_LINES_PATH = (Path.home() / ".config" / "recruiting-report"
@@ -698,8 +780,12 @@ def hype_batch(reps, sales, day, campaign=None, show=None,
         for tpl in pool:
             filled = tpl.format(first=first.upper() if t == "super" else first)
             if line.split("\n")[0] == filled:
-                used.add(tpl)
-                fresh.append(tpl)
+                fam, shp = line_key(tpl)
+                used.add(fam)
+                fresh.append(fam)
+                # The SHAPE is remembered only for THIS post: forbidding it
+                # across a whole afternoon would strip out most of the pool.
+                used.add(shp)
                 break
         out.append(line)
     if room and fresh:
