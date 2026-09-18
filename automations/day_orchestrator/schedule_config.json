@@ -1823,6 +1823,32 @@
       "close_on": "exit_zero",
       "machine": "Lucy 1"
     },
+    "weekly_knocks_focus_backfill": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "BY HAND ONLY (Eve 2026-09-17: 'podes backfillear para cada dueño en su tab la info de weekly disposition que tengamos?'). Fills an OLDER week's WEEKLY KNOCKS DATA box from shared/knock_week_cache, the ownerville pull both knocks reports share. NUMBERS ONLY: no board picture (the one picture per tab is the current week's) and no apps columns (apps come from a Product Sales Summary crosstab downloaded at render time and are never cached — those two rows stay blank instead of guessed). The cache keeps THREE weeks and prunes itself, so that is how far back this can reach, and it is per machine: run it on Lucy 1 (the Sunday report's pulls) and on Lucy 3 (the captainship capture's). `lucy rerun weekly_knocks_focus_backfill --list-cache` prints what a machine still has; add a date to fill it: `lucy rerun weekly_knocks_focus_backfill 2026-09-05`. Every office with a tab and a box is walked, both rosters, de-duped by tab.",
+      "display_name": "Weekly Knocks \u2192 Focus Report (backfill an old week)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.weekly_knocks_focus.run"
+      ],
+      "base_args": [
+        "--from-cache",
+        "--live"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "order": 36.71,
+      "priority": "P3",
+      "freshness_target": null,
+      "after": [],
+      "depends_on": [],
+      "timeout_minutes": 60,
+      "verify": null,
+      "close_on": "exit_zero",
+      "machine": "Lucy 1"
+    },
     "weekly_knocks_focus_captainships": {
       "on_scheduler": true,
       "_note": "ADDED 2026-09-17 (Eve: 'todas las oficinas que faltan'). The same box + board picture as weekly_knocks_focus, for every owner of a captainship with a weekly knock board whose Focus Report tab the Sunday report does NOT feed (Jacob Dover, Nuri Burgos, the Pat/Jess/Tony/Chan/Starr/Sahil/Wayne owners). Source: the board Lucy 3's captainship_knocks capture draws on Monday for the completed Mon-Sat week, plus the rows file it leaves next to it (OFFICE TOTALS are recomputed from those rows with the same board code). That is why this runs on LUCY 3, after the capture AND after captainship_drafts (order 1.1): its 15-25 min must never push the drafts past their 07:15 review link. A tab the Sunday report feeds (Kash Rai, Chan Park...) is skipped so a tab never has two writers. An owner with a tab but no board is a failure (exit 1) UNLESS knocks_access_watch's snapshot says we have no Office Access to them (2026-09-17: Austin Eldredge + Nigel Gilbert, two of Pat's eight ungranted owners, ended the sweep 69/71 exit 1 every run) — those are skipped with a line, like Eve's standing rule for a missing owner. An owner with no Focus Report tab is skipped with a line.",

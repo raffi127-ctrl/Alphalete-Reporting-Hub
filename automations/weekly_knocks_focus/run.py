@@ -354,6 +354,46 @@ def _no_office_access(office: str) -> Optional[str]:
     return f"{why} (knocks_access_watch snapshot {checked.date()})"
 
 
+def cache_weeks() -> List[dt.date]:
+    """The Saturdays this machine still has an ownerville pull for, newest
+    first. The cache keeps the newest three weeks (knock_week_cache.prune), so
+    this is exactly how far back a backfill can reach here."""
+    from automations.shared import knock_week_cache as KWC
+    out = []
+    for f in sorted(Path(KWC.CACHE_DIR).glob("*.json"), reverse=True):
+        try:
+            out.append(dt.date.fromisoformat(f.stem))
+        except ValueError:
+            continue
+    return out
+
+
+def _cache_board(office: str, saturday: dt.date) -> Optional[dict]:
+    """`office`'s OFFICE TOTALS for an OLD week, rebuilt from the shared pull
+    cache — the only thing left of a week whose board is long gone.
+
+    NO APPS. The apps columns come from a Product Sales Summary crosstab
+    downloaded at render time and never cached, so 'Mon-Sat Total Apps' and
+    'Mon-Sat Avg Talk To's per App' stay blank for a backfilled week rather
+    than being guessed. BX.plan skips a blank value, so whatever a human typed
+    in those two cells is left alone."""
+    from automations.shared import knock_week_cache as KWC
+    from automations.weekly_knock_dispositions import board as B
+    hit = KWC.get(office, saturday)
+    if hit is None:
+        return None
+    ov_rows, cols = hit
+    if not ov_rows:
+        return None
+    rows = B.compute_rows(ov_rows, None, cols)
+    totals = next((r for r in rows if len(r) > 1 and r[1] == B.TOTALS_LABEL),
+                  None)
+    if totals is None:
+        return None
+    return {"office": office, "headers": B.headers_for(cols, B.is_gaps_only(ov_rows)),
+            "totals": totals}
+
+
 def captainship_offices(saturday: dt.date) -> List[str]:
     """Every owner of a captainship whose emails carry the weekly knock board
     for this week, de-duped, in config order."""
@@ -399,7 +439,14 @@ def run_office(office: str, saturday: dt.date, tab: Optional[str],
         return skip_missing
 
     stem = f"weekly_knock_dispositions_{saturday.isoformat()}"
-    if source == "captainship":
+    png = None
+    if source == "cache":
+        data = _cache_board(office, saturday)
+        if data is None:
+            print(f"[wkf] ⤳ {office}: nothing in the week cache for "
+                  f"{saturday} — skipped.", flush=True)
+            return True
+    elif source == "captainship":
         data, png = _captainship_board(office, saturday)
         if data is None:
             gap = _no_office_access(office)
@@ -462,6 +509,10 @@ def run_office(office: str, saturday: dt.date, tab: Optional[str],
                           {"numberFormat": {"type": "NUMBER", "pattern": "0.00"}})
         print(f"[wkf] ✅ wrote {len(updates)} box cell(s).", flush=True)
 
+    if source == "cache":
+        # ONE picture per tab and it belongs to the CURRENT week — a backfill
+        # of an old week must never replace it.
+        return True
     if not png.exists():
         print(f"[wkf] ❌ {office}: board PNG missing ({png}).", flush=True)
         return False
@@ -482,6 +533,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--all", action="store_true",
                     help="every office weekly_knock_dispositions covers; "
                          "offices without a Focus Report tab or box are skipped")
+    ap.add_argument("--from-cache", action="store_true",
+                    help="BACKFILL an older week: numbers only, rebuilt from "
+                         "this machine's shared pull cache (no board picture, "
+                         "no apps columns). Walks every office with a tab and "
+                         "a box, Sunday-report and captainship alike")
+    ap.add_argument("--list-cache", action="store_true",
+                    help="print the weeks this machine can backfill and exit")
     ap.add_argument("--captainships", action="store_true",
                     help="every owner of a captainship with a weekly knock "
                          "board, from Lucy 3's capture; tabs the Sunday "
@@ -498,11 +556,43 @@ def main(argv: Optional[List[str]] = None) -> int:
     saturday = _saturday(anchor)
 
     from automations.weekly_knock_dispositions.offices import enabled
-    source = "captainship" if args.captainships else "sunday"
+    if args.list_cache:
+        weeks = cache_weeks()
+        print(f"[wkf] week cache on this machine: "
+              f"{', '.join(w.isoformat() for w in weeks) or 'empty'}",
+              flush=True)
+        for w in weeks:
+            from automations.shared import knock_week_cache as KWC
+            try:
+                import json as _json
+                blob = _json.loads((Path(KWC.CACHE_DIR) / f"{w.isoformat()}.json")
+                                   .read_text(encoding="utf-8"))
+                offices = sorted((blob.get("offices") or {}).values(),
+                                 key=lambda o: str(o.get("office", "")))
+                print(f"    {w}: {len(offices)} office(s): "
+                      + ", ".join(str(o.get("office")) for o in offices),
+                      flush=True)
+            except Exception as e:  # noqa: BLE001
+                print(f"    {w}: unreadable ({type(e).__name__})", flush=True)
+        return 0
+    source = ("cache" if args.from_cache
+              else "captainship" if args.captainships else "sunday")
     if args.office:
         wanted = [(o, None, args.tab, False) for o in args.office]
         pss = {c["name"]: c.get("pss_owner") for c in enabled(None)}
         wanted = [(o, pss.get(o), t, s) for o, _p, t, s in wanted]
+    elif args.from_cache:
+        # Every office with a tab, from BOTH rosters — the cache doesn't care
+        # which report pulled the week, and a tab is only ever written once
+        # here because the list is de-duped by tab.
+        names = [c["name"] for c in enabled(None)] + captainship_offices(saturday)
+        wanted, seen_tabs = [], set()
+        for name in names:
+            tab_i = _tab_for(name)
+            if not tab_i or tab_i in seen_tabs:
+                continue
+            seen_tabs.add(tab_i)
+            wanted.append((name, None, None, True))
     elif args.captainships:
         # A tab the Sunday report feeds stays ITS tab (Kash Rai is also a Raf
         # captainship owner): one writer per tab per week.
@@ -518,7 +608,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     elif args.all:
         wanted = [(c["name"], c.get("pss_owner"), None, True) for c in enabled(None)]
     else:
-        ap.error("pass --office NAME, --all or --captainships")
+        ap.error("pass --office NAME, --all, --captainships or --from-cache")
     # One office's error is that office's failure, never the sweep's: on
     # 2026-09-17 an uncaught Drive 502 on the FIRST office ended the run and
     # the other 35 were never tried.

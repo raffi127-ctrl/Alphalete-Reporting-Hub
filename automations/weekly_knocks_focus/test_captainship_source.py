@@ -142,3 +142,25 @@ class CaptainshipBoard(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CacheBackfill(unittest.TestCase):
+    """--from-cache: an old week's totals come from the shared pull cache, with
+    the apps columns left blank rather than guessed."""
+
+    def test_totals_without_apps(self):
+        reps = [_rep("Ana Uno", talk=30, knocks=600)]
+        from automations.shared import knock_week_cache as KWC
+        with mock.patch.object(KWC, "get", return_value=(reps, [])):
+            data = R._cache_board("Ana's Office", SAT)
+        want = [r for r in B.compute_rows(reps, None, []) if r[1] == B.TOTALS_LABEL][0]
+        self.assertEqual(data["totals"], want)
+        i = data["headers"].index("Mon–Sat Total Apps")
+        self.assertEqual(str(data["totals"][i]).strip(), "")
+
+    def test_no_hit_is_no_board(self):
+        from automations.shared import knock_week_cache as KWC
+        with mock.patch.object(KWC, "get", return_value=None):
+            self.assertIsNone(R._cache_board("Nobody", SAT))
+        with mock.patch.object(KWC, "get", return_value=([], [])):
+            self.assertIsNone(R._cache_board("Nobody", SAT))
