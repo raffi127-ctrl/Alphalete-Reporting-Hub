@@ -564,6 +564,20 @@ def hype(name: str, metrics: Dict[str, int], day: dt.date,
     """
     sh = shape(campaign)
     t = sh.tier(metrics)
+    # ABOVE THE TOP BAR IS AT LEAST THE TOP TIER. These two measure different
+    # things, and on Box they disagreed completely: tier() counts flagged
+    # contracts (Huge >= 1), above_top() measures kWh. Vianey Silva did 500,000
+    # kWh in two contracts on 2026-09-17 with nothing flagged -- she cleared
+    # the gif bar EXACTLY and came out "regular", so she got the plainest line
+    # in the pool and no gif, on the biggest day anyone had.
+    #
+    # Read plainly, "above the top" cannot be less than "the top", so it
+    # settles the tier rather than being gated by it. That also stops the
+    # nonsense the old order allowed: a legendary gif stapled under an
+    # ordinary sentence.
+    legend = sh.above_top(metrics)
+    if legend:
+        t = "super"
     first = _first(name)
     if t == "super":
         pool, who = sh.super_lines or HYPE_SUPER, first.upper()
@@ -578,7 +592,7 @@ def hype(name: str, metrics: Dict[str, int], day: dt.date,
     idx = zlib.crc32(seed.encode("utf-8")) % len(pool)
     line = pool[idx].format(first=who)
     # THE GIF RIDES UNDER THE TOP LINE, and only for a day past even that.
-    if t == "super" and sh.above_top(metrics):
+    if legend:
         gif = gif_for(name, day, sh.total(metrics))
         if gif:
             return "%s\n%s" % (line, gif)

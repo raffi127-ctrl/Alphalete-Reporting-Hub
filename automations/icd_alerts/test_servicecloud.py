@@ -2432,3 +2432,62 @@ class RafsBoardHonoursTheSameGifCap(unittest.TestCase):
             H.record_gifs(day, "ao-board", 3)
             _out, used = H.within_budget(["X\nhttps://g/x"], day, "ryan")
             self.assertEqual(used, 1, "one room's gifs spent another's")
+
+
+class AboveTheBarIsAlsoTheTopTierTest(unittest.TestCase):
+    """The gif bar and the tier measured different things, and disagreed.
+
+    Box's tier() counts FLAGGED CONTRACTS (Huge >= 1); above_top() measures
+    kWh. Vianey Silva did 500,000 kWh in two contracts on 2026-09-17 with
+    nothing flagged Big or Huge -- she cleared the gif bar exactly, came out
+    "regular", and got the plainest line in the pool with no gif, on the
+    biggest day anyone had had. Megan: "I don't see the gif post".
+
+    Above the top cannot be less than the top.
+    """
+
+    def test_volume_alone_earns_the_gif(self):
+        import datetime as dt
+        from automations.shared import sale_hype as H
+        m = {"Sales": 2, "Volume": 500000, "Big": 0, "Huge": 0}
+        self.assertTrue(H.shape("b2b_box").above_top(m))
+        out = H.hype("Vianey Silva", m, dt.date(2026, 9, 17), "b2b_box")
+        self.assertIn("giphy.gif", out)
+
+    def test_it_also_earns_the_top_wording(self):
+        """A legendary gif stapled under an ordinary sentence is the other
+        half of the same bug."""
+        import datetime as dt
+        from automations.shared import sale_hype as H
+        m = {"Sales": 2, "Volume": 500000, "Big": 0, "Huge": 0}
+        out = H.hype("Vianey Silva", m, dt.date(2026, 9, 17), "b2b_box")
+        self.assertIn("VIANEY", out.split("\n")[0])
+
+    def test_below_the_bar_still_gets_nothing(self):
+        import datetime as dt
+        from automations.shared import sale_hype as H
+        m = {"Sales": 3, "Volume": 424272, "Big": 1, "Huge": 0}
+        out = H.hype("Kyara Hurtado", m, dt.date(2026, 9, 17), "b2b_box")
+        self.assertNotIn("giphy.gif", out)
+
+    def test_every_gif_in_the_pool_gets_used(self):
+        """Ten were chosen to cycle through; a hash that favours two of them
+        is the same as having two."""
+        import datetime as dt
+        from automations.shared import sale_hype as H
+        seen = set()
+        for d in range(30):
+            day = dt.date(2026, 9, 1) + dt.timedelta(days=d)
+            for n in ("A Rep", "B Rep", "C Rep", "D Rep", "E Rep"):
+                got = H.gif_for(n, day, 500000)
+                if got:
+                    seen.add(got)
+        self.assertEqual(len(seen), len(H.HYPE_GIFS))
+
+    def test_the_same_sale_always_gets_the_same_gif(self):
+        """A re-run must repeat itself, not celebrate one sale twice."""
+        import datetime as dt
+        from automations.shared import sale_hype as H
+        a = H.gif_for("Vianey Silva", dt.date(2026, 9, 17), 500000)
+        b = H.gif_for("Vianey Silva", dt.date(2026, 9, 17), 500000)
+        self.assertEqual(a, b)
