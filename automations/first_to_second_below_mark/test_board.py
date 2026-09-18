@@ -191,7 +191,9 @@ class EveLayout(unittest.TestCase):
                   r["updateDimensionProperties"]["properties"]["pixelSize"])
                  for r in reqs if "updateDimensionProperties" in r
                  and r["updateDimensionProperties"]["range"]["dimension"] == "ROWS"]
-        self.assertEqual(sizes[0], (0, b.ROW_PX))
+        self.assertEqual(sizes[0], (b.FIRST_BODY_ROW - 1, b.ROW_PX))
+        # the header rows are never squeezed to the body height
+        self.assertIn((b.HEADER_ROW - 1, b.HEADER_ROW_PX), sizes)
         for band_row in lay.band_rows:
             self.assertIn((band_row - 1, b.DAY_ROW_PX), sizes)
 

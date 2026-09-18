@@ -79,6 +79,7 @@ GAP_COLS = 1                              # blank column between the two weeks
 DAY_ROW_PX = 31
 ROW_PX = 21
 TITLE_ROW_PX = 36
+HEADER_ROW_PX = 48          # only if the template's own height cannot be read
 
 DAY_BG = {"red": 0.263, "green": 0.263, "blue": 0.263}
 WEEK_BG = {"red": 0.4, "green": 0.4, "blue": 0.4}
@@ -458,7 +459,8 @@ def _rng(sid, r0, r1, c0, c1):
 
 
 def format_requests(sid: int, tsid: int, t_hrow: int, headers: List[str],
-                    layout: Layout, n_blocks: int, widths: List[Optional[int]]) -> List[dict]:
+                    layout: Layout, n_blocks: int, widths: List[Optional[int]],
+                    head_heights: Optional[List[Optional[int]]] = None) -> List[dict]:
     width = len(headers)
     total = width * n_blocks + GAP_COLS * (n_blocks - 1)
     starts = [k * (width + GAP_COLS) for k in range(n_blocks)]
@@ -474,10 +476,17 @@ def format_requests(sid: int, tsid: int, t_hrow: int, headers: List[str],
     # Every row back to the plain height first: the days land on different
     # rows from one run to the next, and a band's tall height would otherwise
     # stay behind on whatever office row takes its place.
+    # Only the body: rows 3-4 take the template's heights below, because a
+    # fixed 21px there cut the wrapped headers to their first word ('Not').
     reqs.append({"updateDimensionProperties": {
-        "range": {"sheetId": sid, "dimension": "ROWS", "startIndex": 0,
+        "range": {"sheetId": sid, "dimension": "ROWS", "startIndex": FIRST_BODY_ROW - 1,
                   "endIndex": max(layout.last_row + 60, 300)},
         "properties": {"pixelSize": ROW_PX}, "fields": "pixelSize"}})
+    for row, px in ((BANNER_ROW, (head_heights or [None, None])[0]),
+                    (HEADER_ROW, (head_heights or [None, None])[-1])):
+        reqs.append({"updateDimensionProperties": {
+            "range": {"sheetId": sid, "dimension": "ROWS", "startIndex": row - 1, "endIndex": row},
+            "properties": {"pixelSize": px or HEADER_ROW_PX}, "fields": "pixelSize"}})
     col = cols.resolve(headers)
     # The columns before the first group banner get the two-row header box.
     boxed = col.get("qualified", 0)
@@ -631,15 +640,18 @@ def _template(sh, logfn=print):
     if office is not None:
         headers = headers[:office]
     meta = sh.fetch_sheet_metadata({
-        "ranges": [f"'{TEMPLATE_TAB}'!A1:{ars.a1col(len(headers))}1"],
-        "fields": "sheets(properties.sheetId,data.columnMetadata.pixelSize)"})
+        "ranges": [f"'{TEMPLATE_TAB}'!A{hrow - 1}:{ars.a1col(len(headers))}{hrow}"],
+        "fields": "sheets(properties.sheetId,data(columnMetadata.pixelSize,"
+                  "rowMetadata.pixelSize))"})
     widths: List[Optional[int]] = []
+    heights: List[Optional[int]] = []
     for s in meta.get("sheets", []):
         if s["properties"]["sheetId"] == tws.id:
             for d in s.get("data", []):
                 widths = [c.get("pixelSize") for c in d.get("columnMetadata", [])]
+                heights = [r.get("pixelSize") for r in d.get("rowMetadata", [])]
     logfn(f"  template: {TEMPLATE_TAB!r}, headers on row {hrow}, {len(headers)} columns")
-    return tws, hrow, headers, widths
+    return tws, hrow, headers, widths, heights
 
 
 def _board_ws(sh, tab: str, rows: int, cols_: int):
@@ -660,7 +672,7 @@ def run(*, week_label_: Optional[str] = None, tab: str = BOARD_TAB,
     now = dt.datetime.now(dt.timezone.utc).astimezone(rep.CT)
     today = today or now.date()
     sh = fill.open_by_key(rep.SHEET_ID)
-    tws, t_hrow, headers, widths = _template(sh, logfn)
+    tws, t_hrow, headers, widths, head_heights = _template(sh, logfn)
     width = len(headers)
 
     if week_label_:
@@ -734,7 +746,7 @@ def run(*, week_label_: Optional[str] = None, tab: str = BOARD_TAB,
     bws.update(range_name=f"A1:{ars.a1col(total_cols)}{layout.last_row}",
                values=layout.values, value_input_option="RAW")
     sh.batch_update({"requests": format_requests(bws.id, tws.id, t_hrow, headers, layout,
-                                                 len(results), widths)})
+                                                 len(results), widths, head_heights)})
     meta = sh.fetch_sheet_metadata()
     existing = next((s.get("conditionalFormats", []) for s in meta["sheets"]
                      if s["properties"]["sheetId"] == bws.id), [])
