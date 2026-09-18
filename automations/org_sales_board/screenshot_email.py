@@ -483,10 +483,13 @@ def _export_png(gid: int, rng: str, out_path: Path, token: str,
         # (2026-07-31). Retry-After is honoured when Google sends it, else back
         # off 8s..64s over 8 tries — ~4½ minutes, which is longer than any
         # per-minute window it is enforcing.
+        # 500/502/504 retry too: on 2026-09-18 ONE 500 on an All Units block
+        # dropped that whole section from the draft (capture_all_units is
+        # fail-soft), when the same export worked fine minutes later.
         for attempt in range(8):
             r = requests.get(base + extra,
                              headers={"Authorization": f"Bearer {token}"}, timeout=90)
-            if r.status_code in (429, 503):
+            if r.status_code in (429, 500, 502, 503, 504):
                 wait = 8 * (attempt + 1)
                 try:
                     wait = max(wait, int(r.headers.get("Retry-After", 0)))
@@ -500,7 +503,8 @@ def _export_png(gid: int, rng: str, out_path: Path, token: str,
             # A hidden tab exports as an empty 993-byte PDF with HTTP 200 —
             # nothing above catches that. [[shared.sheets_export]]
             return _sx.check_pdf(r.content, where=f"export {rng}")
-        raise RuntimeError(f"export {rng}: throttled (429) after retries")
+        raise RuntimeError(f"export {rng}: throttled/5xx "
+                           f"({r.status_code}) after retries")
 
     # Default: fit-to-WIDTH, landscape (crisp for the wide short tables). If that
     # paginates (a tall block like the leaderboard), re-render fit-to-PAGE so the
