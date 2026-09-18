@@ -43,35 +43,44 @@ export PYTHONPATH="$(pwd)"
 LOG_FILE="$LOG_DIR/below-the-mark-$(date +%Y-%m-%d-%H%M%S).log"
 echo "[$(date)] below-the-mark starting (args: $*)" > "$LOG_FILE"
 
-# PAUSED (Eve, 2026-09-18). Rafael asked for the two-week layout (this week on
-# the left, last week on the right, Mon-Fri, earlier days re-checked every run)
-# and the one-day version is not to go out again until that ships. The
-# scheduled 13:00 / 18:30 passes stop here: no fill, no DM. Exit 0 so the pause
-# does not read as a failure. A hand run can still go through with
-# BELOW_THE_MARK_FORCE=1. Remove this block when the new layout goes live.
-if [ "${BELOW_THE_MARK_FORCE:-0}" != "1" ]; then
-  echo "[$(date)] PAUSED until the two-week layout ships - no fill, no DM" >> "$LOG_FILE"
-  exit 0
+
+# `${ARGS[@]+...}` everywhere below: the mini's bash is 3.2, where an EMPTY
+# array under `set -u` is an "unbound variable" error, and the scheduled pass
+# passes no arguments at all.
+ARGS=("$@")
+
+# THE TWO-WEEK BOARD (Rafael, 2026-09-18): this week on the left, last week on
+# the right, Mon-Fri, every day of both weeks re-pulled each pass. It writes the
+# '1st to 2nd below the mark PREVIEW' tab, and the DM carries the same weekday
+# last week on top and today below. The one-day tab (module `run`) no longer
+# goes out; `bash deploy/below_the_mark.sh --one-day` still runs it by hand.
+MODE=board
+if [ "${ARGS[0]:-}" = "--one-day" ]; then
+  MODE=one-day
+  ARGS=(${ARGS[@]+"${ARGS[@]:1}"})
+  # --now: the one-day tab must always be about TODAY, whatever a look-back
+  # left in its A1/B1 pickers.
+  [ ${#ARGS[@]} -eq 0 ] && ARGS=(--now)
 fi
 
-# --now unless the caller asked for something specific: the scheduled runs must
-# always be about TODAY. Without it, a look-back someone left in the A1/B1
-# pickers would stick and every later run would keep refilling that old day.
-ARGS=("$@")
-[ ${#ARGS[@]} -eq 0 ] && ARGS=(--now)
-
-"$VENV_PY" -m automations.first_to_second_below_mark.run "${ARGS[@]}" >> "$LOG_FILE" 2>&1
+if [ "$MODE" = board ]; then
+  "$VENV_PY" -m automations.first_to_second_below_mark.board ${ARGS[@]+"${ARGS[@]}"} >> "$LOG_FILE" 2>&1
+else
+  "$VENV_PY" -m automations.first_to_second_below_mark.run ${ARGS[@]+"${ARGS[@]}"} >> "$LOG_FILE" 2>&1
+fi
 ST=$?
+DM_ARGS=(--post)
+[ "$MODE" = board ] && DM_ARGS=(--board --post)
 
 # The screenshot DM, ONLY on a clean fill. A failed fill leaves the tab holding
 # the PREVIOUS pass, and DMing that picture would tell five people the day is
 # fine when the run never finished. A dry-run never DMs either.
 DM=0
-case " ${ARGS[*]} " in
+case " ${ARGS[*]+"${ARGS[*]}"} " in
   *" --dry-run "*) echo "[$(date)] dry-run: no DM" >> "$LOG_FILE" ;;
   *)
     if [ "$ST" -eq 0 ]; then
-      "$VENV_PY" -m automations.first_to_second_below_mark.slack_post --post         >> "$LOG_FILE" 2>&1
+      "$VENV_PY" -m automations.first_to_second_below_mark.slack_post "${DM_ARGS[@]}"         >> "$LOG_FILE" 2>&1
       DM=$?
       echo "[$(date)] group DM exit=$DM" >> "$LOG_FILE"
     else
