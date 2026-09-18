@@ -418,48 +418,12 @@ def _batch_get(ws, ranges: List[str]) -> List[List[List[str]]]:
     return [vr.get("values", []) for vr in res.get("valueRanges", [])]
 
 
-def read_owner_day(sh, tab: str, owner: str, workbook: str,
-                   week_label: str, day: str) -> OwnerDay:
-    """Pull one owner's numbers for one day out of their tab's two blocks.
-
-    Three bounded reads, never the whole tab: row 1 to find where the blocks
-    start and end, the two label columns to find the week's box, then the two
-    small windows that box occupies."""
-    ws = fill.worksheet_ci(sh, tab)
+def _owner_day_from_boxes(boxes, q_col, q_end, q_box, a_col, a_end, a_box, *,
+                          owner: str, workbook: str, tab: str,
+                          week_label: str, day: str) -> OwnerDay:
+    """One day out of a weekly box that has already been read."""
     out = OwnerDay(owner=owner, workbook=workbook, tab=tab,
                    week_label=week_label, day=day)
-
-    row1 = (_batch_get(ws, ["1:1"]) or [[]])
-    row1 = row1[0][0] if row1 and row1[0] else []
-    q_col = find_block_column(row1, QUALIFIED_BANNER)
-    a_col = find_block_column(row1, ANSWERED_BANNER)
-    if q_col is None:
-        raise LookupError(f"{tab!r}: no {QUALIFIED_BANNER!r} block on row 1")
-    q_end = block_end(row1, q_col)
-    a_end = block_end(row1, a_col) if a_col else None
-
-    label_ranges = [f"{a1col(q_col)}1:{a1col(q_col)}{SCAN_ROWS}"]
-    if a_col is not None:
-        label_ranges.append(f"{a1col(a_col)}1:{a1col(a_col)}{SCAN_ROWS}")
-    labels = _batch_get(ws, label_ranges)
-
-    q_box = find_week_box(Window(labels[0], row0=1, col0=q_col), q_col, week_label)
-    if q_box is None:
-        have = ", ".join(week_labels(Window(labels[0], row0=1, col0=q_col), q_col)[-6:]) or "none"
-        raise LookupError(f"{tab!r}: no {week_label!r} box; last boxes: {have}")
-    a_box = None
-    if a_col is not None and len(labels) > 1:
-        a_box = find_week_box(Window(labels[1], row0=1, col0=a_col), a_col, week_label)
-
-    def box_range(col, end, row):
-        stop = (end - 1) if end else (col + BLOCK_WIDTH)
-        return f"{a1col(col)}{row}:{a1col(stop)}{row + BOX_STRIDE + 2}"
-
-    box_ranges = [box_range(q_col, q_end, q_box)]
-    if a_box is not None:
-        box_ranges.append(box_range(a_col, a_end, a_box))
-    boxes = _batch_get(ws, box_ranges)
-
     q_win = Window(boxes[0], row0=q_box, col0=q_col)
     q_rows = read_day(q_win, q_col, q_box, day, q_end)
     live = [r for r in q_rows if not r.is_empty()]
@@ -512,6 +476,84 @@ def read_owner_day(sh, tab: str, owner: str, workbook: str,
     # hand as an example, so the agreement was a coincidence, not a rule
     # (Eve, 2026-09-17). Those three come from ApplicantStream; see appstream.py.
     return out
+
+
+def read_owner_weeks(sh, tab: str, owner: str, workbook: str,
+                     week_labels_wanted: List[str],
+                     days: Optional[List[str]] = None,
+                     ws=None) -> Dict[str, Dict[str, OwnerDay]]:
+    """{ars week label: {day: OwnerDay}} for several weeks of one owner's tab.
+
+    Three bounded reads no matter how many weeks: row 1 to find where the blocks
+    start and end, the two label columns to find the weeks' boxes, then every
+    box in one batch. Reading the two weeks the board shows costs the same
+    quota as reading one, which matters with 41 tabs twice a day.
+
+    A week whose box is missing is left out of the result rather than raising,
+    so last week's box can be there while this week's has not been added yet;
+    the error for a missing box is raised only when NO week was found."""
+    days = days or list(DAYS)
+    # `ws` lets a caller that already listed the workbook's tabs skip the
+    # metadata read worksheet_ci costs -- one Sheets read per owner, and the
+    # per-minute read quota is what a 41-owner sweep runs into first.
+    ws = ws or fill.worksheet_ci(sh, tab)
+
+    row1 = (_batch_get(ws, ["1:1"]) or [[]])
+    row1 = row1[0][0] if row1 and row1[0] else []
+    q_col = find_block_column(row1, QUALIFIED_BANNER)
+    a_col = find_block_column(row1, ANSWERED_BANNER)
+    if q_col is None:
+        raise LookupError(f"{tab!r}: no {QUALIFIED_BANNER!r} block on row 1")
+    q_end = block_end(row1, q_col)
+    a_end = block_end(row1, a_col) if a_col else None
+
+    label_ranges = [f"{a1col(q_col)}1:{a1col(q_col)}{SCAN_ROWS}"]
+    if a_col is not None:
+        label_ranges.append(f"{a1col(a_col)}1:{a1col(a_col)}{SCAN_ROWS}")
+    labels = _batch_get(ws, label_ranges)
+    q_labels = Window(labels[0], row0=1, col0=q_col)
+    a_labels = Window(labels[1], row0=1, col0=a_col) if a_col is not None and len(labels) > 1 else None
+
+    def box_range(col, end, row):
+        stop = (end - 1) if end else (col + BLOCK_WIDTH)
+        return f"{a1col(col)}{row}:{a1col(stop)}{row + BOX_STRIDE + 2}"
+
+    plan = []            # (week, q_box, a_box, index of q range, index of a range)
+    ranges: List[str] = []
+    for wk in week_labels_wanted:
+        q_box = find_week_box(q_labels, q_col, wk)
+        if q_box is None:
+            continue
+        a_box = find_week_box(a_labels, a_col, wk) if a_labels is not None else None
+        qi = len(ranges)
+        ranges.append(box_range(q_col, q_end, q_box))
+        ai = None
+        if a_box is not None:
+            ai = len(ranges)
+            ranges.append(box_range(a_col, a_end, a_box))
+        plan.append((wk, q_box, a_box, qi, ai))
+    if not plan:
+        have = ", ".join(week_labels(q_labels, q_col)[-6:]) or "none"
+        raise LookupError(f"{tab!r}: no {' / '.join(week_labels_wanted)!r} box; "
+                          f"last boxes: {have}")
+    got = _batch_get(ws, ranges)
+
+    out: Dict[str, Dict[str, OwnerDay]] = {}
+    for wk, q_box, a_box, qi, ai in plan:
+        boxes = [got[qi]] + ([got[ai]] if ai is not None else [])
+        out[wk] = {d: _owner_day_from_boxes(
+            boxes, q_col, q_end, q_box, a_col, a_end,
+            a_box if ai is not None else None,
+            owner=owner, workbook=workbook, tab=tab, week_label=wk, day=d)
+            for d in days}
+    return out
+
+
+def read_owner_day(sh, tab: str, owner: str, workbook: str,
+                   week_label: str, day: str) -> OwnerDay:
+    """One owner, one day -- the single-day tab's read. Same three reads as
+    read_owner_weeks, which it is a thin wrapper over."""
+    return read_owner_weeks(sh, tab, owner, workbook, [week_label], [day])[week_label][day]
 
 
 # ------------------------------------------------------------- week labelling

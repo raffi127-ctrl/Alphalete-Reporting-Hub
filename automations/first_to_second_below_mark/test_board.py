@@ -1,0 +1,109 @@
+"""The two-week board: layout and the 'did anything move' check, offline."""
+import datetime as dt
+import unittest
+
+from automations.first_to_second_below_mark import board as b
+from automations.first_to_second_below_mark import run as rep
+
+H = list(rep.DEFAULT_HEADERS[:16])            # A..P, the board's block
+W = len(H)
+E = H.index(rep.PCT_HEADER)
+C = H.index("1st interviews showed up")
+
+
+def row(owner, shown, pct):
+    r = [""] * W
+    r[0], r[C], r[E] = owner, shown, pct
+    return r
+
+
+def week(label, start, per_day, future_from=None):
+    wr = b.WeekResult(label=label, start=start)
+    for day in rep.ars.DAYS:
+        d = b.day_date(start, day)
+        all_rows = per_day.get(day, [])
+        dr = b.DayResult(day=day, date=d, future=bool(future_from and d >= future_from))
+        if not dr.future:
+            dr.all_rows = all_rows
+            dr.interviewed = sum(1 for r in all_rows if r[C])
+            dr.rows = rep.worst_first(rep.below_the_mark(all_rows, H), H)
+        wr.days[day] = dr
+    return wr
+
+
+class Dates(unittest.TestCase):
+    def test_this_week_is_the_sunday_that_starts_it(self):
+        self.assertEqual(b.this_week_start(dt.date(2026, 9, 18)), dt.date(2026, 9, 13))
+
+    def test_sunday_keeps_the_week_that_just_ended(self):
+        self.assertEqual(b.this_week_start(dt.date(2026, 9, 20)), dt.date(2026, 9, 13))
+
+    def test_day_dates(self):
+        self.assertEqual(b.day_date(dt.date(2026, 9, 13), "Monday"), dt.date(2026, 9, 14))
+        self.assertEqual(b.day_date(dt.date(2026, 9, 13), "Friday"), dt.date(2026, 9, 18))
+
+
+class Layout(unittest.TestCase):
+    def setUp(self):
+        self.this = week("9/13", dt.date(2026, 9, 13), {
+            "Monday": [row("Ann", 10, 0.3), row("Bob", 10, 0.5), row("Cid", 8, 0.2)],
+        }, future_from=dt.date(2026, 9, 19))
+        self.last = week("9/6", dt.date(2026, 9, 6), {
+            "Monday": [row("Dee", 10, 0.1)],
+        })
+
+    def test_weeks_sit_side_by_side_and_days_line_up(self):
+        lay = b.lay_out([self.this, self.last], H, "status", {}, False)
+        g = lay.values
+        self.assertTrue(g[0][0].startswith("THIS WEEK"))
+        self.assertTrue(g[0][W + b.GAP_COLS].startswith("LAST WEEK"))
+        mon = lay.band_rows[0] - 1
+        self.assertTrue(g[mon][0].startswith("MONDAY 9/14"))
+        self.assertTrue(g[mon][W + b.GAP_COLS].startswith("MONDAY 9/7"))
+        # Monday is as tall as its longer side: two offices on the left.
+        self.assertEqual([g[mon + 1][0], g[mon + 2][0]], ["Cid", "Ann"])
+        self.assertEqual(g[mon + 1][W + b.GAP_COLS], "Dee")
+        self.assertEqual(lay.band_rows[1], lay.band_rows[0] + 3)
+
+    def test_a_quiet_day_says_so_and_a_future_one_says_not_yet(self):
+        this = week("9/13", dt.date(2026, 9, 13), {
+            "Tuesday": [row("Bob", 10, 0.5)]}, future_from=dt.date(2026, 9, 18))
+        lay = b.lay_out([this, self.last], H, "s", {}, False)
+        tue = lay.band_rows[1] - 1
+        self.assertIn("0 of 1", lay.values[tue][0])
+        self.assertTrue(lay.values[tue + 1][0].startswith("No office"))
+        fri = lay.band_rows[4] - 1
+        self.assertIn("not yet", lay.values[fri][0])
+
+
+class Moved(unittest.TestCase):
+    def test_changes_since_the_last_check_are_noted(self):
+        first = week("9/13", dt.date(2026, 9, 13), {
+            "Monday": [row("Ann", 10, 0.3), row("Bob", 10, 0.35), row("Cid", 10, 0.5)]},
+            future_from=dt.date(2026, 9, 19))
+        last = week("9/6", dt.date(2026, 9, 6), {})
+        lay = b.lay_out([first, last], H, "x · checked Thu 9/17 18:30 CT", {}, False)
+        prior = b.read_prior(lay.values, W, H)
+        self.assertEqual(prior.stamp, "Thu 9/17 18:30")
+        self.assertEqual(prior.listed[("9/13", "Monday")], {"Ann": 0.3, "Bob": 0.35})
+
+        # Friday: an applicant called back -- Ann dropped, Bob rose, Cid slipped.
+        again = week("9/13", dt.date(2026, 9, 13), {
+            "Monday": [row("Ann", 10, 0.2), row("Bob", 10, 0.45), row("Cid", 10, 0.4)]},
+            future_from=dt.date(2026, 9, 19))
+        moved = b.compare([again, last], prior, H)
+        self.assertEqual(moved[("9/13", "Monday", "Ann")],
+                         ("retention", "Was 30% at the Thu 9/17 18:30 check."))
+        self.assertEqual(moved[("9/13", "Monday", "Cid")][0], "owner")
+        self.assertEqual(again.days["Monday"].risen, ["Bob (35% -> 45%)"])
+        lay2 = b.lay_out([again, last], H, "s", moved, False)
+        self.assertIn("back above 40%", lay2.values[lay2.band_rows[0] - 1][0])
+        self.assertEqual(len(lay2.cell_notes), 2)
+
+    def test_first_run_compares_nothing(self):
+        wk = week("9/13", dt.date(2026, 9, 13), {"Monday": [row("Ann", 10, 0.3)]})
+        self.assertEqual(b.compare([wk], b.PriorFill(), H), {})
+
+
+if __name__ == "__main__":
+    unittest.main()

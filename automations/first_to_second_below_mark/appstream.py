@@ -192,3 +192,71 @@ def fetch_days(owners: List[str], week_label: str, day: str, *,
                     row[field] = value
             out[owner] = row
     return out, gaps
+
+
+def fetch_weeks(owner_weeks: Dict[str, List[str]], *, logfn=print
+                ) -> Tuple[Dict[str, Dict[str, Dict[str, Dict[str, Optional[float]]]]], List[str]]:
+    """Every day of several weeks at once, for the two-week board.
+
+    owner_weeks: {owner: [week label, ...]} -- last week's roster is not always
+    this week's, so each owner is pulled only for the weeks they are on.
+
+    Returns ({week label: {day: {owner: {field: value}}}}, gaps).
+
+    ONE office switch per owner, then one week submit per week: the switch is
+    the slow part, and the Retention Details page answers a second week on the
+    same office without it. Re-pulling the days that already happened is the
+    point -- an applicant who calls back on Friday moves Monday's number, and
+    the board has to show the number as it stands now, not as it stood then.
+    """
+    from automations.recruiting_report import fetch_office
+    from automations.shared.tableau_patchright import appstream_direct_session
+
+    _register_metric()
+    index = build_office_index()
+    targets: List[Tuple[str, str, str, List[str]]] = []
+    gaps: List[str] = []
+    for owner, weeks in owner_weeks.items():
+        hit = resolve_office(owner, index)
+        if hit is None:
+            gaps.append(f"{owner}: no AppStream office id")
+            continue
+        targets.append((owner, hit[0], hit[1], list(weeks)))
+
+    all_weeks = sorted({w for _, _, _, ws in targets for w in ws})
+    logfn(f"  AppStream: {len(targets)} offices, weeks {', '.join(all_weeks)}")
+
+    out: Dict[str, Dict[str, Dict[str, Dict[str, Optional[float]]]]] = {}
+    with appstream_direct_session(verbose=False) as page:
+        for owner, office_id, hint, weeks in targets:
+            try:
+                if not fetch_office._switch_office(page, office_id, hint,
+                                                   confirm_denial=True):
+                    gaps.append(f"{owner} (office {office_id}): no AppStream access")
+                    continue
+                fetch_office._ensure_on_retention_report(page)
+            except Exception as exc:                      # noqa: BLE001
+                gaps.append(f"{owner} (office {office_id}): {type(exc).__name__}: {exc}")
+                continue
+            for wk in weeks:
+                try:
+                    fetch_office._set_week_and_submit(page, week_start_for(wk))
+                    page.wait_for_timeout(500)
+                    raw = fetch_office._scrape_metrics_per_day(page)
+                except Exception as exc:                  # noqa: BLE001
+                    gaps.append(f"{owner} (office {office_id}, week {wk}): "
+                                f"{type(exc).__name__}: {exc}")
+                    continue
+                for day in ars.DAYS:
+                    key = day.lower()
+                    row: Dict[str, Optional[float]] = {}
+                    for metric, field in METRIC_TO_FIELD.items():
+                        value = (raw.get(metric) or {}).get(key)
+                        if value is None:
+                            row[field] = None
+                        elif metric in PERCENT_METRICS:
+                            row[field] = value / 100.0      # '44%' arrives as 44
+                        else:
+                            row[field] = value
+                    out.setdefault(wk, {}).setdefault(day, {})[owner] = row
+    return out, gaps
