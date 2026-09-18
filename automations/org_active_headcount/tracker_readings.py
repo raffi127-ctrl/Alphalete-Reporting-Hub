@@ -28,9 +28,10 @@ caller from `dates_printed_on_image`, not guessed here: a Monday-morning board
 can still be showing the week that just closed.
 
 RE-POSTS. Tableau sometimes loads late and the board is re-posted the same day
-(8/26 inside the thread, 8/29 as a second 'UPDATED' thread). find_thread_ts takes
-the newest thread of the day and this takes the LAST matching reply in it, so the
-corrected picture always wins.
+(8/26 inside the thread, 8/29 as a second 'UPDATED' thread). Every thread of
+the day is searched and each tracker takes its NEWEST matching reply, so the
+corrected picture wins and a board the UPDATED thread left out (9/18: it only
+re-posted Box) is still read from the morning thread.
 
 TALL IMAGES ARE SLICED. The vision API downsizes anything over ~1568px on its
 long edge, which turns a 60-row table into unreadable blur. Each PNG is cut into
@@ -432,13 +433,36 @@ def match(icd: str, rows: List[dict]) -> List[dict]:
     return out
 
 
+def _day_threads(client, channel: str, day: dt.date) -> List[str]:
+    """Every tracker parent posted for `day`, newest first. A day can have TWO:
+    a stale board is re-posted in a second 'UPDATED' thread that carries only
+    the boards that were redone (9/18: Box alone)."""
+    from automations.tableau_screenshots import slack_post as sp
+    oldest = dt.datetime.combine(day, dt.time.min).timestamp()
+    resp = client.conversations_history(channel=channel, oldest=str(oldest), limit=200)
+    titles = (sp.header_title(day), sp._legacy_title(day))
+    out: List[str] = []
+    for msg in resp.get("messages", []):
+        if any(t in (msg.get("text", "") or "") for t in titles):
+            ts = msg.get("thread_ts") or msg.get("ts")
+            if ts not in out:
+                out.append(ts)
+    return out
+
+
 def _latest_files(client, channel: str, day: dt.date) -> Tuple[Optional[str], Dict[str, dict]]:
+    """Newest image of each tracker ACROSS every thread of the day (2026-09-18:
+    reading only the newest thread — the Box-only UPDATED one — left B2B unread,
+    so Carlos (B2B + BOX) stayed empty)."""
     from automations.tableau_screenshots import pages as pages_mod
     from automations.tableau_screenshots import slack_post as sp
-    ts, _legacy = sp.find_thread_ts(client, channel, day)
-    if not ts:
+    threads = _day_threads(client, channel, day)
+    if not threads:
+        ts, _legacy = sp.find_thread_ts(client, channel, day)
+        threads = [ts] if ts else []
+    if not threads:
         return None, {}
-    replies = sp._image_replies(client, channel, ts)
+    replies = [m for t in threads for m in sp._image_replies(client, channel, t)]
     got = {}
     for tid in TRACKERS:
         spec = pages_mod.by_id(tid)
@@ -448,7 +472,7 @@ def _latest_files(client, channel: str, day: dt.date) -> Tuple[Optional[str], Di
             f = next((f for f in hits[-1].get("files") or [] if f.get("url_private")), None)
             if f:
                 got[tid] = {"file": f, "reply_ts": hits[-1]["ts"]}
-    return ts, got
+    return threads[0], got
 
 
 def run(start: dt.date, end: dt.date, workers: int = 6,
