@@ -34,9 +34,17 @@ class LosingAnApprovalIsLoud(unittest.TestCase):
         P.APPROVALS_PATH = self._orig
 
     def _run(self, knocks=None, channels=None, texts=None):
-        with mock.patch.object(P, "approved_knocks", return_value=knocks or {}), \
-                mock.patch.object(P, "approved_channels", return_value=channels or {}), \
-                mock.patch.object(P, "approved_texts", return_value=texts or {}):
+        # ONE READ now, not three: warn_lost_approvals reads the tab once via
+        # _approvals_now so a single rate-limited read cannot look like every
+        # office being switched off (2026-09-18). Same inputs, same seam.
+        now = {}
+        for key in (knocks or {}):
+            now.setdefault(key, set()).add("board")
+        for key in (channels or {}):
+            now.setdefault(key, set()).add("alerts")
+        for key in (texts or {}):
+            now.setdefault(key, set()).add("texts")
+        with mock.patch.object(P, "_approvals_now", return_value=(True, now)):
             return P.warn_lost_approvals(self.day, send=False,
                                          log=lambda *_: None)
 

@@ -931,6 +931,56 @@ def warn_machine_facts(day: Optional[dt.date] = None, *, send: bool = False,
     return lines
 
 
+def _approvals_now(book=None):
+    """(ok, {office: {"board"|"alerts"|"texts"}}) from ONE read of the tab.
+
+    WHY THIS EXISTS, and it is not tidiness. Each approved_* reader answers a
+    failed read with {} -- the right call for a poster, where "I could not
+    check" must never post to a room nobody approved. But warn_lost_approvals
+    compared that {} against yesterday's snapshot and concluded every office
+    on the roster had been switched off at once, then said so in the ops room:
+    "Nothing posts for them until it is put back."
+
+    2026-09-18, 10:02. Nine offices, every approval intact, nothing stopped.
+    A single unlucky read, and the loudest possible message about it.
+
+    ONE READ, not three. The detector called three readers that each opened
+    the same tab, which is three chances to be rate-limited for one question
+    -- and Sheets 429s on reads here, not only on writes.
+
+    ok=False means WE COULD NOT TELL. It is not "nothing is approved", and the
+    caller must not treat it as either an empty roster or a full one.
+    """
+    if book is None:
+        from automations.recruiting_report.fill import open_by_key
+        book = open_by_key(RELAY_SPREADSHEET_ID)
+    try:
+        rows = book.worksheet(CHANNELS_TAB).get_all_values()
+    except Exception:  # noqa: BLE001
+        return False, {}
+    out: Dict[str, set] = {}
+    for row in rows[1:]:
+        key = (row[CH_OFFICE] or "").strip().lower() if row else ""
+        if not key:
+            continue
+        def _on(flag: int, blob: int) -> bool:
+            if len(row) <= flag:
+                return False
+            if (row[flag] or "").strip().upper() not in ("TRUE", "YES", "Y"):
+                return False
+            try:
+                return bool(json.loads(row[blob] or "[]"))
+            except ValueError:
+                return False
+        if _on(CH_KN_APPROVED, CH_KN_APPROVED_JSON):
+            out.setdefault(key, set()).add("board")
+        if _on(CH_APPROVED, CH_APPROVED_JSON):
+            out.setdefault(key, set()).add("alerts")
+        if _on(CH_TX_APPROVED, CH_TX_APPROVED_JSON):
+            out.setdefault(key, set()).add("texts")
+    return True, out
+
+
 def warn_lost_approvals(day: Optional[dt.date] = None, *, send: bool = False,
                         book=None, log=print) -> List[str]:
     """An office that WAS switched on and now is not.
@@ -948,13 +998,13 @@ def warn_lost_approvals(day: Optional[dt.date] = None, *, send: bool = False,
     "something took this away".
     """
     day = day or dt.date.today()
-    now = {}
-    for key, dests in (approved_knocks(book) or {}).items():
-        now.setdefault(key, set()).add("board")
-    for key, chans in (approved_channels(book) or {}).items():
-        now.setdefault(key, set()).add("alerts")
-    for key, groups in (approved_texts(book) or {}).items():
-        now.setdefault(key, set()).add("texts")
+    ok, now = _approvals_now(book)
+    if not ok:
+        # COULD NOT READ IS NOT "ALL GONE". Reporting it would say every
+        # office had been switched off, and writing the snapshot would make
+        # the next run believe it.
+        log("could not read the approvals tab -- saying nothing this pass")
+        return []
 
     try:
         before = json.loads(APPROVALS_PATH.read_text())
@@ -966,6 +1016,23 @@ def warn_lost_approvals(day: Optional[dt.date] = None, *, send: bool = False,
         gone = set(had) - now.get(key, set())
         if gone:
             lost.append((key, sorted(gone)))
+
+    # AND A SECOND GUARD, because ok=True only means the read RETURNED -- an
+    # empty sheet, a renamed tab or a half-written row all parse fine. Every
+    # office losing everything in one tick is not N independent regressions,
+    # it is one thing wrong on our side.
+    #
+    # THREE, NOT "ALL". With one office enrolled, "all of them" and "the only
+    # one" are the same sentence, and suppressing that would hide the exact
+    # single-office regression this whole function was written for (Cyrus,
+    # 2026-09-15). Three is small enough to catch a real sweep-wide failure
+    # and large enough that it can never swallow one office going quiet.
+    WHOLESALE = 3
+    if (lost and before and not now
+            and len(lost) == len(before) and len(lost) >= WHOLESALE):
+        log("every office lost every approval at once -- that is a read "
+            "problem, not %d offices being switched off" % len(lost))
+        return []
 
     # Remember the CURRENT state either way, so a thing reported once is not
     # reported forever -- and so a restored approval quietly becomes normal.
