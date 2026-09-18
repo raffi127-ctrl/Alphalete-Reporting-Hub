@@ -5485,6 +5485,37 @@
       "timeout_minutes": 5,
       "verify": null
     },
+    "sales_board_sale_transfers": {
+      "on_scheduler": true,
+      "_note": "Todos los dias, ultimo paso de la Sales Board (Eve 2026-09-18): lee el form 'ATT Sales Transfers' (workbook All in One Local Office - Raf) y mueve SOLO las ventas del DIA ANTERIOR (col D) del login donde quedaron (col C) al rep que las hizo (col B) -- resta en uno y suma en el otro, nunca la fila entera. Bonus ('$20 bonus', 'owners pay') se ignoran. Lo que no cierra (nombre que no esta, FROM sin esa venta, dia con X) NO se mueve y sale como CHECK en el log; ventas cargadas tarde salen como LATE. 09:00 porque el sweep cierra 21:30 y los forms llegan de noche. Lucy 1 porque el registro de 'ya movida' (~/.config/recruiting-report/sale_transfers_state.json) es por maquina: correrlo en otra repetiria el movimiento. Manual: `lucy rerun sales_board_sale_transfers` (--date YYYY-MM-DD para otro dia).",
+      "display_name": "Sales Board — transfers de ventas (form)",
+      "machine": "Lucy 1",
+      "command": [
+        "automations.alphalete_sales_board.sale_transfers"
+      ],
+      "base_args": [
+        "--apply"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "not_before": "09:00"
+      },
+      "data_sources": [],
+      "depends_on": [],
+      "freshness_target": null,
+      "priority": "P3",
+      "source_type": "local",
+      "timeout_minutes": 10,
+      "verify": null
+    },
     "sales_board_ref_repair": {
       "on_scheduler": true,
       "_note": "Cada LUNES, despues del roleo manual de Eve: repara en la pestana VIVA de la semana las celdas que el roleo viene arrastrando rotas. Son dos danos, los dos anteriores a este job y los dos silenciosos: (1) 17 SUMIFS del cuadro de Teams con el CRITERIO en #REF! -- alguien borro la celda a la que apuntaban y SUMIFS con criterio roto devuelve 0 sin avisar, asi que parecian ceros reales; (2) el TOTALS de PRIOR WEEK sumando $X$161:$X$171 donde el resto suma $X$158:$X$172, o sea salteandose los tres primeros equipos (leia 60 donde Se7en Sins sola tenia 113). El 2026-09-09 estaban en las 16 pestanas semanales; se repararon las 181 celdas a mano y esto existe para que no vuelvan. Repara SOLO esas celdas y solo copiando la formula sana de al lado, asi que una corrida sin nada que arreglar no escribe nada. --current-week resuelve la pestana sola, para que el job no envejezca cada siete dias. Manual: `lucy rerun sales_board_ref_repair`.",
