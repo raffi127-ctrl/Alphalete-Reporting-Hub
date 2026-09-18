@@ -433,6 +433,31 @@ def sheet_offices(force: bool = False) -> Dict[str, AlertOffice]:
     return out
 
 
+# WHO ELSE ACTUALLY DOES AN OFFICE'S MACHINE WORK.
+#
+# Khalil's computer is looked after by Francia, not by Khalil (Megan,
+# 2026-09-18: "For khalil's alerts it should include Francia in the DM"). She
+# ran every sign-in step on it for two days while the alerts went to him and
+# to us -- so the one person walking to that machine was the only one not
+# being told when it needed her.
+#
+# KEYED HERE, not a field on AlertOffice, because an office can come from the
+# SIGN-UP TAB rather than the code table -- khalil-nds does -- and a code row
+# added just to carry this would silently override whatever the owner typed
+# into the form. That cost Aya an hour of her Saturday on 2026-09-17.
+#
+# ADDED TO the owner, never instead.
+HELPERS = {
+    "khalil": ("U0543NQEWMD",),        # Francia Olivares
+    "khalil-nds": ("U0543NQEWMD",),    # same machine, the live enrolment
+}
+
+
+def helpers_for(key: str) -> tuple:
+    """Extra Slack ids to tell alongside the owner. Never raises."""
+    return tuple(HELPERS.get((key or "").strip().lower()) or ())
+
+
 def all_offices() -> Dict[str, AlertOffice]:
     """The code table plus the sign-up tab, code winning on a shared key."""
     merged = dict(sheet_offices())

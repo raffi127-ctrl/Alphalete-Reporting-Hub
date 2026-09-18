@@ -871,8 +871,12 @@ def ask_office_to_sign_in(office_key: str, when: str = "", *,
     # the sales floor's business, and putting it in their channel is noise in
     # the one room the boards are meant to own.
     owner = getattr(office, "slack_user_id", "") or ""
+    # AND WHOEVER ACTUALLY WALKS TO THAT MACHINE. Francia did every sign-in
+    # step on Khalil's computer for two days while this DM went to him and to
+    # us -- the one person who could act was the only one not told.
+    helpers = list(O.helpers_for(office_key))
     sent_to = []
-    for uid in [owner] + list(O.APPROVERS):
+    for uid in [owner] + helpers + list(O.APPROVERS):
         if not uid or uid in sent_to:
             continue
         try:
@@ -1892,6 +1896,12 @@ def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
         first = (office.owner or "").split()[0] if office.owner else "there"
         try:
             _dm(office.slack_user_id, _nudge_text(first, q, key in laptops))
+            # SAME FOR THE HELPER, who may be the only one near the machine.
+            for uid in O.helpers_for(key):
+                try:
+                    _dm(uid, _nudge_text(first, q, key in laptops))
+                except Exception as e:  # noqa: BLE001 — one DM must not cost the rest
+                    log("could not DM helper %s: %s" % (uid, type(e).__name__))
             nudged.append(q["office"])
         except Exception as e:  # noqa: BLE001 — a failed nudge must still reach us
             log("could not DM %s: %s: %s" % (q["office"], type(e).__name__,
