@@ -167,7 +167,17 @@ def navigate(page, rqst: str, mdy: str, *, attempts: int = 3, log=print) -> None
     """
     url = ("%s?p=89&rqst=%s&startDate=%s&endDate=%s" % (V2_URL, rqst, mdy, mdy))
     for attempt in range(1, attempts + 1):
-        page.goto(url, wait_until="networkidle", timeout=25_000)
+        # A slow page load is the same stall as a slow grid and gets the same
+        # retries. Roshan 2026-09-18: one goto timeout outside this loop ended
+        # the whole knocks read on the first try.
+        try:
+            page.goto(url, wait_until="networkidle", timeout=25_000)
+        except Exception:  # noqa: BLE001 — retried below; the last one raises
+            if attempt == attempts:
+                raise
+            log("page load timed out (try %d/%d) — re-navigating"
+                % (attempt, attempts))
+            continue
         try:
             page.wait_for_selector(DISPOSITIONS_TABLE + " thead th", timeout=15_000)
             break
