@@ -228,5 +228,11 @@ class Screenshot(unittest.TestCase):
         self.assertTrue(text_r.startswith("FRIDAY 9/11"))
 
 
+class TabNames(unittest.TestCase):
+    def test_the_one_day_production_flag_never_hits_the_board(self):
+        self.assertNotEqual(rep.TARGET_TAB.lower(), b.BOARD_TAB.lower())
+        self.assertNotEqual(rep.SANDBOX_TAB.lower(), b.BOARD_TAB.lower())
+
+
 if __name__ == "__main__":
     unittest.main()

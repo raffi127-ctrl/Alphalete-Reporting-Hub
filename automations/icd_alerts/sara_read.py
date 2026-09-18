@@ -99,6 +99,14 @@ def _as_owner_problem(e: Exception) -> "AccountProblem":
     all this says.
     """
     msg = str(e)
+    passcode = getattr(S, "SaraPasscodeWall", None)
+    if passcode is not None and isinstance(e, passcode):
+        return AccountProblem(
+            "SaraPlus wants to confirm this computer with a code it emails "
+            "you. Your password is fine — do NOT change it.\n\n"
+            "A SaraPlus window opens on this computer by itself when someone "
+            "is at it. Sign in THERE and type in the emailed code — signing "
+            "in from your normal browser does not count.")
     change_required = getattr(S, "SaraPasswordChangeRequired", None)
     wall = getattr(S, "SaraPasswordWall", None)
     if change_required is not None and isinstance(e, change_required):

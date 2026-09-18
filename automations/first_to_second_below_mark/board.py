@@ -38,7 +38,7 @@ the next board run picks it up. The live tab itself is only read, never written.
 
 Run:
     python -m automations.first_to_second_below_mark.board --dry-run
-    python -m automations.first_to_second_below_mark.board             # writes the PREVIEW tab
+    python -m automations.first_to_second_below_mark.board             # writes the board tab
     python -m automations.first_to_second_below_mark.board --all       # every office, for checking
     python -m automations.first_to_second_below_mark.board --week 9/13 # which week is "this week"
 """
@@ -63,8 +63,10 @@ from automations.first_to_second_below_mark import columns as cols
 from automations.first_to_second_below_mark import run as rep
 from automations.first_to_second_below_mark import source as src
 
-# Kept apart from the live tab until Rafael and Eve sign off on the look.
-BOARD_TAB = "1st to 2nd below the mark PREVIEW"
+# THE production tab since 2026-09-18 (Eve: "que esta sea la tab de
+# produccion"). It was built as '... PREVIEW'; the original tab of this name
+# became '1st to 2nd below the mark (old)'.
+BOARD_TAB = "1st to 2nd below the mark"
 TEMPLATE_TAB = rep.SANDBOX_TAB           # the live tab: read for its look only
 
 TITLE_ROW, STATUS_ROW, BANNER_ROW, HEADER_ROW = 1, 2, 3, 4

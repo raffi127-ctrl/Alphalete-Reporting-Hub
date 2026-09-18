@@ -678,6 +678,34 @@ def find_thread_ts(client, channel: str, today: dt.date):
     return None, False
 
 
+def find_today_threads(client, channel: str, today: dt.date) -> list:
+    """EVERY tracker parent posted in `channel` today (current or legacy title),
+    newest first. [] = no thread today.
+
+    find_thread_ts returns only the newest, which is right for POSTING (a rerun
+    must land in the latest thread). It is wrong for COUNTING: a `--new-thread`
+    rerun posts an *UPDATED* parent that may carry just the one board it re-ran,
+    while the other eight sit in the morning thread. 2026-09-18: the 08:49 Box
+    rerun opened an UPDATED thread with only Box, and the 14:45 audit, reading
+    that one, reported 8 boards "missing from ALL channels" that were all in the
+    04:47 thread.
+
+    Raises DedupReadUnavailable if the history read fails, same as find_thread_ts."""
+    oldest = dt.datetime.combine(today, dt.time.min).timestamp()
+    titles = (header_title(today), _legacy_title(today))
+    resp = _read_with_retry(client.conversations_history, channel,
+                            "conversations.history",
+                            channel=channel, oldest=str(oldest), limit=200)
+    out = []
+    for msg in resp.get("messages", []):
+        text = msg.get("text", "") or ""
+        if any(t in text for t in titles):
+            ts = msg.get("thread_ts") or msg.get("ts")
+            if ts not in out:
+                out.append(ts)
+    return out
+
+
 def ensure_thread(client, channel: str, pages: list, today: dt.date,
                   pending_late=(), *, new_thread: bool = False,
                   note: str = "", updated: bool = False) -> dict:

@@ -3422,8 +3422,8 @@
     "below_the_mark_board": {
       "hand_run_only": true,
       "on_scheduler": false,
-      "_note": "PREVIEW of Rafael's two-week layout (2026-09-18): this week on the left, last week on the right, Mon-Fri down the page, every day of both weeks re-pulled on each run so a callback that moves an earlier day shows up, with a note on whatever moved since the last check. Writes ONLY the '1st to 2nd below the mark PREVIEW' tab of ARS Management 2.0 and sends nothing. `lucy rerun below_the_mark_board` (add --dry-run to write nothing, --all to list every office). Off the scheduler until Rafael approves the look; then the 13:00 / 18:30 wrapper switches to it.",
-      "display_name": "1st to 2nd Below the Mark — two-week board (preview)",
+      "_note": "Rafael's two-week layout, PRODUCTION since 2026-09-18 (the 13:00 / 18:30 wrapper deploy/below_the_mark.sh runs it and DMs its picture): this week on the left, last week on the right, Mon-Fri down the page, every day of both weeks re-pulled on each run so a callback that moves an earlier day shows up, naming on each day's band whatever moved since the last check. Writes ONLY the '1st to 2nd below the mark' tab (production since 2026-09-18) of ARS Management 2.0 and sends nothing. `lucy rerun below_the_mark_board` (add --dry-run to write nothing, --all to list every office). This entry is the hand-run handle; the real clock is the wrapper's launchd agent.",
+      "display_name": "1st to 2nd Below the Mark — two-week board",
       "source_type": "appstream",
       "command": [
         "automations.first_to_second_below_mark.board"
@@ -3442,7 +3442,7 @@
     "below_the_mark_board_dm": {
       "hand_run_only": true,
       "on_scheduler": false,
-      "_note": "Sends the two-week board's picture (the same weekday last week on top, today below, each under a dated band) to the SAME group DM the 13:00 / 18:30 passes use (Rafael, Carlos, Camila, Perla, Evelyn) -- that group is where Eve tests changes (2026-09-18). Must run on the mini: on Eve's Windows the Slack token is Evelyn's own. Reads the PREVIEW tab as it stands, so run below_the_mark_board first. `lucy rerun below_the_mark_board_dm`.",
+      "_note": "Sends the two-week board's picture (the same weekday last week on top, today below, each under a dated band) to the SAME group DM the 13:00 / 18:30 passes use (Rafael, Carlos, Camila, Perla, Evelyn) -- that group is where Eve tests changes (2026-09-18). Must run on the mini: on Eve's Windows the Slack token is Evelyn's own. Reads the board tab as it stands, so run below_the_mark_board first. `lucy rerun below_the_mark_board_dm`.",
       "display_name": "1st to 2nd Below the Mark — two-week board DM",
       "source_type": "sheet",
       "command": [
@@ -6284,19 +6284,19 @@
       },
       "timeout_minutes": 60
     },
-    "org_active_headcount_dm": {
+    "org_active_headcount_email": {
       "on_scheduler": true,
       "machine": "Lucy 1",
       "order": 58.5,
-      "_note": "Eve 2026-09-18: the daily Slack GROUP DM of the 'Org Active Headcount' tab, as Lucy, to Rafael Hidalgo, Carlos Hidalgo and Evelyn Sobrino. Rafael has not confirmed the tab's changes yet but asked for it to start going out. Two pictures in one message: the board (A1 through PREVIOUS WEEK'S TOTALS, down to the WE history rows) and the delta box cropped to the elapsed days like the Country / All Units boards (rollover.delta_block_range). Order: after the morning fill (depends_on org_active_headcount_daily: a failed fill must not send a stale picture), after the Org Sales Board post (slack:org_board_posted, opens anyway 11:30) and after the tracker thread (slack:owner_tracker_pngs, opens anyway 09:00). Lucy 1 = the mini: the org board post marker is a local file there, and smp._client() is Lucy there (on Windows it is Evelyn).",
-      "display_name": "Org Active Headcount - Slack DM",
+      "_note": "Eve 2026-09-18: the daily EMAIL of the 'Org Active Headcount' tab to Carlos Hidalgo (CarlosHidalgo349@gmail.com), Rafael Hidalgo (raffi127@gmail.com) and Eve Sobrino (eve@alphaletemarketing.com), from alphaletereporting@gmail.com (shared.report_email). It went out as a Slack group DM that morning (org_active_headcount_dm, replaced); Rafael asked for email instead, before confirming the tab's changes. Two pictures in one message: the board (A1 through PREVIOUS WEEK'S TOTALS, down to the WE history rows) and the delta box cropped to the elapsed days like the Country / All Units boards (rollover.delta_block_range). Order: after the morning fill (depends_on org_active_headcount_daily: a failed fill must not send a stale picture), after the Org Sales Board post (slack:org_board_posted, opens anyway 11:30) and after the tracker thread (slack:owner_tracker_pngs, opens anyway 09:00). Lucy 1 = the mini: the org board post marker is a local file there.",
+      "display_name": "Org Active Headcount - Email",
       "source_type": "api",
       "data_sources": [
         "slack:owner_tracker_pngs",
         "slack:org_board_posted"
       ],
       "command": [
-        "automations.org_active_headcount.slack_dm"
+        "automations.org_active_headcount.email_send"
       ],
       "base_args": [
         "--post"

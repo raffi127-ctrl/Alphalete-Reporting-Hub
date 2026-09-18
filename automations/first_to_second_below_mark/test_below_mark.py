@@ -498,7 +498,8 @@ class Pickers(unittest.TestCase):
         # would tell five people the day is fine when the run never finished.
         sh = (pathlib.Path(rep.REPO_ROOT) / "deploy" / "below_the_mark.sh"
               ).read_text(encoding="utf-8")
-        self.assertIn("slack_post --post", sh)
+        self.assertIn('slack_post "${DM_ARGS[@]}"', sh)
+        self.assertIn("DM_ARGS=(--board --post)", sh)   # the board's picture by default
         self.assertIn('if [ "$ST" -eq 0 ]', sh)
         self.assertIn("NOT sending the DM", sh)
         self.assertIn("--dry-run", sh)          # a dry run never DMs either

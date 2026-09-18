@@ -1,27 +1,23 @@
 #!/bin/bash
-# 1st to 2nd Below the Mark — the HR alert fill, twice a day (Mon-Fri).
+# 1st to 2nd Below the Mark — the HR alert, twice a day (Mon-Fri).
 #
-# Lists the offices at or under 40% on "Retention first showed up booked second"
-# for the CURRENT DAY, worst first, so HR knows who to look at first.
+# Fills the two-week board ('1st to 2nd below the mark' tab of ARS Management
+# 2.0: this week on the left, last week on the right, Mon-Fri, every day of both
+# weeks re-pulled each pass) and DMs its picture to the usual group: the same
+# weekday last week on top, today below.
 #
-# WHY TWICE, AND WHY NOT AT 4am. The Daily Focus pattern is 4am + 18:30, but the
-# 4am slot is useless here: this report reads the day's own column, and at 4am
-# nobody has interviewed yet, so every office is empty and the tab comes out
-# blank. The two slots are instead:
+# WHY TWICE, AND WHY NOT AT 4am. At 4am nobody has interviewed yet, so today's
+# section would be empty. The two slots are instead:
 #
 #   13:00  the midday snapshot — HR still has half a day to push the ones that
 #          are behind
 #   18:30  the day closed, the final number (and the slot the Daily Focus
 #          refill already uses)
 #
-#   bash deploy/below_the_mark.sh                 # LIVE fill (passes --now)
-#   bash deploy/below_the_mark.sh --dry-run       # read everything, write nothing
+#   bash deploy/below_the_mark.sh                 # LIVE: board + group DM
+#   bash deploy/below_the_mark.sh --dry-run       # read everything, write nothing, no DM
 #   bash deploy/below_the_mark.sh --all           # list every office, not just <=40%
-#
-# No flag is passed by default ON PURPOSE: the module's default target is the
-# tab still carrying the SANDBOX suffix, which is the live one until Rafael
-# signs off. Adding --production would write the OTHER tab, which still holds
-# Eve's original header row.
+#   bash deploy/below_the_mark.sh --one-day       # the old one-day tab, by hand
 #
 # Needs the AppStream session, so it has to run on the machine that holds it —
 # the same one as the Daily Focus passes.
@@ -51,7 +47,7 @@ ARGS=("$@")
 
 # THE TWO-WEEK BOARD (Rafael, 2026-09-18): this week on the left, last week on
 # the right, Mon-Fri, every day of both weeks re-pulled each pass. It writes the
-# '1st to 2nd below the mark PREVIEW' tab, and the DM carries the same weekday
+# '1st to 2nd below the mark' tab (production since 2026-09-18), and the DM carries the same weekday
 # last week on top and today below. The one-day tab (module `run`) no longer
 # goes out; `bash deploy/below_the_mark.sh --one-day` still runs it by hand.
 MODE=board

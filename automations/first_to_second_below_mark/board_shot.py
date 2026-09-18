@@ -11,7 +11,7 @@ nobody mistakes one for the other:
     <header rows 3-4 of the left-hand week>
     <today's band and offices>
 
-Rendered from the PREVIEW tab itself (Sheets PDF export, the exact sheet look),
+Rendered from the board tab itself (Sheets PDF export, the exact sheet look),
 four ranges -- a header and a day for each week -- stitched into one PNG. Only
 the rows of that day are taken, so the picture stays short however long the
 rest of the week is.
@@ -39,10 +39,12 @@ from automations.first_to_second_below_mark import run as rep
 
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "below_the_mark"
 
-# The caption bands drawn over each table: the board's own dark band colour.
-CAPTION_BG = (67, 67, 67)
+# The caption bands drawn over each table. Deliberately colours the report uses
+# NOWHERE else (Eve, 2026-09-18): the first try reused the day-band grey and the
+# alert red, and the captions blended into the tables under them.
+CAPTION_BG = (21, 101, 192)         # last week: strong blue   #1565C0
 CAPTION_FG = (255, 255, 255)
-TODAY_BG = (234, 67, 53)            # this week's caption in the alert red
+TODAY_BG = (216, 27, 96)            # this week: fuchsia       #D81B60
 
 
 def find_day(values: List[List], day: str, c0: int) -> Optional[Tuple[int, int, str]]:
@@ -104,14 +106,21 @@ def _font(size: int):
         return ImageFont.load_default()
 
 
-def caption(text: str, width: int, bg=CAPTION_BG, height: int = 84):
-    """A full-width dark band with the day written large, as a PIL image."""
+# Band height and text size, in pixels of the ~4400px-wide picture. Raised from
+# 84 / half-height after the first sample: on a phone the day did not read at a
+# glance (Eve, 2026-09-18).
+CAPTION_PX = 150
+CAPTION_TEXT = 0.6          # share of the band's height the letters take
+
+
+def caption(text: str, width: int, bg=CAPTION_BG, height: int = CAPTION_PX):
+    """A full-width band with the day written large, as a PIL image."""
     from PIL import Image, ImageDraw
     im = Image.new("RGB", (width, height), bg)
     d = ImageDraw.Draw(im)
-    f = _font(int(height * 0.5))
+    f = _font(int(height * CAPTION_TEXT))
     box = d.textbbox((0, 0), text, font=f)
-    d.text((24, (height - (box[3] - box[1])) // 2 - box[1]), text, font=f, fill=CAPTION_FG)
+    d.text((40, (height - (box[3] - box[1])) // 2 - box[1]), text, font=f, fill=CAPTION_FG)
     return im
 
 
