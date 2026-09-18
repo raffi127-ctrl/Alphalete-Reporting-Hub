@@ -139,6 +139,27 @@ def _assemble(owner: src.Owner, headers: List[str], as_row: Optional[dict],
     return row
 
 
+def _with_network_retry(fn, *, logfn=print, what: str = "", attempts: int = 3,
+                        wait: float = 15.0):
+    """fn(), retried on a dropped connection or timeout.
+
+    fill's own retry covers Sheets' 429 and 5xx answers but not a request
+    that never got an answer at all -- the 'Connection aborted / Operation
+    timed out' the mini hits now and then. LookupError is a real answer (no
+    box, no tab) and goes straight through."""
+    import time
+    import requests
+    for i in range(attempts):
+        try:
+            return fn()
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout,
+                TimeoutError) as exc:
+            if i == attempts - 1:
+                raise
+            logfn(f"  .. {what}: {type(exc).__name__}, retrying in {wait:.0f}s")
+            time.sleep(wait)
+
+
 def pull(weeks: List[src.Week], starts: List[dt.date], headers: List[str], *,
          today: dt.date, use_appstream: bool = True, show_all: bool = False,
          refresh_index: bool = False, logfn=print) -> Tuple[List[WeekResult], List[str]]:
@@ -175,16 +196,25 @@ def pull(weeks: List[src.Week], starts: List[dt.date], headers: List[str], *,
             notes.append(f"{owner}: no ARS REPORT tab")
             continue
         workbook, tab = hit
-        try:
+
+        def read():
             if workbook not in books:
                 books[workbook] = fill.open_by_key(ars.ARS_WORKBOOKS[workbook])
                 tabs[workbook] = {w.title.strip().lower(): w
                                   for w in books[workbook].worksheets()}
-            got = ars.read_owner_weeks(books[workbook], tab, owner, workbook,
-                                       [to_ars[w] for w in wks],
-                                       ws=tabs[workbook].get(tab.strip().lower()))
+            return ars.read_owner_weeks(books[workbook], tab, owner, workbook,
+                                        [to_ars[w] for w in wks],
+                                        ws=tabs[workbook].get(tab.strip().lower()))
+        try:
+            got = _with_network_retry(read, logfn=logfn, what=owner)
         except LookupError as exc:
             notes.append(str(exc))
+            continue
+        except Exception as exc:                          # noqa: BLE001
+            # One owner's read must not throw away the whole sweep -- the
+            # AppStream pass before it takes the better part of ten minutes
+            # (2026-09-18 07:35: a single Sheets timeout killed the first run).
+            notes.append(f"{owner}: ARS REPORT read failed ({type(exc).__name__}: {exc})")
             continue
         for w in wks:
             if to_ars[w] in got:

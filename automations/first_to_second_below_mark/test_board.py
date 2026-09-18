@@ -105,5 +105,29 @@ class Moved(unittest.TestCase):
         self.assertEqual(b.compare([wk], b.PriorFill(), H), {})
 
 
+class NetworkRetry(unittest.TestCase):
+    def test_a_dropped_connection_is_retried(self):
+        import requests
+        calls = []
+
+        def flaky():
+            calls.append(1)
+            if len(calls) < 2:
+                raise requests.exceptions.ConnectionError("Connection aborted")
+            return "ok"
+        self.assertEqual(b._with_network_retry(flaky, logfn=lambda *_: None, wait=0), "ok")
+        self.assertEqual(len(calls), 2)
+
+    def test_a_missing_box_is_not_retried(self):
+        calls = []
+
+        def missing():
+            calls.append(1)
+            raise LookupError("no box")
+        with self.assertRaises(LookupError):
+            b._with_network_retry(missing, logfn=lambda *_: None, wait=0)
+        self.assertEqual(len(calls), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
