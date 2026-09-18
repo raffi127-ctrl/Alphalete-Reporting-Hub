@@ -361,6 +361,14 @@ def pick_tracker(icd: str, tid: str, reading: Optional[dict], prev) -> object:
         fits = sorted({x for x in cands if prev - 3 <= x <= prev + 25})
         if len(fits) == 1:
             return fits[0]
+        # BOTH readings fit the window (2026-09-18: Muhammad Haque and Salik
+        # Mallick went '-' on Wed/Thu this way). A week's count moves by a few
+        # heads a day, so the reading nearer yesterday's wins; an exact tie in
+        # distance is still '-'.
+        if len(fits) > 1:
+            by_gap = sorted(fits, key=lambda x: abs(x - prev))
+            if abs(by_gap[0] - prev) < abs(by_gap[1] - prev):
+                return by_gap[0]
     return "-"
 
 

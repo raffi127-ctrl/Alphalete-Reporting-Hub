@@ -330,5 +330,21 @@ class BoxJoin(unittest.TestCase):
         self.assertEqual(got, {"Abel Draper": 3})
 
 
+class PickTrackerTie(unittest.TestCase):
+    """Both strip and band readings fit yesterday's window: the nearer wins."""
+
+    def test_nearer_reading_wins(self):
+        from automations.org_active_headcount.daily import pick_tracker
+        reading = {"A": [{"owner": "HAMMAD HAQUE", "rep_count": 8}],
+                   "B": [{"owner": "HAMMAD HAQUE", "rep_count": 18}]}
+        self.assertEqual(pick_tracker("Muhammad Haque", "att_country", reading, 8), 8)
+
+    def test_equal_gap_is_dash(self):
+        from automations.org_active_headcount.daily import pick_tracker
+        reading = {"A": [{"owner": "HAMMAD HAQUE", "rep_count": 7}],
+                   "B": [{"owner": "HAMMAD HAQUE", "rep_count": 9}]}
+        self.assertEqual(pick_tracker("Muhammad Haque", "att_country", reading, 8), "-")
+
+
 if __name__ == "__main__":
     unittest.main()
