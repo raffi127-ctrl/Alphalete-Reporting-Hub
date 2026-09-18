@@ -92,13 +92,23 @@ class Moved(unittest.TestCase):
             "Monday": [row("Ann", 10, 0.2), row("Bob", 10, 0.45), row("Cid", 10, 0.4)]},
             future_from=dt.date(2026, 9, 19))
         moved = b.compare([again, last], prior, H)
-        self.assertEqual(moved[("9/13", "Monday", "Ann")],
-                         ("retention", "Was 30% at the Thu 9/17 18:30 check."))
+        self.assertEqual(moved[("9/13", "Monday", "Ann")], ("retention", "Ann (was 30%)"))
         self.assertEqual(moved[("9/13", "Monday", "Cid")][0], "owner")
         self.assertEqual(again.days["Monday"].risen, ["Bob (35% -> 45%)"])
         lay2 = b.lay_out([again, last], H, "s", moved, False)
-        self.assertIn("back above 40%", lay2.values[lay2.band_rows[0] - 1][0])
-        self.assertEqual(len(lay2.cell_notes), 2)
+        band = lay2.values[lay2.band_rows[0] - 1][0]
+        self.assertIn("back above 40%: Bob (35% -> 45%)", band)
+        self.assertIn("changed since last check: ", band)
+        self.assertIn("Ann (was 30%)", band)
+        self.assertIn("Cid (new)", band)
+        self.assertEqual(lay2.cell_notes, [])      # never a note: it prints in the DM
+
+    def test_today_is_not_compared(self):
+        prior = b.PriorFill(stamp="Fri 9/18 13:00",
+                            listed={("9/13", "Friday"): {"Ann": 0.3}})
+        wk = week("9/13", dt.date(2026, 9, 13), {"Friday": [row("Ann", 10, 0.2)]})
+        wk.days["Friday"].today = True
+        self.assertEqual(b.compare([wk], prior, H), {})
 
     def test_first_run_compares_nothing(self):
         wk = week("9/13", dt.date(2026, 9, 13), {"Monday": [row("Ann", 10, 0.3)]})
@@ -191,6 +201,29 @@ class EveLayout(unittest.TestCase):
                             listed={("9/13", "Monday"): {"Ann": None}})
         b.compare([wk], prior, H)
         self.assertEqual(wk.days["Monday"].risen, [])
+
+
+class Screenshot(unittest.TestCase):
+    def setUp(self):
+        from automations.first_to_second_below_mark import board_shot as bs
+        self.bs = bs
+        this = week("9/13", dt.date(2026, 9, 13), {
+            "Friday": [row("Ann", 10, 0.3), row("Bob", 10, 0.2)]})
+        last = week("9/6", dt.date(2026, 9, 6), {"Friday": [row("Dee", 10, 0.1)]})
+        self.grid = b.lay_out([this, last], H, "s", {}, False).values
+        # the merged header box: the header text sits on row 3
+        self.grid[2][0] = self.grid[2][W + 1] = "Owner Name"
+
+    def test_second_week_found_by_its_header(self):
+        self.assertEqual(self.bs.block_start(self.grid), W + b.GAP_COLS)
+
+    def test_each_side_stops_at_its_own_last_office(self):
+        band, last, text = self.bs.find_day(self.grid, "Friday", 0)
+        self.assertTrue(text.startswith("FRIDAY 9/18"))
+        self.assertEqual(last, band + 2)
+        band_r, last_r, text_r = self.bs.find_day(self.grid, "Friday", W + b.GAP_COLS)
+        self.assertEqual((band_r, last_r), (band, band + 1))
+        self.assertTrue(text_r.startswith("FRIDAY 9/11"))
 
 
 if __name__ == "__main__":

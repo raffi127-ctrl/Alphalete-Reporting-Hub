@@ -330,7 +330,9 @@ def compare(results: List[WeekResult], prior: PriorFill, headers: List[str]
     for wr in results:
         for day, dr in wr.days.items():
             before = prior.listed.get((wr.label, day))
-            if before is None or dr.future:
+            # Today is still being worked, so of course it moves between checks;
+            # what Rafael needs to see is an EARLIER day changing after the fact.
+            if before is None or dr.future or dr.today:
                 continue
             now_all = {str(r[owner_i]): r[pct_i] for r in dr.all_rows}
             now_listed = {str(r[owner_i]) for r in dr.rows}
@@ -340,11 +342,9 @@ def compare(results: List[WeekResult], prior: PriorFill, headers: List[str]
                     if (isinstance(before[owner], (int, float))
                             and not _same(before[owner], now_all.get(owner))):
                         notes[(wr.label, day, owner)] = (
-                            "retention", f"Was {_pct(before[owner])} at the {prior.stamp} check.")
+                            "retention", f"{owner} (was {_pct(before[owner])})")
                 else:
-                    notes[(wr.label, day, owner)] = (
-                        "owner", f"Not on this day's list at the {prior.stamp} check -- "
-                                 f"the day's numbers moved since.")
+                    notes[(wr.label, day, owner)] = ("owner", f"{owner} (new)")
             for owner, was in before.items():
                 # Only a real number that is now over the mark. A blank then
                 # ("no reading yet") or a blank now (no interviews) is not
@@ -356,7 +356,7 @@ def compare(results: List[WeekResult], prior: PriorFill, headers: List[str]
 
 
 # ------------------------------------------------------------------ the layout
-def _band_text(dr: DayResult, show_all: bool) -> str:
+def _band_text(dr: DayResult, show_all: bool, moved: Optional[List[str]] = None) -> str:
     head = f"{dr.day.upper()} {dr.date.month}/{dr.date.day}"
     if dr.today:
         # Early in the day an office with one interview and no callback yet
@@ -371,8 +371,13 @@ def _band_text(dr: DayResult, show_all: bool) -> str:
     else:
         text = (f"{head}  ·  {len(dr.rows)} of {dr.interviewed} offices that "
                 f"interviewed at or under {rep.THRESHOLD:.0%}")
+    # What moved since the last check goes IN the band, not in cell notes: a
+    # note prints as a footnote in the DM picture, in huge type, and throws the
+    # table's scale off (2026-09-18).
+    if moved:
+        text += "  ·  changed since last check: " + ", ".join(moved)
     if dr.risen:
-        text += f"  ·  back above {rep.THRESHOLD:.0%} since last check: " + ", ".join(dr.risen)
+        text += f"  ·  back above {rep.THRESHOLD:.0%}: " + ", ".join(dr.risen)
     return text
 
 
@@ -424,7 +429,9 @@ def lay_out(results: List[WeekResult], headers: List[str], status: str,
     for day in ars.DAYS:
         band = blank()
         for k, wr in enumerate(results):
-            band[k * (width + GAP_COLS)] = _band_text(wr.days[day], show_all)
+            moved = [note for (wk, d, _), (_, note) in notes.items()
+                     if wk == wr.label and d == day]
+            band[k * (width + GAP_COLS)] = _band_text(wr.days[day], show_all, moved)
         grid.append(band)
         bands.append(len(grid))
         height = max([len(wr.days[day].rows) for wr in results] + [1])
@@ -436,10 +443,6 @@ def lay_out(results: List[WeekResult], headers: List[str], status: str,
                 if i < len(dr.rows):
                     line[c0:c0 + width] = dr.rows[i]
                     data.append((len(grid) + 1, c0))
-                    hit = notes.get((wr.label, day, str(dr.rows[i][owner_i])))
-                    if hit:
-                        fld, note = hit
-                        cell_notes.append((len(grid) + 1, c0 + col.get(fld, owner_i), note))
                 elif i == 0 and _empty_text(dr):
                     line[c0] = _empty_text(dr)
                     msgs.append((len(grid) + 1, c0))
@@ -702,7 +705,7 @@ def run(*, week_label_: Optional[str] = None, tab: str = BOARD_TAB,
               f"checked {stamp} CT")
     if prior.stamp:
         status += (f"  ·  {len(moved)} moved since the {prior.stamp} check"
-                   + (" (see the notes on the cells)" if moved else ""))
+                   + (" (named on each day's band)" if moved else ""))
     layout = lay_out(results, headers, status, moved, show_all)
 
     for wr in results:
