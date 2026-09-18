@@ -287,8 +287,20 @@ class NudgeTests(unittest.TestCase):
         text = _nudge_text("Kash", {"last": None,
                                     "reason": "has not checked in today"})
         self.assertIn("Kash", text)
-        for cue in ("asleep", "unplugged", "wifi"):
+        # POWER AND SLEEP AND WIFI, in whichever words fit their machine.
+        # This used to require the literal "unplugged", which is laptop
+        # advice: the default is now the desktop wording, because telling an
+        # iMac owner to leave the lid open reads as somebody else's message
+        # (Roshan, 2026-09-18). The laptop variant is covered in
+        # test_quiet_wording.
+        for cue in ("asleep", "wifi"):
             self.assertIn(cue, text)
+        self.assertTrue("power" in text or "unplugged" in text,
+                        "the nudge has to mention power in some form")
+        laptop = _nudge_text("Cyrus", {"last": None,
+                                       "reason": "has not checked in today"},
+                             laptop=True)
+        self.assertIn("unplugged", laptop)
         # It must promise a RECOVERY, not a duration -- a number here and a
         # different one in the plist is a promise people check and we break.
         self.assertIn("picks itself up", text)

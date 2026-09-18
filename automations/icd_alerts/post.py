@@ -1711,22 +1711,76 @@ NUDGE_STOPPED = ("your Lucy Reports computer has gone quiet — it last checked 
 OWNER_NUDGE = (
     "Hi %s — %s.\n\n"
     "It's almost always one of these:\n"
-    "  • the laptop is asleep or shut — wake it and leave the lid open\n"
-    "  • it's unplugged — it has to be on power to stay awake\n"
+    "  • %s\n"
+    "  • %s\n"
     "  • it's off wifi\n\n"
     "Sort any of those and it picks itself up within a few minutes. Nothing is "
     "lost in the meantime. If it's none of those, please DM Megan & Eve to "
     "help with troubleshooting.")
 
 
-def _nudge_text(first: str, quiet: Dict) -> str:
+def sales_system_for(office) -> str:
+    """What THIS office's numbers come from, in their own words.
+
+    'SaraPlus is cumulative' was written into the quiet notice when every
+    office was AT&T. Roshan sells Box and reads My Service Cloud; she was told
+    about a system her office has never touched (2026-09-18). It is the same
+    shape as every other non-AT&T bug here -- a campaign that is not att
+    falling through a path written as though it were.
+    """
+    from automations.icd_alerts import config as C
+    campaign = (getattr(office, "campaign", "") or "att").strip().lower()
+    if campaign in C.NO_SARAPLUS:
+        return SYSTEMS["servicecloud"]["name"]
+    return SYSTEMS["saraplus"]["name"]
+
+
+def laptop_keys(book=None) -> set:
+    """Offices we KNOW are on a laptop. Read once, not once per office."""
+    try:
+        return {d.get("office") for d in
+                laptop_offices(book=book, include_acknowledged=True)
+                if d.get("office")}
+    except Exception:  # noqa: BLE001 — never lose a nudge to this
+        return set()
+
+
+def machine_words(laptop: bool = False) -> Dict[str, str]:
+    """What to call this office's computer, and how it goes to sleep.
+
+    "wake it and leave the lid open" is advice for a laptop. Roshan runs an
+    iMac, and Megan's answer to the nudge was exactly the right one: "ROshan
+    has an Imac so shouldn't be logged out". A nudge that gets the basics
+    wrong is one people stop reading -- which the comment above NUDGE_NEVER
+    already says, about a different detail.
+
+    DEFAULTS TO THE DESKTOP WORDING, because it is the one that is never
+    absurd: telling somebody with a laptop that their computer may be
+    switched off is merely incomplete, while telling an iMac owner to leave
+    the lid open reads as a message meant for somebody else.
+    """
+    if laptop:
+        return {"noun": "laptop",
+                "asleep": "the laptop is asleep or shut — wake it and leave "
+                          "the lid open",
+                "power": "it's unplugged — it has to be on power to stay awake"}
+    return {"noun": "computer",
+            "asleep": "the computer is asleep — wake it with the mouse or "
+                      "keyboard",
+            "power": "it's switched off, or lost power"}
+
+
+def _nudge_text(first: str, quiet: Dict, laptop: bool = False) -> str:
     """The nudge, opening with whichever thing actually happened."""
     last = (quiet.get("last") or "").strip()
+    w = machine_words(laptop)
     if quiet.get("last") and "not checked in" not in (quiet.get("reason") or ""):
         # Just the clock, not the date -- they are reading this today.
         stamp = last.split(" ")[-1] if " " in last else last
-        return OWNER_NUDGE % (first, NUDGE_STOPPED % stamp)
-    return OWNER_NUDGE % (first, NUDGE_NEVER)
+        opened = NUDGE_STOPPED % stamp
+    else:
+        opened = NUDGE_NEVER
+    return OWNER_NUDGE % (first, opened, w["asleep"], w["power"])
 
 
 def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
@@ -1749,6 +1803,9 @@ def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
         return []
 
     quiet = quiet_offices(day)
+    # ONCE, not once per office: which of these run a laptop decides whether
+    # the advice mentions a lid. Read here so a quiet morning costs one call.
+    laptops = laptop_keys()
 
     data = _warned()
     sent = data.get(day.isoformat()) or {}
@@ -1834,7 +1891,7 @@ def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
             continue
         first = (office.owner or "").split()[0] if office.owner else "there"
         try:
-            _dm(office.slack_user_id, _nudge_text(first, q))
+            _dm(office.slack_user_id, _nudge_text(first, q, key in laptops))
             nudged.append(q["office"])
         except Exception as e:  # noqa: BLE001 — a failed nudge must still reach us
             log("could not DM %s: %s: %s" % (q["office"], type(e).__name__,
@@ -1864,8 +1921,10 @@ def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
             text = ("\n\n".join([
                 ":warning: *%s* — the alerts computer %s.%s"
                 % (q["label"], q["how_long"], tail),
-                "_Nothing is lost: SaraPlus is cumulative, so whatever it "
-                "missed arrives when the laptop is back online._",
+                "_Nothing is lost: %s is cumulative, so whatever it "
+                "missed arrives when the %s is back online._"
+                % (sales_system_for(O.get(key)),
+                   machine_words(key in laptops)["noun"]),
                 "_Updates follow in this thread until it is back._"]))
         try:
             ts = _slack(O.OPS_CHANNEL, text, thread_ts=parent)
