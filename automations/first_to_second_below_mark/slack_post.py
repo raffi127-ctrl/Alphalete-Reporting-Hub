@@ -48,7 +48,10 @@ RECIPIENTS = [
 
 TITLE = "1st to 2nd Below the Mark"
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "below_the_mark"
-LAST_COL = "Q"
+# Stops at P on purpose: column Q ("Office to Fill out report for (MUST MATCH
+# APP STREAM NAME)") is a working column nobody reading the DM needs, and it is
+# wide enough to shrink everything else in the picture (Eve, 2026-09-17).
+LAST_COL = "P"
 # How many blank rows past the last owner to include, so the picture does not
 # end flush against the final row.
 TAIL_ROWS = 1

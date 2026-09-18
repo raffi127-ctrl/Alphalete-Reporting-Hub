@@ -503,6 +503,13 @@ class Pickers(unittest.TestCase):
         self.assertIn("NOT sending the DM", sh)
         self.assertIn("--dry-run", sh)          # a dry run never DMs either
 
+    def test_the_dm_screenshot_stops_before_the_office_column(self):
+        # Column Q is a working column nobody reading the DM needs.
+        from automations.first_to_second_below_mark import slack_post as sp
+        self.assertEqual(sp.LAST_COL, "P")
+        office_i = cols.resolve(rep.DEFAULT_HEADERS)["office"]
+        self.assertEqual(rep._a1col(office_i + 1), "Q")   # so P really is the one before
+
     def test_every_recipient_is_a_slack_id_not_a_name(self):
         from automations.first_to_second_below_mark import slack_post as sp
         self.assertEqual(len(sp.RECIPIENTS), 5)
