@@ -4623,7 +4623,7 @@ AUTOMATED_REPORTS = [
             {
                 "label": "Text it now",
                 "icon": "\U0001F4E3",
-                "help": "One tick for real: renders the current gap card and sends it to whichever of Raf's three destinations are due — the Alphalete Partners chat every 15 minutes, the Alphalete A-Team Chat and #alphalete-lvl1-chat every 30. Skips if nobody is over 15 minutes, or if a room already got a card in the last 5 minutes.",
+                "help": "One tick for real: renders the current gap card and sends it to whichever of Raf's three destinations are due — all three every 30 minutes, with the Alphalete Partners chat on the opposite half hour from the Alphalete A-Team Chat and #alphalete-lvl1-chat, so nobody in both chats gets the same board twice. Skips if nobody is over 15 minutes, or if a room already got a card in the last 5 minutes.",
                 "module": "automations.gap_alerts.run",
                 "args_fn": lambda: ["--send", "--force"],
             },

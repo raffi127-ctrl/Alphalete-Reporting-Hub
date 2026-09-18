@@ -355,10 +355,16 @@ def _dest_anchor(dest: Dict, cfg: Optional[Dict], now: dt.datetime):
         return None
     # Staggered: the office keeps its exact spacing, on its own offset, so
     # twenty offices do not all land on :00. See config.office_offset.
+    #
+    # PER DESTINATION, not per office (config.dest_offset): two rooms of the
+    # same office on the same cadence would otherwise share the office's one
+    # offset and fire on the same anchors — the same board twice, which is the
+    # double-ping Raf's Partners/A-Team pair had. `offset_min` on the row moves
+    # one of them onto the other half of the hour.
     base = now.replace(second=0, microsecond=0)
     mins = base.hour * 60 + base.minute
     a = mins - (mins % C.WAKE_MINUTES)
-    a -= (a - C.office_offset(cfg or {})) % cadence
+    a -= (a - C.dest_offset(dest, cfg or {})) % cadence
     at = base.replace(hour=0, minute=0) + dt.timedelta(minutes=a)
     return at.strftime("%Y-%m-%dT%H:%M")
 

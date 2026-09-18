@@ -85,8 +85,19 @@ RAF = {
     # resolver refuses on 0 or 2+ hits rather than guessing, and this prefix is
     # unique on the machine. Note a SEPARATE chat called "NEW A Players" (15
     # participants) also exists — it is NOT this one.
+    # BOTH iMESSAGE ROOMS RUN AT 30, ON OPPOSITE HALVES OF THE HOUR (Raf,
+    # 2026-09-18). Partners was at 15 and the A-Team at 30, so every :00 and
+    # :30 the SAME board landed in both rooms at once and the people in both
+    # got pinged twice for one board. Raf: "post every 30 min in each but be
+    # the opposite 30 in the partner chat."
+    #
+    # `offset_min` is that "opposite" — the A-Team takes the office's own
+    # anchors (:00/:30 after the stagger) and Partners takes them shifted a
+    # half-cadence later (:15/:45). Neither room loses a board: each still
+    # gets one every 30 minutes, and no minute of the day carries both.
     "destinations": [
-        {"kind": "imessage", "name": "Alphalete Partners", "cadence_min": 15},
+        {"kind": "imessage", "name": "Alphalete Partners",
+         "cadence_min": 30, "offset_min": 15},
         {"kind": "imessage", "name": "Alphalete A-Team Chat", "cadence_min": 30},
         {"kind": "slack", "channel_id": SLACK_HOURLY_CHANNEL,
          "cadence_min": 30},
@@ -299,11 +310,16 @@ def cadence_for(cfg: Dict) -> int:
 def destinations(cfg: Dict) -> List[Dict]:
     """Every place this office's board goes, each with its own cadence.
 
-    {kind: "imessage"|"slack"|"email", name, channel_id, emails, cadence_min}
+    {kind: "imessage"|"slack"|"email", name, channel_id, emails, cadence_min,
+     offset_min}
 
     An office can now list SEVERAL — the owners' room every 15 minutes and the
     rep channel once an hour (Megan 2026-09-01) — which is why cadence lives on
     the destination and not on the office.
+
+    `offset_min` (optional) shifts THIS destination's anchors within its
+    cadence, so two rooms of one office on the same cadence do not fire
+    together — see dest_offset.
 
     A HARDCODED row has no `destinations` key, and its shape is translated here
     rather than in four call sites: its `group` at the office cadence, plus the
@@ -780,6 +796,38 @@ def office_offset(cfg: Dict) -> int:
     buckets = max(1, TICK_MINUTES // WAKE_MINUTES)
     digest = hashlib.sha1(key.encode("utf-8")).digest()
     return (digest[0] % buckets) * WAKE_MINUTES
+
+def dest_offset(dest: Dict, cfg: Dict) -> int:
+    """This DESTINATION's stagger: the office's own offset plus the
+    destination's optional `offset_min`.
+
+    WHY A DESTINATION NEEDS ITS OWN. office_offset spreads DIFFERENT offices
+    across the wake buckets so twenty of them do not all scrape at :00. It says
+    nothing about two rooms of the SAME office, which share the key and so
+    share the offset — put both on a 30-minute cadence and they land on the
+    same two anchors every hour, which is one board pinging the same people
+    twice (Raf, 2026-09-18: Partners at 15 and the A-Team at 30 collided on
+    :00 and :30).
+
+    `offset_min` is how a row says "this room takes the OTHER half of the
+    hour": cadence 30 with offset_min 15 gives :15/:45 where offset 0 gives
+    :00/:30. Clamped to a multiple of WAKE_MINUTES and reduced modulo the
+    cadence — the job only wakes on the 5-minute grid, so an offset of 7 would
+    describe anchors no tick ever lands on, and an offset of 45 on a 30-minute
+    cadence is just 15.
+    """
+    base = office_offset(cfg or {})
+    try:
+        extra = int(dest.get("offset_min") or 0)
+    except (TypeError, ValueError):
+        extra = 0
+    if extra <= 0 or extra % WAKE_MINUTES:
+        return base
+    cadence = dest_cadence(dest)
+    if cadence <= 0:                     # fixed-times: moments, never shifted
+        return base
+    return base + (extra % cadence)
+
 
 # A card is REFUSED if this office got one less than this many minutes ago.
 #
