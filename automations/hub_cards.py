@@ -640,7 +640,7 @@ AUTOMATED_REPORTS = [
     # "no run logged" forever — see day_orchestrator.test_hub_card_ids.
     {
         "id": "below-the-mark",
-        "name": "Recruiting - 1st showd up booked 2nd low numbers report",
+        "name": "Recruiting - 1st showed up booked 2nd low numbers report",
         "category": "🎯 Recruiting",
         "creator": "Eve & Claude",
         "emoji": "🚩",
