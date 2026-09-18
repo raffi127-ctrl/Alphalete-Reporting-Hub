@@ -1,0 +1,134 @@
+<title>Fill Apex Bookmark</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400&display=swap">
+<style>
+  :root{
+    --paper:#F7F9F8; --card:#FFFFFF; --ink:#14211F; --muted:#5A6866;
+    --accent:#0F766E; --accent-ink:#FFFFFF; --line:#DDE5E3; --warn:#8A5A00;
+    --warn-bg:#FFF8EC;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#0E1614; --card:#16211F; --ink:#E8EFED; --muted:#97A6A3;
+      --accent:#37B3A4; --accent-ink:#06201C; --line:#273532; --warn:#E2B469;
+      --warn-bg:#211A0D;
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#0E1614; --card:#16211F; --ink:#E8EFED; --muted:#97A6A3;
+    --accent:#37B3A4; --accent-ink:#06201C; --line:#273532; --warn:#E2B469;
+    --warn-bg:#211A0D;
+  }
+  *{box-sizing:border-box}
+  body{
+    background:var(--paper); color:var(--ink);
+    font:400 17px/1.6 "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
+    margin:0; padding:48px 20px 80px;
+  }
+  .wrap{max-width:640px; margin:0 auto; display:flex; flex-direction:column; gap:28px}
+  .eyebrow{
+    font:500 12px/1 "Archivo", system-ui, sans-serif; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--muted); margin:0;
+  }
+  h1{
+    font:700 34px/1.15 "Archivo", system-ui, sans-serif; margin:6px 0 0;
+    text-wrap:balance; letter-spacing:-.01em;
+  }
+  p{margin:0; max-width:62ch}
+  .lede{color:var(--muted)}
+  .stage{
+    background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:36px 28px; display:flex; flex-direction:column; align-items:center;
+    gap:18px; text-align:center;
+  }
+  .btn{
+    display:inline-block; background:var(--accent); color:var(--accent-ink);
+    text-decoration:none; padding:16px 38px; border-radius:10px;
+    font:700 19px/1 "Archivo", system-ui, sans-serif; cursor:grab;
+  }
+  .btn:active{cursor:grabbing}
+  .btn:focus-visible{outline:3px solid var(--ink); outline-offset:3px}
+  .hint{font-size:14px; color:var(--muted); margin:0}
+  ol{margin:0; padding-left:1.3em; display:flex; flex-direction:column; gap:10px}
+  li{padding-left:.2em}
+  .note{
+    background:var(--warn-bg); border-left:3px solid var(--warn);
+    padding:14px 18px; border-radius:0 8px 8px 0; font-size:15px;
+  }
+  .fallback{display:flex; flex-direction:column; gap:10px}
+  h2{font:700 15px/1.3 "Archivo", system-ui, sans-serif; margin:0;
+     letter-spacing:.02em}
+  button.copy{
+    align-self:flex-start; font:600 14px/1 "Source Sans 3", sans-serif;
+    background:transparent; color:var(--accent); border:1px solid var(--accent);
+    border-radius:8px; padding:9px 16px; cursor:pointer;
+  }
+  button.copy:focus-visible{outline:3px solid var(--ink); outline-offset:2px}
+  pre{
+    margin:0; background:var(--card); border:1px solid var(--line);
+    border-radius:10px; padding:14px; max-height:190px; overflow:auto;
+    font:400 11px/1.5 "JetBrains Mono", ui-monospace, monospace;
+    white-space:pre-wrap; word-break:break-all; color:var(--muted);
+  }
+  .said{font-size:14px; color:var(--accent); min-height:1.2em}
+  footer{font-size:14px; color:var(--muted); border-top:1px solid var(--line);
+         padding-top:18px}
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">New Starts &rarr; Apex</p>
+    <h1>Drag this onto your bookmarks bar</h1>
+  </header>
+
+  <p class="lede">One button, saved once on this computer. It holds no report and
+  no people &mdash; each week it picks up the list the Hub puts on your clipboard.</p>
+
+  <div class="stage">
+    <a class="btn" href="javascript:(async function(){ /* The LOADER. This is the thing that gets bookmarked, and it is the only part that must never change: everything real lives under CODEKEY in this browser and arrives by paste. A saved bookmarklet freezes whatever was inside it, so shipping a fix used to mean asking for the bookmark to be deleted, re-copied and re-dragged -- which happened four times in one afternoon, and three of those the old button was still what ran (Megan, 2026-09-10). */ var CODEKEY=&#x27;apexNewStarts.code&#x27;; function panel(msg){ var old=document.getElementById(&#x27;ansload&#x27;); if(old) old.remove(); var b=document.createElement(&#x27;div&#x27;); b.id=&#x27;ansload&#x27;; b.style.cssText=&#x27;position:fixed;top:14px;right:14px;z-index:2147483647;&#x27;+ &#x27;background:#fff;border:2px solid #0F766E;border-radius:10px;&#x27;+ &#x27;padding:14px 16px;font:14px -apple-system,Helvetica,sans-serif;&#x27;+ &#x27;box-shadow:0 6px 24px rgba(0,0,0,.25);width:320px&#x27;; b.innerHTML=&#x27;&lt;div style=&quot;font-weight:700;font-size:16px&quot;&gt;Load this week&lt;/div&gt;&#x27;+ &#x27;&lt;div style=&quot;color:#555;margin:4px 0 8px;font-size:12px&quot;&gt;&#x27;+msg+&#x27;&lt;/div&gt;&#x27;+ &#x27;&lt;textarea id=&quot;ansblob&quot; style=&quot;width:100%;height:64px;font-size:11px&quot;&gt;&lt;/textarea&gt;&#x27;+ &#x27;&lt;div style=&quot;margin-top:8px&quot;&gt;&#x27;+ &#x27;&lt;button id=&quot;ansloadgo&quot; style=&quot;background:#0F766E;color:#fff;border:0;&#x27;+ &#x27;border-radius:6px;padding:9px 14px;font-weight:700;cursor:pointer&quot;&gt;Load it&lt;/button&gt; &#x27;+ &#x27;&lt;button id=&quot;ansloadno&quot; style=&quot;background:#eee;border:0;border-radius:6px;&#x27;+ &#x27;padding:9px 12px;cursor:pointer&quot;&gt;Cancel&lt;/button&gt;&lt;/div&gt;&#x27;+ &#x27;&lt;div id=&quot;ansloadmsg&quot; style=&quot;margin-top:8px;font-size:12px;color:#b00&quot;&gt;&lt;/div&gt;&#x27;; document.body.appendChild(b); document.getElementById(&#x27;ansloadno&#x27;).onclick=function(){ b.remove(); }; document.getElementById(&#x27;ansloadgo&#x27;).onclick=function(){ var t=(document.getElementById(&#x27;ansblob&#x27;).value||&#x27;&#x27;).trim(); if(t.indexOf(&#x27;javascript:&#x27;)===0) t=t.slice(11); var say=document.getElementById(&#x27;ansloadmsg&#x27;); if(!looksLikeSetup(t)){ say.textContent=&#x27;That is not the setup. Build it on the Hub, then &#x27;+ &#x27;click this button again.&#x27;; return; } try{ localStorage.setItem(CODEKEY,t); } catch(e){ say.textContent=&#x27;This browser would not store it: &#x27;+e.message; return; } b.remove(); exec(t); }; document.getElementById(&#x27;ansblob&#x27;).focus(); } /* The loaded script offers &quot;load a new setup&quot;; this is what it calls. */ window.__ansPaste=function(){ try{ localStorage.removeItem(CODEKEY); }catch(e){} panel(&#x27;Paste the new setup here.&#x27;); }; function exec(c){ /* Apex serves no Content-Security-Policy, so this is allowed to run. */ try{ (new Function(c))(); return true; } catch(e){ panel(&#x27;That setup would not run (&#x27;+e.message+&#x27;).&#x27;); return false; } } function looksLikeSetup(t){ return t.length&gt;2000&amp;&amp;t.indexOf(&#x27;apexNewStarts&#x27;)&gt;=0&amp;&amp;t.indexOf(&#x27;function&#x27;)&gt;=0; } async function fromClipboard(){ /* The Hub puts this week&#x27;s setup on the clipboard when it builds it, so clicking the button is the whole job -- no page to find, nothing to copy, nothing to paste (Megan, 2026-09-13). Only text shaped like our own setup is ever touched; anything else is ignored and the saved one runs instead. */ try{ if(!navigator.clipboard||!navigator.clipboard.readText) return null; var t=(await navigator.clipboard.readText()||&#x27;&#x27;).trim(); if(t.indexOf(&#x27;javascript:&#x27;)===0) t=t.slice(11); if(looksLikeSetup(t)) return t; }catch(e){} return null; } async function run(){ var fresh=await fromClipboard(); if(fresh){ try{ localStorage.setItem(CODEKEY,fresh); }catch(e){} window.__ansSetupFrom=&#x27;clipboard&#x27;; exec(fresh); return; } var c=null; try{ c=localStorage.getItem(CODEKEY); }catch(e){} /* Anything copied between the Hub and here -- a phone number, a name -- and the clipboard no longer holds the setup. Falling back to the saved one is right, but doing it SILENTLY would run whatever week was loaded last (Megan, 2026-09-13). The panel says so, in amber. */ if(c){ window.__ansSetupFrom=&#x27;saved&#x27;; exec(c); return; } panel(&#x27;Build it on the Hub \u2014 it lands on your clipboard and this &#x27;+ &#x27;button picks it up. Or paste it here.&#x27;); } await run(); })()" id="thebtn">Fill Apex</a>
+    <p class="hint">Drag it up to the bookmarks bar. Don&rsquo;t click it here &mdash;
+    it only does something on an Apex page.</p>
+  </div>
+
+  <ol>
+    <li>Drag the button above onto the bookmarks bar.</li>
+    <li>In Apex, go to <strong>Roster &rarr; Employees &rarr; Pending</strong>.</li>
+    <li>Press <strong>Get this week&rsquo;s setup</strong> on the Hub, then click
+        the bookmark. Chrome asks to read the clipboard the first time &mdash;
+        allow it. That&rsquo;s how it gets the week.</li>
+  </ol>
+
+  <p class="note"><strong>Don&rsquo;t retype or email the code.</strong> macOS turns
+  straight quotes into curly ones, which breaks it silently &mdash; the button
+  then does nothing at all when clicked. Drag it, or use Copy below.</p>
+
+  <section class="fallback">
+    <h2>No bookmarks bar?</h2>
+    <button class="copy" id="copybtn" type="button">Copy the button</button>
+    <p class="said" id="said" role="status"></p>
+    <p class="hint" style="text-align:left">Then <strong>Bookmarks &rarr; Open
+    Bookmarks Manager &rarr; &#8942; &rarr; Add new bookmark</strong>. Name it
+    <strong>Fill Apex</strong> and paste into the URL box.</p>
+    <pre id="src">javascript:(async function(){ /* The LOADER. This is the thing that gets bookmarked, and it is the only part that must never change: everything real lives under CODEKEY in this browser and arrives by paste. A saved bookmarklet freezes whatever was inside it, so shipping a fix used to mean asking for the bookmark to be deleted, re-copied and re-dragged -- which happened four times in one afternoon, and three of those the old button was still what ran (Megan, 2026-09-10). */ var CODEKEY='apexNewStarts.code'; function panel(msg){ var old=document.getElementById('ansload'); if(old) old.remove(); var b=document.createElement('div'); b.id='ansload'; b.style.cssText='position:fixed;top:14px;right:14px;z-index:2147483647;'+ 'background:#fff;border:2px solid #0F766E;border-radius:10px;'+ 'padding:14px 16px;font:14px -apple-system,Helvetica,sans-serif;'+ 'box-shadow:0 6px 24px rgba(0,0,0,.25);width:320px'; b.innerHTML='&lt;div style="font-weight:700;font-size:16px"&gt;Load this week&lt;/div&gt;'+ '&lt;div style="color:#555;margin:4px 0 8px;font-size:12px"&gt;'+msg+'&lt;/div&gt;'+ '&lt;textarea id="ansblob" style="width:100%;height:64px;font-size:11px"&gt;&lt;/textarea&gt;'+ '&lt;div style="margin-top:8px"&gt;'+ '&lt;button id="ansloadgo" style="background:#0F766E;color:#fff;border:0;'+ 'border-radius:6px;padding:9px 14px;font-weight:700;cursor:pointer"&gt;Load it&lt;/button&gt; '+ '&lt;button id="ansloadno" style="background:#eee;border:0;border-radius:6px;'+ 'padding:9px 12px;cursor:pointer"&gt;Cancel&lt;/button&gt;&lt;/div&gt;'+ '&lt;div id="ansloadmsg" style="margin-top:8px;font-size:12px;color:#b00"&gt;&lt;/div&gt;'; document.body.appendChild(b); document.getElementById('ansloadno').onclick=function(){ b.remove(); }; document.getElementById('ansloadgo').onclick=function(){ var t=(document.getElementById('ansblob').value||'').trim(); if(t.indexOf('javascript:')===0) t=t.slice(11); var say=document.getElementById('ansloadmsg'); if(!looksLikeSetup(t)){ say.textContent='That is not the setup. Build it on the Hub, then '+ 'click this button again.'; return; } try{ localStorage.setItem(CODEKEY,t); } catch(e){ say.textContent='This browser would not store it: '+e.message; return; } b.remove(); exec(t); }; document.getElementById('ansblob').focus(); } /* The loaded script offers "load a new setup"; this is what it calls. */ window.__ansPaste=function(){ try{ localStorage.removeItem(CODEKEY); }catch(e){} panel('Paste the new setup here.'); }; function exec(c){ /* Apex serves no Content-Security-Policy, so this is allowed to run. */ try{ (new Function(c))(); return true; } catch(e){ panel('That setup would not run ('+e.message+').'); return false; } } function looksLikeSetup(t){ return t.length&gt;2000&amp;&amp;t.indexOf('apexNewStarts')&gt;=0&amp;&amp;t.indexOf('function')&gt;=0; } async function fromClipboard(){ /* The Hub puts this week's setup on the clipboard when it builds it, so clicking the button is the whole job -- no page to find, nothing to copy, nothing to paste (Megan, 2026-09-13). Only text shaped like our own setup is ever touched; anything else is ignored and the saved one runs instead. */ try{ if(!navigator.clipboard||!navigator.clipboard.readText) return null; var t=(await navigator.clipboard.readText()||'').trim(); if(t.indexOf('javascript:')===0) t=t.slice(11); if(looksLikeSetup(t)) return t; }catch(e){} return null; } async function run(){ var fresh=await fromClipboard(); if(fresh){ try{ localStorage.setItem(CODEKEY,fresh); }catch(e){} window.__ansSetupFrom='clipboard'; exec(fresh); return; } var c=null; try{ c=localStorage.getItem(CODEKEY); }catch(e){} /* Anything copied between the Hub and here -- a phone number, a name -- and the clipboard no longer holds the setup. Falling back to the saved one is right, but doing it SILENTLY would run whatever week was loaded last (Megan, 2026-09-13). The panel says so, in amber. */ if(c){ window.__ansSetupFrom='saved'; exec(c); return; } panel('Build it on the Hub \u2014 it lands on your clipboard and this '+ 'button picks it up. Or paste it here.'); } await run(); })()</pre>
+  </section>
+
+  <footer>A current button is <strong>3,981</strong> characters. If clicking it
+  does nothing at all, it&rsquo;s a mangled copy &mdash; drag a fresh one from
+  this page.</footer>
+</div>
+
+<script>
+  document.getElementById('copybtn').addEventListener('click', function(){
+    var text = document.getElementById('thebtn').getAttribute('href');
+    var said = document.getElementById('said');
+    function ok(){ said.textContent = 'Copied \u2713  Now add it as a new bookmark.'; }
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(ok, manual);
+    } else { manual(); }
+    function manual(){
+      var r = document.createRange();
+      r.selectNodeContents(document.getElementById('src'));
+      var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+      said.textContent = 'Selected below \u2014 press \u2318C to copy.';
+    }
+  });
+</script>
