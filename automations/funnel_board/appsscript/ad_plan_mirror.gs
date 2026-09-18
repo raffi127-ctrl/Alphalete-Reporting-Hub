@@ -7,7 +7,7 @@
  * spreadsheet (the URL is parsed out of their hidden tab's IMPORTRANGE, so
  * there is no separate config to maintain).
  *
- * Wiring it reuses: B1 picker, AD1:AE40 name→tab map. Untouched.
+ * Wiring it reuses: B1 picker, AD1:AE60 name→tab map. Untouched.
  * What changes: A2 is no longer a formula — the area is a pasted snapshot,
  * refreshed when B1 changes and hourly by trigger.
  *
@@ -51,7 +51,7 @@ function repaint() {
   var area = ap.getRange(2, 1, MAX_ROWS, MAX_COLS);
   if (!name) return;
 
-  var map = ap.getRange('AD1:AE40').getValues();
+  var map = ap.getRange('AD1:AE60').getValues();
   var tab = '';
   for (var i = 0; i < map.length; i++) {
     if (String(map[i][0]).trim() === name) { tab = String(map[i][1]).trim(); break; }

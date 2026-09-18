@@ -2620,7 +2620,12 @@ def lookup_resume_phone(page):
         # in a few seconds; when CF is blocking it never clears (verified 60s), so a
         # long wait just wastes ~1min/applicant. ~12s covers the good case.
         title, body = "", ""
-        for _i in range(12):
+        # 40s, up from 12 (2026-09-17): Cloudflare's interstitial still clears
+        # on its own but now takes ~15-30s fleet-wide; at 12s every resume read
+        # in every office reported "challenge never cleared" (Carlos: 296
+        # walked, 0 sent). A read that clears returns the moment it finds the
+        # number, so the higher ceiling is free on healthy days.
+        for _i in range(40):
             try:
                 title = (newpg.title() or "").lower()
                 # READ THE FRAMES TOO, not just the top document. Indeed's resume
