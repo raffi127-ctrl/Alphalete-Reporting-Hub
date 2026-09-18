@@ -207,7 +207,8 @@ def _not_live_yet() -> str:
     if today >= go:
         return ""
     days = (go - today).days
-    return (f"Digi Docs is not live until {go:%A %-d %B} "
+    # %-d is Mac-only; this has to run on Windows too.
+    return (f"Digi Docs is not live until {go:%A} {go.day} {go:%B} "
             f"({days} day{'' if days == 1 else 's'} away) — "
             f"config.GO_LIVE_ON")
 
@@ -266,6 +267,60 @@ def _mark_quiet_day(quiet: bool) -> None:
         pass    # a missing marker only costs the next tick a sheet read
 
 
+# A SHEET THAT IS BUSY IS NOT A RUN THAT DIED (2026-09-18). The 06:01 tick hit
+# Google's per-minute read quota (429) on the roster read — the 6am batch shares
+# that quota — and fill's retry spent ~3 minutes on it before giving up. The
+# wrapper then posted "the run was killed before it could report" and tagged
+# the three approvers, on a day with no chart dated for it at all. A tick runs
+# again in five minutes and re-reads the same sheet, so one busy read costs
+# nothing. It only becomes news if it KEEPS happening: past this window a send
+# could land late, so from then on the error goes out loud like any other.
+SHEET_BUSY_GRACE_MIN = 30
+
+
+def sheet_busy_marker_path() -> str:
+    import datetime as _dt
+    return f"output/logs/.digi-docs-sheet-busy-{_dt.date.today().isoformat()}"
+
+
+def _mark_sheet_busy(busy: bool) -> float:
+    """Record the FIRST busy read of the day (kept, not refreshed, so the grace
+    window cannot slide forever); clear it on a good read. Returns how many
+    minutes the sheet has been busy."""
+    import os
+    import time
+    path = sheet_busy_marker_path()
+    try:
+        if not busy:
+            if os.path.exists(path):
+                os.remove(path)
+            return 0.0
+        if not os.path.exists(path):
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as fh:
+                fh.write("sheet read rate-limited\n")
+        return (time.time() - os.path.getmtime(path)) / 60.0
+    except Exception:                                       # noqa: BLE001
+        return 0.0
+
+
+def _sheet_busy_is_a_skip(args, err: BaseException) -> bool:
+    """True when this failed sheet read should end the tick quietly: only the
+    send TICK (the add fires once a day and must never skip in silence), only
+    a transient Google error, and only inside the grace window."""
+    from automations.shared import sheets_retry
+    if not (args.due_now and args.send_only) or not sheets_retry.is_retryable(err):
+        return False
+    busy_for = _mark_sheet_busy(True)
+    if busy_for >= SHEET_BUSY_GRACE_MIN:
+        print(f"⛔ the sheet has been rate-limited for {busy_for:.0f} min — "
+              "reporting it")
+        return False
+    print(f"sheet busy ({sheets_retry.status_code(err)}) for {busy_for:.0f} min "
+          "— skipping this tick, the next one re-reads it")
+    return True
+
+
 def _refuse(refused, line, dry, *, alert: bool = True):
     """Record a failure, and by default alert on it immediately.
 
@@ -303,7 +358,13 @@ def _phases(args) -> int:
 
     do_add = args.add_only or args.both
     do_send = args.send_only or args.both
-    ws, values = _open_tab(args.tab)
+    try:
+        ws, values = _open_tab(args.tab)
+    except Exception as e:                                  # noqa: BLE001
+        if not _sheet_busy_is_a_skip(args, e):
+            raise
+        return 0
+    _mark_sheet_busy(False)
     cands = roster.candidates(values, ws.title)
     send = roster.to_send(cands)
     if args.only:
