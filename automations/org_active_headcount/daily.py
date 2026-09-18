@@ -323,7 +323,12 @@ def tracker_readings_for(post: dt.date, logfn=print) -> Dict[str, Optional[dict]
             logfn(f"    {tid}: no image in the {post} thread")
             out[tid] = None
             continue
-        png = tr.CACHE / post.isoformat() / f"{tid}.png"
+        # Cached PER SLACK FILE, not per day (2026-09-18): the 4:50 B2B Box
+        # Tracker went out with the day before's numbers and was re-posted at
+        # 8:55 in an UPDATED thread. A per-day cache kept the 08:26 read of the
+        # stale picture, so every later run re-read Wednesday as Thursday.
+        fid = files[tid]["file"].get("id") or "nofid"
+        png = tr.CACHE / post.isoformat() / f"{tid}-{fid}.png"
         if not png.exists():
             _download(files[tid]["file"]["url_private"], token, png)
         a = tr.read_image(png, tid).get("rows") or []
