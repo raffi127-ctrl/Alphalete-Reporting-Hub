@@ -129,5 +129,24 @@ class NetworkRetry(unittest.TestCase):
         self.assertEqual(len(calls), 1)
 
 
+class Baseline(unittest.TestCase):
+    def test_an_every_office_fill_is_no_baseline(self):
+        wk = week("9/13", dt.date(2026, 9, 13), {"Monday": [row("Ann", 10, 0.3)]})
+        prior = b.PriorFill(stamp="Fri 9/18 07:15", show_all=True,
+                            listed={("9/13", "Monday"): {"Ann": None}})
+        self.assertEqual(b.compare([wk], prior, H), {})
+
+    def test_blank_before_is_not_a_move(self):
+        wk = week("9/13", dt.date(2026, 9, 13), {"Monday": [row("Ann", 10, 0.3)]})
+        prior = b.PriorFill(stamp="Fri 9/18 07:15",
+                            listed={("9/13", "Monday"): {"Ann": None}})
+        self.assertEqual(b.compare([wk], prior, H), {})
+
+    def test_status_line_marks_an_all_fill(self):
+        lay = b.lay_out([week("9/13", dt.date(2026, 9, 13), {})], H,
+                        "every office  ·  checked Fri 9/18 07:15 CT", {}, True)
+        self.assertTrue(b.read_prior(lay.values, W, H).show_all)
+
+
 if __name__ == "__main__":
     unittest.main()

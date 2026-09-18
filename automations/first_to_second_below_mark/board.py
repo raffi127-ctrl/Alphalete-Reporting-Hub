@@ -105,6 +105,7 @@ class DayResult:
     all_rows: List[list] = field(default_factory=list)   # every office, unfiltered
     interviewed: int = 0                                 # offices with interviews
     future: bool = False
+    today: bool = False                                  # still being worked
     risen: List[str] = field(default_factory=list)       # climbed back above the mark
 
 
@@ -229,7 +230,7 @@ def pull(weeks: List[src.Week], starts: List[dt.date], headers: List[str], *,
         wr = WeekResult(label=w.label, start=start)
         for day in ars.DAYS:
             d = day_date(start, day)
-            dr = DayResult(day=day, date=d, future=d > today)
+            dr = DayResult(day=day, date=d, future=d > today, today=d == today)
             if not dr.future:
                 for o in w.owners:
                     as_row = ((as_data.get(w.label) or {}).get(day) or {}).get(o.name)
@@ -249,6 +250,7 @@ def pull(weeks: List[src.Week], starts: List[dt.date], headers: List[str], *,
 @dataclass
 class PriorFill:
     stamp: str = ""                                     # 'Thu 9/17 18:30'
+    show_all: bool = False                              # that fill listed every office
     # (week label, day) -> {owner: retention} for the offices that were listed
     listed: Dict[Tuple[str, str], Dict[str, Optional[float]]] = field(default_factory=dict)
 
@@ -265,6 +267,7 @@ def read_prior(values: List[List], width: int, headers: List[str]) -> PriorFill:
     status = str(values[STATUS_ROW - 1][0]) if len(values) >= STATUS_ROW and values[STATUS_ROW - 1] else ""
     m = _STAMP_RE.search(status)
     prior.stamp = m.group(1) if m else ""
+    prior.show_all = status.lower().startswith("every office")
     col = cols.resolve(headers)
     owner_i, pct_i = col.get("owner", 0), col.get("retention")
     for c0 in (0, width + GAP_COLS):
@@ -307,7 +310,9 @@ def compare(results: List[WeekResult], prior: PriorFill, headers: List[str]
     are now above the mark. Days the last check never saw (they had not happened
     yet) are not compared: everything on them is new by definition."""
     notes: Dict[Tuple[str, str, str], Tuple[str, str]] = {}
-    if not prior.stamp:
+    # A fill that listed EVERY office (--all, a check run) is no baseline: every
+    # office on it looks "listed", so all of them would read as moved.
+    if not prior.stamp or prior.show_all:
         return notes
     col = cols.resolve(headers)
     owner_i, pct_i = col.get("owner", 0), col.get("retention")
@@ -322,7 +327,9 @@ def compare(results: List[WeekResult], prior: PriorFill, headers: List[str]
             now_listed = {str(r[owner_i]) for r in dr.rows}
             for owner in now_listed:
                 if owner in before:
-                    if not _same(before[owner], now_all.get(owner)):
+                    # No number last time is not a number that moved.
+                    if (isinstance(before[owner], (int, float))
+                            and not _same(before[owner], now_all.get(owner))):
                         notes[(wr.label, day, owner)] = (
                             "retention", f"Was {_pct(before[owner])} at the {prior.stamp} check.")
                 else:
@@ -338,6 +345,10 @@ def compare(results: List[WeekResult], prior: PriorFill, headers: List[str]
 # ------------------------------------------------------------------ the layout
 def _band_text(dr: DayResult, show_all: bool) -> str:
     head = f"{dr.day.upper()} {dr.date.month}/{dr.date.day}"
+    if dr.today:
+        # Early in the day an office with one interview and no callback yet
+        # reads 0%; say the day is not finished so that is not taken as final.
+        head += " (today, still moving)"
     if dr.future:
         return f"{head}  ·  not yet"
     if not dr.interviewed and not dr.rows:
@@ -672,9 +683,14 @@ def run(*, week_label_: Optional[str] = None, tab: str = BOARD_TAB,
     total_cols = 2 * width + GAP_COLS
     bws, created = _board_ws(sh, tab, layout.last_row + 60, total_cols)
     if not created and board_exists:
+        # Unmerge BEFORE writing. Last run's day bands are merged across a whole
+        # week, and a value written into a merged cell that is not its top-left
+        # one is silently dropped -- the first live run lost every number on the
+        # row where the test run had put Tuesday's band (2026-09-18).
+        sh.batch_update({"requests": [{"unmergeCells": {"range": {"sheetId": bws.id}}}]})
         bws.batch_clear([f"A1:{ars.a1col(max(bws.col_count, total_cols))}{bws.row_count}"])
-    bws.update(f"A1:{ars.a1col(total_cols)}{layout.last_row}", layout.values,
-               value_input_option="RAW")
+    bws.update(range_name=f"A1:{ars.a1col(total_cols)}{layout.last_row}",
+               values=layout.values, value_input_option="RAW")
     sh.batch_update({"requests": format_requests(bws.id, tws.id, t_hrow, headers, layout,
                                                  len(results), widths)})
     meta = sh.fetch_sheet_metadata()
