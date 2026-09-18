@@ -103,8 +103,17 @@ from typing import Dict, Iterable, Optional
 # 2026-08-24 y del Country Sales Board desde el 2026-09-01; Mary Maya tambien
 # salio del Country board ese dia. Esto cierra la mitad de capitania que quedaba
 # abierta en los dos casos.
+#
+# 2026-09-18: Jeremiah Minor, fuera de la capitania de SAHIL desde el
+# 2026-08-21 (regla de dos semanas en 0; ya estaba en captain_gate.EXCLUDE y
+# fuera del board). Las vistas de churn lo siguieron trayendo hasta el 9/17 y
+# el 9/18 lo soltaron — las dos tabs de churn de Sahil (NI y Wireless) lo
+# marcaban "went dark" y frenaban el reporte. Con el pin, si Tableau lo vuelve
+# a filar bajo Sahil no se re-escribe su fila, y su fila vieja deja de contar
+# como ausencia (ver drop_expected_absent).
 NOT_ON_TEAM: Dict[str, tuple] = {
     "Raf": ("Steve McElwee",),
+    "Sahil": ("Jeremiah Minor",),
     "Pat": ("Jesus Hawthorne",),
     "Jess": ("Angel Arias", "Mary Maya"),
     "Colten": ("Milan Godbolt", "Marcos Barbosa", "Fernando Munoz",
@@ -261,7 +270,12 @@ def drop_expected_absent(went_dark: dict, slug: str, logfn=None) -> dict:
     Says so in the log: a suppressed finding nobody can see is how a real
     outage later gets mistaken for this one.
     """
-    expected = {_k(n) for n in absent_ok(slug)}
+    # A rep pinned OUT of this captainship (NOT_ON_TEAM) is removed from the
+    # pull by drop_reps, so his leftover row can never fill — his absence is
+    # expected too, not a Tableau fault. The '-wl' suffix is stripped for this
+    # half only: NOT_ON_TEAM is keyed by captain and covers both his tabs.
+    expected = ({_k(n) for n in absent_ok(slug)}
+                | {_k(n) for n in names_for(str(slug or "").split("-")[0])})
     if not expected or not went_dark:
         return went_dark
     out, hushed = {}, []
@@ -272,8 +286,9 @@ def drop_expected_absent(went_dark: dict, slug: str, logfn=None) -> dict:
             out[period] = keep
     if hushed and logfn:
         logfn(f"  – expected absence, not went-dark: "
-              f"{', '.join(sorted(set(hushed)))} — they sell nothing this "
-              f"source measures (shared/captainship_pins.NOT_IN_SOURCE)")
+              f"{', '.join(sorted(set(hushed)))} — pinned out of this captainship "
+              f"or sell nothing this source measures "
+              f"(shared/captainship_pins.NOT_ON_TEAM / NOT_IN_SOURCE)")
     return out
 
 

@@ -54,6 +54,22 @@ def test_matching_ignores_case_and_spacing():
     assert pins.drop_expected_absent(wd, "TONY") == {}
 
 
+def test_pinned_out_rep_is_never_dark_on_either_tab():
+    """Jeremiah Minor (off Sahil 2026-08-21, dropped by the churn views
+    2026-09-18): drop_reps removes him from the pull, so his leftover row can
+    never fill — that is expected on BOTH of Sahil's tabs, NI and wireless."""
+    wd = {"0-30": ["Jeremiah Minor"], "90": ["Jeremiah Minor"]}
+    assert pins.drop_expected_absent(wd, "sahil") == {}
+    assert pins.drop_expected_absent(wd, "sahil-wl") == {}
+
+
+def test_pinned_out_rep_does_not_hush_a_real_finding():
+    wd = {"0-30": ["Jeremiah Minor", "Brian Tran"]}
+    assert pins.drop_expected_absent(wd, "sahil") == {"0-30": ["Brian Tran"]}
+    # and the pin is scoped to Sahil — elsewhere the name still pages
+    assert pins.drop_expected_absent({"0-30": ["Jeremiah Minor"]}, "tony")         == {"0-30": ["Jeremiah Minor"]}
+
+
 def test_not_in_source_is_not_not_on_team():
     """The two lists must stay separate: these reps ARE on Tony's captainship,
     so their numbers must still reach every other tab of his."""
