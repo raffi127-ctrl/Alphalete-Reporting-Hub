@@ -66,6 +66,18 @@ class SaraPasswordWall(SaraError):
     pass
 
 
+class SaraPasscodeWall(SaraError):
+    """SaraPlus wants an emailed code to trust THIS BROWSER (/Security/, e.g.
+    VerifyPasscode.aspx, with a session id in the url -- so the password was
+    accepted). Deliberately NOT a SaraPasswordWall: the heal answers that one
+    by throwing the profile away, and a brand-new profile is a brand-new
+    browser, so against this page the heal earns a fresh challenge every time
+    and then calls the account expired. Khalil's laptop, 2026-09-18: two
+    "set a new password" alerts for a password that was fine. Needs a person
+    to type the code into the profile the job actually uses."""
+    pass
+
+
 class SaraPasswordChangeRequired(SaraError):
     """The wall survived a brand-new profile, so SaraPlus really is demanding a
     new password. Megan 2026-09-12: 'sara asks every few weeks for a new PW
@@ -198,8 +210,15 @@ def _login(page, email: str, password: str, *, login_url: str = LOGIN_URL,
     if "DealerPages/" not in url and "Reports/" in url:
         return url.split("Reports/")[0]
     if SECURITY_PATH in url.lower():
-        raise SaraPasswordWall(
-            _stuck_profile_error(url, email, creds_hint).args[0])
+        # NOT the Change Password page (that was caught above) -- the emailed
+        # passcode. Its own type so no heal rotates the profile over it.
+        raise SaraPasscodeWall(
+            "SaraPlus accepted the password for %s but wants an emailed code "
+            "to trust this browser (%s). The password is FINE -- do not change "
+            "it, and do not move the Chrome profile aside (a new profile is a "
+            "new browser and just gets asked again). A person has to sign in "
+            "once in the profile this job uses and type the code SaraPlus "
+            "emails. Nothing was read and nothing was written." % (email, url))
     if "DealerPages/" not in url:
         raise SaraError("logged in but landed somewhere unexpected: %s" % url)
     # The DEALER ROOT -- everything up to and including the session segment,

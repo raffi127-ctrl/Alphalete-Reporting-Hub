@@ -118,3 +118,24 @@ class Healing(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+class PasscodeWall(Healing):
+    """VerifyPasscode is the emailed-code wall. Khalil's laptop, 2026-09-18:
+    it was healed like a stuck profile -- the profile thrown away, the fresh
+    one challenged again as a new browser -- and the owner was told twice to
+    set a new password that was fine."""
+
+    def test_passcode_never_rotates_the_profile(self):
+        calls, base, err = self._run([S.SaraPasscodeWall("code wanted")])
+        self.assertEqual(calls["rotations"], 0)
+        self.assertEqual(calls["opens"], 1)
+        self.assertIsNotNone(err)
+
+    def test_owner_is_told_the_password_is_fine(self):
+        msg = str(sara_read._as_owner_problem(S.SaraPasscodeWall("x")))
+        self.assertIn("password is fine", msg)
+        self.assertNotIn("NEW password", msg)
+        for jargon in ("set_credentials", "Chrome profile", "DealerPages"):
+            self.assertNotIn(jargon, msg)

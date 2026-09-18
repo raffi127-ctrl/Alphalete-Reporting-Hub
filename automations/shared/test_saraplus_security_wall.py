@@ -138,3 +138,50 @@ class StuckProfileTest(unittest.TestCase):
                       self._msg(_Page("https://www.saraplus.com/e/(S(x))/Default.aspx",
                                       body=RESET_TEXT)))
 
+
+
+class PasscodeWallTest(unittest.TestCase):
+    """VerifyPasscode is the EMAILED-CODE wall, not the Change Password page.
+    Khalil's laptop, 2026-09-18: it was raised as SaraPasswordWall, the heal
+    threw the profile away (a new profile is a new browser, so it got asked
+    again), and the owner was told to set a new password twice."""
+
+    def test_passcode_page_is_its_own_type(self):
+        with self.assertRaises(sp.SaraPasscodeWall):
+            _login(_Page(WALL_URL))
+
+    def test_passcode_page_is_not_the_password_wall(self):
+        # The heal rotates the profile on SaraPasswordWall -- it must not here.
+        self.assertFalse(issubclass(sp.SaraPasscodeWall, sp.SaraPasswordWall))
+
+    def test_it_says_the_password_is_fine(self):
+        with self.assertRaises(sp.SaraPasscodeWall) as cm:
+            _login(_Page(WALL_URL))
+        msg = str(cm.exception)
+        self.assertIn("password is FINE", msg)
+        self.assertNotIn("set_credentials", msg)
+
+    def test_reset_page_is_still_the_password_wall(self):
+        with self.assertRaises(sp.SaraPasswordWall):
+            _login(_Page(RESET_URL, body=RESET_TEXT))
+
+    def test_healing_login_does_not_rotate_on_passcode(self):
+        rotated = []
+        orig_rotate, orig_open, orig_login = sp.rotate_profile, sp.open_context, sp._login
+
+        class _Ctx:
+            pages = []
+            def new_page(self): return object()
+            def close(self): pass
+
+        def _raise(*a, **k):
+            raise sp.SaraPasscodeWall("code wanted")
+        sp.rotate_profile = lambda *a, **k: rotated.append(1)
+        sp.open_context = lambda *a, **k: _Ctx()
+        sp._login = _raise
+        try:
+            with self.assertRaises(sp.SaraPasscodeWall):
+                sp.login_healing(None, "/tmp/p", "e", "pw", log=lambda *a: None)
+        finally:
+            sp.rotate_profile, sp.open_context, sp._login = orig_rotate, orig_open, orig_login
+        self.assertEqual(rotated, [])
