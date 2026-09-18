@@ -560,7 +560,12 @@ def cf_requests(sid: int, existing: List[dict], headers: List[str],
         shifted = [""] * (k * (width + GAP_COLS)) + list(headers)
         for column, rules in rep.cf_plan(shifted, FIRST_BODY_ROW):
             rng = _rng(sid, FIRST_BODY_ROW - 1, last_row, column, column + 1)
+            cell = f"{ars.a1col(column + 1)}{FIRST_BODY_ROW}"
             for formula, bg, fg in rules:
+                # Only a NUMBER gets a colour. The filler rows under the shorter
+                # week hold empty text, and Sheets ranks text above every number,
+                # so '>=0.4' read true there and painted blank cells yellow/green.
+                formula = f"=AND(ISNUMBER({cell}),{formula.lstrip('=')})"
                 reqs.append({"addConditionalFormatRule": {"index": index, "rule": {
                     "ranges": [rng],
                     "booleanRule": {

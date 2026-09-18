@@ -148,5 +148,16 @@ class Baseline(unittest.TestCase):
         self.assertTrue(b.read_prior(lay.values, W, H).show_all)
 
 
+class Colours(unittest.TestCase):
+    def test_every_rule_needs_a_number(self):
+        reqs = b.cf_requests(0, [], H, 2, 60)
+        formulas = [r["addConditionalFormatRule"]["rule"]["booleanRule"]["condition"]
+                    ["values"][0]["userEnteredValue"] for r in reqs]
+        self.assertTrue(formulas)
+        self.assertTrue(all(f.startswith("=AND(ISNUMBER(") for f in formulas))
+        # the right-hand week points at its own columns
+        self.assertTrue(any("ISNUMBER(V5)" in f for f in formulas))
+
+
 if __name__ == "__main__":
     unittest.main()
