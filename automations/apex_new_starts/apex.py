@@ -675,9 +675,21 @@ def apply_fill(page, matched: List[tuple], log=print) -> tuple:
 # Ashari Evans (chk004) is Head of household, Michael Moore (6471) is Married
 # filing jointly. Placement order would have swapped them onto a real tax
 # record, which is why neither was guessed.
+# APEX'S WORDING, not the W-4's. The W-4 calls the middle one "Married filing
+# jointly or Qualifying surviving spouse" and that is the string that was being
+# sent -- no row in Apex's list carries it. Everybody on Single went in; the
+# only two that failed were the jointly ones, which is exactly what a value
+# that is not on the list looks like.
+#
+# Apex's own rows, off the open dropdown (Megan, 2026-09-17), include both
+# "Married filing jointly" and a longer "Married Filing Jointly or Surviving
+# Spouse" -- note: no "Qualifying". The short form is what is sent, because it
+# matches the first exactly and is a prefix of the second, and it cannot
+# collide with "Married Filing Joint, both spouses working" or ", one spouse
+# working", which are different statuses entirely.
 MARITAL_BY_FLAG = {
     "filing_single": "Single or Married filing separately",
-    "filing_mfj": "Married filing jointly or Qualifying surviving spouse",
+    "filing_mfj": "Married filing jointly",
     "filing_hoh": "Head of household",
 }
 MARITAL_SINGLE = MARITAL_BY_FLAG["filing_single"]

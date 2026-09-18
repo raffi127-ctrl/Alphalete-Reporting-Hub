@@ -691,3 +691,55 @@ def test_somebody_with_no_packet_is_a_loud_notice(monkeypatch, tmp_path):
     assert "TYPE BY HAND: Lian Reyes" in page, "in red on the page"
     assert "Paris Carroll" in page and "Lian Reyes" not in page.split(
         "Who's in")[-1].split("TYPE BY HAND")[0] or True
+
+
+def test_the_filing_statuses_are_apex_s_own_words():
+    """Read off the open dropdown on the live page (Megan, 2026-09-17). The
+    W-4 calls the middle one "Married filing jointly or Qualifying surviving
+    spouse"; Apex's row says "Married filing jointly". Sending a string no row
+    carries is what "Marital Status is Required" meant, five times over."""
+    from automations.apex_new_starts import apex as AX
+    import re
+
+    def _n(t):
+        return re.sub(r"\s+", " ", str(t).replace("*", "")).strip().lower()
+
+    # Rows seen on the live dropdown across two screenshots. The list is longer
+    # than one screenful, and one of those shots was FILTERED by what had been
+    # typed into the box -- so both sets are real.
+    APEX_ROWS = [
+        "Single or Married filing separately",
+        "Married filing jointly",
+        "Head of household",
+        "Married/Civil Union Couple Joint",
+        "Married/Civil Union",
+        "Married Filing Joint, both spouses working",
+        "Married Filing Joint, one spouse working",
+        "Married, but withhold at Single rate",
+        "Married Filing Jointly or Surviving Spouse",
+    ]
+
+    def _hits(value):
+        w = _n(value)
+        return [r for r in APEX_ROWS
+                if _n(r) == w or _n(r).startswith(w) or w.startswith(_n(r))]
+
+    for flag, value in AX.MARITAL_BY_FLAG.items():
+        hits = _hits(value)
+        assert hits, f"{flag} sends {value!r}, which matches no row"
+        # every match must mean the same filing status -- "Married Filing
+        # Joint, both spouses working" is a DIFFERENT one and must never be
+        # reachable from our value
+        for h in hits:
+            assert "spouses working" not in h and "spouse working" not in h, \
+                f"{flag} could land on {h!r}"
+            assert "withhold at Single rate" not in h, \
+                f"{flag} could land on {h!r}"
+
+    # The W-4's own wording -- what used to be sent -- DOES prefix-match
+    # "Married filing jointly", so "the value was not on the list" was not the
+    # whole story: the row was missing from the FILTERED list at the moment we
+    # looked, which is the other half of this fix. The short form is still
+    # what to send, because it matches a row exactly rather than by prefix.
+    assert _n(AX.MARITAL_BY_FLAG["filing_mfj"]) in [_n(r) for r in APEX_ROWS], \
+        "an exact row, not a prefix of one"

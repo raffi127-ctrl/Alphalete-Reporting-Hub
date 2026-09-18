@@ -866,7 +866,18 @@ _JS = r"""
        var ds=(w0.dataSource&&w0.dataSource.data)?w0.dataSource.data():null;
        bits.push('dataTextField='+(w0.options&&w0.options.dataTextField)+
                  ' dataValueField='+(w0.options&&w0.options.dataValueField));
-       if(ds&&ds.length) bits.push('item0='+JSON.stringify(ds[0]).slice(0,90));
+       if(ds&&ds.length){
+         /* EVERY option, not just the first. Two screenshots of this list
+            showed different rows -- one was filtered by what had been typed
+            into the box -- and picking a tax status off a partial list is not
+            something to guess at (Megan, 2026-09-17). */
+         var names=[], q, tfx=(w0.options&&w0.options.dataTextField);
+         for(q=0;q<ds.length&&q<14;q++){
+           names.push((tfx&&ds[q][tfx]!==undefined)?ds[q][tfx]
+                      :(ds[q].Text||ds[q].text||ds[q]));
+         }
+         bits.push('options('+ds.length+'): '+names.join(' | '));
+       }
        if(w0.dataItem) bits.push('dataItem='+
          JSON.stringify(w0.dataItem()||null).slice(0,90));
      }catch(e3){ bits.push('datasource unreadable: '+e3.message); }
