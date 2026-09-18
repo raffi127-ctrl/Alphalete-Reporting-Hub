@@ -6284,6 +6284,44 @@
       },
       "timeout_minutes": 60
     },
+    "org_active_headcount_dm": {
+      "on_scheduler": true,
+      "machine": "Lucy 1",
+      "order": 58.5,
+      "_note": "Eve 2026-09-18: the daily Slack GROUP DM of the 'Org Active Headcount' tab, as Lucy, to Rafael Hidalgo, Carlos Hidalgo and Evelyn Sobrino. Rafael has not confirmed the tab's changes yet but asked for it to start going out. Two pictures in one message: the board (A1 through PREVIOUS WEEK'S TOTALS, down to the WE history rows) and the delta box cropped to the elapsed days like the Country / All Units boards (rollover.delta_block_range). Order: after the morning fill (depends_on org_active_headcount_daily: a failed fill must not send a stale picture), after the Org Sales Board post (slack:org_board_posted, opens anyway 11:30) and after the tracker thread (slack:owner_tracker_pngs, opens anyway 09:00). Lucy 1 = the mini: the org board post marker is a local file there, and smp._client() is Lucy there (on Windows it is Evelyn).",
+      "display_name": "Org Active Headcount - Slack DM",
+      "source_type": "api",
+      "data_sources": [
+        "slack:owner_tracker_pngs",
+        "slack:org_board_posted"
+      ],
+      "command": [
+        "automations.org_active_headcount.slack_dm"
+      ],
+      "base_args": [
+        "--post"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [
+        "org_active_headcount_daily"
+      ],
+      "verify": {
+        "type": "not_configured"
+      },
+      "timeout_minutes": 20
+    },
     "hc_retail_daily": {
       "on_scheduler": false,
       "_off_scheduler_note": "MANUAL-ONLY for now (Eve 2026-09-12). Retail NL daily headcount for 'Org Active Headcount Test 2': the Monday focus report's own count (SARA Plus View Data, distinct reps for the range) with Min Date = Monday and Max Date = each day. Writes only the 'HC Retail Daily' tab of the Mini Control workbook. Usage: `lucy rerun hc_retail_daily --start 2026-08-31 --end 2026-09-11`.",
