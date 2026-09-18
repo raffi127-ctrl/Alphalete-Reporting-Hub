@@ -368,7 +368,35 @@ def cache_weeks() -> List[dt.date]:
     return out
 
 
-def _cache_board(office: str, saturday: dt.date) -> Optional[dict]:
+def _cache_entry(office: str, saturday: dt.date, min_schema: int):
+    """The cached pull for one office/week, accepting an entry written by an
+    OLDER build when `min_schema` says so — which only a backfill may do.
+
+    knock_week_cache.get() refuses anything below the current SCHEMA because a
+    board drawn off it would show a column the pull didn't carry. For an old
+    week there is no fresher source, and the cost is bounded: every field the
+    schema added is an OPTIONAL column (board.OPTIONAL_COLUMNS — Sat Clocked
+    In, Mon-Fri Leads, Sat Avg Talk To's / Day, Knocks / Hr), so the board
+    DROPS it and the box row simply stays blank. A blank cell is fine; a wrong
+    one is not, which is why the floor is a number the caller has to choose
+    and not simply 1: below schema 4 a per-day list was stored as a string or
+    absent, and the columns built on it are the ones we cannot check here."""
+    from automations.shared import knock_week_cache as KWC
+    entry = KWC._read_week(saturday).get("offices", {}).get(
+        KWC.office_key(office, None))
+    if not isinstance(entry, dict):
+        return None, None
+    schema = int(entry.get("schema") or 1)
+    if schema < min_schema:
+        return None, schema
+    rows, cols = entry.get("rows"), entry.get("dispo_cols")
+    if not isinstance(rows, list) or not isinstance(cols, list) or not rows:
+        return None, schema
+    return (rows, cols), schema
+
+
+def _cache_board(office: str, saturday: dt.date,
+                 min_schema: Optional[int] = None) -> Optional[dict]:
     """`office`'s OFFICE TOTALS for an OLD week, rebuilt from the shared pull
     cache — the only thing left of a week whose board is long gone.
 
@@ -379,8 +407,14 @@ def _cache_board(office: str, saturday: dt.date) -> Optional[dict]:
     in those two cells is left alone."""
     from automations.shared import knock_week_cache as KWC
     from automations.weekly_knock_dispositions import board as B
-    hit = KWC.get(office, saturday)
+    if min_schema is None:
+        min_schema = KWC.SCHEMA
+    hit, schema = _cache_entry(office, saturday, min_schema)
     if hit is None:
+        if schema is not None:
+            print(f"[wkf] ⤳ {office}: the cached {saturday} pull is schema "
+                  f"{schema}, older than the --min-schema {min_schema} asked "
+                  "for — skipped.", flush=True)
         return None
     ov_rows, cols = hit
     if not ov_rows:
@@ -417,7 +451,8 @@ def captainship_offices(saturday: dt.date) -> List[str]:
 def run_office(office: str, saturday: dt.date, tab: Optional[str],
                live: bool, pss_owner: Optional[str] = None,
                skip_missing: bool = False,
-               source: str = "sunday") -> bool:
+               source: str = "sunday",
+               min_schema: Optional[int] = None) -> bool:
     """True when the office's box + picture landed (or would, dry-run).
 
     `skip_missing` (the --all sweep): an office with no Focus Report tab, or a
@@ -441,7 +476,7 @@ def run_office(office: str, saturday: dt.date, tab: Optional[str],
     stem = f"weekly_knock_dispositions_{saturday.isoformat()}"
     png = None
     if source == "cache":
-        data = _cache_board(office, saturday)
+        data = _cache_board(office, saturday, min_schema)
         if data is None:
             print(f"[wkf] ⤳ {office}: nothing in the week cache for "
                   f"{saturday} — skipped.", flush=True)
@@ -538,6 +573,12 @@ def main(argv: Optional[List[str]] = None) -> int:
                          "this machine's shared pull cache (no board picture, "
                          "no apps columns). Walks every office with a tab and "
                          "a box, Sunday-report and captainship alike")
+    ap.add_argument("--min-schema", type=int, default=None,
+                    help="with --from-cache: accept an entry written by an "
+                         "older build, down to this pull schema. Every field a "
+                         "newer schema added is an OPTIONAL board column, so "
+                         "an older entry costs blank cells, never wrong ones. "
+                         "Default: today's schema (what the live reports use)")
     ap.add_argument("--list-cache", action="store_true",
                     help="print the weeks this machine can backfill and exit")
     ap.add_argument("--captainships", action="store_true",
@@ -569,8 +610,15 @@ def main(argv: Optional[List[str]] = None) -> int:
                                    .read_text(encoding="utf-8"))
                 offices = sorted((blob.get("offices") or {}).values(),
                                  key=lambda o: str(o.get("office", "")))
-                print(f"    {w}: {len(offices)} office(s): "
-                      + ", ".join(str(o.get("office")) for o in offices),
+                by_schema = {}
+                for o in offices:
+                    by_schema.setdefault(int(o.get("schema") or 1), []).append(
+                        str(o.get("office")))
+                print(f"    {w}: {len(offices)} office(s); by schema: "
+                      + ", ".join(f"schema {k}: {len(v)}"
+                                  for k, v in sorted(by_schema.items())),
+                      flush=True)
+                print(f"      {', '.join(str(o.get('office')) for o in offices)}",
                       flush=True)
             except Exception as e:  # noqa: BLE001
                 print(f"    {w}: unreadable ({type(e).__name__})", flush=True)
@@ -617,7 +665,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         try:
             results[name] = run_office(name, saturday, tab, live,
                                        pss_owner=pss_owner,
-                                       skip_missing=skip, source=source)
+                                       skip_missing=skip, source=source,
+                                       min_schema=args.min_schema)
         except Exception as e:  # noqa: BLE001 - one office != the run
             print(f"[wkf] ❌ {name}: {type(e).__name__}: {str(e)[:200]}",
                   flush=True)

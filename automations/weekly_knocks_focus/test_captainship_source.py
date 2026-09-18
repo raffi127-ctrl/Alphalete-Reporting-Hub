@@ -151,7 +151,10 @@ class CacheBackfill(unittest.TestCase):
     def test_totals_without_apps(self):
         reps = [_rep("Ana Uno", talk=30, knocks=600)]
         from automations.shared import knock_week_cache as KWC
-        with mock.patch.object(KWC, "get", return_value=(reps, [])):
+        week = {"offices": {KWC.office_key("Ana's Office", None): {
+            "office": "Ana's Office", "schema": KWC.SCHEMA,
+            "rows": reps, "dispo_cols": []}}}
+        with mock.patch.object(KWC, "_read_week", return_value=week):
             data = R._cache_board("Ana's Office", SAT)
         want = [r for r in B.compute_rows(reps, None, []) if r[1] == B.TOTALS_LABEL][0]
         self.assertEqual(data["totals"], want)
@@ -160,7 +163,35 @@ class CacheBackfill(unittest.TestCase):
 
     def test_no_hit_is_no_board(self):
         from automations.shared import knock_week_cache as KWC
-        with mock.patch.object(KWC, "get", return_value=None):
+        with mock.patch.object(KWC, "_read_week", return_value={}):
             self.assertIsNone(R._cache_board("Nobody", SAT))
-        with mock.patch.object(KWC, "get", return_value=([], [])):
+        empty = {"offices": {KWC.office_key("Nobody", None): {
+            "office": "Nobody", "schema": KWC.SCHEMA,
+            "rows": [], "dispo_cols": []}}}
+        with mock.patch.object(KWC, "_read_week", return_value=empty):
             self.assertIsNone(R._cache_board("Nobody", SAT))
+
+
+class CacheSchemaFloor(unittest.TestCase):
+    """--min-schema: an older entry is readable on purpose for a backfill, and
+    what it lacks comes out BLANK (board.OPTIONAL_COLUMNS), never guessed."""
+
+    def setUp(self):
+        from automations.shared import knock_week_cache as KWC
+        self.KWC = KWC
+        rows = [_rep("Ana Uno", talk=30, knocks=600)]
+        for r in rows:                      # an older pull carried no per-day leads
+            r.pop("total_leads_knocked", None)
+        self.week = {"offices": {KWC.office_key("Ana's Office", None): {
+            "office": "Ana's Office", "schema": 5,
+            "rows": rows, "dispo_cols": []}}}
+
+    def test_default_refuses_an_older_entry(self):
+        with mock.patch.object(self.KWC, "_read_week", return_value=self.week):
+            self.assertIsNone(R._cache_board("Ana's Office", SAT))
+
+    def test_floor_lets_it_through(self):
+        with mock.patch.object(self.KWC, "_read_week", return_value=self.week):
+            data = R._cache_board("Ana's Office", SAT, min_schema=5)
+        self.assertIsNotNone(data)
+        self.assertEqual(data["totals"][1], B.TOTALS_LABEL)
