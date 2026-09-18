@@ -28,21 +28,25 @@ class FakeClient:
 def _patched(fake: FakeClient):
     """Patch the two slack_post readers reconcile() depends on."""
 
-    def find_thread_ts(client, channel, today):
+    def find_today_threads(client, channel, today):
         val = fake.by_channel.get(channel, set())
         if val == "boom":
             raise sp.DedupReadUnavailable("conversations.history timed out")
         if val is None:
-            return (None, False)
-        return ("111.222", False)
+            return []
+        if isinstance(val, list):                 # several threads today
+            return [f"111.{i}" for i in range(len(val))]
+        return ["111.222"]
 
     def posted_ids(client, channel, thread_ts, pages, today):
         val = fake.by_channel.get(channel, set())
         if val == "boom":
             raise sp.DedupReadUnavailable("conversations.history timed out")
+        if isinstance(val, list):
+            return set(val[int(thread_ts.split(".")[1])])
         return set(val or ())
 
-    return (mock.patch.object(sp, "find_thread_ts", find_thread_ts),
+    return (mock.patch.object(sp, "find_today_threads", find_today_threads),
             mock.patch.object(sp, "posted_ids", posted_ids))
 
 
@@ -87,6 +91,26 @@ class TestTheSilentMorning(unittest.TestCase):
         self.assertTrue(rep.clean)
         self.assertEqual(rp.failed_parts(rep), [])
         self.assertFalse(rp.alert_if_incomplete(rep, dry_run=True))
+
+
+class TestUpdatedRerunThread(unittest.TestCase):
+    """2026-09-18: the 08:49 Box rerun opened an *UPDATED* thread holding only
+    Box; the other 8 boards were in the 04:47 thread. Reading just the newest
+    thread called all 8 "missing from ALL channels"."""
+
+    def test_boards_split_across_two_threads_are_all_present(self):
+        org = "elevate"
+        owed = rp.expected_for(org, DAY, now=LATE_ENOUGH)
+        morning = set(owed) - {"b2b_box"}
+        rep = run_reconcile({_chans(org)[0]: [{"b2b_box"}, morning]}, [org])
+        self.assertTrue(rep.clean, rep.orgs[0].missing)
+
+    def test_a_board_in_neither_thread_is_still_missing(self):
+        org = "elevate"
+        owed = rp.expected_for(org, DAY, now=LATE_ENOUGH)
+        morning = set(owed) - {"b2b_box", "nds"}
+        rep = run_reconcile({_chans(org)[0]: [{"b2b_box"}, morning]}, [org])
+        self.assertEqual(rep.orgs[0].missing, ["nds"])
 
 
 class TestStayQuietWhenItCannotTell(unittest.TestCase):

@@ -192,16 +192,20 @@ def reconcile(day: Optional[dt.date] = None, *, client=None,
         thread_missing_everywhere = True
         for channel in sp.channels_for(org):
             try:
-                ts, _legacy = sp.find_thread_ts(client, channel, day)
+                tss = sp.find_today_threads(client, channel, day)
             except Exception as e:                    # noqa: BLE001
                 # DedupReadUnavailable (or any read failure) = we could not look.
                 res.unreadable = f"{type(e).__name__}: {str(e)[:90]}"
                 break
-            if not ts:
+            if not tss:
                 continue                              # no thread in THIS channel
             thread_missing_everywhere = False
+            # A board counts as posted if it is in ANY of today's threads: an
+            # *UPDATED* rerun thread may hold only the board it re-ran.
+            got: set = set()
             try:
-                got = sp.posted_ids(client, channel, ts, pages_mod.PAGES, day)
+                for ts in tss:
+                    got |= sp.posted_ids(client, channel, ts, pages_mod.PAGES, day)
             except Exception as e:                    # noqa: BLE001
                 res.unreadable = f"{type(e).__name__}: {str(e)[:90]}"
                 break
