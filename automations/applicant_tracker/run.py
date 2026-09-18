@@ -106,6 +106,14 @@ class _Clock:
         self.budget_s = budget_s
         self.label = label
         self.start = time.monotonic()
+        # Set True by the office step the moment it is about to touch the
+        # Sheet. The retry in the office loop reads it and REFUSES to re-run an
+        # office that got as far as a write: the Call List (morning) and 2R
+        # Retention (evening) are both append-at-first-empty-row with NO
+        # de-dupe, so a second attempt would duplicate those rows rather than
+        # repair them. Same hazard --skip-call-list exists for.
+        # [[feedback_dont_touch_user_data]]
+        self.wrote = False
 
     @property
     def elapsed(self) -> float:
@@ -216,6 +224,7 @@ def _morning_office(app, ws_call, ws_2r, office_id: str, header: str,
         call_rows = app.scrape_at(h_call, N_CALL_COLS)
     if call_rows:
         clock.check("write Call List")
+        clock.wrote = True
         start = sheets.first_empty_row_in_column(ws_call, "A")
         sheets.paste_block(ws_call, start, "A", [[owner]] * len(call_rows))
         sheets.paste_block(ws_call, start, "B", call_rows)
@@ -255,6 +264,7 @@ def _morning_office(app, ws_call, ws_2r, office_id: str, header: str,
         bob_dates = app.scrape_calendar_bob_dates()  # {name_lower: "Jul 27"}
 
     clock.check("write 2R status")
+    clock.wrote = True
     updated = 0
     # Collected and written as ONE batched call — per-cell writes blew the
     # per-minute quota on big offices (see sheets.set_cells).
@@ -294,6 +304,7 @@ def _evening_office(app, ws_2r, office_id: str, header: str,
     ret_rows = app.scrape_at(h_2nd, N_2R_COLS)
     if ret_rows:
         clock.check("write 2R Retention")
+        clock.wrote = True
         start = sheets.first_empty_row_in_column(ws_2r, "AT")
         sheets.paste_block(ws_2r, start, "AT", [[owner]] * len(ret_rows))
         sheets.paste_block(ws_2r, start, "AU", ret_rows)
@@ -310,6 +321,7 @@ def _evening_office(app, ws_2r, office_id: str, header: str,
         return
     showed = app.names_at(h_show)
     clock.check("mark first-day")
+    clock.wrote = True
     for name in scheduled:
         row = sheets.find_row_by_name(ws_2r, name, 1)
         if not row:
@@ -405,9 +417,69 @@ def run(phase: str, target: dt.date | None = None,
                 no_access.append(str(office_id))
                 print(f"  ⛔ [{office_id}] NO ACCESS: {e}", flush=True)
             except Exception as e:  # noqa: BLE001 -- one office must not sink the rest
-                failed.append(str(office_id))
-                print(f"  ! [{office_id}] error: {type(e).__name__}: {str(e)[:120]}",
+                # RETRY ONCE, but only if this office never reached a write.
+                #
+                # WHY (2026-09-17). The 8pm run lost Khalil Mansour (11901),
+                # Roshan Amin Ahmad (19833) and Isaiah Revelle (19717) to three
+                # separate `Page.goto: Timeout 30000ms exceeded` on the office
+                # select — the other 13 offices went through on the SAME warm
+                # session, so it was per-navigation slowness, not a broken
+                # login. One bad page load cost each of those offices the whole
+                # night and opened an incident somebody had to work by hand.
+                # daily_focus has retried transients once since Raf + JR Young
+                # hit the same thing; this is that, here.
+                #
+                # THE GUARD IS THE POINT. The Call List (morning) and 2R
+                # Retention (evening) append at the first empty row with no
+                # de-dupe, so retrying an office that already wrote duplicates
+                # its rows in Francia's sheet instead of repairing it — exactly
+                # the 2026-09-03 Haytham Nagi shape. clock.wrote is set at each
+                # write site; if it is True the office stays failed and a human
+                # re-runs it with --skip-call-list, as before.
+                #
+                # A fresh clock: the first attempt's slice is spent, and the run
+                # budget above still bounds the whole sweep either way.
+                if clock.wrote:
+                    failed.append(str(office_id))
+                    print(f"  ! [{office_id}] error: {type(e).__name__}: "
+                          f"{str(e)[:120]} — NOT retried, it had already "
+                          "written (a retry would duplicate rows)", flush=True)
+                    continue
+                # A retry spends the SWEEP's budget, not this office's. Once the
+                # run budget is gone the loop above stops starting offices, so a
+                # retry here would buy one office a second chance with time that
+                # belongs to offices which have not had a first one.
+                if run_clock.elapsed > RUN_BUDGET_S:
+                    failed.append(str(office_id))
+                    print(f"  ! [{office_id}] error: {type(e).__name__}: "
+                          f"{str(e)[:120]} — not retried, the "
+                          f"{RUN_BUDGET_S // 60}m run budget is spent",
+                          flush=True)
+                    continue
+                print(f"  ! [{office_id}] error: {type(e).__name__}: "
+                      f"{str(e)[:120]} — retrying once (nothing written yet)",
                       flush=True)
+                clock = _Clock(OFFICE_BUDGET_S, str(office_id))
+                try:
+                    if phase == "morning":
+                        _morning_office(app, ws_call, ws_2r, office_id, header,
+                                        ad_blank, clock,
+                                        skip_call_list=skip_call_list)
+                    else:
+                        _evening_office(app, ws_2r, office_id, header, clock)
+                    print(f"  [{office_id}] recovered on retry, done in "
+                          f"{int(clock.elapsed)}s", flush=True)
+                except OfficeTimeout as e2:
+                    timed_out.append(str(office_id))
+                    print(f"  ⏱ [{office_id}] TIMED OUT on retry: {e2}",
+                          flush=True)
+                except OfficeNotAvailable as e2:
+                    no_access.append(str(office_id))
+                    print(f"  ⛔ [{office_id}] NO ACCESS: {e2}", flush=True)
+                except Exception as e2:  # noqa: BLE001
+                    failed.append(str(office_id))
+                    print(f"  ! [{office_id}] still failing after retry: "
+                          f"{type(e2).__name__}: {str(e2)[:120]}", flush=True)
 
     _report()
     print(f"=== {phase.upper()} phase done ===", flush=True)
