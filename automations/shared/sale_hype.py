@@ -555,7 +555,7 @@ def short_name(name: str) -> str:
 
 
 def hype(name: str, metrics: Dict[str, int], day: dt.date,
-         campaign=None) -> str:
+         campaign=None, avoid=None) -> str:
     """The line that announces one rep's new sale.
 
     The regular line is drawn from the pool by a HASH of (rep, day, count) --
@@ -590,6 +590,21 @@ def hype(name: str, metrics: Dict[str, int], day: dt.date,
     # instead of announcing one sale twice in two different voices.
     seed = "%s|%s|%d" % (name, day.isoformat(), sh.total(metrics))
     idx = zlib.crc32(seed.encode("utf-8")) % len(pool)
+    # NOT THE SAME SENTENCE TWICE IN ONE POST. The hash is per rep, so five
+    # reps landing together can land on one line -- and on 2026-09-18 three of
+    # five read "WHO'S NEXT :eyes::eyes::eyes:" one under the other. Megan:
+    # "these were really redundant right in a row".
+    #
+    # STEPPING FORWARD THROUGH THE POOL, not re-hashing: the order stays
+    # deterministic, so a re-run produces the same post rather than a new
+    # arrangement of it, and every rep still gets their own hashed line
+    # whenever nothing collides.
+    taken = set(avoid or ())
+    for step in range(len(pool)):
+        candidate = pool[(idx + step) % len(pool)]
+        if candidate not in taken:
+            idx = (idx + step) % len(pool)
+            break
     line = pool[idx].format(first=who)
     # THE GIF RIDES UNDER THE TOP LINE, and only for a day past even that.
     if legend:
@@ -597,6 +612,99 @@ def hype(name: str, metrics: Dict[str, int], day: dt.date,
         if gif:
             return "%s\n%s" % (line, gif)
     return line
+
+
+RECENT_LINES_PATH = (Path.home() / ".config" / "recruiting-report"
+                     / "icd_recent_lines.json")
+
+# How far back to remember. Long enough that a channel does not read as a
+# stuck record across a busy half hour, short enough that a fourteen-line pool
+# is never exhausted and forced to repeat anyway.
+RECENT_KEEP = 6
+
+
+def recent_lines(day: dt.date, room: str) -> List[str]:
+    """Templates this room has already heard today, newest first."""
+    try:
+        got = (json.loads(RECENT_LINES_PATH.read_text())
+               .get(day.isoformat(), {}).get(room) or [])
+        return [str(x) for x in got][:RECENT_KEEP]
+    except (OSError, ValueError, AttributeError):
+        return []
+
+
+def record_lines(day: dt.date, room: str, used) -> None:
+    """Remember what just went out, so the next post does not echo it.
+
+    THE COMPLAINT THIS ANSWERS came twice in an afternoon. First three of five
+    lines in one post read "WHO'S NEXT :eyes::eyes::eyes:"; then, once that was
+    fixed inside the post, two posts in a row both read "just put one on the
+    board!". The line is hashed per rep, so nothing had ever looked at what the
+    channel heard a minute ago. Megan, both times: "redundant".
+    """
+    used = [str(u) for u in (used or []) if u]
+    if not used:
+        return
+    try:
+        data = json.loads(RECENT_LINES_PATH.read_text())
+    except (OSError, ValueError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    per_day = data.setdefault(day.isoformat(), {})
+    if not isinstance(per_day, dict):
+        per_day = {}
+        data[day.isoformat()] = per_day
+    keep = (used + list(per_day.get(room) or []))[:RECENT_KEEP]
+    per_day[room] = keep
+    # Only today and yesterday -- this file must not grow forever.
+    for old in [k for k in data if k < (day - dt.timedelta(days=1)).isoformat()]:
+        data.pop(old, None)
+    try:
+        RECENT_LINES_PATH.parent.mkdir(parents=True, exist_ok=True)
+        RECENT_LINES_PATH.write_text(json.dumps(data, indent=2, sort_keys=True))
+    except OSError:
+        pass
+
+
+def hype_batch(reps, sales, day, campaign=None, show=None,
+               room=None) -> List[str]:
+    """One line per rep, repeating neither inside the post nor after it.
+
+    The caller used to build these with a comprehension, which cannot know
+    what the line before it said -- nor what the channel heard a minute ago.
+    `room` is the destination, so two offices are never rationed against each
+    other's wording.
+    """
+    sh = shape(campaign)
+    out = []
+    # START FROM WHAT THIS ROOM ALREADY HEARD TODAY, so consecutive posts read
+    # differently too, then add each line as it is chosen.
+    used = set(recent_lines(day, room) if room else ())
+    fresh = []
+    for rep in reps:
+        metrics = (sales or {}).get(rep) or {}
+        name = show(rep) if show else rep
+        line = hype(name, metrics, day, campaign, avoid=used)
+        # Record the TEMPLATE, not the formatted line: two different reps
+        # filling the same sentence is exactly what this is for.
+        t = sh.tier(metrics)
+        if sh.above_top(metrics):
+            t = "super"
+        pool = ({"super": sh.super_lines or HYPE_SUPER,
+                 "large": sh.large_lines or HYPE_LARGE}.get(
+                     t, sh.regular_lines or HYPE_REGULAR))
+        first = _first(name)
+        for tpl in pool:
+            filled = tpl.format(first=first.upper() if t == "super" else first)
+            if line.split("\n")[0] == filled:
+                used.add(tpl)
+                fresh.append(tpl)
+                break
+        out.append(line)
+    if room and fresh:
+        record_lines(day, room, fresh)
+    return out
 
 
 def breakdown(metrics: Dict[str, int], campaign=None) -> str:

@@ -217,6 +217,77 @@ def decide_sales(sales: Dict, last_posted: Optional[Dict],
     return moved, merged, False
 
 
+BACKSLIDE_PATH = (Path.home() / ".config" / "recruiting-report"
+                  / "icd_backslides.json")
+
+# How far a number has to fall before it is worth saying. A contract being
+# typed can wobble by a little; a third of a megawatt is not a wobble.
+BACKSLIDE_MIN = {"Volume": 25000}
+BACKSLIDE_DEFAULT = 1
+
+
+def backslid(sales: Dict, last_posted: Optional[Dict],
+             campaign=None) -> List[Dict]:
+    """Reps whose CUMULATIVE numbers went DOWN since the last read.
+
+    These metrics are a running total for the day, so they should only ever
+    rise. When one falls, the source changed its mind -- and decide_sales
+    cannot tell us, because its ONLY UP rule answers a fall with max(now,
+    was): right for not re-announcing a sale, and it means the drop leaves no
+    trace at all.
+
+    WHY THAT MATTERS, and it is not tidiness. An alert fires on the delta the
+    moment it is read. Vianey Silva read 500,000 kWh at 18:14 on 2026-09-18
+    and 165,000 twenty minutes later, with her sale count going UP and her
+    Big/Huge flags appearing -- a contract mid-entry, not a half-megawatt day.
+    The high number is what got announced, and the high number is what the
+    day keeps, because max() pinned it there.
+
+    Megan: "keep an eye on that volume dropping thing."
+
+    Pure and offline-testable. Returns [] when nothing fell.
+    """
+    from automations.shared import sale_hype as H
+    names = H.shape(campaign).metrics
+    if not last_posted:
+        return []
+    out = []
+    for rep, now_m in sorted((sales or {}).items()):
+        was = (last_posted or {}).get(str(rep)) or {}
+        for m in names:
+            before = int(was.get(m, 0) or 0)
+            after = int((now_m or {}).get(m, 0) or 0)
+            drop = before - after
+            if drop >= BACKSLIDE_MIN.get(m, BACKSLIDE_DEFAULT) and before > 0:
+                out.append({"rep": str(rep), "metric": m,
+                            "from": before, "to": after, "drop": drop})
+    return out
+
+
+def record_backslides(office_key: str, found: List[Dict],
+                      day: Optional[dt.date] = None, log=print) -> None:
+    """Keep them, so a pattern is visible rather than a single odd afternoon."""
+    if not found:
+        return
+    day = (day or dt.date.today()).isoformat()
+    for f in found:
+        log("BACKSLID: %s %s %s %s -> %s"
+            % (office_key, f["rep"], f["metric"], f["from"], f["to"]))
+    try:
+        data = json.loads(BACKSLIDE_PATH.read_text())
+    except (OSError, ValueError):
+        data = {}
+    rows = data.setdefault(day, [])
+    stamp = dt.datetime.now().isoformat(timespec="seconds")
+    for f in found:
+        rows.append(dict(f, office=office_key, at=stamp))
+    try:
+        BACKSLIDE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        BACKSLIDE_PATH.write_text(json.dumps(data, indent=2, sort_keys=True))
+    except OSError:
+        pass
+
+
 def is_stale(received: Optional[dt.datetime], now: Optional[dt.datetime] = None,
              minutes: int = STALE_MINUTES) -> bool:
     if not received:
@@ -671,12 +742,22 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                             if len(row) > COL_LAST_POSTED_SALES else "")
         sold, merged_sales, sales_baseline = decide_sales(
             sales, last_sales, office.campaign)
+        # A CUMULATIVE NUMBER THAT WENT DOWN. decide_sales cannot tell us --
+        # its ONLY UP rule answers a fall with max(now, was), which is right
+        # for not re-announcing and leaves the fall with no trace. Recorded
+        # here so a pattern is visible rather than one odd afternoon.
+        record_backslides(key, backslid(sales, last_sales, office.campaign),
+                          day, log=log)
         hype_lines, gifs_used = [], 0
         if sold:
             from automations.shared import sale_hype as H
-            hype_lines = [H.hype(show(rep) if show else rep,
-                                 sales.get(rep) or {}, day, office.campaign)
-                          for rep in sold]
+            # BATCHED, so no sentence repeats inside the post -- and keyed on
+            # the ROOM, so it does not repeat in the next post either. Three
+            # of five lines read "WHO'S NEXT" one under the other on
+            # 2026-09-18, and two posts in a row both read "just put one on
+            # the board" an hour later.
+            hype_lines = H.hype_batch(sold, sales, day, office.campaign,
+                                      show=show, room=key)
             hype_lines, gifs_used = _within_gif_budget(hype_lines, day, key)
 
         if baseline:
