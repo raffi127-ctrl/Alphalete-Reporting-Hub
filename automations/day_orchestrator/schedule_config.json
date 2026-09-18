@@ -3405,7 +3405,9 @@
       "command": [
         "automations.first_to_second_below_mark.run"
       ],
-      "base_args": [],
+      "base_args": [
+        "--now"
+      ],
       "cadence": {
         "weekdays": []
       },

@@ -632,6 +632,81 @@ def _icd_relay_roster() -> str:
 
 
 AUTOMATED_REPORTS = [
+    # 1st to 2nd Below the Mark — the HR alert. Its own LaunchAgent
+    # (com.alphalete.below-the-mark) at 13:00 and 18:30, NOT the 4am batch, so
+    # self_scheduled puts it under the TIME SET reports with its real times.
+    # CARD ID MUST SLUG-MATCH the wrapper's report_id (`below_the_mark`), or the
+    # resolver files its runs under a library card of its own and this card says
+    # "no run logged" forever — see day_orchestrator.test_hub_card_ids.
+    {
+        "id": "below-the-mark",
+        "name": "1st to 2nd Below the Mark 🚩",
+        "category": "🎯 Recruiting",
+        "creator": "Eve & Claude",
+        "emoji": "🚩",
+        "color": "#EA4335",          # the alert red the retention column uses
+        "assignees": ["Lucy 1"],
+        "run_machine": "Lucy 1",
+        "run_rerun_id": "below_the_mark",
+        "self_scheduled": True,
+        # TWO passes a day, both the same fill, so the pill counts runs rather
+        # than listing each as its own phase — the same shape as the Daily Focus
+        # morning pass + 6:30pm refill.
+        "daily_runs": 2,
+        "schedule": {
+            "frequency": "weekdays",
+            "time": "6:30 PM",
+            "time_label": "1 PM · 6:30 PM CT",
+            "estimated_minutes": 20,
+        },
+        "sheet_url": (
+            "https://docs.google.com/spreadsheets/d/"
+            "1l4Q0SreuddKZrgXwb9MytF-EdPZH-H1hLsa69epq-n8/edit"
+        ),
+        "description": (
+            "The offices at or under **40%** on *Retention first showed up "
+            "booked second* for the CURRENT day, worst first, so HR knows who "
+            "to look at first. Twice a day, so a number that moved is visible."
+            "\n\n"
+            "Every pass DMs the filled tab as a screenshot to Rafael, Carlos, "
+            "Camila, Perla and Evelyn — one shared group DM, not five."
+            "\n\n"
+            "⚠️ The tab is a **snapshot, not a history**: each pass replaces "
+            "the list. An office that was under the bar at 1 PM and booked its "
+            "way out by 6:30 is simply gone from the evening copy."
+        ),
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Reads the 41 owners and each one's goal off the "
+            "**Interviewers Retention (Interviewer)** tab.\n"
+            "**•** Pulls the day's **1st interviews showed up**, **1st showed "
+            "up booked 2nd** and the retention between them from "
+            "**ApplicantStream** → Reports → Retention Details.\n"
+            "**•** Pulls the interviewer on duty and the qualified / "
+            "disqualified / declined / booked breakdown from that owner's tab "
+            "in the six **ARS REPORT** workbooks.\n"
+            "**•** Lists only the offices at or under 40%, sorted worst first, "
+            "and DMs a screenshot of the result.\n"
+            "\n"
+            "WHAT TO WATCH\n"
+            "**•** The two source tabs label the SAME week **seven days "
+            "apart** — the retention tab names the Sunday that STARTS it, the "
+            "ARS REPORT files the Sunday that ENDS it. The run prints both.\n"
+            "**•** An office with **no interviews that day** is left off "
+            "rather than shown at 0%: no reading is not the same as a bad "
+            "reading, and it would bury the offices that really are under.\n"
+            "**•** The scheduled passes use `--now`, which ignores the A1/B1 "
+            "pickers. Without it, a look-back someone left in B1 would freeze "
+            "the tab on that old day while it still looked live.\n"
+            "**•** The DM must go out from a machine holding **Lucy's** Slack "
+            "token. On Eve's Windows box that token is Evelyn's personal "
+            "account — and Evelyn is one of the recipients."
+        ),
+        "post_run": {
+            "message_success": "✅ Below the Mark — tab filled and the group DM sent.",
+            "message_failed": "❌ Below the Mark failed — see the log above.",
+        },
+    },
     # Intraday knock boards — its own LaunchAgent (com.alphalete.knocks-intraday)
     # ticking every 5 min, NOT the 4am batch, so self_scheduled puts it under
     # ⏰ TIME SET REPORTS with its real times on the pill (Megan 2026-08-25).

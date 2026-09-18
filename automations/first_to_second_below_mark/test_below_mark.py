@@ -17,6 +17,7 @@ The four hazards:
 from __future__ import annotations
 
 import datetime as dt
+import pathlib
 import unittest
 
 from automations.first_to_second_below_mark import ars_reports as ars
@@ -481,6 +482,33 @@ class Pickers(unittest.TestCase):
     def test_a_junk_day_in_b1_falls_back_instead_of_crashing(self):
         self.assertIsNone(rep.selected_day(
             [["9/6", "Caturday", rep.BANNER_TITLE], [], []], 3))
+
+    def test_a_look_back_left_in_the_pickers_cannot_freeze_the_tab(self):
+        # The scheduled runs pass --now, which ignores A1/B1. Without it someone
+        # checking last Monday would leave the tab stuck on Monday for good.
+        import inspect
+        src = inspect.getsource(rep.run)
+        self.assertIn("if now:", src)
+        self.assertIn("ignoring the pickers", src)
+        sh = (pathlib.Path(rep.REPO_ROOT) / "deploy" / "below_the_mark.sh")
+        self.assertIn("--now", sh.read_text(encoding="utf-8"))
+
+    def test_the_dm_only_goes_out_on_a_clean_fill(self):
+        # A failed fill leaves the PREVIOUS pass on the tab; DMing that picture
+        # would tell five people the day is fine when the run never finished.
+        sh = (pathlib.Path(rep.REPO_ROOT) / "deploy" / "below_the_mark.sh"
+              ).read_text(encoding="utf-8")
+        self.assertIn("slack_post --post", sh)
+        self.assertIn('if [ "$ST" -eq 0 ]', sh)
+        self.assertIn("NOT sending the DM", sh)
+        self.assertIn("--dry-run", sh)          # a dry run never DMs either
+
+    def test_every_recipient_is_a_slack_id_not_a_name(self):
+        from automations.first_to_second_below_mark import slack_post as sp
+        self.assertEqual(len(sp.RECIPIENTS), 5)
+        for uid in sp.RECIPIENTS:
+            self.assertRegex(uid, r"^U[A-Z0-9]{8,}$")
+        self.assertEqual(len(set(sp.RECIPIENTS)), 5)
 
     def test_the_day_defaults_to_today(self):
         self.assertEqual(rep.default_day(dt.date(2026, 9, 17)), "Thursday")

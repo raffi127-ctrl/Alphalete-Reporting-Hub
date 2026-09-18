@@ -14,7 +14,7 @@
 #   18:30  the day closed, the final number (and the slot the Daily Focus
 #          refill already uses)
 #
-#   bash deploy/below_the_mark.sh                 # LIVE fill
+#   bash deploy/below_the_mark.sh                 # LIVE fill (passes --now)
 #   bash deploy/below_the_mark.sh --dry-run       # read everything, write nothing
 #   bash deploy/below_the_mark.sh --all           # list every office, not just <=40%
 #
@@ -43,8 +43,34 @@ export PYTHONPATH="$(pwd)"
 LOG_FILE="$LOG_DIR/below-the-mark-$(date +%Y-%m-%d-%H%M%S).log"
 echo "[$(date)] below-the-mark starting (args: $*)" > "$LOG_FILE"
 
-"$VENV_PY" -m automations.first_to_second_below_mark.run "$@" >> "$LOG_FILE" 2>&1
+# --now unless the caller asked for something specific: the scheduled runs must
+# always be about TODAY. Without it, a look-back someone left in the A1/B1
+# pickers would stick and every later run would keep refilling that old day.
+ARGS=("$@")
+[ ${#ARGS[@]} -eq 0 ] && ARGS=(--now)
+
+"$VENV_PY" -m automations.first_to_second_below_mark.run "${ARGS[@]}" >> "$LOG_FILE" 2>&1
 ST=$?
 
-echo "[$(date)] below-the-mark finished exit=$ST" >> "$LOG_FILE"
+# The screenshot DM, ONLY on a clean fill. A failed fill leaves the tab holding
+# the PREVIOUS pass, and DMing that picture would tell five people the day is
+# fine when the run never finished. A dry-run never DMs either.
+DM=0
+case " ${ARGS[*]} " in
+  *" --dry-run "*) echo "[$(date)] dry-run: no DM" >> "$LOG_FILE" ;;
+  *)
+    if [ "$ST" -eq 0 ]; then
+      "$VENV_PY" -m automations.first_to_second_below_mark.slack_post --post         >> "$LOG_FILE" 2>&1
+      DM=$?
+      echo "[$(date)] group DM exit=$DM" >> "$LOG_FILE"
+    else
+      echo "[$(date)] fill failed (exit=$ST) - NOT sending the DM" >> "$LOG_FILE"
+    fi
+    ;;
+esac
+
+echo "[$(date)] below-the-mark finished fill=$ST dm=$DM" >> "$LOG_FILE"
+# A DM that did not reach everyone must fail the run, or the orchestrator's
+# failure alert never fires and this can stop going out unnoticed.
+[ "$ST" -eq 0 ] && [ "$DM" -eq 0 ] || exit 1
 exit 0

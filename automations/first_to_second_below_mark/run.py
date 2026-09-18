@@ -64,6 +64,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import os
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -633,7 +634,7 @@ def run(*, week_label: Optional[str] = None, day: Optional[str] = None,
         production: bool = False, dry_run: bool = False,
         only: Optional[str] = None, refresh_index: bool = False,
         show_all: bool = False, use_appstream: bool = True,
-        tab: Optional[str] = None, logfn=print) -> dict:
+        tab: Optional[str] = None, now: bool = False, logfn=print) -> dict:
     sh = fill.open_by_key(SHEET_ID)
     tab = tab or (TARGET_TAB if production else SANDBOX_TAB)
     ws = fill.worksheet_ci(sh, tab)
@@ -673,10 +674,20 @@ def run(*, week_label: Optional[str] = None, day: Optional[str] = None,
           f"({weeks[0].label} .. {weeks[-1].label})")
 
     # Which week / day: the flags win, else whatever the pickers hold, else the
-    # newest week and today.
-    wanted = week_label or selected_week_label(target, hrow)
+    # current week and today.
+    #
+    # --now IGNORES the pickers, and the two scheduled runs use it. Without it a
+    # look-back would stick: someone sets B1 to Monday to check a past day, and
+    # every run from then on keeps refilling Monday, so the tab quietly stops
+    # being about today while still looking live.
+    if now:
+        wanted = f"{apst.current_week_start():%-m/%-d}" if os.name != "nt" else                  "{d.month}/{d.day}".format(d=apst.current_week_start())
+        the_day = default_day()
+        logfn(f"  --now: ignoring the pickers, using {wanted} / {the_day}")
+    else:
+        wanted = week_label or selected_week_label(target, hrow)
+        the_day = day or selected_day(target, hrow) or default_day()
     week = src.pick_week(weeks, wanted)
-    the_day = day or selected_day(target, hrow) or default_day()
     if the_day not in ars.DAYS:
         raise SystemExit(f"day {the_day!r} is not one of {', '.join(ars.DAYS)}")
     logfn(f"  week:   {week.label} ({'picked' if wanted else 'newest'})"
@@ -805,6 +816,10 @@ def main(argv=None):
                     help="preview ONE owner and write nothing. It never writes: "
                          "a one-owner write would blank the other 40 rows, and "
                          "repairing a single owner is just a full re-run.")
+    ap.add_argument("--now", action="store_true",
+                    help="ignore the A1/B1 pickers and use the current week and "
+                         "today. What the two scheduled runs pass, so a look-back "
+                         "left in the pickers cannot freeze the tab on an old day.")
     ap.add_argument("--tab", default=None,
                     help="write this tab instead of the sandbox (for trying a "
                          "layout change on a scratch copy)")
@@ -836,7 +851,7 @@ def main(argv=None):
     res = run(week_label=args.week, day=day, production=args.production,
               dry_run=args.dry_run, only=args.only,
               refresh_index=args.refresh_index, show_all=args.show_all,
-              use_appstream=args.use_appstream, tab=args.tab)
+              use_appstream=args.use_appstream, tab=args.tab, now=args.now)
     print(f"OK - {res}")
     return 0
 
