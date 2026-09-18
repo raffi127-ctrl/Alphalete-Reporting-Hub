@@ -5487,7 +5487,7 @@
     },
     "sales_board_sale_transfers": {
       "on_scheduler": true,
-      "_note": "Todos los dias, ultimo paso de la Sales Board (Eve 2026-09-18): lee el form 'ATT Sales Transfers' (workbook All in One Local Office - Raf) y mueve SOLO las ventas del DIA ANTERIOR (col D) del login donde quedaron (col C) al rep que las hizo (col B) -- resta en uno y suma en el otro, nunca la fila entera. Bonus ('$20 bonus', 'owners pay') se ignoran. Lo que no cierra (nombre que no esta, FROM sin esa venta, dia con X) NO se mueve y sale como CHECK en el log; ventas cargadas tarde salen como LATE. 09:00 porque el sweep cierra 21:30 y los forms llegan de noche. Lucy 1 porque el registro de 'ya movida' (~/.config/recruiting-report/sale_transfers_state.json) es por maquina: correrlo en otra repetiria el movimiento. Manual: `lucy rerun sales_board_sale_transfers` (--date YYYY-MM-DD para otro dia).",
+      "_note": "Todos los dias, ultimo paso de la Sales Board (Eve 2026-09-18): lee el form 'ATT Sales Transfers' (workbook All in One Local Office - Raf) y mueve SOLO las ventas del DIA ANTERIOR (col D) del login donde quedaron (col C) al rep que las hizo (col B) -- resta en uno y suma en el otro, nunca la fila entera. Bonus ('$20 bonus', 'owners pay') se ignoran. Lo que no cierra (nombre que no esta, FROM sin esa venta, dia con X) NO se mueve y sale como CHECK en el log; ventas cargadas tarde salen como LATE. 05:00 (Eve 2026-09-18): el sweep cierra 21:30 y los forms llegan de madrugada (~04:00); lo cargado despues de las 05:00 sale como LATE al dia siguiente. Lucy 1 porque el registro de 'ya movida' (~/.config/recruiting-report/sale_transfers_state.json) es por maquina: correrlo en otra repetiria el movimiento. Manual: `lucy rerun sales_board_sale_transfers` (--date YYYY-MM-DD para otro dia).",
       "display_name": "Sales Board — transfers de ventas (form)",
       "machine": "Lucy 1",
       "command": [
@@ -5506,7 +5506,7 @@
           5,
           6
         ],
-        "not_before": "09:00"
+        "not_before": "05:00"
       },
       "data_sources": [],
       "depends_on": [],
