@@ -43,6 +43,17 @@ export PYTHONPATH="$(pwd)"
 LOG_FILE="$LOG_DIR/below-the-mark-$(date +%Y-%m-%d-%H%M%S).log"
 echo "[$(date)] below-the-mark starting (args: $*)" > "$LOG_FILE"
 
+# PAUSED (Eve, 2026-09-18). Rafael asked for the two-week layout (this week on
+# the left, last week on the right, Mon-Fri, earlier days re-checked every run)
+# and the one-day version is not to go out again until that ships. The
+# scheduled 13:00 / 18:30 passes stop here: no fill, no DM. Exit 0 so the pause
+# does not read as a failure. A hand run can still go through with
+# BELOW_THE_MARK_FORCE=1. Remove this block when the new layout goes live.
+if [ "${BELOW_THE_MARK_FORCE:-0}" != "1" ]; then
+  echo "[$(date)] PAUSED until the two-week layout ships - no fill, no DM" >> "$LOG_FILE"
+  exit 0
+fi
+
 # --now unless the caller asked for something specific: the scheduled runs must
 # always be about TODAY. Without it, a look-back someone left in the A1/B1
 # pickers would stick and every later run would keep refilling that old day.
