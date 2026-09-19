@@ -1038,7 +1038,7 @@ def _bump_today(key: str, day: dt.date, *, sibling: bool, label: str,
     return st
 
 
-def _today_line(st: dict, day: dt.date) -> str:
+def _today_line(st: dict, day: dt.date, key: str = "") -> str:
     """Render the one status line. Short on purpose — it is the only thing this
     module adds to a thread for the rest of the day.
 
@@ -1051,8 +1051,13 @@ def _today_line(st: dict, day: dt.date) -> str:
     compete with the ✅ / :pending: reactions people triage by)."""
     parts = []
     n = int(st.get("repeats") or 0)
+    # A FINDING DID NOT FAIL (2026-09-19). captainship-cancel-rate's "ran fine —
+    # every tab filled" parent got "*Failed again today* — 1 more run" under it:
+    # the run had simply come back with the same answer. Say that instead.
+    finding = key.startswith(_FINDING_PREFIXES)
     if n:
-        parts.append("*Failed again today* — {} more {}, last {}.".format(
+        parts.append("*{}* — {} more {}, last {}.".format(
+            "Same result again today" if finding else "Failed again today",
             n, "run" if n == 1 else "runs", st.get("at") or ""))
     # What has dropped that the post never named. Kept ABOVE the sibling line
     # because it is the same report getting worse, which is the thing a reader
@@ -1065,7 +1070,8 @@ def _today_line(st: dict, day: dt.date) -> str:
     if also:
         parts.append("*Also failed today:* {}".format(", ".join(also)))
     if not parts:
-        parts.append("*Still failing today* — last {}.".format(
+        parts.append("*{}* — last {}.".format(
+            "Still the same today" if finding else "Still failing today",
             st.get("at") or ""))
     return "\n".join(parts)
 
@@ -1077,7 +1083,7 @@ def _put_status(client, channel: str, key: str, inc: dict, st: dict,
     fails again must not add a message (Eve 2026-08-17).
 
     Mutates `st['ts']` so the caller stores where the line lives."""
-    text = _today_line(st, day)
+    text = _today_line(st, day, key)
     ts = st.get("ts")
     if ts:
         try:

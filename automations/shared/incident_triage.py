@@ -274,6 +274,40 @@ _FINDING_LINE = ("*Needs one of you.* The run itself was fine — this is what i
                  "Re-running will not clear it: the audit only detects, it never "
                  "edits. What it found is listed in this thread.")
 
+# A BLANK THAT IS THE RIGHT ANSWER (2026-09-19). captainship-cancel-rate's
+# `unfilled_icd` finding posts "ran fine — every tab filled … Not a break and
+# nothing to re-run", and _FINDING_LINE then put a red circle on it and said
+# "*Needs one of you.* … it is fixed on the board". There is nothing on the
+# board to fix: an owner with no sales left in the window has no rate, and the
+# report's own remediation says a person only looks if the SAME ICD stays blank
+# for several days. So that is the rule here — nothing to do until the incident
+# has been open BLANK_ICD_DAYS days, then it is a person's.
+# Recognised by the manifest kind when this machine has it, and by report id
+# when it doesn't (triage grades other machines' incidents too).
+_BLANK_OK_KINDS = ("unfilled_icd",)
+_BLANK_OK_REPORTS = ("captainship-cancel-rate", "captainship_cancel_rate")
+BLANK_ICD_DAYS = 3
+_BLANK_OK_LINE = ("*Nothing to do.* Every tab filled; the ICDs named here just "
+                  "have no sales left in that window, so a blank is the right "
+                  "answer. Only worth a look if the same ICD is still blank "
+                  "after {} days.".format(BLANK_ICD_DAYS))
+_BLANK_STUCK_LINE = ("*Needs one of you.* The same ICDs have been blank since "
+                     "{opened}. Check they're still on the Captain's Bonus "
+                     "Teams filter in the Metrics view, or add an alias if they "
+                     "were renamed. Re-running will not change it.")
+
+
+def _blank_is_ok(rid: str) -> bool:
+    if rid in _BLANK_OK_REPORTS:
+        return True
+    try:
+        from automations.shared import run_manifest
+        m = run_manifest.read_manifest(rid) or {}
+        return m.get("kind") in _BLANK_OK_KINDS
+    except Exception:  # noqa: BLE001 — no manifest here = the ordinary finding path
+        return False
+
+
 # After this hour a "waiting on the source" is no longer waiting, it is a
 # no-show — the orchestrator has stopped retrying and it is a person's problem.
 BACKSTOP_HOUR = 12
@@ -537,6 +571,15 @@ def classify(key: str, *, day: Optional[dt.date] = None,
 
     # 0b) Findings, not failures. Must also precede the age rule: it stays open
     #     until a person corrects the board, and no re-run can close it.
+    if key.startswith(_FINDING_PREFIXES) and _blank_is_ok(rid):
+        age = inc._days_open(opened, day) if opened else 0
+        if age >= BLANK_ICD_DAYS:
+            return Verdict(key, NEEDS_YOU,
+                           "The same ICDs have stayed blank for days.",
+                           line=_BLANK_STUCK_LINE.format(opened=opened))
+        return Verdict(key, WAITING,
+                       "It ran fine; the blank ICDs have no sales in the window.",
+                       line=_BLANK_OK_LINE)
     if key.startswith(_FINDING_PREFIXES):
         return Verdict(key, NEEDS_YOU,
                        "The run was fine; it found something to fix on the board.",

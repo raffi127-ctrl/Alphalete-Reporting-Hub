@@ -1321,6 +1321,24 @@ class ResolvedWithNoCheckIsSweptBack(unittest.TestCase):
         self.assertEqual(out["checked"], ["a"])
 
 
+
+
+class AFindingDidNotFail(unittest.TestCase):
+    """2026-09-19: "*Failed again today*" sat under a "ran fine" cancel-rate post."""
+
+    def test_finding_repeat_is_not_called_a_failure(self):
+        from automations.shared import incident_thread as it
+        line = it._today_line({"repeats": 1, "at": "05:43"}, dt.date(2026, 9, 19),
+                              "finding-captainship-cancel-rate")
+        self.assertNotIn("Failed", line)
+        self.assertIn("Same result again today", line)
+
+    def test_failure_repeat_still_says_failed(self):
+        from automations.shared import incident_thread as it
+        line = it._today_line({"repeats": 1, "at": "05:43"}, dt.date(2026, 9, 19),
+                              "failure-daily_focus")
+        self.assertIn("Failed again today", line)
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
 

@@ -567,6 +567,42 @@ class FindingsAreNotFailures(unittest.TestCase):
         self.assertIn("It did not finish", tri.line_for(v))
 
 
+class ABlankThatIsTheRightAnswer(unittest.TestCase):
+    """2026-09-19: captainship-cancel-rate posted "ran fine — every tab filled.
+    Not a break and nothing to re-run", and triage put a red circle on it with
+    "Needs one of you … it is fixed on the board". A blank for an owner with no
+    sales in the window IS the right answer — nothing to do until the same ICDs
+    stay blank for days."""
+
+    KEY = "finding-captainship-cancel-rate"
+
+    def test_first_day_is_nothing_to_do(self):
+        for hour in (6, 8, 13):
+            v = _classify(key=self.KEY, opened=DAY.isoformat(), hour=hour)
+            self.assertEqual(v.bucket, tri.WAITING)
+            line = tri.line_for(v)
+            self.assertIn("Nothing to do", line)
+            self.assertNotIn("Needs one of you", line)
+            self.assertNotIn("fixed on the board", line)
+
+    def test_two_days_is_still_nothing(self):
+        v = _classify(key=self.KEY, opened=(DAY - dt.timedelta(days=2)).isoformat())
+        self.assertEqual(v.bucket, tri.WAITING)
+
+    def test_stuck_for_days_needs_a_person(self):
+        opened = (DAY - dt.timedelta(days=tri.BLANK_ICD_DAYS)).isoformat()
+        v = _classify(key=self.KEY, opened=opened, hour=13)
+        self.assertEqual(v.bucket, tri.NEEDS_YOU)
+        self.assertIn(opened, tri.line_for(v))
+        self.assertIn("Captain's Bonus Teams", tri.line_for(v))
+
+    def test_recognised_by_manifest_kind_too(self):
+        with mock.patch("automations.shared.run_manifest.read_manifest",
+                        return_value={"kind": "unfilled_icd"}):
+            v = _classify(key="finding-some-new-fill")
+        self.assertEqual(v.bucket, tri.WAITING)
+
+
 class FinishesStrandedMarkers(unittest.TestCase):
     """A post with the ✅ and an `open` marker is closed to a person and open to
     every machine. Triage has always DETECTED that state — it has to, or it
