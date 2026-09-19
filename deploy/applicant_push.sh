@@ -429,7 +429,26 @@ case " $* " in
     _SLOT=""
     [ "$h" -eq 12 ] && _SLOT="noon"
     [ "$h" -eq 16 ] && _SLOT="4pm"
-    if [ -n "$_SLOT" ] && [ "$POST_TODO" -eq 1 ]; then
+    # A GROUPED office (Raf's three streams share one channel) posts ONE thread
+    # for the whole group instead of one per office — overview parent, a reply
+    # per stream. The marker is keyed by the GROUP, not the office, so whichever
+    # of his streams ticks first in the hour posts for all three and the other
+    # two skip it. Read from offices.py so the group lives in one place.
+    POST_GROUP=$(PYTHONPATH="$(pwd)" "$VENV_PY" -c "from automations.applicant_push import offices; print(offices.group_of('$OFFICE'))" 2>/dev/null)
+    if [ -n "$_SLOT" ] && [ -n "${POST_GROUP// /}" ]; then
+      _GRP_MARK="$LOG_DIR/.applicant-push-posted-group-$POST_GROUP-$_SLOT-$(date +%Y-%m-%d)"
+      if [ ! -f "$_GRP_MARK" ]; then
+        echo "[$(date)] posting the $_SLOT grouped to-do thread for group '$POST_GROUP' (triggered by $OFFICE_LABEL)" >> "$LOG_FILE"
+        if _capped 300 "the $_SLOT grouped to-do post" \
+             "$VENV_PY" -u -m automations.oat_processing.rollup \
+             --group "$POST_GROUP" --post >> "$LOG_FILE" 2>&1; then
+          touch "$_GRP_MARK"
+        else
+          echo "[$(date)] GROUPED TO-DO POST FAILED for group '$POST_GROUP' ($_SLOT) — the walk ran fine, but the list did NOT reach Slack. Probe read-only with: lucy slack_channel <id>" >> "$LOG_FILE"
+          osascript -e "display notification \"$HUB_NAME: the $_SLOT grouped to-do list did not post to Slack — the walk itself was fine\" with title \"Applicant Push\" sound name \"Sosumi\"" 2>/dev/null || true
+        fi
+      fi
+    elif [ -n "$_SLOT" ] && [ "$POST_TODO" -eq 1 ]; then
       _POST_MARK="$LOG_DIR/.applicant-push-posted${OFFICE_SLUG}-$_SLOT-$(date +%Y-%m-%d)"
       if [ ! -f "$_POST_MARK" ]; then
         echo "[$(date)] posting the $_SLOT manual-to-do report for $OFFICE_LABEL (needs-number + needs-text)" >> "$LOG_FILE"

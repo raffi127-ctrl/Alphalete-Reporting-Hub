@@ -312,6 +312,13 @@ OFFICES = {
         # OFF until Megan/Carlos ask for it: pushing resumes is what Carlos
         # asked for on 9/18, a daily to-do post into Raf's channel is not, and a
         # Slack send is never a side effect of a config flip.
+        # ONE THREAD FOR ALL THREE OF RAF'S STREAMS (Megan
+        # 2026-09-18): "a general overview post and then in the thread
+        # break down each account and what is needed in it". So the
+        # per-office post stays OFF — three offices posting into one
+        # channel would be three separate parents — and post_group
+        # names the rollup that posts once for all of them.
+        "post_group": "raf",
         "post_todo": False,
         "allow_retext": False,
         "remove_blocked_read": False,
@@ -378,6 +385,13 @@ OFFICES = {
         # own #rafs-office-recruiting-11280 like his other two offices — posting
         # is still OFF, this only fixes WHERE it would go.
         "post_channel": "C0AUAS88FGW",
+        # ONE THREAD FOR ALL THREE OF RAF'S STREAMS (Megan
+        # 2026-09-18): "a general overview post and then in the thread
+        # break down each account and what is needed in it". So the
+        # per-office post stays OFF — three offices posting into one
+        # channel would be three separate parents — and post_group
+        # names the rollup that posts once for all of them.
+        "post_group": "raf",
         "post_todo": False,
         "allow_retext": False,
         "remove_blocked_read": False,
@@ -411,6 +425,13 @@ OFFICES = {
         # channel. Posting stays OFF — this is a test stream and nobody has
         # asked for its flagged names in Slack.
         "post_channel": "C0AUAS88FGW",
+        # ONE THREAD FOR ALL THREE OF RAF'S STREAMS (Megan
+        # 2026-09-18): "a general overview post and then in the thread
+        # break down each account and what is needed in it". So the
+        # per-office post stays OFF — three offices posting into one
+        # channel would be three separate parents — and post_group
+        # names the rollup that posts once for all of them.
+        "post_group": "raf",
         "post_todo": False,
         "allow_retext": False,
         "remove_blocked_read": False,
@@ -419,6 +440,47 @@ OFFICES = {
 }
 
 DEFAULT_OFFICE = "11580"
+
+# OFFICES THAT SHARE ONE SLACK THREAD ---------------------------------------
+# A post GROUP is a set of offices whose to-do list is posted ONCE, together,
+# into one channel: an overview parent, then one threaded reply per office.
+#
+# Raf owns three ApplicantStream streams and ONE recruiting channel. Posting
+# per office there would open three parents a day in the same channel and leave
+# the reader to add them up; Megan asked for the opposite — "a general overview
+# post and then in the thread break down each account and what is needed in it"
+# (2026-09-18). Carlos's and Khalil's offices are each their own channel, so
+# they keep the per-office post (post_todo) and belong to no group.
+#
+# An office in a group must have post_todo False, or it would post twice — the
+# rollup AND its own parent. test_offices pins that.
+POST_GROUPS = {
+    "raf": {
+        # #rafs-office-recruiting-11280, confirmed by Megan 2026-09-18. The same
+        # channel the BG-check and new-start posts already use.
+        "channel": "C0AUAS88FGW",
+        "owner": "Rafael Hidalgo",
+        "short": "Raf",
+        # Order the replies appear in the thread: biggest/oldest stream first.
+        "offices": ["11280", "23965", "24065"],
+    },
+}
+
+
+def group_of(office_id: str) -> str:
+    """The post group this office belongs to, or '' when it posts for itself."""
+    return str(get(office_id).get("post_group") or "")
+
+
+def group(name: str) -> dict:
+    try:
+        return POST_GROUPS[name]
+    except KeyError:
+        raise SystemExit(
+            "[push] unknown post group %r — known: %s (see POST_GROUPS in "
+            "automations/applicant_push/offices.py)"
+            % (name, ", ".join(sorted(POST_GROUPS))))
+
 
 # The order the scheduled agent rotates through, ONE office per tick. Each tick
 # stays a single ~5-minute warm session (rather than doubling every tick and

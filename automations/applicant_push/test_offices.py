@@ -240,5 +240,37 @@ for _oid in offices.ROTATION:
           ('export OAT_FILE_SUFFIX="%s"' % offices.get(_oid)["suffix"]) in _wrapper,
           True)
 
+# --- grouped posting: Raf's three streams, one thread (2026-09-18) ----------
+# The failure this guards is DOUBLE POSTING: an office in a group that also has
+# post_todo True posts its own parent AND is named in the group's thread, so the
+# same applicants appear twice in one channel under two different headers.
+print("a grouped office never also posts for itself")
+for _gname, _g in offices.POST_GROUPS.items():
+    for _oid in _g["offices"]:
+        check("%s is in group %r" % (_oid, _gname), offices.group_of(_oid), _gname)
+        check("%s does not ALSO post per-office" % _oid,
+              offices.get(_oid)["post_todo"], False)
+    check("group %r posts to a channel" % _gname, bool(_g["channel"]), True)
+    # Raf's channel, confirmed by Megan 2026-09-18 — never Carlos's.
+    check_ne("group %r is not Carlos's channel" % _gname,
+             _g["channel"], "C09L1S3MQ1E")
+# Every grouped office must be one the table knows and the rotation works, or
+# the thread would name a stream nothing ever walks.
+for _gname, _g in offices.POST_GROUPS.items():
+    for _oid in _g["offices"]:
+        check("grouped office %s exists" % _oid, _oid in offices.OFFICES, True)
+        check("grouped office %s is actually worked" % _oid,
+              _oid in offices.ROTATION, True)
+# An office with no group still posts for itself — Carlos's is the one to pin,
+# since his is the post the format came from.
+check("11580 belongs to no group", offices.group_of("11580"), "")
+check("11580 still posts its own to-do list", offices.get("11580")["post_todo"], True)
+
+# The rollup composes from the same renderer Carlos's post uses.
+from automations.oat_processing import rollup as _rollup
+check("the rollup knows Raf's group", "raf" in offices.POST_GROUPS, True)
+check("the rollup renders with summary.render_section",
+      _rollup.summary.render_section("t", []), "t — 0\n  (none today ✅)")
+
 print("%d/%d passed" % (_passed, _passed + _failed))
 raise SystemExit(1 if _failed else 0)

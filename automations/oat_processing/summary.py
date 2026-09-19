@@ -401,6 +401,37 @@ def _find_today_parent(c, date_str: str):
     return None
 
 
+def render_section(title, entries) -> str:
+    """One labelled bucket, grouped by account: a bold account header with its
+    count, then "• Name — N days" under it, 🚨 on anyone 2+ days old.
+
+    WAS a closure inside post_nophone_report until 2026-09-18, when Raf's three
+    streams needed the same rendering in a grouped thread (oat_processing.rollup).
+    Lifted rather than copied: two renderers drift, and the format is one Carlos
+    signed off on (Megan 2026-08-07). Output is byte-identical to the closure."""
+    if not entries:
+        return f"{title} — 0\n  (none today ✅)"
+    # GROUP by account (Megan 2026-08-07) so the human works one account at a
+    # time: a bold account header with its count, then "• Name — N days" under it.
+    groups = {}
+    for nm, acct, days in entries:
+        an = _account_name(acct) or "No account listed"
+        groups.setdefault(an, []).append((nm, days))
+    # biggest accounts first, then alphabetical
+    ordered = sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0]))
+    out = [f"{title} — {len(entries)}"]
+    for an, people in ordered:
+        out.append(f"\n*{an}* ({len(people)}):")
+        for nm, days in people:
+            line = f"  • {nm}"
+            if days is not None:
+                line += f" — {days} day" + ("" if days == 1 else "s")
+                if days >= 2:   # alert on anyone sitting 2+ days ("old")
+                    line += " \U0001F6A8"
+            out.append(line)
+    return "\n".join(out)
+
+
 def post_nophone_report(date: dt.date, t: dict, dry_run: bool = False,
                         edit: bool = False, coverage: dict = None) -> dict:
     """Post the daily 'manual to-do' report to #alphaletegp-recruiting as Lucy —
@@ -443,33 +474,10 @@ def post_nophone_report(date: dt.date, t: dict, dry_run: bool = False,
     header = (f"\U0001F4CB {date_str} — recruiting to-do: "
               f"{n_num} need a number, {n_txt} need a manual text{_cov}")
 
-    def _section(title, entries):
-        if not entries:
-            return f"{title} — 0\n  (none today ✅)"
-        # GROUP by account (Megan 2026-08-07) so the human works one account at a
-        # time: a bold account header with its count, then "• Name — N days" under it.
-        groups = {}
-        for nm, acct, days in entries:
-            an = _account_name(acct) or "No account listed"
-            groups.setdefault(an, []).append((nm, days))
-        # biggest accounts first, then alphabetical
-        ordered = sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0]))
-        out = [f"{title} — {len(entries)}"]
-        for an, people in ordered:
-            out.append(f"\n*{an}* ({len(people)}):")
-            for nm, days in people:
-                line = f"  • {nm}"
-                if days is not None:
-                    line += f" — {days} day" + ("" if days == 1 else "s")
-                    if days >= 2:   # alert on anyone sitting 2+ days ("old")
-                        line += " \U0001F6A8"
-                out.append(line)
-        return "\n".join(out)
-
-    body = (_section("\U0001F4DE Need a number pulled from Indeed", no_number)
+    body = (render_section("\U0001F4DE Need a number pulled from Indeed", no_number)
             + "\n\n"
-            + _section("\U0001F4AC Need a manual text (thread too old to see)",
-                       needs_text))
+            + render_section("\U0001F4AC Need a manual text (thread too old to see)",
+                             needs_text))
 
     # Time label for the in-thread reply ("12 PM" / "4 PM"), cross-platform.
     slot = dt.datetime.now().strftime("%I %p").lstrip("0")
