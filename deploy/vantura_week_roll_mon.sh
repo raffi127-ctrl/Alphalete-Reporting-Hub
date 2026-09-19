@@ -44,7 +44,7 @@
 # (the module is dry-run by default; this wrapper is what passes --apply, so
 # --dry-run here means "run with neither" — see the case below.)
 #
-# CADENCE: the plist fires once, Monday 08:20am, machine LOCAL time (Lucy 2 is
+# CADENCE: the plist fires once, Monday 05:15am, machine LOCAL time (Lucy 2 is
 # Central). TIME KNOB: edit StartCalendarInterval in the plist, not this wrapper.
 set -u
 cd "$(dirname "$0")/.." || exit 1
@@ -66,6 +66,29 @@ if pgrep -f "automations.sales_boards.week_roll" > /dev/null 2>&1; then
         >> "$LOG_DIR/vantura-week-roll-mon.skip.log"
     exit 0
 fi
+
+# EARLY + GATED (Carlos 2026-09-18: "should be earlier than 8:20"). The plist
+# now fires 05:15, but the roll must still come AFTER the morning production
+# post has DELIVERED (it renders the week being closed; rolling first makes it
+# hold). Delivery proof = today's date in the sales_boards run manifest, which
+# run.py writes only on a delivered exit 0. Poll for it until 08:20; if the
+# whole ladder (05:10..08:05) never delivered, roll anyway at 08:20 — that is
+# the old behavior, and sales_boards' own WE-cell alert covers the miss.
+MANIFEST="output/manifests/sales_boards.json"
+TODAY=$(date +%F)
+GATE_LOG="$LOG_DIR/vantura-week-roll-mon.gate.log"
+while :; do
+    NOWHM=$((10#$(date +%H%M)))
+    if [ "$NOWHM" -ge 820 ]; then
+        echo "[$(date)] 08:20 deadline - rolling without delivery proof" >> "$GATE_LOG"
+        break
+    fi
+    if [ -f "$MANIFEST" ] && grep -q "\"run_ts\": \"$TODAY" "$MANIFEST"; then
+        echo "[$(date)] production post delivered - rolling now" >> "$GATE_LOG"
+        break
+    fi
+    sleep 60
+done
 
 LOG_FILE="$LOG_DIR/vantura-week-roll-mon-$(date +%Y-%m-%d-%H%M%S).log"
 echo "[$(date)] Vantura week roll starting (extra args: ${*:-none})" > "$LOG_FILE"

@@ -22,7 +22,7 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- Monday 08:20am, machine LOCAL time (Lucy 2 is Central). launchd
+    <!-- Monday 05:15am fire, gated in the WRAPPER on the production post's delivery manifest (see vantura_week_roll_mon.sh); machine LOCAL time (Lucy 2 is Central). launchd
          Weekday: 0/7=Sun, 1=Mon … 6=Sat.
 
          WHY 08:20 (moved earlier from 11:30 on 2026-09-14 at Carlos's request —
@@ -51,9 +51,9 @@
         <key>Weekday</key>
         <integer>1</integer>
         <key>Hour</key>
-        <integer>8</integer>
+        <integer>5</integer>
         <key>Minute</key>
-        <integer>20</integer>
+        <integer>15</integer>
     </dict>
 
     <key>StandardOutPath</key>

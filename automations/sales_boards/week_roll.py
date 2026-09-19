@@ -232,6 +232,28 @@ def audit_rolled(sb, wd, sunday) -> int:
     return 4
 
 
+def _poke_rollcall_flip():
+    """The Roll Call flips in the same breath as the board (Carlos 2026-09-18:
+    "those two things always work together and update together"). Hit the
+    bound-script web app so rollCallNewWeek() runs NOW; its 9am/11am Apps
+    Script triggers stay as idempotent backstops. The web-app URL is
+    machine-local (vantura-payroll-webapp.json, gitignored). Never raises."""
+    try:
+        import json as _json
+        import pathlib as _pl
+        import requests as _rq
+        cfg = _pl.Path(__file__).resolve().parents[2] / "vantura-payroll-webapp.json"
+        url = _json.loads(cfg.read_text()).get("webapp_url", "")
+        if not url:
+            print("  roll-call flip: no web-app config (9am trigger will cover)")
+            return
+        r = _rq.get(url, params={"action": "rollcallflip"}, timeout=300)
+        print(f"  roll-call flip: {r.text[:120]}")
+    except Exception as e:  # noqa: BLE001
+        print(f"  roll-call flip poke failed ({type(e).__name__}: {e}) "
+              "- the 9am trigger will cover it")
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Roll the Vantura Sales Board "
                                              "onto the new week.")
@@ -457,6 +479,7 @@ def main(argv=None) -> int:
     print("WROTE Stations!%s = %r" % (STATIONS_WE, new_we))
 
     # ---------------------------------------------------------------- verify
+    _poke_rollcall_flip()
     print("\n--- after ---")
     print("%s: %r | Stations!%s: %r"
           % (WE_CELL, _retry(sb.acell, WE_CELL).value, STATIONS_WE,
