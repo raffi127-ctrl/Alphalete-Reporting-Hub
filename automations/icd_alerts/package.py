@@ -70,6 +70,7 @@ AGENT_FILES = [
     # (2026-09-15).
     "automations/icd_alerts/box_signin.py",
     "automations/icd_alerts/sara_signin.py",
+    "automations/icd_alerts/watchdog.py",
     "automations/icd_alerts/presence.py",
     "automations/icd_alerts/autoprompt.py",
     "automations/icd_alerts/state.py",

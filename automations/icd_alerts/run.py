@@ -27,6 +27,7 @@ import traceback
 import sys
 
 from automations.icd_alerts import config as C
+from automations.icd_alerts import watchdog as W
 from automations.icd_alerts import (box_read, closeout, ov_read, relay as R,
                                     sara_read, state as St)
 
@@ -179,8 +180,21 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date) -> int:
     att_key = str((att or {}).get("office_key") or "")
 
     try:
-        read = sara_read.read_day(day, headless=headless, log=_log)
+        # TIMED AND BOUNDED. A read that hangs holds the two-minute slot and
+        # every tick behind it, which is what an office experiences as
+        # "she's super delay today" -- Roshan, 2026-09-18, twice in one day
+        # with no fault either time because nothing had failed, it was still
+        # working. Abandoning it costs one gap; holding the slot costs the
+        # afternoon, and the numbers are cumulative so nothing is lost.
+        read = W.timed("sweep",
+                       lambda: sara_read.read_day(day, headless=headless,
+                                                  log=_log),
+                       log=_log, report=_report, office_key=att_key)
         current, sales = read["records"], read["sales"]
+    except W.SweepTimeout:
+        # ALREADY REPORTED, with the duration and why it was dropped. Falling
+        # through would file it a second time as an unexpected crash.
+        return 1
     except sara_read.AccountProblem as e:
         print("\n%s" % e)
         _report("sweep", e, office_key=att_key)
@@ -275,12 +289,17 @@ def cmd_box(headless: bool, dry_run: bool, day: dt.date) -> int:
         return 0
 
     try:
-        read = box_read.read_day(day, headless=headless, log=_log)
+        read = W.timed("box",
+                       lambda: box_read.read_day(day, headless=headless,
+                                                 log=_log),
+                       log=_log, report=_report, office_key=_box_key(boxes))
     except box_read.SignInInProgress:
         # Somebody is at that keyboard finishing a sign-in. Not a failure,
         # and reporting it would alert on the exact minute they are doing
         # what we asked them to.
         return 0
+    except W.SweepTimeout:
+        return 1
     except box_read.SignInNeeded as e:
         print("\n%s" % e)
         # The stage names the SYSTEM. post.notify_faults reads it to send the
@@ -378,9 +397,15 @@ def cmd_knocks(headless: bool, dry_run: bool, day: dt.date) -> int:
         if len(rows_of) > 1:
             _log("--- %s (%s) ---" % (key or "this office", campaign))
         try:
-            payload = ov_read.read_knocks(day, headless=headless,
-                                          campaign=campaign, log=_log)
+            payload = W.timed(
+                "knocks",
+                lambda: ov_read.read_knocks(day, headless=headless,
+                                            campaign=campaign, log=_log),
+                log=_log, report=_report, office_key=key)
             rows, tracker = payload["rows"], payload["time_tracker"]
+        except W.SweepTimeout:
+            worst = 1
+            continue
         except ov_read.KnocksProblem as e:
             print("\n%s" % e)
             _report("knocks", e, office_key=key)
