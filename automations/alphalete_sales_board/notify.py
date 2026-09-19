@@ -207,4 +207,17 @@ def slack(text: str, *, dry_run: bool = True, log=print) -> None:
     if dry_run:
         return
     from automations.shared import slack_metrics_post as smp
-    smp._client().chat_postMessage(channel=C.SLACK_CHANNEL, text=text)
+    # SAME HELPER AS THE ICD POSTER, so the two cannot drift apart again --
+    # batching reached one of them and not the other on 2026-09-18.
+    fallback, blocks = _H.slack_blocks(text)
+    kw = {"channel": C.SLACK_CHANNEL, "text": fallback}
+    if blocks:
+        kw["blocks"] = blocks
+    try:
+        smp._client().chat_postMessage(**kw)
+    except Exception:  # noqa: BLE001
+        if not blocks:
+            raise
+        # A gif Slack cannot fetch rejects the whole post -- never let it cost
+        # the sale line. Send it as it always went.
+        smp._client().chat_postMessage(channel=C.SLACK_CHANNEL, text=text)

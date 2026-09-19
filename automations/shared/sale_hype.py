@@ -193,6 +193,48 @@ HYPE_GIFS: tuple = (
 )
 
 
+_GIF_LINE = re.compile(r"^https://media\.giphy\.com/media/[A-Za-z0-9]+/giphy\.gif$")
+
+
+def slack_blocks(text: str):
+    """(fallback_text, blocks) with every gif as a real IMAGE, or (text, None).
+
+    A gif rides on its own line as a bare url and relied on Slack unfurling
+    it. The ICD poster turns unfurling OFF on purpose -- Megan, 2026-09-13,
+    because a preview of the sign-up form under every alert buried the two
+    lines somebody had to act on -- so on 2026-09-19 Amarion's gif, the one
+    the whole bar exists for, landed in #ambient-sales-1 as a blue link.
+
+    An image block renders whatever the unfurl settings are, so previews stay
+    off for everything else. ORDER IS KEPT: text before the gif, the gif, then
+    anything after it. The fallback text (notifications, screen readers)
+    drops the url, which is noise there.
+    """
+    lines = (text or "").split("\n")
+    if not any(_GIF_LINE.match(l.strip()) for l in lines):
+        return text, None
+    blocks, chunk = [], []
+
+    def _flush():
+        body = "\n".join(chunk).strip()
+        if body:
+            blocks.append({"type": "section",
+                           "text": {"type": "mrkdwn", "text": body}})
+        chunk.clear()
+
+    for line in lines:
+        if _GIF_LINE.match(line.strip()):
+            _flush()
+            blocks.append({"type": "image", "image_url": line.strip(),
+                           "alt_text": "celebration"})
+        else:
+            chunk.append(line)
+    _flush()
+    fallback = "\n".join(l for l in lines
+                          if not _GIF_LINE.match(l.strip())).strip()
+    return fallback or "celebration", blocks
+
+
 def gif_for(name: str, day: dt.date, total: int) -> str:
     """One gif from the pool, chosen the same way the words are.
 

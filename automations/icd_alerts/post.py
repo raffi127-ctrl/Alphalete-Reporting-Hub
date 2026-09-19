@@ -2111,9 +2111,25 @@ def _slack(channel_id: str, text: str,
     # lines somebody actually has to act on (Megan 2026-09-13).
     kw = {"channel": channel_id, "text": text,
           "unfurl_links": False, "unfurl_media": False}
+    # A GIF IS SENT AS AN IMAGE, because the line above stops it unfurling --
+    # Amarion's landed as a bare link on 2026-09-19.
+    from automations.shared import sale_hype as _SH
+    fallback, blocks = _SH.slack_blocks(text)
+    if blocks:
+        kw["text"], kw["blocks"] = fallback, blocks
     if thread_ts:
         kw["thread_ts"] = thread_ts
-    return (smp._client().chat_postMessage(**kw) or {}).get("ts")
+    try:
+        return (smp._client().chat_postMessage(**kw) or {}).get("ts")
+    except Exception:  # noqa: BLE001
+        if not blocks:
+            raise
+        # SLACK REJECTS THE WHOLE MESSAGE if it cannot fetch the image. A gif
+        # must never cost the sale it celebrates, so send the words (and the
+        # link) exactly as before.
+        kw.pop("blocks", None)
+        kw["text"] = text
+        return (smp._client().chat_postMessage(**kw) or {}).get("ts")
 
 
 def _dm(user_id: str, text: str) -> None:
