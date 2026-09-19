@@ -2185,6 +2185,13 @@ _ATTACHMENT_PROBE_JS = r"""
 """
 
 
+def _rd_mod():
+    """resume_download, imported lazily — it pulls in the PDF/OCR extractors and
+    the walk must start even on a machine where those are missing."""
+    from automations.oat_processing import resume_download as _rd
+    return _rd
+
+
 def _probe_attachment(page, a) -> None:
     """Log what resume surfaces THIS panel offers. Read-only; never raises.
 
@@ -2241,11 +2248,31 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
              f"{a.first_name} {a.last_name}")
     if (live and getattr(config, "AUTOMATE_PHONE_LOOKUP", False)
             and not already_checked and not cooling_off):
+        # THE ATTACHMENT ON THIS VERY PAGE COMES FIRST (2026-09-18). Megan, on an
+        # applicant we had flagged as needing a number: "the number is right
+        # there" — her screenshot showed the resume in AppStream's own Attachment
+        # viewer carrying a cell number, while lookup_resume_phone was off
+        # fighting Indeed, the one path that has been bot-blocked since August.
+        # The panel carries a plain 'Download Attachment' href on the SAME origin
+        # we are already signed in to, so this read needs no Indeed login, no
+        # Cloudflare wait and no second tab. Indeed stays as the fallback for
+        # applicants whose resume lives only there.
+        phone, detail = None, ""
         try:
-            phone, detail = lookup_resume_phone(page)
+            phone, detail = _rd_mod().phone_from_attachment(page)
+            if phone:
+                _log(f"    \U0001f4ce attachment phone {phone} ({detail})")
+            else:
+                _log(f"    [attachment] {detail} — trying Indeed")
         except Exception as e:  # noqa: BLE001
-            # Never saw the resume -> blocked (retryable), not a confirmed empty one.
-            phone, detail = None, f"{_BLOCKED_PREFIX}read error: {type(e).__name__}"
+            _log(f"    [attachment] errored ({type(e).__name__}) — trying Indeed")
+            phone, detail = None, ""
+        if not phone:
+            try:
+                phone, detail = lookup_resume_phone(page)
+            except Exception as e:  # noqa: BLE001
+                # Never saw the resume -> blocked (retryable), not a confirmed empty one.
+                phone, detail = None, f"{_BLOCKED_PREFIX}read error: {type(e).__name__}"
         if phone and _fill_contact(page, phone):
             _log(f"    \U0001f4de resume phone {phone} → filled + sending: "
                  f"{a.first_name} {a.last_name} "

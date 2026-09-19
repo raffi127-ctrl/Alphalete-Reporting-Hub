@@ -328,6 +328,84 @@ def find_download_link(pg):
     return None, None
 
 
+# Anchors on the AppStream applicant panel that point at the applicant's OWN
+# attached file. "User Guide" (usersguide.pdf) sits on the same page and must
+# never match — it is AppStream's manual, not a resume.
+_ATTACH_HREF_JS = r"""
+() => [...document.querySelectorAll('a[href]')]
+  .filter(a => /download\s*(attachment|original|message|resume|file)/i
+                 .test((a.innerText || '').trim()))
+  .map(a => a.href)
+  .filter(u => !/usersguide/i.test(u))
+"""
+
+
+def attachment_href(page) -> str:
+    """The direct URL of the applicant's attached resume on the AppStream panel,
+    or "" when the panel offers none.
+
+    Found by the 2026-09-18 probe: the panel (frame p=618) carries a plain
+    'Download Attachment' anchor pointing at
+    https://www.applicantStream.com/attachDay/<Y>/<M>/<D>/<id>… — same origin,
+    no Indeed login and no Cloudflare between us and the file whose number
+    Megan could see on screen."""
+    for fr in ([page] + list(getattr(page, "frames", []) or [])):
+        try:
+            hrefs = fr.evaluate(_ATTACH_HREF_JS) or []
+        except Exception:  # noqa: BLE001
+            continue
+        for u in hrefs:
+            if u:
+                return u
+    return ""
+
+
+def phone_from_attachment(page):
+    """(phone, detail) read from the applicant's AppStream attachment.
+
+    FETCHED, NOT CLICKED. download_and_read_phone clicks its way to a file and,
+    as a last resort, navigates the page to the href — safe on a throwaway Indeed
+    tab, NOT safe here: this is the live applicant panel the walk is standing on,
+    and a PDF that Chrome decides to render instead of download would move the
+    panel out from under the walk. The request context carries the session
+    cookies, so a plain GET gets the same bytes with nothing on screen changing.
+
+    Every failure is reported as a reason string, never as 'no number' — the
+    caller still has the Indeed path to try, and Carlos's standing rule is that
+    an applicant we could not read is left alone."""
+    href = attachment_href(page)
+    if not href:
+        return None, "no attachment on the panel"
+    try:
+        resp = page.context.request.get(href, timeout=45000)
+        if not resp.ok:
+            return None, "attachment fetch HTTP %s" % resp.status
+        body = resp.body()
+    except Exception as e:  # noqa: BLE001
+        return None, "attachment fetch failed: %s" % type(e).__name__
+    if not body:
+        return None, "attachment was empty"
+    ext = ""
+    for cand in (".pdf", ".docx", ".doc", ".rtf", ".txt"):
+        if cand in href.lower():
+            ext = cand
+            break
+    if not ext:
+        # Trust the bytes over the URL: AppStream's attachDay URLs often carry no
+        # extension at all, and phone_from_file dispatches on it.
+        ext = ".pdf" if body[:5] == b"%PDF-" else ".txt"
+    dest = os.path.join(tempfile.mkdtemp(prefix="oat_attach_"), "attachment" + ext)
+    try:
+        with open(dest, "wb") as fh:
+            fh.write(body)
+    except Exception as e:  # noqa: BLE001
+        return None, "attachment save failed: %s" % type(e).__name__
+    phone = phone_from_file(dest)
+    if phone:
+        return phone, "from the AppStream attachment (%s, %d bytes)" % (ext, len(body))
+    return None, "attachment read, no number in it (%s, %d bytes)" % (ext, len(body))
+
+
 def download_and_read_phone(pg, timeout_ms: int = 45000):
     """Click the download affordance on a blank-looking resume page, read the
     file, and return (phone, detail).
