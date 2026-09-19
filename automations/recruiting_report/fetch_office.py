@@ -113,17 +113,71 @@ def _focus_search_box(page: Page) -> bool:
             return False
 
 
+def _console_tokens(page: Page) -> list:
+    """Every rqst SSO token that could re-key this session's console, best
+    first: the one in the current URL, then the context's rqst_<TOKEN> cookies.
+
+    THE URL IS NOT A SOURCE OF TRUTH FOR THE TOKEN (2026-09-18). "Get Report"
+    POSTs to index.cfm, so from the first submitted week onward `page.url` is a
+    bare https://applicantstream.com/index.cfm with no rqst= on it — and that is
+    the state the page is in for nearly the whole run. Reading the token off the
+    URL alone therefore finds it exactly when nothing needs it and misses it
+    exactly when something does.
+
+    The cookies are where the login keeps it: tableau_patchright's
+    _reuse_appstream_storage_state re-keys a console off the same rqst_<TOKEN>
+    cookie names. Asking them here is the same recovery that demonstrably works
+    — it is why the NEXT captainship's fresh login healed the run every time
+    this reload could not."""
+    out = []
+    m = re.search(r"rqst=([A-Z0-9-]+)", page.url or "", re.I)
+    if m:
+        out.append(m.group(1))
+    try:
+        for c in page.context.cookies():
+            name = str(c.get("name") or "")
+            if name.startswith("rqst_"):
+                tok = name[len("rqst_"):]
+                if tok and tok not in out:
+                    out.append(tok)
+    except Exception:  # noqa: BLE001 — a recovery probe must never raise
+        pass
+    return out
+
+
 def _reload_console(page: Page) -> None:
     """Navigate back to a page that carries the #searchMC switcher, reusing the
     session's rqst token. Used when the switcher has gone missing (the page
-    drifted off the AppStream console)."""
-    m = re.search(r"rqst=([A-Z0-9-]+)", page.url or "", re.I)
-    if m:
-        page.goto(f"https://applicantstream.com/index.cfm?rqst={m.group(1)}&p=701",
-                  wait_until="domcontentloaded")
-    else:
+    drifted off the AppStream console).
+
+    Tries every token _console_tokens knows and keeps the first that actually
+    paints #searchMC. A stale or missing rqst does not error — it quietly serves
+    Login — so "the goto returned" is never the same fact as "the console is
+    back", and only the selector settles it.
+
+    WHY THIS MATTERS (2026-09-18). One "Get Report" click hung for its full 30s
+    on Chan Park - LA's last week and left the page off the console. Every later
+    office on that tab then landed here, found no rqst= in the post-submit URL,
+    fell through to a bare index.cfm — Login, no switcher — and raised
+    "#searchMC not present even after a console reload". So ONE flaked submit
+    dropped Chan Park - LA, Chan Park - MS and COEL REIF out of the Daily Focus
+    fill, and the tab only recovered when the next captainship logged in again.
+    This function is the cascade stop: it has to be able to actually reload."""
+    for tok in _console_tokens(page):
+        try:
+            page.goto(f"https://applicantstream.com/index.cfm?rqst={tok}&p=701",
+                      wait_until="domcontentloaded")
+            page.wait_for_selector("#searchMC", timeout=8_000)
+            return
+        except Exception:  # noqa: BLE001 — stale token; try the next one
+            continue
+    # Nothing re-keyed the console. Land on index.cfm anyway so the caller's own
+    # "#searchMC not present" describes the page it is actually looking at.
+    try:
         page.goto("https://applicantstream.com/index.cfm",
                   wait_until="domcontentloaded")
+    except Exception:  # noqa: BLE001 — the caller reports the missing switcher
+        pass
     page.wait_for_timeout(1500)
 
 
@@ -387,16 +441,25 @@ def _set_week_and_submit(page: Page, week_start: dt.date) -> None:
 
 
 def _ensure_on_retention_report(page: Page) -> None:
-    """If we got bumped off the retention report after switch, navigate back."""
+    """If we got bumped off the retention report after switch, navigate back.
+
+    Same token rule as _reload_console, for the same reason: the post-submit URL
+    carries no rqst=, so this used to raise "Cannot find rqst token in URL" on
+    the very pages it was written to rescue. The session cookies are asked too,
+    and each candidate is kept only if it lands us back on p=701."""
     if RETENTION_REPORT_PAGE in page.url:
         return
-    # Find the rqst token in the current URL and reuse it
-    m = re.search(r"rqst=([A-Z0-9-]+)", page.url, re.I)
-    if not m:
-        raise RuntimeError(f"Cannot find rqst token in URL: {page.url}")
-    rqst = m.group(1)
-    new_url = f"https://applicantstream.com/index.cfm?rqst={rqst}&p=701"
-    page.goto(new_url, wait_until="load")
+    tokens = _console_tokens(page)
+    if not tokens:
+        raise RuntimeError(f"Cannot find rqst token in URL or cookies: {page.url}")
+    for tok in tokens:
+        page.goto(f"https://applicantstream.com/index.cfm?rqst={tok}&p=701",
+                  wait_until="load")
+        if RETENTION_REPORT_PAGE in page.url:
+            return
+    # No token put us back on the report. Fall through rather than raise: the
+    # scrape below reads empty and the caller's existing retry/skip path handles
+    # it, which is what happened before there was more than one token to try.
 
 
 def _scrape_metrics(page: Page) -> Dict[str, Optional[float]]:
