@@ -149,9 +149,13 @@ def parse_tab(xlsx_path: Path, tab: str) -> List[Owner]:
     """Parse one tab into Owners, finding columns by header label."""
     import openpyxl
     wb = openpyxl.load_workbook(str(xlsx_path), read_only=True, data_only=True)
-    if tab not in wb.sheetnames:
+    # Match by label, not exact string: Kelly's 9.18.26 roster shipped the tab
+    # as 'Hybrid ' (trailing space) and the exact lookup killed the whole sync.
+    actual = next((n for n in wb.sheetnames
+                   if n.strip().lower() == tab.strip().lower()), None)
+    if actual is None:
         raise RuntimeError(f"Tab {tab!r} not in roster (tabs: {wb.sheetnames}).")
-    ws = wb[tab]
+    ws = wb[actual]
     rows = [r for r in ws.iter_rows(values_only=True)]
     if not rows:
         return []
