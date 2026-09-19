@@ -523,8 +523,11 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool,
             # was the one room with no cap: a rep past the gif bar stays past
             # it, so every later sale of theirs carried another one.
             from automations.shared import sale_hype as _SH
-            _hype = [N.hype(rep, delta, day)
-                     for rep, delta in sorted(gained.items())]
+            # BATCHED, so no two reps get the same sentence. Each of these
+            # is posted as its own Slack message and Slack groups them, so a
+            # repeat is as visible here as inside one post.
+            _order = [rep for rep, _d in sorted(gained.items())]
+            _hype = N.hype_batch(_order, gained, day)
             _hype, _gifs = _SH.within_budget(_hype, day, "ao-board")
             for _line in _hype:
                 N.slack(_line, dry_run=not send, log=_log)

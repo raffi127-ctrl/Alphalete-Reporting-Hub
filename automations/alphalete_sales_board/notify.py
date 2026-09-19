@@ -88,6 +88,21 @@ def hype(name: str, metrics: Dict[str, int], day: dt.date) -> str:
     return _H.hype(name, metrics, day)
 
 
+def hype_batch(reps, sales, day):
+    """A whole post's worth of lines, none of them saying the same thing.
+
+    RAF'S BOARD POSTS EACH LINE AS ITS OWN SLACK MESSAGE, and Slack groups
+    them under one timestamp -- so two reps landing on one line read exactly
+    like a repeat, which is what they are. On 2026-09-18 "Ian said watch
+    this" sat directly under "Jacari said watch this".
+
+    The ICD poster was given this an hour earlier and this file was not, which
+    is the same one-place-not-the-other that has cost a day at a time all
+    week. Same campaign default as hype() above: the AO board is AT&T.
+    """
+    return _H.hype_batch(reps, sales, day, room="ao-board")
+
+
 def short_name(name: str) -> str:
     """'Jaylen (Ash) Walker (Wk 2)' -> 'Jaylen Walker' -- drop the board's week
     and status suffixes, keep the whole name. We show full names; the other
