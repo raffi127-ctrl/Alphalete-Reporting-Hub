@@ -100,10 +100,25 @@ FIRST_NAME_ALIASES = {
 # the log files it under. Nico runs the office, sits on a BOX row and sells a
 # B2B now and then — those go on his BOX row too (Eve 2026-09-16). The other
 # campaign's pass leaves him alone, so the authoritative BOX pass never clears
-# what it wrote.
+# what it wrote. The value is only the FALLBACK: the row's own col-L label
+# wins (home_campaigns), because the board re-files him — on 2026-09-19 his
+# row read B2B and a hardcoded BOX flagged 5 sales as "on no board row".
 HOME_CAMPAIGN = {
     "nico murrugarra": "BOX",
 }
+
+
+def home_campaigns(g) -> dict[str, str]:
+    """HOME_CAMPAIGN, re-pointed at whichever campaign the rep's board row is
+    labelled with today. A rep on no row keeps the fallback (and gets flagged
+    by that pass, as before)."""
+    out = dict(HOME_CAMPAIGN)
+    for camp in CAMPAIGNS:
+        rows = campaign_rows(g, camp)
+        for key in HOME_CAMPAIGN:
+            if match_rep(key, rows):
+                out[key] = camp
+    return out
 
 # ------------------------------------------------------------- BOX gate --
 # The cleaned tab has no Drafts, so the remaining question per row is the TPV
@@ -230,16 +245,17 @@ def counts_box_tracker(sh, day: dt.date) -> dict[str, float]:
 
 def run_campaign(sh, g, day: dt.date, campaign: str, counts_fn=None) -> dict:
     rows = campaign_rows(g, campaign)
+    home = home_campaigns(g)
     counts = dict((counts_fn or CAMPAIGNS[campaign])(sh, day))
     for key in [k for k in counts
-                if HOME_CAMPAIGN.get(k, campaign) != campaign]:
+                if home.get(k, campaign) != campaign]:
         del counts[key]                       # filled by its home pass
-    if campaign in HOME_CAMPAIGN.values():
+    if campaign in home.values():
         for other, fn in CAMPAIGNS.items():
             if other == campaign:
                 continue
             for key, n in fn(sh, day).items():
-                if HOME_CAMPAIGN.get(key) == campaign:
+                if home.get(key) == campaign:
                     counts[key] = counts.get(key, 0) + n
     col = day_column(g, day)
 

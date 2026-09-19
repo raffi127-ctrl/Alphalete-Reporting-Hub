@@ -8,6 +8,7 @@ zero BOX sales and blanked eight that Slack had filled.
 from __future__ import annotations
 
 import unittest
+import unittest.mock
 
 from automations.vantura_orderlog_sales import run
 
@@ -43,6 +44,25 @@ class BoxFillPlanTest(unittest.TestCase):
                                                       "tara lynn ecklof": 2}))
         self.assertEqual([(a1, new) for _r, a1, _c, new, _n in plan],
                          [("F4", "2")])
+
+
+class HomeCampaignTest(unittest.TestCase):
+    """Nico's sales follow his row's col-L label, not a hardcoded campaign
+    (2026-09-19: row re-filed B2B, BOX pass flagged 5 sales unmatched)."""
+
+    def test_row_label_wins(self):
+        with unittest.mock.patch.object(run, "campaign_rows",
+                                        side_effect=lambda g, c: (
+                                            {"nico murrugarra": 13}
+                                            if c == "B2B" else {})):
+            self.assertEqual(run.home_campaigns(None)["nico murrugarra"],
+                             "B2B")
+
+    def test_no_row_keeps_fallback(self):
+        with unittest.mock.patch.object(run, "campaign_rows",
+                                        return_value={}):
+            self.assertEqual(run.home_campaigns(None)["nico murrugarra"],
+                             "BOX")
 
 
 if __name__ == "__main__":  # pragma: no cover
