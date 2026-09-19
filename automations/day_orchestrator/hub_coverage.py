@@ -222,6 +222,13 @@ _RETIRED: frozenset = frozenset({
     # Same false alarm _is_offboarded() exists to stop for offices.
     "owner-showdown",
     "owner_showdown",
+    # Knocks for Other Offices (Sahil Multani + Chan Park). Rafael, 2026-09-19:
+    # "We can remove this report from every where". Both doors shut in
+    # schedule_config (on_scheduler:false + weekdays []), the card is gone
+    # from hub_cards.py, and other_office_knocks/DISABLED no-ops a hand-run.
+    # Both spellings for the same reason as owner-showdown.
+    "other-office-knocks",
+    "other_office_knocks",
 })
 
 

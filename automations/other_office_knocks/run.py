@@ -292,6 +292,15 @@ def run(target: dt.date | None = None, *, offices: list[str] | None = None,
 
 
 def main(argv=None) -> int:
+    # RETIRED 2026-09-19 — Rafael: "We can remove this report from every
+    # where". The marker file, not a code change, is what stops it: delete
+    # DISABLED to bring the report back.
+    marker = Path(__file__).resolve().parent / "DISABLED"
+    if marker.exists():
+        print("[other_office_knocks] DISABLED — retired 2026-09-19 at "
+              "Rafael's request. Exiting without pulling or posting. "
+              f"({marker})", flush=True)
+        return 0
     ap = argparse.ArgumentParser(
         prog="other_office_knocks",
         description="Post other offices' Total Knocks images into their own "
