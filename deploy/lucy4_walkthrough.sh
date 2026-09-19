@@ -120,36 +120,44 @@ head2 "2 of 5 · Three switches"
 say "These can't be done in code — each one would mean writing your password"
 say "to a file. It opens each panel; you flip the switch and come back."
 
-# -- auto login
-if [ -n "$(sudo -n defaults read /Library/Preferences/com.apple.loginwindow autoLoginUser 2>/dev/null)" ]; then
-    ok "Automatic login is already on."
+# -- filevault FIRST. macOS refuses automatic login while FileVault is on (the
+# option is greyed out), so asking for auto-login first sent the person at Lucy 4
+# to a switch they could not flip (2026-09-19, Lucy 4's own setup).
+fv_off() { case "$(fdesetup status 2>/dev/null)" in *"FileVault is Off"*) return 0 ;; esac; return 1; }
+if fv_off; then
+    ok "FileVault is already off."
 else
     say ""
-    say "${B}a) Automatic login${R} — so the machine comes back by itself after a"
-    say "   power cut, instead of sitting at the login screen all weekend."
-    if yn "Open Users & Groups now?"; then
-        open "x-apple.systempreferences:com.apple.preferences.users" 2>/dev/null
-        say "   Turn ON automatic login for this machine's user."
-        pause "Done? Press Return."
+    say "${B}a) FileVault OFF${R} — with it on, a restart stops at a password"
+    say "   prompt and the reports never start. macOS also won't allow"
+    say "   automatic login (the next switch) until this is off."
+    if yn "Open Privacy & Security now?"; then
+        open "x-apple.systempreferences:com.apple.preference.security?FileVault" 2>/dev/null
+        say "   Scroll to FileVault and click Turn Off. It decrypts in the"
+        say "   background — you don't have to wait here for that."
+        pause "Clicked Turn Off? Press Return."
     fi
 fi
 
-# -- filevault
-FV="$(fdesetup status 2>/dev/null)"
-case "$FV" in
-    *"FileVault is Off"*) ok "FileVault is already off." ;;
-    *)
-        say ""
-        say "${B}b) FileVault OFF${R} — with it on, a restart stops at a password"
-        say "   prompt and the reports never start."
-        if yn "Open Privacy & Security now?"; then
-            open "x-apple.systempreferences:com.apple.preference.security?FileVault" 2>/dev/null
-            say "   Turn FileVault OFF. (It may take a while to decrypt — that's fine,"
-            say "   you don't have to wait for it.)"
-            pause "Done? Press Return."
+# -- auto login. The plist is world-readable: no sudo. (It used `sudo -n`,
+# which fails silently once step 1's password timestamp has expired, so it
+# always reported auto-login as off.)
+if [ -n "$(defaults read /Library/Preferences/com.apple.loginwindow autoLoginUser 2>/dev/null)" ]; then
+    ok "Automatic login is already on."
+else
+    say ""
+    say "${B}b) Automatic login${R} — so the machine comes back by itself after a"
+    say "   power cut, instead of sitting at the login screen all weekend."
+    if yn "Open Users & Groups now?"; then
+        open "x-apple.systempreferences:com.apple.preferences.users" 2>/dev/null
+        say "   Set 'Automatically log in as' to this machine's user."
+        if ! fv_off; then
+            say "   ${AMBER}Greyed out? FileVault is still decrypting — the Privacy &${R}"
+            say "   ${AMBER}Security panel shows progress. Once it's done this unlocks.${R}"
         fi
-        ;;
-esac
+        pause "Done? Press Return."
+    fi
+fi
 
 # -- messages sign-in
 say ""
