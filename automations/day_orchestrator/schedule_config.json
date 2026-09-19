@@ -6380,6 +6380,8 @@
       "priority": "P3",
       "freshness_target": null,
       "depends_on": [],
+      "close_on": "exit_zero",
+      "_close_on_note": "Writes only a local log file — there is no delivery to observe, so a clean run closes its incident (2026-09-19).",
       "verify": {
         "type": "not_configured"
       },
