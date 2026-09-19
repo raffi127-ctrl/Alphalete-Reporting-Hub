@@ -4,12 +4,12 @@
 # each one works only the offices assigned to it.
 #
 # ONE OFFICE PER TICK, ROUND-ROBIN OVER THE OFFICES THIS MACHINE OWNS. The
-# assignment lives in offices.ROTATION_BY_MACHINE. The Lucy 3 split is still
-# parked (Lucy 3 cannot hold an AppStream session), so Lucy 2 works all SIX:
-# Carlos, Atef, Khalil and Raf's three streams (11280, 23965, 24065 — Carlos,
-# 2026-09-18). A box runs its ticks back to back, so every office added to a
-# machine slows every other office on it: four on Lucy 2 was a pass every ~25
-# minutes each, six is ~36, and splitting three and three would be ~18.
+# assignment lives in offices.ROTATION_BY_MACHINE: Lucy 2 works Carlos, Atef
+# and Khalil; Lucy 4 works Raf's three streams (11280, 23965, 24065 — moved
+# 2026-09-19). A box runs its ticks back to back, so every office added to a
+# machine slows every other office on it: six on one box was a pass every ~36
+# minutes each, three and three is ~18. Both boxes sign in as the same scoped
+# resume login; overlapping sessions were proven on 9/19 (both walked clean).
 # Each office gets a pass every (offices on this machine) x ~6 minutes, and every
 # tick stays ONE warm session.
 #

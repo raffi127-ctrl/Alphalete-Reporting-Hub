@@ -11229,7 +11229,7 @@
     },
     "raf_todo_rollup": {
       "on_scheduler": false,
-      "machine": "Lucy 2",
+      "machine": "Lucy 4",
       "_off_scheduler_note": "Raf's GROUPED recruiting to-do thread: ONE overview post in #rafs-office-recruiting-11280 (C0AUAS88FGW) plus a threaded reply per stream (11280 / 23965 / 24065), instead of three separate parents in one channel (Megan 2026-09-18: 'a general overview post and then in the thread break down each account and what is needed in it'). The REAL schedule is deploy/applicant_push.sh, which fires it at noon and 4PM on the first tick of that hour for whichever of Raf's streams comes up, marker-keyed by GROUP so it posts once and the other two streams skip it. cadence.weekdays [] = the 4am orchestrator never runs it. This entry exists so a person can PREVIEW it: `lucy rerun raf_todo_rollup` prints exactly what would be posted and sends nothing (the module's default is dry-run); only `lucy rerun raf_todo_rollup --post` actually posts. Reads each stream's own oat-flagged-<date><suffix>.json, so a stream whose walk has not finished today is reported as 'no walk yet today', never as a zero.",
       "display_name": "Raf's recruiting to-do thread (3 streams, 1 post)",
       "source_type": "local",
@@ -11250,7 +11250,8 @@
       "verify": null,
       "timeout_minutes": 10,
       "standalone_watch": false,
-      "_standalone_watch_note": "Not a standalone report: it is a step of the Applicant Push wrapper, so the missed-run watcher must not learn to expect its own daily run and post 'Raf's recruiting to-do didn't run today' (the lesson from retiring resume_pushing / oat_processing, 8f401cd — on_scheduler:false alone is NOT enough to keep it out of that watcher)."
+      "_standalone_watch_note": "Not a standalone report: it is a step of the Applicant Push wrapper, so the missed-run watcher must not learn to expect its own daily run and post 'Raf's recruiting to-do didn't run today' (the lesson from retiring resume_pushing / oat_processing, 8f401cd — on_scheduler:false alone is NOT enough to keep it out of that watcher).",
+      "_machine_note": "Lucy 4 since 2026-09-19, with Raf's three streams. The rollup reads each stream's flagged snapshot off the LOCAL disk, so it must run on the box that walks them."
     }
   },
   "read_only_standalone": {

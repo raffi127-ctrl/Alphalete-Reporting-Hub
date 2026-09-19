@@ -167,12 +167,21 @@ check("every ROTATION office has a machine",
 # (11280 / 23965 / 24065, added 2026-09-18). The check that actually protects
 # production is not which box owns what — it is that NOTHING is orphaned, pinned
 # just below.
-_LUCY2 = ["11580", "23467", "11901", "23965", "11280", "24065"]
-check("every live office is worked by Lucy 2 while the split is parked",
-      offices.rotation_for("Lucy 2"), _LUCY2)
-check("Lucy 3 is assigned nothing yet", offices.rotation_for("Lucy 3"), [])
+# SPLIT 2026-09-19: Raf's three streams moved to Lucy 4 as a unit.
+_LUCY2 = ["11580", "23467", "11901"]
+_LUCY4 = ["11280", "23965", "24065"]
+check("Lucy 2 works Carlos, Atef and Khalil", offices.rotation_for("Lucy 2"), _LUCY2)
+check("Lucy 4 works Raf's three streams", offices.rotation_for("Lucy 4"), _LUCY4)
+check("Lucy 3 is assigned nothing", offices.rotation_for("Lucy 3"), [])
 check("a marker written in lower case still resolves",
       offices.rotation_for("lucy 2"), _LUCY2)
+# A post group's offices must all live on ONE machine: the rollup reads every
+# stream's snapshot off the local disk, so a stream on another box would read
+# as "no walk yet today" in the thread every single day.
+for _gname, _g in offices.POST_GROUPS.items():
+    _homes = {m for m, offs in offices.ROTATION_BY_MACHINE.items()
+              for o in _g["offices"] if o in offs}
+    check("post group %r lives on exactly one machine" % _gname, len(_homes), 1)
 check("an unknown machine gets no offices at all",
       offices.rotation_for("Megans-MacBook.local"), [])
 check("so does a machine with no name", offices.rotation_for(""), [])

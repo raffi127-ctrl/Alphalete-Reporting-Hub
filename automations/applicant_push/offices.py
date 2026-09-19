@@ -576,8 +576,20 @@ ROTATION = ["11580", "23467", "11901", "23965", "11280", "24065"]
 # can hold the `lucyresume` session at once — Lucy 3 never got a session to
 # begin with. That question is still open and still needs Lucy 2 checked
 # immediately after Lucy 3's first successful login.
+# SPLIT 2026-09-19 (Megan: "lucy 4 is launched — can we move Raf's 3 accounts
+# to it?"). Raf's three streams move as a UNIT, not one at a time: they share
+# one to-do thread (POST_GROUPS "raf"), and the rollup reads each stream's
+# flagged snapshot off the LOCAL disk — split them across boxes and the thread
+# would report the far box's streams as "no walk yet today" forever. Three and
+# three puts every office on a ~18-minute pass instead of ~36.
+#
+# Lucy 4 signs in as the same scoped `lucyresume` login Lucy 2 uses, on its own
+# Chrome profile. It does NOT hold the shared `Lucy Reports` session (its fleet
+# AppStream flags stay off), so this adds no churn to the token the 4am
+# batches share.
 ROTATION_BY_MACHINE = {
-    "Lucy 2": ["11580", "23467", "11901", "23965", "11280", "24065"],
+    "Lucy 2": ["11580", "23467", "11901"],
+    "Lucy 4": ["11280", "23965", "24065"],
 }
 
 

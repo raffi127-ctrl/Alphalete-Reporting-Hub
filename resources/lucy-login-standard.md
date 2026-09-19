@@ -17,9 +17,12 @@ All three Lucys use the `Lucy Reports` login. Same account on every machine, for
 every report.
 
 **Resume pushing**
-Carlos's and Atef's resume pushers both run on **Lucy 2**, on the
-`Lucy Resume Pushing` login. It is the only job that uses that login, and Lucy 2
-is the only machine it runs on.
+The resume pusher runs on **Lucy 2** (Carlos, Atef, Khalil) and **Lucy 4**
+(Raf's three streams — 11280, 23965, 24065, moved there 2026-09-19 at Megan's
+call), both on the `Lucy Resume Pushing` login. It is the only job that uses
+that login. Each office is pushed by exactly ONE machine —
+`ROTATION_BY_MACHINE` in `automations/applicant_push/offices.py` is the
+assignment, and `test_offices` fails on an office assigned twice or not at all.
 
 **OwnerVille**
 Lucy 2 is logged in as **Carlos**. Lucy 1, Lucy 3 and Lucy 4 are logged in as
@@ -35,7 +38,7 @@ Lucy 3, is what made that machine's first week expensive.
 | Lucy 1 | `Lucy Reports` | `rhidalgo` (Raf) |
 | Lucy 2 | `Lucy Reports` + `Lucy Resume Pushing` | `chidalgo` (Carlos) |
 | Lucy 3 | `Lucy Reports` | `rhidalgo` (Raf) |
-| Lucy 4 | `Lucy Reports` | `rhidalgo` (Raf) |
+| Lucy 4 | `Lucy Reports` + `Lucy Resume Pushing` | `rhidalgo` (Raf) |
 
 ---
 
@@ -89,7 +92,7 @@ These are the exact usernames. Type them **with the spaces**:
 | Username | Used by |
 | --- | --- |
 | `Lucy Reports` | Every report, all three Lucys |
-| `Lucy Resume Pushing` | Resume pusher only, on Lucy 2 |
+| `Lucy Resume Pushing` | Resume pusher only, on Lucy 2 and Lucy 4 |
 
 Not `LucyReports` · not `LucyResume` · not `LucyResumePushing` · not `lucy_reports`
 
@@ -102,7 +105,9 @@ renewal that reports "renewed". It took out a whole 4am batch.
 
 `Lucy Reports` for every report; `Lucy Resume Pushing` for the resume pusher only.
 
-The resume login is deliberately scoped to Carlos's and Atef's offices, because
+The resume login is deliberately scoped to the offices the push works (Carlos,
+Atef, Khalil and Raf's three streams, each assigned to it by hand in the
+ApplicantStream admin), because
 switching office does **not** bound what a push reaches — the batch grid's
 select-all sends to whatever the *account* can see, and the reporting login sees
 all 28 offices. Send-to-AI cannot be undone. **An account that cannot see an
