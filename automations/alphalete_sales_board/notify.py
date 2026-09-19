@@ -48,6 +48,7 @@ COUNTED = ("Int", "Int Up", "DTV", "NL")
 
 FIRE = "\U0001F525"      # the real emoji, not ':fire:' -- iMessage shows text
 TROPHY = "\U0001F3C6"
+GOLD = "\U0001F947"
 
 # THE LINES LIVE IN shared/sale_hype.py, NOT HERE.
 #
@@ -123,7 +124,8 @@ def leaderboard(today: Dict[str, Dict[str, int]], fired: Sequence[str],
                 week_to_date: Optional[int] = None,
                 missing: Sequence[Dict] = (),
                 goal: Optional[int] = None,
-                flag_missing: bool = True) -> str:
+                flag_missing: bool = True,
+                teams=None) -> str:
     """The scoreboard both chats get.
 
     OUR layout -- full names, the breakdown always shown, the weekly goal --
@@ -131,6 +133,10 @@ def leaderboard(today: Dict[str, Dict[str, int]], fired: Sequence[str],
     that system's live post is the ARITHMETIC, not the look: see COUNTED.
 
     `fired` are the reps whose count moved on THIS sweep; they carry the flame.
+
+    `teams` (a weekly_knock_dispositions.teams.TeamBook, or None) adds one
+    line per team under TOTALS (Megan 2026-09-19) -- the same Team column on
+    the sales board that splits the knock boards. None = no team block.
     """
     # Score only, and Python's stable sort keeps SaraPlus's order inside a tie,
     # so the bottom of the board doesn't reshuffle every time somebody scores.
@@ -169,6 +175,8 @@ def leaderboard(today: Dict[str, Dict[str, int]], fired: Sequence[str],
     lines.append("DTV: %d" % totals["DTV"])
     lines.append("NL's: %d" % totals["NL"])
     lines.append("%s TOTALS: %d" % (TROPHY, sum(totals[k] for k in COUNTED)))
+    if teams is not None:
+        lines.extend(team_lines(counted, teams))
     # NO GOAL LINE (Megan 2026-08-26, twice). There is no maintained source for
     # one. The brief's example said 80; the board has a cell literally labelled
     # "Goal" = 350, which is what I switched to -- and it is an annotation at
@@ -184,6 +192,30 @@ def leaderboard(today: Dict[str, Dict[str, int]], fired: Sequence[str],
         lines.append("%s %s sold with no row on this week's board - counted "
                      "above, not on the board yet." % (FIRE, who))
     return "\n".join(lines)
+
+
+def team_lines(counted, teams) -> List[str]:
+    """One 'Team: n' line per team, highest first, under the TOTALS line.
+
+    Every team on the board shows, a zero included -- a team missing from the
+    list reads like a bug, a zero reads like a race. A rep the board can't
+    place lands in Unassigned, which shows only when it has sales, so the team
+    lines always add up to TOTALS."""
+    from automations.weekly_knock_dispositions.teams import UNASSIGNED
+    score = {t: 0 for t in teams.teams if t != UNASSIGNED}
+    for rep, m in counted:
+        t = teams.team_for(short_name(rep)) or teams.team_for(rep) or UNASSIGNED
+        score[t] = score.get(t, 0) + rep_total(m)
+    if not score.get(UNASSIGNED):
+        score.pop(UNASSIGNED, None)
+    order = sorted(score, key=lambda t: (t == UNASSIGNED, -score[t], t.lower()))
+    # The leader gets the gold (Megan 2026-09-19). A tie at the top medals
+    # every team in it; nobody medals at 0, and Unassigned never does.
+    top = max([score[t] for t in score if t != UNASSIGNED] or [0])
+    return [""] + ["%s: %d%s" % (t, score[t],
+                                 " " + GOLD if top and score[t] == top
+                                 and t != UNASSIGNED else "")
+                   for t in order]
 
 
 # --- delivery ---------------------------------------------------------------

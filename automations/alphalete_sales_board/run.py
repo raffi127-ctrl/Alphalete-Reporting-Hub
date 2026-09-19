@@ -510,10 +510,20 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool,
     _log("new this sweep: %d rep(s) with sales, %d with credit checks"
          % (len(gained), len(rec_gained)))
 
+    # TEAM TOTALS under the scoreboard (Megan 2026-09-19), off the Team column
+    # of the week tab this sweep already read -- no extra Sheets call. A tab
+    # with no Team column just drops the block; it never costs the text.
+    try:
+        from automations.weekly_knock_dispositions import teams as TEAMS
+        team_book = TEAMS.from_grid(grid, ws.title)
+    except Exception as e:  # noqa: BLE001
+        team_book = None
+        _log("team totals skipped: %s: %s" % (type(e).__name__, str(e)[:160]))
+
     if gained or rec_gained or missing:
         wtd = week_to_date(grid, day) if apply_writes else None
         body = N.leaderboard(today, [] if baseline else list(gained), wtd, missing,
-                             goal=fill.board_goal(grid))
+                             goal=fill.board_goal(grid), teams=team_book)
         if gained or (baseline and today):
             for group in C.LIVE_GROUPS:
                 N.text_group(group, body, dry_run=not send, log=_log)
@@ -543,7 +553,8 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool,
         # cost the others their scoreboard, so each is attempted on its own.
         # flag_missing=False: the players see the sales, not the paperwork.
         body = N.leaderboard(today, [], week_to_date(grid, day), missing,
-                             goal=fill.board_goal(grid), flag_missing=False)
+                             goal=fill.board_goal(grid), flag_missing=False,
+                             teams=team_book)
         for group in C.END_OF_DAY_GROUPS:
             try:
                 N.text_group(group, body, dry_run=not send, log=_log)

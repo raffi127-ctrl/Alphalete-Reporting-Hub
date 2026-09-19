@@ -240,3 +240,20 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def test_leaderboard_team_totals():
+    """One line per team under TOTALS, highest first, zeros kept, and the
+    team lines add up to TOTALS (unplaced reps land in Unassigned)."""
+    from automations.weekly_knock_dispositions import teams as T
+    book = T.TeamBook(teams=["Ceaseless", "Hashiras", "Se7en Sins"],
+                      _exact={"jane doe": "Hashiras", "bo lee": "Hashiras",
+                              "cy dee": "Ceaseless"})
+    today = {"Jane Doe": {"Int": 2, "Int Up": 1, "DTV": 0, "NL": 0},
+             "Bo Lee (Wk 2)": {"Int": 1, "Int Up": 0, "DTV": 0, "NL": 0},
+             "Cy Dee": {"Int": 1, "Int Up": 0, "DTV": 0, "NL": 0},
+             "New Guy": {"Int": 1, "Int Up": 0, "DTV": 0, "NL": 0}}
+    tail = N.leaderboard(today, [], teams=book).split("\U0001F3C6 TOTALS: 6")[1]
+    assert tail.strip().splitlines() == [
+        "Hashiras: 4 \U0001F947", "Ceaseless: 1", "Se7en Sins: 0", "Unassigned: 1"]
+    assert "Hashiras" not in N.leaderboard(today, [])   # no book, no block

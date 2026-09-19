@@ -138,6 +138,51 @@ def team_order(names) -> list:
     return real + ([UNASSIGNED] if UNASSIGNED in set(names) else [])
 
 
+def from_grid(g: list, tab: str = "") -> TeamBook:
+    """A TeamBook straight off a week tab's grid, no Sheets call.
+
+    The Alphalete sales sweep already holds the week tab it just read, and it
+    runs every 5 minutes -- re-reading the workbook through load() on every
+    sweep would spend quota for nothing. Raises when the tab has no usable
+    Team column; load() turns that into its fail-soft None, callers holding
+    their own grid do the same."""
+    from automations.icd_sales_board import board_read as BR
+
+    hr = BR.header_row(g)
+    tcol = BR._attr_cols(g, hr).get(BR.ATTR_TEAM)
+    if not tcol:
+        raise ValueError(f"no '{BR.ATTR_TEAM}' column on {tab or 'the tab'}")
+
+    pairs, counts, blanks = [], {}, 0
+    for r in range(hr + 1, len(g) + 1):
+        name, _tags = BR.clean_name(BR._c(g, r, BR.LABEL_COL))
+        if not name:
+            continue
+        if name.strip().lower() == BR.TOTALS_LABEL:
+            break                       # the rep block ends here
+        team = " ".join((BR._c(g, r, tcol) or "").split()).strip()
+        if not team:
+            blanks += 1
+            continue
+        counts[team] = counts.get(team, 0) + 1
+        pairs.append((name, team))
+
+    if not counts:
+        raise ValueError(f"'{BR.ATTR_TEAM}' column on {tab or 'the tab'} is empty")
+
+    return TeamBook(
+        tab=tab,
+        source=(f"Alphalete SALES BOARD 2025 -> {tab} -> column "
+                f"'{BR.ATTR_TEAM}' (col {tcol}), rows {hr + 1}+"),
+        teams=team_order(counts),
+        counts=counts,
+        blanks=blanks,
+        _exact=_unique([(_norm(n), t) for n, t in pairs]),
+        _plain=_unique([(_plain(n), t) for n, t in pairs]),
+        _short=_unique([(_short(n), t) for n, t in pairs if _short(n)]),
+    )
+
+
 def load(office: str, saturday: dt.date, *, verbose: bool = True):
     """The office's TeamBook for the week ending `saturday`, or None.
 
@@ -161,40 +206,8 @@ def load(office: str, saturday: dt.date, *, verbose: bool = True):
         want = saturday + dt.timedelta(days=1)
         tab = next((t for t, d in dated if d == want), dated[0][0])
 
-        g = sh.worksheet(tab).get_all_values()
-        hr = BR.header_row(g)
-        tcol = BR._attr_cols(g, hr).get(BR.ATTR_TEAM)
-        if not tcol:
-            raise ValueError(f"no '{BR.ATTR_TEAM}' column on {tab}")
-
-        pairs, counts, blanks = [], {}, 0
-        for r in range(hr + 1, len(g) + 1):
-            name, _tags = BR.clean_name(BR._c(g, r, BR.LABEL_COL))
-            if not name:
-                continue
-            if name.strip().lower() == BR.TOTALS_LABEL:
-                break                       # the rep block ends here
-            team = " ".join((BR._c(g, r, tcol) or "").split()).strip()
-            if not team:
-                blanks += 1
-                continue
-            counts[team] = counts.get(team, 0) + 1
-            pairs.append((name, team))
-
-        if not counts:
-            raise ValueError(f"'{BR.ATTR_TEAM}' column on {tab} is empty")
-
-        book = TeamBook(
-            tab=tab,
-            source=(f"Alphalete SALES BOARD 2025 -> {tab} -> column "
-                    f"'{BR.ATTR_TEAM}' (col {tcol}), rows {hr + 1}+"),
-            teams=team_order(counts),
-            counts=counts,
-            blanks=blanks,
-            _exact=_unique([(_norm(n), t) for n, t in pairs]),
-            _plain=_unique([(_plain(n), t) for n, t in pairs]),
-            _short=_unique([(_short(n), t) for n, t in pairs if _short(n)]),
-        )
+        book = from_grid(sh.worksheet(tab).get_all_values(), tab)
+        counts, blanks = book.counts, book.blanks
         if verbose:
             print(f"[wkd] teams: {office} -> {book.source}", flush=True)
             print("[wkd]   " + ", ".join(
