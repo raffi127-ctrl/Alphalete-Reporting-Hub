@@ -183,7 +183,12 @@ def _open_login_form(page) -> None:
         link.click(timeout=10000)
         return
     except Exception:  # noqa: BLE001 -- any stall here gets the same fallback
-        href = link.get_attribute("href", timeout=5000)
+        # FIFTEEN SECONDS, not five. On 2026-09-19 Carlos's B2B machine waited
+        # the full 10s click and then 5s more without the LOGIN link rendering
+        # at all -- a slow page, not a broken one: it read fine two minutes
+        # later, and three other offices were reading the whole time. Five
+        # turned one slow load into a red alert in the corrections channel.
+        href = link.get_attribute("href", timeout=15000)
         if not href:
             raise
     page.goto(href, wait_until="domcontentloaded")
