@@ -2213,6 +2213,16 @@ def _probe_attachment(page, a) -> None:
                                               seen["tabs"][:6]))
         _log("    [probe] files=%s" % (seen["files"][:6],))
         _log("    [probe] frames=%s" % (seen["frames"][:5],))
+        # AND ACTUALLY READ IT. The real read is gated on `live`, which the
+        # weekend quiet window blocks until Sunday 1PM — but the read itself is a
+        # GET plus a parse, so the probe can prove end-to-end tonight that a real
+        # number comes back, WITHOUT filling a field or sending anyone anywhere.
+        try:
+            _ph, _det = _rd_mod().phone_from_attachment(page)
+            _log("    [probe] attachment read -> phone=%s (%s)" % (_ph, _det))
+        except Exception as e:  # noqa: BLE001
+            _log("    [probe] attachment read errored: %s: %s"
+                 % (type(e).__name__, str(e)[:80]))
     except Exception as e:  # noqa: BLE001
         _log("    [probe] failed: %s: %s" % (type(e).__name__, str(e)[:80]))
 
