@@ -127,8 +127,8 @@ MACHINES: Tuple[Machine, ...] = (
         hostnames=("Lucys-MacBook-Neo.local", "Carloss-Mac-mini-2"),
         holds_appstream=True, runs_appstream=True, can_text=False,
         morning_clock_since="2026-08-29", office_onboarding_choice=True,
-        note="Carlos's org / B2B. A LAPTOP, on a different subnet: no SSH, "
-             "queue only, and caffeinate does not survive a shut lid.",
+        note="Carlos's org / B2B. A LAPTOP: caffeinate does not survive a "
+             "shut lid. SSH (lucy2@) since 2026-09-19, same network as the rest.",
     ),
     Machine(
         name="Lucy 3", badge="3",
@@ -136,7 +136,7 @@ MACHINES: Tuple[Machine, ...] = (
         hostnames=("Lucys-Mac-mini.local",),
         holds_appstream=True, runs_appstream=True, can_text=True,
         morning_clock_since="2026-08-29", office_onboarding_choice=False,
-        note="rerun/overflow box on Raf's accounts. No SSH — queue only.",
+        note="rerun/overflow box on Raf's accounts. SSH (lucy3@) since 2026-09-19.",
     ),
     Machine(
         name="Lucy 4", badge="4",
