@@ -127,6 +127,30 @@ def _is_appstream_runner() -> bool:
         return False
 
 
+def _appstream_off_by_design():
+    """The machine's name when the fleet roster says it deliberately does NOT
+    run AppStream yet — else None.
+
+    WHY (2026-09-19, Lucy 4's first login check). Lucy 4 is provisioned with
+    every credential but `runs_appstream=False` in fleet.py, on purpose: every
+    Lucy shares the one `Lucy Reports` account, and a fourth warm console raises
+    token churn on the live machines. But _is_appstream_runner() defines a runner
+    by "has a credential", and the ownerville-creds file it received from Lucy 1
+    carries the AppStream username too — so the check printed FAIL AppStream,
+    "never seeded", and pointed the person at the machine at a login command
+    that would have minted exactly the extra session the roster exists to avoid.
+
+    Reads the marker directly, never _this_machine(): that one falls back to
+    "Lucy 1", and an unmarked box must not borrow Lucy 1's answer."""
+    try:
+        from automations.shared import session_holder as sh
+        name = sh._MACHINE_MARKER.read_text().strip()
+    except Exception:  # noqa: BLE001 — unmarked is "not a fleet box", not a failure
+        return None
+    m = _fleet.get(name)
+    return name if (m is not None and not m.runs_appstream) else None
+
+
 def check_ownerville() -> dict:
     """Verdict for the ownerville/Tableau session. Never consults AppStream."""
     from automations.shared.appstream_watch import session_status
@@ -231,6 +255,21 @@ def check_accounts() -> dict:
 
 
 def run(deep: bool = False) -> dict:
+    off = _appstream_off_by_design()
+    if off:
+        # OwnerVille AND the account assertion still run — Lucy 4 signing in as
+        # the wrong person is exactly as wrong while it has no AppStream work.
+        results = [{"system": "AppStream", "ok": True,
+                    "detail": "not used on %s yet, on purpose "
+                              "(fleet.py runs_appstream=False) — it switches on "
+                              "when this machine is given its first AppStream "
+                              "report. Do NOT log it in by hand before then: "
+                              "every Lucy shares one AppStream account." % off},
+                   check_ownerville(), check_accounts()]
+        return {"machine": _machine(),
+                "at": dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "ok": all(r["ok"] for r in results),
+                "results": results}
     if not _is_appstream_runner():
         # `ok` IS COMPUTED, NOT ASSUMED. This branch used to hardcode ok=True,
         # so on any machine that is not an AppStream runner a DEAD ownerville

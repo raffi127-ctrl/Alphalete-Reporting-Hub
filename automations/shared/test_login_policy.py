@@ -28,6 +28,22 @@ from automations.shared import creds
 from automations.shared import login_check as lc
 
 
+# HERMETIC ON EVERY MACHINE. _appstream_off_by_design() reads the real
+# .machine-profile marker, so on Lucy 4 every test below would silently take the
+# "AppStream off on purpose" path and assert something different from what it
+# says. Pin it to "not a fleet box" for the module; the tests about it override.
+_REAL_OFF_BY_DESIGN = lc._appstream_off_by_design     # kept for the tests about it
+_OFF_PATCH = mock.patch.object(lc, "_appstream_off_by_design", return_value=None)
+
+
+def setUpModule():
+    _OFF_PATCH.start()
+
+
+def tearDownModule():
+    _OFF_PATCH.stop()
+
+
 class OnlyTwoAccountsExist(unittest.TestCase):
 
     def test_the_retired_names_are_refused(self):
@@ -368,8 +384,6 @@ class BothLoginsAreCheckedSeparately(unittest.TestCase):
             self.assertEqual(lc._machine(), "Lucy 3")
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class VerdictCannotBeAssumed(unittest.TestCase):
@@ -416,3 +430,55 @@ class VerdictCannotBeAssumed(unittest.TestCase):
 
     def test_it_also_fails_on_a_real_appstream_runner(self):
         self.assertFalse(self._run_with(owner_ok=False, is_runner=True)["ok"])
+
+
+class AFleetBoxWithAppStreamOffByDesign(unittest.TestCase):
+    """Lucy 4, 2026-09-19: provisioned with every credential but
+    runs_appstream=False. The check printed FAIL AppStream and told the person at
+    the machine to log AppStream in by hand — which would have minted the extra
+    session on the shared `Lucy Reports` account that the roster exists to avoid.
+    """
+
+    def _run(self, ov_ok=True, acct_ok=True):
+        appstream = mock.Mock(side_effect=AssertionError(
+            "check_appstream ran on a box that deliberately has no AppStream"))
+        with mock.patch.object(lc, "_appstream_off_by_design", return_value="Lucy 4"), \
+             mock.patch.object(lc, "check_appstream", appstream), \
+             mock.patch.object(lc, "check_ownerville", return_value={
+                 "system": "Ownerville", "ok": ov_ok, "detail": "ov"}), \
+             mock.patch.object(lc, "check_accounts", return_value={
+                 "system": "Accounts", "ok": acct_ok, "detail": "acct"}):
+            return lc.run()
+
+    def test_it_is_not_a_failure(self):
+        res = self._run()
+        self.assertTrue(res["ok"])
+        detail = [r for r in res["results"] if r["system"] == "AppStream"][0]["detail"]
+        self.assertIn("on purpose", detail)
+
+    def test_ownerville_and_the_account_are_still_checked(self):
+        """The wrong person logged in is just as wrong while a box has no
+        AppStream work — both of these must still be able to turn it red."""
+        self.assertFalse(self._run(ov_ok=False)["ok"])
+        self.assertFalse(self._run(acct_ok=False)["ok"])
+        got = {r["system"] for r in self._run()["results"]}
+        self.assertEqual(got, {"Ownerville", "AppStream", "Accounts"})
+
+    def test_the_flag_is_read_from_the_roster_and_the_marker(self):
+        import pathlib as _pl
+        import tempfile
+        from automations.shared import session_holder as sh
+        fn = _REAL_OFF_BY_DESIGN
+        with tempfile.TemporaryDirectory() as d:
+            marker = _pl.Path(d) / ".machine-profile"
+            with mock.patch.object(sh, "_MACHINE_MARKER", marker):
+                marker.write_text("Lucy 4\n")
+                self.assertEqual(fn(), "Lucy 4")
+                marker.write_text("Lucy 1\n")      # runs AppStream: checked as usual
+                self.assertIsNone(fn())
+                marker.unlink()                     # the laptop: no marker at all
+                self.assertIsNone(fn())
+
+
+if __name__ == "__main__":
+    unittest.main()
