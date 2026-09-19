@@ -146,9 +146,11 @@ MACHINES: Tuple[Machine, ...] = (
         # Megan 2026-09-17: built to "run anything", but off the 4am clock until
         # a report is actually routed to it. Turning these on early is the one
         # Lucy 4 change that can cost the LIVE fleet — see `holds_appstream`.
-        # can_text stays False until grant_orchestrator_messages.sh has been run
-        # ON this box and a real line AND image were seen to arrive.
-        holds_appstream=False, runs_appstream=False, can_text=False,
+        # can_text flipped 2026-09-19: grant_orchestrator_messages.sh run ON this
+        # box, and the probe's line AND image both arrived in Admin Staff (Megan
+        # confirmed). It first sent "Not Delivered" — iMessage activation on a new
+        # Mac; a Messages sign-out, restart and sign-in cleared it, not the grant.
+        holds_appstream=False, runs_appstream=False, can_text=True,
         morning_clock_since=None, office_onboarding_choice=False,
         note="provisioned 2026-09-17; workflows/lucy4-provisioning.md. "
              "Capabilities flip at go-live, one at a time.",

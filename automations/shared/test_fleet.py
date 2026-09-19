@@ -210,8 +210,10 @@ class TheRosterItselfIsSane(unittest.TestCase):
         self.assertIn("Lucy 4", fleet.RUNNERS)
         self.assertFalse(m.holds_appstream)
         self.assertFalse(m.runs_appstream)
-        self.assertFalse(m.can_text)
         self.assertIsNone(m.morning_clock_since)
+        # can_text went live 2026-09-19 (line + image delivered from the probe),
+        # so it is no longer part of the not-yet-live state this test pins.
+        self.assertTrue(m.can_text)
 
 
 if __name__ == "__main__":
