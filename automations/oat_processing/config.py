@@ -39,6 +39,19 @@ RETEXT_ARMED = os.environ.get("OAT_RETEXT_ARMED", "1") == "1"
 # the real phone, fill it in, and Send to AI. Proven on Nevaeh (+1 817 550 4383).
 # When False, no-phone applicants are just flagged to the human queue.
 AUTOMATE_PHONE_LOOKUP = os.environ.get("OAT_AUTOMATE_PHONE_LOOKUP", "1") == "1"
+# READ-ONLY DIAGNOSTIC (2026-09-18). Dumps what resume surfaces the ApplicantStream
+# panel itself offers — the "Attachment" / "PDF Quick View" tabs and their file
+# URLs — for each applicant the walk touches. Reads nothing else, clicks nothing,
+# changes nothing, and works in a --dry-run (which is the point: the weekend quiet
+# window blocks live passes, and this question needs answering before Sunday).
+#
+# WHY: lookup_resume_phone only ever opens the INDEED "View resume" link, the path
+# that has been bot-blocked since August. Megan's screenshot of Elisa Sanchez
+# (office 11280) shows the resume sitting in AppStream's OWN attachment viewer with
+# "Cell: 972-482-9544" on it — same origin, no Indeed login, no Cloudflare. If that
+# file is reachable, most "needs a number" applicants are readable without Indeed
+# at all. This probe is how we learn the real markup instead of guessing selectors.
+ATTACHMENT_PROBE = os.environ.get("OAT_ATTACHMENT_PROBE", "0") == "1"
 
 # Where flagged no-phone applicants get surfaced for a human. Default is a local
 # CSV under output/ (dry-run friendly, no external side effects). A Slack post

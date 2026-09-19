@@ -2152,6 +2152,64 @@ def _blocked_pending_count() -> int:
                if int((r or {}).get("n", 0)) < _BLOCKED_MAX_ATTEMPTS)
 
 
+_ATTACHMENT_PROBE_JS = r"""
+() => {
+  const pick = (el) => ({
+    tag: el.tagName,
+    text: (el.innerText || el.value || '').trim().slice(0, 40),
+    href: el.getAttribute('href') || '',
+    src: el.getAttribute('src') || el.getAttribute('data') || '',
+  });
+  const out = { tabs: [], files: [], frames: [] };
+  // Tab-like controls in the applicant panel: 'Resume', 'Attachment',
+  // 'PDF Quick View' are what Megan's screenshot shows above the viewer.
+  for (const el of document.querySelectorAll(
+         'a,button,li,span,div[role=tab],input[type=button]')) {
+    const t = (el.innerText || el.value || '').trim();
+    if (/^(resume|attachment|attachments|pdf quick view|download)$/i.test(t)) {
+      out.tabs.push(pick(el));
+    }
+  }
+  // Anything that looks like the file itself.
+  for (const el of document.querySelectorAll('a[href],embed[src],object[data],iframe[src]')) {
+    const u = el.getAttribute('href') || el.getAttribute('src') || el.getAttribute('data') || '';
+    if (/\.(pdf|docx?|rtf|txt)(\?|$)|attach|download|viewfile|getfile|resume/i.test(u)) {
+      out.files.push(pick(el));
+    }
+  }
+  for (const f of document.querySelectorAll('iframe,frame')) {
+    out.frames.push((f.getAttribute('src') || '').slice(0, 140));
+  }
+  return out;
+}
+"""
+
+
+def _probe_attachment(page, a) -> None:
+    """Log what resume surfaces THIS panel offers. Read-only; never raises.
+
+    See config.ATTACHMENT_PROBE for why this exists. Runs across every frame,
+    because the panel's viewer is itself framed and a top-document-only read is
+    the mistake that has cost this walk twice already."""
+    try:
+        seen = {"tabs": [], "files": [], "frames": []}
+        for fr in page.frames:
+            try:
+                d = fr.evaluate(_ATTACHMENT_PROBE_JS) or {}
+            except Exception:  # noqa: BLE001
+                continue
+            for k in seen:
+                for item in (d.get(k) or []):
+                    if item and item not in seen[k]:
+                        seen[k].append(item)
+        _log("    [probe] %s %s — tabs=%s" % (a.first_name, a.last_name,
+                                              seen["tabs"][:6]))
+        _log("    [probe] files=%s" % (seen["files"][:6],))
+        _log("    [probe] frames=%s" % (seen["frames"][:5],))
+    except Exception as e:  # noqa: BLE001
+        _log("    [probe] failed: %s: %s" % (type(e).__name__, str(e)[:80]))
+
+
 def flag_no_phone(page, a: Applicant, live: bool) -> str:
     """No phone on file → first try to pull the real number off the applicant's
     Indeed resume (Megan's 'View resume' method, 2026-07-28). If found, fill it in
@@ -2168,6 +2226,8 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
     manual to-do list. Before this split, a blocked read was filed as "no number" and
     the applicant was written off for the day: on 2026-08-25 that was 90 of 161
     flagged reads — the queue sat at 35 all day and only 9 applicants were sent."""
+    if getattr(config, "ATTACHMENT_PROBE", False):
+        _probe_attachment(page, a)
     key = _nophone_key(a)
     already_checked = key in _load_nophone_checked()
     cooling_off = (not already_checked) and (not _blocked_due(key))

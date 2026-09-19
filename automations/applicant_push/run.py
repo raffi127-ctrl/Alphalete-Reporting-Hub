@@ -265,6 +265,14 @@ def main(argv=None) -> int:
                    help="explicit acknowledgement that this live push targets an "
                         "office OUTSIDE the hard-coded PUSH_ALLOWED allowlist — "
                         "for supervised audit runs only")
+    p.add_argument("--attachment-probe", action="store_true",
+                   help="READ-ONLY diagnostic: for every applicant the walk "
+                        "flags as having no number, log what resume surfaces "
+                        "the AppStream panel itself offers (Attachment / PDF "
+                        "Quick View tabs and their file URLs). Clicks nothing, "
+                        "changes nothing, and works under --dry-run — which is "
+                        "how it answers 'can we read the resume without Indeed?' "
+                        "without waiting for the weekend window to lift.")
     p.add_argument("--recheck-nophone", action="store_true",
                    help="Re-read the resumes of applicants already flagged "
                         "no-number TODAY (archives the day's cache first). Use "
@@ -304,6 +312,13 @@ def main(argv=None) -> int:
             f"[push] REFUSED: live push for office {args.office} — only "
             f"{sorted(PUSH_ALLOWED)} are ever pushed. An audit run must pass "
             f"--audit-office explicitly.")
+
+    if getattr(args, "attachment_probe", False):
+        # Set on the config MODULE, not the environment: offices.activate() has
+        # already bound this process to one office, and the walk reads the flag
+        # off config at call time.
+        from automations.oat_processing import config as _oat_config
+        _oat_config.ATTACHMENT_PROBE = True
 
     live = args.live and not args.dry_run
     if args.batch_only and args.oat_only:
