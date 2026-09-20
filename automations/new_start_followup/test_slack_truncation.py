@@ -10,20 +10,21 @@ times on a Slack response that stopped mid-body:
   08:32  http.client.IncompleteRead: IncompleteRead(74664 bytes read,
          104075 more expected)   ← a bare traceback, through slack_sdk
 
-Two different call sites, one fault. Neither had a retry, so a wobble that was
-over in seconds opened two incidents (`failure-` and `standalone-`).
+Two transports, one fault. The 08:32 half -- every slack_sdk Web API read --
+is covered by the retry handler on the shared client, and its own tests live
+in automations/shared/test_slack_truncated_read.py. THIS file covers the other
+half: the roster screenshot is fetched with plain `requests`, which never goes
+near slack_sdk and so gets none of that.
 
 OFFLINE. No socket, no Slack, no vision call -- the truncation is injected.
 """
 from __future__ import annotations
 
-import datetime as dt
 import http.client
 
 import pytest
 
 from automations.new_start_followup import screenshot_roster as SR
-from automations.new_start_followup import thread as TH
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"rosterbytes" * 40
 
@@ -108,55 +109,3 @@ def test_a_sign_in_page_is_still_a_hard_error(monkeypatch):
         SR._download({"url_private_download": "https://files.slack/x.png"},
                      "xoxp-test")
     assert calls["n"] == 1
-
-
-# --- the thread read --------------------------------------------------------
-class _Client:
-    """A Slack client whose conversations_replies truncates the first time."""
-    def __init__(self, anchor_ts, fail_replies=1):
-        self.anchor_ts = anchor_ts
-        self.fail_replies = fail_replies
-        self.replies_calls = 0
-
-    def conversations_history(self, channel=None, limit=None):
-        return {"messages": [{"ts": self.anchor_ts, "user": "UAISHA",
-                              "text": "New Starts Scheduled for Monday"}]}
-
-    def conversations_replies(self, channel=None, ts=None, limit=None):
-        self.replies_calls += 1
-        if self.replies_calls <= self.fail_replies:
-            raise _truncated()
-        return {"messages": [{"ts": self.anchor_ts, "user": "UAISHA",
-                              "text": "New Starts Scheduled for Monday"}]}
-
-
-def _friday():
-    """A Friday whose ts the anchor finder will accept as 'today's week'."""
-    today = dt.date.today()
-    return today - dt.timedelta(days=(today.weekday() - 4) % 7)
-
-
-def _anchor_ts(friday):
-    return str(dt.datetime.combine(
-        friday, dt.time(15, 0)).timestamp())
-
-
-def test_reading_the_thread_survives_one_truncation(monkeypatch):
-    """08:32's failure -- the bare traceback. Same fault, slack_sdk's stack."""
-    monkeypatch.setattr(TH.slack_retry.time, "sleep", lambda s: None)
-    friday = _friday()
-    cli = _Client(_anchor_ts(friday))
-    out = TH.read_thread(friday=friday, client=cli)
-    assert cli.replies_calls == 2
-    assert out["anchor_ts"] == cli.anchor_ts
-
-
-def test_a_thread_read_that_never_recovers_still_raises(monkeypatch):
-    """Three truncations in a row is not a wobble any more, and the report has
-    to fail rather than post against a thread it could not read."""
-    monkeypatch.setattr(TH.slack_retry.time, "sleep", lambda s: None)
-    friday = _friday()
-    cli = _Client(_anchor_ts(friday), fail_replies=99)
-    with pytest.raises(http.client.IncompleteRead):
-        TH.read_thread(friday=friday, client=cli)
-    assert cli.replies_calls == 3

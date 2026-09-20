@@ -1,31 +1,41 @@
-"""Slack READS, retried through a truncated response body.
+"""Slack FILE DOWNLOADS, retried through a truncated response body.
 
 WHAT THIS IS FOR. Slack sometimes hands back a response that stops in the
-middle: the headers promise 178,739 bytes and the connection closes after
-74,664. Python surfaces that as `http.client.IncompleteRead`, and because it
+middle: the headers promise 178,741 bytes and the connection closes after
+74,352. Python surfaces that as `http.client.IncompleteRead`, and because it
 comes up out of the socket rather than out of Slack's API, there is no
 `ok: false` to check and no error code to branch on -- it is simply an
 exception through the middle of whatever was reading.
 
 It happened three times inside half an hour on 2026-09-20, to three different
 callers (the mini's `slack_thread` action twice, and New-Start Thread Replies
-at 08:01 and again at 08:32), which is what says it is Slack having a moment
-rather than any one report being wrong. The 08:01 run caught it and exited
-INCOMPLETE; the 08:32 run had no catch at all and ended in a traceback. Both
-opened an incident for a fault that was gone by the time anyone read it.
+at 08:01 and again at 08:32), which is what says it was Slack having a moment
+rather than any one report being wrong.
+
+NOT FOR THE WEB API -- that half is already handled, one layer lower.
+`slack_metrics_post._client` installs a slack_sdk retry handler that repeats
+any READ whose body came apart, so every WebClient call in the repo is covered
+at once instead of the handful somebody remembered to wrap. Wrapping a
+WebClient call in this as well just multiplies the attempts.
+
+What that handler CANNOT reach is a file download: `url_private_download` is
+fetched with plain `requests`, outside slack_sdk entirely, and that is the
+call that failed at 08:01 ("Couldn't read the Main funnel roster screenshot").
+This module is for that path.
 
 READS ONLY, AND THAT IS THE WHOLE POINT. A truncated read can be asked for
-again with no consequence -- nobody sees a second conversations.history. A
-truncated WRITE cannot: chat_postMessage may well have posted before the body
-came apart, so retrying it is how one reply becomes two in front of the team.
-Nothing here is safe to wrap around a post, an upload, or a reaction, and the
-helper deliberately does not offer a version that is.
+again with no consequence -- nobody sees a second download. A truncated WRITE
+cannot: the request may well have landed before the body came apart, so
+retrying it is how one post becomes two in front of the team. Nothing here is
+safe to wrap around a post, an upload, or a reaction, and the helper
+deliberately does not offer a version that is.
 
-WHAT IS NOT RETRIED. A SlackApiError (bad token, missing scope, channel_not_found)
-is a real fault that retrying only makes slower, and a timeout is a different
-signal -- the caller's own timeout already bounds it, and tripling a 60-second
-wait to chase a case we have not actually seen costs more than it saves. Only
-the transport coming apart mid-body is retried here.
+WHAT IS NOT RETRIED. An HTTP error (a 403 from a token without files:read, a
+sign-in page instead of the image) is a real fault that retrying only makes
+slower, and a timeout is a different signal -- the caller's own timeout already
+bounds it, and tripling a 60-second wait to chase a case we have not actually
+seen costs more than it saves. Only the transport coming apart mid-body is
+retried here.
 """
 from __future__ import annotations
 

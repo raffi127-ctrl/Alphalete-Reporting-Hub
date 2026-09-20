@@ -23,7 +23,6 @@ import re
 from typing import Dict, List, Optional
 
 from automations.shared import slack_metrics_post as smp
-from automations.shared import slack_retry
 
 # Moved from #rafs-office-recruiting (C06881A7WLV, retired) on 2026-08-21 — Aisha now
 # posts the weekly thread in #rafs-office-recruiting-11280.
@@ -114,8 +113,7 @@ def find_anchor(client, channel: str, friday: dt.date, lookback: int = 200,
     the newest — ordering by newest broke the day Tiffani's post shadowed
     Aisha's.
     """
-    resp = slack_retry.read(client.conversations_history,
-                            channel=channel, limit=lookback, _log=print)
+    resp = client.conversations_history(channel=channel, limit=lookback)
     matches = []
     for msg in resp.get("messages", []):
         if msg.get("subtype"):
@@ -242,11 +240,13 @@ def read_thread(friday: Optional[dt.date] = None, channel: str = CHANNEL_ID,
                 " by <@{}>".format(poster) if poster else "")
         )
 
-    # Retried: this is the call that ended 2026-09-20's 08:32 run in a bare
-    # traceback, through slack_sdk's own urllib. [[slack_retry]]
-    replies = slack_retry.read(
-        client.conversations_replies,
-        channel=channel, ts=anchor["ts"], limit=200, _log=print
+    # A truncated body here is what ended 2026-09-20's 08:32 run in a bare
+    # traceback. The retry for it lives on the CLIENT, not at this call site:
+    # slack_metrics_post._client installs a slack_sdk retry handler that repeats
+    # any read whose response came apart, so every WebClient call in the repo is
+    # covered rather than the handful somebody remembered to wrap.
+    replies = client.conversations_replies(
+        channel=channel, ts=anchor["ts"], limit=200
     ).get("messages", [])
 
     # The roll call is optional now that Lucy posts it: on Saturday morning the
