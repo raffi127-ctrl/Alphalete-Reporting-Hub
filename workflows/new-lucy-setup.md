@@ -89,16 +89,26 @@ office picker.
 | Runs on | `*.applicantstream.com/index.cfm*`, `*.indeed.com/*`, `employers.indeed.com` |
 | Install page (unverified) | https://chromewebstore.google.com/detail/goofbdglmeckblcbcoffnkdnmpehhhmo |
 
-**Still open, to be settled by the applicant-push move to Lucy 4:**
-- Whether that Web Store page is public, or the extension is installed some other
-  way ("internal"). The id and the install page above come from Megan's own
-  Chrome and haven't been tested on a Lucy.
-- **Which browser it has to be in.** The reports drive their own pinned "Chrome
-  for Testing" and per-office profiles, not normal Chrome. An extension installed
-  in a person's Chrome does nothing for them. Find out which profile applicant
-  push reads the resume through, and install it there.
-- Once that's known, add it to `deploy/lucy_walkthrough.sh` as its own step,
-  with a check that confirms the extension is actually loaded in that profile.
+**Where it goes — settled 2026-09-19** (the "Resume pushing offices" session,
+checked against `automations/resume_pushing/run.py`):
+
+1. Install it in **regular Google Chrome, Default profile**, logged in as the
+   Lucy's own Mac user. **Not** Chrome for Testing: applicant push doesn't use
+   that. `_copy_default_profile()` copies the everyday Default profile ("holds
+   the Resume Helper plugin + the live login") into its own working copies
+   under `/tmp` (`/tmp/rp_cdp_*`, each marked with `.rp_seeded`).
+2. Those copies were made **before** the extension existed, so remove their
+   markers and the next run copies it across:
+   ```bash
+   rm -f /tmp/rp_cdp_*/.rp_seeded
+   ```
+   A **restart does the same thing**, because macOS clears `/tmp` on every
+   restart.
+3. **Only needed if the batch stage is on.** The scheduled push runs
+   `--oat-only`, which never reaches the batch stage that uses the extension.
+
+Once the install method is confirmed (whether the Web Store page above works for
+this internal plugin), add it to `deploy/lucy_walkthrough.sh` as its own step.
 
 ## 5. Go-live, when the box gets its first report
 
@@ -108,7 +118,11 @@ Move one report at a time, turning on only what that report needs:
   account.** Watch the other machines the next morning.
 - **Applicant push:** take the offices **off** the old machine's rotation in the
   **same commit** that puts them on the new one. A push can't be undone, and an
-  office on two machines gets pushed twice.
+  office on two machines gets pushed twice. It does **not** need the AppStream
+  fleet flags above: it signs in as its own `lucyresume` login through real
+  Chrome and never touches the shared `Lucy Reports` session (moved Raf's three
+  streams to Lucy 4 this way, bc9ff04). Its working profiles live in `/tmp`, so
+  a restart wipes them and the next run rebuilds them from Default.
 - `morning_clock_since` = tomorrow's date, if it joins the 4am batch. That date
   also arms its heartbeat watchdog.
 - Delete the "not yet live" pin tests for that machine as each flag turns on.
