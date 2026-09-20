@@ -245,9 +245,9 @@
       "timeout_minutes": 30
     },
     "pay_period_office_info": {
-      "on_scheduler": false,
+      "on_scheduler": true,
       "machine": "Lucy 1",
-      "_note": "MENSUAL, dia 1 (Raf 2026-09-16): dibuja el calendario de pagos (semana dom-sab, paga el viernes siguiente; 4 semanas atras + 12 adelante) como PNG y lo CAMBIA DENTRO de un unico mensaje de Lucy en #alphalete-sales (chat.update, sin post nuevo). El link 'Pay Period' de Files -> Office Info apunta a ese mensaje y lo agrega una persona a mano (Lucy no tiene scopes de bookmarks). El ts del mensaje vive en output/state/pay_period_office_info.json de Lucy 1: si se pierde, la corrida postea un mensaje NUEVO y el link queda viejo. APAGADO (on_scheduler false) hasta la primera corrida live verificada. `lucy rerun pay_period_office_info` PUBLICA (base_args --live); en seco: `python -m automations.pay_period_office_info.run`.",
+      "_note": "MENSUAL, dia 1 (Raf 2026-09-16): dibuja el calendario de pagos (semana dom-sab, paga el viernes siguiente; 4 semanas atras + 12 adelante) como PNG y lo CAMBIA DENTRO de un unico mensaje de Lucy en #alphalete-sales (chat.update, sin post nuevo). El link 'Pay Period' de Files -> Office Info apunta a ese mensaje y lo agrega una persona a mano (Lucy no tiene scopes de bookmarks). El ts del mensaje vive en output/state/pay_period_office_info.json de Lucy 1: si se pierde, la corrida postea un mensaje NUEVO y el link queda viejo. Primera corrida live OK 2026-09-19 (mensaje ts 1789872951.044339, imagen visible); desde ahi on_scheduler true. `lucy rerun pay_period_office_info` PUBLICA (base_args --live); en seco: `python -m automations.pay_period_office_info.run`.",
       "display_name": "Pay Period image (Office Info)",
       "source_type": "local",
       "data_sources": [],
