@@ -570,6 +570,72 @@ def plan_day(V, day: dt.date, today: dt.date, logfn=print,
     return out
 
 
+# ------------------------------------------------------------------- sort --
+
+def _block_last_col(g, rows: List[int], floor: int) -> int:
+    """The rightmost column any row of the block actually uses. The sort has to
+    carry the WHOLE row — a helper column left outside the range stays put while
+    the names move under it, which is how the Campaign column would come to
+    point at the wrong ICD."""
+    last = floor
+    for r in rows:
+        row = g[r - 1] if r <= len(g) else []
+        for k in range(len(row), 0, -1):
+            if str(row[k - 1]).strip():
+                last = max(last, k)
+                break
+    return last
+
+
+def sort_requests(sheet_id: int, g) -> List[dict]:
+    """A `sortRange` for each of the three owner blocks: biggest current week
+    first, ties by name. Eve 2026-09-20, after re-ordering them by hand:
+    "acordate de con cada corrida ordenar de mayor a menor quien tiene numero
+    mas grande".
+
+    NEVER a value-write. The Ongoing box's column C is `=SUMIF(...)`, and the
+    delta box's This week / Delta are formulas pointing at their own row;
+    reading those and writing them back in a new order would store what they
+    happen to DISPLAY, freezing every one of them on today's number — and
+    nothing would look wrong afterwards, because a frozen value is the correct
+    value for the moment it froze. That is how the ORG Sales Board's delta
+    boxes sat frozen for a week (`org_sales_board/delta_sort.py` has the
+    story). `sortRange` makes the SERVER move the cells and re-point the
+    references, which a value-write cannot do.
+
+    COLUMN A STAYS OUT: it is the rank gutter, so 1..N keeps counting down the
+    page while the people move underneath it.
+
+    Idempotent — a block already in order sorts to itself."""
+    dl, og, dx = find_daily(g), find_ongoing(g), find_delta(g)
+    # the daily block ranks on RUNNING WEEK TOTALS; with that column gone, on
+    # the last day the Totals row actually has a number for.
+    filled = sum(1 for k in dl["days"] if _num(_c(g, dl["totals"], k)) is not None)
+    day_key = dl["days"][max(filled, 1) - 1]
+    blocks = [
+        (og["rows"], og["wcols"][0][0], og["wcols"][-1][0]),
+        ([r for r, _, _ in dl["rows"]], dl["run"] or day_key,
+         max(dl["days"][-1], dl["prevw"] or 0)),
+        # the delta box ranks on its WEEK triplet (This week / Last week /
+        # Delta), which is the one sitting immediately left of Monday's — three
+        # columns over. Not matched by its caption: Eve renamed that header
+        # from 'Total this week' to 'This week' on 2026-09-20.
+        ([r for r, _ in dx["rows"]], dx["this"][0] - 3, dx["last"][-1] + 1),
+    ]
+    out = []
+    for rows, key, floor in blocks:
+        if not rows:
+            continue
+        out.append({"sortRange": {
+            "range": {"sheetId": sheet_id,
+                      "startRowIndex": rows[0] - 1, "endRowIndex": rows[-1],
+                      "startColumnIndex": 1,          # col B — col A is the rank
+                      "endColumnIndex": _block_last_col(g, rows, floor)},
+            "sortSpecs": [{"dimensionIndex": key - 1, "sortOrder": "DESCENDING"},
+                          {"dimensionIndex": 1, "sortOrder": "ASCENDING"}]}})
+    return out
+
+
 def run(apply_changes: bool = False, today: Optional[dt.date] = None,
         sandbox: bool = False, logfn=print) -> int:
     from automations.recruiting_report.fill import open_by_key, _retry
@@ -615,6 +681,13 @@ def run(apply_changes: bool = False, today: Optional[dt.date] = None,
             V = ws.get_all_values()
         total += len(ups)
     logfn(f"{'wrote' if apply_changes else 'would write'} {total} day cell(s)")
+
+    # LAST: the boxes rank on the numbers the fill just wrote.
+    reqs = sort_requests(ws.id, V)
+    logfn(f"{'sorting' if apply_changes else 'would sort'} {len(reqs)} box(es) "
+          "by this week, descending")
+    if apply_changes and reqs:
+        _retry(ws.spreadsheet.batch_update, {"requests": reqs})
     return 0
 
 

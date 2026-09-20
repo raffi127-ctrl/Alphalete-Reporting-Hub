@@ -488,3 +488,44 @@ class HelpersThatMoved(unittest.TestCase):
         dx = find_delta(g)
         self.assertEqual(dx["hdr"], hdr)
         self.assertEqual([n for _, n in dx["rows"]], ["Rafael Hidalgo", "Jairo Ruiz"])
+
+
+class SortsEveryBoxByThisWeek(unittest.TestCase):
+    """Eve, 2026-09-20: "con cada corrida ordenar de mayor a menor quien tiene
+    numero mas grande"."""
+
+    def _reqs(self, g):
+        from automations.org_active_headcount.daily import sort_requests
+        return [r["sortRange"] for r in sort_requests(1, g)]
+
+    def test_each_box_ranks_on_its_own_this_week_column(self):
+        from automations.org_active_headcount.daily import find_daily
+        g = _hc_grid(week_cols=True)
+        keys = [(r["sortSpecs"][0]["dimensionIndex"] + 1,
+                 r["sortSpecs"][0]["sortOrder"]) for r in self._reqs(g)]
+        # Ongoing -> C, daily -> RUNNING WEEK TOTALS, delta -> its week triplet
+        self.assertEqual(keys, [(3, "DESCENDING"),
+                                (find_daily(g)["run"], "DESCENDING"),
+                                (3, "DESCENDING")])
+
+    def test_the_rank_gutter_stays_put(self):
+        """Column A numbers the rows 1..N. It must not travel with the people,
+        or the ranking would sort itself into nonsense."""
+        for r in self._reqs(_hc_grid(week_cols=True)):
+            self.assertEqual(r["range"]["startColumnIndex"], 1)
+
+    def test_the_delta_box_carries_its_campaign_column(self):
+        """The Campaign helper sits to the RIGHT of the last day triplet. Left
+        out of the range it would stay still while the names move under it, and
+        every ICD would end up reading another ICD's tracker — the same silent
+        break as when the column was moved in the first place."""
+        g = _hc_grid(week_cols=True)
+        hdr = next(r for r in range(1, len(g) + 1)
+                   if g[r - 1] and g[r - 1][0] == "All Campaings Ongoing Headcount"
+                   and "Total for week" in g[r - 1])
+        for r, camp in ((hdr + 2, "Fiber"), (hdr + 3, "NDS")):
+            g[r - 1] = g[r - 1] + [""] * (27 - len(g[r - 1]))
+            g[r - 1][26] = camp                       # col AA
+        delta = self._reqs(g)[-1]
+        self.assertEqual(delta["range"]["startRowIndex"], hdr + 1)
+        self.assertGreaterEqual(delta["range"]["endColumnIndex"], 27)
