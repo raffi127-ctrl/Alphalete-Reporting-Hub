@@ -473,6 +473,21 @@ def reruns_itself(rid: str, *, partial: bool = False) -> bool:
         return True
     if r.get("source_type") == "tableau" or r.get("data_sources"):
         return True
+    # A REPORT WITH ITS OWN LAUNCHAGENT re-runs itself, and nothing above can
+    # see that. The two signals here describe the orchestrator's retry loop, so
+    # a report that lives on its own agent — `weekdays []`, its real cadence in
+    # a plist — reads as "nobody will touch this", and the thread told the room
+    # "Nothing re-runs it on its own" while com.alphalete.new-start-thread-replies
+    # was re-running it every 30 minutes (2026-09-20 08:15; the queue tab shows
+    # that agent's own `rerun new_start_thread_replies` land at 10:30:07 and
+    # exit 0). That line asks a person for work that is already happening, which
+    # is the same false alarm as a watcher guessing a cadence it was never told.
+    #
+    # Declared, not inferred: the plist lives on a machine this code can't read,
+    # and the prose in `_note` is not a contract. `own_agent` names the label,
+    # the same way standalone_weekdays names the days.
+    if r.get("own_agent"):
+        return True
     return partial and (r.get("verify") or {}).get("type") == "manifest"
 
 

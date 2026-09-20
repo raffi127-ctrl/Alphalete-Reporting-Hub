@@ -114,6 +114,32 @@ class NobodyIsComingBackForIt(unittest.TestCase):
         self.assertEqual(v.bucket, tri.NEEDS_YOU)
         self.assertIn("lucy rerun recruiter_retention_daily", tri.line_for(v))
 
+    def test_a_report_on_its_own_launchagent_is_not_a_persons_job(self):
+        """2026-09-20: the thread told the room "Nothing re-runs it on its own
+        — `lucy rerun new_start_thread_replies`" while
+        com.alphalete.new-start-thread-replies was re-running it every 30
+        minutes. The queue tab has that agent's own rerun landing at 10:30:07,
+        exit 0, fifteen minutes after the line was posted. Asking a person for
+        work that is already happening is the same false alarm as a watcher
+        guessing a cadence nobody told it."""
+        v = self._with({"new_start_thread_replies": {
+                            "source_type": "api", "data_sources": [],
+                            "own_agent": "com.alphalete.new-start-thread-replies"}},
+                       key="failure-new_start_thread_replies",
+                       tail="connection reset")
+        self.assertEqual(v.bucket, tri.LUCY)
+        self.assertNotIn("Nothing re-runs it", tri.line_for(v))
+
+    def test_the_same_report_without_the_declaration_is_still_yours(self):
+        """own_agent is DECLARED, never inferred — the plist lives on a machine
+        this code can't read. Undeclared keeps the old, safe answer."""
+        v = self._with({"new_start_thread_replies": {
+                            "source_type": "api", "data_sources": []}},
+                       key="failure-new_start_thread_replies",
+                       tail="connection reset")
+        self.assertEqual(v.bucket, tri.NEEDS_YOU)
+        self.assertIn("Nothing re-runs it", tri.line_for(v))
+
     def test_tableau_report_is_still_lucys(self):
         v = self._with({"b2b_metrics": {"source_type": "tableau",
                                         "data_sources": []}},

@@ -2683,6 +2683,7 @@
     },
     "new_start_number_replies": {
       "on_scheduler": true,
+      "own_agent": "com.alphalete.new-start-number-replies",
       "machine": "Lucy 1",
       "display_name": "New-Start Number Replies (iMessage)",
       "source_type": "api",
@@ -2710,6 +2711,7 @@
     },
     "new_start_thread_replies": {
       "on_scheduler": true,
+      "own_agent": "com.alphalete.new-start-thread-replies",
       "machine": "Lucy 1",
       "display_name": "New-Start Thread Replies (answer @Lucy)",
       "source_type": "api",
