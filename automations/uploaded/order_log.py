@@ -1613,6 +1613,82 @@ def _week_bounds(d: date):
     return start, end, end + timedelta(days=6)
 
 
+# Raf 2026-09-16: a pay-period calendar on every Order Log — a few weeks back so
+# reps can match what they were just paid, the rest forward.
+PAY_PERIOD_WEEKS_BACK = 3
+PAY_PERIOD_WEEKS = 10
+PAY_PERIOD_TAB = "Pay Period"
+
+
+def _pay_period_weeks(today: date, back: int = PAY_PERIOD_WEEKS_BACK,
+                      total: int = PAY_PERIOD_WEEKS) -> list:
+    """(sunday, saturday, paid_friday) for `total` weeks, starting `back` weeks
+    before the week containing today."""
+    from automations.shared.pay_period import pay_weeks
+    return pay_weeks(today, back, total)
+
+
+def _write_pay_period_table(sh, top: int, left: int, today: date) -> tuple:
+    """Draw the Activation/Pay Week table (Week Start Sunday / Week End Saturday
+    / Pay Date Friday) with its top-left at (top, left). The running week is
+    highlighted. Returns (next free row, rows that must not drive widths)."""
+    border = _thin_border()
+    title_fill = PatternFill("solid", fgColor="6D8FC9")
+    head_fill = PatternFill("solid", fgColor="1F3864")
+    band_fill = PatternFill("solid", fgColor="C9DAF8")
+    white_fill = PatternFill("solid", fgColor="FFFFFF")
+    now_fill = PatternFill("solid", fgColor="FFE599")
+    bold = Font(name=_OL_FONT_NAME, size=_OL_FONT_SIZE, bold=True)
+    bold_white = Font(name=_OL_FONT_NAME, size=_OL_FONT_SIZE, bold=True,
+                      color="FFFFFF")
+    skip_rows = set()
+
+    def _put(r, c, value, fill, font, fmt=None):
+        cell = sh.cell(row=r, column=c, value=value)
+        cell.fill, cell.font, cell.border = fill, font, border
+        cell.alignment = _OL_CENTER
+        if fmt:
+            cell.number_format = fmt
+        return cell
+
+    r = top
+    for c in range(left, left + 3):
+        _put(r, c, None, title_fill, bold)
+    sh.cell(row=r, column=left, value="Activation/Pay Week")
+    sh.merge_cells(start_row=r, start_column=left, end_row=r,
+                   end_column=left + 2)
+    skip_rows.add(r); r += 1
+    for heads in (("Week Start", "Week End", "Pay Date"),
+                  ("Sunday", "Saturday", "Friday")):
+        for i, h in enumerate(heads):
+            _put(r, left + i, h, head_fill, bold_white)
+        skip_rows.add(r); r += 1
+
+    this_week = _week_bounds(today)
+    for n, week in enumerate(_pay_period_weeks(today)):
+        is_now = week == this_week
+        fill = now_fill if is_now else (band_fill if n % 2 else white_fill)
+        font = bold if is_now else _ol_font()
+        for i, d in enumerate(week):
+            _put(r, left + i, d, fill, font, "m/d/yy")
+        r += 1
+    note = sh.cell(row=r, column=left,
+                   value="Highlighted = this week")
+    note.font = _ol_font(italic=True)
+    skip_rows.add(r)
+    return r + 1, skip_rows
+
+
+def _add_pay_period_tab(wb, today: date) -> None:
+    """Its own 'Pay Period' tab, FIRST in the book (Raf 2026-09-19) — it's the
+    calendar the whole office looks up, so the file opens on it."""
+    sh = wb.create_sheet(PAY_PERIOD_TAB, index=0)
+    _write_pay_period_table(sh, 1, 1, today)
+    for c in "ABC":
+        sh.column_dimensions[c].width = _ol_width(12)
+    wb.active = 0                     # opens on the calendar, not on the log
+
+
 def _md(d: date) -> str:
     return f"{d.month}.{d.day:02d}"
 
@@ -1641,18 +1717,41 @@ def _unique_sheet_title(base: str, used: set) -> str:
     return base[:31]
 
 
+def _as_date(v):
+    """A cell's date, or None for blank/NaT/NaN."""
+    if v is None:
+        return None
+    try:
+        if pd.isna(v):              # covers NaT (pandas) and NaN, not plain dates
+            return None
+    except (TypeError, ValueError):
+        pass
+    return v.date() if hasattr(v, "date") else v
+
+
 def _eff_date(order, install, activ):
     """Date that decides the pay week: activation, else install, else order."""
     for v in (activ, install, order):
-        if v is None:
-            continue
-        try:
-            if pd.isna(v):          # covers NaT (pandas) and NaN, not plain dates
-                continue
-        except (TypeError, ValueError):
-            pass
-        return v.date() if hasattr(v, "date") else v
+        d = _as_date(v)
+        if d is not None:
+            return d
     return None
+
+
+def _sale_recency(rec, today: date):
+    """When this line last showed the rep working: its newest date that has
+    already happened, or None if the line is all blanks/future.
+
+    Dates in the future are ignored on purpose. Installs get scheduled weeks
+    out, so the newest date in an Order Log is routinely an install that hasn't
+    happened — counting it would drag the whole log's cutoff past today and
+    drop the tabs of reps who sold this morning.
+    """
+    seen = [d for d in (_as_date(rec.get("Activation Date")),
+                        _as_date(rec.get("Install Date")),
+                        _as_date(rec.get("Order Date")))
+            if d is not None and d <= today]
+    return max(seen) if seen else None
 
 
 def _write_rep_row(ws, row_idx: int, values: list, border, center_v,
@@ -1716,7 +1815,24 @@ def _sale_type_counts(recs) -> dict:
     return counts
 
 
-def _append_rep_breakdown_tabs(wb, df: pd.DataFrame, owner: str = "") -> int:
+# Raf 2026-09-19: a rep with nothing sold in the last two activation weeks is
+# most likely not selling any more — no tab for them.
+REP_TAB_ACTIVE_WEEKS = 2
+
+
+def _rep_tab_cutoff(newest: date, weeks: int = REP_TAB_ACTIVE_WEEKS) -> date:
+    """Earliest sale date that still earns a rep their own tab: the Sunday of
+    the week `weeks - 1` back from the log's newest sale.
+
+    Anchored to the newest sale in the FILE, not to today, so re-running an old
+    export still writes the tabs it would have written that day instead of an
+    empty workbook.
+    """
+    return _week_bounds(newest)[0] - timedelta(weeks=weeks - 1)
+
+
+def _append_rep_breakdown_tabs(wb, df: pd.DataFrame, owner: str = "",
+                               today=None) -> int:
     """Append ONE tab per rep: weeks stacked as sections (Active), then a
     Pending/Disconnect/Cancel section. Returns the number of tabs added.
 
@@ -1730,6 +1846,7 @@ def _append_rep_breakdown_tabs(wb, df: pd.DataFrame, owner: str = "") -> int:
     """
     if df.empty or "Rep" not in df.columns:
         return 0
+    today = today or date.today()
 
     pay_grid = _load_pay_grid(owner)
     # When the office has a pay structure, each rep tab gains one column per
@@ -1763,25 +1880,41 @@ def _append_rep_breakdown_tabs(wb, df: pd.DataFrame, owner: str = "") -> int:
     def _week_key(rec):
         return _eff_date(rec["Order Date"], rec["Install Date"], rec["Activation Date"]) or date.min
 
-    for rep in df["Rep"].dropna().unique():
-        rep = str(rep).strip()
-        if not rep:
+    # One pass over the log, bucketed per rep. "latest" is that rep's newest
+    # sale (P/D/C lines count — the order was still written) and decides
+    # whether they get a tab at all.
+    per_rep: dict = {}
+    for row in df.itertuples(index=False, name=None):
+        rec = dict(zip(FRIENDLY_HEADERS, row))
+        raw_rep = rec.get("Rep")
+        rep = "" if raw_rep is None or pd.isna(raw_rep) else str(raw_rep).strip()
+        if not rep:                       # blank/NaN rep never got a tab
             continue
-        sub = df[df["Rep"].astype(str).str.strip() == rep]
+        bucket = per_rep.setdefault(rep, {"weeks": {}, "pdc": [], "latest": None})
+        eff = _eff_date(rec["Order Date"], rec["Install Date"], rec["Activation Date"])
+        seen = _sale_recency(rec, today)
+        if seen and (bucket["latest"] is None or seen > bucket["latest"]):
+            bucket["latest"] = seen
+        code = _pdc_code(rec["Status"])
+        if code is None:
+            if eff is None:
+                continue
+            bucket["weeks"].setdefault(_week_bounds(eff), []).append(rec)
+        else:
+            bucket["pdc"].append((code, rec))
 
-        weeks: dict = {}
-        pdc: list = []
-        for row in sub.itertuples(index=False, name=None):
-            rec = dict(zip(FRIENDLY_HEADERS, row))
-            code = _pdc_code(rec["Status"])
-            if code is None:
-                eff = _eff_date(rec["Order Date"], rec["Install Date"], rec["Activation Date"])
-                if eff is None:
-                    continue
-                weeks.setdefault(_week_bounds(eff), []).append(rec)
-            else:
-                pdc.append((code, rec))
+    newest = max((b["latest"] for b in per_rep.values() if b["latest"]),
+                 default=None)
+    cutoff = _rep_tab_cutoff(newest) if newest else None
+    quiet = 0
+
+    for rep, bucket in per_rep.items():
+        weeks, pdc, latest = bucket["weeks"], bucket["pdc"], bucket["latest"]
         if not weeks and not pdc:
+            continue
+        # No dated line at all -> can't tell they went quiet, so keep the tab.
+        if cutoff and latest and latest < cutoff:
+            quiet += 1
             continue
 
         sh = wb.create_sheet(_unique_sheet_title(rep, used))   # full name; tab per rep
@@ -1828,10 +1961,20 @@ def _append_rep_breakdown_tabs(wb, df: pd.DataFrame, owner: str = "") -> int:
                     _write_pay_cells(sh, r, rec, pay_grid, len(_REP_FULL_HEADER) + 1,
                                      bg, border, active=False)
                 r += 1
+            r += 2
+
+        # Pay-period calendar under everything, same on every rep tab.
+        _, pay_rows = _write_pay_period_table(sh, r, 1, today)
+        banner_rows |= pay_rows
 
         _autosize_rep_tab(sh, banner_rows, header_rows)
+        for c in range(1, 4):                 # room for the calendar's dates
+            dim = sh.column_dimensions[get_column_letter(c)]
+            dim.width = max(dim.width or 0, _ol_width(9))
         added += 1
 
+    if quiet:
+        print(f"  ({quiet} rep(s) with no sale since {cutoff:%m/%d}: no tab)")
     return added
 
 
@@ -1996,6 +2139,10 @@ def csv_to_xlsx(csv_path: Path, output_dir: Path, name_suffix: str = "",
     except Exception as e:  # noqa: BLE001 — see above; base tab still ships
         _TAB_ERROR = f"{type(e).__name__}: {e}"
         print(f"  ⚠ per-rep breakdown tabs skipped: {e}")
+    try:
+        _add_pay_period_tab(wb, date.today())
+    except Exception as e:  # noqa: BLE001 — a calendar never sinks the log
+        print(f"  ⚠ Pay Period tab skipped: {e}")
 
     # Resilient save: if today's file is still open in Excel, Windows locks it
     # and wb.save() raises PermissionError. Fall back to a timestamped name so
