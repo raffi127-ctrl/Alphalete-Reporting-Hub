@@ -15,13 +15,19 @@ Lo que tiene que quedar clavado:
      aunque el day_state siga diciendo INCOMPLETE — `lucy rerun` no lo limpia
   5. el candado del hilo es POR CAPITAN, para que la segunda tanda no le mande
      una copia a quien ya la recibio
+  6. el BORRADOR a medias se acota igual que una falla de modulo: el .eml que no
+     se armo retiene a su dueno, no al dia entero (2026-09-20, ver
+     `AHalfBuiltDraftHoldsOnlyItsCaptain`)
 
 Run:  python -m automations.captainship_drafts.test_scope
 """
 from __future__ import annotations
 
 import datetime as dt
+import tempfile
 import unittest
+from email.message import EmailMessage
+from pathlib import Path
 
 from automations.captainship_drafts import config, scope
 from automations.captainship_drafts import review_gate as rg
@@ -181,6 +187,84 @@ class ThreadLockIsPerCaptain(unittest.TestCase):
         # La segunda tanda: solo el que faltaba.
         self.assertEqual([k for k in scope.other_keys(set()) if k not in done],
                          ["tony"])
+
+
+def _good_eml(path: Path) -> None:
+    """Un .eml como los que arma el reporte: cuerpo HTML + la imagen inline que
+    ese HTML apunta por cid."""
+    msg = EmailMessage()
+    msg["Subject"] = "preview"
+    msg.set_content("texto")
+    msg.add_alternative('<html><body><img src="cid:box1"></body></html>',
+                        subtype="html")
+    msg.get_payload()[1].add_related(b"\x89PNG\r\n\x1a\n", maintype="image",
+                                     subtype="png", cid="<box1>")
+    path.write_bytes(msg.as_bytes())
+
+
+class AHalfBuiltDraftHoldsOnlyItsCaptain(unittest.TestCase):
+    """El domingo 2026-09-20: faltaba UN borrador de quince (Sahil) y el gate
+    retuvo los SEIS bloques — Rafael, Wayne/Starr, Pat/Jess, B2B y NDS estaban
+    enteros y se quedaron sin correo.
+
+    `scope.held_captains` sabe acotar lo que frena por ESTADO, pero un .eml que
+    no se armo no figura en el estado del dia: el dia se lee limpio y el unico
+    que lo ve es el chequeo de los previews, que contestaba por el dia entero.
+    `incomplete_previews` es el que contesta A QUIEN toca."""
+
+    def setUp(self):
+        self._dir = tempfile.TemporaryDirectory()
+        self.root = Path(self._dir.name)
+        self._emls = rg.preview_emls
+        rg.preview_emls = lambda today, block=None: [
+            (c.key, self.root / f"{c.key}.eml") for c in config.CAPTAINS]
+
+    def tearDown(self):
+        rg.preview_emls = self._emls
+        self._dir.cleanup()
+
+    def build(self, *, missing=(), empty=()):
+        for cap in config.CAPTAINS:
+            if cap.key in missing:
+                continue
+            path = self.root / f"{cap.key}.eml"
+            if cap.key in empty:
+                path.write_bytes(b"")
+            else:
+                _good_eml(path)
+
+    def test_the_sunday_that_motivated_this(self):
+        self.build(missing=["sahil"])
+        self.assertEqual(rg.incomplete_previews(TODAY), {"sahil"})
+
+    def test_the_other_blocks_are_complete_without_him(self):
+        """Lo que hace que salgan: sacado el retenido, el resto pasa."""
+        self.build(missing=["sahil"])
+        going = [k for k in ALL if k != "sahil"]
+        ok, why = rg.previews_complete(TODAY, going)
+        self.assertTrue(ok, why)
+
+    def test_an_empty_file_counts_as_missing(self):
+        self.build(empty=["chan"])
+        self.assertEqual(rg.incomplete_previews(TODAY), {"chan"})
+
+    def test_a_broken_one_is_named_too(self):
+        """Sin imagenes = 'no se ve en el correo', el otro modo de falla."""
+        self.build()
+        (self.root / "tony.eml").write_bytes(
+            b"Subject: x\r\nContent-Type: text/html\r\n\r\n<html></html>")
+        self.assertEqual(rg.incomplete_previews(TODAY), {"tony"})
+
+    def test_a_clean_day_holds_nobody(self):
+        self.build()
+        self.assertEqual(rg.incomplete_previews(TODAY), set())
+
+    def test_it_only_looks_at_the_keys_it_was_given(self):
+        """El envio parcial pregunta por los que VAN a salir: el retenido puede
+        estar a medias, que es justamente por lo que se lo retiene."""
+        self.build(missing=["sahil"])
+        self.assertEqual(rg.incomplete_previews(TODAY, ["rafael", "wayne"]),
+                         set())
 
 
 class _FakeSlack:

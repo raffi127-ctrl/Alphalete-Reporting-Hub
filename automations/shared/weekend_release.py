@@ -374,6 +374,15 @@ def held_note(reason: str, what: str,
     today = today or dt.datetime.now(CENTRAL).date()
     when = ("hoy es fin de semana" if is_weekend(today)
             else f"hoy ({today.isoformat()}) no hay revisores")
+    # EL MOTIVO YA VIENE CON EL DÍA PUESTO. Los tres gates le pasan acá el `why`
+    # de `auto_release`, que lo arma como "<day_label>, pero <motivo>" — y esta
+    # nota abre diciendo lo mismo, así que salía «hoy es fin de semana y X se
+    # habría enviado solo, pero fin de semana sin revisores, pero …» (visto el
+    # 2026-09-20). Se saca ese prefijo si está; un motivo escrito a mano no se
+    # toca.
+    prefix = f"{day_label(today)}, pero "
+    if reason.startswith(prefix):
+        reason = reason[len(prefix):]
     return (f"— {HELD_MARK}: {when} y {what} se habría enviado "
             f"solo, pero {reason}. Queda esperando un ✅ como cualquier otro "
             f"día; si está bien, aprobalo y sale.")

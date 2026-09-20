@@ -319,5 +319,35 @@ class AOneOffDayOffBehavesLikeASaturday(Base):
         self.assertIn("--no-auto", why)
 
 
+class TheHeldNoteSaysTheDayOnce(Base):
+    """Los tres gates le pasan a `held_note` el `why` de `auto_release`, que ya
+    viene con el día adelante. El domingo 2026-09-20 la nota salió diciendo
+    «hoy es fin de semana y X se habría enviado solo, pero fin de semana sin
+    revisores, pero el reporte no está completo…»."""
+
+    def test_the_reason_from_auto_release_is_not_repeated(self):
+        self.clean({"captainship_drafts_review": {"status": "DONE"}}, day=SAT)
+        ok, why = wr.auto_release(["captainship_drafts_review"], SAT,
+                                  own_ids=OWN, verify=BAD)
+        self.assertFalse(ok)
+        note = wr.held_note(why, "los reportes de Fiber 1", SAT)
+        self.assertEqual(note.count("fin de semana"), 1)
+        self.assertIn("borradores", note)
+
+    def test_the_same_on_a_day_off(self):
+        self.clean({"captainship_drafts_review": {"status": "DONE"}},
+                   day=FRI_OFF)
+        ok, why = wr.auto_release(["captainship_drafts_review"], FRI_OFF,
+                                  own_ids=OWN, verify=BAD)
+        self.assertFalse(ok)
+        note = wr.held_note(why, "los reportes de Fiber 1", FRI_OFF)
+        self.assertEqual(note.count("no hay revisores"), 1)
+        self.assertNotIn("día sin revisores", note)
+
+    def test_a_hand_written_reason_is_left_alone(self):
+        note = wr.held_note("la sesión de AppStream se murió", "el correo", SAT)
+        self.assertIn("pero la sesión de AppStream se murió", note)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

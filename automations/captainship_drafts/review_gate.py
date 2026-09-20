@@ -296,6 +296,22 @@ def previews_complete(today: dt.date,
     caught one step earlier, by the metric module's own FAILED/INCOMPLETE status
     in the day state, which weekend_release treats as a hard stop.
     """
+    want, missing, broken, _bad = _scan_previews(today, keys)
+    if missing:
+        return False, (f"faltan {len(missing)} de {want} borradores: "
+                       f"{', '.join(missing)}")
+    if broken:
+        return False, f"borradores con problemas: {', '.join(broken)}"
+    return True, f"los {want} borradores estan completos y con las imagenes bien"
+
+
+def _scan_previews(today: dt.date, keys: Optional[Sequence[str]] = None
+                   ) -> Tuple[int, List[str], List[str], Set[str]]:
+    """(cuantos se miraron, faltantes, rotos con su motivo, claves tocadas).
+
+    El chequeo en si — lo que `previews_complete` cuenta en una frase y
+    `incomplete_previews` devuelve como conjunto de capitanes.
+    """
     import re as _re
     from email import policy as _policy
     from email.parser import BytesParser as _BytesParser
@@ -308,10 +324,11 @@ def previews_complete(today: dt.date,
     pairs = [(k, p) for k, p in preview_emls(today)
              if wanted is None or k in wanted]
     want = len(pairs)
-    missing, broken = [], []
+    missing, broken, bad = [], [], set()
     for key, path in pairs:
         if not path.exists() or path.stat().st_size == 0:
             missing.append(key)
+            bad.add(key)
             continue
         try:
             msg = _BytesParser(policy=_policy.default).parsebytes(path.read_bytes())
@@ -323,22 +340,36 @@ def previews_complete(today: dt.date,
                     cids.append((part.get("Content-ID") or "").strip()[1:-1])
             if not html:
                 broken.append(f"{key} (sin cuerpo HTML)")
+                bad.add(key)
                 continue
             refs = _re.findall(r'src="cid:([^"]+)"', html)
             if not cids:
                 broken.append(f"{key} (sin imagenes)")
+                bad.add(key)
             elif [r for r in refs if r not in cids]:
                 broken.append(f"{key} (imagenes rotas: "
                               f"{len([r for r in refs if r not in cids])} cid sin parte)")
+                bad.add(key)
         except Exception as e:  # noqa: BLE001 - un .eml ilegible ES el problema
             broken.append(f"{key} ({type(e).__name__})")
+            bad.add(key)
+    return want, missing, broken, bad
 
-    if missing:
-        return False, (f"faltan {len(missing)} de {want} borradores: "
-                       f"{', '.join(missing)}")
-    if broken:
-        return False, f"borradores con problemas: {', '.join(broken)}"
-    return True, f"los {want} borradores estan completos y con las imagenes bien"
+
+def incomplete_previews(today: dt.date,
+                        keys: Optional[Sequence[str]] = None) -> Set[str]:
+    """QUE capitanes tienen el borrador a medias hoy (vacio = ninguno).
+
+    El gemelo por-capitan de `previews_complete`, y existe por lo mismo que
+    `scope.held_captains`: **una falla que toca a un capitan no frena a los
+    otros** (Eve 2026-08-22). `scope.held_captains` sabe acotar lo que frena por
+    ESTADO (un modulo de metricas que fallo), pero un .eml que no se armo no
+    deja rastro en el estado del dia — el dia figura limpio y el unico que se
+    entera es este chequeo. Sin esto, el domingo 2026-09-20 el borrador de Sahil
+    (uno de quince) retuvo los SEIS bloques: Rafael, Wayne/Starr y Pat/Jess
+    estaban enteros y se quedaron sin correo igual.
+    """
+    return _scan_previews(today, keys)[3]
 
 
 def eml_digest(today: dt.date, block: Optional["config.Block"] = None) -> str:
@@ -1678,14 +1709,35 @@ def main(argv=None) -> int:
                 held, scope_why = scope_today(today,
                                               enabled=not args.no_partial)
                 weekend_auto = wr.is_auto_send_day(today) and not args.no_auto
-                going = [k for b in unticked for k in b.captains
-                         if k not in (held or ())]
+                # Los candidatos de hoy: los que no salieron todavia. Un capitan
+                # que ya recibio su correo no puede retener nada.
+                cand = [k for b in unticked for k in b.captains if k not in done]
+                if held is not None:
+                    # EL BORRADOR A MEDIAS TAMBIEN SE ACOTA. `scope_today` sabe
+                    # acotar lo que frena por ESTADO (un modulo de metricas que
+                    # fallo), pero un .eml que no se armo no deja rastro en el
+                    # estado del dia: el dia figura limpio y el unico que lo ve
+                    # es `previews_complete`, que contesta por el DIA entero. Por
+                    # eso el domingo 2026-09-20 el borrador de Sahil (uno de
+                    # quince) retuvo los SEIS bloques — Rafael, Wayne/Starr y
+                    # Pat/Jess estaban enteros. Ahora se retiene a su dueno y el
+                    # resto sale, que es la regla de Eve del 2026-08-22.
+                    bad = incomplete_previews(today, cand)
+                    if bad:
+                        held = set(held) | bad
+                        scope_why = (f"{scope_why}; borrador a medias: "
+                                     f"{', '.join(sorted(bad))}")
+                going = [k for k in cand if k not in (held or ())]
                 ready, ready_why = (previews_complete(today, going)
                                     if held is not None and weekend_auto and going
                                     else (False, "sin envio parcial"))
                 if held is None or not weekend_auto or not ready:
                     if args.send and wr.is_auto_send_day(today) and not args.no_auto:
-                        detail = why if held is None else f"{why} ({ready_why})"
+                        # Sin repetir: `ready_why` suele ser LA MISMA frase que
+                        # ya trae `why` («faltan 1 de 15 borradores: sahil»), y
+                        # la nota la decia dos veces (2026-09-20).
+                        detail = (why if held is None or ready_why in why
+                                  else f"{why} ({ready_why})")
                         for block in unticked:
                             hold_weekend(parent, block, detail, args.channel,
                                          thread=thread)
