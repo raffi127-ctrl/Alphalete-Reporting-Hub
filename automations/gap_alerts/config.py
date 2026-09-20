@@ -95,12 +95,25 @@ RAF = {
     # anchors (:00/:30 after the stagger) and Partners takes them shifted a
     # half-cadence later (:15/:45). Neither room loses a board: each still
     # gets one every 30 minutes, and no minute of the day carries both.
+    #
+    # `leader_tags` — tag the office's LEADERS on the day's first Slack post
+    # (Megan 2026-09-20). RAF ONLY, and the flag is what keeps it that way:
+    # gap_alerts.leaders reads the 'Alphalete SALES BOARD 2025' workbook, which
+    # is HIS roster, so an office that switched this on would @-ping Raf's
+    # leaders into its own room. The sign-up form never emits the key, so no
+    # onboarded office can turn it on by accident.
+    "leader_tags": True,
     "destinations": [
         {"kind": "imessage", "name": "Alphalete Partners",
          "cadence_min": 30, "offset_min": 15},
         {"kind": "imessage", "name": "Alphalete A-Team Chat", "cadence_min": 30},
+        # `thread_daily` — ONE post a day in the channel, every later board a
+        # reply inside it (Megan 2026-09-20: "versus the chat being filled
+        # up"). 30 minutes across a 1:30pm-10pm weekday is ~17 boards, and they
+        # were 17 separate messages. iMessage has no threads, so the two
+        # Partners/A-Team rooms are untouched.
         {"kind": "slack", "channel_id": SLACK_HOURLY_CHANNEL,
-         "cadence_min": 30},
+         "cadence_min": 30, "thread_daily": True},
     ],
 }
 

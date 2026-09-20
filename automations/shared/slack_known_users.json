@@ -1,5 +1,5 @@
 {
-  "_note": "Slack IDs learned from humans hand-tagging people a report said it could not tag. Written by automations.shared.slack_tag_learning — safe to hand-edit. Keyed by normalized name. IDs and display names only; nothing secret, which is why this is committed (git is the only channel to the mini).",
+  "_note": "Slack IDs learned from humans hand-tagging people a report said it could not tag. Committed so every machine shares them. Runtime writes go to the gitignored local overlay instead (see LOCAL_PATH) and are folded in here with --promote.",
   "users": {
     "aimee garibay": {
       "id": "U0APVP29QSD",
@@ -18,6 +18,192 @@
       "name": "Kenneth Guzman",
       "source": "new_start_followup",
       "learned": "2026-08-30"
+    },
+    "chloe johnson": {
+      "id": "U09E6T2EUUQ",
+      "name": "Chloe Johnson",
+      "source": "new_start_followup",
+      "learned": "2026-09-12"
+    },
+    "lakeaih gregory": {
+      "id": "U0B466L5E3Z",
+      "name": "Lakeaih Gregory",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "pranish shrestha": {
+      "id": "U0AME3NU5KQ",
+      "name": "Pranish Shrestha",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "edgar camunez": {
+      "id": "U0A80F907N3",
+      "name": "Edgar Camunez",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "ian rodriguez": {
+      "id": "U0ACM3GLAG4",
+      "name": "Ian Rodriguez",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "raphael luzes": {
+      "id": "U0BCRV9TA04",
+      "name": "Raphael Luzes",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "willie henderson": {
+      "id": "U060MNFQLJ1",
+      "name": "Willie Henderson",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "thomas crenshaw": {
+      "id": "U0AK05E6S11",
+      "name": "Thomas Crenshaw",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "andrew sanborn": {
+      "id": "U08RNHP5WMD",
+      "name": "Andrew Sanborn",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "alyssa moreno": {
+      "id": "U0BEUK74PCY",
+      "name": "Alyssa Moreno",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "jordan ruiz": {
+      "id": "U0B36GDTT6F",
+      "name": "Jordan Ruiz",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "justin avila": {
+      "id": "U0BH2F6R6NN",
+      "name": "Justin Avila",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "benjamin kushpit": {
+      "id": "U0B1ZDNQUKX",
+      "name": "Benjamin Kushpit",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "sydney agnew": {
+      "id": "U0BA9SL74T1",
+      "name": "Sydney Agnew",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "zoria johnson": {
+      "id": "U08LSELLCGY",
+      "name": "Zoria Johnson",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "ibukunoluwa olapade ogunlola": {
+      "id": "U0AQN5YHV4G",
+      "name": "Ibukunoluwa Olapade Ogunlola",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "anthony marchetti": {
+      "id": "U0BBV9NTLGY",
+      "name": "Anthony Marchetti",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "bill hirwa": {
+      "id": "U0ACYK2MCQ6",
+      "name": "Bill Hirwa",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "andres mejia": {
+      "id": "U0BR63U6SMA",
+      "name": "Andres Mejia",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "keegan miller": {
+      "id": "U0BQV4A45PE",
+      "name": "Keegan Miller",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "rhea mckee": {
+      "id": "U0B8N3DNDJL",
+      "name": "Rhea McKee",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "hayden wilson": {
+      "id": "U083XNMHD39",
+      "name": "Hayden Wilson",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "ciniya weatherspoon": {
+      "id": "U0BQYCCC9PX",
+      "name": "Ciniya Weatherspoon",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "jessie gomez": {
+      "id": "U0B93EDHNGN",
+      "name": "Jessie Gomez",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "safiya mahmoud": {
+      "id": "U0AGKBS4TKJ",
+      "name": "Safiya Mahmoud",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "anthony coca": {
+      "id": "U0B4T7FKM38",
+      "name": "Anthony Coca",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "cooper childers": {
+      "id": "U0BNRMM165V",
+      "name": "Cooper Childers",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "giovanna santos": {
+      "id": "U0BQSFD6PDL",
+      "name": "Giovanna Santos",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "samajai hoy": {
+      "id": "U095L0FG276",
+      "name": "Samajai Hoy",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "hank tran": {
+      "id": "U0BRVG0U0QP",
+      "name": "Hank Tran",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
+    },
+    "lemsy vazquez": {
+      "id": "U0BKPBHLCDD",
+      "name": "Lemsy Vazquez",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-20"
     }
   }
 }

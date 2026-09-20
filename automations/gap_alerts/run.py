@@ -484,35 +484,152 @@ def _cadence_due(cfg: Dict, now: Optional[dt.datetime] = None) -> bool:
     return (anchor % cadence) == 0
 
 
+# --- the day's Slack thread ---------------------------------------------------
+# Megan's Loom, 2026-09-20: *"can we do ONE post that's called Knocks and
+# Dispositions... it only needs to tag them one time, on the first post... and
+# then it just creates the thread, so the rep keeps getting the notification
+# and can see it on the thread, versus the chat being filled up."*
+#
+# Raf's Slack destination fires every 30 minutes, so a weekday used to put ~17
+# separate boards in #alphalete-lvl1-chat and a Saturday ~19. Now the FIRST
+# board of the day posts a parent that names the report and @-tags every
+# non-terminated leader on the sales board, and every later board of that day
+# is a REPLY to it. The channel gains one message a day; the people tagged in
+# the parent follow the thread and are notified on every reply.
+#
+# DAY-SCOPED, keyed by office AND channel: two offices posting into one room
+# must not share a thread, and tomorrow must start a fresh one (the tag list is
+# re-read then, so a rep terminated today is not tagged tomorrow).
+def _thread_state_key(cfg: Dict, channel: str) -> str:
+    return "%s|%s" % (cfg.get("key", "?"), channel)
+
+
+def _leader_tag_line(cfg: Dict, day: dt.date) -> str:
+    """The mention block for today's parent post, or "" if this office does not
+    tag (or the board could not be read).
+
+    NEVER FATAL. A sales board that moved a column is a reason to post an
+    untagged parent, not a reason to drop the day's boards entirely — the board
+    images are the report, the tags are the delivery.
+    """
+    if not cfg.get("leader_tags"):
+        return ""
+    try:
+        from automations.gap_alerts import leaders as L
+        from automations.shared import slack_metrics_post as smp
+        found, tab = L.read_leaders(day, logfn=_log)
+        if not found:
+            _log("  no leaders on %r — parent posts untagged" % tab)
+            return ""
+        ids, missing = L.resolve_tags([l.name for l in found],
+                                      client=smp._client(), logfn=_log)
+        _log("  tagging %d of %d leader(s) off %r%s"
+             % (len(ids), len(found), tab,
+                ("; no Slack account for " + ", ".join(missing)) if missing else ""))
+        return L.tag_line(ids, missing)
+    except Exception as e:  # noqa: BLE001
+        _log("  leader tags skipped (%s: %s) — the parent posts untagged"
+             % (type(e).__name__, str(e)[:160]))
+        return ""
+
+
+def _parent_text(tag_line: str) -> str:
+    """The day's header post, verbatim as Megan wrote it: the report name and
+    what the board is ranked by, said ONCE for the day, with the leaders tagged
+    on the line under it.
+
+    NO CLOCK. This message is written at the day's first board — 1:30pm on a
+    weekday, 10:45am on a Saturday — and is still at the top of the thread at
+    10pm. The time belongs on the replies, one per board.
+    """
+    text = "*%s · ranked by total knocks*" % C.CARD_TITLE.title()
+    return text + "\n" + tag_line if tag_line else text
+
+
+def _daily_thread_ts(cfg: Dict, channel: str, day: dt.date,
+                     dry_run: bool = True) -> str:
+    """The ts of today's parent post in `channel`, creating it if today has none.
+
+    Returns "" when there is no thread to post into — a dry run, or a parent
+    that failed to post. The caller then posts the board at channel level, which
+    is the OLD behaviour: a thread is how the room prefers to read this, but a
+    board that does not arrive at all is the failure that matters.
+    """
+    key = _thread_state_key(cfg, channel)
+    data = _state()
+    rec = (data.get("_slack_thread") or {}).get(key) or {}
+    if rec.get("day") == day.isoformat() and rec.get("ts"):
+        return rec["ts"]
+
+    # Resolution runs on a dry run too — it is read-only, and it is the half
+    # most likely to be wrong (a renamed board column, a leader with no Slack
+    # account). A preview that skipped it would prove nothing.
+    line = _leader_tag_line(cfg, day)
+    text = _parent_text(line)
+    if dry_run:
+        _log("  SLACK (preview) would open today's thread in %s: %s"
+             % (channel, text.replace("\n", " / ")))
+        return ""
+    try:
+        from automations.shared import slack_metrics_post as smp
+        resp = smp._client().chat_postMessage(channel=channel, text=text)
+        ts = resp["ts"]
+    except Exception as e:  # noqa: BLE001
+        _log("  could not open today's thread in %s (%s: %s) — posting the "
+             "board at channel level" % (channel, type(e).__name__, str(e)[:160]))
+        return ""
+    data = _state()
+    data.setdefault("_slack_thread", {})[key] = {"day": day.isoformat(), "ts": ts}
+    _save_state(data)
+    _log("  opened today's thread in %s (ts %s)" % (channel, ts))
+    return ts
+
+
 # The old _slack_due/_mark_slack_sent pair is gone: "once this clock hour" was
 # how the single hourly Slack post avoided drifting later across the day, and a
 # destination's own cadence anchored to the quarter hour says the same thing
 # without a second piece of state to keep in sync.
 def post_slack(cfg: Dict, png: Path, slot: str, day: dt.date,
-               channel: str = "", dry_run: bool = True) -> Dict:
+               channel: str = "", dry_run: bool = True,
+               thread_ts: str = "") -> Dict:
     """Put the board in #alphalete-lvl1-chat, once an hour (Raf 2026-08-29).
 
     The board only — not the gap list. The gap list is a to-text list for the
     handful of people who chase reps; a channel of reps reading a leaderboard
     has no use for who is 20 minutes dark, and posting it would put every rep's
     quiet stretch in front of everyone.
+
+    WHERE THE TIME GOES depends on whether there is a thread (Megan
+    2026-09-20). The day's PARENT is written once and carries no clock —
+    "Knocks & Dispositions · ranked by total knocks" — and each reply under it
+    is labelled with its own time, which is what tells 5:00 PM's board from
+    5:30 PM's in a thread of twenty near-identical images. Without a thread the
+    caption stays what it always was, minus the time the board's own title band
+    already carries.
     """
     who = cfg.get("label") or cfg["name"].split()[0]
-    comment = ("*%s — %s*  ·  ranked by total knocks"
-               % (C.CARD_TITLE.title(), slot))
+    comment = ("*%s*" % slot if thread_ts
+               else "*%s  ·  ranked by total knocks*" % C.CARD_TITLE.title())
     # Per-office channel: the module default is #alphalete-lvl1-chat, which is
     # RAF'S org's room. An office that enrolled through the sign-up form brings
     # its own channel, and inheriting the default would post its numbers in
     # front of another org.
     channel = (channel or "").strip() or SLACK_FALLBACK_CHANNEL
     if dry_run:
-        return {"dry_run": True, "channel": channel,
+        return {"dry_run": True, "channel": channel, "thread_ts": thread_ts,
                 "comment": comment, "file": png.name}
     from automations.shared import slack_metrics_post as smp
-    smp._client().files_upload_v2(
-        file_uploads=[{"file": str(png), "filename": png.name}],
-        channel=channel, initial_comment=comment)
-    return {"channel": channel, "file": png.name, "ok": True}
+    kwargs = {"file_uploads": [{"file": str(png), "filename": png.name}],
+              "channel": channel}
+    if comment:
+        kwargs["initial_comment"] = comment
+    if thread_ts:
+        # No reply_broadcast: putting the board back in the channel would undo
+        # the whole point of the thread.
+        kwargs["thread_ts"] = thread_ts
+    smp._client().files_upload_v2(**kwargs)
+    return {"channel": channel, "file": png.name, "thread_ts": thread_ts,
+            "ok": True}
 
 
 def _publish_hub_once(day: dt.date) -> None:
@@ -1503,11 +1620,19 @@ def tick(day: dt.date, *, send: bool, only: str = "",
                         _log("  %s skipped — no board image to post (the gap "
                              "list went to iMessage as text)" % where)
                         continue
+                    # One post a day, and every later board is a reply to it
+                    # (Megan 2026-09-20). An office without `thread_daily`
+                    # keeps posting at channel level, unchanged.
+                    thread_ts = (_daily_thread_ts(cfg, channel, day,
+                                                  dry_run=not send)
+                                 if dest.get("thread_daily") else "")
                     res = post_slack(cfg, boards[0], slot, day,
-                                     channel=channel, dry_run=not send)
-                    _log("  %s -> %s (%s)"
+                                     channel=channel, dry_run=not send,
+                                     thread_ts=thread_ts)
+                    _log("  %s -> %s (%s)%s"
                          % ("SLACK" if send else "SLACK (preview)",
-                            res.get("channel"), res.get("file")))
+                            res.get("channel"), res.get("file"),
+                            " in today's thread" if thread_ts else ""))
                     delivered = True
                     delivered_dests.append(dest)
                 else:
