@@ -117,8 +117,8 @@ def find_anchor(client, channel: str, friday: dt.date, lookback: int = 200,
     # THE call that died at 09:30 on 2026-09-20, with a bare traceback. Retried
     # here rather than left to the client's slack_sdk handler, which that run
     # proved is not always reached. [[slack_retry]]
-    resp = slack_retry.read(client.conversations_history,
-                            channel=channel, limit=lookback, _log=print)
+    resp = slack_retry.read_paged(client.conversations_history,
+                                  channel=channel, limit=lookback, _log=print)
     matches = []
     for msg in resp.get("messages", []):
         if msg.get("subtype"):
@@ -245,7 +245,7 @@ def read_thread(friday: Optional[dt.date] = None, channel: str = CHANNEL_ID,
                 " by <@{}>".format(poster) if poster else "")
         )
 
-    replies = slack_retry.read(
+    replies = slack_retry.read_paged(
         client.conversations_replies,
         channel=channel, ts=anchor["ts"], limit=200, _log=print
     ).get("messages", [])

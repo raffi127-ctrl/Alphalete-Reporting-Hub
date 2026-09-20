@@ -110,6 +110,57 @@ def describe(err: BaseException) -> str:
     return "{}: {}".format(type(err).__name__, str(err)[:160])
 
 
+# HOW MANY MESSAGES TO ASK FOR IN ONE GO. 50, not Slack's 200 maximum.
+#
+# WHY (2026-09-20, after the retry above turned out not to be enough). The
+# roster finder asks #11280 for `limit=200`, which on that channel is now a
+# ~180 KB response, and on Lucy 1 it truncates at ~66-75 KB EVERY TIME:
+#
+#   17:03  74040 of 180027 — retrying in 1s (1/2)
+#          74664 of 180037 — retrying in 2s (2/2)
+#          then INCOMPLETE
+#
+# Three attempts, three truncations at the same size. That is not a wobble a
+# retry can ride out, and the same call answers 5/5 from a laptop, so it is the
+# size of the response on that machine's network stack -- not Slack refusing.
+# The response is also GROWING (178,741 bytes this morning, 180,037 by evening)
+# as the channel fills, so the day it started failing was the day it crossed
+# whatever that box's ceiling is, and it will not come back on its own.
+#
+# 50 keeps a page near 45 KB, comfortably under the ~66 KB floor of every
+# truncation seen. The retry stays for the genuinely transient case.
+PAGE = 50
+
+
+def read_paged(fn: Callable, *, limit: int, page: int = PAGE,
+               _log: Optional[Callable[[str], None]] = None,
+               **kwargs) -> dict:
+    """`fn` with cursor paging, returning one merged {"messages": [...]}.
+
+    Asks for `limit` messages in pages of `page`, following Slack's
+    `response_metadata.next_cursor`, and stops early when a page comes back
+    short (that is the end of the channel). Each page is retried by read()
+    above, so a genuine wobble on one page still recovers.
+
+    The caller sees exactly what a single `limit=` call would have returned, so
+    this is a drop-in for one -- only the wire traffic changes.
+    """
+    out: list = []
+    cursor = None
+    while len(out) < limit:
+        want = min(page, limit - len(out))
+        call = dict(kwargs, limit=want)
+        if cursor:
+            call["cursor"] = cursor
+        resp = read(fn, _log=_log, **call)
+        batch = resp.get("messages") or []
+        out.extend(batch)
+        cursor = ((resp.get("response_metadata") or {}).get("next_cursor") or "")
+        if not cursor or len(batch) < want:
+            break          # end of the channel, not a short read
+    return {"messages": out[:limit]}
+
+
 def read(fn: Callable, *args,
          _tries: int = _TRIES,
          _base_delay: float = _BASE_DELAY,

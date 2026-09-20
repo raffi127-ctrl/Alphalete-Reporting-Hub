@@ -195,8 +195,11 @@ def _find_roster_image(client, monday_iso: Optional[str] = None,
     in that post's thread (the roster table, not the small funnel-count image).
     With `poster` given, only that author's post counts (one post per funnel
     since the week of 8/24 — see thread.FUNNELS)."""
-    hist = slack_retry.read(client.conversations_history,
-                            channel=CHANNEL_ID, limit=200, _log=print)
+    # PAGED, not one limit=200 call: on Lucy 1 that response is ~180 KB and
+    # truncates at ~74 KB every attempt, which is the failure this report kept
+    # dying on all of 2026-09-20. [[slack_retry.read_paged]]
+    hist = slack_retry.read_paged(client.conversations_history,
+                                  channel=CHANNEL_ID, limit=200, _log=print)
     matches = [m for m in hist.get("messages", [])
                if POST_RE.search(m.get("text", "") or "")
                and (not poster or m.get("user") == poster)]

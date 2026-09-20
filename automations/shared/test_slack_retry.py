@@ -127,3 +127,72 @@ def test_there_is_no_helper_for_writes():
     public = {n for n in dir(R) if not n.startswith("_")}
     assert "read" in public
     assert not {"write", "post", "send", "call"} & public
+
+
+# --- paging, because the retry was not enough -------------------------------
+class _Pager:
+    """A fake conversations.history that truncates any page bigger than
+    `ceiling` — the way Lucy 1 truncated a ~180 KB limit=200 response at
+    ~74 KB, three attempts running, on 2026-09-20 17:03."""
+    def __init__(self, total=200, ceiling=60):
+        self.msgs = [{"ts": "%d.0" % i} for i in range(total)]
+        self.ceiling = ceiling
+        self.calls = []
+
+    def __call__(self, channel=None, limit=None, cursor=None, ts=None):
+        self.calls.append(limit)
+        if limit > self.ceiling:
+            raise _truncated()
+        start = int(cursor or 0)
+        batch = self.msgs[start:start + limit]
+        nxt = start + len(batch)
+        return {"messages": batch,
+                "response_metadata": {"next_cursor": str(nxt) if nxt < len(self.msgs) else ""}}
+
+
+def test_paging_gets_all_200_without_ever_asking_for_200():
+    api = _Pager()
+    got = R.read_paged(api, channel="C0AUAS88FGW", limit=200,
+                       _sleeper=lambda s: None)
+    assert len(got["messages"]) == 200
+    assert max(api.calls) <= R.PAGE          # never asks for the size that breaks
+    assert api.calls == [50, 50, 50, 50]
+
+
+def test_the_unpaged_call_is_the_one_that_fails():
+    """Pins WHY paging was needed: the same fake, asked the old way, dies —
+    and retrying it just dies three times."""
+    api = _Pager()
+    with pytest.raises(http.client.IncompleteRead):
+        R.read(api, channel="C0AUAS88FGW", limit=200, _sleeper=lambda s: None)
+    assert api.calls == [200, 200, 200]
+
+
+def test_paging_stops_at_the_end_of_a_short_channel():
+    api = _Pager(total=70)
+    got = R.read_paged(api, channel="C1", limit=200, _sleeper=lambda s: None)
+    assert len(got["messages"]) == 70
+    assert api.calls == [50, 50]             # second page comes back short
+
+
+def test_a_page_that_wobbles_is_still_retried():
+    """Paging replaces the retry for the SIZE problem; the retry still covers a
+    genuinely transient truncation on one page."""
+    api = _Pager(total=100)
+    real = api.__call__
+    state = {"n": 0}
+
+    def flaky(**kw):
+        state["n"] += 1
+        if state["n"] == 1:
+            raise _truncated()
+        return real(**kw)
+
+    got = R.read_paged(flaky, channel="C1", limit=100, _sleeper=lambda s: None)
+    assert len(got["messages"]) == 100
+
+
+def test_paging_never_returns_more_than_asked():
+    api = _Pager(total=500)
+    got = R.read_paged(api, channel="C1", limit=120, _sleeper=lambda s: None)
+    assert len(got["messages"]) == 120
