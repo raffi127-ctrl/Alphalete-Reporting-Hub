@@ -6,10 +6,18 @@
     <string>com.alphalete.mind-map-daily</string>
 
     <!-- Path is the laptop placeholder; install_agent.py rewrites it to the
-         installing machine's repo path. RUNS ON LUCY 1: she already reads
-         'Alphalete SALES BOARD 2025' all day for the sales board sweep and
-         posts to #alphalete-sales.
-         `lucy update` -> `lucy rerun install_mind_map_agent`. -->
+         installing machine's repo path. `lucy update` -> `lucy rerun
+         install_mind_map_agent`.
+
+         RUNS ON LUCY 1 — the mini — and stays there (Megan 2026-09-20, after
+         asking whether her busiest box was the wrong one). Lucy 1 carries the
+         most reports of any runner (289 registered, 157 in the 4am batch), but
+         that load is the 4AM BATCH and it is long finished by 7. At 7:00 her
+         agent list is EMPTY: the next one is 8:00 (slack-skool-email). The
+         6:15-7:30 cluster people think of is LUCY 2's. This job is ~100s, two
+         Sheets reads and a headless render, so it costs that slot almost
+         nothing — and the mini is the box that is always awake, where a
+         laptop asleep at 7am would skip the day in silence. -->
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
