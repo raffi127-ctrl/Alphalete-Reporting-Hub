@@ -41,6 +41,8 @@ from automations.board_emails import email_send as es
 from automations.org_sales_board.review_gate import (
     REVIEW_CHANNEL, APPROVERS, APPROVE_EMOJI,
     _mentions, _client, _channel, _said, upload_pdf,
+    # The day's window for a channel read — small on purpose; see _since.
+    _since,
 )
 # Publishes the "approved" phase row the Hub card colours green.
 from automations.shared import review_approval as RA
@@ -133,7 +135,8 @@ def _all_posts(board: B.Board, run_day: dt.date,
     four gates share this channel, and a title that is a substring of another's
     would let one board's checkmark release another's email."""
     want = _title(board, run_day)
-    hist = _client().conversations_history(channel=_channel(channel), limit=100)
+    hist = _client().conversations_history(channel=_channel(channel),
+                                           oldest=_since(run_day), limit=100)
     return [m for m in hist.get("messages", [])
             if (m.get("text") or "").lstrip("*").startswith(want)]
 

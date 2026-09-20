@@ -362,6 +362,25 @@ def _title_legacy(today: dt.date) -> str:
     return f"{TITLE_LEGACY} {reported.month}/{reported.day}"
 
 
+def _since(day: dt.date) -> str:
+    """Slack's `oldest` for a day's review posts — the window `_all_posts` reads.
+
+    2026-09-20: asking for the whole channel (limit=100, ~180 KB of JSON) is
+    what Slack kept cutting off mid-answer — three runs died on
+    http.client.IncompleteRead around 70 KB and the Country board's review link
+    never got posted. A day's post is made ON that day, so a window that opens
+    well before its Central midnight cannot miss one, and the reply comes back
+    a tenth of the size.
+
+    Deliberately generous and computed in UTC: 18 hours of slack means no time
+    zone, no DST switch and no late-night rerun can put a post outside its own
+    window. Losing one would be expensive — the gate would believe there is no
+    post for today and publish a second one."""
+    start = dt.datetime(day.year, day.month, day.day,
+                        tzinfo=dt.timezone.utc) - dt.timedelta(hours=18)
+    return str(start.timestamp())
+
+
 def _all_posts(today: dt.date, channel: Optional[str] = None) -> list:
     """Every review post for `today`, newest first. More than one means a rerun
     happened; the captainship gate's posts share this channel and are skipped by
@@ -372,7 +391,8 @@ def _all_posts(today: dt.date, channel: Optional[str] = None) -> list:
     the checker would simply have stopped finding it and that day's email would
     never have gone out."""
     wants = (_title(today), _title_legacy(today))
-    hist = _client().conversations_history(channel=_channel(channel), limit=100)
+    hist = _client().conversations_history(channel=_channel(channel),
+                                           oldest=_since(today), limit=100)
     # PREFIX, not "anywhere in the text" (2026-07-30). Four gates now share this
     # channel, and every post opens with *its own title*. A plain `in` matched
     # any title that merely CONTAINED this one, so a board named
