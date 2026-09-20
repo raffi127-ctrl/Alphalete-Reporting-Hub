@@ -83,6 +83,12 @@ MAX_PER_RUN = int(os.environ.get("OAT_MAX_PER_RUN", "60"))
 # (it did not cover the queue), write the diag row, return 0. The wrapper's kill
 # stays as the backstop for a walk that is genuinely stuck.
 MAX_WALK_SECONDS = int(os.environ.get("OAT_MAX_WALK_SECONDS", "900"))
+# An ABSOLUTE deadline (unix epoch) set by deploy/applicant_push.sh from the same
+# clock its SIGKILL uses. MAX_WALK_SECONDS alone starts counting when the WALK
+# does and cannot see the minutes spent launching Chrome and logging in — which
+# is exactly how the first version of this still got killed mid-applicant. The
+# walk stops at whichever of the two comes first. 0 = not set (a hand-run).
+WALK_DEADLINE_EPOCH = float(os.environ.get("OAT_WALK_DEADLINE_EPOCH", "0") or 0)
 
 # MAX_PER_RUN counts APPLICANTS WE ACTUALLY WORK, not applicants we look at.
 # WHY (2026-09-03): a settled applicant — resume already read today and it

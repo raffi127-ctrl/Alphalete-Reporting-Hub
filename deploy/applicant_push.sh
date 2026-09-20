@@ -345,6 +345,21 @@ ARGS="--live --oat-only"
 # Chrome is pkilled here by its own profile marker (rp_cdp_profile — never the
 # session holder's or Tableau's profile) or it would hold the profile lock.
 MAX_RUN_S=${APPLICANT_PUSH_MAX_RUN_S:-1200}
+# HAND THE WALK THE DEADLINE WE WILL ACTUALLY ENFORCE (2026-09-20).
+#
+# The walk got a budget of its own so it can stop cleanly instead of being
+# SIGKILLed mid-applicant (config.MAX_WALK_SECONDS) — but a budget the WALK
+# starts counting is blind to everything before it: profile copy, Chrome launch,
+# login, Cloudflare, the office switch. On Raf's 11280 at 17:20 that preamble ate
+# the difference, the 900s budget had not elapsed when MAX_RUN_S fired at 1200s,
+# and the walk died mid-read exactly as before.
+#
+# So the deadline is an ABSOLUTE wall-clock epoch, computed here from the same
+# clock the kill uses, and the walk stops at the earlier of that and its own
+# budget. 180s of headroom: the check runs between applicants, and one applicant
+# can take a minute or more (resume fetch + a Cloudflare wait), so the margin has
+# to cover an in-flight read PLUS the snapshot and diag writes that follow.
+export OAT_WALK_DEADLINE_EPOCH=$(( $(date +%s) + MAX_RUN_S - 180 ))
 
 # ---- DON'T START ON TOP OF A HAND-RUN (2026-09-13) ---------------------------
 # The collision guard was one-sided. mini_control REFUSES a rerun while a walk is

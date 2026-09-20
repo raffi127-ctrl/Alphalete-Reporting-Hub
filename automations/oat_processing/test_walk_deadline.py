@@ -59,5 +59,26 @@ check("same walk, with time left -> complete",
 check("out of time does not override an already-partial walk",
       walked_all(60, 60, 10, 400, True, True), False)
 
+print("the wrapper's absolute deadline wins when it is sooner:")
+# THE BUG THIS PINS (2026-09-20, second attempt): MAX_WALK_SECONDS starts
+# counting when the WALK does, so it cannot see the profile copy, Chrome launch,
+# login, Cloudflare and office switch that run first. On 11280 that preamble ate
+# the gap: the 900s budget had not elapsed when the wrapper's 1200s SIGKILL
+# fired, and the walk died mid-applicant exactly as before the budget existed.
+# The wrapper now exports an absolute epoch and the walk takes the EARLIER.
+def effective(budget_s, seconds_left_on_wall):
+    b = budget_s
+    if seconds_left_on_wall is not None:
+        b = seconds_left_on_wall if b is None else min(b, seconds_left_on_wall)
+    return b
+
+
+check("a short wall deadline beats a long budget", effective(900, 240), 240)
+check("a long wall deadline leaves the budget in charge", effective(900, 3000), 900)
+check("no wall deadline (hand-run) keeps the budget", effective(900, None), 900)
+# The preamble case: 300s already spent launching and logging in, so only 720s
+# of the tick remain once headroom is subtracted — the walk must use THAT.
+check("preamble time counts against the walk", effective(900, 720), 720)
+
 print("FAILED" if _failed else "ALL PASSED")
 raise SystemExit(1 if _failed else 0)

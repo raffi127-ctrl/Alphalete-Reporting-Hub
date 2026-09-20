@@ -3214,8 +3214,19 @@ def run_walk(page, live: bool = False, limit: int = None,
     flagged_now = {"nophone": [], "retext": []}
     # See config.MAX_WALK_SECONDS: stop under our own power before the wrapper's
     # SIGKILL, so the snapshot and the diag row still get written.
-    _walk_deadline = (time.monotonic() + config.MAX_WALK_SECONDS
-                      if getattr(config, "MAX_WALK_SECONDS", 0) > 0 else None)
+    # Two clocks, and we stop at whichever runs out first: our own budget from
+    # here, and the wrapper's absolute wall-clock deadline (which also covers the
+    # Chrome launch, login and office switch that happened before this function
+    # was ever called). Expressed as SECONDS REMAINING so they are comparable.
+    _budget_s = (config.MAX_WALK_SECONDS
+                 if getattr(config, "MAX_WALK_SECONDS", 0) > 0 else None)
+    _wall = getattr(config, "WALK_DEADLINE_EPOCH", 0) or 0
+    if _wall > 0:
+        _left = _wall - time.time()
+        _budget_s = _left if _budget_s is None else min(_budget_s, _left)
+        _log(f"[oat] walk deadline: {int(_left)}s left of the wrapper's tick "
+             f"(own budget {config.MAX_WALK_SECONDS}s)")
+    _walk_deadline = (time.monotonic() + _budget_s) if _budget_s is not None else None
     _out_of_time = False
     while worked < limit and processed < touch_cap:
         if _walk_deadline is not None and time.monotonic() >= _walk_deadline:
