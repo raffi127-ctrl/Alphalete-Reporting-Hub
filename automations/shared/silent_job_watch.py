@@ -154,17 +154,44 @@ JOBS: Dict[str, dict] = {
         # Grace: the beat ships in deploy/applicant_push.sh, which Lucy 2 has to
         # pull. Armed the day after so the agent gets one clean day to prove it.
         "watch_from": "2026-09-14",
-        "means": ("applicants stop being pushed to the AI call list entirely — "
-                  "all four live offices share this one agent. The Hub cards "
-                  "keep showing this morning's green, so nothing else will "
-                  "tell you."),
+        "means": ("Carlos (11580), Atef (23467) and Khalil (11901) stop being "
+                  "pushed to the AI call list entirely — those three share this "
+                  "agent. The Hub cards keep showing this morning's green, so "
+                  "nothing else will tell you."),
         "fix": "lucy rerun install_applicant_push_agent --machine \"Lucy 2\"",
     },
-    # NO Lucy 3 ROW YET. The two-machine split is parked (see
-    # applicant_push/offices.py: Lucy 3 cannot hold an AppStream session), and a
+    # LUCY 4 JOINED 2026-09-19 with Raf's three streams (offices.py
+    # ROTATION_BY_MACHINE). It needs its OWN row for the reason spelled out under
+    # "ONE KEY PER MACHINE" below: beat() upserts one row per job_id, so a shared
+    # id would let whichever box beat last light the tab green for both.
+    #
+    # Without this row the beat has nowhere to land — the wrapper's
+    # `--beat-machine applicant_push` derives applicant_push_lucy_4, and on
+    # 2026-09-20, Lucy 4's first live day, every tick ended
+    # "unknown job 'applicant_push_lucy_4'". A heartbeat that is refused is the
+    # same as no heartbeat: a stopped agent on that box would have been invisible.
+    "applicant_push_lucy_4": {
+        "name": "Applicant Push (Raf's three streams)",
+        "machine": "Lucy 4",
+        "first_by": "07:30",
+        "max_gap_min": 45,
+        "active_until": "22:00",
+        "weekdays": None,
+        "quiet": _push_quiet_window,
+        # One clean day before it can page, the same grace Lucy 2's row took:
+        # the beat ships in a wrapper Lucy 4 has to pull, and the box went live
+        # on 9/19.
+        "watch_from": "2026-09-21",
+        "means": ("Raf's three ApplicantStream streams (11280, 23965, 24065) "
+                  "stop being pushed to the AI call list. Lucy 2 keeps working "
+                  "its own three, so the fleet looks healthy from every other "
+                  "angle."),
+        "fix": "lucy rerun install_applicant_push_agent --machine \"Lucy 4\"",
+    },
+    # NO Lucy 3 ROW. Lucy 3 works no push offices (ROTATION_BY_MACHINE), and a
     # heartbeat for an agent nobody installed would page about the absence of a
-    # thing that was never there. It comes back in the same change that flips the
-    # split on — the row is in git history at bd7979f if you need it verbatim.
+    # thing that was never there. The row is in git history at bd7979f if a
+    # future split puts offices there.
 }
 
 # --- the watchdog is itself a silent job --------------------------------------

@@ -3212,7 +3212,18 @@ def run_walk(page, live: bool = False, limit: int = None,
     # counts match what's actually in the queue right now (Megan 2026-08-06: the
     # cumulative log over-counted apps already handled since).
     flagged_now = {"nophone": [], "retext": []}
+    # See config.MAX_WALK_SECONDS: stop under our own power before the wrapper's
+    # SIGKILL, so the snapshot and the diag row still get written.
+    _walk_deadline = (time.monotonic() + config.MAX_WALK_SECONDS
+                      if getattr(config, "MAX_WALK_SECONDS", 0) > 0 else None)
+    _out_of_time = False
     while worked < limit and processed < touch_cap:
+        if _walk_deadline is not None and time.monotonic() >= _walk_deadline:
+            _out_of_time = True
+            _log(f"[oat] {config.MAX_WALK_SECONDS}s walk budget reached — "
+                 f"stopping cleanly after {processed} read / {worked} worked "
+                 f"(the next tick picks up where this left off)")
+            break
         a = read_current_applicant(page, today)
         key = f"{a.email}|{a.first_name} {a.last_name}".strip().lower()
         # Walk logic that survives the queue shifting under us: after a
@@ -3396,7 +3407,11 @@ def run_walk(page, live: bool = False, limit: int = None,
     # bounds; testing `processed < limit` here would call a 104-applicant walk
     # partial the moment it read its 61st person.
     _covered = _start_total is None or processed >= _start_total
-    walked_all = (worked < limit) and (processed < touch_cap) and _covered
+    # Running out of time is an early exit like any other: the walk did NOT cover
+    # the queue, so the snapshot must not be published as the whole picture (the
+    # 2026-08-27 understated-backlog lesson above applies exactly).
+    walked_all = ((worked < limit) and (processed < touch_cap)
+                  and _covered and not _out_of_time)
     if not _covered:
         _log(f"[oat] PARTIAL walk: touched {processed} of {_start_total} in the "
              f"queue — keeping the last full snapshot instead of publishing a "

@@ -64,6 +64,25 @@ NO_PHONE_FLAG_CSV = os.environ.get(
 # large; keep runs short (and mistakes small) by processing a bounded batch.
 # --limit N on the CLI overrides this downward.
 MAX_PER_RUN = int(os.environ.get("OAT_MAX_PER_RUN", "60"))
+# THE WALK STOPS ITSELF BEFORE THE WRAPPER KILLS IT (2026-09-20).
+#
+# deploy/applicant_push.sh caps a tick at MAX_RUN_S (1200s) and SIGKILLs the walk
+# — a blunt guard so a wedged pass cannot swallow every later tick, since launchd
+# keeps one instance per label. That guard cannot tell a wedge from a walk that is
+# simply doing a lot of work, and on Raf's first live day (11280, 385 deep) it
+# killed productive walks over and over: each tick sent real applicants, then died
+# at 20:00 with exit 124, which the streak logic published as FAILED while the
+# wedge-watcher on the next line read `state=healthy evidence='✅ sent to ai'`.
+#
+# Worse than the noise: a killed walk never reaches its bookkeeping, so it writes
+# NO flagged snapshot and NO walk-diag row. The to-do post then reads "no walk yet
+# today" for an office that worked for twenty minutes.
+#
+# So the walk now owns a deadline of its own, comfortably under the wrapper's, and
+# ends the way a capped walk already ends: stop looping, mark the snapshot PARTIAL
+# (it did not cover the queue), write the diag row, return 0. The wrapper's kill
+# stays as the backstop for a walk that is genuinely stuck.
+MAX_WALK_SECONDS = int(os.environ.get("OAT_MAX_WALK_SECONDS", "900"))
 
 # MAX_PER_RUN counts APPLICANTS WE ACTUALLY WORK, not applicants we look at.
 # WHY (2026-09-03): a settled applicant — resume already read today and it
