@@ -195,9 +195,8 @@ def _find_roster_image(client, monday_iso: Optional[str] = None,
     in that post's thread (the roster table, not the small funnel-count image).
     With `poster` given, only that author's post counts (one post per funnel
     since the week of 8/24 — see thread.FUNNELS)."""
-    # Not wrapped: a truncated read is retried on the CLIENT (see
-    # slack_metrics_post._client), which covers every WebClient call at once.
-    hist = client.conversations_history(channel=CHANNEL_ID, limit=200)
+    hist = slack_retry.read(client.conversations_history,
+                            channel=CHANNEL_ID, limit=200, _log=print)
     matches = [m for m in hist.get("messages", [])
                if POST_RE.search(m.get("text", "") or "")
                and (not poster or m.get("user") == poster)]
