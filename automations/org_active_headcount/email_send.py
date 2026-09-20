@@ -42,6 +42,7 @@ RECIPIENTS = [
     "CarlosHidalgo349@gmail.com",     # Carlos Hidalgo
     "raffi127@gmail.com",             # Rafael Hidalgo
     "eve@alphaletemarketing.com",     # Eve Sobrino
+    "coltenwrightsc@gmail.com",       # Colten Wright (added 2026-09-19, Eve)
 ]
 TITLE = "Org Active Headcount"
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "org_active_headcount"
