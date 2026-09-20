@@ -40,15 +40,32 @@ def _path(report_id: str) -> Path:
 
 
 def make_remediation(*, reason: str, fix: str, link: str = "",
-                     message: str = "") -> dict:
+                     message: str = "", tail_headline: str = "",
+                     tail: str = "") -> dict:
     """Build a remediation block for write_manifest(remediation=...).
       reason  : plain-English WHY the run failed
       fix     : WHAT to do to correct it
       link    : (optional) the exact Tableau view / dashboard with the missing
                 info, when it's a Tableau issue
       message : (optional) a neutral, copy-paste message describing the problem,
-                ready to send to whoever can fix it (shown with a Copy button)."""
-    return {"reason": reason, "fix": fix, "link": link, "message": message}
+                ready to send to whoever can fix it (shown with a Copy button).
+
+    The last two override the Slack alert's CLAIM, not its advice — the two
+    sentences section_drop_alert takes from the kind's spec (see its `over`
+    block). A kind's wording is written for its typical case and one caller can
+    be the exception: `kind="section"` asserts "it did NOT post", which is true
+    of a thread built in one pass and false of the Org Sales Board, whose fill
+    and whose 07:05 post are different jobs. Only the caller knows.
+      tail_headline : ends the headline ("… dropped 1 section this run — <this>")
+      tail          : the closing line under the fix
+    Both are pre-formatted by the caller (no {} placeholders) and both are
+    ignored by the Hub, which reads reason/fix/link/message only."""
+    rem = {"reason": reason, "fix": fix, "link": link, "message": message}
+    if tail_headline:
+        rem["tail_headline"] = tail_headline
+    if tail:
+        rem["tail"] = tail
+    return rem
 
 
 def write_manifest(report_id: str, *, failed: List[str] = (),

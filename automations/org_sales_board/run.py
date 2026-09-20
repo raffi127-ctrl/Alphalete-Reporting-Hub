@@ -45,6 +45,27 @@ from automations.org_sales_board.tabs import BOARD_TAB, ARCHIVED_VA_TAB
 SANDBOX_TAB = BOARD_TAB          # the live board (was "Copy of …" until 8/19)
 PROD_TAB = ARCHIVED_VA_TAB       # the VAs' old tab — archived + hidden 8/19
 
+# THE DROP ALERT'S CLAIM, because the stock one is wrong for this board.
+# section_drop_alert's kind="section" ends its headline with "it did NOT post"
+# and closes with "the thread is live but incomplete" — wording for a thread
+# built in ONE pass. This file is the 04:50 FILL; the image is posted at ~07:05
+# by slack_post, a different job whose fill_gate is LIGHT on purpose (it posts
+# unless yesterday's column is empty across EVERY section, because Retail JE
+# and BOX legitimately publish a day behind). So a dropped section here almost
+# never stops the post: on 2026-09-20 a flaky Retail JE click timeout dropped
+# one section and the board went out on time at 07:16 while the channel said it
+# had not — which sends the reader hunting a post that is sitting right there.
+# Same trap as the 'metric' (2026-09-05) and 'owner' kinds, but this caller can
+# be BOTH cases, so it overrides the claim instead of taking a new kind: when
+# EVERY section drops (2026-09-01, the day-number chain hitting 32) the column
+# really is empty and the gate really does hold the post. Hence a tail that
+# names that case rather than promising the board went out.
+# Pinned by test_drop_alert_wording.py.
+DROP_TAIL_HEADLINE = "the board filled SHORT."
+DROP_TAIL = ("The board still posts at ~07:05 with whatever filled — a missing "
+             "part is blank in the image. Only a board with NOTHING in "
+             "yesterday's column is held back from posting.")
+
 OUT_DIR = Path("output")                         # one-off CSVs land here
 
 SUMMARY_TITLE = "Product Summary - This Week"
@@ -630,7 +651,11 @@ def main(argv=None) -> int:
                                          + "; ".join(_failed_all) + ". A re-run "
                                          "often clears a flaky Tableau load; if a "
                                          "view keeps failing it may need "
-                                         "re-creating in Tableau.")))
+                                         "re-creating in Tableau."),
+                                # Not kind="section"'s stock "it did NOT post"
+                                # — see DROP_TAIL_HEADLINE above.
+                                tail_headline=DROP_TAIL_HEADLINE,
+                                tail=DROP_TAIL))
                     elif (_term_note or _va_note or _auto_note or _no_note
                           or _pending_note):
                         # Clean run (nothing missing) — still record the whole-
