@@ -99,11 +99,63 @@ def _load_token() -> str:
     )
 
 
+# --------------------------------------------------------------------------
+# Transient Slack reads
+# --------------------------------------------------------------------------
+# 2026-09-20: the Country board's review link never reached #revision-emails.
+# Slack answered the gate's conversations.history with a body that stopped
+# halfway — http.client.IncompleteRead(66316 bytes read, 115436 more expected)
+# — and the report died AFTER the PDF was already built and in Drive. The
+# slack_sdk client does retry connectivity errors out of the box, but a
+# truncated BODY is not on its list (URLError / ConnectionResetError /
+# RemoteDisconnected), so a half-read answer goes straight up as an exception.
+#
+# Only READS are retried, and that restriction is the whole point. An
+# IncompleteRead means Slack already had the request and was answering it, so
+# re-sending a chat.postMessage would post the message a second time — and for
+# the review gates a duplicate post is worse than none: the checker reads the
+# NEWEST post, so a checkmark left on the older one would silently never send.
+_READ_ONLY_SUFFIXES = (".history", ".replies", ".list", ".info", ".members",
+                       ".lookupByEmail", ".test")
+_READ_ONLY_PREFIXES = ("search.",)
+
+
+def _is_read_only_call(url: str) -> bool:
+    """Is this Slack API url a call that changes nothing, and is therefore safe
+    to send again? Matched on the API method (the last path segment), never on
+    the whole url — a channel id or a cursor in the query string must not be
+    able to make a posting call look like a reading one."""
+    method = (url or "").rsplit("/", 1)[-1].split("?", 1)[0]
+    return (method.endswith(_READ_ONLY_SUFFIXES)
+            or method.startswith(_READ_ONLY_PREFIXES))
+
+
+_RETRY_HANDLERS = None
+
+
+def _retry_handlers():
+    """slack_sdk's own handlers plus one for truncated read responses."""
+    global _RETRY_HANDLERS
+    if _RETRY_HANDLERS is None:
+        from http.client import IncompleteRead
+        from slack_sdk.http_retry import RetryHandler, default_retry_handlers
+
+        class _TruncatedReadRetryHandler(RetryHandler):
+            def _can_retry(self, *, state, request, response=None, error=None):
+                return (isinstance(error, IncompleteRead)
+                        and _is_read_only_call(getattr(request, "url", "")))
+
+        _RETRY_HANDLERS = default_retry_handlers() + [
+            _TruncatedReadRetryHandler(max_retry_count=2)]
+    return _RETRY_HANDLERS
+
+
 def _client():
     import certifi
     from slack_sdk import WebClient
     ctx = ssl.create_default_context(cafile=certifi.where())
-    return WebClient(token=_load_token(), ssl=ctx)
+    return WebClient(token=_load_token(), ssl=ctx,
+                     retry_handlers=_retry_handlers())
 
 
 def _load_bot_token() -> str:
@@ -125,7 +177,8 @@ def _bot_client():
     import certifi
     from slack_sdk import WebClient
     ctx = ssl.create_default_context(cafile=certifi.where())
-    return WebClient(token=_load_bot_token(), ssl=ctx)
+    return WebClient(token=_load_bot_token(), ssl=ctx,
+                     retry_handlers=_retry_handlers())
 
 
 def _resolve_user_id(client, query: str) -> str:
