@@ -324,9 +324,13 @@ disagree). Nico and Sebastian run the office and aren't counted.</p></aside>
 active reps only; terminated reps excluded.</footer>"""
 
 
-def render_png(html_path: Path, png_path: Path) -> None:
+def render_png(html_path: Path, png_path: Path,
+               window: "tuple[int, int]" = (2100, 1750)) -> None:
     # Own temp profile so this can never collide with the shared automation
     # Chrome profile (the tableau_patchright ProcessSingleton trap).
+    # `window` is the headless viewport: anything taller than it is CUT OFF,
+    # not scrolled, so a map with more rows has to ask for a taller window
+    # (the trim below takes the empty apron back off).
     png_path.unlink(missing_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         try:
@@ -334,7 +338,8 @@ def render_png(html_path: Path, png_path: Path) -> None:
                 [CHROME, "--headless=new", "--disable-gpu", "--hide-scrollbars",
                  "--no-first-run", "--no-default-browser-check",
                  "--disable-extensions", f"--user-data-dir={tmp}",
-                 "--force-device-scale-factor=2", "--window-size=2100,1750",
+                 "--force-device-scale-factor=2",
+                 "--window-size=%d,%d" % window,
                  f"--screenshot={png_path}", html_path.resolve().as_uri()],
                 capture_output=True, timeout=90)
         except subprocess.TimeoutExpired:

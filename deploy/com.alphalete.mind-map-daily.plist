@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.mind-map-daily</string>
+
+    <!-- Path is the laptop placeholder; install_agent.py rewrites it to the
+         installing machine's repo path. RUNS ON LUCY 1: she already reads
+         'Alphalete SALES BOARD 2025' all day for the sales board sweep and
+         posts to #alphalete-sales.
+         `lucy update` -> `lucy rerun install_mind_map_agent`. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/sales_board_mind_map_daily.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- DAILY 7:00am machine-local (Central) — the time Raf asked for, so the
+         map is waiting in the channel when the office reads the morning posts.
+         It renders in headless Chrome under its OWN temp user-data-dir, so it
+         does not contend with the 7:00-7:20 jobs for the shared automation
+         Chrome profile. [[reference_browser_profile_collisions]] -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>7</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/mind-map-daily.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/mind-map-daily.launchd.err.log</string>
+</dict>
+</plist>

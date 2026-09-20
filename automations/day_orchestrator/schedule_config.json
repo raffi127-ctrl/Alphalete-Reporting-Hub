@@ -269,6 +269,29 @@
       "verify": null,
       "timeout_minutes": 10
     },
+    "sales_board_mind_map": {
+      "on_scheduler": false,
+      "_note": "Raf's 7am mind map -> #alphalete-sales + #alphalete-lvl1-chat PNG, fired by com.alphalete.mind-map-daily on Lucy 1 at 7:00am (Raf Loom 2026-09-20). The sales board drawn as a tree by trainer, rooted on Team, colored by each rep's WEEK read off the board's own cells; new starts come from the dated 'D2D OBCL m.d' tab; terminated reps removed. Manual: `lucy rerun sales_board_mind_map -- --dry-run` renders only; `-- --dm Megan` DMs the PNG. Read-only: writes nothing to any sheet.",
+      "display_name": "Sales board mind map (7am)",
+      "source_type": "local",
+      "data_sources": [
+        "Alphalete SALES BOARD 2025",
+        "All in One Local Office - Raf"
+      ],
+      "command": [
+        "automations.sales_board_mind_map.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 10,
+      "machine": "Lucy 1"
+    },
     "team_tree": {
       "on_scheduler": false,
       "_note": "Alphalete team tree -> #a-players-b2b PNG, fired by com.alphalete.team-tree-daily on Lucy 2 at 6:00am (Carlos 2026-08-30). Manual: `lucy rerun team_tree -- --dm` posts to Carlos's DM; `--dry-run` renders only.",
@@ -401,6 +424,28 @@
       "verify": null,
       "timeout_minutes": 20,
       "machine": "Lucy 2"
+    },
+    "install_mind_map_agent": {
+      "on_scheduler": false,
+      "_note": "One-shot installer for com.alphalete.mind-map-daily on Lucy 1 (7:00am daily; deploy/sales_board_mind_map_daily.sh -> python -m automations.sales_board_mind_map.run). `lucy update` then `lucy rerun install_mind_map_agent` on the Lucy 1 control tab.",
+      "display_name": "Install mind map daily agent (7am)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "mind-map-daily"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 5,
+      "machine": "Lucy 1"
     },
     "install_team_tree_agent": {
       "on_scheduler": false,

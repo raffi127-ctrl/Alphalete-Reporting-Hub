@@ -2620,6 +2620,80 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "sales-board-mind-map",
+        "name": "Sales Board Mind Map",
+        "creator": "Megan",
+        "emoji": "🧠",
+        "color": "#7C5CE0",
+        "category": "📊 Metrics",
+        "self_scheduled": True,
+        "description": "Lucy posts the office as a mind map every morning at "
+                       "7:00 — the sales board drawn as a tree by trainer, "
+                       "each name in its own week's colour off the board, new "
+                       "starts tagged NEW and terminated reps removed. Goes to "
+                       "#alphalete-sales and the level 1 chat.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "Rebuilds Raf's office as a tree from 'Alphalete SALES BOARD 2025' "
+            "(the newest 'Sales Board WE m.d' tab) and posts it as one PNG:\n"
+            "**•** **Parent** — the rep's 'Trainer' column, the same rule "
+            "Carlos's B2B team tree uses. A rep trained by the office ('Raf & "
+            "JD', 'Alphalete') or by somebody not on this board starts their "
+            "own branch.\n"
+            "**•** **Root** — the 'Team' column, so the map reads Se7en Sins / "
+            "Ceaseless / Alphaletes / Hashiras / Mindset Engine.\n"
+            "**•** **Colour** — the rep's week, read off the BACKGROUND OF "
+            "THEIR OWN NAME CELL on the board. Recolour the board and the map "
+            "follows the next morning; nothing to change here.\n"
+            "**•** **New starts** — the people still onboarding on the dated "
+            "'D2D OBCL m.d' tab of 'All in One Local Office - Raf', hung under "
+            "whoever ran their 2nd round and tagged NEW.\n"
+            "**•** **Terminated reps are removed** — all three ways the board "
+            "marks it (Termination Date, a bare 'T' in any day block, "
+            "'Terminated' in the new-starts box).\n\n"
+            "ALSO ON IT\n"
+            "Level 2+ leader cards (total active / leaders / in training / new "
+            "starts for their whole tree) and a totals box per team plus the "
+            "whole office.\n\n"
+            "WHEN IT RUNS\n"
+            "Daily at 7:00 AM Central on Lucy 1, on its own job — no upload, "
+            "no trigger. Read-only: it writes nothing to any sheet."
+        ),
+        "assignees": ["Lucy 1"],
+        "schedule": {
+            "frequency": "daily",
+            "time": "7:00 AM",
+            "estimated_minutes": 2,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Mind map posted to #alphalete-sales and the "
+                               "level 1 chat as Lucy.",
+            "message_failed": "❌ Run failed. Check the log above, fix, then "
+                              "run again.",
+        },
+        "actions": [
+            {
+                "label": "Post Today's Mind Map",
+                "icon": "▶",
+                "primary": True,
+                "help": "Rebuilds the map from today's sales board and posts "
+                        "it to #alphalete-sales + the level 1 chat as Lucy.",
+                "module": "automations.sales_board_mind_map.run",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Preview Only (no post)",
+                "icon": "👁",
+                "help": "Builds and renders the PNG to "
+                        "output/sales_board_mind_map/ without posting it "
+                        "anywhere.",
+                "module": "automations.sales_board_mind_map.run",
+                "args_fn": lambda: ["--dry-run"],
+            },
+        ],
+    },
+    {
         "id": "energy-slack-fill",
         "name": "Energy Sales → Sales Board (from Slack)",
         "creator": "Eve",

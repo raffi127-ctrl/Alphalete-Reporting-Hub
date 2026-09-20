@@ -1,0 +1,164 @@
+  /* 18px base (vs the artifact's 16) — the daily PNG reads bigger in Slack.
+     Node colours are NOT in here: every chip carries --fill/--tint inline,
+     read off the sales board's own cells (see run.py). */
+  html{ font-size:18px; }
+  :root{
+    --bg:#fdfdfb;
+    --ink:#3a3630;
+    --ink-soft:#8a8578;
+    --rail:#4d7fd6;
+    --wire:#c8c3b6;
+    --node-shadow:0 1px 2px rgba(60,50,30,.10);
+    --root-fill:#b9c6f2;  --root-ink:#2c3a6e;
+  }
+
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:"Nunito","Avenir Next","Segoe UI",sans-serif;
+    margin:0; padding:2.5rem 1rem 4rem;
+  }
+  header{ text-align:center; }
+  h1{ font-size:2rem; font-weight:800; margin:0 0 .35rem; letter-spacing:-.01em; }
+  header .eyebrow{
+    font-size:.78rem; font-weight:700; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--ink-soft); margin:0 0 .25rem;
+  }
+  header .key{
+    font-size:.76rem; font-weight:600; color:var(--ink-soft); margin:0 0 1.5rem;
+  }
+
+  .legend{
+    display:flex; flex-wrap:wrap; gap:.5rem; justify-content:center;
+    margin:0 auto 2.5rem; max-width:52rem;
+  }
+
+  section{ margin-bottom:3.2rem; }
+  .team{ text-align:center; }
+  .root-node{
+    display:inline-block; background:var(--root-fill); color:var(--root-ink);
+    font-weight:800; font-size:1.12rem; padding:.55rem 1.5rem;
+    border-radius:999px; box-shadow:var(--node-shadow);
+  }
+  .root-stem{ width:2px; height:1.4rem; background:var(--rail); margin:0 auto; }
+
+  /* Each team is its own row: the map on the left, that team's Level 2+ cards
+     on the right, so a card sits beside the branch it describes. */
+  section .body{ display:flex; gap:2rem; align-items:flex-start; }
+  /* NO min-width:max-content on the map. The B2B tree has six branches and can
+     afford one long row; this office has a dozen teams, and forcing one row
+     pushed the last branches off under the cards. Branches wrap instead. */
+  .map{ flex:1; min-width:0; padding:0 1rem; }
+  .rail{ height:2px; background:var(--rail); margin:0 4.5rem; }
+  .branches{ display:flex; gap:1.7rem 1.9rem; justify-content:flex-start;
+             align-items:flex-start; flex-wrap:wrap; }
+  .branch{ min-width:8.5rem; text-align:left; }
+  .branch .drop{ width:2px; height:1.3rem; background:var(--wire); margin-left:3.2rem; }
+
+  .node{
+    display:inline-block; background:var(--fill); color:var(--tint);
+    font-weight:700; font-size:.87rem; padding:.34rem .95rem;
+    border-radius:999px; box-shadow:var(--node-shadow);
+    white-space:nowrap;
+  }
+  .branch > .node{ font-weight:800; font-size:.94rem; }
+  .node .tag{
+    font-size:.62rem; font-weight:800; letter-spacing:.06em;
+    vertical-align:.1em; margin-left:.35rem; opacity:.85;
+  }
+
+  .branch ul{ list-style:none; margin:0; padding:.55rem 0 0 .9rem; }
+  .branch ul ul{ padding-top:.5rem; }
+  .branch li{ position:relative; padding:0 0 .55rem 1.15rem; }
+  .branch li:last-child{ padding-bottom:0; }
+  .branch li::before{
+    content:""; position:absolute; left:0; top:-.35rem;
+    width:.85rem; height:1.15rem;
+    border-left:2px solid var(--wire);
+    border-bottom:2px solid var(--wire);
+    border-bottom-left-radius:6px;
+  }
+  .branch li::after{
+    content:""; position:absolute; left:0; top:.8rem; bottom:0;
+    border-left:2px solid var(--wire);
+  }
+  .branch li:last-child::after{ display:none; }
+
+  footer{
+    text-align:center; margin-top:1rem;
+    font-size:.75rem; color:var(--ink-soft); font-weight:600;
+  }
+
+  main{ max-width:135rem; margin:0 auto; }
+  .team-leaders{ width:15.5rem; flex-shrink:0; }
+  .team-leaders h2{
+    font-size:.68rem; font-weight:800; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--ink-soft); margin:0 0 .8rem; text-align:center;
+  }
+  .leader-card{
+    border:1.5px solid var(--wire); border-radius:14px;
+    padding:.8rem .95rem 0.9rem; margin-bottom:.9rem; background:var(--bg);
+    box-shadow:var(--node-shadow);
+  }
+  .leader-card .who{ display:flex; align-items:center; gap:.5rem; margin-bottom:.6rem; flex-wrap:wrap; }
+  .leader-card .who .node{ font-size:.82rem; padding:.26rem .8rem; }
+  .leader-card dl{ margin:0; display:grid; grid-template-columns:1fr auto; row-gap:.28rem; }
+  .leader-card dt{ font-size:.76rem; font-weight:700; color:var(--ink-soft); }
+  .leader-card dd{
+    margin:0; font-size:.82rem; font-weight:800; font-variant-numeric:tabular-nums; text-align:right;
+  }
+  .totals .note{
+    font-size:.72rem; font-weight:600; color:var(--ink-soft);
+    margin:1rem auto 0; max-width:52rem; text-align:center;
+  }
+
+  .totals{ margin-bottom:2rem; }
+  .totals h2{
+    font-size:.72rem; font-weight:800; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--ink-soft); margin:0 0 .8rem; text-align:center;
+  }
+  .totals .boxes{ display:flex; gap:1.2rem; justify-content:center; flex-wrap:wrap; }
+  .totals .office-box{
+    border:1.5px solid var(--wire); border-radius:14px;
+    padding:.9rem 1.1rem 1rem; background:var(--bg); box-shadow:var(--node-shadow);
+    min-width:13rem;
+  }
+  /* The office line is the one number people look for — its own colour so it
+     does not read as a sixth team (Megan 2026-09-20). */
+  .totals .office-box.whole{
+    border:none; background:var(--rail); box-shadow:0 2px 6px rgba(40,70,140,.28);
+  }
+  .totals .office-box.whole .title,
+  .totals .office-box.whole dt,
+  .totals .office-box.whole dd{ color:#fff; }
+  .totals .office-box.whole dt{ opacity:.85; }
+  .totals .office-box .title{ font-weight:800; font-size:.92rem; margin-bottom:.6rem; }
+  .totals dl{ margin:0; display:grid; grid-template-columns:1fr auto; row-gap:.3rem; column-gap:1.5rem; }
+  .totals dt{ font-size:.78rem; font-weight:700; color:var(--ink-soft); }
+  .totals dd{ margin:0; font-size:.86rem; font-weight:800; font-variant-numeric:tabular-nums; text-align:right; }
+
+  /* An upline named only in a Trainer cell — drawn as the team head, dashed
+     so nobody reads them as a rep with a row on the board. */
+  .node.upline{ border:1.5px dashed #a9a396; font-style:italic; }
+
+  /* Structure on a bubble: 1st gens / whole team (Megan 2026-09-20). */
+  .node .count, .root-node .count{
+    font-size:.72rem; font-weight:800; margin-left:.45rem; opacity:.72;
+    font-variant-numeric:tabular-nums;
+  }
+  .root-node .count{ font-size:.85rem; opacity:.75; }
+
+  /* The team's main leader, on the team bubble (Megan 2026-09-20). */
+  .root-node .lead{
+    display:inline-block; margin-left:.6rem; padding-left:.6rem;
+    border-left:1.5px solid rgba(44,58,110,.35);
+    font-size:.8rem; font-weight:700;
+  }
+
+  /* A team of 18 hanging off ONE head is a single 18-deep column with the rest
+     of the page empty — so a branch's FIRST GENS flow into columns and each
+     first gen keeps its own downline with it. */
+  .branch > ul{
+    column-count:var(--cols,1); column-gap:1.7rem;
+    width:calc(var(--cols,1) * 15.5rem);
+  }
+  .branch > ul > li{ break-inside:avoid; -webkit-column-break-inside:avoid; }
