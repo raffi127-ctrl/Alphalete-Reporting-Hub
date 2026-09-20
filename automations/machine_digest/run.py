@@ -603,7 +603,31 @@ def _offday_standalone_ids(cfg, target_date) -> set:
         wdays = wdays if isinstance(wdays, list) and wdays else None
         mdays = mdays if isinstance(mdays, list) and mdays else None
         if wdays is None and mdays is None:
-            continue   # not declared → keep the historical-expected guess
+            # A REAL cadence already says which days it runs -- use it rather
+            # than asking for the same list a second time under another key.
+            #
+            # icd_start_dates is on_scheduler with cadence.weekdays [0..5]
+            # (Mon-Sat). On Sunday 2026-09-20 it dropped out of
+            # _orchestrator_ids (correctly -- the loop isn't running it today),
+            # landed on the watcher, and the watcher had nothing to go on but
+            # the Activity log, which shows six 08:00 runs a week. So it posted
+            # "didn't run today on the mini - usually starts ~8:00" about a
+            # report that was never due. Declaring standalone_weekdays would
+            # have fixed that ONE report by copying a list that already exists
+            # two keys away, and the copy goes stale the day the cadence moves.
+            #
+            # Only when the cadence is NON-EMPTY. An empty weekdays [] means
+            # "the loop never runs this, its real schedule is a plist the
+            # watcher can't read" -- exactly the reports the watcher is the
+            # only alert for, and reading [] as "due no day" would silence them
+            # all. Those keep the historical guess, and standalone_weekdays
+            # stays the way to pin one of them.
+            cadence_wdays = ((rep_raw.get("cadence") or {}).get("weekdays"))
+            if (rep_raw.get("on_scheduler")
+                    and isinstance(cadence_wdays, list) and cadence_wdays):
+                wdays = cadence_wdays
+            else:
+                continue   # not declared → keep the historical-expected guess
         if (wdays is None or wd in wdays) and (mdays is None or target_date.day in mdays):
             continue   # it IS supposed to run today → a missing run is a real miss
         ids.add(rid)

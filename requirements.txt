@@ -22,7 +22,7 @@ gspread>=6.0
 google-auth>=2.30
 
 # Slack pings (corrections channel, Lucy membership checks)
-slack_sdk>=3.21
+slack_sdk>=3.42              # floor, not cosmetic: see automations/shared/slack_retry.py
 certifi>=2023.7              # SSL bundle for the Slack client
 
 pandas>=2.0
