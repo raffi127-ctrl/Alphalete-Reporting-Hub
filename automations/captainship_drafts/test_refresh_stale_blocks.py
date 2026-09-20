@@ -208,12 +208,13 @@ class BlockSentWordingTests(unittest.TestCase):
     def setUp(self):
         self.client = _Client()
 
-    def _mark(self, failures, sent):
+    def _mark(self, failures, sent, *, delivered=None, thread=None):
         block = config.BLOCK_BY_KEY["fiber-3"]        # tony, chan, sahil
         with mock.patch.object(RG, "_client", return_value=self.client), \
              mock.patch.object(RG, "_channel", return_value="C0TEST"):
-            RG.mark_block_sent({"ts": "1.0"}, block, failures, sent=sent)
-        return self.client.posted[0]["text"]
+            RG.mark_block_sent({"ts": "1.0"}, block, failures, sent=sent,
+                               delivered=delivered, thread=thread or [])
+        return self.client.posted[0]["text"] if self.client.posted else ""
 
     def test_total_failure_says_zero_delivered(self):
         """2026-09-10: the guard refused the whole block and the old wording
@@ -231,6 +232,60 @@ class BlockSentWordingTests(unittest.TestCase):
         text = self._mark(0, ["tony", "chan", "sahil"])
         self.assertIn("✅", text)
         self.assertIn("on their way", text)
+
+
+class TheLockOnlyHoldsWhatWasDelivered(unittest.TestCase):
+    """2026-09-20: Rafael y Tony no salieron (una sección en blanco) y el hilo
+    los anotó como enviados igual, así que el tick de los 15 minutos contestó
+    «already sent earlier today» para siempre y en Slack figuraban entregados."""
+
+    def setUp(self):
+        self.client = _Client()
+
+    def _mark(self, failures, sent, delivered, thread=None):
+        block = config.BLOCK_BY_KEY["fiber-3"]        # tony, chan, sahil
+        with mock.patch.object(RG, "_client", return_value=self.client), \
+             mock.patch.object(RG, "_channel", return_value="C0TEST"):
+            RG.mark_block_sent({"ts": "1.0"}, block, failures, sent=sent,
+                               delivered=delivered, thread=thread or [])
+        return self.client.posted
+
+    def test_the_failed_captain_is_not_locked(self):
+        posts = self._mark(1, ["tony", "chan", "sahil"], ["chan", "sahil"])
+        keys = RG._keys_in_marker(posts[0]["text"])
+        self.assertEqual(keys, {"chan", "sahil"})
+        self.assertNotIn("tony", keys)
+
+    def test_it_names_who_did_not_get_it(self):
+        text = self._mark(1, ["tony", "chan", "sahil"], ["chan", "sahil"])[0]["text"]
+        self.assertIn("2 of 3 delivered", text)
+        self.assertIn("Tony", text)
+
+    def test_nothing_delivered_writes_no_lock_at_all(self):
+        """Una línea `CAPTAINSHIP-SENT-ONLY ` vacía no canda a nadie y se lee
+        como si candara."""
+        text = self._mark(3, ["tony", "chan", "sahil"], [])[0]["text"]
+        self.assertNotIn(RG.PARTIAL_SENT_MARKER, text)
+        self.assertIn(RG.FAILED_MARKER, text)
+
+    def test_the_warning_is_said_once_not_every_tick(self):
+        said = [{"text": f"⚠️ algo\n`{RG._tagged(RG.FAILED_MARKER, 'fiber-3')}`"}]
+        posts = self._mark(3, ["tony", "chan", "sahil"], [], thread=said)
+        self.assertEqual(posts, [])
+
+    def test_but_a_later_success_still_gets_its_lock(self):
+        """El reintento que SÍ sale escribe su candado aunque el aviso ya
+        estuviera dicho — si no, ese capitán no queda anotado nunca."""
+        said = [{"text": f"⚠️ algo\n`{RG._tagged(RG.FAILED_MARKER, 'fiber-3')}`"}]
+        posts = self._mark(1, ["tony", "chan"], ["chan"], thread=said)
+        self.assertEqual(RG._keys_in_marker(posts[0]["text"]), {"chan"})
+
+    def test_an_old_runner_that_cannot_name_them_keeps_the_safe_behaviour(self):
+        """`delivered=None` = no se supo quiénes salieron: se canda lo
+        intentado, que es el lado que no remanda."""
+        text = self._mark(1, ["tony", "chan", "sahil"], None)[0]["text"]
+        self.assertEqual(RG._keys_in_marker(text), {"tony", "chan", "sahil"})
+        self.assertIn("2 of 3 delivered", text)
 
 
 if __name__ == "__main__":

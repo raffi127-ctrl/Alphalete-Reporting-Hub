@@ -59,6 +59,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import List, Optional, Sequence, Set, Tuple
 
@@ -138,6 +139,11 @@ SENT_MARKER = "CAPTAINSHIP-SENT"
 # que se arregle el que fallo, o el tick de los 15 minutos les manda el reporte
 # de nuevo a los que ya lo recibieron. Se lee con `sent_keys`.
 PARTIAL_SENT_MARKER = "CAPTAINSHIP-SENT-ONLY"
+# «este bloque intento mandar y alguien no salio». NO es un candado: no lo lee
+# `sent_keys`, asi que el capitan que fallo se reintenta en el proximo tick.
+# Existe solo para que el aviso se diga UNA vez y no cada quince minutos hasta
+# las 20:00 (2026-09-20).
+FAILED_MARKER = "CAPTAINSHIP-SEND-FAILED"
 # The scheduler id of the job that BUILDS these drafts' review post.
 # weekend_release walks its dependency chain (the 8 metric modules included) to
 # decide whether a Sat/Sun day is clean enough to release itself.
@@ -917,36 +923,69 @@ def sent_keys(msg: dict, channel: Optional[str] = None) -> Set[str]:
 def mark_block_sent(parent: dict, block: "config.Block", failures: int,
                     channel: Optional[str] = None, *,
                     sent: Sequence[str] = (),
-                    held: Sequence[str] = (), reason: str = "") -> None:
+                    delivered: Optional[Sequence[str]] = None,
+                    held: Sequence[str] = (), reason: str = "",
+                    thread: Optional[list] = None) -> None:
     """Close ONE BLOCK in the thread, cleanly or not.
 
-    Posted after ANY completed attempt, including one with failures, and that is
-    deliberate. Leaving it unlocked so a partial failure can retry means the
-    captains who DID get their report get it again every 15 minutes; a send that
-    needs a human is the lesser problem, and this message is how they find out.
+    EL CANDADO ES DE LOS ENTREGADOS, NO DE LOS INTENTADOS (2026-09-20). `sent`
+    es a quien se le intento mandar y `delivered` quien recibio de verdad; el
+    marcador lleva `delivered`. Antes llevaba los dos juntos, y el domingo
+    2026-09-20 eso dejo colgados a Rafael y a Tony: sus reportes no salieron
+    (una seccion en blanco, que el guardian de run.py frena bien), el hilo los
+    anoto igual como enviados y el tick de los 15 minutos contesto para siempre
+    «already sent earlier today». En Slack figuraban entregados.
+
+    Remandar al que SI recibio no es un riesgo: el candado es por capitan desde
+    2026-08-26, asi que reintentar toca solo a los que fallaron. Lo que si
+    molestaria es repetir el aviso cada quince minutos, y por eso la nota de
+    falla se dice UNA vez por bloque (`FAILED_MARKER`) aunque el reintento
+    siga corriendo callado.
+
+    `delivered=None` = la corrida no supo decir quienes salieron (una run.py
+    vieja, o un crash antes de escribir el archivo): se vuelve al
+    comportamiento anterior y se canda lo intentado, que es el lado que no
+    remanda.
 
     ALWAYS the per-captain marker, never the bare whole-day one: `sent_keys`
     reads a bare `CAPTAINSHIP-SENT` as "the entire roster is done", which is
     exactly what one block's send must not claim. The blocks add up instead —
     once the last one posts, the union of the markers IS the whole roster."""
     names = {c.key: c.display_name for c in config.CAPTAINS}
-    went = ", ".join(names.get(k, k) for k in sorted(sent))
+    got = list(sent) if delivered is None else list(delivered)
+    lost = [k for k in sent if k not in set(got)]
+    went = ", ".join(names.get(k, k) for k in sorted(got))
     n_all = len(block.captains)
     if failures:
-        # DELIVERED, not attempted. `sent` is who this run TRIED; the only
-        # number that answers "did they get it?" is that minus the failures.
-        # "sent 3 of 3 with 1 failure(s)" for a block the digest guard refused
-        # outright read as almost-fine and cost a morning (2026-09-10) — it was
-        # 0 of 3, and the count itself was a flat exit code back then too.
-        delivered = max(len(sent) - failures, 0)
-        head = (f"⚠️ *{block.label}* — {delivered} of {n_all} delivered, "
-                f"{failures} failed; see the run log. Nothing will retry on "
-                f"its own.")
-    elif len(sent) == n_all:
+        # DELIVERED, not attempted. "sent 3 of 3 with 1 failure(s)" for a block
+        # the digest guard refused outright read as almost-fine and cost a
+        # morning (2026-09-10) — it was 0 of 3.
+        n_ok = len(got) if delivered is not None else max(len(sent) - failures, 0)
+        who_lost = (" (" + ", ".join(names.get(k, k) for k in sorted(lost)) + ")"
+                    if lost else "")
+        retry = ("Se reintenta solo en el proximo chequeo; arregla la fuente y "
+                 "rearma." if delivered is not None and lost else
+                 "Nothing will retry on its own.")
+        head = (f"⚠️ *{block.label}* — {n_ok} of {n_all} delivered, "
+                f"{failures} failed{who_lost}; see the run log. {retry}")
+        # UNA SOLA VEZ. El reintento corre cada quince minutos; el aviso no.
+        if thread is None:
+            thread = replies(parent, channel)
+        if _has_mark(thread, FAILED_MARKER, block.key):
+            if not got:
+                # Nada nuevo que anotar y el aviso ya esta en el hilo: el
+                # reintento sigue, callado. Sin esto el mismo ⚠️ se repite cada
+                # quince minutos hasta las 20:00.
+                print(f"— {block.key}: sigue fallando, ya avisado una vez",
+                      flush=True)
+                return
+        else:
+            head += f"\n`{_tagged(FAILED_MARKER, block.key)}`"
+    elif len(got) == n_all:
         head = (f"✅ *{block.label}* sent — {went}'s reports are on their way "
                 f"to the captains.")
     else:
-        head = f"✅ *{block.label}* — sent {len(sent)} of {n_all}: {went}."
+        head = f"✅ *{block.label}* — sent {len(got)} of {n_all}: {went}."
     tail = ""
     if held:
         waiting = ", ".join(names.get(k, k) for k in sorted(held))
@@ -954,10 +993,13 @@ def mark_block_sent(parent: dict, block: "config.Block", failures: int,
                 f"rebuild and run `review_gate.py --refresh --block "
                 f"{block.key}` (same link); the next check mails only the held "
                 f"one — nobody gets a second copy.")
+    # El candado, SOLO con los entregados. Vacio = no se escribe: una linea
+    # `CAPTAINSHIP-SENT-ONLY ` sin claves no canda a nadie y se lee como si
+    # candara.
+    lock = f"\n`{PARTIAL_SENT_MARKER} {','.join(sorted(got))}`" if got else ""
     _client().chat_postMessage(
         channel=_channel(channel), thread_ts=parent["ts"],
-        text=(f"{head}{tail}\n"
-              f"`{PARTIAL_SENT_MARKER} {','.join(sorted(sent))}`"))
+        text=f"{head}{tail}{lock}")
 
 
 def mark_sent(msg: dict, failures: int, channel: Optional[str] = None,
@@ -1179,21 +1221,44 @@ def refresh_stale_blocks(today: dt.date, keys: Sequence[str], *,
 
 
 def send_reviewed(today: dt.date, verbose: bool = True,
-                  only: Optional[Sequence[str]] = None) -> int:  # noqa: D401
+                  only: Optional[Sequence[str]] = None
+                  ) -> Tuple[int, Optional[List[str]]]:  # noqa: D401
     """Shell out to run.py --send-reviewed for `today`. A separate process on
     purpose: the sender stays the one command that has ever mailed these, and
     this module never grows its own path to a recipient list.
 
     `only` = las claves que salen en esta tanda (envio parcial). Es el `--only`
     que run.py ya tenia; el guardian del digest sigue mirando el SET completo de
-    .eml del dia, asi que mandar a doce no lo afloja."""
+    .eml del dia, asi que mandar a doce no lo afloja.
+
+    Devuelve (fallas, ENTREGADOS). Los entregados vienen de `--sent-keys-out`,
+    no del exit code: el numero dice cuantos no salieron y nunca cuales, y el
+    candado del hilo es por capitan. Si el archivo no aparece (una version vieja
+    de run.py, o un crash antes de escribirlo) se devuelve `None` en su lugar y
+    el que llama vuelve al comportamiento de antes — candar lo intentado — que
+    es el lado seguro: prefiere no remandar."""
+    out = Path(tempfile.gettempdir()) / (
+        f"captainship_sent_{today:%Y%m%d}_{os.getpid()}.txt")
     cmd = [sys.executable, "-m", "automations.captainship_drafts.run",
-           "--send-reviewed", "--date", today.isoformat()]
+           "--send-reviewed", "--date", today.isoformat(),
+           "--sent-keys-out", str(out)]
     if only:
         cmd += ["--only", ",".join(only)]
     if verbose:
         print(f"→ {' '.join(cmd)}", flush=True)
-    return subprocess.call(cmd)
+    try:
+        rc = subprocess.call(cmd)
+    finally:
+        delivered = None
+        if out.exists():
+            delivered = [k.strip() for k in
+                         out.read_text(encoding="utf-8").splitlines()
+                         if k.strip()]
+            try:
+                out.unlink()
+            except OSError:
+                pass
+    return rc, delivered
 
 
 # --------------------------------------------------------------------------
@@ -1793,13 +1858,19 @@ def main(argv=None) -> int:
                       f"({len([k for k in block.captains if k in done])} "
                       f"already out, {len(held_here)} held)", flush=True)
                 continue
-            n = send_reviewed(today, only=going)
+            n, got = send_reviewed(today, only=going)
             failures += n
             mark_block_sent(parent, block, n, args.channel, sent=going,
+                            delivered=got, thread=thread,
                             held=[k for k in block.captains if k in held_keys],
                             reason=held_why)
             if [k for k in block.captains if k in held_keys]:
                 pending += 1          # the held ones still owe a mail
+            # Lo mismo para el que INTENTO salir y no salio: ahora no queda
+            # candado, asi que el proximo tick lo reintenta — pero solo si el
+            # wrapper sigue preguntando, y eso lo decide este contador.
+            if got is not None and [k for k in going if k not in got]:
+                pending += 1
             # Re-read once per send so the NEXT block in this same pass sees the
             # lock we just wrote — cheap, and it is the only thing standing
             # between a crash mid-loop and a double send.

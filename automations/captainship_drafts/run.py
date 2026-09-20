@@ -64,6 +64,7 @@ import datetime as dt
 import sys
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 from automations.captainship_drafts import (
     config, churn_images, box_images, distro, email_build, fiber_png, preview,
@@ -218,14 +219,21 @@ def _apply_subject_prefix(msg, prefix) -> None:
 def _send_reviewed(selected, today: dt.date, *, to_override=None,
                    cc=None, subject_prefix=None,
                    allow_unreviewed: bool = False,
-                   allow_incomplete: bool = False, logfn=print) -> int:
+                   allow_incomplete: bool = False, logfn=print,
+                   delivered: Optional[list] = None) -> int:
     """Send the .eml files --dry-run already wrote for `today`, untouched.
 
     This is the approval gate. It deliberately does NOT rebuild: re-reading the
     Sales Board could pick up a number that changed since Eve looked, and the
     whole point is that what lands in people's inboxes is byte-identical to
     what she approved. A captain with no preview on disk is skipped loudly
-    rather than silently rebuilt."""
+    rather than silently rebuilt.
+
+    `delivered`, si se pasa, recibe las claves que REALMENTE salieron. El conteo
+    de fallas (el valor de retorno, y el exit code) dice cuantos no salieron
+    pero no cuales, y el hilo de Slack necesita los nombres: sin esto anotaba
+    como enviados a los que fallaron y nadie los reintentaba nunca
+    (2026-09-20, Rafael y Tony)."""
     from email import policy
     from email.parser import BytesParser
     from automations.captainship_drafts.mailer import Mailer
@@ -360,6 +368,8 @@ def _send_reviewed(selected, today: dt.date, *, to_override=None,
             try:
                 mailer.send(msg)
                 logfn(f"  ✓ {captain.key}: sent")
+                if delivered is not None:
+                    delivered.append(captain.key)
             except Exception as e:
                 failures += 1
                 logfn(f"  ✗ {captain.key}: send failed: {type(e).__name__}: {e}")
@@ -638,6 +648,11 @@ def main(argv=None) -> int:
                     help="With --send-reviewed: mail reports that still "
                          "show a 'could not be captured' note. Off by "
                          "default — a blank section is not a report.")
+    ap.add_argument("--sent-keys-out", default=None, metavar="PATH",
+                    help="With --send-reviewed: write the keys that ACTUALLY "
+                         "went out, one per line, to PATH. review_gate uses it "
+                         "to lock the thread on the delivered ones only — the "
+                         "exit code counts failures but cannot name them.")
     ap.add_argument("--to", default=None, metavar="ADDR",
                     help="With --send: send to ADDR instead of the captains' "
                          "real distribution lists. Use this to test a real "
@@ -711,10 +726,21 @@ def main(argv=None) -> int:
 
     if args.send_reviewed:
         # Nothing to capture — this path only mails what's already on disk.
+        went: list = []
         n = _send_reviewed(selected, today, to_override=args.to,
                            cc=args.cc, subject_prefix=args.subject_prefix,
                            allow_unreviewed=args.allow_unreviewed,
-                           allow_incomplete=args.allow_incomplete)
+                           allow_incomplete=args.allow_incomplete,
+                           delivered=went)
+        if args.sent_keys_out:
+            # Se escribe SIEMPRE, incluso vacio: el que llama distingue "no
+            # salio ninguno" de "esta corrida no supo decirlo" por la
+            # existencia del archivo, no por su contenido.
+            try:
+                Path(args.sent_keys_out).write_text("\n".join(went),
+                                                    encoding="utf-8")
+            except OSError as e:
+                print(f"  ⚠ could not write --sent-keys-out: {e}")
         if n:
             print(f"\n✗ {n} captain(s) not sent.")
             # THE COUNT, not a flat 1. review_gate reads this exit code as the
