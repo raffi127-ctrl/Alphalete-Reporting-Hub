@@ -1,4 +1,4 @@
-"""The half-hour team snapshot: today vs. yesterday at the same minute.
+"""The half-hour team snapshot: today vs. the same minute of a prior day.
 
     Times of Sales tab, 'Alphalete SALES BOARD 2025'  (same workbook as the board)
 
@@ -8,6 +8,11 @@ Total Units, and the difference against YESTERDAY at that same clock time --
 and the same three numbers go to the chat. The point is not the total; the
 board already carries that. The point is the PACE: 12 units at 4pm means
 something different on a day that had 8 at 4pm than on one that had 20.
+
+WHICH prior day the text measures against is comparison_date(): yesterday
+Monday through Friday, LAST SATURDAY on a Saturday. The tab's own Delta column
+is always today-minus-yesterday, whatever the text says -- see the note above
+comparison_date for why the two differ.
 
 IT DOES NOT SCRAPE. It is handed the `agents` list the sweep already pulled,
 so a snapshot costs one Sheets read and one Sheets write, not a second SaraPlus
@@ -430,6 +435,33 @@ def backfill_plan(grid, row: int, slot_cols: Dict[str, Dict[str, int]],
     return updates, notes
 
 
+# --- what the Difference line measures against ------------------------------
+# SATURDAY COMPARES TO LAST SATURDAY, every other day to the day before.
+# Rafael, 2026-09-20: "can we have it compare to last saturday vs yesterday" --
+# and, asked whether that meant every day: "Just for saturday. Monday - Friday
+# stays the same."
+#
+# A Saturday's yesterday is a Friday, and the two are not the same shape of
+# afternoon: different hours (Saturday starts at noon and closes at 6:30, a
+# Friday runs to 9), different headcount on the doors. So the delta was
+# measuring the calendar more than the pace, which is the one thing this
+# report exists to show. Last Saturday at the same minute is the honest
+# comparison.
+#
+# THE CHAT ONLY. The tab's Delta column stays today-minus-yesterday on every
+# day of the week, because its own sub-header says so ('Delta to the day Prior
+# prior') -- switching it on Saturdays would leave a column whose meaning
+# depends on the row, with nothing in the sheet to say which is which.
+def comparison_date(day: dt.date) -> dt.date:
+    """The day the chat's Difference line measures `day` against."""
+    return day - dt.timedelta(days=7 if day.weekday() == 5 else 1)
+
+
+def comparison_label(day: dt.date) -> str:
+    """'Yesterday' / 'Last Saturday' -- how that day is named in the text."""
+    return "Last Saturday" if day.weekday() == 5 else "Yesterday"
+
+
 def last_week_close(grid, day: dt.date,
                     slot_cols: Dict[str, Dict[str, int]],
                     slots: List[str]) -> Optional[Dict[str, int]]:
@@ -455,17 +487,23 @@ def last_week_close(grid, day: dt.date,
 
 
 # --- the message ------------------------------------------------------------
-def _diff_line(today: int, prior: Optional[int], label: str) -> List[str]:
+def _diff_line(today: int, prior: Optional[int], label: str,
+               prior_name: str = "Yesterday") -> List[str]:
     """The 'Today / Yesterday / Difference' block for one metric.
 
     No prior reading -> today's number only. The old system dropped the two
     lines entirely rather than printing 'Yesterday: 0', which is the right
     call: 0 is a claim about yesterday, and a blank cell is not one.
+
+    `prior_name` is whatever the comparison day is called -- 'Yesterday' most
+    days, 'Last Saturday' on a Saturday. It is passed in rather than assumed
+    because the line has to name the day the number actually came from; a
+    Saturday reading printed under 'Yesterday' is worse than no line at all.
     """
     out = ["Today: %d" % today]
     if prior is None:
         return out
-    out.append("Yesterday at %s: %d" % (label, prior))
+    out.append("%s at %s: %d" % (prior_name, label, prior))
     delta = today - prior
     if delta > 0:
         out.append("Difference: %s +%d" % (UP, delta))
@@ -482,12 +520,15 @@ def message(label: str, now: Dict[str, int], prior: Dict[str, Optional[int]],
     2026-08-11 4:00 PM in the A-Team chat). Kept line for line on purpose --
     the field has read this shape twice an hour for months, and a port is not
     the moment to redesign it."""
+    prior_name = comparison_label(day)
     lines = ["%s Sales Update - %s" % (CHART, label), ""]
     lines.append("%s New Internet" % GLOBE)
-    lines += _diff_line(now["new_internet"], prior.get("new_internet"), label)
+    lines += _diff_line(now["new_internet"], prior.get("new_internet"), label,
+                        prior_name)
     lines += ["", "%s DTV Streaming: %d" % (TV, now["dtv"]), ""]
     lines.append("%s Total Units" % BOX)
-    lines += _diff_line(now["total_units"], prior.get("total_units"), label)
+    lines += _diff_line(now["total_units"], prior.get("total_units"), label,
+                        prior_name)
     if last_week:
         lines += ["", "Last %s's Sales:" % day.strftime("%A"),
                   "%s New Internet: %d" % (GLOBE, last_week["new_internet"]),
@@ -523,7 +564,12 @@ def snapshot(agents: Sequence[Dict], label: str, day: dt.date, *,
     log("Times of Sales %s: New Internet %d, DTV %d, Total Units %d"
         % (label, now["new_internet"], now["dtv"], now["total_units"]))
 
+    # `prior` is what the TEXT compares against (yesterday, or last Saturday on
+    # a Saturday); `yday` is what the tab's Delta column compares against, which
+    # is the day before on every day of the week. Mon-Fri they are the same
+    # reading. [[comparison_date]]
     prior: Dict[str, Optional[int]] = {"new_internet": None, "total_units": None}
+    yday: Dict[str, Optional[int]] = {"new_internet": None, "total_units": None}
     last_week = None
     slots = slots_for(day.weekday())
 
@@ -551,9 +597,15 @@ def snapshot(agents: Sequence[Dict], label: str, day: dt.date, *,
             result["notes"].append(
                 "no %r row on the %r tab -- col A needs extending; nothing "
                 "written, the text still went" % (date_label(day), TAB))
-        prev_row = find_row(grid, day - dt.timedelta(days=1))
+        yday_day = day - dt.timedelta(days=1)
+        prior_day = comparison_date(day)
         if row is not None and cols:
-            prior = read_slot(grid, prev_row, cols)
+            yday = read_slot(grid, find_row(grid, yday_day), cols)
+            prior = (yday if prior_day == yday_day
+                     else read_slot(grid, find_row(grid, prior_day), cols))
+            if prior_day != yday_day:
+                log("  comparing against %s (%s), not yesterday"
+                    % (comparison_label(day).lower(), date_label(prior_day)))
         last_week = last_week_close(grid, day, slot_cols, slots)
 
         if row is not None and NEW_INTERNET in cols and TOTAL_UNITS in cols:
@@ -568,10 +620,10 @@ def snapshot(agents: Sequence[Dict], label: str, day: dt.date, *,
                             "values": [[now["new_internet"]]]})
             updates.append({"range": _a1(row, cols[TOTAL_UNITS]),
                             "values": [[now["total_units"]]]})
-            if prior["total_units"] is not None and DELTA in cols:
+            if yday["total_units"] is not None and DELTA in cols:
                 updates.append({"range": _a1(row, cols[DELTA]),
                                 "values": [[now["total_units"]
-                                            - prior["total_units"]]]})
+                                            - yday["total_units"]]]})
             if apply_writes:
                 # RAW, and ONE batch. These are plain integers -- USER_ENTERED
                 # would let Sheets reinterpret them -- and a per-cell loop here

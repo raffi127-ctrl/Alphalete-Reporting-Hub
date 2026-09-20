@@ -255,6 +255,69 @@ def test_message_marks_a_gain_green():
     assert "Difference: \U0001F7E2 +5" in body
 
 
+# --- Saturday compares to last Saturday -------------------------------------
+# Rafael, 2026-09-20: "Just for saturday. Monday - Friday stays the same."
+def test_saturday_compares_against_last_saturday():
+    assert T.comparison_date(dt.date(2026, 9, 19)) == dt.date(2026, 9, 12)
+    assert T.comparison_label(dt.date(2026, 9, 19)) == "Last Saturday"
+
+
+def test_every_other_day_still_compares_against_yesterday():
+    # Monday through Friday, plus the Sunday nothing runs on, untouched.
+    for d in range(14, 19):                       # Mon 9/14 .. Fri 9/18
+        day = dt.date(2026, 9, d)
+        assert T.comparison_date(day) == day - dt.timedelta(days=1)
+        assert T.comparison_label(day) == "Yesterday"
+    assert T.comparison_date(dt.date(2026, 9, 20)) == dt.date(2026, 9, 19)
+
+
+def test_saturdays_message_names_last_saturday():
+    body = T.message("2:30 PM",
+                     {"new_internet": 7, "dtv": 2, "total_units": 10},
+                     {"new_internet": 4, "total_units": 6},
+                     {"new_internet": 12, "total_units": 15},
+                     dt.date(2026, 9, 19))        # a Saturday
+    assert body.splitlines() == [
+        "\U0001F4CA Sales Update - 2:30 PM",
+        "",
+        "\U0001F310 New Internet",
+        "Today: 7",
+        "Last Saturday at 2:30 PM: 4",
+        "Difference: \U0001F7E2 +3",
+        "",
+        "\U0001F4FA DTV Streaming: 2",
+        "",
+        "\U0001F4E6 Total Units",
+        "Today: 10",
+        "Last Saturday at 2:30 PM: 6",
+        "Difference: \U0001F7E2 +4",
+        "",
+        "Last Saturday's Sales:",
+        "\U0001F310 New Internet: 12",
+        "\U0001F4E6 Total Units: 15",
+    ]
+    assert "Yesterday" not in body
+
+
+def test_a_weekdays_message_still_says_yesterday():
+    body = T.message("2:30 PM",
+                     {"new_internet": 7, "dtv": 2, "total_units": 10},
+                     {"new_internet": 4, "total_units": 6}, None,
+                     dt.date(2026, 9, 18))        # a Friday
+    assert "Yesterday at 2:30 PM: 4" in body
+    assert "Last Saturday" not in body
+
+
+def test_message_drops_the_saturday_comparison_when_it_is_blank():
+    """Last Saturday not recorded -> today's number alone, never 'Last
+    Saturday: 0'. A blank cell is not a claim that nobody sold."""
+    body = T.message("2:30 PM", {"new_internet": 7, "dtv": 0, "total_units": 9},
+                     {"new_internet": None, "total_units": None}, None,
+                     dt.date(2026, 9, 19))
+    assert "Last Saturday at" not in body and "Difference" not in body
+    assert "Today: 7" in body
+
+
 def test_message_uses_real_emoji_not_shortcodes():
     body = T.message("2:00 PM", {"new_internet": 1, "dtv": 0, "total_units": 1},
                      {"new_internet": None, "total_units": None}, None,
@@ -477,3 +540,68 @@ def test_the_new_rows_are_findable_without_a_second_read():
     T.ensure_calendar(ws, grid, dt.date(2026, 9, 16), ahead=5,
                       apply_writes=True)
     assert T.find_row(grid, dt.date(2026, 9, 20)) is not None
+
+
+# --- a whole Saturday snapshot ----------------------------------------------
+class _SnapWs(_FakeWs):
+    """_FakeWs plus the two calls snapshot() makes on a real worksheet."""
+    def __init__(self, grid):
+        super().__init__()
+        self.grid = grid
+        self.batches = []
+
+    def get_all_values(self):
+        return self.grid
+
+    def batch_update(self, updates, value_input_option=None):
+        self.batches.append(updates)
+
+
+def _saturday_ws():
+    """Last Saturday 9/12, yesterday (Friday) 9/18, today Saturday 9/19.
+
+    The two prior days carry DIFFERENT 2:30 PM numbers on purpose: if the text
+    ever went back to reading yesterday, it would say 9 instead of 4.
+    """
+    blank9 = ["", "", "", "", "", "", "", "", ""]        # 1:00 .. 2:00 PM
+    grid = _grid([
+        # 2:30 PM = 4/6, and a later 3:00 PM reading of 12/15 that is the
+        # day's CLOSE -- what the 'Last Saturday's Sales' block reports.
+        _row("Saturday, September 12, 26", *(blank9 + [4, 6, "", 12, 15, ""])),
+        _row("Friday, September 18, 26", *(blank9 + [9, 20, "", "", "", ""])),
+        _row("Saturday, September 19, 26"),
+    ])
+    return _SnapWs(grid)
+
+
+def _snapshot_saturday(ws, **kw):
+    """snapshot() with the chat groups emptied -- nothing here addresses a
+    room, dry-run or not. [[feedback_no_blind_test_sweeps]]"""
+    from automations.alphalete_sales_board import config as C
+    agents = [{"internet_sales": 7, "internet_upgrades": 0, "aia_sales": 0,
+               "dtv_streaming": 2, "wireless_lines_sold": 0}]
+    keep = C.TIMES_GROUPS
+    C.TIMES_GROUPS = []
+    try:
+        return T.snapshot(agents, "2:30 PM", dt.date(2026, 9, 19),
+                          worksheet=ws, log=lambda *a: None, **kw)
+    finally:
+        C.TIMES_GROUPS = keep
+
+
+def test_a_saturday_snapshot_texts_last_saturdays_numbers():
+    res = _snapshot_saturday(_saturday_ws())
+    assert "Last Saturday at 2:30 PM: 4" in res["body"]     # not Friday's 9
+    assert "Last Saturday at 2:30 PM: 6" in res["body"]     # not Friday's 20
+    assert "Yesterday" not in res["body"]
+    # ...and the close line is still last Saturday's LAST reading, not its 2:30.
+    assert "\U0001F310 New Internet: 12" in res["body"]
+
+
+def test_the_tabs_delta_column_stays_yesterday_even_on_saturday():
+    """The sub-header says 'Delta to the day Prior'. Only the chat moved."""
+    ws = _saturday_ws()
+    _snapshot_saturday(ws, apply_writes=True)
+    wrote = {u["range"]: u["values"] for b in ws.batches for u in b}
+    assert wrote["K5"] == [[7]] and wrote["L5"] == [[9]]    # today's own cells
+    assert wrote["M5"] == [[-11]]                          # 9 - Friday's 20
