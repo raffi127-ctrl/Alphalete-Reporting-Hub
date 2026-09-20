@@ -19,41 +19,59 @@ EARLY = dt.datetime(2026, 9, 7, 4, 45)           # the 4:31 batch has just run
 
 class FakeClient:
     """Channels -> the board ids sitting in today's thread. None = no thread;
-    the string 'boom' = the history read itself fails."""
+    the string 'boom' = the history read itself fails; a ``Deleted(ids)`` = the
+    parent was deleted but those board images survive under the tombstone."""
 
     def __init__(self, by_channel):
         self.by_channel = by_channel
 
 
+class Deleted:
+    """Today's parent is gone; `ids` are the images still under its tombstone."""
+
+    def __init__(self, ids):
+        self.ids = set(ids)
+
+
 def _patched(fake: FakeClient):
-    """Patch the two slack_post readers reconcile() depends on."""
+    """Patch the three slack_post readers reconcile() depends on."""
 
     def find_today_threads(client, channel, today):
         val = fake.by_channel.get(channel, set())
         if val == "boom":
             raise sp.DedupReadUnavailable("conversations.history timed out")
-        if val is None:
-            return []
+        if val is None or isinstance(val, Deleted):
+            return []                             # no LIVE parent today
         if isinstance(val, list):                 # several threads today
             return [f"111.{i}" for i in range(len(val))]
         return ["111.222"]
+
+    def find_today_tombstones(client, channel, today):
+        val = fake.by_channel.get(channel, set())
+        if val == "boom":
+            raise sp.DedupReadUnavailable("conversations.history timed out")
+        return ["999.000"] if isinstance(val, Deleted) else []
 
     def posted_ids(client, channel, thread_ts, pages, today):
         val = fake.by_channel.get(channel, set())
         if val == "boom":
             raise sp.DedupReadUnavailable("conversations.history timed out")
+        if isinstance(val, Deleted):
+            return set(val.ids)
         if isinstance(val, list):
             return set(val[int(thread_ts.split(".")[1])])
         return set(val or ())
 
     return (mock.patch.object(sp, "find_today_threads", find_today_threads),
-            mock.patch.object(sp, "posted_ids", posted_ids))
+            mock.patch.object(sp, "posted_ids", posted_ids),
+            mock.patch.object(sp, "find_today_tombstones",
+                              find_today_tombstones))
 
 
 def run_reconcile(by_channel, orgs, *, now=LATE_ENOUGH):
     fake = FakeClient(by_channel)
-    p1, p2 = _patched(fake)
-    with p1, p2:
+    p1, p2, p3 = _patched(fake)
+    with p1, p2, p3:
         return rp.reconcile(DAY, client=fake, orgs=orgs, now=now)
 
 
@@ -174,6 +192,128 @@ class TestNoThreadAtAll(unittest.TestCase):
             al.return_value = True
             rp.alert_if_incomplete(rep)
         self.assertEqual(al.call_args.kwargs["kind"], "no_post")
+
+
+class TestADeletedThreadIsNotAMissingOne(unittest.TestCase):
+    """2026-09-20, #ambient-sales-1. All nine boards posted (5 at 06:49, 4 in the
+    07:05 Box run) and BOTH parents were then deleted in the channel. The audit
+    said "NO THREAD (owed 9)" — the same words it uses when a capture run dies
+    and nothing is posted anywhere — and the remediation it offered was to re-run
+    the capture, which would have burned a Tableau login and fixed nothing."""
+
+    def test_a_deleted_thread_is_not_reported_as_no_thread(self):
+        org = "elevate"
+        owed = set(rp.expected_for(org, DAY, now=LATE_ENOUGH))
+        rep = run_reconcile({_chans(org)[0]: Deleted(owed)}, [org])
+        res = rep.orgs[0]
+        self.assertFalse(res.thread_missing,
+                         "the boards ARE in the channel — this is not a no-post")
+        self.assertTrue(res.deleted_thread)
+        self.assertEqual(res.missing, [])
+        self.assertEqual(set(res.present), owed)
+
+    def test_it_still_counts_as_a_problem(self):
+        """What the office sees is 'This message was deleted.' with loose images
+        under it. Nine delivered boards nobody can read is not a clean day."""
+        org = "elevate"
+        owed = set(rp.expected_for(org, DAY, now=LATE_ENOUGH))
+        rep = run_reconcile({_chans(org)[0]: Deleted(owed)}, [org])
+        self.assertFalse(rep.clean)
+        self.assertTrue(rp.failed_parts(rep))
+
+    def test_the_bullet_says_deleted_and_how_many_survived(self):
+        org = "elevate"
+        owed = set(rp.expected_for(org, DAY, now=LATE_ENOUGH))
+        rep = run_reconcile({_chans(org)[0]: Deleted(owed)}, [org])
+        blob = " ".join(rp.failed_parts(rep))
+        self.assertIn("DELETED", blob)
+        self.assertIn(str(len(owed)), blob)
+        self.assertNotIn("no tracker thread at all today", blob)
+
+    def test_the_remediation_says_do_not_re_run_the_capture(self):
+        org = "elevate"
+        owed = set(rp.expected_for(org, DAY, now=LATE_ENOUGH))
+        rep = run_reconcile({_chans(org)[0]: Deleted(owed)}, [org])
+        with mock.patch("automations.shared.section_drop_alert.alert") as al:
+            al.return_value = True
+            rp.alert_if_incomplete(rep)
+        fix = al.call_args.kwargs["remediation"]["fix"]
+        self.assertIn("Do NOT re-run the capture", fix)
+        self.assertIn("--new-thread", fix)
+        self.assertNotEqual(al.call_args.kwargs["kind"], "no_post")
+
+    def test_a_deleted_thread_missing_boards_reports_both(self):
+        """The parent was deleted AND a board never landed — two different facts,
+        two bullets, neither hiding the other."""
+        org = "elevate"
+        owed = set(rp.expected_for(org, DAY, now=LATE_ENOUGH))
+        rep = run_reconcile({_chans(org)[0]: Deleted(owed - {"nds"})}, [org])
+        parts = rp.failed_parts(rep)
+        self.assertTrue([p for p in parts if "DELETED" in p], parts)
+        self.assertTrue([p for p in parts if "NDS Tracker" in p], parts)
+
+    def test_a_tombstone_with_none_of_our_boards_is_still_no_thread(self):
+        """Somebody deleting an unrelated message must not be read as our
+        thread: a tombstone only counts when our captions are under it."""
+        org = "elevate"
+        rep = run_reconcile({_chans(org)[0]: Deleted(set())}, [org])
+        self.assertTrue(rep.orgs[0].thread_missing)
+        self.assertFalse(rep.orgs[0].deleted_thread)
+
+
+class TestCrossWorkspaceOrgIsReadWithItsOwnToken(unittest.TestCase):
+    """trang's #freshsuccess-* channels are in the FRESH SUCCESS workspace. The
+    audit built ONE client from the AO token and read every org with it, so Slack
+    answered `channel_not_found` and FreshSuccess came back UNREADABLE every
+    single day (seen 2026-09-20) — permanent blind coverage on the one org that
+    has actually broken twice. run.py already routes the POST this way."""
+
+    def test_trang_has_a_cross_workspace_token_file(self):
+        from automations.office_metrics.offices import CROSS_WS_TOKEN_FILES
+        self.assertIn("trang", CROSS_WS_TOKEN_FILES)
+
+    def test_a_normal_org_keeps_the_default_client(self):
+        sentinel = object()
+        self.assertIs(rp._client_for("elevate", sentinel), sentinel)
+
+    def test_a_cross_ws_org_builds_a_client_from_its_own_token(self):
+        sentinel, built = object(), object()
+        with mock.patch("pathlib.Path.exists", return_value=True), \
+             mock.patch("pathlib.Path.read_text", return_value="xoxb-fs\n"), \
+             mock.patch("automations.shared.slack_metrics_post._client",
+                        return_value=built) as mk:
+            got = rp._client_for("trang", sentinel)
+        self.assertIs(got, built)
+        self.assertTrue(mk.called)
+
+    def test_the_ao_token_is_restored_afterwards(self):
+        """The env var is shared process-wide — leaking the FS token into it
+        would make every org AFTER trang read the wrong workspace."""
+        import os
+        os.environ["SLACK_USER_TOKEN"] = "xoxp-ao"
+        try:
+            with mock.patch("pathlib.Path.exists", return_value=True), \
+                 mock.patch("pathlib.Path.read_text", return_value="xoxb-fs\n"), \
+                 mock.patch("automations.shared.slack_metrics_post._client",
+                            return_value=object()):
+                rp._client_for("trang", object())
+            self.assertEqual(os.environ["SLACK_USER_TOKEN"], "xoxp-ao")
+        finally:
+            os.environ.pop("SLACK_USER_TOKEN", None)
+
+    def test_a_missing_token_file_falls_back_and_stays_honest(self):
+        """No FS token on this machine -> the read genuinely fails -> the org is
+        reported unreadable. That is the truthful answer, not a fake gap."""
+        sentinel = object()
+        with mock.patch("pathlib.Path.exists", return_value=False):
+            self.assertIs(rp._client_for("trang", sentinel), sentinel)
+
+    def test_an_explicit_client_is_never_re_routed(self):
+        """A caller that handed us a client (the tests) must not have a token
+        file read out from under it."""
+        with mock.patch.object(rp, "_client_for") as cf:
+            run_reconcile({c: set() for c in _chans("elevate")}, ["elevate"])
+        self.assertFalse(cf.called)
 
 
 class TestTheAlertStaysReadable(unittest.TestCase):

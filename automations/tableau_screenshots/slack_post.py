@@ -706,6 +706,45 @@ def find_today_threads(client, channel: str, today: dt.date) -> list:
     return out
 
 
+def find_today_tombstones(client, channel: str, today: dt.date) -> list:
+    """Every DELETED thread parent from today in `channel` that still has
+    replies, newest first. [] = nothing was deleted.
+
+    A deleted parent leaves a `subtype: "tombstone"` message reading "This
+    message was deleted." — the header title is GONE, so a tombstone can never be
+    matched the way find_today_threads matches a live parent. It is returned on
+    the weaker signal (a tombstone from today that still has replies) and the
+    CALLER decides whether it was ours, by reading its replies for our captions
+    (posted_ids). Anything else deleted in the channel contributes no board ids
+    and drops out on its own.
+
+    WHY (2026-09-20, #ambient-sales-1). Both of the day's tracker parents were
+    deleted in the channel — the 06:49 one within 16 minutes, which is why the
+    07:05 Box run could not find it and opened a second parent, which was then
+    deleted too. All nine board images stayed put, orphaned under the tombstones.
+    find_today_threads correctly returned [], and reconcile_posted reported "no
+    tracker thread at all today" — the exact words it uses when a capture run
+    dies and NOTHING is posted anywhere. Those two mornings need opposite fixes
+    (re-post a parent vs. re-run the capture on a cold session), so they must
+    never read alike.
+
+    Raises DedupReadUnavailable if the history read fails, same as the others."""
+    oldest = dt.datetime.combine(today, dt.time.min).timestamp()
+    resp = _read_with_retry(client.conversations_history, channel,
+                            "conversations.history",
+                            channel=channel, oldest=str(oldest), limit=200)
+    out = []
+    for msg in resp.get("messages", []):
+        if msg.get("subtype") != "tombstone":
+            continue
+        if not msg.get("reply_count"):
+            continue                      # deleted and empty — nothing survived
+        ts = msg.get("thread_ts") or msg.get("ts")
+        if ts and ts not in out:
+            out.append(ts)
+    return out
+
+
 def ensure_thread(client, channel: str, pages: list, today: dt.date,
                   pending_late=(), *, new_thread: bool = False,
                   note: str = "", updated: bool = False) -> dict:

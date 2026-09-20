@@ -32,6 +32,12 @@ Three outcomes per channel, never two:
 
   • thread absent          -> the whole day's post is missing (kind 'no_post').
   • thread present, gaps   -> those boards are genuinely missing (kind 'section').
+  • thread DELETED         -> the parent was removed in the channel but the board
+                              images are still there under the tombstone. A real
+                              gap (nobody can read the morning post) with the
+                              OPPOSITE fix from an absent thread: re-post a
+                              parent, do NOT re-run the capture. See
+                              `slack_post.find_today_tombstones`.
   • channel UNREADABLE     -> say nothing about it. `find_thread_ts` raises
                               DedupReadUnavailable when the history read itself
                               fails, and "I couldn't look" must never be reported
@@ -87,6 +93,10 @@ class OrgResult:
     present: List[str] = field(default_factory=list)
     missing: List[str] = field(default_factory=list)
     thread_missing: bool = False
+    #: The parent was DELETED in the channel; its board images survive under the
+    #: tombstone. Not `thread_missing` — the boards were captured and delivered,
+    #: so the fix is a new parent, not a re-capture.
+    deleted_thread: bool = False
     unreadable: str = ""          # non-empty = we could not look; NOT a miss
 
     @property
@@ -112,6 +122,10 @@ class Reconciliation:
         return [o for o in self.readable if o.thread_missing]
 
     @property
+    def deleted_threads(self) -> List[OrgResult]:
+        return [o for o in self.readable if o.deleted_thread]
+
+    @property
     def with_gaps(self) -> List[OrgResult]:
         return [o for o in self.readable if o.missing and not o.thread_missing]
 
@@ -119,9 +133,15 @@ class Reconciliation:
     def clean(self) -> bool:
         """True when every channel we COULD read has everything it is owed.
 
+        A DELETED thread is never clean even when all nine boards are still in
+        the channel: what the office actually sees that morning is "This message
+        was deleted." with loose images under it, which is not a delivered post.
+        [[feedback_green_means_delivered]]
+
         An unreadable channel does not make the day clean OR dirty — it makes it
         unknown, and unknown is reported in the note, never as a drop."""
-        return not self.threads_missing and not self.with_gaps
+        return (not self.threads_missing and not self.with_gaps
+                and not self.deleted_threads)
 
     def missing_everywhere(self) -> List[str]:
         """Board ids absent from EVERY readable channel that expects them."""
@@ -160,6 +180,72 @@ def expected_for(org: str, day: dt.date, *,
     return [i for i in ids if not (pages_mod.by_id(i) or {}).get("late")]
 
 
+def _boards_in_channel(client, channel: str, day: dt.date) -> tuple:
+    """(board ids present in `channel` today, thread state).
+
+    State is 'live' (today's parent is there), 'deleted' (the parent is gone but
+    its board images are still in the channel, under the tombstone), or 'absent'
+    (no tracker thread today at all).
+
+    Raises whatever the Slack reads raise — the caller turns that into
+    `unreadable`, because "I couldn't look" is never "it isn't there"."""
+    tss = sp.find_today_threads(client, channel, day)
+    if tss:
+        # A board counts as posted if it is in ANY of today's threads: an
+        # *UPDATED* rerun thread may hold only the board it re-ran.
+        got: set = set()
+        for ts in tss:
+            got |= sp.posted_ids(client, channel, ts, pages_mod.PAGES, day)
+        return got, "live"
+    got = set()
+    for ts in sp.find_today_tombstones(client, channel, day):
+        got |= sp.posted_ids(client, channel, ts, pages_mod.PAGES, day)
+    return (got, "deleted") if got else (set(), "absent")
+
+
+def _client_for(org: str, default):
+    """The Slack client that can actually READ `org`'s channels.
+
+    Nearly every org lives in our AO workspace and reads fine with the shared
+    Lucy token. trang's #freshsuccess-* channels do NOT: they are in the FRESH
+    SUCCESS workspace, and a token cannot see another workspace at all — Slack
+    answers a non-member with `channel_not_found`. run.py already routes the
+    POST through that workspace's own bot token (office_metrics.offices
+    .CROSS_WS_TOKEN_FILES); this audit read every org with one default client, so
+    FreshSuccess came back "UNREADABLE — channel_not_found" EVERY day
+    (2026-09-20). A permanent blind spot on the one org that has actually broken
+    twice (8/19, 8/23) is worse than no check at all — it looks like coverage.
+
+    Falls back to `default` when the org has no cross-workspace token, or when
+    its token file is not on this machine (then the read genuinely fails and the
+    org is reported unreadable, which is the honest answer).
+    [[project_trang_fresh_success]]"""
+    try:
+        from automations.office_metrics.offices import CROSS_WS_TOKEN_FILES
+        tok_file = CROSS_WS_TOKEN_FILES.get(org)
+    except Exception:                                 # noqa: BLE001
+        tok_file = None
+    if not tok_file:
+        return default
+    import os
+    from pathlib import Path
+    path = Path.home() / ".config" / "recruiting-report" / tok_file
+    if not path.exists():
+        return default
+    from automations.shared import slack_metrics_post as smp
+    saved = os.environ.get("SLACK_USER_TOKEN")
+    os.environ["SLACK_USER_TOKEN"] = path.read_text(encoding="utf-8-sig").strip()
+    try:
+        return smp._client()
+    except Exception:                                 # noqa: BLE001
+        return default
+    finally:
+        if saved is None:
+            os.environ.pop("SLACK_USER_TOKEN", None)
+        else:
+            os.environ["SLACK_USER_TOKEN"] = saved
+
+
 def reconcile(day: Optional[dt.date] = None, *, client=None,
               orgs: Optional[Sequence[str]] = None,
               now: Optional[dt.datetime] = None) -> Reconciliation:
@@ -168,6 +254,10 @@ def reconcile(day: Optional[dt.date] = None, *, client=None,
     Never raises for a channel-level problem: an org we cannot read is recorded
     as `unreadable` and excluded from the miss counts."""
     day = day or dt.date.today()
+    # A client handed in (the tests, a caller that already built one) is used
+    # as-is for every org; only the default client gets per-org routing, so
+    # nothing in a test can reach out for a token file.
+    routed = client is None
     if client is None:
         from automations.shared import slack_metrics_post as smp
         client = smp._client()
@@ -190,25 +280,19 @@ def reconcile(day: Optional[dt.date] = None, *, client=None,
         present: set = set()
         seen_any = False
         thread_missing_everywhere = True
+        org_client = _client_for(org, client) if routed else client
         for channel in sp.channels_for(org):
             try:
-                tss = sp.find_today_threads(client, channel, day)
+                got, state = _boards_in_channel(org_client, channel, day)
             except Exception as e:                    # noqa: BLE001
                 # DedupReadUnavailable (or any read failure) = we could not look.
                 res.unreadable = f"{type(e).__name__}: {str(e)[:90]}"
                 break
-            if not tss:
+            if state == "absent":
                 continue                              # no thread in THIS channel
             thread_missing_everywhere = False
-            # A board counts as posted if it is in ANY of today's threads: an
-            # *UPDATED* rerun thread may hold only the board it re-ran.
-            got: set = set()
-            try:
-                for ts in tss:
-                    got |= sp.posted_ids(client, channel, ts, pages_mod.PAGES, day)
-            except Exception as e:                    # noqa: BLE001
-                res.unreadable = f"{type(e).__name__}: {str(e)[:90]}"
-                break
+            if state == "deleted":
+                res.deleted_thread = True
             present = got if not seen_any else (present & got)
             seen_any = True
         if res.unreadable:
@@ -240,6 +324,15 @@ def failed_parts(rep: Reconciliation) -> List[str]:
         parts.append(f"{_title(pid)} — missing from ALL channels")
     for o in rep.threads_missing:
         parts.append(f"{o.label} — no tracker thread at all today")
+    for o in rep.deleted_threads:
+        # Deliberately NOT "no tracker thread today": the boards were captured
+        # and delivered, somebody deleted the parent afterwards. Saying how many
+        # images survived is what stops the next person re-running a capture
+        # that already worked.
+        parts.append(
+            f"{o.label} — today's tracker thread was DELETED in the channel "
+            f"({len(o.present)} board image(s) still there, orphaned under "
+            f"“This message was deleted.”)")
     for o in rep.with_gaps:
         rest = [i for i in o.missing if i not in everywhere]
         if rest:
@@ -261,22 +354,35 @@ def alert_if_incomplete(rep: Reconciliation, *, dry_run: bool = False) -> bool:
     note = "; ".join(filter(None, [
         f"{len(rep.threads_missing)} channel(s) have NO tracker thread today"
         if rep.threads_missing else "",
+        f"{len(rep.deleted_threads)} channel(s) had today's thread DELETED "
+        f"after it posted — the board images are still there"
+        if rep.deleted_threads else "",
         f"{len(unread)} channel(s) could not be read, so nothing is claimed "
         f"about them: " + ", ".join(o.label for o in unread) if unread else "",
         "expected set comes from pages.py + slack_post.ORG_TRACKERS, so this "
         "counts what each channel is actually owed",
     ]))
-    kind = "no_post" if (rep.threads_missing and not rep.with_gaps) else "section"
+    kind = ("no_post" if (rep.threads_missing and not rep.with_gaps
+                          and not rep.deleted_threads) else "section")
+    fix = ("re-run the capture once the machine's ownerville/Tableau "
+           "session is live (`lucy login_check` on that runner first) — "
+           "`lucy rerun tableau_screenshots_settle_am` posts only what "
+           "is still missing and never duplicates a board already in "
+           "the thread.")
+    if rep.deleted_threads:
+        # Opposite fix. A re-capture here burns a Tableau login and fixes
+        # nothing: the images are already in the channel, only the parent they
+        # hung from is gone, so the day needs a NEW parent.
+        fix = ("DELETED thread(s) — " + ", ".join(
+                   o.label for o in rep.deleted_threads)
+               + ": the boards ARE in the channel, someone deleted the parent "
+                 "message. Do NOT re-run the capture. Re-post a parent with "
+                 "`lucy rerun tableau_screenshots --orgs <org> --new-thread`, "
+                 "and ask in the channel who is deleting it. || " + fix)
     return sda.alert(
         report_id=REPORT_ID, failed=parts, kind=kind, day=rep.day,
         note=note, dry_run=dry_run,
-        remediation={
-            "fix": "re-run the capture once the machine's ownerville/Tableau "
-                   "session is live (`lucy login_check` on that runner first) — "
-                   "`lucy rerun tableau_screenshots_settle_am` posts only what "
-                   "is still missing and never duplicates a board already in "
-                   "the thread.",
-        })
+        remediation={"fix": fix})
 
 
 def summary(rep: Reconciliation) -> str:
@@ -287,6 +393,13 @@ def summary(rep: Reconciliation) -> str:
         elif o.thread_missing:
             lines.append(f"  X  {o.label}: NO THREAD "
                          f"(owed {len(o.expected)})")
+        elif o.deleted_thread:
+            lines.append(f"  D  {o.label}: THREAD DELETED — "
+                         f"{len(o.present)}/{len(o.expected)} board(s) still in "
+                         f"the channel under the tombstone"
+                         + (", missing "
+                            + ", ".join(_title(i) for i in o.missing)
+                            if o.missing else ""))
         elif o.missing:
             lines.append(f"  !  {o.label}: {len(o.present)}/{len(o.expected)} "
                          f"— missing " + ", ".join(_title(i) for i in o.missing))
