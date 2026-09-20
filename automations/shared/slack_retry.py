@@ -1,4 +1,4 @@
-"""Slack FILE DOWNLOADS, retried through a truncated response body.
+"""Slack READS, retried through a truncated response body.
 
 WHAT THIS IS FOR. Slack sometimes hands back a response that stops in the
 middle: the headers promise 178,741 bytes and the connection closes after
@@ -12,16 +12,30 @@ callers (the mini's `slack_thread` action twice, and New-Start Thread Replies
 at 08:01 and again at 08:32), which is what says it was Slack having a moment
 rather than any one report being wrong.
 
-NOT FOR THE WEB API -- that half is already handled, one layer lower.
-`slack_metrics_post._client` installs a slack_sdk retry handler that repeats
-any READ whose body came apart, so every WebClient call in the repo is covered
-at once instead of the handful somebody remembered to wrap. Wrapping a
-WebClient call in this as well just multiplies the attempts.
+TWO TRANSPORTS, AND THIS COVERS BOTH -- which it did not, for one commit, and
+that cost a run. `slack_metrics_post._client` also installs a slack_sdk retry
+handler for the same fault, and on 2026-09-20 the call sites here were unwrapped
+on the reasoning that the handler made them redundant. The 09:30 run died anyway,
+in `thread.find_anchor`, on `conversations.history`:
 
-What that handler CANNOT reach is a file download: `url_private_download` is
-fetched with plain `requests`, outside slack_sdk entirely, and that is the
-call that failed at 08:01 ("Couldn't read the Main funnel roster screenshot").
-This module is for that path.
+    File ".../automations/new_start_followup/thread.py", line 116, in find_anchor
+    http.client.IncompleteRead: IncompleteRead(74352 bytes read, 104398 more expected)
+
+and slack_sdk never logged its own "Failed to send a request to Slack API
+server", which it emits on every attempt that reaches the branch where retry
+handlers are consulted. So on that machine the handler was never asked.
+
+The likeliest reason is version skew: `requirements.txt` says `slack_sdk>=3.21`,
+unpinned, and the generic `except Exception` branch that consults retry handlers
+is a later addition -- the fleet's py3.9 venvs were built at different times, so
+"the client retries this" is a claim about whatever slack_sdk that box happens
+to have. Not something to bet a report on. Retry HERE, in code we ship, and let
+the handler be a bonus where it exists. A read is idempotent, so the worst case
+of both firing is a few extra seconds on a path that is already failing.
+
+The file download needs this for a plainer reason: `url_private_download` is
+fetched with `requests`, outside slack_sdk entirely, where no handler of any
+version can reach it.
 
 READS ONLY, AND THAT IS THE WHOLE POINT. A truncated read can be asked for
 again with no consequence -- nobody sees a second download. A truncated WRITE

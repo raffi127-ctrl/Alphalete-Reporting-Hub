@@ -208,6 +208,58 @@ class OffdayStandaloneIds(unittest.TestCase):
         self.assertNotIn("plain", _offday_standalone_ids(cfg, dt.date(2026, 8, 22)))
 
 
+class CadenceIsItsOwnPin(unittest.TestCase):
+    """2026-09-20: icd_start_dates posted "didn't run today on the mini - usually
+    starts ~8:00" on a SUNDAY. It is on_scheduler with cadence.weekdays [0..5]
+    (Mon-Sat), so the orchestrator correctly wasn't running it -- which dropped
+    it out of _orchestrator_ids and onto the watcher, where the only evidence
+    left was an Activity log showing six 08:00 runs a week.
+
+    A report that already declares which days it runs should not have to
+    declare them a second time under standalone_weekdays: the copy is one more
+    thing to keep in step, and it goes stale the day the cadence moves."""
+
+    SIX_DAY = _Cfg({"icd_start_dates": {
+        "on_scheduler": True, "cadence": {"weekdays": [0, 1, 2, 3, 4, 5]}}})
+
+    def test_a_mon_sat_report_is_exempt_on_sunday(self):
+        # Sun 2026-09-20 -- the false-alarm day.
+        self.assertIn("icd_start_dates",
+                      _offday_standalone_ids(self.SIX_DAY, dt.date(2026, 9, 20)))
+
+    def test_it_is_still_watched_every_day_it_does_run(self):
+        for day in range(14, 20):          # Mon 9/14 .. Sat 9/19
+            self.assertNotIn(
+                "icd_start_dates",
+                _offday_standalone_ids(self.SIX_DAY, dt.date(2026, 9, day)))
+
+    def test_an_explicit_pin_still_wins_over_the_cadence(self):
+        """standalone_weekdays stays the override for a report whose plist and
+        cadence disagree -- the cadence is only the fallback."""
+        cfg = _Cfg({"r": {"on_scheduler": True,
+                          "cadence": {"weekdays": [0, 1, 2, 3, 4, 5]},
+                          "standalone_weekdays": [2]}})            # Wed only
+        self.assertIn("r", _offday_standalone_ids(cfg, dt.date(2026, 9, 14)))   # Mon
+        self.assertNotIn("r", _offday_standalone_ids(cfg, dt.date(2026, 9, 16)))  # Wed
+
+    def test_an_empty_cadence_is_not_read_as_never_due(self):
+        """weekdays [] means "the loop never runs this, its real schedule is a
+        plist" -- the reports the watcher is the ONLY alert for. Reading [] as
+        "due no day" would silence every one of them."""
+        cfg = _Cfg({"weather": {"on_scheduler": True, "cadence": {"weekdays": []}}})
+        for day in range(14, 21):
+            self.assertNotIn("weather",
+                             _offday_standalone_ids(cfg, dt.date(2026, 9, day)))
+
+    def test_a_non_scheduler_report_keeps_the_historical_guess(self):
+        """on_scheduler:false means cadence.weekdays isn't the real schedule --
+        that lives in a plist, which is exactly why standalone_weekdays exists."""
+        cfg = _Cfg({"paused": {"on_scheduler": False,
+                               "cadence": {"weekdays": [0, 1, 2, 3, 4]}}})
+        self.assertNotIn("paused",
+                         _offday_standalone_ids(cfg, dt.date(2026, 9, 20)))
+
+
 class OneshotUtilityIds(unittest.TestCase):
     """Hand-run utilities must never enter the 'expected today' baseline.
 

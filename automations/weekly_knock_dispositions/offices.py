@@ -50,17 +50,30 @@ RAF = {
     "header_label": "", "slack_token_file": "",
 }
 
-# Chan Park has no metrics thread of his own — his daily knocks ride the
-# 'Knocks for other offices' thread in #alphalete-sales, and his weekly
-# board goes into THAT same thread on Sundays (Megan 2026-08-22: "chans
-# should be in this thread on sundays"). thread_title switches the post
-# from the day's Metrics thread to that named thread.
+# Chan Park gets NO Sunday board of his own (Megan 2026-09-20: "that knocks
+# for other offices needs to be retired - we don't need it at all. Chan's
+# comparison numbers are on all the other knock reports"). He is NOT in
+# all_offices(), so this report never pulls him and never opens a thread for
+# him.
+#
+# HOW WE GOT HERE: his board used to ride 'Knocks for other offices', the
+# thread the daily other_office_knocks report opened each morning. That
+# report was retired 2026-09-19 at Rafael's request, so on Sunday 9/20 THIS
+# report opened a thread under the retired report's name in #alphalete-sales
+# and its #alphalete-lvl1-chat mirror. The name is gone with the board.
+#
+# THE DICT STAYS — DO NOT DELETE IT. captainship_drafts/knock_dispo_images.py
+# imports CHAN (name / ov / campaign_id) to pull his week for the teal
+# 'CHAN PARK TOTAL' comparison row on the CAPTAINSHIP emails, and
+# COMPARE_TOTALS_EVERYONE below keeps that same comparison on every office's
+# knock board. Both are untouched by this — Megan: "This should NOT change
+# ANYTHING on the captainship emails though for Chan." Deleting the dict, or
+# emptying COMPARE_TOTALS_EVERYONE, is what would break them.
 CHAN = {
     "name": "Chan Park", "ov": "impersonate", "campaign_id": "3",
     "pss_owner": "Chan Park",
     "channel_id": "", "channel_name": "#alphalete-sales",
     "header_label": "", "slack_token_file": "",
-    "thread_title": "Knocks for other offices",
 }
 
 # Both spellings of the enrollment key resolve to the knocks/gaps board
@@ -158,7 +171,8 @@ def enrolled_offices() -> list[dict]:
 def all_offices() -> list[dict]:
     include = (INCLUDE_ENROLLED
                or os.environ.get("WKD_INCLUDE_ENROLLED", "") == "1")
-    rows = [dict(RAF), dict(CHAN)]
+    # CHAN is deliberately absent — see the note on the dict above.
+    rows = [dict(RAF)]
     if include:
         seen = {r["name"].lower() for r in rows}
         for r in enrolled_offices():

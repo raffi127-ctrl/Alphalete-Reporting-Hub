@@ -20,11 +20,13 @@ OFFLINE. No socket, no Slack, no vision call -- the truncation is injected.
 """
 from __future__ import annotations
 
+import datetime as dt
 import http.client
 
 import pytest
 
 from automations.new_start_followup import screenshot_roster as SR
+from automations.new_start_followup import thread as TH
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"rosterbytes" * 40
 
@@ -109,3 +111,77 @@ def test_a_sign_in_page_is_still_a_hard_error(monkeypatch):
         SR._download({"url_private_download": "https://files.slack/x.png"},
                      "xoxp-test")
     assert calls["n"] == 1
+
+
+# --- the thread read --------------------------------------------------------
+# This is the call that actually killed the 09:30 run on 2026-09-20 —
+# thread.find_anchor's conversations.history — AFTER the first fix had been
+# deployed. The retry had been left to slack_sdk's own handler on the shared
+# client, and on that machine the handler was never reached (slack_sdk never
+# logged its per-attempt "Failed to send a request to Slack API server").
+# requirements.txt says `slack_sdk>=3.21`, unpinned, so which slack_sdk a Lucy
+# has is not something a report can depend on. These two pin the retry into
+# code we ship.
+class _Client:
+    """A Slack client whose reads truncate the first `fail_n` times."""
+    def __init__(self, anchor_ts, fail_history=0, fail_replies=0):
+        self.anchor_ts = anchor_ts
+        self.fail_history = fail_history
+        self.fail_replies = fail_replies
+        self.history_calls = 0
+        self.replies_calls = 0
+
+    def _anchor(self):
+        return {"ts": self.anchor_ts, "user": "UAISHA",
+                "text": "New Starts Scheduled for Monday"}
+
+    def conversations_history(self, channel=None, limit=None):
+        self.history_calls += 1
+        if self.history_calls <= self.fail_history:
+            raise _truncated()
+        return {"messages": [self._anchor()]}
+
+    def conversations_replies(self, channel=None, ts=None, limit=None):
+        self.replies_calls += 1
+        if self.replies_calls <= self.fail_replies:
+            raise _truncated()
+        return {"messages": [self._anchor()]}
+
+
+def _friday():
+    today = dt.date.today()
+    return today - dt.timedelta(days=(today.weekday() - 4) % 7)
+
+
+def _anchor_ts(friday):
+    return str(dt.datetime.combine(friday, dt.time(15, 0)).timestamp())
+
+
+def test_find_anchors_history_survives_one_truncation(monkeypatch):
+    """The exact 09:30 failure: thread.py:116, conversations.history."""
+    monkeypatch.setattr(TH.slack_retry.time, "sleep", lambda s: None)
+    friday = _friday()
+    cli = _Client(_anchor_ts(friday), fail_history=1)
+    out = TH.read_thread(friday=friday, client=cli)
+    assert cli.history_calls == 2
+    assert out["anchor_ts"] == cli.anchor_ts
+
+
+def test_reading_the_replies_survives_one_truncation(monkeypatch):
+    monkeypatch.setattr(TH.slack_retry.time, "sleep", lambda s: None)
+    friday = _friday()
+    cli = _Client(_anchor_ts(friday), fail_replies=1)
+    out = TH.read_thread(friday=friday, client=cli)
+    assert cli.replies_calls == 2
+    assert out["anchor_ts"] == cli.anchor_ts
+
+
+def test_a_thread_read_that_never_recovers_still_raises(monkeypatch):
+    """Three truncations in a row is not a wobble any more, and the report has
+    to fail rather than post against a thread it could not read."""
+    monkeypatch.setattr(TH.slack_retry.time, "sleep", lambda s: None)
+    friday = _friday()
+    cli = _Client(_anchor_ts(friday), fail_history=99)
+    with pytest.raises(http.client.IncompleteRead):
+        TH.read_thread(friday=friday, client=cli)
+    assert cli.history_calls == 3

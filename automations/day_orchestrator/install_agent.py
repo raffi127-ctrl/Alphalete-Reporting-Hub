@@ -38,6 +38,52 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 PLACEHOLDER = "/Users/megan/1st Claude Folder"   # committed laptop path in the plists
 
 
+# EVERY AGENT GETS A REAL FILE-DESCRIPTOR CEILING (2026-09-20).
+#
+# A launchd job inherits macOS's default soft limit of **256 open files**, and
+# none of the 117 committed plists set one. That is low for what these agents
+# actually do: on Lucy 2 the session holder's Chrome sat at 211 descriptors, and
+# the mini-control poller — a process that has run for days at a time while
+# shelling out, talking to Sheets and driving reports — kept hitting the wall.
+# On 2026-09-18 `git_status` failed there three times with
+# `OSError: [Errno 24] Too many open files`, once for another person's command,
+# while the box was otherwise healthy. A limit that low turns an ordinary busy
+# stretch into a fleet-visible failure.
+#
+# 4096 is deliberately far under this hardware's kern.maxfilesperproc (10240 on
+# Lucy 2), so it cannot starve the system, and far over anything these jobs
+# legitimately need — the point is that a descriptor spike stops being fatal,
+# not that we expect to use them.
+#
+# Injected HERE rather than edited into 117 plists: this is the one place every
+# agent passes through on its way to ~/Library/LaunchAgents, so a new plist can
+# never be added without it. A plist that already declares its own
+# SoftResourceLimits is left ALONE — a job that asked for a specific ceiling
+# meant it.
+FD_SOFT_LIMIT = 4096
+
+
+def _with_fd_limit(plist_xml: str, label: str) -> str:
+    """Return the plist with SoftResourceLimits.NumberOfFiles set, unless it
+    already declares its own. Best-effort: an unparseable plist is returned
+    untouched so `plutil -lint` below reports the real problem."""
+    try:
+        pl = plistlib.loads(plist_xml.encode())
+    except Exception:  # noqa: BLE001 — let the lint step name the failure
+        return plist_xml
+    limits = pl.get("SoftResourceLimits")
+    if isinstance(limits, dict) and "NumberOfFiles" in limits:
+        return plist_xml
+    if not isinstance(limits, dict):
+        limits = {}
+    limits["NumberOfFiles"] = FD_SOFT_LIMIT
+    pl["SoftResourceLimits"] = limits
+    try:
+        return plistlib.dumps(pl).decode()
+    except Exception:  # noqa: BLE001
+        return plist_xml
+
+
 def install(name: str) -> tuple[bool, str]:
     name = name.strip().replace("com.alphalete.", "").replace(".plist", "")
     if not name or "/" in name or ".." in name:
@@ -48,6 +94,7 @@ def install(name: str) -> tuple[bool, str]:
         return False, f"{label}.plist not found in {src.parent} — git pull first?"
 
     fixed = src.read_text().replace(PLACEHOLDER, str(REPO_ROOT))
+    fixed = _with_fd_limit(fixed, label)
     la_dir = Path(os.path.expanduser("~/Library/LaunchAgents"))
     la_dir.mkdir(parents=True, exist_ok=True)
     dest = la_dir / f"{label}.plist"
