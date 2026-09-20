@@ -787,15 +787,9 @@ def render_html(week: str, reps: List[Rep], groups, palette) -> str:
 </header>
 <main>
 %s
-<section class="totals"><h2>Totals</h2><div class="boxes">%s</div>
-<p class="note">Total active = Entry Level and up · Leaders = Level 1 and up ·
-In training = In Training on the board · New starts = onboarding on the D2D
-OBCL, teamed by who ran their 2nd round. A leader's card covers their whole
-tree, leader included.</p></section>
-</main>
-<footer>Built from the Alphalete Sales Board (%s).</footer>""" % (
-        css, html.escape(week), "".join(chips), "".join(sections),
-        "".join(boxes), html.escape(week))
+<section class="totals"><h2>Totals</h2><div class="boxes">%s</div></section>
+</main>""" % (css, html.escape(week), "".join(chips), "".join(sections),
+              "".join(boxes))
 
 
 # -------------------------------------------------------------------- post
@@ -804,8 +798,10 @@ def post(png: Path, week: str, *, dm: Optional[str] = None,
     """#alphalete-sales, plus every channel the central mirror table carries
     for it (the level 1 chat). ONE render, N posts."""
     from automations.shared import slack_metrics_post as smp
-    comment = ("Alphalete mind map — week ending %s: the sales board by "
-               "trainer, colored by week. New starts tagged NEW." % week)
+    # No %-m / %-d: Windows strftime has neither. [[feedback_cross_platform_reports]]
+    today = dt.date.today()
+    comment = "Alphalete Mind Map : %d/%d/%s" % (today.month, today.day,
+                                                 today.strftime("%y"))
     if dm:
         return smp.dm_user_with_file(png, user=dm, comment=comment,
                                      dry_run=dry_run)

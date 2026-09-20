@@ -83,11 +83,6 @@
   }
   .branch li:last-child::after{ display:none; }
 
-  footer{
-    text-align:center; margin-top:1rem;
-    font-size:.75rem; color:var(--ink-soft); font-weight:600;
-  }
-
   main{ max-width:135rem; margin:0 auto; }
   .team-leaders{ width:15.5rem; flex-shrink:0; }
   .team-leaders h2{
