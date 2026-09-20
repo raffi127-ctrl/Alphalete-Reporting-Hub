@@ -271,7 +271,7 @@
     },
     "sales_board_mind_map": {
       "on_scheduler": false,
-      "_note": "Raf's 7am mind map -> #alphalete-sales + #alphalete-lvl1-chat PNG, fired by com.alphalete.mind-map-daily on Lucy 1 at 7:00am (Raf Loom 2026-09-20). The sales board drawn as a tree by trainer, rooted on Team, colored by each rep's WEEK read off the board's own cells; new starts come from the dated 'D2D OBCL m.d' tab; terminated reps removed. Manual: `lucy rerun sales_board_mind_map -- --dry-run` renders only; `-- --dm Megan` DMs the PNG. Read-only: writes nothing to any sheet.",
+      "_note": "Raf's 7am mind map -> #alphalete-lvl1-chat PNG (NOT #alphalete-sales -- Megan 2026-09-20), fired by com.alphalete.mind-map-daily on Lucy 1 at 7:00am (Raf Loom 2026-09-20). The sales board drawn as a tree by trainer, rooted on Team, colored by each rep's WEEK read off the board's own cells; new starts come from the dated 'D2D OBCL m.d' tab; terminated reps removed. Manual: `lucy rerun sales_board_mind_map -- --dry-run` renders only; `-- --dm Megan` DMs the PNG. Read-only: writes nothing to any sheet.",
       "display_name": "Sales board mind map (7am)",
       "source_type": "local",
       "data_sources": [

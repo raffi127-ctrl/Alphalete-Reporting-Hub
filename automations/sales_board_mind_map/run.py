@@ -1,4 +1,4 @@
-"""Alphalete sales board mind map — daily 7:00am PNG to #alphalete-sales.
+"""Alphalete sales board mind map — daily 7:00am PNG to #alphalete-lvl1-chat.
 
 Raf's Loom (2026-09-20, l10-alphalete "MIND MAP"): *"Can we do a mind map just
 based off of the sales board and have it posted every day? Especially with new
@@ -66,11 +66,12 @@ OBCL_SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
 _OBCL_TAB = re.compile(r"^D2D OBCL\s+(\d{1,2})\.(\d{1,2})\s*$")
 
 # --- where it posts --------------------------------------------------------
-# #alphalete-sales is the primary; the level 1 chat comes from the central
-# mirror table (slack_metrics_post.MIRROR_CHANNELS), so this report gains and
-# loses mirror channels with every other Alphalete post instead of holding its
-# own copy of the list. [[project_lvl1_chat_mirror]]
-CHANNEL = ("#alphalete-sales", "C068PH3RFSM")
+# THE LEVEL 1 CHAT, AND NOWHERE ELSE (Megan 2026-09-20: "it should NOT be
+# posting here", about #alphalete-sales). Deliberately NOT #alphalete-sales:
+# that channel is the one the central mirror table fans out FROM, so posting
+# there would put a copy in this chat as well and a second one in front of the
+# whole sales room. [[project_lvl1_chat_mirror]]
+CHANNEL = ("#alphalete-lvl1-chat", "C09JG28CD27")
 
 OUT_DIR = Path("output/sales_board_mind_map")
 
@@ -795,8 +796,8 @@ def render_html(week: str, reps: List[Rep], groups, palette) -> str:
 # -------------------------------------------------------------------- post
 def post(png: Path, week: str, *, dm: Optional[str] = None,
          dry_run: bool = False, logfn=print) -> dict:
-    """#alphalete-sales, plus every channel the central mirror table carries
-    for it (the level 1 chat). ONE render, N posts."""
+    """The level 1 chat, plus any channel the central mirror table carries for
+    it (none today). ONE render, N posts."""
     from automations.shared import slack_metrics_post as smp
     # No %-m / %-d: Windows strftime has neither. [[feedback_cross_platform_reports]]
     today = dt.date.today()

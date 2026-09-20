@@ -2631,7 +2631,7 @@ AUTOMATED_REPORTS = [
                        "7:00 — the sales board drawn as a tree by trainer, "
                        "each name in its own week's colour off the board, new "
                        "starts tagged NEW and terminated reps removed. Goes to "
-                       "#alphalete-sales and the level 1 chat.",
+                       "#alphalete-lvl1-chat.",
         "breakdown": (
             "WHAT IT DOES\n"
             "Rebuilds Raf's office as a tree from 'Alphalete SALES BOARD 2025' "
@@ -2667,8 +2667,8 @@ AUTOMATED_REPORTS = [
         },
         "checklist": [],
         "post_run": {
-            "message_success": "✅ Mind map posted to #alphalete-sales and the "
-                               "level 1 chat as Lucy.",
+            "message_success": "✅ Mind map posted to #alphalete-lvl1-chat as "
+                               "Lucy.",
             "message_failed": "❌ Run failed. Check the log above, fix, then "
                               "run again.",
         },
@@ -2678,7 +2678,7 @@ AUTOMATED_REPORTS = [
                 "icon": "▶",
                 "primary": True,
                 "help": "Rebuilds the map from today's sales board and posts "
-                        "it to #alphalete-sales + the level 1 chat as Lucy.",
+                        "it to #alphalete-lvl1-chat as Lucy.",
                 "module": "automations.sales_board_mind_map.run",
                 "args_fn": lambda: [],
             },

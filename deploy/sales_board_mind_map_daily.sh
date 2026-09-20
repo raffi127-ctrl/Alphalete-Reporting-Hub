@@ -1,7 +1,7 @@
 #!/bin/bash
-# Alphalete sales board mind map — daily 7:00am PNG to #alphalete-sales and the
-# level 1 chat (Raf's Loom, 2026-09-20: "have it posted for us and the level
-# one chat... let's do 7 a.m. every day").
+# Alphalete sales board mind map — daily 7:00am PNG to #alphalete-lvl1-chat
+# (Raf's Loom, 2026-09-20: "let's do 7 a.m. every day"; Megan the same day:
+# NOT #alphalete-sales).
 #
 # Rebuilds the office tree from 'Alphalete SALES BOARD 2025' (Trainer column =
 # parent, Team = root, colour = the rep's WEEK read off the board's own cells),
@@ -9,7 +9,7 @@
 # with headless Chrome and posts the PNG as Lucy.
 #
 # RUNS ON LUCY 1 — the box that already reads this workbook all day for the
-# sales board sweep and posts to #alphalete-sales. Deployed via GitHub:
+# sales board sweep and holds Lucy's Slack token. Deployed via GitHub:
 # push -> `lucy update` -> `lucy rerun install_mind_map_agent` on Lucy 1.
 #
 # Manual test (build + render only, posts nothing):
