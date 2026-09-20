@@ -136,6 +136,20 @@ INACTIVE_ICDS: dict[str, str] = {
     # not the org. Rows stay for the history.
     "kobe cireus": "off Tony's captainship 2026-09-15 (Eve); out of the "
                    "Metrics view since 2026-09-12",
+    # Pat's Team. Same shape as William Sassenberg: no run of 0.00% first —
+    # he filled real numbers in all four boxes (0-30 / 30-60 on Cancel Rate
+    # AND on the sibling Activation Rate - Pat tab) through Fri 2026-09-18 and
+    # vanished from all four at once on 9/19. The roster change IS the cause:
+    # he came off Pat's captainship 2026-09-08 under the two-week zero rule
+    # (WE 09.06 and WE 08.30 both 0 in Pat's two fiber boxes, last sale
+    # WE 08.23) — pinned in captain_gate.EXCLUDE["Pat"], off Pat's distro
+    # (captainship_drafts/config.py, org_sales_board/distro_remove) and off
+    # the boards (roster_sync, all_campaigns_board/roster). Tableau's
+    # Captain's Bonus Teams filter only caught up on 9/19, so there is no
+    # filter or alias to chase. Off the captainship, not the org — his card
+    # stays in "ATT Fiber Owners". Rows stay for the history.
+    "roberto luconi": "off Pat's captainship 2026-09-08 (two-week zero rule); "
+                      "out of the Metrics view since 2026-09-19 (Eve)",
 }
 
 

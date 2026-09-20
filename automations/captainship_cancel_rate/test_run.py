@@ -328,6 +328,10 @@ class InactiveIcdsAreExpectedBlanks(unittest.TestCase):
         # decision he was the "still on the team" case below — the list only
         # grows by a decision, never because a blank looks odd.
         self.assertTrue(C.is_inactive("Kobe Cireus"))
+        # 2026-09-20: Roberto Luconi — off Pat's captainship 2026-09-08
+        # (two-week zero rule), out of the Metrics view from 9/19 on all four
+        # boxes at once.
+        self.assertTrue(C.is_inactive("Roberto Luconi"))
 
     def test_an_owner_still_on_the_team_is_not_a_winddown(self):
         """The list is per-name and only ever grows by a decision. An owner
