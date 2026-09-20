@@ -23,6 +23,7 @@ from typing import List, Optional
 import requests
 
 from automations.shared import slack_metrics_post as smp
+from automations.shared import slack_retry
 from automations.brand_audit import credentials
 
 # Moved from #rafs-office-recruiting (C06881A7WLV, retired) on 2026-08-21 — Aisha now
@@ -194,7 +195,8 @@ def _find_roster_image(client, monday_iso: Optional[str] = None,
     in that post's thread (the roster table, not the small funnel-count image).
     With `poster` given, only that author's post counts (one post per funnel
     since the week of 8/24 — see thread.FUNNELS)."""
-    hist = client.conversations_history(channel=CHANNEL_ID, limit=200)
+    hist = slack_retry.read(client.conversations_history,
+                            channel=CHANNEL_ID, limit=200, _log=print)
     matches = [m for m in hist.get("messages", [])
                if POST_RE.search(m.get("text", "") or "")
                and (not poster or m.get("user") == poster)]
@@ -265,13 +267,23 @@ def _find_roster_image(client, monday_iso: Optional[str] = None,
 _IMAGE_MAGIC = (b"\x89PNG", b"\xff\xd8\xff", b"GIF8", b"RIFF")
 
 
-def _download(file_obj: dict, token: str) -> Path:
-    url = file_obj.get("url_private_download") or file_obj["url_private"]
+def _fetch_bytes(url: str, token: str) -> bytes:
+    """One attempt at the image. Reading `.content` is INSIDE the attempt on
+    purpose: with a chunked body the truncation surfaces when the content is
+    read, not when get() returns, so a retry wrapped around get() alone would
+    re-raise on exactly the same half-downloaded response."""
     r = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=60)
     r.raise_for_status()
-    body = r.content
+    return r.content, r.headers.get("Content-Type", "?")
+
+
+def _download(file_obj: dict, token: str) -> Path:
+    url = file_obj.get("url_private_download") or file_obj["url_private"]
+    # Retried: Slack truncated this download twice on 2026-09-20 (74,352 of
+    # 178,741 bytes at 08:01, and again at 08:32), and each one failed the whole
+    # report over a fault that was gone seconds later. [[slack_retry]]
+    body, ctype = slack_retry.read(_fetch_bytes, url, token, _log=print)
     if not body.startswith(_IMAGE_MAGIC):
-        ctype = r.headers.get("Content-Type", "?")
         raise RuntimeError(
             "Slack returned {} bytes of {!r} instead of the roster image for "
             "{!r}. Usually the token can't read files in that channel "
