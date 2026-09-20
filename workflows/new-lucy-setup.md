@@ -87,7 +87,8 @@ office picker.
 | Chrome extension id | `goofbdglmeckblcbcoffnkdnmpehhhmo` |
 | Version seen | 1.0.9 (on Megan's laptop, Chrome Profile 20) |
 | Runs on | `*.applicantstream.com/index.cfm*`, `*.indeed.com/*`, `employers.indeed.com` |
-| Install page (unverified) | https://chromewebstore.google.com/detail/goofbdglmeckblcbcoffnkdnmpehhhmo |
+| Publisher | **estreamincapps (ESTREAM, INC.)** — ApplicantStream's own vendor |
+| Install page | https://chromewebstore.google.com/detail/goofbdglmeckblcbcoffnkdnmpehhhmo — **public listing, verified 2026-09-20** (144 users, updated 2026-09-10). "Internal" means internal-use, not private: anyone with the link can add it |
 
 **Where it goes — settled 2026-09-19** (the "Resume pushing offices" session,
 checked against `automations/resume_pushing/run.py`):
@@ -107,8 +108,23 @@ checked against `automations/resume_pushing/run.py`):
 3. **Only needed if the batch stage is on.** The scheduled push runs
    `--oat-only`, which never reaches the batch stage that uses the extension.
 
-Once the install method is confirmed (whether the Web Store page above works for
-this internal plugin), add it to `deploy/lucy_walkthrough.sh` as its own step.
+**How to install it on a Lucy** (a person has to click Add — Chrome won't let a
+script do it):
+
+1. On that Lucy's screen (Screen Sharing is fine), open **regular Google
+   Chrome** — check it's the Default profile, signed in as
+   alphaletereporting@gmail.com.
+2. Go to the install page above and click **Add to Chrome**.
+3. `rm -f /tmp/rp_cdp_*/.rp_seeded`, or just restart the machine.
+
+**Chrome sync will NOT carry it over.** Sync is off on Megan's laptop and has
+never run on Lucy 4, and her Chrome's main account
+(meganhidalgo1191@) isn't the one the Lucys use anyway. It has to be installed on
+each machine.
+
+**Unconfirmed:** whether the extension needs its own sign-in after install
+("authorized MFA users"). Check the robot icon appears and works on the
+AppStream console before calling it done.
 
 ## 5. Go-live, when the box gets its first report
 
