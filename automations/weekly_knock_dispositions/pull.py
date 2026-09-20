@@ -188,12 +188,27 @@ def _fmt_knock(minutes: int) -> str:
 def _navigate_day(page, rqst: str, day: dt.date,
                   *, attempts: int = 3, verbose: bool = True) -> None:
     """Same grid-not-built guard as the daily pull's _navigate (DataTables
-    builds from an AJAX call that fires AFTER networkidle)."""
+    builds from an AJAX call that fires AFTER networkidle).
+
+    The goto is INSIDE the retry, not in front of it (2026-09-20): Colten
+    Wright's weekly pull died on `Page.goto: Timeout 25000ms exceeded` with
+    all three attempts unused, because a navigation timeout raised past a
+    loop that only ever retried a stalled grid. Both halves of "the page did
+    not come up" now cost one attempt, not the office — the last attempt
+    still raises, so an ownerville that is really down keeps saying so."""
     mdy = day.strftime("%m/%d/%Y")
     url = (f"https://v2.ownerville.com/index.cfm?p=89&rqst={rqst}"
            f"&startDate={mdy}&endDate={mdy}")
     for attempt in range(1, attempts + 1):
-        page.goto(url, wait_until="networkidle", timeout=25000)
+        try:
+            page.goto(url, wait_until="networkidle", timeout=25000)
+        except Exception:  # noqa: BLE001 — slow ownerville, not a dead one
+            if attempt == attempts:
+                raise      # really down: keep the navigation error as the note
+            if verbose:
+                print(f"[wkd] ownerville did not finish loading "
+                      f"(try {attempt}/{attempts}) — re-navigating", flush=True)
+            continue
         try:
             page.wait_for_selector("#table-dispositions thead th",
                                    timeout=15000)

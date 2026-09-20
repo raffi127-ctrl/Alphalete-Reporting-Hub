@@ -219,7 +219,18 @@ def _navigate(page, rqst: str, target_mdy: str, *, attempts: int = 3) -> None:
     url = (f"https://v2.ownerville.com/index.cfm?p=89&rqst={rqst}"
            f"&startDate={target_mdy}&endDate={target_mdy}")
     for attempt in range(1, attempts + 1):
-        page.goto(url, wait_until="networkidle", timeout=25000)
+        try:
+            page.goto(url, wait_until="networkidle", timeout=25000)
+        except Exception:  # noqa: BLE001 — slow ownerville, not a dead one
+            # The goto belongs INSIDE the retry (2026-09-20): a navigation
+            # timeout used to raise past this loop with all three attempts
+            # unused, so one slow page cost that office its whole board —
+            # the weekly twin of this function lost Colten Wright that way.
+            if attempt == attempts:
+                raise      # really down: keep the navigation error as the note
+            print(f"[knocks] ownerville did not finish loading "
+                  f"(try {attempt}/{attempts}) — re-navigating", flush=True)
+            continue
         try:
             page.wait_for_selector("#table-dispositions thead th", timeout=15000)
             break
