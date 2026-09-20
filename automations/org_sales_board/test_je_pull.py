@@ -6,8 +6,9 @@ cannot be exercised anywhere else: driving the real view needs a warm
 ownerville session, which only the mini has (a laptop run hits Cloudflare).
 So the Tableau categorical quick filter is modelled here — its tri-state
 '(All)' row, its refusal to be left with nothing selected, and the other
-filter cards that render their own options into the same viz — and the driver
-is run against it.
+filter cards that render their own options into the same viz, and a cover
+over the combobox that intercepts the click that opens it (2026-09-20) — and
+the driver is run against it.
 
 Run:  .venv/bin/python -m pytest automations/org_sales_board/test_je_pull.py
   or  .venv/bin/python -m unittest automations.org_sales_board.test_je_pull
@@ -80,13 +81,29 @@ class _OnlyLink:
 
 
 class _Combo:
+    """The 'Sales Week Ending' combobox.
+
+    State lives on the filter, not here: `locator()` builds a fresh _Combo on
+    every call, so a counter on the instance would reset between passes.
+    """
+
     def __init__(self, filt):
         self.filt = filt
 
     def inner_text(self):
         return self.filt.box_text()
 
-    def click(self, **_kw):
+    def click(self, **kw):
+        self.filt.combo_clicks += 1
+        self.filt.combo_click_kwargs.append(kw)
+        if self.filt.combo_fails:
+            # What a cover over the combobox actually does: the click is
+            # INTERCEPTED, not refused, so Playwright waits out its timeout
+            # and raises. Verbatim shape of the 2026-09-20 board failure.
+            self.filt.combo_fails -= 1
+            raise TimeoutError(
+                "Locator.click: Timeout 30000ms exceeded. "
+                "<div class='tab-glass'> intercepts pointer events")
         self.filt.open = True
 
 
@@ -149,7 +166,8 @@ class FakeFilter:
                     into the same viz — always ticked, must never be touched
     """
 
-    def __init__(self, weeks, checked, has_only_link=False, other_options=()):
+    def __init__(self, weeks, checked, has_only_link=False, other_options=(),
+                 combo_fails=0):
         self.weeks = list(weeks)
         self.checked = set(checked)
         self.has_only_link = has_only_link
@@ -157,6 +175,9 @@ class FakeFilter:
         self.open = False
         self.hovered = None
         self.clicks = 0
+        self.combo_fails = combo_fails    # how many opens get intercepted
+        self.combo_clicks = 0
+        self.combo_click_kwargs = []
 
     # -- the filter's own behaviour ----------------------------------------
     def is_checked(self, text):
@@ -308,6 +329,48 @@ class WeekSelectionTest(unittest.TestCase):
         self.assertIn(TARGET, msg)
         self.assertIn("7/26/2026", msg)     # the stuck weeks, by name
         self.assertIn("4 week option(s)", msg)
+
+
+class OpenDropdownTest(unittest.TestCase):
+    """THE 2026-09-20 FAILURE. `tbox.click()` carried no timeout, so a cover
+    over the combobox burned Playwright's full 30s default and raised. All
+    three crosstab attempts hit the same cover and Retail JE was dropped off
+    the board while the rest of it posted."""
+
+    def test_the_open_click_is_bounded(self):
+        """No timeout on this click is the whole bug — pin it shut."""
+        f = FakeFilter(WEEKS, ["8/9/2026"])
+        _drive(f)
+        self.assertTrue(f.combo_click_kwargs, "the dropdown was never opened")
+        for kw in f.combo_click_kwargs:
+            self.assertTrue(kw.get("timeout"),
+                            "the combobox click fell back to the 30s default")
+
+    def test_an_intercepted_open_is_retried(self):
+        """One intercepted click must not cost the section: clear the cover,
+        click again, select the week."""
+        f = FakeFilter(WEEKS, ["8/9/2026"], combo_fails=1)
+        _drive(f)
+        self.assertEqual(f.checked, {TARGET})
+        self.assertGreater(f.combo_clicks, 1, "the open was never retried")
+
+    def test_a_dropdown_that_never_opens_leaves_the_week_alone(self):
+        """When every pass is intercepted, bail the way an unrecognised
+        dropdown already does — quietly, on the view's own week, for parse()'s
+        staleness guard to vet. A raised timeout here drops the section."""
+        f = FakeFilter(WEEKS, ["8/9/2026"], combo_fails=99,
+                       other_options=("ATT", "Box"))
+        _drive(f)                       # must not raise
+        self.assertEqual(f.checked, {"8/9/2026"}, "the week was changed blind")
+        self.assertEqual(f.clicks, 0, "options were clicked in a closed menu")
+        self.assertTrue(all(f.other.values()), "another filter was modified")
+
+    def test_the_retry_is_bounded_too(self):
+        """Three bounded passes, not an unbounded loop — the budget is what
+        keeps a dead viz from eating the rest of the board's pulls."""
+        f = FakeFilter(WEEKS, ["8/9/2026"], combo_fails=99)
+        _drive(f)
+        self.assertLessEqual(f.combo_clicks, 3)
 
 
 if __name__ == "__main__":

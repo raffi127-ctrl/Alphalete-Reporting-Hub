@@ -272,6 +272,41 @@ def _drive_week_selection(label: str, verbose: bool = False):
             page.wait_for_timeout(1000)
         return None, None
 
+    def _open_dropdown(page, viz, tbox):
+        """Open the week menu — bounded and retried, never a 30s hang.
+
+        This replaces a bare `tbox.click()`, the ONE unguarded click left in
+        this function (every other one carries an explicit timeout). A cover
+        over the combobox does not REFUSE a click, it INTERCEPTS it, so
+        Playwright waits out its full 30s default and then raises. The usual
+        cover is the same `div.tab-glass` outside-click catcher _close_dropdown
+        already documents — left up by another filter card's menu — and the
+        other is Tableau's own loading overlay on a slow viz. Nothing cleared
+        it, so all three of download_crosstab_patchright's attempts hit the
+        identical wall and ~95s later Retail JE was dropped off the board
+        (2026-09-20, `Locator.click: Timeout 30000ms exceeded`).
+
+        So: take the glass down first, then click bounded, three passes. The
+        return value is whether week options are actually ON SCREEN, not
+        whether a click was dispatched — a click that lands on the glass reads
+        as a perfectly good click.
+
+        Never raises. A menu that won't open leaves the view on its own week,
+        which parse()'s staleness guard vets before anything is written."""
+        for i in range(3):
+            if _weeks(viz):
+                return True                   # already open
+            if i:
+                _close_dropdown(page, viz)    # whatever covered it, take it down
+            try:
+                tbox.click(timeout=8000)      # bounded — never the 30s default
+            except Exception:  # noqa: BLE001 — the next pass clears the cover
+                if verbose:
+                    print("  [je] week dropdown click intercepted — clearing "
+                          f"the overlay and retrying ({i + 1}/3)")
+            page.wait_for_timeout(1200)
+        return bool(_weeks(viz))
+
     def pre_export(page, viz):
         tbox, cur = _find_box(page, viz)
         if tbox is None:
@@ -282,16 +317,21 @@ def _drive_week_selection(label: str, verbose: bool = False):
         if cur == label:
             return   # already on the target week
 
-        tbox.click()               # open the dropdown
-        page.wait_for_timeout(1200)
+        _open_dropdown(page, viz, tbox)
         weeks = _weeks(viz)
         if not weeks:
-            # The combobox we opened has no week-shaped options — it belongs to
-            # some other filter, so leave the view alone rather than click
-            # blindly in it.
+            # Two ways to land here and ONE right answer to both: the menu
+            # never opened (something covered the combobox for all three
+            # passes), or the combobox we found belongs to a different filter
+            # card. Either way there is nothing week-shaped to click, so leave
+            # the view on its own week rather than click blindly in there.
+            # parse() reports is_current_week off what the crosstab actually
+            # shows, so a week we failed to drive is caught before a single
+            # cell is written — and a section that pulls is worth more than a
+            # section dropped over a 30s timeout.
             if verbose:
-                print(f"  [je] ⚠ the {cur!r} dropdown holds no week options — "
-                      "not touching it; leaving the view's own week")
+                print(f"  [je] ⚠ no week options under {cur!r} — not touching "
+                      "it; leaving the view's own week")
             _close_dropdown(page, viz)
             return
         if label not in [w for w, _ in weeks]:
