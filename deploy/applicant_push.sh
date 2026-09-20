@@ -359,7 +359,12 @@ MAX_RUN_S=${APPLICANT_PUSH_MAX_RUN_S:-1200}
 # budget. 180s of headroom: the check runs between applicants, and one applicant
 # can take a minute or more (resume fetch + a Cloudflare wait), so the margin has
 # to cover an in-flight read PLUS the snapshot and diag writes that follow.
-export OAT_WALK_DEADLINE_EPOCH=$(( $(date +%s) + MAX_RUN_S - 180 ))
+# 300s, raised from 180 on the same day: 180 was not enough on Raf's 11280,
+# where the deadline passed at 18:30 and the walk was still inside one
+# applicant's resume read at 18:34. The walk also refuses to START a read with
+# less than OAT_RESUME_READ_RESERVE_S left, so the overshoot is now bounded by
+# one read rather than open-ended.
+export OAT_WALK_DEADLINE_EPOCH=$(( $(date +%s) + MAX_RUN_S - 300 ))
 
 # ---- DON'T START ON TOP OF A HAND-RUN (2026-09-13) ---------------------------
 # The collision guard was one-sided. mini_control REFUSES a rerun while a walk is

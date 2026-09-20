@@ -80,5 +80,27 @@ check("no wall deadline (hand-run) keeps the budget", effective(900, None), 900)
 # of the tick remain once headroom is subtracted — the walk must use THAT.
 check("preamble time counts against the walk", effective(900, 720), 720)
 
+print("a resume read is not STARTED when the tick cannot fit one:")
+# Between-applicants checking is not enough on its own: one applicant can run for
+# minutes (attachment GET, Indeed tab, up to 40s of Cloudflare, a download,
+# sometimes OCR), so a walk that passes its deadline mid-read overshoots by that
+# much. 2026-09-20 on Raf's 11280: deadline at 18:30, still mid-read at 18:34.
+from automations.oat_processing import run as oat_run  # noqa: E402
+import time as _time  # noqa: E402
+
+_saved = oat_run._WALK_DEADLINE
+try:
+    oat_run._WALK_DEADLINE = _time.monotonic() + 600
+    check("plenty of time -> read", oat_run._time_for_a_resume_read(), True)
+    oat_run._WALK_DEADLINE = _time.monotonic() + 10
+    check("10s left -> do NOT start a read", oat_run._time_for_a_resume_read(), False)
+    oat_run._WALK_DEADLINE = None
+    check("a hand-run with no deadline always reads",
+          oat_run._time_for_a_resume_read(), True)
+    check("the reserve covers a bad-case read",
+          oat_run.RESUME_READ_RESERVE_S >= 120, True)
+finally:
+    oat_run._WALK_DEADLINE = _saved
+
 print("FAILED" if _failed else "ALL PASSED")
 raise SystemExit(1 if _failed else 0)

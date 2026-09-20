@@ -2185,6 +2185,32 @@ _ATTACHMENT_PROBE_JS = r"""
 """
 
 
+# The walk's deadline, published so the EXPENSIVE work inside an applicant can
+# see it too. run_walk checks between applicants, but one applicant can run for
+# minutes — an attachment fetch, then Indeed with a Cloudflare wait, then a
+# download — so a between-applicants check alone can overshoot the wrapper's
+# SIGKILL by more than the headroom (2026-09-20, Raf's 11280: the 900s deadline
+# passed at 18:30 and the walk was still mid-read at 18:34).
+_WALK_DEADLINE = None            # monotonic seconds, or None when unbounded
+# A resume read needs about this long in the bad case: attachment GET, Indeed
+# tab, up to 40s of Cloudflare, a download and possibly OCR. With less than this
+# left we do not START one — the applicant is simply flagged, unread and
+# UNCACHED, so the next tick tries them properly.
+RESUME_READ_RESERVE_S = int(os.environ.get("OAT_RESUME_READ_RESERVE_S", "150"))
+
+
+def _walk_time_left():
+    """Seconds left in this walk, or None when it has no deadline."""
+    if _WALK_DEADLINE is None:
+        return None
+    return _WALK_DEADLINE - time.monotonic()
+
+
+def _time_for_a_resume_read() -> bool:
+    left = _walk_time_left()
+    return left is None or left > RESUME_READ_RESERVE_S
+
+
 def _rd_mod():
     """resume_download, imported lazily — it pulls in the PDF/OCR extractors and
     the walk must start even on a machine where those are missing."""
@@ -2257,6 +2283,14 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
         _log(f"    already checked today ({_why}) — skip re-read: "
              f"{a.first_name} {a.last_name}")
     if (live and getattr(config, "AUTOMATE_PHONE_LOOKUP", False)
+            and not already_checked and not cooling_off
+            and not _time_for_a_resume_read()):
+        # Out of tick. Flag WITHOUT reading and WITHOUT caching: an unread
+        # applicant is not a confirmed no-number one, and the next tick must try
+        # them properly rather than skip them as settled.
+        _log(f"    no time left in this tick for a resume read — flagging "
+             f"unread (next tick retries): {a.first_name} {a.last_name}")
+    elif (live and getattr(config, "AUTOMATE_PHONE_LOOKUP", False)
             and not already_checked and not cooling_off):
         # THE ATTACHMENT ON THIS VERY PAGE COMES FIRST (2026-09-18). Megan, on an
         # applicant we had flagged as needing a number: "the number is right
@@ -3227,6 +3261,8 @@ def run_walk(page, live: bool = False, limit: int = None,
         _log(f"[oat] walk deadline: {int(_left)}s left of the wrapper's tick "
              f"(own budget {config.MAX_WALK_SECONDS}s)")
     _walk_deadline = (time.monotonic() + _budget_s) if _budget_s is not None else None
+    global _WALK_DEADLINE
+    _WALK_DEADLINE = _walk_deadline
     _out_of_time = False
     while worked < limit and processed < touch_cap:
         if _walk_deadline is not None and time.monotonic() >= _walk_deadline:
