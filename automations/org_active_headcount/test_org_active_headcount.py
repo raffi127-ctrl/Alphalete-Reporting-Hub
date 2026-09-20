@@ -348,3 +348,143 @@ class PickTrackerTie(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# --------------------------------------------------------------------------
+# 2026-09-20. Eve tidied the tab by hand: she painted RUNNING WEEK / LAST
+# WEEK'S / PREVIOUS WEEK'S black on black, moved the Campaign helper column out
+# to the delta box, and turned the delta box's 'Total for week' caption into a
+# live 'by <last day filled>'. Three finders were anchored on exactly those
+# cells, and all three broke at once — the fill silently dropped from 33 cells
+# a day to 1, the Tuesday roll raised a bare StopIteration, and the mail's
+# second picture could not be built. Nothing here is about the layout she
+# chose; it is about not anchoring on cells a person is expected to edit.
+# --------------------------------------------------------------------------
+
+def _hc_grid(*, week_cols: bool):
+    """A miniature of the tab: summary, Ongoing block, daily block, history.
+    `week_cols` adds the three columns the redesign removed."""
+    tail = ["RUNNING WEEK TOTALS", "LAST WEEK'S TOTALS", "PREVIOUS WEEK'S TOTALS"] \
+        if week_cols else ["", "", ""]
+    days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    g = [
+        ["", "ORG ACTIVE HEADCOUNT"],
+        [],
+        ["", "Headcount Summary - This Week"],
+        ["", "Headcount"] + days,                                  # day names, no Totals
+        ["", ""] + ["10", "20", "30", "", "", "", ""],
+        [],
+        ["", "All Campaigns: Mon-Sun"] + days,                     # day names, no Totals
+        ["", "HC (Last Week)"] + ["1", "2", "3", "", "", "", ""],
+        ["", "HC (4 Week AVG)"] + ["1", "2", "3", "", "", "", ""],
+        [],
+        ["All Campaings Ongoing Headcount", "", "WE 09.20", "WE 09.13"],
+        [],
+        ["1", "Rafael Hidalgo", "30", "50"],
+        ["2", "Jairo Ruiz", "20", "41"],
+        ["TOTALS", "", "50", "91"],
+        [],
+        ["All Campaigns HC", ""] + days + tail + ["Campaign"],
+        ["", ""] + ["14", "15", "16", "17", "18", "19", "20"],
+        ["1", "Rafael Hidalgo", "10", "20", "30", "", "", "", ""]
+        + (["30", "50", "53"] if week_cols else ["", "", ""]) + ["Fiber"],
+        ["2", "Jairo Ruiz", "5", "12", "20", "", "", "", ""]
+        + (["20", "41", "43"] if week_cols else ["", "", ""]) + ["NDS"],
+        ["Totals", ""] + ["15", "32", "50", "", "", "", ""]
+        + (["50", "91", "96"] if week_cols else ["", "", ""]),
+        ["WE 9.13", ""] + ["11", "22", "33", "44", "55", "66", "91"]
+        + (["91"] if week_cols else []),
+        [],
+        # the delta box: 'Total for week' + one This/Last/Delta triplet per day
+        ["All Campaings Ongoing Headcount", "", "Total for week", "", ""]
+        + [c for d in days for c in (d, "", "")],
+        ["", "", "Total this week", "Last week", "Delta"]
+        + ["This week", "Last week", "Delta"] * 7,
+        ["1", "Rafael Hidalgo"] + [""] * 26,
+        ["2", "Jairo Ruiz"] + [""] * 26,
+        [],
+    ]
+    return [list(r) for r in g]
+
+
+class DailyBlockFoundByShape(unittest.TestCase):
+    """`find_daily` anchored on the 'RUNNING WEEK TOTALS' header. It now anchors
+    on the block's SHAPE, so the three columns can be hidden, renamed or
+    removed without taking the block with them."""
+
+    def test_finds_the_block_when_the_three_columns_are_gone(self):
+        from automations.org_active_headcount.daily import find_daily
+        dl = find_daily(_hc_grid(week_cols=False))
+        self.assertEqual(dl["hdr"], 17)
+        self.assertEqual([n for _, n, _ in dl["rows"]], ["Rafael Hidalgo", "Jairo Ruiz"])
+        self.assertEqual(dl["totals"], 21)
+        self.assertIsNone(dl["run"])
+        self.assertIsNone(dl["lastw"])
+        self.assertIsNone(dl["prevw"])
+
+    def test_still_reads_a_tab_that_has_them(self):
+        """The live tab keeps the three columns until the sandbox is signed off,
+        so the same code has to read both shapes."""
+        from automations.org_active_headcount.daily import find_daily
+        dl = find_daily(_hc_grid(week_cols=True))
+        self.assertEqual(dl["hdr"], 17)
+        self.assertEqual((dl["run"], dl["lastw"], dl["prevw"]), (10, 11, 12))
+
+    def test_the_summary_blocks_are_not_mistaken_for_it(self):
+        """Rows 4 and 8 of the real tab carry all seven day names too. They are
+        rejected because no col-A 'Totals' row closes them — if that ever broke,
+        the fill would write the day numbers into the summary."""
+        from automations.org_active_headcount.daily import find_daily
+        for week_cols in (True, False):
+            self.assertEqual(find_daily(_hc_grid(week_cols=week_cols))["hdr"], 17)
+
+    def test_the_roll_skips_the_freeze_and_ends_the_history_row_on_sunday(self):
+        from automations.org_active_headcount.daily import plan_roll, find_daily
+        g = _hc_grid(week_cols=False)
+        p = plan_roll(g, g, dt.date(2026, 9, 20), dt.date(2026, 9, 27))
+        # the history row is the seven day totals, with nothing after Sunday
+        self.assertEqual(p["stack_values"], ["15", "32", "50", "", "", "", ""])
+        self.assertEqual(p["last_col"], find_daily(g)["days"][-1])
+        # and nothing is written into the columns that no longer exist
+        touched = {a1 for a1, _ in p["values"]}
+        self.assertFalse([a for a in touched if a[0] in "JKL" and a[1:].isdigit()
+                          and 17 <= int(a[1:]) <= 21])
+
+    def test_a_tab_that_still_has_them_still_freezes_k_and_l(self):
+        from automations.org_active_headcount.daily import plan_roll
+        g = _hc_grid(week_cols=True)
+        p = plan_roll(g, g, dt.date(2026, 9, 20), dt.date(2026, 9, 27))
+        w = dict(p["values"])
+        self.assertEqual(w["K19"], "30")      # LAST WEEK'S <- RUNNING WEEK
+        self.assertEqual(w["L19"], "50")      # PREVIOUS WEEK'S <- LAST WEEK'S
+        self.assertEqual(p["stack_values"][-1], "50")
+
+
+class HelpersThatMoved(unittest.TestCase):
+    """The two cells whose text a person is expected to change."""
+
+    def test_campaign_is_read_by_name_from_wherever_it_sits(self):
+        """Moved out of the daily block, it still has to reach the ICDs — this
+        is the one that took the fill down to a single cell."""
+        from automations.org_active_headcount.daily import find_daily
+        g = _hc_grid(week_cols=True)
+        for r in (17, 18, 19):                       # drop the in-block column
+            g[r - 1][-1] = ""
+        g += [[], ["", "", "", "", "", "", "Campaign"],
+              ["1", "Rafael Hidalgo", "", "", "", "", "Fiber"],
+              ["2", "Jairo Ruiz", "", "", "", "", "NDS"]]
+        rows = {n: c for _, n, c in find_daily(g)["rows"]}
+        self.assertEqual(rows, {"Rafael Hidalgo": "fiber", "Jairo Ruiz": "nds"})
+
+    def test_the_delta_box_is_found_though_its_caption_changed(self):
+        """'Total for week' is now a live 'by Friday'. Anchoring on it is what
+        made the Tuesday roll raise StopIteration."""
+        from automations.org_active_headcount.daily import find_delta
+        g = _hc_grid(week_cols=True)
+        hdr = next(r for r in range(1, len(g) + 1)
+                   if g[r - 1] and g[r - 1][0] == "All Campaings Ongoing Headcount"
+                   and "Total for week" in g[r - 1])
+        g[hdr - 1][2] = "by Friday"
+        dx = find_delta(g)
+        self.assertEqual(dx["hdr"], hdr)
+        self.assertEqual([n for _, n in dx["rows"]], ["Rafael Hidalgo", "Jairo Ruiz"])

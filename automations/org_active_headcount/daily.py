@@ -65,12 +65,22 @@ SHEET_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
 # silently point the run at nothing; the name is only the fallback + log label.
 TAB = "Org Active Headcount"
 TAB_GID = 1529537631
+# A duplicate of the live tab, for trying a change before it touches the real
+# one (Eve 2026-09-20, the J/K/L redesign). Opened BY NAME: it is made by hand
+# with 'Duplicate', so its gid is different on every copy. It does not exist
+# unless somebody duplicated the tab under exactly this name.
+SANDBOX_TAB = "Org Active Headcount SANDBOX"
 BACKUP_TAB = "backup_pre_rollover_headcount"
 
 
-def open_tab():
+def open_tab(sandbox: bool = False):
     from automations.recruiting_report.fill import open_by_key
     sh = open_by_key(SHEET_ID)
+    if sandbox:
+        try:
+            return next(w for w in sh.worksheets() if w.title.strip() == SANDBOX_TAB)
+        except StopIteration:
+            raise SystemExit(f"no hay tab {SANDBOX_TAB!r} — duplicá {TAB!r} con ese nombre")
     try:
         return sh.get_worksheet_by_id(TAB_GID)
     except Exception:                                              # noqa: BLE001
@@ -108,26 +118,94 @@ def A(k: int) -> str:
     return s
 
 
+def _last_number(vals) -> str:
+    """The last of these cells that actually holds a number — the week's figure
+    when the days after it have not happened (or came in as '-')."""
+    for v in reversed(list(vals)):
+        if _num(v) is not None:
+            return str(v).strip()
+    return ""
+
+
+def campaign_by_name(g) -> Dict[str, str]:
+    """{icd: campaign} read off the 'Campaign' helper column, WHEREVER it sits.
+
+    It used to be one column right of the daily block's week totals, and
+    `find_daily` took it by that position. Eve moved it out to the delta box on
+    2026-09-20 while tidying the tab — and every ICD silently lost the tracker
+    it reads: `plan_day` went from 33 cells a day to 1, because only Carlos
+    Hidalgo is matched by NAME (he is in DUAL). The run still exits 0, so
+    nothing would have said the tab had stopped filling.
+
+    Looked up by its own header, one block of names at a time, so moving the
+    column again is a non-event."""
+    for r in range(1, len(g) + 1):
+        for k in range(1, len(g[r - 1]) + 1):
+            if _c(g, r, k).lower() != "campaign":
+                continue
+            out: Dict[str, str] = {}
+            rr = r + 1
+            while rr <= len(g) and not _c(g, rr, 2):
+                rr += 1
+            while rr <= len(g) and _c(g, rr, 2):
+                if _c(g, rr, k):
+                    out.setdefault(_c(g, rr, 2).lower(), _c(g, rr, k).lower())
+                rr += 1
+            if out:
+                return out
+    return {}
+
+
 def find_daily(g) -> dict:
-    """The per-day block, by its 'RUNNING WEEK TOTALS' header (its col-A title
-    was renamed 'All Units' -> 'All Campaigns HC' on 2026-09-13)."""
-    hdr = next(r for r in range(1, len(g) + 1)
-               if any(str(x).strip().lower().startswith("running week") for x in g[r - 1]))
-    cols: Dict[str, int] = {}
-    for k in range(1, len(g[hdr - 1]) + 1):
-        cols.setdefault(_c(g, hdr, k).lower(), k)
+    """The per-day block, found BY SHAPE: the row carrying all seven day names
+    whose roster is closed by a col-A 'Totals' row.
+
+    It used to anchor on the 'RUNNING WEEK TOTALS' header. Eve painted that
+    column — and LAST WEEK'S / PREVIOUS WEEK'S — black on black on 2026-09-20 so
+    the numbers stay in the tab without showing; a cell that reads as empty is a
+    cell somebody eventually clears, and that would have taken the whole block
+    with it. The col-A title is no anchor either: it has already been renamed
+    twice ('All Units' -> 'All Campaigns HC'). The day names and the 'Totals'
+    row are the two things that cannot go without the block itself going.
+
+    The three blocks above and below also carry seven day names — the Headcount
+    Summary, 'Current vs Prior Weeks' and the delta box — and are rejected
+    because none of them is closed by a col-A 'Totals' row."""
+    last_err: Optional[Exception] = None
+    for hdr in range(1, len(g) + 1):
+        cols: Dict[str, int] = {}
+        for k in range(1, len(g[hdr - 1]) + 1):
+            cols.setdefault(_c(g, hdr, k).lower(), k)
+        if not all(d in cols for d in DAYS):
+            continue
+        try:
+            return _daily_block(g, hdr, cols, campaign_by_name(g))
+        except ValueError as e:
+            last_err = e
+    raise ValueError(f"daily block: no day-header row closed by a 'Totals' row "
+                     f"({last_err})")
+
+
+def _daily_block(g, hdr: int, cols: Dict[str, int],
+                 camp_map: Optional[Dict[str, str]] = None) -> dict:
+    def opt(prefix: str) -> Optional[int]:
+        return next((k for l, k in cols.items() if l.startswith(prefix)), None)
     out = {"hdr": hdr, "daynum": hdr + 1,
            "days": [cols[d] for d in DAYS],
-           "run": next(k for l, k in cols.items() if l.startswith("running week")),
-           "lastw": next(k for l, k in cols.items() if l.startswith("last week")),
-           "prevw": next(k for l, k in cols.items() if l.startswith("previous week")),
+           # OPTIONAL: present on the live tab (hidden behind black-on-black
+           # text, still read here), None if they are ever really taken off.
+           "run": opt("running week"),
+           "lastw": opt("last week"),
+           "prevw": opt("previous week"),
            "camp": cols.get("campaign")}
     r = hdr + 1
     while r <= len(g) and not _c(g, r, 2):
         r += 1
     rows = []
     while r <= len(g) and _c(g, r, 2) and _c(g, r, 1).lower() != "totals":
-        rows.append((r, _c(g, r, 2), _c(g, r, out["camp"]).lower() if out["camp"] else ""))
+        name = _c(g, r, 2)
+        camp = _c(g, r, out["camp"]).lower() if out["camp"] else ""
+        rows.append((r, name, camp or (camp_map or {}).get(name.lower(), "")))
         r += 1
     if _c(g, r, 1).lower() != "totals":
         raise ValueError(f"daily block: no 'Totals' row after the ICDs (row {r})")
@@ -144,8 +222,15 @@ def find_stack(g, totals_row: int) -> List[int]:
 
 
 def find_delta(g) -> dict:
-    dh = next(r for r in range(1, len(g) + 1)
-              if "ongoing headcount" in _c(g, r, 1).lower() and _c(g, r, 3).lower() == "total for week")
+    """The delta box, by its col-A title plus the 'This week' sub-header under
+    it. The col-C cell used to be the anchor ('Total for week'); Eve turned it
+    into a live 'by <last day filled>' caption on 2026-09-20, and an exact-match
+    anchor on a cell whose whole job is to change its text is a trap — it took
+    the Tuesday roll down with a bare StopIteration."""
+    dh = next(r for r in range(1, len(g))
+              if "ongoing headcount" in _c(g, r, 1).lower()
+              and any(_c(g, r + 1, k).lower() == "this week"
+                      for k in range(1, len(g[r]) + 1)))
     sub = dh + 1
     this_c, last_c = [], []
     for d in DAYS:
@@ -216,11 +301,14 @@ def plan_roll(V, F, closed: dt.date, new_sunday: dt.date) -> dict:
     first, last = og["rows"][0], og["rows"][-1]
     if not _c(F, og["totals"], new_last):
         values.append((f"{A(new_last)}{og['totals']}", f"=SUM({A(new_last)}{first}:{A(new_last)}{last})"))
-    # 2 daily K/L freeze: L <- K, K <- J (ICD rows + Totals row)
+    # 2 daily K/L freeze: L <- K, K <- J (ICD rows + Totals row). Skipped if the
+    # columns are ever taken off the tab — step 1 above is what actually saves
+    # the closed week, into the Ongoing block's new WE column.
     dl = find_daily(V)
-    for r in [x[0] for x in dl["rows"]] + [dl["totals"]]:
-        values.append((f"{A(dl['prevw'])}{r}", _c(V, r, dl["lastw"])))
-        values.append((f"{A(dl['lastw'])}{r}", _c(V, r, dl["run"])))
+    if dl["run"] and dl["lastw"] and dl["prevw"]:
+        for r in [x[0] for x in dl["rows"]] + [dl["totals"]]:
+            values.append((f"{A(dl['prevw'])}{r}", _c(V, r, dl["lastw"])))
+            values.append((f"{A(dl['lastw'])}{r}", _c(V, r, dl["run"])))
     # 3 delta box 'Last week' <- this week's daily values (blank when not a number)
     dx = find_delta(V)
     by_name = {name.lower(): r for r, name, _ in dl["rows"]}
@@ -233,8 +321,12 @@ def plan_roll(V, F, closed: dt.date, new_sunday: dt.date) -> dict:
         if not _c(F, dx["totals"], k).upper().startswith("=SUM"):
             values.append((f"{A(k)}{dx['totals']}",
                            f"=SUM({A(k)}{dx['rows'][0][0]}:{A(k)}{dx['rows'][-1][0]})"))
-    # 4 the closed week's daily totals, read BEFORE the clear
-    stack_values = [_c(V, dl["totals"], k) for k in dl["days"]] + [_c(V, dl["totals"], dl["run"])]
+    # 4 the closed week's daily totals, read BEFORE the clear. The trailing
+    # figure comes out of RUNNING WEEK TOTALS; without that column the history
+    # row ends on Sunday, because the week's final is also in the Ongoing
+    # block's TOTALS row under that same week (WE 9.13 -> 548 in both).
+    day_vals = [_c(V, dl["totals"], k) for k in dl["days"]]
+    stack_values = day_vals + ([_c(V, dl["totals"], dl["run"])] if dl["run"] else [])
     # 5 clear the days + the new week's day numbers
     clear = [f"{A(dl['days'][0])}{dl['rows'][0][0]}:{A(dl['days'][-1])}{dl['rows'][-1][0]}"]
     monday = new_sunday - dt.timedelta(days=6)
@@ -244,7 +336,8 @@ def plan_roll(V, F, closed: dt.date, new_sunday: dt.date) -> dict:
     return {"values": values, "clear": clear,
             "stack_top": stack[0] if stack else dl["totals"] + 1,
             "stack_label": f"WE {closed.month}.{closed.day}",
-            "stack_values": stack_values, "last_col": dl["run"],
+            "stack_values": stack_values,
+            "last_col": dl["run"] or dl["days"][-1],
             "summary": find_summary(V, dl["hdr"]),
             "stack_already": bool(stack) and _c(V, stack[0], 1) == f"WE {closed.month}.{closed.day}"}
 
@@ -477,16 +570,17 @@ def plan_day(V, day: dt.date, today: dt.date, logfn=print,
     return out
 
 
-def run(apply_changes: bool = False, today: Optional[dt.date] = None, logfn=print) -> int:
+def run(apply_changes: bool = False, today: Optional[dt.date] = None,
+        sandbox: bool = False, logfn=print) -> int:
     from automations.recruiting_report.fill import open_by_key, _retry
     from automations.org_sales_board.week import reporting_sunday, completed_days
     today = today or dt.date.today()
-    ws = open_tab()
+    ws = open_tab(sandbox)
     V = ws.get_all_values()
     F = ws.get_all_values(value_render_option="FORMULA")
     target = reporting_sunday(today)
     on = board_sunday(V, today)
-    logfn(f"{TAB}: tab is on WE {on}, reporting week WE {target} (today {today})")
+    logfn(f"{ws.title}: tab is on WE {on}, reporting week WE {target} (today {today})")
     if on < target:
         closed = on
         if (target - on).days > 7:
@@ -528,8 +622,10 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--apply", action="store_true", help="write (default: dry run)")
     ap.add_argument("--today", type=dt.date.fromisoformat, help="pretend today is this date")
+    ap.add_argument("--sandbox", action="store_true",
+                    help=f"write the {SANDBOX_TAB!r} copy instead of the live tab")
     a = ap.parse_args(argv)
-    return run(apply_changes=a.apply, today=a.today)
+    return run(apply_changes=a.apply, today=a.today, sandbox=a.sandbox)
 
 
 if __name__ == "__main__":

@@ -49,34 +49,41 @@ OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "org_active_headcount
 
 
 def board_range(g) -> str:
-    """A1 through the per-day block's 'PREVIOUS WEEK'S TOTALS' column, down to
-    the last 'WE M.D' history row (or its Totals row if there is none)."""
+    """A1 through SUNDAY, down to the last 'WE M.D' history row (or its Totals
+    row if there is none).
+
+    It used to run out to 'PREVIOUS WEEK'S TOTALS'. Eve asked for Sunday on
+    2026-09-20 (`con que hagamos captura hasta columna I esta bien`), once she
+    had painted RUNNING WEEK / LAST WEEK'S / PREVIOUS WEEK'S black on black to
+    keep their numbers without showing them. NOTE this also cuts the Ongoing
+    block, which is wider: it runs ten weeks, and the mail now shows the seven
+    that fit. Widen this to `og['wcols'][-1][0]` to put the other three back."""
     dl = d.find_daily(g)
     stack = d.find_stack(g, dl["totals"])
-    return f"A1:{d.A(dl['prevw'])}{stack[-1] if stack else dl['totals']}"
+    return f"A1:{d.A(dl['days'][-1])}{stack[-1] if stack else dl['totals']}"
 
 
 def delta_range(g, today: Optional[dt.date] = None) -> str:
-    """The delta box, cropped to the elapsed days — the same derivation the
-    Country / All Units boards use. Widened to col A when the rank numbers are
-    there (delta_block_range starts at B)."""
-    from automations.org_sales_board import rollover as org_ro
-    tables = [t for t in org_ro.find_delta_tables(g)
-              if "ongoing headcount" in str(g[t["header_row"] - 2][0]).lower()]
-    if not tables:
-        raise ValueError("delta box ('All Campaings Ongoing Headcount' / "
-                         "'Total this week') not found")
-    t = tables[0]
-    rng = org_ro.delta_block_range(g, t, today=today)
-    first = t["data_rows"][0]
-    if str(g[first - 1][0]).strip():
-        rng = "A" + rng.lstrip("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-    return rng
+    """The delta box's WEEK triplet only — This week / Last week / Delta — from
+    its title row down to its totals row.
+
+    It used to be the whole box cropped to the elapsed days, borrowed from the
+    Country / All Units boards (`org_sales_board.rollover.delta_block_range`).
+    Those boards accumulate, so their per-day columns each say something new.
+    This one does not: every day is its own ongoing headcount, so the seven
+    per-day triplets were seven ways of saying what the week triplet already
+    says. Eve, 2026-09-20: `con que capturamos hasta columna E todos los dias,
+    esta bien`. Dropping that borrowed derivation also drops its anchor on the
+    exact string 'Total this week', which she had just edited away."""
+    dx = d.find_delta(g)
+    last = dx["this"][0] - 1          # the week triplet's Delta, left of Monday
+    return f"A{dx['hdr']}:{d.A(last)}{dx['totals']}"
 
 
-def build_pngs(today: Optional[dt.date] = None) -> List[Tuple[Path, str]]:
+def build_pngs(today: Optional[dt.date] = None,
+               sandbox: bool = False) -> List[Tuple[Path, str]]:
     from automations.org_sales_board.screenshot_email import _export_png, _access_token
-    ws = d.open_tab()
+    ws = d.open_tab(sandbox)
     g = ws.get_all_values()
     parts = [("board", board_range(g)), ("delta", delta_range(g, today))]
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -95,11 +102,13 @@ def main(argv=None) -> int:
     ap.add_argument("--only", default="",
                     help="comma-separated email(s) INSTEAD of the list (test)")
     ap.add_argument("--today", type=dt.date.fromisoformat, help="pretend today is this date")
+    ap.add_argument("--sandbox", action="store_true",
+                    help="shoot the SANDBOX copy of the tab instead of the live one")
     a = ap.parse_args(argv)
     from automations.shared import report_email
     today = a.today or dt.date.today()
     to = [u.strip() for u in a.only.split(",") if u.strip()] or list(RECIPIENTS)
-    shots = build_pngs(today)
+    shots = build_pngs(today, sandbox=a.sandbox)
     for p, rng in shots:
         print(f"screenshot {rng} -> {p} ({p.stat().st_size // 1024} KB)")
     yday = today - dt.timedelta(days=1)
