@@ -256,6 +256,14 @@ def _reconcile_stale_window(who: str, summary: dict, dash: dict, log,
     return problems
 
 
+def _dashboard_behind(prev2_summary: dict | None, dash: dict) -> bool:
+    """Does our D-2 window reconcile with the dashboard? Then the office's
+    mismatch is CHURNRATES being ≥2 days behind for it, not a bad pull — the
+    same test _reconcile_stale_window diagnoses with, asked as a yes/no."""
+    return (prev2_summary is not None
+            and not _compare("", prev2_summary, dash, lambda *a: None))
+
+
 # A product that still had this many active accounts yesterday cannot honestly
 # reach zero overnight: the 0-30 base is a 30-day rolling population, so an
 # office that stops selling something decays through 8, 5, 2, 1 over weeks. A
@@ -639,6 +647,9 @@ def main(argv=None) -> int:
     # the activation rates a few blocks down ("one office's rep/office mismatch
     # is not a reason to leave three churn tabs stale").
     churn_source_down: dict = {}
+    # An office whose numbers match the dashboard only on our TWO-day-old
+    # window: CHURNRATES is behind for that office, our pull is not wrong.
+    churn_dash_behind: dict = {}
     for key, prefix, _sid, tab, _has_act in owners:
         lines = compute.load_orderlog(files[key], prefix)
         summary = compute.churn_summary(lines, today)
@@ -666,18 +677,41 @@ def main(argv=None) -> int:
             # Same Order Log, older 0-30 cutoffs: what the dashboard would say
             # if it were a day (or two) behind on rolling its window forward.
             # Only used to decide WHO is stale — never written.
-            problems += _reconcile(
+            prev2 = compute.churn_summary(lines, today - dt.timedelta(days=2))
+            office_problems = _reconcile(
                 key.upper(), summary, dash, log,
                 prev_summary=compute.churn_summary(
                     lines, today - dt.timedelta(days=1)),
-                prev2_summary=compute.churn_summary(
-                    lines, today - dt.timedelta(days=2)))
+                prev2_summary=prev2)
+            if office_problems and _dashboard_behind(prev2, dash):
+                # 2026-09-21: JAMIS matched the dashboard EXACTLY on our D-2
+                # window, so our pull was right and CHURNRATES was behind for
+                # him — and CARLOS, ATEF and SABRINA, all reconciled, stayed
+                # stale all day behind it. Same line as the missing owner
+                # above: provably scoped to this office, so it costs this
+                # office's cells, not the other three boards.
+                churn_dash_behind[key] = "; ".join(office_problems)
+                log(f"    {key} is skipped: its tabs keep yesterday's numbers "
+                    "(stale, not wrong); the other offices still write.")
+                continue
+            problems += office_problems
 
-    if churn_source_down:
-        owners = [o for o in owners if o[0] not in churn_source_down]
+    if churn_dash_behind and problems:
+        # Another office has a REAL mismatch, so the all-or-nothing rule holds
+        # and nothing writes; keep the behind office's diagnosis in the alert.
+        problems += sorted(churn_dash_behind.values())
+        churn_dash_behind = {}
+    skipped = dict(churn_source_down, **churn_dash_behind)
+    if skipped:
+        owners = [o for o in owners if o[0] not in skipped]
         ar_paths = {k: v for k, v in ar_paths.items()
-                    if k not in churn_source_down}
-        if not owners:
+                    if k not in skipped}
+        if not owners and not churn_source_down:
+            # EVERY office behind is the whole extract behind, not one office:
+            # exactly the failure this report always raised for it.
+            problems = sorted(churn_dash_behind.values())
+            churn_dash_behind = {}
+        elif not owners:
             # EVERY owner missing is not "the dashboard dropped an office" —
             # it is a broken pull (wrong view, an export that came back as the
             # default dashboard, a truncated download). Fail loudly: there is
@@ -884,7 +918,8 @@ def main(argv=None) -> int:
     # that office's CELLS, not the report. Its own manifest id so a clean run
     # closes it by itself and _ok_manifest() can't erase it.
     if not args.skip_reconcile and need_tableau and not args.dry_run:
-        _churn_source_manifest(churn_source_down, log=log)
+        _churn_source_manifest(churn_source_down, log=log,
+                               behind=churn_dash_behind)
 
     _ok_manifest()
     log("✓ Vantura churn & activations update complete.")
@@ -893,6 +928,11 @@ def main(argv=None) -> int:
             + ", ".join(sorted(churn_source_down))
             + " — not in the CHURNRATES export, so those tabs are stale, "
               "not wrong.")
+    if churn_dash_behind:
+        log("  ⚠ churn NOT refreshed for: "
+            + ", ".join(sorted(churn_dash_behind))
+            + " — CHURNRATES is ≥2 days behind for them, so those tabs are "
+              "stale, not wrong.")
     if rate_source_down:
         log("  ⚠ activation rates NOT refreshed for: "
             + ", ".join(sorted(rate_source_down))
@@ -1042,7 +1082,8 @@ def _rate_source_manifest(down: dict, log=print) -> None:
 CHURN_SOURCE_ID = "vantura_churn_source"
 
 
-def _churn_source_manifest(down: dict, log=print) -> None:
+def _churn_source_manifest(down: dict, log=print,
+                           behind: dict | None = None) -> None:
     """Ping (or clear) the notice for an office the CHURNRATES export dropped.
 
     2026-09-03 is why this exists. CARLOS HIDALGO stopped appearing in
@@ -1055,12 +1096,16 @@ def _churn_source_manifest(down: dict, log=print) -> None:
     """
     try:
         from automations.shared import run_manifest as _rm
-        if not down:
+        if not down and not behind:
             _rm.mark_clean(CHURN_SOURCE_ID, kind="source")
+            return
+        if not down:
+            _behind_manifest(_rm, behind)
             return
         who = ", ".join(sorted(down))
         _rm.write_manifest(
-            CHURN_SOURCE_ID, failed=sorted(down), kind="source",
+            CHURN_SOURCE_ID, failed=sorted(set(down) | set(behind or {})),
+            kind="source",
             note=("The Churn Rates dashboard carries no rows for: " + who
                   + ". Those offices were skipped — their churn tabs hold the "
                     "previous run's numbers (stale, not wrong). Every other "
@@ -1092,6 +1137,35 @@ def _churn_source_manifest(down: dict, log=print) -> None:
     except Exception as e:  # noqa: BLE001 — alerting never breaks a good run
         log(f"  ⚠ couldn't record the churn-source manifest "
             f"({type(e).__name__}: {str(e)[:120]})")
+
+
+def _behind_manifest(_rm, behind: dict) -> None:
+    """The source notice for offices CHURNRATES is ≥2 days behind on (and none
+    missing outright). Same id as the missing-owner notice, so one clean run
+    closes either; its own words, because the fix is the extract schedule, not
+    the owner filter."""
+    who = ", ".join(sorted(behind))
+    _rm.write_manifest(
+        CHURN_SOURCE_ID, failed=sorted(behind), kind="source",
+        note=("The Churn Rates dashboard is ≥2 days behind for: " + who
+              + " — it matches our two-day-old window. Those offices were "
+                "skipped (their churn tabs hold the previous run's numbers: "
+                "stale, not wrong). Every other office reconciled and wrote "
+                "normally."),
+        remediation=_rm.make_remediation(
+            reason="; ".join(f"{k}: {v[:200]}"
+                             for k, v in sorted(behind.items())),
+            fix="Our Order Log pull is fine for this office — shifted two days "
+                "it matches the dashboard. The CHURNRATES side has not "
+                "refreshed for it: check the ATTTRACKER-B2B extract schedule "
+                "(last refresh). Once the dashboard is current, re-run "
+                "vantura_churn; a re-run before that will skip the office "
+                "again.",
+            link="https://us-east-1.online.tableau.com/#/site/sci/views/"
+                 "ATTTRACKER-B2B/CHURNRATES",
+            message="The B2B Churn Rates dashboard is 2+ days behind for "
+                    + who + ", so that office's churn tab wasn't refreshed "
+                    "today. The other offices are current."))
 
 
 def _ok_manifest() -> None:

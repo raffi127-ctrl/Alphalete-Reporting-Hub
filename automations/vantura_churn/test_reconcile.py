@@ -147,6 +147,82 @@ def test_two_products_gone_are_both_named():
     assert any("Internet" in p for p in problems)
 
 
+# ------------------------------------------------ one office behind (2026-09-21)
+# JAMIS matched the dashboard only on our D-2 window and the all-or-nothing rule
+# left CARLOS, ATEF and SABRINA stale all day. That office is now skipped alone.
+
+def test_two_days_behind_is_recognised_as_the_dashboards_fault():
+    dash = {"base": 391, "rate": 0.0640, "raw": {}}
+    assert vc._dashboard_behind(_s(25, 389), dash)
+
+
+def test_a_structural_break_is_not_called_behind():
+    """Wrong owner: no shift of the window reconciles, so it still aborts all."""
+    dash = {"base": 391, "rate": 0.0640, "raw": {}}
+    assert not vc._dashboard_behind(_s(8, 128), dash)
+    assert not vc._dashboard_behind(None, dash)
+
+
+class _FakeManifest:
+    def __init__(self):
+        self.written, self.cleaned = [], []
+
+    def write_manifest(self, rid, **kw):
+        self.written.append((rid, kw))
+
+    def mark_clean(self, rid, **kw):
+        self.cleaned.append(rid)
+
+    def make_remediation(self, **kw):
+        return kw
+
+
+def _with_fake_manifest(fn):
+    import sys
+    import types
+    fake = _FakeManifest()
+    shared = sys.modules.get("automations.shared")
+    old = sys.modules.get("automations.shared.run_manifest")
+    sys.modules["automations.shared.run_manifest"] = fake
+    old_attr = getattr(shared, "run_manifest", None) if shared else None
+    if shared:
+        shared.run_manifest = fake
+    try:
+        fn()
+    finally:
+        if old is not None:
+            sys.modules["automations.shared.run_manifest"] = old
+        else:
+            sys.modules.pop("automations.shared.run_manifest", None)
+        if shared and old_attr is not None:
+            shared.run_manifest = old_attr
+    return fake
+
+
+def test_behind_office_pings_its_own_source_notice():
+    fake = _with_fake_manifest(lambda: vc._churn_source_manifest(
+        {}, log=_quiet, behind={"jamis": "JAMIS: ≥2 days behind"}))
+    assert not fake.cleaned
+    (rid, kw), = fake.written
+    assert rid == vc.CHURN_SOURCE_ID
+    assert kw["failed"] == ["jamis"] and kw["kind"] == "source"
+    assert "2 days behind" in kw["note"]
+
+
+def test_nothing_skipped_clears_the_notice():
+    fake = _with_fake_manifest(lambda: vc._churn_source_manifest(
+        {}, log=_quiet, behind={}))
+    assert fake.cleaned == [vc.CHURN_SOURCE_ID] and not fake.written
+
+
+def test_missing_and_behind_both_listed_as_failed():
+    fake = _with_fake_manifest(lambda: vc._churn_source_manifest(
+        {"atef": "not in export"}, log=_quiet,
+        behind={"jamis": "≥2 days behind"}))
+    (rid, kw), = fake.written
+    assert kw["failed"] == ["atef", "jamis"]
+
+
 def _main() -> int:
     fails = 0
     for name, fn in sorted(globals().items()):
