@@ -50,29 +50,43 @@ Box answers.
 5. Google credentials (service account or OAuth) with edit access to the copy.
 6. For Ad Plan: each manager's personal Indeed tracker sheet link.
 
-## Setup
+## Setup — on the manager's OWN device (no Alphalete runner involved)
 
-1. **Copy the template**; note the new spreadsheet id from its URL.
-2. **Point the code at it**: `automations/funnel_board/build.py` (SSID) and
-   your roster in `automations/funnel_board/roster.py` — ORG = one tuple per
-   manager: `(display name, office id, AppStream owner spelling)`. A blank
-   office id ("") is legal: the nightly run watches the office switcher and
-   starts pulling (with history + an announcement) the moment it appears.
-3. **Share the copy** with the runner's Google account (editor).
-4. **First funnel run**: `python -m automations.funnel_board.run` — pulls the
-   offices, fills Daily Log, draws Dashboard/Focus/Goals/Matrix. Add
-   `--weeks 34` once for deep history (run it in batches of ~8 managers via
-   `--only "A|B|C"`; a full 40-office 34-week pull exceeds the 60-min cap).
-5. **First source-report run**: `python -m automations.indeed_source_report.run`
-   — fills Source Report - Indeed for the current month.
-6. **Ad Plan**: per manager, add a hidden tab that IMPORTRANGEs their tracker
-   (`A1:Z1000`), click the one-time "Allow access", then map them in
-   `Ad Plan!AD:AE` (AD = name, AE = tab name). The dropdown updates itself.
-7. **Goals**: type them on Goals or the violet Focus column — mirrored both
-   ways automatically (simple onEdit; no trigger install needed).
-8. **Schedule**: daily full run + midday refresh. Copy
-   `deploy/recruiting_chain.sh` + the two `com.alphalete.recruiting-chain`
-   plists as the starting point (Alphalete runs 1 AM full / 1 PM refresh).
+This reporting runs entirely on the manager's machine: their AppStream login,
+their workbook copy, their schedule. **It must never be wired to Alphalete's
+production runner ("Lucy"), its command queue, or its schedules** — the kit
+below doesn't know they exist, and the standalone env (`FUNNEL_NO_SLACK=1`)
+keeps runs from posting into Alphalete channels.
+
+1. **Copy the template** (File → Make a copy) into the manager's own Drive.
+2. **Clone the repo on their machine** and create its venv
+   (`python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`).
+3. **Run the wizard** — it asks everything ("whose data do you want?" =
+   managers + office ids + AppStream owner spellings, the workbook id, their
+   AppStream login) and writes only local files:
+
+       python -m automations.manager_kit.setup
+
+   It stores the roster at `~/.config/recruiting-reporting/roster.json`, the
+   login in the gitignored `ownerville-creds.json` (chmod 600), generates
+   `./manager_run.sh`, verifies Google access to the workbook, and offers a
+   launchd schedule on THAT Mac (1 AM + 1 PM, label
+   `com.recruiting-reporting.daily`).
+4. **First run**: `./manager_run.sh` — draws every tab with their roster
+   (replacing the Manager 1..8 placeholders). Then once for history:
+   `./manager_run.sh --weeks 34` (batch with `--only "A|B|C"` for many
+   managers — a full 34-week pull for a big roster runs long).
+5. **Ad Plan trackers**: per manager, a hidden tab with
+   `=IMPORTRANGE("<tracker url>","A1:Z1000")`, one human "Allow access"
+   click, and a row in `Ad Plan!AD:AE`.
+6. **Goals**: type on Goals or the violet Focus column — the bundled script
+   mirrors them (it copied with the template; human edits only).
+
+How the isolation works under the hood: `FUNNEL_SSID` +
+`INDEED_SOURCE_SPREADSHEET_ID` point the engine at their workbook,
+`RECRUITING_ROSTER_JSON` replaces the production roster wholesale, and
+`FUNNEL_NO_SLACK=1` mutes announcements. Unset, the same code serves
+Alphalete production — so pulling repo updates keeps both worlds current.
 
 ## What bites (short list — full list in RECRUITING-STACK-README.md §4)
 

@@ -153,3 +153,27 @@ AD_TABS = ["Atef Choudhury", "Jackie LeRoy", "Jamis Garay",
 BOARD_TITLE = "Captainship Recruiting Dashboard"
 TREND_TITLE = "Captainship Focus Report"
 AD_VIEW_TITLE = "Captain Ship Ad View"
+
+
+# ---------------------------------------------------------------------------
+# STANDALONE / MANAGER-KIT OVERRIDE (2026-09-21). When RECRUITING_ROSTER_JSON
+# names a JSON file ({"org": [[display name, office id or "", appstream owner
+# spelling], ...], "captainship": [...], "south_shore": [...]}), every roster
+# above is REPLACED by it — that is how a new manager runs this reporting on
+# their own machine against their own copy of the workbook, with no tie to
+# Alphalete's production roster or runner. Unset (production, Lucy 2): the
+# hardcoded lists above are used untouched.
+import json as _json
+import os as _os
+
+_OVR = _os.environ.get("RECRUITING_ROSTER_JSON", "").strip()
+if _OVR:
+    with open(_OVR, encoding="utf-8") as _f:
+        _cfg = _json.load(_f)
+    ORG = [tuple(x) for x in _cfg.get("org", [])]
+    CAPTAINSHIP = [tuple(x) for x in _cfg.get("captainship", [])]
+    ORG_NAMES = [n for n, _, _ in ORG]
+    CAPTAINSHIP_NAMES = [n for n, _, _ in CAPTAINSHIP]
+    SOUTH_SHORE_NAMES = list(_cfg.get("south_shore_names",
+                             [n for n, _, _ in _cfg.get("south_shore", [])]))
+    CAMPAIGN_ONLY = list(_cfg.get("campaign_only", []))

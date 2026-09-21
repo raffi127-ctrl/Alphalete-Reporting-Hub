@@ -203,3 +203,4 @@ automations/uploaded/.ov_autorenew/
 automations/uploaded/.ov_autorenew.launchlock
 automations/uploaded/.ov_laptop_seed/
 automations/uploaded/.ov_laptop_seed.launchlock
+manager_run.sh
