@@ -10,9 +10,13 @@ whoever reads it to add them up.
 Megan, 2026-09-18: "we just need to have a general overview post and then in the
 thread break down each account and what is needed in it." So:
 
-    PARENT   the overview — totals across the group, plus one line per stream
+    PARENT   ONE line: the group's totals for the day, nothing else
     REPLY    one per stream, in POST_GROUPS order, each using the SAME
              account-grouped format Carlos's post uses (summary.render_section)
+
+The parent carried a per-stream bullet block until 2026-09-20, when Raf asked
+for "a cleaner thread" — those counts are already in the replies, so repeating
+them above the fold was noise in the channel.
 
 Re-running the same day does NOT add a second thread or a second set of replies:
 the parent's counts are refreshed in place and each stream's existing reply is
@@ -84,30 +88,21 @@ def build(group_name: str, date: dt.date = None) -> dict:
             "queue_total": snap.get("queue_total"),
         })
 
-    head = ("\U0001F4CB %s — %s's recruiting to-do: %d need a number, "
-            "%d need a manual text" % (date_str, g["short"], tot_num, tot_txt))
-    lines = [head, ""]
-    for st in streams:
-        if not st["walked"]:
-            lines.append("• *%s* — no walk yet today" % st["name"])
-            continue
-        bits = []
-        if st["no_number"]:
-            bits.append("%d need a number" % len(st["no_number"]))
-        if st["needs_text"]:
-            bits.append("%d need a manual text" % len(st["needs_text"]))
-        queue = ("" if st["queue_total"] is None
-                 else " · %s in the queue" % st["queue_total"])
-        lines.append("• *%s* — %s%s"
-                     % (st["name"], ", ".join(bits) if bits else "nothing to do ✅",
-                        queue))
+    # THE PARENT IS ONE LINE (Raf, 2026-09-20: "I don't like all these words and
+    # clutters, can we make this a cleaner thread please"). It used to repeat a
+    # per-stream bullet block — counts that the thread's own replies already
+    # carry, one per stream, right underneath. In the channel you now see the
+    # total and nothing else; open the thread for who and where.
+    parent = ("\U0001F4CB %s — %s's recruiting to-do: %d need a number, "
+              "%d need a manual text" % (date_str, g["short"], tot_num, tot_txt))
     if missing:
-        # Say it on the parent too: a stream missing from the totals is the one
-        # thing a reader cannot infer from a list of names.
-        lines.append("")
-        lines.append("_Not counted above: %s — no walk has finished there today._"
-                     % ", ".join(missing))
-    parent = "\n".join(lines)
+        # The ONE thing a reader cannot infer from a total: that a stream is not
+        # in it. Kept to a short clause rather than its own paragraph — a total
+        # that silently omits a stream is the understated-backlog failure again,
+        # and "13 need a number" must not read as the whole picture when it is
+        # only two of the three streams.
+        parent += (" · %d of %d streams (the rest have not walked yet)"
+                   % (len(streams) - len(missing), len(streams)))
 
     replies = []
     for st in streams:
@@ -117,14 +112,21 @@ def build(group_name: str, date: dt.date = None) -> dict:
         elif not st["no_number"] and not st["needs_text"]:
             body = "*%s*\nNothing needs a hand here today ✅" % st["name"]
         else:
-            body = ("*%s*\n" % st["name"]
-                    + summary.render_section(
-                        "\U0001F4DE Need a number pulled from Indeed",
-                        st["no_number"])
-                    + "\n\n"
-                    + summary.render_section(
-                        "\U0001F4AC Need a manual text (thread too old to see)",
-                        st["needs_text"]))
+            # Only the buckets that HAVE someone in them. A reply that says
+            # "0 — (none today ✅)" under a list of real names is the clutter Raf
+            # objected to, and it is not information: a bucket with nobody in it
+            # asks nothing of the reader. When BOTH are empty the branch above
+            # already says so in one line, so nothing is ever silently dropped.
+            parts = ["*%s*" % st["name"]]
+            if st["no_number"]:
+                parts.append(summary.render_section(
+                    "\U0001F4DE Need a number pulled from Indeed",
+                    st["no_number"]))
+            if st["needs_text"]:
+                parts.append(summary.render_section(
+                    "\U0001F4AC Need a manual text (thread too old to see)",
+                    st["needs_text"]))
+            body = "\n".join(parts[:1]) + "\n" + "\n\n".join(parts[1:])
         replies.append({"office_id": st["office_id"], "text": body})
 
     return {"channel": g["channel"], "parent": parent, "replies": replies,

@@ -60,10 +60,14 @@ with tempfile.TemporaryDirectory() as tmp:
         print("one stream walked, two silent:")
         check("posts", res2.get("skipped"), None)
         check("counts the walked stream", res2.get("no_number"), 1)
-        check("names the unwalked ones instead of zeroing them",
-              "no walk yet today" in out2, True)
-        check("says they are not in the totals",
-              "Not counted above" in out2, True)
+        # The PARENT is one line since 2026-09-20 (Raf: "can we make this a
+        # cleaner thread"), so the per-stream detail moved to the replies — but
+        # a total that silently omits a stream is still the understated-backlog
+        # failure, so the parent must say it is partial.
+        check("the parent says how many streams it covers",
+              "1 of 3 streams" in out2, True)
+        check("the unwalked streams still get a reply saying so",
+              "No walk has finished for this stream today" in out2, True)
     finally:
         os.chdir(_prev)
 
