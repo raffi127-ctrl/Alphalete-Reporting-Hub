@@ -570,8 +570,11 @@ class FaultReporting(unittest.TestCase):
             "First At", "Last At", "Local Time", "Agent", "Platform",
             "Last Posted At"]
 
+    # count="2": these tests are about HOW a fault is posted (threading,
+    # marking the row), and since 2026-09-21 a per-tick fault seen only once
+    # is held until it repeats (test_faults_wait_for_repeat covers that).
     def _row(self, office="kash", stage="sweep", summary="boom",
-             detail="Traceback...", count="1", posted=""):
+             detail="Traceback...", count="2", posted=""):
         return [office, "2026-09-13", stage, summary, detail, count,
                 "9/13/2026 09:00", "9/13/2026 09:02", "", "icd_alerts/2",
                 "Darwin 24.0 / py3.11", posted]

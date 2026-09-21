@@ -1280,6 +1280,39 @@ def open_faults(day: Optional[dt.date] = None, book=None) -> List[Dict]:
     return out
 
 
+# STAGES THAT RUN EVERY TICK, and so get a second chance within minutes.
+PER_TICK_STAGES = ("sweep", "knocks", "box")
+
+
+def waits_for_a_repeat(fault: Dict) -> bool:
+    """Hold a fault back until it happens a SECOND time.
+
+    2026-09-21, 10:00-10:01: Khalil, Aya and Ryan all posted a red "something
+    broke" in the same minute -- the moment every office starts its first read
+    of the day at once -- and every one of them read fine two to seven minutes
+    later. The day before, Carlos did the same at 10:38. None needed anybody.
+    Megan: alert only when it repeats.
+
+    ONLY for stages that run every couple of minutes: a real failure there
+    repeats on the next tick, so holding it costs at most one tick, while a
+    one-off never pings anybody. It is still written to the Faults tab, so
+    nothing is hidden -- only the ping waits.
+
+    NOT for sign-in problems, which DM the person who has to walk to the
+    machine, and not for one-time stages like the install, which have no
+    next tick to repeat on and would otherwise never be reported at all.
+    """
+    stage = str(fault.get("stage") or "")
+    if stage.startswith("signin-"):
+        return False
+    if stage.split("-", 1)[0] not in PER_TICK_STAGES:
+        return False
+    try:
+        return int(str(fault.get("count") or "0").strip() or 0) < 2
+    except ValueError:
+        return False
+
+
 def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
                   book=None, log=print) -> List[Dict]:
     """Put what broke on an ICD laptop in front of us, once per fault.
@@ -1331,6 +1364,13 @@ def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
             except Exception as e:  # noqa: BLE001 — one must not stop the rest
                 log("could not ask %s to sign in: %s: %s"
                     % (f["office"], type(e).__name__, str(e)[:100]))
+            continue
+
+        if waits_for_a_repeat(f):
+            # Left UNPOSTED on purpose, so the next tick that hits it again
+            # picks it up with a count of two.
+            log("HOLDING %s %s -- once so far, posting only if it repeats"
+                % (f["office"], f["stage"]))
             continue
 
         office = O.get(f["office"])
