@@ -280,6 +280,25 @@ def week_of(day: dt.date) -> dt.date:
     return day - dt.timedelta(days=day.weekday())
 
 
+# Before this, an empty target day means "the export hasn't loaded it yet";
+# from it on, it means nobody sold. B2B AT&T sells to businesses, so a Sunday
+# with no rows is ordinary (order log: 9/6 0 lines, 9/13 4, 9/20 0). The
+# B2B Metrics runner's copy of this check had no cutoff at all, so on
+# 2026-09-21 it held the Revenue Board at 7:45 AND 8:30 waiting for Sunday
+# sales that never existed, and the section never posted. One rule, both paths.
+ATT_EMPTY_DAY_IS_REAL_AFTER = dt.time(6, 25)
+
+
+def att_day_ready(per_rep: dict, upto: dt.date,
+                  now: dt.datetime | None = None) -> bool:
+    """Can the AT&T board render for `upto`? Yes once any rep has a priced
+    sale that day, or once it is late enough that an empty day is a real 0."""
+    if any(rec["days"].get(upto) for rec in per_rep.values()):
+        return True
+    now = now or dt.datetime.now()
+    return now.time() >= ATT_EMPTY_DAY_IS_REAL_AFTER
+
+
 def load_priced(csv_path: Path, monday: dt.date, upto: dt.date):
     """-> per-rep {'days': {date: $}, 'elig': n, 'payable': n}, unpriced."""
     from automations.att_order_log import clean
@@ -685,8 +704,7 @@ def main(argv=None) -> int:
                 pull_orderlog(monday, upto, src_csv)
         print(f"ATT: pricing {src_csv}")
         per_rep, unpriced = load_priced(src_csv, monday, upto)
-        if not any(rec["days"].get(upto) for rec in per_rep.values()) and \
-                (now.hour < 6 or (now.hour == 6 and now.minute < 25)):
+        if not att_day_ready(per_rep, upto, now):
             print(f"ATT HOLD: no rows for {upto} in the export yet")
             held = True
         else:
