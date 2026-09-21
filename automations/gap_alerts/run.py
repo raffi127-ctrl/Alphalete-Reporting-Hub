@@ -533,17 +533,23 @@ def _leader_tag_line(cfg: Dict, day: dt.date) -> str:
         return ""
 
 
-def _parent_text(tag_line: str) -> str:
-    """The day's header post, verbatim as Megan wrote it: the report name and
-    what the board is ranked by, said ONCE for the day, with the leaders tagged
-    on the line under it.
+def _parent_text(tag_line: str = "") -> str:
+    """The day's header post: the report name and what the board is ranked by,
+    said ONCE for the day — and NOTHING ELSE.
+
+    THE TAGS GO IN THE THREAD, NOT UNDER THE TITLE (Raf 2026-09-21: "can we make
+    the names in the thread please. I don't like this look... I'll always want
+    a clean look on postings and everything inside of threads"). Thirty-odd
+    @-mentions under the title turned the channel's view of the post into a
+    wall of blue names. The tag line is now the thread's first reply —
+    `_daily_thread_ts` posts it there. `tag_line` is accepted and ignored so
+    nothing that still passes one puts the wall back.
 
     NO CLOCK. This message is written at the day's first board — 1:30pm on a
     weekday, 10:45am on a Saturday — and is still at the top of the thread at
     10pm. The time belongs on the replies, one per board.
     """
-    text = "*%s · ranked by total knocks*" % C.CARD_TITLE.title()
-    return text + "\n" + tag_line if tag_line else text
+    return "*%s · ranked by total knocks*" % C.CARD_TITLE.title()
 
 
 def _daily_thread_ts(cfg: Dict, channel: str, day: dt.date,
@@ -565,19 +571,30 @@ def _daily_thread_ts(cfg: Dict, channel: str, day: dt.date,
     # most likely to be wrong (a renamed board column, a leader with no Slack
     # account). A preview that skipped it would prove nothing.
     line = _leader_tag_line(cfg, day)
-    text = _parent_text(line)
+    text = _parent_text()
     if dry_run:
-        _log("  SLACK (preview) would open today's thread in %s: %s"
-             % (channel, text.replace("\n", " / ")))
+        _log("  SLACK (preview) would open today's thread in %s: %s%s"
+             % (channel, text,
+                " — then tag %d leader(s) in its first reply"
+                % line.count("<@") if line else ""))
         return ""
     try:
         from automations.shared import slack_metrics_post as smp
-        resp = smp._client().chat_postMessage(channel=channel, text=text)
+        client = smp._client()
+        resp = client.chat_postMessage(channel=channel, text=text)
         ts = resp["ts"]
     except Exception as e:  # noqa: BLE001
         _log("  could not open today's thread in %s (%s: %s) — posting the "
              "board at channel level" % (channel, type(e).__name__, str(e)[:160]))
         return ""
+    if line:
+        # First reply, before any board. A tag line that fails costs the day
+        # its pings, never its boards — the thread is already open.
+        try:
+            client.chat_postMessage(channel=channel, thread_ts=ts, text=line)
+        except Exception as e:  # noqa: BLE001
+            _log("  the thread opened but its tag line failed (%s: %s)"
+                 % (type(e).__name__, str(e)[:160]))
     data = _state()
     data.setdefault("_slack_thread", {})[key] = {"day": day.isoformat(), "ts": ts}
     _save_state(data)

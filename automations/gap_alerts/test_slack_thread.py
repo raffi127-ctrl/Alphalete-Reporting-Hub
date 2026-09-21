@@ -59,6 +59,27 @@ class ThreadParentTests(unittest.TestCase):
         text = cli.chat_postMessage.call_args.kwargs["text"]
         self.assertIn(C.CARD_TITLE.title(), text)
 
+    def test_the_tags_are_the_first_reply_not_part_of_the_parent(self):
+        """Raf 2026-09-21: 'can we make the names in the thread please'. Two
+        posts: the bare title, then the tag line INSIDE its thread."""
+        store, cli = _Store(), self._client()
+        with mock.patch.object(R, "_leader_tag_line",
+                               lambda cfg, day: "<@U1> <@U2>"):
+            ts = self._run(store, cli)
+        parent, reply = cli.chat_postMessage.call_args_list
+        self.assertNotIn("<@", parent.kwargs["text"])
+        self.assertNotIn("thread_ts", parent.kwargs)
+        self.assertEqual(reply.kwargs["text"], "<@U1> <@U2>")
+        self.assertEqual(reply.kwargs["thread_ts"], ts)
+
+    def test_a_failed_tag_reply_still_leaves_the_thread_open(self):
+        store, cli = _Store(), self._client()
+        cli.chat_postMessage.side_effect = [{"ts": "1700.1"},
+                                            RuntimeError("rate_limited")]
+        with mock.patch.object(R, "_leader_tag_line",
+                               lambda cfg, day: "<@U1>"):
+            self.assertEqual(self._run(store, cli), "1700.1")
+
     def test_every_later_board_reuses_it_and_re_tags_nobody(self):
         store, cli = _Store(), self._client()
         first = self._run(store, cli)
@@ -118,10 +139,12 @@ class CaptionTests(unittest.TestCase):
         self.assertEqual(R._parent_text(""),
                          "*Knocks & Dispositions · ranked by total knocks*")
 
-    def test_the_parent_header_carries_the_tags_under_it(self):
+    def test_the_parent_header_never_carries_the_tags(self):
+        """Raf 2026-09-21: 'can we make the names in the thread please'. The
+        parent is the title alone — even if a caller still hands it a tag line."""
         text = R._parent_text("<@U1> <@U2>")
-        self.assertTrue(text.startswith("*Knocks & Dispositions"))
-        self.assertIn("<@U1> <@U2>", text.split("\n", 1)[1])
+        self.assertEqual(text, "*Knocks & Dispositions · ranked by total knocks*")
+        self.assertNotIn("<@", text)
 
     def test_a_channel_level_post_is_unchanged_but_for_the_time(self):
         """Offices without a thread keep the caption they have had all along —
