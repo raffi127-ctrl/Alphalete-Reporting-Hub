@@ -1230,8 +1230,46 @@ FAULT_STAGE_LABEL = {
     "install": "during setup",
     "sweep": "reading SaraPlus",
     "knocks": "reading OwnerVille",
+    "box": "reading My Service Cloud",
     "login": "signing in",
 }
+
+
+def fault_headline(label: str, stage: str) -> str:
+    """The first line of a fault post, in words an owner would use.
+
+    A slow read is not a breakage, and "something broke knocks-slow" -- what
+    Kash's office got on 2026-09-21 -- said neither what happened nor that it
+    was fine. The watchdog's two stages get their own sentences; everything
+    else keeps the old one.
+    """
+    base, _, kind = (stage or "").partition("-")
+    where = FAULT_STAGE_LABEL.get(base, "")
+    if kind == "slow" and where:
+        return (":hourglass_flowing_sand: *%s* — %s is running slowly "
+                "(it still finished)." % (label, where))
+    if kind == "timeout" and where:
+        return (":rotating_light: *%s* — %s got stuck and was stopped so the "
+                "next one could start." % (label, where))
+    where = FAULT_STAGE_LABEL.get(stage, where or stage or "on the laptop")
+    return ":rotating_light: *%s* — something broke %s." % (label, where)
+
+
+def stage_words(stage: str) -> str:
+    """'knocks-slow' -> 'reading OwnerVille (slow)'. Used for the "Also ...:"
+    line when a second problem joins an office's thread."""
+    base, _, kind = (stage or "").partition("-")
+    if kind in ("slow", "timeout") and base in FAULT_STAGE_LABEL:
+        return "%s (%s)" % (FAULT_STAGE_LABEL[base],
+                            "slow" if kind == "slow" else "stuck, stopped")
+    return FAULT_STAGE_LABEL.get(stage, stage or "on the laptop")
+
+
+def _real_traceback(detail: str) -> str:
+    """The traceback worth posting, or "". A report made with no exception in
+    flight carries Python's placeholder, which is noise in a thread."""
+    d = (detail or "").strip()
+    return "" if d in ("", "NoneType: None", "None") else d
 
 
 def _fault_threads() -> Dict:
@@ -1375,10 +1413,9 @@ def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
 
         office = O.get(f["office"])
         label = office.label if office else f["office"]
-        where = FAULT_STAGE_LABEL.get(f["stage"], f["stage"] or "on the laptop")
+        where = stage_words(f["stage"])
         parent = threads.get(key_for(f))
-        head = (":rotating_light: *%s* — something broke %s." % (label, where)
-                if not parent else
+        head = (fault_headline(label, f["stage"]) if not parent else
                 "*Also %s:*" % where)
         body = [head, "> %s" % f["summary"]]
         if f["count"] and f["count"] not in ("1", ""):
@@ -1395,7 +1432,7 @@ def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
             if not parent and ts:
                 threads[key_for(f)] = ts
                 parent = ts
-            if f["detail"]:
+            if _real_traceback(f["detail"]):
                 # THE TRACEBACK GOES IN THE THREAD, never the channel. It is
                 # for whoever picks the ticket up, and it is the wrong size
                 # for a room people are scanning.

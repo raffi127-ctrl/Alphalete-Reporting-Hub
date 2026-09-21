@@ -144,9 +144,13 @@ def _report(stage: str, e: Exception, detail: str = "",
     """
     if isinstance(e, R.RelayError):
         return
+    # Only a REAL traceback. The watchdog files a slow read from a `finally`
+    # with nothing raised, and format_exc() then returns "NoneType: None" --
+    # which went into Kash's thread as if it were an error (2026-09-21).
+    live = sys.exc_info()[0] is not None
     R.report_fault(stage, "%s: %s" % (type(e).__name__, str(e)[:200]),
-                   detail or traceback.format_exc(), log=_log,
-                   office_key=office_key)
+                   detail or (traceback.format_exc() if live else ""),
+                   log=_log, office_key=office_key)
 
 
 def cmd_once(headless: bool, dry_run: bool, day: dt.date) -> int:
