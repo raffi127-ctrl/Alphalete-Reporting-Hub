@@ -606,6 +606,11 @@ def main(argv=None) -> int:
     ap.add_argument("--skip-sheets", action="store_true",
                     help="Skip Sales Board screenshots (no browser/sheet "
                          "writes); those sections show a 'pending' note.")
+    ap.add_argument("--no-wait", action="store_true",
+                    help="Build right away even if a metric/churn tab this "
+                         "reads is not filled for today yet (see "
+                         "readiness.py). Default: wait for it, up to "
+                         "readiness.DEADLINE.")
     ap.add_argument("--fresh-knocks", action="store_true",
                     help="Re-pull the knock boards instead of reusing today's "
                          "capture. The reuse manifest keys on the DATE, so a "
@@ -758,6 +763,16 @@ def main(argv=None) -> int:
     # agreeing on a directory by copy-paste is how that quietly stops working.
     render_dir = config.RENDER_DIR
     failures = 0
+
+    # Don't build on yesterday's numbers (Eve 2026-09-21): the fills this reads
+    # run on Lucy 1 and the 06:45 clock fence can't see them finish, so look
+    # at the tabs themselves and wait until they carry today. Instant on a
+    # normal morning; see readiness.py for the deadline and the alert. A
+    # backdated --date rebuild is checking history, not today — never wait.
+    if not (args.no_wait or args.skip_sheets or args.date):
+        from automations.captainship_drafts import readiness
+        readiness.wait_for_fills(selected, today,
+                                 logfn=lambda m: print(m, flush=True))
 
     # Pass 1: capture every captain's images. Pass 2 (below) assembles + emits,
     # with a size-normalization step in between so same-flavor sections match.
