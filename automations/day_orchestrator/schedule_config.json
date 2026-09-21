@@ -3549,6 +3549,26 @@
       "timeout_minutes": 15,
       "verify": null
     },
+    "call_list_to_2nd": {
+      "hand_run_only": true,
+      "on_scheduler": false,
+      "_note": "Rafael's second board (2026-09-21), CALL LIST TO 2ND ROUND: this week left, last week right, Mon-Fri down, one row per interviewer (owner's AppStream columns merged down the group). 1st round from AppStream per office, 2nd round from each owner's ARS REPORT log. Every run re-reads both weeks and names on each day's bar what changed. Writes the 'Call List to 2nd Round SANDBOX' tab of 'Interviewers Report from R to Z' by default; --production writes 'Call List to 2nd Round'. Needs the AppStream session, so it runs where that lives. Not scheduled yet: the plan is each office at its own 1 PM local (--due). `lucy rerun call_list_to_2nd` (add --dry-run to write nothing, --no-appstream for the 2nd-round side only).",
+      "display_name": "Call List to 2nd Round",
+      "source_type": "appstream",
+      "command": [
+        "automations.call_list_to_2nd.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "data_sources": [],
+      "depends_on": [],
+      "freshness_target": null,
+      "priority": "P3",
+      "timeout_minutes": 60,
+      "verify": null
+    },
     "install_below_the_mark_agent": {
       "on_scheduler": true,
       "_note": "NOT a report — a one-shot LaunchAgent installer, run via `lucy rerun install_below_the_mark_agent`. Bootstraps com.alphalete.below-the-mark from the committed plist: 13:00 and 18:30 Mon-Fri. Must land on the SAME machine as the Daily Focus passes — the AppStream session lives there.",
