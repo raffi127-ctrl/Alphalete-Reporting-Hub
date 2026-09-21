@@ -776,7 +776,11 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                     tab = ov.open_docs_portal(page, modal)
                     ov.generate_bundle(tab, c.name, dry_run=dry)
                     if not dry and not ov.confirm_generated(tab, c.name):
-                        _refuse(refused, f"{c.name}: no success banner", dry)
+                        why = ""
+                        if hasattr(ov, "why_not_generated"):
+                            why = " — " + ov.why_not_generated(tab, c.name)
+                        _refuse(refused, f"{c.name}: no success banner{why}",
+                                dry)
                         continue
                     if not dry:
                         _record_sent(c.name)

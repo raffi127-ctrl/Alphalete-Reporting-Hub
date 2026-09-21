@@ -1056,6 +1056,45 @@ def confirm_generated(tab, name: str) -> bool:
         return False
 
 
+def why_not_generated(tab, name: str) -> str:
+    """What the portal is showing when the success banner never came.
+
+    Jalissa Lopez, 2026-09-21: "no success banner" twice, forty minutes apart,
+    and the log could not say why -- it records every click and nothing the
+    page said back. So read the page's own objections (alerts, error text,
+    required-field messages) and keep a screenshot, and put both where the
+    refusal will carry them. Best-effort: never raises.
+    """
+    import datetime as _dt
+    import os
+    bits = []
+    try:
+        texts = tab.locator(
+            "[role='alert']:visible, .alert:visible, .error:visible, "
+            ".text-danger:visible, .invalid-feedback:visible, "
+            ".swal2-popup:visible, .toast:visible, .modal.show"
+        ).all_inner_texts()
+        bits = [" ".join(t.split())[:160] for t in texts if t.strip()][:4]
+    except Exception:                                   # noqa: BLE001
+        pass
+    shot = ""
+    try:
+        os.makedirs("output/logs/digi-docs-shots", exist_ok=True)
+        slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+        shot = (f"output/logs/digi-docs-shots/{slug}-"
+                f"{_dt.datetime.now():%Y%m%d-%H%M%S}.png")
+        tab.screenshot(path=shot, full_page=True, timeout=15000)
+    except Exception:                                   # noqa: BLE001
+        shot = ""
+    said = "; ".join(bits) if bits else "no error text on the page"
+    # The screenshot path goes in the log, NOT the returned line: the line
+    # becomes the alert, alerts are de-duplicated by their text, and a
+    # timestamped path would re-post the same failure on every tick.
+    if shot:
+        print(f"  (screenshot of {name}'s portal: {shot})")
+    return f"the page said: {said}"
+
+
 def tick_attestations(page, modal, *, dry_run: bool = True,
                       verbose: bool = True) -> list:
     """BACKGROUND CHECK (1 box), DRUG TEST (2), SERVICE -> RES-ATT, Save Changes.
