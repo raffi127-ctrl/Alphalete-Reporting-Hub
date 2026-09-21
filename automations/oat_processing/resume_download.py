@@ -376,6 +376,23 @@ def _attach_hrefs_now(page) -> str:
     return ""
 
 
+_ATTACH_TAB_JS = r"""
+() => [...document.querySelectorAll('a,li,button,div[role=tab]')]
+  .some(e => /^\s*attachments?\s*$/i.test(e.textContent || ''))
+"""
+
+
+def _attachment_tab_state(page) -> str:
+    """'no Attachment tab' / 'Attachment tab present, NO LINK' — for the log."""
+    for fr in ([page] + list(getattr(page, "frames", []) or [])):
+        try:
+            if fr.evaluate(_ATTACH_TAB_JS):
+                return "Attachment tab present, NO LINK"
+        except Exception:  # noqa: BLE001
+            continue
+    return "no Attachment tab"
+
+
 def attachment_href(page, wait_s: float = None) -> str:
     """The direct URL of the applicant's attached resume on the AppStream panel,
     or "" when the panel still offers none after waiting up to `wait_s`.
@@ -418,8 +435,12 @@ def phone_from_attachment(page):
     an applicant we could not read is left alone."""
     href = attachment_href(page)
     if not href:
-        return None, ("no attachment on the panel (waited %.1fs)"
-                      % LAST_ATTACH_WAIT_S)
+        # Say WHICH kind of "none" this is, so a 0-for-N day answers itself from
+        # the log: a panel with no Attachment tab has nothing to read (the
+        # applicant came in without one); a panel that HAS the tab but yielded no
+        # link means the reader is missing it, which is a bug to chase.
+        return None, ("no attachment on the panel (waited %.1fs; %s)"
+                      % (LAST_ATTACH_WAIT_S, _attachment_tab_state(page)))
     try:
         resp = page.context.request.get(href, timeout=45000)
         if not resp.ok:
