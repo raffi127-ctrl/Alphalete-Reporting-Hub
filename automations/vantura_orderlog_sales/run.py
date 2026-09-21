@@ -387,6 +387,13 @@ def main(argv=None) -> int:
     sh = open_by_key(SHEET_ID)
     ws, g = board_grid()
 
+    # Monday: the week roll flips the board at 05:15 (Carlos 2026-09-18), so
+    # every pass after it sees NEXT week while closing out Sunday. A campaign
+    # with no Sunday rows has nothing to lose — done, not a hold (every Monday
+    # pass read "partial" and alerted, 2026-09-21). One WITH rows still falls
+    # through to the WRONG WEEK hold below: those sales really missed the board.
+    rolled_past = week_ok(g, days[-1] + dt.timedelta(days=7))[0]
+
     # Coverage gate, per campaign (see FRESHNESS above). Gated on the LAST
     # target day — with --week the earlier days are already-covered history.
     held_fresh = False
@@ -395,6 +402,9 @@ def main(argv=None) -> int:
     for c in campaigns:
         if covers(sh, c, days[-1]):
             ready.append(c)
+        elif rolled_past:
+            _log(f"{c}: board already rolled past {days[-1]}'s week and the "
+                 "log has no rows for it — nothing to close out")
         elif now_t >= FAILOPEN[c]:
             _log(f"{c}: no {days[-1]} rows in the log tab but past the "
                  f"{FAILOPEN[c]:%H:%M} fail-open floor — proceeding with "
