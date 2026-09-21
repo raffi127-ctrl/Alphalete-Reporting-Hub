@@ -556,12 +556,17 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
             # onboarding email, absent-when-wrong is a duplicate welcome to a
             # real person. Not complete, or empty, means fall straight back to
             # asking per person, which is slow and right.
-            roster, complete = ov.snapshot(page)
-            trust = bool(roster and complete)
-            if not trust:
-                print("  roster not proven complete — checking each person "
-                      "individually (slower, and the safe way round)",
-                      flush=True)
+            #
+            # THE WHOLE-LIST READ CANNOT WORK, SO IT IS NOT ATTEMPTED
+            # (2026-09-21). View Progress is a SERVER-SIDE table: the browser
+            # only ever holds the one 25-row page OwnerVille sends, and it
+            # ignores the page-size menu (roster_probe). Every run since 8/31
+            # read 24 rows, said INCOMPLETE, and fell back to per-person
+            # anyway — after spending minutes walking every campaign first.
+            # Per-person is the path that works, so go straight to it.
+            roster, trust = set(), False
+            print("  checking each person in OwnerVille individually",
+                  flush=True)
             for c in add_list:
                 try:
                     if trust and ov.present(roster, c.name):

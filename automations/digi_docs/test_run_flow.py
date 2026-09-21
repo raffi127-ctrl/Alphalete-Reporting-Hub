@@ -1076,10 +1076,14 @@ class FastAddOnlyTrustsAProvenRosterTest(_NoNetwork):
                        dry=False, added=[], done=[], refused=[])
         return ov
 
-    def test_a_proven_roster_skips_the_present_and_fast_paths_the_rest(self):
+    def test_the_whole_list_read_is_not_even_attempted(self):
+        """2026-09-21: View Progress is server-side, so a whole-list read
+        can never prove itself (roster_probe). Even a roster that CLAIMS to be
+        complete is not asked for -- every person goes through the
+        per-person path that works, and nobody is assumed absent."""
         ov = self._add({"1 ana lopez rep"}, True)
-        self.assertEqual(["Bo Diaz"], ov.asked, "Ana is already there")
-        self.assertTrue(all(ov.known_absent_flags))
+        self.assertEqual(["Ana Lopez", "Bo Diaz"], ov.asked)
+        self.assertFalse(any(ov.known_absent_flags))
 
     def test_an_incomplete_roster_is_not_trusted_at_all(self):
         """Even though Ana is in it — a read that could not prove itself must
