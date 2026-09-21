@@ -1223,6 +1223,10 @@ def main(argv=None) -> int:
     ap.add_argument("--names", default="",
                     help="';'-separated names for --tag-onto (semicolons, not "
                          "commas: the queue sheet eats commas)")
+    ap.add_argument("--retag", metavar="TS",
+                    help="REWRITE an existing tag-line message (its own ts) "
+                         "to today's full list — team leaders first, then the "
+                         "board's leaders. An edit: nobody is pinged again")
     ap.add_argument("--thread-onto", metavar="TS",
                     help="post ONLY the thread (tag line + team shots) under "
                          "an existing map post in the level 1 chat — for a "
@@ -1273,6 +1277,23 @@ def main(argv=None) -> int:
                                           still, tab=title))
     roots = build_tree(reps, new_starts, departed=departed)
     groups = plan_teams(roots, reps)
+    if args.retag:
+        # 9/21: the morning's tag line missed Al Kennel and Bas. Edit it in
+        # place so ONE message carries everyone (Megan) — chat.update, so the
+        # 31 already tagged are not pinged a second time. Only the author can
+        # edit, so this has to run as Lucy, on a Lucy.
+        from automations.shared import slack_metrics_post as smp
+        client = smp._client()
+        tags = leader_tags(client=client, tab=title,
+                           team_leads=[g[3] for g in groups if g[3]])
+        if not tags:
+            print("  no tag line built — nothing edited")
+            return 1
+        client.chat_update(channel=CHANNEL[1], ts=args.retag, text=tags)
+        print("  tag line %s rewritten: %d mention(s)"
+              % (args.retag, tags.count("<@")))
+        return 0
+
     # 'Sales Board WE 9.20' -> '9.20'. The tab's own "WE" is the week label
     # everywhere else, but the header already says "Week ending".
     week = title.replace("Sales Board ", "").replace("WE ", "").strip()
