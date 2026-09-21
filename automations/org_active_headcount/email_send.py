@@ -39,6 +39,8 @@ except Exception:                                                  # noqa: BLE00
 
 from automations.org_active_headcount import daily as d
 
+REPORT_ID = "org_active_headcount_email"        # schedule_config id
+
 RECIPIENTS = [
     "CarlosHidalgo349@gmail.com",     # Carlos Hidalgo
     "raffi127@gmail.com",             # Rafael Hidalgo
@@ -131,6 +133,25 @@ def build_pngs(today: Optional[dt.date] = None,
     return out
 
 
+def _record_delivery(to: List[str], subject: str) -> None:
+    """Write today's run manifest — the PROOF of delivery shared/delivery_check
+    looks for (same pattern as the six reports in 4506e6d).
+
+    2026-09-21: the first pass FAILED, the mail then went out to all four at
+    10:30 (and an UPDATE at 12:08), and the ticket still sat open — "ran clean,
+    but nothing can confirm it DELIVERED" — because this report wrote no
+    manifest. Only a real send to the real list writes it (not dry run,
+    --only, --sandbox or --today). Never raises."""
+    try:
+        from automations.shared import run_manifest
+        note = f"emailed '{subject}' to {len(to)}"
+        run_manifest.write_manifest(REPORT_ID, succeeded=list(to), note=note)
+        print(f"  manifest: {note}")
+    except Exception as e:                                      # noqa: BLE001
+        print(f"  ⚠ couldn't write the run manifest ({type(e).__name__}: {e}) "
+              "— the mail went out, but a failure ticket won't close itself")
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="org_active_headcount.email_send")
     ap.add_argument("--post", action="store_true", help="send (default: dry run)")
@@ -149,9 +170,10 @@ def main(argv=None) -> int:
     for p, rng in shots:
         print(f"screenshot {rng} -> {p} ({p.stat().st_size // 1024} KB)")
     yday = today - dt.timedelta(days=1)
+    subject = f"{'UPDATE — ' if a.update else ''}{TITLE} — through {yday:%a %m/%d}"
     try:
         resp = report_email.send_boards(
-            subject=f"{'UPDATE — ' if a.update else ''}{TITLE} — through {yday:%a %m/%d}",
+            subject=subject,
             to=to, title=TITLE.upper(),
             blocks=[("Headcount", shots[0][0]), ("Delta vs last week", shots[1][0])],
             dry_run=not a.post)
@@ -161,7 +183,11 @@ def main(argv=None) -> int:
         print(f"  FAILED — {type(e).__name__}: {e}")
         return 1
     print(f"  result: {resp}")
-    return 0 if resp.get("ok") else 1
+    if not resp.get("ok"):
+        return 1
+    if a.post and not (a.only or a.sandbox or a.today):
+        _record_delivery(to, subject)
+    return 0
 
 
 if __name__ == "__main__":
