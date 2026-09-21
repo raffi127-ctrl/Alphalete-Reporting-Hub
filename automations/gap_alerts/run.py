@@ -2048,7 +2048,26 @@ def main(argv=None) -> int:
                          "reset")
     ap.add_argument("--probe", action="store_true",
                     help="READ-ONLY: dump the raw Time Tracker rows")
+    ap.add_argument("--clean-parent", metavar="TS",
+                    help="EDIT an already-posted day's parent (its ts) down to "
+                         "the bare title — for a parent written before the "
+                         "tags moved into the thread. An edit: nobody is "
+                         "pinged. Runs as Lucy, so it has to run on a Lucy")
+    ap.add_argument("--channel", default="",
+                    help="channel for --clean-parent (default: Raf's room)")
     args = ap.parse_args(argv)
+
+    if args.clean_parent:
+        # 9/21: that day's parent went out with the tag wall under its title,
+        # then Raf asked for the names in the thread. Only the author can
+        # edit, hence a flag here rather than a hand edit from the laptop.
+        from automations.shared import slack_metrics_post as smp
+        channel = args.channel or SLACK_FALLBACK_CHANNEL
+        smp._client().chat_update(channel=channel, ts=args.clean_parent,
+                                  text=_parent_text())
+        _log("  parent %s in %s is now just its title" % (args.clean_parent,
+                                                         channel))
+        return 0
 
     day = (dt.datetime.strptime(args.date, "%Y-%m-%d").date()
            if args.date else dt.date.today())
