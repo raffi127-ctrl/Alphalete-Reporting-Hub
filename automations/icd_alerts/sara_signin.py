@@ -91,12 +91,54 @@ def run(log=print) -> int:
     except OSError:
         pass          # not being able to say so must not stop them signing in
     try:
-        return _window(log=log)
+        rc = _window(log=log)
     finally:
         try:
             C.SARA_SIGNIN_LOCK.unlink()
         except OSError:
             pass
+    if rc != 0:
+        return rc
+    # THE WINDOW IS NOT THE THING THAT HAS TO WORK. Every sweep runs its own,
+    # hidden browser, and on 2026-09-21 Khalil's visible window was trusted at
+    # 9:24 while the hidden reads were still asked for the code at 10:05.
+    # So before anyone is told "done", do one real hidden read -- the exact
+    # thing the schedule does -- and say which way it went. Megan: "isn't
+    # there something she can run now to make sure it's working before people
+    # actually hit the field today??"
+    return verify_hidden_read(log=log)
+
+
+def verify_hidden_read(log=print) -> int:
+    """One real scheduled-style SaraPlus sign-in, hidden, and a plain verdict."""
+    from automations.icd_alerts import sara_read as SR
+    log("")
+    log("  Now checking the automatic reads can get in too (about a minute)...")
+    try:
+        got = SR.check_account(headless=True, log=lambda *_a: None)
+    except SR.AccountProblem as e:
+        log("")
+        log("  NOT YET. The automatic read was stopped:")
+        for line in str(e).splitlines()[:3]:
+            if line.strip():
+                log("    " + line.strip())
+        log("")
+        log("  Please send the reporting team a photo of this window.")
+        return 1
+    except Exception as e:  # noqa: BLE001 -- any failure is a "not yet"
+        log("")
+        log("  Could not finish the check (%s). Please send the reporting "
+            "team a photo of this window." % type(e).__name__)
+        return 1
+    if got.get("ok"):
+        log("")
+        log("  ALL SET. The automatic reads can get into SaraPlus, so sales")
+        log("  will start coming through on their own. Nothing else to do.")
+        return 0
+    log("")
+    log("  Signed in, but landed somewhere unexpected (%s). Please send the "
+        "reporting team a photo of this window." % (got.get("landed") or "?"))
+    return 1
 
 
 def _live_urls(ctx) -> list:
@@ -137,8 +179,16 @@ def _window(log=print) -> int:
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.goto(S.LOGIN_URL, timeout=60000)
-            if _signed_in(page.url):
-                log("  Already signed in — nothing to do.")
+            if any(_signed_in(u) for u in _live_urls(ctx)):
+                # Only THIS window. The hidden read is checked next -- and it
+                # must present the identity this window was trusted as, so
+                # record it here too, not only after a fresh sign-in.
+                try:
+                    _SR.remember_browser_id(
+                        page.evaluate("() => navigator.userAgent"), log=log)
+                except Exception:  # noqa: BLE001
+                    pass
+                log("  This window is already signed in.")
                 return 0
 
             waited, said, url = 0, False, ""

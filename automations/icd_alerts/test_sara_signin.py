@@ -256,3 +256,47 @@ class OnlyAChallengedMachineChangesItsBrowserIdTest(unittest.TestCase):
         R.remember_browser_id("", log=lambda *_: None)
         R.remember_browser_id("not a browser", log=lambda *_: None)
         self.assertEqual(R.browser_id(), "")
+
+
+class SignInProvesTheAutomaticReadTest(unittest.TestCase):
+    """The visible window being signed in is not the thing that has to work --
+    the hidden scheduled read is. Megan, 2026-09-21: "isn't there something
+    she can run now to make sure it's working before people actually hit the
+    field today??" """
+
+    def test_a_good_hidden_read_says_all_set(self):
+        from unittest import mock
+        said = []
+        with mock.patch.object(R, "check_account", return_value={"ok": True}):
+            rc = X.verify_hidden_read(log=said.append)
+        self.assertEqual(rc, 0)
+        self.assertTrue(any("ALL SET" in l for l in said))
+
+    def test_a_code_check_on_the_hidden_read_says_not_yet(self):
+        from unittest import mock
+        said = []
+        with mock.patch.object(R, "check_account",
+                               side_effect=R.AccountProblem("wants a code")):
+            rc = X.verify_hidden_read(log=said.append)
+        self.assertEqual(rc, 1)
+        self.assertTrue(any("NOT YET" in l for l in said))
+
+    def test_it_checks_hidden_not_visible(self):
+        from unittest import mock
+        with mock.patch.object(R, "check_account",
+                               return_value={"ok": True}) as ca:
+            X.verify_hidden_read(log=lambda *_: None)
+        self.assertTrue(ca.call_args.kwargs.get("headless"))
+
+    def test_run_verifies_after_the_window_and_after_unlocking(self):
+        """The lock has to be gone first, or the hidden read would stand back
+        from its own check."""
+        from unittest import mock
+        order = []
+        with mock.patch.object(X, "_window", side_effect=lambda **k: order.append("window") or 0), \
+             mock.patch.object(X, "verify_hidden_read",
+                               side_effect=lambda **k: order.append(
+                                   "verify:%s" % C.SARA_SIGNIN_LOCK.exists()) or 0), \
+             mock.patch.object(X.C, "creds", return_value={}):
+            X.run(log=lambda *_: None)
+        self.assertEqual(order, ["window", "verify:False"])
