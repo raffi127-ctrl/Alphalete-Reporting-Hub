@@ -180,3 +180,8 @@
     width:calc(var(--cols,1) * 15.5rem);
   }
   .branch > ul > li{ break-inside:avoid; -webkit-column-break-inside:avoid; }
+
+  /* One team on its own page, for the thread: no header above it, so the
+     section does not need the spacing that separates teams on the big map. */
+  main.solo{ padding-top:.5rem; }
+  main.solo section{ margin-bottom:0; }

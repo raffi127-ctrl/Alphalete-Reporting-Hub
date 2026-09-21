@@ -949,22 +949,28 @@ def render_html(week: str, reps: List[Rep], groups, palette,
                   'office</div>%s</div></section>'
                   % _stat_dl(reps, sum(terminated_by_team.values())))
 
-    title = "Alphalete Mind Map" if only_team is None else html.escape(only_team)
+    # A THREAD SHOT IS JUST THE TEAM (Raf, via Megan 2026-09-21): the same row
+    # as on the big map — roof, branches, that team's box — with no title,
+    # eyebrow or legend, because the parent post above it already carries them.
+    header = ""
+    if only_team is None:
+        header = ("""<header>
+  <h1>Alphalete Mind Map</h1>
+  <p class="eyebrow">Pulled from the Sales Board WE %s</p>
+  <p class="key">teams by trainer · bubble numbers are 1st gens / whole team</p>
+  <div class="legend">%s</div>
+</header>""" % (html.escape(week), "".join(chips)))
+
     return """<meta charset="utf-8">
 <title>Alphalete Sales Board Mind Map</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800&display=swap">
 <style>%s</style>
-<header>
-  <h1>%s</h1>
-  <p class="eyebrow">Pulled from the Sales Board WE %s</p>
-  <p class="key">teams by trainer · bubble numbers are 1st gens / whole team</p>
-  <div class="legend">%s</div>
-</header>
-<main>
+%s
+<main class="%s">
 %s
 %s
-</main>""" % (css, title, html.escape(week), "".join(chips),
-              "".join(sections), totals)
+</main>""" % (css, header, "solo" if only_team else "", "".join(sections),
+              totals)
 
 
 # -------------------------------------------------------------------- post
@@ -1129,6 +1135,11 @@ def main(argv=None) -> int:
     # One page per team for the thread. Its own window: a single team is a
     # fraction of the office and the office-sized apron would swallow it.
     team_pngs = []
+    # Clear last run's shots first: a team that has since been renamed or
+    # emptied would otherwise leave its old PNG on disk, one directory listing
+    # away from being posted as if it were today's.
+    for stale in OUT_DIR.glob("team-*.*"):
+        stale.unlink()
     if not args.no_thread:
         for team, _b, _l, _n, _f, _m in groups:
             t_html = OUT_DIR / ("team-%s.html" % _slug(team))
