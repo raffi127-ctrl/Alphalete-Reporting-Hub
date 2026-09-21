@@ -17,7 +17,7 @@ so a day whose cells carry a status is reported and skipped, never overwritten.
 from __future__ import annotations
 
 import re
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 NAME_COL = 3                     # col C, the rep list
 DAY_ROW, SUB_ROW = 1, 3          # row 1 = MON/TUES/..., row 3 = Apps/Int/...
@@ -83,6 +83,28 @@ def find_rep_row(grid, rep: str) -> Tuple[Optional[int], str]:
         return None, f"{rep!r} could be any of: {names}"
     return None, (f"{rep!r} is on no row of this week's board -- add them to the "
                   "roster first, or check the spelling against col C")
+
+
+def rt_reps(grid) -> List[Tuple[int, str]]:
+    """[(row, name)] for every roster row whose Field Status is 'RT' (road trip).
+
+    Road-trip reps sell under ANOTHER ICD while they sit on Rafael's board, so
+    every office-scoped feed (the SaraPlus sweep included) reads them as zero.
+    Field Status is found by its ROW-1 label, like the rest of the roster's
+    detail columns -- it has lived in CG, BX and DQ on different weeks.
+    """
+    width = max((len(r) for r in grid[:3]), default=0)
+    col = next((c for c in range(1, width + 1)
+                if " ".join(cell(grid, DAY_ROW, c).split()) == "Field Status"),
+               None)
+    if col is None:
+        return []
+    out = []
+    for r in range(SUB_ROW + 1, last_rep_row(grid) + 1):
+        name = cell(grid, r, NAME_COL).strip()
+        if name and cell(grid, r, col).strip().upper() == "RT":
+            out.append((r, name))
+    return out
 
 
 def day_blocks(grid) -> Dict[str, Dict[str, int]]:

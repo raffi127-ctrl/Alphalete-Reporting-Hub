@@ -133,7 +133,7 @@ def daily_counts(path, rep: str, product_to_metric: Dict[str, str],
 
     out: Dict[str, Dict[str, int]] = {}
     stats = {"rows": 0, "mine": 0, "reps_seen": set(), "unmapped": [],
-             "no_date": 0, "out_of_range": 0, "dates_seen": []}
+             "no_date": 0, "out_of_range": 0, "dates_seen": [], "names": []}
     for r in rows[1:]:
         if len(r) <= max(ci_rep, ci_date, ci_prod):
             continue
@@ -141,6 +141,8 @@ def daily_counts(path, rep: str, product_to_metric: Dict[str, str],
         stats["reps_seen"].add(_norm(r[ci_rep]))
         if not _rep_matches(r[ci_rep], rep):
             continue
+        if _norm(r[ci_rep]) not in stats["names"]:
+            stats["names"].append(_norm(r[ci_rep]))
         d = _parse_date(r[ci_date])
         if d is None:
             stats["no_date"] += 1
@@ -167,3 +169,25 @@ def daily_counts(path, rep: str, product_to_metric: Dict[str, str],
     ds = sorted(stats["dates_seen"])
     stats["dates_seen"] = f"{ds[0]} .. {ds[-1]}" if ds else "(ninguna)"
     return out, stats
+
+
+def sale_dates(path) -> set:
+    """Every sale date in the export, whoever sold it.
+
+    The proof that Tableau has published a day. One rep's empty day proves
+    nothing (road-trip reps often sell nothing); the whole log having no row
+    for a weekday means the day has not landed yet.
+    """
+    rows = read_rows(path)
+    if not rows:
+        return set()
+    ci_date = _find_col(rows[0], DATE_COLUMNS)
+    if ci_date < 0:
+        return set()
+    out = set()
+    for r in rows[1:]:
+        if len(r) > ci_date:
+            d = _parse_date(r[ci_date])
+            if d is not None:
+                out.add(d)
+    return out

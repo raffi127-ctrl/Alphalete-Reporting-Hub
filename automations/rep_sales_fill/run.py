@@ -45,9 +45,19 @@ WHICH DAYS IT TOUCHES (Eve 2026-08-14):
     "only empty days" rule can never revisit.
 Pass --overwrite to force an older day you know is wrong.
 
-  python -m automations.rep_sales_fill.run                    # preview yesterday's week
+ROAD-TRIP MODE (Eve 2026-09-21) -- the default when --rep is not given. Every
+roster row whose Field Status is 'RT' is filled the same way Andrew always was:
+7 more road-trip reps landed on WE 9.27, all selling under other ICDs. The list
+is read off the board on every run, so adding or dropping an RT needs no code.
+One order-log pull serves all of them. A day that has a sale on the 'ATT Sales
+Transfers' form for that rep (either side) is filled only when EMPTY, never
+overwritten: sale_transfers moves those at 05:00 on Lucy 1, and a later
+overwrite from the raw log would undo the move.
+
+  python -m automations.rep_sales_fill.run                    # preview yesterday, every RT row
+  python -m automations.rep_sales_fill.run --apply            # what the scheduler runs
+  python -m automations.rep_sales_fill.run --rep "Andrew Sanborn"   # one rep, old path
   python -m automations.rep_sales_fill.run --date 2026-08-13
-  python -m automations.rep_sales_fill.run --rep "Andrew Sanborn" --apply
   python -m automations.rep_sales_fill.run --from-file out.csv # offline, no Tableau
 """
 from __future__ import annotations
@@ -56,6 +66,7 @@ import argparse
 import datetime as dt
 import sys
 from pathlib import Path
+from typing import Dict, List
 from urllib.parse import quote
 
 try:
@@ -337,9 +348,211 @@ def list_sheets(sunday: dt.date, rep: str, filters: str = "both",
     return 1
 
 
+def same_person(a: str, b: str) -> bool:
+    """Board name vs form name. 'Jonathan Malpica (Jonny)' = 'Jonathan
+    Malpica'; 'Jose Angel Medellin' = 'Jose Medellin' (first + last)."""
+    ta, tb = B._norm_name(a).split(), B._norm_name(b).split()
+    if not ta or not tb:
+        return False
+    if set(ta) <= set(tb) or set(tb) <= set(ta):
+        return True
+    return ta[0] == tb[0] and ta[-1] == tb[-1]
+
+
+def transfer_days(form_rows, rep: str, monday: dt.date, sunday: dt.date
+                  ) -> Dict[str, List[str]]:
+    """{weekday: [what the form says]} for the rep's transfers this week.
+
+    Either side counts. FROM = the rep's login was used by somebody else, so
+    the log credits the rep with a sale that sale_transfers takes away. TO =
+    the rep sold under another login, so the log misses a sale that
+    sale_transfers adds. Either way the log is not the final word for that day.
+    """
+    from automations.alphalete_sales_board import sale_transfers as ST
+    out: Dict[str, List[str]] = {}
+    for t in form_rows:
+        if ST.is_bonus(t["to"]) or t["date"] is None:
+            continue
+        if not (monday <= t["date"] <= sunday):
+            continue
+        side = ("TO" if same_person(rep, t["to"])
+                else "FROM" if same_person(rep, t["from"]) else "")
+        if side:
+            out.setdefault(P.WEEKDAYS[t["date"].weekday()], []).append(
+                f"form row {t['row']}: {side} ({t['from']} -> {t['to']}, "
+                f"{t['product']})")
+    return out
+
+
+def rep_counts(src: Path, rep: str, monday: dt.date, sunday: dt.date):
+    """(days, stats, name tried). The board decorates names -- '(Jonny)',
+    '(Wk 2)' -- and Tableau carries the legal one, so try the cleaned name,
+    then first + last."""
+    clean = B._norm_name(rep)
+    toks = clean.split()
+    tries = [clean] + ([f"{toks[0]} {toks[-1]}"] if len(toks) > 2 else [])
+    for name in tries:
+        days, stats = OL.daily_counts(src, name, P.PRODUCT_TO_METRIC,
+                                      start=monday, end=sunday)
+        if stats["mine"] or stats["out_of_range"]:
+            return days, stats, name
+    return days, stats, tries[-1]
+
+
+def plan_rep(grid, row: int, blocks, days, day: dt.date, today: dt.date,
+             overwrite: bool, locked: Dict[str, List[str]]):
+    """(cell writes, days left as is, log lines) for one rep's row.
+
+    Same rules as the single-rep path: nothing on or after today; the target
+    day follows the log; older days only when empty. A day in `locked` (a
+    transfer on the form) is only ever filled when empty.
+    """
+    from gspread.utils import rowcol_to_a1
+    plan, held, lines = [], [], []
+    monday = day - dt.timedelta(days=day.weekday())
+    for d in P.WEEKDAYS:
+        if d not in blocks:
+            continue
+        d_date = monday + dt.timedelta(days=P.WEEKDAYS.index(d))
+        if d_date >= today:
+            continue
+        wanted = days.get(d, {})
+        cols = blocks[d]
+        force = (overwrite or d_date == day) and d not in locked
+        writes, notes = B.plan_day(grid, row, cols, wanted, overwrite=force)
+        cur = {m: B.cell(grid, row, c).strip() for m, c in sorted(cols.items())}
+        if not writes and not notes and not wanted and not any(cur.values()):
+            continue
+        shown = ", ".join(f"{m} {v or '-'}" for m, v in cur.items())
+        want = ", ".join(f"{m} {wanted.get(m, 0) or '-'}" for m in sorted(cols))
+        mark = "  <<< CAMBIA" if writes else ""
+        lines.append(f"    {d:<10} board [{shown}]")
+        lines.append(f"    {'':<10} tabl. [{want}]{mark}")
+        for t in locked.get(d, []):
+            lines.append(f"      ~ transfer, solo si esta vacio: {t}")
+        for n in notes:
+            lines.append(f"      ! {n}")
+            if "LEFT AS IS" in n:
+                held.append(d)
+        for metric, col, old, new in writes:
+            plan.append((rowcol_to_a1(row, col), metric, old, new))
+    return plan, held, lines
+
+
+def run_rt(a, day: dt.date, sunday: dt.date, names=None) -> int:
+    """Every RT row (or the --rep names given), one order-log pull, one write."""
+    from automations.alphalete_production.capture import SHEET_ID, find_week_tab
+    from automations.recruiting_report.fill import open_by_key, _retry
+
+    monday = sunday - dt.timedelta(days=6)
+    ss = open_by_key(a.sheet_id or SHEET_ID)
+    ws = find_week_tab(ss, day)
+    grid = ws.get_all_values()
+    _log(f"road trip   week ending {sunday.isoformat()}   closing "
+         f"{day.isoformat()} ({P.WEEKDAYS[day.weekday()]})")
+    _log(f"sheet: {ss.title!r}  tab: {ws.title!r}"
+         + ("" if not a.sheet_id else "   (NOT the prod workbook)"))
+
+    if names:
+        reps = []
+        for n in names:
+            row, note = B.find_rep_row(grid, n)
+            if row is None:
+                _log(f"  !! {note}")
+                continue
+            reps.append((row, B.cell(grid, row, B.NAME_COL).strip()))
+    else:
+        reps = B.rt_reps(grid)
+    if not reps:
+        _log("  no RT rows on this tab -- nothing to do")
+        return 0
+    _log(f"  {len(reps)} rep(s): " + ", ".join(n for _r, n in reps))
+
+    blocks = B.day_blocks(grid)
+    if a.from_file:
+        src = Path(a.from_file)
+        _log(f"  leyendo {src} (offline)")
+    else:
+        src = pull_order_log(monday, sunday,
+                             OUT_DIR / f"orderlog_{sunday.isoformat()}.csv")
+
+    # HAS TABLEAU PUBLISHED THE DAY? Judged on the whole log, not on one rep:
+    # a road-trip rep with nothing that day is normal. Sunday is exempt -- the
+    # org can genuinely sell nothing on a Sunday, and holding would retry into
+    # the noon backstop for a day that is simply empty.
+    if day not in OL.sale_dates(src) and day.weekday() != 6:
+        _log(f"  !! the log has no sale at all dated {day.isoformat()} -- "
+             "Tableau has not published it yet. HOLDING, nothing written.")
+        return 75
+
+    try:
+        from automations.alphalete_sales_board import sale_transfers as ST
+        from automations.recruiting_report.fill import _client
+        form = ST.read_form(_client().open_by_key(ST.FORM_SHEET_ID)
+                            .worksheet(ST.FORM_TAB).get_all_values())
+        form_ok = True
+    except Exception as exc:  # noqa: BLE001
+        _log(f"  !! transfers form unreadable ({exc}) -- every day is "
+             "fill-only-if-empty this run")
+        form, form_ok = [], False
+
+    today = dt.date.today()
+    plan, held_all, no_sales = [], [], []
+    for row, name in reps:
+        days, stats, _tried = rep_counts(src, name, monday, sunday)
+        if stats["out_of_range"]:
+            _log(f"  !! {stats['out_of_range']} venta(s) de {name} FUERA de "
+                 f"{monday} .. {sunday} -- el filtro de fechas no aplico. HOLD.")
+            return 75
+        if stats["unmapped"]:
+            _log(f"  !! {name}: product types sin mapear {stats['unmapped']}")
+        units = sum(sum(m.values()) for m in days.values())
+        if units > SANE_WEEK_MAX:
+            _log(f"  !! {name}: {units} units is not one rep -- skipped")
+            continue
+        locked = (transfer_days(form, name, monday, sunday) if form_ok
+                  else {d: ["(form unreadable)"] for d in P.WEEKDAYS})
+        p, held, lines = plan_rep(grid, row, blocks, days, day, today,
+                                  a.overwrite, locked)
+        who = ", ".join(stats["names"]) or "(nadie en el log)"
+        _log(f"  row {row}: {name}   log: {who}   {units} unit(s)")
+        for ln in lines:
+            _log(ln)
+        if not stats["mine"]:
+            no_sales.append(name)
+        plan.extend(p)
+        held_all.extend(f"{name} {d}" for d in held)
+
+    _log("")
+    if no_sales:
+        _log(f"sin ventas en el log esta semana ({len(no_sales)}): "
+             + ", ".join(no_sales)
+             + " -- normal si no vendieron; si vendieron, el nombre no matchea")
+    if held_all:
+        _log(f"ya cargados y DISTINTOS al log, no se tocaron: {', '.join(held_all)}")
+    if not plan:
+        _log("nothing to write")
+        return 0
+    _log(f"{len(plan)} cell(s) would change:")
+    for a1, metric, old, new in plan:
+        _log(f"  {a1:<8} {metric:<7} {old or '(blank)':>8} -> {new or '(blank)'}")
+    if a.preview or not a.apply:
+        _log("PREVIEW -- nada escrito")
+        return 0
+    # USER_ENTERED for the same reason as main(): RAW stores "2" as text and
+    # every SUM on the board skips text.
+    _retry(ws.batch_update, [{"range": a1, "values": [[new]]}
+                             for a1, _m, _o, new in plan],
+           value_input_option="USER_ENTERED")
+    _log(f"wrote {len(plan)} cell(s) to {ws.title!r}")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--rep", default=DEFAULT_REP)
+    ap.add_argument("--rep", action="append",
+                    help="one rep (the old single-rep path). Repeat it for "
+                         "several; leave it out to fill every RT row")
     ap.add_argument("--date", help="any day in the target week (YYYY-MM-DD); "
                                    "default yesterday")
     ap.add_argument("--from-file", help="parse this crosstab instead of pulling")
@@ -394,6 +607,14 @@ def main(argv=None) -> int:
     day = (dt.date.fromisoformat(a.date) if a.date
            else dt.date.today() - dt.timedelta(days=1))
     sunday = week_ending(day)
+    reps = a.rep
+    a.rep = (reps or [DEFAULT_REP])[0]
+    diagnostic = a.probe_filters or a.list_sheets or a.dump
+    if not diagnostic and (not reps or len(reps) > 1):
+        if a.source != "order-log":
+            _log("  !! road-trip mode reads the order log only")
+            return 2
+        return run_rt(a, day, sunday, reps)
     _log(f"rep: {a.rep}   week ending {sunday.isoformat()}")
 
     if a.probe_filters:
