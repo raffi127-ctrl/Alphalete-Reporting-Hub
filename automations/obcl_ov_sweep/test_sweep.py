@@ -151,5 +151,24 @@ class ReadyForOwnerSubmit(unittest.TestCase):
                                                           _all_but_submit()))
 
 
+class FullyOnboarded(unittest.TestCase):
+    """Da'ryan Stringer, Megan's screenshot 2026-09-21 — the finished shape."""
+
+    def _row(self):
+        c = _all_but_submit()
+        c[16] = {"text": "\u2713 Approved\n09/21/26\n12:00 AM",
+                 "html": '<span class="badge bg-success">'}
+        return c
+
+    def test_all_four_columns_done(self):
+        self.assertEqual(ov_table.done_columns(VP_HEADS, self._row()),
+                         {c: True for c in config.COLUMNS})
+
+    def test_ready_too_but_run_ticks_green_instead_of_blue(self):
+        # ready is True; run.py only paints blue when Owner Submit is NOT
+        # being ticked in the same pass.
+        self.assertTrue(ov_table.ready_for_owner_submit(VP_HEADS, self._row()))
+
+
 if __name__ == "__main__":
     unittest.main()
