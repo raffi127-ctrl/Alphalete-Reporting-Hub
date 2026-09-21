@@ -21,6 +21,7 @@ schedule_config (`org_active_headcount_email`).
     python -m automations.org_active_headcount.email_send            # dry run
     python -m automations.org_active_headcount.email_send --post
     python -m automations.org_active_headcount.email_send --post --only eve@alphaletemarketing.com
+    python -m automations.org_active_headcount.email_send --post --update   # resend after a fix
 Python 3.9-safe (Lucy runtime).
 """
 from __future__ import annotations
@@ -80,11 +81,45 @@ def delta_range(g, today: Optional[dt.date] = None) -> str:
     return f"A{dx['hdr']}:{d.A(last)}{dx['totals']}"
 
 
+def totals_mismatch(g) -> List[str]:
+    """The same week, read from its three places, must be ONE number: the
+    Ongoing block's current WE column, the daily block's Totals row on its last
+    filled day, and the delta box's week 'This week'. Plus each filled day of
+    the daily Totals row against that day's 'This week' total in the delta box.
+
+    They are hand-written formulas with their own rules, and they drifted more
+    than once: 2026-09-21 the delta box counted a '-' day as 0 (SUMIF) while the
+    Totals row carries the last known number — 457 vs 516 went out in the mail.
+    Returns one line per disagreement; empty = all agree."""
+    dl, og, dx = d.find_daily(g), d.find_ongoing(g), d.find_delta(g)
+    out = []
+    day_tot = [d._num(d._c(g, dl["totals"], k)) for k in dl["days"]]
+    filled = [i for i, v in enumerate(day_tot) if v is not None]
+    for i in filled:
+        dv = d._num(d._c(g, dx["totals"], dx["this"][i]))
+        if dv != day_tot[i]:
+            out.append(f"{d.DAYS[i]}: daily Totals {day_tot[i]} vs delta box {dv}")
+    if filled:
+        last = day_tot[filled[-1]]
+        ongoing = d._num(d._c(g, og["totals"], og["wcols"][0][0]))
+        week = d._num(d._c(g, dx["totals"], dx["this"][0] - 3))
+        if ongoing != last:
+            out.append(f"week: Ongoing {og['wcols'][0][1]} {ongoing} vs daily Totals {last}")
+        if week != last:
+            out.append(f"week: delta box This week {week} vs daily Totals {last}")
+    return out
+
+
 def build_pngs(today: Optional[dt.date] = None,
                sandbox: bool = False) -> List[Tuple[Path, str]]:
     from automations.org_sales_board.screenshot_email import _export_png, _access_token
     ws = d.open_tab(sandbox)
     g = ws.get_all_values()
+    bad = totals_mismatch(g)
+    if bad:
+        # Fail the run (orchestrator alerts) rather than mail numbers that
+        # contradict each other on the same page.
+        raise SystemExit("totals disagree, mail NOT sent:\n  " + "\n  ".join(bad))
     parts = [("board", board_range(g)), ("delta", delta_range(g, today))]
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     token = _access_token()
@@ -104,6 +139,8 @@ def main(argv=None) -> int:
     ap.add_argument("--today", type=dt.date.fromisoformat, help="pretend today is this date")
     ap.add_argument("--sandbox", action="store_true",
                     help="shoot the SANDBOX copy of the tab instead of the live one")
+    ap.add_argument("--update", action="store_true",
+                    help="resend after a fix: subject starts with 'UPDATE'")
     a = ap.parse_args(argv)
     from automations.shared import report_email
     today = a.today or dt.date.today()
@@ -114,7 +151,7 @@ def main(argv=None) -> int:
     yday = today - dt.timedelta(days=1)
     try:
         resp = report_email.send_boards(
-            subject=f"{TITLE} — through {yday:%a %m/%d}",
+            subject=f"{'UPDATE — ' if a.update else ''}{TITLE} — through {yday:%a %m/%d}",
             to=to, title=TITLE.upper(),
             blocks=[("Headcount", shots[0][0]), ("Delta vs last week", shots[1][0])],
             dry_run=not a.post)
