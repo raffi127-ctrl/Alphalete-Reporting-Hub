@@ -637,9 +637,13 @@ def weekly_needs(today: dt.date) -> dt.date:
 # the feed move day to day. The extra day applies every day, not only Mondays —
 # bounded here because opt_je is this sheet's only caller and runs Mondays only,
 # so no other day is ever judged.
+#
+# SUPERSEDED 2026-09-21 for JE: the "+1 day" bar still alerted on a Monday
+# when the one ICD opt_je pulls simply didn't sell Saturday. That view now sits
+# under ONE_OWNER_MARKERS instead (never date-judged); the history above is
+# kept because the org-wide JE views really do lag a day.
 LAGGY_SOURCE_DAYS = {
     "automationpull-nichurnview": 2,
-    "jeallretailerssalessummarybylocation": 2,
 }
 
 
@@ -739,6 +743,38 @@ def business_needs(today: dt.date,
 WEEK_PINNED_MARKERS = (
     "ddfullyexp",
 )
+
+
+# --- Views only ever pulled filtered to ONE owner ----------------------------
+# The fifth shape, and the only one where the date column cannot speak for the
+# feed at all. A crosstab lists only the days that owner sold, so its newest
+# date is that owner's last sale — a small ICD's quiet weekend reads exactly
+# like a frozen feed.
+#
+# JEAllRetailersSalesSummarybyLocation is the case (thread
+# `drop-tableau-stale-justenergyrtl-…-jeallretaile`, 2026-09-21: "newest
+# 2026-09-18, needs 2026-09-19"). Its only caller, alphalete_org_report/opt_je,
+# pulls it with `ICD Name=<one ICD>` in the URL. That morning the one ICD was
+# Brandon Stallkamp: 2 stores, 4 sales all week, dated 9/15 and 9/18 — and the
+# feed itself was fine: org_sales_board's org-wide JE pull (WeeklyMetricsbyICD,
+# Lucy 1, same morning) had every day Mon 9/14..Sat 9/19, Saturday the biggest
+# (27 sales across the board's 3 ICDs). It sat under LAGGY_SOURCE_DAYS before
+# this, which only moved the bar a day; no bar fits a one-owner slice.
+#
+# Not judged, not un-watched: JE freshness is still judged org-wide every
+# morning through WeeklyMetricsbyICD (content check) and org_sales_board's own
+# staleness guard. ⚠ Name the VIEW, never the workbook — WeeklyMetricsbyICD
+# lives in the same workbook and must keep being judged.
+ONE_OWNER_MARKERS = (
+    "jeallretailerssalessummarybylocation",
+)
+
+
+def is_one_owner_source(label: str) -> bool:
+    """Is this view only ever pulled filtered to a single owner, so its newest
+    date says nothing about whether the feed is current?"""
+    low = (label or "").lower()
+    return any(m in low for m in ONE_OWNER_MARKERS)
 
 
 def is_week_pinned_source(label: str) -> bool:
@@ -885,6 +921,13 @@ def check_export(path,
     try:
         today = today or dt.date.today()
         label = _view_label(view_url, sheet)
+        if is_one_owner_source(label):
+            # Its dates are ONE owner's sales days, not the feed's — nothing
+            # here can say the feed is behind. See ONE_OWNER_MARKERS.
+            out["column"] = "one owner's slice — not judged for feed freshness"
+            if verbose:
+                _say("  [freshness] {} — {}".format(label, out["column"]))
+            return out
         # A weekly source gets the weekly bar unless the CALLER named a date:
         # an explicit `needs` is a report saying it knows better, and this must
         # never tighten it — only loosen the daily default that never fitted.

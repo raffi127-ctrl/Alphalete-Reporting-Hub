@@ -389,6 +389,32 @@ def release_lock():
         pass
 
 
+REPORT_ID = "funnel_board"
+
+
+def record_delivery(note, *, real):
+    """Write today's run manifest — the PROOF of delivery
+    shared/delivery_check looks for.
+
+    2026-09-21: six days in a row this ran clean and its ticket stayed open —
+    "ran clean, but nothing can confirm it DELIVERED" — because it has no
+    verify and wrote no manifest. Only on a real, complete write: a dry run,
+    a skipped (locked) run or a pass with failed offices delivered nothing
+    new, and writes nothing, so it can't erase an earlier pass's proof.
+    Never raises."""
+    if not real:
+        return
+    try:
+        from automations.shared import run_manifest
+        run_manifest.write_manifest(REPORT_ID, succeeded=["Funnel Board tabs"],
+                                    note=note)
+        log("manifest: %s" % note)
+    except Exception as e:  # noqa: BLE001
+        log("!! couldn't write the run manifest (%s: %s) — the board is "
+            "written, but a failure ticket won't close itself"
+            % (type(e).__name__, e))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="pull and report, write nothing")
@@ -617,6 +643,9 @@ def main():
         # Stamp AFTER the write — build.py wipes the tab and rewrites it, so a
         # stamp put down any earlier wouldn't survive the run that set it.
         guard.stamp(S, API, _auth_identity(), log)
+        if not failed:
+            record_delivery("%d office(s) refreshed, board rebuilt" % len(fresh),
+                            real=True)
     return rc or (1 if failed else 0)
 
 

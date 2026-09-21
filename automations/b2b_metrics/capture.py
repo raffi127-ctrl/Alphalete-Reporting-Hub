@@ -340,7 +340,7 @@ def revenue_board_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
         from automations.captainship_boards.run import pull_orderlog
         pull_orderlog(monday, upto, src_csv)
     per_rep, _unpriced = rb.load_priced(src_csv, monday, upto)
-    if not any(rec["days"].get(upto) for rec in per_rep.values()):
+    if not rb.att_day_ready(per_rep, upto):
         raise RuntimeError(
             "revenue board: export has no rows for {} yet — retry later"
             .format(upto))
