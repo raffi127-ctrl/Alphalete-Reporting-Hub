@@ -633,7 +633,8 @@ def _icd_relay_roster() -> str:
 
 AUTOMATED_REPORTS = [
     # 1st to 2nd Below the Mark — the HR alert. Its own LaunchAgent
-    # (com.alphalete.below-the-mark) at 13:00 and 18:30, NOT the 4am batch, so
+    # (com.alphalete.below-the-mark) at each office's own 11:00 AM and 6:30 PM
+    # (eight CT times, Mon-Sat), NOT the 4am batch, so
     # self_scheduled puts it under the TIME SET reports with its real times.
     # CARD ID MUST SLUG-MATCH the wrapper's report_id (`below_the_mark`), or the
     # resolver files its runs under a library card of its own and this card says
@@ -649,15 +650,15 @@ AUTOMATED_REPORTS = [
         "run_machine": "Lucy 1",
         "run_rerun_id": "below_the_mark",
         "self_scheduled": True,
-        # TWO passes a day, both the same fill, so the pill counts runs rather
-        # than listing each as its own phase — the same shape as the Daily Focus
-        # morning pass + 6:30pm refill.
-        "daily_runs": 2,
+        # EIGHT passes a day (Rafael 2026-09-21): each time zone at its own
+        # 11:00 AM and 6:30 PM. Same fill every time, so the pill counts runs.
+        "daily_runs": 8,
         "schedule": {
-            "frequency": "weekdays",
-            "time": "6:30 PM",
-            "time_label": "1 PM · 6:30 PM CT",
-            "estimated_minutes": 20,
+            "frequency": "daily",
+            "weekdays": [0, 1, 2, 3, 4, 5],
+            "time": "8:30 PM",
+            "time_label": "11 AM · 6:30 PM local, per office (10 AM–8:30 PM CT)",
+            "estimated_minutes": 10,
         },
         "sheet_url": (
             "https://docs.google.com/spreadsheets/d/"
@@ -665,11 +666,14 @@ AUTOMATED_REPORTS = [
         ),
         "description": (
             "The offices at or under **40%** on *Retention first showed up "
-            "booked second* for the CURRENT day, worst first, so HR knows who "
-            "to look at first. Twice a day, so a number that moved is visible."
+            "booked second* day by day, worst first, so HR knows who "
+            "to look at first. Each office is re-checked at ITS OWN **11:00 "
+            "AM** (yesterday's callbacks are in) and **6:30 PM** (the day "
+            "closed) local time, Monday to Saturday."
             "\n\n"
-            "Every pass DMs the filled tab as a screenshot to Rafael, Carlos, "
-            "Camila, Perla and Evelyn — one shared group DM, not five."
+            "Every pass DMs a picture of that time zone's offices — the week so "
+            "far, and on Mondays the whole week that just ended — to Rafael, "
+            "Carlos, Camila, Perla and Evelyn, one shared group DM."
             "\n\n"
             "⚠️ The tab is a **snapshot, not a history**: each pass replaces "
             "the list. An office that was under the bar at 1 PM and booked its "

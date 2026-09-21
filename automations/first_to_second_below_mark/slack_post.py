@@ -106,8 +106,9 @@ def main(argv=None) -> int:
                          "the full list, for a targeted test")
     ap.add_argument("--tab", default=None, help="screenshot a different tab")
     ap.add_argument("--board", action="store_true",
-                    help="send the two-week board's picture instead (last week's "
-                         "day on top, today below) -- board_shot.build_png")
+                    help="send the two-week board's picture instead: this pass's "
+                         "offices, the week so far (Mondays: last week whole too) "
+                         "-- board_shot.build_png")
     args = ap.parse_args(argv)
     dry = not args.post
 

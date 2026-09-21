@@ -194,8 +194,8 @@ def fetch_days(owners: List[str], week_label: str, day: str, *,
     return out, gaps
 
 
-def fetch_weeks(owner_weeks: Dict[str, List[str]], *, logfn=print
-                ) -> Tuple[Dict[str, Dict[str, Dict[str, Dict[str, Optional[float]]]]], List[str]]:
+def fetch_weeks(owner_weeks: Dict[str, List[str]], *, days: Optional[List[str]] = None,
+                logfn=print) -> Tuple[Dict[str, Dict[str, Dict[str, Dict[str, Optional[float]]]]], List[str]]:
     """Every day of several weeks at once, for the two-week board.
 
     owner_weeks: {owner: [week label, ...]} -- last week's roster is not always
@@ -247,7 +247,9 @@ def fetch_weeks(owner_weeks: Dict[str, List[str]], *, logfn=print
                     gaps.append(f"{owner} (office {office_id}, week {wk}): "
                                 f"{type(exc).__name__}: {exc}")
                     continue
-                for day in ars.DAYS:
+                # Retention Details has every day of the week, Saturday too;
+                # the ARS REPORT files stop at Friday.
+                for day in days or ars.DAYS:
                     key = day.lower()
                     row: Dict[str, Optional[float]] = {}
                     for metric, field in METRIC_TO_FIELD.items():

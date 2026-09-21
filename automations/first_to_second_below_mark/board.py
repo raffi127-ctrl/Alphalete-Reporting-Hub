@@ -60,6 +60,7 @@ from automations.recruiting_report import fill
 from automations.first_to_second_below_mark import appstream as apst
 from automations.first_to_second_below_mark import ars_reports as ars
 from automations.first_to_second_below_mark import columns as cols
+from automations.first_to_second_below_mark import office_tz as tz
 from automations.first_to_second_below_mark import run as rep
 from automations.first_to_second_below_mark import source as src
 
@@ -68,6 +69,22 @@ from automations.first_to_second_below_mark import source as src
 # became '1st to 2nd below the mark (old)'.
 BOARD_TAB = "1st to 2nd below the mark"
 TEMPLATE_TAB = rep.SANDBOX_TAB           # the live tab: read for its look only
+# The same board cut down to the offices of ONE pass (one time zone's 11:00 or
+# 6:30 PM), which is what the picture is taken from. Generated like the board;
+# it stays VISIBLE because a hidden tab exports as a blank page.
+PICTURE_TAB = "1st to 2nd below the mark (picture)"
+# Every office's numbers as of the last time that office was pulled, so a pass
+# that pulls only one zone can still rebuild the whole board. Hidden, generated.
+DATA_TAB = "1st to 2nd below the mark DATA"
+
+# What the report measures, in words, on top of every board and picture:
+# Rafael (2026-09-21) wanted it impossible to miss what the numbers are.
+REPORT_TITLE = "RETENTION: FIRST SHOWED UP → BOOKED SECOND"
+
+# Monday to SATURDAY (Rafael, 2026-09-21). AppStream has Saturday; the ARS
+# REPORT files stop at Friday, so Saturday's qualified/answered columns stay
+# blank and only C/D/E fill.
+WEEK_DAYS = list(ars.DAYS) + ["Saturday"]
 
 TITLE_ROW, STATUS_ROW, BANNER_ROW, HEADER_ROW = 1, 2, 3, 4
 FIRST_BODY_ROW = 5
@@ -105,7 +122,7 @@ def this_week_start(today: dt.date) -> dt.date:
 
 
 def day_date(week_start: dt.date, day: str) -> dt.date:
-    return week_start + dt.timedelta(days=ars.DAYS.index(day) + 1)
+    return week_start + dt.timedelta(days=WEEK_DAYS.index(day) + 1)
 
 
 # ----------------------------------------------------------- one day's result
@@ -173,22 +190,29 @@ def _with_network_retry(fn, *, logfn=print, what: str = "", attempts: int = 3,
             time.sleep(wait)
 
 
-def pull(weeks: List[src.Week], starts: List[dt.date], headers: List[str], *,
-         today: dt.date, use_appstream: bool = True, show_all: bool = False,
-         refresh_index: bool = False, logfn=print) -> Tuple[List[WeekResult], List[str]]:
-    """Every day of every week, from scratch."""
+RowKey = Tuple[str, str, str]                           # (week label, day, owner)
+
+
+def fetch_rows(weeks: List[src.Week], starts: List[dt.date], headers: List[str], *,
+               today: dt.date, use_appstream: bool = True, refresh_index: bool = False,
+               only: Optional[set] = None, logfn=print) -> Tuple[Dict[RowKey, list], List[str]]:
+    """{(week, day, owner): row} for every day that has happened, pulled fresh.
+
+    `only` limits the pull to those owners (one time zone's pass); None pulls
+    everybody."""
     notes: List[str] = []
     labels = [w.label for w in weeks]
 
     owner_weeks: Dict[str, List[str]] = {}
     for w in weeks:
         for o in w.owners:
-            owner_weeks.setdefault(o.name, []).append(w.label)
+            if only is None or o.name in only:
+                owner_weeks.setdefault(o.name, []).append(w.label)
 
     as_data: Dict[str, Dict[str, Dict[str, dict]]] = {}
     if use_appstream and owner_weeks:
         try:
-            as_data, gaps = apst.fetch_weeks(owner_weeks, logfn=logfn)
+            as_data, gaps = apst.fetch_weeks(owner_weeks, days=WEEK_DAYS, logfn=logfn)
             notes.extend(gaps)
         except Exception as exc:                          # noqa: BLE001
             notes.append(f"AppStream unavailable: {type(exc).__name__}: {exc}")
@@ -235,19 +259,37 @@ def pull(weeks: List[src.Week], starts: List[dt.date], headers: List[str], *,
             else:
                 notes.append(f"{owner}: no {to_ars[w]} box in {tab!r}")
 
+    rows: Dict[RowKey, list] = {}
+    for w, start in zip(weeks, starts):
+        for o in w.owners:
+            if o.name not in owner_weeks:
+                continue
+            for day in WEEK_DAYS:
+                if day_date(start, day) > today:
+                    continue
+                as_row = ((as_data.get(w.label) or {}).get(day) or {}).get(o.name)
+                ars_day = (ars_data.get((o.name, w.label)) or {}).get(day)
+                rows[(w.label, day, o.name)] = _assemble(o, headers, as_row, ars_day)
+    return rows, notes
+
+
+def build_results(weeks: List[src.Week], starts: List[dt.date], headers: List[str],
+                  rows: Dict[RowKey, list], *, today: dt.date, show_all: bool = False,
+                  only: Optional[set] = None) -> List[WeekResult]:
+    """The board's weeks and days out of the rows, each day's list worst first.
+    `only` keeps just those owners (the picture of one pass)."""
     results = []
     col = cols.resolve(headers)
     shown_i = col.get("first_showed")
     for w, start in zip(weeks, starts):
         wr = WeekResult(label=w.label, start=start)
-        for day in ars.DAYS:
+        for day in WEEK_DAYS:
             d = day_date(start, day)
             dr = DayResult(day=day, date=d, future=d > today, today=d == today)
             if not dr.future:
-                for o in w.owners:
-                    as_row = ((as_data.get(w.label) or {}).get(day) or {}).get(o.name)
-                    ars_day = (ars_data.get((o.name, w.label)) or {}).get(day)
-                    dr.all_rows.append(_assemble(o, headers, as_row, ars_day))
+                dr.all_rows = [rows[(w.label, day, o.name)] for o in w.owners
+                               if (w.label, day, o.name) in rows
+                               and (only is None or o.name in only)]
                 dr.interviewed = sum(
                     1 for r in dr.all_rows
                     if shown_i is not None and isinstance(r[shown_i], (int, float)) and r[shown_i])
@@ -255,7 +297,84 @@ def pull(weeks: List[src.Week], starts: List[dt.date], headers: List[str], *,
                 dr.rows = rep.worst_first(listed, headers)
             wr.days[day] = dr
         results.append(wr)
-    return results, notes
+    return results
+
+
+def pull(weeks: List[src.Week], starts: List[dt.date], headers: List[str], *,
+         today: dt.date, use_appstream: bool = True, show_all: bool = False,
+         refresh_index: bool = False, logfn=print) -> Tuple[List[WeekResult], List[str]]:
+    """Every day of every week, from scratch."""
+    rows, notes = fetch_rows(weeks, starts, headers, today=today, use_appstream=use_appstream,
+                             refresh_index=refresh_index, logfn=logfn)
+    return build_results(weeks, starts, headers, rows, today=today, show_all=show_all), notes
+
+
+# ------------------------------------------------------------ the DATA store
+# A pass pulls only the offices that are due, so the numbers of everybody else
+# come from here: each office as of the last pass that pulled it. It lives in
+# the workbook, not in a file, so the board rebuilds the same from any machine.
+DATA_KEYS = ["Week", "Day", "Owner", "Pulled (CT)"]
+
+
+def store_to_values(rows: Dict[RowKey, list], pulled: Dict[RowKey, str],
+                    headers: List[str]) -> List[list]:
+    out = [DATA_KEYS + list(headers)]
+    order = {d: i for i, d in enumerate(WEEK_DAYS)}
+    for key in sorted(rows, key=lambda k: (k[0], order.get(k[1], 9), k[2])):
+        wk, day, owner = key
+        out.append([wk, day, owner, pulled.get(key, "")] + list(rows[key]))
+    return out
+
+
+def store_from_values(values: List[list], headers: List[str]
+                      ) -> Tuple[Dict[RowKey, list], Dict[RowKey, str]]:
+    """Rows back out of the DATA tab, lined up with TODAY's headers by label,
+    so a column added to the template does not shift every stored number."""
+    rows: Dict[RowKey, list] = {}
+    pulled: Dict[RowKey, str] = {}
+    if not values:
+        return rows, pulled
+    head = [str(h) for h in values[0]]
+    if head[:len(DATA_KEYS)] != DATA_KEYS:
+        return rows, pulled
+    stored = {cols.norm(h): i for i, h in enumerate(head) if i >= len(DATA_KEYS)}
+    for v in values[1:]:
+        if len(v) < 3 or not str(v[0]).strip():
+            continue
+        key = (str(v[0]), str(v[1]), str(v[2]))
+        row = []
+        for h in headers:
+            i = stored.get(cols.norm(h))
+            row.append(v[i] if i is not None and i < len(v) else "")
+        rows[key] = row
+        pulled[key] = str(v[3]) if len(v) > 3 else ""
+    return rows, pulled
+
+
+def read_store(sh, headers: List[str]) -> Tuple[Dict[RowKey, list], Dict[RowKey, str]]:
+    try:
+        ws = fill.worksheet_ci(sh, DATA_TAB)
+    except Exception:                                     # noqa: BLE001
+        return {}, {}
+    return store_from_values(ws.get_all_values(value_render_option="UNFORMATTED_VALUE"),
+                             headers)
+
+
+def write_store(sh, rows: Dict[RowKey, list], pulled: Dict[RowKey, str],
+                headers: List[str]) -> None:
+    values = store_to_values(rows, pulled, headers)
+    width = len(values[0])
+    try:
+        ws = fill.worksheet_ci(sh, DATA_TAB)
+    except Exception:                                     # noqa: BLE001
+        ws = sh.add_worksheet(title=DATA_TAB, rows=len(values) + 100, cols=width + 2)
+        sh.batch_update({"requests": [{"updateSheetProperties": {
+            "properties": {"sheetId": ws.id, "hidden": True}, "fields": "hidden"}}]})
+    if ws.row_count < len(values) or ws.col_count < width:
+        ws.resize(rows=max(ws.row_count, len(values) + 100), cols=max(ws.col_count, width))
+    ws.batch_clear([f"A1:{ars.a1col(max(ws.col_count, width))}{ws.row_count}"])
+    ws.update(range_name=f"A1:{ars.a1col(width)}{len(values)}", values=values,
+              value_input_option="RAW")
 
 
 # ------------------------------------------------------- what the last fill said
@@ -279,7 +398,7 @@ def read_prior(values: List[List], width: int, headers: List[str]) -> PriorFill:
     status = str(values[STATUS_ROW - 1][0]) if len(values) >= STATUS_ROW and values[STATUS_ROW - 1] else ""
     m = _STAMP_RE.search(status)
     prior.stamp = m.group(1) if m else ""
-    prior.show_all = status.lower().startswith("every office")
+    prior.show_all = "every office" in status.lower()
     col = cols.resolve(headers)
     owner_i, pct_i = col.get("owner", 0), col.get("retention")
     for c0 in (0, width + GAP_COLS):
@@ -291,7 +410,7 @@ def read_prior(values: List[List], width: int, headers: List[str]) -> PriorFill:
         for row in values[FIRST_BODY_ROW - 1:]:
             first = str(row[c0]) if len(row) > c0 else ""
             head = first.split(" ", 1)[0]
-            if head.isupper() and head.title() in ars.DAYS:
+            if head.isupper() and head.title() in WEEK_DAYS:
                 day = head.title()
                 continue
             if not day or not first.strip() or pct_i is None:
@@ -415,9 +534,9 @@ def lay_out(results: List[WeekResult], headers: List[str], status: str,
     titles = blank()
     for k, wr in enumerate(results):
         which = "THIS WEEK" if k == 0 else "LAST WEEK"
-        mon, fri = day_date(wr.start, "Monday"), day_date(wr.start, "Friday")
+        mon, sat = day_date(wr.start, "Monday"), day_date(wr.start, "Saturday")
         t = (f"{which}  ·  week of {wr.label}  ·  Mon {mon.month}/{mon.day} – "
-             f"Fri {fri.month}/{fri.day}")
+             f"Sat {sat.month}/{sat.day}  ·  {REPORT_TITLE}")
         if wr.missing:
             t += f"  ·  {wr.missing}"
         titles[k * (width + GAP_COLS)] = t
@@ -429,7 +548,7 @@ def lay_out(results: List[WeekResult], headers: List[str], status: str,
     grid.append(blank())                 # headers: pasted from the template
 
     bands, data, msgs, cell_notes = [], [], [], []
-    for day in ars.DAYS:
+    for day in WEEK_DAYS:
         band = blank()
         for k, wr in enumerate(results):
             moved = [note for (wk, d, _), (_, note) in notes.items()
@@ -667,11 +786,55 @@ def _board_ws(sh, tab: str, rows: int, cols_: int):
     return ws, False
 
 
+def _write_tab(sh, tab: str, tws, t_hrow: int, headers: List[str], widths, head_heights,
+               layout: Layout, n_blocks: int, logfn=print) -> None:
+    width = len(headers)
+    total_cols = n_blocks * width + GAP_COLS * (n_blocks - 1)
+    bws, created = _board_ws(sh, tab, layout.last_row + 60, total_cols)
+    if not created:
+        # Unmerge BEFORE writing. Last run's day bands are merged across a whole
+        # week, and a value written into a merged cell that is not its top-left
+        # one is silently dropped -- the first live run lost every number on the
+        # row where the test run had put Tuesday's band (2026-09-18).
+        sh.batch_update({"requests": [{"unmergeCells": {"range": {"sheetId": bws.id}}}]})
+        bws.batch_clear([f"A1:{ars.a1col(max(bws.col_count, total_cols))}{bws.row_count}"])
+    bws.update(range_name=f"A1:{ars.a1col(total_cols)}{layout.last_row}",
+               values=layout.values, value_input_option="RAW")
+    sh.batch_update({"requests": format_requests(bws.id, tws.id, t_hrow, headers, layout,
+                                                 n_blocks, widths, head_heights)})
+    meta = sh.fetch_sheet_metadata()
+    existing = next((s.get("conditionalFormats", []) for s in meta["sheets"]
+                     if s["properties"]["sheetId"] == bws.id), [])
+    sh.batch_update({"requests": cf_requests(bws.id, existing, headers, n_blocks,
+                                             layout.last_row)})
+    logfn(f"  wrote {layout.last_row} rows to {tab!r}")
+
+
+def pick_pass(roster: List[str], now: dt.datetime, *, due: bool = False,
+              zone: Optional[str] = None) -> Tuple[Optional[set], str, List[str]]:
+    """(owners in this pass or None for all, the pass's name, its zone labels).
+
+    --due takes whoever's local 11:00 AM or 6:30 PM it is right now; --zone
+    takes one zone by hand (a re-run, a preview); neither takes everybody."""
+    if zone:
+        want = zone.strip().title()
+        picked = [o for o in roster if tz.label(tz.zone_or_fallback(o)[0]) == want]
+        return set(picked), f"{want} offices", [want]
+    if due:
+        picked, slot, labels = tz.due(roster, now)
+        if not picked:
+            return set(), "", []
+        return (set(picked), f"{' + '.join(labels)} offices  ·  "
+                f"{tz.slot_text(slot)} local update", labels)
+    return None, "All offices", []
+
+
 def run(*, week_label_: Optional[str] = None, tab: str = BOARD_TAB,
         dry_run: bool = False, show_all: bool = False, use_appstream: bool = True,
         refresh_index: bool = False, today: Optional[dt.date] = None,
-        logfn=print) -> dict:
-    now = dt.datetime.now(dt.timezone.utc).astimezone(rep.CT)
+        due: bool = False, zone: Optional[str] = None,
+        now: Optional[dt.datetime] = None, logfn=print) -> dict:
+    now = (now or dt.datetime.now(dt.timezone.utc)).astimezone(rep.CT)
     today = today or now.date()
     sh = fill.open_by_key(rep.SHEET_ID)
     tws, t_hrow, headers, widths, head_heights = _template(sh, logfn)
@@ -697,8 +860,39 @@ def run(*, week_label_: Optional[str] = None, tab: str = BOARD_TAB,
     logfn(f"  this week {weeks[0].label} ({len(weeks[0].owners)} owners), "
           f"last week {weeks[1].label} ({len(weeks[1].owners)} owners)")
 
-    results, notes = pull(weeks, starts, headers, today=today, use_appstream=use_appstream,
-                          show_all=show_all, refresh_index=refresh_index, logfn=logfn)
+    roster = sorted({o.name for w in weeks for o in w.owners})
+    no_zone = tz.unknown(roster)
+    if no_zone:
+        logfn(f"  {len(no_zone)} offices with no known time zone, run on the Central "
+              f"clock: {', '.join(no_zone)}")
+    in_pass, scope, _labels = pick_pass(roster, now, due=due, zone=zone)
+    if in_pass is not None and not in_pass:
+        logfn(f"  {now:%a %H:%M} CT: no office is at its 11:00 AM or 6:30 PM - nothing to do")
+        return {"written": False, "due": 0, "notes": []}
+
+    # Everybody else's numbers come from the last pass that pulled them. An
+    # office the store has never seen is pulled now too, whatever its clock --
+    # otherwise it would sit off the board until its own zone came round.
+    stored, pulled_at = read_store(sh, headers)
+    shown = {w.label for w in weeks}
+    stored = {k: v for k, v in stored.items() if k[0] in shown}
+    to_pull = None
+    if in_pass is not None:
+        seen = {k[2] for k in stored}
+        to_pull = set(in_pass) | {o for o in roster if o not in seen}
+        logfn(f"  pass: {scope} -> {len(in_pass)} offices"
+              + (f" (+{len(to_pull) - len(in_pass)} never pulled before)"
+                 if len(to_pull) > len(in_pass) else ""))
+    fresh, notes = fetch_rows(weeks, starts, headers, today=today,
+                              use_appstream=use_appstream, refresh_index=refresh_index,
+                              only=to_pull, logfn=logfn)
+    stamp = f"{now:%a} {now.month}/{now.day} {now:%H:%M}"
+    rows = dict(stored)
+    rows.update(fresh)
+    pulled_at = {k: v for k, v in pulled_at.items() if k in rows}
+    pulled_at.update({k: stamp for k in fresh})
+
+    results = build_results(weeks, starts, headers, rows, today=today, show_all=show_all)
     for wr, why in zip(results, missing):
         wr.missing = why
 
@@ -712,11 +906,10 @@ def run(*, week_label_: Optional[str] = None, tab: str = BOARD_TAB,
     prior = read_prior(before, width, headers)
     moved = compare(results, prior, headers)
 
-    stamp = f"{now:%a} {now.month}/{now.day} {now:%H:%M}"
     what = ("every office" if show_all else
             f"offices at or under {rep.THRESHOLD:.0%} on 'Retention first showed up booked second'")
-    status = (f"{what}  ·  every day of both weeks re-checked this run  ·  "
-              f"checked {stamp} CT")
+    status = (f"{what}  ·  each office re-checked at its own 11:00 AM and 6:30 PM  ·  "
+              f"last pass: {scope}, checked {stamp} CT")
     if prior.stamp:
         status += (f"  ·  {len(moved)} moved since the {prior.stamp} check"
                    + (" (named on each day's band)" if moved else ""))
@@ -731,32 +924,31 @@ def run(*, week_label_: Optional[str] = None, tab: str = BOARD_TAB,
         for (wk, day, owner), (_, note) in moved.items():
             logfn(f"    {wk} {day} {owner}: {note}")
 
+    # The picture of this pass: only its offices (everybody, on a full run).
+    pic_results = build_results(weeks, starts, headers, rows, today=today,
+                                show_all=show_all, only=in_pass)
+    for wr, why in zip(pic_results, missing):
+        wr.missing = why
+    pic_moved = {k: v for k, v in compare(pic_results, prior, headers).items()
+                 if in_pass is None or k[2] in in_pass}
+    picture = lay_out(pic_results, headers,
+                      f"{scope}  ·  {what}  ·  checked {stamp} CT", pic_moved, show_all)
+
     if dry_run:
         logfn(f"  DRY RUN - nothing written ({layout.last_row} rows would be)")
         return {"written": False, "rows": layout.last_row, "moved": len(moved),
-                "notes": notes}
+                "scope": scope, "notes": notes}
 
-    total_cols = 2 * width + GAP_COLS
-    bws, created = _board_ws(sh, tab, layout.last_row + 60, total_cols)
-    if not created and board_exists:
-        # Unmerge BEFORE writing. Last run's day bands are merged across a whole
-        # week, and a value written into a merged cell that is not its top-left
-        # one is silently dropped -- the first live run lost every number on the
-        # row where the test run had put Tuesday's band (2026-09-18).
-        sh.batch_update({"requests": [{"unmergeCells": {"range": {"sheetId": bws.id}}}]})
-        bws.batch_clear([f"A1:{ars.a1col(max(bws.col_count, total_cols))}{bws.row_count}"])
-    bws.update(range_name=f"A1:{ars.a1col(total_cols)}{layout.last_row}",
-               values=layout.values, value_input_option="RAW")
-    sh.batch_update({"requests": format_requests(bws.id, tws.id, t_hrow, headers, layout,
-                                                 len(results), widths, head_heights)})
-    meta = sh.fetch_sheet_metadata()
-    existing = next((s.get("conditionalFormats", []) for s in meta["sheets"]
-                     if s["properties"]["sheetId"] == bws.id), [])
-    sh.batch_update({"requests": cf_requests(bws.id, existing, headers, len(results),
-                                             layout.last_row)})
-    logfn(f"  wrote {layout.last_row} rows to {tab!r}")
-    return {"written": True, "tab": tab, "rows": layout.last_row,
-            "moved": len(moved), "notes": notes}
+    _write_tab(sh, tab, tws, t_hrow, headers, widths, head_heights, layout,
+               len(results), logfn)
+    if use_appstream:
+        # A run without AppStream has blank C/D/E; storing that would wipe the
+        # real numbers of every office it pulled.
+        write_store(sh, rows, pulled_at, headers)
+    _write_tab(sh, PICTURE_TAB, tws, t_hrow, headers, widths, head_heights, picture,
+               len(results), logfn)
+    return {"written": True, "tab": tab, "picture_tab": PICTURE_TAB, "rows": layout.last_row,
+            "moved": len(moved), "scope": scope, "notes": notes}
 
 
 def main(argv=None) -> int:
@@ -766,15 +958,31 @@ def main(argv=None) -> int:
     ap.add_argument("--tab", default=BOARD_TAB)
     ap.add_argument("--all", dest="show_all", action="store_true",
                     help="list every office, not only those at or under the mark")
+    ap.add_argument("--due", action="store_true",
+                    help="pull only the offices whose local 11:00 AM / 6:30 PM it is now "
+                         "(the scheduled passes)")
+    ap.add_argument("--zone", default=None, choices=["Eastern", "Central", "Mountain", "Pacific"],
+                    help="pull one time zone's offices by hand")
+    ap.add_argument("--at", default=None,
+                    help="pretend it is this CT time, 'YYYY-MM-DD HH:MM' (checking --due)")
     ap.add_argument("--no-appstream", dest="use_appstream", action="store_false")
     ap.add_argument("--refresh-index", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args(argv)
+    now = (dt.datetime.strptime(args.at, "%Y-%m-%d %H:%M").replace(tzinfo=rep.CT)
+           if args.at else None)
     res = run(week_label_=args.week, tab=args.tab, dry_run=args.dry_run,
               show_all=args.show_all, use_appstream=args.use_appstream,
-              refresh_index=args.refresh_index)
+              refresh_index=args.refresh_index, due=args.due, zone=args.zone, now=now)
     print(f"OK - { {k: v for k, v in res.items() if k != 'notes'} }")
+    if res.get("due") == 0:
+        return NOTHING_DUE
     return 0
+
+
+# Exit code of a --due pass with no office at its 11:00 AM / 6:30 PM: the
+# wrapper sends nothing and exits clean.
+NOTHING_DUE = 3
 
 
 if __name__ == "__main__":
