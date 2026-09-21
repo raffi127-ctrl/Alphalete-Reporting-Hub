@@ -10,8 +10,9 @@ from automations.sales_board_mind_map import run as R
 
 
 def rep(name, trainer="", *, week="5th wk+", team="Se7en Sins",
-        level="level 1"):
-    return R.Rep(name=name, week=week, team=team, level=level, trainer=trainer)
+        level="level 1", apps=0.0, internet=0.0):
+    return R.Rep(name=name, week=week, team=team, level=level, trainer=trainer,
+                 apps=apps, internet=internet)
 
 
 def quiet(*_a, **_k):
@@ -58,7 +59,8 @@ class TreeTests(unittest.TestCase):
         roots = R.build_tree([r], [], logfn=quiet)
         # 2 nodes in the branch, but the counts only know about the one rep.
         self.assertEqual(roots[0].size, 2)
-        self.assertEqual(R.stats(list(roots[0].subtree())), (1, 1, 0, 0))
+        st = R.team_stats(list(roots[0].subtree()))
+        self.assertEqual((st["total"], st["leaders"]), (1, 1))
 
     def test_a_trainer_loop_does_not_hang(self):
         a, b = rep("A", "B"), rep("B", "A")
@@ -110,14 +112,42 @@ class DisplayTests(unittest.TestCase):
 
 
 class StatsTests(unittest.TestCase):
+    """Raf's vocabulary (2026-09-21): total active = week two and up, i.e.
+    entry levels + leaders; a week one is a "Week 1 new start", never "in
+    training"."""
 
-    def test_counts_split_active_leaders_training_and_new(self):
-        sub = [rep("a", level="mastermind"), rep("b", level="entry level"),
-               rep("c", level="in training")]
-        ns = R.Rep(name="d", week="1st wk", team="", level="in training",
+    def _team(self):
+        sub = [rep("a", level="mastermind", apps=10, internet=6),
+               rep("b", level="level 1", apps=4, internet=2),
+               rep("c", level="entry level", apps=2, internet=2),
+               rep("d", level="in training", apps=0, internet=0)]
+        ns = R.Rep(name="e", week="1st wk", team="", level="in training",
                    trainer="", new_start=True)
-        active, leaders, training, new = R.stats(sub + [ns])
-        self.assertEqual((active, leaders, training, new), (2, 1, 1, 1))
+        return sub + [ns]
+
+    def test_the_head_counts_are_raf_s_five_lines(self):
+        st = R.team_stats(self._team(), terminated=3)
+        self.assertEqual((st["total"], st["active"], st["leaders"],
+                          st["entry"], st["week1"], st["terminated"]),
+                         (5, 3, 2, 1, 2, 3))
+
+    def test_averages_divide_team_production_by_who_should_sell(self):
+        st = R.team_stats(self._team())
+        # 16 apps / 2 leaders, and / 3 entry+leaders
+        self.assertEqual(st["apps_per_leader"], "8.0")
+        self.assertEqual(st["apps_per_active"], "5.3")
+        self.assertEqual(st["int_per_leader"], "5.0")
+
+    def test_no_leaders_reads_as_a_dash_not_a_zero(self):
+        st = R.team_stats([rep("solo", level="entry level", apps=3)])
+        self.assertEqual(st["apps_per_leader"], "—")
+        self.assertEqual(st["apps_per_active"], "3.0")
+
+    def test_the_bubble_carries_the_leadership_status(self):
+        # Raf's shorthand, not the board's wording (Megan 2026-09-21).
+        self.assertEqual(rep("x", level="level 2").rank, "Lvl 2")
+        self.assertEqual(rep("y", level="in training").rank, "WK1 New Start")
+        self.assertIn("Lvl 2", R._node(rep("x", level="level 2"), {}))
 
 
 class TeamTests(unittest.TestCase):
@@ -172,7 +202,8 @@ class LeaverTests(unittest.TestCase):
         willie = rep("Willie Henderson", "Raf & JD", team="Ceaseless")
         lemsy = rep("Lemsy Vazquez", "Deavion", team="Ceaseless")
         roots = R.build_tree([willie, chloe, lemsy], [],
-                             departed={"deavion allen": "Chloe Johnson"},
+                             departed={"deavion allen": ("Chloe Johnson",
+                                                        "Ceaseless")},
                              logfn=quiet)
         self.assertEqual([r.name for r in roots], ["Willie Henderson"])
         self.assertIn("Lemsy Vazquez", [c.name for c in chloe.children])
@@ -182,16 +213,21 @@ class LeaverTests(unittest.TestCase):
         boss = rep("Willie Henderson", "Raf & JD")
         orphan = rep("Someone", "Gone One")
         R.build_tree([boss, orphan], [],
-                     departed={"gone one": "Gone Two",
-                               "gone two": "Willie Henderson"}, logfn=quiet)
+                     departed={"gone one": ("Gone Two", ""),
+                               "gone two": ("Willie Henderson", "")},
+                     logfn=quiet)
         self.assertEqual([c.name for c in boss.children], ["Someone"])
 
     def test_a_leaver_who_reported_to_the_office_leaves_a_branch_head(self):
         orphan = rep("Someone", "Gone One")
+        orphan.team = ""
         roots = R.build_tree([orphan], [],
-                             departed={"gone one": "Raf & JD"}, logfn=quiet)
+                             departed={"gone one": ("Raf & JD", "Ceaseless")},
+                             logfn=quiet)
         self.assertEqual([r.name for r in roots], ["Someone"])
         self.assertFalse(roots[0].offboard)
+        # and they keep the leaver's team rather than landing on "No team"
+        self.assertEqual(roots[0].team, "Ceaseless")
 
     def test_a_trainer_who_was_never_on_the_board_still_heads_the_team(self):
         r = rep("Elijah Rodriguez", "Bas")

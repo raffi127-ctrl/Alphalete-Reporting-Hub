@@ -119,6 +119,11 @@ UPLINE_BG = "#DCD8CE"                     # a team head with no row on the board
 
 LEADER_LEVELS = {"level 1", "level 2", "mastermind"}
 CARD_LEVELS = {"level 2", "mastermind"}
+# What goes UNDER a name on the bubble. Raf's shorthand, not the board's
+# wording: he never says "in training", and "Lvl 2" is what he asked for.
+RANK_LABELS = {"mastermind": "Mastermind", "level 2": "Lvl 2",
+               "level 1": "Lvl 1", "entry level": "Entry Lvl",
+               "in training": "WK1 New Start"}
 TRAINING_LEVELS = {"in training"}
 # The board's ladder (promotion_checkin.config.LADDER). A roster row that
 # carries none of these is not a person: below the roster the same column
@@ -148,9 +153,12 @@ class Rep:
     """One node of the map."""
 
     def __init__(self, name, week, team, level, trainer, *, new_start=False,
-                 offboard=False):
+                 offboard=False, apps=0.0, internet=0.0):
         self.name, self.week, self.team = name, week, team
         self.level, self.trainer = level, trainer
+        # This week's RUNNING WEEK TOTALS for them, for the per-team averages
+        # Raf asked for (2026-09-21 Loom).
+        self.apps, self.internet = apps, internet
         self.new_start = new_start
         # An upline named in a Trainer cell who has no row on this board
         # (Algemar Kennel, Bas, Deavion). Drawn, so their team has a head to
@@ -169,6 +177,16 @@ class Rep:
     @property
     def size(self) -> int:
         return sum(1 for _ in self.subtree())
+
+    @property
+    def rank(self) -> str:
+        """The leadership status as it goes UNDER the name on the bubble
+        (Raf 2026-09-21: "can we put the leadership status under their name").
+        A week-1 new start reads as that, not as "In Training" — the word Raf
+        never uses."""
+        if self.new_start or self.level in TRAINING_LEVELS:
+            return "WK1 New Start"
+        return RANK_LABELS.get(self.level, (self.level or "").title())
 
     @property
     def upline(self) -> "Rep":
@@ -206,8 +224,38 @@ def _need(titles: Dict[str, int], label: str) -> int:
     return col
 
 
+def running_week_cols(grid) -> Dict[str, int]:
+    """{'APPS': col, 'INT': col} for the RUNNING WEEK TOTALS block.
+
+    By label on BOTH rows, because the same 'APPS'/'INT' sub-headers repeat
+    under LAST WEEK'S and PRIOR WEEK'S totals — three identical pairs, and the
+    wrong one would quietly report a week that is already over."""
+    banners = [(c, str(v).strip().upper())
+               for c, v in enumerate(grid[0], 1) if str(v).strip()]
+    start = next((c for c, v in banners if v == "RUNNING WEEK TOTALS"), None)
+    if start is None:
+        raise BD.BoardLayoutError(
+            "Row 1 has no 'RUNNING WEEK TOTALS' banner — can't tell this "
+            "week's numbers from last week's.")
+    end = next((c for c, _ in banners if c > start), len(grid[2]) + 1)
+    out = {}
+    for c in range(start, end):
+        head = BD._norm(BD._cell(grid, 3, c)).upper()
+        if head in ("APPS", "INT"):
+            out.setdefault(head, c)
+    return out
+
+
+def _num(value) -> float:
+    try:
+        return float(str(value).replace(",", "").strip() or 0)
+    except ValueError:
+        return 0.0
+
+
 def read_board(today: dt.date, *, tab: Optional[str] = None, logfn=print):
-    """(tab title, [Rep], {week: hex}, {gone name: their trainer}).
+    """(tab, [Rep], {week: hex}, {gone: (trainer, team)}, {team: terminated},
+    {new start: classroom trainer}).
 
     `gone` is every terminated row's OWN trainer. Dropping a terminated leader
     would otherwise strand their people under a name nothing resolves —
@@ -221,8 +269,14 @@ def read_board(today: dt.date, *, tab: Optional[str] = None, logfn=print):
     c_train, c_week = _need(titles, COL_TRAINER), _need(titles, COL_WEEK)
     c_team, c_level = _need(titles, COL_TEAM), _need(titles, COL_LEVEL)
 
+    prod = running_week_cols(grid)
     reps, dropped = [], 0
     gone: Dict[str, str] = {}
+    # Raf 2026-09-21: "add a section in there that says terminated so we see how
+    # many people have been terminated that week". They are off the tree, so
+    # their own Team cell is what files them — there is no trainer chain left
+    # to walk.
+    terminated_by_team: Dict[str, int] = {}
     rows: List[int] = []
     for r in lay.roster_rows:
         raw = str(BD._cell(grid, r, lay.name_col) or "").strip()
@@ -239,19 +293,25 @@ def read_board(today: dt.date, *, tab: Optional[str] = None, logfn=print):
         if BD.to_date(BD._cell(grid, r, lay.term_col)) is not None \
                 or BD.day_marks(grid, r, lay.day_blocks):
             dropped += 1
-            gone[_base(raw)] = str(BD._cell(grid, r, c_train) or "").strip()
+            t = str(BD._cell(grid, r, c_team) or "").strip()
+            gone[_base(raw)] = (str(BD._cell(grid, r, c_train) or "").strip(), t)
+            key = t or "No team"
+            terminated_by_team[key] = terminated_by_team.get(key, 0) + 1
             continue
         reps.append(Rep(name=raw,
                         week=BD._norm(BD._cell(grid, r, c_week)),
                         team=str(BD._cell(grid, r, c_team) or "").strip(),
                         level=level,
-                        trainer=str(BD._cell(grid, r, c_train) or "").strip()))
+                        trainer=str(BD._cell(grid, r, c_train) or "").strip(),
+                        apps=_num(BD._cell(grid, r, prod.get("APPS", 0))),
+                        internet=_num(BD._cell(grid, r, prod.get("INT", 0)))))
         rows.append(r)
 
     palette = _read_week_colors(sh, title, lay.name_col, rows, reps, logfn=logfn)
-    logfn("  %r: %d on the roster, %d terminated and dropped"
-          % (title, len(reps), dropped))
-    return title, reps, palette, gone
+    classroom = classroom_trainers(grid)
+    logfn("  %r: %d on the roster, %d terminated and dropped, %d in the "
+          "classroom block" % (title, len(reps), dropped, len(classroom)))
+    return title, reps, palette, gone, terminated_by_team, classroom
 
 
 def _read_week_colors(sh, title: str, name_col: int, rows: List[int],
@@ -297,6 +357,35 @@ def _read_week_colors(sh, title: str, name_col: int, rows: List[int],
     return palette
 
 
+def classroom_trainers(grid) -> Dict[str, str]:
+    """{new start: their trainer} from the 'Classroom / Trainers' block under
+    the roster.
+
+    THE TRAINER IS WHOSE TEAM THEY ARE ON — not whoever ran their 2nd round
+    (Megan 2026-09-21, twice). The 2nd-round interviewer is a recruiting fact
+    and the two are often different people: Noe Rocha was interviewed by Safiya
+    and is trained by Benjamin Kushpit, so the OBCL put him on the wrong team
+    (and, when Safiya's row moved, on no team at all)."""
+    header = None
+    for r in range(1, len(grid) + 1):
+        cells = [BD._norm(BD._cell(grid, r, c)) for c in range(1, 16)]
+        if "classroom" in cells and "trainers" in cells:
+            header = (r, cells.index("classroom") + 1, cells.index("trainers") + 1)
+            break
+    if not header:
+        return {}
+    hrow, name_col, trainer_col = header
+    out: Dict[str, str] = {}
+    for r in range(hrow + 1, len(grid) + 1):
+        who = str(BD._cell(grid, r, name_col) or "").strip()
+        if not who:
+            continue
+        trainer = str(BD._cell(grid, r, trainer_col) or "").strip()
+        if trainer:
+            out.setdefault(_base(who), trainer)
+    return out
+
+
 # --------------------------------------------------- who a leaver reported to
 # How many earlier week tabs to open looking for a trainer who is no longer on
 # the board. Deavion Allen was last on WE 8.30 and Lemsy Vazquez's Trainer cell
@@ -306,8 +395,8 @@ LOOKBACK_WEEKS = 6
 
 
 def lookback_trainers(sh, today: dt.date, wanted, *, tab: str,
-                      weeks: int = LOOKBACK_WEEKS, logfn=print) -> Dict[str, str]:
-    """{name: the trainer they had} for people who have left the board.
+                      weeks: int = LOOKBACK_WEEKS, logfn=print):
+    """{name: (the trainer they had, the team they were on)} for leavers.
 
     Reads earlier 'Sales Board WE' tabs newest-first and stops as soon as every
     wanted name is answered — usually one tab, and none at all on a week where
@@ -325,15 +414,19 @@ def lookback_trainers(sh, today: dt.date, wanted, *, tab: str,
         row1 = head[0] if head else []
         c_train = next((i for i, v in enumerate(row1, 1)
                         if BD._norm(v) == COL_TRAINER), None)
+        c_team = next((i for i, v in enumerate(row1, 1)
+                       if BD._norm(v) == COL_TEAM), None)
         if not c_train:
             continue
         grid = ws.get_values(value_render_option="UNFORMATTED_VALUE")
         lay = BD.find_layout(grid)
-        was: Dict[str, str] = {}
+        was = {}
         for r in lay.roster_rows:
             name = _base(BD._cell(grid, r, lay.name_col))
             if name:
-                was[name] = str(BD._cell(grid, r, c_train) or "").strip()
+                was[name] = (
+                    str(BD._cell(grid, r, c_train) or "").strip(),
+                    str(BD._cell(grid, r, c_team) or "").strip() if c_team else "")
         # Matched the same loose way the Trainer cells are typed: the cell says
         # "Deavion" and the roster said "Deavion Allen".
         for w in wanted - set(found):
@@ -342,9 +435,10 @@ def lookback_trainers(sh, today: dt.date, wanted, *, tab: str,
                 found[w] = was[key]
         if len(found) == len(wanted):
             break
-    for name, trainer in found.items():
-        logfn("  %r has left the board — their people roll up to %r (last seen "
-              "with that trainer)" % (name, trainer or "the office"))
+    for name, (trainer, team) in found.items():
+        logfn("  %r has left the board — their people roll up to %r%s"
+              % (name, trainer or "the office",
+                 " (%s)" % team if team else ""))
     missing = wanted - set(found)
     if missing:
         logfn("  never on this board, kept as a team head: %s"
@@ -366,11 +460,15 @@ def newest_obcl_tab(sh, today: dt.date):
     return best[1] if best else None
 
 
-def read_new_starts(today: dt.date, on_board, *, logfn=print):
-    """[(name, second_rounder)] for people onboarding who are not on the board
-    yet. A row is a real incoming start once somebody has moved its Final
+def read_new_starts(today: dt.date, on_board, classroom=None, *, logfn=print):
+    """[(name, who they hang off)] for people onboarding who are not on the
+    board yet. A row is a real incoming start once somebody has moved its Final
     Status off blank; 'Terminated' is skipped, which is Raf's "remove the
-    person" for the people who never made it in."""
+    person" for the people who never made it in.
+
+    Their TRAINER decides the team (Megan 2026-09-21). The board's classroom
+    block is asked first; the OBCL's 2nd-round interviewer is only the fallback
+    for somebody who has not reached that block yet."""
     sh = BD.open_by_key(OBCL_SHEET_ID)
     ws = newest_obcl_tab(sh, today)
     if ws is None:
@@ -379,7 +477,7 @@ def read_new_starts(today: dt.date, on_board, *, logfn=print):
     grid = ws.get("A1:L400")
     hdr = next((i for i, row in enumerate(grid)
                 if len(row) > 3 and BD._norm(row[3]) == "name"), 1)
-    out = []
+    out, by_trainer = [], 0
     for row in grid[hdr + 1:]:
         row = list(row) + [""] * (12 - len(row))
         name = " ".join((row[3].strip() + " " + row[4].strip()).split())
@@ -390,17 +488,35 @@ def read_new_starts(today: dt.date, on_board, *, logfn=print):
             continue                       # the header block, repeated mid-tab
         if _base(name) in on_board:
             continue                       # already has a row on the board
-        out.append((name, row[1].strip()))
-    logfn("  %d new start(s) onboarding and not on the board yet" % len(out))
+        trained_by = (classroom or {}).get(_base(name), "")
+        out.append((name, trained_by or row[1].strip()))
+        if trained_by:
+            by_trainer += 1
+    logfn("  %d new start(s) onboarding and not on the board yet (%d placed by "
+          "their classroom trainer, the rest by their 2nd round)"
+          % (len(out), by_trainer))
     return out
 
 
 # ------------------------------------------------------------------- tree
-def match_name(raw: str, keys) -> Optional[str]:
+def _words(name: str) -> set:
+    """A name's comparable words, WITH whatever is in parentheses opened up.
+
+    The board writes 'Amjad (MJ) Malhas' and the Trainer cells write 'MJ' —
+    `base_name` drops parentheticals, so those two shared no word at all and
+    the map grew a phantom team head called "Mj" (WE 9.21). The tenure markers
+    still come off: '(Wk 2)' is not a nickname."""
+    text = re.sub(r"\((?:\s*(?:wk|week|nc|rt)\s*\d*\s*)\)", " ",
+                  str(name or ""), flags=re.I)
+    text = text.replace("(", " ").replace(")", " ")
+    return {w for w in _norm(text).split() if w}
+
+
+def match_name(raw: str, keys, originals=None) -> Optional[str]:
     """The one key a free-typed name means, or None. Exact first, then a
-    token-subset both ways so 'Willie' finds 'willie henderson' and 'Deavion'
-    finds 'deavion allen'. Two candidates is a real question for a human, so it
-    answers None rather than guessing."""
+    token-subset both ways so 'Willie' finds 'willie henderson', 'Deavion'
+    finds 'deavion allen' and 'MJ' finds 'Amjad (MJ) Malhas'. Two candidates
+    is a real question for a human, so it answers None rather than guessing."""
     n = _base(raw)
     if not n:
         return None
@@ -408,16 +524,26 @@ def match_name(raw: str, keys) -> Optional[str]:
         n = _base(ALIASES[n])
     if n in keys:
         return n
-    toks = set(n.split())
+    toks = _words(raw if n == _base(raw) else ALIASES.get(_base(raw), raw))
     if not toks:
         return None
     hits = [k for k in keys
             if toks <= set(k.split()) or set(k.split()) <= toks]
+    if len(hits) == 1:
+        return hits[0]
+    # Nobody matched on the plain name: try again with the nicknames opened up
+    # on BOTH sides. `originals` carries the names as the ROSTER spells them,
+    # parentheses and all, because the keys have already had them stripped —
+    # 'mj' only meets 'Amjad (MJ) Malhas' there.
+    originals = originals or {}
+    hits = [k for k, words in ((k, _words(originals.get(k, k))) for k in keys)
+            if toks <= words or words <= toks]
     return hits[0] if len(hits) == 1 else None
 
 
 def _resolve(raw: str, by_name: Dict[str, Rep]) -> Optional[Rep]:
-    key = match_name(raw, by_name)
+    key = match_name(raw, by_name,
+                     {k: r.name for k, r in by_name.items()})
     return by_name[key] if key else None
 
 
@@ -463,30 +589,37 @@ def build_tree(reps: List[Rep], new_starts, *, departed=None, logfn=print):
 
     def upline_of(raw: str, who: str):
         """Follow a trainer name through however many leavers it takes to reach
-        somebody still on the board. Returns (live Rep or None, raw name to
-        blame if nobody was found)."""
-        first, seen, hops = str(raw).strip(), set(), 0
+        somebody still on the board. Returns (live Rep or None, the raw name to
+        blame if nobody was found, the team the last leaver was on).
+
+        That last team is what keeps a new start off a "No team" island: Noe
+        Rocha's 2nd-rounder Safiya Mahmoud left the board, his OBCL row carries
+        no team of its own, and without this he was his own one-man team
+        (2026-09-21)."""
+        first, seen, hops, team = str(raw).strip(), set(), 0, ""
         while raw and hops < 6:
             live = _resolve(raw, by_name)
             if live is not None:
                 if hops:
                     logfn("  %s: trainer %r has left — rolled up to %r"
                           % (who, first, live.display))
-                return live, raw
+                return live, raw, team
             # Matched loosely, like every other name here: `departed` may be
             # keyed by the Trainer cell's spelling ("Deavion") or the roster's
             # ("Deavion Allen"), and both have to find the same person.
             key = match_name(raw, departed)
             if key is None or key in seen:
-                return None, raw
+                return None, raw, team
             seen.add(key)
-            nxt = departed[key]
+            nxt, their_team = departed[key]
+            team = team or their_team
             if not _base(nxt) or _base(nxt) in OFFICE_TRAINERS:
                 logfn("  %s: trainer %r has left and reported to the office — "
-                      "now a branch of their own" % (who, first))
-                return None, ""            # "" = the office trains them now
+                      "now a branch of their own%s"
+                      % (who, first, " on %s" % team if team else ""))
+                return None, "", team      # "" = the office trains them now
             raw, hops = nxt, hops + 1
-        return None, raw
+        return None, raw, team
 
     def offboard_head(raw: str) -> Rep:
         """A trainer with no row here (Algemar Kennel, Bas, Deavion) still
@@ -508,8 +641,9 @@ def build_tree(reps: List[Rep], new_starts, *, departed=None, logfn=print):
         if not t or t in OFFICE_TRAINERS or t == _base(r.name):
             roots.append(r)                # the office trains them directly
             continue
-        live, blame = upline_of(r.trainer, r.display)
+        live, blame, team_hint = upline_of(r.trainer, r.display)
         if live is None and not blame:
+            r.team = r.team or team_hint
             roots.append(r)                # their whole line reported to Raf
             continue
         parent = live or offboard_head(blame)
@@ -520,7 +654,9 @@ def build_tree(reps: List[Rep], new_starts, *, departed=None, logfn=print):
         ns = Rep(name=name, week="1st wk", team="", level="in training",
                  trainer=trainer, new_start=True)
         ns.bg = NEW_START_BG
-        live, blame = upline_of(trainer, name) if _base(trainer) else (None, "")
+        live, blame, team_hint = (upline_of(trainer, name) if _base(trainer)
+                                  else (None, "", ""))
+        ns.team = ns.team or team_hint
         if live is None and not blame:
             roots.append(ns)               # nobody live to hang them off
         else:
@@ -650,14 +786,20 @@ def _count_chip(rep: Rep) -> str:
 
 
 def _node(rep: Rep, palette) -> str:
+    """A bubble: the name (with their structure) and their leadership status
+    under it (Raf 2026-09-21)."""
     if rep.offboard:                       # an upline with no row on the board
-        return ('<span class="node upline" style="--fill:%s;--tint:%s">%s%s</span>'
-                % (UPLINE_BG, _ink(UPLINE_BG), html.escape(rep.display),
-                   _count_chip(rep)))
-    bg = _fill(rep, palette)
+        bg, cls = UPLINE_BG, " upline"
+        rank = "Team leader"
+    else:
+        bg, cls = _fill(rep, palette), ""
+        rank = rep.rank
     tag = '<span class="tag">NEW</span>' if rep.new_start else ""
-    return ('<span class="node" style="--fill:%s;--tint:%s">%s%s%s</span>'
-            % (bg, _ink(bg), html.escape(rep.display), tag, _count_chip(rep)))
+    return ('<span class="node%s" style="--fill:%s;--tint:%s">'
+            '<span class="nm">%s%s%s</span>'
+            '<span class="rank">%s</span></span>'
+            % (cls, bg, _ink(bg), html.escape(rep.display), tag,
+               _count_chip(rep), html.escape(rank)))
 
 
 def _kids(rep: Rep, palette) -> str:
@@ -691,113 +833,220 @@ def _branch(rep: Rep, palette) -> str:
             % (_node(rep, palette), cols, _kids(rep, palette)))
 
 
-def stats(sub: List[Rep]) -> Tuple[int, int, int, int]:
-    """Counts for a subtree. An off-board upline is drawn but never counted —
-    they have no row on this board, so counting them would put a person in the
-    office totals that the board itself does not carry."""
-    sub = [r for r in sub if not r.offboard]
-    active = sum(1 for r in sub if not r.new_start
-                 and r.level not in TRAINING_LEVELS)
-    leaders = sum(1 for r in sub if r.level in LEADER_LEVELS)
-    training = sum(1 for r in sub if not r.new_start
-                   and r.level in TRAINING_LEVELS)
-    new = sum(1 for r in sub if r.new_start)
-    return active, leaders, training, new
+def team_stats(members: List[Rep], terminated: int = 0) -> Dict[str, object]:
+    """The numbers Raf reads off a team (2026-09-21 Loom, his own words).
+
+    His vocabulary, not the board's: he never says "in training", so a week one
+    is a "Week 1 new start"; "total active" is everybody from week two up, i.e.
+    the entry levels plus the leaders. Averages divide the TEAM's production by
+    the count of the people expected to sell — so a team carried by one leader
+    reads differently from one where the whole bench produces.
+    """
+    people = [r for r in members if not r.offboard]
+    leaders = [r for r in people if r.level in LEADER_LEVELS]
+    entry = [r for r in people if r.level == "entry level"]
+    week1 = [r for r in people if r.new_start or r.level in TRAINING_LEVELS]
+    active = leaders + entry               # week 2 and up
+    apps = sum(r.apps for r in people)
+    internet = sum(r.internet for r in people)
+    return {
+        "total": len(people), "active": len(active), "leaders": len(leaders),
+        "entry": len(entry), "week1": len(week1), "terminated": terminated,
+        "apps": apps, "internet": internet,
+        "int_per_leader": _avg(internet, len(leaders)),
+        "int_per_active": _avg(internet, len(active)),
+        "apps_per_leader": _avg(apps, len(leaders)),
+        "apps_per_active": _avg(apps, len(active)),
+    }
 
 
-def _stat_dl(sub: List[Rep]) -> str:
-    active, leaders, training, new = stats(sub)
-    return ("<dl><dt>Total active</dt><dd>%d</dd>"
-            "<dt>Leaders</dt><dd>%d</dd>"
-            "<dt>In training</dt><dd>%d</dd>"
-            "<dt>New starts</dt><dd>%d</dd></dl>"
-            % (active, leaders, training, new))
+def _avg(total: float, n: int) -> str:
+    return "—" if not n else ("%.1f" % (total / n))
+
+
+def structure_strip(members: List[Rep], terminated: int = 0) -> str:
+    """The team's structure, right under its name bubble (Raf 2026-09-21:
+    "adding team structures to the names makes sense"). Small and one line —
+    the full box still sits at the bottom of the page."""
+    st = team_stats(members, terminated)
+    bits = [("Leaders", st["leaders"]), ("Entry Lvl", st["entry"]),
+            ("WK1 New Starts", st["week1"]), ("Terminated", st["terminated"])]
+    chips = "".join('<span class="bit"><b>%s</b> %s</span>' % (v, k)
+                    for k, v in bits)
+    avgs = [("int/leader", st["int_per_leader"]),
+            ("int/entry+lead", st["int_per_active"]),
+            ("apps/leader", st["apps_per_leader"]),
+            ("apps/entry+lead", st["apps_per_active"])]
+    chips += "".join('<span class="bit avg"><b>%s</b> %s</span>' % (v, k)
+                     for k, v in avgs)
+    return '<div class="structure">%s</div>' % chips
 
 
 def _leader_card(ld: Rep, palette) -> str:
+    """A Level 2+ card. KEPT at Raf's word (2026-09-21) after he first asked to
+    drop it: Zoey and Safiya read it to see where they stand to qualify, which
+    is the whole reason Carlos's map has one."""
     return ('<div class="leader-card"><div class="who">%s</div>%s</div>'
             % (_node(ld, palette), _stat_dl(list(ld.subtree()))))
 
 
-def render_html(week: str, reps: List[Rep], groups, palette) -> str:
+def _stat_dl(members: List[Rep], terminated: int = 0) -> str:
+    st = team_stats(members, terminated)
+    rows = [("Total", st["total"]), ("Total active", st["active"]),
+            ("Leaders", st["leaders"]), ("Entry Lvl", st["entry"]),
+            ("WK1 New Starts", st["week1"]),
+            ("Terminated this week", st["terminated"])]
+    avgs = [("New internet / leader", st["int_per_leader"]),
+            ("New internet / entry+leaders", st["int_per_active"]),
+            ("Apps / leader", st["apps_per_leader"]),
+            ("Apps / entry+leaders", st["apps_per_active"])]
+    body = "".join("<dt>%s</dt><dd>%s</dd>" % (k, v) for k, v in rows)
+    tail = "".join('<dt class="avg">%s</dt><dd class="avg">%s</dd>' % (k, v)
+                   for k, v in avgs)
+    return "<dl>%s%s</dl>" % (body, tail)
+
+
+def render_html(week: str, reps: List[Rep], groups, palette,
+                terminated_by_team: Optional[Dict[str, int]] = None,
+                *, only_team: Optional[str] = None) -> str:
     """`groups` comes from plan_teams — one section per MAIN TEAM, biggest
-    first, with the team's leader already lifted onto the roof."""
+    first, with the team's leader already lifted onto the roof.
+
+    `only_team` renders ONE team on its own page, for the per-team shots that
+    go in the thread (Raf 2026-09-21: "inside the thread, it's just per team").
+    """
     css = (Path(__file__).parent / "style.css").read_text()
+    terminated_by_team = terminated_by_team or {}
     team_leads = {id(lead) for _, _, lead, _, _, _ in groups if lead is not None}
+    shown = [g for g in groups if only_team is None or g[0] == only_team]
 
     sections = []
-    for team, branches_in, lead, lead_name, first_gens, members in groups:
-        # Same shape as every other bubble: the leader's 1st gens / the whole
-        # team. A team with no main leader counts the lines it runs on.
+    for team, branches_in, lead, lead_name, first_gens, members in shown:
         headline = ('<span class="root-node">%s<span class="count">%d/%d</span>'
                     '%s</span>'
-                    % (html.escape(team), first_gens,
-                       len(members),
+                    % (html.escape(team), first_gens, len(members),
                        ('<span class="lead">%s</span>' % html.escape(lead_name))
                        if lead_name else ""))
 
-        # The team's OWN Level 2+ leaders, beside the team they belong to
-        # (Megan 2026-09-20) instead of one office-wide rail sorted by size —
-        # a card is only useful next to the branch it describes. The main team
-        # leader is left off: their numbers are the team's, already on the roof
-        # and in the totals.
+        # The team's structure sits right under its name (Raf 2026-09-21),
+        # with the full box still at the bottom of the page.
+        gone_here = terminated_by_team.get(team, 0)
+        strip = structure_strip(members, gone_here)
+
+        # The Level 2+ cards STAY — Raf asked to drop them, then kept them
+        # once Megan pointed out Zoey and Safiya read them to see where they
+        # stand to qualify — but they move DOWN, to the bottom right of their
+        # own team block instead of a tall rail beside it.
         in_team = [r for r in members
                    if r.level in CARD_LEVELS and id(r) not in team_leads]
         cards = "".join(_leader_card(ld, palette) for ld in
                         sorted(in_team, key=lambda r: (-structure(r)[1],
                                                        -structure(r)[0],
                                                        r.display)))
-        aside = ('<aside class="team-leaders"><h2>Level 2+ on this team</h2>%s'
-                 '</aside>' % cards) if cards else ""
+        side = ""
+        if cards or gone_here:
+            side = ('<aside class="team-side">'
+                    '<div class="gone">Terminated this week'
+                    '<b>%d</b></div>%s%s</aside>'
+                    % (gone_here,
+                       '<h2>Lvl 2+ on this team</h2>' if cards else "",
+                       cards))
 
         sections.append(
             '<section><div class="team">%s<div class="root-stem"></div></div>'
-            '<div class="body"><div class="map"><div class="rail"></div>'
+            '%s<div class="body"><div class="map"><div class="rail"></div>'
             '<div class="branches">%s</div></div>%s</div></section>'
-            % (headline, "".join(_branch(b, palette) for b in branches_in),
-               aside))
+            % (headline, strip,
+               "".join(_branch(b, palette) for b in branches_in), side))
 
-    # Legend: the weeks that actually exist this week, in week order.
+    # Legend: the weeks that actually exist on this page, in week order.
+    on_page = [r for g in shown for r in g[5]] if only_team else reps
     chips = []
-    for key in sorted({r.week for r in reps if r.week},
+    for key in sorted({r.week for r in on_page if r.week},
                       key=lambda k: WEEKS.get(k, (9, k))[0]):
         bg = palette.get(key) or WEEK_FALLBACK.get(key, "#E4E0D6")
-        chips.append('<span class="node" style="--fill:%s;--tint:%s">%s</span>'
+        chips.append('<span class="node" style="--fill:%s;--tint:%s">'
+                     '<span class="nm">%s</span></span>'
                      % (bg, _ink(bg), html.escape(WEEKS.get(key, (9, key.title()))[1])))
-    chips.append('<span class="node" style="--fill:%s;--tint:%s">New start</span>'
+    chips.append('<span class="node" style="--fill:%s;--tint:%s">'
+                 '<span class="nm">Week 1 new start</span></span>'
                  % (NEW_START_BG, _ink(NEW_START_BG)))
 
-    # One totals box per main team, then the office.
-    boxes = []
-    for team, _branches, _lead, _name, _first, members in groups:
-        sub = members
-        boxes.append('<div class="office-box"><div class="title">%s</div>%s</div>'
-                     % (html.escape(team), _stat_dl(sub)))
-    boxes.append('<div class="office-box whole"><div class="title">Whole office'
-                 '</div>%s</div>' % _stat_dl(reps))
+    # The office line only belongs on the whole-office page.
+    totals = ""
+    if only_team is None:
+        boxes = "".join(
+            '<div class="office-box"><div class="title">%s</div>%s</div>'
+            % (html.escape(t), _stat_dl(m, terminated_by_team.get(t, 0)))
+            for t, _b, _l, _n, _f, m in groups)
+        boxes += ('<div class="office-box whole"><div class="title">Whole '
+                  'office</div>%s</div>'
+                  % _stat_dl(reps, sum(terminated_by_team.values())))
+        totals = ('<section class="totals"><h2>Totals</h2>'
+                  '<div class="boxes">%s</div></section>' % boxes)
 
+    title = "Alphalete Mind Map" if only_team is None else html.escape(only_team)
     return """<meta charset="utf-8">
 <title>Alphalete Sales Board Mind Map</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800&display=swap">
 <style>%s</style>
 <header>
-  <h1>Alphalete Mind Map</h1>
+  <h1>%s</h1>
   <p class="eyebrow">Pulled from the Sales Board WE %s</p>
   <p class="key">teams by trainer · bubble numbers are 1st gens / whole team</p>
   <div class="legend">%s</div>
 </header>
 <main>
 %s
-<section class="totals"><h2>Totals</h2><div class="boxes">%s</div></section>
-</main>""" % (css, html.escape(week), "".join(chips), "".join(sections),
-              "".join(boxes))
+%s
+</main>""" % (css, title, html.escape(week), "".join(chips),
+              "".join(sections), totals)
 
 
 # -------------------------------------------------------------------- post
-def post(png: Path, week: str, *, dm: Optional[str] = None,
+def _share_ts(resp, channel: str) -> Optional[str]:
+    """The ts of the message an upload created, so the per-team shots can reply
+    to it. files_upload_v2 answers with the file, not the message, and the
+    share block is the only place the ts appears."""
+    shares = ((resp.get("file") or {}).get("shares") or {})
+    for scope in ("public", "private"):
+        for ch, entries in (shares.get(scope) or {}).items():
+            if ch == channel and entries:
+                return entries[0].get("ts")
+    return None
+
+
+def leader_tags(*, client=None, logfn=print) -> str:
+    """Every non-terminated leader on the board, as a mention line.
+
+    Raf 2026-09-21: *"you can just tag every leader in the office from the
+    sales board"*. Straight through `gap_alerts.leaders`, which already reads
+    that board, honours the do-not-ping list, learns ids from hand-tags and
+    NAMES anyone it cannot tag — a second implementation would drift from it
+    and the drift would show up as @-pinging somebody who was let go."""
+    try:
+        from automations.gap_alerts import leaders as GL
+        found, _tab = GL.read_leaders(logfn=lambda *_a, **_k: None)
+        ids, missing = GL.resolve_tags([l.name for l in found], client=client,
+                                       logfn=logfn)
+        logfn("  tagging %d leader(s)%s"
+              % (len(ids), ", %d with no Slack account" % len(missing)
+                 if missing else ""))
+        return GL.tag_line(ids, missing)
+    except Exception as exc:  # noqa: BLE001 — a tag line is never worth the post
+        logfn("  leader tags unavailable (%s: %s) — posting without them"
+              % (type(exc).__name__, str(exc)[:120]))
+        return ""
+
+
+def post(png: Path, week: str, *, team_pngs=(), dm: Optional[str] = None,
          dry_run: bool = False, logfn=print) -> dict:
-    """The level 1 chat, plus any channel the central mirror table carries for
-    it (none today). ONE render, N posts."""
+    """The whole-office map in the channel, then the thread: the leader tags,
+    then one shot per team (Raf 2026-09-21 — "inside the thread, it's just per
+    team", the way the sales board posts).
+
+    Goes to the level 1 chat plus any channel the central mirror table carries
+    for it (none today). ONE render, N posts."""
     from automations.shared import slack_metrics_post as smp
     # No %-m / %-d: Windows strftime has neither. [[feedback_cross_platform_reports]]
     today = dt.date.today()
@@ -808,8 +1057,10 @@ def post(png: Path, week: str, *, dm: Optional[str] = None,
                                      dry_run=dry_run)
     targets = [CHANNEL[1]] + list(smp.mirror_channels(CHANNEL[1]))
     if dry_run:
-        return {"dry_run": True, "channels": targets, "comment": comment}
+        return {"dry_run": True, "channels": targets, "comment": comment,
+                "thread": [t for t, _ in team_pngs]}
     client = smp._client()
+    tags = leader_tags(client=client, logfn=logfn)
     out = {}
     for ch in targets:
         try:
@@ -825,7 +1076,37 @@ def post(png: Path, week: str, *, dm: Optional[str] = None,
             logfn("  post to %s FAILED: %s" % (ch, exc))
             if ch == CHANNEL[1]:
                 raise
+            continue
+
+        parent = _share_ts(resp, ch)
+        if not parent:
+            # The map is already in the channel; only the thread is lost, so
+            # say so loudly and keep the run green-for-what-it-did.
+            logfn("  %s: no thread ts came back — the per-team shots and the "
+                  "tag line were NOT posted" % ch)
+            out["%s_thread" % ch] = False
+            continue
+        if tags:
+            try:
+                client.chat_postMessage(channel=ch, thread_ts=parent, text=tags)
+            except Exception as exc:  # noqa: BLE001
+                logfn("  %s: tag line failed (%s)" % (ch, exc))
+        posted = 0
+        for team, team_png in team_pngs:
+            try:
+                client.files_upload_v2(
+                    channel=ch, thread_ts=parent, file=str(team_png),
+                    filename="%s-%s.png" % (_slug(team), week or "week"),
+                    initial_comment="*%s*" % team)
+                posted += 1
+            except Exception as exc:  # noqa: BLE001
+                logfn("  %s: %r shot failed (%s)" % (ch, team, exc))
+        out["%s_thread" % ch] = posted
     return out
+
+
+def _slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", str(text).lower()).strip("-") or "team"
 
 
 def main(argv=None) -> int:
@@ -835,12 +1116,15 @@ def main(argv=None) -> int:
     ap.add_argument("--dm", metavar="WHO",
                     help="DM the PNG to one person instead of the channels")
     ap.add_argument("--tab", help="read a specific 'Sales Board WE m.d' tab")
+    ap.add_argument("--no-thread", action="store_true",
+                    help="skip the per-team shots and post only the map")
     args = ap.parse_args(argv)
 
     today = dt.date.today()
-    title, reps, palette, gone = read_board(today, tab=args.tab)
+    title, reps, palette, gone, terminated_by_team, classroom = read_board(
+        today, tab=args.tab)
     on_board = {_base(r.name) for r in reps}
-    new_starts = read_new_starts(today, on_board)
+    new_starts = read_new_starts(today, on_board, classroom)
 
     # Trainer names nobody on this week's board answers to. The terminated rows
     # answer some of them for free; the rest are looked up on earlier weeks, so
@@ -864,8 +1148,9 @@ def main(argv=None) -> int:
     from automations.team_tree.run import render_png   # one screenshotter
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     html_path, png_path = OUT_DIR / "mind_map.html", OUT_DIR / "mind_map.png"
-    html_path.write_text(render_html(week, reps, groups, palette),
-                         encoding="utf-8")
+    html_path.write_text(
+        render_html(week, reps, groups, palette, terminated_by_team),
+        encoding="utf-8")
     # Taller window than the B2B map: five team sections stack vertically and
     # anything below the viewport is cut off, not scrolled. The trim inside
     # render_png takes the unused apron back off.
@@ -877,10 +1162,25 @@ def main(argv=None) -> int:
                        for t, _b, _l, name, _f, members in groups),
              png_path, png_path.stat().st_size))
 
+    # One page per team for the thread. Its own window: a single team is a
+    # fraction of the office and the office-sized apron would swallow it.
+    team_pngs = []
+    if not args.no_thread:
+        for team, _b, _l, _n, _f, _m in groups:
+            t_html = OUT_DIR / ("team-%s.html" % _slug(team))
+            t_png = OUT_DIR / ("team-%s.png" % _slug(team))
+            t_html.write_text(
+                render_html(week, reps, groups, palette, terminated_by_team,
+                            only_team=team), encoding="utf-8")
+            render_png(t_html, t_png, window=(2400, 2000))
+            team_pngs.append((team, t_png))
+        print("  %d per-team shot(s) for the thread" % len(team_pngs))
+
     if args.dry_run and not args.dm:
         print("  dry-run: not posting")
         return 0
-    out = post(png_path, week, dm=args.dm, dry_run=args.dry_run)
+    out = post(png_path, week, team_pngs=team_pngs, dm=args.dm,
+               dry_run=args.dry_run)
     print("  posted: %s" % out)
     return 0
 
