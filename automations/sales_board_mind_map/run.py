@@ -118,7 +118,6 @@ NEW_START_BG = "#F9BCD2"                  # onboarding, not on the board yet
 UPLINE_BG = "#DCD8CE"                     # a team head with no row on the board
 
 LEADER_LEVELS = {"level 1", "level 2", "mastermind"}
-CARD_LEVELS = {"level 2", "mastermind"}
 # What goes UNDER a name on the bubble. Raf's shorthand, not the board's
 # wording: he never says "in training", and "Lvl 2" is what he asked for.
 RANK_LABELS = {"mastermind": "Mastermind", "level 2": "Lvl 2",
@@ -864,15 +863,6 @@ def _avg(total: float, n: int) -> str:
     return "—" if not n else ("%.1f" % (total / n))
 
 
-def _leader_card(ld: Rep, palette, team: str = "") -> str:
-    """A Level 2+ card. KEPT at Raf's word (2026-09-21) after he first asked to
-    drop it: Zoey and Safiya read it to see where they stand to qualify, which
-    is the whole reason Carlos's map has one."""
-    label = ('<span class="camp">%s</span>' % html.escape(team)) if team else ""
-    return ('<div class="leader-card"><div class="who">%s%s</div>%s</div>'
-            % (_node(ld, palette), label, _stat_dl(list(ld.subtree()))))
-
-
 # The box reads as four bands, each its own colour, all one type size (Megan
 # 2026-09-21): the head count, the week's terminations, then internet and apps
 # averages. Order here IS the order on the card.
@@ -909,7 +899,6 @@ def render_html(week: str, reps: List[Rep], groups, palette,
     """
     css = (Path(__file__).parent / "style.css").read_text()
     terminated_by_team = terminated_by_team or {}
-    team_leads = {id(lead) for _, _, lead, _, _, _ in groups if lead is not None}
     shown = [g for g in groups if only_team is None or g[0] == only_team]
 
     sections = []
@@ -950,25 +939,15 @@ def render_html(week: str, reps: List[Rep], groups, palette,
                  % (NEW_START_BG, _ink(NEW_START_BG)))
 
     # The office line only belongs on the whole-office page.
+    # The office box closes the right-hand column the team boxes run down
+    # (Megan 2026-09-21), and the Lvl 2+ cards are gone with it — every number
+    # they held is already in a team box.
     totals = ""
     if only_team is None:
-        # Every Lvl 2+ leader in the office, their own team named on the card
-        # now that it no longer sits beside their team.
-        cards = []
-        for t, _b, _l, _n, _f, m in groups:
-            for ld in sorted((r for r in m if r.level in CARD_LEVELS
-                              and id(r) not in team_leads),
-                             key=lambda r: (-structure(r)[1], -structure(r)[0],
-                                            r.display)):
-                cards.append(_leader_card(ld, palette, team=t))
-        leaders_block = ('<section class="leaders-bottom">'
-                         '<h2>Lvl 2+ Leaders</h2><div class="cards">%s</div>'
-                         '</section>' % "".join(cards)) if cards else ""
-        office = ('<section class="totals"><div class="boxes">'
+        totals = ('<section class="totals">'
                   '<div class="office-box whole"><div class="title">Whole '
-                  'office</div>%s</div></div></section>'
+                  'office</div>%s</div></section>'
                   % _stat_dl(reps, sum(terminated_by_team.values())))
-        totals = leaders_block + office
 
     title = "Alphalete Mind Map" if only_team is None else html.escape(only_team)
     return """<meta charset="utf-8">
