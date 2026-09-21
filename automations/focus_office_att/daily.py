@@ -1121,7 +1121,12 @@ PHASE2_TIMEOUT_S = 60 * 60  # was 40 — a full 30-owner scrape (~1.5 min/owner 
 # registry timeout (raised to 170 to match). When it DOES trip, the checkpoint is
 # real and a re-run is cheap: 8/17's picked up at the last 3 owners and finished
 # everything — sweep, Phase 3, Monday freeze — in 53 min, not a fresh 130.
-PHASE2_SHIFT_TIMEOUT_S = 85 * 60
+# 2026-09-21: 85 was not enough either — 24 owners at ~4.5 min each (not the
+# ~2.5 measured on 8/17) hit the cap at owner 20. Raised to 110 as a stopgap
+# while run_all_owners' per-owner ⏱ lines show where the extra time goes; the
+# registry timeout went 170 → 195 to keep 110 + Phase 3's 35 + the Monday
+# Sheet work (~25 min on 9/21: freeze, wipe, dates, colors) inside it.
+PHASE2_SHIFT_TIMEOUT_S = 110 * 60
 PHASE3_TIMEOUT_S = 35 * 60  # was 20 — heavy days (big fills + Tableau retries) ran over (Megan 2026-06-07)
 
 # Daily Rep BD report pull custom view (Phase 3 Tableau source) — surfaced as

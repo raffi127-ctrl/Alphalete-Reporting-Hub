@@ -90,6 +90,31 @@ _HAS_ALARM = hasattr(signal, "SIGALRM")
 class _OwnerTimeout(Exception):
     """Raised when one owner blows PER_OWNER_TIMEOUT_S — caught per-owner, skipped."""
 
+
+# Per-owner timing (2026-09-21). That Monday owners averaged ~4.5 min against
+# ~2.5 measured on 8/17 and Phase 2 hit its cap at owner 20 of 24 — and the log
+# had no clock, so nobody could say WHERE the time went. _scrape_one_owner
+# stamps each stage here; the owner loop prints one ⏱ line per owner (even on a
+# timeout or exception), and any single design op over SLOW_OP_S gets its own.
+_owner_marks: dict[str, float] = {}
+SLOW_OP_S = 20
+
+
+def _owner_timing_line(t0: float, marks: dict, now: float) -> str:
+    """One-line breakdown of where an owner's time went. Stages that never
+    started (e.g. impersonation failed) are left out rather than shown as 0."""
+    start, write, design = marks.get("start"), marks.get("write"), marks.get("design")
+    parts = []
+    if start is not None:
+        parts.append(f"impersonate/nav {start - t0:.0f}s")
+        parts.append(f"scrape {(write or now) - start:.0f}s")
+    if write is not None:
+        parts.append(f"sheet write {(design or now) - write:.0f}s")
+    if design is not None:
+        parts.append(f"design {now - design:.0f}s")
+    return (f"  ⏱ {(now - t0) / 60:.1f} min" +
+            (" — " + " · ".join(parts) if parts else ""))
+
 # ----------------------------------------------------------------------
 # Resume checkpoint
 # ----------------------------------------------------------------------
@@ -539,6 +564,7 @@ def _scrape_one_owner(page, ws, days: list[dt.date], rqst: str,
     'LAST WEEK' block (by rep name) instead of the live current-week block,
     and the expensive design pass is skipped (the frozen block is already
     styled). Used to recover a last week that was down at the time."""
+    _owner_marks["start"] = time.monotonic()
     metrics = (
         list(TT_FIELD_TO_CANONICAL.values())
         + list(DISP_FIELD_TO_CANONICAL.values())
@@ -581,6 +607,7 @@ def _scrape_one_owner(page, ws, days: list[dt.date], rqst: str,
     if backfill_lastweek:
         # Write into the FROZEN block by name; refresh that block's weekly
         # totals. No design pass — the frozen block is already styled.
+        _owner_marks["write"] = time.monotonic()
         bstats = backfill_lastweek_block(ws, scraped_by_date, layout)
         try:
             # Refresh the FROZEN block's derived totals — NOT the top zone.
@@ -607,6 +634,7 @@ def _scrape_one_owner(page, ws, days: list[dt.date], rqst: str,
             "new_reps": [],
         }
 
+    _owner_marks["write"] = time.monotonic()
     stats = fill_owner_tab(ws, scraped_by_date, layout)
 
     # Cosmetic ops are EXPENSIVE (each = 1-3 Sheets API calls). Skip the
@@ -640,11 +668,16 @@ def _scrape_one_owner(page, ws, days: list[dt.date], rqst: str,
     # source of truth (shared with Phase 3) so a run reproduces the WHOLE
     # design. Each op is wrapped — a transient Sheets hiccup on one
     # cosmetic step shouldn't invalidate the owner's data write.
+    _owner_marks["design"] = time.monotonic()
     for label, fn in design_cosmetic_ops(ws, layout):
+        _op_t0 = time.monotonic()
         try:
             fn()
         except Exception as e:
             print(f"  ⚠ {label} failed (cosmetic, ignoring): {type(e).__name__}: {e}")
+        _op_s = time.monotonic() - _op_t0
+        if _op_s > SLOW_OP_S:
+            print(f"  ⏱ slow design op: {label} took {_op_s:.0f}s")
 
     # Collapse the blank rows between this week's last rep and the frozen LAST
     # WEEK block so the two charts sit adjacent (the freeze hides this headroom
@@ -818,6 +851,8 @@ def main() -> int:
 
         for i, owner in enumerate(owner_tabs, 1):
             print(f"\n[{i}/{len(owner_tabs)}] === {owner} ===")
+            _owner_marks.clear()
+            owner_t0 = time.monotonic()
             scraped_ok = False
             is_master = owner in NO_IMPERSONATE_OWNERS
             try:
@@ -876,6 +911,7 @@ def main() -> int:
             finally:
                 if _HAS_ALARM:
                     signal.alarm(0)     # clear this owner's deadline (success or not)
+                print(_owner_timing_line(owner_t0, _owner_marks, time.monotonic()))
                 if is_master:
                     # No impersonation to exit; nothing to do.
                     continue
