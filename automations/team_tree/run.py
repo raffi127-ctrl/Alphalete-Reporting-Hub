@@ -72,8 +72,9 @@ CARD_STATUSES = {"level 2", "mastermind"}
 
 OUT_DIR = Path("output/team_tree")
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-# How long to wait for a screenshot at worst. It normally lands in 2-5s.
-SHOT_TIMEOUT = 90
+# A screenshot normally lands in 2-5s. Past SHOT_TIMEOUT the launch is stuck,
+# and a second, fresh launch beats waiting longer on the first.
+SHOT_TIMEOUT, SHOT_ATTEMPTS = 45, 2
 
 
 def _norm(s: str) -> str:
@@ -347,23 +348,36 @@ def render_png(html_path: Path, png_path: Path,
     # mind map's thread backfill). A finished PNG ends with its IEND chunk, so
     # that is the test. Chrome runs in its own process group so the kill takes
     # its helpers with it instead of leaving them to pile up on the runner.
-    png_path.unlink(missing_ok=True)
-    with tempfile.TemporaryDirectory() as tmp:
-        proc = subprocess.Popen(
-            [CHROME, "--headless=new", "--disable-gpu", "--hide-scrollbars",
-             "--no-first-run", "--no-default-browser-check",
-             "--disable-extensions", f"--user-data-dir={tmp}",
-             "--force-device-scale-factor=2",
-             "--window-size=%d,%d" % window,
-             f"--screenshot={png_path}", html_path.resolve().as_uri()],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            start_new_session=True)
-        deadline = time.time() + SHOT_TIMEOUT
-        while time.time() < deadline:
-            if _png_complete(png_path):
-                break
-            time.sleep(0.2)
-        _stop_group(proc)
+    # ONE RETRY. A launch that never writes anything is a stuck Chrome, not a
+    # bad page: on 9/21 the mini rendered all six mind-map shots at 07:47 and
+    # then sat out the whole timeout on one of them at 07:52, with other jobs
+    # running beside it. A fresh launch is the fix; a bad page fails twice and
+    # still raises.
+    for attempt in range(1, SHOT_ATTEMPTS + 1):
+        png_path.unlink(missing_ok=True)
+        started = time.time()
+        with tempfile.TemporaryDirectory() as tmp:
+            proc = subprocess.Popen(
+                [CHROME, "--headless=new", "--disable-gpu", "--hide-scrollbars",
+                 "--no-first-run", "--no-default-browser-check",
+                 "--disable-extensions", f"--user-data-dir={tmp}",
+                 "--force-device-scale-factor=2",
+                 "--window-size=%d,%d" % window,
+                 f"--screenshot={png_path}", html_path.resolve().as_uri()],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True)
+            deadline = started + SHOT_TIMEOUT
+            while time.time() < deadline and not _png_complete(png_path):
+                time.sleep(0.2)
+            _stop_group(proc)
+        took = time.time() - started
+        if _png_complete(png_path):
+            if attempt > 1:
+                print("  %s: rendered on attempt %d (%.1fs)"
+                      % (png_path.name, attempt, took))
+            break
+        print("  %s: no finished image after %.0fs (attempt %d of %d)"
+              % (png_path.name, took, attempt, SHOT_ATTEMPTS))
     if not png_path.exists() or png_path.stat().st_size < 20_000:
         raise RuntimeError(f"screenshot too small/missing: {png_path}")
     _trim(png_path)

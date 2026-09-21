@@ -1267,7 +1267,9 @@ def main(argv=None) -> int:
             t_html.write_text(
                 render_html(week, reps, groups, palette,
                             only_team=team), encoding="utf-8")
+            began = time.time()
             render_png(t_html, t_png, window=(2400, 2000))
+            print("  %s shot rendered in %.1fs" % (team, time.time() - began))
             team_pngs.append((team, t_png))
         print("  %d per-team shot(s) for the thread" % len(team_pngs))
 
