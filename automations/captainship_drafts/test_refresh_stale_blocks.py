@@ -288,5 +288,24 @@ class TheLockOnlyHoldsWhatWasDelivered(unittest.TestCase):
         self.assertIn("2 of 3 delivered", text)
 
 
+class SharedRendererIsReleased(unittest.TestCase):
+    """2026-09-21: the build's live sheet_render browser made every automatic
+    re-seal die with 'Please use the Async API instead'."""
+    _NAME = "automations.captainship_drafts.sheet_render"
+
+    def test_closes_the_builds_browser_before_printing(self):
+        fake = mock.Mock()
+        with mock.patch.dict("sys.modules", {self._NAME: fake}):
+            RG._release_shared_renderer()
+        fake.close_renderer.assert_called_once_with()
+
+    def test_standalone_refresh_imports_nothing(self):
+        import sys
+        with mock.patch.dict("sys.modules"):
+            sys.modules.pop(self._NAME, None)
+            RG._release_shared_renderer()
+            self.assertNotIn(self._NAME, sys.modules)
+
+
 if __name__ == "__main__":
     unittest.main()

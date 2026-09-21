@@ -196,6 +196,23 @@ def preview_htmls(today: dt.date,
     return out
 
 
+def _release_shared_renderer() -> None:
+    """Close sheet_render's long-lived browser if this process started one.
+
+    run.py builds §1 through sheet_render, which keeps a sync_playwright()
+    RUNNING between captains, then calls refresh_stale_blocks → build_pdf in
+    the same thread. A second sync_playwright() there dies with "using
+    Playwright Sync API inside the asyncio loop. Please use the Async API
+    instead" — so every rebuild on Lucy 3 failed to re-seal its PDFs and
+    printed "run review_gate.py --refresh by hand" (2026-09-21: all four
+    fiber blocks had to be refreshed by hand). Same collision run.py already
+    sidesteps before its Tableau shots. Only if the module is loaded: a
+    standalone `review_gate --refresh` never started one."""
+    mod = sys.modules.get("automations.captainship_drafts.sheet_render")
+    if mod is not None:
+        mod.close_renderer()
+
+
 def build_pdf(today: dt.date, block: Optional["config.Block"] = None,
               verbose: bool = True) -> Path:
     """Render one BLOCK's previews into ONE PDF (or the whole day's, if no
@@ -233,6 +250,7 @@ def build_pdf(today: dt.date, block: Optional["config.Block"] = None,
 
     out = _OUTPUT_DIR / pdf_name(today, block)
     parts: list[Path] = []
+    _release_shared_renderer()
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
