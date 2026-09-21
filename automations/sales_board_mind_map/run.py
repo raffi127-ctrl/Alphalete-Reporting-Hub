@@ -1203,6 +1203,10 @@ def main(argv=None) -> int:
     ap.add_argument("--tab", help="read a specific 'Sales Board WE m.d' tab")
     ap.add_argument("--no-thread", action="store_true",
                     help="skip the per-team shots and post only the map")
+    ap.add_argument("--thread-onto", metavar="TS",
+                    help="post ONLY the thread (tag line + team shots) under "
+                         "an existing map post in the level 1 chat — for a "
+                         "day whose thread did not land")
     args = ap.parse_args(argv)
 
     today = dt.date.today()
@@ -1270,6 +1274,22 @@ def main(argv=None) -> int:
     if args.dry_run and not args.dm:
         print("  dry-run: not posting")
         return 0
+
+    if args.thread_onto:
+        # Backfill: the map is already up (9/21 7:01, whose thread never
+        # posted). Tag line + team shots under IT, nothing new in the channel.
+        from automations.shared import slack_metrics_post as smp
+        client = smp._client()
+        tags = leader_tags(client=client)
+        if tags:
+            client.chat_postMessage(channel=CHANNEL[1],
+                                    thread_ts=args.thread_onto, text=tags)
+        n = post_team_shots(client, CHANNEL[1], args.thread_onto, team_pngs,
+                            week)
+        print("  thread backfilled under %s: tags=%s, %d/%d team shots"
+              % (args.thread_onto, bool(tags), n, len(team_pngs)))
+        return 0 if n == len(team_pngs) else 1
+
     out = post(png_path, week, team_pngs=team_pngs, dm=args.dm,
                dry_run=args.dry_run)
     print("  posted: %s" % out)
