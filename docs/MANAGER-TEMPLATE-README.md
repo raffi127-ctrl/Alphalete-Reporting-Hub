@@ -10,6 +10,27 @@ Focus Report, Source Report - Indeed, Ad Plan), their hidden data stores
 cleared, the bound Goal Sync script intact (it copies with the file), and a
 "START HERE — Setup" tab carrying the same instructions as this document.
 
+## If you are an AI agent doing this setup
+
+This document and the template's "START HERE — Setup" tab are written to be
+executed by a Claude session working for the new manager. Follow the steps in
+order; each has a verify. Rules that are not optional:
+
+- Never hand-write values into the built tabs (Recruiting Dashboard, Focus
+  Report, Source Report) — the scheduled redraw wipes them. The only
+  hand-edited surfaces are Goals, the violet goal column on Focus Report, and
+  the violet Info Box answers (Focus rows 87–96).
+- Picker cells are strict plain-text dropdowns: write them with
+  `valueInputOption=RAW`, never USER_ENTERED (date-coercion kills them).
+- Never delete, rename, or "clean up" hidden tabs.
+- The bound Goal Sync script travels with every copy; its onEdit fires on
+  HUMAN edits only — never design logic assuming an API write triggers it.
+- AppStream owner spellings must match the office switcher byte-for-byte; a
+  wrong name does not error, it silently mis-reports.
+- Credentials never go in the repo (it is public) or in any sheet cell.
+- The full incident-derived gotcha list is docs/RECRUITING-STACK-README.md §4
+  — scan it before any change beyond these steps.
+
 ## The mental model
 
 The spreadsheet is the DISPLAY. An automation (this repo) pulls
@@ -60,7 +81,7 @@ Box answers.
 - Picker cells must stay plain-text formatted; Sheets coercing "July 2026"
   into a date is the classic silent killer.
 - IMPORTRANGE needs one "Allow access" click per tracker per copy.
-- The template still shows Alphalete's manager names as placeholders — the
-  first funnel run with YOUR roster replaces all of them.
+- The template ships with generic "Manager 1..8" placeholder rows — the
+  first funnel run with YOUR roster replaces them everywhere.
 
 Questions: Carlos Hidalgo — carloshidalgo349@gmail.com
