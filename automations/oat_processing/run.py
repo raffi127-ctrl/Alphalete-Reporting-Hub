@@ -367,13 +367,41 @@ def read_current_applicant(page, today: dt.date = None) -> Applicant:
 _ADVANCE_SETTLE_CAP_MS = 1800
 
 
+def jump_to_last(page) -> bool:
+    """Click the pager's LAST control (⏮/⏭ jump-to-end) so the walk starts at
+    the newest applicant and works backward. Carlos, 2026-09-20: the front of
+    the queue is a wall of Cloudflare-blocked no-phone people that eats every
+    tick; the newest applicants (who have numbers) never get reached. Returns
+    True if it clicked something."""
+    try:
+        return bool(page.evaluate(
+            """() => {
+               const imgs=[...document.querySelectorAll('img')];
+               const t=e=>((e.alt||'')+' '+(e.title||'')).toLowerCase();
+               let el=imgs.find(e=>/last|end|\u23ed|\u25ba\u25ba/.test(t(e)));
+               if(!el){ const as=[...document.querySelectorAll('a')];
+                 el=as.find(a=>/\u23ed|>>|last/i.test(a.innerText||'')); }
+               if(!el) return false;
+               el.scrollIntoView({block:'center'}); el.click(); return true; }"""))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def advance_to_next(page) -> bool:
     """Advance the OAT pager ("<page> of <N> Emails", top-right of the dup area)
     to the next applicant. Returns False when there's no next control (end of
     queue). # >>> VERIFY on Lucy 2: confirm the next-arrow locator."""
     # The pager Next control is an <img alt="Next"> (confirmed 2026-07-27). Click
     # the image itself (its click handler is jQuery-bound, no inline onclick).
-    candidates = [
+    # WALK_FROM_END reverses direction — "next" becomes the PREV arrow.
+    if os.environ.get("OAT_WALK_FROM_END") == "1":
+        candidates = [
+            "xpath=//img[translate(@alt,'PREV','prev')='prev']",
+            "xpath=//img[contains(translate(@alt,'PREVIOUS','previous'),'previous')]",
+            "xpath=//a[normalize-space(.)='\u25c4' or normalize-space(.)='<']",
+        ]
+    else:
+        candidates = [
         "xpath=//img[translate(@alt,'NEXT','next')='next']",
         "xpath=//img[contains(translate(@alt,'NEXT','next'),'next')]",
         "xpath=//img[contains(translate(@alt,'NEXT','next'),'next')]/ancestor::a[1]",
@@ -3201,6 +3229,12 @@ def run_walk(page, live: bool = False, limit: int = None,
     if not assert_on_expected_office(page):
         return 2
 
+    if os.environ.get("OAT_WALK_FROM_END") == "1":
+        if jump_to_last(page):
+            page.wait_for_timeout(2000)
+            _log("[oat] WALK_FROM_END: jumped to the last applicant; walking backward")
+        else:
+            _log("[oat] WALK_FROM_END requested but no jump-to-last control found")
     _start_total = getattr(read_current_applicant(page, today), "_total", None)
     # Log the URL with the pager count. The count comes from the PAGE's own
     # "<page> of <N> Emails", so it is only ever the total for the view we happen
