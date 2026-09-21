@@ -270,3 +270,35 @@ class PlanTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WeekTabTests(unittest.TestCase):
+    """Monday draws the week that just closed (Megan 2026-09-21)."""
+
+    class _Sheet:
+        pass
+
+    def setUp(self):
+        import datetime as dt
+        from automations.terminated_reps import board as BD
+        self.dt, self.BD = dt, BD
+        self.tabs = [(dt.date(2026, 9, 13), "Sales Board WE 9.13"),
+                     (dt.date(2026, 9, 20), "Sales Board WE 9.20"),
+                     (dt.date(2026, 9, 27), "Sales Board WE 9.27")]
+        self._week_tabs, self._pick = BD.week_tabs, BD.pick_tab
+        BD.week_tabs = lambda sh, today: list(self.tabs)
+        BD.pick_tab = lambda sh, today, want=None: "Sales Board WE 9.27"
+
+    def tearDown(self):
+        self.BD.week_tabs, self.BD.pick_tab = self._week_tabs, self._pick
+
+    def test_monday_reads_last_week_even_when_the_new_tab_exists(self):
+        monday = self.dt.date(2026, 9, 21)
+        self.assertEqual(R.week_tab_for(self._Sheet(), monday, logfn=quiet),
+                         "Sales Board WE 9.20")
+
+    def test_every_other_day_reads_its_own_week(self):
+        for day in (22, 23, 26, 27):        # Tue, Wed, Sat, Sun
+            d = self.dt.date(2026, 9, day)
+            self.assertEqual(R.week_tab_for(self._Sheet(), d, logfn=quiet),
+                             "Sales Board WE 9.27")

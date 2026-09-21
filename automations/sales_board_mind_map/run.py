@@ -252,6 +252,28 @@ def _num(value) -> float:
         return 0.0
 
 
+def week_tab_for(sh, today: dt.date, *, logfn=print) -> str:
+    """Which week's tab to draw.
+
+    MONDAY READS THE WEEK THAT JUST CLOSED (Megan 2026-09-21: "Monday should
+    post the full week prior anyways"). A Monday 7am post about the week that
+    started seven hours ago would be a roster with no production behind it —
+    every average 0.0, every termination count zero. The finished week is the
+    one worth looking at, and it is what the office is reviewing on Monday.
+
+    Every other day reads its own week, in progress, which is what Raf watches.
+    """
+    if today.weekday() != 0:               # Mon = 0
+        return BD.pick_tab(sh, today)
+    closed = BD.week_sunday(today) - dt.timedelta(days=7)
+    for when, title in sorted(BD.week_tabs(sh, today), reverse=True):
+        if when <= closed:
+            logfn("  Monday: reading the week that closed %s (%r)"
+                  % (closed.isoformat(), title))
+            return title
+    return BD.pick_tab(sh, today)          # nothing older: take what there is
+
+
 def read_board(today: dt.date, *, tab: Optional[str] = None, logfn=print):
     """(tab, [Rep], {week: hex}, {gone: (trainer, team)}, {team: terminated},
     {new start: classroom trainer}).
@@ -260,7 +282,7 @@ def read_board(today: dt.date, *, tab: Optional[str] = None, logfn=print):
     would otherwise strand their people under a name nothing resolves —
     Megan 2026-09-20: *"his team goes to his upline"*."""
     sh = BD.open_by_key(SHEET_ID)
-    title = tab or BD.pick_tab(sh, today)
+    title = tab or week_tab_for(sh, today, logfn=logfn)
     ws = sh.worksheet(title)
     grid = ws.get_values(value_render_option="UNFORMATTED_VALUE")
     lay = BD.find_layout(grid)
