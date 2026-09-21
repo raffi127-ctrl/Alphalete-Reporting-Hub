@@ -238,7 +238,21 @@ def _install_global_retry() -> None:
     _orig = _hc.HTTPClient.request
 
     def _wrapped(self, method, *args, **kwargs):
-        return _retry(_orig, self, method, *args, **kwargs)
+        # A dropped connection never reaches _retry's APIError branch -- it is
+        # requests' ConnectionError/Timeout. On 2026-09-21 one 60s timeout
+        # opening the OBCL sheet killed a Digi Docs tick and tagged three people
+        # with nobody due. READS only: a write that timed out may have landed,
+        # and re-sending an append would add the row twice.
+        import requests
+        tries = 3 if str(method).upper() == "GET" else 1
+        for i in range(tries):
+            try:
+                return _retry(_orig, self, method, *args, **kwargs)
+            except (requests.exceptions.ConnectionError,
+                    requests.exceptions.Timeout):
+                if i == tries - 1:
+                    raise
+                time.sleep(5 * (i + 1))
 
     _wrapped._sheets_retry_wrapped = True  # type: ignore[attr-defined]
     _hc.HTTPClient.request = _wrapped
