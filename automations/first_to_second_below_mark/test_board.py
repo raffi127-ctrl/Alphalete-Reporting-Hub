@@ -372,5 +372,32 @@ class BorrowedRoster(unittest.TestCase):
         self.assertIsNone(missing[0])
 
 
+class ChannelThread(unittest.TestCase):
+    """The board goes to today's thread in #ars-recruiting-numbers, never the group DM."""
+    def test_posts_in_the_days_thread(self):
+        import unittest.mock as um
+        from pathlib import Path
+        from automations.first_to_second_below_mark import slack_post as sp
+        with um.patch.object(sp.smp, "ensure_named_thread",
+                             return_value={"ok": True, "thread_ts": "111.222"}) as th,              um.patch.object(sp.smp, "post_reply_with_image",
+                             return_value={"ok": True}) as rep_,              um.patch.object(sp.smp, "dm_users_with_file") as dm:
+            rc = sp.post_to_thread(Path("x.png"), "*1st to 2nd Below the Mark* — Eastern offices",
+                                   dry=False, today=dt.date(2026, 9, 21))
+        self.assertEqual(rc, 0)
+        self.assertEqual(th.call_args.kwargs["channel_id"], "C0C42793AKS")
+        self.assertEqual(rep_.call_args.kwargs["thread_ts"], "111.222")
+        self.assertEqual(rep_.call_args.kwargs["channel_id"], "C0C42793AKS")
+        dm.assert_not_called()
+
+    def test_board_without_only_never_dms(self):
+        import unittest.mock as um
+        from pathlib import Path
+        from automations.first_to_second_below_mark import slack_post as sp, board_shot
+        with um.patch.object(board_shot, "build_png", return_value=(Path("x.png"), "h")),              um.patch.object(sp, "post_to_thread", return_value=0) as pt,              um.patch.object(sp.smp, "dm_users_with_file") as dm:
+            self.assertEqual(sp.main(["--board", "--post"]), 0)
+        pt.assert_called_once()
+        dm.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

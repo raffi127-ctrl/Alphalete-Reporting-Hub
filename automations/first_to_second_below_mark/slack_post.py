@@ -47,6 +47,17 @@ RECIPIENTS = [
 ]
 
 TITLE = "1st to 2nd Below the Mark"
+
+# WHERE THE WAVES GO (Rafael / Eve, 2026-09-21): #ars-recruiting-numbers, ONE
+# thread per day -- a dated parent post, and every wave (each time zone's 11 AM
+# and 6:30 PM) as a reply under it, so the day's updates stay together instead
+# of scattering between other messages. The group DM above is no longer used
+# for the board; RECIPIENTS stays only for the old one-day tab and --only tests.
+CHANNEL_ID = "C0C42793AKS"       # #ars-recruiting-numbers
+THREAD_LINES = [
+    "Retention first showed up → booked second · offices at or under 40%",
+    "Each time zone at its own 11:00 AM and 6:30 PM — every update lands in this thread.",
+]
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "below_the_mark"
 # Stops at P on purpose: column Q ("Office to Fill out report for (MUST MATCH
 # APP STREAM NAME)") is a working column nobody reading the DM needs, and it is
@@ -97,6 +108,31 @@ def build_png(tab: Optional[str] = None, out: Optional[Path] = None) -> tuple:
     return out, rng, headline
 
 
+def post_to_thread(png: Path, headline: str, *, dry: bool,
+                   today: Optional["dt.date"] = None) -> int:
+    """Today's thread in #ars-recruiting-numbers (posted on the first wave of
+    the day), then this wave's picture as a reply in it."""
+    import datetime as dt
+    today = today or dt.datetime.now(dt.timezone.utc).astimezone(rep.CT).date()
+    print(f"{'DRY-RUN (no post)' if dry else 'POSTING'} to channel {CHANNEL_ID}, "
+          f"thread '{TITLE} — {today:%b %d}'")
+    print(f"  comment: {headline}")
+    head = smp.ensure_named_thread(TITLE, today, lines=THREAD_LINES, dry_run=dry,
+                                   channel_id=CHANNEL_ID)
+    print(f"  thread: {head}")
+    if dry:
+        return 0
+    ts = head.get("thread_ts")
+    if not ts:
+        print("  FAILED - could not find or post today's thread")
+        return 1
+    resp = smp.post_reply_with_image(png, comment=headline, thread_ts=ts,
+                                     channel_id=CHANNEL_ID, file_name=f"{TITLE}.png",
+                                     mirror=False)
+    print(f"  result: { {k: v for k, v in resp.items() if k != 'raw'} }")
+    return 0 if resp.get("ok") else 1
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="first_to_second_below_mark.slack_post")
     ap.add_argument("--post", action="store_true",
@@ -106,9 +142,10 @@ def main(argv=None) -> int:
                          "the full list, for a targeted test")
     ap.add_argument("--tab", default=None, help="screenshot a different tab")
     ap.add_argument("--board", action="store_true",
-                    help="send the two-week board's picture instead: this pass's "
-                         "offices, the week so far (Mondays: last week whole too) "
-                         "-- board_shot.build_png")
+                    help="the two-week board's picture (this pass's offices, the "
+                         "week so far; Mondays last week whole too), posted in "
+                         "today's thread in #ars-recruiting-numbers -- or DMed "
+                         "only to --only, for a test")
     args = ap.parse_args(argv)
     dry = not args.post
 
@@ -121,6 +158,10 @@ def main(argv=None) -> int:
         from automations.first_to_second_below_mark import board_shot
         png, headline = board_shot.build_png(**({"tab": args.tab} if args.tab else {}))
         rng = "two-week board"
+        if not args.only:
+            # The board ALWAYS goes to the channel thread; the group DM is
+            # reachable for it only as an explicit --only test.
+            return post_to_thread(png, headline, dry=dry)
     else:
         png, rng, headline = build_png(tab=args.tab)
     print(f"screenshot {rng} -> {png} ({png.stat().st_size // 1024} KB)")
