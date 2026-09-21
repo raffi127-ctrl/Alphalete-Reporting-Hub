@@ -864,12 +864,13 @@ def _avg(total: float, n: int) -> str:
     return "—" if not n else ("%.1f" % (total / n))
 
 
-def _leader_card(ld: Rep, palette) -> str:
+def _leader_card(ld: Rep, palette, team: str = "") -> str:
     """A Level 2+ card. KEPT at Raf's word (2026-09-21) after he first asked to
     drop it: Zoey and Safiya read it to see where they stand to qualify, which
     is the whole reason Carlos's map has one."""
-    return ('<div class="leader-card"><div class="who">%s</div>%s</div>'
-            % (_node(ld, palette), _stat_dl(list(ld.subtree()))))
+    label = ('<span class="camp">%s</span>' % html.escape(team)) if team else ""
+    return ('<div class="leader-card"><div class="who">%s%s</div>%s</div>'
+            % (_node(ld, palette), label, _stat_dl(list(ld.subtree()))))
 
 
 # The box reads as four bands, each its own colour, all one type size (Megan
@@ -919,20 +920,14 @@ def render_html(week: str, reps: List[Rep], groups, palette,
                        ('<span class="lead">%s</span>' % html.escape(lead_name))
                        if lead_name else ""))
 
-        # The Level 2+ cards STAY — Raf asked to drop them, then kept them
-        # once Megan pointed out Zoey and Safiya read them to see where they
-        # stand to qualify — but they move DOWN, to the bottom right of their
-        # own team block instead of a tall rail beside it.
-        in_team = [r for r in members
-                   if r.level in CARD_LEVELS and id(r) not in team_leads]
-        cards = "".join(_leader_card(ld, palette) for ld in
-                        sorted(in_team, key=lambda r: (-structure(r)[1],
-                                                       -structure(r)[0],
-                                                       r.display)))
-        # No terminated chip beside the team: its box at the bottom already
-        # carries that number (Megan 2026-09-21).
-        side = ('<aside class="team-side"><h2>Lvl 2+ on this team</h2>%s'
-                '</aside>' % cards) if cards else ""
+        # THE TEAM'S OWN NUMBERS SIT BESIDE THE TEAM (Megan 2026-09-21), where
+        # the Lvl 2+ cards used to — they answer questions about the branch you
+        # are looking at, so they belong next to it. The cards moved to the
+        # bottom, where they read as the office's up-and-coming leaders.
+        side = ('<aside class="team-side"><div class="office-box">'
+                '<div class="title">%s</div>%s</div></aside>'
+                % (html.escape(team),
+                   _stat_dl(members, terminated_by_team.get(team, 0))))
 
         sections.append(
             '<section><div class="team">%s<div class="root-stem"></div></div>'
@@ -957,15 +952,23 @@ def render_html(week: str, reps: List[Rep], groups, palette,
     # The office line only belongs on the whole-office page.
     totals = ""
     if only_team is None:
-        boxes = "".join(
-            '<div class="office-box"><div class="title">%s</div>%s</div>'
-            % (html.escape(t), _stat_dl(m, terminated_by_team.get(t, 0)))
-            for t, _b, _l, _n, _f, m in groups)
-        boxes += ('<div class="office-box whole"><div class="title">Whole '
-                  'office</div>%s</div>'
+        # Every Lvl 2+ leader in the office, their own team named on the card
+        # now that it no longer sits beside their team.
+        cards = []
+        for t, _b, _l, _n, _f, m in groups:
+            for ld in sorted((r for r in m if r.level in CARD_LEVELS
+                              and id(r) not in team_leads),
+                             key=lambda r: (-structure(r)[1], -structure(r)[0],
+                                            r.display)):
+                cards.append(_leader_card(ld, palette, team=t))
+        leaders_block = ('<section class="leaders-bottom">'
+                         '<h2>Lvl 2+ Leaders</h2><div class="cards">%s</div>'
+                         '</section>' % "".join(cards)) if cards else ""
+        office = ('<section class="totals"><div class="boxes">'
+                  '<div class="office-box whole"><div class="title">Whole '
+                  'office</div>%s</div></div></section>'
                   % _stat_dl(reps, sum(terminated_by_team.values())))
-        totals = ('<section class="totals"><h2>Totals</h2>'
-                  '<div class="boxes">%s</div></section>' % boxes)
+        totals = leaders_block + office
 
     title = "Alphalete Mind Map" if only_team is None else html.escape(only_team)
     return """<meta charset="utf-8">
