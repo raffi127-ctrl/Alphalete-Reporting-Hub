@@ -810,6 +810,23 @@ def _write_tab(sh, tab: str, tws, t_hrow: int, headers: List[str], widths, head_
     logfn(f"  wrote {layout.last_row} rows to {tab!r}")
 
 
+def borrow_roster(weeks: List[src.Week], missing: List[Optional[str]]) -> None:
+    """This week not on the source tab yet -> check LAST week's offices, with
+    TODAY's numbers.
+
+    The source tab's weekly block (which offices, and each one's goal) is added
+    by hand, and on a Monday it is often not there yet -- so Monday's list came
+    out empty while AppStream already had the day (2026-09-21). Only the office
+    list and goals are borrowed; every number is still pulled for the day it
+    belongs to. An office that opened this week is missing until the block is
+    added, which the week's title says."""
+    if weeks and not weeks[0].owners and len(weeks) > 1 and weeks[1].owners:
+        weeks[0] = src.Week(label=weeks[0].label, header_row=0,
+                            owners=list(weeks[1].owners))
+        missing[0] = (f"office list borrowed from week of {weeks[1].label} "
+                      f"(this week not on {src.SOURCE_TAB!r} yet)")
+
+
 def pick_pass(roster: List[str], now: dt.datetime, *, due: bool = False,
               zone: Optional[str] = None) -> Tuple[Optional[set], str, List[str]]:
     """(owners in this pass or None for all, the pass's name, its zone labels).
@@ -857,6 +874,7 @@ def run(*, week_label_: Optional[str] = None, tab: str = BOARD_TAB,
             # show the week empty and say why, rather than failing the whole board.
             weeks.append(src.Week(label=week_label(s), header_row=0, owners=[]))
             missing.append(f"not on {src.SOURCE_TAB!r} yet")
+    borrow_roster(weeks, missing)
     logfn(f"  this week {weeks[0].label} ({len(weeks[0].owners)} owners), "
           f"last week {weeks[1].label} ({len(weeks[1].owners)} owners)")
 

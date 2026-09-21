@@ -351,5 +351,26 @@ class PicturePlan(unittest.TestCase):
                                          "Mon 9/21 10:00 CT").startswith("All offices"))
 
 
+class BorrowedRoster(unittest.TestCase):
+    def test_monday_without_this_weeks_block_checks_last_weeks_offices(self):
+        from automations.first_to_second_below_mark import source as src
+        last = src.Week(label="9/13", header_row=5, owners=[src.Owner(name="Ann", goal=0.5)])
+        weeks = [src.Week(label="9/20", header_row=0, owners=[]), last]
+        missing = ["not on tab yet", None]
+        b.borrow_roster(weeks, missing)
+        self.assertEqual(weeks[0].label, "9/20")
+        self.assertEqual([o.name for o in weeks[0].owners], ["Ann"])
+        self.assertIn("borrowed from week of 9/13", missing[0])
+
+    def test_a_real_block_is_never_replaced(self):
+        from automations.first_to_second_below_mark import source as src
+        this = src.Week(label="9/20", header_row=5, owners=[src.Owner(name="Bob")])
+        weeks = [this, src.Week(label="9/13", header_row=5, owners=[src.Owner(name="Ann")])]
+        missing = [None, None]
+        b.borrow_roster(weeks, missing)
+        self.assertEqual([o.name for o in weeks[0].owners], ["Bob"])
+        self.assertIsNone(missing[0])
+
+
 if __name__ == "__main__":
     unittest.main()
