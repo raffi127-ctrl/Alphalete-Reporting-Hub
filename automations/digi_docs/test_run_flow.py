@@ -1480,3 +1480,80 @@ class AnExplicitPhaseBeatsBoth(unittest.TestCase):
         do_add, do_send = self._phases(["--both"])
         self.assertTrue(do_add)
         self.assertTrue(do_send)
+
+
+class SentTodayIsNotReopened(_NoNetwork):
+    """Megan 2026-09-21: every tick reopened everybody an earlier tick had
+    already sent, read PENDING, and called it "NOT SENT". By 12:39 a tick had
+    38 people to walk and the 1:00 starts were still waiting at 1:00. A
+    confirmed send is recorded, and the next tick skips that person before
+    opening OwnerVille."""
+
+    def setUp(self):
+        super().setUp()
+        import tempfile
+        from automations.digi_docs import run as R
+        d = tempfile.mkdtemp()
+        path = f"{d}/.digi-docs-sent"
+        for pt in (mock.patch.object(R, "sent_ledger_path", lambda: path),
+                   mock.patch.object(R, "_mark_quiet_day", lambda q: None),
+                   mock.patch.object(R, "_mark_did_work", lambda d: None),
+                   mock.patch.object(R.roster, "starting_today",
+                                     lambda s, today=None: s),
+                   mock.patch.object(R.roster, "due_now",
+                                     lambda s, now=None: (s, [], []))):
+            pt.start()
+            self.addCleanup(pt.stop)
+        self.path = path
+
+    def _ov(self, opens):
+        ov = _fake_ov()
+
+        def _open(page, name, **kw):
+            opens.append(name)
+            return object(), name
+
+        ov.open_set_status = _open
+        ov.docs_row_state = lambda modal: "REQUIRED ACTION"
+        ov.open_docs_portal = lambda page, modal: object()
+        ov.generate_bundle = lambda tab, name, dry_run=True: None
+        ov.confirm_generated = lambda tab, name: True
+        ov.tick_attestations = lambda page, modal, dry_run=True: ["BG"]
+        return ov
+
+    def _tick(self, opens, rec):
+        args = _Args()
+        args.due_now = True
+        return _run(self._ov(opens), rec, args)
+
+    def test_second_tick_skips_who_the_first_sent(self):
+        opens, rec = [], _Recorder()
+        self._tick(opens, rec)
+        self.assertEqual(["Dana Reyes"], opens)
+        self.assertEqual(1, rec.calls[0]["sent"])
+
+        self._tick(opens, rec)
+        self.assertEqual(["Dana Reyes"], opens,
+                         "a person sent this morning must not be reopened")
+        self.assertEqual([], rec.calls[-1]["refused"],
+                         "and must not be reported as NOT SENT")
+
+    def test_a_failed_generate_is_not_recorded(self):
+        opens, rec = [], _Recorder()
+        ov = self._ov(opens)
+        ov.confirm_generated = lambda tab, name: False
+        args = _Args()
+        args.due_now = True
+        _run(ov, rec, args)
+        from automations.digi_docs import run as R
+        self.assertEqual(set(), R._sent_today(),
+                         "no success banner = not sent = next tick retries")
+
+    def test_a_dry_run_records_nobody(self):
+        opens, rec = [], _Recorder()
+        args = _Args()
+        args.due_now = True
+        args.live = False
+        _run(self._ov(opens), rec, args)
+        from automations.digi_docs import run as R
+        self.assertEqual(set(), R._sent_today())

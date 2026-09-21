@@ -270,6 +270,46 @@ def _mark_quiet_day(quiet: bool) -> None:
         pass    # a missing marker only costs the next tick a sheet read
 
 
+# WHO THIS MACHINE ALREADY SENT TODAY (Megan 2026-09-21: "why haven't the last
+# 3 [been sent]"). Every tick used to reopen every due person in OwnerVille,
+# including the ones an earlier tick had just sent. Each of those cost a full
+# Set Status page walk only to read PENDING, so by 12:39 a tick had 38 people to
+# get through, took 15+ minutes, and the 1:00 starts were still waiting at 1:00.
+# The same pass also reported each of them as "NOT SENT and not finished" and
+# re-opened the corrections alert every tick with people who had their
+# documents. A confirmed generate goes in this file right away, and later ticks
+# skip those people before opening a browser.
+#
+# Only THIS machine's confirmed sends. Somebody sent by hand is not in it and
+# still gets the OwnerVille check, which is the authoritative one.
+def sent_ledger_path() -> str:
+    import datetime as _dt
+    return f"output/logs/.digi-docs-sent-{_dt.date.today().isoformat()}"
+
+
+def _ledger_key(name: str) -> str:
+    return " ".join((name or "").lower().split())
+
+
+def _sent_today() -> set:
+    try:
+        with open(sent_ledger_path()) as fh:
+            return {_ledger_key(l) for l in fh if l.strip()}
+    except Exception:                                       # noqa: BLE001
+        return set()   # no ledger = check everyone in OwnerVille, as before
+
+
+def _record_sent(name: str) -> None:
+    import os
+    path = sent_ledger_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a") as fh:
+            fh.write(_ledger_key(name) + "\n")
+    except Exception:                                       # noqa: BLE001
+        pass   # worst case the next tick reads PENDING in OwnerVille instead
+
+
 # A SHEET THAT IS BUSY IS NOT A RUN THAT DIED (2026-09-18). The 06:01 tick hit
 # Google's per-minute read quota (429) on the roster read — the 6am batch shares
 # that quota — and fill's retry spent ~3 minutes on it before giving up. The
@@ -420,6 +460,15 @@ def _phases(args) -> int:
         send, not_yet, no_time = roster.due_now(send)
         print(f"due now: {len(send)} · not yet: {len(not_yet)} · "
               f"no readable start time: {len(no_time)}")
+        # See sent_ledger_path. Live only: a dry run sends nobody, so its
+        # "sends" were never recorded and there is nothing to skip.
+        if not dry:
+            ledger = _sent_today()
+            already = [c for c in send if _ledger_key(c.name) in ledger]
+            if already:
+                send = [c for c in send if _ledger_key(c.name) not in ledger]
+                print(f"already sent today by an earlier tick: "
+                      f"{len(already)} — not reopening them")
         for c in not_yet:
             at = roster.send_due_at(c)
             # %-I is Mac-only; this has to run on Windows too.
@@ -729,6 +778,8 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                     if not dry and not ov.confirm_generated(tab, c.name):
                         _refuse(refused, f"{c.name}: no success banner", dry)
                         continue
+                    if not dry:
+                        _record_sent(c.name)
                     # THE SEND ALREADY HAPPENED (2026-08-31). generate_bundle
                     # is the send — OwnerVille mails the packet on that click —
                     # and confirm_generated above saw the success banner. So a
