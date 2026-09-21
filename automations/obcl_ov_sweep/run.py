@@ -11,8 +11,8 @@ Show All). A box is ticked only when OwnerVille shows every step behind it
 done with a date stamp. Ticks go ON only — never off: a hand tick stays.
 Blue Ink and Headshot Photo have their own automations and are not touched.
 
-Owner Submit also gets a colour: BLUE once every other OwnerVille step is
-green (someone needs to go submit them), GREEN once it's ticked.
+Every box it ticks also turns GREEN. Owner Submit additionally turns BLUE
+once every other OwnerVille step is green (someone needs to go submit them).
 """
 from __future__ import annotations
 
@@ -55,10 +55,9 @@ def match(people, reps: dict):
     return out, missing
 
 
-def _tint(ws, p, color) -> dict:
-    """Background of the Owner Submit cell ONLY — the checkbox value is never
-    touched by a tint."""
-    col = p.cols["Owner Submit"]
+def _tint(ws, p, color, column: str = "Owner Submit") -> dict:
+    """Background of ONE cell only — a tint never touches the checkbox value."""
+    col = p.cols[column]
     return {"repeatCell": {
         "range": {"sheetId": ws.id, "startRowIndex": p.row - 1,
                   "endRowIndex": p.row, "startColumnIndex": col - 1,
@@ -135,11 +134,12 @@ def main(argv=None) -> int:
             [{"range": gspread.utils.rowcol_to_a1(p.row, p.cols[c]),
               "values": [["TRUE"]]} for p, c in writes],
             value_input_option="USER_ENTERED")   # so the checkbox ticks
-    submitted = [p for p, c in writes if c == "Owner Submit"]
-    if args.tick and (ready or submitted):
+    # Every box we tick also turns green (Megan 2026-09-21: "checkmark the box
+    # and turn it green") — which is also what clears an Owner Submit blue.
+    if args.tick and (ready or writes):
         ws.spreadsheet.batch_update({"requests":
             [_tint(ws, p, config.READY_BLUE) for p in ready]
-            + [_tint(ws, p, config.DONE_GREEN) for p in submitted]})
+            + [_tint(ws, p, config.DONE_GREEN, c) for p, c in writes]})
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     stamp = dt.datetime.now().strftime("%Y-%m-%d_%H%M")

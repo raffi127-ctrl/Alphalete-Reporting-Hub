@@ -25,9 +25,10 @@ COLUMNS = ("Digi Docs", "Onboarding Quizzes", "UID Request", "Owner Submit")
 GONE_WORDS = ("quit", "terminat", "no show", "no-show", "fail", "resched",
               "declin", "not moving", "fired")
 
-# Owner Submit cell tints (backgroundColor only — never the value).
-#   blue   everything else is done in OwnerVille: someone needs to submit
-#   green  submitted (set when the sweep ticks it, so the blue goes away)
+# Cell tints (backgroundColor only — never the value).
+#   blue   Owner Submit only: everything else is done in OwnerVille, someone
+#          needs to submit them
+#   green  every box the sweep ticks (this also clears an Owner Submit blue)
 # Sheets' "light blue 3" / "light green 3", the palette these tabs use by hand.
 READY_BLUE = {"red": 0xCF / 255, "green": 0xE2 / 255, "blue": 0xF3 / 255}
 DONE_GREEN = {"red": 0xD9 / 255, "green": 0xEA / 255, "blue": 0xD3 / 255}

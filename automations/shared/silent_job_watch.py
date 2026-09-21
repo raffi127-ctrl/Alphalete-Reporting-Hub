@@ -123,6 +123,20 @@ JOBS: Dict[str, dict] = {
                   "Nothing is sent or lost — only the ticks go cold."),
         "fix": "lucy rerun install_blueink_sweep_agent --machine \"Lucy 2\"",
     },
+    "obcl_ov_sweep": {
+        "name": "OBCL <- OwnerVille sweep",
+        "machine": "Lucy 3",
+        "first_by": "15:00",       # first pass 14:00 + 60 min grace
+        "max_gap_min": 150,        # hourly → 2.5h tolerates one skipped pass
+        "active_until": "20:00",   # last pass 19:00 + grace
+        "weekdays": None,
+        "watch_from": "2026-09-22",
+        "means": ("the Digi Docs / Onboarding Quizzes / UID Request / Owner "
+                  "Submit boxes stop ticking off OwnerVille, and nobody's Owner "
+                  "Submit turns blue when they are ready. Nothing is sent or "
+                  "lost — the OBCL just goes stale."),
+        "fix": "lucy rerun install_obcl_ov_sweep_agent --machine \"Lucy 3\"",
+    },
     # The push fires every 5 minutes, 07:00-22:00, rotating one ApplicantStream
     # office per tick, and is HELD Fri 1pm -> Sun 1pm (see `quiet` below). It
     # publishes a Hub row ONCE a day per office, so a card that went green at
