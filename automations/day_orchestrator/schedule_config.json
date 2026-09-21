@@ -11504,6 +11504,26 @@
         4
       ],
       "_standalone_weekdays_note": "Mon-Fri. NOT a schedule change - the plist is untouched. This pins the missed-run watcher's GUESS, which is the only thing that reads it. Carlos's weekend quiet window (applicant_push.window.quiet_window: Fri 1PM -> Sun 1PM CST) makes every live pass DECLINE with exit 75, and deploy/applicant_push.sh publishes NOTHING for a decline - so on a weekend the watcher sees no Activity row and calls a correct skip a miss. It did exactly that on Sun 2026-09-20 at ~09:00 for applicant_push_khalil and applicant_push_raf_funnel2, the two per-office ids that had no entry here (Carlos's and Atef's, which do, stayed quiet). Saturday never runs; Sunday cannot run before 1PM while _historical_expected has learned a ~7AM start. FAILED / INCOMPLETE / STUCK stay watched every day, so a weekend run that really breaks still alerts."
+    },
+    "obcl_ov_sweep": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "OBCL <- OwnerVille sweep (Megan 2026-09-21). Reads the newest D2D OBCL tab + ONE View Progress read (RES-AT&T, Show All) and ticks Digi Docs / Onboarding Quizzes (all six courses) / UID Request / Owner Submit once OwnerVille shows them green with a date. DRY by default: base_args is empty, append --tick to write. Also paints the Owner Submit cell BLUE when every other OV step is green incl. a PASSED background check (someone needs to submit them), green once ticked. Ticks ON only, never off. Blue Ink + Headshot Photo have their own automations. weekdays [] until the dry run is confirmed.",
+      "machine": "Lucy 3",
+      "display_name": "OBCL ← OwnerVille sweep",
+      "source_type": "browser",
+      "data_sources": [],
+      "command": [
+        "automations.obcl_ov_sweep.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 20,
+      "verify": null
     }
   },
   "read_only_standalone": {
