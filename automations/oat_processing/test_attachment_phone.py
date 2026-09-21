@@ -23,6 +23,10 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
 from automations.oat_processing import resume_download as rd  # noqa: E402
 
+# The reader now WAITS for the link (2026-09-21). Tests that expect "no link"
+# must not sit through the real wait; the one test about waiting sets its own.
+rd.ATTACH_WAIT_S = 0
+
 _failed = 0
 
 
@@ -120,7 +124,38 @@ phone, detail = rd.phone_from_attachment(_Page(RuntimeError("boom"), []))
 check("an exception is caught", phone, None)
 check("and named", "fetch failed" in detail, True)
 phone, detail = rd.phone_from_attachment(_Page(_Resp(b""), [], links=PANEL_LINKS[:1]))
-check("no attachment at all is its own reason", detail, "no attachment on the panel")
+check("no attachment at all is its own reason",
+      detail.startswith("no attachment on the panel"), True)
+check("and says how long it waited", "waited" in detail, True)
+
+print("A LINK THAT LOADS LATE IS STILL FOUND (the 0-for-94 bug):")
+# 2026-09-21: live, every one of 94 applicants read "no attachment on the panel"
+# while the 9/18 probe had found it on 3 of 3 — the panel settles before its
+# attachment frame loads, and a single look happened too early. Here the link
+# only exists from the THIRD look on.
+class _LatePage(_Page):
+    def __init__(self, resp, log, show_after):
+        super().__init__(resp, log)
+        self._looks = 0
+        self._show_after = show_after
+        self._late = _Frame(PANEL_LINKS)
+        self.frames = [_Frame([])]          # the attachment frame is not there yet
+
+    def evaluate(self, js):
+        self._looks += 1
+        if self._looks >= self._show_after and self._late not in self.frames:
+            self.frames.append(self._late)  # ...and now it has loaded
+        return []
+
+    def wait_for_timeout(self, ms):
+        pass                                 # no real waiting in a test
+
+late = _LatePage(_Resp(b"%PDF-1.4 fake"), [], show_after=3)
+check("found once it appears",
+      rd.attachment_href(late, wait_s=5.0),
+      "https://www.applicantStream.com/attachDay/2026/09/11/187988588.pdf")
+check("a single instant look would have missed it",
+      rd.attachment_href(_LatePage(_Resp(b""), [], show_after=3), wait_s=0), "")
 
 print("a resume that really has no number says exactly that:")
 rd.phone_from_file = lambda path: None

@@ -340,15 +340,31 @@ _ATTACH_HREF_JS = r"""
 """
 
 
-def attachment_href(page) -> str:
-    """The direct URL of the applicant's attached resume on the AppStream panel,
-    or "" when the panel offers none.
+# HOW LONG TO WAIT FOR THE ATTACHMENT LINK TO APPEAR (2026-09-21).
+#
+# The first version looked ONCE and moved on. Live, that went 0 for 94 in one
+# morning — every applicant "no attachment on the panel" — while the 2026-09-18
+# probe had found the attachment on 3 of 3. The difference: the probe scanned
+# every frame for tabs and file links FIRST, and that scan gave the panel time to
+# finish loading. The applicant panel settles before its attachment frame does,
+# so a read timed on the panel sees nothing. It is the 2026-09-13 bug in a new
+# place (reference_panel_reads_before_frames_load), and it costs more than a
+# missed number: the walk then falls through to Indeed, finds no link either, and
+# SHELVES that applicant as "no resume" for 7 days.
+#
+# So poll — and the condition is the link itself being reachable, never "the
+# page changed", per that same lesson. Returns the moment it appears, so an
+# applicant who has an attachment costs nothing extra; one who has none costs at
+# most this long.
+ATTACH_WAIT_S = float(os.environ.get("OAT_ATTACH_WAIT_S", "4"))
 
-    Found by the 2026-09-18 probe: the panel (frame p=618) carries a plain
-    'Download Attachment' anchor pointing at
-    https://www.applicantStream.com/attachDay/<Y>/<M>/<D>/<id>… — same origin,
-    no Indeed login and no Cloudflare between us and the file whose number
-    Megan could see on screen."""
+# How long the last attachment_href() call waited, for the walk's log line — so
+# the next time this goes 0-for-N the log says whether we waited or gave up.
+LAST_ATTACH_WAIT_S = 0.0
+
+
+def _attach_hrefs_now(page) -> str:
+    # page.frames is re-read every call: the frame we want may not exist yet.
     for fr in ([page] + list(getattr(page, "frames", []) or [])):
         try:
             hrefs = fr.evaluate(_ATTACH_HREF_JS) or []
@@ -358,6 +374,33 @@ def attachment_href(page) -> str:
             if u:
                 return u
     return ""
+
+
+def attachment_href(page, wait_s: float = None) -> str:
+    """The direct URL of the applicant's attached resume on the AppStream panel,
+    or "" when the panel still offers none after waiting up to `wait_s`.
+
+    Found by the 2026-09-18 probe: the panel (frame p=618) carries a plain
+    'Download Attachment' anchor pointing at
+    https://www.applicantStream.com/attachDay/<Y>/<M>/<D>/<id>… — same origin,
+    no Indeed login and no Cloudflare between us and the file whose number
+    Megan could see on screen."""
+    import time as _time
+    global LAST_ATTACH_WAIT_S
+    wait_s = ATTACH_WAIT_S if wait_s is None else wait_s
+    start = _time.monotonic()
+    deadline = start + max(0.0, wait_s)
+    while True:
+        u = _attach_hrefs_now(page)
+        if u or _time.monotonic() >= deadline:
+            LAST_ATTACH_WAIT_S = _time.monotonic() - start
+            return u
+        # Let the page keep loading while we wait (a bare sleep would stall the
+        # sync driver's event processing); fall back to sleep for test doubles.
+        try:
+            page.wait_for_timeout(250)
+        except Exception:  # noqa: BLE001
+            _time.sleep(0.25)
 
 
 def phone_from_attachment(page):
@@ -375,7 +418,8 @@ def phone_from_attachment(page):
     an applicant we could not read is left alone."""
     href = attachment_href(page)
     if not href:
-        return None, "no attachment on the panel"
+        return None, ("no attachment on the panel (waited %.1fs)"
+                      % LAST_ATTACH_WAIT_S)
     try:
         resp = page.context.request.get(href, timeout=45000)
         if not resp.ok:
@@ -402,7 +446,8 @@ def phone_from_attachment(page):
         return None, "attachment save failed: %s" % type(e).__name__
     phone = phone_from_file(dest)
     if phone:
-        return phone, "from the AppStream attachment (%s, %d bytes)" % (ext, len(body))
+        return phone, ("from the AppStream attachment (%s, %d bytes, link after %.1fs)"
+                       % (ext, len(body), LAST_ATTACH_WAIT_S))
     return None, "attachment read, no number in it (%s, %d bytes)" % (ext, len(body))
 
 
