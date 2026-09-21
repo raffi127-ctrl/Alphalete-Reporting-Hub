@@ -86,6 +86,8 @@ def main(argv=None) -> int:
     if not todo:
         return 0
 
+    import time
+    t0 = time.monotonic()
     from automations.shared.tableau_patchright import ownerville_session
     with ownerville_session(headless=not args.show, verbose=False,
                             profile_dir=PROFILE_DIR) as page:
@@ -103,21 +105,9 @@ def main(argv=None) -> int:
             firsts = sorted({p.first.split()[0] for p in missing if p.first})
             ov_table.search_fill(page, heads, reps, firsts)
             matched, missing = match(todo, reps)
-        if missing:
-            # Last resort, one by one: the same find_rep Digi Docs uses to
-            # locate these people. Everyone on the OBCL was ADDED to
-            # OwnerVille by Digi Docs (Megan 2026-09-21), so "not found" here
-            # should be rare and worth a look.
-            found = 0
-            for p in list(missing):
-                if ov_table.lookup_one(page, p.name, heads, reps):
-                    found += 1
-            print(f"  find_rep fallback: {found} of {len(missing)} found",
-                  flush=True)
-            matched, missing = match(todo, reps)
-            # Everyone we were looking for was searched for directly, so the
-            # page-1 shortfall no longer leaves anyone unread.
-            complete = True
+        # Everyone not on page 1 was searched for directly, so the page-1
+        # shortfall no longer leaves anyone unread.
+        complete = True
     writes, log, ready = [], [], []
     for p in todo:
         ov_name = matched.get(p.row)
