@@ -41,6 +41,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"
@@ -71,6 +72,9 @@ CARD_STATUSES = {"level 2", "mastermind"}
 
 OUT_DIR = Path("output/team_tree")
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+# How long to wait for a screenshot at worst, and how long the file has to sit
+# unchanged before we call it finished.
+SHOT_TIMEOUT, SHOT_SETTLE = 90, 1.0
 
 
 def _norm(s: str) -> str:
@@ -331,22 +335,43 @@ def render_png(html_path: Path, png_path: Path,
     # `window` is the headless viewport: anything taller than it is CUT OFF,
     # not scrolled, so a map with more rows has to ask for a taller window
     # (the trim below takes the empty apron back off).
+    # WE WAIT FOR THE FILE, NOT FOR CHROME. `--headless=new` with a fresh
+    # --user-data-dir writes the PNG and then hangs on exit (seen on the mini
+    # 2026-08-30) — measured 2026-09-21: the image lands in ~2s and the process
+    # never exits, so `subprocess.run(timeout=90)` sat out the whole 90s EVERY
+    # TIME. Six shots for the mind map's thread cost nine minutes of nothing.
+    # So: poll until the file stops growing, then kill it. The file on disk is
+    # the truth — the size check below decides, not the exit code.
     png_path.unlink(missing_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
-        try:
-            subprocess.run(
-                [CHROME, "--headless=new", "--disable-gpu", "--hide-scrollbars",
-                 "--no-first-run", "--no-default-browser-check",
-                 "--disable-extensions", f"--user-data-dir={tmp}",
-                 "--force-device-scale-factor=2",
-                 "--window-size=%d,%d" % window,
-                 f"--screenshot={png_path}", html_path.resolve().as_uri()],
-                capture_output=True, timeout=90)
-        except subprocess.TimeoutExpired:
-            # headless=new sometimes writes the PNG, then hangs on exit with a
-            # fresh --user-data-dir (seen on the mini 2026-08-30). The file on
-            # disk is the truth — the size check below decides, not the exit.
-            pass
+        proc = subprocess.Popen(
+            [CHROME, "--headless=new", "--disable-gpu", "--hide-scrollbars",
+             "--no-first-run", "--no-default-browser-check",
+             "--disable-extensions", f"--user-data-dir={tmp}",
+             "--force-device-scale-factor=2",
+             "--window-size=%d,%d" % window,
+             f"--screenshot={png_path}", html_path.resolve().as_uri()],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        deadline = time.time() + SHOT_TIMEOUT
+        size, steady_since = -1, None
+        while time.time() < deadline:
+            if proc.poll() is not None:
+                break                       # it exited on its own: done
+            now = png_path.stat().st_size if png_path.exists() else 0
+            if now and now == size:
+                # Unchanged for SHOT_SETTLE seconds = Chrome has finished
+                # writing it. Anything shorter risks a half-written PNG.
+                if steady_since and time.time() - steady_since >= SHOT_SETTLE:
+                    break
+            else:
+                size, steady_since = now, time.time()
+            time.sleep(0.15)
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
     if not png_path.exists() or png_path.stat().st_size < 20_000:
         raise RuntimeError(f"screenshot too small/missing: {png_path}")
     _trim(png_path)
