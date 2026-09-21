@@ -81,6 +81,56 @@ def find_by_email(page, cols: dict, email: str):
     return None
 
 
+def _name_key(s: str) -> str:
+    return " ".join(ovn.norm(s or "").split())
+
+
+def _plain_prefix(word: str) -> str:
+    """The word up to its first letter that is not plain a-z (accents,
+    apostrophes, hyphens)."""
+    out = ""
+    for ch in word or "":
+        if not ("a" <= ch.lower() <= "z"):
+            break
+        out += ch
+    return out
+
+
+def find_by_name(page, cols: dict, first: str, last: str) -> list:
+    """Every rep row whose first AND last name equal these, ignoring case,
+    accents and spacing. Used only to REFUSE a create -- never to decide
+    someone is present or to send them anything (see create).
+
+    Searches the SURNAME alone: the table search matches its rendered text,
+    and a full name typed as one term filters to nothing (ov_name_sync)."""
+    f, l = _name_key(first), _name_key(last)
+    if not (f and l):
+        return []
+    hits = []
+    # One word of the surname, the longest: "Al Mutlaq" typed whole can filter
+    # to nothing for the same reason a full name does. The table search does
+    # not fold accents, and the accent can be on EITHER side -- "Quinones" on
+    # the board, "Quiñones" in OwnerVille -- so when the whole word finds
+    # nobody, look again on its first three plain letters. The exact
+    # comparison below does the deciding either way.
+    word = _plain_prefix(max(last.split(), key=len))
+    terms = [t for t in (word, word[:3]) if len(t) >= 3]
+    for term in dict.fromkeys(terms):
+        for row, _href in ovn._search_rows(page, term):
+            fields = ovn._row_fields(page, row, cols)
+            rf = _name_key(fields.get("first"))
+            rl = _name_key(fields.get("last"))
+            if not (rf or rl):
+                parts = _name_key(fields.get("full")).split()
+                rf, rl = ((parts[0], " ".join(parts[1:]))
+                          if len(parts) >= 2 else ("", ""))
+            if rf == f and rl == l:
+                hits.append(fields)
+        if hits:
+            break
+    return hits
+
+
 # The New Sales Rep form's text boxes, by the names bg_check_sync proved live
 # on this page (ov_name_sync: "whose name boxes are `fname` and `lname`").
 # Ordered: the first selector that exists wins.
@@ -270,6 +320,25 @@ def create(page, person, *, dry_run: bool = True, verbose: bool = True) -> str:
                   f"{existing.get('full') or existing.get('email')!r}")
         return "exists"
 
+    # SAME NAME, DIFFERENT EMAIL IS NOT "ABSENT" (2026-09-21). Jaylen Anthony
+    # was already in OwnerVille under another email, the email lookup correctly
+    # found nobody with the board's address, and this created him a second
+    # time -- two rows on View Progress, the send refused as ambiguous, and
+    # Megan deleted the copy by hand. The email rule stays: a name match is
+    # never used to SEND or to call someone present. It is used only to STOP,
+    # because a second record is the one mistake a person has to clean up.
+    namesakes = find_by_name(page, cols, first, last)
+    if namesakes:
+        mails = sorted({(r.get("email") or "no email").strip()
+                        for r in namesakes})
+        raise Refused(
+            f"{who} was not created: OwnerVille already has "
+            f"{len(namesakes)} record(s) with this name ({', '.join(mails)}) "
+            f"but none with {email}. If that is them, correct the email on "
+            f"the board or in OwnerVille so the two match; if it is a "
+            f"different person, add them by hand under Sales Reps → + Add "
+            f"Sales Rep.")
+
     first_in, last_in = _open_form(page, rqst, verbose=verbose)
     if dry_run:
         # Prove the whole path without writing: every field and box the live
@@ -322,9 +391,20 @@ def create(page, person, *, dry_run: bool = True, verbose: bool = True) -> str:
     # PROVE IT. Clicking Add is not evidence; the row is. Same reason the
     # Digi Docs day went wrong in the first place -- a step that "ran" is not
     # a step that landed.
-    ovn.open_rep_list(page, verbose=False)
-    cols = ovn._columns(page)
-    made = find_by_email(page, cols, email)
+    # THREE LOOKS, NOT ONE (2026-09-21). Faith Moss was the first create of the
+    # day: the save worked (record 9505694, visible in OwnerVille minutes
+    # later), but the one search right after it found nothing, so the run
+    # posted "add them by hand" -- an instruction that, followed, makes a
+    # duplicate. A new record can take a few seconds to reach the list.
+    made = None
+    for wait_ms in (0, 5000, 15000):
+        if wait_ms:
+            page.wait_for_timeout(wait_ms)
+        ovn.open_rep_list(page, verbose=False)
+        cols = ovn._columns(page)
+        made = find_by_email(page, cols, email)
+        if made:
+            break
     if not made:
         bad = ovn._complaints(page)
         raise Refused(f"{who} could not be created in OwnerVille — we "
