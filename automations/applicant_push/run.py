@@ -261,6 +261,9 @@ def main(argv=None) -> int:
                         "touches ONLY these people and pages past everyone else. "
                         "Written by restore_removed --names-out; sets "
                         "OAT_ONLY_NAMES for the OAT stage.")
+    p.add_argument("--from-end", action="store_true",
+                   help="walk the OAT queue newest-first (jump to last, page "
+                        "backward) — the front is a wall of no-phone flags")
     p.add_argument("--audit-office", action="store_true",
                    help="explicit acknowledgement that this live push targets an "
                         "office OUTSIDE the hard-coded PUSH_ALLOWED allowlist — "
@@ -287,6 +290,8 @@ def main(argv=None) -> int:
     args = p.parse_args(argv)
     if getattr(args, "only_names", ""):
         os.environ["OAT_ONLY_NAMES"] = args.only_names
+    if getattr(args, "from_end", False):
+        os.environ["OAT_WALK_FROM_END"] = "1"
     # WEEKEND QUIET WINDOW (Carlos, 2026-09-04): pushes stop FRIDAY 1:00 PM CST
     # and stay off until SUNDAY 1:00 PM CST. Supersedes the plain Saturday block
     # (2026-08-31) — the whole Fri-afternoon-to-Sun-midday stretch is quiet.
