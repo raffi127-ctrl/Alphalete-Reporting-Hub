@@ -163,14 +163,11 @@ def plan(values: List[List], today: dt.date) -> List[dict]:
 
 
 def comment_for(blocks: List[dict], sub: str) -> str:
-    """The Slack text: whose pass it is, then one line per day in the picture,
-    so the message reads without opening the image."""
-    lines = [f"*1st to 2nd Below the Mark* — {sub}"]
-    for blk in blocks:
-        lines.append(f"*{blk['caption'].split('  ·  ')[0].title()}*")
-        for _, text in blk["days"]:
-            lines.append(f"• {_date_of(text).title()}: {_count(text)}")
-    return "\n".join(lines)
+    """The Slack text: ONE line saying whose wave it is. Everything else is in
+    the picture -- a per-day summary under it read as clutter, since everyone
+    opens the image anyway (Eve, 2026-09-21)."""
+    scope = re.split(r"\s+·\s+(?:offices at or under|every office)", sub, maxsplit=1)[0]
+    return f"*1st to 2nd Below the Mark* — {scope.strip()}"
 
 
 def _font(size: int):
