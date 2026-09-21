@@ -171,15 +171,8 @@ def read_table(page, *, verbose: bool = True) -> tuple:
 
     got = page.evaluate(_READ_JS)
     heads = got.get("heads") or []
-    name_i = header_index(heads, "name")
     reps: Dict[str, list] = {}
-    for cells in got.get("rows") or []:
-        if name_i is None or name_i >= len(cells):
-            continue
-        # Name cell reads "Marqoun Holland\n(9502292)\nEdit\nAction".
-        first_line = (cells[name_i].get("text") or "").strip().split("\n")[0]
-        if first_line and "no data" not in first_line.lower():
-            reps.setdefault(first_line.strip(), cells)
+    _collect(got, heads, reps)
     m = re.search(r"of\s+([\d,]+)\s+entries", got.get("info") or "", re.I)
     claimed = int(m.group(1).replace(",", "")) if m else dov._entries_total(page)
     complete = claimed is None or len(reps) >= claimed
@@ -188,6 +181,54 @@ def read_table(page, *, verbose: bool = True) -> tuple:
               f"{len(reps)}, table says {claimed if claimed is not None else '?'}"
               f"{'' if complete else '  ⛔ INCOMPLETE'}", flush=True)
     return heads, reps, complete
+
+
+def _collect(got: dict, heads: List[str], reps: Dict[str, list]) -> int:
+    """Add each table row to reps under its OV name. Returns rows added."""
+    name_i = header_index(heads, "name")
+    added = 0
+    for cells in got.get("rows") or []:
+        if name_i is None or name_i >= len(cells):
+            continue
+        # Name cell reads "Marqoun Holland\n(9502292)\nEdit\nAction".
+        first_line = (cells[name_i].get("text") or "").strip().split("\n")[0]
+        if first_line and "no data" not in first_line.lower():
+            if first_line.strip() not in reps:
+                added += 1
+            reps.setdefault(first_line.strip(), cells)
+    return added
+
+
+def search_fill(page, heads: List[str], reps: Dict[str, list],
+                surnames: List[str], *, verbose: bool = True) -> int:
+    """Look up each surname through DataTables' search box and add whatever
+    rows it shows. The fallback for when the one-page read comes up short
+    (Lucy 3, 2026-09-21: 50 of 58 "not found" — the table never left page 1).
+    Search filters client-side, so the person's row is on page 1 by
+    construction; this is the same box headshots' find_rep has used daily."""
+    box = page.locator("input[type='search']:visible").first
+    box.wait_for(state="visible", timeout=20000)
+    found = 0
+    for term in surnames:
+        try:
+            box.fill("")
+            box.press_sequentially(term, delay=25)
+            page.wait_for_timeout(1500)
+            got = page.evaluate(_READ_JS)
+            if not heads:
+                heads[:] = got.get("heads") or []
+            found += _collect(got, heads, reps)
+        except Exception as e:                              # noqa: BLE001
+            if verbose:
+                print(f"    search {term!r} failed: {type(e).__name__}")
+    try:
+        box.fill("")
+    except Exception:                                       # noqa: BLE001
+        pass
+    if verbose:
+        print(f"  search fallback: {len(surnames)} surname(s) looked up, "
+              f"{found} more row(s) read", flush=True)
+    return found
 
 
 def _largest_page_length(page) -> int:

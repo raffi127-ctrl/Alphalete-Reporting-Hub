@@ -89,8 +89,22 @@ def main(argv=None) -> int:
     with ownerville_session(headless=not args.show, verbose=False,
                             profile_dir=PROFILE_DIR) as page:
         heads, reps, complete = ov_table.read_table(page)
-
-    matched, missing = match(todo, reps)
+        matched, missing = match(todo, reps)
+        if missing:
+            # The one-page read is not trusted to be whole; search the rest.
+            surnames = sorted({(p.last or p.first).split()[-1]
+                               for p in missing if (p.last or p.first)})
+            ov_table.search_fill(page, heads, reps, surnames)
+            matched, missing = match(todo, reps)
+        if missing:
+            # Second probe for a surname that searches differently in OV
+            # ("Quiroz - Lebron" on the OBCL): the first name.
+            firsts = sorted({p.first.split()[0] for p in missing if p.first})
+            ov_table.search_fill(page, heads, reps, firsts)
+            matched, missing = match(todo, reps)
+            # Everyone we were looking for was searched for directly, so the
+            # page-1 shortfall no longer leaves anyone unread.
+            complete = True
     writes, log, ready = [], [], []
     for p in todo:
         ov_name = matched.get(p.row)
