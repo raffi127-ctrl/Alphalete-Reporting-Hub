@@ -1132,29 +1132,51 @@ _DAILY_RB_VIEW = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
 _DAILY_RB_CARD_ID = "daily-rep-breakdown"
 
 
-def _daily_manifest_fail(phase: str) -> None:
+def _daily_manifest_fail(phase: str, timeout_min: int = 0) -> None:
     """Write the standard failure manifest (why/fix/link/message) for the Daily
     Rep Breakdown card so the Hub shows what failed + how to fix it. Best-effort
     — never raises. `phase` is 'phase2' (ownerville scrape) or 'phase3'
-    (Tableau pull)."""
+    (Tableau pull). `timeout_min` > 0 means Phase 2 ran out of time rather than
+    crashing.
+
+    NO "sign Report Chrome in" here (2026-09-21). The scrape opens its own
+    patchright browser and logs itself in (resources/lucy-login-standard.md), so
+    that line sent people to check a session that was fine — and on 9/21 the run
+    had simply hit its time cap at owner 20 of 24."""
     try:
         from automations.shared import run_manifest as _rm
-        if phase == "phase2":
+        if phase == "phase2" and timeout_min:
+            _rm.write_manifest(
+                _DAILY_RB_CARD_ID, failed=["Phase 2 — ownerville scrape"],
+                retry_args=[], kind="phase",
+                note=f"ownerville scrape (Phase 2) ran past its {timeout_min}-min "
+                     "cap and was stopped.",
+                remediation=_rm.make_remediation(
+                    reason=f"The ownerville scrape ran out of time ({timeout_min} "
+                           "min) before every owner was done — the session was "
+                           "not the problem.",
+                    fix="Run Again — Phase 2 resumes from its checkpoint, so only "
+                        "the owners it didn't reach are scraped. It signs itself "
+                        "in to ownerville; nobody needs to.",
+                    link="",
+                    message="The Daily Rep Breakdown ran out of time partway "
+                            "through the ownerville scrape. A re-run picks up "
+                            "the remaining owners."))
+        elif phase == "phase2":
             _rm.write_manifest(
                 _DAILY_RB_CARD_ID, failed=["Phase 2 — ownerville scrape"],
                 retry_args=[], kind="phase",
                 note="ownerville scrape (Phase 2) failed.",
                 remediation=_rm.make_remediation(
-                    reason="The ownerville scrape (Phase 2) didn't complete — it "
-                           "timed out or the Chrome/ownerville session dropped.",
-                    fix="Make sure Report Chrome is running and signed in to "
-                        "ownerville, then Run Again — Phase 2 resumes from its "
-                        "checkpoint, so finished owners aren't re-scraped.",
+                    reason="The ownerville scrape (Phase 2) crashed before "
+                           "writing its results.",
+                    fix="Run Again — Phase 2 resumes from its checkpoint, so "
+                        "finished owners aren't re-scraped, and it signs itself "
+                        "back in to ownerville. If it crashes again, check the "
+                        "run log for the error.",
                     link="",
-                    message="The Daily Rep Breakdown report failed at the "
-                            "ownerville scrape step — the browser session likely "
-                            "dropped. Re-running with Report Chrome signed in "
-                            "should resume it."))
+                    message="The Daily Rep Breakdown failed at the ownerville "
+                            "scrape step. A re-run resumes where it stopped."))
         else:  # phase3
             _rm.write_manifest(
                 _DAILY_RB_CARD_ID, failed=["Phase 3 — Tableau pull"],
@@ -1584,7 +1606,7 @@ def main() -> int:
                 "and was stopped — usually one owner's page hung. Progress is "
                 "checkpointed, so click Run Again to resume where it left off.",
                 str(log_path))
-            _daily_manifest_fail("phase2")
+            _daily_manifest_fail("phase2", timeout_min=phase2_timeout_s // 60)
             return 1
         # run_all_owners exits non-zero when SOME owners were skipped — that's
         # expected (pending-access owners). A genuine failure = no results
