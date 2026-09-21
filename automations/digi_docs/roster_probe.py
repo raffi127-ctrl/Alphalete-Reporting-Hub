@@ -86,7 +86,74 @@ def main(argv=None) -> int:
         page.wait_for_timeout(5000)
         print(f"\nafter picking '{best}' on the VISIBLE menu: {_info(page)} · "
               f"rows in DOM: {page.locator('tbody tr:visible').count()}")
+
+        # ROUND 2 (2026-09-21, 18:01 run): one menu, visible, and picking 100
+        # still left "Showing 1 to 25 of 143" -- the table ignores the control
+        # entirely, which is also why Next never advanced. Two routes that do
+        # not go through the controls:
+        _try_datatables_api(page)
+        _try_csv_export(page)
     return 0
+
+
+def _try_datatables_api(page) -> None:
+    """Ask DataTables itself to show every row.
+
+    page.evaluate runs in an ISOLATED world under patchright, where the page's
+    jQuery does not exist. A <script> tag runs in the page's own world, so the
+    call goes in one and leaves its answer on <body> for us to read."""
+    js = """
+    (function () {
+      var out = 'no jQuery';
+      try {
+        if (window.jQuery && jQuery.fn.dataTable) {
+          var tables = jQuery.fn.dataTable.tables({visible: true});
+          out = 'visible tables: ' + tables.length;
+          if (tables.length) {
+            var dt = jQuery(tables[0]).DataTable();
+            var s = dt.settings()[0];
+            out += ' · serverSide=' + !!(s.oFeatures && s.oFeatures.bServerSide)
+                 + ' · ajax=' + !!s.ajax
+                 + ' · rows known to DataTables=' + dt.rows().count();
+            dt.page.len(-1).draw(false);
+          }
+        }
+      } catch (e) { out += ' · ERROR ' + e; }
+      document.body.setAttribute('data-roster-probe', out);
+    })();
+    """
+    try:
+        page.add_script_tag(content=js)
+        page.wait_for_timeout(5000)
+        said = page.locator("body").get_attribute("data-roster-probe")
+    except Exception as e:                      # noqa: BLE001
+        said = f"script failed: {type(e).__name__}"
+    print(f"\nDataTables API: {said}")
+    print(f"   after page.len(-1): {_info(page)} · rows in DOM: "
+          f"{page.locator('tbody tr:visible').count()}")
+
+
+def _try_csv_export(page) -> None:
+    """The CSV button exports what DataTables holds, not what is on screen.
+    Counts the rows; saves nothing past the probe."""
+    import csv
+    import io
+    btn = page.locator("button:has-text('CSV'):visible, "
+                       "a:has-text('CSV'):visible").first
+    if not btn.count():
+        print("\nCSV export: no visible CSV button")
+        return
+    try:
+        with page.expect_download(timeout=30000) as dl:
+            btn.click()
+        path = dl.value.path()
+        with open(path, newline="", encoding="utf-8-sig") as fh:
+            rows = list(csv.reader(fh))
+        print(f"\nCSV export: {max(len(rows) - 1, 0)} data row(s) "
+              f"(header: {rows[0][:4] if rows else '-'})")
+    except Exception as e:                      # noqa: BLE001
+        print(f"\nCSV export: failed — {type(e).__name__}: "
+              f"{str(e).splitlines()[0][:120]}")
 
 
 if __name__ == "__main__":
