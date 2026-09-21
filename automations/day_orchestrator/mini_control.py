@@ -8452,8 +8452,17 @@ def main(argv=None) -> int:
         # shlex.join (paired with _action_rerun's shlex.split) so a quoted
         # multi-word arg survives the Sheet round-trip, e.g.
         # `lucy rerun opt_phase --only "Marcellus Butler"` stays ONE token.
-        enqueue(a.enqueue[0], shlex.join(a.enqueue[1:]), by=a.by,
-                sandbox=a.sandbox, machine=a.machine)
+        # `update` goes to EVERY Lucy unless one is named (Megan 2026-09-21:
+        # a fix pushed to three boxes left Lucy 4 on old code). The roster is
+        # fleet.RUNNERS, so a Lucy 5 added there is included with no edit here.
+        # `--machine all` works for it too.
+        targets = [a.machine]
+        if a.enqueue[0] == "update" and (a.machine or "").lower() in ("", "all"):
+            from automations.shared import fleet
+            targets = list(fleet.RUNNERS)
+        for m in targets:
+            enqueue(a.enqueue[0], shlex.join(a.enqueue[1:]), by=a.by,
+                    sandbox=a.sandbox, machine=m)
         return 0
     if a.loop:
         poll_loop(a.interval, dry_run=a.dry_run, sandbox=a.sandbox,
