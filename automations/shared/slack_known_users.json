@@ -204,6 +204,18 @@
       "name": "Lemsy Vazquez",
       "source": "gap_alerts leader tag",
       "learned": "2026-09-20"
+    },
+    "algemar kennel": {
+      "id": "U09MXMU76MB",
+      "name": "Algemar Kennel",
+      "source": "gap_alerts leader tag",
+      "learned": "2026-09-21"
+    },
+    "basil elhassan": {
+      "id": "U096NS13LHZ",
+      "name": "Basil Elhassan",
+      "source": "Megan confirmed 2026-09-21: Hashiras leader; the board only ever types 'Bas', Slack calls him 'Elhassan' (xyzaroug)",
+      "learned": "2026-09-21"
     }
   }
 }
