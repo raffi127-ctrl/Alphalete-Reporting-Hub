@@ -130,11 +130,34 @@ def _is_read_only_call(url: str) -> bool:
             or method.startswith(_READ_ONLY_PREFIXES))
 
 
+# 2026-09-21: cody_metrics lost Rep Activations + Sales 6+ Days Out at 08:15 —
+# "_ssl.c:1112: The handshake operation timed out" on BOTH, one a read
+# (conversations.history), one a write (files.completeUploadExternal). slack_sdk
+# retries a URLError ONCE, and each try waits 30s for the handshake, so a blip
+# a little over a minute long outlasts it. Lucy 1's logs show the same error on
+# 17 of the last 18 days (rc-autoread, sara-down, org-board review, country board).
+#
+# A connection that never OPENED is safe to re-send even for a post: the TLS
+# handshake (or DNS, or a refused connect) happens before a single byte of the
+# request goes out, so Slack never saw it and nothing can double-post. That is
+# the one exception to reads-only above, and it is matched narrowly — a timeout
+# while SENDING or READING says "timed out"/"write operation", never "handshake".
+def _never_reached_slack(error) -> bool:
+    import socket
+    from urllib.error import URLError
+    reason = error.reason if isinstance(error, URLError) else error
+    if isinstance(reason, (ConnectionRefusedError, socket.gaierror)):
+        return True
+    return (isinstance(reason, (socket.timeout, TimeoutError, ssl.SSLError))
+            and "handshake" in str(reason).lower())
+
+
 _RETRY_HANDLERS = None
 
 
 def _retry_handlers():
-    """slack_sdk's own handlers plus one for truncated read responses."""
+    """slack_sdk's own handlers plus one for truncated read responses and one
+    for connections that never opened."""
     global _RETRY_HANDLERS
     if _RETRY_HANDLERS is None:
         from http.client import IncompleteRead
@@ -145,8 +168,13 @@ def _retry_handlers():
                 return (isinstance(error, IncompleteRead)
                         and _is_read_only_call(getattr(request, "url", "")))
 
+        class _NeverConnectedRetryHandler(RetryHandler):
+            def _can_retry(self, *, state, request, response=None, error=None):
+                return error is not None and _never_reached_slack(error)
+
         _RETRY_HANDLERS = default_retry_handlers() + [
-            _TruncatedReadRetryHandler(max_retry_count=2)]
+            _TruncatedReadRetryHandler(max_retry_count=2),
+            _NeverConnectedRetryHandler(max_retry_count=4)]
     return _RETRY_HANDLERS
 
 
