@@ -99,6 +99,32 @@ def run(log=print) -> int:
             pass
 
 
+def _live_urls(ctx) -> list:
+    """Where every open tab ACTUALLY is right now, asked of the page itself.
+
+    NOT page.url. In the sync API that is a cached value refreshed by protocol
+    events, and events are only processed while a Playwright call is running.
+    The loop below used to wait with time.sleep, which runs none -- so page.url
+    stayed frozen on the address the window opened on, forever. Francia signed
+    in, typed the emailed code, reached the Hub on 2026-09-18 AND again on
+    2026-09-21, and the Terminal never noticed either time. box_signin never
+    had this bug only by accident: it asks the page a question every tick.
+
+    EVERY TAB, because a sign-in that opens its result in a new tab would
+    otherwise be watched in the old one.
+    """
+    out = []
+    for pg in list(getattr(ctx, "pages", []) or []):
+        try:
+            out.append(pg.evaluate("() => location.href") or pg.url)
+        except Exception:  # noqa: BLE001 -- a tab mid-navigation or closed
+            try:
+                out.append(pg.url)
+            except Exception:  # noqa: BLE001
+                pass
+    return out
+
+
 def _window(log=print) -> int:
     from patchright.sync_api import sync_playwright
 
@@ -112,27 +138,28 @@ def _window(log=print) -> int:
                 log("  Already signed in — nothing to do.")
                 return 0
 
-            waited, said = 0, False
+            waited, said, url = 0, False, ""
             while waited < WAIT_SECONDS:
-                time.sleep(POLL_SECONDS)
-                waited += POLL_SECONDS
+                # wait_for_timeout, NOT time.sleep: it keeps the connection to
+                # the browser running, so the page's address actually updates.
                 try:
-                    url = page.url
-                except Exception:  # noqa: BLE001 — they closed the window
-                    break
-                if _signed_in(url):
+                    page.wait_for_timeout(POLL_SECONDS * 1000)
+                except Exception:  # noqa: BLE001 — the tab we held was closed
+                    time.sleep(POLL_SECONDS)
+                waited += POLL_SECONDS
+                urls = _live_urls(ctx)
+                if not urls:
+                    break                     # they closed the window
+                if any(_signed_in(u) for u in urls):
                     log("")
                     log("  Signed in. This browser is trusted now, so the")
                     log("  sweep can read sales again within a few minutes.")
                     return 0
-                if _still_challenged(url) and not said:
+                url = urls[0]
+                if any(_still_challenged(u) for u in urls) and not said:
                     said = True
                     log("  SaraPlus is asking for the emailed code — that is")
                     log("  this step, not a password problem. Enter it here.")
-            try:
-                url = page.url
-            except Exception:  # noqa: BLE001
-                url = ""
         finally:
             try:
                 ctx.close()

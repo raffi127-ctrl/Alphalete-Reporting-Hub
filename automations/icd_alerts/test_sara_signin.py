@@ -88,3 +88,42 @@ class TheSweepStandsBackWhileSomebodyTypesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheWindowWatchesTheLivePageTest(unittest.TestCase):
+    """Francia signed in and typed the code on 2026-09-18 AND 2026-09-21, and
+    the Terminal never noticed. page.url is a cached value in the sync API,
+    refreshed only while a Playwright call runs -- and the loop waited with
+    time.sleep, so it stayed frozen on the login address forever. Proven
+    against a real browser before this was changed."""
+
+    class _Page:
+        def __init__(self, live, cached="https://ui.saraplus.com"):
+            self.live, self.url = live, cached
+
+        def evaluate(self, _js):
+            return self.live
+
+    class _Ctx:
+        def __init__(self, pages):
+            self.pages = pages
+
+    def test_it_asks_the_page_not_the_cache(self):
+        ctx = self._Ctx([self._Page(SESSION + "/DealerPages/SubmitOrders.aspx")])
+        urls = X._live_urls(ctx)
+        self.assertTrue(any(X._signed_in(u) for u in urls))
+
+    def test_every_tab_is_checked(self):
+        """A sign-in that lands in a new tab must still count."""
+        ctx = self._Ctx([self._Page("https://ui.saraplus.com"),
+                         self._Page(SESSION + "/DealerPages/SubmitOrders.aspx")])
+        self.assertTrue(any(X._signed_in(u) for u in X._live_urls(ctx)))
+
+    def test_a_closed_window_is_no_tabs(self):
+        self.assertEqual(X._live_urls(self._Ctx([])), [])
+
+    def test_the_loop_no_longer_sleeps_blind(self):
+        import inspect
+        src = inspect.getsource(X._window)
+        self.assertIn("wait_for_timeout", src)
+        self.assertIn("_live_urls", src)
