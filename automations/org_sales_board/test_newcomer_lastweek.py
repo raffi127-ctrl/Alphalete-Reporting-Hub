@@ -214,5 +214,38 @@ class Calibrate(unittest.TestCase):
         self.assertFalse(N.trusted(10, ["x", "y"]))
 
 
+class OrgLinesTest(unittest.TestCase):
+    """ALL TOTALS = Raf + Carlos + Colten (Eve 2026-09-21): a newcomer's week
+    lands on their own org's line, found by the daily table's 'Org Head' tag."""
+
+    def _grid(self):
+        from automations.org_sales_board import fill_section as fs
+        g = [["ALPHALETE ORG", "", "WE 09.20", "WE 09.13"],
+             ["ALL TOTALS", "", "", "100"],
+             ["Raf Org", "", "", "50"],
+             ["Carlos Org", "", "", "30"],
+             ["Colten Org", "", "", "20"],
+             ["Retail NL"],
+             ["", ""],
+             ["Retail NL", "", *DAYS, "RUNNING WEEK TOTALS", "LAST WEEK'S TOTALS",
+              "PREVIOUS WEEK'S TOTALS", "Org Head"],
+             ["", "", "14", "15", "16", "17", "18", "19", "20", "", "", "", ""],
+             ["1", "Amy C", "1", "", "", "", "", "", "", "1", "", "", "Carlos"],
+             ["2", "Ned X", "1", "", "", "", "", "", "", "1", "", "", ""],
+             ["Totals"]]
+        return g, fs.find_daily_section(g, "Retail NL")
+
+    def test_org_lines_found_under_all_totals(self):
+        g, _ = self._grid()
+        self.assertEqual(N.org_line_rows(g, 2), {"raf": 3, "carlos": 4, "colten": 5})
+        self.assertEqual(N.org_line_rows(g, None), {})
+
+    def test_org_head_tag(self):
+        g, a = self._grid()
+        self.assertEqual(N.org_head_of(g, a, "Amy C"), "carlos")
+        self.assertEqual(N.org_head_of(g, a, "Ned X"), "")
+        self.assertEqual(N.org_head_of(g, a, "Nobody"), "")
+
+
 if __name__ == "__main__":
     unittest.main()

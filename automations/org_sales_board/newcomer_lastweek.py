@@ -352,6 +352,33 @@ def _growth_writes(grid, fgrid, adds: Dict[Tuple[int, int], float]) -> List[dict
     return out
 
 
+def org_line_rows(grid, all_totals: Optional[int]) -> Dict[str, int]:
+    """The per-org lines right under ALL TOTALS ('Raf Org', 'Carlos Org',
+    'Colten Org' — Eve 2026-09-21), as {'raf': row, ...}. ALL TOTALS is their
+    =SUM, so a newcomer's closed week has to land on one of them too, or the
+    frozen history stops adding up."""
+    out: Dict[str, int] = {}
+    if not all_totals:
+        return out
+    for r in range(all_totals + 1, all_totals + 6):
+        lab = _cell(grid, r, 1).lower()
+        if not lab.endswith(" org"):
+            break
+        out[lab.split()[0]] = r
+    return out
+
+
+def org_head_of(grid, anchor, name: str) -> str:
+    """The person's 'Org Head' tag (col headed 'Org Head' on the daily table),
+    lowercased — the same tag the board's CARLOS/COLTEN ORG blocks =SUMIF on."""
+    if anchor is None or name not in anchor.icd_rows:
+        return ""
+    hdr = anchor.header_row
+    col = next((c for c in range(1, len(grid[hdr - 1]) + 1)
+                if _cell(grid, hdr, c).lower() == "org head"), None)
+    return _cell(grid, anchor.icd_rows[name], col).lower() if col else ""
+
+
 def plan_org(grid, fgrid, pulls, failed, aliases, today: dt.date):
     """(updates, notes) for the ORG board's campaign sections."""
     from automations.new_owners import board_add as ba
@@ -367,6 +394,7 @@ def plan_org(grid, fgrid, pulls, failed, aliases, today: dt.date):
     if org:
         all_totals = next((r for r in range(org.header_row + 1, org.header_row + 4)
                            if _cell(grid, r, 1).lower() == "all totals"), None)
+    org_lines = org_line_rows(grid, all_totals)
     hist = {t["this"]: t for t in ro.find_campaign_history_tables(grid)}
 
     for label in ba.campaign_labels(grid):
@@ -434,6 +462,14 @@ def plan_org(grid, fgrid, pulls, failed, aliases, today: dt.date):
                     sec_adds[(lb["totals_row"], b.col)] += tot
                 if all_totals:
                     sec_adds[(all_totals, b.col)] += tot
+                if org_lines:
+                    # ALL TOTALS = Raf + Carlos + Colten: the person's own line
+                    # grows too. Untagged → Raf (his line is the org minus
+                    # Carlos and Colten).
+                    line = org_lines.get(org_head_of(grid, anchor, b.name),
+                                         org_lines.get("raf"))
+                    if line:
+                        sec_adds[(line, b.col)] += tot
         for k, v in sec_adds.items():
             adds[k] += v
     updates += _growth_writes(grid, fgrid, adds)
