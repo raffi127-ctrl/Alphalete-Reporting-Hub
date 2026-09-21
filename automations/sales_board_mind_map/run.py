@@ -864,24 +864,6 @@ def _avg(total: float, n: int) -> str:
     return "—" if not n else ("%.1f" % (total / n))
 
 
-def structure_strip(members: List[Rep], terminated: int = 0) -> str:
-    """The team's structure, right under its name bubble (Raf 2026-09-21:
-    "adding team structures to the names makes sense"). Small and one line —
-    the full box still sits at the bottom of the page."""
-    st = team_stats(members, terminated)
-    bits = [("Leaders", st["leaders"]), ("Entry Lvl", st["entry"]),
-            ("WK1 New Starts", st["week1"]), ("Terminated", st["terminated"])]
-    chips = "".join('<span class="bit"><b>%s</b> %s</span>' % (v, k)
-                    for k, v in bits)
-    avgs = [("int/leader", st["int_per_leader"]),
-            ("int/entry+lead", st["int_per_active"]),
-            ("apps/leader", st["apps_per_leader"]),
-            ("apps/entry+lead", st["apps_per_active"])]
-    chips += "".join('<span class="bit avg"><b>%s</b> %s</span>' % (v, k)
-                     for k, v in avgs)
-    return '<div class="structure">%s</div>' % chips
-
-
 def _leader_card(ld: Rep, palette) -> str:
     """A Level 2+ card. KEPT at Raf's word (2026-09-21) after he first asked to
     drop it: Zoey and Safiya read it to see where they stand to qualify, which
@@ -928,10 +910,10 @@ def render_html(week: str, reps: List[Rep], groups, palette,
                        ('<span class="lead">%s</span>' % html.escape(lead_name))
                        if lead_name else ""))
 
-        # The team's structure sits right under its name (Raf 2026-09-21),
-        # with the full box still at the bottom of the page.
+        # No structure chips under the name: the same numbers are in the
+        # team's box at the bottom, and saying them twice just crowds the roof
+        # (Megan 2026-09-21).
         gone_here = terminated_by_team.get(team, 0)
-        strip = structure_strip(members, gone_here)
 
         # The Level 2+ cards STAY — Raf asked to drop them, then kept them
         # once Megan pointed out Zoey and Safiya read them to see where they
@@ -954,9 +936,9 @@ def render_html(week: str, reps: List[Rep], groups, palette,
 
         sections.append(
             '<section><div class="team">%s<div class="root-stem"></div></div>'
-            '%s<div class="body"><div class="map"><div class="rail"></div>'
+            '<div class="body"><div class="map"><div class="rail"></div>'
             '<div class="branches">%s</div></div>%s</div></section>'
-            % (headline, strip,
+            % (headline,
                "".join(_branch(b, palette) for b in branches_in), side))
 
     # Legend: the weeks that actually exist on this page, in week order.

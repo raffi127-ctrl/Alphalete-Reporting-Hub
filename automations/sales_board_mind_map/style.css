@@ -94,22 +94,6 @@
 
   main{ max-width:135rem; margin:0 auto; }
 
-  /* The team's structure, right under its name bubble (Raf 2026-09-21). */
-  .structure{
-    display:flex; flex-wrap:wrap; gap:.4rem .5rem; justify-content:center;
-    margin:.7rem auto 0; max-width:64rem;
-  }
-  .structure .bit{
-    font-size:.68rem; font-weight:700; color:var(--ink-soft);
-    border:1px solid var(--wire); border-radius:999px; padding:.16rem .6rem;
-    background:var(--bg);
-  }
-  .structure .bit b{
-    color:var(--ink); font-weight:800; font-variant-numeric:tabular-nums;
-    margin-right:.2rem;
-  }
-  .structure .bit.avg{ border-style:dashed; }
-
   /* Level 2+ cards + the week's terminations, at the bottom right of the team
      block they belong to (Megan 2026-09-21). */
   .team-side{
