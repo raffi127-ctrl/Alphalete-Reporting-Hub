@@ -120,6 +120,28 @@ class PublishTests(unittest.TestCase):
         c = post.publish(_rep(), "D1", cl=cl)
         self.assertEqual((c["pin_errors"], c["photos"]), (1, 1))
 
+    def test_pin_reminder_lists_new_then_last_weeks(self):
+        refused = FakeSlack()
+        refused.pins_add = lambda **kw: (_ for _ in ()).throw(RuntimeError("missing_scope"))
+        c1 = post.publish(_rep(), "C1", cl=refused)                 # Fri 9/18
+        self.assertEqual(c1["to_pin"], [("AT&T Sales Agent – Arlington TX", "100.1")])
+        self.assertEqual(c1["to_unpin"], [])
+        rep = _rep(); rep.day = dt.date(2026, 9, 19)               # same week
+        self.assertEqual(post.publish(rep, "C1", cl=refused)["to_pin"], [])  # once only
+        rep = _rep(); rep.day = dt.date(2026, 9, 21)               # next Monday
+        nxt = FakeSlack(); nxt.pins_add = refused.pins_add; nxt._n = 5
+        c3 = post.publish(rep, "C1", cl=nxt)
+        self.assertEqual([t for _, t in c3["to_pin"]], ["100.6"])
+        self.assertEqual([t for _, t in c3["to_unpin"]], ["100.1"])
+        txt = post.pin_reminder_text("C1", rep.day, c3["to_pin"], c3["to_unpin"])
+        self.assertIn("archives/C1/p1006|", txt)
+        self.assertIn("Unpin last week's", txt)
+
+    def test_no_reminder_when_lucy_can_pin(self):
+        c = post.publish(_rep(), "C1", cl=FakeSlack())
+        self.assertEqual((c["to_pin"], c["to_unpin"]), ([], []))
+        self.assertFalse(post.send_pin_reminder("C1", dt.date(2026, 9, 18), c))
+
     def test_day_done_marker(self):
         d = dt.date(2026, 9, 18)
         self.assertFalse(post.day_done("D1", d))

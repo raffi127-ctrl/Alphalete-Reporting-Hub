@@ -29,6 +29,11 @@ LIVE_CHANNEL_ID = SOURCE_CHANNEL_ID
 POST_AFTER_CT = (19, 0)
 POST_WEEKDAYS = {0, 1, 2, 3, 4, 5}
 
+# Lucy's token has no pins:write, so Eve pins the week's threads by hand
+# (2026-09-21). Whenever a run opens new threads, Lucy DMs her the links to
+# pin, plus last week's to unpin. Stops by itself once Lucy can pin.
+PIN_REMINDER_USER = "U088E2KJEV8"   # Evelyn Sobrino
+
 # Megan 2026-09-21: every funnel Raf runs, each labelled with its
 # ApplicantStream account number. The third one, 24065 "New Recruiter Test"
 # (live since 9/18), starts 1st rounds 9/21.

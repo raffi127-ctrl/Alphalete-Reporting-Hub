@@ -157,7 +157,7 @@ def publish(rep: collect.DayReport, channel: str, *, cl=None,
     wk = weeks.setdefault(monday.isoformat(), {})
     day = rep.day.isoformat()
     counts = {"threads_new": 0, "replies": 0, "skipped_done": 0, "photos": 0,
-              "pin_errors": 0}
+              "pin_errors": 0, "to_pin": [], "to_unpin": []}
 
     intro_key = f"_pilot_intro_{day}"
     if pilot and not ch_state.get(intro_key):
@@ -180,6 +180,7 @@ def publish(rep: collect.DayReport, channel: str, *, cl=None,
             r = cl.chat_postMessage(channel=channel,
                                     text=parent_text(item["title"], monday, pilot))
             ad["thread_ts"] = r["ts"]
+            ad["title"] = item["title"]
             counts["threads_new"] += 1
             err = _pin(cl, channel, ad["thread_ts"], True)
             ad["pinned"] = err is None
@@ -215,4 +216,53 @@ def publish(rep: collect.DayReport, channel: str, *, cl=None,
         ad["days"].append(day)
         counts["replies"] += 1
         _save_state(state)
+
+    # Threads a PERSON pinned (Lucy's token has no pins:write — Eve pins by
+    # hand, 2026-09-21): once this week's threads exist, last week's are hers
+    # to unpin. Listed once each, including ads that stopped running. Read
+    # from state, not from this run, so a run that died after opening a
+    # thread still gets it into the next run's reminder.
+    if not pilot:
+        for key, ad in wk.items():
+            if ad.get("thread_ts") and not ad.get("pinned") \
+                    and not ad.get("pin_reminded"):
+                counts["to_pin"].append((ad.get("title") or key, ad["thread_ts"]))
+                ad["pin_reminded"] = True
+    if counts["to_pin"]:
+        prev = sorted(w for w in weeks if w < monday.isoformat())
+        if prev:
+            for key, old in weeks[prev[-1]].items():
+                if (old.get("thread_ts") and not old.get("pinned")
+                        and not old.get("unpin_reminded")):
+                    counts["to_unpin"].append((old.get("title") or key, old["thread_ts"]))
+                    old["unpin_reminded"] = True
+        _save_state(state)
     return counts
+
+
+def permalink(channel: str, ts: str) -> str:
+    """Built, not fetched: chat.getPermalink is one more call that can fail."""
+    return f"https://ao-pbns.slack.com/archives/{channel}/p{ts.replace('.', '')}"
+
+
+def pin_reminder_text(channel: str, day: dt.date, to_pin, to_unpin) -> str:
+    lines = [f":pushpin: *Ad Photo Threads — pin reminder ({day:%a} {day.month}/{day.day})*"]
+    if to_pin:
+        lines.append("\n*Pin these new threads:*")
+        lines += [f"• <{permalink(channel, ts)}|{title}>" for title, ts in to_pin]
+    if to_unpin:
+        lines.append("\n*Unpin last week's:*")
+        lines += [f"• <{permalink(channel, ts)}|{title}>" for title, ts in to_unpin]
+    return "\n".join(lines)
+
+
+def send_pin_reminder(channel: str, day: dt.date, counts: dict, *, cl=None) -> bool:
+    """DM the pinner the links. False if there was nothing to say."""
+    if not (counts.get("to_pin") or counts.get("to_unpin")):
+        return False
+    cl = cl or collect._client()
+    dm = cl.conversations_open(users=config.PIN_REMINDER_USER)["channel"]["id"]
+    cl.chat_postMessage(channel=dm, text=pin_reminder_text(
+        channel, day, counts.get("to_pin"), counts.get("to_unpin")),
+        unfurl_links=False)
+    return True

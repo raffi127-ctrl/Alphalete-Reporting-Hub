@@ -117,6 +117,11 @@ def nightly(day: dt.date, explicit_date: bool = False) -> int:
     print(summary(rep))
     counts = post.publish(rep, channel)
     print("\nPosted:", counts)
+    try:
+        if post.send_pin_reminder(channel, day, counts):
+            print("Pin reminder DM sent.")
+    except Exception as e:                    # noqa: BLE001 — never costs the post
+        print(f"pin reminder DM failed: {type(e).__name__}: {str(e)[:160]}")
     # Done only when the day actually had candidates; an empty sheet at 7 PM
     # (interviewers late to log) gets re-read on the next tick.
     if rep.candidates:
