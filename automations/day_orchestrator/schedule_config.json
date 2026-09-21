@@ -2855,6 +2855,25 @@
       "depends_on": [],
       "verify": null
     },
+    "ad_photo_threads": {
+      "on_scheduler": true,
+      "_note": "MANUAL (Eve 2026-09-21): 1st-round Zoom screenshots from #rafs-office-recruiting-11280 re-posted into one thread per Indeed ad. weekdays [] = manual only while testing. Pass the mode as extra args: `lucy rerun ad_photo_threads --post --test-dm --date 2026-09-18 --max-ads 2` (test group DM) or `--dry-run --show-posts`. Runs on the mini because only Lucy's token can download the screenshots.",
+      "display_name": "Ad Photo Threads",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.ad_photo_threads.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 20
+    },
     "bg_check_sync_post": {
       "on_scheduler": true,
       "_note": "MANUAL trigger for the BG Check Sync (`lucy rerun bg_check_sync_post`). Same as the daily launchd run: reads Sterling emails, updates col K on both OBCL tabs, and EDITS the weekly #rafs-office-recruiting-11280 thread reply in place (uses the mini's bg_slack_state.json, so it edits rather than reposts). weekdays [] = manual only; the real schedule is the com.alphalete.bg-check-sync launchd job (8/11:30/16 CST).",
