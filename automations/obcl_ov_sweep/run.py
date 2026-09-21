@@ -67,6 +67,20 @@ def _tint(ws, p, color, column: str = "Owner Submit") -> dict:
         "fields": "userEnteredFormat.backgroundColor"}}
 
 
+def _paint(ws, everyone, ticked_now, ready_rows, live: bool) -> None:
+    """Green = ticked, blue = ready for Owner Submit, light red = not done —
+    all four sweep columns, every active person, one batch_update."""
+    plan = sweep.paint_plan(everyone, ticked_now, ready_rows)
+    n = {k: sum(1 for *_, col in plan if col is v) for k, v in
+         (("green", config.DONE_GREEN), ("blue", config.READY_BLUE),
+          ("red", config.NOT_FOUND_RED))}
+    print(f"{'Painted' if live else 'Would paint'}: green {n['green']}, "
+          f"blue {n['blue']}, light red {n['red']}")
+    if live and plan:
+        ws.spreadsheet.batch_update({"requests":
+            [_tint(ws, p, color, c) for p, c, color in plan]})
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--tick", action="store_true",
@@ -84,6 +98,8 @@ def main(argv=None) -> int:
     print(f"{ws.title}: {len(everyone)} people, {len(todo)} with an open box "
           f"({', '.join(config.COLUMNS)})", flush=True)
     if not todo:
+        # Nothing to look up — still colour every box by its tick.
+        _paint(ws, everyone, (), (), args.tick)
         return 0
 
     import time
@@ -156,22 +172,8 @@ def main(argv=None) -> int:
             value_input_option="USER_ENTERED")   # so the checkbox ticks
     # Every box we tick also turns green (Megan 2026-09-21: "checkmark the box
     # and turn it green") — which is also what clears an Owner Submit blue.
-    # Every box this sweep owns is GREEN (done) or LIGHT RED (not done) —
-    # Megan 2026-09-21: "they are either done - green or not done - red".
-    # Owner Submit is BLUE instead when it's the only thing left. Found or not
-    # found makes no difference: a box we couldn't confirm is not done.
-    ticked_now = {(p.row, c) for p, c in writes}
-    blue_now = {p.row for p in ready}
-    red = [(p, c) for p in todo for c in p.open_columns
-           if (p.row, c) not in ticked_now
-           and not (c == "Owner Submit" and p.row in blue_now)]
-    print(f"{'Painted' if args.tick else 'Would paint'} light red (not done): "
-          f"{len(red)} box(es)")
-    if args.tick and (ready or writes or red):
-        ws.spreadsheet.batch_update({"requests":
-            [_tint(ws, p, config.READY_BLUE) for p in ready]
-            + [_tint(ws, p, config.DONE_GREEN, c) for p, c in writes]
-            + [_tint(ws, p, config.NOT_FOUND_RED, c) for p, c in red]})
+    _paint(ws, everyone, [(p.row, c) for p, c in writes],
+           [p.row for p in ready], args.tick)
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     stamp = dt.datetime.now().strftime("%Y-%m-%d_%H%M")

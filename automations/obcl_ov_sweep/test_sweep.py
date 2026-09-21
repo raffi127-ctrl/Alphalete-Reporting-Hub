@@ -75,6 +75,22 @@ class Earned(unittest.TestCase):
         self.assertNotIn("Digi Docs", sweep.earned(ben, ALL_DONE))
 
 
+class Paint(unittest.TestCase):
+    def test_every_box_green_or_red_hand_ticks_green_gone_untouched(self):
+        plan = sweep.paint_plan(sweep.people(_tab()),
+                                ticked_now=[(8, "Digi Docs")],
+                                ready_rows=[8])
+        got = {(p.name, c): col for p, c, col in plan}
+        self.assertEqual(got[("Ann Old", "Owner Submit")], config.DONE_GREEN)
+        self.assertEqual(got[("Ben Carried", "Digi Docs")], config.DONE_GREEN)
+        self.assertEqual(got[("Ben Carried", "UID Request")],
+                         config.NOT_FOUND_RED)
+        self.assertEqual(got[("Cara New", "Digi Docs")], config.DONE_GREEN)
+        self.assertEqual(got[("Cara New", "Owner Submit")], config.READY_BLUE)
+        self.assertEqual(got[("Cara New", "UID Request")], config.NOT_FOUND_RED)
+        self.assertFalse(any(n == "Dan Quit" for n, _ in got))
+
+
 VP_HEADS = ["Name", "Contact", "Login Created", "Onboarding Documents",
             "Background Check", "Drug Test", "FTC DIRECTV Compliance Training",
             "AT&T Protective Advantage Course", "AT&T Broadband Facts",

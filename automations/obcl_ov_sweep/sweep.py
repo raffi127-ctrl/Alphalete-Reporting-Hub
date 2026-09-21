@@ -95,3 +95,27 @@ def earned(p: Person, done: Dict[str, object]) -> List[str]:
     returned, and nothing here ever un-ticks.
     """
     return [c for c in p.open_columns if done.get(c) is True]
+
+
+def paint_plan(everyone: List[Person], ticked_now=(), ready_rows=()):
+    """[(person, column, colour)] for EVERY sweep column of every active
+    person — not only the boxes this pass ticked (Megan 2026-09-21: hand-ticked
+    boxes were left white). Ticked (before or now) = GREEN; Owner Submit ready
+    to submit = BLUE; anything else = LIGHT RED. Quit / terminated / no-show
+    rows are left alone."""
+    now = set(ticked_now)
+    ready = set(ready_rows)
+    out = []
+    for p in everyone:
+        if _gone(p.final_status):
+            continue
+        for c in config.COLUMNS:
+            if c not in p.cols:
+                continue
+            if p.ticked.get(c) or (p.row, c) in now:
+                out.append((p, c, config.DONE_GREEN))
+            elif c == "Owner Submit" and p.row in ready:
+                out.append((p, c, config.READY_BLUE))
+            else:
+                out.append((p, c, config.NOT_FOUND_RED))
+    return out
