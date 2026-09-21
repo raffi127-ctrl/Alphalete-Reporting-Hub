@@ -13,6 +13,7 @@
     # Slack token can't download the screenshots):
     python -m automations.ad_photo_threads.run --post --channel C0XXXXXXX
     python -m automations.ad_photo_threads.run --post --test-dm --date 2026-09-18 --max-ads 2
+    python -m automations.ad_photo_threads.run --post --dm U088E2KJEV8   # Eve alone
 
 Python 3.9-safe (runs on the mini): no runtime `X | Y`, no 3.10+ syntax.
 """
@@ -142,6 +143,9 @@ def main(argv=None) -> int:
     ap.add_argument("--channel", help="Slack channel id to post into.")
     ap.add_argument("--test-dm", action="store_true",
                     help="Post into the test group DM (config.TEST_DM_USERS + Lucy).")
+    ap.add_argument("--dm", metavar="USER_IDS",
+                    help="Preview into a DM with these Slack ids (comma-separated), "
+                         "e.g. --dm U088E2KJEV8 for Eve alone. Tagged [PILOT].")
     ap.add_argument("--max-ads", type=int,
                     help="Post only the N biggest ads that have photos (a sample).")
     ap.add_argument("--no-images", action="store_true",
@@ -149,8 +153,8 @@ def main(argv=None) -> int:
     ap.add_argument("--show-posts", action="store_true",
                     help="With --dry-run: print the exact Slack text per ad.")
     a = ap.parse_args(argv)
-    if a.post and not (a.channel or a.test_dm):
-        ap.error("--post needs --channel or --test-dm (no default channel yet)")
+    if a.post and not (a.channel or a.test_dm or a.dm):
+        ap.error("--post needs --channel, --test-dm or --dm")
     day = dt.date.fromisoformat(a.date) if a.date else collect.central_today()
 
     if a.nightly:
@@ -161,12 +165,14 @@ def main(argv=None) -> int:
     if a.post:
         from automations.ad_photo_threads import post
         channel = a.channel
-        if a.test_dm:
+        pilot = bool(a.test_dm or a.dm)
+        if pilot:
             from automations.ad_photo_threads import config
-            r = collect._client().conversations_open(users=",".join(config.TEST_DM_USERS))
+            users = a.dm or ",".join(config.TEST_DM_USERS)
+            r = collect._client().conversations_open(users=users)
             channel = r["channel"]["id"]
-            print(f"\nTest group DM: {channel}")
-        print("\nPosted:", post.publish(rep, channel, pilot=a.test_dm,
+            print(f"\nPreview DM: {channel}")
+        print("\nPosted:", post.publish(rep, channel, pilot=pilot,
                                          max_ads=a.max_ads))
         return 0
     if a.show_posts:
