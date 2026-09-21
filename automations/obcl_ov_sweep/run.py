@@ -11,8 +11,8 @@ Show All). A box is ticked only when OwnerVille shows every step behind it
 done with a date stamp. Ticks go ON only — never off: a hand tick stays.
 Blue Ink and Headshot Photo have their own automations and are not touched.
 
-Every box it ticks also turns GREEN. Anyone NOT FOUND in OwnerVille gets
-their open boxes shaded LIGHT RED (cleared once they're found). Owner Submit additionally turns BLUE
+Colours: every box it owns is GREEN (done) or LIGHT RED (not done); Owner
+Submit is BLUE when it's the only step left. Owner Submit additionally turns BLUE
 once every other OwnerVille step is green (someone needs to go submit them).
 """
 from __future__ import annotations
@@ -65,35 +65,6 @@ def _tint(ws, p, color, column: str = "Owner Submit") -> dict:
                   "endColumnIndex": col},
         "cell": {"userEnteredFormat": {"backgroundColor": color}},
         "fields": "userEnteredFormat.backgroundColor"}}
-
-
-def _same(a: dict, b: dict) -> bool:
-    return all(abs(a.get(k, 0.0) - b[k]) < 0.01 for k in ("red", "green", "blue"))
-
-
-def _painted_red(ws, people) -> set:
-    """{(row, col)} of open boxes currently carrying OUR not-found red, so a
-    found person's red can be cleared without touching any other tint (the
-    Digi Docs "sent" green, hand colours)."""
-    cells = [(p.row, p.cols[c]) for p in people for c in p.open_columns]
-    if not cells:
-        return set()
-    ranges = [f"'{ws.title}'!{gspread.utils.rowcol_to_a1(r, c)}"
-              for r, c in cells]
-    meta = ws.spreadsheet.fetch_sheet_metadata(params={
-        "ranges": ranges, "includeGridData": "true",
-        "fields": "sheets(data(startRow,startColumn,rowData(values("
-                  "userEnteredFormat(backgroundColor)))))"})
-    out = set()
-    for sh in meta.get("sheets", []):
-        for d in sh.get("data", []):
-            r0, c0 = d.get("startRow", 0), d.get("startColumn", 0)
-            for i, rd in enumerate(d.get("rowData", [])):
-                for j, v in enumerate(rd.get("values", [])):
-                    bg = (v.get("userEnteredFormat") or {}).get("backgroundColor")
-                    if bg and _same(bg, config.NOT_FOUND_RED):
-                        out.add((r0 + i + 1, c0 + j + 1))
-    return out
 
 
 def main(argv=None) -> int:
@@ -195,32 +166,22 @@ def main(argv=None) -> int:
             value_input_option="USER_ENTERED")   # so the checkbox ticks
     # Every box we tick also turns green (Megan 2026-09-21: "checkmark the box
     # and turn it green") — which is also what clears an Owner Submit blue.
-    # Not found in OwnerVille -> their open boxes go light red. Found people
-    # whose box still carries that red (from an earlier miss) go back to
-    # white, unless this pass greens or blues it anyway.
-    red = [(p, c) for p in missing for c in p.open_columns]
-    found_people = [p for p in todo if p.row in matched]
-    recolored = {(p.row, c) for p, c in writes} | {
-        (p.row, "Owner Submit") for p in ready}
-    clear = []
-    if args.tick and found_people:
-        try:
-            was_red = _painted_red(ws, found_people)
-        except Exception as e:                              # noqa: BLE001
-            print(f"  (couldn't read cell colours: {type(e).__name__}) — "
-                  "no red cleared this pass")
-            was_red = set()
-        clear = [(p, c) for p in found_people for c in p.open_columns
-                 if (p.row, p.cols[c]) in was_red
-                 and (p.row, c) not in recolored]
-    print(f"{'Painted' if args.tick else 'Would paint'} light red (not found): "
-          f"{len(red)} box(es); cleared {len(clear)}")
-    if args.tick and (ready or writes or red or clear):
+    # Every box this sweep owns is GREEN (done) or LIGHT RED (not done) —
+    # Megan 2026-09-21: "they are either done - green or not done - red".
+    # Owner Submit is BLUE instead when it's the only thing left. Found or not
+    # found makes no difference: a box we couldn't confirm is not done.
+    ticked_now = {(p.row, c) for p, c in writes}
+    blue_now = {p.row for p in ready}
+    red = [(p, c) for p in todo for c in p.open_columns
+           if (p.row, c) not in ticked_now
+           and not (c == "Owner Submit" and p.row in blue_now)]
+    print(f"{'Painted' if args.tick else 'Would paint'} light red (not done): "
+          f"{len(red)} box(es)")
+    if args.tick and (ready or writes or red):
         ws.spreadsheet.batch_update({"requests":
             [_tint(ws, p, config.READY_BLUE) for p in ready]
             + [_tint(ws, p, config.DONE_GREEN, c) for p, c in writes]
-            + [_tint(ws, p, config.NOT_FOUND_RED, c) for p, c in red]
-            + [_tint(ws, p, config.WHITE, c) for p, c in clear]})
+            + [_tint(ws, p, config.NOT_FOUND_RED, c) for p, c in red]})
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     stamp = dt.datetime.now().strftime("%Y-%m-%d_%H%M")
