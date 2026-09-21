@@ -1209,11 +1209,40 @@ def main(argv=None) -> int:
     ap.add_argument("--tab", help="read a specific 'Sales Board WE m.d' tab")
     ap.add_argument("--no-thread", action="store_true",
                     help="skip the per-team shots and post only the map")
+    ap.add_argument("--tag-onto", metavar="TS",
+                    help="tag ONLY the --names people under an existing post "
+                         "in the level 1 chat — for leaders a day's tag line "
+                         "missed, without re-pinging everyone it already got")
+    ap.add_argument("--names", default="",
+                    help="';'-separated names for --tag-onto (semicolons, not "
+                         "commas: the queue sheet eats commas)")
     ap.add_argument("--thread-onto", metavar="TS",
                     help="post ONLY the thread (tag line + team shots) under "
                          "an existing map post in the level 1 chat — for a "
                          "day whose thread did not land")
     args = ap.parse_args(argv)
+
+    if args.tag_onto:
+        # 9/21: the tag line missed Al Kennel and Bas. Tag just them under that
+        # morning's thread — re-running the whole tag line would ping the 31
+        # people it already reached a second time.
+        from automations.gap_alerts import leaders as GL
+        from automations.shared import slack_metrics_post as smp
+        names = [n.strip() for n in args.names.split(";") if n.strip()]
+        if not names:
+            print("  --tag-onto needs --names")
+            return 2
+        client = smp._client()
+        ids, missing = GL.resolve_tags(names, client=client)
+        line = GL.tag_line(ids, missing)
+        if not ids:
+            print("  nobody resolved — nothing posted (%s)" % ", ".join(missing))
+            return 1
+        client.chat_postMessage(channel=CHANNEL[1], thread_ts=args.tag_onto,
+                                text=line)
+        print("  tagged %d under %s%s" % (len(ids), args.tag_onto,
+              " (no Slack account: %s)" % ", ".join(missing) if missing else ""))
+        return 0
 
     today = dt.date.today()
     title, reps, palette, gone, classroom = read_board(
