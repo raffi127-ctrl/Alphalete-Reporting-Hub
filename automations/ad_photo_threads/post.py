@@ -6,14 +6,21 @@ thread the first time it shows up, and every evening one reply is added to it:
 the day, who interviewed from that ad (✅/❌, stars, account number) and their
 Zoom screenshots. Reviewing an ad for the week = opening its thread.
 
-State (which thread belongs to which ad, which days are already posted) lives
-in output/ad_photo_threads/state.json, keyed by channel, so a re-run never
-double-posts and a test channel never collides with the real one.
+WEEKLY + PINNED (Raf 2026-09-21: "Yes, fresh PINned thread per ad"): an ad's
+thread lives Monday–Sunday. The first day an ad shows up in a new week it gets
+a fresh thread, which is pinned, and last week's thread for that ad is
+unpinned — so the channel's pins are always "this week's ads", never a year of
+them. A pin that Slack refuses never stops the photos from posting.
+
+State (which thread belongs to which ad in which week, which days are already
+posted) lives in output/ad_photo_threads/state.json, keyed by channel, so a
+re-run never double-posts and a test channel never collides with the real one.
 
 Python 3.9-safe (runs on the mini): no runtime `X | Y`, no 3.10+ syntax.
 """
 from __future__ import annotations
 
+import datetime as dt
 import json
 import tempfile
 from pathlib import Path
@@ -43,9 +50,14 @@ def _save_state(state: dict) -> None:
 PILOT_TAG = ":test_tube: *[PILOT]* "
 
 
-def parent_text(title: str, pilot: bool = False) -> str:
+def week_monday(day: dt.date) -> dt.date:
+    return day - dt.timedelta(days=day.weekday())
+
+
+def parent_text(title: str, monday: dt.date, pilot: bool = False) -> str:
     return (f"{PILOT_TAG if pilot else ''}:clapper: *Ad Photos — {title}*\n"
-            "1st-round screenshots from this ad, added every evening.")
+            f"Week of {monday.month}/{monday.day} · 1st-round screenshots from "
+            "this ad, added every evening.")
 
 
 def pilot_intro(day) -> str:
@@ -105,6 +117,32 @@ def plan(rep: collect.DayReport) -> List[dict]:
              "images": _unique_images(groups[k])} for k in keys]
 
 
+def _pin(cl, channel: str, ts: str, add: bool) -> Optional[str]:
+    """Pin/unpin; returns the error text instead of raising — a missing
+    pins:write must cost the pin, not the day's photos."""
+    try:
+        (cl.pins_add if add else cl.pins_remove)(channel=channel, timestamp=ts)
+        return None
+    except Exception as e:                       # noqa: BLE001
+        msg = str(e)
+        if "already_pinned" in msg or "no_pin" in msg:
+            return None
+        return msg.splitlines()[0][:160]
+
+
+def day_done(channel: str, day: dt.date) -> bool:
+    return day.isoformat() in _load_state().get(channel, {}).get("done_days", [])
+
+
+def mark_day_done(channel: str, day: dt.date) -> None:
+    state = _load_state()
+    done = state.setdefault(channel, {}).setdefault("done_days", [])
+    if day.isoformat() not in done:
+        done.append(day.isoformat())
+        done[:] = sorted(done)[-60:]
+    _save_state(state)
+
+
 def publish(rep: collect.DayReport, channel: str, *, cl=None,
             pilot: bool = False, max_ads: Optional[int] = None) -> Dict[str, int]:
     """Post the day. Returns counts. Idempotent per (channel, ad, day).
@@ -114,8 +152,12 @@ def publish(rep: collect.DayReport, channel: str, *, cl=None,
     cl = cl or collect._client()
     state = _load_state()
     ch_state = state.setdefault(channel, {})
+    weeks = ch_state.setdefault("weeks", {})
+    monday = week_monday(rep.day)
+    wk = weeks.setdefault(monday.isoformat(), {})
     day = rep.day.isoformat()
-    counts = {"threads_new": 0, "replies": 0, "skipped_done": 0, "photos": 0}
+    counts = {"threads_new": 0, "replies": 0, "skipped_done": 0, "photos": 0,
+              "pin_errors": 0}
 
     intro_key = f"_pilot_intro_{day}"
     if pilot and not ch_state.get(intro_key):
@@ -130,15 +172,27 @@ def publish(rep: collect.DayReport, channel: str, *, cl=None,
         items = [i for i in items if i["images"]][:max_ads]
 
     for item in items:
-        ad = ch_state.setdefault(item["key"], {"thread_ts": "", "days": []})
+        ad = wk.setdefault(item["key"], {"thread_ts": "", "days": [], "pinned": False})
         if day in ad["days"]:
             counts["skipped_done"] += 1
             continue
         if not ad["thread_ts"]:
             r = cl.chat_postMessage(channel=channel,
-                                    text=parent_text(item["title"], pilot))
+                                    text=parent_text(item["title"], monday, pilot))
             ad["thread_ts"] = r["ts"]
             counts["threads_new"] += 1
+            err = _pin(cl, channel, ad["thread_ts"], True)
+            ad["pinned"] = err is None
+            if err:
+                counts["pin_errors"] += 1
+                print(f"  pin failed for {item['title']!r}: {err}")
+            # Retire last week's pin for this ad — the newest earlier week only.
+            for old_wk in sorted((w for w in weeks if w < monday.isoformat()), reverse=True):
+                old = weeks[old_wk].get(item["key"])
+                if old:
+                    if old.get("pinned") and not _pin(cl, channel, old["thread_ts"], False):
+                        old["pinned"] = False
+                    break
             _save_state(state)
 
         with tempfile.TemporaryDirectory() as tmp:

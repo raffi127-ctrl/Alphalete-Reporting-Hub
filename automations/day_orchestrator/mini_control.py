@@ -1471,6 +1471,66 @@ def _action_install_night_knocks(args: str) -> tuple[bool, str]:
                   f"{smoke[:110]}")
 
 
+def _action_install_ad_photo_threads(args: str) -> tuple[bool, str]:
+    """Install (or reinstall) the AD PHOTO THREADS nightly poster on THIS
+    machine (Lucy 1 — its Slack token is the one that can download the
+    screenshots). Raf 2026-09-21: every evening, the day's 1st-round Zoom
+    screenshots go into one pinned thread per Indeed ad, a fresh thread each
+    week, in #rafs-office-recruiting-11280.
+
+    Ticks every 30 min; run.py's `--nightly` posts the day once after 7 PM
+    Central (Mon-Sat) and is a no-op otherwise. Run `update` + `restart_poller`
+    first so this action exists in the running poller. Read a night with
+    `lucy logtail ad_photo_threads_<YYYYMMDD>`."""
+    uid = os.getuid()
+    label = "com.alphalete.ad-photo-threads"
+    src_plist = REPO_ROOT / "deploy" / f"{label}.plist"
+    wrapper = REPO_ROOT / "deploy" / "ad_photo_threads.sh"
+    dst_plist = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+    if not src_plist.exists() or not wrapper.exists():
+        return False, (f"missing {src_plist.name} or {wrapper.name} — run "
+                       "`update` first to pull them")
+    try:
+        text = src_plist.read_text().replace(
+            "/Users/megan/1st Claude Folder", str(REPO_ROOT))
+        dst_plist.parent.mkdir(parents=True, exist_ok=True)
+        dst_plist.write_text(text)
+    except Exception as e:  # noqa: BLE001
+        return False, f"couldn't write plist: {str(e).splitlines()[0][:140]}"
+    lint = subprocess.run(["plutil", "-lint", str(dst_plist)],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                          text=True)
+    if lint.returncode != 0:
+        return False, f"plist lint failed: {(lint.stdout or '')[:160]}"
+    try:
+        os.chmod(wrapper, 0o755)
+    except Exception:  # noqa: BLE001
+        pass
+
+    # Smoke test, READ-ONLY: today's sheet + Slack threads, text summary, no
+    # downloads, posts nothing. Proves the sheet is shared with this machine
+    # and the threads are readable before anything is scheduled.
+    smoke_ok, smoke = _run_cmd(
+        [sys.executable, "-u", "-m", "automations.ad_photo_threads.run",
+         "--dry-run", "--no-images"],
+        timeout_s=300, log_name="ad-photo-threads-install-smoke.log")
+    if not smoke_ok:
+        return False, f"smoke test failed — NOT installed: {smoke[:150]}"
+
+    subprocess.run(["launchctl", "bootout", f"gui/{uid}/{label}"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["launchctl", "enable", f"gui/{uid}/{label}"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    boot = subprocess.run(["launchctl", "bootstrap", f"gui/{uid}",
+                           str(dst_plist)],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                          text=True)
+    if boot.returncode != 0:
+        return False, (f"smoke ok; bootstrap FAILED: "
+                       f"{(boot.stdout or '').strip()[:150]}")
+    return True, f"installed {label} · {smoke[:120]}"
+
+
 def _action_install_jiraiya(args: str) -> tuple[bool, str]:
     """Install 'Jiraiya' on THIS machine: the always-on /dd Socket Mode listener
     (com.alphalete.jiraiya-bot, KeepAlive) + the 3am nightly DD pre-harvest
@@ -7781,6 +7841,7 @@ ACTIONS = {
     "install_card_scheduler": _action_install_card_scheduler,
     "peek": _action_peek,
     "install_night_knocks": _action_install_night_knocks,
+    "install_ad_photo_threads": _action_install_ad_photo_threads,
     "install_jiraiya": _action_install_jiraiya,
     "set_raffi_app_password": _action_set_raffi_app_password,
     "set_alphalete_app_password": _action_set_alphalete_app_password,

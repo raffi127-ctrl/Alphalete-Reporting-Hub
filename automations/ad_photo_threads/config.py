@@ -18,6 +18,17 @@ SHEET_ID = "16UruNs3bHGJ_pBvmD6T9KEqMAtDNNyuKArA_es6f0LE"
 # #rafs-office-recruiting-11280 — where the 1st-round threads live.
 SOURCE_CHANNEL_ID = "C0AUAS88FGW"
 
+# Where the ad threads go live — the same channel (Raf 2026-09-21: "yes, rafs
+# office recruiting channel").
+LIVE_CHANNEL_ID = SOURCE_CHANNEL_ID
+
+# "Every day at the end of the day": the nightly agent ticks every 30 min and
+# posts the day once it's past this time, Central. The last 1st-round slot is
+# ~3:45 PM and the sheet is filled as they go, so 7 PM has the whole day.
+# Mon–Sat; Sunday has no 1st rounds.
+POST_AFTER_CT = (19, 0)
+POST_WEEKDAYS = {0, 1, 2, 3, 4, 5}
+
 # Megan 2026-09-21: every funnel Raf runs, each labelled with its
 # ApplicantStream account number. The third one, 24065 "New Recruiter Test"
 # (live since 9/18), starts 1st rounds 9/21.

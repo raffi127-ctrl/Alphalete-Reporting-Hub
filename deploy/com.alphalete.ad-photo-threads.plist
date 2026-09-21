@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.alphalete.ad-photo-threads</string>
+    <!-- PATHS ARE MEGAN'S LAPTOP and are rewritten at install time by
+         `lucy install_ad_photo_threads` to the machine's repo root. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/ad_photo_threads.sh</string>
+        <string>--nightly</string>
+    </array>
+    <key>WorkingDirectory</key><string>/Users/megan/1st Claude Folder</string>
+    <key>EnvironmentVariables</key><dict><key>PYTHONPATH</key><string>/Users/megan/1st Claude Folder</string></dict>
+    <!-- Every 30 min; the 7 PM Central gate is in run.py (nightly), not here. -->
+    <key>StartInterval</key><integer>1800</integer>
+    <key>StandardOutPath</key><string>/tmp/com.alphalete.ad-photo-threads.out</string>
+    <key>StandardErrorPath</key><string>/tmp/com.alphalete.ad-photo-threads.err</string>
+    <key>RunAtLoad</key><false/>
+</dict>
+</plist>

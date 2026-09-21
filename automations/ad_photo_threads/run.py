@@ -98,6 +98,32 @@ def preview_html(rep: collect.DayReport, out_dir: Path) -> Path:
     return page
 
 
+def nightly(day: dt.date, explicit_date: bool = False) -> int:
+    """One tick of the 30-minute agent. Cheap when there's nothing to do: the
+    clock and the state file are checked BEFORE any Sheets/Slack read, so the
+    ~40 idle ticks a day cost nothing against the shared Sheets quota."""
+    from automations.ad_photo_threads import config, post
+    now = dt.datetime.now(collect.CENTRAL)
+    if not explicit_date:
+        if day.weekday() not in config.POST_WEEKDAYS:
+            return 0
+        if (now.hour, now.minute) < config.POST_AFTER_CT:
+            return 0
+    channel = config.LIVE_CHANNEL_ID
+    if post.day_done(channel, day):
+        return 0
+    rep = collect.build(day)
+    print(f"[{now:%Y-%m-%d %H:%M} CT] nightly")
+    print(summary(rep))
+    counts = post.publish(rep, channel)
+    print("\nPosted:", counts)
+    # Done only when the day actually had candidates; an empty sheet at 7 PM
+    # (interviewers late to log) gets re-read on the next tick.
+    if rep.candidates:
+        post.mark_day_done(channel, day)
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--date", help="YYYY-MM-DD (default: today, Central)")
@@ -105,6 +131,9 @@ def main(argv=None) -> int:
     mode.add_argument("--dry-run", action="store_true", help="Preview only.")
     mode.add_argument("--post", action="store_true",
                       help="Post to Slack (needs --channel).")
+    mode.add_argument("--nightly", action="store_true",
+                      help="The scheduled tick: post today to the live channel "
+                           "once it's past config.POST_AFTER_CT; otherwise no-op.")
     ap.add_argument("--channel", help="Slack channel id to post into.")
     ap.add_argument("--test-dm", action="store_true",
                     help="Post into the test group DM (config.TEST_DM_USERS + Lucy).")
@@ -118,6 +147,9 @@ def main(argv=None) -> int:
     if a.post and not (a.channel or a.test_dm):
         ap.error("--post needs --channel or --test-dm (no default channel yet)")
     day = dt.date.fromisoformat(a.date) if a.date else collect.central_today()
+
+    if a.nightly:
+        return nightly(day, explicit_date=bool(a.date))
 
     rep = collect.build(day)
     print(summary(rep))
