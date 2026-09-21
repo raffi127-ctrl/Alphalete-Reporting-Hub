@@ -86,9 +86,10 @@ def _upload_shot(png_bytes: bytes, tab: str, log=print) -> None:
             % (tab, type(e).__name__, str(e)[:120]))
 
 
-def _upload_bytes(data: bytes, tab: str, log=print) -> None:
+def _upload_bytes(data: bytes, tab: str, log=print) -> bool:
     """base64-chunk ANY file into a sheet tab (the PNG uploader's pattern),
-    so the mini can pull the exported CSV down whole and parse it locally."""
+    so the mini can pull the exported CSV down whole and parse it locally.
+    True when it landed — sp_order_log records delivery only on True."""
     import base64
     try:
         from automations.recruiting_report import fill as _fill
@@ -103,9 +104,11 @@ def _upload_bytes(data: bytes, tab: str, log=print) -> None:
         t.update([[c] for c in chunks], "A1")
         log("  file -> %r (%s bytes, %d chunk(s))"
             % (tab, "{:,}".format(len(data)), len(chunks)))
+        return True
     except Exception as e:  # noqa: BLE001 — a lost upload must not sink the run
         log("  (file upload to %r failed: %s: %s)"
             % (tab, type(e).__name__, str(e)[:120]))
+        return False
 
 
 def _export_csv(page, log) -> Optional[bytes]:

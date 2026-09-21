@@ -55,6 +55,7 @@ from automations.vantura_payout_estimate.run import (
     _n, board_b2b_reps, norm_name, price,
 )
 
+REPORT_ID = "vantura_revenue_board"             # schedule_config id
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "vantura_revenue_board"
 # A-PLAYERS ONLY to start (Carlos 2026-08-30: "It shouldn't go on the GP
 # sales. I want it on the A players' Slack to start.") — the thread exists
@@ -659,6 +660,31 @@ def post(png: Path, plain: str, caption: str, kind: str,
     return 75 if held else 0
 
 
+def _record_delivery(boards) -> None:
+    """Write today's run manifest — the PROOF of delivery
+    shared/delivery_check looks for.
+
+    2026-09-21: the 05:20 pass went `partial`, the 08:31 pass ran clean, and
+    the ticket still stayed open — "ran clean, but nothing can confirm it
+    DELIVERED" — because this report has no verify and wrote no manifest.
+
+    Only when a live pass (not DM, not --no-post, no hold) has a board in the
+    thread — posted now or already there. A pass that only renders the ATT
+    board (the B2B Metrics runner posts it) delivered nothing of its own, so it
+    writes nothing; neither does a hold (75) or crash. A later pass that
+    doesn't deliver never writes, so it can't erase an earlier pass's proof.
+    Never raises."""
+    try:
+        from automations.shared import run_manifest
+        note = f"in the thread: {', '.join(boards)}"
+        run_manifest.write_manifest(REPORT_ID, succeeded=list(boards),
+                                    note=note)
+        print(f"  manifest: {note}")
+    except Exception as e:                                      # noqa: BLE001
+        print(f"  ⚠ couldn't write the run manifest ({type(e).__name__}: {e}) "
+              "— the board is posted, but a failure ticket won't close itself")
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--date", help="target day YYYY-MM-DD (default yesterday)")
@@ -802,6 +828,7 @@ def main(argv=None) -> int:
             for line in (r.stdout or "").splitlines()[-6:]:
                 print(f"  sales_boards: {line}")
             held = held or r.returncode == 75
+        delivered = []
         for png, kind, plain, caption in boards:
             # The ATT board is posted by the b2b_metrics runner as the
             # thread's #1 section (Carlos 2026-09-13: it double-posted; keep
@@ -813,6 +840,10 @@ def main(argv=None) -> int:
                 continue
             rc = post(png, plain, caption, kind, dm_user=a.dm or "")
             held = held or rc == 75
+            if rc == 0:
+                delivered.append(plain)
+        if not held and delivered and not a.dm:
+            _record_delivery(delivered)
         return 75 if held else 0
     print("dry-run — --post to reply in the thread")
     return 75 if held else 0

@@ -731,9 +731,35 @@ def pull_csv(start: dt.date, end: dt.date, *, headless: bool = True,
             ctx.close()
 
 
-def _push(path: Path, tab: str, log=print) -> None:
+def _push(path: Path, tab: str, log=print) -> bool:
     from automations.rc_contact_sync.status_probe import _upload_bytes
-    _upload_bytes(path.read_bytes(), tab, log=log)
+    return _upload_bytes(path.read_bytes(), tab, log=log) is True
+
+
+REPORT_ID = "sp_order_log"
+
+
+def record_delivery(note: str, *, real: bool, log=print) -> None:
+    """Write today's run manifest — the PROOF of delivery
+    shared/delivery_check looks for.
+
+    2026-09-21: the 9/12 ticket stayed open for days — "ran clean, but
+    nothing can confirm it DELIVERED" — because this report has no verify and
+    wrote no manifest. Only when both artifacts landed in the control sheet
+    from a live SaraPlus pull: --from-file, no --push or a lost upload
+    delivered nothing, and writes nothing, so it can't erase earlier proof.
+    Never raises."""
+    if not real:
+        return
+    try:
+        from automations.shared import run_manifest
+        run_manifest.write_manifest(
+            REPORT_ID, succeeded=[XLSX_TAB, SHOT_TAB], note=note)
+        log("manifest: %s" % note)
+    except Exception as e:  # noqa: BLE001
+        log("couldn't write the run manifest (%s: %s) — the artifacts are "
+            "pushed, but a failure ticket won't close itself"
+            % (type(e).__name__, e))
 
 
 def track_lines(data: bytes, wl_bytes, today: dt.date, log=print):
@@ -864,8 +890,9 @@ def main(argv=None) -> int:
     png_path = build_overview_png(lines, today)
     build_revenue_png(lines, today)   # logs WEEKREPORT per-rep $ lines
     if args.push:
-        _push(xlsx_path, XLSX_TAB)
-        _push(png_path, SHOT_TAB)
+        landed = [_push(xlsx_path, XLSX_TAB), _push(png_path, SHOT_TAB)]
+        record_delivery("%d line(s); workbook + overview pushed" % len(lines),
+                        real=all(landed) and not args.from_file)
     print("=== done ===", flush=True)
     return 0
 

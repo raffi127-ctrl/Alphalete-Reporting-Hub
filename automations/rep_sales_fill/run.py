@@ -108,6 +108,34 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = REPO_ROOT / "output" / "rep_sales_fill"
 
 
+REPORT_ID = "rep_sales_fill"          # schedule_config key = the ticket's id
+
+
+def _record_delivery(a, note: str, *, run_ts: dt.datetime | None = None) -> None:
+    """Write today's run manifest -- the PROOF of delivery
+    shared/delivery_check looks for.
+
+    2026-09-21: the 01:04 run failed, the re-runs at 01:06 and 06:01 went clean,
+    and the ticket still stayed open -- "ran clean, but nothing can confirm it
+    DELIVERED" -- because this report had no verify and wrote no manifest.
+
+    Only when the prod board is really current: --apply, not --preview, not a
+    --sheet-id copy. "Nothing to write" counts: every check passed and the
+    board already matches the log, which is the job done. A hold (75) or crash
+    writes nothing, so a later bad pass never erases an earlier pass's proof.
+    Never raises."""
+    if a.preview or not a.apply or a.sheet_id:
+        return
+    try:
+        from automations.shared import run_manifest
+        run_manifest.write_manifest(REPORT_ID, succeeded=["Sales Board"],
+                                    note=note, run_ts=run_ts)
+        _log(f"  manifest: {note}")
+    except Exception as e:                                      # noqa: BLE001
+        _log(f"  !! couldn't write the run manifest ({type(e).__name__}: {e}) "
+             "-- the board is filled, but a failure ticket won't close itself")
+
+
 def _log(msg: str = "") -> None:
     print(msg, flush=True)
 
@@ -532,6 +560,7 @@ def run_rt(a, day: dt.date, sunday: dt.date, names=None) -> int:
         _log(f"ya cargados y DISTINTOS al log, no se tocaron: {', '.join(held_all)}")
     if not plan:
         _log("nothing to write")
+        _record_delivery(a, f"{len(reps)} RT row(s) already match the log")
         return 0
     _log(f"{len(plan)} cell(s) would change:")
     for a1, metric, old, new in plan:
@@ -545,6 +574,7 @@ def run_rt(a, day: dt.date, sunday: dt.date, names=None) -> int:
                              for a1, _m, _o, new in plan],
            value_input_option="USER_ENTERED")
     _log(f"wrote {len(plan)} cell(s) to {ws.title!r}")
+    _record_delivery(a, f"wrote {len(plan)} cell(s) for {len(reps)} RT row(s)")
     return 0
 
 
@@ -823,6 +853,7 @@ def main(argv=None) -> int:
         _log("  (re-run with --overwrite for a day you know the board has wrong)")
     if not plan:
         _log("nothing to write -- every empty day is already accounted for")
+        _record_delivery(a, f"{a.rep}: board already matches the log")
         return 0
     _log(f"{len(plan)} cell(s) would change:")
     for a1, metric, old, new in plan:
@@ -846,6 +877,7 @@ def main(argv=None) -> int:
                              for a1, _m, _o, new in plan],
            value_input_option="USER_ENTERED")
     _log(f"wrote {len(plan)} cell(s) to {ws.title!r}")
+    _record_delivery(a, f"{a.rep}: wrote {len(plan)} cell(s)")
     return 0
 
 

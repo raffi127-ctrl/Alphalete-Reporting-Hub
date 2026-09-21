@@ -595,6 +595,33 @@ def _publish_times_hub(label: str) -> None:
              % (label, type(e).__name__, str(e)[:120]))
 
 
+def _record_delivery(n_cells: int, *, run_ts: Optional[dt.datetime] = None) -> None:
+    """Write today's run manifest -- the PROOF of delivery
+    shared/delivery_check looks for.
+
+    2026-09-12 to 09-21 the ticket stayed open every day -- "ran clean, but
+    nothing can confirm it DELIVERED" -- because this report had no verify and
+    wrote no manifest. Filed under HUB_CARD_ID because that is the id the Hub
+    row carries, so it is the id the closer asks about; delivery_check also
+    tries the dashed spelling of the schedule_config key, which lands on the
+    same file.
+
+    Only on a real sweep (--apply, no --dry-run) that got through: the board is
+    now what SaraPlus says, even when 0 cells had to change -- SaraPlus is
+    cumulative, so an unchanged board is a current one. A preview, a skipped
+    tick or a crash writes nothing, so a later bad sweep never erases an
+    earlier sweep's proof. Never raises."""
+    try:
+        from automations.shared import run_manifest
+        run_manifest.write_manifest(
+            HUB_CARD_ID, succeeded=["Sales Board"],
+            note="sweep wrote %d cell(s); board matches SaraPlus" % n_cells,
+            run_ts=run_ts)
+    except Exception as e:  # noqa: BLE001 — the proof must never fail the sweep
+        _log("manifest skipped: %s: %s -- the board is filled, but a failure "
+             "ticket won't close itself" % (type(e).__name__, str(e)[:120]))
+
+
 def _publish_hub_once(day: dt.date) -> None:
     """First good sweep of the day paints the card; the other 149 stay quiet."""
     data = S.load()
@@ -692,8 +719,8 @@ def main(argv=None) -> int:
             _log("another sweep is still running -- skipping this tick")
             return 0
         try:
-            sweep(day, apply_writes=apply_writes, send=send,
-                  headless=not args.headed, times_label=times_label)
+            n_cells = sweep(day, apply_writes=apply_writes, send=send,
+                            headless=not args.headed, times_label=times_label)
         except _sp.SaraPasswordChangeRequired as e:
             # NOT a breakage, and not something a retry or a rotated profile
             # can fix -- SaraPlus asks for a new password every few weeks
@@ -709,6 +736,7 @@ def main(argv=None) -> int:
 
     _clear_failures()
     if apply_writes:
+        _record_delivery(n_cells)     # BEFORE the Hub row: that is where the close is decided
         _publish_hub_once(day)
     _log("=== done ===")
     return 0

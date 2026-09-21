@@ -55,6 +55,8 @@ from automations.vantura_slack_sales.run import (
     board_grid, campaign_rows, day_column, ensure_board_shape, week_ok,
 )
 
+REPORT_ID = "vantura_orderlog_sales"            # schedule_config id
+
 DATA_TAB_ATT = "Lucy At&t Data"
 DATA_TAB_BOX = "Lucy Box Data"
 
@@ -507,7 +509,36 @@ def main(argv=None) -> int:
         except Exception as e:  # noqa: BLE001 — the fill itself succeeded
             _log(f"  ! corrected re-post failed to launch: {e!r}")
 
-    return 75 if (held or held_fresh) else 0
+    rc = 75 if (held or held_fresh) else 0
+    if rc == 0 and a.fill and a.yes:
+        _record_delivery(results, days[-1])
+    return rc
+
+
+def _record_delivery(results, day: dt.date) -> None:
+    """Write today's run manifest — the PROOF of delivery
+    shared/delivery_check looks for.
+
+    2026-09-21: the 05:02 pass went `partial`, a later pass ran clean, and the
+    ticket still stayed open — "ran clean, but nothing can confirm it
+    DELIVERED" — because this report has no verify and wrote no manifest.
+
+    Only on a live (--fill --yes) exit 0: a dry run wrote nothing, and a hold
+    (75) or crash already alerts, so neither writes. That includes a pass with
+    0 cells to change (the board already matched the log) and the Monday
+    "rolled past, nothing to close out" — both are the job done. A later pass
+    that holds never writes, so it can't erase an earlier pass's proof.
+    Never raises."""
+    try:
+        from automations.shared import run_manifest
+        done = sorted({f"{r['campaign']} {_md(r['day'])}" for r in results})
+        note = (f"closed out {', '.join(done)}" if done
+                else f"nothing to close out for {_md(day)}")
+        run_manifest.write_manifest(REPORT_ID, succeeded=done, note=note)
+        _log(f"  manifest: {note}")
+    except Exception as e:                                      # noqa: BLE001
+        _log(f"  ⚠ couldn't write the run manifest ({type(e).__name__}: {e}) "
+             "— the board is filled, but a failure ticket won't close itself")
 
 
 if __name__ == "__main__":
