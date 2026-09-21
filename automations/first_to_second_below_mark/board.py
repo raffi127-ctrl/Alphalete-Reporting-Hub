@@ -32,7 +32,7 @@ works the same from the mini or from Windows -- there is no state file.
 
 WHERE THE LOOK COMES FROM. This tab is generated end to end and is rebuilt on
 every run -- do not format it by hand, it will not survive. Its look is copied
-from the live single-day tab (rep.SANDBOX_TAB): the group banner row, the header
+from the TEMPLATE tab (TEMPLATE_TAB): the group banner row, the header
 row, the first data row's colours, and the column widths. Restyle THAT tab and
 the next board run picks it up. The live tab itself is only read, never written.
 
@@ -68,7 +68,14 @@ from automations.first_to_second_below_mark import source as src
 # produccion"). It was built as '... PREVIEW'; the original tab of this name
 # became '1st to 2nd below the mark (old)'.
 BOARD_TAB = "1st to 2nd below the mark"
-TEMPLATE_TAB = rep.SANDBOX_TAB           # the live tab: read for its look only
+# The board's look is copied from this tab (banners, headers, colours,
+# widths); it holds no data and is only read. Renamed from '... SANDBOX' on
+# 2026-09-21 (Eve: a tab called SANDBOX read as a test tab). The old name is
+# still accepted so a rename and a deploy never have to land in the same
+# minute. NOT rep.SANDBOX_TAB on purpose: sandbox.py --refresh DELETES the
+# tab of that name and re-copies it.
+TEMPLATE_TAB = "1st to 2nd below the mark TEMPLATE"
+TEMPLATE_TAB_OLD = rep.SANDBOX_TAB
 # The same board cut down to the offices of ONE pass (one time zone's 11:00 or
 # 6:30 PM), which is what the picture is taken from. Generated like the board;
 # it stays VISIBLE because a hidden tab exports as a blank page.
@@ -747,11 +754,14 @@ def cf_requests(sid: int, existing: List[dict], headers: List[str],
 # ------------------------------------------------------------------- the run
 def _template(sh, logfn=print):
     """(worksheet, header row, headers, column widths) from the live tab."""
-    tws = fill.worksheet_ci(sh, TEMPLATE_TAB)
+    try:
+        tws = fill.worksheet_ci(sh, TEMPLATE_TAB)
+    except Exception:                                     # noqa: BLE001
+        tws = fill.worksheet_ci(sh, TEMPLATE_TAB_OLD)
     top = tws.get("A1:AZ25")
     hrow = rep.find_header_row(top)
     if hrow is None:
-        raise SystemExit(f"{TEMPLATE_TAB!r}: no {rep.OWNER_HEADER!r} header row")
+        raise SystemExit(f"{tws.title!r}: no {rep.OWNER_HEADER!r} header row")
     headers = list(top[hrow - 1])
     while headers and not rep._norm(headers[-1]):
         headers.pop()
@@ -761,7 +771,7 @@ def _template(sh, logfn=print):
     if office is not None:
         headers = headers[:office]
     meta = sh.fetch_sheet_metadata({
-        "ranges": [f"'{TEMPLATE_TAB}'!A{hrow - 1}:{ars.a1col(len(headers))}{hrow}"],
+        "ranges": [f"'{tws.title}'!A{hrow - 1}:{ars.a1col(len(headers))}{hrow}"],
         "fields": "sheets(properties.sheetId,data(columnMetadata.pixelSize,"
                   "rowMetadata.pixelSize))"})
     widths: List[Optional[int]] = []
@@ -771,7 +781,7 @@ def _template(sh, logfn=print):
             for d in s.get("data", []):
                 widths = [c.get("pixelSize") for c in d.get("columnMetadata", [])]
                 heights = [r.get("pixelSize") for r in d.get("rowMetadata", [])]
-    logfn(f"  template: {TEMPLATE_TAB!r}, headers on row {hrow}, {len(headers)} columns")
+    logfn(f"  template: {tws.title!r}, headers on row {hrow}, {len(headers)} columns")
     return tws, hrow, headers, widths, heights
 
 
