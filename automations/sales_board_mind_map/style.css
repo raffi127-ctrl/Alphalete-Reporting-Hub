@@ -94,8 +94,8 @@
 
   main{ max-width:135rem; margin:0 auto; }
 
-  /* Level 2+ cards + the week's terminations, at the bottom right of the team
-     block they belong to (Megan 2026-09-21). */
+  /* Level 2+ cards, at the bottom right of the team block they belong to
+     (Megan 2026-09-21). */
   .team-side{
     width:15.5rem; flex-shrink:0; align-self:flex-end; text-align:left;
   }
@@ -103,16 +103,6 @@
     font-size:.66rem; font-weight:800; letter-spacing:.12em;
     text-transform:uppercase; color:var(--ink-soft); margin:0 0 .6rem;
     text-align:center;
-  }
-  .team-side .gone{
-    display:flex; justify-content:space-between; align-items:baseline;
-    font-size:.72rem; font-weight:700; color:var(--ink-soft);
-    border:1.5px solid var(--wire); border-radius:12px;
-    padding:.4rem .75rem; margin-bottom:.9rem; background:var(--bg);
-  }
-  .team-side .gone b{
-    font-size:.95rem; font-weight:800; color:var(--ink);
-    font-variant-numeric:tabular-nums;
   }
   .leader-card{
     border:1.5px solid var(--wire); border-radius:14px;
@@ -122,12 +112,13 @@
   .leader-card .who{ margin-bottom:.5rem; }
   .leader-card .who .node{ font-size:.8rem; padding:.24rem .7rem .28rem; }
   .leader-card dl{ margin:0; display:grid; grid-template-columns:1fr auto; row-gap:.24rem; }
-  .leader-card dt{ font-size:.72rem; font-weight:700; color:var(--ink-soft); }
-  .leader-card dd{
-    margin:0; font-size:.78rem; font-weight:800;
-    font-variant-numeric:tabular-nums; text-align:right;
+  .leader-card dl{ row-gap:0; column-gap:.8rem; }
+  .leader-card dt, .leader-card dd{
+    font-size:.72rem; font-weight:700; padding:.16rem .45rem;
   }
-  .leader-card dt.avg, .leader-card dd.avg{ font-size:.66rem; }
+  .leader-card dd{
+    margin:0; font-weight:800; font-variant-numeric:tabular-nums; text-align:right;
+  }
 
   .totals{ margin-bottom:2rem; }
   .totals .boxes{ display:flex; gap:1.2rem; justify-content:center; flex-wrap:wrap; }
@@ -147,17 +138,31 @@
   .totals .office-box.whole dt{ opacity:.85; }
   .totals .office-box .title{ font-weight:800; font-size:.92rem; margin-bottom:.6rem; }
   .totals dl{ margin:0; display:grid; grid-template-columns:1fr auto; row-gap:.3rem; column-gap:1.5rem; }
-  .totals dt{ font-size:.78rem; font-weight:700; color:var(--ink-soft); }
-  .totals dd{ margin:0; font-size:.86rem; font-weight:800; font-variant-numeric:tabular-nums; text-align:right; }
-  /* The four averages hang below the head count, quieter than it. */
-  .office-box dt.avg, .office-box dd.avg{
-    font-size:.72rem; font-weight:700; opacity:.85;
-  }
-  .office-box dt.avg{ padding-top:.1rem; }
-  .office-box dl dt.avg:first-of-type,
-  .office-box dl dd.avg:first-of-type{
-    border-top:1px solid var(--wire); padding-top:.45rem; margin-top:.35rem;
-  }
+  .totals dt{ font-size:.8rem; font-weight:700; }
+  .totals dd{ margin:0; font-size:.8rem; font-weight:800; font-variant-numeric:tabular-nums; text-align:right; }
+
+  /* FOUR BANDS, ONE TYPE SIZE (Megan 2026-09-21): head count, the week's
+     terminations, internet averages, app averages. The colour is what
+     separates them — every row is the same size and weight, so nothing reads
+     as more important than the rest. */
+  .office-box dl{ row-gap:0; column-gap:1rem; }
+  .office-box dt, .office-box dd{ padding:.2rem .5rem; }
+  .office-box dt{ border-radius:7px 0 0 7px; }
+  .office-box dd{ border-radius:0 7px 7px 0; }
+  .office-box .b-count{ background:#f1efe8; color:#4a463d; }
+  .office-box .b-term { background:#fbe7e4; color:#8a2f25; }
+  .office-box .b-int  { background:#e7f0fa; color:#1d4c88; }
+  .office-box .b-apps { background:#e9f3e4; color:#38602a; }
+  .office-box dd.b-count{ color:#2f2b25; }
+  .office-box dd.b-term { color:#7a291d; }
+  .office-box dd.b-int  { color:#163d6e; }
+  .office-box dd.b-apps { color:#2b4a1f; }
+
+  /* On the solid blue office card the same bands read as tints of white. */
+  .office-box.whole .b-count{ background:rgba(255,255,255,.12); color:#fff; }
+  .office-box.whole .b-term { background:rgba(255,255,255,.22); color:#fff; }
+  .office-box.whole .b-int  { background:rgba(255,255,255,.12); color:#fff; }
+  .office-box.whole .b-apps { background:rgba(255,255,255,.22); color:#fff; }
 
   /* An upline named only in a Trainer cell — drawn as the team head, dashed
      so nobody reads them as a rep with a row on the board. */

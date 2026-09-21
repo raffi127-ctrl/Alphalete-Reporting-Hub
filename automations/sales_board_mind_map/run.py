@@ -872,20 +872,29 @@ def _leader_card(ld: Rep, palette) -> str:
             % (_node(ld, palette), _stat_dl(list(ld.subtree()))))
 
 
+# The box reads as four bands, each its own colour, all one type size (Megan
+# 2026-09-21): the head count, the week's terminations, then internet and apps
+# averages. Order here IS the order on the card.
+STAT_BANDS = (
+    ("count", (("Total", "total"), ("Total active", "active"),
+               ("Leaders", "leaders"), ("Entry Lvl", "entry"),
+               ("WK1 New Starts", "week1"))),
+    ("term", (("Terminated this week", "terminated"),)),
+    ("int", (("New internet / leader", "int_per_leader"),
+             ("New internet / entry+leaders", "int_per_active"))),
+    ("apps", (("Apps / leader", "apps_per_leader"),
+              ("Apps / entry+leaders", "apps_per_active"))),
+)
+
+
 def _stat_dl(members: List[Rep], terminated: int = 0) -> str:
     st = team_stats(members, terminated)
-    rows = [("Total", st["total"]), ("Total active", st["active"]),
-            ("Leaders", st["leaders"]), ("Entry Lvl", st["entry"]),
-            ("WK1 New Starts", st["week1"]),
-            ("Terminated this week", st["terminated"])]
-    avgs = [("New internet / leader", st["int_per_leader"]),
-            ("New internet / entry+leaders", st["int_per_active"]),
-            ("Apps / leader", st["apps_per_leader"]),
-            ("Apps / entry+leaders", st["apps_per_active"])]
-    body = "".join("<dt>%s</dt><dd>%s</dd>" % (k, v) for k, v in rows)
-    tail = "".join('<dt class="avg">%s</dt><dd class="avg">%s</dd>' % (k, v)
-                   for k, v in avgs)
-    return "<dl>%s%s</dl>" % (body, tail)
+    out = []
+    for band, rows in STAT_BANDS:
+        for label, key in rows:
+            out.append('<dt class="b-%s">%s</dt><dd class="b-%s">%s</dd>'
+                       % (band, label, band, st[key]))
+    return "<dl>%s</dl>" % "".join(out)
 
 
 def render_html(week: str, reps: List[Rep], groups, palette,
@@ -910,11 +919,6 @@ def render_html(week: str, reps: List[Rep], groups, palette,
                        ('<span class="lead">%s</span>' % html.escape(lead_name))
                        if lead_name else ""))
 
-        # No structure chips under the name: the same numbers are in the
-        # team's box at the bottom, and saying them twice just crowds the roof
-        # (Megan 2026-09-21).
-        gone_here = terminated_by_team.get(team, 0)
-
         # The Level 2+ cards STAY — Raf asked to drop them, then kept them
         # once Megan pointed out Zoey and Safiya read them to see where they
         # stand to qualify — but they move DOWN, to the bottom right of their
@@ -925,14 +929,10 @@ def render_html(week: str, reps: List[Rep], groups, palette,
                         sorted(in_team, key=lambda r: (-structure(r)[1],
                                                        -structure(r)[0],
                                                        r.display)))
-        side = ""
-        if cards or gone_here:
-            side = ('<aside class="team-side">'
-                    '<div class="gone">Terminated this week'
-                    '<b>%d</b></div>%s%s</aside>'
-                    % (gone_here,
-                       '<h2>Lvl 2+ on this team</h2>' if cards else "",
-                       cards))
+        # No terminated chip beside the team: its box at the bottom already
+        # carries that number (Megan 2026-09-21).
+        side = ('<aside class="team-side"><h2>Lvl 2+ on this team</h2>%s'
+                '</aside>' % cards) if cards else ""
 
         sections.append(
             '<section><div class="team">%s<div class="root-stem"></div></div>'
