@@ -69,7 +69,7 @@ def pilot_intro(day) -> str:
 
 
 def _label(c: collect.Candidate) -> str:
-    return next((s["office_id"] for s in config.SOURCES if s["label"] == c.source), "")
+    return next((s["stream"] for s in config.SOURCES if s["label"] == c.source), "")
 
 
 def _stars(s: str) -> str:

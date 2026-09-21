@@ -34,9 +34,15 @@ POST_WEEKDAYS = {0, 1, 2, 3, 4, 5}
 # pin, plus last week's to unpin. Stops by itself once Lucy can pin.
 PIN_REMINDER_USER = "U088E2KJEV8"   # Evelyn Sobrino
 
-# Megan 2026-09-21: every funnel Raf runs, each labelled with its
-# ApplicantStream account number. The third one, 24065 "New Recruiter Test"
-# (live since 9/18), starts 1st rounds 9/21.
+# Each candidate line is labelled with the ApplicantStream it came from, BY
+# NAME (Raf 2026-09-21: "label it with what the applicant stream is called,
+# not the account number"). Names as ApplicantStream shows them (the same
+# names Raf's recruiting to-do uses).
+#
+# Raf 2026-09-21: "1st rds from all 3 funnels are all in the same recruiting
+# funnel" — the third stream (24065 New Recruiter Test) has no thread or tab
+# of its own; its 1st rounds land in the Irving thread + "Rafael Hidalgo" tab,
+# so they carry that row's label.
 #
 # sheet tab -> the daily Slack thread whose replies carry its screenshots.
 #   "🦏 Alphalete (Irving) - September 18th- 1st Rounds 🦏"
@@ -44,24 +50,17 @@ PIN_REMINDER_USER = "U088E2KJEV8"   # Evelyn Sobrino
 SOURCES = [
     {
         "office_id": "11280",
-        "label": "11280 · Alphalete (Irving)",
+        "stream": "ALPHALETE MARKETING, INC.",
+        "label": "Alphalete (Irving)",
         "tab": "Rafael Hidalgo",
         "thread_re": re.compile(r"alphalete\s*\(irving\).*1st\s*round", re.I),
     },
     {
         "office_id": "23965",
-        "label": "23965 · 2nd funnel iMessage Test",
+        "stream": "2nd Funnel iMessage Test",
+        "label": "2nd funnel iMessage Test",
         "tab": "Raf Hidalgo 2nd funnel",
         "thread_re": re.compile(r"2nd\s*funnel.*1st\s*round", re.I),
-    },
-    {
-        # Interviews start 2026-09-21 (Camila), same posting guideline as the
-        # other two. Tab name is a guess until it exists — a missing tab is
-        # skipped, so check `--dry-run` output once their first thread is up.
-        "office_id": "24065",
-        "label": "24065 · New Recruiter Test",
-        "tab": "Raf Hidalgo New Recruiter Test",
-        "thread_re": re.compile(r"new\s*recruiter.*1st\s*round", re.I),
     },
 ]
 

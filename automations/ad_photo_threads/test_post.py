@@ -39,10 +39,10 @@ def _rep():
     img = {"id": "F1", "mimetype": "image/png"}
     rep.candidates = [
         collect.Candidate("Ana Uno", "AT&T Sales Agent, Arlington, TX", "Alexa",
-                          "Qualify", "3 Star", "11280 · Alphalete (Irving)",
+                          "Qualify", "3 Star", "Alphalete (Irving)",
                           ad="at&t sales agent arlington tx", images=[img], shared=True),
         collect.Candidate("Bo Dos", "AT&T Sales Agent ? Arlington TX", "Alexa",
-                          "Disqualify", "", "11280 · Alphalete (Irving)",
+                          "Disqualify", "", "Alphalete (Irving)",
                           ad="at&t sales agent arlington tx", images=[img], shared=True),
         collect.Candidate("Cy Tres", "???", "Alexa", "Qualify", "", "x", ad=None),
     ]
@@ -69,7 +69,7 @@ class PublishTests(unittest.TestCase):
         self.assertIn("[PILOT]", cl.posts[0]["text"])   # intro
         self.assertIn("[PILOT]", cl.posts[1]["text"])   # thread parent
         body = cl.uploads[0]["initial_comment"]
-        self.assertIn("✅ Ana Uno · 3⭐ · 11280 · Alexa", body)
+        self.assertIn("✅ Ana Uno · 3⭐ · ALPHALETE MARKETING, INC. · Alexa", body)
         self.assertIn("❌ Bo Dos", body)
         self.assertNotIn("Cy Tres", body)            # unknown ad is never posted
 
