@@ -168,8 +168,10 @@ def preview(tab_name: str = "", *, fetch_link: bool = True) -> int:
     send_to = _recipients(people)
     skipped = [p for p in people if not p.eligible]
 
-    print("\nTab: {!r}   ({} people on it, all charts)".format(
+    print("\nTab: {!r}   ({} people on it, this week's charts)".format(
         ws.title, len(people)))
+    for line in bir.describe_other_week_charts(values, ws.title):
+        print("  " + line)
     print("From: {} ({})".format(config.FROM_ACCOUNT, config.MACHINE))
     print("Subject: {}\n".format(config.SUBJECT))
 
@@ -196,7 +198,7 @@ def preview(tab_name: str = "", *, fetch_link: bool = True) -> int:
     # Anyone the parser did NOT turn into a person but who has an email on the
     # tab. Silence is the failure mode that matters: nobody notices the new
     # start who didn't get the email.
-    stray = bir.unparsed_email_rows(values, people)
+    stray = bir.unparsed_email_rows(values, people, ws.title)
     if stray:
         print("\nNOT READ AS PEOPLE ({}) -- check none of these should have "
               "been included:".format(len(stray)))

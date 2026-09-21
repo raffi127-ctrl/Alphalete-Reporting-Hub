@@ -10,6 +10,12 @@ Two things about these tabs that the parser has to survive:
    are not in it and are not people.
 2. **Columns move.** Everything is located by its header label, per-section, so
    inserting a column upstream can't make us email the wrong field.
+3. **Last week's chart can still be on the tab.** "D2D OBCL 9.21" opened with
+   the 9/14/2026 chart (last week's people) and only then the 9/21 one, and
+   the Slack/Skool email went to 80 instead of 49 -- 31 people who had already
+   started were told to set up for orientation. Only a chart dated in the
+   tab's own week counts (Megan 2026-09-21, for all three readers: Blue Ink,
+   Digi Docs, Slack/Skool). A chart with no date row still counts.
 """
 from __future__ import annotations
 
@@ -133,8 +139,47 @@ def _skip_reason(final_status: str, bg_status: str, friday: str,
     return ""
 
 
+def other_week_charts(values: List[List[str]], tab_name: str) -> List[dict]:
+    """Charts on this tab dated OUTSIDE the tab's week (rule 3 above).
+
+    Each: {"date": date, "date_text", "start_row", "end_row"} (1-indexed,
+    inclusive). The week is the tab's date through the six days after it. A
+    tab whose name carries no date, or a chart with no date row, filters
+    nothing -- when we can't tell, the chart counts, as it always did.
+    """
+    tab_d = _tab_date(tab_name)
+    if tab_d is None:
+        return []
+    from automations.shared import obcl_charts as _oc
+    out = []
+    for ch in _oc.find_charts(values):
+        d = _oc.chart_date(ch, str(tab_d.year))
+        if d is None or tab_d <= d <= tab_d + dt.timedelta(days=6):
+            continue
+        out.append({"date": d, "date_text": ch.get("date_text", ""),
+                    "start_row": ch["start_row"],
+                    "end_row": ch.get("end_row") or ch["start_row"]})
+    return out
+
+
+def _other_week_rows(values: List[List[str]], tab_name: str) -> set:
+    rows = set()
+    for ch in other_week_charts(values, tab_name):
+        rows.update(range(ch["start_row"], ch["end_row"] + 1))
+    return rows
+
+
+def describe_other_week_charts(values: List[List[str]],
+                               tab_name: str) -> List[str]:
+    """One printable line per chart left out, so a run says what it ignored."""
+    return ["Ignored the chart dated {} (rows {}-{}) -- not this week's.".format(
+                ch["date_text"] or ch["date"], ch["start_row"], ch["end_row"])
+            for ch in other_week_charts(values, tab_name)]
+
+
 def parse_tab(values: List[List[str]], tab_name: str) -> List[NewStart]:
-    """Every person in every section of one dated tab."""
+    """Every person in every chart of THIS WEEK on one dated tab."""
+    other_week = _other_week_rows(values, tab_name)
     out: List[NewStart] = []
     section = 0
     header: Optional[List[str]] = None
@@ -218,6 +263,8 @@ def parse_tab(values: List[List[str]], tab_name: str) -> List[NewStart]:
         if pending_chart:
             section += 1
             pending_chart = False
+        if i + 1 in other_week:
+            continue                       # last week's chart (rule 3)
         email = _cell(row, cols["email"])
         final_status = _cell(row, cols["final"])
         bg_status = _cell(row, cols["bg"])
@@ -289,7 +336,8 @@ def current_tab(workbook, tab_name: str = ""):
 
 
 def unparsed_email_rows(values: List[List[str]],
-                        people: List[NewStart]) -> List[tuple]:
+                        people: List[NewStart],
+                        tab_name: str = "") -> List[tuple]:
     """Rows holding an email address that we did NOT turn into a person.
 
     The structural safety net. The parser finds people by walking header rows,
@@ -301,9 +349,10 @@ def unparsed_email_rows(values: List[List[str]],
     as a warning instead of a quiet short-send.
 
     Header rows and the odd stray address are expected to show up here; it's a
-    prompt to look, not proof of a bug.
+    prompt to look, not proof of a bug. Rows in another week's chart were left
+    out on purpose, so pass `tab_name` and they aren't reported as missed.
     """
-    claimed = {p.row for p in people}
+    claimed = {p.row for p in people} | _other_week_rows(values, tab_name)
     out = []
     for i, row in enumerate(values, start=1):
         if i in claimed or _looks_like_header(row):

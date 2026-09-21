@@ -46,7 +46,10 @@ def preview(tab_name: str = "") -> int:
     done = roster.done_by_hand(cands)
     skipped = [c for c in cands if not c.eligible]
 
-    print(f"\nTab: {ws.title}   ({len(cands)} people on it, all charts)")
+    print(f"\nTab: {ws.title}   ({len(cands)} people on it, this week's charts)")
+    from automations.blueink_docs import roster as _bir
+    for line in _bir.describe_other_week_charts(values, ws.title):
+        print(f"  {line}")
     print(f"Bundle: {config.BUNDLE_TYPE} / {config.BUNDLE}")
     print(f"Machine: {config.MACHINE}\n")
 

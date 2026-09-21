@@ -251,3 +251,36 @@ def test_many_charts_of_mixed_shape_all_read():
     assert [p.first for p in people] == names
     assert [p.section for p in people] == list(range(1, len(names) + 1))
     assert "Stray" not in [p.first for p in people]
+
+
+def _dated(date, rows):
+    return [[date] + [""] * 12, list(HEADER)] + list(rows) + [[""] * 13]
+
+
+def test_last_weeks_chart_on_this_weeks_tab_is_ignored():
+    # 2026-09-21: "D2D OBCL 9.21" opened with the 9/14/2026 chart and the
+    # Slack/Skool email went to 31 people who had started the week before.
+    values = (_dated("9/14/2026", [_row("Old", "Week", "old@x.com")])
+              + _dated("9/21/2026", [_row("New", "Week", "new@x.com")]))
+    assert [p.name for p in parse_tab(values, "D2D OBCL 9.21")] == ["New Week"]
+
+
+def test_late_add_chart_in_the_same_week_still_counts():
+    values = (_dated("9/21", [_row("Ana", "Lopez", "a@x.com")])
+              + _dated("9/23", [_row("Ben", "Ruiz", "b@x.com")]))
+    assert len(parse_tab(values, "D2D OBCL 9.21")) == 2
+
+
+def test_undated_tab_or_chart_filters_nothing():
+    values = _dated("9/14/2026", [_row("Ana", "Lopez", "a@x.com")])
+    assert len(parse_tab(values, "t")) == 1
+    values = [list(HEADER), _row("Ana", "Lopez", "a@x.com")]
+    assert len(parse_tab(values, "D2D OBCL 9.21")) == 1
+
+
+def test_ignored_chart_is_not_reported_as_missed_rows():
+    from automations.blueink_docs.roster import unparsed_email_rows
+    values = (_dated("9/14/2026", [_row("Old", "Week", "old@x.com")])
+              + _dated("9/21/2026", [_row("New", "Week", "new@x.com")]))
+    people = parse_tab(values, "D2D OBCL 9.21")
+    assert unparsed_email_rows(values, people, "D2D OBCL 9.21") == []
