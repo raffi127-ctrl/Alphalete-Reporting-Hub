@@ -1084,7 +1084,8 @@ def _parent_ts(client, resp, channel: str, *, wait_s: float = 30.0,
     return ts
 
 
-def leader_tags(*, client=None, team_leads=(), logfn=print) -> str:
+def leader_tags(*, client=None, team_leads=(), tab: Optional[str] = None,
+                logfn=print) -> str:
     """Every non-terminated leader on the board, as a mention line.
 
     Raf 2026-09-21: *"you can just tag every leader in the office from the
@@ -1100,7 +1101,11 @@ def leader_tags(*, client=None, team_leads=(), logfn=print) -> str:
     # board as well is still tagged once.
     try:
         from automations.gap_alerts import leaders as GL
-        found, _tab = GL.read_leaders(logfn=lambda *_a, **_k: None)
+        # The SAME tab the map drew. On a Monday the map reads the week that
+        # closed while the board reader, left to itself, reads the new one —
+        # on 9/21 they matched 31 for 31 by luck; a weekend promotion or
+        # termination would have split them.
+        found, _tab = GL.read_leaders(tab=tab, logfn=lambda *_a, **_k: None)
         names = [n for n in team_leads if n] + [l.name for l in found]
         ids, missing = GL.resolve_tags(names, client=client, logfn=logfn)
         logfn("  tagging %d leader(s)%s"
@@ -1114,7 +1119,8 @@ def leader_tags(*, client=None, team_leads=(), logfn=print) -> str:
 
 
 def post(png: Path, week: str, *, team_pngs=(), team_leads=(),
-         dm: Optional[str] = None, dry_run: bool = False, logfn=print) -> dict:
+         tab: Optional[str] = None, dm: Optional[str] = None,
+         dry_run: bool = False, logfn=print) -> dict:
     """The whole-office map in the channel, then the thread: the leader tags,
     then one shot per team (Raf 2026-09-21 — "inside the thread, it's just per
     team", the way the sales board posts).
@@ -1134,7 +1140,8 @@ def post(png: Path, week: str, *, team_pngs=(), team_leads=(),
         return {"dry_run": True, "channels": targets, "comment": comment,
                 "thread": [t for t, _ in team_pngs]}
     client = smp._client()
-    tags = leader_tags(client=client, team_leads=team_leads, logfn=logfn)
+    tags = leader_tags(client=client, team_leads=team_leads, tab=tab,
+                       logfn=logfn)
     out = {}
     for ch in targets:
         try:
@@ -1317,7 +1324,7 @@ def main(argv=None) -> int:
         # posted). Tag line + team shots under IT, nothing new in the channel.
         from automations.shared import slack_metrics_post as smp
         client = smp._client()
-        tags = leader_tags(client=client,
+        tags = leader_tags(client=client, tab=title,
                            team_leads=[g[3] for g in groups if g[3]])
         if tags:
             client.chat_postMessage(channel=CHANNEL[1],
@@ -1329,7 +1336,7 @@ def main(argv=None) -> int:
         return 0 if n == len(team_pngs) else 1
 
     out = post(png_path, week, team_pngs=team_pngs,
-               team_leads=[g[3] for g in groups if g[3]],
+               team_leads=[g[3] for g in groups if g[3]], tab=title,
                dm=args.dm, dry_run=args.dry_run)
     print("  posted: %s" % out)
     if args.dm or args.dry_run:
