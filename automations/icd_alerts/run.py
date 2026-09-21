@@ -191,6 +191,11 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date) -> int:
                                                   log=_log),
                        log=_log, report=_report, office_key=att_key)
         current, sales = read["records"], read["sales"]
+    except sara_read.SignInInProgress:
+        # Somebody is at the keyboard finishing a sign-in. Send NOTHING: an
+        # empty read relayed here is a day of zeros written over the real
+        # one. Same as cmd_box.
+        return 0
     except W.SweepTimeout:
         # ALREADY REPORTED, with the duration and why it was dropped. Falling
         # through would file it a second time as an unexpected crash.

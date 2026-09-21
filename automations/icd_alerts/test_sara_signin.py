@@ -127,3 +127,66 @@ class TheWindowWatchesTheLivePageTest(unittest.TestCase):
         src = inspect.getsource(X._window)
         self.assertIn("wait_for_timeout", src)
         self.assertIn("_live_urls", src)
+
+
+class StandingBackSendsNothingTest(unittest.TestCase):
+    """While a sign-in window is open the sweep must send NOTHING.
+
+    It used to return an empty read, which cmd_once relayed as the day's real
+    totals. Khalil's relay said 0 credit checks and 0 sales on 9/17, 9/18 and
+    9/19 while his NDS order log had 23, 24 and 29 orders -- and it read as a
+    broken SaraPlus read for two days, when he had never got in once.
+    """
+
+    def test_read_day_raises_instead_of_returning_an_empty_day(self):
+        from unittest import mock
+        with mock.patch.object(R, "signin_in_progress", return_value=True):
+            with self.assertRaises(R.SignInInProgress):
+                R.read_day(log=lambda *_: None)
+
+    def test_cmd_once_sends_nothing_and_reports_nothing(self):
+        import datetime as dt
+        from unittest import mock
+        from automations.icd_alerts import run as RUN
+        att = {"office_key": "khalil-nds", "campaign": "nds"}
+        with mock.patch.object(RUN.sara_read, "read_day",
+                               side_effect=R.SignInInProgress("open")), \
+             mock.patch.object(RUN.R, "send") as sent, \
+             mock.patch.object(RUN, "_report") as reported, \
+             mock.patch.object(RUN.C, "uses_saraplus", return_value=True), \
+             mock.patch.object(RUN.C, "enrollments", return_value=[att]), \
+             mock.patch("automations.icd_alerts.selfupdate.run") as upd:
+            try:
+                # DRY, and the update patched out: a non-dry cmd_once in a
+                # checkout once pulled GitHub's copies over uncommitted work.
+                rc = RUN.cmd_once(True, True, dt.date(2026, 9, 21))
+            except Exception as e:  # noqa: BLE001
+                self.fail("standing back raised out of cmd_once: %r" % e)
+        sent.assert_not_called()
+        reported.assert_not_called()
+        self.assertEqual(rc, 0)
+
+
+class SelfUpdateNeverOverwritesACheckoutTest(unittest.TestCase):
+    """2026-09-21: a test ran a sweep in Megan's repo and the self-update
+    copied GitHub's versions over the 29 agent files, silently reverting a fix
+    that had not been committed yet. Installs are plain folders; a .git means
+    it is somebody's working copy."""
+
+    def test_a_git_checkout_is_skipped(self):
+        import pathlib, tempfile
+        from unittest import mock
+        from automations.icd_alerts import selfupdate as SU
+        root = pathlib.Path(tempfile.mkdtemp())
+        (root / ".git").mkdir()
+        said = []
+        with mock.patch.object(SU, "due", return_value=True), \
+             mock.patch.object(SU, "_app_root", return_value=root), \
+             mock.patch.object(SU, "published_release",
+                               side_effect=AssertionError("must not fetch")):
+            self.assertFalse(SU.run(log=said.append))
+        self.assertTrue(any("git checkout" in m for m in said))
+
+    def test_this_repo_is_protected(self):
+        from automations.icd_alerts import selfupdate as SU
+        self.assertTrue((SU._app_root() / ".git").exists())

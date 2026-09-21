@@ -30,6 +30,11 @@ class AccountProblem(RuntimeError):
     """Something the ICD can fix, phrased for the ICD."""
 
 
+class SignInInProgress(RuntimeError):
+    """Somebody is at this machine finishing a SaraPlus sign-in. Not a fault,
+    and NOT a day with no sales -- there is simply nothing to send yet."""
+
+
 def signin_in_progress() -> bool:
     """Is somebody at a SaraPlus sign-in window right now?
 
@@ -270,8 +275,17 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
         # NOT an error, and nothing is lost: the next tick is two minutes
         # away. Taking the profile now would close the window under somebody
         # mid-passcode and leave them certain they had done it wrong.
+        #
+        # RAISED, NOT AN EMPTY DAY. This used to return {"records": {},
+        # "sales": {}}, and cmd_once relays whatever it is handed -- so every
+        # pass spent standing back sent "nobody ran a credit check, nobody
+        # sold anything" as the day's real totals. Khalil's relay showed 0/0
+        # on 9/17, 9/18 and 9/19 while his NDS order log had 23, 24 and 29
+        # orders, and it read as a broken SaraPlus read for two days. It was
+        # never a read at all: he had not got in once. box_read raises for
+        # exactly this and cmd_box returns without sending; this now matches.
         log("someone is signing in to SaraPlus — standing back this pass")
-        return {"records": {}, "sales": {}}
+        raise SignInInProgress("a SaraPlus sign-in window is open")
     with sync_playwright() as p:
         ctx, page, base = _heal_and_login(p, headless, log=log)
         try:

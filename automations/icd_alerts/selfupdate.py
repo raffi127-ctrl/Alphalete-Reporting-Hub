@@ -188,6 +188,15 @@ def run(log=print, today: Optional[dt.date] = None) -> bool:
     if root is None:
         log("self-update: cannot find the installed copy; skipping")
         return False
+    if (root / ".git").exists():
+        # A DEVELOPMENT CHECKOUT, NOT AN INSTALL. Installs are plain folders
+        # under ~/.lucy-reports/app; a .git beside `automations/` means this
+        # is the repo, and overwriting it with GitHub's copies deletes every
+        # uncommitted edit to these 29 files -- other people's included. It
+        # happened on 2026-09-21: a test ran a sweep in Megan's checkout and
+        # this silently reverted a fix that was mid-way to being committed.
+        log("self-update: %s is a git checkout, not an install; skipping" % root)
+        return False
 
     # READ ONCE, at the top. Asking again after the files are in would risk
     # recording a release we did not actually install -- somebody could
