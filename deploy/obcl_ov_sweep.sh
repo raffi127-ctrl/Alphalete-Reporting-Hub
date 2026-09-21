@@ -6,10 +6,10 @@
 # SENDS NOTHING. One read of View Progress, one batched Sheet write.
 #
 # MODE is the knob below: "dry" prints what it WOULD tick (log only); "tick"
-# writes. Dry until Megan confirms the first dry run (2026-09-21).
+# writes. LIVE since 2026-09-21 (Megan: "take it live").
 #
 # Manual: bash deploy/obcl_ov_sweep.sh
-MODE="dry"
+MODE="tick"
 set -u
 cd "$(dirname "$0")/.." || exit 1
 mkdir -p output/logs

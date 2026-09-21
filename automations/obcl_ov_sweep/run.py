@@ -102,6 +102,18 @@ def main(argv=None) -> int:
             firsts = sorted({p.first.split()[0] for p in missing if p.first})
             ov_table.search_fill(page, heads, reps, firsts)
             matched, missing = match(todo, reps)
+        if missing:
+            # Last resort, one by one: the same find_rep Digi Docs uses to
+            # locate these people. Everyone on the OBCL was ADDED to
+            # OwnerVille by Digi Docs (Megan 2026-09-21), so "not found" here
+            # should be rare and worth a look.
+            found = 0
+            for p in list(missing):
+                if ov_table.lookup_one(page, p.name, heads, reps):
+                    found += 1
+            print(f"  find_rep fallback: {found} of {len(missing)} found",
+                  flush=True)
+            matched, missing = match(todo, reps)
             # Everyone we were looking for was searched for directly, so the
             # page-1 shortfall no longer leaves anyone unread.
             complete = True
@@ -131,6 +143,9 @@ def main(argv=None) -> int:
     for p in missing:
         print(f"  row {p.row:>3}  {p.name:<28} ⚠ not found in OwnerVille "
               f"({config.CAMPAIGN}) — left alone")
+    if missing:
+        print(f"NOT FOUND ({len(missing)}): "
+              + "; ".join(f"{p.name} (row {p.row})" for p in missing))
     if not complete:
         print("  ⛔ View Progress read was INCOMPLETE — anyone not found above "
               "may simply not have been read.")

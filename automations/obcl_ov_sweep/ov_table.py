@@ -212,9 +212,8 @@ def search_fill(page, heads: List[str], reps: Dict[str, list],
     for term in surnames:
         try:
             box.fill("")
-            box.press_sequentially(term, delay=25)
-            page.wait_for_timeout(1500)
-            got = page.evaluate(_READ_JS)
+            box.press_sequentially(term, delay=40)
+            got = _wait_for_results(page, term)
             if not heads:
                 heads[:] = got.get("heads") or []
             found += _collect(got, heads, reps)
@@ -229,6 +228,56 @@ def search_fill(page, heads: List[str], reps: Dict[str, list],
         print(f"  search fallback: {len(surnames)} surname(s) looked up, "
               f"{found} more row(s) read", flush=True)
     return found
+
+
+def _wait_for_results(page, term: str, timeout_ms: int = 10000) -> dict:
+    """The table AFTER the server answers the search. View Progress is
+    serverSide DataTables (digi_docs_roster_probe, 2026-09-21), so a fixed
+    pause can read the rows from before the search. Poll until a row carries
+    the term, or the table says no match, or time runs out."""
+    t = term.lower()
+    waited = 0
+    got = {}
+    while waited <= timeout_ms:
+        try:
+            page.wait_for_load_state("networkidle", timeout=3000)
+        except Exception:                                   # noqa: BLE001
+            pass
+        got = page.evaluate(_READ_JS)
+        texts = [" ".join(c.get("text", "") for c in r).lower()
+                 for r in got.get("rows") or []]
+        if any(t in x for x in texts) or any("no matching" in x or "no data" in x
+                                              for x in texts):
+            return got
+        page.wait_for_timeout(700)
+        waited += 700 + 300
+    return got
+
+
+def lookup_one(page, name: str, heads: List[str], reps: Dict[str, list],
+               *, verbose: bool = True) -> bool:
+    """Last resort per person: headshots/digi_docs' find_rep — short probes,
+    Show Last 3 Weeks then Show All, RES-AT&T only. The path Digi Docs uses
+    to find these same people before sending them their bundle."""
+    from automations.headshots.ov_upload import find_rep
+    try:
+        row, _camp, matched = find_rep(page, name, verbose=False,
+                                       campaigns=[config.CAMPAIGN])
+    except Exception as e:                                  # noqa: BLE001
+        if verbose:
+            print(f"    find_rep {name!r} failed: {type(e).__name__}: {e}")
+        return False
+    if row is None or not matched:
+        return False
+    got = page.evaluate(_READ_JS)
+    if not heads:
+        heads[:] = got.get("heads") or []
+    cells = row.evaluate("""tr => [...tr.querySelectorAll('td')].map(td => ({
+        text: td.innerText, html: td.innerHTML.slice(0, 600)}))""")
+    first_line = (cells[header_index(heads, "name") or 0].get("text") or ""
+                  ).strip().split("\n")[0].strip() or matched
+    reps.setdefault(first_line, cells)
+    return True
 
 
 def _largest_page_length(page) -> int:

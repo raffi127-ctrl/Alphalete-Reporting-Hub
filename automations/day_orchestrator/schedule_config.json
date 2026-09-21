@@ -11528,7 +11528,7 @@
     "install_obcl_ov_sweep_agent": {
       "on_scheduler": false,
       "machine": "Lucy 3",
-      "_off_scheduler_note": "Installs com.alphalete.obcl-ov-sweep on LUCY 3 (hourly 14:00-19:00 machine-local, every day, deploy/obcl_ov_sweep.sh; Megan 2026-09-21). Ticks + greens Digi Docs / Onboarding Quizzes / UID Request / Owner Submit off OwnerVille View Progress and paints Owner Submit blue when ready. MODE knob in the wrapper: 'dry' until Megan confirms the first dry run, then 'tick'. Sends nothing.",
+      "_off_scheduler_note": "Installs com.alphalete.obcl-ov-sweep on LUCY 3 (hourly 14:00-19:00 machine-local, every day, deploy/obcl_ov_sweep.sh; Megan 2026-09-21). Ticks + greens Digi Docs / Onboarding Quizzes / UID Request / Owner Submit off OwnerVille View Progress and paints Owner Submit blue when ready. MODE knob in the wrapper: 'tick' (LIVE since 2026-09-21). Sends nothing.",
       "display_name": "Install OBCL <- OwnerVille sweep agent (hourly 2-7pm)",
       "source_type": "local",
       "data_sources": [],
