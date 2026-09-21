@@ -302,3 +302,41 @@ class WeekTabTests(unittest.TestCase):
             d = self.dt.date(2026, 9, day)
             self.assertEqual(R.week_tab_for(self._Sheet(), d, logfn=quiet),
                              "Sales Board WE 9.27")
+
+
+class TerminatedTests(unittest.TestCase):
+    """Raf 2026-09-21: terminated this week stays on the map, struck through,
+    and counts only as a termination."""
+
+    def _team(self):
+        boss = rep("Willie Henderson", "Raf & JD", team="Ceaseless", level="level 2")
+        kid = rep("Chloe Johnson", "Willie Henderson", team="Ceaseless")
+        gone = rep("Gregory Beamon", "Willie Henderson", team="Ceaseless",
+                   level="in training")
+        gone.terminated = True
+        # somebody the terminated rep trained
+        orphan = rep("Paris Carroll", "Gregory Beamon", team="Ceaseless",
+                     level="in training")
+        reps = [boss, kid, gone, orphan]
+        R.build_tree(reps, [], departed={"gregory beamon":
+                                         ("Willie Henderson", "Ceaseless")},
+                     logfn=quiet)
+        return boss, kid, gone, orphan
+
+    def test_the_terminated_stay_on_the_map_under_their_trainer(self):
+        boss, _kid, gone, _o = self._team()
+        self.assertIn(gone, boss.children)
+        html = R._node(gone, {})
+        self.assertIn(" gone", html)
+        self.assertIn("Terminated", html)
+
+    def test_nobody_hangs_off_a_struck_through_name(self):
+        boss, _kid, gone, orphan = self._team()
+        self.assertEqual(gone.children, [])
+        self.assertIs(orphan.upline, boss)    # rolled up past them
+
+    def test_they_count_as_terminations_and_nothing_else(self):
+        boss, *_ = self._team()
+        st = R.team_stats(list(boss.subtree()))
+        self.assertEqual((st["total"], st["terminated"]), (3, 1))
+        self.assertEqual(R.structure(boss), (2, 2))   # Chloe + Paris, not Gregory

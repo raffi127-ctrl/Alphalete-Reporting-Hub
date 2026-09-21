@@ -185,3 +185,9 @@
      section does not need the spacing that separates teams on the big map. */
   main.solo{ padding-top:.5rem; }
   main.solo section{ margin-bottom:0; }
+
+  /* Terminated this week: still on the map, struck through (Raf 2026-09-21:
+     "lets have it do a slash on their name"). Faded as well, so the room reads
+     them as gone at a glance and not as a rep with a typo. */
+  .node.gone{ opacity:.55; }
+  .node.gone .nm{ text-decoration:line-through; text-decoration-thickness:2px; }

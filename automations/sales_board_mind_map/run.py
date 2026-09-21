@@ -52,6 +52,7 @@ import datetime as dt
 import html
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -152,12 +153,15 @@ class Rep:
     """One node of the map."""
 
     def __init__(self, name, week, team, level, trainer, *, new_start=False,
-                 offboard=False, apps=0.0, internet=0.0):
+                 offboard=False, apps=0.0, internet=0.0, terminated=False):
         self.name, self.week, self.team = name, week, team
         self.level, self.trainer = level, trainer
         # This week's RUNNING WEEK TOTALS for them, for the per-team averages
         # Raf asked for (2026-09-21 Loom).
         self.apps, self.internet = apps, internet
+        # Terminated THIS WEEK: still drawn, struck through, and counted in
+        # nothing but "Terminated this week" (Raf 2026-09-21).
+        self.terminated = terminated
         self.new_start = new_start
         # An upline named in a Trainer cell who has no row on this board
         # (Algemar Kennel, Bas, Deavion). Drawn, so their team has a head to
@@ -183,6 +187,8 @@ class Rep:
         (Raf 2026-09-21: "can we put the leadership status under their name").
         A week-1 new start reads as that, not as "In Training" — the word Raf
         never uses."""
+        if self.terminated:
+            return "Terminated"
         if self.new_start or self.level in TRAINING_LEVELS:
             return "WK1 New Start"
         return RANK_LABELS.get(self.level, (self.level or "").title())
@@ -252,6 +258,15 @@ def _num(value) -> float:
         return 0.0
 
 
+def _week_monday(title: str, today: dt.date) -> Optional[dt.date]:
+    """The Monday that opens the week a 'Sales Board WE m.d' tab covers."""
+    m = re.search(r"WE\s*(\d{1,2})\.(\d{1,2})", title or "")
+    if not m:
+        return None
+    sunday = BD._resolve_tab_date(int(m.group(1)), int(m.group(2)), today)
+    return sunday - dt.timedelta(days=6) if sunday else None
+
+
 def week_tab_for(sh, today: dt.date, *, logfn=print) -> str:
     """Which week's tab to draw.
 
@@ -275,8 +290,9 @@ def week_tab_for(sh, today: dt.date, *, logfn=print) -> str:
 
 
 def read_board(today: dt.date, *, tab: Optional[str] = None, logfn=print):
-    """(tab, [Rep], {week: hex}, {gone: (trainer, team)}, {team: terminated},
-    {new start: classroom trainer}).
+    """(tab, [Rep], {week: hex}, {gone: (trainer, team)},
+    {new start: classroom trainer}). Terminated-this-week reps come back IN
+    the list, flagged, so they can be drawn struck through.
 
     `gone` is every terminated row's OWN trainer. Dropping a terminated leader
     would otherwise strand their people under a name nothing resolves —
@@ -291,13 +307,9 @@ def read_board(today: dt.date, *, tab: Optional[str] = None, logfn=print):
     c_team, c_level = _need(titles, COL_TEAM), _need(titles, COL_LEVEL)
 
     prod = running_week_cols(grid)
-    reps, dropped = [], 0
+    week_start = _week_monday(title, today)
+    reps, dropped, old = [], 0, 0
     gone: Dict[str, str] = {}
-    # Raf 2026-09-21: "add a section in there that says terminated so we see how
-    # many people have been terminated that week". They are off the tree, so
-    # their own Team cell is what files them — there is no trainer chain left
-    # to walk.
-    terminated_by_team: Dict[str, int] = {}
     rows: List[int] = []
     for r in lay.roster_rows:
         raw = str(BD._cell(grid, r, lay.name_col) or "").strip()
@@ -308,31 +320,40 @@ def read_board(today: dt.date, *, tab: Optional[str] = None, logfn=print):
         level = BD._norm(BD._cell(grid, r, c_level))
         if level not in LADDER:
             continue                       # a summary row, not a person
-        # Terminated, all three ways the board says it. A contradicted 'T'
-        # (what terminated_reps files as a Check) drops the person too: the
-        # board is saying it does not know, and Raf asked for them gone.
-        if BD.to_date(BD._cell(grid, r, lay.term_col)) is not None \
-                or BD.day_marks(grid, r, lay.day_blocks):
+        # Terminated, all three ways the board says it — via the one reader
+        # that knows all three. [[automations/gap_alerts/leaders.py]]
+        term_date = BD.to_date(BD._cell(grid, r, lay.term_col))
+        marked = bool(BD.day_marks(grid, r, lay.day_blocks))
+        trainer = str(BD._cell(grid, r, c_train) or "").strip()
+        team = str(BD._cell(grid, r, c_team) or "").strip()
+        terminated = term_date is not None or marked
+        if terminated:
+            # Anyone they trained rolls up past them to THEIR upline, whether
+            # or not they are drawn. [[project_sales_board_mind_map]]
+            gone[_base(raw)] = (trainer, team)
+            # KEPT, STRUCK THROUGH, for the week they left (Raf 2026-09-21:
+            # "for anyone thats terminated for the week, lets have it do a
+            # slash on their name") — this reverses his first "just remove
+            # the person". A termination dated before this week is last
+            # week's news and stays off the map.
+            if not marked and week_start and term_date < week_start:
+                old += 1
+                continue
             dropped += 1
-            t = str(BD._cell(grid, r, c_team) or "").strip()
-            gone[_base(raw)] = (str(BD._cell(grid, r, c_train) or "").strip(), t)
-            key = t or "No team"
-            terminated_by_team[key] = terminated_by_team.get(key, 0) + 1
-            continue
         reps.append(Rep(name=raw,
                         week=BD._norm(BD._cell(grid, r, c_week)),
-                        team=str(BD._cell(grid, r, c_team) or "").strip(),
-                        level=level,
-                        trainer=str(BD._cell(grid, r, c_train) or "").strip(),
+                        team=team, level=level, trainer=trainer,
                         apps=_num(BD._cell(grid, r, prod.get("APPS", 0))),
-                        internet=_num(BD._cell(grid, r, prod.get("INT", 0)))))
+                        internet=_num(BD._cell(grid, r, prod.get("INT", 0))),
+                        terminated=terminated))
         rows.append(r)
 
     palette = _read_week_colors(sh, title, lay.name_col, rows, reps, logfn=logfn)
     classroom = classroom_trainers(grid)
-    logfn("  %r: %d on the roster, %d terminated and dropped, %d in the "
-          "classroom block" % (title, len(reps), dropped, len(classroom)))
-    return title, reps, palette, gone, terminated_by_team, classroom
+    logfn("  %r: %d on the roster (%d terminated this week, struck through; "
+          "%d older terminations left off), %d in the classroom block"
+          % (title, len(reps), dropped, old, len(classroom)))
+    return title, reps, palette, gone, classroom
 
 
 def _read_week_colors(sh, title: str, name_col: int, rows: List[int],
@@ -604,7 +625,10 @@ def build_tree(reps: List[Rep], new_starts, *, departed=None, logfn=print):
     node for every upline the Trainer cells name who was never on this board.
     """
     departed = departed or {}
-    by_name = {_base(r.name): r for r in reps}
+    # Only the LIVE can be somebody's trainer. A terminated rep is drawn as a
+    # leaf under their own trainer, and anyone they trained rolls up past them
+    # through `departed` — so a struck-through name never heads a branch.
+    by_name = {_base(r.name): r for r in reps if not r.terminated}
     roots: List[Rep] = []
     offboard: Dict[str, Rep] = {}          # normalised upline name -> its node
 
@@ -714,8 +738,9 @@ def structure(rep: Rep) -> Tuple[int, int]:
     has 2 1st gens and 5 people total on the team their bubble would be 'Name
     2/5'"*. Both counts are of REAL people: a team head with no row on the
     board is drawn but never counted."""
-    direct = sum(1 for c in rep.children if not c.offboard)
-    total = sum(1 for r in rep.subtree() if r is not rep and not r.offboard)
+    direct = sum(1 for c in rep.children if not (c.offboard or c.terminated))
+    total = sum(1 for r in rep.subtree()
+                if r is not rep and not (r.offboard or r.terminated))
     return direct, total
 
 
@@ -740,8 +765,10 @@ def branch_team(head: Rep) -> str:
 
 def team_people(branches: List[Rep]) -> int:
     """How many REAL people a team holds — the off-board head is a drawing,
-    not a body, so it never swells a team past what the board carries."""
-    return sum(1 for b in branches for r in b.subtree() if not r.offboard)
+    not a body, and a struck-through name has left, so neither swells a team
+    past what the board carries."""
+    return sum(1 for b in branches for r in b.subtree()
+               if not (r.offboard or r.terminated))
 
 
 def group_by_team(roots: List[Rep]):
@@ -770,6 +797,7 @@ def plan_teams(roots: List[Rep], reps: List[Rep]):
     out = []
     for team, branches in group_by_team(roots):
         members = [r for b in branches for r in b.subtree() if not r.offboard]
+        live = [r for r in members if not r.terminated]
         head = next((b for b in branches if b.offboard), None) \
             or team_lead(branches)
         if head is not None:
@@ -778,12 +806,15 @@ def plan_teams(roots: List[Rep], reps: List[Rep]):
             if head.offboard and head in reps:
                 reps.remove(head)          # never was a body on this board
             lead = None if head.offboard else head
-            lead_name, first = head.display, len(first_gens)
+            lead_name = head.display
+            first = sum(1 for c in first_gens if not c.terminated)
         else:
             # No main leader (Alphaletes): count the separate lines it runs on.
             lead, lead_name = None, ""
-            first = len(branches)
+            first = sum(1 for b in branches if not b.terminated)
         branches.sort(key=lambda b: -b.size)
+        # members keeps the struck-through: the team box counts them as
+        # "Terminated this week", and every other number skips them.
         out.append((team, branches, lead, lead_name, first, members))
     return out
 
@@ -813,9 +844,10 @@ def _node(rep: Rep, palette) -> str:
         bg, cls = UPLINE_BG, " upline"
         rank = "Team leader"
     else:
-        bg, cls = _fill(rep, palette), ""
+        bg, cls = _fill(rep, palette), (" gone" if rep.terminated else "")
         rank = rep.rank
-    tag = '<span class="tag">NEW</span>' if rep.new_start else ""
+    tag = ('<span class="tag">NEW</span>'
+           if rep.new_start and not rep.terminated else "")
     return ('<span class="node%s" style="--fill:%s;--tint:%s">'
             '<span class="nm">%s%s%s</span>'
             '<span class="rank">%s</span></span>'
@@ -854,7 +886,8 @@ def _branch(rep: Rep, palette) -> str:
             % (_node(rep, palette), cols, _kids(rep, palette)))
 
 
-def team_stats(members: List[Rep], terminated: int = 0) -> Dict[str, object]:
+def team_stats(members: List[Rep], terminated: Optional[int] = None
+               ) -> Dict[str, object]:
     """The numbers Raf reads off a team (2026-09-21 Loom, his own words).
 
     His vocabulary, not the board's: he never says "in training", so a week one
@@ -863,7 +896,14 @@ def team_stats(members: List[Rep], terminated: int = 0) -> Dict[str, object]:
     the count of the people expected to sell — so a team carried by one leader
     reads differently from one where the whole bench produces.
     """
-    people = [r for r in members if not r.offboard]
+    # The struck-through are counted ONCE, as terminations, and in nothing
+    # else — they are on the page so the room can see who left, not on the
+    # team. `terminated` overrides the count only for a caller that has it
+    # from somewhere else.
+    gone_now = sum(1 for r in members if r.terminated and not r.offboard)
+    if terminated is None:
+        terminated = gone_now
+    people = [r for r in members if not (r.offboard or r.terminated)]
     leaders = [r for r in people if r.level in LEADER_LEVELS]
     entry = [r for r in people if r.level == "entry level"]
     week1 = [r for r in people if r.new_start or r.level in TRAINING_LEVELS]
@@ -900,7 +940,7 @@ STAT_BANDS = (
 )
 
 
-def _stat_dl(members: List[Rep], terminated: int = 0) -> str:
+def _stat_dl(members: List[Rep], terminated: Optional[int] = None) -> str:
     st = team_stats(members, terminated)
     out = []
     for band, rows in STAT_BANDS:
@@ -911,7 +951,6 @@ def _stat_dl(members: List[Rep], terminated: int = 0) -> str:
 
 
 def render_html(week: str, reps: List[Rep], groups, palette,
-                terminated_by_team: Optional[Dict[str, int]] = None,
                 *, only_team: Optional[str] = None) -> str:
     """`groups` comes from plan_teams — one section per MAIN TEAM, biggest
     first, with the team's leader already lifted onto the roof.
@@ -920,14 +959,14 @@ def render_html(week: str, reps: List[Rep], groups, palette,
     go in the thread (Raf 2026-09-21: "inside the thread, it's just per team").
     """
     css = (Path(__file__).parent / "style.css").read_text()
-    terminated_by_team = terminated_by_team or {}
     shown = [g for g in groups if only_team is None or g[0] == only_team]
 
     sections = []
     for team, branches_in, lead, lead_name, first_gens, members in shown:
         headline = ('<span class="root-node">%s<span class="count">%d/%d</span>'
                     '%s</span>'
-                    % (html.escape(team), first_gens, len(members),
+                    % (html.escape(team), first_gens,
+                       sum(1 for r in members if not r.terminated),
                        ('<span class="lead">%s</span>' % html.escape(lead_name))
                        if lead_name else ""))
 
@@ -938,7 +977,7 @@ def render_html(week: str, reps: List[Rep], groups, palette,
         side = ('<aside class="team-side"><div class="office-box">'
                 '<div class="title">%s</div>%s</div></aside>'
                 % (html.escape(team),
-                   _stat_dl(members, terminated_by_team.get(team, 0))))
+                   _stat_dl(members)))
 
         sections.append(
             '<section><div class="team">%s<div class="root-stem"></div></div>'
@@ -959,6 +998,10 @@ def render_html(week: str, reps: List[Rep], groups, palette,
     chips.append('<span class="node" style="--fill:%s;--tint:%s">'
                  '<span class="nm">Week 1 new start</span></span>'
                  % (NEW_START_BG, _ink(NEW_START_BG)))
+    if any(r.terminated for r in on_page):
+        chips.append('<span class="node gone" style="--fill:#E4E0D6;'
+                     '--tint:#3a3630"><span class="nm">Terminated this week'
+                     '</span></span>')
 
     # The office line only belongs on the whole-office page.
     # The office box closes the right-hand column the team boxes run down
@@ -969,7 +1012,7 @@ def render_html(week: str, reps: List[Rep], groups, palette,
         totals = ('<section class="totals">'
                   '<div class="office-box whole"><div class="title">Whole '
                   'office</div>%s</div></section>'
-                  % _stat_dl(reps, sum(terminated_by_team.values())))
+                  % _stat_dl([r for r in reps if not r.offboard]))
 
     # A THREAD SHOT IS JUST THE TEAM (Raf, via Megan 2026-09-21): the same row
     # as on the big map — roof, branches, that team's box — with no title,
@@ -996,16 +1039,49 @@ def render_html(week: str, reps: List[Rep], groups, palette,
 
 
 # -------------------------------------------------------------------- post
-def _share_ts(resp, channel: str) -> Optional[str]:
-    """The ts of the message an upload created, so the per-team shots can reply
-    to it. files_upload_v2 answers with the file, not the message, and the
-    share block is the only place the ts appears."""
-    shares = ((resp.get("file") or {}).get("shares") or {})
-    for scope in ("public", "private"):
-        for ch, entries in (shares.get(scope) or {}).items():
-            if ch == channel and entries:
-                return entries[0].get("ts")
-    return None
+def _parent_ts(client, resp, channel: str, *, wait_s: float = 30.0,
+               logfn=print) -> Optional[str]:
+    """The ts of the channel message an upload created, so the thread can hang
+    off it.
+
+    The 2026-09-21 7am run posted the map and then NO thread, because this used
+    to read `resp["file"]["shares"]` straight off the upload response — wrong
+    twice over: files_upload_v2 answers with `files` (a list), and it answers
+    when the UPLOAD finishes, before Slack has shared the file into the
+    channel, so there is no share (and no ts) in it yet. It now asks Slack for
+    the file until the share appears, then falls back to the channel history.
+    """
+    from automations.shared import slack_metrics_post as smp
+    file_id = smp._uploaded_file_id(resp)
+
+    def from_shares(file_obj) -> Optional[str]:
+        shares = (file_obj or {}).get("shares") or {}
+        for scope in ("public", "private"):
+            entries = (shares.get(scope) or {}).get(channel) or []
+            if entries and entries[0].get("ts"):
+                return entries[0]["ts"]
+        return None
+
+    files = resp.get("files") or [resp.get("file") or {}]
+    ts = from_shares(files[0] if files else {})
+    deadline = time.monotonic() + wait_s
+    while not ts and file_id and time.monotonic() < deadline:
+        time.sleep(1.5)
+        try:
+            ts = from_shares(client.files_info(file=file_id).get("file"))
+        except Exception as exc:  # noqa: BLE001 — try the history instead
+            logfn("  files.info failed (%s) — checking the channel instead" % exc)
+            break
+    if not ts and file_id:
+        try:
+            hist = client.conversations_history(channel=channel, limit=15)
+            for msg in hist.get("messages") or []:
+                if any(f.get("id") == file_id for f in msg.get("files") or []):
+                    ts = msg.get("ts")
+                    break
+        except Exception as exc:  # noqa: BLE001
+            logfn("  channel history read failed: %s" % exc)
+    return ts
 
 
 def leader_tags(*, client=None, logfn=print) -> str:
@@ -1070,31 +1146,48 @@ def post(png: Path, week: str, *, team_pngs=(), dm: Optional[str] = None,
                 raise
             continue
 
-        parent = _share_ts(resp, ch)
+        parent = _parent_ts(client, resp, ch, logfn=logfn)
         if not parent:
-            # The map is already in the channel; only the thread is lost, so
-            # say so loudly and keep the run green-for-what-it-did.
-            logfn("  %s: no thread ts came back — the per-team shots and the "
-                  "tag line were NOT posted" % ch)
-            out["%s_thread" % ch] = False
+            # The map is up but the thread is not — that is a FAILED run, not
+            # a green one: half the post Raf asked for is missing.
+            # [[feedback_green_means_delivered]]
+            logfn("  %s: could not find the map's message — the tag line and "
+                  "per-team shots were NOT posted" % ch)
+            out["%s_thread" % ch] = 0
             continue
+        out["%s_parent_ts" % ch] = parent
         if tags:
             try:
                 client.chat_postMessage(channel=ch, thread_ts=parent, text=tags)
             except Exception as exc:  # noqa: BLE001
                 logfn("  %s: tag line failed (%s)" % (ch, exc))
-        posted = 0
-        for team, team_png in team_pngs:
-            try:
-                client.files_upload_v2(
-                    channel=ch, thread_ts=parent, file=str(team_png),
-                    filename="%s-%s.png" % (_slug(team), week or "week"),
-                    initial_comment="*%s*" % team)
-                posted += 1
-            except Exception as exc:  # noqa: BLE001
-                logfn("  %s: %r shot failed (%s)" % (ch, team, exc))
-        out["%s_thread" % ch] = posted
+        out["%s_thread" % ch] = post_team_shots(
+            client, ch, parent, team_pngs, week, logfn=logfn)
     return out
+
+
+def post_team_shots(client, channel: str, parent: str, team_pngs, week: str,
+                    *, logfn=print) -> int:
+    """One shot per team under `parent`, IN ORDER. Returns how many landed.
+
+    Each upload waits for its own share before the next one goes: Slack
+    finishes small images first, so five uploads fired back to back arrive in
+    size order, not team order (Eve 2026-08-19, the knocks thread).
+    [[shared.slack_metrics_post.wait_for_share]]"""
+    from automations.shared import slack_metrics_post as smp
+    posted = 0
+    for team, team_png in team_pngs:
+        try:
+            up = client.files_upload_v2(
+                channel=channel, thread_ts=parent, file=str(team_png),
+                filename="%s-%s.png" % (_slug(team), week or "week"),
+                initial_comment="*%s*" % team)
+            smp.wait_for_share(client, channel, parent,
+                               smp._uploaded_file_id(up), text="*%s*" % team)
+            posted += 1
+        except Exception as exc:  # noqa: BLE001
+            logfn("  %s: %r shot failed (%s)" % (channel, team, exc))
+    return posted
 
 
 def _slug(text: str) -> str:
@@ -1113,19 +1206,20 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     today = dt.date.today()
-    title, reps, palette, gone, terminated_by_team, classroom = read_board(
+    title, reps, palette, gone, classroom = read_board(
         today, tab=args.tab)
-    on_board = {_base(r.name) for r in reps}
-    new_starts = read_new_starts(today, on_board, classroom)
+    on_board = {_base(r.name) for r in reps}   # the struck-through included:
+    new_starts = read_new_starts(today, on_board, classroom)  # no double entry
 
     # Trainer names nobody on this week's board answers to. The terminated rows
     # answer some of them for free; the rest are looked up on earlier weeks, so
     # somebody who left the roster hands their people to their own upline
     # instead of coming back as a head node.
+    live = {_base(r.name): r for r in reps if not r.terminated}
     wanted = {_base(t) for t in
               [r.trainer for r in reps] + [t for _, t in new_starts]
               if _base(t) and _base(t) not in OFFICE_TRAINERS
-              and _resolve(t, {_base(r.name): r for r in reps}) is None}
+              and _resolve(t, live) is None}
     departed = dict(gone)
     still = {w for w in wanted if w not in departed}
     if still:
@@ -1141,7 +1235,7 @@ def main(argv=None) -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     html_path, png_path = OUT_DIR / "mind_map.html", OUT_DIR / "mind_map.png"
     html_path.write_text(
-        render_html(week, reps, groups, palette, terminated_by_team),
+        render_html(week, reps, groups, palette),
         encoding="utf-8")
     # Taller window than the B2B map: five team sections stack vertically and
     # anything below the viewport is cut off, not scrolled. The trim inside
@@ -1167,7 +1261,7 @@ def main(argv=None) -> int:
             t_html = OUT_DIR / ("team-%s.html" % _slug(team))
             t_png = OUT_DIR / ("team-%s.png" % _slug(team))
             t_html.write_text(
-                render_html(week, reps, groups, palette, terminated_by_team,
+                render_html(week, reps, groups, palette,
                             only_team=team), encoding="utf-8")
             render_png(t_html, t_png, window=(2400, 2000))
             team_pngs.append((team, t_png))
@@ -1179,6 +1273,20 @@ def main(argv=None) -> int:
     out = post(png_path, week, team_pngs=team_pngs, dm=args.dm,
                dry_run=args.dry_run)
     print("  posted: %s" % out)
+    if args.dm or args.dry_run:
+        return 0
+    # GREEN ONLY WHEN IT ALL LANDED: the map, and every team shot in its
+    # thread. The 9/21 7am run exited 0 with an empty thread, and the Hub pill
+    # said it had delivered. [[feedback_green_means_delivered]]
+    want = len(team_pngs)
+    short = [ch for ch in [CHANNEL[1]]
+             if not out.get(ch) or out.get("%s_thread" % ch, 0) < want]
+    if short:
+        print("  INCOMPLETE: %s got the map but %s of %d team shots"
+              % (", ".join(short),
+                 ", ".join(str(out.get("%s_thread" % c, 0)) for c in short),
+                 want))
+        return 1
     return 0
 
 
