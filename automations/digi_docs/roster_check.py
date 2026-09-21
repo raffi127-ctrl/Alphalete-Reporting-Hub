@@ -52,17 +52,31 @@ def count_matches(page, name: str) -> int:
         box.fill("")
         # Key by key: this table filters on keyup, which fill() never fires.
         box.press_sequentially(probe, delay=40)
-        try:
-            # Server-side: each keystroke is a request, so wait for the
-            # answer rather than a fixed pause.
-            page.wait_for_load_state("networkidle", timeout=15000)
-        except Exception:                                   # noqa: BLE001
-            pass
-        page.wait_for_timeout(600)
-        n = page.locator("tbody tr").filter(has_text=pat).count()
+        # POLL FOR THE ANSWER (2026-09-21, first live run: 1 of 15 found, the
+        # other 14 -- people sent that same afternoon -- called MISSING). The
+        # server answers a search a second or more after the last key, and
+        # networkidle returns before the request has even gone out, so a
+        # short fixed pause read the PREVIOUS person's rows every time.
+        # Keep looking until this name shows up or ~8s pass.
+        n = 0
+        for _ in range(16):
+            page.wait_for_timeout(500)
+            n = page.locator("tbody tr").filter(has_text=pat).count()
+            if n:
+                page.wait_for_timeout(800)   # let a second row land, if any
+                n = page.locator("tbody tr").filter(has_text=pat).count()
+                break
         best = max(best, n)
         if n:
             break
+    if not best:
+        # Say what the table DID show, so a wrong "missing" is diagnosable
+        # from the log instead of from somebody knowing better.
+        from automations.headshots.ov_upload import _sample_rows
+        try:
+            print(f"  {name}: not found — table showed {_sample_rows(page)}")
+        except Exception:                                   # noqa: BLE001
+            pass
     return best
 
 
