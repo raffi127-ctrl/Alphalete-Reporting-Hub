@@ -347,6 +347,45 @@ def check_ins(day: Optional[dt.date] = None, book=None) -> tuple:
         ever.add(key)
         if _day_key(row[COL_DAY]) == day.isoformat():
             seen[key] = (row[COL_RECEIVED] or "").strip()
+
+    # ANY SIGN OF LIFE, not only a sales read. Khalil's computer relayed
+    # knocks at 11:08 and reported a SaraPlus code check at 11:07 on
+    # 2026-09-21, and was announced as "last checked in at 10:07, 52 min ago"
+    # -- because the only clock read here was the SALES one, and a machine
+    # that cannot get past a sign-in never writes it. That failure already
+    # has its own alert; calling the machine quiet as well is a second,
+    # wrong alert about the same thing. (Until that morning an empty relay
+    # row written while a sign-in window was open had been keeping this
+    # clock fresh, which is how it went unnoticed.)
+    def _later(key, cell):
+        cell = (cell or "").strip()
+        new = _parse_received(cell) if cell else None
+        if not new:
+            return
+        ever.add(key)
+        old = _parse_received(seen[key]) if seen.get(key) else None
+        if old is None or new > old:
+            seen[key] = cell
+
+    try:
+        kn = book.worksheet(KNOCKS_TAB).get_all_values()
+        head = [h.strip() for h in (kn[0] if kn else [])]
+        at = head.index("Received At") if "Received At" in head else -1
+        for row in kn[1:]:
+            key = (row[0] if row else "").strip().lower()
+            if (key and at >= 0 and len(row) > at
+                    and _day_key(row[1]) == day.isoformat()):
+                _later(key, row[at])
+    except Exception:  # noqa: BLE001 -- the sales clock alone still works
+        pass
+    try:
+        for row in book.worksheet(FAULTS_TAB).get_all_values()[1:]:
+            key = (row[F_OFFICE] if row else "").strip().lower()
+            if (key and len(row) > F_LAST
+                    and _day_key(row[F_DAY]) == day.isoformat()):
+                _later(key, row[F_LAST])
+    except Exception:  # noqa: BLE001
+        pass
     return seen, ever
 
 
@@ -2048,7 +2087,14 @@ def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
 
     nudged = []
     for q in fresh:
-        office = O.get(q["office"])
+        # BOUND HERE. The lines below used `key` without it, so every nudge
+        # since 2026-09-18 died on UnboundLocalError, was swallowed, and the
+        # post then claimed "No Slack id on file" for offices that have one
+        # (Khalil, 2026-09-21). Worse, if the recovery loop above had run,
+        # `key` held ANOTHER office -- and its laptop wording and helpers
+        # would have been used for this one.
+        key = q["office"]
+        office = O.get(key)
         if not (office and office.slack_user_id):
             continue
         first = (office.owner or "").split()[0] if office.owner else "there"
