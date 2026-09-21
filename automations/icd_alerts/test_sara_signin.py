@@ -300,3 +300,55 @@ class SignInProvesTheAutomaticReadTest(unittest.TestCase):
              mock.patch.object(X.C, "creds", return_value={}):
             X.run(log=lambda *_: None)
         self.assertEqual(order, ["window", "verify:False"])
+
+
+class AChallengedMachineReadsWithFullChromeTest(unittest.TestCase):
+    """Matching the NAME was not enough: at 12:11 on 2026-09-21 Khalil's window
+    was trusted and the hidden read, presenting the identical name, was still
+    asked for the code. The hidden default is the stripped "headless shell"
+    (0 plugins, no window.chrome, no WebGL); the full Chrome run hidden
+    matched the window on every one of those."""
+
+    def setUp(self):
+        import pathlib, tempfile
+        from unittest import mock
+        self.path = pathlib.Path(tempfile.mkdtemp()) / "id.txt"
+        p = mock.patch.object(R, "BROWSER_ID_PATH", self.path)
+        p.start(); self.addCleanup(p.stop)
+
+    def _kwargs(self, headless=True, fail_channel=False):
+        from unittest import mock
+        pw = mock.Mock()
+        calls = []
+
+        def launch(_dir, **kw):
+            calls.append(dict(kw))
+            if fail_channel and "channel" in kw:
+                raise RuntimeError("chromium channel not installed")
+            ctx = mock.Mock()
+            ctx.pages = [mock.Mock(**{"evaluate.return_value": "HeadlessChrome/148"})]
+            return ctx
+        pw.chromium.launch_persistent_context.side_effect = launch
+        with mock.patch.object(R.C, "PROFILE_DIR", self.path.parent / "prof"):
+            R._context(pw, headless)
+        return calls
+
+    def test_challenged_hidden_read_uses_full_chrome(self):
+        self.path.write_text("Mozilla/5.0 Chrome/148.0.0.0")
+        self.assertEqual(self._kwargs()[-1].get("channel"), "chromium")
+
+    def test_unchallenged_machine_is_untouched(self):
+        kw = self._kwargs()[-1]
+        self.assertNotIn("channel", kw)
+        self.assertNotIn("user_agent", kw)
+
+    def test_missing_full_chrome_falls_back_rather_than_failing(self):
+        self.path.write_text("Mozilla/5.0 Chrome/148.0.0.0")
+        calls = self._kwargs(fail_channel=True)
+        self.assertEqual(len(calls), 2)
+        self.assertNotIn("channel", calls[-1])
+        self.assertEqual(calls[-1].get("user_agent"), "Mozilla/5.0 Chrome/148.0.0.0")
+
+    def test_the_visible_window_is_left_alone(self):
+        self.path.write_text("Mozilla/5.0 Chrome/148.0.0.0")
+        self.assertNotIn("channel", self._kwargs(headless=False)[-1])

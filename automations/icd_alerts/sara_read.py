@@ -111,7 +111,24 @@ def _context(p, headless: bool):
     known = browser_id()
     if known:
         kw["user_agent"] = known
-    ctx = p.chromium.launch_persistent_context(str(C.PROFILE_DIR), **kw)
+        # AND THE FULL BROWSER, not the stripped one. Matching the name was
+        # not enough: on 2026-09-21 Khalil's visible window was trusted and
+        # the hidden read, presenting the identical name, was still asked for
+        # the code. The hidden default is Playwright's "headless shell" -- 0
+        # plugins, no window.chrome, no WebGL, 0 media types -- which any
+        # fingerprint tells apart from the window a person used. channel=
+        # "chromium" runs the real Chrome hidden, and matched the visible
+        # window on every one of those, measured before this was written.
+        # Only for a machine SaraPlus has challenged, like the name.
+        if headless:
+            kw["channel"] = "chromium"
+    try:
+        ctx = p.chromium.launch_persistent_context(str(C.PROFILE_DIR), **kw)
+    except Exception:  # noqa: BLE001 -- full Chrome missing: read as before
+        if "channel" not in kw:
+            raise
+        kw.pop("channel")
+        ctx = p.chromium.launch_persistent_context(str(C.PROFILE_DIR), **kw)
     if not known:
         # Kept, in case SaraPlus challenges this launch and we need to say
         # what the visible version of it is.
