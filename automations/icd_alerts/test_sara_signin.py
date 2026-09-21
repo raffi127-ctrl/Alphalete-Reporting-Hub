@@ -190,3 +190,69 @@ class SelfUpdateNeverOverwritesACheckoutTest(unittest.TestCase):
     def test_this_repo_is_protected(self):
         from automations.icd_alerts import selfupdate as SU
         self.assertTrue((SU._app_root() / ".git").exists())
+
+
+class OnlyAChallengedMachineChangesItsBrowserIdTest(unittest.TestCase):
+    """The hidden read said "HeadlessChrome/148.0.7778.96"; the sign-in window
+    says "Chrome/148.0.0.0". Khalil's code check was cleared in the window at
+    9:24 on 2026-09-21 and hit again by the hidden read at 10:05. Four other
+    offices read as HeadlessChrome daily and are never asked -- changing what
+    a trusted machine calls itself could get them asked, so they must be left
+    alone."""
+
+    HEADLESS = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/"
+                "537.36 (KHTML, like Gecko) HeadlessChrome/148.0.7778.96 "
+                "Safari/537.36")
+    VISIBLE = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/"
+               "537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36")
+
+    def setUp(self):
+        import pathlib, tempfile
+        from unittest import mock
+        self.path = pathlib.Path(tempfile.mkdtemp()) / "id.txt"
+        p = mock.patch.object(R, "BROWSER_ID_PATH", self.path)
+        p.start(); self.addCleanup(p.stop)
+
+    def _launch_kwargs(self):
+        from unittest import mock
+        pw = mock.Mock()
+        ctx = pw.chromium.launch_persistent_context.return_value
+        ctx.pages = [mock.Mock(**{"evaluate.return_value": self.HEADLESS})]
+        with mock.patch.object(R.C, "PROFILE_DIR", self.path.parent / "prof"):
+            R._context(pw, True)
+        return pw.chromium.launch_persistent_context.call_args.kwargs
+
+    def test_the_conversion_matches_the_visible_browser_exactly(self):
+        self.assertEqual(R._as_visible_chrome(self.HEADLESS), self.VISIBLE)
+
+    def test_an_unchallenged_machine_launches_exactly_as_before(self):
+        self.assertNotIn("user_agent", self._launch_kwargs())
+
+    def test_a_challenged_machine_presents_the_visible_identity(self):
+        R.remember_browser_id(self.HEADLESS, log=lambda *_: None)
+        self.assertEqual(self._launch_kwargs().get("user_agent"), self.VISIBLE)
+
+    def test_the_code_check_is_what_switches_it(self):
+        from unittest import mock
+        R._LAST_UA["ua"] = self.HEADLESS
+        with mock.patch.object(R, "_context"), \
+             mock.patch.object(R, "_sign_in_raw",
+                               side_effect=R.S.SaraPasscodeWall("code check")):
+            with self.assertRaises(R.AccountProblem):
+                R._heal_and_login(mock.Mock(), True, log=lambda *_: None)
+        self.assertEqual(R.browser_id(), self.VISIBLE)
+
+    def test_any_other_failure_does_not(self):
+        from unittest import mock
+        R._LAST_UA["ua"] = self.HEADLESS
+        with mock.patch.object(R, "_context"), \
+             mock.patch.object(R, "_sign_in_raw",
+                               side_effect=R.S.SaraError("slow page")):
+            with self.assertRaises(R.AccountProblem):
+                R._heal_and_login(mock.Mock(), True, log=lambda *_: None)
+        self.assertEqual(R.browser_id(), "")
+
+    def test_garbage_is_never_saved(self):
+        R.remember_browser_id("", log=lambda *_: None)
+        R.remember_browser_id("not a browser", log=lambda *_: None)
+        self.assertEqual(R.browser_id(), "")

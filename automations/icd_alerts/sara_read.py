@@ -55,10 +55,71 @@ def signin_in_progress() -> bool:
         minutes=C.SARA_SIGNIN_LOCK_MINUTES)
 
 
+# WHAT THIS BROWSER CALLS ITSELF, once SaraPlus has ever asked who it is.
+#
+# The scheduled read runs Chrome hidden, and hidden Chrome tells every site it
+# is "HeadlessChrome/148.0.7778.96". The sign-in window a person uses is
+# visible, and says "Chrome/148.0.0.0". Same profile folder, same cookies --
+# and to a site that fingerprints the browser, two different computers.
+#
+# Khalil, 2026-09-21: Francia cleared SaraPlus's emailed-code check in the
+# visible window at 9:24, closed it at 9:55, and the hidden read hit the same
+# check at 10:05. Four other offices read as HeadlessChrome every day and are
+# never asked, so this is NOT applied everywhere: changing what a trusted
+# machine calls itself is exactly how you get it asked again.
+#
+# So a machine switches only after SaraPlus has challenged it, and from then
+# on every launch -- hidden or visible -- presents the one identity a person
+# has vouched for. Written when the check is hit, and again when a sign-in
+# window succeeds.
+BROWSER_ID_PATH = C.APP_DIR / "sara-browser-id.txt"
+_LAST_UA = {"ua": ""}
+
+
+def _as_visible_chrome(ua: str) -> str:
+    """'...HeadlessChrome/148.0.7778.96 ...' -> '...Chrome/148.0.0.0 ...' --
+    exactly what the same Chrome reports when it has a window."""
+    import re
+    return re.sub(r"HeadlessChrome/(\d+)[\d.]*", r"Chrome/\1.0.0.0", ua or "")
+
+
+def browser_id() -> str:
+    try:
+        return BROWSER_ID_PATH.read_text().strip()
+    except OSError:
+        return ""
+
+
+def remember_browser_id(ua: str, log=print) -> None:
+    ua = _as_visible_chrome(ua).strip()
+    if not ua or "Chrome/" not in ua:
+        return
+    try:
+        BROWSER_ID_PATH.parent.mkdir(parents=True, exist_ok=True)
+        if BROWSER_ID_PATH.exists() and browser_id() == ua:
+            return
+        BROWSER_ID_PATH.write_text(ua)
+        log("SaraPlus has challenged this browser -- every launch now presents "
+            "itself the way the sign-in window does")
+    except OSError:
+        pass
+
+
 def _context(p, headless: bool):
     C.PROFILE_DIR.mkdir(parents=True, exist_ok=True)
-    ctx = p.chromium.launch_persistent_context(
-        str(C.PROFILE_DIR), headless=headless, args=["--disable-sync"])
+    kw = {"headless": headless, "args": ["--disable-sync"]}
+    known = browser_id()
+    if known:
+        kw["user_agent"] = known
+    ctx = p.chromium.launch_persistent_context(str(C.PROFILE_DIR), **kw)
+    if not known:
+        # Kept, in case SaraPlus challenges this launch and we need to say
+        # what the visible version of it is.
+        try:
+            pg = ctx.pages[0] if ctx.pages else ctx.new_page()
+            _LAST_UA["ua"] = pg.evaluate("() => navigator.userAgent") or ""
+        except Exception:  # noqa: BLE001 -- never cost the read for this
+            pass
     if not headless:
         # Only when a person can actually see it. On the scheduled run this is
         # headless and nothing appears on their screen at all.
@@ -169,9 +230,15 @@ def _heal_and_login(p, headless: bool, log=print):
             raise
 
     wall = getattr(S, "SaraPasswordWall", None)
+    passcode = getattr(S, "SaraPasscodeWall", None)
     try:
         return _open()
     except S.SaraError as first:
+        if passcode is not None and isinstance(first, passcode):
+            # From the next launch on, look like the window a person clears
+            # the check in. Nothing else changes; the check still has to be
+            # cleared once.
+            remember_browser_id(_LAST_UA["ua"], log=log)
         if wall is None or not isinstance(first, wall):
             raise _as_owner_problem(first) from first
         log("SaraPlus served its Change Password page -- testing whether it "

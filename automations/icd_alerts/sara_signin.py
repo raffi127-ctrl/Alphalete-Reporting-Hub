@@ -129,8 +129,11 @@ def _window(log=print) -> int:
     from patchright.sync_api import sync_playwright
 
     with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(
-            str(C.PROFILE_DIR), headless=False, args=["--disable-sync"])
+        from automations.icd_alerts import sara_read as _SR
+        kw = {"headless": False, "args": ["--disable-sync"]}
+        if _SR.browser_id():
+            kw["user_agent"] = _SR.browser_id()
+        ctx = p.chromium.launch_persistent_context(str(C.PROFILE_DIR), **kw)
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.goto(S.LOGIN_URL, timeout=60000)
@@ -151,6 +154,13 @@ def _window(log=print) -> int:
                 if not urls:
                     break                     # they closed the window
                 if any(_signed_in(u) for u in urls):
+                    # THE IDENTITY THAT WAS JUST TRUSTED is the one the hidden
+                    # reads must present from now on.
+                    try:
+                        _SR.remember_browser_id(
+                            page.evaluate("() => navigator.userAgent"), log=log)
+                    except Exception:  # noqa: BLE001
+                        pass
                     log("")
                     log("  Signed in. This browser is trusted now, so the")
                     log("  sweep can read sales again within a few minutes.")
