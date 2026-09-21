@@ -46,9 +46,15 @@ class Roster(unittest.TestCase):
         self.assertNotIn("Blue Ink", p.cols)
         self.assertNotIn("Headshot Photo", p.cols)
 
-    def test_to_check_skips_finished_and_gone_keeps_owner_submitted(self):
+    def test_to_check_skips_finished_gone_and_owner_submitted(self):
         names = [p.name for p in sweep.to_check(sweep.people(_tab()))]
-        self.assertEqual(names, ["Ben Carried", "Cara New", "Eve Owner"])
+        self.assertEqual(names, ["Ben Carried", "Cara New"])
+
+    def test_owner_submit_ticked_is_skipped_too(self):
+        tab = _tab()
+        tab[7] = _row("Cara", "New", own="TRUE")
+        names = [p.name for p in sweep.to_check(sweep.people(tab))]
+        self.assertNotIn("Cara New", names)
 
 
 class Earned(unittest.TestCase):

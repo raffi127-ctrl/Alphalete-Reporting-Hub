@@ -20,8 +20,8 @@ from automations.shared.new_start_steps import SHEET_ID  # noqa: F401
 COLUMNS = ("Digi Docs", "Onboarding Quizzes", "UID Request", "Owner Submit")
 
 # Final Status words that mean this person is not going through onboarding —
-# no point spending an OwnerVille lookup on them. "Owner submitted" is a
-# POSITIVE status and is NOT in here.
+# no point spending an OwnerVille lookup on them. "Owner submitted" is skipped
+# too, but separately (sweep.owner_submitted) — it's finished, not gone.
 GONE_WORDS = ("quit", "terminat", "no show", "no-show", "fail", "resched",
               "declin", "not moving", "fired")
 

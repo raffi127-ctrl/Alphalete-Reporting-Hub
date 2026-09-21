@@ -71,10 +71,20 @@ def people(values: List[List[str]]) -> List[Person]:
     return out
 
 
+def owner_submitted(p: Person) -> bool:
+    """Already owner-submitted — Final Status says so, or the box is ticked.
+    Owner Submit needs every other step done first, so there is nothing left
+    to look up (Megan 2026-09-21: re-searching them "is a waste of time")."""
+    return ("owner submit" in (p.final_status or "").lower()
+            or bool(p.ticked.get("Owner Submit")))
+
+
 def to_check(everyone: List[Person]) -> List[Person]:
-    """People worth an OwnerVille lookup: something still open, not gone."""
+    """People worth an OwnerVille lookup: something still open, not gone,
+    not already owner-submitted."""
     return [p for p in everyone
-            if p.open_columns and not _gone(p.final_status)]
+            if p.open_columns and not _gone(p.final_status)
+            and not owner_submitted(p)]
 
 
 def earned(p: Person, done: Dict[str, object]) -> List[str]:
