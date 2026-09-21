@@ -22,28 +22,50 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- Fire every 5 min around the clock (:00/:05/…/:55) so the leftovers queue is
-         worked constantly and never builds up (Megan 2026-08-06). The wrapper
-         (applicant_push.sh) gates the ACTIVE window to 7am–10pm CST, EVERY day;
-         outside that it exits immediately. Machine LOCAL time (Lucy 2 is Central).
-         TIME KNOB for hours: edit the window gate in the wrapper, NOT this array.
-         launchd keeps ONE instance per label, so if a walk runs longer than 5 min
-         the next tick is simply skipped until it finishes — runs back-to-back, never
-         stacks. -->
+    <!-- Fire every 2 min around the clock (:00/:02/…/:58). Was every 5 until
+         2026-09-21, when Megan asked for the queues to be processed "asap and as
+         quick as possible": walks had got short (1-6 min once the backlog cleared
+         and the walk learned to stop itself), so a 5-min clock left each box idle
+         between ticks and each office waited ~15 min for its turn with three
+         offices per box. Every 2 min, a box starts its next office almost as soon
+         as the last one finishes — ~6 min per office. Nothing here makes a walk
+         riskier: launchd keeps ONE instance per label, so a walk longer than 2 min
+         simply holds the slot and the missed ticks are skipped, never stacked.
+         The wrapper (applicant_push.sh) gates the ACTIVE window to 7am-10pm, EVERY
+         day; outside it every tick exits immediately. Machine LOCAL time.
+         TIME KNOB for hours: edit the window gate in the wrapper, NOT this array. -->
     <key>StartCalendarInterval</key>
     <array>
         <dict><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Minute</key><integer>2</integer></dict>
+        <dict><key>Minute</key><integer>4</integer></dict>
+        <dict><key>Minute</key><integer>6</integer></dict>
+        <dict><key>Minute</key><integer>8</integer></dict>
         <dict><key>Minute</key><integer>10</integer></dict>
-        <dict><key>Minute</key><integer>15</integer></dict>
+        <dict><key>Minute</key><integer>12</integer></dict>
+        <dict><key>Minute</key><integer>14</integer></dict>
+        <dict><key>Minute</key><integer>16</integer></dict>
+        <dict><key>Minute</key><integer>18</integer></dict>
         <dict><key>Minute</key><integer>20</integer></dict>
-        <dict><key>Minute</key><integer>25</integer></dict>
+        <dict><key>Minute</key><integer>22</integer></dict>
+        <dict><key>Minute</key><integer>24</integer></dict>
+        <dict><key>Minute</key><integer>26</integer></dict>
+        <dict><key>Minute</key><integer>28</integer></dict>
         <dict><key>Minute</key><integer>30</integer></dict>
-        <dict><key>Minute</key><integer>35</integer></dict>
+        <dict><key>Minute</key><integer>32</integer></dict>
+        <dict><key>Minute</key><integer>34</integer></dict>
+        <dict><key>Minute</key><integer>36</integer></dict>
+        <dict><key>Minute</key><integer>38</integer></dict>
         <dict><key>Minute</key><integer>40</integer></dict>
-        <dict><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Minute</key><integer>42</integer></dict>
+        <dict><key>Minute</key><integer>44</integer></dict>
+        <dict><key>Minute</key><integer>46</integer></dict>
+        <dict><key>Minute</key><integer>48</integer></dict>
         <dict><key>Minute</key><integer>50</integer></dict>
-        <dict><key>Minute</key><integer>55</integer></dict>
+        <dict><key>Minute</key><integer>52</integer></dict>
+        <dict><key>Minute</key><integer>54</integer></dict>
+        <dict><key>Minute</key><integer>56</integer></dict>
+        <dict><key>Minute</key><integer>58</integer></dict>
     </array>
 
     <key>StandardOutPath</key>

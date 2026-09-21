@@ -1,5 +1,5 @@
 #!/bin/bash
-# Applicant Push — every 5 min, 7:00 AM–10:00 PM CST, EVERY DAY, on Lucy 2 AND
+# Applicant Push — every 2 min (was 5 until 2026-09-21), 7:00 AM–10:00 PM CST, EVERY DAY, on Lucy 2 AND
 # Lucy 3 via launchd (com.alphalete.applicant-push). Same wrapper on both boxes;
 # each one works only the offices assigned to it.
 #
