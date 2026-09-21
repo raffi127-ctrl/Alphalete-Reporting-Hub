@@ -6,8 +6,13 @@
     # a past day, text summary only (fast, no downloads):
     python -m automations.ad_photo_threads.run --dry-run --date 2026-09-18 --no-images
 
-Posting is NOT built yet: the thread layout (one thread per ad vs one per day)
-is waiting on Raf. Until then the only mode is --dry-run.
+    # the exact Slack texts it would post, one per ad (no downloads):
+    python -m automations.ad_photo_threads.run --dry-run --show-posts
+
+    # LIVE, into a channel you name (test first; needs the mini — Windows'
+    # Slack token can't download the screenshots):
+    python -m automations.ad_photo_threads.run --post --channel C0XXXXXXX
+    python -m automations.ad_photo_threads.run --post --test-dm --date 2026-09-18 --max-ads 2
 
 Python 3.9-safe (runs on the mini): no runtime `X | Y`, no 3.10+ syntax.
 """
@@ -96,15 +101,43 @@ def preview_html(rep: collect.DayReport, out_dir: Path) -> Path:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--date", help="YYYY-MM-DD (default: today, Central)")
-    ap.add_argument("--dry-run", action="store_true", required=True,
-                    help="Preview only. Posting isn't built yet.")
+    mode = ap.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--dry-run", action="store_true", help="Preview only.")
+    mode.add_argument("--post", action="store_true",
+                      help="Post to Slack (needs --channel).")
+    ap.add_argument("--channel", help="Slack channel id to post into.")
+    ap.add_argument("--test-dm", action="store_true",
+                    help="Post into the test group DM (config.TEST_DM_USERS + Lucy).")
+    ap.add_argument("--max-ads", type=int,
+                    help="Post only the N biggest ads that have photos (a sample).")
     ap.add_argument("--no-images", action="store_true",
                     help="Text summary only; skip downloading the screenshots.")
+    ap.add_argument("--show-posts", action="store_true",
+                    help="With --dry-run: print the exact Slack text per ad.")
     a = ap.parse_args(argv)
+    if a.post and not (a.channel or a.test_dm):
+        ap.error("--post needs --channel or --test-dm (no default channel yet)")
     day = dt.date.fromisoformat(a.date) if a.date else collect.central_today()
 
     rep = collect.build(day)
     print(summary(rep))
+    if a.post:
+        from automations.ad_photo_threads import post
+        channel = a.channel
+        if a.test_dm:
+            from automations.ad_photo_threads import config
+            r = collect._client().conversations_open(users=",".join(config.TEST_DM_USERS))
+            channel = r["channel"]["id"]
+            print(f"\nTest group DM: {channel}")
+        print("\nPosted:", post.publish(rep, channel, pilot=a.test_dm,
+                                         max_ads=a.max_ads))
+        return 0
+    if a.show_posts:
+        from automations.ad_photo_threads import post
+        for item in post.plan(rep):
+            print(f"\n=== thread: {item['title']}  ({len(item['images'])} photos)")
+            print(item["text"])
+        return 0
     if not a.no_images:
         page = preview_html(rep, REPO / "output" / "ad_photo_threads" / day.isoformat())
         print(f"\nPreview: {page}")

@@ -49,6 +49,17 @@ SOURCES = [
     },
 ]
 
+# First live test (Eve 2026-09-21): a group DM with Lucy instead of the real
+# channel. IDs, not names — Lucy has no users:read.
+TEST_DM_USERS = [
+    "U045Z8N0ZQC",   # Rafael Hidalgo
+    "U07FWSYP3NV",   # Camila Hornos Kraschinsky
+    "U04G5HJBGFN",   # Megan Hidalgo
+    "U088E2KJEV8",   # Evelyn Sobrino
+    "U07R68ZGHT6",   # Perla Falabella
+    "U09HN07PPU5",   # Maddie Buck
+]
+
 # Found by the header text, never by column letter — the template moves.
 COL_DATE = "Date 1st Rd"
 COL_NAME = "Full Name"
