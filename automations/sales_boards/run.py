@@ -37,6 +37,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 
 from automations.recruiting_report.fill import open_by_key, _retry
 from automations.pnl_office.run import _token
@@ -283,24 +284,65 @@ def _replies(imgs: dict, zeros: dict, tag: str, want_zeros: bool,
 # LOG thread (box_order_log's 7:00 post; we reply by title). Both in the same
 # two rooms as before: #alphalete-gp-sales + #a-players-b2b.
 
-def metrics_thread_ts(client, chan: str, today) -> str:
-    """ts of the day's 'B2B Metrics' thread in `chan`, creating the parent if
-    nobody has yet (5:10 normally beats the metrics runner, which is exactly
-    what puts the Sales Board FIRST in the thread — Carlos 2026-08-30)."""
-    import automations.b2b_quality.run as bq
-    state = bq._load_state(today, chan)
-    ts = state.get("thread_ts")
-    if ts:
-        return ts
+# LOOKING UP and OPENING the thread are two functions on purpose. This used to
+# be one `metrics_thread_ts` that created the parent whenever this machine's
+# thread_state.json had no entry — and that file lives only on the Lucy that
+# posted. 2026-09-21 08:08 a laptop "checking" whether a board had landed
+# called it, found no local state, and posted two empty
+# "*B2B Metrics 09/21/2026*" parents (under Megan's name, in both channels)
+# on top of Lucy's real 05:11 threads. A lookup can never post now, and the
+# opener asks Slack before it trusts a missing state file.
+
+def _b2b_header(today) -> str:
     from automations.b2b_metrics import offices as MO
     from automations.b2b_metrics import runner as MR
-    o = MO.OFFICES["carlos"]
     # Parent is the bare title+date (Carlos 2026-09-13: no board lines under
     # the title — the first-reply contents list covers what's inside).
-    header = MR.header_text(o, today)
-    ts = client.chat_postMessage(channel=chan, text=header).get("ts")
-    bq._save_state(today, chan, ts, list(state.get("posted") or []))
-    print(f"    opened B2B Metrics thread in {chan} ts={ts}")
+    return MR.header_text(MO.OFFICES["carlos"], today)
+
+
+def find_b2b_metrics_thread_ts(client, chan: str, today) -> Optional[str]:
+    """READ-ONLY: ts of the day's 'B2B Metrics' thread in `chan`, or None.
+    Never posts, never writes thread_state.json — safe to call from anywhere.
+    The state file answers first (no Slack scope needed); otherwise today's
+    channel history, oldest matching parent wins (that is the real thread
+    if a stray duplicate ever got posted after it)."""
+    import automations.b2b_quality.run as bq
+    ts = bq._load_state(today, chan).get("thread_ts")
+    if ts:
+        return ts
+    header = _b2b_header(today).strip()
+    oldest = dt.datetime.combine(today, dt.time.min).timestamp()
+    try:
+        resp = client.conversations_history(channel=chan, oldest=str(oldest),
+                                            limit=200)
+    except Exception as e:  # noqa: BLE001
+        print(f"    (b2b-metrics thread lookup unavailable in {chan} — "
+              f"{type(e).__name__})")
+        return None
+    import html as _html
+    hits = [m for m in resp.get("messages", [])
+            if not m.get("thread_ts") or m.get("thread_ts") == m.get("ts")
+            if _html.unescape(m.get("text") or "").strip().startswith(header)]
+    if not hits:
+        return None
+    return min(hits, key=lambda m: float(m["ts"]))["ts"]
+
+
+def open_b2b_metrics_thread(client, chan: str, today) -> str:
+    """POSTS: the day's 'B2B Metrics' thread in `chan`, creating the parent
+    only if neither the state file nor Slack knows one (5:10 normally beats
+    the metrics runner, which is exactly what puts the Sales Board FIRST in
+    the thread — Carlos 2026-08-30). Only posting paths call this."""
+    import automations.b2b_quality.run as bq
+    state = bq._load_state(today, chan)
+    ts = find_b2b_metrics_thread_ts(client, chan, today)
+    if not ts:
+        ts = client.chat_postMessage(channel=chan,
+                                     text=_b2b_header(today)).get("ts")
+        print(f"    opened B2B Metrics thread in {chan} ts={ts}")
+    if state.get("thread_ts") != ts:
+        bq._save_state(today, chan, ts, list(state.get("posted") or []))
     return ts
 
 
@@ -370,7 +412,7 @@ def post_thread(imgs: dict, zeros: dict, day, yday, dry_run: bool,
                 if kind == "box":
                     ts_cache[kind] = box_thread_ts(client, cid, day)
                 else:
-                    ts_cache[kind] = metrics_thread_ts(client, cid, day)
+                    ts_cache[kind] = open_b2b_metrics_thread(client, cid, day)
             return ts_cache[kind]
 
         for plain, caption, ups in _replies(imgs, zeros, tag,

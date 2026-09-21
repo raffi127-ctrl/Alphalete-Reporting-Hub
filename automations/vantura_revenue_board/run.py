@@ -628,7 +628,7 @@ def post(png: Path, plain: str, caption: str, kind: str,
     the standalone Vantura Production thread is retired."""
     from automations.sales_boards.run import (TARGETS, _already_replied,
                                               box_thread_ts,
-                                              metrics_thread_ts)
+                                              open_b2b_metrics_thread)
     from automations.shared import slack_metrics_post as smp
     client = smp._client()
     today = dt.date.today()
@@ -643,7 +643,7 @@ def post(png: Path, plain: str, caption: str, kind: str,
     held = False
     for name, cid, _wz in TARGETS:
         ts = (box_thread_ts(client, cid, today) if kind == "box"
-              else metrics_thread_ts(client, cid, today))
+              else open_b2b_metrics_thread(client, cid, today))
         if ts is None:
             print(f"HOLD: no BOX Order Log thread in {name} yet "
                   "(box_order_log posts it at 7:00) — retrying later")
