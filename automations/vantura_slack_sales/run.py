@@ -828,28 +828,27 @@ def main(argv=None) -> int:
                 _log(f"  lucy rerun vantura_slack_sales --date {d.isoformat()}"
                      f' --machine "Lucy 2"')
 
-    # Monday heads-up, while there is still time to act. The 5:00am pass runs on
-    # LAST week's board on purpose (it is closing out Sunday), but the 4:00pm
-    # pass needs the NEW week up — and nothing in between says so. Without this
-    # the first sign of a board that was never rolled (or rolled to the wrong
-    # week: the picker list has 8.9 sitting right under 8.23, which is how
-    # 2026-08-17 went wrong) is the 4:00pm HOLD, and every pass after it.
+    # Monday, log only. The 5:00am pass runs on LAST week's board on purpose (it
+    # is closing out Sunday); the roll to the new week is com.alphalete.vantura-
+    # week-roll-mon on Lucy 2, which fires 05:15 and rolls once the 05:10 post
+    # delivers (08:20 at the latest). This pass ALWAYS runs before that, so a
+    # Slack reminder here fired every Monday for a board that was about to roll
+    # itself — and it told people to pick B2 from the dropdown, the exact hand
+    # roll that broke 2026-08-17 and 08-24 (Eve 2026-09-21). If the roll really
+    # fails, the 4:00pm pass holds and the HOLD alert names the fix.
     if not a.date and today.weekday() == 0 and now.hour < OFFICE_DAY_START:
         from automations.sales_boards.run import WE_CELL, expected_we
         shown = str(_cell(g, *WE_CELL)).strip()
         _, new_we = expected_we(today)      # Sunday of the week starting today
         if shown != new_we:
             _log("")
-            _log(f"ROLL DUE: the board reads WE {shown!r} — right for this "
-                 f"pass, which is closing out Sunday. It has to read "
-                 f"{new_we!r} (cell B2) before the 4:00pm pass fills "
-                 f"{_md(today)}.")
-            if a.fill and a.yes:
-                from automations.vantura_slack_sales import alert
-                alert.remind_roll(shown, new_we)
+            _log(f"ROLL PENDING: the board reads WE {shown!r} — right for this "
+                 f"pass, which is closing out Sunday. The Monday week_roll "
+                 f"(Lucy 2) moves it to {new_we!r} before the 4:00pm pass "
+                 f"fills {_md(today)}.")
 
-    # The afternoon wrote into a rolled board, so a Monday-morning ROLL DUE
-    # reminder has been acted on. No-op when nothing is open.
+    # The afternoon wrote into a rolled board: close any ROLL DUE thread left
+    # from before the reminder was retired. No-op when nothing is open.
     if a.fill and a.yes and not held and now.hour >= OFFICE_DAY_START:
         from automations.vantura_slack_sales import alert
         alert.resolve_roll()
