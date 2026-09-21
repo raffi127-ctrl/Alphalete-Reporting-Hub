@@ -31,6 +31,10 @@ GONE_WORDS = ("quit", "terminat", "no show", "no-show", "fail", "resched",
 #   green  every box the sweep ticks (this also clears an Owner Submit blue)
 # Sheets' "light blue 3" / "light green 3", the palette these tabs use by hand.
 READY_BLUE = {"red": 0xCF / 255, "green": 0xE2 / 255, "blue": 0xF3 / 255}
+# light red 3: this person is NOT FOUND in OwnerVille — their open boxes can't
+# be checked (Megan 2026-09-21). Cleared back to white once they are found.
+NOT_FOUND_RED = {"red": 0xF4 / 255, "green": 0xCC / 255, "blue": 0xCC / 255}
+WHITE = {"red": 1.0, "green": 1.0, "blue": 1.0}
 DONE_GREEN = {"red": 0xD9 / 255, "green": 0xEA / 255, "blue": 0xD3 / 255}
 
 TRUTHY = {"true", "yes", "y", "1", "x", "✓", "✔"}
