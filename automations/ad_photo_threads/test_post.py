@@ -32,6 +32,10 @@ class FakeSlack:
         self.uploads.append(kw)
         return {"ok": True}
 
+    def chat_update(self, **kw):
+        self.updates = getattr(self, "updates", []) + [kw]
+        return {"ok": True}
+
 
 def _rep():
     book = TitleBook(["AT&T Sales Agent ? Arlington TX"] * 3)
@@ -57,6 +61,10 @@ class PublishTests(unittest.TestCase):
         d = mock.patch("automations.sara_down.run._download_image",
                        return_value=(b"\x89PNG", "png"))
         d.start(); self.addCleanup(d.stop)
+        # No Claude call in tests: the cropper "finds" nobody -> full shots.
+        c = mock.patch("automations.ad_photo_threads.crop.crop_names",
+                       side_effect=lambda data, names, fid="": {n: None for n in names})
+        self.crop = c.start(); self.addCleanup(c.stop)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -69,9 +77,34 @@ class PublishTests(unittest.TestCase):
         self.assertIn("[PILOT]", cl.posts[0]["text"])   # intro
         self.assertIn("[PILOT]", cl.posts[1]["text"])   # thread parent
         body = cl.uploads[0]["initial_comment"]
-        self.assertIn("✅ Ana Uno · 3⭐ · ALPHALETE MARKETING, INC. · Alexa", body)
+        self.assertIn("ALPHALETE MARKETING, INC. - 11280\n2 total candidates", body)
+        self.assertIn("✅ Ana Uno · 3⭐ · Alexa", body)
         self.assertIn("❌ Bo Dos", body)
+        self.assertIn("whole group call", body)      # crop found nobody
         self.assertNotIn("Cy Tres", body)            # unknown ad is never posted
+        # header = bold title, then edited in place with the week's numbers
+        self.assertEqual(cl.posts[1]["text"],
+                         ":test_tube: *[PILOT]* *AT&T Sales Agent – Arlington TX*")
+        self.assertEqual(cl.updates[-1]["text"], ":test_tube: *[PILOT]* "
+                         "*AT&T Sales Agent – Arlington TX - 50% Removed / Avg 3⭐*")
+
+    def test_cropped_shot_posts_one_tile_per_person_no_group_note(self):
+        self.crop.side_effect = lambda data, names, fid="": {n: b"PNG" + n.encode()
+                                                              for n in names}
+        cl = FakeSlack()
+        post.publish(_rep(), "D1", cl=cl)
+        up = cl.uploads[0]
+        self.assertEqual(len(up["file_uploads"]), 2)  # Ana's tile + Bo's tile
+        self.assertNotIn("group call", up["initial_comment"])
+        self.assertEqual(self.crop.call_args[0][1], ["Ana Uno", "Bo Dos"])
+
+    def test_week_stats_add_up_across_days(self):
+        post.publish(_rep(), "D1", cl=FakeSlack())          # Fri: 1 of 2 removed, 3⭐
+        rep = _rep(); rep.day = dt.date(2026, 9, 19)
+        rep.candidates[0].qualify = "Disqualify"; rep.candidates[1].stars = "1 Star"
+        cl = FakeSlack()
+        post.publish(rep, "D1", cl=cl)                      # Sat: 2 of 2, 3⭐ + 1⭐
+        self.assertIn("75% Removed / Avg 2.3⭐", cl.updates[-1]["text"])
 
     def test_rerun_same_day_posts_nothing(self):
         post.publish(_rep(), "D1", cl=FakeSlack(), pilot=True)
@@ -104,7 +137,6 @@ class PublishTests(unittest.TestCase):
         cl = FakeSlack()
         c = post.publish(rep, "D1", cl=cl)
         self.assertEqual(c["threads_new"], 1)
-        self.assertIn("Week of 9/21", cl.posts[0]["text"])
         self.assertEqual(cl.pins, [("add", "100.1"), ("remove", "100.1")])
         # new thread "100.1" in this fake = the fresh one; old ts was also 100.1
         # in its own fake, so check the state instead:
@@ -141,6 +173,23 @@ class PublishTests(unittest.TestCase):
         c = post.publish(_rep(), "C1", cl=FakeSlack())
         self.assertEqual((c["to_pin"], c["to_unpin"]), ([], []))
         self.assertFalse(post.send_pin_reminder("C1", dt.date(2026, 9, 18), c))
+
+    def test_retire_channel_deletes_only_lucys_posts(self):
+        post.publish(_rep(), "C1", cl=FakeSlack())
+        cl = FakeSlack()
+        cl.auth_test = lambda: {"user_id": "ULUCY"}
+        cl.conversations_replies = lambda **kw: {"messages": [
+            {"ts": "100.1", "user": "ULUCY"},
+            {"ts": "100.2", "user": "ULUCY", "files": [{"id": "F9"}]},
+            {"ts": "100.3", "user": "URAF"}]}
+        gone, files = [], []
+        cl.chat_delete = lambda **kw: gone.append(kw["ts"])
+        cl.files_delete = lambda **kw: files.append(kw["file"])
+        c = post.retire_channel("C1", cl=cl)
+        self.assertEqual(gone, ["100.2", "100.1"])           # replies, then header
+        self.assertEqual(files, ["F9"])
+        self.assertEqual(c["kept_others"], 1)
+        self.assertNotIn("C1", post._load_state())
 
     def test_day_done_marker(self):
         d = dt.date(2026, 9, 18)

@@ -15,6 +15,9 @@
     python -m automations.ad_photo_threads.run --post --test-dm --date 2026-09-18 --max-ads 2
     python -m automations.ad_photo_threads.run --post --dm U088E2KJEV8   # Eve alone
 
+    # take this report's threads back out of a channel (moving channels):
+    python -m automations.ad_photo_threads.run --retire-channel C0AUAS88FGW
+
 Python 3.9-safe (runs on the mini): no runtime `X | Y`, no 3.10+ syntax.
 """
 from __future__ import annotations
@@ -137,6 +140,10 @@ def main(argv=None) -> int:
     mode.add_argument("--dry-run", action="store_true", help="Preview only.")
     mode.add_argument("--post", action="store_true",
                       help="Post to Slack (needs --channel).")
+    mode.add_argument("--retire-channel", metavar="CHANNEL_ID",
+                      help="Delete the threads this report posted in CHANNEL_ID "
+                           "(headers, Lucy's replies, their photos) and forget "
+                           "that channel. People's own replies are kept.")
     mode.add_argument("--nightly", action="store_true",
                       help="The scheduled tick: post today to the live channel "
                            "once it's past config.POST_AFTER_CT; otherwise no-op.")
@@ -148,6 +155,9 @@ def main(argv=None) -> int:
                          "e.g. --dm U088E2KJEV8 for Eve alone. Tagged [PILOT].")
     ap.add_argument("--max-ads", type=int,
                     help="Post only the N biggest ads that have photos (a sample).")
+    ap.add_argument("--no-crop", action="store_true",
+                    help="Post the screenshots whole instead of cut down to "
+                         "the ad's own candidates.")
     ap.add_argument("--no-images", action="store_true",
                     help="Text summary only; skip downloading the screenshots.")
     ap.add_argument("--show-posts", action="store_true",
@@ -157,6 +167,10 @@ def main(argv=None) -> int:
         ap.error("--post needs --channel, --test-dm or --dm")
     day = dt.date.fromisoformat(a.date) if a.date else collect.central_today()
 
+    if a.retire_channel:
+        from automations.ad_photo_threads import post
+        print("Retired:", post.retire_channel(a.retire_channel))
+        return 0
     if a.nightly:
         return nightly(day, explicit_date=bool(a.date))
 
