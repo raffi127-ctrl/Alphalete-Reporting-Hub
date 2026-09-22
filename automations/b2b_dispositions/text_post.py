@@ -150,6 +150,16 @@ def resolve_group(name: str) -> Dict:
             "member (Carlos adds her), or the name changed. Check with "
             "`lucy find_group %s --machine \"Lucy 2\"`." % (name, name))
     if len(hits) > 1:
+        # AN EXACT NAME IS NOT A GUESS. The lookup matches by "contains", so a
+        # group called "Lucy Test" is ambiguous the moment somebody makes
+        # "Indelible Lucy Test" -- which happened on 2026-09-21, and would have
+        # made a send to the one Megan created refuse forever. When exactly one
+        # of the matches has the name typed in full, that is the one meant.
+        # Two exact matches, or none, still refuse.
+        exact = [h for h in hits
+                 if (h.get("name") or "").strip() == (name or "").strip()]
+        if len(exact) == 1:
+            return exact[0]
         raise GroupTextError(
             "%d chats match %r (%s) — refusing to guess which one. Narrow the "
             "name in config.TEXT_ROUTES." % (

@@ -2208,6 +2208,35 @@ def _normalize_us_phone(raw: str) -> str:
     return raw.strip()
 
 
+def _action_textgroup(args: str) -> tuple[bool, str]:
+    """Send ONE text to an iMessage GROUP, by name, from THIS machine.
+
+    Args:  <group name> :: <message>
+    e.g.   textgroup Lucy Test :: Test from Lucy - reply if you can read this
+
+    For testing whether a group can actually see what Lucy sends. Built
+    2026-09-21 when everyone in Aya's "Indelible Lvl 1 Leaders" group but
+    Megan saw Lucy's boards as empty bubbles, and the only way to try a fix
+    was to wait for the next scheduled board. Same sender and the same
+    by-name lookup production uses (resolved fresh, refuses 0 or 2+ matches
+    unless exactly one name matches in full). One message per queued row, so
+    the queue tab stays the audit log of who sent what.
+    """
+    if "::" not in (args or ""):
+        return False, "textgroup needs '<group name> :: <message>'"
+    group, text = [x.strip() for x in args.split("::", 1)]
+    if not group or not text:
+        return False, "textgroup needs both a group name and a message"
+    try:
+        from automations.b2b_dispositions import text_post as tp
+        res = tp.send_text_to_group(group, text, dry_run=False)
+    except Exception as e:  # noqa: BLE001
+        return False, "text to %r FAILED: %s: %s" % (group, type(e).__name__,
+                                                     str(e)[:300])
+    return True, "sent to %r (%s participants, chat %s)" % (
+        res.get("resolved_name"), res.get("participants"), res.get("chat_id"))
+
+
 def _action_sendtext(args: str) -> tuple[bool, str]:
     """Send ONE iMessage from THIS machine's signed-in iMessage account.
 
@@ -7771,6 +7800,7 @@ ACTIONS = {
     "messages_diag": _action_messages_diag,
     "find_group": _action_find_group,
     "sendtext": _action_sendtext,
+    "textgroup": _action_textgroup,
     "run_b2b_dispositions": _action_run_b2b_dispositions,
     "text_dispositions": _action_text_dispositions,
     "text_tracker": _action_text_tracker,
