@@ -866,11 +866,21 @@ RECENT_KEEP = 6
 
 
 def recent_lines(day: dt.date, room: str) -> List[str]:
-    """Templates this room has already heard today, newest first."""
+    """Templates this room has already heard lately, newest first.
+
+    TODAY AND YESTERDAY. The memory used to reset at midnight, so the first
+    sale of a morning could echo the last one of the night before -- Roshan's
+    channel read "AYLIN ATE. Everybody else picking crumbs" at 8:01 PM and
+    "BRIANNA ATE. Everybody else picking crumbs" at 10:50 AM (Megan,
+    2026-09-22: "same response back to back"). Back to back is what the room
+    hears, whatever the date on the two posts.
+    """
     try:
-        got = (json.loads(RECENT_LINES_PATH.read_text())
-               .get(day.isoformat(), {}).get(room) or [])
-        return [str(x) for x in got][:RECENT_KEEP]
+        data = json.loads(RECENT_LINES_PATH.read_text())
+        today = list(data.get(day.isoformat(), {}).get(room) or [])
+        before = list(data.get((day - dt.timedelta(days=1)).isoformat(), {})
+                      .get(room) or [])
+        return [str(x) for x in today + before][:RECENT_KEEP]
     except (OSError, ValueError, AttributeError):
         return []
 
