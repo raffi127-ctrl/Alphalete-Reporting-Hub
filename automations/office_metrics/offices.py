@@ -478,8 +478,8 @@ def _merge_onboarded() -> None:
         # keys -> runner slugs (the NDS flavor of OWNER_KEY_TO_SLUG).
         if r.get("campaign") == "nds_d2d" and key not in SECTION_OVERRIDES:
             _NDS_KEY_TO_SLUG = {"knocks": "knocks_gaps", "order_log": "order_log",
-                                "cancels": "cancels", "churn_wl": "churn",
-                                "activations": "rep_activations"}
+                                "cancels": "cancels", "disconnects": "disconnects",
+                                "churn_wl": "churn", "activations": "rep_activations"}
             _slugs = tuple(_NDS_KEY_TO_SLUG[k]
                            for k in (r.get("enrolled_reports") or [])
                            if k in _NDS_KEY_TO_SLUG)

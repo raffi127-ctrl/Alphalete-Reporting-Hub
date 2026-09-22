@@ -387,6 +387,7 @@
       "knocks",
       "order_log",
       "cancels",
+      "disconnects",
       "churn_wl",
       "activations"
     ],
@@ -394,8 +395,9 @@
       "knocks": 1,
       "order_log": 2,
       "cancels": 3,
-      "churn_wl": 4,
-      "activations": 5
+      "disconnects": 4,
+      "churn_wl": 5,
+      "activations": 6
     },
     "per_office_views": {},
     "machine": "Lucy 1",

@@ -112,8 +112,12 @@ REPORTS_BY_KEY: Dict[str, ReportKind] = {r.key: r for r in REPORTS}
 # DIFFERENT workbook — its subset mirrors the live isaiah/drew overrides.
 CAMPAIGNS: "List[tuple]" = [
     ("fiber_d2d", "🏠 D2D AT&T Fiber — Internet & Phones", "d2d", None),
+    # "disconnects" added 2026-09-22: the NDS runner has had a wireless
+    # Disconnected Orders board since isaiah went live (hand-wired in
+    # SECTION_OVERRIDES), but this menu never offered it, so every
+    # form-onboarded NDS office (colten) came out one board short of isaiah's.
     ("nds_d2d", "📶 D2D NDS — Wireless & Phones", "d2d",
-     ("knocks", "order_log", "cancels", "churn_wl", "activations")),
+     ("knocks", "order_log", "cancels", "disconnects", "churn_wl", "activations")),
     ("b2b_att", "🏢 B2B AT&T", "b2b",
      ("b2b_sales", "b2b_activation", "b2b_churn_wireless", "b2b_churn_int",
       "b2b_churn_air", "b2b_customer_churn", "b2b_order_log_att")),
