@@ -17,6 +17,7 @@ automations/icd_alerts/presence.py
 automations/icd_alerts/autoprompt.py
 automations/icd_alerts/state.py
 automations/icd_alerts/closeout.py
+automations/icd_alerts/sales_closeout.py
 automations/icd_alerts/run.py
 automations/icd_alerts/dialogs.py
 automations/icd_alerts/ov_read.py

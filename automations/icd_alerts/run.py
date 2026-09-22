@@ -153,7 +153,8 @@ def _report(stage: str, e: Exception, detail: str = "",
                    log=_log, office_key=office_key)
 
 
-def cmd_once(headless: bool, dry_run: bool, day: dt.date) -> int:
+def cmd_once(headless: bool, dry_run: bool, day: dt.date,
+             sales_only: bool = False) -> int:
     # FIRST, AND ONCE A DAY. Getting a fix onto an office's machine used to
     # mean messaging a person and hoping they pasted a line -- which is how
     # Kash ran a whole day on the first agent with no sales at all. The files
@@ -232,6 +233,19 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date) -> int:
         return 1
 
     data = St.load()
+    if sales_only:
+        # OUTSIDE THE ALERT HOURS the sales still go over, but the credit
+        # checks sent are the ones already seen today — so our side has
+        # nothing new to announce at 11pm or on a Sunday (Megan 2026-09-22:
+        # the extended hours are for the sales boards).
+        current = dict(data.get(day.isoformat()) or {})
+        try:
+            R.send(current, day, sales=sales, dry_run=dry_run,
+                   office_key=att_key, log=_log)
+        except R.RelayError as e:
+            _log("could not send this time: %s" % e)
+            return 1
+        return 0
     baseline = St.is_baseline(data, day)
     gained = St.deltas(data, day, current)
 
@@ -496,10 +510,26 @@ def main(argv=None) -> int:
         except Exception as e:  # noqa: BLE001 — never lose a sweep to this
             _log("close-out skipped: %s" % type(e).__name__)
 
-        if args.if_due and not C.in_selling_window():
+        # THE 2AM SALES CATCH-UP, also ahead of the gate: past 2am the
+        # previous day is finished, so its sales are read once more and that
+        # day's row overwritten with the final numbers (Megan 2026-09-22).
+        try:
+            from automations.icd_alerts import sales_closeout
+            sales_closeout.maybe_run(
+                lambda d: (cmd_once(headless, args.dry_run, d, sales_only=True)
+                           or cmd_box(headless, args.dry_run, d)),
+                log=_log)
+        except Exception as e:  # noqa: BLE001 — never lose a sweep to this
+            _log("sales catch-up skipped: %s" % type(e).__name__)
+
+        alerting = C.in_selling_window()
+        # Sales read noon to midnight every day; alerts keep their own hours.
+        # Outside BOTH, nothing to do.
+        if args.if_due and not (alerting or C.in_sales_window()):
             # Quiet on purpose. This fires every 15 minutes on somebody's
             # laptop; a line per skip would be the only thing in the log.
             return 0
+        sales_only = bool(args.if_due and not alerting)
         # BOTH, INDEPENDENTLY. SaraPlus and OwnerVille are different systems
         # with different outages, and a credit-check sweep that worked must not
         # be thrown away because OwnerVille was slow -- nor the reverse. Each
@@ -508,9 +538,11 @@ def main(argv=None) -> int:
         # OwnerVille have different outages, and a read that worked must not
         # be thrown away because another was slow. Each reports its own
         # failure and the run ends unhappy if any did.
-        rc = cmd_once(headless, args.dry_run, day)
+        rc = cmd_once(headless, args.dry_run, day, sales_only=sales_only)
         rb = cmd_box(headless, args.dry_run, day)
-        rk = cmd_knocks(headless, args.dry_run, day)
+        # Knocks keep the selling window; the knocks close-out above delivers
+        # the finished day either way.
+        rk = 0 if sales_only else cmd_knocks(headless, args.dry_run, day)
         return rc or rb or rk
     ap.print_help()
     return 2

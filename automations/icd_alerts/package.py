@@ -80,6 +80,7 @@ AGENT_FILES = [
     # can reach. The manifest test compares this list against agent_files.txt
     # and passes happily when BOTH are missing a file, so it is no guard here.
     "automations/icd_alerts/closeout.py",
+    "automations/icd_alerts/sales_closeout.py",
     "automations/icd_alerts/run.py",
     "automations/icd_alerts/dialogs.py",
     "automations/icd_alerts/ov_read.py",

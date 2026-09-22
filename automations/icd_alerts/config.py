@@ -374,6 +374,32 @@ SATURDAY_END_HHMM = (17, 0)
 SELLING_DAYS = (0, 1, 2, 3, 4, 5)      # Mon-Sat; Sunday is not a selling day
 
 
+# THE SALES BOARD'S HOURS (Megan 2026-09-22): "run them all for their sales
+# boards 12-12 with a 2am final catch up sweep", "every day - 7 days a week".
+# The selling window above was built for credit-check alerts and ended at
+# 17:00 on Saturday, so every Saturday evening was missing from the live
+# boards — the morning check caught it: Cyrus 1 live vs 15 settled, Kash 20
+# vs 35, Aya 7 vs 15. Sales now read noon to midnight, Sunday included, and a
+# close-out after 2am re-reads the finished day (see sales_closeout.py).
+#
+# Credit-check ALERTS keep the selling window: during the extra hours the
+# agent relays fresh sales and the day's last-seen credit checks, so nothing
+# new is announced at 11pm or on a Sunday that was not announced before.
+SALES_START_HHMM = (12, 0)
+SALES_END_HHMM = (23, 59)
+SALES_CATCHUP_AFTER_HHMM = (2, 0)
+
+
+def in_sales_window(now: Optional[dt.datetime] = None) -> bool:
+    """Noon to midnight, every day of the week."""
+    now = now or dt.datetime.now()
+    start = now.replace(hour=SALES_START_HHMM[0], minute=SALES_START_HHMM[1],
+                        second=0, microsecond=0)
+    end = now.replace(hour=SALES_END_HHMM[0], minute=SALES_END_HHMM[1],
+                      second=59, microsecond=999999)
+    return start <= now <= end
+
+
 def in_selling_window(now: Optional[dt.datetime] = None) -> bool:
     now = now or dt.datetime.now()
     if now.weekday() not in SELLING_DAYS:

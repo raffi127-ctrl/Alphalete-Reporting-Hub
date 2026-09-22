@@ -116,12 +116,24 @@ class RunsAheadOfTheGate(unittest.TestCase):
     is always too late to be the number anybody sees.
     """
 
+    # The gate is 'outside BOTH the alert hours and the sales hours' since the
+    # sales board went noon-to-midnight (2026-09-22). Both close-outs — the
+    # knocks one and the 2am sales catch-up — have to sit ahead of it.
+    GATE = "if args.if_due and not (alerting or C.in_sales_window()):"
+
     def test_the_hook_precedes_the_if_due_return(self):
         src = Path("automations/icd_alerts/run.py").read_text()
         hook = src.index("closeout.maybe_run")
-        gate = src.index("if args.if_due and not C.in_selling_window():")
+        gate = src.index(self.GATE)
         self.assertLess(hook, gate,
                         "the close-out must run before the window gate")
+
+    def test_the_sales_catch_up_precedes_the_gate_too(self):
+        src = Path("automations/icd_alerts/run.py").read_text()
+        self.assertLess(src.index("sales_closeout.maybe_run"),
+                        src.index(self.GATE),
+                        "the 2am sales catch-up must run before the gate — "
+                        "at 2am neither window is open")
 
     def test_the_window_really_does_open_after_the_metrics_thread_reads(self):
         """If this ever stops being true, the hook's placement stops mattering

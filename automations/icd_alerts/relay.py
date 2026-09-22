@@ -36,8 +36,9 @@ from typing import Dict, Optional
 from automations.icd_alerts import config as C
 
 TIMEOUT_SECONDS = 30
-AGENT_VERSION = "icd_alerts/4"   # 2 = sales, 3 = names its machine,
-                                 # 4 = reads Box sales at all
+AGENT_VERSION = "icd_alerts/5"   # 2 = sales, 3 = names its machine,
+                                 # 4 = reads Box sales at all,
+                                 # 5 = sales noon-midnight 7 days + 2am catch-up
 # THE VERSION IS HOW WE SEE WHO HAS UPDATED, from the relay row, without
 # asking anybody. Kash sat on /1 for a day with no sales and it was only
 # visible because somebody went looking at the right column.
