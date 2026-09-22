@@ -122,6 +122,7 @@ def run(sheet_id: str, week: dt.date | None = None, dry_run: bool = False,
         logfn("NDS (LW): the export has no readable 'Currently Viewing' week - "
               "nothing written (a column guessed from today's date would be "
               "the one thing this must never do)")
+        _describe_export(out_path, logfn)
         return {"filled": [], "skipped": [], "cells": 0, "week": None}
     if week and week != found:
         logfn(f"NDS (LW): asked for WE {week} but the export holds WE {found} - "
@@ -174,6 +175,23 @@ def run(sheet_id: str, week: dt.date | None = None, dry_run: bool = False,
           f"{len(skipped)} tab(s) untouched")
     return {"filled": filled, "skipped": skipped, "cells": len(data),
             "week": week}
+
+
+def _describe_export(path: Path, logfn=print) -> None:
+    """Print enough of the export to tell WHY its week could not be read:
+    size, header, and the first data row. Diagnosis only — reads nothing else
+    and changes nothing."""
+    try:
+        size = path.stat().st_size
+    except OSError as e:
+        logfn(f"NDS (LW): cannot stat {path}: {e}")
+        return
+    rows = opt_nds._read_tab_csv(path)
+    logfn(f"NDS (LW): {path.name} is {size:,} bytes, parsed {len(rows)} row(s)")
+    if rows:
+        logfn(f"NDS (LW): header = {rows[0][:12]}")
+        if len(rows) > 1:
+            logfn(f"NDS (LW): first row = {rows[1][:12]}")
 
 
 def _row_for_label(grid, label: str):
