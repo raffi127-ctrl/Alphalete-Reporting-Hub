@@ -188,6 +188,15 @@ def _make_section_adapter(spec_key: str):
                                           log=ctx.logfn)
             except Exception as e:   # noqa: BLE001 — never fatal
                 ctx.logfn(f"  board rep days: SKIPPED ({type(e).__name__}: {e})")
+            # THE MORNING CHECK, here and nowhere else: this is the moment
+            # yesterday has just been settled, so comparing it with what the
+            # ECO relay reported live costs no pull and cannot run too early
+            # (Megan 2026-09-22). Never fatal, like everything in this block.
+            try:
+                from automations.icd_sales_board import reconcile
+                reconcile.run(days=1, log=ctx.logfn)
+            except Exception as e:   # noqa: BLE001
+                ctx.logfn(f"  board check: SKIPPED ({type(e).__name__}: {e})")
         return section_pull.parse_byday(spec, csv_path, today)
     return _adapter
 

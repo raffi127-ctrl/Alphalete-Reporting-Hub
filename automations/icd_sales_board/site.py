@@ -2014,6 +2014,40 @@ def _rep_editor(office_key: str, week_ending, rows: list,
             st.rerun()
 
 
+@st.cache_data(ttl=900, show_spinner=False)
+def _board_check(office_key: str) -> dict:
+    """The newest morning check for this office, or {} if it has none."""
+    try:
+        from automations.icd_sales_board import reconcile
+        return reconcile.latest(office_key)
+    except Exception:   # noqa: BLE001 — a missing check is not a broken page
+        return {}
+
+
+def _check_line(office_key: str) -> str:
+    """One line saying whether yesterday's live count held up in Tableau.
+
+    The board swaps the live (relay) number for Tableau's once a day settles.
+    Without this nobody could tell whether the live number an owner watched
+    all day was right (Megan 2026-09-22)."""
+    c = _board_check(office_key)
+    if not c or not c.get("Date"):
+        return ""
+    try:
+        day = dt.date.fromisoformat(c["Date"])
+        live, tab = int(c["Live apps"]), int(c["Tableau apps"])
+        match = float(c["Match %"])
+    except (KeyError, ValueError):
+        return ""
+    when = f"{day:%a} {day:%b} {day.day}"
+    from automations.icd_sales_board.reconcile import MATCH_AT
+    if match >= MATCH_AT:
+        return (f"✓ Yesterday's live count held up — {when}: {live} live, "
+                f"{tab} in Tableau.")
+    return (f"⚠ Yesterday's live count was off — {when}: {live} live, {tab} "
+            f"in Tableau. The board now shows Tableau's number.")
+
+
 def _paint(html: str) -> None:
     """Put the board on the page WITHOUT a markdown pass.
 
@@ -2526,7 +2560,10 @@ def relay_board(icd: str, office_key: str) -> None:
     # there.
     c_key, c_edit = st.columns([6, 3])
     with c_key:
-        st.markdown(_colour_key(), unsafe_allow_html=True)
+        line = _check_line(office_key)
+    if line:
+        st.caption(line)
+    st.markdown(_colour_key(), unsafe_allow_html=True)
     editing = c_edit.toggle(
         "Edit rep details", key=f"repedit_on_{office_key}",
         help="Team, Leadership and Status. The board stays as it is; the "
