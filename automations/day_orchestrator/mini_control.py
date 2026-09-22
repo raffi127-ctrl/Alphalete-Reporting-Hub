@@ -2222,7 +2222,15 @@ def _action_textgroup(args: str) -> tuple[bool, str]:
     unless exactly one name matches in full). One message per queued row, so
     the queue tab stays the audit log of who sent what.
     """
-    if "::" not in (args or ""):
+    # THE QUEUE QUOTES ARGS WITH SPACES (--enqueue shlex-joins them), so the
+    # first live send looked for a group named "'Lucy Test" and found none.
+    # Unwrap exactly the way _action_rerun does before splitting.
+    import shlex
+    try:
+        args = " ".join(shlex.split(args or ""))
+    except ValueError:
+        args = (args or "").strip().strip("'\"")
+    if "::" not in args:
         return False, "textgroup needs '<group name> :: <message>'"
     group, text = [x.strip() for x in args.split("::", 1)]
     if not group or not text:

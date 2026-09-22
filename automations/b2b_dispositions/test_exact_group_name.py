@@ -58,5 +58,21 @@ class TextgroupActionTest(unittest.TestCase):
         self.assertIs(s.call_args.kwargs.get("dry_run"), False)
 
 
+class TextgroupUnwrapsQueueQuotingTest(unittest.TestCase):
+    def test_a_quoted_arg_from_the_queue_is_unwrapped(self):
+        """The first live send looked for "'Lucy Test" -- the queue had
+        shlex-quoted the whole argument because it contained spaces."""
+        import shlex
+        from automations.day_orchestrator import mini_control as M
+        raw = shlex.join(["Lucy Test :: hello there"])
+        with mock.patch.object(tp, "send_text_to_group",
+                               return_value={"resolved_name": "Lucy Test",
+                                             "participants": "2",
+                                             "chat_id": "b"}) as s:
+            ok, _msg = M._action_textgroup(raw)
+        self.assertTrue(ok)
+        self.assertEqual(s.call_args.args[:2], ("Lucy Test", "hello there"))
+
+
 if __name__ == "__main__":
     unittest.main()
