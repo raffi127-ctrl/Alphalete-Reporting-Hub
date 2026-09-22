@@ -7,8 +7,9 @@ picture of ITS offices, so the day's updates stay together.
 
 WHAT: ONE picture of ONE day (Eve): the last full day -- yesterday, or last
 Friday on a Monday -- from the '(picture)' tab run.py writes next to the board.
-Anything that moved on an earlier day (owners updating late) is listed in the
-message text, read off the board's day bars.
+Anything that moved since the last check (owners updating late) goes as a
+SECOND picture in the same message, off the '(updates)' tab -- no second image
+on a pass where nothing moved.
 
 MUST RUN ON THE MINI: on Eve's Windows box the Slack token is Evelyn's own, so
 a post from there would be signed by Evelyn, not Lucy.
@@ -22,10 +23,9 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
-import re
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -42,27 +42,6 @@ THREAD_LINES = [
     "Each time zone at its own 1 PM — every update lands in this thread.",
 ]
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "call_list_to_2nd"
-MAX_CHANGES = 3          # one short line; the tab has the rest
-
-
-def changed_lines(board_values, skip_day: str = "") -> List[str]:
-    """'9/16 Kash Rai 2nd % 64%→73%' for every day bar on the board that names a
-    change, both weeks -- `skip_day` ('9/21') drops the day the picture shows,
-    whose numbers are already in the picture (Eve, 2026-09-22)."""
-    out = []
-    for row in board_values[rep.FIRST_BODY_ROW - 1:]:
-        for cell in row:
-            text = str(cell)
-            m = rep._BAND_RE.match(text)
-            if not m or "CHANGED: " not in text:
-                continue
-            day = f"{int(m.group(2))}/{int(m.group(3))}"
-            if day == skip_day:
-                continue
-            # the band itself truncates with a '(+2 more)' tail -- not a change
-            changes = re.sub(r"\s*\(\+\d+ more\)$", "", text.split("CHANGED: ", 1)[1])
-            out += [f"{day} {c.strip()}" for c in changes.split(", ") if c.strip()]
-    return out
 
 
 def _set_hidden(sh, sheet_id: int, hidden: bool) -> None:
@@ -70,12 +49,11 @@ def _set_hidden(sh, sheet_id: int, hidden: bool) -> None:
         "properties": {"sheetId": sheet_id, "hidden": hidden}, "fields": "hidden"}}]})
 
 
-def build_png(tab: str = rep.SANDBOX_TAB) -> Tuple[Path, str, str, List[str]]:
-    """(png, the picture's title, its status line, what changed on earlier days)."""
+def _export_tab(sh, name: str, out: Path) -> Tuple[Optional[Path], str, str]:
+    """Shoot one picture tab -> (png or None when it has no rows, title, status)."""
     from automations.org_sales_board.screenshot_email import _export_png, _access_token
 
-    sh = fill.open_by_key(rep.SHEET_ID)
-    pic = fill.worksheet_ci(sh, tab + rep.PICTURE_SUFFIX)
+    pic = fill.worksheet_ci(sh, name)
     values = pic.get_all_values()
     header = values[rep.HEADER_ROW - 1] if len(values) >= rep.HEADER_ROW else []
     width = len(rep.resolve_columns(header))
@@ -83,8 +61,9 @@ def build_png(tab: str = rep.SANDBOX_TAB) -> Tuple[Path, str, str, List[str]]:
                default=rep.HEADER_ROW)
     title = values[rep.TITLE_ROW - 1][0] if values else ""
     status = values[rep.STATUS_ROW - 1][0] if len(values) >= rep.STATUS_ROW else ""
+    if last <= rep.HEADER_ROW:            # title + header only: nothing to show
+        return None, title, status
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    out = OUT_DIR / "call_list_to_2nd.png"
     # The picture tab is kept HIDDEN so the workbook stays clean (Eve,
     # 2026-09-21) -- but a hidden tab exports as a blank page. So: show it for
     # the export, and hide it again whatever happens.
@@ -101,21 +80,51 @@ def build_png(tab: str = rep.SANDBOX_TAB) -> Tuple[Path, str, str, List[str]]:
     finally:
         if hidden:
             _set_hidden(sh, pic.id, True)
-    board = fill.worksheet_ci(sh, tab).get_all_values()
-    pic_day = rep.last_full_day(dt.datetime.now(dt.timezone.utc).astimezone(rep.CT).date())
-    return out, title, status, changed_lines(board, rep.md(pic_day))
+    return out, title, status
 
 
-def message(title: str, changes: List[str]) -> str:
-    """The reply's text. Short on purpose: the thread's parent already says what
-    the report is. No colour legend -- Eve, 2026-09-22: the colours speak for
-    themselves and the line was just noise on every post."""
-    lines = [f"*{title.replace('  ·  ', ' · ') or TITLE}*"]
-    if changes:
-        shown = " · ".join(changes[:MAX_CHANGES])
-        more = len(changes) - MAX_CHANGES
-        lines.append("Earlier days moved: " + shown + (f" · +{more} more" if more > 0 else ""))
-    return "\n".join(lines)
+def build_pngs(tab: str = rep.SANDBOX_TAB) -> Tuple[Path, Optional[Path], str, str]:
+    """(the day's picture, the updates picture or None, title, status).
+
+    TWO images in one Slack message (Eve, 2026-09-22): the day's board, and
+    what moved on earlier days -- as a picture rather than a list of names in
+    the message text. run.py blanks the '(updates)' tab when nothing moved, and
+    then there is no second image."""
+    sh = fill.open_by_key(rep.SHEET_ID)
+    png, title, status = _export_tab(sh, tab + rep.PICTURE_SUFFIX,
+                                     OUT_DIR / "call_list_to_2nd.png")
+    if png is None:
+        raise SystemExit(f"{tab + rep.PICTURE_SUFFIX!r} is empty - run.py first")
+    try:
+        upd, _, _ = _export_tab(sh, tab + rep.UPDATES_SUFFIX,
+                                OUT_DIR / "call_list_to_2nd_updates.png")
+    except Exception:                       # noqa: BLE001 -- run.py hasn't made it yet
+        upd = None
+    return png, upd, title, status
+
+
+def message(title: str, has_updates: bool = False) -> str:
+    """The reply's text: one line. No colour legend and no list of changes --
+    Eve, 2026-09-22: both made the post look overloaded. The changes are the
+    second image; the text only says it is there."""
+    line = f"*{title.replace('  ·  ', ' · ') or TITLE}*"
+    if has_updates:
+        line += "  ·  2nd picture: what moved on earlier days"
+    return line
+
+
+def post(png: Path, updates: Optional[Path], text: str, *, thread_ts: str) -> dict:
+    """Both pictures in ONE message: Slack groups several files under a single
+    initial_comment, so the day and its updates arrive together instead of as
+    two posts people have to tie back to each other."""
+    from automations.shared import slack_metrics_post as smp
+    client = smp._client()
+    uploads = [{"file": str(png), "filename": f"{TITLE}.png"}]
+    if updates:
+        uploads.append({"file": str(updates), "filename": f"{TITLE} - updates.png"})
+    resp = client.files_upload_v2(file_uploads=uploads, channel=CHANNEL_ID,
+                                  thread_ts=thread_ts, initial_comment=text)
+    return {"ok": bool(resp.get("ok")), "files": len(uploads)}
 
 
 def main(argv=None) -> int:
@@ -127,9 +136,11 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     tab = rep.PRODUCTION_TAB if args.production else rep.SANDBOX_TAB
 
-    png, title, status, changes = build_png(tab)
-    text = message(title, changes)
+    png, updates, title, status = build_pngs(tab)
+    text = message(title, updates is not None)
     print(f"picture -> {png} ({png.stat().st_size // 1024} KB)")
+    print(f"updates -> {updates} ({updates.stat().st_size // 1024} KB)" if updates
+          else "updates -> none (nothing moved on an earlier day)")
     print(text)
     if args.png_only:
         return 0
@@ -147,9 +158,8 @@ def main(argv=None) -> int:
     if not ts:
         print("  FAILED - could not find or post today's thread")
         return 1
-    resp = smp.post_reply_with_image(png, comment=text, channel_id=CHANNEL_ID, thread_ts=ts,
-                                     file_name=f"{TITLE}.png", mirror=False)
-    print(f"  result: { {k: v for k, v in resp.items() if k != 'raw'} }")
+    resp = post(png, updates, text, thread_ts=ts)
+    print(f"  result: {resp}")
     if not (resp or {}).get("ok", False):
         print("  FAILED - nothing landed in the thread")
         return 1

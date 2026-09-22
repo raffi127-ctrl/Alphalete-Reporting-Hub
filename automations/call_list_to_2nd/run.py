@@ -89,6 +89,7 @@ TITLE = "CALL LIST TO 2ND ROUND"
 # header on top. Kept HIDDEN (Eve: a clean workbook); a hidden tab exports as a
 # blank page, so slack_post shows it just for the export and hides it again.
 PICTURE_SUFFIX = " (picture)"
+UPDATES_SUFFIX = " (updates)"    # the second picture: what moved on earlier days
 
 # field key -> the header text on Eve's tab (matched loosely: case/spaces).
 HEADERS = {
@@ -1093,7 +1094,8 @@ def run(*, tab: str = SANDBOX_TAB, dry_run: bool = False, use_appstream: bool = 
               f"every day re-checked each run  ·  last checked {stamp}")
     if prev_stamp:
         status += (f"  ·  {len(moved)} changed since the {prev_stamp} check"
-                   + (" (listed on each day's bar)" if moved else ""))
+                   + (" (each day's bar names them; the post shows them as a"
+                      " second picture)" if moved else ""))
     if not use_appstream:
         status += "  ·  (1st-round columns as of the last AppStream check)"
     titles = [f"{TITLE}  ·  THIS WEEK (week of {md(starts[0])})",
@@ -1115,6 +1117,19 @@ def run(*, tab: str = SANDBOX_TAB, dry_run: bool = False, use_appstream: bool = 
     day_groups = pic_groups(pic_day)
     pic_lay = lay_out_picture(order, [
         (picture_band_text(pic_day, len(day_groups)), "past", day_groups)])
+
+    # The SECOND picture (Eve, 2026-09-22: the changes as a picture, not a wall
+    # of text in the message): one box per day that moved since the last check,
+    # holding only the offices whose numbers moved. Empty on a quiet pass --
+    # then there is no second image at all.
+    upd_blocks = []
+    for d in sorted(changes):
+        who = [c.owner for c in changes[d]]
+        groups = [g for g in (pic_groups(d)) if g and g[0].get("owner") in who]
+        if groups:
+            upd_blocks.append((picture_band_text(d, len(groups)), "past", groups))
+    upd_lay = lay_out_picture(order, upd_blocks) if upd_blocks else None
+    upd_title = f"{TITLE}  ·  updated since the {prev_stamp} check" if upd_blocks else ""
     pic_title = f"{TITLE}  ·  {pic_day:%A} {md(pic_day)}"
     if due:
         # Say whose picture this is: each time zone's pass posts its own.
@@ -1136,7 +1151,23 @@ def run(*, tab: str = SANDBOX_TAB, dry_run: bool = False, use_appstream: bool = 
     # Hidden on every write (the cached isSheetHidden flag can be stale).
     sh.batch_update({"requests": [{"updateSheetProperties": {
         "properties": {"sheetId": pic_ws.id, "hidden": True}, "fields": "hidden"}}]})
-    return {"picture_tab": pic_tab, "written": True, "tab": ws.title, "rows": len(lay.values), "changed": len(moved),
+
+    # The updates picture, written even when nothing moved: an empty layout
+    # BLANKS the tab, so a quiet pass can never post the last pass's changes.
+    upd_tab = ws.title + UPDATES_SUFFIX
+    try:
+        upd_ws = fill.worksheet_ci(sh, upd_tab)
+    except Exception:                                     # noqa: BLE001
+        logfn(f"  creating {upd_tab!r}")
+        upd_ws = sh.duplicate_sheet(ws.id, new_sheet_name=upd_tab)
+    write(upd_ws, order, upd_lay or Layout(width=len(order)),
+          [upd_title or f"{TITLE}  ·  nothing moved since the last check"],
+          status, logfn, sides=1)
+    sh.batch_update({"requests": [{"updateSheetProperties": {
+        "properties": {"sheetId": upd_ws.id, "hidden": True}, "fields": "hidden"}}]})
+
+    return {"picture_tab": pic_tab, "updates_tab": upd_tab if upd_lay else "",
+            "written": True, "tab": ws.title, "rows": len(lay.values), "changed": len(moved),
             "changes": [f"{c.date:%a} {md(c.date)}: {c.text}" for c in moved], "notes": notes}
 
 
