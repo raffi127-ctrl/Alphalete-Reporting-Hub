@@ -250,6 +250,14 @@ def _all_but_submit():
     return c
 
 
+class OwnerSubmitReview(unittest.TestCase):
+    def test_review_in_progress_counts_as_submitted(self):
+        c = _all_but_submit()
+        c[16] = {"text": " Review in Progress",
+                 "html": '<div class="label label-default"><i class="fa fa-check">'}
+        self.assertTrue(ov_table.done_columns(VP_HEADS, c)["Owner Submit"])
+
+
 class Photo(unittest.TestCase):
     def test_green_pill_uploaded_red_or_orange_missing(self):
         self.assertTrue(ov_table.photo_uploaded(

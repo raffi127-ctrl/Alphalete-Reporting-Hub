@@ -83,8 +83,23 @@ def photo_uploaded(text: str, html: str = "") -> bool:
     return bool(re.search(r"<(i|svg)\b|fa-|glyphicon", h)) or "✓" in t
 
 
+def owner_submitted_cell(text: str, html: str = "") -> bool:
+    """Owner Submit is DONE once it reads "Review in Progress" (submitted,
+    waiting on the campaign) or Approved — Megan 2026-09-22: all four "blue"
+    people were already in review. The review pill has no date, so the plain
+    date rule called it not done."""
+    t = (text or "").lower()
+    if "review in progress" in t or "approved" in t:
+        return True
+    return cell_done(text, html)
+
+
 def _judge(header: str):
-    return photo_uploaded if header == "upload documents" else cell_done
+    if header == "upload documents":
+        return photo_uploaded
+    if header == "owner submit":
+        return owner_submitted_cell
+    return cell_done
 
 
 def cell_filled(text: str, html: str = "") -> bool:
