@@ -58,6 +58,11 @@ def match(people, reps: dict):
     return out, missing
 
 
+def _key(p) -> str:
+    from automations.digi_docs import namematch
+    return namematch.norm(p.name)
+
+
 def _tint(ws, p, color, column: str = "Owner Submit") -> dict:
     """Background of ONE cell only — a tint never touches the checkbox value."""
     col = p.cols[column]
@@ -179,6 +184,22 @@ def main(argv=None) -> int:
           f"(ready to submit): {len(ready)}"
           + (f" — {', '.join(p.name for p in ready)}" if ready else ""))
 
+    # RE-READ BEFORE WRITING (2026-09-21, 7:22pm). The OwnerVille part takes
+    # minutes; someone deleted last week's chart and inserted a Classroom
+    # column meanwhile, and colours painted at the rows/columns read at the
+    # START landed on Blue Ink, above the header and below the table. So the
+    # tab is read again here and every tick + colour is placed by NAME on the
+    # fresh read. A person who moved is found where they are now; one who
+    # vanished is skipped.
+    if args.tick:
+        ws, values = _open_tab(args.tab or ws.title)
+        fresh = sweep.people(values)
+        where = {_key(p): p for p in fresh}
+        writes = [(where[_key(p)], c) for p, c in writes
+                  if _key(p) in where and c in where[_key(p)].cols]
+        ready = [where[_key(p)] for p in ready if _key(p) in where]
+        bg_wait = [where[_key(p)] for p in bg_wait if _key(p) in where]
+        everyone = fresh
     if args.tick and writes:
         ws.batch_update(
             [{"range": gspread.utils.rowcol_to_a1(p.row, p.cols[c]),
