@@ -284,6 +284,52 @@ def _heal_and_login(p, headless: bool, log=print):
             raise _as_owner_problem(second) from second
 
 
+SARA_HOLD_PATH = C.APP_DIR / "sara-hold-until.txt"
+SARA_HOLD_MINUTES = 30
+
+
+def hold_sara(minutes: int = SARA_HOLD_MINUTES, log=print) -> None:
+    """After SaraPlus refuses a login, stand back for a while.
+
+    THE AGENT USED TO TRY AGAIN EVERY SWEEP. Khalil's machine: 115 walled
+    logins on 2026-09-17, 123 on 2026-09-21, 10 an hour today -- and by
+    mid-morning SaraPlus answered the same password with "invalid
+    email/password" until a person signed in by hand and reset it, after
+    which the next hidden attempt was walled again, not refused. Hammering
+    the login page is how a fixable wall turns into a throttle, and it burns
+    the fix the moment somebody makes it. One report, then thirty minutes
+    of quiet. The sign-in link clears the hold, so a person's fix is tried
+    at once, not half an hour later.
+    """
+    until = dt.datetime.now() + dt.timedelta(minutes=minutes)
+    try:
+        SARA_HOLD_PATH.parent.mkdir(parents=True, exist_ok=True)
+        SARA_HOLD_PATH.write_text(until.isoformat(timespec="seconds"))
+    except OSError:
+        return
+    log("SaraPlus refused this login; not trying again until %s"
+        % until.strftime("%H:%M"))
+
+
+def sara_held_until():
+    """The time the current hold ends, or None when there is no hold."""
+    try:
+        until = dt.datetime.fromisoformat(SARA_HOLD_PATH.read_text().strip())
+    except (OSError, ValueError):
+        return None
+    if until <= dt.datetime.now():
+        clear_sara_hold()
+        return None
+    return until
+
+
+def clear_sara_hold() -> None:
+    try:
+        SARA_HOLD_PATH.unlink()
+    except OSError:
+        pass
+
+
 def what_saraplus_sees(ctx, page) -> list:
     """What this browser presents to SaraPlus, one line each -- so a photo of
     the sign-in window shows WHY the hidden read is not trusted when the

@@ -184,6 +184,14 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date,
         return 0
     att_key = str((att or {}).get("office_key") or "")
 
+    held = sara_read.sara_held_until()
+    if held is not None:
+        # Refused recently. The fault is already reported; another attempt
+        # now is another poke at a throttled login page. See hold_sara.
+        _log("SaraPlus refused this login at the last try; holding off "
+             "until %s" % held.strftime("%H:%M"))
+        return 0
+
     try:
         # TIMED AND BOUNDED. A read that hangs holds the two-minute slot and
         # every tick behind it, which is what an office experiences as
@@ -208,6 +216,7 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date,
     except sara_read.AccountProblem as e:
         print("\n%s" % e)
         _report("sweep", e, office_key=att_key)
+        sara_read.hold_sara(log=_log)
         # SAME AS THE BOX PATH, and for the SAME reason. Khalil's machine hit
         # SaraPlus's passcode wall 115 times on 2026-09-17 -- five hours of
         # every-two-minutes failing while people traded screenshots about a
