@@ -185,16 +185,27 @@ OFFICE_SERIES = {"b2b_box": "box", "box": "box", "b2b_att": "b2b",
                  "nds": "nds", "att_nds": "nds"}
 
 
+# What each campaign's Tableau view actually counts, so the live side is
+# added up the same way. The NDS view is WIRELESS AND NOTHING ELSE — every
+# one of its 46 owners has exactly two rows, 'Total' and 'WIRELESS', equal to
+# each other — so adding Int and Int Up to the live side invented units that
+# its Tableau could never show: Colten, Monday 2026-09-21, live 56 against a
+# settled 49, where the wireless alone was 50 against 49. If a non-wireless
+# product ever appears on that view, this is the line to revisit.
+LIVE_MEASURES = {"box": ("Sales",),
+                 "nds": ("NL",), "att_nds": ("NL",)}
+ALL_MEASURES = ("Int", "Int Up", "DTV", "NL")
+
+
 def _live_total(feed, reps: dict) -> int:
     """A feed's office total for one day, counted the way its Tableau counts.
 
-    Box counts deals, which the agent relays as Sales. B2B counts units."""
-    if feed.family == "box":
-        return sum(int(v.get("Sales", 0) or 0) for v in reps.values())
-    # NDS and B2B both keep their owner's TOTAL row in Tableau (all products),
-    # so the live side adds every measure the feed sends.
-    return sum(int(v.get(m, 0) or 0) for v in reps.values()
-               for m in ("Int", "Int Up", "DTV", "NL"))
+    Box counts deals, which the agent relays as Sales. B2B keeps its owner's
+    TOTAL row across all products, so it adds every measure the feed sends."""
+    want = LIVE_MEASURES.get(feed.campaign)
+    if want is None:
+        want = ("Sales",) if feed.family == "box" else ALL_MEASURES
+    return sum(int(v.get(m, 0) or 0) for v in reps.values() for m in want)
 
 
 def check_office(feed, day: dt.date, series=None) -> dict:
