@@ -7197,6 +7197,43 @@ def _action_purge_retired_appstream_creds(args: str) -> tuple[bool, str]:
                   % ("; ".join(removed), ", ".join(kept) or "primary only"))
 
 
+def _action_group_members(args: str) -> tuple[bool, str]:
+    """group_members <group name>: every member handle of an iMessage group,
+    as THIS machine's Messages sees it, plus the chat id and service. Built
+    2026-09-22: Colten's and Aya's groups deliver Lucy's texts to Megan and to
+    nobody else, and worked for a while first -- so what does Lucy's copy of
+    the roster actually hold? Read-only."""
+    import shlex, subprocess
+    try:
+        name = " ".join(shlex.split(args or "")).strip()
+    except ValueError:
+        name = (args or "").strip().strip("'\"")
+    if not name:
+        return False, "group_members needs a group name"
+    script = (
+        'tell application "Messages"\n'
+        '  set out to ""\n'
+        '  repeat with c in chats\n'
+        '    try\n'
+        '      if (name of c as text) is "%s" then\n'
+        '        set out to out & "chat " & (id of c as text) & " || service=" & (name of service of c as text) & linefeed\n'
+        '        repeat with p in participants of c\n'
+        '          set out to out & "  " & (handle of p as text) & " :: " & (name of p as text) & linefeed\n'
+        '        end repeat\n'
+        '      end if\n'
+        '    end try\n'
+        '  end repeat\n'
+        '  return out\n'
+        'end tell' % name.replace('"', '\\"'))
+    try:
+        res = subprocess.run(["osascript", "-e", script], capture_output=True,
+                             text=True, timeout=120)
+    except Exception as e:  # noqa: BLE001
+        return False, "osascript failed: %s" % e
+    out = (res.stdout or "").strip() or (res.stderr or "").strip() or "(no chat with that exact name)"
+    return res.returncode == 0, out[-1500:]
+
+
 def _action_sara_probe(args: str) -> tuple[bool, str]:
     """sara_probe [--chromium]: can THIS machine log into SaraPlus hidden, in
     the headless shell (default) or full Chromium? Throwaway profile, the
@@ -7996,6 +8033,7 @@ ACTIONS = {
     "push_appstream_fleet": _action_push_appstream_fleet,
     "login_check": _action_login_check,
     "sara_probe": _action_sara_probe,
+    "group_members": _action_group_members,
     "purge_retired_appstream_creds": _action_purge_retired_appstream_creds,
     "set_ownerville_creds": _action_set_ownerville_creds,
     "appstream_renew_probe": _action_appstream_renew_probe,
