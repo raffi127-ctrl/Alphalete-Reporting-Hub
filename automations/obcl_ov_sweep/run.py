@@ -70,10 +70,11 @@ def _tint(ws, p, color, column: str = "Owner Submit") -> dict:
 
 
 def _paint(ws, everyone, ticked_now, ready_rows, live: bool,
-           bg_pending_rows=()) -> None:
+           bg_pending_rows=(), sheet_only: bool = False) -> None:
     """Green = ticked, blue = ready for Owner Submit, light red = not done —
     all four sweep columns, every active person, one batch_update."""
-    plan = sweep.paint_plan(everyone, ticked_now, ready_rows, bg_pending_rows)
+    plan = sweep.paint_plan(everyone, ticked_now, ready_rows, bg_pending_rows,
+                            sheet_only=sheet_only)
     n = {k: sum(1 for *_, col in plan if col is v) for k, v in
          (("green", config.DONE_GREEN), ("blue", config.READY_BLUE),
           ("yellow", config.BG_PENDING_YELLOW), ("red", config.NOT_FOUND_RED))}
@@ -103,7 +104,7 @@ def main(argv=None) -> int:
     print(f"{ws.title}: {len(everyone)} people, {len(todo)} with an open box "
           f"({', '.join(config.COLUMNS)})", flush=True)
     if args.paint_only:
-        _paint(ws, everyone, (), (), args.tick)
+        _paint(ws, everyone, (), (), args.tick, sheet_only=True)
         return 0
     if not todo:
         # Nothing to look up — still colour every box by its tick.

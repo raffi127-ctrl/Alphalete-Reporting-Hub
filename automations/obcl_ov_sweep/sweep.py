@@ -120,7 +120,7 @@ def sheet_bg_pending(p: Person) -> bool:
 
 
 def paint_plan(everyone: List[Person], ticked_now=(), ready_rows=(),
-               bg_pending_rows=()):
+               bg_pending_rows=(), sheet_only: bool = False):
     """[(person, column, colour)] for EVERY sweep column of every active
     person — not only the boxes this pass ticked (Megan 2026-09-21: hand-ticked
     boxes were left white). Ticked (before or now) = GREEN; Owner Submit ready
@@ -144,6 +144,11 @@ def paint_plan(everyone: List[Person], ticked_now=(), ready_rows=(),
             elif c == "Owner Submit" and (p.row in bg_wait
                                           or sheet_bg_pending(p)):
                 out.append((p, c, config.BG_PENDING_YELLOW))
+            elif c == "Owner Submit" and sheet_only:
+                # Without an OwnerVille read we can't know blue (or the OV-only
+                # yellow) — leave the last Lucy pass's colour alone rather than
+                # overwrite it with red (2026-09-21: wiped Govany Torres' blue).
+                continue
             else:
                 out.append((p, c, config.NOT_FOUND_RED))
     return out

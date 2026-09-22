@@ -126,6 +126,10 @@ class SheetBgPending(unittest.TestCase):
     def test_another_box_open_stays_red(self):
         self.assertEqual(self._owner_colour(dd="FALSE"), config.NOT_FOUND_RED)
 
+    def test_sheet_only_never_reds_owner_submit(self):
+        plan = sweep.paint_plan(self._person(dd="FALSE"), sheet_only=True)
+        self.assertEqual([c for _, c, _ in plan if c == "Owner Submit"], [])
+
     def test_ticked_is_green(self):
         self.assertEqual(self._owner_colour(own="TRUE"), config.DONE_GREEN)
 
