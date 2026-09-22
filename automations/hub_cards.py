@@ -33,6 +33,14 @@ CARLOS_SHEET_URL = "https://docs.google.com/spreadsheets/d/1KLF8diMJ8pwIQWW9IqN7
 # CAPTAINSHIP=Alphalete-Org when running.
 ALPHALETE_ORG_SHEET_URL = "https://docs.google.com/spreadsheets/d/1C6BLttOSZhs_dREySac19XkxnMl-Ab_sYacNSl2l6AQ/edit"
 
+# NDS Program - Focus Report — one tab per owner in the NDS tracker (Rafael
+# 2026-09-22), our org's and the ones outside it. Its own workbook, in the same
+# Drive folder as the Alphalete Org one.
+NDS_PROGRAM_SHEET_ID = "1Vu_J7bcSpreIBcsYuAVEQMusL9-RaOSgB65DiKxrYtI"
+NDS_PROGRAM_SHEET_URL = (
+    "https://docs.google.com/spreadsheets/d/" + NDS_PROGRAM_SHEET_ID + "/edit"
+)
+
 
 WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
@@ -1577,6 +1585,105 @@ AUTOMATED_REPORTS = [
                 "module": "automations.recruiting_report.run",
                 "args_fn": lambda d, name: ["--week", (d - dt.timedelta(days=7)).isoformat(),
                                             "--only", name, "--no-opt"],
+            },
+        ],
+    },
+    {
+        # NDS Program - Focus Report (Rafael 2026-09-22, #l10-alphalete): the
+        # fiber-style focus report for the whole NDS PROGRAM — a tab per owner
+        # in the NDS tracker, not just the org's ten. Runs Mondays as
+        # nds_program_focus_all (registry) on Lucy 3.
+        "id": "nds-program-focus",
+        "name": "NDS Program - Focus Report",
+        "creator": "Eve",
+        "emoji": "\U0001F4E1",
+        "color": "#8B5CF6",
+        "category": "\U0001F3AF Recruiting",
+        "description": "Recruiting + OPT for every owner in the NDS tracker — "
+                       "the org's and the ones outside it.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Recruiting pull from AppStream (APPS / Total Applies / "
+            "Retention / 1st & 2nd Booked / New Starts) for the owners whose "
+            "office we can open.\n"
+            "**•** OPT from Tableau: headcount, ranking, churn, "
+            "activation, leads, personal production, direct deposit, and the "
+            "rep production box at the bottom of each tab.\n\n"
+            "WHEN IT RUNS\n"
+            "**Mondays, in the 4 AM flow.** Each run fills the week that just "
+            "ended.\n\n"
+            "WHY MONDAY AND NOT ANY OTHER DAY\n"
+            "The NDS tracker has no week filter — it always shows the week in "
+            "progress. Monday morning is the only time that week is the one "
+            "that just closed. A midweek run writes this week's numbers under "
+            "last week's column.\n\n"
+            "WHAT STAYS BLANK, AND WHY\n"
+            "**•** 24 owners have no office we can open in AppStream, so "
+            "their recruiting rows stay empty and the tab says "
+            "'No access to this office' — Rafael asked us NOT to request "
+            "access.\n"
+            "**•** Sara Plus only carries our own org (14 of the 47), so "
+            "for the owners outside it the sales rows come from the NDS "
+            "tracker instead, and the log says so on every such cell."
+        ),
+        "sheet_url": NDS_PROGRAM_SHEET_URL,
+        "assignees": ["Lucy 3"],
+        "schedule": {
+            "frequency": "weekly",
+            "weekdays": [0],  # Monday
+            "time": "4 AM flow (when data's ready)",
+            "estimated_minutes": 40,
+        },
+        # Unattended via patchright (AppStream + Tableau). Empty list hides it.
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ NDS Program run complete — recruiting + "
+                               "OPT. The owners with no AppStream office keep "
+                               "their 'No access to this office' note; that is "
+                               "expected, not a failure.",
+            "message_failed":  "❌ Run failed. Check the log above, fix the "
+                               "issue, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Run This Week",
+                "icon": "▶",
+                "primary": True,
+                "help": "ONE run: AppStream recruiting + the NDS OPT fill for "
+                        "the week that just ended. Run it on a MONDAY — the "
+                        "tracker has no week filter.",
+                "module": "automations.recruiting_report.nds_program_all",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Run OPT only",
+                "icon": "\U0001F4CA",
+                "help": "Skip AppStream and refill just the Tableau metrics on "
+                        "every tab.",
+                "module": "automations.alphalete_org_report.opt_nds",
+                "args_fn": lambda: ["--sheet-id", NDS_PROGRAM_SHEET_ID],
+            },
+            {
+                "label": "Run for One Owner",
+                "icon": "\U0001F3AF",
+                "needs_text": True,
+                "text_label": "Owner name (as the tab spells it)",
+                "help": "Refill one owner's OPT block.",
+                "module": "automations.alphalete_org_report.opt_nds",
+                "args_fn": lambda name: ["--sheet-id", NDS_PROGRAM_SHEET_ID,
+                                         "--only", name],
+            },
+            {
+                # AppStream IS week-filterable, so this one is safe any day —
+                # unlike the Tableau half.
+                "label": "Recruiting only (pick a week)",
+                "icon": "\U0001F5D3",
+                "needs_date": True,
+                "help": "Pick a WE Sunday and refill only the AppStream "
+                        "recruiting rows.",
+                "module": "automations.recruiting_report.run",
+                "args_fn": lambda d: ["--week", d.isoformat(), "--no-opt"],
+                "env": {"CAPTAINSHIP": "NDS-Program"},
             },
         ],
     },

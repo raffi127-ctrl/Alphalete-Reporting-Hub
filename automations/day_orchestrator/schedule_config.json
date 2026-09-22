@@ -6363,6 +6363,32 @@
       "_note": "MONDAYS (Rafael 2026-09-22). Two steps: the AppStream recruiting pull under CAPTAINSHIP=NDS-Program (24 owners whose office we can see; the other 24 are in the mapping's skip list with 'No access to this office' in A22) and then opt_nds --sheet-id on the NDS Program - Focus Report workbook (1Vu_J7bcSpreIBcsYuAVEQMusL9-RaOSgB65DiKxrYtI, Drive folder Promotions, same one as the Alphalete Org 1on1s). Runs right after alphalete_org_focus (order 39) on the SAME machine - Lucy 3 is where Tableau logs in; from Windows the login form hangs. MONDAY IS NOT A PREFERENCE: NDSDailyTracker has no date control, so Active Selling Heads / Scorecard Ranking / National AVG - and New Lines + AIR for the owners Sara Plus does not carry - are only the just-closed week's numbers on a Monday morning. A Tuesday run writes the in-progress week under last week's column (2026-09-22, cleared by hand). Sara Plus covers 14 of the 47 tracker owners (measured: the by-day view returns 34 owners, and the CostcoLeaderRecognition custom view is a different dimension entirely), which is why the rest take New Lines from the tracker's 'Phone' and AIR from 'Air Sold' - every such cell says so in the log. `lucy rerun nds_program_focus_all`; the OPT half alone is `lucy rerun nds_program_focus`.",
       "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
+    "nds_lastweek_fill": {
+      "hand_run_only": true,
+      "on_scheduler": true,
+      "machine": "Lucy 3",
+      "_note": "Backfills ONE past week of NDS sales on the NDS Program - Focus Report from the tracker's '(LW)' twin sheet - the only route to a past week for the owners Sara Plus does not carry (Eve 2026-09-22). Writes New Lines (tracker 'Phone'), AIR ('Air Sold'), Active Selling Heads ('Rep Count') and Scorecard Ranking, ONLY into cells that are empty, so a Sara number is never overwritten by a tracker one (the two disagree: Drew Tepper WE 9/6 is 176/19 in Sara and 195/7 on the tracker). The week is read out of the export's 'Currently Viewing' caption minus one week, never from today's date - the tracker's week does not flip at midnight Sunday. `lucy rerun nds_lastweek_fill`; add --week YYYY-MM-DD to refuse to write unless the export holds that week. Exits 1 when it wrote nothing.",
+      "display_name": "NDS Program - backfill last week from the (LW) tracker",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:product_sales"
+      ],
+      "command": [
+        "automations.alphalete_org_report.nds_lastweek_fill"
+      ],
+      "base_args": [
+        "--sheet-id",
+        "1Vu_J7bcSpreIBcsYuAVEQMusL9-RaOSgB65DiKxrYtI"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 30
+    },
     "alphalete_org_box": {
       "hand_run_only": true,
       "on_scheduler": true,
