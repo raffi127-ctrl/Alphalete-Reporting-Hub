@@ -113,6 +113,8 @@ def nightly(day: dt.date, explicit_date: bool = False) -> int:
             return 0
         if (now.hour, now.minute) < config.POST_AFTER_CT:
             return 0
+    if getattr(config, "NIGHTLY_PAUSED", False):
+        return 0
     channel = config.LIVE_CHANNEL_ID
     if post.day_done(channel, day):
         return 0
