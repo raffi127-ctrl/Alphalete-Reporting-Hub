@@ -132,6 +132,9 @@ CAPTAINSHIP = [
     # Office id unknown yet — blank oid = run.py discovery pins it from the
     # AppStream picker on the next funnel run and backfills history.
     ("Nicolas Lujan",    "",      "Nicolas Lujan"),
+    # Added 2026-09-21 (Carlos): captainship views. Office pinned from
+    # office-mapping-carlos.json (Viridian, Inc., confidence 1.0).
+    ("Stefan Cameron",   "23264", "Stefan Cameron"),
 ]
 
 CAPTAINSHIP_NAMES = [n for n, _, _ in CAPTAINSHIP]
