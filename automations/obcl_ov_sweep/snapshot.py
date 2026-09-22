@@ -268,9 +268,17 @@ def draw_set(recs: List[dict], week: str, stamp: str, clock: str) -> list:
 
 
 def caption(made) -> str:
+    """Megan 2026-09-22 — exactly this shape, one line per group:
+        OBCL update
+        ✅ 21 owner submitted
+        ➡️ 4 ready for owner submit
+        ⚠️ 9 waiting on BG / still missing checks"""
     counts = {g: n for g, n, _ in made}
-    return "OBCL update — " + " · ".join(
-        f"{counts.get(g, 0)} {g.lower()}" for g in GROUPS)
+    lines = [("✅", GROUPS[0], "owner submitted"),
+             ("➡️", GROUPS[1], "ready for owner submit"),
+             ("⚠️", GROUPS[2], "waiting on BG / still missing checks")]
+    return "\n".join(["OBCL update"] + [f"{e} {counts.get(g, 0)} {t}"
+                                          for e, g, t in lines])
 
 
 def after_pass(ws, values, *, live: bool, text: bool) -> str:
