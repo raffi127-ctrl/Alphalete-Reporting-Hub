@@ -1,7 +1,7 @@
 #!/bin/bash
 # Ad Photo Threads — the nightly post into #indeed-photos-rafs-local-office.
 # Ticks every 30 minutes (com.alphalete.ad-photo-threads.plist) and posts the
-# day ONCE, after 7 PM Central, Mon–Sat. The clock gate and the "day already
+# day ONCE, after 4:30 PM Central, Mon–Sat. The clock gate and the "day already
 # posted" check live in Python (run.py nightly) and run before any Sheets or
 # Slack call, so an idle tick costs nothing. An interval rather than a calendar
 # plist: launchd's cached zone has fired calendar jobs +2h on this fleet.

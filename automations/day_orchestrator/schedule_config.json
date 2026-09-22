@@ -2857,7 +2857,7 @@
     },
     "ad_photo_threads": {
       "on_scheduler": true,
-      "_note": "MANUAL (Eve 2026-09-21): 1st-round Zoom screenshots from #rafs-office-recruiting-11280 re-posted into one thread per Indeed ad. weekdays [] = manual only: the nightly post is its own LaunchAgent (com.alphalete.ad-photo-threads, `lucy install_ad_photo_threads`, 7 PM CT Mon-Sat), because a 7 PM not_before in the orchestrator runs behind the pass and the noon backstop. This entry is for reruns. Pass the mode as extra args: `lucy rerun ad_photo_threads --post --test-dm --date 2026-09-18 --max-ads 2` (test group DM) or `--dry-run --show-posts`. Runs on the mini because only Lucy's token can download the screenshots.",
+      "_note": "MANUAL (Eve 2026-09-21): 1st-round Zoom screenshots from #rafs-office-recruiting-11280 re-posted into one thread per Indeed ad. weekdays [] = manual only: the nightly post is its own LaunchAgent (com.alphalete.ad-photo-threads, `lucy install_ad_photo_threads`, 4:30 PM CT Mon-Sat, Raf 2026-09-22), because a 7 PM not_before in the orchestrator runs behind the pass and the noon backstop. This entry is for reruns. Pass the mode as extra args: `lucy rerun ad_photo_threads --post --test-dm --date 2026-09-18 --max-ads 2` (test group DM) or `--dry-run --show-posts`. Runs on the mini because only Lucy's token can download the screenshots.",
       "display_name": "Ad Photo Threads",
       "source_type": "local",
       "data_sources": [],

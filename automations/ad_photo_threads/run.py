@@ -138,7 +138,7 @@ def nightly(day: dt.date, explicit_date: bool = False) -> int:
             print("Pin reminder DM sent.")
     except Exception as e:                    # noqa: BLE001 — never costs the post
         print(f"pin reminder DM failed: {type(e).__name__}: {str(e)[:160]}")
-    # Done only when the day actually had candidates; an empty sheet at 7 PM
+    # Done only when the day actually had candidates; an empty sheet at 4:30 PM
     # (interviewers late to log) gets re-read on the next tick.
     if rep.candidates:
         post.mark_day_done(channel, day)

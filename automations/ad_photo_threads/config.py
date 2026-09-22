@@ -33,9 +33,11 @@ NIGHTLY_PAUSED_BEFORE = "2026-09-22"
 
 # "Every day at the end of the day": the nightly agent ticks every 30 min and
 # posts the day once it's past this time, Central. The last 1st-round slot is
-# ~3:45 PM and the sheet is filled as they go, so 7 PM has the whole day.
+# 3:45 PM CT (Camila 2026-09-22) and the sheet is filled as they go; Raf
+# 9/22: "to be safe lets do 4:30 local time of the pulling instead of 7:00pm".
+# A shot posted after the pull is caught by the late-photo watch next nights.
 # Mon–Sat; Sunday has no 1st rounds.
-POST_AFTER_CT = (19, 0)
+POST_AFTER_CT = (16, 30)
 POST_WEEKDAYS = {0, 1, 2, 3, 4, 5}
 
 # Lucy's token has no pins:write, so Eve pins the week's threads by hand
