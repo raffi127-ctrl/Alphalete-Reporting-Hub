@@ -23,7 +23,7 @@ from typing import Dict, List, Optional
 from zoneinfo import ZoneInfo
 
 from automations.ad_photo_threads import config
-from automations.ad_photo_threads.titles import TitleBook
+from automations.ad_photo_threads.titles import TitleBook, norm
 
 CENTRAL = ZoneInfo("America/Chicago")
 
@@ -60,6 +60,10 @@ class Candidate:
     # How Slack spelled them when it differs from the sheet (first-name match)
     # — the Zoom tile may carry that spelling, so the cropper looks for both.
     alt_names: List[str] = field(default_factory=list)
+    # What the interviewer wrote about them in the 1st-rounds reply (Raf
+    # 2026-09-22: "include the written description per candidate that the
+    # interviewer writes"), with the name / stars / ✅ / ad title taken off.
+    notes: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -179,6 +183,81 @@ def first_name_matches(msgs: List[dict], todays: List[Candidate],
     return out
 
 
+# ---- the interviewer's description -----------------------------------------
+NOTE_MAX = 400        # a runaway line (a whole reply on one line) gets cut
+_STARS = re.compile(r"(\d\s*)?((:star:|⭐)\s*)+", re.I)
+_STAR_WORDS = re.compile(r"\b[1-5]\s*stars?\b", re.I)
+_SHORTCODE = re.compile(r":[a-z0-9_+'-]+:", re.I)
+_EMOJI = re.compile("[☀-➿\U0001F300-\U0001FAFF️]")
+_TAIL = re.compile(r"(\s*(\bapplied to\b|\bfor\b|\b[1-5]\b|[-–—,;:?|./]))+\s*$", re.I)
+
+
+def _slack_plain(text: str) -> str:
+    """Slack markup to plain words: <@U1|Jorge> -> @Jorge, <url|label> -> label,
+    and no * _ ~ that would bold/italicize half of our own reply."""
+    t = re.sub(r"<@[A-Z0-9]+\|([^>]+)>", r"@\1", text or "")
+    t = re.sub(r"<[^>|]+\|([^>]+)>", r"\1", t)
+    t = re.sub(r"<[^>]+>", "", t)
+    t = t.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+    return re.sub(r"[*_~`]", "", t)
+
+
+def candidate_line(text: str, c: Candidate) -> str:
+    """The line of a reply that is about `c` (sheet spelling or the one Slack
+    used), "" if none."""
+    for ln in (text or "").splitlines():
+        fl = _fold(ln)
+        if any(_fold(n) and _fold(n) in fl for n in [c.name] + c.alt_names):
+            return ln
+    return ""
+
+
+def note_from_line(line: str, c: Candidate, book: Optional[TitleBook] = None) -> str:
+    """Just the description out of an interviewer's line. Every interviewer
+    writes it their own way (9/21 thread):
+        • Angie Barron  - Dallas, sales, ... - can start asap - 3 stars :star:- Entry Level Sales Manager ? Garland TX:white_check_mark:
+        • Brandon Freeman: Nevada Tx, ..., can start next week :white_check_mark:3:star:Entry Level Assistant Manager, McKinney, TX
+        Devon Patrick - customer service - november 1st :white_check_mark::star::star::star::star:- Entry Level ...
+    so: drop the name up front, the stars and emoji, and everything from the
+    ad title on (the thread is already that ad). A ❌ reason ("declined, not
+    willing to relocate") stays — it's the part Raf wants most."""
+    t = _slack_plain(line)
+    t = _STARS.sub(" ", t)
+    t = _SHORTCODE.sub(" ", t)
+    t = _EMOJI.sub(" ", t)
+    t = _STAR_WORDS.sub(" ", t)
+    for n in [c.name] + c.alt_names:
+        m = re.search(r"\s+".join(map(re.escape, n.split())), t, re.I) if n.split() else None
+        if m:
+            t = t[m.end():]
+            break
+    # The ad title: cut at the first word where the rest of the line starts
+    # with an ad: this candidate's (the book's key or the sheet's own typing)
+    # or any running ad — 9/21 Shane Patrick's sheet row named a different ad
+    # than his Slack line did. First 3 words survive a cut-off paste.
+    keys = [c.ad or "", norm(c.title_raw)] + list(book.ads if book else [])
+    heads = {" ".join(k.split()[:3]) for k in keys if k}
+    heads.discard("")
+    for m in re.finditer(r"\S+", t):
+        rest = norm(t[m.start():])
+        if any(rest.startswith(h) for h in heads):
+            t = t[:m.start()]
+            break
+    t = re.sub(r"\s+", " ", t)
+    t = re.sub(r"\s+([,;])", r"\1", t)
+    t = re.sub(r"(\s*[-–—]\s*){2,}", " - ", t)
+    t = _TAIL.sub("", t).strip(" \t•·:;,-–—|?")
+    if len(t) > NOTE_MAX:
+        t = t[:NOTE_MAX].rsplit(" ", 1)[0] + "…"
+    return t
+
+
+def _add_note(c: Candidate, text: str, book: Optional[TitleBook] = None) -> None:
+    n = note_from_line(candidate_line(text, c), c, book)
+    if n and n not in c.notes:
+        c.notes.append(n)
+
+
 # ---- the day -----------------------------------------------------------------
 def build(day: dt.date, *, sh=None, cl=None) -> DayReport:
     from automations.recruiting_report.fill import open_by_key
@@ -221,6 +300,8 @@ def build(day: dt.date, *, sh=None, cl=None) -> DayReport:
                            key=lambda p: p[0])
             named = [c for _, c in named]
             imgs = _images(msg)
+            for c in named:
+                _add_note(c, msg.get("text", ""), book)
             for c in named:
                 if c.ad is None:     # blank/unclear sheet title: try the Slack line
                     line = next((ln for ln in (msg.get("text") or "").splitlines()

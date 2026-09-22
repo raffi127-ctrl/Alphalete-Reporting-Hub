@@ -249,6 +249,40 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(out, {})
         self.assertEqual(post._load_state()["C1"]["late"], {})
 
+    def test_description_goes_under_each_candidate(self):
+        rep = _rep()
+        rep.candidates[0].notes = ["Dallas, retail, can start asap"]
+        cl = FakeSlack()
+        post.publish(rep, "C1", cl=cl)
+        body = cl.uploads[0]["initial_comment"]
+        lines = body.splitlines()
+        i = next(n for n, ln in enumerate(lines) if "Ana Uno" in ln)
+        self.assertEqual(lines[i + 1], "> Dallas, retail, can start asap")
+
+    def test_add_notes_edits_the_posted_reply_in_place(self):
+        rep = _rep()
+        cl = FakeSlack()
+        post.publish(rep, "C1", cl=cl)
+        posted = cl.uploads[0]["initial_comment"] + "\n_No photo: Bo Dos (name not visible on the Zoom)_"
+        thread = post._load_state()["C1"]["weeks"]["2026-09-14"]["at&t sales agent arlington tx"]["thread_ts"]
+        cl.auth_test = lambda: {"user_id": "ULUCY"}
+        cl.conversations_replies = lambda **kw: {"messages": [
+            {"ts": thread, "user": "ULUCY", "text": "*AT&T Sales Agent*"},
+            {"ts": "200.1", "user": "UOTHER", "text": "*Fri 9/18*\nnot ours"},
+            {"ts": "200.2", "user": "ULUCY", "text": posted}]}
+        cl.updates = []
+        rep.candidates[1].notes = ["declined, commute"]
+        got = post.add_notes(rep, "C1", cl=cl)
+        self.assertEqual(len(cl.updates), 1)
+        self.assertEqual(cl.updates[0]["ts"], "200.2")
+        self.assertIn("> declined, commute", cl.updates[0]["text"])
+        self.assertIn("_No photo: Bo Dos", cl.updates[0]["text"])   # kept
+        self.assertEqual(len(cl.uploads), 1)                     # nothing new posted
+        self.assertIn("edited", list(got.values())[0])
+        cl.updates = []
+        post.add_notes(rep, "C1", cl=cl, dry_run=True)
+        self.assertEqual(cl.updates, [])
+
     def test_day_done_marker(self):
         d = dt.date(2026, 9, 18)
         self.assertFalse(post.day_done("D1", d))

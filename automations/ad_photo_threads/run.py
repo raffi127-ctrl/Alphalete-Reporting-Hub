@@ -18,6 +18,10 @@
     # add a late photo to a thread that's already posted (one extra reply):
     python -m automations.ad_photo_threads.run --add-photo "Pedro Menendez" --date 2026-09-21
 
+    # a day ALREADY posted: edit its replies to add the interviewers'
+    # descriptions (same messages, no new posts; add --dry-run-notes to look first):
+    python -m automations.ad_photo_threads.run --add-notes --date 2026-09-21
+
     # watch someone who went out as "No screenshot" (re-checked 3 nights):
     python -m automations.ad_photo_threads.run --watch "Christopher Franklin" --date 2026-09-21
 
@@ -157,6 +161,9 @@ def main(argv=None) -> int:
     mode.add_argument("--add-photo", metavar="NAMES",
                       help="Comma-separated sheet names: add their photo to the "
                            "ad's thread already posted in the live channel.")
+    mode.add_argument("--add-notes", action="store_true",
+                      help="Edit the day's replies already posted in the live "
+                           "channel to add the interviewers' descriptions.")
     mode.add_argument("--watch", metavar="NAMES",
                       help="Comma-separated sheet names to re-check for a late "
                            "photo on the next nights (days before the watch).")
@@ -167,6 +174,8 @@ def main(argv=None) -> int:
     mode.add_argument("--nightly", action="store_true",
                       help="The scheduled tick: post today to the live channel "
                            "once it's past config.POST_AFTER_CT; otherwise no-op.")
+    ap.add_argument("--dry-run-notes", action="store_true",
+                    help="With --add-notes: say what would be edited, edit nothing.")
     ap.add_argument("--channel", help="Slack channel id to post into.")
     ap.add_argument("--test-dm", action="store_true",
                     help="Post into the test group DM (config.TEST_DM_USERS + Lucy).")
@@ -205,6 +214,14 @@ def main(argv=None) -> int:
         from automations.ad_photo_threads import config, post
         names = [n.strip() for n in a.add_photo.split(",") if n.strip()]
         print("\nAdd photo:", post.add_photos(rep, config.LIVE_CHANNEL_ID, names))
+        return 0
+    if a.add_notes:
+        from automations.ad_photo_threads import config, post
+        got = post.add_notes(rep, a.channel or config.LIVE_CHANNEL_ID,
+                             dry_run=a.dry_run_notes)
+        print("\nAdd notes:")
+        for k, v in got.items():
+            print(f"  {k}: {v}")
         return 0
     if a.post:
         from automations.ad_photo_threads import post

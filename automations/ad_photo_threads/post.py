@@ -118,7 +118,8 @@ def reply_text(rep: collect.DayReport, cands: List[collect.Candidate],
     account number, the count, and one line per candidate. No "group call"
     note (Eve 9/21: stale now that photos are cut to the ad's people); a
     person whose name the cropper can't find on their screenshots gets no
-    photo and a "No photo" line (`not_visible`)."""
+    photo and a "No photo" line (`not_visible`). Under each candidate, what
+    the interviewer wrote about them, as a quote (Raf 2026-09-22)."""
     # month/day by hand: `%-m` is Mac-only and dies on Windows.
     lines = [f"*{rep.day:%a} {rep.day.month}/{rep.day.day}*"]
     streams: Dict[str, List[collect.Candidate]] = {}
@@ -132,12 +133,17 @@ def reply_text(rep: collect.DayReport, cands: List[collect.Candidate],
         for c in cs:
             bits = [c.name, _stars(c.stars), c.interviewer]
             lines.append(f"{'✅' if _ok(c) else '❌'} " + " · ".join(b for b in bits if b))
+            lines += note_lines(c)
     no_shot = [c.name for c in cands if not c.images]
     if no_shot:
         lines.append(f"_No screenshot: {', '.join(no_shot)}_")
     for n in not_visible or []:
         lines.append(f"_No photo: {n} (name not visible on the Zoom)_")
     return "\n".join(lines)
+
+
+def note_lines(c: collect.Candidate) -> List[str]:
+    return [f"> {n}" for n in c.notes]
 
 
 def _shots(cands: List[collect.Candidate]) -> List[dict]:
@@ -373,12 +379,51 @@ def add_photos(rep: collect.DayReport, channel: str, names: List[str], *,
                                                   else "no screenshot") + ")"
                 continue
             bits = [c.name, _stars(c.stars), c.interviewer]
-            text = (f"*{rep.day:%a} {rep.day.month}/{rep.day.day}* · photo added\n"
-                    f"{'✅' if _ok(c) else '❌'} " + " · ".join(b for b in bits if b))
+            text = "\n".join(
+                [f"*{rep.day:%a} {rep.day.month}/{rep.day.day}* · photo added",
+                 f"{'✅' if _ok(c) else '❌'} " + " · ".join(b for b in bits if b)]
+                + note_lines(c))
             cl.files_upload_v2(channel=channel, thread_ts=ad["thread_ts"],
                                file_uploads=uploads[:MAX_FILES_PER_REPLY],
                                initial_comment=text)
         out[name] = f"added {len(uploads)} photo(s)"
+    return out
+
+
+def add_notes(rep: collect.DayReport, channel: str, *, cl=None,
+              dry_run: bool = False) -> Dict[str, str]:
+    """Put the interviewers' descriptions into a day that's ALREADY posted
+    (Raf asked for them 9/22, after 9/21 was out): the day's reply in each
+    ad's thread is EDITED in place — same message, same photos, no new post.
+    The "No photo" lines the crop wrote that night are kept. {ad: what}."""
+    cl = cl or collect._client()
+    me = cl.auth_test()["user_id"]
+    wk = _load_state().get(channel, {}).get("weeks", {}).get(
+        week_monday(rep.day).isoformat(), {})
+    head = f"*{rep.day:%a} {rep.day.month}/{rep.day.day}*"
+    out: Dict[str, str] = {}
+    for item in plan(rep):
+        ad = wk.get(item["key"]) or {}
+        if not ad.get("thread_ts"):
+            out[item["title"]] = "no thread this week"
+            continue
+        r = cl.conversations_replies(channel=channel, ts=ad["thread_ts"], limit=200)
+        mine = [m for m in r.get("messages", [])
+                if m.get("user") == me and m.get("ts") != ad["thread_ts"]
+                and (m.get("text") or "").split("\n", 1)[0].strip() == head]
+        if not mine:
+            out[item["title"]] = "day not posted in the thread"
+            continue
+        old = mine[0]["text"]
+        kept = [ln for ln in old.splitlines() if ln.startswith("_No photo:")]
+        new = "\n".join([item["text"]] + [k for k in kept if k not in item["text"]])
+        if new == old:
+            out[item["title"]] = "already has them"
+            continue
+        if not dry_run:
+            cl.chat_update(channel=channel, ts=mine[0]["ts"], text=new)
+        n = sum(1 for c in item["cands"] if c.notes)
+        out[item["title"]] = f"{'would edit' if dry_run else 'edited'} ({n} descriptions)"
     return out
 
 
