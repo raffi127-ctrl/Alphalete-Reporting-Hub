@@ -2133,7 +2133,7 @@ def _rollout_section() -> None:
     rows = _rollout_rows()
     n = RO.counts(rows)
     on = len(rows) - n[RO.NONE]
-    st.subheader(f"LucyECO — {on} of {len(rows)} offices")
+    st.subheader(f"{on} of {len(rows)} offices on LucyEco")
     st.caption(" · ".join(f"{k}: {v}" for k, v in n.items() if v))
     tone = {RO.LIVE: "background-color:#D9EAD3",
             RO.UPDATE: "background-color:#FFF2CC",
@@ -3468,11 +3468,20 @@ def main() -> None:
             return
         view = "Office"
     else:
-        view = st.sidebar.radio("View", ["Office", "Captain", "Org"],
+        view = st.sidebar.radio("View", ["Office", "Captain", "Org",
+                                         "LucyEco"],
                                 key="view", disabled=locked)
 
     if view == "Captain":
         captain_page()
+        return
+
+    # ITS OWN SECTION (Megan 2026-09-22): the rollout is not part of the org
+    # list, it is the thing being built toward. Admin-only like the other
+    # org-wide views — an ICD's own code never offers this radio at all.
+    if view == "LucyEco":
+        st.title("LucyEco")
+        _rollout_section()
         return
 
     if view == "Org":
@@ -3488,7 +3497,6 @@ def main() -> None:
             use_container_width=True, hide_index=True,
             column_config=_centered(("ICD", "Campaigns", "Sells", "Metrics",
                                      "Feed today")))
-        _rollout_section()
         return
 
     names = sorted(profs)
