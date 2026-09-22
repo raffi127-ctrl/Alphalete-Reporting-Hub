@@ -284,13 +284,49 @@ def record_gifs(day: dt.date, room: str, n: int) -> None:
     except (OSError, ValueError):
         seen = {}
     seen[key] = int(seen.get(key, 0)) + n
+    # WHICH gifs, not just how many -- so the next pick can skip them.
+    urls = _PENDING_GIFS.pop(key, [])
+    if urls:
+        seen[key + "|gifs"] = list(seen.get(key + "|gifs") or []) + urls
+        seen["last|" + room] = urls[-1]
     today = day.isoformat()
-    seen = {k: v for k, v in seen.items() if k.startswith(today)}
+    seen = {k: v for k, v in seen.items()
+            if k.startswith(today) or k.startswith("last|")}
     try:
         GIFS_SENT_PATH.parent.mkdir(parents=True, exist_ok=True)
         GIFS_SENT_PATH.write_text(json.dumps(seen, indent=2, sort_keys=True))
     except OSError:
         pass
+
+
+# NO REPEATS IN A ROOM. Megan, 2026-09-21: "I've seen 2 gifs go out so far
+# and they've been the exact same one." The pick is a hash of rep/day/total,
+# so with ten gifs two big days collide one time in ten. The hash still picks
+# the STARTING point (a re-run repeats itself); a gif this room already saw
+# today -- or the last one it saw on any day -- is stepped past to the next.
+_PENDING_GIFS: dict = {}
+
+
+def _gifs_to_avoid(day: dt.date, room: str) -> set:
+    try:
+        seen = json.loads(GIFS_SENT_PATH.read_text())
+    except (OSError, ValueError):
+        return set()
+    avoid = set(seen.get("%s|%s|gifs" % (day.isoformat(), room)) or [])
+    if seen.get("last|" + room):
+        avoid.add(seen["last|" + room])
+    return avoid
+
+
+def _fresh_gif(gif: str, avoid: set) -> str:
+    if gif not in HYPE_GIFS:
+        return gif
+    start = HYPE_GIFS.index(gif)
+    for step in range(len(HYPE_GIFS)):
+        cand = HYPE_GIFS[(start + step) % len(HYPE_GIFS)]
+        if cand not in avoid:
+            return cand
+    return gif
 
 
 def within_budget(lines, day: dt.date, room: str):
@@ -300,15 +336,27 @@ def within_budget(lines, day: dt.date, room: str):
     the day still gets announced.
     """
     left = GIF_BUDGET - gifs_sent(day, room)
+    avoid = _gifs_to_avoid(day, room)
+    picked = []
     out, used = [], 0
     for line in lines:
         if "\n" in line:
             if left > 0:
                 left -= 1
                 used += 1
+                head, gif = line.split("\n", 1)
+                gif = _fresh_gif(gif.strip(), avoid)
+                avoid.add(gif)
+                picked.append(gif)
+                line = "%s\n%s" % (head, gif)
             else:
                 line = line.split("\n", 1)[0]
         out.append(line)
+    key = "%s|%s" % (day.isoformat(), room)
+    if picked:
+        _PENDING_GIFS[key] = picked
+    else:
+        _PENDING_GIFS.pop(key, None)
     return out, used
 
 
