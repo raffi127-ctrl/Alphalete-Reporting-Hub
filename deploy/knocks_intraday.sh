@@ -47,10 +47,23 @@ SLOT=""
 # line. The quiet tick exited 0, read that line as its own work, and published
 # SUCCESS ten minutes after the failure — "ran clean" over Joseph's board that
 # never landed and was never retried.
-SLOT_LINE=$(tail -n +"$((START + 1))" "$LOG" 2>/dev/null | grep -oE '\[knocks\] (first|money|eod): (DRY-RUN )?posted=' | tail -1)
+#
+# THE SLOT THAT FAILED WINS over the last one (2026-09-21). At 20:00 Central one
+# tick fires BOTH the Eastern `eod` (posted=3 failed=0) and Trang's hourly `h20`
+# (failed=1). Taking the last `first|money|eod` line named the pass "End of Day"
+# and published it FAILED with rc=1 from h20 — a red 9 PM ticket over three
+# boards that had landed, and nothing pointing at Trang, whose board never did.
+# And an hourly slot failing ALONE matched nothing, so it published nothing: the
+# exact silent dark office the 2026-08-30 rule exists to stop.
+# Hourly slots (h12…h21) now count as work only when they FAIL — an hourly
+# success stays a quiet tick, same as before, so the card isn't repainted 10x.
+PASS_LINES=$(tail -n +"$((START + 1))" "$LOG" 2>/dev/null \
+    | grep -oE '\[knocks\] (first|money|eod|h[0-9]{2}): (DRY-RUN )?posted=[0-9]+ skipped=[0-9]+ failed=[0-9]+')
+SLOT_LINE=$(printf '%s\n' "$PASS_LINES" | grep -vE 'failed=0$' | tail -1)
+[ -n "$SLOT_LINE" ] || SLOT_LINE=$(printf '%s\n' "$PASS_LINES" | grep -E '\] (first|money|eod):' | tail -1)
 if [ -n "$SLOT_LINE" ]; then
     WORKED=1
-    SLOT=$(printf '%s' "$SLOT_LINE" | sed -E 's/^\[knocks\] ([a-z]+):.*$/\1/')
+    SLOT=$(printf '%s' "$SLOT_LINE" | sed -E 's/^\[knocks\] ([a-z0-9]+):.*$/\1/')
 fi
 
 # EACH SLOT IS ITS OWN PHASE ON THE HUB CARD (Megan 2026-08-25: "this should
@@ -67,6 +80,10 @@ case "$SLOT" in
     first) PHASE="Intraday Knocks — First Knocks (2 PM)" ;;
     money) PHASE="Intraday Knocks — Money Lap (5:15 PM)" ;;
     eod)   PHASE="Intraday Knocks — End of Day (9 PM)" ;;
+    # An hourly office's 9 PM tick IS its end-of-day board (schedule.py), so it
+    # shares that phase; the earlier hours only ever publish on a failure.
+    h21)   PHASE="Intraday Knocks — End of Day (9 PM)" ;;
+    h*)    PHASE="Intraday Knocks — Hourly Board" ;;
     *)     PHASE="Intraday Knocks" ;;
 esac
 
