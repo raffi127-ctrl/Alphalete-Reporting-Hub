@@ -1747,7 +1747,7 @@ def _rep_days_all(icd: str) -> dict:
     stopped rendering at all. One read, sliced in Python."""
     from automations.icd_sales_board import tableau_days as TD
     try:
-        return TD.stored_rep_days(icd) or {}
+        return TD.stored_rep_days(_owner_names(icd)) or {}
     except Exception:   # noqa: BLE001
         return {}
 
@@ -1840,6 +1840,20 @@ def _week_apps_back(icd: str, week_ending: dt.date, weeks: int = 1) -> dict:
     return out
 
 
+@st.cache_data(ttl=1800, show_spinner=False)
+def _owner_names(icd: str) -> list:
+    """Every spelling this ICD goes by: this site's plus the ICD Aliases
+    sheet's. Tableau calls Muhammad Haque 'Hammad Haque', and an exact-name
+    lookup left his board empty while his numbers sat in the store."""
+    names = [icd]
+    try:
+        from automations.focus_office_att import aliases as A
+        names += A.get_search_candidates(icd, A.load_aliases())
+    except Exception:   # noqa: BLE001 — the site's own spelling still works
+        pass
+    return list(dict.fromkeys(n for n in names if n))
+
+
 @st.cache_data(ttl=900, show_spinner=False)
 def _days_all(icd: str) -> dict:
     """{date: measures} — this office's settled Board Days, read ONCE.
@@ -1849,7 +1863,12 @@ def _days_all(icd: str) -> dict:
     70-second board for Ryan (2026-09-22). One read, sliced for both."""
     from automations.icd_sales_board import tableau_days as TD
     try:
-        return TD.stored_days(icd).get(icd, {}) or {}
+        # Keyed by however TABLEAU spells the owner, which is not always how
+        # this site does — so every matched owner's days are merged.
+        merged: dict = {}
+        for days in TD.stored_days(_owner_names(icd)).values():
+            merged.update(days)
+        return merged
     except Exception:   # noqa: BLE001 — no store is not a broken page
         return {}
 
@@ -2139,14 +2158,18 @@ def _rollout_section() -> None:
             RO.UPDATE: "background-color:#FFF2CC",
             RO.QUIET: "background-color:#F4CCCC",
             RO.WAITING: "background-color:#FCE5CD"}
-    frame = pd.DataFrame(rows, columns=["ICD", "Status", "Campaign",
-                                        "Last reading", "Agent",
+    frame = pd.DataFrame(rows, columns=["ICD", "Status", "Board shows",
+                                        "Campaign", "Last reading", "Agent",
                                         "Board code"])
     st.dataframe(
         frame.style.apply(lambda col: [tone.get(v, "") for v in col],
                           subset=["Status"]),
         use_container_width=True, hide_index=True,
         height=_grid_height(len(rows)))
+    ready = sum(1 for r in rows if r.get("Board shows") != RO.SHOWS_NOTHING
+                and r.get("Board shows") != RO.SHOWS_OFFICE)
+    st.caption(f"**{ready} ICDs have a board worth sending today** — live, or "
+               f"at least yesterday's settled numbers from Tableau.")
     st.caption("To give an ICD their board: send "
                "**lucyeco.streamlit.app/sales-board** and the code on their "
                "row. Their code opens their office only.")

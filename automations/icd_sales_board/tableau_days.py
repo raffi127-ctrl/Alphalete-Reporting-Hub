@@ -405,21 +405,25 @@ def log_days(path=DEFAULT_PATH, week_ending: dt.date | None = None,
         return 0
 
 
-def stored_days(owner: str = "", sheet_id: str = SHEET_ID) -> dict:
+def stored_days(owner="", sheet_id: str = SHEET_ID) -> dict:
     """{owner: {date: {measures}}} straight from the sheet — no Tableau, no
-    browser, safe to call from a page."""
+    browser, safe to call from a page.
+
+    `owner` may be one name or a list of spellings, matched on letters only:
+    Tableau calls him 'Hammad Haque', the ICD list 'Muhammad Haque', and an
+    exact match left his board empty with his numbers sitting right here."""
     from automations.recruiting_report.fill import open_by_key
 
     grid = open_by_key(sheet_id).worksheet(TAB).get_all_values()
     if not grid:
         return {}
     header = [str(h).strip() for h in grid[0]]
-    want = (owner or "").strip().lower()
+    want = _want(owner)
     out: dict = collections.defaultdict(dict)
     for row in grid[1:]:
         rec = dict(zip(header, row))
         name = str(rec.get("Owner") or "").strip()
-        if not name or (want and name.lower() != want):
+        if not name or (want and _letters(name) not in want):
             continue
         try:
             day = dt.date.fromisoformat(str(rec.get("Date") or "")[:10])
@@ -502,19 +506,21 @@ def log_rep_days(path=REP_PATH, week_ending: dt.date | None = None,
         return 0
 
 
-def stored_rep_days(owner: str, sheet_id: str = SHEET_ID) -> dict:
-    """{rep: {date: {measures}}} for one owner, straight from the sheet."""
+def stored_rep_days(owner, sheet_id: str = SHEET_ID) -> dict:
+    """{rep: {date: {measures}}} for one owner, straight from the sheet.
+
+    `owner` may be a list of spellings; see stored_days."""
     from automations.recruiting_report.fill import open_by_key
 
     grid = open_by_key(sheet_id).worksheet(REP_TAB).get_all_values()
     if not grid:
         return {}
     header = [str(h).strip() for h in grid[0]]
-    want = (owner or "").strip().lower()
+    want = _want(owner)
     out: dict = collections.defaultdict(dict)
     for row in grid[1:]:
         rec = dict(zip(header, row))
-        if str(rec.get("Owner") or "").strip().lower() != want:
+        if _letters(rec.get("Owner")) not in want:
             continue
         rep = str(rec.get("Rep") or "").strip()
         try:
@@ -643,6 +649,12 @@ OFFICE_COLUMNS = ["Date", "Owner", "Campaign", "Count", "Stored"]
 def _letters(name: str) -> str:
     import re
     return re.sub(r"[^a-z]", "", (name or "").lower())
+
+
+def _want(owner) -> set:
+    """Letters-only keys for a name or a list of spellings. Empty = anyone."""
+    names = [owner] if isinstance(owner, str) else list(owner or [])
+    return {_letters(n) for n in names if n and _letters(n)}
 
 
 def log_office_days(parsed: dict, campaign: str, sheet_id: str = SHEET_ID,
