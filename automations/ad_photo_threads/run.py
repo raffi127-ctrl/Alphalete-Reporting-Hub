@@ -15,6 +15,9 @@
     python -m automations.ad_photo_threads.run --post --test-dm --date 2026-09-18 --max-ads 2
     python -m automations.ad_photo_threads.run --post --dm U088E2KJEV8   # Eve alone
 
+    # add a late photo to a thread that's already posted (one extra reply):
+    python -m automations.ad_photo_threads.run --add-photo "Pedro Menendez" --date 2026-09-21
+
     # take this report's threads back out of a channel (moving channels):
     python -m automations.ad_photo_threads.run --retire-channel C0AUAS88FGW
 
@@ -142,6 +145,9 @@ def main(argv=None) -> int:
     mode.add_argument("--dry-run", action="store_true", help="Preview only.")
     mode.add_argument("--post", action="store_true",
                       help="Post to Slack (needs --channel).")
+    mode.add_argument("--add-photo", metavar="NAMES",
+                      help="Comma-separated sheet names: add their photo to the "
+                           "ad's thread already posted in the live channel.")
     mode.add_argument("--retire-channel", metavar="CHANNEL_ID",
                       help="Delete the threads this report posted in CHANNEL_ID "
                            "(headers, Lucy's replies, their photos) and forget "
@@ -178,6 +184,11 @@ def main(argv=None) -> int:
 
     rep = collect.build(day)
     print(summary(rep))
+    if a.add_photo:
+        from automations.ad_photo_threads import config, post
+        names = [n.strip() for n in a.add_photo.split(",") if n.strip()]
+        print("\nAdd photo:", post.add_photos(rep, config.LIVE_CHANNEL_ID, names))
+        return 0
     if a.post:
         from automations.ad_photo_threads import post
         channel = a.channel

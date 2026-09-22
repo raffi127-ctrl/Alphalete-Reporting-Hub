@@ -337,6 +337,42 @@ def publish(rep: collect.DayReport, channel: str, *, cl=None,
     return counts
 
 
+def add_photos(rep: collect.DayReport, channel: str, names: List[str], *,
+               cl=None) -> Dict[str, str]:
+    """Add a late photo to an ad's thread that's already posted — one extra
+    reply, nothing deleted (9/21: Pedro Menendez went out as "No screenshot"
+    because Slack spelled him "Pedro Moreno"). {name: what happened}."""
+    cl = cl or collect._client()
+    state = _load_state()
+    wk = state.get(channel, {}).get("weeks", {}).get(week_monday(rep.day).isoformat(), {})
+    out: Dict[str, str] = {}
+    for name in names:
+        c = next((c for c in rep.candidates
+                  if c.name.strip().lower() == name.strip().lower()), None)
+        if not c or not c.ad:
+            out[name] = "not on the sheet that day (or ad unknown)"
+            continue
+        ad = wk.get(c.ad) or {}
+        if not ad.get("thread_ts"):
+            out[name] = "no thread for that ad this week"
+            continue
+        item = {"shots": _shots([c]), "cands": [c]}
+        with tempfile.TemporaryDirectory() as tmp:
+            uploads, missing = _uploads(item, tmp, True)
+            if not uploads:
+                out[name] = "no photo found (" + ("name not visible" if missing
+                                                  else "no screenshot") + ")"
+                continue
+            bits = [c.name, _stars(c.stars), c.interviewer]
+            text = (f"*{rep.day:%a} {rep.day.month}/{rep.day.day}* · photo added\n"
+                    f"{'✅' if _ok(c) else '❌'} " + " · ".join(b for b in bits if b))
+            cl.files_upload_v2(channel=channel, thread_ts=ad["thread_ts"],
+                               file_uploads=uploads[:MAX_FILES_PER_REPLY],
+                               initial_comment=text)
+        out[name] = f"added {len(uploads)} photo(s)"
+    return out
+
+
 def retire_channel(channel: str, *, cl=None, dry_run: bool = False) -> Dict[str, int]:
     """Take the ad threads back out of a channel (Raf 9/21: "lets delete what
     was posted today and have it reposted on the new channel"). Deletes ONLY

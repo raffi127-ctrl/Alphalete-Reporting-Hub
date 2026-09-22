@@ -52,5 +52,37 @@ class TitleTests(unittest.TestCase):
                          "AT&T Sales Agent – Arlington TX")
 
 
+class FirstNameFallbackTests(unittest.TestCase):
+    def _c(self, name, ad="entry level assistant manager farmers branch tx"):
+        from automations.ad_photo_threads import collect
+        return collect.Candidate(name, "", "", "Qualify", "", "x", ad=ad)
+
+    def setUp(self):
+        from automations.ad_photo_threads.titles import TitleBook
+        self.book = TitleBook(["Entry Level Assistant Manager – Farmers Branch TX"] * 3
+                              + ["AT&T Sales Agent – Arlington TX"] * 3)
+        self.ad = self.book.resolve("Entry Level Assistant Manager – Farmers Branch TX")
+        self.msgs = [{"text": "3.15\nPedro Moreno - teacher - Entry Level Assistant "
+                              "Manager – Farmers Branch TX\nStarla Kennedy - "
+                              "AT&T Sales Agent – Arlington TX"}]
+
+    def test_pedro_menendez_found_as_pedro_moreno(self):
+        from automations.ad_photo_threads import collect
+        pedro = self._c("Pedro Menendez", self.ad)
+        starla = self._c("Starla Kennedy", self.book.resolve("AT&T Sales Agent – Arlington TX"))
+        got = collect.first_name_matches(self.msgs, [pedro, starla], self.book)
+        self.assertEqual([c.name for _, c in got[0]], ["Pedro Menendez"])
+
+    def test_not_taken_when_the_line_is_another_ad(self):
+        from automations.ad_photo_threads import collect
+        pedro = self._c("Pedro Menendez", self.book.resolve("AT&T Sales Agent – Arlington TX"))
+        self.assertEqual(collect.first_name_matches(self.msgs, [pedro], self.book), {})
+
+    def test_not_taken_when_two_pedros_share_the_ad(self):
+        from automations.ad_photo_threads import collect
+        two = [self._c("Pedro Menendez", self.ad), self._c("Pedro Alvarez", self.ad)]
+        self.assertEqual(collect.first_name_matches(self.msgs, two, self.book), {})
+
+
 if __name__ == "__main__":
     unittest.main()

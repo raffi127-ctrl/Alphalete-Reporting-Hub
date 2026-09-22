@@ -129,6 +129,45 @@ def _images(msg: dict) -> List[dict]:
             if str(f.get("mimetype", "")).startswith("image/")]
 
 
+def _full_named(msg: dict, todays: List[Candidate]) -> List[tuple]:
+    """(position, candidate) for every sheet name written out in full."""
+    text = _fold(msg.get("text", ""))
+    return [(text.find(_fold(c.name)), c) for c in todays
+            if _fold(c.name) and _fold(c.name) in text]
+
+
+def first_name_matches(msgs: List[dict], todays: List[Candidate],
+                       book: TitleBook) -> Dict[int, List[tuple]]:
+    """Sheet candidates NO reply names in full, found by first name instead:
+    {message index: [(position, candidate)]}.
+
+    9/21: the sheet had "Pedro Menendez", the interviewer wrote "Pedro Moreno"
+    in Slack — same person, same ad, and he went out with no photo. Only
+    taken when there's no doubt: exactly one line in the whole thread has
+    that first name AND names the candidate's ad, and no other unmatched
+    candidate on that ad shares the first name."""
+    full = {id(c) for m in msgs for _, c in _full_named(m, todays)}
+    loose = [c for c in todays if id(c) not in full and c.ad and _fold(c.name).split()]
+    out: Dict[int, List[tuple]] = {}
+    for c in loose:
+        first = _fold(c.name).split()[0]
+        if sum(1 for o in loose if o.ad == c.ad
+               and _fold(o.name).split()[0] == first) > 1:
+            continue
+        hits = []
+        for i, m in enumerate(msgs):
+            text = _fold(m.get("text", ""))
+            for ln in (m.get("text") or "").splitlines():
+                fl = _fold(ln)
+                if re.search(rf"\b{re.escape(first)}\b", fl) \
+                        and book.find_in_text(ln) == c.ad:
+                    hits.append((i, text.find(fl) if fl in text else 0))
+        if len(hits) == 1:
+            i, pos = hits[0]
+            out.setdefault(i, []).append((pos, c))
+    return out
+
+
 # ---- the day -----------------------------------------------------------------
 def build(day: dt.date, *, sh=None, cl=None) -> DayReport:
     from automations.recruiting_report.fill import open_by_key
@@ -164,10 +203,10 @@ def build(day: dt.date, *, sh=None, cl=None) -> DayReport:
                 rep.missing_threads.append(src["label"])
             continue
 
-        for msg in _replies(cl, parent["ts"]):
-            text = _fold(msg.get("text", ""))
-            named = sorted(((text.find(_fold(c.name)), c) for c in todays
-                            if _fold(c.name) and _fold(c.name) in text),
+        msgs = _replies(cl, parent["ts"])
+        loose = first_name_matches(msgs, todays, book)
+        for i, msg in enumerate(msgs):
+            named = sorted(_full_named(msg, todays) + loose.get(i, []),
                            key=lambda p: p[0])
             named = [c for _, c in named]
             imgs = _images(msg)

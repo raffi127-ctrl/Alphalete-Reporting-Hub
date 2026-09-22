@@ -215,6 +215,15 @@ class PublishTests(unittest.TestCase):
         c = post.publish(_rep(), "D1", cl=FakeSlack(), pilot=True)
         self.assertEqual((c["threads_new"], c["replies"]), (1, 1))
 
+    def test_add_photo_replies_in_the_existing_thread(self):
+        post.publish(_rep(), "C1", cl=FakeSlack())
+        cl = FakeSlack()
+        out = post.add_photos(_rep(), "C1", ["ana uno", "Nobody"], cl=cl)
+        self.assertEqual(out["ana uno"], "added 1 photo(s)")
+        self.assertIn("not on the sheet", out["Nobody"])
+        self.assertEqual(cl.uploads[0]["thread_ts"], "100.1")
+        self.assertIn("photo added\n✅ Ana Uno · 3⭐ · Alexa", cl.uploads[0]["initial_comment"])
+
     def test_day_done_marker(self):
         d = dt.date(2026, 9, 18)
         self.assertFalse(post.day_done("D1", d))
