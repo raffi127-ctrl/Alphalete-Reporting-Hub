@@ -281,8 +281,11 @@ def caption(made, failures=()) -> str:
     # A submit this pass tried and OwnerVille did NOT confirm (Megan
     # 2026-09-22: "if you can't OS them in OV then that's what you would put
     # in the group text").
-    for name, why in failures or ():
-        out.append(f"❌ Couldn't owner submit in OV: {name} — {why}")
+    # Megan's wording; the technical reason stays in the run log. No pronoun —
+    # a name doesn't say who someone is.
+    for name, _why in failures or ():
+        out.append(f"❌ Couldn't owner submit in OV: {name} — ready to go but "
+                   "needs done manually")
     return "\n".join(out)
 
 

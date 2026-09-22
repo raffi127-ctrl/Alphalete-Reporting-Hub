@@ -297,8 +297,9 @@ class FailureCaption(unittest.TestCase):
         from automations.obcl_ov_sweep import snapshot as sn
         made = [(sn.GROUPS[0], 21, None), (sn.GROUPS[1], 1, None)]
         cap = sn.caption(made, [("Jane Doe", "confirm box would not tick")])
-        self.assertIn("❌ Couldn't owner submit in OV: Jane Doe — "
-                      "confirm box would not tick", cap)
+        self.assertIn("❌ Couldn't owner submit in OV: Jane Doe — ready to go "
+                      "but needs done manually", cap)
+        self.assertNotIn("confirm box", cap)
         self.assertTrue(cap.startswith("OBCL update\n✅ 21 owner submitted"))
 
     def test_no_failures_no_extra_line(self):
