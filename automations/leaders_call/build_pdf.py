@@ -437,7 +437,7 @@ def _promotions_slides(promos, week_label):
     return out
 
 
-def _draw_cover(c, week_label, summary):
+def _draw_cover(c, week_label, summary, org_apps=None):
     c.saveState()
     c.setFillColor(INK)
     c.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
@@ -464,6 +464,12 @@ def _draw_cover(c, week_label, summary):
         c.setFillColor(WHITE)
         c.setFont("Helvetica", 13)
         c.drawCentredString(PAGE_W / 2, cy - 1.95 * inch, summary)
+    if org_apps is not None:
+        # The org's total apps for the recognized week (Megan 2026-09-21), one
+        # centered line: small spaced label · big gold number · vs-last-week note.
+        # Sits between the week label and the tagline; drops lower if a summary
+        # line is also on (it isn't today — see build_pdf).
+        _draw_org_apps(c, cy - (2.45 if summary else 2.05) * inch, org_apps)
     # brand tagline — the 🐺 is the wolf PNG (base PDF fonts can't render the emoji)
     tag = "Live more.  Dream more.  Do more."
     tf, ts = "Helvetica-BoldOblique", 15
@@ -474,7 +480,7 @@ def _draw_cover(c, week_label, summary):
         mh = 0.32 * inch
         mw = mh * (wi.width / wi.height)
         gap = 0.10 * inch
-        by = 0.9 * inch
+        by = 0.72 * inch          # was 0.9: room for the org-apps line above
         x0 = (PAGE_W - (mw + gap + tw)) / 2
         c.drawImage(ImageReader(str(WOLF)), x0, by - (mh - ts * 0.72) / 2,
                     width=mw, height=mh, mask="auto")
@@ -484,8 +490,31 @@ def _draw_cover(c, week_label, summary):
     except Exception:      # no PIL/asset → just center the tagline text
         c.setFillColor(GOLD)
         c.setFont(tf, ts)
-        c.drawCentredString(PAGE_W / 2, 0.9 * inch, tag)
+        c.drawCentredString(PAGE_W / 2, 0.72 * inch, tag)
     c.restoreState()
+
+
+
+def _draw_org_apps(c, y, oa):
+    """'ORG TOTAL APPS  4,403  +84 vs 4,319 the week before' centered at
+    baseline y. Three fonts on one line, so widths are summed by hand."""
+    from automations.leaders_call.org_apps import cover_lines
+    big, note = cover_lines(oa)
+    label = "O R G   T O T A L   A P P S"
+    lf, ls = "Helvetica-Bold", 12
+    bf, bs = "Helvetica-Bold", 30
+    nf, ns = "Helvetica", 12
+    gap = 0.22 * inch
+    parts = [(label, lf, ls, MUTED), (big, bf, bs, GOLD_HI)]
+    if note:
+        parts.append((note, nf, ns, ICD))
+    widths = [c.stringWidth(t, f, sz) for t, f, sz, _ in parts]
+    x = (PAGE_W - (sum(widths) + gap * (len(parts) - 1))) / 2
+    for (t, f, sz, col), w in zip(parts, widths):
+        c.setFillColor(col)
+        c.setFont(f, sz)
+        c.drawString(x, y, t)
+        x += w + gap
 
 
 def _make_footer(week_label):
@@ -515,13 +544,18 @@ def _rows_ok(rows) -> bool:
 
 def build_pdf(results: dict, out_path, qualifiers: dict,
               week_end: "dt.date | None" = None, summary: "str | None" = None,
-              promotions: "list | None" = None, rr: bool = True) -> Path:
+              promotions: "list | None" = None, rr: bool = True,
+              org_apps="auto") -> Path:
     """Render the Leader's Call widescreen deck from a run's `results` dict.
 
     results: {section_title: [(rep, owner, value)]}. Empty/None sections are
     skipped. `qualifiers` maps section_title -> sub-title (e.g. "12+ Apps").
     week_end (the recognized week's Sunday) and summary are derived if omitted.
-    rr=False drops the closing R&R trip slide."""
+    rr=False drops the closing R&R trip slide.
+    org_apps: the org's total apps for the week on the cover (leaders_call.org_apps
+    .OrgApps). "auto" (default) reads it off the Alphalete ORG Sales Board for
+    week_end; None leaves the cover without the stat. A board read that fails is
+    printed and skipped — the deck still builds (the call needs the slides)."""
     out_path = Path(out_path)
     bases = bases_from_campaigns()
     if week_end is None:
@@ -531,6 +565,16 @@ def build_pdf(results: dict, out_path, qualifiers: dict,
         except Exception:
             week_end = dt.date.today()
     week_label = _week_label(week_end)
+
+    if isinstance(org_apps, str) and org_apps == "auto":
+        try:
+            from automations.leaders_call.org_apps import org_total_apps, cover_lines
+            org_apps = org_total_apps(week_end)
+            print(f"   org total apps WE {week_end}: "
+                  f"{'  '.join(x for x in cover_lines(org_apps) if x)}")
+        except Exception as e:             # noqa: BLE001 — fail-soft, but say so
+            print(f"   \u26a0 org total apps NOT on the cover (board read failed): {e}")
+            org_apps = None
 
     # Title slide shows just the logo + week (Megan 2026-07-21: dropped the summary
     # line). summary stays None → _draw_cover skips it.
@@ -578,7 +622,7 @@ def build_pdf(results: dict, out_path, qualifiers: dict,
     doc = SimpleDocTemplate(str(out_path), pagesize=(PAGE_W, PAGE_H),
                             leftMargin=MARGIN, rightMargin=MARGIN, topMargin=MARGIN,
                             bottomMargin=0.55 * inch, title="Alphalete Leader's Call")
-    doc.build(story, onFirstPage=lambda c, d: _draw_cover(c, week_label, summary),
+    doc.build(story, onFirstPage=lambda c, d: _draw_cover(c, week_label, summary, org_apps),
               onLaterPages=_make_footer(week_label))
     return out_path
 
