@@ -44,6 +44,7 @@ class _Page:
     def expect_navigation(self, *a, **k): return _Nav()
     def locator(self, *a, **k): return _Field()
     def evaluate(self, script, arg=None): return self._body
+    def wait_for_timeout(self, ms): pass   # the post-submit settle poll
 
 
 class _Ctx:

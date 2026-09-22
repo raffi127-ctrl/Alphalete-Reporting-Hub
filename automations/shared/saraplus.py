@@ -194,6 +194,29 @@ def _open_login_form(page) -> None:
     page.goto(href, wait_until="domcontentloaded")
 
 
+# How long the post-submit redirect may take before "still on the login page"
+# means it. Polled, so a fast login costs nothing extra.
+LOGIN_SETTLE_MS = 20_000
+LOGIN_POLL_MS = 500
+
+
+def _login_page_message(page) -> str:
+    """Whatever the login page is telling the person -- 'Invalid login',
+    'account locked' -- read off the usual ASP.NET message spots. "" when
+    there is none, or when the page cannot be asked (a fake page in tests)."""
+    try:
+        text = page.evaluate(
+            """() => [...document.querySelectorAll(
+                 '[id*="Error"], [id*="Msg"], [id*="Message"], [id*="lbl"],'
+                 + ' .validation-summary-errors, .alert, .error')]
+                 .map(e => (e.innerText || '').trim())
+                 .filter(t => t && t.length < 300 && !/\{1\}|##LOC/.test(t))
+                 .join(' | ')""")
+        return " ".join(str(text or "").split())[:300]
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _login(page, email: str, password: str, *, login_url: str = LOGIN_URL,
            creds_hint: str = "the saved SaraPlus login", log=print) -> str:
     """Sign in and return the DealerPages base url. Raises if we land back on
@@ -216,12 +239,33 @@ def _login(page, email: str, password: str, *, login_url: str = LOGIN_URL,
         field.type(password, delay=50)
     with page.expect_navigation():
         page.click("#MainContent_btnLogin")
+    # LET THE REDIRECT LAND. The login is an ASP.NET postback: the first
+    # navigation after the click can be login.aspx itself, with the hop to
+    # DealerPages/ still to come. Reading the url straight off the postback
+    # called that "still on the login page" -- Khalil's machine, 123 times
+    # between 12:30 and 21:29 on 2026-09-21, from the minute its hidden read
+    # moved from the stripped headless browser to full Chrome (whose timing
+    # differs) and while the password was demonstrably fine (it had cleared
+    # the passcode wall an hour before). So: wait for the url to leave the
+    # login page, up to LOGIN_SETTLE_MS, before calling it a failure.
     url = page.url
+    waited = 0
+    while "login" in url.lower() and waited < LOGIN_SETTLE_MS:
+        page.wait_for_timeout(LOGIN_POLL_MS)
+        waited += LOGIN_POLL_MS
+        url = page.url
     if "login" in url.lower():
+        # SAY WHAT THE PAGE SAYS. "Still on the login page" covers a wrong
+        # password, a locked account and a redirect that never came, and
+        # they need different people. The page's own message tells them
+        # apart; no message at all is its own answer (see _as_owner_problem).
+        said = _login_page_message(page)
         raise SaraError(
-            "SaraPlus login failed -- still on the login page after submit. "
-            "Check the credentials in %s (a password change is the usual "
-            "cause); nothing was written." % creds_hint)
+            "SaraPlus login failed -- still on the login page after submit "
+            "(waited %ds; url %s; page says: %s). Check the credentials in %s "
+            "(a password change is the usual cause); nothing was written."
+            % (waited // 1000, url, said or "nothing -- no error shown",
+               creds_hint))
     # THE CHANGE PASSWORD PAGE, raised as its OWN type so the caller can run
     # the one test that tells a stuck profile from a real demand: try again on
     # a brand-new profile. See login_healing().
