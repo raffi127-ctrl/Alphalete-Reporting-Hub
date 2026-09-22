@@ -7,8 +7,9 @@ Source: Carlos Loom (36f30a9222fb4b0fb9307450e0b6d2b7) + #b2b-dispositions spec.
 
 ## What it posts
 
-Three per-day threads, each in **both** `#alphalete-gp-sales` and
-`#a-players-b2b` (bold dated parent, image replies underneath):
+Three per-day threads in `#alphalete-gp-sales` (bold dated parent, image
+replies underneath). `#a-players-b2b` mirrored them 7/29–9/21 until Carlos
+asked for the room to stop getting them:
 
 | Thread | Content | Cadence (Central) |
 |---|---|---|

@@ -51,10 +51,15 @@ CAMPAIGN_TAG = {CAMPAIGN_ATT: "AT&T", CAMPAIGN_BOX: "Box"}
 CAMPAIGNS = [CAMPAIGN_ATT, CAMPAIGN_BOX]
 
 # --- Slack delivery -----------------------------------------------------------
-# Both of Carlos's channels (already wired in tableau_screenshots.slack_post):
+# #alphalete-gp-sales ONLY (Carlos 2026-09-21, #l10-alphalete: "lucy sends
+# these two screenshots in my aplayers chat. can we have her stop please").
+# #a-players-b2b (C0AJQA8P716) mirrored GP Sales from 7/29 to 9/21 — both the
+# hourly activity pair and the 7pm territory pair, with the three @mentions on
+# every reply, which is what made the room noisy. Its id stays in CHANNEL_LABEL
+# so retitle_today / old-thread lookups still name it; to mirror again, put the
+# id back in this list and nothing else moves.
 #   #alphalete-gp-sales  C07J46MQNUX  ("GP Sales")
-#   #a-players-b2b       C0AJQA8P716  ("A Players") — mirrors GP Sales
-CHANNELS = ["C07J46MQNUX", "C0AJQA8P716"]
+CHANNELS = ["C07J46MQNUX"]
 CHANNEL_LABEL = {
     "C07J46MQNUX": "#alphalete-gp-sales",
     "C0AJQA8P716": "#a-players-b2b",

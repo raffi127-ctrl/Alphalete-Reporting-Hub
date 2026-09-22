@@ -1,5 +1,5 @@
-"""Post the captured PNGs into three per-day Slack threads, in BOTH of Carlos's
-channels (#alphalete-gp-sales + #a-players-b2b).
+"""Post the captured PNGs into three per-day Slack threads in Carlos's
+#alphalete-gp-sales (cfg.CHANNELS; #a-players-b2b dropped 2026-09-21).
 
 Threads (a bold dated parent, image replies underneath):
   * "Today's Activity"  — hourly replies, AT&T + Box, captioned by campaign+slot
