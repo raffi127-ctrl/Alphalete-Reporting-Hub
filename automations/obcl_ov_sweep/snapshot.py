@@ -267,7 +267,7 @@ def draw_set(recs: List[dict], week: str, stamp: str, clock: str) -> list:
     return made
 
 
-def caption(made) -> str:
+def caption(made, failures=()) -> str:
     """Megan 2026-09-22 — exactly this shape, one line per group:
         OBCL update
         ✅ 21 owner submitted
@@ -277,11 +277,16 @@ def caption(made) -> str:
     lines = [("✅", GROUPS[0], "owner submitted"),
              ("➡️", GROUPS[1], "ready for owner submit"),
              ("⚠️", GROUPS[2], "waiting on BG / still missing checks")]
-    return "\n".join(["OBCL update"] + [f"{e} {counts.get(g, 0)} {t}"
-                                          for e, g, t in lines])
+    out = ["OBCL update"] + [f"{e} {counts.get(g, 0)} {t}" for e, g, t in lines]
+    # A submit this pass tried and OwnerVille did NOT confirm (Megan
+    # 2026-09-22: "if you can't OS them in OV then that's what you would put
+    # in the group text").
+    for name, why in failures or ():
+        out.append(f"❌ Couldn't owner submit in OV: {name} — {why}")
+    return "\n".join(out)
 
 
-def after_pass(ws, values, *, live: bool, text: bool) -> str:
+def after_pass(ws, values, *, live: bool, text: bool, failures=()) -> str:
     """Called by run.py after a pass. Returns a one-line outcome for the log."""
     recs = collect(ws, values)
     if not recs:
@@ -293,7 +298,10 @@ def after_pass(ws, values, *, live: bool, text: bool) -> str:
     made = draw_set(recs, ch.get("date_text") or ws.title, stamp, clock)
     names = " ".join(p.name for _, _, p in made)
     if made:  # the caption travels with the pictures, next to the first one
-        made[0][2].with_suffix(".txt").write_text(caption(made))
+        made[0][2].with_suffix(".txt").write_text(caption(made, failures))
+    # A failed submit is part of what changed: fold it into the fingerprint,
+    # so a NEW failure sends and the same one repeating next hour doesn't.
+    recs = recs + [{"_submit_failures": sorted(failures)}] if failures else recs
     ch_ = changed(recs)
     if not (live and text):
         return f"pictures: {names} — not texting (dry)"

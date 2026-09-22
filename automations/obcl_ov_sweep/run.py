@@ -58,6 +58,9 @@ def match(people, reps: dict):
     return out, missing
 
 
+SUBMIT_FAILURES: list = []   # [(name, reason)] this pass — for the group text
+
+
 def _picture(ws, args) -> None:
     """The hourly picture: drawn every live pass, texted only if it changed.
     Never lets a picture problem fail the sweep — the ticks already landed."""
@@ -66,8 +69,8 @@ def _picture(ws, args) -> None:
     try:
         from automations.obcl_ov_sweep import snapshot
         _, values = _open_tab(args.tab or ws.title)
-        print(snapshot.after_pass(ws, values, live=args.tick, text=args.text),
-              flush=True)
+        print(snapshot.after_pass(ws, values, live=args.tick, text=args.text,
+                                  failures=SUBMIT_FAILURES), flush=True)
     except Exception as e:                                  # noqa: BLE001
         print(f"picture: FAILED ({type(e).__name__}: {str(e)[:200]})",
               flush=True)
@@ -92,6 +95,10 @@ def _submit(ready, writes, *, live: bool) -> None:
             outcome, detail = owner_submit.submit_one(page, p.name,
                                                       dry_run=not real)
             print(f"  OWNER SUBMIT {outcome.upper()}: {detail}", flush=True)
+            if real and outcome == "refused":
+                # Megan 2026-09-22: a submit that didn't go through goes in the
+                # group text. Detail reads "<Name>: <reason>" — keep the reason.
+                SUBMIT_FAILURES.append((p.name, detail.split(": ", 1)[-1]))
             if outcome in ("submitted", "already"):
                 writes.append((p, "Owner Submit"))
                 ready.remove(p)

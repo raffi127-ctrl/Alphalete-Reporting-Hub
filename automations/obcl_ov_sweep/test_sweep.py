@@ -292,6 +292,20 @@ class OwnerSubmitGate(unittest.TestCase):
         self.assertEqual(ready, [p])           # still blue
 
 
+class FailureCaption(unittest.TestCase):
+    def test_failed_submit_is_named_in_the_text(self):
+        from automations.obcl_ov_sweep import snapshot as sn
+        made = [(sn.GROUPS[0], 21, None), (sn.GROUPS[1], 1, None)]
+        cap = sn.caption(made, [("Jane Doe", "confirm box would not tick")])
+        self.assertIn("❌ Couldn't owner submit in OV: Jane Doe — "
+                      "confirm box would not tick", cap)
+        self.assertTrue(cap.startswith("OBCL update\n✅ 21 owner submitted"))
+
+    def test_no_failures_no_extra_line(self):
+        from automations.obcl_ov_sweep import snapshot as sn
+        self.assertNotIn("❌", sn.caption([(sn.GROUPS[0], 3, None)]))
+
+
 class OwnerSubmitReview(unittest.TestCase):
     def test_review_in_progress_counts_as_submitted(self):
         c = _all_but_submit()
