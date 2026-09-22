@@ -43,16 +43,19 @@ def status_rows(today: dt.date | None = None) -> list:
                                              eco_feeds as E, profiles as P,
                                              relay_read as RR)
     today = today or dt.date.today()
+    # THE CODE ITSELF, not "yes": this list is admin-only, and the code is the
+    # one thing needed to hand an ICD their board — copy it from the row
+    # instead of opening the Board Access tab to find it.
     try:
-        coded = {icd.strip().lower() for icd in BA.codes().values()}
+        code_of = {icd.strip().lower(): code for code, icd in BA.codes().items()}
     except Exception:   # noqa: BLE001
-        coded = set()
+        code_of = {}
     want = _agent_n(CURRENT_AGENT)
     rows = []
     for icd in sorted(P.load()):
         feeds = E.for_icd(icd)
         base = {"ICD": icd, "Campaign": _campaigns(feeds),
-                "Board code": "yes" if icd.strip().lower() in coded else "—"}
+                "Board code": code_of.get(icd.strip().lower(), "—")}
         if not feeds:
             rows.append(dict(base, Status=NONE, **{"Last reading": "",
                                                     "Agent": ""}))

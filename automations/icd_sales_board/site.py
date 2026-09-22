@@ -2147,6 +2147,9 @@ def _rollout_section() -> None:
                           subset=["Status"]),
         use_container_width=True, hide_index=True,
         height=_grid_height(len(rows)))
+    st.caption("To give an ICD their board: send "
+               "**lucyeco.streamlit.app/sales-board** and the code on their "
+               "row. Their code opens their office only.")
     st.caption(f"Live = reported in the last day on the current agent "
                f"({RO.CURRENT_AGENT}). Needs update = reporting on an older "
                f"agent; it updates itself. Gone quiet = no reading for two "
