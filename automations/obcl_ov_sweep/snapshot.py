@@ -39,6 +39,23 @@ LABELS = {"BG Status : Last Checked": "BG Status",
           "Onboarding Quizzes": "Quizzes", "Headshot Photo": "Headshot"}
 CHECKBOXES = set(COLUMNS[7:])
 
+# Final Status is a dropdown whose colours live on the CHIPS, and the Sheets
+# API does not expose chip colours (it returns the option list only, and the
+# cell background is plain white). So the picture carries its own palette,
+# matched by eye to the OBCL's chips (Megan 2026-09-22: "missing the colors we
+# need on final status"). (fill, text). Unknown status = plain white/black.
+STATUS_COLORS = {
+    "showed up to cr":        ((39, 106, 64), (255, 255, 255)),
+    "owner submitted":        ((205, 235, 139), (0, 0, 0)),
+    "pending on ov":          ((201, 218, 233), (31, 60, 110)),
+    "needs blueink":          ((17, 85, 204), (255, 255, 255)),
+    "activations email sent": ((134, 72, 12), (255, 255, 255)),
+    "missing id":             ((244, 204, 204), (153, 0, 0)),
+    "waiting on bgc":         ((255, 229, 153), (0, 0, 0)),
+    "sara+ received":         ((183, 225, 205), (0, 0, 0)),
+    "roadmap?":               ((230, 230, 230), (0, 0, 0)),
+}
+
 
 def _start_key(s: str):
     """12:30 before 1:00 — these are all PM (digi_docs roster rule)."""
@@ -181,7 +198,11 @@ def render(recs: List[dict], title: str, out: Path) -> Path:
         x = 0
         for c, cw in zip(COLUMNS, widths):
             cell = r[c]
-            d.rectangle([x, y, x + cw, y + rh], fill=_rgb(cell["bg"]),
+            fill, ink = _rgb(cell["bg"]), None
+            if c == "Final Status":
+                fill, ink = STATUS_COLORS.get(cell["v"].strip().lower(),
+                                              (fill, None))
+            d.rectangle([x, y, x + cw, y + rh], fill=fill,
                         outline=(170, 170, 170))
             if c in CHECKBOXES:
                 ticked = cell["v"].lower() in config.TRUTHY
@@ -195,7 +216,8 @@ def render(recs: List[dict], title: str, out: Path) -> Path:
                     d.rectangle([bx, by, bx + s, by + s], outline=(90, 90, 90),
                                 width=2)
             else:
-                color = (255, 0, 255) if c in ("Name", "Last Name") else "black"
+                color = ink or ((255, 0, 255) if c in ("Name", "Last Name")
+                                else "black")
                 d.text((x + cw / 2, y + rh / 2), cell["v"], font=f,
                        fill=color, anchor="mm")
             x += cw
