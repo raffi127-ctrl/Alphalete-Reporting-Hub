@@ -38,6 +38,9 @@ TABLE_COLUMNS = {
                            "2024 consent decree"),
     "UID Request": ("at&t uid request",),
     "Owner Submit": ("owner submit",),
+    # Megan 2026-09-21: catch headshots uploaded BY HAND too. Upload Documents
+    # shows a "✓ Photo" pill, green when uploaded — judged by photo_uploaded.
+    "Headshot Photo": ("upload documents",),
 }
 
 # Everything OwnerVille needs before an owner can submit (Megan 2026-09-21:
@@ -62,6 +65,26 @@ def cell_done(text: str, html: str = "") -> bool:
         return False
     h = (html or "").lower()
     return not any(m in h for m in RED_MARKERS)
+
+
+def photo_uploaded(text: str, html: str = "") -> bool:
+    """Upload Documents: green "✓ Photo" pill = uploaded. The ✓ is an ICON, so
+    both states read plain "Photo" (headshots/ov_upload._photo_pill, 2026-08-24)
+    — decide on the pill's CLASS, same rule that code proved: success/green =
+    uploaded, danger/warning/orange/red = missing, else an icon means uploaded."""
+    t = (text or "").lower()
+    h = (html or "").lower()
+    if "photo" not in t:
+        return False
+    if re.search(r"success|green", h):
+        return True
+    if re.search(r"danger|warning|orange|red", h):
+        return False
+    return bool(re.search(r"<(i|svg)\b|fa-|glyphicon", h)) or "✓" in t
+
+
+def _judge(header: str):
+    return photo_uploaded if header == "upload documents" else cell_done
 
 
 def cell_filled(text: str, html: str = "") -> bool:
@@ -89,8 +112,7 @@ def ready_for_owner_submit(headers: List[str], cells: List[dict]):
         i = header_index(headers, w)
         if i is None or i >= len(cells):
             return None
-        judge = cell_filled if w in _NO_DATE_OK else cell_done
-        if not judge(cells[i].get("text", ""), cells[i].get("html", "")):
+        if not _judge(w)(cells[i].get("text", ""), cells[i].get("html", "")):
             return False
     return True
 
@@ -108,8 +130,7 @@ def owner_submit_state(headers: List[str], cells: List[dict]):
     others = [w for w in READY_FOR_OWNER_SUBMIT if w != "background check"]
     for w in others:
         i = header_index(headers, w)
-        judge = cell_filled if w in _NO_DATE_OK else cell_done
-        if not judge(cells[i].get("text", ""), cells[i].get("html", "")):
+        if not _judge(w)(cells[i].get("text", ""), cells[i].get("html", "")):
             return ""
     i = header_index(headers, "background check")
     bg = (cells[i].get("text") or "").lower()
@@ -139,7 +160,7 @@ def done_columns(headers: List[str], cells: List[dict]) -> Dict[str, object]:
             if i is None or i >= len(cells):
                 ok = None
                 break
-            if not cell_done(cells[i].get("text", ""), cells[i].get("html", "")):
+            if not _judge(w)(cells[i].get("text", ""), cells[i].get("html", "")):
                 ok = False
         out[col] = ok
     return out

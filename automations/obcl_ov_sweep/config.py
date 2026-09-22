@@ -1,8 +1,9 @@
 """Which OBCL column is ticked off which OwnerVille Set Status rows.
 
 Megan 2026-09-21: "check the OBCL as things are completed for each new start"
-off their OwnerVille profile. Blue Ink and Headshot Photo are NOT here — each
-already has its own automation ticking its column.
+off their OwnerVille profile. Blue Ink is NOT here — it has its own
+automation. Headshot Photo is shared with the Headshot Bot (ticks ON only, so
+the two can't undo each other).
 
 This reverses the 2026-08-25 "no completion sweep" call recorded in
 digi_docs/config.py and workflows/digi-docs-onboarding-quizzes.md. That call
@@ -17,7 +18,10 @@ from automations.shared.new_start_steps import SHEET_ID  # noqa: F401
 # ov_table.TABLE_COLUMNS (which View Progress headers must all be green).
 # Onboarding Quizzes needs ALL SIX courses: ticking on FTC alone would call
 # the quizzes finished while five are open — this side may be late, never wrong.
-COLUMNS = ("Digi Docs", "Onboarding Quizzes", "UID Request", "Owner Submit")
+COLUMNS = ("Digi Docs", "Onboarding Quizzes", "Headshot Photo", "UID Request",
+           "Owner Submit")
+# Headshot Photo added 2026-09-21 (Megan): the Headshot Bot ticks it for photos
+# sent through Slack; this catches ones uploaded straight into OwnerVille.
 
 # Final Status words that mean this person is not going through onboarding —
 # no point spending an OwnerVille lookup on them. "Owner submitted" is skipped

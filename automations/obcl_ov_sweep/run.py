@@ -9,7 +9,8 @@ Reads the newest `D2D OBCL <m.d>` tab (every chart on it, last week's carried
 chart included), then ONE read of OwnerVille's View Progress table (RES-AT&T,
 Show All). A box is ticked only when OwnerVille shows every step behind it
 done with a date stamp. Ticks go ON only — never off: a hand tick stays.
-Blue Ink and Headshot Photo have their own automations and are not touched.
+Blue Ink has its own automation and is not touched. Headshot Photo is shared
+with the Headshot Bot (both tick ON only); this catches hand uploads.
 
 Colours: every box it owns is GREEN (done) or LIGHT RED (not done); Owner
 Submit is BLUE when it's the only step left, YELLOW when only a pending

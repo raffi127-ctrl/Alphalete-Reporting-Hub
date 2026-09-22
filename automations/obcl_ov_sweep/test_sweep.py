@@ -44,7 +44,7 @@ class Roster(unittest.TestCase):
         self.assertEqual(p.cols["Digi Docs"], 8)
         self.assertEqual(p.cols["Owner Submit"], 13)
         self.assertNotIn("Blue Ink", p.cols)
-        self.assertNotIn("Headshot Photo", p.cols)
+        self.assertEqual(p.cols["Headshot Photo"], 11)
 
     def test_to_check_skips_finished_gone_and_owner_submitted(self):
         names = [p.name for p in sweep.to_check(sweep.people(_tab()))]
@@ -61,9 +61,10 @@ class Earned(unittest.TestCase):
     def _cara(self):
         return [p for p in sweep.people(_tab()) if p.first == "Cara"][0]
 
-    def test_everything_done_ticks_all_four(self):
+    def test_everything_done_ticks_every_open_column(self):
+        # Cara's Headshot is already ticked on the sheet, so it isn't re-ticked.
         self.assertEqual(sorted(sweep.earned(self._cara(), ALL_DONE)),
-                         sorted(config.COLUMNS))
+                         sorted(set(config.COLUMNS) - {"Headshot Photo"}))
 
     def test_only_true_ticks_false_and_unread_do_not(self):
         st = dict(ALL_DONE, **{"Digi Docs": False, "UID Request": None})
@@ -123,7 +124,8 @@ class TableRead(unittest.TestCase):
     def test_megans_screenshot_row(self):
         self.assertEqual(ov_table.done_columns(VP_HEADS, _marqoun()),
                          {"Digi Docs": True, "Onboarding Quizzes": True,
-                          "UID Request": True, "Owner Submit": False})
+                          "UID Request": True, "Owner Submit": False,
+                          "Headshot Photo": False})
 
     def test_one_open_course_blocks_quizzes(self):
         c = _marqoun()
@@ -146,9 +148,25 @@ def _all_but_submit():
     c[2] = dict(DONE)                                   # Login Created
     c[4] = dict(DONE)                                   # Background Check
     c[5] = dict(DONE)                                   # Drug Test
-    c[12] = {"text": "\u2713 Photo", "html": '<span class="badge bg-success">'}
+    c[12] = {"text": "Photo", "html": '<span class="badge bg-success">'}
     c[14] = {"text": "RES-ATT\n09/21/26\n2:32 PM", "html": ""}
     return c
+
+
+class Photo(unittest.TestCase):
+    def test_green_pill_uploaded_red_or_orange_missing(self):
+        self.assertTrue(ov_table.photo_uploaded(
+            "Photo", '<span class="badge bg-success"><i class="fa fa-check">'))
+        self.assertFalse(ov_table.photo_uploaded(
+            "Photo", '<span class="badge bg-danger">'))
+        self.assertFalse(ov_table.photo_uploaded(
+            "Photo", '<span class="badge bg-warning">'))
+        self.assertFalse(ov_table.photo_uploaded("", ""))
+
+    def test_uploaded_photo_ticks_headshot(self):
+        c = _marqoun()
+        c[12] = {"text": "Photo", "html": '<span class="badge bg-success">'}
+        self.assertTrue(ov_table.done_columns(VP_HEADS, c)["Headshot Photo"])
 
 
 class ReadyForOwnerSubmit(unittest.TestCase):
