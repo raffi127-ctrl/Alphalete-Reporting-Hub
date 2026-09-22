@@ -41,7 +41,10 @@ fi
 ARGS=()
 # --text: after the pass, text the picture to "ORIENTATION CREW - Real" — but
 # only when something on it CHANGED (Megan 2026-09-21).
-[ "$MODE" = "tick" ] && ARGS+=(--tick --text)
+# --submit: owner-submit anyone READY in OwnerVille. GATED in
+# automations/obcl_ov_sweep/config.py (OWNER_SUBMIT_LIVE): a dry walk to the
+# confirm box until Megan OKs the first one (2026-09-22).
+[ "$MODE" = "tick" ] && ARGS+=(--tick --text --submit)
 
 LOG_FILE="output/logs/obcl-ov-sweep-$(date +%Y-%m-%d-%H%M%S).log"
 echo "[$(date)] OBCL <- OwnerVille sweep starting (mode=$MODE)" > "$LOG_FILE"

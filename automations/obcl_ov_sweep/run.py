@@ -73,6 +73,30 @@ def _picture(ws, args) -> None:
               flush=True)
 
 
+def _submit(ready, writes, *, live: bool) -> None:
+    """Owner-submit each READY person in OwnerVille (Megan 2026-09-22).
+
+    GATED by config.OWNER_SUBMIT_LIVE: while it is False this is always a dry
+    walk up to the confirm box — nobody is submitted and they stay blue. When
+    live, only a submit OwnerVille CONFIRMS ("Review in Progress" on a fresh
+    re-open) moves someone off blue and ticks the OBCL box."""
+    from automations.obcl_ov_sweep import owner_submit
+    from automations.shared.tableau_patchright import ownerville_session
+    real = bool(live and config.OWNER_SUBMIT_LIVE)
+    if live and not config.OWNER_SUBMIT_LIVE:
+        print("  OWNER SUBMIT is GATED (config.OWNER_SUBMIT_LIVE = False) — "
+              "dry walk only, nobody submitted", flush=True)
+    with ownerville_session(headless=True, verbose=False,
+                            profile_dir=PROFILE_DIR) as page:
+        for p in list(ready):
+            outcome, detail = owner_submit.submit_one(page, p.name,
+                                                      dry_run=not real)
+            print(f"  OWNER SUBMIT {outcome.upper()}: {detail}", flush=True)
+            if outcome in ("submitted", "already"):
+                writes.append((p, "Owner Submit"))
+                ready.remove(p)
+
+
 def _key(p) -> str:
     from automations.digi_docs import namematch
     return namematch.norm(p.name)
@@ -129,6 +153,9 @@ def main(argv=None) -> int:
     ap.add_argument("--text", action="store_true",
                     help="after a live pass, text the picture to ORIENTATION "
                          "CREW - Real IF it changed (the hourly wrapper sets it)")
+    ap.add_argument("--submit", action="store_true",
+                    help="owner-submit anyone READY in OwnerVille — gated by "
+                         "config.OWNER_SUBMIT_LIVE (dry walk while False)")
     ap.add_argument("--paint-only", action="store_true",
                     help="colour the boxes off the sheet alone — no OwnerVille")
     args = ap.parse_args(argv)
@@ -219,6 +246,8 @@ def main(argv=None) -> int:
           f"(ready to submit): {len(ready)}"
           + (f" — {', '.join(p.name for p in ready)}" if ready else ""))
 
+    if ready and args.submit:
+        _submit(ready, writes, live=args.tick)
     # RE-READ BEFORE WRITING (2026-09-21, 7:22pm). The OwnerVille part takes
     # minutes; someone deleted last week's chart and inserted a Classroom
     # column meanwhile, and colours painted at the rows/columns read at the

@@ -50,3 +50,11 @@ BROWSER_PROFILE_DIRNAME = ".browser_profile_obcl_ov_sweep"
 
 # The campaign every D2D new start is added under (digi_docs.config).
 CAMPAIGN = "RES-AT&T"
+
+# AUTO OWNER SUBMIT (Megan 2026-09-22) — owner_submit.py. The confirm box is an
+# attestation to the campaign (Alphalete "has reviewed a criminal history
+# background check ... and confirmed that it passes") with no unsubmit, so it
+# ships GATED: while False, a READY person is walked up to the confirm box and
+# NOT submitted — they stay BLUE on the OBCL and the log says "WOULD SUBMIT".
+# Megan reviews that first dry run; only on her OK does this flip to True.
+OWNER_SUBMIT_LIVE = False

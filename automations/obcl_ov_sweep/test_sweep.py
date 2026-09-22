@@ -250,6 +250,49 @@ def _all_but_submit():
     return c
 
 
+class OwnerSubmitGate(unittest.TestCase):
+    def test_gate_ships_closed(self):
+        self.assertFalse(config.OWNER_SUBMIT_LIVE)
+
+    def test_section_states_and_blockers(self):
+        from automations.obcl_ov_sweep import owner_submit as os_
+
+        class M:
+            def inner_text(self):
+                return (" BACKGROUND CHECK\nCOMPLETED\n DRUG TEST\nPENDING\n"
+                        " OWNER SUBMIT\nREQUIRED ACTION\n BADGE\n"
+                        "REQUIRED ACTION\n SARA PLUS\nOPTIONAL\nSave Changes")
+        st = os_.section_states(M())
+        self.assertEqual(st["OWNER SUBMIT"], "REQUIRED ACTION")
+        self.assertEqual(os_.blockers(st), ["DRUG TEST=PENDING"])
+
+    def test_closed_gate_walks_dry_even_on_a_live_pass(self):
+        from unittest import mock
+        from automations.obcl_ov_sweep import run as r
+        calls = []
+
+        def fake_submit(page, name, *, dry_run):
+            calls.append(dry_run)
+            return "would submit", name
+
+        class Ctx:
+            def __enter__(self):
+                return object()
+
+            def __exit__(self, *a):
+                return False
+        p = sweep.people(_tab())[2]
+        ready, writes = [p], []
+        with mock.patch("automations.obcl_ov_sweep.owner_submit.submit_one",
+                        fake_submit), \
+             mock.patch("automations.shared.tableau_patchright."
+                        "ownerville_session", lambda **k: Ctx()):
+            r._submit(ready, writes, live=True)
+        self.assertEqual(calls, [True])        # dry, despite live=True
+        self.assertEqual(writes, [])           # nothing ticked
+        self.assertEqual(ready, [p])           # still blue
+
+
 class OwnerSubmitReview(unittest.TestCase):
     def test_review_in_progress_counts_as_submitted(self):
         c = _all_but_submit()
