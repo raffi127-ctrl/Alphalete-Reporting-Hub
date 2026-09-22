@@ -881,6 +881,29 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
             for line in lines:
                 log("    %s" % line)
 
+        # THE STANDINGS TO THEIR TEXT GROUP, the way Raf's partners get them:
+        # whenever a rep's count moves, the whole day's board with a flame on
+        # who moved; a backlog baseline sends the standings once, no flames.
+        # AFTER the Slack rooms and never blocking them -- a group that
+        # cannot be resolved must not cost the channel its alert, and must
+        # not stop 'Last Posted' being written (a retry would re-announce).
+        if (sold or (sales_baseline and merged_sales)) and texts.get(key):
+            board = scoreboard_text(merged_sales, [] if sales_baseline else sold,
+                                    office.campaign, show)
+            if board and not can_text:
+                log("%-10s standings text skipped -- this machine cannot "
+                    "send iMessage" % key)
+            elif board:
+                from automations.b2b_dispositions import text_post as tp
+                for t in texts[key]:
+                    group = t.get("channel_name") or ""
+                    try:
+                        tp.send_text_to_group(group, board, dry_run=not send)
+                        log("%-10s standings -> text group %r%s"
+                            % (key, group, "" if send else "  (dry run)"))
+                    except Exception as e:  # noqa: BLE001
+                        log("%-10s FAILED to text standings to %r: %s: %s"
+                            % (key, group, type(e).__name__, str(e)[:120]))
         if not send:
             continue
         if hype_lines or lines:
@@ -910,29 +933,6 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                 except Exception as e:  # noqa: BLE001
                     log("%-10s FAILED to post to %s: %s: %s"
                         % (key, channel.name, type(e).__name__, str(e)[:120]))
-        # THE STANDINGS TO THEIR TEXT GROUP, the way Raf's partners get them:
-        # whenever a rep's count moves, the whole day's board with a flame on
-        # who moved; a backlog baseline sends the standings once, no flames.
-        # AFTER the Slack rooms and never blocking them -- a group that
-        # cannot be resolved must not cost the channel its alert, and must
-        # not stop 'Last Posted' being written (a retry would re-announce).
-        if (sold or (sales_baseline and merged_sales)) and texts.get(key):
-            board = scoreboard_text(merged_sales, [] if sales_baseline else sold,
-                                    office.campaign, show)
-            if board and not can_text:
-                log("%-10s standings text skipped -- this machine cannot "
-                    "send iMessage" % key)
-            elif board:
-                from automations.b2b_dispositions import text_post as tp
-                for t in texts[key]:
-                    group = t.get("channel_name") or ""
-                    try:
-                        tp.send_text_to_group(group, board, dry_run=not send)
-                        log("%-10s standings -> text group %r%s"
-                            % (key, group, "" if send else "  (dry run)"))
-                    except Exception as e:  # noqa: BLE001
-                        log("%-10s FAILED to text standings to %r: %s: %s"
-                            % (key, group, type(e).__name__, str(e)[:120]))
         if lines or hype_lines or baseline or sales_baseline:
             tab.update_cell(rownum, COL_LAST_POSTED + 1, json.dumps(merged))
             tab.update_cell(rownum, COL_LAST_POSTED_SALES + 1,
