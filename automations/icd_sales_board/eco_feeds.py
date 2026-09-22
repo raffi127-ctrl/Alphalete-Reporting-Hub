@@ -78,10 +78,17 @@ def feeds(force: bool = False) -> dict:
                             (getattr(s, "campaign", "") or "att").strip())
     # The pilots predate the sign-up form, so they are only in the office
     # metrics registry — whose key is the relay key for exactly these offices.
+    # ONLY a key that has actually RELAYED counts: every office with a metrics
+    # thread has a registry key, and treating those as ECO feeds listed Cody,
+    # Haytham, Rashad, Salik and Isaiah as "signed up, not reporting" when none
+    # of them ever signed up (2026-09-22).
     try:
         from automations.icd_sales_board import profiles as P
+        from automations.icd_sales_board import relay_read as RR
+        relayed = set(RR.offices())
         for name, p in P.load().items():
-            if p.office_key and p.office_key not in out:
+            if (p.office_key and p.office_key not in out
+                    and p.office_key in relayed):
                 out[p.office_key] = Feed(p.office_key, name,
                                          p.primary_campaign or "att")
     except Exception:   # noqa: BLE001

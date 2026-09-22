@@ -2117,6 +2117,41 @@ def _num(v) -> str:
     return "" if v is None else str(v)
 
 
+@st.cache_data(ttl=300, show_spinner="Checking every office…")
+def _rollout_rows() -> list:
+    from automations.icd_sales_board import rollout as RO
+    return RO.status_rows()
+
+
+def _rollout_section() -> None:
+    """Every ICD's LucyECO state, so the rollout can be chased from one list.
+
+    The goal is every ICD on LucyECO with their own live board (Megan
+    2026-09-22); this is read entirely from what the machines already report,
+    so nobody has to be asked where they are."""
+    from automations.icd_sales_board import rollout as RO
+    rows = _rollout_rows()
+    n = RO.counts(rows)
+    on = len(rows) - n[RO.NONE]
+    st.subheader(f"LucyECO — {on} of {len(rows)} offices")
+    st.caption(" · ".join(f"{k}: {v}" for k, v in n.items() if v))
+    tone = {RO.LIVE: "background-color:#D9EAD3",
+            RO.UPDATE: "background-color:#FFF2CC",
+            RO.QUIET: "background-color:#F4CCCC",
+            RO.WAITING: "background-color:#FCE5CD"}
+    frame = pd.DataFrame(rows, columns=["ICD", "Status", "Last reading",
+                                        "Agent", "Feeds", "Board code"])
+    st.dataframe(
+        frame.style.apply(lambda col: [tone.get(v, "") for v in col],
+                          subset=["Status"]),
+        use_container_width=True, hide_index=True,
+        height=_grid_height(len(rows)))
+    st.caption(f"Live = reported in the last day on the current agent "
+               f"({RO.CURRENT_AGENT}). Needs update = reporting on an older "
+               f"agent; it updates itself. Gone quiet = no reading for two "
+               f"days or more — check that machine.")
+
+
 def _paint(html: str) -> None:
     """Put the board on the page WITHOUT a markdown pass.
 
@@ -3453,8 +3488,7 @@ def main() -> None:
             use_container_width=True, hide_index=True,
             column_config=_centered(("ICD", "Campaigns", "Sells", "Metrics",
                                      "Feed today")))
-        st.info("Per-rep org roll-up lands once the per-office boards exist — "
-                "today only Raf's board carries real rep rows.")
+        _rollout_section()
         return
 
     names = sorted(profs)
