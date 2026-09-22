@@ -18,6 +18,9 @@
     # add a late photo to a thread that's already posted (one extra reply):
     python -m automations.ad_photo_threads.run --add-photo "Pedro Menendez" --date 2026-09-21
 
+    # watch someone who went out as "No screenshot" (re-checked 3 nights):
+    python -m automations.ad_photo_threads.run --watch "Christopher Franklin" --date 2026-09-21
+
     # take this report's threads back out of a channel (moving channels):
     python -m automations.ad_photo_threads.run --retire-channel C0AUAS88FGW
 
@@ -135,6 +138,12 @@ def nightly(day: dt.date, explicit_date: bool = False) -> int:
     # (interviewers late to log) gets re-read on the next tick.
     if rep.candidates:
         post.mark_day_done(channel, day)
+    try:
+        late = post.retry_late(channel, day)
+        if late:
+            print("Late photos:", late)
+    except Exception as e:                    # noqa: BLE001 — never costs the post
+        print(f"late-photo check failed: {type(e).__name__}: {str(e)[:160]}")
     return 0
 
 
@@ -148,6 +157,9 @@ def main(argv=None) -> int:
     mode.add_argument("--add-photo", metavar="NAMES",
                       help="Comma-separated sheet names: add their photo to the "
                            "ad's thread already posted in the live channel.")
+    mode.add_argument("--watch", metavar="NAMES",
+                      help="Comma-separated sheet names to re-check for a late "
+                           "photo on the next nights (days before the watch).")
     mode.add_argument("--retire-channel", metavar="CHANNEL_ID",
                       help="Delete the threads this report posted in CHANNEL_ID "
                            "(headers, Lucy's replies, their photos) and forget "
@@ -175,6 +187,11 @@ def main(argv=None) -> int:
         ap.error("--post needs --channel, --test-dm or --dm")
     day = dt.date.fromisoformat(a.date) if a.date else collect.central_today()
 
+    if a.watch:
+        from automations.ad_photo_threads import config, post
+        names = [n.strip() for n in a.watch.split(",") if n.strip()]
+        print("Watching:", post.watch(config.LIVE_CHANNEL_ID, day, names))
+        return 0
     if a.retire_channel:
         from automations.ad_photo_threads import post
         print("Retired:", post.retire_channel(a.retire_channel))

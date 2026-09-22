@@ -224,6 +224,31 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(cl.uploads[0]["thread_ts"], "100.1")
         self.assertIn("photo added\n✅ Ana Uno · 3⭐ · Alexa", cl.uploads[0]["initial_comment"])
 
+    def test_no_screenshot_is_watched_and_added_when_it_shows_up(self):
+        rep = _rep()
+        rep.candidates[1].images = []; rep.candidates[1].shared = False
+        post.publish(rep, "C1", cl=FakeSlack())                 # Fri 9/18
+        self.assertEqual(post._load_state()["C1"]["late"], {"2026-09-18": ["Bo Dos"]})
+        # Saturday: the interviewer has since posted Bo's shot.
+        cl = FakeSlack()
+        out = post.retry_late("C1", dt.date(2026, 9, 19), build=lambda d: _rep(), cl=cl)
+        self.assertEqual(out, {"2026-09-18 Bo Dos": "added 1 photo(s)"})
+        self.assertEqual(cl.uploads[0]["thread_ts"], "100.1")
+        self.assertEqual(post._load_state()["C1"]["late"], {})
+
+    def test_watch_by_hand(self):
+        self.assertEqual(post.watch("C1", dt.date(2026, 9, 21), ["Chris F"]), ["Chris F"])
+        self.assertEqual(post._load_state()["C1"]["late"], {"2026-09-21": ["Chris F"]})
+
+    def test_late_watch_gives_up_after_three_days(self):
+        rep = _rep()
+        rep.candidates[1].images = []
+        post.publish(rep, "C1", cl=FakeSlack())
+        out = post.retry_late("C1", dt.date(2026, 9, 22),
+                              build=lambda d: self.fail("should not rebuild"))
+        self.assertEqual(out, {})
+        self.assertEqual(post._load_state()["C1"]["late"], {})
+
     def test_day_done_marker(self):
         d = dt.date(2026, 9, 18)
         self.assertFalse(post.day_done("D1", d))

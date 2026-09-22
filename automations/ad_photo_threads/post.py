@@ -307,6 +307,12 @@ def publish(rep: collect.DayReport, channel: str, *, cl=None,
 
         ad["days"].append(day)
         ad.setdefault("stats", {})[day] = day_stats(item["cands"])
+        # Posted with no screenshot at all: watched for a few nights in case
+        # the interviewer posts it late (retry_late).
+        late = [c.name for c in item["cands"] if not c.images]
+        if late and not pilot:
+            got = ch_state.setdefault("late", {}).setdefault(day, [])
+            got += [n for n in late if n not in got]
         counts["replies"] += 1
         _save_state(state)
         # The header carries the week so far; Lucy posted it, so she can edit it.
@@ -373,6 +379,49 @@ def add_photos(rep: collect.DayReport, channel: str, names: List[str], *,
                                file_uploads=uploads[:MAX_FILES_PER_REPLY],
                                initial_comment=text)
         out[name] = f"added {len(uploads)} photo(s)"
+    return out
+
+
+LATE_DAYS = 3        # how many nights a "No screenshot" candidate is re-checked
+
+
+def watch(channel: str, day: dt.date, names: List[str]) -> List[str]:
+    """Put names on the late-photo watch by hand (a day posted before the
+    watch existed). Returns the day's watch list."""
+    state = _load_state()
+    got = state.setdefault(channel, {}).setdefault("late", {}).setdefault(
+        day.isoformat(), [])
+    got += [n for n in names if n not in got]
+    _save_state(state)
+    return got
+
+
+def retry_late(channel: str, today: dt.date, *, build=None, cl=None) -> Dict[str, str]:
+    """Each night, after the day's post: candidates from the last LATE_DAYS
+    days that went out as "No screenshot" get looked for again, and a photo
+    posted since goes into their ad's thread as one extra reply (Eve 9/21:
+    "vigila" Christopher Franklin). Re-reads the sheet once per such day, so
+    it only runs for days that still have someone missing."""
+    build = build or collect.build
+    state = _load_state()
+    late = state.get(channel, {}).get("late", {})
+    out: Dict[str, str] = {}
+    for day in sorted(late):
+        d = dt.date.fromisoformat(day)
+        if d >= today:
+            continue
+        if (today - d).days > LATE_DAYS or not late[day]:
+            late.pop(day, None)
+            continue
+        got = add_photos(build(d), channel, list(late[day]), cl=cl)
+        for name, what in got.items():
+            out[f"{day} {name}"] = what
+            if what.startswith("added"):
+                late[day].remove(name)
+    state = _load_state()                      # add_photos saved nothing; merge
+    if channel in state:
+        state[channel]["late"] = {k: v for k, v in late.items() if v}
+        _save_state(state)
     return out
 
 
