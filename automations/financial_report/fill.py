@@ -20,6 +20,12 @@ OUTPUT_SHEETS = {
     "ATT Program - Focus Report":          "1w_KWAmlLfMR4kceaJmz_kyahnVslStTquVkVydysXTE",
     "Carlos 1on1s - Focus Report":         "1KLF8diMJ8pwIQWW9IqN7CL288t1l9VGUKxzBcMl8Of4",
     "Alphalete Org 1on1s - Focus Reports": "1C6BLttOSZhs_dREySac19XkxnMl-Ab_sYacNSl2l6AQ",
+    # NDS Program - Focus Report (Eve 2026-09-22: "linkeala de la misma
+    # forma que usan los otros"). One tab per owner in the NDS tracker;
+    # the tab-name suffix is the same ' - NDS' this module already strips,
+    # and an owner with no row in the FINANCIAL SUMMARY files is simply
+    # left alone, so the owners outside our org cost nothing here.
+    "NDS Program - Focus Report":          "1Vu_J7bcSpreIBcsYuAVEQMusL9-RaOSgB65DiKxrYtI",
 }
 
 # How far below the 'Total Funds Available' anchor the financial rows run.
