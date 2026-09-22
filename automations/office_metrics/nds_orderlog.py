@@ -424,8 +424,11 @@ def _render_status_orders(owner, header, rows, target, out_dir, keyword, label, 
     ]
     out = out_dir / f"nds_{slug}_{target.isoformat()}.png"
     core = label.split(" ", 1)[1] if " " in label else label
+    noun = "disconnected" if slug == "disconnects" else "canceled"
     return (_house_render(house_rows, out, title=f"{owner} — {core}",
-                          cols=nds_cols), len(lines))
+                          cols=nds_cols,
+                          empty_note=f"No new Local Office {noun} orders."),
+            len(lines))
 
 
 def run(owner: str, board: str, *, target: dt.date | None = None,

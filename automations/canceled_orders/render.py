@@ -41,10 +41,14 @@ def _font(size: int, bold: bool = False):
 
 def render(rows: List[Dict[str, str]], out_path: Path,
            title: str = "Local Office — Canceled Orders",
-           cols: "List[tuple] | None" = None) -> Path:
+           cols: "List[tuple] | None" = None,
+           empty_note: str = "No new Local Office canceled orders.") -> Path:
     """`cols` overrides the column set (label, min-width) — the NDS wireless
     boards pass their own (device/port/TN columns instead of the internet-only
-    install fields). Default None = the house internet layout, unchanged."""
+    install fields). Default None = the house internet layout, unchanged.
+    `empty_note` is the one line drawn when there are no rows — the NDS
+    Disconnected Orders board reuses this layout and was saying "canceled
+    orders" on an empty day (Colten's first dry-run, 2026-09-22)."""
     cols = cols or COLS
     total_w = sum(w for _, w in cols) + PAD * 2
     h = HEADER_H + ROW_H * (max(len(rows), 1) + 1) + PAD * 2
@@ -69,8 +73,7 @@ def render(rows: List[Dict[str, str]], out_path: Path,
     y += ROW_H
 
     if not rows:
-        draw.text((x + 10, y + 5),
-                  "No new Local Office canceled orders.",
+        draw.text((x + 10, y + 5), empty_note,
                   fill=(120, 120, 120), font=font)
         img.save(out_path)
         return out_path
