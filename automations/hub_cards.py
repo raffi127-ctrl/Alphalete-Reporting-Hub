@@ -4165,7 +4165,7 @@ AUTOMATED_REPORTS = [
         "name": "Sales Text Updates",
         "creator": "Claude",
         # Ops, not Metrics: this is an always-on background job (every 5 min,
-        # 10:00-21:30) like rc-autoread and sara-plus-issues, not a report that
+        # noon-midnight) like rc-autoread and sara-plus-issues, not a report that
         # runs once and is read. The category is what puts it under the OPS
         # divider; the amber pill is a SEPARATE per-card-id CSS rule in
         # dashboard.py -- `color` here does not drive the tile.
@@ -4230,20 +4230,17 @@ AUTOMATED_REPORTS = [
         "run_rerun_id": "alphalete_sales_board",
         "schedule": {
             "frequency": "daily",
-            # Mon-Sat, and it starts at 10:00 - BOTH halves matter, and the
-            # card had neither (2026-08-30). deploy/alphalete_sales_board_5min.sh
-            # bails on `[ "$DOW" = "7" ] && exit 0` (Sunday is not a selling
-            # day) and again on `[ "$HOUR" -lt 10 ]`. With no weekdays list the
-            # Hub called it due on SUNDAY, and with no time it defaulted to
-            # 08:00, so it also read as late every weekday from ~09:02 until
-            # the sweep's first real tick at 10:00. Two standing false alarms
-            # on a job that was working perfectly - and a "needs attention"
-            # row that is wrong twice a week teaches you to skim the list.
-            # Its twin card times-of-sales, driven by this SAME sweep, has
-            # carried the weekday list all along; this just brings the pair
-            # back into step.
-            "weekdays": [0, 1, 2, 3, 4, 5],
-            "time": "every 5 min, 10:00am-9:30pm (Sat 10:00am-5:00pm)",
+            # EVERY DAY, from NOON (Megan 2026-09-22: "every day should be
+            # 12-12 not just weekdays"). Both halves matter: with no weekdays
+            # list or no time the Hub defaulted to 08:00 and read the sweep
+            # as late every morning until its first real tick (2026-08-30),
+            # and a "needs attention" row that is wrong daily teaches you to
+            # skim the list. deploy/alphalete_sales_board_5min.sh bails on
+            # `[ "$HOUR" -lt 12 ]`; config.DAY_END_HHMM stops it at 23:59.
+            # Its twin card times-of-sales keeps its own Mon-Sat list: the
+            # snapshot tab has no Sunday columns.
+            "weekdays": [0, 1, 2, 3, 4, 5, 6],
+            "time": "every 5 min, 12:00pm-midnight, every day (+ a 2am refresh of yesterday)",
             "estimated_minutes": 2,
         },
         "checklist": [],

@@ -12,8 +12,8 @@ def test_quiet_outside_selling_hours():
 
 
 def test_too_early_in_the_day_is_not_a_fault():
-    # 10:05 — the first sweep of the day may legitimately not have landed.
-    now = dt.datetime(2026, 8, 26, 10, 5)
+    # 12:05 — the first sweep of the day may legitimately not have landed.
+    now = dt.datetime(2026, 8, 26, 12, 5)
     start = now.replace(hour=C.DAY_START_HHMM[0], minute=C.DAY_START_HHMM[1])
     assert (now - start).total_seconds() / 60.0 < W.STALE_MINUTES
 

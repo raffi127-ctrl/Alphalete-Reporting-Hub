@@ -139,19 +139,39 @@ LVL1_WINDOW_MINUTES = 60
 # browser, so the sweep deliberately does not start until the wave is through.
 # SaraPlus is cumulative per day, so a late start loses nothing -- the first
 # sweep of the day reads the whole day so far.
-# 10:00, not 07:00 (Megan 2026-08-26: "no one will be making sales at 7am").
-# The old 07:00 start bought nothing -- SaraPlus is cumulative within the day,
-# so the first sweep reads the whole morning at once no matter when it runs --
-# and cost 36 logins and 36 browser launches on Lucy 1 before anyone knocked a
-# door. Move this if the field starts earlier; nothing else depends on it.
-DAY_START_HHMM = (10, 0)
+# NOON TO MIDNIGHT, EVERY DAY (Megan 2026-09-22: "every day should be 12-12
+# not just weekdays"). Was 07:00, then 10:00 (Megan 2026-08-26: "no one will
+# be making sales at 7am"): SaraPlus is cumulative within the day, so a late
+# start loses nothing -- the first sweep reads the whole morning at once --
+# and every hour cut off the front saves 12 logins and browser launches on
+# Lucy 1. Move this if the field starts earlier; nothing else depends on it.
+DAY_START_HHMM = (12, 0)
 
-# Selling stops earlier on Saturday, which is why the Saturday scoreboard goes
-# out at 4pm and the weekday one at 8pm. Sweeping until 21:30 on a Saturday was
-# ~65 passes after the day was already called.
-DAY_END_HHMM = (21, 30)
-SATURDAY_END_HHMM = (17, 0)
-WEEKDAYS = (0, 1, 2, 3, 4, 5)          # Mon-Sat; Sunday is not a selling day
+# EVERY DAY RUNS TO MIDNIGHT (Rafael 2026-09-22: "Reminder of Sara+ checking
+# all night. Today theirs 8 apps missing that were done after Sara+ stopped
+# checking"; Megan the same day: "every day should be 12-12 not just
+# weekdays"). Until then weekdays stopped at 21:30, Saturday at 17:00 and
+# Sunday never ran, and an app keyed into SaraPlus after the stop never
+# reached the board: the next day's sweeps read the next day only. 23:59, not
+# (0, 0) -- a tick at midnight would read the NEW day, which is empty, and
+# `day` is fixed when the tick starts, so a 23:59 sweep that finishes at 00:01
+# still writes the right block. The 8pm / Sat 4pm scoreboards to the reps stay
+# where they are (LVL1_WINDOWS); the extra passes only fill the board and text
+# the Partners chat when something lands. Whatever is entered after the last
+# tick is picked up by the previous-day CATCH-UP in run.py.
+DAY_END_HHMM = (23, 59)
+WEEKDAYS = (0, 1, 2, 3, 4, 5, 6)       # every day, Sunday included
+
+# THE MORNING REFRESH (Megan 2026-09-22: "add in a morning refresh before the
+# 12pm start - maybe at like 2am"). During this hour every tick runs
+# `run.py --refresh`: no live sweep (today is empty at 2am), just the
+# previous-day catch-up, so an order keyed in late last night is on the board
+# before anyone opens it in the morning instead of at noon. The first tick
+# that succeeds marks the day done and the rest of the hour exits in a
+# heartbeat; a failure is simply retried by the next tick and, if the whole
+# hour fails, the noon sweep's own catch-up is the backstop. 2, not 4: the 4am
+# batch owns Lucy 1's browser then.
+REFRESH_HOUR = 2
 
 STATE_PATH = Path.home() / ".config" / "recruiting-report" / "alphalete_sales_board_state.json"
 LOCK_PATH = Path.home() / ".config" / "recruiting-report" / "alphalete_sales_board.lock"
@@ -182,9 +202,19 @@ def in_selling_window(now: Optional[dt.datetime] = None) -> bool:
         return False
     start = now.replace(hour=DAY_START_HHMM[0], minute=DAY_START_HHMM[1],
                         second=0, microsecond=0)
-    end_h, end_m = SATURDAY_END_HHMM if now.weekday() == 5 else DAY_END_HHMM
-    end = now.replace(hour=end_h, minute=end_m, second=0, microsecond=0)
+    end = now.replace(hour=DAY_END_HHMM[0], minute=DAY_END_HHMM[1],
+                      second=0, microsecond=0)
     return start <= now <= end
+
+
+def previous_selling_day(day: dt.date) -> dt.date:
+    """The selling day before `day` -- plain yesterday while every day is in
+    WEEKDAYS; skips any day that isn't, so a Monday would reach back to
+    Saturday if Sunday were ever taken out again."""
+    prev = day - dt.timedelta(days=1)
+    while prev.weekday() not in WEEKDAYS:
+        prev -= dt.timedelta(days=1)
+    return prev
 
 
 def lvl1_due(now: Optional[dt.datetime] = None) -> bool:

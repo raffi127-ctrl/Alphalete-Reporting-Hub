@@ -4,6 +4,8 @@
     python -m automations.alphalete_sales_board.run --apply        # write board
     python -m automations.alphalete_sales_board.run --apply --send # + notify
     python -m automations.alphalete_sales_board.run --date 2026-08-25 --force
+    python -m automations.alphalete_sales_board.run --catch-up             # preview yesterday's top-up too
+    python -m automations.alphalete_sales_board.run --refresh --apply      # the 2am pass: yesterday only
 
 ONE SWEEP: log into SaraPlus, read the day's three ReportingHub grids, work out
 each rep's Int / Int Up / DTV / NL, write TODAY's block on this week's Sales
@@ -571,6 +573,91 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool,
     return len(updates)
 
 
+def catch_up(prev: dt.date, *, apply_writes: bool, headless: bool = True) -> int:
+    """Re-read the PREVIOUS selling day once and top up its block on the board.
+
+    WHY (Rafael 2026-09-22): "Today theirs 8 apps missing that were done after
+    Sara+ stopped checking." An order keyed into SaraPlus after the last tick
+    of the day -- after midnight, or on a Saturday evening, or during an
+    outage -- never reached the board, because every later sweep reads only
+    its own day. SaraPlus is cumulative per day, so one read of yesterday
+    returns the closed day in full.
+
+    BOARD ONLY. No texts, no Slack, no roster append, no chat replies: those
+    belong to the live day. It writes through the same plan(), so it can raise
+    or re-split a number and can never blank one, and it leaves any day cell
+    carrying a roll-call letter alone. Returns the number of cells changed.
+    """
+    _log("--- catch-up: re-reading %s (%s) for orders entered after its last "
+         "sweep ---" % (prev.isoformat(), prev.strftime("%A")))
+    scraped = sara.scrape(prev, headless=headless, log=_log)
+    agents = scraped["agents"]
+    ws = fill.open_tab(prev)
+    grid = ws.get_all_values()
+    names = fill.board_names(grid)
+    alias_map = aliases.load()
+    rows, notes, missing = calc.calculate(agents, names, alias_map)
+    for n in notes:
+        _log("  note: %s" % n)
+    if missing:
+        _log("  catch-up: %d SaraPlus name(s) with no row on %r are NOT added "
+             "here (%s) -- the live day owns the roster"
+             % (len(missing), ws.title,
+                ", ".join(m["sara_name"] for m in missing[:5])))
+    updates, plan_notes = fill.plan(grid, prev, rows)
+    for n in plan_notes:
+        _log("  note: %s" % n)
+    if apply_writes and updates:
+        changed = fill.apply(ws, updates)
+        _log("catch-up wrote %d cell(s) to %s for %s"
+             % (changed, ws.title, prev.strftime("%A")))
+    else:
+        changed = 0
+        _log("catch-up: %d cell(s) would change on %s (preview)"
+             % (len(updates), ws.title))
+    for u in updates[:15]:
+        _log("    %s -> %r" % (u["range"], u["values"][0][0]))
+    _mirror_to_sandbox(prev, agents, alias_map, ws, apply_writes=apply_writes,
+                       live_grid=grid, live_updates=updates)
+    return changed
+
+
+def _refresh(day: dt.date, *, apply_writes: bool, send: bool, force: bool,
+             headless: bool = True) -> int:
+    """The 2am pass: yesterday's top-up and nothing else.
+
+    Every tick of REFRESH_HOUR lands here. The first one that succeeds marks
+    the day (state._catchup) and the rest exit before touching a browser. A
+    failure marks NOTHING -- the next tick retries, and if the whole hour
+    fails the noon sweep's catch-up still owes the day. Never texts: there is
+    nothing new about a closed day at 2am, only cells to fill.
+    """
+    prev = C.previous_selling_day(day)
+    if not force and S.catchup_done(S.load(), prev):
+        _log("refresh: %s already caught up -- nothing to do" % prev.isoformat())
+        return 0
+    with Lock() as lock:
+        if not lock.held:
+            _log("another pass is still running -- skipping this tick")
+            return 0
+        try:
+            catch_up(prev, apply_writes=apply_writes, headless=headless)
+        except _sp.SaraPasswordChangeRequired as e:
+            # The one failure a retry can't fix: say so now, as the live
+            # sweep would, instead of letting ten more ticks fail quietly.
+            _alert_password_reset(str(e), dry_run=not send)
+            _log("refresh of %s FAILED: %s" % (prev.isoformat(), e))
+            return 1
+        except Exception as e:  # noqa: BLE001
+            _log("refresh of %s FAILED (next tick retries): %s: %s"
+                 % (prev.isoformat(), type(e).__name__, str(e)[:300]))
+            return 1
+    if apply_writes:
+        S.save(S.mark_catchup(S.load(), prev, ok=True))
+    _log("=== done ===")
+    return 0
+
+
 def _publish_times_hub(label: str) -> None:
     """EVERY snapshot publishes, not just the first of the day.
 
@@ -647,6 +734,12 @@ def main(argv=None) -> int:
     ap.add_argument("--force", action="store_true",
                     help="run outside the selling-day window")
     ap.add_argument("--headed", action="store_true", help="show the browser")
+    ap.add_argument("--catch-up", action="store_true",
+                    help="also re-read the previous selling day and top up its "
+                         "block (the live sweep does this by itself once a day)")
+    ap.add_argument("--refresh", action="store_true",
+                    help="the 2am pass: ONLY the previous-day top-up, no live "
+                         "sweep, no texts; exits at once if it already ran")
     ap.add_argument("--dry-run", action="store_true",
                     help="explicit preview (the default; here for the house flag)")
     ap.add_argument("--times-slot", metavar="LABEL",
@@ -687,6 +780,10 @@ def main(argv=None) -> int:
     apply_writes = args.apply and not args.dry_run
     send = args.send and not args.dry_run
 
+    if args.refresh:
+        return _refresh(day, apply_writes=apply_writes, send=send,
+                        force=args.force, headless=not args.headed)
+
     # THE CHECKPOINT IS READ HERE, before the window gate and long before the
     # scrape. A sweep takes 30-60 seconds; asking the clock afterwards would
     # stamp the 4:00 column with numbers read at 3:59, or miss 4:00 entirely
@@ -697,17 +794,13 @@ def main(argv=None) -> int:
         TOS.due(sent=S.times_sent(S.load(), day))
         if day == dt.date.today() else None)
 
-    # THE SATURDAY TAIL. The board's sweep stops at 17:00 on a Saturday --
-    # Megan set that deliberately, because sweeping to 21:30 was ~65 passes
-    # after the day had been called. But Times of Sales runs to 6:30 PM on a
-    # Saturday and has done for months (the tab's Saturday rows fill through
-    # the 6:30 column), so the plain window gate would have silently dropped
-    # the last three snapshots of every Saturday. Letting a due checkpoint
-    # open the gate buys those three back at a cost of three extra passes,
-    # not sixty-five -- and the board write those passes also do is harmless,
-    # since SaraPlus is cumulative and today's cells track it all day anyway.
+    # A due Times of Sales checkpoint opens the gate on its own. Since
+    # 2026-09-22 the sweep runs noon-midnight every day and every snapshot slot
+    # sits inside that, so this is only a safety net for the two windows
+    # drifting apart again (it once bought back Saturday's 5:30-6:30 snapshots
+    # when the board's sweep stopped at 17:00).
     if not args.force and not C.in_selling_window() and not times_label:
-        _log("outside the selling day (%s-%s, Mon-Sat) -- nothing to do"
+        _log("outside the selling day (%s-%s, every day) -- nothing to do"
              % ("%02d:%02d" % C.DAY_START_HHMM, "%02d:%02d" % C.DAY_END_HHMM))
         return 0
     if times_label and not C.in_selling_window():
@@ -733,6 +826,34 @@ def main(argv=None) -> int:
         except Exception as e:  # noqa: BLE001
             _record_failure("%s: %s" % (type(e).__name__, e), dry_run=not send)
             return 1
+
+        # THE PREVIOUS DAY, ONCE. After today's sweep has succeeded (so a
+        # broken login never costs today its pass), the first live tick of the
+        # day (noon) re-reads yesterday for anything entered after its last
+        # sweep at 23:59 -- or during an outage. Runs AFTER today so the Partners chat gets the live
+        # picture first; inside the lock so the next tick cannot stack on it.
+        # A failure spends one of three tries and can never fail this tick.
+        prev = C.previous_selling_day(day)
+        wants_catchup = args.catch_up or (
+            apply_writes and day == dt.date.today()
+            and not S.catchup_done(S.load(), prev))
+        if wants_catchup:
+            try:
+                catch_up(prev, apply_writes=apply_writes,
+                         headless=not args.headed)
+                if apply_writes:
+                    S.save(S.mark_catchup(S.load(), prev, ok=True))
+            except Exception as e:  # noqa: BLE001 -- never fail today's sweep
+                _log("catch-up of %s FAILED: %s: %s"
+                     % (prev.isoformat(), type(e).__name__, str(e)[:300]))
+                if apply_writes:
+                    data = S.mark_catchup(S.load(), prev, ok=False)
+                    S.save(data)
+                    if S.catchup_done(data, prev):
+                        _log("catch-up of %s: giving up after %d tries -- "
+                             "run `--date %s --apply --force` by hand"
+                             % (prev.isoformat(), S.CATCHUP_MAX_TRIES,
+                                prev.isoformat()))
 
     _clear_failures()
     if apply_writes:

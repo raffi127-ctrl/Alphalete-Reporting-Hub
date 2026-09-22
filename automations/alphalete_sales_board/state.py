@@ -64,7 +64,7 @@ def prune(data: Dict, keep: int = KEEP_DAYS) -> Dict:
     # this report on 2026-08-26, more than any other report on the Hub, all of
     # them the same first-sweep-of-the-day row over and over.
     for section in ("_records", "_lvl1_sent", "_added", "_times_sent",
-                    "_hub"):
+                    "_hub", "_catchup"):
         sub = data.get(section) or {}
         keys = sorted(sub)[-keep:]
         if keys:
@@ -173,4 +173,28 @@ def forget_added(data: Dict, sara_name: str) -> Dict:
     key = sara_name.strip().upper()
     for day_key in list((data.get("_added") or {})):
         data["_added"][day_key].pop(key, None)
+    return data
+
+
+# --- previous-day catch-up: once per selling day, a few tries at most --------
+# Keyed by the day being CAUGHT UP (yesterday), not the day the sweep runs on.
+CATCHUP_MAX_TRIES = 3
+
+
+def catchup_tries(data: Dict, day: dt.date) -> int:
+    return int((data.get("_catchup") or {}).get(day.isoformat()) or 0)
+
+
+def catchup_done(data: Dict, day: dt.date) -> bool:
+    """True once the catch-up succeeded, or gave up after CATCHUP_MAX_TRIES.
+    A catch-up that keeps failing must not cost every later tick a second
+    SaraPlus login all day."""
+    return catchup_tries(data, day) >= CATCHUP_MAX_TRIES
+
+
+def mark_catchup(data: Dict, day: dt.date, *, ok: bool) -> Dict:
+    """A success counts as finished; a failure spends one try."""
+    key = day.isoformat()
+    tries = CATCHUP_MAX_TRIES if ok else catchup_tries(data, day) + 1
+    data.setdefault("_catchup", {})[key] = tries
     return data

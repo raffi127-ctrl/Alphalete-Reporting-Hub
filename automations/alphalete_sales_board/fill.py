@@ -19,8 +19,10 @@ writes 150 times a day unattended:
   * never blank a cell that holds a number. A sale that reached the board is
     evidence; an empty grid cell is not evidence of its absence, and a short
     SaraPlus export is a normal event;
-  * never write a day that is not today. Yesterday is closed and belongs to
-    rep_sales_fill, which fills it once from Tableau.
+  * never write a day that is not the one being swept. The live sweep only
+    ever sweeps today; run.catch_up re-reads the PREVIOUS selling day once
+    (orders keyed in after its last tick) and writes only that block, under
+    the same three rules above.
 
 Writes go out as ONE batch_update. A per-cell loop across 60 reps would burn
 the Sheets write quota inside a minute and 429 the next report to touch the
