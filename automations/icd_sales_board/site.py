@@ -546,7 +546,7 @@ def _vital(col, label: str, value: str, hit=None, goal: str = "",
         f'justify-content:center;align-items:center;gap:.28rem;'
         f'text-align:center;line-height:1.2">'
         f'<div style="font-size:.8rem;opacity:.6">{label}</div>'
-        f'<div style="font-size:{"2.5rem" if big else "1.7rem"};'
+        f'<div style="font-size:{_card_size(value, big)};'
         f'font-weight:600;'
         f'color:{tone[0] if tone else "inherit"}">{value}</div>'
         f'<div style="display:flex;gap:.3rem;flex-wrap:wrap;'
@@ -1841,6 +1841,20 @@ def _week_apps_back(icd: str, week_ending: dt.date, weeks: int = 1) -> dict:
 
 
 @st.cache_data(ttl=900, show_spinner=False)
+def _days_all(icd: str) -> dict:
+    """{date: measures} — this office's settled Board Days, read ONCE.
+
+    _settled_weeks and _settled_days each read the whole tab; under Google's
+    rate limit that was two retry backoffs per render, 67 seconds of a
+    70-second board for Ryan (2026-09-22). One read, sliced for both."""
+    from automations.icd_sales_board import tableau_days as TD
+    try:
+        return TD.stored_days(icd).get(icd, {}) or {}
+    except Exception:   # noqa: BLE001 — no store is not a broken page
+        return {}
+
+
+@st.cache_data(ttl=900, show_spinner=False)
 def _settled_weeks(icd: str) -> list:
     """Every week this office has settled Tableau days for, newest first.
 
@@ -1848,12 +1862,7 @@ def _settled_weeks(icd: str) -> list:
     said 'nothing for this office' about an office with three weeks on
     file — the board went blank the moment the week rolled over. The weeks
     that exist are a fact about the data, not about today's date."""
-    from automations.icd_sales_board import tableau_days as TD
-    try:
-        got = TD.stored_days(icd).get(icd, {})
-        return sorted({_week_end(d) for d in got}, reverse=True)
-    except Exception:   # noqa: BLE001 — no store is not a broken page
-        return []
+    return sorted({_week_end(d) for d in _days_all(icd)}, reverse=True)
 
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -1867,13 +1876,10 @@ def _settled_days(icd: str, week_ending: dt.date) -> dict:
     # harvest — the mini — and this page may be running anywhere, so the
     # stored rows are the portable source. The local file is the fallback for
     # a machine that just pulled one itself.
-    try:
-        got = TD.stored_days(icd).get(icd, {})
-        if got:
-            return {d: v for d, v in got.items()
-                    if week_ending - dt.timedelta(days=6) <= d <= week_ending}
-    except Exception:
-        pass
+    got = _days_all(icd)
+    if got:
+        return {d: v for d, v in got.items()
+                if week_ending - dt.timedelta(days=6) <= d <= week_ending}
     try:
         return TD.for_owner(icd, week_ending=week_ending)
     except Exception:
@@ -2085,6 +2091,18 @@ def _check_line(office_key: str) -> str:
                 f"{tab} in Tableau.")
     return (f"⚠ Yesterday's live count was off — {when}: {live} live, {tab} "
             f"in Tableau. The board now shows Tableau's number.")
+
+
+def _card_size(value, big: bool) -> str:
+    """The card's number shrinks as it gets longer, so it stays inside.
+
+    Box's Volume is six figures and a comma (309,193); at the headline size it
+    ran out past the card's border. Short numbers keep the size they had."""
+    n = len(str(value))
+    base = 2.5 if big else 1.7
+    if n <= 4:
+        return f"{base}rem"
+    return f"{max(1.2, base * 4.5 / n):.2f}rem"
 
 
 def _num(v) -> str:
