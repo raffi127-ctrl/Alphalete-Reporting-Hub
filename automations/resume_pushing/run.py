@@ -1614,7 +1614,16 @@ def _launch_cdp_chrome(url: str = "https://applicantstream.com/index.cfm"):
               f"--remote-debugging-port={CDP_PORT}", "--no-first-run",
               "--no-default-browser-check", "--disable-sync", "--restore-last-session=false",
               "--disable-session-crashed-bubble", "--disable-infobars", url]
-    return subprocess.Popen(launch, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # start_new_session: give Chrome its OWN process group (2026-09-22). launchd
+    # kills whatever is left in a job's process group when the job's main process
+    # exits, so a Chrome launched as a child of the tick died the moment the tick
+    # finished — every "leaving Chrome warm" line was followed by launchd killing
+    # it, and not one tick ever reused a browser. Out of the group, it survives
+    # between ticks, which is the entire point of keep-warm. pkill -f still
+    # reaches it (that matches on the command line, not the group), so every
+    # existing cleanup path is unaffected.
+    return subprocess.Popen(launch, stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL, start_new_session=True)
 
 
 def _upload_png_b64(png_bytes: bytes) -> None:
