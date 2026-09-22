@@ -11275,6 +11275,37 @@
       "freshness_target": null,
       "assignee": "Claude"
     },
+    "icd_knocks_backfill": {
+      "on_scheduler": true,
+      "_note": "Puts relay-only offices' knocks into the history. 'Knocks Daily' fills as a side effect of a run that POSTS a board, so an office whose knocks arrive by LucyECO relay and whose board we do not post was in no trend at all (Khalil, Ryan, Roshan, Carlos x2 - 28 office-days recovered on 2026-09-22, 14 offices -> 19). PULLS NOTHING: reads the 'ICD Knocks' relay tab and the history, writes the history. Every gate the poster uses applies, so a day that is not finished is left for a later run - which is why the window is 7 days and it runs daily. Idempotent: a second run the same day adds nothing.",
+      "label": "ICD knocks backfill (relay -> history)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.icd_sales_board.knocks_backfill"
+      ],
+      "base_args": [],
+      "machine": "Lucy 3",
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "not_before": "04:30"
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 15,
+      "verify": null,
+      "assignee": "Claude",
+      "_order_note": "After the ICD posters have had the night to finish their days, and before anyone opens a board in the morning."
+    },
     "icd_profiles_refresh": {
       "on_scheduler": true,
       "_note": "Re-reads the ORG Sales Board and rewrites the ICD sales-board site's office list. That list was a hand-built snapshot from 2026-08-17 and had gone stale: four offices (Joseph Logan, Nii Tagoe, Steve McElwee, Trang Canavan) had settled Tableau numbers stored and no way to be selected on the site. One sheet read, no Tableau, no browser. It never drops an office silently - anyone missing from the board that day is kept and reported, and 'extra_icds' (offices that sell into Tableau without being a board row) is merged back in. Use --prune to actually remove one.",
@@ -11288,7 +11319,15 @@
         "--refresh"
       ],
       "cadence": {
-        "weekdays": [0, 1, 2, 3, 4, 5, 6]
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
       },
       "priority": "P3",
       "freshness_target": null,
