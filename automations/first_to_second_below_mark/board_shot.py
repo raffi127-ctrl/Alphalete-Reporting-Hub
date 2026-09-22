@@ -206,6 +206,17 @@ def caption(text: str, width: int, bg=CAPTION_BG, height: int = CAPTION_PX,
     return im
 
 
+def _is_hidden(sh, sheet_id: int) -> bool:
+    meta = sh.fetch_sheet_metadata({"fields": "sheets(properties(sheetId,hidden))"})
+    return any(s["properties"]["sheetId"] == sheet_id and s["properties"].get("hidden")
+               for s in meta["sheets"])
+
+
+def _set_hidden(sh, sheet_id: int, hidden: bool) -> None:
+    sh.batch_update({"requests": [{"updateSheetProperties": {
+        "properties": {"sheetId": sheet_id, "hidden": hidden}, "fields": "hidden"}}]})
+
+
 def build_png(tab: str = b.PICTURE_TAB, today: Optional[dt.date] = None,
               out: Optional[Path] = None, logfn=print) -> Tuple[Path, str]:
     """(png path, Slack comment) for the tab as the last pass left it."""
@@ -223,17 +234,28 @@ def build_png(tab: str = b.PICTURE_TAB, today: Optional[dt.date] = None,
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     token = _access_token()
     images = []
-    for k, blk in enumerate(blocks):
-        hp = OUT_DIR / f"board_{k}_hdr.png"
-        bp = OUT_DIR / f"board_{k}_body.png"
-        # The export endpoint drops a connection now and then (SSL EOF,
-        # 2026-09-21); one picture has up to four exports, so retry each.
-        for rng, path in ((blk["header"], hp), (blk["body"], bp)):
-            b._with_network_retry(
-                lambda: _export_png(ws.id, rng, path, token, spreadsheet_id=rep.SHEET_ID),
-                logfn=logfn, what=f"export {rng}", wait=5.0)
-        images.append((blk, Image.open(hp).convert("RGB"), Image.open(bp).convert("RGB")))
-        logfn(f"  {blk['caption']}: {blk['header']} + {blk['body']}")
+    # The picture tab is kept HIDDEN so the workbook stays clean (Eve,
+    # 2026-09-21), but a hidden tab exports as a blank page: show it for the
+    # exports and hide it again whatever happens. The flag is read FRESH -- the
+    # opened workbook can be a cached copy from before the tab was hidden.
+    hidden = _is_hidden(sh, ws.id)
+    if hidden:
+        _set_hidden(sh, ws.id, False)
+    try:
+        for k, blk in enumerate(blocks):
+            hp = OUT_DIR / f"board_{k}_hdr.png"
+            bp = OUT_DIR / f"board_{k}_body.png"
+            # The export endpoint drops a connection now and then (SSL EOF,
+            # 2026-09-21); one picture has up to four exports, so retry each.
+            for rng, path in ((blk["header"], hp), (blk["body"], bp)):
+                b._with_network_retry(
+                    lambda: _export_png(ws.id, rng, path, token, spreadsheet_id=rep.SHEET_ID),
+                    logfn=logfn, what=f"export {rng}", wait=5.0)
+            images.append((blk, Image.open(hp).convert("RGB"), Image.open(bp).convert("RGB")))
+            logfn(f"  {blk['caption']}: {blk['header']} + {blk['body']}")
+    finally:
+        if hidden:
+            _set_hidden(sh, ws.id, True)
 
     w = max(max(h.width, bd.width) for _, h, bd in images)
     gap = 60

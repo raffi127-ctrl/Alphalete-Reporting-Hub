@@ -78,7 +78,8 @@ TEMPLATE_TAB = "1st to 2nd below the mark TEMPLATE"
 TEMPLATE_TAB_OLD = rep.SANDBOX_TAB
 # The same board cut down to the offices of ONE pass (one time zone's 11:00 or
 # 6:30 PM), which is what the picture is taken from. Generated like the board;
-# it stays VISIBLE because a hidden tab exports as a blank page.
+# it is kept HIDDEN (Eve, 2026-09-21: a clean workbook); a hidden tab exports as a
+# blank page, so board_shot shows it just for the export and hides it again.
 PICTURE_TAB = "1st to 2nd below the mark (picture)"
 # Every office's numbers as of the last time that office was pulled, so a pass
 # that pulls only one zone can still rebuild the whole board. Hidden, generated.
