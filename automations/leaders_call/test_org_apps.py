@@ -20,6 +20,17 @@ GRID = [
     ["Carlos Org", "", "1157", "1036", "1156", "1405"],
     ["Retail NL"],
     ["1", "Amjad Malhas", "129", "28", "13", "34"],
+    ["TOTALS", "", "151", "43", "20", "50"],
+    ["ATT Fiber Team"],
+    ["1", "Jane Doe", "700", "800", "700", "600"],
+    ["2", "John Roe", "522", "653", "600", "500"],
+    ["TOTALS", "", "1,222", "1453", "1300", "1100"],
+    ["BOX"],
+    ["1", "Abel Draper", "13", "7", "0", "1"],
+    ["TOTALS", "", "250", "193", "150", "100"],
+    ["Retail NL", "", "Monday", "Tuesday"],          # daily section starts
+    ["1", "Amjad Malhas", "5", "6"],
+    ["TOTALS", "", "999", "999"],                    # must NOT be a group
 ]
 
 
@@ -29,6 +40,18 @@ class OrgAppsFromGrid(unittest.TestCase):
         self.assertEqual((r.total, r.prev, r.delta), (4403, 4319, 84))
         self.assertEqual(oa.cover_lines(r),
                          ("4,403", "+84 vs 4,319 the week before"))
+
+    def test_breakdown_is_the_group_totals_in_board_order(self):
+        r = oa.org_apps_from_grid(GRID, dt.date(2026, 9, 20))
+        self.assertEqual(r.breakdown, [("Retail NL", 151, 43),
+                                       ("ATT Fiber Team", 1222, 1453),
+                                       ("BOX", 250, 193)])
+        self.assertEqual(oa.breakdown_line(r),
+                         "Fiber 1,222   ·   BOX 250   ·   Retail NL 151")
+
+    def test_breakdown_without_prior_week(self):
+        r = oa.org_apps_from_grid(GRID, dt.date(2026, 8, 30))
+        self.assertEqual(r.breakdown[0], ("Retail NL", 50, None))
 
     def test_frozen_week_further_right(self):
         r = oa.org_apps_from_grid(GRID, dt.date(2026, 9, 6))

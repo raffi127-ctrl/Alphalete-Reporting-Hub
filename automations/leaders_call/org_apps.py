@@ -41,8 +41,8 @@ from __future__ import annotations
 
 import datetime as dt
 import re
-from dataclasses import dataclass
-from typing import List, Optional
+from dataclasses import dataclass, field
+from typing import List, Optional, Tuple
 
 # Same workbook as run.LEADERS_CALL_SHEET_ID / org_sales_board.run.SHEET_ID.
 # Typed here (not imported) so importing this module never drags in run.py's
@@ -54,11 +54,25 @@ ALL_TOTALS_LABEL = "ALL TOTALS"
 _WE_RE = re.compile(r"^\s*WE\s+(\d{1,2})\.(\d{1,2})\s*$", re.I)
 
 
+# Board group label -> how the slide names it. The deck's own sections are
+# called Fiber / NDS / B2B / BOX, so the breakdown uses the same words; a group
+# not listed here keeps the board's label as-is (a new campaign shows up on
+# its own, nothing to add).
+DISPLAY = {
+    "ATT FIBER TEAM": "Fiber",
+    "ATT NDS TEAM": "NDS",
+}
+
+
 @dataclass
 class OrgApps:
     week_end: dt.date        # the recognized week's Sunday
     total: int               # ALL TOTALS under that week's header
     prev: Optional[int]      # ALL TOTALS under the previous Sunday, if present
+    # Megan 2026-09-22: the campaign split under the total — one entry per
+    # group of the ALPHALETE ORG block (its 'TOTALS' row under the same
+    # header), as (board label, this week, week before). Board order.
+    breakdown: List[Tuple[str, int, Optional[int]]] = field(default_factory=list)
 
     @property
     def delta(self) -> Optional[int]:
@@ -114,7 +128,33 @@ def org_apps_from_grid(grid: List[List], week_end: dt.date) -> OrgApps:
     prev_sun = week_end - dt.timedelta(days=7)
     pc = cols.get((prev_sun.month, prev_sun.day))
     prev = _num(_cell(grid, tr, pc)) if pc is not None else None
-    return OrgApps(week_end=week_end, total=total, prev=prev)
+    return OrgApps(week_end=week_end, total=total, prev=prev,
+                   breakdown=_groups(grid, tr, cols[want], pc))
+
+
+def _groups(grid, start_row: int, col: int, pcol: Optional[int]) -> list:
+    """The campaign groups under ALL TOTALS: a label row (col A text that is
+    not a rank number), its numbered ICD rows, then its 'TOTALS' row. Ends
+    where the daily sections begin (a 'Monday' header in col C) or the grid
+    does. The org lines right under ALL TOTALS ('Raf Org' ...) carry no
+    TOTALS row of their own, so they never form a group."""
+    out, label = [], None
+    for r in range(start_row + 1, len(grid)):
+        if _cell(grid, r, 2).lower() == "monday":
+            break
+        a = _cell(grid, r, 0)
+        if not a or a.isdigit():
+            continue
+        if a.upper() in ("TOTALS", "TOTAL"):
+            if label:
+                v = _num(_cell(grid, r, col))
+                pv = _num(_cell(grid, r, pcol)) if pcol is not None else None
+                if v is not None:
+                    out.append((label, v, pv))
+            label = None
+        else:
+            label = a
+    return out
 
 
 def org_total_apps(week_end: dt.date, sheet_id: str = SHEET_ID) -> OrgApps:
@@ -138,6 +178,13 @@ def cover_lines(oa: OrgApps) -> tuple:
     return big, f"{sign}{d:,} vs {oa.prev:,} the week before"
 
 
+def breakdown_line(oa: OrgApps) -> str:
+    """'NDS 2,165 · Fiber 1,222 · B2B 476 · ...' — biggest first, every group
+    shown (a 0 is information). '' when the board had no groups."""
+    items = sorted(oa.breakdown, key=lambda t: -t[1])
+    return "   ·   ".join(f"{DISPLAY.get(lab.upper(), lab)} {v:,}" for lab, v, _ in items)
+
+
 def main() -> int:
     import argparse
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
@@ -156,6 +203,7 @@ def main() -> int:
         return 1
     big, note = cover_lines(oa)
     print(f"WE {sun}: ORG TOTAL APPS {big}  {note}")
+    print(f"  {breakdown_line(oa)}")
     return 0
 
 

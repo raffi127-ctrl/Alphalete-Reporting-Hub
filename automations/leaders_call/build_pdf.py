@@ -446,11 +446,13 @@ def _draw_cover(c, week_label, summary, org_apps=None):
     c.line(MARGIN, PAGE_H - 0.4 * inch, PAGE_W - MARGIN, PAGE_H - 0.4 * inch)
     c.line(MARGIN, 0.4 * inch, PAGE_W - MARGIN, 0.4 * inch)
     # Spread the title block down the page (Megan 2026-07-21: fill more of the slide).
-    lw = 2.55 * inch
+    # 2.55" -> 2.3" and a tighter gap (2026-09-22): the org-apps total and its
+    # campaign breakdown now sit under the week label, so the block moves up.
+    lw = 2.3 * inch
     logo_top = PAGE_H - 0.95 * inch                 # gap below the top gold rule
     c.drawImage(ImageReader(str(LOGO)), (PAGE_W - lw) / 2, logo_top - lw,
                 width=lw, height=lw, mask="auto")
-    cy = logo_top - lw - 0.75 * inch
+    cy = logo_top - lw - 0.65 * inch
     c.setFillColor(RED)
     c.setFont("Helvetica-Bold", 16)
     c.drawCentredString(PAGE_W / 2, cy, "A L P H A L E T E   L E A D E R ' S   C A L L")
@@ -470,6 +472,13 @@ def _draw_cover(c, week_label, summary, org_apps=None):
         # Sits between the week label and the tagline; drops lower if a summary
         # line is also on (it isn't today — see build_pdf).
         _draw_org_apps(c, cy - (2.45 if summary else 2.05) * inch, org_apps)
+        # Megan 2026-09-22: the campaign split, one small line under the total.
+        from automations.leaders_call.org_apps import breakdown_line
+        line = breakdown_line(org_apps)
+        if line:
+            c.setFillColor(MUTED)
+            c.setFont("Helvetica", 11.5)
+            c.drawCentredString(PAGE_W / 2, cy - (2.78 if summary else 2.38) * inch, line)
     # brand tagline — the 🐺 is the wolf PNG (base PDF fonts can't render the emoji)
     tag = "Live more.  Dream more.  Do more."
     tf, ts = "Helvetica-BoldOblique", 15
@@ -480,7 +489,7 @@ def _draw_cover(c, week_label, summary, org_apps=None):
         mh = 0.32 * inch
         mw = mh * (wi.width / wi.height)
         gap = 0.10 * inch
-        by = 0.72 * inch          # was 0.9: room for the org-apps line above
+        by = 0.62 * inch          # was 0.9: room for the org-apps lines above
         x0 = (PAGE_W - (mw + gap + tw)) / 2
         c.drawImage(ImageReader(str(WOLF)), x0, by - (mh - ts * 0.72) / 2,
                     width=mw, height=mh, mask="auto")
@@ -490,7 +499,7 @@ def _draw_cover(c, week_label, summary, org_apps=None):
     except Exception:      # no PIL/asset → just center the tagline text
         c.setFillColor(GOLD)
         c.setFont(tf, ts)
-        c.drawCentredString(PAGE_W / 2, 0.72 * inch, tag)
+        c.drawCentredString(PAGE_W / 2, 0.62 * inch, tag)
     c.restoreState()
 
 
