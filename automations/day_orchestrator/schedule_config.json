@@ -11568,6 +11568,44 @@
       "depends_on": [],
       "timeout_minutes": 5,
       "verify": null
+    },
+    "colten_metrics": {
+      "order": 36.58,
+      "on_scheduler": true,
+      "display_name": "Colten's Daily Metrics (southshore-d2d-sales)",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:order_log"
+      ],
+      "command": [
+        "automations.office_metrics.runner"
+      ],
+      "base_args": [
+        "--office",
+        "colten",
+        "--live"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P1",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 60,
+      "verify": {
+        "type": "manifest",
+        "report_id": "colten_metrics"
+      },
+      "_note": "Office metrics for colten -> southshore-d2d-sales. Onboarded via office_onboarding on 2026-09-22 14:01 UTC. Machine Lucy 1 (view owners). NDS/wireless office (campaign nds_d2d): Time Gaps, Wireless Churn, Rep Activations, Order Log, Cancels. Held off until a dry-run on Lucy 1 proved data on every board (2026-09-22: 13 reps knocking, 584 wireless orders, 103 reps with churn data, 3 cancels) — Megan's rule: never a blank first post. order 36.58 = after harvest_prime warms the crosstab cache.",
+      "_onboarded": true
     }
   },
   "read_only_standalone": {

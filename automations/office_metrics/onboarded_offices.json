@@ -364,5 +364,45 @@
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%"
+  },
+  {
+    "key": "colten",
+    "report_id": "colten_metrics",
+    "label": "Colten's Local Office",
+    "owner": "Colten Wright",
+    "channel_id": "C0BUAA9DARW",
+    "channel_name": "southshore-d2d-sales",
+    "sheet_id": "1XgKI_FwaMjejAknaovU8BcYporeEBRUiSF-TZKBxnKo",
+    "knocks_office": "Colten Wright",
+    "ov_account": "14733",
+    "owner_office": "",
+    "business_name": "South Shore Specialized Marketing, Inc.",
+    "website": "",
+    "header_label": "",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "knocks",
+      "order_log",
+      "cancels",
+      "churn_wl",
+      "activations"
+    ],
+    "report_order": {
+      "knocks": 1,
+      "order_log": 2,
+      "cancels": 3,
+      "churn_wl": 4,
+      "activations": 5
+    },
+    "per_office_views": {},
+    "machine": "Lucy 1",
+    "campaign": "nds_d2d",
+    "notes": "",
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%"
   }
 ]
