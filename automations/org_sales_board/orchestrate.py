@@ -198,12 +198,13 @@ def _make_section_adapter(spec_key: str):
             except Exception as e:   # noqa: BLE001
                 ctx.logfn(f"  board check: SKIPPED ({type(e).__name__}: {e})")
         parsed = section_pull.parse_byday(spec, csv_path, today)
-        # BOX AND B2B TOO. This job already pulls both campaigns' workbooks;
+        # BOX, B2B AND NDS TOO. This job already pulls those campaigns'
+        # workbooks;
         # storing their office totals lets the LucyECO boards for those
         # offices be checked against Tableau like the fiber ones, with no
         # extra pull and no extra login (2026-09-22). The check re-runs so a
         # row settled by THIS pull replaces the earlier one. Never fatal.
-        if spec_key in ("b2b", "box"):
+        if spec_key in ("b2b", "box", "nds"):
             try:
                 from automations.icd_sales_board import (reconcile,
                                                          tableau_days as _td)

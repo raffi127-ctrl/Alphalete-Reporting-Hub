@@ -2320,7 +2320,10 @@ def relay_board(icd: str, office_key: str, family: str = "att") -> None:
                 f"an older build ({status['agent'] or 'unknown version'}). "
                 "Re-running the installer on that machine picks up the sales "
                 "passes.", icon="⬆️")
-        else:
+        elif status.get("reading_days", 0) > 1:
+            # Only once this office has been heard from on more than one day
+            # with nothing to show for any of them. On a feed's first day
+            # there is simply nothing yet.
             st.warning(f"{icd}'s last reading carried nothing. Last heard "
                        f"{status['day']:%b %d}.", icon="🚧")
 

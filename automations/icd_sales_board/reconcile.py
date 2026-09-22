@@ -178,9 +178,11 @@ def store(results: list, log=print) -> int:
 # extract publishes yesterday's sales DURING the day and the 14:30 catch-up
 # fills it, so at 2am its newest settled day is two back — checking yesterday
 # would call every Box office "off" every morning.
-SETTLE_LAG = {"att": 1, "b2b_att": 1, "b2b_box": 2, "box": 2}
+SETTLE_LAG = {"att": 1, "b2b_att": 1, "b2b_box": 2, "box": 2,
+              "nds": 1, "att_nds": 1}
 # Which stored office-day series a feed's campaign is compared with.
-OFFICE_SERIES = {"b2b_box": "box", "box": "box", "b2b_att": "b2b"}
+OFFICE_SERIES = {"b2b_box": "box", "box": "box", "b2b_att": "b2b",
+                 "nds": "nds", "att_nds": "nds"}
 
 
 def _live_total(feed, reps: dict) -> int:
@@ -189,6 +191,8 @@ def _live_total(feed, reps: dict) -> int:
     Box counts deals, which the agent relays as Sales. B2B counts units."""
     if feed.family == "box":
         return sum(int(v.get("Sales", 0) or 0) for v in reps.values())
+    # NDS and B2B both keep their owner's TOTAL row in Tableau (all products),
+    # so the live side adds every measure the feed sends.
     return sum(int(v.get(m, 0) or 0) for v in reps.values()
                for m in ("Int", "Int Up", "DTV", "NL"))
 

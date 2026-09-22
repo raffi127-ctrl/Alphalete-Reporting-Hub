@@ -588,9 +588,9 @@ def backfill(week_ending: dt.date, out_dir=Path("output"),
             rows += log_rep_days(rpath, week_ending=week_ending, log=log)
         except Exception as e:   # noqa: BLE001
             log(f"  rep days: FAILED ({type(e).__name__}: {e})")
-        # Box and B2B office totals, so those campaigns' boards can be
+        # Box, B2B and NDS office totals, so those campaigns' boards can be
         # checked against Tableau too.
-        for key in ("b2b", "box"):
+        for key in ("b2b", "box", "nds"):
             try:
                 spec = SP.SPECS[key]
                 bpath = SP.pull_section_byday(spec, out, page,

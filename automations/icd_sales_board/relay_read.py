@@ -195,6 +195,7 @@ def last_reading(office_key: str) -> dict:
     to update rather than to check their wifi."""
     newest, newest_day = None, None
     recent_sales = False
+    days_seen = set()
     week_ago = dt.date.today() - dt.timedelta(days=7)
     for row in _rows():
         if str(row.get(COL_OFFICE) or "").strip().lower() != (
@@ -207,8 +208,10 @@ def last_reading(office_key: str) -> dict:
         # Judging it on the newest reading alone called every office broken
         # each morning, because at 10am nobody has sold yet (Aya, 2026-09-22:
         # sales every day Sep 17-21, an empty 11am reading today).
-        if day is not None and day >= week_ago and _loads(row.get(COL_SALES)):
-            recent_sales = True
+        if day is not None and day >= week_ago:
+            days_seen.add(day)
+            if _loads(row.get(COL_SALES)):
+                recent_sales = True
     if newest is None:
         return {"day": None, "local_time": "", "agent": "", "reps": 0,
                 "sends_sales": False}
@@ -222,6 +225,11 @@ def last_reading(office_key: str) -> dict:
         # sent no sales — that is an old agent, not a quiet laptop.
         "sends_sales": bool(sales) or recent_sales,
         "has_records": bool(_loads(newest.get(COL_RECORDS))),
+        # How many DAYS this office has been heard from in the last week. A
+        # feed's first day carries no sales until somebody sells, and calling
+        # that "carried nothing" is wrong (Raf's first reading, 12:04 on
+        # 2026-09-22, before his office had sold anything).
+        "reading_days": len(days_seen),
     }
 
 
