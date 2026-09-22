@@ -200,8 +200,9 @@ def check_office(feed, day: dt.date, series=None) -> dict:
     live = RR.for_office(feed.key, day, day).get(day) or {}
     if not live:
         return dict(base, status="no live reading")
+    from automations.icd_sales_board import eco_feeds as E
     settled = series if series is not None else TD.stored_office_days(
-        feed.owner, OFFICE_SERIES[feed.campaign])
+        E.names_for(feed), OFFICE_SERIES[feed.campaign])
     if day not in settled:
         return dict(base, status="not settled in Tableau")
     a, b = _live_total(feed, live), settled[day]
@@ -249,7 +250,7 @@ def run(days: int = 1, end: dt.date | None = None, dry_run: bool = False,
         f = feeds.get(key)
         if not f or f.campaign not in OFFICE_SERIES:
             continue
-        series = TD.stored_office_days(f.owner, OFFICE_SERIES[f.campaign])
+        series = TD.stored_office_days(E.names_for(f), OFFICE_SERIES[f.campaign])
         last = end or dt.date.today() - dt.timedelta(
             days=SETTLE_LAG.get(f.campaign, 1))
         for i in range(days):

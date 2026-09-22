@@ -101,3 +101,25 @@ def for_icd(icd: str) -> list:
         live = set()
     # A test row ('ztest') never matches a real ICD, so it cannot leak in.
     return sorted(mine, key=lambda f: (f.key not in live, f.key))
+
+
+def names_for(feed) -> list:
+    """Every spelling this feed's owner goes by: the sign-up's, the org list's
+    and the ICD Aliases sheet's.
+
+    Tableau's Box view calls Roshan 'Roshan Ahmad'; his sign-up says 'Roshan
+    Amin Ahmad'. Letters-only matching cannot bridge a dropped middle name,
+    and the alias sheet is where that mapping already lives — so it is asked,
+    rather than a spelling being patched in here."""
+    out = [feed.owner]
+    try:
+        from automations.icd_sales_board import profiles as P
+        want = norm(feed.owner)
+        out += [n for n in P.load() if norm(n) == want]
+        from automations.focus_office_att import aliases as A
+        raw = A.load_aliases()
+        for n in list(out):
+            out += A.get_search_candidates(n, raw)
+    except Exception:   # noqa: BLE001 — the sign-up spelling still works
+        pass
+    return list(dict.fromkeys(n for n in out if n))

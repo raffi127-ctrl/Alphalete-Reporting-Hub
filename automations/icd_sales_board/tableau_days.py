@@ -640,9 +640,11 @@ def log_office_days(parsed: dict, campaign: str, sheet_id: str = SHEET_ID,
         return 0
 
 
-def stored_office_days(owner: str, campaign: str,
+def stored_office_days(owner, campaign: str,
                        sheet_id: str = SHEET_ID) -> dict:
-    """{date: count} for one owner in one campaign, matched on letters only."""
+    """{date: count} for one owner in one campaign, matched on letters only.
+
+    `owner` may be one name or a list of spellings (see eco_feeds.names_for)."""
     from automations.recruiting_report.fill import open_by_key, _retry
     try:
         g = _retry(open_by_key(sheet_id).worksheet(OFFICE_TAB).get_all_values)
@@ -650,11 +652,12 @@ def stored_office_days(owner: str, campaign: str,
         return {}
     if not g:
         return {}
-    want = _letters(owner)
+    names = [owner] if isinstance(owner, str) else list(owner or [])
+    want = {_letters(n) for n in names if n}
     out = {}
     for r in g[1:]:
         rec = dict(zip(g[0], r))
-        if rec.get("Campaign") != campaign or _letters(rec.get("Owner")) != want:
+        if rec.get("Campaign") != campaign or _letters(rec.get("Owner")) not in want:
             continue
         try:
             out[dt.date.fromisoformat(rec["Date"][:10])] = int(rec["Count"])
