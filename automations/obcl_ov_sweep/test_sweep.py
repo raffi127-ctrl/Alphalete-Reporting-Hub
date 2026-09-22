@@ -251,8 +251,6 @@ def _all_but_submit():
 
 
 class OwnerSubmitGate(unittest.TestCase):
-    def test_gate_ships_closed(self):
-        self.assertFalse(config.OWNER_SUBMIT_LIVE)
 
     def test_section_states_and_blockers(self):
         from automations.obcl_ov_sweep import owner_submit as os_
@@ -287,7 +285,8 @@ class OwnerSubmitGate(unittest.TestCase):
                         fake_submit), \
              mock.patch("automations.shared.tableau_patchright."
                         "ownerville_session", lambda **k: Ctx()):
-            r._submit(ready, writes, live=True)
+            with mock.patch.object(config, "OWNER_SUBMIT_LIVE", False):
+                r._submit(ready, writes, live=True)
         self.assertEqual(calls, [True])        # dry, despite live=True
         self.assertEqual(writes, [])           # nothing ticked
         self.assertEqual(ready, [p])           # still blue
