@@ -290,16 +290,12 @@ def caption(made, failures=(), alerted: bool = False) -> str:
              ("➡️", GROUPS[1], "New Lucy Owner Submitted"),
              ("⚠️", GROUPS[2], "waiting on BG / still missing checks")]
     out = ["OBCL update"] + [f"{e} {counts.get(g, 0)} {t}" for e, g, t in lines]
-    # Megan's latest format (2026-09-22): a COUNT of who needs doing by hand,
-    # then each name with its reason. The alerts channel gets the same list.
+    # SHORT (Megan 2026-09-22: "this text is way too long"): count + names only.
+    # The reason lives in the alerts channel post, not here.
     if failures:
-        who = "; ".join(f"{n} — {why}" for n, why in failures)
-        tail = " Needs done manually"
-        # Only CLAIM Eve & Megan were told when the alert really posted.
-        tail += (" — I've let Eve & Megan know so it gets fixed going "
-                 "forward." if alerted else ".")
-        out.append(f"❌ {len(failures)} Couldn't owner submit in OV: {who}."
-                   + tail)
+        who = ", ".join(n for n, _ in failures)
+        tail = " (Eve & Megan notified)" if alerted else ""
+        out.append(f"❌ {len(failures)} need owner submit by hand: {who}{tail}")
     return "\n".join(out)
 
 
