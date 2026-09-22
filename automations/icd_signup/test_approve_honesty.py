@@ -80,3 +80,27 @@ class ARefusedBoxOfficeReturnsNonZero(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TextsApprovalTouchesOnlyOurColumnsTest(unittest.TestCase):
+    """Colten 2026-09-22: approved at 8:50, un-approved by his own 9:05 sweep.
+    The writer had rewritten 'Texts: Wanted' + its JSON (the OFFICE's
+    columns); the relay saw a disagreement and cleared the approval."""
+
+    def test_writer_updates_only_the_two_approved_cells(self):
+        from unittest import mock
+        from automations.icd_alerts import approve as A, post as P
+        tab = mock.Mock()
+        tab.get_all_values.return_value = [["Office"], ["colten"]]
+        book = mock.Mock(); book.worksheet.return_value = tab
+        with mock.patch("automations.recruiting_report.fill.open_by_key",
+                        return_value=book), \
+             mock.patch.object(A, "ensure_text_columns"):
+            A._write_texts_approval("colten", [{"group": "A Players",
+                                                "cadence_min": 0}])
+        kw = tab.update.call_args.kwargs
+        self.assertEqual(kw["range_name"], "%s2:%s2" % (
+            A._col_letter(P.CH_TX_APPROVED_JSON + 1),
+            A._col_letter(P.CH_TX_APPROVED + 1)))
+        self.assertEqual(len(kw["values"][0]), 2)
+        self.assertEqual(kw["values"][0][1], "TRUE")

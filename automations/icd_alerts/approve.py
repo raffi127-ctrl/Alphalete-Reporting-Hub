@@ -360,11 +360,15 @@ def _write_texts_approval(office_key: str, resolved) -> None:
     ensure_text_columns(tab)
     for i, row in enumerate(tab.get_all_values()[1:], start=2):
         if (row[P.CH_OFFICE] or "").strip().lower() == office_key:
-            tab.update(values=[[", ".join(g["group"] for g in resolved),
-                                json.dumps([g["group"] for g in resolved]),
-                                json.dumps(resolved), "TRUE"]],
+            # OUR TWO COLUMNS ONLY. "Texts: Wanted" and its JSON belong to
+            # the office: their machine re-sends them on every hand-over, and
+            # the relay clears the approval when what it finds there is not
+            # what it sent. This used to rewrite all four, so Colten's texts
+            # were approved at 8:50 and un-approved by his own 9:05 sweep
+            # (2026-09-22). Same rule set_knocks_cadence learned from Cyrus.
+            tab.update(values=[[json.dumps(resolved), "TRUE"]],
                        range_name="%s%d:%s%d" % (
-                           _col_letter(P.CH_TX_WANTED + 1), i,
+                           _col_letter(P.CH_TX_APPROVED_JSON + 1), i,
                            _col_letter(P.CH_TX_APPROVED + 1), i))
             return
     raise SystemExit("no row for %r on the '%s' tab"
