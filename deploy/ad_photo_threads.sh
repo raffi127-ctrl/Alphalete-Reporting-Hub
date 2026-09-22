@@ -1,5 +1,5 @@
 #!/bin/bash
-# Ad Photo Threads — the nightly post into #rafs-office-recruiting-11280.
+# Ad Photo Threads — the nightly post into #rafs-local-office-indeed-photos.
 # Ticks every 30 minutes (com.alphalete.ad-photo-threads.plist) and posts the
 # day ONCE, after 7 PM Central, Mon–Sat. The clock gate and the "day already
 # posted" check live in Python (run.py nightly) and run before any Sheets or

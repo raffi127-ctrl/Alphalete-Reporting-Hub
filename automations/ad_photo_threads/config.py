@@ -18,9 +18,12 @@ SHEET_ID = "16UruNs3bHGJ_pBvmD6T9KEqMAtDNNyuKArA_es6f0LE"
 # #rafs-office-recruiting-11280 — where the 1st-round threads live.
 SOURCE_CHANNEL_ID = "C0AUAS88FGW"
 
-# Where the ad threads go live — the same channel (Raf 2026-09-21: "yes, rafs
-# office recruiting channel").
-LIVE_CHANNEL_ID = SOURCE_CHANNEL_ID
+# Where the ad threads go live: #rafs-local-office-indeed-photos (Raf
+# 2026-09-21: "lets move the post to the new channel I just made ... I don't
+# like the recruiting channel getting so clogged up"). The 1st-rounds threads
+# are still READ from SOURCE_CHANNEL_ID. The first night's posts in the old
+# channel were taken out with `--retire-channel C0AUAS88FGW`.
+LIVE_CHANNEL_ID = "C0C3LCLKZTN"
 
 # "Every day at the end of the day": the nightly agent ticks every 30 min and
 # posts the day once it's past this time, Central. The last 1st-round slot is
