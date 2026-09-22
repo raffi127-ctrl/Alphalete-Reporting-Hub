@@ -2139,8 +2139,9 @@ def _rollout_section() -> None:
             RO.UPDATE: "background-color:#FFF2CC",
             RO.QUIET: "background-color:#F4CCCC",
             RO.WAITING: "background-color:#FCE5CD"}
-    frame = pd.DataFrame(rows, columns=["ICD", "Status", "Last reading",
-                                        "Agent", "Feeds", "Board code"])
+    frame = pd.DataFrame(rows, columns=["ICD", "Status", "Campaign",
+                                        "Last reading", "Agent",
+                                        "Board code"])
     st.dataframe(
         frame.style.apply(lambda col: [tone.get(v, "") for v in col],
                           subset=["Status"]),

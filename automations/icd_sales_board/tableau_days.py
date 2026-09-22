@@ -290,6 +290,44 @@ TAB = "Board Days"
 COLUMNS = ["Date", "Owner"] + MEASURES + ["Total", "Source"]
 
 
+
+def _day_totals(days_by_owner: dict) -> dict:
+    """{date: units} across every owner, from {owner: {date: measures}}."""
+    out: dict = collections.defaultdict(int)
+    for days in days_by_owner.values():
+        for day, m in days.items():
+            out[day] += sum(int(v or 0) for v in m.values())
+    return dict(out)
+
+
+def looks_misdated(day_totals: dict, today: dt.date | None = None) -> str:
+    """Why a parsed week cannot be trusted, or '' when it can.
+
+    The crosstab carries weekday NAMES and no dates, so a wrong week_ending
+    dates everything wrong and the store REPLACES good rows with it. It
+    happened twice in one week (a backfill on 09-14, then the 2am job every
+    morning until 09-22) and both times the data looked clean until somebody
+    compared a number. Both left the same two fingerprints, so the store now
+    refuses a week that carries either — nothing written beats wrong written:
+
+      * a date after today — a week dated forward;
+      * weekday-sized volume on a SUNDAY. Sunday is not a selling day: the
+        real org-wide Sunday runs a handful of units against hundreds on a
+        weekday. Shifted data drops a weekday's volume there (Raf's Sunday
+        read 83 against ~90 on weekdays; it was really 3)."""
+    today = today or dt.date.today()
+    future = sorted(d for d, n in day_totals.items() if n and d > today)
+    if future:
+        return f"dated in the future ({future[0].isoformat()})"
+    sunday = sum(n for d, n in day_totals.items() if d.weekday() == 6)
+    weekdays = [n for d, n in day_totals.items() if d.weekday() != 6]
+    top = max(weekdays, default=0)
+    if sunday >= 20 and top and sunday > 0.5 * top:
+        return (f"Sunday carries {sunday} units against a best weekday of "
+                f"{top} — the signature of a week dated off by days")
+    return ""
+
+
 def log_days(path=DEFAULT_PATH, week_ending: dt.date | None = None,
              sheet_id: str = SHEET_ID, log=print) -> int:
     """Write a pulled crosstab's settled days to the sheet. Returns rows written.
@@ -309,6 +347,11 @@ def log_days(path=DEFAULT_PATH, week_ending: dt.date | None = None,
         by_owner = parse(path, week_ending)
         if not by_owner:
             log("  board days: nothing parsed (no crosstab?)")
+            return 0
+        why = looks_misdated(_day_totals(by_owner))
+        if why:
+            log(f"  board days: REFUSED to store — {why}. Nothing written; "
+                f"the rows already on file stand.")
             return 0
 
         sh = open_by_key(sheet_id)
@@ -403,6 +446,13 @@ def log_rep_days(path=REP_PATH, week_ending: dt.date | None = None,
         by_owner = parse_reps(path, week_ending)
         if not by_owner:
             log("  board rep days: nothing parsed (no crosstab?)")
+            return 0
+        flat = {f"{o}|{r}": days for o, reps in by_owner.items()
+                for r, days in reps.items()}
+        why = looks_misdated(_day_totals(flat))
+        if why:
+            log(f"  board rep days: REFUSED to store — {why}. Nothing "
+                f"written; the rows already on file stand.")
             return 0
 
         sh = open_by_key(sheet_id)

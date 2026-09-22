@@ -27,8 +27,17 @@ def _agent_n(agent: str) -> int:
         return 0
 
 
+def _campaigns(feeds) -> str:
+    """'Box, AT&T B2B' — the campaigns only. The feed's own key repeated the
+    owner's name, which the ICD column already says (Megan 2026-09-22)."""
+    seen: dict = {}
+    for f in feeds:
+        seen[f.label] = seen.get(f.label, 0) + 1
+    return ", ".join(lab if n == 1 else f"{lab} ×{n}" for lab, n in seen.items())
+
+
 def status_rows(today: dt.date | None = None) -> list:
-    """[{ICD, Status, Feeds, Last reading, Agent, Board code}], worst first
+    """[{ICD, Status, Campaign, Last reading, Agent, Board code}], worst first
     within the ones that need attention, Live at the top."""
     from automations.icd_sales_board import (board_access as BA,
                                              eco_feeds as E, profiles as P,
@@ -42,8 +51,7 @@ def status_rows(today: dt.date | None = None) -> list:
     rows = []
     for icd in sorted(P.load()):
         feeds = E.for_icd(icd)
-        base = {"ICD": icd,
-                "Feeds": ", ".join(f"{f.label} ({f.key})" for f in feeds),
+        base = {"ICD": icd, "Campaign": _campaigns(feeds),
                 "Board code": "yes" if icd.strip().lower() in coded else "—"}
         if not feeds:
             rows.append(dict(base, Status=NONE, **{"Last reading": "",
