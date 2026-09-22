@@ -37,12 +37,25 @@ from pathlib import Path
 # Tableau's product types -> the four columns a board keeps. VOICE is excluded
 # by the view itself and reads 0 where it appears at all, so it is not mapped:
 # a product nobody sells must not silently become an Int.
+# Int Up is UPGRADES + INTERNET AIR, the same reading SaraPlus gets
+# (alphalete_sales_board.calc: Int Up = Internet Upgrades + AIA). This map
+# used to know AIR and not 'UPGRADE INTERNET', and an unknown product is
+# skipped — so every upgrade vanished from the board while the parse looked
+# clean. Raf, WE 9/13: 36 upgrades in Tableau, 35 on his own sheet, 0 on ours.
+# The check that it is right now: NEW INTERNET 185 + VIDEO 29 + WIRELESS 129
+# + UPGRADE 36 = 379, Tableau's own Total row for him.
 PRODUCT_TO_MEASURE = {
     "NEW INTERNET": "Int",
+    "UPGRADE INTERNET": "Int Up",
     "AIR": "Int Up",        # AT&T Internet Air — what SaraPlus counts as AIA
     "VIDEO": "DTV",
     "WIRELESS": "NL",
 }
+# Products deliberately NOT on the board. Anything that is neither here nor
+# in the map above gets logged, so the next new product name is noticed
+# instead of silently dropped the way UPGRADE INTERNET was.
+IGNORED_PRODUCTS = {"VOICE", "TOTAL"}
+UNMAPPED: set = set()      # filled by the parsers, reported by log_*_days
 MEASURES = ["Int", "Int Up", "DTV", "NL"]
 
 _WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
@@ -107,6 +120,8 @@ def parse(path=DEFAULT_PATH, week_ending: dt.date | None = None) -> dict:
             # measures would double every number on the board.
             measure = PRODUCT_TO_MEASURE.get(product)
             if measure is None:
+                if product and product not in IGNORED_PRODUCTS:
+                    UNMAPPED.add(product)
                 continue
             for name, day in day_of.items():
                 n = _int(row.get(name))
@@ -220,6 +235,8 @@ def parse_reps(path=REP_PATH, week_ending: dt.date | None = None) -> dict:
                 continue
             measure = PRODUCT_TO_MEASURE.get(product)
             if measure is None:
+                if product and product not in IGNORED_PRODUCTS:
+                    UNMAPPED.add(product)
                 continue
             for name, day in day_of.items():
                 n = _int(row.get(name))
@@ -285,6 +302,7 @@ def log_days(path=DEFAULT_PATH, week_ending: dt.date | None = None,
     board; a logging problem must not take that down. Every failure returns 0
     and says why.
     """
+    UNMAPPED.clear()
     try:
         from automations.recruiting_report.fill import open_by_key, _retry
 
@@ -335,6 +353,9 @@ def log_days(path=DEFAULT_PATH, week_ending: dt.date | None = None,
         _retry(ws.update, "A1", body, value_input_option="USER_ENTERED")
         log(f"  board days: {wrote} settled day-rows stored "
             f"({len(merged)} in the tab)")
+        if UNMAPPED:
+            log(f"  board days: UNMAPPED product(s) skipped — "
+                f"{sorted(UNMAPPED)}")
         return wrote
     except Exception as e:   # noqa: BLE001 — never take the harvest down
         log(f"  board days: SKIPPED ({type(e).__name__}: {e})")
@@ -375,6 +396,7 @@ REP_COLUMNS = ["Date", "Owner", "Rep"] + MEASURES + ["Total", "Source"]
 def log_rep_days(path=REP_PATH, week_ending: dt.date | None = None,
                  sheet_id: str = SHEET_ID, log=print) -> int:
     """Store settled per-REP days. Idempotent, never fatal — see log_days."""
+    UNMAPPED.clear()
     try:
         from automations.recruiting_report.fill import open_by_key, _retry
 
@@ -420,6 +442,10 @@ def log_rep_days(path=REP_PATH, week_ending: dt.date | None = None,
         _retry(ws.clear)
         _retry(ws.update, "A1", body, value_input_option="USER_ENTERED")
         log(f"  board rep days: {wrote} stored ({len(merged)} in the tab)")
+        if UNMAPPED:
+            log(f"  board rep days: UNMAPPED product(s) skipped — "
+                f"{sorted(UNMAPPED)}. Add them to PRODUCT_TO_MEASURE or "
+                f"IGNORED_PRODUCTS.")
         return wrote
     except Exception as e:   # noqa: BLE001
         log(f"  board rep days: SKIPPED ({type(e).__name__}: {e})")
