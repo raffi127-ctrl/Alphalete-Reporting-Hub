@@ -57,4 +57,4 @@ CAMPAIGN = "RES-AT&T"
 # ships GATED: while False, a READY person is walked up to the confirm box and
 # NOT submitted — they stay BLUE on the OBCL and the log says "WOULD SUBMIT".
 # Megan reviews that first dry run; only on her OK does this flip to True.
-OWNER_SUBMIT_LIVE = False
+OWNER_SUBMIT_LIVE = True
