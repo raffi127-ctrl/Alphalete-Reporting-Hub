@@ -516,7 +516,13 @@ class Layout:
 # re-checks both weeks -- and says which numbers MOVED since the last check.
 # It goes on the day's band, never in a cell note: notes print at the foot of
 # an exported picture (the Below the Mark lesson).
-CHANGE_LABEL = {"call_ret": "Call list %", "r1": "1st %", "r2": "2nd %"}
+CHANGE_LABEL = {"call_ret": "Call list %", "r1": "1st %", "r2": "2nd %",
+                # the COUNTS too (Eve, 2026-09-22): a count can move without
+                # moving its %, and that was invisible
+                "sent": "Sent", "b1": "1st booked", "s1": "1st showed",
+                "b2": "2nd booked", "s2": "2nd showed"}
+OWNER_WATCHED = ("call_ret", "r1", "sent", "b1", "s1")   # per office
+ROW_WATCHED = ("r2", "b2", "s2")                         # per interviewer
 BAND_MAX_CHANGES = 4
 _STAMP_RE = re.compile(r"last checked (\w{3} \d{1,2}/\d{1,2} \d{1,2}:\d{2} CT)")
 
@@ -531,9 +537,17 @@ class Change:
     interviewer: str = ""
 
     @property
+    def is_pct(self) -> bool:
+        return self.key in PCT_FIELDS
+
+    def amount(self, v: float) -> str:
+        return f"{v:.0%}" if self.is_pct else f"{v:g}"
+
+    @property
     def text(self) -> str:
         who = f"{self.owner} ({self.interviewer})" if self.interviewer else self.owner
-        return f"{who} {CHANGE_LABEL[self.key]} {self.old:.0%}→{self.new:.0%}"
+        return (f"{who} {CHANGE_LABEL[self.key]} "
+                f"{self.amount(self.old)}→{self.amount(self.new)}")
 
 
 def _num(v) -> Optional[float]:
@@ -559,7 +573,7 @@ def compare(prev: Dict[Tuple[str, dt.date], List[dict]],
                 before = prev.get((owner, d))
                 if not before:
                     continue
-                for key in ("call_ret", "r1"):
+                for key in OWNER_WATCHED:
                     old, new = _num(before[0].get(key)), _num(group[0].get(key))
                     if moved(old, new):
                         out.setdefault(d, []).append(Change(owner, d, key, old, new))
@@ -568,13 +582,17 @@ def compare(prev: Dict[Tuple[str, dt.date], List[dict]],
                     old_rec = was.get(rec.get("interviewer"))
                     if not old_rec:
                         continue
-                    old, new = _num(old_rec.get("r2")), _num(rec.get("r2"))
-                    if moved(old, new):
-                        # One interviewer per office needs no name in brackets.
-                        who = rec["interviewer"] if len(group) > 1 else ""
-                        out.setdefault(d, []).append(Change(owner, d, "r2", old, new, who))
+                    for key in ROW_WATCHED:
+                        old, new = _num(old_rec.get(key)), _num(rec.get(key))
+                        if moved(old, new):
+                            # One interviewer per office needs no name in brackets.
+                            who = rec["interviewer"] if len(group) > 1 else ""
+                            out.setdefault(d, []).append(
+                                Change(owner, d, key, old, new, who))
+    # percents first, each by how far it moved: a % is the number people read,
+    # and a count's raw delta would otherwise always outrank it
     for lst in out.values():
-        lst.sort(key=lambda c: -abs(c.new - c.old))
+        lst.sort(key=lambda c: (not c.is_pct, -abs(c.new - c.old)))
     return out
 
 

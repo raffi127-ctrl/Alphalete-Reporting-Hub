@@ -130,6 +130,20 @@ class Layout(unittest.TestCase):
         self.assertEqual(r.prior_stamp([["x"], ["... last checked Mon 9/21 13:58 CT ..."]]),
                          "Mon 9/21 13:58 CT")
 
+    def test_counts_move_without_their_percent(self):
+        # Eve, 2026-09-22: a count that moves while its % stays put used to be
+        # invisible. Counts read as counts, percents as percents.
+        prev = {("Kash Rai", MON): [{"owner": "Kash Rai", "interviewer": "Daniela",
+                                     "sent": 66, "b1": 20, "s1": 10, "r1": 0.5,
+                                     "b2": 4, "s2": 2, "r2": 0.5}]}
+        now = [(dt.date(2026, 9, 13), {"Monday": [
+            [{"owner": "Kash Rai", "interviewer": "Daniela",
+              "sent": 70, "b1": 20, "s1": 10, "r1": 0.5,
+              "b2": 8, "s2": 4, "r2": 0.5}]]})]
+        got = [c.text for c in r.compare(prev, now)[MON]]
+        self.assertEqual(sorted(got), ["Kash Rai 2nd booked 4→8", "Kash Rai 2nd showed 2→4",
+                                       "Kash Rai Sent 66→70"])
+
     def test_band_caps_the_list(self):
         ch = [r.Change(f"O{i}", MON, "r2", 0.1, 0.2) for i in range(6)]
         band = r.day_band_text("Monday", MON, dt.date(2026, 9, 21), 6, ch)
