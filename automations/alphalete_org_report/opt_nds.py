@@ -1135,6 +1135,10 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
                  # Absent/owner-missing => those two rows stay BLANK; they are
                  # never backfilled from the org-wide totals.
                  sara_office: Optional[Dict[str, Dict[str, int]]] = None,
+                 # {owner_norm: {'Next Up %', 'Extra/Premium %'}} off
+                 # NDSWeeklyMetricsRep — the fallback for the owners Sara
+                 # Plus has no row for at all.
+                 weekly_office: Optional[Dict[str, Dict[str, str]]] = None,
                  ) -> List[str]:
     """Write all available metrics for this rep into the target week column.
     Skips metrics whose source data isn't available.
@@ -1342,6 +1346,20 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
     # Don't "fix" a >100% here; it isn't a share of a whole.
     if premium is not None and extra is not None and new_port and new_port > 0:
         values["Extra/Premium %"] = f"{(premium + extra) / new_port:.2%}"
+
+    # Fallback for the owners Sara Plus does not carry: the same two rows off
+    # NDSWeeklyMetricsRep, which covers 58 owners (Eve 2026-09-22). Fills only
+    # what Sara left empty, so an owner with a Sara row keeps the Sara figure
+    # and no tab mixes the two for one week. Current-week only — like every
+    # other NDS tracker view, it has no date control.
+    if weekly_office and not backfill:
+        wk_row = weekly_office.get(owner_norm) or {}
+        for label in ("Next Up %", "Extra/Premium %"):
+            if label not in values and wk_row.get(label):
+                values[label] = wk_row[label]
+                log.append(f"  [weekly-metrics] {ws.title}: {label} "
+                           f"{wk_row[label]} from NDS Weekly Metrics (Rep) — "
+                           f"{owner_norm!r} is not in Sara Plus")
 
     if not values:
         return [f"[skip] {ws.title}: no metrics available for {owner_norm}"]
@@ -1619,10 +1637,16 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
         OUTPUT_DIR / "opt_nds_activation_http.csv")
     cancel = tableau_http.parse_weekly_metrics_cancel(
         OUTPUT_DIR / "opt_nds_weekly_metrics_http.csv")
+    # Next Up % / Extra&Premium % for the owners with no Sara Plus row — same
+    # file as the cancel rate above, so no extra download.
+    weekly_office = tableau_http.parse_weekly_metrics_office(
+        OUTPUT_DIR / "opt_nds_weekly_metrics_http.csv")
     leads = tableau_http.parse_lead_penetration(
         OUTPUT_DIR / "opt_nds_lead_penetration_http.csv")
     sara_byday = tableau_http.parse_sara_plus_byday(
         OUTPUT_DIR / "opt_nds_sara_plus_byday.csv")
+    logfn(f"OPT NDS: parsed {len(weekly_office)} owner(s) in NDS Weekly "
+          f"Metrics (Next Up % / Extra&Premium %)")
     logfn(f"OPT NDS: parsed {len(tt)} TT-Detail, "
           f"{len(churn)} Churn, "
           f"{len(activation)} Activation, "
@@ -1707,7 +1731,8 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
                              abp=abp,
                              aliases_map=nds_aliases,
                              backfill=backfill,
-                             sara_office=sara_office)
+                             sara_office=sara_office,
+                             weekly_office=weekly_office)
         for ln in lines:
             logfn(f"OPT NDS: {ln}")
         if lines and lines[0].startswith(("[OK]", "[DRY-RUN]")):

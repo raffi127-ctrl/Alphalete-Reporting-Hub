@@ -211,6 +211,57 @@ def parse_weekly_metrics_cancel(path: Path) -> Dict[str, str]:
     return out
 
 
+def parse_weekly_metrics_office(path: Path) -> Dict[str, Dict[str, str]]:
+    """{normalized owner: {'Next Up %': '12.99%', 'Extra/Premium %': '...'}}
+    from the same NDS Weekly Metrics CSV the cancel rate reads.
+
+    Sara Plus is the primary source for those two rows, but it only carries our
+    own org — 14 of the 47 owners on the NDS tracker (measured 2026-09-22) — so
+    every owner outside it had both rows blank on the NDS Program - Focus
+    Report. Eve found this view holds them for 58 owners: "next up y extra
+    premium tambien se podrian sacar de ... NDS Weekly Metrics(Rep)".
+
+    The export is per REP, plus ONE row per owner whose Rep Name is literally
+    'All' — the office's own figure, and the only row read here. (The cancel
+    parser above takes whatever row comes last instead; that lands on 'All'
+    because Tableau sorts it last, which is luck, not a rule. Don't copy it.)
+
+    Values arrive as fractions (0.129870130) and are formatted the way the Sara
+    path formats them, so one tab can never show a fraction in one row and a
+    percent in the next.
+    """
+    rows = parse_csv(path)
+    if not rows:
+        return {}
+    header = rows[0]
+    owner_i = col_idx(header, "Owner & Office")
+    rep_i = col_idx(header, "Rep Name")
+    measure_i = col_idx(header, "Measure Names")
+    value_i = col_idx(header, "Measure Values")
+    if None in (owner_i, rep_i, measure_i, value_i):
+        return {}
+    # sheet row label -> substring of the Tableau measure name (which carries a
+    # trailing dot: 'Next Up %.', 'Extra&Premium %.')
+    wanted = {"next up %": "Next Up %", "extra&premium %": "Extra/Premium %"}
+    out: Dict[str, Dict[str, str]] = {}
+    for r in rows[1:]:
+        if len(r) <= max(owner_i, rep_i, measure_i, value_i):
+            continue
+        if (r[rep_i] or "").strip().lower() != "all":
+            continue
+        label = wanted.get((r[measure_i] or "").strip().lower().rstrip("."))
+        if not label:
+            continue
+        try:
+            value = float(str(r[value_i]).replace(",", "").strip())
+        except (ValueError, TypeError):
+            continue
+        owner = _norm_owner(r[owner_i])
+        if owner:
+            out.setdefault(owner, {})[label] = f"{value:.2%}"
+    return out
+
+
 def parse_lead_penetration(path: Path) -> Dict[str, int]:
     """{normalized owner: total Lead Count summed across all rows}.
     Each ICD has multiple rows (one per Customer Zip). We sum to get
