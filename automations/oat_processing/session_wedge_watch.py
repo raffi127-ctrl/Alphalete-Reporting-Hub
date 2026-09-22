@@ -240,7 +240,8 @@ def _channel() -> str:
 
 
 def _post(title: str, body_lines: list[str], dry_run: bool,
-          office: str = "11580") -> bool:
+          office: str = "11580", key: str | None = None,
+          channel_line: str | None = None) -> bool:
     """Open (or follow up in) the wedge incident thread in #claudecorrections.
 
     Channel gets ONE emoji-free line, the detail goes in the thread — the standing
@@ -261,9 +262,10 @@ def _post(title: str, body_lines: list[str], dry_run: bool,
     try:
         from automations.shared import incident_thread as _inc
         posted = _inc.open_or_followup(
-            key=_incident_key(office), title=title, body=body_lines,
-            channel_line="*Applicant Push* — %s session wedged on Lucy 2"
-                         % _office_label(office),
+            key=key or _incident_key(office), title=title, body=body_lines,
+            channel_line=channel_line or (
+                "*Applicant Push* — %s session wedged on Lucy 2"
+                % _office_label(office)),
             channel=ch, client=client)
         if posted:
             return True
@@ -374,13 +376,153 @@ def run(dry_run: bool = False, now: dt.datetime | None = None) -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------
+# Indeed's resume check (Megan, 2026-09-22: "whenever that issue recurs I need
+# alerted in the slack channel to clear it")
+# ---------------------------------------------------------------------------
+# A SECOND, narrower alarm. The wedge alarm above watches the AppStream session;
+# this one watches the one gate a machine genuinely cannot open by itself —
+# Indeed's "Verify you are human" box on the resume viewer. It clears itself most
+# of the time, so the walk waits it out (_CF_FIRST_READ_POLLS); when it doesn't,
+# every resume read in that tick is walled and the walk logs ONE line saying so.
+#
+# Why it needs its own alarm: on 2026-09-22 the AppStream session was perfectly
+# healthy all day — sends, removes, re-texts all working — while every office on
+# two machines filled ZERO phone numbers, because only the Indeed reads were
+# blocked. The wedge watcher looked at that day and correctly said "healthy", so
+# nobody was told, and ~150 applicants a day landed on the manual to-do list
+# saying "need a number" when the number was on the resume all along.
+CF_WALL_SIG = "cloudflare wall"
+# A fill proves the gate is open again — the all-clear for this alarm.
+CF_OPEN_SIGS = ("resume phone ", "attachment phone ")
+# One walled tick is normal (the check is random); this many in the window is a
+# machine that is not getting in on its own and wants a human to tick the box.
+CF_WALL_TICKS = 3
+CF_WALL_WINDOW_MIN = 30
+CF_INCIDENT_KEY = "failure-indeed-resume-check"
+
+
+def _cf_incident_key(office: str) -> str:
+    return "%s-%s" % (CF_INCIDENT_KEY, office)
+
+
+def _cf_state_path(office: str):
+    return pathlib.Path(str(STATE) + "-cf-" + office)
+
+
+def _machine() -> str:
+    try:
+        from automations.shared.hub_identity import machine_name
+        return machine_name()
+    except Exception:  # noqa: BLE001
+        import socket
+        return socket.gethostname()
+
+
+def assess_resume_check(now: dt.datetime | None = None) -> dict:
+    """Per office: how many recent ticks were walled by Indeed's check, and whether
+    any number has been read since. Returns {office: (walls, fills, log_name)}."""
+    now = now or dt.datetime.now()
+    cutoff = now.timestamp() - CF_WALL_WINDOW_MIN * 60
+    out: dict = {}
+    for p in _recent_logs():
+        try:
+            if p.stat().st_mtime < cutoff:
+                continue
+        except OSError:
+            continue
+        office = _office_of(p.name)
+        text = _tail(p, n=1200)
+        walls = text.count(CF_WALL_SIG)
+        fills = sum(text.count(s) for s in CF_OPEN_SIGS)
+        if walls or fills:
+            w, f, _ = out.get(office, (0, 0, p.name))
+            out[office] = (w + walls, f + fills, p.name)
+    return out
+
+
+def run_resume_check(dry_run: bool = False, now: dt.datetime | None = None) -> int:
+    """Alert the corrections channel when a machine can't get past Indeed's check
+    on its own, and ✅ the thread as soon as numbers are being read again."""
+    now = now or dt.datetime.now()
+    for office, (walls, fills, source) in sorted(assess_resume_check(now).items()):
+        try:
+            st = json.loads(_cf_state_path(office).read_text())
+        except Exception:  # noqa: BLE001
+            st = {}
+        label = _office_label(office)
+        print(f"[cf-watch] {label}: walled_ticks={walls} numbers_read={fills} "
+              f"({source})")
+        # Numbers are being read → whatever was open is over.
+        if fills:
+            if st.get("alerted_at"):
+                try:
+                    from automations.shared import incident_thread as _inc
+                    closed = _inc.ensure_closed(
+                        _cf_incident_key(office),
+                        what="*Applicant Push* — Indeed's resume check on %s" % label,
+                        detail="Numbers are being read off resumes again; nothing "
+                               "to clear.",
+                        channel=_channel(), dry_run=dry_run)
+                except Exception as e:  # noqa: BLE001
+                    print(f"[cf-watch] couldn't close the thread "
+                          f"({type(e).__name__}: {str(e)[:80]})")
+                    closed = False
+                if closed and not dry_run:
+                    _cf_state_path(office).write_text("{}")
+                    print("[cf-watch] episode closed (✅)")
+            continue
+        if walls < CF_WALL_TICKS:
+            continue
+        last = st.get("alerted_at")
+        if last:
+            try:
+                if (now - dt.datetime.fromisoformat(last)).total_seconds() \
+                        < RE_ALERT_HOURS * 3600:
+                    print("[cf-watch] still blocked, alerted recently — no re-ping")
+                    continue
+            except ValueError:
+                pass
+        machine = _machine()
+        title = (":rotating_light: *Indeed is asking to verify a human — %s, %s*"
+                 % (label, machine))
+        body = [
+            "Indeed's *“Verify you are human”* box did not clear by itself "
+            "on the last %d resume reads for %s, so the walk is opening resumes "
+            "and getting the check instead of the number." % (walls, label),
+            "Nobody is written off — these applicants stay in the queue — but no "
+            "phone numbers are being filled while it is closed.",
+            "",
+            "*Fix (~1 min, on %s):* run this, tick the box once in the window that "
+            "opens, then close it. One tick covers the whole session." % machine,
+            "```cd ~/recruiting-report && PYTHONPATH=. .venv/bin/python -m "
+            "automations.oat_processing.cf_clear_window %s```" % office,
+            "",
+            "_Auto-clears here as soon as a number is read again._",
+        ]
+        if _post(title, body, dry_run, office=office,
+                 key=_cf_incident_key(office),
+                 channel_line="*Applicant Push* — Indeed is asking to verify a "
+                              "human on %s (%s); numbers are not being read"
+                              % (_office_label(office), machine)):
+            if not dry_run:
+                _cf_state_path(office).write_text(json.dumps(
+                    {"alerted_at": now.isoformat(), "walls": walls}))
+            print("[cf-watch] ALERT posted")
+    return 0
+
+
 def main(argv=None) -> int:
     import argparse
     ap = argparse.ArgumentParser(description="Applicant Push session-wedge alarm")
     ap.add_argument("--dry-run", action="store_true",
                     help="assess + print the alert, post nothing")
+    ap.add_argument("--resume-check-only", action="store_true",
+                    help="only run the Indeed 'verify you are human' alarm")
     args = ap.parse_args(argv)
-    return run(dry_run=args.dry_run)
+    rc = 0 if args.resume_check_only else run(dry_run=args.dry_run)
+    rc2 = run_resume_check(dry_run=args.dry_run)
+    return rc or rc2
 
 
 if __name__ == "__main__":

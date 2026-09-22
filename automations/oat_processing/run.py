@@ -2239,6 +2239,53 @@ def _time_for_a_resume_read() -> bool:
     return left is None or left > RESUME_READ_RESERVE_S
 
 
+# How long the FIRST resume read of a browser session waits for Indeed's
+# Cloudflare check to clear itself, in ~1s polls. Every later read in the same
+# session is not challenged at all (proven 2026-09-22, see lookup_resume_phone),
+# so this is paid once per tick, not per applicant.
+_CF_FIRST_READ_POLLS = int(os.environ.get("OAT_CF_FIRST_READ_POLLS", "150"))
+# Set once anything has rendered in this browser session.
+_CF_CLEARED = False
+# Set when the session's first read never got past the check: the whole tick is
+# walled, so the walk stops opening resumes instead of spending its budget (and
+# each applicant's retries) on a gate that is closed for all of them.
+_CF_WALLED = False
+_CF_WALL_DETAIL = "cloudflare challenge never cleared"
+
+
+def _cf_session_cleared() -> bool:
+    return _CF_CLEARED
+
+
+def _mark_cf_cleared() -> None:
+    global _CF_CLEARED, _CF_WALLED
+    _CF_CLEARED, _CF_WALLED = True, False
+
+
+def _cf_walled() -> bool:
+    return _CF_WALLED
+
+
+def _mark_cf_walled(detail: str) -> None:
+    """The session's opening challenge never cleared — every resume in this tick is
+    behind the same gate, so say so ONCE, loudly enough for the Slack watcher to
+    see it, and stop reading."""
+    global _CF_WALLED, _CF_WALL_DETAIL
+    if _CF_WALLED:
+        return
+    _CF_WALLED, _CF_WALL_DETAIL = True, detail
+    _log(f"    [cf] CLOUDFLARE WALL — office {getattr(config, 'OFFICE_ID', '?')}: "
+         f"Indeed's check never cleared for this browser session ({detail}); "
+         f"skipping resume reads for the rest of this tick")
+
+
+def reset_cf_session() -> None:
+    """Forget the session's Cloudflare verdict. Called when a fresh browser session
+    opens, so one tick's wall never silences the next tick's read."""
+    global _CF_CLEARED, _CF_WALLED
+    _CF_CLEARED, _CF_WALLED = False, False
+
+
 def _rd_mod():
     """resume_download, imported lazily — it pulls in the PDF/OCR extractors and
     the walk must start even on a machine where those are missing."""
@@ -2311,6 +2358,14 @@ def flag_no_phone(page, a: Applicant, live: bool) -> str:
         _log(f"    already checked today ({_why}) — skip re-read: "
              f"{a.first_name} {a.last_name}")
     if (live and getattr(config, "AUTOMATE_PHONE_LOOKUP", False)
+            and not already_checked and not cooling_off and _cf_walled()):
+        # Indeed's check is closed for this whole browser session (the first read
+        # proved it). Flag WITHOUT reading and WITHOUT caching or counting an
+        # attempt: this applicant is not a confirmed no-number one, and the next
+        # tick opens a fresh browser that usually gets straight in.
+        _log(f"    [cf] session is walled — flagging unread (no attempt spent): "
+             f"{a.first_name} {a.last_name}")
+    elif (live and getattr(config, "AUTOMATE_PHONE_LOOKUP", False)
             and not already_checked and not cooling_off
             and not _time_for_a_resume_read()):
         # Out of tick. Flag WITHOUT reading and WITHOUT caching: an unread
@@ -2784,7 +2839,27 @@ def lookup_resume_phone(page):
         # in every office reported "challenge never cleared" (Carlos: 296
         # walked, 0 sent). A read that clears returns the moment it finds the
         # number, so the higher ceiling is free on healthy days.
-        for _i in range(40):
+        #
+        # THE FIRST READ OF A SESSION PAYS FOR ALL OF THEM (2026-09-22). Measured
+        # on Lucy 4, office 11280: Indeed challenges the FIRST resume a browser
+        # opens and, once that one is past, every later resume in the SAME
+        # browser renders immediately — 6 of 6, no second challenge. So the
+        # challenge is per-session, not per-applicant, and the 40s ceiling was
+        # being applied to the only read that ever needed more: an untouched
+        # challenge cleared itself at ~40s, i.e. right at the edge, and when it
+        # missed, the tick relaunched Chrome and met a brand-new challenge. That
+        # is how every office logged 0 numbers filled on 2026-09-22 while
+        # yesterday's identical code filled 40+ each.
+        #
+        # So: give the session's FIRST read a long ceiling, and once anything has
+        # rendered, drop back to 40s (the rest of the session is not challenged,
+        # so a slow read there is a slow resume, not a challenge).
+        _first_of_session = not _cf_session_cleared()
+        _polls = _CF_FIRST_READ_POLLS if _first_of_session else 40
+        if _first_of_session:
+            _log(f"    [cf] first resume read of this session — waiting up to "
+                 f"{_polls}s for Indeed's check to clear itself")
+        for _i in range(_polls):
             try:
                 title = (newpg.title() or "").lower()
                 # READ THE FRAMES TOO, not just the top document. Indeed's resume
@@ -2830,6 +2905,10 @@ def lookup_resume_phone(page):
             challenged = ("just a moment" in title or "just a moment" in body.lower()
                           or "verify you are human" in body.lower())
             if not challenged and body:
+                # Past the gate. Remember it for the REST of this browser session:
+                # later reads need no long wait, and a later block is a real block
+                # rather than the session's opening challenge.
+                _mark_cf_cleared()
                 for _t in texts:
                     for m in _PHONE_RE.finditer(_t):
                         digits = re.sub(r"\D", "", m.group(0))
@@ -2859,6 +2938,12 @@ def lookup_resume_phone(page):
         # Say which, so the caller can retry (b) later instead of writing the applicant
         # off for the whole day. See _BLOCKED_PREFIX.
         reason = _blocked_reason(title, body)
+        if reason and _first_of_session:
+            # The session never got in. Wall the tick (see _mark_cf_walled) rather
+            # than letting every remaining applicant spend a retry on the same gate:
+            # on 2026-09-22 that turned ONE closed gate into 162 "blocked" reads and
+            # 57 people written off for the day in Raf's office alone.
+            _mark_cf_walled(reason)
         if reason:
             return None, f"{_BLOCKED_PREFIX}{reason} (title={newpg.title()[:40]!r})"
 
@@ -3268,6 +3353,9 @@ def run_walk(page, live: bool = False, limit: int = None,
     _SETTLED_SKIPS = 0
     actions = 0                 # live mutations (sent/removed) this run
     MUTATIONS = ("sent", "sent_override", "removed")
+    # Fresh browser, fresh Cloudflare verdict: this walk opens its own Chrome, so
+    # neither a previous tick's clearance nor its wall carries over.
+    reset_cf_session()
     counts: dict = {}
     seen: set = set()          # applicant keys already handled this run
     no_progress = 0            # consecutive already-seen reads (end guard)
