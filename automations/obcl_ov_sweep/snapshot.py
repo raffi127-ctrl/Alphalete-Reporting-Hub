@@ -306,8 +306,11 @@ def send(png_names, *, dry_run: bool = True) -> dict:
     """Called BY THE POLLER: one message, the caption then every picture.
     Idempotent via a .sent marker next to the FIRST picture."""
     from automations.b2b_dispositions import text_post as tp
+    # Accept one space-joined string OR a list whose items may themselves be
+    # space-joined (2026-09-22: a quoted queue arg arrived as ONE name).
     if isinstance(png_names, str):
-        png_names = png_names.split()
+        png_names = [png_names]
+    png_names = [n for item in png_names for n in str(item).split()]
     pngs = [SHOT_DIR / n for n in png_names]
     missing = [str(p) for p in pngs if not p.exists()]
     if missing or not pngs:
