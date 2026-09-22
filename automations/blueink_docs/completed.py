@@ -2,8 +2,8 @@
 
 Two different marks live in that one column, and they mean different things:
 
-  light green background  we sent it            (mark.highlight, at send time)
-  checkbox ticked         they have SIGNED it   (here)
+  blue background         we sent it, waiting   (mark.highlight, at send time)
+  checkbox ticked + green they have SIGNED it   (here)
 
 Sending is a moment; signing happens whenever the person gets round to it. So
 this is a separate pass that re-reads Blue Ink's own list and ticks whoever has
@@ -28,6 +28,7 @@ import gspread
 
 from automations.blueink_docs import blueink
 from automations.blueink_docs import config
+from automations.blueink_docs import mark
 from automations.blueink_docs import recent_ui
 from automations.blueink_docs import session as S
 from automations.blueink_docs.roster import NewStart
@@ -46,7 +47,7 @@ DONE = {"completed", "complete", "signed"}
 # be strict.
 LOOKBACK_DAYS = 7
 
-TRUTHY = {"true", "yes", "y", "1", "x", "✓"}
+TRUTHY = mark.TICKED
 
 
 def _within(datestr: str, today: dt.date, days: int = LOOKBACK_DAYS) -> bool:
@@ -367,4 +368,19 @@ def tick(worksheet, people: List[NewStart], done_keys: Dict[str, str]) -> int:
         [{"range": gspread.utils.rowcol_to_a1(p.row, p.blueink_col),
           "values": [["TRUE"]]} for p in targets],
         value_input_option="USER_ENTERED")   # so the checkbox actually ticks
+    # Ticked and green go together (Megan 2026-09-21): blue means we're still
+    # waiting on them, so a box that ticks and stays blue says two things at
+    # once. Cosmetic -- never worth failing a sweep whose ticks already landed.
+    try:
+        mark.green(worksheet, targets)
+    except Exception as exc:                       # noqa: BLE001
+        print(f"Ticked {len(targets)}, but couldn't turn them green: {exc}")
     return len(targets)
+
+
+def green_ticked(worksheet, people: List[NewStart]) -> int:
+    """Green every box that is ALREADY ticked -- hand ticks, and anything
+    ticked before ticking also meant green. `find_completed` skips a ticked box
+    (nothing to look up), so without this those cells would stay blue for good."""
+    done = [p for p in people if p.blueink_col and p.row and mark.is_ticked(p)]
+    return mark.green(worksheet, done) if done else 0

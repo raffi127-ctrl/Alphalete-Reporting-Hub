@@ -297,7 +297,7 @@ def _send_via_ui(workbook, worksheet, people: List[NewStart],
         try:
             tinted = mark.highlight(worksheet, sent)
             if tinted:
-                print(f"\nTinted {tinted} first name(s) light green on "
+                print(f"\nColoured {tinted} Blue Ink cell(s) light blue on "
                       f"{worksheet.title!r}.")
         except Exception as exc:
             print(f"\nSends went out, but the green highlight failed: {exc}\n"
@@ -336,7 +336,7 @@ def _send(workbook, worksheet, people: List[NewStart], is_test: bool) -> int:
     try:
         tinted = mark.highlight(worksheet, sent)
         if tinted:
-            print(f"\nTinted {tinted} first name(s) light green on "
+            print(f"\nColoured {tinted} Blue Ink cell(s) light blue on "
                   f"{worksheet.title!r}.")
     except Exception as exc:
         print(f"\nSends went out, but the green highlight failed: {exc}\n"
@@ -387,9 +387,9 @@ def _handle_held(worksheet, to_send_all: List[NewStart], held: dict,
         verdict[id(pp)] = why
     if ok:
         try:
-            tinted = mark.highlight(worksheet, ok, color=mark.CARRIED_GREEN)
+            tinted = mark.highlight(worksheet, ok, color=mark.CARRIED_BLUE)
             if tinted:
-                print(f"\nTinted {tinted} carried-over packet(s) deeper green "
+                print(f"\nTinted {tinted} carried-over packet(s) deeper blue "
                       f"on {worksheet.title!r}.")
         except Exception as exc:
             # Cosmetic. Never worth failing a run that mailed the right people.
@@ -397,22 +397,69 @@ def _handle_held(worksheet, to_send_all: List[NewStart], held: dict,
     return ([(pp.name, verdict.get(id(pp), "")) for pp in ok], problems)
 
 
+def _repaint(workbook, worksheet, people: List[NewStart]) -> int:
+    """Re-apply the Blue Ink colours to the whole tab, by rule, every sweep:
+
+      box ticked                          green        (signed)
+      we sent it off THIS tab             light blue   (waiting on them)
+      we sent it in an EARLIER week       deeper blue  (carried over, waiting --
+                                                     only if still starting)
+      anyone else                         left exactly as it is
+
+    WHY every sweep and not just at send time (2026-09-21): Google silently
+    SKIPS formatting on rows a filter has hidden -- the request succeeds and
+    the cell doesn't change. The 9.21 tab had 22 rows filtered out, so 14
+    cells kept the old colour through a repaint that reported 49 done. The
+    sweep can't clear the team's filter and shouldn't, so it just re-applies
+    the rule; a hidden row catches up on the first sweep after it's shown.
+    Idempotent and one batch, so running it every two hours costs one write.
+    """
+    rows = ledger.read(workbook)
+    sent_map = ledger.already_sent(workbook, rows=rows)
+    this_tab = {r[ledger.COL_NAME].strip().lower() for r in rows
+                if len(r) > ledger.COL_BUNDLE and r[ledger.COL_WEEK].strip() == worksheet.title
+                and r[ledger.COL_BUNDLE].strip()}
+    done, sent, carried = [], [], []
+    for pp in people:
+        if not (pp.row and pp.blueink_col):
+            continue
+        if mark.is_ticked(pp):
+            done.append(pp)
+        elif pp.name.strip().lower() in this_tab:
+            sent.append(pp)
+        elif pp.eligible and ledger.seen(sent_map, pp):
+            # eligible: an OLD packet on someone who has since declined or quit
+            # is not "waiting on them" -- Antashia Rich, 9.21, sent 9/7 and
+            # Declined on Friday. Their row keeps whatever it has.
+            carried.append(pp)
+    return (mark.green(worksheet, done) + mark.highlight(worksheet, sent)
+            + mark.highlight(worksheet, carried, color=mark.CARRIED_BLUE))
+
+
 def _sync_completed(worksheet, people: List[NewStart],
                     headless: bool = True, use_api: bool = True) -> int:
-    """Tick the Blue Ink checkbox for anyone Blue Ink shows as signed."""
+    """Tick the Blue Ink checkbox -- and turn the cell green -- for anyone
+    Blue Ink shows as signed. Boxes already ticked (by us earlier, or by hand)
+    go green too; they're skipped by the lookup, so this is their only chance."""
     done = completed.find_completed(people, headless=headless, use_api=use_api)
-    return completed.tick(worksheet, people, done) if done else 0
+    n = completed.tick(worksheet, people, done) if done else 0
+    try:
+        completed.green_ticked(worksheet, people)
+    except Exception as exc:                       # noqa: BLE001 -- cosmetic
+        print(f"Couldn't turn the already-ticked boxes green: {exc}")
+    return n
 
 
 def _highlight_only(workbook, worksheet, people: List[NewStart]) -> int:
-    """Back-fill the green on everyone the log says already has their docs --
-    for when a batch sent fine but the tint didn't land."""
+    """Back-fill the blue on everyone the log says already has their docs --
+    for when a batch sent fine but the colour didn't land. Anyone already
+    signed goes green instead (mark.highlight decides)."""
     sent_map = ledger.already_sent(workbook)
     done = [p for p in people if ledger.seen(sent_map, p)]
     if not done:
         print("Nobody on this tab is in the log yet -- nothing to tint.")
         return 0
-    print(f"Tinting {len(done)} first name(s) light green on {worksheet.title!r}:")
+    print(f"Colouring {len(done)} Blue Ink cell(s) on {worksheet.title!r} (blue = sent, green = signed):")
     for p in done:
         print(f"  {p.name:<28} row {p.row}")
     mark.highlight(worksheet, done)
@@ -570,6 +617,13 @@ def _main(argv=None) -> int:
         # cannot be renewed remotely -- a login is Google SSO and nothing here
         # types a password. Reads over the API don't touch the send quota, so
         # the sweep simply stops depending on the fragile thing.
+        # Colours first, ticks second: _repaint works from the boxes as they
+        # were read, so anything that ticks in THIS sweep must be greened after
+        # it, not painted back to blue by a stale read.
+        try:
+            _repaint(workbook, ws, people)
+        except Exception as exc:                   # noqa: BLE001 -- cosmetic
+            print(f"Couldn't re-apply the Blue Ink colours: {exc}")
         try:
             n = _sync_completed(ws, people, headless=not args.headed,
                                 use_api=not args.sweep_browser)

@@ -72,7 +72,7 @@ def test_singular_plural():
 # --- the OTHER road to "already had a packet" (2026-09-14) -------------------
 # Blue Ink's own lookup is only half of it. Someone we sent in an EARLIER week
 # is dropped from the send list before that lookup ever runs, off our own
-# ledger, so nothing downstream saw them: no deeper green, no line here. Their
+# ledger, so nothing downstream saw them: no deeper colour, no line here. Their
 # row read exactly like a row nobody had touched -- which is how Le'derius
 # Arnold (sent 9/7) came to look un-sent on the 9/14 tab.
 
@@ -108,7 +108,7 @@ def test_ledger_held_people_are_tinted_and_named():
     assert tinted["people"] == ["Le'derius Arnold", "Billy Garvin"]
     # The DEEPER green -- a packet from an earlier week usually means a
     # rescheduled start, and that has to be distinguishable from today's send.
-    assert tinted["color"] == run.mark.CARRIED_GREEN
+    assert tinted["color"] == run.mark.CARRIED_BLUE
     assert problems == []
     body = sp.build_thread(36, [], None, pairs)
     assert "*2* not sent — already had a packet:" in body
