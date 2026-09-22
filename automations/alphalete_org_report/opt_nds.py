@@ -341,6 +341,14 @@ def _norm_owner(s: str) -> str:
     return " ".join(s.lower().split())
 
 
+def _tracker_int(raw) -> Optional[int]:
+    """'1,062' -> 1062. None when the tracker cell is blank or not a number."""
+    try:
+        return int(float(str(raw).replace(",", "").strip()))
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
 def parse_tt_detail(path: Path) -> Dict[str, Dict[str, str]]:
     """Parse TT-LineN/P Detail: {normalized owner: {Rep Count: ..., Ranking: ...}}."""
     rows = _read_tab_csv(path)
@@ -355,6 +363,11 @@ def parse_tt_detail(path: Path) -> Dict[str, Dict[str, str]]:
         return None
     rank_i = col("Ranking")
     rc_i = col("Rep Count")
+    # Phone (= New/Port lines) and Air Sold. Sara Plus is the primary source
+    # for those two rows; these are the fallback for the NDS owners Sara Plus
+    # does not carry — see the fallback in fill_nds_tab.
+    phone_i = col("Phone")
+    air_i = col("Air Sold")
     out: Dict[str, Dict[str, str]] = {}
     for r in rows[2:]:  # skip header + Total row
         owner = _norm_owner(r[0] if r else "")
@@ -365,6 +378,10 @@ def parse_tt_detail(path: Path) -> Dict[str, Dict[str, str]]:
             rec["ranking"] = r[rank_i]
         if rc_i is not None and rc_i < len(r):
             rec["rep_count"] = r[rc_i]
+        if phone_i is not None and phone_i < len(r):
+            rec["phone"] = r[phone_i]
+        if air_i is not None and air_i < len(r):
+            rec["air_sold"] = r[air_i]
         if rec:
             out[owner] = rec
     return out
@@ -1215,6 +1232,33 @@ def fill_nds_tab(ws: gspread.Worksheet, owner_norm: str,
     air_rep = rep_byday.get("AIA")
     if air_rep is not None:
         values["AIR"] = str(air_rep)
+
+    # FALLBACK for the owners Sara Plus does not carry (Eve 2026-09-22).
+    # Sara Plus By Day returns ~17 owners — our own org — while the NDS
+    # tracker returns all 47 in the program, which is who the NDS Program -
+    # Focus Report covers. For an owner with no Sara Plus row, take New Lines
+    # from the tracker's 'Phone' (its New/Port line count) and AIR from
+    # 'Air Sold', and SAY so in the log: the two sources do not agree to the
+    # cell (Drew Tepper WE 9/6: Sara 176 new lines / 19 AIR, tracker 195 / 7),
+    # so a number that came from the tracker must never look like a Sara one.
+    # Current-week only: the tracker has no date control, so on a past-week
+    # backfill there is nothing to read (same rule as Active Selling Heads).
+    if not backfill and "New Lines" not in values:
+        phone = _tracker_int(rep.get("phone"))
+        if phone is not None:
+            values["New Lines"] = str(phone)
+            log.append(f"  [tracker] {ws.title}: New Lines {phone} from the "
+                       f"NDS tracker ('Phone') — {owner_norm!r} is not in "
+                       f"Sara Plus")
+            try:
+                heads = float(str(rep.get("rep_count", "")).strip())
+                if heads > 0:
+                    values["AVG Apps Per Active Headcount"] = f"{phone / heads:.2f}"
+            except (ValueError, TypeError):
+                pass
+        air_sold = _tracker_int(rep.get("air_sold"))
+        if air_sold is not None and "AIR" not in values:
+            values["AIR"] = str(air_sold)
 
     # Personal Production — the ICD's OWN per-rep production from
     # ProductSalesSummaryRep (0 for managers like Jairo/Isaiah, whose

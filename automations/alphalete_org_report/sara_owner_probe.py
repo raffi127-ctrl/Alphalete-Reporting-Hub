@@ -17,6 +17,7 @@ names, plus how many NDS-tracker owners it covers. Writes nothing: stdout only
 """
 from __future__ import annotations
 
+import codecs
 import csv
 import io
 import json
@@ -57,14 +58,18 @@ URLS: List[Tuple[str, str, dict]] = [
 
 def _rows(path: Path) -> List[List[str]]:
     raw = path.read_bytes()
-    for enc in ("utf-16", "utf-8-sig", "cp1252"):
-        try:
-            text = raw.decode(enc)
-            break
-        except Exception:  # noqa: BLE001
-            continue
+    # Decide by BOM, never by trial order: the crosstab exports opt_nds reads
+    # are UTF-16, the .csv HTTP endpoint returns UTF-8 — and raw.decode("utf-16")
+    # does NOT raise on UTF-8 bytes, it returns CJK mojibake. The first version
+    # of this probe tried utf-16 first and so reported "0 owner(s)" for every
+    # view, including the tracker we know has 47 (2026-09-22).
+    if raw[:2] in (codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE):
+        text = raw.decode("utf-16", errors="replace")
     else:
-        return []
+        try:
+            text = raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = raw.decode("cp1252", errors="replace")
     lines = text.splitlines()
     delim = "\t" if lines and "\t" in lines[0] else ","
     return list(csv.reader(io.StringIO(text), delimiter=delim))
