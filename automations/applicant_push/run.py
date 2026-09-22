@@ -169,8 +169,14 @@ def run(live: bool = False, limit: int = None, max_actions: int = None,
         def _oat_work(page, ctx, net):
             oat.attach_dialog_accept(page)
             try:
-                return oat.run_walk(page, live=live, limit=limit,
-                                    max_actions=max_actions)
+                _rc = oat.run_walk(page, live=live, limit=limit,
+                                   max_actions=max_actions)
+                if oat._cf_walled():
+                    # Indeed never let THIS browser through. Don't keep it warm —
+                    # a cold one gets a fresh challenge it often passes.
+                    rp.mark_browser_suspect(
+                        "Indeed's resume check never cleared for this browser")
+                return _rc
             except Exception as e:  # noqa: BLE001
                 import traceback
                 rp._log("[push] OAT stage error: " + str(e)[:200])

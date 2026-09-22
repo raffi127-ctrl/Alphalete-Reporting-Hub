@@ -58,6 +58,22 @@ def test_kill_decision() -> bool:
                  rp._should_kill_on_exit(False, False), True)
     ok &= _check("keep-warm off AND raised: killed",
                  rp._should_kill_on_exit(True, False), True)
+    # A browser Indeed never let through is retired even though nothing raised:
+    # keeping it pins the office behind the same closed gate forever, while a cold
+    # Chrome gets a fresh challenge it often passes.
+    ok &= _check("a walled browser is retired, not kept",
+                 rp._should_kill_on_exit(False, True, "never cleared"), True)
+    ok &= _check("a healthy browser with no suspicion is kept",
+                 rp._should_kill_on_exit(False, True, ""), False)
+    try:
+        rp.mark_browser_suspect("Indeed's check never cleared")
+        ok &= _check("marking a suspect flips the decision",
+                     rp._should_kill_on_exit(False, True), True)
+        rp._clear_browser_suspect()
+        ok &= _check("clearing it restores keep-warm",
+                     rp._should_kill_on_exit(False, True), False)
+    finally:
+        rp._clear_browser_suspect()
     return ok
 
 

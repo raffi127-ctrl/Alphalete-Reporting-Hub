@@ -1535,11 +1535,37 @@ def _should_reuse_browser(port_alive: bool, keep_warm: bool = None) -> bool:
                                 else keep_warm))
 
 
-def _should_kill_on_exit(hard_stop: bool, keep_warm: bool = None) -> bool:
-    """Kill the browser on the way out unless keep-warm is on and the session
-    ended cleanly. A session that raised is ALWAYS killed: a wedged or
-    half-logged-in browser must never be handed to the next tick."""
+# Set by the caller when the session worked but the BROWSER is a bad one to keep
+# — today that means Indeed's check never cleared for it. See mark_browser_suspect.
+_BROWSER_SUSPECT = ""
+
+
+def mark_browser_suspect(why: str) -> None:
+    """Don't keep this browser warm, even though nothing raised.
+
+    Keeping a browser is only worth it while the browser is worth having. A
+    session Indeed never let through is the opposite: reuse it and the office is
+    pinned behind the same closed gate forever, while a COLD Chrome gets a fresh
+    roll of the dice — which is exactly how office 24065 got in on 2026-09-22
+    (32 numbers) on a day 11280 and 23965 never did. So a walled walk retires its
+    browser and the next tick starts clean."""
+    global _BROWSER_SUSPECT
+    _BROWSER_SUSPECT = why or "unspecified"
+
+
+def _clear_browser_suspect() -> None:
+    global _BROWSER_SUSPECT
+    _BROWSER_SUSPECT = ""
+
+
+def _should_kill_on_exit(hard_stop: bool, keep_warm: bool = None,
+                         suspect: str = None) -> bool:
+    """Kill the browser on the way out unless keep-warm is on, the session ended
+    cleanly, AND the browser is still worth keeping. A session that raised is
+    ALWAYS killed: a wedged or half-logged-in browser must never be handed on."""
     if hard_stop:
+        return True
+    if (_BROWSER_SUSPECT if suspect is None else suspect):
         return True
     return not (KEEP_WARM_BROWSER if keep_warm is None else keep_warm)
 
@@ -1960,7 +1986,12 @@ def warm_appstream_cdp_page(switch_office: bool = True, diag_tab: str = "RP Diag
             pw.stop()
         except Exception:  # noqa: BLE001
             pass
+        _why_kill = _BROWSER_SUSPECT
         if _should_kill_on_exit(_hard_stop):
+            if _why_kill and not _hard_stop:
+                _log(f"[cdp] retiring this browser instead of keeping it warm: "
+                     f"{_why_kill}")
+            _clear_browser_suspect()
             try:
                 if proc is not None:
                     proc.terminate()
