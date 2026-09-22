@@ -32,6 +32,14 @@ CAMPAIGNS = {
     "att_nds": ("NDS Wireless", "att"),
 }
 
+# Feeds posted by one of OUR machines on an office's behalf, rather than by
+# an agent the office installed. Raf's office is read every five minutes by
+# the Alphalete SaraPlus sweep on Lucy 1, which relays under his BOARD key so
+# his saved roster stays attached (see alphalete_sales_board/eco_relay.py).
+HOUSE_FEEDS = {
+    "rafael_hidalgo": ("Rafael Hidalgo", "att"),
+}
+
 _CACHE: dict = {"at": 0.0, "feeds": None}
 _TTL = 300
 
@@ -76,6 +84,8 @@ def feeds(force: bool = False) -> dict:
         if key and s.owner:
             out[key] = Feed(key, s.owner.strip(),
                             (getattr(s, "campaign", "") or "att").strip())
+    for key, (owner, campaign) in HOUSE_FEEDS.items():
+        out.setdefault(key, Feed(key, owner, campaign))
     # The pilots predate the sign-up form, so they are only in the office
     # metrics registry — whose key is the relay key for exactly these offices.
     # ONLY a key that has actually RELAYED counts: every office with a metrics

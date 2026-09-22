@@ -69,11 +69,15 @@ def status_rows(today: dt.date | None = None) -> list:
                                                        "Agent": ""}))
             continue
         age = (today - best["day"]).days
+        agent = str(best.get("agent") or "")
         if age >= 2:
             status = QUIET
-        elif _agent_n(best.get("agent")) < want:
+        elif agent.startswith("icd_alerts/") and _agent_n(agent) < want:
             status = UPDATE
         else:
+            # Anything that is not the ECO agent is one of our own machines
+            # relaying for the office (Raf: the Alphalete sweep), which has no
+            # version to fall behind on.
             status = LIVE
         when = best.get("local_time") or best["day"].isoformat()
         rows.append(dict(base, Status=status,

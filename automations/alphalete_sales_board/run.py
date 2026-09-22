@@ -366,6 +366,12 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool,
     scraped = sara.scrape(day, headless=headless, log=_log)
     agents, records = scraped["agents"], scraped["records"]
 
+    # RAF'S LIVE BOARD. The same numbers go to the LucyEco relay as his
+    # office's feed, so the ICD site's board, morning check and LucyEco list
+    # see him like every other office. Sales only; never raises (eco_relay).
+    from automations.alphalete_sales_board import eco_relay
+    eco_relay.send(agents, day, dry_run=not apply_writes, log=_log)
+
     ws = fill.open_tab(day)
     grid = ws.get_all_values()
     names = fill.board_names(grid)
