@@ -118,17 +118,17 @@ def main(argv=None) -> int:
         heads, reps, complete = ov_table.read_table(page)
         matched, missing = match(todo, reps)
         if missing:
-            # The one-page read is not trusted to be whole; search the rest.
-            surnames = sorted({(p.last or p.first).split()[-1]
-                               for p in missing if (p.last or p.first)})
-            ov_table.search_fill(page, heads, reps, surnames)
+            # Page 1 is all the browser ever gets (server-side table); ask the
+            # search about each person still missing, one at a time.
+            t1 = time.monotonic()
+            for p in list(missing):
+                try:
+                    ov_table.lookup_person(page, p.name, heads, reps)
+                except Exception as e:                      # noqa: BLE001
+                    print(f"  {p.name}: search failed ({type(e).__name__})")
             matched, missing = match(todo, reps)
-        if missing:
-            # Second probe for a surname that searches differently in OV
-            # ("Quiroz - Lebron" on the OBCL): the first name.
-            firsts = sorted({p.first.split()[0] for p in missing if p.first})
-            ov_table.search_fill(page, heads, reps, firsts)
-            matched, missing = match(todo, reps)
+            print(f"  searched one by one in {time.monotonic() - t1:.0f}s — "
+                  f"{len(missing)} still not found", flush=True)
         # Everyone not on page 1 was searched for directly, so the page-1
         # shortfall no longer leaves anyone unread.
         complete = True

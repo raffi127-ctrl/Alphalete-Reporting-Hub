@@ -316,6 +316,42 @@ def _wait_for_results(page, term: str, before: str = "",
     return got
 
 
+def lookup_person(page, name: str, heads: List[str],
+                  reps: Dict[str, list]) -> bool:
+    """Find ONE person through the server-side search and add their row(s).
+
+    Same loop as digi_docs.roster_check.count_matches, which found 15 of 15 on
+    2026-09-21 where this module's bulk search found none: probe with the
+    surname, a 4-letter prefix, then the first name; after each, POLL every
+    0.5s for up to 8s until a row carrying this WHOLE name appears — the server
+    answers a second or more after the last key, and anything read sooner is
+    the previous search's rows. Every row seen is kept either way, so a name
+    spelled differently in OwnerVille can still be matched by namematch."""
+    from automations.headshots.ov_upload import _search_box, _search_probes
+    parts = [p for p in name.split() if p]
+    if not parts:
+        return False
+    pat = re.compile(r"\s+".join(re.escape(p) for p in parts), re.I)
+    for probe in _search_probes(name):
+        box = _search_box(page)
+        box.fill("")
+        box.press_sequentially(probe, delay=40)     # keyup-driven filter
+        hit = False
+        for _ in range(16):
+            page.wait_for_timeout(500)
+            if page.locator("tbody tr").filter(has_text=pat).count():
+                page.wait_for_timeout(800)          # a second row, if any
+                hit = True
+                break
+        got = page.evaluate(_READ_JS)
+        if not heads:
+            heads[:] = got.get("heads") or []
+        _collect(got, heads, reps)
+        if hit:
+            return True
+    return False
+
+
 def _largest_page_length(page) -> int:
     """Set the VISIBLE DataTables length menu to its biggest option ("All" is
     -1). digi_docs' _show_all_entries takes `.first` without :visible, which
