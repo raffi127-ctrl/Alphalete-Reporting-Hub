@@ -80,7 +80,7 @@ class PublishTests(unittest.TestCase):
         self.assertIn("ALPHALETE MARKETING, INC. - 11280\n2 total candidates", body)
         self.assertIn("✅ Ana Uno · 3⭐ · Alexa", body)
         self.assertIn("❌ Bo Dos", body)
-        self.assertIn("whole group call", body)      # crop found nobody
+        self.assertNotIn("group call", body)         # note retired 9/21
         self.assertNotIn("Cy Tres", body)            # unknown ad is never posted
         # header = bold title, then edited in place with the week's numbers
         self.assertEqual(cl.posts[1]["text"],
