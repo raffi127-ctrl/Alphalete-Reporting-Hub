@@ -98,6 +98,38 @@ class Paint(unittest.TestCase):
                          config.BG_PENDING_YELLOW)
 
 
+class SheetBgPending(unittest.TestCase):
+    def _person(self, fs="", bg="Taken - Pending", own="FALSE", dd="TRUE"):
+        head = HEAD + ["BG Status : Last Checked"]
+        row = _row("Quincy", "Williams", fs=fs, dd=dd, oq="TRUE", uid="TRUE",
+                   own=own) + [bg]
+        return sweep.people([["9/21/2026"], head, row])
+
+    def _owner_colour(self, **kw):
+        plan = sweep.paint_plan(self._person(**kw))
+        return [col for _, c, col in plan if c == "Owner Submit"][0]
+
+    def test_taken_pending_all_else_done_is_yellow(self):
+        self.assertEqual(self._owner_colour(), config.BG_PENDING_YELLOW)
+
+    def test_pending_on_ov_final_status_is_yellow(self):
+        self.assertEqual(self._owner_colour(fs="Pending on OV", bg="Passed"),
+                         config.BG_PENDING_YELLOW)
+
+    def test_unperformable_all_else_done_is_yellow(self):
+        self.assertEqual(self._owner_colour(bg="Unperformable"),
+                         config.BG_PENDING_YELLOW)
+
+    def test_failed_bg_stays_red(self):
+        self.assertEqual(self._owner_colour(bg="Failed"), config.NOT_FOUND_RED)
+
+    def test_another_box_open_stays_red(self):
+        self.assertEqual(self._owner_colour(dd="FALSE"), config.NOT_FOUND_RED)
+
+    def test_ticked_is_green(self):
+        self.assertEqual(self._owner_colour(own="TRUE"), config.DONE_GREEN)
+
+
 VP_HEADS = ["Name", "Contact", "Login Created", "Onboarding Documents",
             "Background Check", "Drug Test", "FTC DIRECTV Compliance Training",
             "AT&T Protective Advantage Course", "AT&T Broadband Facts",

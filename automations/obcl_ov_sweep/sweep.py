@@ -17,6 +17,8 @@ class Person:
     final_status: str = ""
     cols: Dict[str, int] = field(default_factory=dict)   # label -> 1-indexed
     ticked: Dict[str, bool] = field(default_factory=dict)
+    bg_status: str = ""
+    blue_ink: bool = False
 
     @property
     def name(self) -> str:
@@ -54,6 +56,8 @@ def people(values: List[List[str]]) -> List[Person]:
         if not fi:
             continue
         fs = cols.get("Final Status")
+        bg = cols.get("BG Status : Last Checked")
+        bi = cols.get("Blue Ink")
         mapped = {c: cols[c] for c in config.COLUMNS if c in cols}
         for r in range(ch["start_row"], ch["end_row"] + 1):
             row = values[r - 1] if r - 1 < len(values) else []
@@ -67,7 +71,8 @@ def people(values: List[List[str]]) -> List[Person]:
             out.append(Person(
                 first=first, last=last, row=r, final_status=cell(fs),
                 cols=mapped,
-                ticked={c: _truthy(cell(i)) for c, i in mapped.items()}))
+                ticked={c: _truthy(cell(i)) for c, i in mapped.items()},
+                bg_status=cell(bg), blue_ink=_truthy(cell(bi))))
     return out
 
 
@@ -97,6 +102,23 @@ def earned(p: Person, done: Dict[str, object]) -> List[str]:
     return [c for c in p.open_columns if done.get(c) is True]
 
 
+def sheet_bg_pending(p: Person) -> bool:
+    """Owner Submit YELLOW straight off the sheet (Megan 2026-09-21: "that
+    group of pending BGs"): every other box on the row is ticked — Digi Docs,
+    Quizzes, Blue Ink, Headshot, UID — and the background check is still
+    pending: BG Status says Pending ("Taken - Pending") or Unperformable (Megan,
+    same day: "and the unperformables that have everything else done"), or
+    Final Status says "Pending on OV" (Faith Moss). Needs no OwnerVille read."""
+    others = [c for c in config.COLUMNS if c != "Owner Submit" and c in p.cols]
+    if not others or not all(p.ticked.get(c) for c in others):
+        return False
+    if not p.blue_ink:
+        return False
+    bg = (p.bg_status or "").lower()
+    return ("pending" in bg or "unperformable" in bg
+            or "pending on ov" in (p.final_status or "").lower())
+
+
 def paint_plan(everyone: List[Person], ticked_now=(), ready_rows=(),
                bg_pending_rows=()):
     """[(person, column, colour)] for EVERY sweep column of every active
@@ -119,7 +141,8 @@ def paint_plan(everyone: List[Person], ticked_now=(), ready_rows=(),
                 out.append((p, c, config.DONE_GREEN))
             elif c == "Owner Submit" and p.row in ready:
                 out.append((p, c, config.READY_BLUE))
-            elif c == "Owner Submit" and p.row in bg_wait:
+            elif c == "Owner Submit" and (p.row in bg_wait
+                                          or sheet_bg_pending(p)):
                 out.append((p, c, config.BG_PENDING_YELLOW))
             else:
                 out.append((p, c, config.NOT_FOUND_RED))

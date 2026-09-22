@@ -91,6 +91,8 @@ def main(argv=None) -> int:
     ap.add_argument("--tab", default="", help="OBCL tab (default: newest)")
     ap.add_argument("--only", default="", help="one person, 'First Last'")
     ap.add_argument("--show", action="store_true", help="visible browser")
+    ap.add_argument("--paint-only", action="store_true",
+                    help="colour the boxes off the sheet alone — no OwnerVille")
     args = ap.parse_args(argv)
 
     ws, values = _open_tab(args.tab)
@@ -100,6 +102,9 @@ def main(argv=None) -> int:
         todo = [p for p in todo if p.name.lower() == args.only.strip().lower()]
     print(f"{ws.title}: {len(everyone)} people, {len(todo)} with an open box "
           f"({', '.join(config.COLUMNS)})", flush=True)
+    if args.paint_only:
+        _paint(ws, everyone, (), (), args.tick)
+        return 0
     if not todo:
         # Nothing to look up — still colour every box by its tick.
         _paint(ws, everyone, (), (), args.tick)
