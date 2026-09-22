@@ -63,8 +63,8 @@ class PublishTests(unittest.TestCase):
         d.start(); self.addCleanup(d.stop)
         # No Claude call in tests: by default the cropper finds everybody.
         c = mock.patch("automations.ad_photo_threads.crop.crop_names",
-                       side_effect=lambda data, names, fid="": {n: b"PNG" + n.encode()
-                                                                for n in names})
+                       side_effect=lambda data, names, fid="", **kw: {n: b"PNG" + n.encode()
+                                                                      for n in names})
         self.crop = c.start(); self.addCleanup(c.stop)
 
     def tearDown(self):
@@ -91,8 +91,8 @@ class PublishTests(unittest.TestCase):
                          "*AT&T Sales Agent – Arlington TX - 50% Removed / Avg 3⭐*")
 
     def test_cropped_shot_posts_one_tile_per_person_no_group_note(self):
-        self.crop.side_effect = lambda data, names, fid="": {n: b"PNG" + n.encode()
-                                                              for n in names}
+        self.crop.side_effect = lambda data, names, fid="", **kw: {n: b"PNG" + n.encode()
+                                                                    for n in names}
         cl = FakeSlack()
         post.publish(_rep(), "D1", cl=cl)
         up = cl.uploads[0]
@@ -101,7 +101,7 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(self.crop.call_args[0][1], ["Ana Uno", "Bo Dos"])
 
     def test_name_not_found_posts_no_photo_and_says_so(self):
-        self.crop.side_effect = lambda data, names, fid="": {
+        self.crop.side_effect = lambda data, names, fid="", **kw: {
             n: (b"" if n == "Bo Dos" else b"PNG") for n in names}
         cl = FakeSlack()
         c = post.publish(_rep(), "D1", cl=cl)
@@ -110,7 +110,7 @@ class PublishTests(unittest.TestCase):
                       cl.uploads[0]["initial_comment"])
 
     def test_nobody_found_posts_text_only(self):
-        self.crop.side_effect = lambda data, names, fid="": {n: b"" for n in names}
+        self.crop.side_effect = lambda data, names, fid="", **kw: {n: b"" for n in names}
         cl = FakeSlack()
         c = post.publish(_rep(), "D1", cl=cl)
         self.assertEqual((c["photos"], len(cl.uploads)), (0, 0))

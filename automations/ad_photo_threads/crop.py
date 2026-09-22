@@ -69,8 +69,11 @@ _SCHEMA = {
                 "additionalProperties": False,
             },
         },
+        # Every tile label on the screenshot — only for the run log, so a
+        # "not visible" can be told apart from a name Zoom spelled otherwise.
+        "all_labels": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["tiles"],
+    "required": ["tiles", "all_labels"],
     "additionalProperties": False,
 }
 
@@ -81,7 +84,8 @@ def _cache_path(file_id: str, name: str) -> Path:
 
 
 def _ask(img_bytes: bytes, media_type: str, size: Tuple[int, int],
-         names: List[str], client=None) -> List[dict]:
+         names: List[str], client=None,
+         aliases: Optional[Dict[str, List[str]]] = None) -> dict:
     import anthropic
     if client is None:
         from automations.brand_audit import credentials
@@ -95,13 +99,18 @@ def _ask(img_bytes: bytes, media_type: str, size: Tuple[int, int],
                 "type": "base64", "media_type": media_type,
                 "data": base64.standard_b64encode(img_bytes).decode("ascii")}},
             {"type": "text", "text":
-                f"Image size: {w} x {h} pixels.\nNames to find:\n"
-                + "\n".join(f"- {n}" for n in names)},
+                f"Image size: {w} x {h} pixels.\nNames to find (return each "
+                "under the name before any parentheses):\n"
+                + "\n".join(f"- {n}" + (f" (may also appear as: "
+                                        f"{', '.join((aliases or {})[n])})"
+                                        if (aliases or {}).get(n) else "")
+                            for n in names)
+                + "\nAlso list every tile label you can read in all_labels."},
         ]}])
     if resp.stop_reason != "end_turn":
         raise RuntimeError(f"model stopped: {resp.stop_reason}")
     text = next((b.text for b in resp.content if b.type == "text"), "{}")
-    return json.loads(text).get("tiles") or []
+    return json.loads(text)
 
 
 def _box(t: dict, w: int, h: int) -> Optional[Tuple[int, int, int, int]]:
@@ -116,7 +125,8 @@ def _box(t: dict, w: int, h: int) -> Optional[Tuple[int, int, int, int]]:
 
 
 def crop_names(data: bytes, names: List[str], file_id: str = "",
-               client=None) -> Dict[str, bytes]:
+               client=None, aliases: Optional[Dict[str, List[str]]] = None
+               ) -> Dict[str, bytes]:
     """{name: PNG of that person's tile, or b"" = not on this screenshot}."""
     from PIL import Image
 
@@ -138,7 +148,8 @@ def crop_names(data: bytes, names: List[str], file_id: str = "",
         (round(img.width * scale), round(img.height * scale)))
     buf = io.BytesIO()
     small.save(buf, "PNG")
-    tiles = _ask(buf.getvalue(), "image/png", small.size, todo, client)
+    got = _ask(buf.getvalue(), "image/png", small.size, todo, client, aliases)
+    tiles = got.get("tiles") or []
 
     by_name = {str(t.get("name", "")).strip().lower(): t for t in tiles}
     for n in todo:
@@ -146,6 +157,8 @@ def crop_names(data: bytes, names: List[str], file_id: str = "",
         box = _box(t, small.width, small.height) if t and t.get("found") else None
         if not box:
             out[n] = b""
+            print(f"  crop: {n!r} not found on {file_id or 'shot'}; labels seen: "
+                  f"{', '.join(got.get('all_labels') or []) or '(none)'}")
             continue
         full = tuple(round(v / scale) for v in box)
         # A tile that is basically the whole screenshot: the shot is just them.

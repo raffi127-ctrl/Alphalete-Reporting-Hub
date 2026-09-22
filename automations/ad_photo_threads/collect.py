@@ -57,6 +57,9 @@ class Candidate:
     images: List[dict] = field(default_factory=list)
     shared: bool = False              # images are the slot's group call
     reply_ts: Optional[str] = None
+    # How Slack spelled them when it differs from the sheet (first-name match)
+    # — the Zoom tile may carry that spelling, so the cropper looks for both.
+    alt_names: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -161,10 +164,13 @@ def first_name_matches(msgs: List[dict], todays: List[Candidate],
                 fl = _fold(ln)
                 if re.search(rf"\b{re.escape(first)}\b", fl) \
                         and book.find_in_text(ln) == c.ad:
-                    hits.append((i, text.find(fl) if fl in text else 0))
+                    hits.append((i, text.find(fl) if fl in text else 0, ln))
         if len(hits) == 1:
-            i, pos = hits[0]
+            i, pos, ln = hits[0]
             out.setdefault(i, []).append((pos, c))
+            spelled = re.split(r"\s[-–—:]\s", ln.strip(" •*-\t"), maxsplit=1)[0].strip()
+            if spelled and _fold(spelled) != _fold(c.name) and len(spelled) <= 40:
+                c.alt_names.append(spelled)
     return out
 
 

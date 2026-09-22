@@ -72,6 +72,7 @@ class FirstNameFallbackTests(unittest.TestCase):
         starla = self._c("Starla Kennedy", self.book.resolve("AT&T Sales Agent – Arlington TX"))
         got = collect.first_name_matches(self.msgs, [pedro, starla], self.book)
         self.assertEqual([c.name for _, c in got[0]], ["Pedro Menendez"])
+        self.assertEqual(pedro.alt_names, ["Pedro Moreno"])
 
     def test_not_taken_when_the_line_is_another_ad(self):
         from automations.ad_photo_threads import collect

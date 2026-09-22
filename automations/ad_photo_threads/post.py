@@ -186,7 +186,10 @@ def _uploads(item: dict, tmp: str, crop: bool) -> tuple:
             uploads.append({"file": str(p), "filename": p.name})
             seen.update(shot["names"])
             continue
-        cuts = cropper.crop_names(data, shot["names"], f.get("id", ""))
+        aliases = {c.name: c.alt_names for c in item["cands"]
+                   if c.name in shot["names"] and c.alt_names}
+        cuts = cropper.crop_names(data, shot["names"], f.get("id", ""),
+                                  aliases=aliases or None)
         for j, n in enumerate(shot["names"]):
             if not cuts.get(n):
                 continue

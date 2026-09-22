@@ -28,7 +28,8 @@ class FakeClaude:
     def _create(self, **kw):
         self.calls.append(kw)
         return SimpleNamespace(stop_reason=self.stop, content=[
-            SimpleNamespace(type="text", text=json.dumps({"tiles": self.tiles}))])
+            SimpleNamespace(type="text", text=json.dumps(
+                {"tiles": self.tiles, "all_labels": [t["name"] for t in self.tiles]}))])
 
 
 def _tile(name, found=True, box=(0, 0, 784, 392)):
@@ -55,6 +56,13 @@ class CropTests(unittest.TestCase):
         self.assertAlmostEqual(w, 1040, delta=3)           # 1000 + 4% pad
         self.assertAlmostEqual(h, 520, delta=3)
         self.assertIn("1568 x 784", cl.calls[0]["messages"][0]["content"][1]["text"])
+
+    def test_slack_spelling_is_handed_to_the_model(self):
+        cl = FakeClaude([_tile("Pedro Menendez")])
+        crop.crop_names(_png(), ["Pedro Menendez"], "F7", client=cl,
+                        aliases={"Pedro Menendez": ["Pedro Moreno"]})
+        self.assertIn("Pedro Menendez (may also appear as: Pedro Moreno)",
+                      cl.calls[0]["messages"][0]["content"][1]["text"])
 
     def test_cached_crop_skips_the_model(self):
         crop.crop_names(_png(), ["Ana Uno"], "F1", client=FakeClaude([_tile("Ana Uno")]))
