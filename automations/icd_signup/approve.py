@@ -50,6 +50,23 @@ def show_waiting(log=print) -> int:
     return 0
 
 
+def _already_approved(kind: str, office_key: str) -> bool:
+    """Was this half signed off on 'Office Channels' already, by hand?
+
+    The gates below only read PENDING requests, so an office approved earlier
+    from the terminal has nothing pending and used to be refused (Colten,
+    2026-09-22: three approvals at 8:50, "could not be approved yet" from the
+    link at 9:45). One place to look, so the tests can stand in for the sheet.
+    """
+    from automations.icd_alerts import post as P
+    reader = {"alerts": P.approved_channels, "knocks": P.approved_knocks,
+              "texts": P.approved_texts}[kind]
+    try:
+        return bool(reader().get(office_key))
+    except Exception:  # noqa: BLE001 -- no sheet: fall through to the gate
+        return False
+
+
 def approve(office_key: str, *, do_push: bool = True, log=print) -> int:
     rec = store.get(office_key)
     if not rec:
@@ -80,6 +97,13 @@ def approve(office_key: str, *, do_push: bool = True, log=print) -> int:
             "so there is nothing to approve there.")
         log("  Their knocks board is separate and carries on below.")
         rc = 0
+    elif _already_approved("alerts", rec.office_key):
+        # ALREADY SIGNED OFF ON 'Office Channels' -- by hand, earlier. The
+        # gate below only reads PENDING requests, so it found nothing and
+        # refused an office whose channel was fine (Colten, 2026-09-22: three
+        # approvals written at 8:50, "could not be approved yet" at 9:45).
+        log("  Their alert channel is already approved.")
+        rc = 0
     else:
         # THE GATE: the channels they asked for. icd_alerts.approve resolves
         # the room, checks Lucy is in it, and writes the sign-off.
@@ -97,7 +121,10 @@ def approve(office_key: str, *, do_push: bool = True, log=print) -> int:
         # was live on 2026-09-15 seconds after his approval had refused both
         # his channels for not having Lucy in them. The SaraPlus half above
         # has always checked its own result; this half never did.
-        knocks_ok = channels.cmd_knocks(rec.office_key) == 0
+        if _already_approved("knocks", rec.office_key):
+            log("  Their knocks board is already approved.")
+        else:
+            knocks_ok = channels.cmd_knocks(rec.office_key) == 0
     else:
         log("  They said they do not want a knocks board.")
 
@@ -118,7 +145,10 @@ def approve(office_key: str, *, do_push: bool = True, log=print) -> int:
     if rec.text_groups:
         log("")
         log("They also asked to be texted:")
-        channels.cmd_texts(rec.office_key)
+        if _already_approved("texts", rec.office_key):
+            log("  Their text group is already approved.")
+        else:
+            channels.cmd_texts(rec.office_key)
 
     store.set_status(rec.office_key, STATUS_APPROVED,
                      note="approved %s" % rec.submitted_at)

@@ -57,6 +57,7 @@ class ARefusedBoxOfficeReturnsNonZero(unittest.TestCase):
         ch.cmd_approve.return_value = 0
         ch.cmd_knocks.return_value = knocks_rc
         with mock.patch.object(A.store, "get", return_value=rec), \
+                mock.patch.object(A, "_already_approved", return_value=False), \
                 mock.patch.object(A.store, "set_status") as setst, \
                 mock.patch.dict("sys.modules",
                                 {"automations.icd_alerts.approve": ch}), \

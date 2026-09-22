@@ -81,6 +81,7 @@ class ApprovalGatesPosting(unittest.TestCase):
         with mock.patch.object(store, "get", return_value=rec), \
              mock.patch.object(store, "pending", return_value=[]), \
              mock.patch.object(store, "set_status") as setst, \
+             mock.patch.object(A, "_already_approved", return_value=False), \
              mock.patch("automations.icd_alerts.approve.cmd_approve",
                         return_value=channel_rc) as chan, \
              mock.patch("automations.icd_alerts.approve.cmd_knocks",
@@ -108,6 +109,22 @@ class ApprovalGatesPosting(unittest.TestCase):
         setst.assert_not_called()
         knocks.assert_not_called()
         self.assertNotEqual(rc, 0)
+
+    def test_an_office_already_approved_by_hand_is_switched_on(self):
+        """Colten 2026-09-22: approved from the terminal at 8:50, then the
+        link said 'could not be approved yet' because nothing was pending."""
+        rec = _rec()
+        with mock.patch.object(store, "get", return_value=rec), \
+             mock.patch.object(store, "pending", return_value=[]), \
+             mock.patch.object(store, "set_status") as setst, \
+             mock.patch.object(A, "_already_approved", return_value=True), \
+             mock.patch("automations.icd_alerts.approve.cmd_approve") as chan, \
+             mock.patch("automations.icd_alerts.approve.cmd_knocks") as knocks:
+            rc = A.approve(rec.office_key, log=lambda *a, **k: None)
+        self.assertEqual(rc, 0)
+        chan.assert_not_called()
+        knocks.assert_not_called()
+        self.assertEqual(setst.call_args[0][1], STATUS_APPROVED)
 
     def test_a_good_channel_switches_them_on(self):
         rc, setst, chan, knocks = self._approve(_rec())
@@ -414,6 +431,7 @@ class NamingNoChannelIsNotARefusal(unittest.TestCase):
         with mock.patch.object(store, "get", return_value=rec), \
              mock.patch.object(store, "pending", return_value=[]), \
              mock.patch.object(store, "set_status") as setst, \
+             mock.patch.object(A, "_already_approved", return_value=False), \
              mock.patch("automations.icd_alerts.approve.cmd_approve",
                         return_value=1) as chan, \
              mock.patch("automations.icd_alerts.approve.cmd_knocks",
