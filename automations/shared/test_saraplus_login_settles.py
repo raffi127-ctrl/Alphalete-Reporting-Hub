@@ -79,3 +79,17 @@ class LoginSettlesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BodySentenceTest(unittest.TestCase):
+    """The rejection lives in a plain span; the fault must still say so."""
+
+    def test_the_owner_hears_did_not_accept_when_the_body_says_invalid(self):
+        # The JS runs in a real page; here the fake returns what it would
+        # have assembled -- the sentence found on the body, no labels.
+        page = _Page([LOGIN], says="have entered an invalid email/password. "
+                                   "[title: ; user field: filled; password field: filled; body: ...]")
+        with self.assertRaises(sp.SaraError) as cm:
+            sp._login(page, "e", "p")
+        self.assertIn("invalid email/password", str(cm.exception))
+        self.assertIn("did not accept", str(sara_read._as_owner_problem(cm.exception)))

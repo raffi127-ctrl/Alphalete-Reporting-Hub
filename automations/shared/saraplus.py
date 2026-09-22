@@ -221,6 +221,12 @@ def _login_page_message(page) -> str:
                  const p = document.querySelector('#ctl00_MainContent_txtPassword');
                  const body = (document.body && document.body.innerText || '')
                    .replace(/\s+/g, ' ').trim().slice(0, 400);
+                 // SaraPlus puts "You have entered an invalid email/password"
+                 // in a plain span with no id or class (Khalil, 2026-09-22
+                 // 10:56 -- the body carried it while every selector above
+                 // came back empty). Read the sentence off the body itself.
+                 const m = body.match(/[^.!?]*\b(invalid|incorrect|locked|expired|disabled|not recognized)\b[^.!?]*[.!?]?/i);
+                 if (!said.length && m) said.push(m[0].trim());
                  return (said.length ? said.join(' | ') : '')
                    + ' [title: ' + document.title + '; user field: '
                    + (u ? (u.value ? 'filled' : 'EMPTY') : 'missing')
