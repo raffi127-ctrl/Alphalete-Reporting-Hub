@@ -217,6 +217,36 @@ def decide_sales(sales: Dict, last_posted: Optional[Dict],
     return moved, merged, False
 
 
+def scoreboard_text(sales: Dict, fired: List[str], campaign=None,
+                    show=None) -> str:
+    """The day's standings for an office's TEXT GROUP -- Raf's partner-chat
+    layout, off the office's own relayed sales (Megan, 2026-09-22: "for
+    those enrolled in LucyECO can we build out this for their text alerts
+    as well? Like we have in the partner chat for Raf?").
+
+    One line per rep with a sale, highest first, the Int/Up/DTV/NL breakdown,
+    a flame on whoever moved THIS sweep, then the INT/Upgrades/DTV/NL's/
+    TOTALS block. No team lines yet: an ECO office has no live board to
+    assign reps to teams (Megan: "the team breakdown will have to wait").
+    No weekly figure either, for the same reason.
+
+    AT&T-SHAPED CAMPAIGNS ONLY. The layout counts Int / Int Up / DTV / NL;
+    a Box office relays Sales / Volume and would render every rep as zero.
+    Returns "" for those rather than a board that says nobody sold.
+    """
+    from automations.shared import sale_hype as H
+    if tuple(H.shape(campaign).metrics) != ("Int", "Int Up", "DTV", "NL"):
+        return ""
+    from automations.alphalete_sales_board import notify as N
+    named = {(show(rep) if show else rep): dict(m or {})
+             for rep, m in (sales or {}).items()}
+    flames = [(show(r) if show else r) for r in (fired or [])]
+    if not any(N.rep_total(m) for m in named.values()):
+        return ""
+    return N.leaderboard(named, flames, None, (), flag_missing=False,
+                         teams=None)
+
+
 BACKSLIDE_PATH = (Path.home() / ".config" / "recruiting-report"
                   / "icd_backslides.json")
 
@@ -740,6 +770,11 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
     day = day or dt.date.today()
     tab = _relay_tab()
     approved = approved_channels(tab.spreadsheet)
+    # THE SCOREBOARD TEXT rides the same approval the knocks board texts do
+    # (the "Texts Approved" columns) -- one group per office, approved once.
+    texts = approved_texts(tab.spreadsheet)
+    from automations.icd_alerts import knocks_post as _KP
+    can_text = _KP._can_text() if texts else False
     # ONE read for the whole tick. Per office it would be a read per office per
     # minute against a workbook the laptops are writing to.
     name_fixes = RN.load(tab.spreadsheet)
@@ -841,6 +876,29 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                 except Exception as e:  # noqa: BLE001
                     log("%-10s FAILED to post to %s: %s: %s"
                         % (key, channel.name, type(e).__name__, str(e)[:120]))
+        # THE STANDINGS TO THEIR TEXT GROUP, the way Raf's partners get them:
+        # whenever a rep's count moves, the whole day's board with a flame on
+        # who moved; a backlog baseline sends the standings once, no flames.
+        # AFTER the Slack rooms and never blocking them -- a group that
+        # cannot be resolved must not cost the channel its alert, and must
+        # not stop 'Last Posted' being written (a retry would re-announce).
+        if (sold or (sales_baseline and merged_sales)) and texts.get(key):
+            board = scoreboard_text(merged_sales, [] if sales_baseline else sold,
+                                    office.campaign, show)
+            if board and not can_text:
+                log("%-10s standings text skipped -- this machine cannot "
+                    "send iMessage" % key)
+            elif board:
+                from automations.b2b_dispositions import text_post as tp
+                for t in texts[key]:
+                    group = t.get("channel_name") or ""
+                    try:
+                        tp.send_text_to_group(group, board, dry_run=not send)
+                        log("%-10s standings -> text group %r%s"
+                            % (key, group, "" if send else "  (dry run)"))
+                    except Exception as e:  # noqa: BLE001
+                        log("%-10s FAILED to text standings to %r: %s: %s"
+                            % (key, group, type(e).__name__, str(e)[:120]))
         if lines or hype_lines or baseline or sales_baseline:
             tab.update_cell(rownum, COL_LAST_POSTED + 1, json.dumps(merged))
             tab.update_cell(rownum, COL_LAST_POSTED_SALES + 1,
