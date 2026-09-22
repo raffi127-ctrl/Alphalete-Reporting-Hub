@@ -487,16 +487,37 @@ def backfill(week_ending: dt.date, out_dir=Path("output"),
                 f"pinned view first, then pass force.")
             return 0
     rows = 0
-    try:
-        path = pull(week_ending=week_ending, out_dir=out_dir, log=log)
-        rows += log_days(path, week_ending=week_ending, log=log)
-    except Exception as e:   # noqa: BLE001 — one half is not the run
-        log(f"  office days: FAILED ({type(e).__name__}: {e})")
-    try:
-        rpath = pull_reps(week_ending=week_ending, out_dir=out_dir, log=log)
-        rows += log_rep_days(rpath, week_ending=week_ending, log=log)
-    except Exception as e:   # noqa: BLE001
-        log(f"  rep days: FAILED ({type(e).__name__}: {e})")
+    from automations.org_sales_board import section_pull as SP
+    from automations.shared.tableau_patchright import tableau_session
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    # ONE session for every pull below: each extra session is another login
+    # against the daily Tableau budget, and they all read the same site.
+    with tableau_session(headless=False, verbose=False) as page:
+        try:
+            path = SP.pull_section_byday(SP.SPECS["fiber"], out, page,
+                                         today=week_ending)
+            rows += log_days(path, week_ending=week_ending, log=log)
+        except Exception as e:   # noqa: BLE001 — one part is not the run
+            log(f"  office days: FAILED ({type(e).__name__}: {e})")
+        try:
+            rpath = pull_reps_with(page, week_ending=week_ending,
+                                   out_dir=out, log=log)
+            rows += log_rep_days(rpath, week_ending=week_ending, log=log)
+        except Exception as e:   # noqa: BLE001
+            log(f"  rep days: FAILED ({type(e).__name__}: {e})")
+        # Box and B2B office totals, so those campaigns' boards can be
+        # checked against Tableau too.
+        for key in ("b2b", "box"):
+            try:
+                spec = SP.SPECS[key]
+                bpath = SP.pull_section_byday(spec, out, page,
+                                              today=week_ending)
+                rows += log_office_days(SP.parse_byday(spec, bpath,
+                                                       week_ending),
+                                        key, log=log)
+            except Exception as e:   # noqa: BLE001
+                log(f"  {key} office days: FAILED ({type(e).__name__}: {e})")
     return rows
 
 
@@ -529,6 +550,91 @@ def main(argv=None) -> int:
         total += backfill(wk, force=a.force)
     print(f"done — {total} row(s) stored")
     return 0
+
+
+
+# ---------------------------------------------------------------- office days
+# Box and B2B settle in their own Tableau workbooks, and the 2am org-board job
+# already pulls both — as OFFICE totals per day (one count per owner), not per
+# rep. Stored here so their boards' morning check has a settled number to
+# compare the live one with (2026-09-22). Unlike the fiber crosstab, Box's
+# headers carry real dates ('Mon (06-22)'), and both are parsed by the org
+# board's own proven parser, so there is no weekday-dating step to get wrong.
+OFFICE_TAB = "Board Office Days"
+OFFICE_COLUMNS = ["Date", "Owner", "Campaign", "Count", "Stored"]
+
+
+def _letters(name: str) -> str:
+    import re
+    return re.sub(r"[^a-z]", "", (name or "").lower())
+
+
+def log_office_days(parsed: dict, campaign: str, sheet_id: str = SHEET_ID,
+                    log=print) -> int:
+    """Upsert {owner: {metric: {date: n}}} for one campaign. Never fatal."""
+    try:
+        from automations.recruiting_report.fill import open_by_key, _retry
+        fresh = {}
+        for owner, metrics in (parsed or {}).items():
+            for _metric, days in (metrics or {}).items():
+                for day, n in (days or {}).items():
+                    if hasattr(day, "isoformat"):
+                        k = (day.isoformat(), str(owner).strip(), campaign)
+                        fresh[k] = fresh.get(k, 0) + int(n or 0)
+        if not fresh:
+            log(f"  board office days ({campaign}): nothing parsed")
+            return 0
+        sh = open_by_key(sheet_id)
+        try:
+            ws = sh.worksheet(OFFICE_TAB)
+        except Exception:   # noqa: BLE001
+            ws = sh.add_worksheet(title=OFFICE_TAB, rows=4000,
+                                  cols=len(OFFICE_COLUMNS))
+        grid = _retry(ws.get_all_values) or [OFFICE_COLUMNS]
+        head = grid[0] if grid and grid[0] else OFFICE_COLUMNS
+        keep = {}
+        for r in grid[1:]:
+            rec = dict(zip(head, r))
+            if rec.get("Date") and rec.get("Owner"):
+                keep[(rec["Date"], rec["Owner"], rec.get("Campaign", ""))] = \
+                    [rec["Date"], rec["Owner"], rec.get("Campaign", ""),
+                     rec.get("Count", "0"), rec.get("Stored", "")]
+        now = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+        for (d, o, c), n in fresh.items():
+            keep[(d, o, c)] = [d, o, c, str(n), now]
+        body = [OFFICE_COLUMNS] + [keep[k] for k in sorted(keep, reverse=True)]
+        _retry(ws.clear)
+        _retry(ws.update, values=body, range_name="A1",
+               value_input_option="RAW")
+        log(f"  board office days ({campaign}): {len(fresh)} stored")
+        return len(fresh)
+    except Exception as e:   # noqa: BLE001 — never fatal
+        log(f"  board office days ({campaign}): SKIPPED "
+            f"({type(e).__name__}: {e})")
+        return 0
+
+
+def stored_office_days(owner: str, campaign: str,
+                       sheet_id: str = SHEET_ID) -> dict:
+    """{date: count} for one owner in one campaign, matched on letters only."""
+    from automations.recruiting_report.fill import open_by_key, _retry
+    try:
+        g = _retry(open_by_key(sheet_id).worksheet(OFFICE_TAB).get_all_values)
+    except Exception:   # noqa: BLE001
+        return {}
+    if not g:
+        return {}
+    want = _letters(owner)
+    out = {}
+    for r in g[1:]:
+        rec = dict(zip(g[0], r))
+        if rec.get("Campaign") != campaign or _letters(rec.get("Owner")) != want:
+            continue
+        try:
+            out[dt.date.fromisoformat(rec["Date"][:10])] = int(rec["Count"])
+        except (KeyError, ValueError):
+            continue
+    return out
 
 
 if __name__ == "__main__":

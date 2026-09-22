@@ -197,7 +197,22 @@ def _make_section_adapter(spec_key: str):
                 reconcile.run(days=1, log=ctx.logfn)
             except Exception as e:   # noqa: BLE001
                 ctx.logfn(f"  board check: SKIPPED ({type(e).__name__}: {e})")
-        return section_pull.parse_byday(spec, csv_path, today)
+        parsed = section_pull.parse_byday(spec, csv_path, today)
+        # BOX AND B2B TOO. This job already pulls both campaigns' workbooks;
+        # storing their office totals lets the LucyECO boards for those
+        # offices be checked against Tableau like the fiber ones, with no
+        # extra pull and no extra login (2026-09-22). The check re-runs so a
+        # row settled by THIS pull replaces the earlier one. Never fatal.
+        if spec_key in ("b2b", "box"):
+            try:
+                from automations.icd_sales_board import (reconcile,
+                                                         tableau_days as _td)
+                _td.log_office_days(parsed, spec_key, log=ctx.logfn)
+                reconcile.run(days=1, log=ctx.logfn)
+            except Exception as e:   # noqa: BLE001
+                ctx.logfn(f"  board office days ({spec_key}): SKIPPED "
+                          f"({type(e).__name__}: {e})")
+        return parsed
     return _adapter
 
 

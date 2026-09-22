@@ -174,26 +174,88 @@ def store(results: list, log=print) -> int:
     return len(rows)
 
 
+# How many days back a campaign is fully settled when the 2am job runs. Box's
+# extract publishes yesterday's sales DURING the day and the 14:30 catch-up
+# fills it, so at 2am its newest settled day is two back — checking yesterday
+# would call every Box office "off" every morning.
+SETTLE_LAG = {"att": 1, "b2b_att": 1, "b2b_box": 2, "box": 2}
+# Which stored office-day series a feed's campaign is compared with.
+OFFICE_SERIES = {"b2b_box": "box", "box": "box", "b2b_att": "b2b"}
+
+
+def _live_total(feed, reps: dict) -> int:
+    """A feed's office total for one day, counted the way its Tableau counts.
+
+    Box counts deals, which the agent relays as Sales. B2B counts units."""
+    if feed.family == "box":
+        return sum(int(v.get("Sales", 0) or 0) for v in reps.values())
+    return sum(int(v.get(m, 0) or 0) for v in reps.values()
+               for m in ("Int", "Int Up", "DTV", "NL"))
+
+
+def check_office(feed, day: dt.date, series=None) -> dict:
+    """Box / B2B: the office total, live vs settled. Tableau has no per-rep
+    view for these campaigns, so this cannot say WHICH rep was off."""
+    base = {"Date": day.isoformat(), "Office": feed.key, "ICD": feed.owner}
+    live = RR.for_office(feed.key, day, day).get(day) or {}
+    if not live:
+        return dict(base, status="no live reading")
+    settled = series if series is not None else TD.stored_office_days(
+        feed.owner, OFFICE_SERIES[feed.campaign])
+    if day not in settled:
+        return dict(base, status="not settled in Tableau")
+    a, b = _live_total(feed, live), settled[day]
+    match = max(0.0, 100.0 * (1 - abs(a - b) / max(b, 1)))
+    return dict(base, status="checked",
+                **{"Live apps": a, "Tableau apps": b, "Diff": a - b,
+                   "Match %": round(match, 1),
+                   "Reps off": "office total only — Tableau has no per-rep "
+                               "view for this campaign"})
+
+
 def run(days: int = 1, end: dt.date | None = None, dry_run: bool = False,
         log=print) -> list:
-    """Check the last `days` days ending `end` (default: yesterday)."""
-    end = end or (dt.date.today() - dt.timedelta(days=1))
+    """Check the last `days` settled days for every relaying office.
+
+    `end` defaults per campaign to its newest SETTLED day (see SETTLE_LAG)."""
+    from automations.icd_sales_board import eco_feeds as E
     results = []
     cache: dict = {}
+
+    def _emit(r, key, day, first):
+        results.append(r)
+        if r["status"] == "checked":
+            flag = "OK " if r["Match %"] >= MATCH_AT else "OFF"
+            log(f"  {flag} {day} {key:14} live {r['Live apps']:4} "
+                f"tableau {r['Tableau apps']:4}  {r['Match %']:5.1f}%"
+                + (f"  | {r['Reps off']}" if r.get("Reps off")
+                   and "office total" not in r["Reps off"] else ""))
+        elif first:
+            log(f"  --  {day} {key:14} {r['status']}")
+
+    # AT&T fiber: per rep, against the fiber view
     for key, icd in pairs(log=log):
-        if icd and icd not in cache:
-            cache[icd] = TD.stored_rep_days(icd)
+        if not icd:
+            continue
+        cache.setdefault(icd, TD.stored_rep_days(icd))
+        last = end or dt.date.today() - dt.timedelta(days=SETTLE_LAG["att"])
         for i in range(days):
-            day = end - dt.timedelta(days=i)
-            r = check(key, icd, day, cache.get(icd))
-            results.append(r)
-            if r["status"] == "checked":
-                flag = "OK " if r["Match %"] >= MATCH_AT else "OFF"
-                log(f"  {flag} {day} {key:14} live {r['Live apps']:4} "
-                    f"tableau {r['Tableau apps']:4}  {r['Match %']:5.1f}%"
-                    + (f"  | {r['Reps off']}" if r["Reps off"] else ""))
-            elif i == 0:
-                log(f"  --  {day} {key:14} {r['status']}")
+            day = last - dt.timedelta(days=i)
+            _emit(check(key, icd, day, cache[icd]), key, day, i == 0)
+
+    # Box and B2B: office totals, against their own workbooks
+    feeds = E.feeds()
+    for key in RR.offices():
+        f = feeds.get(key)
+        if not f or f.campaign not in OFFICE_SERIES:
+            continue
+        series = TD.stored_office_days(f.owner, OFFICE_SERIES[f.campaign])
+        last = end or dt.date.today() - dt.timedelta(
+            days=SETTLE_LAG.get(f.campaign, 1))
+        for i in range(days):
+            day = last - dt.timedelta(days=i)
+            _emit(check_office(f, day, series), key, day, i == 0)
+
     if not dry_run:
         log(f"board check: {store(results)} row(s) stored")
     return results
