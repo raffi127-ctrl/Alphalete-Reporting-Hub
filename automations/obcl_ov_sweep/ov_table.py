@@ -145,6 +145,14 @@ _READ_JS = """() => {
 }"""
 
 
+_INFO_JS = """() => {
+  const vis = e => !!(e.offsetParent || e.getClientRects().length);
+  const i = [...document.querySelectorAll('.dataTables_info')].filter(vis)[0];
+  const n = document.querySelectorAll('table tbody tr').length;
+  return (i ? i.innerText : '') + '|' + n;
+}"""
+
+
 def read_table(page, *, verbose: bool = True) -> tuple:
     """(headers, {ov name: cells}, complete). RES-AT&T, Show All, every entry.
 
@@ -206,11 +214,13 @@ def search_fill(page, heads: List[str], reps: Dict[str, list],
     (Lucy 3, 2026-09-21: 50 of 58 "not found" — the table never left page 1).
     Search filters client-side, so the person's row is on page 1 by
     construction; this is the same box headshots' find_rep has used daily."""
-    box = page.locator("input[type='search']:visible").first
-    box.wait_for(state="visible", timeout=20000)
-    found = 0
+    _settle(page)
+    found, failed = 0, 0
     for term in surnames:
         try:
+            # Fresh locator each time: a stale one survives a reload silently.
+            box = page.locator("input[type='search']:visible").first
+            box.wait_for(state="visible", timeout=20000)
             box.fill("")
             box.press_sequentially(term, delay=20)
             got = _wait_for_results(page, term)
@@ -218,19 +228,21 @@ def search_fill(page, heads: List[str], reps: Dict[str, list],
                 heads[:] = got.get("heads") or []
             found += _collect(got, heads, reps)
         except Exception as e:                              # noqa: BLE001
+            failed += 1
             if verbose:
                 print(f"    search {term!r} failed: {type(e).__name__}")
     try:
-        box.fill("")
+        page.locator("input[type='search']:visible").first.fill("")
     except Exception:                                       # noqa: BLE001
         pass
     if verbose:
-        print(f"  search fallback: {len(surnames)} surname(s) looked up, "
-              f"{found} more row(s) read", flush=True)
+        print(f"  search fallback: {len(surnames)} name(s) looked up, "
+              f"{found} more row(s) read, {failed} search(es) errored",
+              flush=True)
     return found
 
 
-def _wait_for_results(page, term: str, timeout_ms: int = 6000) -> dict:
+def _wait_for_results(page, term: str, timeout_ms: int = 10000) -> dict:
     """The table AFTER the server answers the search. View Progress is
     serverSide DataTables (digi_docs_roster_probe, 2026-09-21), so a fixed
     pause can read the rows from before the search. Poll until a row carries
@@ -283,12 +295,35 @@ def _largest_page_length(page) -> int:
 
 
 def _settle(page):
-    """Short on purpose. OwnerVille keeps a background connection open, so
-    "networkidle" can simply never arrive — a 60s wait for it was paid in
-    full several times a run. The table itself is the real gate."""
+    """Wait until the page has LOADED and the table has STOPPED CHANGING.
+
+    Not "networkidle": OwnerVille keeps a background connection open, so that
+    can never arrive and each wait burned its full 60s. But "a table row is
+    visible" is not enough either — changing the campaign or the date filter
+    reloads the page, and the OLD table is still visible while it does. The
+    7:01pm pass on 2026-09-21 typed its searches into a page being replaced and
+    came back 47 not found. So: page load, then the table's own "Showing … of
+    N entries" line reading the same twice in a row."""
     try:
-        page.locator("table tbody tr").first.wait_for(state="visible",
-                                                      timeout=15000)
+        page.wait_for_load_state("load", timeout=30000)
     except Exception:                                       # noqa: BLE001
         pass
-    page.wait_for_timeout(600)
+    try:
+        page.locator("table tbody tr").first.wait_for(state="visible",
+                                                      timeout=20000)
+    except Exception:                                       # noqa: BLE001
+        pass
+    last, same = None, 0
+    for _ in range(20):                                     # ~12s cap
+        try:
+            info = page.evaluate(_INFO_JS)
+        except Exception:                                   # noqa: BLE001
+            info = None                                     # mid-navigation
+        if info and info == last:
+            same += 1
+            if same >= 2:
+                return
+        else:
+            same = 0
+        last = info
+        page.wait_for_timeout(600)
