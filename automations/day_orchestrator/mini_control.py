@@ -2208,6 +2208,47 @@ def _normalize_us_phone(raw: str) -> str:
     return raw.strip()
 
 
+def _test_card_png(text: str) -> "Path":
+    """A small labelled PNG for textgroup_image -- stands in for a board."""
+    import tempfile
+    from PIL import Image, ImageDraw
+    img = Image.new("RGB", (900, 360), (24, 64, 120))
+    d = ImageDraw.Draw(img)
+    d.rectangle([20, 20, 880, 340], outline=(255, 255, 255), width=6)
+    d.text((60, 150), (text or "Lucy image test")[:80], fill=(255, 255, 255))
+    out = Path(tempfile.gettempdir()) / "lucy-image-test.png"
+    img.save(out)
+    return out
+
+
+def _action_textgroup_image(args: str) -> tuple[bool, str]:
+    """Like textgroup, but also sends a test PICTURE -- the way boards go.
+
+    Args:  <group name> :: <message>
+    Built 2026-09-21: Aya's group could read Lucy's plain texts; the real
+    question was whether the board IMAGES get through. Same send_to_group
+    production uses (text first, then the image)."""
+    import shlex
+    try:
+        args = " ".join(shlex.split(args or ""))
+    except ValueError:
+        args = (args or "").strip().strip("'\"")
+    if "::" not in args:
+        return False, "textgroup_image needs '<group name> :: <message>'"
+    group, text = [x.strip() for x in args.split("::", 1)]
+    if not group or not text:
+        return False, "textgroup_image needs both a group name and a message"
+    try:
+        from automations.b2b_dispositions import text_post as tp
+        png = _test_card_png(text)
+        res = tp.send_to_group(group, text, [png], dry_run=False)
+    except Exception as e:  # noqa: BLE001
+        return False, "text+image to %r FAILED: %s: %s" % (group, type(e).__name__, e)
+    return bool(res.get("ok")), "sent to %r: text + %d image(s) (%s participants)" % (
+        res.get("resolved_name") or group, len(res.get("sent_images") or []),
+        res.get("participants"))
+
+
 def _action_textgroup(args: str) -> tuple[bool, str]:
     """Send ONE text to an iMessage GROUP, by name, from THIS machine.
 
@@ -7839,6 +7880,7 @@ ACTIONS = {
     "find_group": _action_find_group,
     "sendtext": _action_sendtext,
     "textgroup": _action_textgroup,
+    "textgroup_image": _action_textgroup_image,
     "run_b2b_dispositions": _action_run_b2b_dispositions,
     "text_dispositions": _action_text_dispositions,
     "text_tracker": _action_text_tracker,
