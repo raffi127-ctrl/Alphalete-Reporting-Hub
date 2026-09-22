@@ -171,6 +171,135 @@ def roster_for(office: str, start=None, end=None,
         return set()
 
 
+def _wanted(office: str) -> set:
+    """Every spelling this office goes by on the tab, lower case.
+
+    Shared by every reader here: this tab spells owners its own way
+    ('Akashdeep Rai', 'Muhammad UI Haque'), and an office cell can carry the
+    company AND the owner ('Next Horizon Group, Inc. Nii Tagoe'), which is why
+    callers substring-match rather than compare."""
+    out = {(office or "").strip().lower()}
+    try:
+        from automations.focus_office_att import aliases as _al
+        out |= {n.strip().lower() for n in
+                _al.get_search_candidates(office, _al.load_aliases()) if n}
+    except Exception:  # noqa: BLE001 — aliases are a nicety here
+        pass
+    return {w for w in out if w}
+
+
+# Columns that are not a per-day measure: the row's identity, and the two
+# clock times, which are read as a first/last rather than added up.
+_IDENTITY = ("Date", "Office", "ID", "Rep")
+_TIMES = ("First Knock", "Last Knock")
+
+
+def _clock(text: str) -> tuple:
+    """'8:20 PM' as something that sorts. COMPARING THE STRINGS IS WRONG —
+    '8:20 PM' sorts before '12:53 PM' because '8' > '1', so the earliest knock
+    of a two-row day came out as the latest. Anything unparseable sorts last,
+    which keeps a stray value from winning 'first'."""
+    raw = (text or "").strip().upper()
+    for fmt in ("%I:%M %p", "%I:%M:%S %p", "%H:%M", "%H:%M:%S"):
+        try:
+            t = dt.datetime.strptime(raw, fmt).time()
+            return (t.hour, t.minute, t.second)
+        except ValueError:
+            continue
+    return (99, 99, 99)
+
+
+def detail_from(grid: list, office: str, start=None, end=None) -> dict:
+    """{rep lowered: {date: {column: value}}} — EVERY column the tab carries.
+
+    activity_from keeps Total Knocks and Total Talk to, because that is all
+    the sales board draws. The knocks page is about the rest of the row: the
+    dispositions each knock turned into, and the time-tracker gaps. Rather
+    than name those columns here they are taken FROM THE HEADER, so a new
+    disposition on the tab shows up on the page without an edit
+    (`feedback_no_hardcoded_columns`).
+
+    BLANK IS KEPT BLANK. The tab's own convention is that a count is an int
+    where blank means 0, but the Time Tracker pair (Gaps, Total Gaps) stays
+    blank when a rep has no tracker row at all — 'did not clock in' and 'stood
+    still for zero minutes' are different facts, and the page draws them
+    differently. A column that is blank in every row for a rep's day stays
+    blank; one that has a number anywhere is summed.
+
+    The clock columns are not summed: First Knock is the earliest and Last
+    Knock the latest, which is what they mean across two rows of one day.
+
+    Never raises — the knocks page says so itself rather than dying."""
+    try:
+        if not grid:
+            return {}
+        header = [str(h).strip() for h in grid[0]]
+        need = ("Date", "Office", "Rep")
+        if any(n not in header for n in need):
+            return {}
+        idx = {n: header.index(n) for n in header}
+        measures = [h for h in header
+                    if h and h not in _IDENTITY and h not in _TIMES]
+        wanted = _wanted(office)
+
+        def _n(v):
+            try:
+                return int(float(str(v).replace(",", "").strip() or 0))
+            except ValueError:
+                return 0
+
+        out: dict = {}
+        for row in grid[1:]:
+            if len(row) <= max(idx[n] for n in need):
+                continue
+            name = str(row[idx["Office"]]).strip().lower()
+            if not any(w == name or w in name for w in wanted):
+                continue
+            try:
+                d = dt.date.fromisoformat(str(row[idx["Date"]]).strip()[:10])
+            except ValueError:
+                continue
+            if (start and d < start) or (end and d > end):
+                continue
+            rep = str(row[idx["Rep"]]).strip()
+            if not rep:
+                continue
+            cell = out.setdefault(rep.lower(), {}).setdefault(d, {})
+            for m in measures:
+                i = idx[m]
+                raw = str(row[i]).strip() if len(row) > i else ""
+                if raw == "":
+                    cell.setdefault(m, "")     # blank until a number appears
+                    continue
+                cell[m] = _n(cell.get(m) or 0) + _n(raw)
+            for t in _TIMES:
+                if t not in idx or len(row) <= idx[t]:
+                    continue
+                raw = str(row[idx[t]]).strip()
+                if not raw:
+                    continue
+                have = cell.get(t)
+                if not have:
+                    cell[t] = raw
+                elif (t == "First Knock") == (_clock(raw) < _clock(have)):
+                    cell[t] = raw
+        return out
+    except Exception:   # noqa: BLE001 — the page reports an empty read itself
+        return {}
+
+
+def detail_for(office: str, start=None, end=None,
+               sheet_id: str = SHEET_ID) -> dict:
+    """detail_from over a freshly read tab. Prefer detail_from on a page,
+    which reads the tab once for every office it shows."""
+    from automations.recruiting_report.fill import open_by_key, _retry
+    try:
+        grid = _retry(open_by_key(sheet_id).worksheet(TAB).get_all_values)
+    except Exception:   # noqa: BLE001
+        return {}
+    return detail_from(grid, office, start, end)
+
+
 def activity_for(office: str, start=None, end=None,
                  sheet_id: str = SHEET_ID) -> dict:
     """{rep lowered: {date: {"TK": knocks, "TT": talk-tos}}} for one office.

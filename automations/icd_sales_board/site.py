@@ -2937,31 +2937,203 @@ def goals_editor(office_key: str, icd: str) -> None:
         st.rerun()
 
 
-def knocks_page(icd: str) -> None:
-    """Where the knocks reports will live.
+# The knocks tab's own column names, in the order an owner reads them, with
+# the short label the header shows. Anything the tab carries that is NOT named
+# here still appears, under its own name, in the Outcomes block — so a new
+# disposition shows up without an edit here.
+KNOCK_CORE = [("Total Knocks", "Knocks"), ("Total Talk to", "Talk to")]
+KNOCK_TIME = [("Gaps", "Gaps"), ("Total Gaps (min)", "Gap min")]
+KNOCK_SHORT = {"Talk To - Not Interested": "TT no",
+               "Presentation – Not Interested": "Pres no",
+               "No answer": "No ans", "Come Back": "Come bk",
+               "Inaccessible": "Inacc", "Do Not Knock": "DNK",
+               "Sale": "Sale", "Total Leads Knocked": "Doors"}
+# Not an outcome of a knock: the row's totals and the time-tracker pair, which
+# have their own blocks.
+KNOCK_NOT_OUTCOME = {"Total Knocks", "Total Talk to", "Total Leads Knocked",
+                     "Gaps", "Total Gaps (min)"}
 
-    Standing here rather than nowhere: knocks come from ownerville, not
-    Tableau, via the one metric that impersonates an office — so this page
-    exists as the destination before the feed is pointed at it."""
-    st.subheader("Knocks")
+
+def _knock_week(icd: str, week_ending: dt.date) -> tuple:
+    """({rep lowered: {date: {column: value}}}, [outcome columns]) for a week.
+
+    The outcome columns are whatever the tab actually carried that week, in
+    its own order, so the page follows the feed rather than a list here."""
+    from automations.icd_sales_board import knocks_log as K
+    grid = _knocks_raw()
+    detail = K.detail_from(grid, icd, week_ending - dt.timedelta(days=6),
+                           week_ending)
+    header = [str(h).strip() for h in (grid[0] if grid else [])]
+    outcomes = [h for h in header
+                if h and h not in KNOCK_NOT_OUTCOME
+                and h not in ("Date", "Office", "ID", "Rep",
+                              "First Knock", "Last Knock")]
+    return detail, outcomes
+
+
+def _knock_weeks(icd: str) -> list:
+    """Every week this office has knocks for, newest first."""
+    from automations.icd_sales_board import knocks_log as K
+    grid = _knocks_raw()
+    days = {d for days in K.detail_from(grid, icd).values() for d in days}
+    return sorted({d + dt.timedelta(days=6 - d.weekday()) for d in days},
+                  reverse=True)
+
+
+def knocks_page(icd: str) -> None:
+    """Knocks and dispositions, per rep per day — the same shape as sales.
+
+    The feed is the daily knocks run, which logs every row it renders to
+    AUTOMATION MASTER → 'Knocks Daily' (ownerville → impersonate → Disposition
+    + Time Tracker). That tab is per rep per day and carries the whole
+    disposition breakdown, so this page is a read of it, not a second pull.
+
+    WHAT IT CANNOT SHOW: an office whose knocks nobody scrapes. Only the
+    offices in the daily run are on the tab, and this page says that plainly
+    rather than drawing an empty board (`feedback_never_post_blank`)."""
+    weeks = _knock_weeks(icd)
+    if not weeks:
+        st.subheader("Knocks & dispositions")
+        st.info(f"No knocks logged for {icd}. The daily knocks run covers the "
+                f"offices it can reach in ownerville; an office it does not "
+                f"cover has nothing to draw here until its own machine "
+                f"reports. Sales are unaffected — they come from a different "
+                f"feed.", icon="🚧")
+        return
+
+    week_ending = st.sidebar.selectbox(
+        "Week Ending", weeks, key=f"knockwk_{icd}",
+        format_func=lambda d: f"{d.strftime('%b')} {_ord(d.day)}, {d.year}")
+    detail, outcomes = _knock_week(icd, week_ending)
+    started = week_ending - dt.timedelta(days=6)
+    st.subheader(f"Knocks & dispositions · Monday {started.strftime('%b')} "
+                 f"{_ord(started.day)} – Sunday {week_ending.strftime('%b')} "
+                 f"{_ord(week_ending.day)}")
+    if not detail:
+        st.info("Nothing logged for this week yet.", icon="🚧")
+        return
+
+    week_days = [started + dt.timedelta(days=i) for i in range(7)]
+    reported = {d for days in detail.values() for d in days}
+    measures = [c for c, _lab in KNOCK_CORE] + ["Total Leads Knocked"] + \
+               outcomes + [c for c, _lab in KNOCK_TIME]
+
+    # The four numbers an owner wants before any table: the week in one line.
+    tot = {m: 0 for m in measures}
+    for days in detail.values():
+        for cell in days.values():
+            for m in measures:
+                v = cell.get(m)
+                if isinstance(v, int):
+                    tot[m] += v
     c1, c2, c3, c4 = st.columns(4)
-    for col, label in zip((c1, c2, c3, c4),
-                          ("Total knocks", "Talk to", "Reps knocking",
-                           "Time gaps")):
-        col.metric(label, "—", help="Starts filling once days accumulate")
-    st.info("The knocks feed isn't wired into the site yet. It is the one "
-            "metric that comes from ownerville rather than Tableau "
-            "(impersonate → Disposition + Time Tracker), so it needs its own "
-            "pull — this page is where it will land.", icon="🚧")
-    st.success("As of today the daily run LOGS its rows to AUTOMATION MASTER → "
-               "'Knocks Daily', so day-over-day history is accumulating from "
-               "now on. It could not be built from the past: the run used to "
-               "render its images and keep nothing, so earlier days exist only "
-               "as pictures in Slack.", icon="✅")
-    st.markdown("**What will show here**")
-    st.markdown("- Total knocks per rep, per day\n"
-                "- Time gaps\n"
-                "- The same day / team filters as the sales board")
+    tt_pct = (100.0 * tot["Total Talk to"] / tot["Total Knocks"]
+              if tot.get("Total Knocks") else 0)
+    c1.metric("Total knocks", f"{tot['Total Knocks']:,}")
+    c2.metric("Talk to", f"{tot['Total Talk to']:,}",
+              help="Doors that turned into a conversation")
+    c3.metric("Talk-to rate", f"{tt_pct:.0f}%")
+    c4.metric("Reps knocking", f"{len(detail):,}",
+              help="Anyone with a logged row this week")
+
+    start_tenure = _appstream_tenure(icd, week_ending)
+    grid = []
+    for rep_low, days in detail.items():
+        name = _title_name(rep_low)
+        row = {"Rep": name,
+               "Tenure": _board_tenure(start_tenure.get(rep_low, "")
+                                       or ("5th wk+" if start_tenure else ""))}
+        for m in measures:
+            vals = [cell.get(m) for cell in days.values()]
+            nums = [v for v in vals if isinstance(v, int)]
+            # BLANK STAYS BLANK for the time-tracker pair: a rep who never
+            # clocked in is not a rep with zero gaps, and the tab keeps that
+            # difference on purpose.
+            row[m] = sum(nums) if nums else ""
+        row["%TT"] = (f"{100.0 * row['Total Talk to'] / row['Total Knocks']:.0f}%"
+                      if _num_int(row.get("Total Knocks")) else "")
+        row["No dispo"] = _knock_no_dispo(row, outcomes)
+        for d in week_days:
+            cell = days.get(d) or {}
+            for m, _lab in KNOCK_CORE:
+                row[f"{d:%a} {m}"] = cell.get(m, "")
+        grid.append(row)
+    grid.sort(key=lambda r: -_num_int(r.get("Total Knocks")))
+    grid.append(_knock_totals(grid, measures, week_days, outcomes))
+
+    groups = [("Week", [("Knocks", "Total Knocks", "wk", True),
+                        ("Talk to", "Total Talk to", "", True),
+                        ("%TT", "%TT", "", True)])]
+    if outcomes:
+        # DOORS LEADS THIS BLOCK AND 'NO DISPO' CLOSES IT, so the row ties out.
+        # The outcomes break down DOORS, not knocks — Total Knocks counts every
+        # knock including repeat visits at one address, Total Leads Knocked
+        # counts the addresses, and only an address gets an outcome. Even then
+        # they rarely add up: across all 3,294 logged rep-days the dispositions
+        # equal the doors 19% of the time and are SHORT the other 81% (never
+        # over), and the split is the same before and after the 2026-09-17 zero
+        # fix, so it is not that old bug — it is doors nobody dispositioned.
+        # Showing the remainder as its own column makes the block add up and
+        # turns a silent gap into a number an owner can act on
+        # (`feedback_fill_but_flag`).
+        groups.append(("What the doors did",
+                       [("Doors", "Total Leads Knocked", "", True)]
+                       + [(KNOCK_SHORT.get(c, c), c, "", True)
+                          for c in outcomes]
+                       + [("No dispo", "No dispo", "", True)]))
+    if any(r.get("Gaps") != "" for r in grid):
+        groups.append(("Time gaps",
+                       [(lab, c, "", True) for c, lab in KNOCK_TIME]))
+    for d in week_days:
+        groups.append((f"{d:%a} {d.day}",
+                       [(lab, f"{d:%a} {m}", "day" if m == "Total Knocks"
+                         else "", d in reported)
+                        for m, lab in KNOCK_CORE]))
+    _paint(_grouped_board(grid, groups))
+    st.caption("From the daily knocks run's own rows (AUTOMATION MASTER → "
+               "'Knocks Daily'), per rep per day. A blank day is one nobody "
+               "logged, not a day of zeros — and blank gaps mean the rep has "
+               "no time-tracker row at all.")
+
+
+def _num_int(v) -> int:
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _title_name(low: str) -> str:
+    """'amarion hill' → 'Amarion Hill'. The tab is keyed lower case and the
+    house look is title-cased names (`feedback_report_formatting_standard`)."""
+    return " ".join(w.capitalize() for w in str(low or "").split())
+
+
+def _knock_no_dispo(row: dict, outcomes: list) -> int | str:
+    """Doors that got no outcome recorded. Blank when there are no doors to
+    account for, so an office that logs knocks but not doors reads as unknown
+    rather than as a perfect zero."""
+    doors = _num_int(row.get("Total Leads Knocked"))
+    if not doors:
+        return ""
+    return max(0, doors - sum(_num_int(row.get(c)) for c in outcomes))
+
+
+def _knock_totals(grid: list, measures: list, week_days: list,
+                  outcomes: list) -> dict:
+    """The TOTALS row. Sums only what is there; a column nobody logged stays
+    blank rather than reading as a measured zero."""
+    row = {"Rep": TOTALS_LABEL, "Tenure": ""}
+    keys = list(measures) + [f"{d:%a} {m}" for d in week_days
+                             for m, _lab in KNOCK_CORE]
+    for k in keys:
+        nums = [_num_int(r.get(k)) for r in grid
+                if isinstance(r.get(k), int)]
+        row[k] = sum(nums) if nums else ""
+    row["%TT"] = (f"{100.0 * row['Total Talk to'] / row['Total Knocks']:.0f}%"
+                  if _num_int(row.get("Total Knocks")) else "")
+    row["No dispo"] = _knock_no_dispo(row, outcomes)
+    return row
 
 
 def captain_page() -> None:

@@ -51,6 +51,37 @@ EXTRA_TOTALS_OFFICES = [o.strip() for o in
                                         "Chan Park").split(",") if o.strip()]
 
 
+# WHOSE OFFICE THIS RUN IS. The knocks history tab is keyed by owner name the
+# way the per-office runs write it ('Cyrus Wade'), and this run is the master
+# ownerville session, which IS Raf's office 11280.
+LOG_OFFICE = _os.environ.get("KNOCKS_OFFICE") or "Rafael Hidalgo"
+
+
+def _log_day(target: dt.date, office_name: str, rows: list) -> None:
+    """Keep the day, the way every per-office knocks run already does.
+
+    THIS RUN WAS THE ONE OFFICE MISSING FROM THE HISTORY. rashad_metrics'
+    knocks_run logs its rows to AUTOMATION MASTER → 'Knocks Daily', so the 14
+    offices it covers have a day-over-day record — and Raf's own office, the
+    most looked-at board in the org, had none, because this run renders its
+    PNGs and forgets (verified 2026-09-22: 3,294 rows, 14 offices, no Rafael
+    Hidalgo).
+
+    Costs no second pull and no extra ownerville session: these are the rows
+    the run already has. Idempotent (a logged day is skipped) and never fatal —
+    a logging failure must not take down a post that would otherwise go out."""
+    if not rows:
+        return
+    try:
+        from automations.icd_sales_board import knocks_log
+        n = knocks_log.append_day(target, office_name, rows)
+        print(f"[total_knocks] knocks log: {n} row(s) kept for "
+              f"{office_name}.", flush=True)
+    except Exception as e:                        # noqa: BLE001
+        print(f"[total_knocks] knocks log: SKIPPED for {office_name} "
+              f"({type(e).__name__}: {e})", flush=True)
+
+
 def _yesterday() -> dt.date:
     return central_today() - dt.timedelta(days=1)
 
@@ -117,6 +148,7 @@ def run(target: dt.date | None = None, *, test_tab: bool = False,
     stats = _fill.fill_total_knocks(rows, tab=tab)
     print(f"[total_knocks] Wrote {stats['reps']} rep(s) to "
           f"{stats['write_range']}.", flush=True)
+    _log_day(target, LOG_OFFICE, rows)
 
     # 3. Extra offices' totals (Chan) for the rows above ours — pulled in
     #    their own ownerville session AFTER ours closed. Best-effort.
@@ -129,6 +161,9 @@ def run(target: dt.date | None = None, *, test_tab: bool = False,
                 extra_totals.append((extra_office, x_rows))
                 print(f"[total_knocks] {extra_office}: {len(x_rows)} rep(s) "
                       "for the totals row.", flush=True)
+                # Their rows are in hand and nothing else pulls them, so the
+                # history gets them too rather than only their totals line.
+                _log_day(target, extra_office, x_rows)
             else:
                 print(f"[total_knocks] ⚠ {extra_office}: no rows — posting "
                       "without that totals line.", flush=True)
