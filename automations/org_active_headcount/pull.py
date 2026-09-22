@@ -78,7 +78,7 @@ JE_HEADCOUNT_COL = "Productive Rep Count"
 BOX_TRACKER_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
                    "B2BBOXEnergyTracker/BoxDailyTracker?:iid=1")
 BOX_SHEET = "Daily Tracker Metrics"
-BOX_WEEK_FIELD = "Sale Date Weekending"
+BOX_WEEK_FIELD = "Selected Weekending"   # renamed from "Sale Date Weekending" in Tableau 2026-09-22
 # The sheet also carries 'Selling Rep Count' (reps who actually sold), which is
 # what the other six campaigns count. Eve named 'Total Rep Count', so that is
 # what is written; the difference is real (Roshan Ahmad 19 selling vs 22 total

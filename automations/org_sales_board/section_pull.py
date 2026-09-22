@@ -553,7 +553,10 @@ BOX_SPEC = ScrapeSpec(
     crosstab_sheet="Daily Tracker Sales",
     skip_owners=("Grand Total", "Total"),
     week_pin=True,    # pin to the reporting week (Monday = last week).
-    week_pin_field="Sale Date Weekending",   # ← this view's OWN caption. It is
+    week_pin_field="Selected Weekending",   # ← this view's OWN caption
+    #   (renamed in Tableau from "Sale Date Weekending" on 2026-09-22 — the old
+    #   name left 'Daily Tracker Sales' empty and out of the Crosstab dialog,
+    #   "saw 3 thumb(s)", and BOX went blank on the board). It is
     #   not the "(mon-sun)" one every other spec uses, and Tableau ignores a
     #   wrong caption silently, so the pin did nothing: on Mondays the view sat
     #   on the NEW week ("Mon (08-10)", one owner, zero sales) and the fill had

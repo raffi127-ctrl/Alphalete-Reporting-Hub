@@ -75,7 +75,7 @@ DAILY_METRICS_SHEET = "Daily Tracker Metrics"
 BULLETIN_SHEET = "Top 20 Reps"
 DROPS_SHEET = "Drops Pull"
 
-WEEK_PIN_FIELD = "Sale Date Weekending"       # this workbook's own caption
+WEEK_PIN_FIELD = "Selected Weekending"       # this workbook's own caption (was "Sale Date Weekending" until 2026-09-22)
 # (No pin for DropsTracker — 'Dropped Date Weekending' in the URL kills the
 # load; see _drops.)
 

@@ -104,7 +104,7 @@ DAILY_SOURCES: List[Source] = [
         shared_key="box",
         notes="Pull config lives in section_pull.BOX_SPEC (CROSSTAB, worksheet "
               "'Daily Tracker Sales': Owner Name | Mon (06-22)…Sun | Grand "
-              "Total). Its week filter is captioned 'Sale Date Weekending' — "
+              "Total). Its week filter is captioned 'Selected Weekending' (was 'Sale Date Weekending' until 2026-09-22) — "
               "NOT the '(mon-sun)' caption the other views use — so the pin "
               "must be sent under that name or Tableau ignores it silently "
               "and Mondays pull the new week (Eve 2026-08-10). Workbook "

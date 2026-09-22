@@ -100,7 +100,7 @@ def _box_url() -> str:
     _, sun = _target_week()
     base = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
             "B2BBOXEnergyTracker/BoxSalesMetrics?:iid=1")
-    return f"{base}&{quote('Sale Date Weekending')}={sun.isoformat()}"
+    return f"{base}&{quote('Selected Weekending')}={sun.isoformat()}"
 
 
 def _costco_url() -> str:
