@@ -27,10 +27,17 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- Hourly 2pm-7pm machine-local (Lucy 3 is Central), every day
+    <!-- 8am catch-up Tue-Fri (Megan 2026-09-22: "get it all up to date"),
+         then hourly 2pm-7pm machine-local (Lucy 3 is Central), every day.
+         launchd Weekday: 0=Sun 1=Mon 2=Tue ... 5=Fri. No 8am Monday: that's
+         start day and the new chart isn't worked yet at 8.
          (Megan 2026-09-21). -->
     <key>StartCalendarInterval</key>
     <array>
+        <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
         <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer></dict>
         <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>0</integer></dict>
         <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>

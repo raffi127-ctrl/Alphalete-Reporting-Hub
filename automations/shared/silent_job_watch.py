@@ -126,6 +126,8 @@ JOBS: Dict[str, dict] = {
     "obcl_ov_sweep": {
         "name": "OBCL <- OwnerVille sweep",
         "machine": "Lucy 3",
+        # Tue-Fri also fire at 08:00, but the watch keys on the 14:00 start so
+        # the 8am-2pm gap (by design) never reads as a missed pass.
         "first_by": "15:00",       # first pass 14:00 + 60 min grace
         "max_gap_min": 150,        # hourly → 2.5h tolerates one skipped pass
         "active_until": "20:00",   # last pass 19:00 + grace
