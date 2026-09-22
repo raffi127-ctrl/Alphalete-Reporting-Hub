@@ -146,18 +146,29 @@ class SheetBgPending(unittest.TestCase):
 class NoShowAndStatus(unittest.TestCase):
     HEAD2 = HEAD[:6] + ["Location"] + HEAD[6:]
 
-    def _p(self, fs="", loc="", own="FALSE", blue="TRUE", date="9/14/2026"):
-        row = _row("Sung", "Par", fs=fs, own=own)
+    def _p(self, fs="", loc="", own="FALSE", blue="TRUE", date="9/14/2026",
+           dd="FALSE"):
+        row = _row("Sung", "Par", fs=fs, own=own, dd=dd)
         row = row[:6] + [loc] + row[6:]
         row[self.HEAD2.index("Blue Ink")] = blue
         return sweep.people([[date], self.HEAD2, row])[0]
 
     def test_blank_status_and_location_after_start_is_a_no_show(self):
         import datetime as d
-        p = self._p()
+        p = self._p(blue="FALSE")
+        for c in p.ticked:
+            p.ticked[c] = False
         self.assertTrue(sweep.no_show(p, d.date(2026, 9, 21)))
         self.assertEqual(sweep.to_check([p]), [])
         self.assertEqual(sweep.paint_plan([p]), [])
+
+    def test_something_ticked_is_not_a_no_show(self):
+        import datetime as d
+        head = self.HEAD2
+        row = _row("Govany", "Torres", dd="TRUE", oq="TRUE", uid="TRUE")
+        row = row[:6] + [""] + row[6:]
+        p = sweep.people([["9/14/2026"], head, row])[0]
+        self.assertFalse(sweep.no_show(p, d.date(2026, 9, 21)))
 
     def test_start_day_itself_is_not_a_no_show(self):
         import datetime as d

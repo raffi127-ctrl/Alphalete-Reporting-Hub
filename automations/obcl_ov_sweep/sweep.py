@@ -102,6 +102,11 @@ def no_show(p: Person, today=None) -> bool:
         return False
     if (p.final_status or "").strip() or p.location.strip():
         return False
+    # Anything already ticked means they DID come — Govany Torres (row 54,
+    # 2026-09-21): blank status + location, but docs/quizzes/headshot/UID all
+    # done and ready to owner-submit. Only a row with NOTHING done is a no-show.
+    if any(p.ticked.values()) or p.blue_ink:
+        return False
     return bool(p.chart_date and p.chart_date < today)
 
 
