@@ -24,33 +24,64 @@ from automations.digi_docs import ownerville as ov
 
 CONFIRM_TEXT = "I confirm that this statement is accurate and true"
 SUBMITTED_STATES = ("REVIEW IN PROGRESS", "APPROVED", "COMPLETED")
-# Sections that come AFTER the submit, or are optional — not required.
-NOT_REQUIRED = ("OWNER SUBMIT", "BADGE", "SARA PLUS")
+# The sections that must read COMPLETED before a submit. An EXPLICIT list, not
+# "everything except a few": an unsubmitted person's Owner Submit row carries
+# the words "NOT SUBMITTED", which the old "every other line is a section" rule
+# read as a section named NOT SUBMITTED and refused on (Marqoun Holland,
+# 2026-09-22 — he was fully complete). SUPPLEMENT is left out for the same
+# reason it is left out of the readiness check: not everyone gets one.
+REQUIRED = ("LOGIN CREATED", "ONBOARDING DOCUMENTS", "BACKGROUND CHECK",
+            "DRUG TEST", "FTC DIRECTV COMPLIANCE TRAINING",
+            "AT&T PROTECTIVE ADVANTAGE COURSE", "AT&T BROADBAND FACTS",
+            "AT&T PROTECTING CPNI", "AT&T COMPLIANCE",
+            "2024 CONSENT DECREE MANUAL", "UPLOAD DOCUMENTS",
+            "AT&T UID REQUEST", "SERVICE")
+OTHER_SECTIONS = ("OWNER SUBMIT", "BADGE", "SARA PLUS", "SUPPLEMENT")
+# "NOT SUBMITTED" is Owner Submit's own wording for "nobody has submitted yet".
 STATES = ("COMPLETED", "REQUIRED ACTION", "PENDING", "REVIEW IN PROGRESS",
           "OPTIONAL", "APPROVED", "DENIED", "REJECTED", "IN PROGRESS",
-          "NOT STARTED")
+          "NOT STARTED", "NOT SUBMITTED")
+
+
+def _section(line: str):
+    """The known section this line names, or None. Prefix match so the dash in
+    "AT&T COMPLIANCE – 2023" and the "/SPI" tail can't miss."""
+    up = " ".join((line or "").upper().split())
+    for known in REQUIRED + OTHER_SECTIONS:
+        if up.startswith(known):
+            return known
+    return None
 
 
 def section_states(modal) -> dict:
-    """{SECTION LABEL: STATE} read off the Set Status modal's own text, where
-    each section is its label line followed by its chip line."""
-    lines = [x.strip() for x in (modal.inner_text() or "").splitlines()
-             if x.strip()]
-    out, last = {}, None
-    for ln in lines:
-        up = ln.upper()
-        if up in STATES:
-            if last and last not in out:
-                out[last] = up
-        else:
-            last = up
+    """{SECTION: STATE} off the Set Status modal's own text. A section is its
+    label line; the next state word belongs to it. Lines that are neither
+    (headings, the attestation paragraph, "Review is in progress.") are
+    ignored, which is what keeps "NOT SUBMITTED" from becoming a section."""
+    out, current = {}, None
+    for ln in (modal.inner_text() or "").splitlines():
+        ln = ln.strip()
+        if not ln:
+            continue
+        sec = _section(ln)
+        if sec:
+            current = sec
+            continue
+        up = " ".join(ln.upper().split())
+        if up in STATES and current and current not in out:
+            out[current] = up
     return out
 
 
 def blockers(states: dict) -> list:
-    """Sections that must be COMPLETED before a submit and aren't."""
-    return [f"{k}={v}" for k, v in states.items()
-            if k not in NOT_REQUIRED and v != "COMPLETED"]
+    """Required sections that don't read COMPLETED — including any the modal
+    never showed, which is not the same as done."""
+    out = []
+    for sec in REQUIRED:
+        got = states.get(sec)
+        if got != "COMPLETED":
+            out.append(f"{sec}={got or 'not shown'}")
+    return out
 
 
 def _confirm_box(modal):

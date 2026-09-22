@@ -254,15 +254,29 @@ class OwnerSubmitGate(unittest.TestCase):
 
     def test_section_states_and_blockers(self):
         from automations.obcl_ov_sweep import owner_submit as os_
+        full = "\n".join(f" {s}\nCOMPLETED" for s in os_.REQUIRED)
 
         class M:
+            def __init__(self, txt):
+                self.txt = txt
+
             def inner_text(self):
-                return (" BACKGROUND CHECK\nCOMPLETED\n DRUG TEST\nPENDING\n"
-                        " OWNER SUBMIT\nREQUIRED ACTION\n BADGE\n"
-                        "REQUIRED ACTION\n SARA PLUS\nOPTIONAL\nSave Changes")
-        st = os_.section_states(M())
-        self.assertEqual(st["OWNER SUBMIT"], "REQUIRED ACTION")
-        self.assertEqual(os_.blockers(st), ["DRUG TEST=PENDING"])
+                return self.txt
+        # Marqoun Holland, 2026-09-22: everything done, Owner Submit shows the
+        # words NOT SUBMITTED — which must NOT read as an unfinished section.
+        st = os_.section_states(M(full + "\n SUPPLEMENT\nCOMPLETED\n OWNER "
+                                  "SUBMIT\nNOT SUBMITTED\nREQUIRED ACTION\n"
+                                  " BADGE\nREQUIRED ACTION\n SARA PLUS\n"
+                                  "OPTIONAL\nSave Changes"))
+        self.assertEqual(st["OWNER SUBMIT"], "NOT SUBMITTED")
+        self.assertEqual(os_.blockers(st), [])
+        # A real blocker still blocks, and a section never shown is not "done".
+        part = full.replace(" DRUG TEST\nCOMPLETED", " DRUG TEST\nPENDING")
+        self.assertEqual(os_.blockers(os_.section_states(M(part))),
+                         ["DRUG TEST=PENDING"])
+        thin = " LOGIN CREATED\nCOMPLETED"
+        self.assertIn("SERVICE=not shown",
+                      os_.blockers(os_.section_states(M(thin))))
 
     def test_closed_gate_walks_dry_even_on_a_live_pass(self):
         from unittest import mock
