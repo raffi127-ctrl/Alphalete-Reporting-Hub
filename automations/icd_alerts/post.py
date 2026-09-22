@@ -217,6 +217,35 @@ def decide_sales(sales: Dict, last_posted: Optional[Dict],
     return moved, merged, False
 
 
+def _box_scoreboard(sales: Dict, fired: List[str], show=None) -> str:
+    """Box: 'Name 2 (27,000 kWh)' per rep, then Contracts / kWh / TOTALS."""
+    from automations.alphalete_sales_board import notify as N
+    rows = []
+    for rep, m in (sales or {}).items():
+        n = int((m or {}).get("Sales", 0) or 0)
+        if n <= 0:
+            continue
+        kwh = int((m or {}).get("Volume", 0) or 0)
+        rows.append((show(rep) if show else rep, n, kwh, rep))
+    if not rows:
+        return ""
+    rows.sort(key=lambda r: -r[1])          # stable: ties keep relay order
+    flames = set(fired or [])
+    lines = []
+    for name, n, kwh, raw in rows:
+        line = "%s %d" % (N.short_name(name), n)
+        if kwh:
+            line += " (%s kWh)" % format(kwh, ",")
+        if raw in flames or name in flames:
+            line += " " + N.FIRE
+        lines.append(line)
+    lines.append("")
+    lines.append("Contracts: %d" % sum(r[1] for r in rows))
+    lines.append("kWh: %s" % format(sum(r[2] for r in rows), ","))
+    lines.append("%s TOTALS: %d" % (N.TROPHY, sum(r[1] for r in rows)))
+    return "\n".join(lines)
+
+
 def scoreboard_text(sales: Dict, fired: List[str], campaign=None,
                     show=None) -> str:
     """The day's standings for an office's TEXT GROUP -- Raf's partner-chat
@@ -230,12 +259,17 @@ def scoreboard_text(sales: Dict, fired: List[str], campaign=None,
     assign reps to teams (Megan: "the team breakdown will have to wait").
     No weekly figure either, for the same reason.
 
-    AT&T-SHAPED CAMPAIGNS ONLY. The layout counts Int / Int Up / DTV / NL;
-    a Box office relays Sales / Volume and would render every rep as zero.
-    Returns "" for those rather than a board that says nobody sold.
+    BOX GETS ITS OWN LINES (Megan, 2026-09-22): contracts and kWh, no
+    Big/Huge -- "we should remove the big/huge verbiage". Same shape of
+    text so a Box group reads like an AT&T one: reps highest first, a
+    flame on who moved, then the totals block. Any other shape returns ""
+    rather than a board that says nobody sold.
     """
     from automations.shared import sale_hype as H
-    if tuple(H.shape(campaign).metrics) != ("Int", "Int Up", "DTV", "NL"):
+    names = tuple(H.shape(campaign).metrics)
+    if names == ("Sales", "Volume", "Big", "Huge"):
+        return _box_scoreboard(sales, fired, show)
+    if names != ("Int", "Int Up", "DTV", "NL"):
         return ""
     from automations.alphalete_sales_board import notify as N
     named = {(show(rep) if show else rep): dict(m or {})

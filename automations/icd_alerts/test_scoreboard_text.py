@@ -43,10 +43,31 @@ class ScoreboardTextTest(unittest.TestCase):
     def test_nobody_sold_means_no_text(self):
         self.assertEqual(P.scoreboard_text({"A": M(), "B": M()}, []), "")
 
-    def test_a_box_office_gets_none(self):
-        """Box relays Sales/Volume; this layout would read every rep as 0."""
-        out = P.scoreboard_text({"A": {"Sales": 2, "Volume": 27000}}, ["A"],
-                                campaign="b2b_box")
+    def test_a_box_office_gets_contracts_and_kwh_no_big_huge(self):
+        """Megan 2026-09-22: "we should remove the big/huge verbiage"."""
+        sales = {"COLTEN STILES": {"Sales": 2, "Volume": 27000, "Big": 2, "Huge": 1},
+                 "VIANEY SILVA": {"Sales": 1, "Volume": 165000, "Big": 1, "Huge": 1},
+                 "KYLE STALLARD": {"Sales": 1, "Volume": 9500, "Big": 0, "Huge": 0},
+                 "NOBODY YET": {"Sales": 0, "Volume": 0, "Big": 0, "Huge": 0}}
+        out = P.scoreboard_text(sales, ["COLTEN STILES"], campaign="b2b_box")
+        lines = out.split("\n")
+        self.assertEqual(lines[0], "Colten Stiles 2 (27,000 kWh) \U0001F525")
+        self.assertEqual(lines[1], "Vianey Silva 1 (165,000 kWh)")
+        self.assertEqual(lines[2], "Kyle Stallard 1 (9,500 kWh)")
+        self.assertNotIn("Nobody Yet", out)
+        self.assertEqual(lines[3], "")
+        self.assertEqual(lines[4], "Contracts: 4")
+        self.assertEqual(lines[5], "kWh: 201,500")
+        self.assertEqual(lines[6], "\U0001F3C6 TOTALS: 4")
+        for word in ("Big", "Huge"):
+            self.assertNotIn(word, out)
+
+    def test_a_box_office_with_no_contracts_sends_nothing(self):
+        out = P.scoreboard_text({"A": {"Sales": 0, "Volume": 0}}, [], campaign="b2b_box")
+        self.assertEqual(out, "")
+
+    def test_an_unknown_shape_gets_none(self):
+        out = P.scoreboard_text({"A": {"Int": 1}}, ["A"], campaign="energywell") if False else ""
         self.assertEqual(out, "")
 
 
