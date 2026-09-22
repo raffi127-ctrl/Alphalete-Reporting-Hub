@@ -385,6 +385,17 @@ class StationsLegendHeaderRow(unittest.TestCase):
         reported = self._names_reported((rows, []))
         self.assertIn("Zed Unknownperson", reported)
 
+    def test_car_ride_leader_header_is_not_reported(self):
+        """2026-09-22: the BOX CAR RIDES block heads 'Car Ride Leader | Rep #2
+        | Rep #3 | Rep #4' (no 'Rep #1') and the leader label was reported as
+        a person. The reps under it are still checked."""
+        rows = [[""] * 95 for _ in range(6)]
+        rows[3][1:5] = ["Car Ride Leader", "Rep #2", "Rep #3", "Rep #4"]
+        rows[4][1] = "Zed Unknownperson"
+        reported = self._names_reported((rows, []))
+        self.assertNotIn("Car Ride Leader", reported)
+        self.assertIn("Zed Unknownperson", reported)
+
 
 class ReportAnIssueDedupe(unittest.TestCase):
     """The dedupe that decides whether a finding reaches the board's tab.

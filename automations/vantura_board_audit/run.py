@@ -1178,6 +1178,12 @@ def audit_stations(sh, last_rep: int, reps, roll, log=_log, alias=None,
         cells = {str(c).strip().lower() for c in row[:8]}
         if cells & {"territory leader", "rep #1", "rep list"}:
             return True
+        # The BOX 'CAR RIDES' block (r30, 2026-09-22) heads its columns
+        # 'Car Ride Leader | Rep #2 | Rep #3 | Rep #4' — no 'Rep #1', so the
+        # leader label came back as an unknown rep every morning. Any 'Rep #N'
+        # column header marks the row; no person is named 'Rep #2'.
+        if any(re.fullmatch(r"rep #\d+", c) for c in cells):
+            return True
         # The STATIONS legend under the blocks (r42 'STATIONS', r43 headers,
         # reps from r44) has its own header shape: the three PITCH STAGES across
         # A/B/C. 'Pitch' and 'Closing' were already anchored in LABELS, so only
