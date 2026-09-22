@@ -242,7 +242,8 @@ def search_fill(page, heads: List[str], reps: Dict[str, list],
     return found
 
 
-def _wait_for_results(page, term: str, timeout_ms: int = 10000) -> dict:
+def _wait_for_results(page, term: str, before: str = "",
+                      timeout_ms: int = 10000) -> dict:
     """The table AFTER the server answers the search. View Progress is
     serverSide DataTables (digi_docs_roster_probe, 2026-09-21), so a fixed
     pause can read the rows from before the search. Poll until a row carries
@@ -251,11 +252,22 @@ def _wait_for_results(page, term: str, timeout_ms: int = 10000) -> dict:
     waited = 0
     got = {}
     while waited <= timeout_ms:
-        got = page.evaluate(_READ_JS)
+        try:
+            got = page.evaluate(_READ_JS)
+            info = page.evaluate(_INFO_JS)
+        except Exception:                                   # noqa: BLE001
+            page.wait_for_timeout(300)                      # mid-redraw
+            waited += 300
+            continue
         texts = [" ".join(c.get("text", "") for c in r).lower()
                  for r in got.get("rows") or []]
-        if any(t in x for x in texts) or any("no matching" in x or "no data" in x
-                                              for x in texts):
+        if any(t in x for x in texts):
+            return got
+        # "No matching" only counts once the table has actually ANSWERED this
+        # search — its info line changes from what it said before we typed.
+        # The 7:01pm pass took a mid-reload "no data" for a real no-match on
+        # all 47 names and finished in a minute having found nobody.
+        if info != before and any("no matching" in x for x in texts):
             return got
         page.wait_for_timeout(300)
         waited += 300
