@@ -115,10 +115,26 @@ def read_all() -> dict:
         if not sales:
             continue
         out[office][day] = {
-            str(name).strip(): {m: int(vals.get(m, 0) or 0) for m in MEASURES}
+            str(name).strip(): _measures(vals)
             for name, vals in sales.items() if str(name).strip()
         }
     return dict(out)
+
+
+def _measures(vals) -> dict:
+    """Every number a feed sent for one rep, with the AT&T four defaulted.
+
+    This used to keep ONLY Int / Int Up / DTV / NL, so a Box office's Sales,
+    Volume, Big and Huge were dropped on the way in and its board read zero
+    for every rep (Ryan, Carlos, 2026-09-22). The campaign decides which of
+    these the board draws; the reader should not decide for it."""
+    out = {m: 0 for m in MEASURES}
+    for k, v in (vals or {}).items():
+        try:
+            out[str(k)] = int(float(v or 0))
+        except (TypeError, ValueError):
+            continue
+    return out
 
 
 def worked_names(office_key: str, start=None, end=None) -> set:
@@ -164,8 +180,8 @@ def week(office_key: str, week_ending: dt.date) -> dict:
         for name, vals in reps.items():
             rec = by_rep[name]
             rec["days"][day] = vals
-            for m in MEASURES:
-                rec["total"][m] += vals.get(m, 0)
+            for m, n in vals.items():          # every campaign's measures
+                rec["total"][m] = rec["total"].get(m, 0) + n
     return dict(by_rep)
 
 

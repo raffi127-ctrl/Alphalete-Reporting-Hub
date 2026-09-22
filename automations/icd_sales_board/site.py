@@ -23,6 +23,7 @@ Run:
 from __future__ import annotations
 
 import collections
+from dataclasses import dataclass
 import datetime as dt
 import re
 import sys
@@ -134,6 +135,34 @@ def _apps(m: dict) -> int:
     would count it twice and every week's total would read high."""
     return int(m.get("Int", 0)) + int(m.get("DTV", 0)) + int(m.get("NL", 0))
 
+
+
+@dataclass(frozen=True)
+class _BoardSpec:
+    """What one campaign's board is made of.
+
+    headline — what the big number is called ('Apps', 'Sales')
+    summed   — every measure the feed carries, added up per rep and per day
+    shown    — the breakdown columns under the headline
+    head     — how the headline is computed from a rep's measures"""
+    headline: str
+    summed: tuple
+    shown: tuple
+    head: object
+
+
+def _box_sales(m: dict) -> int:
+    return int(m.get("Sales", 0) or 0)
+
+
+_SPECS = {
+    # Apps = Int + DTV + NL, upgrades left out (Megan 2026-09-13).
+    "att": _BoardSpec("Apps", tuple(RELAY_MEASURES), tuple(RELAY_MEASURES),
+                      _apps),
+    # Box relays kWh as Volume, and Big / Huge as deal counts.
+    "box": _BoardSpec("Sales", ("Sales", "Volume", "Big", "Huge"),
+                      ("Volume", "Big", "Huge"), _box_sales),
+}
 
 def _units(m: dict) -> int:
     """Everything sold, upgrades included. Apps answers "how did we do
@@ -457,7 +486,8 @@ def _card_style(label: str) -> str:
 # The headline three (four where upgrades exist). Raf reads Apps, who got
 # on the board, and Int first; DTV and NL are the breakdown behind them, so
 # they get a smaller card rather than equal billing (Megan 2026-09-13).
-BIG_VITALS = ("Total units", "Apps", "Selling reps", "Int")
+BIG_VITALS = ("Total units", "Apps", "Sales", "Selling reps", "Int",
+              "Volume")
 
 
 def _vital(col, label: str, value: str, hit=None, goal: str = "",
@@ -1649,7 +1679,6 @@ def _relay_week(office_key: str, week_ending: dt.date) -> dict:
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
-@st.cache_data(ttl=1800, show_spinner=False)
 def _appstream_tenure(icd: str, on) -> dict:
     """{lowered rep: tenure label} from the AppStream start dates.
 
@@ -2014,6 +2043,16 @@ def _rep_editor(office_key: str, week_ending, rows: list,
             st.rerun()
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def _eco_feeds(icd: str) -> list:
+    """This ICD's LucyECO feeds, relaying ones first."""
+    try:
+        from automations.icd_sales_board import eco_feeds as E
+        return E.for_icd(icd)
+    except Exception:   # noqa: BLE001 — no map means the office-key path
+        return []
+
+
 @st.cache_data(ttl=900, show_spinner=False)
 def _board_check(office_key: str) -> dict:
     """The newest morning check for this office, or {} if it has none."""
@@ -2046,6 +2085,18 @@ def _check_line(office_key: str) -> str:
                 f"{tab} in Tableau.")
     return (f"⚠ Yesterday's live count was off — {when}: {live} live, {tab} "
             f"in Tableau. The board now shows Tableau's number.")
+
+
+def _num(v) -> str:
+    """A count as a person reads it: 426,300, not 426300.
+
+    Box's Volume is kWh and runs to six figures; every other measure on the
+    board stays under a thousand, so this only ever changes that column."""
+    if isinstance(v, bool):
+        return str(v)
+    if isinstance(v, int) and abs(v) >= 1000:
+        return f"{v:,}"
+    return "" if v is None else str(v)
 
 
 def _paint(html: str) -> None:
@@ -2101,6 +2152,7 @@ def _grouped_board(grid: list, groups: list) -> str:
         for _title, cells in groups:
             for i, (_lab, key, mode, reported) in enumerate(cells):
                 v = row.get(key, "")
+                shown_v = _num(v)
                 # Only the APPS figure is coloured. Colouring every product
                 # would turn each block into a wall and lose the one number
                 # the board is actually read for.
@@ -2109,7 +2161,7 @@ def _grouped_board(grid: list, groups: list) -> str:
                 cells_html.append(
                     f'<td class="{"edge" if i == 0 else ""}'
                     f'{" apps" if mode else " part"}" '
-                    f'style="{css or base}">{v}</td>')
+                    f'style="{css or base}">{shown_v}</td>')
         body.append(f'<tr class="{"tot" if is_tot else ""}">'
                     + "".join(cells_html) + "</tr>")
 
@@ -2141,7 +2193,7 @@ def _colour_key() -> str:
             f"</div>")
 
 
-def relay_board(icd: str, office_key: str) -> None:
+def relay_board(icd: str, office_key: str, family: str = "att") -> None:
     """An office's board, filled from its OWN SaraPlus via the ICD agent.
 
     Raf's board is a sheet we can read. Nobody else's is — but every office
@@ -2158,6 +2210,12 @@ def relay_board(icd: str, office_key: str) -> None:
     NOTHING IS DRAWN WITHOUT A READING. An office whose agent has not run gets
     told which of the three things is wrong — never a board of zeros, which
     would read as "nobody sold anything" when it means "nobody told us"."""
+    # WHAT THIS OFFICE SELLS decides the columns (Megan 2026-09-22). A Box
+    # office relays Sales / Volume / Big / Huge, and reading it through the
+    # AT&T columns showed every rep at zero. The headline number keeps its
+    # internal key 'Apps' so none of the board's plumbing changes — only what
+    # it is called and what it is made of.
+    spec = _SPECS.get(family, _SPECS["att"])
     status = _relay_status(office_key)
 
     # THE RELAY IS OPTIONAL NOW. It used to be the only source, so no reading
@@ -2309,7 +2367,7 @@ def relay_board(icd: str, office_key: str) -> None:
         # name rather than hoping three systems agree on capitals.
         sd = next((d for n, d in settled_reps.items()
                    if n.strip().lower() == low), {})
-        tot = {m: 0 for m in RELAY_MEASURES}
+        tot = {m: 0 for m in spec.summed}
         for d in ([picked_day] if picked_day else
                   [week_ending - dt.timedelta(days=i) for i in range(7)]):
             if d > dt.date.today():
@@ -2318,7 +2376,7 @@ def relay_board(icd: str, office_key: str) -> None:
             # no row for it. Today: the relay, which is the only live source.
             src = (sd.get(d) or live_days.get(d) or {}) if d < dt.date.today() \
                 else (live_days.get(d) or {})
-            for m in RELAY_MEASURES:
+            for m in spec.summed:
                 tot[m] += int(src.get(m, 0) or 0)
         rep = roster.get(low)
         row = {"Rep": shown.title()}
@@ -2356,8 +2414,8 @@ def relay_board(icd: str, office_key: str) -> None:
         # (APPS, INT, INT UP, DTV, NL), then MON..SUN, each day carrying the
         # same five. They used to sit at the far right, and the measures only
         # appeared when something was expanded.
-        row["Apps"] = _apps(tot)
-        row.update({m: tot[m] for m in RELAY_MEASURES})
+        row["Apps"] = spec.head(tot)
+        row.update({m: tot[m] for m in spec.summed})
         # Total units only differs from Apps by the upgrades, and upgrades
         # count as zero — so on an office that sells none the two columns are
         # the same number twice (Megan 2026-09-13). Dropped below when that is
@@ -2380,8 +2438,8 @@ def relay_board(icd: str, office_key: str) -> None:
         row["TT"] = wk_tt if kn else ""
         row["TT/day"] = f"{wk_tt / n_days:.1f}" if n_days else ""
         row["%TT"] = f"{wk_tt / wk_tk * 100:.1f}%" if wk_tk else ""
-        row["TT/app"] = (f"{wk_tt / _apps(tot):.1f}"
-                         if wk_tt and _apps(tot) else "")
+        row["TT/app"] = (f"{wk_tt / spec.head(tot):.1f}"
+                         if wk_tt and spec.head(tot) else "")
         # A DAY PER COLUMN, and they come FIRST. The settled pull is already
         # per-day — it was just being summed away — and a week total cannot
         # answer "who fell off midweek", which is most of what an owner opens
@@ -2398,8 +2456,8 @@ def relay_board(icd: str, office_key: str) -> None:
             lab = d.strftime("%a")
             # Every measure its own column, Raf's layout.
             blank = 0 if d in reported_days else ""
-            row[f"{lab} Apps"] = _apps(src) if src else blank
-            for m in RELAY_MEASURES:
+            row[f"{lab} Apps"] = spec.head(src) if src else blank
+            for m in spec.summed:
                 row[f"{lab} {m}"] = int(src.get(m, 0) or 0) if src else blank
 
         # Kept on every row whatever the view, so the office totals can be
@@ -2458,21 +2516,21 @@ def relay_board(icd: str, office_key: str) -> None:
     # the row sum left that loop in place, so every number was counted twice —
     # Raf's Apps read 671 against a day row that added to 343.
     tot = {m: sum(int(measures.get(r["Rep"], {}).get(m, 0) or 0) for r in rows)
-           for m in RELAY_MEASURES}
+           for m in spec.summed}
 
     # Int Up only earns a card where the office sells them; on Raf's board it
     # is a permanent 0 sitting next to a Total units that equals Apps.
-    shown_measures = [m for m in RELAY_MEASURES
+    shown_measures = [m for m in spec.shown
                       if m != "Int Up" or has_upgrades]
     labels = ([("Total units", _units(tot))] if has_upgrades else []) \
-        + [("Apps", _apps(tot)), ("Selling reps", selling)] \
+        + [(spec.headline, spec.head(tot)), ("Selling reps", selling)] \
         + [(m, tot[m]) for m in shown_measures]
     # Wider columns for the headline ones, so the size difference is the
     # card and not just the number inside it.
     weights = [3 if lab in BIG_VITALS else 2 for lab, _ in labels]
     cols = st.columns(weights, gap="small")
     for col, (label, value) in zip(cols, labels):
-        _vital(col, label, str(value), None,
+        _vital(col, label, _num(value), None,
                big=label in BIG_VITALS)
 
     # No "settled from Tableau" caption (Megan 2026-09-13). Where the
@@ -2485,7 +2543,7 @@ def relay_board(icd: str, office_key: str) -> None:
     day_totals = {}
     for d in week_days:
         lab = d.strftime("%a")
-        cols_for_day = ([f"{lab} Apps"] + [f"{lab} {m}" for m in RELAY_MEASURES]
+        cols_for_day = ([f"{lab} Apps"] + [f"{lab} {m}" for m in spec.summed]
                         if products else [lab])
         # An unreported day totals ZERO, not blank (Megan 2026-09-13). The REP
         # cells stay blank there, because we cannot say whether a given rep
@@ -2496,13 +2554,13 @@ def relay_board(icd: str, office_key: str) -> None:
             day_totals[col] = (sum(r.get(col, 0) for r in rows)
                                if reported else 0)
     totals_row = dict({"Rep": TOTALS_LABEL}, **day_totals,
-                      **{"Apps": _apps(tot)})
+                      **{"Apps": spec.head(tot)})
     if has_upgrades:
         totals_row["Total units"] = _units(tot)
     # The measures are columns on every view now, so the totals line carries
     # them unconditionally — gated, it left Int / Int Up / DTV / NL blank
     # under columns that were plainly there.
-    totals_row.update({m: tot[m] for m in RELAY_MEASURES})
+    totals_row.update({m: tot[m] for m in spec.summed})
     for _k in ("Last wk Apps", "Prior wk Apps"):
         totals_row[_k] = sum(int(r.get(_k, 0) or 0) for r in rows)
     # Built from the FIRST row's keys so the totals line carries every column
@@ -2512,7 +2570,7 @@ def relay_board(icd: str, office_key: str) -> None:
     cfg = _centered(grid[0])
     for d in week_days:
         lab = d.strftime("%a")
-        keys = ([f"{lab} {m}" for m in ["Apps"] + RELAY_MEASURES]
+        keys = ([f"{lab} {m}" for m in ["Apps"] + list(spec.summed)]
                 if products else [lab])
         for k in keys:
             m = k[len(lab):].strip() or "Apps"
@@ -2523,7 +2581,7 @@ def relay_board(icd: str, office_key: str) -> None:
     # way they do on Raf's sheet — where a merged "RUNNING WEEK TOTALS" header
     # sits above them and tells them apart. A Streamlit grid cannot merge a
     # header, so the tooltip does that job instead.
-    for k in ["Apps", "Total units"] + RELAY_MEASURES:
+    for k in ["Apps", "Total units"] + list(spec.summed):
         if k in grid[0]:
             cfg[k] = dict(cfg.get(k) or {},
                           help=f"{k} — running week total")
@@ -2576,7 +2634,7 @@ def relay_board(icd: str, office_key: str) -> None:
     # underneath. The editable grid is still one toggle away, which is where
     # Team, Leadership and Status are changed.
     if not expand:
-        shown = [m for m in RELAY_MEASURES
+        shown = [m for m in spec.shown
                  if m != "Int Up" or has_upgrades]
         # RAF'S WEEK BLOCK IN FULL: the products, then the knock numbers and
         # the ratios he reads off them. The knock columns are dropped whole
@@ -2586,7 +2644,8 @@ def relay_board(icd: str, office_key: str) -> None:
         week_cols = ["Apps"] + shown + (["Total units"] if has_upgrades else [])
         if has_knocks:
             week_cols += ["TK", "K/day", "TT", "TT/day", "%TT", "TT/app"]
-        groups = [("Week", [(c, c, "wk" if c == "Apps" else "", True)
+        groups = [("Week", [(spec.headline if c == "Apps" else c, c,
+                             "wk" if c == "Apps" else "", True)
                             for c in week_cols])]
         # LAST WEEK sits beside the running week, as it does on Raf's sheet —
         # it is how an owner sees who has dropped off. Only shown once there
@@ -2595,12 +2654,13 @@ def relay_board(icd: str, office_key: str) -> None:
         for _title, _key in (("Last wk", "Last wk Apps"),
                              ("Prior wk", "Prior wk Apps")):
             if any(r.get(_key) for r in grid):
-                groups.append((_title, [("Apps", _key, "wk", True)]))
+                groups.append((_title, [(spec.headline, _key, "wk", True)]))
         for d in week_days:
             lab = d.strftime("%a")
             groups.append((
                 f"{d:%a} {d.day}",
-                [(c, f"{lab} {c}", "day" if c == "Apps" else "",
+                [(spec.headline if c == "Apps" else c, f"{lab} {c}",
+                  "day" if c == "Apps" else "",
                   d in reported_days) for c in ["Apps"] + shown]))
         # THE REP SECTION IS EITHER PRINTED OR EDITABLE, never both and never
         # underneath (Megan 2026-09-15): "I want to toggle on edit and be able
@@ -2710,8 +2770,13 @@ def relay_wow(office_key: str) -> None:
         return
 
     st.markdown("**Week over week**")
-    n = st.slider("Weeks to show", 2, max(2, min(26, len(weeks))),
-                  min(8, len(weeks)), key=f"relaywow_{office_key}")
+    # No slider with nothing to choose between. With exactly two weeks on file
+    # it was built as 'from 2 to 2', which Streamlit refuses — and it took
+    # the whole page down with it for every office in its second week
+    # (Ryan, Carlos, 2026-09-22).
+    top = min(26, len(weeks))
+    n = (st.slider("Weeks to show", 2, top, min(8, top),
+                   key=f"relaywow_{office_key}") if top > 2 else top)
 
     rows = []
     for wk in sorted(weeks, reverse=True)[:n]:
@@ -3436,7 +3501,22 @@ def main() -> None:
             "Raf's sheet board", value=False, key="raf_sheet",
             help="The original Google-Sheet board: roll call, zero streaks, "
                  "per-day products."):
-        relay_board(icd, key)
+        # WHICH ECO FEED. An office's relay is keyed by its own ECO key, not
+        # the ICD, and one ICD can run two campaigns — Carlos relays Box AND
+        # AT&T B2B. With more than one, the owner picks; the board follows
+        # that feed's key and draws that campaign's columns. No feed at all
+        # (Raf today) keeps the office key and the Tableau-only board.
+        feeds = _eco_feeds(icd)
+        feed = feeds[0] if feeds else None
+        if len(feeds) > 1:
+            labels = [f.label for f in feeds]
+            if len(set(labels)) < len(labels):          # two of one campaign
+                labels = [f"{f.label} ({f.key})" for f in feeds]
+            pick = st.sidebar.radio("Campaign", labels, key=f"feed_{icd}",
+                                    disabled=locked)
+            feed = feeds[labels.index(pick)]
+        relay_board(icd, feed.key if feed else key,
+                    feed.family if feed else "att")
         return
 
     data = load_raf_board(st.session_state.get("tab", ""))

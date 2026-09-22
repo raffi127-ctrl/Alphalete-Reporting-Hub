@@ -46,20 +46,21 @@ def _apps(v: dict) -> int:
 def pairs(log=print) -> list:
     """[(relay office key, Tableau owner name or '')] for every relaying office.
 
-    Matched on the profile's office_key first, then on a UNIQUE first-name hit
-    among Tableau's owners — 'cyrus' -> 'Cyrus Wade'. No hit, or two, means no
-    counterpart; guessing would compare one office's live count with another's
-    settled one."""
-    from automations.icd_sales_board import profiles as P
-    by_key = {p.office_key: n for n, p in P.load().items() if p.office_key}
-    owners = sorted({o for o in _owners()})
+    Owners come from the ECO feed map (the ICD Signup tab plus the pilots), so
+    'ryan' is Ryan McSpadden however either list spells him. Only an AT&T feed
+    is paired with the fiber Tableau view: a Box feed compared against fiber
+    numbers would report a mismatch that is really two different businesses —
+    Carlos runs both."""
+    from automations.icd_sales_board import eco_feeds as E
+    owners = _owners()
+    by_norm = {E.norm(o): o for o in owners}
+    feeds = E.feeds()
     out = []
     for key in RR.offices():
-        icd = by_key.get(key, "")
-        if icd not in owners:
-            first = key.split("-")[0].lower()
-            hits = [o for o in owners if o.split()[0].lower() == first]
-            icd = hits[0] if len(hits) == 1 and "-" not in key else ""
+        f = feeds.get(key)
+        icd = ""
+        if f and f.family == "att" and f.campaign not in ("b2b_att",):
+            icd = by_norm.get(E.norm(f.owner), "")
         out.append((key, icd))
     return out
 
