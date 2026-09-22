@@ -74,6 +74,15 @@ class FirstNameFallbackTests(unittest.TestCase):
         self.assertEqual([c.name for _, c in got[0]], ["Pedro Menendez"])
         self.assertEqual(pedro.alt_names, ["Pedro Moreno"])
 
+    def test_breija_found_by_last_name_as_breia(self):
+        from automations.ad_photo_threads import collect
+        msgs = [{"text": "• Breia Smith: Dallas tx - Entry Level Assistant "
+                         "Manager – Farmers Branch TX"}]
+        b = self._c("Breija Smith", self.ad)
+        got = collect.first_name_matches(msgs, [b], self.book)
+        self.assertEqual([c.name for _, c in got[0]], ["Breija Smith"])
+        self.assertEqual(b.alt_names, ["Breia Smith"])
+
     def test_not_taken_when_the_line_is_another_ad(self):
         from automations.ad_photo_threads import collect
         pedro = self._c("Pedro Menendez", self.book.resolve("AT&T Sales Agent – Arlington TX"))

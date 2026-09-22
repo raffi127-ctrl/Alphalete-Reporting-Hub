@@ -145,30 +145,35 @@ def first_name_matches(msgs: List[dict], todays: List[Candidate],
     {message index: [(position, candidate)]}.
 
     9/21: the sheet had "Pedro Menendez", the interviewer wrote "Pedro Moreno"
-    in Slack — same person, same ad, and he went out with no photo. Only
-    taken when there's no doubt: exactly one line in the whole thread has
-    that first name AND names the candidate's ad, and no other unmatched
-    candidate on that ad shares the first name."""
+    in Slack — same person, same ad, and he went out with no photo. Same
+    night "Breija Smith" was "Breia Smith", so the LAST name is tried when
+    the first doesn't settle it. Only taken when there's no doubt: exactly
+    one line in the whole thread has that name AND names the candidate's
+    ad, and no other unmatched candidate on that ad shares it."""
     full = {id(c) for m in msgs for _, c in _full_named(m, todays)}
     loose = [c for c in todays if id(c) not in full and c.ad and _fold(c.name).split()]
     out: Dict[int, List[tuple]] = {}
     for c in loose:
-        first = _fold(c.name).split()[0]
-        if sum(1 for o in loose if o.ad == c.ad
-               and _fold(o.name).split()[0] == first) > 1:
-            continue
         hits = []
-        for i, m in enumerate(msgs):
-            text = _fold(m.get("text", ""))
-            for ln in (m.get("text") or "").splitlines():
-                fl = _fold(ln)
-                if re.search(rf"\b{re.escape(first)}\b", fl) \
-                        and book.find_in_text(ln) == c.ad:
-                    hits.append((i, text.find(fl) if fl in text else 0, ln))
+        for part in (0, -1):                       # first name, then last name
+            word = _fold(c.name).split()[part]
+            if len(word) < 3 or sum(1 for o in loose if o.ad == c.ad
+                                    and _fold(o.name).split()[part] == word) > 1:
+                continue
+            hits = []
+            for i, m in enumerate(msgs):
+                text = _fold(m.get("text", ""))
+                for ln in (m.get("text") or "").splitlines():
+                    fl = _fold(ln)
+                    if re.search(rf"\b{re.escape(word)}\b", fl) \
+                            and book.find_in_text(ln) == c.ad:
+                        hits.append((i, text.find(fl) if fl in text else 0, ln))
+            if len(hits) == 1:
+                break
         if len(hits) == 1:
             i, pos, ln = hits[0]
             out.setdefault(i, []).append((pos, c))
-            spelled = re.split(r"\s[-–—:]\s", ln.strip(" •*-\t"), maxsplit=1)[0].strip()
+            spelled = re.split(r"\s[-–—]\s|:", ln.strip(" •*-\t"), maxsplit=1)[0].strip()
             if spelled and _fold(spelled) != _fold(c.name) and len(spelled) <= 40:
                 c.alt_names.append(spelled)
     return out
