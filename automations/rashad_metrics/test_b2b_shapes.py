@@ -491,3 +491,28 @@ def test_the_per_rep_twin_is_box_only():
     for headers in (R.B2B_ATT_KNOCKS_HEADERS, R.COMBINED_KNOCKS_HEADERS,
                     R.WIRELESS_KNOCKS_HEADERS, R.ENERGYWELL_KNOCKS_HEADERS):
         assert R.COL_BOX_ACTUAL_TALK_TO_PER_REP not in headers
+
+
+def test_the_box_board_ranks_by_actual_talk_tos():
+    """Ryan McSpadden, 2026-09-22: "most actual talk to's at the top". More
+    knocks but more no-contact buckets must rank BELOW fewer, cleaner knocks."""
+    from automations.icd_alerts import knocks_map as M
+
+    def box(rep, rid, tk, corp, inacc, inaccur):
+        return {"id": rid, "rep": rep, "total leads knocked": "100",
+                "total knocks": str(tk), "first knock": "9:05 AM",
+                "last knock": "6:40 PM", "talked to": "0",
+                "owner talked to": "6", "not interested": "8",
+                "contract signed": "2", "bill collected - no sale": "1",
+                "come back": "31", "am come back": "4",
+                "corp - no opp": str(corp), "do not disturb": "3",
+                "inaccessible": str(inacc), "inaccurate lead": str(inaccur)}
+
+    rows = M.to_rows([box("A B", "1", 148, 40, 20, 10),   # 148 knocks -> 78
+                      box("C D", "2", 133, 5, 4, 3)])      # 133 knocks -> 121
+    header, table = R._table_from_rows(rows)
+    sub = R._combined_sub(header, table, sort_by="knocks",
+                          base_cols=R.B2B_BOX_KNOCKS_COLUMNS,
+                          out_cols=R.B2B_BOX_KNOCKS_HEADERS)
+    rep_at = R.B2B_BOX_KNOCKS_HEADERS.index(knocks.COL_REP)
+    assert [r[rep_at] for r in sub] == ["C D", "A B"]

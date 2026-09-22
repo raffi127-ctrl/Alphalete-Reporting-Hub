@@ -1884,7 +1884,13 @@ def _combined_sub(header: list[str], rows: list[list[str]],
         # what happened when gap_alerts sorted its rows and the board still
         # came out A-Z. Ties fall back to name so reps who are level don't
         # shuffle between ticks.
-        tk_pos = out_cols.index(COL_TOTAL_KNOCKS)
+        # The Box board ranks by Actual Talk To's instead (Ryan McSpadden,
+        # 2026-09-22: "most actual talk to's at the top"). Keyed off the
+        # column, which only the Box shape carries, so every other board
+        # still ranks by Total Knocks.
+        tk_pos = out_cols.index(COL_BOX_ACTUAL_TALK_TO
+                                if COL_BOX_ACTUAL_TALK_TO in out_cols
+                                else COL_TOTAL_KNOCKS)
 
         def _tk(r):
             v = str(r[tk_pos]).strip().replace(",", "")
