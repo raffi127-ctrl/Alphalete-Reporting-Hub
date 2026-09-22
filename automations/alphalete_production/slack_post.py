@@ -99,7 +99,12 @@ def find_thread_ts(client, channel: str, today: dt.date):
 
 def _post_thread(client, channel: str, captures: list, sections: list,
                  today: dt.date, *, banner: str = "") -> dict:
-    ts = None if banner else find_thread_ts(client, channel, today)
+    # ALPHALETE_NEW_THREAD (run.py --new-thread): a fresh dated parent even
+    # though today's already exists -- for a full repost after late sales were
+    # added by hand, when replies buried under the 4am images go unseen
+    # (Eve 2026-09-22).
+    fresh = bool(banner) or os.environ.get("ALPHALETE_NEW_THREAD") == "1"
+    ts = None if fresh else find_thread_ts(client, channel, today)
     created = ts is None
     if ts is None:
         ts = client.chat_postMessage(

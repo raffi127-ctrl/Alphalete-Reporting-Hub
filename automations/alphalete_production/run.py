@@ -98,7 +98,14 @@ def main():
                     help="post ONLY to this channel id (no mirror fan-out) — "
                          "for repairing one channel that a timed-out run left "
                          "short, without re-posting into the other")
+    ap.add_argument("--new-thread", action="store_true",
+                    help="post a NEW dated parent thread instead of appending "
+                         "to today's -- a full repost after late sales were "
+                         "added by hand")
     args = ap.parse_args()
+
+    if args.new_thread:
+        os.environ["ALPHALETE_NEW_THREAD"] = "1"
 
     if args.channel_only:
         # slack_post.CHANNEL is read at IMPORT time, so setting the env var here
