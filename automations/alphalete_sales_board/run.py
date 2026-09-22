@@ -385,6 +385,10 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool,
     if apply_writes and updates:
         changed = fill.apply(ws, updates)
         _log("wrote %d cell(s) to %s" % (changed, ws.title))
+    elif apply_writes:
+        # Not "(preview)": that word on a live run read as "it didn't apply"
+        # (2026-09-22). The board already matched SaraPlus.
+        _log("nothing to write -- %s already matches SaraPlus" % ws.title)
     else:
         _log("%d cell(s) would change (preview)" % len(updates))
         for u in updates[:15]:
@@ -611,6 +615,10 @@ def catch_up(prev: dt.date, *, apply_writes: bool, headless: bool = True) -> int
         changed = fill.apply(ws, updates)
         _log("catch-up wrote %d cell(s) to %s for %s"
              % (changed, ws.title, prev.strftime("%A")))
+    elif apply_writes:
+        changed = 0
+        _log("catch-up: nothing to write -- %s on %s already matches SaraPlus"
+             % (prev.strftime("%A"), ws.title))
     else:
         changed = 0
         _log("catch-up: %d cell(s) would change on %s (preview)"
