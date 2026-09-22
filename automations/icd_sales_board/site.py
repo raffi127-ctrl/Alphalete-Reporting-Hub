@@ -2014,6 +2014,18 @@ def _rep_editor(office_key: str, week_ending, rows: list,
             st.rerun()
 
 
+def _paint(html: str) -> None:
+    """Put the board on the page WITHOUT a markdown pass.
+
+    st.markdown(unsafe_allow_html=True) runs its input through the browser's
+    markdown parser first, and the board is ~185,000 characters across ~3,000
+    styled cells. The server finished a render in 5 seconds; the browser then
+    froze for a minute or more parsing it, which looked like the page hanging
+    — on the local preview and on Raf's link alike (Megan 2026-09-22: "nothing
+    is loading"). st.html injects the markup as-is."""
+    st.html(html)
+
+
 def _grouped_board(grid: list, groups: list) -> str:
     """The board as a real table, with each block SPANNING its columns.
 
@@ -2567,13 +2579,12 @@ def relay_board(icd: str, office_key: str) -> None:
         if editing:
             c_board, c_rep = st.columns([7, 3], gap="small")
             with c_board:
-                st.markdown(_grouped_board(grid, groups),
-                            unsafe_allow_html=True)
+                _paint(_grouped_board(grid, groups))
             with c_rep:
                 _rep_editor(office_key, week_ending, rows, roster)
         else:
             groups.append(("Rep", [(c, c, "", True) for c in rep_cols]))
-            st.markdown(_grouped_board(grid, groups), unsafe_allow_html=True)
+            _paint(_grouped_board(grid, groups))
         relay_wow(office_key)
         return
 
