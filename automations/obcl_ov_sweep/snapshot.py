@@ -228,43 +228,96 @@ def render(recs: List[dict], title: str, out: Path) -> Path:
 
 # --- the hourly step -------------------------------------------------------
 
+def _is(bg, colour) -> bool:
+    return bool(bg) and all(abs(bg[i] - colour[k]) < 0.01
+                            for i, k in enumerate(("red", "green", "blue")))
+
+
+GROUPS = ("Owner Submitted", "Ready for Owner Submit",
+          "Waiting on BG / Still Missing Checks")
+
+
+def split(recs: List[dict]):
+    """Three pictures (Megan 2026-09-22): owner submitted (the box is ticked) /
+    ready for owner submit (the box is BLUE — the sweep's own verdict) /
+    everyone else. Yellow (only the BG check pending) goes in the third: it
+    can't be submitted yet."""
+    out = {g: [] for g in GROUPS}
+    for r in recs:
+        box = r["Owner Submit"]
+        if box["v"].strip().lower() in config.TRUTHY:
+            out[GROUPS[0]].append(r)
+        elif _is(box["bg"], config.READY_BLUE):
+            out[GROUPS[1]].append(r)
+        else:
+            out[GROUPS[2]].append(r)
+    return [(g, out[g]) for g in GROUPS]
+
+
+def draw_set(recs: List[dict], week: str, stamp: str, clock: str) -> list:
+    """Render one PNG per non-empty group; returns [(group, count, png)]. An
+    empty group is skipped, never drawn as a blank picture."""
+    made = []
+    for i, (g, rows) in enumerate(split(recs), start=1):
+        if not rows:
+            continue
+        png = render(rows, f"{g} ({len(rows)})  ·  New Starts {week}  ·  {clock}",
+                     SHOT_DIR / f"obcl_{stamp}_{i}.png")
+        made.append((g, len(rows), png))
+    return made
+
+
+def caption(made) -> str:
+    counts = {g: n for g, n, _ in made}
+    return "OBCL update — " + " · ".join(
+        f"{counts.get(g, 0)} {g.lower()}" for g in GROUPS)
+
+
 def after_pass(ws, values, *, live: bool, text: bool) -> str:
     """Called by run.py after a pass. Returns a one-line outcome for the log."""
     recs = collect(ws, values)
     if not recs:
         return "picture: nobody on this week's chart qualifies — nothing drawn"
-    stamp = dt.datetime.now().strftime("%Y-%m-%d_%H%M")
-    ch = this_weeks_chart(values)
     now = dt.datetime.now()
+    stamp = now.strftime("%Y-%m-%d_%H%M")
     clock = f"{now.hour % 12 or 12}:{now.minute:02d} {'PM' if now.hour >= 12 else 'AM'}"
-    title = f"New Starts — {ch.get('date_text') or ws.title}  ·  {clock}"
-    png = render(recs, title, SHOT_DIR / f"obcl_{stamp}.png")
+    ch = this_weeks_chart(values)
+    made = draw_set(recs, ch.get("date_text") or ws.title, stamp, clock)
+    names = " ".join(p.name for _, _, p in made)
+    if made:  # the caption travels with the pictures, next to the first one
+        made[0][2].with_suffix(".txt").write_text(caption(made))
     ch_ = changed(recs)
     if not (live and text):
-        return f"picture: {png.name} ({len(recs)} people) — not texting (dry)"
+        return f"pictures: {names} — not texting (dry)"
     if ch_ is None:
         record(recs)
-        return f"picture: {png.name} — first pass, baseline recorded, not sent"
+        return f"pictures: {names} — first pass, baseline recorded, not sent"
     if not ch_:
-        return f"picture: {png.name} — nothing changed since last send, not sent"
+        return f"pictures: {names} — nothing changed since last send, not sent"
     from automations.day_orchestrator import mini_control as mc
     from automations.day_orchestrator.registry import this_machine
-    mc.enqueue("text_obcl", png.name, by="obcl_ov_sweep",
+    mc.enqueue("text_obcl", names, by="obcl_ov_sweep",
                machine=this_machine(), auto=True)
     record(recs)
-    return f"picture: {png.name} — CHANGED, queued text_obcl to {GROUP!r}"
+    return f"pictures: {names} — CHANGED, queued text_obcl to {GROUP!r}"
 
 
-def send(png_name: str, *, dry_run: bool = True) -> dict:
-    """Called BY THE POLLER. Idempotent via a .sent marker next to the PNG."""
+def send(png_names, *, dry_run: bool = True) -> dict:
+    """Called BY THE POLLER: one message, the caption then every picture.
+    Idempotent via a .sent marker next to the FIRST picture."""
     from automations.b2b_dispositions import text_post as tp
-    png = SHOT_DIR / png_name
-    if not png.exists():
-        raise FileNotFoundError(f"no picture {png}")
-    marker = png.with_suffix(".sent")
+    if isinstance(png_names, str):
+        png_names = png_names.split()
+    pngs = [SHOT_DIR / n for n in png_names]
+    missing = [str(p) for p in pngs if not p.exists()]
+    if missing or not pngs:
+        raise FileNotFoundError(f"no picture(s) {missing or png_names}")
+    marker = pngs[0].with_suffix(".sent")
     if marker.exists() and not dry_run:
         return {"skipped": marker.read_text().strip(), "ok": True}
-    res = tp.send_to_group(GROUP, "OBCL update", [png], dry_run=dry_run)
+    cap = pngs[0].with_suffix(".txt")
+    text = cap.read_text().strip() if cap.exists() else "OBCL update"
+    res = tp.send_to_group(GROUP, text, pngs, dry_run=dry_run)
     if res.get("ok") and not dry_run:
         marker.write_text(dt.datetime.now().isoformat(timespec="seconds"))
     return res

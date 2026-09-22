@@ -6951,7 +6951,8 @@ def _action_text_dispositions(args: str) -> tuple[bool, str]:
 def _action_text_obcl(args: str) -> tuple[bool, str]:
     """Text the OBCL picture to the "ORIENTATION CREW - Real" group.
 
-    Args:  <png filename> [--dry-run]    e.g.  text_obcl obcl_2026-09-22_1400.png
+    Args:  <png filename> [<png> ...] [--dry-run]
+           e.g.  text_obcl obcl_2026-09-22_1400_1.png obcl_2026-09-22_1400_2.png
 
     Queued by obcl_ov_sweep after an hourly pass whose picture CHANGED (Megan
     2026-09-21). Sent from here, not from the sweep, for the usual reason: only
@@ -6966,14 +6967,15 @@ def _action_text_obcl(args: str) -> tuple[bool, str]:
         return False, "text_obcl needs a png filename"
     from automations.obcl_ov_sweep import snapshot
     try:
-        res = snapshot.send(parts[0], dry_run="--dry-run" in parts[1:])
+        pngs = [x for x in parts if not x.startswith("--")]
+        res = snapshot.send(pngs, dry_run="--dry-run" in parts)
     except Exception as e:  # noqa: BLE001
         return False, f"{type(e).__name__}: {str(e)[:220]}"
     if res.get("skipped"):
         return True, f"already sent at {res['skipped']} — not re-texting"
     if not res.get("ok"):
         return False, f"not sent: {str(res)[:260]}"
-    return True, (f"texted {parts[0]} to {res.get('resolved_name')!r} "
+    return True, (f"texted {' '.join(pngs)} to {res.get('resolved_name')!r} "
                   f"({res.get('participants')} people)"
                   + (" [DRY RUN]" if res.get("dry_run") else ""))
 
