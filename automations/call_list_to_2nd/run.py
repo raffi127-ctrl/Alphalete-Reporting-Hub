@@ -27,6 +27,12 @@ WHERE EACH COLUMN COMES FROM (found by header text, never by position)
     1st rds showed         /  'Sent to Call List', 'Retention Call List',
     1st rd %              /   'Total First Interviews', 'First Interviews
                               Showed Up', 'Retention First Interviews'
+
+'Retention Call list' GOES OVER 100% AND THAT IS THE NUMBER RAFAEL WANTS
+(confirmed 2026-09-22): it is that day's bookings over that day's sends, and a
+resume sent on Friday is often called on Monday -- "Monday is typically higher
+because resumes get pushed over the weekend but called on Monday". Andre sent
+19 and booked 47 = 247%, green. Do not "fix" it into a capped ratio.
     2nd interviews booked \   the owner's ARS REPORT tab (Camila's Drive), block
     2nd interviews showed  >  '2ND RD SHOWED RETENTION', that day's B and S per
     2nd interview %       /   interviewer; % = S / B -- see parse_second_block
