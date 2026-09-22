@@ -3036,6 +3036,14 @@ def knocks_page(icd: str) -> None:
     c4.metric("Reps knocking", f"{len(detail):,}",
               help="Anyone with a logged row this week")
 
+    # A MISSING DAY DRAWS AS A DAY NOBODY KNOCKED, which is the one way this
+    # board can be confidently wrong. Every row arrives as a side effect of
+    # something else succeeding, so when one of those stops the day is just
+    # absent — said out loud here rather than left for someone to notice.
+    warn = _knock_check_line(icd)
+    if warn:
+        st.warning(warn, icon="🚧")
+
     start_tenure = _appstream_tenure(icd, week_ending)
     grid = []
     for rep_low, days in detail.items():
@@ -3107,6 +3115,26 @@ def _title_name(low: str) -> str:
     """'amarion hill' → 'Amarion Hill'. The tab is keyed lower case and the
     house look is title-cased names (`feedback_report_formatting_standard`)."""
     return " ".join(w.capitalize() for w in str(low or "").split())
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _knock_check_line(icd: str) -> str:
+    """The knocks history's own warning for this ICD, or ''.
+
+    Cached, and handed the grid this session already read, so the check costs
+    the page nothing beyond the read it was doing anyway."""
+    from automations.icd_sales_board import knocks_check as KC
+    from automations.icd_sales_board import knocks_log as KL
+    grid = _knocks_raw()
+    # Every spelling: the history files a two-campaign owner under two names,
+    # and a scrape and a relay can spell one office differently.
+    names = {icd} | {o for o in {r[1] for r in grid[1:] if len(r) > 1}
+                     if any(w in (o or "").strip().lower()
+                            for w in KL._wanted(icd))}
+    try:
+        return KC.line_for(names, grid=grid)
+    except Exception:   # noqa: BLE001 — a warning must not cost the board
+        return ""
 
 
 def _knock_no_dispo(row: dict, outcomes: list) -> int | str:

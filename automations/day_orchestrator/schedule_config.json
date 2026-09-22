@@ -11306,6 +11306,23 @@
       "assignee": "Claude",
       "_order_note": "After the ICD posters have had the night to finish their days, and before anyone opens a board in the morning."
     },
+    "icd_knocks_check": {
+      "on_scheduler": false,
+      "_note": "READ-ONLY, POSTS NOTHING. Asks whether each office's knocks history is keeping up: a day missing where that office has always had one, and a day far short of its OWN median FOR THAT WEEKDAY. Not a reconciliation - knocks have no second source to check against, OwnerVille is the only place they exist - so what it looks for is silence, because every row arrives as a side effect of something else succeeding and an absent day draws as a day nobody knocked. The board shows the same line on each ICD's Knock & Dispo page. 'lucy rerun icd_knocks_check'. It could post to #claudecorrections-and-requests on change, the way knocks_access_watch does - not wired, needs Megan's say-so (2026-09-22).",
+      "label": "ICD knocks check (history gaps)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.icd_sales_board.knocks_check"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "assignee": "Claude"
+    },
     "icd_profiles_refresh": {
       "on_scheduler": true,
       "_note": "Re-reads the ORG Sales Board and rewrites the ICD sales-board site's office list. That list was a hand-built snapshot from 2026-08-17 and had gone stale: four offices (Joseph Logan, Nii Tagoe, Steve McElwee, Trang Canavan) had settled Tableau numbers stored and no way to be selected on the site. One sheet read, no Tableau, no browser. It never drops an office silently - anyone missing from the board that day is kept and reported, and 'extra_icds' (offices that sell into Tableau without being a board row) is merged back in. Use --prune to actually remove one.",
