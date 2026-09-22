@@ -1122,12 +1122,32 @@ def run(*, tab: str = SANDBOX_TAB, dry_run: bool = False, use_appstream: bool = 
     # of text in the message): one box per day that moved since the last check,
     # holding only the offices whose numbers moved. Empty on a quiet pass --
     # then there is no second image at all.
+    # ONE image for every update, however many there are (Eve, 2026-09-22) --
+    # and only the rows that moved: an office whose one interviewer changed
+    # shows that interviewer, not its whole group.
     upd_blocks = []
     for d in sorted(changes):
-        who = [c.owner for c in changes[d]]
-        groups = [g for g in (pic_groups(d)) if g and g[0].get("owner") in who]
+        groups = []
+        for g in pic_groups(d):
+            mine = [c for c in changes[d] if c.owner == g[0].get("owner")]
+            if not mine:
+                continue
+            names = {c.interviewer for c in mine if c.interviewer}
+            rows = [r for r in g if r.get("interviewer") in names]
+            # an owner-level (1st-round) change names no interviewer: the
+            # numbers live on the group's first row, so that is the row to show
+            if not rows or any(not c.interviewer for c in mine):
+                rows = [g[0]] + [r for r in rows if r is not g[0]]
+            # the office's 1st-round numbers sit on the group's FIRST row and
+            # are merged down from there; dropping that row would blank them,
+            # so the first row kept carries them instead
+            if rows[0] is not g[0]:
+                rows[0] = {**rows[0], **{f: g[0].get(f) for f in OWNER_FIELDS}}
+            groups.append(rows)
         if groups:
-            upd_blocks.append((picture_band_text(d, len(groups)), "past", groups))
+            n = sum(len(g) for g in groups)
+            upd_blocks.append((f"{d:%A}".upper() + f" {md(d)}  ·  {n} update"
+                               + ("s" if n != 1 else ""), "past", groups))
     upd_lay = lay_out_picture(order, upd_blocks) if upd_blocks else None
     upd_title = f"{TITLE}  ·  updated since the {prev_stamp} check" if upd_blocks else ""
     pic_title = f"{TITLE}  ·  {pic_day:%A} {md(pic_day)}"
