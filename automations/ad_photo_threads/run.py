@@ -185,6 +185,7 @@ def main(argv=None) -> int:
             users = a.dm or ",".join(config.TEST_DM_USERS)
             r = collect._client().conversations_open(users=users)
             channel = r["channel"]["id"]
+            post.forget_channel(channel)      # a preview always posts fresh
             print(f"\nPreview DM: {channel}")
         print("\nPosted:", post.publish(rep, channel, pilot=pilot,
                                          max_ads=a.max_ads))

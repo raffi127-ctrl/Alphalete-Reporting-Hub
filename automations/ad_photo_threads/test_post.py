@@ -191,6 +191,12 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(c["kept_others"], 1)
         self.assertNotIn("C1", post._load_state())
 
+    def test_forget_channel_lets_a_preview_repost(self):
+        post.publish(_rep(), "D1", cl=FakeSlack(), pilot=True)
+        post.forget_channel("D1")
+        c = post.publish(_rep(), "D1", cl=FakeSlack(), pilot=True)
+        self.assertEqual((c["threads_new"], c["replies"]), (1, 1))
+
     def test_day_done_marker(self):
         d = dt.date(2026, 9, 18)
         self.assertFalse(post.day_done("D1", d))
