@@ -6291,6 +6291,29 @@
       "verify": null,
       "timeout_minutes": 40
     },
+    "sara_owner_probe": {
+      "hand_run_only": true,
+      "on_scheduler": true,
+      "machine": "Lucy 3",
+      "_note": "READ-ONLY diagnostic (Eve 2026-09-22): lists the DISTINCT owners each Sara Plus / Product Sales / NDS tracker export actually returns, and which NDS-tracker owners are missing from each. Asked because the NDS Program - Focus Report (nds_program_focus) skipped the owners outside our org with 'no metrics available' and the cached crosstabs suggested Sara Plus only carries our own ICDs. Writes nothing - stdout only. `lucy rerun sara_owner_probe`.",
+      "display_name": "Sara Plus owner probe (read-only)",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:product_sales"
+      ],
+      "command": [
+        "automations.alphalete_org_report.sara_owner_probe"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 20
+    },
     "alphalete_org_box": {
       "hand_run_only": true,
       "on_scheduler": true,
