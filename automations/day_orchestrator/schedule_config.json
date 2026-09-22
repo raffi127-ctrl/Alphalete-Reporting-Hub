@@ -3552,7 +3552,7 @@
     "call_list_to_2nd": {
       "hand_run_only": true,
       "on_scheduler": false,
-      "_note": "Rafael's second board (2026-09-21), CALL LIST TO 2ND ROUND: this week left, last week right, Mon-Fri down, one row per interviewer (owner's AppStream columns merged down the group). 1st round from AppStream per office, 2nd round from each owner's ARS REPORT log. Every run re-reads both weeks and names on each day's bar what changed. Writes the 'Call List to 2nd Round SANDBOX' tab of 'Interviewers Report from R to Z' by default; --production writes 'Call List to 2nd Round'. Needs the AppStream session, so it runs where that lives. Not scheduled yet: the plan is each office at its own 1 PM local (--due). `lucy rerun call_list_to_2nd` (add --dry-run to write nothing, --no-appstream for the 2nd-round side only).",
+      "_note": "Rafael's second board (2026-09-21), CALL LIST TO 2ND ROUND, in ARS Management 2.0 next to Below the Mark: this week left, last week right, Mon-Fri, one row per interviewer. 1st round from AppStream per office; 2nd round from the '2ND RD SHOWED RETENTION' block of each owner's ARS REPORT tab. Writes ONLY its own tabs (the board, SANDBOX, and their (picture) tabs); everything else is read. Scheduled by deploy/call_list_to_2nd.sh (LaunchAgent com.alphalete.call-list-to-2nd, 12:20/13:20/14:20/15:20 CT Mon-Fri = each zone's 1 PM), which writes the real tab and posts the picture in today's thread in #ars-recruiting-numbers. This entry is the hand-run handle: `lucy rerun call_list_to_2nd` writes the SANDBOX (add --production for the real tab, --dry-run to write nothing).",
       "display_name": "Call List to 2nd Round",
       "source_type": "appstream",
       "command": [
@@ -3567,6 +3567,27 @@
       "freshness_target": null,
       "priority": "P3",
       "timeout_minutes": 60,
+      "verify": null
+    },
+    "install_call_list_to_2nd_agent": {
+      "on_scheduler": true,
+      "_note": "NOT a report — a one-shot LaunchAgent installer, run via `lucy rerun install_call_list_to_2nd_agent`. Bootstraps com.alphalete.call-list-to-2nd from the committed plist: 12:20/13:20/14:20/15:20 CT Mon-Fri (each zone's 1 PM). Must land on the SAME machine as the Below the Mark passes — the AppStream session lives there.",
+      "display_name": "Install call-list-to-2nd agent",
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "call-list-to-2nd"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "data_sources": [],
+      "depends_on": [],
+      "freshness_target": null,
+      "priority": "P3",
+      "source_type": "local",
+      "timeout_minutes": 5,
       "verify": null
     },
     "install_below_the_mark_agent": {
