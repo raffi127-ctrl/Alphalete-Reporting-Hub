@@ -34,6 +34,8 @@ READY_BLUE = {"red": 0xCF / 255, "green": 0xE2 / 255, "blue": 0xF3 / 255}
 # light red 3: NOT DONE (Megan 2026-09-21: "either done - green or not done -
 # red"), whether OwnerVille shows it open or we couldn't find the person.
 NOT_FOUND_RED = {"red": 0xF4 / 255, "green": 0xCC / 255, "blue": 0xCC / 255}
+# light yellow 3: everything done except a background check still Pending.
+BG_PENDING_YELLOW = {"red": 0xFF / 255, "green": 0xF2 / 255, "blue": 0xCC / 255}
 DONE_GREEN = {"red": 0xD9 / 255, "green": 0xEA / 255, "blue": 0xD3 / 255}
 
 TRUTHY = {"true", "yes", "y", "1", "x", "✓", "✔"}

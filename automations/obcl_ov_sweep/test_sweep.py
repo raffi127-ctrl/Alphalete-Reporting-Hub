@@ -90,6 +90,12 @@ class Paint(unittest.TestCase):
         self.assertEqual(got[("Cara New", "UID Request")], config.NOT_FOUND_RED)
         self.assertFalse(any(n == "Dan Quit" for n, _ in got))
 
+    def test_bg_pending_owner_submit_is_yellow(self):
+        plan = sweep.paint_plan(sweep.people(_tab()), bg_pending_rows=[8])
+        got = {(p.name, c): col for p, c, col in plan}
+        self.assertEqual(got[("Cara New", "Owner Submit")],
+                         config.BG_PENDING_YELLOW)
+
 
 VP_HEADS = ["Name", "Contact", "Login Created", "Onboarding Documents",
             "Background Check", "Drug Test", "FTC DIRECTV Compliance Training",
@@ -166,6 +172,17 @@ class ReadyForOwnerSubmit(unittest.TestCase):
             c = _all_but_submit()
             c[4] = bad
             self.assertFalse(ov_table.ready_for_owner_submit(VP_HEADS, c), bad)
+
+    def test_bg_pending_everything_else_done_is_yellow_state(self):
+        c = _all_but_submit()
+        c[4] = {"text": "Pending", "html": '<span class="badge bg-warning">'}
+        self.assertEqual(ov_table.owner_submit_state(VP_HEADS, c), "bg_pending")
+        c[5] = {"text": "", "html": ""}          # drug test open too
+        self.assertEqual(ov_table.owner_submit_state(VP_HEADS, c), "")
+
+    def test_ready_state(self):
+        self.assertEqual(ov_table.owner_submit_state(VP_HEADS,
+                                                     _all_but_submit()), "ready")
 
     def test_missing_header_is_unread(self):
         heads = [h for h in VP_HEADS if h != "Drug Test"]

@@ -95,6 +95,27 @@ def ready_for_owner_submit(headers: List[str], cells: List[dict]):
     return True
 
 
+def owner_submit_state(headers: List[str], cells: List[dict]):
+    """'ready' — every step before Owner Submit is done (BLUE);
+    'bg_pending' — all done except Background Check, which is still Pending
+                   in OwnerVille (YELLOW; Megan 2026-09-21, Faith Moss);
+    None — a header is missing, never paint on a guess; '' — anything else."""
+    ready = ready_for_owner_submit(headers, cells)
+    if ready is None:
+        return None
+    if ready:
+        return "ready"
+    others = [w for w in READY_FOR_OWNER_SUBMIT if w != "background check"]
+    for w in others:
+        i = header_index(headers, w)
+        judge = cell_filled if w in _NO_DATE_OK else cell_done
+        if not judge(cells[i].get("text", ""), cells[i].get("html", "")):
+            return ""
+    i = header_index(headers, "background check")
+    bg = (cells[i].get("text") or "").lower()
+    return "bg_pending" if "pending" in bg else ""
+
+
 def header_index(headers: List[str], want: str):
     hs = [_h(x) for x in headers]
     for i, h in enumerate(hs):

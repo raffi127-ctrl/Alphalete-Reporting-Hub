@@ -12,7 +12,8 @@ done with a date stamp. Ticks go ON only — never off: a hand tick stays.
 Blue Ink and Headshot Photo have their own automations and are not touched.
 
 Colours: every box it owns is GREEN (done) or LIGHT RED (not done); Owner
-Submit is BLUE when it's the only step left. Owner Submit additionally turns BLUE
+Submit is BLUE when it's the only step left, YELLOW when only a pending
+background check stands in the way. Owner Submit additionally turns BLUE
 once every other OwnerVille step is green (someone needs to go submit them).
 """
 from __future__ import annotations
@@ -67,15 +68,16 @@ def _tint(ws, p, color, column: str = "Owner Submit") -> dict:
         "fields": "userEnteredFormat.backgroundColor"}}
 
 
-def _paint(ws, everyone, ticked_now, ready_rows, live: bool) -> None:
+def _paint(ws, everyone, ticked_now, ready_rows, live: bool,
+           bg_pending_rows=()) -> None:
     """Green = ticked, blue = ready for Owner Submit, light red = not done —
     all four sweep columns, every active person, one batch_update."""
-    plan = sweep.paint_plan(everyone, ticked_now, ready_rows)
+    plan = sweep.paint_plan(everyone, ticked_now, ready_rows, bg_pending_rows)
     n = {k: sum(1 for *_, col in plan if col is v) for k, v in
          (("green", config.DONE_GREEN), ("blue", config.READY_BLUE),
-          ("red", config.NOT_FOUND_RED))}
+          ("yellow", config.BG_PENDING_YELLOW), ("red", config.NOT_FOUND_RED))}
     print(f"{'Painted' if live else 'Would paint'}: green {n['green']}, "
-          f"blue {n['blue']}, light red {n['red']}")
+          f"blue {n['blue']}, yellow {n['yellow']}, light red {n['red']}")
     if live and plan:
         ws.spreadsheet.batch_update({"requests":
             [_tint(ws, p, color, c) for p, c, color in plan]})
@@ -124,7 +126,7 @@ def main(argv=None) -> int:
         # Everyone not on page 1 was searched for directly, so the page-1
         # shortfall no longer leaves anyone unread.
         complete = True
-    writes, log, ready = [], [], []
+    writes, log, ready, bg_wait = [], [], [], []
     for p in todo:
         ov_name = matched.get(p.row)
         if not ov_name:
@@ -134,10 +136,13 @@ def main(argv=None) -> int:
         new = sweep.earned(p, done)
         for col in new:
             writes.append((p, col))
-        is_ready = ov_table.ready_for_owner_submit(heads, cells)
-        if (is_ready is True and "Owner Submit" in p.open_columns
-                and "Owner Submit" not in new):
-            ready.append(p)
+        state = ov_table.owner_submit_state(heads, cells)
+        is_ready = state == "ready"
+        if "Owner Submit" in p.open_columns and "Owner Submit" not in new:
+            if state == "ready":
+                ready.append(p)
+            elif state == "bg_pending":
+                bg_wait.append(p)
         log.append({"row": p.row, "obcl": p.name, "ov": ov_name,
                     "done": done, "tick": new, "ready": is_ready,
                     "cells": {h.replace("\n", " "): c["text"].replace("\n", " ")
@@ -145,6 +150,8 @@ def main(argv=None) -> int:
         mark = ", ".join(new) if new else "nothing new"
         if ready and ready[-1] is p:
             mark += "  🔵 ready for Owner Submit"
+        elif bg_wait and bg_wait[-1] is p:
+            mark += "  🟡 only the background check is pending"
         print(f"  row {p.row:>3}  {p.name:<28} → {mark}")
 
     for p in missing:
@@ -173,7 +180,7 @@ def main(argv=None) -> int:
     # Every box we tick also turns green (Megan 2026-09-21: "checkmark the box
     # and turn it green") — which is also what clears an Owner Submit blue.
     _paint(ws, everyone, [(p.row, c) for p, c in writes],
-           [p.row for p in ready], args.tick)
+           [p.row for p in ready], args.tick, [p.row for p in bg_wait])
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     stamp = dt.datetime.now().strftime("%Y-%m-%d_%H%M")
