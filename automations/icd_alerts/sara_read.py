@@ -284,6 +284,44 @@ def _heal_and_login(p, headless: bool, log=print):
             raise _as_owner_problem(second) from second
 
 
+def what_saraplus_sees(ctx, page) -> list:
+    """What this browser presents to SaraPlus, one line each -- so a photo of
+    the sign-in window shows WHY the hidden read is not trusted when the
+    visible one is (Khalil, 2026-09-21/22: visible window trusted, hidden
+    read walled, same profile, same name). Cookie NAMES only, never values.
+    Never raises: a fake page in tests, or a closed tab, just yields less.
+    """
+    out = []
+    try:
+        cks = [c for c in ctx.cookies() if "saraplus" in (c.get("domain") or "")]
+        out.append("cookies for saraplus (%d): %s" % (len(cks), ", ".join(
+            "%s%s" % (c.get("name"), "" if c.get("expires", -1) not in (-1, None, 0)
+                      else "[session]") for c in cks) or "none"))
+    except Exception as e:  # noqa: BLE001
+        out.append("cookies: could not read (%s)" % type(e).__name__)
+    try:
+        fp = page.evaluate("""() => ({
+            ua: navigator.userAgent,
+            screen: screen.width + 'x' + screen.height,
+            window: innerWidth + 'x' + innerHeight,
+            plugins: navigator.plugins.length,
+            chrome: !!window.chrome,
+            webdriver: navigator.webdriver,
+            tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            lang: navigator.languages.join(','),
+            storage: Object.keys(localStorage).slice(0, 12).join(','),
+            webgl: (() => { try { const c = document.createElement('canvas');
+              const g = c.getContext('webgl'); const d = g.getExtension('WEBGL_debug_renderer_info');
+              return d ? g.getParameter(d.UNMASKED_RENDERER_WEBGL) : 'n/a'; } catch (e) { return 'err'; } })()
+        })""")
+        for k in ("ua", "screen", "window", "plugins", "chrome", "webdriver",
+                  "tz", "lang", "webgl", "storage"):
+            out.append("%s: %s" % (k, fp.get(k)))
+    except Exception as e:  # noqa: BLE001
+        out.append("fingerprint: could not read (%s)" % type(e).__name__)
+    return out
+
+
 def check_account(*, headless: bool = True, log=print,
                   interactive: bool = False) -> Dict:
     """STEP ONE of the app: can this login actually read reports?
@@ -298,7 +336,21 @@ def check_account(*, headless: bool = True, log=print,
     from patchright.sync_api import sync_playwright
 
     with sync_playwright() as p:
-        ctx, page, base = _heal_and_login(p, headless, log=log)
+        try:
+            ctx, page, base = _heal_and_login(p, headless, log=log)
+        except AccountProblem as e:
+            # SAY WHAT THIS BROWSER PRESENTED, on the way out. The verdict
+            # alone ("wants a code") has been the same for two days; the
+            # difference from the trusted window is the whole question.
+            try:
+                probe_ctx = _context(p, headless)
+                pg = probe_ctx.pages[0] if probe_ctx.pages else probe_ctx.new_page()
+                pg.goto(S.LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
+                e.presented = what_saraplus_sees(probe_ctx, pg)
+                probe_ctx.close()
+            except Exception:  # noqa: BLE001
+                pass
+            raise
         try:
             log("signed in: %s" % base)
 

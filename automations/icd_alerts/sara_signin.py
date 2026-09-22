@@ -42,6 +42,7 @@ from typing import Dict
 from automations.icd_alerts import config as C
 from automations.shared import saraplus as S
 
+SETTLE_SECONDS = 10
 WAIT_SECONDS = 600          # the email is the slow part, not the typing
 POLL_SECONDS = 5
 
@@ -122,6 +123,11 @@ def verify_hidden_read(log=print) -> int:
         for line in str(e).splitlines()[:3]:
             if line.strip():
                 log("    " + line.strip())
+        if getattr(e, "presented", None):
+            log("")
+            log("  The hidden read presents:")
+            for line in e.presented:
+                log("    " + line)
         log("")
         log("  Please send the reporting team a photo of this window.")
         return 1
@@ -214,6 +220,19 @@ def _window(log=print) -> int:
                     log("")
                     log("  Signed in. This browser is trusted now, so the")
                     log("  sweep can read sales again within a few minutes.")
+                    # LET SARAPLUS FINISH. The window used to close the
+                    # instant the address changed -- before any "remember
+                    # this device" cookie set after landing could be written
+                    # to the profile. Ten seconds on the page, then say what
+                    # this window is presenting, for the photo.
+                    try:
+                        page.wait_for_timeout(SETTLE_SECONDS * 1000)
+                        log("")
+                        log("  This window presents:")
+                        for line in _SR.what_saraplus_sees(ctx, page):
+                            log("    " + line)
+                    except Exception:  # noqa: BLE001
+                        pass
                     return 0
                 url = urls[0]
                 if any(_still_challenged(u) for u in urls) and not said:
