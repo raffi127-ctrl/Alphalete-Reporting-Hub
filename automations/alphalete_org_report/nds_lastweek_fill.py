@@ -192,6 +192,17 @@ def _describe_export(path: Path, logfn=print) -> None:
         logfn(f"NDS (LW): header = {rows[0][:12]}")
         if len(rows) > 1:
             logfn(f"NDS (LW): first row = {rows[1][:12]}")
+        header = [(h or "").strip().lower() for h in rows[0]]
+        if "currently viewing" in header:
+            cap_i = header.index("currently viewing")
+            seen = []
+            for r in rows[1:]:
+                cap = (r[cap_i] if cap_i < len(r) else "").strip()
+                if cap and cap.lower() != "total" and cap not in seen:
+                    seen.append(cap)
+                if len(seen) >= 3:
+                    break
+            logfn(f"NDS (LW): 'Currently Viewing' values = {seen or '(none)'}")
 
 
 def _row_for_label(grid, label: str):
