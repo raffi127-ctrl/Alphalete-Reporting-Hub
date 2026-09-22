@@ -154,9 +154,21 @@ class Posting(unittest.TestCase):
         from automations.call_list_to_2nd import slack_post
         board = [[""]] * (r.FIRST_BODY_ROW - 1) + [
             ["MONDAY 9/14  ·  41 offices  ·  CHANGED: Kash Rai 2nd % 64%→73%", "", "x"],
-            ["TUESDAY 9/15  ·  40 offices"]]
+            ["TUESDAY 9/15  ·  40 offices"],
+            ["FRIDAY 9/18  ·  41 offices  ·  CHANGED: Andre Burton 1st % 59%→62%"]]
         self.assertEqual(slack_post.changed_lines(board),
-                         ["Monday 9/14: Kash Rai 2nd % 64%→73%"])
+                         ["9/14 Kash Rai 2nd % 64%→73%", "9/18 Andre Burton 1st % 59%→62%"])
+        # the day the picture already shows is left out of the message
+        self.assertEqual(slack_post.changed_lines(board, "9/18"),
+                         ["9/14 Kash Rai 2nd % 64%→73%"])
+
+    def test_message_is_one_line_per_thing(self):
+        from automations.call_list_to_2nd import slack_post
+        text = slack_post.message("CALL LIST TO 2ND ROUND  ·  Monday 9/21",
+                                  [f"9/1{i} Someone 1st % 4{i}%→5{i}%" for i in range(5)])
+        self.assertEqual(len(text.splitlines()), 2)          # title + the changes
+        self.assertNotIn("green", text)                      # no colour legend
+        self.assertIn("+2 more", text)                       # capped at MAX_CHANGES
 
 
 if __name__ == "__main__":

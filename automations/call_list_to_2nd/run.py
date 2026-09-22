@@ -649,13 +649,12 @@ def last_full_day(today: dt.date) -> dt.date:
     return d
 
 
-def picture_band_text(d: dt.date, n: int, changes: Optional[List[Change]] = None) -> str:
+def picture_band_text(d: dt.date, n: int) -> str:
+    """The picture's band stays bare: day + how many offices. No CHANGED list
+    (Eve, 2026-09-22: it made the band look overloaded) -- the board's own bands
+    still carry it, and the Slack line names the days the picture doesn't show."""
     text = f"{d:%A}".upper() + f" {md(d)}"
     text += f"  ·  {n} office{'s' if n != 1 else ''}" if n else "  ·  no activity"
-    if changes:
-        shown = ", ".join(c.text for c in changes[:BAND_MAX_CHANGES])
-        more = len(changes) - BAND_MAX_CHANGES
-        text += f"  ·  CHANGED: {shown}" + (f" (+{more} more)" if more > 0 else "")
     return text
 
 
@@ -1115,8 +1114,7 @@ def run(*, tab: str = SANDBOX_TAB, dry_run: bool = False, use_appstream: bool = 
     # picture too long).
     day_groups = pic_groups(pic_day)
     pic_lay = lay_out_picture(order, [
-        (picture_band_text(pic_day, len(day_groups), changes.get(pic_day)), "past",
-         day_groups)])
+        (picture_band_text(pic_day, len(day_groups)), "past", day_groups)])
     pic_title = f"{TITLE}  ·  {pic_day:%A} {md(pic_day)}"
     if due:
         # Say whose picture this is: each time zone's pass posts its own.

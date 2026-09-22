@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import re
 import sys
 from pathlib import Path
 from typing import List, Tuple
@@ -41,19 +42,26 @@ THREAD_LINES = [
     "Each time zone at its own 1 PM — every update lands in this thread.",
 ]
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "call_list_to_2nd"
-MAX_CHANGE_LINES = 10
+MAX_CHANGES = 3          # one short line; the tab has the rest
 
 
-def changed_lines(board_values) -> List[str]:
-    """'Wednesday 9/16: Kash Rai 2nd % 64%→73%, ...' for every day bar on the
-    board that names a change, both weeks."""
+def changed_lines(board_values, skip_day: str = "") -> List[str]:
+    """'9/16 Kash Rai 2nd % 64%→73%' for every day bar on the board that names a
+    change, both weeks -- `skip_day` ('9/21') drops the day the picture shows,
+    whose numbers are already in the picture (Eve, 2026-09-22)."""
     out = []
     for row in board_values[rep.FIRST_BODY_ROW - 1:]:
         for cell in row:
             text = str(cell)
             m = rep._BAND_RE.match(text)
-            if m and "CHANGED: " in text:
-                out.append(f"{text.split('  ·  ')[0].title()}: {text.split('CHANGED: ', 1)[1]}")
+            if not m or "CHANGED: " not in text:
+                continue
+            day = f"{int(m.group(2))}/{int(m.group(3))}"
+            if day == skip_day:
+                continue
+            # the band itself truncates with a '(+2 more)' tail -- not a change
+            changes = re.sub(r"\s*\(\+\d+ more\)$", "", text.split("CHANGED: ", 1)[1])
+            out += [f"{day} {c.strip()}" for c in changes.split(", ") if c.strip()]
     return out
 
 
@@ -94,20 +102,19 @@ def build_png(tab: str = rep.SANDBOX_TAB) -> Tuple[Path, str, str, List[str]]:
         if hidden:
             _set_hidden(sh, pic.id, True)
     board = fill.worksheet_ci(sh, tab).get_all_values()
-    return out, title, status, changed_lines(board)
+    pic_day = rep.last_full_day(dt.datetime.now(dt.timezone.utc).astimezone(rep.CT).date())
+    return out, title, status, changed_lines(board, rep.md(pic_day))
 
 
 def message(title: str, changes: List[str]) -> str:
     """The reply's text. Short on purpose: the thread's parent already says what
-    the report is; the colour rules are the ones Rafael set."""
-    lines = [f"*{title.replace('  ·  ', ' · ') or TITLE}*",
-             "Retention Call List & 1st rd %: 50%+ green · 45–49.99% grey · under 45% red  |  "
-             "2nd interview %: 50%+ green · under 50% red"]
+    the report is. No colour legend -- Eve, 2026-09-22: the colours speak for
+    themselves and the line was just noise on every post."""
+    lines = [f"*{title.replace('  ·  ', ' · ') or TITLE}*"]
     if changes:
-        lines.append("*Updated late* (moved on earlier days since the last check):")
-        lines += [f"• {c}" for c in changes[:MAX_CHANGE_LINES]]
-        if len(changes) > MAX_CHANGE_LINES:
-            lines.append(f"• …and {len(changes) - MAX_CHANGE_LINES} more days")
+        shown = " · ".join(changes[:MAX_CHANGES])
+        more = len(changes) - MAX_CHANGES
+        lines.append("Earlier days moved: " + shown + (f" · +{more} more" if more > 0 else ""))
     return "\n".join(lines)
 
 
