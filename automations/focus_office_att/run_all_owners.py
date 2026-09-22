@@ -100,9 +100,14 @@ _owner_marks: dict[str, float] = {}
 SLOW_OP_S = 20
 
 
-def _owner_timing_line(t0: float, marks: dict, now: float) -> str:
+def _owner_timing_line(t0: float, marks: dict, now: float,
+                       sheets: dict | None = None) -> str:
     """One-line breakdown of where an owner's time went. Stages that never
-    started (e.g. impersonation failed) are left out rather than shown as 0."""
+    started (e.g. impersonation failed) are left out rather than shown as 0.
+    `sheets` is _ratelimit.take_stats() for this owner: how long the Sheets
+    pacer held calls and how many 429s it waited out — the part of "design"
+    that is Google's quota, not our work (2026-09-22: design 365s on one
+    owner was ~9 silent 40s quota sleeps)."""
     start, write, design = marks.get("start"), marks.get("write"), marks.get("design")
     parts = []
     if start is not None:
@@ -112,6 +117,12 @@ def _owner_timing_line(t0: float, marks: dict, now: float) -> str:
         parts.append(f"sheet write {(design or now) - write:.0f}s")
     if design is not None:
         parts.append(f"design {now - design:.0f}s")
+    if sheets:
+        if sheets.get("paced_s", 0) >= 1:
+            parts.append(f"sheets paced {sheets['paced_s']:.0f}s")
+        if sheets.get("quota_waits", 0):
+            parts.append(f"429 waits {int(sheets['quota_waits'])} "
+                         f"({sheets['quota_wait_s']:.0f}s)")
     return (f"  ⏱ {(now - t0) / 60:.1f} min" +
             (" — " + " · ".join(parts) if parts else ""))
 
@@ -849,6 +860,8 @@ def main() -> int:
                     f"exceeded the {PER_OWNER_TIMEOUT_S // 60}-min per-owner budget")
             signal.signal(signal.SIGALRM, _on_owner_alarm)
 
+        from automations.focus_office_att._ratelimit import take_stats as _sheets_stats
+        _sheets_stats()   # drop the pre-loop setup's counters
         for i, owner in enumerate(owner_tabs, 1):
             print(f"\n[{i}/{len(owner_tabs)}] === {owner} ===")
             _owner_marks.clear()
@@ -911,7 +924,8 @@ def main() -> int:
             finally:
                 if _HAS_ALARM:
                     signal.alarm(0)     # clear this owner's deadline (success or not)
-                print(_owner_timing_line(owner_t0, _owner_marks, time.monotonic()))
+                print(_owner_timing_line(owner_t0, _owner_marks, time.monotonic(),
+                                         _sheets_stats()))
                 if is_master:
                     # No impersonation to exit; nothing to do.
                     continue

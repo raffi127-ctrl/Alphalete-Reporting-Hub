@@ -955,6 +955,17 @@ def design_cosmetic_ops(ws, layout: Layout) -> list:
     an ordered list of (label, callable) — both Phase 2 (run_all_owners)
     and Phase 3 (step6) run this same list so a daily run reproduces the
     ENTIRE approved design, not a partial subset. Every op is idempotent."""
+    # ONE column-B read shared by the four frozen-block ops below. Nothing
+    # between them touches column B (they write formulas/totals in day and
+    # weekly columns), and each re-read cost one of the ~60 reads/min Google
+    # allows per user — the cap this pass was overrunning (2026-09-22).
+    _colb: dict = {}
+
+    def _frozen_rows() -> list:
+        if "rows" not in _colb:
+            _colb["rows"] = _frozen_rep_rows(ws.col_values(2))
+        return _colb["rows"]
+
     return [
         # sort by SUM Total Apps FIRST — it writes the rep block back as
         # values, so the formula writers below must run after to restore
@@ -979,11 +990,11 @@ def design_cosmetic_ops(ws, layout: Layout) -> list:
         # backfill path in run_all_owners.py so a frozen block heals on the next
         # daily run instead of needing drb_backfill_lastweek + a hand-fix.
         ("frozen_total_apps_per_day",    lambda: write_per_day_total_apps_formulas(
-            ws, layout, rep_rows=_frozen_rep_rows(ws.col_values(2)), clear_future=False)),
+            ws, layout, rep_rows=_frozen_rows(), clear_future=False)),
         ("frozen_weekly_formulas",       lambda: write_weekly_formulas(
-            ws, layout, rep_rows=_frozen_rep_rows(ws.col_values(2)))),
-        ("refresh_frozen_office_totals_avgs", lambda: refresh_frozen_office_totals_avgs(ws, layout, _frozen_rep_rows(ws.col_values(2)))),
-        ("refresh_frozen_office_totals_apps", lambda: refresh_frozen_office_totals_apps(ws, layout, _frozen_rep_rows(ws.col_values(2)))),
+            ws, layout, rep_rows=_frozen_rows())),
+        ("refresh_frozen_office_totals_avgs", lambda: refresh_frozen_office_totals_avgs(ws, layout, _frozen_rows())),
+        ("refresh_frozen_office_totals_apps", lambda: refresh_frozen_office_totals_apps(ws, layout, _frozen_rows())),
         ("write_office_summary_block",   lambda: write_office_summary_block(ws, layout)),
         ("apply_bold_border",            lambda: apply_bold_border(ws)),
         ("apply_day_block_borders",      lambda: apply_day_block_borders(ws, layout)),
