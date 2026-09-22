@@ -990,6 +990,20 @@ def write(ws, order: List[str], lay: Layout, titles: List[str], status: str, log
 
 
 # ----------------------------------------------------------------- the pass
+def in_zones(owners: List[str], wanted: List[str]) -> List[str]:
+    """The owners on one clock -- 'eastern', 'central', 'mountain', 'pacific'
+    (matched on the zone's label, so 'east' is enough). For REDOING one pass by
+    hand: the scheduled passes still pick their offices from the clock."""
+    from automations.first_to_second_below_mark import office_tz as tz
+    keys = [w.strip().lower() for w in wanted if w.strip()]
+    picked = []
+    for o in owners:
+        lab = tz.label(tz.zone_or_fallback(o)[0]).lower()
+        if any(lab.startswith(k) or k.startswith(lab) for k in keys):
+            picked.append(o)
+    return picked
+
+
 def due_now(owners: List[str], now: dt.datetime) -> List[str]:
     """Owners whose local 1:00 PM it is right now (unknown zones run on Central)."""
     from automations.first_to_second_below_mark import office_tz as tz
@@ -1024,7 +1038,7 @@ def load_roster(starts: List[dt.date], logfn=print) -> Dict[str, List[str]]:
 
 def run(*, tab: str = SANDBOX_TAB, dry_run: bool = False, use_appstream: bool = True,
         due: bool = False, now: Optional[dt.datetime] = None, only: Optional[List[str]] = None,
-        refresh_index: bool = False, logfn=print) -> dict:
+        zones: Optional[List[str]] = None, refresh_index: bool = False, logfn=print) -> dict:
     now = (now or dt.datetime.now(dt.timezone.utc)).astimezone(CT)
     today = now.date()
     start = this_week_start(today)
@@ -1038,6 +1052,14 @@ def run(*, tab: str = SANDBOX_TAB, dry_run: bool = False, use_appstream: bool = 
     logfn(f"  {len(owners)} owners, this week {md(starts[0])}, last week {md(starts[1])}")
 
     to_pull = owners
+    if zones:
+        # like --due, but the clock is given: the offices of one pass, so a
+        # pass can be redone by hand. Everybody else keeps their board rows.
+        to_pull = in_zones(owners, zones)
+        if not to_pull:
+            logfn(f"  no office on the {', '.join(zones)} clock")
+            return {"written": False, "due": 0}
+        logfn(f"  {', '.join(zones)} pass: {len(to_pull)} offices")
     if due:
         to_pull = due_now(owners, now)
         if not to_pull:
@@ -1186,7 +1208,7 @@ def run(*, tab: str = SANDBOX_TAB, dry_run: bool = False, use_appstream: bool = 
     upd_lay = lay_out_picture(upd_order, upd_blocks) if upd_blocks else None
     upd_title = f"{TITLE}  ·  updated since the {prev_stamp} check" if upd_blocks else ""
     pic_title = f"{TITLE}  ·  {pic_day:%A} {md(pic_day)}"
-    if due:
+    if due or zones:
         # Say whose picture this is: each time zone's pass posts its own.
         from automations.first_to_second_below_mark import office_tz as tz
         zones = sorted({tz.label(tz.zone_or_fallback(o)[0]) for o in to_pull})
@@ -1235,6 +1257,9 @@ def main(argv=None) -> int:
     ap.add_argument("--no-appstream", dest="use_appstream", action="store_false")
     ap.add_argument("--due", action="store_true", help="only offices at their local 1:00 PM")
     ap.add_argument("--only", action="append", help="one owner (repeatable), for checking")
+    ap.add_argument("--zone", action="append", dest="zones",
+                    help="one clock: eastern/central/mountain/pacific (repeatable). "
+                         "For redoing a pass by hand; the scheduled passes use --due")
     ap.add_argument("--at", default=None, help="pretend it is this CT time, 'YYYY-MM-DD HH:MM'")
     ap.add_argument("--refresh-index", action="store_true")
     args = ap.parse_args(argv)
@@ -1242,6 +1267,7 @@ def main(argv=None) -> int:
     now = (dt.datetime.strptime(args.at, "%Y-%m-%d %H:%M").replace(tzinfo=CT)
            if args.at else None)
     res = run(tab=tab, dry_run=args.dry_run, use_appstream=args.use_appstream, due=args.due,
+              zones=args.zones,
               now=now, only=args.only, refresh_index=args.refresh_index)
     print(f"OK - { {k: v for k, v in res.items() if k != 'notes'} }")
     return 3 if res.get("due") == 0 else 0
