@@ -91,10 +91,18 @@ def get(name: str):
     return load().get(name)
 
 
-def refresh_from_board(*, tab: str = "") -> dict:
+def refresh_from_board(*, tab: str = "", prune: bool = False) -> dict:
     """Re-read the live ORG Sales Board and rewrite icd_profiles.json.
 
-    READ-ONLY against the sheet. Returns the new {name: sections} map."""
+    READ-ONLY against the sheet. Returns the new {name: sections} map.
+
+    NEVER DROPS AN ICD SILENTLY. A section that is missing from the board on
+    the day this runs — renamed, emptied, or simply not there yet — takes
+    every ICD in it with it: the first refresh lost Abel Draper, whose office
+    is the Frontier section, and losing him would have taken his board away
+    with nothing said. Anyone in the old file who is not on the board today is
+    KEPT and reported. `prune=True` is how an office that really has gone gets
+    removed, on purpose."""
     from automations.org_sales_board.run import SHEET_ID, PROD_TAB
     from automations.org_sales_board import sources as S
     from automations.org_sales_board.fill_section import find_daily_section
@@ -113,8 +121,41 @@ def refresh_from_board(*, tab: str = "") -> dict:
         for n in names:
             per_icd.setdefault(n, []).append(src.label)
 
+    # KEPT ACROSS A REFRESH. Some ICDs sell into Tableau without being a row
+    # on the ORG board — Joseph Logan, Nii Tagoe, Steve McElwee and Trang
+    # Canavan all had settled numbers stored and no way to be selected on the
+    # site. They are listed in 'extra_icds' and merged back in here, so a
+    # refresh brings the board up to date without dropping them again
+    # (2026-09-22).
+    extra = {}
+    if _FILE.exists():
+        try:
+            extra = json.loads(_FILE.read_text()).get("extra_icds") or {}
+        except (ValueError, OSError):
+            extra = {}
+    for name, secs in extra.items():
+        if name not in per_icd:
+            per_icd[name] = list(secs)
+            for lab in secs:
+                sections.setdefault(lab, []).append(name)
+
+    # Anyone the board no longer shows: kept unless pruned, and handed back so
+    # the caller can say who.
+    previous = {}
+    if _FILE.exists():
+        try:
+            previous = json.loads(_FILE.read_text()).get("per_icd") or {}
+        except (ValueError, OSError):
+            previous = {}
+    missing = sorted(n for n in previous if n not in per_icd)
+    if not prune:
+        for name in missing:
+            per_icd[name] = list(previous[name])
+    refresh_from_board.missing = missing
+
     _FILE.write_text(json.dumps(
         {"source_tab": tab or PROD_TAB, "sections": sections,
+         "extra_icds": dict(sorted(extra.items())),
          "per_icd": dict(sorted(per_icd.items()))},
-        indent=2), encoding="utf-8")
+        indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return per_icd

@@ -11252,6 +11252,25 @@
       "freshness_target": null,
       "assignee": "Claude"
     },
+    "icd_profiles_refresh": {
+      "on_scheduler": true,
+      "_note": "Re-reads the ORG Sales Board and rewrites the ICD sales-board site's office list. That list was a hand-built snapshot from 2026-08-17 and had gone stale: four offices (Joseph Logan, Nii Tagoe, Steve McElwee, Trang Canavan) had settled Tableau numbers stored and no way to be selected on the site. One sheet read, no Tableau, no browser. It never drops an office silently - anyone missing from the board that day is kept and reported, and 'extra_icds' (offices that sell into Tableau without being a board row) is merged back in. Use --prune to actually remove one.",
+      "label": "ICD list refresh (ORG board)",
+      "source_type": "sheet",
+      "data_sources": [],
+      "command": [
+        "automations.icd_sales_board.run"
+      ],
+      "base_args": [
+        "--refresh"
+      ],
+      "cadence": {
+        "weekdays": [0, 1, 2, 3, 4, 5, 6]
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "assignee": "Claude"
+    },
     "icd_start_dates": {
       "on_scheduler": true,
       "_note": "Rep START DATES from AppStream, for the ICD sales board's tenure colours (Raf's Loom 2026-09-13: 'days worked based off the start date ... can be pulled off of AppStream'). One page load per day per office, so ~5 weeks back is the whole job: a rep outside that window is a veteran, not an unknown. Run it manually first with --dry-run.",

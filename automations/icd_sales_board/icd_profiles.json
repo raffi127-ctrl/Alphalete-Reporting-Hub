@@ -1,5 +1,5 @@
 {
-  "source_tab": "Alphalete ORG Sales Board",
+  "source_tab": "ARCHIVE — Alphalete ORG Sales Board (VAs, hasta 7/21)",
   "sections": {
     "Retail NL": [
       "Ana Griffin",
@@ -62,9 +62,20 @@
       "Aiysha Mariano",
       "Brandon Stallkamp",
       "David Martinez"
+    ]
+  },
+  "extra_icds": {
+    "Joseph Logan": [
+      "ATT Fiber Team"
     ],
-    "Frontier": [
-      "Abel Draper"
+    "Nii Tagoe": [
+      "ATT Fiber Team"
+    ],
+    "Steve McElwee": [
+      "ATT Fiber Team"
+    ],
+    "Trang Canavan": [
+      "ATT Fiber Team"
     ]
   },
   "per_icd": {

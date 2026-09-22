@@ -138,13 +138,20 @@ def main(argv=None) -> int:
     ap.add_argument("--icd", metavar="NAME")
     ap.add_argument("--campaigns", action="store_true")
     ap.add_argument("--check", action="store_true")
+    ap.add_argument("--prune", action="store_true",
+                    help="with --refresh: actually remove ICDs the board no "
+                         "longer shows (default: keep and report them).")
     ap.add_argument("--refresh", action="store_true",
                     help="re-read the live ORG board (read-only) + rewrite JSON")
     a = ap.parse_args(argv)
 
     if a.refresh:
-        n = P.refresh_from_board()
+        n = P.refresh_from_board(prune=a.prune)
         print(f"refreshed {len(n)} ICDs from the ORG Sales Board")
+        gone = getattr(P.refresh_from_board, "missing", [])
+        if gone:
+            print(("dropped (--prune): " if a.prune else
+                   "not on the board today, KEPT: ") + ", ".join(gone))
     if a.campaigns:
         _campaigns()
     if a.icd:
