@@ -168,7 +168,13 @@ def _make_section_adapter(spec_key: str):
         # board is this job's real work.
         if spec_key == "fiber":
             from automations.icd_sales_board import tableau_days
-            tableau_days.log_days(csv_path, week_ending=today,
+            from automations.org_sales_board import week as _wk
+            # THE WEEK THAT WAS PINNED, not the run date. The crosstab has
+            # weekday names and no dates, so handing in `today` dated every
+            # column backwards from a Tuesday or a Thursday and overwrote the
+            # right rows with the wrong ones every morning (2026-09-22).
+            pinned = _wk.reporting_sunday(today)
+            tableau_days.log_days(csv_path, week_ending=pinned,
                                   log=ctx.logfn)
             # The per-REP view is a second crosstab off the SAME workbook and
             # the same live session, so it costs a download and no extra
@@ -176,9 +182,9 @@ def _make_section_adapter(spec_key: str):
             # without the agent being installed there.
             try:
                 rep_csv = tableau_days.pull_reps_with(
-                    ctx.page, week_ending=today, out_dir=ctx.out_dir,
+                    ctx.page, week_ending=pinned, out_dir=ctx.out_dir,
                     log=ctx.logfn)
-                tableau_days.log_rep_days(rep_csv, week_ending=today,
+                tableau_days.log_rep_days(rep_csv, week_ending=pinned,
                                           log=ctx.logfn)
             except Exception as e:   # noqa: BLE001 — never fatal
                 ctx.logfn(f"  board rep days: SKIPPED ({type(e).__name__}: {e})")

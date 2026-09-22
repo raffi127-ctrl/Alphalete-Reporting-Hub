@@ -62,6 +62,21 @@ def _int(v) -> int:
         return 0
 
 
+def _pinned_sunday(week_ending):
+    """The Sunday ending the week a pinned view ACTUALLY returns for a date.
+
+    The crosstab carries weekday NAMES and no dates, so every number is dated
+    backwards from this Sunday. The org board's 2am pull was handing in the
+    run date instead — on six days of seven that stamped each weekday a few
+    days off and replaced good rows (Raf's settled week read 537 apps against
+    253 on his own sheet, Sundays showing weekday volume; 2026-09-22). This
+    maps any date to the same week pinned_view_url pins, so the parse and the
+    pull cannot disagree. A Sunday maps to itself, so callers that already pass
+    one are unchanged."""
+    from automations.org_sales_board import week as _wk
+    return _wk.reporting_sunday(week_ending or dt.date.today())
+
+
 def parse(path=DEFAULT_PATH, week_ending: dt.date | None = None) -> dict:
     """{owner: {date: {Int, Int Up, DTV, NL}}} from a pulled crosstab.
 
@@ -74,7 +89,7 @@ def parse(path=DEFAULT_PATH, week_ending: dt.date | None = None) -> dict:
     path = Path(path)
     if not path.exists():
         return {}
-    week_ending = week_ending or _this_sunday()
+    week_ending = _pinned_sunday(week_ending)
     monday = week_ending - dt.timedelta(days=6)
     day_of = {name: monday + dt.timedelta(days=i)
               for i, name in enumerate(_WEEKDAYS)}
@@ -147,7 +162,7 @@ def pull_reps_with(page, week_ending: dt.date | None = None,
     from automations.shared.tableau_patchright import (
         download_crosstab_patchright)
 
-    week_ending = week_ending or _this_sunday()
+    week_ending = _pinned_sunday(week_ending)
     url = SP.pinned_view_url(rep_spec(), week_ending, logfn=log)
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     out = Path(out_dir) / REP_PATH.name
@@ -164,7 +179,7 @@ def pull_reps(week_ending: dt.date | None = None, out_dir=Path("output"),
     from automations.shared.tableau_patchright import (
         tableau_session, download_crosstab_patchright)
 
-    week_ending = week_ending or _this_sunday()
+    week_ending = _pinned_sunday(week_ending)
     url = SP.pinned_view_url(rep_spec(), week_ending, logfn=log)
     out = Path(out_dir) / REP_PATH.name
     Path(out_dir).mkdir(parents=True, exist_ok=True)
@@ -188,7 +203,7 @@ def parse_reps(path=REP_PATH, week_ending: dt.date | None = None) -> dict:
     path = Path(path)
     if not path.exists():
         return {}
-    week_ending = week_ending or _this_sunday()
+    week_ending = _pinned_sunday(week_ending)
     monday = week_ending - dt.timedelta(days=6)
     day_of = {name: monday + dt.timedelta(days=i)
               for i, name in enumerate(_WEEKDAYS)}
@@ -225,7 +240,7 @@ def pull(week_ending: dt.date | None = None, out_dir=Path("output"),
     from automations.org_sales_board import section_pull as SP
     from automations.shared.tableau_patchright import tableau_session
 
-    week_ending = week_ending or _this_sunday()
+    week_ending = _pinned_sunday(week_ending)
     spec = SP.SPECS["fiber"]
     log(f"pulling {spec.section_label} for week ending {week_ending}…")
     with tableau_session(headless=False, verbose=False) as page:
