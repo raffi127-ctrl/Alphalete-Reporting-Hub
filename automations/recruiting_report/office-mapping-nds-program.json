@@ -1,0 +1,302 @@
+{
+  "confirmed_count": 24,
+  "needs_review_count": 0,
+  "skip_count": 25,
+  "confirmed": [
+    {
+      "sheet_tab": "Alex Guzman Benitez - NDS",
+      "office_id": "9218",
+      "as_owner": "Alex Guzman Benitez",
+      "as_company": "BEYMARK, INC.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Colten Wright - NDS",
+      "office_id": "14733",
+      "as_owner": "COLTEN WRIGHT",
+      "as_company": "SOUTH SHORE SPECIALIZED MARKETING, INC.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Drew Tepper - NDS",
+      "office_id": "22583",
+      "as_owner": "Drew Tepper",
+      "as_company": "Precision Management Team, Inc.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Fernando Munoz - NDS",
+      "office_id": "22604",
+      "as_owner": "Fernando Munoz",
+      "as_company": "SD Premier Consulting, Inc.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Frank Matos - NDS",
+      "office_id": "23221",
+      "as_owner": "Frank Matos",
+      "as_company": "Peak Management, Inc.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "George Delgado - NDS",
+      "office_id": "22477",
+      "as_owner": "George Delgado",
+      "as_company": "Skyline Elite, Inc.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Isaac Amissah - NDS",
+      "office_id": "21190",
+      "as_owner": "Isaac Amissah",
+      "as_company": "Amis Solutions, Inc",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Isaiah Revelle - NDS",
+      "office_id": "19717",
+      "as_owner": "Isaiah Revelle",
+      "as_company": "Legacy Specialized Acquisitions, Inc.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Jairo Ruiz - NDS",
+      "office_id": "21270",
+      "as_owner": "Jairo Ruiz",
+      "as_company": "Profits Management, Inc.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "James Andorful - NDS",
+      "office_id": "12044",
+      "as_owner": "James Andorful",
+      "as_company": "Ascension Management, Inc.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Jose Velasquez - NDS",
+      "office_id": "22434",
+      "as_owner": "Jose Velasquez",
+      "as_company": "Legacy Shore Marketing, Inc.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Joseph Delgado - NDS",
+      "office_id": "20788",
+      "as_owner": "Joseph Delgado",
+      "as_company": "Golden View Solutions, Inc.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Juan Lucio - NDS",
+      "office_id": "6871",
+      "as_owner": "Juan Ignacio Lucio",
+      "as_company": "Lucio Marketing, Inc.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Justin Fermin - NDS",
+      "office_id": "23425",
+      "as_owner": "Justin Fermin",
+      "as_company": "Code Marketing Executives, Inc.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Karrington Moody - NDS",
+      "office_id": "21757",
+      "as_owner": "Karrington Moody",
+      "as_company": "Coastal Creative Concepts, Inc.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Khalil Mansour - NDS",
+      "office_id": "11901",
+      "as_owner": "KHALIL MANSOUR",
+      "as_company": "ALPHALETE MANAGEMENT GROUP, INC.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Kyle Campas - NDS",
+      "office_id": "23230",
+      "as_owner": "Kyle Campas",
+      "as_company": "Palm City Management, Inc.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "LJ Brown - NDS",
+      "office_id": "22232",
+      "as_owner": "Lajavius Brown",
+      "as_company": "Timeless Management Agency, Inc.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Logan Waite - NDS",
+      "office_id": "20433",
+      "as_owner": "Logan Waite",
+      "as_company": "TriMkt, Inc.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Maxamad Aden - NDS",
+      "office_id": "23066",
+      "as_owner": "Maxamad Aden",
+      "as_company": "Maximal Management, Inc.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Milan Godbolt - NDS",
+      "office_id": "21037",
+      "as_owner": "Milan Godbolt",
+      "as_company": "Arise Solutions Inc.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Noah Dubale - NDS",
+      "office_id": "23356",
+      "as_owner": "Noah Dubale",
+      "as_company": "Oracle Acquisitions, Inc",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Samuel Acay - NDS",
+      "office_id": "23751",
+      "as_owner": "Samuel Acay",
+      "as_company": "Dynasty Growth Group, Inc",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Taylor Nickerson - NDS",
+      "office_id": "20886",
+      "as_owner": "Taylor Nickerson",
+      "as_company": "Legacy Marketing, Inc",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    }
+  ],
+  "needs_review": [],
+  "skip": [
+    {
+      "sheet_tab": "NDS Template",
+      "reason": "template tab, not an office"
+    },
+    {
+      "sheet_tab": "Abdallah Ghousheh - NDS",
+      "reason": "2026-09-22: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    },
+    {
+      "sheet_tab": "Aiden Atoori - NDS",
+      "reason": "2026-09-22: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    },
+    {
+      "sheet_tab": "Alejandro Balderas - NDS",
+      "reason": "2026-09-22: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    },
+    {
+      "sheet_tab": "Aram Muradyan - NDS",
+      "reason": "2026-09-22: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    },
+    {
+      "sheet_tab": "Bethany/Alex Jun/Haberlach - NDS",
+      "reason": "2026-09-22: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    },
+    {
+      "sheet_tab": "Daighn Dunn - NDS",
+      "reason": "2026-09-22: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    },
+    {
+      "sheet_tab": "Dana Iverson - NDS",
+      "reason": "2026-09-22: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    },
+    {
+      "sheet_tab": "Devin Vidal - NDS",
+      "reason": "2026-09-22: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    },
+    {
+      "sheet_tab": "Eli Goldberg - NDS",
+      "reason": "2026-09-22: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    },
+    {
+      "sheet_tab": "Gilberto Tortolero - NDS",
+      "reason": "2026-09-22: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    },
+    {
+      "sheet_tab": "Jarrad Nwameme - NDS",
+      "reason": "2026-09-22: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    },
+    {
+      "sheet_tab": "Jayden Lewis - NDS",
+      "reason": "2026-09-22: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    },
+    {
+      "sheet_tab": "Jean Roy - NDS",
+      "reason": "2026-09-22: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    },
+    {
+      "sheet_tab": "Joey Ortiz - NDS",
+      "reason": "2026-09-22: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    },
+    {
+      "sheet_tab": "Joshua Veninga - NDS",
+      "reason": "2026-09-22: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    },
+    {
+      "sheet_tab": "Mckinley Harris - NDS",
+      "reason": "2026-09-22: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    },
+    {
+      "sheet_tab": "Orlando Cantu - NDS",
+      "reason": "2026-09-22: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    },
+    {
+      "sheet_tab": "Osi Ikhuoria - NDS",
+      "reason": "2026-09-22: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    },
+    {
+      "sheet_tab": "Rudy Soto - NDS",
+      "reason": "2026-09-22: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    },
+    {
+      "sheet_tab": "Sarah Park - NDS",
+      "reason": "2026-09-22: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    },
+    {
+      "sheet_tab": "Ty Jackson - NDS",
+      "reason": "2026-09-22: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    },
+    {
+      "sheet_tab": "William Smith - NDS",
+      "reason": "2026-09-22: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    },
+    {
+      "sheet_tab": "Yadieski Sandy Escalona Marin - NDS",
+      "reason": "2026-09-22: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    },
+    {
+      "sheet_tab": "Zaid Arabyat - NDS",
+      "reason": "2026-09-22: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    }
+  ]
+}

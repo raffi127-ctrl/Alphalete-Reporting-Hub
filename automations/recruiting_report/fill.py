@@ -86,6 +86,17 @@ _CAPTAINSHIP_CONFIG = {
         "template_tab":      "NDS Template",     # default; per-campaign selection TBD
         "mapping_filename":  "office-mapping-alphalete-org.json",
     },
+    # NDS Program - Focus Report (Rafael 2026-09-22): one '<Owner> - NDS' tab
+    # per owner in the NDS tracker, org or not. Recruiting only for the owners
+    # whose office AppStream shows us; the rest sit in `skip` and carry a
+    # 'No access to this office' note (A22). OPT comes from opt_nds
+    # --sheet-id (registry id nds_program_focus), so always run with --no-opt.
+    "NDS-Program": {
+        "sheet_id_fallback": "1Vu_J7bcSpreIBcsYuAVEQMusL9-RaOSgB65DiKxrYtI",
+        "master_tab":        "(no master tab)",  # none on this sheet -> fill_master_row skips
+        "template_tab":      "NDS Template",
+        "mapping_filename":  "office-mapping-nds-program.json",
+    },
 }
 if CAPTAINSHIP not in _CAPTAINSHIP_CONFIG:
     raise SystemExit(
