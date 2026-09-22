@@ -19,6 +19,14 @@ inside this window fill numbers for real.
 
 It uses the SAME Chrome profile the walk uses for that office, so nothing about
 the session is special-cased. Run it on the machine named in the alert.
+
+AND THEN IT DRAINS THE QUEUE (the reason to bother). The gate opens for this
+browser SESSION, and the scheduled walk relaunches Chrome every tick — so a
+clear that just ends buys a few minutes. Instead, once the check is past, this
+runs the ordinary live walk inside the very session the person opened: numbers
+filled, applicants sent, for as long as the queue lasts. `--just-clear` skips it.
+The scheduled agent is paused while this runs (it would pkill this window's
+Chrome on its next tick) and restarted afterwards.
 """
 from __future__ import annotations
 
@@ -68,7 +76,7 @@ def _challenged(pg) -> tuple[bool, str, str]:
     return blocked, title, body
 
 
-def run(office: str, hold_s: int = DEFAULT_HOLD_S) -> int:
+def run(office: str, hold_s: int = DEFAULT_HOLD_S, drain: bool = True) -> int:
     from automations.applicant_push import offices
     from automations.oat_processing import run as oat
     from automations.resume_pushing import run as rp
@@ -103,23 +111,78 @@ def run(office: str, hold_s: int = DEFAULT_HOLD_S) -> int:
               flush=True)
         print("[clear] (it often clears on its own — give it ~40s first)", flush=True)
         t0 = time.time()
+        cleared = False
         while time.time() - t0 < hold_s:
             blocked, title, body = _challenged(pg)
             if title == "(window closed)":
                 print("[clear] window closed — stopping", flush=True)
                 return 1
             if not blocked:
+                cleared = True
                 print(f"[clear] ✅ through the check after "
                       f"{int(time.time() - t0)}s — title={title!r}", flush=True)
-                print("[clear] the walk's next tick reads numbers normally; "
-                      "you can close this window", flush=True)
-                return 0
+                break
             print(f"[clear] {int(time.time() - t0):4d}s still on the check "
                   f"({title!r})", flush=True)
             pg.wait_for_timeout(10000)
-        print(f"[clear] still on the check after {hold_s}s — give up for now; "
-              f"the walk keeps retrying on its own", flush=True)
-    return 4
+        if not cleared:
+            print(f"[clear] still on the check after {hold_s}s — giving up for now; "
+                  f"the walk keeps retrying on its own", flush=True)
+            return 4
+        try:
+            pg.close()
+        except Exception:  # noqa: BLE001
+            pass
+        if not drain:
+            print("[clear] done — you can close this window", flush=True)
+            return 0
+        # DRAIN, and this is the whole point of the window. The gate is open for
+        # THIS browser session only: the scheduled walk relaunches Chrome every
+        # tick and meets a brand-new check, so a clear that ends here buys a few
+        # minutes. Walking the queue inside the session the human just opened
+        # turns one tick of their time into the whole queue's numbers.
+        print("[clear] gate is open — walking the queue in THIS session now "
+              "(this is the real work: numbers filled, applicants sent)",
+              flush=True)
+        oat.reset_cf_session()
+        oat._mark_cf_cleared()
+        try:
+            rc = oat.run_walk(page, live=True)
+            print(f"[clear] walk finished (rc={rc})", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"[clear] walk error: {type(e).__name__}: {str(e)[:160]}",
+                  flush=True)
+            return 5
+    return 0
+
+
+AGENT_PLIST = "~/Library/LaunchAgents/com.alphalete.applicant-push.plist"
+
+
+def _agent(action: str) -> bool:
+    """bootout/bootstrap the scheduled push agent. It relaunches Chrome on its own
+    every couple of minutes and pkills the office profile when it does — which
+    would close this window under the person standing at it. Best effort: a
+    machine without the agent (a laptop) just carries on."""
+    import os
+    import subprocess
+    plist = os.path.expanduser(AGENT_PLIST)
+    if not os.path.exists(plist):
+        return False
+    try:
+        uid = os.getuid()
+        r = subprocess.run(["launchctl", action, f"gui/{uid}"] +
+                           ([plist] if action == "bootstrap" else [plist]),
+                           capture_output=True, text=True)
+        ok = r.returncode == 0
+        print(f"[clear] scheduled push agent "
+              f"{'paused' if action == 'bootout' else 'restarted'}"
+              f"{'' if ok else ' (failed: ' + (r.stderr or '').strip()[:60] + ')'}",
+              flush=True)
+        return ok
+    except Exception as e:  # noqa: BLE001
+        print(f"[clear] could not {action} the agent ({type(e).__name__})", flush=True)
+        return False
 
 
 def main(argv=None) -> int:
@@ -129,8 +192,15 @@ def main(argv=None) -> int:
                     help="office id, e.g. 11280 (see applicant_push/offices.py)")
     ap.add_argument("--hold", type=int, default=DEFAULT_HOLD_S,
                     help="seconds to keep the window open waiting for the tick")
+    ap.add_argument("--just-clear", action="store_true",
+                    help="stop once the check is cleared; do NOT walk the queue")
     args = ap.parse_args(argv)
-    return run(args.office, args.hold)
+    paused = _agent("bootout")
+    try:
+        return run(args.office, args.hold, drain=not args.just_clear)
+    finally:
+        if paused:
+            _agent("bootstrap")
 
 
 if __name__ == "__main__":
