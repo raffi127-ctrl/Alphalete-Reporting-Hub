@@ -57,6 +57,11 @@ def changed_lines(board_values) -> List[str]:
     return out
 
 
+def _set_hidden(sh, sheet_id: int, hidden: bool) -> None:
+    sh.batch_update({"requests": [{"updateSheetProperties": {
+        "properties": {"sheetId": sheet_id, "hidden": hidden}, "fields": "hidden"}}]})
+
+
 def build_png(tab: str = rep.SANDBOX_TAB) -> Tuple[Path, str, str, List[str]]:
     """(png, the picture's title, its status line, what changed on earlier days)."""
     from automations.org_sales_board.screenshot_email import _export_png, _access_token
@@ -72,8 +77,22 @@ def build_png(tab: str = rep.SANDBOX_TAB) -> Tuple[Path, str, str, List[str]]:
     status = values[rep.STATUS_ROW - 1][0] if len(values) >= rep.STATUS_ROW else ""
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     out = OUT_DIR / "call_list_to_2nd.png"
-    _export_png(pic.id, f"A1:{rep._a1col(width)}{last}", out, _access_token(),
-                spreadsheet_id=rep.SHEET_ID)
+    # The picture tab is kept HIDDEN so the workbook stays clean (Eve,
+    # 2026-09-21) -- but a hidden tab exports as a blank page. So: show it for
+    # the export, and hide it again whatever happens.
+    # Read the flag FRESH: the opened workbook can be a cached copy from before
+    # the tab was hidden, and trusting it exported a blank page (2026-09-21).
+    meta = sh.fetch_sheet_metadata({"fields": "sheets(properties(sheetId,hidden))"})
+    hidden = any(s["properties"]["sheetId"] == pic.id and s["properties"].get("hidden")
+                 for s in meta["sheets"])
+    if hidden:
+        _set_hidden(sh, pic.id, False)
+    try:
+        _export_png(pic.id, f"A1:{rep._a1col(width)}{last}", out, _access_token(),
+                    spreadsheet_id=rep.SHEET_ID)
+    finally:
+        if hidden:
+            _set_hidden(sh, pic.id, True)
     board = fill.worksheet_ci(sh, tab).get_all_values()
     return out, title, status, changed_lines(board)
 

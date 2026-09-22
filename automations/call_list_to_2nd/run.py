@@ -86,7 +86,8 @@ GAP_COLS = 1
 TITLE = "CALL LIST TO 2ND ROUND"
 # What goes to Slack (Eve, 2026-09-21): ONE picture of ONE day -- the last full
 # day (Friday on a Monday). Its own tab so the export is just that day with the
-# header on top. Visible on purpose: a hidden tab exports as a blank page.
+# header on top. Kept HIDDEN (Eve: a clean workbook); a hidden tab exports as a
+# blank page, so slack_post shows it just for the export and hides it again.
 PICTURE_SUFFIX = " (picture)"
 
 # field key -> the header text on Eve's tab (matched loosely: case/spaces).
@@ -1134,6 +1135,9 @@ def run(*, tab: str = SANDBOX_TAB, dry_run: bool = False, use_appstream: bool = 
         logfn(f"  creating {pic_tab!r}")
         pic_ws = sh.duplicate_sheet(ws.id, new_sheet_name=pic_tab)
     write(pic_ws, order, pic_lay, [pic_title], status, logfn, sides=1)
+    # Hidden on every write (the cached isSheetHidden flag can be stale).
+    sh.batch_update({"requests": [{"updateSheetProperties": {
+        "properties": {"sheetId": pic_ws.id, "hidden": True}, "fields": "hidden"}}]})
     return {"picture_tab": pic_tab, "written": True, "tab": ws.title, "rows": len(lay.values), "changed": len(moved),
             "changes": [f"{c.date:%a} {md(c.date)}: {c.text}" for c in moved], "notes": notes}
 
