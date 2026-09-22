@@ -22,6 +22,7 @@ are sufficient for the GET endpoints we need.
 from __future__ import annotations
 
 import csv
+import datetime as dt
 import io
 import json
 from pathlib import Path
@@ -97,10 +98,32 @@ def download_view_csv(workbook: str, view: str, out_path: Path,
     # in "every stale pull is heard". opt_je / opt_nds ride this.
     try:
         from automations.shared import tableau_freshness
-        tableau_freshness.check_export(out_path, view_url=url, sheet=view)
+        tableau_freshness.check_export(out_path, view_url=url, sheet=view,
+                                       needs=_pinned_needs(params))
     except Exception:
         pass
     return out_path
+
+
+def _pinned_needs(params: Optional[Dict[str, str]],
+                  today: Optional[dt.date] = None) -> Optional[dt.date]:
+    """The date a week-pinned pull can reach at most: its 'Max Date'. A pull
+    pinned to Mon 9/14..Sun 9/20 and judged on Tue 9/22 has 9/20 as its
+    newest row BY DESIGN — the daily bar ('needs 9/21') opened a false stale
+    thread on DropshipV_2/SARAPLUSSALESSUMMARYBYDAY (2026-09-22). Only ever
+    loosens: a Max Date at or past the daily bar returns None (default bar)."""
+    raw = (params or {}).get("Max Date")
+    if not raw:
+        return None
+    try:
+        pinned = dt.date.fromisoformat(str(raw)[:10])
+    except ValueError:
+        return None
+    from automations.shared.tableau_freshness import DEFAULT_MAX_DAYS_BEHIND
+    today = today or dt.date.today()
+    if pinned < today - dt.timedelta(days=DEFAULT_MAX_DAYS_BEHIND):
+        return pinned
+    return None
 
 
 def parse_csv(path: Path) -> List[List[str]]:
