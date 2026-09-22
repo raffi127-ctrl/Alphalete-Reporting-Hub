@@ -233,32 +233,42 @@ def _is(bg, colour) -> bool:
                             for i, k in enumerate(("red", "green", "blue")))
 
 
-GROUPS = ("Owner Submitted", "Ready for Owner Submit",
+GROUPS = ("Owner Submitted", "New Lucy Owner Submitted",
           "Waiting on BG / Still Missing Checks")
 
 
-def split(recs: List[dict]):
-    """Three pictures (Megan 2026-09-22): owner submitted (the box is ticked) /
-    ready for owner submit (the box is BLUE — the sweep's own verdict) /
-    everyone else. Yellow (only the BG check pending) goes in the third: it
-    can't be submitted yet."""
+def _full(r: dict) -> str:
+    from automations.digi_docs import namematch
+    return namematch.norm(f"{r['Name']['v']} {r['Last Name']['v']}")
+
+
+def split(recs: List[dict], lucy_new=()):
+    """Three pictures (Megan 2026-09-22):
+      1  Owner Submitted — every ticked box, INCLUDING the ones Lucy just did
+         ("that 21 should include the 4 that Lucy did");
+      2  New Lucy Owner Submitted — only the people Lucy submitted THIS pass
+         (a subset of 1);
+      3  everyone not submitted: waiting on BG, missing checks, or a submit
+         Lucy couldn't do (those are also named on the ❌ line)."""
+    from automations.digi_docs import namematch
+    new = {namematch.norm(n) for n in lucy_new or ()}
     out = {g: [] for g in GROUPS}
     for r in recs:
-        box = r["Owner Submit"]
-        if box["v"].strip().lower() in config.TRUTHY:
+        if r["Owner Submit"]["v"].strip().lower() in config.TRUTHY:
             out[GROUPS[0]].append(r)
-        elif _is(box["bg"], config.READY_BLUE):
-            out[GROUPS[1]].append(r)
+            if _full(r) in new:
+                out[GROUPS[1]].append(r)
         else:
             out[GROUPS[2]].append(r)
     return [(g, out[g]) for g in GROUPS]
 
 
-def draw_set(recs: List[dict], week: str, stamp: str, clock: str) -> list:
+def draw_set(recs: List[dict], week: str, stamp: str, clock: str,
+             lucy_new=()) -> list:
     """Render one PNG per non-empty group; returns [(group, count, png)]. An
     empty group is skipped, never drawn as a blank picture."""
     made = []
-    for i, (g, rows) in enumerate(split(recs), start=1):
+    for i, (g, rows) in enumerate(split(recs, lucy_new), start=1):
         if not rows:
             continue
         png = render(rows, f"{g} ({len(rows)})  ·  New Starts {week}  ·  {clock}",
@@ -268,28 +278,28 @@ def draw_set(recs: List[dict], week: str, stamp: str, clock: str) -> list:
 
 
 def caption(made, failures=()) -> str:
-    """Megan 2026-09-22 — exactly this shape, one line per group:
+    """Megan 2026-09-22 — exactly this shape:
         OBCL update
-        ✅ 21 owner submitted
-        ➡️ 4 ready for owner submit
-        ⚠️ 9 waiting on BG / still missing checks"""
+        ✅ 21 owner submitted          (everyone, Lucy's included)
+        ➡️ 4 New Lucy Owner Submitted  (this pass)
+        ⚠️ 9 waiting on BG / still missing checks
+        ❌ 1 Couldn't owner submit in OV: Jane Doe — confirm box would not tick
+    (count first, then each name with its reason; several are joined by "; ")"""
     counts = {g: n for g, n, _ in made}
     lines = [("✅", GROUPS[0], "owner submitted"),
-             ("➡️", GROUPS[1], "ready for owner submit"),
+             ("➡️", GROUPS[1], "New Lucy Owner Submitted"),
              ("⚠️", GROUPS[2], "waiting on BG / still missing checks")]
     out = ["OBCL update"] + [f"{e} {counts.get(g, 0)} {t}" for e, g, t in lines]
-    # A submit this pass tried and OwnerVille did NOT confirm (Megan
-    # 2026-09-22: "if you can't OS them in OV then that's what you would put
-    # in the group text").
-    # Megan's wording; the technical reason stays in the run log. No pronoun —
-    # a name doesn't say who someone is.
-    for name, _why in failures or ():
-        out.append(f"❌ Couldn't owner submit in OV: {name} — ready to go but "
-                   "needs done manually")
+    # Megan's latest format (2026-09-22): a COUNT of who needs doing by hand,
+    # then each name with its reason. The alerts channel gets the same list.
+    if failures:
+        who = "; ".join(f"{n} — {why}" for n, why in failures)
+        out.append(f"❌ {len(failures)} Couldn't owner submit in OV: {who}")
     return "\n".join(out)
 
 
-def after_pass(ws, values, *, live: bool, text: bool, failures=()) -> str:
+def after_pass(ws, values, *, live: bool, text: bool, failures=(),
+               lucy_new=()) -> str:
     """Called by run.py after a pass. Returns a one-line outcome for the log."""
     recs = collect(ws, values)
     if not recs:
@@ -298,7 +308,8 @@ def after_pass(ws, values, *, live: bool, text: bool, failures=()) -> str:
     stamp = now.strftime("%Y-%m-%d_%H%M")
     clock = f"{now.hour % 12 or 12}:{now.minute:02d} {'PM' if now.hour >= 12 else 'AM'}"
     ch = this_weeks_chart(values)
-    made = draw_set(recs, ch.get("date_text") or ws.title, stamp, clock)
+    made = draw_set(recs, ch.get("date_text") or ws.title, stamp, clock,
+                    lucy_new)
     names = " ".join(p.name for _, _, p in made)
     if made:  # the caption travels with the pictures, next to the first one
         made[0][2].with_suffix(".txt").write_text(caption(made, failures))

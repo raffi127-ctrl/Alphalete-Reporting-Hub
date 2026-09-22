@@ -295,12 +295,26 @@ class OwnerSubmitGate(unittest.TestCase):
 class FailureCaption(unittest.TestCase):
     def test_failed_submit_is_named_in_the_text(self):
         from automations.obcl_ov_sweep import snapshot as sn
-        made = [(sn.GROUPS[0], 21, None), (sn.GROUPS[1], 1, None)]
+        made = [(sn.GROUPS[0], 21, None), (sn.GROUPS[1], 4, None)]
         cap = sn.caption(made, [("Jane Doe", "confirm box would not tick")])
-        self.assertIn("❌ Couldn't owner submit in OV: Jane Doe — ready to go "
-                      "but needs done manually", cap)
-        self.assertNotIn("confirm box", cap)
-        self.assertTrue(cap.startswith("OBCL update\n✅ 21 owner submitted"))
+        self.assertIn("❌ 1 Couldn't owner submit in OV: Jane Doe — "
+                      "confirm box would not tick", cap)
+        self.assertTrue(cap.startswith("OBCL update\n✅ 21 owner submitted\n"
+                                       "➡️ 4 New Lucy Owner Submitted"))
+
+    def test_lucy_new_are_counted_in_owner_submitted_too(self):
+        from automations.obcl_ov_sweep import snapshot as sn
+        def rec(first, last, own):
+            r = {c: {"v": "", "bg": None} for c in sn.COLUMNS}
+            r["Name"]["v"], r["Last Name"]["v"] = first, last
+            r["Owner Submit"]["v"] = own
+            return r
+        recs = [rec("Ann", "A", "TRUE"), rec("Bo", "B", "TRUE"),
+                rec("Cy", "C", "FALSE")]
+        groups = dict(sn.split(recs, lucy_new=["Bo B"]))
+        self.assertEqual(len(groups[sn.GROUPS[0]]), 2)   # includes Lucy's
+        self.assertEqual(len(groups[sn.GROUPS[1]]), 1)   # just Lucy's
+        self.assertEqual(len(groups[sn.GROUPS[2]]), 1)
 
     def test_no_failures_no_extra_line(self):
         from automations.obcl_ov_sweep import snapshot as sn

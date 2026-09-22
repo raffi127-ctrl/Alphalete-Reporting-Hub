@@ -59,6 +59,7 @@ def match(people, reps: dict):
 
 
 SUBMIT_FAILURES: list = []   # [(name, reason)] this pass — for the group text
+LUCY_SUBMITTED: list = []    # names Lucy owner-submitted THIS pass
 
 
 def _picture(ws, args) -> None:
@@ -70,7 +71,8 @@ def _picture(ws, args) -> None:
         from automations.obcl_ov_sweep import snapshot
         _, values = _open_tab(args.tab or ws.title)
         print(snapshot.after_pass(ws, values, live=args.tick, text=args.text,
-                                  failures=SUBMIT_FAILURES), flush=True)
+                                  failures=SUBMIT_FAILURES,
+                                  lucy_new=LUCY_SUBMITTED), flush=True)
     except Exception as e:                                  # noqa: BLE001
         print(f"picture: FAILED ({type(e).__name__}: {str(e)[:200]})",
               flush=True)
@@ -99,9 +101,39 @@ def _submit(ready, writes, *, live: bool) -> None:
                 # Megan 2026-09-22: a submit that didn't go through goes in the
                 # group text. Detail reads "<Name>: <reason>" — keep the reason.
                 SUBMIT_FAILURES.append((p.name, detail.split(": ", 1)[-1]))
+            if outcome == "submitted":
+                LUCY_SUBMITTED.append(p.name)
             if outcome in ("submitted", "already"):
                 writes.append((p, "Owner Submit"))
                 ready.remove(p)
+
+
+ALERT_CHANNEL = "C0BK5PRG259"          # #claudecorrections-and-requests
+ALERT_TAGS = ("<@U04G5HJBGFN>", "<@U088E2KJEV8>")   # Megan, Eve
+
+
+def _alert_failures(live: bool) -> None:
+    """Megan 2026-09-22: a submit Lucy couldn't do goes to the alerts channel,
+    tagging Megan and Eve, so it gets corrected. One incident thread
+    (failure-obcl_owner_submit): a same-day repeat updates it rather than
+    posting again. The technical reason lives HERE, not in the group text."""
+    if not (live and SUBMIT_FAILURES):
+        return
+    body = [" ".join(ALERT_TAGS) + " — owner submit needs doing by hand in "
+            "OwnerVille (then Lucy ticks the OBCL on the next pass):"]
+    body += [f"• {n} — {why}" for n, why in SUBMIT_FAILURES]
+    title = (f"OBCL: couldn't owner submit {len(SUBMIT_FAILURES)} "
+             f"new start{'s' if len(SUBMIT_FAILURES) != 1 else ''} in OwnerVille")
+    try:
+        from automations.shared import incident_thread as inc
+        inc.open_or_followup(key="failure-obcl_owner_submit", title=title,
+                             body=body, channel=ALERT_CHANNEL,
+                             subjects=[n for n, _ in SUBMIT_FAILURES],
+                             label="OBCL owner submit")
+        print(f"  alert posted: {title}", flush=True)
+    except Exception as e:                                  # noqa: BLE001
+        print(f"  ⚠ owner-submit alert FAILED to post ({type(e).__name__}: "
+              f"{str(e)[:160]})", flush=True)
 
 
 def _key(p) -> str:
@@ -255,6 +287,7 @@ def main(argv=None) -> int:
 
     if ready and args.submit:
         _submit(ready, writes, live=args.tick)
+        _alert_failures(args.tick)
     # RE-READ BEFORE WRITING (2026-09-21, 7:22pm). The OwnerVille part takes
     # minutes; someone deleted last week's chart and inserted a Classroom
     # column meanwhile, and colours painted at the rows/columns read at the
