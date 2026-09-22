@@ -25,9 +25,11 @@ SOURCE_CHANNEL_ID = "C0AUAS88FGW"
 # channel were taken out with `--retire-channel C0AUAS88FGW`.
 LIVE_CHANNEL_ID = "C0C3LCLKZTN"
 
-# True = the nightly tick posts nothing (explicit --post runs still work).
-# Eve 2026-09-21: hold the new channel until the crops are checked.
-NIGHTLY_PAUSED = True
+# The scheduled tick posts nothing for days BEFORE this date (an explicit
+# `--nightly --date` still runs). 2026-09-21: the first night in the new
+# channel is posted by hand, so the tick can't race it and double-post; from
+# 9/22 on the tick runs as usual. "" = never paused.
+NIGHTLY_PAUSED_BEFORE = "2026-09-22"
 
 # "Every day at the end of the day": the nightly agent ticks every 30 min and
 # posts the day once it's past this time, Central. The last 1st-round slot is

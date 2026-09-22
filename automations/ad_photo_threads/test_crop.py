@@ -50,7 +50,7 @@ class CropTests(unittest.TestCase):
         # The model sees 1568x784 (2000x1000 scaled); its box is the left half.
         cl = FakeClaude([_tile("Ana Uno"), _tile("Bo Dos", found=False)])
         out = crop.crop_names(_png(), ["Ana Uno", "Bo Dos"], "F1", client=cl)
-        self.assertIsNone(out["Bo Dos"])                   # not seen -> full shot
+        self.assertEqual(out["Bo Dos"], b"")               # not seen -> no photo
         w, h = Image.open(io.BytesIO(out["Ana Uno"])).size
         self.assertAlmostEqual(w, 1040, delta=3)           # 1000 + 4% pad
         self.assertAlmostEqual(h, 520, delta=3)
@@ -63,17 +63,18 @@ class CropTests(unittest.TestCase):
         self.assertTrue(out["Ana Uno"])
         self.assertEqual(cl.calls, [])
 
-    def test_silly_boxes_fall_back_to_full_shot(self):
+    def test_tiny_box_is_not_found_whole_frame_is_the_person(self):
         tiny = _tile("Ana Uno", box=(10, 10, 30, 30))
         whole = _tile("Bo Dos", box=(0, 0, 1568, 784))
         out = crop.crop_names(_png(), ["Ana Uno", "Bo Dos"], "F2",
                               client=FakeClaude([tiny, whole]))
-        self.assertEqual(out, {"Ana Uno": None, "Bo Dos": None})
+        self.assertEqual(out["Ana Uno"], b"")
+        self.assertEqual(Image.open(io.BytesIO(out["Bo Dos"])).size, (2000, 1000))
 
-    def test_model_failure_never_raises(self):
-        out = crop.crop_names(_png(), ["Ana Uno"], "F3",
-                              client=FakeClaude([], stop="refusal"))
-        self.assertEqual(out, {"Ana Uno": None})
+    def test_model_failure_raises_so_the_night_retries(self):
+        with self.assertRaises(RuntimeError):
+            crop.crop_names(_png(), ["Ana Uno"], "F3",
+                            client=FakeClaude([], stop="refusal"))
 
 
 if __name__ == "__main__":

@@ -61,9 +61,10 @@ class PublishTests(unittest.TestCase):
         d = mock.patch("automations.sara_down.run._download_image",
                        return_value=(b"\x89PNG", "png"))
         d.start(); self.addCleanup(d.stop)
-        # No Claude call in tests: the cropper "finds" nobody -> full shots.
+        # No Claude call in tests: by default the cropper finds everybody.
         c = mock.patch("automations.ad_photo_threads.crop.crop_names",
-                       side_effect=lambda data, names, fid="": {n: None for n in names})
+                       side_effect=lambda data, names, fid="": {n: b"PNG" + n.encode()
+                                                                for n in names})
         self.crop = c.start(); self.addCleanup(c.stop)
 
     def tearDown(self):
@@ -73,7 +74,7 @@ class PublishTests(unittest.TestCase):
         cl = FakeSlack()
         c = post.publish(_rep(), "D1", cl=cl, pilot=True)
         self.assertEqual(c["threads_new"], 1)
-        self.assertEqual(c["photos"], 1)            # shared shot deduped
+        self.assertEqual(c["photos"], 2)            # one shot, one tile each
         self.assertIn("[PILOT]", cl.posts[0]["text"])   # intro
         self.assertIn("[PILOT]", cl.posts[1]["text"])   # thread parent
         body = cl.uploads[0]["initial_comment"]
@@ -81,6 +82,7 @@ class PublishTests(unittest.TestCase):
         self.assertIn("✅ Ana Uno · 3⭐ · Alexa", body)
         self.assertIn("❌ Bo Dos", body)
         self.assertNotIn("group call", body)         # note retired 9/21
+        self.assertNotIn("No photo", body)
         self.assertNotIn("Cy Tres", body)            # unknown ad is never posted
         # header = bold title, then edited in place with the week's numbers
         self.assertEqual(cl.posts[1]["text"],
@@ -97,6 +99,22 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(len(up["file_uploads"]), 2)  # Ana's tile + Bo's tile
         self.assertNotIn("group call", up["initial_comment"])
         self.assertEqual(self.crop.call_args[0][1], ["Ana Uno", "Bo Dos"])
+
+    def test_name_not_found_posts_no_photo_and_says_so(self):
+        self.crop.side_effect = lambda data, names, fid="": {
+            n: (b"" if n == "Bo Dos" else b"PNG") for n in names}
+        cl = FakeSlack()
+        c = post.publish(_rep(), "D1", cl=cl)
+        self.assertEqual(c["photos"], 1)                     # Ana's tile only
+        self.assertIn("_No photo: Bo Dos (name not visible on the Zoom)_",
+                      cl.uploads[0]["initial_comment"])
+
+    def test_nobody_found_posts_text_only(self):
+        self.crop.side_effect = lambda data, names, fid="": {n: b"" for n in names}
+        cl = FakeSlack()
+        c = post.publish(_rep(), "D1", cl=cl)
+        self.assertEqual((c["photos"], len(cl.uploads)), (0, 0))
+        self.assertIn("No photo: Ana Uno", cl.posts[-1]["text"])
 
     def test_week_stats_add_up_across_days(self):
         post.publish(_rep(), "D1", cl=FakeSlack())          # Fri: 1 of 2 removed, 3⭐
@@ -150,7 +168,7 @@ class PublishTests(unittest.TestCase):
             raise RuntimeError("missing_scope pins:write")
         cl.pins_add = boom
         c = post.publish(_rep(), "D1", cl=cl)
-        self.assertEqual((c["pin_errors"], c["photos"]), (1, 1))
+        self.assertEqual((c["pin_errors"], c["photos"]), (1, 2))
 
     def test_pin_reminder_lists_new_then_last_weeks(self):
         refused = FakeSlack()

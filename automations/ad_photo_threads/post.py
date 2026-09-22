@@ -112,11 +112,13 @@ def day_stats(cands: List[collect.Candidate]) -> dict:
             "stars": [n for n in (_star_num(c.stars) for c in cands) if n is not None]}
 
 
-def reply_text(rep: collect.DayReport, cands: List[collect.Candidate]) -> str:
+def reply_text(rep: collect.DayReport, cands: List[collect.Candidate],
+               not_visible: Optional[List[str]] = None) -> str:
     """Megan's layout (9/21): the day, then per ApplicantStream its name +
     account number, the count, and one line per candidate. No "group call"
     note (Eve 9/21: stale now that photos are cut to the ad's people); a
-    shot the cropper couldn't cut is listed in the run log instead."""
+    person whose name the cropper can't find on their screenshots gets no
+    photo and a "No photo" line (`not_visible`)."""
     # month/day by hand: `%-m` is Mac-only and dies on Windows.
     lines = [f"*{rep.day:%a} {rep.day.month}/{rep.day.day}*"]
     streams: Dict[str, List[collect.Candidate]] = {}
@@ -133,6 +135,8 @@ def reply_text(rep: collect.DayReport, cands: List[collect.Candidate]) -> str:
     no_shot = [c.name for c in cands if not c.images]
     if no_shot:
         lines.append(f"_No screenshot: {', '.join(no_shot)}_")
+    for n in not_visible or []:
+        lines.append(f"_No photo: {n} (name not visible on the Zoom)_")
     return "\n".join(lines)
 
 
@@ -166,29 +170,32 @@ def plan(rep: collect.DayReport) -> List[dict]:
 
 
 def _uploads(item: dict, tmp: str, crop: bool) -> tuple:
-    """Files to attach + the names whose group shot went up uncut. A photo is cut to
-    each of this ad's people on it (Raf 9/21: no candidates from other ads);
-    a name the cropper can't find keeps the full screenshot."""
+    """Files to attach + the people with no photo at all. Each screenshot is
+    cut to this ad's people on it (Raf 9/21: no candidates from other ads); a
+    name the cropper can't find gets nothing from that shot (Eve 9/21: never
+    fall back to the whole group call). crop=False posts shots whole."""
     from automations.sara_down.run import _download_image
     from automations.ad_photo_threads import crop as cropper
-    uploads, uncut = [], []
+    uploads, seen = [], set()
     for i, shot in enumerate(item["shots"]):
         f = shot["file"]
         data, subtype = _download_image(f)
-        cuts = cropper.crop_names(data, shot["names"], f.get("id", "")) if crop else {}
-        got = [cuts.get(n) for n in shot["names"]]
-        if got and all(got):
-            for j, png in enumerate(got):
-                p = Path(tmp) / f"{i:02d}_{j}.png"
-                p.write_bytes(png)
-                uploads.append({"file": str(p), "filename": p.name})
+        if not crop:
+            p = Path(tmp) / f"{i:02d}.{subtype or 'png'}"
+            p.write_bytes(data)
+            uploads.append({"file": str(p), "filename": p.name})
+            seen.update(shot["names"])
             continue
-        p = Path(tmp) / f"{i:02d}.{subtype or 'png'}"
-        p.write_bytes(data)
-        uploads.append({"file": str(p), "filename": p.name})
-        if any(c.shared for c in item["cands"] if c.name in shot["names"]):
-            uncut += [n for n in shot["names"] if not cuts.get(n)]
-    return uploads, uncut
+        cuts = cropper.crop_names(data, shot["names"], f.get("id", ""))
+        for j, n in enumerate(shot["names"]):
+            if not cuts.get(n):
+                continue
+            p = Path(tmp) / f"{i:02d}_{j}.png"
+            p.write_bytes(cuts[n])
+            uploads.append({"file": str(p), "filename": p.name})
+            seen.add(n)
+    missing = [c.name for c in item["cands"] if c.images and c.name not in seen]
+    return uploads, missing
 
 
 def _pin(cl, channel: str, ts: str, add: bool) -> Optional[str]:
@@ -281,10 +288,10 @@ def publish(rep: collect.DayReport, channel: str, *, cl=None,
             _save_state(state)
 
         with tempfile.TemporaryDirectory() as tmp:
-            uploads, uncut = _uploads(item, tmp, crop)
-            if uncut:
-                print(f"  {item['title']!r}: group shot posted UNCUT for {', '.join(uncut)}")
-            text = item["text"]
+            uploads, missing = _uploads(item, tmp, crop)
+            if missing:
+                print(f"  {item['title']!r}: name not visible, no photo for {', '.join(missing)}")
+            text = reply_text(rep, item["cands"], not_visible=missing)
             if not uploads:
                 cl.chat_postMessage(channel=channel, thread_ts=ad["thread_ts"],
                                     text=text)

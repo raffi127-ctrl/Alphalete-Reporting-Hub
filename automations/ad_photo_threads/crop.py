@@ -7,10 +7,13 @@ Zoom labels every tile with the person's name, so Claude is handed the
 screenshot plus the names we want and returns each one's tile; we cut those
 out with Pillow and post only them.
 
-Anything that goes wrong (no API key, model can't find the name, a box that
-makes no sense) returns None for that name and the caller posts the full
-screenshot instead, exactly as before — a missing crop must never cost the
-day's photos.
+A name the model can't find on any tile (Zoom showed a phone number, a
+nickname, camera off) comes back EMPTY and the caller posts NO photo for that
+person, with a "No photo" line instead (Eve 9/21: never show candidates from
+other ads). A tile that fills the whole screenshot comes back as the whole
+screenshot — it IS that person. If Claude can't be reached at all, this
+RAISES: the night's post waits for the next tick rather than going out with
+no photos.
 
 Crops are cached under output/ad_photo_threads/crops/ by (Slack file id, name)
 so a re-run doesn't pay for the same screenshot twice.
@@ -113,11 +116,11 @@ def _box(t: dict, w: int, h: int) -> Optional[Tuple[int, int, int, int]]:
 
 
 def crop_names(data: bytes, names: List[str], file_id: str = "",
-               client=None) -> Dict[str, Optional[bytes]]:
-    """{name: PNG bytes of that person's tile, or None = post the full shot}."""
+               client=None) -> Dict[str, bytes]:
+    """{name: PNG of that person's tile, or b"" = not on this screenshot}."""
     from PIL import Image
 
-    out: Dict[str, Optional[bytes]] = {}
+    out: Dict[str, bytes] = {}
     todo = []
     for n in names:
         p = _cache_path(file_id, n)
@@ -127,34 +130,27 @@ def crop_names(data: bytes, names: List[str], file_id: str = "",
             todo.append(n)
     if not todo:
         return out
-    try:
-        img = Image.open(io.BytesIO(data))
-        img.load()
-        img = img.convert("RGB")
-        scale = min(1.0, MAX_EDGE / max(img.size))
-        small = img if scale >= 1.0 else img.resize(
-            (round(img.width * scale), round(img.height * scale)))
-        buf = io.BytesIO()
-        small.save(buf, "PNG")
-        tiles = _ask(buf.getvalue(), "image/png", small.size, todo, client)
-    except Exception as e:                         # noqa: BLE001 — full shot instead
-        print(f"  crop skipped ({type(e).__name__}: {str(e)[:120]})")
-        for n in todo:
-            out[n] = None
-        return out
+    img = Image.open(io.BytesIO(data))
+    img.load()
+    img = img.convert("RGB")
+    scale = min(1.0, MAX_EDGE / max(img.size))
+    small = img if scale >= 1.0 else img.resize(
+        (round(img.width * scale), round(img.height * scale)))
+    buf = io.BytesIO()
+    small.save(buf, "PNG")
+    tiles = _ask(buf.getvalue(), "image/png", small.size, todo, client)
 
     by_name = {str(t.get("name", "")).strip().lower(): t for t in tiles}
     for n in todo:
         t = by_name.get(n.strip().lower())
         box = _box(t, small.width, small.height) if t and t.get("found") else None
         if not box:
-            out[n] = None
+            out[n] = b""
             continue
         full = tuple(round(v / scale) for v in box)
-        # A "tile" that is basically the whole screenshot is no crop at all.
+        # A tile that is basically the whole screenshot: the shot is just them.
         if (full[2] - full[0]) * (full[3] - full[1]) > 0.85 * img.width * img.height:
-            out[n] = None
-            continue
+            full = (0, 0, img.width, img.height)
         buf = io.BytesIO()
         img.crop(full).save(buf, "PNG")
         out[n] = buf.getvalue()
