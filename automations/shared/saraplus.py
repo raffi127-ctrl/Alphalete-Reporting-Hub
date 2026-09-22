@@ -227,12 +227,34 @@ def _login_page_message(page) -> str:
                  // came back empty). Read the sentence off the body itself.
                  const m = body.match(/[^.!?]*\b(invalid|incorrect|locked|expired|disabled|not recognized)\b[^.!?]*[.!?]?/i);
                  if (!said.length && m) said.push(m[0].trim());
+                 // THE POPUP AFTER THE PASSWORD. On some accounts login.aspx
+                 // opens a Telerik RadWindow ("rwRegisterType", loading
+                 // RegisterType.aspx) once the password is accepted and
+                 // waits for a choice -- a person clicks, the hidden read
+                 // sits on the login page with no error (Khalil, 2026-09-22:
+                 // .ASPXAUTH present, fields still filled, nothing said).
+                 // Say whether it is open and what it offers.
+                 let popup = 'popup: none';
+                 try {
+                   const win = document.getElementById('ctl00_MainContent_rwRegisterType');
+                   const shown = win && getComputedStyle(win).display !== 'none';
+                   const fr = win && win.querySelector('iframe');
+                   let inside = '';
+                   if (fr && fr.contentDocument) {
+                     const d = fr.contentDocument;
+                     inside = ' text: ' + (d.body && d.body.innerText || '').replace(/\s+/g,' ').trim().slice(0, 300)
+                       + ' controls: ' + [...d.querySelectorAll('input,button,a,select')]
+                         .map(e => (e.tagName + ' ' + (e.id || e.name || '') + ' ' + (e.value || e.textContent || '').trim().slice(0, 40)).trim())
+                         .filter(t => !/__|_TSM|_TSSM|ClientState/.test(t)).slice(0, 12).join(' ; ');
+                   }
+                   popup = 'popup: ' + (shown ? 'OPEN' : 'closed') + (fr ? ' src=' + fr.src : '') + inside;
+                 } catch (e) { popup = 'popup: could not read (' + e + ')'; }
                  return (said.length ? said.join(' | ') : '')
                    + ' [title: ' + document.title + '; user field: '
                    + (u ? (u.value ? 'filled' : 'EMPTY') : 'missing')
                    + '; password field: '
                    + (p ? (p.value ? 'filled' : 'EMPTY') : 'missing')
-                   + '; body: ' + body + ']';
+                   + '; ' + popup + '; body: ' + body + ']';
                }""")
         text = " ".join(str(text or "").split())
         # "nothing" stays the marker _as_owner_problem keys on: no message
