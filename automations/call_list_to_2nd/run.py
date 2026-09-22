@@ -1,9 +1,13 @@
 r"""Call List to 2nd Round -- the two-week board (Rafael, 2026-09-21).
 
 Rafael's second report after '1st to 2nd Below the Mark': same idea (a board of
-days, every office), different funnel stages. It lives on the 'Interviewers
-Report from R to Z' workbook, on the tab Eve set up with the headers
-('Sheet51' until the report gets its name).
+days, every office), different funnel stages. It lives in ARS Management 2.0,
+next to the Below the Mark tabs, on 'Call List to 2nd Round' (Eve's header row,
+first set up as 'Sheet51' on Camila's 'Interviewers Report from R to Z').
+
+THAT WORKBOOK IS NOT EVE'S. This report writes ONLY its own tabs (the board,
+its SANDBOX, and their '(picture)' tabs). Every other tab there, and every ARS
+REPORT file, is read and never written (Eve, 2026-09-21).
 
     row 1   THIS WEEK (week of 9/20)          |   LAST WEEK (week of 9/13)
     row 2   status: where the numbers come from, when they were checked
@@ -15,17 +19,17 @@ Report from R to Z' workbook, on the tab Eve set up with the headers
 WHERE EACH COLUMN COMES FROM (found by header text, never by position)
     Owner Name            'Interviewers Retention (Interviewer)' roster,
                           ARS Management 2.0 (the same owners as Below the Mark)
-    Interviewer Name      the owner's ARS REPORT tab, col '1st Round Interviewer'
-                          of the rows dated that day (1st or 2nd round)
+    Interviewer Name      the owner's ARS REPORT tab, block '2ND RD SHOWED
+                          RETENTION': one row per interviewer with 2nd rounds
     Sent to call list     \
     Retention Call list    \  ApplicantStream -> Reports -> Retention Details,
     1st rds booked          > per office, that day's column:
     1st rds showed         /  'Sent to Call List', 'Retention Call List',
     1st rd %              /   'Total First Interviews', 'First Interviews
                               Showed Up', 'Retention First Interviews'
-    2nd interviews booked \   the owner's ARS REPORT tab (the interviewer's
-    2nd interviews showed  >  report, Camila's Drive): rows whose 'Date 2nd Rd'
-    2nd interview %       /   is that day -- see count_second_rounds
+    2nd interviews booked \   the owner's ARS REPORT tab (Camila's Drive), block
+    2nd interviews showed  >  '2ND RD SHOWED RETENTION', that day's B and S per
+    2nd interview %       /   interviewer; % = S / B -- see parse_second_block
 
 Rafael: "for second rounds booked ... you're gonna have to pull from the
 interviewer's report, because it's gonna go based off the interviewer's name".
@@ -64,19 +68,26 @@ except Exception:
 
 from automations.recruiting_report import fill
 
-SHEET_ID = "1amAXf1rguSMvQ3HRNiCpJC8pgTlTPT5503S0Yns3IA4"   # Interviewers Report from R to Z
-PRODUCTION_TAB = "Call List to 2nd Round"          # Eve's tab (was 'Sheet51')
+# ARS Management 2.0, next to '1st to 2nd below the mark' (Eve moved it there
+# 2026-09-21; it started on 'Interviewers Report from R to Z').
+SHEET_ID = "1l4Q0SreuddKZrgXwb9MytF-EdPZH-H1hLsa69epq-n8"
+PRODUCTION_TAB = "Call List to 2nd Round"          # Eve's header row
 SANDBOX_TAB = "Call List to 2nd Round SANDBOX"    # a copy of it; the default target
 
 CT = ZoneInfo("America/Chicago")
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]   # Rafael: Mon-Fri
-RUN_AT = (13, 0)                       # 1:00 PM local (Rafael)
+RUN_AT = (13, 0)                       # 1:00 PM local (Rafael); the agent fires at :20
+                                       # so it never shares Chrome with Below the Mark
 LATE_OK_MIN = 45
 
 TITLE_ROW, STATUS_ROW, HEADER_ROW = 1, 2, 3
 FIRST_BODY_ROW = 4
 GAP_COLS = 1
 TITLE = "CALL LIST TO 2ND ROUND"
+# What goes to Slack (Eve, 2026-09-21): ONE picture of ONE day -- the last full
+# day (Friday on a Monday). Its own tab so the export is just that day with the
+# header on top. Visible on purpose: a hidden tab exports as a blank page.
+PICTURE_SUFFIX = " (picture)"
 
 # field key -> the header text on Eve's tab (matched loosely: case/spaces).
 HEADERS = {
@@ -110,12 +121,6 @@ AS_ROWS = {
 }
 AS_PERCENT = {"call_ret", "r1"}
 
-# ARS REPORT log columns, by header text.
-LOG_DATE1 = "date 1st rd"
-LOG_INTERVIEWER = "1st round interviewer"
-LOG_BOOKED = "booked to 2nd rd"
-LOG_DATE2 = "date 2nd rd"
-LOG_SHOWED = "showed up to 2nd round"
 
 # Colour bands: (field, [(lo, hi, colour)]) -- lo inclusive, hi exclusive.
 GREEN = {"red": 0.576, "green": 0.769, "blue": 0.490}     # #93C47D
@@ -126,18 +131,34 @@ BANDS = {
     "r1": [(None, 0.45, RED), (0.45, 0.50, GREY), (0.50, None, GREEN)],
     "r2": [(None, 0.50, RED), (0.50, None, GREEN)],
 }
-BAND_NOTES = {
-    "call_ret": "50%+ green · 45%-49.99% grey · under 45% red (Rafael)",
-    "r1": "50%+ green · 45%-49.99% grey · under 45% red (Rafael)",
-    "r2": "50%+ green · under 50% red, no grey (Rafael)",
-}
 
 NAME_WIDTHS = {"owner": 150, "interviewer": 230}
 
-DAY_BG = {"red": 0.263, "green": 0.263, "blue": 0.263}
-WEEK_BG = {"red": 0.4, "green": 0.4, "blue": 0.4}
-STATUS_BG = {"red": 0.937, "green": 0.937, "blue": 0.937}
+def _hex(h: str) -> dict:
+    h = h.lstrip("#")
+    return {k: int(h[i:i + 2], 16) / 255 for k, i in (("red", 0), ("green", 2), ("blue", 4))}
+
+
+# Eve (2026-09-21): "ponele bordes a las cajas y un poco más de vida, se ve muy plano".
+WEEK_BG = _hex("#1F3864")            # title row: dark navy
+DAY_BG = _hex("#2F5597")             # a day that happened: blue
+TODAY_BG = _hex("#E69138")           # today, still moving: orange
+FUTURE_BG = _hex("#B7B7B7")          # not yet: grey
+STATUS_BG = _hex("#DEEAF6")
+FIRST_TINT = _hex("#DDE8F8")         # the 1st-round columns (AppStream)
+SECOND_TINT = _hex("#EAE0F5")        # the 2nd-round columns (ARS REPORT)
+NAME_TINT = _hex("#EDEDED")          # Owner / Interviewer columns: grey (Eve)
+# Header cells, pastel, one colour per section (Eve, 2026-09-21).
+HEAD_NAME = _hex("#CCCCCC")
+HEAD_FIRST = _hex("#A9C4EB")
+HEAD_SECOND = _hex("#C9B5E3")
+BOX_LINE = _hex("#434343")           # around each day
+GROUP_LINE = _hex("#8C8C8C")         # around each office, and between sections
+ROW_LINE = _hex("#D9D9D9")           # between an office's interviewers
 WHITE = {"red": 1.0, "green": 1.0, "blue": 1.0}
+FIRST_FIELDS = ("sent", "call_ret", "b1", "s1", "r1")
+SECOND_FIELDS = ("b2", "s2", "r2")
+ROW_PX = 22
 
 
 # ------------------------------------------------------------------ the dates
@@ -206,31 +227,26 @@ def resolve_columns(header_row: List[str]) -> List[str]:
     return order
 
 
-# ------------------------------------------------ 2nd rounds, from the ARS log
-@dataclass
-class LogCols:
-    date1: int
-    interviewer: int
-    booked: int
-    date2: int
-    showed: int
-
-
-def log_columns(header: List[str]) -> Optional[LogCols]:
-    h = [_hkey(x) for x in header]
-    try:
-        return LogCols(h.index(LOG_DATE1), h.index(LOG_INTERVIEWER), h.index(LOG_BOOKED),
-                       h.index(LOG_DATE2), h.index(LOG_SHOWED))
-    except ValueError:
-        return None
-
-
-# 'Showed Up to 2nd Round' values that take a row OUT of that day's 2nd rounds:
-# a reschedule did not happen that day, a pause is on hold.
-NOT_THAT_DAY = {"reschedule requested", "paused"}
-ATTENDED = {"showed"}
-
-
+# ------------------------------------ 2nd rounds, from the ARS REPORT's block
+# Eve (2026-09-21): the 2nd-round columns come from each owner's tab, block
+# '2ND RD SHOWED RETENTION' -- the per-interviewer, per-day numbers Camila's
+# sheet already works out -- not counted by us from the applicant log.
+#
+# The block is a STACK of weekly boxes going down its first column:
+#     <week label>  Monday ... Tuesday ... Saturday ... TOTAL for the WEEK
+#     Interviewer   B | S | NS | RR | C | R   (per day)   2nd Rd Booked | ...
+#     <interviewer> the numbers
+#     ...           (a blank row, then the next box)
+# Its starting column differs from tab to tab (CM, BZ, BJ), and so does a box's
+# height, so everything is found by text: the banner on row 1, the day names on
+# a box's label row, 'B' and 'S' under each day.
+#
+# The week label is the SUNDAY THAT ENDS the week, as in the rest of the ARS
+# REPORT files: box '9/27' is Mon 9/21 .. Sat 9/26 (see ars_reports).
+SECOND_BANNER = "2ND RD SHOWED RETENTION"
+BOOKED_LABEL, SHOWED_LABEL = "B", "S"
+_LABEL_RE = re.compile(r"^\s*(\d{1,2})/(\d{1,2})\s*$")
+_DAY_NAMES = {d.lower(): i for i, d in enumerate(DAYS + ["Saturday"])}   # Monday = 0
 NO_INTERVIEWER = "(no interviewer)"
 
 
@@ -238,64 +254,105 @@ NO_INTERVIEWER = "(no interviewer)"
 class SecondRounds:
     booked: int = 0
     showed: int = 0
-    interviewers: List[str] = field(default_factory=list)       # everyone active that day
+    interviewers: List[str] = field(default_factory=list)       # names in that week's box
     by: Dict[str, List[int]] = field(default_factory=dict)      # interviewer -> [booked, showed]
 
 
-def count_second_rounds(values: List[List[str]], year: int) -> Dict[dt.date, SecondRounds]:
-    """{date: SecondRounds} out of one owner's ARS REPORT log.
+def _count(raw) -> int:
+    try:
+        return int(float(str(raw).replace(",", "").strip() or 0))
+    except ValueError:
+        return 0
 
-    A 2nd round counts on its 'Date 2nd Rd' when 'Booked to 2nd Rd' is Booked
-    (or the outcome was already filled in), unless it was rescheduled / paused.
-    It counts as showed only on 'Showed'; a blank outcome on a past day is an
-    owner who did not update -- that is exactly what this board is meant to
-    surface, so it stays in the denominator.
 
-    Each 2nd round is credited to the row's '1st Round Interviewer' (`by`);
-    `interviewers` names everyone with a row dated that day, 1st or 2nd round."""
-    if not values:
-        return {}
-    cols = log_columns(values[0])
-    if cols is None:
-        raise LookupError("log headers not found (Date 1st Rd / Booked to 2nd Rd / ...)")
+def label_week_end(label: str, today: dt.date) -> Optional[dt.date]:
+    """'9/27' -> the Sunday it names. No year on the tab: the nearest one to
+    today (the boxes run a few weeks ahead of it, never months)."""
+    m = _LABEL_RE.match(label or "")
+    if not m:
+        return None
+    best = None
+    for year in (today.year - 1, today.year, today.year + 1):
+        try:
+            d = dt.date(year, int(m.group(1)), int(m.group(2)))
+        except ValueError:
+            continue
+        if best is None or abs((d - today).days) < abs((best - today).days):
+            best = d
+    return best
+
+
+def parse_second_block(values: List[List[str]], today: dt.date) -> Dict[dt.date, SecondRounds]:
+    """{date: SecondRounds} out of one owner's block, `values` read from the
+    banner's column rightwards (row 1 first)."""
     out: Dict[dt.date, SecondRounds] = {}
-    names: Dict[dt.date, Dict[str, int]] = {}
-
-    def cell(r, i):
-        return str(r[i]).strip() if i < len(r) else ""
-
-    for r in values[1:]:
-        who = cell(r, cols.interviewer)
-        d1 = parse_date(cell(r, cols.date1), year)
-        d2 = parse_date(cell(r, cols.date2), year)
-        booked = cell(r, cols.booked).lower()
-        outcome = cell(r, cols.showed).lower()
-        if d1 and who:
-            names.setdefault(d1, {}).setdefault(who, 0)
-            names[d1][who] += 1
-        if not d2 or outcome in NOT_THAT_DAY:
+    i = 0
+    while i < len(values):
+        row = values[i]
+        end = label_week_end(row[0] if row else "", today)
+        days = {j: _DAY_NAMES[str(c).strip().lower()] for j, c in enumerate(row)
+                if str(c).strip().lower() in _DAY_NAMES}
+        if end is None or not days or i + 1 >= len(values):
+            i += 1
             continue
-        if booked != "booked" and not outcome:
-            continue
-        sr = out.setdefault(d2, SecondRounds())
-        mine = sr.by.setdefault(who or NO_INTERVIEWER, [0, 0])
-        sr.booked += 1
-        mine[0] += 1
-        if outcome in ATTENDED:
-            sr.showed += 1
-            mine[1] += 1
-        if who:
-            names.setdefault(d2, {}).setdefault(who, 0)
-            names[d2][who] += 1
-    for d, counts in names.items():
-        out.setdefault(d, SecondRounds()).interviewers = sorted(
-            counts, key=lambda n: (-counts[n], n.lower()))
+        sub = values[i + 1]
+        starts = sorted(days)
+        cols: Dict[int, Tuple[Optional[int], Optional[int]]] = {}
+        for n, j in enumerate(starts):
+            stop = starts[n + 1] if n + 1 < len(starts) else j + 8
+            span = [(k, str(sub[k]).strip()) for k in range(j, min(stop, len(sub)))]
+            b = next((k for k, v in span if v == BOOKED_LABEL), None)
+            s = next((k for k, v in span if v == SHOWED_LABEL), None)
+            cols[days[j]] = (b, s)
+        monday = end - dt.timedelta(days=6)
+        names: List[str] = []
+        i += 2
+        while i < len(values):
+            r = values[i]
+            first = str(r[0]).strip() if r else ""
+            if label_week_end(first, today) is not None and any(
+                    str(c).strip().lower() in _DAY_NAMES for c in r):
+                break                                   # the next box
+            if not first or first.lower() == "interviewer":
+                if not any(str(c).strip() for c in r):
+                    i += 1
+                    if i < len(values) and not any(str(c).strip() for c in values[i]):
+                        break                           # two blank rows: the box is over
+                    continue
+                i += 1
+                continue                                # an unnamed totals row
+            names.append(first)
+            for weekday, (b, s) in cols.items():
+                booked = _count(r[b]) if b is not None and b < len(r) else 0
+                showed = _count(r[s]) if s is not None and s < len(r) else 0
+                if not booked and not showed:
+                    continue
+                d = monday + dt.timedelta(days=weekday)
+                sr = out.setdefault(d, SecondRounds())
+                mine = sr.by.setdefault(first, [0, 0])
+                mine[0] += booked
+                mine[1] += showed
+                sr.booked += booked
+                sr.showed += showed
+            i += 1
+        for weekday in cols:
+            d = monday + dt.timedelta(days=weekday)
+            out.setdefault(d, SecondRounds()).interviewers = list(names)
     return out
 
 
-def read_logs(owners: List[str], year: int, *, refresh_index: bool = False,
-              logfn=print) -> Tuple[Dict[str, Dict[dt.date, SecondRounds]], List[str]]:
-    """Every owner's log, one batch read per ARS REPORT workbook."""
+def _col_letter(n: int) -> str:            # 0-indexed
+    s, n = "", n + 1
+    while n:
+        n, rem = divmod(n - 1, 26)
+        s = chr(65 + rem) + s
+    return s
+
+
+def read_second_rounds(owners: List[str], today: dt.date, *, refresh_index: bool = False,
+                       logfn=print) -> Tuple[Dict[str, Dict[dt.date, SecondRounds]], List[str]]:
+    """Every owner's 2ND RD block: two batch reads per ARS REPORT workbook (row 1
+    to find the banner, then the block itself)."""
     from automations.first_to_second_below_mark import ars_reports as ars
 
     index = ars._index(logfn=logfn, refresh=refresh_index)
@@ -312,13 +369,24 @@ def read_logs(owners: List[str], year: int, *, refresh_index: bool = False,
     out: Dict[str, Dict[dt.date, SecondRounds]] = {}
     for book, pairs in by_book.items():
         sh = fill.open_by_key(ars.ARS_WORKBOOKS[book])
-        res = sh.values_batch_get([f"'{tab}'!A1:K" for _, tab in pairs])
-        for (owner, tab), vr in zip(pairs, res.get("valueRanges", [])):
-            try:
-                out[owner] = count_second_rounds(vr.get("values", []), year)
-            except LookupError as exc:
-                notes.append(f"{owner} ({book} / {tab}): {exc}")
-    logfn(f"  ARS REPORT: {len(out)} of {len(owners)} owners read")
+        heads = sh.values_batch_get([f"'{tab}'!1:1" for _, tab in pairs]).get("valueRanges", [])
+        wanted, ranges = [], []
+        for (owner, tab), vr in zip(pairs, heads):
+            row1 = (vr.get("values") or [[]])[0]
+            c = next((j for j, v in enumerate(row1) if SECOND_BANNER in str(v).upper()), None)
+            if c is None:
+                notes.append(f"{owner} ({book} / {tab}): no '{SECOND_BANNER}' block")
+                continue
+            # The block runs to the next banner on row 1.
+            nxt = next((j for j in range(c + 1, len(row1)) if str(row1[j]).strip()), c + 60)
+            wanted.append(owner)
+            ranges.append(f"'{tab}'!{_col_letter(c)}1:{_col_letter(nxt - 1)}")
+        if not ranges:
+            continue
+        blocks = sh.values_batch_get(ranges).get("valueRanges", [])
+        for owner, vr in zip(wanted, blocks):
+            out[owner] = parse_second_block(vr.get("values", []), today)
+    logfn(f"  ARS REPORT 2nd-round blocks: {len(out)} of {len(owners)} owners read")
     return out, notes
 
 
@@ -421,6 +489,8 @@ class Band:
     row: int              # 1-indexed
     side: int             # 0 = this week (left), 1 = last week (right)
     text: str
+    kind: str = "past"    # past | today | future
+    rows: int = 0         # data rows under it on this side
 
 
 @dataclass
@@ -548,7 +618,9 @@ def lay_out(order: List[str], weeks: List[Tuple[dt.date, Dict[str, List[List[dic
             c0 = side * (width + GAP_COLS)
             text = day_band_text(day, d, today, len(groups), (changes or {}).get(d))
             grid[0][c0] = text
-            lay.bands.append(Band(row=r, side=side, text=text))
+            kind = "future" if d > today else ("today" if d == today else "past")
+            lay.bands.append(Band(row=r, side=side, text=text, kind=kind,
+                                  rows=sum(len(g) for g in groups)))
             i = 1
             for group in groups:
                 lay.groups.append((r + i, len(group), side))
@@ -562,6 +634,57 @@ def lay_out(order: List[str], weeks: List[Tuple[dt.date, Dict[str, List[List[dic
                     i += 1
         lay.values.extend(grid)
         r += height
+    return lay
+
+
+# ------------------------------------------------------------ the picture
+def last_full_day(today: dt.date) -> dt.date:
+    """The last weekday that is over: yesterday, or Friday on a Monday / weekend.
+    At 1 PM today is half done, so comparing it with a finished day a week back
+    would always make today look worse."""
+    d = today - dt.timedelta(days=1)
+    while d.weekday() >= 5:
+        d -= dt.timedelta(days=1)
+    return d
+
+
+def picture_band_text(d: dt.date, n: int, changes: Optional[List[Change]] = None) -> str:
+    text = f"{d:%A}".upper() + f" {md(d)}"
+    text += f"  ·  {n} office{'s' if n != 1 else ''}" if n else "  ·  no activity"
+    if changes:
+        shown = ", ".join(c.text for c in changes[:BAND_MAX_CHANGES])
+        more = len(changes) - BAND_MAX_CHANGES
+        text += f"  ·  CHANGED: {shown}" + (f" (+{more} more)" if more > 0 else "")
+    return text
+
+
+def lay_out_picture(order: List[str], blocks: List[Tuple[str, str, List[List[dict]]]]
+                    ) -> Layout:
+    """One column of day boxes, top to bottom: [(band text, kind, groups)], a
+    blank row between boxes."""
+    width = len(order)
+    lay = Layout(width=width)
+    r = FIRST_BODY_ROW
+    for n, (text, kind, groups) in enumerate(blocks):
+        if n:
+            lay.values.append([""] * width)
+            r += 1
+        rows = sum(len(g) for g in groups)
+        lay.bands.append(Band(row=r, side=0, text=text, kind=kind, rows=rows))
+        lay.values.append([text] + [""] * (width - 1))
+        i = 1
+        for group in groups:
+            lay.groups.append((r + i, len(group), 0))
+            for k, rec in enumerate(group):
+                line = [""] * width
+                for j, key in enumerate(order):
+                    if key and not (k and key in OWNER_FIELDS):
+                        v = rec.get(key)
+                        line[j] = "" if v is None else v
+                lay.values.append(line)
+                lay.data_rows.append((r + i, 0))
+                i += 1
+        r += 1 + rows
     return lay
 
 
@@ -662,11 +785,14 @@ def ensure_top_rows(ws, logfn=print) -> List[str]:
     return [str(x) for x in (top[HEADER_ROW - 1] if len(top) >= HEADER_ROW else [])]
 
 
-def write(ws, order: List[str], lay: Layout, titles: List[str], status: str, logfn=print):
+def write(ws, order: List[str], lay: Layout, titles: List[str], status: str, logfn=print,
+          *, sides: int = 2):
+    """Write the board (two sides: this week | last week) or the picture (one)."""
     sh = ws.spreadsheet
     sid = ws.id
     width = len(order)
-    total = 2 * width + GAP_COLS
+    total = 2 * width + GAP_COLS if sides == 2 else width
+    SIDES = range(sides)
     last = max(lay.last_row, FIRST_BODY_ROW)
     need_rows = last + 5
     if ws.row_count < need_rows or ws.col_count < total:
@@ -682,16 +808,33 @@ def write(ws, order: List[str], lay: Layout, titles: List[str], status: str, log
         if m.get("startRowIndex", 0) != HEADER_ROW - 1:
             reqs.append({"unmergeCells": {"range": m}})
     body_end = max(ws.row_count, need_rows)
-    reqs.append({"updateCells": {"range": _rng(sid, FIRST_BODY_ROW - 1, body_end, 0, total),
+    wide = max(total, ws.col_count)          # a copied tab can carry more columns
+    reqs.append({"updateCells": {"range": _rng(sid, FIRST_BODY_ROW - 1, body_end, 0, wide),
                                  "fields": "userEnteredValue,userEnteredFormat,note"}})
-    reqs.append({"updateCells": {"range": _rng(sid, 0, 2, 0, total),
+    reqs.append({"updateCells": {"range": _rng(sid, 0, 2, 0, wide),
                                  "fields": "userEnteredValue,userEnteredFormat"}})
-    # Last week's header: a copy of Eve's, look and all.
-    reqs.append({"copyPaste": {"source": _rng(sid, HEADER_ROW - 1, HEADER_ROW, 0, width),
-                               "destination": _rng(sid, HEADER_ROW - 1, HEADER_ROW,
-                                                   width + GAP_COLS, total),
-                               "pasteType": "PASTE_NORMAL"}})
-    for side in (0, 1):
+    if sides == 2:
+        # Last week's header: a copy of Eve's, look and all.
+        reqs.append({"copyPaste": {"source": _rng(sid, HEADER_ROW - 1, HEADER_ROW, 0, width),
+                                   "destination": _rng(sid, HEADER_ROW - 1, HEADER_ROW,
+                                                       width + GAP_COLS, total),
+                                   "pasteType": "PASTE_NORMAL"}})
+    elif wide > width:
+        reqs.append({"updateCells": {"range": _rng(sid, HEADER_ROW - 1, HEADER_ROW, width, wide),
+                                     "fields": "userEnteredValue,userEnteredFormat,note"}})
+    # ...then each header cell in its section's pastel, bold.
+    for side in SIDES:
+        c0 = side * (width + GAP_COLS)
+        for j, key in enumerate(order):
+            bg = (HEAD_FIRST if key in FIRST_FIELDS else HEAD_SECOND if key in SECOND_FIELDS
+                  else HEAD_NAME if key in ("owner", "interviewer") else None)
+            if bg:
+                reqs.append({"repeatCell": {
+                    "range": _rng(sid, HEADER_ROW - 1, HEADER_ROW, c0 + j, c0 + j + 1),
+                    "cell": {"userEnteredFormat": {"backgroundColor": bg,
+                                                   "textFormat": {"bold": True}}},
+                    "fields": "userEnteredFormat.backgroundColor,userEnteredFormat.textFormat.bold"}})
+    for side in SIDES:
         c0 = side * (width + GAP_COLS)
         for r0, bg, size in ((TITLE_ROW - 1, WEEK_BG, 12), (STATUS_ROW - 1, STATUS_BG, 9)):
             reqs.append({"mergeCells": {"range": _rng(sid, r0, r0 + 1, c0, c0 + width),
@@ -704,18 +847,17 @@ def write(ws, order: List[str], lay: Layout, titles: List[str], status: str, log
                                    "foregroundColor": WHITE if bg is WEEK_BG else
                                    {"red": 0.2, "green": 0.2, "blue": 0.2}}}},
                 "fields": "userEnteredFormat"}})
-        # The colour rule written on the header cell, so it is never a guess.
-        for j, key in enumerate(order):
-            if key in BAND_NOTES:
-                reqs.append({"updateCells": {
-                    "range": _rng(sid, HEADER_ROW - 1, HEADER_ROW, c0 + j, c0 + j + 1),
-                    "rows": [{"values": [{"note": BAND_NOTES[key]}]}], "fields": "note"}})
+        # NO notes on the header: a note prints at the foot of the exported
+        # picture ("[1] 50%+ green ..."). The colour rules go in the Slack
+        # message instead (slack_post.message). Clear any left from before.
+        reqs.append({"updateCells": {
+            "range": _rng(sid, HEADER_ROW - 1, HEADER_ROW, c0, c0 + width), "fields": "note"}})
     # Body: numbers centred, percents as percents, a light grid.
     body = _rng(sid, FIRST_BODY_ROW - 1, last, 0, total)
     reqs.append({"repeatCell": {"range": body, "cell": {"userEnteredFormat": {
         "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE",
         "textFormat": {"fontSize": 10}}}, "fields": "userEnteredFormat"}})
-    for side in (0, 1):
+    for side in SIDES:
         c0 = side * (width + GAP_COLS)
         for j, key in enumerate(order):
             if key in ("owner", "interviewer"):
@@ -726,11 +868,27 @@ def write(ws, order: List[str], lay: Layout, titles: List[str], status: str, log
                 reqs.append({"repeatCell": {"range": _rng(sid, FIRST_BODY_ROW - 1, last, c0 + j, c0 + j + 1),
                     "cell": {"userEnteredFormat": {"numberFormat": {"type": "PERCENT", "pattern": "0%"}}},
                     "fields": "userEnteredFormat.numberFormat"}})
+    # Section tints: the 1st-round columns one colour, the 2nd-round another,
+    # so the eye splits the row in two without reading the header.
     for row, side in lay.data_rows:
         c0 = side * (width + GAP_COLS)
         reqs.append({"updateBorders": {"range": _rng(sid, row - 1, row, c0, c0 + width),
-            **{k: {"style": "SOLID", "color": {"red": 0.8, "green": 0.8, "blue": 0.8}}
+            **{k: {"style": "SOLID", "color": ROW_LINE}
                for k in ("top", "bottom", "left", "right", "innerVertical")}}})
+        for j, key in enumerate(order):
+            tint = (FIRST_TINT if key in FIRST_FIELDS else SECOND_TINT if key in SECOND_FIELDS
+                    else NAME_TINT if key in ("owner", "interviewer") else None)
+            if tint:
+                reqs.append({"repeatCell": {"range": _rng(sid, row - 1, row, c0 + j, c0 + j + 1),
+                    "cell": {"userEnteredFormat": {"backgroundColor": tint}},
+                    "fields": "userEnteredFormat.backgroundColor"}})
+        oj = order.index("owner")
+        reqs.append({"repeatCell": {"range": _rng(sid, row - 1, row, c0 + oj, c0 + oj + 1),
+            "cell": {"userEnteredFormat": {"textFormat": {"bold": True}}},
+            "fields": "userEnteredFormat.textFormat.bold"}})
+        reqs.append({"updateDimensionProperties": {"range": {
+            "sheetId": sid, "dimension": "ROWS", "startIndex": row - 1, "endIndex": row},
+            "properties": {"pixelSize": ROW_PX}, "fields": "pixelSize"}})
     for first, rows, side in lay.groups:
         c0 = side * (width + GAP_COLS)
         if rows > 1:
@@ -739,17 +897,31 @@ def write(ws, order: List[str], lay: Layout, titles: List[str], status: str, log
                     reqs.append({"mergeCells": {"range": _rng(sid, first - 1, first - 1 + rows,
                                                               c0 + j, c0 + j + 1),
                                                 "mergeType": "MERGE_ALL"}})
-        # A darker line between offices, so a group reads as one office.
-        reqs.append({"updateBorders": {"range": _rng(sid, first - 1, first, c0, c0 + width),
-            "top": {"style": "SOLID_MEDIUM", "color": {"red": 0.5, "green": 0.5, "blue": 0.5}}}})
+        # Each office is a box; the 1st- and 2nd-round sections are split by a line.
+        box = _rng(sid, first - 1, first - 1 + rows, c0, c0 + width)
+        reqs.append({"updateBorders": {"range": box, **{
+            k: {"style": "SOLID_MEDIUM", "color": GROUP_LINE}
+            for k in ("top", "bottom", "left", "right")}}})
+        for key in (FIRST_FIELDS[0], SECOND_FIELDS[0]):
+            j = order.index(key)
+            reqs.append({"updateBorders": {
+                "range": _rng(sid, first - 1, first - 1 + rows, c0 + j, c0 + j + 1),
+                "left": {"style": "SOLID_MEDIUM", "color": GROUP_LINE}}})
     for b in lay.bands:
         c0 = b.side * (width + GAP_COLS)
         rng = _rng(sid, b.row - 1, b.row, c0, c0 + width)
         reqs.append({"mergeCells": {"range": rng, "mergeType": "MERGE_ALL"}})
+        bg = {"today": TODAY_BG, "future": FUTURE_BG}.get(b.kind, DAY_BG)
         reqs.append({"repeatCell": {"range": rng, "cell": {"userEnteredFormat": {
-            "backgroundColor": DAY_BG, "horizontalAlignment": "LEFT", "verticalAlignment": "MIDDLE",
+            "backgroundColor": bg, "horizontalAlignment": "LEFT", "verticalAlignment": "MIDDLE",
+            "padding": {"left": 8},
             "textFormat": {"bold": True, "fontSize": 11, "foregroundColor": WHITE}}},
             "fields": "userEnteredFormat"}})
+        # The whole day -- its bar and its offices -- inside one thick box.
+        reqs.append({"updateBorders": {
+            "range": _rng(sid, b.row - 1, b.row + b.rows, c0, c0 + width),
+            **{k: {"style": "SOLID_THICK", "color": BOX_LINE}
+               for k in ("top", "bottom", "left", "right")}}})
         reqs.append({"updateDimensionProperties": {"range": {
             "sheetId": sid, "dimension": "ROWS", "startIndex": b.row - 1, "endIndex": b.row},
             "properties": {"pixelSize": 28}, "fields": "pixelSize"}})
@@ -757,15 +929,17 @@ def write(ws, order: List[str], lay: Layout, titles: List[str], status: str, log
     for key, bands in BANDS.items():
         j = order.index(key)
         ranges = [_rng(sid, FIRST_BODY_ROW - 1, last, s * (width + GAP_COLS) + j,
-                       s * (width + GAP_COLS) + j + 1) for s in (0, 1)]
+                       s * (width + GAP_COLS) + j + 1) for s in SIDES]
         letter = _a1col(j + 1)
         for lo, hi, colour in bands:
             reqs.append(_band_rule(sid, ranges, lo, hi, colour, letter, FIRST_BODY_ROW))
-    reqs.append({"updateDimensionProperties": {"range": {
-        "sheetId": sid, "dimension": "COLUMNS", "startIndex": width, "endIndex": width + GAP_COLS},
-        "properties": {"pixelSize": 24}, "fields": "pixelSize"}})
+    if sides == 2:
+        reqs.append({"updateDimensionProperties": {"range": {
+            "sheetId": sid, "dimension": "COLUMNS", "startIndex": width,
+            "endIndex": width + GAP_COLS},
+            "properties": {"pixelSize": 24}, "fields": "pixelSize"}})
     # Names have to read whole: the owner and interviewer columns are widened.
-    for side in (0, 1):
+    for side in SIDES:
         c0 = side * (width + GAP_COLS)
         for key, px in NAME_WIDTHS.items():
             j = order.index(key)
@@ -775,7 +949,7 @@ def write(ws, order: List[str], lay: Layout, titles: List[str], status: str, log
     sh.batch_update({"requests": reqs})
 
     top = [[""] * total, [""] * total]
-    for side in (0, 1):
+    for side in SIDES:
         c0 = side * (width + GAP_COLS)
         top[0][c0] = titles[side]
         top[1][c0] = status
@@ -857,16 +1031,6 @@ def run(*, tab: str = SANDBOX_TAB, dry_run: bool = False, use_appstream: bool = 
                        if any(_hkey(x) == _hkey(HEADERS["owner"]) for x in r)), [])
     order = resolve_columns(header)
 
-    logs, notes = read_logs(to_pull, start.year, refresh_index=refresh_index, logfn=logfn)
-    as_data: Dict[Tuple[str, dt.date], dict] = {}
-    if use_appstream and to_pull:
-        try:
-            as_data, gaps = fetch_appstream(to_pull, starts, logfn=logfn)
-            notes.extend(gaps)
-        except Exception as exc:                          # noqa: BLE001
-            notes.append(f"AppStream unavailable: {type(exc).__name__}: {exc}")
-            logfn(f"  !! AppStream unavailable ({type(exc).__name__}: {exc})")
-
     # The board as it stands: the "before" for what moved, and the numbers of
     # the offices a --due pass does not pull.
     board = ws if ws is not None else next(
@@ -875,6 +1039,24 @@ def run(*, tab: str = SANDBOX_TAB, dry_run: bool = False, use_appstream: bool = 
     prev = read_back(before, order, start.year) if before else {}
     prev_stamp = prior_stamp(before)
     kept = prev if set(to_pull) != set(owners) else {}
+
+    # The picture's day: the last full day (Friday on a Monday). Always on the
+    # board -- this week or last week -- so nothing extra to pull.
+    pic_day = last_full_day(today)
+
+    logs, notes = read_second_rounds(to_pull, today, refresh_index=refresh_index, logfn=logfn)
+    as_data: Dict[Tuple[str, dt.date], dict] = {}
+    if use_appstream and to_pull:
+        try:
+            as_data, gaps = fetch_appstream(to_pull, starts, logfn=logfn)
+            notes.extend(gaps)
+        except Exception as exc:                          # noqa: BLE001
+            notes.append(f"AppStream unavailable: {type(exc).__name__}: {exc}")
+            logfn(f"  !! AppStream unavailable ({type(exc).__name__}: {exc})")
+    elif not use_appstream:
+        # No AppStream this run (Windows has no session): keep the 1st-round
+        # numbers the board already shows rather than blanking every office.
+        as_data = {k: {f: g[0].get(f) for f in AS_ROWS} for k, g in prev.items()}
 
     weeks = []
     for s in starts:
@@ -913,15 +1095,46 @@ def run(*, tab: str = SANDBOX_TAB, dry_run: bool = False, use_appstream: bool = 
         status += (f"  ·  {len(moved)} changed since the {prev_stamp} check"
                    + (" (listed on each day's bar)" if moved else ""))
     if not use_appstream:
-        status += "  ·  (1st-round columns not pulled this run)"
+        status += "  ·  (1st-round columns as of the last AppStream check)"
     titles = [f"{TITLE}  ·  THIS WEEK (week of {md(starts[0])})",
               f"LAST WEEK (week of {md(starts[1])})"]
+    # The picture: this pass's offices (everybody on a full run), fresh.
+    def pic_groups(d: dt.date) -> List[List[dict]]:
+        out = []
+        for o in owners:
+            if o not in to_pull:
+                continue
+            g = make_group(o, roster.get(o, []), as_data.get((o, d)),
+                           (logs.get(o) or {}).get(d))
+            if g:
+                out.append(g)
+        return out
+
+    # ONE day only (Eve, 2026-09-21: the comparison with last week made the
+    # picture too long).
+    day_groups = pic_groups(pic_day)
+    pic_lay = lay_out_picture(order, [
+        (picture_band_text(pic_day, len(day_groups), changes.get(pic_day)), "past",
+         day_groups)])
+    pic_title = f"{TITLE}  ·  {pic_day:%A} {md(pic_day)}"
+    if due:
+        # Say whose picture this is: each time zone's pass posts its own.
+        from automations.first_to_second_below_mark import office_tz as tz
+        zones = sorted({tz.label(tz.zone_or_fallback(o)[0]) for o in to_pull})
+        pic_title += f"  ·  {' + '.join(zones)} offices"
     if dry_run:
         logfn(f"  DRY RUN - nothing written ({len(lay.values)} rows would be)")
         return {"written": False, "rows": len(lay.values), "changed": len(moved),
                 "notes": notes}
     write(ws, order, lay, titles, status, logfn)
-    return {"written": True, "tab": ws.title, "rows": len(lay.values), "changed": len(moved),
+    pic_tab = ws.title + PICTURE_SUFFIX
+    try:
+        pic_ws = fill.worksheet_ci(sh, pic_tab)
+    except Exception:                                     # noqa: BLE001
+        logfn(f"  creating {pic_tab!r}")
+        pic_ws = sh.duplicate_sheet(ws.id, new_sheet_name=pic_tab)
+    write(pic_ws, order, pic_lay, [pic_title], status, logfn, sides=1)
+    return {"picture_tab": pic_tab, "written": True, "tab": ws.title, "rows": len(lay.values), "changed": len(moved),
             "changes": [f"{c.date:%a} {md(c.date)}: {c.text}" for c in moved], "notes": notes}
 
 

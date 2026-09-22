@@ -4,45 +4,50 @@ import unittest
 
 from automations.call_list_to_2nd import run as r
 
-LOG_HEADER = ["Client Name", "Date 1st Rd", "1st Round Interviewer", "Full Name", "Qualify",
-              "Answer Call", "Booked to 2nd Rd", "Date 2nd Rd", "Showed Up to 2nd Round"]
 EVE_HEADER = ["Owner Name", "Interviewer Name", "Sent to call list", "Retention Call list",
               "1st rds booked", "1st rds showed", "1st rd %", "2nd interviews booked",
               "2nd interviews showed", "2nd interview %"]
 MON, TUE = dt.date(2026, 9, 14), dt.date(2026, 9, 15)
 
 
-def row(d1, who, booked, d2, outcome):
-    return ["Kash Rai", d1, who, "x", "Qualify", "Answered", booked, d2, outcome]
+TODAY = dt.date(2026, 9, 21)
+DAYS_ROW = ["9/20", "Monday", "", "", "", "", "", "Tuesday", "", "", "", "", "",
+            "TOTAL for the WEEK"]
+SUB_ROW = ["Interviewer", "B", "S", "NS", "RR", "C", "R", "B", "S", "NS", "RR", "C", "R",
+           "2nd Rd Booked"]
 
 
-class SecondRoundCount(unittest.TestCase):
-    def test_counts_by_second_round_date_and_interviewer(self):
-        vals = [LOG_HEADER,
-                row("9/14/2026", "Daniela", "Booked", "9/15/2026", "Showed"),
-                row("9/14/2026", "Daniela", "Booked", "9/15/2026", "No Show"),
-                row("9/14/2026", "Daniela", "Booked", "9/15/2026", ""),          # not updated
-                row("9/14/2026", "Daniela", "Booked", "9/15/2026", "Cancelled"),
-                row("9/14/2026", "Daniela", "Booked", "9/15/2026", "Reschedule Requested"),
-                row("9/14/2026", "Daniela", "Booked", "9/15/2026", "Paused"),
-                row("9/14/2026", "Daniela", "Not Booked", "", ""),
-                row("9/14/2026", "Maria", "Booked", "9/15/2026", "Showed")]
-        got = r.count_second_rounds(vals, 2026)
-        d = got[TUE]
-        self.assertEqual((d.booked, d.showed), (5, 2))
-        self.assertEqual(d.by, {"Daniela": [4, 1], "Maria": [1, 1]})
-        self.assertEqual(got[MON].booked, 0)
-        self.assertEqual(got[MON].interviewers, ["Daniela", "Maria"])
+def box(label, *people):
+    rows = [[label] + DAYS_ROW[1:], SUB_ROW]
+    for name, mon, tue in people:
+        rows.append([name, str(mon[0]), str(mon[1]), "0", "0", "0", "", str(tue[0]),
+                     str(tue[1]), "0", "0", "0", "", "x"])
+    return rows
 
-    def test_columns_found_by_label_not_position(self):
-        # 8 of the tabs have no 'Answer Call' column.
-        header = [h for h in LOG_HEADER if h != "Answer Call"]
-        vals = [header, ["K", "9/14/2026", "D", "x", "Q", "Booked", "9/15/2026", "Showed"]]
-        self.assertEqual(r.count_second_rounds(vals, 2026)[TUE].showed, 1)
 
-    def test_missing_headers_raise(self):
-        with self.assertRaises(LookupError):
-            r.count_second_rounds([["Client Name", "Date 1st Rd"]], 2026)
+class SecondRoundBlock(unittest.TestCase):
+    """The '2ND RD SHOWED RETENTION' block of an owner's ARS REPORT tab."""
+
+    def test_reads_booked_and_showed_per_interviewer_per_day(self):
+        vals = ([["2ND RD SHOWED RETENTION"], []]
+                + box("9/20", ("Daniela", (11, 8), (12, 7)), ("Maria", (1, 1), (0, 0)))
+                + [[]] + box("9/27", ("Daniela", (5, 2), (0, 0))))
+        got = r.parse_second_block(vals, TODAY)
+        # Box '9/20' is the week that ENDS Sunday 9/20: Monday 9/14.
+        self.assertEqual(got[MON].by, {"Daniela": [11, 8], "Maria": [1, 1]})
+        self.assertEqual((got[MON].booked, got[MON].showed), (12, 9))
+        self.assertEqual(got[TUE].by, {"Daniela": [12, 7]})
+        self.assertEqual(got[dt.date(2026, 9, 21)].by, {"Daniela": [5, 2]})
+        self.assertEqual(got[TUE].interviewers, ["Daniela", "Maria"])
+
+    def test_unnamed_totals_row_is_skipped(self):
+        vals = box("9/20", ("Daniela", (3, 2), (0, 0))) + [["", "9", "9"]]
+        self.assertEqual(r.parse_second_block(vals, TODAY)[MON].by, {"Daniela": [3, 2]})
+
+    def test_label_year_is_the_nearest(self):
+        self.assertEqual(r.label_week_end("9/27", TODAY), dt.date(2026, 9, 27))
+        self.assertEqual(r.label_week_end("1/4", TODAY), dt.date(2027, 1, 4))
+        self.assertIsNone(r.label_week_end("Interviewer", TODAY))
 
 
 class Groups(unittest.TestCase):
@@ -145,11 +150,13 @@ class Layout(unittest.TestCase):
 
 
 class Posting(unittest.TestCase):
-    def test_thread_link(self):
+    def test_late_updates_are_read_off_the_day_bars(self):
         from automations.call_list_to_2nd import slack_post
-        self.assertEqual(
-            slack_post.parse_thread("https://x.slack.com/archives/C0ABC12/p1758480000123456"),
-            ("C0ABC12", "1758480000.123456"))
+        board = [[""]] * (r.FIRST_BODY_ROW - 1) + [
+            ["MONDAY 9/14  ·  41 offices  ·  CHANGED: Kash Rai 2nd % 64%→73%", "", "x"],
+            ["TUESDAY 9/15  ·  40 offices"]]
+        self.assertEqual(slack_post.changed_lines(board),
+                         ["Monday 9/14: Kash Rai 2nd % 64%→73%"])
 
 
 if __name__ == "__main__":
