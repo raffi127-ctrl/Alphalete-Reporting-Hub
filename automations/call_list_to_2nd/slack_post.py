@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import time
 import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -57,6 +58,10 @@ def _export_tab(sh, name: str, out: Path) -> Tuple[Optional[Path], str, str]:
     values = pic.get_all_values()
     header = values[rep.HEADER_ROW - 1] if len(values) >= rep.HEADER_ROW else []
     width = len(rep.resolve_columns(header))
+    # the '(updates)' tab carries one column Eve's template doesn't have (the
+    # before→after), which resolve_columns drops -- shoot it too
+    if rep.MOVED_HEADER in header:
+        width = max(width + 1, header.index(rep.MOVED_HEADER) + 1)
     last = max((i for i, r in enumerate(values, start=1) if any(str(c).strip() for c in r[:width])),
                default=rep.HEADER_ROW)
     title = values[rep.TITLE_ROW - 1][0] if values else ""
@@ -95,11 +100,19 @@ def build_pngs(tab: str = rep.SANDBOX_TAB) -> Tuple[Path, Optional[Path], str, s
                                      OUT_DIR / "call_list_to_2nd.png")
     if png is None:
         raise SystemExit(f"{tab + rep.PICTURE_SUFFIX!r} is empty - run.py first")
-    try:
-        upd, _, _ = _export_tab(sh, tab + rep.UPDATES_SUFFIX,
-                                OUT_DIR / "call_list_to_2nd_updates.png")
-    except Exception:                       # noqa: BLE001 -- run.py hasn't made it yet
-        upd = None
+    upd = None
+    for attempt in (1, 2):                  # the export drops a connection now and then
+        try:
+            upd, _, _ = _export_tab(sh, tab + rep.UPDATES_SUFFIX,
+                                    OUT_DIR / "call_list_to_2nd_updates.png")
+            break
+        except Exception as exc:            # noqa: BLE001 -- run.py may not have made it yet
+            # say so: a swallowed error here silently drops the second image
+            print(f"  updates picture attempt {attempt} failed "
+                  f"({type(exc).__name__}: {exc})")
+            if attempt == 2:
+                break
+            time.sleep(3)
     return png, upd, title, status
 
 

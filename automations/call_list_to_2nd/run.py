@@ -90,6 +90,9 @@ TITLE = "CALL LIST TO 2ND ROUND"
 # blank page, so slack_post shows it just for the export and hides it again.
 PICTURE_SUFFIX = " (picture)"
 UPDATES_SUFFIX = " (updates)"    # the second picture: what moved on earlier days
+MOVED_FIELD = "moved"            # its extra last column: '2nd % 57% → 67%'
+MOVED_HEADER = "What moved"
+MOVED_WIDTH = 260
 
 # field key -> the header text on Eve's tab (matched loosely: case/spaces).
 HEADERS = {
@@ -659,6 +662,30 @@ def picture_band_text(d: dt.date, n: int) -> str:
     return text
 
 
+def write_moved_header(ws, width: int) -> None:
+    """The '(updates)' tab's last column is not on Eve's template -- it is the
+    before→after of each change -- so its header cell is written here, in the
+    look of the name columns."""
+    sid, j = ws.id, width - 1
+    ws.update(values=[[MOVED_HEADER]],
+              range_name=f"{_a1col(width)}{HEADER_ROW}", value_input_option="RAW")
+    ws.spreadsheet.batch_update({"requests": [
+        {"repeatCell": {"range": _rng(sid, HEADER_ROW - 1, HEADER_ROW, j, j + 1),
+                        "cell": {"userEnteredFormat": {
+                            "backgroundColor": HEAD_NAME, "horizontalAlignment": "LEFT",
+                            "verticalAlignment": "MIDDLE", "wrapStrategy": "WRAP",
+                            "textFormat": {"bold": True, "fontSize": 11}}},
+                        "fields": "userEnteredFormat"}},
+        {"repeatCell": {"range": _rng(sid, FIRST_BODY_ROW - 1, ws.row_count, j, j + 1),
+                        "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT"}},
+                        "fields": "userEnteredFormat.horizontalAlignment"}},
+        {"updateDimensionProperties": {
+            "range": {"sheetId": sid, "dimension": "COLUMNS",
+                      "startIndex": j, "endIndex": j + 1},
+            "properties": {"pixelSize": MOVED_WIDTH}, "fields": "pixelSize"}},
+    ]})
+
+
 def lay_out_picture(order: List[str], blocks: List[Tuple[str, str, List[List[dict]]]]
                     ) -> Layout:
     """One column of day boxes, top to bottom: [(band text, kind, groups)], a
@@ -1125,6 +1152,7 @@ def run(*, tab: str = SANDBOX_TAB, dry_run: bool = False, use_appstream: bool = 
     # ONE image for every update, however many there are (Eve, 2026-09-22) --
     # and only the rows that moved: an office whose one interviewer changed
     # shows that interviewer, not its whole group.
+    upd_order = list(order) + [MOVED_FIELD]
     upd_blocks = []
     for d in sorted(changes):
         groups = []
@@ -1132,23 +1160,30 @@ def run(*, tab: str = SANDBOX_TAB, dry_run: bool = False, use_appstream: bool = 
             mine = [c for c in changes[d] if c.owner == g[0].get("owner")]
             if not mine:
                 continue
-            names = {c.interviewer for c in mine if c.interviewer}
-            rows = [r for r in g if r.get("interviewer") in names]
-            # an owner-level (1st-round) change names no interviewer: the
-            # numbers live on the group's first row, so that is the row to show
-            if not rows or any(not c.interviewer for c in mine):
-                rows = [g[0]] + [r for r in rows if r is not g[0]]
+            rows: List[dict] = []
+            for c in mine:
+                # an owner-level (1st-round) change names no interviewer: its
+                # numbers live on the group's first row
+                base = next((r for r in g if r.get("interviewer") == c.interviewer),
+                            g[0]) if c.interviewer else g[0]
+                moved_text = f"{CHANGE_LABEL[c.key]} {c.old:.0%} → {c.new:.0%}"
+                same = next((r for r in rows if r["_from"] is base), None)
+                if same:                      # two things moved on one row
+                    same[MOVED_FIELD] += "  ·  " + moved_text
+                else:
+                    rows.append({**base, "_from": base, MOVED_FIELD: moved_text})
+            rows.sort(key=lambda r: g.index(r["_from"]))
             # the office's 1st-round numbers sit on the group's FIRST row and
             # are merged down from there; dropping that row would blank them,
             # so the first row kept carries them instead
-            if rows[0] is not g[0]:
-                rows[0] = {**rows[0], **{f: g[0].get(f) for f in OWNER_FIELDS}}
+            if rows[0]["_from"] is not g[0]:
+                rows[0].update({f: g[0].get(f) for f in OWNER_FIELDS})
             groups.append(rows)
         if groups:
             n = sum(len(g) for g in groups)
             upd_blocks.append((f"{d:%A}".upper() + f" {md(d)}  ·  {n} update"
                                + ("s" if n != 1 else ""), "past", groups))
-    upd_lay = lay_out_picture(order, upd_blocks) if upd_blocks else None
+    upd_lay = lay_out_picture(upd_order, upd_blocks) if upd_blocks else None
     upd_title = f"{TITLE}  ·  updated since the {prev_stamp} check" if upd_blocks else ""
     pic_title = f"{TITLE}  ·  {pic_day:%A} {md(pic_day)}"
     if due:
@@ -1180,9 +1215,10 @@ def run(*, tab: str = SANDBOX_TAB, dry_run: bool = False, use_appstream: bool = 
     except Exception:                                     # noqa: BLE001
         logfn(f"  creating {upd_tab!r}")
         upd_ws = sh.duplicate_sheet(ws.id, new_sheet_name=upd_tab)
-    write(upd_ws, order, upd_lay or Layout(width=len(order)),
+    write(upd_ws, upd_order, upd_lay or Layout(width=len(upd_order)),
           [upd_title or f"{TITLE}  ·  nothing moved since the last check"],
           status, logfn, sides=1)
+    write_moved_header(upd_ws, len(upd_order))
     sh.batch_update({"requests": [{"updateSheetProperties": {
         "properties": {"sheetId": upd_ws.id, "hidden": True}, "fields": "hidden"}}]})
 
