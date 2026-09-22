@@ -143,6 +143,47 @@ class SheetBgPending(unittest.TestCase):
         self.assertEqual(self._owner_colour(own="TRUE"), config.DONE_GREEN)
 
 
+class NoShowAndStatus(unittest.TestCase):
+    HEAD2 = HEAD[:6] + ["Location"] + HEAD[6:]
+
+    def _p(self, fs="", loc="", own="FALSE", blue="TRUE", date="9/14/2026"):
+        row = _row("Sung", "Par", fs=fs, own=own)
+        row = row[:6] + [loc] + row[6:]
+        row[self.HEAD2.index("Blue Ink")] = blue
+        return sweep.people([[date], self.HEAD2, row])[0]
+
+    def test_blank_status_and_location_after_start_is_a_no_show(self):
+        import datetime as d
+        p = self._p()
+        self.assertTrue(sweep.no_show(p, d.date(2026, 9, 21)))
+        self.assertEqual(sweep.to_check([p]), [])
+        self.assertEqual(sweep.paint_plan([p]), [])
+
+    def test_start_day_itself_is_not_a_no_show(self):
+        import datetime as d
+        self.assertFalse(sweep.no_show(self._p(date="9/21/2026"),
+                                       d.date(2026, 9, 21)))
+
+    def test_owner_submit_and_blue_ink_sets_owner_submitted(self):
+        p = self._p(fs="Showed Up To CR", loc="Dallas", own="TRUE")
+        self.assertEqual(sweep.status_updates([p]), [p])
+
+    def test_missing_blue_ink_keeps_status(self):
+        p = self._p(fs="Needs BlueInk", loc="Dallas", own="TRUE", blue="FALSE")
+        self.assertEqual(sweep.status_updates([p]), [])
+
+    def test_later_statuses_never_overwritten(self):
+        for fs in ("Activations Email sent", "MISSING ID", "Owner submitted",
+                   "Sara+ Received"):
+            p = self._p(fs=fs, loc="Dallas", own="TRUE")
+            self.assertEqual(sweep.status_updates([p]), [], fs)
+
+    def test_ticked_this_pass_counts(self):
+        p = self._p(fs="Pending on OV", loc="Dallas")
+        self.assertEqual(sweep.status_updates([p], [(p.row, "Owner Submit")]),
+                         [p])
+
+
 VP_HEADS = ["Name", "Contact", "Login Created", "Onboarding Documents",
             "Background Check", "Drug Test", "FTC DIRECTV Compliance Training",
             "AT&T Protective Advantage Course", "AT&T Broadband Facts",

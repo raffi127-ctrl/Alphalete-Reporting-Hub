@@ -89,6 +89,20 @@ def _tint(ws, p, color, column: str = "Owner Submit") -> dict:
         "fields": "userEnteredFormat.backgroundColor"}}
 
 
+def _statuses(ws, everyone, ticked_now, live: bool) -> None:
+    """Final Status -> "Owner submitted" once Owner Submit + Blue Ink are both
+    ticked. One batched write; the value only, never the cell's formatting."""
+    ups = sweep.status_updates(everyone, ticked_now)
+    print(f"{'Set' if live else 'Would set'} Final Status to "
+          f"{sweep.OWNER_SUBMITTED!r}: {len(ups)}"
+          + (f" — {', '.join(p.name for p in ups)}" if ups else ""))
+    if live and ups:
+        ws.batch_update(
+            [{"range": gspread.utils.rowcol_to_a1(p.row, p.status_col),
+              "values": [[sweep.OWNER_SUBMITTED]]} for p in ups],
+            value_input_option="USER_ENTERED")
+
+
 def _paint(ws, everyone, ticked_now, ready_rows, live: bool,
            bg_pending_rows=(), sheet_only: bool = False) -> None:
     """Green = ticked, blue = ready for Owner Submit, light red = not done —
@@ -127,10 +141,12 @@ def main(argv=None) -> int:
     print(f"{ws.title}: {len(everyone)} people, {len(todo)} with an open box "
           f"({', '.join(config.COLUMNS)})", flush=True)
     if args.paint_only:
+        _statuses(ws, everyone, (), args.tick)
         _paint(ws, everyone, (), (), args.tick, sheet_only=True)
         return 0
     if not todo:
         # Nothing to look up — still colour every box by its tick.
+        _statuses(ws, everyone, (), args.tick)
         _paint(ws, everyone, (), (), args.tick)
         _picture(ws, args)
         return 0
@@ -224,6 +240,7 @@ def main(argv=None) -> int:
             [{"range": gspread.utils.rowcol_to_a1(p.row, p.cols[c]),
               "values": [["TRUE"]]} for p, c in writes],
             value_input_option="USER_ENTERED")   # so the checkbox ticks
+    _statuses(ws, everyone, [(p.row, c) for p, c in writes], args.tick)
     # Every box we tick also turns green (Megan 2026-09-21: "checkmark the box
     # and turn it green") — which is also what clears an Owner Submit blue.
     _paint(ws, everyone, [(p.row, c) for p, c in writes],

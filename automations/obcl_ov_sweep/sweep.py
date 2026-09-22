@@ -19,6 +19,9 @@ class Person:
     ticked: Dict[str, bool] = field(default_factory=dict)
     bg_status: str = ""
     blue_ink: bool = False
+    location: object = None                    # None = chart has no Location col
+    chart_date: object = None                  # date the person's chart is for
+    status_col: int = 0                        # 1-indexed Final Status column
 
     @property
     def name(self) -> str:
@@ -58,6 +61,8 @@ def people(values: List[List[str]]) -> List[Person]:
         fs = cols.get("Final Status")
         bg = cols.get("BG Status : Last Checked")
         bi = cols.get("Blue Ink")
+        lo = cols.get("Location")
+        cdate = oc.chart_date(ch)
         mapped = {c: cols[c] for c in config.COLUMNS if c in cols}
         for r in range(ch["start_row"], ch["end_row"] + 1):
             row = values[r - 1] if r - 1 < len(values) else []
@@ -72,7 +77,8 @@ def people(values: List[List[str]]) -> List[Person]:
                 first=first, last=last, row=r, final_status=cell(fs),
                 cols=mapped,
                 ticked={c: _truthy(cell(i)) for c, i in mapped.items()},
-                bg_status=cell(bg), blue_ink=_truthy(cell(bi))))
+                bg_status=cell(bg), blue_ink=_truthy(cell(bi)),
+                location=cell(lo) if lo else None, chart_date=cdate, status_col=fs or 0))
     return out
 
 
@@ -84,12 +90,27 @@ def owner_submitted(p: Person) -> bool:
             or bool(p.ticked.get("Owner Submit")))
 
 
+def no_show(p: Person, today=None) -> bool:
+    """Blank Final Status AND blank Location once their start day has passed
+    = never came. Digi Docs only adds people who show up, so OwnerVille has no
+    record of them — searching cost ~10 min a pass for 15 such rows on
+    2026-09-21 (Sung Par, Antashia Rich: "0 entries" under Show All). On their
+    start day itself they're still checked: the status just isn't filled yet."""
+    import datetime as _dt
+    today = today or _dt.date.today()
+    if p.location is None:              # no Location column: can't tell, so no
+        return False
+    if (p.final_status or "").strip() or p.location.strip():
+        return False
+    return bool(p.chart_date and p.chart_date < today)
+
+
 def to_check(everyone: List[Person]) -> List[Person]:
     """People worth an OwnerVille lookup: something still open, not gone,
     not already owner-submitted."""
     return [p for p in everyone
             if p.open_columns and not _gone(p.final_status)
-            and not owner_submitted(p)]
+            and not owner_submitted(p) and not no_show(p)]
 
 
 def earned(p: Person, done: Dict[str, object]) -> List[str]:
@@ -133,7 +154,7 @@ def paint_plan(everyone: List[Person], ticked_now=(), ready_rows=(),
     bg_wait = set(bg_pending_rows)
     out = []
     for p in everyone:
-        if _gone(p.final_status):
+        if _gone(p.final_status) or no_show(p):
             continue
         for c in config.COLUMNS:
             if c not in p.cols:
@@ -152,4 +173,30 @@ def paint_plan(everyone: List[Person], ticked_now=(), ready_rows=(),
                 continue
             else:
                 out.append((p, c, config.NOT_FOUND_RED))
+    return out
+
+
+# Final Status values this sweep may move ON to "Owner submitted" — all
+# EARLIER in the process. Anything else (Activations Email sent, Sara+
+# Received, MISSING ID, Terminated, ...) is left exactly as a person set it.
+STATUS_BEFORE_SUBMIT = {"", "showed up to cr", "pending on ov",
+                        "needs blueink", "waiting on bgc"}
+OWNER_SUBMITTED = "Owner submitted"      # the dropdown's exact spelling
+
+
+def status_updates(everyone: List[Person], ticked_now=()) -> List[Person]:
+    """People whose Final Status should now read "Owner submitted" (Megan
+    2026-09-21): Owner Submit ticked AND Blue Ink ticked — someone still
+    missing Blue Ink stays "Needs BlueInk"."""
+    now = set(ticked_now)
+    out = []
+    for p in everyone:
+        if not p.status_col or _gone(p.final_status):
+            continue
+        submitted = (p.ticked.get("Owner Submit")
+                     or (p.row, "Owner Submit") in now)
+        if (submitted and p.blue_ink
+                and (p.final_status or "").strip().lower()
+                in STATUS_BEFORE_SUBMIT):
+            out.append(p)
     return out
