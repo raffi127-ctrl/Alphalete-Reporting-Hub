@@ -3301,8 +3301,20 @@ def main() -> None:
                   or st.session_state.get("rgoal_dirty"))
     if locked:
         st.sidebar.warning("Unsaved changes", icon="✏️")
-    view = st.sidebar.radio("View", ["Office", "Captain", "Org"], key="view",
-                            disabled=locked)
+
+    # ONE OFFICE OR ALL OF THEM (Megan 2026-09-22). An ICD who came in on
+    # their own code sees their own board and nothing else: no Captain or Org
+    # view, no office picker — those are windows onto every other office's
+    # reps. Megan's code, and anyone on one of our own Macs, sees it all.
+    only = _GATE.scope()
+    if only != _GATE.ALL:
+        if only not in profs:
+            st.error(f"There is no board set up for {only} yet. Ask Megan.")
+            return
+        view = "Office"
+    else:
+        view = st.sidebar.radio("View", ["Office", "Captain", "Org"],
+                                key="view", disabled=locked)
 
     if view == "Captain":
         captain_page()
@@ -3326,9 +3338,13 @@ def main() -> None:
         return
 
     names = sorted(profs)
-    icd = st.sidebar.selectbox(
-        "Office", names, index=names.index(RAF_ICD) if RAF_ICD in names else 0,
-        disabled=locked)
+    if only != _GATE.ALL:
+        icd = only
+    else:
+        icd = st.sidebar.selectbox(
+            "Office", names,
+            index=names.index(RAF_ICD) if RAF_ICD in names else 0,
+            disabled=locked)
     prof = profs[icd]
     key = (prof.office_key or icd.lower().replace(" ", "_"))
 
