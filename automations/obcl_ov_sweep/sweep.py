@@ -104,16 +104,17 @@ def earned(p: Person, done: Dict[str, object]) -> List[str]:
 
 def sheet_bg_pending(p: Person) -> bool:
     """Owner Submit YELLOW straight off the sheet (Megan 2026-09-21: "that
-    group of pending BGs"): every other box on the row is ticked — Digi Docs,
-    Quizzes, Blue Ink, Headshot, UID — and the background check is still
+    group of pending BGs"): every other sweep box on the row is ticked — Digi
+    Docs, Quizzes, Headshot, UID (Blue Ink doesn't count) — and the BG is still
     pending: BG Status says Pending ("Taken - Pending") or Unperformable (Megan,
     same day: "and the unperformables that have everything else done"), or
     Final Status says "Pending on OV" (Faith Moss). Needs no OwnerVille read."""
     others = [c for c in config.COLUMNS if c != "Owner Submit" and c in p.cols]
     if not others or not all(p.ticked.get(c) for c in others):
         return False
-    if not p.blue_ink:
-        return False
+    # Blue Ink does NOT block yellow (Megan 2026-09-21, David Dean / Jomanah
+    # Bennett): it's outside OwnerVille onboarding, so it can't hold up the
+    # owner submit.
     bg = (p.bg_status or "").lower()
     return ("pending" in bg or "unperformable" in bg
             or "pending on ov" in (p.final_status or "").lower())

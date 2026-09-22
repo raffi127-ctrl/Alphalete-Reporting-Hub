@@ -120,6 +120,15 @@ class SheetBgPending(unittest.TestCase):
         self.assertEqual(self._owner_colour(bg="Unperformable"),
                          config.BG_PENDING_YELLOW)
 
+    def test_blue_ink_open_does_not_block_yellow(self):
+        head = HEAD + ["BG Status : Last Checked"]
+        row = _row("David", "Dean", dd="TRUE", oq="TRUE", uid="TRUE") + [
+            "Taken - Pending"]
+        row[HEAD.index("Blue Ink")] = "FALSE"
+        plan = sweep.paint_plan(sweep.people([["9/21/2026"], head, row]))
+        self.assertEqual([col for _, c, col in plan if c == "Owner Submit"],
+                         [config.BG_PENDING_YELLOW])
+
     def test_failed_bg_stays_red(self):
         self.assertEqual(self._owner_colour(bg="Failed"), config.NOT_FOUND_RED)
 

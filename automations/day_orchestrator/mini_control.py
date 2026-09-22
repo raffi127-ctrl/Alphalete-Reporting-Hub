@@ -6907,6 +6907,36 @@ def _action_text_dispositions(args: str) -> tuple[bool, str]:
     return True, ("texted %d group(s): " % len(sent)) + " · ".join(lines)
 
 
+def _action_text_obcl(args: str) -> tuple[bool, str]:
+    """Text the OBCL picture to the "ORIENTATION CREW - Real" group.
+
+    Args:  <png filename> [--dry-run]    e.g.  text_obcl obcl_2026-09-22_1400.png
+
+    Queued by obcl_ov_sweep after an hourly pass whose picture CHANGED (Megan
+    2026-09-21). Sent from here, not from the sweep, for the usual reason: only
+    this poller holds the macOS "control Messages" grant. Idempotent via a
+    .sent marker next to the PNG, so a queue retry never double-texts."""
+    import shlex
+    try:
+        parts = shlex.split(args or "")
+    except ValueError:
+        parts = (args or "").split()
+    if not parts:
+        return False, "text_obcl needs a png filename"
+    from automations.obcl_ov_sweep import snapshot
+    try:
+        res = snapshot.send(parts[0], dry_run="--dry-run" in parts[1:])
+    except Exception as e:  # noqa: BLE001
+        return False, f"{type(e).__name__}: {str(e)[:220]}"
+    if res.get("skipped"):
+        return True, f"already sent at {res['skipped']} — not re-texting"
+    if not res.get("ok"):
+        return False, f"not sent: {str(res)[:260]}"
+    return True, (f"texted {parts[0]} to {res.get('resolved_name')!r} "
+                  f"({res.get('participants')} people)"
+                  + (" [DRY RUN]" if res.get("dry_run") else ""))
+
+
 def _action_text_tracker(args: str) -> tuple[bool, str]:
     """Text one Tableau Country Tracker board to its iMessage group(s).
 
@@ -7812,6 +7842,7 @@ ACTIONS = {
     "run_b2b_dispositions": _action_run_b2b_dispositions,
     "text_dispositions": _action_text_dispositions,
     "text_tracker": _action_text_tracker,
+    "text_obcl": _action_text_obcl,
     "sendimage_diag": _action_sendimage_diag,
     "sendimage_fmt": _action_sendimage_fmt,
     "sendimage_loc": _action_sendimage_loc,

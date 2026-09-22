@@ -39,7 +39,9 @@ if pgrep -f "automations.obcl_ov_sweep.run" > /dev/null 2>&1; then
 fi
 
 ARGS=()
-[ "$MODE" = "tick" ] && ARGS+=(--tick)
+# --text: after the pass, text the picture to "ORIENTATION CREW - Real" — but
+# only when something on it CHANGED (Megan 2026-09-21).
+[ "$MODE" = "tick" ] && ARGS+=(--tick --text)
 
 LOG_FILE="output/logs/obcl-ov-sweep-$(date +%Y-%m-%d-%H%M%S).log"
 echo "[$(date)] OBCL <- OwnerVille sweep starting (mode=$MODE)" > "$LOG_FILE"

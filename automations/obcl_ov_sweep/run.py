@@ -58,6 +58,21 @@ def match(people, reps: dict):
     return out, missing
 
 
+def _picture(ws, args) -> None:
+    """The hourly picture: drawn every live pass, texted only if it changed.
+    Never lets a picture problem fail the sweep — the ticks already landed."""
+    if not args.tick:
+        return
+    try:
+        from automations.obcl_ov_sweep import snapshot
+        _, values = _open_tab(args.tab or ws.title)
+        print(snapshot.after_pass(ws, values, live=args.tick, text=args.text),
+              flush=True)
+    except Exception as e:                                  # noqa: BLE001
+        print(f"picture: FAILED ({type(e).__name__}: {str(e)[:200]})",
+              flush=True)
+
+
 def _key(p) -> str:
     from automations.digi_docs import namematch
     return namematch.norm(p.name)
@@ -97,6 +112,9 @@ def main(argv=None) -> int:
     ap.add_argument("--tab", default="", help="OBCL tab (default: newest)")
     ap.add_argument("--only", default="", help="one person, 'First Last'")
     ap.add_argument("--show", action="store_true", help="visible browser")
+    ap.add_argument("--text", action="store_true",
+                    help="after a live pass, text the picture to ORIENTATION "
+                         "CREW - Real IF it changed (the hourly wrapper sets it)")
     ap.add_argument("--paint-only", action="store_true",
                     help="colour the boxes off the sheet alone — no OwnerVille")
     args = ap.parse_args(argv)
@@ -114,6 +132,7 @@ def main(argv=None) -> int:
     if not todo:
         # Nothing to look up — still colour every box by its tick.
         _paint(ws, everyone, (), (), args.tick)
+        _picture(ws, args)
         return 0
 
     import time
@@ -209,6 +228,8 @@ def main(argv=None) -> int:
     # and turn it green") — which is also what clears an Owner Submit blue.
     _paint(ws, everyone, [(p.row, c) for p, c in writes],
            [p.row for p in ready], args.tick, [p.row for p in bg_wait])
+
+    _picture(ws, args)
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     stamp = dt.datetime.now().strftime("%Y-%m-%d_%H%M")
