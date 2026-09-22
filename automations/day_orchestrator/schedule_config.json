@@ -6265,6 +6265,32 @@
       "verify": null,
       "timeout_minutes": 40
     },
+    "nds_program_focus": {
+      "hand_run_only": true,
+      "on_scheduler": true,
+      "machine": "Lucy 3",
+      "_note": "NDS Program - Focus Report (Rafael 2026-09-22, #l10-alphalete): one '<Owner> - NDS' tab per owner in the NDS tracker, not just the org, cloned from the org workbook's 'NDS Template'. Workbook 1Vu_J7bcSpreIBcsYuAVEQMusL9-RaOSgB65DiKxrYtI in the same Drive folder as Alphalete Org 1on1s (Promotions). Same engine as the org NDS step (opt_nds) pointed at this sheet with --sheet-id. Lucy 3 because Tableau logs in there (it hangs on the login form from Windows). PREVIEW: only Frank Matos until Eve says roll out - `lucy rerun nds_program_focus --only \"Frank Matos\"`. Manual only, not on the scheduler yet.",
+      "display_name": "NDS Program - Focus Report",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:product_sales"
+      ],
+      "command": [
+        "automations.alphalete_org_report.opt_nds"
+      ],
+      "base_args": [
+        "--sheet-id",
+        "1Vu_J7bcSpreIBcsYuAVEQMusL9-RaOSgB65DiKxrYtI"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 40
+    },
     "alphalete_org_box": {
       "hand_run_only": true,
       "on_scheduler": true,

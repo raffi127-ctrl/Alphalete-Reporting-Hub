@@ -1476,6 +1476,16 @@ def run_nds_opt(dry_run: bool = False, only_rep: Optional[str] = None,
                   f"{type(e).__name__}: {str(e)[:160]}")
             download_errors.append(
                 f"patchright session: {type(e).__name__}: {str(e)[:120]}")
+            # No session = nothing was downloaded, so every csv in output/ is
+            # whatever an OLDER run left there. Parsing on would write that
+            # old week into this week's column and still exit 0 — 2026-09-22
+            # from Windows (Tableau login hung) it put WE 9/6 numbers under
+            # 9/20 on Frank Matos's tab. Write nothing; re-run with
+            # --skip-download if the cached files are really wanted.
+            logfn("OPT NDS: ✗ no Tableau session — nothing written "
+                  "(cached crosstabs are from an older run)")
+            return {"filled": [], "skipped": [], "errors": download_errors,
+                    "aborted": True}
     else:
         logfn("OPT NDS: --skip-download — reusing cached crosstabs")
 
@@ -1728,3 +1738,5 @@ if __name__ == "__main__":
           f"Download errors: {len(result['errors'])}")
     for err in result["errors"]:
         print(f"  ✗ {err}")
+    if result.get("aborted"):
+        sys.exit(1)
