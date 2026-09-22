@@ -75,7 +75,8 @@ def week_from_export(path: Path) -> dt.date | None:
     08/31-09/06 — so "today minus N days" gets the week wrong on exactly the
     days this is most likely to be run. Every row instead carries a
     'Currently Viewing' caption with the MAIN sheet's range (e.g.
-    '08/31 - 09/06'), and the (LW) twin's data is the week BEFORE that one:
+    '08/31 - 09/06', or just '09/21 - 09/21' on a Monday), and the twin holds
+    the week BEFORE the one that range belongs to:
     verified 2026-09-07, when the file captioned 08/31-09/06 matched the
     08/24-08/30 tracker owner for owner (Aiden Atoori 484 lines / 4 AIR).
 
@@ -93,19 +94,20 @@ def week_from_export(path: Path) -> dt.date | None:
         return None
     for r in rows[1:]:
         caption = (r[cap_i] if cap_i < len(r) else "").strip()
-        m = re.search(r"(\d{1,2})/(\d{1,2})\s*-\s*(\d{1,2})/(\d{1,2})", caption)
+        m = re.search(r"(\d{1,2})/(\d{1,2})", caption)
         if not m:
-            continue
-        month, day = int(m.group(3)), int(m.group(4))
+            continue                      # the 'Total' row, or an empty cell
+        month, day = int(m.group(1)), int(m.group(2))
         # The caption carries no year. Anchor it to the year whose <month>/<day>
         # is nearest today, so a December/January run can't land 12 months off.
         today = dt.date.today()
-        best = min((dt.date(y, month, day) for y in
-                    (today.year - 1, today.year, today.year + 1)),
-                   key=lambda d: abs((d - today).days))
-        main_week_end = best
-        if main_week_end.weekday() != 6:      # caption ends on the Sunday
-            return None
+        start = min((dt.date(y, month, day) for y in
+                     (today.year - 1, today.year, today.year + 1)),
+                    key=lambda d: abs((d - today).days))
+        # The caption's range STARTS on the Monday of the week the main sheet
+        # is showing (on a Monday that range is just that one day). Close that
+        # week on its Sunday, then step back one: the twin is the week before.
+        main_week_end = start + dt.timedelta(days=(6 - start.weekday()) % 7)
         return main_week_end - dt.timedelta(days=7)
     return None
 
