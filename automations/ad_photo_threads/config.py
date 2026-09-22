@@ -18,7 +18,7 @@ SHEET_ID = "16UruNs3bHGJ_pBvmD6T9KEqMAtDNNyuKArA_es6f0LE"
 # #rafs-office-recruiting-11280 — where the 1st-round threads live.
 SOURCE_CHANNEL_ID = "C0AUAS88FGW"
 
-# Where the ad threads go live: #rafs-local-office-indeed-photos (Raf
+# Where the ad threads go live: #indeed-photos-rafs-local-office (Raf
 # 2026-09-21: "lets move the post to the new channel I just made ... I don't
 # like the recruiting channel getting so clogged up"). The 1st-rounds threads
 # are still READ from SOURCE_CHANNEL_ID. The first night's posts in the old
