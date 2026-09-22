@@ -60,6 +60,7 @@ def match(people, reps: dict):
 
 SUBMIT_FAILURES: list = []   # [(name, reason)] this pass — for the group text
 LUCY_SUBMITTED: list = []    # names Lucy owner-submitted THIS pass
+ALERTED: list = []           # [True] once the Megan/Eve alert really posted
 
 
 def _picture(ws, args) -> None:
@@ -72,7 +73,8 @@ def _picture(ws, args) -> None:
         _, values = _open_tab(args.tab or ws.title)
         print(snapshot.after_pass(ws, values, live=args.tick, text=args.text,
                                   failures=SUBMIT_FAILURES,
-                                  lucy_new=LUCY_SUBMITTED), flush=True)
+                                  lucy_new=LUCY_SUBMITTED,
+                                  alerted=bool(ALERTED)), flush=True)
     except Exception as e:                                  # noqa: BLE001
         print(f"picture: FAILED ({type(e).__name__}: {str(e)[:200]})",
               flush=True)
@@ -126,11 +128,15 @@ def _alert_failures(live: bool) -> None:
              f"new start{'s' if len(SUBMIT_FAILURES) != 1 else ''} in OwnerVille")
     try:
         from automations.shared import incident_thread as inc
-        inc.open_or_followup(key="failure-obcl_owner_submit", title=title,
-                             body=body, channel=ALERT_CHANNEL,
-                             subjects=[n for n, _ in SUBMIT_FAILURES],
-                             label="OBCL owner submit")
-        print(f"  alert posted: {title}", flush=True)
+        res = inc.open_or_followup(key="failure-obcl_owner_submit",
+                                   title=title, body=body,
+                                   channel=ALERT_CHANNEL,
+                                   subjects=[n for n, _ in SUBMIT_FAILURES],
+                                   label="OBCL owner submit")
+        if res:
+            ALERTED.append(True)
+        print(f"  alert {'posted' if res else 'NOT confirmed'}: {title}",
+              flush=True)
     except Exception as e:                                  # noqa: BLE001
         print(f"  ⚠ owner-submit alert FAILED to post ({type(e).__name__}: "
               f"{str(e)[:160]})", flush=True)

@@ -277,7 +277,7 @@ def draw_set(recs: List[dict], week: str, stamp: str, clock: str,
     return made
 
 
-def caption(made, failures=()) -> str:
+def caption(made, failures=(), alerted: bool = False) -> str:
     """Megan 2026-09-22 — exactly this shape:
         OBCL update
         ✅ 21 owner submitted          (everyone, Lucy's included)
@@ -294,12 +294,17 @@ def caption(made, failures=()) -> str:
     # then each name with its reason. The alerts channel gets the same list.
     if failures:
         who = "; ".join(f"{n} — {why}" for n, why in failures)
-        out.append(f"❌ {len(failures)} Couldn't owner submit in OV: {who}")
+        tail = " Needs done manually"
+        # Only CLAIM Eve & Megan were told when the alert really posted.
+        tail += (" — I've let Eve & Megan know so it gets fixed going "
+                 "forward." if alerted else ".")
+        out.append(f"❌ {len(failures)} Couldn't owner submit in OV: {who}."
+                   + tail)
     return "\n".join(out)
 
 
 def after_pass(ws, values, *, live: bool, text: bool, failures=(),
-               lucy_new=()) -> str:
+               lucy_new=(), alerted: bool = False) -> str:
     """Called by run.py after a pass. Returns a one-line outcome for the log."""
     recs = collect(ws, values)
     if not recs:
@@ -312,7 +317,7 @@ def after_pass(ws, values, *, live: bool, text: bool, failures=(),
                     lucy_new)
     names = " ".join(p.name for _, _, p in made)
     if made:  # the caption travels with the pictures, next to the first one
-        made[0][2].with_suffix(".txt").write_text(caption(made, failures))
+        made[0][2].with_suffix(".txt").write_text(caption(made, failures, alerted))
     # A failed submit is part of what changed: fold it into the fingerprint,
     # so a NEW failure sends and the same one repeating next hour doesn't.
     recs = recs + [{"_submit_failures": sorted(failures)}] if failures else recs

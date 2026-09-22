@@ -298,7 +298,11 @@ class FailureCaption(unittest.TestCase):
         made = [(sn.GROUPS[0], 21, None), (sn.GROUPS[1], 4, None)]
         cap = sn.caption(made, [("Jane Doe", "confirm box would not tick")])
         self.assertIn("❌ 1 Couldn't owner submit in OV: Jane Doe — "
-                      "confirm box would not tick", cap)
+                      "confirm box would not tick. Needs done manually.", cap)
+        told = sn.caption(made, [("Jane Doe", "confirm box would not tick")],
+                          alerted=True)
+        self.assertIn("I've let Eve & Megan know so it gets fixed going "
+                      "forward.", told)
         self.assertTrue(cap.startswith("OBCL update\n✅ 21 owner submitted\n"
                                        "➡️ 4 New Lucy Owner Submitted"))
 
