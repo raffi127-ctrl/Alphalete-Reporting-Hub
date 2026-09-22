@@ -1468,6 +1468,116 @@ CDP_STARTUP_CAP_S = 22
 CDP_STARTUP_SETTLE_S = 4
 
 
+# ---------------------------------------------------------------------------
+# KEEP THE BROWSER WARM BETWEEN TICKS (2026-09-22)
+# ---------------------------------------------------------------------------
+# Every tick used to launch a brand-new Chrome and terminate it on the way out.
+# For AppStream that only cost startup time; for INDEED it cost the whole job.
+# Indeed challenges the FIRST resume a browser opens ("Verify you are human")
+# and then lets that session through — measured on Lucy 4: after one clear, 6 of
+# 6 resumes rendered unchallenged. A browser that dies every two minutes meets a
+# brand-new challenge every two minutes, and on a day the challenge stops
+# auto-clearing (2026-09-22) every office on two machines filled ZERO numbers
+# while the AppStream session was perfectly healthy.
+#
+# So a healthy session now LEAVES Chrome running and the next tick connects to
+# it. The clearance — and the resume reads that depend on it — survive.
+#
+# Bounded on purpose:
+#   * any failure path still kills the browser, so a wedged one never persists
+#     (the self-heal the retry logic already relies on),
+#   * a browser nobody has used for KEEP_WARM_TTL_MIN is reaped, so the offices
+#     a machine rotates through don't leave three idle Chromes forever.
+import os as _os_keepwarm
+
+KEEP_WARM_BROWSER = _os_keepwarm.environ.get("RP_KEEP_WARM_BROWSER", "1") == "1"
+KEEP_WARM_TTL_MIN = int(_os_keepwarm.environ.get("RP_KEEP_WARM_TTL_MIN", "45"))
+
+
+def _lastuse_path(profile: str = None) -> str:
+    return (profile or CDP_PROFILE) + "/.rp_lastuse"
+
+
+def _touch_lastuse(profile: str = None) -> None:
+    import time as _t
+    try:
+        with open(_lastuse_path(profile), "w") as fh:
+            fh.write(str(_t.time()))
+    except Exception:  # noqa: BLE001 — an unmarked profile just looks stale
+        pass
+
+
+def _is_stale(last_use: float, now: float, ttl_min: int = None) -> bool:
+    """Has this warm browser gone unused long enough to reap? An unreadable or
+    missing marker counts as stale — we only keep what we can prove is in use."""
+    ttl = KEEP_WARM_TTL_MIN if ttl_min is None else ttl_min
+    if not last_use:
+        return True
+    return (now - last_use) > ttl * 60
+
+
+def _cdp_port_alive(port=None, timeout: float = 1.5) -> bool:
+    """Is a Chrome already listening on this office's debug port?"""
+    import json as _json
+    import urllib.request as _u
+    try:
+        with _u.urlopen(f"http://127.0.0.1:{port or CDP_PORT}/json/version",
+                        timeout=timeout) as r:
+            _json.loads(r.read().decode() or "{}")
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _should_reuse_browser(port_alive: bool, keep_warm: bool = None) -> bool:
+    """Reuse the running Chrome only when keep-warm is on AND one is answering."""
+    return bool(port_alive and (KEEP_WARM_BROWSER if keep_warm is None
+                                else keep_warm))
+
+
+def _should_kill_on_exit(hard_stop: bool, keep_warm: bool = None) -> bool:
+    """Kill the browser on the way out unless keep-warm is on and the session
+    ended cleanly. A session that raised is ALWAYS killed: a wedged or
+    half-logged-in browser must never be handed to the next tick."""
+    if hard_stop:
+        return True
+    return not (KEEP_WARM_BROWSER if keep_warm is None else keep_warm)
+
+
+def reap_stale_warm_browsers() -> int:
+    """Kill warm browsers nobody has used lately, across every office this
+    machine knows about. Called at session open, so the rotation cleans up after
+    itself without a separate timer."""
+    import subprocess
+    import time as _t
+    killed = 0
+    try:
+        from automations.applicant_push import offices as _offices
+        rows = list(_offices.OFFICES.values())
+    except Exception:  # noqa: BLE001 — a machine without the office table
+        return 0
+    now = _t.time()
+    for row in rows:
+        profile, port = row.get("cdp_profile"), row.get("cdp_port")
+        pat = row.get("cdp_kill_pat")
+        if not profile or not port or not pat:
+            continue
+        if profile == CDP_PROFILE or not _cdp_port_alive(port):
+            continue        # this office's own browser, or nothing running
+        last = 0.0
+        try:
+            with open(_lastuse_path(profile)) as fh:
+                last = float(fh.read().strip() or 0)
+        except Exception:  # noqa: BLE001
+            last = 0.0
+        if _is_stale(last, now):
+            subprocess.run(["pkill", "-f", pat], capture_output=True)
+            killed += 1
+            _log(f"[cdp] reaped an idle warm Chrome for office "
+                 f"{row.get('office_id')} (unused > {KEEP_WARM_TTL_MIN}min)")
+    return killed
+
+
 def _await_cdp_ready(port=None, cap_s: float = None) -> float:
     """Block until Chrome's debug port answers (or the cap elapses). Returns the
     seconds waited, for the log line."""
@@ -1689,13 +1799,23 @@ def warm_appstream_cdp_page(switch_office: bool = True, diag_tab: str = "RP Diag
     from automations.shared import creds
     from automations.recruiting_report import fetch_office
 
-    dst = _copy_default_profile()
-    _log(f"[cdp] profile copy; plugin present: "
-         f"{os.path.isdir(dst + '/Default/Extensions/' + EXT_ID)}")
-    proc = _launch_cdp_chrome()
-    _waited = _await_cdp_ready()
-    _log(f"[cdp] launched real Chrome pid={proc.pid}; debug port ready in "
-         f"{_waited:.1f}s (cap {CDP_STARTUP_CAP_S}s)")
+    # Reuse the Chrome the last tick left running, when there is one. This IS the
+    # keep-warm mechanism: no pkill, no re-seed, no relaunch — so Indeed's cleared
+    # check, and the resume reads behind it, survive into this tick.
+    reap_stale_warm_browsers()
+    reused = _should_reuse_browser(_cdp_port_alive())
+    proc = None
+    if reused:
+        _log(f"[cdp] reusing the warm Chrome on port {CDP_PORT} — no relaunch, so "
+             f"Indeed's check stays cleared for this office")
+    else:
+        dst = _copy_default_profile()
+        _log(f"[cdp] profile copy; plugin present: "
+             f"{os.path.isdir(dst + '/Default/Extensions/' + EXT_ID)}")
+        proc = _launch_cdp_chrome()
+        _waited = _await_cdp_ready()
+        _log(f"[cdp] launched real Chrome pid={proc.pid}; debug port ready in "
+             f"{_waited:.1f}s (cap {CDP_STARTUP_CAP_S}s)")
     # Watch the extractor's own fetches so an exit=3 wedge names the RIGHT cause
     # (Indeed's employer-portal Turnstile, not AppStream). See _cdp_run's comment.
     net = {"indeed_403": False, "turnstile": False}
@@ -1710,6 +1830,9 @@ def warm_appstream_cdp_page(switch_office: bool = True, diag_tab: str = "RP Diag
         except Exception:  # noqa: BLE001
             pass
 
+    # Anything that raises between here and the end of the caller's work means the
+    # browser is NOT safe to hand on — see _should_kill_on_exit.
+    _hard_stop = False
     pw = sync_playwright().start()
     try:
         browser = pw.chromium.connect_over_cdp(f"http://127.0.0.1:{CDP_PORT}")
@@ -1719,6 +1842,22 @@ def warm_appstream_cdp_page(switch_office: bool = True, diag_tab: str = "RP Diag
             ctx.on("response", _net_watch)
         except Exception:  # noqa: BLE001
             pass
+        if reused:
+            # A reused browser is wherever the last tick left it — often a resume
+            # tab, and sometimes several. Close the extras and put the working page
+            # back on the console, so the login checks below see what they expect.
+            for _extra in list(ctx.pages)[1:]:
+                try:
+                    _extra.close()
+                except Exception:  # noqa: BLE001
+                    pass
+            try:
+                page.goto("https://applicantstream.com/index.cfm",
+                          wait_until="domcontentloaded", timeout=45000)
+                page.wait_for_timeout(1500)
+            except Exception as e:  # noqa: BLE001
+                _log(f"[cdp] warm browser would not return to the console "
+                     f"({type(e).__name__}) — the login path below re-drives it")
 
         logged = _reuse_account_session(ctx, page, tp, True)
         if logged and page.locator("#searchMC").count() > 0:
@@ -1796,17 +1935,36 @@ def warm_appstream_cdp_page(switch_office: bool = True, diag_tab: str = "RP Diag
         page.wait_for_timeout(2000)
         _log(f"[cdp] service_workers: {[sw.url for sw in ctx.service_workers]}")
 
-        yield page, ctx, net
+        try:
+            yield page, ctx, net
+        except BaseException:
+            # The caller's work blew up. Whatever state the browser is in, it is
+            # not state to hand the next tick — kill it and let the next run
+            # start clean (the self-heal every retry path already assumes).
+            _hard_stop = True
+            raise
+    except BaseException:
+        _hard_stop = True
+        raise
     finally:
         try:
             pw.stop()
         except Exception:  # noqa: BLE001
             pass
-        try:
-            proc.terminate()
-        except Exception:  # noqa: BLE001
-            pass
-        subprocess.run(["pkill", "-f", _CDP_KILL_PAT], capture_output=True)
+        if _should_kill_on_exit(_hard_stop):
+            try:
+                if proc is not None:
+                    proc.terminate()
+            except Exception:  # noqa: BLE001
+                pass
+            subprocess.run(["pkill", "-f", _CDP_KILL_PAT], capture_output=True)
+        else:
+            # LEAVE IT RUNNING. This is the point: the next tick connects to this
+            # same Chrome, so Indeed's cleared check survives instead of being
+            # re-fought every two minutes.
+            _touch_lastuse()
+            _log(f"[cdp] leaving Chrome warm on port {CDP_PORT} for the next tick "
+                 f"(reaped after {KEEP_WARM_TTL_MIN}min idle)")
         _flush_diag(diag_tab)
 
 
