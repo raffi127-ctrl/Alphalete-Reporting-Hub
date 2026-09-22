@@ -206,13 +206,33 @@ def _login_page_message(page) -> str:
     there is none, or when the page cannot be asked (a fake page in tests)."""
     try:
         text = page.evaluate(
-            """() => [...document.querySelectorAll(
-                 '[id*="Error"], [id*="Msg"], [id*="Message"], [id*="lbl"],'
-                 + ' .validation-summary-errors, .alert, .error')]
-                 .map(e => (e.innerText || '').trim())
-                 .filter(t => t && t.length < 300 && !/\{1\}|##LOC/.test(t))
-                 .join(' | ')""")
-        return " ".join(str(text or "").split())[:300]
+            """() => {
+                 const pick = sel => [...document.querySelectorAll(sel)]
+                   .map(e => (e.innerText || '').trim())
+                   .filter(t => t && t.length < 300 && !/\{1\}|##LOC/.test(t));
+                 // Labels, validation summaries AND Telerik's RadWindow
+                 // alert text -- SaraPlus says "invalid login" in a popup,
+                 // not in a label (2026-09-22: a bounce read "no error
+                 // shown" because only labels were asked).
+                 const said = pick('[id*="Error"], [id*="Msg"], [id*="Message"],'
+                   + ' [id*="lbl"], .validation-summary-errors, .alert, .error,'
+                   + ' .rwDialogText, [class*="rwDialog"], .RadWindow');
+                 const u = document.querySelector('#ctl00_MainContent_txtUserName');
+                 const p = document.querySelector('#ctl00_MainContent_txtPassword');
+                 const body = (document.body && document.body.innerText || '')
+                   .replace(/\s+/g, ' ').trim().slice(0, 400);
+                 return (said.length ? said.join(' | ') : '')
+                   + ' [title: ' + document.title + '; user field: '
+                   + (u ? (u.value ? 'filled' : 'EMPTY') : 'missing')
+                   + '; password field: '
+                   + (p ? (p.value ? 'filled' : 'EMPTY') : 'missing')
+                   + '; body: ' + body + ']';
+               }""")
+        text = " ".join(str(text or "").split())
+        # "nothing" stays the marker _as_owner_problem keys on: no message
+        # from the page itself, whatever the diagnostics after it say.
+        return (text if not text.startswith(" [") and not text.startswith("[")
+                else "nothing -- no error shown" + text)[:900]
     except Exception:  # noqa: BLE001
         return ""
 

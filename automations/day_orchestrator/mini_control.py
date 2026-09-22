@@ -7197,6 +7197,16 @@ def _action_purge_retired_appstream_creds(args: str) -> tuple[bool, str]:
                   % ("; ".join(removed), ", ".join(kept) or "primary only"))
 
 
+def _action_sara_probe(args: str) -> tuple[bool, str]:
+    """sara_probe [--chromium]: can THIS machine log into SaraPlus hidden, in
+    the headless shell (default) or full Chromium? Throwaway profile, the
+    sales board's account, read-only. Built 2026-09-22 to A/B the browser
+    Khalil's hidden read was moved to, on a machine we can see."""
+    cmd = [sys.executable, "-m", "automations.shared.saraplus_probe"] + (args or "").split()
+    ok, res = _run_cmd(cmd, timeout_s=6 * 60, log_name="sara-probe.log")
+    return ok, res[-1200:]
+
+
 def _action_login_check(args: str) -> tuple[bool, str]:
     """Are BOTH logins live on THIS machine — ownerville AND AppStream?
 
@@ -7985,6 +7995,7 @@ ACTIONS = {
     "reseed_appstream": _action_reseed_appstream,
     "push_appstream_fleet": _action_push_appstream_fleet,
     "login_check": _action_login_check,
+    "sara_probe": _action_sara_probe,
     "purge_retired_appstream_creds": _action_purge_retired_appstream_creds,
     "set_ownerville_creds": _action_set_ownerville_creds,
     "appstream_renew_probe": _action_appstream_renew_probe,
