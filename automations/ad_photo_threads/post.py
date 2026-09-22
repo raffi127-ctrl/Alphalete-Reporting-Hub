@@ -207,6 +207,15 @@ def _pin(cl, channel: str, ts: str, add: bool) -> Optional[str]:
         return msg.splitlines()[0][:160]
 
 
+def forget_channel(channel: str) -> None:
+    """Drop a channel's state. Previews use it so every DM sample posts from
+    scratch — otherwise a second sample of the same day finds it "already
+    posted" and sends nothing (9/21: Eve saw only the old pilots)."""
+    state = _load_state()
+    if state.pop(channel, None) is not None:
+        _save_state(state)
+
+
 def day_done(channel: str, day: dt.date) -> bool:
     return day.isoformat() in _load_state().get(channel, {}).get("done_days", [])
 
