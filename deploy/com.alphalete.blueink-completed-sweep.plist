@@ -27,20 +27,24 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- The OBCL tracking schedule (Megan 2026-09-22): a 9am check, then
-         hourly 2pm-7pm machine-local (Lucy 2 is Central), all 7 days: the
-         same rhythm as the OBCL <- OwnerVille sweep, so both columns of the
-         tab move together. :15 past on purpose: clear of the 7:30 Monday send
-         and of the jobs that fire on the hour. -->
+    <!-- 15 minutes BEFORE every OBCL <- OwnerVille sweep pass (Megan
+         2026-09-22), so the Blue Ink column is up to date when that sweep
+         reads the tab: 07:45 Tue-Fri, then 13:45-18:45 hourly every day,
+         machine-local (Lucy 2 is Central). No Monday morning pass: Monday is
+         start day, the 07:30 send is running then and syncs the ticks itself.
+         launchd Weekday: 2=Tue 3=Wed 4=Thu 5=Fri. -->
     <key>StartCalendarInterval</key>
     <array>
-        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>15</integer></dict>
-        <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>15</integer></dict>
-        <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>15</integer></dict>
-        <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>15</integer></dict>
-        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>15</integer></dict>
-        <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>15</integer></dict>
-        <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>15</integer></dict>
+        <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>45</integer></dict>
     </array>
 
     <key>StandardOutPath</key>

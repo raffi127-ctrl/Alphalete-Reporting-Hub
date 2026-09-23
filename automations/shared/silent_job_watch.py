@@ -113,11 +113,12 @@ JOBS: Dict[str, dict] = {
     "blueink_completed_sweep": {
         "name": "Blue Ink completed-sweep",
         "machine": "Lucy 2",
-        # A 09:15 pass fires too, but the watch keys on the 14:15 start so the
-        # 9am-2pm gap (by design, 2026-09-22) never reads as a missed pass.
-        "first_by": "15:15",       # first afternoon pass 14:15 + 60 min grace
+        # Runs 15 min ahead of every OBCL <- OwnerVille pass. Tue-Fri fire at
+        # 07:45 too, but the watch keys on the 13:45 start so the morning-to-
+        # afternoon gap (by design, 2026-09-22) never reads as a missed pass.
+        "first_by": "14:45",       # first afternoon pass 13:45 + 60 min grace
         "max_gap_min": 150,        # hourly → 2.5h tolerates one skipped pass
-        "active_until": "20:15",   # last pass 19:15 + grace
+        "active_until": "19:45",   # last pass 18:45 + grace
         "weekdays": None,
         "watch_from": "2026-08-28",
         "means": ("the \"Blue Ink\" checkboxes stop tracking who has signed, so "

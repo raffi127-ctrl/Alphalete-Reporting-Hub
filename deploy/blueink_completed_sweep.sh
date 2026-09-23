@@ -1,6 +1,7 @@
 #!/bin/bash
-# 9:15am, then hourly 2:15-7:15pm (machine-local; Lucy 2 is Central) — the
-# OBCL tracking schedule — tick the "Blue Ink" checkbox for anyone whose packet has been SIGNED since the last look.
+# 15 min before every OBCL <- OwnerVille sweep pass: 7:45am Tue-Fri, then
+# 1:45-6:45pm hourly daily (machine-local; Lucy 2 is Central) — tick the "Blue
+# Ink" checkbox for anyone whose packet has been SIGNED since the last look.
 # launchd: com.alphalete.blueink-completed-sweep.
 #
 # SENDS NOTHING. `--sync-completed` only reads Blue Ink's Completed list and
