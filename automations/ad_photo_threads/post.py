@@ -78,6 +78,14 @@ def week_monday(day: dt.date) -> dt.date:
 FOREVER = "forever"
 
 
+def header_week(ad: dict, monday: dt.date) -> dt.date:
+    """Whose numbers the header shows: the NEWEST week the thread has. Adding
+    last week's days into a forever thread (Raf 9/23, 9/14-9/18 into this
+    week's threads) must not roll the header back to last week."""
+    days = ad.get("days") or []
+    return max([monday] + [week_monday(dt.date.fromisoformat(d)) for d in days])
+
+
 def bucket(day: dt.date) -> str:
     """Which set of threads a day goes into. Raf 2026-09-23: "we don't need a
     new thread every week, we can keep the same thread forever, we need a new
@@ -365,7 +373,7 @@ def publish(rep: collect.DayReport, channel: str, *, cl=None,
         try:
             cl.chat_update(channel=channel, ts=ad["thread_ts"],
                            text=parent_text(item["title"], monday, pilot,
-                                            week_stats(ad, monday)))
+                                            week_stats(ad, header_week(ad, monday))))
         except Exception as e:                   # noqa: BLE001 — never costs the photos
             print(f"  header update failed for {item['title']!r}: {str(e)[:160]}")
 
@@ -641,7 +649,7 @@ def merge_dups(channel: str, day: dt.date, *, build=None, cl=None,
         try:
             cl.chat_update(channel=channel, ts=tgt["thread_ts"],
                            text=parent_text(tgt_name, monday, False,
-                                            week_stats(tgt, monday)))
+                                            week_stats(tgt, header_week(tgt, monday))))
         except Exception as e:                   # noqa: BLE001 — the move already happened
             print(f"  header update failed for {tgt_name!r}: {str(e)[:160]}")
         out[name] = (f"moved {moved} candidate(s) into {tgt_name!r}; duplicate deleted "

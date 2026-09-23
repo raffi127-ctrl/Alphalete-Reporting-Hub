@@ -385,6 +385,16 @@ class ForeverThreadTests(PublishTests):
         self.assertIn("- 0% Removed", cl.updates[-1]["text"])
         self.assertIn("this week", cl.updates[-1]["text"])
 
+    def test_backfilling_last_week_keeps_this_weeks_header(self):
+        rep = _rep(); rep.day = dt.date(2026, 9, 21)
+        for c in rep.candidates:
+            c.qualify = "Qualify"                           # this week: 0% removed
+        post.publish(rep, "D1", cl=FakeSlack())
+        cl = FakeSlack()
+        c = post.publish(_rep(), "D1", cl=cl)               # Fri 9/18, added after
+        self.assertEqual(c["threads_new"], 0)
+        self.assertIn("- 0% Removed", cl.updates[-1]["text"])
+
     def test_new_ad_gets_its_own_thread(self):
         post.publish(_rep(), "D1", cl=FakeSlack())
         rep = _rep(); rep.day = dt.date(2026, 9, 22)
