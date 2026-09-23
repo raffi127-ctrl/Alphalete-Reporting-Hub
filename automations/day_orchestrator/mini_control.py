@@ -8270,6 +8270,37 @@ def _reclaim_orphans(ws, rows, lane: str = LANE_MAIN) -> int:
     return n
 
 
+def _pass_order(rows: list) -> list:
+    """(index, row) for one pass — PLUMBING FIRST, then sheet order.
+
+    THE QUEUE IS ONE SERIAL WORKER AND A BACKFILL IS DOZENS OF ROWS. On
+    2026-09-23 Eve queued ~90 `rerun ad_photo_threads` rows (ten offices x eight
+    dates, four to six minutes each); a deploy queued at 12:49 was still waiting
+    at 15:15, and so were two incident rows and the ping behind it. Nothing was
+    broken -- the lane was healthy and grinding through them in order -- but
+    three hours is the same outcome as broken for the person waiting, and it is
+    exactly how a session concludes the poller is dead. It cost one this
+    afternoon.
+
+    The read lane already fixed this for READS (2026-08-27). This is the same
+    argument for the other cheap rows: `update`, `restart_poller`, `ping` and
+    their siblings are bounded, idempotent plumbing -- seconds each -- and they
+    are how the machine gets fixed. A deploy that has to wait out a backfill is
+    a deploy nobody can rely on, and `update` is already exempt from the daily
+    cap for this very reason.
+
+    NOT A PRIORITY SYSTEM, and deliberately not. Two buckets, each in sheet
+    order: plumbing, then everything else. Reports keep their FIFO order among
+    themselves -- a backfill still runs oldest-first, which is what makes it
+    re-runnable -- and plumbing cannot starve reports because there is never
+    much of it.
+    """
+    numbered = list(enumerate(rows))
+    return sorted(numbered,
+                  key=lambda pair: 0 if str(pair[1].get("Action", "")).strip()
+                  .lower() in PLUMBING_ACTIONS else 1)
+
+
 def poll_once(*, dry_run: bool = False, sandbox: bool = False,
               machine: str | None = None, lane: str = LANE_MAIN) -> int:
     """One poll pass: run every 'queued' row's whitelisted action. Returns the
@@ -8290,7 +8321,7 @@ def poll_once(*, dry_run: bool = False, sandbox: bool = False,
             rows = ws.get_all_records()   # re-read: statuses just changed
     cap_used = _autoruns_today(rows)
     acted = 0
-    for i, row in enumerate(rows):
+    for i, row in _pass_order(rows):
         if str(row.get("Status", "")).strip().lower() != "queued":
             continue
         rownum = i + 2                    # +1 header row, +1 for 1-based
