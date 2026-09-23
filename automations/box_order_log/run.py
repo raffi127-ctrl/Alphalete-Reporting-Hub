@@ -71,13 +71,16 @@ PAYOUT_LINE = "\U0001F4B5 Accepted by supplier"
 PENDING_LINE = "\U0001F5C2\uFE0F Pending orders"
 # Third attachment (Carlos 2026-08-15): the Box Tier Bonus - Rep Level board.
 # The line itself lives in tier_bonus.py, next to the capture it describes.
+# Box Daily Tracker - Rep Lvl (Carlos 2026-09-23): org-wide, so Carlos's own
+# thread only — see rep_lvl.py.
 
 OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output"
 
 
 def _pull(dest: Path, verbose: bool = True, view_url: str = "",
           crosstab_sheet: str = "", today: Optional[dt.date] = None,
-          tier_owner: str = "", tier_dest: Optional[Path] = None):
+          tier_owner: str = "", tier_dest: Optional[Path] = None,
+          rep_lvl: Optional[dict] = None):
     """Download the order-log crosstab. Returns (csv_path, tier_png, tier_note).
 
     tier_png is None when the board couldn't be captured, and tier_note then
@@ -89,6 +92,10 @@ def _pull(dest: Path, verbose: bool = True, view_url: str = "",
     second Chrome launch and a second SSO round-trip for one screenshot. The
     tier capture never breaks the pull: a flake there comes back as a message
     and the log still posts (see tier_bonus.capture_quietly).
+
+    `rep_lvl` (a dict, filled in place with "png"/"note") asks for the Box Daily
+    Tracker - Rep Lvl board in the same session, same never-breaks rule. A dict
+    rather than a 4th return value so the other caller (per_office) is untouched.
     """
     from automations.shared.tableau_patchright import (
         download_crosstab_patchright, tableau_session)
@@ -111,6 +118,12 @@ def _pull(dest: Path, verbose: bool = True, view_url: str = "",
                       flush=True)
             tier_png, tier_note = tier_bonus.capture_quietly(
                 tier_dest, tier_owner, page=page, day=today, verbose=verbose)
+        if rep_lvl is not None and tier_dest is not None:
+            from . import rep_lvl as rep_lvl_mod
+            if verbose:
+                print("\n-> {}".format(rep_lvl_mod.BOARD_NAME), flush=True)
+            rep_lvl["png"], rep_lvl["note"] = rep_lvl_mod.capture_quietly(
+                tier_dest, page=page, day=today, verbose=verbose)
         return out, tier_png, tier_note
 
 
@@ -148,6 +161,7 @@ def _post_thread(client, channel: str, text: str, xlsx_path: Path,
                  revenue_path: Optional[Path] = None,
                  revboard_path: Optional[Path] = None,
                  revboard_caption: str = "",
+                 rep_lvl_path: Optional[Path] = None,
                  contents: str = "") -> str:
     """Post one dated thread — parent, then its attachments — and return its ts.
 
@@ -161,7 +175,8 @@ def _post_thread(client, channel: str, text: str, xlsx_path: Path,
     in the parent — the parent is just the title + date now.
     """
     sections = sections if sections is not None else {"order_log", "accepted",
-                                                      "pending", "tier_bonus"}
+                                                      "pending", "tier_bonus",
+                                                      "rep_lvl"}
     ts = client.chat_postMessage(channel=channel, text=text)["ts"]
     if contents:
         try:
@@ -198,6 +213,14 @@ def _post_thread(client, channel: str, text: str, xlsx_path: Path,
             channel=channel, thread_ts=ts, file=str(tier_path),
             filename=tier_path.name, title=tier_path.stem,
             initial_comment=tier_line,
+        )
+        _spaced()
+    if rep_lvl_path and "rep_lvl" in sections:
+        from . import rep_lvl as _rl
+        client.files_upload_v2(
+            channel=channel, thread_ts=ts, file=str(rep_lvl_path),
+            filename=rep_lvl_path.name, title=rep_lvl_path.stem,
+            initial_comment=_rl.REP_LVL_LINE,
         )
         _spaced()
     if activations_path and "activations" in sections:
@@ -536,11 +559,13 @@ def main(argv: Optional[list] = None) -> int:
     # (revenue image subtitle lives at module scope? keep local-simple)
     ap.add_argument("--sections",
                     default="revenue_board,order_log,accepted,pending,"
-                            "tier_bonus,activations,revenue",
+                            "tier_bonus,rep_lvl,activations,revenue",
                     help="which thread sections to post, csv of: order_log "
                          "(the workbook), accepted (the payout board), "
                          "pending (the pending-orders worklist image), "
-                         "tier_bonus, activations (0-30 / 31-60 day BOX "
+                         "tier_bonus, rep_lvl (Box Daily Tracker - Rep Lvl, "
+                         "org-wide: Carlos's own run only), "
+                         "activations (0-30 / 31-60 day BOX "
                          "activation rates — accepted by supplier / all sales). Per-office enrollment subsets from the "
                          "onboarding form pass this; default = the full "
                          "thread.")
@@ -558,6 +583,9 @@ def main(argv: Optional[list] = None) -> int:
     # office must name its own owner. See --tier-owner above.
     tier_owner = "" if (args.no_tier or "tier_bonus" not in sections) else (
         args.tier_owner or ("" if args.owner_office else tier_bonus.DEFAULT_OWNER))
+    # Rep Lvl is ORG-WIDE (every owner's reps): never on a per-office run.
+    want_rep_lvl = "rep_lvl" in sections and not args.owner_office
+    rep_lvl_res = {"png": None, "note": ""}
 
     # Resolve the post destinations once. A --channel override (per-office runs)
     # means EXACTLY that one channel; Carlos's own run posts to both of his.
@@ -603,13 +631,18 @@ def main(argv: Optional[list] = None) -> int:
             # in a session of its own.
             tier_png, tier_note = tier_bonus.capture_quietly(
                 OUTPUT_DIR, tier_owner, day=today, verbose=verbose)
+        if want_rep_lvl:
+            from . import rep_lvl as _rl
+            rep_lvl_res["png"], rep_lvl_res["note"] = _rl.capture_quietly(
+                OUTPUT_DIR, day=today, verbose=verbose)
     else:
         src = OUTPUT_DIR / "box_order_log_{}.csv".format(today.isoformat())
         try:
             _, tier_png, tier_note = _pull(
                 src, verbose=verbose, view_url=(args.view_url or ""),
                 crosstab_sheet=(args.crosstab_sheet or ""), today=today,
-                tier_owner=tier_owner, tier_dest=OUTPUT_DIR)
+                tier_owner=tier_owner, tier_dest=OUTPUT_DIR,
+                rep_lvl=rep_lvl_res if want_rep_lvl else None)
         except Exception as exc:
             print("✗ Tableau pull failed: {}".format(exc), file=sys.stderr)
             traceback.print_exc()
@@ -993,6 +1026,9 @@ def main(argv: Optional[list] = None) -> int:
         attach_lines.append(revboard_caption)
     if tier_png:
         attach_lines.append(tier_bonus.TIER_LINE)
+    if rep_lvl_res["png"]:
+        from . import rep_lvl as _rl_line
+        attach_lines.append(_rl_line.REP_LVL_LINE)
     if out_activations and "activations" in sections:
         from . import activations as _act_lines
         attach_lines.append(_act_lines.ACTIVATIONS_LINE)
@@ -1029,6 +1065,10 @@ def main(argv: Optional[list] = None) -> int:
                     tier_png, "  ⚠ " + tier_note if tier_note else ""))
             elif tier_owner:
                 print("    tier   : NOT captured — {}".format(tier_note))
+            if rep_lvl_res["png"]:
+                print("    rep lvl: {}".format(rep_lvl_res["png"]))
+            elif want_rep_lvl:
+                print("    rep lvl: NOT captured — {}".format(rep_lvl_res["note"]))
             print("    re-run with --post")
         return 0
 
@@ -1129,6 +1169,7 @@ def main(argv: Optional[list] = None) -> int:
                              revenue_path=out_revenue,
                              revboard_path=out_revboard,
                              revboard_caption=revboard_caption,
+                             rep_lvl_path=rep_lvl_res["png"],
                              pending_path=out_pending, contents=contents)
             except Exception as exc:                      # noqa: BLE001
                 failed_channels.append("{} — {}: {}".format(
@@ -1202,6 +1243,18 @@ def main(argv: Optional[list] = None) -> int:
                           kind="section", day=today)
             except Exception:
                 pass
+    # Same rule for the Rep Lvl board: missing from a live thread is invisible
+    # in the channel, so it goes where dropped sections get read.
+    if want_rep_lvl and not rep_lvl_res["png"] and not args.dm:
+        try:
+            from automations.shared import section_drop_alert as sda
+            from . import rep_lvl as _rl_alert
+            sda.alert(report_id="box-order-log",
+                      failed=["{} — {}".format(_rl_alert.BOARD_NAME,
+                                               rep_lvl_res["note"])],
+                      kind="section", day=today)
+        except Exception:
+            pass
     _report_to_hub(started_at, verbose)
     return 0
 
