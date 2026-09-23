@@ -113,6 +113,18 @@ def run(office: str, hold_s: int = DEFAULT_HOLD_S, drain: bool = True) -> int:
             pg.bring_to_front()
         except Exception:  # noqa: BLE001
             pass
+        # bring_to_front only fronts the TAB inside Chrome. If Chrome itself is
+        # behind another window, the person sees no resume and ticks whatever is
+        # in front of them — which is how a whole sitting of six windows on
+        # 2026-09-22 timed out still on the check while the person believed they
+        # had cleared them. Raise the app too.
+        try:
+            import subprocess
+            subprocess.run(["osascript", "-e",
+                            'tell application "Google Chrome" to activate'],
+                           capture_output=True, timeout=15)
+        except Exception:  # noqa: BLE001
+            pass
         print("[clear] >>> tick the 'Verify you are human' box in this window <<<",
               flush=True)
         print("[clear] (it often clears on its own — give it ~40s first)", flush=True)
