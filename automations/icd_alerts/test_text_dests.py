@@ -334,11 +334,19 @@ class ATextIsTheBoardAndNothingElse(unittest.TestCase):
         self.assertIn("_gaps_text", call)
 
     def test_slack_still_gets_its_comment(self):
+        """THE RULE, NOT THE LINE. This asserted the literal
+        `_upload(d["channel_id"], boards, comment)` and failed the day the
+        Slack post moved into the day's thread (2026-09-23) -- where the
+        heading is still there, just as the thread's parent, with `comment`
+        kept for the no-thread case. What must stay true is that the Slack
+        branch posts WITH a caption, not that it is spelled a given way."""
         import inspect
         from automations.icd_alerts import knocks_post as KP
         src = inspect.getsource(KP.run)
-        self.assertIn("_upload(d[\"channel_id\"], boards, comment)", src,
-                      "the Slack post lost its heading too")
+        i = src.index("_text(P.text_group_of")
+        call = src[src.index("else:", i):src.index("posted_at[d[", i)]
+        self.assertIn("_upload(", call, "the Slack post is gone")
+        self.assertIn("comment", call, "the Slack post lost its heading too")
 
 
 class TheTextCarriesTheGapList(unittest.TestCase):

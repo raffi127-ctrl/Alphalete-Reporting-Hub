@@ -343,7 +343,12 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                     _text(P.text_group_of(d["channel_id"]), boards,
                           _gaps_text(office, rows_for_board, now))
                 else:
-                    _upload(d["channel_id"], boards, comment)
+                    # THE DAY'S THREAD, when there is one: the room sees one
+                    # header and each board arrives under it.
+                    ts = _thread_ts(d["channel_id"], office, day, log=log)
+                    _upload(d["channel_id"], boards,
+                            _reply_caption(now) if ts else comment,
+                            thread_ts=ts)
                 posted_at[d["channel_id"]] = now
                 posted_total += 1
             except Exception as e:  # noqa: BLE001 — one room must not cost the rest
@@ -483,6 +488,116 @@ def _clock(now: dt.datetime) -> str:
     return "%d:%02d %s" % (hour, now.minute, "AM" if now.hour < 12 else "PM")
 
 
+def _card_title() -> str:
+    """"Knocks & Dispositions" -- taken from gap_alerts rather than retyped, so
+    Raf's board and an ICD's cannot end up with two different names for the
+    same report."""
+    try:
+        from automations.gap_alerts.config import CARD_TITLE
+    except Exception:  # noqa: BLE001
+        CARD_TITLE = "KNOCKS & DISPOSITIONS"
+    return CARD_TITLE.title()
+
+
+# --- the day's thread --------------------------------------------------------
+# ONE HEADER A DAY, EVERY BOARD UNDER IT (Megan 2026-09-23, looking at
+# #box-leaders: "it's really clogging up the chats"). A room on a 30-minute
+# cadence gets a dozen near-identical pictures at channel level between 10am
+# and the bell, and the office's own conversation ends up scrolled off the
+# screen between them. Raf's board already answers this in
+# #alphalete-lvl1-chat: a parent that says once what this is, and one reply per
+# board carrying its own clock -- which is also what tells 10:32's board from
+# 11:04's in a thread of twenty near-identical images.
+#
+# PER OFFICE AND CAMPAIGN, not per channel. Carlos runs two campaigns off one
+# Mac mini into the same room; they are two different boards with the same
+# heading, so they are two threads. The title carries the campaign for the same
+# reason the board's own title band does.
+def _thread_title(office) -> str:
+    """The day's header for this office's boards in a room.
+
+    NO CLOCK, and nothing else. This line is written at the day's first board
+    and is still at the top of the thread at 9pm, so a time on it would be
+    wrong for every reply under it. [[feedback_clean_parent_posts]]
+    """
+    return "%s · %s" % (_card_title(), _board_title(office))
+
+
+def _reply_caption(now: dt.datetime) -> str:
+    """What a board says when it lands IN the thread: its own time, and no more.
+
+    The name of the report and what it is ranked by are in the parent, said
+    once. Repeating them on every reply is the clutter this change is removing,
+    one level down.
+    """
+    return "*%s*" % _clock(now)
+
+
+def _threads_path() -> Path:
+    return OUT_DIR / ".threads.json"
+
+
+def _thread_key(channel_id: str, office, day: dt.date) -> str:
+    return "%s|%s|%s|%s" % (day.isoformat(), channel_id,
+                            getattr(office, "key", "?"),
+                            (getattr(office, "campaign", "") or "").lower())
+
+
+def _remembered_thread(key: str) -> str:
+    try:
+        return str(json.loads(_threads_path().read_text()).get(key) or "")
+    except (OSError, ValueError, AttributeError):
+        return ""
+
+
+def _remember_thread(key: str, ts: str) -> None:
+    """Best effort -- failing to remember costs a channel read, never a board."""
+    try:
+        try:
+            seen = json.loads(_threads_path().read_text())
+        except (OSError, ValueError):
+            seen = {}
+        today = key.split("|", 1)[0]
+        seen = {k: v for k, v in seen.items() if k.startswith(today)}
+        seen[key] = ts
+        OUT_DIR.mkdir(parents=True, exist_ok=True)
+        _threads_path().write_text(json.dumps(seen, indent=2, sort_keys=True))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _thread_ts(channel_id: str, office, day: dt.date, log=print) -> str:
+    """Today's parent post for this office's boards in this room, opening one if
+    today has none. "" means post at channel level -- the old behaviour.
+
+    REMEMBERED LOCALLY AS WELL AS SEARCHED FOR. ensure_named_thread finds the
+    header by reading the channel, which is the right answer after a restart,
+    but it reads at most 200 messages back from midnight: in a busy room a
+    morning header can fall out of that window by the afternoon, and the miss
+    reads as "no header today" -- a second thread, with the rest of the day's
+    boards split across the two. The note on disk is what the normal path uses;
+    the search is the fallback that survives losing it.
+    """
+    key = _thread_key(channel_id, office, day)
+    remembered = _remembered_thread(key)
+    if remembered:
+        return remembered
+    try:
+        from automations.shared import slack_metrics_post as smp
+        out = smp.ensure_named_thread(_thread_title(office), day,
+                                      channel_id=channel_id)
+        ts = str(out.get("thread_ts") or "")
+    except Exception as e:  # noqa: BLE001 -- a missing thread must not cost the board
+        log("%-10s could not open today's thread in %s (%s: %s) -- posting the "
+            "board in the channel instead"
+            % (getattr(office, "key", "?"), channel_id,
+               type(e).__name__, str(e)[:120]))
+        return ""
+    if ts:
+        _remember_thread(key, ts)
+    return ts
+
+
 def _comment(office, rows: List[Dict], now: dt.datetime) -> str:
     """THE SAME HEADER RAF'S BOARD CARRIES (Megan 2026-09-12).
 
@@ -494,12 +609,7 @@ def _comment(office, rows: List[Dict], now: dt.datetime) -> str:
     IS the office, so naming it in the header is telling a room whose room it
     is, and the counts are in the image directly beneath.
     """
-    try:
-        from automations.gap_alerts.config import CARD_TITLE
-    except Exception:  # noqa: BLE001
-        CARD_TITLE = "KNOCKS & DISPOSITIONS"
-    return "*%s — %s*  ·  ranked by total knocks" % (CARD_TITLE.title(),
-                                                     _clock(now))
+    return "*%s — %s*  ·  ranked by total knocks" % (_card_title(), _clock(now))
 
 
 def _gaps_text(office, rows: List[Dict], now: dt.datetime) -> str:
@@ -649,15 +759,26 @@ def _text(group: str, boards, caption: str = "") -> None:
     tp.send_to_group(group, caption or "", list(boards), dry_run=False)
 
 
-def _upload(channel_id: str, boards, comment: str) -> None:
+def _upload(channel_id: str, boards, comment: str,
+            thread_ts: str = "") -> None:
     """Every board this shape produced, in post order. A wireless office gets
-    a pair (the board and its Time Gaps twin) and both belong in the room."""
+    a pair (the board and its Time Gaps twin) and both belong in the room.
+
+    UNDER THE DAY'S HEADER WHEN THERE IS ONE, and NEVER broadcast back to the
+    channel: putting the picture at channel level as well would undo the whole
+    point of the thread. An empty thread_ts is the old behaviour -- the board
+    goes straight into the room -- because a board that does not arrive at all
+    is a worse failure than one that arrives in the wrong place.
+    """
     from automations.shared import slack_metrics_post as smp
     client = smp._client()
     for i, board in enumerate(boards):
-        client.files_upload_v2(
-            channel=channel_id, file=str(board), filename=Path(board).name,
-            initial_comment=comment if i == 0 else None)
+        kwargs = {"channel": channel_id, "file": str(board),
+                  "filename": Path(board).name,
+                  "initial_comment": comment if i == 0 else None}
+        if thread_ts:
+            kwargs["thread_ts"] = thread_ts
+        client.files_upload_v2(**kwargs)
 
 
 def main(argv=None) -> int:
