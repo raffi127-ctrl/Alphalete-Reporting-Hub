@@ -88,6 +88,30 @@ def is_due(dest: Dict, last_posted: Optional[dt.datetime],
     return (now - last_posted) >= dt.timedelta(minutes=cadence)
 
 
+def _after_hours_slot(office, now: dt.datetime) -> bool:
+    """Are we inside a fixed slot's grace window that falls after this
+    office's field hours today, within RECAP_AFTER_MIN of their end?"""
+    if now.weekday() == 6 or (now.weekday() == 5 and not office.saturday):
+        return False
+    end = office.sat_end if now.weekday() == 5 else office.day_end
+    eh, em = _hm(end)
+    end_at = now.replace(hour=eh, minute=em, second=0, microsecond=0)
+    if not (end_at < now <= end_at + dt.timedelta(minutes=RECAP_AFTER_MIN)):
+        return False
+    for text in _slots():
+        h, m = _hm(text)
+        slot = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        if slot >= end_at and slot <= now <= slot + dt.timedelta(minutes=SLOT_GRACE_MIN):
+            return True
+    return False
+
+
+# How long after the bell a set-time recap may still post. 9:00 after an 8:30
+# end is the common case; an office ending at 7:00 does not get a 9:00 board
+# two hours later.
+RECAP_AFTER_MIN = 60
+
+
 def _slot_due(last_posted: Optional[dt.datetime], now: dt.datetime) -> bool:
     """Fixed times: due if we are just past a slot and have not posted since it."""
     for text in _slots():
@@ -208,7 +232,10 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         # loses nobody any visibility -- it only stops us asserting a number
         # we cannot stand behind. The agent relays every couple of minutes,
         # so anything this old means it is not running at all.
-        if _too_old(row[KN_RECEIVED]):
+        if _too_old(row[KN_RECEIVED]) and not _after_hours_slot(office, _office_now(office)):
+            # A recap after the bell draws from the last relay of the day:
+            # the office's machine stops sweeping at their end time, so at
+            # 9:00 a 30-minute-old reading is the whole day, not a stale one.
             log("%-10s last relayed at %s -- too old to post a board from"
                 % (key, row[KN_RECEIVED] or "?"))
             continue
@@ -236,7 +263,16 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
             continue
 
         now = _office_now(office)
-        if not force and not in_field_hours(office, now):
+        # THE END-OF-DAY RECAP. An office on set times (2:00 / 5:15 / 9:00)
+        # picked 9:00 as the day's last look, and for most of them it falls
+        # AFTER their field hours -- Colten ends at 8:30 and his 9:00 board
+        # never posted (2026-09-22: "outside field hours (Tue 21:12 their
+        # time)"). A slot the office chose is not a board nobody asked for,
+        # so a fixed-time destination may post within the slot's grace
+        # after hours; a cadence destination still stops at the bell.
+        recap = (any(int(d.get("cadence_min") or 0) == 0 for d in dests)
+                 and _after_hours_slot(office, now))
+        if not force and not in_field_hours(office, now) and not recap:
             log("%-10s outside field hours (%s their time)"
                 % (key, now.strftime("%a %H:%M")))
             continue
