@@ -111,6 +111,54 @@ def _cell(row: list, cols: dict, key: str) -> str:
 
 _DATE_RE = re.compile(r"^\s*\d{1,2}/\d{1,2}/\d{2,4}\s*$")
 
+# --- "am I even reading the right column?" ----------------------------------
+# A column shift doesn't announce itself: the run still exits 0, the Hub card
+# still goes green, and the only symptom is that nothing moves (September 2026,
+# "Classroom" inserted at F). What DOES give it away instantly is the content —
+# a real BG column is full of Passed / Sent / Taken - Pending / Review /
+# Unperformable and nothing else. The day it filled up with "Owner submitted"
+# and "Terminated", we were reading Final Status.
+#
+# Humans do write the odd note in there ("Pending (Name Issue)"), so a value
+# counts as plausible if it STARTS with a status word, and the check only fires
+# when most of a populated column is unrecognisable.
+_BG_WORDS = ("passed", "failed", "review", "pending", "taken", "unperformable",
+             "sent", "complete", "not taken")
+SANITY_MIN_VALUES = 5      # too few to judge below this
+SANITY_BAD_SHARE = 0.4     # this much unrecognisable = wrong column
+
+
+def looks_like_bg_value(value: str) -> bool:
+    v = re.sub(r"\s+", " ", (value or "")).strip().lower()
+    if not v:
+        return True                      # blank is normal, not evidence
+    return v in {w.lower() for w in RANK} or v.startswith(_BG_WORDS)
+
+
+def column_sanity(people: list, where: str) -> Optional[str]:
+    """None if the column we read looks like BG statuses, else why it doesn't.
+
+    Deliberately about what was READ, not about how much got written: a run that
+    proposes nothing and a run that proposes to advance the entire week are the
+    same underlying fault, and both are visible here first.
+    """
+    values = [p.current for p in people if (p.current or "").strip()]
+    if len(values) < SANITY_MIN_VALUES:
+        return None
+    bad = [v for v in values if not looks_like_bg_value(v)]
+    if len(bad) / len(values) < SANITY_BAD_SHARE:
+        return None
+    common = sorted({v for v in bad})[:4]
+    hint = ""
+    if any(v.strip().lower() in {"owner submitted", "terminated", "no show",
+                                 "showed up to cr", "quit before classroom"}
+           for v in bad):
+        hint = " — that is the Final Status column, not the BG one"
+    return (f"{where}: {len(bad)} of {len(values)} values in the column read as "
+            f"\"BG Status\" aren't background-check statuses "
+            f"(e.g. {', '.join(repr(c) for c in common)}){hint}")
+
+
 # Statuses we are allowed to WRITE (advance to). Everything else is left as-is.
 WRITABLE = {parse.TAKEN_PENDING, parse.PASSED, parse.FAILED,
             parse.REVIEW, parse.UNPERFORMABLE}

@@ -342,7 +342,7 @@ def ov_targets_for(roster, matched, state, out: list) -> None:
 def process_week(sh, monday, events, *, dry_run, do_post, repost, now,
                  do_slack=True, rolling_vals=None, claimed_ids=None,
                  ov_targets=None, pending_asks=None, names_from=None,
-                 refresh_asks=False, far_unbacked=None):
+                 refresh_asks=False, far_unbacked=None, sanity_problems=None):
     """Update col K on both tabs for ONE week, and (if do_slack) post/edit its
     Slack thread. Returns a short summary dict. Empty weeks are skipped."""
     week = _fmt_week(monday)
@@ -350,6 +350,27 @@ def process_week(sh, monday, events, *, dry_run, do_post, repost, now,
     if not roster:
         print(f"\nWeek of {week} (Mon–Sun): no roster yet — skipped")
         return {"week": week, "roster": 0, "changes": 0}
+
+    # BEFORE ANYTHING IS DECIDED: is the column we just read actually the BG
+    # column? A shifted sheet still exits 0, so this is the only thing standing
+    # between a template change and another fortnight of silence. Nothing is
+    # written for a week that fails it — writing to a column we don't trust is
+    # exactly the damage we're preventing.
+    problems = []
+    problem = match.column_sanity(roster, f"week of {week}")
+    if problem:
+        problems.append(problem)
+    for tab in {t for p in roster for t, _row in p.locations}:
+        if not (match.TAB_COLUMNS.get(tab) or {}).get("status"):
+            problems.append(f"{tab}: no \"BG Status\" column in its header row")
+    if problems:
+        for why in problems:
+            print(f"[column-check] {why}")
+        print(f"  -> week of {week} SKIPPED: nothing read, nothing written")
+        if sanity_problems is not None:
+            sanity_problems.extend(problems)
+        return {"week": week, "roster": len(roster), "changes": 0,
+                "blocked": True}
 
     fuzzy_log: list = []
     matched = match.match_events_to_people(roster, events, fuzzy_log=fuzzy_log)
@@ -567,6 +588,7 @@ def _run(args) -> None:
     # to answer them itself.
     pending_asks: list = [] if args.ov else None
     far_unbacked: list = []
+    sanity_problems: list = []
     for monday in weeks:
         do_slack = monday in slack_weeks
         # Friday-afternoon repost applies only to the UPCOMING week's thread.
@@ -577,7 +599,7 @@ def _run(args) -> None:
                      rolling_vals=rolling_vals, claimed_ids=claimed_ids,
                      ov_targets=ov_targets, pending_asks=pending_asks,
                      names_from=names_from, refresh_asks=args.refresh_asks,
-                     far_unbacked=far_unbacked)
+                     far_unbacked=far_unbacked, sanity_problems=sanity_problems)
 
     try:
         state = name_gate.load_state()
@@ -603,6 +625,20 @@ def _run(args) -> None:
         except Exception as e:  # noqa: BLE001
             print(f"[ov-names] pass skipped: "
                   f"{type(e).__name__}: {str(e).splitlines()[0][:160]}")
+
+    if sanity_problems:
+        # Raised LAST so weeks that read fine still got their updates, and
+        # raised at all because this has to reach somebody: main() turns an
+        # exception into a failed Hub row, which opens the incident thread.
+        # A green card with a frozen column is the thing we are ending.
+        raise RuntimeError(
+            "BG Status column looks wrong — no statuses were written for "
+            f"{len(sanity_problems)} week/tab(s). "
+            + " | ".join(sanity_problems[:3])
+            + ". The OBCL's columns have moved before (a 'Classroom' column "
+              "inserted at F in Sept moved BG Status from K to L); check the "
+              "header row against what the report is reading.")
+
 
 
 def run_ov_pass(targets: list, *, apply: bool, headless: bool,

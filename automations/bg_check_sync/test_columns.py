@@ -98,3 +98,49 @@ class RosterTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ColumnSanityTests(unittest.TestCase):
+    """The alarm that was missing in September: a shifted column still exits 0,
+    so the only thing that can catch it is what the column CONTAINS."""
+
+    class _P:
+        def __init__(self, current):
+            self.current = current
+
+    def _people(self, *values):
+        return [self._P(v) for v in values]
+
+    def test_a_healthy_column_says_nothing(self):
+        people = self._people("Passed", "Passed", "Sent", "Taken - Pending",
+                              "Review", "Unperformable")
+        self.assertIsNone(match.column_sanity(people, "week of 9/21/2026"))
+
+    def test_final_status_is_caught_and_named(self):
+        people = self._people("Owner submitted", "Terminated", "Owner submitted",
+                              "Showed Up To CR", "Needs BlueInk", "MISSING ID")
+        why = match.column_sanity(people, "week of 9/21/2026")
+        self.assertIsNotNone(why)
+        self.assertIn("Final Status column", why)
+        self.assertIn("week of 9/21/2026", why)
+
+    def test_a_human_note_is_not_an_alarm(self):
+        """Somebody really did type "Pending (Name Issue)" in there."""
+        people = self._people("Passed", "Passed", "Pending (Name Issue)",
+                              "Sent", "Passed", "Taken - Pending")
+        self.assertIsNone(match.column_sanity(people, "w"))
+
+    def test_blanks_are_not_evidence_either_way(self):
+        people = self._people("Passed", "", "", "Sent", "", "Review", "")
+        self.assertIsNone(match.column_sanity(people, "w"))
+
+    def test_too_few_values_to_judge(self):
+        self.assertIsNone(match.column_sanity(
+            self._people("Owner submitted", "Terminated"), "w"))
+
+    def test_an_unfamiliar_column_still_trips_without_the_hint(self):
+        people = self._people("Dallas", "Arlington", "McKinney", "Coppell",
+                              "Frisco", "Irving")
+        why = match.column_sanity(people, "w")
+        self.assertIsNotNone(why)
+        self.assertNotIn("Final Status", why)
