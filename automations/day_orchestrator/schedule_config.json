@@ -11829,6 +11829,44 @@
       "verify": {
         "type": "not_configured"
       }
+    },
+    "khalil_metrics": {
+      "order": 36.59,
+      "on_scheduler": false,
+      "display_name": "Khalil's Daily Metrics (everforward-sales)",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:order_log"
+      ],
+      "command": [
+        "automations.office_metrics.runner"
+      ],
+      "base_args": [
+        "--office",
+        "khalil",
+        "--live"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P1",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 60,
+      "verify": {
+        "type": "manifest",
+        "report_id": "khalil_metrics"
+      },
+      "_note": "Office metrics for khalil -> everforward-sales (C0C2E04TY6N). Wired by hand 2026-09-22 (no form). NDS/wireless office (campaign nds_d2d), same boards as colten. on_scheduler stays false until a dry run on Lucy 1 proves data on every board -- Megan's rule: never a blank first post. Sheet 'Khalil Mansour - Metrics' 1lN2isHXTc9XNYG4kEvqCn_d-uzyIXxi6NyiLNWWQvpw copied from the Master Metrics Templates.",
+      "_onboarded": true
     }
   },
   "read_only_standalone": {

@@ -406,5 +406,47 @@
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%"
+  },
+  {
+    "key": "khalil",
+    "report_id": "khalil_metrics",
+    "label": "Khalil's Local Office",
+    "owner": "Khalil Mansour",
+    "channel_id": "C0C2E04TY6N",
+    "channel_name": "everforward-sales",
+    "sheet_id": "1lN2isHXTc9XNYG4kEvqCn_d-uzyIXxi6NyiLNWWQvpw",
+    "knocks_office": "Khalil Mansour",
+    "ov_account": "",
+    "owner_office": "",
+    "business_name": "Everforward",
+    "website": "",
+    "header_label": "",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "knocks",
+      "order_log",
+      "cancels",
+      "disconnects",
+      "churn_wl",
+      "activations"
+    ],
+    "report_order": {
+      "knocks": 1,
+      "order_log": 2,
+      "cancels": 3,
+      "disconnects": 4,
+      "churn_wl": 5,
+      "activations": 6
+    },
+    "per_office_views": {},
+    "machine": "Lucy 1",
+    "campaign": "nds_d2d",
+    "notes": "wired by hand 2026-09-22 (Megan: 'just wire khalil up ... without the forms'); NDS like colten; ECO relay keys are khalil / khalil-nds",
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%"
   }
 ]

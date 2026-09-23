@@ -125,7 +125,7 @@
       "quantum_fiber",
       "vzftr"
     ],
-    "_note": "delivered BY EMAIL \u2014 Joseph Logan has no Slack account, so this row carries `emails` and NO channel_ids (a row with both is refused). Megan 2026-09-13, 'he can get all trackers for now'."
+    "_note": "delivered BY EMAIL — Joseph Logan has no Slack account, so this row carries `emails` and NO channel_ids (a row with both is refused). Megan 2026-09-13, 'he can get all trackers for now'."
   },
   {
     "key": "colten",
@@ -133,6 +133,25 @@
     "owner": "Colten Wright",
     "channel_ids": [
       "C0BUAA9DARW"
+    ],
+    "trackers": [
+      "att_country",
+      "att_country_internet_only",
+      "nds",
+      "b2b_att_country",
+      "b2b_att_country_cru",
+      "b2b_d2d_consolidated",
+      "b2b_box",
+      "quantum_fiber",
+      "vzftr"
+    ]
+  },
+  {
+    "key": "khalil",
+    "label": "#everforward-sales",
+    "owner": "Khalil Mansour",
+    "channel_ids": [
+      "C0C2E04TY6N"
     ],
     "trackers": [
       "att_country",
