@@ -151,6 +151,27 @@ def _reply_exists(client, channel: str, parent_ts: str, caption: str) -> bool:
     return False
 
 
+def _upload_reply(client, channel: str, ts: str, uploads: List[Dict],
+                  caption: str, slot_key: str, wait_s: float = 20.0) -> Dict:
+    """Upload this slot's shots into the day's thread, with ONE retry.
+
+    9/23 noon: the parent posted, the upload raised, and the 12 PM shots never
+    reached the thread — an hour's numbers gone for a one-off Slack hiccup (1 PM
+    posted fine). The shared client retries only reads, so retry the write here.
+    Check the thread first: an upload can land and still raise on the way back,
+    and a second copy is worse than the error."""
+    try:
+        return client.files_upload_v2(file_uploads=uploads, channel=channel,
+                                      thread_ts=ts, initial_comment=caption)
+    except Exception as e:  # noqa: BLE001
+        print(f"  upload failed ({type(e).__name__}: {str(e)[:140]}) - "
+              f"retrying in {wait_s:.0f}s", flush=True)
+        time.sleep(wait_s)
+        if _reply_exists(client, channel, ts, slot_key):
+            return {"ok": True}
+        return client.files_upload_v2(file_uploads=uploads, channel=channel,
+                                      thread_ts=ts, initial_comment=caption)
+
 def post_daily_thread(prefix: str, slot: str, paths: List,
                       today: Optional[dt.date] = None, *,
                       dry_run: bool = False,
@@ -192,8 +213,7 @@ def post_daily_thread(prefix: str, slot: str, paths: List,
             elif _reply_exists(client, channel, ts, slot_key):
                 results.append({"channel": clabel, "skipped": True, "ok": True})
                 continue
-            up = client.files_upload_v2(file_uploads=uploads, channel=channel,
-                                        thread_ts=ts, initial_comment=caption)
+            up = _upload_reply(client, channel, ts, uploads, caption, slot_key)
             results.append({"channel": clabel, "ts": ts,
                             "ok": up.get("ok", True)})
         except Exception as e:  # noqa: BLE001
@@ -303,8 +323,7 @@ def post_daily_thread(prefix: str, slot: str, paths: List,
             elif _reply_exists(client, channel, ts, slot_key):
                 results.append({"channel": clabel, "skipped": True, "ok": True})
                 continue
-            up = client.files_upload_v2(file_uploads=uploads, channel=channel,
-                                        thread_ts=ts, initial_comment=caption)
+            up = _upload_reply(client, channel, ts, uploads, caption, slot_key)
             results.append({"channel": clabel, "ts": ts,
                             "ok": up.get("ok", True)})
         except Exception as e:  # noqa: BLE001

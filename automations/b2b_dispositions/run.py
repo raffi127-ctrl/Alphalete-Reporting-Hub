@@ -381,6 +381,10 @@ def main(argv=None) -> int:
     print(f"\nPosted. ok={ok}", flush=True)
     for r in results:
         print(f"  {r['title']}: ok={r.get('ok')}", flush=True)
+        # Say WHY: 9/23 noon logged only "ok=False" and the reason was lost.
+        for c in r.get("channels") or []:
+            if not c.get("ok"):
+                print(f"    {c.get('channel')}: {c.get('error')}", flush=True)
 
     # Text only AFTER Slack succeeded. Slack is the record everyone checks; a
     # text that fired for a posting nobody can find in the channel would send
