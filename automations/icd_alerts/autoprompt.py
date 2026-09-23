@@ -48,6 +48,18 @@ SYSTEMS = {
         "stamp": "sara-autoprompt.txt",
         "name": "SaraPlus",
     },
+    # THE PASSWORD BOX, not the browser. When SaraPlus says "invalid
+    # email/password" the sign-in window cannot help: a person signs in
+    # there by hand and the machine keeps its wrong saved copy (Khalil,
+    # 2026-09-22/23: Francia signed in twice, the sweep stayed refused). This
+    # one pops the native "Your NEW SaraPlus password" box, saves, and proves
+    # it against SaraPlus before saying done (run --set-login).
+    "saraplus_password": {
+        "module": "automations.icd_alerts.run",
+        "args": ["--set-login"],
+        "stamp": "sara-password-autoprompt.txt",
+        "name": "SaraPlus password",
+    },
 }
 
 
@@ -93,7 +105,7 @@ def offer(system: str, log=print) -> bool:
     if not root:
         return False
     args = PR.in_user_session(
-        [str(B.venv_python(root)), "-m", spec["module"]])
+        [str(B.venv_python(root)), "-m", spec["module"]] + list(spec.get("args") or []))
     try:
         subprocess.Popen(args, cwd=str(root), start_new_session=True,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

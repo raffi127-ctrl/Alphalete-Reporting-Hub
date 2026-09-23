@@ -93,6 +93,9 @@ def cmd_set_login(headless: bool = True) -> int:
             ok, result = False, {"message": str(e)}
 
         if ok:
+            # The sweep may be standing back after the refusals; a person
+            # just fixed it, so the next tick must try, not sit out the hold.
+            sara_read.clear_sara_hold()
             ask.message("That worked — your alerts will start again within a "
                         "few minutes.\n\nNothing else to do.")
             print("OK")
@@ -224,7 +227,12 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date,
         # that can actually clear it.
         try:
             from automations.icd_alerts import autoprompt
-            autoprompt.offer("saraplus", log=_log)
+            # A REFUSED PASSWORD GETS THE PASSWORD BOX; a wall or a bounce
+            # gets the sign-in window. Offering the window for a wrong saved
+            # password had Francia sign in twice while the sweep stayed
+            # refused (Khalil, 2026-09-22/23).
+            which = "saraplus_password" if "did not accept" in str(e) else "saraplus"
+            autoprompt.offer(which, log=_log)
         except Exception:  # noqa: BLE001 — never cost the fault report
             pass
         return 1
