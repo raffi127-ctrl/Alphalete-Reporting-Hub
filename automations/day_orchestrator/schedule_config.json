@@ -6389,6 +6389,32 @@
       "verify": null,
       "timeout_minutes": 30
     },
+    "nds_program_digest": {
+      "machine": "Lucy 3",
+      "order": 41,
+      "on_scheduler": true,
+      "display_name": "NDS Program - Focus Report: Monday DM to Eve",
+      "source_type": "sheets",
+      "data_sources": [],
+      "command": [
+        "automations.recruiting_report.nds_program_digest"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": [
+          0
+        ]
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [
+        "nds_program_focus_all"
+      ],
+      "verify": null,
+      "timeout_minutes": 10,
+      "_note": "Eve 2026-09-22: 'avisame el lunes al dm de evelyn (mandalo como lucy)'. Read-only digest of what the NDS Program - Focus Report filled, DM'd to Evelyn (U088E2KJEV8) from Lucy's token - so it has to run on a machine that HAS that token, which is why it sits on Lucy 3 next to the fill. Runs right after nds_program_focus_all (order 40) and depends_on it, so a failed fill does not produce a cheerful digest. Every section is measured against last week's column rather than against a fixed expectation: 24 owners have no AppStream office, Double Entry carries only our org, and an owner can just not have sold, so only 'filled last week, blank now' is worth an alert. Also names any owner on the NDS tracker with no tab yet - nothing else notices a MISSING tab. `lucy rerun nds_program_digest --dry-run` prints the message without sending it.",
+      "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
+    },
     "alphalete_org_box": {
       "hand_run_only": true,
       "on_scheduler": true,
