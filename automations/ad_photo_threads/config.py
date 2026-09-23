@@ -141,6 +141,7 @@ ARS_D_TO_I = "1U5GZyzuXmzeNRKDL8V_lvCpzEtpjxuy4LLCDT3gDKcQ"
 ARS_J_TO_L = "1sq_0VY-y1kzcQ8SAOmqs4VLE_2bPSJpCLTFufcUtQW4"
 ARS_M_TO_Q = "12zye9tduziss1w-EdZKkPJ2DE-dg-xB0aqvC2H3cLao"
 ARS_R_TO_Z = SHEET_ID
+SOUTH_SHORE = "13a1ACbG_F_r1g5D9Zny7fSixuolobwyEL1YQXu1WgJk"
 
 _MORE = [
     ("salik", "Salik Hammad", ARS_R_TO_Z, "Salik Mallick", "21328", "Elite Prime Group",
@@ -169,6 +170,20 @@ _MORE = [
      "C0AUUT7JH33", "C0C41A9G6JG", r"sapphire\s*marketing.*1st\s*round"),
     ("ryan", "Ryan McSpadden", ARS_R_TO_Z, "Ryan McSpadden", "22820", "Highline Management Team",
      "C0794R5TLG5", "C0C3G97JN1M", r"highline\s*management.*1st\s*round"),
+    # SOUTH SHORE | PROFITS - Report (New), same folder as the ARS books (Eve
+    # 9/23). Drew's live tab is " Drew Tepper New" -- leading space and all;
+    # his old "Drew Tepper" tab stopped in September. Samuel, Jose and Colten
+    # post a "FIRST ROUND THREAD: 09/23 please post photo, ..." thread; Jose's
+    # started 9/22 (nothing posted before). Joseph Delgado's tab has no Ad
+    # Title column and no rows since 9/14, so he isn't here yet.
+    ("drew", "Drew Tepper", SOUTH_SHORE, " Drew Tepper New", "22583", "Precision Management",
+     "C0AUKGJAX8C", "C0C3XGN1W9G", r"precision\s*management.*1st\s*round"),
+    ("samuel", "Samuel Acay", SOUTH_SHORE, "Samuel Acay", "23751", "Samuel Acay",
+     "C0BHAAAKASJ", "C0C3G96BU6B", r"first\s*round\s*thread"),
+    ("jose", "Jose Velasquez", SOUTH_SHORE, "José Velasquez", "22434", "Jose Velasquez",
+     "C0AU9JBCJGK", "C0C3ZJ7FNDP", r"first\s*round\s*thread"),
+    ("colten", "Colten Wright", SOUTH_SHORE, "Colten Wright", "14733", "Colten Wright",
+     "C0AUAPMEF37", "C0C3ZJ7FTH7", r"first\s*round\s*thread"),
 ]
 
 # Zones the office_tz table can't place yet; everyone else falls to Central.
