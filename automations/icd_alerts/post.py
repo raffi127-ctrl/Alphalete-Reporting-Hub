@@ -314,9 +314,12 @@ def scoreboard_text(sales: Dict, fired: List[str], campaign=None,
         # rarely"; Megan: "only include what he sells for the totals").
         # SaraPlus counts Air inside "Int Up" (metrics_for: Int Up =
         # Internet Upgrades + AIA), so that bucket IS Air for this campaign.
+        # ONE NUMBER, TWO THINGS: SaraPlus hands Air and upgrades over
+        # already added together, so the label says both (Megan: "colten
+        # should also have upgrades on his sales text scoreboard").
         return _lines_scoreboard(sales, fired, show,
-                                 (("Int Up", "Air"), ("NL", "NL")),
-                                 (("Int Up", "Air"), ("NL", "NL's")))
+                                 (("Int Up", "Air/Up"), ("NL", "NL")),
+                                 (("Int Up", "Air/Upgrades"), ("NL", "NL's")))
     from automations.alphalete_sales_board import notify as N
     named = {(show(rep) if show else rep): dict(m or {})
              for rep, m in (sales or {}).items()}

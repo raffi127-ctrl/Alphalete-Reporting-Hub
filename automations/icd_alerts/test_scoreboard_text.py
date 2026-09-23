@@ -68,13 +68,13 @@ class ScoreboardTextTest(unittest.TestCase):
                  "NOBODY": M()}
         out = P.scoreboard_text(sales, ["HERMIONE HICKS"], campaign="nds")
         lines = out.split("\n")
-        self.assertEqual(lines[0], "Hermione Hicks 6 (1 Air, 5 NL) \U0001F525")
+        self.assertEqual(lines[0], "Hermione Hicks 6 (1 Air/Up, 5 NL) \U0001F525")
         self.assertEqual(lines[1], "Sebastian Grimaldo 5 (5 NL)")
         self.assertEqual(lines[2], "")
-        self.assertEqual(lines[3], "Air: 1")
+        self.assertEqual(lines[3], "Air/Upgrades: 1")
         self.assertEqual(lines[4], "NL's: 10")
         self.assertEqual(lines[5], "\U0001F3C6 TOTALS: 11")
-        for word in ("INT:", "DTV", "Upgrades", " Up,", " Up)"):
+        for word in ("INT:", "DTV", " Up,", " Up)"):
             self.assertNotIn(word, out)
 
     def test_att_keeps_the_full_block(self):
