@@ -324,5 +324,56 @@ class StageTwoRespectsTheRunsClock(unittest.TestCase):
         self.assertEqual(calls, [None])
 
 
+class NdsLastWeekFromTheTwoWeekView(unittest.TestCase):
+    """2026-09-23: NDS has no '(LW2)' sheet; 'This week and last' carries both
+    weeks side by side and parse_byday alone would ADD them together."""
+
+    HEAD = ["", "", ""] + ["6/21/2026"] * 8 + ["6/28/2026"] * 8 + ["Grand Total"]
+    DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
+            "Saturday", "Sunday", "Total"]
+
+    def _file(self, tmp):
+        import csv
+        rows = [self.HEAD,
+                ["Owner & Office ", "Rep Name", "Product Type (Broken Out)"]
+                + self.DAYS * 2 + ["Total"],
+                ["Grand Total", "Total", "Total"] + ["9"] * 17,
+                ["REP ONE\n[some office]", "Total", "Total",
+                 "6", "22", "7", "16", "10", "7", "", "68",
+                 "", "15", "12", "", "2", "2", "", "31", "99"]]
+        path = tmp + "/two.csv"
+        with open(path, "w", encoding="utf-16", newline="") as fh:
+            csv.writer(fh, delimiter="\t").writerows(rows)
+        return path
+
+    def _parse(self, week_end, ref):
+        import tempfile, dataclasses
+        from pathlib import Path
+        from automations.org_sales_board import captainship as cap
+        from automations.org_sales_board import section_pull as sp
+        with tempfile.TemporaryDirectory() as tmp:
+            cut = tmp + "/cut.csv"
+            ok = bf.keep_week_block(self._file(tmp), week_end, cut)
+            if not ok:
+                return None
+            spec = dataclasses.replace(
+                cap._spec("PROG_nds", bf.TWO_WEEK_VIEWS["nds"],
+                          cap.TYPES["nds"]["parse"], "Total"),
+                week_pin=False)
+            return sp.parse_byday(spec, Path(cut), ref)["rep one"]["Total"]
+
+    def test_first_week_alone(self):
+        got = self._parse(dt.date(2026, 6, 21), dt.date(2026, 6, 17))
+        self.assertEqual(got[dt.date(2026, 6, 16)], 22)     # not 22 + 15
+
+    def test_second_week_alone(self):
+        got = self._parse(dt.date(2026, 6, 28), dt.date(2026, 6, 24))
+        self.assertEqual(got[dt.date(2026, 6, 23)], 15)
+        self.assertNotIn(dt.date(2026, 6, 22), got)
+
+    def test_a_week_the_view_does_not_carry_is_refused(self):
+        self.assertIsNone(self._parse(dt.date(2026, 7, 5), dt.date(2026, 7, 1)))
+
+
 if __name__ == "__main__":
     unittest.main()

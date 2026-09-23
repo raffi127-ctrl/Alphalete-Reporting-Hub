@@ -335,6 +335,48 @@ def program_days(prog: dict, hint: str, name: str, kind: str, aliases):
 # 'Sales By ICD (ATT) (V2) (LW2)'. Same view, no week filter.
 LAST_WEEK_SUFFIX = " (LW2)"
 
+# A program whose 1-PAGER has NO '(LW2)' sheet gets last week from a two-week
+# view instead. NDS (2026-09-23): 'Sales By ICD (Weekly View) (LW2)' does not
+# exist — both morning fills and the standalone rerun died on it — but the
+# 'This week and last' custom view (the OPT phase's NDS personal-production
+# pull, opt_nds.py) carries the same sheet with BOTH weeks side by side, each
+# block under its week-ending date. parse_byday maps weekday NAMES onto one
+# week, so fed raw it ADDS the two weeks together (Abdallah Tue = 22 + 15);
+# `keep_week_block` cuts the file down to the wanted week first.
+TWO_WEEK_VIEWS = {
+    "nds": ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+            "NDS-SNRES-ATT-OOFWorkbook/ProductSalesSummaryRep/"
+            "5e31de75-1d1c-4f23-b234-4148516134c0/Thisweekandlast"),
+}
+
+
+def _header_date(s: str) -> Optional[dt.date]:
+    try:
+        return dt.datetime.strptime(str(s).strip(), "%m/%d/%Y").date()
+    except ValueError:
+        return None
+
+
+def keep_week_block(path, week_end: dt.date, out_path) -> bool:
+    """Rewrite a two-week crosstab keeping only the label columns and the block
+    whose week-ending header is `week_end`. False (nothing written) when no
+    column carries that date — the view is on other weeks."""
+    import csv as _csv
+    from automations.org_sales_board import sara_pull
+    rows = sara_pull._read_rows(Path(path))
+    if not rows:
+        return False
+    head = rows[0]
+    keep = [i for i, h in enumerate(head)
+            if (not str(h).strip()) or _header_date(h) == week_end]
+    if not any(_header_date(head[i]) == week_end for i in keep):
+        return False
+    with open(out_path, "w", encoding="utf-16", newline="") as fh:
+        w = _csv.writer(fh, delimiter="\t")
+        for r in rows:
+            w.writerow([r[i] if i < len(r) else "" for i in keep])
+    return True
+
 
 def parsed_dates(parsed: dict) -> set:
     """Every date a parse actually returned. The crosstabs label their day
@@ -403,16 +445,26 @@ def lastweek_programs(today: dt.date, page=None, out_dir=None, logfn=print,
                   f"— la hoja {sheet + LAST_WEEK_SUFFIX!r} no se baja; "
                   f"queda para {RERUN_HINT}")
             continue
+        two_week = TWO_WEEK_VIEWS.get(tk)
         spec = dataclasses.replace(
-            cap._spec(f"PROG_{tk}", cap.PROGRAMS[tk], cap.TYPES[tk]["parse"],
-                      cap.TYPES[tk]["metric"],
+            cap._spec(f"PROG_{tk}", two_week or cap.PROGRAMS[tk],
+                      cap.TYPES[tk]["parse"], cap.TYPES[tk]["metric"],
                       out_prefix="org_sales_board_lw2_"),
-            week_pin=False, crosstab_sheet=sheet + LAST_WEEK_SUFFIX)
+            week_pin=False,
+            crosstab_sheet=sheet if two_week else sheet + LAST_WEEK_SUFFIX)
         logfn(f"  hoja de la semana pasada, sin pin: {tk} "
-              f"{spec.crosstab_sheet!r}")
+              f"{spec.crosstab_sheet!r}"
+              + (" (vista 'This week and last')" if two_week else ""))
         try:
             csv = sp.pull_section_byday(spec, out_dir, page,
                                         logfn=lambda m: None, today=ref)
+            if two_week:
+                cut = Path(csv).with_name(Path(csv).stem + "_lastweek.csv")
+                if not keep_week_block(csv, max(want), cut):
+                    logfn(f"  [!] {tk}: la vista de dos semanas no trae la "
+                          f"semana que termina {max(want)} — se descarta")
+                    continue
+                csv = cut
             got_parsed = sp.parse_byday(spec, csv, ref)
         except Exception as e:                                # noqa: BLE001
             logfn(f"  [!] {tk}: la hoja {spec.crosstab_sheet!r} tampoco se "

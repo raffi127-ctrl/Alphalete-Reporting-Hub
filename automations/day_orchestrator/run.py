@@ -626,9 +626,14 @@ def _alert_timeout_kill(ds, r, rs, detail, target, *, dry_run, simulate) -> None
     # so an empty title would stamp "✅ · *RESOLVED*" onto a blank line and leave
     # the real headline unbadged. Same shape as notify's terminal alerts.
     title = f":x: *{label}* — killed at its timeout"
+    # NOT "it wrote/posted nothing": the orchestrator cannot know that, and on
+    # 2026-09-23 the ORG Sales Board had already filled and sorted its whole
+    # board before a late step ate the clock — the alert sent Eve looking for
+    # damage that wasn't there (the draft came out complete and was approved).
     lines = [
         f"*Error:* {detail} (attempt {rs.attempts}/{MAX_RUN_RETRIES}) — it "
-        "wrote/posted nothing this run."
+        "was cut off before it finished. Whatever it did before the kill "
+        "stays; check the output before redoing it."
         + (" A retry is queued for this pass." if retrying
            else " Retries are exhausted — this is terminal for today."),
         f"*Log:* `lucy logtail {logname}`",
