@@ -3505,6 +3505,60 @@ def _ars(icd: str) -> list:
     return A2.load(icd)
 
 
+def pnl_page(icd: str) -> None:
+    """The office P&L off its Focus Report tab, week by week.
+
+    ABSENT, NOT ZERO, where an office has no books on the tab (Megan
+    2026-09-23: "we don't have access for them on everyone"). A board printing
+    $0.00 profit for an office nobody has the P&L for is stating something
+    false, and it is the kind of false that gets acted on."""
+    from automations.icd_sales_board import pnl as PL
+    st.subheader("P&L")
+    data = recruiting_data(icd)
+    if data.get("error") or not data.get("metrics"):
+        st.info(f"No Focus Report tab for {icd}, so there is no P&L to read.",
+                icon="🚧")
+        return
+    weeks = sorted([w for w in data.get("weeks", [])
+                    if w <= dt.date.today()], reverse=True)
+    if not weeks:
+        st.info("No weeks on this tab yet.", icon="🗓️")
+        return
+    n = st.sidebar.slider("Weeks shown", 4, 26, 12, key=f"pnlw_{icd}")
+    shown = weeks[:n]
+    rows = PL.rows_for(data, shown)
+    if not rows:
+        st.info(f"No P&L on file for {icd}. Not every office's books are on "
+                f"the Focus Report — this reads as absent rather than as "
+                f"zeros, because $0.00 profit is a claim and 'we don't have "
+                f"it' is not.", icon="🚧")
+        return
+
+    # The most recent week that actually has the headline figures — the newest
+    # column is usually the week we are standing in, which nobody has filled.
+    head, on = [], None
+    for w in shown:
+        head = PL.headline(data, w)
+        if head:
+            on = w
+            break
+    if head:
+        cols = st.columns(len(head))
+        for col, (label, value) in zip(cols, head):
+            col.metric(label, value)
+        st.caption(f"Week ending {on:%b %d, %Y}.")
+
+    st.dataframe(rows, use_container_width=True, hide_index=True,
+                 height=_grid_height(len(rows)))
+    st.caption(
+        f"Straight off {icd}'s Focus Report tab"
+        + (f" ({data.get('report')})" if data.get("report") else "")
+        + ", newest week first. A cell whose formula is broken on the sheet "
+          "(#REF! and the like) is left blank here rather than printed — and "
+          "a row that is broken or empty across every week shown is left out "
+          "entirely, so this is what the office actually has.")
+
+
 def focus_block(icd: str, data: dict, win_start, win_end) -> None:
     """The Focus Report's own recruiting section, week by week.
 
@@ -4029,7 +4083,7 @@ def main() -> None:
     # by different people at different times, and stacking them buries
     # whichever is second.
     pages = ["Sales board", "Knock & Dispo Report", "Summary", "Recruiting",
-             "Goals"]
+             "P&L", "Goals"]
     # A session that was open when this list changed still holds the old label
     # ("Production"), and Streamlit raises rather than falling back when a
     # remembered value is not in the options. Clear it instead of crashing the
@@ -4052,6 +4106,9 @@ def main() -> None:
 
     if page == "Summary":
         summary_page(icd, key)
+        return
+    if page == "P&L":
+        pnl_page(icd)
         return
     if page == "Recruiting":
         recruiting(prof, icd, key)
