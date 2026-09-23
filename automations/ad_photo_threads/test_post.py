@@ -418,3 +418,25 @@ class SeedForeverTests(unittest.TestCase):
             st = post._load_state()
             self.assertEqual(st["C1"]["weeks"][post.FOREVER]["a"]["thread_ts"], "2.0")
             self.assertEqual(st["C1"]["weeks"]["2026-09-14"]["a"]["thread_ts"], "1.0")
+
+
+class RetireWeekTests(unittest.TestCase):
+    def test_deletes_untouched_old_threads_only(self):
+        with tempfile.TemporaryDirectory() as tmp,                 mock.patch.object(post, "STATE_PATH", Path(tmp) / "s.json"),                 mock.patch.object(post.config, "ONE_THREAD_PER_AD", True):
+            post._save_state({"C1": {"weeks": {
+                "2026-09-14": {"a": {"thread_ts": "1.0"}, "b": {"thread_ts": "2.0"},
+                               "c": {"thread_ts": "9.0"}},
+                "forever": {"c": {"thread_ts": "9.0"}}}}})
+            cl = FakeSlack()
+            cl.auth_test = lambda: {"user_id": "ULUCY"}
+            cl.conversations_replies = lambda **kw: {"messages": [
+                {"ts": kw["ts"], "user": "ULUCY"}]
+                + ([{"ts": "2.5", "user": "URAF"}] if kw["ts"] == "2.0" else [])}
+            gone = []
+            cl.chat_delete = lambda **kw: gone.append(kw["ts"])
+            cl.files_delete = lambda **kw: None
+            c = post.retire_week("C1", dt.date(2026, 9, 14), cl=cl)
+            self.assertEqual(gone, ["1.0"])
+            self.assertEqual((c["kept_touched"], c["kept_forever"]), (1, 1))
+            wk = post._load_state()["C1"]["weeks"]["2026-09-14"]
+            self.assertEqual(sorted(wk), ["b", "c"])

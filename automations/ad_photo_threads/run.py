@@ -28,6 +28,10 @@
     # another office (config.OFFICES key; default rafael):
     python -m automations.ad_photo_threads.run --office carlos --dry-run --no-images
 
+    # delete one week's old weekly threads nobody wrote in (after moving
+    # those days into the forever threads):
+    python -m automations.ad_photo_threads.run --office rafael --retire-week 2026-09-14
+
     # take this report's threads back out of a channel (moving channels):
     python -m automations.ad_photo_threads.run --retire-channel C0AUAS88FGW
 
@@ -198,6 +202,11 @@ def main(argv=None) -> int:
                       help="Delete the threads this report posted in CHANNEL_ID "
                            "(headers, Lucy's replies, their photos) and forget "
                            "that channel. People's own replies are kept.")
+    mode.add_argument("--retire-week", metavar="MONDAY",
+                      help="Delete that week's weekly threads in the live "
+                           "channel (or --channel) that nobody else wrote in "
+                           "and that aren't the ads' current threads. With "
+                           "--dry-run-notes: say only.")
     mode.add_argument("--merge-dups", action="store_true",
                       help="Fold this week's duplicate threads (an ad title "
                            "pasted without its first words) into the real one "
@@ -240,6 +249,12 @@ def main(argv=None) -> int:
     if a.retire_channel:
         from automations.ad_photo_threads import post
         print("Retired:", post.retire_channel(a.retire_channel))
+        return 0
+    if a.retire_week:
+        from automations.ad_photo_threads import post
+        print("Retired week:", post.retire_week(
+            a.channel or config.LIVE_CHANNEL_ID,
+            dt.date.fromisoformat(a.retire_week), dry_run=a.dry_run_notes))
         return 0
     if a.merge_dups:
         from automations.ad_photo_threads import config, post

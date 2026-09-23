@@ -539,6 +539,39 @@ def retire_channel(channel: str, *, cl=None, dry_run: bool = False) -> Dict[str,
     return counts
 
 
+def retire_week(channel: str, monday: dt.date, *, cl=None,
+                dry_run: bool = False) -> Dict[str, int]:
+    """Delete ONE week's weekly threads, only the ones nobody else wrote in
+    (Eve 9/23: Raf's 9/14 week went into the forever threads, so the weekly
+    copies posted that morning are duplicates -- "si nadie escribio adentro,
+    podes borrarlos"). A thread that is also a forever thread is never
+    touched; one with a person's reply is kept whole (kept_touched)."""
+    cl = cl or collect._client()
+    me = cl.auth_test()["user_id"]
+    state = _load_state()
+    weeks = (state.get(channel) or {}).get("weeks") or {}
+    wk = weeks.get(monday.isoformat()) or {}
+    live = {a.get("thread_ts") for a in (weeks.get(FOREVER) or {}).values()}
+    counts = {"threads": 0, "messages": 0, "files": 0, "kept_others": 0,
+              "kept_touched": 0, "kept_forever": 0}
+    for key, ad in list(wk.items()):
+        ts = ad.get("thread_ts")
+        if not ts:
+            continue
+        if ts in live:
+            counts["kept_forever"] += 1
+            continue
+        r = cl.conversations_replies(channel=channel, ts=ts, limit=200)
+        if any(m.get("user") != me for m in r.get("messages", [])):
+            counts["kept_touched"] += 1
+            continue
+        _delete_thread(cl, channel, ts, me, counts, dry_run)
+        if not dry_run:
+            del wk[key]
+            _save_state(state)
+    return counts
+
+
 def _delete_thread(cl, channel: str, ts: str, me: str, counts: Dict[str, int],
                    dry_run: bool = False) -> None:
     """One thread out: Lucy's replies and their photos, then the header. A
