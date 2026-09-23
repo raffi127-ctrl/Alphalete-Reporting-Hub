@@ -34,7 +34,13 @@ import argparse
 import sys
 import time
 
-DEFAULT_HOLD_S = 600
+# 5 minutes. A person standing at the machine ticks the box in seconds; a person
+# who is NOT there is not helped by waiting longer, and every minute of waiting is
+# a minute the scheduled agent is paused. 2026-09-22: a 15-minute hold × 3 offices
+# × 2 machines left both push agents off for 45 minutes, and Lucy 1's watcher
+# correctly reported "Applicant Push didn't run today" on both — a real alert
+# caused by this tool, which is worse than the problem it was opened for.
+DEFAULT_HOLD_S = 300
 
 
 def _open_resume(page, oat):
@@ -185,6 +191,25 @@ def _agent(action: str) -> bool:
         return False
 
 
+def _beat(note: str) -> None:
+    """Stamp the same heartbeat a scheduled tick stamps.
+
+    While this tool holds the agent paused, nothing else beats — and the fleet
+    watcher reads a gap as "the agent is not running at all" (it opened
+    `standalone-applicant_push_lucy_2` and `_lucy_4` on 2026-09-22 for exactly
+    that reason). The work IS Applicant Push, done by hand, so it beats too.
+    """
+    import subprocess
+    import sys
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "automations.shared.silent_job_watch",
+             "--beat-machine", "applicant_push", "--exit", "0", "--note", note],
+            capture_output=True, timeout=120)
+    except Exception as e:  # noqa: BLE001 — a missed beat must never stop the work
+        print(f"[clear] (heartbeat skipped: {type(e).__name__})", flush=True)
+
+
 def _machine_offices() -> list:
     """The offices THIS machine actually works, in rotation order."""
     try:
@@ -225,6 +250,9 @@ def main(argv=None) -> int:
             worst = worst or rc
             if len(todo) > 1:
                 print(f"[clear] office {office} finished (rc={rc})", flush=True)
+            # Beat after each office so a long sitting never looks like a dead
+            # agent to the fleet watcher.
+            _beat(f"cf_clear_window office {office}")
         return worst
     finally:
         if paused:
