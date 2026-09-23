@@ -11832,7 +11832,7 @@
     },
     "khalil_metrics": {
       "order": 36.59,
-      "on_scheduler": false,
+      "on_scheduler": true,
       "display_name": "Khalil's Daily Metrics (everforward-sales)",
       "source_type": "tableau",
       "data_sources": [
@@ -11865,7 +11865,7 @@
         "type": "manifest",
         "report_id": "khalil_metrics"
       },
-      "_note": "Office metrics for khalil -> everforward-sales (C0C2E04TY6N). Wired by hand 2026-09-22 (no form). NDS/wireless office (campaign nds_d2d), same boards as colten. on_scheduler stays false until a dry run on Lucy 1 proves data on every board -- Megan's rule: never a blank first post. Sheet 'Khalil Mansour - Metrics' 1lN2isHXTc9XNYG4kEvqCn_d-uzyIXxi6NyiLNWWQvpw copied from the Master Metrics Templates.",
+      "_note": "Office metrics for khalil -> everforward-sales (C0C2E04TY6N). Wired by hand 2026-09-22 (no form). NDS/wireless office (campaign nds_d2d), same boards as colten. switched on 2026-09-22 20:50 after a dry run on Lucy 1 came back green on all six boards (knocks+gaps, wireless churn, activations, order log, cancels, 3 disconnects) -- Megan's rule: never a blank first post. Sheet 'Khalil Mansour - Metrics' 1lN2isHXTc9XNYG4kEvqCn_d-uzyIXxi6NyiLNWWQvpw copied from the Master Metrics Templates.",
       "_onboarded": true
     },
     "icd_knocks_board_now": {
