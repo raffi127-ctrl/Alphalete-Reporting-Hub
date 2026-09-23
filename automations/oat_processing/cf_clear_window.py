@@ -82,7 +82,74 @@ def _challenged(pg) -> tuple[bool, str, str]:
     return blocked, title, body
 
 
+class _Tee:
+    """Write to the terminal AND to the office's own daily log.
+
+    A hand-run used to print only to wherever the operator sent stdout, so the
+    26 numbers this drained for office 11580 on 2026-09-23 existed nowhere the
+    fleet looks: the Slack watcher reads the office log to decide the machine is
+    reading numbers again, saw none, and left its ticket open while the work was
+    actually done. The scorecard reads the same log. So mirror it.
+    """
+
+    def __init__(self, stream, path):
+        self._stream = stream
+        try:
+            self._fh = open(path, "a", buffering=1)
+        except Exception:  # noqa: BLE001 — a log we cannot open must not stop work
+            self._fh = None
+
+    def write(self, s):
+        self._stream.write(s)
+        if self._fh:
+            try:
+                self._fh.write(s)
+            except Exception:  # noqa: BLE001
+                pass
+        return len(s)
+
+    def flush(self):
+        self._stream.flush()
+        if self._fh:
+            try:
+                self._fh.flush()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def close(self):
+        if self._fh:
+            try:
+                self._fh.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def _office_log(office: str):
+    """Where the scheduled tick for this office writes — the file every watcher,
+    scorecard and digest reads."""
+    import datetime as _dt
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[2]
+    d = root / "output" / "logs"
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+    except Exception:  # noqa: BLE001
+        pass
+    return d / ("applicant-push-%s-%s.log" % (office, _dt.date.today().isoformat()))
+
+
 def run(office: str, hold_s: int = DEFAULT_HOLD_S, drain: bool = True) -> int:
+    import sys as _sys
+    tee = _Tee(_sys.stdout, _office_log(office))
+    _orig_stdout, _sys.stdout = _sys.stdout, tee
+    try:
+        return _run(office, hold_s, drain)
+    finally:
+        _sys.stdout = _orig_stdout
+        tee.close()
+
+
+def _run(office: str, hold_s: int = DEFAULT_HOLD_S, drain: bool = True) -> int:
     from automations.applicant_push import offices
     from automations.oat_processing import run as oat
     from automations.resume_pushing import run as rp
