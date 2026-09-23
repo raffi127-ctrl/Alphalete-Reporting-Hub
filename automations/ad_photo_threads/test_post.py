@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest import mock
 
 from automations.ad_photo_threads import collect, post
-from automations.ad_photo_threads.titles import TitleBook
+from automations.ad_photo_threads.titles import TitleBook, norm
 
 
 class FakeSlack:
@@ -282,6 +282,57 @@ class PublishTests(unittest.TestCase):
         cl.updates = []
         post.add_notes(rep, "C1", cl=cl, dry_run=True)
         self.assertEqual(cl.updates, [])
+
+    def test_merge_dups_moves_candidates_and_deletes_the_duplicate(self):
+        # 9/22: "AT&T Services (Spanish Required) ? Dallas TX" = the Client
+        # Solutions Specialist Dallas ad without its first words.
+        full = "Client Solutions Specialist - AT&T Services (Spanish Required), Dallas, TX"
+        short = "AT&T Services (Spanish Required) ? Dallas TX"
+        img = {"id": "F1", "mimetype": "image/png"}
+
+        def rep_with(ad_of_short):
+            rep = collect.DayReport(day=dt.date(2026, 9, 22),
+                                    book=TitleBook([full] * 5 + [short] * 3))
+            rep.candidates = [
+                collect.Candidate("Ana Uno", full, "Alexa", "Qualify", "3 Star",
+                                  "Alphalete (Irving)", ad=norm(full), images=[img]),
+                collect.Candidate("Bo Dos", short, "Alexa", "Disqualify", "4 Star",
+                                  "Alphalete (Irving)", ad=ad_of_short, images=[img]),
+            ]
+            return rep
+
+        # What went out before the fix: two threads for one ad.
+        post.publish(rep_with(norm(short)), "C1", cl=FakeSlack())
+        wk = post._load_state()["C1"]["weeks"]["2026-09-21"]
+        self.assertEqual(len(wk), 2)
+        real_ts, dup_ts = wk[norm(full)]["thread_ts"], wk[norm(short)]["thread_ts"]
+
+        cl = FakeSlack()
+        cl.auth_test = lambda: {"user_id": "ULUCY"}
+        cl.conversations_replies = lambda **kw: {"messages": [
+            {"ts": dup_ts, "user": "ULUCY"}, {"ts": "9.9", "user": "ULUCY"}]}
+        gone = []
+        cl.chat_delete = lambda **kw: gone.append(kw["ts"])
+        cl.files_delete = lambda **kw: None
+        fixed = rep_with(norm(full))
+        self.assertIn("would move 1", list(post.merge_dups(
+            "C1", fixed.day, build=lambda d: fixed, cl=cl, dry_run=True).values())[0])
+        self.assertEqual((cl.uploads, gone), ([], []))
+
+        got = post.merge_dups("C1", fixed.day, build=lambda d: fixed, cl=cl)
+        self.assertIn("moved 1", list(got.values())[0])
+        self.assertEqual(len(cl.uploads), 1)                     # Bo only, in the real thread
+        self.assertEqual(cl.uploads[0]["thread_ts"], real_ts)
+        self.assertIn("Bo Dos", cl.uploads[0]["initial_comment"])
+        self.assertNotIn("Ana Uno", cl.uploads[0]["initial_comment"])
+        self.assertEqual(gone, ["9.9", dup_ts])                  # duplicate gone
+        wk = post._load_state()["C1"]["weeks"]["2026-09-21"]
+        self.assertEqual(list(wk), [norm(full)])
+        self.assertEqual(wk[norm(full)]["stats"]["2026-09-22"]["n"], 2)
+        self.assertIn("50% Removed", cl.updates[-1]["text"])      # header redone
+        # Run again: nothing left to merge, nothing posted.
+        self.assertEqual(post.merge_dups("C1", fixed.day, build=lambda d: fixed, cl=cl), {})
+        self.assertEqual(len(cl.uploads), 1)
 
     def test_day_done_marker(self):
         d = dt.date(2026, 9, 18)
