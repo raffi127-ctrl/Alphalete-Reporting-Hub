@@ -130,6 +130,61 @@ OFFICES = [
 ]
 
 
+# The rest of the offices with a check mark on Raf's list (Eve 9/23). Same
+# shape as Carlos, one stream each: (key, owner, ARS workbook, tab, office id,
+# company as ApplicantStream shows it, recruiting channel, indeed-photos
+# channel, the daily thread's wording). They start not live: last week and
+# this week are posted by hand first, then they go live.
+# Rashad's regex is anchored at the start: an "EOD-ELEVATE ... 1st ROUNDS"
+# recap is posted the evening after and must not be taken for the thread.
+ARS_D_TO_I = "1U5GZyzuXmzeNRKDL8V_lvCpzEtpjxuy4LLCDT3gDKcQ"
+ARS_J_TO_L = "1sq_0VY-y1kzcQ8SAOmqs4VLE_2bPSJpCLTFufcUtQW4"
+ARS_M_TO_Q = "12zye9tduziss1w-EdZKkPJ2DE-dg-xB0aqvC2H3cLao"
+ARS_R_TO_Z = SHEET_ID
+
+_MORE = [
+    ("salik", "Salik Hammad", ARS_R_TO_Z, "Salik Mallick", "21328", "Elite Prime Group",
+     "C05BPNNJGE7", "C0C3RDDJ9MH", r"elite\s*prime\s*group.*1st\s*round"),
+    ("kash", "Kash Rai", ARS_J_TO_L, "Kash Rai", "22177", "Palace Acquisitions Inc",
+     "C08U6GCS7SB", "C0C3VMK0B1U", r"palace\s*acquisitions.*1st\s*round"),
+    ("cyrus", "Cyrus Wade", ARS_A_TO_C, "Cyrus Wade", "22815", "Ambient Marketing",
+     "C0AUC4PAF2A", "C0C3G969J2K", r"ambient\s*marketing.*1st\s*round"),
+    ("aya", "Aya Al-Khafaji", ARS_A_TO_C, "Aya Al-Khafaji", "22992", "Indelible Marketing",
+     "C0AU7GN2TJ7", "C0C3XGN68GJ", r"indelible\s*marketing.*1st\s*round"),
+    ("rashad", "Rashad Reed", ARS_R_TO_Z, "Rashad Reed", "23411", "Elevate Specialized Acquisitions",
+     "C0APEHLHDD2", "C0C3XGN9K0S", r"^\W*elevate\s*specialized.*1st\s*round"),
+    ("haytham", "Haytham Nagi", ARS_D_TO_I, "Haytham Nagi", "22524", "Horizon Edge Alliance",
+     "C0AUUSCSEV7", "C0C4S176UQG", r"horizon\s*edge.*1st\s*round"),
+    ("jacob", "Jacob Dover", ARS_J_TO_L, "Jacob Dover", "23607", "Rockstarworld Incorporated",
+     "C0B9N1WDBB8", "C0C3VMKLZGE", r"rockstarworld.*1st\s*round"),
+    ("khalil", "Khalil Mansour", ARS_J_TO_L, "Khalil Mansour", "11901", "Ever Forward Marketing",
+     "C0AUKHN120L", "C0C4S17G62U", r"ever\s*forward.*1st\s*round"),
+    ("isaiah", "Isaiah Revelle", ARS_D_TO_I, "Isaiah Revelle", "19717", "Legacy Acquisitions Inc",
+     "C0AU0G0K2DD", "C0C3XGP0ZEE", r"legacy\s*acquisitions.*1st\s*round"),
+    ("maxamad", "Maxamad Aden", ARS_M_TO_Q, "Max Aden", "23066", "Maximal Management",
+     "C0AH5G7SY66", "C0C3ZJ7F1FT", r"maximal\s*management.*1st\s*round"),
+    ("atef", "Atef Choudhury", ARS_A_TO_C, "Atef Choudhury", "23467", "Domin8 Acquisitions (Denver)",
+     "C0B85KRS5FU", "C0C3G97KHFH", r"domin8.*1st\s*round"),
+    ("roshan", "Roshan Amin Ahmad", ARS_R_TO_Z, "Roshan Ahmad", "19833", "Sapphire Marketing",
+     "C0AUUT7JH33", "C0C41A9G6JG", r"sapphire\s*marketing.*1st\s*round"),
+    ("ryan", "Ryan McSpadden", ARS_R_TO_Z, "Ryan McSpadden", "22820", "Highline Management Team",
+     "C0794R5TLG5", "C0C3G97JN1M", r"highline\s*management.*1st\s*round"),
+]
+
+# Zones the office_tz table can't place yet; everyone else falls to Central.
+_TZ = {"atef": "America/Denver"}       # "Domin8 Acquisitions (Denver)"
+
+OFFICES += [
+    {
+        "key": key, "owner": owner, "tz": _TZ.get(key), "live": False,
+        "sheet_id": book, "source_channel": src, "live_channel": live,
+        "paused_before": "",
+        "sources": [{"office_id": oid, "stream": company, "label": company,
+                     "tab": tab, "thread_re": re.compile(rx, re.I)}],
+    }
+    for key, owner, book, tab, oid, company, src, live, rx in _MORE
+]
+
 def office(key: str) -> dict:
     for o in OFFICES:
         if o["key"] == key.strip().lower():
