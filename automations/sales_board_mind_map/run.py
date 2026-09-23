@@ -130,6 +130,20 @@ LEADER_LEVELS = {"level 1", "level 2", "mastermind"}
 RANK_LABELS = {"mastermind": "Mastermind", "level 2": "Lvl 2",
                "level 1": "Lvl 1", "entry level": "Entry Lvl",
                "in training": "WK1 New Start"}
+# LEFT TO RIGHT, HIGHEST RANK FIRST (Raf 2026-09-23: "Entry lvls should go to
+# the right side of the picture. Jacari and bo would be more toward the end").
+# Size only breaks ties inside a rank.
+RANK_ORDER = {"mastermind": 0, "level 2": 1, "level 1": 2, "entry level": 3,
+              "in training": 4}
+
+
+def _place(rep: "Rep"):
+    """Sort key for a bubble on its row: rank, then the bigger team, then
+    the name so the order never wobbles between runs."""
+    if rep.terminated:
+        return (9, 0, rep.display)         # the struck-through sit last
+    rank = 5 if rep.new_start else RANK_ORDER.get(rep.level, 5)
+    return (rank, -rep.size, rep.display)
 TRAINING_LEVELS = {"in training"}
 # The board's ladder (promotion_checkin.config.LADDER). A roster row that
 # carries none of these is not a person: below the roster the same column
@@ -782,7 +796,7 @@ def group_by_team(roots: List[Rep]):
     for b in roots:
         teams.setdefault(branch_team(b), []).append(b)
     for branches in teams.values():
-        branches.sort(key=lambda b: -b.size)
+        branches.sort(key=_place)
     return sorted(teams.items(), key=lambda kv: -team_people(kv[1]))
 
 
@@ -817,7 +831,9 @@ def plan_teams(roots: List[Rep], reps: List[Rep]):
             # No main leader (Alphaletes): count the separate lines it runs on.
             lead, lead_name = None, ""
             first = sum(1 for b in branches if not b.terminated)
-        branches.sort(key=lambda b: -b.size)
+        # Highest rank on the left, entry levels and week ones toward the end
+        # (Raf 2026-09-23).
+        branches.sort(key=_place)
         # members keeps the struck-through: the team box counts them as
         # "Terminated this week", and every other number skips them.
         out.append((team, branches, lead, lead_name, first, members))
@@ -861,7 +877,7 @@ def _node(rep: Rep, palette) -> str:
 
 
 def _kids(rep: Rep, palette) -> str:
-    kids = sorted(rep.children, key=lambda c: (c.new_start, -c.size))
+    kids = sorted(rep.children, key=_place)
     return "".join("<li>%s%s</li>"
                    % (_node(c, palette),
                       ("<ul>%s</ul>" % _kids(c, palette)) if c.children else "")

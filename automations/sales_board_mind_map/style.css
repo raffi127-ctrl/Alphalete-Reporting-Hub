@@ -32,7 +32,7 @@
     margin:0 auto 2.5rem; max-width:52rem;
   }
 
-  section{ margin-bottom:3.2rem; }
+  section{ margin-bottom:2.4rem; }
   .team{ text-align:center; }
   .root-node{
     display:inline-block; background:var(--root-fill); color:var(--root-ink);
@@ -48,22 +48,28 @@
      afford one long row; this office has a dozen teams, and forcing one row
      pushed the last branches off under the cards. Branches wrap instead. */
   .map{ flex:1; min-width:0; padding:0 1rem; }
-  .rail{ height:2px; background:var(--rail); margin:0 4.5rem; }
-  .branches{ display:flex; gap:1.7rem 1.9rem; justify-content:flex-start;
+  .rail{ height:2px; background:var(--rail); margin:0 3rem; }
+  /* TIGHTER (Raf 2026-09-23: "a little less white space to fit them all in
+     one screen shot" — Rebecca had wrapped onto a row of her own). */
+  .branches{ display:flex; gap:1.1rem 1.2rem; justify-content:flex-start;
              align-items:flex-start; flex-wrap:wrap; }
-  .branch{ min-width:8.5rem; text-align:left; }
-  .branch .drop{ width:2px; height:1.3rem; background:var(--wire); margin-left:3.2rem; }
+  .branch{ min-width:0; text-align:left; }
+  .branch .drop{ width:2px; height:1.1rem; background:var(--wire); margin-left:2.2rem; }
 
   /* Two lines now: the name, and the leadership status under it (Raf
      2026-09-21). A rounded rect, not a pill — a pill round enough for one line
      puts big empty ears on two. */
+  /* A LONG NAME STACKS instead of running wide (Raf 2026-09-23: "make bo's
+     name smaller by putting first and last name on top of each other" —
+     "Kelvinton ( BO ) Scarbough" alone was as wide as three bubbles). */
   .node{
     display:inline-flex; flex-direction:column; align-items:flex-start;
     background:var(--fill); color:var(--tint);
-    font-weight:700; font-size:.87rem; padding:.3rem .8rem .34rem;
-    border-radius:13px; box-shadow:var(--node-shadow); white-space:nowrap;
+    font-weight:700; font-size:.87rem; padding:.28rem .7rem .3rem;
+    border-radius:12px; box-shadow:var(--node-shadow);
+    max-width:9.5rem; white-space:normal; overflow-wrap:break-word;
   }
-  .node .nm{ display:block; }
+  .node .nm{ display:block; line-height:1.15; }
   .node .rank{
     display:block; font-size:.62rem; font-weight:700; letter-spacing:.02em;
     opacity:.72; margin-top:.05rem;
@@ -75,9 +81,9 @@
     vertical-align:.1em; margin-left:.35rem; opacity:.85;
   }
 
-  .branch ul{ list-style:none; margin:0; padding:.55rem 0 0 .9rem; }
-  .branch ul ul{ padding-top:.5rem; }
-  .branch li{ position:relative; padding:0 0 .55rem 1.15rem; }
+  .branch ul{ list-style:none; margin:0; padding:.4rem 0 0 .6rem; }
+  .branch ul ul{ padding-top:.35rem; }
+  .branch li{ position:relative; padding:0 0 .4rem 1rem; }
   .branch li:last-child{ padding-bottom:0; }
   .branch li::before{
     content:""; position:absolute; left:0; top:-.35rem;
@@ -176,8 +182,8 @@
      of the page empty — so a branch's FIRST GENS flow into columns and each
      first gen keeps its own downline with it. */
   .branch > ul{
-    column-count:var(--cols,1); column-gap:1.7rem;
-    width:calc(var(--cols,1) * 15.5rem);
+    column-count:var(--cols,1); column-gap:1.2rem;
+    width:calc(var(--cols,1) * 12rem);
   }
   .branch > ul > li{ break-inside:avoid; -webkit-column-break-inside:avoid; }
 
