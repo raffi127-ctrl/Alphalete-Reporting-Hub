@@ -11867,6 +11867,30 @@
       },
       "_note": "Office metrics for khalil -> everforward-sales (C0C2E04TY6N). Wired by hand 2026-09-22 (no form). NDS/wireless office (campaign nds_d2d), same boards as colten. on_scheduler stays false until a dry run on Lucy 1 proves data on every board -- Megan's rule: never a blank first post. Sheet 'Khalil Mansour - Metrics' 1lN2isHXTc9XNYG4kEvqCn_d-uzyIXxi6NyiLNWWQvpw copied from the Master Metrics Templates.",
       "_onboarded": true
+    },
+    "icd_knocks_board_now": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Post ONE office's knocks board right now, to every approved destination, ignoring cadence and field hours: `lucy rerun icd_knocks_board_now --office aya --machine \"Lucy 1\"`. Built 2026-09-22 (Megan: 'send Aya's final knock board now please') -- the day's last board had gone from Lucy 3, which her group does not receive. Lucy 1 because texts must leave from there.",
+      "machine": "Lucy 1",
+      "display_name": "ICD knocks board — post one office now",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.icd_alerts.knocks_post"
+      ],
+      "base_args": [
+        "--send",
+        "--force"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
     }
   },
   "read_only_standalone": {
