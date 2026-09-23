@@ -23,7 +23,9 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import os
 import sys
+import time
 from pathlib import Path
 
 from automations.recruiting_report.fill import open_by_key
@@ -144,7 +146,17 @@ def clear_product_summary(ws, *, dry_run=False, logfn=print):
     return ranges
 
 
+def _run_deadline():
+    """time.monotonic() at which the orchestrator / `lucy rerun` kills this run
+    (they export HUB_REPORT_TIMEOUT_S), or None on a hand run."""
+    try:
+        return time.monotonic() + float(os.environ["HUB_REPORT_TIMEOUT_S"])
+    except (KeyError, ValueError):
+        return None
+
+
 def main(argv=None) -> int:
+    _deadline = _run_deadline()
     ap = argparse.ArgumentParser(prog="org_sales_board")
     ap.add_argument("--step", default="daily",
                     choices=["clear-summary", "retail-nl", "daily",
@@ -362,7 +374,8 @@ def main(argv=None) -> int:
             try:
                 from automations.org_sales_board import (
                     delta_lastweek_backfill as _dlb)
-                _dlb.apply_backfill(ws, dry_run=args.dry_run)
+                _dlb.apply_backfill(ws, dry_run=args.dry_run,
+                                    deadline=_deadline)
             except Exception as _edb:  # noqa: BLE001
                 print(f"  [!] backfill de 'Last week' por día salteado "
                       f"({type(_edb).__name__}: {str(_edb)[:90]})", flush=True)
@@ -372,10 +385,22 @@ def main(argv=None) -> int:
             # "tampoco estan sus numeros de la semana pasada en org sales board,
             # y si no tiene ventas, va 0"). Free on a normal day: no newcomer,
             # no browser. All Campaigns runs the same step on its own tab.
+            # Same clock rule as the backfill above (its STAGE2_MIN_LEFT_S): a
+            # newcomer means Tableau pulls, and a board that already filled
+            # must not be killed doing them. Skipped = blank, not wrong.
             try:
                 from automations.org_sales_board import newcomer_lastweek as _nlw
-                _nlw.apply_org_boards(dry_run=args.dry_run, org_tab=ws.title,
-                                      boards=("org",))
+                from automations.org_sales_board import (
+                    delta_lastweek_backfill as _dlb)
+                _left = _dlb.seconds_left(_deadline)
+                if _left is not None and _left < _dlb.STAGE2_MIN_LEFT_S:
+                    print(f"  [!] semana pasada de altas nuevas salteada: quedan "
+                          f"{max(_left, 0) / 60:.0f} min del reporte — "
+                          f"`lucy rerun newcomer_lastweek_backfill --apply "
+                          f"--board org`", flush=True)
+                else:
+                    _nlw.apply_org_boards(dry_run=args.dry_run,
+                                          org_tab=ws.title, boards=("org",))
             except Exception as _enl:  # noqa: BLE001
                 print(f"  [!] semana pasada de altas nuevas salteada "
                       f"({type(_enl).__name__}: {str(_enl)[:90]})", flush=True)

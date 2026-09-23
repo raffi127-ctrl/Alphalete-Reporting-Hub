@@ -250,10 +250,6 @@ class TheNewInternetBoxReadsItsOwnMetric(unittest.TestCase):
                                          "ALL UNITS", ALIASES), (None, None))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TheWeekTheParseCameBackOn(unittest.TestCase):
     """The 1-PAGER worksheets are RELATIVE windows, so 'last week' is only last
     week while the view's clock agrees with the board's. The dates decide."""
@@ -272,3 +268,61 @@ class TheWeekTheParseCameBackOn(unittest.TestCase):
         other = {dt.date(2026, 8, 31), dt.date(2026, 9, 1)}
         self.assertFalse(other <= want)
         self.assertTrue({WEEK[0]} <= want)
+
+
+class _FakeWs:
+    """Just enough worksheet for apply_backfill: the grid, no backup tab."""
+
+    def __init__(self, grid, formulas):
+        self._grid, self._formulas, self.writes = grid, formulas, []
+
+        class _Book:
+            def worksheet(self, _title):
+                raise LookupError("no backup tab in this test")
+        self.spreadsheet = _Book()
+
+    def get_all_values(self, value_render_option=None):
+        return self._formulas if value_render_option else self._grid
+
+    def batch_update(self, updates, **_kw):
+        self.writes += updates
+
+
+class StageTwoRespectsTheRunsClock(unittest.TestCase):
+    """2026-09-23: a newcomer's blank cells sent the board fill into last
+    week's pulls with no clock, and both morning fills were killed at 45m."""
+
+    def _run(self, deadline):
+        from unittest import mock
+        grid, formulas = _board()
+        ws = _FakeWs(grid, formulas)
+        calls = []
+
+        def _pulls(*_a, **kw):
+            calls.append(kw.get("deadline"))
+            return {}, ["b2b"]
+        with mock.patch.object(bf, "lastweek_programs", _pulls), \
+                mock.patch.object(bf, "load_aliases", lambda: ALIASES):
+            bf.apply_backfill(ws, today=dt.date(2026, 9, 2), page=object(),
+                              deadline=deadline, logfn=lambda m: None)
+        return calls, ws.writes
+
+    def test_too_little_room_skips_the_pulls_and_writes_nothing(self):
+        import time
+        calls, writes = self._run(time.monotonic() + 60)
+        self.assertEqual(calls, [])
+        self.assertEqual(writes, [])
+
+    def test_room_to_finish_still_pulls_and_passes_the_deadline_on(self):
+        import time
+        deadline = time.monotonic() + bf.STAGE2_MIN_LEFT_S + 600
+        calls, _ = self._run(deadline)
+        self.assertEqual(calls, [deadline])
+
+    def test_no_deadline_is_a_hand_run_and_always_pulls(self):
+        calls, _ = self._run(None)
+        self.assertEqual(calls, [None])
+
+
+if __name__ == "__main__":
+    unittest.main()

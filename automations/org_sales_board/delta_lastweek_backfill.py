@@ -83,6 +83,7 @@ import dataclasses
 import datetime as dt
 import re
 import sys
+import time
 import unicodedata
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -113,6 +114,25 @@ MIN_CALIBRATION_ROWS = 5
 # the wrong week or the wrong view, and nothing is written.
 MIN_PROGRAM_CALIBRATION_ROWS = 5
 MAX_PROGRAM_DISAGREE_SHARE = 0.10
+
+# Stage 2 has no clock of its own, and inside the board fill it spends the
+# BOARD's clock. 2026-09-23: Isaac Gehrke was added to Carlos's captainship the
+# day before, so both morning fills (04:56, 06:07) reached stage 2 with his
+# cells blank, spent the rest of their 45m on last week's program pulls (nds
+# fails its pin every time and falls to its '(LW2)' sheet) and were killed —
+# a board that had already FILLED, reported as "wrote/posted nothing", and
+# every retry doomed to the same path. With a deadline, stage 2 only starts
+# with room to finish, and the '(LW2)' fallbacks stop once the room runs out;
+# the cells stay blank for `lucy rerun delta_lastweek_backfill`, which runs on
+# its own clock. No deadline (a hand run, that handle) = no limit, as before.
+STAGE2_MIN_LEFT_S = 20 * 60
+LW2_MIN_LEFT_S = 5 * 60
+RERUN_HINT = "`lucy rerun delta_lastweek_backfill`"
+
+
+def seconds_left(deadline: Optional[float]) -> Optional[float]:
+    """Seconds until `deadline` (a time.monotonic() value), or None if none."""
+    return None if deadline is None else deadline - time.monotonic()
 
 
 def _key(name: str) -> str:
@@ -324,7 +344,8 @@ def parsed_dates(parsed: dict) -> set:
             for by_day in metrics.values() for d in by_day}
 
 
-def lastweek_programs(today: dt.date, page=None, out_dir=None, logfn=print):
+def lastweek_programs(today: dt.date, page=None, out_dir=None, logfn=print,
+                      deadline: Optional[float] = None):
     """({program: parsed}, [failed programs]) for the week the delta boxes are
     comparing AGAINST — one week before the live one.
 
@@ -375,6 +396,12 @@ def lastweek_programs(today: dt.date, page=None, out_dir=None, logfn=print):
     for tk in list(failed):
         sheet = cap.TYPES[tk]["parse"].get("crosstab_sheet", "")
         if not sheet:
+            continue
+        left = seconds_left(deadline)
+        if left is not None and left < LW2_MIN_LEFT_S:
+            logfn(f"  [!] {tk}: quedan {max(left, 0) / 60:.0f} min del reporte "
+                  f"— la hoja {sheet + LAST_WEEK_SUFFIX!r} no se baja; "
+                  f"queda para {RERUN_HINT}")
             continue
         spec = dataclasses.replace(
             cap._spec(f"PROG_{tk}", cap.PROGRAMS[tk], cap.TYPES[tk]["parse"],
@@ -513,7 +540,8 @@ def plan(cells, index) -> Tuple[List[dict], List[dict], List[str]]:
 
 def apply_backfill(ws, today: Optional[dt.date] = None,
                    dry_run: bool = False, logfn=print, page=None,
-                   offline: bool = False) -> List[dict]:
+                   offline: bool = False,
+                   deadline: Optional[float] = None) -> List[dict]:
     """Fill every blank per-day 'Last week' cell on `ws`.
 
     Two sources, in order: the pre-rollover snapshot (a move between
@@ -523,7 +551,9 @@ def apply_backfill(ws, today: Optional[dt.date] = None,
     one read and never opens a browser.
 
     `page` reuses a live patchright session if the caller already has one;
-    `offline` skips stage 2 entirely."""
+    `offline` skips stage 2 entirely. `deadline` (time.monotonic()) is the
+    caller's own kill time: stage 2 is skipped without STAGE2_MIN_LEFT_S of
+    room — see that constant."""
     today = today or dt.date.today()
     grid = _retry(ws.get_all_values)
     formulas = _retry(lambda: ws.get_all_values(value_render_option="FORMULA"))
@@ -573,9 +603,16 @@ def apply_backfill(ws, today: Optional[dt.date] = None,
     # ---- stage 2: last week's program crosstabs, for the people the snapshot
     # never carried. Only reached when stage 1 left something over, which is
     # only the morning after somebody was added to a captainship.
+    left = seconds_left(deadline)
     if leftover and offline:
         logfn(f"  [!] {len(leftover)} celda(s) sin resolver y --offline — "
               f"quedan en blanco")
+    elif leftover and left is not None and left < STAGE2_MIN_LEFT_S:
+        names = ", ".join(dict.fromkeys(c["name"] for c in leftover))
+        logfn(f"  [!] {len(leftover)} celda(s) sin resolver ({names}) y quedan "
+              f"{max(left, 0) / 60:.0f} min del reporte — las vistas de la "
+              f"semana pasada no se bajan acá; quedan en blanco para "
+              f"{RERUN_HINT}")
     elif leftover:
         try:
             names = ", ".join(dict.fromkeys(c["name"] for c in leftover))
@@ -584,12 +621,14 @@ def apply_backfill(ws, today: Optional[dt.date] = None,
             day_dates = {d.strftime("%A"): d
                          for d in wk.reporting_week(today - dt.timedelta(days=7))}
             if page is not None:
-                prog, failed = lastweek_programs(today, page=page, logfn=logfn)
+                prog, failed = lastweek_programs(today, page=page, logfn=logfn,
+                                                 deadline=deadline)
             else:
                 from automations.shared.tableau_patchright import tableau_session
                 with tableau_session(verbose=False) as _pg:
                     prog, failed = lastweek_programs(today, page=_pg,
-                                                     logfn=logfn)
+                                                     logfn=logfn,
+                                                     deadline=deadline)
             chk, bad = calibrate_programs(grid, prog, day_dates, aliases)
             share = (len(bad) / chk) if chk else 1.0
             if chk < MIN_PROGRAM_CALIBRATION_ROWS:
