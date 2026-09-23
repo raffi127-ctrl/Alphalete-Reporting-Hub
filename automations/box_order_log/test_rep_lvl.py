@@ -40,5 +40,30 @@ class PostThread(unittest.TestCase):
                       self._post(None))  # None = the standalone default set
 
 
+class ContentsBackfill(unittest.TestCase):
+    """backfill_tier --board rep_lvl: the contents reply gains the line under
+    the tier line, once."""
+
+    def _client(self, text):
+        c = mock.Mock()
+        c.conversations_replies.return_value = {"messages": [
+            {"ts": "1.0", "text": "parent"}, {"ts": "1.1", "text": text}]}
+        return c
+
+    def test_inserted_under_the_tier_line(self):
+        from automations.box_order_log import backfill_tier, tier_bonus
+        c = self._client("\n".join(["A", tier_bonus.TIER_LINE, "B"]))
+        backfill_tier._add_to_contents(c, "C1", "1.0")
+        new = c.chat_update.call_args.kwargs["text"].split("\n")
+        self.assertEqual(new, ["A", tier_bonus.TIER_LINE,
+                               rep_lvl.REP_LVL_LINE, "B"])
+
+    def test_not_added_twice(self):
+        from automations.box_order_log import backfill_tier
+        c = self._client(":clipboard: " + rep_lvl.BOARD_NAME)
+        backfill_tier._add_to_contents(c, "C1", "1.0")
+        c.chat_update.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

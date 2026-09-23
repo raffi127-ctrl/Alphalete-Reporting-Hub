@@ -24,6 +24,12 @@ would post as Megan. DRY-RUN by default; --post does the work.
     lucy rerun box_order_log_tier_backfill                      # dry, both rooms
     lucy rerun box_order_log_tier_backfill --post               # do it
     lucy rerun box_order_log_tier_backfill --channel C0… --post  # one room
+    lucy rerun box_order_log_tier_backfill --board rep_lvl --post  # Rep Lvl board
+
+`--board rep_lvl` (2026-09-23) does the same for the Box Daily Tracker - Rep Lvl
+board, the day Carlos asked for it after that morning's thread had gone out. It
+also adds the board's line to the contents reply (the thread's first reply), so
+the list keeps matching what's in the thread.
 
 Python 3.9 on Lucy 2 — deferred annotations, no runtime `X | Y`.
 """
@@ -36,7 +42,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from . import tier_bonus
+from . import rep_lvl, tier_bonus
 from .run import (OUTPUT_DIR, PAYOUT_LINE, PENDING_LINE, TARGETS,
                   WORKBOOK_LINE)
 
@@ -109,7 +115,16 @@ def find_parent(client, channel: str, day: dt.date) -> Optional[dict]:
     return None
 
 
-def already_in_thread(client, channel: str, ts: str) -> bool:
+def _board_name(args) -> str:
+    return rep_lvl.BOARD_NAME if args.board == "rep_lvl" else tier_bonus.BOARD_NAME
+
+
+def _board_line(args) -> str:
+    return rep_lvl.REP_LVL_LINE if args.board == "rep_lvl" else tier_bonus.TIER_LINE
+
+
+def already_in_thread(client, channel: str, ts: str,
+                      board_name: str = tier_bonus.BOARD_NAME) -> bool:
     """Is the board already a reply here? Matches on the board NAME, which is in
     both the caption and the filename, rather than the emoji-led caption — Slack
     may store an emoji as a shortcode or as the character."""
@@ -118,11 +133,11 @@ def already_in_thread(client, channel: str, ts: str) -> bool:
     except Exception:                                     # noqa: BLE001
         return False
     for m in rs.get("messages", [])[1:]:
-        if tier_bonus.BOARD_NAME.lower() in (m.get("text") or "").lower():
+        if board_name.lower() in (m.get("text") or "").lower():
             return True
         for f in m.get("files", []) or []:
             name = "{} {}".format(f.get("name", ""), f.get("title", ""))
-            if tier_bonus.BOARD_NAME.lower() in name.lower():
+            if board_name.lower() in name.lower():
                 return True
     return False
 
@@ -137,6 +152,8 @@ def _board_for(day, args, state: dict):
     if state.get("img") is None:
         if args.image:
             state["img"] = Path(args.image)
+        elif args.board == "rep_lvl":
+            state["img"] = rep_lvl.capture(OUTPUT_DIR, day=day)
         else:
             img, warning = tier_bonus.capture(OUTPUT_DIR, args.owner, day=day)
             if warning:
@@ -159,7 +176,7 @@ def _one_channel(client, name: str, channel: str, day, args,
     text = parent.get("text") or ""
     print("  thread ts               : {}".format(ts))
 
-    have_board = already_in_thread(client, channel, ts)
+    have_board = already_in_thread(client, channel, ts, _board_name(args))
     # SHORT PARENT (2026-09-05): the parent is title-only now — the attachment
     # list lives in the thread's first reply. A parent with no attachment lines
     # is the new form, not a broken header: leave it alone, just add the board.
@@ -167,7 +184,10 @@ def _one_channel(client, name: str, channel: str, day, args,
         line_key(ln) in {line_key(a) for a in ATTACHMENT_LINES}
         for ln in text.split("\n")[1:])
     new_text = text if short_parent else canonical_header(text, day)
-    needs_header = new_text.strip() != text.strip()
+    # canonical_header only knows the tier board's line; a Rep Lvl backfill
+    # never rewrites the parent — its line goes in the contents reply instead.
+    needs_header = (args.board != "rep_lvl"
+                    and new_text.strip() != text.strip())
     print("  board already in thread : {}".format("yes" if have_board else "no"))
     print("  header already correct  : {}".format("no" if needs_header else "yes"))
     if have_board and not needs_header:
@@ -182,7 +202,7 @@ def _one_channel(client, name: str, channel: str, day, args,
         print("  DRY RUN — nothing sent. Would:")
         if not have_board:
             print("    • reply with {}".format(img))
-            print("      caption: {}".format(tier_bonus.TIER_LINE))
+            print("      caption: {}".format(_board_line(args)))
         if needs_header:
             print("    • rewrite the header to:\n      "
                   + new_text.replace("\n", "\n      "))
@@ -192,14 +212,39 @@ def _one_channel(client, name: str, channel: str, day, args,
         client.files_upload_v2(
             channel=channel, thread_ts=ts, file=str(img),
             filename=img.name, title=img.stem,
-            initial_comment=tier_bonus.TIER_LINE,
+            initial_comment=_board_line(args),
         )
         print("  ✓ board posted into the thread")
+        if args.board == "rep_lvl":
+            _add_to_contents(client, channel, ts)
     if needs_header:
         # Only Lucy can edit Lucy's message — this is why it runs on Lucy 2.
         client.chat_update(channel=channel, ts=parent.get("ts"), text=new_text)
         print("  ✓ header rewritten to the current lines")
     return True
+
+
+def _add_to_contents(client, channel: str, ts: str) -> None:
+    """Put the Rep Lvl line into the contents reply, right under the tier line
+    (where run.py lists it). Best-effort: the picture is what matters."""
+    try:
+        rs = client.conversations_replies(channel=channel, ts=ts, limit=5)
+        replies = rs.get("messages", [])[1:]
+        first = replies[0] if replies else None
+        text = (first or {}).get("text") or ""
+        lines = text.split("\n")
+        if not first or line_key(rep_lvl.REP_LVL_LINE) in {
+                line_key(ln) for ln in lines}:
+            return
+        tier_key = line_key(tier_bonus.TIER_LINE)
+        at = next((i + 1 for i, ln in enumerate(lines)
+                   if line_key(ln) == tier_key), 0)
+        lines.insert(at, rep_lvl.REP_LVL_LINE)
+        client.chat_update(channel=channel, ts=first["ts"],
+                           text="\n".join(lines))
+        print("  ✓ contents list now names the board")
+    except Exception as exc:                              # noqa: BLE001
+        print("  ⚠ contents list not updated: {}".format(exc), file=sys.stderr)
 
 
 def main(argv: Optional[list] = None) -> int:
@@ -219,6 +264,9 @@ def main(argv: Optional[list] = None) -> int:
                              ", ".join(n for n, _ in TARGETS)))
     ap.add_argument("--owner", default=tier_bonus.DEFAULT_OWNER,
                     help="Owner Name to slice the board to")
+    ap.add_argument("--board", choices=["tier", "rep_lvl"], default="tier",
+                    help="which board to add: tier (Box Tier Bonus Rep Level, "
+                         "default) or rep_lvl (Box Daily Tracker - Rep Lvl)")
     ap.add_argument("--image", metavar="PNG",
                     help="use this PNG instead of capturing a fresh one")
     ap.add_argument("--date", metavar="YYYY-MM-DD",
@@ -255,7 +303,7 @@ def main(argv: Optional[list] = None) -> int:
     if not done:
         return 1
     print("\n✅ {} now carries the {}.".format(
-        " + ".join(done), tier_bonus.BOARD_NAME))
+        " + ".join(done), _board_name(args)))
     return 0 if not missed else 1
 
 
