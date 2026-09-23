@@ -383,6 +383,101 @@ def for_icd(icd: str, start: dt.date, end: dt.date,
     return out
 
 
+def _office_rows(office) -> list:
+    """_rows for one office, cached, so the org view and that office's own
+    board share the read instead of pulling the same tab twice."""
+    key = ("rows", office.get("key"))
+    now = time.time()
+    if key in _CACHE and now - _CACHE[key][0] < _TTL:
+        return _CACHE[key][1]
+    rows = _rows(office)
+    _CACHE[key] = (now, rows)
+    return rows
+
+
+def org(start: dt.date, end: dt.date, force: bool = False) -> dict:
+    """The same KPIs across every office at once — the buying decision.
+
+    An ad is bought for the org, not for one office: the same posting runs in
+    six markets, and whether it is worth paying for is a question about all of
+    them together. An office's own board answers "is this working HERE"; this
+    answers "is this working".
+
+    ONE SHARED TitleBook, not each office's own. The per-office view learns the
+    running ads from that office's tab, which is right there and wrong here: two
+    offices running the same posting would learn it separately and it would
+    appear twice, split, and be judged twice on half its people. Built from
+    every office's titles at once, the same spelling folds to one ad wherever
+    it was typed — and the extra volume makes the folding surer, not looser.
+
+    It is still a per-office READ, so `Offices` counts how many actually ran
+    the ad. An ad in one office at 60% removed is a different problem from one
+    failing in six."""
+    now = time.time()
+    ck = ("org", start, end)
+    if not force and ck in _CACHE and now - _CACHE[ck][0] < _TTL:
+        return _CACHE[ck][1]
+    out = {"ads": [], "cities": [], "offices": 0, "error": ""}
+    try:
+        from automations.ad_photo_threads import config as C
+        from automations.ad_photo_threads import titles as T
+        span = (end - start).days + 1
+        prev_end = start - dt.timedelta(days=1)
+        prev_start = prev_end - dt.timedelta(days=span - 1)
+        look = start - dt.timedelta(days=C.TITLE_LOOKBACK_DAYS)
+
+        per_office = []
+        every_title = []
+        for office in C.OFFICES:
+            rows = _office_rows(office)
+            if not rows:
+                continue
+            per_office.append((office, rows))
+            every_title += [t for d, t, _q, _s in rows if look <= d <= end]
+        if not per_office:
+            out["error"] = "no-rows"
+            _CACHE[ck] = (now, out)
+            return out
+        out["offices"] = len(per_office)
+        book = T.TitleBook(every_title)
+
+        this: dict = collections.defaultdict(
+            lambda: {"n": 0, "removed": 0, "stars": [], "offices": set()})
+        last: dict = collections.defaultdict(lambda: {"n": 0, "removed": 0})
+        for office, rows in per_office:
+            for key, a in _tally(rows, start, end, book).items():
+                t = this[key]
+                t["n"] += a["n"]
+                t["removed"] += a["removed"]
+                t["stars"] += a["stars"]
+                t["offices"].add(office.get("key"))
+            for key, a in _tally(rows, prev_start, prev_end, book).items():
+                b = last[key]
+                b["n"] += a["n"]
+                b["removed"] += a["removed"]
+
+        ads = []
+        for key, a in this.items():
+            row = _shape(key, a, book)
+            row["Offices"] = len(a["offices"])
+            b = last.get(key)
+            row["Last % Removed"] = (
+                round(100.0 * b["removed"] / b["n"], 0) if b and b["n"] else None)
+            row["Last candidates"] = b["n"] if b else 0
+            row["Verdict"] = verdict(row)
+            ads.append(row)
+        ads.sort(key=lambda r: (-r["Candidates"], r["Ad"]))
+        out["ads"] = ads
+        out["cities"] = by_city(ads)
+        out["best"] = best(ads)
+        out["span"] = (start, end)
+        out["prior"] = (prev_start, prev_end)
+    except Exception as e:   # noqa: BLE001
+        out["error"] = f"{type(e).__name__}: {e}"
+    _CACHE[ck] = (now, out)
+    return out
+
+
 def main(argv=None) -> int:
     import argparse
 

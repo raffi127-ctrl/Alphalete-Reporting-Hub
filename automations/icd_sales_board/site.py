@@ -3550,6 +3550,97 @@ def focus_block(icd: str, data: dict, win_start, win_end) -> None:
             "beside it. Rows with nothing in the range are left out.")
 
 
+@st.cache_data(ttl=900, show_spinner="Reading ad performance across every office…")
+def _org_ad_kpis(start, end) -> dict:
+    from automations.icd_sales_board import ad_kpis as AK
+    return AK.org(start, end)
+
+
+def org_ad_section() -> None:
+    """Every office's ads at once, for a range picked here.
+
+    This page has no sidebar date control of its own — the Office view's range
+    belongs to an office — so the range sits with the section it drives, which
+    is still one control for one thing."""
+    from automations.icd_sales_board import ad_kpis as AK
+    st.subheader("Ad performance — every office")
+    today = dt.date.today()
+    span = st.radio("Range", [2, 4, 8, 12], horizontal=True, index=1,
+                    key="orgadwk", format_func=lambda n: f"Last {n} weeks")
+    end = today - dt.timedelta(days=1)
+    start = end - dt.timedelta(days=span * 7 - 1)
+    data = _org_ad_kpis(start, end)
+    if data.get("error"):
+        st.info(f"No ad data to read ({data['error']}).", icon="🚧")
+        return
+    ads = data.get("ads") or []
+    if not ads:
+        st.info("No first-round interviews recorded in that range.", icon="🚧")
+        return
+    seen = sum(a["Candidates"] for a in ads)
+    rm = sum(a["Removed"] for a in ads)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Offices reporting", data.get("offices", 0))
+    c2.metric("Ads running", len(ads))
+    c3.metric("First rounds", f"{seen:,}")
+    c4.metric("Removed", f"{100.0 * rm / seen:.0f}%" if seen else "—")
+
+    win = data.get("best") or {}
+    bits = []
+    if win.get("cleanest"):
+        b = win["cleanest"]
+        bits.append(f"**Lowest removal — {b['Ad']}** · "
+                    f"{b['% Removed']:.0f}% of {b['Candidates']} "
+                    f"across {b['Offices']} office(s)")
+    if win.get("rated"):
+        b = win["rated"]
+        bits.append(f"**Best rated — {b['Ad']}** · {b['Avg stars']:.1f}⭐ "
+                    f"from {b['Rated']}")
+    if bits:
+        st.success("  \n".join(bits), icon="⭐")
+
+    show = []
+    for a in ads:
+        last = a["Last % Removed"]
+        move = ("new" if last is None else
+                "—" if abs(a["% Removed"] - last) < 5 else
+                f"{a['% Removed'] - last:+.0f}")
+        show.append({"Ad": a["Ad"], "Offices": a["Offices"],
+                     "People": a["Candidates"],
+                     "% Removed": f"{a['% Removed']:.0f}%",
+                     "Prior": "—" if last is None else f"{last:.0f}%",
+                     "Move": move,
+                     "Avg ⭐": "—" if a["Avg stars"] is None
+                              else f"{a['Avg stars']:.1f}",
+                     "Verdict": a["Verdict"] or ""})
+    left, right = st.columns([3, 2], gap="medium")
+    with left:
+        st.dataframe(show, use_container_width=True, hide_index=True,
+                     column_config=_centered(show[0]),
+                     height=_grid_height(min(len(show), 20)))
+    with right:
+        cities = data.get("cities") or []
+        if cities:
+            st.dataframe(
+                [{"City": c["City"], "Ads": c["Ads"], "People": c["Candidates"],
+                  "% Removed": f"{c['% Removed']:.0f}%"
+                               + ("" if c["Ranked"] else "*"),
+                  "Avg ⭐": "—" if c["Avg stars"] is None
+                            else f"{c['Avg stars']:.1f}"}
+                 for c in cities],
+                use_container_width=True, hide_index=True,
+                height=_grid_height(min(len(cities), 20)))
+            st.caption("Best market first — fewest removed. `*` is too few "
+                       "people to rank.")
+    prior = data.get("prior")
+    st.caption(
+        f"{data['span'][0]:%b %d} – {data['span'][1]:%b %d} against "
+        f"{prior[0]:%b %d} – {prior[1]:%b %d}. One shared reading of the ad "
+        f"titles across every office, so the same posting in six markets is "
+        f"ONE row here — 'Offices' is how many ran it. An ad failing in one "
+        f"office is a different problem from one failing in six.")
+
+
 @st.cache_data(ttl=600, show_spinner="Reading ad performance…")
 def _ad_kpis(icd: str, start, end) -> dict:
     from automations.icd_sales_board import ad_kpis as AK
@@ -3910,6 +4001,13 @@ def main() -> None:
             use_container_width=True, hide_index=True,
             column_config=_centered(("ICD", "Campaigns", "Sells", "Metrics",
                                      "Feed today")))
+        # AD PERFORMANCE ACROSS EVERY OFFICE (Megan 2026-09-23). An ad is
+        # bought for the org, not for one office: the same posting runs in six
+        # markets, and whether it is worth paying for is a question about all
+        # of them together. The per-office section answers "is this working
+        # HERE"; this answers "is this working".
+        st.divider()
+        org_ad_section()
         return
 
     names = sorted(profs)
