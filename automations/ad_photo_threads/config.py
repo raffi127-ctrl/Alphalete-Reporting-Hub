@@ -106,13 +106,13 @@ OFFICES = [
         "sources": SOURCES,
     },
     {
-        # Preview office (Eve 9/23). Daily thread in
+        # First office after Rafael (Eve 9/23). Daily thread in
         # #carlos-hidalgo-office-recruiting-11580:
         #   ":wolf:*ALPHALETE MARKETING - 1st ROUNDS - SEPTEMBER 23rd*:wolf:"
         "key": "carlos",
         "owner": "Carlos Hidalgo",
         "tz": None,
-        "live": False,
+        "live": True,          # Eve 9/23, after the preview (9/14-9/22 posted)
         "sheet_id": ARS_A_TO_C,
         "source_channel": "C09L1S3MQ1E",
         "live_channel": "C0C3XGN541G",     # #indeed-photos-carlos-hidalgos-office
