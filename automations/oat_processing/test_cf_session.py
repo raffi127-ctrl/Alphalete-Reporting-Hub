@@ -143,8 +143,13 @@ def test_watcher_thresholds() -> bool:
                      3 >= w.CF_WALL_TICKS, False)
         # The bar exists so a human is pinged once, about something worth
         # walking to a machine for — not every time the check is briefly moody.
-        ok &= _check("one ping per machine per day at most",
-                     w.CF_RE_ALERT_HOURS >= 20, True)
+        # ONE post that stays open, with anything further said INSIDE it
+        # (Megan 2026-09-23) — not a fresh post each morning about the same
+        # unfixed thing.
+        ok &= _check("the thread survives across days",
+                     w.CF_THREAD_MAX_AGE_DAYS >= 365, True)
+        ok &= _check("follow-ups are spaced, not per tick",
+                     w.CF_RE_ALERT_HOURS >= 3, True)
         ok &= _check("no tickets outside working hours",
                      (w.CF_QUIET_BEFORE_H, w.CF_QUIET_AFTER_H), (8, 19))
     finally:

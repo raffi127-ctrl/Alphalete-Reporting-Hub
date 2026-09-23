@@ -241,7 +241,8 @@ def _channel() -> str:
 
 def _post(title: str, body_lines: list[str], dry_run: bool,
           office: str = "11580", key: str | None = None,
-          channel_line: str | None = None) -> bool:
+          channel_line: str | None = None,
+          max_age_days: int | None = None) -> bool:
     """Open (or follow up in) the wedge incident thread in #claudecorrections.
 
     Channel gets ONE emoji-free line, the detail goes in the thread — the standing
@@ -261,12 +262,13 @@ def _post(title: str, body_lines: list[str], dry_run: bool,
         return False
     try:
         from automations.shared import incident_thread as _inc
+        _kw = {} if max_age_days is None else {"max_age_days": max_age_days}
         posted = _inc.open_or_followup(
             key=key or _incident_key(office), title=title, body=body_lines,
             channel_line=channel_line or (
                 "*Applicant Push* — %s session wedged on Lucy 2"
                 % _office_label(office)),
-            channel=ch, client=client)
+            channel=ch, client=client, **_kw)
         if posted:
             return True
         print("[wedge-watch] incident thread declined — posting standalone")
@@ -405,9 +407,15 @@ CF_OPEN_SIGS = ("resume phone ", "attachment phone ")
 # So the bar is now "this machine has read NO numbers for a solid hour of trying".
 CF_WALL_TICKS = 8
 CF_WALL_WINDOW_MIN = 60
-# And at most ONE ping per machine per day: the fix does not change through the
-# day, so a re-ping tells nobody anything they don't already know.
-CF_RE_ALERT_HOURS = 20
+# ONE POST, EVER, UNTIL IT IS FIXED (Megan 2026-09-23: "make it one alert and
+# responses in thread if needs more pinging"). Every other alarm in this channel
+# opens a fresh post each day, which is right for a problem that comes and goes;
+# this one is the same unfixed thing every morning, so a new post each day is
+# just the same news again. The thread stays open across days and any further
+# word goes INSIDE it, until a number is read and it closes with a ✅.
+CF_THREAD_MAX_AGE_DAYS = 365
+# How often it may add to that thread while it stays open.
+CF_RE_ALERT_HOURS = 3
 # Don't open a ticket outside the hours someone could act on it. The walk keeps
 # trying regardless, and an overnight ticket is just something to read at 7am.
 CF_QUIET_BEFORE_H = 8
@@ -535,6 +543,7 @@ def run_resume_check(dry_run: bool = False, now: dt.datetime | None = None) -> i
         "_Auto-clears here as soon as a number is read again._",
     ]
     if _post(title, body, dry_run, office=blocked[0],
+             max_age_days=CF_THREAD_MAX_AGE_DAYS,
              key=_cf_incident_key(machine.replace(" ", "_")),
              channel_line="*Applicant Push* — Indeed is asking to verify a human "
                           "on %s; %d office(s) are not reading numbers"
