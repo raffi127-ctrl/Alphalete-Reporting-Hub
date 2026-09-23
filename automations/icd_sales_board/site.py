@@ -3505,6 +3505,15 @@ def _ars(icd: str) -> list:
     return A2.load(icd)
 
 
+@st.cache_data(ttl=900, show_spinner=False)
+def _org_money(icd: str) -> dict:
+    from automations.icd_sales_board import org_money as OM
+    try:
+        return OM.for_icd(icd)
+    except Exception:   # noqa: BLE001 — the Focus Report half still stands
+        return {}
+
+
 def pnl_page(icd: str) -> None:
     """The office P&L off its Focus Report tab, week by week.
 
@@ -3512,21 +3521,44 @@ def pnl_page(icd: str) -> None:
     2026-09-23: "we don't have access for them on everyone"). A board printing
     $0.00 profit for an office nobody has the P&L for is stating something
     false, and it is the kind of false that gets acted on."""
+    from automations.icd_sales_board import org_money as OM
     from automations.icd_sales_board import pnl as PL
     st.subheader("P&L")
     data = recruiting_data(icd)
-    if data.get("error") or not data.get("metrics"):
-        st.info(f"No Focus Report tab for {icd}, so there is no P&L to read.",
-                icon="🚧")
-        return
-    weeks = sorted([w for w in data.get("weeks", [])
-                    if w <= dt.date.today()], reverse=True)
+    if data.get("error"):
+        data = {"weeks": [], "metrics": {}}
+    # MONEY IN COMES FROM THE ORG TABS, FOR EVERYONE (Megan 2026-09-23: "you
+    # should have all Direct deposit amounts since we already pull for
+    # everyone on the bulletin - we should pull their overrides as well").
+    # Those two are pulled org-wide every week for the bulletins, one row per
+    # ICD, so an office with no Focus Report tab at all — 27 of the 44 — still
+    # gets the money in rather than an empty page.
+    money = _org_money(icd)
+    today = dt.date.today()
+    weeks = sorted({w for w in data.get("weeks", []) if w <= today}
+                   | {w for by in money.values() for w in by if w <= today},
+                   reverse=True)
     if not weeks:
-        st.info("No weeks on this tab yet.", icon="🗓️")
+        st.info(f"Nothing on file for {icd} — no Focus Report tab and no row "
+                f"on the org DD or override reports.", icon="🚧")
         return
     n = st.sidebar.slider("Weeks shown", 4, 26, 12, key=f"pnlw_{icd}")
     shown = weeks[:n]
-    rows = PL.rows_for(data, shown)
+    rows = []
+    for label in ("Direct Deposit", "Override"):
+        by = money.get(label) or {}
+        if not any(by.get(w) for w in shown):
+            continue
+        row = {"Metric": label, "Goal": ""}
+        for w in shown:
+            row[f"{w:%m/%d}"] = by.get(w, "")
+        rows.append(row)
+    # The Focus Report's own block, minus any line the org tabs already gave —
+    # the same number twice, from two sources, invites a game of spot the
+    # difference nobody wins.
+    have = {r["Metric"].strip().lower() for r in rows}
+    rows += [r for r in PL.rows_for(data, shown)
+             if r["Metric"].strip().lower() not in have]
     if not rows:
         st.info(f"No P&L on file for {icd}. Not every office's books are on "
                 f"the Focus Report — this reads as absent rather than as "
@@ -3553,7 +3585,9 @@ def pnl_page(icd: str) -> None:
     st.caption(
         f"Straight off {icd}'s Focus Report tab"
         + (f" ({data.get('report')})" if data.get("report") else "")
-        + ", newest week first. A cell whose formula is broken on the sheet "
+        + ", newest week first, with Direct Deposit and Override from the "
+          "org-wide reports that feed the weekly bulletins. A cell whose "
+          "formula is broken on the sheet "
           "(#REF! and the like) is left blank here rather than printed — and "
           "a row that is broken or empty across every week shown is left out "
           "entirely, so this is what the office actually has.")
