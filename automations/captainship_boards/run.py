@@ -195,7 +195,7 @@ def parse_orderlog(path: Path, monday: dt.date, upto: dt.date):
                     a["byod_cru"] += u
                 elif cru == "IRU":
                     a["byod_iru"] += u
-        elif prod == "AIR/AWB":
+        elif prod in ("AIR/AWB", "AIR"):   # renamed 2026-09-23
             a["air"] += u
         if cru == "CRU":
             a["cru"] += u

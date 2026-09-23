@@ -82,7 +82,8 @@ N_WEEKS = 8
 LOOKBACK_WEEKS = 5                      # posted-date slack before week 1
 CHUNK_DAYS = 31                         # matches the daily pull's proven size
 
-COUNTED_PRODUCTS = {"NEW INTERNET", "WIRELESS", "AIR/AWB"}
+# 'AIR' = Tableau's 2026-09-23 rename of 'AIR/AWB'; both kept.
+COUNTED_PRODUCTS = {"NEW INTERNET", "WIRELESS", "AIR/AWB", "AIR"}
 CANCEL_STATUSES = ("canceled", "cancelled", "disconnected")
 POSTED_COL = "spe.dtr Posted Date (copy)"
 ORDER_COL = "sp.Order Date (copy)"

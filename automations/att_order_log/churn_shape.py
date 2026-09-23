@@ -69,7 +69,7 @@ PRODUCT_TOTAL = "TOTAL"
 PRODUCT_TYPES = {
     "wireless": ("BYOD WIRELESS", "NON BYOD WIRELESS"),
     "new_int": ("NEW INTERNET",),
-    "air": ("AIR/AWB",),
+    "air": ("AIR", "AIR/AWB"),   # 'AIR' = Tableau's 2026-09-23 rename; both kept
 }
 
 # Must survive the rename or the parse silently yields nothing.

@@ -86,7 +86,7 @@ def _product(ln: dict) -> Optional[str]:
     prod = " ".join(str(ln.get("Product Type (Broken Out)", "") or "").split()).upper()
     if prod == "NEW INTERNET":
         return "internet"
-    if prod == "AIR/AWB":
+    if prod in ("AIR/AWB", "AIR"):   # renamed 2026-09-23
         return "air"
     if prod == "WIRELESS":
         wip = str(ln.get("Wireless Installment Plan", "") or "").strip().upper()

@@ -60,7 +60,10 @@ SALES_BOARD_SHEET = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"
 # The BYOD-split product field + its four members (Carlos's own list). The
 # field name is URL-encoded in the raw-paren house style ([[…]] — percent-
 # encoding the parens makes Tableau select NOTHING, proven 2026-09-05).
-PRODUCTS = ["AIR/AWB", "BYOD WIRELESS", "NON BYOD WIRELESS", "NEW INTERNET"]
+PRODUCTS = ["AIR", "BYOD WIRELESS", "NON BYOD WIRELESS", "NEW INTERNET"]
+# URL filter value per product. Tableau renamed AIR/AWB -> AIR on 2026-09-23;
+# asking for both keeps the Air pull non-empty on either side of the rename.
+FILTER_MEMBERS = {"AIR": "AIR,AIR/AWB"}
 BYOD_FIELD_URL = ("Product%20Type%20(Broken%20Out)%20(BYOD/Non%20BYOD)")
 
 
@@ -375,7 +378,7 @@ def _render_both(log=print) -> int:
                 # product column, but the BYOD-split field URL-filters it —
                 # raw-paren house style, value with a raw slash.
                 for prod in PRODUCTS:
-                    pv = prod.replace(" ", "%20")
+                    pv = FILTER_MEMBERS.get(prod, prod).replace(" ", "%20")
                     purl = (CHURN_VIEW + "?" + BYOD_FIELD_URL + "=" + pv)
                     download_crosstab_patchright(
                         purl, CHURN_REP_SHEET,
@@ -435,7 +438,7 @@ def _render_both(log=print) -> int:
     try:
         import json as _json
         _pmap = {"NEW INTERNET": "internet", "NON BYOD WIRELESS": "nonbyod",
-                 "BYOD WIRELESS": "byod", "AIR/AWB": "air"}
+                 "BYOD WIRELESS": "byod", "AIR": "air"}
         _cache = {"date": dt.date.today().isoformat(), "office": "carlos",
                   "churn_0_30": {}}
         for _prod, _key in _pmap.items():
@@ -636,7 +639,7 @@ def probe_csv() -> int:
     candidates = [("custom-view", f"{base_csv}&:customView={cv}"),
                   ("bare", base_csv)]
     prod_url = (CHURN_VIEW + "?Product%20Type%20(Broken%20Out)="
-                "AIR/AWB,WIRELESS,NEW%20INTERNET")
+                "AIR,AIR/AWB,WIRELESS,NEW%20INTERNET")
     with cdp_pull._cdp_lock(label="b2b rep_boards probe-csv", log=log):
         cdp_pull._kill_ours()
         proc = cdp_pull._launch()

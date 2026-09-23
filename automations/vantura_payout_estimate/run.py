@@ -140,7 +140,7 @@ def price(row):
             notes.append("int-abp+30")
         return amt, f"Internet {spd or '?'} {cru}", ",".join(notes)
 
-    if prod == "AIR/AWB":
+    if prod in ("AIR/AWB", "AIR"):   # renamed 2026-09-23
         amt = 268 if cru == "CRU" else 100
         if abp:
             amt += 100 if cru == "CRU" else 45

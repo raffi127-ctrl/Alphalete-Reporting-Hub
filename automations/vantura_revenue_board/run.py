@@ -334,7 +334,7 @@ def load_priced(csv_path: Path, monday: dt.date, upto: dt.date):
         cru = _n(r.get("CRU/IRU")).upper()
         if prod != "VOICE":
             rec["elig"] += u
-            if not (prod == "AIR/AWB" and cru == "IRU"):
+            if not (prod in ("AIR/AWB", "AIR") and cru == "IRU"):
                 rec["payable"] += u
     return out, unpriced
 

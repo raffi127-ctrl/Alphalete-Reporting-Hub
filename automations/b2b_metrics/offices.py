@@ -123,7 +123,7 @@ TEAM: dict = {
                        "e5d34696-30de-4db7-a27e-2654dbf9babd/"
                        "CarlosTEAMWireless"
                        "?Product%20Type%20(Broken%20Out)="
-                       "AIR/AWB,WIRELESS,NEW%20INTERNET"),
+                       "AIR,AIR/AWB,WIRELESS,NEW%20INTERNET"),
     # Order Tiered Bonus - Rep Ranking (Carlos 2026-07-27). Base view shows
     # every team — slice by Owner Name (Carlos's screenshot filters on "Owner
     # Name" = the plain owner). Captured full canvas (no data_cols in VIEW_META)
@@ -345,7 +345,7 @@ OFFICES: dict = {
                                "7419b960-0fb1-41d5-a11e-76f0e81c0547/"
                                "CarlosLocalOfficeEXPANDEDCHURN"
                                "?Product%20Type%20(Broken%20Out)="
-                               "AIR/AWB,WIRELESS,NEW%20INTERNET"),
+                               "AIR,AIR/AWB,WIRELESS,NEW%20INTERNET"),
             # Activation = the SAME view b2b_quality posts correctly. Captured
             # as-is (owner filter baked); VIEW_META's sort_header clicks "0-7
             # Days" high->low, exactly as b2b_quality does.
@@ -390,7 +390,7 @@ OFFICES: dict = {
             "churn_wireless": (_T + "ATTTRACKER-B2B/CHURNRATES/"
                                "5b6a79de-9727-4ff2-bf4f-4b9eac449d70/AtefExp"
                                "?Product%20Type%20(Broken%20Out)="
-                               "AIR/AWB,WIRELESS,NEW%20INTERNET"),
+                               "AIR,AIR/AWB,WIRELESS,NEW%20INTERNET"),
             # Activation can't be URL-sliced (Owner & Office) either — Carlos's
             # Atef-scoped ACTIVATIONRATES saved view (named AtefEXP).
             "activation_rate": (_T + "ATTTRACKER-B2B/ACTIVATIONRATES/"

@@ -143,7 +143,7 @@ def orderlog_all_owner_slots(path, monday, upto, wanted, log=print):
                     a["byod_cru"] += u
                 elif cru == "IRU":
                     a["byod_iru"] += u
-        elif prod == "AIR/AWB":
+        elif prod in ("AIR/AWB", "AIR"):   # renamed 2026-09-23
             a["air"] += u
         if cru == "CRU":
             a["cru"] += u

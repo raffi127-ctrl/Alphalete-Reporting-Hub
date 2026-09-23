@@ -74,7 +74,9 @@ PRODUCT_COLUMNS: List[tuple] = [
     ("NI",   ("CRU NEW INTERNET", "IRU NEW INTERNET")),
     ("VOIP", ("CRU VOICE",)),
     ("NL",   ("CRU WIRELESS", "IRU WIRELESS")),
-    ("AIR",  ("CRU AIR/AWB", "IRU AIR/AWB")),
+    # AIR/AWB -> AIR renamed 2026-09-23; only one pair exists, so summing all
+    # four is safe either side of the rename.
+    ("AIR",  ("CRU AIR", "IRU AIR", "CRU AIR/AWB", "IRU AIR/AWB")),
 ]
 
 
