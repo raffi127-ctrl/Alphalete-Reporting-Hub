@@ -25,6 +25,9 @@
     # watch someone who went out as "No screenshot" (re-checked 3 nights):
     python -m automations.ad_photo_threads.run --watch "Christopher Franklin" --date 2026-09-21
 
+    # another office (config.OFFICES key; default rafael):
+    python -m automations.ad_photo_threads.run --office carlos --dry-run --no-images
+
     # take this report's threads back out of a channel (moving channels):
     python -m automations.ad_photo_threads.run --retire-channel C0AUAS88FGW
 
@@ -37,6 +40,8 @@ import datetime as dt
 import html
 import sys
 from pathlib import Path
+from typing import Optional
+from zoneinfo import ZoneInfo
 
 from automations.ad_photo_threads import collect
 
@@ -112,24 +117,44 @@ def preview_html(rep: collect.DayReport, out_dir: Path) -> Path:
     return page
 
 
-def nightly(day: dt.date, explicit_date: bool = False) -> int:
-    """One tick of the 30-minute agent. Cheap when there's nothing to do: the
-    clock and the state file are checked BEFORE any Sheets/Slack read, so the
-    ~40 idle ticks a day cost nothing against the shared Sheets quota."""
+def nightly(day: Optional[dt.date] = None, explicit_date: bool = False,
+            only: Optional[str] = None) -> int:
+    """One tick of the 30-minute agent, for every live office (or just
+    `only`). Each office is due at 4:30 PM on ITS clock (config.OFFICES), so
+    one tick can post Eastern while Pacific is still interviewing. Cheap when
+    there's nothing to do: the clock and the state file are checked BEFORE any
+    Sheets/Slack read, so the idle ticks cost nothing against the Sheets quota.
+    One office failing never stops the others; the tick exits 1 if any did."""
+    from automations.ad_photo_threads import config
+    offices = [config.office(only)] if only else \
+        [o for o in config.OFFICES if o.get("live")]
+    failed = []
+    for o in offices:
+        try:
+            _nightly_office(o, day, explicit_date)
+        except Exception as e:                # noqa: BLE001 — next office still runs
+            failed.append(o["key"])
+            print(f"[{o['key']}] FAILED: {type(e).__name__}: {str(e)[:300]}")
+    return 1 if failed else 0
+
+
+def _nightly_office(o: dict, day: Optional[dt.date], explicit_date: bool) -> None:
     from automations.ad_photo_threads import config, post
-    now = dt.datetime.now(collect.CENTRAL)
+    now = dt.datetime.now(ZoneInfo(config.office_zone(o)))
+    day = day or now.date()
     if not explicit_date:
         if day.weekday() not in config.POST_WEEKDAYS:
-            return 0
+            return
         if (now.hour, now.minute) < config.POST_AFTER_CT:
-            return 0
-        if day.isoformat() < (config.NIGHTLY_PAUSED_BEFORE or ""):
-            return 0
+            return
+        if day.isoformat() < (o.get("paused_before") or ""):
+            return
+    config.use(o)
     channel = config.LIVE_CHANNEL_ID
     if post.day_done(channel, day):
-        return 0
+        return
     rep = collect.build(day)
-    print(f"[{now:%Y-%m-%d %H:%M} CT] nightly")
+    print(f"[{now:%Y-%m-%d %H:%M} {now.tzname()}] nightly — {o['owner']}")
     print(summary(rep))
     counts = post.publish(rep, channel)
     print("\nPosted:", counts)
@@ -148,12 +173,14 @@ def nightly(day: dt.date, explicit_date: bool = False) -> int:
             print("Late photos:", late)
     except Exception as e:                    # noqa: BLE001 — never costs the post
         print(f"late-photo check failed: {type(e).__name__}: {str(e)[:160]}")
-    return 0
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--date", help="YYYY-MM-DD (default: today, Central)")
+    ap.add_argument("--office", default=None,
+                    help="Which office (config.OFFICES key: rafael, carlos, ...). "
+                         "Default rafael; with --nightly, default every live office.")
     mode = ap.add_mutually_exclusive_group(required=True)
     mode.add_argument("--dry-run", action="store_true", help="Preview only.")
     mode.add_argument("--post", action="store_true",
@@ -198,6 +225,11 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     if a.post and not (a.channel or a.test_dm or a.dm):
         ap.error("--post needs --channel, --test-dm or --dm")
+    if a.nightly:
+        day = dt.date.fromisoformat(a.date) if a.date else None
+        return nightly(day, explicit_date=bool(a.date), only=a.office)
+    from automations.ad_photo_threads import config
+    config.use(config.office(a.office or "rafael"))
     day = dt.date.fromisoformat(a.date) if a.date else collect.central_today()
 
     if a.watch:
@@ -215,9 +247,6 @@ def main(argv=None) -> int:
                               dry_run=a.dry_run_notes)
         print("Merge duplicates:", got or "none this week")
         return 0
-    if a.nightly:
-        return nightly(day, explicit_date=bool(a.date))
-
     rep = collect.build(day)
     print(summary(rep))
     if a.add_photo:
