@@ -54,17 +54,23 @@ class _Client:
         return {"ok": True}
 
 
+# The blocks Wayne and Khalil sit in: their own until 2026-09-24, the waves
+# ("fiber-2", "nds") before it. The tests hold for either shape.
+W = config.block_of("wayne").key
+K = config.block_of("khalil").key
+
+
 class RefreshStaleBlocksTests(unittest.TestCase):
     """Two real blocks, so "only what was rebuilt" is actually exercised."""
 
     def setUp(self):
-        self.fiber2 = config.BLOCK_BY_KEY["wayne"]
-        self.nds = config.BLOCK_BY_KEY["khalil"]
+        self.fiber2 = config.BLOCK_BY_KEY[W]
+        self.nds = config.BLOCK_BY_KEY[K]
         self.client = _Client()
         self.uploaded = []
 
     def _run(self, keys, *, sealed, on_disk, thread_texts=(), approved=(),
-             posted=("wayne", "khalil")):
+             posted=(W, K)):
         """Drive the function with every outside edge stubbed.
 
         `sealed` / `on_disk` are per-block digests: equal means the PDF still
@@ -103,23 +109,23 @@ class RefreshStaleBlocksTests(unittest.TestCase):
 
     def test_stale_block_is_resealed(self):
         out = self._run(["wayne", "starr"],
-                        sealed={"wayne": "OLD", "khalil": "SAME"},
-                        on_disk={"wayne": "NEW", "khalil": "SAME"})
-        self.assertEqual(out, ["wayne"])
-        self.assertEqual(self.uploaded, ["/tmp/wayne.pdf"])
+                        sealed={W: "OLD", K: "SAME"},
+                        on_disk={W: "NEW", K: "SAME"})
+        self.assertEqual(out, [W])
+        self.assertEqual(self.uploaded, [f"/tmp/{W}.pdf"])
 
     def test_untouched_block_is_left_alone(self):
         """A rebuild of fiber-2 must not rewrite the nds PDF — that approval
         was given off a file nothing touched."""
         out = self._run(["wayne", "starr"],
-                        sealed={"wayne": "OLD", "khalil": "OLD"},
-                        on_disk={"wayne": "NEW", "khalil": "NEW"})
-        self.assertEqual(out, ["wayne"])
+                        sealed={W: "OLD", K: "OLD"},
+                        on_disk={W: "NEW", K: "NEW"})
+        self.assertEqual(out, [W])
 
     def test_matching_digest_is_not_rewritten(self):
         out = self._run(["wayne", "starr"],
-                        sealed={"wayne": "SAME", "khalil": "SAME"},
-                        on_disk={"wayne": "SAME", "khalil": "SAME"})
+                        sealed={W: "SAME", K: "SAME"},
+                        on_disk={W: "SAME", K: "SAME"})
         self.assertEqual(out, [])
         self.assertEqual(self.uploaded, [])
 
@@ -127,8 +133,8 @@ class RefreshStaleBlocksTests(unittest.TestCase):
         """The sent PDF is the record of what people received; replacing it
         would swap the evidence for something nobody got."""
         out = self._run(["wayne", "starr"],
-                        sealed={"wayne": "OLD", "khalil": "SAME"},
-                        on_disk={"wayne": "NEW", "khalil": "SAME"},
+                        sealed={W: "OLD", K: "SAME"},
+                        on_disk={W: "NEW", K: "SAME"},
                         thread_texts=[f"{RG.PARTIAL_SENT_MARKER} starr,wayne"])
         self.assertEqual(out, [])
         self.assertEqual(self.uploaded, [])
@@ -137,8 +143,8 @@ class RefreshStaleBlocksTests(unittest.TestCase):
         """No fingerprint = built before the check existed. Nothing to compare,
         so nothing to correct."""
         out = self._run(["wayne", "starr"],
-                        sealed={"wayne": "", "khalil": ""},
-                        on_disk={"wayne": "NEW", "khalil": "NEW"})
+                        sealed={W: "", K: ""},
+                        on_disk={W: "NEW", K: "NEW"})
         self.assertEqual(out, [])
 
     def test_no_review_post_yet_is_a_no_op(self):
@@ -168,22 +174,22 @@ class RefreshStaleBlocksTests(unittest.TestCase):
     def test_ticked_block_tells_the_thread(self):
         """Eve's rule: a ✅ that now stands for a different PDF has to say so."""
         out = self._run(["wayne", "starr"],
-                        sealed={"wayne": "OLD", "khalil": "SAME"},
-                        on_disk={"wayne": "NEW", "khalil": "SAME"},
-                        approved=("wayne",))
-        self.assertEqual(out, ["wayne"])
+                        sealed={W: "OLD", K: "SAME"},
+                        on_disk={W: "NEW", K: "SAME"},
+                        approved=(W,))
+        self.assertEqual(out, [W])
         self.assertEqual(len(self.client.posted), 1)
         text = self.client.posted[0]["text"]
-        self.assertIn("Wayne", text)
+        self.assertIn(config.BLOCK_BY_KEY[W].label, text)
         self.assertIn("Evelyn", text)
         self.assertEqual(self.client.posted[0]["thread_ts"], "1.0")
 
     def test_unticked_block_says_nothing(self):
         """Nobody has looked yet, so there is nothing to warn anyone about."""
         out = self._run(["wayne", "starr"],
-                        sealed={"wayne": "OLD", "khalil": "SAME"},
-                        on_disk={"wayne": "NEW", "khalil": "SAME"})
-        self.assertEqual(out, ["wayne"])
+                        sealed={W: "OLD", K: "SAME"},
+                        on_disk={W: "NEW", K: "SAME"})
+        self.assertEqual(out, [W])
         self.assertEqual(self.client.posted, [])
 
     def test_digest_read_failure_does_not_raise(self):
@@ -194,7 +200,7 @@ class RefreshStaleBlocksTests(unittest.TestCase):
              mock.patch.object(RG, "_find_post", return_value={"ts": "1.0"}), \
              mock.patch.object(RG, "replies", return_value=[]), \
              mock.patch.object(RG, "block_posts",
-                               return_value={"wayne": {"ts": "fiber-2.1"}}), \
+                               return_value={W: {"ts": "fiber-2.1"}}), \
              mock.patch.object(RG, "reviewed_digest",
                                side_effect=RuntimeError("drive down")):
             self.assertEqual(

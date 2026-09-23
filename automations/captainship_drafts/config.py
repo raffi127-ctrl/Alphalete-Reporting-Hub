@@ -971,10 +971,25 @@ _GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("B2B", ("carlos", "eveliz", "luis", "atef")),
     ("NDS", ("khalil", "colten", "jairo")),
 )
-_BLOCKS: List[Block] = [
+_PER_CAPTAIN = [
     Block(k, f"{wave} — {BY_KEY[k].display_name}", (k,))
     for wave, keys in _GROUPS for k in keys if k in BY_KEY
 ]
+# The old wave blocks, ONLY so the day the change was pushed (2026-09-23) keeps
+# reading its own thread: its links carry the wave keys ("fiber-3"), and a
+# checker that no longer knew them would call all six "not posted" and post
+# fifteen new links on top. From 2026-09-24 (Texas date) on, per captain.
+# Safe to delete this and the switch below any day after that.
+_WAVES = [
+    Block(f"fiber-{i}" if wave.startswith("Fiber") else wave.lower(),
+          wave, keys)
+    for i, (wave, keys) in enumerate(_GROUPS, start=1)
+]
+from zoneinfo import ZoneInfo as _ZoneInfo  # noqa: E402 — local to the switch
+_BLOCKS: List[Block] = (
+    _PER_CAPTAIN
+    if dt.datetime.now(_ZoneInfo("America/Chicago")).date() >= dt.date(2026, 9, 24)
+    else _WAVES)
 
 # A captain added to CAPTAINS and forgotten here must NOT silently stop being
 # built, reviewed and mailed — that is a report that quietly disappears, which
