@@ -3631,10 +3631,12 @@ def _action_icd_board(args: str) -> tuple[bool, str]:
     has just been set up and wants to see the thing work before tomorrow
     morning (Roshan, 2026-09-16).
 
-    LUCY 3 IS THE ONLY MACHINE THAT CAN. It holds Lucy Reporting's Slack
-    token, refuses SSH, and the ICD poster runs from a LaunchAgent rather than
-    the orchestrator -- so there was no way to ask for this at all short of
-    sitting at the machine.
+    ONLY THE BOX RUNNING THE POSTER CAN -- Lucy 1 since 2026-09-22 (it was
+    Lucy 3 until the iMessage split; schedule_config.json's
+    install_icd_alerts_poster_agent note is the record of where it lives). That
+    box holds Lucy Reporting's Slack token, refuses SSH, and runs the ICD
+    poster from a LaunchAgent rather than the orchestrator -- so there was no
+    way to ask for this at all short of sitting at the machine.
 
     ONE OFFICE, NAMED. It will not run for everybody: forcing the fleet
     outside hours would put a board in front of every team at whatever hour

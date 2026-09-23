@@ -10,9 +10,19 @@
 # unless auth_test() says Lucy Reporting, so a wrong box fails loudly instead
 # of quietly doing the wrong thing.
 #
-# Lucy 3 is the right home on load -- this needs Sheets and Slack, no browser,
-# no iMessage, and Lucy 3 is idle after ~08:30. Confirm it has the user token
-# before arming: `lucy rerun slack_whoami --machine "Lucy 3"`.
+# LUCY 1 IS THE HOME since 2026-09-22. It started on Lucy 3 -- this needs
+# Sheets and Slack, no browser, and Lucy 3 is idle after ~08:30 -- but the
+# poster also TEXTS boards and standings to iMessage groups, and texts sent
+# from Lucy 3 reached SOME phones and not others (Colten and two of his reps
+# saw nothing all afternoon while the same messages from Lucy 1 reached
+# everyone). Lucy 1 is the fleet's iMessage box, so it moved. The box needs
+# BOTH: Lucy Reporting's Slack user token -- confirm with
+# `lucy rerun slack_whoami --machine "Lucy 1"` before arming -- and iMessage
+# consent (gap_alerts.config.can_text).
+#
+# The record of which box runs this is schedule_config.json's
+# install_icd_alerts_poster_agent note, not this comment: it was wrong here for
+# a day and cost somebody a wrong answer about where a change had to land.
 #
 # THE HOUR GATE IS HERE as well as in Python, so an off-hours tick costs a few
 # milliseconds instead of a Python start-up. It is deliberately WIDER than any
@@ -48,7 +58,7 @@ mkdir -p "$LOG_DIR"
 # This machine ran a whole afternoon on code that had been fixed and pushed
 # hours earlier (2026-09-12): the fix existed, the runner did not have it, and
 # the only thing that moved it across was somebody remembering to type
-# `lucy update --machine "Lucy 3"`. A report nobody has to remember to deploy
+# `lucy update --machine "<this box>"`. A report nobody has to remember to deploy
 # is the whole point of this thing being on a schedule.
 #
 # ONCE A DAY, NOT EVERY TICK. This wrapper fires every minute; pulling that
