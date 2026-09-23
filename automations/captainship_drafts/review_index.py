@@ -28,8 +28,8 @@ def build_index(today: dt.date | None = None, *, logfn=print) -> Path:
     # means reading a flat list and remembering who is in it.
     rows = []
     for block in config.BLOCKS:
-        rows.append(f'<tr class="blk"><td colspan="3">{block.label} — '
-                    f'{block.who}</td></tr>')
+        rows.append(f'<tr class="blk"><td colspan="3">{block.heading}'
+                    f'</td></tr>')
         for captain in block.members:
             f = _OUTPUT_DIR / (
                 f"captainship_draft_{captain.key}_{today:%Y%m%d}.html")

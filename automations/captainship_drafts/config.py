@@ -941,14 +941,39 @@ class Block:
         """"Wayne, Starr" — the names for the Slack post and the log line."""
         return ", ".join(c.display_name for c in self.members)
 
+    @property
+    def heading(self) -> str:
+        """How the Slack thread names this block: "Fiber 2 — Wayne" for a
+        one-captain block, "Label (names)" for anything bigger, e.g. the
+        catch-all "Unassigned" block."""
+        if len(self.captains) == 1:
+            return self.label
+        return f"{self.label} ({self.who})"
 
+
+# ONE CAPTAINSHIP PER BLOCK (Eve, 2026-09-23). The blocks used to group two to
+# four captains behind one link, and one checkmark mailed all of them. More than
+# once two of three drafts in a link were fine and the third was wrong, and the
+# two good ones had to wait: approving meant sending the bad one too. Now every
+# captainship is its own block — its own draft PDF, its own link, its own
+# checkmark — so a wrong one is held alone. Chosen over "one emoji per captain
+# on a shared link" because one link = one ✅ keeps the single rule nobody has
+# to memorise (which colour is Chan?) and reuses every per-block lock as is.
+#
+# The block key IS the captain key ("tony"), so `--block tony` rebuilds or
+# re-posts just him. _GROUPS (the old waves) only sets the ORDER and the
+# "Fiber 2 — Wayne" name in the post; it is no longer a unit of anything.
+_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
+    ("Fiber 1", ("rafael",)),
+    ("Fiber 2", ("wayne", "starr")),
+    ("Fiber 3", ("tony", "chan", "sahil")),
+    ("Fiber 4", ("pat", "jess")),
+    ("B2B", ("carlos", "eveliz", "luis", "atef")),
+    ("NDS", ("khalil", "colten", "jairo")),
+)
 _BLOCKS: List[Block] = [
-    Block("fiber-1", "Fiber 1", ("rafael",)),
-    Block("fiber-2", "Fiber 2", ("wayne", "starr")),
-    Block("fiber-3", "Fiber 3", ("tony", "chan", "sahil")),
-    Block("fiber-4", "Fiber 4", ("pat", "jess")),
-    Block("b2b", "B2B", ("carlos", "eveliz", "luis", "atef")),
-    Block("nds", "NDS", ("khalil", "colten", "jairo")),
+    Block(k, f"{wave} — {BY_KEY[k].display_name}", (k,))
+    for wave, keys in _GROUPS for k in keys if k in BY_KEY
 ]
 
 # A captain added to CAPTAINS and forgotten here must NOT silently stop being

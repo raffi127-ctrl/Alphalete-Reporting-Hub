@@ -557,17 +557,16 @@ def ensure_parent(today: dt.date, channel: Optional[str] = None,
     # .month/.day, never %-m — that strftime flag does not exist on Windows and
     # this module runs on both machines.
     reported = today - dt.timedelta(days=1)
-    blocks_line = " · ".join(f"{b.label} ({b.who})" for b in config.BLOCKS)
     # English, all of it (Eve, 2026-07-30) — the replies in the thread below
     # match, so the two halves of one conversation don't switch language.
     # The mentions come from APPROVERS, so changing who approves can't leave
     # the message pinging the old list.
+    # SHORT on purpose (Eve, 2026-09-23): no roster of who is in what — every
+    # link below already names its captain.
     text = (f"*Captainship Reports — {reported.month}/{reported.day}*\n"
-            f"{_mentions()} — the reports go up in this thread in blocks: "
-            f"{blocks_line}.\n"
-            f"Each block gets its own link below. React :white_check_mark: on "
-            f"a block's message to send THAT block — you don't have to wait "
-            f"for the rest. Nothing goes out until then.\n"
+            f"{_mentions()} — one link per captainship below. React "
+            f":white_check_mark: on a link to send just that one. Nothing "
+            f"goes out until then.\n"
             f"`{MARKER} {today:%Y-%m-%d}`")
     r = _client().chat_postMessage(channel=_channel(channel), text=text,
                                    unfurl_links=False)
@@ -691,11 +690,10 @@ def post_block(link: str, today: dt.date, block: "config.Block", parent: dict,
                   f"{type(e).__name__}) — CHECK THE THREAD: two links means a "
                   f"checkmark can land on the wrong one", flush=True)
 
-    n = len(block.members)
-    text = (f"*{block.label} — {block.who}* "
-            f"({n} report{'s' if n != 1 else ''})\n"
-            f"{link}\n"
-            f"{_mentions()} — :white_check_mark: here sends these {n}.\n"
+    # Name + link and nothing else (Eve, 2026-09-23: "sino es demasiado
+    # texto"). How to approve lives once, in the parent. The marker line stays:
+    # it is how --check tells which captain a checkmark releases.
+    text = (f"*{block.heading}* <{link}|link>\n"
             f"`{BLOCK_MARKER} {today:%Y-%m-%d} {block.key}`")
     r = cli.chat_postMessage(channel=_channel(channel), thread_ts=parent["ts"],
                              text=text, unfurl_links=False)
@@ -785,7 +783,7 @@ def remind(today: dt.date, after_hours: float = REMIND_AFTER_HOURS,
         n = len(block.members)
         _client().chat_postMessage(
             channel=_channel(channel), thread_ts=parent["ts"],
-            text=(f"{_mentions()} — reminder: *{block.label}* ({block.who}) is "
+            text=(f"{_mentions()} — reminder: *{block.heading}* is "
                   f"still unapproved ({age_h:.0f}h). Those {n} reports have "
                   f"not been sent; they need a :white_check_mark: on that "
                   f"block's message above.\n"
@@ -862,7 +860,7 @@ def close_day(today: dt.date, channel: Optional[str] = None,
                     f"leave it and tomorrow's run replaces them.")
         _client().chat_postMessage(
             channel=_channel(channel), thread_ts=parent["ts"],
-            text=(f"{_mentions()} — *{block.label}* ({block.who}): {body}\n"
+            text=(f"{_mentions()} — *{block.heading}*: {body}\n"
                   f"`{_tagged(CLOSED_MARKER, block.key)}`"))
         if verbose:
             print(f"✓ closed {block.key} — said so in the thread", flush=True)
@@ -1498,7 +1496,7 @@ def ensure_posted(today: dt.date, channel: Optional[str] = None,
                       f"(exit {rc}) — nothing posted for it. The next tick "
                       f"tries again.", flush=True)
                 failures.append(
-                    f"*{block.label}* ({block.who}) — the deadline BUILD "
+                    f"*{block.heading}* — the deadline BUILD "
                     f"exited {rc} and wrote no previews, so nothing was "
                     f"posted for it (look for output/captainship_draft_*_"
                     f"{today.strftime('%Y%m%d')}.html). This ran from the "
@@ -1551,7 +1549,7 @@ def ensure_posted(today: dt.date, channel: Optional[str] = None,
             print(f"✗ {block.key}: the deadline post failed: "
                   f"{type(last_err).__name__}: {last_err}", flush=True)
             failures.append(
-                f"*{block.label}* ({block.who}) — previews are built but "
+                f"*{block.heading}* — previews are built but "
                 f"POSTING them failed on all 3 tries "
                 f"({type(last_err).__name__}: {str(last_err)[:120]})")
     if failures:

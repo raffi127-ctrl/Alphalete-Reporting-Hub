@@ -6,7 +6,7 @@ churn images, assembles each draft, and creates it in Gmail.
 
   python -m automations.captainship_drafts.run --only wayne --dry-run
   python -m automations.captainship_drafts.run --dry-run     # all 12, no send
-  python -m ...run --dry-run --block fiber-2                 # one block only
+  python -m ...run --dry-run --block wayne                   # one captainship only
   python -m automations.captainship_drafts.run --only wayne  # live: create draft
   python -m ...run --only wayne --send                       # live: SEND it
   python -m ...run --only wayne --dry-run --skip-sheets      # churn-only preview
