@@ -253,6 +253,17 @@ def _uploads(item: dict, tmp: str, crop: bool) -> tuple:
     return uploads, missing
 
 
+def _thread_alive(cl, channel: str, ts: str) -> bool:
+    """Is the thread header still there? A read error that isn't "gone"
+    counts as alive -- a network hiccup must not open duplicate threads."""
+    try:
+        r = cl.conversations_replies(channel=channel, ts=ts, limit=1)
+    except Exception as e:                       # noqa: BLE001
+        return not ("thread_not_found" in str(e) or "message_not_found" in str(e))
+    msgs = r.get("messages") or []
+    return bool(msgs) and msgs[0].get("ts") == ts and msgs[0].get("subtype") != "tombstone"
+
+
 def _pin(cl, channel: str, ts: str, add: bool) -> Optional[str]:
     """Pin/unpin; returns the error text instead of raising — a missing
     pins:write must cost the pin, not the day's photos."""
@@ -322,6 +333,12 @@ def publish(rep: collect.DayReport, channel: str, *, cl=None,
         if day in ad["days"]:
             counts["skipped_done"] += 1
             continue
+        if ad["thread_ts"] and not _thread_alive(cl, channel, ad["thread_ts"]):
+            # The header was deleted (by hand, or a retire that died halfway):
+            # replying to it would put the reply LOOSE in the channel -- 9/23,
+            # Carlos saw candidates outside any thread. Start the ad over.
+            print(f"  thread for {item['title']!r} is gone; opening a new one")
+            wk[item["key"]] = ad = {"thread_ts": "", "days": [], "pinned": False}
         if not ad["thread_ts"]:
             r = cl.chat_postMessage(channel=channel,
                                     text=parent_text(item["title"], monday, pilot))
@@ -621,7 +638,14 @@ def _delete_thread(cl, channel: str, ts: str, me: str, counts: Dict[str, int],
     counts["threads"] += 1
     msgs, cursor = [], None
     while True:
-        r = cl.conversations_replies(channel=channel, ts=ts, limit=200, cursor=cursor)
+        try:
+            r = cl.conversations_replies(channel=channel, ts=ts, limit=200, cursor=cursor)
+        except Exception as e:                   # noqa: BLE001
+            # Already gone (9/23: deleted by hand before the retire ran, and
+            # the retire died on it) -- nothing left to delete here.
+            if "thread_not_found" in str(e) or "message_not_found" in str(e):
+                return
+            raise
         msgs += r.get("messages", [])
         cursor = (r.get("response_metadata") or {}).get("next_cursor")
         if not cursor:

@@ -16,6 +16,12 @@ from automations.ad_photo_threads.titles import TitleBook, norm
 class FakeSlack:
     def __init__(self):
         self.posts, self.uploads, self.pins, self._n = [], [], [], 0
+        self.gone = set()          # thread headers deleted by hand
+
+    def conversations_replies(self, **kw):
+        if kw["ts"] in self.gone:
+            raise RuntimeError("The server responded with: {'ok': False, 'error': 'thread_not_found'}")
+        return {"messages": [{"ts": kw["ts"], "user": "ULUCY"}]}
 
     def pins_add(self, **kw):
         self.pins.append(("add", kw["timestamp"]))
@@ -444,3 +450,23 @@ class RetireWeekTests(unittest.TestCase):
             self.assertEqual((c["kept_touched"], c["kept_forever"]), (1, 1))
             wk = post._load_state()["C1"]["weeks"]["2026-09-14"]
             self.assertEqual(sorted(wk), ["b", "c"])
+
+
+class DeletedThreadTests(PublishTests):
+    test_one_thread_one_reply_group_photo_once = None
+
+    def test_reply_to_a_deleted_thread_opens_a_new_one_not_a_loose_post(self):
+        post.publish(_rep(), "C1", cl=FakeSlack())          # thread 100.1
+        rep = _rep(); rep.day = dt.date(2026, 9, 17)        # same week, new day
+        cl = FakeSlack(); cl._n = 4; cl.gone = {"100.1"}
+        c = post.publish(rep, "C1", cl=cl)
+        self.assertEqual(c["threads_new"], 1)
+        self.assertEqual(cl.uploads[0]["thread_ts"], "100.5")
+
+    def test_retire_survives_a_thread_already_deleted(self):
+        post.publish(_rep(), "C1", cl=FakeSlack())
+        cl = FakeSlack(); cl.gone = {"100.1"}
+        cl.auth_test = lambda: {"user_id": "ULUCY"}
+        cl.conversations_history = lambda **kw: {"messages": []}
+        post.retire_channel("C1", cl=cl)
+        self.assertNotIn("C1", post._load_state())
