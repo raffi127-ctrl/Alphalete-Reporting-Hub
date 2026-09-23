@@ -98,3 +98,51 @@ class RowsForTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AppendDayGuardTests(unittest.TestCase):
+    """The guard that actually failed: append_day must refuse a day the tab
+    already holds under ANY spelling of that office, whichever writer got
+    there first."""
+
+    def _ws(self, existing):
+        ws = mock.Mock()
+        ws.get_all_values.return_value = existing
+        ws.append_rows.return_value = None
+        return ws
+
+    def _run(self, existing, office):
+        from automations.icd_sales_board import knocks_log as KL
+        ws = self._ws(existing)
+        book = mock.Mock()
+        book.worksheet.return_value = ws
+        with mock.patch(
+                "automations.recruiting_report.fill.open_by_key",
+                return_value=book), \
+             mock.patch.object(KL, "_columns",
+                               return_value=["Date", "Office", "Rep"]), \
+             mock.patch.object(KL, "_wanted",
+                               return_value={"kash rai", "akashdeep rai"}):
+            n = KL.append_day(dt.date(2026, 9, 22), office,
+                              [{"Rep": "A"}], verbose=False)
+        return n, ws
+
+    def test_the_same_spelling_is_skipped(self):
+        n, ws = self._run([["Date", "Office", "Rep"],
+                           ["2026-09-22", "Kash Rai", "A"]], "Kash Rai")
+        self.assertEqual(n, 0)
+        ws.append_rows.assert_not_called()
+
+    def test_another_spelling_of_the_same_office_is_skipped(self):
+        # Kash, 2026-09-23: backfill wrote 'Kash Rai' at 04:30, the scrape
+        # then wrote 'Akashdeep Rai' and his board read 3,630 against 1,815.
+        n, ws = self._run([["Date", "Office", "Rep"],
+                           ["2026-09-22", "Kash Rai", "A"]], "Akashdeep Rai")
+        self.assertEqual(n, 0)
+        ws.append_rows.assert_not_called()
+
+    def test_a_genuinely_new_day_is_written(self):
+        n, ws = self._run([["Date", "Office", "Rep"],
+                           ["2026-09-21", "Kash Rai", "A"]], "Akashdeep Rai")
+        self.assertEqual(n, 1)
+        ws.append_rows.assert_called_once()

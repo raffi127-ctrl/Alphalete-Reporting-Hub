@@ -59,12 +59,29 @@ def append_day(day: dt.date, office: str, records: list,
         existing = _retry(ws.get_all_values)
 
         key_day, key_office = day.isoformat(), (office or "").strip()
+        # ALIAS-AWARE, NOT EXACT-STRING. The readers gather an office by alias
+        # and by substring, so two spellings of one office are SUMMED — which
+        # makes a second write of a day already on the tab not a wasted row but
+        # every number on that office's board doubled.
+        #
+        # It happened on 2026-09-23, to Kash. The backfill ran at 04:30 and
+        # filed his 22 reps as 'Kash Rai'; the scrape ran after and filed the
+        # same 22 reps as 'Akashdeep Rai', because this check only ever looked
+        # for its own spelling. His board read 3,630 knocks against a real
+        # 1,815. The backfill had the alias-aware check and the scrape did not,
+        # which is exactly why it belongs HERE, at the one place rows are
+        # written, instead of in whichever caller thought of it.
+        mine = _wanted(key_office)
         for r in existing[1:]:
-            if len(r) > 1 and (r[0] or "").strip()[:10] == key_day \
-                    and (r[1] or "").strip().lower() == key_office.lower():
+            if len(r) < 2 or (r[0] or "").strip()[:10] != key_day:
+                continue
+            cell = (r[1] or "").strip().lower()
+            if any(w == cell or w in cell or cell in w for w in mine):
                 if verbose:
+                    under = ("" if cell == key_office.lower()
+                             else f" (as {r[1].strip()!r})")
                     print(f"   knocks log: {key_office} {key_day} already "
-                          f"logged - skipped")
+                          f"logged{under} - skipped")
                 return 0
 
         out = []
