@@ -217,6 +217,43 @@ def decide_sales(sales: Dict, last_posted: Optional[Dict],
     return moved, merged, False
 
 
+def _lines_scoreboard(sales: Dict, fired: List[str], show, per_rep, totals) -> str:
+    """The AT&T-shaped board with only the metrics a campaign sells.
+
+    `per_rep`: (metric, label) pairs for the breakdown in parentheses;
+    `totals`: (metric, label) pairs for the block under the names. TOTALS
+    is the sum of the listed metrics only.
+    """
+    from automations.alphalete_sales_board import notify as N
+    keys = [m for m, _l in totals]
+    rows = []
+    for rep, m in (sales or {}).items():
+        m = m or {}
+        n = sum(int(m.get(k, 0) or 0) for k in keys)
+        if n <= 0:
+            continue
+        rows.append((show(rep) if show else rep, n, m, rep))
+    if not rows:
+        return ""
+    rows.sort(key=lambda r: -r[1])
+    flames = set(fired or [])
+    lines = []
+    for name, n, m, raw in rows:
+        parts = ["%d %s" % (int(m.get(k, 0) or 0), label)
+                 for k, label in per_rep if int(m.get(k, 0) or 0)]
+        line = "%s %d" % (N.short_name(name), n)
+        if parts:
+            line += " (%s)" % ", ".join(parts)
+        if raw in flames or name in flames:
+            line += " " + N.FIRE
+        lines.append(line)
+    lines.append("")
+    for k, label in totals:
+        lines.append("%s: %d" % (label, sum(int((r[2] or {}).get(k, 0) or 0) for r in rows)))
+    lines.append("%s TOTALS: %d" % (N.TROPHY, sum(r[1] for r in rows)))
+    return "\n".join(lines)
+
+
 def _box_scoreboard(sales: Dict, fired: List[str], show=None) -> str:
     """Box: 'Name 2 (27,000 kWh)' per rep, then Contracts / kWh / TOTALS."""
     from automations.alphalete_sales_board import notify as N
@@ -271,6 +308,15 @@ def scoreboard_text(sales: Dict, fired: List[str], campaign=None,
         return _box_scoreboard(sales, fired, show)
     if names != ("Int", "Int Up", "DTV", "NL"):
         return ""
+    if str(campaign or "").strip().lower() == "nds":
+        # NDS SELLS LINES AND AT&T AIR -- no internet, no DTV (Colten,
+        # 2026-09-22: "Att air / No DTV / No int / Maybe an upgrade but
+        # rarely"; Megan: "only include what he sells for the totals").
+        # SaraPlus counts Air inside "Int Up" (metrics_for: Int Up =
+        # Internet Upgrades + AIA), so that bucket IS Air for this campaign.
+        return _lines_scoreboard(sales, fired, show,
+                                 (("Int Up", "Air"), ("NL", "NL")),
+                                 (("Int Up", "Air"), ("NL", "NL's")))
     from automations.alphalete_sales_board import notify as N
     named = {(show(rep) if show else rep): dict(m or {})
              for rep, m in (sales or {}).items()}

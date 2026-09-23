@@ -62,6 +62,26 @@ class ScoreboardTextTest(unittest.TestCase):
         for word in ("Big", "Huge"):
             self.assertNotIn(word, out)
 
+    def test_nds_shows_only_lines_and_air(self):
+        """Colten 2026-09-22: NDS sells Air + lines, no DTV, no internet."""
+        sales = {"HERMIONE HICKS": M(0, 1, 0, 5), "SEBASTIAN GRIMALDO": M(0, 0, 0, 5),
+                 "NOBODY": M()}
+        out = P.scoreboard_text(sales, ["HERMIONE HICKS"], campaign="nds")
+        lines = out.split("\n")
+        self.assertEqual(lines[0], "Hermione Hicks 6 (1 Air, 5 NL) \U0001F525")
+        self.assertEqual(lines[1], "Sebastian Grimaldo 5 (5 NL)")
+        self.assertEqual(lines[2], "")
+        self.assertEqual(lines[3], "Air: 1")
+        self.assertEqual(lines[4], "NL's: 10")
+        self.assertEqual(lines[5], "\U0001F3C6 TOTALS: 11")
+        for word in ("INT:", "DTV", "Upgrades", " Up,", " Up)"):
+            self.assertNotIn(word, out)
+
+    def test_att_keeps_the_full_block(self):
+        out = P.scoreboard_text({"A": M(1, 1, 1, 1)}, [], campaign="att")
+        for word in ("INT: 1", "Upgrades: 1", "DTV: 1", "NL's: 1", "TOTALS: 4"):
+            self.assertIn(word, out)
+
     def test_a_box_office_with_no_contracts_sends_nothing(self):
         out = P.scoreboard_text({"A": {"Sales": 0, "Volume": 0}}, [], campaign="b2b_box")
         self.assertEqual(out, "")
