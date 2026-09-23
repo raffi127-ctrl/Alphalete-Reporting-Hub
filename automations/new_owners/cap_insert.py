@@ -155,6 +155,10 @@ def add_rep(ws, captain_title: str, name: str, *, aliases=None,
     """Insert `name` into every table of `captain_title`. Returns
     {'rows': {kind: row}, 'already': kind|None}."""
     from automations.focus_office_att.aliases import load_aliases
+    from automations.shared.name_case import titlecase_name
+    # The gate hands over the name as the log keyed it ('isaac gehrke', 9/23);
+    # a new row always goes on the board with First/Last capitalized (Eve).
+    name = titlecase_name(name)
     _guard(ws)
     aliases = aliases if aliases is not None else load_aliases()
     grid = _retry(ws.get_all_values)
