@@ -19,6 +19,20 @@ import re
 
 SHEET_ID = "1w_KWAmlLfMR4kceaJmz_kyahnVslStTquVkVydysXTE"
 
+# THERE IS MORE THAN ONE OF THESE (Megan 2026-09-23: "there are a few focus
+# reports - carlos has one too"). Same layout in each, different ICDs: the
+# first holds 67 tabs and matched only 14 of the board's 44 offices, and the
+# other 30 were not spelling mismatches the alias sheet could fix — they were
+# simply in another workbook. An ICD is looked up in each in turn.
+#
+# ORDER IS THE TIE-BREAK. If the same owner has a tab in two workbooks the
+# first one here wins, so the list runs most-canonical first rather than in
+# whatever order the links arrived.
+SHEETS = [
+    ("ATT Program", SHEET_ID),
+    ("NDS / B2B", "1KLF8diMJ8pwIQWW9IqN7CL288t1l9VGUKxzBcMl8Of4"),
+]
+
 GOAL_COL = 0        # 'OFFICE GOALS'
 LABEL_COL = 1       # 'WE SUNDAY' header sits here; metric names below
 FIRST_WEEK_COL = 2
@@ -106,30 +120,70 @@ def sections(data: dict) -> list:
     return out
 
 
-def load(icd: str, sheet_id: str = SHEET_ID) -> dict:
+def load(icd: str, sheet_id: str = "") -> dict:
+    """This ICD's tab, from whichever Focus Report holds it.
+
+    `sheet_id` pins the search to one workbook; left out, every workbook in
+    SHEETS is tried in order and the first tab found wins. The result carries
+    `report` so a page can say WHICH one it read — two offices on one board
+    reading from two different workbooks is worth being able to see."""
+    tried = [("", sheet_id)] if sheet_id else SHEETS
+    names = _names_for(icd)
+    last = {}
+    for label, sid in tried:
+        got = _load_one(names, sid)
+        if not got.get("error"):
+            got["report"] = label
+            return got
+        last = got
+    return last
+
+
+def _names_for(icd: str) -> list:
+    """Every spelling this ICD's tab might use, best first.
+
+    RESOLVED ONCE PER LOOKUP, not once per workbook. The alias table is a
+    Sheets read, and doing it inside the per-workbook search meant an ICD
+    missing from the first Focus Report paid for it again in the second — with
+    a dozen offices on a page that is the difference between a slow render and
+    a quota sleep ([[reference_sheets_per_user_read_cap]]).
+
+    An alias failure is non-fatal: the exact name still works, so a Sheets
+    outage there must not take every tab away."""
+    names = [icd]
+    try:
+        from automations.focus_office_att import aliases as _al
+        names += [n for n in _al.get_search_candidates(icd, _al.load_aliases())
+                  if n]
+    except Exception:   # noqa: BLE001
+        pass
+    seen, out = set(), []
+    for n in names:
+        k = (n or "").strip().lower()
+        if k and k not in seen:
+            seen.add(k)
+            out.append(k)
+    return out
+
+
+def _load_one(names: list, sheet_id: str) -> dict:
+    """The first tab in this workbook matching any of `names`."""
     from automations.recruiting_report.fill import open_by_key, _retry
-    sh = open_by_key(sheet_id)
-    # The tab is not always spelled the way the rest of the Hub spells the ICD
-    # — this workbook calls Rafael Hidalgo 'Raf Hidalgo'. That mismatch belongs
-    # in the ICD Aliases sheet, not in a per-report special case, so ask the
-    # alias table for every name this person is known by and try each. A Sheet
-    # outage there must not take the tab away, so an exact match is tried first
-    # and an alias failure is non-fatal.
-    tabs = {w.title.strip().lower(): w for w in sh.worksheets()}
-    ws = tabs.get(icd.strip().lower())
-    if ws is None:
-        try:
-            from automations.focus_office_att import aliases as _al
-            raw = _al.load_aliases()
-            for cand in _al.get_search_candidates(icd, raw):
-                ws = tabs.get(cand.strip().lower())
-                if ws is not None:
-                    break
-        except Exception:
-            pass
-    if ws is None:
-        return {"weeks": [], "metrics": {}, "error": f"no tab for {icd!r}"}
-    return parse_tab(_retry(ws.get_all_values))
+    try:
+        sh = open_by_key(sheet_id)
+        # The tab is not always spelled the way the rest of the Hub spells the
+        # ICD — this workbook calls Rafael Hidalgo 'Raf Hidalgo'. That mismatch
+        # belongs in the ICD Aliases sheet, not in a per-report special case.
+        tabs = {w.title.strip().lower(): w for w in sh.worksheets()}
+    except Exception as e:   # noqa: BLE001 — one workbook down is not all of them
+        return {"weeks": [], "metrics": {},
+                "error": f"{type(e).__name__}: {e}"}
+    for n in names:
+        ws = tabs.get(n)
+        if ws is not None:
+            return parse_tab(_retry(ws.get_all_values))
+    return {"weeks": [], "metrics": {},
+            "error": f"no tab for {names[0]!r}"}
 
 
 def icd_tabs(sheet_id: str = SHEET_ID) -> list:
