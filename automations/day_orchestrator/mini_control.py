@@ -101,6 +101,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 import os
 import pathlib
 import re
@@ -170,10 +171,48 @@ def is_manual(by: str = "") -> bool:
 # Only the runaway-risk actions count (see PLUMBING_ACTIONS); a hands-on deploy
 # day with lots of update/restart/pip_install churn shouldn't trip it.
 DAILY_AUTORUN_CAP = 100
+#: A cap RAISED FOR ONE DAY, and only for that day (Megan 2026-09-23).
+#:
+#: A backfill is a legitimate reason to blow past 100: Eve queued ~90
+#: `rerun ad_photo_threads` rows that afternoon (ten offices x eight dates) and
+#: the last 19 parked at the cap with the rest of the day's ordinary traffic
+#: already spent. The cap is there to bound a RUNAWAY -- a report re-queuing
+#: itself -- not to stop a person who has decided to re-post ten offices.
+#:
+#: DATED, so it cannot become the new normal by being forgotten. The file
+#: carries the day it was set for and is ignored on any other, which is the
+#: whole difference between "raise it for today" and "raise it": tomorrow the
+#: guard is back at 100 with nobody having to remember to put it back.
+_CAP_OVERRIDE_PATH = (Path.home() / ".config" / "recruiting-report"
+                      / "autorun_cap.json")
+#: Above this a typo is likelier than an intention. 1000 rows at even a minute
+#: each is more than a day.
+MAX_AUTORUN_CAP = 1000
+
+
+def _daily_cap() -> int:
+    """Today's cap: DAILY_AUTORUN_CAP unless a dated override raises it.
+
+    Best effort in both directions -- an unreadable or stale file means the
+    normal cap, never no cap. A missing guard is how a loop runs all night.
+    """
+    try:
+        raw = json.loads(_CAP_OVERRIDE_PATH.read_text())
+        if str(raw.get("day", "")) != dt.date.today().isoformat():
+            return DAILY_AUTORUN_CAP
+        cap = int(raw.get("cap") or 0)
+    except Exception:  # noqa: BLE001
+        return DAILY_AUTORUN_CAP
+    if cap <= DAILY_AUTORUN_CAP:
+        return DAILY_AUTORUN_CAP        # an override may only ever RAISE it
+    return min(cap, MAX_AUTORUN_CAP)
 # Bounded, idempotent operational actions — NOT runaway risks, so they don't burn
 # the daily budget (a multi-person deploy day generates lots of these). The
 # budget is meant to bound repeated REPORT runs (rerun), not deploy plumbing.
 PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_holder",
+                    # Raises TODAY's cap. Exempt because the cap is already
+                    # reached when you need it -- a lock with the key inside.
+                    "set_autorun_cap",
                     "restart_orchestrator",
                     # Reloads the Jiraiya listener's CODE. Plumbing for the
                     # same reason as the two below: `update` alone leaves that
@@ -7930,8 +7969,48 @@ def _action_slack_delete(args: str) -> tuple[bool, str]:
     return True, f"deleted {ts} from {cid}"
 
 
+def _action_set_autorun_cap(args: str) -> tuple[bool, str]:
+    """Raise TODAY's runaway cap -- `lucy set_autorun_cap 150`.
+
+    For the backfill day: somebody has decided to re-post ten offices and the
+    hundred ordinary runs are already spent. It writes a DATED file, so the
+    guard is back at its normal 100 tomorrow with nobody having to remember to
+    put it back.
+
+    PLUMBING, and it has to be: the cap is already reached when you need this,
+    and an action that the cap itself blocks would be a lock with the key
+    inside. Only ever UP -- a row that could LOWER the cap could silence the
+    queue, and the way to stop work is to cancel the rows.
+    """
+    text = (args or "").strip().split()
+    if not text:
+        return False, ("say a number, e.g. `lucy set_autorun_cap 150` -- "
+                       "today's cap is %d" % _daily_cap())
+    try:
+        want = int(text[0])
+    except ValueError:
+        return False, "%r is not a number" % text[0][:40]
+    if want > MAX_AUTORUN_CAP:
+        return False, ("%d is past the %d ceiling -- that is likelier a typo "
+                       "than an intention" % (want, MAX_AUTORUN_CAP))
+    if want <= DAILY_AUTORUN_CAP:
+        return False, ("%d is not above the standing cap of %d; an override may "
+                       "only raise it. Cancel rows to do less."
+                       % (want, DAILY_AUTORUN_CAP))
+    today = dt.date.today().isoformat()
+    try:
+        _CAP_OVERRIDE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _CAP_OVERRIDE_PATH.write_text(json.dumps({"day": today, "cap": want}))
+    except OSError as e:
+        return False, "could not write the override: %s" % str(e)[:120]
+    return True, ("cap raised to %d for %s only (back to %d tomorrow); "
+                  "queued rows resume on the next pass"
+                  % (want, today, DAILY_AUTORUN_CAP))
+
+
 ACTIONS = {
     "ping": _action_ping,
+    "set_autorun_cap": _action_set_autorun_cap,
     "messages_diag": _action_messages_diag,
     "find_group": _action_find_group,
     "sendtext": _action_sendtext,
@@ -8363,16 +8442,17 @@ def poll_once(*, dry_run: bool = False, sandbox: bool = False,
         shown = "<redacted>" if action in SECRET_ACTIONS else args
         if (action.strip().lower() not in PLUMBING_ACTIONS
                 and action.strip().lower() not in READONLY_ACTIONS
-                and cap_used >= DAILY_AUTORUN_CAP):
+                and cap_used >= _daily_cap()):
             # SAY SO OUT LOUD. A capped row stays "queued" while plumbing keeps
             # succeeding, so the queue reads as alive and the skipped rerun looks
             # like it's merely waiting its turn — on 2026-08-13 that cost an hour
             # of watching a row that was never going to run.
-            print(f"[mini_control] daily cap ({DAILY_AUTORUN_CAP}) reached — "
+            print(f"[mini_control] daily cap ({_daily_cap()}) reached — "
                   f"leaving {action} {shown} queued for a human")
             _set(ws, rownum, "queued",
-                 f"daily cap {DAILY_AUTORUN_CAP} reached @ {_now()} — NOT run; "
-                 f"waiting for a human or for the date to roll")
+                 f"daily cap {_daily_cap()} reached @ {_now()} — NOT run; "
+                 f"waiting for a human or for the date to roll. Raise it for "
+                 f"TODAY with `lucy set_autorun_cap <n>`.")
             continue
         if dry_run:
             print(f"[mini_control] DRY-RUN would run: {action} {shown}")
