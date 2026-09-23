@@ -662,6 +662,10 @@ def main(argv=None) -> int:
             f"{b['Internet']}  disconnects = {d['Wireless']}/{d['Air']}/"
             f"{d['Internet']}  ({summary['disc_total']}/"
             f"{summary['base_total']})")
+        other = compute.unmapped_products(lines, today)
+        if other:
+            log(f"  {key.upper()}: product types NOT counted (0-30): "
+                + ", ".join(f"{k!r}={n}" for k, n in other.items()))
         if not args.skip_reconcile:
             try:
                 dash = pull.parse_churnrates(churnrates_path, prefix)

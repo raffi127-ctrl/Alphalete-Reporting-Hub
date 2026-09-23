@@ -178,6 +178,22 @@ def _churn_units(lines: list[dict], today: dt.date) -> list[dict]:
     return units
 
 
+def unmapped_products(lines: list[dict], today: dt.date) -> dict:
+    """Product Type labels in the 0-30 window that PRODUCT_MAP ignores, with
+    their distinct-SPE counts. Logged every run so a Tableau rename (2026-09-23:
+    Air fell to 0-6 on all four offices overnight) names the new label in the
+    log instead of needing a second trip to find it."""
+    cutoff = today - dt.timedelta(days=30)
+    seen: dict = defaultdict(set)
+    for ln in lines:
+        lbl = (ln.get("product") or "").strip()
+        if (lbl.upper() in PRODUCT_MAP or not ln.get("posted")
+                or ln["posted"] < cutoff):
+            continue
+        seen[lbl or "(blank)"].add(ln.get("spe"))
+    return {k: len(v) for k, v in sorted(seen.items())}
+
+
 def churn_summary(lines: list[dict], today: dt.date) -> dict:
     """Per-product activation bases + disconnect counts (0-30 by posted date)."""
     base = {p: 0 for p in PRODUCT_ORDER}
