@@ -337,6 +337,24 @@ def main(argv=None):
             if len(r) > 1 and r[0]
             and r[1] != YTD_LABEL
             and not (r[1] == period and r[0] in pulled)]
+    # Keep the tab's Manager picker in step with the roster. The Y:Z lists on
+    # 'Indeed Ad Data' feed C3's dropdown (via the AA FILTER) and were parked
+    # ONCE in August — every roster add since (South Shore, Badawi, Lujan,
+    # Cameron) was pulled but invisible in the picker (found 2026-09-21).
+    try:
+        from automations.funnel_board.roster import ORG_NAMES, CAPTAINSHIP_NAMES
+        _n = max(len(ORG_NAMES), len(CAPTAINSHIP_NAMES), 39)
+        _rows = [[ORG_NAMES[i] if i < len(ORG_NAMES) else "",
+                  CAPTAINSHIP_NAMES[i] if i < len(CAPTAINSHIP_NAMES) else ""]
+                 for i in range(_n)]
+        sheet.put_values(sess, "'%s'!Y2:Z%d" % (sheet.DATA_TAB, 1 + _n), _rows)
+        print("[indeed_source_report] picker rosters refreshed "
+              "(%d org / %d captainship)" % (len(ORG_NAMES), len(CAPTAINSHIP_NAMES)),
+              flush=True)
+    except Exception as e:  # noqa: BLE001 — picker refresh must not sink the run
+        print("[indeed_source_report] picker roster refresh skipped: %s"
+              % str(e)[:120], flush=True)
+
     print("[indeed_source_report] refreshed %d managers; kept %d existing rows"
           % (len(pulled), len(keep)), flush=True)
 
