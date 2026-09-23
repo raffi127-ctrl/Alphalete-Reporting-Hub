@@ -220,7 +220,12 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     # the report budget.
                     "incident_resolve", "incident_working", "incident_unmark",
                     "incident_triage", "incident_close_stranded",
-                    "find_group"}
+                    "find_group",
+                    # A HAND-SENT TEXT IS NOT REPORT CHURN: one message per row,
+                    # typed by a person. On 2026-09-23 the cap (hit by a day of
+                    # log reads + a backfill) held Khalil's group test until
+                    # midnight. These run regardless.
+                    "textgroup", "textgroup_image"}
 # READ-ONLY diagnostics. They look at a log, the repo, or Slack and change
 # NOTHING, so like plumbing they don't burn the budget — the cap exists to bound
 # repeated REPORT runs, and _autoruns_today's own docstring says "side-effecting".
