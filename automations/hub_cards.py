@@ -6161,15 +6161,18 @@ AUTOMATED_REPORTS = [
             "already has one, and posts who still needs doing by hand."),
         "breakdown": (
             "WHAT IT DOES\n"
-            "Reads the newest dated **`D2D OBCL <m.d>`** tab \u2014 every "
-            "**chart** on it, and Monday's has two \u2014 and sends each "
-            "eligible new start "
-            "their packet through the Blue Ink **web app**, then tints their "
-            "first name light green in column D and logs the send to the "
-            "**Blue Ink Log** tab.\n\n"
+            "Reads the newest dated **`D2D OBCL <m.d>`** tab \u2014 only the "
+            "chart dated for **that week** (last week's chart is often still "
+            "on the tab and is skipped; a blank row inside a chart is fine) "
+            "\u2014 and sends each eligible new start their packet through the "
+            "Blue Ink **web app**, then colours their **Blue Ink** cell light "
+            "blue and logs the send to the **Blue Ink Log** tab.\n\n"
             "WHEN IT RUNS\n"
             "**Monday 7:30am CST** on Lucy 2, its own launchd timer. A full "
-            "week takes about an hour \u2014 roughly a minute a person.\n\n"
+            "week takes about half an hour \u2014 roughly a minute a person.\n"
+            "The **signed-status sweep** (below) runs on its own timer, 15 "
+            "minutes ahead of every OBCL \u2190 OwnerVille pass: **7:45am "
+            "Tue\u2013Fri**, then **1:45\u20136:45pm hourly, every day**.\n\n"
             "WHO IT SKIPS\n"
             "**\u2022** Any **Final Status** meaning they aren't starting "
             "(quit, failed BGC, terminated, no show, rescheduling).\n"
@@ -6190,20 +6193,35 @@ AUTOMATED_REPORTS = [
             "send; the name check holds that person back and names them in "
             "Slack instead.\n\n"
             "THE \u201cBLUE INK\u201d COLUMN\n"
-            "That one cell carries two different facts:\n"
-            "**\u2022** **Light green background** \u2014 we sent it.\n"
-            "**\u2022** **Checkbox ticked** \u2014 they have SIGNED it. A "
-            "separate pass re-reads Blue Ink's Completed list (last 7 days) "
-            "and ticks whoever has finished since. It only ever ticks ON, so a "
-            "box someone checked by hand is never cleared.\n"
+            "One cell, one colour, one fact:\n"
+            "**\u2022** **Light blue** \u2014 we sent it, waiting on their "
+            "signature.\n"
+            "**\u2022** **Deeper blue** \u2014 they already had a packet from "
+            "an earlier week (usually a rescheduled start), still waiting.\n"
+            "**\u2022** **Green + ticked** \u2014 SIGNED. A box someone ticks "
+            "by hand goes green too.\n"
+            "**\u2022** **White** \u2014 not sent (declined, failed background, "
+            "quit).\n"
+            "The sweep reads Blue Ink's signed list through the API (no "
+            "browser needed), ticks and greens whoever has signed, and "
+            "re-applies every colour by rule each pass. It also **clears a "
+            "tick Blue Ink contradicts** \u2014 ticked, but no signed packet "
+            "in the last 45 days \u2014 and names everyone it clears. Two "
+            "guards: if Blue Ink shows nobody on the tab signed, or more than "
+            "half the ticks would clear, it treats that as a bad read and "
+            "touches nothing.\n"
+            "**\u2022** Google won't recolour rows a **filter** is hiding; "
+            "they catch up on the first sweep after the filter comes off.\n"
             "**\u2022** If the column is missing the run says so in Slack and "
             "**still sends** \u2014 paperwork beats a marking.\n\n"
             "AFTER IT RUNS\n"
             "Posts **Blueink Status Update** to "
             "**#rafs-office-recruiting-11280**: how many went "
-            "out, and a bullet per person who still needs doing by hand, "
-            "tagging Tiff, Aimee and Alisson. The correct skips aren't listed "
-            "\u2014 they'd bury the names that need acting on."),
+            "out, a bullet per person who still needs doing by hand "
+            "(tagging Tiff, Aimee and Alisson), and a separate list of anyone "
+            "held back because they **already had a packet**, with the date it "
+            "was sent. The correct skips aren't listed \u2014 they'd bury the "
+            "names that need acting on."),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4/edit"
                       "?gid=1430069873#gid=1430069873"),
@@ -6223,7 +6241,7 @@ AUTOMATED_REPORTS = [
         },
         "checklist": [],
         "post_run": {
-            "message_success": "\u2705 Packets sent, names tinted green, and the status summary posted to #rafs-office-recruiting-11280.",
+            "message_success": "\u2705 Packets sent, Blue Ink cells marked blue, and the status summary posted to #rafs-office-recruiting-11280.",
             "message_failed": "\u274C Run failed. Usually the Blue Ink session on Lucy 2 has expired \u2014 someone at that machine runs `python -m automations.blueink_docs.session --login`. Nothing was sent.",
         },
         "actions": [
@@ -6245,7 +6263,7 @@ AUTOMATED_REPORTS = [
             {
                 "label": "Refresh Signed",
                 "icon": "\u2705",
-                "help": "Sends nothing. Just ticks the Blue Ink checkbox for anyone whose packet has been signed since the last run.",
+                "help": "Sends nothing. Ticks + greens the Blue Ink box for anyone who has signed, clears any tick Blue Ink contradicts, and re-applies the blue/green colours.",
                 "module": "automations.blueink_docs.run",
                 "args_fn": lambda: ["--sync-completed"],
             },
@@ -6437,8 +6455,9 @@ AUTOMATED_REPORTS = [
         "breakdown": (
             "WHAT IT DOES\n"
             "Reads the **Sterling / First Advantage** BG-check emails (raffi127 "
-            "inbox) and updates **column K “BG Status”** for the week's new "
-            "starts on both `D2D OBCL` tabs. Then posts a weekly "
+            "inbox) and updates the **“BG Status : Last Checked”** column for "
+            "the week's new starts on both `D2D OBCL` tabs — the rolling tab's "
+            "week blocks and that week's dated tab. Then posts a weekly "
             "thread in "
             "**#rafs-office-recruiting-11280**, grouping everyone into Passed / "
             "Taken-Pending / Failed / Unperformable / Invited-not-taken (one "
@@ -6474,7 +6493,16 @@ AUTOMATED_REPORTS = [
             "**Over 18** box, so a blank one gets **Entry Level** / ticked — "
             "never an answer somebody already gave.\n"
             "**•** Names are corrected from the **next** start week onward; the "
-            "week in flight is left as the team hand-fixed it."
+            "week in flight is left as the team hand-fixed it.\n"
+            "**•** Columns are found by their **header text**, per week block — "
+            "the blocks don't agree with each other (older ones have no “Start "
+            "Time” column at all). Insert a column and it still works; a block "
+            "whose header has no BG column is **skipped, not guessed at**.\n"
+            "**•** **If statuses stop moving, it won't go red.** A run that "
+            "reads the wrong column still exits 0 — that's how a “Classroom” "
+            "column inserted in September cost about two weeks (fixed 9/22). "
+            "The tell is the run output: “N changes” near zero across a whole "
+            "week, or a **skipped** line naming a tab."
         ),
         # Deep-links to the D2D OBCL tab this run updates.
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
