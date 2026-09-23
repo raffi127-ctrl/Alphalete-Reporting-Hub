@@ -23,13 +23,13 @@ class TreeTests(unittest.TestCase):
 
     def test_trainer_becomes_the_parent(self):
         boss, kid = rep("Willie Henderson"), rep("Chloe Johnson", "Willie Henderson")
-        roots = R.build_tree([boss, kid], [], logfn=quiet)
+        roots = R.build_tree([boss, kid], logfn=quiet)
         self.assertEqual([r.name for r in roots], ["Willie Henderson"])
         self.assertEqual([c.name for c in boss.children], ["Chloe Johnson"])
 
     def test_office_trainer_and_blank_are_branch_roots(self):
         a, b = rep("Zoria Johnson", "Raf & JD"), rep("Ana Griffin", "")
-        roots = R.build_tree([a, b], [], logfn=quiet)
+        roots = R.build_tree([a, b], logfn=quiet)
         self.assertEqual({r.name for r in roots}, {"Zoria Johnson", "Ana Griffin"})
 
     def test_partial_and_decorated_trainer_names_resolve(self):
@@ -37,14 +37,14 @@ class TreeTests(unittest.TestCase):
         # another; both are the same person.
         boss = rep("Willie Henderson")
         short, decorated = rep("A", "Willie"), rep("B", "Willie Henderson (NC)")
-        R.build_tree([boss, short, decorated], [], logfn=quiet)
+        R.build_tree([boss, short, decorated], logfn=quiet)
         self.assertEqual(sorted(c.name for c in boss.children), ["A", "B"])
 
     def test_a_trainer_with_no_row_becomes_the_team_head(self):
         # Bas is above the board — no row of his own, but he is still the
         # upline, so the team hangs off HIM. [Megan 2026-09-20]
         a, b = rep("Elijah Rodriguez", "Bas"), rep("Andres Mejia", "BAS")
-        roots = R.build_tree([a, b], [], logfn=quiet)
+        roots = R.build_tree([a, b], logfn=quiet)
         # One head, not two — and shown with the full name Megan gave us, not
         # the "Bas" the Trainer cells type.
         self.assertEqual([x.display for x in roots], ["Basil Elhassan"])
@@ -56,7 +56,7 @@ class TreeTests(unittest.TestCase):
 
     def test_the_team_head_is_drawn_but_never_counted(self):
         r = rep("Elijah Rodriguez", "Bas", level="level 1")
-        roots = R.build_tree([r], [], logfn=quiet)
+        roots = R.build_tree([r], logfn=quiet)
         # 2 nodes in the branch, but the counts only know about the one rep.
         self.assertEqual(roots[0].size, 2)
         st = R.team_stats(list(roots[0].subtree()))
@@ -64,33 +64,9 @@ class TreeTests(unittest.TestCase):
 
     def test_a_trainer_loop_does_not_hang(self):
         a, b = rep("A", "B"), rep("B", "A")
-        roots = R.build_tree([a, b], [], logfn=quiet)
+        roots = R.build_tree([a, b], logfn=quiet)
         self.assertEqual(len(roots), 1)       # one of them keeps the other
         self.assertEqual(sum(r.size for r in roots), 2)
-
-    def test_new_start_hangs_off_its_second_rounder_and_is_tagged(self):
-        boss = rep("Zoria Johnson", "Raf & JD")
-        reps = [boss]
-        R.build_tree(reps, [("Erick Pullins", "Zoria Johnson")], logfn=quiet)
-        ns = boss.children[0]
-        self.assertTrue(ns.new_start)
-        self.assertIs(ns.upline, boss)         # lands in their 2nd-rounder's team
-        self.assertIn("NEW", R._node(ns, {}))
-
-    def test_new_start_whose_interviewer_has_no_row_joins_that_team(self):
-        reps = []
-        roots = R.build_tree(reps, [("Someone New", "Algemar Kennel")], logfn=quiet)
-        self.assertEqual([r.display for r in roots], ["Algemar Kennel"])
-        self.assertEqual([c.name for c in roots[0].children], ["Someone New"])
-
-    def test_new_start_with_nobody_named_still_shows_up(self):
-        reps = []
-        roots = R.build_tree(reps, [("Someone New", "")], logfn=quiet)
-        self.assertEqual([r.name for r in roots], ["Someone New"])
-        self.assertEqual(len(reps), 1)        # counted in the totals too
-
-
-class DisplayTests(unittest.TestCase):
 
     def test_week_marker_comes_off_the_label(self):
         self.assertEqual(rep("Aundre Browder  (Wk 2)").display, "Aundre Browder")
@@ -166,7 +142,7 @@ class TeamTests(unittest.TestCase):
             rep("Safiya Mahmoud", "Raf & JD", team="Alphaletes"),
             rep("Zoria Johnson", "Raf & JD", team="Alphaletes"),
         ]
-        return board, R.build_tree(board, [], logfn=quiet)
+        return board, R.build_tree(board, logfn=quiet)
 
     def test_sections_are_the_main_teams(self):
         _, roots = self._office()
@@ -201,9 +177,9 @@ class LeaverTests(unittest.TestCase):
         chloe = rep("Chloe Johnson", "Willie Henderson", team="Ceaseless")
         willie = rep("Willie Henderson", "Raf & JD", team="Ceaseless")
         lemsy = rep("Lemsy Vazquez", "Deavion", team="Ceaseless")
-        roots = R.build_tree([willie, chloe, lemsy], [],
+        roots = R.build_tree([willie, chloe, lemsy],
                              departed={"deavion allen": ("Chloe Johnson",
-                                                        "Ceaseless")},
+                                                         "Ceaseless")},
                              logfn=quiet)
         self.assertEqual([r.name for r in roots], ["Willie Henderson"])
         self.assertIn("Lemsy Vazquez", [c.name for c in chloe.children])
@@ -212,7 +188,7 @@ class LeaverTests(unittest.TestCase):
     def test_it_walks_more_than_one_leaver(self):
         boss = rep("Willie Henderson", "Raf & JD")
         orphan = rep("Someone", "Gone One")
-        R.build_tree([boss, orphan], [],
+        R.build_tree([boss, orphan],
                      departed={"gone one": ("Gone Two", ""),
                                "gone two": ("Willie Henderson", "")},
                      logfn=quiet)
@@ -221,7 +197,7 @@ class LeaverTests(unittest.TestCase):
     def test_a_leaver_who_reported_to_the_office_leaves_a_branch_head(self):
         orphan = rep("Someone", "Gone One")
         orphan.team = ""
-        roots = R.build_tree([orphan], [],
+        roots = R.build_tree([orphan],
                              departed={"gone one": ("Raf & JD", "Ceaseless")},
                              logfn=quiet)
         self.assertEqual([r.name for r in roots], ["Someone"])
@@ -231,7 +207,7 @@ class LeaverTests(unittest.TestCase):
 
     def test_a_trainer_who_was_never_on_the_board_still_heads_the_team(self):
         r = rep("Elijah Rodriguez", "Bas")
-        roots = R.build_tree([r], [], departed={}, logfn=quiet)
+        roots = R.build_tree([r], departed={}, logfn=quiet)
         self.assertTrue(roots[0].offboard)
         self.assertEqual(roots[0].display, "Basil Elhassan")
 
@@ -246,7 +222,7 @@ class PlanTests(unittest.TestCase):
         jordan = rep("Jordan Ruiz", "Willie Henderson", team="Ceaseless")
         kid = rep("Yani Young", "Jordan Ruiz", team="Ceaseless")
         reps = [willie, chloe, jordan, kid]
-        return reps, R.build_tree(reps, [], logfn=quiet)
+        return reps, R.build_tree(reps, logfn=quiet)
 
     def test_the_leader_moves_to_the_roof_and_their_1st_gens_become_branches(self):
         reps, roots = self._office()
@@ -318,8 +294,8 @@ class TerminatedTests(unittest.TestCase):
         orphan = rep("Paris Carroll", "Gregory Beamon", team="Ceaseless",
                      level="in training")
         reps = [boss, kid, gone, orphan]
-        R.build_tree(reps, [], departed={"gregory beamon":
-                                         ("Willie Henderson", "Ceaseless")},
+        R.build_tree(reps, departed={"gregory beamon":
+                                     ("Willie Henderson", "Ceaseless")},
                      logfn=quiet)
         return boss, kid, gone, orphan
 

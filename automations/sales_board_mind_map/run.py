@@ -33,9 +33,13 @@ pointing at that PNG in the Loom — with the two things he asked to change:
     `terminated_reps.board` — the one reader that knows all three
     ([[automations/gap_alerts/leaders.py]] explains why it must not be
     re-implemented here).
-  * NEW STARTS still in onboarding come from the dated 'D2D OBCL m.d' tab of
-    'All in One Local Office - Raf' (Megan 2026-09-20), teamed by their 2nd
-    round interviewer, tagged NEW. Terminated ones never appear.
+  * ONE SOURCE: THE SALES BOARD (Megan 2026-09-23, "you should only be reading
+    the sales board not the OBCL"). Week ones are already roster rows — their
+    week colour and "WK1 New Start" rank say so — and when their Trainer cell
+    is still blank, the board's own New Starts/Classroom block names who trains
+    them. The onboarding checklist used to be read as a second source and it
+    put LAST week's people on the map with recruiters as their leaders
+    (Raf, 9/23).
 
 Everything is found by LABEL — row-1 titles for the per-rep columns, the
 roster block through `board.find_layout` — because this board gains and loses
@@ -60,11 +64,6 @@ from automations.terminated_reps import board as BD
 
 # --- sources ---------------------------------------------------------------
 SHEET_ID = BD.SHEET_ID                    # 'Alphalete SALES BOARD 2025'
-# 'All in One Local Office - Raf' — the weekly onboarding checklist. A new tab
-# every week, labelled with the date ('D2D OBCL 9.21'), so the newest is picked
-# by date and never by position.
-OBCL_SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
-_OBCL_TAB = re.compile(r"^D2D OBCL\s+(\d{1,2})\.(\d{1,2})\s*$")
 
 # --- where it posts --------------------------------------------------------
 # THE LEVEL 1 CHAT, AND NOWHERE ELSE (Megan 2026-09-20: "it should NOT be
@@ -93,6 +92,10 @@ OFFICE_TRAINERS = {"raf & jd", "raf/jd", "raf and jd", "raf", "jd",
 #   Se7en Sins, which is her team (checked on WE 9.20).
 ALIASES: Dict[str, str] = {
     "keiah": "Lakeaih Gregory",
+    # Se7en Sins' leader. The board writes him "Algemar Kennel" on a rep's
+    # Trainer cell and "AL" in the New Starts block; Megan calls him Al Kennel.
+    "al": "Algemar Kennel",
+    "al kennel": "Algemar Kennel",
     # Hashiras' leader. He has no row on the board — the Trainer cells only
     # ever say "Bas"/"BAS" — so this is also what the map DISPLAYS for him
     # (Megan 2026-09-20, who supplied the spelling).
@@ -115,6 +118,9 @@ WEEKS: Dict[str, Tuple[int, str]] = {
 # colour from) — the hexes the board carried on WE 9.20.
 WEEK_FALLBACK = {"1st wk": "#D9D2E9", "2nd wk": "#FFE599", "3rd wk": "#CFE2F3",
                  "4th wk": "#B45F06", "5th wk+": "#B6D7A8", "rt": "#00FFFF"}
+# The bucket for week ones the New Starts block has not given a trainer yet.
+# Named for what it IS, so the fix is obvious: fill in the Trainers column.
+NO_TRAINER = "New starts · no trainer yet"
 NEW_START_BG = "#F9BCD2"                  # onboarding, not on the board yet
 UPLINE_BG = "#DCD8CE"                     # a team head with no row on the board
 
@@ -291,8 +297,9 @@ def week_tab_for(sh, today: dt.date, *, logfn=print) -> str:
 
 def read_board(today: dt.date, *, tab: Optional[str] = None, logfn=print):
     """(tab, [Rep], {week: hex}, {gone: (trainer, team)},
-    {new start: classroom trainer}). Terminated-this-week reps come back IN
-    the list, flagged, so they can be drawn struck through.
+    Terminated-this-week reps come back IN the list, flagged, so they can be
+    drawn struck through. EVERYTHING comes off the sales board — Megan
+    2026-09-23: "you should only be reading the sales board not the OBCL".
 
     `gone` is every terminated row's OWN trainer. Dropping a terminated leader
     would otherwise strand their people under a name nothing resolves —
@@ -307,6 +314,7 @@ def read_board(today: dt.date, *, tab: Optional[str] = None, logfn=print):
     c_team, c_level = _need(titles, COL_TEAM), _need(titles, COL_LEVEL)
 
     prod = running_week_cols(grid)
+    classroom = classroom_trainers(grid)
     week_start = _week_monday(title, today)
     reps, dropped, old = [], 0, 0
     gone: Dict[str, str] = {}
@@ -342,18 +350,41 @@ def read_board(today: dt.date, *, tab: Optional[str] = None, logfn=print):
             dropped += 1
         reps.append(Rep(name=raw,
                         week=BD._norm(BD._cell(grid, r, c_week)),
-                        team=team, level=level, trainer=trainer,
+                        team=team, level=level,
+                        # A week one often has no Trainer cell yet — the
+                        # board's own New Starts/Classroom block names who
+                        # trains them. SAME SHEET, no second source.
+                        trainer=trainer or classroom.get(_base(raw), ""),
                         apps=_num(BD._cell(grid, r, prod.get("APPS", 0))),
                         internet=_num(BD._cell(grid, r, prod.get("INT", 0))),
                         terminated=terminated))
         rows.append(r)
 
+    # THIS WEEK'S NEW STARTS, off the board's own New Starts/Classroom block:
+    # the people who have no roster row yet, each with the trainer the block
+    # names for them (Raf wanted new starts on the map; Megan 2026-09-23 wanted
+    # the board to be the only source). No week colour of their own — they take
+    # the week-1 colour the board uses for everyone else in their first week.
+    # Everyone in the block, not only the ones whose trainer cell is filled
+    # in: Juliette Ojeda had no trainer of her own and so never reached the
+    # map, which left the new start SHE trains stranded on a "No team" island
+    # (9/23).
+    seen = {_base(r.name) for r in reps}
+    for shown in classroom_names(grid):
+        who = _base(shown)
+        if not who or who in seen:
+            continue
+        seen.add(who)
+        reps.append(Rep(name=shown, week="1st wk", team="", level="in training",
+                        trainer=classroom.get(who, ""), new_start=True))
+    logfn("  %d new start(s) from the board's New Starts block"
+          % sum(1 for r in reps if r.new_start))
+
     palette = _read_week_colors(sh, title, lay.name_col, rows, reps, logfn=logfn)
-    classroom = classroom_trainers(grid)
     logfn("  %r: %d on the roster (%d terminated this week, struck through; "
-          "%d older terminations left off), %d in the classroom block"
-          % (title, len(reps), dropped, old, len(classroom)))
-    return title, reps, palette, gone, classroom
+          "%d older terminations left off)"
+          % (title, sum(1 for r in reps if not r.new_start), dropped, old))
+    return title, reps, palette, gone
 
 
 def _read_week_colors(sh, title: str, name_col: int, rows: List[int],
@@ -399,21 +430,39 @@ def _read_week_colors(sh, title: str, name_col: int, rows: List[int],
     return palette
 
 
+def classroom_names(grid) -> List[str]:
+    """The New Starts/Classroom block's names, spelled as the board spells
+    them (the map shows these, `classroom_trainers` keys off folded ones)."""
+    cols = _classroom_cols(grid)
+    if not cols:
+        return []
+    hrow, name_col, _trainer_col = cols
+    out = []
+    for r in range(hrow + 1, len(grid) + 1):
+        who = str(BD._cell(grid, r, name_col) or "").strip()
+        if who:
+            out.append(who)
+    return out
+
+
+def _classroom_cols(grid):
+    """(header row, name col, trainer col) for the New Starts/Classroom block."""
+    for r in range(1, len(grid) + 1):
+        cells = [BD._norm(BD._cell(grid, r, c)) for c in range(1, 16)]
+        if "classroom" in cells and "trainers" in cells:
+            return r, cells.index("classroom") + 1, cells.index("trainers") + 1
+    return None
+
+
 def classroom_trainers(grid) -> Dict[str, str]:
     """{new start: their trainer} from the 'Classroom / Trainers' block under
     the roster.
 
-    THE TRAINER IS WHOSE TEAM THEY ARE ON — not whoever ran their 2nd round
-    (Megan 2026-09-21, twice). The 2nd-round interviewer is a recruiting fact
-    and the two are often different people: Noe Rocha was interviewed by Safiya
-    and is trained by Benjamin Kushpit, so the OBCL put him on the wrong team
-    (and, when Safiya's row moved, on no team at all)."""
-    header = None
-    for r in range(1, len(grid) + 1):
-        cells = [BD._norm(BD._cell(grid, r, c)) for c in range(1, 16)]
-        if "classroom" in cells and "trainers" in cells:
-            header = (r, cells.index("classroom") + 1, cells.index("trainers") + 1)
-            break
+    THE TRAINER IS WHOSE TEAM THEY ARE ON (Megan 2026-09-21, twice) — and for
+    a week one whose Trainer cell is still blank, this block is where the board
+    says it. Noe Rocha was interviewed by Safiya and trained by Benjamin
+    Kushpit; the interviewer would have put him on the wrong team."""
+    header = _classroom_cols(grid)
     if not header:
         return {}
     hrow, name_col, trainer_col = header
@@ -489,57 +538,6 @@ def lookback_trainers(sh, today: dt.date, wanted, *, tab: str,
 
 
 # ------------------------------------------------------------- new starts
-def newest_obcl_tab(sh, today: dt.date):
-    """The dated 'D2D OBCL m.d' tab for the most recent week."""
-    best = None
-    for w in sh.worksheets():
-        m = _OBCL_TAB.match(w.title)
-        if not m:
-            continue
-        when = BD._resolve_tab_date(int(m.group(1)), int(m.group(2)), today)
-        if when and (best is None or when > best[0]):
-            best = (when, w)
-    return best[1] if best else None
-
-
-def read_new_starts(today: dt.date, on_board, classroom=None, *, logfn=print):
-    """[(name, who they hang off)] for people onboarding who are not on the
-    board yet. A row is a real incoming start once somebody has moved its Final
-    Status off blank; 'Terminated' is skipped, which is Raf's "remove the
-    person" for the people who never made it in.
-
-    Their TRAINER decides the team (Megan 2026-09-21). The board's classroom
-    block is asked first; the OBCL's 2nd-round interviewer is only the fallback
-    for somebody who has not reached that block yet."""
-    sh = BD.open_by_key(OBCL_SHEET_ID)
-    ws = newest_obcl_tab(sh, today)
-    if ws is None:
-        logfn("  no dated 'D2D OBCL m.d' tab found — new starts left off")
-        return []
-    grid = ws.get("A1:L400")
-    hdr = next((i for i, row in enumerate(grid)
-                if len(row) > 3 and BD._norm(row[3]) == "name"), 1)
-    out, by_trainer = [], 0
-    for row in grid[hdr + 1:]:
-        row = list(row) + [""] * (12 - len(row))
-        name = " ".join((row[3].strip() + " " + row[4].strip()).split())
-        status = BD._norm(row[9])
-        if not name or not status or status == "terminated":
-            continue
-        if status == "final status":
-            continue                       # the header block, repeated mid-tab
-        if _base(name) in on_board:
-            continue                       # already has a row on the board
-        trained_by = (classroom or {}).get(_base(name), "")
-        out.append((name, trained_by or row[1].strip()))
-        if trained_by:
-            by_trainer += 1
-    logfn("  %d new start(s) onboarding and not on the board yet (%d placed by "
-          "their classroom trainer, the rest by their 2nd round)"
-          % (len(out), by_trainer))
-    return out
-
-
 # ------------------------------------------------------------------- tree
 def _words(name: str) -> set:
     """A name's comparable words, WITH whatever is in parentheses opened up.
@@ -611,7 +609,7 @@ def _attach(parent: Rep, child: Rep, *, logfn=print) -> bool:
     return True
 
 
-def build_tree(reps: List[Rep], new_starts, *, departed=None, logfn=print):
+def build_tree(reps: List[Rep], *, departed=None, logfn=print):
     """Hang everyone off their trainer — the trainer IS the upline, so the
     branch a person ends up in is their team (Megan 2026-09-20).
 
@@ -637,10 +635,9 @@ def build_tree(reps: List[Rep], new_starts, *, departed=None, logfn=print):
         somebody still on the board. Returns (live Rep or None, the raw name to
         blame if nobody was found, the team the last leaver was on).
 
-        That last team is what keeps a new start off a "No team" island: Noe
-        Rocha's 2nd-rounder Safiya Mahmoud left the board, his OBCL row carries
-        no team of its own, and without this he was his own one-man team
-        (2026-09-21)."""
+        That last team is what keeps somebody off a "No team" island when the
+        trainer above them has left the board and their own Team cell is still
+        blank (2026-09-21)."""
         first, seen, hops, team = str(raw).strip(), set(), 0, ""
         while raw and hops < 6:
             live = _resolve(raw, by_name)
@@ -670,10 +667,15 @@ def build_tree(reps: List[Rep], new_starts, *, departed=None, logfn=print):
         """A trainer with no row here (Algemar Kennel, Bas, Deavion) still
         heads a team, so they get ONE node — case variants ('Bas' / 'BAS')
         share it instead of splitting the team in two."""
-        key = _base(raw)
+        # Through the alias table first: the board writes Se7en Sins' leader
+        # "Algemar Kennel" on a rep's Trainer cell and "AL" in the New Starts
+        # block, and two heads for one man split his team in two.
+        alias = ALIASES.get(_base(raw))
+        key = _base(alias or raw)
         node = offboard.get(key)
         if node is None:
-            shown = FULL_NAMES.get(key) or " ".join(str(raw).split()).title()
+            shown = (FULL_NAMES.get(_base(raw)) or FULL_NAMES.get(key)
+                     or alias or " ".join(str(raw).split()).title())
             node = Rep(name=shown, week="", team="", level="", trainer="",
                        offboard=True)
             offboard[key] = node
@@ -691,24 +693,25 @@ def build_tree(reps: List[Rep], new_starts, *, departed=None, logfn=print):
             r.team = r.team or team_hint
             roots.append(r)                # their whole line reported to Raf
             continue
-        parent = live or offboard_head(blame)
+        parent = live
+        if parent is None:
+            # A NEW START NEVER INVENTS A TEAM HEAD. An off-board head is a
+            # real upline a ROSTER row points at (Al Kennel, Bas). The New
+            # Starts block can name a recruiter who leads nobody, and turning
+            # those into heads grew a "No team" section on the 9/23 map. They
+            # may still JOIN a head the roster already put there.
+            key = match_name(blame, offboard)
+            if key is not None:
+                parent = offboard[key]
+            elif r.new_start:
+                logfn("  new start %r: trainer %r is on nobody's row — own "
+                      "branch" % (r.display, blame))
+                roots.append(r)
+                continue
+            else:
+                parent = offboard_head(blame)
         if not _attach(parent, r, logfn=logfn):
             roots.append(r)
-
-    for name, trainer in new_starts:
-        ns = Rep(name=name, week="1st wk", team="", level="in training",
-                 trainer=trainer, new_start=True)
-        ns.bg = NEW_START_BG
-        live, blame, team_hint = (upline_of(trainer, name) if _base(trainer)
-                                  else (None, "", ""))
-        ns.team = ns.team or team_hint
-        if live is None and not blame:
-            roots.append(ns)               # nobody live to hang them off
-        else:
-            parent = live or offboard_head(blame)
-            if not _attach(parent, ns, logfn=logfn):
-                roots.append(ns)
-        reps.append(ns)
 
     if offboard:
         logfn("  upline not on this board (drawn as the team head, not "
@@ -753,13 +756,15 @@ def branch_team(head: Rep) -> str:
     on Se7en Sins and Bas on Hashiras (Megan 2026-09-20)."""
     if head.team:
         return head.team
+    if head.new_start and not _base(head.trainer):
+        return NO_TRAINER
     votes: Dict[str, int] = {}
     for r in head.subtree():
         if r is head or not r.team:
             continue
         votes[r.team] = votes.get(r.team, 0) + 1
     if not votes:
-        return "No team"
+        return NO_TRAINER if head.new_start else "No team"
     return max(sorted(votes), key=lambda t: votes[t])
 
 
@@ -798,8 +803,8 @@ def plan_teams(roots: List[Rep], reps: List[Rep]):
     for team, branches in group_by_team(roots):
         members = [r for b in branches for r in b.subtree() if not r.offboard]
         live = [r for r in members if not r.terminated]
-        head = next((b for b in branches if b.offboard), None) \
-            or team_lead(branches)
+        head = (next((b for b in branches if b.offboard), None)
+                or (None if team == NO_TRAINER else team_lead(branches)))
         if head is not None:
             first_gens = list(head.children)      # the count on the roof
             branches = ([b for b in branches if b is not head] + first_gens)
@@ -1256,18 +1261,14 @@ def main(argv=None) -> int:
         return 0
 
     today = dt.date.today()
-    title, reps, palette, gone, classroom = read_board(
-        today, tab=args.tab)
-    on_board = {_base(r.name) for r in reps}   # the struck-through included:
-    new_starts = read_new_starts(today, on_board, classroom)  # no double entry
+    title, reps, palette, gone = read_board(today, tab=args.tab)
 
     # Trainer names nobody on this week's board answers to. The terminated rows
     # answer some of them for free; the rest are looked up on earlier weeks, so
     # somebody who left the roster hands their people to their own upline
     # instead of coming back as a head node.
     live = {_base(r.name): r for r in reps if not r.terminated}
-    wanted = {_base(t) for t in
-              [r.trainer for r in reps] + [t for _, t in new_starts]
+    wanted = {_base(t) for t in [r.trainer for r in reps]
               if _base(t) and _base(t) not in OFFICE_TRAINERS
               and _resolve(t, live) is None}
     departed = dict(gone)
@@ -1275,7 +1276,7 @@ def main(argv=None) -> int:
     if still:
         departed.update(lookback_trainers(BD.open_by_key(SHEET_ID), today,
                                           still, tab=title))
-    roots = build_tree(reps, new_starts, departed=departed)
+    roots = build_tree(reps, departed=departed)
     groups = plan_teams(roots, reps)
     if args.retag:
         # 9/21: the morning's tag line missed Al Kennel and Bas. Edit it in
