@@ -208,6 +208,11 @@ def _as_owner_problem(e: Exception) -> "AccountProblem":
             "computer. Nothing was read and nothing was changed — please tell "
             "Megan & Eve, this one is ours to fix.")
     if "still on the login page" in msg:
+        if "page says: REJECTED" in msg:
+            return AccountProblem(
+                "SaraPlus did not accept that email and password. If you recently "
+                "changed your SaraPlus password, open the alerts app and enter "
+                "the new one.")
         if "page says: nothing" in msg:
             # THE PAGE SHOWED NO ERROR. A wrong password gets "Invalid login"
             # on the page; a bounce with no message is the redirect not

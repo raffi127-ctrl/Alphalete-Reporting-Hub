@@ -200,6 +200,18 @@ LOGIN_SETTLE_MS = 20_000
 LOGIN_POLL_MS = 500
 
 
+_LAST_TYPED = "typed ?"
+
+
+def _field_value(page):
+    """What the password field holds right now, or None if it cannot be asked."""
+    try:
+        return page.evaluate(
+            "() => (document.querySelector('#ctl00_MainContent_txtPassword') || {}).value")
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _login_page_message(page) -> str:
     """Whatever the login page is telling the person -- 'Invalid login',
     'account locked' -- read off the usual ASP.NET message spots. "" when
@@ -249,7 +261,13 @@ def _login_page_message(page) -> str:
                    }
                    popup = 'popup: ' + (shown ? 'OPEN' : 'closed') + (fr ? ' src=' + fr.src : '') + inside;
                  } catch (e) { popup = 'popup: could not read (' + e + ')'; }
-                 return (said.length ? said.join(' | ') : '')
+                 // A PLAIN VERDICT, first. On 2026-09-23 the sentence sat in
+                 // the body and the capture still said "nothing", so the box
+                 // on Khalil's Mac told Francia the password was NOT rejected
+                 // while SaraPlus was saying exactly that. Test, don't parse.
+                 const rejected = /invalid (email|login|password|user)|incorrect (password|login)|account (is )?locked|too many attempts/i.test(body);
+                 return (rejected ? 'REJECTED: ' + (body.match(/[^.]{0,60}(invalid|incorrect|locked|too many)[^.]{0,60}/i) || ['invalid login'])[0].trim() + ' | ' : '')
+                   + (said.length ? said.join(' | ') : '')
                    + ' [title: ' + document.title + '; user field: '
                    + (u ? (u.value ? 'filled' : 'EMPTY') : 'missing')
                    + '; password field: '
@@ -259,6 +277,8 @@ def _login_page_message(page) -> str:
         text = " ".join(str(text or "").split())
         # "nothing" stays the marker _as_owner_problem keys on: no message
         # from the page itself, whatever the diagnostics after it say.
+        if text.startswith("REJECTED:"):
+            return text[:900]
         return (text if not text.startswith(" [") and not text.startswith("[")
                 else "nothing -- no error shown" + text)[:900]
     except Exception:  # noqa: BLE001
@@ -285,6 +305,20 @@ def _login(page, email: str, password: str, *, login_url: str = LOGIN_URL,
         field.press_sequentially(password, delay=50)
     else:
         field.type(password, delay=50)
+    # DID THE FIELD TAKE IT? A password a person types by hand works while the
+    # same one typed here is refused (Khalil, 2026-09-23) -- so read the field
+    # back. Never the value itself; only whether it matches and how long it is.
+    held = _field_value(page)
+    if held is not None and held != password:
+        try:
+            page.fill("#ctl00_MainContent_txtPassword", password)
+        except Exception:  # noqa: BLE001
+            pass
+        held = _field_value(page)
+    global _LAST_TYPED
+    _LAST_TYPED = ("typed %d chars, field holds %s%s"
+                   % (len(password), "?" if held is None else len(held),
+                      "" if held in (None, password) else " -- DIFFERENT"))
     with page.expect_navigation():
         page.click("#MainContent_btnLogin")
     # LET THE REDIRECT LAND. The login is an ASP.NET postback: the first
@@ -310,10 +344,10 @@ def _login(page, email: str, password: str, *, login_url: str = LOGIN_URL,
         said = _login_page_message(page)
         raise SaraError(
             "SaraPlus login failed -- still on the login page after submit "
-            "(waited %ds; url %s; page says: %s). Check the credentials in %s "
+            "(waited %ds; url %s; page says: %s; %s). Check the credentials in %s "
             "(a password change is the usual cause); nothing was written."
             % (waited // 1000, url, said or "nothing -- no error shown",
-               creds_hint))
+               _LAST_TYPED, creds_hint))
     # THE CHANGE PASSWORD PAGE, raised as its OWN type so the caller can run
     # the one test that tells a stuck profile from a real demand: try again on
     # a brand-new profile. See login_healing().
