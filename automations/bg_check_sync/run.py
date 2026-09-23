@@ -133,7 +133,16 @@ def build_roster(sh, monday: dt.date, rolling_vals=None):
 
 
 def apply_writes(sh, decisions, dry_run: bool) -> int:
-    """Write col K for advancing decisions in every tab a person appears."""
+    """Write the BG Status column for advancing decisions, in every tab a person
+    appears on.
+
+    The column is whatever that tab's header calls "BG Status", looked up when
+    the roster was read — NOT a hardcoded K. A "Classroom" column inserted at F
+    in September moved it to L, and the hardcoded version spent days writing
+    background-check results into Final Status. If a tab never told us where its
+    BG column is, nothing is written to that tab and it says so: a write to a
+    guessed column is how that damage happened.
+    """
     by_tab: dict[str, list[tuple[int, str]]] = {}
     for d in decisions:
         if not d.new_status:
@@ -142,13 +151,23 @@ def apply_writes(sh, decisions, dry_run: bool) -> int:
             by_tab.setdefault(tab, []).append((row, d.new_status))
     written = 0
     for tab, updates in by_tab.items():
+        col = (match.TAB_COLUMNS.get(tab) or {}).get("status")
+        if not col:
+            print(f"[writes] SKIPPED {tab}: no 'BG Status' column in its header "
+                  f"— refusing to guess which column to write")
+            continue
+        letter = match.a1_col(col)
         ws = sh.worksheet(tab)
-        data = [{"range": f"K{row}", "values": [[val]]} for row, val in updates]
+        data = [{"range": f"{letter}{row}", "values": [[val]]}
+                for row, val in updates]
         written += len(data)
         if not dry_run:
             fill._retry(ws.batch_update, data, value_input_option="USER_ENTERED")
+    cols_used = {t: match.a1_col((match.TAB_COLUMNS.get(t) or {}).get("status", 0))
+                 for t in by_tab if (match.TAB_COLUMNS.get(t) or {}).get("status")}
     print(f"[writes] {'(dry-run) would update' if dry_run else 'updated'} "
-          f"{written} cell(s) across {len(by_tab)} tab(s)")
+          f"{written} cell(s) across {len(cols_used)} tab(s)"
+          + (f" (col {'/'.join(sorted(set(cols_used.values())))})" if cols_used else ""))
     return written
 
 

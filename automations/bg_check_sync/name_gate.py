@@ -109,8 +109,23 @@ AFTER_START_GRACE = 30
 
 # The sheet columns the rename touches. Names are D (first) / E (last); K is the
 # status this report already owns.
+# Fallbacks only. The name columns did NOT move when "Classroom" was inserted
+# at F, but they are resolved per tab anyway — the next insertion could land to
+# their left, and a rename written into the wrong column is the same accident
+# the BG column just had.
 FIRST_COL_A1 = "D"
 LAST_COL_A1 = "E"
+
+
+def _name_cols(tab: str) -> tuple:
+    """(first-name letter, last-name letter) for `tab`, by its own header."""
+    from automations.bg_check_sync import match as _match
+    cols = _match.TAB_COLUMNS.get(tab) or {}
+    first = cols.get("first")
+    last = cols.get("last")
+    if not (first and last):
+        return FIRST_COL_A1, LAST_COL_A1
+    return _match.a1_col(first), _match.a1_col(last)
 
 # A row that already shows Passed/Failed under a nickname is NOT excluded — it is
 # the most common shape of the real thing. The live example is row 175 of the
@@ -688,7 +703,8 @@ def apply_renames(sh, approved: list[dict], state: dict, *,
         for tab, row in entry.get("locations", []):
             try:
                 ws = sh.worksheet(tab)
-                cur = fill._retry(ws.get, f"{FIRST_COL_A1}{row}:{LAST_COL_A1}{row}")
+                f_col, l_col = _name_cols(tab)
+                cur = fill._retry(ws.get, f"{f_col}{row}:{l_col}{row}")
             except Exception as e:  # noqa: BLE001
                 skipped.append(f"{tab}!{row} ({e})")
                 continue
@@ -700,7 +716,8 @@ def apply_renames(sh, approved: list[dict], state: dict, *,
             by_tab.setdefault(tab, []).append(row)
         written = 0
         for tab, rows in by_tab.items():
-            data = [{"range": f"{FIRST_COL_A1}{r}:{LAST_COL_A1}{r}",
+            f_col, l_col = _name_cols(tab)
+            data = [{"range": f"{f_col}{r}:{l_col}{r}",
                      "values": [[want_first, want_last]]} for r in rows]
             written += len(data)
             if not dry_run:
@@ -886,7 +903,8 @@ def tint_confirmed(sh, by_tab: dict, state: dict, *, dry_run: bool = True) -> in
         if not fresh:
             continue
         tabs_touched += 1
-        ranges = [{"range": f"{FIRST_COL_A1}{row}:{LAST_COL_A1}{row}",
+        f_col, l_col = _name_cols(tab)
+        ranges = [{"range": f"{f_col}{row}:{l_col}{row}",
                    "format": {"backgroundColor": CONFIRMED_BG}}
                   for row, _ in sorted(set(fresh))]
         painted += len(ranges)

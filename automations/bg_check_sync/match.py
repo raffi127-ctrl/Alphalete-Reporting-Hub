@@ -22,12 +22,87 @@ from automations.recruiting_report import fill
 from automations.bg_check_sync import parse
 from automations.bg_check_sync.parse import BGEvent, RANK, norm
 
-LABEL_COL = 2      # column B holds nothing useful here; names are D/E
-FIRST_COL = 4      # col D (1-indexed) = first name
-LAST_COL = 5       # col E = last name
-EMAIL_COL = 7      # col G = the candidate's own email address
-PHONE_COL = 8      # col H = their phone
-STATUS_COL = 11    # col K = "BG Status : Last Checked"
+# COLUMNS ARE FOUND BY HEADER LABEL, NEVER BY POSITION.
+#
+# These constants are the LAST-RESORT fallback for a block with no readable
+# header, and they are the old layout: D/E names, G email, H phone, K BG Status.
+# On 2026-09-2x somebody inserted a "Classroom" column at F and every one of
+# them slid a column right — so the report spent days reading FINAL STATUS as
+# the BG status (seeing "Owner submitted"/"Terminated", deciding everyone needed
+# advancing) and writing BG values back into Final Status, while the real BG
+# column went untouched. That is the whole reason this file now resolves columns
+# from the header row it is actually looking at.
+LABEL_COL = 2      # column B holds nothing useful here
+FIRST_COL = 4
+LAST_COL = 5
+EMAIL_COL = 7
+PHONE_COL = 8
+STATUS_COL = 11
+
+# header text (normalised) -> the key this file uses for it
+_HEADER_EXACT = {
+    "name": "first",
+    "last name": "last",
+    "email": "email",
+    "phone": "phone",
+}
+
+
+def _norm_header(cell: str) -> str:
+    """Lowercased, whitespace-collapsed header text. The real sheet writes
+    '\nBG Status : Last Checked ' with a leading newline and a trailing space."""
+    return re.sub(r"\s+", " ", (cell or "")).strip().lower()
+
+
+def header_columns(header: list[str]) -> dict:
+    """{key: 1-based column} for the header row handed in.
+
+    'bg status' is matched as a substring because the live header is
+    'BG Status : Last Checked'; the rest are exact so that 'Last Name' can never
+    answer to 'Name' and 'Final Status' can never answer to the BG one.
+    """
+    out: dict = {}
+    for idx, raw in enumerate(header or [], start=1):
+        h = _norm_header(raw)
+        if not h:
+            continue
+        key = _HEADER_EXACT.get(h)
+        if key and key not in out:
+            out[key] = idx
+        elif "bg status" in h and "status" not in out:
+            out["status"] = idx
+        elif h == "final status" and "final_status" not in out:
+            out["final_status"] = idx
+    return out
+
+
+FALLBACK_COLUMNS = {"first": FIRST_COL, "last": LAST_COL, "email": EMAIL_COL,
+                    "phone": PHONE_COL, "status": STATUS_COL}
+
+# Filled in as rosters are read, so the writers know where each tab keeps its
+# BG column without re-reading the sheet: {tab title: {key: 1-based column}}.
+TAB_COLUMNS: dict = {}
+
+
+def a1_col(idx: int) -> str:
+    """1 -> 'A', 12 -> 'L'."""
+    letters = ""
+    while idx > 0:
+        idx, rem = divmod(idx - 1, 26)
+        letters = chr(65 + rem) + letters
+    return letters
+
+
+def columns_for(tab: str) -> dict:
+    """What we learned about `tab` while reading it, or the old layout."""
+    return TAB_COLUMNS.get(tab) or dict(FALLBACK_COLUMNS)
+
+
+def _cell(row: list, cols: dict, key: str) -> str:
+    idx = cols.get(key) or FALLBACK_COLUMNS.get(key)
+    if not idx:
+        return ""
+    return (row[idx - 1] if len(row) >= idx else "").strip()
 
 _DATE_RE = re.compile(r"^\s*\d{1,2}/\d{1,2}/\d{2,4}\s*$")
 
@@ -83,11 +158,13 @@ def roster_from_dated_tab(values: list[list[str]], tab_name: str) -> list[Person
     hdr = _header_row(values)
     if hdr is None:
         return []
+    cols = header_columns(values[hdr]) or dict(FALLBACK_COLUMNS)
+    TAB_COLUMNS[tab_name] = cols
     out = []
     for i in range(hdr + 1, len(values)):
         row = values[i]
-        first = (row[FIRST_COL - 1] if len(row) >= FIRST_COL else "").strip()
-        last = (row[LAST_COL - 1] if len(row) >= LAST_COL else "").strip()
+        first = _cell(row, cols, "first")
+        last = _cell(row, cols, "last")
         if not (first and last):  # real candidates have both; skips legend rows (Megan/JD/…)
             continue
         # A tab can hold a SECOND stacked block (date row + its own header row),
@@ -95,10 +172,10 @@ def roster_from_dated_tab(values: list[list[str]], tab_name: str) -> list[Person
         # header's "Name"/"Last Name" cells or it becomes a fake person.
         if _looks_like_header(row):
             continue
-        cur = (row[STATUS_COL - 1] if len(row) >= STATUS_COL else "").strip()
-        person = Person(first, last, _norm_key(first, last), cur, [(tab_name, i + 1)])
-        person.email = (row[EMAIL_COL - 1] if len(row) >= EMAIL_COL else "").strip()
-        person.phone = (row[PHONE_COL - 1] if len(row) >= PHONE_COL else "").strip()
+        person = Person(first, last, _norm_key(first, last),
+                        _cell(row, cols, "status"), [(tab_name, i + 1)])
+        person.email = _cell(row, cols, "email")
+        person.phone = _cell(row, cols, "phone")
         out.append(person)
     return out
 
@@ -126,30 +203,42 @@ def roster_blocks_in_window(values: list[list[str]], start, end,
     out = []
     i = 0
     n = len(values)
+    # Every block carries its own header row, and they can disagree: a newly
+    # inserted column reaches the top block first. So columns are read per
+    # block, and the last one seen becomes what this tab's writers use.
+    tab_cols = None
     while i < n:
         d = parse_header_date(values[i][0] if values[i] else "")
         if d is not None and start <= d <= end:
             # walk forward until the next date-header row
             j = i + 1
+            cols = None
             while j < n:
                 if parse_header_date(values[j][0] if values[j] else "") is not None:
                     break
                 row = values[j]
-                first = (row[FIRST_COL - 1] if len(row) >= FIRST_COL else "").strip()
-                last = (row[LAST_COL - 1] if len(row) >= LAST_COL else "").strip()
-                if first and last and not _looks_like_header(row):
-                    cur = (row[STATUS_COL - 1] if len(row) >= STATUS_COL else "").strip()
-                    person = Person(first, last, _norm_key(first, last), cur,
-                                    [(tab_name, j + 1)])
-                    person.email = (row[EMAIL_COL - 1]
-                                    if len(row) >= EMAIL_COL else "").strip()
-                    person.phone = (row[PHONE_COL - 1]
-                                    if len(row) >= PHONE_COL else "").strip()
+                if _looks_like_header(row):
+                    found = header_columns(row)
+                    if found.get("first") and found.get("status"):
+                        cols = found
+                        tab_cols = found
+                    j += 1
+                    continue
+                use = cols or tab_cols or dict(FALLBACK_COLUMNS)
+                first = _cell(row, use, "first")
+                last = _cell(row, use, "last")
+                if first and last:
+                    person = Person(first, last, _norm_key(first, last),
+                                    _cell(row, use, "status"), [(tab_name, j + 1)])
+                    person.email = _cell(row, use, "email")
+                    person.phone = _cell(row, use, "phone")
                     out.append(person)
                 j += 1
             i = j
             continue
         i += 1
+    if tab_cols:
+        TAB_COLUMNS[tab_name] = tab_cols
     return out
 
 
