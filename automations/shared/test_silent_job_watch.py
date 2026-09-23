@@ -71,40 +71,58 @@ class TheDeadlineCatchesAMorningStall(unittest.TestCase):
 
 
 class TheGapCatchesAMidDayStall(unittest.TestCase):
-    """The sweep fires every 2h. A deadline alone would call it healthy all
-    afternoon on the strength of one 08:15 beat."""
+    """The sweep fires at 09:15, then hourly 14:15-19:15 (the OBCL tracking
+    schedule, 2026-09-22). A deadline alone would call it healthy all
+    afternoon on the strength of one beat; the gap rule is what notices it
+    stopped. The watch keys on the 14:15 start, so the 09:15 pass and the
+    by-design 9am-2pm quiet are never read as a stall."""
 
     def test_one_skipped_pass_is_tolerated(self):
         """The wrapper skips a pass on purpose when blueink_docs is running."""
-        late = sjw.overdue(_at(DAY, "12:30"),
+        late = sjw.overdue(_at(DAY, "16:30"),
                            _beats(**{BOX: _at(DAY, "06:59"),
-                                     SWEEP: _at(DAY, "08:16")}))   # 4h 14m quiet
+                                     SWEEP: _at(DAY, "14:16")}))   # 2h 14m quiet
         self.assertNotIn(SWEEP, [j["job_id"] for j in late])
 
     def test_two_missed_passes_in_a_row_is_a_stall(self):
-        late = sjw.overdue(_at(DAY, "14:30"),
+        late = sjw.overdue(_at(DAY, "17:30"),
                            _beats(**{BOX: _at(DAY, "06:59"),
-                                     SWEEP: _at(DAY, "08:16")}))   # 6h 14m quiet
+                                     SWEEP: _at(DAY, "14:16")}))   # 3h 14m quiet
         hit = [j for j in late if j["job_id"] == SWEEP]
         self.assertEqual(len(hit), 1)
-        self.assertIn("allowed 300", hit[0]["why"])
+        self.assertIn("allowed 150", hit[0]["why"])
 
     def test_the_overnight_gap_is_not_a_stall(self):
-        """20:15 to 08:15 is twelve quiet hours BY DESIGN. Checked at 22:00 —
-        past active_until — the gap rule must not fire."""
+        """19:15 to 09:15 is fourteen quiet hours BY DESIGN. Checked at 22:00 --
+        past active_until -- the gap rule must not fire."""
         late = sjw.overdue(_at(DAY, "22:00"),
                            _beats(**{BOX: _at(DAY, "06:59"),
-                                     SWEEP: _at(DAY, "20:16")}))
+                                     SWEEP: _at(DAY, "19:16")}))
         self.assertNotIn(SWEEP, [j["job_id"] for j in late])
 
     def test_the_gap_rule_stays_quiet_before_the_first_pass(self):
-        """At 08:00 the last beat is yesterday's 20:15 — 11h 45m quiet, way over
-        the 5h gap, and entirely correct. Firing here would page every single
-        morning."""
+        """At 08:00 the last beat is yesterday's 19:15 -- nearly 13h quiet, way
+        over the gap, and entirely correct. Firing here would page every
+        single morning."""
         late = sjw.overdue(_at(DAY, "08:00"),
                            _beats(**{BOX: _at(DAY, "06:59"),
-                                     SWEEP: _at(YDAY, "20:16")}))
+                                     SWEEP: _at(YDAY, "19:16")}))
         self.assertNotIn(SWEEP, [j["job_id"] for j in late])
+
+    def test_the_morning_to_afternoon_gap_is_by_design(self):
+        """The 09:15 check ran; nothing is due again until 14:15. At 13:30
+        that is 4h quiet and nothing is wrong."""
+        late = sjw.overdue(_at(DAY, "13:30"),
+                           _beats(**{BOX: _at(DAY, "06:59"),
+                                     SWEEP: _at(DAY, "09:16")}))
+        self.assertNotIn(SWEEP, [j["job_id"] for j in late])
+
+    def test_a_missing_afternoon_start_is_caught(self):
+        """09:15 ran, 14:15 never came. By 15:30 the sweep is overdue."""
+        late = sjw.overdue(_at(DAY, "15:30"),
+                           _beats(**{BOX: _at(DAY, "06:59"),
+                                     SWEEP: _at(DAY, "09:16")}))
+        self.assertIn(SWEEP, [j["job_id"] for j in late])
 
 
 class DeploymentAndRecovery(unittest.TestCase):

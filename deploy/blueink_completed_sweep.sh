@@ -1,6 +1,6 @@
 #!/bin/bash
-# Every 2 hours, 8am-8pm (machine-local; Lucy 2 is Central) — tick the "Blue
-# Ink" checkbox for anyone whose packet has been SIGNED since the last look.
+# 9:15am, then hourly 2:15-7:15pm (machine-local; Lucy 2 is Central) — the
+# OBCL tracking schedule — tick the "Blue Ink" checkbox for anyone whose packet has been SIGNED since the last look.
 # launchd: com.alphalete.blueink-completed-sweep.
 #
 # SENDS NOTHING. `--sync-completed` only reads Blue Ink's Completed list and

@@ -113,9 +113,11 @@ JOBS: Dict[str, dict] = {
     "blueink_completed_sweep": {
         "name": "Blue Ink completed-sweep",
         "machine": "Lucy 2",
-        "first_by": "09:15",       # first pass 08:15 + 60 min grace
-        "max_gap_min": 300,        # 2h cadence → 5h tolerates one skipped pass
-        "active_until": "21:15",   # last pass 20:15 + grace
+        # A 09:15 pass fires too, but the watch keys on the 14:15 start so the
+        # 9am-2pm gap (by design, 2026-09-22) never reads as a missed pass.
+        "first_by": "15:15",       # first afternoon pass 14:15 + 60 min grace
+        "max_gap_min": 150,        # hourly → 2.5h tolerates one skipped pass
+        "active_until": "20:15",   # last pass 19:15 + grace
         "weekdays": None,
         "watch_from": "2026-08-28",
         "means": ("the \"Blue Ink\" checkboxes stop tracking who has signed, so "

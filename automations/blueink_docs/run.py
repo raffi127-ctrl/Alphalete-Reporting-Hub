@@ -673,7 +673,7 @@ def _main(argv=None) -> int:
             # in -- i.e. the machine genuinely can't see Blue Ink by any route.
             if session_alert.looks_dead(exc):
                 session_alert.alert_dead(
-                    exc, what_failed="the every-2-hours completed sweep",
+                    exc, what_failed="the completed sweep",
                     dry_run=not args.slack)
             raise
         print(f"Checked off {n} completed packet(s) in {config.COL_BLUEINK!r} "
