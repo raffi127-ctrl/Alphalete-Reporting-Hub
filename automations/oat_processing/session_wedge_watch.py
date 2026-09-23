@@ -397,8 +397,21 @@ CF_WALL_SIG = "cloudflare wall"
 CF_OPEN_SIGS = ("resume phone ", "attachment phone ")
 # One walled tick is normal (the check is random); this many in the window is a
 # machine that is not getting in on its own and wants a human to tick the box.
-CF_WALL_TICKS = 3
-CF_WALL_WINDOW_MIN = 30
+# HOW MUCH EVIDENCE BEFORE PINGING A HUMAN (raised 2026-09-23).
+# 3 walled ticks in 30 min was "the check is being stubborn right now", which it
+# often is for ten minutes and then isn't. Megan got pinged at 9:57 about a state
+# she could not act on from where she was — a second alert about the same
+# unfixable thing is noise, and noise is how a channel stops being read.
+# So the bar is now "this machine has read NO numbers for a solid hour of trying".
+CF_WALL_TICKS = 8
+CF_WALL_WINDOW_MIN = 60
+# And at most ONE ping per machine per day: the fix does not change through the
+# day, so a re-ping tells nobody anything they don't already know.
+CF_RE_ALERT_HOURS = 20
+# Don't open a ticket outside the hours someone could act on it. The walk keeps
+# trying regardless, and an overnight ticket is just something to read at 7am.
+CF_QUIET_BEFORE_H = 8
+CF_QUIET_AFTER_H = 19
 CF_INCIDENT_KEY = "failure-indeed-resume-check"
 
 
@@ -495,6 +508,11 @@ def run_resume_check(dry_run: bool = False, now: dt.datetime | None = None) -> i
                 return 0
         except ValueError:
             pass
+
+    if not (CF_QUIET_BEFORE_H <= now.hour < CF_QUIET_AFTER_H):
+        print(f"[cf-watch] blocked, but it is {now.hour}:00 — outside the hours "
+              f"anyone could clear it; holding the ticket")
+        return 0
 
     names = ", ".join("%s (%s)" % (o, seen[o][0]) for o in blocked)
     title = (":rotating_light: *Indeed is asking to verify a human — %s*" % machine)

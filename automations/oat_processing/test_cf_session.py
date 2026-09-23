@@ -123,7 +123,8 @@ def test_watcher_thresholds() -> bool:
     tmp = Path(tempfile.mkdtemp(prefix="cf-watch-"))
     (tmp / "applicant-push-11280-2026-09-22.log").write_text("\n".join(
         ["[1] FLAG_NO_PHONE — Chris Fernandez"]
-        + ["    [cf] CLOUDFLARE WALL — office 11280: Indeed's check never cleared"] * 3
+        + ["    [cf] CLOUDFLARE WALL — office 11280: Indeed's check never cleared"]
+        * w.CF_WALL_TICKS
     ))
     (tmp / "applicant-push-23467-2026-09-22.log").write_text("\n".join([
         "    [cf] CLOUDFLARE WALL — office 23467: Indeed's check never cleared",
@@ -132,13 +133,20 @@ def test_watcher_thresholds() -> bool:
     orig_dir, w.LOG_DIR = w.LOG_DIR, tmp
     try:
         seen = w.assess_resume_check()
-        ok &= _check("Raf's office: 3 walled ticks, no numbers",
-                     seen.get("11280", (0, 0, ""))[:2], (3, 0))
+        ok &= _check("Raf's office: a full hour of walls, no numbers",
+                     seen.get("11280", (0, 0, ""))[:2], (w.CF_WALL_TICKS, 0))
         ok &= _check("an office that read a number is not alerting",
                      seen.get("23467", (0, 0, ""))[1] > 0, True)
-        ok &= _check("3 walls reaches the alert threshold",
+        ok &= _check("a sustained hour reaches the alert threshold",
                      seen["11280"][0] >= w.CF_WALL_TICKS, True)
-        ok &= _check("1 wall does not", 1 >= w.CF_WALL_TICKS, False)
+        ok &= _check("a few stubborn minutes does not",
+                     3 >= w.CF_WALL_TICKS, False)
+        # The bar exists so a human is pinged once, about something worth
+        # walking to a machine for — not every time the check is briefly moody.
+        ok &= _check("one ping per machine per day at most",
+                     w.CF_RE_ALERT_HOURS >= 20, True)
+        ok &= _check("no tickets outside working hours",
+                     (w.CF_QUIET_BEFORE_H, w.CF_QUIET_AFTER_H), (8, 19))
     finally:
         w.LOG_DIR = orig_dir
     return ok
