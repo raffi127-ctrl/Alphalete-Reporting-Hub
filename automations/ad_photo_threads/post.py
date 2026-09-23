@@ -30,7 +30,7 @@ import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from automations.ad_photo_threads import collect, config
+from automations.ad_photo_threads import collect, config, titles
 
 REPO = Path(__file__).resolve().parents[2]
 STATE_PATH = REPO / "output" / "ad_photo_threads" / "state.json"
@@ -484,42 +484,130 @@ def retire_channel(channel: str, *, cl=None, dry_run: bool = False) -> Dict[str,
     counts = {"threads": 0, "messages": 0, "files": 0, "kept_others": 0}
     for wk in (ch.get("weeks") or {}).values():
         for ad in wk.values():
-            ts = ad.get("thread_ts")
-            if not ts:
-                continue
-            counts["threads"] += 1
-            msgs, cursor = [], None
-            while True:
-                r = cl.conversations_replies(channel=channel, ts=ts, limit=200,
-                                             cursor=cursor)
-                msgs += r.get("messages", [])
-                cursor = (r.get("response_metadata") or {}).get("next_cursor")
-                if not cursor:
-                    break
-            # Replies first, header last: a header deleted first can leave
-            # its replies orphaned under "This message was deleted".
-            for m in sorted(msgs, key=lambda m: m["ts"] == ts):
-                if m.get("user") != me:
-                    counts["kept_others"] += 1
-                    continue
-                for f in m.get("files") or []:
-                    counts["files"] += 1
-                    if not dry_run:
-                        try:
-                            cl.files_delete(file=f["id"])
-                        except Exception as e:           # noqa: BLE001
-                            print(f"  file {f.get('id')} not deleted: {str(e)[:120]}")
-                counts["messages"] += 1
-                if not dry_run:
-                    try:
-                        cl.chat_delete(channel=channel, ts=m["ts"])
-                    except Exception as e:               # noqa: BLE001
-                        if "message_not_found" not in str(e):
-                            print(f"  message {m['ts']} not deleted: {str(e)[:120]}")
+            if ad.get("thread_ts"):
+                _delete_thread(cl, channel, ad["thread_ts"], me, counts, dry_run)
     if not dry_run and channel in state:
         del state[channel]
         _save_state(state)
     return counts
+
+
+def _delete_thread(cl, channel: str, ts: str, me: str, counts: Dict[str, int],
+                   dry_run: bool = False) -> None:
+    """One thread out: Lucy's replies and their photos, then the header. A
+    person's reply is left alone (counted in kept_others)."""
+    counts["threads"] += 1
+    msgs, cursor = [], None
+    while True:
+        r = cl.conversations_replies(channel=channel, ts=ts, limit=200, cursor=cursor)
+        msgs += r.get("messages", [])
+        cursor = (r.get("response_metadata") or {}).get("next_cursor")
+        if not cursor:
+            break
+    # Replies first, header last: a header deleted first can leave
+    # its replies orphaned under "This message was deleted".
+    for m in sorted(msgs, key=lambda m: m["ts"] == ts):
+        if m.get("user") != me:
+            counts["kept_others"] += 1
+            continue
+        for f in m.get("files") or []:
+            counts["files"] += 1
+            if not dry_run:
+                try:
+                    cl.files_delete(file=f["id"])
+                except Exception as e:           # noqa: BLE001
+                    print(f"  file {f.get('id')} not deleted: {str(e)[:120]}")
+        counts["messages"] += 1
+        if not dry_run:
+            try:
+                cl.chat_delete(channel=channel, ts=m["ts"])
+            except Exception as e:               # noqa: BLE001
+                if "message_not_found" not in str(e):
+                    print(f"  message {m['ts']} not deleted: {str(e)[:120]}")
+
+
+def merge_dups(channel: str, day: dt.date, *, build=None, cl=None,
+               dry_run: bool = False) -> Dict[str, str]:
+    """Fold this week's duplicate threads back into their ad's real thread.
+
+    9/21-22: an interviewer pasted an ad title without its first words ("AT&T
+    Services (Spanish Required) ? Dallas TX" for "Client Solutions Specialist
+    - AT&T Services (Spanish Required), Dallas, TX") and it got a thread of
+    its own. titles.py folds that now, but the threads already posted stay.
+    For each thread whose ad now folds onto another ad with a thread this
+    week: its candidates are re-posted as a reply in the real thread (photos
+    included), the real thread's header numbers are redone, and the duplicate
+    (Lucy's posts only) is deleted. {duplicate title: what happened}."""
+    build = build or collect.build
+    cl = cl or collect._client()
+    state = _load_state()
+    monday = week_monday(day)
+    wk = state.get(channel, {}).get("weeks", {}).get(monday.isoformat(), {})
+    reps: Dict[str, collect.DayReport] = {}
+
+    def rep_for(d: str) -> collect.DayReport:
+        if d not in reps:
+            reps[d] = build(dt.date.fromisoformat(d))
+        return reps[d]
+
+    book = rep_for(day.isoformat()).book
+    out: Dict[str, str] = {}
+    for key, ad in list(wk.items()):
+        if not ad.get("thread_ts") or key in book.ads:
+            continue
+        target = book.resolve(key)
+        if not target or target == key:
+            continue
+        name = ad.get("title") or key
+        tgt = wk.get(target) or {}
+        if not tgt.get("thread_ts"):
+            out[name] = "its ad has no thread this week — left alone"
+            continue
+        tgt_name = tgt.get("title") or target
+        moved = 0
+        # Days already moved (a run that died before the delete): not re-posted.
+        done = tgt.setdefault("merged", {}).setdefault(key, [])
+        for d in sorted(ad.get("days") or []):
+            rep = rep_for(d)
+            cands = [c for c in rep.candidates
+                     if c.ad == target and titles.norm(c.title_raw) == key]
+            moved += len(cands)
+            if not cands or d in done or dry_run:
+                continue
+            with tempfile.TemporaryDirectory() as tmp:
+                uploads, missing = _uploads({"shots": _shots(cands), "cands": cands},
+                                            tmp, True)
+                text = reply_text(rep, cands, not_visible=missing)
+                if not uploads:
+                    cl.chat_postMessage(channel=channel, thread_ts=tgt["thread_ts"],
+                                        text=text)
+                for n in range(0, len(uploads), MAX_FILES_PER_REPLY):
+                    kw = {"initial_comment": text} if n == 0 else {}
+                    cl.files_upload_v2(channel=channel, thread_ts=tgt["thread_ts"],
+                                       file_uploads=uploads[n:n + MAX_FILES_PER_REPLY],
+                                       **kw)
+            tgt.setdefault("stats", {})[d] = day_stats(
+                [c for c in rep.candidates if c.ad == target])
+            if d not in tgt.setdefault("days", []):
+                tgt["days"].append(d)
+            done.append(d)
+            _save_state(state)
+        if dry_run:
+            out[name] = f"would move {moved} candidate(s) into {tgt_name!r}"
+            continue
+        counts = {"threads": 0, "messages": 0, "files": 0, "kept_others": 0}
+        _delete_thread(cl, channel, ad["thread_ts"], cl.auth_test()["user_id"], counts)
+        del wk[key]
+        _save_state(state)
+        try:
+            cl.chat_update(channel=channel, ts=tgt["thread_ts"],
+                           text=parent_text(tgt_name, monday, False, week_stats(tgt)))
+        except Exception as e:                   # noqa: BLE001 — the move already happened
+            print(f"  header update failed for {tgt_name!r}: {str(e)[:160]}")
+        out[name] = (f"moved {moved} candidate(s) into {tgt_name!r}; duplicate deleted "
+                     f"({counts['messages']} posts, {counts['kept_others']} people's "
+                     f"replies kept)")
+    return out
 
 
 def permalink(channel: str, ts: str) -> str:

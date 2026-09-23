@@ -171,6 +171,10 @@ def main(argv=None) -> int:
                       help="Delete the threads this report posted in CHANNEL_ID "
                            "(headers, Lucy's replies, their photos) and forget "
                            "that channel. People's own replies are kept.")
+    mode.add_argument("--merge-dups", action="store_true",
+                      help="Fold this week's duplicate threads (an ad title "
+                           "pasted without its first words) into the real one "
+                           "in the live channel. With --dry-run-notes: say only.")
     mode.add_argument("--nightly", action="store_true",
                       help="The scheduled tick: post today to the live channel "
                            "once it's past config.POST_AFTER_CT; otherwise no-op.")
@@ -204,6 +208,12 @@ def main(argv=None) -> int:
     if a.retire_channel:
         from automations.ad_photo_threads import post
         print("Retired:", post.retire_channel(a.retire_channel))
+        return 0
+    if a.merge_dups:
+        from automations.ad_photo_threads import config, post
+        got = post.merge_dups(a.channel or config.LIVE_CHANNEL_ID, day,
+                              dry_run=a.dry_run_notes)
+        print("Merge duplicates:", got or "none this week")
         return 0
     if a.nightly:
         return nightly(day, explicit_date=bool(a.date))
