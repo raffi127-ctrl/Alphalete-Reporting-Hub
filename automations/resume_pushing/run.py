@@ -1492,28 +1492,64 @@ import os as _os_keepwarm
 
 KEEP_WARM_BROWSER = _os_keepwarm.environ.get("RP_KEEP_WARM_BROWSER", "1") == "1"
 KEEP_WARM_TTL_MIN = int(_os_keepwarm.environ.get("RP_KEEP_WARM_TTL_MIN", "45"))
+# A browser that has been THROUGH Indeed's check is worth far more than a fresh
+# one: recreating it costs a challenge, and a challenge sometimes costs a person
+# walking to the machine. The overnight gap (10pm–7am) is longer than the idle
+# TTL above, so under one TTL every morning started cold — a new browser, a new
+# check, for every office, which is the daily chore this is meant to remove.
+# So a cleared browser gets a TTL that spans the night; an uncleared one, which
+# is cheap to recreate and may even be the reason we are stuck, does not.
+KEEP_WARM_CLEARED_TTL_MIN = int(
+    _os_keepwarm.environ.get("RP_KEEP_WARM_CLEARED_TTL_MIN", "960"))   # 16h
 
 
 def _lastuse_path(profile: str = None) -> str:
     return (profile or CDP_PROFILE) + "/.rp_lastuse"
 
 
-def _touch_lastuse(profile: str = None) -> None:
+def _touch_lastuse(profile: str = None, cleared: bool = False) -> None:
+    """Stamp when this browser was last used, and whether it has been through
+    Indeed's check — the second half decides how long it is worth keeping."""
+    import json as _json
     import time as _t
     try:
         with open(_lastuse_path(profile), "w") as fh:
-            fh.write(str(_t.time()))
+            fh.write(_json.dumps({"t": _t.time(), "cleared": bool(cleared)}))
     except Exception:  # noqa: BLE001 — an unmarked profile just looks stale
         pass
 
 
-def _is_stale(last_use: float, now: float, ttl_min: int = None) -> bool:
+def _read_lastuse(profile: str = None):
+    """(last_use_epoch, has_been_through_the_check). Understands the old
+    plain-number marker, which predates the cleared flag."""
+    import json as _json
+    try:
+        raw = open(_lastuse_path(profile)).read().strip()
+    except Exception:  # noqa: BLE001
+        return 0.0, False
+    if not raw:
+        return 0.0, False
+    try:
+        d = _json.loads(raw)
+        return float(d.get("t") or 0), bool(d.get("cleared"))
+    except Exception:  # noqa: BLE001 — old format: bare epoch, never "cleared"
+        try:
+            return float(raw), False
+        except ValueError:
+            return 0.0, False
+
+
+def _is_stale(last_use: float, now: float, ttl_min: int = None,
+              cleared: bool = False) -> bool:
     """Has this warm browser gone unused long enough to reap? An unreadable or
-    missing marker counts as stale — we only keep what we can prove is in use."""
-    ttl = KEEP_WARM_TTL_MIN if ttl_min is None else ttl_min
+    missing marker counts as stale — we only keep what we can prove is in use.
+    A browser that got through the check is kept far longer (see
+    KEEP_WARM_CLEARED_TTL_MIN): it is the expensive one to replace."""
+    if ttl_min is None:
+        ttl_min = KEEP_WARM_CLEARED_TTL_MIN if cleared else KEEP_WARM_TTL_MIN
     if not last_use:
         return True
-    return (now - last_use) > ttl * 60
+    return (now - last_use) > ttl_min * 60
 
 
 def _cdp_port_alive(port=None, timeout: float = 1.5) -> bool:
@@ -1558,6 +1594,17 @@ def _clear_browser_suspect() -> None:
     _BROWSER_SUSPECT = ""
 
 
+# Set by the caller when this session got through Indeed's check, so teardown can
+# mark the browser as the expensive kind and keep it overnight.
+_BROWSER_CLEARED = False
+
+
+def mark_browser_cleared() -> None:
+    """This browser has been through Indeed's check — keep it much longer."""
+    global _BROWSER_CLEARED
+    _BROWSER_CLEARED = True
+
+
 def _should_kill_on_exit(hard_stop: bool, keep_warm: bool = None,
                          suspect: str = None) -> bool:
     """Kill the browser on the way out unless keep-warm is on, the session ended
@@ -1590,17 +1637,14 @@ def reap_stale_warm_browsers() -> int:
             continue
         if profile == CDP_PROFILE or not _cdp_port_alive(port):
             continue        # this office's own browser, or nothing running
-        last = 0.0
-        try:
-            with open(_lastuse_path(profile)) as fh:
-                last = float(fh.read().strip() or 0)
-        except Exception:  # noqa: BLE001
-            last = 0.0
-        if _is_stale(last, now):
+        last, cleared = _read_lastuse(profile)
+        if _is_stale(last, now, cleared=cleared):
             subprocess.run(["pkill", "-f", pat], capture_output=True)
             killed += 1
+            _ttl = KEEP_WARM_CLEARED_TTL_MIN if cleared else KEEP_WARM_TTL_MIN
             _log(f"[cdp] reaped an idle warm Chrome for office "
-                 f"{row.get('office_id')} (unused > {KEEP_WARM_TTL_MIN}min)")
+                 f"{row.get('office_id')} (unused > {_ttl}min"
+                 f"{', had cleared the check' if cleared else ''})")
     return killed
 
 
@@ -1841,8 +1885,17 @@ def warm_appstream_cdp_page(switch_office: bool = True, diag_tab: str = "RP Diag
     reused = _should_reuse_browser(_cdp_port_alive())
     proc = None
     if reused:
-        _log(f"[cdp] reusing the warm Chrome on port {CDP_PORT} — no relaunch, so "
-             f"Indeed's check stays cleared for this office")
+        # Say how OLD it is and whether it has been through the check: that is
+        # the only way to learn how long a pass actually survives, which is what
+        # decides whether anyone ever has to tick a box again.
+        import time as _tw
+        _last, _was_cleared = _read_lastuse()
+        _age_min = int((_tw.time() - _last) / 60) if _last else -1
+        _log(f"[cdp] reusing the warm Chrome on port {CDP_PORT} — no relaunch "
+             f"(idle {_age_min}min"
+             f"{', has been through Indeed check' if _was_cleared else ''})")
+        if _was_cleared:
+            mark_browser_cleared()
     else:
         dst = _copy_default_profile()
         _log(f"[cdp] profile copy; plugin present: "
@@ -2002,9 +2055,13 @@ def warm_appstream_cdp_page(switch_office: bool = True, diag_tab: str = "RP Diag
             # LEAVE IT RUNNING. This is the point: the next tick connects to this
             # same Chrome, so Indeed's cleared check survives instead of being
             # re-fought every two minutes.
-            _touch_lastuse()
+            _was_cleared, _ = _read_lastuse()[1], None
+            _cleared = _BROWSER_CLEARED or _was_cleared
+            _touch_lastuse(cleared=_cleared)
             _log(f"[cdp] leaving Chrome warm on port {CDP_PORT} for the next tick "
-                 f"(reaped after {KEEP_WARM_TTL_MIN}min idle)")
+                 f"(idle TTL "
+                 f"{KEEP_WARM_CLEARED_TTL_MIN if _cleared else KEEP_WARM_TTL_MIN}"
+                 f"min{'; it has been through Indeed check' if _cleared else ''})")
         _flush_diag(diag_tab)
 
 

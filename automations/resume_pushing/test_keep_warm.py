@@ -88,6 +88,47 @@ def test_staleness() -> bool:
     return ok
 
 
+def test_cleared_browser_survives_the_night() -> bool:
+    """A browser that got through Indeed's check must outlive the overnight gap;
+    one that never did is cheap to replace and goes on the short TTL."""
+    print("a cleared browser is kept across the night")
+    ok = True
+    t = 1_000_000.0
+    night = 9 * 3600          # 10pm -> 7am, longer than the ordinary idle TTL
+    ok &= _check("cleared browser survives the night",
+                 rp._is_stale(t, t + night, cleared=True), False)
+    ok &= _check("uncleared browser does not",
+                 rp._is_stale(t, t + night, cleared=False), True)
+    ok &= _check("even a cleared browser goes eventually",
+                 rp._is_stale(t, t + (rp.KEEP_WARM_CLEARED_TTL_MIN + 1) * 60,
+                              cleared=True), True)
+    ok &= _check("the long TTL really does span a night",
+                 rp.KEEP_WARM_CLEARED_TTL_MIN * 60 > night, True)
+    return ok
+
+
+def test_marker_round_trip() -> bool:
+    print("the cleared flag survives a round trip")
+    ok = True
+    tmp = Path(tempfile.mkdtemp(prefix="rp-mark-"))
+    orig, rp.CDP_PROFILE = rp.CDP_PROFILE, str(tmp)
+    try:
+        rp._touch_lastuse(cleared=True)
+        ok &= _check("reads back as cleared", rp._read_lastuse()[1], True)
+        rp._touch_lastuse(cleared=False)
+        ok &= _check("and as not cleared", rp._read_lastuse()[1], False)
+        # The marker predates the flag on any machine already running keep-warm.
+        Path(rp._lastuse_path()).write_text("1790000000.0")
+        ok &= _check("an old bare-epoch marker still parses",
+                     rp._read_lastuse(), (1790000000.0, False))
+        Path(rp._lastuse_path()).write_text("nonsense")
+        ok &= _check("garbage reads as stale-and-uncleared",
+                     rp._read_lastuse(), (0.0, False))
+    finally:
+        rp.CDP_PROFILE = orig
+    return ok
+
+
 def test_lastuse_marker() -> bool:
     print("the last-use marker")
     ok = True
@@ -97,10 +138,11 @@ def test_lastuse_marker() -> bool:
         rp._touch_lastuse()
         p = Path(rp._lastuse_path())
         ok &= _check("marker written beside the profile", p.exists(), True)
-        val = float(p.read_text().strip())
+        val, cleared = rp._read_lastuse()
         import time as _t
         ok &= _check("marker holds a recent timestamp",
                      abs(_t.time() - val) < 60, True)
+        ok &= _check("a plain touch is not marked cleared", cleared, False)
         ok &= _check("a fresh marker is not stale",
                      rp._is_stale(val, _t.time(), 45), False)
     finally:
@@ -159,6 +201,8 @@ def test_reaper_skips_own_and_live() -> bool:
 def main() -> int:
     print("keep-warm browser\n")
     results = [test_reuse_decision(), test_kill_decision(), test_staleness(),
+               test_cleared_browser_survives_the_night(),
+               test_marker_round_trip(),
                test_lastuse_marker(), test_reaper_skips_own_and_live()]
     print("\n" + ("ALL OK" if all(results) else "FAILURES ABOVE"))
     return 0 if all(results) else 1

@@ -176,6 +176,11 @@ def run(live: bool = False, limit: int = None, max_actions: int = None,
                     # a cold one gets a fresh challenge it often passes.
                     rp.mark_browser_suspect(
                         "Indeed's resume check never cleared for this browser")
+                elif oat._cf_session_cleared():
+                    # It IS through the check. That makes it the expensive kind of
+                    # browser: keep it across the night so the morning does not
+                    # start with a fresh challenge for every office.
+                    rp.mark_browser_cleared()
                 return _rc
             except Exception as e:  # noqa: BLE001
                 import traceback
