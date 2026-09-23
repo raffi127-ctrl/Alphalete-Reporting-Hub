@@ -215,12 +215,47 @@ def kick(name: str) -> tuple[bool, str]:
                   f"(`lucy logtail <name>`), not this result")
 
 
+def remove(name: str) -> tuple[bool, str]:
+    """Unload a LaunchAgent and delete its plist -- the other half of
+    install(). Built 2026-09-22 to move the ICD poster off Lucy 3: texts
+    sent from that box were reaching some phones and not others (Colten,
+    two of his reps) while the same messages from Lucy 1 reached everyone.
+    Two boxes running the same poster would double-post, so the old one
+    has to come off before the new one goes on."""
+    name = name.strip().replace("com.alphalete.", "").replace(".plist", "")
+    if not name or "/" in name or ".." in name:
+        return False, f"bad launchagent name {name!r}"
+    label = f"com.alphalete.{name}"
+    dest = Path(os.path.expanduser("~/Library/LaunchAgents")) / f"{label}.plist"
+    target = f"gui/{os.getuid()}/{label}"
+    subprocess.run(["launchctl", "bootout", target],
+                   capture_output=True, text=True, timeout=30)
+    for _ in range(20):
+        if subprocess.run(["launchctl", "print", target], capture_output=True,
+                          text=True, timeout=30).returncode != 0:
+            break
+        time.sleep(0.5)
+    else:
+        return False, f"{label}: still loaded 10s after bootout"
+    existed = dest.exists()
+    if existed:
+        dest.unlink()
+    return True, f"{label}: unloaded" + (" and plist removed" if existed else " (no plist was installed)")
+
+
 def main(argv=None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if not args:
         print("usage: python -m automations.day_orchestrator.install_agent "
-              "<name> [--now]")
+              "<name> [--now | --remove]")
         return 2
+    if "--remove" in args:
+        name = next((a for a in args if not a.startswith("-")), "")
+        ok, msg = remove(name)
+        print(msg, flush=True)
+        if ok:
+            print("=== done ===", flush=True)
+        return 0 if ok else 1
     # --now = install (refresh the plist), THEN run it immediately. Install
     # first, always: kicking the OLD job would test code that is about to be
     # replaced, which is the same false pass as running a report on a runner

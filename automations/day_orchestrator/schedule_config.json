@@ -10644,8 +10644,8 @@
     },
     "install_icd_alerts_poster_agent": {
       "on_scheduler": false,
-      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_icd_alerts_poster_agent --machine \"Lucy 3\"` can install or refresh the standalone com.alphalete.icd-alerts-poster LaunchAgent. It reads what the ICD laptops relayed into the 'Lucy Access App' workbook and posts each office's credit-check alerts to their approved Slack channel; an office with nothing approved is held to Megan's DM rather than guessed into a team room. StartInterval 60 (was 120, and documented as 600 before that; tightened 2026-09-14 so the lag an office feels is the laptop's 2-minute sweep plus one minute here) -- the wrapper, not the plist, sets the 08:00-23:00 Mon-Sat gate, deliberately wider than any one office's selling day because offices sit in different timezones and a laptop that wakes late still has a real day to hand over. MUST run on a box holding Lucy Reporting's Slack USER token: the token is per machine, and post.py refuses to --send unless auth_test() says Lucy Reporting, so a wrong box fails loudly instead of posting every ICD's alerts under Megan's name. Confirm with `lucy rerun slack_whoami --machine \"Lucy 3\"` before arming. install_agent only rewrites and reloads the plist; it touches no Sheet and no report data. Re-run after any change to the plist.",
-      "machine": "Lucy 3",
+      "_off_scheduler_note": "MOVED TO LUCY 1 on 2026-09-22: the poster also TEXTS boards and standings to iMessage groups, and texts sent from Lucy 3 reached some phones and not others (Colten and two of his reps saw nothing from Lucy 3 all afternoon while the same messages from Lucy 1 reached everyone; Aya's group had the same pattern). Lucy 1 is the fleet's iMessage box (gap alerts, the sales board texts). Install with `lucy rerun install_icd_alerts_poster_agent --machine \"Lucy 1\"` AFTER `lucy rerun remove_icd_alerts_poster_agent --machine \"Lucy 3\"` -- two boxes running it would double-post. Needs Lucy Reporting's Slack USER token on the box (post.py refuses --send otherwise) and iMessage consent (gap_alerts.config can_text). Earlier history: on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_icd_alerts_poster_agent --machine \"Lucy 3\"` can install or refresh the standalone com.alphalete.icd-alerts-poster LaunchAgent. It reads what the ICD laptops relayed into the 'Lucy Access App' workbook and posts each office's credit-check alerts to their approved Slack channel; an office with nothing approved is held to Megan's DM rather than guessed into a team room. StartInterval 60 (was 120, and documented as 600 before that; tightened 2026-09-14 so the lag an office feels is the laptop's 2-minute sweep plus one minute here) -- the wrapper, not the plist, sets the 08:00-23:00 Mon-Sat gate, deliberately wider than any one office's selling day because offices sit in different timezones and a laptop that wakes late still has a real day to hand over. MUST run on a box holding Lucy Reporting's Slack USER token: the token is per machine, and post.py refuses to --send unless auth_test() says Lucy Reporting, so a wrong box fails loudly instead of posting every ICD's alerts under Megan's name. Confirm with `lucy rerun slack_whoami --machine \"Lucy 3\"` before arming. install_agent only rewrites and reloads the plist; it touches no Sheet and no report data. Re-run after any change to the plist.",
+      "machine": "Lucy 1",
       "display_name": "Install ICD Credit-Check Alerts poster (10-min)",
       "source_type": "local",
       "data_sources": [],
@@ -11805,6 +11805,30 @@
       },
       "_note": "Office metrics for colten -> southshore-d2d-sales. Onboarded via office_onboarding on 2026-09-22 14:01 UTC. Machine Lucy 1 (view owners). NDS/wireless office (campaign nds_d2d): Time Gaps, Wireless Churn, Rep Activations, Order Log, Cancels. Held off until a dry-run on Lucy 1 proved data on every board (2026-09-22: 13 reps knocking, 584 wireless orders, 103 reps with churn data, 3 cancels) — Megan's rule: never a blank first post. order 36.58 = after harvest_prime warms the crosstab cache.",
       "_onboarded": true
+    },
+    "remove_icd_alerts_poster_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Unload + delete the com.alphalete.icd-alerts-poster LaunchAgent on the box named by --machine. The other half of install_icd_alerts_poster_agent; run it on the OLD box before installing on the new one (2026-09-22, Lucy 3 -> Lucy 1).",
+      "machine": "Lucy 3",
+      "display_name": "Remove ICD Credit-Check Alerts poster",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "icd-alerts-poster",
+        "--remove"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
     }
   },
   "read_only_standalone": {
