@@ -185,19 +185,47 @@ def _agent(action: str) -> bool:
         return False
 
 
+def _machine_offices() -> list:
+    """The offices THIS machine actually works, in rotation order."""
+    try:
+        from automations.applicant_push import offices
+        return list(offices.rotation_for())
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         description="Open one resume so a human can clear Indeed's check")
     ap.add_argument("office", nargs="?", default="11280",
                     help="office id, e.g. 11280 (see applicant_push/offices.py)")
+    ap.add_argument("--all", action="store_true",
+                    help="every office this machine works, one window after "
+                         "another — one sitting instead of one command each")
     ap.add_argument("--hold", type=int, default=DEFAULT_HOLD_S,
                     help="seconds to keep the window open waiting for the tick")
     ap.add_argument("--just-clear", action="store_true",
                     help="stop once the check is cleared; do NOT walk the queue")
     args = ap.parse_args(argv)
+    todo = _machine_offices() if args.all else [args.office]
+    if args.all and not todo:
+        print("[clear] this machine has no office rotation — name one instead",
+              flush=True)
+        return 2
+    # Pause the scheduled agent ONCE around the whole sitting, not per office:
+    # its next tick would pkill whichever window is open at the time.
     paused = _agent("bootout")
+    worst = 0
     try:
-        return run(args.office, args.hold, drain=not args.just_clear)
+        for i, office in enumerate(todo, 1):
+            if len(todo) > 1:
+                print(f"\n[clear] ===== office {office} ({i} of {len(todo)}) =====",
+                      flush=True)
+            rc = run(office, args.hold, drain=not args.just_clear)
+            worst = worst or rc
+            if len(todo) > 1:
+                print(f"[clear] office {office} finished (rc={rc})", flush=True)
+        return worst
     finally:
         if paused:
             _agent("bootstrap")
