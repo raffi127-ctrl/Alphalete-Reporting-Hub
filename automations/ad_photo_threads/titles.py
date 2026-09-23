@@ -83,11 +83,19 @@ class TitleBook:
         if key in ads:
             return key
         if len(key) >= MIN_PREFIX:
+            # Cut off at the END (pasted short) or at the FRONT: 9/22 "AT&T
+            # Services (Spanish Required) ? Dallas TX" was the Client Solutions
+            # Specialist Dallas ad minus its first words, and got its own
+            # thread next to the real one. Front cuts match on whole words only,
+            # and only when they point at ONE ad (otherwise: as before).
             cut = [a for a in ads if a.startswith(key)]
             if len(cut) == 1:
                 return cut[0]
             if len(cut) > 1:
                 return None          # a cut-off of two ads: don't pick one
+            front = [a for a in ads if a.endswith(" " + key)]
+            if len(front) == 1:
+                return front[0]
         close = [(difflib.SequenceMatcher(None, key, a).ratio(), a) for a in ads]
         close = [c for c in close if c[0] >= TYPO_RATIO]
         if close:

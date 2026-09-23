@@ -11,6 +11,8 @@ SHEET = (
     + ["AT&T Wireless Associate (Spanish), 2 locations"] * 6
     + ["AT&T Wireless Associate (Spanish) ? Frisco TX"] * 3
     + ["AT&T Enrollment Associate, Denton, TX,"] * 5
+    + ["Client Solutions Specialist - AT&T Services (Spanish Required), Dallas, TX"] * 15
+    + ["AT&T Services (Spanish Required) ? Dallas TX"] * 4
 )
 
 
@@ -27,6 +29,12 @@ class TitleTests(unittest.TestCase):
     def test_cut_off_paste_folds_onto_its_one_ad(self):
         self.assertEqual(self.book.resolve("AT&T Sales Agent, Arlington, T"),
                          norm("AT&T Sales Agent, Arlington, TX"))
+
+    def test_front_cut_folds_onto_its_one_ad(self):
+        # 9/22: the ad's first words left off made a second thread for one ad.
+        self.assertEqual(self.book.resolve("AT&T Services (Spanish Required) ? Dallas TX"),
+                         norm("Client Solutions Specialist - AT&T Services (Spanish Required), Dallas, TX"))
+        self.assertNotIn(norm("AT&T Services (Spanish Required) Dallas TX"), self.book.ads)
 
     def test_typo_folds(self):
         self.assertEqual(self.book.resolve("AT&T Erollment Associate, Denton, TX"),
