@@ -67,7 +67,7 @@
     background:var(--fill); color:var(--tint);
     font-weight:700; font-size:.87rem; padding:.28rem .7rem .3rem;
     border-radius:12px; box-shadow:var(--node-shadow);
-    max-width:9.5rem; white-space:normal; overflow-wrap:break-word;
+    max-width:8.2rem; white-space:normal; overflow-wrap:break-word;
   }
   .node .nm{ display:block; line-height:1.15; }
   .node .rank{
