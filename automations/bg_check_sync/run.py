@@ -573,15 +573,25 @@ def _run(args) -> None:
     upcoming = max(slack_weeks)  # the next-Monday cohort — the one worth a Friday bump
     print(f"[weeks] updating {len(weeks)} week(s) on the OBCL: "
           f"{', '.join(_fmt_week(w) for w in weeks)}")
+    # NAMES ARE CORRECTED IN EVERY WEEK WE UPDATE, the current one included.
+    #
+    # This used to default to skipping the week in flight. That came from Megan
+    # in August — "we're not doing any of this week's, they've already been hand
+    # done" — which was about ONE cohort that had already been reconciled by
+    # hand, and I turned it into a rolling rule. The cost only showed up on
+    # 2026-09-22: the people who start THIS Monday are exactly the ones a name
+    # mismatch blocks at activation, and they were the one group never fixed.
+    # Megan chose to drop it. --names-from still pins a cutoff by hand.
     if args.names_from:
         names_from = match.parse_header_date(args.names_from)
         if names_from is None:
             raise SystemExit(f"--names-from {args.names_from!r} isn't a M/D/YYYY date")
         names_from = _monday_of(names_from)
+        print(f"[name-gate] name corrections apply from the week of "
+              f"{_fmt_week(names_from)} onward")
     else:
-        names_from = _monday_of(now.date()) + dt.timedelta(days=7)
-    print(f"[name-gate] name corrections apply from the week of "
-          f"{_fmt_week(names_from)} onward")
+        names_from = None
+        print("[name-gate] name corrections apply to every week being updated")
 
     ov_targets: list = [] if args.ov else None
     # With OwnerVille in play, hold the questions back until it has had a chance
