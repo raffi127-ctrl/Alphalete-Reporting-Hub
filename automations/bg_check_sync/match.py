@@ -26,12 +26,17 @@ from automations.bg_check_sync.parse import BGEvent, RANK, norm
 #
 # These constants are the LAST-RESORT fallback for a block with no readable
 # header, and they are the old layout: D/E names, G email, H phone, K BG Status.
-# On 2026-09-2x somebody inserted a "Classroom" column at F and every one of
-# them slid a column right — so the report spent days reading FINAL STATUS as
-# the BG status (seeing "Owner submitted"/"Terminated", deciding everyone needed
-# advancing) and writing BG values back into Final Status, while the real BG
-# column went untouched. That is the whole reason this file now resolves columns
-# from the header row it is actually looking at.
+# In September 2026 somebody inserted a "Classroom" column at F and every one of
+# them slid a column right — so the report read FINAL STATUS as the BG status
+# (seeing "Owner submitted"/"Terminated" where a status belonged, and concluding
+# the whole week needed advancing) while the real BG column went untouched. That
+# is what Megan saw: people started Monday, Sterling moved, the sheet did not.
+#
+# The blocks also disagree with each other. Old ones on the rolling tab have no
+# "Start Time" column at all — names at C/D, BG Status legitimately at K — so
+# there is no single right answer for the tab, only for the block in front of
+# you. Hence per-block resolution, and hence the fallback below being a last
+# resort rather than a default.
 LABEL_COL = 2      # column B holds nothing useful here
 FIRST_COL = 4
 LAST_COL = 5
