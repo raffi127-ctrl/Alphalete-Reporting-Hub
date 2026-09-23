@@ -110,20 +110,33 @@ def _day_bounds(day: dt.date):
     return start.timestamp(), (start + dt.timedelta(days=1)).timestamp()
 
 
+def source_channels() -> List[str]:
+    """The office's recruiting channel(s). A list when the 1st rounds moved
+    channel (Rashad 2026-09-23: from #rashad-reed-office-recruiting-23411 to
+    #23411-elevate-specialized-acquisitions-inc-rashad-reed on 9/24), so old
+    days are still found where they were posted."""
+    ch = config.SOURCE_CHANNEL_ID
+    return [ch] if isinstance(ch, str) else list(ch)
+
+
 def find_thread(cl, thread_re, day: dt.date) -> Optional[dict]:
-    """The day's parent post, matched on its wording and posted that day (CT)."""
+    """The day's parent post, matched on its wording and posted that day (CT),
+    in whichever of the office's channels has it. Carries `_channel`."""
     lo, hi = _day_bounds(day)
-    resp = cl.conversations_history(channel=config.SOURCE_CHANNEL_ID,
-                                    oldest=str(lo), latest=str(hi), limit=200)
-    hits = [m for m in resp.get("messages", [])
-            if thread_re.search(m.get("text", "") or "")]
+    hits = []
+    for ch in source_channels():
+        resp = cl.conversations_history(channel=ch, oldest=str(lo),
+                                        latest=str(hi), limit=200)
+        hits += [dict(m, _channel=ch) for m in resp.get("messages", [])
+                 if thread_re.search(m.get("text", "") or "")]
     return min(hits, key=lambda m: float(m["ts"])) if hits else None
 
 
-def _replies(cl, ts: str) -> List[dict]:
+def _replies(cl, ts: str, channel: Optional[str] = None) -> List[dict]:
+    channel = channel or source_channels()[0]
     out, cursor = [], None
     while True:
-        r = cl.conversations_replies(channel=config.SOURCE_CHANNEL_ID, ts=ts,
+        r = cl.conversations_replies(channel=channel, ts=ts,
                                      limit=200, cursor=cursor)
         out += r.get("messages", [])
         cursor = (r.get("response_metadata") or {}).get("next_cursor")
@@ -293,7 +306,7 @@ def build(day: dt.date, *, sh=None, cl=None) -> DayReport:
                 rep.missing_threads.append(src["label"])
             continue
 
-        msgs = _replies(cl, parent["ts"])
+        msgs = _replies(cl, parent["ts"], parent.get("_channel"))
         loose = first_name_matches(msgs, todays, book)
         for i, msg in enumerate(msgs):
             named = sorted(_full_named(msg, todays) + loose.get(i, []),

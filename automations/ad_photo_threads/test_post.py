@@ -66,6 +66,10 @@ class PublishTests(unittest.TestCase):
                        side_effect=lambda data, names, fid="", **kw: {n: b"PNG" + n.encode()
                                                                       for n in names})
         self.crop = c.start(); self.addCleanup(c.stop)
+        # These tests pin down the weekly threads (9/21-9/23); the forever
+        # threads Raf asked for 9/23 are ForeverThreadTests below.
+        w = mock.patch.object(post.config, "ONE_THREAD_PER_AD", False)
+        w.start(); self.addCleanup(w.stop)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -344,3 +348,63 @@ class PublishTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ForeverThreadTests(PublishTests):
+    """Raf 2026-09-23: one thread per ad forever, a new one only for a new ad."""
+    def setUp(self):
+        super().setUp()
+        f = mock.patch.object(post.config, "ONE_THREAD_PER_AD", True)
+        f.start(); self.addCleanup(f.stop)
+
+    # The weekly-only behaviour doesn't apply here.
+    test_new_week_fresh_pinned_thread_and_old_one_unpinned = None
+    test_pin_reminder_lists_new_then_last_weeks = None
+    test_add_notes_edits_the_posted_reply_in_place = None
+    test_merge_dups_moves_candidates_and_deletes_the_duplicate = None
+    test_one_thread_one_reply_group_photo_once = None
+
+    def test_next_week_reuses_the_same_thread_and_keeps_the_pin(self):
+        post.publish(_rep(), "D1", cl=FakeSlack())          # Fri 9/18 -> 100.1
+        rep = _rep(); rep.day = dt.date(2026, 9, 21)       # next Monday
+        cl = FakeSlack(); cl._n = 7
+        c = post.publish(rep, "D1", cl=cl)
+        self.assertEqual(c["threads_new"], 0)
+        self.assertEqual(cl.uploads[0]["thread_ts"], "100.1")
+        self.assertEqual(cl.pins, [])                      # nothing unpinned
+        ad = post._load_state()["D1"]["weeks"][post.FOREVER]["at&t sales agent arlington tx"]
+        self.assertEqual(ad["days"], ["2026-09-18", "2026-09-21"])
+
+    def test_header_shows_this_weeks_numbers(self):
+        post.publish(_rep(), "D1", cl=FakeSlack())          # Fri 9/18: 1 of 2 removed
+        rep = _rep(); rep.day = dt.date(2026, 9, 21)
+        for c in rep.candidates:
+            c.qualify = "Qualify"                           # Mon 9/21: nobody removed
+        cl = FakeSlack()
+        post.publish(rep, "D1", cl=cl)
+        self.assertIn("- 0% Removed", cl.updates[-1]["text"])
+        self.assertIn("this week", cl.updates[-1]["text"])
+
+    def test_new_ad_gets_its_own_thread(self):
+        post.publish(_rep(), "D1", cl=FakeSlack())
+        rep = _rep(); rep.day = dt.date(2026, 9, 22)
+        rep.candidates[1].ad = "new ad"
+        rep.book.ads.append("new ad")
+        c = post.publish(rep, "D1", cl=FakeSlack())
+        self.assertEqual(c["threads_new"], 1)
+        self.assertEqual(c["to_unpin"], [])
+
+    def test_no_saturday(self):
+        self.assertNotIn(5, post.config.POST_WEEKDAYS)
+
+
+class SeedForeverTests(unittest.TestCase):
+    def test_newest_week_becomes_the_forever_threads(self):
+        with tempfile.TemporaryDirectory() as tmp,                 mock.patch.object(post, "STATE_PATH", Path(tmp) / "s.json"),                 mock.patch.object(post.config, "ONE_THREAD_PER_AD", True):
+            post.STATE_PATH.write_text(
+                '{"C1": {"weeks": {"2026-09-14": {"a": {"thread_ts": "1.0", "days": ["2026-09-14"]}},'
+                ' "2026-09-21": {"a": {"thread_ts": "2.0", "days": ["2026-09-21"]}}}}}',
+                encoding="utf-8")
+            st = post._load_state()
+            self.assertEqual(st["C1"]["weeks"][post.FOREVER]["a"]["thread_ts"], "2.0")
+            self.assertEqual(st["C1"]["weeks"]["2026-09-14"]["a"]["thread_ts"], "1.0")

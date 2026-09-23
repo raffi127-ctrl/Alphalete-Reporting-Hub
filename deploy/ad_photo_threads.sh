@@ -2,7 +2,7 @@
 # Ad Photo Threads — the nightly post into each office's #indeed-photos-… channel
 # (config.OFFICES; only the ones marked live). Ticks every 30 minutes
 # (com.alphalete.ad-photo-threads.plist) and posts each office's day ONCE,
-# after 4:30 PM in THAT office's zone, Mon–Sat. The clock gate and the "day already
+# after 4:30 PM in THAT office's zone, Mon–Fri. The clock gate and the "day already
 # posted" check live in Python (run.py nightly) and run before any Sheets or
 # Slack call, so an idle tick costs nothing. An interval rather than a calendar
 # plist: launchd's cached zone has fired calendar jobs +2h on this fleet.

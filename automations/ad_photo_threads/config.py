@@ -37,9 +37,15 @@ NIGHTLY_PAUSED_BEFORE = "2026-09-22"
 # 1st-round slot is 3:45 PM CT (Camila 2026-09-22) and the sheet is filled as they go; Raf
 # 9/22: "to be safe lets do 4:30 local time of the pulling instead of 7:00pm".
 # A shot posted after the pull is caught by the late-photo watch next nights.
-# Mon–Sat; Sunday has no 1st rounds.
+# Days: POST_WEEKDAYS below.
 POST_AFTER_CT = (16, 30)
-POST_WEEKDAYS = {0, 1, 2, 3, 4, 5}
+# Mon–Fri (Raf 2026-09-23: "we don't do 1st rds on saturday").
+POST_WEEKDAYS = {0, 1, 2, 3, 4}
+
+# One thread per ad FOREVER, a new one only for a new ad (Raf 2026-09-23:
+# "we don't need a new thread every week"). Its header still shows THIS
+# week's % removed / avg stars. False = the old fresh-thread-every-week.
+ONE_THREAD_PER_AD = True
 
 # Lucy's token has no pins:write, so Eve pins the week's threads by hand
 # (2026-09-21). Whenever a run opens new threads, Lucy DMs her the links to
@@ -137,6 +143,8 @@ OFFICES = [
 # this week are posted by hand first, then they go live.
 # Rashad's regex is anchored at the start: an "EOD-ELEVATE ... 1st ROUNDS"
 # recap is posted the evening after and must not be taken for the thread.
+# His 1st rounds move to #23411-elevate-specialized-acquisitions-inc-rashad-reed
+# from 9/24 (Raf 9/23), so both channels are read (collect.source_channels).
 ARS_D_TO_I = "1U5GZyzuXmzeNRKDL8V_lvCpzEtpjxuy4LLCDT3gDKcQ"
 ARS_J_TO_L = "1sq_0VY-y1kzcQ8SAOmqs4VLE_2bPSJpCLTFufcUtQW4"
 ARS_M_TO_Q = "12zye9tduziss1w-EdZKkPJ2DE-dg-xB0aqvC2H3cLao"
@@ -153,7 +161,8 @@ _MORE = [
     ("aya", "Aya Al-Khafaji", ARS_A_TO_C, "Aya Al-Khafaji", "22992", "Indelible Marketing",
      "C0AU7GN2TJ7", "C0C3XGN68GJ", r"indelible\s*marketing.*1st\s*round"),
     ("rashad", "Rashad Reed", ARS_R_TO_Z, "Rashad Reed", "23411", "Elevate Specialized Acquisitions",
-     "C0APEHLHDD2", "C0C3XGN9K0S", r"^\W*elevate\s*specialized.*1st\s*round"),
+     ["C0APEHLHDD2", "C0BEWHY5KQ9"], "C0C3XGN9K0S",
+     r"^\W*elevate\s*specialized.*1st\s*round"),
     ("haytham", "Haytham Nagi", ARS_D_TO_I, "Haytham Nagi", "22524", "Horizon Edge Alliance",
      "C0AUUSCSEV7", "C0C4S176UQG", r"horizon\s*edge.*1st\s*round"),
     ("jacob", "Jacob Dover", ARS_J_TO_L, "Jacob Dover", "23607", "Rockstarworld Incorporated",

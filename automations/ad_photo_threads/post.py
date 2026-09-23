@@ -39,9 +39,26 @@ MAX_FILES_PER_REPLY = 10          # Slack's cap on files in one message
 
 def _load_state() -> dict:
     try:
-        return json.loads(STATE_PATH.read_text(encoding="utf-8"))
+        state = json.loads(STATE_PATH.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
+    if config.ONE_THREAD_PER_AD:
+        for ch in state.values():
+            _seed_forever(ch)
+    return state
+
+
+def _seed_forever(ch_state: dict) -> None:
+    """The switch to one-thread-per-ad (9/23), for a channel that already has
+    weekly threads (Rafael, Carlos): the NEWEST week's threads become the
+    ads' threads from here on -- they're the pinned ones -- and older weeks
+    stay in the channel as history. Nothing is posted or deleted."""
+    weeks = ch_state.get("weeks") if isinstance(ch_state, dict) else None
+    if not weeks or FOREVER in weeks:
+        return
+    dated = [w for w in weeks if w != FOREVER]
+    if dated:
+        weeks[FOREVER] = json.loads(json.dumps(weeks[max(dated)]))
 
 
 def _save_state(state: dict) -> None:
@@ -58,10 +75,29 @@ def week_monday(day: dt.date) -> dt.date:
     return day - dt.timedelta(days=day.weekday())
 
 
-def week_stats(ad: dict) -> Dict[str, float]:
+FOREVER = "forever"
+
+
+def bucket(day: dt.date) -> str:
+    """Which set of threads a day goes into. Raf 2026-09-23: "we don't need a
+    new thread every week, we can keep the same thread forever, we need a new
+    thread when its a new AD only" -- so with config.ONE_THREAD_PER_AD every
+    day of an ad lands in the same thread ("forever"); off, it's the week's
+    Monday (the 9/21-9/23 weekly threads)."""
+    return FOREVER if config.ONE_THREAD_PER_AD else week_monday(day).isoformat()
+
+
+def week_stats(ad: dict, monday: Optional[dt.date] = None) -> Dict[str, float]:
     """The week so far for one ad's thread, from what each posted day saved:
-    % removed (❌ / everyone) and the average star rating of those rated."""
-    days = (ad.get("stats") or {}).values()
+    % removed (❌ / everyone) and the average star rating of those rated.
+    With `monday`, only that week's days count -- a forever thread still
+    shows the week's numbers (Megan 9/21: an ad can pull well weeks 1-2 and
+    then die off)."""
+    stats = ad.get("stats") or {}
+    if monday is not None:
+        lo, hi = monday.isoformat(), (monday + dt.timedelta(days=7)).isoformat()
+        stats = {d: v for d, v in stats.items() if lo <= d < hi}
+    days = stats.values()
     n = sum(d.get("n", 0) for d in days)
     removed = sum(d.get("removed", 0) for d in days)
     stars = [s for d in days for s in d.get("stars", [])]
@@ -82,6 +118,8 @@ def parent_text(title: str, monday: dt.date, pilot: bool = False,
         head += f" - {stats['pct_removed']:.0f}% Removed"
         if stats.get("avg_stars") is not None:
             head += f" / Avg {stats['avg_stars']:g}⭐"
+        if config.ONE_THREAD_PER_AD:
+            head += " this week"
     return f"{PILOT_TAG if pilot else ''}*{head}*"
 
 
@@ -254,7 +292,7 @@ def publish(rep: collect.DayReport, channel: str, *, cl=None,
     ch_state = state.setdefault(channel, {})
     weeks = ch_state.setdefault("weeks", {})
     monday = week_monday(rep.day)
-    wk = weeks.setdefault(monday.isoformat(), {})
+    wk = weeks.setdefault(bucket(rep.day), {})
     day = rep.day.isoformat()
     counts = {"threads_new": 0, "replies": 0, "skipped_done": 0, "photos": 0,
               "pin_errors": 0, "to_pin": [], "to_unpin": []}
@@ -288,7 +326,9 @@ def publish(rep: collect.DayReport, channel: str, *, cl=None,
                 counts["pin_errors"] += 1
                 print(f"  pin failed for {item['title']!r}: {err}")
             # Retire last week's pin for this ad — the newest earlier week only.
-            for old_wk in sorted((w for w in weeks if w < monday.isoformat()), reverse=True):
+            # (Forever threads have no last week.)
+            for old_wk in sorted((w for w in weeks if w < monday.isoformat()
+                                  and not config.ONE_THREAD_PER_AD), reverse=True):
                 old = weeks[old_wk].get(item["key"])
                 if old:
                     if old.get("pinned") and not _pin(cl, channel, old["thread_ts"], False):
@@ -325,7 +365,7 @@ def publish(rep: collect.DayReport, channel: str, *, cl=None,
         try:
             cl.chat_update(channel=channel, ts=ad["thread_ts"],
                            text=parent_text(item["title"], monday, pilot,
-                                            week_stats(ad)))
+                                            week_stats(ad, monday)))
         except Exception as e:                   # noqa: BLE001 — never costs the photos
             print(f"  header update failed for {item['title']!r}: {str(e)[:160]}")
 
@@ -340,7 +380,7 @@ def publish(rep: collect.DayReport, channel: str, *, cl=None,
                     and not ad.get("pin_reminded"):
                 counts["to_pin"].append((ad.get("title") or key, ad["thread_ts"]))
                 ad["pin_reminded"] = True
-    if counts["to_pin"]:
+    if counts["to_pin"] and not config.ONE_THREAD_PER_AD:
         prev = sorted(w for w in weeks if w < monday.isoformat())
         if prev:
             for key, old in weeks[prev[-1]].items():
@@ -359,7 +399,7 @@ def add_photos(rep: collect.DayReport, channel: str, names: List[str], *,
     because Slack spelled him "Pedro Moreno"). {name: what happened}."""
     cl = cl or collect._client()
     state = _load_state()
-    wk = state.get(channel, {}).get("weeks", {}).get(week_monday(rep.day).isoformat(), {})
+    wk = state.get(channel, {}).get("weeks", {}).get(bucket(rep.day), {})
     out: Dict[str, str] = {}
     for name in names:
         c = next((c for c in rep.candidates
@@ -398,8 +438,7 @@ def add_notes(rep: collect.DayReport, channel: str, *, cl=None,
     The "No photo" lines the crop wrote that night are kept. {ad: what}."""
     cl = cl or collect._client()
     me = cl.auth_test()["user_id"]
-    wk = _load_state().get(channel, {}).get("weeks", {}).get(
-        week_monday(rep.day).isoformat(), {})
+    wk = _load_state().get(channel, {}).get("weeks", {}).get(bucket(rep.day), {})
     head = f"*{rep.day:%a} {rep.day.month}/{rep.day.day}*"
     out: Dict[str, str] = {}
     for item in plan(rep):
@@ -542,7 +581,7 @@ def merge_dups(channel: str, day: dt.date, *, build=None, cl=None,
     cl = cl or collect._client()
     state = _load_state()
     monday = week_monday(day)
-    wk = state.get(channel, {}).get("weeks", {}).get(monday.isoformat(), {})
+    wk = state.get(channel, {}).get("weeks", {}).get(bucket(day), {})
     reps: Dict[str, collect.DayReport] = {}
 
     def rep_for(d: str) -> collect.DayReport:
@@ -601,7 +640,8 @@ def merge_dups(channel: str, day: dt.date, *, build=None, cl=None,
         _save_state(state)
         try:
             cl.chat_update(channel=channel, ts=tgt["thread_ts"],
-                           text=parent_text(tgt_name, monday, False, week_stats(tgt)))
+                           text=parent_text(tgt_name, monday, False,
+                                            week_stats(tgt, monday)))
         except Exception as e:                   # noqa: BLE001 — the move already happened
             print(f"  header update failed for {tgt_name!r}: {str(e)[:160]}")
         out[name] = (f"moved {moved} candidate(s) into {tgt_name!r}; duplicate deleted "
