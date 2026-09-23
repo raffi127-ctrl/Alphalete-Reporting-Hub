@@ -73,6 +73,39 @@ def parse_tab(grid: list) -> dict:
     return {"weeks": weeks, "metrics": metrics}
 
 
+def sections(data: dict) -> list:
+    """[(section label, [metric names…])] in the tab's own order.
+
+    The tab is not one list of metrics, it is four blocks — the recruiting
+    funnel, then OPT, then WEEKLY KNOCKS DATA, then Office Metrics — and Raf
+    reads the first of them in every 1-on-1 (Megan 2026-09-23: "Top section is
+    recruiting so should be in our recruiting section").
+
+    A DIVIDER IS FOUND BY ITS SHAPE, not by its name. Every section header row
+    repeats the week-ending DATES across its value cells instead of carrying
+    numbers, which is what makes it a header; matching on the labels instead
+    would mean a list here going stale the first time somebody renames a block
+    or adds a fifth ([[feedback_no_hardcoded_columns]]). Rows before the first
+    divider are the funnel, which has no header row of its own.
+
+    parse_tab builds `metrics` in sheet order and dicts keep it, so the order
+    here is the order on the tab."""
+    out, current, rows = [], "Recruiting", []
+    for name, m in (data.get("metrics") or {}).items():
+        vals = [v for v in (m.get("by_week") or {}).values() if str(v).strip()]
+        is_divider = bool(vals) and all(_WEEK_RE.match(str(v).strip())
+                                        for v in vals)
+        if is_divider:
+            if rows:
+                out.append((current, rows))
+            current, rows = name, []
+            continue
+        rows.append(name)
+    if rows:
+        out.append((current, rows))
+    return out
+
+
 def load(icd: str, sheet_id: str = SHEET_ID) -> dict:
     from automations.recruiting_report.fill import open_by_key, _retry
     sh = open_by_key(sheet_id)

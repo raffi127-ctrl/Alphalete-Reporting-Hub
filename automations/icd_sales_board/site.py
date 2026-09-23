@@ -3326,13 +3326,20 @@ def recruiting(profile, icd: str, office_key: str = "") -> None:
         '<style>[data-testid="stExpander"]{margin-bottom:.6rem}</style>'
         '<div style="height:1.2rem"></div>', unsafe_allow_html=True)
 
-    # NOT IN AN EXPANDER, and above the ones that are. The three below are
-    # reference — you open them with a question already in mind. This one is
-    # the question: which ads are worth still paying for (Megan 2026-09-23,
-    # "track KPIs of the ad to make sure that we're running the correct
-    # ones"). A decision surface that has to be clicked open is a decision
-    # nobody makes.
-    ad_kpi_section(icd, win_start, win_end)
+    # THE WHOLE RECRUITING BLOCK, not just the nine (Megan 2026-09-23: "Raf
+    # uses this every week for one on ones - I want this to just be the one
+    # place he goes for the info. Top section is recruiting so should be in
+    # our recruiting section"). The nine cards above are the judged metrics;
+    # this is the rest of that same block as it stands on his tab, so a 1-on-1
+    # does not have to move to the sheet halfway through.
+    focus_block(icd, data, win_start, win_end)
+
+    # A SUB-SECTION, with the other drill-downs (Megan 2026-09-23: "the ad
+    # thing you just built should be in a sub section of recruiting section").
+    # It went in as a full-width block above these; the page is becoming the
+    # one place Raf opens for a 1-on-1, and the funnel is what he reads first.
+    with st.expander("Ad performance — which ads are worth still running"):
+        ad_kpi_section(icd, win_start, win_end)
 
     with st.expander("Sent to call list — which job ads it came from"):
         ads_breakdown(icd, win_start, win_end)
@@ -3498,6 +3505,51 @@ def _ars(icd: str) -> list:
     return A2.load(icd)
 
 
+def focus_block(icd: str, data: dict, win_start, win_end) -> None:
+    """The Focus Report's own recruiting section, week by week.
+
+    Every row of it, in the tab's order, for the weeks in the sidebar's range
+    — the goal beside each, because that column is already filled in per ICD
+    and is what the number is being read against."""
+    from automations.icd_sales_board import recruiting_read as RR
+    try:
+        blocks = RR.sections(data)
+    except Exception:   # noqa: BLE001 — the nine above still stand
+        return
+    rows = next((r for name, r in blocks if name.strip().lower()
+                 == "recruiting"), None)
+    if not rows:
+        return
+    weeks = [w for w in data.get("weeks", []) if win_start <= w <= win_end]
+    if not weeks:
+        return
+    # Newest week first: a 1-on-1 starts from last week and works back, and a
+    # table that starts in February makes you scroll to find it.
+    weeks = sorted(weeks, reverse=True)[:12]
+    metrics = data.get("metrics") or {}
+    table = []
+    for name in rows:
+        m = metrics.get(name) or {}
+        by = m.get("by_week") or {}
+        # A row nobody has ever filled for these weeks is noise on the page.
+        if not any(str(by.get(w, "")).strip() for w in weeks):
+            continue
+        rec = {"Metric": name, "Goal": m.get("goal", "") or ""}
+        for w in weeks:
+            rec[f"{w:%m/%d}"] = str(by.get(w, "")).strip()
+        table.append(rec)
+    if not table:
+        return
+    with st.expander(f"The full recruiting block — {len(table)} rows, "
+                     f"as it stands on the Focus Report", expanded=True):
+        st.dataframe(table, use_container_width=True, hide_index=True,
+                     height=_grid_height(len(table)))
+        st.caption(
+            "Every row of the Focus Report's recruiting section for this "
+            "office, newest week first, with its own OFFICE GOALS figure "
+            "beside it. Rows with nothing in the range are left out.")
+
+
 @st.cache_data(ttl=600, show_spinner="Reading ad performance…")
 def _ad_kpis(icd: str, start, end) -> dict:
     from automations.icd_sales_board import ad_kpis as AK
@@ -3518,7 +3570,6 @@ def ad_kpi_section(icd: str, start, end) -> None:
     different stretch of time without saying so."""
     from automations.icd_sales_board import ad_kpis as AK
     data = _ad_kpis(icd, start, end)
-    st.markdown("**Ad performance — which ads are worth still running**")
     if data.get("error") == "no-office":
         st.caption(f"{icd} isn't on the ad report's office list yet, so there "
                    f"are no first-round rows to read per ad.")
