@@ -3326,6 +3326,14 @@ def recruiting(profile, icd: str, office_key: str = "") -> None:
         '<style>[data-testid="stExpander"]{margin-bottom:.6rem}</style>'
         '<div style="height:1.2rem"></div>', unsafe_allow_html=True)
 
+    # NOT IN AN EXPANDER, and above the ones that are. The three below are
+    # reference — you open them with a question already in mind. This one is
+    # the question: which ads are worth still paying for (Megan 2026-09-23,
+    # "track KPIs of the ad to make sure that we're running the correct
+    # ones"). A decision surface that has to be clicked open is a decision
+    # nobody makes.
+    ad_kpi_section(icd, win_start, win_end)
+
     with st.expander("Sent to call list — which job ads it came from"):
         ads_breakdown(icd, win_start, win_end)
 
@@ -3488,6 +3496,130 @@ def _bob(icd: str, key: str, start, end) -> tuple:
 def _ars(icd: str) -> list:
     from automations.icd_sales_board import ars as A2
     return A2.load(icd)
+
+
+@st.cache_data(ttl=600, show_spinner="Reading ad performance…")
+def _ad_kpis(icd: str, start, end) -> dict:
+    from automations.icd_sales_board import ad_kpis as AK
+    return AK.for_icd(icd, start, end)
+
+
+def ad_kpi_section(icd: str, start, end) -> None:
+    """Every ad this office ran in the range, and whether it is worth running.
+
+    The same two numbers Eve's Slack thread carries — what share of the people
+    an ad sent were removed, and how the rest were rated — plus the PRECEDING
+    RANGE beside them, because the figure you can act on is the direction:
+    30% removed is fine after 45% and bad after 12%.
+
+    It reads the page's own sidebar range rather than carrying a date control
+    of its own. The page deliberately has ONE (Megan 2026-08-31), after three
+    sections each had their own window and could each be describing a
+    different stretch of time without saying so."""
+    from automations.icd_sales_board import ad_kpis as AK
+    data = _ad_kpis(icd, start, end)
+    st.markdown("**Ad performance — which ads are worth still running**")
+    if data.get("error") == "no-office":
+        st.caption(f"{icd} isn't on the ad report's office list yet, so there "
+                   f"are no first-round rows to read per ad.")
+        return
+    if data.get("error"):
+        st.caption(f"Couldn't read the interview sheet ({data['error']}).")
+        return
+    ads = data.get("ads") or []
+    if not ads:
+        st.caption("No first-round interviews recorded for this office in "
+                   "that range.")
+        return
+
+    stop = [a for a in ads if a["Verdict"] == "Stop"]
+    watch = [a for a in ads if a["Verdict"] == "Watch"]
+    seen = sum(a["Candidates"] for a in ads)
+    rm = sum(a["Removed"] for a in ads)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Ads running", len(ads))
+    c2.metric("First rounds", f"{seen:,}")
+    c3.metric("Removed", f"{100.0 * rm / seen:.0f}%" if seen else "—",
+              help="Anyone whose Qualify cell isn't 'Qualified'")
+    c4.metric("Worth a look", f"{len(stop) + len(watch)}",
+              help="Ads flagged Stop or Watch")
+
+    # THE ONES TO RUN MORE OF (Megan 2026-09-23). The table below flags what
+    # to stop; without this nothing named the winners, which is the other half
+    # of the decision. Two different questions, so two lines: the ad that
+    # wastes the fewest people, and the ad whose people the interviewers
+    # actually rated.
+    win = data.get("best") or {}
+    if win.get("cleanest") or win.get("rated"):
+        bits = []
+        if win.get("cleanest"):
+            b = win["cleanest"]
+            bits.append(f"**Lowest removal — {b['Ad']}** · "
+                        f"{b['% Removed']:.0f}% of {b['Candidates']}")
+        if win.get("rated"):
+            b = win["rated"]
+            bits.append(f"**Best rated — {b['Ad']}** · "
+                        f"{b['Avg stars']:.1f}⭐ from {b['Rated']}")
+        st.success("  \n".join(bits), icon="⭐")
+
+    show = []
+    for a in ads:
+        last = a["Last % Removed"]
+        # The ARROW IS THE POINT, so it is drawn rather than left to be worked
+        # out from two numbers. No arrow where there is no prior week: a new
+        # ad has not got worse, it has just arrived.
+        if last is None:
+            move = "new"
+        else:
+            d = a["% Removed"] - last
+            move = "—" if abs(d) < 5 else (f"▲ {d:+.0f}" if d > 0
+                                           else f"▼ {d:+.0f}")
+        show.append({
+            "Ad": a["Ad"], "Candidates": a["Candidates"],
+            "% Removed": f"{a['% Removed']:.0f}%",
+            "Prior": "—" if last is None else f"{last:.0f}%",
+            "Move": move,
+            "Avg ⭐": "—" if a["Avg stars"] is None else f"{a['Avg stars']:.1f}",
+            "Verdict": a["Verdict"] or "",
+        })
+    left, right = st.columns([3, 2], gap="medium")
+    with left:
+        st.dataframe(show, use_container_width=True, hide_index=True,
+                     column_config=_centered(show[0]),
+                     height=_grid_height(len(show)))
+    with right:
+        # BY CITY, beside the ads rather than under them (Megan 2026-09-23,
+        # "highest performing city or avgs listed"). An owner picks markets as
+        # well as ads, and one city usually runs several ads — Arlington is
+        # five of Raf's — so the per-ad table alone never answers "where is
+        # working". Best = fewest removed.
+        cities = data.get("cities") or []
+        if cities:
+            st.dataframe(
+                [{"City": c["City"], "Ads": c["Ads"], "People": c["Candidates"],
+                  "% Removed": f"{c['% Removed']:.0f}%"
+                               + ("" if c["Ranked"] else "*"),
+                  "Avg ⭐": "—" if c["Avg stars"] is None
+                            else f"{c['Avg stars']:.1f}"}
+                 for c in cities],
+                use_container_width=True, hide_index=True,
+                height=_grid_height(len(cities)))
+            st.caption("Best city first — fewest removed. `*` is too few "
+                       "people to rank. 'Multiple' is an ad running in more "
+                       "than one market, which names no single city.")
+    prior = data.get("prior")
+    if prior:
+        st.caption(f"Compared with {prior[0]:%b %d} – {prior[1]:%b %d}, the "
+                   f"same number of days before this range.")
+    st.caption(
+        f"First-round interviews in the range, per ad, from the interviewers' "
+        f"ARS REPORT sheet — the same rows Eve's Slack thread counts. "
+        f"**% Removed is the typed Qualify column**, which is the only place "
+        f"that number exists. An ad is only judged once it has sent "
+        f"{AK.MIN_FOR_VERDICT} people: 'Watch' is over {AK.BAD_REMOVED:.0%} "
+        f"removed or under {AK.BAD_STARS} stars, 'Stop' is both. If a Slack "
+        f"thread shows different figures, check its week before anything "
+        f"else — a pinned thread is often last week's.")
 
 
 def ars_breakdown(icd: str, start=None, end=None) -> None:
