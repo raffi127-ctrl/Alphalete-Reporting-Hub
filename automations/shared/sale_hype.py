@@ -612,7 +612,9 @@ BOX = _Box(("Sales", "Volume", "Big", "Huge"), ("Sales",),
 
 # Keyed by the campaign name the office record carries. An office enrolled
 # before campaigns existed has none, and AT&T is what it was.
-NDS = _Nds(METRICS, COUNTED, METRIC_LABEL)
+NDS = _Nds(METRICS + ("Air",), COUNTED,
+           dict(METRIC_LABEL, Air="Air"))   # Air rides along; COUNTED is unchanged
+                                            # (Air is already inside Int Up)
 
 SHAPES = {"b2b_box": BOX, "nds": NDS}
 
@@ -644,6 +646,12 @@ def metrics_for(agent: Dict) -> Dict[str, int]:
         "Int Up": max(upgrades + aia, 0),
         "DTV": max(int(agent.get("dtv_streaming", 0) or 0), 0),
         "NL": max(int(agent.get("wireless_lines_sold", 0) or 0), 0),
+        # AIR ON ITS OWN, as well as inside Int Up. NDS sells AT&T Air and
+        # lines and needs Air / lines / upgrades as three sections with
+        # upgrades outside the total (Megan, 2026-09-22). The AT&T shape
+        # lists four metrics, so this key is dropped for AT&T offices at the
+        # poster and nothing there changes; the NDS shape lists it.
+        "Air": max(aia, 0),
     }
 
 

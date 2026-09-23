@@ -62,20 +62,39 @@ class ScoreboardTextTest(unittest.TestCase):
         for word in ("Big", "Huge"):
             self.assertNotIn(word, out)
 
-    def test_nds_shows_only_lines_and_air(self):
-        """Colten 2026-09-22: NDS sells Air + lines, no DTV, no internet."""
-        sales = {"HERMIONE HICKS": M(0, 1, 0, 5), "SEBASTIAN GRIMALDO": M(0, 0, 0, 5),
-                 "NOBODY": M()}
+    def test_nds_three_sections_upgrades_outside_the_total(self):
+        """Megan 2026-09-22: Air / NLs / Upgrades, upgrades not a unit."""
+        sales = {"HERMIONE HICKS": dict(M(0, 1, 0, 5), Air=1),
+                 "SEBASTIAN GRIMALDO": dict(M(0, 0, 0, 5), Air=0),
+                 "KYLE X": dict(M(0, 1, 0, 2), Air=0),
+                 "NOBODY": dict(M(), Air=0)}
         out = P.scoreboard_text(sales, ["HERMIONE HICKS"], campaign="nds")
         lines = out.split("\n")
-        self.assertEqual(lines[0], "Hermione Hicks 6 (1 Air/Up, 5 NL) \U0001F525")
+        self.assertEqual(lines[0], "Hermione Hicks 6 (1 Air, 5 NL) \U0001F525")
         self.assertEqual(lines[1], "Sebastian Grimaldo 5 (5 NL)")
-        self.assertEqual(lines[2], "")
-        self.assertEqual(lines[3], "Air/Upgrades: 1")
-        self.assertEqual(lines[4], "NL's: 10")
-        self.assertEqual(lines[5], "\U0001F3C6 TOTALS: 11")
-        for word in ("INT:", "DTV", " Up,", " Up)"):
+        self.assertEqual(lines[2], "Kyle X 2 (2 NL, 1 Up)")
+        self.assertEqual(lines[3], "")
+        self.assertEqual(lines[4], "Air: 1")
+        self.assertEqual(lines[5], "NL's: 12")
+        self.assertEqual(lines[6], "Upgrades: 1")
+        self.assertEqual(lines[7], "\U0001F3C6 TOTALS: 13")
+        for word in ("INT:", "DTV"):
             self.assertNotIn(word, out)
+
+    def test_nds_old_payload_without_air_still_renders(self):
+        out = P.scoreboard_text({"A": M(0, 1, 0, 3)}, [], campaign="nds")
+        self.assertIn("A 3 (3 NL, 1 Up)", out)
+        self.assertIn("TOTALS: 3", out)
+
+    def test_the_relay_carries_air_on_its_own(self):
+        from automations.shared import sale_hype as H
+        m = H.metrics_for({"internet_sales": 3, "internet_upgrades": 1, "aia_sales": 1,
+                           "dtv_streaming": 0, "wireless_lines_sold": 5})
+        self.assertEqual(m["Air"], 1)
+        self.assertEqual(m["Int Up"], 2)
+        self.assertEqual(m["Int"], 1)
+        self.assertEqual(tuple(H.shape("nds").metrics)[-1], "Air")
+        self.assertNotIn("Air", H.shape("att").metrics)
 
     def test_att_keeps_the_full_block(self):
         out = P.scoreboard_text({"A": M(1, 1, 1, 1)}, [], campaign="att")

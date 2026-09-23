@@ -217,6 +217,46 @@ def decide_sales(sales: Dict, last_posted: Optional[Dict],
     return moved, merged, False
 
 
+def _nds_scoreboard(sales: Dict, fired: List[str], show=None) -> str:
+    """NDS: Air / lines / upgrades as three sections, upgrades OUTSIDE the
+    total (Megan, 2026-09-22: "colten should have AIR / NLs / Upgrade - 3
+    sections" ... "I don't think upgrades count as a unit of sale though").
+
+    Air comes over on its own key since agent release 2026.09.22.7; before
+    that it sits inside "Int Up", so a payload without "Air" shows the whole
+    bucket as upgrades until the office's machine updates.
+    """
+    from automations.alphalete_sales_board import notify as N
+    rows = []
+    for rep, m in (sales or {}).items():
+        m = m or {}
+        air = int(m.get("Air", 0) or 0)
+        up = max(int(m.get("Int Up", 0) or 0) - air, 0)
+        nl = int(m.get("NL", 0) or 0)
+        if air + nl + up <= 0:
+            continue
+        rows.append((show(rep) if show else rep, air + nl, air, nl, up, rep))
+    if not rows:
+        return ""
+    rows.sort(key=lambda r: -r[1])
+    flames = set(fired or [])
+    lines = []
+    for name, n, air, nl, up, raw in rows:
+        parts = ["%d Air" % air] if air else []
+        parts += ["%d NL" % nl] if nl else []
+        parts += ["%d Up" % up] if up else []
+        line = "%s %d (%s)" % (N.short_name(name), n, ", ".join(parts))
+        if raw in flames or name in flames:
+            line += " " + N.FIRE
+        lines.append(line)
+    lines.append("")
+    lines.append("Air: %d" % sum(r[2] for r in rows))
+    lines.append("NL's: %d" % sum(r[3] for r in rows))
+    lines.append("Upgrades: %d" % sum(r[4] for r in rows))
+    lines.append("%s TOTALS: %d" % (N.TROPHY, sum(r[1] for r in rows)))
+    return "\n".join(lines)
+
+
 def _lines_scoreboard(sales: Dict, fired: List[str], show, per_rep, totals) -> str:
     """The AT&T-shaped board with only the metrics a campaign sells.
 
@@ -306,20 +346,10 @@ def scoreboard_text(sales: Dict, fired: List[str], campaign=None,
     names = tuple(H.shape(campaign).metrics)
     if names == ("Sales", "Volume", "Big", "Huge"):
         return _box_scoreboard(sales, fired, show)
+    if str(campaign or "").strip().lower() == "nds":
+        return _nds_scoreboard(sales, fired, show)
     if names != ("Int", "Int Up", "DTV", "NL"):
         return ""
-    if str(campaign or "").strip().lower() == "nds":
-        # NDS SELLS LINES AND AT&T AIR -- no internet, no DTV (Colten,
-        # 2026-09-22: "Att air / No DTV / No int / Maybe an upgrade but
-        # rarely"; Megan: "only include what he sells for the totals").
-        # SaraPlus counts Air inside "Int Up" (metrics_for: Int Up =
-        # Internet Upgrades + AIA), so that bucket IS Air for this campaign.
-        # ONE NUMBER, TWO THINGS: SaraPlus hands Air and upgrades over
-        # already added together, so the label says both (Megan: "colten
-        # should also have upgrades on his sales text scoreboard").
-        return _lines_scoreboard(sales, fired, show,
-                                 (("Int Up", "Air/Up"), ("NL", "NL")),
-                                 (("Int Up", "Air/Upgrades"), ("NL", "NL's")))
     from automations.alphalete_sales_board import notify as N
     named = {(show(rep) if show else rep): dict(m or {})
              for rep, m in (sales or {}).items()}
