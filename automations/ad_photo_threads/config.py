@@ -118,7 +118,9 @@ OFFICES = [
         "key": "carlos",
         "owner": "Carlos Hidalgo",
         "tz": None,
-        "live": True,          # Eve 9/23, after the preview (9/14-9/22 posted)
+        # Off 9/23 afternoon while the channel is re-posted as one thread per
+        # ad (Raf 9/23); back on once 9/23 is in.
+        "live": False,
         "sheet_id": ARS_A_TO_C,
         "source_channel": "C09L1S3MQ1E",
         "live_channel": "C0C3XGN541G",     # #indeed-photos-carlos-hidalgos-office
