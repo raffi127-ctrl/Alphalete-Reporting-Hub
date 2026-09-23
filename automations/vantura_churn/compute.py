@@ -28,7 +28,11 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Optional
 
-PRODUCT_MAP = {"WIRELESS": "Wireless", "AIR/AWB": "Air", "NEW INTERNET": "Internet"}
+# 'AIR' is the same product: Tableau dropped the '/AWB' suffix overnight on
+# 2026-09-23 (Air read 6/5/0/0 against 35/37/54/26 the day before). Both
+# spellings stay so a rollback on their side can't zero Air again.
+PRODUCT_MAP = {"WIRELESS": "Wireless", "AIR/AWB": "Air", "AIR": "Air",
+               "NEW INTERNET": "Internet"}
 PRODUCT_ORDER = ["Wireless", "Air", "Internet"]
 
 # Crosstab column headers we consume (ATTTRACKER-B2B/ORDERLOG, "Order Log" sheet).

@@ -32,7 +32,14 @@ ORDERLOG_SHEET = "Order Log"
 CHURNRATES_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER-B2B/CHURNRATES/429cb06d-a32e-4d0e-bf06-9acb77587afd/"
-    "ALLTEAMCHURN?:iid=1")
+    "ALLTEAMCHURN?:iid=1"
+    # The saved view pins the product filter to the members that existed when
+    # it was saved, so 'AIR' (Tableau's 2026-09-23 rename of 'AIR/AWB') was
+    # left out and the dashboard base dropped Air too. Name the members in the
+    # URL (raw parens/slash — encoding them selects NOTHING, per b2b_metrics
+    # 2026-09-05). Both Air spellings, so either side of the rename renders.
+    "&Product%20Type%20(Broken%20Out)="
+    "AIR,AIR/AWB,WIRELESS,NEW%20INTERNET")
 CHURNRATES_SHEET = "ICD Churn"
 
 # The product breakout added to CHURNRATES on 2026-08-30. Probed live off
