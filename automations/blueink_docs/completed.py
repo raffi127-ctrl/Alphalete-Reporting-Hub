@@ -9,9 +9,10 @@ Sending is a moment; signing happens whenever the person gets round to it. So
 this is a separate pass that re-reads Blue Ink's own list and ticks whoever has
 finished since last time. Safe to run as often as you like.
 
-Only ever ticks ON. It never un-ticks: somebody may have checked a box by hand
-for a packet sent before this report existed, and clearing that would be
-deleting a colleague's work to satisfy our own view of the world.
+It ticks ON from Blue Ink's completed list. Since 2026-09-22 (Megan) it also
+ticks OFF -- but only a box Blue Ink contradicts, and only when Blue Ink
+actually answered: see `wrongly_ticked` for the rule and its two safety
+valves. A hand tick for a packet Blue Ink shows signed is left exactly alone.
 
 TWO ROUTES to the same answer (2026-09-08). The API goes first, because no
 session can expire out from under it; the browser is the fallback, and was the
@@ -200,7 +201,8 @@ def _stamp(d: dt.date) -> str:
     return "{}/{}/{:02d}".format(d.month, d.day, d.year % 100)
 
 
-def _scan_completed_api(today: dt.date):
+def _scan_completed_api(today: dt.date, lookback: int = LOOKBACK_DAYS,
+                        pages: int = _API_PAGES):
     """({email: date}, {name key: date}) for packets signed inside the window.
 
     ONE sweep of the bundle list for the whole roster, newest first -- the same
@@ -213,7 +215,7 @@ def _scan_completed_api(today: dt.date):
     """
     by_email = {}
     by_name = {}
-    for page in range(1, _API_PAGES + 1):
+    for page in range(1, pages + 1):
         rows = blueink._results(blueink._request(
             "GET", "/bundles/",
             params={"page": page, "per_page": _API_PAGE_SIZE}))
@@ -226,7 +228,7 @@ def _scan_completed_api(today: dt.date):
                 when, exact = _signed_on(b, pk)
                 if not when:
                     continue           # a date we can't read never ticks a box
-                span = LOOKBACK_DAYS if exact else LOOKBACK_DAYS * 2
+                span = lookback if exact else lookback * 2
                 if not 0 <= (today - when).days <= span:
                     continue
                 stamp = _stamp(when)
@@ -375,6 +377,68 @@ def tick(worksheet, people: List[NewStart], done_keys: Dict[str, str]) -> int:
         mark.green(worksheet, targets)
     except Exception as exc:                       # noqa: BLE001
         print(f"Ticked {len(targets)}, but couldn't turn them green: {exc}")
+    return len(targets)
+
+
+# How far back the untick check looks. The sweep's own window is 7 days --
+# "who signed since last time" -- but a box ticked for someone who signed three
+# weeks ago is RIGHT, so the check has to see that far or it would clear it.
+UNTICK_LOOKBACK_DAYS = 45
+UNTICK_PAGES = 20            # 1000 bundles newest-first, ~2 months at this office
+
+
+def signed_recently(people: List[NewStart], today: dt.date = None) -> Dict[str, str]:
+    """{person key: date} for everyone with a SIGNED packet in the last
+    UNTICK_LOOKBACK_DAYS, read through the API. Raises when the API isn't
+    available here -- a failed read must never come back as "nobody signed"."""
+    config.api_key()                                # raises without a key
+    by_email, by_name = _scan_completed_api(
+        today or dt.date.today(), lookback=UNTICK_LOOKBACK_DAYS,
+        pages=UNTICK_PAGES)
+    out = {}
+    for p in people:
+        em = (p.email or "").strip().lower()
+        stamp = (by_email.get(em) if em else None) or by_name.get(p.key)
+        if stamp:
+            out[p.key] = stamp
+    return out
+
+
+def wrongly_ticked(people: List[NewStart], signed: Dict[str, str]) -> List[NewStart]:
+    """The ticked boxes Blue Ink contradicts -- ticked, no signed packet.
+
+    Two safety valves, because an untick fights whoever ticked the box:
+      - Blue Ink shows NOBODY on the tab signed: that's a broken read, not a
+        tab full of wrong ticks. Untick nothing.
+      - more than half the ticked boxes would clear: same. Untick nothing.
+    Either way the caller prints why, so a quiet sweep is never a wrong one.
+    """
+    ticked = [p for p in people if p.blueink_col and p.row and mark.is_ticked(p)]
+    if not ticked:
+        return []
+    if not any(p.key in signed for p in people):
+        print("Untick check skipped: Blue Ink shows no signed packet for anyone "
+              "on this tab, which is a bad read, not a bad tab.")
+        return []
+    wrong = [p for p in ticked if p.key not in signed]
+    if len(wrong) * 2 > len(ticked):
+        print(f"Untick check skipped: it would clear {len(wrong)} of "
+              f"{len(ticked)} ticked boxes -- too many to be right.")
+        return []
+    return wrong
+
+
+def untick(worksheet, people: List[NewStart]) -> int:
+    """Write FALSE into the Blue Ink box of everyone in `people`. One batch."""
+    targets = [p for p in people if p.blueink_col and p.row]
+    if not targets:
+        return 0
+    worksheet.batch_update(
+        [{"range": gspread.utils.rowcol_to_a1(p.row, p.blueink_col),
+          "values": [["FALSE"]]} for p in targets],
+        value_input_option="USER_ENTERED")
+    for p in targets:
+        p.blueink_val = "FALSE"       # so the colour pass sees them as waiting
     return len(targets)
 
 

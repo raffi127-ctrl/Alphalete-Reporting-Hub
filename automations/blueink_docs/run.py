@@ -414,6 +414,13 @@ def _repaint(workbook, worksheet, people: List[NewStart]) -> int:
     the rule; a hidden row catches up on the first sweep after it's shown.
     Idempotent and one batch, so running it every two hours costs one write.
     """
+    done, sent, carried = _colour_groups(workbook, worksheet, people)
+    return (mark.green(worksheet, done) + mark.highlight(worksheet, sent)
+            + mark.highlight(worksheet, carried, color=mark.CARRIED_BLUE))
+
+
+def _colour_groups(workbook, worksheet, people: List[NewStart]):
+    """(signed, sent off this tab, carried over) -- who gets which colour."""
     rows = ledger.read(workbook)
     sent_map = ledger.already_sent(workbook, rows=rows)
     this_tab = {r[ledger.COL_NAME].strip().lower() for r in rows
@@ -432,8 +439,41 @@ def _repaint(workbook, worksheet, people: List[NewStart]) -> int:
             # is not "waiting on them" -- Antashia Rich, 9.21, sent 9/7 and
             # Declined on Friday. Their row keeps whatever it has.
             carried.append(pp)
-    return (mark.green(worksheet, done) + mark.highlight(worksheet, sent)
-            + mark.highlight(worksheet, carried, color=mark.CARRIED_BLUE))
+    return done, sent, carried
+
+
+def _untick_check(workbook, worksheet, people: List[NewStart]) -> List[NewStart]:
+    """Clear any Blue Ink box that Blue Ink itself contradicts, and recolour it.
+
+    Megan 2026-09-22, after the OV sweep ticked a column of boxes it never
+    meant to (Jeremiah Ireland's Blue Ink read "signed", in red). A ticked box
+    is a claim -- "this person signed" -- and Blue Ink is the only thing that
+    can confirm it. So: ticked, but no signed packet in Blue Ink's last 45 days,
+    means the tick comes off and the cell goes back to blue (still waiting) or
+    white (no packet we know of). Refuses to act on a bad read -- see
+    completed.wrongly_ticked for the two valves -- and prints every name it
+    clears, so nobody has to wonder where a tick went.
+    """
+    try:
+        signed = completed.signed_recently(people)
+    except Exception as exc:                       # noqa: BLE001
+        print(f"Untick check skipped -- couldn't read Blue Ink's signed list "
+              f"({exc}). A failed read is not a reason to clear anything.")
+        return []
+    wrong = completed.wrongly_ticked(people, signed)
+    if not wrong:
+        return []
+    completed.untick(worksheet, wrong)
+    print(f"Unticked {len(wrong)} box(es) Blue Ink shows NOT signed:")
+    for pp in wrong:
+        print(f"  row {pp.row:>3}  {pp.name}")
+    done, sent, carried = _colour_groups(workbook, worksheet, wrong)
+    known = {id(pp) for pp in sent + carried}
+    rest = [pp for pp in wrong if id(pp) not in known]
+    mark.highlight(worksheet, sent)
+    mark.highlight(worksheet, carried, color=mark.CARRIED_BLUE)
+    mark.clear(worksheet, rest)
+    return wrong
 
 
 def _sync_completed(worksheet, people: List[NewStart],
@@ -638,6 +678,11 @@ def _main(argv=None) -> int:
             raise
         print(f"Checked off {n} completed packet(s) in {config.COL_BLUEINK!r} "
               f"on {ws.title!r}.")
+        # AFTER the ticks, and API-only: the browser route can't read far
+        # enough back to know an old tick is right, and a wrong untick fights
+        # whoever ticked the box.
+        if not args.sweep_browser:
+            _untick_check(workbook, ws, people)
 
         # The browser session still matters -- but for MONDAY'S SEND, which is
         # the one thing the API can't do (its bundles bill as Bulk Envelopes,

@@ -103,6 +103,27 @@ def main() -> int:
                  ws.painted == {20: mark.SENT_BLUE, 21: mark.DONE_GREEN,
                                 22: mark.CARRIED_BLUE}, bad)
 
+    # The untick check (Megan 2026-09-22): a ticked box Blue Ink contradicts
+    # comes off -- unless the read itself looks wrong.
+    ann, bo, cy, di = (_Person("Ann", 30, ticked="TRUE"), _Person("Bo", 31, ticked="TRUE"),
+                       _Person("Cy", 32, ticked="TRUE"), _Person("Di", 33))
+    for pp in (ann, bo, cy, di):
+        pp.key = pp.name.lower()
+    signed = {"ann": "9/20/26", "bo": "9/21/26"}
+    bad = _check("ticked + not signed in Blue Ink -> unticked; signed ones kept",
+                 completed.wrongly_ticked([ann, bo, cy, di], signed) == [cy], bad)
+    bad = _check("valve: Blue Ink shows nobody signed -> untick nothing",
+                 completed.wrongly_ticked([ann, bo, cy], {}) == [], bad)
+    bad = _check("valve: more than half the ticks would clear -> untick nothing",
+                 completed.wrongly_ticked([ann, bo, cy], {"ann": "9/20/26"}) == [], bad)
+    bad = _check("an empty box is never 'wrongly ticked'",
+                 completed.wrongly_ticked([di, ann], {"ann": "x"}) == [], bad)
+    ws = _Sheet()
+    completed.untick(ws, [cy])
+    bad = _check("untick writes FALSE and the person now reads as waiting",
+                 [v["values"] for v in ws.values] == [[["FALSE"]]]
+                 and not mark.is_ticked(cy), bad)
+
     bad = _check("the send colour is not green any more",
                  mark.SENT_BLUE != mark.DONE_GREEN
                  and mark.CARRIED_BLUE != mark.DONE_GREEN, bad)

@@ -38,6 +38,7 @@ SENT_BLUE = {"red": 0xC9 / 255, "green": 0xDA / 255, "blue": 0xF8 / 255}     # l
 # rescheduled start date, and that should be visible without opening anything.
 CARRIED_BLUE = {"red": 0xA4 / 255, "green": 0xC2 / 255, "blue": 0xF4 / 255}  # light cornflower blue 2
 DONE_GREEN = {"red": 0xD9 / 255, "green": 0xEA / 255, "blue": 0xD3 / 255}    # light green 3
+NO_FILL = {"red": 1.0, "green": 1.0, "blue": 1.0}                            # white: nothing to say
 
 # What a ticked checkbox reads as. The one list: completed.py reads it from here.
 TICKED = {"true", "yes", "y", "1", "x", "✓"}
@@ -75,6 +76,13 @@ def green(worksheet, people: List[NewStart]) -> int:
     hand ticks included -- a box somebody checked by hand is just as finished,
     and leaving it blue would read as still waiting."""
     return _paint(worksheet, [(p, DONE_GREEN) for p in people
+                              if p.row and p.blueink_col])
+
+
+def clear(worksheet, people: List[NewStart]) -> int:
+    """Back to white -- for a box that was unticked and has no packet we know
+    of, so neither "waiting" nor "signed" is true of it."""
+    return _paint(worksheet, [(p, NO_FILL) for p in people
                               if p.row and p.blueink_col])
 
 
