@@ -41,28 +41,48 @@ class PostThread(unittest.TestCase):
 
 
 class ContentsBackfill(unittest.TestCase):
-    """backfill_tier --board rep_lvl: the contents reply gains the line under
-    the tier line, once."""
+    """backfill_tier --board rep_lvl: the line goes into the contents reply
+    (found by content, not position), once, and comes back off any caption it
+    got glued onto (the live thread, 2026-09-23)."""
 
-    def _client(self, text):
+    def _client(self, *texts):
         c = mock.Mock()
-        c.conversations_replies.return_value = {"messages": [
-            {"ts": "1.0", "text": "parent"}, {"ts": "1.1", "text": text}]}
+        msgs = [{"ts": "1.0", "text": "parent"}]
+        msgs += [{"ts": "1.{}".format(i + 1), "text": t}
+                 for i, t in enumerate(texts)]
+        c.conversations_replies.return_value = {"messages": msgs}
         return c
 
+    def _contents(self, *extra):
+        return "\n".join([":bar_chart: Rev", ":trophy: Box Tier Bonus Rep Level"]
+                         + list(extra) + [run.WORKBOOK_LINE])
+
     def test_inserted_under_the_tier_line(self):
-        from automations.box_order_log import backfill_tier, tier_bonus
-        c = self._client("\n".join(["A", tier_bonus.TIER_LINE, "B"]))
+        from automations.box_order_log import backfill_tier
+        c = self._client(self._contents())
         backfill_tier._add_to_contents(c, "C1", "1.0")
-        new = c.chat_update.call_args.kwargs["text"].split("\n")
-        self.assertEqual(new, ["A", tier_bonus.TIER_LINE,
-                               rep_lvl.REP_LVL_LINE, "B"])
+        kw = c.chat_update.call_args.kwargs
+        self.assertEqual(kw["ts"], "1.1")
+        self.assertEqual(kw["text"].split("\n")[2], rep_lvl.REP_LVL_LINE)
 
     def test_not_added_twice(self):
         from automations.box_order_log import backfill_tier
-        c = self._client(":clipboard: " + rep_lvl.BOARD_NAME)
+        c = self._client(self._contents(":clipboard: " + rep_lvl.BOARD_NAME))
         backfill_tier._add_to_contents(c, "C1", "1.0")
         c.chat_update.assert_not_called()
+
+    def test_repairs_the_glued_caption(self):
+        from automations.box_order_log import backfill_tier
+        glued = ":clipboard: {}\n:moneybag: BOX Revenue by Status".format(
+            rep_lvl.BOARD_NAME)
+        c = self._client(self._contents(), ":zap: Act", glued,
+                         ":clipboard: " + rep_lvl.BOARD_NAME)
+        backfill_tier._add_to_contents(c, "C1", "1.0")
+        calls = {k.kwargs["ts"]: k.kwargs["text"]
+                 for k in c.chat_update.call_args_list}
+        self.assertEqual(calls["1.3"], ":moneybag: BOX Revenue by Status")
+        self.assertIn(rep_lvl.BOARD_NAME, calls["1.1"])
+        self.assertNotIn("1.4", calls)          # the image reply is left alone
 
 
 if __name__ == "__main__":

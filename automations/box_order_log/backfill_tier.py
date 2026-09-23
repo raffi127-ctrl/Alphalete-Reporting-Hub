@@ -191,6 +191,8 @@ def _one_channel(client, name: str, channel: str, day, args,
     print("  board already in thread : {}".format("yes" if have_board else "no"))
     print("  header already correct  : {}".format("no" if needs_header else "yes"))
     if have_board and not needs_header:
+        if args.board == "rep_lvl" and args.post:
+            _add_to_contents(client, channel, ts)   # repairs a bad list edit
         print("  ✅ nothing to do — this thread already has the board and "
               "says so.")
         return True
@@ -226,21 +228,43 @@ def _one_channel(client, name: str, channel: str, day, args,
 
 def _add_to_contents(client, channel: str, ts: str) -> None:
     """Put the Rep Lvl line into the contents reply, right under the tier line
-    (where run.py lists it). Best-effort: the picture is what matters."""
+    (where run.py lists it), and take it back OUT of any other reply it landed
+    in. Best-effort: the picture is what matters.
+
+    The contents reply is found by WHAT IT SAYS (it lists both the tier board
+    and the workbook), never by position: on 2026-09-23 "first reply" picked the
+    Revenue by Status caption instead and the line got glued on top of it. A
+    re-run repairs that case too.
+    """
     try:
-        rs = client.conversations_replies(channel=channel, ts=ts, limit=5)
+        rs = client.conversations_replies(channel=channel, ts=ts, limit=200)
         replies = rs.get("messages", [])[1:]
-        first = replies[0] if replies else None
-        text = (first or {}).get("text") or ""
-        lines = text.split("\n")
-        if not first or line_key(rep_lvl.REP_LVL_LINE) in {
-                line_key(ln) for ln in lines}:
-            return
+        rl_key = line_key(rep_lvl.REP_LVL_LINE)
         tier_key = line_key(tier_bonus.TIER_LINE)
+        need = {tier_key, line_key(WORKBOOK_LINE)}
+        contents = None
+        for m in replies:
+            lines = (m.get("text") or "").split("\n")
+            keys = {line_key(ln) for ln in lines}
+            if need <= keys and contents is None:
+                contents = m
+            elif len(lines) > 1 and rl_key in keys:
+                # a caption the line was wrongly glued onto: strip it back off
+                kept = [ln for ln in lines if line_key(ln) != rl_key]
+                client.chat_update(channel=channel, ts=m["ts"],
+                                   text="\n".join(kept))
+                print("  ✓ took the line back off reply {}".format(m["ts"]))
+        if contents is None:
+            print("  ⚠ contents reply not found — list left as is",
+                  file=sys.stderr)
+            return
+        lines = (contents.get("text") or "").split("\n")
+        if rl_key in {line_key(ln) for ln in lines}:
+            return
         at = next((i + 1 for i, ln in enumerate(lines)
-                   if line_key(ln) == tier_key), 0)
+                   if line_key(ln) == tier_key), len(lines))
         lines.insert(at, rep_lvl.REP_LVL_LINE)
-        client.chat_update(channel=channel, ts=first["ts"],
+        client.chat_update(channel=channel, ts=contents["ts"],
                            text="\n".join(lines))
         print("  ✓ contents list now names the board")
     except Exception as exc:                              # noqa: BLE001
