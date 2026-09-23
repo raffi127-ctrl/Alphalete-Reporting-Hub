@@ -769,7 +769,10 @@ def main(argv=None) -> int:
     # at the tabs themselves and wait until they carry today. Instant on a
     # normal morning; see readiness.py for the deadline and the alert. A
     # backdated --date rebuild is checking history, not today — never wait.
-    if not (args.no_wait or args.skip_sheets or args.date):
+    # BACKDATED, not "any --date" (2026-09-23): review_gate's 07:15 deadline
+    # build passes --date <today>, and skipping the wait there put up all six
+    # blocks with cancel / ABP / churn still on 9/22.
+    if not (args.no_wait or args.skip_sheets or today != dt.date.today()):
         from automations.captainship_drafts import readiness
         readiness.wait_for_fills(selected, today,
                                  logfn=lambda m: print(m, flush=True))
