@@ -442,73 +442,89 @@ def assess_resume_check(now: dt.datetime | None = None) -> dict:
 
 
 def run_resume_check(dry_run: bool = False, now: dt.datetime | None = None) -> int:
-    """Alert the corrections channel when a machine can't get past Indeed's check
-    on its own, and ✅ the thread as soon as numbers are being read again."""
+    """ONE alert per MACHINE when Indeed's check is shutting the resume reads out,
+    and ✅ as soon as numbers are being read again.
+
+    Per OFFICE was wrong (2026-09-22 -> 23): the check goes stubborn across a whole
+    machine at once, so Megan woke up to five near-identical tickets naming five
+    offices and one fix. The offices belong in ONE ticket, as a list.
+    """
     now = now or dt.datetime.now()
-    for office, (walls, fills, source) in sorted(assess_resume_check(now).items()):
-        try:
-            st = json.loads(_cf_state_path(office).read_text())
-        except Exception:  # noqa: BLE001
-            st = {}
-        label = _office_label(office)
-        print(f"[cf-watch] {label}: walled_ticks={walls} numbers_read={fills} "
-              f"({source})")
-        # Numbers are being read → whatever was open is over.
-        if fills:
-            if st.get("alerted_at"):
-                try:
-                    from automations.shared import incident_thread as _inc
-                    closed = _inc.ensure_closed(
-                        _cf_incident_key(office),
-                        what="*Applicant Push* — Indeed's resume check on %s" % label,
-                        detail="Numbers are being read off resumes again; nothing "
-                               "to clear.",
-                        channel=_channel(), dry_run=dry_run)
-                except Exception as e:  # noqa: BLE001
-                    print(f"[cf-watch] couldn't close the thread "
-                          f"({type(e).__name__}: {str(e)[:80]})")
-                    closed = False
-                if closed and not dry_run:
-                    _cf_state_path(office).write_text("{}")
-                    print("[cf-watch] episode closed (✅)")
-            continue
-        if walls < CF_WALL_TICKS:
-            continue
-        last = st.get("alerted_at")
-        if last:
+    seen = assess_resume_check(now)
+    if not seen:
+        return 0
+    machine = _machine()
+    blocked = sorted(o for o, (w, f, _s) in seen.items()
+                     if f == 0 and w >= CF_WALL_TICKS)
+    reading = sorted(o for o, (_w, f, _s) in seen.items() if f)
+    for office, (walls, fills, source) in sorted(seen.items()):
+        print(f"[cf-watch] {_office_label(office)}: walled_ticks={walls} "
+              f"numbers_read={fills} ({source})")
+
+    path = _cf_state_path(machine.replace(" ", "_"))
+    try:
+        st = json.loads(path.read_text())
+    except Exception:  # noqa: BLE001
+        st = {}
+
+    if not blocked:
+        if st.get("alerted_at"):
             try:
-                if (now - dt.datetime.fromisoformat(last)).total_seconds() \
-                        < RE_ALERT_HOURS * 3600:
-                    print("[cf-watch] still blocked, alerted recently — no re-ping")
-                    continue
-            except ValueError:
-                pass
-        machine = _machine()
-        title = (":rotating_light: *Indeed is asking to verify a human — %s, %s*"
-                 % (label, machine))
-        body = [
-            "Indeed's *“Verify you are human”* box did not clear by itself "
-            "on the last %d resume reads for %s, so the walk is opening resumes "
-            "and getting the check instead of the number." % (walls, label),
-            "Nobody is written off — these applicants stay in the queue — but no "
-            "phone numbers are being filled while it is closed.",
-            "",
-            "*Fix (~1 min, on %s):* run this, tick the box once in the window that "
-            "opens, then close it. One tick covers the whole session." % machine,
-            "```cd ~/recruiting-report && PYTHONPATH=. .venv/bin/python -m "
-            "automations.oat_processing.cf_clear_window %s```" % office,
-            "",
-            "_Auto-clears here as soon as a number is read again._",
-        ]
-        if _post(title, body, dry_run, office=office,
-                 key=_cf_incident_key(office),
-                 channel_line="*Applicant Push* — Indeed is asking to verify a "
-                              "human on %s (%s); numbers are not being read"
-                              % (_office_label(office), machine)):
-            if not dry_run:
-                _cf_state_path(office).write_text(json.dumps(
-                    {"alerted_at": now.isoformat(), "walls": walls}))
-            print("[cf-watch] ALERT posted")
+                from automations.shared import incident_thread as _inc
+                closed = _inc.ensure_closed(
+                    _cf_incident_key(machine.replace(" ", "_")),
+                    what="*Applicant Push* — Indeed's resume check on %s" % machine,
+                    detail="Numbers are being read off resumes again on %s; "
+                           "nothing to clear." % (", ".join(reading) or machine),
+                    channel=_channel(), dry_run=dry_run)
+            except Exception as e:  # noqa: BLE001
+                print(f"[cf-watch] couldn't close the thread "
+                      f"({type(e).__name__}: {str(e)[:80]})")
+                closed = False
+            if closed and not dry_run:
+                path.write_text("{}")
+                print("[cf-watch] episode closed (✅)")
+        return 0
+
+    last = st.get("alerted_at")
+    if last:
+        try:
+            if (now - dt.datetime.fromisoformat(last)).total_seconds() \
+                    < RE_ALERT_HOURS * 3600:
+                print("[cf-watch] still blocked, alerted recently — no re-ping")
+                return 0
+        except ValueError:
+            pass
+
+    names = ", ".join("%s (%s)" % (o, seen[o][0]) for o in blocked)
+    title = (":rotating_light: *Indeed is asking to verify a human — %s*" % machine)
+    body = [
+        "Indeed's *\u201cVerify you are human\u201d* box is not clearing by itself "
+        "on %s, so the walk opens a resume and gets the check instead of the "
+        "number." % machine,
+        "*Offices shut out* (walled ticks): %s" % names,
+        ("*Still reading numbers:* %s" % ", ".join(reading)) if reading
+        else "*No office on this machine is reading numbers right now.*",
+        "Nobody is written off — these applicants stay in the queue and the walk "
+        "keeps trying; it gets in by itself a good share of the time.",
+        "",
+        "*If you want them now (~1 min, on %s):* run this, tick the box once in "
+        "the window that opens, and it drains that office's queue in the same "
+        "window." % machine,
+        "```cd ~/recruiting-report && PYTHONPATH=. .venv/bin/python -m "
+        "automations.oat_processing.cf_clear_window --all```",
+        "",
+        "_Auto-clears here as soon as a number is read again._",
+    ]
+    if _post(title, body, dry_run, office=blocked[0],
+             key=_cf_incident_key(machine.replace(" ", "_")),
+             channel_line="*Applicant Push* — Indeed is asking to verify a human "
+                          "on %s; %d office(s) are not reading numbers"
+                          % (machine, len(blocked))):
+        if not dry_run:
+            path.write_text(json.dumps(
+                {"alerted_at": now.isoformat(), "offices": blocked}))
+        print("[cf-watch] ALERT posted")
     return 0
 
 
