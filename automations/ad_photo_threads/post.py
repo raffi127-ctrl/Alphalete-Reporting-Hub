@@ -522,21 +522,63 @@ def retire_channel(channel: str, *, cl=None, dry_run: bool = False) -> Dict[str,
     was posted today and have it reposted on the new channel"). Deletes ONLY
     what this report posted: the thread headers in state and, inside those
     threads, Lucy's own replies and their screenshots. A person's reply in
-    one of those threads is left alone. Then forgets the channel's state, so
-    nothing points at deleted posts."""
+    one of those threads is left alone.
+
+    Each thread is forgotten the moment it's deleted, not at the end: 9/23 a
+    retire in Carlos's channel died halfway (read timeout) with the whole
+    state still in place, and the next run replied into headers that no
+    longer existed -- Slack put those replies loose in the channel. Then a
+    sweep deletes any of Lucy's top-level posts the state doesn't know about
+    (those loose replies), so a retire leaves the channel clean either way."""
     cl = cl or collect._client()
     me = cl.auth_test()["user_id"]
     state = _load_state()
     ch = state.get(channel) or {}
     counts = {"threads": 0, "messages": 0, "files": 0, "kept_others": 0}
-    for wk in (ch.get("weeks") or {}).values():
-        for ad in wk.values():
+    for wk in list((ch.get("weeks") or {}).values()):
+        for key, ad in list(wk.items()):
             if ad.get("thread_ts"):
                 _delete_thread(cl, channel, ad["thread_ts"], me, counts, dry_run)
+            if not dry_run:
+                del wk[key]
+                _save_state(state)
     if not dry_run and channel in state:
         del state[channel]
         _save_state(state)
+    _sweep_loose(cl, channel, me, counts, dry_run)
     return counts
+
+
+def _sweep_loose(cl, channel: str, me: str, counts: Dict[str, int],
+                 dry_run: bool = False) -> None:
+    """Every top-level post of Lucy's still in the channel goes, with its
+    thread (Lucy's replies only). Other people's posts are never touched."""
+    cursor = None
+    while True:
+        r = cl.conversations_history(channel=channel, limit=200, cursor=cursor)
+        for m in r.get("messages", []):
+            if m.get("user") != me or m.get("subtype"):
+                continue
+            if m.get("reply_count"):
+                _delete_thread(cl, channel, m["ts"], me, counts, dry_run)
+                continue
+            for f in m.get("files") or []:
+                counts["files"] += 1
+                if not dry_run:
+                    try:
+                        cl.files_delete(file=f["id"])
+                    except Exception as e:       # noqa: BLE001
+                        print(f"  file {f.get('id')} not deleted: {str(e)[:120]}")
+            counts["messages"] += 1
+            if not dry_run:
+                try:
+                    cl.chat_delete(channel=channel, ts=m["ts"])
+                except Exception as e:           # noqa: BLE001
+                    if "message_not_found" not in str(e):
+                        print(f"  message {m['ts']} not deleted: {str(e)[:120]}")
+        cursor = (r.get("response_metadata") or {}).get("next_cursor")
+        if not cursor:
+            return
 
 
 def retire_week(channel: str, monday: dt.date, *, cl=None,

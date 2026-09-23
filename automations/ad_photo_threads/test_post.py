@@ -207,9 +207,13 @@ class PublishTests(unittest.TestCase):
         gone, files = [], []
         cl.chat_delete = lambda **kw: gone.append(kw["ts"])
         cl.files_delete = lambda **kw: files.append(kw["file"])
+        cl.conversations_history = lambda **kw: {"messages": [
+            {"ts": "200.1", "user": "ULUCY", "files": [{"id": "F8"}]},   # loose reply
+            {"ts": "200.2", "user": "UEVE"},
+            {"ts": "200.3", "user": "ULUCY", "subtype": "channel_join"}]}
         c = post.retire_channel("C1", cl=cl)
-        self.assertEqual(gone, ["100.2", "100.1"])           # replies, then header
-        self.assertEqual(files, ["F9"])
+        self.assertEqual(gone, ["100.2", "100.1", "200.1"])  # replies, header, loose
+        self.assertEqual(files, ["F9", "F8"])
         self.assertEqual(c["kept_others"], 1)
         self.assertNotIn("C1", post._load_state())
 
