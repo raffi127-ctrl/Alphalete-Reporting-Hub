@@ -84,7 +84,13 @@ class NoThreadMachineryIsLeftBehind(unittest.TestCase):
 
     def test_the_send_does_not_ask_for_a_thread(self):
         src = inspect.getsource(K.run)
-        self.assertIn('_upload(d["channel_id"], boards, comment)', src)
+        # THE RULE IS "NO THREAD", not a spelling of the upload call. The
+        # third argument stopped being `comment` on 2026-09-24, when the
+        # caption became per-room -- Kash's #palace-sales carries the typed
+        # gap list in its caption and the other rooms carry the heading
+        # alone -- so pinning the literal call failed on a change that has
+        # nothing to do with threads.
+        self.assertIn('_upload(d["channel_id"], boards,', src)
         self.assertNotIn("thread_ts", src)
 
 

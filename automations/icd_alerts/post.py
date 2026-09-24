@@ -763,6 +763,65 @@ def set_knocks_cadence(office_key: str, minutes: int, book=None) -> bool:
     return False
 
 
+def set_knocks_gaps(office_key: str, minutes: int, book=None,
+                    channel_id: str = "") -> bool:
+    """How often a Slack room's board caption carries the typed gap list.
+
+    `minutes` is the list's own cadence -- 60 against a 30-minute board is
+    "every other board" -- and 0 removes it, which is also the default for
+    every room that has never been given one.
+
+    SAME COLUMN AND SAME REASON AS set_knocks_cadence: OURS, never "Knocks:
+    Wanted". A cadence written into the office's own column is put back by
+    their machine on the next sweep, the relay reads the disagreement as a new
+    request, and the approval CLEARS -- which is how Cyrus lost a day of
+    boards on 2026-09-15.
+
+    AND ONLY COLUMN K, not K:L. The approval flag beside it is a different
+    fact: writing TRUE here would approve a room's boards as a side effect of
+    turning its gap list on, and this is a setting, not a sign-off.
+
+    A HAND-EDITED JSON CELL IS THE THING THIS EXISTS TO AVOID. It is one
+    character between a working room and a silent one, and nothing would say
+    which had happened.
+
+    `channel_id` narrows it to one room for an office with several; the
+    default is every approved room, which is what a one-room office wants.
+    """
+    if book is None:
+        from automations.recruiting_report.fill import open_by_key
+        book = open_by_key(RELAY_SPREADSHEET_ID)
+    tab = book.worksheet(CHANNELS_TAB)
+    key = office_key.strip().lower()
+    want = (channel_id or "").strip()
+    for i, row in enumerate(tab.get_all_values()[1:], start=2):
+        if (row[CH_OFFICE] or "").strip().lower() != key:
+            continue
+        try:
+            dests = json.loads(row[CH_KN_APPROVED_JSON] or "[]")
+        except ValueError:
+            return False
+        if not dests:
+            return False
+        hit = False
+        for d in dests:
+            if want and (d.get("channel_id") or "").strip() != want:
+                continue
+            hit = True
+            if int(minutes) > 0:
+                d["gaps_min"] = int(minutes)
+            else:
+                # OFF IS AN ABSENT KEY, not a zero. The poster treats both the
+                # same, but a room whose setting was removed should read like
+                # every other room that never had one.
+                d.pop("gaps_min", None)
+        if not hit:
+            return False
+        tab.update(values=[[json.dumps(dests)]], range_name="K%d" % i)
+        return True
+    return False
+
+
 def pending_texts(book=None) -> List[Dict]:
     """Offices that asked for their board as a text and are not signed off."""
     if book is None:

@@ -346,7 +346,16 @@ class ATextIsTheBoardAndNothingElse(unittest.TestCase):
         i = src.index("_text(P.text_group_of")
         call = src[src.index("else:", i):src.index("posted_at[d[", i)]
         self.assertIn("_upload(", call, "the Slack post is gone")
-        self.assertIn("comment", call, "the Slack post lost its heading too")
+        # AND IT WAS SPELLED A GIVEN WAY AGAIN. `comment` became
+        # `captions[channel_id]` on 2026-09-24, when the caption stopped being
+        # one string for every room: Kash's #palace-sales carries the typed
+        # gap list in it and the other nine rooms carry the heading alone. The
+        # rule is unchanged, so this now asks the question the docstring above
+        # always meant -- is there a caption, and is it not empty.
+        self.assertTrue("comment" in call or "captions[" in call,
+                        "the Slack post lost its heading too")
+        self.assertNotIn('boards, "")', call,
+                         "the Slack post carries an empty caption")
 
 
 class TheTextCarriesTheGapList(unittest.TestCase):

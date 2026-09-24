@@ -10,6 +10,11 @@ rep channel once an hour is a normal answer (it is why the disposition
 enrolment carries destinations rather than one cadence), so "is this due?" is
 asked per room and answered from when THAT room last got one.
 
+AND THE TYPED GAP LIST HAS A SECOND, SLOWER CLOCK of its own inside that: a
+room can take a board every 30 minutes and the list once an hour, riding
+every other board's caption rather than posting on its own (see
+GAPS_IN_SLACK_KEY).
+
   python -m automations.icd_alerts.knocks_post                  # dry run
   python -m automations.icd_alerts.knocks_post --send
   python -m automations.icd_alerts.knocks_post --office kash --force
@@ -39,6 +44,25 @@ STALE_MINUTES = 25
 
 GAP_THRESHOLD_MIN = 15
 OUT_DIR = Path.home() / ".config" / "recruiting-report" / "icd_knocks_cards"
+
+# THE TYPED GAP LIST IN A SLACK CHANNEL, on its own slower clock.
+#
+# Kash, 2026-09-24: he wants the "15 min of gaps" list "with his slack channel
+# knock boards but on every other board post" -- his board posts every 30
+# minutes and he wants the list once an hour. Until now the list only ever
+# went to iMessage groups: a Slack destination got the header line and the
+# picture, here and in gap_alerts both.
+#
+# ONE MESSAGE, NOT TWO (Raf 2026-09-24). It rides the board's own caption, so
+# the room gets one notification and the list sits with the picture it
+# describes rather than above or below a separate post.
+#
+# PER DESTINATION and OFF unless the approved JSON carries `gaps_min`, because
+# which room wants a list is the same kind of decision as how often that room
+# wants a board -- it belongs beside `cadence_min`, not in a table of offices.
+# Set it with post.set_knocks_gaps(); #palace-sales is the only room with it
+# today, and Raf's #alphalete-lvl1-chat is untouched.
+GAPS_IN_SLACK_KEY = "gaps_min"
 
 # Fixed-time destinations (cadence_min == 0) post at these moments, the same
 # three knocks_intraday already uses. A slot counts as hit if we are within
@@ -86,6 +110,66 @@ def is_due(dest: Dict, last_posted: Optional[dt.datetime],
     if last_posted is None:
         return True
     return (now - last_posted) >= dt.timedelta(minutes=cadence)
+
+
+def _gaps_marker(channel_id: str) -> str:
+    """The Posted-cell key for "when this room last got the typed gap list".
+
+    It lives in the same cell as the board's own marker, prefixed so the two
+    cannot collide: `posted_at` is only ever read by exact channel id, so an
+    extra key is invisible to the board's due-check.
+    """
+    return "gaps|%s" % channel_id
+
+
+def wants_gaps(dest: Dict) -> bool:
+    """Has this room been given the typed gap list at all?
+
+    ASKED SEPARATELY from whether it is due, and that separation is the whole
+    guard: `--force` exists to ignore a clock, `--force --send` is a real
+    thing somebody does by hand to re-post a board, and a force that also
+    skipped this check would put a gap list into nine rooms that never asked
+    for one. A clock is the kind of thing to override. An opt-in is not.
+    """
+    return int(dest.get(GAPS_IN_SLACK_KEY) or 0) > 0
+
+
+def gaps_due(dest: Dict, last_gaps: Optional[dt.datetime],
+             board_posted: Optional[dt.datetime], now: dt.datetime) -> bool:
+    """Does the board about to go to THIS room carry the typed gap list?
+
+    NOT THE DAY'S FIRST BOARD (Raf 2026-09-24: start on the second board of
+    the day, then every other). `board_posted` is when this room last got a
+    board TODAY -- the Posted cell is per office per day -- so None means the
+    board about to go out is the day's first one and the list waits for the
+    next.
+
+    Then once per `gaps_min`, measured from when the list actually went out
+    rather than from a fixed minute, which is what keeps it self-correcting. A
+    room's boards are never closer together than that room's own cadence, so
+    at 30-minute boards and a 60-minute list it lands on the second, fourth
+    and sixth board; and when a board is skipped -- a stale relay, a machine
+    that stopped -- the list simply rides the next board an hour or more out.
+    It can never arrive twice inside the hour.
+    """
+    if not wants_gaps(dest):
+        return False
+    if last_gaps is None:
+        return board_posted is not None
+    minutes = int(dest.get(GAPS_IN_SLACK_KEY) or 0)
+    return (now - last_gaps) >= dt.timedelta(minutes=minutes)
+
+
+def caption_for(comment: str, gap_list: str) -> str:
+    """The board's Slack caption: the header line, and the gap list under it.
+
+    ONE DEFINITION so the dry-run preview prints exactly what the room gets --
+    a preview that assembles the message its own way is a preview of nothing.
+
+    An empty list adds nothing at all, not a heading with a blank under it:
+    a quiet stretch posts the board on its own (never post blank).
+    """
+    return (comment + "\n\n" + gap_list) if gap_list else comment
 
 
 def _after_hours_slot(office, now: dt.datetime) -> bool:
@@ -333,18 +417,58 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
             % (key, len(rows_for_board), shape,
                ", ".join(d.get("channel_name") or d["channel_id"] for d in due)))
 
+        # THE CAPTIONS, BEFORE ANYTHING IS SENT, so a dry run can print the
+        # exact message each room would get. `remember=send` is the reason
+        # this is safe to do twice: a preview must not consume the ⏰ state
+        # and leave the next real list with nothing marked as newly over.
+        #
+        # KNOWN AND SMALL: on a real send the names are recorded here, before
+        # the upload is known to have worked, so a room whose post then fails
+        # gets its retry list an hour later with those names no longer marked
+        # as newly over. The iMessage leg has always had the same shape. The
+        # HOUR is not lost that way -- that marker is stamped only after a
+        # post succeeds, below -- so the retry still happens.
+        comment = _comment(office, rows_for_board, now)
+        captions, listed_gaps = {}, {}
+        for d in due:
+            cid = d["channel_id"]
+            if P.is_text_dest(cid):
+                continue
+            # `force` overrides the CLOCK only, never the opt-in -- see
+            # wants_gaps. A preview has to show the room its own message.
+            if wants_gaps(d) and (
+                    force or gaps_due(d, posted_at.get(_gaps_marker(cid)),
+                                      posted_at.get(cid), now)):
+                listed_gaps[cid] = _gaps_text(office, rows_for_board, now,
+                                              dest=cid, slack=True,
+                                              remember=send)
+            captions[cid] = caption_for(comment, listed_gaps.get(cid, ""))
+
         if not send:
+            for d in due:
+                cid = d["channel_id"]
+                if P.is_text_dest(cid):
+                    continue
+                log("%-10s %s would read:\n%s\n"
+                    % (key, d.get("channel_name") or cid, captions[cid]))
             continue
 
-        comment = _comment(office, rows_for_board, now)
         for d in due:
             try:
                 if P.is_text_dest(d["channel_id"]):
                     _text(P.text_group_of(d["channel_id"]), boards,
-                          _gaps_text(office, rows_for_board, now))
+                          _gaps_text(office, rows_for_board, now,
+                                     dest=d["channel_id"]))
                 else:
-                    _upload(d["channel_id"], boards, comment)
+                    _upload(d["channel_id"], boards,
+                            captions[d["channel_id"]])
                 posted_at[d["channel_id"]] = now
+                # THE HOUR IS SPENT ONLY ON A LIST THAT ACTUALLY WENT OUT. A
+                # room that failed, or one where nobody was over the line,
+                # gets its list on the next board rather than waiting another
+                # hour for a message that was never sent.
+                if listed_gaps.get(d["channel_id"]):
+                    posted_at[_gaps_marker(d["channel_id"])] = now
                 posted_total += 1
             except Exception as e:  # noqa: BLE001 — one room must not cost the rest
                 where = d.get("channel_name") or d["channel_id"]
@@ -522,7 +646,9 @@ def _comment(office, rows: List[Dict], now: dt.datetime) -> str:
     return "*%s — %s*  ·  ranked by total knocks" % (_card_title(), _clock(now))
 
 
-def _gaps_text(office, rows: List[Dict], now: dt.datetime) -> str:
+def _gaps_text(office, rows: List[Dict], now: dt.datetime, *,
+               dest: str = "", slack: bool = False,
+               remember: bool = True) -> str:
     """The gap list Raf's texts carry, for an ICD's own reps.
 
     Megan 2026-09-15, looking at Carlos's first text beside Raf's: "we're
@@ -537,7 +663,12 @@ def _gaps_text(office, rows: List[Dict], now: dt.datetime) -> str:
 
     Formatted by gap_alerts.gap_text so an ICD's text and Raf's are the same
     message: longest gap first, "min" not "minutes", the clock on whoever is
-    newly over.
+    newly over. `slack` bolds the heading -- in a channel it is a heading
+    above a picture and reads as one; in a text there is no markup to speak.
+
+    `dest` is the room this list is for, and it keys the ⏰ state (see
+    _previous_gaps). `remember=False` builds the list without recording it,
+    which is what a preview needs.
     """
     try:
         from automations.gap_alerts import config as gc
@@ -564,10 +695,12 @@ def _gaps_text(office, rows: List[Dict], now: dt.datetime) -> str:
     # all while Raf's did (Megan 2026-09-15). The clock is the difference
     # between "here are twelve names" and "these two just went quiet": without
     # it the list is undifferentiated and reads the same at 2pm and 6pm.
-    before = _previous_gaps(key, now.date())
+    before = _previous_gaps(key, now.date(), dest=dest)
     text, names = gap_text(gaps, previous=before,
-                           first_of_day=before is None)
-    _remember_gaps(key, now.date(), names)
+                           first_of_day=before is None,
+                           header=("*%s*" % gc.GAP_TEXT_HEADER) if slack else "")
+    if remember:
+        _remember_gaps(key, now.date(), names, dest=dest)
     return text
 
 
@@ -575,8 +708,24 @@ def _gaps_path():
     return OUT_DIR / ".gaps_seen.json"
 
 
-def _previous_gaps(key: str, day: dt.date):
-    """Who was on this office's last list today, or None if there wasn't one.
+def _gaps_state_key(key: str, day: dt.date, dest: str = "") -> str:
+    """PER DESTINATION, not just per office.
+
+    The ⏰ means "this rep was not on the list you last read", so it can only
+    be answered against the last list THAT ROOM got. Keyed per office alone,
+    a channel on an hourly list and a group chat on the board's own 30 minutes
+    would share one memory: the channel's list would mark as newly-over
+    whoever had appeared since the chat's last text half an hour earlier, and
+    the chat would mark almost nobody. Two rooms, one clock, both wrong.
+
+    Nothing today has both -- Kash's #palace-sales is Slack only -- which is
+    exactly when to fix it, rather than after somebody has read it.
+    """
+    return "%s|%s|%s" % (day.isoformat(), key, dest)
+
+
+def _previous_gaps(key: str, day: dt.date, dest: str = ""):
+    """Who was on this room's last list today, or None if there wasn't one.
 
     None and empty-set are different: None means no list has gone out today,
     so EVERY name is simply the first list rather than twelve people who all
@@ -586,11 +735,11 @@ def _previous_gaps(key: str, day: dt.date):
         seen = json.loads(_gaps_path().read_text())
     except (OSError, ValueError):
         return None
-    got = seen.get("%s|%s" % (day.isoformat(), key))
+    got = seen.get(_gaps_state_key(key, day, dest))
     return set(got) if got is not None else None
 
 
-def _remember_gaps(key: str, day: dt.date, names) -> None:
+def _remember_gaps(key: str, day: dt.date, names, dest: str = "") -> None:
     """Best effort -- failing to remember must never cost the text."""
     try:
         try:
@@ -598,7 +747,7 @@ def _remember_gaps(key: str, day: dt.date, names) -> None:
         except (OSError, ValueError):
             seen = {}
         seen = {k: v for k, v in seen.items() if k.startswith(day.isoformat())}
-        seen["%s|%s" % (day.isoformat(), key)] = sorted(names or [])
+        seen[_gaps_state_key(key, day, dest)] = sorted(names or [])
         OUT_DIR.mkdir(parents=True, exist_ok=True)
         _gaps_path().write_text(json.dumps(seen, indent=2, sort_keys=True))
     except Exception:  # noqa: BLE001
@@ -697,6 +846,10 @@ def _upload(channel_id: str, boards, comment: str) -> None:
     """Every board this shape produced, in post order, AT CHANNEL LEVEL. A
     wireless office gets a pair (the board and its Time Gaps twin) and both
     belong in the room.
+
+    The caption is the first board's alone -- a pair is one post as far as the
+    room is concerned, and repeating the gap list under the twin would read as
+    a second list.
 
     No thread_ts, deliberately -- see the note above _comment. A board people
     have to open a thread to see is a board they stop looking at.
