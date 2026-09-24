@@ -2356,7 +2356,7 @@ def _shot(pg, tag) -> None:
         # v2 marker (2026-09-24: Carlos wanted the WHOLE page and both pages;
         # the v1 cropped single shot already went out, so a new marker name
         # re-arms today's delivery once with the fixed shots)
-        marker = _os.path.join(d, ".dmed-v2")
+        marker = _os.path.join(d, ".dmed-v3")
         if _os.path.exists(marker):
             return                      # today's evidence already delivered
         dm_after = True
@@ -2946,7 +2946,8 @@ def lookup_resume_phone(page):
         return _aph, "from attachment (%s)" % _adet[:60]
     _log("    [resume] no number from attachment (%s) — trying the viewer"
          % _adet[:60])
-    _shot(page, "panel-no-attachment")
+    if os.environ.get("OAT_SHOTS_DIR"):
+        _shot(page, "panel-no-attachment")
     fr, loc = _view_resume_link(page)
     href = _view_resume_href(page)
     if loc is None and not href:
