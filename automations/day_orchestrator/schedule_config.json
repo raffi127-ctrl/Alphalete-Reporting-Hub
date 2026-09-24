@@ -4430,14 +4430,14 @@
       "report_id": "captainship-knock-access"
     },
     "knocks_source_check": {
-      "order": 36.2,
-      "_order_position_note": "AFTER the per-office Daily Metrics block (27-36.1) and after knocks_access_watch, because it reports on boards those runs have already posted. Asking earlier would be asking before the answer exists.",
+      "order": 36.595,
+      "_order_position_note": "AFTER EVERY per-office Daily Metrics job, because it reports on boards those runs have already posted. Asking earlier is asking before the answer exists. It sat at 36.2 from 2026-09-17, which was after the block as the block stood that day (27-36.1) — the block has since grown a tail (joseph 36.56, christian 36.57, colten 36.58, khalil 36.59), so from 2026-09-24 it runs at 36.595, after khalil and before weekly_dispo_pdf_slack (36.6). Colten was the one it caught: enrolled in ECO on 09-21, graded at 07:35 against a board his runner did not draw until 07:40, every morning.",
       "on_scheduler": true,
       "display_name": "Knocks Source Check (own machine vs scrape)",
       "command": [
         "automations.rashad_metrics.knocks_source_check"
       ],
-      "_note": "Megan 2026-09-17: \"check the metrics threads in the morning -- add it to the routines here so I know.\" For every office that is BOTH ECO-enrolled and on a metrics thread, says whether this morning's knocks board was built from the office's own relayed rows or fell back to a Lucy scraping OwnerVille. READ-ONLY: posts nothing, scrapes nothing, opens no session. It FAILS only when the fault is ours -- the day was closed out and the board still scraped. A machine that never closed the day out is reported plainly and is NOT a failure: Cyrus's is the fleet's only laptop, a shut laptop sleeps whatever we assert, and the scrape covers it. A standing alarm every morning about that is how the real ones stop being read."
+      "_note": "Megan 2026-09-17: \"check the metrics threads in the morning -- add it to the routines here so I know.\" For every office that is BOTH ECO-enrolled and on a metrics thread, says whether this morning's knocks board was built from the office's own relayed rows or fell back to a Lucy scraping OwnerVille. READ-ONLY: posts nothing, scrapes nothing, opens no session. The close-out is compared against WHEN THAT OFFICE'S METRICS ACTUALLY RAN, read from the Hub Activity tab -- reading the relay as it stands at check time instead is how 2026-09-24 passed clean while Aya's board had scraped (her iMac closed 09-23 out at 07:37; her metrics drew at 06:48). TWO THINGS FAIL IT. Ours: the day was closed out before the board drew and the board still scraped. Theirs: a LATE close-out, landing after its own board had already drawn -- nothing is lost, but it costs a board every morning until the machine's clock moves, and until 2026-09-24 it only ever sat in the run log (Megan: make late close-outs fail). A machine that never closed the day out at all is reported plainly and is NOT a failure: Cyrus's is the fleet's only laptop, a shut laptop sleeps whatever we assert, and the scrape covers it. A standing alarm every morning about that is how the real ones stop being read."
     },
     "captainship_knocks": {
       "order": 1,

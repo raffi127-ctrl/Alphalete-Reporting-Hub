@@ -438,8 +438,20 @@ class MorningSourceCheck(unittest.TestCase):
         from automations.rashad_metrics import knocks_source_check as C
         self.C = C
 
+    HUB = ["RunID", "Started At", "Report ID", "Report Name", "User",
+           "Machine", "PID", "Status", "Ended At", "Code Version"]
+
     def _row(self, key, day, received, rows_json='[{"rep":"A"}]'):
         return [key, day, rows_json, "[]", "1", received, "", "", "", ""]
+
+    def _hub(self, *starts, name=None):
+        """Hub Activity as it looks after `starts` runs of one office's
+        metrics. The name has to be the real display_name or board_time finds
+        nothing and every verdict falls back to 'board time unknown'."""
+        name = name or self.C.board_display_name("kash")
+        return [self.HUB] + [
+            ["x", s, "office-metrics", name, "Mini (auto)", "m", "",
+             "success", s, ""] for s in starts]
 
     def test_monday_looks_back_to_saturday(self):
         """Sunday is nobody's selling day, so Monday's 'day prior' is not it."""
@@ -482,6 +494,188 @@ class MorningSourceCheck(unittest.TestCase):
         self.assertTrue(got["closed_out"])
         self.assertFalse(got["relayed"])
         self.assertTrue(got["fault"])
+
+    def test_a_close_out_that_beat_the_board_is_the_good_case(self):
+        office = _Office(key="kash")
+        values = [self.HEADER,
+                  self._row("kash", "2026-09-16", "9/17/2026 00:01:00")]
+        got = self.C.check_office(office, _Metrics(), WED, values=values,
+                                  hub_values=self._hub("2026-09-17T06:53:12"))
+        self.assertTrue(got["relayed"])
+        self.assertFalse(got["late"])
+        self.assertFalse(got["fault"])
+
+    def test_a_close_out_AFTER_the_board_drew_did_not_reach_that_board(self):
+        """Aya, 2026-09-24: her iMac closed 09-23 out at 07:37 and her metrics
+        had drawn and posted at 06:48. Reading the relay at check time called
+        that green; it scraped."""
+        office = _Office(key="kash")
+        values = [self.HEADER,
+                  self._row("kash", "2026-09-16", "9/17/2026 07:37:00")]
+        got = self.C.check_office(office, _Metrics(), WED, values=values,
+                                  hub_values=self._hub("2026-09-17T06:48:05"))
+        self.assertTrue(got["closed_out"], "the day WAS closed out")
+        self.assertTrue(got["late"])
+        self.assertFalse(got["relayed"], "the board that went out scraped")
+        self.assertFalse(got["fault"], "late is the machine's, not ours")
+        self.assertIn("after the board drew", got["why"])
+
+    def test_a_late_close_out_is_not_late_for_a_board_drawn_after_it(self):
+        """The same row, judged against a board that drew later, is simply the
+        good case — the comparison is to the clock, not to a fixed hour."""
+        office = _Office(key="kash")
+        values = [self.HEADER,
+                  self._row("kash", "2026-09-16", "9/17/2026 07:37:00")]
+        got = self.C.check_office(office, _Metrics(), WED, values=values,
+                                  hub_values=self._hub("2026-09-17T09:07:44"))
+        self.assertTrue(got["relayed"])
+        self.assertFalse(got["late"])
+
+    def test_a_redraw_that_picked_the_close_out_up_is_said_so(self):
+        office = _Office(key="kash")
+        values = [self.HEADER,
+                  self._row("kash", "2026-09-16", "9/17/2026 07:37:00")]
+        got = self.C.check_office(
+            office, _Metrics(), WED, values=values,
+            hub_values=self._hub("2026-09-17T06:48:05",
+                                 "2026-09-17T09:07:44"))
+        self.assertTrue(got["late"], "the board people read at 7am scraped")
+        self.assertIn("09:07 redraw picked it up", got["why"])
+
+    def test_a_board_drawn_before_the_day_ended_is_not_this_mornings(self):
+        """Intraday runs on the day itself must never be mistaken for the
+        board, or every office reads as late against its own lunchtime."""
+        office = _Office(key="kash")
+        values = [self.HEADER,
+                  self._row("kash", "2026-09-16", "9/17/2026 00:01:00")]
+        got = self.C.check_office(
+            office, _Metrics(), WED, values=values,
+            hub_values=self._hub("2026-09-16T13:00:00",
+                                 "2026-09-17T06:53:12"))
+        self.assertEqual(got["drew"], dt.datetime(2026, 9, 17, 6, 53, 12))
+        self.assertTrue(got["relayed"])
+
+    def test_no_hub_row_judges_on_the_relay_alone_rather_than_guessing(self):
+        office = _Office(key="kash")
+        values = [self.HEADER,
+                  self._row("kash", "2026-09-16", "9/17/2026 07:37:00")]
+        got = self.C.check_office(office, _Metrics(), WED, values=values,
+                                  hub_values=[self.HUB])
+        self.assertIsNone(got["drew"])
+        self.assertFalse(got["late"], "unknown board time cannot mean late")
+        self.assertTrue(got["relayed"])
+
+    def test_a_scrape_of_data_that_arrived_late_is_NOT_blamed_on_us(self):
+        """The fault verdict means 'it was there and we did not use it'. Data
+        that landed after the board drew was never ours to miss."""
+        from automations.rashad_metrics import knocks_relay as KR
+        office = _Office(key="kash")
+        values = [self.HEADER,
+                  self._row("kash", "2026-09-16", "9/17/2026 07:37:00")]
+        orig = KR.relayed_rows
+        KR.relayed_rows = lambda *a, **k: None
+        try:
+            got = self.C.check_office(
+                office, _Metrics(), WED, values=values,
+                hub_values=self._hub("2026-09-17T06:48:05"))
+        finally:
+            KR.relayed_rows = orig
+        self.assertFalse(got["fault"])
+        self.assertTrue(got["late"])
+
+    def _run(self, results):
+        """run()'s exit code for a hand-built set of verdicts. The code is the
+        contract: the orchestrator turns it into a red card and a post in
+        #claudecorrections, so which verdicts return 1 IS the behaviour."""
+        from automations.rashad_metrics import knocks_relay as KR
+        from automations.recruiting_report import fill as F
+        saved = (self.C.offices_to_check, self.C.check_office,
+                 KR._knocks_values, F.open_by_key)
+        pairs = [(_Office(key=r["key"]), _Metrics()) for r in results]
+        self.C.offices_to_check = lambda: pairs
+        self.C.check_office = lambda eco, m, day, values=None, **k: next(
+            r for r in results if r["key"] == eco.key)
+        KR._knocks_values = lambda: [self.HEADER]
+
+        def _offline(*a, **k):
+            # No Sheet in a unit test. run() must treat an unreadable Hub as
+            # "board time unknown" and still reach a verdict, which is also
+            # the real behaviour when the tab is down.
+            raise RuntimeError("no network in tests")
+
+        F.open_by_key = _offline
+        try:
+            return self.C.run(WED, log=lambda *a: None)
+        finally:
+            (self.C.offices_to_check, self.C.check_office,
+             KR._knocks_values, F.open_by_key) = saved
+
+    def _verdict(self, key, **kw):
+        out = {"key": key, "owner": key.title(), "day": WED, "relayed": False,
+               "closed_out": True, "received": None, "why": "", "fault": False,
+               "late": False, "drew": None, "redrew": None, "reps": 0}
+        out.update(kw)
+        return out
+
+    def test_a_clean_morning_passes(self):
+        self.assertEqual(self._run([self._verdict("kash", relayed=True)]), 0)
+
+    def test_a_late_close_out_FAILS_the_check(self):
+        """Megan 2026-09-24: it only ever landed in the run log before, so the
+        two boards Aya's iMac cost never reached anybody."""
+        self.assertEqual(self._run([self._verdict("aya", late=True)]), 1)
+
+    def test_a_sleeping_machine_still_does_not_fail(self):
+        """Cyrus's laptop. A standing alarm every morning about a laptop doing
+        what laptops do is how the real ones stop being read."""
+        self.assertEqual(
+            self._run([self._verdict("cyrus", closed_out=False,
+                                     why="machine stopped at 12:51")]), 0)
+
+    def test_our_own_bug_still_fails(self):
+        self.assertEqual(self._run([self._verdict("kash", fault=True)]), 1)
+
+    def test_one_late_office_fails_a_morning_the_rest_were_clean(self):
+        self.assertEqual(self._run([self._verdict("kash", relayed=True),
+                                    self._verdict("colten", relayed=True),
+                                    self._verdict("cyrus", closed_out=False),
+                                    self._verdict("aya", late=True)]), 1)
+
+    def test_every_eco_metrics_office_has_a_board_clock(self):
+        """board_time derives the Hub row name from the orchestrator job
+        `<key>_metrics`. An office whose job is named anything else has no
+        board time at all and silently loses the whole comparison."""
+        for eco, _ in self.C.offices_to_check():
+            self.assertTrue(self.C.board_display_name(eco.key),
+                            "%s has no <key>_metrics job — its board time "
+                            "can never be read" % eco.key)
+
+    def test_the_check_runs_AFTER_every_board_it_grades(self):
+        """It sat at 36.2 while colten's runner sat at 36.58, so from the day
+        he enrolled it graded him at 07:35 against a board drawn at 07:40 —
+        every morning, silently, because 'no board time' reads as a shrug and
+        not as a bug. The metrics block has grown a tail twice now; pin it.
+        """
+        import json
+        from pathlib import Path
+        cfg = json.loads(
+            (Path(__file__).resolve().parents[1] / "day_orchestrator"
+             / "schedule_config.json").read_text(encoding="utf-8"))
+        reports = cfg["reports"]
+        mine = reports["knocks_source_check"]["order"]
+        for eco, _ in self.C.offices_to_check():
+            job = reports.get("%s_metrics" % eco.key)
+            self.assertIsNotNone(job, "%s has no metrics job" % eco.key)
+            self.assertLess(
+                job["order"], mine,
+                "%s's board is drawn at %s, after the check at %s — it can "
+                "only ever be graded on a board that does not exist yet"
+                % (eco.key, job["order"], mine))
+
+    def test_the_stamp_never_uses_the_windows_hostile_flag(self):
+        self.assertEqual(self.C._stamp(dt.datetime(2026, 9, 4, 7, 37)),
+                         "Sep 4 07:37")
+        self.assertEqual(self.C._stamp(None), "?")
 
     def test_only_offices_on_both_sides_are_checked(self):
         """An office with no metrics thread has no board for this to be

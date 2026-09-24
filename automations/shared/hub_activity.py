@@ -91,3 +91,62 @@ def log_completed(report_id: str, report_name: str, *,
         return True
     except Exception:
         return False            # never let reporting sink the report
+
+
+def started_at(text: str) -> Optional[dt.datetime]:
+    """Read one 'Started At' cell. None when it cannot be read.
+
+    Rows are written ISO by log_completed and by the Hub, but the column is
+    plain text in a Sheet a human can edit, so a stray US-format value is one
+    typo away. Unreadable is None, never a raise — a caller asking WHEN a
+    report ran can answer "don't know", and none of them should die over it.
+    """
+    text = (text or "").strip()
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S",
+                "%m/%d/%Y %H:%M:%S", "%m/%d/%Y %H:%M"):
+        try:
+            return dt.datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def runs(report_name: str, *, since: Optional[dt.datetime] = None,
+         until: Optional[dt.datetime] = None,
+         values=None) -> Optional[list]:
+    """WHEN a report ran, by the name the Hub shows. None = could not read.
+
+    Matched on "Report Name" and not "Report ID" on purpose: most of the
+    per-office metrics runs share the single card id `office-metrics`, so the
+    id cannot tell Aya's run from Kash's. The display name can, and it is the
+    orchestrator's `display_name` verbatim.
+
+    Returns [(started, status)] sorted, for starts inside [since, until).
+    None means the tab could not be read at all, which a caller must not
+    confuse with "it never ran".
+    """
+    if values is None:
+        try:
+            from automations.recruiting_report.fill import open_by_key
+            sh = open_by_key(SHEET_ID)
+            values = sh.worksheet(TAB).get_all_values()
+        except Exception:       # noqa: BLE001
+            return None
+    if not values:
+        return None
+
+    want = " ".join(str(report_name or "").split()).strip().lower()
+    out = []
+    for r in values[1:]:
+        r = list(r) + [""] * (len(HEADERS) - len(r))
+        if " ".join(str(r[3] or "").split()).strip().lower() != want:
+            continue
+        when = started_at(r[1])
+        if when is None:
+            continue
+        if since is not None and when < since:
+            continue
+        if until is not None and when >= until:
+            continue
+        out.append((when, (r[7] or "").strip().lower()))
+    return sorted(out)
