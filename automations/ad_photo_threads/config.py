@@ -208,7 +208,11 @@ _TZ = {
 
 # Offices whose channel is loaded 9/14 onward, checked and pinned; the rest
 # wait (Eve 9/23: last week, then this week, pin, THEN go live).
-_LIVE = {"haytham"}                    # 9/24 00:30 CT: 11 threads, 0 loose
+_LIVE = {
+    "haytham",                         # 9/24 00:30 CT: 11 threads, 0 loose
+    "colten",                          # 9/24 11:30 CT: 23 threads, 0 loose
+    "jacob",                           # 9/24 11:30 CT: 11 threads, 0 loose
+}
 
 OFFICES += [
     {
