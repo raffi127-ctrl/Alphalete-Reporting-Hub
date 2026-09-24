@@ -1737,7 +1737,8 @@ def _flush_diag(tab: str = "RP Diag") -> None:
 # though a real Chrome WOULD have passed it a few seconds later. The keep-warm
 # polls up to this long, so the challenge clears, a fresh cf_clearance is minted,
 # and the profile is left warm for the next real run to reuse.
-WARM_LOGIN_POLL_S = int(os.environ.get("RP_WARM_LOGIN_POLL_S", "90"))
+import os as _os_env
+WARM_LOGIN_POLL_S = int(_os_env.environ.get("RP_WARM_LOGIN_POLL_S", "90"))
 
 
 def _cdp_warm(force_fresh: bool = True) -> int:
