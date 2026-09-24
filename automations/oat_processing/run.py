@@ -2791,6 +2791,24 @@ def lookup_resume_phone(page):
     the 'Just a moment…' block (2026-08-02). Falls back to loading the signed href."""
     global _LAST_RESUME_EMAIL
     _LAST_RESUME_EMAIL = ""
+    # DOWNLOAD FIRST (Carlos, 2026-09-20/23: "what if you download the resume?
+    # when you open it on the right there's a download option"). The AppStream
+    # attachment is a same-origin file fetched with the session cookies — NO
+    # Cloudflare, nothing on screen moves — so it never hits the "Just a
+    # moment…" wall the Indeed viewer does. Try it before touching the viewer;
+    # only fall through to the Cloudflare-walled View-resume path when the panel
+    # genuinely has no attachment.
+    try:
+        _aph, _adet = _rd_mod().phone_from_attachment(page)
+    except Exception as _e:  # noqa: BLE001
+        _aph, _adet = None, "attachment path errored: %s" % type(_e).__name__
+    if _aph:
+        _LAST_RESUME_EMAIL = getattr(_rd_mod(), "LAST_EMAIL", "") or ""
+        _log("    \U0001f4ce phone from the DOWNLOADED attachment: %s (%s)"
+             % (_aph, _adet))
+        return _aph, "from attachment (%s)" % _adet[:60]
+    _log("    [resume] no number from attachment (%s) — trying the viewer"
+         % _adet[:60])
     fr, loc = _view_resume_link(page)
     href = _view_resume_href(page)
     if loc is None and not href:
