@@ -10830,6 +10830,29 @@
         "type": "not_configured"
       }
     },
+    "install_alphalete_lanes_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Installs or refreshes the standalone com.alphalete.alphalete-lanes LaunchAgent (StartInterval 600, wrapper gates 06:00-21:59) on Lucy 1. That agent runs automations.alphalete_sales_board.lanes --apply: re-points the 10 FILTER formulas on the Sales Board 'Lanes' tab to this week's / last week's 'Sales Board WE' tab and the row above TOTALS (Rafael + Maud 2026-09-24). install_agent only rewrites and reloads the plist; it touches no Sheet and no report data.",
+      "machine": "Lucy 1",
+      "display_name": "Install Sales Board Lanes refresh (10-min)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "alphalete-lanes"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
+    },
     "sabrina_metrics": {
       "order": 36.55,
       "on_scheduler": true,
