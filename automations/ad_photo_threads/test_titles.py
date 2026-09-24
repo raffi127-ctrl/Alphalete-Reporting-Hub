@@ -104,3 +104,28 @@ class FirstNameFallbackTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CompanyTailTests(unittest.TestCase):
+    def test_company_at_the_end_is_the_same_ad(self):
+        # Carlos 9/23: these two got separate threads.
+        a = "Event Marketing & Sales Assistant (Spanish Needed) – 2 locations – Vantura Acquisition"
+        b = "Event Marketing & Sales Assistant (Spanish Needed), 2 locations"
+        self.assertEqual(norm(a), norm(b))
+        self.assertEqual(norm("Entry Level Assistant Manager (Spanish Needed) – Ft Worth TX – Vantura Acquisitions Inc"),
+                         norm("Entry Level Assistant Manager (Spanish Needed), Ft Worth, TX"))
+
+    def test_company_name_cut_short(self):
+        self.assertEqual(norm("Entry Level Assistant Manager (Spanish Needed) – Ft Worth TX – Vantura"),
+                         norm("Entry Level Assistant Manager (Spanish Needed), Ft Worth, TX"))
+
+    def test_marketing_or_management_endings_stay(self):
+        self.assertTrue(norm("Entry Level at Alphalete Marketing").endswith("alphalete marketing"))
+        self.assertIn("management", norm("Highline Management"))
+
+    def test_old_state_keys_fold_onto_the_ad(self):
+        # A key saved before 9/23 (already normalized, tail and all) resolves
+        # to the ad, so --merge-dups can fold the old thread into it.
+        book = TitleBook(["Event Marketing & Sales Assistant (Spanish Needed), 2 locations"] * 3)
+        self.assertEqual(book.resolve("event marketing & sales assistant (spanish needed) 2 locations vantura acquisition"),
+                         "event marketing & sales assistant (spanish needed) 2 locations")

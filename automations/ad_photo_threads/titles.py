@@ -35,12 +35,26 @@ MIN_PREFIX = 12       # shorter cut-offs ("at&t role") say too little to fold
 _LEAD_JUNK = re.compile(r"^\s*(new application for|indeed\s*/)\s*", re.I)
 
 
+# The company tacked on at the end (Carlos 9/23: "Event Marketing & Sales
+# Assistant (Spanish Needed) – 2 locations – Vantura Acquisition" got a thread
+# next to "..., 2 locations" -- same ad). Only names ending in Acquisition(s) /
+# Inc / LLC, one word before it (the company's name): "Marketing" and
+# "Management" also end real ad titles, so they stay.
+# Plus company names seen pasted on their own, cut before "Acquisition"
+# (Carlos 9/23: "... (Spanish Needed) – Ft Worth TX – Vantura").
+KNOWN_COMPANIES = ("vantura",)
+_TAIL_COMPANY = re.compile(
+    r"(?:\s+[a-z0-9&]+\s+acquisitions?(?:\s+inc)?|\s+(?:inc|llc)"
+    r"|\s+(?:" + "|".join(KNOWN_COMPANIES) + r"))$")
+
+
 def norm(title: str) -> str:
     t = (title or "").replace("&amp;", "&").replace("·", " ").lower()
     t = _LEAD_JUNK.sub("", t)
     t = t.replace("entry-level", "entry level")
     t = re.sub(r"[^a-z0-9&()]+", " ", t)
-    return re.sub(r"\s+", " ", t).strip()
+    t = re.sub(r"\s+", " ", t).strip()
+    return _TAIL_COMPANY.sub("", t).strip() or t
 
 
 def pretty(title: str) -> str:
