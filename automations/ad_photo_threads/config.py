@@ -217,6 +217,8 @@ _LIVE = {
     "maxamad",                         # 9/24: 3 threads, 0 loose
     "atef",                            # 9/24: 10 threads, 0 loose
     "roshan",                          # 9/24: 6 threads, 0 loose
+    "ryan",                            # 9/24: 8 threads, 0 loose
+    "jose",                            # 9/24: 12 threads (9/22-9/23 only; no shots before), 0 loose
 }
 
 OFFICES += [
