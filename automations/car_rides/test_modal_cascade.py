@@ -124,3 +124,56 @@ class ApplyEditLeavesThePageClean(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheSearchBoxIsATextarea(unittest.TestCase):
+    """THE TWO-MONTH OUTAGE (2026-09-24). OwnerVille runs select2 4.1, whose
+    MULTI-select search box is `<textarea class="select2-search__field">`. This
+    module looked for `input.select2-search__field`, which can never match it,
+    so every edit carrying an `add` burned 30s and threw — while remove-only
+    edits, which never touch that box, went through. 519 runs since 2026-07-16,
+    46 edits applied, every one of them remove-only.
+
+    Probed live on Lucy 2 before the fix: `.select2-search__field` resolves to
+    TEXTAREA, and #territoryModal holds THREE of them (Assigned Sales Rep(s),
+    Car Ride Captain, Guest Pass Rep(s) — the last one disabled).
+    """
+
+    def test_the_search_box_is_matched_by_class_not_tag(self):
+        self.assertEqual(run.SEARCH_FIELD, ".select2-search__field")
+        for tag in ("input", "textarea"):
+            self.assertFalse(run.SEARCH_FIELD.startswith(tag),
+                             "a tag prefix breaks on the next select2 bump")
+
+    def test_no_input_only_selector_survives_in_the_edit_path(self):
+        import inspect
+        src = inspect.getsource(run.apply_edit)
+        self.assertNotIn("input.select2-search__field", src)
+        self.assertNotIn(".select2-search input", src)
+
+    def test_every_field_locator_is_scoped_to_assigned_sales_reps(self):
+        """Three multi-selects share these class names. An unscoped `.first`
+        could strip a Car Ride Captain chip instead of a rider."""
+        self.assertIn("select.territoryAssignedUsers", run.ASSIGNED_REPS)
+        import inspect
+        src = inspect.getsource(run.apply_edit)
+        body = src[src.index("ctr = page.locator"):]
+        for unscoped in ("page.locator(\n                f\"li.select2-selection__choice",
+                         "page.locator(f\"li.select2-selection__choice"):
+            self.assertNotIn(unscoped, body)
+        self.assertIn("ctr.locator(", body)
+
+    def test_the_dropdown_is_read_from_the_open_container(self):
+        """select2 appends its results to <body>, not inside the modal."""
+        import inspect
+        self.assertIn(".select2-container--open .select2-results__option",
+                      inspect.getsource(run.apply_edit))
+
+    def test_an_ambiguous_name_flags_instead_of_adding_someone(self):
+        """Two Andrews on the roster used to mean adding whichever the list put
+        on top — to a car ride, silently."""
+        import inspect
+        src = inspect.getsource(run.apply_edit)
+        self.assertIn("names_match(rep, t)", src)
+        self.assertIn("refusing to guess", src)
+        self.assertIn("len(hits) != 1", src)

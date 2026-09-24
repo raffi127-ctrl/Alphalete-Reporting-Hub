@@ -514,6 +514,28 @@ def _modal_open(page) -> bool:
         return False
 
 
+# THE CONTROL WE EDIT, AND ONLY IT. The Edit Layer modal holds THREE multi-
+# selects — "Assigned Sales Rep(s)" (.territoryAssignedUsers), "Car Ride Captain
+# (Optional)" (.carRideCaptain) and "Guest Pass Rep(s) (Optional)"
+# (.guestPassOtherOfficeUsers, disabled). Every locator below hangs off this one
+# so a chip can never be removed from, or a rep added to, the wrong field —
+# `.first` across the whole modal was one DOM re-order away from doing exactly
+# that. select2 renders its UI as the immediate sibling of the original <select>.
+ASSIGNED_REPS = ("#territoryModal select.territoryAssignedUsers "
+                 "+ .select2-container")
+
+# NO TAG PREFIX ON THE SEARCH BOX, AND THIS IS THE WHOLE BUG (2026-09-24).
+# This module looked for `input.select2-search__field, .select2-search input`.
+# OwnerVille runs select2 4.1, whose MULTI-select search box is a
+# `<textarea class="select2-search__field">` — an <input> selector can never
+# match it, so every `add` waited the full 30s and threw. Removes, which never
+# touch this box, went through fine. That is the whole story of the run-log:
+# 519 runs since 2026-07-16 and 46 edits applied, every one of them remove-only
+# (stale-leader empties, one-rep-one-car-ride). The cleanup has never once added
+# a rep to a territory. Matching on the CLASS alone works on both spellings and
+# survives the next select2 bump.
+SEARCH_FIELD = ".select2-search__field"
+
 # Every modal dismiss control OwnerVille's Edit Layer offers, scoped INSIDE
 # the modal so nothing on the page behind it can ever be clicked by mistake.
 _MODAL_CLOSE = (".modal button.close, .modal [data-dismiss=modal], "
@@ -581,26 +603,44 @@ def apply_edit(page, edit: dict, log=_log) -> bool:
         log(f"  open {name!r} failed: {e!r}")
         _dismiss_modal(page, log)
         return False
+    ctr = page.locator(ASSIGNED_REPS)
     try:
         for rep in edit.get("remove", []):
-            chip = page.locator(
+            chip = ctr.locator(
                 f"li.select2-selection__choice:has-text({json.dumps(rep.split()[0])})").first
             chip.locator("span.select2-selection__choice__remove, .remove, "
                          "[aria-label*=remove i]").first.click()
             page.wait_for_timeout(800)
             log(f"  removed chip {rep!r}")
         for rep in edit.get("add", []):
-            box = page.locator(
-                "input.select2-search__field, .select2-search input").first
-            box.click()
+            # The box only exists to be typed in once the control is OPEN.
+            ctr.locator(".select2-selection").first.click()
+            page.wait_for_timeout(400)
+            box = ctr.locator(SEARCH_FIELD).first
             box.fill(rep.split()[0])
             page.wait_for_timeout(1_500)
-            opt = page.locator(
-                f".select2-results__option:has-text({json.dumps(rep.split()[0])})").first
-            opt.click()
+            # ONE MATCH OR NOTHING. The old code typed a FIRST NAME and clicked
+            # `.first`, so two Andrews on the roster meant adding whichever the
+            # list happened to put on top — to a car ride, silently. The filter
+            # still uses the first name (that is what narrows the list), but the
+            # pick is made by names_match on the FULL name, and an ambiguous or
+            # empty result flags instead of guessing. Scoped to the OPEN
+            # dropdown: select2 appends it to <body>, not inside the modal.
+            opts = page.locator(
+                ".select2-container--open .select2-results__option")
+            texts = [opts.nth(i).inner_text().strip()
+                     for i in range(min(opts.count(), 20))]
+            hits = [i for i, t in enumerate(texts) if names_match(rep, t)]
+            if len(hits) != 1:
+                raise RuntimeError(
+                    "{!r} matched {} of {} option(s) in Assigned Sales Rep(s) "
+                    "({}) — refusing to guess which person that is".format(
+                        rep, len(hits), len(texts),
+                        "; ".join(texts[:4]) or "no options"))
+            opts.nth(hits[0]).click()
             page.keyboard.press("Escape")    # select2 gotcha: close BEFORE Save
             page.wait_for_timeout(500)
-            log(f"  added {rep!r}")
+            log(f"  added {rep!r} as {texts[hits[0]]!r}")
         page.keyboard.press("Escape")
         page.get_by_role("button", name=re.compile(r"^save$", re.I)).first.click()
         page.wait_for_timeout(3_000)
