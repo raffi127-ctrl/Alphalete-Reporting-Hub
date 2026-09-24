@@ -227,6 +227,13 @@ def drop_names(names: Iterable[str], captain_or_team: str,
 # Take them out the day either one sells fiber.
 NOT_IN_SOURCE: Dict[str, tuple] = {
     "tony": ("Kobe Cireus", "Melik El Jaiez"),
+    # 2026-09-24 (Eve): Dhey Patel ("Dhyey" in Tableau) vanished from Atef's
+    # B2B churn view AND the org-wide backfill in all five periods, the day
+    # after ~100 units. Probably unlinked from the team, not confirmed yet.
+    # Eve: leave his rows blank, delete nothing until someone confirms. This
+    # only silences the went-dark check — if Tableau brings him back he fills
+    # normally. Take it out once his status is confirmed.
+    "atef": ("Dhey Patel", "Dhyey Patel"),
     # GARY WHITAKER II WAS REMOVED 2026-09-04 — the evidence he was pinned on
     # was false. Eve pinned him 2026-09-03 because he was "absent from Carlos's
     # B2B churn view AND from the org-wide B2B pull that the went-dark backfill
