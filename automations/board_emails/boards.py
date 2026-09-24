@@ -12,8 +12,9 @@ them separate so each block gets the full width of the mail column.
 """
 from __future__ import annotations
 
+import datetime as dt
 from dataclasses import dataclass
-from typing import Callable, List
+from typing import Callable, List, Optional
 
 # Rafael and Maud, and nobody else (Eve, 2026-07-30). Kept as one list per board
 # so a change to who reads one board is visibly a change to that board.
@@ -24,6 +25,21 @@ MAUD = "maudmiller4@gmail.com"
 def _country_pngs():
     from automations.country_sales_board.slack_post import build_pngs
     return build_pngs()
+
+
+def _headcount_pngs():
+    from automations.org_active_headcount.email_send import build_parts
+    return build_parts()
+
+
+def _headcount_subject(reported: dt.date) -> str:
+    # The subject it had before the gate (%a %m/%d: Windows-safe, no %-m).
+    return f"Org Active Headcount — through {reported:%a %m/%d}"
+
+
+def _headcount_to() -> List[str]:
+    from automations.org_active_headcount.email_send import RECIPIENTS
+    return list(RECIPIENTS)
 
 
 @dataclass(frozen=True)
@@ -44,6 +60,8 @@ class Board:
     hub_name: str       # display name used when publishing a Hub run row
     banner_bg: str = "#d9d9d9"
     banner_fg: str = "#8a0000"
+    # (reported day) -> subject. None = "<name> M/D".
+    subject: Optional[Callable[[dt.date], str]] = None
 
 
 BOARDS: List[Board] = [
@@ -61,6 +79,22 @@ BOARDS: List[Board] = [
         review_title="Country Sales Board Email",
         report_id="country-sales-board-email",
         hub_name="Country Sales Board Email",
+    ),
+    # Eve 2026-09-24: "agreguemos un gate a Org Active Headcount a
+    # revision-emails". It used to mail itself as soon as the morning fill was
+    # done; now the scheduled run posts the PDF and a checkmark sends it, like
+    # Country. Recipients stay where they were (org_active_headcount.email_send
+    # .RECIPIENTS — one list, not a copy).
+    Board(
+        key="headcount",
+        name="Org Active Headcount",
+        build_pngs=_headcount_pngs,
+        to=_headcount_to(),
+        drive_folder="Org Active Headcount - correos para revisar",
+        review_title="Org Active Headcount Email",
+        report_id="org-active-headcount-email",
+        hub_name="Org Active Headcount - Email",
+        subject=_headcount_subject,
     ),
     # RETIRED 2026-07-31 — the All Units Org Sales Board is no longer its own
     # email. Eve: "lo que antes eran dos mails, hay que juntarlos en uno". It is

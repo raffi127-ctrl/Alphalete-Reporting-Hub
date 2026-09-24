@@ -466,10 +466,13 @@ class SharedModuleOptOut(_GuardBase):
                                     simulate=False)
         self.assertEqual(outcome, "deferred")
 
-    def test_the_live_config_opts_out_exactly_one_report(self):
+    def test_the_live_config_opts_out_only_the_review_gate_reports(self):
         """A blanket opt-out would put the fleet back where 2026-08-24 started."""
         from automations.day_orchestrator import registry
         cfg = registry.load_config()
         off = sorted(rid for rid, rep in cfg.reports.items()
                      if not rep.duplicate_guard)
-        self.assertEqual(off, ["country_sales_board_email"])
+        # org_active_headcount_email joined 2026-09-24: it runs the same
+        # board_emails.review_gate (--board headcount) as the watcher.
+        self.assertEqual(off, ["country_sales_board_email",
+                               "org_active_headcount_email"])

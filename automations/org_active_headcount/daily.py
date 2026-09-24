@@ -693,6 +693,7 @@ def run(apply_changes: bool = False, today: Optional[dt.date] = None,
         apply_roll(ws, V, F, closed, target, logfn=logfn)
         V = ws.get_all_values()
     total = 0
+    broken = []
     for day in completed_days(today):
         if day > today - dt.timedelta(days=1):
             continue
@@ -700,6 +701,7 @@ def run(apply_changes: bool = False, today: Optional[dt.date] = None,
             ups = plan_day(V, day, today, logfn=logfn)
         except Exception as e:                                     # noqa: BLE001
             logfn(f"  {day}: NOT filled — {type(e).__name__}: {e}")
+            broken.append(day)
             continue
         logfn(f"  {day:%a %m/%d}: {len(ups)} cell(s)" + ("" if ups else " (nothing empty)"))
         for a1, v in ups:
@@ -717,6 +719,15 @@ def run(apply_changes: bool = False, today: Optional[dt.date] = None,
           "by this week, descending")
     if apply_changes and reqs:
         _retry(ws.spreadsheet.batch_update, {"requests": reqs})
+    # A day that could not be READ is a failure, not a quiet day (2026-09-24:
+    # the tracker reader got "credit balance is too low" from the Anthropic API,
+    # Wednesday stayed empty, the run exited 0 and nobody was told). Failing
+    # here fires the orchestrator's alert AND holds the email, which
+    # depends_on this run. A source that simply has not posted yet does not
+    # land here — it leaves the cell empty without raising.
+    if broken:
+        logfn(f"FAILED: {', '.join(f'{d:%a %m/%d}' for d in broken)} could not be read")
+        return 1
     return 0
 
 

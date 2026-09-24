@@ -22,6 +22,10 @@ schedule_config (`org_active_headcount_email`).
     python -m automations.org_active_headcount.email_send --post
     python -m automations.org_active_headcount.email_send --post --only eve@alphaletemarketing.com
     python -m automations.org_active_headcount.email_send --post --update   # resend after a fix
+SINCE 2026-09-24 THE SCHEDULED RUN DOES NOT CALL THIS: it goes through the
+review gate (`board_emails.review_gate --board headcount`), which posts the day's
+PDF in #revision-emails and mails only on a checkmark. This command stays for a
+manual send that skips the gate.
 Python 3.9-safe (Lucy runtime).
 """
 from __future__ import annotations
@@ -150,6 +154,23 @@ def _record_delivery(to: List[str], subject: str) -> None:
     except Exception as e:                                      # noqa: BLE001
         print(f"  ⚠ couldn't write the run manifest ({type(e).__name__}: {e}) "
               "— the mail went out, but a failure ticket won't close itself")
+
+
+def build_parts(today: Optional[dt.date] = None) -> Tuple[List[Tuple[str, Path, int]], str]:
+    """The same two pictures in the shape the review gate wants
+    (board_emails.boards): [(name, png, sheet_px)] + the ranges, for logging.
+
+    Eve 2026-09-24: the mail now waits for a checkmark in #revision-emails like
+    the Country board's — the gate captures through THIS function, so the
+    totals check above still stops a picture whose numbers disagree."""
+    from automations.recruiting_report.fill import open_by_key
+    from automations.org_sales_board.screenshot_email import column_pixels, _range_width_px
+    shots = build_pngs(today)
+    ws = d.open_tab(False)
+    colpx = column_pixels(open_by_key(d.SHEET_ID), ws.id)
+    parts = [(f"headcount_{name}", p, _range_width_px(colpx, rng))
+             for name, (p, rng) in zip(("board", "delta"), shots)]
+    return parts, " + ".join(rng for _p, rng in shots)
 
 
 def main(argv=None) -> int:

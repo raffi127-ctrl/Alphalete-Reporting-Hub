@@ -123,6 +123,8 @@ def subject_for(board: B.Board, run_day: dt.date) -> str:
     """'Country Sales Board 7/29' — .month/.day, never %-m (that strftime flag
     does not exist on Windows and this runs on both machines)."""
     d = reported_day(run_day)
+    if board.subject:
+        return board.subject(d)
     return f"{board.name} {d.month}/{d.day}"
 
 

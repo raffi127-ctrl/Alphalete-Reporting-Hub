@@ -6591,17 +6591,21 @@
       "machine": "Lucy 1",
       "order": 58.5,
       "_note": "Eve 2026-09-18: the daily EMAIL of the 'Org Active Headcount' tab to Carlos Hidalgo (CarlosHidalgo349@gmail.com), Rafael Hidalgo (raffi127@gmail.com), Eve Sobrino (eve@alphaletemarketing.com) and, since 2026-09-19, Colten Wright (coltenwrightsc@gmail.com), from alphaletereporting@gmail.com (shared.report_email). It went out as a Slack group DM that morning (org_active_headcount_dm, replaced); Rafael asked for email instead, before confirming the tab's changes. Two pictures in one message: the board (A1 through PREVIOUS WEEK'S TOTALS, down to the WE history rows) and the delta box cropped to the elapsed days like the Country / All Units boards (rollover.delta_block_range). Order: after the morning fill (depends_on org_active_headcount_daily: a failed fill must not send a stale picture), after the Org Sales Board post (slack:org_board_posted, opens anyway 11:30) and after the tracker thread (slack:owner_tracker_pngs, opens anyway 09:00). Lucy 1 = the mini: the org board post marker is a local file there.",
-      "display_name": "Org Active Headcount - Email",
+      "_gate_note": "Eve 2026-09-24: 'agreguemos un gate a Org Active Headcount a revision-emails'. The run no longer mails: it runs board_emails.review_gate --post --board headcount (build the same two pictures through org_active_headcount.email_send.build_parts, totals check included -> PDF in Drive -> Lucy posts the link in #revision-emails). A checkmark from an approver sends it, via deploy/org_board_email_review.sh (BOARDS now 'country headcount'), the every-15-min watcher already on the mini. Sat/Sun a clean day sends itself (shared.weekend_release). A correction after the link went out: `lucy rerun org_active_headcount_email --refresh` (same link, no new post). duplicate_guard false for the same reason as country_sales_board_email: its module is also the watcher's.",
+      "duplicate_guard": false,
+      "display_name": "Org Active Headcount - Email (a revisión)",
       "source_type": "api",
       "data_sources": [
         "slack:owner_tracker_pngs",
         "slack:org_board_posted"
       ],
       "command": [
-        "automations.org_active_headcount.email_send"
+        "automations.board_emails.review_gate"
       ],
       "base_args": [
-        "--post"
+        "--post",
+        "--board",
+        "headcount"
       ],
       "cadence": {
         "weekdays": [

@@ -63,7 +63,9 @@ fi
 # 'all-units' was dropped 2026-07-31: the All Units board is now a section of the
 # Org board's own email, so its checkmark is the Org email's checkmark. Leaving it
 # here would make every tick fail with "unknown board all-units".
-BOARDS="country"
+# 'headcount' added 2026-09-24 (Eve): the Org Active Headcount email now waits
+# for its own checkmark here too.
+BOARDS="country headcount"
 
 VENV_PY=".venv/bin/python3.14"
 [ -x "$VENV_PY" ] || VENV_PY=".venv/bin/python"
