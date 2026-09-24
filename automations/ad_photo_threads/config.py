@@ -216,6 +216,7 @@ _LIVE = {
     "isaiah",                          # 9/24 12:00 CT: 19 threads, 0 loose
     "maxamad",                         # 9/24: 3 threads, 0 loose
     "atef",                            # 9/24: 10 threads, 0 loose
+    "roshan",                          # 9/24: 6 threads, 0 loose
 }
 
 OFFICES += [
