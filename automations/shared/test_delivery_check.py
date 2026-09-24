@@ -329,6 +329,35 @@ class TheUnverifiedNoteIsSaidOnceADay(unittest.TestCase):
         self.assertFalse(self._note(c))
         c.chat_postMessage.assert_not_called()
 
+    def test_the_other_machine_already_said_it_so_this_one_stays_quiet(self):
+        """ONCE PER THREAD, NOT ONCE PER MACHINE (2026-09-24). The stamp is a
+        local file and two machines speak this line — the one that ran the
+        report and the mini's watcher. car_rides' thread got the same note
+        twice, and a false-red said twice reads as two problems."""
+        c = mock.MagicMock()
+        c.conversations_replies.return_value = {"messages": [
+            {"ts": "1.0", "text": "the parent"},
+            {"ts": "5.0", "text": "*R* ran clean, but nothing can confirm it "
+                                  "DELIVERED, so this stays open."}]}
+        self.assertFalse(self._note(c))
+        c.chat_postMessage.assert_not_called()
+
+    def test_the_parent_post_is_not_mistaken_for_the_note(self):
+        c = mock.MagicMock()
+        c.conversations_replies.return_value = {"messages": [
+            {"ts": "1.0", "text": "nothing can confirm it DELIVERED"}]}
+        c.chat_postMessage.return_value = {"ok": True, "ts": "9.0"}
+        self.assertTrue(self._note(c))
+
+    def test_a_thread_it_cannot_read_is_still_told(self):
+        """Silence is the one answer a broken Slack read must not produce here:
+        it falls through to exactly the behaviour before the check existed."""
+        c = mock.MagicMock()
+        c.conversations_replies.side_effect = RuntimeError("ratelimited")
+        c.chat_postMessage.return_value = {"ok": True, "ts": "9.0"}
+        self.assertTrue(self._note(c))
+        c.chat_postMessage.assert_called_once()
+
     def test_it_never_touches_a_findings_thread(self):
         self.inc._save_index({"finding-r": {"ts": "1.0", "channel": "C1",
                                             "opened": "2026-09-08",
