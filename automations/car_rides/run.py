@@ -563,19 +563,54 @@ def _dismiss_modal(page, log=_log) -> bool:
     retrying blind."""
     if not _modal_open(page):
         return True
-    for step in ("escape", "escape", "close"):
+    for step in ("escape", "escape", "close", "escape"):
         try:
             if step == "escape":
                 page.keyboard.press("Escape")
             else:
+                # Every dismiss control in this modal reports shown:false while
+                # the edit pane is up, so this click often just times out. It
+                # costs 2s and sometimes works; the caller's reload is the
+                # guarantee, not this.
                 page.locator(_MODAL_CLOSE).first.click(timeout=2_000)
-            page.wait_for_timeout(600)
+            page.wait_for_timeout(900)
         except Exception:  # noqa: BLE001 — try the next way out
             pass
         if not _modal_open(page):
             return True
     log("  a modal is still covering the page and will not close")
     return False
+
+
+def _pick_option(rep: str, texts: list) -> list:
+    """Which dropdown option IS this person? Indexes; 1 = go, anything else = flag.
+
+    names_match alone is the WRONG instrument here and the first live run proved
+    it (2026-09-24): it is deliberately loose — "ANY strong token match", built
+    to find a TERRITORY from a leader's short name — so board "Michelle Flores"
+    matched both "Michelle Flores" and "Kandice Michelle Flores" and the edit
+    flagged rather than guess. Right call, wrong question: one of those two IS
+    the exact person.
+
+    So it asks in order of confidence and stops at the first rung that answers
+    with exactly one name:
+      1. the same name, normalised  ("Michelle Flores" -> "Michelle Flores")
+      2. every token of the board name present in the option (a middle name or
+         a "Jr" on OwnerVille's side, e.g. "Gavin Natividad" ->
+         "Gavin Dimitri Natividad")
+      3. names_match, which still buys nicknames, initials and small typos
+
+    A rung that matches two people does NOT fall through to a looser one — it
+    stops, because a tie at high confidence is a real ambiguity and the looser
+    rung can only widen it."""
+    exact = [i for i, t in enumerate(texts) if _norm(t) == _norm(rep)]
+    if exact:
+        return exact
+    want = _tokens(rep)
+    subset = [i for i, t in enumerate(texts) if want and want <= _tokens(t)]
+    if subset:
+        return subset
+    return [i for i, t in enumerate(texts) if names_match(rep, t)]
 
 
 def apply_edit(page, edit: dict, log=_log) -> bool:
@@ -622,15 +657,15 @@ def apply_edit(page, edit: dict, log=_log) -> bool:
             # ONE MATCH OR NOTHING. The old code typed a FIRST NAME and clicked
             # `.first`, so two Andrews on the roster meant adding whichever the
             # list happened to put on top — to a car ride, silently. The filter
-            # still uses the first name (that is what narrows the list), but the
-            # pick is made by names_match on the FULL name, and an ambiguous or
-            # empty result flags instead of guessing. Scoped to the OPEN
-            # dropdown: select2 appends it to <body>, not inside the modal.
+            # still uses the first name (that is what narrows the list); the
+            # PICK is _pick_option's, and an ambiguous or empty result flags
+            # instead of guessing. Scoped to the OPEN dropdown: select2 appends
+            # it to <body>, not inside the modal.
             opts = page.locator(
                 ".select2-container--open .select2-results__option")
             texts = [opts.nth(i).inner_text().strip()
                      for i in range(min(opts.count(), 20))]
-            hits = [i for i, t in enumerate(texts) if names_match(rep, t)]
+            hits = _pick_option(rep, texts)
             if len(hits) != 1:
                 raise RuntimeError(
                     "{!r} matched {} of {} option(s) in Assigned Sales Rep(s) "
@@ -773,6 +808,38 @@ def _file_manifest(*, live: bool, failures: list[str], findings: list[str],
                                 retry_args=[], note=note + "; no flags")
 
 
+def _clear_for_next_edit(page, camp: str, log=_log) -> bool:
+    """Leave the page able to open the NEXT territory. True = go ahead.
+
+    WHY A RELOAD AND NOT JUST ESCAPE (2026-09-24, from the first live run that
+    ever applied an add). Escape closes a freshly-opened modal reliably — that
+    was probed. What it does NOT reliably close is the modal left behind by a
+    SAVE: 'rodolfo' saved four reps at 12:27:47 and andrew / fernando / andrew
+    all died at 12:27:55-12:28:01 on "an earlier modal is still covering the
+    page". One saved edit still cost the three behind it.
+
+    So dismissal is the fast path and re-opening the territory list is the
+    guarantee: it is a fresh page, so there is no modal state left to argue
+    with. It costs ~10s and only runs when the modal actually stuck, which is
+    cheap next to the 30s-per-territory timeouts this replaces.
+
+    Returns False only when the page cannot be brought back at all — the caller
+    stops that campaign there rather than walking down a list of territories it
+    can no longer open."""
+    if _dismiss_modal(page, log):
+        return True
+    log(f"  {camp}: modal stuck — reloading the territory list to clear it")
+    try:
+        goto_territory_assignment(page)
+        if not _select_campaign(page, camp):
+            log(f"  {camp}: campaign not found after the reload")
+            return False
+        return _dismiss_modal(page, log)
+    except Exception as e:  # noqa: BLE001
+        log(f"  {camp}: reload failed: {e!r}")
+        return False
+
+
 # --- main ----------------------------------------------------------------------
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Car-rides cleanup (OwnerVille vs Stations tab).")
@@ -879,6 +946,12 @@ def main(argv: list[str] | None = None) -> int:
                         lines.append(f"- {e['territory']}: +{e['add'] or '—'} "
                                      f"-{e['remove'] or '—'}{why}")
                         if live and not veto:
+                            if not _clear_for_next_edit(page, camp):
+                                _fail(f"{camp}: a modal stayed stuck and the "
+                                      "territory list would not reload — "
+                                      "stopped after this point, nothing was "
+                                      "left half-applied")
+                                break
                             ok = apply_edit(page, e)
                             if ok:
                                 changes[key] += 1

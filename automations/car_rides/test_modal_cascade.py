@@ -174,6 +174,45 @@ class TheSearchBoxIsATextarea(unittest.TestCase):
         on top — to a car ride, silently."""
         import inspect
         src = inspect.getsource(run.apply_edit)
-        self.assertIn("names_match(rep, t)", src)
+        self.assertIn("_pick_option(rep, texts)", src)
         self.assertIn("refusing to guess", src)
         self.assertIn("len(hits) != 1", src)
+
+
+class PickingTheRightPerson(unittest.TestCase):
+    """_pick_option, on the names that actually came out of OwnerVille."""
+
+    # The exact list the 12:27 live run saw when it typed "Michelle".
+    FLORES = ["Kandice Michelle Flores", "Michelle Flores"]
+
+    def test_the_exact_name_wins_over_a_longer_one_containing_it(self):
+        """The first live add flagged this instead of guessing — right call,
+        wrong question: one of the two IS the exact person."""
+        self.assertEqual(run._pick_option("Michelle Flores", self.FLORES), [1])
+
+    def test_the_longer_name_still_picks_itself(self):
+        self.assertEqual(
+            run._pick_option("Kandice Michelle Flores", self.FLORES), [0])
+
+    def test_a_middle_name_on_ownervilles_side_is_the_same_person(self):
+        opts = ["Gavin Dimitri Natividad", "Eduardo Alvarez"]
+        self.assertEqual(run._pick_option("Gavin Natividad", opts), [0])
+
+    def test_two_people_sharing_a_surname_are_not_one_person(self):
+        opts = ["Ruby Flores", "Janel Fernandez"]
+        self.assertEqual(run._pick_option("Flores", opts), [0])
+        self.assertEqual(len(run._pick_option("Aaron De La Torre",
+                                              ["Aaron De La Torre",
+                                               "Andrew De La Torre"])), 1)
+
+    def test_a_real_tie_still_refuses(self):
+        self.assertEqual(len(run._pick_option("Andrew", ["Andrew De La Torre",
+                                                         "Andrew Smith"])), 2)
+
+    def test_nobody_matching_is_not_a_match(self):
+        self.assertEqual(run._pick_option("Nobody Here", self.FLORES), [])
+
+    def test_a_high_confidence_tie_does_not_fall_through_to_a_looser_rung(self):
+        """A looser rung can only widen a tie, never resolve it."""
+        opts = ["Chris Vela", "Chris Vela"]
+        self.assertEqual(len(run._pick_option("Chris Vela", opts)), 2)
