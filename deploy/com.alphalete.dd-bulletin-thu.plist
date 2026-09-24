@@ -23,7 +23,8 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- THURSDAYS only (Weekday 4). Passes 10:30-13:00 Central every 25 min,
+    <!-- THURSDAYS only (Weekday 4). Passes 10:15-13:00 Central (Eve 2026-09-24:
+         first pass 10:15, was 10:30) then every 25 min,
          then HOURLY 14:00-22:00 (Megan 2026-08-20: the send is released by
          Evelyn's checkmark, so the gate has to keep watching for it no matter
          what time she ticks — 13:00 used to be the last look, and a later
@@ -38,7 +39,7 @@
          mini is Central). -->
     <key>StartCalendarInterval</key>
     <array>
-        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>15</integer></dict>
         <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>55</integer></dict>
         <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>11</integer><key>Minute</key><integer>20</integer></dict>
         <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>11</integer><key>Minute</key><integer>45</integer></dict>

@@ -14,7 +14,8 @@
 # Jolie left, so Evelyn is the only approver anywhere — see APPROVERS in
 # review_gate.py.
 #
-# launchd fires passes Thursday 10:30-13:00 Central, every 25 min. Every pass
+# launchd fires passes Thursday 10:15-13:00 Central (first pass moved up from
+# 10:30 by Eve 2026-09-24), then every 25 min. Every pass
 # runs the same three steps, all idempotent:
 #   --post          builds the pages, uploads the PDF, posts the link ONCE a
 #                   week. HOLDS silently while the tab's newest column is not
