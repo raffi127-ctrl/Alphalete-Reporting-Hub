@@ -213,6 +213,7 @@ _LIVE = {
     "colten",                          # 9/24 11:30 CT: 23 threads, 0 loose
     "jacob",                           # 9/24 11:30 CT: 11 threads, 0 loose
     "khalil",                          # 9/24 11:10 CT: 24 threads, 0 loose
+    "isaiah",                          # 9/24 12:00 CT: 19 threads, 0 loose
 }
 
 OFFICES += [
