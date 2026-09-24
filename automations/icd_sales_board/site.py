@@ -958,8 +958,13 @@ def _style_board(df, gone_rows: set):
             return ["background-color: rgba(255, 193, 7, 0.28); "
                     "font-weight: 700"] * len(row)
         if row.name in gone_rows:
-            return ["background-color: rgba(120, 120, 120, 0.16); "
-                    "color: #6B7280"] * len(row)
+            # The name is struck through as well as greyed, so the row reads
+            # as "this person is gone" and not merely as "quiet week".
+            grey = ("background-color: rgba(120, 120, 120, 0.16); "
+                    "color: #6B7280")
+            return [grey + ("; text-decoration: line-through"
+                            if c == "Rep" else "")
+                    for c in row.index]
         # Zebra striping. Sixty-odd rows across a dozen columns is a lot of
         # sideways tracking, and a faint band per row keeps your eye on the
         # right person. Very low alpha so it never competes with the totals
@@ -2225,8 +2230,16 @@ def _grouped_board(grid: list, groups: list) -> str:
         is_tot = str(row.get("Rep", "")).strip() == TOTALS_LABEL
         tint = "" if is_tot else tenure_style(row.get("Tenure"))
         base = _TOTAL_TINT + ";" if is_tot else tint
+        # A TERMINATED REP KEEPS THEIR ROW AND LOSES THEIR NAME TO A LINE
+        # (Megan 2026-09-24: "when someone gets marked terminated they should
+        # get a strikthrough on their name"). The row stays because their
+        # production stays — a sale landing after someone was marked gone is
+        # exactly the case to SEE — so the strike marks the person, not the
+        # numbers, and it never becomes a filter.
+        gone = str(row.get("Status", "")).strip().lower() == "terminated"
+        name_css = base + ("text-decoration:line-through;" if gone else "")
         cells_html = [
-            f'<td class="name" style="{base}">{row.get("Rep", "")}</td>',
+            f'<td class="name" style="{name_css}">{row.get("Rep", "")}</td>',
             f'<td style="{base}">{"" if is_tot else row.get("Tenure", "")}'
             f'</td>']
         for _title, cells in groups:
@@ -3045,10 +3058,19 @@ def knocks_page(icd: str) -> None:
         st.warning(warn, icon="🚧")
 
     start_tenure = _appstream_tenure(icd, week_ending)
+    # The same roster the sales board reads, for one reason: a rep marked
+    # Terminated is struck through THERE, and a name that reads normally here
+    # looks like one of the two boards is wrong.
+    try:
+        from automations.icd_sales_board import roster as R
+        status_of = {r.name.strip().lower(): r.status
+                     for r in R.load(_knock_office_key(icd))}
+    except Exception:   # noqa: BLE001 — knocks draw fine without it
+        status_of = {}
     grid = []
     for rep_low, days in detail.items():
         name = _title_name(rep_low)
-        row = {"Rep": name,
+        row = {"Rep": name, "Status": status_of.get(rep_low, ""),
                "Tenure": _board_tenure(start_tenure.get(rep_low, "")
                                        or ("5th wk+" if start_tenure else ""))}
         for m in measures:
@@ -3145,6 +3167,18 @@ def _knock_no_dispo(row: dict, outcomes: list) -> int | str:
     if not doors:
         return ""
     return max(0, doors - sum(_num_int(row.get(c)) for c in outcomes))
+
+
+def _knock_office_key(icd: str) -> str:
+    """The roster key for this ICD — the same one the sales board saves under."""
+    try:
+        from automations.icd_sales_board import profiles as P
+        prof = P.load().get(icd)
+        if prof and prof.office_key:
+            return prof.office_key
+    except Exception:   # noqa: BLE001
+        pass
+    return icd.lower().replace(" ", "_")
 
 
 def _knock_totals(grid: list, measures: list, week_days: list,
