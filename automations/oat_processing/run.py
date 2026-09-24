@@ -2295,19 +2295,47 @@ def _rd_mod():
 
 def _shot(pg, tag) -> None:
     """Diag screenshot (2026-09-23, Carlos: "get me a screenshot because you're
-    screwing something up"). Only when OAT_SHOTS_DIR is set; never raises."""
+    screwing something up"). With OAT_SHOTS_DIR set (--shots) every failure is
+    snapped there; WITHOUT it, the first wall/blank of the day per office is
+    still snapped and DM'd to Carlos (2026-09-24, third ask: "wheres a
+    screenshot of where youre getting stuck?" — the hand-run kept colliding
+    with the scheduled tick, so the tick itself now delivers). Never raises."""
     import os as _os
     d = _os.environ.get("OAT_SHOTS_DIR", "")
+    dm_after = False
     if not d:
-        return
+        from pathlib import Path as _P
+        root = _P(__file__).resolve().parents[2]
+        d = str(root / "output" / ("oat-shots-%s%s" % (
+            dt.date.today().isoformat(), config.FILE_SUFFIX)))
+        marker = _os.path.join(d, ".dmed")
+        if _os.path.exists(marker):
+            return                      # today's evidence already delivered
+        dm_after = True
     try:
         _os.makedirs(d, exist_ok=True)
         n = len([f for f in _os.listdir(d) if f.endswith(".png")]) + 1
-        pg.screenshot(path=_os.path.join(d, "%02d-%s.png" % (n, tag)),
-                      full_page=False)
+        path = _os.path.join(d, "%02d-%s.png" % (n, tag))
+        pg.screenshot(path=path, full_page=False)
         _log("    [shot] saved %02d-%s.png" % (n, tag))
     except Exception as e:  # noqa: BLE001
         _log("    [shot] failed (%s): %s" % (tag, type(e).__name__))
+        return
+    if dm_after:
+        try:
+            from automations.shared import slack_metrics_post as smp
+            client = smp._client()
+            ch = client.conversations_open(users="U046G04P5LG")["channel"]["id"]
+            client.chat_postMessage(channel=ch, text=(
+                "Where the resume read is stuck in office %s (%s) — first "
+                "failure of the day, snapped mid-run:"
+                % (config.OFFICE_ID, tag)))
+            client.files_upload_v2(channel=ch, file=path,
+                                   title=_os.path.basename(path))
+            open(marker, "w").write(dt.datetime.now().isoformat())
+            _log("    [shot] DM'd Carlos")
+        except Exception as e:  # noqa: BLE001
+            _log("    [shot] DM failed: %s: %s" % (type(e).__name__, str(e)[:80]))
 
 
 def _ocr_phone(pg, who="") -> tuple:
