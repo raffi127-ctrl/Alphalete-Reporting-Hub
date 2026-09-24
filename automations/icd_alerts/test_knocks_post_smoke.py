@@ -172,7 +172,10 @@ class TheSendBranchDoesNotTouchTheHandlersVariables(unittest.TestCase):
     def test_the_send_branch_is_a_plain_prefix_check(self):
         from automations.icd_alerts import knocks_post as KP
         src = __import__("inspect").getsource(KP.run)
-        i = src.index("_text(P.text_group_of")
+        # The anchor moved on 2026-09-24 (`_text` takes the destination, not
+        # its name) — the rule it guards, that the send branch never reads the
+        # failure handler's variables, is unchanged.
+        i = src.index("_text(d,")
         branch = src[max(0, i - 200):i]
         for name in ("where", "type(e)"):
             self.assertNotIn(name, branch,
@@ -216,7 +219,11 @@ class TheSendBranchDoesNotTouchTheHandlersVariables(unittest.TestCase):
                 mock.patch.object(KP, "_comment", return_value="x"), \
                 mock.patch.object(KP, "in_field_hours", return_value=True), \
                 mock.patch.object(KP, "_text",
-                                  side_effect=lambda g, b, c: sent.append(g)):
+                                  side_effect=lambda d, b, c: sent.append(d)):
             KP.run(day, send=True, log=lambda *_: None)
-        self.assertEqual(sent, ["Box B2B"],
+        # THE WHOLE DESTINATION now reaches _text, not just its name: a
+        # participant-pinned group cannot be looked up by name (2026-09-24).
+        # The rule this pins is unchanged — the text dest reached the sender.
+        self.assertEqual([d.get("channel_name") if isinstance(d, dict) else d
+                          for d in sent], ["Box B2B"],
                          "the text destination never reached the sender")

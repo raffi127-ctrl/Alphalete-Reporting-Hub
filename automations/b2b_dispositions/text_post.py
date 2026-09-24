@@ -169,9 +169,145 @@ def resolve_group(name: str) -> Dict:
     return hits[0]
 
 
+# --- addressing a group whose NAME is not usable -----------------------------
+# Cyrus's managing-partners group renames itself several times an hour: Raf
+# watched it cycle "Ambient Managing Partners 🔥" -> "1️⃣🎉" -> "Ambient
+# Partners" -> "1️⃣🎉" within minutes, and by the time it was looked up on the
+# mini it was "1️⃣🐦‍🔥". Its members do it; nobody is going to stop.
+#
+# A NAME-KEYED DESTINATION BREAKS THREE WAYS THERE, and only the first is
+# loud: resolve_group raises and nothing sends; the per-room cadence marker is
+# the address string, so a rename mints a fresh marker, reads as "never
+# posted" and fires a board INSTANTLY (a rename storm becomes a text storm);
+# and the gap list's "who is newly over" state is keyed the same way, so the
+# ⏰ quietly stops appearing.
+#
+# THE ANSWER IS NOT A STORED GUID EITHER, which is what the module rule above
+# is about: a membership change mints a new chat id and a stale one does not
+# raise. Megan/Raf chose the third key, 2026-09-24: PIN THE PARTICIPANTS. A
+# chat is identified by the handles in it, the display name is never read, and
+# a `chat_guid` only breaks a tie between two chats holding the same people.
+# So a rename is invisible, and a reminted id self-heals instead of sending
+# into a thread nobody can see.
+#
+# The required set is a SUBSET, not the whole roster: Raf adds people to these
+# groups, and a destination that breaks when a ninth member joins is a
+# destination that breaks.
+
+
+def _norm_handle(handle: str) -> str:
+    """A handle as something two spellings of it can be compared by.
+
+    Messages hands back "+13195609495", "(319) 560-9495" and sometimes a bare
+    "3195609495" for the same person, so phones compare on their last ten
+    digits. An email handle compares lowercased.
+    """
+    text = str(handle or "").strip()
+    if "@" in text:
+        return text.lower()
+    digits = "".join(ch for ch in text if ch.isdigit())
+    return digits[-10:] if len(digits) >= 10 else digits
+
+
+def list_chats() -> List[Dict]:
+    """Every chat on this machine as {id, name, handles}.
+
+    One AppleScript pass, because the alternative is a round trip per chat.
+    Participants are what this is for -- the name comes back only so a log
+    line can say which room was picked.
+    """
+    out = _osascript(
+        'tell application "Messages"\n'
+        '  set res to ""\n'
+        '  repeat with c in chats\n'
+        '    set nm to ""\n'
+        '    try\n'
+        '      set nm to name of c as text\n'
+        '    end try\n'
+        '    set hs to ""\n'
+        '    try\n'
+        '      repeat with p in participants of c\n'
+        '        set hs to hs & (handle of p) & ","\n'
+        '      end repeat\n'
+        '    end try\n'
+        '    set res to res & (id of c) & tab & nm & tab & hs & linefeed\n'
+        '  end repeat\n'
+        '  return res\n'
+        'end tell')
+    chats = []
+    for line in (out or "").splitlines():
+        parts = line.split("\t")
+        if not parts or not parts[0].strip():
+            continue
+        raw = parts[2] if len(parts) > 2 else ""
+        chats.append({
+            "id": parts[0].strip(),
+            "name": parts[1] if len(parts) > 1 else "",
+            "handles": [h for h in (raw or "").split(",") if h.strip()],
+        })
+    return chats
+
+
+def find_group_by_handles(require: Sequence, guid: str = "") -> List[Dict]:
+    """Every chat whose participants INCLUDE all of `require`."""
+    need = set(_norm_handle(h) for h in (require or []) if _norm_handle(h))
+    if not need:
+        return []
+    hits = []
+    for chat in list_chats():
+        have = set(_norm_handle(h) for h in chat.get("handles") or [])
+        if need <= have:
+            hit = dict(chat)
+            hit["participants"] = str(len(chat.get("handles") or []))
+            hit["guid_matches"] = bool(guid) and chat["id"] == guid
+            hits.append(hit)
+    return hits
+
+
+def resolve_dest(dest: Dict) -> Dict:
+    """The ONE live chat this destination means. Raises on 0 or 2+.
+
+    A destination carrying `require_handles` is resolved by PARTICIPANTS and
+    its display name is never consulted. Anything else is a name-keyed
+    destination and goes down the original path unchanged -- the seven groups
+    already live must not change behaviour because a new one needed this.
+    """
+    require = dest.get("require_handles") or []
+    if not require:
+        return resolve_group(dest.get("group") or dest.get("channel_name") or "")
+
+    guid = str(dest.get("chat_guid") or "")
+    hits = find_group_by_handles(require, guid)
+    label = dest.get("group") or "(participant-pinned group)"
+    if not hits:
+        raise GroupTextError(
+            "no chat on this machine holds all of %s (%s) — either Lucy was "
+            "removed from the group, or those numbers left it. The display "
+            "name is deliberately not used, so a rename is NOT the cause."
+            % (", ".join(require), label))
+    if len(hits) > 1:
+        # A GUID BREAKS THE TIE AND NEVER DECIDES ALONE. If the configured id
+        # is one of the matches it is the one meant; two chats holding the
+        # same people and neither matching the id is a refusal, not a guess.
+        exact = [h for h in hits if h.get("guid_matches")]
+        if len(exact) == 1:
+            return exact[0]
+        raise GroupTextError(
+            "%d chats hold %s (%s) — refusing to guess which. Set chat_guid "
+            "on the destination to the right one: %s"
+            % (len(hits), ", ".join(require), label,
+               ", ".join("%s/%s participants" % (h["id"], h["participants"])
+                         for h in hits)))
+    # EXACTLY ONE, which is the answer whether or not the id still matches.
+    # An id that has moved is the reminted-GUID case the module rule warns
+    # about, and finding the group by its people is what heals it.
+    return hits[0]
+
+
 def send_to_group(name: str, text: str, image_paths: Sequence,
                   *, dry_run: bool = True,
-                  allow_textonly: bool = False) -> Dict:
+                  allow_textonly: bool = False,
+                  dest: Optional[Dict] = None) -> Dict:
     """Send one posting — its Slack text, then its image(s) — to a named group.
 
     Text first so the images arrive under a labelled header, matching how Slack
@@ -194,7 +330,7 @@ def send_to_group(name: str, text: str, image_paths: Sequence,
 
     # Resolve even on a dry run: it's read-only, and it's the half most likely to
     # be wrong (membership churn). A dry run that skipped it would prove nothing.
-    info = resolve_group(name)
+    info = resolve_dest(dest) if dest else resolve_group(name)
     result["chat_id"] = info["id"]
     result["resolved_name"] = info["name"]
     result["participants"] = info["participants"]
@@ -238,7 +374,8 @@ def send_to_group(name: str, text: str, image_paths: Sequence,
     return result
 
 
-def send_text_to_group(name: str, text: str, *, dry_run: bool = True) -> Dict:
+def send_text_to_group(name: str, text: str, *, dry_run: bool = True,
+                       dest: Optional[Dict] = None) -> Dict:
     """Send a TEXT-ONLY message to a named group.
 
     send_to_group refuses image-less sends because for the disposition posts
@@ -253,7 +390,7 @@ def send_text_to_group(name: str, text: str, *, dry_run: bool = True) -> Dict:
         raise GroupTextError("refusing to send an empty text to %r" % name)
 
     result = {"group": name, "text": text, "dry_run": dry_run, "ok": False}
-    info = resolve_group(name)
+    info = resolve_dest(dest) if dest else resolve_group(name)
     result["chat_id"] = info["id"]
     result["resolved_name"] = info["name"]
     result["participants"] = info["participants"]

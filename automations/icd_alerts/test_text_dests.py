@@ -68,24 +68,59 @@ class ATextDestinationLooksLikeAChannel(unittest.TestCase):
                          "Admin Staff")
 
 
-class NothingEverStoresAChatId(unittest.TestCase):
-    """A group's chat id is regenerated whenever its membership changes, and a
-    stale id does NOT raise -- Messages sends into a thread nobody can see.
-    That is how the Texas de Brazil texts went missing for weeks, and Carlos
-    is actively adding people to these groups."""
+class AChatIdIsNeverTrustedOnItsOwn(unittest.TestCase):
+    """Was NothingEverStoresAChatId, and the reason it existed has not
+    changed: a group's chat id is regenerated whenever its membership
+    changes, and a stale id does NOT raise -- Messages sends into a thread
+    nobody can see. That is how the Texas de Brazil texts went missing for
+    weeks, and Raf is actively adding people to these groups.
 
-    def test_an_id_is_never_produced_as_the_address(self):
+    What changed on 2026-09-24 is that ONE group cannot be addressed by name
+    either: Cyrus's managing-partners chat is renamed by its own members
+    several times an hour. So `chat_guid` may now be stored -- and the rule
+    is that it is never the address and never decides a lookup by itself.
+    The participants are the key; the id only breaks a tie between two chats
+    holding the same people. A moved id is found again by its people, which
+    is the TdB failure made self-healing rather than silent.
+    """
+
+    def test_an_id_is_never_the_address(self):
+        out = P.approved_texts(_book(_channels_rows(
+            [{"group": "Ambient Managing Partners",
+              "chat_guid": "any;+;4a0f39ca3b224acc906a049b63bc4c45",
+              "require_handles": ["+13195609495", "+19039311920"]}])))
+        addr = out["cyrus"][0]["channel_id"]
+        self.assertNotIn("any;+;", addr,
+                         "a chat id became the address, so a reminted id "
+                         "would silently mint a new cadence marker")
+        self.assertTrue(addr.startswith("imessage:handles:"), addr)
+
+    def test_a_name_keyed_group_still_stores_no_id_at_all(self):
         out = P.approved_texts(_book(_channels_rows(
             [{"group": "Admin Staff",
               "chat_id": "any;+;da1e42ef23df4ff1bb67c6e3b1d10773"}])))
-        blob = json.dumps(out)
-        self.assertNotIn("any;+;", blob,
-                         "a stored chat id reached the send path")
+        self.assertEqual(out["cyrus"][0]["channel_id"], "imessage:Admin Staff")
+        self.assertEqual(out["cyrus"][0]["chat_guid"], "",
+                         "an unrecognised id key leaked into the dest")
+
+    def test_the_lookup_refuses_two_chats_with_the_same_people(self):
+        """The one thing a guid is allowed to do is break that tie -- and
+        with no guid it must refuse rather than pick one."""
+        from automations.b2b_dispositions import text_post as tp
+        two = [{"id": "any;+;aaa", "name": "1", "handles": ["+13195609495"],
+                "participants": "1", "guid_matches": False},
+               {"id": "any;+;bbb", "name": "2", "handles": ["+13195609495"],
+                "participants": "1", "guid_matches": False}]
+        with mock.patch.object(tp, "find_group_by_handles", return_value=two):
+            with self.assertRaises(tp.GroupTextError):
+                tp.resolve_dest({"group": "g",
+                                 "require_handles": ["+13195609495"]})
 
     def test_the_source_says_why(self):
         import inspect
         doc = inspect.getdoc(P.approved_texts) or ""
         self.assertIn("name", doc.lower())
+        self.assertIn("participants", doc.lower())
 
 
 class AMachineThatCannotTextSaysSo(unittest.TestCase):
@@ -130,7 +165,11 @@ class TheSendPicksTheRightRoute(unittest.TestCase):
         self.assertTrue(P.is_text_dest("imessage:Admin Staff"))
         src = __import__("inspect").getsource(KP.run)
         self.assertIn("P.is_text_dest(d[\"channel_id\"])", src)
-        self.assertIn("_text(P.text_group_of", src)
+        # THE DEST GOES TO _text, not just a name. It was
+        # `_text(P.text_group_of(...))` until 2026-09-24: a participant-pinned
+        # group cannot be found by name, so the whole destination has to
+        # travel. The rule -- a text dest takes the text route -- is unchanged.
+        self.assertIn("_text(d,", src)
 
     def test_texting_reuses_the_production_sender(self):
         from automations.icd_alerts import knocks_post as KP
@@ -324,7 +363,7 @@ class ATextIsTheBoardAndNothingElse(unittest.TestCase):
         import inspect
         from automations.icd_alerts import knocks_post as KP
         src = inspect.getsource(KP.run)
-        i = src.index("_text(P.text_group_of")
+        i = src.index("_text(d,")
         # THE _text CALL ONLY. A 200-character window ran past the `else:`
         # into the Slack _upload(..., comment) beside it, so the assertion
         # failed on the line it is meant to protect.
@@ -343,7 +382,7 @@ class ATextIsTheBoardAndNothingElse(unittest.TestCase):
         import inspect
         from automations.icd_alerts import knocks_post as KP
         src = inspect.getsource(KP.run)
-        i = src.index("_text(P.text_group_of")
+        i = src.index("_text(d,")
         call = src[src.index("else:", i):src.index("posted_at[d[", i)]
         self.assertIn("_upload(", call, "the Slack post is gone")
         # AND IT WAS SPELLED A GIVEN WAY AGAIN. `comment` became
@@ -408,7 +447,7 @@ class TheTextCarriesTheGapList(unittest.TestCase):
         import inspect
         from automations.icd_alerts import knocks_post as KP
         src = inspect.getsource(KP.run)
-        i = src.index("_text(P.text_group_of")
+        i = src.index("_text(d,")
         self.assertIn("_gaps_text", src[i:i + 200],
                       "the text still carries the Slack heading instead of "
                       "the gap list")
@@ -428,7 +467,7 @@ class TheGapListIsAutomaticForEveryTextOffice(unittest.TestCase):
         import inspect
         from automations.icd_alerts import knocks_post as KP
         src = inspect.getsource(KP.run)
-        i = src.index("_text(P.text_group_of")
+        i = src.index("_text(d,")
         call = src[i:src.index("else:", i)]
         self.assertIn("_gaps_text", call)
         # No conditional between the send and the gap list.

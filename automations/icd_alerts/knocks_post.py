@@ -456,7 +456,11 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         for d in due:
             try:
                 if P.is_text_dest(d["channel_id"]):
-                    _text(P.text_group_of(d["channel_id"]), boards,
+                    # THE DEST, not just its name: a participant-pinned group
+                    # cannot be found by name at all (its members rename it
+                    # hourly), and `dest=` keys the ⏰ state on the stable
+                    # address rather than a name that churns.
+                    _text(d, boards,
                           _gaps_text(office, rows_for_board, now,
                                      dest=d["channel_id"]))
                 else:
@@ -789,8 +793,14 @@ def _can_text() -> bool:
         return False
 
 
-def _text(group: str, boards, caption: str = "") -> None:
+def _text(dest, boards, caption: str = "") -> None:
     """The board to an iMessage group, through the sender production uses.
+
+    TAKES THE DESTINATION, not a name. A name-keyed group still resolves by
+    name inside text_post exactly as before; a participant-pinned one is
+    found by its handles, because its display name is not usable (see
+    text_post.resolve_dest). A plain string is still accepted so nothing that
+    hands this a name has to change.
 
     NOT our own AppleScript. text_post knows two things this would otherwise
     have to rediscover: resolve the group by NAME every time (a stored chat id
@@ -815,7 +825,13 @@ def _text(group: str, boards, caption: str = "") -> None:
     alone rather than a header with nothing under it.
     """
     from automations.b2b_dispositions import text_post as tp
-    tp.send_to_group(group, caption or "", list(boards), dry_run=False)
+    if isinstance(dest, dict):
+        tp.send_to_group(dest.get("group") or dest.get("channel_name") or "",
+                         caption or "", list(boards), dry_run=False,
+                         dest=dest)
+    else:
+        tp.send_to_group(str(dest), caption or "", list(boards),
+                         dry_run=False)
 
 
 # ROOMS THAT GET ONE THREAD A DAY instead of a loose post every tick. Carlos

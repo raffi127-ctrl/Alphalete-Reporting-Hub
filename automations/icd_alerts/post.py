@@ -681,17 +681,31 @@ def approved_knocks(book=None) -> Dict[str, List[Dict]]:
 
 
 def approved_texts(book=None) -> Dict[str, List[Dict]]:
-    """{office_key: [{channel_id, channel_name, cadence_min}]}, signed off.
+    """{office_key: [{channel_id, channel_name, group, cadence_min, ...}]},
+    signed off.
 
     Shaped exactly like approved_knocks() so the posting pass can concatenate
-    the two and treat them identically -- the channel_id is the group NAME
-    behind TEXT_DEST_PREFIX.
+    the two and treat them identically.
 
-    THE NAME IS THE ADDRESS, AND IT STAYS THE NAME. b2b_dispositions.text_post
-    resolves a group by name on every single send because a chat id is
+    THE NAME IS THE ADDRESS FOR A NAME-KEYED GROUP, AND IT STAYS THE NAME.
+    text_post resolves those by name on every single send because a chat id is
     regenerated whenever the membership changes, and a stale id does not raise
     -- Messages sends into a thread nobody can see. That is how the Texas de
-    Brazil texts went missing for weeks. So nothing here ever stores an id.
+    Brazil texts went missing for weeks. Seven groups are addressed this way
+    and none of them change here.
+
+    A GROUP WHOSE NAME CANNOT BE USED CARRIES `require_handles` INSTEAD
+    (Megan/Raf 2026-09-24, for Cyrus's managing-partners chat, which its own
+    members rename several times an hour). Then:
+
+      * the address is derived from the PARTICIPANTS, never the name, so a
+        rename cannot mint a new one. That matters beyond the lookup: this
+        string is the per-room cadence marker AND the key for the gap list's
+        ⏰ state, so a churning address means duplicate texts and a clock
+        that silently stops appearing -- see text_post.resolve_dest.
+      * `chat_guid` rides along but is NEVER the address and never decides a
+        lookup alone; it only breaks a tie between two chats holding the same
+        people. An id that has moved is found again by its people.
     """
     if book is None:
         from automations.recruiting_report.fill import open_by_key
@@ -714,16 +728,46 @@ def approved_texts(book=None) -> Dict[str, List[Dict]]:
             continue
         good = []
         for g in groups:
-            name = (g.get("group") or "").strip() if isinstance(g, dict) else str(g).strip()
+            g = g if isinstance(g, dict) else {"group": str(g).strip()}
+            name = (g.get("group") or "").strip()
+            handles = [str(h).strip() for h in (g.get("require_handles") or [])
+                       if str(h).strip()]
+            # A NAME IS STILL REQUIRED even when it is not the address: it is
+            # what the logs and the failure alerts call the room, and a
+            # destination nobody can name is one nobody can find in a log.
             if not name:
                 continue
-            good.append({"channel_id": TEXT_DEST_PREFIX + name,
+            good.append({"channel_id": text_dest_address(name, handles),
                          "channel_name": name,
-                         "cadence_min": int((g or {}).get("cadence_min") or 0)
-                         if isinstance(g, dict) else 0})
+                         "group": name,
+                         "chat_guid": str(g.get("chat_guid") or "").strip(),
+                         "require_handles": handles,
+                         "cadence_min": int(g.get("cadence_min") or 0)})
         if good:
             out[key] = good
     return out
+
+
+def text_dest_address(name: str, require_handles=None) -> str:
+    """The stable address for a text destination.
+
+    Derived from the PARTICIPANTS when the destination is pinned to them, so
+    it survives every rename -- and it has to, because this string is not
+    only an address: knocks_post uses it as the per-room cadence marker and as
+    the gap list's ⏰ key. A churning address re-posts a board instantly on
+    every rename and quietly loses the clock marks.
+
+    Normalised to last-ten-digits and sorted, so the same three numbers
+    written three ways give one address. A name-keyed destination keeps the
+    name it has always had -- seven live groups depend on that marker staying
+    exactly what it is today.
+    """
+    handles = [h for h in (require_handles or []) if str(h).strip()]
+    if not handles:
+        return TEXT_DEST_PREFIX + name
+    from automations.b2b_dispositions.text_post import _norm_handle
+    keys = sorted(set(_norm_handle(h) for h in handles if _norm_handle(h)))
+    return TEXT_DEST_PREFIX + "handles:" + ",".join(keys)
 
 
 def set_knocks_cadence(office_key: str, minutes: int, book=None) -> bool:
@@ -1036,7 +1080,10 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                 for t in texts[key]:
                     group = t.get("channel_name") or ""
                     try:
-                        tp.send_text_to_group(group, board, dry_run=not send)
+                        # `dest=` so a participant-pinned group resolves by
+                        # its handles; a name-keyed one is unchanged.
+                        tp.send_text_to_group(group, board, dry_run=not send,
+                                              dest=t)
                         log("%-10s standings -> text group %r%s"
                             % (key, group, "" if send else "  (dry run)"))
                     except Exception as e:  # noqa: BLE001
