@@ -824,6 +824,21 @@ def assert_impersonating(page, rqst: str, canonical: str, aliases_raw,
     # 2026-09-01 it told Raf "impersonation landed on 'Akashdeep Rai (22177 -
     # Palace Acquisitions, Inc.)', not 'Kash Rai'" — which is the same office,
     # under the spelling ownerville uses.
+    # A board pinned to one office number (Shealey Miller = Angel Padilla's
+    # 23858) is checked by that NUMBER: the label carries the owner's name,
+    # which is the same on his other office, so a name match proves nothing.
+    from automations.shared.ownerville_office_pins import (
+        label_is_office, pinned_office)
+    pin = pinned_office(canonical)
+    if pin:
+        if label_is_office(label, pin):
+            if verbose:
+                print("  ✓ Confirmed on %s" % label.strip(), flush=True)
+            return
+        raise RuntimeError(
+            "impersonation landed on %r, not office %s (pinned for %r) — "
+            "every number from this session would belong to another office."
+            % (label.strip()[:80], pin, canonical))
     want = {_norm_office(canonical)}
     for canon, alias_list in (aliases_raw or {}).items():
         if _norm_office(canon) != _norm_office(canonical):

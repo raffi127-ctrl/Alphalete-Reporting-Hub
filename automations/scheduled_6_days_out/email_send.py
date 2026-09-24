@@ -97,6 +97,9 @@ RECIPIENTS: dict[str, List[str]] = {
         # IN 2026-09-15 (Eve): Nuri Burgos — same add as
         # captainship_drafts.config.RECIPIENTS and the live group.
         "nuri@22select.com",
+        # IN 2026-09-24: Shealey Miller + Angel Padilla — same add as
+        # captainship_drafts.config.RECIPIENTS and the live group.
+        "miller10xbusiness@gmail.com", "padilla10x2001@gmail.com",
     ],
     "starr": [
         # OUT 2026-08-19, two-week zero rule: Jason Strid.

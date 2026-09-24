@@ -71,8 +71,10 @@ class RostersSkipTerminatedTests(unittest.TestCase):
                 p.stop()
 
     def test_knock_boards_leave_him_out(self):
-        got = self._run(lambda: KD.owner_names(
-            "chan", grid=[], is_terminated=_lookup("Eric Martinez")))
+        from automations.captainship_drafts import config
+        with mock.patch.object(config, "EXTRA_KNOCK_OWNERS", {}):
+            got = self._run(lambda: KD.owner_names(
+                "chan", grid=[], is_terminated=_lookup("Eric Martinez")))
         self.assertEqual(got, ["Chan Park", "Carissa Ng"])
 
     def test_extra_owner_rides_along_after_the_block(self):
@@ -88,7 +90,9 @@ class RostersSkipTerminatedTests(unittest.TestCase):
 
     def test_access_watch_leaves_him_out(self):
         from automations.knocks_access_watch import audit as A
-        with mock.patch.object(A, "CAPTAINS", ("chan",)):
+        from automations.captainship_drafts import config
+        with mock.patch.object(A, "CAPTAINS", ("chan",)), \
+                mock.patch.object(config, "EXTRA_KNOCK_OWNERS", {}):
             got = self._run(lambda: A.rosters(
                 grid=[], is_terminated=_lookup("Eric Martinez")))
         self.assertEqual(got["chan"][1], ["Chan Park", "Carissa Ng"])

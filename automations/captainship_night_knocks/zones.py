@@ -254,6 +254,43 @@ def provenance(icd: str) -> Optional[str]:
     return None
 
 
+# ---------------------------------------------------------------------------
+# THE AUTO LAYER — the one exception to "a scraper never writes a live zone".
+#
+# Eve 2026-09-24, on Shealey Miller (office 23858, access not granted yet):
+# "pido acceso en ownerville y cuando lo tengamos sumala automaticamente".
+# Nobody can read the office address before the grant, and nobody will be at a
+# keyboard when it lands. So an ICD listed in AUTO_ZONE_ICDS — and ONLY those —
+# may take the zone `await_zone.py` harvests once access works. It lands in
+# AUTO_ZONE_JSON, is used in LIVE too, and Eve gets a mail naming the city so a
+# wrong read is one look away. The confirmed table still wins, and every other
+# ICD keeps the old rule.
+# ---------------------------------------------------------------------------
+
+AUTO_ZONE_ICDS: Tuple[str, ...] = ("Shealey Miller",)
+
+AUTO_ZONE_JSON = Path("output") / "icd_zones_auto.json"
+
+_AUTO_NORM = {normalize(n) for n in AUTO_ZONE_ICDS}
+
+
+def load_auto(path=None) -> Dict[str, str]:
+    """{normalized icd: zone} from the auto file, limited to AUTO_ZONE_ICDS.
+    Missing or unreadable file = {} (those ICDs stay out, as before)."""
+    p = Path(path) if path else AUTO_ZONE_JSON
+    try:
+        raw = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 — no file is a state, not a crash
+        return {}
+    out = {}
+    for icd, rec in (raw.get("zones") or {}).items():
+        zone = rec.get("zone") if isinstance(rec, dict) else rec
+        n = normalize(icd)
+        if n in _AUTO_NORM and zone in ZONE_LABEL:
+            out[n] = zone
+    return out
+
+
 def zone_for(icd: str) -> Optional[str]:
     """The ICD's IANA zone, or None if nobody has harvested it.
 
@@ -264,7 +301,10 @@ def zone_for(icd: str) -> Optional[str]:
     from a slow night.
     """
     n = normalize(icd)
-    return _BY_NORM.get(n) or _HARVESTED.get(n)
+    hit = _BY_NORM.get(n) or _HARVESTED.get(n)
+    if hit or n not in _AUTO_NORM:
+        return hit
+    return load_auto().get(n)
 
 
 def label_for(icd: str) -> Optional[str]:

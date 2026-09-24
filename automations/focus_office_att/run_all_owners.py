@@ -463,8 +463,32 @@ def _find_owner_and_impersonate(page, sheet_tab_name: str, aliases_raw: dict) ->
                 return tr, visible
         return None, visible
 
-    candidates = get_search_candidates(sheet_tab_name, aliases_raw)
-    owner_row = None
+    # A board pinned to ONE office (shared.ownerville_office_pins) is found by
+    # its office number, never by name: Shealey Miller is Angel Padilla's
+    # 23858, and a name search would take whichever of his two rows is first.
+    from automations.shared.ownerville_office_pins import pinned_office
+    pin = pinned_office(sheet_tab_name)
+    if pin:
+        owner_row = None
+        try:
+            sb.fill(pin)
+            page.wait_for_timeout(800)
+            for tr in table.locator("tbody tr").all():
+                cells = tr.locator("td").all()
+                if cells and cells[0].inner_text().strip() == pin:
+                    owner_row = tr
+                    break
+        except Exception as e:  # noqa: BLE001
+            print(f"  ⚠ Search box unusable: {e}")
+        if owner_row is None:
+            print(f"  ❌ Office {pin} (pinned for '{sheet_tab_name}') is not on "
+                  "the Office Access list.")
+            return None, f"name not found in ownerville — office {pin} not listed"
+        print(f"  ✓ '{sheet_tab_name}' → office {pin} (pinned)")
+        candidates = []
+    else:
+        candidates = get_search_candidates(sheet_tab_name, aliases_raw)
+        owner_row = None
     last_visible_names: list[str] = []
 
     for cand in candidates:

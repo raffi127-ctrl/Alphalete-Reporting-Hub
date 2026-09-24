@@ -508,6 +508,11 @@ RECIPIENTS: dict = {
         # reporte de Raf, donde van sus knocks (EXTRA_KNOCK_OWNERS). Ya estaba
         # en el grupo VIVO; aca para que seed_groups no la marque para SACAR.
         "nuri@22select.com",
+        # IN 2026-09-24 (Rafael, mail "daily knocks"; Eve lo confirmo):
+        # Shealey Miller (maneja la 23858 de Angel Padilla) y Angel reciben
+        # este reporte, donde van los knocks de Shealey (EXTRA_KNOCK_OWNERS).
+        # Agregados primero al grupo VIVO; aca para que seed_groups no los saque.
+        "miller10xbusiness@gmail.com", "padilla10x2001@gmail.com",
     ],
     "wayne": [
         "iraffi127@icloud.com",
@@ -563,6 +568,11 @@ RECIPIENTS: dict = {
         # keeps the fallback in sync so he isn't dropped if Contacts is
         # unreachable at send time.
         "jamosleybiz@gmail.com",
+        # IN 2026-09-24 (Rafael, mail "daily knocks"; Eve lo confirmo):
+        # Shealey Miller (maneja la 23858 de Angel Padilla) y Angel reciben
+        # este reporte, donde van los knocks de Shealey (EXTRA_KNOCK_OWNERS).
+        # Agregados primero al grupo VIVO; aca para que seed_groups no los saque.
+        "miller10xbusiness@gmail.com", "padilla10x2001@gmail.com",
     ],
     "tony": [
         # OUT 2026-09-15 (Eve): kcireus@ — Kobe Cireus sale de la capitania de
@@ -1035,8 +1045,17 @@ DROP_KNOCK_OWNERS: tuple = ()
 # nuri burgos -> rafael, 2026-09-14 (Eve: "agregues los knocks reports de Nuri
 # burgos en la capitania de rafael aunque estrictamente no sea parte de ella").
 # Oficina ownerville 20593 (22 Select Inc), acceso pedido ese dia.
+#
+# shealey miller -> rafael + chan, 2026-09-24 (Rafael, mail "daily knocks":
+# "attach her knocks data to Chan and I's each captainship email"; Eve: "solo
+# para los knocks reports, sus numeros de ventas y metricas no"). Maneja la
+# oficina 23858 (Azul Connections Inc 2nd) de Angel Padilla — Angel tiene DOS
+# oficinas, asi que el nombre esta clavado al numero en
+# shared/ownerville_office_pins.py. Sale una sola vez por noche en el mail de
+# las 9 PM aunque este en dos capitanias (state.office_sent).
 EXTRA_KNOCK_OWNERS: Dict[str, Tuple[str, ...]] = {
-    "rafael": ("Nuri Burgos",),
+    "rafael": ("Nuri Burgos", "Shealey Miller"),
+    "chan": ("Shealey Miller",),
 }
 
 BLOCKS: List[Block] = _BLOCKS + (

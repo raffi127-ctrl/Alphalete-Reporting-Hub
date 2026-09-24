@@ -45,6 +45,9 @@ OWNER_EMAILS: Dict[str, str] = {
     "Rashad Reed":         "rashadreed715@gmail.com",
     "Salik Mallick":       "salikmallick6@gmail.com",
     "Trang Canavan":       "trang.lecanavan@gmail.com",
+    # rafael + chan (EXTRA_KNOCK_OWNERS, 2026-09-24): office 23858, run by
+    # Shealey for Angel Padilla — Angel gets a copy (EXTRA_RECIPIENTS below).
+    "Shealey Miller":      "miller10xbusiness@gmail.com",
     # chan
     "Carissa Ng":          "carissang46@gmail.com",
     "Chan Park":           "parkwchan19@gmail.com",
@@ -122,11 +125,20 @@ OWNER_EMAILS: Dict[str, str] = {
 }
 
 
+# More people on ONE office's mail besides its owner. Rafael 2026-09-23: "you
+# can include angel in the email as well for the daily knocks" — Shealey runs
+# his 23858 office, so he gets her board too.
+EXTRA_RECIPIENTS: Dict[str, List[str]] = {
+    "Shealey Miller": ["padilla10x2001@gmail.com"],   # Angel Padilla
+}
+
+
 def _key(name: str) -> str:
     return " ".join((name or "").lower().split())
 
 
 _BY_KEY = {_key(k): v for k, v in OWNER_EMAILS.items()}
+_EXTRA_BY_KEY = {_key(k): v for k, v in EXTRA_RECIPIENTS.items()}
 
 
 def owner_email(*names: str) -> Optional[str]:
@@ -140,8 +152,16 @@ def owner_email(*names: str) -> Optional[str]:
 
 
 def recipients(*names: str) -> List[str]:
-    """[owner, Eve] for one office, or [] when the owner has no address."""
+    """[owner, any EXTRA_RECIPIENTS, Eve] for one office, or [] when the
+    owner has no address."""
     owner = owner_email(*names)
     if not owner:
         return []
-    return [owner] + ([ALWAYS_CC] if owner.lower() != ALWAYS_CC else [])
+    out = [owner]
+    for n in names:
+        for a in _EXTRA_BY_KEY.get(_key(n), ()):
+            if a.lower() not in {x.lower() for x in out}:
+                out.append(a)
+    if ALWAYS_CC not in {x.lower() for x in out}:
+        out.append(ALWAYS_CC)
+    return out

@@ -4439,6 +4439,29 @@
       ],
       "_note": "Megan 2026-09-17: \"check the metrics threads in the morning -- add it to the routines here so I know.\" For every office that is BOTH ECO-enrolled and on a metrics thread, says whether this morning's knocks board was built from the office's own relayed rows or fell back to a Lucy scraping OwnerVille. READ-ONLY: posts nothing, scrapes nothing, opens no session. The close-out is compared against WHEN THAT OFFICE'S METRICS ACTUALLY RAN, read from the Hub Activity tab -- reading the relay as it stands at check time instead is how 2026-09-24 passed clean while Aya's board had scraped (her iMac closed 09-23 out at 07:37; her metrics drew at 06:48). TWO THINGS FAIL IT. Ours: the day was closed out before the board drew and the board still scraped. Theirs: a LATE close-out, landing after its own board had already drawn -- nothing is lost, but it costs a board every morning until the machine's clock moves, and until 2026-09-24 it only ever sat in the run log (Megan: make late close-outs fail). A machine that never closed the day out at all is reported plainly and is NOT a failure: Cyrus's is the fleet's only laptop, a shut laptop sleeps whatever we assert, and the scrape covers it. A standing alarm every morning about that is how the real ones stop being read."
     },
+    "night_knocks_await_zone": {
+      "order": 1.1,
+      "machine": "Lucy 3",
+      "on_scheduler": true,
+      "display_name": "Night Knocks: place new offices once access lands",
+      "_note": "Eve 2026-09-24 (Shealey Miller, Angel Padilla's office 23858, access not granted yet): 'cuando lo tengamos sumala automaticamente'. Her knock boards need nothing - the capture before this picks her up the day the grant lands. The 9 PM mail also needs her office's timezone, readable only after the grant. This reads it (harvest_zones, one impersonation) for zones.AUTO_ZONE_ICDS offices that still have no zone, writes output/icd_zones_auto.json and mails Eve the city once. When nothing is pending it exits at once without opening ownerville. Read-only on ownerville, no Sheet, no Slack.",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.captainship_night_knocks.await_zone"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": [0, 1, 2, 3, 4, 5, 6]
+      },
+      "after": ["captainship_knocks"],
+      "depends_on": [],
+      "timeout_minutes": 20,
+      "priority": "P3",
+      "freshness_target": null,
+      "verify": null,
+      "close_on": "exit_zero"
+    },
     "captainship_knocks": {
       "order": 1,
       "machine": "Lucy 3",
