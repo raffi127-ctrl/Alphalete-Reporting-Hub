@@ -15,10 +15,11 @@ from automations.shared import incident_triage as tri
 DAY = dt.date(2026, 8, 26)
 
 
-def _classify(key="failure-x", tail="", opened=DAY.isoformat(), repeats=0, hour=6):
+def _classify(key="failure-x", tail="", opened=DAY.isoformat(), repeats=0,
+              hour=6, needs_human=False):
     with mock.patch.object(tri, "_log_tail", return_value=tail.lower()):
         return tri.classify(key, day=DAY, opened=opened, repeats=repeats,
-                            now_hour=hour)
+                            now_hour=hour, needs_human=needs_human)
 
 
 class Buckets(unittest.TestCase):
@@ -234,6 +235,95 @@ class TheLine(unittest.TestCase):
         for bucket in (tri.NEEDS_YOU, tri.LUCY, tri.WAITING):
             line = tri.line_for(tri.Verdict("k", bucket, "Something broke."))
             self.assertLess(len(line), 220, "this is the wall of text we removed")
+
+
+class NoRerunFixesThisOne(unittest.TestCase):
+    """An alert that already KNOWS a person has to do it (2026-09-24).
+
+    `blueink_session` opened 07:46 on Lucy 2; triage graded it at 08:15 on a
+    machine with no log for it and said "*Lucy has this.* … She re-runs it
+    about every 25 minutes until noon. Nothing for you to do." Nothing re-runs
+    a Google SSO sign-in, and the reply two lines above said so. If anyone had
+    believed the triage line, Monday 7:30 would have sent no packets."""
+
+    def test_the_declaration_beats_the_no_log_guess(self):
+        v = _classify(key="blueink_session", tail="", needs_human=True)
+        self.assertEqual(v.bucket, tri.NEEDS_YOU)
+
+    def test_without_it_the_same_incident_reads_as_lucys(self):
+        """The bug, pinned: nothing else in the incident says otherwise, so
+        the flag is carrying the whole verdict."""
+        self.assertEqual(_classify(key="blueink_session", tail="").bucket,
+                         tri.LUCY)
+
+    def test_it_never_promises_a_rerun_or_a_wait(self):
+        line = tri.line_for(_classify(needs_human=True))
+        for promise in ("Lucy has this", "re-runs it", "until noon",
+                        "Nothing for you to do", "Waiting on the source"):
+            self.assertNotIn(promise, line)
+
+    def test_it_hands_nobody_a_rerun_command(self):
+        """There isn't one. A line that pastes a command which cannot fix it
+        is how the reader learns to stop reading these."""
+        self.assertNotIn("lucy rerun", tri.line_for(_classify(needs_human=True)))
+
+    def test_it_obeys_the_house_line_rules(self):
+        line = tri.line_for(_classify(needs_human=True))
+        self.assertIn("Needs one of you", line)
+        self.assertNotIn(":", line.replace("*", ""))
+        self.assertLess(len(line), 220)
+
+    def test_a_transient_signature_does_not_talk_it_round(self):
+        """Several of these DO time out on the way down — the Blue Ink sweep
+        exits on a dead session after opening a browser. The producer's
+        declaration outranks the log."""
+        v = _classify(tail="session expired — read timed out", needs_human=True)
+        self.assertEqual(v.bucket, tri.NEEDS_YOU)
+
+    def test_the_first_morning_says_more_than_the_clock(self):
+        """Opened today, and the wording still has to be about the fix, not
+        about how long it has been open — that is the day it gets read."""
+        v = _classify(needs_human=True, opened=DAY.isoformat())
+        self.assertIn("somebody has to do it", tri.line_for(v))
+
+    def test_day_two_still_says_it_needs_a_person(self):
+        v = _classify(needs_human=True, opened="2026-08-25")
+        self.assertEqual(v.bucket, tri.NEEDS_YOU)
+        self.assertIn("somebody has to do it", tri.line_for(v))
+
+    def test_nothing_else_is_affected(self):
+        """The flag is opt-in: an ordinary early failure is still Lucy's."""
+        self.assertEqual(_classify(tail="timed out").bucket, tri.LUCY)
+
+
+class TheDeclarationTravelsInThePost(unittest.TestCase):
+    """It has to survive the trip between machines, which is the whole reason
+    it is in the marker and not in the per-machine index."""
+
+    def _scan(self, text):
+        msgs = [{"ts": "1.0", "text": text, "reactions": []}]
+        with mock.patch.object(tri.inc, "_history", return_value=msgs), \
+             mock.patch.object(tri.inc, "_load_index", return_value={}):
+            return tri._open_incidents(None, "C1", DAY, {})[0]
+
+    def test_read_back_off_a_parent_this_machine_never_wrote(self):
+        rows = self._scan(
+            "*Blue Ink* — the session on Lucy 2 expired\n\n"
+            + tri.inc.marker("blueink_session", "open", DAY, needs_human=True))
+        self.assertEqual([r["needs_human"] for r in rows], [True])
+
+    def test_a_post_written_before_this_existed_still_parses(self):
+        rows = self._scan("*Something* — broke\n\n"
+                          + tri.inc.marker("failure-a", "open", DAY))
+        self.assertEqual([(r["key"], r["needs_human"]) for r in rows],
+                         [("failure-a", False)])
+
+    def test_the_flag_is_not_swallowed_into_the_key_or_the_date(self):
+        rows = self._scan("*Blue Ink* — broke\n\n"
+                          + tri.inc.marker("blueink_session", "open", DAY,
+                                           needs_human=True))
+        self.assertEqual(rows[0]["key"], "blueink_session")
+        self.assertEqual(rows[0]["opened"], DAY.isoformat())
 
 
 class ReportId(unittest.TestCase):

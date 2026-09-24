@@ -268,6 +268,32 @@ _EXPECTED_MISS_LINE = (
     "yet, or an owner with no Sheet tab. Re-running will not change it; it "
     "fills itself on the next run once the access lands.")
 
+# THE ALERT ALREADY SAID A PERSON HAS TO DO IT (2026-09-24). Some incidents
+# are not a guess at all: the producer knows the fix is somebody signing in or
+# ticking a box, and stamps `needs-human` on its own marker (see
+# incident_thread._MARK_RE). Triage's job on those is to agree, loudly, and
+# not to send the reader anywhere the thread has not already sent them.
+#
+# It has to run BEFORE everything, including the age rule. Not for the bucket
+# — the age rule reaches NEEDS_YOU too — but for the WORDING and the DAY it
+# arrives: "Open since yesterday" is a fact about the clock, and what this
+# reader needs on the first morning is that no clock changes this one.
+#
+# What went wrong without it: `blueink_session`, opened 07:46 on Lucy 2, was
+# graded here at 08:15 with no local log to read and came out LUCY — "*Lucy
+# has this.* … She re-runs it about every 25 minutes until noon. Nothing for
+# you to do unless it is still here after that." Nothing was re-running it,
+# nothing could: the account is Google SSO and no code in this repo types a
+# password. The line sat directly under a reply saying "it needs a human",
+# which is both the contradiction this module keeps getting patched for and,
+# here, a week of new starts with no packet if anyone believed it.
+#
+# No re-run command in the line, deliberately: for these there ISN'T one, and
+# the steps are already in the thread the reader is standing in.
+_NEEDS_HUMAN_LINE = ("*Needs one of you.* No re-run fixes this one — somebody "
+                     "has to do it at the machine. The steps are in this "
+                     "thread.")
+
 _FINDING_PREFIXES = ("finding-",)
 _FINDING_LINE = ("*Needs one of you.* The run itself was fine — this is what it "
                  "FOUND, and it is fixed on the board, not in the code. "
@@ -549,7 +575,8 @@ class Verdict:
 
 def classify(key: str, *, day: Optional[dt.date] = None,
              opened: str = "", repeats: int = 0,
-             now_hour: Optional[int] = None) -> Verdict:
+             now_hour: Optional[int] = None,
+             needs_human: bool = False) -> Verdict:
     """Sort one open incident into NEEDS_YOU / LUCY / WAITING.
 
     The order of the questions is the whole design, and it is biased: an
@@ -563,7 +590,14 @@ def classify(key: str, *, day: Optional[dt.date] = None,
     rid = report_id(key)
     tail = _log_tail(rid, day)
 
-    # 0) Notices, not work. Must precede the age rule — these stay open for days
+    # 0) The alert said so itself. Nothing this module can read outranks the
+    #    producer on whether a re-run is even a route to the fix.
+    if needs_human:
+        return Verdict(key, NEEDS_YOU,
+                       "It needs a person at the machine; no re-run does it.",
+                       line=_NEEDS_HUMAN_LINE)
+
+    # 0a) Notices, not work. Must precede the age rule — these stay open for days
     #    by their nature, and nothing on our side can close them.
     if key.startswith(_NO_ACTION_PREFIXES):
         hits = _stale_hit_reports(key, day)
@@ -803,6 +837,9 @@ def _open_incidents(client, channel: str, day: dt.date,
             "key": key,
             "ts": m.get("ts") or "",
             "opened": mark.group("date"),
+            # Read off the PARENT, not the index: the index is per-machine and
+            # an incident opened on Lucy 2 has no entry here at all.
+            "needs_human": bool(mark.group("human")),
             "repeats": int(today.get("repeats") or 0)
             if today.get("date") == day.isoformat() else 0,
             "reactions": reactions,
@@ -959,7 +996,8 @@ def run(*, day: Optional[dt.date] = None, channel: str = inc.CHANNEL,
     for item in found:
         key = item["key"]
         v = classify(key, day=day, opened=item["opened"],
-                     repeats=item["repeats"], now_hour=now_hour)
+                     repeats=item["repeats"], now_hour=now_hour,
+                     needs_human=bool(item.get("needs_human")))
         v.ts = item["ts"]
         out[v.bucket].append(key)
         print("  {:<44} {:<10} {}".format(key[:44], v.bucket, v.reason))

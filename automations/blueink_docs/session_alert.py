@@ -87,6 +87,15 @@ def alert_dead(exc: BaseException, *, what_failed: str,
         from automations.shared import incident_thread
         incident_thread.open_or_followup(
             key=KEY,
+            # Say it in the MARKER too, not only in the prose (2026-09-24).
+            # The docstring above already explains that a human has to
+            # re-seed, and the thread says it in as many words — but triage
+            # reads neither. On 2026-09-24 it graded this post off the local
+            # log (which, for a Lucy 2 incident, does not exist on the machine
+            # doing the grading), came out "Lucy has this, she re-runs it
+            # every 25 minutes", and put that under the reply saying the
+            # opposite. Nothing re-runs a Google SSO sign-in.
+            needs_human=True,
             title="Blue Ink session on %s has expired" % machine,
             channel_line="*Blue Ink* — the session on %s expired" % machine,
             body=[

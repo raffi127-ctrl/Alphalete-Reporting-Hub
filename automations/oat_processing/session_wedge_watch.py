@@ -242,7 +242,8 @@ def _channel() -> str:
 def _post(title: str, body_lines: list[str], dry_run: bool,
           office: str = "11580", key: str | None = None,
           channel_line: str | None = None,
-          max_age_days: int | None = None) -> bool:
+          max_age_days: int | None = None,
+          needs_human: bool = False) -> bool:
     """Open (or follow up in) the wedge incident thread in #claudecorrections.
 
     Channel gets ONE emoji-free line, the detail goes in the thread — the standing
@@ -263,6 +264,8 @@ def _post(title: str, body_lines: list[str], dry_run: bool,
     try:
         from automations.shared import incident_thread as _inc
         _kw = {} if max_age_days is None else {"max_age_days": max_age_days}
+        if needs_human:
+            _kw["needs_human"] = True
         posted = _inc.open_or_followup(
             key=key or _incident_key(office), title=title, body=body_lines,
             channel_line=channel_line or (
@@ -553,7 +556,10 @@ def run_resume_check(dry_run: bool = False, now: dt.datetime | None = None) -> i
         "",
         "_Auto-clears here as soon as a number is read again._",
     ]
-    if _post(title, body, dry_run, office=blocked[0],
+    # A box somebody ticks in a window that is not even open yet — the alert
+    # only fires inside the hours a person could do it. Nothing re-runs that,
+    # so triage must not tell the channel to wait for the loop (2026-09-24).
+    if _post(title, body, dry_run, office=blocked[0], needs_human=True,
              max_age_days=CF_THREAD_MAX_AGE_DAYS,
              key=_cf_incident_key(machine.replace(" ", "_")),
              channel_line="*Applicant Push* — Indeed is asking to verify a human "

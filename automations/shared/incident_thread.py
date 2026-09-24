@@ -158,9 +158,27 @@ _HISTORY_LIMIT = 200
 # marker is parsed back out of Slack, so a key with a space or a "·" in it would
 # be unfindable. Reject it loudly at the door instead of alerting into a void.
 _KEY_RE = re.compile(r"^[A-Za-z0-9_.:@/-]+$")
+# THE ALERT MAY DECLARE THAT NO RE-RUN FIXES IT (2026-09-24). The optional
+# ` · needs-human` tail means the producer already knows the fix is a person
+# doing something at a machine — a Google-SSO sign-in, a box to tick — and
+# that re-running is not a route to it.
+#
+# It rides in the MARKER because the marker is the only part of an incident
+# every machine can read. incident_triage grades Lucy 1's, Lucy 2's and the
+# mini's posts alike off the channel, but reads its reasons out of the LOCAL
+# log — so for another machine's incident it has no evidence at all and falls
+# through to "the loop still has budget, let it spend it". On 2026-09-24 that
+# put "*Lucy has this.* … She re-runs it about every 25 minutes until noon.
+# Nothing for you to do" under the Blue Ink session alert, whose own reply two
+# lines above says the account is Google SSO and it needs a human. Walking
+# away IS the outage there: the 7:30am Monday send refuses to run without a
+# session, so that week's new starts get no packet.
+#
+# Optional and at the END, so every post written before this parses unchanged.
 _MARK_RE = re.compile(
     r"_incident · (?P<key>[^ ·]+) · (?P<state>open|resolved|superseded) "
-    r"(?P<date>\d{4}-\d{2}-\d{2})_")
+    r"(?P<date>\d{4}-\d{2}-\d{2})(?P<human> · needs-human)?_")
+NEEDS_HUMAN_MARK = " · needs-human"
 
 # SUPERSEDED IS NOT RESOLVED (Megan 2026-09-09). A roll-over used to write
 # `resolved` — the same word a fix writes — purely so find() would stop
@@ -437,9 +455,17 @@ def same_alert(a: str, b: str) -> bool:
     return _canon(a) == _canon(b)
 
 
-def marker(key: str, state: str = "open", day: Optional[dt.date] = None) -> str:
-    return "_incident · {} · {} {}_".format(key, state,
-                                            (day or dt.date.today()).isoformat())
+def marker(key: str, state: str = "open", day: Optional[dt.date] = None,
+           *, needs_human: bool = False) -> str:
+    """The grey line every machine finds this thread by.
+
+    `needs_human` is only ever written on an OPEN marker: it says what to do
+    about a live ticket, and a resolved or superseded one is not being graded
+    by anybody. See _MARK_RE for why it lives here and not in the index.
+    """
+    return "_incident · {} · {} {}{}_".format(
+        key, state, (day or dt.date.today()).isoformat(),
+        NEEDS_HUMAN_MARK if needs_human and state == OPEN else "")
 
 
 def _resolved_headline(text: str, day: dt.date) -> str:
@@ -1108,6 +1134,7 @@ def _put_status(client, channel: str, key: str, inc: dict, st: dict,
 def open_or_followup(*, key: str, title: str, body: Sequence[str],
                      channel_line: Optional[str] = None,
                      reaction: Optional[str] = None,
+                     needs_human: bool = False,
                      details: Optional[Sequence[str]] = None,
                      followup: Optional[Sequence[str]] = None,
                      stamp: Optional[str] = None, label: str = "",
@@ -1126,6 +1153,12 @@ def open_or_followup(*, key: str, title: str, body: Sequence[str],
                 — precision management") instead of counting sections. Emoji are
                 stripped; length is the caller's contract.
       body      the rest of the full alert (also goes to the thread)
+      needs_human  this one is NOT fixed by re-running it — somebody has to
+                do something at a machine. Stamps the marker so triage on any
+                machine says so instead of promising the retry loop will get
+                it, and puts the red circle on from minute one rather than at
+                the next triage pass. Pass it only when a re-run genuinely
+                cannot help: a login that self-heals is not this.
       details   posted as a threaded reply ONLY when the incident is NEW (the
                 re-run command, the paste-to-Claude block: unchanged from before)
       followup  kept for callers that still pass it; a same-day repeat no longer
@@ -1165,7 +1198,8 @@ def open_or_followup(*, key: str, title: str, body: Sequence[str],
     from automations.shared import alert_thread
     head = (alert_thread.strip_emoji(channel_line) if channel_line
             else alert_thread.headline(title, body))
-    parent_text = "\n".join([head, "", marker(key, "open", day)])
+    parent_text = "\n".join(
+        [head, "", marker(key, OPEN, day, needs_human=needs_human)])
     full = [l for l in ([title] + body) if str(l).strip()]
     if alert_thread.same_story(head, full):
         full = []               # a one-line ping: don't echo it under itself
@@ -1263,6 +1297,10 @@ def open_or_followup(*, key: str, title: str, body: Sequence[str],
         except Exception as e:  # noqa: BLE001 — parent landed; detail is a bonus
             print(f"  ⚠ incident detail reply failed ({type(e).__name__}: "
                   f"{str(e)[:80]})", flush=True)
+    # The channel list is the whole point of the circle, so a declared
+    # needs-human wears it immediately instead of waiting for a triage pass —
+    # these alerts fire at 07:46 and triage runs at 08:15.
+    reaction = reaction or (NEEDS_HUMAN_REACTION if needs_human else None)
     if reaction:
         _react(client, channel, ts, reaction)
     # Seed today's named subjects from the post that just named them, so the
@@ -2052,6 +2090,37 @@ def resolve_report(report_id: str, *, what: str = "", note: str = "",
 
 _UNVERIFIED_DIR = REPO_ROOT / "output" / "state" / "delivery_unverified"
 
+# The half-sentence that identifies this note wherever it was posted from.
+_UNVERIFIED_SENTENCE = "nothing can confirm it delivered"
+
+
+def _unverified_already_in_thread(client, channel: str, ts: str) -> bool:
+    """Is this note already under that thread, whoever put it there?
+
+    ONCE PER THREAD, NOT ONCE PER MACHINE (2026-09-24). The stamp file below is
+    local, and this line has two independent speakers: the machine that ran the
+    report (hub_publish._clear_failure) and the mini's watcher
+    (machine_digest). Each honoured its own stamp, neither could see the
+    other's, and car_rides' thread got the same two-paragraph note twice on
+    2026-09-24 — a false-red said twice reads as two problems. The THREAD is
+    the only state every machine can both write and read, the same reason
+    _thread_already_spoke exists.
+
+    A read that FAILS answers False: the caller then posts, which is exactly
+    the behaviour before this check. Silence is the one answer a broken Slack
+    read must never produce here."""
+    try:
+        resp = client.conversations_replies(channel=channel, ts=ts, limit=200)
+        for msg in (resp.get("messages") or []):
+            if msg.get("ts") == ts:
+                continue                  # the parent, not a reply
+            if _UNVERIFIED_SENTENCE in (msg.get("text") or "").lower():
+                return True
+    except Exception as e:  # noqa: BLE001
+        print("  - incident: couldn't read thread {} ({}: {})".format(
+            ts, type(e).__name__, str(e)[:60]))
+    return False
+
 
 def note_delivery_unverified(report_id: str, *, what: str = "", why: str = "",
                              channel: str = CHANNEL,
@@ -2100,12 +2169,18 @@ def note_delivery_unverified(report_id: str, *, what: str = "", why: str = "",
                   "{}".format(report_id, line))
             return True
         client = client or _client()
-        _send(client, channel, [line], thread_ts=idx[hit]["ts"])
+        said = _unverified_already_in_thread(client, channel, idx[hit]["ts"])
+        if not said:
+            _send(client, channel, [line], thread_ts=idx[hit]["ts"])
         try:
             stamp.parent.mkdir(parents=True, exist_ok=True)
             stamp.write_text(why or "", encoding="utf-8")
         except Exception:  # noqa: BLE001 — worst case the line repeats tomorrow
             pass
+        if said:
+            print("[incident] {}: delivery still unverified — already said in "
+                  "the thread, not repeating".format(report_id))
+            return False
         print("[incident] {}: ran clean but delivery unverified — thread told, "
               "ticket left OPEN".format(report_id))
         return True
