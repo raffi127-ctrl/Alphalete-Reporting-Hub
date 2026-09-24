@@ -1423,7 +1423,8 @@
       "freshness_target": null,
       "depends_on": [],
       "timeout_minutes": 30,
-      "verify": null
+      "verify": null,
+      "_verify_note": "2026-09-24 (Eve): the module now writes a run-manifest (run._file_manifest), which is what delivery_check reads \u2014 `_from_manifest`, under this same config key \u2014 so failure-car_rides closes itself on a clean pass instead of sitting open with \"ran clean, but nothing can confirm it DELIVERED\". DELIBERATELY STILL null, the same as vantura_board_audit and digi_docs, and it is NOT close_on: exit_zero either. This report can end a perfectly good pass with BOARD FINDINGS for Carlos (\"no territory found \u2014 needs new team\", \"ambiguous, skipped\"), which it files as kind 'finding', ok=false. delivery_check._from_manifest knows that shape means \"ran and delivered, with findings to review\" and closes the ticket; reconcile._verify_manifest does NOT \u2014 it reads ok=false as a failure \u2014 and _from_verifier is asked FIRST, so wiring a manifest verifier here would hold the ticket open on exactly the mornings the run worked, with no re-run able to clear it (a human fixes the board). captainship_cancel_rate has a manifest verifier AND writes kind 'unfilled_icd', so it carries that contradiction today; fix _verify_manifest there, not by re-wiring this one."
     },
     "install_car_rides_agent": {
       "on_scheduler": false,

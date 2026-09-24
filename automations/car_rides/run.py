@@ -67,6 +67,10 @@ def _find_repo_root() -> Path:
 REPO_ROOT = _find_repo_root()
 STATE_DIR = REPO_ROOT / "output" / "car_rides"
 
+# The id everything else already calls this report: the schedule_config key,
+# the wrapper's publish_done, `lucy rerun car_rides`, and now its manifest.
+REPORT_ID = "car_rides"
+
 # --- Source of truth ---------------------------------------------------------
 SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"   # Vantura Master Sales Board
 STATIONS_GID = 1999003555
@@ -566,7 +570,13 @@ CONTROL_SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
 REPORT_TAB = "Car Rides Report"
 
 
-def _publish_report_tab(report: str, log=_log) -> None:
+def _publish_report_tab(report: str, log=_log) -> bool:
+    """True = the report tab on the control workbook now holds this run's report.
+
+    Returns a verdict instead of nothing (2026-09-24) because that tab is one of
+    the two things this report DELIVERS — it is where Carlos reads the flags —
+    and the manifest cannot claim a delivery it did not check. Still best-effort:
+    a sheet hiccup is recorded, never raised."""
     try:
         import gspread as _gs
         from automations.recruiting_report import fill as _fill
@@ -580,8 +590,10 @@ def _publish_report_tab(report: str, log=_log) -> None:
         ws.update([[l] for l in lines], f"A1:A{len(lines)}",
                   value_input_option="RAW")
         log(f"report published to sheet tab {REPORT_TAB!r} ({len(lines)} lines)")
+        return True
     except Exception as e:  # noqa: BLE001 — reporting must never fail the run
         log(f"report tab publish skipped: {e!r}")
+        return False
 
 
 def _load_prev_flags() -> list[str]:
@@ -603,6 +615,75 @@ def _persist(report: str, changes: dict[str, int], flags: list[str]) -> None:
     (STATE_DIR / "last-report.md").write_text(report)
 
 
+# --- delivery proof -----------------------------------------------------------
+def _file_manifest(*, live: bool, failures: list[str], findings: list[str],
+                   tab_ok: bool, changes: dict[str, int],
+                   reconciled: list[str]) -> None:
+    """Record what this pass actually DID, so a clean one can close its ticket.
+
+    WHY (2026-09-24). `verify` was null and nothing here wrote a manifest, so
+    delivery_check had no evidence at all and answered UNKNOWN on every clean
+    pass: failure-car_rides sat open saying "ran clean, but nothing can confirm
+    it DELIVERED". NOT `close_on: exit_zero` — what this delivers is the
+    reconciled OwnerVille territories plus the 'Car Rides Report' tab anybody
+    can open, so it gets checked like everything else.
+
+    THE SPLIT THIS ENCODES. `flags` has always carried two different things and
+    delivery only cares about one of them:
+
+      * FAILURES — a stale OwnerVille session, a campaign selector that never
+        loaded, 0 territories, a vetoed plan, an edit that threw, a report tab
+        that would not publish. The pass did not reconcile. `failed` + kind
+        'part' -> NOT_DELIVERED, and the ticket stays open. Today these exit 3,
+        which the wrapper publishes as `success`, so a whole morning of "session
+        missing/stale, reconciled nothing" was SILENT.
+
+      * FINDINGS — plan flags: "no territory found — needs new team", "ambiguous,
+        skipped", "empty stale territory ... first sighting". The pass did its
+        whole job and is reporting what it SAW; a human fixes the BOARD and a
+        re-run changes nothing. kind 'finding' -> DELIVERED with findings, an
+        orange card, ticket closes. Same shape as vantura_board_audit.
+
+    alert=False on the findings write, where vantura_board_audit alerts: that
+    audit runs once a day, this runs nine passes a morning, and its routine
+    flags include "first sighting; will confirm next run" — which is the rule
+    working, not something to page a channel about. The findings still reach
+    Carlos on the Hub card and in the report tab.
+
+    A --dry-run writes NOTHING. It plans edits and applies none, so it has no
+    delivery to prove, and a manifest from a rehearsal would later be read as
+    proof by a real ticket."""
+    from automations.shared import run_manifest
+
+    if not live:
+        _log("dry-run: no run-manifest written (a plan is not a delivery)")
+        return
+    if not tab_ok:
+        failures = list(failures) + [
+            "the {!r} tab on the control workbook".format(REPORT_TAB)]
+    applied = sum(changes.values())
+    where = ", ".join(reconciled) or "no campaign"
+    note = "reconciled {}; {} edit(s) applied".format(where, applied)
+    if failures:
+        run_manifest.write_manifest(
+            REPORT_ID, failed=failures, succeeded=list(reconciled),
+            retry_args=[], kind="part", note=note,
+            remediation=run_manifest.make_remediation(
+                reason="the pass could not reconcile every car-ride territory",
+                fix="check Lucy 2's warm OwnerVille session (session_holder) "
+                    "and the Stations tab layout, then read the plan with "
+                    "`lucy rerun car_rides --dry-run` before going live again."))
+        return
+    if findings:
+        run_manifest.write_manifest(
+            REPORT_ID, ok=False, kind="finding", failed=findings,
+            retry_args=[], alert=False,
+            note=note + "; {} board finding(s) for Carlos".format(len(findings)))
+        return
+    run_manifest.write_manifest(REPORT_ID, ok=True, kind="part", failed=[],
+                                retry_args=[], note=note + "; no flags")
+
+
 # --- main ----------------------------------------------------------------------
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Car-rides cleanup (OwnerVille vs Stations tab).")
@@ -620,14 +701,27 @@ def main(argv: list[str] | None = None) -> int:
     _log(f"car-rides cleanup — mode={'LIVE' if live else ('PROBE' if args.probe else 'DRY-RUN')}")
     prev_flags = _load_prev_flags()
     flags: list[str] = []
+    # The same flags, split by what they mean for DELIVERY (see _file_manifest):
+    # `failures` = this pass could not reconcile; `findings` = it reconciled and
+    # is reporting what it saw, which only Carlos can fix on the board.
+    failures: list[str] = []
+    findings: list[str] = []
+    reconciled: list[str] = []
     changes = {k: 0 for k in BOXES}
     lines: list[str] = []
+
+    def _fail(msg: str) -> None:
+        flags.append(msg)
+        failures.append(msg)
 
     # 1) Source of truth first — cheap, and fails loud before any browser work.
     try:
         expected = read_expected()
     except Exception as e:
         _log(f"STOP: Stations read failed: {e}")
+        _fail(f"Stations tab read failed — nothing could be reconciled: {e}")
+        _file_manifest(live=live, failures=failures, findings=findings,
+                       tab_ok=True, changes=changes, reconciled=reconciled)
         return 4
 
     keys = [args.campaign] if args.campaign else list(BOXES)
@@ -640,11 +734,14 @@ def main(argv: list[str] | None = None) -> int:
                 ctx, page = _open_ownerville(p, headless=not args.headed,
                                              verbose=True)
             except SessionGone as e:
-                flags.append(f"OwnerVille session missing/stale on this machine "
-                             f"— no unattended re-auth (by design). {e}")
+                _fail(f"OwnerVille session missing/stale on this machine "
+                      f"— no unattended re-auth (by design). {e}")
                 report = _report(expected, {}, flags, changes, live)
                 _persist(report, changes, flags)
-                _publish_report_tab(report)
+                tab_ok = _publish_report_tab(report)
+                _file_manifest(live=live, failures=failures, findings=findings,
+                               tab_ok=tab_ok, changes=changes,
+                               reconciled=reconciled)
                 _log(report)
                 return 3
             try:
@@ -666,23 +763,26 @@ def main(argv: list[str] | None = None) -> int:
                     camp = BOXES[key]["campaign"]
                     _log(f"— campaign {camp} —")
                     if not _select_campaign(page, camp):
-                        flags.append(f"{camp}: campaign selector not found — "
-                                     "skipped (run --probe on Lucy 2)")
+                        _fail(f"{camp}: campaign selector not found — "
+                              "skipped (run --probe on Lucy 2)")
                         continue
                     terrs = list_territories(page)
                     if not terrs:
-                        flags.append(f"{camp}: 0 territories loaded — skipped, "
-                                     "not re-authing (per rules)")
+                        _fail(f"{camp}: 0 territories loaded — skipped, "
+                              "not re-authing (per rules)")
                         continue
+                    reconciled.append(camp)
                     plan = plan_campaign(expected[key], terrs, prev_flags)
-                    flags += [f"{camp}: {f}" for f in plan["flags"]]
+                    found = [f"{camp}: {f}" for f in plan["flags"]]
+                    flags += found
+                    findings += found
                     lines.append(f"\n### {camp}")
                     veto = stale_sanity(expected[key], terrs, plan)
                     if veto:
                         msg = f"LIVE EDITS ABORTED — {veto}"
-                        flags.append(f"{camp}: {msg}. Plan is reported below; "
-                                     "NOTHING was changed. Check the Stations "
-                                     "tab layout before re-running --live.")
+                        _fail(f"{camp}: {msg}. Plan is reported below; "
+                              "NOTHING was changed. Check the Stations "
+                              "tab layout before re-running --live.")
                         lines.append(f"- ⚠️ {msg}; plan shown, not applied")
                         _log(f"!! {camp}: {msg}")
                     for e in plan["edits"]:
@@ -694,8 +794,8 @@ def main(argv: list[str] | None = None) -> int:
                             if ok:
                                 changes[key] += 1
                             else:
-                                flags.append(f"{camp}: edit failed on "
-                                             f"{e['territory']!r} — left as-is")
+                                _fail(f"{camp}: edit failed on "
+                                      f"{e['territory']!r} — left as-is")
                     if not plan["edits"]:
                         lines.append("- nothing to change")
                     if not live and plan["edits"]:
@@ -706,12 +806,14 @@ def main(argv: list[str] | None = None) -> int:
     except SessionGone:
         raise  # already handled above; belt-and-suspenders
     except Exception as e:
-        flags.append(f"unexpected browser failure: {e!r}")
+        _fail(f"unexpected browser failure: {e!r}")
         _log(f"browser phase failed: {e!r}")
 
     report = _report(expected, lines, flags, changes, live)
     _persist(report, changes, flags)
-    _publish_report_tab(report)
+    tab_ok = _publish_report_tab(report)
+    _file_manifest(live=live, failures=failures, findings=findings,
+                   tab_ok=tab_ok, changes=changes, reconciled=reconciled)
     _log(report)
     _log("done.")
     return 0 if not flags else 3

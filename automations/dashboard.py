@@ -1378,7 +1378,13 @@ AUTOMATED_REPORTS.extend(r for r in _load_uploaded_reports_raw()
 # the half of the loop the module could not close on its own.
 FINDINGS_REPORTS = {"vantura_board_audit", "vantura-board-audit",
                     "captainship-cancel-rate", "captainship_cancel_rate",
-                    "digi_docs", "digi-docs"}
+                    "digi_docs", "digi-docs",
+                    # car_rides added 2026-09-24 with its manifest: its plan
+                    # flags ("no territory found — needs new team", "empty stale
+                    # territory … first sighting") are things only Carlos can
+                    # fix on the board, so nine passes a morning must not leave
+                    # a red ❌ on triage for a report that did its whole job.
+                    "car_rides", "car-rides"}
 
 # STOOD-DOWN reports live in day_orchestrator.paused_reports — one declaration
 # the Hub AND the watchers read. See that module for why it is not in this file
