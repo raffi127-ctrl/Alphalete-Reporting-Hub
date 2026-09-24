@@ -231,6 +231,8 @@ def run(live: bool = False, limit: int = None, max_actions: int = None,
     rp._log(f"[push] mode={mode} | batch reached={batch.get('reached')} "
             f"sent={batch.get('sent')} still-ready={batch.get('remaining')} "
             f"| oat rc={oat_rc}")
+    if shots_dir:
+        _dm_shots(shots_dir, args.office)
     return 0
 
 
@@ -245,6 +247,33 @@ def run(live: bool = False, limit: int = None, max_actions: int = None,
 # streams". This set and that login assignment are the two independent bounds on
 # an irreversible send; keep them in step.
 PUSH_ALLOWED = {"11580", "23467", "11901", "23965", "11280", "24065"}
+
+
+def _dm_shots(shots_dir, office) -> None:
+    """DM the diag screenshots to Carlos (U046G04P5LG). Best-effort."""
+    import glob
+    pngs = sorted(glob.glob(os.path.join(shots_dir, "*.png")))
+    try:
+        from automations.shared import slack_metrics_post as smp
+        client = smp._client()
+        ch = client.conversations_open(users="U046G04P5LG")["channel"]["id"]
+        if not pngs:
+            client.chat_postMessage(channel=ch, text=(
+                "OAT diag (office %s): run finished with NO failure screenshots "
+                "— every resume read got a number this run." % office))
+            return
+        client.chat_postMessage(channel=ch, text=(
+            "OAT diag (office %s): %d screenshot(s) of where the resume read "
+            "stuck — 'panel-no-attachment' = the applicant panel when no "
+            "download link was found; 'viewer-blocked' = the Indeed tab when "
+            "Cloudflare walled it." % (office, len(pngs))))
+        for f in pngs[:8]:
+            client.files_upload_v2(channel=ch, file=f,
+                                   title=os.path.basename(f))
+        print("[shots] DM'd %d screenshot(s) to Carlos" % min(len(pngs), 8))
+    except Exception as e:  # noqa: BLE001
+        print("[shots] Slack DM failed: %s: %s — files in %s"
+              % (type(e).__name__, str(e)[:120], shots_dir))
 
 
 def main(argv=None) -> int:
@@ -292,6 +321,10 @@ def main(argv=None) -> int:
                         "no-number TODAY (archives the day's cache first). Use "
                         "after fixing the resume read itself; normally the cache "
                         "is what stops us reopening dead-end resumes q5min.")
+    p.add_argument("--shots", action="store_true",
+                   help="Diag (2026-09-23): screenshot the panel/viewer at each "
+                        "resume-read failure and DM the PNGs to Carlos on Slack "
+                        "when the run ends, so he can SEE where the walk sticks.")
     p.add_argument("--office", default=offices.DEFAULT_OFFICE,
                    choices=sorted(offices.OFFICES),
                    help="Which ApplicantStream office to work this run "
@@ -299,6 +332,12 @@ def main(argv=None) -> int:
                         "browser profile, day files and Slack settings — see "
                         "automations/applicant_push/offices.py.")
     args = p.parse_args(argv)
+    shots_dir = ""
+    if getattr(args, "shots", False):
+        import tempfile as _tf
+        shots_dir = _tf.mkdtemp(prefix="oat-shots-")
+        os.environ["OAT_SHOTS_DIR"] = shots_dir
+
     if getattr(args, "only_names", ""):
         os.environ["OAT_ONLY_NAMES"] = args.only_names
     if getattr(args, "from_end", False):

@@ -2293,6 +2293,23 @@ def _rd_mod():
     return _rd
 
 
+def _shot(pg, tag) -> None:
+    """Diag screenshot (2026-09-23, Carlos: "get me a screenshot because you're
+    screwing something up"). Only when OAT_SHOTS_DIR is set; never raises."""
+    import os as _os
+    d = _os.environ.get("OAT_SHOTS_DIR", "")
+    if not d:
+        return
+    try:
+        _os.makedirs(d, exist_ok=True)
+        n = len([f for f in _os.listdir(d) if f.endswith(".png")]) + 1
+        pg.screenshot(path=_os.path.join(d, "%02d-%s.png" % (n, tag)),
+                      full_page=False)
+        _log("    [shot] saved %02d-%s.png" % (n, tag))
+    except Exception as e:  # noqa: BLE001
+        _log("    [shot] failed (%s): %s" % (tag, type(e).__name__))
+
+
 def _probe_attachment(page, a) -> None:
     """Log what resume surfaces THIS panel offers. Read-only; never raises.
 
@@ -2809,6 +2826,7 @@ def lookup_resume_phone(page):
         return _aph, "from attachment (%s)" % _adet[:60]
     _log("    [resume] no number from attachment (%s) — trying the viewer"
          % _adet[:60])
+    _shot(page, "panel-no-attachment")
     fr, loc = _view_resume_link(page)
     href = _view_resume_href(page)
     if loc is None and not href:
@@ -2971,6 +2989,7 @@ def lookup_resume_phone(page):
         # Say which, so the caller can retry (b) later instead of writing the applicant
         # off for the whole day. See _BLOCKED_PREFIX.
         reason = _blocked_reason(title, body)
+        _shot(newpg, "viewer-" + ("blocked" if reason else "no-number"))
         if reason and _first_of_session:
             # The session never got in. Wall the tick (see _mark_cf_walled) rather
             # than letting every remaining applicant spend a retry on the same gate:
