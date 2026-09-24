@@ -46,6 +46,11 @@ class OfficesTest(unittest.TestCase):
         self.assertEqual(config.SOURCE_CHANNEL_ID, "C09L1S3MQ1E")
         self.assertEqual(config.SOURCES[0]["tab"], "Carlos Hidalgo")
 
+    def test_eastern_offices_are_not_on_central(self):
+        for key, zone in [("salik", "America/Detroit"), ("samuel", "America/New_York"),
+                          ("aya", "America/Indiana/Indianapolis")]:
+            self.assertEqual(config.office_zone(config.office(key)), zone, key)
+
     def test_carlos_thread_wording(self):
         rx = config.office("carlos")["sources"][0]["thread_re"]
         self.assertTrue(rx.search(":wolf:*ALPHALETE MARKETING - 1st ROUNDS - SEPTEMBER 23rd*:wolf:"))

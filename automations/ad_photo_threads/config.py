@@ -195,8 +195,16 @@ _MORE = [
      "C0AUAPMEF37", "C0C3ZJ7FTH7", r"first\s*round\s*thread"),
 ]
 
-# Zones the office_tz table can't place yet; everyone else falls to Central.
-_TZ = {"atef": "America/Denver"}       # "Domin8 Acquisitions (Denver)"
+# Zones the office_tz table (knocks, by owner name) can't place, cross-checked
+# 9/23 against office_metrics.OFFICE_TIMEZONES (ownerville addresses) and the
+# cities in each office's own ad titles. Everyone else comes from office_tz.
+_TZ = {
+    "salik": "America/Detroit",        # Southfield, MI (office_metrics; knocks spells him "Salik Mallick")
+    "samuel": "America/New_York",      # ads: Orlando / Kissimmee / Ocoee, FL
+    "atef": "America/Denver",          # ads: Denver / Lakewood / Aurora, CO
+    "roshan": "America/Chicago",       # ads: Houston / League City, TX
+    "ryan": "America/Chicago",         # ads: Arlington / Plano / Dallas, TX
+}
 
 OFFICES += [
     {
