@@ -206,9 +206,13 @@ _TZ = {
     "ryan": "America/Chicago",         # ads: Arlington / Plano / Dallas, TX
 }
 
+# Offices whose channel is loaded 9/14 onward, checked and pinned; the rest
+# wait (Eve 9/23: last week, then this week, pin, THEN go live).
+_LIVE = {"haytham"}                    # 9/24 00:30 CT: 11 threads, 0 loose
+
 OFFICES += [
     {
-        "key": key, "owner": owner, "tz": _TZ.get(key), "live": False,
+        "key": key, "owner": owner, "tz": _TZ.get(key), "live": key in _LIVE,
         "sheet_id": book, "source_channel": src, "live_channel": live,
         "paused_before": "",
         "sources": [{"office_id": oid, "stream": company, "label": company,
