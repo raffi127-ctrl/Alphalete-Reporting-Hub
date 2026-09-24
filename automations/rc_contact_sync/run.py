@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 import sys
 from typing import Dict, List, Optional
 
@@ -79,6 +80,33 @@ def missing_names_reply(missing: List[Dict[str, str]], total: int) -> str:
     return "\n".join(lines)
 
 
+def _saved_thread_ts(day: dt.date, chan: str) -> Optional[str]:
+    """The header this machine already posted for day+channel, or None.
+    Unreadable/missing file = None: never block the post over it."""
+    try:
+        blob = json.loads(C.THREAD_STATE_PATH.read_text(encoding="utf-8"))
+        return blob.get("%s|%s" % (day.isoformat(), chan)) or None
+    except Exception:                                      # noqa: BLE001
+        return None
+
+
+def _save_thread_ts(day: dt.date, chan: str, ts: str) -> None:
+    """Best effort; keeps the last ~20 keys so the file stays small."""
+    try:
+        try:
+            blob = json.loads(C.THREAD_STATE_PATH.read_text(encoding="utf-8"))
+        except Exception:                                  # noqa: BLE001
+            blob = {}
+        blob["%s|%s" % (day.isoformat(), chan)] = ts
+        for k in sorted(blob)[:-20]:
+            blob.pop(k, None)
+        C.THREAD_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        C.THREAD_STATE_PATH.write_text(json.dumps(blob, indent=2),
+                                       encoding="utf-8")
+    except Exception:                                      # noqa: BLE001
+        pass
+
+
 def post_missing(day: dt.date, missing: List[Dict[str, str]], total: int,
                  *, dry_run: bool, log=print) -> List[str]:
     """Post the header, then the names as a reply IN ITS THREAD.
@@ -102,10 +130,15 @@ def post_missing(day: dt.date, missing: List[Dict[str, str]], total: int,
                                                  for ln in body.split("\n"))))
             continue
         try:
-            head = smp.ensure_named_thread(title, day, channel_id=chan)
-            ts = head.get("thread_ts")
-            if not ts:
-                raise RuntimeError("no thread_ts came back: %s" % head)
+            ts = _saved_thread_ts(day, chan)
+            if ts:
+                head = {"thread_ts": ts, "existed": True}
+            else:
+                head = smp.ensure_named_thread(title, day, channel_id=chan)
+                ts = head.get("thread_ts")
+                if not ts:
+                    raise RuntimeError("no thread_ts came back: %s" % head)
+                _save_thread_ts(day, chan, ts)
             res = smp.post_reply_text_only(body, thread_ts=ts, channel_id=chan)
             log("  posted to %s (%s header, reply ts=%s)"
                 % (label, "existing" if head.get("existed") else "new",

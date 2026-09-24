@@ -269,5 +269,47 @@ class TestVerificationCode(unittest.TestCase):
         self.assertEqual(VC.extract_code(VC._body_text(msg)), "481920")
 
 
+class TestHeaderMemory(unittest.TestCase):
+    """GP sales can't be read back, so a rerun must reuse the saved header
+    instead of calling Slack for a new one (Carlos 2026-09-24)."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        from automations.rc_contact_sync import config as C
+        self.C = C
+        self._old = C.THREAD_STATE_PATH
+        self._tmp = tempfile.TemporaryDirectory()
+        C.THREAD_STATE_PATH = Path(self._tmp.name) / "threads.json"
+
+    def tearDown(self):
+        self.C.THREAD_STATE_PATH = self._old
+        self._tmp.cleanup()
+
+    def test_second_run_replies_under_first_header(self):
+        from unittest import mock
+        from automations.shared import slack_metrics_post as smp
+        day = dt.date(2026, 9, 23)
+        missing = [{"rep": "Rep A", "business": "Biz", "customer": "Cust",
+                    "phone": "2145551234"}]
+        heads, replies = [], []
+
+        def fake_head(title, d, channel_id=None):
+            heads.append(channel_id)
+            return {"thread_ts": "ts-" + channel_id, "existed": False}
+
+        def fake_reply(body, thread_ts=None, channel_id=None):
+            replies.append((channel_id, thread_ts))
+            return {"ts": "r"}
+
+        with mock.patch.object(smp, "ensure_named_thread", fake_head),                 mock.patch.object(smp, "post_reply_text_only", fake_reply):
+            R.post_missing(day, missing, 1, dry_run=False, log=lambda *a: None)
+            R.post_missing(day, missing, 1, dry_run=False, log=lambda *a: None)
+        self.assertEqual(heads, self.C.CHANNELS)          # one header each
+        self.assertEqual(len(replies), 2 * len(self.C.CHANNELS))
+        for chan, ts in replies:
+            self.assertEqual(ts, "ts-" + chan)
+
+
 if __name__ == "__main__":
     unittest.main()

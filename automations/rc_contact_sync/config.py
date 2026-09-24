@@ -183,10 +183,9 @@ PHONE_LABEL = "mobile"
 # posted in the aplayers slack"); Carlos 2026-09-24 added GP sales: "Can we
 # have it also sent on the Alphalete GP sales please!" Same header + reply
 # thread in each.
-# CAVEAT: Lucy's token can't read #alphalete-gp-sales history (see
-# b2b_quality/run.py), so a same-day RE-RUN can't find the existing header
-# there and opens a second one. The scheduled 4am run posts once; only a
-# manual rerun doubles it.
+# Lucy's token can't read #alphalete-gp-sales history (see
+# b2b_quality/run.py), so the header's ts is remembered in THREAD_STATE_PATH
+# and a same-day rerun replies under it instead of opening a second one.
 CHANNELS = ["C0AJQA8P716", "C07J46MQNUX"]
 CHANNEL_LABEL = {
     "C0AJQA8P716": "#a-players-b2b",
@@ -215,6 +214,12 @@ SLACK_HEADER = ":telephone_receiver: Customers who didn\'t receive wrap up text"
 # not undoable from here, so the guard is written the moment each contact
 # lands, not at the end of the run.
 STATE_PATH = CONFIG_DIR / "rc_contact_sync_state.json"
+
+# Header already posted per "day|channel" -> thread_ts. Needed because Lucy
+# can't read #alphalete-gp-sales back, so the Slack lookup never finds the
+# morning's header there and a rerun would open a second one. Per machine:
+# the 4am run and `lucy rerun` both run on the mini, so they share it.
+THREAD_STATE_PATH = CONFIG_DIR / "rc_contact_sync_threads.json"
 
 
 def creds() -> Dict[str, str]:
