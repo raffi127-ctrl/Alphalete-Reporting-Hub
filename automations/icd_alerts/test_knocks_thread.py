@@ -13,6 +13,10 @@ These pin the reverted shape so it does not drift back:
     channel level that line is the only thing dating the post;
   * RAF'S IS NOT THIS. gap_alerts keeps its parent and per-board replies in
     #alphalete-lvl1-chat, which predates all of the above and stays.
+  * CARLOS'S #a-players-b2b IS THE ONE EXCEPTION (2026-09-24, same day):
+    Carlos asked "can they just go into one thread please!" and Megan, in
+    the reply: "please just make that for Carlos". Only the rooms listed in
+    K.THREADED_CHANNELS thread; every other room is still a channel post.
 """
 from __future__ import annotations
 
@@ -82,6 +86,37 @@ class NoThreadMachineryIsLeftBehind(unittest.TestCase):
         src = inspect.getsource(K.run)
         self.assertIn('_upload(d["channel_id"], boards, comment)', src)
         self.assertNotIn("thread_ts", src)
+
+
+class CarlosAPlayersIsTheOneThreadedRoom(unittest.TestCase):
+    """One opt-in room, not a second rollout: the list stays Carlos's."""
+
+    def test_only_a_players_is_threaded(self):
+        self.assertEqual(K.THREADED_CHANNELS, {"C0AJQA8P716"})
+
+    def test_a_players_boards_land_in_the_day_thread(self):
+        client = _Client()
+        with mock.patch("automations.shared.slack_metrics_post._client",
+                        return_value=client),              mock.patch("automations.shared.slack_metrics_post."
+                        "ensure_named_thread",
+                        return_value={"thread_ts": "111.1"}):
+            K._upload("C0AJQA8P716", ["a.png", "b.png"], "*Knocks*")
+        self.assertEqual([c.get("thread_ts") for c in client.calls],
+                         ["111.1", "111.1"])
+
+    def test_no_thread_means_the_board_still_posts(self):
+        client = _Client()
+        with mock.patch("automations.shared.slack_metrics_post._client",
+                        return_value=client),              mock.patch("automations.shared.slack_metrics_post."
+                        "ensure_named_thread", side_effect=RuntimeError("x")):
+            K._upload("C0AJQA8P716", ["a.png"], "*Knocks*")
+        self.assertEqual(len(client.calls), 1)
+        self.assertNotIn("thread_ts", client.calls[0])
+
+    def test_the_header_has_no_ampersand(self):
+        """Slack stores '&' as '&amp;': the header would never be found again
+        and every tick would open a new thread."""
+        self.assertNotIn("&", K.THREAD_TITLE)
 
 
 class RafsBoardIsUntouched(unittest.TestCase):

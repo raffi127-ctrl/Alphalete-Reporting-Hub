@@ -669,6 +669,30 @@ def _text(group: str, boards, caption: str = "") -> None:
     tp.send_to_group(group, caption or "", list(boards), dry_run=False)
 
 
+# ROOMS THAT GET ONE THREAD A DAY instead of a loose post every tick. Carlos
+# 2026-09-24, in #a-players-b2b: "these screenshots on the Aplayers chat can
+# they just go into one thread please!" -- a board every half hour was burying
+# the room. Add a channel id here to thread another room the same way.
+THREADED_CHANNELS = {"C0AJQA8P716"}   # #a-players-b2b
+# "and", NOT "&": Slack stores an ampersand as "&amp;", so a header with one
+# never matches find_named_thread_ts and every tick would open a new thread.
+THREAD_TITLE = "Knocks and Dispositions"
+
+
+def _day_thread_ts(smp, channel_id: str) -> Optional[str]:
+    """Today's parent in a threaded room, posted by the first board of the day.
+    None = post loose: a board in the wrong place beats a board not posted."""
+    if channel_id not in THREADED_CHANNELS:
+        return None
+    try:
+        return smp.ensure_named_thread(THREAD_TITLE, dt.date.today(),
+                                       channel_id=channel_id).get("thread_ts")
+    except Exception as e:  # noqa: BLE001
+        print("  day thread for %s unavailable (%s: %s) -- posting loose"
+            % (channel_id, type(e).__name__, str(e)[:120]))
+        return None
+
+
 def _upload(channel_id: str, boards, comment: str) -> None:
     """Every board this shape produced, in post order, AT CHANNEL LEVEL. A
     wireless office gets a pair (the board and its Time Gaps twin) and both
@@ -679,10 +703,12 @@ def _upload(channel_id: str, boards, comment: str) -> None:
     """
     from automations.shared import slack_metrics_post as smp
     client = smp._client()
+    thread_ts = _day_thread_ts(smp, channel_id)
     for i, board in enumerate(boards):
+        kw = {"thread_ts": thread_ts} if thread_ts else {}
         client.files_upload_v2(
             channel=channel_id, file=str(board), filename=Path(board).name,
-            initial_comment=comment if i == 0 else None)
+            initial_comment=comment if i == 0 else None, **kw)
 
 
 def main(argv=None) -> int:
