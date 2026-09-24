@@ -715,8 +715,12 @@ def merge_dups(channel: str, day: dt.date, *, build=None, cl=None,
         done = tgt.setdefault("merged", {}).setdefault(key, [])
         for d in sorted(ad.get("days") or []):
             rep = rep_for(d)
-            cands = [c for c in rep.candidates
-                     if c.ad == target and titles.norm(c.title_raw) == key]
+            # The duplicate's own candidates: their title made THIS key --
+            # with today's norm, or with the pre-9/23 one that kept the
+            # company tail (9/23 Carlos: matching only today's norm found
+            # nobody, and the duplicate was deleted with its candidates).
+            cands = [c for c in rep.candidates if c.ad == target and key in (
+                titles.norm(c.title_raw), titles.norm_keep_company(c.title_raw))]
             moved += len(cands)
             if not cands or d in done or dry_run:
                 continue
@@ -740,6 +744,10 @@ def merge_dups(channel: str, day: dt.date, *, build=None, cl=None,
             _save_state(state)
         if dry_run:
             out[name] = f"would move {moved} candidate(s) into {tgt_name!r}"
+            continue
+        if not moved and ad.get("days"):
+            # Never delete a thread whose people couldn't be found again.
+            out[name] = "no candidates matched its days — left alone"
             continue
         counts = {"threads": 0, "messages": 0, "files": 0, "kept_others": 0}
         _delete_thread(cl, channel, ad["thread_ts"], cl.auth_test()["user_id"], counts)

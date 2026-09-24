@@ -48,12 +48,18 @@ _TAIL_COMPANY = re.compile(
     r"|\s+(?:" + "|".join(KNOWN_COMPANIES) + r"))$")
 
 
-def norm(title: str) -> str:
+def norm_keep_company(title: str) -> str:
+    """`norm` as it was before 9/23: the company tail stays. The keys saved
+    in state before then were made this way (--merge-dups needs it)."""
     t = (title or "").replace("&amp;", "&").replace("·", " ").lower()
     t = _LEAD_JUNK.sub("", t)
     t = t.replace("entry-level", "entry level")
     t = re.sub(r"[^a-z0-9&()]+", " ", t)
-    t = re.sub(r"\s+", " ", t).strip()
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def norm(title: str) -> str:
+    t = norm_keep_company(title)
     return _TAIL_COMPANY.sub("", t).strip() or t
 
 

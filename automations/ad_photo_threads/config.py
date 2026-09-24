@@ -118,7 +118,9 @@ OFFICES = [
         "key": "carlos",
         "owner": "Carlos Hidalgo",
         "tz": None,
-        "live": True,          # re-posted 9/23 as one thread per ad (9/14-9/23)
+        # Off 9/23 night while the channel is re-posted with the new title
+        # rule (a merge lost one duplicate's people); back on after.
+        "live": False,
         "sheet_id": ARS_A_TO_C,
         "source_channel": "C09L1S3MQ1E",
         "live_channel": "C0C3XGN541G",     # #indeed-photos-carlos-hidalgos-office

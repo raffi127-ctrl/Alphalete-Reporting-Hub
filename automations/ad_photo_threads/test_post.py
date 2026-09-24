@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from automations.ad_photo_threads import collect, post
+from automations.ad_photo_threads import collect, post, titles
 from automations.ad_photo_threads.titles import TitleBook, norm
 
 
@@ -470,3 +470,48 @@ class DeletedThreadTests(PublishTests):
         cl.conversations_history = lambda **kw: {"messages": []}
         post.retire_channel("C1", cl=cl)
         self.assertNotIn("C1", post._load_state())
+
+
+class MergeOldCompanyKeyTests(PublishTests):
+    test_one_thread_one_reply_group_photo_once = None
+
+    def test_old_key_with_company_tail_moves_its_people_not_deletes_them(self):
+        # 9/23 Carlos: the duplicate's key was saved with the company tail;
+        # the merge must still find its candidate and move them.
+        base = "Event Marketing & Sales Assistant (Spanish Needed), 2 locations"
+        tail = "Event Marketing & Sales Assistant (Spanish Needed) – 2 locations – Vantura Acquisition"
+        img = {"id": "F1", "mimetype": "image/png"}
+        rep = collect.DayReport(day=dt.date(2026, 9, 22), book=TitleBook([base] * 5))
+        rep.candidates = [
+            collect.Candidate("Ana Uno", base, "A", "Qualify", "", "x", ad=norm(base), images=[img]),
+            collect.Candidate("Bo Dos", tail, "A", "Qualify", "", "x", ad=norm(base), images=[img])]
+        post.publish(rep, "C1", cl=FakeSlack())
+        st = post._load_state()
+        wk = st["C1"]["weeks"][post.bucket(rep.day)]
+        old_key = titles.norm_keep_company(tail)
+        wk[old_key] = {"thread_ts": "55.0", "days": ["2026-09-22"], "title": "dup"}
+        post._save_state(st)
+        cl = FakeSlack()
+        cl.auth_test = lambda: {"user_id": "ULUCY"}
+        gone = []
+        cl.chat_delete = lambda **kw: gone.append(kw["ts"])
+        cl.files_delete = lambda **kw: None
+        got = post.merge_dups("C1", rep.day, build=lambda d: rep, cl=cl)
+        self.assertIn("moved 1", list(got.values())[0])
+        self.assertIn("Bo Dos", cl.uploads[0]["initial_comment"])
+
+    def test_merge_never_deletes_a_thread_whose_people_it_cant_find(self):
+        base = "Retail Associate, Euless, TX"
+        rep = collect.DayReport(day=dt.date(2026, 9, 22), book=TitleBook([base] * 5))
+        rep.candidates = [collect.Candidate("Ana Uno", base, "A", "Qualify", "", "x", ad=norm(base))]
+        post.publish(rep, "C1", cl=FakeSlack())
+        st = post._load_state()
+        wk = st["C1"]["weeks"][post.bucket(rep.day)]
+        wk["retail associate euless tx vantura acquisition"] = {"thread_ts": "56.0", "days": ["2026-09-22"]}
+        post._save_state(st)
+        cl = FakeSlack(); cl.auth_test = lambda: {"user_id": "ULUCY"}
+        gone = []
+        cl.chat_delete = lambda **kw: gone.append(kw["ts"])
+        got = post.merge_dups("C1", rep.day, build=lambda d: rep, cl=cl)
+        self.assertEqual(gone, [])
+        self.assertIn("left alone", list(got.values())[0])
