@@ -81,6 +81,15 @@ def build_report() -> str:
     return ("*Push report %s*\n" % now.strftime("%-I:%M %p")) + "\n".join(lines)
 
 
+def _shots_dirs():
+    import glob
+    import os
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    today = dt.date.today().isoformat()
+    return sorted(glob.glob(str(root / "output" / ("oat-shots-%s*" % today))))
+
+
 def main(argv=None) -> int:
     args = argv if argv is not None else sys.argv[1:]
     text = build_report()
@@ -89,9 +98,31 @@ def main(argv=None) -> int:
         return 0
     from automations.shared import slack_metrics_post as smp
     client = smp._client()
-    ch = client.conversations_open(users=CARLOS)["channel"]["id"]
+    # --channel <id> posts THERE instead of Carlos's DM (2026-09-24: the
+    # Carlos/Megan/Eve/Lucy group chat); --with-shots also uploads today's
+    # failure screenshots from THIS machine's output/oat-shots-<date>*/.
+    ch = ""
+    if "--channel" in args:
+        ch = args[args.index("--channel") + 1]
+    if not ch:
+        ch = client.conversations_open(users=CARLOS)["channel"]["id"]
     client.chat_postMessage(channel=ch, text=text)
-    print("[push_report] DM'd Carlos")
+    print("[push_report] posted to %s" % ch)
+    if "--with-shots" in args:
+        import glob
+        import os
+        n = 0
+        for d in _shots_dirs():
+            for f in sorted(glob.glob(os.path.join(d, "*.png")))[:10]:
+                try:
+                    client.files_upload_v2(channel=ch, file=f,
+                                           title=os.path.basename(d) + "/"
+                                           + os.path.basename(f))
+                    n += 1
+                except Exception as e:  # noqa: BLE001
+                    print("[push_report] upload failed %s: %s"
+                          % (f, type(e).__name__))
+        print("[push_report] uploaded %d screenshot(s)" % n)
     return 0
 
 
