@@ -972,7 +972,8 @@ def _stat_dl(members: List[Rep], terminated: Optional[int] = None) -> str:
 
 
 def render_html(week: str, reps: List[Rep], groups, palette,
-                *, only_team: Optional[str] = None) -> str:
+                *, only_team: Optional[str] = None,
+                corrected: bool = False) -> str:
     """`groups` comes from plan_teams — one section per MAIN TEAM, biggest
     first, with the team's leader already lifted onto the roof.
 
@@ -1041,7 +1042,7 @@ def render_html(week: str, reps: List[Rep], groups, palette,
     header = ""
     if only_team is None:
         header = ("""<header>
-  <h1>Alphalete Mind Map</h1>
+  <h1>Alphalete Mind Map%s</h1>""" % (" — CORRECTED" if corrected else "") + """
   <p class="eyebrow">Pulled from the Sales Board WE %s</p>
   <p class="key">teams by trainer · bubble numbers are 1st gens / whole team</p>
   <div class="legend">%s</div>
@@ -1141,7 +1142,7 @@ def leader_tags(*, client=None, team_leads=(), tab: Optional[str] = None,
 
 def post(png: Path, week: str, *, team_pngs=(), team_leads=(),
          tab: Optional[str] = None, dm: Optional[str] = None,
-         dry_run: bool = False, logfn=print) -> dict:
+         corrected: bool = False, dry_run: bool = False, logfn=print) -> dict:
     """The whole-office map in the channel, then the thread: the leader tags,
     then one shot per team (Raf 2026-09-21 — "inside the thread, it's just per
     team", the way the sales board posts).
@@ -1153,6 +1154,12 @@ def post(png: Path, week: str, *, team_pngs=(), team_leads=(),
     today = dt.date.today()
     comment = "Alphalete Mind Map : %d/%d/%s" % (today.month, today.day,
                                                  today.strftime("%y"))
+    if corrected:
+        # Its OWN post and thread, not an edit of the morning's — the room has
+        # already read that one, and a silent edit would not tell them the
+        # numbers moved (Megan 2026-09-24, after the board had Anthony and
+        # Coca terminated by mistake).
+        comment += "  —  *CORRECTED*"
     if dm:
         return smp.dm_user_with_file(png, user=dm, comment=comment,
                                      dry_run=dry_run)
@@ -1235,6 +1242,10 @@ def main(argv=None) -> int:
     ap.add_argument("--dm", metavar="WHO",
                     help="DM the PNG to one person instead of the channels")
     ap.add_argument("--tab", help="read a specific 'Sales Board WE m.d' tab")
+    ap.add_argument("--corrected", action="store_true",
+                    help="post a fresh map headed CORRECTED, with its own "
+                         "thread — for a day the sales board was wrong when "
+                         "the morning's map ran")
     ap.add_argument("--no-thread", action="store_true",
                     help="skip the per-team shots and post only the map")
     ap.add_argument("--tag-onto", metavar="TS",
@@ -1319,7 +1330,7 @@ def main(argv=None) -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     html_path, png_path = OUT_DIR / "mind_map.html", OUT_DIR / "mind_map.png"
     html_path.write_text(
-        render_html(week, reps, groups, palette),
+        render_html(week, reps, groups, palette, corrected=args.corrected),
         encoding="utf-8")
     # Taller window than the B2B map: five team sections stack vertically and
     # anything below the viewport is cut off, not scrolled. The trim inside
@@ -1375,7 +1386,7 @@ def main(argv=None) -> int:
 
     out = post(png_path, week, team_pngs=team_pngs,
                team_leads=[g[3] for g in groups if g[3]], tab=title,
-               dm=args.dm, dry_run=args.dry_run)
+               dm=args.dm, corrected=args.corrected, dry_run=args.dry_run)
     print("  posted: %s" % out)
     if args.dm or args.dry_run:
         return 0
