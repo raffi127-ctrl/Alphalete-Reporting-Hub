@@ -2308,7 +2308,10 @@ def _shot(pg, tag) -> None:
         root = _P(__file__).resolve().parents[2]
         d = str(root / "output" / ("oat-shots-%s%s" % (
             dt.date.today().isoformat(), config.FILE_SUFFIX)))
-        marker = _os.path.join(d, ".dmed")
+        # v2 marker (2026-09-24: Carlos wanted the WHOLE page and both pages;
+        # the v1 cropped single shot already went out, so a new marker name
+        # re-arms today's delivery once with the fixed shots)
+        marker = _os.path.join(d, ".dmed-v2")
         if _os.path.exists(marker):
             return                      # today's evidence already delivered
         dm_after = True
@@ -2316,7 +2319,7 @@ def _shot(pg, tag) -> None:
         _os.makedirs(d, exist_ok=True)
         n = len([f for f in _os.listdir(d) if f.endswith(".png")]) + 1
         path = _os.path.join(d, "%02d-%s.png" % (n, tag))
-        pg.screenshot(path=path, full_page=False)
+        pg.screenshot(path=path, full_page=True)
         _log("    [shot] saved %02d-%s.png" % (n, tag))
     except Exception as e:  # noqa: BLE001
         _log("    [shot] failed (%s): %s" % (tag, type(e).__name__))
@@ -2332,7 +2335,10 @@ def _shot(pg, tag) -> None:
                 % (config.OFFICE_ID, tag)))
             client.files_upload_v2(channel=ch, file=path,
                                    title=_os.path.basename(path))
-            open(marker, "w").write(dt.datetime.now().isoformat())
+            if tag.startswith("viewer"):
+                # the viewer shot is the LAST of the sequence (panel first,
+                # then the tab View-resume opened) — only it closes the day
+                open(marker, "w").write(dt.datetime.now().isoformat())
             _log("    [shot] DM'd Carlos")
         except Exception as e:  # noqa: BLE001
             _log("    [shot] DM failed: %s: %s" % (type(e).__name__, str(e)[:80]))
@@ -3058,6 +3064,7 @@ def lookup_resume_phone(page):
         # Say which, so the caller can retry (b) later instead of writing the applicant
         # off for the whole day. See _BLOCKED_PREFIX.
         reason = _blocked_reason(title, body)
+        _shot(page, "applicant-panel")
         _shot(newpg, "viewer-" + ("blocked" if reason else "no-number"))
         if reason and _first_of_session:
             # The session never got in. Wall the tick (see _mark_cf_walled) rather
