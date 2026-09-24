@@ -33,7 +33,10 @@ WHERE EACH DAY'S NUMBER COMES FROM (a tracker posted on day D shows D-1):
     JE day is '-'.
 
 RULES THAT SHAPE THE WRITE (Eve 2026-09-13):
-  - a day that could not be collected is '-', never blank and never a 0 that
+  - a day that could not be collected CARRIES the ICD's last number (Eve
+    2026-09-24: "si no encuentra en el tracker tiene que llenar con el mismo
+    último valor disponible") — the day before, or LAST WEEK'S on a Monday.
+    '-' is left only when there is no earlier number at all, never a 0 that
     looks real. A source that simply has not posted yet leaves the cell EMPTY
     (a later run fills it) — '-' is only for "tried and could not".
   - only empty cells are written; nothing a person typed is overwritten.
@@ -125,6 +128,21 @@ def _last_number(vals) -> str:
         if _num(v) is not None:
             return str(v).strip()
     return ""
+
+
+def carried(g, dl: dict, r: int, day_idx: int) -> Optional[int]:
+    """The number an ICD's row carries INTO day `day_idx` (0 = Monday): the last
+    earlier day of the week with a number, else LAST WEEK'S (the closed week's
+    final, hidden black-on-black), else None.
+
+    Eve 2026-09-24: Brandon Stallkamp read 3 on Monday and '-' on Tuesday, and
+    the '-' pulled his week down to nothing. A tracker that misses someone for a
+    day is not a headcount of zero or of unknown — he still has his 3."""
+    for k in reversed(dl["days"][:day_idx]):
+        v = _num(_c(g, r, k))
+        if v is not None:
+            return v
+    return _num(_c(g, r, dl["lastw"])) if dl.get("lastw") else None
 
 
 def campaign_by_name(g) -> Dict[str, str]:
@@ -309,13 +327,18 @@ def plan_roll(V, F, closed: dt.date, new_sunday: dt.date) -> dict:
         for r in [x[0] for x in dl["rows"]] + [dl["totals"]]:
             values.append((f"{A(dl['prevw'])}{r}", _c(V, r, dl["lastw"])))
             values.append((f"{A(dl['lastw'])}{r}", _c(V, r, dl["run"])))
-    # 3 delta box 'Last week' <- this week's daily values (blank when not a number)
+    # 3 delta box 'Last week' <- this week's daily values. A day that is not a
+    # number carries the row's last one (Eve 2026-09-24: Carlos Hidalgo and
+    # Brandon Stallkamp had '-' on Tue 9/15, so 'by Tuesday 9/22' showed them
+    # with NO last week at all). Blank only when there is no number to carry.
     dx = find_delta(V)
     by_name = {name.lower(): r for r, name, _ in dl["rows"]}
     for r, name in dx["rows"]:
         src = by_name.get(name.lower())
         for i, k in enumerate(dx["last"]):
             v = _num(_c(V, src, dl["days"][i])) if src else None
+            if src and v is None:
+                v = carried(V, dl, src, i)
             values.append((f"{A(k)}{r}", "" if v is None else v))
     for k in dx["last"]:
         if not _c(F, dx["totals"], k).upper().startswith("=SUM"):
@@ -537,9 +560,14 @@ def plan_day(V, day: dt.date, today: dt.date, logfn=print,
     if _num(_c(V, dl["daynum"], col)) != day.day:
         raise ValueError(f"{day}: the day-number cell {A(col)}{dl['daynum']} says "
                          f"{_c(V, dl['daynum'], col)!r} — the tab is not on this week")
+    i = day.weekday()
+    # a '-' this run (or an older one) already wrote: no source to re-ask, the
+    # day just takes the last number the row had.
+    out = [(f"{A(col)}{r}", carried(V, dl, r, i)) for r, _, _ in dl["rows"]
+           if _c(V, r, col) == "-" and carried(V, dl, r, i) is not None]
     empty = [(r, name, camp) for r, name, camp in dl["rows"] if _c(V, r, col) == ""]
     if not empty:
-        return []
+        return out
     need = {CAMPAIGN_SOURCE.get(camp) for _, _, camp in empty} | \
            {s for _, name, _ in empty for s in DUAL.get(name.lower(), ())}
     if trackers is None and need & {"att_country", "nds", "b2b_att_country", "b2b_box"}:
@@ -549,7 +577,6 @@ def plan_day(V, day: dt.date, today: dt.date, logfn=print,
     if je is None and "je" in need:
         je = (je_values(today, [n for _, n, c in empty if CAMPAIGN_SOURCE.get(c) == "je"], logfn)
               if day == today - dt.timedelta(days=1) else {})
-    out = []
     for r, name, camp in empty:
         prev = _num(_c(V, r, dl["days"][day.weekday() - 1])) if day.weekday() else None
         srcs = DUAL.get(name.lower()) or (CAMPAIGN_SOURCE.get(camp),)
@@ -566,6 +593,8 @@ def plan_day(V, day: dt.date, today: dt.date, logfn=print,
         if any(p is None for p in parts):
             continue                        # a source not there yet: a later run fills it
         v = "-" if any(p == "-" for p in parts) else sum(int(p) for p in parts)
+        if v == "-" and carried(V, dl, r, i) is not None:
+            v = carried(V, dl, r, i)
         out.append((f"{A(col)}{r}", v))
     return out
 

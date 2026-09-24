@@ -15,6 +15,7 @@ import unittest
 from automations.org_active_headcount import fill, rollover, skeleton_repair, sort
 from automations.org_active_headcount import sources as src
 from automations.org_active_headcount import structure as st
+from automations.org_active_headcount.daily import A
 
 
 def _box(campaign, names, weeks=("WE 08.30", "WE 08.23", "WE 08.16")):
@@ -458,6 +459,54 @@ class DailyBlockFoundByShape(unittest.TestCase):
         self.assertEqual(w["K19"], "30")      # LAST WEEK'S <- RUNNING WEEK
         self.assertEqual(w["L19"], "50")      # PREVIOUS WEEK'S <- LAST WEEK'S
         self.assertEqual(p["stack_values"][-1], "50")
+
+
+class MissingDayCarriesTheLastNumber(unittest.TestCase):
+    """Eve 2026-09-24: "si no encuentra en el tracker tiene que llenar con el
+    mismo último valor disponible" — Brandon Stallkamp went 3 -> '-'."""
+
+    def _g(self):
+        g = _hc_grid(week_cols=True)
+        g[19 - 1][2:5] = ["10", "-", ""]           # Rafael: Mon 10, Tue '-'
+        g[20 - 1][2:5] = ["-", "12", ""]           # Jairo:  Mon '-'
+        return g
+
+    def test_an_old_dash_takes_the_day_before(self):
+        from automations.org_active_headcount.daily import plan_day
+        w = dict(plan_day(self._g(), dt.date(2026, 9, 15), dt.date(2026, 9, 17),
+                          trackers={}, retail={}, je={}))
+        self.assertEqual(w["D19"], 10)
+
+    def test_a_monday_dash_takes_last_weeks(self):
+        from automations.org_active_headcount.daily import plan_day
+        w = dict(plan_day(self._g(), dt.date(2026, 9, 14), dt.date(2026, 9, 17),
+                          trackers={}, retail={}, je={}))
+        self.assertEqual(w["C20"], 41)             # LAST WEEK'S column
+
+    def test_a_tracker_that_misses_the_icd_carries_too(self):
+        from automations.org_active_headcount.daily import plan_day
+        g = self._g()
+        g[19 - 1][4] = ""                          # Rafael Wed empty
+        w = dict(plan_day(g, dt.date(2026, 9, 16), dt.date(2026, 9, 17),
+                          trackers={"att_country": None}, retail={}, je={}))
+        self.assertNotIn("E19", w)                 # not posted yet: left empty
+        from automations.org_active_headcount import daily
+        orig = daily.pick_tracker
+        daily.pick_tracker = lambda *a, **k: "-"
+        try:
+            w = dict(plan_day(g, dt.date(2026, 9, 16), dt.date(2026, 9, 17),
+                              trackers={"att_country": {}}, retail={}, je={}))
+        finally:
+            daily.pick_tracker = orig
+        self.assertEqual(w["E19"], 10)             # Mon 10, Tue '-' -> 10
+
+    def test_the_roll_gives_last_week_the_carried_number(self):
+        from automations.org_active_headcount.daily import plan_roll, find_delta
+        g = self._g()
+        p = plan_roll(g, g, dt.date(2026, 9, 20), dt.date(2026, 9, 27))
+        dx, w = find_delta(g), dict(p["values"])
+        r = dx["rows"][0][0]                       # Rafael
+        self.assertEqual(w[f"{A(dx['last'][1])}{r}"], 10)   # Tue '-' -> Mon 10
 
 
 class HelpersThatMoved(unittest.TestCase):
