@@ -475,8 +475,16 @@ def run_resume_check(dry_run: bool = False, now: dt.datetime | None = None) -> i
     if not seen:
         return 0
     machine = _machine()
-    blocked = sorted(o for o, (w, f, _s) in seen.items()
+    # WHO IS SHUT OUT vs WHAT TRIPPED THE ALARM. The alarm needs one office with
+    # a solid hour of failure before it says anything — but once it speaks, it
+    # must report every office that is not reading numbers, not just the one that
+    # crossed the line first. On 2026-09-24 it announced "1 office(s) are not
+    # reading numbers" while all THREE on that machine were shut out; the other
+    # two were a few ticks short of the hour. Megan went to the machine believing
+    # it was a small problem.
+    trigger = sorted(o for o, (w, f, _s) in seen.items()
                      if f == 0 and w >= CF_WALL_TICKS)
+    blocked = sorted(o for o, (w, f, _s) in seen.items() if f == 0 and w)
     reading = sorted(o for o, (_w, f, _s) in seen.items() if f)
     for office, (walls, fills, source) in sorted(seen.items()):
         print(f"[cf-watch] {_office_label(office)}: walled_ticks={walls} "
@@ -488,7 +496,7 @@ def run_resume_check(dry_run: bool = False, now: dt.datetime | None = None) -> i
     except Exception:  # noqa: BLE001
         st = {}
 
-    if not blocked:
+    if not trigger:
         if st.get("alerted_at"):
             try:
                 from automations.shared import incident_thread as _inc
@@ -529,6 +537,9 @@ def run_resume_check(dry_run: bool = False, now: dt.datetime | None = None) -> i
         "on %s, so the walk opens a resume and gets the check instead of the "
         "number." % machine,
         "*Offices shut out* (walled ticks): %s" % names,
+        "",
+        "*Nothing is open on %s yet — this has to be started.* Then tick the box "
+        "in the window it opens." % machine,
         ("*Still reading numbers:* %s" % ", ".join(reading)) if reading
         else "*No office on this machine is reading numbers right now.*",
         "Nobody is written off — these applicants stay in the queue and the walk "
@@ -546,8 +557,9 @@ def run_resume_check(dry_run: bool = False, now: dt.datetime | None = None) -> i
              max_age_days=CF_THREAD_MAX_AGE_DAYS,
              key=_cf_incident_key(machine.replace(" ", "_")),
              channel_line="*Applicant Push* — Indeed is asking to verify a human "
-                          "on %s; %d office(s) are not reading numbers"
-                          % (machine, len(blocked))):
+                          "on %s; %d of %d offices are not reading numbers, and "
+                          "a window has to be opened there"
+                          % (machine, len(blocked), len(seen))):
         if not dry_run:
             path.write_text(json.dumps(
                 {"alerted_at": now.isoformat(), "offices": blocked}))
