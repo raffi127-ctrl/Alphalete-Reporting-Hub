@@ -155,6 +155,50 @@ def open_oat(page) -> bool:
     return "p=604" in (page.url or "")
 
 
+def _select_indeed_job_board(page) -> None:
+    """Set the OAT page's "Job Board" filter to Indeed (Carlos 2026-09-24:
+    "on the job board, you can switch that to Indeed, probably, so that you
+    only see Indeed stuff" — a Glassdoor quick-apply had been eating the walk's
+    40s viewer wait per applicant). Finds a <select> whose options include an
+    Indeed entry, near a Job Board/source-ish label when one exists.
+    Best-effort: the walk still runs unfiltered if the control is missing, and
+    the per-applicant non-Indeed skip in lookup_resume_phone is the belt."""
+    js = """() => {
+      const sels = [...document.querySelectorAll('select')];
+      for (const s of sels) {
+        const opts = [...s.options];
+        const ind = opts.find(o => /indeed/i.test(o.text || o.value || ''));
+        if (!ind) continue;
+        const ctx = ((s.closest('td,div,label,form') || {}).innerText || '') +
+                    ' ' + (s.name || '') + ' ' + (s.id || '');
+        if (!/job\s*board|board|source/i.test(ctx) && sels.length > 1) continue;
+        if (s.value === ind.value) return 'already';
+        s.value = ind.value;
+        s.dispatchEvent(new Event('change', {bubbles: true}));
+        return 'set';
+      }
+      return 'none';
+    }"""
+    try:
+        r = None
+        for fr in page.frames:
+            try:
+                r = fr.evaluate(js)
+            except Exception:  # noqa: BLE001
+                continue
+            if r in ("set", "already"):
+                break
+        if r == "set":
+            page.wait_for_timeout(2500)   # the filter reloads the queue
+            _log("[oat] Job Board filter -> Indeed")
+        elif r == "already":
+            _log("[oat] Job Board filter already Indeed")
+        else:
+            _log("[oat] no Job Board filter control found — walking unfiltered")
+    except Exception as e:  # noqa: BLE001
+        _log("[oat] Job Board filter failed: %s" % type(e).__name__)
+
+
 def _open_oat_ready(page, tries: int = 3) -> bool:
     """open_oat + confirm we actually landed on a walkable queue (a Next pager or
     a readable applicant). Retries the whole open when the laggy nav drops us on a
@@ -163,6 +207,7 @@ def _open_oat_ready(page, tries: int = 3) -> bool:
     for _ in range(tries):
         if open_oat(page):
             page.wait_for_timeout(800)
+            _select_indeed_job_board(page)
             has_pager = page.locator(
                 "xpath=//img[contains(translate(@alt,'NEXT','next'),'next')]"
             ).count() > 0
@@ -2906,6 +2951,22 @@ def lookup_resume_phone(page):
     href = _view_resume_href(page)
     if loc is None and not href:
         return None, "no view-resume link"
+    # ONLY regular Indeed resumes get worked (Carlos 2026-09-24, off the two
+    # screenshots: Glassdoor quick-reads and the not-regular Indeed variants —
+    # "you can just skip it"). A link whose href points anywhere else is
+    # SETTLED as a skip, never a 40s viewer wait and never a retry.
+    if not href and loc is not None:
+        try:
+            _lh = (loc.get_attribute("href") or "").strip()
+        except Exception:  # noqa: BLE001
+            _lh = ""
+        if _lh and "indeed" not in _lh.lower():
+            import re as _re
+            _dom = _re.search(r"https?://([^/]+)", _lh)
+            _log("    [resume] non-Indeed source (%s) — skipping per Carlos "
+                 "2026-09-24" % (_dom.group(1) if _dom else _lh[:40]))
+            return None, ("non-Indeed resume (%s) — skipped"
+                          % (_dom.group(1) if _dom else "other job board"))
     newpg = None
     try:
         # Open the resume the way a HUMAN does — a REAL CLICK carries a user
