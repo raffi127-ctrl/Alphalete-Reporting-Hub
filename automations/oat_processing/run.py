@@ -3506,6 +3506,7 @@ def run_walk(page, live: bool = False, limit: int = None,
     if not open_oat(page):
         _log("[oat] FATAL: could not open the One-App-at-a-time page")
         return 2
+    _select_indeed_job_board(page)
 
     # WHOSE queue is this? Checked BEFORE a single applicant is read, because
     # everything past this point sends, removes or texts a real person.
@@ -3967,6 +3968,7 @@ def run(live: bool = False, limit: int = None, debug: bool = False,
                     st, det = retext_by_name(page, first, last, ph)
                     _log(f"[oat] RETEXT-BY-NAME {first} {last!r} -> {st} :: {det[:90]}")
                     open_oat(page)  # back to a clean OAT page for the next one
+                _select_indeed_job_board(page)
                 return 0
 
             if retext_test or retext_send:
