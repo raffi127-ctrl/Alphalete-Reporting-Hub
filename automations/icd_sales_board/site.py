@@ -3075,12 +3075,7 @@ def knocks_page(icd: str) -> None:
     # The same roster the sales board reads, for one reason: a rep marked
     # Terminated is struck through THERE, and a name that reads normally here
     # looks like one of the two boards is wrong.
-    try:
-        from automations.icd_sales_board import roster as R
-        status_of = {r.name.strip().lower(): r.status
-                     for r in R.load(_knock_office_key(icd))}
-    except Exception:   # noqa: BLE001 — knocks draw fine without it
-        status_of = {}
+    status_of = _knock_statuses(_knock_office_key(icd))
     grid = []
     for rep_low, days in detail.items():
         name = _title_name(rep_low)
@@ -3192,9 +3187,15 @@ def _knock_check_line(icd: str) -> str:
     grid = _knocks_raw()
     # Every spelling: the history files a two-campaign owner under two names,
     # and a scrape and a relay can spell one office differently.
+    #
+    # THE ALIAS LOOKUP IS HOISTED OUT OF THE LOOP, and that is not a tidy-up:
+    # _wanted() is a Sheets read, and calling it inside the comprehension ran
+    # it once per distinct office on the tab. Measured at 73 SECONDS for one
+    # render of Cyrus's board — the table simply never appeared while the
+    # metrics above it sat there looking finished.
+    want = KL._wanted(icd)
     names = {icd} | {o for o in {r[1] for r in grid[1:] if len(r) > 1}
-                     if any(w in (o or "").strip().lower()
-                            for w in KL._wanted(icd))}
+                     if any(w in (o or "").strip().lower() for w in want)}
     try:
         return KC.line_for(names, grid=grid)
     except Exception:   # noqa: BLE001 — a warning must not cost the board
@@ -3261,6 +3262,19 @@ def _avg_clock(times: list) -> str:
     ampm = "AM" if h < 12 else "PM"
     h12 = h % 12 or 12
     return f"{h12}:{m:02d} {ampm}"
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _knock_statuses(office_key: str) -> dict:
+    """{rep lowered: status} for the strikethrough. CACHED, because it is a
+    Sheets read and the knocks page already pays for several — an uncached one
+    added here is one more chance to land in a quota sleep mid-render
+    ([[reference_sheets_per_user_read_cap]])."""
+    try:
+        from automations.icd_sales_board import roster as R
+        return {r.name.strip().lower(): r.status for r in R.load(office_key)}
+    except Exception:   # noqa: BLE001 — knocks draw fine without it
+        return {}
 
 
 def _knock_office_key(icd: str) -> str:
