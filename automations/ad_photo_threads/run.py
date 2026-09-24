@@ -228,6 +228,9 @@ def main(argv=None) -> int:
                          "e.g. --dm U088E2KJEV8 for Eve alone. Tagged [PILOT].")
     ap.add_argument("--max-ads", type=int,
                     help="Post only the N biggest ads that have photos (a sample).")
+    ap.add_argument("--crop-model",
+                    help="With --compare-crop: the model to try (default "
+                         "crop.CHEAP_MODEL), e.g. claude-sonnet-5.")
     ap.add_argument("--no-crop", action="store_true",
                     help="Post the screenshots whole instead of cut down to "
                          "the ad's own candidates.")
@@ -270,7 +273,8 @@ def main(argv=None) -> int:
     print(summary(rep))
     if a.compare_crop:
         from automations.ad_photo_threads import crop
-        print("Crop trial:", crop.compare(rep, a.compare_crop, limit=a.max_ads or 15))
+        print("Crop trial:", crop.compare(rep, a.compare_crop, limit=a.max_ads or 15,
+                                          model=a.crop_model or crop.CHEAP_MODEL))
         return 0
     if a.add_photo:
         from automations.ad_photo_threads import config, post
