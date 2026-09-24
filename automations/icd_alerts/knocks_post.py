@@ -851,8 +851,12 @@ def _upload(channel_id: str, boards, comment: str) -> None:
     room is concerned, and repeating the gap list under the twin would read as
     a second list.
 
-    No thread_ts, deliberately -- see the note above _comment. A board people
-    have to open a thread to see is a board they stop looking at.
+    NO THREAD, EXCEPT THE ONE ROOM THAT ASKED. This said "no thread_ts,
+    deliberately" while the line below it had already started passing one:
+    #a-players-b2b was threaded the same day the others were un-threaded, and
+    the docstring kept the morning's answer (see THREADED_CHANNELS). Every
+    other room is a channel post, because a board people have to open a thread
+    to see is a board they stop looking at.
     """
     from automations.shared import slack_metrics_post as smp
     client = smp._client()
