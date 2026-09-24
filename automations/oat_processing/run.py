@@ -2797,19 +2797,34 @@ def lookup_resume_phone(page):
         return None, "no view-resume link"
     newpg = None
     try:
-        # 1) Preferred: CMD+CLICK the link → opens the raw signed URL in a new tab,
-        #    bypassing the link's onclick (which otherwise forces an Indeed login).
-        #    This is exactly Megan's manual move (2026-08-02: "hold command + click
-        #    View resume → opens without having to log into Indeed").
-        if loc is not None:
+        # Open the resume the way a HUMAN does — a REAL CLICK carries a user
+        # gesture, and Cloudflare waves a user-gesture navigation through; the
+        # old cold `goto(href)` fallback had no gesture, so Cloudflare challenged
+        # EVERY one and it burned the full 40s wall (Carlos, 2026-09-20: "when
+        # you right-click View Resume and open a new tab, it opens immediately,
+        # no Cloudflare"). So: try a real click a few times; only cold-goto as a
+        # LAST resort, and log it, because that's the path that stalls.
+        for _attempt in range(3):
+            if loc is None:
+                break
             try:
                 with page.context.expect_page(timeout=15000) as pi:
+                    # Ctrl/Cmd+click = "open link in new tab" with a real gesture.
                     loc.click(timeout=8000, modifiers=["Meta"])
                 newpg = pi.value
+                break
             except Exception:  # noqa: BLE001
-                newpg = None
-        # 2) Fallback: cold-load the signed URL in a new tab.
+                # re-find the link (the panel may have re-rendered) and retry
+                try:
+                    _fr2, loc = _view_resume_link(page)
+                except Exception:  # noqa: BLE001
+                    pass
+                page.wait_for_timeout(600)
+        # LAST resort only: the cold load that Cloudflare stops. Logged so we can
+        # see when we're paying the 40s wall.
         if newpg is None and href:
+            _log("    [resume] real-click failed — cold-loading href (Cloudflare "
+                 "may wall this)")
             newpg = page.context.new_page()
             try:
                 newpg.goto(href, wait_until="domcontentloaded", timeout=45000)
