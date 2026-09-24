@@ -2310,6 +2310,47 @@ def _shot(pg, tag) -> None:
         _log("    [shot] failed (%s): %s" % (tag, type(e).__name__))
 
 
+def _ocr_phone(pg, who="") -> tuple:
+    """(phone, email) read OFF THE SCREEN with Claude vision (Carlos 2026-09-24:
+    "if you cant download you can still read the screen"). The viewer/panel can
+    render a resume as an image or canvas that yields no selectable text — but a
+    human reads it fine, so screenshot the page and let vision read it. Same
+    key + pattern as new_start_followup's roster OCR. Never raises."""
+    try:
+        import base64 as _b64
+        import anthropic
+        from automations.brand_audit import credentials as _creds
+        png = pg.screenshot(full_page=False)
+        client = anthropic.Anthropic(api_key=_creds.anthropic_api_key())
+        msg = client.messages.create(
+            model="claude-haiku-4-5-20251001", max_tokens=200,
+            messages=[{"role": "user", "content": [
+                {"type": "image", "source": {
+                    "type": "base64", "media_type": "image/png",
+                    "data": _b64.standard_b64encode(png).decode()}},
+                {"type": "text", "text":
+                 "This is a job applicant's resume%s. Find the applicant's own "
+                 "phone number and email on it. Reply with EXACTLY two lines:\n"
+                 "PHONE: <digits or NONE>\nEMAIL: <address or NONE>\n"
+                 "If the page is a loading/challenge/sign-in screen or shows no "
+                 "resume, reply NONE for both." % (" for %s" % who if who else "")},
+            ]}])
+        txt = "".join(b.text for b in msg.content if getattr(b, "text", None))
+        import re as _re
+        pm = _re.search(r"PHONE:\s*([\d() .+-]{7,20})", txt)
+        em = _re.search(r"EMAIL:\s*([\w.+-]+@[\w.-]+\.\w+)", txt)
+        phone = _re.sub(r"\D", "", pm.group(1)) if pm else ""
+        if phone and len(phone) == 11 and phone.startswith("1"):
+            phone = phone[1:]
+        if phone and len(phone) != 10:
+            phone = ""
+        return (phone or None), (em.group(1) if em else "")
+    except Exception as e:  # noqa: BLE001
+        _log("    [ocr] screen read failed: %s: %s"
+             % (type(e).__name__, str(e)[:80]))
+        return None, ""
+
+
 def _probe_attachment(page, a) -> None:
     """Log what resume surfaces THIS panel offers. Read-only; never raises.
 
@@ -3019,6 +3060,15 @@ def lookup_resume_phone(page):
             _log(f"    \U0001f4c4 phone from the DOWNLOADED resume: {_dl_phone} "
                  f"({_dl_detail})")
             return _dl_phone, f"from downloaded resume ({_dl_detail[:60]})"
+        # SCREEN READ before any verdict (Carlos 2026-09-24: "if you cant
+        # download you can still read the screen") — the resume may be rendered
+        # as an image the text poll can't see, but vision reads it like a human.
+        _oph, _oem = _ocr_phone(newpg)
+        if _oph:
+            _LAST_RESUME_EMAIL = ("" if (_oem or "").lower() in _office_emails(page)
+                                  else (_oem or ""))
+            _log(f"    👁 phone read OFF THE SCREEN: {_oph}")
+            return _oph, "from screen OCR"
         if "no download link" not in _dl_detail:
             # There WAS something to download and it still did not yield a number.
             # Deliberately BLOCKED, not "no phone": we never actually read a
