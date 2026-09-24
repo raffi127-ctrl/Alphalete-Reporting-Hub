@@ -1561,6 +1561,125 @@ def waits_for_a_repeat(fault: Dict) -> bool:
         return False
 
 
+# --- the tick after a fault clears -----------------------------------------
+# A fault post used to stay red forever: the office's laptop read fine on its
+# next tick and nobody said so, so Megan marked them by hand (Colten,
+# 2026-09-24: two LOGIN-link timeouts at 9:10, clean reads from 9:29, a ✅ and a
+# thread reply typed by a person). These posts carry no incident key, so
+# incident_thread cannot close them either. This does it the way the rest of
+# the channel works: the code puts the ✅ on when the report runs clean.
+RECOVERY_GRACE_MIN = 5
+
+# Which relay proves a stage is reading again.
+_RECOVERY_PROOF = {"sweep": "relay", "box": "relay", "knocks": "knocks",
+                   "signin-saraplus": "relay", "signin-servicecloud": "relay",
+                   "signin-ownerville": "knocks", "login": "relay"}
+
+
+def recovered_stages(faults: List[Dict], proof_at: Dict[str, Optional[dt.datetime]],
+                     now: Optional[dt.datetime] = None) -> Dict[str, bool]:
+    """{stage: recovered?} for one office's POSTED faults of a day.
+
+    A stage has recovered when the relay that stage feeds took a row in AFTER
+    the fault's last occurrence, and the fault has not recurred for
+    RECOVERY_GRACE_MIN. Pure: `proof_at` is {"relay": when, "knocks": when}.
+    """
+    from automations.icd_alerts import knocks_post as _KP
+    now = now or dt.datetime.now()
+    out = {}
+    for f in faults:
+        stage = str(f.get("stage") or "")
+        base = stage.split("-", 1)[0] if not stage.startswith("signin-") else stage
+        proof = _RECOVERY_PROOF.get(base) or _RECOVERY_PROOF.get(stage)
+        last = _KP._received_at(str(f.get("last") or ""))
+        when = proof_at.get(proof) if proof else None
+        ok = bool(proof and last and when and when > last
+                  and (now - last) >= dt.timedelta(minutes=RECOVERY_GRACE_MIN))
+        out[stage] = out.get(stage, True) and ok
+    return out
+
+
+def close_recovered_faults(day: Optional[dt.date] = None, *, send: bool = False,
+                           book=None, log=print, now: Optional[dt.datetime] = None) -> List[str]:
+    """✅ every fault thread whose office has read clean since. Once per thread."""
+    from automations.recruiting_report.fill import open_by_key
+    from automations.icd_alerts import knocks_post as _KP
+    day = day or dt.date.today()
+    now = now or dt.datetime.now()
+    threads = _fault_threads()
+    todo = {k: ts for k, ts in threads.items()
+            if k.startswith(day.isoformat() + "|") and k.count("|") == 1
+            and not threads.get(k + "|recovered")}
+    if not todo:
+        return []
+    book = book or open_by_key(RELAY_SPREADSHEET_ID)
+    try:
+        frows = book.worksheet(FAULTS_TAB).get_all_values()
+        rrows = book.worksheet(RELAY_TAB).get_all_values()
+        krows = book.worksheet(KNOCKS_TAB).get_all_values()
+    except Exception as e:  # noqa: BLE001
+        log("could not read the relay tabs: %s" % type(e).__name__)
+        return []
+
+    def _latest(rows, col):
+        best = {}
+        for row in rows[1:]:
+            if len(row) <= col or _day_key(row[1] if len(row) > 1 else "") != day.isoformat():
+                continue
+            key = (row[0] or "").strip().lower()
+            when = _KP._received_at(row[col])
+            if key and when and (key not in best or when > best[key]):
+                best[key] = when
+        return best
+    relay_at = _latest(rrows, COL_RECEIVED)
+    knocks_at = _latest(krows, _KP.KN_RECEIVED)
+
+    closed = []
+    for key, parent in sorted(todo.items()):
+        office_key = key.split("|", 1)[1]
+        faults = [{"stage": (r[F_STAGE] or "").strip(), "last": r[F_LAST] if len(r) > F_LAST else ""}
+                  for r in frows[1:]
+                  if len(r) > F_POSTED and (r[F_OFFICE] or "").strip().lower() == office_key
+                  and _day_key(r[F_DAY]) == day.isoformat() and (r[F_POSTED] or "").strip()]
+        if not faults:
+            continue
+        # An office whose ECO keys differ from its relay key (khalil / khalil-nds)
+        # still proves itself on either.
+        proof = {"relay": max([w for k, w in relay_at.items() if k.startswith(office_key) or office_key.startswith(k)] or [None], key=lambda x: x or dt.datetime.min),
+                 "knocks": max([w for k, w in knocks_at.items() if k.startswith(office_key) or office_key.startswith(k)] or [None], key=lambda x: x or dt.datetime.min)}
+        verdict = recovered_stages(faults, proof, now=now)
+        if not verdict or not all(verdict.values()):
+            continue
+        since = min(w for w in proof.values() if w)
+        office = O.get(office_key)
+        label = office.label if office else office_key
+        log("RECOVERED: %-10s %s -- reading fine since %s"
+            % (office_key, ", ".join(verdict), since.strftime("%H:%M")))
+        if not send:
+            continue
+        try:
+            from automations.shared import slack_metrics_post as smp
+            smp._client().reactions_add(channel=O.OPS_CHANNEL, timestamp=parent,
+                                        name="white_check_mark")
+        except Exception as e:  # noqa: BLE001 -- a duplicate reaction is fine
+            log("could not ✅ %s: %s" % (office_key, type(e).__name__))
+        try:
+            _slack(O.OPS_CHANNEL,
+                   ":white_check_mark: *%s* is reading fine again — clean since %s "
+                   "(their time). Nothing was changed on our side."
+                   % (label, since.strftime("%I:%M %p").lstrip("0")),   # no %-I: Windows
+                   thread_ts=parent)
+        except Exception as e:  # noqa: BLE001
+            log("could not reply in %s's thread: %s" % (office_key, type(e).__name__))
+            continue
+        threads[key + "|recovered"] = now.isoformat(timespec="seconds")
+        closed.append(office_key)
+    if closed:
+        FAULT_THREADS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        FAULT_THREADS_PATH.write_text(json.dumps(threads, indent=2, sort_keys=True))
+    return closed
+
+
 def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
                   book=None, log=print) -> List[Dict]:
     """Put what broke on an ICD laptop in front of us, once per fault.
@@ -2478,6 +2597,7 @@ def main(argv=None) -> int:
                 notify_new_signups(send=args.send)
                 notify_pending(send=args.send)
                 notify_faults(day, send=args.send)
+                close_recovered_faults(day, send=args.send)
                 warn_quiet(day, send=args.send)
                 warn_stale_machines(day, send=args.send)
                 # BOTH OF THESE EXISTED AND NOTHING CALLED THEM. A machine
