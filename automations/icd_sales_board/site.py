@@ -2259,9 +2259,15 @@ def _grouped_board(grid: list, groups: list, green_at: dict = None) -> str:
                     # PASS/FAIL, not a scale: green once the goal is reached
                     # and plain below it. A gradient here would invite reading
                     # "nearly there" as "there".
+                    #
+                    # NO GOAL MEANS NO GREEN. Defaulting the threshold to 0
+                    # made every row green the moment an office had not set
+                    # one — the precise thing the green is meant to pick out,
+                    # inverted.
+                    at = (green_at or {}).get(key)
                     css = (GOAL_GREEN
-                           if _num_float(v) >= (green_at or {}).get(key, 0)
-                           and str(v).strip() != "" else "")
+                           if at is not None and str(v).strip() != ""
+                           and _num_float(v) >= at else "")
                 else:
                     css = (_week_scale(v) if mode == "wk"
                            else _scale(v, reported) if mode == "day" else "")
@@ -3146,9 +3152,14 @@ def knocks_page(icd: str) -> None:
                        [(lab, f"{d:%a} {m}", "day" if m == "Total Knocks"
                          else "", d in reported)
                         for m, lab in KNOCK_CORE]))
-    _paint(_grouped_board(grid, groups, green_at={"Doors/day": goal}))
-    st.caption(f"Green on Doors/day is {goal:.0f}+ a day, the D2D goal. "
-               "Averages are over the days a rep ACTUALLY knocked, not over "
+    _paint(_grouped_board(grid, groups,
+                          green_at=({"Doors/day": goal} if goal else {})))
+    st.caption((f"Green on Doors/day is {goal:.0f}+ a day. "
+                if goal else
+                "No doors-per-day goal set for this office yet, so nothing is "
+                "highlighted — set one and the column goes green for the reps "
+                "who hit it. ")
+               + "Averages are over the days a rep ACTUALLY knocked, not over "
                "the week — three days out is judged on those three. "
                "From the daily knocks run's own rows (AUTOMATION MASTER → "
                "'Knocks Daily'), per rep per day. A blank day is one nobody "
@@ -3212,28 +3223,31 @@ def _knock_no_dispo(row: dict, outcomes: list) -> int | str:
     return max(0, doors - sum(_num_int(row.get(c)) for c in outcomes))
 
 
-# THE D2D KNOCKS GOAL. Nothing on the knock rows of the Focus Report carries
-# one — column A is empty for every Mon-Fri AVG Doors / Day row — but the
-# planning block on the tab spells the arithmetic out: 'Leads per rep' 65,
-# 'Leads sheets given Per week' 2, 'Total Leads Per week knocked' 130. So the
-# week's target is 130 doors and a five-day week is 26 a day. Held here as a
-# default an office can override rather than as a constant, because it is
-# derived from a planning block and not from a stated goal (Megan 2026-09-24
-# asked what it was, which is itself a sign it is not written down anywhere
-# obvious).
-KNOCK_GOAL_PER_DAY = 26
+# THE D2D KNOCKS GOAL — AND THERE IS NO DEFAULT ON PURPOSE.
+#
+# Nothing on the knock rows of the Focus Report carries one: column A is empty
+# for every Mon-Fri AVG Doors / Day row. The planning block on the tab looked
+# like it held the answer — 'Leads per rep' 65, 'Leads sheets given Per week'
+# 2, 'Total Leads Per week knocked' 130 — which works out at 26 doors a day.
+# IT IS NOT THE GOAL. Raf's reps actually knocked 70 to 132 doors a day this
+# week, so a 26 threshold turns every row green, and a highlight that fires
+# for everybody is worse than none: it teaches people to stop seeing it. That
+# block is territory arithmetic, not a rep target.
+#
+# So until an office sets one, nothing is highlighted and the page says so.
+# Megan is asking Raf for the number (2026-09-24).
 KNOCK_GOAL_KEY = "doors_per_day"
 
 
-def _knock_goal(office_key: str) -> float:
-    """This office's doors-per-day goal, its own if it set one."""
+def _knock_goal(office_key: str):
+    """This office's doors-per-day goal, or None if nobody has set one."""
     try:
         v = G.vital_goal(office_key, KNOCK_GOAL_KEY)
         if v not in (None, ""):
             return float(str(v).replace(",", ""))
     except Exception:   # noqa: BLE001
         pass
-    return float(KNOCK_GOAL_PER_DAY)
+    return None
 
 
 def _clock_minutes(text: str):

@@ -101,5 +101,14 @@ class GoalGreenTests(unittest.TestCase):
         from automations.icd_sales_board import site as S
         groups = [("Week", [("Doors/day", "Doors/day", "goal", True)])]
         out = S._grouped_board([{"Rep": "A", "Doors/day": ""}], groups,
-                               green_at={"Doors/day": 0})
+                               green_at={"Doors/day": 100})
+        self.assertNotIn(S.GOAL_GREEN.split(";")[0], out)
+
+    def test_no_goal_set_means_no_green_at_all(self):
+        # Defaulting the threshold to 0 turned EVERY row green the moment an
+        # office had not set a goal — the thing the green picks out, inverted.
+        from automations.icd_sales_board import site as S
+        groups = [("Week", [("Doors/day", "Doors/day", "goal", True)])]
+        out = S._grouped_board([{"Rep": "A", "Doors/day": 132}], groups,
+                               green_at={})
         self.assertNotIn(S.GOAL_GREEN.split(";")[0], out)
