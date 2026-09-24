@@ -248,6 +248,10 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "appstream_promote_alt",
                     "post_note",
                     "sheets_login", "set_sheets_cookies", "sheets_whoami",
+                    # Same reason as sheets_login: a human-cleared login is
+                    # bounded and idempotent, and the day you need it is the
+                    # day something is already broken.
+                    "blueink_login",
                     "slack_whoami", "set_slack_user_token",
                     "clear_untracked", "set_doubleentry_creds", "messages_diag",
                     "set_appstream_creds",
@@ -1812,6 +1816,55 @@ def _action_sheets_login(args: str) -> tuple[bool, str]:
                           else " — SIGNED OUT: queue `sheets_login` and finish "
                                "the Google sign-in on the mini's screen")
     return ok, res + " (needs a human to finish the Google sign-in on the mini)"
+
+
+def _action_blueink_login(args: str) -> tuple[bool, str]:
+    """Blue Ink — check the saved session, or open its login for a human.
+
+      blueink_login check   is the saved session still good on this machine?
+      blueink_login         open the headed browser so a HUMAN signs in on
+                            THIS machine's screen (Google SSO + 2FA)
+
+    WHY IT IS A QUEUE ACTION AT ALL. Lucy 2 takes no SSH, and this is the one
+    login in the repo that genuinely cannot be automated: on the Unlimited
+    Annual plan an API-created bundle bills against Bulk Envelopes (50/year,
+    already spent), so the sends have to go through the web app — and a web
+    session that can SEND documents is deliberately never minted from a
+    stored password in a public repo. A person signs in; nothing here types
+    anything. Same shape as sheets_login and reseed_appstream: this only
+    LAUNCHES the legitimate human-cleared flow on the right machine.
+
+    Before this existed the alert could only say "go to Lucy 2 and type
+    this", which is a terminal command handed to whoever is nearest the
+    machine — and on 2026-09-24 the session had been dead since the 23rd
+    with nobody able to start it from anywhere else.
+
+    NOT machine-bound, unlike ownerville/AppStream: Blue Ink is one shared
+    account and the saved state does not encode WHICH machine you are. It
+    still has to be seeded on the box that runs the sweep and the Monday
+    send, because that is where the file is read from.
+
+    `check` is read-only and safe any time. Prefer it first — the interactive
+    form ties up the poller for up to ten minutes waiting for a person."""
+    mode = (args or "").strip().lower() or "login"
+    if mode not in ("login", "check"):
+        return False, ("blueink_login takes 'check' (read-only probe) or "
+                       "nothing (open the login for a human)")
+    cmd = [sys.executable, "-m", "automations.blueink_docs.session",
+           "--check" if mode == "check" else "--login"]
+    # session.login() waits 600s for the sign-in on its own, so anything
+    # under that kills the browser out from under whoever is mid-2FA and
+    # reports a failure that never happened. Browser start + teardown on top.
+    ok, res = _run_cmd(cmd, timeout_s=(3 * 60 if mode == "check" else 13 * 60),
+                       log_name="blueink_login-{}.log".format(mode))
+    if mode == "check":
+        return ok, res + (" — the session is good" if ok else
+                          " — NO SESSION: queue `blueink_login` on this "
+                          "machine and sign in as alphaletemarketing@gmail.com")
+    return ok, res + (" — signed in and saved" if ok else
+                      " — nothing was saved; the browser is open on that "
+                      "machine's screen for up to 10 minutes, so re-queue it "
+                      "when somebody can be there")
 
 
 def _action_set_sheets_cookies(args: str) -> tuple[bool, str]:
@@ -8124,6 +8177,7 @@ ACTIONS = {
     "set_ownerville_creds": _action_set_ownerville_creds,
     "appstream_renew_probe": _action_appstream_renew_probe,
     "sheets_login": _action_sheets_login,
+    "blueink_login": _action_blueink_login,
     "set_sheets_cookies": _action_set_sheets_cookies,
     "appstream_status": _action_appstream_status,
     "watch_test": _action_watch_test,
