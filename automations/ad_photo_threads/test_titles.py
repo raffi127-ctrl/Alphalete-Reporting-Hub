@@ -119,6 +119,14 @@ class CompanyTailTests(unittest.TestCase):
         self.assertEqual(norm("Entry Level Assistant Manager (Spanish Needed) – Ft Worth TX – Vantura"),
                          norm("Entry Level Assistant Manager (Spanish Needed), Ft Worth, TX"))
 
+    def test_khalil_company_tails(self):
+        self.assertEqual(norm("AT&T Retail Associate (Spanish Required) – 3 locations – Everforward Management"),
+                         norm("AT&T Retail Associate (Spanish Required), 3 locations"))
+        self.assertEqual(norm("Entry Level Sales Manager – 2 locations – Everforward"),
+                         norm("Entry Level Sales Manager, 2 locations"))
+        self.assertEqual(norm("Event Marketing and Sales Assistant (Spanish required) – 2 locations – Confidential"),
+                         norm("Event Marketing and Sales Assistant (Spanish required), 2 locations"))
+
     def test_marketing_or_management_endings_stay(self):
         self.assertTrue(norm("Entry Level at Alphalete Marketing").endswith("alphalete marketing"))
         self.assertIn("management", norm("Highline Management"))

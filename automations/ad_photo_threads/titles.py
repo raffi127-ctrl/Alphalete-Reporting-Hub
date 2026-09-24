@@ -42,7 +42,9 @@ _LEAD_JUNK = re.compile(r"^\s*(new application for|indeed\s*/)\s*", re.I)
 # "Management" also end real ad titles, so they stay.
 # Plus company names seen pasted on their own, cut before "Acquisition"
 # (Carlos 9/23: "... (Spanish Needed) – Ft Worth TX – Vantura").
-KNOWN_COMPANIES = ("vantura",)
+# Khalil 9/24: "– Everforward Management" / "– Everforward" (his company) and
+# "– Confidential" (what Indeed shows for a hidden company). Longest first.
+KNOWN_COMPANIES = ("everforward management", "everforward", "confidential", "vantura")
 _TAIL_COMPANY = re.compile(
     r"(?:\s+[a-z0-9&]+\s+acquisitions?(?:\s+inc)?|\s+(?:inc|llc)"
     r"|\s+(?:" + "|".join(KNOWN_COMPANIES) + r"))$")
