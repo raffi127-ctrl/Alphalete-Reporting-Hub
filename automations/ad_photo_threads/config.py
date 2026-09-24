@@ -273,6 +273,13 @@ def office_zone(o: dict) -> str:
 
 TITLE_ALIASES: dict = {}
 
+# One-shot duplicate-thread merges the 30-minute agent runs on the first tick
+# on/after the date (Central) -- off the Mini Control queue and its daily limit.
+# {office key: "YYYY-MM-DD"}; each runs once (state remembers it).
+SCHEDULED_MERGES = {
+    "colten": "2026-09-25",   # Valeria's ad list + Entry Level AM in one thread (Eve 9/24)
+}
+
 
 def use(o: dict) -> None:
     """Point this module's globals at office `o` for the rest of the pass."""

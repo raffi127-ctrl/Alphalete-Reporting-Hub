@@ -11,6 +11,8 @@ from zoneinfo import ZoneInfo
 
 from automations.ad_photo_threads import config, run
 
+_REAL_SCHEDULED_MERGES = run._scheduled_merges
+
 
 def _office(key, tz, live=True):
     return {"key": key, "owner": key.title(), "tz": tz, "live": live,
@@ -20,6 +22,9 @@ def _office(key, tz, live=True):
 
 class OfficesTest(unittest.TestCase):
     def setUp(self):
+        # nightly() also runs the scheduled merges -- never against real Slack here.
+        m = mock.patch.object(run, "_scheduled_merges", lambda: None)
+        m.start(); self.addCleanup(m.stop)
         self._saved = (config.SHEET_ID, config.SOURCE_CHANNEL_ID,
                        config.LIVE_CHANNEL_ID, config.NIGHTLY_PAUSED_BEFORE,
                        config.SOURCES)
@@ -85,6 +90,19 @@ class OfficesTest(unittest.TestCase):
         ran = self._tick([_office("on", "America/Chicago"),
                           _office("off", "America/Chicago", live=False)], now)
         self.assertEqual([ch for ch, _ in ran], ["LIVE-on"])
+
+    def test_scheduled_merge_runs_once_on_or_after_its_date(self):
+        import tempfile
+        from pathlib import Path
+        from automations.ad_photo_threads import post
+        calls = []
+        with tempfile.TemporaryDirectory() as tmp,                 mock.patch.object(post, "STATE_PATH", Path(tmp) / "s.json"),                 mock.patch.object(config, "SCHEDULED_MERGES", {"carlos": "2026-09-25"}),                 mock.patch.object(post, "merge_dups", side_effect=lambda ch, d: calls.append((ch, d)) or {}),                 mock.patch("automations.ad_photo_threads.collect.central_today",
+                           side_effect=[dt.date(2026, 9, 24), dt.date(2026, 9, 25), dt.date(2026, 9, 25)]):
+            fn = _REAL_SCHEDULED_MERGES
+            fn()          # 9/24: too early
+            fn()          # 9/25: runs
+            fn()          # 9/25 again: already done
+        self.assertEqual(calls, [("C0C3XGN541G", dt.date(2026, 9, 25))])
 
     def test_one_office_failing_does_not_stop_the_next(self):
         now = dt.datetime(2026, 9, 23, 18, 0, tzinfo=ZoneInfo("America/Chicago"))

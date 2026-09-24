@@ -133,6 +133,12 @@ def nightly(day: Optional[dt.date] = None, explicit_date: bool = False,
     offices = [config.office(only)] if only else \
         [o for o in config.OFFICES if o.get("live")]
     failed = []
+    if not only and not explicit_date:
+        try:
+            _scheduled_merges()
+        except Exception as e:                # noqa: BLE001 — never costs the posts
+            failed.append("scheduled-merge")
+            print(f"[scheduled merge] FAILED: {type(e).__name__}: {str(e)[:300]}")
     for o in offices:
         try:
             _nightly_office(o, day, explicit_date)
@@ -140,6 +146,30 @@ def nightly(day: Optional[dt.date] = None, explicit_date: bool = False,
             failed.append(o["key"])
             print(f"[{o['key']}] FAILED: {type(e).__name__}: {str(e)[:300]}")
     return 1 if failed else 0
+
+
+def _scheduled_merges() -> None:
+    """config.SCHEDULED_MERGES, {office key: "YYYY-MM-DD"}: on the first tick
+    on/after that date (Central), fold that office's duplicate threads once.
+    Runs from the 30-minute agent, NOT the Mini Control queue, so it spends
+    none of the queue's daily run limit (Eve 9/24: "encolalo para las 12am
+    cuando se resetean las cargas")."""
+    from automations.ad_photo_threads import config, post
+    today = collect.central_today()
+    state = post._load_state()
+    done = state.get("_scheduled_merges_done") or {}
+    for key, when in (getattr(config, "SCHEDULED_MERGES", {}) or {}).items():
+        tag = f"{key}:{when}"
+        if done.get(tag) or today.isoformat() < when:
+            continue
+        o = config.office(key)
+        config.use(o)
+        print(f"[scheduled merge] {key}:", post.merge_dups(o["live_channel"], today))
+        state = post._load_state()
+        state.setdefault("_scheduled_merges_done", {})[tag] = dt.datetime.now(
+            collect.CENTRAL).isoformat(timespec="minutes")
+        post._save_state(state)
+        done = state["_scheduled_merges_done"]
 
 
 def _nightly_office(o: dict, day: Optional[dt.date], explicit_date: bool) -> None:
