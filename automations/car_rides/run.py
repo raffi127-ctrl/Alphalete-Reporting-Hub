@@ -514,10 +514,57 @@ def _modal_open(page) -> bool:
         return False
 
 
+# Every modal dismiss control OwnerVille's Edit Layer offers, scoped INSIDE
+# the modal so nothing on the page behind it can ever be clicked by mistake.
+_MODAL_CLOSE = (".modal button.close, .modal [data-dismiss=modal], "
+                ".modal [aria-label='Close'], .modal [aria-label='close']")
+
+
+def _dismiss_modal(page, log=_log) -> bool:
+    """True = nothing is covering the page any more.
+
+    THE CASCADE THIS ENDS (2026-09-24). Both failure paths in apply_edit used to
+    return False with the Edit Layer modal STILL OPEN, and the next territory's
+    `row.click()` was then intercepted by it. So ONE bad edit failed every edit
+    behind it: on the 10:30 pass, `rodolfo` timed out waiting for the select2
+    search box and andrew / fernando / andrew / tara / joelle / nathaly / becky
+    all died on "<div id=territoryModal> intercepts pointer events" — 8 flags,
+    0 edits applied, and 4 minutes of the pass spent on 30-second timeouts that
+    could never have succeeded.
+
+    Escape twice on purpose: inside an open select2 the first press closes the
+    DROPDOWN and the modal stays put. The close control is scoped to `.modal`
+    (see _MODAL_CLOSE) so a miss can never land on the page behind it.
+
+    Nothing here saves: dismissing is how a half-finished edit is ABANDONED,
+    which is the behaviour the caller already wants when it flags instead of
+    retrying blind."""
+    if not _modal_open(page):
+        return True
+    for step in ("escape", "escape", "close"):
+        try:
+            if step == "escape":
+                page.keyboard.press("Escape")
+            else:
+                page.locator(_MODAL_CLOSE).first.click(timeout=2_000)
+            page.wait_for_timeout(600)
+        except Exception:  # noqa: BLE001 — try the next way out
+            pass
+        if not _modal_open(page):
+            return True
+    log("  a modal is still covering the page and will not close")
+    return False
+
+
 def apply_edit(page, edit: dict, log=_log) -> bool:
     """Open one territory, add/remove chips, Escape, Save, verify. True=verified.
     Conservative: any element we can't confidently find -> False (caller flags)."""
     name = edit["territory"]
+    # A modal left over from the edit BEFORE this one would intercept the row
+    # click and burn 30s per territory. Fail in about two seconds instead.
+    if not _dismiss_modal(page, log):
+        log(f"  open {name!r}: an earlier modal is still covering the page")
+        return False
     try:
         row = page.get_by_text(name, exact=False).first
         row.click()
@@ -532,6 +579,7 @@ def apply_edit(page, edit: dict, log=_log) -> bool:
             return False
     except Exception as e:
         log(f"  open {name!r} failed: {e!r}")
+        _dismiss_modal(page, log)
         return False
     try:
         for rep in edit.get("remove", []):
@@ -559,6 +607,7 @@ def apply_edit(page, edit: dict, log=_log) -> bool:
         return True
     except Exception as e:
         log(f"  edit {name!r} failed mid-way: {e!r} — flagging, NOT retrying blind")
+        _dismiss_modal(page, log)          # or it fails every edit behind it
         return False
 
 
