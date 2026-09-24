@@ -60,7 +60,23 @@ def _machine() -> str:
     return socket.gethostname()
 
 
+# What a dead session COSTS depends on which run found it. The sweep ticks over
+# the API, so when only the send-readiness check fails the checkboxes are fine
+# and it's Monday's packets that are at risk -- the old single sentence said
+# the opposite (2026-09-23 post).
+_STAKES_SWEEP = ("Nobody is missing a packet because of this -- the SEND "
+                 "refuses to run without a session rather than risk "
+                 "duplicates. What stops is the checkbox marking, so the "
+                 "sheet goes stale.")
+_STAKES_SEND = ("The checkboxes are still being marked (that goes through the "
+                "API). What's at risk is the SEND: without a session it "
+                "refuses to run rather than risk duplicates, so if nobody "
+                "signs in before Monday 7:30am, that week's new starts get "
+                "no packet.")
+
+
 def alert_dead(exc: BaseException, *, what_failed: str,
+               send_at_risk: bool = False,
                dry_run: bool = False) -> None:
     """Open (or follow up) the one post that tells somebody to re-seed.
 
@@ -77,9 +93,7 @@ def alert_dead(exc: BaseException, *, what_failed: str,
                 "%s can't read Blue Ink, so **%s is doing nothing** and will "
                 "keep doing nothing until somebody signs in again." % (
                     machine, what_failed),
-                "Nobody is missing a packet because of this — the SEND refuses "
-                "to run without a session rather than risk duplicates. What "
-                "stops is the checkbox marking, so the sheet goes stale.",
+                _STAKES_SEND if send_at_risk else _STAKES_SWEEP,
             ],
             details=[
                 "Fix it at *%s* — it needs a human, the account is Google SSO "

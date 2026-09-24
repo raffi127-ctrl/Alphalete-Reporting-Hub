@@ -701,7 +701,7 @@ def _main(argv=None) -> int:
                 session_alert.alert_dead(
                     exc, what_failed="Monday's 7:30am send (the sweep itself "
                                      "is unaffected -- it reads via the API)",
-                    dry_run=not args.slack)
+                    send_at_risk=True, dry_run=not args.slack)
             else:
                 print(f"\n(couldn't check send-readiness: {exc})")
         return 0
@@ -758,7 +758,7 @@ def _main(argv=None) -> int:
                 # check, so a dead session on a Monday means nobody gets docs.
                 session_alert.alert_dead(
                     exc, what_failed="the Monday 7:30am send",
-                    dry_run=not args.slack)
+                    send_at_risk=True, dry_run=not args.slack)
             if args.send:
                 print("REFUSING to send -- without that check this could "
                       "duplicate packets your team already sent by hand. "
