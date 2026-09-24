@@ -282,8 +282,9 @@ def build(day: dt.date, *, sh=None, cl=None) -> DayReport:
     tabs = {s["tab"]: _read_tab(sh, s["tab"]) for s in sources}
     since = day - dt.timedelta(days=config.TITLE_LOOKBACK_DAYS)
     book = TitleBook(
-        r[config.COL_TITLE] for rows in tabs.values() for r in rows
-        if (_parse_date(r[config.COL_DATE]) or dt.date.min) >= since)
+        (r[config.COL_TITLE] for rows in tabs.values() for r in rows
+         if (_parse_date(r[config.COL_DATE]) or dt.date.min) >= since),
+        aliases=getattr(config, "TITLE_ALIASES", None))
     rep = DayReport(day=day, book=book)
     rep.missing_tabs = [s["label"] for s in config.SOURCES if s["tab"] not in have]
 

@@ -77,12 +77,20 @@ def pretty(title: str) -> str:
 class TitleBook:
     """The running ads, learned from the sheet's own title column."""
 
-    def __init__(self, titles: Iterable[str]):
+    def __init__(self, titles: Iterable[str],
+                 aliases: Optional[Dict[str, str]] = None):
+        # Office-confirmed equivalences, {spelling: the ad it is} (config
+        # TITLE_ALIASES; Colten's team 9/24 sent their live ad list, so the
+        # title typed without its city folds onto the one ad with that title).
+        self.aliases = {norm(a): norm(b) for a, b in (aliases or {}).items()
+                        if norm(a) and norm(b)}
         raw = [t for t in titles if norm(t)]
-        self.counts: Counter = Counter(norm(t) for t in raw)
+        self.counts: Counter = Counter(self.aliases.get(norm(t), norm(t)) for t in raw)
         # Most common raw spelling per key — that is what gets displayed.
         spellings: Dict[str, Counter] = {}
         for t in raw:
+            if norm(t) in self.aliases:
+                continue          # show the ad the way its own title is typed
             spellings.setdefault(norm(t), Counter())[t.strip()] += 1
         self._spelling = {k: c.most_common(1)[0][0] for k, c in spellings.items()}
 
@@ -131,6 +139,9 @@ class TitleBook:
         key = norm(title)
         if not key:
             return None
+        key = self.aliases.get(key, key)
+        if key in self.ads:
+            return key
         if key in self._fold:
             return self._fold[key]
         return self._match(key, self.ads)

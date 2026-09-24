@@ -222,9 +222,27 @@ _LIVE = {
     "rashad",                          # 9/24: 6 threads, 0 loose (reads both his channels)
 }
 
+# Spellings an office confirmed are one ad, {typed title: the ad's title}.
+# Colten 9/24 (Valeria, his live ad list): each of these titles runs in ONE
+# city, so the copy typed without the city is that ad. "Entry Level Assistant
+# Manager" runs in Doral AND Princeton, so its city-less copy stays apart.
+_ALIASES = {
+    "colten": {
+        "AT&T Brand Representative": "AT&T Brand Representative – Cutler Bay FL",
+        "AT&T Sales Agent": "AT&T Sales Agent – Miami FL",
+        "AT&T Sales Associate (Spanish Required)": "AT&T Sales Associate (Spanish Required) – Miami FL",
+        "Customer Sales Associate (Full-Time)": "Customer Sales Associate (Full-Time), Naranja, FL",
+        "Customer Associate (AT&T)": "Urgently Hiring: Customer Associate (AT&T), Miami, FL",
+        "Customer Associate": "Urgently Hiring: Customer Associate (AT&T), Miami, FL",
+        "AT&T Customer Services Representative": "AT&T Customer Service Representative, Miami, FL",
+        "Customer Service Representative": "AT&T Customer Service Representative, Miami, FL",
+    },
+}
+
 OFFICES += [
     {
         "key": key, "owner": owner, "tz": _TZ.get(key), "live": key in _LIVE,
+        "title_aliases": _ALIASES.get(key, {}),
         "sheet_id": book, "source_channel": src, "live_channel": live,
         "paused_before": "",
         "sources": [{"office_id": oid, "stream": company, "label": company,
@@ -250,9 +268,14 @@ def office_zone(o: dict) -> str:
         return "America/Chicago"
 
 
+TITLE_ALIASES: dict = {}
+
+
 def use(o: dict) -> None:
     """Point this module's globals at office `o` for the rest of the pass."""
     global SHEET_ID, SOURCE_CHANNEL_ID, LIVE_CHANNEL_ID, NIGHTLY_PAUSED_BEFORE, SOURCES
+    global TITLE_ALIASES
+    TITLE_ALIASES = o.get("title_aliases") or {}
     SHEET_ID = o["sheet_id"]
     SOURCE_CHANNEL_ID = o["source_channel"]
     LIVE_CHANNEL_ID = o["live_channel"]

@@ -137,3 +137,18 @@ class CompanyTailTests(unittest.TestCase):
         book = TitleBook(["Event Marketing & Sales Assistant (Spanish Needed), 2 locations"] * 3)
         self.assertEqual(book.resolve("event marketing & sales assistant (spanish needed) 2 locations vantura acquisition"),
                          "event marketing & sales assistant (spanish needed) 2 locations")
+
+
+class AliasTests(unittest.TestCase):
+    def test_office_confirmed_alias_folds_the_city_less_copy(self):
+        book = TitleBook(["AT&T Sales Agent"] * 5 + ["AT&T Sales Agent – Miami FL"] * 3,
+                         aliases={"AT&T Sales Agent": "AT&T Sales Agent – Miami FL"})
+        self.assertEqual(book.ads, [norm("AT&T Sales Agent – Miami FL")])
+        self.assertEqual(book.resolve("AT&T Sales Agent"), norm("AT&T Sales Agent – Miami FL"))
+        # an old state key (the city-less ad's key) resolves too -> merge-dups folds it
+        self.assertEqual(book.resolve(norm("AT&T Sales Agent")), norm("AT&T Sales Agent – Miami FL"))
+        self.assertEqual(book.display(book.ads[0]), "AT&T Sales Agent – Miami FL")
+
+    def test_no_alias_no_change(self):
+        book = TitleBook(["Entry Level Assistant Manager"] * 5 + ["Entry Level Assistant Manager – Doral FL"] * 3)
+        self.assertEqual(len(book.ads), 2)
