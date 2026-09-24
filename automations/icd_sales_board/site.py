@@ -2196,7 +2196,13 @@ def _paint(html: str) -> None:
     st.html(html)
 
 
-def _grouped_board(grid: list, groups: list) -> str:
+# Bright, and only ever used for "this rep hit the number" — the rest of the
+# board's colour is a scale, so a flat vivid green reads as a pass/fail and
+# cannot be mistaken for "a bit above average".
+GOAL_GREEN = "background-color:#22C55E;color:#062E13;font-weight:700"
+
+
+def _grouped_board(grid: list, groups: list, green_at: dict = None) -> str:
     """The board as a real table, with each block SPANNING its columns.
 
     Raf's sheet puts MON above its own Apps / Int / DTV / NL block, and a
@@ -2249,8 +2255,16 @@ def _grouped_board(grid: list, groups: list) -> str:
                 # Only the APPS figure is coloured. Colouring every product
                 # would turn each block into a wall and lose the one number
                 # the board is actually read for.
-                css = (_week_scale(v) if mode == "wk"
-                       else _scale(v, reported) if mode == "day" else "")
+                if mode == "goal":
+                    # PASS/FAIL, not a scale: green once the goal is reached
+                    # and plain below it. A gradient here would invite reading
+                    # "nearly there" as "there".
+                    css = (GOAL_GREEN
+                           if _num_float(v) >= (green_at or {}).get(key, 0)
+                           and str(v).strip() != "" else "")
+                else:
+                    css = (_week_scale(v) if mode == "wk"
+                           else _scale(v, reported) if mode == "day" else "")
                 cells_html.append(
                     f'<td class="{"edge" if i == 0 else ""}'
                     f'{" apps" if mode else " part"}" '
@@ -3083,6 +3097,18 @@ def knocks_page(icd: str) -> None:
         row["%TT"] = (f"{100.0 * row['Total Talk to'] / row['Total Knocks']:.0f}%"
                       if _num_int(row.get("Total Knocks")) else "")
         row["No dispo"] = _knock_no_dispo(row, outcomes)
+        # PER DAY WORKED, not per calendar day — see _avg_clock. A rep out
+        # three days is judged on those three.
+        worked = [d for d, cell in days.items()
+                  if _num_int(cell.get("Total Knocks"))]
+        n_worked = len(worked) or 1
+        doors = _num_int(row.get("Total Leads Knocked"))
+        row["Days"] = len(worked)
+        row["Doors/day"] = round(doors / n_worked) if doors else ""
+        row["Avg 1st"] = _avg_clock([days[d].get("First Knock", "")
+                                     for d in worked])
+        row["Avg last"] = _avg_clock([days[d].get("Last Knock", "")
+                                      for d in worked])
         for d in week_days:
             cell = days.get(d) or {}
             for m, _lab in KNOCK_CORE:
@@ -3091,9 +3117,15 @@ def knocks_page(icd: str) -> None:
     grid.sort(key=lambda r: -_num_int(r.get("Total Knocks")))
     grid.append(_knock_totals(grid, measures, week_days, outcomes))
 
+    goal = _knock_goal(_knock_office_key(icd))
     groups = [("Week", [("Knocks", "Total Knocks", "wk", True),
+                        ("Doors/day", "Doors/day", "goal", True),
+                        ("Days", "Days", "", True),
                         ("Talk to", "Total Talk to", "", True),
                         ("%TT", "%TT", "", True)])]
+    if any(r.get("Avg 1st") for r in grid):
+        groups.append(("Hours out", [("Avg 1st", "Avg 1st", "", True),
+                                     ("Avg last", "Avg last", "", True)]))
     if outcomes:
         # DOORS LEADS THIS BLOCK AND 'NO DISPO' CLOSES IT, so the row ties out.
         # The outcomes break down DOORS, not knocks — Total Knocks counts every
@@ -3119,11 +3151,21 @@ def knocks_page(icd: str) -> None:
                        [(lab, f"{d:%a} {m}", "day" if m == "Total Knocks"
                          else "", d in reported)
                         for m, lab in KNOCK_CORE]))
-    _paint(_grouped_board(grid, groups))
-    st.caption("From the daily knocks run's own rows (AUTOMATION MASTER → "
+    _paint(_grouped_board(grid, groups, green_at={"Doors/day": goal}))
+    st.caption(f"Green on Doors/day is {goal:.0f}+ a day, the D2D goal. "
+               "Averages are over the days a rep ACTUALLY knocked, not over "
+               "the week — three days out is judged on those three. "
+               "From the daily knocks run's own rows (AUTOMATION MASTER → "
                "'Knocks Daily'), per rep per day. A blank day is one nobody "
                "logged, not a day of zeros — and blank gaps mean the rep has "
                "no time-tracker row at all.")
+
+
+def _num_float(v) -> float:
+    try:
+        return float(str(v).replace(",", "").replace("%", "").strip() or 0)
+    except ValueError:
+        return 0.0
 
 
 def _num_int(v) -> int:
@@ -3167,6 +3209,58 @@ def _knock_no_dispo(row: dict, outcomes: list) -> int | str:
     if not doors:
         return ""
     return max(0, doors - sum(_num_int(row.get(c)) for c in outcomes))
+
+
+# THE D2D KNOCKS GOAL. Nothing on the knock rows of the Focus Report carries
+# one — column A is empty for every Mon-Fri AVG Doors / Day row — but the
+# planning block on the tab spells the arithmetic out: 'Leads per rep' 65,
+# 'Leads sheets given Per week' 2, 'Total Leads Per week knocked' 130. So the
+# week's target is 130 doors and a five-day week is 26 a day. Held here as a
+# default an office can override rather than as a constant, because it is
+# derived from a planning block and not from a stated goal (Megan 2026-09-24
+# asked what it was, which is itself a sign it is not written down anywhere
+# obvious).
+KNOCK_GOAL_PER_DAY = 26
+KNOCK_GOAL_KEY = "doors_per_day"
+
+
+def _knock_goal(office_key: str) -> float:
+    """This office's doors-per-day goal, its own if it set one."""
+    try:
+        v = G.vital_goal(office_key, KNOCK_GOAL_KEY)
+        if v not in (None, ""):
+            return float(str(v).replace(",", ""))
+    except Exception:   # noqa: BLE001
+        pass
+    return float(KNOCK_GOAL_PER_DAY)
+
+
+def _clock_minutes(text: str):
+    """'8:20 PM' -> minutes past midnight, or None."""
+    raw = (text or "").strip().upper()
+    for fmt in ("%I:%M %p", "%I:%M:%S %p", "%H:%M", "%H:%M:%S"):
+        try:
+            t = dt.datetime.strptime(raw, fmt).time()
+            return t.hour * 60 + t.minute
+        except ValueError:
+            continue
+    return None
+
+
+def _avg_clock(times: list) -> str:
+    """The average of several clock times, back as '1:12 PM'.
+
+    Averaged over the DAYS A REP ACTUALLY KNOCKED, not over the week: a rep
+    who worked three days should not have their first-knock time dragged
+    earlier by four days they were not out at all."""
+    mins = [m for m in (_clock_minutes(t) for t in times) if m is not None]
+    if not mins:
+        return ""
+    avg = int(round(sum(mins) / len(mins)))
+    h, m = divmod(avg % (24 * 60), 60)
+    ampm = "AM" if h < 12 else "PM"
+    h12 = h % 12 or 12
+    return f"{h12}:{m:02d} {ampm}"
 
 
 def _knock_office_key(icd: str) -> str:

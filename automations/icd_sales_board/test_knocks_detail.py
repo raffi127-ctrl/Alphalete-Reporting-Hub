@@ -65,3 +65,41 @@ class DetailTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ClockAverageTests(unittest.TestCase):
+    """Avg first/last knock, and the goal green."""
+
+    def test_the_average_of_clock_times(self):
+        from automations.icd_sales_board import site as S
+        self.assertEqual(S._avg_clock(["1:00 PM", "2:00 PM"]), "1:30 PM")
+        self.assertEqual(S._avg_clock(["8:00 AM"]), "8:00 AM")
+
+    def test_morning_and_evening_average_correctly(self):
+        # Plain string sorting put 8:20 PM before 12:53 PM; minutes do not.
+        from automations.icd_sales_board import site as S
+        self.assertEqual(S._avg_clock(["12:00 PM", "8:00 PM"]), "4:00 PM")
+
+    def test_unreadable_times_are_skipped_not_zeroed(self):
+        from automations.icd_sales_board import site as S
+        self.assertEqual(S._avg_clock(["", "-", "2:00 PM"]), "2:00 PM")
+        self.assertEqual(S._avg_clock(["", ""]), "")
+
+
+class GoalGreenTests(unittest.TestCase):
+    def test_green_at_or_above_the_goal_and_not_below(self):
+        from automations.icd_sales_board import site as S
+        groups = [("Week", [("Doors/day", "Doors/day", "goal", True)])]
+        hit = S._grouped_board([{"Rep": "A", "Doors/day": 26}], groups,
+                               green_at={"Doors/day": 26})
+        miss = S._grouped_board([{"Rep": "A", "Doors/day": 25}], groups,
+                                green_at={"Doors/day": 26})
+        self.assertIn(S.GOAL_GREEN.split(";")[0], hit)
+        self.assertNotIn(S.GOAL_GREEN.split(";")[0], miss)
+
+    def test_a_blank_cell_is_never_green(self):
+        from automations.icd_sales_board import site as S
+        groups = [("Week", [("Doors/day", "Doors/day", "goal", True)])]
+        out = S._grouped_board([{"Rep": "A", "Doors/day": ""}], groups,
+                               green_at={"Doors/day": 0})
+        self.assertNotIn(S.GOAL_GREEN.split(";")[0], out)
