@@ -71,6 +71,16 @@ class CropTests(unittest.TestCase):
         self.assertTrue(out["Ana Uno"])
         self.assertEqual(cl.calls, [])
 
+    def test_trial_model_neither_reads_nor_writes_the_live_cache(self):
+        crop.crop_names(_png(), ["Ana Uno"], "F1", client=FakeClaude([_tile("Ana Uno")]))
+        cached = crop._cache_path("F1", "Ana Uno").read_bytes()
+        cl = FakeClaude([_tile("Ana Uno", box=(0, 0, 392, 392))])
+        out = crop.crop_names(_png(), ["Ana Uno"], "F1", client=cl,
+                              model=crop.CHEAP_MODEL, use_cache=False)
+        self.assertEqual(cl.calls[0]["model"], crop.CHEAP_MODEL)
+        self.assertNotEqual(out["Ana Uno"], cached)                  # its own crop
+        self.assertEqual(crop._cache_path("F1", "Ana Uno").read_bytes(), cached)
+
     def test_tiny_box_is_not_found_whole_frame_is_the_person(self):
         tiny = _tile("Ana Uno", box=(10, 10, 30, 30))
         whole = _tile("Bo Dos", box=(0, 0, 1568, 784))

@@ -207,6 +207,10 @@ def main(argv=None) -> int:
                            "channel (or --channel) that nobody else wrote in "
                            "and that aren't the ads' current threads. With "
                            "--dry-run-notes: say only.")
+    mode.add_argument("--compare-crop", metavar="USER_ID",
+                      help="Trial: DM USER_ID the day's cached crops next to "
+                           "the cheaper model's (crop.CHEAP_MODEL). --max-ads = "
+                           "how many (default 15). Posts nothing in channels.")
     mode.add_argument("--merge-dups", action="store_true",
                       help="Fold this week's duplicate threads (an ad title "
                            "pasted without its first words) into the real one "
@@ -264,6 +268,10 @@ def main(argv=None) -> int:
         return 0
     rep = collect.build(day)
     print(summary(rep))
+    if a.compare_crop:
+        from automations.ad_photo_threads import crop
+        print("Crop trial:", crop.compare(rep, a.compare_crop, limit=a.max_ads or 15))
+        return 0
     if a.add_photo:
         from automations.ad_photo_threads import config, post
         names = [n.strip() for n in a.add_photo.split(",") if n.strip()]

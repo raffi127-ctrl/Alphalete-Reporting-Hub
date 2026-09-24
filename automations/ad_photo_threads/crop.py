@@ -32,6 +32,9 @@ from typing import Dict, List, Optional, Tuple
 REPO = Path(__file__).resolve().parents[2]
 CACHE_DIR = REPO / "output" / "ad_photo_threads" / "crops"
 MODEL = "claude-opus-5"
+# The cheaper model on trial (Eve 9/24: the API balance ran out after two days
+# of bulk loads). `--compare-crop` puts its crops next to MODEL's cached ones.
+CHEAP_MODEL = "claude-haiku-4-5-20251001"
 MAX_EDGE = 1568          # the model sees images at most this long; send that
 PAD = 0.04               # grow each tile a little so the name label isn't clipped
 MIN_SIDE = 0.06          # a "tile" thinner than 6% of the image is a misread
@@ -85,14 +88,15 @@ def _cache_path(file_id: str, name: str) -> Path:
 
 def _ask(img_bytes: bytes, media_type: str, size: Tuple[int, int],
          names: List[str], client=None,
-         aliases: Optional[Dict[str, List[str]]] = None) -> dict:
+         aliases: Optional[Dict[str, List[str]]] = None,
+         model: Optional[str] = None) -> dict:
     import anthropic
     if client is None:
         from automations.brand_audit import credentials
         client = anthropic.Anthropic(api_key=credentials.anthropic_api_key())
     w, h = size
     resp = client.messages.create(
-        model=MODEL, max_tokens=4000, system=_SYSTEM,
+        model=model or MODEL, max_tokens=4000, system=_SYSTEM,
         output_config={"format": {"type": "json_schema", "schema": _SCHEMA}},
         messages=[{"role": "user", "content": [
             {"type": "image", "source": {
@@ -125,16 +129,19 @@ def _box(t: dict, w: int, h: int) -> Optional[Tuple[int, int, int, int]]:
 
 
 def crop_names(data: bytes, names: List[str], file_id: str = "",
-               client=None, aliases: Optional[Dict[str, List[str]]] = None
+               client=None, aliases: Optional[Dict[str, List[str]]] = None,
+               model: Optional[str] = None, use_cache: bool = True
                ) -> Dict[str, bytes]:
-    """{name: PNG of that person's tile, or b"" = not on this screenshot}."""
+    """{name: PNG of that person's tile, or b"" = not on this screenshot}.
+    `model`/`use_cache=False`: a trial run that neither reads nor writes the
+    cache the live report uses."""
     from PIL import Image
 
     out: Dict[str, bytes] = {}
     todo = []
     for n in names:
         p = _cache_path(file_id, n)
-        if file_id and p.exists():
+        if use_cache and file_id and p.exists():
             out[n] = p.read_bytes()
         else:
             todo.append(n)
@@ -148,7 +155,8 @@ def crop_names(data: bytes, names: List[str], file_id: str = "",
         (round(img.width * scale), round(img.height * scale)))
     buf = io.BytesIO()
     small.save(buf, "PNG")
-    got = _ask(buf.getvalue(), "image/png", small.size, todo, client, aliases)
+    got = _ask(buf.getvalue(), "image/png", small.size, todo, client, aliases,
+               model=model)
     tiles = got.get("tiles") or []
 
     by_name = {str(t.get("name", "")).strip().lower(): t for t in tiles}
@@ -167,7 +175,52 @@ def crop_names(data: bytes, names: List[str], file_id: str = "",
         buf = io.BytesIO()
         img.crop(full).save(buf, "PNG")
         out[n] = buf.getvalue()
-        if file_id:
+        if file_id and use_cache:
             CACHE_DIR.mkdir(parents=True, exist_ok=True)
             _cache_path(file_id, n).write_bytes(out[n])
     return out
+
+
+def compare(rep, user: str, limit: int = 15, model: str = CHEAP_MODEL,
+            cl=None) -> Dict[str, int]:
+    """Trial (Eve 9/24): for up to `limit` candidates of the day whose crop
+    is already cached (made by MODEL), crop the same screenshot with `model`
+    and DM `user` both, side by side. The cached crop costs nothing; only
+    `model`'s calls are billed."""
+    from automations.ad_photo_threads import collect
+    from automations.sara_down.run import _download_image
+    cl = cl or collect._client()
+    dm = cl.conversations_open(users=user)["channel"]["id"]
+    cl.chat_postMessage(channel=dm, text=(
+        f"*Crop trial — {rep.day:%a} {rep.day.month}/{rep.day.day}*\n"
+        f"Each pair: first = today's crop ({MODEL}), second = {model}."))
+    counts = {"pairs": 0, "same_found": 0, "cheap_missed": 0, "cheap_extra": 0}
+    for c in rep.candidates:
+        if counts["pairs"] >= limit:
+            break
+        f = next((f for f in c.images if _cache_path(f.get("id", ""), c.name).exists()), None)
+        if not f:
+            continue
+        old = _cache_path(f["id"], c.name).read_bytes()
+        data, _ = _download_image(f)
+        new = crop_names(data, [c.name], f["id"], aliases={c.name: c.alt_names},
+                         model=model, use_cache=False).get(c.name, b"")
+        counts["pairs"] += 1
+        if old and new:
+            counts["same_found"] += 1
+        elif old and not new:
+            counts["cheap_missed"] += 1
+        elif new and not old:
+            counts["cheap_extra"] += 1
+        files = [{"content": old, "filename": f"{c.name} - {MODEL}.png"}] if old else []
+        if new:
+            files.append({"content": new, "filename": f"{c.name} - {model}.png"})
+        note = f"{c.name}" + ("" if new else f" — {model} did NOT find them")
+        if files:
+            cl.files_upload_v2(channel=dm, file_uploads=files, initial_comment=note)
+        else:
+            cl.chat_postMessage(channel=dm, text=note)
+    cl.chat_postMessage(channel=dm, text=(
+        f"Done: {counts['pairs']} pairs · both found {counts['same_found']} · "
+        f"{model} missed {counts['cheap_missed']} · found extra {counts['cheap_extra']}"))
+    return counts
