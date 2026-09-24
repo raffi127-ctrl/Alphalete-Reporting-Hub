@@ -11968,6 +11968,48 @@
       "verify": {
         "type": "not_configured"
       }
+    },
+    "push_hourly_report": {
+      "on_scheduler": false,
+      "_note": "Hourly resume-push report DM'd to Carlos (2026-09-24: 'every hour report back to me on how much has been pushed for every and how resumes are left in the one app at a time' + 'cant lucy report to me? even if its through slack'). Sheets+Slack only, no browser: reads the six OAT Walk Diag tabs (Carlos/Atef/Khalil on Lucy 2, Raf x3 on Lucy 4) on the Mini Control sheet and DMs per-office pushed-today + queue-left, flagging a machine silent >2h inside the 7am-10pm push window. Cadence = com.alphalete.push-report-hourly LaunchAgent (:15 past the hour, 8am-10pm) on Lucy 2; `lucy rerun push_hourly_report` = send one now; --dry-run prints without DMing.",
+      "display_name": "Hourly push report DM",
+      "source_type": "none",
+      "data_sources": [],
+      "command": [
+        "automations.push_report.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 10,
+      "machine": "Lucy 2"
+    },
+    "install_push_report_agent": {
+      "on_scheduler": false,
+      "_note": "One-shot installer for com.alphalete.push-report-hourly on Lucy 2 — see push_hourly_report. Run `lucy rerun install_push_report_agent` after `lucy update`.",
+      "display_name": "Install push report hourly agent (:15, 8am-10pm)",
+      "source_type": "none",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "push-report-hourly"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 15,
+      "machine": "Lucy 2"
     }
   },
   "read_only_standalone": {
