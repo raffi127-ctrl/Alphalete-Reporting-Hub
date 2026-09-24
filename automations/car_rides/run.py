@@ -429,7 +429,15 @@ def plan_campaign(expected: dict[str, list[str]], territories: list[dict],
                       if l != owner and names_match(w, r)
                       and not any(names_match(x, r)
                                   for x in [owner] + expected[owner])]
-            for s in set(strays):
+            # …but not one this territory's own edit is already removing. The
+            # leader edit above and this rule can reach the same rep from two
+            # directions, and the second pass then hunts a chip the first one
+            # took away (2026-09-24: `andrew` / 'Eduardo A.').
+            going = {_norm(x) for e in plan["edits"]
+                     if e["territory"] == t["name"] for x in e.get("remove", [])}
+            for s in sorted(set(strays)):
+                if _norm(s) in going:
+                    continue
                 plan["edits"].append({"territory": t["name"], "leader": owner,
                                       "add": [], "remove": [s],
                                       "why": "one-rep-one-car-ride"})
@@ -643,8 +651,18 @@ def apply_edit(page, edit: dict, log=_log) -> bool:
         for rep in edit.get("remove", []):
             chip = ctr.locator(
                 f"li.select2-selection__choice:has-text({json.dumps(rep.split()[0])})").first
+            # A REMOVE WHOSE CHIP IS ALREADY GONE HAS DONE ITS JOB. Without
+            # this the locator waits the full 30s for something that cannot
+            # appear and the whole edit is flagged as failed: on 2026-09-24 the
+            # 12:34 pass removed 'Eduardo A.' from `andrew` and then the
+            # one-rep-one-car-ride edit for the same rep in the same territory
+            # timed out trying to remove him a second time — the ONLY failure
+            # left in that run, and nothing was actually wrong.
+            if chip.count() == 0:
+                log(f"  chip {rep!r} already gone — nothing to remove")
+                continue
             chip.locator("span.select2-selection__choice__remove, .remove, "
-                         "[aria-label*=remove i]").first.click()
+                         "[aria-label*=remove i]").first.click(timeout=10_000)
             page.wait_for_timeout(800)
             log(f"  removed chip {rep!r}")
         for rep in edit.get("add", []):

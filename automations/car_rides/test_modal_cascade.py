@@ -216,3 +216,32 @@ class PickingTheRightPerson(unittest.TestCase):
         """A looser rung can only widen a tie, never resolve it."""
         opts = ["Chris Vela", "Chris Vela"]
         self.assertEqual(len(run._pick_option("Chris Vela", opts)), 2)
+
+
+class ARemoveIsIdempotent(unittest.TestCase):
+    """2026-09-24, the 12:34 live pass: its ONLY failure was the plan removing
+    the same rep from the same territory twice — the leader edit took
+    'Eduardo A.' off `andrew`, then the one-rep-one-car-ride edit spent 30s
+    hunting a chip that was already gone. Nothing was wrong."""
+
+    def test_the_planner_does_not_schedule_it_twice(self):
+        expected = {"Andrew De La Torre": ["Danniel Alvarenga"],
+                    "Nick Smedra": ["Eduardo Alvarez"]}
+        terrs = [{"name": "andrew",
+                  "reps": ["Andrew De La Torre", "Eduardo Alvarez"]}]
+        plan = run.plan_campaign(expected, terrs, [], log=lambda m: None)
+        removes = [r for e in plan["edits"] if e["territory"] == "andrew"
+                   for r in e.get("remove", [])]
+        self.assertEqual(len(removes), len(set(removes)), removes)
+
+    def test_a_chip_that_is_already_gone_is_not_a_failure(self):
+        import inspect
+        src = inspect.getsource(run.apply_edit)
+        body = src[src.index("for rep in edit.get(\"remove\""):]
+        self.assertIn("chip.count() == 0", body)
+        self.assertIn("continue", body.split("already gone")[1][:200])
+
+    def test_the_remove_click_cannot_burn_the_full_default_timeout(self):
+        import inspect
+        src = inspect.getsource(run.apply_edit)
+        self.assertIn("timeout=10_000", src)
