@@ -231,8 +231,9 @@ def run(live: bool = False, limit: int = None, max_actions: int = None,
     rp._log(f"[push] mode={mode} | batch reached={batch.get('reached')} "
             f"sent={batch.get('sent')} still-ready={batch.get('remaining')} "
             f"| oat rc={oat_rc}")
-    if shots_dir:
-        _dm_shots(shots_dir, args.office)
+    _sd = os.environ.get("OAT_SHOTS_DIR", "")
+    if _sd:
+        _dm_shots(_sd, os.environ.get("OAT_OFFICE_ID", "?"))
     return 0
 
 
