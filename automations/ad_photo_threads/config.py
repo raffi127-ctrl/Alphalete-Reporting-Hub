@@ -225,7 +225,8 @@ _LIVE = {
 # Spellings an office confirmed are one ad, {typed title: the ad's title}.
 # Colten 9/24 (Valeria, his live ad list): each of these titles runs in ONE
 # city, so the copy typed without the city is that ad. "Entry Level Assistant
-# Manager" runs in Doral AND Princeton, so its city-less copy stays apart.
+# Manager" runs in Doral AND Princeton (Valeria 9/24): the city-less copy can't
+# be told apart, so Eve 9/24 folded all three into ONE thread.
 _ALIASES = {
     "colten": {
         "AT&T Brand Representative": "AT&T Brand Representative – Cutler Bay FL",
@@ -236,6 +237,8 @@ _ALIASES = {
         "Customer Associate": "Urgently Hiring: Customer Associate (AT&T), Miami, FL",
         "AT&T Customer Services Representative": "AT&T Customer Service Representative, Miami, FL",
         "Customer Service Representative": "AT&T Customer Service Representative, Miami, FL",
+        "Entry Level Assistant Manager – Doral FL": "Entry Level Assistant Manager",
+        "Entry Level Assistant Manager – Princeton FL": "Entry Level Assistant Manager",
     },
 }
 
