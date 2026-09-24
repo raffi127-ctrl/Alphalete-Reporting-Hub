@@ -2931,7 +2931,7 @@ AUTOMATED_REPORTS = [
         "emoji": "📇",
         "color": "#4A90D9",
         "category": "📊 Metrics",
-        "description": "Takes yesterday's B2B sales out of SaraPlus and adds each customer to Taylor's RingCentral contacts — business name, phone, and the rep's name in the notes — then posts a 'Customers who didn't receive wrap up text' header in #a-players-b2b with the customers nobody ever messaged listed in its thread.",
+        "description": "Takes yesterday's B2B sales out of SaraPlus and adds each customer to Taylor's RingCentral contacts — business name, phone, and the rep's name in the notes — then posts a 'Customers who didn't receive wrap up text' header in #a-players-b2b and #alphalete-gp-sales with the customers nobody ever messaged listed in its thread.",
         "breakdown": (
             "WHY IT MATTERS\n"
             "A B2B customer who was sold yesterday and never texted is a "
@@ -2970,7 +2970,8 @@ AUTOMATED_REPORTS = [
             "customer or business name. The window starts on the day of the "
             "sale and runs to now, so a customer sold at 5:55pm and messaged "
             "the next morning counts as contacted.\n\n"
-            "It posts two messages in #a-players-b2b: a header — "
+            "It posts two messages in #a-players-b2b and again in "
+            "#alphalete-gp-sales: a header — "
             "\"Customers who didn't receive wrap up text\" — and, in that "
             "header's thread, the names grouped under the rep who sold them. "
             "A re-run replies to the same header instead of posting a second "

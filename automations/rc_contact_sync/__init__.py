@@ -26,8 +26,8 @@ Every morning, for YESTERDAY's B2B sales:
      now, not just the sale's own calendar day: a customer sold at 5:55pm and
      messaged next morning HAS been contacted.
 
-     Two Slack messages, in #a-players-b2b only ("we dont need a text. slack
-     works"): a HEADER post carrying Carlos's own sentence -- "Customers who
+     Two Slack messages, in #a-players-b2b + #alphalete-gp-sales (GP added
+     by Carlos 9/24; no text: "we dont need a text. slack works"): a HEADER post carrying Carlos's own sentence -- "Customers who
      didn't receive wrap up text" -- and the names as a REPLY in that
      header's thread, grouped by the rep who sold them.
 

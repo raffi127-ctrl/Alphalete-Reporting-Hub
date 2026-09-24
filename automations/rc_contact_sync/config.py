@@ -179,14 +179,18 @@ PHONE_LABEL = "mobile"
 
 
 # --- Slack --------------------------------------------------------------------
-# ONE CHANNEL. The Loom said "the A players and the B2B chat", which read as
-# both of Carlos's channels; asked directly he narrowed it (2026-09-02): "it
-# can be posted in the aplayers slack in the b2b metrics thread". So
-# #alphalete-gp-sales is deliberately NOT in this list -- b2b_dispositions
-# posts to both, this does not.
-CHANNELS = ["C0AJQA8P716"]
+# TWO CHANNELS. Started as #a-players-b2b only (Carlos 2026-09-02: "it can be
+# posted in the aplayers slack"); Carlos 2026-09-24 added GP sales: "Can we
+# have it also sent on the Alphalete GP sales please!" Same header + reply
+# thread in each.
+# CAVEAT: Lucy's token can't read #alphalete-gp-sales history (see
+# b2b_quality/run.py), so a same-day RE-RUN can't find the existing header
+# there and opens a second one. The scheduled 4am run posts once; only a
+# manual rerun doubles it.
+CHANNELS = ["C0AJQA8P716", "C07J46MQNUX"]
 CHANNEL_LABEL = {
     "C0AJQA8P716": "#a-players-b2b",
+    "C07J46MQNUX": "#alphalete-gp-sales",
 }
 
 # No iMessage. Carlos, same thread: "we dont need a text. slack works."
