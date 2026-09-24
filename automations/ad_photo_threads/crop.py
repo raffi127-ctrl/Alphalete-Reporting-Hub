@@ -31,7 +31,12 @@ from typing import Dict, List, Optional, Tuple
 
 REPO = Path(__file__).resolve().parents[2]
 CACHE_DIR = REPO / "output" / "ad_photo_threads" / "crops"
-MODEL = "claude-opus-5"
+# Sonnet since 9/24 (Eve, after a side-by-side on 15 of Raf's 9/23 shots:
+# "la gran mayoría se ve bien"): a fraction of Opus's cost, which ran the
+# API balance dry in two days of bulk loads. Haiku was tried first and cut
+# the wrong tile. If anyone complains about a crop, go back to Opus:
+# MODEL = "claude-opus-5"
+MODEL = "claude-sonnet-5"
 # The cheaper model on trial (Eve 9/24: the API balance ran out after two days
 # of bulk loads). `--compare-crop` puts its crops next to MODEL's cached ones.
 CHEAP_MODEL = "claude-haiku-4-5-20251001"
