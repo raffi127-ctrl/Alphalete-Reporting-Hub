@@ -204,9 +204,15 @@ def _draft(msg: EmailMessage, out_dir: Path, images: List[Tuple]) -> None:
     print("=== done (draft) ===", flush=True)
 
 
-def _recipients(board: B.Board, override: Optional[str]) -> List[str]:
+def _recipients(board: B.Board, override: Optional[str],
+                *, sending: bool = True) -> Optional[List[str]]:
+    """None = refuse to send (the caller returns 2). A board on a contacts
+    group looks it up only for a real send; a dry run or draft shows the
+    group's name instead, so a Contacts hiccup never blocks the morning build."""
     if override:
         return [x.strip() for x in override.split(",") if x.strip()]
+    if board.distro:
+        return board.distro() if sending else [board.distro_label]
     return list(board.to)
 
 
@@ -249,7 +255,12 @@ def main(argv=None) -> int:
 
     board = B.get(a.board)
     run_day = dt.date.fromisoformat(a.date) if a.date else today_central()
-    to = _recipients(board, a.to)
+    sending = not (a.dry_run or a.draft)
+    to = _recipients(board, a.to, sending=sending)
+    if to is None:
+        print(f"[board_emails] NOT SENT — no recipients for {board.name}.",
+              flush=True)
+        return 2
 
     if a.send_reviewed:
         images = reviewed_images(board, run_day)

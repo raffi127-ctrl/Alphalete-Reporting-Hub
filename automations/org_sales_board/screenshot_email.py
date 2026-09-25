@@ -1110,49 +1110,57 @@ def _last_known_distro() -> Tuple[List[str], str]:
     return best
 
 
+def resolve_distro() -> Optional[List[str]]:
+    """Expand the Alphalete Org Owners group to live addresses. None = refuse
+    to send. Shared with the Org Active Headcount email (Eve 2026-09-25: "se
+    tiene que enviar a la misma [distro] que alphalete org sales board") —
+    one resolver, so the two emails can never drift apart."""
+    from automations.shared.contacts_auth import expand_groups
+    try:
+        to, missing = expand_groups(DISTRO_GROUPS)
+    except Exception as e:  # noqa: BLE001
+        # A DEAD CONTACTS TOKEN MUST NOT SWALLOW THE EMAIL. On 2026-07-31
+        # the token came back 'invalid_grant: expired or revoked', this
+        # raised, the process died with exit 1, and the gate reported "Could
+        # not send" every 15 minutes with an approved board sitting there.
+        # Re-authorizing is a browser flow and nobody can sit at the mini, so
+        # a Contacts outage would have meant no board email for days.
+        # Same call the 6-days-out emails already make: fall back to the last
+        # good list and SAY SO — never silently. [[feedback_fill_but_flag]]
+        fallback, since = _last_known_distro()
+        if not fallback:
+            print(f"[screenshot_email] NOT SENT — contacts lookup failed "
+                  f"({type(e).__name__}: {str(e).splitlines()[0][:120]}) and "
+                  f"there is no cached distro to fall back on.", flush=True)
+            return None
+        print(f"[screenshot_email] ⚠ CONTACTS LOOKUP FAILED "
+              f"({type(e).__name__}: {str(e).splitlines()[0][:120]}).\n"
+              f"    Falling back to the last known distro: "
+              f"{len(fallback)} address(es), {since}. Anyone added to "
+              f"'{DISTRO_GROUPS[0]}' since then will NOT get this email — "
+              f"re-authorize Contacts (mini_control set_contacts_ro_token).",
+              flush=True)
+        return fallback
+    if missing:                         # fail loudly — never silently under-send
+        print(f"[screenshot_email] NOT SENT — distro group(s) not found: "
+              f"{missing}. Check the names match the contacts groups.", flush=True)
+        return None
+    if not to:
+        print("[screenshot_email] NOT SENT — distro expanded to 0 addresses.",
+              flush=True)
+        return None
+    print(f"[screenshot_email] distro expanded to {len(to)} address(es)", flush=True)
+    _cache_distro(to)
+    return to
+
+
 def _recipients(a) -> Optional[List[str]]:
     """Resolve the recipient list from the flags. None = refuse to send (the
     caller returns 2) — an under-sent distro is worse than no email."""
     if a.to:
         return [x.strip() for x in a.to.split(",") if x.strip()]
     if a.distro:
-        from automations.shared.contacts_auth import expand_groups
-        try:
-            to, missing = expand_groups(DISTRO_GROUPS)
-        except Exception as e:  # noqa: BLE001
-            # A DEAD CONTACTS TOKEN MUST NOT SWALLOW THE EMAIL. On 2026-07-31
-            # the token came back 'invalid_grant: expired or revoked', this
-            # raised, the process died with exit 1, and the gate reported "Could
-            # not send" every 15 minutes with an approved board sitting there.
-            # Re-authorizing is a browser flow and nobody can sit at the mini, so
-            # a Contacts outage would have meant no board email for days.
-            # Same call the 6-days-out emails already make: fall back to the last
-            # good list and SAY SO — never silently. [[feedback_fill_but_flag]]
-            fallback, since = _last_known_distro()
-            if not fallback:
-                print(f"[screenshot_email] NOT SENT — contacts lookup failed "
-                      f"({type(e).__name__}: {str(e).splitlines()[0][:120]}) and "
-                      f"there is no cached distro to fall back on.", flush=True)
-                return None
-            print(f"[screenshot_email] ⚠ CONTACTS LOOKUP FAILED "
-                  f"({type(e).__name__}: {str(e).splitlines()[0][:120]}).\n"
-                  f"    Falling back to the last known distro: "
-                  f"{len(fallback)} address(es), {since}. Anyone added to "
-                  f"'{DISTRO_GROUPS[0]}' since then will NOT get this email — "
-                  f"re-authorize Contacts (mini_control set_contacts_ro_token).",
-                  flush=True)
-            return fallback
-        if missing:                         # fail loudly — never silently under-send
-            print(f"[screenshot_email] NOT SENT — distro group(s) not found: "
-                  f"{missing}. Check the names match the contacts groups.", flush=True)
-            return None
-        if not to:
-            print("[screenshot_email] NOT SENT — distro expanded to 0 addresses.",
-                  flush=True)
-            return None
-        print(f"[screenshot_email] distro expanded to {len(to)} address(es)", flush=True)
-        _cache_distro(to)
-        return to
+        return resolve_distro()
     return PREVIEW_TO if a.preview else PROVING_TO
 
 

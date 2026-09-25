@@ -25,7 +25,7 @@ def build_index(run_day: dt.date | None = None, *, logfn=print) -> Path:
     rows = []
     for board in B.BOARDS:
         preview = es.out_dir_for(board, run_day) / "preview.html"
-        who = ", ".join(board.to)
+        who = B.who(board)
         if preview.exists():
             # Relative to output/ so the links work from the index's own folder
             # wherever the repo lives.

@@ -15,6 +15,7 @@ from automations.shared import report_email, run_manifest
 
 
 class EmailWritesManifestOnlyOnRealDelivery(unittest.TestCase):
+    GROUP = ["a@x.com", "b@x.com"]      # the expanded Alphalete Org Owners group
 
     def _main(self, argv, ok=True):
         shots = [(Path("b.png"), "A1:B2"), (Path("d.png"), "C1:D2")]
@@ -22,7 +23,7 @@ class EmailWritesManifestOnlyOnRealDelivery(unittest.TestCase):
              mock.patch.object(Path, "stat", lambda self: mock.Mock(st_size=2048)), \
              mock.patch.object(report_email, "send_boards",
                                return_value={"ok": ok}) as send, \
-             mock.patch.object(run_manifest, "write_manifest") as wm:
+             mock.patch.object(es, "recipients", lambda: list(self.GROUP)),              mock.patch.object(run_manifest, "write_manifest") as wm:
             rc = es.main(argv)
         return rc, send, wm
 
@@ -31,7 +32,7 @@ class EmailWritesManifestOnlyOnRealDelivery(unittest.TestCase):
         self.assertEqual(rc, 0)
         wm.assert_called_once()
         self.assertEqual(wm.call_args[0][0], "org_active_headcount_email")
-        self.assertEqual(wm.call_args[1]["succeeded"], list(es.RECIPIENTS))
+        self.assertEqual(wm.call_args[1]["succeeded"], self.GROUP)
 
     def test_update_resend_counts_too(self):
         rc, send, wm = self._main(["--post", "--update"])
