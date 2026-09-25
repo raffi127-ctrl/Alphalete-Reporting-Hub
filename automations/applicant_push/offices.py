@@ -588,10 +588,10 @@ ROTATION = ["11580", "23467", "11901", "23965", "11280", "24065"]
 # AppStream flags stay off), so this adds no churn to the token the 4am
 # batches share.
 ROTATION_BY_MACHINE = {
-    # 2026-09-24 (Carlos): 11580 + all three of Raf's offices pulled from the
-    # rotation — no pushes for them from any machine. Atef + Khalil remain.
-    "Lucy 2": ["23467", "11901"],
-    "Lucy 4": [],
+    # 2026-09-24 late (Carlos): 11580 + Raf's main 11280 back in; Raf's
+    # 23965 + 24065 stay paused for now.
+    "Lucy 2": ["11580", "23467", "11901"],
+    "Lucy 4": ["11280"],
 }
 
 
