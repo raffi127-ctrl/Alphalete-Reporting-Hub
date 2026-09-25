@@ -255,6 +255,13 @@ _ALIASES = {
         "AT&T Wireless Associate (Spanish Required), Garland, TX": "AT&T Wireless Associate (Spanish), Garland, TX",
         "AT&T Retail Associate (Bilingual Spanish Required) – 3 locations": "AT&T Retail Associate (Spanish Required), 3 locations",
     },
+    # Isaiah 9/25 (Maddie): Indeed ran these as ONE ad in 3 locations without
+    # saying which city each person applied to, so the copy typed without a
+    # city is the 3-locations ad. "AT&T Team Member" has no such ad: stays.
+    "isaiah": {
+        "AT&T Wireless Associate - Spanish Required": "AT&T Wireless Associate - Spanish Required – 3 locations",
+        "Event Marketing & Sales Associate (Spanish Required)": "Event Marketing & Sales Associate (Spanish Required) – 3 locations",
+    },
 }
 
 OFFICES += [
@@ -294,6 +301,7 @@ TITLE_ALIASES: dict = {}
 SCHEDULED_MERGES = {
     "colten": "2026-09-25",   # Valeria's ad list + Entry Level AM in one thread (Eve 9/24)
     "khalil": "2026-09-25",   # Maddie's ad list: Garland Wireless x3 + Retail 3 locations x2
+    "isaiah": "2026-09-25",   # Maddie: city-less Wireless / Event Marketing = the 3-locations ad
 }
 
 
