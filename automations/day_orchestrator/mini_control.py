@@ -7297,40 +7297,30 @@ def _action_purge_retired_appstream_creds(args: str) -> tuple[bool, str]:
 
 
 def _action_group_members(args: str) -> tuple[bool, str]:
-    """group_members <group name>: every member handle of an iMessage group,
-    as THIS machine's Messages sees it, plus the chat id and service. Built
-    2026-09-22: Colten's and Aya's groups deliver Lucy's texts to Megan and to
-    nobody else, and worked for a while first -- so what does Lucy's copy of
-    the roster actually hold? Read-only."""
-    import shlex, subprocess
+    """group_members <name part>: every iMessage chat on THIS machine whose
+    name contains it, with its chat id and every participant handle. What
+    `require_handles` is written from when a group is pinned to its people
+    instead of its name (Aya's chat was renamed on 2026-09-24 and every send
+    refused). Read-only; uses the same listing the sender does."""
+    import shlex
     try:
         name = " ".join(shlex.split(args or "")).strip()
     except ValueError:
         name = (args or "").strip().strip("'\"")
     if not name:
-        return False, "group_members needs a group name"
-    script = (
-        'tell application "Messages"\n'
-        '  set out to ""\n'
-        '  repeat with c in chats\n'
-        '    try\n'
-        '      if (name of c as text) is "%s" then\n'
-        '        set out to out & "chat " & (id of c as text) & " || service=" & (name of service of c as text) & linefeed\n'
-        '        repeat with p in participants of c\n'
-        '          set out to out & "  " & (handle of p as text) & " :: " & (name of p as text) & linefeed\n'
-        '        end repeat\n'
-        '      end if\n'
-        '    end try\n'
-        '  end repeat\n'
-        '  return out\n'
-        'end tell' % name.replace('"', '\\"'))
+        return False, "group_members needs part of a group name"
+    from automations.b2b_dispositions import text_post as tp
     try:
-        res = subprocess.run(["osascript", "-e", script], capture_output=True,
-                             text=True, timeout=120)
+        chats = tp.list_chats()
     except Exception as e:  # noqa: BLE001
-        return False, "osascript failed: %s" % e
-    out = (res.stdout or "").strip() or (res.stderr or "").strip() or "(no chat with that exact name)"
-    return res.returncode == 0, out[-1500:]
+        return False, "could not list chats: %s: %s" % (type(e).__name__, str(e)[:120])
+    lines = []
+    for c in chats:
+        if name.lower() in (c.get("name") or "").lower():
+            lines.append("%s || name=%s || %d handles: %s"
+                         % (c["id"], c.get("name"), len(c.get("handles") or []),
+                            ", ".join(c.get("handles") or [])))
+    return True, ("\n".join(lines) or "(no chat whose name contains %r)" % name)[-1800:]
 
 
 def _action_sara_probe(args: str) -> tuple[bool, str]:
