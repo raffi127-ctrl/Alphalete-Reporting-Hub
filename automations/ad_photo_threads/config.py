@@ -246,6 +246,15 @@ _ALIASES = {
         "Entry Level Assistant Manager – Doral FL": "Entry Level Assistant Manager",
         "Entry Level Assistant Manager – Princeton FL": "Entry Level Assistant Manager",
     },
+    # Khalil 9/25 (Maddie, his live ad list): Garland has ONE Wireless
+    # Associate ad, "(Spanish)". The Retail Associate "3 locations" ad is
+    # typed with and without "Bilingual": one ad, one thread.
+    "khalil": {
+        "AT&T Wireless Associate, Garland, TX": "AT&T Wireless Associate (Spanish), Garland, TX",
+        "AT&T Wireless Associate(Spanish Required), Garland, TX": "AT&T Wireless Associate (Spanish), Garland, TX",
+        "AT&T Wireless Associate (Spanish Required), Garland, TX": "AT&T Wireless Associate (Spanish), Garland, TX",
+        "AT&T Retail Associate (Bilingual Spanish Required) – 3 locations": "AT&T Retail Associate (Spanish Required), 3 locations",
+    },
 }
 
 OFFICES += [
@@ -284,6 +293,7 @@ TITLE_ALIASES: dict = {}
 # {office key: "YYYY-MM-DD"}; each runs once (state remembers it).
 SCHEDULED_MERGES = {
     "colten": "2026-09-25",   # Valeria's ad list + Entry Level AM in one thread (Eve 9/24)
+    "khalil": "2026-09-25",   # Maddie's ad list: Garland Wireless x3 + Retail 3 locations x2
 }
 
 
