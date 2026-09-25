@@ -316,6 +316,32 @@ def _section_html(captain: Captain, heading: str, kind: str, n: int,
     return head + body
 
 
+def _attachment_only_notes(captain: Captain, bundle: dict,
+                           today: dt.date) -> str:
+    """The Daily Knocks boards ride only as PDFs since 2026-09-25 (Rafael: too
+    much scrolling). Their images leave the body, but a board that FAILED must
+    not vanish with them: its pending note is what run.py's send guard reads,
+    and a missing page in a list of attachments is something nobody notices.
+    So only real failures are listed here, one short line each; a real zero
+    (NO_DATA_MARK) says nothing — its owner simply has no page, as before."""
+    from automations.captainship_drafts.config import ATTACHMENT_ONLY_KINDS
+    if "daily_knocks" not in ATTACHMENT_ONLY_KINDS or "daily_knocks" not in {
+            k for _h, k in captain.sections_on(today)}:
+        return ""
+    err = bundle.get("errors") or {}
+    items = bundle.get("daily_knocks") or []
+    if not items:
+        why = err.get("daily_knocks", "")
+        return ("" if why.startswith(NO_DATA_MARK)
+                else _pending("Daily Knocks boards", why))
+    out = ""
+    for owner, path in items:
+        why = err.get(f"daily_knocks:{owner}", "")
+        if path is None and not why.startswith(NO_DATA_MARK):
+            out += _pending(f"{_html.escape(owner)}'s Daily Knocks board", why)
+    return out
+
+
 def subject_prefix(captain: Captain) -> str:
     """The captain-identifying, date-free part of the subject.
 
@@ -439,6 +465,7 @@ def build(captain: Captain, bundle: dict, today: dt.date) -> EmailMessage:
         f'{_notice_html()}'
         f'{_intro_html(captain, today)}'
         f'{sections_html}'
+        f'{_attachment_only_notes(captain, bundle, today)}'
         '<br>Kind regards,<br><br>'
         f'{_signature_html(cid_photo)}'
         '</div>'

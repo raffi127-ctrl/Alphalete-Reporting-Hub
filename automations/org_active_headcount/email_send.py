@@ -45,12 +45,13 @@ from automations.org_active_headcount import daily as d
 
 REPORT_ID = "org_active_headcount_email"        # schedule_config id
 
-RECIPIENTS = [
-    "CarlosHidalgo349@gmail.com",     # Carlos Hidalgo
-    "raffi127@gmail.com",             # Rafael Hidalgo
-    "eve@alphaletemarketing.com",     # Eve Sobrino
-    "coltenwrightsc@gmail.com",       # Colten Wright (added 2026-09-19, Eve)
-]
+# Eve 2026-09-25: the same distro as the Alphalete Org Sales Board — the
+# "Alphalete Org Owners" contacts group, resolved live at send time
+# (org_sales_board.screenshot_email.resolve_distro). It replaced a fixed list of
+# Carlos, Rafael, Eve and Colten; all four are in the group.
+def recipients():
+    from automations.org_sales_board.screenshot_email import resolve_distro
+    return resolve_distro()
 TITLE = "Org Active Headcount"
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "org_active_headcount"
 
@@ -186,7 +187,12 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     from automations.shared import report_email
     today = a.today or dt.date.today()
-    to = [u.strip() for u in a.only.split(",") if u.strip()] or list(RECIPIENTS)
+    to = [u.strip() for u in a.only.split(",") if u.strip()]
+    if not to:
+        to = recipients() if a.post else ["(Alphalete Org Owners)"]
+    if not to:
+        print("  NOT SENT — no recipients (see the distro message above)")
+        return 2
     shots = build_pngs(today, sandbox=a.sandbox)
     for p, rng in shots:
         print(f"screenshot {rng} -> {p} ({p.stat().st_size // 1024} KB)")

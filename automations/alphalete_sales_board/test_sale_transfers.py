@@ -68,6 +68,35 @@ def test_only_the_closed_day_late_rows_listed():
     assert todo == [] and [t["date_raw"] for t in late] == ["9/15/2026"]
 
 
+def test_late_form_sent_after_close_is_a_catch_up():
+    # MJ Malhas 9/25: 9/23's sales sent in 9/24 19:23, after 9/23's last
+    # closing slot (9/24 08:00) -> moved on the 9/23 block by the 9/24 run.
+    form = _form(("Amjad Malhas", "Hayden Wilson", "9/16/2026", "New Internet", "a", "1", ""))
+    form[1][0] = "9/17/2026 19:23:26"
+    todo, notes, late = _todo(form, day=WED + dt.timedelta(days=1))
+    assert todo == [] and len(late) == 1 and late[0]["catchup"], late
+    assert late[0]["metrics"] == {"Int": 1}
+    grid = _grid([_row("Amjad Malhas"), _row("Hayden Wilson", intr="6")])
+    ups, moved, pn = T.plan(grid, late[0]["date"], late)
+    # Hayden keeps his own 5.
+    assert _cells(ups) == {"E4": "1", "E5": "5"}, (_cells(ups), pn)
+
+
+def test_late_form_sent_before_close_is_not_moved_again():
+    # Ana Griffin 9/23: sent in 21:54 the same night -> the closing run on
+    # Lucy 1 already moved it; a later run must not move it a second time.
+    form = _form(("Ana Griffin", "JD Mascorro", "9/16/2026", "New Internet", "a", "1", ""))
+    form[1][0] = "9/16/2026 21:54:38"
+    todo, notes, late = _todo(form, day=WED + dt.timedelta(days=1))
+    assert todo == [] and len(late) == 1 and not late[0]["catchup"], late
+
+
+def test_catch_up_stops_after_seven_days():
+    form = _form(("Ana Griffin", "Pranish Shrestha", "9/8/2026", "New Internet", "a", "1", ""))
+    todo, notes, late = _todo(form)
+    assert late == []
+
+
 def test_lines_from_notes_and_multi_product():
     m, unknown = T.products("New Internet, DTV, New Line", "It was 1 internet 1 DTV 4 Lines")
     assert m == {"Int": 1, "DTV": 1, "NL": 4} and not unknown, m

@@ -37,9 +37,11 @@ def _headcount_subject(reported: dt.date) -> str:
     return f"Org Active Headcount — through {reported:%a %m/%d}"
 
 
-def _headcount_to() -> List[str]:
-    from automations.org_active_headcount.email_send import RECIPIENTS
-    return list(RECIPIENTS)
+def _org_owners_distro():
+    # The Alphalete Org Sales Board's own resolver: the "Alphalete Org Owners"
+    # contacts group, expanded live, with its cached-list fallback.
+    from automations.org_sales_board.screenshot_email import resolve_distro
+    return resolve_distro()
 
 
 @dataclass(frozen=True)
@@ -53,7 +55,7 @@ class Board:
     # The Slack DM still stitches — it takes a single file — off these same
     # blocks and the same renderer, so the two channels can't disagree.
     build_pngs: Callable
-    to: List[str]       # real recipients
+    to: List[str]       # real recipients (empty when `distro` is set)
     drive_folder: str   # Drive folder the review PDF lands in
     review_title: str   # first line of the Slack review post, + " — M/D"
     report_id: str      # Hub card / orchestrator id
@@ -62,6 +64,15 @@ class Board:
     banner_fg: str = "#8a0000"
     # (reported day) -> subject. None = "<name> M/D".
     subject: Optional[Callable[[dt.date], str]] = None
+    # A contacts GROUP instead of a fixed list: () -> [emails], or None to
+    # refuse the send. Resolved at send time, never at import.
+    distro: Optional[Callable[[], Optional[List[str]]]] = None
+    distro_label: str = ""
+
+
+def who(board: "Board") -> str:
+    """Recipients as a person reads them, for the Slack note and the index."""
+    return board.distro_label or ", ".join(board.to)
 
 
 BOARDS: List[Board] = [
@@ -83,13 +94,17 @@ BOARDS: List[Board] = [
     # Eve 2026-09-24: "agreguemos un gate a Org Active Headcount a
     # revision-emails". It used to mail itself as soon as the morning fill was
     # done; now the scheduled run posts the PDF and a checkmark sends it, like
-    # Country. Recipients stay where they were (org_active_headcount.email_send
-    # .RECIPIENTS — one list, not a copy).
+    # Country.
+    # Eve 2026-09-25: "se tiene que enviar a otra distro list: la misma que
+    # alphalete org sales board" — the Alphalete Org Owners group, not the
+    # four-person list it had (all four are in the group).
     Board(
         key="headcount",
         name="Org Active Headcount",
         build_pngs=_headcount_pngs,
-        to=_headcount_to(),
+        to=[],
+        distro=_org_owners_distro,
+        distro_label="Alphalete Org Owners (grupo de contactos)",
         drive_folder="Org Active Headcount - correos para revisar",
         review_title="Org Active Headcount Email",
         report_id="org-active-headcount-email",

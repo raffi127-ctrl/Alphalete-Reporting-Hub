@@ -496,7 +496,7 @@ def main(argv=None) -> int:
         rc = send_reviewed(board, run_day)
         if rc == 0:
             confirm_sent(board, run_day, who[1],
-                         to_note=", ".join(board.to), channel=args.channel)
+                         to_note=B.who(board), channel=args.channel)
         else:
             report_failure(board, run_day, rc, args.channel)
         return rc

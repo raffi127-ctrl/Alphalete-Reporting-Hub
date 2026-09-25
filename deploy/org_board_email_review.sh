@@ -83,9 +83,10 @@ export PYTHONPATH="$(pwd)"
 # Drop --distro to fall back to the proving list (Rafael + Megan).
 # "--dry" checks for the approval and stops short of mailing.
 MODE="--send --distro"
-# The other two carry no --distro: their recipients are fixed in
-# board_emails/boards.py (Rafael + Maud), so "approved" has exactly one
-# destination and there is no wider list to leak into by accident.
+# The other boards carry no --distro flag: board_emails/boards.py decides each
+# one's recipients. Country is a fixed list (Rafael + Maud); headcount resolves
+# the same "Alphalete Org Owners" group itself (Eve 2026-09-25).
+# Sat/Sun no checkmark is needed: a clean day sends itself (weekend_release).
 MODE_BOARDS="--send"
 if [ "${1:-}" = "--dry" ]; then
     MODE=""

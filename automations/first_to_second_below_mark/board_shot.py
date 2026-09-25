@@ -5,8 +5,8 @@ What each pass sends, top to bottom:
     RETENTION: FIRST SHOWED UP → BOOKED SECOND     <- what the numbers are
     Eastern offices · 11:00 AM local update · ...   <- whose, and when
     (Mondays only)
-    LAST WEEK · MON 9/14 – SAT 9/19 · FINAL         <- the whole week just closed
-    <header rows 3-4>  <Monday .. Saturday>
+    LAST WEEK · MON 9/14 – FRI 9/18 · FINAL         <- the whole week just closed
+    <header rows 3-4>  <Monday .. Friday>
     THIS WEEK · MON 9/21 – MON 9/21 (TODAY)         <- the week so far
     <header rows 3-4>  <Monday .. today>
 
@@ -50,6 +50,7 @@ CAPTION_BG = (21, 101, 192)         # last week: strong blue   #1565C0
 CAPTION_FG = (255, 255, 255)
 TODAY_BG = (216, 27, 96)            # this week: fuchsia       #D81B60
 TITLE_BG = (33, 33, 33)             # the report's name        #212121
+TOTAL_BG = (106, 27, 154)           # the week's total: purple #6A1B9A
 SUBTITLE_BG = (238, 238, 238)
 SUBTITLE_FG = (33, 33, 33)
 
@@ -66,10 +67,10 @@ def find_day(values: List[List], day: str, c0: int) -> Optional[Tuple[int, int, 
         cell = str(row[c0]) if len(row) > c0 else ""
         head = cell.split(" ", 1)[0]
         if band is None:
-            if head == want:
+            if head == want or (want == b.TOTAL_BAND and cell.startswith(want)):
                 band = (i, cell)
             continue
-        if head.isupper() and head.title() in b.WEEK_DAYS:
+        if (head.isupper() and head.title() in b.WEEK_DAYS) or cell.startswith(b.TOTAL_BAND):
             end = i - 1
             break
     else:
@@ -154,11 +155,21 @@ def plan(values: List[List], today: dt.date) -> List[dict]:
             span += "  ·  FINAL"
         elif hits[-1][1][2].split("  ·  ")[0].endswith("(today, still moving)"):
             span += " (TODAY)"
+        header = f"{first_col}{b.BANNER_ROW}:{last_col}{b.HEADER_ROW}"
         blocks.append({
-            "caption": f"{label}  ·  {span}", "bg": bg,
-            "header": f"{first_col}{b.BANNER_ROW}:{last_col}{b.HEADER_ROW}",
+            "caption": f"{label}  ·  {span}", "bg": bg, "header": header,
             "body": f"{first_col}{first_row}:{last_col}{last_row}",
             "days": [(d, h[2]) for d, h in hits]})
+        # The week's TOTAL under its days (Rafael, 2026-09-24: "at the bottom
+        # of the screenshot ... Total for the week"). Not on a week that has
+        # only its Monday so far: that total is Monday again.
+        tot = find_day(values, b.TOTAL_BAND, c0)
+        if tot is not None and len(days) > 1 and tot[1] > tot[0]:
+            blocks.append({
+                "caption": f"{label}  ·  TOTAL FOR THE WEEK  ·  {span.replace('  ·  FINAL', '')}",
+                "bg": TOTAL_BG, "header": header,
+                "body": f"{first_col}{tot[0]}:{last_col}{tot[1]}",
+                "days": [(b.TOTAL_BAND, tot[2])]})
     return blocks
 
 

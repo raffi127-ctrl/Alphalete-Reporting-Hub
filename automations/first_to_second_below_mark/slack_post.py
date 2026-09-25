@@ -54,9 +54,13 @@ TITLE = "1st to 2nd Below the Mark"
 # of scattering between other messages. The group DM above is no longer used
 # for the board; RECIPIENTS stays only for the old one-day tab and --only tests.
 CHANNEL_ID = "C0C42793AKS"       # #ars-recruiting-numbers
+# What the report is, said once a day -- as the FIRST REPLY in the thread, not
+# on the channel post (Rafael, 2026-09-24: the channel shows the title and date
+# only; the explanation lives inside the thread).
 THREAD_LINES = [
     "Retention first showed up → booked second · offices at or under 40%",
-    "Each time zone at its own 11:00 AM and 6:30 PM — every update lands in this thread.",
+    "Every time zone in one post, at 11:00 AM and 6:30 PM Pacific — every office "
+    "re-checked each time, every update lands in this thread.",
 ]
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "below_the_mark"
 # Stops at P on purpose: column Q ("Office to Fill out report for (MUST MATCH
@@ -108,6 +112,25 @@ def build_png(tab: Optional[str] = None, out: Optional[Path] = None) -> tuple:
     return out, rng, headline
 
 
+def ensure_thread(title: str, today, lines: List[str], *, dry: bool,
+                  channel_id: str) -> dict:
+    """Today's thread: the channel post is the dated title ALONE, and `lines`
+    go in as its first reply, posted only when the thread is new (Rafael,
+    2026-09-24). Shared with Call List to 2nd."""
+    head = smp.ensure_named_thread(title, today, dry_run=dry, channel_id=channel_id)
+    if dry:
+        print(f"  first reply (new thread only): {' / '.join(lines)}")
+        return head
+    if head.get("thread_ts") and not head.get("existed") and lines:
+        try:
+            smp.post_reply_text_only("\n".join(lines), thread_ts=head["thread_ts"],
+                                     channel_id=channel_id, today=today)
+        except Exception as exc:                          # noqa: BLE001
+            # the picture matters more than the intro line: never lose it for this
+            print(f"  intro reply failed: {type(exc).__name__}: {exc}")
+    return head
+
+
 def post_to_thread(png: Path, headline: str, *, dry: bool,
                    today: Optional["dt.date"] = None) -> int:
     """Today's thread in #ars-recruiting-numbers (posted on the first wave of
@@ -117,8 +140,7 @@ def post_to_thread(png: Path, headline: str, *, dry: bool,
     print(f"{'DRY-RUN (no post)' if dry else 'POSTING'} to channel {CHANNEL_ID}, "
           f"thread '{TITLE} — {today:%b %d}'")
     print(f"  comment: {headline}")
-    head = smp.ensure_named_thread(TITLE, today, lines=THREAD_LINES, dry_run=dry,
-                                   channel_id=CHANNEL_ID)
+    head = ensure_thread(TITLE, today, THREAD_LINES, dry=dry, channel_id=CHANNEL_ID)
     print(f"  thread: {head}")
     if dry:
         return 0

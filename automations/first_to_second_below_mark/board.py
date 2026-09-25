@@ -50,6 +50,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -89,10 +90,12 @@ DATA_TAB = "1st to 2nd below the mark DATA"
 # Rafael (2026-09-21) wanted it impossible to miss what the numbers are.
 REPORT_TITLE = "RETENTION: FIRST SHOWED UP → BOOKED SECOND"
 
-# Monday to SATURDAY (Rafael, 2026-09-21). AppStream has Saturday; the ARS
-# REPORT files stop at Friday, so Saturday's qualified/answered columns stay
+# Monday to FRIDAY (Eve, 2026-09-24). Saturday was added on 2026-09-21 with
+# no request from Rafael behind it, and taken back out. The ARS REPORT files
+# stop at Friday anyway. The launchd agent still fires on Saturdays; pick_pass
+# sends nothing then. (Was: Saturday's qualified/answered columns stayed
 # blank and only C/D/E fill.
-WEEK_DAYS = list(ars.DAYS) + ["Saturday"]
+WEEK_DAYS = list(ars.DAYS)
 
 TITLE_ROW, STATUS_ROW, BANNER_ROW, HEADER_ROW = 1, 2, 3, 4
 FIRST_BODY_ROW = 5
@@ -144,6 +147,7 @@ class DayResult:
     future: bool = False
     today: bool = False                                  # still being worked
     risen: List[str] = field(default_factory=list)       # climbed back above the mark
+    flagged: List[str] = field(default_factory=list)     # owners at or under the mark THIS day
 
 
 @dataclass
@@ -152,6 +156,8 @@ class WeekResult:
     start: dt.date
     days: Dict[str, DayResult] = field(default_factory=dict)
     missing: Optional[str] = None                        # why the week is blank
+    totals: List[list] = field(default_factory=list)     # one row per listed office, the week summed
+    through: Optional[dt.date] = None                    # last day the totals cover
 
 
 # ----------------------------------------------------------------- the pull
@@ -281,16 +287,87 @@ def fetch_rows(weeks: List[src.Week], starts: List[dt.date], headers: List[str],
     return rows, notes
 
 
+def _n(v) -> Optional[float]:
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    return ars._as_number(v) if isinstance(v, str) else None
+
+
+def week_total(rows: List[list], headers: List[str]) -> list:
+    """One office's days added up into one row (Rafael, 2026-09-24: "Total for
+    the week" -- Monday to today combined, to see where the week sits).
+
+    Counts are summed; every % is worked out again from the summed counts,
+    never averaged -- a 0% day with one interview must not weigh as much as a
+    60% day with ten. The same ratios the boxes use:
+        retention        1st showed up booked 2nd / 1st interviews showed up
+        qualified %      qualified / (qualified + disqualified + declined)
+        declined %       (disqualified + declined) / the same
+        booked %         booked / qualified (answered block)
+        not contacted %  not contacted / qualified (answered block)"""
+    col = cols.resolve(headers)
+    out = [""] * len(headers)
+
+    def cell(row, f):
+        i = col.get(f)
+        return row[i] if i is not None and i < len(row) else ""
+
+    def total(f) -> Optional[float]:
+        vals = [v for v in (_n(cell(r, f)) for r in rows) if v is not None]
+        return sum(vals) if vals else None
+
+    def put(f, v):
+        if f in col and v is not None:
+            out[col[f]] = v
+
+    def ratio(num, den) -> Optional[float]:
+        return num / den if num is not None and den else None
+
+    put("owner", cell(rows[0], "owner") if rows else None)
+    put("goal", next((cell(r, "goal") for r in rows if cell(r, "goal") != ""), None))
+    names: List[str] = []
+    for r in rows:
+        for n in str(cell(r, "interviewer") or "").split(","):
+            if n.strip() and n.strip() not in names:
+                names.append(n.strip())
+    put("interviewer", ", ".join(names) or None)
+    sums = {f: total(f) for f in rep.COUNT_FIELDS}
+    for f, v in sums.items():
+        put(f, v)
+    put("retention", ratio(sums.get("booked_2nd"), sums.get("first_showed")))
+    screened = sum(sums.get(f) or 0 for f in ("qualified", "disqualified", "declined"))
+    if sums.get("qualified") is not None:
+        put("qualified_ret", ratio(sums["qualified"], screened))
+    if sums.get("disqualified") is not None or sums.get("declined") is not None:
+        put("declined_ret", ratio((sums.get("disqualified") or 0) + (sums.get("declined") or 0),
+                                  screened))
+    put("booked_ret", ratio(sums.get("booked"), sums.get("ab_qualified")))
+    put("not_contacted_ret", ratio(sums.get("not_contacted"), sums.get("ab_qualified")))
+    return out
+
+
 def build_results(weeks: List[src.Week], starts: List[dt.date], headers: List[str],
                   rows: Dict[RowKey, list], *, today: dt.date, show_all: bool = False,
                   only: Optional[set] = None) -> List[WeekResult]:
-    """The board's weeks and days out of the rows, each day's list worst first.
-    `only` keeps just those owners (the picture of one pass)."""
+    """The board's weeks and days out of the rows. `only` keeps just those
+    owners (the picture of one pass).
+
+    THE WHOLE WEEK FOR ANYONE WHO SLIPPED (Rafael, 2026-09-24): an office at
+    or under the mark on ANY day of the week is shown on EVERY day of that
+    week, so its Monday-to-today run reads down the page ("Isaiah is on for
+    Monday, but we don't see him again for Tuesday"). Same order every day:
+    worst week total first. Under the days goes the week's TOTAL: each of
+    those offices with its days so far added up."""
     results = []
     col = cols.resolve(headers)
     shown_i = col.get("first_showed")
+    owner_i = col.get("owner", 0)
     for w, start in zip(weeks, starts):
         wr = WeekResult(label=w.label, start=start)
+        per_day: Dict[str, Dict[str, list]] = {}
+        listed: List[str] = []
         for day in WEEK_DAYS:
             d = day_date(start, day)
             dr = DayResult(day=day, date=d, future=d > today, today=d == today)
@@ -301,9 +378,19 @@ def build_results(weeks: List[src.Week], starts: List[dt.date], headers: List[st
                 dr.interviewed = sum(
                     1 for r in dr.all_rows
                     if shown_i is not None and isinstance(r[shown_i], (int, float)) and r[shown_i])
-                listed = dr.all_rows if show_all else rep.below_the_mark(dr.all_rows, headers)
-                dr.rows = rep.worst_first(listed, headers)
+                flagged = dr.all_rows if show_all else rep.below_the_mark(dr.all_rows, headers)
+                dr.flagged = [str(r[owner_i]) for r in flagged]
+                listed += [o for o in dr.flagged if o not in listed]
+                per_day[day] = {str(r[owner_i]): r for r in dr.all_rows}
+                wr.through = d
             wr.days[day] = dr
+        totals = [week_total([per_day[day][o] for day in WEEK_DAYS
+                              if o in per_day.get(day, {})], headers) for o in listed]
+        wr.totals = rep.worst_first(totals, headers)
+        order = [str(r[owner_i]) for r in wr.totals]
+        for dr in wr.days.values():
+            if not dr.future:
+                dr.rows = [per_day[dr.day][o] for o in order if o in per_day[dr.day]]
         results.append(wr)
     return results
 
@@ -421,6 +508,9 @@ def read_prior(values: List[List], width: int, headers: List[str]) -> PriorFill:
             if head.isupper() and head.title() in WEEK_DAYS:
                 day = head.title()
                 continue
+            if first.startswith(TOTAL_BAND):
+                day = None                   # the week's total, not a day
+                continue
             if not day or not first.strip() or pct_i is None:
                 continue
             if first.startswith("No office"):
@@ -473,7 +563,9 @@ def compare(results: List[WeekResult], prior: PriorFill, headers: List[str]
                             and not _same(before[owner], now_all.get(owner))):
                         notes[(wr.label, day, owner)] = (
                             "retention", f"{owner} (was {_pct(before[owner])})")
-                else:
+                elif owner in dr.flagged:
+                    # On a day only because another day slipped is not news;
+                    # slipping under the mark on it after the fact is.
                     notes[(wr.label, day, owner)] = ("owner", f"{owner} (new)")
             for owner, was in before.items():
                 # Only a real number that is now over the mark. A blank then
@@ -499,7 +591,7 @@ def _band_text(dr: DayResult, show_all: bool, moved: Optional[List[str]] = None)
     if show_all:
         text = f"{head}  ·  every office ({dr.interviewed} interviewed)"
     else:
-        text = (f"{head}  ·  {len(dr.rows)} of {dr.interviewed} offices that "
+        text = (f"{head}  ·  {len(dr.flagged)} of {dr.interviewed} offices that "
                 f"interviewed at or under {rep.THRESHOLD:.0%}")
     # What moved since the last check goes IN the band, not in cell notes: a
     # note prints as a footnote in the DM picture, in huge type, and throws the
@@ -542,9 +634,9 @@ def lay_out(results: List[WeekResult], headers: List[str], status: str,
     titles = blank()
     for k, wr in enumerate(results):
         which = "THIS WEEK" if k == 0 else "LAST WEEK"
-        mon, sat = day_date(wr.start, "Monday"), day_date(wr.start, "Saturday")
+        mon, fri = day_date(wr.start, "Monday"), day_date(wr.start, WEEK_DAYS[-1])
         t = (f"{which}  ·  week of {wr.label}  ·  Mon {mon.month}/{mon.day} – "
-             f"Sat {sat.month}/{sat.day}  ·  {REPORT_TITLE}")
+             f"{fri:%a} {fri.month}/{fri.day}  ·  {REPORT_TITLE}")
         if wr.missing:
             t += f"  ·  {wr.missing}"
         titles[k * (width + GAP_COLS)] = t
@@ -577,8 +669,42 @@ def lay_out(results: List[WeekResult], headers: List[str], status: str,
                     line[c0] = _empty_text(dr)
                     msgs.append((len(grid) + 1, c0))
             grid.append(line)
+
+    # The week's TOTAL, under the last day (Rafael, 2026-09-24).
+    band = blank()
+    for k, wr in enumerate(results):
+        band[k * (width + GAP_COLS)] = total_band_text(wr)
+    grid.append(band)
+    bands.append(len(grid))
+    for i in range(max([len(wr.totals) for wr in results] + [1])):
+        line = blank()
+        for k, wr in enumerate(results):
+            c0 = k * (width + GAP_COLS)
+            if i < len(wr.totals):
+                line[c0:c0 + width] = wr.totals[i]
+                data.append((len(grid) + 1, c0))
+            elif i == 0 and wr.through:
+                line[c0] = f"No office at or under {rep.THRESHOLD:.0%} this week."
+                msgs.append((len(grid) + 1, c0))
+        grid.append(line)
     return Layout(values=grid, band_rows=bands, data_rows=data, message_rows=msgs,
                   last_row=len(grid), cell_notes=cell_notes)
+
+
+TOTAL_BAND = "TOTAL FOR THE WEEK"
+
+
+def total_band_text(wr: WeekResult) -> str:
+    """'TOTAL FOR THE WEEK  ·  Mon 9/21 – Thu 9/24 combined  ·  7 offices ...'"""
+    if wr.through is None:
+        return f"{TOTAL_BAND}  ·  not yet"
+    mon = day_date(wr.start, "Monday")
+    span = f"Mon {mon.month}/{mon.day}"
+    if wr.through != mon:
+        span += f" – {wr.through:%a} {wr.through.month}/{wr.through.day}"
+    n = len(wr.totals)
+    return (f"{TOTAL_BAND}  ·  {span} combined  ·  {n} office{'s' if n != 1 else ''} "
+            f"at or under {rep.THRESHOLD:.0%} on at least one day")
 
 
 # --------------------------------------------------------------- the requests
@@ -848,12 +974,19 @@ def pick_pass(roster: List[str], now: dt.datetime, *, due: bool = False,
         want = zone.strip().title()
         picked = [o for o in roster if tz.label(tz.zone_or_fallback(o)[0]) == want]
         return set(picked), f"{want} offices", [want]
+    if due and now.weekday() >= len(WEEK_DAYS):
+        return set(), "", []                      # weekend: no post (Mon-Fri)
     if due:
-        picked, slot, labels = tz.due(roster, now)
-        if not picked:
+        # ONE post per slot with every time zone in it (Rafael, 2026-09-24):
+        # due when the LAST zone reaches its 11:00 AM / 6:30 PM, and then every
+        # office is pulled again -- the zones that got there earlier are
+        # re-checked, not reused from their own hour.
+        slot = tz.last_zone_slot(roster, now)
+        if slot is None:
             return set(), "", []
-        return (set(picked), f"{' + '.join(labels)} offices  ·  "
-                f"{tz.slot_text(slot)} local update", labels)
+        zones = {tz.zone_or_fallback(o)[0] for o in roster} or {tz.FALLBACK_ZONE}
+        last = min(zones, key=lambda z: now.astimezone(ZoneInfo(z)).utcoffset())
+        return None, f"All offices  ·  {tz.slot_text(slot)} {tz.label(last)} update", []
     return None, "All offices", []
 
 
@@ -937,7 +1070,7 @@ def run(*, week_label_: Optional[str] = None, tab: str = BOARD_TAB,
 
     what = ("every office" if show_all else
             f"offices at or under {rep.THRESHOLD:.0%} on 'Retention first showed up booked second'")
-    status = (f"{what}  ·  each office re-checked at its own 11:00 AM and 6:30 PM  ·  "
+    status = (f"{what}  ·  every office re-checked at 11:00 AM and 6:30 PM Pacific  ·  "
               f"last pass: {scope}, checked {stamp} CT")
     if prior.stamp:
         status += (f"  ·  {len(moved)} moved since the {prior.stamp} check"

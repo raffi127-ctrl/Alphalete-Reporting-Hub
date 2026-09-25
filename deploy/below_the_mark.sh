@@ -1,15 +1,18 @@
 #!/bin/bash
-# 1st to 2nd Below the Mark -- the HR alert, at each office's own 11:00 AM and
-# 6:30 PM, Monday to Saturday (Rafael, 2026-09-21).
+# 1st to 2nd Below the Mark -- the HR alert, at 11:00 AM and 6:30 PM Pacific
+# with every office in one post, Monday to Friday (Rafael / Eve, 2026-09-24).
+# The agent still fires on Saturdays too; those passes send nothing.
 #
 # Fills the two-week board ('1st to 2nd below the mark' tab of ARS Management
 # 2.0: this week on the left, last week on the right, Mon-Sat) and sends the
-# picture of THIS PASS's offices: the week so far, and on Mondays the whole
-# week that just ended too.
+# picture: every office that slipped on any day, on every day of the week so
+# far, plus the week's total; on Mondays the whole week that just ended too.
 #
-# EIGHT PASSES A DAY, ONE PER ZONE AND SLOT. launchd fires at every CT time a
-# zone reaches 11:00 AM or 6:30 PM; the board works out from the clock which
-# offices are due and pulls only those (office_tz.py):
+# TWO POSTS A DAY, EVERY TIME ZONE IN EACH (Rafael, 2026-09-24). launchd still
+# fires at every CT time a zone reaches 11:00 AM or 6:30 PM, but only the LAST
+# zone's hour does anything (Pacific: 1:00 PM and 8:30 PM CT) -- it pulls EVERY
+# office fresh, so the zones that got there earlier are re-checked, and posts
+# one picture. The other six fires exit clean (office_tz.last_zone_slot):
 #
 #             11:00 local    6:30 PM local
 #   Eastern   10:00 CT       17:30 CT
@@ -21,7 +24,7 @@
 # days have moved; 6:30 PM is the day closed. A pass with nobody due exits
 # clean and sends nothing.
 #
-#   bash deploy/below_the_mark.sh                 # LIVE: the offices due now + DM
+#   bash deploy/below_the_mark.sh                 # LIVE: at Pacific's hour, everybody + post
 #   bash deploy/below_the_mark.sh --full          # every office now + DM
 #   bash deploy/below_the_mark.sh --zone Eastern  # one zone by hand + DM
 #   bash deploy/below_the_mark.sh --dry-run       # read everything, write nothing, no DM

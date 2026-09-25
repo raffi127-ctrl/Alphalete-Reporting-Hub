@@ -1,18 +1,18 @@
 #!/bin/bash
-# Call List to 2nd Round -- each office at its own 1 PM, Monday to Friday
-# (Rafael, 2026-09-21).
+# Call List to 2nd Round -- ONE post a day, Monday to Friday, with every
+# office (Rafael, 2026-09-24; it was one pass per time zone before).
 #
 # Fills the two-week board ('Call List to 2nd Round' tab of ARS Management 2.0)
-# with the offices whose local 1 PM it is, then posts the picture of THOSE
-# offices (the last full day) in today's thread in #ars-recruiting-numbers.
+# with EVERY office, pulled fresh, then posts the picture (the week so far +
+# its total) in today's thread in #ars-recruiting-numbers.
 #
-# FOUR PASSES A DAY, ONE PER ZONE. launchd fires at :20 past each zone's 1 PM
-# (not :00 -- Below the Mark holds the same Chrome at 12:00 and 13:00 CT); the
-# run picks the offices due from the clock (run.due_now):
+# launchd still fires at :20 past each zone's 1 PM (not :00 -- Below the Mark
+# holds the same Chrome on the hour), but only the LAST zone's fire does
+# anything (office_tz.last_zone_slot); the others exit clean:
 #
-#   Eastern 12:20 CT · Central 13:20 CT · Mountain 14:20 CT · Pacific 15:20 CT
+#   Eastern 12:20 CT · Central 13:20 CT · Mountain 14:20 CT · Pacific 15:20 CT <- the pass
 #
-#   bash deploy/call_list_to_2nd.sh             # LIVE: the offices due now + post
+#   bash deploy/call_list_to_2nd.sh             # LIVE: at the last zone's 1 PM, everybody + post
 #   bash deploy/call_list_to_2nd.sh --full      # every office now + post
 #   bash deploy/call_list_to_2nd.sh --dry-run   # read everything, write nothing, no post
 #
@@ -47,7 +47,7 @@ fi
 
 "$VENV_PY" -m automations.call_list_to_2nd.run --production ${ARGS[@]+"${ARGS[@]}"} >> "$LOG_FILE" 2>&1
 ST=$?
-# 3 = nobody is at their 1 PM right now.
+# 3 = not the last zone's 1 PM: nothing to do at this fire.
 if [ "$ST" -eq 3 ]; then
   echo "[$(date)] no office due at this hour - nothing posted" >> "$LOG_FILE"
   exit 0

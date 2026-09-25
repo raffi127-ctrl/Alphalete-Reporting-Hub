@@ -239,20 +239,79 @@ def _channel() -> str:
     return CHANNEL
 
 
+def _group_dm(client) -> str:
+    """The Carlos/Eve/Raf + Lucy Reporting group DM — the SAME chat the hourly
+    push report posts to, minted the SAME way (Raf, 2026-09-25: "move just the
+    indeed needs cleared alert to the DM" + "remove it from the corrections
+    channel").
+
+    NOT a hardcoded id, on purpose. A Slack conversation id only resolves for a
+    MEMBER, so an id copied off somebody else's screen names nothing to us and
+    Slack answers that exactly as it answers an id that never existed. The push
+    report burned TWO such ids learning this — one off Carlos's screen, one off
+    Megan's own copy-link — and both failures read as a permissions bug rather
+    than a wrong id (see push_report.run's header for the full account).
+    `conversations.open` sidesteps it: it mints/returns the MPIM of these people
+    PLUS the token owner, so Lucy Reporting is a participant by construction.
+
+    Do not "simplify" this by pasting the id you see in a log. test_indeed_
+    alert_dm fails on sight of one, for the reason above.
+
+    The member list is imported from push_report rather than retyped, so the two
+    alerts can never drift onto different chats.
+    """
+    from automations.push_report.run import GROUP
+    return client.conversations_open(users=",".join(GROUP))["channel"]["id"]
+
+
+def _post_plain_to_group(title: str, body_lines: list[str],
+                         dry_run: bool) -> bool:
+    """One plain message to the group DM. No incident thread, deliberately.
+
+    The all-clear uses this rather than _post because _post routes through
+    incident_thread under the WEDGE incident key — a key that belongs to the
+    Cloudflare episode, not to Indeed's. Borrowing it to say "clear" could tick
+    somebody else's ticket. A DM cannot carry the thread bookkeeping anyway
+    (no mpim:history), so there is nothing to give up here."""
+    text = "\n".join([title] + body_lines)
+    if dry_run:
+        print(f"[cf-watch] DRY-RUN — would post to the group DM:\n{text}\n")
+        return True
+    try:
+        from automations.shared.slack_metrics_post import _client
+        client = _client()
+        client.chat_postMessage(channel=_group_dm(client), text=text,
+                                unfurl_links=False, unfurl_media=False)
+        return True
+    except Exception as e:  # noqa: BLE001
+        print(f"[cf-watch] all-clear post failed: {type(e).__name__}: {e}")
+        return False
+
+
 def _post(title: str, body_lines: list[str], dry_run: bool,
           office: str = "11580", key: str | None = None,
           channel_line: str | None = None,
           max_age_days: int | None = None,
-          needs_human: bool = False) -> bool:
+          needs_human: bool = False,
+          to_group: bool = False) -> bool:
     """Open (or follow up in) the wedge incident thread in #claudecorrections.
 
     Channel gets ONE emoji-free line, the detail goes in the thread — the standing
     format for this channel (Megan 2026-08-18); incident_thread does that split.
     Falls back to a plain threaded post if the incident helper is unavailable, so a
-    wedge is never swallowed just because the thread bookkeeping failed."""
+    wedge is never swallowed just because the thread bookkeeping failed.
+
+    `to_group` sends to the Carlos/Eve/Raf group DM INSTEAD of the corrections
+    channel. It is a flag and not a channel id because the id does not exist
+    until there is a client to mint it with — see `_group_dm`. Only the Indeed
+    "verify a human" alarm passes it; the Cloudflare session-wedge alarm that
+    shares this helper stays on the channel, untouched."""
     text = "\n".join([title] + body_lines)
     if dry_run:
-        print(f"[wedge-watch] DRY-RUN — would post to {_channel()}:\n{text}\n")
+        dest = ("the Carlos/Eve/Raf + Lucy group DM (minted at send time via "
+                "conversations.open — no id to print from here)") if to_group \
+            else _channel()
+        print(f"[wedge-watch] DRY-RUN — would post to {dest}:\n{text}\n")
         return True
     ch = _channel()
     try:
@@ -261,6 +320,20 @@ def _post(title: str, body_lines: list[str], dry_run: bool,
     except Exception as e:  # noqa: BLE001
         print(f"[wedge-watch] no Slack client: {type(e).__name__}: {e}")
         return False
+    if to_group:
+        # A SIREN NOBODY CAN HEAR IS WORSE THAN NO SIREN — this file's own
+        # history (2026-08-26: 252 silent "NO CHANNEL" prints while the batch
+        # sat wedged). So if the DM cannot be minted, the alert still goes to
+        # the corrections channel rather than nowhere, and SAYS that is what
+        # happened. That is the only path left that still touches the channel.
+        try:
+            ch = _group_dm(client)
+        except Exception as e:  # noqa: BLE001
+            print(f"[wedge-watch] could not open the group DM "
+                  f"({type(e).__name__}: {str(e)[:80]}) — falling back to "
+                  f"{_channel()}")
+            title = title + "  _(could not reach the group DM)_"
+            text = "\n".join([title] + body_lines)
     try:
         from automations.shared import incident_thread as _inc
         _kw = {} if max_age_days is None else {"max_age_days": max_age_days}
@@ -503,16 +576,34 @@ def run_resume_check(dry_run: bool = False, now: dt.datetime | None = None) -> i
         if st.get("alerted_at"):
             try:
                 from automations.shared import incident_thread as _inc
+                from automations.shared.slack_metrics_post import _client
+                # The all-clear has to be looked for WHERE THE ALERT WENT. This
+                # used to pass _channel(); after the move to the DM that would
+                # hunt the corrections channel for a post that was never made
+                # there, find nothing, and leave the DM's alert open forever.
+                _cl = _client()
                 closed = _inc.ensure_closed(
                     _cf_incident_key(machine.replace(" ", "_")),
                     what="*Applicant Push* — Indeed's resume check on %s" % machine,
                     detail="Numbers are being read off resumes again on %s; "
                            "nothing to clear." % (", ".join(reading) or machine),
-                    channel=_channel(), dry_run=dry_run)
+                    channel=_group_dm(_cl), dry_run=dry_run)
             except Exception as e:  # noqa: BLE001
-                print(f"[cf-watch] couldn't close the thread "
-                      f"({type(e).__name__}: {str(e)[:80]})")
-                closed = False
+                # EXPECTED IN THE DM, not an anomaly. Lucy Reporting's token has
+                # 13 scopes and `mpim:history` is not among them (probed on
+                # Lucy 2, 2026-09-25), so incident_thread cannot find its own
+                # post to tick — the ✅ mechanic needs to READ the conversation.
+                # Without this branch the episode would simply never close: no
+                # all-clear, and `alerted_at` left set forever. So say it in
+                # plain words instead, which is the part that was ever useful.
+                print(f"[cf-watch] no ✅ in the DM "
+                      f"({type(e).__name__}: {str(e)[:80]}) — plain all-clear")
+                closed = _post_plain_to_group(
+                    ":white_check_mark: *Indeed's resume check is clear — %s*"
+                    % machine,
+                    ["Numbers are being read off resumes again on %s; nothing "
+                     "to clear." % (", ".join(reading) or machine)],
+                    dry_run)
             if closed and not dry_run:
                 path.write_text("{}")
                 print("[cf-watch] episode closed (✅)")
@@ -554,13 +645,17 @@ def run_resume_check(dry_run: bool = False, now: dt.datetime | None = None) -> i
         "```cd ~/recruiting-report && PYTHONPATH=. .venv/bin/python -m "
         "automations.oat_processing.cf_clear_window --all```",
         "",
-        "_Auto-clears here as soon as a number is read again._",
+        # NOT "auto-clears here" any more. In the channel that meant the ✅ going
+        # onto this very post; a DM cannot carry that (no mpim:history), so the
+        # close arrives as its own short message instead. Promising a tick that
+        # will never appear teaches people to distrust the alert.
+        "_A follow-up here will say so as soon as numbers are being read again._",
     ]
     # A box somebody ticks in a window that is not even open yet — the alert
     # only fires inside the hours a person could do it. Nothing re-runs that,
     # so triage must not tell the channel to wait for the loop (2026-09-24).
     if _post(title, body, dry_run, office=blocked[0], needs_human=True,
-             max_age_days=CF_THREAD_MAX_AGE_DAYS,
+             max_age_days=CF_THREAD_MAX_AGE_DAYS, to_group=True,
              key=_cf_incident_key(machine.replace(" ", "_")),
              channel_line="*Applicant Push* — Indeed is asking to verify a human "
                           "on %s; %d of %d offices are not reading numbers, and "

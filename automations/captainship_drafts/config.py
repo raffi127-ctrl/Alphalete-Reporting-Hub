@@ -251,7 +251,16 @@ SECTION_DAYS = {
 # It also takes ~17 board images out of the Sun/Mon message, which was the one
 # near Gmail's 25MB ceiling (weekly_pdf's PAGE_MAX_PX note) — the daily PDFs
 # added the same day spend that headroom.
-ATTACHMENT_ONLY_KINDS = {"knock_dispo"}
+#
+# 2026-09-25: the DAILY Knocks boards follow (Rafael, email to Eve: "I think
+# we're good to remove the knocks within the email body, it makes the
+# scrolling so long… The attachments are what the guys are going to for their
+# knocks"). Same reasoning: capture unchanged, the combined + per-owner daily
+# PDFs (daily_pdf) keep printing the same PNGs. What a failed owner used to
+# show in the body — the pending note run.py's send guard greps — is kept as a
+# short line by email_build._attachment_only_notes, so a broken pull still
+# holds the send instead of shipping one PDF short.
+ATTACHMENT_ONLY_KINDS = {"knock_dispo", "daily_knocks"}
 
 
 def kind_runs_on(kind: str, today: "dt.date") -> bool:
