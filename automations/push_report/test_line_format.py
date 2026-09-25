@@ -54,7 +54,17 @@ class TheClock(unittest.TestCase):
 class TheLine(unittest.TestCase):
     """Render the real thing against a stub Sheet — no network, no Slack."""
 
-    def _render(self, now: dt.datetime) -> str:
+    def _render(self, now: dt.datetime, paused=frozenset(),
+                skip_rows=()) -> str:
+        """`paused` is STUBBED, never read from applicant_push.
+
+        It has to be. The real _paused_offices() reads ROTATION_BY_MACHINE,
+        which Carlos edits as he turns offices on and off — twice on
+        2026-09-25 alone. A render test that consulted it would assert on his
+        current rotation and start failing the next time he flips one, having
+        caught no bug at all. `skip_rows` drops an office's diag rows, for the
+        paused-and-nothing-logged-today case.
+        """
         stamp = now.strftime("%Y-%m-%d")
         rows = {
             "OAT Walk Diag":       ("20:33", "120 -> 7",   30),
@@ -70,6 +80,8 @@ class TheLine(unittest.TestCase):
                 self.tab = tab
 
             def get_all_values(self):
+                if self.tab in skip_rows:
+                    return []
                 at, queue, sent = rows[self.tab]
                 return [["%s %s:00" % (stamp, at), queue, "", "",
                          "sent=%d" % sent]]
@@ -84,6 +96,7 @@ class TheLine(unittest.TestCase):
 
         from automations.recruiting_report import fill as _fill
         real_client, real_dt = _fill._client, pr.dt
+        real_paused = pr._paused_offices
 
         class _DT:
             datetime = type("D", (), {
@@ -94,10 +107,12 @@ class TheLine(unittest.TestCase):
 
         _fill._client = lambda: _Client()
         pr.dt = _DT
+        pr._paused_offices = lambda: set(paused)
         try:
             return pr.build_report()
         finally:
             _fill._client, pr.dt = real_client, real_dt
+            pr._paused_offices = real_paused
 
     def test_exact_message(self):
         got = self._render(dt.datetime(2026, 9, 24, 20, 37))
@@ -136,6 +151,89 @@ class TheWindowsGate(unittest.TestCase):
         """Built by hand instead; this is the thing that breaks on Windows."""
         src = Path(pr.__file__).read_text()
         self.assertIsNone(re.search(r"%-[IdmHejlpSMy]", src))
+
+
+class PausedOffices(unittest.TestCase):
+    """23965 + 24065 were pulled from every rotation on 2026-09-25 (Carlos).
+
+    Their lines used to read `0 pushed`, which is true and reads as broken —
+    the exact zero-with-a-story the house rule warns about. They say `paused`
+    now, and the label is DERIVED from ROTATION_BY_MACHINE so it cannot rot.
+    """
+
+    def test_paused_office_says_paused_not_zero(self):
+        got = TheLine()._render(dt.datetime(2026, 9, 25, 9, 20),
+                                paused={"23965", "24065"})
+        self.assertIn("Raf 2nd funnel 23965: paused · 33 left @ 8:28 PM", got)
+        self.assertIn("Raf 24065: paused · 36 left @ 8:34 PM", got)
+        self.assertNotIn("23965: 0 pushed", got)
+
+    def test_live_offices_untouched(self):
+        got = TheLine()._render(dt.datetime(2026, 9, 25, 9, 20),
+                                paused={"23965", "24065"})
+        self.assertIn("Carlos 11580: 30 pushed · 7 left @ 8:33 PM", got)
+        self.assertIn("Raf main 11280: 34 pushed · 114 left @ 8:21 PM", got)
+
+    def test_paused_and_nothing_logged_is_not_a_worry_line(self):
+        """'no runs yet today' means the walk should have run. Paused ≠ that."""
+        got = TheLine()._render(dt.datetime(2026, 9, 25, 9, 20),
+                                paused={"24065"},
+                                skip_rows=("OAT Walk Diag 24065",))
+        self.assertIn("Raf 24065: paused", got)
+        self.assertNotIn("Raf 24065: no runs yet today", got)
+
+    def test_whole_machine_paused_does_not_page(self):
+        """Lucy 4 sat with an EMPTY rotation for 4 minutes on 2026-09-25."""
+        got = TheLine()._render(
+            dt.datetime(2026, 9, 25, 9, 20),
+            paused={"11280", "23965", "24065"},
+            skip_rows=("OAT Walk Diag 11280", "OAT Walk Diag 23965",
+                       "OAT Walk Diag 24065"))
+        self.assertIn("Lucy 4: all offices paused", got)
+        self.assertNotIn(":warning: Lucy 4 has posted NO runs today", got)
+
+    def test_a_genuinely_silent_machine_still_pages(self):
+        """The guard must not swallow a real outage."""
+        got = TheLine()._render(
+            dt.datetime(2026, 9, 25, 9, 20), paused=set(),
+            skip_rows=("OAT Walk Diag 11280", "OAT Walk Diag 23965",
+                       "OAT Walk Diag 24065"))
+        self.assertIn(":warning: Lucy 4 has posted NO runs today", got)
+
+
+class PausedIsDerived(unittest.TestCase):
+    def test_no_hardcoded_office_list(self):
+        """A literal paused list here would have been stale within the hour."""
+        import inspect
+        src = inspect.getsource(pr._paused_offices)
+        self.assertIn("ROTATION_BY_MACHINE", src)
+        for literal in ("23965", "24065"):
+            self.assertNotIn('"%s"' % literal, src)
+
+    def test_import_failure_marks_nothing(self):
+        """Guessing 'paused' for a live office would hide a real outage."""
+        import builtins
+        real_import = builtins.__import__
+
+        def boom(name, *a, **k):
+            if "applicant_push" in name:
+                raise ImportError("no applicant_push here")
+            return real_import(name, *a, **k)
+        builtins.__import__ = boom
+        try:
+            self.assertEqual(pr._paused_offices(), set())
+        finally:
+            builtins.__import__ = real_import
+
+    def test_no_browser_dependency(self):
+        """This report is Sheets + Slack only; PUSH_ALLOWED drags in patchright."""
+        import inspect
+        src = inspect.getsource(pr._paused_offices)
+        self.assertNotIn("PUSH_ALLOWED", src.split('"""')[-1])
+
+    def test_office_id_from_tab(self):
+        self.assertEqual(pr._office_id("OAT Walk Diag"), "11580")
+        self.assertEqual(pr._office_id("OAT Walk Diag 23965"), "23965")
 
 
 if __name__ == "__main__":

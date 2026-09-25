@@ -73,12 +73,51 @@ def _hm12(text: str) -> str:
     return "%d:%02d %s" % (h % 12 or 12, m, "AM" if h < 12 else "PM")
 
 
+def _office_id(tab: str) -> str:
+    """'OAT Walk Diag 23965' -> '23965'. The UNSUFFIXED tab is Carlos's 11580
+    (FILE_SUFFIX ""), same convention OFFICES documents above."""
+    tail = tab[len("OAT Walk Diag"):].strip()
+    return tail or "11580"
+
+
+def _paused_offices() -> set:
+    """Offices no machine is pushing right now, DERIVED — never a list here.
+
+    Carlos flipped this set twice on 2026-09-25 alone (f9da93b pulled 11580 and
+    all three of Raf's, 42a8b78 put 11580 + 11280 back four minutes later). A
+    hardcoded "paused" list in this file would have been wrong within the hour,
+    and a wrong label is worse than none: it explains away a zero.
+
+    The truth is `applicant_push.offices.ROTATION_BY_MACHINE` — what each box
+    actually walks. NOT `run.PUSH_ALLOWED`, which is the same fact but lives in
+    a module that imports patchright at import time; this report is Sheets +
+    Slack only and must not grow a browser dependency to print a label.
+
+    Best-effort by design: on any failure this returns empty, so every office
+    reports exactly as it did before. Never the other way round — guessing
+    "paused" for a live office would hide a real outage.
+    """
+    try:
+        from automations.applicant_push.offices import ROTATION_BY_MACHINE
+    except Exception:  # noqa: BLE001
+        return set()
+    out = set()
+    for tab, _label, machine in OFFICES:
+        walked = ROTATION_BY_MACHINE.get(machine)
+        if walked is None:          # machine absent = unknown, not paused
+            continue
+        if _office_id(tab) not in walked:
+            out.add(_office_id(tab))
+    return out
+
+
 def build_report() -> str:
     from automations.recruiting_report import fill as _fill
     sh = _fill._client().open_by_key(CONTROL_SHEET)
     now = dt.datetime.now()
     today = now.date().isoformat()
     lines = []
+    paused = _paused_offices()
     machine_last: dict[str, dt.datetime] = {}
     for tab, label, machine in OFFICES:
         try:
@@ -92,8 +131,14 @@ def build_report() -> str:
             m = re.search(r"\bsent=(\d+)", r[4] if len(r) > 4 else "")
             if m:
                 sent += int(m.group(1))
+        is_paused = _office_id(tab) in paused
         if not rows:
-            lines.append("%s: no runs yet today" % label)
+            # "no runs yet today" is a WORRY line — it means the walk should have
+            # run and hasn't. For a paused office it is merely true and entirely
+            # expected, and reading it as a fault is how someone goes looking for
+            # a broken agent that was switched off on purpose.
+            lines.append("%s: paused" % label if is_paused
+                         else "%s: no runs yet today" % label)
             continue
         m2 = re.search(r"->\s*(\d+)", rows[-1][1] if len(rows[-1]) > 1 else "")
         left = m2.group(1) if m2 else "?"
@@ -102,7 +147,12 @@ def build_report() -> str:
         # ('2026-09-24 20:33:12'), which is why it read as military — it was
         # never a datetime, so nothing ever formatted it. _hm12 does now.
         at = _hm12(rows[-1][0][11:16])
-        lines.append("%s: %d pushed · %s left @ %s" % (label, sent, left, at))
+        # A paused office says "paused" where the count would go, rather than
+        # "0 pushed" — the zero is true but reads as a failure, and the queue
+        # count still matters (it keeps growing while nobody works it).
+        lines.append("%s: %s · %s left @ %s"
+                     % (label, "paused" if is_paused else "%d pushed" % sent,
+                        left, at))
         try:
             ts = dt.datetime.strptime(rows[-1][0], "%Y-%m-%d %H:%M:%S")
             if machine not in machine_last or ts > machine_last[machine]:
@@ -115,8 +165,17 @@ def build_report() -> str:
                 lines.append(":warning: %s has posted nothing since %s — the "
                              "walk may be down"
                              % (machine, _hm12(last.strftime("%H:%M"))))
+        # A machine whose WHOLE rotation is paused has posted no runs on purpose.
+        # Lucy 4 was in exactly that state for four minutes on 2026-09-25
+        # (ROTATION_BY_MACHINE["Lucy 4"] == [] between f9da93b and 42a8b78), and
+        # this line would have paged about a box that was switched off by hand.
         for machine in ("Lucy 2", "Lucy 4"):
-            if machine not in machine_last:
+            if machine in machine_last:
+                continue
+            mine = {_office_id(t) for t, _l, m in OFFICES if m == machine}
+            if mine and mine <= paused:
+                lines.append("%s: all offices paused" % machine)
+            else:
                 lines.append(":warning: %s has posted NO runs today" % machine)
     # Header unchanged in LOOK ('Push report 8:37 PM') — but no longer via the
     # no-pad hour flag, which is glibc/BSD-only and fails the validation gate.
