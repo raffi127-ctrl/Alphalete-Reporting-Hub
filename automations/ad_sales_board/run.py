@@ -29,6 +29,10 @@ from automations.indeed_source_report.run import CITY_AGNOSTIC, _headline
 
 from . import names, sheet, weeks
 
+# The weekly Source Report columns beyond Pull/SCL, stored at AJ..AR in
+# rows_for order. Raw counts, never ratios: the Funnel view divides sums.
+METRIC_FIELDS = ("removed", "b1", "s1", "b2", "s2", "tb", "ts", "nb", "ns")
+
 CARD_ID = "ad-sales-board"
 CARD_NAME = "Ad Sales Board (weekly Source Report)"
 # Same `standalone-` family prefix as the monthly job, for the same reason: the
@@ -216,7 +220,7 @@ def rows_for(manager, label, week_start, ads, name_rows, day_recv):
     sunday = week_start + dt.timedelta(days=6)
     out = [[manager, label, "", "", "WEEK ENDING %s — %s"
             % (sunday.strftime("%-m/%-d"), label),
-            "", "", "", "", "", iso] + [""] * 15]
+            "", "", "", "", "", iso] + [""] * 24]
     tot = parse.blank()
     for g in ads:
         for f in parse.FIELDS:
@@ -234,16 +238,17 @@ def rows_for(manager, label, week_start, ads, name_rows, day_recv):
         out.append([manager, label, parse.account_name(g["inbox"]), g["inbox"],
                     g["title"], g["city"], g["rec"]["apps"], g["rec"]["scl"],
                     len(got) if fed else "", ", ".join(got), iso]
-                   + day_cells(days) + [rank] + list(recv))
+                   + day_cells(days) + [rank] + list(recv)
+                   + [g["rec"][f] for f in METRIC_FIELDS])
     if unmatched:
         tot_days = [a + b for a, b in zip(tot_days, unmatched_days)]
         out.append([manager, label, "—", "", "— names with no matching ad —",
                     "", "", "", len(unmatched), ", ".join(unmatched), iso]
-                   + day_cells(unmatched_days) + [""] * 8)
+                   + day_cells(unmatched_days) + [""] * 17)
     n_names = sum(len(v) for v in names_for.values()) + len(unmatched)
     out.append([manager, label, "", "", "TOTAL", "", tot["apps"], tot["scl"],
                 n_names if fed else "", "", iso] + day_cells(tot_days) + [""]
-               + tot_recv)
+               + tot_recv + [tot[f] for f in METRIC_FIELDS])
     return out
 
 
@@ -348,16 +353,17 @@ def main(argv=None):
     # Existing rows are read BEFORE the browser opens: rewriting a week must
     # CARRY OVER its accumulated received-per-day cells (AC..AI) — those came
     # from one-day pulls on days now gone, and cannot be re-derived. Rows are
-    # normalized to the internal 26-wide shape (A..S + the 7 recv slots); the
-    # helper columns T..AB in between are never part of a row.
+    # normalized to the internal 35-wide shape (A..S + the 7 recv slots +
+    # the 9 weekly funnel metrics written at AJ..AR); the helper columns
+    # T..AB in between are never part of a row.
     if a.reset:
         print("[ad_sales_board] --reset: dropping ALL existing rows", flush=True)
         existing = []
     else:
         existing = []
-        for r in sheet.get_values(sess, sheet.data_range("A2:AI20000")):
-            r = list(r) + [""] * (35 - len(r))
-            existing.append(r[:19] + r[28:35])
+        for r in sheet.get_values(sess, sheet.data_range("A2:AR20000")):
+            r = list(r) + [""] * (44 - len(r))
+            existing.append(r[:19] + r[28:35] + r[35:44])
     carry = {}   # (manager, label) -> {ad_key: [7 recv slots]}
     for r in existing:
         if not r[0] or not r[1] or r[4] == "TOTAL" or r[2] == "—" \
@@ -651,10 +657,13 @@ def main(argv=None):
         # never be touched by a row write (see sheet.py).
         sheet.clear(sess, sheet.data_range("A2:S20000"))
         sheet.clear(sess, sheet.data_range("AC2:AI20000"))
+        sheet.clear(sess, sheet.data_range("AJ2:AR20000"))
         sheet.put_values(sess, sheet.data_range("A2"),
-                         [(list(r) + [""] * 26)[:19] for r in new])
+                         [(list(r) + [""] * 35)[:19] for r in new])
         sheet.put_values(sess, sheet.data_range("AC2"),
-                         [(list(r) + [""] * 26)[19:26] for r in new])
+                         [(list(r) + [""] * 35)[19:26] for r in new])
+        sheet.put_values(sess, sheet.data_range("AJ2"),
+                         [(list(r) + [""] * 35)[26:35] for r in new])
         sheet.put_values(sess, sheet.data_range("W2"),
                          [[managers[i] if i < len(managers) else "",
                            week_labels[i] if i < len(week_labels) else ""]
@@ -674,7 +683,7 @@ def main(argv=None):
         tr = [r for r in rws if len(r) > 10 and r[4] == "TOTAL"]
         if not tr:
             continue
-        r = list(tr[0]) + [""] * 26
+        r = list(tr[0]) + [""] * 35
         start = dt.date.fromisoformat(r[10])
         if start + dt.timedelta(days=6) >= today:
             continue                       # week still filling up
@@ -742,7 +751,8 @@ def _numeric_cols(rows):
     for r in rows:
         rr = list(r)
         for i in (6, 7, 8, 11, 12, 13, 14, 15, 16, 17, 18,
-                  19, 20, 21, 22, 23, 24, 25):
+                  19, 20, 21, 22, 23, 24, 25,
+                  26, 27, 28, 29, 30, 31, 32, 33, 34):
             if i < len(rr) and isinstance(rr[i], str) and rr[i].strip():
                 try:
                     rr[i] = int(float(rr[i]))

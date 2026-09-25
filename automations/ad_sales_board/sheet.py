@@ -27,6 +27,14 @@ DATA_HEADERS = ["Manager", "Week", "Account", "Inbox Email", "Ad Title", "City",
                 "D7 Sun", "Rank"]
 RECV_HEADERS = ["R1 Mon", "R2 Tue", "R3 Wed", "R4 Thu", "R5 Fri", "R6 Sat",
                 "R7 Sun"]
+# AJ..AR — the rest of the weekly Source Report, per ad (Carlos 2026-09-25:
+# "I want to see this reporting for all of the other metrics"). Raw counts
+# only; the Funnel view computes the percentages, so TOTAL rows divide sums
+# instead of averaging ratios. Same rule as AC..AI: rows write these as their
+# own range and never touch T..AB in between.
+METRIC_HEADERS = ["Removed", "FR Booked", "FR Showed", "SR Booked", "SR Showed",
+                  "Trn Booked", "Trn Showed", "Day1 Booked", "Day1 Showed"]
+FUNNEL_TAB = "Ad Funnel Board"
 
 
 def data_range(a1):
