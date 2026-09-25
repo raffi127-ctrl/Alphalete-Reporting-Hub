@@ -283,7 +283,9 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
 READONLY_ACTIONS = {"push_appstream_fleet",
                     "login_check",
                     "logtail", "daystate", "git_status", "git_diff",
-                    "slack_channel", "slack_find", "slack_thread"}
+                    "slack_channel", "slack_find", "slack_thread",
+                    # Messages lookups: they read the chat list and send nothing.
+                    "find_group", "group_members", "text_resolve"}
 
 # --- lanes --------------------------------------------------------------------
 # The queue is ONE serial worker, so a 2-second read waits behind whatever report
