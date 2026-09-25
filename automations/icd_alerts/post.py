@@ -1535,6 +1535,48 @@ def notify_pending(*, send: bool = False, book=None, log=print) -> List[Dict]:
 FAULT_THREADS_PATH = (Path.home() / ".config" / "recruiting-report"
                       / "icd_fault_threads.json")
 
+FAULT_SAID_PATH = (Path.home() / ".config" / "recruiting-report"
+                   / "icd_fault_said.json")
+
+
+def _fault_said(day: dt.date, f: Dict) -> bool:
+    """Has this exact fault line already gone into today's log? Best effort.
+
+    THE POSTER RUNS EVERY SIXTY SECONDS AND A HELD FAULT NEVER CLOSES. A
+    fault that waits for a repeat is deliberately left unposted, so it stays
+    "open" all day -- and the log printed it, and its HOLDING line, on every
+    single tick. Cyrus's ONE slow sweep on 2026-09-24 became 228 pairs of
+    lines, which is what a crisis looks like from the outside: it was read
+    (by me, writing this) as 228 slow sweeps rather than one row re-read, and
+    the diagnosis started from a number that was never real.
+
+    KEYED ON THE COUNT AS WELL AS THE STAGE, so the line that matters is not
+    the one swallowed: a fault going from one occurrence to two is the moment
+    it starts alerting, and it prints again the tick it changes.
+
+    The durable record is the 'ICD Faults' tab and the Hub card, neither of
+    which this touches -- the log is the only thing being quietened.
+    """
+    stamp = "%s|%s|%s|%s" % (day.isoformat(), f.get("office") or "?",
+                             f.get("stage") or "?", f.get("count") or "?")
+    try:
+        try:
+            said = json.loads(FAULT_SAID_PATH.read_text())
+        except (OSError, ValueError):
+            said = {}
+        if said.get(stamp):
+            return True
+        # Today's keys only: the file is a day's worth of noise suppression,
+        # not a record, and a fault must say itself again tomorrow.
+        said = {k: v for k, v in said.items()
+                if k.startswith(day.isoformat())}
+        said[stamp] = True
+        FAULT_SAID_PATH.parent.mkdir(parents=True, exist_ok=True)
+        FAULT_SAID_PATH.write_text(json.dumps(said, indent=2, sort_keys=True))
+    except Exception:  # noqa: BLE001 — failing to remember must not hide a fault
+        return False
+    return False
+
 # How a stage reads in a channel. The laptop sends the short word; nobody
 # reading #claudecorrections should have to know our module names.
 FAULT_STAGE_LABEL = {
@@ -1807,8 +1849,23 @@ def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
     if not faults:
         return []
 
+    # ONCE A DAY IN THE LOG, not once a minute -- but only on the scheduled
+    # run. A person running this by hand wants the whole picture, and a dry
+    # run that printed nothing because the poller had already said it an hour
+    # ago is a tool that lies about what is open.
+    # ASKED ONCE PER FAULT, because _fault_said RECORDS as it answers: calling
+    # it again for the HOLDING line below would suppress that line on the very
+    # tick the fault first appeared.
+    fresh = set()
     for f in faults:
+        fkey = (f.get("office"), f.get("stage"), f.get("count"))
+        if send and _fault_said(day, f):
+            continue
+        fresh.add(fkey)
         log("FAULT: %-10s %s -- %s" % (f["office"], f["stage"], f["summary"]))
+        if send:
+            log("       (still open; identical lines suppressed until it "
+                "changes — see the 'ICD Faults' tab)")
     if not send:
         return faults
 
@@ -1841,9 +1898,12 @@ def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
 
         if waits_for_a_repeat(f):
             # Left UNPOSTED on purpose, so the next tick that hits it again
-            # picks it up with a count of two.
-            log("HOLDING %s %s -- once so far, posting only if it repeats"
-                % (f["office"], f["stage"]))
+            # picks it up with a count of two. Said ONCE, for the same reason
+            # the FAULT line above is: a held fault never closes, so this
+            # printed on every tick for the rest of the day.
+            if (f.get("office"), f.get("stage"), f.get("count")) in fresh:
+                log("HOLDING %s %s -- once so far, posting only if it repeats"
+                    % (f["office"], f["stage"]))
             continue
 
         office = O.get(f["office"])
