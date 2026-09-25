@@ -59,6 +59,7 @@ OFFICE_CITY = {
     "kash": "dfw", "cyrus": "dfw", "carlos": "dfw", "carlos-b2batt": "dfw",
     "ryan": "dfw", "khalil": "dfw", "khalil-nds": "dfw",
     "roshan": "houston", "aya": "indianapolis", "colten": "miami",
+    "isaiah": "dfw",            # Legacy office, Dallas (office_metrics has him Central)
 }
 
 
