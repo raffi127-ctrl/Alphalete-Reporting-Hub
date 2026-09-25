@@ -379,6 +379,107 @@ def _handrun_only_ids(cfg) -> set:
     return ids
 
 
+def _nudge_specs(cfg) -> dict:
+    """Ids DECLARED `nudge_if_not_run` — the cards that are a BUTTON somebody has
+    to press, where silence is the wrong answer.
+
+    WHY (Megan, 2026-09-24). `hand_run_only` stops the false incident, and that
+    was right: `New Starts -> Apex` has no LaunchAgent and never will, because it
+    rides the Apex login in the operator's own Chrome, so ":no_entry_sign: didn't
+    run today on MacBook-Pro-3.local" named a machine and sent people to read an
+    agent that has never existed. But being un-scheduled is not being un-needed —
+    the work is still due every Thursday or Friday, and a flag that only silences
+    means the week it gets forgotten, nothing says so. Megan: *"if no one runs
+    this - I just want the alert to say 'Heads up, no one has ran the Apex
+    employee addition'"*.
+
+    So this is the OTHER half of `hand_run_only`: that flag suppresses the
+    watcher's GUESS about a schedule it cannot see, and this one states the real
+    one out loud. They are declared together and they do not fight — step 2 skips
+    the id via `offday`, step 2c picks it up here.
+
+        "nudge_if_not_run": {
+            "weekdays": [3, 4],        # Python weekday(): Mon=0 ... Thu=3, Fri=4
+            "hour": 15,                # don't nag before this (machine-local)
+            "how": "Hub -> New Starts -> Apex -> 'Get this week's setup'."
+        }
+
+    WEEKLY, NOT DAILY, and that is the whole subtlety. The report does one
+    cohort per week, so running it on Thursday means Friday must stay quiet —
+    asking "did it run TODAY" would nag her the day after she did it. The window
+    is THIS WEEK, from Monday, which is also the week the sales-board tab is
+    named for. Friday still nudges if Thursday came and went.
+
+    Narrow the same two ways the other declarations are:
+
+      * Honoured ONLY when `cadence.weekdays` is empty, so it can never attach
+        to something the orchestrator really fires (that already alerts, and a
+        cheerful "nobody's run this yet" next to a real MISSED is worse than
+        either alone).
+      * It NUDGES only. A declared card that runs and FAILS still gets its
+        ordinary failure alert from step 1 — being un-scheduled was never a
+        reason to stop watching, and this does not change that.
+    """
+    try:
+        from automations.day_orchestrator.hub_publish import _HUB_CARD
+    except Exception:  # noqa: BLE001
+        _HUB_CARD = {}
+    try:
+        from automations.day_orchestrator.hub_coverage import CURATED_ALIAS, slug
+    except Exception:  # noqa: BLE001
+        CURATED_ALIAS, slug = {}, lambda r: r.replace("_", "-").strip("-")
+    out = {}
+    for rid, rep_raw in (cfg.raw.get("reports", {}) or {}).items():
+        spec = rep_raw.get("nudge_if_not_run")
+        if not isinstance(spec, dict):
+            continue
+        wdays = ((rep_raw.get("cadence") or {}).get("weekdays"))
+        if not (isinstance(wdays, list) and not wdays):
+            continue   # the orchestrator CAN fire it -> it alerts for real
+        days = spec.get("weekdays")
+        if not (isinstance(days, list) and days):
+            continue   # no days named = nothing to say; bias to quiet
+        # ONE ENTRY PER CARD, KEYED BY THE ID THE ACTIVITY LOG WRITES — not one
+        # per spelling. The other declarations fan every alias into a flat SET
+        # because all they do is membership tests, but this one is POSTED from,
+        # and the id it posts under becomes the incident key
+        # (`standalone-<id>`). Keyed by the schedule_config spelling it opened
+        # `standalone-apex_new_starts` while the Hub row says `apex-new-starts`,
+        # so _close_recovered_incidents — which looks up `standalone-<rid>` off
+        # the Activity row — would never have found it, and the heads-up would
+        # have sat open through the afternoon she actually did the work. The
+        # aliases stay, on the `aliases` key, for the did-it-run test only.
+        aliases = {c for c in (rid, _HUB_CARD.get(rid), CURATED_ALIAS.get(rid),
+                               slug(rid)) if c}
+        card = _HUB_CARD.get(rid) or CURATED_ALIAS.get(rid) or slug(rid) or rid
+        out[card] = {"weekdays": [int(d) for d in days],
+                     "hour": int(spec.get("hour", 12)),
+                     "how": str(spec.get("how") or ""),
+                     "name": rep_raw.get("display_name") or rid,
+                     "aliases": aliases}
+    return out
+
+
+def _ran_since(rows, ids: set, since) -> set:
+    """Which of `ids` produced an Activity row on or after `since` (a date).
+
+    Asked over the WEEK, not the day — see _nudge_specs. Any status counts,
+    including a failure: somebody pressing the button and hitting a problem is
+    not somebody forgetting, and step 1 already alerts on the failure itself.
+    A second post saying "nobody's run this" while its failure sits three lines
+    above would be the channel arguing with itself.
+    """
+    seen = set()
+    for r in rows:
+        d = str(r.get("Started At") or "").strip()[:10]
+        if not d or d < since.isoformat():
+            continue
+        cid = str(r.get("Report ID") or r.get("Report Name") or "").strip()
+        if cid in ids:
+            seen.add(cid)
+    return seen
+
+
 def _event_logged_ids(cfg) -> set:
     """Registry ids DECLARED `logs_on_event_only: true` — a report whose clock ticks
     constantly but which only writes an Activity row when it actually DID something.
@@ -1311,6 +1412,43 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
         except Exception as e:  # noqa: BLE001
             print(f"[{ts}] watch: didn't-run alert failed for {cid}: "
                   f"{type(e).__name__}: {e}", flush=True)
+
+    # 2c) NOT RUN YET — the cards that are a BUTTON somebody presses. Step 2
+    #    can't see these (nothing on a clock runs them, so `offday` skipped them
+    #    a few lines up), but "un-scheduled" is not "un-needed": the work is
+    #    still due, and the week it gets forgotten nothing else will say so.
+    #    A REMINDER, not an incident — no machine named, no LaunchAgent to go
+    #    read. See _nudge_specs. Megan 2026-09-24.
+    try:
+        _nudges = _nudge_specs(cfg)
+        if _nudges:
+            _monday = target_date - dt.timedelta(days=target_date.weekday())
+            _all_aliases = set().union(*(s["aliases"] for s in _nudges.values()))
+            _done = _ran_since(rows, _all_aliases, _monday)
+            for cid, _spec in sorted(_nudges.items()):
+                # Any spelling counts as "somebody pressed it" — the Hub row and
+                # the config disagree about the separator and always have.
+                if _spec["aliases"] & (_done | ran_ids | skip):
+                    continue
+                if cid in already or cid in newly:
+                    continue          # once a day, and it recurs in its thread
+                if target_date.weekday() not in _spec["weekdays"]:
+                    continue
+                if now.hour < _spec["hour"]:
+                    continue          # don't nag before the day has had a chance
+                _last = max(_spec["weekdays"]) == target_date.weekday()
+                notify.send_standalone_alert(
+                    cfg, name=_spec["name"], report_id=cid, kind="NUDGE",
+                    status="not run yet this week",
+                    when=("last day to do it this week" if _last
+                          else "due today or tomorrow"),
+                    day=day_human, machine_label="", how=_spec["how"],
+                    dry_run=dry_run)
+                newly.add(cid)
+                posted += 1
+    except Exception as e:  # noqa: BLE001 — a missed nudge must not sink the pass
+        print(f"[{ts}] watch: not-run-yet check failed: {type(e).__name__}: {e}",
+              flush=True)
 
     # 2b) SILENT JOBS — the handful that publish nothing on purpose, so steps 1
     #    and 2 are structurally blind to them (no Activity row means no error to

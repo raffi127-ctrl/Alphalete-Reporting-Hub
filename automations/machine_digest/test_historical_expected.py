@@ -10,6 +10,7 @@ import datetime as dt
 import unittest
 
 from automations.machine_digest.run import (_historical_expected, _handrun_only_ids,
+                                            _nudge_specs, _ran_since,
                                             _offday_standalone_ids,
                                             _event_logged_ids)
 
@@ -498,3 +499,112 @@ class ApexNewStartsIsAButtonNotASchedule(unittest.TestCase):
         ids = _handrun_only_ids(_reg.load_config())
         for rid in ("daily_focus", "office_metrics", "blueink_docs"):
             self.assertNotIn(rid, ids)
+
+
+class TheNotRunYetNudge(unittest.TestCase):
+    """Megan, 2026-09-24, after `hand_run_only` silenced the false incident:
+    *"if no one runs this - I just want the alert to say 'Heads up, no one has
+    ran the Apex employee addition'"*.
+
+    So the two declarations are halves of one answer and must not fight:
+    `hand_run_only` kills the watcher's GUESS at a schedule it cannot see, and
+    `nudge_if_not_run` states the real one. Step 2 skips the id via `offday`,
+    step 2c picks it up here.
+    """
+
+    def _specs(self, reports):
+        return _nudge_specs(_Cfg(reports))
+
+    def test_it_is_keyed_by_the_id_THE_ACTIVITY_LOG_WRITES(self):
+        """THE ONE THAT WOULD HAVE LEFT THE THREAD OPEN. Unlike the other
+        declarations this dict is POSTED from, and the key becomes the incident
+        key (`standalone-<id>`). Keyed by the schedule_config spelling it opened
+        `standalone-apex_new_starts` while the Hub row says `apex-new-starts`,
+        so _close_recovered_incidents — which looks up `standalone-<rid>` off
+        the Activity row — could never find it, and the heads-up would have sat
+        open right through the afternoon the work got done. ONE entry per card,
+        under the kebab id; the spellings live on `aliases`."""
+        specs = self._specs({"apex_new_starts": {
+            "cadence": {"weekdays": []},
+            "nudge_if_not_run": {"weekdays": [3, 4], "hour": 15}}})
+        self.assertEqual(list(specs), ["apex-new-starts"])          # ONE, kebab
+        self.assertEqual(specs["apex-new-starts"]["aliases"],
+                         {"apex_new_starts", "apex-new-starts"})
+        self.assertEqual(specs["apex-new-starts"]["weekdays"], [3, 4])
+        self.assertEqual(specs["apex-new-starts"]["hour"], 15)
+
+    def test_either_spelling_in_the_log_counts_as_pressed(self):
+        """The aliases earn their keep here: the Hub row and the config have
+        always disagreed about the separator, and a nudge that missed the run
+        because of a hyphen would nag her the day she did the work."""
+        specs = self._specs({"apex_new_starts": {
+            "cadence": {"weekdays": []},
+            "nudge_if_not_run": {"weekdays": [3, 4], "hour": 15}}})
+        aliases = specs["apex-new-starts"]["aliases"]
+        monday = dt.date(2026, 9, 21)
+        for spelling in ("apex-new-starts", "apex_new_starts"):
+            rows = _rows(spelling, [dt.date(2026, 9, 24)], hour=15)
+            self.assertTrue(_ran_since(rows, aliases, monday), spelling)
+
+    def test_flag_is_ignored_when_the_orchestrator_can_fire_it(self):
+        """The narrow half, same as hand_run_only / logs_on_event_only: a card
+        the 4am batch really runs already alerts for real, and a cheerful
+        "nobody's run this yet" beside a genuine MISSED is worse than either."""
+        self.assertEqual(self._specs({"daily_focus": {
+            "cadence": {"weekdays": [0, 1, 2, 3, 4]},
+            "nudge_if_not_run": {"weekdays": [3], "hour": 15}}}), {})
+
+    def test_no_days_named_says_nothing(self):
+        """Bias to quiet: an empty or missing weekday list is not 'every day'."""
+        self.assertEqual(self._specs({"apex_new_starts": {
+            "cadence": {"weekdays": []},
+            "nudge_if_not_run": {"hour": 15}}}), {})
+
+    def test_undeclared_cards_are_never_nudged(self):
+        self.assertEqual(self._specs({"apex_payroll": {"cadence": {"weekdays": []}}}), {})
+
+    def test_the_live_config_nudges_apex_on_thursday_and_friday(self):
+        from automations.day_orchestrator import registry as _reg
+        specs = _nudge_specs(_reg.load_config())
+        self.assertIn("apex-new-starts", specs)
+        self.assertEqual(specs["apex-new-starts"]["weekdays"], [3, 4])
+        self.assertTrue(specs["apex-new-starts"]["how"])   # must say how to run it
+
+    def test_nudging_and_silencing_are_declared_together(self):
+        """THE PAIRING. A card that nudges must also be hand_run_only, or step 2
+        posts the ":no_entry_sign: didn't run today on <machine>" incident and
+        step 2c posts the heads-up, and the channel says both about one card."""
+        from automations.day_orchestrator import registry as _reg
+        cfg = _reg.load_config()
+        silenced = _handrun_only_ids(cfg) | _event_logged_ids(cfg)
+        for cid in _nudge_specs(cfg):
+            self.assertIn(cid, silenced, f"{cid} nudges but isn't silenced")
+
+
+class TheWeekWindow(unittest.TestCase):
+    """The subtlety: the nudge asks about THE WEEK, not today. Apex does one
+    cohort per week, so running it Thursday must leave Friday quiet — asking
+    "did it run today" would nag her the morning after she did the work."""
+
+    MONDAY = dt.date(2026, 9, 21)
+
+    def test_thursdays_run_silences_friday(self):
+        rows = _rows("apex-new-starts", [dt.date(2026, 9, 24)], hour=15)
+        self.assertEqual(_ran_since(rows, {"apex-new-starts"}, self.MONDAY),
+                         {"apex-new-starts"})
+
+    def test_last_weeks_run_does_NOT_silence_this_week(self):
+        """The 9/17-9/18 cohort is done and gone; WE 9.27 is still owed."""
+        rows = (_rows("apex-new-starts", [dt.date(2026, 9, 17)], hour=15)
+                + _rows("apex-new-starts", [dt.date(2026, 9, 18)], hour=11))
+        self.assertEqual(_ran_since(rows, {"apex-new-starts"}, self.MONDAY), set())
+
+    def test_a_failed_press_still_counts_as_pressed(self):
+        """Somebody hitting a problem is not somebody forgetting — and step 1
+        already alerts on the failure. Two posts arguing about one card is the
+        exact noise this kind exists to avoid."""
+        rows = _rows("apex-new-starts", [dt.date(2026, 9, 24)], hour=15)
+        for r in rows:
+            r["Status"] = "failed"
+        self.assertEqual(_ran_since(rows, {"apex-new-starts"}, self.MONDAY),
+                         {"apex-new-starts"})

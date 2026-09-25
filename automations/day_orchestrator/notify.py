@@ -132,7 +132,8 @@ def send_session_alert(cfg, ds, reason, *, channel="email", dry_run=False):
 
 
 def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day="",
-                          machine_label="Lucy 2", channel="email", dry_run=False):
+                          machine_label="Lucy 2", how="", channel="email",
+                          dry_run=False):
     """Per-report problem alert for a STANDALONE report that isn't in the
     orchestrator loop (Lucy 2's launchd agents, summarized off the shared Hub
     Activity log by machine_digest) — so Lucy 2 gets the SAME per-problem Slack
@@ -166,6 +167,22 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
             err = ("this phase runs itself the moment the day's review post "
                    "gets its approval checkmark — nothing to fix"
                    + (f" · {when}" if when else ""))
+        elif kind == "NUDGE":
+            # A REMINDER, NOT AN INCIDENT (Megan, 2026-09-24). Some cards are a
+            # button a person presses — New Starts -> Apex rides the operator's
+            # own Apex login, so nothing on any clock can ever run it. Declaring
+            # it `hand_run_only` stopped the false ":no_entry_sign: didn't run
+            # today on MacBook-Pro-3.local" incident, but silence was not what
+            # she wanted either: "if no one runs this - I just want the alert to
+            # say 'Heads up, no one has ran the Apex employee addition'".
+            #
+            # NO MACHINE IN THE TITLE. That is the whole point of the kind: the
+            # old post named MacBook-Pro-3.local and sent people to read a
+            # LaunchAgent that has never existed. This one runs wherever the
+            # operator is sitting, so naming a box is worse than saying nothing.
+            title = f":wave: *{name}* — heads up, nobody's run this yet"
+            err = ("nothing on a clock runs this one — somebody has to press it, "
+                   "and nobody has this week" + (f" · {when}" if when else ""))
         elif kind == "INCOMPLETE":
             title = f":warning: *{name}* — ran partial on {lbl}"
             err = f"status \"{status}\"" + (f" · {when}" if when else "")
@@ -178,7 +195,7 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
         else:
             title = f":x: *{name}* — didn't run clean on {lbl}"
             err = f"status \"{status}\"" + (f" · {when}" if when else "")
-        parent = [f"{'*Status:*' if kind == 'NO_NEW' else '*Error:*'} {err}"]
+        parent = [f"{'*Status:*' if kind in ('NO_NEW', 'NUDGE') else '*Error:*'} {err}"]
         # The detail block is built FIRST (it used to be built after the parent
         # post) so the whole incident — parent, in-thread detail, and what a
         # repeat says — goes out in one incident_thread call.
@@ -210,6 +227,18 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
                 f"quiet day, not a miss.",
                 "_If you were expecting results in and don't see them, reply "
                 "here and we'll check._",
+            ]
+        elif kind == "NUDGE":
+            # Benign reminder — nothing is broken, nothing to diagnose. No
+            # paste-to-Claude block, and no "check its LaunchAgent on that
+            # machine": there is no agent, and telling somebody to go look for
+            # one is exactly the wrong turn this kind exists to stop.
+            reply = [
+                f"*{how or 'Open it on the Hub and hit play.'}*",
+                "Nothing is broken and nothing needs re-running — it just "
+                "hasn't been done yet.",
+                "_This closes itself the moment it runs. If it isn't needed "
+                "this week, ignore it._",
             ]
         elif kind == "WAITING":
             # Benign FYI — the gate is doing its job. No paste-to-Claude.
@@ -262,7 +291,8 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
         # ✅ = done. As a REACTION, never in the text.
         inc = _incident_post(cfg, key=key, title=title, body=parent,
                              details=reply, followup=[title] + parent,
-                             label=f"*{name}* on {lbl}",
+                             label=(f"*{name}*" if kind == "NUDGE"
+                                    else f"*{name}* on {lbl}"),
                              reaction=("large_purple_circle"
                                        if kind == "WAITING" else None),
                              dry_run=dry_run, tag=key)
@@ -281,6 +311,13 @@ def send_standalone_alert(cfg, *, name, report_id, kind, status, when="", day=""
         text = (f"No new background-check emails came in on {lbl}, so there was "
                 f"nothing to sync today.\n\nReport: {name} "
                 f"(report_id: {report_id})\n"
+                + (f"When: {when}\n" if when else ""))
+    elif kind == "NUDGE":
+        subj = f"👋 {name} — nobody's run this yet — {day}"
+        text = (f"Heads up: {name} hasn't been run yet.\n\n"
+                f"{how or 'Open it on the Hub and hit play.'}\n\n"
+                f"Nothing is broken — this one only runs when somebody presses "
+                f"it.\n\nReport: {name} (report_id: {report_id})\n"
                 + (f"When: {when}\n" if when else ""))
     else:
         subj = f"⚠️ [{lbl}] {name} {kind} — {day}"
