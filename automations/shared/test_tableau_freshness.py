@@ -550,3 +550,39 @@ class ARecoveredSourceClosesItsOwnThread(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OrgOverrideSummaryIsAPeriodScan(unittest.TestCase):
+    """override_bulletin pulls ORGOVERRIDESUMMARY once per period in a window;
+    the last pull of the loop is a closed/future period, so its fingerprint
+    never moves. 2026-09-25 opened a frozen thread the same morning the
+    bulletin filled WE 9.20.26 with fresh numbers."""
+
+    URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+           "OverridesICDView/ORGOVERRIDESUMMARY?Period=Period%202026-12")
+
+    def setUp(self):
+        self._calls = []
+        self._real = (tf.alert_stale, tf.alert_frozen)
+        tf.alert_stale = lambda **kw: (self._calls.append(kw), True)[1]
+        tf.alert_frozen = lambda *a, **kw: (self._calls.append(kw), True)[1]
+        self.tmp = Path(tempfile.mkdtemp())
+
+    def tearDown(self):
+        tf.alert_stale, tf.alert_frozen = self._real
+
+    def test_identical_pulls_do_not_alert(self):
+        p = self.tmp / "org.csv"
+        p.write_text("Owner,09/20/2026" + chr(10) + "A,1" + chr(10), encoding="utf-8")
+        for day in (21, 22, 23, 24, 25):
+            out = tf.check_export(p, view_url=self.URL,
+                                  sheet="ORG Override Summary",
+                                  today=dt.date(2026, 9, day))
+            self.assertEqual(out["verdict"], "unknown")
+        self.assertEqual(self._calls, [])
+
+    def test_the_ledger_sheet_is_still_judged(self):
+        self.assertFalse(tf.is_period_scan_source(
+            "OverridesICDView/NETSUITESECURITYLEDGERSFDC → Ledger"))
+        self.assertTrue(tf.is_period_scan_source(
+            "OverridesICDView/ORGOVERRIDESUMMARY → ORG Override Summary"))
