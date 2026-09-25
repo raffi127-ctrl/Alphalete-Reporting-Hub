@@ -22,6 +22,21 @@ import sys
 CONTROL_SHEET = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
 CARLOS = "U046G04P5LG"
 
+# The Carlos/Eve/Lucy/Megan group chat (Megan's own Copy-link, 2026-09-24).
+#
+# The first cut shipped --channel C0C4FE2TD1A and every run died on
+# `channel_not_found`. That id was copied from CARLOS's screen, and a Slack
+# conversation id is only resolvable by a member: to anyone outside the chat it
+# does not name anything, which is the same answer Slack gives for an id that
+# never existed. So the error looked like a permission problem and was really a
+# wrong id — the chat's actual id is the one below.
+#
+# These reports post with MEGAN's user token (they only DISPLAY as Lucy), and
+# she is in this chat, so this id is valid for the sender. If the chat's
+# membership is ever changed, Slack mints a NEW id for the same people and this
+# goes stale — re-copy the link from the chat rather than editing anything else.
+GROUP_CHANNEL = "C0BJX9LJSJD"
+
 # (diag tab, label, machine). The UNSUFFIXED tab is Carlos's 11580 — his office
 # is the default (FILE_SUFFIX "") so its diag tab carries no office id.
 OFFICES = [
@@ -97,13 +112,25 @@ def main(argv=None) -> int:
     if "--dry-run" in args:
         return 0
     from automations.shared import slack_metrics_post as smp
-    client = smp._client()
-    # --channel <id> posts THERE instead of Carlos's DM (2026-09-24: the
-    # Carlos/Megan/Eve/Lucy group chat); --with-shots also uploads today's
-    # failure screenshots from THIS machine's output/oat-shots-<date>*/.
+    # AS LUCY, NOT AS MEGAN (2026-09-24). This shipped on smp._client(), which
+    # is the per-USER token — Megan's account. The first live post into the
+    # group chat therefore arrived under Megan's name and photo, as if she had
+    # typed it, which is exactly the thing every other report avoids:
+    # _bot_client() is the separate 'Lucy' token and exists so a send reads as
+    # Lucy. Deliberately NOT falling back to _client() when the Lucy token is
+    # missing — that fallback is what put Megan's name on it, and a loud failure
+    # is cheaper than a report that quietly impersonates her.
+    client = smp._bot_client()
+    # WHERE THIS GOES. --group posts in the Carlos/Eve/Lucy/Megan chat;
+    # --channel <id> is the escape hatch for any other destination; with
+    # neither, it DMs Carlos, which is how this shipped and still works.
+    # --with-shots also uploads today's failure screenshots from THIS machine's
+    # output/oat-shots-<date>*/.
     ch = ""
     if "--channel" in args:
         ch = args[args.index("--channel") + 1]
+    elif "--group" in args:
+        ch = GROUP_CHANNEL
     if not ch:
         ch = client.conversations_open(users=CARLOS)["channel"]["id"]
     client.chat_postMessage(channel=ch, text=text)
