@@ -22,20 +22,29 @@ import sys
 CONTROL_SHEET = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
 CARLOS = "U046G04P5LG"
 
-# The Carlos/Eve/Lucy/Megan group chat (Megan's own Copy-link, 2026-09-24).
+EVE = "U088E2KJEV8"
+MEGAN = "U04G5HJBGFN"
+
+# WHO the hourly report goes to, as a GROUP DM that Lucy opens herself.
 #
-# The first cut shipped --channel C0C4FE2TD1A and every run died on
-# `channel_not_found`. That id was copied from CARLOS's screen, and a Slack
-# conversation id is only resolvable by a member: to anyone outside the chat it
-# does not name anything, which is the same answer Slack gives for an id that
-# never existed. So the error looked like a permission problem and was really a
-# wrong id — the chat's actual id is the one below.
+# Two dead ends got us here, both worth not repeating:
+#   1. --channel C0C4FE2TD1A, an id Carlos pasted from HIS Slack. A Slack
+#      conversation id only resolves for a member, so to us it named nothing
+#      and every run died on `channel_not_found` — the same error Slack gives
+#      for an id that never existed, which is why it read as a permissions bug.
+#   2. Pointing at Megan's EXISTING Carlos/Eve/Lucy/Megan chat by its real id.
+#      Also channel_not_found from Lucy 2, because the "Lucy" in that chat is
+#      the Lucy USER account, and Lucy Reporting (U0BCG8F9B5Z, the app whose
+#      token every Lucy box posts with) is not in it — and cannot be, since
+#      Slack does not allow adding an app to a DM.
 #
-# These reports post with MEGAN's user token (they only DISPLAY as Lucy), and
-# she is in this chat, so this id is valid for the sender. If the chat's
-# membership is ever changed, Slack mints a NEW id for the same people and this
-# goes stale — re-copy the link from the chat rather than editing anything else.
-GROUP_CHANNEL = "C0BJX9LJSJD"
+# The way out is the one the focus reports already use: Lucy doesn't join a
+# chat, she OPENS one. conversations.open(users=…) mints the multi-party DM of
+# exactly these people plus the token owner, so Lucy Reporting is a participant
+# by construction. Needs mpim:write, which that token has (13 scopes).
+#
+# Ids, not names — a name lookup would happily resolve the WRONG Lucy.
+GROUP = (CARLOS, EVE, MEGAN)
 
 # (diag tab, label, machine). The UNSUFFIXED tab is Carlos's 11580 — his office
 # is the default (FILE_SUFFIX "") so its diag tab carries no office id.
@@ -131,7 +140,7 @@ def main(argv=None) -> int:
     if "--channel" in args:
         ch = args[args.index("--channel") + 1]
     elif "--group" in args:
-        ch = GROUP_CHANNEL
+        ch = client.conversations_open(users=",".join(GROUP))["channel"]["id"]
     if not ch:
         ch = client.conversations_open(users=CARLOS)["channel"]["id"]
     client.chat_postMessage(channel=ch, text=text)
