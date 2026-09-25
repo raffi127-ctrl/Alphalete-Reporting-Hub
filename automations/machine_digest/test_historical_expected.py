@@ -608,3 +608,44 @@ class TheWeekWindow(unittest.TestCase):
             r["Status"] = "failed"
         self.assertEqual(_ran_since(rows, {"apex-new-starts"}, self.MONDAY),
                          {"apex-new-starts"})
+
+
+class TheNudgeSurvivesTheRetractor(unittest.TestCase):
+    """A CROSS-INTERACTION THAT WOULD SILENTLY KILL THE FEATURE.
+
+    `_retract_false_alarms` takes back a didn't-run alert for any id that is
+    now declared exempt — and `apex-new-starts` IS declared exempt, via
+    `hand_run_only`. The only thing stopping it from also retracting the
+    heads-up (which shares the key `standalone-apex-new-starts`) is the second
+    half of its proof: the parent's own wording must read as a didn't-run
+    alert. So the NUDGE wording must never drift into `_DIDNT_RUN_WORDING`, or
+    the retractor would erase the reminder minutes after it posted and nobody
+    would ever learn why.
+    """
+
+    def _nudge_text(self):
+        from automations.day_orchestrator import registry as _reg
+        cfg = _reg.load_config()
+        spec = _nudge_specs(cfg)["apex-new-starts"]
+        # Mirrors what step 2c passes for both the Thursday and Friday post.
+        return [
+            f"*{spec['name']}* — heads up, nobody's run this yet",
+            "nothing on a clock runs this one — somebody has to press it, and "
+            "nobody has this week · due today or tomorrow",
+            "nothing on a clock runs this one — somebody has to press it, and "
+            "nobody has this week · last day to do it this week",
+        ]
+
+    def test_the_nudge_never_says_the_words_that_get_it_retracted(self):
+        from automations.machine_digest.run import _DIDNT_RUN_WORDING
+        for text in self._nudge_text():
+            low = text.lower()
+            for phrase in _DIDNT_RUN_WORDING:
+                self.assertNotIn(phrase, low, f"{phrase!r} in {text!r}")
+
+    def test_the_real_missed_alert_still_says_them(self):
+        """The other direction: if MISSED ever stopped saying it, the retractor
+        would go quiet on the false alarms it exists to take back."""
+        from automations.machine_digest.run import _DIDNT_RUN_WORDING
+        missed = "*New Starts → Apex* — didn't run today on MacBook-Pro-3.local"
+        self.assertTrue(any(p in missed.lower() for p in _DIDNT_RUN_WORDING))
