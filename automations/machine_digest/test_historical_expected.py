@@ -435,3 +435,66 @@ class EventLoggedIds(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ApexNewStartsIsAButtonNotASchedule(unittest.TestCase):
+    """Regression cover for 2026-09-24. `New Starts -> Apex` is a Hub BUTTON a
+    person presses on a Thursday or Friday — no LaunchAgent, no 4am batch, no
+    clock of any kind, because it rides the Apex login in the operator's own
+    Chrome. Megan pressed it on Thu 9/17 (first run 15:31) and on Thu 9/3
+    (19:35), which is two of the last three Thursdays WITH the recency gate
+    satisfied, so on Thu 9/24 the watcher posted
+
+        "New Starts -> Apex — didn't run today on MacBook-Pro-3.local ·
+         usually starts ~15:00"
+
+    and told whoever picked it up to go check a LaunchAgent that has never
+    existed. Exactly the sara_down / alphalete_org_b2b shape: the Activity log
+    is not the schedule.
+
+    It could not have been suppressed before, either — the report had NO entry
+    in schedule_config at all, and `_handrun_only_ids` can only read ids that
+    are in there. The declaration is the entry.
+
+    NOTE the hand-run marker does NOT cover this. `_is_hand_run` gates the
+    ERRORED branch (see test_hand_run_not_an_incident), and every row here is a
+    SUCCESS — the didn't-run branch never reads the User column, because its
+    whole premise is that no row exists today.
+    """
+
+    THURSDAY = dt.date(2026, 9, 24)
+
+    def _log(self):
+        """The real Activity rows, verbatim-shaped: 9/3 at 19:35, then the
+        9/17 session from 15:31, then Fri 9/18 on the office iMac."""
+        return (_rows("apex-new-starts", [dt.date(2026, 9, 3)], hour=19,
+                      name="New Starts → Apex", machine="MacBook-Pro-3.local")
+                + _rows("apex-new-starts", [dt.date(2026, 9, 17)], hour=15,
+                        name="New Starts → Apex", machine="MacBook-Pro-3.local")
+                + _rows("apex-new-starts", [dt.date(2026, 9, 18)], hour=11,
+                        name="New Starts → Apex",
+                        machine="Zacharys-iMac.attwifi.manager"))
+
+    def test_the_baseline_really_does_expect_it_today(self):
+        """The flag is the only thing standing between this card and the false
+        alarm — same check sara_down carries. If this stops being true the
+        exemption is covering nothing and should be reconsidered, not left."""
+        info = _historical_expected(self._log(), self.THURSDAY).get("apex-new-starts")
+        self.assertIsNotNone(info)
+        self.assertEqual(info["start_hour"], 15)              # what the post said
+        self.assertEqual(info["machine"], "MacBook-Pro-3.local")   # ditto
+
+    def test_the_live_config_declares_it_hand_run_only(self):
+        from automations.day_orchestrator import registry as _reg
+        ids = _handrun_only_ids(_reg.load_config())
+        # Activity rows are written under the kebab CARD id; `lucy rerun` and
+        # schedule_config use the underscore one. Both must resolve.
+        self.assertIn("apex-new-starts", ids)
+        self.assertIn("apex_new_starts", ids)
+
+    def test_a_scheduled_report_on_the_same_machine_is_untouched(self):
+        """Don't let a broad exemption ride in on this one."""
+        from automations.day_orchestrator import registry as _reg
+        ids = _handrun_only_ids(_reg.load_config())
+        for rid in ("daily_focus", "office_metrics", "blueink_docs"):
+            self.assertNotIn(rid, ids)

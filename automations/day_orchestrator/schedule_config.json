@@ -8982,6 +8982,25 @@
         "type": "not_configured"
       }
     },
+    "apex_new_starts": {
+      "on_scheduler": false,
+      "hand_run_only": true,
+      "display_name": "New Starts → Apex",
+      "source_type": "api",
+      "command": [
+        "automations.apex_new_starts.run"
+      ],
+      "base_args": [
+        "--preview"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "data_sources": [],
+      "depends_on": [],
+      "freshness_target": null,
+      "_note": "NOT SCHEDULED AND NEVER WILL BE - no LaunchAgent, no 4am batch, no clock of any kind. It is a Hub BUTTON a person presses on Thursday or Friday (preflight refuses other days without --any-day), and it rides the Apex login in the OPERATOR'S OWN Chrome (apex.herbjoyent.com has no API and no session this repo can hold), so no `machine` is pinned - it runs wherever the operator is: Megan's laptop (MacBook-Pro-3.local) or the office iMac (Zacharys-iMac, the `interviews` account). weekdays [] + hand_run_only EXIST FOR THE WATCHER: machine_digest derives 'runs today' from the Hub Activity log alone, and this report's own hand-runs taught it a schedule that does not exist. Megan ran it Thu 9/17 from 15:31 and Thu 9/3 at 19:35, which is two of the last three Thursdays WITH the recency gate satisfied, so on Thu 2026-09-24 it posted \"New Starts -> Apex - didn't run today on MacBook-Pro-3.local - usually starts ~15:00\" and told whoever picked it up to go read a LaunchAgent that has never existed. Same class as alphalete_org_b2b (2026-08-25) and sara_down (2026-09-01): the log is not the schedule, and the cure is a DECLARATION. This entry also gives `lucy rerun apex_new_starts` a handle; base_args --preview so a bare rerun is READ-ONLY - it lists who WOULD be added and stops, the same safety default apex_payroll gets from --probe. NOT --preflight: that one opens a real browser for the Apex login check and goes straight on to build the week's setup and leave an obcl_watch watcher, which is a button-press, not a probe. --preview posts nothing without --slack. The real flow is the card's \"Get this week's setup\" button + the Fill Apex bookmarklet. Pinned by automations/machine_digest/test_hand_run_not_an_incident.py."
+    },
     "apex_payroll": {
       "on_scheduler": false,
       "machine": "Lucy 2",
