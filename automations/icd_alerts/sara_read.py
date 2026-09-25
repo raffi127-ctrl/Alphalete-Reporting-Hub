@@ -469,6 +469,13 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
     from automations.shared import sale_hype as H
 
     day = day or C.today()
+    # A FRESH BREAKDOWN PER READ, so a slow sweep's fault reports where THIS
+    # read went rather than the last one's leftovers (see
+    # saraplus.pass_timings_summary).
+    try:
+        S.reset_pass_timings()
+    except Exception:  # noqa: BLE001 — instrumentation must never cost a read
+        pass
     if signin_in_progress():
         # NOT an error, and nothing is lost: the next tick is two minutes
         # away. Taking the profile now would close the window under somebody

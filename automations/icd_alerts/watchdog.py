@@ -113,12 +113,25 @@ def timed(stage: str, fn: Callable, *, log=print, report=None,
         log("%s took %.1fs" % (stage, took))
         if report and took >= SLOW_SECONDS:
             try:
+                # WHERE IT WENT, when the stage can say. "this read took 208
+                # seconds" named the office and nothing else, so the 2026-09-24
+                # diagnosis had to infer the retried pass from arithmetic --
+                # these laptops cannot be reached to read their own logs. The
+                # breakdown rides the fault into the 'ICD Faults' tab instead.
+                detail = ""
+                try:
+                    from automations.shared import saraplus as _S
+                    detail = _S.pass_timings_summary()
+                except Exception:  # noqa: BLE001 — a missing breakdown must
+                    detail = ""    # not cost the fault itself
                 report("%s-slow" % stage,
                        RuntimeError(
                            "this read took %.0f seconds. Healthy is a few. "
                            "The office sees this as alerts arriving late and "
                            "then all at once, because the job cannot start "
-                           "again until it finishes." % took),
+                           "again until it finishes.%s"
+                           % (took, ("  Where it went: %s" % detail)
+                              if detail else "")),
                        office_key=office_key)
             except Exception:  # noqa: BLE001
                 pass

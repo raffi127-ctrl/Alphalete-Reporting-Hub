@@ -23,6 +23,7 @@ which are not machines we set up.
 from __future__ import annotations
 
 import datetime as dt
+import time
 from typing import Dict, List, Optional
 
 LOGIN_URL = "https://ui.saraplus.com"
@@ -482,6 +483,79 @@ def _select_service(page, label: str) -> None:
     page.wait_for_timeout(500)
 
 
+# --- where a slow read actually went ----------------------------------------
+# A sweep that crosses 180s is reported as "this read took 208 seconds" and
+# nothing more, so the diagnosis on 2026-09-24 could say WHICH office was slow
+# and not WHICH of its three passes, nor whether a pass had been retried. The
+# arithmetic pointed at one retried pass (a 90s GRID_TIMEOUT_MS + the retry on
+# top of a ~60s baseline lands exactly in the 181-244s band every slow sweep
+# across the fleet sits in) -- but that was inference, and the office laptops
+# cannot be reached to read their logs.
+#
+# So each attempt records what it cost, and the slow-sweep fault carries the
+# breakdown. It answers the question the next change needs: is GRID_TIMEOUT_MS
+# the thing to lower, and to what.
+#
+# A LIST ON THE MODULE, deliberately: this is shared code and the reports that
+# call it do not all have somewhere to thread a timing object through. Bounded
+# so a long-running process cannot grow it, cleared per read by whoever cares.
+_PASS_TIMINGS: List[Dict] = []
+_PASS_TIMINGS_CAP = 24
+
+
+def reset_pass_timings() -> None:
+    """Start a fresh read. Safe to call from anywhere; never raises."""
+    del _PASS_TIMINGS[:]
+
+
+def pass_timings() -> List[Dict]:
+    return list(_PASS_TIMINGS)
+
+
+def pass_timings_summary() -> str:
+    """'Internet 41s | AT&T 132s [attempt 1 failed 91s TimeoutError] | All 35s'
+
+    Empty when nothing was recorded, so a caller can append it unconditionally
+    and a read that predates this still reports exactly as it did.
+    """
+    if not _PASS_TIMINGS:
+        return ""
+    by_service: List[str] = []
+    order: List[str] = []
+    totals: Dict[str, float] = {}
+    notes: Dict[str, List[str]] = {}
+    for t in _PASS_TIMINGS:
+        svc = str(t.get("service") or "?")
+        if svc not in totals:
+            totals[svc] = 0.0
+            notes[svc] = []
+            order.append(svc)
+        totals[svc] += float(t.get("secs") or 0)
+        if not t.get("ok"):
+            notes[svc].append("attempt %s failed %.0fs %s"
+                              % (t.get("attempt"), t.get("secs") or 0,
+                                 t.get("err") or "?"))
+    for svc in order:
+        line = "%s %.0fs" % (svc, totals[svc])
+        if notes[svc]:
+            line += " [" + "; ".join(notes[svc]) + "]"
+        by_service.append(line)
+    return " | ".join(by_service)
+
+
+def _record_pass(service: str, attempt: int, secs: float, ok: bool,
+                 err: str = "") -> None:
+    """Best effort. A timing that cannot be recorded must never cost a read."""
+    try:
+        if len(_PASS_TIMINGS) >= _PASS_TIMINGS_CAP:
+            del _PASS_TIMINGS[0]
+        _PASS_TIMINGS.append({"service": service, "attempt": attempt,
+                              "secs": round(float(secs), 1), "ok": bool(ok),
+                              "err": err})
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _run_report(page, base_url: str, day: dt.date, service: str, grid: str,
                 attempts: int = 3, log=print) -> List[List[str]]:
     """One report pass, RETRIED -- SaraPlus is intermittently slow.
@@ -497,14 +571,22 @@ def _run_report(page, base_url: str, day: dt.date, service: str, grid: str,
     failing on: that means SaraPlus is down, not slow.
     """
     for attempt in range(1, attempts + 1):
+        started = time.time()
         try:
-            return _run_report_once(page, base_url, day, service, grid)
+            rows = _run_report_once(page, base_url, day, service, grid)
+            _record_pass(service, attempt, time.time() - started, True)
+            log("  %r pass took %.0fs%s"
+                % (service, time.time() - started,
+                   "" if attempt == 1 else " (attempt %d)" % attempt))
+            return rows
         except Exception as e:  # noqa: BLE001 — retry ANY per-pass failure
+            took = time.time() - started
+            _record_pass(service, attempt, took, False, type(e).__name__)
             if attempt == attempts:
                 raise SaraError("the %r report failed %d times; last error %s: %s"
                                 % (service, attempts, type(e).__name__, str(e)[:200]))
-            log("  %r pass attempt %d/%d failed (%s) — retrying"
-                % (service, attempt, attempts, type(e).__name__))
+            log("  %r pass attempt %d/%d failed after %.0fs (%s) — retrying"
+                % (service, attempt, attempts, took, type(e).__name__))
             try:
                 page.wait_for_timeout(3000)
             except Exception:  # noqa: BLE001
