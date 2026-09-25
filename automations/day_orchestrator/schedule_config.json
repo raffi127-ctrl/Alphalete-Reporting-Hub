@@ -3553,7 +3553,7 @@
     "call_list_to_2nd": {
       "hand_run_only": true,
       "on_scheduler": false,
-      "_note": "Rafael's second board (2026-09-21), CALL LIST TO 2ND ROUND, in ARS Management 2.0 next to Below the Mark: this week left, last week right, Mon-Fri, one row per interviewer. 1st round from AppStream per office; 2nd round from the '2ND RD SHOWED RETENTION' block of each owner's ARS REPORT tab. Writes ONLY its own tabs (the board, SANDBOX, and their (picture) tabs); everything else is read. Scheduled by deploy/call_list_to_2nd.sh (LaunchAgent com.alphalete.call-list-to-2nd, 12:20/13:20/14:20/15:20 CT Mon-Fri = each zone's 1 PM), which writes the real tab and posts the picture in today's thread in #ars-recruiting-numbers. This entry is the hand-run handle: `lucy rerun call_list_to_2nd` writes the SANDBOX (add --production for the real tab, --dry-run to write nothing).",
+      "_note": "Rafael's second board (2026-09-21), CALL LIST TO 2ND ROUND, in ARS Management 2.0 next to Below the Mark: this week left, last week right, Mon-Fri, one row per interviewer. 1st round from AppStream per office; 2nd round from the '2ND RD SHOWED RETENTION' block of each owner's ARS REPORT tab. Writes ONLY its own tabs (the board, SANDBOX, and their (picture) tabs); everything else is read. Scheduled by deploy/call_list_to_2nd.sh (LaunchAgent com.alphalete.call-list-to-2nd, fires 12:20/13:20/14:20/15:20 CT Mon-Fri; since 2026-09-24 only the LAST zone's 1 PM (Pacific, 15:20 CT) runs, ONE pass with every office re-pulled; the post is ONE picture per day of the week so far + one of TOTAL FOR THE WEEK, Rafael 2026-09-25), which writes the real tab and posts the picture in today's thread in #ars-recruiting-numbers. This entry is the hand-run handle: `lucy rerun call_list_to_2nd` writes the SANDBOX (add --production for the real tab, --dry-run to write nothing).",
       "display_name": "Call List to 2nd Round",
       "source_type": "appstream",
       "command": [
@@ -3573,7 +3573,7 @@
     "call_list_to_2nd_post": {
       "hand_run_only": true,
       "on_scheduler": false,
-      "_note": "Posts the Call List to 2nd Round pictures into today's thread in #ars-recruiting-numbers, as Lucy: the day's board plus, when something moved since the last check, the '(updates)' picture in the SAME message. Reads the '(picture)' / '(updates)' tabs as they stand, so run `call_list_to_2nd --production --zone <clock>` first -- that pair is how a pass is REDONE by hand (delete the old reply first; an image cannot be edited). Must run on the mini: on Eve's Windows the Slack token is Evelyn's own. `lucy rerun call_list_to_2nd_post`.",
+      "_note": "Posts the Call List to 2nd Round pictures into today's thread in #ars-recruiting-numbers, as Lucy: one picture per day of the week so far, then TOTAL FOR THE WEEK, plus, when something moved since the last check, the '(updates)' picture in the SAME message. Reads the '(picture)' / '(updates)' tabs as they stand, so run `call_list_to_2nd --production` first (every office; --zone <clock> only for one clock) -- that pair is how a pass is REDONE by hand (delete the old reply first; an image cannot be edited). Must run on the mini: on Eve's Windows the Slack token is Evelyn's own. `lucy rerun call_list_to_2nd_post`.",
       "display_name": "Call List to 2nd Round — post",
       "source_type": "sheet",
       "command": [

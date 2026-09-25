@@ -47,14 +47,20 @@ COLOURS (Rafael, 2026-09-21), whole column, both weeks:
     Retention Call list, 1st rd %   >= 50% green  |  45%-49.99% grey  |  < 45% red
     2nd interview %                 >= 50% green  |  < 50% red  (no grey)
 
-WHEN: 1:00 PM LOCAL per office (--due picks the offices whose local 1 PM it is;
-offices not in the pass keep the numbers the board already shows).
+WHEN: ONE pass a day, when the LAST time zone on the roster reaches 1:00 PM
+(Pacific: 3 PM CT), and it re-pulls EVERY office (Rafael, 2026-09-24: "one post
+of everything for that day", checking the earlier zones again). Before that it
+was one pass per zone at each office's own 1 PM.
+
+THE PICTURE (Rafael, 2026-09-24): the whole week so far -- Monday to the last
+full day, one box per day -- with every office that had activity on ANY of
+those days in EVERY box, then a 'TOTAL FOR THE WEEK' box at the bottom.
 
 Run:
     python -m automations.call_list_to_2nd.run --dry-run
     python -m automations.call_list_to_2nd.run                 # writes the SANDBOX tab
     python -m automations.call_list_to_2nd.run --no-appstream  # 2nd-round side only
-    python -m automations.call_list_to_2nd.run --due           # the scheduled 1 PM passes
+    python -m automations.call_list_to_2nd.run --due           # the scheduled pass (1 PM Pacific)
     python -m automations.call_list_to_2nd.run --production    # the real tab
 """
 from __future__ import annotations
@@ -98,7 +104,14 @@ PICTURE_SUFFIX = " (picture)"
 UPDATES_SUFFIX = " (updates)"    # the second picture: what moved on earlier days
 MOVED_FIELD = "moved"            # its extra last column: '2nd % 57% → 67%'
 MOVED_HEADER = "What moved"
-MOVED_WIDTH = 260
+MOVED_WIDTH = 260                # at least; widened to fit the longest line
+MOVED_PX_PER_CHAR = 8            # 11pt Arial, generous, so nothing is cut off
+
+
+def moved_width(texts: List[str]) -> int:
+    """Pixels for the 'What moved' column: wide enough for its longest text.
+    A fixed 260 cut most lines off in the picture (2026-09-24)."""
+    return max([MOVED_WIDTH] + [MOVED_PX_PER_CHAR * len(t) + 24 for t in texts])
 
 # field key -> the header text on Eve's tab (matched loosely: case/spaces).
 HEADERS = {
@@ -155,6 +168,9 @@ WEEK_BG = _hex("#1F3864")            # title row: dark navy
 DAY_BG = _hex("#2F5597")             # a day that happened: blue
 TODAY_BG = _hex("#E69138")           # today, still moving: orange
 FUTURE_BG = _hex("#B7B7B7")          # not yet: grey
+TOTAL_BG = _hex("#6A1B9A")           # the week total: purple, bigger and taller, so it
+                                     # stands out from the day bars (Eve, 2026-09-24);
+                                     # the same purple as Below the Mark's total
 STATUS_BG = _hex("#DEEAF6")
 FIRST_TINT = _hex("#DDE8F8")         # the 1st-round columns (AppStream)
 SECOND_TINT = _hex("#EAE0F5")        # the 2nd-round columns (ARS REPORT)
@@ -462,14 +478,18 @@ def ratio(num, den) -> Optional[float]:
 
 
 def make_group(owner: str, fallback_interviewers: List[str], as_row: Optional[dict],
-               sr: Optional[SecondRounds], *, is_today: bool = False) -> Optional[List[dict]]:
+               sr: Optional[SecondRounds], *, is_today: bool = False,
+               keep_empty: bool = False) -> Optional[List[dict]]:
     """One office's rows for one day -- one per interviewer with 2nd rounds that
     day, most booked first -- or None when nothing happened. The FIRST row
     carries the owner's AppStream numbers; they are merged down the group.
 
     TODAY's 2nd-round % is left blank: at 1 PM most of the day's 2nd rounds
     have not happened yet, and a column of reds would be noise. The counts
-    still show; the % fills in on the next day's run."""
+    still show; the % fills in on the next day's run.
+
+    keep_empty: return the group even on a day with nothing, so an office the
+    week picture lists shows up on EVERY day (Rafael, 2026-09-24)."""
     as_row = as_row or {}
     head = {"owner": owner}
     for f in AS_ROWS:
@@ -491,7 +511,83 @@ def make_group(owner: str, fallback_interviewers: List[str], as_row: Optional[di
         rows.append({"owner": owner, "interviewer": ", ".join(names), "b2": 0, "s2": 0, "r2": None})
     rows[0].update(head)
     active = any(isinstance(r.get(f), (int, float)) and r[f] for r in rows for f in COUNT_FIELDS)
-    return rows if active else None
+    return rows if (active or keep_empty) else None
+
+
+def _sum(values) -> Optional[float]:
+    nums = [v for v in (_num(x) for x in values) if v is not None]
+    return sum(nums) if nums else None
+
+
+def week_total_group(groups: List[List[dict]]) -> List[dict]:
+    """One office's week: its day groups added up, the %s worked out again
+    from the sums (a % is never added or averaged).
+
+        Retention Call list  1st rds booked / Sent to call list -- how AppStream
+                             makes the day's number (Andre: 19 sent, 47 booked
+                             = 247%), so the week reads the same way
+        1st rd %             1st rds showed / 1st rds booked
+        2nd interview %      per interviewer: 2nd showed / 2nd booked
+
+    Interviewers are matched by name across the days; one with no 2nd rounds
+    all week is left off unless nobody had any."""
+    owner = groups[0][0]["owner"]
+    head: dict = {"owner": owner}
+    for f in ("sent", "b1", "s1"):
+        head[f] = _sum(g[0].get(f) for g in groups)
+    head["call_ret"] = ratio(head["b1"], head["sent"])
+    head["r1"] = ratio(head["s1"], head["b1"])
+    by: Dict[str, List[float]] = {}
+    for g in groups:
+        for rec in g:
+            name = str(rec.get("interviewer") or "")
+            b, s_ = _num(rec.get("b2")) or 0, _num(rec.get("s2")) or 0
+            tot = by.setdefault(name, [0, 0])
+            tot[0] += b
+            tot[1] += s_
+    people = [(n, bs) for n, bs in by.items() if bs[0] or bs[1]]
+    if not people:
+        names = [n for n in by if n] or [""]
+        people = [(names[0], [0, 0])]
+    people.sort(key=lambda kv: (-kv[1][0], kv[0].lower()))
+    rows = [{"owner": owner, "interviewer": n, "b2": b, "s2": s_, "r2": ratio(s_, b)}
+            for n, (b, s_) in people]
+    rows[0].update(head)
+    return rows
+
+
+def week_days_to(last: dt.date) -> List[dt.date]:
+    """Monday of `last`'s week through `last` (the picture's days)."""
+    first = last - dt.timedelta(days=last.weekday())
+    return [first + dt.timedelta(days=i) for i in range((last - first).days + 1)]
+
+
+def week_picture_blocks(owners: List[str], days: List[dt.date], group_for
+                        ) -> List[Tuple[str, str, List[List[dict]]]]:
+    """The picture's boxes: one per day, then TOTAL FOR THE WEEK.
+
+    `group_for(owner, date, keep_empty)` -> the office's group (or None). An
+    office with activity on ANY day is in EVERY day's box, in the same order,
+    so a row can be followed down the week (Rafael, 2026-09-24: Isaiah shows
+    Monday, then vanishes Tuesday)."""
+    active = {(o, d): group_for(o, d, False) is not None for o in owners for d in days}
+    listed = [o for o in owners if any(active[(o, d)] for d in days)]
+    blocks = []
+    per_owner: Dict[str, List[List[dict]]] = {o: [] for o in listed}
+    for d in days:
+        groups = []
+        for o in listed:
+            g = group_for(o, d, True)
+            groups.append(g)
+            per_owner[o].append(g)
+        n = sum(1 for o in listed if active[(o, d)])
+        blocks.append((picture_band_text(d, n), "past", groups))
+    if listed:
+        totals = [week_total_group(per_owner[o]) for o in listed]
+        blocks.append((f"TOTAL FOR THE WEEK  ·  {days[0]:%a} {md(days[0])} – "
+                       f"{days[-1]:%a} {md(days[-1])}  ·  {len(listed)} offices",
+                       "total", totals))
+    return blocks
 
 
 # ----------------------------------------------------------------- the layout
@@ -500,7 +596,7 @@ class Band:
     row: int              # 1-indexed
     side: int             # 0 = this week (left), 1 = last week (right)
     text: str
-    kind: str = "past"    # past | today | future
+    kind: str = "past"    # past | today | future | total
     rows: int = 0         # data rows under it on this side
 
 
@@ -686,7 +782,7 @@ def picture_band_text(d: dt.date, n: int) -> str:
     return text
 
 
-def write_moved_header(ws, width: int) -> None:
+def write_moved_header(ws, width: int, px: int = MOVED_WIDTH) -> None:
     """The '(updates)' tab's last column is not on Eve's template -- it is the
     before→after of each change -- so its header cell is written here, in the
     look of the name columns."""
@@ -706,7 +802,7 @@ def write_moved_header(ws, width: int) -> None:
         {"updateDimensionProperties": {
             "range": {"sheetId": sid, "dimension": "COLUMNS",
                       "startIndex": j, "endIndex": j + 1},
-            "properties": {"pixelSize": MOVED_WIDTH}, "fields": "pixelSize"}},
+            "properties": {"pixelSize": px}, "fields": "pixelSize"}},
     ]})
 
 
@@ -963,11 +1059,12 @@ def write(ws, order: List[str], lay: Layout, titles: List[str], status: str, log
         c0 = b.side * (width + GAP_COLS)
         rng = _rng(sid, b.row - 1, b.row, c0, c0 + width)
         reqs.append({"mergeCells": {"range": rng, "mergeType": "MERGE_ALL"}})
-        bg = {"today": TODAY_BG, "future": FUTURE_BG}.get(b.kind, DAY_BG)
+        bg = {"today": TODAY_BG, "future": FUTURE_BG, "total": TOTAL_BG}.get(b.kind, DAY_BG)
         reqs.append({"repeatCell": {"range": rng, "cell": {"userEnteredFormat": {
             "backgroundColor": bg, "horizontalAlignment": "LEFT", "verticalAlignment": "MIDDLE",
             "padding": {"left": 8},
-            "textFormat": {"bold": True, "fontSize": 11, "foregroundColor": WHITE}}},
+            "textFormat": {"bold": True, "fontSize": 14 if b.kind == "total" else 11,
+                           "foregroundColor": WHITE}}},
             "fields": "userEnteredFormat"}})
         # The whole day -- its bar and its offices -- inside one thick box.
         reqs.append({"updateBorders": {
@@ -976,7 +1073,7 @@ def write(ws, order: List[str], lay: Layout, titles: List[str], status: str, log
                for k in ("top", "bottom", "left", "right")}}})
         reqs.append({"updateDimensionProperties": {"range": {
             "sheetId": sid, "dimension": "ROWS", "startIndex": b.row - 1, "endIndex": b.row},
-            "properties": {"pixelSize": 28}, "fields": "pixelSize"}})
+            "properties": {"pixelSize": 40 if b.kind == "total" else 28}, "fields": "pixelSize"}})
     # Colours: the whole column, both weeks.
     for key, bands in BANDS.items():
         j = order.index(key)
@@ -1028,19 +1125,6 @@ def in_zones(owners: List[str], wanted: List[str]) -> List[str]:
     return picked
 
 
-def due_now(owners: List[str], now: dt.datetime) -> List[str]:
-    """Owners whose local 1:00 PM it is right now (unknown zones run on Central)."""
-    from automations.first_to_second_below_mark import office_tz as tz
-    picked = []
-    for o in owners:
-        z, _ = tz.zone_or_fallback(o)
-        local = now.astimezone(ZoneInfo(z))
-        start = local.replace(hour=RUN_AT[0], minute=RUN_AT[1], second=0, microsecond=0)
-        if dt.timedelta(0) <= local - start <= dt.timedelta(minutes=LATE_OK_MIN):
-            picked.append(o)
-    return picked
-
-
 def load_roster(starts: List[dt.date], logfn=print) -> Dict[str, List[str]]:
     """{owner: [interviewers]} -- the owners on 'Interviewers Retention
     (Interviewer)' for either week, the same list Below the Mark reports on."""
@@ -1085,11 +1169,15 @@ def run(*, tab: str = SANDBOX_TAB, dry_run: bool = False, use_appstream: bool = 
             return {"written": False, "due": 0}
         logfn(f"  {', '.join(zones)} pass: {len(to_pull)} offices")
     if due:
-        to_pull = due_now(owners, now)
-        if not to_pull:
-            logfn(f"  {now:%a %H:%M} CT: no office is at its 1:00 PM - nothing to do")
+        # ONE pass a day (Rafael, 2026-09-24): when the last zone on the roster
+        # reaches 1 PM, and it re-pulls EVERY office -- the zones that got
+        # there earlier are checked again, not reused.
+        from automations.first_to_second_below_mark import office_tz as tz
+        if tz.last_zone_slot(owners, now, slots=(RUN_AT,), late_ok_min=LATE_OK_MIN) is None:
+            logfn(f"  {now:%a %H:%M} CT: the last zone is not at its 1:00 PM - nothing to do")
             return {"written": False, "due": 0}
-        logfn(f"  1 PM pass: {len(to_pull)} offices")
+        to_pull = owners
+        logfn(f"  1 PM pass (last zone): all {len(to_pull)} offices")
 
     sh = fill.open_by_key(SHEET_ID)
     ws = ensure_tab(sh, tab, logfn) if not dry_run else None
@@ -1167,29 +1255,25 @@ def run(*, tab: str = SANDBOX_TAB, dry_run: bool = False, use_appstream: bool = 
               f"every day re-checked each run  ·  last checked {stamp}")
     if prev_stamp:
         status += (f"  ·  {len(moved)} changed since the {prev_stamp} check"
-                   + (" (each day's bar names them; the post shows them as a"
-                      " second picture)" if moved else ""))
+                   + (" (each day's bar names them; the post shows them as its"
+                      " last picture)" if moved else ""))
     if not use_appstream:
         status += "  ·  (1st-round columns as of the last AppStream check)"
     titles = [f"{TITLE}  ·  THIS WEEK (week of {md(starts[0])})",
               f"LAST WEEK (week of {md(starts[1])})"]
     # The picture: this pass's offices (everybody on a full run), fresh.
-    def pic_groups(d: dt.date) -> List[List[dict]]:
-        out = []
-        for o in owners:
-            if o not in to_pull:
-                continue
-            g = make_group(o, roster.get(o, []), as_data.get((o, d)),
-                           (logs.get(o) or {}).get(d))
-            if g:
-                out.append(g)
-        return out
+    def group_for(o: str, d: dt.date, keep_empty: bool = False) -> Optional[List[dict]]:
+        return make_group(o, roster.get(o, []), as_data.get((o, d)),
+                          (logs.get(o) or {}).get(d), keep_empty=keep_empty)
 
-    # ONE day only (Eve, 2026-09-21: the comparison with last week made the
-    # picture too long).
-    day_groups = pic_groups(pic_day)
-    pic_lay = lay_out_picture(order, [
-        (picture_band_text(pic_day, len(day_groups)), "past", day_groups)])
+    def pic_groups(d: dt.date) -> List[List[dict]]:
+        return [g for g in (group_for(o, d) for o in owners if o in to_pull) if g]
+
+    # THE WEEK SO FAR, Monday to the last full day, and its total (Rafael,
+    # 2026-09-24; it was one day since Eve's 2026-09-21 cut).
+    pic_days = week_days_to(pic_day)
+    pic_owners = [o for o in owners if o in to_pull]
+    pic_lay = lay_out_picture(order, week_picture_blocks(pic_owners, pic_days, group_for))
 
     # The SECOND picture (Eve, 2026-09-22: the changes as a picture, not a wall
     # of text in the message): one box per day that moved since the last check,
@@ -1212,7 +1296,8 @@ def run(*, tab: str = SANDBOX_TAB, dry_run: bool = False, use_appstream: bool = 
                 # numbers live on the group's first row
                 base = next((r for r in g if r.get("interviewer") == c.interviewer),
                             g[0]) if c.interviewer else g[0]
-                moved_text = f"{CHANGE_LABEL[c.key]} {c.old:.0%} → {c.new:.0%}"
+                # a count reads as a count: "2nd booked 7 → 8", never "700% → 800%"
+                moved_text = f"{CHANGE_LABEL[c.key]} {c.amount(c.old)} → {c.amount(c.new)}"
                 same = next((r for r in rows if r["_from"] is base), None)
                 if same:                      # two things moved on one row
                     same[MOVED_FIELD] += "  ·  " + moved_text
@@ -1231,12 +1316,16 @@ def run(*, tab: str = SANDBOX_TAB, dry_run: bool = False, use_appstream: bool = 
                                + ("s" if n != 1 else ""), "past", groups))
     upd_lay = lay_out_picture(upd_order, upd_blocks) if upd_blocks else None
     upd_title = f"{TITLE}  ·  updated since the {prev_stamp} check" if upd_blocks else ""
-    pic_title = f"{TITLE}  ·  {pic_day:%A} {md(pic_day)}"
-    if due or zones:
-        # Say whose picture this is: each time zone's pass posts its own.
+    pic_title = (f"{TITLE}  ·  week so far: {pic_days[0]:%a} {md(pic_days[0])} – "
+                 f"{pic_day:%a} {md(pic_day)}")
+    if zones:
+        # a pass redone by hand for one clock says whose picture it is; the
+        # scheduled pass is every office
         from automations.first_to_second_below_mark import office_tz as tz
         zones = sorted({tz.label(tz.zone_or_fallback(o)[0]) for o in to_pull})
         pic_title += f"  ·  {' + '.join(zones)} offices"
+    else:
+        pic_title += "  ·  All offices"
     if dry_run:
         logfn(f"  DRY RUN - nothing written ({len(lay.values)} rows would be)")
         return {"written": False, "rows": len(lay.values), "changed": len(moved),
@@ -1264,7 +1353,8 @@ def run(*, tab: str = SANDBOX_TAB, dry_run: bool = False, use_appstream: bool = 
     write(upd_ws, upd_order, upd_lay or Layout(width=len(upd_order)),
           [upd_title or f"{TITLE}  ·  nothing moved since the last check"],
           status, logfn, sides=1)
-    write_moved_header(upd_ws, len(upd_order))
+    write_moved_header(upd_ws, len(upd_order), moved_width(
+        [str(r.get(MOVED_FIELD) or "") for _, _, gs in upd_blocks for g in gs for r in g]))
     sh.batch_update({"requests": [{"updateSheetProperties": {
         "properties": {"sheetId": upd_ws.id, "hidden": True}, "fields": "hidden"}}]})
 

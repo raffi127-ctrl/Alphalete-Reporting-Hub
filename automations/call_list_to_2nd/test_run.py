@@ -170,12 +170,101 @@ class Posting(unittest.TestCase):
         self.assertEqual(len(plain.splitlines()), 1)
         self.assertNotIn("green", plain)                     # no colour legend
         self.assertNotIn("picture", plain)                   # nothing moved: one image
-        self.assertIn("2nd picture", slack_post.message("CALL LIST  ·  Monday 9/21", True))
+        self.assertIn("last picture", slack_post.message("CALL LIST  ·  Monday 9/21", True))
 
     def test_the_picture_band_carries_no_change_list(self):
         band = r.picture_band_text(dt.date(2026, 9, 21), 8)
         self.assertEqual(band, "MONDAY 9/21  ·  8 offices")
 
+
+class WeekPicture(unittest.TestCase):
+    """Rafael, 2026-09-24: the week so far, every listed office on every day,
+    and a TOTAL FOR THE WEEK box."""
+    MON, TUE, WED = dt.date(2026, 9, 21), dt.date(2026, 9, 22), dt.date(2026, 9, 23)
+
+    def _data(self):
+        sr_mon = r.SecondRounds()
+        sr_mon.by = {"Daniela": [4, 2]}
+        sr_wed = r.SecondRounds()
+        sr_wed.by = {"Daniela": [6, 5], "Maria": [2, 0]}
+        as_data = {("Isaiah", self.MON): {"sent": 10, "b1": 20, "s1": 10},
+                   ("Kash", self.TUE): {"sent": 5, "b1": 4, "s1": 3},
+                   ("Kash", self.WED): {"sent": 5, "b1": 6, "s1": 3}}
+        logs = {"Kash": {self.MON: sr_mon, self.WED: sr_wed}}
+
+        def group_for(o, d, keep_empty=False):
+            return r.make_group(o, ["Daniela"] if o == "Kash" else [], as_data.get((o, d)),
+                                logs.get(o, {}).get(d), keep_empty=keep_empty)
+        return group_for
+
+    def test_week_days_to(self):
+        self.assertEqual(r.week_days_to(self.WED), [self.MON, self.TUE, self.WED])
+        fri = dt.date(2026, 9, 25)
+        self.assertEqual(r.week_days_to(fri)[0], self.MON)
+        self.assertEqual(len(r.week_days_to(fri)), 5)
+
+    def test_every_listed_office_on_every_day_then_the_total(self):
+        blocks = r.week_picture_blocks(["Isaiah", "Kash", "Nobody"],
+                                       [self.MON, self.TUE, self.WED], self._data())
+        self.assertEqual(len(blocks), 4)
+        for text, kind, groups in blocks[:3]:
+            self.assertEqual(kind, "past")
+            self.assertEqual([g[0]["owner"] for g in groups], ["Isaiah", "Kash"])
+        # Isaiah had only Monday, but is still on Tuesday's box, blank
+        tue = blocks[1][2]
+        self.assertIsNone(tue[0][0].get("sent"))
+        self.assertIn("1 office", blocks[1][0])            # only Kash active Tuesday
+        text, kind, totals = blocks[3]
+        self.assertEqual(kind, "total")
+        self.assertTrue(text.startswith("TOTAL FOR THE WEEK  ·  Mon 9/21 – Wed 9/23"))
+        self.assertEqual([g[0]["owner"] for g in totals], ["Isaiah", "Kash"])
+
+    def test_total_sums_counts_and_recomputes_percents(self):
+        blocks = r.week_picture_blocks(["Kash"], [self.MON, self.TUE, self.WED], self._data())
+        kash = blocks[-1][2][0]
+        head = kash[0]
+        self.assertEqual((head["sent"], head["b1"], head["s1"]), (10, 10, 6))
+        self.assertAlmostEqual(head["call_ret"], 1.0)      # 10 booked / 10 sent
+        self.assertAlmostEqual(head["r1"], 0.6)            # 6 showed / 10 booked
+        by = {row["interviewer"]: row for row in kash}
+        self.assertEqual((by["Daniela"]["b2"], by["Daniela"]["s2"]), (10, 7))
+        self.assertAlmostEqual(by["Daniela"]["r2"], 0.7)
+        self.assertEqual(by["Maria"]["r2"], 0)
+        self.assertEqual(kash[0]["interviewer"], "Daniela")  # most booked first
+
+    def test_quiet_week_has_no_total_box(self):
+        blocks = r.week_picture_blocks(["Nobody"], [self.MON], self._data())
+        self.assertEqual([(k, g) for _, k, g in blocks], [("past", [])])   # the day, empty
+        self.assertIn("no activity", blocks[0][0])
+
+
+
+class MovedColumn(unittest.TestCase):
+    """2026-09-24: the updates picture printed counts as percents and cut the
+    column off."""
+    def test_counts_read_as_counts(self):
+        d = dt.date(2026, 9, 21)
+        self.assertEqual(r.Change("O", d, "b2", 7, 8).amount(7), "7")
+        self.assertEqual(r.Change("O", d, "r2", 0.71, 0.83).amount(0.71), "71%")
+
+    def test_column_fits_the_longest_line(self):
+        long = "Call list % 100% → 113%  ·  1st % 39% → 44%  ·  1st showed 10 → 11"
+        self.assertGreaterEqual(r.moved_width([long]), 8 * len(long))
+        self.assertEqual(r.moved_width([]), r.MOVED_WIDTH)
+
+
+class OnePicturePerDay(unittest.TestCase):
+    """Rafael 2026-09-25: the week in one picture was too large -- one per day."""
+    def test_boxes_split_at_each_band(self):
+        from automations.call_list_to_2nd import slack_post as sp
+        blank = [""] * 4
+        v = [["TITLE"], ["status"], ["Owner Name"],
+             ["MONDAY 9/21  ·  2 offices"], ["Ann", "x"], ["", "y"], blank,
+             ["TUESDAY 9/22  ·  1 office"], ["Ann", "z"], blank,
+             ["TOTAL FOR THE WEEK  ·  Mon 9/21 – Tue 9/22  ·  1 offices"], ["Ann", "t"]]
+        got = sp.boxes(v, 4)
+        self.assertEqual([(t.split()[0], a, b) for t, a, b in got],
+                         [("MONDAY", 4, 6), ("TUESDAY", 8, 9), ("TOTAL", 11, 12)])
 
 if __name__ == "__main__":
     unittest.main()
