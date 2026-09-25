@@ -112,15 +112,16 @@ def main(argv=None) -> int:
     if "--dry-run" in args:
         return 0
     from automations.shared import slack_metrics_post as smp
-    # AS LUCY, NOT AS MEGAN (2026-09-24). This shipped on smp._client(), which
-    # is the per-USER token — Megan's account. The first live post into the
-    # group chat therefore arrived under Megan's name and photo, as if she had
-    # typed it, which is exactly the thing every other report avoids:
-    # _bot_client() is the separate 'Lucy' token and exists so a send reads as
-    # Lucy. Deliberately NOT falling back to _client() when the Lucy token is
-    # missing — that fallback is what put Megan's name on it, and a loud failure
-    # is cheaper than a report that quietly impersonates her.
-    client = smp._bot_client()
+    # WHO THIS POSTS AS IS THE MACHINE, NOT THE CODE (2026-09-24). _client()
+    # reads ~/.config/recruiting-report/slack-user-token on whatever box runs
+    # it: on every Lucy that file is Lucy Reporting, on Megan's laptop it is
+    # MEGAN. So the 8:11pm verification post — run from the laptop — arrived
+    # under Megan's name and photo, which is a laptop artefact and not a bug in
+    # here. Do NOT "fix" it by switching to _bot_client(): that token is the
+    # DM-only Lucy app (chat:write + files:write + im:write, no mpim:write) and
+    # the file does not exist on the Lucy boxes at all. Verify a change to this
+    # send by running it ON a Lucy, never here.
+    client = smp._client()
     # WHERE THIS GOES. --group posts in the Carlos/Eve/Lucy/Megan chat;
     # --channel <id> is the escape hatch for any other destination; with
     # neither, it DMs Carlos, which is how this shipped and still works.
