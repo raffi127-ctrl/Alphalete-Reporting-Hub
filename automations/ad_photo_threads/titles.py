@@ -74,6 +74,21 @@ def pretty(title: str) -> str:
     return t
 
 
+def _other_city(a: str, b: str) -> bool:
+    """Same title, same state, a DIFFERENT city: two ads, not a typo. 9/25
+    Isaiah: "... irving tx" vs "... garland tx" scored 0.93 and the merge
+    moved Irving's people into the Garland thread. A typo bends letters
+    ("arlingotn"); it doesn't swap the city."""
+    wa, wb = a.split(), b.split()
+    if not (wa and wb and wa[-1] == wb[-1] and len(wa[-1]) == 2 and wa[-1].isalpha()):
+        return False
+    p = 0
+    while p < min(len(wa), len(wb)) - 1 and wa[p] == wb[p]:
+        p += 1
+    ca, cb = " ".join(wa[p:-1]), " ".join(wb[p:-1])
+    return bool(ca and cb) and difflib.SequenceMatcher(None, ca, cb).ratio() < 0.75
+
+
 class TitleBook:
     """The running ads, learned from the sheet's own title column."""
 
@@ -127,7 +142,7 @@ class TitleBook:
             if len(front) == 1:
                 return front[0]
         close = [(difflib.SequenceMatcher(None, key, a).ratio(), a) for a in ads]
-        close = [c for c in close if c[0] >= TYPO_RATIO]
+        close = [c for c in close if c[0] >= TYPO_RATIO and not _other_city(key, c[1])]
         if close:
             close.sort(reverse=True)
             if len(close) == 1 or close[0][0] - close[1][0] >= 0.03:

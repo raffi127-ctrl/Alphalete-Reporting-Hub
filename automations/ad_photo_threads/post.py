@@ -772,6 +772,72 @@ def merge_dups(channel: str, day: dt.date, *, build=None, cl=None,
     return out
 
 
+def unmerge(channel: str, source_key: str, reply_ts: List[str], *, build=None,
+            cl=None) -> Dict[str, object]:
+    """Undo one wrong merge_dups move. 9/25 Isaiah: the Irving ad was taken
+    for a typo of Garland and its people were moved into the Garland thread.
+    Deletes the moved replies (`reply_ts`, Lucy's only) from the thread they
+    went into, redoes that thread's numbers without them, then posts the
+    source ad's days again into a thread of its own."""
+    build = build or collect.build
+    cl = cl or collect._client()
+    state = _load_state()
+    # The key the merge saved may carry the company tail; match on norm.
+    hit = [(wk, k, m) for wk in state.get(channel, {}).get("weeks", {}).values()
+           for k, a in wk.items() for m in (a.get("merged") or {})
+           if titles.norm(m) == titles.norm(source_key)]
+    if len(hit) != 1:
+        return {"error": f"{len(hit)} merge(s) took {source_key!r} -- need exactly 1"}
+    wk, target, merged_key = hit[0]
+    tgt = wk[target]
+    days = sorted(tgt["merged"][merged_key])
+    reps = {d: build(dt.date.fromisoformat(d)) for d in days}
+    # Nothing is deleted unless every day now reads as an ad of its own.
+    ad_keys = {d: reps[d].book.resolve(source_key) for d in days}
+    stuck = [d for d, k in ad_keys.items() if not k or k == target]
+    if stuck:
+        return {"error": f"{source_key!r} still reads as {target!r} on {stuck}"}
+    tgt["merged"].pop(merged_key)
+    me = cl.auth_test()["user_id"]
+    msgs = cl.conversations_replies(channel=channel, ts=tgt["thread_ts"],
+                                    limit=200).get("messages", [])
+    deleted = 0
+    for m in msgs:
+        if m["ts"] not in reply_ts or m["ts"] == tgt["thread_ts"] or m.get("user") != me:
+            continue
+        for f in m.get("files") or []:
+            try:
+                cl.files_delete(file=f["id"])
+            except Exception as e:               # noqa: BLE001
+                print(f"  file {f.get('id')} not deleted: {str(e)[:120]}")
+        cl.chat_delete(channel=channel, ts=m["ts"])
+        deleted += 1
+    for d in days:
+        own = [c for c in reps[d].candidates if c.ad == target]
+        if own:
+            tgt.setdefault("stats", {})[d] = day_stats(own)
+        else:
+            tgt["days"] = [x for x in tgt.get("days", []) if x != d]
+            tgt.get("stats", {}).pop(d, None)
+    _save_state(state)
+    monday = week_monday(dt.date.fromisoformat(days[-1]))
+    try:
+        cl.chat_update(channel=channel, ts=tgt["thread_ts"],
+                       text=parent_text(tgt.get("title") or target, monday, False,
+                                        week_stats(tgt, header_week(tgt, monday))))
+    except Exception as e:                       # noqa: BLE001
+        print(f"  header update failed: {str(e)[:160]}")
+    posted = []
+    for d in days:
+        rep = reps[d]
+        rep.candidates = [c for c in rep.candidates if c.ad == ad_keys[d]]
+        if rep.candidates:
+            publish(rep, channel, cl=cl)
+            posted.append(d)
+    return {"from": tgt.get("title") or target, "deleted": deleted,
+            "reposted_days": posted}
+
+
 def permalink(channel: str, ts: str) -> str:
     """Built, not fetched: chat.getPermalink is one more call that can fail."""
     return f"https://ao-pbns.slack.com/archives/{channel}/p{ts.replace('.', '')}"

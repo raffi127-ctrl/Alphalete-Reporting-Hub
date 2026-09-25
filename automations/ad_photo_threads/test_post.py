@@ -541,3 +541,48 @@ class MergeOldCompanyKeyTests(PublishTests):
         got = post.merge_dups("C1", rep.day, build=lambda d: rep, cl=cl)
         self.assertEqual(gone, [])
         self.assertIn("left alone", list(got.values())[0])
+
+
+class UnmergeTests(PublishTests):
+    test_one_thread_one_reply_group_photo_once = None
+
+    def _setup(self, fixed: bool):
+        g = "Retail Associate – Garland TX"
+        i = "Retail Associate – Irving TX"
+        img = {"id": "F1", "mimetype": "image/png"}
+        book = TitleBook([g] * 5 + [i] * 3) if fixed else TitleBook([g] * 5)
+        rep = collect.DayReport(day=dt.date(2026, 9, 16), book=book)
+        rep.candidates = [
+            collect.Candidate("Ana Uno", g, "A", "Qualify", "", "x", ad=norm(g), images=[img]),
+            collect.Candidate("Iris Dos", i, "A", "Qualify", "", "x",
+                              ad=book.resolve(i), images=[img])]
+        st = post._load_state()
+        wk = st.setdefault("C1", {}).setdefault("weeks", {}).setdefault(post.bucket(rep.day), {})
+        wk[norm(g)] = {"thread_ts": "10.0", "days": ["2026-09-16"], "title": g,
+                       "merged": {norm(i): ["2026-09-16"]}}
+        post._save_state(st)
+        cl = FakeSlack(); cl.auth_test = lambda: {"user_id": "ULUCY"}
+        cl.conversations_replies = lambda **kw: {"messages": [
+            {"ts": "10.0", "user": "ULUCY"}, {"ts": "11.0", "user": "ULUCY"},
+            {"ts": "12.0", "user": "ULUCY", "files": [{"id": "F9"}]}]}
+        cl.gone = []
+        cl.chat_delete = lambda **kw: cl.gone.append(kw["ts"])
+        cl.files_delete = lambda **kw: None
+        return rep, cl, i, g
+
+    def test_moves_the_people_back_into_their_own_thread(self):
+        rep, cl, i, g = self._setup(fixed=True)
+        got = post.unmerge("C1", i, ["12.0"], build=lambda d: rep, cl=cl)
+        self.assertEqual(cl.gone, ["12.0"])
+        self.assertEqual(got["reposted_days"], ["2026-09-16"])
+        self.assertIn("Iris Dos", cl.uploads[-1]["initial_comment"])
+        self.assertNotIn("Ana Uno", cl.uploads[-1]["initial_comment"])
+        wk = post._load_state()["C1"]["weeks"][post.bucket(rep.day)]
+        self.assertIn(norm(i), wk)
+        self.assertNotIn(norm(i), wk[norm(g)].get("merged", {}))
+
+    def test_deletes_nothing_while_the_ad_still_folds(self):
+        rep, cl, i, g = self._setup(fixed=False)
+        got = post.unmerge("C1", i, ["12.0"], build=lambda d: rep, cl=cl)
+        self.assertIn("error", got)
+        self.assertEqual(cl.gone, [])

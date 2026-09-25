@@ -246,6 +246,10 @@ def main(argv=None) -> int:
                       help="Trial: DM USER_ID the day's cached crops next to "
                            "the cheaper model's (crop.CHEAP_MODEL). --max-ads = "
                            "how many (default 15). Posts nothing in channels.")
+    mode.add_argument("--unmerge", metavar="AD_TITLE",
+                      help="Undo a wrong --merge-dups move of AD_TITLE: delete "
+                           "the moved replies (--reply-ts) and post its days "
+                           "again in a thread of its own.")
     mode.add_argument("--merge-dups", action="store_true",
                       help="Fold this week's duplicate threads (an ad title "
                            "pasted without its first words) into the real one "
@@ -256,6 +260,7 @@ def main(argv=None) -> int:
     ap.add_argument("--dry-run-notes", action="store_true",
                     help="With --add-notes: say what would be edited, edit nothing.")
     ap.add_argument("--channel", help="Slack channel id to post into.")
+    ap.add_argument("--reply-ts", help="With --unmerge: the moved replies' ts, comma-separated.")
     ap.add_argument("--test-dm", action="store_true",
                     help="Post into the test group DM (config.TEST_DM_USERS + Lucy).")
     ap.add_argument("--dm", metavar="USER_IDS",
@@ -297,6 +302,12 @@ def main(argv=None) -> int:
         print("Retired week:", post.retire_week(
             a.channel or config.LIVE_CHANNEL_ID,
             dt.date.fromisoformat(a.retire_week), dry_run=a.dry_run_notes))
+        return 0
+    if a.unmerge:
+        from automations.ad_photo_threads import config, post
+        ts = [t.strip() for t in (a.reply_ts or "").split(",") if t.strip()]
+        print("Unmerge:", post.unmerge(a.channel or config.LIVE_CHANNEL_ID,
+                                       a.unmerge, ts))
         return 0
     if a.merge_dups:
         from automations.ad_photo_threads import config, post
