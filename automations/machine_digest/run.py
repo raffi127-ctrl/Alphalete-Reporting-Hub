@@ -1031,12 +1031,38 @@ def _close_recovered_incidents(cfg, reports, dry_run: bool, ts: str) -> int:
         except Exception:  # noqa: BLE001 — a broken check must not stop a close
             _ok, _verdict, _why = True, "", ""
         if not _ok:
-            print(f"[{ts}] watch: {rid} ran clean but delivery {_verdict} "
-                  f"({_why}) — leaving its thread open", flush=True)
-            if _verdict == "unknown":
-                inc.note_delivery_unverified(rid, what=r.get("name") or rid,
-                                             why=_why, dry_run=dry_run)
-            continue
+            # A NUDGE THREAD IS THE ONE EXCEPTION, and it is not a hole in the
+            # delivery gate — it is a different claim. The gate exists because
+            # "exit 0" is not "it delivered" ([[green means DELIVERED]]): a
+            # report that SENDS something can run clean and send nothing. But a
+            # nudge never claimed anything was delivered. It said *nobody has
+            # pressed this button*, and an Activity row is exactly the proof
+            # that somebody did. Holding it open for delivery evidence it never
+            # asserted would leave "heads up, nobody's run this yet" sitting in
+            # the channel through the afternoon the work got done — and its own
+            # last line promises "this closes itself the moment it runs".
+            #
+            # Narrow: only for a card DECLARED `nudge_if_not_run`, and only when
+            # the parent actually reads as a nudge. A real failure on the same
+            # card keeps the gate, because that thread IS about delivery.
+            _is_nudge = False
+            try:
+                if rid in _nudge_specs(cfg) and f"standalone-{rid}" in open_keys:
+                    _parent = inc._find_any_state(f"standalone-{rid}", channel=ch)
+                    _txt = ((_parent or {}).get("text") or "").lower()
+                    _is_nudge = any(w in _txt for w in _NUDGE_WORDING)
+            except Exception as e:  # noqa: BLE001 — unreadable → keep the gate
+                print(f"[{ts}] watch: can't read {rid}'s thread to see if it is "
+                      f"a nudge ({e}) — keeping the delivery gate", flush=True)
+            if not _is_nudge:
+                print(f"[{ts}] watch: {rid} ran clean but delivery {_verdict} "
+                      f"({_why}) — leaving its thread open", flush=True)
+                if _verdict == "unknown":
+                    inc.note_delivery_unverified(rid, what=r.get("name") or rid,
+                                                 why=_why, dry_run=dry_run)
+                continue
+            print(f"[{ts}] watch: {rid} is a nudge, not a delivery claim — "
+                  f"somebody ran it, so it closes", flush=True)
         for key in (f"standalone-{rid}", f"nonew-{rid}"):
             if key not in open_keys:
                 continue
@@ -1098,6 +1124,10 @@ def _close_silent_job_incidents(cfg, job_ids, dry_run: bool, ts: str) -> int:
 # prose is the honest discriminator here.
 _DIDNT_RUN_WORDING = ("didn't run today", "did not run today",
                       "didn\u2019t run today")
+
+# Wording that marks a thread as a NUDGE — "somebody still has to press this"
+# — as opposed to a failure. Both apostrophes, same defensive reason as above.
+_NUDGE_WORDING = ("nobody's run this yet", "nobody\u2019s run this yet")
 
 
 def _retract_false_alarms(cfg, target_date, dry_run: bool, ts: str) -> int:

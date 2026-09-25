@@ -649,3 +649,57 @@ class TheNudgeSurvivesTheRetractor(unittest.TestCase):
         from automations.machine_digest.run import _DIDNT_RUN_WORDING
         missed = "*New Starts → Apex* — didn't run today on MacBook-Pro-3.local"
         self.assertTrue(any(p in missed.lower() for p in _DIDNT_RUN_WORDING))
+
+
+class TheNudgeClosesItself(unittest.TestCase):
+    """Its own last line promises *"this closes itself the moment it runs"* —
+    and it would not have.
+
+    `_close_recovered_incidents` asks `delivery_check.may_close()` before it
+    closes anything, because "exit 0" is not "it delivered". For
+    `apex-new-starts` that check answers `(False, 'unknown', 'nothing can
+    confirm this report delivered — its verify is not wired and it wrote no
+    manifest today')` — so the heads-up would have stayed open, with a
+    "delivery unverified" note under it, right through the afternoon somebody
+    did the work. The retractor can't save it either: the nudge wording is
+    deliberately kept clear of `_DIDNT_RUN_WORDING` (see
+    TheNudgeSurvivesTheRetractor), so nothing at all would have closed it.
+
+    The exception is narrow on purpose. A nudge never claimed a delivery — it
+    claimed nobody pressed the button — so an Activity row IS its proof. A real
+    FAILURE on the same card keeps the gate, because that thread is about
+    delivery.
+    """
+
+    def test_apex_has_no_verify_wired_which_is_WHY_it_is_gated(self):
+        """The precondition the exception rests on, pinned WITHOUT a network
+        call. `delivery_check.may_close('apex-new-starts')` answers
+        (False, 'unknown', '...its `verify` is not wired and it wrote no
+        manifest today') — but asking it for real reads the Sheet, which turned
+        this suite from 0.05s into minutes and would fail it offline. The local
+        half of that sentence is the half that can change: wire a `verify` here
+        and the ordinary close path starts working, at which point this
+        exception is dead weight and should be removed rather than left quietly
+        widening the gate."""
+        from automations.day_orchestrator import registry as _reg
+        raw = _reg.load_config().raw["reports"]["apex_new_starts"]
+        self.assertIn(raw.get("verify", {}).get("type", "not_configured"),
+                      ("not_configured", None))
+
+    def test_the_close_path_recognises_the_nudge_wording(self):
+        """The discriminator is the parent's own prose, the same honest test
+        the retractor uses. Both apostrophes — Slack and macOS both rewrite
+        them, and a curly one would silently fail the match."""
+        from automations.machine_digest.run import _NUDGE_WORDING
+        for title in ("*New Starts → Apex* — heads up, nobody's run this yet",
+                      "*New Starts → Apex* — heads up, nobody’s run this yet"):
+            self.assertTrue(any(w in title.lower() for w in _NUDGE_WORDING), title)
+
+    def test_a_failure_thread_is_NOT_read_as_a_nudge(self):
+        """The direction that matters: being un-scheduled was never a reason to
+        stop watching, and a card that fails must keep the delivery gate."""
+        from automations.machine_digest.run import _NUDGE_WORDING
+        for title in ("*New Starts → Apex* — didn't run clean on MacBook-Pro-3.local",
+                      "*New Starts → Apex* — ran partial on MacBook-Pro-3.local",
+                      "*New Starts → Apex* — stuck, never finished"):
+            self.assertFalse(any(w in title.lower() for w in _NUDGE_WORDING), title)
