@@ -27,6 +27,7 @@ def week(label, start, per_day, future_from=None):
             dr.all_rows = all_rows
             dr.interviewed = sum(1 for r in all_rows if r[C])
             dr.rows = rep.worst_first(rep.below_the_mark(all_rows, H), H)
+            dr.flagged = [r[0] for r in dr.rows]
         wr.days[day] = dr
     return wr
 
@@ -269,23 +270,96 @@ class Clock(unittest.TestCase):
         import unittest.mock as um
         from automations.first_to_second_below_mark import office_tz as tz
         with um.patch.object(tz, "_alias_candidates", return_value=[]):
-            who, scope, _ = b.pick_pass(roster, self.at(10, 0), due=True)
-            self.assertEqual(who, {"Colten Wright"})
-            self.assertEqual(scope, "Eastern offices  ·  11:00 AM local update")
+            # ONE post per slot (Rafael, 2026-09-24): nothing at Eastern's 11 AM...
+            self.assertEqual(b.pick_pass(roster, self.at(10, 0), due=True)[0], set())
+            # ...everybody at Pacific's 11 AM (1 PM CT) and 6:30 PM (8:30 PM CT)
+            who, scope, _ = b.pick_pass(roster, self.at(13, 0), due=True)
+            self.assertIsNone(who)
+            self.assertEqual(scope, "All offices  ·  11:00 AM Pacific update")
+            who, scope, _ = b.pick_pass(roster, self.at(20, 30), due=True)
+            self.assertIsNone(who)
+            self.assertEqual(scope, "All offices  ·  6:30 PM Pacific update")
             self.assertEqual(b.pick_pass(roster, self.at(14, 0), due=True)[0], set())
+            # Saturday 9/26 at Pacific's 11 AM: no post, Mon-Fri only
+            sat = self.at(13, 0) + dt.timedelta(days=(5 - self.at(13, 0).weekday()) % 7)
+            self.assertEqual(b.pick_pass(roster, sat, due=True)[0], set())
             self.assertIsNone(b.pick_pass(roster, self.at(14, 0))[0])
             self.assertEqual(b.pick_pass(roster, self.at(14, 0), zone="pacific")[0],
                              {"JC Pascual"})
 
 
-class Saturday(unittest.TestCase):
-    def test_the_week_runs_to_saturday(self):
-        self.assertEqual(b.WEEK_DAYS[-1], "Saturday")
-        self.assertEqual(b.day_date(dt.date(2026, 9, 13), "Saturday"), dt.date(2026, 9, 19))
+class Weekdays(unittest.TestCase):
+    def test_the_week_runs_to_friday(self):
+        self.assertEqual(b.WEEK_DAYS[-1], "Friday")
+        self.assertEqual(b.day_date(dt.date(2026, 9, 13), "Friday"), dt.date(2026, 9, 18))
         lay = b.lay_out([week("9/13", dt.date(2026, 9, 13), {})], H, "s", {}, False)
-        self.assertEqual(len(lay.band_rows), 6)
-        self.assertTrue(lay.values[lay.band_rows[-1] - 1][0].startswith("SATURDAY 9/19"))
+        self.assertEqual(len(lay.band_rows), 6)          # five days + the week's total
+        self.assertTrue(lay.values[lay.band_rows[-2] - 1][0].startswith("FRIDAY 9/18"))
+        self.assertTrue(lay.values[lay.band_rows[-1] - 1][0].startswith(b.TOTAL_BAND))
         self.assertIn(b.REPORT_TITLE, lay.values[0][0])
+
+
+class WholeWeek(unittest.TestCase):
+    """Rafael 2026-09-24: an office under the mark on ANY day shows on EVERY
+    day of that week, and the week's total sits under the days."""
+    def setUp(self):
+        from automations.first_to_second_below_mark import source as src
+        booked = H.index("1st showed up booked 2nd")
+
+        def r(owner, shown, got):
+            x = row(owner, shown, got / shown if shown else "")
+            x[booked] = got
+            return x
+        self.rows = {
+            ("9/20", "Monday", "Isaiah"): r("Isaiah", 10, 3),      # 30%: under
+            ("9/20", "Tuesday", "Isaiah"): r("Isaiah", 10, 7),     # 70%
+            ("9/20", "Wednesday", "Isaiah"): r("Isaiah", 0, 0),    # no interviews
+            ("9/20", "Monday", "Zoe"): r("Zoe", 10, 6),
+            ("9/20", "Tuesday", "Zoe"): r("Zoe", 10, 6),
+            ("9/20", "Wednesday", "Zoe"): r("Zoe", 10, 6),
+        }
+        wk = src.Week(label="9/20", header_row=0,
+                      owners=[src.Owner(name="Isaiah"), src.Owner(name="Zoe")])
+        self.res = b.build_results([wk], [dt.date(2026, 9, 20)], H, self.rows,
+                                   today=dt.date(2026, 9, 23))
+
+    def test_every_day_of_the_week(self):
+        days = self.res[0].days
+        self.assertEqual([r[0] for r in days["Monday"].rows], ["Isaiah"])
+        self.assertEqual([r[0] for r in days["Tuesday"].rows], ["Isaiah"])
+        self.assertEqual([r[0] for r in days["Wednesday"].rows], ["Isaiah"])
+        self.assertEqual(days["Tuesday"].flagged, [])            # the band still says 0 under
+        self.assertEqual(days["Thursday"].rows, [])              # not yet
+
+    def test_total_is_the_days_added_up(self):
+        (tot,) = self.res[0].totals
+        self.assertEqual(tot[0], "Isaiah")
+        self.assertEqual(tot[C], 20)
+        self.assertEqual(tot[H.index("1st showed up booked 2nd")], 10)
+        self.assertAlmostEqual(tot[E], 0.5)                     # 10 / 20, not the average
+        self.assertEqual(self.res[0].through, dt.date(2026, 9, 23))
+
+    def test_total_block_under_friday_and_in_the_picture(self):
+        from automations.first_to_second_below_mark import board_shot as bs
+        lay = b.lay_out(self.res * 2, H, "s", {}, False)
+        tot = lay.band_rows[-1] - 1
+        self.assertEqual(lay.values[tot][0],
+                         "TOTAL FOR THE WEEK  ·  Mon 9/21 – Wed 9/23 combined  ·  "
+                         "1 office at or under 40% on at least one day")
+        self.assertEqual(lay.values[tot + 1][0], "Isaiah")
+        # the tab as read back: header rows so the picture finds both weeks
+        vals = [list(v) for v in lay.values]
+        vals[b.HEADER_ROW - 1] = H + [""] * b.GAP_COLS + H
+        blocks = bs.plan(vals, dt.date(2026, 9, 23))
+        self.assertEqual([k["caption"].split("  ·  ")[:2] for k in blocks],
+                         [["THIS WEEK", "MON 9/21 – WED 9/23 (TODAY)"],
+                          ["THIS WEEK", "TOTAL FOR THE WEEK"]])
+        # Wednesday stops at Thursday's band; the total runs to its last office
+        self.assertTrue(blocks[0]["body"].endswith(str(lay.band_rows[3] - 1)))
+        self.assertTrue(blocks[1]["body"].endswith(str(tot + 2)))
+        # reading the tab back does not take the total's rows for Friday's
+        prior = b.read_prior(lay.values, W, H)
+        self.assertNotIn(("9/20", "Friday"), prior.listed)
 
 
 class Store(unittest.TestCase):
@@ -323,7 +397,7 @@ class PicturePlan(unittest.TestCase):
             future_from=dt.date(2026, 9, 23))
         this.days["Tuesday"].today = True
         last = week("9/13", dt.date(2026, 9, 13), {
-            "Friday": [row("Dee", 10, 0.1)], "Saturday": [row("Eve", 4, 0.25)]})
+            "Thursday": [row("Eve", 4, 0.25)], "Friday": [row("Dee", 10, 0.1)]})
         self.grid = b.lay_out([this, last], H, "s", {}, False).values
         self.grid[2][0] = self.grid[2][W + 1] = "Owner Name"
 
@@ -337,10 +411,10 @@ class PicturePlan(unittest.TestCase):
         blocks = self.bs.plan(self.grid, dt.date(2026, 9, 21))
         self.assertEqual([x["caption"].split("  ·  ")[0] for x in blocks],
                          ["LAST WEEK", "THIS WEEK"])
-        self.assertEqual(blocks[0]["caption"], "LAST WEEK  ·  MON 9/14 – SAT 9/19  ·  FINAL")
-        self.assertEqual(len(blocks[0]["days"]), 6)
-        sat = self.bs.find_day(self.grid, "Saturday", W + b.GAP_COLS)
-        self.assertTrue(blocks[0]["body"].endswith(str(sat[1])))
+        self.assertEqual(blocks[0]["caption"], "LAST WEEK  ·  MON 9/14 – FRI 9/18  ·  FINAL")
+        self.assertEqual(len(blocks[0]["days"]), 5)
+        fri = self.bs.find_day(self.grid, "Friday", W + b.GAP_COLS)
+        self.assertTrue(blocks[0]["body"].endswith(str(fri[1])))
 
     def test_subtitle(self):
         st = ("Eastern offices  ·  11:00 AM local update  ·  offices at or under 40% on "
@@ -374,20 +448,39 @@ class BorrowedRoster(unittest.TestCase):
 
 class ChannelThread(unittest.TestCase):
     """The board goes to today's thread in #ars-recruiting-numbers, never the group DM."""
-    def test_posts_in_the_days_thread(self):
+    def _post(self, existed):
         import unittest.mock as um
         from pathlib import Path
         from automations.first_to_second_below_mark import slack_post as sp
         with um.patch.object(sp.smp, "ensure_named_thread",
-                             return_value={"ok": True, "thread_ts": "111.222"}) as th,              um.patch.object(sp.smp, "post_reply_with_image",
-                             return_value={"ok": True}) as rep_,              um.patch.object(sp.smp, "dm_users_with_file") as dm:
-            rc = sp.post_to_thread(Path("x.png"), "*1st to 2nd Below the Mark* — Eastern offices",
+                             return_value={"ok": True, "thread_ts": "111.222",
+                                           "existed": existed}) as th, \
+             um.patch.object(sp.smp, "post_reply_text_only",
+                             return_value={"ok": True}) as intro, \
+             um.patch.object(sp.smp, "post_reply_with_image",
+                             return_value={"ok": True}) as rep_, \
+             um.patch.object(sp.smp, "dm_users_with_file") as dm:
+            rc = sp.post_to_thread(Path("x.png"), "*1st to 2nd Below the Mark* — All offices",
                                    dry=False, today=dt.date(2026, 9, 21))
         self.assertEqual(rc, 0)
         self.assertEqual(th.call_args.kwargs["channel_id"], "C0C42793AKS")
         self.assertEqual(rep_.call_args.kwargs["thread_ts"], "111.222")
         self.assertEqual(rep_.call_args.kwargs["channel_id"], "C0C42793AKS")
         dm.assert_not_called()
+        return th, intro
+
+    def test_posts_in_the_days_thread(self):
+        th, intro = self._post(existed=False)
+        # Rafael 2026-09-24: the channel post is the title alone; the
+        # explanation is the thread's first reply.
+        self.assertFalse(th.call_args.kwargs.get("lines"))
+        intro.assert_called_once()
+        self.assertEqual(intro.call_args.kwargs["thread_ts"], "111.222")
+        self.assertIn("Retention first showed up", intro.call_args.args[0])
+
+    def test_intro_goes_in_once(self):
+        _, intro = self._post(existed=True)
+        intro.assert_not_called()
 
     def test_board_without_only_never_dms(self):
         import unittest.mock as um

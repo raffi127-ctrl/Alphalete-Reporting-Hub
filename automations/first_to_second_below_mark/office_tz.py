@@ -143,3 +143,23 @@ def by_label(owners: Iterable[str], **kw) -> Dict[str, List[str]]:
     for o in owners:
         out.setdefault(label(zone_or_fallback(o, **kw)[0]), []).append(o)
     return out
+
+
+def last_zone_slot(owners: Iterable[str], now: dt.datetime,
+                   slots: Tuple[Tuple[int, int], ...] = SLOTS,
+                   late_ok_min: int = LATE_OK_MIN) -> Optional[Tuple[int, int]]:
+    """The slot whose LAST zone is due at `now`, or None.
+
+    Rafael, 2026-09-24: ONE post with every time zone together, not one per
+    zone -- "we just know the updates are behind based off of time zones". So
+    a slot goes out once, when the westernmost zone on the roster reaches it
+    (Pacific: 11:00 AM = 1 PM CT), and that pass pulls EVERY office again, so
+    the zones that reached the slot earlier are re-checked, not reused."""
+    zones = {zone_or_fallback(o)[0] for o in owners} or {FALLBACK_ZONE}
+    for h, m in slots:
+        latest = max(now.astimezone(ZoneInfo(z)).replace(hour=h, minute=m, second=0,
+                                                         microsecond=0)
+                     for z in zones)
+        if dt.timedelta(0) <= now - latest <= dt.timedelta(minutes=late_ok_min):
+            return (h, m)
+    return None
