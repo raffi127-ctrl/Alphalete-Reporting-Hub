@@ -272,6 +272,17 @@ _ALIASES = {
         "Immediate Hiring: AT&T Customer Service Representative – Alafaya FL": "AT&T Customer Service Representative – Alafaya FL",
         "Customer Representative": "Customer Representative – Casselberry FL",
     },
+    # Salik 9/25 (Maddie, his live ad list): from 9/22 on the interviewers
+    # stopped typing the city, and the city-less rows start after the older
+    # city (Hazel Park, Ferndale) stopped, so each is the ONE live ad with that
+    # title. Left alone: "AT&T Sales Agent" (live in Southfield AND Southgate),
+    # "Entry Level Account Representative" (no longer live), "AT&T Retail
+    # Sales Rep" (not on the list).
+    "salik": {
+        "AT&T Retail Sales Associate": "AT&T Retail Sales Associate – Dearborn MI",
+        "Entry Level AT&T Team Member": "Entry Level AT&T Team Member – Sterling Heights MI",
+        "Entry Level Sales Representative -AT&T": "Entry Level Sales Representative -AT&T – Livonia MI",
+    },
 }
 
 OFFICES += [
@@ -313,6 +324,7 @@ SCHEDULED_MERGES = {
     "khalil": "2026-09-25",   # Maddie's ad list: Garland Wireless x3 + Retail 3 locations x2
     "isaiah": "2026-09-25",   # Maddie: city-less Wireless / Event Marketing = the 3-locations ad
     "drew": "2026-09-25",     # Valeria: Team Member / Customer (Service) Rep without a city
+    "salik": "2026-09-25",    # Maddie: city-less titles = the one live ad (Dearborn, Sterling Hts, Livonia)
 }
 
 
