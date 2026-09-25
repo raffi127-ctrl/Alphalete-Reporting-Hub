@@ -33,8 +33,20 @@ WHAT IT WILL NOT DO -- every one of these is REPORTED instead, for a person:
   * move half a form row: all of its products move, or none do;
   * act on a "Your Name" that is not a person -- 'bonus', '$50', 'owners pay'
     are bonus entries, not transfers, and are skipped silently;
-  * act on a row whose Date of Sale is not the closed day. Those are listed as
-    LATE so nobody assumes they were handled.
+  * act on a row whose Date of Sale is not the closed day -- UNLESS it is a
+    CATCH-UP (below). The rest are listed as LATE so nobody assumes they were
+    handled.
+
+CATCH-UP (Eve 2026-09-25). A rep who fills the form a day or more late used to
+be stranded: MJ Malhas sent 9/23's three Internet sales on 9/24 at 19:23, the
+run that closes 9/23 had gone at 05:00-08:00 that morning, and the next day's
+run only looks at 9/24. So a row up to 7 days old is moved too, on its own
+day's block (last week's tab if it falls there) -- but ONLY when it was
+SUBMITTED after that day's last closing slot (08:00 the next morning). A row
+submitted in time was already moved by the closing run on Lucy 1, even if this
+machine's record does not show it (Ana Griffin 9/23, submitted 21:54 the same
+night). Same guard as always: the login owner must have the sale on the board,
+and only the form's sales come off -- the owner's own sales stay.
 
 NO MINUS, ONLY THE PLUS, in two cases -- both where the sweep never put the
 sale on any row, so there is nothing to take back:
@@ -88,6 +100,7 @@ HAND_DONE_PATH = Path(__file__).with_name("sale_transfers_hand_done.json")
 
 # Header text (lower-case, contains) -> field. Found by label, not by letter.
 HEADERS = {
+    "stamp": "timestamp",
     "to": "your name",
     "from": "name that the sale is under",
     "date": "date of sale",
@@ -107,6 +120,12 @@ PRODUCTS = (
     ("line", "NL"),
     ("wireless", "NL"),
 )
+
+# The last closing slot of a sale day: 08:00 the next morning (deploy/
+# sale_transfers.sh runs 05:00, 06:00, 08:00). A form submitted after it was
+# never seen by a closing run -- see CATCH-UP in the docstring.
+LAST_SLOT = dt.time(8, 0)
+CATCHUP_DAYS = 7
 
 # Not a person: bonus lines ('$20 bonus', 'owners pay') and test submissions.
 _BONUS_WORDS = ("bonus", "owner", "pay", "spiff", "$", "(test)")
@@ -129,6 +148,24 @@ def parse_date(s: str) -> Optional[dt.date]:
         except ValueError:
             pass
     return None
+
+
+def parse_stamp(s: str) -> Optional[dt.datetime]:
+    s = _clean(s)
+    for fmt in ("%m/%d/%Y %H:%M:%S", "%m/%d/%Y %H:%M", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return dt.datetime.strptime(s, fmt)
+        except ValueError:
+            pass
+    return None
+
+
+def missed_by_close(t: Dict) -> bool:
+    """Submitted after the last run that closes its Date of Sale."""
+    stamp = t.get("stamp")
+    if stamp is None or t.get("date") is None:
+        return False
+    return stamp > dt.datetime.combine(t["date"] + dt.timedelta(days=1), LAST_SLOT)
 
 
 def is_bonus(name: str) -> bool:
@@ -191,7 +228,7 @@ def read_form(values: List[List[str]]) -> List[Dict]:
             return _clean(row[i]) if i is not None and i < len(row) else ""
         if not any(_clean(v) for v in row):
             continue
-        out.append({"row": r, "to": get("to"), "from": get("from"),
+        out.append({"row": r, "stamp": parse_stamp(get("stamp")), "to": get("to"), "from": get("from"),
                     "date_raw": get("date"), "date": parse_date(get("date")),
                     "product": get("product"), "customer": get("customer"),
                     "spm": get("spm"), "notes": get("notes")})
@@ -208,7 +245,10 @@ def key(t: Dict) -> str:
 
 def select(responses: List[Dict], day: dt.date, done: Dict[str, str]
            ) -> Tuple[List[Dict], List[str], List[Dict]]:
-    """(transfers to move, notes, late rows) for the closed day."""
+    """(transfers to move, notes, late rows) for the closed day.
+
+    A late row that is a CATCH-UP comes back in `late` with catchup=True and
+    its metrics filled in, ready for plan() on its own day."""
     todo, notes, late, seen = [], [], [], set()
     for t in responses:
         if is_bonus(t["to"]):
@@ -219,7 +259,13 @@ def select(responses: List[Dict], day: dt.date, done: Dict[str, str]
             continue
         k = key(t)
         if t["date"] != day:
-            if t["date"] < day and k not in done and day - t["date"] <= dt.timedelta(days=7):
+            if (t["date"] < day and k not in done
+                    and day - t["date"] <= dt.timedelta(days=CATCHUP_DAYS)):
+                t = dict(t, key=k, catchup=False)
+                if missed_by_close(t) and k not in seen:
+                    seen.add(k)
+                    t["metrics"], unknown = products(t["product"], t["notes"])
+                    t["catchup"] = bool(t["metrics"]) and not unknown
                 late.append(t)
             continue
         if k in done:
@@ -412,6 +458,32 @@ def _metrics_txt(m: Dict[str, int]) -> str:
     return ", ".join("%d %s" % (q, k) for k, q in m.items())
 
 
+def _move_day(gc, day: dt.date, todo: List[Dict], alias_map, apply: bool
+              ) -> Tuple[List[Dict], List[str]]:
+    """Plan (and with apply, write + record) one sale day's transfers."""
+    live = fill.open_tab(day, gc)
+    updates, moved, notes = plan(live.get_all_values(), day, todo, alias_map)
+    print("tab %r, %s: %d cell(s) to change"
+          % (live.title, day.strftime("%A"), len(updates)))
+    twin = fill.sandbox_twin(live, gc)
+    twin_updates = []
+    if twin is not None:
+        twin_updates, _m, tnotes = plan(twin.get_all_values(), day,
+                                        [t for t in todo if t["key"] in
+                                         {x["key"] for x in moved}], alias_map)
+        notes += ["[sandbox] " + n for n in tnotes]
+    if apply and updates:
+        fill.apply(live, updates)
+        if twin is not None and twin_updates:
+            fill.apply(twin, twin_updates)
+            print("mirrored %d cell(s) to %r" % (len(twin_updates), twin.title))
+        stamp = dt.date.today().isoformat()
+        done = load_state()
+        done.update({t["key"]: stamp for t in moved})
+        save_state(done)
+    return moved, notes
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--date", help="the day to close (YYYY-MM-DD); default yesterday")
@@ -433,44 +505,46 @@ def main(argv=None) -> int:
     print("Sale transfers for %s (%s): %d to move from the form"
           % (day.isoformat(), day.strftime("%A"), len(todo)))
 
-    moved: List[Dict] = []
-    if todo:
+    catchup = [t for t in late if t.get("catchup")]
+    late = [t for t in late if not t.get("catchup")]
+    alias_map: Dict[str, str] = {}
+    if todo or catchup:
         try:
             from automations.alphalete_sales_board import aliases
             alias_map = aliases.load()
         except Exception as e:  # noqa: BLE001 -- the aliases tab is a nicety
             print("(aliases tab unreadable: %s -- config.NAME_MAP only)" % e)
-            alias_map = {}
-        live = fill.open_tab(day, gc)
-        updates, moved, pnotes = plan(live.get_all_values(), day, todo, alias_map)
-        notes += pnotes
-        print("tab %r: %d cell(s) to change" % (live.title, len(updates)))
-        twin = fill.sandbox_twin(live, gc)
-        twin_updates = []
-        if twin is not None:
-            twin_updates, _m, tnotes = plan(twin.get_all_values(), day,
-                                            [t for t in todo if t["key"] in
-                                             {x["key"] for x in moved}], alias_map)
-            notes += ["[sandbox] " + n for n in tnotes]
-        if a.apply and updates:
-            fill.apply(live, updates)
-            if twin is not None and twin_updates:
-                fill.apply(twin, twin_updates)
-                print("mirrored %d cell(s) to %r" % (len(twin_updates), twin.title))
-            stamp = dt.date.today().isoformat()
-            done = load_state()
-            done.update({t["key"]: stamp for t in moved})
-            save_state(done)
+
+    moved: List[Dict] = []
+    if todo:
+        m, n = _move_day(gc, day, todo, alias_map, a.apply)
+        moved += m
+        notes += n
+    # Catch-ups, each on its own day's block (and tab, if it was last week).
+    for d in sorted({t["date"] for t in catchup}):
+        rows = [t for t in catchup if t["date"] == d]
+        print("CATCH-UP %s (%s): %d form row(s) sent in after that day closed"
+              % (d.isoformat(), d.strftime("%A"), len(rows)))
+        try:
+            m, n = _move_day(gc, d, rows, alias_map, a.apply)
+        except RuntimeError as e:  # e.g. last week's tab is gone
+            notes.append("catch-up %s: %s" % (d.isoformat(), e))
+            continue
+        moved += m
+        notes += ["[catch-up %s] %s" % (d.strftime("%m/%d"), x) for x in n]
 
     for t in moved:
-        print("  MOVED  %s: %s -> %s  [form row %d, %s]"
+        print("  MOVED  %s: %s -> %s  [form row %d, %s, sold %s]"
               % (_metrics_txt(t["metrics"]), t["from_board"], t["to_board"],
-                 t["row"], t["spm"] or "no SPM"))
+                 t["row"], t["spm"] or "no SPM", t["date"].strftime("%m/%d")))
     for n in notes:
         print("  CHECK  " + n)
     for t in late:
-        print("  LATE   form row %d: %s <- %s, %s on %s -- sold before %s, NOT moved"
-              % (t["row"], t["to"], t["from"], t["product"], t["date_raw"], day))
+        why = ("product %r not understood -- NOT moved" % t["product"]
+               if missed_by_close(t) else
+               "sent in before that day closed; the closing run on Lucy 1 moved it")
+        print("  LATE   form row %d: %s <- %s, %s on %s -- %s"
+              % (t["row"], t["to"], t["from"], t["product"], t["date_raw"], why))
     if not a.apply:
         print("\npreview only -- re-run with --apply to write.")
     return 0
