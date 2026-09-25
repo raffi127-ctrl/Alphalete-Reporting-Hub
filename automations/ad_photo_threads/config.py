@@ -222,6 +222,10 @@ _LIVE = {
     "rashad",                          # 9/24: 6 threads, 0 loose (reads both his channels)
     "salik",                           # 9/25: re-posted overnight, 19 threads, 0 loose, Eastern
     "kash",                            # 9/25: re-posted overnight, 9 threads, 0 loose
+    "drew",                            # 9/25: 19 threads, 0 loose, Eastern
+    "samuel",                          # 9/25: 11 threads, 0 loose, Eastern
+    "cyrus",                           # 9/25: re-posted, 9 threads, 0 loose
+    "aya",                             # 9/25: re-posted, 9 threads, 0 loose, Eastern
 }
 
 # Spellings an office confirmed are one ad, {typed title: the ad's title}.
