@@ -164,7 +164,12 @@ def _scheduled_merges() -> None:
             continue
         o = config.office(key)
         config.use(o)
-        print(f"[scheduled merge] {key}:", post.merge_dups(o["live_channel"], today))
+        got = post.merge_dups(o["live_channel"], today)
+        # One line per thread: `lucy logtail` cuts a long line before the
+        # reason (Khalil 9/25: the whole dict on one line hid why one stayed).
+        print(f"[scheduled merge] {key}: {len(got)} thread(s)")
+        for name, what in got.items():
+            print(f"[scheduled merge] {key} · {name}: {what}")
         state = post._load_state()
         state.setdefault("_scheduled_merges_done", {})[tag] = dt.datetime.now(
             collect.CENTRAL).isoformat(timespec="minutes")
@@ -241,6 +246,10 @@ def main(argv=None) -> int:
                       help="Trial: DM USER_ID the day's cached crops next to "
                            "the cheaper model's (crop.CHEAP_MODEL). --max-ads = "
                            "how many (default 15). Posts nothing in channels.")
+    mode.add_argument("--unmerge", metavar="AD_TITLE",
+                      help="Undo a wrong --merge-dups move of AD_TITLE: delete "
+                           "the moved replies (--reply-ts) and post its days "
+                           "again in a thread of its own.")
     mode.add_argument("--merge-dups", action="store_true",
                       help="Fold this week's duplicate threads (an ad title "
                            "pasted without its first words) into the real one "
@@ -251,6 +260,7 @@ def main(argv=None) -> int:
     ap.add_argument("--dry-run-notes", action="store_true",
                     help="With --add-notes: say what would be edited, edit nothing.")
     ap.add_argument("--channel", help="Slack channel id to post into.")
+    ap.add_argument("--reply-ts", help="With --unmerge: the moved replies' ts, comma-separated.")
     ap.add_argument("--test-dm", action="store_true",
                     help="Post into the test group DM (config.TEST_DM_USERS + Lucy).")
     ap.add_argument("--dm", metavar="USER_IDS",
@@ -293,11 +303,19 @@ def main(argv=None) -> int:
             a.channel or config.LIVE_CHANNEL_ID,
             dt.date.fromisoformat(a.retire_week), dry_run=a.dry_run_notes))
         return 0
+    if a.unmerge:
+        from automations.ad_photo_threads import config, post
+        ts = [t.strip() for t in (a.reply_ts or "").split(",") if t.strip()]
+        print("Unmerge:", post.unmerge(a.channel or config.LIVE_CHANNEL_ID,
+                                       a.unmerge, ts))
+        return 0
     if a.merge_dups:
         from automations.ad_photo_threads import config, post
         got = post.merge_dups(a.channel or config.LIVE_CHANNEL_ID, day,
                               dry_run=a.dry_run_notes)
-        print("Merge duplicates:", got or "none this week")
+        print("Merge duplicates:", len(got) or "none this week")
+        for name, what in got.items():
+            print(f"  {name}: {what}")
         return 0
     rep = collect.build(day)
     print(summary(rep))

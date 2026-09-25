@@ -770,6 +770,34 @@ ONE_OWNER_MARKERS = (
 )
 
 
+# --- Views pulled across a WINDOW of periods, last pull wins the key --------
+# The sixth shape. override_bulletin/run._scan_summary pulls the ORG Override
+# Summary once per retail period in a window (month+1, month, month+2, month-1,
+# month+3), each with `?Period=Period YYYY-N` in the URL. `_view_label` strips
+# the query string, so all of them land on ONE history key and the day's
+# fingerprint is whichever period the loop ends on — a CLOSED or FUTURE period,
+# never the live one. Identical every run by construction: thread
+# `drop-tableau-stale-overridesicdview-orgoverridesummary-…`, 2026-09-25
+# ("IDENTICAL data 4 days running") while the bulletin that morning filled
+# WE 9.20.26 with fresh numbers (32 of 39 rows differ from 9.13).
+#
+# Not judged here, not un-watched: the bulletin gates itself —
+# run.resolve_target_week HOLDS when the newest week the summary has is
+# already filled, so a summary that stops rolling means NO send, not a send
+# with old numbers. ⚠ Name the VIEW; other sheets of OverridesICDView (the
+# NetSuite ledger) keep being judged.
+PERIOD_SCAN_MARKERS = (
+    "orgoverridesummary",
+)
+
+
+def is_period_scan_source(label: str) -> bool:
+    """Is this view pulled once per period in a loop, so the day's fingerprint
+    is a closed/future period and says nothing about the feed?"""
+    low = (label or "").lower()
+    return any(m in low for m in PERIOD_SCAN_MARKERS)
+
+
 def is_one_owner_source(label: str) -> bool:
     """Is this view only ever pulled filtered to a single owner, so its newest
     date says nothing about whether the feed is current?"""
@@ -925,6 +953,12 @@ def check_export(path,
             # Its dates are ONE owner's sales days, not the feed's — nothing
             # here can say the feed is behind. See ONE_OWNER_MARKERS.
             out["column"] = "one owner's slice — not judged for feed freshness"
+            if verbose:
+                _say("  [freshness] {} — {}".format(label, out["column"]))
+            return out
+        if is_period_scan_source(label):
+            out["column"] = ("period-scan pull — the bulletin's own week gate "
+                             "guards it; not judged for feed freshness")
             if verbose:
                 _say("  [freshness] {} — {}".format(label, out["column"]))
             return out

@@ -59,6 +59,7 @@ OFFICE_CITY = {
     "kash": "dfw", "cyrus": "dfw", "carlos": "dfw", "carlos-b2batt": "dfw",
     "ryan": "dfw", "khalil": "dfw", "khalil-nds": "dfw",
     "roshan": "houston", "aya": "indianapolis", "colten": "miami",
+    "isaiah": "dfw",            # Legacy office, Dallas (office_metrics has him Central)
 }
 
 
@@ -265,6 +266,9 @@ def main() -> int:
                                              "to #alphalete-sales.")
     ap.add_argument("--dry-run", action="store_true",
                     help="Print the message instead of posting to Slack.")
+    ap.add_argument("--offices-only", action="store_true",
+                    help="Post to the ECO office rooms only -- not #alphalete-sales. "
+                         "For a mid-day rollout after the 6am post already went.")
     args = ap.parse_args()
 
     try:
@@ -282,6 +286,11 @@ def main() -> int:
         post_offices(None, dry_run=True, dfw_summary=s)
         return 0
 
+    if args.offices_only:
+        from automations.shared import slack_metrics_post as smp
+        n = post_offices(smp._client(), dry_run=False, dfw_summary=s)
+        print(f"[weather] offices only: {n} room(s) posted", flush=True)
+        return 0
     try:
         from automations.shared import slack_metrics_post as smp
         client = smp._client()

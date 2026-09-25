@@ -16,6 +16,11 @@ SOURCE, spelled out:
   col D     "Date of Sale"  -- ONLY rows equal to the day being closed
   col E     "Type of Product Sold" (a row can carry several, comma-separated)
   col J     "Notes"         -- read only for a line count ("4 Lines")
+  "Quantity for each Product"  (Eve 2026-09-25) -- "New Int - 3 | Upg - 2 |
+            DTV - 1 | NL - 1": how many of each ticked product to move. When
+            filled it WINS over the one-each / Notes count; it must cover
+            exactly the ticked products, or the row is left for a person.
+            Old rows have it blank and read as before.
 Columns are found by their header text, never by letter.
 
 TARGET: the same cells the sweep writes -- 'Sales Board WE <m>.<d>' -> the
@@ -108,6 +113,7 @@ HEADERS = {
     "customer": "customers name",
     "spm": "spm",
     "notes": "notes",
+    "qty": "quantity for each",
 }
 
 # Product wording on the form -> board column. Checked in order, first hit wins.
@@ -200,6 +206,55 @@ def products(kind: str, notes: str) -> Tuple[Dict[str, int], List[str]]:
     return out, unknown
 
 
+# Words in the "Quantity for each Product" answer -> board column, checked in
+# order on whole words ("upg int" is an upgrade, "new int" is internet).
+QTY_WORDS = (
+    (r"upg\w*|up", "Int Up"),
+    (r"int\w*|fiber", "Int"),
+    (r"dtv|directv|tv|video", "DTV"),
+    (r"nl|lines?|phones?|wireless", "NL"),
+)
+
+
+def quantities(text: str, ticked: Dict[str, int]) -> Tuple[Dict[str, int], str]:
+    """({metric: qty}, problem) from the quantity answer. problem != '' means
+    it could not be read for sure -- the row is then not moved at all."""
+    raw = _clean(text)
+    low = re.sub(r"\d+\s*gig\w*", " ", raw.lower())   # '1 gig' is a plan, not a count
+    if re.fullmatch(r"\d+", low.strip()):
+        if len(ticked) == 1:
+            return {next(iter(ticked)): int(low)}, ""
+        return {}, "quantity %r does not say which product" % raw
+    out: Dict[str, int] = {}
+    covered = set()
+    for part in re.split(r"[|,;/\n]+", low):
+        if not part.strip():
+            continue
+        metric = next((m for w, m in QTY_WORDS
+                       if re.search(r"\b(?:%s)\b" % w, part)), None)
+        nums = re.findall(r"\d+", part)
+        if metric is None or len(nums) != 1:
+            return {}, "quantity %r: cannot read %r" % (raw, part.strip())
+        covered.add(metric)
+        if int(nums[0]):
+            out[metric] = out.get(metric, 0) + int(nums[0])
+    if covered != set(ticked):
+        return {}, ("quantity %r does not match the products ticked (%s)"
+                    % (raw, ", ".join(sorted(ticked))))
+    return out, ""
+
+
+def form_metrics(t: Dict) -> Tuple[Dict[str, int], str]:
+    """({metric: qty}, problem) for one form row: the ticked products, with
+    the quantity answer when there is one."""
+    m, unknown = products(t["product"], t["notes"])
+    if unknown or not m:
+        return {}, "product %r not understood" % t["product"]
+    if t.get("qty"):
+        return quantities(t["qty"], m)
+    return m, ""
+
+
 def header_map(header: List[str]) -> Dict[str, int]:
     """{field: 0-based index}. Raises naming the header it could not find."""
     low = [_clean(h).lower() for h in header]
@@ -231,7 +286,8 @@ def read_form(values: List[List[str]]) -> List[Dict]:
         out.append({"row": r, "stamp": parse_stamp(get("stamp")), "to": get("to"), "from": get("from"),
                     "date_raw": get("date"), "date": parse_date(get("date")),
                     "product": get("product"), "customer": get("customer"),
-                    "spm": get("spm"), "notes": get("notes")})
+                    "spm": get("spm"), "notes": get("notes"),
+                    "qty": get("qty")})
     return out
 
 
@@ -264,8 +320,8 @@ def select(responses: List[Dict], day: dt.date, done: Dict[str, str]
                 t = dict(t, key=k, catchup=False)
                 if missed_by_close(t) and k not in seen:
                     seen.add(k)
-                    t["metrics"], unknown = products(t["product"], t["notes"])
-                    t["catchup"] = bool(t["metrics"]) and not unknown
+                    t["metrics"], t["problem"] = form_metrics(t)
+                    t["catchup"] = bool(t["metrics"]) and not t["problem"]
                 late.append(t)
             continue
         if k in done:
@@ -276,10 +332,10 @@ def select(responses: List[Dict], day: dt.date, done: Dict[str, str]
             continue
         seen.add(k)
         t = dict(t, key=k)
-        t["metrics"], unknown = products(t["product"], t["notes"])
-        if unknown or not t["metrics"]:
-            notes.append("form row %d: product %r not understood -- not moved"
-                         % (t["row"], t["product"]))
+        t["metrics"], problem = form_metrics(t)
+        if problem or not t["metrics"]:
+            notes.append("form row %d: %s -- not moved"
+                         % (t["row"], problem or "nothing to move"))
             continue
         todo.append(t)
     return todo, notes, late
@@ -453,6 +509,73 @@ def save_state(done: Dict[str, str], path: Path = STATE_PATH) -> None:
                     encoding="utf-8")
 
 
+# --- alert ------------------------------------------------------------------
+# A form row the run could not move goes to #claudecorrections-and-requests
+# with Eve tagged (Eve 2026-09-25) -- a CHECK line in a log nobody opens is how
+# 'Bas <- Paris' sat for a week. ONE THREAD PER WEEK (Mon-Sun, the board's
+# week): the first problem opens it, every later one is a reply in it that tags
+# Eve again, so none gets lost in a status line. Once per problem: ALERTED_PATH
+# remembers what was already posted. Only from Lucy: anything in that channel
+# goes out as Lucy, and a run from Windows would post as Evelyn.
+EVE = "U088E2KJEV8"            # Evelyn Sobrino
+INCIDENT_PREFIX = "sale_transfers_check_we"
+ALERTED_PATH = STATE_PATH.with_name("sale_transfers_alerted.json")
+
+
+def needs_person(note: str) -> bool:
+    """A note about one form row that a person has to act on."""
+    return ("row " in note and "[sandbox]" not in note
+            and "counted once" not in note and "nothing to move" not in note)
+
+
+def alert(problems: List[str], dry_run: bool = False) -> None:
+    try:
+        seen = json.loads(ALERTED_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        seen = {}
+    new = [p for p in problems if p not in seen]
+    if not new:
+        return
+    today = dt.date.today()
+    sunday = today + dt.timedelta(days=(6 - today.weekday()))
+    key = INCIDENT_PREFIX + sunday.strftime("%m%d")
+    head = ("<@%s> Sales Board: %d sale transfer(s) from the form could not be "
+            "moved -- please check" % (EVE, len(new)))
+    body = ["- " + p for p in new] + [
+        "", "Fix the form row (or the board), then: "
+        "`python -m automations.alphalete_sales_board.sale_transfers "
+        "--date <day after the sale> --apply`"]
+    try:
+        from automations.shared import incident_thread as inc
+        if not dry_run and not inc.is_lucy():
+            print("(alert NOT posted: this machine is not Lucy)\n  " + head)
+            return
+        got = inc.open_or_followup(
+            key=key, title=head, body=body, label="Sale transfers",
+            channel_line=("Sales Board: sale transfers that could not be moved "
+                          "-- week ending %s" % sunday.strftime("%m/%d")),
+            max_age_days=7, max_followups=1000, dry_run=dry_run)
+        if got and not got.get("new"):
+            # Same week, new problem: its own reply, Eve tagged again.
+            if dry_run:
+                print("[alert] DRY-RUN reply in %s:\n%s" % (got["ts"], "\n".join([head] + body)))
+            else:
+                inc._send(inc._client(), inc.CHANNEL, [head] + body,
+                          thread_ts=got["ts"])
+    except Exception as e:  # noqa: BLE001 -- an alert must never break the move
+        print("alert failed: %s: %s" % (type(e).__name__, str(e)[:120]))
+        return
+    if dry_run:
+        return
+    stamp = dt.date.today().isoformat()
+    seen.update({p: stamp for p in new})
+    cutoff = (dt.date.today() - dt.timedelta(days=30)).isoformat()
+    seen = {k: v for k, v in seen.items() if v >= cutoff}
+    ALERTED_PATH.parent.mkdir(parents=True, exist_ok=True)
+    ALERTED_PATH.write_text(json.dumps(seen, indent=1, sort_keys=True),
+                            encoding="utf-8")
+
+
 # --- CLI --------------------------------------------------------------------
 def _metrics_txt(m: Dict[str, int]) -> str:
     return ", ".join("%d %s" % (q, k) for k, q in m.items())
@@ -537,14 +660,20 @@ def main(argv=None) -> int:
         print("  MOVED  %s: %s -> %s  [form row %d, %s, sold %s]"
               % (_metrics_txt(t["metrics"]), t["from_board"], t["to_board"],
                  t["row"], t["spm"] or "no SPM", t["date"].strftime("%m/%d")))
+    problems = [n for n in notes if needs_person(n)]
+    problems += ["form row %d: %s <- %s (sold %s): %s -- not moved"
+                 % (t["row"], t["to"], t["from"], t["date_raw"], t["problem"])
+                 for t in late if missed_by_close(t) and t.get("problem")]
     for n in notes:
         print("  CHECK  " + n)
     for t in late:
-        why = ("product %r not understood -- NOT moved" % t["product"]
+        why = ("%s -- NOT moved" % (t.get("problem") or "nothing to move")
                if missed_by_close(t) else
                "sent in before that day closed; the closing run on Lucy 1 moved it")
         print("  LATE   form row %d: %s <- %s, %s on %s -- %s"
               % (t["row"], t["to"], t["from"], t["product"], t["date_raw"], why))
+    if problems:
+        alert(problems, dry_run=not a.apply)
     if not a.apply:
         print("\npreview only -- re-run with --apply to write.")
     return 0
