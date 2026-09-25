@@ -105,10 +105,11 @@ class DailyPdfTests(unittest.TestCase):
         self.assertIn("knock_dispo", [k for _h, k in cap.sections_on(sunday)])
         self.assertNotIn("knock_dispo",
                          [k for _h, k in cap.body_sections_on(sunday)])
-        # …and the daily section stays in the body (§10 is Rafael's reference
-        # for what the combined PDF should look like).
-        self.assertIn("daily_knocks",
-                      [k for _h, k in cap.body_sections_on(sunday)])
+        # …and since 2026-09-25 the daily one follows it (Rafael: too much
+        # scrolling) — still captured, only the body drops it.
+        self.assertIn("daily_knocks", [k for _h, k in cap.sections_on(sunday)])
+        self.assertNotIn("daily_knocks",
+                         [k for _h, k in cap.body_sections_on(sunday)])
 
     def test_rafaels_worked_example_is_fifteen_attachments(self):
         pairs = self._pairs(13)
@@ -133,8 +134,21 @@ class DailyPdfTests(unittest.TestCase):
                   "errors": {}}
         msg = email_build.build(_rafael(), bundle, dt.date(2026, 9, 6))  # Sunday
         html = _html_of(msg)
-        self.assertIn("Daily Knocks", html)
+        self.assertNotIn("Daily Knocks", html)
         self.assertNotIn("Weekly Knock Dispositions", html)
+
+    def test_a_failed_daily_board_still_holds_the_send(self):
+        # The boards left the body, but a FAILED owner must still leave the
+        # pending note run.py's send guard reads; a real zero stays silent.
+        pairs = self._pairs(1) + [("Broken Owner", None), ("Quiet Owner", None)]
+        bundle = {"daily_knocks": pairs, "errors": {
+            "daily_knocks:Broken Owner": "RuntimeError: grid never loaded",
+            "daily_knocks:Quiet Owner":
+                email_build.NO_DATA_MARK + "no knocks recorded yesterday"}}
+        html = _html_of(email_build.build(_rafael(), bundle, self.today))
+        self.assertIn("Broken Owner's Daily Knocks board "
+                      + email_build.PENDING_MARK, html)
+        self.assertNotIn("Quiet Owner", html)
 
 
 if __name__ == "__main__":
