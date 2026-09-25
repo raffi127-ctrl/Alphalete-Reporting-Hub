@@ -7296,6 +7296,30 @@ def _action_purge_retired_appstream_creds(args: str) -> tuple[bool, str]:
                   % ("; ".join(removed), ", ".join(kept) or "primary only"))
 
 
+def _action_text_resolve(args: str) -> tuple[bool, str]:
+    """text_resolve <office key>: which chat each of an office's approved text
+    destinations would send to RIGHT NOW, without sending. The check to run
+    after pinning a group to its people (2026-09-24, every ECO group)."""
+    key = (args or "").strip().strip("'\"").lower()
+    if not key:
+        return False, "text_resolve needs an office key"
+    from automations.icd_alerts import post as P
+    from automations.b2b_dispositions import text_post as tp
+    dests = P.approved_texts().get(key) or []
+    if not dests:
+        return False, "no approved text destination for %r" % key
+    lines = []
+    for d in dests:
+        try:
+            hit = tp.resolve_dest(d)
+            lines.append("%s -> %s (%s participants, chat %s)%s" % (
+                d.get("channel_name"), hit.get("name"), hit.get("participants"), hit.get("id"),
+                "  [pinned to %d handles]" % len(d.get("require_handles") or []) if d.get("require_handles") else "  [BY NAME]"))
+        except Exception as e:  # noqa: BLE001
+            lines.append("%s -> REFUSED: %s" % (d.get("channel_name"), str(e)[:200]))
+    return all("REFUSED" not in l for l in lines), "\n".join(lines)[-1500:]
+
+
 def _action_group_members(args: str) -> tuple[bool, str]:
     """group_members <name part>: every iMessage chat on THIS machine whose
     name contains it, with its chat id and every participant handle. What
@@ -8163,6 +8187,7 @@ ACTIONS = {
     "login_check": _action_login_check,
     "sara_probe": _action_sara_probe,
     "group_members": _action_group_members,
+    "text_resolve": _action_text_resolve,
     "purge_retired_appstream_creds": _action_purge_retired_appstream_creds,
     "set_ownerville_creds": _action_set_ownerville_creds,
     "appstream_renew_probe": _action_appstream_renew_probe,
