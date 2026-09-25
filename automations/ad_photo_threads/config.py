@@ -262,6 +262,16 @@ _ALIASES = {
         "AT&T Wireless Associate - Spanish Required": "AT&T Wireless Associate - Spanish Required – 3 locations",
         "Event Marketing & Sales Associate (Spanish Required)": "Event Marketing & Sales Associate (Spanish Required) – 3 locations",
     },
+    # Drew 9/25 (Valeria, his live ad list): plain "AT&T Team Member" is the
+    # Ocoee ad; Orlando's is "(Bilingual Required)". A title typed without its
+    # city folds onto the one ad with that title (as Colten).
+    "drew": {
+        "AT&T Team Member": "AT&T Team Member – Ocoee FL",
+        "AT&T Team Member (Bilingual Required) – Orlando FL": "AT&T Team Member – Orlando FL",
+        "Customer Service Representative": "AT&T Customer Service Representative – Alafaya FL",
+        "Immediate Hiring: AT&T Customer Service Representative – Alafaya FL": "AT&T Customer Service Representative – Alafaya FL",
+        "Customer Representative": "Customer Representative – Casselberry FL",
+    },
 }
 
 OFFICES += [
@@ -302,6 +312,7 @@ SCHEDULED_MERGES = {
     "colten": "2026-09-25",   # Valeria's ad list + Entry Level AM in one thread (Eve 9/24)
     "khalil": "2026-09-25",   # Maddie's ad list: Garland Wireless x3 + Retail 3 locations x2
     "isaiah": "2026-09-25",   # Maddie: city-less Wireless / Event Marketing = the 3-locations ad
+    "drew": "2026-09-25",     # Valeria: Team Member / Customer (Service) Rep without a city
 }
 
 
