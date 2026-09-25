@@ -43,15 +43,34 @@ _FETCH_RETRIES = 4
 _FETCH_BACKOFF = (2, 5, 10)  # seconds between attempts 1→2, 2→3, 3→4
 
 
-def _fetch_forecast() -> dict:
+# EVERY ECO OFFICE GETS ITS OWN, in its own city, in the channel its
+# SaraPlus alerts already land in (Megan 2026-09-25: "roll it out to all
+# offices"). Cities were read off the zip codes in each office's knocks
+# relay; DFW is fetched ONCE and shared by every DFW office (one pull, many
+# channels). Add an office here when it enrolls; an office not listed, or
+# with no approved alert channel, is skipped and named in the log.
+CITIES = {
+    "dfw": ("DFW", 33.1507, -96.8236, "America/Chicago"),
+    "houston": ("Houston, TX", 29.7604, -95.3698, "America/Chicago"),
+    "indianapolis": ("Indianapolis, IN", 39.7684, -86.1581, "America/New_York"),
+    "miami": ("Hollywood / Miami, FL", 26.0112, -80.1495, "America/New_York"),
+}
+OFFICE_CITY = {
+    "kash": "dfw", "cyrus": "dfw", "carlos": "dfw", "carlos-b2batt": "dfw",
+    "ryan": "dfw", "khalil": "dfw", "khalil-nds": "dfw",
+    "roshan": "houston", "aya": "indianapolis", "colten": "miami",
+}
+
+
+def _fetch_forecast(lat: float = LAT, lon: float = LON, tz: str = TZ) -> dict:
     url = (
         "https://api.open-meteo.com/v1/forecast"
-        f"?latitude={LAT}&longitude={LON}"
+        f"?latitude={lat}&longitude={lon}"
         "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,"
         "wind_speed_10m_max,weather_code"
         "&hourly=precipitation_probability,temperature_2m"
         "&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch"
-        f"&timezone={TZ}&forecast_days=1"
+        f"&timezone={tz}&forecast_days=1"
     )
     last_err: Exception | None = None
     for attempt in range(_FETCH_RETRIES):
@@ -182,15 +201,63 @@ def _condition_emoji(s: dict) -> str:
     return "🌤️"
 
 
-def _build_message(s: dict) -> str:
-    """The plain daily forecast — no greeting, hype, nicknames, or sign-off."""
+def _build_message(s: dict, city: str = LOCATION) -> str:
+    """The plain daily forecast — no greeting, hype, nicknames, or sign-off.
+    The city is in the header (Megan 2026-09-25) now that ten rooms get one."""
     return "\n".join([
-        f"{_condition_emoji(s)} Today's Weather Forecast",
+        f"{_condition_emoji(s)} Today's Weather Forecast — {city}",
         f"🌡️ Temp: high {s['hi']}°F / low {s['lo']}°F",
         f"🌧️ Precipitation: {_precipitation(s)}",
         f"👕 Recommended dressing: {_recommended_dressing(s)}",
         f"🎒 Recommended to bring: {_recommended_bring(s)}",
     ])
+
+
+def office_posts() -> list:
+    """[(office_key, city_key, [channel_id, ...])] for every ECO office that
+    has a city here AND an approved alert channel. Read-only."""
+    from automations.icd_alerts import post as P
+    approved = P.approved_channels()
+    out = []
+    for key, city in OFFICE_CITY.items():
+        chans = [c.id for c in (approved.get(key) or [])]
+        if chans:
+            out.append((key, city, chans))
+    return out
+
+
+def post_offices(client, *, dry_run: bool, dfw_summary: dict | None = None) -> int:
+    """One forecast per city, one post per office channel. Never raises: a
+    room that fails is logged and the rest still get theirs. Returns how
+    many posts went out (or would have)."""
+    summaries = {"dfw": dfw_summary} if dfw_summary else {}
+    sent, seen = 0, set()
+    for key, city, chans in office_posts():
+        label, lat, lon, tz = CITIES[city]
+        if city not in summaries:
+            try:
+                summaries[city] = _summarize(_fetch_forecast(lat, lon, tz))
+            except Exception as e:  # noqa: BLE001
+                print(f"[weather] {label}: forecast fetch failed: {type(e).__name__}: {e}", flush=True)
+                summaries[city] = None
+        if not summaries[city]:
+            continue
+        msg = _build_message(summaries[city], label)
+        for ch in chans:
+            if ch in seen:            # two office keys, one room (Carlos, Khalil)
+                continue
+            seen.add(ch)
+            if dry_run:
+                print(f"----- would post to {ch} ({key}, {label}) -----\n{msg}", flush=True)
+                sent += 1
+                continue
+            try:
+                client.chat_postMessage(channel=ch, text=msg)
+                print(f"[weather] posted {label} to {ch} ({key}) ✓", flush=True)
+                sent += 1
+            except Exception as e:  # noqa: BLE001
+                print(f"[weather] {key} -> {ch} failed: {type(e).__name__}: {e}", flush=True)
+    return sent
 
 
 def main() -> int:
@@ -212,6 +279,7 @@ def main() -> int:
         print("----- would post to #alphalete-sales -----")
         print(msg)
         print("------------------------------------------")
+        post_offices(None, dry_run=True, dfw_summary=s)
         return 0
 
     try:
@@ -230,6 +298,12 @@ def main() -> int:
         print(f"[weather] Slack post failed: {type(e).__name__}: {e}", flush=True)
         return 1
     print("[weather] posted to #alphalete-sales ✓", flush=True)
+    # THE ECO OFFICES, after Raf's room and never instead of it: a failure
+    # here is logged per room and does not touch the post above.
+    try:
+        post_offices(client, dry_run=False, dfw_summary=s)
+    except Exception as e:  # noqa: BLE001
+        print(f"[weather] office fan-out failed: {type(e).__name__}: {e}", flush=True)
     # Mark the "Lucy Weather Forecast" Hub card green when the 6am job (or a manual
     # run) posts — it runs on its own job, not the 4am batch, so nothing else marks
     # it. Best-effort: never fail the post over a Hub write.
