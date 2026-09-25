@@ -116,7 +116,11 @@ MACHINES: Tuple[Machine, ...] = (
     Machine(
         name="Lucy 1", badge="1",
         ownerville_account="rhidalgo", owner_display_name="Rafael Hidalgo",
-        hostnames=("alphaletes-mac-mini.local",),
+        # Casing as the box itself reports it (`ping`, 2026-09-25); it was
+        # recorded all-lowercase here. Nothing matches these exactly today, but
+        # reference data that disagrees with the machine is how the next reader
+        # gets sent somewhere else.
+        hostnames=("Alphaletes-Mac-mini.local",),
         holds_appstream=True, runs_appstream=True, can_text=True,
         morning_clock_since="2026-08-29", office_onboarding_choice=True,
         note="the original mini; D2D / Raf's org. Reachable by SSH.",
@@ -124,11 +128,27 @@ MACHINES: Tuple[Machine, ...] = (
     Machine(
         name="Lucy 2", badge="2",
         ownerville_account="chidalgo", owner_display_name="Carlos Hidalgo",
+        # THE RUNNER IS THE FIRST NAME ONLY. `ping` on 2026-09-25 answered
+        # `Lucys-MacBook-Neo.local`, and that is the box that runs the jobs.
+        # `Carloss-Mac-mini-2` is Carlos's SEPARATE dev/control Mac mini
+        # (docs/operating-lucy2.md: "Claude Code runs on Carlos's Mac mini …
+        # automations RUN on a separate machine, Lucy 2"). It is listed here on
+        # purpose — deploy/lucy2_digest_daily.sh passes it in `--host` so a run
+        # started from the mini still gets labelled 'Lucy 2' in the digest — but
+        # it is NOT a runner and holds no agents.
+        #
+        # THIS TUPLE HAS ALREADY MISLED A SESSION (2026-09-25). Asked "did Carlos
+        # move the push off Lucy 2?", a reader took `chidalgo` + this hostname to
+        # mean Carlos possesses Lucy 2, and answered "no move — and Lucy 2 IS
+        # Carlos's box". Raf had the MacBook in hand; Carlos had moved the push to
+        # the mini. Nothing here records CUSTODY — `ownerville_account` is a
+        # LOGIN — so do not read one out of it.
         hostnames=("Lucys-MacBook-Neo.local", "Carloss-Mac-mini-2"),
         holds_appstream=True, runs_appstream=True, can_text=False,
         morning_clock_since="2026-08-29", office_onboarding_choice=True,
-        note="Carlos's org / B2B. A LAPTOP: caffeinate does not survive a "
-             "shut lid. SSH (lucy2@) since 2026-09-19, same network as the rest.",
+        note="Carlos's org / B2B — the DATA it works, not who holds it. A "
+             "LAPTOP: caffeinate does not survive a shut lid. SSH (lucy2@) "
+             "since 2026-09-19, same network as the rest.",
     ),
     Machine(
         name="Lucy 3", badge="3",
@@ -141,7 +161,12 @@ MACHINES: Tuple[Machine, ...] = (
     Machine(
         name="Lucy 4", badge="4",
         ownerville_account="rhidalgo", owner_display_name="Rafael Hidalgo",
-        hostnames=(),
+        # Recorded 2026-09-25 from the box's own `ping` — it had been provisioned
+        # for eight days with an EMPTY tuple here, which is how a live runner
+        # ends up looking like a machine nobody can name. Mind the collision:
+        # this is `Lucys-Mac-mini-2`, one word from Lucy 2's `Carloss-Mac-mini-2`
+        # and one character from Lucy 3's `Lucys-Mac-mini`.
+        hostnames=("Lucys-Mac-mini-2.local",),
         # EVERY CAPABILITY FLAG IS OFF AT PROVISIONING, DELIBERATELY.
         # Megan 2026-09-17: built to "run anything", but off the 4am clock until
         # a report is actually routed to it. Turning these on early is the one
@@ -204,6 +229,17 @@ MACHINE_OWNER: Dict[str, str] = {
 #: hostname to a label and deliberately prints an UNKNOWN host raw rather than
 #: guessing, because "Lucys-Mac-mini.local" is Lucy 3 and "Lucys-MacBook-Neo"
 #: is Lucy 2 — any "lucy in the hostname → Lucy 1" shortcut names the wrong box.
+#:
+#: FOUR NAMES, ALL NEARLY THE SAME, ON PURPOSE-ISH. Verified by `ping` on
+#: 2026-09-25, because three of these were wrong or missing before that:
+#:   Alphaletes-Mac-mini.local  Lucy 1
+#:   Lucys-MacBook-Neo.local    Lucy 2  (the runner)
+#:   Lucys-Mac-mini.local       Lucy 3
+#:   Lucys-Mac-mini-2.local     Lucy 4  ← not Lucy 2, despite
+#:   Carloss-Mac-mini-2         Carlos's dev box, filed under Lucy 2 for digests
+#: Nothing imports this map; it is documentation, and `machine_digest` gets its
+#: own list from `--host`. So an edit here is safe — and worth making the moment
+#: a `ping` disagrees with it.
 HOSTNAMES: Dict[str, Tuple[str, ...]] = {m.name: m.hostnames for m in MACHINES}
 
 
