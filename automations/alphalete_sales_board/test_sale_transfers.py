@@ -16,7 +16,8 @@ FORM_HEAD = ["Timestamp",
              "Your Name ﻿﻿(That's getting the sale transferred to)",
              "Name that the Sale is under", "Date of Sale", "Type of Product Sold",
              "Customers Name", "Cx's Number", "SPM #",
-             "Activation Date you Scheduled on Sara+", "Notes", "Status"]
+             "Activation Date you Scheduled on Sara+", "Notes",
+             "Quantity for each Product  ", "Status"]
 
 
 def _grid(rows):
@@ -28,7 +29,7 @@ def _row(name, intr="", up="", dtv="", nl=""):
 
 
 def _form(*rows):
-    return [FORM_HEAD] + [["9/17/2026 3:55:04", to, frm, date, prod, cx, "", spm, "", notes, ""]
+    return [FORM_HEAD] + [["9/17/2026 3:55:04", to, frm, date, prod, cx, "", spm, "", notes, "", ""]
                           for to, frm, date, prod, cx, spm, notes in rows]
 
 
@@ -95,6 +96,39 @@ def test_catch_up_stops_after_seven_days():
     form = _form(("Ana Griffin", "Pranish Shrestha", "9/8/2026", "New Internet", "a", "1", ""))
     todo, notes, late = _todo(form)
     assert late == []
+
+
+def test_quantity_answer_wins():
+    ticked = {"Int": 1, "Int Up": 1, "DTV": 1, "NL": 1}
+    assert T.quantities("New Int – 3 | Upg – 2 | DTV – 1 | NL – 1", ticked)         == ({"Int": 3, "Int Up": 2, "DTV": 1, "NL": 1}, "")
+    assert T.quantities("New Int 1 gig - 2, 2 phones", {"Int": 1, "NL": 1})         == ({"Int": 2, "NL": 2}, "")
+    assert T.quantities("3", {"Int": 1}) == ({"Int": 3}, "")
+
+
+def test_quantity_answer_unreadable_or_off_moves_nothing():
+    assert T.quantities("3", {"Int": 1, "DTV": 1})[1]          # which one?
+    assert T.quantities("New Int - 2", {"Int": 1, "DTV": 1})[1]  # DTV missing
+    assert T.quantities("lots of internet", {"Int": 1})[1]      # no number
+    # A ticked product given as 0 is covered, just not moved.
+    assert T.quantities("Int - 2 | DTV - 0", {"Int": 1, "DTV": 1}) == ({"Int": 2}, "")
+
+
+def test_quantity_column_on_the_form_moves_that_many():
+    form = _form(("Ana Griffin", "Pranish Shrestha", "9/16/2026", "New Internet",
+                  "Terry", "1", ""))
+    form[1][10] = "New Int - 2"
+    todo, notes, late = _todo(form)
+    grid = _grid([_row("Ana Griffin"), _row("Pranish Shrestha", intr="3")])
+    ups, moved, pn = T.plan(grid, WED, todo)
+    assert _cells(ups) == {"E4": "2", "E5": "1"}, (_cells(ups), pn)
+
+
+def test_which_notes_page_a_person():
+    assert T.needs_person("row 176 Bas <- Paris (New Internet): TO not on the board -- x")
+    assert T.needs_person("form row 9: quantity 'lots' does not say which product -- not moved")
+    assert not T.needs_person("[sandbox] row 5 A <- B (DTV): NOT moved -- y")
+    assert not T.needs_person("form row 7: same sale as an earlier row (a, b, c) -- counted once")
+    assert not T.needs_person("no Tuesday block on this tab -- nothing moved")
 
 
 def test_lines_from_notes_and_multi_product():
