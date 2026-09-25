@@ -787,6 +787,40 @@ def make_button(today: dt.date, *, tab=None, include_ona=True,
     else:
         _log("Open this and click 'Copy this week's setup':")
         _log(f"  {out}")
+    # WHAT THIS RUN ACTUALLY DELIVERED, in writing (Megan, 2026-09-24: "wire
+    # the verify"). Until now this card had no `verify` block, so
+    # delivery_check answered `unknown` for it — which cannot close a ticket,
+    # so its incident threads could only ever be closed by hand. See
+    # shared/delivery_check.py for why `unknown` is not permission to go green.
+    #
+    # The deliverable of THIS run is the week's setup: N people built, on the
+    # clipboard, listed on the card. And its real failure is already known by
+    # name here — somebody with no signed Blue Ink packet is NOT in the button,
+    # so nothing will fill them in Apex and nothing will tick them on the OBCL
+    # (Megan, 2026-09-17: "This lian one should be LOUDER"). That is a person
+    # quietly getting missed, so it is `failed`, not a note: delivery_check
+    # reads a non-empty `failed` as NOT_DELIVERED and holds the ticket open
+    # until somebody deals with it.
+    #
+    # alert=False on purpose. The manifest RECORDS the gap — orange card,
+    # NOT_DELIVERED, ticket stays open — without adding a Slack ping nobody
+    # asked for; the packet gap is already shouted in the page notice and the
+    # log above. Turn it on if that turns out to be too quiet.
+    try:
+        from automations.shared.run_manifest import write_manifest
+        write_manifest(
+            "apex-new-starts",
+            failed=list(_by_hand),
+            succeeded=[person["name"] for person in people],
+            ok=bool(people) and not _by_hand,
+            kind="part",
+            note=("{}: {} in the button{}".format(
+                _week, len(people),
+                ", {} with no signed packet".format(len(_by_hand))
+                if _by_hand else "")),
+            alert=False)
+    except Exception as e:  # noqa: BLE001 — never fail a good build over this
+        _log(f"  (could not write the run manifest: {e})")
     # The Hub reads success off this marker, not off the exit code. Without it
     # every clean run was recorded "unknown" and the card printed "Run failed"
     # over a log that plainly said it had worked (Megan, 2026-09-13).

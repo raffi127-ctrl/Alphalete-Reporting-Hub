@@ -1042,6 +1042,16 @@ def _close_recovered_incidents(cfg, reports, dry_run: bool, ts: str) -> int:
             # the channel through the afternoon the work got done — and its own
             # last line promises "this closes itself the moment it runs".
             #
+            # THIS SURVIVED apex-new-starts GETTING ITS `verify` WIRED
+            # (2026-09-24), and the wiring sharpened it rather than retiring it.
+            # It used to be the `unknown` case — nothing could confirm the card
+            # at all. Now the manifest can, and the interesting answer is
+            # NOT_DELIVERED: a week where somebody has no signed Blue Ink packet
+            # is a week where that person gets missed, so the ticket rightly
+            # stays open. But the NUDGE is still false the moment she presses
+            # the button, whatever the packets say. So this covers both verdicts
+            # — it sits under `if not _ok`, not under a test for `unknown`.
+            #
             # Narrow: only for a card DECLARED `nudge_if_not_run`, and only when
             # the parent actually reads as a nudge. A real failure on the same
             # card keeps the gate, because that thread IS about delivery.

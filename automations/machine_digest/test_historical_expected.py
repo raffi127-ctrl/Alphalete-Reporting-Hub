@@ -671,20 +671,24 @@ class TheNudgeClosesItself(unittest.TestCase):
     delivery.
     """
 
-    def test_apex_has_no_verify_wired_which_is_WHY_it_is_gated(self):
-        """The precondition the exception rests on, pinned WITHOUT a network
-        call. `delivery_check.may_close('apex-new-starts')` answers
-        (False, 'unknown', '...its `verify` is not wired and it wrote no
-        manifest today') — but asking it for real reads the Sheet, which turned
-        this suite from 0.05s into minutes and would fail it offline. The local
-        half of that sentence is the half that can change: wire a `verify` here
-        and the ordinary close path starts working, at which point this
-        exception is dead weight and should be removed rather than left quietly
-        widening the gate."""
+    def test_apex_now_has_a_verify_and_the_exception_STILL_holds(self):
+        """THE CANARY FIRED, AND IT WAS RIGHT TO. This test used to pin the
+        opposite — that no `verify` was wired, which was why delivery_check
+        answered `unknown` and the exception was needed. Megan wired it
+        (2026-09-24), this failed, and the failure was the point: it forced the
+        question of whether the exception was now dead weight.
+
+        It is not, and the reason sharpened. With the manifest wired the
+        interesting verdict is no longer `unknown` but NOT_DELIVERED — a week
+        where somebody has no signed Blue Ink packet is a week where that
+        person gets missed, so the ticket rightly stays open. But the NUDGE is
+        false the moment she presses the button, whatever the packets say. So
+        the exception sits under `if not _ok`, covering BOTH verdicts, rather
+        than under a test for `unknown`."""
         from automations.day_orchestrator import registry as _reg
         raw = _reg.load_config().raw["reports"]["apex_new_starts"]
-        self.assertIn(raw.get("verify", {}).get("type", "not_configured"),
-                      ("not_configured", None))
+        self.assertEqual(raw["verify"]["type"], "manifest")
+        self.assertEqual(raw["verify"]["report_id"], "apex-new-starts")
 
     def test_the_close_path_recognises_the_nudge_wording(self):
         """The discriminator is the parent's own prose, the same honest test
@@ -703,3 +707,56 @@ class TheNudgeClosesItself(unittest.TestCase):
                       "*New Starts → Apex* — ran partial on MacBook-Pro-3.local",
                       "*New Starts → Apex* — stuck, never finished"):
             self.assertFalse(any(w in title.lower() for w in _NUDGE_WORDING), title)
+
+
+class TheApexManifestIsTheDeliveryProof(unittest.TestCase):
+    """What `verify: manifest` now lets delivery_check say about this card.
+
+    The deliverable of a run is the week's setup — N people built and on the
+    clipboard. Its failure mode was already known by name in `make_button`:
+    somebody with NO SIGNED BLUE INK PACKET is not in the button, so nothing
+    will fill them in Apex and nothing will tick them on the OBCL. That is a
+    person quietly getting missed (Megan 2026-09-17: "This lian one should be
+    LOUDER"), so it goes in `failed`, not in a note — and a non-empty `failed`
+    is NOT_DELIVERED, which holds the ticket open.
+
+    Driven through `_from_manifest` with a stubbed reader: the real one reads
+    output/manifests/, and a test that writes there would put a fabricated run
+    on Megan's live Hub card.
+    """
+
+    def _verdict(self, manifest, day=dt.date(2026, 9, 24)):
+        import automations.shared.run_manifest as rm
+        from automations.shared import delivery_check as dc
+        real = rm.read_manifest
+        rm.read_manifest = lambda _rid: manifest
+        try:
+            return dc._from_manifest("apex-new-starts", day)
+        finally:
+            rm.read_manifest = real
+
+    def _m(self, **kw):
+        base = {"run_ts": "2026-09-24T15:31:00", "ok": True,
+                "failed": [], "succeeded": ["A", "B"], "kind": "part"}
+        base.update(kw)
+        return base
+
+    def test_everybody_had_a_packet_so_it_delivered(self):
+        verdict, _why = self._verdict(self._m())
+        from automations.shared.delivery_check import DELIVERED
+        self.assertEqual(verdict, DELIVERED)
+
+    def test_a_missing_packet_is_NOT_delivered(self):
+        """The one that matters. That person is not in the button and nothing
+        downstream will ever tick them — the ticket must stay open."""
+        from automations.shared.delivery_check import NOT_DELIVERED
+        verdict, why = self._verdict(
+            self._m(ok=False, failed=["Lian Nguyen"], succeeded=["A"]))
+        self.assertEqual(verdict, NOT_DELIVERED)
+        self.assertIn("Lian Nguyen", why)
+
+    def test_yesterdays_manifest_proves_nothing_about_today(self):
+        """The freshness gate: a run that crashes before writing leaves the
+        PRIOR run's file in place, and a stale ok=true would close a real
+        failure."""
+        self.assertIsNone(self._verdict(self._m(run_ts="2026-09-17T15:31:00")))
