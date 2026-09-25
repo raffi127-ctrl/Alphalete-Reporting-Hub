@@ -164,7 +164,12 @@ def _scheduled_merges() -> None:
             continue
         o = config.office(key)
         config.use(o)
-        print(f"[scheduled merge] {key}:", post.merge_dups(o["live_channel"], today))
+        got = post.merge_dups(o["live_channel"], today)
+        # One line per thread: `lucy logtail` cuts a long line before the
+        # reason (Khalil 9/25: the whole dict on one line hid why one stayed).
+        print(f"[scheduled merge] {key}: {len(got)} thread(s)")
+        for name, what in got.items():
+            print(f"[scheduled merge] {key} · {name}: {what}")
         state = post._load_state()
         state.setdefault("_scheduled_merges_done", {})[tag] = dt.datetime.now(
             collect.CENTRAL).isoformat(timespec="minutes")
@@ -297,7 +302,9 @@ def main(argv=None) -> int:
         from automations.ad_photo_threads import config, post
         got = post.merge_dups(a.channel or config.LIVE_CHANNEL_ID, day,
                               dry_run=a.dry_run_notes)
-        print("Merge duplicates:", got or "none this week")
+        print("Merge duplicates:", len(got) or "none this week")
+        for name, what in got.items():
+            print(f"  {name}: {what}")
         return 0
     rep = collect.build(day)
     print(summary(rep))

@@ -321,7 +321,7 @@ TITLE_ALIASES: dict = {}
 # {office key: "YYYY-MM-DD"}; each runs once (state remembers it).
 SCHEDULED_MERGES = {
     "colten": "2026-09-25",   # Valeria's ad list + Entry Level AM in one thread (Eve 9/24)
-    "khalil": "2026-09-25",   # Maddie's ad list: Garland Wireless x3 + Retail 3 locations x2
+    "khalil": "2026-09-26",   # Maddie's ad list; 9/25 run left Retail Bilingual 3 locations, rerun to see why
     "isaiah": "2026-09-25",   # Maddie: city-less Wireless / Event Marketing = the 3-locations ad
     "drew": "2026-09-25",     # Valeria: Team Member / Customer (Service) Rep without a city
     "salik": "2026-09-25",    # Maddie: city-less titles = the one live ad (Dearborn, Sterling Hts, Livonia)
