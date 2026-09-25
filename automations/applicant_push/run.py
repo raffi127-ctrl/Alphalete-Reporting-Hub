@@ -247,7 +247,10 @@ def run(live: bool = False, limit: int = None, max_actions: int = None,
 # Resume Pushing login — Carlos: "push resumes for all three of Raf's applicant
 # streams". This set and that login assignment are the two independent bounds on
 # an irreversible send; keep them in step.
-PUSH_ALLOWED = {"11580", "23467", "11901", "23965", "11280", "24065"}
+# 2026-09-24 (Carlos): STOP pushing for his own office and ALL of Raf's —
+# "have this device, lucy2 & lucy4 not push resumes for all of rafs app
+# streams and my app stream". Only Atef and Khalil stay live.
+PUSH_ALLOWED = {"23467", "11901"}
 
 
 def _dm_shots(shots_dir, office) -> None:
