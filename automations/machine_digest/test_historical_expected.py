@@ -7,6 +7,7 @@ Tuesday, once Tuesday had two. The daily-cadence path closes that hole; these
 tests pin both it and the weekend false-positives it must NOT create.
 """
 import datetime as dt
+import pathlib
 import unittest
 
 from automations.machine_digest.run import (_historical_expected, _handrun_only_ids,
@@ -760,3 +761,84 @@ class TheApexManifestIsTheDeliveryProof(unittest.TestCase):
         PRIOR run's file in place, and a stale ok=true would close a real
         failure."""
         self.assertIsNone(self._verdict(self._m(run_ts="2026-09-17T15:31:00")))
+
+
+class TheMissingPacketAlert(unittest.TestCase):
+    """Megan, 2026-09-24: "turn on the alert for the missing packet" — after it
+    shipped `alert=False` a few hours earlier so that wiring the verify would
+    not smuggle in a Slack ping. Quiet was the wrong side to land on: she had
+    already said so on 9/17 about this exact case ("This lian one should be
+    LOUDER"), and the page notice and the log only reach somebody already
+    looking.
+
+    THE KIND IS THE POINT. digi_docs paid for this on 2026-09-14: `finding` is
+    worded for a board audit, so fifteen people with no onboarding documents
+    reached Raf's office as "15 board data-quality findings" with a fix line
+    about "Roll Call status, Stations formula, …" and a closing "nothing is
+    missing". `part` lands the same way — a person is not a section.
+    """
+
+    def _manifest_call(self):
+        """The write_manifest(...) keywords, read from the AST.
+
+        NOT a substring search over the source: the first version of this test
+        matched `alert=False` inside the COMMENT explaining why it is no longer
+        false, and failed on prose. The call is the thing being asserted, so
+        parse the call.
+        """
+        import ast
+        from automations.apex_new_starts import run as apex
+        tree = ast.parse(pathlib.Path(apex.__file__).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call)
+                    and getattr(node.func, "id", "") == "write_manifest"
+                    and node.args
+                    and getattr(node.args[0], "value", "") == "apex-new-starts"):
+                return {kw.arg: kw.value for kw in node.keywords}
+        self.fail("no write_manifest('apex-new-starts', ...) call found")
+
+    def test_it_alerts(self):
+        """No `alert=False` on the call any more — it defaults to alerting."""
+        import ast
+        kws = self._manifest_call()
+        if "alert" in kws:
+            self.assertNotEqual(getattr(kws["alert"], "value", None), False)
+
+    def test_the_kind_is_blocked_person_and_not_a_board_word(self):
+        import ast
+        kind = self._manifest_call().get("kind")
+        self.assertIsNotNone(kind)
+        self.assertEqual(getattr(kind, "value", None), "blocked_person")
+
+    def test_that_kind_is_worded_for_people_not_sections(self):
+        """Pins the wording itself, so a future edit to _KINDS that makes this
+        read like a board audit again fails here instead of in Raf's office."""
+        from automations.shared import section_drop_alert as sda
+        spec = sda._KINDS["blocked_person"]
+        self.assertIn("new start", spec["what"])
+        self.assertIn("does not clear them", spec["fix"])
+        self.assertTrue(spec.get("bullets"))
+
+    def test_it_still_reads_as_NOT_delivered(self):
+        """The alert must not quietly turn the verdict green. Only 'finding'
+        and 'unfilled_icd' are read as "ran and delivered, with findings", and
+        blocked_person is deliberately neither — somebody here gets missed."""
+        import automations.shared.run_manifest as rm
+        from automations.shared import delivery_check as dc
+        m = {"run_ts": "2026-09-24T15:31:00", "ok": False, "kind": "blocked_person",
+             "failed": ["Lian N — no signed Blue Ink packet"], "succeeded": ["A"]}
+        real = rm.read_manifest
+        rm.read_manifest = lambda _rid: m
+        try:
+            verdict, _why = dc._from_manifest("apex-new-starts", dt.date(2026, 9, 24))
+        finally:
+            rm.read_manifest = real
+        self.assertEqual(verdict, dc.NOT_DELIVERED)
+
+    def test_its_thread_cannot_collide_with_the_nudge(self):
+        """Different namespaces on purpose: the packet alert is a finding a
+        re-run can't clear, the nudge is a standalone- thread that closes the
+        moment somebody presses the button."""
+        from automations.shared import section_drop_alert as sda
+        self.assertEqual(sda._incident_key("apex-new-starts", "blocked_person"),
+                         "finding-apex-new-starts")

@@ -802,23 +802,48 @@ def make_button(today: dt.date, *, tab=None, include_ona=True,
     # reads a non-empty `failed` as NOT_DELIVERED and holds the ticket open
     # until somebody deals with it.
     #
-    # alert=False on purpose. The manifest RECORDS the gap — orange card,
-    # NOT_DELIVERED, ticket stays open — without adding a Slack ping nobody
-    # asked for; the packet gap is already shouted in the page notice and the
-    # log above. Turn it on if that turns out to be too quiet.
+    # IT ALERTS (Megan, 2026-09-24: "turn on the alert for the missing
+    # packet"). It shipped alert=False a few hours earlier so wiring the verify
+    # would not smuggle in a new Slack ping — but quiet was the wrong side to
+    # land on for this one, and she had already said so on 9/17 about this
+    # exact case: "This lian one should be LOUDER". The page notice and the log
+    # only reach somebody who is already looking.
+    #
+    # kind='blocked_person', NOT 'part'. The wording matters and digi_docs paid
+    # for the lesson on 2026-09-14: 'finding' is written for a board audit, so
+    # fifteen people with no onboarding documents reached Raf's office as "15
+    # board data-quality findings" with a fix line about "Roll Call status,
+    # Stations formula, …" and a closing "nothing is missing". 'part' would
+    # land the same way here — a person is not a section. 'blocked_person' says
+    # what is true: "could not process N blocked new starts — the run finished;
+    # these names did not", and its fix line is the right advice, because
+    # re-running does NOT clear them. The packet has to get signed first.
+    #
+    # Each name carries its own reason, which is what that kind's thread
+    # bullets and its "each name carries its own reason" fix line promise.
+    #
+    # It stays NOT_DELIVERED for delivery_check: only 'finding' and
+    # 'unfilled_icd' are read as "ran and delivered, with findings", and this
+    # is deliberately neither — somebody here gets missed. The Hub pill is
+    # ORANGE rather than red whenever anyone DID get built (outcome() reads
+    # succeeded+failed as partial); a week where NOBODY has a packet builds
+    # nothing at all, and red is honest for that.
     try:
         from automations.shared.run_manifest import write_manifest
         write_manifest(
             "apex-new-starts",
-            failed=list(_by_hand),
+            failed=["{} — no signed Blue Ink packet, so they are not in the "
+                    "button: nothing will fill them in Apex and nothing will "
+                    "tick them on the OBCL".format(n) for n in _by_hand],
             succeeded=[person["name"] for person in people],
             ok=bool(people) and not _by_hand,
-            kind="part",
-            note=("{}: {} in the button{}".format(
-                _week, len(people),
-                ", {} with no signed packet".format(len(_by_hand))
-                if _by_hand else "")),
-            alert=False)
+            kind="blocked_person",
+            note=("{}: {} in the button{}. The run itself was fine — these "
+                  "names need their Blue Ink packet signed, and re-running "
+                  "this will not change that.".format(
+                      _week, len(people),
+                      ", {} with no signed packet".format(len(_by_hand))
+                      if _by_hand else "")))
     except Exception as e:  # noqa: BLE001 — never fail a good build over this
         _log(f"  (could not write the run manifest: {e})")
     # The Hub reads success off this marker, not off the exit code. Without it
