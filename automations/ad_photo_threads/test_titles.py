@@ -152,3 +152,16 @@ class AliasTests(unittest.TestCase):
     def test_no_alias_no_change(self):
         book = TitleBook(["Entry Level Assistant Manager"] * 5 + ["Entry Level Assistant Manager – Doral FL"] * 3)
         self.assertEqual(len(book.ads), 2)
+
+    def test_another_city_is_another_ad_not_a_typo(self):
+        # 9/25 Isaiah: Irving scored 0.93 against Garland and was merged into it.
+        g = "AT&T Retail Associate (Bilingual Spanish Required) – Garland TX"
+        i = "AT&T Retail Associate (Bilingual Spanish Required) – Irving TX"
+        book = TitleBook([g] * 9 + [i] * 5)
+        self.assertEqual(len(book.ads), 2)
+        self.assertEqual(book.resolve(i), norm(i))
+
+    def test_a_mistyped_city_still_folds(self):
+        a = "AT&T Retail Associate (Bilingual Spanish Required) – Arlington TX"
+        book = TitleBook([a] * 9 + [a.replace("Arlington", "Arlingotn")] * 3)
+        self.assertEqual(len(book.ads), 1)

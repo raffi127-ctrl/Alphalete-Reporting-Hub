@@ -246,6 +246,43 @@ _ALIASES = {
         "Entry Level Assistant Manager – Doral FL": "Entry Level Assistant Manager",
         "Entry Level Assistant Manager – Princeton FL": "Entry Level Assistant Manager",
     },
+    # Khalil 9/25 (Maddie, his live ad list): Garland has ONE Wireless
+    # Associate ad, "(Spanish)". The Retail Associate "3 locations" ad is
+    # typed with and without "Bilingual": one ad, one thread.
+    "khalil": {
+        "AT&T Wireless Associate, Garland, TX": "AT&T Wireless Associate (Spanish), Garland, TX",
+        "AT&T Wireless Associate(Spanish Required), Garland, TX": "AT&T Wireless Associate (Spanish), Garland, TX",
+        "AT&T Wireless Associate (Spanish Required), Garland, TX": "AT&T Wireless Associate (Spanish), Garland, TX",
+        "AT&T Retail Associate (Bilingual Spanish Required) – 3 locations": "AT&T Retail Associate (Spanish Required), 3 locations",
+    },
+    # Isaiah 9/25 (Maddie): Indeed ran these as ONE ad in 3 locations without
+    # saying which city each person applied to, so the copy typed without a
+    # city is the 3-locations ad. "AT&T Team Member" has no such ad: stays.
+    "isaiah": {
+        "AT&T Wireless Associate - Spanish Required": "AT&T Wireless Associate - Spanish Required – 3 locations",
+        "Event Marketing & Sales Associate (Spanish Required)": "Event Marketing & Sales Associate (Spanish Required) – 3 locations",
+    },
+    # Drew 9/25 (Valeria, his live ad list): plain "AT&T Team Member" is the
+    # Ocoee ad; Orlando's is "(Bilingual Required)". A title typed without its
+    # city folds onto the one ad with that title (as Colten).
+    "drew": {
+        "AT&T Team Member": "AT&T Team Member – Ocoee FL",
+        "AT&T Team Member (Bilingual Required) – Orlando FL": "AT&T Team Member – Orlando FL",
+        "Customer Service Representative": "AT&T Customer Service Representative – Alafaya FL",
+        "Immediate Hiring: AT&T Customer Service Representative – Alafaya FL": "AT&T Customer Service Representative – Alafaya FL",
+        "Customer Representative": "Customer Representative – Casselberry FL",
+    },
+    # Salik 9/25 (Maddie, his live ad list): from 9/22 on the interviewers
+    # stopped typing the city, and the city-less rows start after the older
+    # city (Hazel Park, Ferndale) stopped, so each is the ONE live ad with that
+    # title. Left alone: "AT&T Sales Agent" (live in Southfield AND Southgate),
+    # "Entry Level Account Representative" (no longer live), "AT&T Retail
+    # Sales Rep" (not on the list).
+    "salik": {
+        "AT&T Retail Sales Associate": "AT&T Retail Sales Associate – Dearborn MI",
+        "Entry Level AT&T Team Member": "Entry Level AT&T Team Member – Sterling Heights MI",
+        "Entry Level Sales Representative -AT&T": "Entry Level Sales Representative -AT&T – Livonia MI",
+    },
 }
 
 OFFICES += [
@@ -284,6 +321,10 @@ TITLE_ALIASES: dict = {}
 # {office key: "YYYY-MM-DD"}; each runs once (state remembers it).
 SCHEDULED_MERGES = {
     "colten": "2026-09-25",   # Valeria's ad list + Entry Level AM in one thread (Eve 9/24)
+    "khalil": "2026-09-26",   # Maddie's ad list; 9/25 run left Retail Bilingual 3 locations, rerun to see why
+    "isaiah": "2026-09-25",   # Maddie: city-less Wireless / Event Marketing = the 3-locations ad
+    "drew": "2026-09-25",     # Valeria: Team Member / Customer (Service) Rep without a city
+    "salik": "2026-09-25",    # Maddie: city-less titles = the one live ad (Dearborn, Sterling Hts, Livonia)
 }
 
 
