@@ -7,7 +7,7 @@ Sheets-API + Slack only — no browser, no AppStream login. Reads the per-office
 'OAT Walk Diag' tabs on the Mini Control sheet (the walk appends one row per
 run: timestamp, 'startQueue -> endQueue', outcome counts) and DMs:
 
-  <office>: N pushed today | M left in OAT (as of HH:MM)
+  <office>: N pushed · M left @ H:MM PM
 
 Also flags a machine whose offices have posted NO new diag row for over 2h
 inside the 7am-10pm push window — that is the walk being down, not quiet.
@@ -61,6 +61,18 @@ STALE_AFTER_MIN = 120
 WINDOW = (7, 22)  # push window, hours local
 
 
+def _hm12(text: str) -> str:
+    """'20:33' -> '8:33 PM'. Built by hand, not strftime: the no-pad hour flag
+    is glibc/BSD-only (report_validation._chk_windows rejects it on sight) and
+    plain %I pads to '08:33'. Same 6-liner as hub_cards._icd_hm12 /
+    disposition_signup._ampm."""
+    try:
+        h, m = [int(x) for x in str(text).split(":")[:2]]
+    except Exception:  # noqa: BLE001
+        return str(text)
+    return "%d:%02d %s" % (h % 12 or 12, m, "AM" if h < 12 else "PM")
+
+
 def build_report() -> str:
     from automations.recruiting_report import fill as _fill
     sh = _fill._client().open_by_key(CONTROL_SHEET)
@@ -85,9 +97,12 @@ def build_report() -> str:
             continue
         m2 = re.search(r"->\s*(\d+)", rows[-1][1] if len(rows[-1]) > 1 else "")
         left = m2.group(1) if m2 else "?"
-        at = rows[-1][0][11:16]
-        lines.append("%s: %d pushed today | %s left in OAT (as of %s)"
-                     % (label, sent, left, at))
+        # Raf, 2026-09-25: "this dm needs to not be military time and shortened
+        # up". The as-of is a RAW SLICE of the diag tab's timestamp cell
+        # ('2026-09-24 20:33:12'), which is why it read as military — it was
+        # never a datetime, so nothing ever formatted it. _hm12 does now.
+        at = _hm12(rows[-1][0][11:16])
+        lines.append("%s: %d pushed · %s left @ %s" % (label, sent, left, at))
         try:
             ts = dt.datetime.strptime(rows[-1][0], "%Y-%m-%d %H:%M:%S")
             if machine not in machine_last or ts > machine_last[machine]:
@@ -98,11 +113,14 @@ def build_report() -> str:
         for machine, last in sorted(machine_last.items()):
             if (now - last).total_seconds() / 60 > STALE_AFTER_MIN:
                 lines.append(":warning: %s has posted nothing since %s — the "
-                             "walk may be down" % (machine, last.strftime("%H:%M")))
+                             "walk may be down"
+                             % (machine, _hm12(last.strftime("%H:%M"))))
         for machine in ("Lucy 2", "Lucy 4"):
             if machine not in machine_last:
                 lines.append(":warning: %s has posted NO runs today" % machine)
-    return ("*Push report %s*\n" % now.strftime("%-I:%M %p")) + "\n".join(lines)
+    # Header unchanged in LOOK ('Push report 8:37 PM') — but no longer via the
+    # no-pad hour flag, which is glibc/BSD-only and fails the validation gate.
+    return ("*Push report %s*\n" % _hm12(now.strftime("%H:%M"))) + "\n".join(lines)
 
 
 def _shots_dirs():
