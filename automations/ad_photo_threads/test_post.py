@@ -500,6 +500,32 @@ class MergeOldCompanyKeyTests(PublishTests):
         self.assertIn("moved 1", list(got.values())[0])
         self.assertIn("Bo Dos", cl.uploads[0]["initial_comment"])
 
+    def test_key_with_tail_finds_a_row_typed_without_it(self):
+        # 9/25 Khalil: thread saved as "... 3 locations everforward", the
+        # sheet row now reads "..., 3 locations" (no tail) -- still theirs.
+        base = "AT&T Retail Associate (Spanish Required), 3 locations"
+        row = "AT&T Retail Associate (Bilingual Spanish Required), 3 locations"
+        img = {"id": "F1", "mimetype": "image/png"}
+        book = TitleBook([base] * 5, aliases={row: base})
+        rep = collect.DayReport(day=dt.date(2026, 9, 16), book=book)
+        rep.candidates = [
+            collect.Candidate("Ana Uno", base, "A", "Qualify", "", "x", ad=norm(base), images=[img]),
+            collect.Candidate("Diana Dos", row, "A", "Qualify", "", "x", ad=norm(base), images=[img])]
+        post.publish(rep, "C1", cl=FakeSlack())
+        st = post._load_state()
+        wk = st["C1"]["weeks"][post.bucket(rep.day)]
+        for k in [k for k in wk if k != norm(base)]:
+            del wk[k]
+        wk[norm(row) + " everforward"] = {"thread_ts": "57.0", "days": ["2026-09-16"], "title": "dup"}
+        post._save_state(st)
+        cl = FakeSlack(); cl.auth_test = lambda: {"user_id": "ULUCY"}
+        cl.chat_delete = lambda **kw: None
+        cl.files_delete = lambda **kw: None
+        got = post.merge_dups("C1", rep.day, build=lambda d: rep, cl=cl)
+        self.assertIn("moved 1", got["dup"])
+        self.assertIn("Diana Dos", cl.uploads[0]["initial_comment"])
+        self.assertNotIn("Ana Uno", cl.uploads[0]["initial_comment"])
+
     def test_merge_never_deletes_a_thread_whose_people_it_cant_find(self):
         base = "Retail Associate, Euless, TX"
         rep = collect.DayReport(day=dt.date(2026, 9, 22), book=TitleBook([base] * 5))

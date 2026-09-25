@@ -713,14 +713,21 @@ def merge_dups(channel: str, day: dt.date, *, build=None, cl=None,
         moved = 0
         # Days already moved (a run that died before the delete): not re-posted.
         done = tgt.setdefault("merged", {}).setdefault(key, [])
+        # The key minus its company tail, when no other thread owns that: 9/25
+        # Khalil's "... 3 locations – Everforward" thread was saved WITH the
+        # tail, but its person's sheet row now reads "..., 3 locations" (no
+        # tail), so matching the saved key alone found nobody.
+        keys = {key}
+        if titles.norm(key) not in wk:
+            keys.add(titles.norm(key))
         for d in sorted(ad.get("days") or []):
             rep = rep_for(d)
             # The duplicate's own candidates: their title made THIS key --
             # with today's norm, or with the pre-9/23 one that kept the
             # company tail (9/23 Carlos: matching only today's norm found
             # nobody, and the duplicate was deleted with its candidates).
-            cands = [c for c in rep.candidates if c.ad == target and key in (
-                titles.norm(c.title_raw), titles.norm_keep_company(c.title_raw))]
+            cands = [c for c in rep.candidates if c.ad == target and keys & {
+                titles.norm(c.title_raw), titles.norm_keep_company(c.title_raw)}]
             moved += len(cands)
             if not cands or d in done or dry_run:
                 continue
