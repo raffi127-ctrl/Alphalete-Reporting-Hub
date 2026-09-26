@@ -413,3 +413,23 @@ class JoinMissTest(unittest.TestCase):
     def test_a_clean_join_reports_nothing(self):
         convos = {"4698762121": {"phone": "4698762121", "msgs": []}}
         self.assertEqual(A.join_misses(convos, {"4698762121": {}}), [])
+
+
+class SuffixPairingTest(unittest.TestCase):
+    """A backfilled column must take BOTH halves from the same pull. It did
+    not once: load_office honoured --suffix and load_log did not, so WE 9/4
+    got its reply speeds, questions and flags from the week of 9/25 and the
+    two columns came out identical (Megan spotted it: "these are identical")."""
+
+    def test_a_suffixed_log_that_does_not_exist_returns_nothing(self):
+        rows, src = A.load_log("11580", "definitely-not-a-real-pull")
+        self.assertEqual(rows, [])
+        self.assertIn("no output/", src)
+
+    def test_a_suffixed_load_never_falls_back_to_the_current_week(self):
+        # the unsuffixed file may well exist; a suffixed ask must not take it
+        rows, src = A.load_log("11580", "0904")
+        if rows:
+            self.assertIn("_0904", src)
+        else:
+            self.assertIn("no output/", src)

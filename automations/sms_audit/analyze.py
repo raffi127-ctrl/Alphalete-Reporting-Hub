@@ -173,12 +173,22 @@ def phone10(raw):
     return digits[-10:] if len(digits) >= 10 else ""
 
 
-def load_log(office):
+def load_log(office, suffix=""):
     """Every message for the office, from the p=336 SMS List Report pull:
-    local output/sms_log_<office>.json first, else the sheet tab."""
-    local = OUTPUT_DIR / "sms_log_{}.json".format(office)
+    local output/sms_log_<office>.json first, else the sheet tab.
+
+    `suffix` must match the one `load_office` was given. It did not, once, and
+    a backfilled WE 9/4 column quietly took its reply speeds, questions and
+    flags from the CURRENT week's log — two different weeks inside one column,
+    which is how WE 9/4 and WE 9/25 came out identical. A suffixed run with no
+    matching log returns nothing, so those rows stay blank rather than
+    borrowing another week's answer."""
+    local = OUTPUT_DIR / "sms_log_{}{}.json".format(
+        office, "_" + suffix if suffix else "")
     if local.exists():
         return json.loads(local.read_text()), "output/{}".format(local.name)
+    if suffix:
+        return [], "no output/{}".format(local.name)
 
     from automations.recruiting_report import fill as _fill
     tab = "{} {}".format(LOG_TAB_PREFIX, office)

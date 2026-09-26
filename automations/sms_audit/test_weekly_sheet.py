@@ -26,12 +26,12 @@ class LabelLookupTest(unittest.TestCase):
     def test_a_metric_is_found_by_its_label_wherever_it_sits(self):
         values = [["Applicant text audit"],
                   ["", "", "09/18/26"],
-                  ["Reach", "People texted", "100"],
+                  ["Reach", "People we texted", "100"],
                   ["", "", ""],                       # a gap somebody left
-                  ["Booking", "Booked by the AI", "40"]]
+                  ["Booking", "…booked by the AI", "40"]]
         rows = W._label_rows(values)
-        self.assertEqual(rows["People texted"], 3)
-        self.assertEqual(rows["Booked by the AI"], 5)
+        self.assertEqual(rows["People we texted"], 3)
+        self.assertEqual(rows["…booked by the AI"], 5)
 
     def test_a_blank_label_is_not_a_row(self):
         self.assertNotIn("", W._label_rows([["Reach", ""], ["", "  "]]))
@@ -41,7 +41,7 @@ class WeekColumnTest(unittest.TestCase):
     def test_week_headers_are_read_off_the_header_row(self):
         values = [["Applicant text audit"],
                   ["", "", "09/18/26", "09/25/26"],
-                  ["Reach", "People texted", "100", "120"]]
+                  ["Reach", "People we texted", "100", "120"]]
         cols = W._week_columns(values)
         self.assertEqual(cols[dt.date(2026, 9, 18)], 3)
         self.assertEqual(cols[dt.date(2026, 9, 25)], 4)
@@ -100,9 +100,9 @@ class BlankNotZeroTest(unittest.TestCase):
     def test_log_only_metrics_are_blank_without_a_log(self):
         rep = {"log": None, "threads": 5, "mix": {"ai": 2, "human": 3}}
         by_label = {label: fn for _s, label, fn in W.ROWS}
-        self.assertEqual(by_label["People texted"](rep), "")
-        self.assertEqual(by_label["Reply rate %"](rep), "")
-        self.assertEqual(by_label["AI reply, median minutes"](rep), "")
+        self.assertEqual(by_label["People we texted"](rep), "")
+        self.assertEqual(by_label["% who texted back"](rep), "")
+        self.assertEqual(by_label["Minutes for the AI to reply (typical)"](rep), "")
 
     def test_a_rate_over_nothing_is_blank_not_zero(self):
         self.assertEqual(W._rate(0, 0), "")
@@ -113,8 +113,8 @@ class BlankNotZeroTest(unittest.TestCase):
         rep = {"log": None, "threads": 10, "mix": {"ai": 6, "human": 4}}
         by_label = {label: fn for _s, label, fn in W.ROWS}
         self.assertEqual(by_label["Booked a 1st interview"](rep), 10)
-        self.assertEqual(by_label["Booked by the AI"](rep), 6)
-        self.assertEqual(by_label["AI share of bookings %"](rep), 60.0)
+        self.assertEqual(by_label["…booked by the AI"](rep), 6)
+        self.assertEqual(by_label["% of bookings made by the AI"](rep), 60.0)
 
 
 class TabNameTest(unittest.TestCase):
@@ -205,7 +205,7 @@ class WeekHeaderTest(unittest.TestCase):
         self.assertEqual(W.parse_week_header("WE 9/25/26"), dt.date(2026, 9, 25))
 
     def test_a_label_is_not_a_week(self):
-        for junk in ("People texted", "", "Reach", "Q: What is the pay?"):
+        for junk in ("People we texted", "", "Reach", "Q: What is the pay?"):
             self.assertIsNone(W.parse_week_header(junk))
 
 
@@ -270,7 +270,7 @@ class NoMessagesIsBlankTest(unittest.TestCase):
         by_label = {label: fn for _s, label, fn in W.ROWS}
         for label in ("Questions asked", "Questions we couldn't group",
                       "Most asked → what we usually reply",
-                      "Left unanswered", "Texts sent before 8am or after 9pm",
+                      "Applicants left waiting on a reply", "Texts sent before 8am or after 9pm",
                       "Texted after they said stop", "Broken links sent"):
             self.assertEqual(by_label[label](rep), "", label)
 
@@ -278,7 +278,7 @@ class NoMessagesIsBlankTest(unittest.TestCase):
         rep = self._bookings_only()
         by_label = {label: fn for _s, label, fn in W.ROWS}
         self.assertEqual(by_label["Booked a 1st interview"](rep), 832)
-        self.assertEqual(by_label["Booked by the AI"](rep), 364)
+        self.assertEqual(by_label["…booked by the AI"](rep), 364)
 
     def test_with_messages_a_zero_is_a_real_zero(self):
         import collections
@@ -359,3 +359,53 @@ class CoverageRowTest(unittest.TestCase):
 
     def test_it_is_the_first_row_so_it_is_read_before_the_numbers(self):
         self.assertEqual(W.ROWS[0][1], "1st-interview days covered")
+
+
+class PlainLabelTest(unittest.TestCase):
+    """Megan, twice: "Applicants over the carrier limit — what does this
+    mean?" and "median minutes / Person's reply — this verbiage is
+    confusing". A label a non-technical person has to ask about is a broken
+    label."""
+
+    def test_no_statistician_words(self):
+        for _sec, label, _fn in W.ROWS:
+            low = label.lower()
+            for word in ("median", "p90", "rate,", "carrier limit", "bucket",
+                         "person's"):
+                self.assertNotIn(word, low, label)
+
+    def test_a_percent_row_says_what_of_what(self):
+        for _sec, label, _fn in W.ROWS:
+            if "%" in label:
+                self.assertTrue(label.startswith("%") or "%" in label.split()[-1],
+                                "{!r} does not read as a percentage of "
+                                "something".format(label))
+
+
+class RenameTest(unittest.TestCase):
+    """Rewording a label has to RENAME the row, not add a new one and leave
+    the old one holding real weeks above it."""
+
+    def _rep(self):
+        import collections
+        return {"office": "11280", "threads": 10, "questions_total": 0,
+                "questions": collections.Counter(), "questions_other": [],
+                "mix": {"ai": 6, "human": 4}, "unanswered": [], "messages": 0,
+                "anomalies": {}, "log": None, "question_table": [],
+                "dates": ["09-25-2026"]}
+
+    def test_every_old_label_points_at_a_live_one(self):
+        live = {label for _s, label, _f in W.ROWS}
+        for old, new in W.RENAMED.items():
+            self.assertIn(new, live, "{} -> {} is not a row any more".format(old, new))
+            self.assertNotIn(old, live, "{} is both old and current".format(old))
+
+    def test_an_old_tab_gets_its_labels_rewritten_in_place(self):
+        class _Tab(W._EmptyTab):
+            def get_all_values(self):
+                return [["Applicant text audit"], ["", "", "WE 9/18"],
+                        ["Reach", "People texted", "100"],
+                        ["Speed", "AI reply, median minutes", "1"]]
+        col, _n = W.write_week(_Tab("t"), self._rep(), dt.date(2026, 9, 25),
+                               dry_run=True)
+        self.assertEqual(col, 4)   # the old week keeps its column

@@ -115,6 +115,38 @@ def question_cell(rep):
     return "\n\n".join(out)
 
 
+# When a label is reworded, the row it names has to be RENAMED in place, not
+# added below with the old one left holding real weeks above it. Old -> new;
+# entries stay for good, they cost nothing and removing one silently splits a
+# row in two the next time somebody rebuilds an old tab.
+RENAMED = {
+    'People texted': 'People we texted',
+    'Replied to us': 'People who texted back',
+    'Reply rate %': '% who texted back',
+    'Messages sent + received': 'Total messages (sent + received)',
+    'Booked by the AI': '…booked by the AI',
+    'Booked by a recruiter': '…booked by a recruiter',
+    'AI share of bookings %': '% of bookings made by the AI',
+    'Texted → booked %': '% of people texted who booked',
+    'Never booked': 'Texted but never booked',
+    'Showed up': 'Showed up to their interview',
+    'Show rate, AI bookings %': '% who showed — AI bookings',
+    'Show rate, recruiter bookings %': '% who showed — recruiter bookings',
+    'AI reply, median minutes': 'Minutes for the AI to reply (typical)',
+    "Person's reply, median minutes": 'Minutes for a recruiter to reply (typical)',
+    "Person's replies within 5 min %": '% of recruiter replies within 5 minutes',
+    'Left unanswered': 'Applicants left waiting on a reply',
+    "Interview days in this column": "1st-interview days covered",
+    "Didn't fit a bucket": "Questions we couldn't group",
+    "Applicants over the carrier limit": "Applicants texted 4+ times, no reply",
+    "Texts outside 8am–9pm": "Texts sent before 8am or after 9pm",
+    "Dead links sent": "Broken links sent",
+    "Not delivered": "Texts that never arrived",
+    "…of those, never booked": "…of those, never booked an interview",
+    "Bookings with no message logged": "Bookings with no texts on file",
+}
+
+
 def _msg(fn):
     """Wrap a metric that is computed from MESSAGES so it writes blank when no
     messages were pulled.
@@ -182,34 +214,34 @@ def days_cell(rep, week_end=None):
 
 ROWS = [
     ("Week", "1st-interview days covered", days_cell),
-    ("Reach", "People texted", lambda r: _f(r, "contacted", "")),
-    ("Reach", "Replied to us", lambda r: _f(r, "replied", "")),
-    ("Reach", "Reply rate %", lambda r: _rate(_f(r, "replied"), _f(r, "contacted"))),
-    ("Reach", "Messages sent + received", lambda r: (r.get("log") or {}).get("rows", "")),
+    ("Reach", "People we texted", lambda r: _f(r, "contacted", "")),
+    ("Reach", "People who texted back", lambda r: _f(r, "replied", "")),
+    ("Reach", "% who texted back", lambda r: _rate(_f(r, "replied"), _f(r, "contacted"))),
+    ("Reach", "Total messages (sent + received)", lambda r: (r.get("log") or {}).get("rows", "")),
     ("Reach", "Bookings with no texts on file", lambda r: _f(r, "join_misses", "")),
 
     ("Booking", "Booked a 1st interview", lambda r: _f(r, "booked", r["threads"])),
-    ("Booking", "Booked by the AI", lambda r: _f(r, "booked_ai", r["mix"]["ai"])),
-    ("Booking", "Booked by a recruiter", lambda r: _f(r, "booked_human", r["mix"]["human"])),
-    ("Booking", "AI share of bookings %",
+    ("Booking", "…booked by the AI", lambda r: _f(r, "booked_ai", r["mix"]["ai"])),
+    ("Booking", "…booked by a recruiter", lambda r: _f(r, "booked_human", r["mix"]["human"])),
+    ("Booking", "% of bookings made by the AI",
      lambda r: _rate(_f(r, "booked_ai", r["mix"]["ai"]), _f(r, "booked", r["threads"]))),
-    ("Booking", "Texted → booked %", lambda r: _rate(_f(r, "booked"), _f(r, "contacted"))),
-    ("Booking", "Never booked", lambda r: _f(r, "never_booked", "")),
+    ("Booking", "% of people texted who booked", lambda r: _rate(_f(r, "booked"), _f(r, "contacted"))),
+    ("Booking", "Texted but never booked", lambda r: _f(r, "never_booked", "")),
 
-    ("Show", "Showed up", lambda r: _f(r, "shown", "")),
-    ("Show", "Show rate, AI bookings %",
+    ("Show", "Showed up to their interview", lambda r: _f(r, "shown", "")),
+    ("Show", "% who showed — AI bookings",
      lambda r: _rate(_f(r, "shown_ai"), _f(r, "booked_ai"))),
-    ("Show", "Show rate, recruiter bookings %",
+    ("Show", "% who showed — recruiter bookings",
      lambda r: _rate(_f(r, "shown_human"), _f(r, "booked_human"))),
 
-    ("Speed", "AI reply, median minutes",
+    ("Speed", "Minutes for the AI to reply (typical)",
      lambda r: _median((r.get("log") or {}).get("speed_ai"))),
-    ("Speed", "Person's reply, median minutes",
+    ("Speed", "Minutes for a recruiter to reply (typical)",
      lambda r: _median((r.get("log") or {}).get("speed_human"))),
-    ("Speed", "Person's replies within 5 min %",
+    ("Speed", "% of recruiter replies within 5 minutes",
      lambda r: _within5((r.get("log") or {}).get("speed_human"))),
 
-    ("Dropped", "Left unanswered",
+    ("Dropped", "Applicants left waiting on a reply",
      _msg(lambda r: len(((r.get("log") or {}).get("unanswered")) or r["unanswered"]))),
     ("Dropped", "…of those, never booked an interview",
      lambda r: sum(1 for u in ((r.get("log") or {}).get("unanswered") or [])
@@ -409,14 +441,19 @@ def check_window(rep, week_end):
 
 
 def write_week(ws, rep, week_end, dry_run=False):
+    updates_rename = []
     """Put this week's numbers in this week's column, creating the column and
     any missing metric rows. Re-running the same week overwrites that column
     and leaves every other one alone."""
     values = ws.get_all_values()
     labels = _label_rows(values)
+    for old_label, new_label in RENAMED.items():
+        if old_label in labels and new_label not in labels:
+            labels[new_label] = labels.pop(old_label)
+            updates_rename.append((_a1(labels[new_label], 2), [[new_label]]))
     weeks = _week_columns(values)
 
-    updates = []
+    updates = list(updates_rename)
     # --- the skeleton: title, section names, metric labels ---
     if not values or not (values[0] and str(values[0][0]).strip()):
         updates.append(("A1", [["Applicant text audit — one row per metric, "
@@ -578,7 +615,7 @@ def build_report(office, suffix=""):
     recs, src = A.load_office(office, suffix)
     if not recs:
         return None, src
-    rows, lsrc = A.load_log(office)
+    rows, lsrc = A.load_log(office, suffix)
     convos = None
     if rows:
         booked = A.booked_index(recs)
