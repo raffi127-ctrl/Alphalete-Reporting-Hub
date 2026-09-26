@@ -134,35 +134,46 @@ def _print_diagnosis(office, d):
 
 
 def _set_range(page, lo, hi):
-    """Fill From/To and press Search.
+    """Fill the date range. There are FOUR fields, not two (confirmed from the
+    form dump 2026-09-26):
 
-    The two inputs are found by the date already in them — both are prefilled
-    with today — and only by name/id as a fallback. Matching on the VALUE is
-    what survives the page renaming its fields, which an id-only match would
-    not."""
+        startDate  / endDate   MM-DD-YYYY   the visible boxes
+        startDate2 / endDate2  MM/DD/YYYY   hidden, written by the datepicker
+
+    The server reads the *2 pair. Setting only the visible boxes — which is
+    what the first two attempts did — leaves the hidden pair on today, and
+    Search happily returns today while the boxes on screen say otherwise.
+    Both pairs get set, each in its own format."""
+    slash_lo, slash_hi = lo.replace("-", "/"), hi.replace("-", "/")
     filled = page.evaluate(
-        r"""([lo, hi]) => {
-             const ins = [...document.querySelectorAll('input[type=text], input:not([type])')];
-             const dated = ins.filter(i => /^\d{2}-\d{2}-\d{4}$/.test((i.value||'').trim()));
-             let from = dated[0], to = dated[1];
-             if (!from || !to) {
-               const byName = n => ins.find(i =>
-                 new RegExp(n, 'i').test((i.name||'') + ' ' + (i.id||'')));
-               from = from || byName('from|start|begin');
-               to   = to   || byName('^to$|todate|to_date|end');
-             }
-             if (!from || !to) return 'inputs not found: ' + ins.map(
-               i => (i.name||i.id||'?') + '=' + (i.value||'')).join(' | ').slice(0, 300);
-             for (const [el, v] of [[from, lo], [to, hi]]) {
+        r"""([lo, hi, slashLo, slashHi]) => {
+             const byName = n => document.querySelector(
+               "input[name='" + n + "']");
+             const pairs = [["startDate", lo], ["endDate", hi],
+                            ["startDate2", slashLo], ["endDate2", slashHi]];
+             const missing = [], set = [];
+             for (const [name, v] of pairs) {
+               const el = byName(name);
+               if (!el) { missing.push(name); continue; }
                el.value = v;
                el.dispatchEvent(new Event('input', {bubbles: true}));
                el.dispatchEvent(new Event('change', {bubbles: true}));
+               set.push(name + '=' + v);
              }
-             return 'ok';
-           }""", [lo, hi])
-    if filled != "ok":
-        raise RuntimeError("SMS List Report date fields: " + filled)
-
+             if (!set.length) {
+               // nothing matched by name — fall back to whatever holds a date
+               const ins = [...document.querySelectorAll('input')].filter(
+                 i => /^\d{2}[-/]\d{2}[-/]\d{4}$/.test((i.value || '').trim()));
+               if (ins.length < 2) return 'no date fields at all';
+               ins[0].value = lo; ins[1].value = hi;
+               return 'fallback: set the first two dated inputs';
+             }
+             return 'ok ' + set.join(' ') +
+                    (missing.length ? ' (absent: ' + missing.join(',') + ')' : '');
+           }""", [lo, hi, slash_lo, slash_hi])
+    print("[sms_log] dates: {}".format(filled), flush=True)
+    if filled.startswith("no date fields"):
+        raise RuntimeError("SMS List Report: " + filled)
     return filled
 
 
@@ -186,26 +197,21 @@ def _submit(page, lo, hi):
                      .first.click(timeout=5000)),
         ("Search input[type=submit]",
          lambda: page.locator("input[type=submit][value*='Search' i]").first.click(timeout=5000)),
-        ("Search button:has-text",
-         lambda: page.locator("button:has-text('Search')").first.click(timeout=5000)),
+        ("submit the named form",
+         lambda: page.evaluate(
+             r"""() => {
+                  const f = document.forms['from'] ||
+                            (document.querySelector("input[name='startDate2']") || {}).form;
+                  if (f) f.submit();
+                }""")),
         ("Enter in the To field",
          lambda: page.evaluate(
              r"""() => {
-                  const ins = [...document.querySelectorAll('input')].filter(
-                    i => /^\d{2}-\d{2}-\d{4}$/.test((i.value||'').trim()));
-                  const to = ins[1] || ins[0];
+                  const to = document.querySelector("input[name='endDate']");
                   if (!to) return;
                   to.focus();
                   to.dispatchEvent(new KeyboardEvent('keydown',
                     {key: 'Enter', keyCode: 13, which: 13, bubbles: true}));
-                }""")),
-        ("submit the enclosing form",
-         lambda: page.evaluate(
-             r"""() => {
-                  const ins = [...document.querySelectorAll('input')].filter(
-                    i => /^\d{2}-\d{2}-\d{4}$/.test((i.value||'').trim()));
-                  const f = ins[0] && ins[0].form;
-                  if (f) f.submit();
                 }""")),
     ]
     last = ""

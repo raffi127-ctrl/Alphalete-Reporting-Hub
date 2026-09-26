@@ -51,15 +51,33 @@ class InjectedJsTest(unittest.TestCase):
                 self.fail("line {}: {!r} reaches the browser as an escaped "
                           "backslash".format(lineno, m.group(0)))
 
-    def test_the_date_pattern_matches_the_pages_format(self):
-        """The From/To inputs are found by the MM-DD-YYYY already in them."""
-        pats = [m.group(0) for _l, js in _injected_js()
-                for m in re.finditer(r"/\^\\d\{2\}[^/]*/", js)]
-        self.assertTrue(pats, "no date-shaped regex in the injected JS")
-        for pat in pats:
-            rx = re.compile(pat.strip("/").replace("$", r"\Z"))
-            self.assertTrue(rx.match("09-25-2026"), pat)
-            self.assertFalse(rx.match("2026-09-25"), pat)
+    def test_all_four_date_fields_are_set(self):
+        """The form carries FOUR date fields: startDate/endDate in MM-DD-YYYY
+        (the visible boxes) and hidden startDate2/endDate2 in MM/DD/YYYY. The
+        server reads the *2 pair, so setting only the visible boxes leaves the
+        hidden pair on today and Search returns today while the boxes on
+        screen say otherwise. That is exactly what the first two probes did."""
+        js = " ".join(j for _l, j in _injected_js())
+        for name in ("startDate", "endDate", "startDate2", "endDate2"):
+            self.assertTrue('"{}"'.format(name) in js or "'{}'".format(name) in js,
+                            "{} is never set".format(name))
+
+    def test_the_hidden_pair_gets_slashes_not_hyphens(self):
+        from automations.sms_audit import pull_log as P
+        self.assertEqual("09-25-2026".replace("-", "/"), "09/25/2026")
+        src = MODULE.read_text(encoding="utf-8")
+        self.assertIn('slash_lo, slash_hi = lo.replace("-", "/")', src)
+        self.assertTrue(hasattr(P, "_set_range"))
+
+    def test_the_fallback_pattern_accepts_either_separator(self):
+        """If the names ever change, the fallback finds inputs by the date
+        already in them — and both spellings are on this page."""
+        rx = re.compile(r"^\d{2}[-/]\d{2}[-/]\d{4}$")
+        self.assertTrue(rx.match("09-25-2026"))
+        self.assertTrue(rx.match("09/25/2026"))
+        self.assertFalse(rx.match("2026-09-25"))
+        js = " ".join(j for _l, j in _injected_js())
+        self.assertIn(r"\d{2}[-/]\d{2}[-/]\d{4}", js)
 
 
 class HeaderMapTest(unittest.TestCase):
