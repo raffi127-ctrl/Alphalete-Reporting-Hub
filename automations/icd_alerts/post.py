@@ -866,6 +866,71 @@ def set_knocks_gaps(office_key: str, minutes: int, book=None,
     return False
 
 
+def set_text_cadence(office_key: str, minutes: int, book=None,
+                     group: str = "", dry_run: bool = True):
+    """How often an office's TEXT destination sends. OUR COLUMN ONLY.
+
+    The text twin of set_knocks_cadence, and it exists for the same reason that
+    one does: this cadence lives inside a JSON blob in a spreadsheet cell, and
+    "A HAND-EDITED JSON CELL IS THE THING THIS EXISTS TO AVOID" -- one character
+    between a working room and a silent one, with nothing to say which happened.
+    Cyrus's cadence has now been changed twice in two days by hand; this is the
+    named way to do it.
+
+    NEVER TOUCH "Texts: Wanted" OR ITS JSON (columns N/O). Those are the
+    OFFICE's: their machine re-sends what it was installed with on every sweep,
+    and the relay reads a disagreement as "they are asking for something
+    different", which CLEARS the approval. That cost Cyrus a day of boards on
+    2026-09-15 and Colten his texts on 2026-09-22. The poster only ever reads
+    the approved column, so changing that one is both sufficient and safe.
+
+    AND ONLY COLUMN P, not P:Q -- the lesson set_knocks_gaps wrote down. The
+    approval flag beside it is a different fact: writing TRUE here would sign a
+    room off as a side effect of retiming it, and this is a setting, not a
+    sign-off. An office that is not approved stays not approved.
+
+    `group` narrows it to one room for an office with several; the default is
+    every approved room, which is what a one-room office wants. DO NOT re-run
+    approve to change a cadence: _write_texts_approval rebuilds the JSON from
+    the office's signup record, so it would put the form's number back.
+
+    DRY RUN BY DEFAULT. Returns (changed, before, after) where before/after are
+    the cell's exact text, so a caller can show the diff and only then pass
+    dry_run=False. Returns (False, before, before) when no room matched.
+    """
+    if book is None:
+        from automations.recruiting_report.fill import open_by_key
+        book = open_by_key(RELAY_SPREADSHEET_ID)
+    tab = book.worksheet(CHANNELS_TAB)
+    key = office_key.strip().lower()
+    want = (group or "").strip().lower()
+    for i, row in enumerate(tab.get_all_values()[1:], start=2):
+        if (row[CH_OFFICE] or "").strip().lower() != key:
+            continue
+        before = row[CH_TX_APPROVED_JSON] or ""
+        try:
+            groups = json.loads(before or "[]")
+        except ValueError:
+            return False, before, before
+        if not groups:
+            return False, before, before
+        hit = False
+        for g in groups:
+            if not isinstance(g, dict):
+                continue
+            if want and (g.get("group") or "").strip().lower() != want:
+                continue
+            hit = True
+            g["cadence_min"] = int(minutes)
+        if not hit:
+            return False, before, before
+        after = json.dumps(groups)
+        if not dry_run:
+            tab.update(values=[[after]], range_name="P%d" % i)
+        return True, before, after
+    return False, "", ""
+
+
 def pending_texts(book=None) -> List[Dict]:
     """Offices that asked for their board as a text and are not signed off."""
     if book is None:
