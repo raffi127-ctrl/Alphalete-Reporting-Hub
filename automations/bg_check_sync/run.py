@@ -422,9 +422,11 @@ def process_week(sh, monday, events, *, dry_run, do_post, repost, now,
     # told). Only the week in flight, only once per person per week, and never
     # allowed to take the sync down — the col-K write is the job.
     try:
+        _today = (now.date() if now else dt.date.today())
+        _this_mon = _monday_of(_today)
         alert = fail_alert.send(decisions, week,
-                                is_current_week=(monday == _active_monday(
-                                    now.date() if now else None)),
+                                is_current_week=monday in (
+                                    _this_mon, _this_mon + dt.timedelta(days=7)),
                                 dry_run=dry_run or not do_post)
         if alert.get("texted"):
             print(f"[bg-fail] {'WOULD text' if alert['dry_run'] else 'texted'} "

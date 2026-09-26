@@ -37,6 +37,10 @@ class WhoCounts(unittest.TestCase):
         self.assertEqual(got["Jane Doe"], "Failed")
         self.assertIn("Score FAIL", got["Quincy Williams"])
 
+    def test_one_line_per_person_even_with_two_emails(self):
+        twice = [QUINCY, D("Quincy", "Williams", "Review", True)]
+        self.assertEqual(fa.failures(twice), fa.failures([QUINCY]))
+
     def test_a_pass_is_never_texted(self):
         self.assertEqual(fa.failures([PASSED]), [])
 

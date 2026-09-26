@@ -7,8 +7,11 @@ current week."
 
 So the trigger is the EMAIL — Sterling's "Background Check Complete - Score
 FAIL" (which sets needs_adjudication) or a terminal Failed — and the audience
-is only the people on the week in flight. Older weeks and future cohorts are
-not texted: the point is the person who is starting now.
+is the week IN FLIGHT plus the cohort starting next Monday — both are "current
+week new starts" depending on the day you ask (the sync's own _active_monday
+rolls to the next Monday late in the week, which is how the first version
+missed Quincy on the Friday). Weeks further out, and weeks already gone, are
+not texted.
 
 What this does NOT change: the OBCL still records "Review" for a Score FAIL,
 because Sterling's FAIL is an adverse-action review a rep can be cleared
@@ -52,16 +55,25 @@ def failures(decisions: Sequence) -> List[tuple]:
     `needs_adjudication` is set by parse.classify on a "Score FAIL" email;
     `new_status == "Failed"` is a terminal fail. Either one is a fail as far as
     this text is concerned."""
-    out = []
+    out, seen = [], set()
     for d in decisions:
         p = getattr(d, "person", None)
         if p is None:
             continue
         name = f"{p.first} {p.last}".strip()
         if getattr(d, "new_status", "") == "Failed":
-            out.append((name, "Failed"))
+            what = "Failed"
         elif getattr(d, "needs_adjudication", False):
-            out.append((name, "Score FAIL — in adverse-action review"))
+            what = "Score FAIL — in adverse-action review"
+        else:
+            continue
+        # One line per person: a rep can have two emails in the same run
+        # (Quincy Williams had both on 2026-09-25) and the text named him twice.
+        key = " ".join(name.split()).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append((name, what))
     return out
 
 
