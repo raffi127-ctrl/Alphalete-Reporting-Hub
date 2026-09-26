@@ -83,6 +83,56 @@ def _fmt(d):
     return d.strftime("%m-%d-%Y")
 
 
+def diagnose(page):
+    """Everything about the filter form, in one shot. A failed Search is a
+    guessing game otherwise, and every guess costs a queue round trip."""
+    return page.evaluate(
+        """() => {
+             const q = s => [...document.querySelectorAll(s)];
+             return {
+               url: location.href,
+               inputs: q('input').slice(0, 40).map(i => ({
+                 tag: 'input', type: i.type, name: i.name, id: i.id,
+                 value: (i.value || '').slice(0, 40),
+                 readonly: i.readOnly, hidden: i.offsetParent === null,
+                 onclick: (i.getAttribute('onclick') || '').slice(0, 120)})),
+               selects: q('select').slice(0, 10).map(s2 => ({
+                 name: s2.name, id: s2.id, value: s2.value})),
+               buttons: q('button, input[type=submit], input[type=button], a[onclick]')
+                 .slice(0, 25).map(b => ({
+                   tag: b.tagName, text: (b.innerText || b.value || '').trim().slice(0, 40),
+                   id: b.id, name: b.name,
+                   onclick: (b.getAttribute('onclick') || '').slice(0, 160),
+                   href: (b.getAttribute('href') || '').slice(0, 120)})),
+               forms: q('form').slice(0, 6).map(f => ({
+                 name: f.name, id: f.id, action: (f.action || '').slice(0, 160),
+                 method: f.method,
+                 fields: [...f.elements].slice(0, 30).map(
+                   e => (e.name || e.id || e.type) + '=' + String(e.value || '').slice(0, 24))})),
+               header: ((document.body.innerText || '').match(
+                 /SMS for[^\n]*/) || ['(no SMS for … header)'])[0],
+             };
+           }""")
+
+
+def _print_diagnosis(office, d):
+    print("[sms_log] --- diagnose {} ---".format(office), flush=True)
+    print("  url: {}".format(d.get("url")), flush=True)
+    print("  header: {}".format(d.get("header")), flush=True)
+    for i in d.get("inputs", []):
+        if i["hidden"] and not i["value"]:
+            continue
+        print("  input type={type} name={name!r} id={id!r} value={value!r} "
+              "readonly={readonly} hidden={hidden} onclick={onclick!r}".format(**i),
+              flush=True)
+    for b in d.get("buttons", []):
+        print("  button <{tag}> {text!r} id={id!r} onclick={onclick!r} href={href!r}"
+              .format(**b), flush=True)
+    for f in d.get("forms", []):
+        print("  form {name!r} action={action!r} method={method}".format(**f), flush=True)
+        print("    fields: {}".format(", ".join(f["fields"])), flush=True)
+
+
 def _set_range(page, lo, hi):
     """Fill From/To and press Search.
 
@@ -113,18 +163,68 @@ def _set_range(page, lo, hi):
     if filled != "ok":
         raise RuntimeError("SMS List Report date fields: " + filled)
 
-    for how in (lambda: page.get_by_role("button", name=re.compile(r"^\s*Search\s*$", re.I)).first.click(),
-                lambda: page.locator("input[type=submit][value*='Search' i]").first.click(),
-                lambda: page.locator("button:has-text('Search')").first.click()):
+    return filled
+
+
+def _submit(page, lo, hi):
+    """Press Search, and keep trying other ways until the grid header says it
+    heard us. The first attempt filled the fields and clicked Search and the
+    page still showed TODAY (2026-09-26), so the click alone is not enough —
+    rather than guess which one works, try each and report the winner."""
+    def _clicked():
+        page.wait_for_load_state("networkidle")
+        time.sleep(2.0)
+        try:
+            _confirm_range(page, lo, hi)
+            return True
+        except Exception:
+            return False
+
+    ways = [
+        ("Search button (role)",
+         lambda: page.get_by_role("button", name=re.compile(r"^\s*Search\s*$", re.I))
+                     .first.click(timeout=5000)),
+        ("Search input[type=submit]",
+         lambda: page.locator("input[type=submit][value*='Search' i]").first.click(timeout=5000)),
+        ("Search button:has-text",
+         lambda: page.locator("button:has-text('Search')").first.click(timeout=5000)),
+        ("Enter in the To field",
+         lambda: page.evaluate(
+             """() => {
+                  const ins = [...document.querySelectorAll('input')].filter(
+                    i => /^\\d{2}-\\d{2}-\\d{4}$/.test((i.value||'').trim()));
+                  const to = ins[1] || ins[0];
+                  if (!to) return;
+                  to.focus();
+                  to.dispatchEvent(new KeyboardEvent('keydown',
+                    {key: 'Enter', keyCode: 13, which: 13, bubbles: true}));
+                }""")),
+        ("submit the enclosing form",
+         lambda: page.evaluate(
+             """() => {
+                  const ins = [...document.querySelectorAll('input')].filter(
+                    i => /^\\d{2}-\\d{2}-\\d{4}$/.test((i.value||'').trim()));
+                  const f = ins[0] && ins[0].form;
+                  if (f) f.submit();
+                }""")),
+    ]
+    last = ""
+    for name, how in ways:
         try:
             how()
-            break
-        except Exception:
+        except Exception as e:  # noqa: BLE001
+            last = "{}: {}".format(name, type(e).__name__)
             continue
-    else:
-        raise RuntimeError("no Search button on the SMS List Report")
-    page.wait_for_load_state("networkidle")
-    time.sleep(2.0)
+        if _clicked():
+            print("[sms_log] date range took via {}".format(name), flush=True)
+            return name
+        last = "{}: grid did not change".format(name)
+        # the click may have reset the fields — put them back before the next try
+        try:
+            _set_range(page, lo, hi)
+        except Exception:
+            pass
+    raise RuntimeError("Search never took the date range ({})".format(last))
 
 
 def _confirm_range(page, lo, hi):
@@ -193,7 +293,7 @@ def _write_tab(records, meta, office):
     return tab, len(rows)
 
 
-def pull_office(page, tok, office, owner, lo, hi):
+def pull_office(page, tok, office, owner, lo, hi, diag=False):
     if owner:
         if not fo._switch_office(page, office, owner, confirm_denial=True):
             raise RuntimeError("cannot reach office {}".format(office))
@@ -208,7 +308,10 @@ def pull_office(page, tok, office, owner, lo, hi):
     page.goto("https://www.applicantstream.com/index.cfm?rqst={}&p=336".format(tok))
     page.wait_for_load_state("networkidle")
     time.sleep(1.5)
+    if diag:
+        _print_diagnosis(office, diagnose(page))
     _set_range(page, lo, hi)
+    _submit(page, lo, hi)
     total, incoming, outgoing = _confirm_range(page, lo, hi)
     got = _scrape_grid(page)
     if got.get("error"):
@@ -236,6 +339,9 @@ def main(argv=None):
                     help="FROM,TO in MM-DD-YYYY; default the last full Sat-Fri week")
     ap.add_argument("--week", type=int, nargs="?", const=1, default=0,
                     help="1 = the recruiting week just finished, 2 = the one before")
+    ap.add_argument("--diagnose", action="store_true",
+                    help="dump the filter form's inputs, buttons and forms "
+                         "before searching — one round trip instead of guesses")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
 
@@ -259,7 +365,8 @@ def main(argv=None):
             raise RuntimeError("no rqst token on the console page")
         for office in offices:
             try:
-                rows, totals = pull_office(page, tok, office, a.owner, lo, hi)
+                rows, totals = pull_office(page, tok, office, a.owner, lo, hi,
+                                           diag=a.diagnose)
             except Exception as e:  # noqa: BLE001 — one office must not kill the rest
                 print("[sms_log] {}: FAILED {}: {}".format(
                     office, type(e).__name__, str(e).splitlines()[0][:200]), flush=True)
