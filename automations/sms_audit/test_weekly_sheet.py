@@ -65,7 +65,8 @@ class WriteWeekTest(unittest.TestCase):
         return {"office": "11280", "threads": 10, "questions_total": 4,
                 "questions": collections.Counter({"Can we reschedule / a different time?": 3}),
                 "mix": {"ai": 6, "human": 4}, "unanswered": [1, 2],
-                "anomalies": {}, "log": None}
+                "anomalies": {}, "log": None, "questions_other": [],
+                "question_table": [], "messages": 0}
 
     def test_a_fresh_tab_lays_out_labels_and_one_week(self):
         ws = W._EmptyTab("11280 Rafael Hidalgo")
@@ -208,34 +209,45 @@ class WeekHeaderTest(unittest.TestCase):
             self.assertIsNone(W.parse_week_header(junk))
 
 
-class QuestionRowsTest(unittest.TestCase):
-    """Every question gets its own row (Megan). A single "top question" row
-    hides the thing worth acting on — that reschedule went 38% to 51%."""
+class QuestionCellTest(unittest.TestCase):
+    """The whole ranked list lives in the WEEK'S OWN CELL (Megan), most asked
+    first, with what we usually reply on the same line. Eleven fixed rows were
+    unreadable and the reply had nowhere to go."""
 
-    def test_there_is_a_row_per_bucket(self):
-        labels = {label for _s, label, _fn in W.ROWS}
-        for bucket, _pat in A.QUESTION_BUCKETS:
-            self.assertIn(W._q_label(bucket), labels)
+    def _rep(self, table, other=0):
+        return {"question_table": table, "questions_other": list(range(other)),
+                "messages": 900, "log": None}
 
-    def test_the_unbucketed_ones_are_counted_too(self):
-        self.assertIn("Q: something else", {l for _s, l, _f in W.ROWS})
+    def test_most_asked_comes_first(self):
+        cell = W.question_cell(self._rep([
+            {"question": "Can we reschedule / a different time?", "asked": 45,
+             "reply": "1st Interview - Reschedule", "no_reply": 2},
+            {"question": "What is the pay?", "asked": 2,
+             "reply": "“Our HR manager…”", "no_reply": 0}]))
+        self.assertLess(cell.index("reschedule"), cell.index("pay"))
+        self.assertTrue(cell.startswith("45 x"))
 
-    def test_a_bucket_reads_its_own_count(self):
-        import collections
-        rep = {"questions": collections.Counter({"What is the pay?": 7}),
-               "questions_other": [1, 2, 3], "messages": 900, "log": None}
-        by_label = {label: fn for _s, label, fn in W.ROWS}
-        self.assertEqual(by_label["Q: What is the pay?"](rep), 7)
-        self.assertEqual(by_label["Q: something else"](rep), 3)
+    def test_the_reply_rides_with_its_question(self):
+        cell = W.question_cell(self._rep([
+            {"question": "What is the pay?", "asked": 2,
+             "reply": "1st Interview - Reschedule", "no_reply": 0}]))
+        self.assertIn("What is the pay?", cell)
+        self.assertIn("-> 1st Interview - Reschedule", cell)
 
-    def test_a_question_nobody_asked_is_zero_not_blank(self):
-        # zero is a real measurement here: we read every message and nobody
-        # asked it. That is different from the log-only metrics.
-        import collections
-        rep = {"questions": collections.Counter(), "questions_other": [],
-               "messages": 900, "log": None}
-        by_label = {label: fn for _s, label, fn in W.ROWS}
-        self.assertEqual(by_label["Q: What is the pay?"](rep), 0)
+    def test_questions_that_got_no_reply_are_called_out(self):
+        cell = W.question_cell(self._rep([
+            {"question": "What is the pay?", "asked": 5, "reply": "x",
+             "no_reply": 3}]))
+        self.assertIn("(3 got no reply)", cell)
+
+    def test_the_unbucketed_ones_are_the_last_line(self):
+        cell = W.question_cell(self._rep(
+            [{"question": "What is the pay?", "asked": 5, "reply": "x",
+              "no_reply": 0}], other=49))
+        self.assertTrue(cell.rstrip().endswith("49 x  (didn't fit a bucket)"))
+
+    def test_a_week_with_no_questions_is_empty_not_a_header(self):
+        self.assertEqual(W.question_cell(self._rep([])), "")
 
 
 class NoMessagesIsBlankTest(unittest.TestCase):
@@ -249,12 +261,14 @@ class NoMessagesIsBlankTest(unittest.TestCase):
         return {"messages": 0, "log": None, "threads": 832,
                 "mix": {"ai": 364, "human": 468},
                 "questions": collections.Counter(), "questions_other": [],
-                "questions_total": 0, "unanswered": [], "anomalies": {}}
+                "questions_total": 0, "unanswered": [], "anomalies": {},
+                "question_table": []}
 
     def test_questions_and_flags_are_blank_not_zero(self):
         rep = self._bookings_only()
         by_label = {label: fn for _s, label, fn in W.ROWS}
-        for label in ("Questions asked", "Q: What is the pay?", "Q: something else",
+        for label in ("Questions asked", "Didn't fit a bucket",
+                      "Most asked → what we usually reply",
                       "Left unanswered", "Texts outside 8am–9pm",
                       "Texted after they said stop", "Dead links sent"):
             self.assertEqual(by_label[label](rep), "", label)
@@ -270,8 +284,8 @@ class NoMessagesIsBlankTest(unittest.TestCase):
         rep = self._bookings_only()
         rep["messages"] = 3164          # the walk DID read the threads
         by_label = {label: fn for _s, label, fn in W.ROWS}
-        # nobody asked about pay, and we read every message to find that out
-        self.assertEqual(by_label["Q: What is the pay?"](rep), 0)
+        # nobody asked anything, and we read every message to find that out
+        self.assertEqual(by_label["Questions asked"](rep), 0)
         self.assertEqual(by_label["Texts outside 8am–9pm"](rep), 0)
 
 

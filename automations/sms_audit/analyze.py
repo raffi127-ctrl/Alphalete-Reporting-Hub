@@ -404,6 +404,89 @@ def questions(recs):
     return asked, total, unbucketed
 
 
+def bucket_of(body):
+    """Which question bucket a message falls in, or None. First match wins —
+    the list is ordered specific-to-general on purpose."""
+    for label, pat in QUESTION_BUCKETS:
+        if re.search(pat, body, re.I):
+            return label
+    return None
+
+
+IS_QUESTION = re.compile(r"^\s*(what|when|where|who|why|how|is|are|do|does|did|can|"
+                         r"could|will|would|should|may|am i|i have a question)\b", re.I)
+
+
+def question_responses(recs, convos=None):
+    """For each kind of question: how often it is asked, and WHAT WE SEND BACK.
+
+    The reply is the first outbound message after the question. A templated
+    one is named by its template; a typed one is folded to its opening words,
+    because "Great. What email should I send the Zoom link to?" typed 35 times
+    is one response, not 35. Questions that got no reply at all are counted
+    too — that is the most important response of the lot."""
+    asked = collections.Counter()
+    replies = collections.defaultdict(collections.Counter)
+    examples = {}
+
+    def _generalise(body, who):
+        """Take the applicant's own name out of a typed reply before folding.
+        "Great, thanks Ashley. What email…" and "Great, thanks Marco. What
+        email…" are ONE response; leaving the name in makes every reply
+        unique and the whole column useless."""
+        words = " ".join((body or "").split())
+        first = (who or "").strip().split(" ")[0]
+        if len(first) > 2:
+            words = re.sub(r"\b{}\b".format(re.escape(first)), "[name]", words,
+                           flags=re.I)
+        return words
+
+    def _walk(seq, getter, who=""):
+        for i, m in enumerate(seq):
+            if getter(m, "dir") != "In":
+                continue
+            body = getter(m, "body") or ""
+            if "?" not in body and not IS_QUESTION.match(body):
+                continue
+            b = bucket_of(body)
+            if not b:
+                continue
+            asked[b] += 1
+            examples.setdefault(b, body.strip().replace("\n", " ")[:120])
+            nxt = next((x for x in seq[i + 1:] if getter(x, "dir") == "Out"), None)
+            if nxt is None:
+                replies[b]["(no reply)"] += 1
+                continue
+            tmpl = getter(nxt, "template")
+            if tmpl:
+                replies[b][tmpl] += 1
+            else:
+                words = _generalise(getter(nxt, "body"), who)
+                replies[b]["“{}…”".format(words[:70])] += 1
+
+    if convos:
+        for c in convos.values():
+            _walk(c["msgs"], lambda m, k: m["dir"] if k == "dir" else m.get(
+                "template" if k == "template" else "body"), c.get("name", ""))
+    else:
+        for r in recs:
+            seq = messages(r)
+            _walk(seq, lambda m, k: m[1] if k == "dir" else (
+                m[2] if k == "template" else m[3]), r.get("name", ""))
+
+    out = []
+    for b, n in asked.most_common():
+        top = replies[b].most_common(1)
+        out.append({
+            "question": b, "asked": n,
+            "reply": top[0][0] if top else "",
+            "reply_n": top[0][1] if top else 0,
+            "no_reply": replies[b].get("(no reply)", 0),
+            "example": examples.get(b, ""),
+        })
+    return out
+
+
 def regular_responses(recs):
     """Our side of it: which templates fire how often, and the free-typed lines
     repeated so often they are templates in everything but name."""
@@ -633,6 +716,7 @@ def audit(recs, office):
         "speed_first": _stat(first),
         "questions": asked, "questions_total": q_total, "questions_other": q_other,
         "templates": tmpl, "typed": typed,
+        "question_table": question_responses(recs),
         "unanswered": unanswered(recs),
         "anomalies": anomalies(recs),
     }

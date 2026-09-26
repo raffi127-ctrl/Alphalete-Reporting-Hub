@@ -77,6 +77,25 @@ def _rate(n, d):
     return "" if not d or n is None else round(100.0 * n / d, 1)
 
 
+def question_cell(rep):
+    """The week's questions as ONE multi-line cell, most asked first, each
+    with the reply we most often send back. Empty when nothing was asked."""
+    table = rep.get("question_table") or []
+    if not table:
+        return ""
+    lines = []
+    for row in table:
+        reply = row["reply"] or "—"
+        line = "{} x  {}\n        -> {}".format(row["asked"], row["question"], reply)
+        if row["no_reply"]:
+            line += "  ({} got no reply)".format(row["no_reply"])
+        lines.append(line)
+    other = len(rep.get("questions_other") or [])
+    if other:
+        lines.append("{} x  (didn't fit a bucket)".format(other))
+    return "\n".join(lines)
+
+
 def _msg(fn):
     """Wrap a metric that is computed from MESSAGES so it writes blank when no
     messages were pulled.
@@ -136,18 +155,13 @@ ROWS = [
                    if not u.get("booked")) if r.get("log") else ""),
 
     ("What they ask", "Questions asked", _msg(lambda r: r["questions_total"])),
-] + [
-    # Every question spelled out, one row each, so a week-over-week read shows
-    # what is RISING — "reschedule went 38% → 51%" is the thing worth acting
-    # on, and a single "top question" row hides it. The bucket list lives in
-    # analyze.QUESTION_BUCKETS; adding one there adds a row here, and because
-    # rows are found by label an added bucket slots in without moving the
-    # existing weeks.
-    ("What they ask", _q_label(label), _q_count(label))
-    for label, _pat in A.QUESTION_BUCKETS
-] + [
-    ("What they ask", "Q: something else", _msg(lambda r: len(r["questions_other"]))),
-
+    ("What they ask", "Didn't fit a bucket", _msg(lambda r: len(r["questions_other"]))),
+    # ONE cell for the week (Megan 2026-09-26): the whole ranked list lives in
+    # the week's own box instead of eleven fixed rows nobody could scan. Most
+    # asked first, and what we usually send back on the same line — the two
+    # halves of the question only mean something together.
+    ("What they ask", "Most asked → what we usually reply",
+     _msg(lambda r: question_cell(r))),
     ("Flags", "Texts outside 8am–9pm",
      _msg(lambda r: len(r["anomalies"].get(
          "Texted outside 8am–9pm (TCPA quiet hours)", [])))),
@@ -394,35 +408,95 @@ def write_week(ws, rep, week_end, dry_run=False):
         ws.resize(rows=next_row + 2, cols=ws.col_count)
     ws.batch_update([{"range": rng, "values": vals} for rng, vals in updates],
                     value_input_option="USER_ENTERED")
-    _format(ws, col, next_row)
+    _format(ws, col, next_row - 1, labels)
     return col, len(updates)
 
 
-def _format(ws, last_col, last_row):
-    """The house look (Georgia 12 bold black, centered) on the headers and
-    labels. Best-effort — a formatting failure must never lose the numbers
-    that were just written."""
+SECTION_TINT = {"Reach": (0.90, 0.94, 0.99), "Booking": (0.90, 0.96, 0.91),
+                "Show": (0.98, 0.95, 0.88), "Speed": (0.93, 0.91, 0.98),
+                "Dropped": (0.99, 0.91, 0.91), "What they ask": (0.95, 0.95, 0.95),
+                "Flags": (0.99, 0.93, 0.85)}
+WIDE_ROW = "Most asked → what we usually reply"
+
+
+def _rgb(t):
+    return {"red": t[0], "green": t[1], "blue": t[2]}
+
+
+def _format(ws, last_col, last_row, label_rows):
+    """Make it readable: a title, a frozen label column, each section tinted so
+    the eye can find it, numbers centred, and the one tall question cell
+    wrapped and left-aligned because a centred paragraph is unreadable.
+
+    Best-effort — losing the formatting must never lose the numbers that were
+    just written, so every step is guarded."""
     try:
-        head = {"textFormat": {"fontFamily": "Georgia", "fontSize": 12,
-                               "bold": True,
-                               "foregroundColor": {"red": 0, "green": 0, "blue": 0}},
-                "horizontalAlignment": "CENTER",
-                "verticalAlignment": "MIDDLE"}
-        body = {"textFormat": {"fontFamily": "Georgia", "fontSize": 12},
+        georgia = {"fontFamily": "Georgia", "fontSize": 12}
+        title = {"textFormat": dict(georgia, bold=True, fontSize=13),
+                 "horizontalAlignment": "LEFT", "verticalAlignment": "MIDDLE"}
+        head = {"textFormat": dict(georgia, bold=True,
+                                   foregroundColor={"red": 1, "green": 1, "blue": 1}),
+                "backgroundColor": {"red": 0.23, "green": 0.27, "blue": 0.33},
                 "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"}
+        body = {"textFormat": georgia, "horizontalAlignment": "CENTER",
+                "verticalAlignment": "MIDDLE"}
+        label = {"textFormat": dict(georgia, bold=True),
+                 "horizontalAlignment": "LEFT", "verticalAlignment": "MIDDLE"}
+        wrapped = {"textFormat": {"fontFamily": "Georgia", "fontSize": 10},
+                   "horizontalAlignment": "LEFT", "verticalAlignment": "TOP",
+                   "wrapStrategy": "WRAP"}
+
+        ws.format("A1:{}".format(_a1(1, max(last_col, 3))), title)
         ws.format("{}:{}".format(_a1(HEADER_ROW, 1), _a1(HEADER_ROW, last_col)), head)
-        ws.format("A1:B{}".format(last_row), head)
+        ws.format("{}:{}".format(_a1(HEADER_ROW + 1, 1), _a1(last_row, 2)), label)
         ws.format("{}:{}".format(_a1(HEADER_ROW + 1, FIRST_WEEK_COL),
                                  _a1(last_row, last_col)), body)
+
+        # one tint per section, applied to the whole band so a section reads as
+        # a block rather than a run of identical rows
+        for section in {sec for sec, _l, _f in ROWS}:
+            rows = sorted(label_rows[l] for sec2, l, _f in ROWS
+                          if sec2 == section and l in label_rows)
+            if not rows:
+                continue
+            ws.format("{}:{}".format(_a1(rows[0], 1), _a1(rows[-1], 2)),
+                      dict(label, backgroundColor=_rgb(SECTION_TINT.get(
+                          section, (0.95, 0.95, 0.95)))))
+
+        wide = label_rows.get(WIDE_ROW)
+        if wide:
+            ws.format("{}:{}".format(_a1(wide, FIRST_WEEK_COL), _a1(wide, last_col)),
+                      wrapped)
         ws.freeze(rows=HEADER_ROW, cols=2)
+        _widths(ws, last_col)
     except Exception as e:  # noqa: BLE001
         print("[weekly_sheet] formatting skipped: {}".format(e), flush=True)
 
 
+def _widths(ws, last_col):
+    """Column A narrow (a section name), B wide enough for the longest metric
+    label, and every week column wide enough for the question paragraph."""
+    reqs = [
+        {"updateDimensionProperties": {
+            "range": {"sheetId": ws.id, "dimension": "COLUMNS",
+                      "startIndex": 0, "endIndex": 1},
+            "properties": {"pixelSize": 110}, "fields": "pixelSize"}},
+        {"updateDimensionProperties": {
+            "range": {"sheetId": ws.id, "dimension": "COLUMNS",
+                      "startIndex": 1, "endIndex": 2},
+            "properties": {"pixelSize": 265}, "fields": "pixelSize"}},
+        {"updateDimensionProperties": {
+            "range": {"sheetId": ws.id, "dimension": "COLUMNS",
+                      "startIndex": FIRST_WEEK_COL - 1, "endIndex": last_col},
+            "properties": {"pixelSize": 430}, "fields": "pixelSize"}},
+    ]
+    ws.spreadsheet.batch_update({"requests": reqs})
+
+
 class _EmptyTab(object):
     """A blank worksheet stand-in for --dry-run: it reads as a tab that does
-    not exist yet, which is the layout worth eyeballing before the first
-    real write."""
+    not exist yet, which is the layout worth eyeballing before the first real
+    write."""
 
     def __init__(self, title):
         self.title = title
