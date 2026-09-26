@@ -27,6 +27,16 @@ class PickTest(unittest.TestCase):
         self.assertEqual(out, [])
 
 
+class ActivityTest(unittest.TestCase):
+    def test_att_counts_credit_checks_and_sales(self):
+        a = G.activity({"NICK SMITH": 2}, {"NICK SMITH": {"Int": 1, "Int Up": 0, "DTV": 0, "NL": 1}}, "att")
+        self.assertEqual(a["nick smith"], 4)
+
+    def test_box_counts_contracts(self):
+        a = G.activity({}, {"Ana B": {"Sales": 2, "Volume": 27000, "Big": 1, "Huge": 0}}, "b2b_box")
+        self.assertEqual(a["ana b"], 2)
+
+
 class LineTest(unittest.TestCase):
     def test_names_and_rounded_minutes(self):
         s = G.line("carlos", [{"name": "Nick Smith", "mins": 45}, {"name": "CHRISTIAN DOE", "mins": 43}], NOW)

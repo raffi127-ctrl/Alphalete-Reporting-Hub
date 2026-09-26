@@ -38,25 +38,35 @@ from typing import Dict, List, Optional
 
 from automations.icd_alerts import knocks_map as M, knocks_post as K, offices as O, post as P
 
-# AT&T offices only: the cross-check IS the credit check. A Box office has no
-# SaraPlus, so every gap would qualify and a Saturday afternoon read as
-# twelve names -- a wall, not a call-out (seen in the first dry run).
-CALLOUT_OFFICES = {"carlos-b2batt"}
+# EVERY OFFICE WITH AN APPROVED ALERT CHANNEL (Megan 2026-09-26: "roll out
+# for everyone"), Slack only -- the room its SaraPlus / Service Cloud alerts
+# already land in. Not the text groups. The cross-check is whatever the
+# office's system relays: credit checks on AT&T, contracts on Box; a rep whose
+# count moved this hour is working, not idle. Names capped so a slow Saturday
+# is a call-out, not a roll call.
 MAX_NAMES = 5
 CALLOUT_EVERY_MIN = 60
 GAP_MIN = 15
+GAP_MAX = 180        # past this they went home; a call-out every hour would be noise
 STATE_PATH = Path.home() / ".config" / "recruiting-report" / "icd_gap_callouts.json"
 
 # THE VOICE. Mild enough for any office, pointed enough to land. {names} is
 # "Nick, Christian and Jose", {m} is the shortest gap among them.
+# THE HOUSE SLANG (Megan 2026-09-26): "Snicklemeberries" is Lucy's, like
+# "Snicklepop!!" on the sale line; a "finger popper" -- "master finger
+# popper", "finger poppin' ninja" -- is somebody NOT working, and the offices
+# say it constantly, so Lucy does too.
 LINES = (
-    "{names} — {m}+ min without a dispo and nothing in SaraPlus. Y'all taking a group nap out there?",
-    "Quiet check: {names}. {m}+ min since a door and no credit check. Doors don't knock themselves.",
-    "{names}: {m}+ min, no dispo, no credit check. Coffee break's over — go find the money.",
-    "No doors and no credit checks from {names} for {m}+ min. Everything okay, or just admiring the neighborhood?",
-    "{names} — {m}+ min off the doors. The board's not going to fill itself.",
+    "Snicklemeberries! {names} — {m}+ min without a dispo. Finger poppin' or knocking?",
+    "{names}: {m}+ min off the doors and nothing on the board. Master finger poppers in the making.",
+    "Finger poppin' ninjas spotted: {names}. {m}+ min since a door. Doors don't knock themselves.",
+    "{names} — {m}+ min, no dispo, no sale. Coffee break's over — go find the money.",
+    "Snicklemeberries, {names}. {m}+ min of silence. Knock something.",
     "{m}+ minutes and not a single dispo from {names}. I'm watching 👀",
-    "{names} — {m}+ min of silence. Knock something.",
+    "No doors and no sales from {names} for {m}+ min. Everything okay, or just admiring the neighborhood?",
+    "{names} — {m}+ min off the doors. The board's not going to fill itself.",
+    "Quiet check: {names} — {m}+ min without a door. Y'all finger poppin' each other out there?",
+    "{names} — {m}+ min without a dispo. Lucy sees you, finger poppers.",
 )
 
 
@@ -70,12 +80,24 @@ def _first(name: str) -> str:
     return name_case.titlecase_name(first) if first else ""
 
 
+def activity(records: Dict, sales: Dict, campaign=None) -> Dict[str, int]:
+    """One number per rep that only rises while they work: credit checks plus
+    sales on AT&T, contracts on Box (which has no credit checks)."""
+    from automations.shared import sale_hype as H
+    out = {}
+    for k, v in (records or {}).items():
+        out[_key(k)] = out.get(_key(k), 0) + int(v or 0)
+    for k, m in (sales or {}).items():
+        out[_key(k)] = out.get(_key(k), 0) + int(H.shape(campaign).total(m or {}))
+    return out
+
+
 def pick(rows: List[Dict], records_now: Dict[str, int], records_prev: Dict[str, int],
          now: dt.datetime) -> List[Dict]:
-    """Reps to call out: 15+ min since their last knock AND no new credit
-    check since the previous call-out. Pure. `rows` are knocks_map.to_rows
-    rows ('Rep', 'Last Knock' on the office's clock); records are SaraPlus
-    credit-check counts by rep, now and at the last call-out."""
+    """Reps to call out: 15+ min since their last knock AND their activity
+    number has not moved since the previous call-out. Pure. `rows` are
+    knocks_map.to_rows rows ('Rep', 'Last Knock' on the office's clock);
+    the two dicts are activity() now and at the last call-out."""
     now_n = {_key(k): int(v or 0) for k, v in (records_now or {}).items()}
     prev_n = {_key(k): int(v or 0) for k, v in (records_prev or {}).items()}
     out = []
@@ -85,7 +107,7 @@ def pick(rows: List[Dict], records_now: Dict[str, int], records_prev: Dict[str, 
         if not name or not last:
             continue
         mins = K._minutes_since(last, now)
-        if mins is None or mins < GAP_MIN:
+        if mins is None or mins < GAP_MIN or mins > GAP_MAX:
             continue
         if now_n.get(_key(name), 0) > prev_n.get(_key(name), 0):
             continue                       # pitching, not idle
@@ -144,11 +166,10 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
               if len(r) > K.KN_RECEIVED and P._day_key(r[K.KN_DAY]) == day.isoformat()}
     relay = {r[0].strip().lower(): r for r in book.worksheet(P.RELAY_TAB).get_all_values()[1:]
              if len(r) > P.COL_RECEIVED and P._day_key(r[1]) == day.isoformat()}
-    approved_ch = P.approved_channels()
-    approved_tx = P.approved_texts()
+    approved_ch = {k: v for k, v in P.approved_channels().items() if v}
     state = _state()
     said = []
-    for key in sorted(CALLOUT_OFFICES):
+    for key in sorted(approved_ch):
         if only and key != only:
             continue
         office = O.get(key)
@@ -171,8 +192,10 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
         rrow = relay.get(key) or next((r for k, r in relay.items() if k.startswith(key) or key.startswith(k)), None)
         try:
             records = json.loads(rrow[P.COL_RECORDS] or "{}") if rrow else {}
+            sales = json.loads(rrow[P.COL_SALES] or "{}") if rrow and len(rrow) > P.COL_SALES else {}
         except ValueError:
-            records = {}
+            records, sales = {}, {}
+        records = activity(records, sales, getattr(office, "campaign", None))
         st = state.get(key) or {}
         if not due(st, now):
             continue
@@ -185,8 +208,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
             log("%-14s nobody over %d min without a credit check -- nothing to say" % (key, GAP_MIN))
             continue
         dests = [c.id for c in (approved_ch.get(key) or [])]
-        texts = approved_tx.get(key) or []
-        log("%-14s -> %s%s: %s" % (key, ", ".join(dests) or "-", "".join(" + text %r" % t["channel_name"] for t in texts), text))
+        log("%-14s -> %s: %s" % (key, ", ".join(dests) or "-", text))
         said.append(text)
         if not send:
             continue
@@ -195,12 +217,6 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
                 P._slack(ch, text)
             except Exception as e:  # noqa: BLE001
                 log("%-14s FAILED to post to %s: %s" % (key, ch, type(e).__name__))
-        from automations.b2b_dispositions import text_post as tp
-        for t in texts:
-            try:
-                tp.send_text_to_group(t["channel_name"], text, dry_run=False, dest=t)
-            except Exception as e:  # noqa: BLE001
-                log("%-14s FAILED to text %r: %s: %s" % (key, t["channel_name"], type(e).__name__, str(e)[:120]))
     if send:
         _save(state)
     return said
