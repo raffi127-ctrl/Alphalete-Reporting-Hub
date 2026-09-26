@@ -120,6 +120,8 @@ def question_cell(rep):
 # entries stay for good, they cost nothing and removing one silently splits a
 # row in two the next time somebody rebuilds an old tab.
 RENAMED = {
+    "Left unanswered": "Applicants left waiting 2+ hours",
+    "Applicants left waiting on a reply": "Applicants left waiting 2+ hours",
     'People texted': 'People we texted',
     'Replied to us': 'People who texted back',
     'Reply rate %': '% who texted back',
@@ -135,7 +137,6 @@ RENAMED = {
     'AI reply, median minutes': 'Minutes for the AI to reply (typical)',
     "Person's reply, median minutes": 'Minutes for a recruiter to reply (typical)',
     "Person's replies within 5 min %": '% of recruiter replies within 5 minutes',
-    'Left unanswered': 'Applicants left waiting on a reply',
     "Interview days in this column": "1st-interview days covered",
     "Didn't fit a bucket": "Questions we couldn't group",
     "Applicants over the carrier limit": "Applicants texted 4+ times, no reply",
@@ -280,7 +281,7 @@ ROWS = [
     ("Speed", "% of recruiter replies within 5 minutes",
      lambda r: _within5((r.get("log") or {}).get("speed_human"))),
 
-    ("Dropped", "Applicants left waiting on a reply",
+    ("Dropped", "Applicants left waiting 2+ hours",
      _msg(lambda r: len(((r.get("log") or {}).get("unanswered")) or r["unanswered"]))),
     ("Dropped", "…of those, never booked an interview",
      lambda r: sum(1 for u in ((r.get("log") or {}).get("unanswered") or [])

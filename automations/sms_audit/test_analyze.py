@@ -34,13 +34,15 @@ class CloserTest(unittest.TestCase):
             self.assertFalse(A.CLOSER.match(said), said)
 
     def test_unanswered_counts_only_the_ones_left_hanging(self):
+        # the last message in the window is at 5pm, so the 9am ones are well
+        # past the two-hour threshold
         recs = [
             _rec([["Out", "", "hi", "09/23 9:00 AM"], ["In", "", "C", "09/23 9:01 AM"]]),
             _rec([["Out", "", "hi", "09/23 9:00 AM"],
                   ["In", "", "I'm ready for zoom call .", "09/23 9:01 AM"]],
                  name="Left Waiting"),
             _rec([["In", "", "are you there?", "09/23 9:00 AM"],
-                  ["Out", "", "yes!", "09/23 9:02 AM"]]),
+                  ["Out", "", "yes!", "09/23 5:00 PM"]]),
         ]
         out = A.unanswered(A.as_items(recs))
         self.assertEqual([u["name"] for u in out], ["Left Waiting"])
@@ -502,3 +504,33 @@ class DropoffTest(unittest.TestCase):
         self.assertEqual(curve["one"]["booked"], 0)
         self.assertEqual(curve["many"]["people"], 1)
         self.assertEqual(curve["many"]["booked"], 1)
+
+
+class LeftWaitingThresholdTest(unittest.TestCase):
+    """Megan: "for more than 5 min? 10? days?" — there was no threshold, so
+    somebody who texted four minutes before the pull counted as ignored.
+    Two hours now, measured against the END OF THE DATA rather than the
+    clock, so re-reading an old pull cannot reclassify people."""
+
+    def _items(self, last_in_minutes_before_end):
+        end = dt.datetime(2026, 9, 25, 17, 0)
+        t = end - dt.timedelta(minutes=last_in_minutes_before_end)
+        return [("Late Texter", [(end - dt.timedelta(hours=9), "Out", "", "hi"),
+                                 (t, "In", "", "can we do friday?")]),
+                ("Anchor", [(end, "Out", "", "…")])]
+
+    def test_a_message_from_four_minutes_ago_is_not_being_ignored(self):
+        self.assertEqual(A.unanswered(self._items(4)), [])
+
+    def test_a_message_from_this_morning_is(self):
+        out = A.unanswered(self._items(6 * 60))
+        self.assertEqual([u["name"] for u in out], ["Late Texter"])
+
+    def test_the_clock_is_the_end_of_the_data_not_today(self):
+        # re-reading a month-old pull must give the same answer it gave then
+        self.assertEqual(A.unanswered(self._items(4)), [])
+        self.assertEqual(len(A.unanswered(self._items(180))), 1)
+
+    def test_the_threshold_is_adjustable(self):
+        self.assertEqual(len(A.unanswered(self._items(30), min_wait_min=10)), 1)
+        self.assertEqual(len(A.unanswered(self._items(30), min_wait_min=120)), 0)

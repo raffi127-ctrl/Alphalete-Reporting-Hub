@@ -270,7 +270,7 @@ class NoMessagesIsBlankTest(unittest.TestCase):
         by_label = {label: fn for _s, label, fn in W.ROWS}
         for label in ("Questions asked", "Questions we couldn't group",
                       "Most asked → what we usually reply",
-                      "Applicants left waiting on a reply", "Texts sent before 8am or after 9pm",
+                      "Applicants left waiting 2+ hours", "Texts sent before 8am or after 9pm",
                       "Texted after they said stop", "Broken links sent"):
             self.assertEqual(by_label[label](rep), "", label)
 

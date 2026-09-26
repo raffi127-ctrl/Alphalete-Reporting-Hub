@@ -589,17 +589,28 @@ def regular_responses(recs):
     return tmpl, typed
 
 
-def unanswered(items, meta=None):
-    """Applicants left on read: the LAST message is theirs and it is not a
-    plain 'ok/thanks/C' — they said something that wanted an answer and never
-    got one."""
+def unanswered(items, meta=None, min_wait_min=ANSWER_WINDOW_MIN, now=None):
+    """Applicants left on read: the LAST message is theirs, it is not a plain
+    'ok/thanks/C', and **it has gone unanswered for at least min_wait_min**.
+
+    The threshold is the point (Megan 2026-09-26: "for more than 5 min? 10?
+    days?"). Without one, somebody who texted four minutes before the pull
+    counted as ignored, which is not a fair thing to say about a recruiter.
+    Two hours, matching what counts as an answer everywhere else here. `now`
+    is the END OF THE DATA, not the clock — a pull read a week later must not
+    suddenly reclassify everyone as ignored."""
     meta = meta or {}
+    if now is None:
+        stamps = [seq[-1][0] for _w, seq in items if seq]
+        now = max(stamps) if stamps else None
     out = []
     for who, seq in items:
         if not seq or seq[-1][1] != "In":
             continue
         body = seq[-1][3].strip()
         if CLOSER.match(body):
+            continue
+        if now is not None and (now - seq[-1][0]).total_seconds() < min_wait_min * 60:
             continue
         m = meta.get(who, {})
         out.append({"name": who, "phone": m.get("phone", ""),
@@ -799,16 +810,20 @@ def log_reply_speed(convos):
     return lanes
 
 
-def log_unanswered(convos):
+def log_unanswered(convos, min_wait_min=ANSWER_WINDOW_MIN):
     """Conversations sitting on an applicant message nobody answered — now
     across EVERYONE contacted, which is where the ones who never booked live."""
     out = []
+    stamps = [c["msgs"][-1]["when"] for c in convos.values() if c["msgs"]]
+    now = max(stamps) if stamps else None
     for c in convos.values():
         msgs = c["msgs"]
         if not msgs or msgs[-1]["dir"] != "In":
             continue
         body = msgs[-1]["body"].strip()
         if CLOSER.match(body):
+            continue
+        if now is not None and (now - msgs[-1]["when"]).total_seconds() < min_wait_min * 60:
             continue
         out.append({"name": c["name"] or c["phone"], "phone": c["phone"],
                     "when": msgs[-1]["when"], "booked": c["booked"],
