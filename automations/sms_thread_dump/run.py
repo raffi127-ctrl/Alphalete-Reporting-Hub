@@ -12,13 +12,18 @@ retired rcaptain, so the read has to happen on Lucy 2's live "Lucy Reports"
 session. READ-ONLY on AppStream — the only writes are the sheet tabs and a
 local JSON cache per office.
 
-  lucy rerun sms_thread_dump                          # office 11580, last Wed/Thu/Fri
-  ... run.py --office 11280,11580 --days 3            # both offices, last 3 non-Sunday days
+  lucy rerun sms_thread_dump                          # office 11580, last full Sat-Fri week
+  ... run.py --office 11280,11580                     # both offices, that same week
+  ... run.py --week 2                                 # the week before that
+  ... run.py --office 11280 --days 3                  # last 3 non-Sunday days instead
   ... run.py --office 11280 --dates 09-23-2026,09-24-2026
   ... run.py --limit 3                                # first 3 applicants per office (probe)
   ... run.py --dry-run                                # scrape, print counts, no sheet write
 
-Mechanics: p=105 Weekly Calendar defaults to the current Mon-Sun band. Each
+Mechanics: the default window is the last COMPLETE recruiting week, which runs
+SATURDAY to FRIDAY (Megan 2026-09-26) — not the Mon-Sun band the calendar page
+itself draws, so a week normally spans two of its pages and the code shifts
+between them. p=105 Weekly Calendar defaults to the current Mon-Sun band. Each
 "First Interview Date: <d>. Applicants: N" header row toggles its day table.
 Every data row's LAST cell holds two icons; the FIRST opens the "Applicant
 History for <name>" dialog (tabs: Action History / Email Sent / SMS Sent).
@@ -75,6 +80,34 @@ def _default_dates(today=None):
             d -= dt.timedelta(days=1)
         out.append(d)
     return sorted(out)
+
+
+def _recruiting_week(today=None, back=1):
+    """The last COMPLETE recruiting week as (saturday, friday).
+
+    Recruiting counts a week Saturday→Friday (Megan 2026-09-26), not Mon→Sun
+    like the calendar page's own banner. back=1 is the week just finished,
+    back=2 the one before it. Called on a Saturday, back=1 is the six days
+    that ended yesterday — today is day 1 of the new week and is not in it."""
+    today = today or dt.date.today()
+    # the most recent Friday strictly before today ends the last full week
+    end = today - dt.timedelta(days=1)
+    while end.weekday() != 4:                      # 4 = Friday
+        end -= dt.timedelta(days=1)
+    end -= dt.timedelta(days=7 * (back - 1))
+    return end - dt.timedelta(days=6), end         # Saturday, Friday
+
+
+def _week_dates(today=None, back=1):
+    """Every day of that recruiting week except Sunday — nobody books a first
+    interview on one, so asking costs a page load to be told there is none."""
+    start, end = _recruiting_week(today, back)
+    out, d = [], start
+    while d <= end:
+        if d.weekday() != 6:
+            out.append(d)
+        d += dt.timedelta(days=1)
+    return out
 
 
 def _last_days(n, today=None):
@@ -345,6 +378,10 @@ def main(argv=None):
                     help="comma list MM-DD-YYYY; default last Wed/Thu/Fri")
     ap.add_argument("--days", type=int, default=0,
                     help="instead of --dates: the N most recent non-Sunday days")
+    ap.add_argument("--week", type=int, nargs="?", const=1, default=0,
+                    help="a whole recruiting week, Sat-Fri: 1 = the week just "
+                         "finished (the default when nothing else is given), 2 = "
+                         "the one before it")
     ap.add_argument("--limit", type=int, default=0, help="stop after N applicants per office")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
@@ -356,7 +393,9 @@ def main(argv=None):
     elif a.days:
         dates = _last_days(a.days)
     else:
-        dates = _default_dates()
+        # A recruiting week is Sat-Fri, and an audit that reports "the week" has
+        # to mean that week — a Wed/Thu/Fri sample is the tail of one.
+        dates = _week_dates(back=a.week or 1)
     dates = sorted(dates)
     date_strs = [_fmt(d) for d in dates]
     print("[sms_dump] offices {}, dates {}".format(offices, date_strs), flush=True)

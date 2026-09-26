@@ -37,6 +37,36 @@ class WindowTest(unittest.TestCase):
         self.assertEqual(out, [dt.date(2026, 9, 25)])
 
 
+class RecruitingWeekTest(unittest.TestCase):
+    """Recruiting counts a week SATURDAY to FRIDAY (Megan 2026-09-26). The
+    calendar page draws Mon-Sun, so a recruiting week straddles two of its
+    pages — getting this wrong reports the tail of a week as the week."""
+
+    def test_on_a_saturday_the_last_full_week_ended_yesterday(self):
+        self.assertEqual(R._recruiting_week(dt.date(2026, 9, 26)),
+                         (dt.date(2026, 9, 19), dt.date(2026, 9, 25)))
+
+    def test_today_is_never_inside_the_window(self):
+        # Friday: the week that ends TODAY is not finished yet
+        start, end = R._recruiting_week(dt.date(2026, 9, 25))
+        self.assertEqual((start, end), (dt.date(2026, 9, 12), dt.date(2026, 9, 18)))
+
+    def test_midweek_still_means_the_last_finished_week(self):
+        self.assertEqual(R._recruiting_week(dt.date(2026, 9, 21)),
+                         (dt.date(2026, 9, 12), dt.date(2026, 9, 18)))
+
+    def test_back_two_steps_one_week_further(self):
+        self.assertEqual(R._recruiting_week(dt.date(2026, 9, 26), back=2),
+                         (dt.date(2026, 9, 12), dt.date(2026, 9, 18)))
+
+    def test_the_week_is_six_scrape_days_sunday_dropped(self):
+        days = R._week_dates(dt.date(2026, 9, 26))
+        self.assertEqual(len(days), 6)
+        self.assertNotIn(dt.date(2026, 9, 20), days)     # the Sunday
+        self.assertEqual(days[0], dt.date(2026, 9, 19))  # Saturday leads
+        self.assertEqual(days[-1], dt.date(2026, 9, 25))
+
+
 class TabNameTest(unittest.TestCase):
     def test_each_office_gets_its_own_tab(self):
         # one shared tab meant the second office's run cleared the first's
