@@ -438,6 +438,10 @@ class SuffixPairingTest(unittest.TestCase):
             self.assertIn("no output/", src)
 
 
+LATER = dt.date(2026, 9, 30)   # well past the fixtures' one day, so the
+                               # booking-lag hold-out is not what is under test
+
+
 class DropoffTest(unittest.TestCase):
     """Megan's real question: why isn't each office booking more. Every
     unbooked conversation lands in exactly ONE bucket, so the columns add up
@@ -453,36 +457,36 @@ class DropoffTest(unittest.TestCase):
                 "source": "", "status": status}
 
     def test_one_text_and_silence_is_its_own_bucket(self):
-        d = A.dropoff({"a": self._c([self._m("Out", 0)])})
+        d = A.dropoff({"a": self._c([self._m("Out", 0)])}, window_end=LATER)
         self.assertEqual(d["buckets"]["one text only"], 1)
 
     def test_several_texts_and_silence_is_a_different_bucket(self):
         d = A.dropoff({"a": self._c([self._m("Out", 0), self._m("Out", 60),
-                                     self._m("Out", 120)])})
+                                     self._m("Out", 120)])}, window_end=LATER)
         self.assertEqual(d["buckets"]["never replied"], 1)
         self.assertNotIn("one text only", d["buckets"])
 
     def test_they_spoke_last_is_the_fixable_one(self):
         d = A.dropoff({"a": self._c([self._m("Out", 0),
-                                     self._m("In", 5, "can we do friday?")])})
+                                     self._m("In", 5, "can we do friday?")])}, window_end=LATER)
         self.assertEqual(d["buckets"]["we never answered"], 1)
 
     def test_a_polite_sign_off_is_not_us_ignoring_them(self):
-        d = A.dropoff({"a": self._c([self._m("Out", 0), self._m("In", 5, "thanks!")])})
+        d = A.dropoff({"a": self._c([self._m("Out", 0), self._m("In", 5, "thanks!")])}, window_end=LATER)
         self.assertEqual(d["buckets"]["talked, then stopped"], 1)
 
     def test_a_decline_is_not_a_leak(self):
         d = A.dropoff({"a": self._c([self._m("Out", 0),
-                                     self._m("In", 5, "not interested")])})
+                                     self._m("In", 5, "not interested")])}, window_end=LATER)
         self.assertEqual(d["buckets"]["said no"], 1)
 
     def test_texts_that_all_failed_mean_they_never_saw_us(self):
         d = A.dropoff({"a": self._c([self._m("Out", 0, status="Error"),
-                                     self._m("Out", 60, status="Error")])})
+                                     self._m("Out", 60, status="Error")])}, window_end=LATER)
         self.assertEqual(d["buckets"]["never reached them"], 1)
 
     def test_a_booked_person_is_not_a_dropoff(self):
-        d = A.dropoff({"a": self._c([self._m("Out", 0)], booked=True)})
+        d = A.dropoff({"a": self._c([self._m("Out", 0)], booked=True)}, window_end=LATER)
         self.assertEqual(sum(d["buckets"].values()), 0)
 
     def test_every_unbooked_person_lands_in_exactly_one_bucket(self):
@@ -494,12 +498,12 @@ class DropoffTest(unittest.TestCase):
             "e": self._c([self._m("Out", 0, status="Error")]),
             "f": self._c([self._m("Out", 0)], booked=True),
         }
-        self.assertEqual(sum(A.dropoff(convos)["buckets"].values()), 5)
+        self.assertEqual(sum(A.dropoff(convos, window_end=LATER)["buckets"].values()), 5)
 
     def test_the_follow_up_curve_splits_on_how_many_we_sent(self):
         convos = {"a": self._c([self._m("Out", 0)]),
                   "b": self._c([self._m("Out", 0), self._m("Out", 60)], booked=True)}
-        curve = A.dropoff(convos)["curve"]
+        curve = A.dropoff(convos, window_end=LATER)["curve"]
         self.assertEqual(curve["one"]["people"], 1)
         self.assertEqual(curve["one"]["booked"], 0)
         self.assertEqual(curve["many"]["people"], 1)
@@ -534,3 +538,40 @@ class LeftWaitingThresholdTest(unittest.TestCase):
     def test_the_threshold_is_adjustable(self):
         self.assertEqual(len(A.unanswered(self._items(30), min_wait_min=10)), 1)
         self.assertEqual(len(A.unanswered(self._items(30), min_wait_min=120)), 0)
+
+
+class BookingLagTest(unittest.TestCase):
+    """Megan: "are you sure they weren't called and then booked?" A booking
+    lands 0-5 days after the first text, so anyone first contacted near the
+    end of the window may book in the NEXT week's calendar, which this pull
+    cannot see. Calling them "never booked" is a claim the data cannot
+    support, so they are held out of every bucket and out of the curve."""
+
+    def _c(self, first_out_day, n_out=1, booked=False):
+        msgs = [{"when": dt.datetime(2026, 9, first_out_day, 9, 0) + dt.timedelta(hours=i),
+                 "dir": "Out", "template": "", "body": "hi", "sent_by": "",
+                 "source": "", "status": "Delivered"} for i in range(n_out)]
+        return {"phone": "469876212%d" % first_out_day, "name": "x",
+                "booked": booked, "booked_by": "", "outcome": "", "msgs": msgs}
+
+    def test_a_contact_on_the_last_day_is_not_called_a_failure(self):
+        convos = {"a": self._c(25)}
+        d = A.dropoff(convos, window_end=dt.date(2026, 9, 25))
+        self.assertEqual(d["buckets"]["too soon to tell"], 1)
+        self.assertNotIn("one text only", d["buckets"])
+
+    def test_a_contact_early_in_the_week_had_its_chance(self):
+        convos = {"a": self._c(21)}
+        d = A.dropoff(convos, window_end=dt.date(2026, 9, 25))
+        self.assertEqual(d["buckets"]["one text only"], 1)
+        self.assertNotIn("too soon to tell", d["buckets"])
+
+    def test_the_late_ones_are_out_of_the_follow_up_curve_too(self):
+        convos = {"early": self._c(21), "late": self._c(25)}
+        curve = A.dropoff(convos, window_end=dt.date(2026, 9, 25))["curve"]
+        self.assertEqual(curve["one"]["people"], 1)   # the late one is excluded
+
+    def test_someone_who_booked_is_never_too_soon(self):
+        convos = {"a": self._c(25, booked=True)}
+        d = A.dropoff(convos, window_end=dt.date(2026, 9, 25))
+        self.assertEqual(sum(d["buckets"].values()), 0)

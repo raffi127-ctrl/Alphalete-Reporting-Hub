@@ -262,6 +262,8 @@ ROWS = [
     ("Why they didn't book", "Talked, then it just stopped", _drop("talked, then stopped")),
     ("Why they didn't book", "Said no / not interested", _drop("said no")),
     ("Why they didn't book", "Never reached them (texts failed)", _drop("never reached them")),
+    ("Why they didn't book", "Too soon to tell (texted in the last 3 days)",
+     _drop("too soon to tell")),
 
     ("Follow-up", "People who got exactly 1 text", _curve("one", "people")),
     ("Follow-up", "% of those who booked", _curve_pct("one", "booked")),

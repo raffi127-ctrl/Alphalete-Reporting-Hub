@@ -744,7 +744,50 @@ SAID_NO = re.compile(r"\b(not interested|no longer interested|stop|unsubscribe|"
                      r"no thank|don'?t (text|contact))", re.I)
 
 
-def dropoff(convos):
+BOOKING_LAG_DAYS = 3
+
+
+def dropoff(convos, window_end=None):
+    """WHY the people we texted did not book — Megan's actual question
+    (2026-09-26): "our goal is to book as many of our applicants as we can…
+    we really need to find out why each office isn't booking more."
+
+    TIMING. A booking lands 0-5 days after the first text (measured: 88% of
+    Raf's inside two days). So someone first texted near the END of the window
+    may well book in the NEXT week's calendar, which this pull cannot see —
+    calling them "never booked" would be a lie the data cannot support.
+    Anyone first contacted within BOOKING_LAG_DAYS of the window's end goes to
+    "too soon to tell" and is kept out of every other bucket and out of the
+    follow-up curve. Megan asked exactly this ("are you sure they weren't
+    called and then booked?"); the answer held, but only after the late
+    contacts were taken out of it.
+
+    Every remaining unbooked conversation lands in exactly one bucket, most
+    fixable first when you read them together:
+
+      one text only        we said one thing and never followed up
+      never replied        they got more than one and stayed silent
+      we never answered    THEY spoke last — the most fixable of all
+      talked, then stopped a real conversation that petered out
+      said no              a genuine decline, not a leak
+      never reached them   every text errored; they never saw us at all
+    """
+    if window_end is None:
+        stamps = [m["when"] for c in convos.values() for m in c["msgs"]]
+        window_end = max(stamps).date() if stamps else None
+    cutoff = (window_end - dt.timedelta(days=BOOKING_LAG_DAYS)
+              if window_end else None)
+
+    def _too_soon(c):
+        if cutoff is None or c["booked"]:
+            return False
+        outs = [m["when"] for m in c["msgs"] if m["dir"] == "Out"]
+        return bool(outs) and min(outs).date() > cutoff
+
+    return _dropoff_inner(convos, _too_soon)
+
+
+def _dropoff_inner(convos, too_soon):
     """WHY the people we texted did not book — Megan's actual question
     (2026-09-26): "our goal is to book as many of our applicants as we can…
     we really need to find out why each office isn't booking more."
@@ -765,6 +808,9 @@ def dropoff(convos):
     for c in convos.values():
         if c["booked"]:
             continue
+        if too_soon(c):
+            out["too soon to tell"] += 1
+            continue
         msgs = c["msgs"]
         outs = [m for m in msgs if m["dir"] == "Out"]
         ins = [m for m in msgs if m["dir"] == "In"]
@@ -779,10 +825,12 @@ def dropoff(convos):
         else:
             out["talked, then stopped"] += 1
 
+    # the curve excludes the late contacts for the same reason
     curve = {}
     for label, keep in (("one", lambda n: n == 1), ("many", lambda n: n >= 2)):
         grp = [c for c in convos.values()
-               if keep(len([m for m in c["msgs"] if m["dir"] == "Out"]))]
+               if keep(len([m for m in c["msgs"] if m["dir"] == "Out"]))
+               and not too_soon(c)]
         curve[label] = {
             "people": len(grp),
             "replied": sum(1 for c in grp if any(m["dir"] == "In" for m in c["msgs"])),
