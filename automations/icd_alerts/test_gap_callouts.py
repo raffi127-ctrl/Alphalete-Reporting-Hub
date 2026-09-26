@@ -47,11 +47,15 @@ class LineTest(unittest.TestCase):
         s = G.line("carlos", [{"name": "Nick Smith", "mins": 22}], NOW)
         self.assertIn("Nick", s); self.assertNotIn(" and ", s); self.assertIn("20+", s)
 
-    def test_a_crowd_is_capped(self):
-        c = [{"name": "R%d X" % i, "mins": 30} for i in range(9)]
-        s = G.line("carlos-b2batt", c, NOW)
-        self.assertIn("and 5 more", s)
-        self.assertLessEqual(s.count(","), 4)
+    def test_a_crowd_is_a_bulleted_list_with_every_name(self):
+        c = [{"name": "Breana A", "mins": 47}, {"name": "Gary B", "mins": 31}, {"name": "Kandice C", "mins": 25},
+             {"name": "Jaslene D", "mins": 22}, {"name": "Tara E", "mins": 20}]
+        s = G.line("carlos", c, NOW)
+        self.assertNotIn("more", s)
+        self.assertIn("5 of y'all", s)
+        for n in ("• Breana — 47 min", "• Gary — 31 min", "• Kandice — 25 min", "• Jaslene — 22 min", "• Tara — 20 min"):
+            self.assertIn(n, s)
+        self.assertTrue(s.index("Breana") < s.index("Tara"))
 
     def test_nobody_is_no_message(self):
         self.assertEqual(G.line("carlos", [], NOW), "")

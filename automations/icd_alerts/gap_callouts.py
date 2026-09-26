@@ -44,7 +44,8 @@ from automations.icd_alerts import knocks_map as M, knocks_post as K, offices as
 # office's system relays: credit checks on AT&T, contracts on Box; a rep whose
 # count moved this hour is working, not idle. Names capped so a slow Saturday
 # is a call-out, not a roll call.
-MAX_NAMES = 5
+CALLOUT_CAMPAIGNS = {"att", "nds"}   # D2D only; B2B and Box offices are out (Megan 2026-09-26)
+INLINE_NAMES = 3      # more than this and every name goes on its own bullet (Megan: name them, no '6 more')
 CALLOUT_EVERY_MIN = 60
 GAP_MIN = 15
 GAP_MAX = 180        # past this they went home; a call-out every hour would be noise
@@ -126,13 +127,19 @@ def line(office_key: str, callouts: List[Dict], now: dt.datetime) -> str:
         f = _first(c["name"])
         if f and f not in firsts:
             firsts.append(f)
-    if len(firsts) > MAX_NAMES:
-        firsts = firsts[:MAX_NAMES - 1] + ["%d more" % (len(firsts) - MAX_NAMES + 1)]
-    names = firsts[0] if len(firsts) == 1 else ", ".join(firsts[:-1]) + " and " + firsts[-1]
     m = min(c["mins"] for c in callouts)
     m = (m // 5) * 5                       # "40+", not "43+"
     seed = "callout|%s|%s|%d" % (office_key, now.date().isoformat(), now.hour)
-    return LINES[zlib.crc32(seed.encode("utf-8")) % len(LINES)].format(names=names, m=m)
+    template = LINES[zlib.crc32(seed.encode("utf-8")) % len(LINES)]
+    if len(firsts) <= INLINE_NAMES:
+        names = firsts[0] if len(firsts) == 1 else ", ".join(firsts[:-1]) + " and " + firsts[-1]
+        return template.format(names=names, m=m)
+    # A CROWD IS A LIST, NOT A COUNT (Megan 2026-09-26: "it shouldn't say
+    # '6 more' it should name them"). The sentence addresses the group; every
+    # name sits on its own bullet with its own minutes, longest gap first.
+    head = template.format(names="%d of y'all" % len(firsts), m=m)
+    bullets = ["• %s — %d min" % (_first(c["name"]), c["mins"]) for c in callouts]
+    return head + "\n" + "\n".join(bullets)
 
 
 def _state() -> Dict:
@@ -174,6 +181,10 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
             continue
         office = O.get(key)
         if not office:
+            continue
+        # D2D AT&T AND NDS ONLY (Megan 2026-09-26: "Att & NDS", "not B2B").
+        # The B2B offices -- Carlos's two, Ryan's and Roshan's Box -- are out.
+        if str(getattr(office, "campaign", "") or "att").strip().lower() not in CALLOUT_CAMPAIGNS:
             continue
         now = K._office_now(office)
         if not K.in_field_hours(office, now):
