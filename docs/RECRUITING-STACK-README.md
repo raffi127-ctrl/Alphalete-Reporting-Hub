@@ -204,6 +204,37 @@ matches what you're about to touch.
   every run via FULL_MONTH_MANAGERS in indeed_source_report/run.py; everyone else
   stays 1st→today. If his numbers ever look inflated vs others, check this first.
 
+## 5b. Reading the applicant texts (the SMS audit)
+
+Raf asked on 2026-09-26 for an audit of the applicant text stream; Carlos asked
+for his office beside it. Two read-only pieces, both on Lucy 2's AppStream
+session, both landing in the control sheet:
+
+| Piece | Page | Writes |
+| --- | --- | --- |
+| `sms_thread_dump` | p=105 Weekly Calendar → each booking's Applicant History → **SMS Sent** | tab `SMS Dump <office>` + `output/sms_thread_dump_<office>.json` |
+| `as_templates_probe --all` | p=332 SMS Templates, every Edit link | tab `AS Templates <office>` |
+| `sms_audit.analyze` | *(reads the tabs — no AppStream)* | `output/sms-audit-<date>.md` |
+| `sms_audit.templates` | *(reads the tabs — no AppStream)* | prints findings, exit 1 if any |
+
+```
+lucy rerun sms_thread_dump --office 11280,11580 --days 3 --machine "Lucy 2"
+python -m automations.sms_audit.analyze --office 11280,11580
+```
+
+Both pulls now write **one tab per office** — they used to share a single tab,
+so probing a second office silently cleared the first and a comparison could
+never hold both halves at once.
+
+**What the calendar walk cannot tell you.** The Chat History has no sender
+column, so a free-typed message could be a recruiter or the conversational AI;
+and only applicants who *booked* appear at all. Both limits are lifted by the
+**SMS List Report (p=336)** — every message for a date range with `Sent By`,
+`Source` and `Status`, plus an Export to CSV. Nothing reads it yet; it is the
+obvious next pull. `p=1500` (AI SMS Automation) already totals **AI Bookings vs
+Other Bookings** natively, which is the same split §1 of the audit computes
+from two weaker signals.
+
 ## 6. Standing rules
 
 - Vantura Master Sales Board is NEVER part of fleet/captainship changes unless

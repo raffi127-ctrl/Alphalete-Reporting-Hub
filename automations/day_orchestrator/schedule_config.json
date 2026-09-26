@@ -356,7 +356,7 @@
     },
     "sms_thread_dump": {
       "on_scheduler": false,
-      "_note": "MANUAL-ONLY (Carlos 2026-09-06): dump the full SMS chat history behind First Interview bookings for chosen dates/office off the p=105 Weekly Calendar, into control-sheet tab 'SMS Dump' for the mini to read back. Built so Claude can outline how the AI/team responds to applicants without a laptop AppStream login (rcaptain is retired). READ-ONLY on AppStream. `lucy rerun sms_thread_dump` = office 11580, most recent Wed/Thu/Fri; args pass through: --office, --dates MM-DD-YYYY[,..], --limit N, --dry-run.",
+      "_note": "MANUAL-ONLY (Carlos 2026-09-06, Raf 2026-09-26): dump the full SMS chat history behind First Interview bookings for chosen dates/offices off the p=105 Weekly Calendar, into control-sheet tab 'SMS Dump <office>' (one per office) for the mini to read back. Feeds the sms_audit write-up. Built so Claude can outline how the AI/team responds to applicants without a laptop AppStream login (rcaptain is retired). READ-ONLY on AppStream. `lucy rerun sms_thread_dump` = office 11580, most recent Wed/Thu/Fri; args pass through: --office 11280,11580 (comma list, one run), --dates MM-DD-YYYY[,..], --days N, --limit N, --dry-run.",
       "display_name": "SMS thread dump (first-interview chat histories)",
       "source_type": "appstream",
       "data_sources": [],
@@ -371,7 +371,7 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": null,
-      "timeout_minutes": 45,
+      "timeout_minutes": 120,
       "machine": "Lucy 2"
     },
     "recruiter_stats": {

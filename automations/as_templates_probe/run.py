@@ -26,7 +26,8 @@ from automations.recruiter_retention.run import _rqst
 from automations.shared.tableau_patchright import appstream_direct_session
 
 CONTROL_SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
-OUT_TAB = "AS Templates Probe"
+OUT_TAB = "AS Templates Probe"   # legacy single-office tab, left in place
+OUT_TAB_PREFIX = "AS Templates"  # real tab is "AS Templates <office>"
 HINT = re.compile(r"templat|sms|text|email|communicat|await|message", re.I)
 
 
@@ -36,12 +37,16 @@ def _emit(rows, line):
         rows.append([line[i:i + 45000]])
 
 
+# The first read (Carlos 2026-09-08) only wanted the pre-call texts. The audit
+# (Raf 2026-09-26) lints the whole library — a bad link in ANY activated
+# template reaches every applicant it fires for — so --all walks every Edit
+# link instead. Kept as the default so the original narrow run still works.
 WANT_SECTIONS = ["Await Call", "Await Call AI", "1st Left Message",
                  "2nd Left Message", "3rd Left Message", "No Answer",
                  "First Interview Confirmation", "Friendly Reminder 1"]
 
 
-def _dump_template_bodies(page, rqst, rows):
+def _dump_template_bodies(page, rqst, rows, want=None):
     """On the SMS Templates page (p=332), click Edit on each wanted section's
     templates and dump every textarea/text-input the edit view exposes."""
     url = f"https://applicantstream.com/index.cfm?rqst={rqst}&p=332"
@@ -81,9 +86,10 @@ def _dump_template_bodies(page, rqst, rows):
           return out;
         }""")
     _emit(rows, f"=== phase 2: {len(links)} Edit links found ===")
-    wanted = [l for l in links
-              if any(l["head"].startswith(w) or l["name"].startswith(w)
-                     for w in WANT_SECTIONS)]
+    want = WANT_SECTIONS if want is None else want
+    wanted = links if not want else [
+        l for l in links
+        if any(l["head"].startswith(w) or l["name"].startswith(w) for w in want)]
     for l in wanted:
         _emit(rows, f"opening Edit #{l['i']} — section {l['head']!r} "
                     f"template {l['name']!r}")
@@ -131,6 +137,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog="as_templates_probe")
     ap.add_argument("--office", default="11280")
     ap.add_argument("--owner", default="Rafael Hidalgo")
+    ap.add_argument("--all", action="store_true",
+                    help="dump EVERY template body, not just the pre-call ones")
     args = ap.parse_args(argv)
 
     rows = []
@@ -188,19 +196,22 @@ def main(argv=None):
 
             # ---- phase 2: open Edit on the pre-call templates and capture the
             # actual message bodies (p=332 lists names only).
-            _dump_template_bodies(page, rqst, rows)
+            _dump_template_bodies(page, rqst, rows,
+                                  want=[] if args.all else None)
 
+    # One tab per office. Probing a second office used to clear the first
+    # one's dump, which made a two-office comparison impossible to hold.
+    tab = f"{OUT_TAB_PREFIX} {args.office}"
     sh = _fill._client().open_by_key(CONTROL_SHEET_ID)
     try:
-        ws = sh.worksheet(OUT_TAB)
+        ws = sh.worksheet(tab)
     except Exception:  # noqa: BLE001
-        ws = sh.add_worksheet(title=OUT_TAB, rows=max(len(rows) + 10, 100),
-                              cols=1)
+        ws = sh.add_worksheet(title=tab, rows=max(len(rows) + 10, 100), cols=1)
     ws.clear()
     if ws.row_count < len(rows) + 5:
         ws.resize(rows=len(rows) + 5, cols=1)
     ws.update(rows, "A1")
-    print(f"wrote {len(rows)} rows -> '{OUT_TAB}'", flush=True)
+    print(f"wrote {len(rows)} rows -> '{tab}'", flush=True)
     return 0
 
 

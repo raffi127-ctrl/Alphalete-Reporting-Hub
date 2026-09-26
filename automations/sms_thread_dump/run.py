@@ -1,30 +1,36 @@
 """SMS thread dump — read every First Interview booking's SMS chat history off
 the AppStream Weekly Calendar for chosen dates and park the raw threads in the
-control sheet (tab "SMS Dump") for the mini to read back.
+control sheet (one tab per office) for the mini and Claude to read back.
 
 WHY (Carlos 2026-09-06): he wants the full text-message conversations behind
-last week's Wed/Thu/Fri first-round bookings in HIS office (11580) so Claude
-can outline how the AI/team responds to applicants. The laptop's own AppStream
-login is the retired rcaptain, so the read has to happen here on Lucy 2's live
-"Lucy Reports" session. READ-ONLY on AppStream — the only writes are the sheet
-tab and a local JSON cache.
+last week's Wed/Thu/Fri first-round bookings so Claude can outline how the
+AI/team responds to applicants. WHY AGAIN (Raf 2026-09-26): same read on HIS
+office (11280) plus a Raf-vs-Carlos comparison — so the dump now takes a comma
+list of offices in ONE run and writes each to its OWN tab (a second office used
+to clear the first office's rows). The laptop's own AppStream login is the
+retired rcaptain, so the read has to happen on Lucy 2's live "Lucy Reports"
+session. READ-ONLY on AppStream — the only writes are the sheet tabs and a
+local JSON cache per office.
 
-  lucy rerun sms_thread_dump                      # office 11580, last Wed/Thu/Fri
-  ... run.py --office 11580 --dates 09-02-2026,09-03-2026,09-04-2026
-  ... run.py --limit 3                            # first 3 applicants only (probe)
-  ... run.py --dry-run                            # scrape, print counts, no sheet write
+  lucy rerun sms_thread_dump                          # office 11580, last Wed/Thu/Fri
+  ... run.py --office 11280,11580 --days 3            # both offices, last 3 non-Sunday days
+  ... run.py --office 11280 --dates 09-23-2026,09-24-2026
+  ... run.py --limit 3                                # first 3 applicants per office (probe)
+  ... run.py --dry-run                                # scrape, print counts, no sheet write
 
 Mechanics: p=105 Weekly Calendar defaults to the current Mon-Sun band. Each
 "First Interview Date: <d>. Applicants: N" header row toggles its day table.
 Every data row's LAST cell holds two icons; the FIRST opens the "Applicant
 History for <name>" dialog (tabs: Action History / Email Sent / SMS Sent).
 The SMS Sent tab's "Chat History" table is [Direction, Type, Text, At]. We
-click through every row, scrape, close, next. ~2-4s per applicant.
+click through every row, scrape, close, next. ~2-4s per applicant. Dates that
+fall in different weeks are grouped and the calendar is shifted once per week.
 
-Output tab rows: [date, time, name, phone, board, booked_by, status, part,
-thread_json]. thread_json is a JSON list of [direction, type, text, at]; a
-thread longer than ~45k chars continues on extra rows with part=2,3… (sheet
-cells cap at 50k). Row 1 is a meta line, row 2 the header.
+Output tab "SMS Dump <office>", rows: [date, time, name, phone, board,
+booked_by, status, part, thread_json]. thread_json is a JSON list of
+[direction, type, text, at]; a thread longer than ~45k chars continues on extra
+rows with part=2,3… (sheet cells cap at 50k). Row 1 is a meta line, row 2 the
+header. The legacy "SMS Dump" tab (Carlos, 09-02→09-04) is left alone.
 """
 from __future__ import annotations
 
@@ -45,9 +51,8 @@ from automations.shared.tableau_patchright import appstream_direct_session
 from automations.recruiting_report import fill as _fill
 
 CONTROL_SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
-TAB = "SMS Dump"
-RAW_PATH = (Path(__file__).resolve().parent.parent.parent / "output"
-            / "sms_thread_dump.json")
+TAB_PREFIX = "SMS Dump"          # real tab is "SMS Dump <office>"
+OUTPUT_DIR = Path(__file__).resolve().parent.parent.parent / "output"
 CELL_CAP = 45000
 
 
@@ -69,6 +74,19 @@ def _default_dates(today=None):
         while d.weekday() != wd:
             d -= dt.timedelta(days=1)
         out.append(d)
+    return sorted(out)
+
+
+def _last_days(n, today=None):
+    """The n most recent non-Sunday days strictly before today. Sunday is
+    skipped because nobody books first interviews on it — asking for it just
+    logs 'no First Interview section' and burns a page load."""
+    today = today or dt.date.today()
+    out, d = [], today - dt.timedelta(days=1)
+    while len(out) < n:
+        if d.weekday() != 6:
+            out.append(d)
+        d -= dt.timedelta(days=1)
     return sorted(out)
 
 
@@ -232,14 +250,17 @@ def _close_dialog(page):
     time.sleep(0.5)
 
 
-def _write_tab(records, meta: str):
+def _write_tab(records, meta: str, office: str):
+    """One tab per office — "SMS Dump 11280" — so dumping a second office does
+    not clear the first one's rows (the whole point of the comparison)."""
+    tab = "{} {}".format(TAB_PREFIX, office)
     gc = _fill._client()
     sh = gc.open_by_key(CONTROL_SHEET_ID)
     try:
-        ws = sh.worksheet(TAB)
+        ws = sh.worksheet(tab)
         ws.clear()
     except Exception:
-        ws = sh.add_worksheet(TAB, rows=2000, cols=10)
+        ws = sh.add_worksheet(tab, rows=4000, cols=10)
     rows = [[meta, "", "", "", "", "", "", "", ""],
             ["date", "time", "name", "phone", "board", "booked_by", "status",
              "part", "thread_json"]]
@@ -250,88 +271,126 @@ def _write_tab(records, meta: str):
             rows.append([r["date"], r["time"], r["name"], r["phone"], r["board"],
                          r["booked_by"], r["status"], pi, chunk])
     ws.update(values=rows, range_name="A1", raw=True)
-    return len(rows)
+    return tab, len(rows)
+
+
+def _scrape_office(page, tok, office, dates, date_strs, limit):
+    """Everything for ONE office: switch to it, walk each date's table, scrape.
+    Dates in different calendar weeks are handled — the banner is re-checked
+    per date, so a window that straddles a Sunday still reads clean."""
+    page.goto("https://www.applicantstream.com/index.cfm?p=104&rqst={}&newOfficeId={}"
+              .format(tok, office))
+    page.wait_for_load_state("networkidle")
+    time.sleep(1.0)
+
+    records, scraped, week = [], 0, None
+    for d, ds in zip(dates, date_strs):
+        if week is None or not (week[0] <= d <= week[1]):
+            lo, hi = _goto_week_containing(page, tok, d)
+            week = (dt.datetime.strptime(lo, "%m-%d-%Y").date(),
+                    dt.datetime.strptime(hi, "%m-%d-%Y").date())
+            print("[sms_dump] {}: on week {} -> {}".format(office, lo, hi), flush=True)
+        n = _expand_day(page, ds)
+        if n < 0:
+            print("[sms_dump] {} {}: no First Interview section — skipped"
+                  .format(office, ds), flush=True)
+            continue
+        rows = _day_rows(page, ds)
+        print("[sms_dump] {} {}: header says {}, table rows {}"
+              .format(office, ds, n, len(rows)), flush=True)
+        for row in rows:
+            if limit and scraped >= limit:
+                break
+            rec = dict(row)
+            rec.pop("idx", None)
+            rec["office"] = office
+            try:
+                if not _open_history(page, row):
+                    raise RuntimeError("history link not found")
+                page.wait_for_selector("text=Applicant History for", timeout=15000)
+                thread = _scrape_thread(page)
+                rec["thread"] = thread or []
+                if not thread:
+                    rec["error"] = "no chat table"
+            except Exception as e:  # noqa: BLE001 — one bad row must not kill the run
+                state = ""
+                try:
+                    state = " · " + _dialog_state(page)
+                except Exception:
+                    pass
+                rec["error"] = "{}: {}{}".format(
+                    type(e).__name__, str(e).splitlines()[0][:120], state)
+                print("[sms_dump]   {}: {}".format(row["name"], rec["error"]), flush=True)
+            finally:
+                _close_dialog(page)
+            records.append(rec)
+            scraped += 1
+            if scraped % 10 == 0:
+                print("[sms_dump]   …{} applicants read ({})".format(scraped, office),
+                      flush=True)
+        # collapse the day again to keep row indices stable per-day
+        try:
+            page.get_by_text("First Interview Date: {}.".format(ds), exact=False).first.click()
+            time.sleep(0.8)
+        except Exception:
+            pass
+    return records
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("--office", default="11580")
+    ap.add_argument("--office", default="11580",
+                    help="one id or a comma list, e.g. 11280,11580")
     ap.add_argument("--dates", default="",
                     help="comma list MM-DD-YYYY; default last Wed/Thu/Fri")
-    ap.add_argument("--limit", type=int, default=0, help="stop after N applicants")
+    ap.add_argument("--days", type=int, default=0,
+                    help="instead of --dates: the N most recent non-Sunday days")
+    ap.add_argument("--limit", type=int, default=0, help="stop after N applicants per office")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
 
-    dates = ([dt.datetime.strptime(s.strip(), "%m-%d-%Y").date()
-              for s in a.dates.split(",") if s.strip()]
-             if a.dates else _default_dates())
+    offices = [o.strip() for o in str(a.office).split(",") if o.strip()]
+    if a.dates:
+        dates = [dt.datetime.strptime(s.strip(), "%m-%d-%Y").date()
+                 for s in a.dates.split(",") if s.strip()]
+    elif a.days:
+        dates = _last_days(a.days)
+    else:
+        dates = _default_dates()
+    dates = sorted(dates)
     date_strs = [_fmt(d) for d in dates]
-    print(f"[sms_dump] office {a.office}, dates {date_strs}", flush=True)
+    print("[sms_dump] offices {}, dates {}".format(offices, date_strs), flush=True)
 
-    records, scraped = [], 0
+    per_office = {}
     with appstream_direct_session(verbose=True) as page:
         tok = _rqst(page)
         if not tok:
             raise RuntimeError("no rqst token on the console page")
-        page.goto(f"https://www.applicantstream.com/index.cfm?p=104&rqst={tok}&newOfficeId={a.office}")
-        page.wait_for_load_state("networkidle")
-        time.sleep(1.0)
-        lo, hi = _goto_week_containing(page, tok, dates[0])
-        print(f"[sms_dump] on week {lo} → {hi}", flush=True)
+        for office in offices:
+            per_office[office] = _scrape_office(page, tok, office, dates,
+                                                date_strs, a.limit)
 
-        for d in date_strs:
-            n = _expand_day(page, d)
-            if n < 0:
-                print(f"[sms_dump] {d}: no First Interview section — skipped", flush=True)
-                continue
-            rows = _day_rows(page, d)
-            print(f"[sms_dump] {d}: header says {n}, table rows {len(rows)}", flush=True)
-            for row in rows:
-                if a.limit and scraped >= a.limit:
-                    break
-                rec = dict(row)
-                rec.pop("idx", None)
-                try:
-                    if not _open_history(page, row):
-                        raise RuntimeError("history link not found")
-                    page.wait_for_selector("text=Applicant History for", timeout=15000)
-                    thread = _scrape_thread(page)
-                    rec["thread"] = thread or []
-                    if not thread:
-                        rec["error"] = "no chat table"
-                except Exception as e:  # noqa: BLE001 — one bad row must not kill the run
-                    state = ""
-                    try:
-                        state = " · " + _dialog_state(page)
-                    except Exception:
-                        pass
-                    rec["error"] = f"{type(e).__name__}: {str(e).splitlines()[0][:120]}{state}"
-                    print(f"[sms_dump]   {row['name']}: {rec['error']}", flush=True)
-                finally:
-                    _close_dialog(page)
-                records.append(rec)
-                scraped += 1
-                if scraped % 10 == 0:
-                    print(f"[sms_dump]   …{scraped} applicants read", flush=True)
-            # collapse the day again to keep row indices stable per-day
-            try:
-                page.get_by_text(f"First Interview Date: {d}.", exact=False).first.click()
-                time.sleep(0.8)
-            except Exception:
-                pass
-
-    RAW_PATH.parent.mkdir(exist_ok=True)
-    RAW_PATH.write_text(json.dumps(records, indent=1, ensure_ascii=False))
-    with_thread = sum(1 for r in records if r.get("thread"))
-    meta = (f"sms_thread_dump {dt.datetime.now():%Y-%m-%d %H:%M} office={a.office} "
-            f"dates={','.join(date_strs)} applicants={len(records)} with_sms={with_thread}")
-    if a.dry_run:
-        print(f"[sms_dump] DRY RUN — no sheet write. {meta}", flush=True)
-        return 0
-    nrows = _write_tab(records, meta)
-    print(f"[sms_dump] finished: {len(records)} applicants ({with_thread} with SMS), "
-          f"{nrows} rows → tab '{TAB}'", flush=True)
-    return 0
+    OUTPUT_DIR.mkdir(exist_ok=True)
+    rc = 0
+    for office, records in per_office.items():
+        (OUTPUT_DIR / "sms_thread_dump_{}.json".format(office)).write_text(
+            json.dumps(records, indent=1, ensure_ascii=False))
+        with_thread = sum(1 for r in records if r.get("thread"))
+        meta = ("sms_thread_dump {:%Y-%m-%d %H:%M} office={} dates={} applicants={} "
+                "with_sms={}".format(dt.datetime.now(), office, ",".join(date_strs),
+                                     len(records), with_thread))
+        if a.dry_run:
+            print("[sms_dump] DRY RUN — no sheet write. " + meta, flush=True)
+            continue
+        if not records:
+            print("[sms_dump] {}: nothing scraped — tab left alone".format(office),
+                  flush=True)
+            rc = 1
+            continue
+        tab, nrows = _write_tab(records, meta, office)
+        print("[sms_dump] {}: {} applicants ({} with SMS), {} rows → tab '{}'"
+              .format(office, len(records), with_thread, nrows, tab), flush=True)
+    return rc
 
 
 if __name__ == "__main__":

@@ -47,8 +47,11 @@ from automations.icd_alerts import knocks_map as M, knocks_post as K, offices as
 CALLOUT_CAMPAIGNS = {"att", "nds"}   # D2D only; B2B and Box offices are out (Megan 2026-09-26)
 CALLOUT_EXTRA_OFFICES = {"ryan"}      # ... except an office that asked (Ryan, 2026-09-26)
 INLINE_NAMES = 3      # more than this and every name goes on its own bullet (Megan: name them, no '6 more')
-CALLOUT_EVERY_MIN = 60
-GAP_MIN = 15
+# CARLOS'S NUMBERS (2026-09-26): "30 mins plus. But if they've had a credit
+# check in the last 30 mins they're not finger popping." So the check runs
+# every 30 and the snapshot it compares against is 30 minutes old.
+CALLOUT_EVERY_MIN = 30
+GAP_MIN = 30
 GAP_MAX = 180        # past this they went home; a call-out every hour would be noise
 STATE_PATH = Path.home() / ".config" / "recruiting-report" / "icd_gap_callouts.json"
 
@@ -187,6 +190,13 @@ def pick_from_gaps(gaps: List[Dict], records_now: Dict[str, int], records_prev: 
         out.append({"name": name, "mins": mins})
     out.sort(key=lambda x: -x["mins"])
     return out
+
+
+# A GUEST OFFICE'S CALL-OUT GOES TO ITS OWN SLACK ROOM, not the text chains
+# (Megan to Carlos, 2026-09-26: "moving to be on the main slack channel
+# only"). The guest name as the host's roster spells it -> the ECO office
+# key whose approved alert channel gets it.
+GUEST_SLACK_KEY = {"carlos hidalgo": "carlos"}
 
 
 def guest_callout(host_key: str, guest: str, gaps: List[Dict], records_now: Dict[str, int],

@@ -8,7 +8,7 @@ from automations.icd_alerts import gap_callouts as G
 NOW = dt.datetime(2026, 9, 26, 15, 0)
 ROWS = [{"Rep": "Nick Smith", "Last Knock": "2:15 PM"},      # 45 min
         {"Rep": "Christian Doe", "Last Knock": "2:20 PM"},   # 40 min
-        {"Rep": "Jose Ruiz", "Last Knock": "2:50 PM"},       # 10 min
+        {"Rep": "Jose Ruiz", "Last Knock": "2:40 PM"},       # 20 min -- under Carlos's 30
         {"Rep": "Ana Pitching", "Last Knock": "2:00 PM"}]    # 60 min but a fresh credit check
 
 
@@ -18,7 +18,7 @@ class PickTest(unittest.TestCase):
         self.assertEqual([c["name"] for c in out], ["Nick Smith", "Christian Doe"])
         self.assertEqual(out[0]["mins"], 45)
 
-    def test_under_fifteen_is_left_alone(self):
+    def test_under_thirty_is_left_alone(self):
         out = G.pick(ROWS[2:3], {}, {}, NOW)
         self.assertEqual(out, [])
 
@@ -44,8 +44,8 @@ class LineTest(unittest.TestCase):
         self.assertIn("40+", s)
 
     def test_single_name(self):
-        s = G.line("carlos", [{"name": "Nick Smith", "mins": 22}], NOW)
-        self.assertIn("Nick", s); self.assertNotIn("Nick and", s); self.assertNotIn("and Nick", s); self.assertIn("20+", s)
+        s = G.line("carlos", [{"name": "Nick Smith", "mins": 32}], NOW)
+        self.assertIn("Nick", s); self.assertNotIn("Nick and", s); self.assertNotIn("and Nick", s); self.assertIn("30+", s)
 
     def test_a_crowd_is_a_bulleted_list_with_every_name(self):
         c = [{"name": "Breana A", "mins": 47}, {"name": "Gary B", "mins": 31}, {"name": "Kandice C", "mins": 25},
@@ -84,9 +84,9 @@ class DueTest(unittest.TestCase):
     def test_first_of_day_is_due(self):
         self.assertTrue(G.due(None, NOW)); self.assertTrue(G.due({"day": "2026-09-25", "last_at": "2026-09-25T20:00:00"}, NOW))
 
-    def test_within_the_hour_is_not(self):
-        self.assertFalse(G.due({"day": "2026-09-26", "last_at": "2026-09-26T14:30:00"}, NOW))
-        self.assertTrue(G.due({"day": "2026-09-26", "last_at": "2026-09-26T13:59:00"}, NOW))
+    def test_within_the_half_hour_is_not(self):
+        self.assertFalse(G.due({"day": "2026-09-26", "last_at": "2026-09-26T14:40:00"}, NOW))
+        self.assertTrue(G.due({"day": "2026-09-26", "last_at": "2026-09-26T14:29:00"}, NOW))
 
 
 if __name__ == "__main__":
@@ -105,10 +105,10 @@ class GuestCalloutTest(unittest.TestCase):
     def test_from_a_gap_list_with_the_hosts_credit_checks(self):
         gaps = [{"name": "Nick Smith", "minutesSinceLastKnock": 45},
                 {"name": "Ana Pitching", "minutesSinceLastKnock": 50},
-                {"name": "Jose Ruiz", "minutesSinceLastKnock": 9}]
+                {"name": "Jose Ruiz", "minutesSinceLastKnock": 20}]
         first = G.guest_callout("rafael_hidalgo", "Carlos Hidalgo", gaps, {"NICK SMITH": 1, "ANA PITCHING": 1}, NOW)
         self.assertIn("Nick", first); self.assertIn("Ana", first)      # first hour: no previous -> both idle
         again = G.guest_callout("rafael_hidalgo", "Carlos Hidalgo", gaps, {"NICK SMITH": 1, "ANA PITCHING": 2}, NOW.replace(minute=20))
-        self.assertEqual(again, "")                                     # within the hour: quiet
-        later = G.guest_callout("rafael_hidalgo", "Carlos Hidalgo", gaps, {"NICK SMITH": 1, "ANA PITCHING": 2}, NOW + dt.timedelta(hours=1))
+        self.assertEqual(again, "")                                     # within the half hour: quiet
+        later = G.guest_callout("rafael_hidalgo", "Carlos Hidalgo", gaps, {"NICK SMITH": 1, "ANA PITCHING": 2}, NOW + dt.timedelta(minutes=30))
         self.assertIn("Nick", later); self.assertNotIn("Ana", later)   # Ana ran a credit check since
