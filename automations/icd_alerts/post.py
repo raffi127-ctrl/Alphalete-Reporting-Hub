@@ -927,6 +927,24 @@ def set_text_cadence(office_key: str, minutes: int, book=None,
         after = json.dumps(groups)
         if not dry_run:
             tab.update(values=[[after]], range_name="P%d" % i)
+            # AND THE HUB'S COPY, the way approve already does. The card's
+            # cadence line is read from output/.icd_relay_schedule.json, not
+            # from this sheet -- a live read at Hub import once hung every card
+            # in the app -- and nothing else refreshes it. Retiming a room
+            # without this leaves the Hub telling an owner the old number
+            # indefinitely. Best-effort: the sheet write is the change, and a
+            # stale card must never make it look as though it failed.
+            #
+            # PER MACHINE, so this fixes the checkout it RUNS in. A Hub served
+            # from another box needs its own refresh there.
+            try:
+                from automations.icd_alerts import schedule_cache
+                schedule_cache.refresh(log=lambda *_a, **_k: None)
+            except Exception as e:  # noqa: BLE001
+                print("[set_text_cadence] cadence written; Hub cache NOT "
+                      "refreshed (%s: %s) — run "
+                      "`python -m automations.icd_alerts.schedule_cache "
+                      "--refresh`" % (type(e).__name__, str(e)[:120]))
         return True, before, after
     return False, "", ""
 

@@ -29,6 +29,12 @@ def build() -> Dict:
 
     alerts = P.approved_channels()
     knocks = P.approved_knocks()
+    # TEXTS TOO, since 2026-09-26. They were missing, so an office whose board
+    # goes to a group chat read as "no knock boards approved yet" on the Hub --
+    # Cyrus's iMessage room did not appear anywhere in the app, and neither did
+    # its cadence, which is the one number an owner rings up about (he asked to
+    # go from 15 to 30 that day). Same approved-column rule as the other two.
+    texts = P.approved_texts()
 
     def _name(x):
         # TWO SHAPES ON PURPOSE: approved_channels returns offices.Channel
@@ -38,14 +44,20 @@ def build() -> Dict:
             return x.get("channel_name") or x.get("channel_id")
         return getattr(x, "name", None) or getattr(x, "id", None)
 
+    def _cad(d):
+        return (d.get("cadence_min") if isinstance(d, dict)
+                else getattr(d, "cadence_min", None))
+
     out: Dict = {}
-    for key in sorted(set(list(alerts) + list(knocks))):
+    for key in sorted(set(list(alerts) + list(knocks) + list(texts))):
         out[key] = {
             "alerts": [_name(c) for c in (alerts.get(key) or [])],
-            "knocks": [[_name(d),
-                        d.get("cadence_min") if isinstance(d, dict)
-                        else getattr(d, "cadence_min", None)]
-                       for d in (knocks.get(key) or [])],
+            "knocks": [[_name(d), _cad(d)] for d in (knocks.get(key) or [])],
+            # THE GROUP NAME, not the address. approved_texts() hands back a
+            # `channel_id` that is a participant-pinned digest for a room whose
+            # members rename it hourly -- correct as an address, unreadable as a
+            # label -- so the card wants `channel_name`, which _name() prefers.
+            "texts": [[_name(d), _cad(d)] for d in (texts.get(key) or [])],
         }
     return out
 
@@ -77,8 +89,11 @@ def main(argv=None) -> int:
         print("no cache yet — run with --refresh")
         return 1
     for key, s in sorted(data.items()):
-        print("%s: alerts=%s knocks=%s"
-              % (key, s.get("alerts"), s.get("knocks")))
+        # texts= PRINTED TOO, or this command cannot be used to check the one
+        # thing it is usually run to check. It read as though a text-only
+        # office had nothing approved.
+        print("%s: alerts=%s knocks=%s texts=%s"
+              % (key, s.get("alerts"), s.get("knocks"), s.get("texts")))
     return 0
 
 

@@ -53,7 +53,18 @@ def _book(rows):
     return book
 
 
-class ItWritesOneCell(unittest.TestCase):
+class _NoRealSheets(unittest.TestCase):
+    """A real write refreshes the Hub cache, which would otherwise open the
+    live workbook from inside a unit test. Patched, and asserted on below."""
+
+    def setUp(self):
+        from automations.icd_alerts import schedule_cache
+        p = mock.patch.object(schedule_cache, "refresh")
+        self.refresh = p.start()
+        self.addCleanup(p.stop)
+
+
+class ItWritesOneCell(_NoRealSheets):
     def test_the_cadence_changes_and_nothing_else_in_the_blob_does(self):
         book = _book(_rows(("cyrus", CYRUS, "TRUE")))
         changed, before, after = P.set_text_cadence(
@@ -91,7 +102,7 @@ class ItWritesOneCell(unittest.TestCase):
         self.assertEqual(P.approved_texts(book), {})   # still not served
 
 
-class ItTouchesOneOfficeOnly(unittest.TestCase):
+class ItTouchesOneOfficeOnly(_NoRealSheets):
     def test_another_offices_row_is_not_written(self):
         book = _book(_rows(("kash", [{"group": "Reporting",
                                       "cadence_min": 15}], "TRUE"),
@@ -121,7 +132,7 @@ class ItTouchesOneOfficeOnly(unittest.TestCase):
         self.assertEqual(got[1]["cadence_min"], 30)
 
 
-class DryRunIsTheDefault(unittest.TestCase):
+class DryRunIsTheDefault(_NoRealSheets):
     def test_nothing_is_written_unless_asked(self):
         book = _book(_rows(("cyrus", CYRUS, "TRUE")))
         changed, before, after = P.set_text_cadence("cyrus", 30, book=book)
@@ -129,8 +140,39 @@ class DryRunIsTheDefault(unittest.TestCase):
         self.assertNotEqual(before, after)             # it shows the diff
         self.assertEqual(book.worksheet.return_value.update.call_args_list, [])
 
+    def test_a_dry_run_does_not_refresh_the_hub_cache_either(self):
+        book = _book(_rows(("cyrus", CYRUS, "TRUE")))
+        P.set_text_cadence("cyrus", 30, book=book)
+        self.refresh.assert_not_called()
 
-class ThePosterReadsTheNewNumber(unittest.TestCase):
+
+class TheHubCacheFollowsTheWrite(_NoRealSheets):
+    """The card's cadence line is read from a cache file, and nothing else
+    refreshes it -- so a retime without this leaves the Hub quoting the old
+    number at the owner indefinitely."""
+
+    def test_a_real_write_refreshes_it(self):
+        book = _book(_rows(("cyrus", CYRUS, "TRUE")))
+        P.set_text_cadence("cyrus", 30, book=book, dry_run=False)
+        self.refresh.assert_called_once()
+
+    def test_a_no_op_does_not(self):
+        book = _book(_rows(("kash", [{"group": "Reporting"}], "TRUE")))
+        P.set_text_cadence("cyrus", 30, book=book, dry_run=False)
+        self.refresh.assert_not_called()
+
+    def test_a_failing_refresh_never_fails_the_change(self):
+        # The sheet write IS the change. A stale card must not make a completed
+        # retime look as though it failed.
+        self.refresh.side_effect = RuntimeError("no google auth on this box")
+        book = _book(_rows(("cyrus", CYRUS, "TRUE")))
+        changed, _, after = P.set_text_cadence("cyrus", 30, book=book,
+                                               dry_run=False)
+        self.assertTrue(changed)
+        self.assertEqual(json.loads(after)[0]["cadence_min"], 30)
+
+
+class ThePosterReadsTheNewNumber(_NoRealSheets):
     def test_thirty_comes_back_out_of_the_approved_column(self):
         rows = _rows(("cyrus", CYRUS, "TRUE"))
         book = _book(rows)

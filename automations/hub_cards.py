@@ -583,6 +583,38 @@ def _icd_cadence_label(minutes) -> str:
     return "every %d minutes" % n
 
 
+def _icd_text_cadence_label(minutes, knocks) -> str:
+    """Same as _icd_cadence_label, except 0 does NOT mean the fixed slots here.
+
+    A TEXT FOLLOWS THE BOARD IT IS A COPY OF. The sign-up form never asks a
+    cadence for a group chat -- it is the same board, "as well as" Slack -- so
+    these arrive as 0 and knocks_post fills in the office's own board cadence
+    (`beat`). Only when the office has no interval board either does 0 keep its
+    fixed-slot meaning. Printing "at 2:00 PM · 5:15 PM · 9:00 PM" for all of
+    them would have told Carlos and Colten their texts run on set times when
+    they ride a 30-minute board -- see knocks_post's note on the 2026-09-15
+    14:05 send.
+    """
+    try:
+        n = int(minutes or 0)
+    except Exception:  # noqa: BLE001
+        return "on its own schedule"
+    if n > 0:
+        return _icd_cadence_label(n)
+    beat = 0
+    for _name, cad in (knocks or []):
+        try:
+            cad = int(cad or 0)
+        except Exception:  # noqa: BLE001
+            continue
+        if cad > 0:
+            beat = cad
+            break
+    if beat:
+        return "with their board, %s" % _icd_cadence_label(beat)
+    return _icd_cadence_label(0)
+
+
 def _icd_schedule_by_office() -> dict:
     """{office_key: {'alerts': [names], 'knocks': [[name, cadence_min]]}}.
 
@@ -624,12 +656,23 @@ def _icd_relay_roster() -> str:
                       else "_no channel approved yet_"))
 
         kn = s.get("knocks") or []
+        tx = s.get("texts") or []
         if kn:
             out.append("   ◦ Knock boards → %s"
                        % " · ".join("%s %s" % (name, _icd_cadence_label(cad))
                                     for name, cad in kn))
-        else:
+        elif not tx:
+            # ONLY when there is no text room either. An office whose board goes
+            # to a group chat and nowhere else read as "none approved yet" here
+            # until 2026-09-26, which is the Hub saying a live board does not
+            # exist -- Cyrus's was live for days that way.
             out.append("   ◦ Knock boards → _none approved yet_")
+        if tx:
+            out.append("   ◦ Texted boards → %s"
+                       % " · ".join(
+                           "%s %s" % (name,
+                                      _icd_text_cadence_label(cad, kn))
+                           for name, cad in tx))
 
         sat = ("Sat %s–%s" % (_icd_hm12(o.sat_start), _icd_hm12(o.sat_end))
                if o.saturday else "no Saturday")
@@ -4688,7 +4731,7 @@ AUTOMATED_REPORTS = [
             "two hours is the point of the message, and a phone shows the top "
             "of a picture.\n\n"
             "NEVER TWO CARDS BACK TO BACK\n"
-            "A card is refused if the chat got one less than **9 minutes** ago, "
+            "A card is refused if the chat got one less than **5 minutes** ago, "
             "whoever asked for it. The scheduled cadence is not the risk \u2014 "
             "a launchd job fires the moment it is reloaded and again after a "
             "wake, and the button above runs on top of whatever the schedule is "
