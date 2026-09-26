@@ -1706,6 +1706,24 @@ def tick(day: dt.date, *, send: bool, only: str = "",
         # own list is cut from this copy below.
         all_gaps = list(gaps)
         gaps = _own_reps_only(cfg, gaps, rows)
+        # LUCY'S CALL-OUT FOR THE HOST'S OWN REPS (Raf, 2026-09-26), to the
+        # office's main Slack room, every 30 minutes, crossed against the
+        # sales board sweep's credit checks. Never costs the gap list.
+        try:
+            from automations.icd_alerts import gap_callouts as _GC
+            _room = _GC.HOST_SLACK.get(cfg["key"])
+            if _room:
+                from automations.alphalete_sales_board import state as _SBS
+                _recs = ((_SBS.load().get("_records") or {}).get(day.isoformat()) or {})
+                _line = _GC.guest_callout(cfg["key"], "own", gaps, _recs,
+                                          dt.datetime.now(), remember=send)
+                if _line:
+                    _log("  %s: call-out -> %s: %s" % (cfg["key"], _room, _line.splitlines()[0]))
+                    if send:
+                        from automations.icd_alerts import post as _P
+                        _P._slack(_room, _line)
+        except Exception as _e:  # noqa: BLE001
+            _log("  %s: call-out skipped: %s" % (cfg["key"], type(_e).__name__))
         previous, first_of_day = _previous_gap_names(cfg["key"], day)
         body, gap_names = gap_text(gaps, previous, first_of_day,
                                    header=gap_header(cfg))

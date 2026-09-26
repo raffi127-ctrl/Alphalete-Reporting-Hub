@@ -198,6 +198,11 @@ def pick_from_gaps(gaps: List[Dict], records_now: Dict[str, int], records_prev: 
 # key whose approved alert channel gets it.
 GUEST_SLACK_KEY = {"carlos hidalgo": "carlos"}
 
+# A HOST OFFICE'S OWN REPS (Megan 2026-09-26: "when will the first call outs
+# post for Raf?"): the gap_alerts host, whose credit checks the sales board
+# sweep reads, posted to its main room. gap_alerts key -> Slack channel.
+HOST_SLACK = {"rafael": "C068PH3RFSM"}       # #alphalete-sales
+
 
 def guest_callout(host_key: str, guest: str, gaps: List[Dict], records_now: Dict[str, int],
                   now: dt.datetime, *, remember: bool = True) -> str:
