@@ -75,8 +75,7 @@ LINES = (
     # BENEFIT OF THE DOUBT (Megan 2026-09-26): a quiet rep may be inside with
     # a customer. Half the pool leaves that door open.
     "{names} — {m}+ min without a dispo. Must be cooking up something good in there… right? 👨‍🍳🔥",
-    "{names}: {m}+ min off the doors. Either y'all are working a sale 💰 or finger poppin' 🤌 Which one?",
-    "No dispo from {names} in {m}+ min. In a house with a customer 🏠 or in the car scrolling? 📱",
+    "No dispo from {names} in {m}+ min. In a house with a customer? 🏠",
     "{names} — {m}+ min quiet. If that's a sale being cooked 🍳 take your time. If not… 👀",
     # EN ESPAÑOL TAMBIÉN (Megan 2026-09-26: "make lucy bilingual"). Same
     # pool, so some hours land in Spanish and some in English.
@@ -231,15 +230,22 @@ def guest_callout(host_key: str, guest: str, gaps: List[Dict], records_now: Dict
 # Megan) -- and only once the span is an hour, so five doors in ten minutes
 # is not "30 an hour". Each rep is praised ONCE a day.
 PACE_KNOCKS_PER_HOUR = 25
-PACE_MIN_SPAN_MIN = 60
+PACE_MIN_SPAN_MIN = 120     # 2+ hours of the target (Megan 2026-09-26: one hour is one hour of data)
+# BOX IS JUDGED ON ACTUAL TALK-TO'S, NOT DOORS (Ryan McSpadden 2026-09-26:
+# "change the Knocks per hour to actual TT per hour and make the recognition
+# anyone that is average 10+ per hour"; Megan: for all Box campaigns).
+# Actual Talk To's is the Box board's own number: Total Knocks minus the
+# buckets where nobody was spoken to (render.BOX_ACTUAL_TALK_TO_SUBTRAHENDS).
+PACE_BOX_TT_PER_HOUR = 10
+BOX_TT_SUBTRAHENDS = ("Corp - No Opp", "Inaccessible", "Inaccurate Lead")
 
 PACE_LINES = (
-    "Snicklepop!! ⚡ {names} averaging {avg}+ doors an hour 🚪🚪🚪 That's how it's done 🔥",
-    "{names} — {avg} doors/hr 🏃💨 Somebody's definitely not finger poppin' 🔥",
-    "Pace check ⏱️ {names} at {avg} doors an hour. Keep that foot on the gas 🚀",
-    "{avg} doors/hr from {names} 🚪🔥 The neighborhood knows your name by now 🏡",
-    "¡Snicklepop! ⚡ {names} tocando {avg} puertas por hora 🚪🚪🚪 Así se hace 🔥",
-    "{names} a {avg} puertas por hora 🏃💨 Eso no es finger poppin', eso es trabajo 💪",
+    "Snicklepop!! ⚡ {names} averaging {avg}+ {unit} an hour 🚪🚪🚪 That's how it's done 🔥",
+    "{names} — {avg} {unit}/hr 🏃💨 Somebody's definitely not finger poppin' 🔥",
+    "Pace check ⏱️ {names} at {avg} {unit} an hour. Keep that foot on the gas 🚀",
+    "{avg} {unit}/hr from {names} 🚪🔥 The neighborhood knows your name by now 🏡",
+    "¡Snicklepop! ⚡ {names} con {avg} {unit_es} por hora 🚪🚪🚪 Así se hace 🔥",
+    "{names} a {avg} {unit_es} por hora 🏃💨 Eso no es finger poppin', eso es trabajo 💪",
 )
 
 
@@ -251,28 +257,57 @@ def _span_minutes(first: str, last: str, now: dt.datetime):
     return a - b
 
 
-def pace(rows: List[Dict], now: dt.datetime) -> List[Dict]:
-    """[{name, avg}] for reps at PACE_KNOCKS_PER_HOUR+ over an hour or more."""
+def _num(row: Dict, key: str) -> int:
+    for k, v in row.items():
+        if str(k).strip().lower() == key.lower():
+            try:
+                return int(str(v or "0").replace(",", "").strip() or 0)
+            except ValueError:
+                return 0
+    return 0
+
+
+def pace_metric(row: Dict, campaign=None) -> int:
+    """The number a rep's hour is judged on: doors, or on Box the board's own
+    Actual Talk To's (knocks minus the nobody-home buckets)."""
+    knocks = _num(row, "Total Knocks")
+    if str(campaign or "").strip().lower() == "b2b_box":
+        return max(knocks - sum(_num(row, k) for k in BOX_TT_SUBTRAHENDS), 0)
+    return knocks
+
+
+def pace_target(campaign=None) -> int:
+    return PACE_BOX_TT_PER_HOUR if str(campaign or "").strip().lower() == "b2b_box" else PACE_KNOCKS_PER_HOUR
+
+
+def pace_units(campaign=None):
+    """(english, spanish) for the line."""
+    if str(campaign or "").strip().lower() == "b2b_box":
+        return "talk-to's", "conversaciones"
+    return "doors", "puertas"
+
+
+def pace(rows: List[Dict], now: dt.datetime, campaign=None) -> List[Dict]:
+    """[{name, avg}] for reps at the campaign's target, over 2+ hours."""
     out = []
+    target = pace_target(campaign)
     for r in rows:
         name = str(r.get("Rep") or "").strip()
-        try:
-            knocks = int(str(r.get("Total Knocks") or "0").replace(",", "") or 0)
-        except ValueError:
-            continue
+        n = pace_metric(r, campaign)
         span = _span_minutes(str(r.get("First Knock") or ""), str(r.get("Last Knock") or ""), now)
-        if not name or not span or span < PACE_MIN_SPAN_MIN or knocks <= 0:
+        if not name or not span or span < PACE_MIN_SPAN_MIN or n <= 0:
             continue
-        avg = knocks / (span / 60.0)
-        if avg >= PACE_KNOCKS_PER_HOUR:
+        avg = n / (span / 60.0)
+        if avg >= target:
             out.append({"name": name, "avg": int(avg)})
     out.sort(key=lambda x: -x["avg"])
     return out
 
 
-def pace_line(office_key: str, reps: List[Dict], now: dt.datetime) -> str:
+def pace_line(office_key: str, reps: List[Dict], now: dt.datetime, campaign=None) -> str:
     if not reps:
         return ""
+    unit_en, unit_es = pace_units(campaign)
     seed = "pace|%s|%s|%d" % (office_key, now.date().isoformat(), now.hour)
     template = PACE_LINES[zlib.crc32(seed.encode("utf-8")) % len(PACE_LINES)]
     spanish = _is_spanish(template)
@@ -283,10 +318,10 @@ def pace_line(office_key: str, reps: List[Dict], now: dt.datetime) -> str:
             firsts.append(f)
     joiner = " y " if spanish else " and "
     names = firsts[0] if len(firsts) == 1 else ", ".join(firsts[:-1]) + joiner + firsts[-1]
-    return template.format(names=names, avg=min(r["avg"] for r in reps))
+    return template.format(names=names, avg=min(r["avg"] for r in reps), unit=unit_en, unit_es=unit_es)
 
 
-def pace_callout(office_key: str, rows: List[Dict], now: dt.datetime, *, remember: bool = True) -> str:
+def pace_callout(office_key: str, rows: List[Dict], now: dt.datetime, *, remember: bool = True, campaign=None) -> str:
     """The positive line, ONCE A DAY, on the day's numbers -- Megan 2026-09-26:
     "25+ doors should be if they are at that for the day - so after the final
     knock report it pulled". The caller decides when the day is over (the
@@ -298,7 +333,7 @@ def pace_callout(office_key: str, rows: List[Dict], now: dt.datetime, *, remembe
     st = state.get(key) or {}
     if st.get("day") == now.date().isoformat():
         return ""
-    text = pace_line(office_key, pace(rows, now), now)
+    text = pace_line(office_key, pace(rows, now, campaign), now, campaign)
     if remember:
         state[key] = {"day": now.date().isoformat(), "judged_at": now.isoformat(timespec="seconds")}
         _save(state)
@@ -426,7 +461,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
             rows = M.to_rows(json.loads(krow[K.KN_ROWS] or "[]"), json.loads(krow[K.KN_TRACKER] or "[]"))
         except ValueError:
             continue
-        praise = pace_callout(key, rows, now, remember=send)
+        praise = pace_callout(key, rows, now, remember=send, campaign=getattr(office, "campaign", None))
         if not praise:
             continue
         dests = [c.id for c in (approved_ch.get(key) or [])]

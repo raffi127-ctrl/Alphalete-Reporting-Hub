@@ -119,9 +119,21 @@ class PaceTest(unittest.TestCase):
             {"Rep": "Bo Slow", "Total Knocks": "20", "First Knock": "12:00 PM", "Last Knock": "2:00 PM"},    # 10/hr
             {"Rep": "Cy Short", "Total Knocks": "9", "First Knock": "2:40 PM", "Last Knock": "2:55 PM"}]     # 36/hr but 15 min
 
-    def test_25_an_hour_over_an_hour(self):
+    def test_25_an_hour_over_two_hours(self):
         out = G.pace(self.ROWS, NOW)
         self.assertEqual([(r["name"], r["avg"]) for r in out], [("Ana Fast", 31)])
+
+    def test_one_hour_of_data_is_not_enough(self):
+        rows = [{"Rep": "Ana Fast", "Total Knocks": "40", "First Knock": "1:30 PM", "Last Knock": "2:45 PM"}]  # 32/hr, 75 min
+        self.assertEqual(G.pace(rows, NOW), [])
+
+    def test_box_is_actual_talk_tos_at_ten(self):
+        rows = [{"Rep": "Bo Box", "Total Knocks": "40", "Corp - No Opp": "8", "Inaccessible": "4", "Inaccurate Lead": "2",
+                 "First Knock": "12:00 PM", "Last Knock": "2:00 PM"}]     # 26 actual TT / 2h = 13/hr
+        self.assertEqual(G.pace(rows, NOW, "b2b_box"), [{"name": "Bo Box", "avg": 13}])
+        self.assertEqual(G.pace(rows, NOW, "att"), [])                    # 20 doors/hr is under 25
+        s = G.pace_line("ryan", G.pace(rows, NOW, "b2b_box"), NOW, "b2b_box")
+        self.assertTrue("talk-to's" in s or "conversaciones" in s, s)
 
     def test_praised_once_a_day(self):
         import pathlib, tempfile
