@@ -58,8 +58,17 @@ automations/uploaded/.extractor_cache/
 automations/shared/.appstream_storage_state*
 # ownerville storage_state export — contains live SESSION cookies (auth). Sensitive;
 # never commit. Exported by output/_scratch_ownerville_export_state.py.
-.ownerville_storage_state.json
-automations/shared/.ownerville_storage_state.json
+#
+# NO TRAILING '.json', for the reason spelled out under .appstream_storage_state
+# just above: a bare name does not match a COPY. The AppStream twin was widened
+# to a wildcard on 2026-09-02 and this one was left behind — so
+# `.ownerville_storage_state.json.carlos-bak`, a live OwnerVille session, sat
+# untracked on Lucy 1 in a PUBLIC repo, one `git add .` from publication (found
+# 2026-09-26). Third time this shape has bitten; see also
+# `ownerville-creds.json.bak.20260802-230835` at the top of this file. It is
+# always the rotated/dated copy that slips past a rule written for the original.
+.ownerville_storage_state*
+automations/shared/.ownerville_storage_state*
 # Credico storage_state export — contains live SESSION cookies (auth). Sensitive;
 # the repo is PUBLIC. Never commit.
 .credico_storage_state.json
@@ -200,7 +209,27 @@ automations/shared/.ownerville_session.wanted
 # Cookies, certificates, session state -- driven against OwnerVille, in a
 # PUBLIC repo.
 automations/uploaded/.ov_autorenew/
-automations/uploaded/.ov_autorenew.launchlock
 automations/uploaded/.ov_laptop_seed/
-automations/uploaded/.ov_laptop_seed.launchlock
+
+# EVERY launchlock, by SHAPE rather than by name. These are the sibling lock
+# files tableau_patchright mints beside a profile dir
+# (`p.parent / (p.name + ".launchlock")`) — pure per-machine runtime state,
+# regenerated, never meaningful anywhere else.
+#
+# They were listed one profile at a time, and the list lost the race every
+# time a new profile appeared: .ov_diag_readonly, .ov_href_diag,
+# .ov_login_test (whose DIRECTORY was ignored while its launchlock was not)
+# and .appstream_probe_cold were all sitting untracked on Lucy 1 together
+# (2026-09-26). A wildcard cannot fall behind the next probe somebody adds.
+#
+# NOT COSMETIC. An untracked file at a path that later lands upstream is what
+# makes `git pull --ff-only` abort — "untracked working tree files would be
+# overwritten by merge" — and that stranded Lucy 2 eleven commits behind for
+# eleven hours on 2026-08-01. Ignoring them is what stops that recurring.
+*.launchlock
+
+# The cold-start AppStream PROBE profile. A real browser profile, so it holds
+# session state like every other one here, and `.appstream_profile*` does not
+# reach it — different name, not a variant of that stem.
+automations/uploaded/.appstream_probe_*/
 manager_run.sh
