@@ -20,8 +20,9 @@ from typing import Dict, List, Optional
 from automations.recruiting_report import fill
 from automations.shared import new_start_eligibility as eligibility
 from automations.shared import obcl_tabs
+from automations.shared.workbooks import ALL_IN_ONE_RAF
 
-SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
+SHEET_ID = ALL_IN_ONE_RAF
 
 # The rolling all-history tab (every new start ever), as opposed to the dated
 # weekly tabs. No longer read here — its only user was phone_book(), removed
@@ -224,7 +225,70 @@ def read_new_starts(monday: Optional[dt.date] = None, sheet_id: str = SHEET_ID):
                 bg_status=cell(row, i_bg) if i_bg >= 0 else "",
             )
         )
+    warn_if_charts_disagree(grid, starts, ws.title)
     return monday, ws.title, starts
+
+
+def warn_if_charts_disagree(grid, starts, tab_title: str) -> List[str]:
+    """Shout if the shared chart parser sees people this walk stopped short of.
+
+    THE DIVERGENCE, stated plainly. Two rules for the same tab live in this
+    repo, each put there by a real incident:
+
+      * here, a BLANK ROW ENDS the table. The 9.7 tab carried a leftover block
+        below one blank, and walking past it posted 27 names to Raf as new
+        starts needing a leader -- last week's people and leaders who were never
+        new starts (2026-09-06).
+      * in `shared.obcl_charts` (and `blueink_docs.roster`), a blank row only
+        PAUSES a chart; it resumes on the next row carrying a real email in that
+        chart's own Email column. Deleting the person on row 17 of a 38-row
+        lineup leaves a gap that looks exactly like the end, and 21 people below
+        it went missing from the headshot bot (2026-09-14).
+
+    Both rules are right about the tab they were written for, and on the live
+    9.28 tab they agree exactly (63 people, one chart), so there is nothing to
+    reconcile today. What is NOT acceptable is the two silently differing on
+    some future Monday: this report would simply text fewer leaders and say
+    nothing. So the difference is reported, not resolved -- fill and red-flag,
+    per the house rule. Changing this walk to span gaps means re-arguing the
+    9/6 incident, and that is Megan's call, not a quiet refactor's.
+    """
+    notes: List[str] = []
+    try:
+        from automations.shared import obcl_charts as oc
+        charts = oc.find_charts(grid, first_label=FIRST_NAME_HEADER,
+                                last_label=LAST_NAME_HEADER)
+    except Exception as exc:  # noqa: BLE001 — a diagnostic must never break the read
+        print("[obcl] couldn't cross-check the chart parser ({}).".format(exc))
+        return notes
+
+    last_seen = max((s.row for s in starts), default=HEADER_ROW)
+    missed = []
+    for ch in charts:
+        name_col = oc.column(ch, FIRST_NAME_HEADER)
+        if not name_col:
+            continue
+        for r in range(ch["start_row"], ch["end_row"] + 1):
+            if r <= last_seen or r > len(grid):
+                continue
+            row = grid[r - 1]
+            first = (row[name_col - 1] if name_col - 1 < len(row) else "").strip()
+            if first:
+                missed.append((r, first))
+    if missed:
+        notes.append(
+            "[obcl] WARNING: the chart parser sees {} row(s) on {} BELOW the "
+            "blank this walk stopped at (row {}). The two readers of this tab "
+            "disagree about who is on it -- Blue Ink / Digi Docs / the headshot "
+            "bot would include these people and this report will not."
+            .format(len(missed), tab_title, last_seen + 1))
+        for r, first in missed[:10]:
+            notes.append("           row {}: {}".format(r, first))
+        if len(missed) > 10:
+            notes.append("           ... and {} more".format(len(missed) - 10))
+    for line in notes:
+        print(line)
+    return notes
 
 
 # phone_book() REMOVED 2026-08-23 (Megan): the Phone column on the OBCL is

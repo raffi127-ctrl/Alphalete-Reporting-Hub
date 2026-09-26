@@ -136,3 +136,52 @@ class TheGateStillComesFirst(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ChartDivergenceIsReported(unittest.TestCase):
+    """Two readers of one tab disagree about where it ends. Neither rule is
+    wrong; the two silently differing IS. See obcl.warn_if_charts_disagree.
+    """
+
+    HEAD = ["#", "2ND Round Interviewer", "Name", "Last Name", "Email"]
+
+    def _grid(self, extra_rows):
+        return ([["9/28/2026", "", "", "", ""], self.HEAD,
+                 ["1", "Lead One", "Ana", "Diaz", "ana@x.com"],
+                 ["2", "Lead Two", "Ben", "Cole", "ben@x.com"]] + extra_rows)
+
+    def _starts(self, grid):
+        """What obcl's own walk sees: stop at the first blank after the header."""
+        out = []
+        for n, row in enumerate(grid[2:], start=3):
+            if not (row[1].strip() or row[2].strip()):
+                break
+            out.append(obcl.NewStart(interviewer=row[1], name=row[2], phone="",
+                                     status="", row=n))
+        return out
+
+    def test_no_warning_when_the_tab_has_one_clean_chart(self):
+        grid = self._grid([])
+        notes = obcl.warn_if_charts_disagree(grid, self._starts(grid), "T")
+        self.assertEqual(notes, [])
+
+    def test_warns_about_people_below_the_blank_this_walk_stopped_at(self):
+        """A second chart after a gap: Blue Ink and Digi Docs would include
+        Cal, this report would not."""
+        grid = self._grid([["", "", "", "", ""],
+                           ["3", "Lead Three", "Cal", "Reed", "cal@x.com"]])
+        starts = self._starts(grid)
+        self.assertEqual(len(starts), 2)              # it stopped at the blank
+        notes = obcl.warn_if_charts_disagree(grid, starts, "D2D OBCL 9.28")
+        self.assertTrue(notes, "the divergence was not reported")
+        self.assertIn("WARNING", notes[0])
+        self.assertIn("D2D OBCL 9.28", notes[0])
+        self.assertTrue(any("Cal" in n for n in notes))
+
+    def test_a_broken_chart_parser_never_breaks_the_read(self):
+        """The check is a diagnostic. It must not be able to fail the report."""
+        from automations.shared import obcl_charts as oc
+        with mock.patch.object(oc, "find_charts",
+                               side_effect=RuntimeError("boom")):
+            self.assertEqual(
+                obcl.warn_if_charts_disagree(self._grid([]), [], "T"), [])

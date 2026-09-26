@@ -169,7 +169,12 @@ def build_report() -> str:
         # Lucy 4 was in exactly that state for four minutes on 2026-09-25
         # (ROTATION_BY_MACHINE["Lucy 4"] == [] between f9da93b and 42a8b78), and
         # this line would have paged about a box that was switched off by hand.
-        for machine in ("Lucy 2", "Lucy 4"):
+        # Derived from OFFICES, never typed: a hand-kept machine list is
+        # invisible when it goes stale, and the box that stops being named is
+        # the box nobody gets paged about. Put a push office on another Lucy
+        # and it is covered here with no edit. (automations/shared/test_fleet
+        # guards this repo-wide.)
+        for machine in sorted({m for _t, _l, m in OFFICES}):
             if machine in machine_last:
                 continue
             mine = {_office_id(t) for t, _l, m in OFFICES if m == machine}
