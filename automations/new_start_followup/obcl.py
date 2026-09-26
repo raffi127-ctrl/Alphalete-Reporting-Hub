@@ -19,6 +19,7 @@ from typing import Dict, List, Optional
 
 from automations.recruiting_report import fill
 from automations.shared import new_start_eligibility as eligibility
+from automations.shared import obcl_tabs
 
 SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
 
@@ -121,32 +122,24 @@ def upcoming_monday(today: Optional[dt.date] = None) -> dt.date:
     return today + dt.timedelta(days=ahead)
 
 
-def _tab_date(title: str) -> Optional[tuple]:
-    """'D2D OBCL 7.20' -> (7, 20). None if the title isn't a dated OBCL tab."""
-    m = re.search(r"(\d{1,2})\.(\d{1,2})\s*$", title.strip())
-    if not m:
-        return None
-    return int(m.group(1)), int(m.group(2))
-
-
 def find_week_tab(sheet, monday: dt.date):
     """The OBCL tab for `monday`, matched on the date in its title.
 
     Raises if there's no tab for that week -- silently falling back to the
     newest tab would text last week's leaders about last week's new starts.
+
+    The title parse is shared (automations/shared/obcl_tabs). The copy that used
+    to live here read month/day only, with '.' as the sole separator, so
+    "D2D OBCL 9.28.26" parsed as month 28 / day 26 and the tab went invisible --
+    this function would then raise on a week that was sitting right there. It
+    never misfired only because no month is 28; the day a year appears in a tab
+    name it would have stopped the Saturday roll call (found 2026-09-26).
     """
-    want = (monday.month, monday.day)
-    candidates = []
-    for ws in sheet.worksheets():
-        if not ws.title.upper().startswith("D2D OBCL"):
-            continue
-        got = _tab_date(ws.title)
-        if got is None:
-            continue
-        candidates.append((got, ws))
-        if got == want:
-            return ws
-    seen = ", ".join(sorted(ws.title for _, ws in candidates)) or "(none)"
+    by_title = {ws.title: ws for ws in sheet.worksheets()}
+    want = obcl_tabs.for_week(by_title, monday)
+    if want:
+        return by_title[want]
+    seen = ", ".join(sorted(t for _, t in obcl_tabs.dated(by_title))) or "(none)"
     raise RuntimeError(
         "No OBCL tab for the week of {}. Expected a tab named 'D2D OBCL {}.{}'. "
         "Tabs found: {}".format(monday.isoformat(), monday.month, monday.day, seen)

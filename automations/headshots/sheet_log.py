@@ -35,6 +35,7 @@ import re
 import sys
 
 from automations.shared import obcl_charts
+from automations.shared import obcl_tabs
 
 # Same workbook the Blue Ink report and bg_check_sync write to.
 SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
@@ -60,31 +61,13 @@ def _client():
     return c()
 
 
-def tab_date(title: str, today: dt.date | None = None) -> dt.date | None:
-    """'D2D OBCL 8.24' -> date(2026, 8, 24). None if it isn't a dated tab."""
-    if not title.strip().lower().startswith(DATED_TAB_PREFIX.lower()):
-        return None
-    m = _TAB_DATE.search(title)
-    if not m:
-        return None
-    today = today or dt.date.today()
-    month, day = int(m.group(1)), int(m.group(2))
-    year = int(m.group(3) or 0)
-    if year and year < 100:
-        year += 2000
-    if not year:
-        # No year on the tab: assume the nearest sensible one.
-        year = today.year
-        try:
-            cand = dt.date(year, month, day)
-        except ValueError:
-            return None
-        if (cand - today).days > 180:      # e.g. "12.29" seen in January
-            year -= 1
-    try:
-        return dt.date(year, month, day)
-    except ValueError:
-        return None
+# Shared with Blue Ink, the follow-up report and apex
+# (automations/shared/obcl_tabs). This module's own copy inferred the year in
+# ONE direction: it could pull a date back a year but never push it forward, so
+# the January tab built in late December resolved to the January just gone —
+# which sorts OLDEST, and find_week_tab takes the newest, so it would have
+# ticked rows on the wrong week. Fixed by sharing the parser (2026-09-26).
+tab_date = obcl_tabs.tab_date
 
 
 def find_week_tab(sh, today: dt.date | None = None):
@@ -93,17 +76,13 @@ def find_week_tab(sh, today: dt.date | None = None):
     The team keeps ONE dated tab and rolls it forward: on 2026-08-30 the only
     dated tab was "D2D OBCL 8.31" (next week's). An "on or before today" rule
     would have skipped it, so the newest dated tab wins outright."""
-    today = today or dt.date.today()
-    dated = []
-    for ws in sh.worksheets():
-        d = tab_date(ws.title, today)
-        if d:
-            dated.append((d, ws))
-    if not dated:
+    by_title = {ws.title: ws for ws in sh.worksheets()}
+    found = obcl_tabs.newest(by_title, today)
+    if not found:
         raise SheetLogError(
             f"no dated {DATED_TAB_PREFIX!r} tab in the workbook")
-    d, ws = max(dated, key=lambda t: t[0])
-    return ws, d
+    d, title = found
+    return by_title[title], d
 
 
 def candidate_tabs(sh, today: dt.date | None = None) -> list:
@@ -114,18 +93,10 @@ def candidate_tabs(sh, today: dt.date | None = None) -> list:
     after that person's week has rolled over, and their row only survives in
     the stack — Ivan Soto (submitted 8/26) was reported "Not found on OBCL
     Sheet" purely because his week's dated tab no longer existed."""
-    today = today or dt.date.today()
-    dated = []
-    rolling = None
-    for ws in sh.worksheets():
-        title = ws.title.strip()
-        d = tab_date(title, today)
-        if d:
-            dated.append((d, ws))
-        elif title.lower() == DATED_TAB_PREFIX.lower():
-            rolling = ws
-    dated.sort(key=lambda t: t[0], reverse=True)
-    out = [ws for _, ws in dated]
+    by_title = {ws.title.strip(): ws for ws in sh.worksheets()}
+    out = [by_title[t] for _, t in obcl_tabs.dated(by_title, today)]
+    rolling = next((ws for t, ws in by_title.items()
+                    if obcl_tabs.is_rolling(t)), None)
     if rolling is not None:
         out.append(rolling)
     if not out:

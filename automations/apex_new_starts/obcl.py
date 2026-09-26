@@ -30,6 +30,7 @@ import unicodedata
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from automations.blueink_docs import config as C
+from automations.shared import obcl_tabs
 from automations.recruiting_report.fill import open_by_key
 
 # By LABEL, never by position — the OBCL gains columns regularly (this one was
@@ -66,23 +67,13 @@ def split_name(full: str) -> Tuple[str, str]:
 
 
 def tab_for(week_start: dt.date, titles: Iterable[str]) -> Optional[str]:
-    """The dated OBCL tab whose label falls inside this board week."""
-    best = None
-    for title in titles:
-        m = re.match(r"^\s*" + re.escape(C.DATED_TAB_PREFIX) +
-                     r"\s+(\d{1,2})\.(\d{1,2})\s*$", title, re.I)
-        if not m:
-            continue
-        month, day = int(m.group(1)), int(m.group(2))
-        for year in (week_start.year, week_start.year - 1):
-            try:
-                when = dt.date(year, month, day)
-            except ValueError:
-                continue
-            if week_start <= when <= week_start + dt.timedelta(days=6):
-                if best is None or when < best[0]:
-                    best = (when, title)
-    return best[1] if best else None
+    """The dated OBCL tab whose label falls inside this board week.
+
+    Parse shared with Blue Ink, headshots and the follow-up report
+    (automations/shared/obcl_tabs); the week window and "earliest wins" are
+    this caller's own rule.
+    """
+    return obcl_tabs.in_week(titles, week_start)
 
 
 def _layout(grid: List[List[str]]) -> Tuple[int, Dict[str, int]]:

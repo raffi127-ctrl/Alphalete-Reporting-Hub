@@ -27,6 +27,7 @@ from typing import List, Optional
 
 from automations.blueink_docs import config
 from automations.shared import new_start_eligibility as eligibility
+from automations.shared import obcl_tabs
 
 _DATE_RE = re.compile(r"^\s*\d{1,2}[./]\d{1,2}([./]\d{2,4})?\s*$")
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -280,43 +281,18 @@ def parse_tab(values: List[List[str]], tab_name: str) -> List[NewStart]:
     return out
 
 
-def _tab_date(title: str) -> Optional[dt.date]:
-    """'D2D OBCL 8.24' -> date(2026, 8, 24). Year is inferred, so a tab dated
-    in December read in January resolves to the year just gone, not next."""
-    m = re.search(r"(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?\s*$", title.strip())
-    if not m:
-        return None
-    month, day, year = int(m.group(1)), int(m.group(2)), m.group(3)
-    today = dt.date.today()
-    if year:
-        year = int(year)
-        if year < 100:
-            year += 2000
-    else:
-        year = today.year
-        if month - today.month > 6:
-            year -= 1
-        elif today.month - month > 6:
-            year += 1
-    try:
-        return dt.date(year, month, day)
-    except ValueError:
-        return None
+# The tab-title parser is shared (automations/shared/obcl_tabs) — four modules
+# had their own and two of them were wrong about the turn of the year.
+_tab_date = obcl_tabs.tab_date
 
 
 def dated_tabs(workbook) -> list:
-    """[(date, worksheet)] for every dated OBCL tab, newest first."""
-    found = []
-    for ws in workbook.worksheets():
-        title = ws.title.strip()
-        if not title.lower().startswith(config.DATED_TAB_PREFIX.lower()):
-            continue
-        if title.lower() == config.DATED_TAB_PREFIX.lower():
-            continue                        # the rolling all-weeks tab
-        d = _tab_date(title)
-        if d:
-            found.append((d, ws))
-    return sorted(found, key=lambda p: p[0], reverse=True)
+    """[(date, worksheet)] for every dated OBCL tab, newest first.
+
+    The rolling all-weeks tab carries no date and so is excluded by the parser.
+    """
+    by_title = {ws.title.strip(): ws for ws in workbook.worksheets()}
+    return [(d, by_title[t]) for d, t in obcl_tabs.dated(by_title)]
 
 
 def current_tab(workbook, tab_name: str = ""):
