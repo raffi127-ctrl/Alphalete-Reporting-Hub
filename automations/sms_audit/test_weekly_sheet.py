@@ -28,10 +28,10 @@ class LabelLookupTest(unittest.TestCase):
                   ["", "", "09/18/26"],
                   ["Reach", "People we texted", "100"],
                   ["", "", ""],                       # a gap somebody left
-                  ["Booking", "…booked by the AI", "40"]]
+                  ["Booking", "— booked by the AI", "40"]]
         rows = W._label_rows(values)
         self.assertEqual(rows["People we texted"], 3)
-        self.assertEqual(rows["…booked by the AI"], 5)
+        self.assertEqual(rows["— booked by the AI"], 5)
 
     def test_a_blank_label_is_not_a_row(self):
         self.assertNotIn("", W._label_rows([["Reach", ""], ["", "  "]]))
@@ -112,9 +112,9 @@ class BlankNotZeroTest(unittest.TestCase):
     def test_the_calendar_walk_still_fills_the_booking_rows(self):
         rep = {"log": None, "threads": 10, "mix": {"ai": 6, "human": 4}}
         by_label = {label: fn for _s, label, fn in W.ROWS}
-        self.assertEqual(by_label["Booked a 1st interview"](rep), 10)
-        self.assertEqual(by_label["…booked by the AI"](rep), 6)
-        self.assertEqual(by_label["% of bookings made by the AI"](rep), 60.0)
+        self.assertEqual(by_label["Interviews booked"](rep), 10)
+        self.assertEqual(by_label["— booked by the AI"](rep), 6)
+        self.assertEqual(by_label["% of interviews booked by the AI"](rep), 60.0)
 
 
 class TabNameTest(unittest.TestCase):
@@ -271,14 +271,14 @@ class NoMessagesIsBlankTest(unittest.TestCase):
         for label in ("Questions asked", "Questions we couldn't group",
                       "Most asked → what we usually reply",
                       "Applicants left waiting 2+ hours", "Texts sent before 8am or after 9pm",
-                      "Texted after they said stop", "Broken links sent"):
+                      "Texted someone after they said stop", "Broken links sent"):
             self.assertEqual(by_label[label](rep), "", label)
 
     def test_the_booking_rows_are_still_real(self):
         rep = self._bookings_only()
         by_label = {label: fn for _s, label, fn in W.ROWS}
-        self.assertEqual(by_label["Booked a 1st interview"](rep), 832)
-        self.assertEqual(by_label["…booked by the AI"](rep), 364)
+        self.assertEqual(by_label["Interviews booked"](rep), 832)
+        self.assertEqual(by_label["— booked by the AI"](rep), 364)
 
     def test_with_messages_a_zero_is_a_real_zero(self):
         import collections
@@ -358,7 +358,7 @@ class CoverageRowTest(unittest.TestCase):
         self.assertEqual(W.days_cell(self._rep([])), "")
 
     def test_it_is_the_first_row_so_it_is_read_before_the_numbers(self):
-        self.assertEqual(W.ROWS[0][1], "1st-interview days covered")
+        self.assertEqual(W.ROWS[0][1], "Days of interviews in this column")
 
 
 class PlainLabelTest(unittest.TestCase):
@@ -370,8 +370,7 @@ class PlainLabelTest(unittest.TestCase):
     def test_no_statistician_words(self):
         for _sec, label, _fn in W.ROWS:
             low = label.lower()
-            for word in ("median", "p90", "rate,", "carrier limit", "bucket",
-                         "person's"):
+            for word in ("median", "p90", "rate,", "carrier limit", "bucket"):
                 self.assertNotIn(word, low, label)
 
     def test_a_percent_row_says_what_of_what(self):
@@ -420,7 +419,7 @@ class PercentCellTest(unittest.TestCase):
         self.assertTrue(W.is_percent("% who texted back"))
         self.assertTrue(W.is_percent("% who showed — AI bookings"))
         self.assertFalse(W.is_percent("People we texted"))
-        self.assertFalse(W.is_percent("Booked a 1st interview"))
+        self.assertFalse(W.is_percent("Interviews booked"))
 
     def test_a_percent_is_stored_as_its_fraction(self):
         import collections
@@ -463,8 +462,8 @@ class PercentCellTest(unittest.TestCase):
         rows = {label: W._a1(i, 3) for i, (_s, label, _f)
                 in enumerate(W.ROWS, start=W.HEADER_ROW + 1)}
         # 6 of 10 bookings are the AI's -> 60% stored as 0.6, not 60
-        self.assertEqual(by_range[rows["% of bookings made by the AI"]], 0.6)
-        self.assertEqual(by_range[rows["…booked by the AI"]], 6)
+        self.assertEqual(by_range[rows["% of interviews booked by the AI"]], 0.6)
+        self.assertEqual(by_range[rows["— booked by the AI"]], 6)
 
     def test_a_blank_percent_stays_blank_not_zero(self):
         import collections
@@ -474,3 +473,83 @@ class PercentCellTest(unittest.TestCase):
                "anomalies": {}, "question_table": [], "dates": []}
         by_label = {label: fn for _s, label, fn in W.ROWS}
         self.assertEqual(by_label["% who texted back"](rep), "")
+
+
+class UniqueLabelTest(unittest.TestCase):
+    """Rows are found BY LABEL, so two rows sharing one is not a cosmetic
+    problem — the second silently reuses the first's row and clobbers its
+    numbers. That is exactly what happened when the cold-list and live-flow
+    sections both used "% of them who booked"."""
+
+    def test_no_two_rows_share_a_label(self):
+        seen = {}
+        for section, label, _fn in W.ROWS:
+            self.assertNotIn(label, seen,
+                             "{!r} is used by both {!r} and {!r}".format(
+                                 label, seen.get(label), section))
+            seen[label] = section
+
+    def test_a_label_says_which_group_it_is_about(self):
+        # "% of them who booked" under two sections was ambiguous to read as
+        # well as broken to write
+        for _sec, label, _fn in W.ROWS:
+            self.assertNotIn("of them", label.lower(), label)
+
+
+class IssuesCellTest(unittest.TestCase):
+    """Megan: "add a row on there of issues that you see." Every other row is
+    a number somebody has to interpret; this one says what the numbers mean."""
+
+    def _rep(self, **log):
+        base = {"funnel": {"drop": {}, "curve": {}, "delivery": {}}}
+        base["funnel"].update(log.pop("funnel", {}))
+        base.update(log)
+        return {"log": base, "anomalies": log.pop("anomalies", {})}
+
+    def test_a_clean_week_says_so_instead_of_listing_zeros(self):
+        self.assertEqual(W.issues_cell(self._rep()), "Nothing flagged this week.")
+
+    def test_no_log_means_no_claim_at_all(self):
+        self.assertEqual(W.issues_cell({"log": None, "anomalies": {}}), "")
+
+    def test_running_out_of_credits_is_listed_first(self):
+        rep = self._rep(funnel={"delivery": {
+            "by_status": {"Insufficient SMS Credits": 17}, "sent": 0,
+            "undelivered": 0}})
+        self.assertTrue(W.issues_cell(rep).startswith("1. 17 texts were never sent"))
+
+    def test_a_broken_link_names_the_fix(self):
+        rep = {"log": {"funnel": {"drop": {}, "curve": {}, "delivery": {}}},
+               "anomalies": {"Dead link — the web address is spelled with a "
+                             "look-alike letter": [1] * 714}}
+        out = W.issues_cell(rep)
+        self.assertIn("714 texts carried a BROKEN LINK", out)
+        self.assertIn("Fix the template", out)
+
+    def test_the_one_text_finding_only_fires_when_none_of_them_booked(self):
+        rep = self._rep(funnel={"curve": {"one": {"people": 100, "booked": 0},
+                                          "many": {"people": 100, "booked": 60}}})
+        self.assertIn("not one of them booked", W.issues_cell(rep))
+        rep2 = self._rep(funnel={"curve": {"one": {"people": 100, "booked": 3},
+                                           "many": {"people": 100, "booked": 60}}})
+        self.assertNotIn("not one of them booked", W.issues_cell(rep2))
+
+
+class RenameChainTest(unittest.TestCase):
+    """A rename map is only useful if it lands somewhere real. Reword a label
+    twice and the first entry points at the intermediate name, which no longer
+    exists — the row is never found, a duplicate is added below it, and the
+    weeks already written sit orphaned above."""
+
+    def test_no_entry_points_at_another_entry(self):
+        for old, new in W.RENAMED.items():
+            self.assertNotIn(new, W.RENAMED,
+                             "{!r} -> {!r} -> {!r} is a chain; point it at the "
+                             "final name".format(old, new, W.RENAMED.get(new)))
+
+    def test_no_entry_is_also_a_current_label(self):
+        live = {l for _s, l, _f in W.ROWS}
+        for old in W.RENAMED:
+            self.assertNotIn(old, live,
+                             "{!r} is both a current row and something to rename "
+                             "away from".format(old))

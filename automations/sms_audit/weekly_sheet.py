@@ -120,31 +120,65 @@ def question_cell(rep):
 # entries stay for good, they cost nothing and removing one silently splits a
 # row in two the next time somebody rebuilds an old tab.
 RENAMED = {
-    "Left unanswered": "Applicants left waiting 2+ hours",
-    "Applicants left waiting on a reply": "Applicants left waiting 2+ hours",
-    'People texted': 'People we texted',
-    'Replied to us': 'People who texted back',
-    'Reply rate %': '% who texted back',
-    'Messages sent + received': 'Total messages (sent + received)',
-    'Booked by the AI': '…booked by the AI',
-    'Booked by a recruiter': '…booked by a recruiter',
-    'AI share of bookings %': '% of bookings made by the AI',
-    'Texted → booked %': '% of people texted who booked',
-    'Never booked': 'Texted but never booked',
-    'Showed up': 'Showed up to their interview',
-    'Show rate, AI bookings %': '% who showed — AI bookings',
-    'Show rate, recruiter bookings %': '% who showed — recruiter bookings',
+    '% of THOSE who booked': '% of the followed-up group who booked',
+    '% of bookings made by the AI': '% of interviews booked by the AI',
+    '% of people texted who booked': '% of people we texted who booked',
+    '% of recruiter replies within 5 minutes': '% of replies by a person within 5 minutes',
+    '% of them who booked': '% of blast people who booked',
+    '% of them who replied': '% of blast people who replied',
+    '% of those who booked': '% of the once-only group who booked',
+    '% that failed — 1st text to them': '% that failed — our FIRST text to them',
+    '% that failed — later texts to them': '% that failed — our later texts to them',
+    '% who showed — recruiter bookings': '% who showed — booked by a person',
+    '1st-interview days covered': 'Days of interviews in this column',
     'AI reply, median minutes': 'Minutes for the AI to reply (typical)',
-    "Person's reply, median minutes": 'Minutes for a recruiter to reply (typical)',
-    "Person's replies within 5 min %": '% of recruiter replies within 5 minutes',
-    "Interview days in this column": "1st-interview days covered",
+    'AI share of bookings %': '% of interviews booked by the AI',
+    'Applicants left waiting on a reply': 'Applicants left waiting 2+ hours',
+    'Applicants over the carrier limit': 'Applicants texted 4+ times with no reply',
+    'Applicants texted 4+ times, no reply': 'Applicants texted 4+ times with no reply',
+    'Booked a 1st interview': 'Interviews booked',
+    'Booked by a recruiter': '— booked by a person',
+    'Booked by the AI': '— booked by the AI',
+    'Bookings with no message logged': 'Interviews booked with no texts on file',
+    'Bookings with no texts on file': 'Interviews booked with no texts on file',
+    'Dead links sent': 'Broken links sent',
     "Didn't fit a bucket": "Questions we couldn't group",
-    "Applicants over the carrier limit": "Applicants texted 4+ times, no reply",
-    "Texts outside 8am–9pm": "Texts sent before 8am or after 9pm",
-    "Dead links sent": "Broken links sent",
-    "Not delivered": "Texts that never arrived",
-    "…of those, never booked": "…of those, never booked an interview",
-    "Bookings with no message logged": "Bookings with no texts on file",
+    'Got 2+ texts, never replied': 'We kept texting, they never replied',
+    'Got ONE text and nothing more': 'We texted once and never again',
+    'Interview days in this column': 'Days of interviews in this column',
+    'Left unanswered': 'Applicants left waiting 2+ hours',
+    'Messages sent + received': 'Total texts (sent + received)',
+    'Minutes for a recruiter to reply (typical)': 'Minutes for a person to reply (typical)',
+    'Never booked': 'People we texted who never booked',
+    'Never reached them (texts failed)': 'Our texts never reached them',
+    'No number on file (Dummy Phone)': 'No phone number on file (Dummy Phone)',
+    'Not delivered': 'Texts that never arrived',
+    'Number not valid': 'Phone number not valid',
+    'People texted': 'People we texted',
+    'People who got 2+ texts': 'People we texted 2 or more times',
+    'People who got exactly 1 text': 'People we texted only ONCE',
+    'People who texted back': 'People who texted us back',
+    "Person's replies within 5 min %": '% of replies by a person within 5 minutes',
+    "Person's reply, median minutes": 'Minutes for a person to reply (typical)',
+    'Replied to us': 'People who texted us back',
+    'Reply rate %': '% who texted back',
+    'Said no / not interested': 'They said no',
+    'Show rate, AI bookings %': '% who showed — AI bookings',
+    'Show rate, recruiter bookings %': '% who showed — booked by a person',
+    'Showed up': 'Showed up to their interview',
+    'Still queued (Requeued)': 'Still stuck in the queue (Requeued)',
+    'THEY spoke last — we never answered': 'They wrote last, we never answered',
+    'Talked, then it just stopped': 'We talked, then it went quiet',
+    'Texted after they said stop': 'Texted someone after they said stop',
+    'Texted but never booked': 'People we texted who never booked',
+    'Texted → booked %': '% of people we texted who booked',
+    'Texts outside 8am–9pm': 'Texts sent before 8am or after 9pm',
+    'Too soon to tell (texted in the last 3 days)': 'Too recent to judge (texted in the last 3 days)',
+    'Total messages (sent + received)': 'Total texts (sent + received)',
+    '…booked by a recruiter': '— booked by a person',
+    '…booked by the AI': '— booked by the AI',
+    '…of those, never booked': '— of those, never booked an interview',
+    '…of those, never booked an interview': '— of those, never booked an interview',
 }
 
 
@@ -168,6 +202,90 @@ def _curve_pct(which, field):
             return ""
         return round(100.0 * c[field] / c["people"], 1)
     return read
+
+
+def issues_cell(rep):
+    """One cell: what is actually wrong this week, worst first, in words.
+
+    Megan 2026-09-26: "add a row on there of issues that you see." Every
+    other row is a number somebody has to interpret; this row says what the
+    numbers mean and roughly what it would take to fix. Only real findings
+    appear — a clean week says so rather than printing a list of zeros.
+
+    Ranked by how much it costs, not by how alarming it sounds."""
+    log = rep.get("log") or {}
+    fun = log.get("funnel") or {}
+    drop = fun.get("drop") or {}
+    curve = fun.get("curve") or {}
+    deliv = fun.get("delivery") or {}
+    an = rep.get("anomalies") or {}
+    found = []
+
+    def n(anom):
+        return len(an.get(anom, []))
+
+    broken = n("Dead link — the web address is spelled with a look-alike letter")
+    if broken:
+        found.append((1, "{:,} texts carried a BROKEN LINK. The web address is "
+                         "spelled with a look-alike letter, so it opens nothing. "
+                         "Fix the template, not the texts.".format(broken)))
+
+    once = (curve.get("one") or {}).get("people")
+    if once and (curve["one"].get("booked") or 0) == 0:
+        found.append((2, "{:,} people got ONE text and nothing more, and not one "
+                         "of them booked. Everyone we texted twice or more booked "
+                         "at {:.0f}%.".format(
+                             once,
+                             100.0 * (curve.get("many") or {}).get("booked", 0)
+                             / max((curve.get("many") or {}).get("people", 1), 1))))
+
+    if deliv.get("undelivered") and deliv.get("sent"):
+        line = "{:,} texts never arrived ({:.0f}% of everything sent)".format(
+            deliv["undelivered"], 100.0 * deliv["undelivered"] / deliv["sent"])
+        if deliv.get("first_rate") is not None and deliv.get("later_rate"):
+            line += (". It gets worse the more we send the same person — {:.0f}% "
+                     "fail on our first text, {:.0f}% on later ones, which is the "
+                     "carrier throttling the number".format(
+                         deliv["first_rate"], deliv["later_rate"]))
+        found.append((3, line + "."))
+
+    credits = (deliv.get("by_status") or {}).get("Insufficient SMS Credits", 0)
+    if credits:
+        found.append((0, "{} texts were never sent because the office RAN OUT OF "
+                         "SMS CREDITS.".format(credits)))
+
+    stopped = n("Kept texting after they asked us to stop / said no")
+    if stopped:
+        found.append((4, "{} people were texted again AFTER they asked us to stop "
+                         "or said they were not interested.".format(stopped)))
+
+    quiet = n("Texted outside 8am–9pm (TCPA quiet hours)")
+    if quiet:
+        found.append((5, "{:,} texts went out before 8am or after 9pm.".format(quiet)))
+
+    over = n("Over the carrier limit — 4+ separate texts with no reply between")
+    if over:
+        found.append((6, "{:,} applicants got 4 or more texts without ever "
+                         "replying — the pattern that gets a number flagged as "
+                         "spam.".format(over)))
+
+    waiting = drop.get("we never answered")
+    if waiting:
+        found.append((7, "{} people wrote to us last and never got an answer."
+                         .format(waiting)))
+
+    merge = n("A merge field never filled in — the applicant got the raw tag")
+    if merge:
+        found.append((8, "{} texts went out with an unfilled merge tag in them."
+                         .format(merge)))
+    braces = n("Merge braces {{ }} printed around the text")
+    if braces:
+        found.append((9, "{} texts printed {{ }} around the date.".format(braces)))
+
+    if not found:
+        return "Nothing flagged this week." if log else ""
+    return "\n\n".join("{}. {}".format(i, text)
+                        for i, (_rank, text) in enumerate(sorted(found), 1))
 
 
 def _lane(which, field):
@@ -267,33 +385,37 @@ def days_cell(rep, week_end=None):
 
 
 ROWS = [
-    ("Week", "1st-interview days covered", days_cell),
-    ("Reach", "People we texted", lambda r: _f(r, "contacted", "")),
-    ("Reach", "People who texted back", lambda r: _f(r, "replied", "")),
-    ("Reach", "% who texted back", lambda r: _rate(_f(r, "replied"), _f(r, "contacted"))),
-    ("Reach", "Total messages (sent + received)", lambda r: (r.get("log") or {}).get("rows", "")),
-    ("Reach", "Bookings with no texts on file", lambda r: _f(r, "join_misses", "")),
+    ("This week", "Days of interviews in this column", days_cell),
+    # Megan 2026-09-26: "add a row on there of issues that you see." Every
+    # other row is a number somebody has to interpret; this one says what the
+    # numbers mean, worst first.
+    ("This week", "ISSUES WE SEE", issues_cell),
+    ("Who we texted", "People we texted", lambda r: _f(r, "contacted", "")),
+    ("Who we texted", "People who texted us back", lambda r: _f(r, "replied", "")),
+    ("Who we texted", "% who texted back", lambda r: _rate(_f(r, "replied"), _f(r, "contacted"))),
+    ("Who we texted", "Total texts (sent + received)", lambda r: (r.get("log") or {}).get("rows", "")),
+    ("Who we texted", "Interviews booked with no texts on file", lambda r: _f(r, "join_misses", "")),
 
-    ("Booking", "Booked a 1st interview", lambda r: _f(r, "booked", r["threads"])),
-    ("Booking", "…booked by the AI", lambda r: _f(r, "booked_ai", r["mix"]["ai"])),
-    ("Booking", "…booked by a recruiter", lambda r: _f(r, "booked_human", r["mix"]["human"])),
-    ("Booking", "% of bookings made by the AI",
+    ("Interviews booked", "Interviews booked", lambda r: _f(r, "booked", r["threads"])),
+    ("Interviews booked", "— booked by the AI", lambda r: _f(r, "booked_ai", r["mix"]["ai"])),
+    ("Interviews booked", "— booked by a person", lambda r: _f(r, "booked_human", r["mix"]["human"])),
+    ("Interviews booked", "% of interviews booked by the AI",
      lambda r: _rate(_f(r, "booked_ai", r["mix"]["ai"]), _f(r, "booked", r["threads"]))),
-    ("Booking", "% of people texted who booked", lambda r: _rate(_f(r, "booked"), _f(r, "contacted"))),
-    ("Booking", "Texted but never booked", lambda r: _f(r, "never_booked", "")),
+    ("Interviews booked", "% of people we texted who booked", lambda r: _rate(_f(r, "booked"), _f(r, "contacted"))),
+    ("Interviews booked", "People we texted who never booked", lambda r: _f(r, "never_booked", "")),
 
     # Megan 2026-09-26: "our goal is to book as many of our applicants as we
     # can — we really need to find out why each office isn't booking more."
     # This section is that question. Every unbooked person lands in exactly
     # one row, and the follow-up curve sits beside it because in Raf's office
     # it is the whole story: one text booked 0%, two or more booked 47%.
-    ("Why they didn't book", "Got ONE text and nothing more", _drop("one text only")),
-    ("Why they didn't book", "Got 2+ texts, never replied", _drop("never replied")),
-    ("Why they didn't book", "THEY spoke last — we never answered", _drop("we never answered")),
-    ("Why they didn't book", "Talked, then it just stopped", _drop("talked, then stopped")),
-    ("Why they didn't book", "Said no / not interested", _drop("said no")),
-    ("Why they didn't book", "Never reached them (texts failed)", _drop("never reached them")),
-    ("Why they didn't book", "Too soon to tell (texted in the last 3 days)",
+    ("Why they didn't book", "We texted once and never again", _drop("one text only")),
+    ("Why they didn't book", "We kept texting, they never replied", _drop("never replied")),
+    ("Why they didn't book", "They wrote last, we never answered", _drop("we never answered")),
+    ("Why they didn't book", "We talked, then it went quiet", _drop("talked, then stopped")),
+    ("Why they didn't book", "They said no", _drop("said no")),
+    ("Why they didn't book", "Our texts never reached them", _drop("never reached them")),
+    ("Why they didn't book", "Too recent to judge (texted in the last 3 days)",
      _drop("too soon to tell")),
 
     # Megan 2026-09-26: "there should be a 2nd section below for the cold
@@ -301,72 +423,74 @@ ROWS = [
     # re-engagement blast. Holding the two in one number is what made the
     # whole office look broken: Raf's cold list books at 8%, his live flow at
     # 74%, and Carlos runs no blast at all.
-    ("Cold list (mass blast)", "People on the blast", _lane("cold", "people")),
-    ("Cold list (mass blast)", "% of them who replied", _lane_pct("cold", "replied")),
-    ("Cold list (mass blast)", "% of them who booked", _lane_pct("cold", "booked")),
+    ("Cold list (mass text blast)", "People on the blast", _lane("cold", "people")),
+    ("Cold list (mass text blast)", "% of blast people who replied", _lane_pct("cold", "replied")),
+    ("Cold list (mass text blast)", "% of blast people who booked", _lane_pct("cold", "booked")),
 
-    ("Live flow (not the blast)", "People in the normal flow", _lane("live", "people")),
-    ("Live flow (not the blast)", "% of them who replied", _lane_pct("live", "replied")),
-    ("Live flow (not the blast)", "% of them who booked", _lane_pct("live", "booked")),
+    ("Normal applicants (not the blast)", "People in the normal flow", _lane("live", "people")),
+    ("Normal applicants (not the blast)", "% of normal applicants who replied",
+     _lane_pct("live", "replied")),
+    ("Normal applicants (not the blast)", "% of normal applicants who booked",
+     _lane_pct("live", "booked")),
 
     # Megan: "we need to know why it never reached them."
-    ("Why texts don't arrive", "Carrier rejected it (Failed)", _why("Failed")),
-    ("Why texts don't arrive", "Still queued (Requeued)", _why("Requeued")),
-    ("Why texts don't arrive", "No number on file (Dummy Phone)", _why("Dummy Phone")),
-    ("Why texts don't arrive", "Ran out of SMS credits",
+    ("Why texts never arrive", "Carrier rejected it (Failed)", _why("Failed")),
+    ("Why texts never arrive", "Still stuck in the queue (Requeued)", _why("Requeued")),
+    ("Why texts never arrive", "No phone number on file (Dummy Phone)", _why("Dummy Phone")),
+    ("Why texts never arrive", "Ran out of SMS credits",
      _why("Insufficient SMS Credits")),
-    ("Why texts don't arrive", "Number not valid",
+    ("Why texts never arrive", "Phone number not valid",
      _why("Failed - Phone Not Valid")),
-    ("Why texts don't arrive", "% that failed — 1st text to them",
+    ("Why texts never arrive", "% that failed — our FIRST text to them",
      _why_rate("first_rate")),
-    ("Why texts don't arrive", "% that failed — later texts to them",
+    ("Why texts never arrive", "% that failed — our later texts to them",
      _why_rate("later_rate")),
 
-    ("Follow-up", "People who got exactly 1 text", _curve("one", "people")),
-    ("Follow-up", "% of those who booked", _curve_pct("one", "booked")),
-    ("Follow-up", "People who got 2+ texts", _curve("many", "people")),
-    ("Follow-up", "% of THOSE who booked", _curve_pct("many", "booked")),
+    ("Does following up work?", "People we texted only ONCE", _curve("one", "people")),
+    ("Does following up work?", "% of the once-only group who booked", _curve_pct("one", "booked")),
+    ("Does following up work?", "People we texted 2 or more times", _curve("many", "people")),
+    ("Does following up work?", "% of the followed-up group who booked", _curve_pct("many", "booked")),
 
-    ("Show", "Showed up to their interview", lambda r: _f(r, "shown", "")),
-    ("Show", "% who showed — AI bookings",
+    ("Did they show up?", "Showed up to their interview", lambda r: _f(r, "shown", "")),
+    ("Did they show up?", "% who showed — AI bookings",
      lambda r: _rate(_f(r, "shown_ai"), _f(r, "booked_ai"))),
-    ("Show", "% who showed — recruiter bookings",
+    ("Did they show up?", "% who showed — booked by a person",
      lambda r: _rate(_f(r, "shown_human"), _f(r, "booked_human"))),
 
-    ("Speed", "Minutes for the AI to reply (typical)",
+    ("How fast we reply", "Minutes for the AI to reply (typical)",
      lambda r: _median((r.get("log") or {}).get("speed_ai"))),
-    ("Speed", "Minutes for a recruiter to reply (typical)",
+    ("How fast we reply", "Minutes for a person to reply (typical)",
      lambda r: _median((r.get("log") or {}).get("speed_human"))),
-    ("Speed", "% of recruiter replies within 5 minutes",
+    ("How fast we reply", "% of replies by a person within 5 minutes",
      lambda r: _within5((r.get("log") or {}).get("speed_human"))),
 
-    ("Dropped", "Applicants left waiting 2+ hours",
+    ("People we left hanging", "Applicants left waiting 2+ hours",
      _msg(lambda r: len(((r.get("log") or {}).get("unanswered")) or r["unanswered"]))),
-    ("Dropped", "…of those, never booked an interview",
+    ("People we left hanging", "— of those, never booked an interview",
      lambda r: sum(1 for u in ((r.get("log") or {}).get("unanswered") or [])
                    if not u.get("booked")) if r.get("log") else ""),
 
-    ("What they ask", "Questions asked", _msg(lambda r: r["questions_total"])),
-    ("What they ask", "Questions we couldn't group", _msg(lambda r: len(r["questions_other"]))),
+    ("What applicants ask", "Questions asked", _msg(lambda r: r["questions_total"])),
+    ("What applicants ask", "Questions we couldn't group", _msg(lambda r: len(r["questions_other"]))),
     # ONE cell for the week (Megan 2026-09-26): the whole ranked list lives in
     # the week's own box instead of eleven fixed rows nobody could scan. Most
     # asked first, and what we usually send back on the same line — the two
     # halves of the question only mean something together.
-    ("What they ask", "Most asked → what we usually reply",
+    ("What applicants ask", "Most asked → what we usually reply",
      _msg(lambda r: question_cell(r))),
-    ("Flags", "Texts sent before 8am or after 9pm",
+    ("Problems to fix", "Texts sent before 8am or after 9pm",
      _msg(lambda r: len(r["anomalies"].get(
          "Texted outside 8am–9pm (TCPA quiet hours)", [])))),
-    ("Flags", "Applicants texted 4+ times, no reply",
+    ("Problems to fix", "Applicants texted 4+ times with no reply",
      _msg(lambda r: len(r["anomalies"].get(
          "Over the carrier limit — 4+ separate texts with no reply between", [])))),
-    ("Flags", "Texted after they said stop",
+    ("Problems to fix", "Texted someone after they said stop",
      _msg(lambda r: len(r["anomalies"].get(
          "Kept texting after they asked us to stop / said no", [])))),
-    ("Flags", "Broken links sent",
+    ("Problems to fix", "Broken links sent",
      _msg(lambda r: len(r["anomalies"].get(
          "Dead link — the web address is spelled with a look-alike letter", [])))),
-    ("Flags", "Texts that never arrived",
+    ("Problems to fix", "Texts that never arrived",
      lambda r: sum(v for k, v in ((r.get("log") or {}).get("delivery") or {}).items()
                    if k.lower() != "delivered") if r.get("log") else ""),
 ]
@@ -613,17 +737,17 @@ def write_week(ws, rep, week_end, dry_run=False):
     return col, len(updates)
 
 
-SECTION_TINT = {"Week": (0.86, 0.86, 0.86),
-                "Cold list (mass blast)": (0.93, 0.90, 0.86),
-                "Live flow (not the blast)": (0.88, 0.96, 0.90),
-                "Why texts don't arrive": (0.99, 0.91, 0.86),
+SECTION_TINT = {"This week": (0.86, 0.86, 0.86),
+                "Cold list (mass text blast)": (0.93, 0.90, 0.86),
+                "Normal applicants (not the blast)": (0.88, 0.96, 0.90),
+                "Why texts never arrive": (0.99, 0.91, 0.86),
                 "Why they didn't book": (0.99, 0.89, 0.89),
-                "Follow-up": (0.89, 0.95, 0.99), "Reach": (0.90, 0.94, 0.99), "Booking": (0.90, 0.96, 0.91),
-                "Show": (0.98, 0.95, 0.88), "Speed": (0.93, 0.91, 0.98),
-                "Dropped": (0.99, 0.91, 0.91), "What they ask": (0.95, 0.95, 0.95),
-                "Flags": (0.99, 0.93, 0.85)}
+                "Does following up work?": (0.89, 0.95, 0.99), "Who we texted": (0.90, 0.94, 0.99), "Interviews booked": (0.90, 0.96, 0.91),
+                "Did they show up?": (0.98, 0.95, 0.88), "How fast we reply": (0.93, 0.91, 0.98),
+                "People we left hanging": (0.99, 0.91, 0.91), "What applicants ask": (0.95, 0.95, 0.95),
+                "Problems to fix": (0.99, 0.93, 0.85)}
 WIDE_ROW = "Most asked → what we usually reply"
-WRAP_ROWS = (WIDE_ROW, "1st-interview days covered")
+WRAP_ROWS = (WIDE_ROW, "Days of interviews in this column", "ISSUES WE SEE")
 
 
 def is_percent(label):
