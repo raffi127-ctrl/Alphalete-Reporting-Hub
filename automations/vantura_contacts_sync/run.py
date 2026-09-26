@@ -38,6 +38,7 @@ import unicodedata
 from typing import Dict, List, Optional, Tuple
 
 from automations.fiber_owners_distro import contacts_write as cw
+from automations.recruiting_report.du_layout import resolve as du_resolve
 
 SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"   # Vantura Master
 ACCOUNT = "alphaletegp@gmail.com"
@@ -45,10 +46,10 @@ GROUP = "Vantura Reps"
 ADD_STATUSES = {"active", "orientation scheduled"}
 
 DU_TAB, ROLL_TAB, ALIAS_TAB = "Daily Update", "Roll Call", "Name Aliases"
-# Daily Update columns (0-based): Status A, Campaign F, Name I, Email J, Phone K,
-# "2nd round" (the interviewer who ran it) N, Orientation Date R.
-DU_STATUS, DU_CAMP, DU_NAME, DU_EMAIL, DU_PHONE = 0, 5, 8, 9, 10
-DU_2ND, DU_ORIENT = 13, 17
+# Daily Update columns are located by HEADER (recruiting_report/du_layout):
+# Status, Campaign, Name, Email, Phone, "2nd round" (the interviewer who ran
+# it) and Orientation Date. A 'Week Ending' column went in at M on 2026-09-26,
+# so nothing right of L sits where it used to.
 
 # Managed block written into the contact's Notes (biographies). Anything a human
 # typed ABOVE this marker is preserved; the block below is regenerated each run,
@@ -167,6 +168,7 @@ def rollcall_campaign(roll_vals, aliases) -> Dict[str, Tuple[dt.date, str]]:
 def build_targets(sh) -> List[dict]:
     """The people to ensure in the group: name, campaign, phone, email."""
     du = sh.worksheet(DU_TAB).get_all_values()
+    lay = du_resolve(du[0] if du else [])
     roll = sh.worksheet(ROLL_TAB).get_all_values()
     aliases = load_aliases(sh)
     rc = rollcall_campaign(roll, aliases)
@@ -174,11 +176,11 @@ def build_targets(sh) -> List[dict]:
     targets: List[dict] = []
     seen_phone: set = set()
     for r in du[2:]:
-        if len(r) <= DU_PHONE:
+        if len(r) <= lay["phone"]:
             continue
-        if _norm(r[DU_STATUS]) not in ADD_STATUSES:
+        if _norm(r[lay["status"]]) not in ADD_STATUSES:
             continue
-        name = _strip_parens(r[DU_NAME])
+        name = _strip_parens(r[lay["name"]])
         if not name:
             continue
         nkey = _norm(name)
@@ -188,8 +190,8 @@ def build_targets(sh) -> List[dict]:
                 if al in rc:
                     hit = rc[al]
                     break
-        campaign = (hit[1] if hit else "") or _canon_campaign(r[DU_CAMP])
-        phone = _phone10(r[DU_PHONE])
+        campaign = (hit[1] if hit else "") or _canon_campaign(r[lay["campaign"]])
+        phone = _phone10(r[lay["phone"]])
         if phone and phone in seen_phone:
             continue                      # one Daily Update row per rep already
         if phone:
@@ -198,10 +200,12 @@ def build_targets(sh) -> List[dict]:
             "name": name,
             "campaign": campaign,
             "phone": phone,
-            "email": str(r[DU_EMAIL]).strip(),
-            "status": str(r[DU_STATUS]).strip(),
-            "orientation": str(r[DU_ORIENT]).strip() if len(r) > DU_ORIENT else "",
-            "second_round": str(r[DU_2ND]).strip() if len(r) > DU_2ND else "",
+            "email": str(r[lay["email"]]).strip(),
+            "status": str(r[lay["status"]]).strip(),
+            "orientation": (str(r[lay["orient"]]).strip()
+                            if len(r) > lay["orient"] else ""),
+            "second_round": (str(r[lay["second"]]).strip()
+                             if len(r) > lay["second"] else ""),
         })
     return targets
 

@@ -192,23 +192,27 @@ def build(today: dt.date):
             parent.children.append(r)
 
     # ---- Daily Update: scheduled orientations still in the future ------------
-    du = sh.worksheet("Daily Update").get("A1:R4000")
+    # Columns by HEADER, not position: a 'Week Ending' column went in at M on
+    # 2026-09-26 and the VA's layout drifts (see recruiting_report/du_layout).
+    from automations.recruiting_report.du_layout import resolve as du_resolve
+    du = sh.worksheet("Daily Update").get("A1:AB4000")
+    lay = du_resolve(du[0] if du else [])
     scheduled = []           # (person, campaign, team-Rep-or-None)
-    for row in du:
-        row += [""] * (18 - len(row))
-        if _norm(row[0]) != "orientation scheduled":
+    for row in du[1:]:
+        row += [""] * (30 - len(row))
+        if _norm(row[lay["status"]]) != "orientation scheduled":
             continue
-        when = _parse_date(row[17], today)
+        when = _parse_date(row[lay["orient"]], today)
         if not when or when < today:
             continue
-        camp = "BOX" if "box" in _norm(row[5]) else "B2B"
-        second = _resolve(row[13], by_norm)
+        camp = "BOX" if "box" in _norm(row[lay["campaign"]]) else "B2B"
+        second = _resolve(row[lay["second"]], by_norm)
         # Campaign overrides the 2nd-rounder's team on a mismatch (Carlos
         # 2026-08-30, the Dominic Drennon case) — the start still counts for
         # its campaign's office total, just not that leader's card.
         if second is not None and second.campaign != camp:
             second = None
-        scheduled.append((row[8].strip(), camp, second))
+        scheduled.append((row[lay["name"]].strip(), camp, second))
 
     for kind, name, trainer in unresolved:
         print(f"  UNRESOLVED trainer ({kind}): {name!r} -> {trainer!r} — "

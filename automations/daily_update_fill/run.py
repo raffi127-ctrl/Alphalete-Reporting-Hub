@@ -41,6 +41,11 @@ from automations.applicant_tracker.run import (
     L_2ND_ROSTER, L_2ND_SHOWED, L_OFFERED, L_BOB, L_TRAINING,
     L_TRAINING_SHOWED, N_2R_COLS, date_header_for)
 from automations.captainship_boards.config import OWNERS as BOARD_IDS
+# Daily Update columns are located by HEADER (Carlos 2026-09-26): the master
+# gained a 'Week Ending' column at M, the owner boards did not, and the
+# header wording differs between them. Never index the tab by position.
+from automations.recruiting_report.du_layout import col_letter as _cl
+from automations.recruiting_report.du_layout import resolve as du_resolve
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -275,8 +280,9 @@ def apply_to_sheet(name_label, sheet_id, tab, cands, cr_map, write):
     from automations.recruiting_report.fill import _retry, open_by_key
     sh = _retry(lambda: open_by_key(sheet_id))
     ws = sh.worksheet(tab)
-    col_i = [_n(c) for c in ws.col_values(NAME_COL_IDX)]
-    col_t = [_n(c) for c in ws.col_values(20)]           # T
+    lay = du_resolve(ws.row_values(1))
+    col_i = [_n(c) for c in ws.col_values(lay["name"] + 1)]
+    col_t = [_n(c) for c in ws.col_values(lay["cr"] + 1)]  # Classroom Retention
     n_before = len(col_i)
     existing = {}
     for idx, nm in enumerate(col_i):
@@ -307,17 +313,27 @@ def apply_to_sheet(name_label, sheet_id, tab, cands, cr_map, write):
         next_row += 1
         existing[key] = row
         ldate = f"{c['day'].month}/{c['day'].day}"
-        data.append({"range": f"'{tab}'!A{row}", "values": [[status]]})
+        data.append({"range": f"'{tab}'!{_cl(lay['status'])}{row}",
+                     "values": [[status]]})
         # Campaign (col F) — the owner boards are single-campaign, so stamp it
         # (Carlos 8/24). The Vantura master runs B2B AND BOX; the VA sorts it.
         if name_label not in NO_ROLLCALL_SYNC:
-            data.append({"range": f"'{tab}'!F{row}", "values": [["AT&T B2B"]]})
-        data.append({"range": f"'{tab}'!I{row}:S{row}", "values": [[
-            c["name"], c["email"], c["phone"], ldate, c["first_round"],
-            c["second_round"], c["show"], c["offered"], c["bob_status"],
-            orientation, c["ad"]]]})
+            data.append({"range": f"'{tab}'!{_cl(lay['campaign'])}{row}",
+                         "values": [["AT&T B2B"]]})
+        # One cell per field, each located by its header. Never a positional
+        # I:S block: the master's 'Week Ending' column sits inside that span
+        # and holds a formula that a blank write would wipe (Carlos 9/26).
+        for key, val in (("name", c["name"]), ("email", c["email"]),
+                         ("phone", c["phone"]), ("date2", ldate),
+                         ("first", c["first_round"]),
+                         ("second", c["second_round"]), ("show", c["show"]),
+                         ("offered", c["offered"]), ("bob", c["bob_status"]),
+                         ("orient", orientation), ("ad", c["ad"])):
+            data.append({"range": f"'{tab}'!{_cl(lay[key])}{row}",
+                         "values": [[val]]})
         if t_val:
-            data.append({"range": f"'{tab}'!T{row}", "values": [[t_val]]})
+            data.append({"range": f"'{tab}'!{_cl(lay['cr'])}{row}",
+                         "values": [[t_val]]})
         appended += 1
     cr_updates = 0
     for key, (d, shown) in cr_map.items():
@@ -327,7 +343,7 @@ def apply_to_sheet(name_label, sheet_id, tab, cands, cr_map, write):
         cur_t = col_t[row - 1] if row <= len(col_t) else ""
         if cur_t:
             continue
-        data.append({"range": f"'{tab}'!T{row}",
+        data.append({"range": f"'{tab}'!{_cl(lay['cr'])}{row}",
                      "values": [[CR_SHOW if shown else CR_NOSHOW]]})
         cr_updates += 1
     log(f"  {name_label:<17} append={appended} cr-updates={cr_updates}"
@@ -477,11 +493,12 @@ def sync_statuses(name_label, sh, tab, write) -> int:
     sellers_f = {k for k in (_fuzzy_key(x) for x in sellers) if k}
     roster_f = {k for k in (_fuzzy_key(x) for x in roster) if k}
     ws = sh.worksheet(tab)
-    col_i = [_n(c) for c in ws.col_values(NAME_COL_IDX)]
-    col_a = [_n(c) for c in ws.col_values(1)]
-    col_b = [_n(c) for c in ws.col_values(2)]
-    col_t = [_n(c) for c in ws.col_values(20)]
-    col_r = [_n(c) for c in ws.col_values(18)]
+    lay = du_resolve(ws.row_values(1))
+    col_i = [_n(c) for c in ws.col_values(lay["name"] + 1)]
+    col_a = [_n(c) for c in ws.col_values(lay["status"] + 1)]
+    col_b = [_n(c) for c in ws.col_values(lay["secondary"] + 1)]
+    col_t = [_n(c) for c in ws.col_values(lay["cr"] + 1)]
+    col_r = [_n(c) for c in ws.col_values(lay["orient"] + 1)]
     today_ = dt.datetime.now(CENTRAL).date()
     data, flips = [], 0
     for idx, nm in enumerate(col_i):
@@ -521,10 +538,11 @@ def sync_statuses(name_label, sh, tab, write) -> int:
         else:
             continue                     # Not Active / Active / blank stand
         if cur != want:
-            data.append({"range": f"'{tab}'!A{idx + 1}", "values": [[want]]})
+            data.append({"range": f"'{tab}'!{_cl(lay['status'])}{idx + 1}",
+                         "values": [[want]]})
             flips += 1
         if _member(key, term, term_f) and                 not (col_b[idx] if idx < len(col_b) else ""):
-            data.append({"range": f"'{tab}'!B{idx + 1}",
+            data.append({"range": f"'{tab}'!{_cl(lay['secondary'])}{idx + 1}",
                          "values": [["Terminated"]]})
     log(f"  {name_label:<17} term={len(term)} sellers={len(sellers)} "
         f"status-flips={flips}" + ("" if write else "  (dry-run)"))
@@ -545,7 +563,9 @@ def rollcall_sync(name_label, sh, tab, write) -> int:
         return 0
     ws = sh.worksheet("Roll Call")
     rc = ws.get_values("A1:N250")
-    du = sh.worksheet(tab).get_values("A2:T6000")
+    du_ws = sh.worksheet(tab)
+    lay = du_resolve(du_ws.row_values(1))
+    du = du_ws.get_values("A2:AB6000")
     today = dt.datetime.now(CENTRAL).date()
     cur_we = today - dt.timedelta(days=today.weekday()) + dt.timedelta(days=6)
 
@@ -574,11 +594,12 @@ def rollcall_sync(name_label, sh, tab, write) -> int:
 
     by_name = {}
     for row in du:
-        row = list(row) + [""] * 20
-        nm = _n(row[8])
+        row = list(row) + [""] * 30
+        nm = _n(row[lay["name"]])
         if not nm:
             continue
-        e = {"n2": _n(row[13]), "orient": _n(row[17]), "cr": _n(row[19])}
+        e = {"n2": _n(row[lay["second"]]), "orient": _n(row[lay["orient"]]),
+             "cr": _n(row[lay["cr"]])}
         by_name[nm.lower()] = e
         fk = _fuzzy_key(nm)
         if fk:
@@ -609,14 +630,14 @@ def rollcall_sync(name_label, sh, tab, write) -> int:
     # (first dry-run wanted +53 on Justin). No parseable date = not recent.
     seen_new, skipped_old = set(), 0
     for row in du:
-        row = list(row) + [""] * 20
-        nm = _n(row[8])
-        if not nm or _n(row[19]) != CR_SHOW:
+        row = list(row) + [""] * 30
+        nm = _n(row[lay["name"]])
+        if not nm or _n(row[lay["cr"]]) != CR_SHOW:
             continue
         key = nm.lower()
         if key in seen_new or _member(key, set(rc_names), set(rc_names)):
             continue
-        m = re.match(r"^(\d{1,2})/(\d{1,2})", _n(row[17]))
+        m = re.match(r"^(\d{1,2})/(\d{1,2})", _n(row[lay["orient"]]))
         try:
             od = dt.date(today.year, int(m.group(1)), int(m.group(2))) if m else None
         except ValueError:
@@ -628,15 +649,15 @@ def rollcall_sync(name_label, sh, tab, write) -> int:
         seen_new.add(key)
         r = first_empty + added
         data.append({"range": f"'Roll Call'!A{r}:F{r}",
-                     "values": [[orient_we(row[17]), "New Start", campaign,
-                                 nm, _n(row[13]), ""]]})
+                     "values": [[orient_we(row[lay["orient"]]), "New Start",
+                                 campaign, nm, _n(row[lay["second"]]), ""]]})
         added += 1
     # week rollover: previous weeks' New Starts become Active; backfills;
     # and the TERMINATION CASCADE (Carlos 8/24: "mark T" must actually do
     # its job) — an attendance-cell T sets Status='Terminated', fills Date
     # Gone with the T'd day, and guarantees a DU row exists to flip.
-    du_names = {_n(r[8]).lower() for r in
-                (list(x) + [""] * 20 for x in du) if _n(r[8])}
+    du_names = {_n(r[lay["name"]]).lower() for r in
+                (list(x) + [""] * 30 for x in du) if _n(r[lay["name"]])}
     term_cascaded, term_new_du = 0, []
     for i, row in enumerate(rc[2:], 3):
         row = list(row) + [""] * 14
@@ -676,10 +697,10 @@ def rollcall_sync(name_label, sh, tab, write) -> int:
                 filled += 1
     next_du = len(du) + 2
     for nm in term_new_du:
-        data.append({"range": f"'{tab}'!A{next_du}", "values": [["Not Active"]]})
-        data.append({"range": f"'{tab}'!B{next_du}", "values": [["Terminated"]]})
-        data.append({"range": f"'{tab}'!F{next_du}", "values": [[campaign]]})
-        data.append({"range": f"'{tab}'!I{next_du}", "values": [[nm]]})
+        for key, val in (("status", "Not Active"), ("secondary", "Terminated"),
+                         ("campaign", campaign), ("name", nm)):
+            data.append({"range": f"'{tab}'!{_cl(lay[key])}{next_du}",
+                         "values": [[val]]})
         next_du += 1
     log(f"  {name_label:<17} rollcall: +{added} new-start, {flipped} -> Active, "
         f"{filled} backfilled, {skipped_old} historical skipped, "
