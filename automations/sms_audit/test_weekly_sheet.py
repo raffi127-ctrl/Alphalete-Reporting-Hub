@@ -118,14 +118,17 @@ class BlankNotZeroTest(unittest.TestCase):
 class TabNameTest(unittest.TestCase):
     def test_one_tab_per_account_named_by_id_and_owner(self):
         names = {"11280": "Rafael Hidalgo"}
-        self.assertEqual(W.tab_title("11280", names), "Texts 11280 Rafael Hidalgo")
+        self.assertEqual(W.tab_title("11280", names), "11280 Rafael Hidalgo")
         # Raf's other two streams are their own accounts, so their own tabs
-        self.assertEqual(W.tab_title("23965", names), "Texts 23965")
+        self.assertEqual(W.tab_title("23965", names), "23965")
 
-    def test_the_prefix_keeps_them_clear_of_the_control_sheets_tabs(self):
-        # while these live in the control sheet, a bare "11280" would sit
-        # among 161 unrelated tabs and could collide with one
-        self.assertTrue(W.tab_title("11280", {}).startswith(W.TAB_PREFIX + " "))
+    def test_one_owner_with_three_accounts_gets_three_tabs(self):
+        # Raf owns 11280, 23965 and 24065 — keying the tab on the OWNER would
+        # collapse all three into one and silently sum them
+        names = {"11280": "Rafael Hidalgo", "23965": "Rafael Hidalgo",
+                 "24065": "Rafael Hidalgo"}
+        titles = {W.tab_title(o, names) for o in ("11280", "23965", "24065")}
+        self.assertEqual(len(titles), 3)
 
 
 if __name__ == "__main__":

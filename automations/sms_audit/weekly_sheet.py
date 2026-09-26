@@ -7,11 +7,11 @@ Raf can open any time, **one tab per ApplicantStream account** (Megan
   ... weekly_sheet.py --dry-run                 # print the column, write nothing
   ... weekly_sheet.py --workbook <sheet-id>     # set the permanent home (remembered)
 
-The workbook id is recorded in `workbook.json` beside this file, so every
-later run and every machine writes to the SAME sheet. This code cannot CREATE
-a spreadsheet — the Sheets OAuth token is scoped to spreadsheets only — so
-until somebody passes `--workbook <id>` the tabs land in the control sheet,
-prefixed "Texts " to keep them out of the way of the 161 tabs already there.
+The home is **Applicant Correspondence Audit (ACA)**, recorded in
+`workbook.json` beside this file so every later run and every machine writes
+to the same book. `--workbook <id>` moves it. This code cannot CREATE a
+spreadsheet — the Sheets OAuth token is scoped to spreadsheets only — so a new
+home is made by hand and named once.
 
 LAYOUT, and why it is this way. Column A is the section, **column B is the
 metric label**, and every column from C rightwards is one recruiting week
@@ -42,14 +42,15 @@ from automations.sms_thread_dump.run import _recruiting_week
 HERE = Path(__file__).resolve().parent
 WORKBOOK_REF = HERE / "workbook.json"
 WORKBOOK_TITLE = "Applicant Text Audit"
-# Where the tabs live until somebody names a better home. The Sheets OAuth
-# token is scoped to spreadsheets ONLY, so this code CANNOT create a new
-# spreadsheet — `gc.create` comes back 403 "insufficient authentication
-# scopes", and widening the scope needs the one-time attended browser consent
-# (automations.recruiting_report.sheets_auth). The same token also cannot open
-# the Alphalete Recruiting Dashboard. So the default is the control sheet,
-# which it reads and writes all day, and `--workbook <id>` repoints every
-# later run once a home exists. Pass the id once; it is recorded.
+# The home: "Applicant Correspondence Audit (ACA)", made by Megan 2026-09-26
+# and recorded in workbook.json so every machine writes to the same book.
+# NOTE this code cannot CREATE a spreadsheet — the Sheets OAuth token is
+# scoped to spreadsheets only, so `gc.create` comes back 403 "insufficient
+# authentication scopes" and widening it needs the one-time attended browser
+# consent (automations.recruiting_report.sheets_auth). A new home therefore
+# has to be made by hand and passed once with --workbook <id>. The control
+# sheet is the fallback only so a machine with no workbook.json still writes
+# somewhere readable rather than failing.
 DEFAULT_WORKBOOK = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
 FIRST_WEEK_COL = 3          # A = section, B = metric label, C+ = weeks
 HEADER_ROW = 2              # row 1 is the title line, row 2 the week headers
@@ -160,15 +161,13 @@ def open_workbook(gc, explicit=None):
     return gc.open_by_key(DEFAULT_WORKBOOK)
 
 
-TAB_PREFIX = "Texts"
-
-
 def tab_title(office, names):
-    """'Texts 11280 Rafael Hidalgo'. The prefix is load-bearing while these
-    live in the control sheet: it keeps one tab per account from colliding
-    with the 161 tabs already in there, and groups them when sorted."""
+    """'11280 Rafael Hidalgo' — one tab per ApplicantStream account, named by
+    the account id first so the tabs sort by account and an owner with two
+    accounts (Raf has three) can never share a tab. The id leads because it is
+    the thing that is unique; the name is there so a person can read it."""
     who = names.get(office, "")
-    return "{} {} {}".format(TAB_PREFIX, office, who).strip()
+    return "{} {}".format(office, who).strip()
 
 
 def ensure_tab(sh, title):
