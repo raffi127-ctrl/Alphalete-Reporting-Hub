@@ -5,12 +5,13 @@ Raf can open any time, **one tab per ApplicantStream account** (Megan
   python -m automations.sms_audit.weekly_sheet --office 11280,23965,24065,11580
   ... weekly_sheet.py --week 2                  # backfill the week before
   ... weekly_sheet.py --dry-run                 # print the column, write nothing
-  ... weekly_sheet.py --workbook <sheet-id>     # point at an existing workbook
+  ... weekly_sheet.py --workbook <sheet-id>     # set the permanent home (remembered)
 
-The first run creates the workbook and records its id in `workbook.json` beside
-this file, so every later run and every machine writes to the SAME sheet
-instead of quietly making a second one. `--share you@example.com` adds an
-editor.
+The workbook id is recorded in `workbook.json` beside this file, so every
+later run and every machine writes to the SAME sheet. This code cannot CREATE
+a spreadsheet — the Sheets OAuth token is scoped to spreadsheets only — so
+until somebody passes `--workbook <id>` the tabs land in the control sheet,
+prefixed "Texts " to keep them out of the way of the 161 tabs already there.
 
 LAYOUT, and why it is this way. Column A is the section, **column B is the
 metric label**, and every column from C rightwards is one recruiting week
@@ -41,6 +42,15 @@ from automations.sms_thread_dump.run import _recruiting_week
 HERE = Path(__file__).resolve().parent
 WORKBOOK_REF = HERE / "workbook.json"
 WORKBOOK_TITLE = "Applicant Text Audit"
+# Where the tabs live until somebody names a better home. The Sheets OAuth
+# token is scoped to spreadsheets ONLY, so this code CANNOT create a new
+# spreadsheet — `gc.create` comes back 403 "insufficient authentication
+# scopes", and widening the scope needs the one-time attended browser consent
+# (automations.recruiting_report.sheets_auth). The same token also cannot open
+# the Alphalete Recruiting Dashboard. So the default is the control sheet,
+# which it reads and writes all day, and `--workbook <id>` repoints every
+# later run once a home exists. Pass the id once; it is recorded.
+DEFAULT_WORKBOOK = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
 FIRST_WEEK_COL = 3          # A = section, B = metric label, C+ = weeks
 HEADER_ROW = 2              # row 1 is the title line, row 2 the week headers
 
@@ -127,31 +137,38 @@ def _remember(sheet_id):
                                         "title": WORKBOOK_TITLE}, indent=1))
 
 
-def open_workbook(gc, explicit=None, create=True):
-    """The one workbook, found in this order: --workbook, the recorded id, then
-    created. Recording the id is what stops a second machine from making a
-    second 'Applicant Text Audit' nobody is looking at."""
+def open_workbook(gc, explicit=None):
+    """The one workbook: --workbook wins and is remembered, then the recorded
+    id, then DEFAULT_WORKBOOK. Recording it is what stops a second machine
+    from writing this week's column into a different sheet."""
     if explicit:
-        return gc.open_by_key(explicit), False
+        sh = gc.open_by_key(explicit)
+        _remember(explicit)
+        print("[weekly_sheet] workbook set to {} ({})".format(sh.title, explicit),
+              flush=True)
+        return sh
     if WORKBOOK_REF.exists():
         try:
             ref = json.loads(WORKBOOK_REF.read_text())
-            return gc.open_by_key(ref["spreadsheet_id"]), False
+            return gc.open_by_key(ref["spreadsheet_id"])
         except Exception as e:  # noqa: BLE001
             print("[weekly_sheet] recorded workbook unreadable ({}) — "
                   "pass --workbook <id>".format(e), flush=True)
             raise
-    if not create:
-        raise RuntimeError("no workbook recorded and --no-create given")
-    sh = gc.create(WORKBOOK_TITLE)
-    _remember(sh.id)
-    print("[weekly_sheet] created workbook {} — {}".format(sh.id, sh.url), flush=True)
-    return sh, True
+    print("[weekly_sheet] no home named yet — writing into the control sheet. "
+          "Give it a permanent one with --workbook <id>.", flush=True)
+    return gc.open_by_key(DEFAULT_WORKBOOK)
+
+
+TAB_PREFIX = "Texts"
 
 
 def tab_title(office, names):
+    """'Texts 11280 Rafael Hidalgo'. The prefix is load-bearing while these
+    live in the control sheet: it keeps one tab per account from colliding
+    with the 161 tabs already in there, and groups them when sorted."""
     who = names.get(office, "")
-    return "{} {}".format(office, who).strip()
+    return "{} {} {}".format(TAB_PREFIX, office, who).strip()
 
 
 def ensure_tab(sh, title):
@@ -191,6 +208,37 @@ def _a1(row, col):
         col, rem = divmod(col - 1, 26)
         letters = chr(65 + rem) + letters
     return "{}{}".format(letters, row)
+
+
+def data_window(rep):
+    """(first, last) date the pulled data actually covers, off the calendar
+    walk's own date column. None when the report carries no dates."""
+    ds = []
+    for raw in rep.get("dates") or []:
+        try:
+            ds.append(dt.datetime.strptime(raw, "%m-%d-%Y").date())
+        except ValueError:
+            continue
+    return (min(ds), max(ds)) if ds else (None, None)
+
+
+def check_window(rep, week_end):
+    """Refuse to file data under a week it did not come from.
+
+    The column header IS the claim. A pull that covered Sep 2-4 written into
+    the column headed 09/25/26 does not just mislabel itself — next week's run
+    finds that column already there and the wrong numbers stay. This is the
+    same failure that overwrote good rows twice on the weekday-column
+    crosstabs, and it is silent in both directions, so it is a hard stop."""
+    first, last = data_window(rep)
+    if first is None:
+        return None                      # nothing to check against
+    start = week_end - dt.timedelta(days=6)
+    if start <= first and last <= week_end:
+        return None
+    return ("data covers {} → {}, which is not the week ending {} ({} → {}). "
+            "Re-pull that week, or name the right one with --week N."
+            .format(first, last, week_end, start, week_end))
 
 
 def write_week(ws, rep, week_end, dry_run=False):
@@ -306,7 +354,8 @@ def main(argv=None):
     ap.add_argument("--week", type=int, nargs="?", const=1, default=1,
                     help="1 = the recruiting week just finished, 2 = the one before")
     ap.add_argument("--workbook", default="", help="write into this spreadsheet id")
-    ap.add_argument("--share", default="", help="add this email as an editor")
+    ap.add_argument("--force", action="store_true",
+                    help="write even when the data is not from the named week")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
 
@@ -328,15 +377,7 @@ def main(argv=None):
     gc = _fill._client()
     sh = None
     if not a.dry_run:
-        sh, created = open_workbook(gc, a.workbook or None)
-        if a.share:
-            sh.share(a.share, perm_type="user", role="writer")
-            print("[weekly_sheet] shared with {}".format(a.share), flush=True)
-        if created:
-            try:                       # the default empty tab, before any of ours
-                sh.del_worksheet(sh.worksheet("Sheet1"))
-            except Exception:          # noqa: BLE001 — already gone or renamed
-                pass
+        sh = open_workbook(gc, a.workbook or None)
 
     rc = 0
     for office in offices:
@@ -347,9 +388,21 @@ def main(argv=None):
             rc = 1
             continue
         title = tab_title(office, names)
+        bad_dry = check_window(rep, week_end)
+        if bad_dry:
+            print("[weekly_sheet] {}: window mismatch — {}".format(office, bad_dry),
+                  flush=True)
         if a.dry_run:
             write_week(_EmptyTab(title), rep, week_end, dry_run=True)
             continue
+        bad = check_window(rep, week_end)
+        if bad and not a.force:
+            print("[weekly_sheet] {}: REFUSED — {}".format(office, bad), flush=True)
+            rc = 1
+            continue
+        if bad:
+            print("[weekly_sheet] {}: --force, writing anyway — {}".format(office, bad),
+                  flush=True)
         ws, made = ensure_tab(sh, title)
         col, n = write_week(ws, rep, week_end)
         print("[weekly_sheet] {}: {} cells → tab '{}'{} column {}".format(

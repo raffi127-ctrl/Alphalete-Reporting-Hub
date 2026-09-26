@@ -118,10 +118,52 @@ class BlankNotZeroTest(unittest.TestCase):
 class TabNameTest(unittest.TestCase):
     def test_one_tab_per_account_named_by_id_and_owner(self):
         names = {"11280": "Rafael Hidalgo"}
-        self.assertEqual(W.tab_title("11280", names), "11280 Rafael Hidalgo")
+        self.assertEqual(W.tab_title("11280", names), "Texts 11280 Rafael Hidalgo")
         # Raf's other two streams are their own accounts, so their own tabs
-        self.assertEqual(W.tab_title("23965", names), "23965")
+        self.assertEqual(W.tab_title("23965", names), "Texts 23965")
+
+    def test_the_prefix_keeps_them_clear_of_the_control_sheets_tabs(self):
+        # while these live in the control sheet, a bare "11280" would sit
+        # among 161 unrelated tabs and could collide with one
+        self.assertTrue(W.tab_title("11280", {}).startswith(W.TAB_PREFIX + " "))
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WindowGuardTest(unittest.TestCase):
+    """The column header IS the claim. A Sep 2-4 pull filed under the column
+    headed 09/25/26 does not just mislabel itself — next week's run finds that
+    column already filled and the wrong numbers stay. Silent in both
+    directions, so it is a hard stop, not a warning."""
+
+    def _rep(self, dates):
+        return {"office": "11580", "dates": dates}
+
+    def test_data_inside_the_week_is_allowed(self):
+        rep = self._rep(["09-19-2026", "09-22-2026", "09-25-2026"])
+        self.assertIsNone(W.check_window(rep, dt.date(2026, 9, 25)))
+
+    def test_data_from_another_week_is_refused(self):
+        rep = self._rep(["09-02-2026", "09-04-2026"])
+        msg = W.check_window(rep, dt.date(2026, 9, 25))
+        self.assertIsNotNone(msg)
+        self.assertIn("2026-09-02", msg)
+
+    def test_a_window_spilling_one_day_past_the_friday_is_refused(self):
+        rep = self._rep(["09-19-2026", "09-26-2026"])
+        self.assertIsNotNone(W.check_window(rep, dt.date(2026, 9, 25)))
+
+    def test_the_saturday_start_is_inside_the_week(self):
+        # Sat 09-19 opens the week ending Fri 09-25 — an off-by-one here would
+        # refuse every full-week pull
+        rep = self._rep(["09-19-2026"])
+        self.assertIsNone(W.check_window(rep, dt.date(2026, 9, 25)))
+
+    def test_no_dates_cannot_be_checked_so_is_not_blocked(self):
+        self.assertIsNone(W.check_window({"dates": []}, dt.date(2026, 9, 25)))
+
+    def test_the_window_is_read_off_the_data_not_the_request(self):
+        self.assertEqual(W.data_window(self._rep(["09-04-2026", "09-02-2026"])),
+                         (dt.date(2026, 9, 2), dt.date(2026, 9, 4)))
