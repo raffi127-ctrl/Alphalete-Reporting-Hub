@@ -4,6 +4,7 @@ A fake Slack client only — nothing here touches the real Slack (see
 project_tests-sysmodules-mock-posted-to-real-slack: the client is passed in,
 never patched through sys.modules)."""
 import datetime as dt
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -586,3 +587,72 @@ class UnmergeTests(PublishTests):
         got = post.unmerge("C1", i, ["12.0"], build=lambda d: rep, cl=cl)
         self.assertIn("error", got)
         self.assertEqual(cl.gone, [])
+
+
+class PinBackfillTests(unittest.TestCase):
+    """The one-time pass that pins threads opened before Lucy had pins:write."""
+
+    STATE = {
+        "C0AAA": {"weeks": {
+            "2026-09-14": {"old": {"thread_ts": "1.0", "title": "Last week"}},
+            "forever": {
+                "b": {"thread_ts": "3.0", "title": "Beta"},
+                "a": {"thread_ts": "2.0", "title": "Alpha", "pinned": True},
+                "c": {"thread_ts": "", "title": "No thread yet"},
+            }}},
+        "D0DM1": {"weeks": {"forever": {"x": {"thread_ts": "9.0", "title": "DM"}}}},
+        "_scheduled_merges_done": {"2026-09-21": True},
+    }
+
+    def _run(self, **kw):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        with mock.patch.object(post, "STATE_PATH", Path(tmp.name) / "s.json"), \
+                mock.patch.object(post.config, "ONE_THREAD_PER_AD", True), \
+                mock.patch.object(post.time, "sleep", lambda *_: None):
+            post.STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            post._save_state(json.loads(json.dumps(self.STATE)))
+            cl = kw.pop("cl", FakeSlack())
+            got = post.pin_backfill(cl=cl, logfn=lambda *_: None, **kw)
+            return got, cl, post._load_state()
+
+    def test_dry_run_lists_without_pinning_or_saving(self):
+        got, cl, state = self._run(dry_run=True)
+        self.assertEqual(got["C0AAA"]["pinned"], ["Beta"])
+        self.assertEqual(got["C0AAA"]["already"], ["Alpha"])
+        self.assertEqual(got["C0AAA"]["no_thread"], ["No thread yet"])
+        self.assertEqual(cl.pins, [])                       # Slack untouched
+        self.assertFalse(state["C0AAA"]["weeks"]["forever"]["b"].get("pinned"))
+
+    def test_apply_pins_the_live_bucket_only_and_records_it(self):
+        got, cl, state = self._run(dry_run=False, pace=0)
+        self.assertEqual(cl.pins, [("add", "3.0")])         # not "1.0": history
+        self.assertEqual(got["C0AAA"]["pinned"], ["Beta"])
+        self.assertTrue(state["C0AAA"]["weeks"]["forever"]["b"]["pinned"])
+
+    def test_dms_and_bookkeeping_keys_are_skipped(self):
+        got, cl, _ = self._run(dry_run=False, pace=0)
+        self.assertEqual(sorted(got), ["C0AAA"])
+        self.assertNotIn(("add", "9.0"), cl.pins)
+
+    def test_a_refused_pin_is_reported_not_recorded(self):
+        cl = FakeSlack()
+        cl.pins_add = lambda **kw: (_ for _ in ()).throw(
+            RuntimeError("{'ok': False, 'error': 'not_in_channel'}"))
+        got, _, state = self._run(dry_run=False, pace=0, cl=cl)
+        self.assertIn("Beta", got["C0AAA"]["failed"])
+        self.assertFalse(state["C0AAA"]["weeks"]["forever"]["b"].get("pinned"))
+
+    def test_rate_limit_backs_off_then_succeeds(self):
+        cl, calls = FakeSlack(), []
+
+        def flaky(**kw):
+            calls.append(kw)
+            if len(calls) == 1:
+                raise RuntimeError("{'ok': False, 'error': 'ratelimited'}")
+            cl.pins.append(("add", kw["timestamp"]))
+        cl.pins_add = flaky
+        got, _, state = self._run(dry_run=False, pace=0, cl=cl)
+        self.assertEqual(len(calls), 2)                     # retried, not failed
+        self.assertEqual(got["C0AAA"]["failed"], {})
+        self.assertTrue(state["C0AAA"]["weeks"]["forever"]["b"]["pinned"])

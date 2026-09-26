@@ -27,6 +27,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import tempfile
+import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -275,6 +276,94 @@ def _pin(cl, channel: str, ts: str, add: bool) -> Optional[str]:
         if "already_pinned" in msg or "no_pin" in msg:
             return None
         return msg.splitlines()[0][:160]
+
+
+def _live_bucket(ch_state: dict) -> str:
+    """Which week's threads are the ones actually in use. With
+    ONE_THREAD_PER_AD that is `forever`; otherwise it is the newest dated
+    week. The older dated weeks are history -- retire_week already treats a
+    thread that is also a forever thread as the live one."""
+    weeks = (ch_state or {}).get("weeks") or {}
+    if config.ONE_THREAD_PER_AD and FOREVER in weeks:
+        return FOREVER
+    dated = sorted(w for w in weeks if w != FOREVER)
+    return dated[-1] if dated else ""
+
+
+def pin_backfill(channels: Optional[List[str]] = None, *, cl=None,
+                 dry_run: bool = True, pace: float = 3.2,
+                 logfn=print) -> Dict[str, dict]:
+    """Pin the ad threads that were opened before Lucy could pin them.
+
+    `_pin` only fires the moment a thread is OPENED, so every thread that
+    already existed when `pins:write` landed on Lucy's token (2026-09-25)
+    stays unpinned for good: a later run finds the thread alive and never
+    revisits the pin. This is the one-time pass that closes that gap, and it
+    is safe to run again -- `already_pinned` is not an error.
+
+    Only the LIVE bucket is pinned (see _live_bucket): pinning the dated weeks
+    under it would pin the same threads twice and fill the channel's pins with
+    history. Channels come from state; pass `channels` to limit it. Anything
+    that is not a real channel id is skipped -- the bookkeeping keys, and DMs,
+    where a pin buys nothing.
+
+    A dry run writes NOTHING: not to Slack, not to state, and it never even
+    builds a client. It returns the same shape as a real run so the two read
+    alike.
+
+    pins.add is a Tier-2 method (~20/min) and this walks hundreds of threads,
+    so calls are paced and a `ratelimited` refusal backs off and retries
+    rather than being recorded as a failed pin.
+    """
+    state = _load_state()
+    if not dry_run:
+        cl = cl or collect._client()
+    names = list(channels) if channels else sorted(state)
+    out = {}
+    for ch in names:
+        ch_state = state.get(ch)
+        if not isinstance(ch_state, dict) or not ch.startswith("C"):
+            continue                      # bookkeeping keys, DMs, test scratch
+        bucket_key = _live_bucket(ch_state)
+        ads = ((ch_state.get("weeks") or {}).get(bucket_key) or {})
+        res = {"bucket": bucket_key, "pinned": [], "already": [],
+               "failed": {}, "no_thread": []}
+        for key in sorted(ads, key=lambda k: (ads[k].get("title") or k).lower()):
+            ad = ads[key]
+            title = ad.get("title") or key
+            ts = ad.get("thread_ts")
+            if not ts:
+                res["no_thread"].append(title)
+                continue
+            if ad.get("pinned"):
+                res["already"].append(title)
+                continue
+            if dry_run:
+                res["pinned"].append(title)
+                continue
+            err = _pin(cl, ch, ts, True)
+            wait = 30.0
+            for _ in range(3):
+                if not err or "ratelimited" not in err.lower():
+                    break
+                logfn("  rate limited; waiting %.0fs" % wait)
+                time.sleep(wait)
+                wait *= 2
+                err = _pin(cl, ch, ts, True)
+            if err:
+                res["failed"][title] = err
+                logfn("  PIN FAILED %s: %s" % (title, err))
+                continue
+            res["pinned"].append(title)
+            ad["pinned"] = True
+            _save_state(state)   # resumable: an interrupted pass keeps what it did
+            time.sleep(pace)
+        out[ch] = res
+        logfn("%s [%s]: %d %s, %d already, %d failed, %d without a thread"
+              % (ch, bucket_key or "-", len(res["pinned"]),
+                 "to pin" if dry_run else "pinned", len(res["already"]),
+                 len(res["failed"]), len(res["no_thread"])))
+    return out
 
 
 def forget_channel(channel: str) -> None:
