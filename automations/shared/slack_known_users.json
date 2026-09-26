@@ -228,6 +228,18 @@
       "name": "Noemi (Ivette) Ontiveros",
       "source": "Megan confirmed 2026-09-21: Slack surname differs from the board's, so only a first-name match reached them",
       "learned": "2026-09-21"
+    },
+    "amjad malhas": {
+      "id": "U0488R0E9D5",
+      "name": "Amjad Malhas",
+      "source": "Megan confirmed 2026-09-26: Slack shows him only as 'MJ' — no name field carries 'Amjad' or 'Malhas', so no matcher could ever reach him. Identified by email amjadmalhas24@gmail.com (a SECOND 'MJ', U0BDD1CTG3Y, is Mary Joy Salomia — not him)",
+      "learned": "2026-09-26"
+    },
+    "jacari melbert": {
+      "id": "U0BV47PP3AB",
+      "name": "Jacari Melbert",
+      "source": "Megan confirmed 2026-09-26: Slack name matches the board exactly, he was just never in the store and nobody hand-tagged him. Email jacarimel989@gmail.com",
+      "learned": "2026-09-26"
     }
   }
 }
