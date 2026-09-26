@@ -114,13 +114,27 @@ RAF = {
     # Players" is NOT Raf's "Alphalete A-Team Chat🔥🔥" — two different rooms
     # with similar names, see the note above.
     #
-    # HOURLY, not Raf's 30: these rooms already get his B2B shots on the hour,
-    # and this board is a second flyer into the same 15-20 phones. One number
-    # to change if Carlos wants it tighter.
+    # EVERY 15 (Carlos, 2026-09-26, forwarded by Raf: "can the 15 mins gap text
+    # message be sent every 15 mins instead of every hour?"). It launched HOURLY
+    # on 2026-09-25 on the reasoning that these rooms already get his B2B shots
+    # on the hour and this board is a second flyer into the same 15-20 phones —
+    # he has now asked for it tighter, which is the number that note said to
+    # change.
+    #
+    # NO SECOND PULL. Raf's own rooms already put this office on a 15-minute
+    # tick (A-Team at :00/:30, Partners at :15/:45), so these rooms ride ticks
+    # that already happen — same scrape, more sends.
+    #
+    # BOTH ROOMS LAND ON THE SAME ANCHOR, on purpose and unchanged: they shared
+    # one before at 60 and they share one at 15. The overlap between them is
+    # real (~15-20 phones across the two), so anyone in both gets two texts a
+    # tick — that was true hourly too. If Carlos asks for that halved, give ONE
+    # of them offset_min 15 the way Raf's Partners room has it, rather than
+    # dropping either back to 30.
     "guests": {
         "Carlos Hidalgo": [
-            {"kind": "imessage", "name": "NEW A Players", "cadence_min": 60},
-            {"kind": "imessage", "name": "ATT B2B Leaders", "cadence_min": 60},
+            {"kind": "imessage", "name": "NEW A Players", "cadence_min": 15},
+            {"kind": "imessage", "name": "ATT B2B Leaders", "cadence_min": 15},
         ],
     },
     "destinations": [
