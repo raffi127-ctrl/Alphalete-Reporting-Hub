@@ -132,6 +132,13 @@ def pick(rows: List[Dict], records_now: Dict[str, int], records_prev: Dict[str, 
     return out
 
 
+_SPANISH_MARKERS = ("¡", "¿", " sin ", "puertas", "ustedes", "estoy", "Ojo,", "callados")
+
+
+def _is_spanish(template: str) -> bool:
+    return any(mk in template for mk in _SPANISH_MARKERS)
+
+
 def line(office_key: str, callouts: List[Dict], now: dt.datetime) -> str:
     """One sentence in the house voice, chosen by office + hour so a re-run
     repeats itself and neighbouring hours don't."""
@@ -146,13 +153,16 @@ def line(office_key: str, callouts: List[Dict], now: dt.datetime) -> str:
     m = (m // 5) * 5                       # "40+", not "43+"
     seed = "callout|%s|%s|%d" % (office_key, now.date().isoformat(), now.hour)
     template = LINES[zlib.crc32(seed.encode("utf-8")) % len(LINES)]
+    spanish = _is_spanish(template)
     if len(firsts) <= INLINE_NAMES:
-        names = firsts[0] if len(firsts) == 1 else ", ".join(firsts[:-1]) + " and " + firsts[-1]
+        joiner = " y " if spanish else " and "
+        names = firsts[0] if len(firsts) == 1 else ", ".join(firsts[:-1]) + joiner + firsts[-1]
         return template.format(names=names, m=m)
     # A CROWD IS A LIST, NOT A COUNT (Megan 2026-09-26: "it shouldn't say
     # '6 more' it should name them"). The sentence addresses the group; every
     # name sits on its own bullet with its own minutes, longest gap first.
-    head = template.format(names="%d of y'all" % len(firsts), m=m)
+    crowd = ("%d de ustedes" if spanish else "%d of y'all") % len(firsts)
+    head = template.format(names=crowd, m=m)
     bullets = ["• %s — %d min" % (_first(c["name"]), c["mins"]) for c in callouts]
     return head + "\n" + "\n".join(bullets)
 

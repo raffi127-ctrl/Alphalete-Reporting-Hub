@@ -40,7 +40,7 @@ class ActivityTest(unittest.TestCase):
 class LineTest(unittest.TestCase):
     def test_names_and_rounded_minutes(self):
         s = G.line("carlos", [{"name": "Nick Smith", "mins": 45}, {"name": "CHRISTIAN DOE", "mins": 43}], NOW)
-        self.assertIn("Nick and Christian", s)
+        self.assertTrue("Nick and Christian" in s or "Nick y Christian" in s, s)
         self.assertIn("40+", s)
 
     def test_single_name(self):
@@ -52,7 +52,7 @@ class LineTest(unittest.TestCase):
              {"name": "Jaslene D", "mins": 22}, {"name": "Tara E", "mins": 20}]
         s = G.line("carlos", c, NOW)
         self.assertNotIn("more", s)
-        self.assertIn("5 of y'all", s)
+        self.assertTrue("5 of y'all" in s or "5 de ustedes" in s, s)
         for n in ("• Breana — 47 min", "• Gary — 31 min", "• Kandice — 25 min", "• Jaslene — 22 min", "• Tara — 20 min"):
             self.assertIn(n, s)
         self.assertTrue(s.index("Breana") < s.index("Tara"))
@@ -66,6 +66,18 @@ class LineTest(unittest.TestCase):
         self.assertEqual(a, b)
         seen = {G.line("carlos", c, NOW.replace(hour=h)) for h in range(13, 21)}
         self.assertGreater(len(seen), 1)
+
+
+class SpanishTest(unittest.TestCase):
+    def test_a_spanish_line_joins_with_y(self):
+        from unittest import mock
+        es = [t for t in G.LINES if G._is_spanish(t)]
+        self.assertGreaterEqual(len(es), 5)
+        with mock.patch.object(G, "LINES", (es[0],)):
+            s = G.line("x", [{"name": "Nick S", "mins": 30}, {"name": "Jose R", "mins": 25}], NOW)
+            self.assertIn("Nick y Jose", s)
+            big = G.line("x", [{"name": "R%d X" % i, "mins": 30} for i in range(5)], NOW)
+            self.assertIn("5 de ustedes", big)
 
 
 class DueTest(unittest.TestCase):
