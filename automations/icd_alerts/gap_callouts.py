@@ -68,6 +68,12 @@ LINES = (
     "{names} — {m}+ min off the doors. The board's not going to fill itself.",
     "Quiet check: {names} — {m}+ min without a door. Y'all finger poppin' each other out there?",
     "{names} — {m}+ min without a dispo. Lucy sees you, finger poppers.",
+    # BENEFIT OF THE DOUBT (Megan 2026-09-26): a quiet rep may be inside with
+    # a customer. Half the pool leaves that door open.
+    "{names} — {m}+ min without a dispo. Must be cooking up something good in there… right?",
+    "{names}: {m}+ min off the doors. Either y'all are working a sale or finger poppin'. Which one?",
+    "No dispo from {names} in {m}+ min. Locked in with a customer, or locked out of the truck?",
+    "{names} — {m}+ min quiet. If that's a sale being cooked, take your time. If not… 👀",
 )
 
 
