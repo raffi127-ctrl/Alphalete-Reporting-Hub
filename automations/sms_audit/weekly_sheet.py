@@ -578,12 +578,14 @@ def build_report(office, suffix=""):
     recs, src = A.load_office(office, suffix)
     if not recs:
         return None, src
-    rep = A.audit(recs, office)
     rows, lsrc = A.load_log(office)
+    convos = None
     if rows:
         booked = A.booked_index(recs)
-        rep["log"] = A.audit_log(rows, A.log_conversations(rows, booked), office,
-                                 booked)
+        convos = A.log_conversations(rows, booked)
+    rep = A.audit(recs, office, convos)
+    if convos:
+        rep["log"] = A.audit_log(rows, convos, office, booked)
     return rep, "{} + {}".format(src, lsrc if rows else "no full log")
 
 

@@ -41,7 +41,7 @@ class CloserTest(unittest.TestCase):
             _rec([["In", "", "are you there?", "09/23 9:00 AM"],
                   ["Out", "", "yes!", "09/23 9:02 AM"]]),
         ]
-        out = A.unanswered(recs)
+        out = A.unanswered(A.as_items(recs))
         self.assertEqual([u["name"] for u in out], ["Left Waiting"])
 
 
@@ -101,14 +101,14 @@ class CarrierBurstTest(unittest.TestCase):
               ["Out", "First Interview Confirmation", "here's the link", "09/23 7:00 AM"],
               ["Out", "Friendly Reminder 1", "starting in 5", "09/23 8:10 AM"],
               ["Out", "Friendly Reminder 1", "link again", "09/23 8:10 AM"]]
-        found = A.anomalies([_rec(th)])
+        found = A.anomalies(A.as_items([_rec(th)]))
         self.assertNotIn("Over the carrier limit — 4+ separate texts with no reply between",
                          found)
 
     def test_four_real_sends_with_no_reply_is_flagged(self):
         th = [["Out", "", "a", "09/23 9:00 AM"], ["Out", "", "b", "09/23 10:00 AM"],
               ["Out", "", "c", "09/23 11:00 AM"], ["Out", "", "d", "09/23 12:00 PM"]]
-        found = A.anomalies([_rec(th)])
+        found = A.anomalies(A.as_items([_rec(th)]))
         self.assertIn("Over the carrier limit — 4+ separate texts with no reply between",
                       found)
 
@@ -116,7 +116,7 @@ class CarrierBurstTest(unittest.TestCase):
         th = [["Out", "", "a", "09/23 9:00 AM"], ["Out", "", "b", "09/23 10:00 AM"],
               ["In", "", "hi", "09/23 10:30 AM"],
               ["Out", "", "c", "09/23 11:00 AM"], ["Out", "", "d", "09/23 12:00 PM"]]
-        found = A.anomalies([_rec(th)])
+        found = A.anomalies(A.as_items([_rec(th)]))
         self.assertNotIn("Over the carrier limit — 4+ separate texts with no reply between",
                          found)
 
@@ -128,7 +128,7 @@ class LookAlikeLinkTest(unittest.TestCase):
     def test_a_cyrillic_o_in_the_host_is_caught(self):
         th = [["Out", "Friendly Reminder 1",
                "join now https://us02web.zоom.us/j/2935077152", "09/23 8:10 AM"]]
-        found = A.anomalies([_rec(th)])
+        found = A.anomalies(A.as_items([_rec(th)]))
         key = "Dead link — the web address is spelled with a look-alike letter"
         self.assertIn(key, found)
         self.assertIn("CYRILLIC", found[key][0])
@@ -136,7 +136,7 @@ class LookAlikeLinkTest(unittest.TestCase):
     def test_a_normal_zoom_link_is_left_alone(self):
         th = [["Out", "Friendly Reminder 1",
                "join now https://us02web.zoom.us/j/2935077152", "09/23 8:10 AM"]]
-        found = A.anomalies([_rec(th)])
+        found = A.anomalies(A.as_items([_rec(th)]))
         self.assertNotIn("Dead link — the web address is spelled with a look-alike letter",
                          found)
 
@@ -147,14 +147,14 @@ class QuietHoursTest(unittest.TestCase):
                      name="A"),
                 _rec([["Out", "First Interview Confirmation", "x", "09/23 7:00 AM"]],
                      name="B")]
-        found = A.anomalies(recs)
+        found = A.anomalies(A.as_items(recs))
         hits = found["Texted outside 8am–9pm (TCPA quiet hours)"]
         self.assertEqual(len(hits), 2)
         self.assertEqual(len(set(hits)), 1)  # one cause, not two findings
         self.assertIn("7:00 AM", hits[0])
 
     def test_business_hours_are_not_flagged(self):
-        found = A.anomalies([_rec([["Out", "", "x", "09/23 10:00 AM"]])])
+        found = A.anomalies(A.as_items([_rec([["Out", "", "x", "09/23 10:00 AM"]])]))
         self.assertNotIn("Texted outside 8am–9pm (TCPA quiet hours)", found)
 
 
@@ -162,13 +162,13 @@ class OptOutTest(unittest.TestCase):
     def test_texting_after_not_interested_is_flagged(self):
         th = [["In", "", "I'm no longer interested", "09/23 9:00 AM"],
               ["Out", "", "see you tomorrow!", "09/23 9:05 AM"]]
-        found = A.anomalies([_rec(th)])
+        found = A.anomalies(A.as_items([_rec(th)]))
         self.assertIn("Kept texting after they asked us to stop / said no", found)
 
     def test_stopping_when_asked_is_not_flagged(self):
         th = [["Out", "", "hi", "09/23 9:00 AM"],
               ["In", "", "stop", "09/23 9:01 AM"]]
-        found = A.anomalies([_rec(th)])
+        found = A.anomalies(A.as_items([_rec(th)]))
         self.assertNotIn("Kept texting after they asked us to stop / said no", found)
 
 

@@ -284,6 +284,21 @@ def messages(rec):
 
 # --------------------------------------------------------------- metrics ----
 
+def as_items(recs=None, convos=None):
+    """Both sources in one shape: [(who, [(when, 'In'|'Out', template, body)])].
+
+    The audit grew a thread-based path first and a log-based one second, and
+    for one run the flags and questions still read the (empty) threads while
+    the log sat there full — so Raf's tab reported "0 questions asked, 0 texts
+    before 8am" off 21,184 messages. One shape, one implementation, no second
+    path to forget."""
+    if convos:
+        return [(c.get("name") or c["phone"],
+                 [(m["when"], m["dir"], m["template"], m["body"]) for m in c["msgs"]])
+                for c in convos.values()]
+    return [(r.get("name", ""), messages(r)) for r in (recs or [])]
+
+
 def booking_mix(recs):
     """Who booked the interview — the automation or a person. Reports the two
     signals separately so a disagreement shows up instead of being averaged."""
@@ -378,30 +393,6 @@ def _stat(vals):
         "within_60": 100.0 * sum(1 for v in s if v <= 60) / len(s),
         "over_4h": 100.0 * sum(1 for v in s if v > 240) / len(s),
     }
-
-
-def questions(recs):
-    """What applicants actually ask. An inbound message counts as a question if
-    it carries a '?' or opens with a question word; everything else is a reply
-    to us, not a question of theirs."""
-    opener = re.compile(r"^\s*(what|when|where|who|why|how|is|are|do|does|did|can|could|"
-                        r"will|would|should|may|am i|i have a question)\b", re.I)
-    asked, unbucketed = collections.Counter(), []
-    total = 0
-    for r in recs:
-        for _when, dirn, _t, body in messages(r):
-            if dirn != "In":
-                continue
-            if "?" not in body and not opener.match(body):
-                continue
-            total += 1
-            for label, pat in QUESTION_BUCKETS:
-                if re.search(pat, body, re.I):
-                    asked[label] += 1
-                    break
-            else:
-                unbucketed.append(body.strip().replace("\n", " ")[:120])
-    return asked, total, unbucketed
 
 
 def bucket_of(body):
@@ -510,6 +501,27 @@ def question_responses(recs, convos=None):
     return out
 
 
+def questions(items):
+    """What applicants actually ask. An inbound message counts as a question
+    if it carries a '?' or opens with a question word; everything else is a
+    reply to us, not a question of theirs."""
+    asked, unbucketed = collections.Counter(), []
+    total = 0
+    for _who, seq in items:
+        for _when, dirn, _t, body in seq:
+            if dirn != "In":
+                continue
+            if "?" not in body and not IS_QUESTION.match(body):
+                continue
+            total += 1
+            b = bucket_of(body)
+            if b:
+                asked[b] += 1
+            else:
+                unbucketed.append(body.strip().replace("\n", " ")[:120])
+    return asked, total, unbucketed
+
+
 def regular_responses(recs):
     """Our side of it: which templates fire how often, and the free-typed lines
     repeated so often they are templates in everything but name."""
@@ -528,36 +540,36 @@ def regular_responses(recs):
     return tmpl, typed
 
 
-def unanswered(recs):
-    """Applicants left on read. A thread qualifies when the LAST message is
-    theirs and it is not a plain 'ok/thanks/C' — i.e. they said something that
-    wanted an answer and never got one."""
+def unanswered(items, meta=None):
+    """Applicants left on read: the LAST message is theirs and it is not a
+    plain 'ok/thanks/C' — they said something that wanted an answer and never
+    got one."""
+    meta = meta or {}
     out = []
-    for r in recs:
-        th = messages(r)
-        if not th or th[-1][1] != "In":
+    for who, seq in items:
+        if not seq or seq[-1][1] != "In":
             continue
-        body = th[-1][3].strip()
+        body = seq[-1][3].strip()
         if CLOSER.match(body):
             continue
-        out.append({"name": r.get("name", ""), "phone": r.get("phone", ""),
-                    "status": r.get("status", ""), "when": th[-1][0],
-                    "booked_by": r.get("booked_by", ""),
+        m = meta.get(who, {})
+        out.append({"name": who, "phone": m.get("phone", ""),
+                    "status": m.get("status", ""), "when": seq[-1][0],
+                    "booked": m.get("booked", False),
+                    "booked_by": m.get("booked_by", ""),
                     "said": body.replace("\n", " ")[:160]})
     out.sort(key=lambda d: d["when"])
     return out
 
 
-def anomalies(recs):
+def anomalies(items):
     """Everything that looks wrong on its own terms, each with the evidence.
 
     The carrier rule is AppStream's own (SMS Templates page, deliverability
     checklist item 6): more than 3 messages to an applicant with no reply is
     how a sending number gets flagged as spam."""
     found = collections.defaultdict(list)
-    for r in recs:
-        th = messages(r)
-        who = r.get("name", "")
+    for who, th in items:
 
         # a link whose host is spelled with a look-alike letter never resolves
         for _when, dirn, _t, body in th:
@@ -728,20 +740,36 @@ def audit_log(rows, convos, office, booked=None):
     }
 
 
-def audit(recs, office):
+def audit(recs, office, convos=None):
+    """The audit. When the full log is present its conversations are what the
+    message-derived parts read — a --bookings-only walk carries no threads,
+    and reading those would report 0 questions off 21,184 messages."""
+    items = as_items(recs, convos)
+    meta = {}
+    if convos:
+        for c in convos.values():
+            meta[c.get("name") or c["phone"]] = {
+                "phone": c["phone"], "status": c.get("outcome", ""),
+                "booked": c.get("booked", False),
+                "booked_by": c.get("booked_by", "")}
+    else:
+        for r in recs:
+            meta[r.get("name", "")] = {"phone": r.get("phone", ""),
+                                       "status": r.get("status", ""),
+                                       "booked": True,
+                                       "booked_by": r.get("booked_by", "")}
     mix = booking_mix(recs)
     speed, first = reply_speed(recs)
-    asked, q_total, q_other = questions(recs)
+    asked, q_total, q_other = questions(items)
     tmpl, typed = regular_responses(recs)
-    threads_with_reply = sum(1 for r in recs
-                             if any(m[1] == "In" for m in messages(r)))
+    threads_with_reply = sum(1 for _w, seq in items if any(m[1] == "In" for m in seq))
     dates = sorted({r.get("date", "") for r in recs if r.get("date")})
     return {
         "office": office,
         "dates": dates,
         "threads": len(recs),
-        "messages": sum(len(messages(r)) for r in recs),
-        "inbound": sum(1 for r in recs for m in messages(r) if m[1] == "In"),
+        "messages": sum(len(seq) for _w, seq in items),
+        "inbound": sum(1 for _w, seq in items for m in seq if m[1] == "In"),
         "threads_with_reply": threads_with_reply,
         "mix": mix,
         "outcomes": outcome_by_booker(recs),
@@ -752,9 +780,9 @@ def audit(recs, office):
         "speed_first": _stat(first),
         "questions": asked, "questions_total": q_total, "questions_other": q_other,
         "templates": tmpl, "typed": typed,
-        "question_table": question_responses(recs),
-        "unanswered": unanswered(recs),
-        "anomalies": anomalies(recs),
+        "question_table": question_responses(recs, convos),
+        "unanswered": unanswered(items, meta),
+        "anomalies": anomalies(items),
     }
 
 
