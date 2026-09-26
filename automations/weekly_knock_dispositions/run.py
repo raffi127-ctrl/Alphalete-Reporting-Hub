@@ -39,6 +39,7 @@ except Exception:  # noqa: BLE001
     pass
 
 from automations.shared.report_week import week_ending
+from automations.total_knocks import guests as GUESTS
 from automations.total_knocks.pull import central_today
 from automations.weekly_knock_dispositions import apps as A
 from automations.weekly_knock_dispositions import board as B
@@ -393,6 +394,19 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                             page, cfg, aliases_raw, monday, saturday)
                         KWC.put(name, saturday, ov_rows, dispo_cols,
                                 aliases=aliases_raw)
+                    # Reps knocking under this office who belong to another
+                    # owner come off its board here — after the cache, so a
+                    # cached week is filtered too, and before anything is
+                    # computed, so the OFFICE TOTALS, the per-rep averages and
+                    # the team bands all cover the reps actually listed.
+                    # (Carlos's fourteen on Raf's ownerville, 2026-09-25.)
+                    # THE WEEKLY BOARD DOES NOT YET DRAW THEIR OWN — their
+                    # apps come off this office's PSS owner, so a guest board
+                    # here would need its own apps slice first. The daily and
+                    # intraday boards do (total_knocks.guest_board).
+                    ov_rows, _guested = GUESTS.split(
+                        name, ov_rows,
+                        logfn=lambda m: print(f"[wkd] {m}", flush=True))
                     pulled[name] = (cfg, ov_rows, dispo_cols)
                 except Exception as e:  # noqa: BLE001 — one office ≠ the run
                     print(f"[wkd] ❌ {name} failed: {type(e).__name__}: "

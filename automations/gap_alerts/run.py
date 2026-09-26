@@ -414,7 +414,9 @@ def _wrong_account(plan: List, boards: Dict) -> bool:
     guard suppress Raf's board on 2026-09-01 minutes after it shipped, which is
     exactly the harm it was written to prevent, pointed the wrong way.
     """
-    imp = [c for c, _s, _d in plan if c.get("ov") == "impersonate"]
+    # entry[0] is the cfg whatever else the tick tacked on (due rooms, guest
+    # rooms) — index, don't unpack, the way _drop_duplicate_offices does.
+    imp = [e[0] for e in plan if e[0].get("ov") == "impersonate"]
     missed_names = set()
     for cfg in imp:
         err = boards.get(cfg["key"], ([], [], None))[2]
@@ -1099,9 +1101,17 @@ def _date_text(day: dt.date) -> str:
     return "%d/%d (%s)" % (day.month, day.day, day.strftime("%A"))
 
 
-def pull_boards_many(plan: List, day: dt.date, out_dir: Path) -> Dict:
+def pull_boards_many(plan: List, day: dt.date, out_dir: Path,
+                     guests_out: Optional[Dict] = None) -> Dict:
     """Every due office's board, from ONE ownerville session. -> {key: (pngs,
     rows, err)}
+
+    `guests_out` (optional): filled with {office key: {guest office: {"png",
+    "rows"}}} for the reps who knock under an office but belong to somebody
+    else. Their board is drawn HERE because this is where their rows and the
+    comparison office's rows are both in hand — one pull, two boards. A sink
+    rather than a fourth tuple element: three call sites unpack that tuple,
+    and a guest is not a fourth thing about the host's own board.
 
     `plan` is [(cfg, slot), ...]. pull_offices_days has always been able to
     scrape several offices in one session — gap_alerts just never asked it to,
@@ -1177,10 +1187,38 @@ def pull_boards_many(plan: List, day: dt.date, out_dir: Path) -> Dict:
             out[cfg["key"]] = ([], [], err)
             continue
         rows = (by_day or {}).get(day) or []
+        # Reps who knock under this office but belong to another owner come
+        # off it here (Carlos's fourteen on Raf's ownerville, 2026-09-25), so
+        # the board this posts and the gap texts it sends both cover this
+        # office's own reps — a leader in Raf's room being pinged about a gap
+        # on somebody else's rep is a text nobody can act on. Their own board
+        # is drawn by the daily and intraday runs (total_knocks.guest_board).
+        from automations.total_knocks import guests as _guests
+        rows, guested = _guests.split(cfg["name"], rows,
+                                      logfn=lambda m: _log(m))
+        extra = [(compare, chan_rows)] if (chan_rows and C.compares(cfg)) else []
+        # The guests' boards are drawn BEFORE the host's empty-day exit: a day
+        # when only they knocked still owes them their board, and the host
+        # having no rows says nothing about whether they have any.
+        if guests_out is not None and guested:
+            from automations.total_knocks import guest_board as _gb
+            for guest, g_rows in guested.items():
+                try:
+                    g_png, _shape = _gb.build(
+                        day, guest, g_rows, extra_totals=extra,
+                        out_dir=out_dir / "guests",
+                        date_text=_date_text(day), logfn=_log)
+                    if g_png is not None:
+                        guests_out.setdefault(cfg["key"], {})[guest] = {
+                            "png": g_png, "rows": g_rows}
+                except Exception as e:  # noqa: BLE001 — a guest ≠ the host
+                    _log("  ⚠ %s board off %s failed (%s: %s) — %s's own "
+                         "board is unaffected"
+                         % (guest, cfg["key"], type(e).__name__,
+                            str(e)[:160], cfg["key"]))
         if not rows:
             out[cfg["key"]] = ([], [], None)
             continue
-        extra = [(compare, chan_rows)] if (chan_rows and C.compares(cfg)) else []
         try:
             out[cfg["key"]] = (_render_board(cfg, rows, extra, day, out_dir,
                                              slot), rows, None)
@@ -1329,6 +1367,99 @@ def render(cfg: Dict, pngs, out_dir: Path, slot: str):
     return [Path(p) for p in pngs]
 
 
+def _guest_gaps(gaps: List[Dict], rows: List[Dict]) -> List[Dict]:
+    """The gap rows belonging to the reps on `rows` — the mirror image of
+    _own_reps_only, pointed at a guest's board instead of the host's.
+
+    Carlos asked for the gaps specifically ("just the unassigned section with
+    the time gap", 2026-09-25), and after the split his fourteen are the names
+    _own_reps_only strips out of Raf's list. Matching on the board's rows, not
+    on the roster, so a rep who is on the board under a slightly different
+    spelling still carries their own gap line."""
+    if not gaps or not rows:
+        return []
+    mine = {_norm_rep(r.get("Rep") or r.get("rep")) for r in rows}
+    mine.discard("")
+    return [g for g in gaps if _norm_rep(g.get("name")) in mine]
+
+
+def _send_guest_boards(cfg: Dict, guest_due: Dict, guest_boards: Dict,
+                       all_gaps: List[Dict], day: dt.date, *, send: bool,
+                       failures: List[str]) -> None:
+    """Text each guest office's board to ITS rooms, with ITS gap list.
+
+    SEPARATE FROM THE HOST'S ROUTE LOOP, for the reason every route in that
+    loop has its own try: one room failing must never cost another. A guest's
+    room is also a different audience — the people in it can act on their own
+    reps' gaps and on nobody else's, which is the whole reason the board was
+    split in the first place.
+
+    Cadence, the anchor bookkeeping and the new-name marks all go through the
+    same helpers the host's rooms use, keyed per guest, so a guest room gets
+    one board per anchor exactly like everybody else."""
+    if not guest_due:
+        return
+    from automations.b2b_dispositions import text_post as tp
+
+    for guest, dests in guest_due.items():
+        info = (guest_boards.get(cfg["key"]) or {}).get(guest) or {}
+        png, g_rows = info.get("png"), info.get("rows") or []
+        g_gaps = _guest_gaps(all_gaps, g_rows)
+        state_key = "%s:%s" % (cfg["key"], _norm_rep(guest).replace(" ", "-"))
+        previous, first_of_day = _previous_gap_names(state_key, day)
+        body, names = gap_text(g_gaps, previous, first_of_day,
+                               header="%s — %s" % (C.GAP_TEXT_HEADER, guest))
+        if not png and not body:
+            # Never post blank: their reps have not knocked and nobody is
+            # over the threshold. Said out loud so a quiet room is visible.
+            _log("  %s: no board and no gaps for %s — nothing sent"
+                 % (cfg["key"], guest))
+            continue
+        _log("  %s -> %s: %d rep(s) over %d min%s"
+             % (cfg["key"], guest, len(names), C.GAP_THRESHOLD_MIN,
+                "" if png else " (no board — text only)"))
+        took = []
+        for dest in dests:
+            where = C.dest_label(dest)
+            try:
+                if dest.get("kind") != "imessage":
+                    # Slack for a guest would need a channel of their own and
+                    # a thread of their own; say so rather than dropping it.
+                    _log("  %s %s: only iMessage is wired for a guest room "
+                         "— skipped" % (guest, where))
+                    continue
+                if not (dest.get("name") or "").strip():
+                    _log("  %s %s has no chat name — skipped" % (guest, where))
+                    continue
+                if not C.can_text():
+                    _log("  %s %s SKIPPED — %s cannot send iMessage from a "
+                         "LaunchAgent (Messages consent belongs to the "
+                         "poller's identity on this box)"
+                         % (guest, where, C.this_machine()))
+                    failures.append(
+                        "%s %s %s: no iMessage from a LaunchAgent on %s"
+                        % (cfg["key"], guest, where, C.this_machine()))
+                    continue
+                res = tp.send_to_group(dest["name"], body,
+                                       [png] if png else [],
+                                       dry_run=not send,
+                                       allow_textonly=not png)
+                _log("  %s %s -> %r (%s participants)%s"
+                     % (guest, "TEXT" if send else "PREVIEW",
+                        res.get("resolved_name"), res.get("participants"),
+                        "" if send else " — nothing sent"))
+                took.append(dest)
+            except Exception as e:  # noqa: BLE001 — one room ≠ the rest
+                failures.append("%s %s %s: %s: %s"
+                                % (cfg["key"], guest, where,
+                                   type(e).__name__, str(e)[:200]))
+                _log("  %s %s FAILED: %s: %s"
+                     % (guest, where, type(e).__name__, str(e)[:200]))
+        if send and took:
+            _mark_dest_anchors(cfg, took, dt.datetime.now())
+            _remember_gap_names(state_key, day, names)
+
+
 def tick(day: dt.date, *, send: bool, only: str = "",
          headless: bool = True, force: bool = False) -> List[str]:
     """One pass. Returns the list of failures (empty = clean).
@@ -1394,7 +1525,16 @@ def tick(day: dt.date, *, send: bool, only: str = "",
                  "now — skipping so the channel only gets one"
                  % (cfg["key"], C.dest_label(d)))
         due = [d for d in due if d not in _dupes]
-        if not due:
+        # A GUEST ROOM OWED A BOARD KEEPS THIS OFFICE IN THE PLAN. Carlos's
+        # rooms run on their own cadence, so most ticks one of the two sides
+        # is owed nothing — and without this the office is skipped whole, and
+        # his board silently never fires on an hour Raf's rooms are quiet.
+        guest_due = {}
+        for _g, _dests in C.guest_destinations(cfg).items():
+            _d = [d for d in _dests if (only or force) or _dest_due(d, cfg=cfg)]
+            if _d:
+                guest_due[_g] = _d
+        if not due and not guest_due:
             _log("%s: nothing due at %s (%s) — skipping"
                  % (cfg["key"], slot,
                     ", ".join(
@@ -1411,23 +1551,26 @@ def tick(day: dt.date, *, send: bool, only: str = "",
                  "(min gap %d min). The room already has this."
                  % (cfg["key"], recent, C.MIN_SEND_GAP_MINUTES))
             continue
-        plan.append((cfg, slot, due))
+        plan.append((cfg, slot, due, guest_due))
 
     if not plan:
         _terminated_check_once(day, seen_names)
         return failures
 
+    # Filled by the pull below: {office key: {guest office: {png, rows}}}.
+    guest_boards: Dict = {}
+
     # PASS TWO — the network, once. Two sessions for the whole tick (boards,
     # then the gap lists) instead of two per office.
     _log("pulling %d office(s) in one session: %s"
-         % (len(plan), ", ".join(c["key"] for c, _s, _d in plan)))
+         % (len(plan), ", ".join(c["key"] for c, _s, _d, _g in plan)))
     # NOT `boards`: the per-office rendered images are assigned to `boards`
     # inside the send loop below, which rebound this dict after the first
     # office and made the second iteration crash with
     # "'list' object has no attribute 'get'" (2026-09-01, live).
     try:
-        pulled_boards = pull_boards_many([(c, s) for c, s, _d in plan],
-                                         day, out_dir)
+        pulled_boards = pull_boards_many([(c, s) for c, s, _d, _g in plan],
+                                         day, out_dir, guests_out=guest_boards)
     except OwnervilleBusy as e:
         # NOT a failure — a skipped tick. One ownerville session per machine
         # (a private Chrome profile is not a private session), and the long
@@ -1445,7 +1588,7 @@ def tick(day: dt.date, *, send: bool, only: str = "",
     # yesterday ended. The board is history and travels fine; the gap list is a
     # live signal and does not.
     try:
-        gaps_by_key = (gap_rows_many([c for c, _s, _d in plan], day)
+        gaps_by_key = (gap_rows_many([c for c, _s, _d, _g in plan], day)
                        if day == dt.date.today() else {})
     except OwnervilleBusy as e:
         # The boards are already pulled and are worth sending; only the live
@@ -1469,7 +1612,7 @@ def tick(day: dt.date, *, send: bool, only: str = "",
         return failures
 
     # PASS THREE — render and send. No network except the sending itself.
-    for cfg, slot, due in plan:
+    for cfg, slot, due, guest_due in plan:
         pngs, rows, pull_err = pulled_boards.get(cfg["key"], ([], [], None))
         if pull_err is not None:
             failures.append("%s: %s: %s" % (cfg["key"], type(pull_err).__name__,
@@ -1533,6 +1676,10 @@ def tick(day: dt.date, *, send: bool, only: str = "",
                 gaps = []
                 _log("  gap list SKIPPED (%s: %s)"
                      % (type(gap_err).__name__, str(gap_err)[:160]))
+        # BEFORE the trim: _own_reps_only keeps only names on the HOST's
+        # board, which is now exactly what the guests' names are not. Their
+        # own list is cut from this copy below.
+        all_gaps = list(gaps)
         gaps = _own_reps_only(cfg, gaps, rows)
         previous, first_of_day = _previous_gap_names(cfg["key"], day)
         body, gap_names = gap_text(gaps, previous, first_of_day,
@@ -1550,6 +1697,10 @@ def tick(day: dt.date, *, send: bool, only: str = "",
             # That is the ordinary quiet case, not a fault: never post blank.
             if not body:
                 _log("  %s: no board and no gaps — nothing sent" % cfg["key"])
+                # …for the HOST. A guest whose reps did knock still has a
+                # board waiting, and it goes to a different room.
+                _send_guest_boards(cfg, guest_due, guest_boards, all_gaps,
+                                   day, send=send, failures=failures)
                 continue
             _log("  %s: board empty — sending the gap list alone (no flyer)"
                  % cfg["key"])
@@ -1660,6 +1811,9 @@ def tick(day: dt.date, *, send: bool, only: str = "",
                                    str(e)[:200]))
                 _log("  %s FAILED: %s: %s"
                      % (where, type(e).__name__, str(e)[:200]))
+
+        _send_guest_boards(cfg, guest_due, guest_boards, all_gaps, day,
+                           send=send, failures=failures)
 
         if send and delivered:
             # Both stamped only after a route actually took it: a failed send

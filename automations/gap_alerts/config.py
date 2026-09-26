@@ -103,6 +103,26 @@ RAF = {
     # leaders into its own room. The sign-up form never emits the key, so no
     # onboarded office can turn it on by accident.
     "leader_tags": True,
+    # REPS WHO KNOCK UNDER RAF BUT BELONG TO CARLOS (2026-09-25). They are
+    # off Raf's board entirely — see total_knocks.guests — and their own board
+    # goes to CARLOS'S rooms from here, because this is the job that already
+    # holds his pull AND runs on the box that can text (Lucy 1; Megan
+    # 2026-09-25 confirmed the machine and both groups).
+    #
+    # The two groups are the ones his B2B disposition shots already go to
+    # (b2b_dispositions.config TEXT_GROUP_ALL / TEXT_GROUP_ATT). "NEW A
+    # Players" is NOT Raf's "Alphalete A-Team Chat🔥🔥" — two different rooms
+    # with similar names, see the note above.
+    #
+    # HOURLY, not Raf's 30: these rooms already get his B2B shots on the hour,
+    # and this board is a second flyer into the same 15-20 phones. One number
+    # to change if Carlos wants it tighter.
+    "guests": {
+        "Carlos Hidalgo": [
+            {"kind": "imessage", "name": "NEW A Players", "cadence_min": 60},
+            {"kind": "imessage", "name": "ATT B2B Leaders", "cadence_min": 60},
+        ],
+    },
     "destinations": [
         {"kind": "imessage", "name": "Alphalete Partners",
          "cadence_min": 30, "offset_min": 15},
@@ -362,6 +382,31 @@ def destinations(cfg: Dict) -> List[Dict]:
         if cfg.get(addr_key):
             out.append({"kind": "email", "emails": list(cfg[addr_key]),
                         "cadence_min": cadence_for(cfg)})
+    return out
+
+
+def guest_destinations(cfg: Dict, guest: str = "") -> Dict:
+    """{guest office: [destination, …]} for the reps who knock under this
+    office but belong to somebody else, or {} for an office with none.
+
+    Same destination shape as `destinations()`, so the cadence, the offset and
+    the anchor bookkeeping are the ones every other room already uses — a
+    guest's room is a room, not a special case. `guest` narrows it to one.
+    """
+    raw = cfg.get("guests") or {}
+    out = {}
+    for name, dests in raw.items():
+        if guest and name.strip().lower() != guest.strip().lower():
+            continue
+        clean = []
+        for d in dests or []:
+            if not isinstance(d, dict) or not d.get("kind"):
+                continue
+            d = dict(d)
+            d.setdefault("cadence_min", TICK_MINUTES)
+            clean.append(d)
+        if clean:
+            out[name] = clean
     return out
 
 

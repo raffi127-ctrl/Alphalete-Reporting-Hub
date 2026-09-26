@@ -571,6 +571,13 @@ def board_for(office: str, target: Optional[dt.date] = None,
     # ---- fold the days ----------------------------------------------------
     from automations.total_knocks.aggregate import aggregate_days
     rows = aggregate_days([ours[d] for d in days if d in ours])
+    # Reps who knock under this office but belong to another owner come off
+    # the board here, so an on-demand board says the same thing the posted one
+    # did (Carlos's fourteen on Raf's ownerville, 2026-09-25). The CACHE keeps
+    # the full grid — the split is a presentation rule, and a cached day has
+    # to stay re-splittable when the roster changes.
+    from automations.total_knocks import guests as _guests
+    rows, _guested = _guests.split(canonical, rows, logfn=logfn)
     b.rows = rows
     b.source = ("live" if sources == {"live"}
                 else "mixed" if len(sources) > 1

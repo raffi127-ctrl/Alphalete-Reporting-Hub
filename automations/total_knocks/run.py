@@ -109,6 +109,21 @@ def run(target: dt.date | None = None, *, test_tab: bool = False,
               "alert take it from here.", flush=True)
         return 1
     print(f"[total_knocks] Scraped {len(rows)} rep(s).", flush=True)
+
+    # REPS WHO KNOCK UNDER THIS OFFICE BUT AREN'T ITS OWN come off the board
+    # here, before anything is written or drawn (Carlos's fourteen, dispatching
+    # on Raf's ownerville since 2026-09-25). Everything downstream — the tab,
+    # the history, the TOTAL, the rate columns, the team bands — is computed
+    # from `rows`, so taking them out at the pull is the whole change. Their
+    # own board is built further down, off the rows kept here: one pull, two
+    # boards. An office with no guests gets its list back untouched.
+    from automations.total_knocks import guests as _guests
+    rows, guest_rows = _guests.split(LOG_OFFICE, rows, logfn=lambda m:
+                                     print(f"[total_knocks] {m}", flush=True))
+    if guest_rows:
+        print(f"[total_knocks] {len(rows)} rep(s) left on "
+              f"{LOG_OFFICE}'s board.", flush=True)
+
     if not rows:
         # VERIFIED no knocks for that day (the scrape completed and the office
         # logged nothing — e.g. a Sunday nobody door-knocked). Post an
@@ -177,7 +192,32 @@ def run(target: dt.date | None = None, *, test_tab: bool = False,
                                          extra_totals=extra_totals)
     print(f"[total_knocks] Rendered -> {img_tk}", flush=True)
 
-    # 4. Slack — the single combined post.
+    # 4b. The guest offices' own boards — same day, same Chan comparison
+    #     line, their reps only. Rendered even on --no-slack (the file is the
+    #     deliverable when nothing is being sent); delivery is dry-run unless
+    #     this run is posting for real.
+    for guest, g_rows in (guest_rows or {}).items():
+        try:
+            from automations.total_knocks import guest_board as _gb
+            png, _shape = _gb.build(target, guest, g_rows,
+                                    extra_totals=extra_totals,
+                                    logfn=lambda m: print(
+                                        f"[total_knocks] {m}", flush=True))
+            if png is None:
+                continue
+            cap = (f"🚪 *Total Knocks — {guest} — "
+                   f"{target.strftime('%b')} {target.day}*")
+            _gb.deliver(png, guest, cap, dry_run=(dry_run or no_slack),
+                        logfn=lambda m: print(f"[total_knocks] {m}",
+                                              flush=True))
+        except Exception as e:                        # noqa: BLE001
+            # A guest's board must never cost the host his — the host's post
+            # is the one the whole channel is waiting on.
+            print(f"[total_knocks] ⚠ {guest} board failed "
+                  f"({type(e).__name__}: {e}) — {LOG_OFFICE}'s post is "
+                  "unaffected.", flush=True)
+
+    # 5. Slack — the single combined post.
     if no_slack:
         print("[total_knocks] Skipping Slack post (--no-slack).", flush=True)
         print("[total_knocks] ✅ Finished.", flush=True)

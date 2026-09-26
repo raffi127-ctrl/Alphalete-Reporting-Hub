@@ -151,6 +151,30 @@ def _caption(owner: str, day: dt.date, slot, abbr: str) -> str:
             f"{_date_text(day)}*\n_As of {_clock(slot)} {abbr}._")
 
 
+def _build_guest_boards(rec: dict, day: dt.date, extra, *,
+                        logfn=print) -> None:
+    """Draw each guest office's own board off the rows just taken off `rec`.
+
+    Their reps, the same Chan comparison line, drawn FLAT: the team split
+    reads the host's sales board and these reps are not on it, so every one of
+    them would land in one grey UNASSIGNED band. A guest board that fails to
+    draw is logged and dropped — it must never cost the host the board his
+    whole channel is waiting on."""
+    for guest, g_rows in (rec.get("guest_rows") or {}).items():
+        try:
+            from automations.total_knocks import guest_board as _gb
+            g_png, _shape = _gb.build(
+                day, guest, g_rows, extra_totals=extra,
+                out_dir=OUT_DIR / "guests", date_text=_date_text(day),
+                logfn=lambda m: logfn(f"[knocks] {m}"))
+            if g_png is not None:
+                rec.setdefault("guest_pngs", {})[guest] = g_png
+        except Exception as e:  # noqa: BLE001 — a guest ≠ the host's board
+            logfn(f"[knocks] ⚠ {guest} board off {rec.get('key')} failed "
+                  f"({type(e).__name__}: {e}) — {rec.get('key')}'s board is "
+                  "unaffected")
+
+
 def build(slot, jobs_in, *, logfn=print) -> List[dict]:
     """Pull + render the CURRENT-day board for each office owed `slot`.
 
@@ -213,15 +237,18 @@ def build(slot, jobs_in, *, logfn=print) -> List[dict]:
             if err is not None:
                 raise err
             rows = by_day.get(day) or []
+            # Reps knocking under this office who belong to somebody else come
+            # off it here (Carlos's fourteen on Raf's ownerville, 2026-09-25),
+            # before the board is drawn — so the TOTAL, the rate columns and
+            # the team bands are all computed over the reps actually shown.
+            # Their own board rides along on `rec`, built from the same pull.
+            from automations.total_knocks import guests as _guests
+            rows, rec["guest_rows"] = _guests.split(
+                o.knocks_office, rows, logfn=lambda m: logfn(f"[knocks] {m}"))
             rec["rows"] = rows
-            if not rows:
-                # Visible absence, never a blank board (standing rule): no post
-                # goes out for this office and the log says which one.
-                logfn(f"[knocks] ⚠ {o.key}: no rows — nothing to post")
-                out.append(rec)
-                continue
-            # Per-office out dir: the renderers name files by DATE, so two
-            # offices in one run would otherwise overwrite each other.
+            # Chan's comparison line, built BEFORE the empty-office exit
+            # below: it is also the guest boards' comparison line, and a day
+            # when only the guests knocked still owes them their board.
             extra = []
             chan_rows = chan_by_day.get(day) or []
             if chan_rows and _norm(o.knocks_office) != _norm(compare):
@@ -230,6 +257,15 @@ def build(slot, jobs_in, *, logfn=print) -> List[dict]:
             elif not chan_rows:
                 logfn(f"[knocks] {o.key}: no {compare} rows for {day} — "
                       "board goes out without the comparison line")
+            _build_guest_boards(rec, day, extra, logfn=logfn)
+            if not rows:
+                # Visible absence, never a blank board (standing rule): no post
+                # goes out for this office and the log says which one.
+                logfn(f"[knocks] ⚠ {o.key}: no rows — nothing to post")
+                out.append(rec)
+                continue
+            # Per-office out dir: the renderers name files by DATE, so two
+            # offices in one run would otherwise overwrite each other.
             # Broken up by team for an office whose sales board can say who
             # is on what (Raf 2026-09-13, "the team breakdown for all his
             # daily interval knock dispo posts"). RAF'S IS THE ONLY ONE THAT
@@ -423,6 +459,36 @@ def post(results: List[dict], slot, *, dry_run: bool = True,
     return 1 if failed else 0
 
 
+def post_guests(results: List[dict], slot, *, dry_run: bool = True,
+                logfn=print) -> int:
+    """Deliver each guest office's board to its OWN people. Returns an exit
+    code, and it is always 0 for a destination that isn't configured yet.
+
+    SEPARATE FROM post() ON PURPOSE. The host loop owns the counters, the
+    delivery manifest and the per-office markers that decide what a retry
+    re-posts; a guest board is a second audience for the same pull, not
+    another office, and folding it into that loop would have one guest's
+    iMessage failure mark a host office undelivered. A guest failing here is
+    logged and counted on its own — the host's board already landed."""
+    sent = failed = 0
+    for rec in results:
+        for guest, png in (rec.get("guest_pngs") or {}).items():
+            from automations.total_knocks import guest_board as _gb
+            who = first_name(rec["label"])
+            cap = (f"{POST_EMOJI} *Total Knocks — {slot.label} — {guest} — "
+                   f"{_date_text(rec['day'])}*\n_As of {_clock(slot)} "
+                   f"{rec['abbr']}. Reps dispositioning on "
+                   f"{who}'s ownerville._")
+            res = _gb.deliver(png, guest, cap, dry_run=dry_run,
+                              logfn=lambda m: logfn(f"[knocks] {m}"))
+            sent += len(res["sent"])
+            failed += len(res["failed"])
+    if sent or failed:
+        logfn(f"[knocks] guest boards: {'DRY-RUN ' if dry_run else ''}"
+              f"sent={sent} failed={failed}")
+    return 1 if failed else 0
+
+
 def _ran_path() -> Path:
     """Per-machine 'already posted' markers. Never committed — two machines
     running the same slot is a deploy question, not a state question."""
@@ -513,6 +579,7 @@ def run_slot(slot, jobs_in, *, dry_run: bool, logfn=print) -> int:
         return 0
     results = build(slot, jobs_in, logfn=logfn)
     rc = post(results, slot, dry_run=dry_run, logfn=logfn)
+    rc |= post_guests(results, slot, dry_run=dry_run, logfn=logfn)
     if not dry_run:
         for rec in results:
             if rec.get("posted"):
