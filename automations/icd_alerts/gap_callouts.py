@@ -356,6 +356,66 @@ def pace_callout(office_key: str, rows: List[Dict], now: dt.datetime, *, remembe
     return text
 
 
+# SATURDAY STOPS AT 5 (Raf, 2026-09-26: "Call outs need to stop at 5pm on
+# Saturdays"). A HARD wall on the office's own clock, not a tweak to anybody's
+# bell: Cyrus's Saturday bell is 17:15 and the after-the-bell window ran to
+# 19:15, which is how call-outs were still landing at 6pm on a Saturday. Every
+# office, both kinds of call-out, weekdays untouched.
+SATURDAY = 5
+SATURDAY_CUTOFF_H = 17
+
+
+def callouts_allowed(now: dt.datetime) -> bool:
+    """False once Saturday hits 5pm local. Weekdays are unaffected."""
+    return not (now.weekday() == SATURDAY and now.hour >= SATURDAY_CUTOFF_H)
+
+
+# NEVER THE SAME LINE TWICE INTO ONE ROOM INSIDE THIS MANY MINUTES. The backstop
+# for "that cannot happen in any office" (Raf, 2026-09-26), and it is deliberately
+# NOT our state file: it asks SLACK what is already in the room, so it still
+# holds when the state file is missing, stale, unwritable or clobbered -- which
+# is exactly the failure that put the same call-out in #ambient-sales-1 and
+# #palace-sales every 60 seconds tonight. A de-dupe that depends on the thing
+# that broke is not a backstop.
+DUP_WINDOW_MIN = 90
+
+
+def already_said(channel_id: str, text: str, now: dt.datetime, client=None) -> bool:
+    """Is this EXACT line already in this room from the last DUP_WINDOW_MIN?
+
+    FAILS CLOSED. If Slack cannot be read we report True (skip the post): one
+    missed call-out costs a single tick and the next one retries, while guessing
+    the other way is how a room gets ninety copies. That trade is the whole
+    reason this exists.
+    """
+    try:
+        if client is None:
+            from automations.shared import slack_metrics_post as smp
+            client = smp._client()
+        oldest = (now - dt.timedelta(minutes=DUP_WINDOW_MIN)).timestamp()
+        res = client.conversations_history(channel=channel_id, oldest=str(oldest),
+                                           limit=60) or {}
+        want = (text or "").strip()
+        for m in res.get("messages") or []:
+            if (m.get("text") or "").strip() == want:
+                return True
+        return False
+    except Exception as e:  # noqa: BLE001
+        print("[callouts] cannot read %s to de-dupe (%s: %s) — NOT posting; "
+              "the next tick retries" % (channel_id, type(e).__name__, str(e)[:120]),
+              flush=True)
+        return True
+
+
+def _say(channel_id: str, text: str, now: dt.datetime, log) -> None:
+    """Post one call-out, unless that room already has this exact line."""
+    if already_said(channel_id, text, now):
+        log("%-14s already has this line in the last %d min — skipped"
+            % (channel_id, DUP_WINDOW_MIN))
+        return
+    P._slack(channel_id, text)
+
+
 def after_the_bell(office, now: dt.datetime, within_min: int = 120) -> bool:
     """Is `now` past this office's field day (today), and within `within_min`
     of it -- the window in which the day's last relay is the day's report?"""
@@ -413,6 +473,10 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
                 and key not in CALLOUT_EXTRA_OFFICES):
             continue
         now = K._office_now(office)
+        if not callouts_allowed(now):
+            log("%-14s Saturday past %d:00 — call-outs are done for the week"
+                % (key, SATURDAY_CUTOFF_H))
+            continue
         if not K.in_field_hours(office, now):
             log("%-14s outside field hours (%s their time)" % (key, now.strftime("%a %H:%M")))
             continue
@@ -454,7 +518,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
             continue
         for ch in dests:
             try:
-                P._slack(ch, text)
+                _say(ch, text, now, log)
             except Exception as e:  # noqa: BLE001
                 log("%-14s FAILED to post to %s: %s" % (key, ch, type(e).__name__))
     # THE POSITIVE ONE, after the bell: the day's numbers, once a day.
@@ -466,6 +530,8 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
                           and key not in CALLOUT_EXTRA_OFFICES):
             continue
         now = K._office_now(office)
+        if not callouts_allowed(now):
+            continue
         if not after_the_bell(office, now):
             continue
         # THE DAY'S LAST RELAY IS THE DAY'S REPORT: the machine stops sweeping
@@ -486,7 +552,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
         if send:
             for ch in dests:
                 try:
-                    P._slack(ch, praise)
+                    _say(ch, praise, now, log)
                 except Exception as e:  # noqa: BLE001
                     log("%-14s FAILED to post to %s: %s" % (key, ch, type(e).__name__))
     if send:

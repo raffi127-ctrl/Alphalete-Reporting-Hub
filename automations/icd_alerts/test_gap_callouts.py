@@ -220,3 +220,103 @@ class TheDayIsJudgedOnce(unittest.TestCase):
         self.assertEqual(G.pace_callout("cyrus", rows, now), "")
         self.assertEqual(G.pace_callout("cyrus", rows, now + dt.timedelta(minutes=1)), "")
         self.assertNotEqual(G.pace_callout("cyrus", rows, now + dt.timedelta(days=1)), first or "x")
+
+
+class SaturdayStopsAtFive(unittest.TestCase):
+    """Raf 2026-09-26: "Call outs need to stop at 5pm on Saturdays." A hard
+    wall on the office's own clock, independent of anybody's bell -- Cyrus's
+    Saturday bell is 17:15 and after_the_bell ran to 19:15, which is how
+    call-outs were still landing at 6pm on a Saturday."""
+
+    def test_saturday_before_five_is_fine(self):
+        self.assertTrue(G.callouts_allowed(dt.datetime(2026, 9, 26, 16, 59)))
+
+    def test_saturday_at_five_is_blocked(self):
+        self.assertFalse(G.callouts_allowed(dt.datetime(2026, 9, 26, 17, 0)))
+
+    def test_saturday_after_five_is_blocked(self):
+        # The exact window that spammed tonight.
+        self.assertFalse(G.callouts_allowed(dt.datetime(2026, 9, 26, 17, 43)))
+        self.assertFalse(G.callouts_allowed(dt.datetime(2026, 9, 26, 18, 1)))
+        self.assertFalse(G.callouts_allowed(dt.datetime(2026, 9, 26, 19, 14)))
+
+    def test_weekdays_are_untouched(self):
+        for hour in (17, 18, 19, 20, 21):
+            self.assertTrue(G.callouts_allowed(dt.datetime(2026, 9, 25, hour, 30)),
+                            "Friday %d:30 must still call out" % hour)
+        self.assertTrue(G.callouts_allowed(dt.datetime(2026, 9, 28, 20, 0)))   # Mon
+
+
+class TheRoomItselfIsTheBackstop(unittest.TestCase):
+    """already_said asks SLACK what is in the room, NOT our state file.
+
+    That is the whole point: tonight's runaway happened because the state file
+    was being clobbered, so a de-dupe built on that same file would have failed
+    with it. This guard has to hold with the state file EMPTY.
+    """
+
+    class _Client:
+        def __init__(self, texts):
+            self.texts = texts
+            self.calls = []
+
+        def conversations_history(self, channel, oldest, limit):
+            self.calls.append((channel, oldest, limit))
+            return {"messages": [{"text": t} for t in self.texts]}
+
+    NOW = dt.datetime(2026, 9, 26, 17, 43)
+    LINE = "Logan, Jamarion and Madelene — 25 doors/hr 🏃💨"
+
+    def test_it_blocks_a_repeat_with_no_state_at_all(self):
+        import pathlib, tempfile
+        from unittest import mock
+        # State file deliberately absent -- the failure mode from tonight.
+        with mock.patch.object(G, "STATE_PATH",
+                               pathlib.Path(tempfile.mkdtemp()) / "gone.json"):
+            self.assertEqual(G._state(), {})
+            c = self._Client([self.LINE])
+            self.assertTrue(G.already_said("C0B1DHEFVLH", self.LINE, self.NOW, client=c))
+
+    def test_a_new_line_still_gets_through(self):
+        c = self._Client([self.LINE])
+        self.assertFalse(
+            G.already_said("C0B1DHEFVLH", "Something else entirely", self.NOW, client=c))
+
+    def test_an_empty_room_lets_it_through(self):
+        self.assertFalse(
+            G.already_said("C0B1DHEFVLH", self.LINE, self.NOW, client=self._Client([])))
+
+    def test_whitespace_does_not_smuggle_a_duplicate_past_it(self):
+        c = self._Client(["  " + self.LINE + "  "])
+        self.assertTrue(G.already_said("C0B1DHEFVLH", self.LINE, self.NOW, client=c))
+
+    def test_it_only_looks_back_the_window(self):
+        c = self._Client([])
+        G.already_said("C0B1DHEFVLH", self.LINE, self.NOW, client=c)
+        _ch, oldest, _lim = c.calls[0]
+        expected = (self.NOW - dt.timedelta(minutes=G.DUP_WINDOW_MIN)).timestamp()
+        self.assertAlmostEqual(float(oldest), expected, places=3)
+
+    def test_an_unreadable_room_fails_CLOSED(self):
+        class Boom:
+            def conversations_history(self, **_kw):
+                raise RuntimeError("slack down")
+        # A missed call-out costs one tick. Guessing the other way is ninety
+        # copies, which is the thing that must never happen again.
+        self.assertTrue(G.already_said("C0B1DHEFVLH", self.LINE, self.NOW, client=Boom()))
+
+    def test_say_does_not_post_a_duplicate(self):
+        from unittest import mock
+        posted = []
+        with mock.patch.object(G.P, "_slack", lambda ch, t: posted.append((ch, t))), \
+                mock.patch.object(G, "already_said", lambda *a, **k: True):
+            G._say("C0B1DHEFVLH", self.LINE, self.NOW, lambda *_a: None)
+        self.assertEqual(posted, [])
+
+    def test_say_posts_when_the_room_is_clear(self):
+        from unittest import mock
+        posted = []
+        with mock.patch.object(G.P, "_slack", lambda ch, t: posted.append((ch, t))), \
+                mock.patch.object(G, "already_said", lambda *a, **k: False):
+            G._say("C0B1DHEFVLH", self.LINE, self.NOW, lambda *_a: None)
+        self.assertEqual(posted, [("C0B1DHEFVLH", self.LINE)])
