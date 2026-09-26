@@ -575,3 +575,75 @@ class BookingLagTest(unittest.TestCase):
         convos = {"a": self._c(25, booked=True)}
         d = A.dropoff(convos, window_end=dt.date(2026, 9, 25))
         self.assertEqual(sum(d["buckets"].values()), 0)
+
+
+class ColdListTest(unittest.TestCase):
+    """Megan: "there should be a 2nd section below for the cold list." The
+    log says which is which outright — Source "Mass SMS" is the bulk
+    re-engagement blast. Holding the two in one number is what made Raf's
+    office look broken: the blast books at 8%, the live flow at 74%."""
+
+    def _row(self, phone, source, direction="Out"):
+        return {"type": direction, "sent_at": "09-21-2026 09:00 AM",
+                "queued_at": "09-21-2026 09:00 AM", "source": source,
+                "sms_type": "", "body": "hi", "status": "Delivered",
+                "sent_by": "", "sender": "office", "sender_phone": "+14695891180",
+                "recipient": "them", "recipient_phone": phone}
+
+    def _convos(self, rows, booked=()):
+        return A.log_conversations(rows, {p: {"booked_by": "", "status": ""}
+                                          for p in booked})
+
+    def test_mass_sms_recipients_are_the_cold_list(self):
+        rows = [self._row("+14690000001", "Mass SMS"),
+                self._row("+14690000002", "AI Messaging")]
+        out = A.lanes(self._convos(rows), rows)
+        self.assertEqual(out["cold"]["people"], 1)
+        self.assertEqual(out["live"]["people"], 1)
+
+    def test_one_blast_puts_a_person_in_the_cold_lane_for_good(self):
+        # they got the blast AND normal follow-up; they are still cold-sourced
+        rows = [self._row("+14690000001", "Mass SMS"),
+                self._row("+14690000001", "AI Messaging")]
+        out = A.lanes(self._convos(rows), rows)
+        self.assertEqual(out["cold"]["people"], 1)
+        self.assertEqual(out["live"]["people"], 0)
+
+    def test_an_office_with_no_blast_has_an_empty_cold_lane(self):
+        # Carlos runs none, which is most of why his booking rate looks better
+        rows = [self._row("+14690000001", "AI Messaging")]
+        out = A.lanes(self._convos(rows), rows)
+        self.assertEqual(out["cold"]["people"], 0)
+        self.assertEqual(out["live"]["people"], 1)
+
+
+class DeliveryReasonTest(unittest.TestCase):
+    """Megan: "we need to know why it never reached them." """
+
+    def _row(self, phone, status, at="09-21-2026 09:00 AM"):
+        return {"type": "Out", "sent_at": at, "queued_at": at, "source": "",
+                "sms_type": "", "body": "hi", "status": status, "sent_by": "",
+                "sender": "office", "sender_phone": "+14695891180",
+                "recipient": "them", "recipient_phone": phone}
+
+    def test_each_status_is_counted_by_its_own_name(self):
+        d = A.delivery_reasons([self._row("+14690000001", "Delivered"),
+                                self._row("+14690000002", "Failed"),
+                                self._row("+14690000003", "Dummy Phone")])
+        self.assertEqual(d["by_status"]["Failed"], 1)
+        self.assertEqual(d["by_status"]["Dummy Phone"], 1)
+        self.assertEqual(d["undelivered"], 2)
+
+    def test_the_failure_rate_is_split_first_text_vs_later(self):
+        # the pattern that explains most of them: the carrier starts refusing
+        # once we have already sent several
+        rows = [self._row("+14690000001", "Delivered", "09-21-2026 09:00 AM"),
+                self._row("+14690000001", "Failed", "09-21-2026 10:00 AM"),
+                self._row("+14690000001", "Failed", "09-21-2026 11:00 AM")]
+        d = A.delivery_reasons(rows)
+        self.assertEqual(d["first_rate"], 0.0)
+        self.assertEqual(d["later_rate"], 100.0)
+
+    def test_no_messages_gives_no_rate_rather_than_zero(self):
+        d = A.delivery_reasons([])
+        self.assertIsNone(d["first_rate"])

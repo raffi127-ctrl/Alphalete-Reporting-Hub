@@ -839,6 +839,74 @@ def _dropoff_inner(convos, too_soon):
     return {"buckets": out, "curve": curve}
 
 
+MASS_SOURCE = "Mass SMS"
+
+
+def lanes(convos, rows):
+    """Split the week into the COLD LIST and the LIVE FLOW (Megan 2026-09-26:
+    "there should be a 2nd section below for the cold list").
+
+    The log says which is which outright: `Source` = "Mass SMS" is the bulk
+    re-engagement blast to the backlog; everything else is the ordinary
+    applicant flow. Keeping them in one number is what made the whole office
+    look broken — Raf's cold list replies at 18% and books at 8%, his live
+    flow replies at 71% and books at 74%. Those are two different problems
+    and only one of them is a leak."""
+    cold = set()
+    for r in rows:
+        if (r.get("source") or "") != MASS_SOURCE:
+            continue
+        who = phone10(r.get("recipient_phone") if
+                      not (r.get("type") or "").lower().startswith("in")
+                      else r.get("sender_phone"))
+        if who:
+            cold.add(who)
+    out = {}
+    for name, members in (("cold", cold), ("live", set(convos) - cold)):
+        grp = [convos[p] for p in members if p in convos]
+        out[name] = {
+            "people": len(grp),
+            "replied": sum(1 for c in grp if any(m["dir"] == "In" for m in c["msgs"])),
+            "booked": sum(1 for c in grp if c["booked"]),
+        }
+    return out
+
+
+def delivery_reasons(rows):
+    """WHY a text never arrived (Megan 2026-09-26: "we need to know why it
+    never reached them").
+
+    AppStream's own Status word for each one, plus the pattern that explains
+    most of them: the failure rate CLIMBS with how many texts that person has
+    already been sent — 5% on the first, 14% by the fourth in Raf's office.
+    That is the carrier flagging the number, which is exactly what the
+    deliverability checklist warns about, and it means the undelivered texts
+    and the "texted 4+ times, no reply" flag are the same problem."""
+    outs = [r for r in rows if (r.get("type") or "").lower().startswith("out")]
+    by_status = collections.Counter((r.get("status") or "(blank)").strip() for r in outs)
+
+    seq = collections.defaultdict(list)
+    for r in outs:
+        when = _log_ts(r.get("sent_at") or r.get("queued_at"))
+        who = phone10(r.get("recipient_phone"))
+        if when and who:
+            seq[who].append((when, r))
+    first, later = [0, 0], [0, 0]
+    for msgs in seq.values():
+        for i, (_w, r) in enumerate(sorted(msgs, key=lambda x: x[0]), 1):
+            slot = first if i == 1 else later
+            slot[0] += 1
+            if (r.get("status") or "").strip().lower() != "delivered":
+                slot[1] += 1
+    return {
+        "by_status": by_status,
+        "sent": len(outs),
+        "undelivered": sum(v for k, v in by_status.items() if k.lower() != "delivered"),
+        "first_rate": (100.0 * first[1] / first[0]) if first[0] else None,
+        "later_rate": (100.0 * later[1] / later[0]) if later[0] else None,
+    }
+
+
 def log_reply_speed(convos):
     """Reply speed with the sender actually known. 'human' here means a named
     person in Sent By — not an inference from who booked."""
@@ -891,6 +959,8 @@ def log_delivery(rows):
 def audit_log(rows, convos, office, booked=None):
     fun = funnel(convos)
     fun["join_misses"] = len(join_misses(convos, booked or {}))
+    fun["lanes"] = lanes(convos, rows)
+    fun["delivery"] = delivery_reasons(rows)
     drop = dropoff(convos)
     fun["drop"] = drop["buckets"]
     fun["curve"] = drop["curve"]

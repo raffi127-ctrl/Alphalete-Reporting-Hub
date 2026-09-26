@@ -170,6 +170,37 @@ def _curve_pct(which, field):
     return read
 
 
+def _lane(which, field):
+    def read(rep):
+        L = ((rep.get("log") or {}).get("funnel", {}).get("lanes") or {}).get(which)
+        return L.get(field, "") if L else ""
+    return read
+
+
+def _lane_pct(which, field):
+    def read(rep):
+        L = ((rep.get("log") or {}).get("funnel", {}).get("lanes") or {}).get(which)
+        if not L or not L.get("people"):
+            return ""
+        return round(100.0 * L[field] / L["people"], 1)
+    return read
+
+
+def _why(status):
+    def read(rep):
+        d = (rep.get("log") or {}).get("funnel", {}).get("delivery")
+        return d["by_status"].get(status, 0) if d else ""
+    return read
+
+
+def _why_rate(field):
+    def read(rep):
+        d = (rep.get("log") or {}).get("funnel", {}).get("delivery")
+        v = d.get(field) if d else None
+        return round(v, 1) if v is not None else ""
+    return read
+
+
 def _msg(fn):
     """Wrap a metric that is computed from MESSAGES so it writes blank when no
     messages were pulled.
@@ -264,6 +295,32 @@ ROWS = [
     ("Why they didn't book", "Never reached them (texts failed)", _drop("never reached them")),
     ("Why they didn't book", "Too soon to tell (texted in the last 3 days)",
      _drop("too soon to tell")),
+
+    # Megan 2026-09-26: "there should be a 2nd section below for the cold
+    # list". The log says which is which — Source "Mass SMS" is the bulk
+    # re-engagement blast. Holding the two in one number is what made the
+    # whole office look broken: Raf's cold list books at 8%, his live flow at
+    # 74%, and Carlos runs no blast at all.
+    ("Cold list (mass blast)", "People on the blast", _lane("cold", "people")),
+    ("Cold list (mass blast)", "% of them who replied", _lane_pct("cold", "replied")),
+    ("Cold list (mass blast)", "% of them who booked", _lane_pct("cold", "booked")),
+
+    ("Live flow (not the blast)", "People in the normal flow", _lane("live", "people")),
+    ("Live flow (not the blast)", "% of them who replied", _lane_pct("live", "replied")),
+    ("Live flow (not the blast)", "% of them who booked", _lane_pct("live", "booked")),
+
+    # Megan: "we need to know why it never reached them."
+    ("Why texts don't arrive", "Carrier rejected it (Failed)", _why("Failed")),
+    ("Why texts don't arrive", "Still queued (Requeued)", _why("Requeued")),
+    ("Why texts don't arrive", "No number on file (Dummy Phone)", _why("Dummy Phone")),
+    ("Why texts don't arrive", "Ran out of SMS credits",
+     _why("Insufficient SMS Credits")),
+    ("Why texts don't arrive", "Number not valid",
+     _why("Failed - Phone Not Valid")),
+    ("Why texts don't arrive", "% that failed — 1st text to them",
+     _why_rate("first_rate")),
+    ("Why texts don't arrive", "% that failed — later texts to them",
+     _why_rate("later_rate")),
 
     ("Follow-up", "People who got exactly 1 text", _curve("one", "people")),
     ("Follow-up", "% of those who booked", _curve_pct("one", "booked")),
@@ -557,6 +614,9 @@ def write_week(ws, rep, week_end, dry_run=False):
 
 
 SECTION_TINT = {"Week": (0.86, 0.86, 0.86),
+                "Cold list (mass blast)": (0.93, 0.90, 0.86),
+                "Live flow (not the blast)": (0.88, 0.96, 0.90),
+                "Why texts don't arrive": (0.99, 0.91, 0.86),
                 "Why they didn't book": (0.99, 0.89, 0.89),
                 "Follow-up": (0.89, 0.95, 0.99), "Reach": (0.90, 0.94, 0.99), "Booking": (0.90, 0.96, 0.91),
                 "Show": (0.98, 0.95, 0.88), "Speed": (0.93, 0.91, 0.98),
