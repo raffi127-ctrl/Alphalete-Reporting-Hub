@@ -120,10 +120,15 @@ def _year_of(rec):
     return int(m.group(1)) if m else dt.date.today().year
 
 
-def load_office(office):
+def load_office(office, suffix=""):
     """Records for one office: the local dump if it's there, else the sheet tab.
-    Same shape either way — a list of booking dicts each holding a `thread`."""
-    local = OUTPUT_DIR / "sms_thread_dump_{}.json".format(office)
+    Same shape either way — a list of booking dicts each holding a `thread`.
+
+    `suffix` reads a kept-aside pull instead of the current one
+    (sms_thread_dump_11580_0904.json), which is how an older week is backfilled
+    after a newer pull has replaced the live file."""
+    local = OUTPUT_DIR / "sms_thread_dump_{}{}.json".format(
+        office, "_" + suffix if suffix else "")
     if local.exists():
         recs = json.loads(local.read_text())
         for r in recs:
@@ -283,13 +288,21 @@ def booking_mix(recs):
     """Who booked the interview — the automation or a person. Reports the two
     signals separately so a disagreement shows up instead of being averaged."""
     by_booker = collections.Counter(r.get("booked_by", "") or "(blank)" for r in recs)
-    ai = human = disagree = 0
+    ai = human = disagree = unconfirmed = 0
     for r in recs:
         tmpl = {m[2] for m in messages(r)}
         said_ai = r.get("booked_by") == AI_BOOKER
         fired_ai = AI_TEMPLATE in tmpl and HUMAN_TEMPLATE not in tmpl
         fired_hu = HUMAN_TEMPLATE in tmpl and AI_TEMPLATE not in tmpl
-        if said_ai and fired_ai:
+        # A --bookings-only walk carries no thread, so neither Directions
+        # template is there to corroborate. That is NOT the two signals
+        # disagreeing — it is one signal on its own, and calling it a
+        # disagreement would put a red flag on every row of a healthy fast
+        # pull. Counted separately, and Booked By is trusted.
+        if not (fired_ai or fired_hu) and not tmpl:
+            unconfirmed += 1
+            ai, human = (ai + 1, human) if said_ai else (ai, human + 1)
+        elif said_ai and fired_ai:
             ai += 1
         elif (not said_ai) and fired_hu:
             human += 1
@@ -300,7 +313,7 @@ def booking_mix(recs):
             human += 1
             disagree += 1
     return {"by_booker": by_booker, "ai": ai, "human": human,
-            "disagree": disagree, "total": len(recs)}
+            "disagree": disagree, "unconfirmed": unconfirmed, "total": len(recs)}
 
 
 def outcome_by_booker(recs):
@@ -736,6 +749,10 @@ def render(reports, names, channels=None):
         for k, v in m["by_booker"].most_common():
             tag = " ← the automation" if k == AI_BOOKER else ""
             add("  - {} — {}{}".format(k, v, tag))
+        if m.get("unconfirmed"):
+            add("- {} of these were read with the fast booking-only walk, so "
+                "\"Booked By\" stands on its own — the Directions template that "
+                "normally corroborates it was not pulled.".format(m["unconfirmed"]))
         if m["disagree"]:
             add("- ⚠️ {} thread(s) where the two signals disagree (the calendar says one "
                 "thing, the template that fired says the other) — worth a look.".format(

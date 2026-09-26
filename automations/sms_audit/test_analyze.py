@@ -320,3 +320,29 @@ class LogTimestampTest(unittest.TestCase):
     def test_midnight_is_not_noon(self):
         self.assertEqual(A._log_ts("09-26-2026 12:01 AM").hour, 0)
         self.assertEqual(A._log_ts("09-26-2026 12:01 PM").hour, 12)
+
+
+class BookingsOnlyTest(unittest.TestCase):
+    """A --bookings-only walk has no thread, so the Directions template that
+    normally corroborates Booked By is absent. Absent is not contradictory —
+    treating it as a disagreement would red-flag every row of a healthy pull."""
+
+    def test_no_thread_is_unconfirmed_not_disagreeing(self):
+        recs = [_rec([], booked_by="A. Messaging"),
+                _rec([], booked_by="E. Gonzalez")]
+        mix = A.booking_mix(recs)
+        self.assertEqual(mix["disagree"], 0)
+        self.assertEqual(mix["unconfirmed"], 2)
+
+    def test_booked_by_is_still_trusted_without_a_thread(self):
+        recs = [_rec([], booked_by="A. Messaging"),
+                _rec([], booked_by="A. Messaging"),
+                _rec([], booked_by="E. Gonzalez")]
+        mix = A.booking_mix(recs)
+        self.assertEqual((mix["ai"], mix["human"]), (2, 1))
+
+    def test_a_real_disagreement_is_still_caught(self):
+        recs = [_rec([["Out", "Directions", "x", "09/23 9:00 AM"]],
+                     booked_by="A. Messaging")]
+        mix = A.booking_mix(recs)
+        self.assertEqual((mix["disagree"], mix["unconfirmed"]), (1, 0))

@@ -120,8 +120,10 @@ class TabNameTest(unittest.TestCase):
     def test_one_tab_per_account_named_by_id_and_owner(self):
         names = {"11280": "Rafael Hidalgo"}
         self.assertEqual(W.tab_title("11280", names), "11280 Rafael Hidalgo")
-        # Raf's other two streams are their own accounts, so their own tabs
-        self.assertEqual(W.tab_title("23965", names), "23965")
+        # Raf's other two streams are their own accounts, so their own tabs.
+        # Their name is not in OFFICE_NAMES, so it comes off the push table's
+        # `short` — three tabs all reading "Rafael Hidalgo" would be unreadable
+        self.assertEqual(W.tab_title("23965", names), "23965 Rafael 2nd funnel")
 
     def test_one_owner_with_three_accounts_gets_three_tabs(self):
         # Raf owns 11280, 23965 and 24065 — keying the tab on the OWNER would
@@ -221,7 +223,7 @@ class QuestionRowsTest(unittest.TestCase):
     def test_a_bucket_reads_its_own_count(self):
         import collections
         rep = {"questions": collections.Counter({"What is the pay?": 7}),
-               "questions_other": [1, 2, 3]}
+               "questions_other": [1, 2, 3], "messages": 900, "log": None}
         by_label = {label: fn for _s, label, fn in W.ROWS}
         self.assertEqual(by_label["Q: What is the pay?"](rep), 7)
         self.assertEqual(by_label["Q: something else"](rep), 3)
@@ -230,6 +232,80 @@ class QuestionRowsTest(unittest.TestCase):
         # zero is a real measurement here: we read every message and nobody
         # asked it. That is different from the log-only metrics.
         import collections
-        rep = {"questions": collections.Counter(), "questions_other": []}
+        rep = {"questions": collections.Counter(), "questions_other": [],
+               "messages": 900, "log": None}
         by_label = {label: fn for _s, label, fn in W.ROWS}
         self.assertEqual(by_label["Q: What is the pay?"](rep), 0)
+
+
+class NoMessagesIsBlankTest(unittest.TestCase):
+    """A --bookings-only walk carries booking rows and no thread. Every
+    message-derived metric then computes 0 — and 0 is a CLAIM ("nobody asked
+    anything", "no texts went out at 7am"), not a measurement. Blank is the
+    truth. This is the bug the first WE 9/25 column shipped with."""
+
+    def _bookings_only(self):
+        import collections
+        return {"messages": 0, "log": None, "threads": 832,
+                "mix": {"ai": 364, "human": 468},
+                "questions": collections.Counter(), "questions_other": [],
+                "questions_total": 0, "unanswered": [], "anomalies": {}}
+
+    def test_questions_and_flags_are_blank_not_zero(self):
+        rep = self._bookings_only()
+        by_label = {label: fn for _s, label, fn in W.ROWS}
+        for label in ("Questions asked", "Q: What is the pay?", "Q: something else",
+                      "Left unanswered", "Texts outside 8am–9pm",
+                      "Texted after they said stop", "Dead links sent"):
+            self.assertEqual(by_label[label](rep), "", label)
+
+    def test_the_booking_rows_are_still_real(self):
+        rep = self._bookings_only()
+        by_label = {label: fn for _s, label, fn in W.ROWS}
+        self.assertEqual(by_label["Booked a 1st interview"](rep), 832)
+        self.assertEqual(by_label["Booked by the AI"](rep), 364)
+
+    def test_with_messages_a_zero_is_a_real_zero(self):
+        import collections
+        rep = self._bookings_only()
+        rep["messages"] = 3164          # the walk DID read the threads
+        by_label = {label: fn for _s, label, fn in W.ROWS}
+        # nobody asked about pay, and we read every message to find that out
+        self.assertEqual(by_label["Q: What is the pay?"](rep), 0)
+        self.assertEqual(by_label["Texts outside 8am–9pm"](rep), 0)
+
+
+class ColumnOrderTest(unittest.TestCase):
+    """Weeks read left to right in time. A backfilled week goes in its place,
+    not on the end — otherwise the sheet reads 9/25 then 9/4."""
+
+    def _rep(self):
+        import collections
+        return {"office": "11580", "threads": 10, "questions_total": 0,
+                "questions": collections.Counter(), "questions_other": [],
+                "mix": {"ai": 6, "human": 4}, "unanswered": [], "messages": 0,
+                "anomalies": {}, "log": None}
+
+    def test_an_older_week_lands_left_of_a_newer_one(self):
+        class _Tab(W._EmptyTab):
+            def get_all_values(self):
+                return [["Applicant text audit"], ["", "", "WE 9/25"]]
+        col, _ = W.write_week(_Tab("t"), self._rep(), dt.date(2026, 9, 4),
+                              dry_run=True)
+        self.assertEqual(col, 3)      # takes C, pushing WE 9/25 to D
+
+    def test_the_newest_week_still_lands_on_the_end(self):
+        class _Tab(W._EmptyTab):
+            def get_all_values(self):
+                return [["Applicant text audit"], ["", "", "WE 9/4", "WE 9/18"]]
+        col, _ = W.write_week(_Tab("t"), self._rep(), dt.date(2026, 9, 25),
+                              dry_run=True)
+        self.assertEqual(col, 5)
+
+    def test_a_middle_week_slots_between(self):
+        class _Tab(W._EmptyTab):
+            def get_all_values(self):
+                return [["Applicant text audit"], ["", "", "WE 9/4", "WE 9/25"]]
+        col, _ = W.write_week(_Tab("t"), self._rep(), dt.date(2026, 9, 18),
+                              dry_run=True)
+        self.assertEqual(col, 4)

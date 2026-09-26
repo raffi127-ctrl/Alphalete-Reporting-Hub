@@ -77,6 +77,21 @@ def _rate(n, d):
     return "" if not d or n is None else round(100.0 * n / d, 1)
 
 
+def _msg(fn):
+    """Wrap a metric that is computed from MESSAGES so it writes blank when no
+    messages were pulled.
+
+    A --bookings-only walk carries the booking rows and no thread, so
+    "questions asked" and every flag come out 0 — and 0 here is a claim
+    ("nobody asked anything", "no texts went out at 7am") rather than a
+    measurement. Blank says "not measured", which is the truth."""
+    def read(rep):
+        if not rep.get("messages") and not rep.get("log"):
+            return ""
+        return fn(rep)
+    return read
+
+
 def _q_label(bucket):
     """'Q: Can we reschedule / a different time?' — prefixed so the question
     rows read as a group and cannot collide with a metric label."""
@@ -84,7 +99,7 @@ def _q_label(bucket):
 
 
 def _q_count(bucket):
-    return lambda r: r["questions"].get(bucket, 0)
+    return _msg(lambda r: r["questions"].get(bucket, 0))
 
 
 ROWS = [
@@ -115,12 +130,12 @@ ROWS = [
      lambda r: _within5((r.get("log") or {}).get("speed_human"))),
 
     ("Dropped", "Left unanswered",
-     lambda r: len(((r.get("log") or {}).get("unanswered")) or r["unanswered"])),
+     _msg(lambda r: len(((r.get("log") or {}).get("unanswered")) or r["unanswered"]))),
     ("Dropped", "…of those, never booked",
      lambda r: sum(1 for u in ((r.get("log") or {}).get("unanswered") or [])
                    if not u.get("booked")) if r.get("log") else ""),
 
-    ("What they ask", "Questions asked", lambda r: r["questions_total"]),
+    ("What they ask", "Questions asked", _msg(lambda r: r["questions_total"])),
 ] + [
     # Every question spelled out, one row each, so a week-over-week read shows
     # what is RISING — "reschedule went 38% → 51%" is the thing worth acting
@@ -131,19 +146,20 @@ ROWS = [
     ("What they ask", _q_label(label), _q_count(label))
     for label, _pat in A.QUESTION_BUCKETS
 ] + [
-    ("What they ask", "Q: something else", lambda r: len(r["questions_other"])),
+    ("What they ask", "Q: something else", _msg(lambda r: len(r["questions_other"]))),
 
     ("Flags", "Texts outside 8am–9pm",
-     lambda r: len(r["anomalies"].get("Texted outside 8am–9pm (TCPA quiet hours)", []))),
+     _msg(lambda r: len(r["anomalies"].get(
+         "Texted outside 8am–9pm (TCPA quiet hours)", [])))),
     ("Flags", "Applicants over the carrier limit",
-     lambda r: len(r["anomalies"].get(
-         "Over the carrier limit — 4+ separate texts with no reply between", []))),
+     _msg(lambda r: len(r["anomalies"].get(
+         "Over the carrier limit — 4+ separate texts with no reply between", [])))),
     ("Flags", "Texted after they said stop",
-     lambda r: len(r["anomalies"].get(
-         "Kept texting after they asked us to stop / said no", []))),
+     _msg(lambda r: len(r["anomalies"].get(
+         "Kept texting after they asked us to stop / said no", [])))),
     ("Flags", "Dead links sent",
-     lambda r: len(r["anomalies"].get(
-         "Dead link — the web address is spelled with a look-alike letter", []))),
+     _msg(lambda r: len(r["anomalies"].get(
+         "Dead link — the web address is spelled with a look-alike letter", [])))),
     ("Flags", "Not delivered",
      lambda r: sum(v for k, v in ((r.get("log") or {}).get("delivery") or {}).items()
                    if k.lower() != "delivered") if r.get("log") else ""),
@@ -180,13 +196,28 @@ def open_workbook(gc, explicit=None):
     return gc.open_by_key(DEFAULT_WORKBOOK)
 
 
+def account_label(office, names):
+    """A human name for the account. OFFICE_NAMES first; failing that the
+    applicant-push table's `short`, which is the only place Raf's second and
+    third streams are described ('Rafael 2nd funnel', 'Raf new recruiter
+    test') — three tabs all reading 'Rafael Hidalgo' would be unreadable."""
+    who = names.get(office)
+    if who:
+        return who
+    try:
+        from automations.applicant_push.offices import OFFICES as _push
+        short = (_push.get(str(office)) or {}).get("short", "")
+    except Exception:  # noqa: BLE001
+        short = ""
+    return re.sub(r"^office\s*\d+\s*,?\s*", "", short).strip()
+
+
 def tab_title(office, names):
     """'11280 Rafael Hidalgo' — one tab per ApplicantStream account, named by
     the account id first so the tabs sort by account and an owner with two
     accounts (Raf has three) can never share a tab. The id leads because it is
     the thing that is unique; the name is there so a person can read it."""
-    who = names.get(office, "")
-    return "{} {}".format(office, who).strip()
+    return "{} {}".format(office, account_label(office, names)).strip()
 
 
 def ensure_tab(sh, title):
@@ -324,8 +355,16 @@ def write_week(ws, rep, week_end, dry_run=False):
 
     # --- the week's column ---
     col = weeks.get(week_end)
+    inserted_at = None
     if col is None:
-        col = max([FIRST_WEEK_COL - 1] + list(weeks.values())) + 1
+        # Weeks read left to right in time, so a backfilled week goes in its
+        # place rather than on the end. Normal runs land at the right edge and
+        # never shift anything; only an older week inserts.
+        later = sorted(c for d, c in weeks.items() if d > week_end)
+        if later:
+            col = inserted_at = later[0]
+        else:
+            col = max([FIRST_WEEK_COL - 1] + list(weeks.values())) + 1
         updates.append((_a1(HEADER_ROW, col), [[week_header(week_end)]]))
 
     for section, label, fn in ROWS:
@@ -346,6 +385,8 @@ def write_week(ws, rep, week_end, dry_run=False):
             print("    {:<34} {}".format(label, v), flush=True)
         return col, 0
 
+    if inserted_at is not None:
+        ws.insert_cols([[]], inserted_at)
     need_cols = col + 1
     if ws.col_count < need_cols:
         ws.resize(rows=max(ws.row_count, next_row + 2), cols=need_cols + 8)
@@ -394,10 +435,10 @@ class _EmptyTab(object):
 
 # ------------------------------------------------------------------ main ----
 
-def build_report(office):
+def build_report(office, suffix=""):
     """The same audit the markdown write-up uses — one code path, so the sheet
     and the document can never disagree."""
-    recs, src = A.load_office(office)
+    recs, src = A.load_office(office, suffix)
     if not recs:
         return None, src
     rep = A.audit(recs, office)
@@ -415,6 +456,9 @@ def main(argv=None):
     ap.add_argument("--week", type=int, nargs="?", const=1, default=1,
                     help="1 = the recruiting week just finished, 2 = the one before")
     ap.add_argument("--workbook", default="", help="write into this spreadsheet id")
+    ap.add_argument("--suffix", default="",
+                    help="backfill from a kept-aside pull, e.g. --suffix 0904 "
+                         "reads output/sms_thread_dump_<office>_0904.json")
     ap.add_argument("--force", action="store_true",
                     help="write even when the data is not from the named week")
     ap.add_argument("--dry-run", action="store_true")
@@ -442,7 +486,7 @@ def main(argv=None):
 
     rc = 0
     for office in offices:
-        rep, src = build_report(office)
+        rep, src = build_report(office, a.suffix)
         if not rep:
             print("[weekly_sheet] {}: nothing to read ({})".format(office, src),
                   flush=True)
