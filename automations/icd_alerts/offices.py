@@ -349,6 +349,34 @@ SHEET_CACHE = (Path.home() / ".config" / "recruiting-report"
 SHEET_CACHE_TTL_S = 600
 
 
+def typed_name(raw) -> str:
+    """A person's name as they typed it on the form, cased for display.
+
+    The form is free text and people fill it in a hurry. Carlos typed his name
+    all lowercase, and "carlos hidalgo" then rendered verbatim on his Hub card,
+    in the invite listing, and in every Slack line that names his office. House
+    style is title-cased names [[feedback_report_formatting_standard]].
+
+    ONLY WHEN THE TYPING CARRIES NO CASE INFORMATION -- all lower, or all upper.
+    A value somebody cased deliberately is returned untouched, because .title()
+    is actively WRONG for a fair share of real surnames: it turns this roster's
+    own "Ryan McSpadden" into "Ryan Mcspadden" and "Aya Al-Khafaji" survives
+    only by luck. There is no rule that recovers those, so the split is between
+    typing that tells us something and typing that does not.
+
+    The honest limit: a surname typed all lowercase cannot be fully recovered
+    either -- "mcspadden" can only become "Mcspadden" here. That is still
+    closer than leaving it lowercase, and the owner can override it by typing
+    their name with capitals, which this function then preserves exactly.
+    """
+    s = str(raw or "").strip()
+    if not s:
+        return ""
+    if s == s.lower() or s == s.upper():
+        return s.title()
+    return s
+
+
 def _office_from_signup(row: Dict) -> Optional[AlertOffice]:
     key = str(row.get("office_key") or "").strip().lower()
     if not key:
@@ -357,12 +385,18 @@ def _office_from_signup(row: Dict) -> Optional[AlertOffice]:
     def _b(v):
         return str(v).strip().upper() in ("TRUE", "YES", "Y", "1")
     saturday = _b(row.get("saturday"))
+    owner = typed_name(row.get("owner"))
     return AlertOffice(
         key=key,
-        owner=str(row.get("owner") or "").strip(),
+        owner=owner,
+        # DERIVED FROM THE CASED OWNER, so the fallback label inherits the fix
+        # rather than carrying "carlos's Local Office" alongside a corrected
+        # "Carlos Hidalgo". An office_label somebody typed for themselves is
+        # left exactly as typed -- it is their own wording, and it is not a
+        # person's name, so title-casing it would mangle things like AT&T.
         label=(str(row.get("office_label") or "").strip()
-               or "%s's Local Office" % (str(row.get("owner") or "there")
-                                         .strip().split() or ["there"])[0]),
+               or "%s's Local Office" % ((owner or "there").split()
+                                         or ["there"])[0]),
         # NEVER ROUTED FROM THE FORM. What they typed is a request on the
         # 'Office Channels' tab; a human approves it. A sign-up that could
         # name its own channel would be an office enrolling itself into
@@ -458,11 +492,88 @@ def helpers_for(key: str) -> tuple:
     return tuple(HELPERS.get((key or "").strip().lower()) or ())
 
 
+def _campaign_tag(campaign: str) -> str:
+    """'B2B — AT&T' for a campaign key, or the key itself if it is unknown.
+
+    Borrowed from the sign-up form rather than spelled again here: the two
+    intake forms are deliberately kept agreeing about what this company sells,
+    and a third spelling of "Box Energy" is how that stops being true.
+    """
+    key = str(campaign or "").strip().lower()
+    try:
+        from automations.icd_signup.schema import campaign_label
+        return campaign_label(key) or key
+    except Exception:  # noqa: BLE001 — a label must never break the roster
+        return key
+
+
+def _disambiguate(merged: Dict[str, AlertOffice]) -> Dict[str, AlertOffice]:
+    """Name the campaign on any label two offices would otherwise share.
+
+    ONE OWNER CAN HAVE TWO OFFICES. Carlos runs B2B AT&T and B2B Box as
+    separate keys (`carlos`, `carlos-b2batt`) that deliberately post to ONE
+    room -- see the note above OFFICES -- and the label is derived from his
+    first name, so both read "Carlos's Local Office". The Hub roster printed
+    that twice with nothing to tell them apart, and so did every other line
+    built from `label`: a withheld-board notice, a held-alert header, the
+    invite listing. Two identical entries where one is stalled and one is fine
+    is worse than no entry, because the reader cannot tell which they are
+    looking at.
+
+    THE CAMPAIGN IS ALREADY THE DISCRIMINATOR everywhere else -- the knocks
+    board header names it for exactly this reason -- so this says out loud on
+    the label what the board has always said in its heading.
+
+    ONLY the labels that actually collide are touched. An owner with one office
+    keeps the plain "Kash's Local Office"; tagging every office with its
+    campaign would be noise on nine rows to fix two.
+
+    AMONG THE ACTIVE ONES ONLY. `khalil` sits in the code table switched OFF
+    while `khalil-nds` runs from the form, both labelled "Khalil's Local
+    Office" -- counting the dead row would tag the live one for a twin nobody
+    can see. Switch khalil back on and they both get tagged, which is then
+    right.
+
+    AND THE TAG HAS TO ACTUALLY SEPARATE THEM. Those two Khalil rows are BOTH
+    `nds`, so the campaign alone would hand back two identical labels again --
+    noise, and still ambiguous. When that happens the key goes on instead; it
+    is unique by construction, which is the one thing that cannot collide.
+    """
+    live = [o for o in merged.values() if o.active]
+    seen: Dict[str, int] = {}
+    for o in live:
+        lbl = (o.label or "").strip().lower()
+        seen[lbl] = seen.get(lbl, 0) + 1
+    dupes = {lbl for lbl, n in seen.items() if n > 1 and lbl}
+    if not dupes:
+        return merged
+
+    # Would the campaign tag be enough, for each colliding label?
+    tagged: Dict[str, int] = {}
+    for o in live:
+        if (o.label or "").strip().lower() not in dupes:
+            continue
+        cand = "%s (%s)" % (o.label, _campaign_tag(o.campaign))
+        tagged[cand.lower()] = tagged.get(cand.lower(), 0) + 1
+
+    out = dict(merged)
+    for key, o in merged.items():
+        if not o.active or (o.label or "").strip().lower() not in dupes:
+            continue
+        tag = _campaign_tag(o.campaign)
+        cand = "%s (%s)" % (o.label, tag) if tag else ""
+        if cand and tagged.get(cand.lower(), 0) == 1:
+            out[key] = o._replace(label=cand)
+        else:
+            out[key] = o._replace(label="%s (%s)" % (o.label, o.key))
+    return out
+
+
 def all_offices() -> Dict[str, AlertOffice]:
     """The code table plus the sign-up tab, code winning on a shared key."""
     merged = dict(sheet_offices())
     merged.update(OFFICES)
-    return merged
+    return _disambiguate(merged)
 
 
 # The fields an OWNER chooses for themselves on the sign-up form. A code row
