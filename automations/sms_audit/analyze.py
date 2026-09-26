@@ -50,7 +50,8 @@ except Exception:
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OUTPUT_DIR = REPO_ROOT / "output"
 CONTROL_SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
-TAB_PREFIX = "SMS Dump"
+TAB_PREFIX = "SMS Dump"          # the calendar walk, per office
+LOG_TAB_PREFIX = "SMS Log"       # the p=336 full log, per office
 
 AI_BOOKER = "A. Messaging"       # the automation's name in the calendar's Booked By
 AI_TEMPLATE = "Directions AI"    # fires only after an AI booking
@@ -154,6 +155,112 @@ def load_office(office):
             d["thread"] = []
         d.pop("thread_json", None)
     return recs, "sheet tab '{}'".format(tab)
+
+
+def phone10(raw):
+    """'+14698762121', '14698762121', '(469) 876-2121' -> '4698762121'.
+
+    The two sources spell a number differently — the calendar gives 11 bare
+    digits, the SMS log gives E.164 — so every join between them goes through
+    here. A join that silently misses is the worst outcome available: it reads
+    as "this applicant was never booked"."""
+    digits = re.sub(r"\D", "", raw or "")
+    return digits[-10:] if len(digits) >= 10 else ""
+
+
+def load_log(office):
+    """Every message for the office, from the p=336 SMS List Report pull:
+    local output/sms_log_<office>.json first, else the sheet tab."""
+    local = OUTPUT_DIR / "sms_log_{}.json".format(office)
+    if local.exists():
+        return json.loads(local.read_text()), "output/{}".format(local.name)
+
+    from automations.recruiting_report import fill as _fill
+    tab = "{} {}".format(LOG_TAB_PREFIX, office)
+    try:
+        ws = _fill._client().open_by_key(CONTROL_SHEET_ID).worksheet(tab)
+    except Exception:  # noqa: BLE001 — no log pulled for this office yet
+        return [], "no tab '{}'".format(tab)
+    vals = ws.get_all_values()
+    if len(vals) < 3:
+        return [], "tab '{}' (empty)".format(tab)
+    hdr = vals[1]
+    return [dict(zip(hdr, row)) for row in vals[2:] if any(row)], "tab '{}'".format(tab)
+
+
+def booked_index(recs):
+    """{phone10: booking} off the calendar walk — who ended up with a first
+    interview, who booked it, and whether they showed. This is the half the
+    SMS log cannot know: the log says we talked to someone, it never says it
+    turned into anything."""
+    idx = {}
+    for r in recs:
+        key = phone10(r.get("phone"))
+        if key:
+            idx[key] = r
+    return idx
+
+
+def log_conversations(rows, booked=None):
+    """Group the flat message log into one conversation per applicant phone.
+
+    The applicant's number is the SENDER on an inbound row and the RECIPIENT on
+    an outbound one — the office's own Bandwidth number sits on the other side
+    of both, so keying on either column alone would file every message under
+    the office."""
+    booked = booked or {}
+    convos = collections.OrderedDict()
+    for row in rows:
+        inbound = (row.get("type") or "").strip().lower().startswith("in")
+        who = phone10(row.get("sender_phone") if inbound else row.get("recipient_phone"))
+        name = (row.get("sender") if inbound else row.get("recipient")) or ""
+        if not who:
+            continue
+        when = _log_ts(row.get("sent_at") or row.get("queued_at"))
+        if not when:
+            continue
+        c = convos.setdefault(who, {"phone": who, "name": name.strip(), "msgs": []})
+        if not c["name"]:
+            c["name"] = name.strip()
+        c["msgs"].append({
+            "when": when,
+            "dir": "In" if inbound else "Out",
+            "template": (row.get("sms_type") or "").strip(),
+            "body": row.get("body") or "",
+            "sent_by": (row.get("sent_by") or "").strip(),
+            "source": (row.get("source") or "").strip(),
+            "status": (row.get("status") or "").strip(),
+        })
+    for who, c in convos.items():
+        c["msgs"].sort(key=lambda m: m["when"])
+        b = booked.get(who)
+        c["booked"] = bool(b)
+        c["booked_by"] = (b or {}).get("booked_by", "")
+        c["outcome"] = (b or {}).get("status", "")
+    return convos
+
+
+def _log_ts(stamp):
+    """'09-26-2026 10:16 AM' -> datetime. The log carries the year, unlike the
+    chat history, so nothing has to be inferred here."""
+    m = re.match(r"\s*(\d{2})-(\d{2})-(\d{4})\s+(\d{1,2}):(\d{2})\s*([AaPp])",
+                 stamp or "")
+    if not m:
+        return None
+    h = int(m.group(4)) % 12 + (12 if m.group(6).lower() == "p" else 0)
+    try:
+        return dt.datetime(int(m.group(3)), int(m.group(1)), int(m.group(2)),
+                           h, int(m.group(5)))
+    except ValueError:
+        return None
+
+
+def is_ai(msg):
+    """The log names the sender outright: "AI Messaging" in Sent By (and in
+    Source). No inference, no persona guessing — this is the column the
+    calendar walk does not have and the reason to prefer this source."""
+    return "ai messaging" in (msg.get("sent_by", "") + " " +
+                              msg.get("source", "")).lower()
 
 
 def messages(rec):
@@ -410,6 +517,85 @@ def anomalies(recs):
     return found
 
 
+def funnel(convos):
+    """Everyone we texted, not just the ones who booked — the whole point of
+    pulling the log. Counts the conversations, who replied, who ended up with a
+    first interview, and who showed for it."""
+    total = len(convos)
+    replied = sum(1 for c in convos.values() if any(m["dir"] == "In" for m in c["msgs"]))
+    booked = [c for c in convos.values() if c["booked"]]
+    by_ai = [c for c in booked if c["booked_by"] == AI_BOOKER]
+    by_human = [c for c in booked if c["booked_by"] and c["booked_by"] != AI_BOOKER]
+    shown = [c for c in booked if c["outcome"] and "No Show" not in c["outcome"]]
+    return {
+        "contacted": total, "replied": replied,
+        "booked": len(booked), "booked_ai": len(by_ai), "booked_human": len(by_human),
+        "shown": len(shown),
+        "shown_ai": sum(1 for c in by_ai if c["outcome"] and "No Show" not in c["outcome"]),
+        "shown_human": sum(1 for c in by_human if c["outcome"] and "No Show" not in c["outcome"]),
+        "never_booked": total - len(booked),
+    }
+
+
+def log_reply_speed(convos):
+    """Reply speed with the sender actually known. 'human' here means a named
+    person in Sent By — not an inference from who booked."""
+    lanes = {"ai": [], "human": []}
+    for c in convos.values():
+        msgs = c["msgs"]
+        for i, m in enumerate(msgs):
+            if m["dir"] != "In":
+                continue
+            nxt = next((x for x in msgs[i + 1:] if x["dir"] == "Out"), None)
+            if not nxt:
+                continue
+            gap = (nxt["when"] - m["when"]).total_seconds() / 60.0
+            if gap < 0 or gap > 24 * 60:
+                continue
+            lanes["ai" if is_ai(nxt) else "human"].append(gap)
+    return lanes
+
+
+def log_unanswered(convos):
+    """Conversations sitting on an applicant message nobody answered — now
+    across EVERYONE contacted, which is where the ones who never booked live."""
+    out = []
+    for c in convos.values():
+        msgs = c["msgs"]
+        if not msgs or msgs[-1]["dir"] != "In":
+            continue
+        body = msgs[-1]["body"].strip()
+        if CLOSER.match(body):
+            continue
+        out.append({"name": c["name"] or c["phone"], "phone": c["phone"],
+                    "when": msgs[-1]["when"], "booked": c["booked"],
+                    "status": c["outcome"] or ("booked" if c["booked"] else "never booked"),
+                    "said": body.replace("\n", " ")[:160]})
+    out.sort(key=lambda d: d["when"])
+    return out
+
+
+def log_delivery(rows):
+    """A text that errored is not a text we sent. Counted separately so a
+    delivery problem never hides inside a response-rate number."""
+    c = collections.Counter((r.get("status") or "(blank)").strip() for r in rows)
+    return c
+
+
+def audit_log(rows, convos, office):
+    fun = funnel(convos)
+    lanes = log_reply_speed(convos)
+    return {
+        "office": office,
+        "rows": len(rows),
+        "funnel": fun,
+        "speed_ai": _stat(lanes["ai"]),
+        "speed_human": _stat(lanes["human"]),
+        "unanswered": log_unanswered(convos),
+        "delivery": log_delivery(rows),
+    }
+
+
 def audit(recs, office):
     mix = booking_mix(recs)
     speed, first = reply_speed(recs)
@@ -453,7 +639,60 @@ def _speed_line(s):
             .format(s["median"], s["p90"], s["within_5"], s["within_60"]))
 
 
-def render(reports, names):
+def render_log(rep, who):
+    """The section the calendar walk cannot produce: everyone contacted."""
+    L, add = [], None
+    out = []
+    add = out.append
+    f = rep["funnel"]
+    add("### 0. Everyone we texted — not just the ones who booked")
+    add("")
+    add("*(from the SMS List Report, p=336: every message in and out for the "
+        "window, joined to the calendar on phone number)*")
+    add("")
+    add("- **{:,} people texted**, {:,} messages".format(f["contacted"], rep["rows"]))
+    add("- **{:,} replied** ({})".format(f["replied"], _pct(f["replied"], f["contacted"])))
+    add("- **{:,} booked a first interview** ({} of everyone contacted, {} of "
+        "everyone who replied)".format(
+            f["booked"], _pct(f["booked"], f["contacted"]),
+            _pct(f["booked"], f["replied"])))
+    add("  - the AI booked **{}** ({} of bookings) · a recruiter booked **{}** ({})"
+        .format(f["booked_ai"], _pct(f["booked_ai"], f["booked"]),
+                f["booked_human"], _pct(f["booked_human"], f["booked"])))
+    add("  - showed up: **{}** of {} AI bookings ({}) · **{}** of {} recruiter "
+        "bookings ({})".format(
+            f["shown_ai"], f["booked_ai"], _pct(f["shown_ai"], f["booked_ai"]),
+            f["shown_human"], f["booked_human"], _pct(f["shown_human"], f["booked_human"])))
+    add("- **{:,} were texted and never booked** ({})".format(
+        f["never_booked"], _pct(f["never_booked"], f["contacted"])))
+    add("")
+    add("**Reply speed, by who actually sent it** (the log names the sender — "
+        "“AI Messaging” or a person):")
+    add("")
+    add("- **AI**: {}".format(_speed_line(rep["speed_ai"])))
+    add("- **A person**: {}".format(_speed_line(rep["speed_human"])))
+    add("")
+    bad = {k: v for k, v in rep["delivery"].items() if k.lower() != "delivered"}
+    if bad:
+        add("**Not delivered:** " + ", ".join(
+            "{} {}".format(v, k) for k, v in sorted(bad.items(), key=lambda x: -x[1])))
+        add("")
+    ua = rep["unanswered"]
+    never = [u for u in ua if not u["booked"]]
+    add("**{:,} conversations end on something the applicant said that nobody "
+        "answered** ({} of everyone contacted) — **{} of them never booked**."
+        .format(len(ua), _pct(len(ua), f["contacted"]), len(never)))
+    add("")
+    for u in (never or ua)[:15]:
+        add("- **{}** ({:%m/%d %I:%M %p}, {}) — “{}”".format(
+            u["name"], u["when"], u["status"], u["said"]))
+    if len(never or ua) > 15:
+        add("- …and {} more.".format(len((never or ua)) - 15))
+    add("")
+    return out
+
+
+def render(reports, names, channels=None):
     L = []
     add = L.append
     today = dt.date.today()
@@ -474,6 +713,12 @@ def render(reports, names):
         add("")
         add("## {} — office {}".format(who, rep["office"]))
         add("")
+        chan = (channels or {}).get(rep["office"])
+        if chan:
+            add("*Goes to that ICD's own recruiting channel: `{}`.*".format(chan))
+            add("")
+        if rep.get("log"):
+            L.extend(render_log(rep["log"], who))
         win = "{} → {}".format(rep["dates"][0], rep["dates"][-1]) if rep["dates"] else "n/a"
         add("**{} booked interviews** over {}, **{:,} text messages** "
             "({:,} from applicants). {} of the {} applicants texted back at all."
@@ -602,6 +847,18 @@ def render(reports, names):
         def row(label, fn):
             add("| " + " | ".join([label] + [fn(r) for r in reports]) + " |")
 
+        if all(r.get("log") for r in reports):
+            row("People texted", lambda r: "{:,}".format(r["log"]["funnel"]["contacted"]))
+            row("Replied", lambda r: _pct(r["log"]["funnel"]["replied"],
+                                          r["log"]["funnel"]["contacted"]))
+            row("Texted → booked", lambda r: _pct(r["log"]["funnel"]["booked"],
+                                                  r["log"]["funnel"]["contacted"]))
+            row("AI reply, median", lambda r: (
+                "{:.0f} min".format(r["log"]["speed_ai"]["median"])
+                if r["log"]["speed_ai"] else "—"))
+            row("Person's reply, median", lambda r: (
+                "{:.0f} min".format(r["log"]["speed_human"]["median"])
+                if r["log"]["speed_human"] else "—"))
         row("Interviews booked", lambda r: "{}".format(r["threads"]))
         row("Booked by the AI", lambda r: "{} ({})".format(
             r["mix"]["ai"], _pct(r["mix"]["ai"], r["mix"]["total"])))
@@ -644,6 +901,19 @@ def main(argv=None):
         from automations.applicant_tracker.config import OFFICE_NAMES as names
     except Exception:
         names = {}
+    # Each ICD has their OWN recruiting channel, and one office's applicants
+    # never land in another office's channel. The canonical map already exists
+    # in the applicant-push table — reusing it means a channel change lands in
+    # one place, not two. Raf's three streams (11280 / 23965 / 24065) all point
+    # at #rafs-office-recruiting-11280.
+    channels = {}
+    try:
+        from automations.applicant_push.offices import OFFICES as _push
+        for oid, row in _push.items():
+            if row.get("post_channel"):
+                channels[str(oid)] = row["post_channel"]
+    except Exception:  # noqa: BLE001 — a missing map must not fail the report
+        pass
 
     reports = []
     for o in offices:
@@ -652,14 +922,27 @@ def main(argv=None):
             print("[sms_audit] {}: nothing to read ({})".format(o, src), flush=True)
             continue
         print("[sms_audit] {}: {} threads from {}".format(o, len(recs), src), flush=True)
-        reports.append(audit(recs, o))
+        rep = audit(recs, o)
+        # The full log is the better source where it exists; the calendar walk
+        # stays because it is the only place a BOOKING is recorded, and the two
+        # are joined on phone number.
+        rows, lsrc = load_log(o)
+        if rows:
+            convos = log_conversations(rows, booked_index(recs))
+            print("[sms_audit] {}: {} log rows → {} conversations from {}"
+                  .format(o, len(rows), len(convos), lsrc), flush=True)
+            rep["log"] = audit_log(rows, convos, o)
+        else:
+            print("[sms_audit] {}: no full log ({}) — booked applicants only"
+                  .format(o, lsrc), flush=True)
+        reports.append(rep)
     if not reports:
         return 1
 
     out = Path(a.out) if a.out else (
         OUTPUT_DIR / "sms-audit-{:%Y-%m-%d}.md".format(dt.date.today()))
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(render(reports, names), encoding="utf-8")
+    out.write_text(render(reports, names, channels), encoding="utf-8")
     print("[sms_audit] wrote {}".format(out), flush=True)
     return 0
 

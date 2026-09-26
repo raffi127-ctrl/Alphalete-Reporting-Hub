@@ -374,6 +374,26 @@
       "timeout_minutes": 120,
       "machine": "Lucy 2"
     },
+    "sms_log": {
+      "on_scheduler": false,
+      "_note": "MANUAL-ONLY (Raf 2026-09-26): pull the FULL SMS log for an office off the p=336 SMS List Report \u2014 every message in and out for a date range, with 'Sent By' (AI Messaging vs a named recruiter) and delivery Status. This is the source sms_thread_dump cannot be: the calendar walk only sees applicants who BOOKED, and the people left on read are exactly the ones who did not (Megan 2026-09-26). Writes tab 'SMS Log <office>' + output/sms_log_<office>.json. READ-ONLY on AppStream. Default window is the last full Sat-Fri recruiting week. Args: --office 11280,23965,24065 (comma list), --owner \"Rafael Hidalgo\", --dates FROM,TO (MM-DD-YYYY), --week N, --dry-run. Feeds `python -m automations.sms_audit.analyze`, which joins it to the calendar walk on phone number to say who ultimately booked.",
+      "display_name": "SMS log pull (every applicant text, p=336)",
+      "source_type": "appstream",
+      "data_sources": [],
+      "command": [
+        "automations.sms_audit.pull_log"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 60,
+      "machine": "Lucy 2"
+    },
     "recruiter_stats": {
       "on_scheduler": true,
       "_note": "DAILY since 2026-09-10 (Carlos approved the tab): per-admin weekly funnel boxes for Carlos (11580) / Atef (23467) / Raf (11280) on the Alphalete Recruiting Dashboard — ONE visible 'Recruiter Stats' tab with an office dropdown mirroring hidden 'RS Data - <name>' tabs via INDIRECT; color grading is CF formulas so it follows the dropdown. Daily runs are INCREMENTAL (--recent 3): scrape only the last 3 Sun-Sat weeks of AppStream p=701 Retention Details (admin breakdown ON) and merge into the cached output/recruiter_stats_raw.json (~3 min); falls back to a full-year pull (~10 min) when the cache is missing. `--no-pull` rebuilds tabs from cache; a bare `lucy rerun recruiter_stats` re-pulls the whole year.",

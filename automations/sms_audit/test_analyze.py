@@ -202,3 +202,121 @@ class TimestampTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _log_row(direction, when, body, sent_by="", applicant="+14698762121",
+             applicant_name="Jane Doe", sms_type="", status="Delivered"):
+    """One SMS List Report row. The office's own Bandwidth number sits opposite
+    the applicant on every row, and which side is which flips with direction."""
+    office, office_name = "+14695891180", "ALPHALETE MARKETING, INC. Bandwidth"
+    inbound = direction == "In"
+    return {"type": direction, "queued_at": when, "sent_at": when,
+            "sender": applicant_name if inbound else office_name,
+            "sender_phone": applicant if inbound else office,
+            "recipient": office_name if inbound else applicant_name,
+            "recipient_phone": office if inbound else applicant,
+            "source": "AI Messaging" if sent_by == "AI Messaging" else "",
+            "sms_type": sms_type, "body": body, "status": status,
+            "sent_by": sent_by}
+
+
+class PhoneJoinTest(unittest.TestCase):
+    """The calendar gives 11 bare digits, the log gives E.164. A join that
+    misses reads as 'this applicant was never booked' — the worst available
+    wrong answer, because it is invisible."""
+
+    def test_the_two_spellings_meet(self):
+        self.assertEqual(A.phone10("+14698762121"), A.phone10("14698762121"))
+        self.assertEqual(A.phone10("(469) 876-2121"), "4698762121")
+
+    def test_a_junk_number_does_not_become_a_key(self):
+        self.assertEqual(A.phone10("0000"), "")
+        self.assertEqual(A.phone10(""), "")
+
+    def test_booked_index_keys_on_the_normalised_number(self):
+        idx = A.booked_index([_rec([], name="Jane")
+                              | {"phone": "14698762121"}])
+        self.assertIn("4698762121", idx)
+
+
+class ConversationGroupingTest(unittest.TestCase):
+    def test_the_applicant_is_the_key_not_the_office(self):
+        rows = [_log_row("Out", "09-23-2026 09:00 AM", "hi", sent_by="AI Messaging"),
+                _log_row("In", "09-23-2026 09:05 AM", "hello?")]
+        convos = A.log_conversations(rows)
+        self.assertEqual(list(convos), ["4698762121"])
+        self.assertEqual(len(convos["4698762121"]["msgs"]), 2)
+
+    def test_two_applicants_stay_apart(self):
+        rows = [_log_row("In", "09-23-2026 09:00 AM", "a"),
+                _log_row("In", "09-23-2026 09:01 AM", "b",
+                         applicant="+19085361289", applicant_name="Sue")]
+        self.assertEqual(len(A.log_conversations(rows)), 2)
+
+    def test_booking_state_comes_from_the_calendar_join(self):
+        rows = [_log_row("In", "09-23-2026 09:00 AM", "hello?")]
+        booked = A.booked_index([_rec([], booked_by="A. Messaging",
+                                      status="Interview Completed")
+                                 | {"phone": "14698762121"}])
+        c = A.log_conversations(rows, booked)["4698762121"]
+        self.assertTrue(c["booked"])
+        self.assertEqual(c["outcome"], "Interview Completed")
+
+    def test_an_unbooked_conversation_is_still_a_conversation(self):
+        rows = [_log_row("In", "09-23-2026 09:00 AM", "hello?")]
+        c = A.log_conversations(rows, {})["4698762121"]
+        self.assertFalse(c["booked"])
+
+
+class SentByTest(unittest.TestCase):
+    """'Sent By' is the column the calendar walk does not have. It is why the
+    log can answer 'how quick are our HUMAN recruiters' without inferring."""
+
+    def test_ai_messaging_is_the_automation(self):
+        self.assertTrue(A.is_ai({"sent_by": "AI Messaging", "source": "AI Messaging"}))
+
+    def test_a_named_person_is_not(self):
+        self.assertFalse(A.is_ai({"sent_by": "E. Gonzalez", "source": ""}))
+
+    def test_reply_speed_splits_on_the_real_sender(self):
+        rows = [_log_row("In", "09-23-2026 09:00 AM", "hello?"),
+                _log_row("Out", "09-23-2026 09:01 AM", "hi", sent_by="AI Messaging"),
+                _log_row("In", "09-23-2026 10:00 AM", "one more thing"),
+                _log_row("Out", "09-23-2026 10:30 AM", "sure", sent_by="V. Rodea")]
+        lanes = A.log_reply_speed(A.log_conversations(rows))
+        self.assertEqual(lanes["ai"], [1.0])
+        self.assertEqual(lanes["human"], [30.0])
+
+
+class FunnelTest(unittest.TestCase):
+    def test_everyone_texted_counts_not_just_the_booked(self):
+        rows = [_log_row("Out", "09-23-2026 09:00 AM", "hi", sent_by="AI Messaging"),
+                _log_row("Out", "09-23-2026 09:00 AM", "hi", sent_by="AI Messaging",
+                         applicant="+19085361289", applicant_name="Sue"),
+                _log_row("In", "09-23-2026 09:05 AM", "yes")]
+        booked = A.booked_index([_rec([], booked_by="A. Messaging",
+                                      status="Interview Completed")
+                                 | {"phone": "14698762121"}])
+        f = A.funnel(A.log_conversations(rows, booked))
+        self.assertEqual(f["contacted"], 2)
+        self.assertEqual(f["replied"], 1)
+        self.assertEqual(f["booked"], 1)
+        self.assertEqual(f["booked_ai"], 1)
+        self.assertEqual(f["never_booked"], 1)
+        self.assertEqual(f["shown_ai"], 1)
+
+    def test_a_no_show_is_booked_but_not_shown(self):
+        rows = [_log_row("Out", "09-23-2026 09:00 AM", "hi")]
+        booked = A.booked_index([_rec([], booked_by="E. Gonzalez", status="No Show")
+                                 | {"phone": "14698762121"}])
+        f = A.funnel(A.log_conversations(rows, booked))
+        self.assertEqual((f["booked_human"], f["shown_human"]), (1, 0))
+
+
+class LogTimestampTest(unittest.TestCase):
+    def test_the_log_carries_its_own_year(self):
+        self.assertEqual(A._log_ts("09-26-2026 10:16 AM").year, 2026)
+
+    def test_midnight_is_not_noon(self):
+        self.assertEqual(A._log_ts("09-26-2026 12:01 AM").hour, 0)
+        self.assertEqual(A._log_ts("09-26-2026 12:01 PM").hour, 12)
