@@ -70,31 +70,70 @@ CLOSER = re.compile(
 # Buckets for "what do applicants ask us". Ordered — first match wins, so the
 # specific patterns sit above the general ones.
 QUESTION_BUCKETS = [
-    ("Is this remote / where is the office?",
-     r"\b(remote|virtual|in[- ]person|onsite|on[- ]site|location|where\b.*\b(office|located|interview)|address|directions?|how far)"),
-    ("What is the pay?",
-     r"\b(pay|salary|hourly|commission|compensation|how much|wage|\$\d)"),
-    ("What is the job / what do you do?",
-     r"\b(what (is|are|s) the (job|role|position)|what (would|do) i (be )?do|job descri|"
-     r"what company|what kind of (work|job)|door to door|sales\?|tell me more|"
-     r"more (detail|info)|what.{0,12}job about|give me detail)"),
+    # Ordered — first match wins, so the specific ones sit above the general.
+    # Widened 2026-09-26 after 369 of Raf's 712 questions fell through: the
+    # gap was dominated by people asking WHICH ROLE this even is, by callback
+    # logistics, and by bare "are you there?" chases.
+    ("Which role / which company is this?",
+     r"\b(wh(at|ich) (role|position|job|company)|what (job|role|position) is th|"
+     r"role is this|job is this|position is this|is this (for )?(the )?(at&?t|"
+     r"the .{0,18} (role|position))|what (did|have) i appl|i (can'?t|don'?t) "
+     r"(find|see|remember) (the|my|anything)|not applied|didn'?t apply|"
+     r"remind me what (the )?(position|role|job|this)|which store|what store|"
+     r"under another name|is that not the compan|what company)"),
     ("How do I join the Zoom / link trouble?",
      r"\b(zoom|link|meeting id|password|can'?t (get|log) ?in|join|waiting room|not working)"),
+    ("When will you call me / what number?",
+     r"\b((give|make) (me|you )?a call|call (me|this|that|you) ?(back|at|around|on|now|"
+     r"tomorrow|today)?|can (i|you) call|could you (give me a )?call|should i call|"
+     r"calling from|what number|which number|specific number|800 (phone )?number|"
+     r"expect(ing)? (the|your|a) call|timeframe of when|when (will|should) (you|i) "
+     r"(call|hear)|(get|have) a phone call|speak to me|time to speak|"
+     r"text me the details|good time to call)"),
+    ("I never got the email",
+     r"\b((haven'?t|not|never) (received|got|gotten|seen) (the|an|your|my) ?(email|link|"
+     r"message|invite)|where (was|did) it (sent|go)|check (my|your) spam|"
+     r"pertaining to the email|thru indeed|through indeed|via indeed)"),
+    ("Hours, training, is it paid?",
+     r"\b(what (are|is) the hours|how many hours|hours for this|schedule like|"
+     r"full[- ]time|part[- ]time|training (work|paid|be)|is (the )?training|"
+     r"is it paid|paid training|benefits)"),
+    ("Is this remote / where is the office?",
+     r"\b(remote|virtual|in[- ]person|onsite|on[- ]site|location|where\b.*\b(office|located|interview)|"
+     r"address|directions?|how far|located in|at a store|in a store|the store|"
+     r"which (area|city|location)|actual office|working at a)"),
+    ("What is the pay?",
+     r"\b(pay|salary|hourly|commission|comission|compensation|how much|wage|\$\d)"),
+    ("What is the job / what do you do?",
+     r"\b(what (is|are|s) the (job|role|position)|what (would|do) i (be )?do|job descri|"
+     r"what kind of (work|job)|door to door|sales\?|tell me more|"
+     r"more (detail|info)|what.{0,12}job about|give me detail|job details|"
+     r"what (the )?job entail|learning more)"),
+    ("I can't make it / I'm sick / running late",
+     r"\b(can'?t make|running late|be late|won'?t be able|something came up|"
+     r"miss (my|the)|sick|under the weather|not feeling|emergency|"
+     r"car (trouble|broke)|flat tire)"),
     ("Can we reschedule / a different time?",
-     r"\b(reschedul|another (time|day)|different (time|day)|move (it|my)|push (it|my)|"
-     r"later (time|today)|earlier|can we do|availab|what time|when would|"
-     r"any(thing| time) (next|later|else)|(before|after) \d|do (monday|tuesday|wednesday|"
-     r"thursday|friday|saturday)|works? for you)"),
-    ("I can't make it / I'm running late",
-     r"\b(can'?t make|running late|be late|won'?t be able|something came up|miss (my|the))"),
+     r"\b(reschedul|reschdul|another (time|day)|different (time|day)|move (it|my|this)|"
+     r"push (it|my)|later (time|today|days?)|earlier|can we do|availab|what time|"
+     r"when would|any(thing| time) (today|next|later|else)|(before|after) \d|"
+     r"do (monday|tuesday|wednesday|thursday|friday|saturday|sunday)|works? for you|"
+     r"add me for|is it at|that (not )?the correct time|for tomorrow correct|"
+     r"how about \d|schedule it for|any openings|openings (today|tomorrow)|"
+     r"connect after|what day and time|could we do it|would .{0,12}(work|be a good)|"
+     r"^\s*(is|was) it \d|\b\d{1,2}(:\d{2})?\s*(am|pm)\b)"),
     ("What should I wear / bring?",
      r"\b(wear|dress|attire|bring|resume|business (casual|professional))"),
     ("How long is the interview / what's next?",
      r"\b(how long|next step|hear back|when will|what happens|second interview|follow up)"),
     ("Is this a real job / who are you?",
-     r"\b(scam|legit|real (job|company)|who is this|who are you|spam|how did you get)"),
+     r"\b(scam|legit|real (job|company)|who is this|who are you|spam|how did you get|"
+     r"verify|is this a bot)"),
     ("Am I still being considered?",
      r"\b(still (hiring|available|considering|interested in me)|did i get|any update|status of my)"),
+    ("Are you there? (chasing us for a reply)",
+     r"^\s*(hello\??|hi\??|are you (there|still there)|you there|\?+|anyone there)"
+     r"[\s!.?]*$"),
 ]
 
 
@@ -689,6 +728,58 @@ def funnel(convos):
     }
 
 
+SAID_NO = re.compile(r"\b(not interested|no longer interested|stop|unsubscribe|"
+                     r"remove me|found (another|a) job|accepted (a|another)|"
+                     r"no thank|don'?t (text|contact))", re.I)
+
+
+def dropoff(convos):
+    """WHY the people we texted did not book — Megan's actual question
+    (2026-09-26): "our goal is to book as many of our applicants as we can…
+    we really need to find out why each office isn't booking more."
+
+    Every unbooked conversation lands in exactly one bucket, most fixable
+    first when you read them together:
+
+      one text only        we said one thing and never followed up
+      never replied        they got more than one and stayed silent
+      we never answered    THEY spoke last — the most fixable of all
+      talked, then stopped a real conversation that petered out
+      said no              a genuine decline, not a leak
+      never reached them   every text errored; they never saw us at all
+
+    Plus the follow-up curve, which is the finding in Raf's office: people
+    who got ONE text booked at 0%, people who got two or more booked at 47%."""
+    out = collections.Counter()
+    for c in convos.values():
+        if c["booked"]:
+            continue
+        msgs = c["msgs"]
+        outs = [m for m in msgs if m["dir"] == "Out"]
+        ins = [m for m in msgs if m["dir"] == "In"]
+        if outs and not any((m.get("status") or "").lower() == "delivered" for m in outs):
+            out["never reached them"] += 1
+        elif ins and any(SAID_NO.search(m["body"] or "") for m in ins):
+            out["said no"] += 1
+        elif not ins:
+            out["one text only" if len(outs) <= 1 else "never replied"] += 1
+        elif msgs[-1]["dir"] == "In" and not CLOSER.match((msgs[-1]["body"] or "").strip()):
+            out["we never answered"] += 1
+        else:
+            out["talked, then stopped"] += 1
+
+    curve = {}
+    for label, keep in (("one", lambda n: n == 1), ("many", lambda n: n >= 2)):
+        grp = [c for c in convos.values()
+               if keep(len([m for m in c["msgs"] if m["dir"] == "Out"]))]
+        curve[label] = {
+            "people": len(grp),
+            "replied": sum(1 for c in grp if any(m["dir"] == "In" for m in c["msgs"])),
+            "booked": sum(1 for c in grp if c["booked"]),
+        }
+    return {"buckets": out, "curve": curve}
+
+
 def log_reply_speed(convos):
     """Reply speed with the sender actually known. 'human' here means a named
     person in Sent By — not an inference from who booked."""
@@ -737,6 +828,9 @@ def log_delivery(rows):
 def audit_log(rows, convos, office, booked=None):
     fun = funnel(convos)
     fun["join_misses"] = len(join_misses(convos, booked or {}))
+    drop = dropoff(convos)
+    fun["drop"] = drop["buckets"]
+    fun["curve"] = drop["curve"]
     fun["booked_rows"] = len(booked or {})
     lanes = log_reply_speed(convos)
     return {

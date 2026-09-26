@@ -5,6 +5,7 @@ turns a real finding into noise, or hides one.
 """
 from __future__ import annotations
 
+import datetime as dt
 import unittest
 
 from automations.sms_audit import analyze as A
@@ -433,3 +434,71 @@ class SuffixPairingTest(unittest.TestCase):
             self.assertIn("_0904", src)
         else:
             self.assertIn("no output/", src)
+
+
+class DropoffTest(unittest.TestCase):
+    """Megan's real question: why isn't each office booking more. Every
+    unbooked conversation lands in exactly ONE bucket, so the columns add up
+    and the biggest leak is the biggest number."""
+
+    def _c(self, msgs, booked=False):
+        return {"phone": "4698762121", "name": "Jane", "booked": booked,
+                "booked_by": "", "outcome": "", "msgs": msgs}
+
+    def _m(self, d, mins, body="hi", status="Delivered", template=""):
+        return {"when": dt.datetime(2026, 9, 21, 9, 0) + dt.timedelta(minutes=mins),
+                "dir": d, "template": template, "body": body, "sent_by": "",
+                "source": "", "status": status}
+
+    def test_one_text_and_silence_is_its_own_bucket(self):
+        d = A.dropoff({"a": self._c([self._m("Out", 0)])})
+        self.assertEqual(d["buckets"]["one text only"], 1)
+
+    def test_several_texts_and_silence_is_a_different_bucket(self):
+        d = A.dropoff({"a": self._c([self._m("Out", 0), self._m("Out", 60),
+                                     self._m("Out", 120)])})
+        self.assertEqual(d["buckets"]["never replied"], 1)
+        self.assertNotIn("one text only", d["buckets"])
+
+    def test_they_spoke_last_is_the_fixable_one(self):
+        d = A.dropoff({"a": self._c([self._m("Out", 0),
+                                     self._m("In", 5, "can we do friday?")])})
+        self.assertEqual(d["buckets"]["we never answered"], 1)
+
+    def test_a_polite_sign_off_is_not_us_ignoring_them(self):
+        d = A.dropoff({"a": self._c([self._m("Out", 0), self._m("In", 5, "thanks!")])})
+        self.assertEqual(d["buckets"]["talked, then stopped"], 1)
+
+    def test_a_decline_is_not_a_leak(self):
+        d = A.dropoff({"a": self._c([self._m("Out", 0),
+                                     self._m("In", 5, "not interested")])})
+        self.assertEqual(d["buckets"]["said no"], 1)
+
+    def test_texts_that_all_failed_mean_they_never_saw_us(self):
+        d = A.dropoff({"a": self._c([self._m("Out", 0, status="Error"),
+                                     self._m("Out", 60, status="Error")])})
+        self.assertEqual(d["buckets"]["never reached them"], 1)
+
+    def test_a_booked_person_is_not_a_dropoff(self):
+        d = A.dropoff({"a": self._c([self._m("Out", 0)], booked=True)})
+        self.assertEqual(sum(d["buckets"].values()), 0)
+
+    def test_every_unbooked_person_lands_in_exactly_one_bucket(self):
+        convos = {
+            "a": self._c([self._m("Out", 0)]),
+            "b": self._c([self._m("Out", 0), self._m("Out", 60), self._m("Out", 90)]),
+            "c": self._c([self._m("Out", 0), self._m("In", 5, "friday?")]),
+            "d": self._c([self._m("Out", 0), self._m("In", 5, "not interested")]),
+            "e": self._c([self._m("Out", 0, status="Error")]),
+            "f": self._c([self._m("Out", 0)], booked=True),
+        }
+        self.assertEqual(sum(A.dropoff(convos)["buckets"].values()), 5)
+
+    def test_the_follow_up_curve_splits_on_how_many_we_sent(self):
+        convos = {"a": self._c([self._m("Out", 0)]),
+                  "b": self._c([self._m("Out", 0), self._m("Out", 60)], booked=True)}
+        curve = A.dropoff(convos)["curve"]
+        self.assertEqual(curve["one"]["people"], 1)
+        self.assertEqual(curve["one"]["booked"], 0)
+        self.assertEqual(curve["many"]["people"], 1)
+        self.assertEqual(curve["many"]["booked"], 1)

@@ -409,3 +409,68 @@ class RenameTest(unittest.TestCase):
         col, _n = W.write_week(_Tab("t"), self._rep(), dt.date(2026, 9, 25),
                                dry_run=True)
         self.assertEqual(col, 4)   # the old week keeps its column
+
+
+class PercentCellTest(unittest.TestCase):
+    """A percentage cell shows "54.0%", not a bare 54 that reads like a count
+    (Megan). It is stored as the FRACTION with a percent number format, so the
+    value underneath is still a real number."""
+
+    def test_the_percent_rows_are_the_ones_labelled_so(self):
+        self.assertTrue(W.is_percent("% who texted back"))
+        self.assertTrue(W.is_percent("% who showed — AI bookings"))
+        self.assertFalse(W.is_percent("People we texted"))
+        self.assertFalse(W.is_percent("Booked a 1st interview"))
+
+    def test_a_percent_is_stored_as_its_fraction(self):
+        import collections
+        rep = {"log": None, "threads": 10, "mix": {"ai": 6, "human": 4},
+               "messages": 0, "questions": collections.Counter(),
+               "questions_other": [], "questions_total": 0, "unanswered": [],
+               "anomalies": {}, "question_table": [], "dates": ["09-25-2026"]}
+
+        class _Book(object):
+            """The workbook-level batch_update (column widths) is a different
+            call from the worksheet one; a stub that conflates them swallows
+            the cell writes."""
+
+            def batch_update(self, body, **kw):
+                pass
+
+        class _Tab(W._EmptyTab):
+            id = 0
+
+            def __init__(self):
+                W._EmptyTab.__init__(self, "t")
+                self.sent = []
+                self.spreadsheet = _Book()
+
+            def batch_update(self, data, **kw):
+                self.sent = list(data)
+
+            def resize(self, **kw):
+                pass
+
+            def format(self, *a, **kw):
+                pass
+
+            def freeze(self, **kw):
+                pass
+
+        tab = _Tab()
+        W.write_week(tab, rep, dt.date(2026, 9, 25))
+        by_range = {d["range"]: d["values"][0][0] for d in tab.sent}
+        rows = {label: W._a1(i, 3) for i, (_s, label, _f)
+                in enumerate(W.ROWS, start=W.HEADER_ROW + 1)}
+        # 6 of 10 bookings are the AI's -> 60% stored as 0.6, not 60
+        self.assertEqual(by_range[rows["% of bookings made by the AI"]], 0.6)
+        self.assertEqual(by_range[rows["…booked by the AI"]], 6)
+
+    def test_a_blank_percent_stays_blank_not_zero(self):
+        import collections
+        rep = {"log": None, "threads": 0, "mix": {"ai": 0, "human": 0},
+               "messages": 0, "questions": collections.Counter(),
+               "questions_other": [], "questions_total": 0, "unanswered": [],
+               "anomalies": {}, "question_table": [], "dates": []}
+        by_label = {label: fn for _s, label, fn in W.ROWS}
+        self.assertEqual(by_label["% who texted back"](rep), "")

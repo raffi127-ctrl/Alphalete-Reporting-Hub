@@ -147,6 +147,28 @@ RENAMED = {
 }
 
 
+def _drop(bucket):
+    """One reason people did not book. Blank without a log, never 0."""
+    return lambda r: ((r.get("log") or {}).get("funnel", {})
+                      .get("drop", {}) or {}).get(bucket, "") if r.get("log") else ""
+
+
+def _curve(which, field):
+    def read(rep):
+        c = ((rep.get("log") or {}).get("funnel", {}).get("curve") or {}).get(which)
+        return c.get(field, "") if c else ""
+    return read
+
+
+def _curve_pct(which, field):
+    def read(rep):
+        c = ((rep.get("log") or {}).get("funnel", {}).get("curve") or {}).get(which)
+        if not c or not c.get("people"):
+            return ""
+        return round(100.0 * c[field] / c["people"], 1)
+    return read
+
+
 def _msg(fn):
     """Wrap a metric that is computed from MESSAGES so it writes blank when no
     messages were pulled.
@@ -227,6 +249,23 @@ ROWS = [
      lambda r: _rate(_f(r, "booked_ai", r["mix"]["ai"]), _f(r, "booked", r["threads"]))),
     ("Booking", "% of people texted who booked", lambda r: _rate(_f(r, "booked"), _f(r, "contacted"))),
     ("Booking", "Texted but never booked", lambda r: _f(r, "never_booked", "")),
+
+    # Megan 2026-09-26: "our goal is to book as many of our applicants as we
+    # can — we really need to find out why each office isn't booking more."
+    # This section is that question. Every unbooked person lands in exactly
+    # one row, and the follow-up curve sits beside it because in Raf's office
+    # it is the whole story: one text booked 0%, two or more booked 47%.
+    ("Why they didn't book", "Got ONE text and nothing more", _drop("one text only")),
+    ("Why they didn't book", "Got 2+ texts, never replied", _drop("never replied")),
+    ("Why they didn't book", "THEY spoke last — we never answered", _drop("we never answered")),
+    ("Why they didn't book", "Talked, then it just stopped", _drop("talked, then stopped")),
+    ("Why they didn't book", "Said no / not interested", _drop("said no")),
+    ("Why they didn't book", "Never reached them (texts failed)", _drop("never reached them")),
+
+    ("Follow-up", "People who got exactly 1 text", _curve("one", "people")),
+    ("Follow-up", "% of those who booked", _curve_pct("one", "booked")),
+    ("Follow-up", "People who got 2+ texts", _curve("many", "people")),
+    ("Follow-up", "% of THOSE who booked", _curve_pct("many", "booked")),
 
     ("Show", "Showed up to their interview", lambda r: _f(r, "shown", "")),
     ("Show", "% who showed — AI bookings",
@@ -484,7 +523,11 @@ def write_week(ws, rep, week_end, dry_run=False):
             val = fn(rep)
         except Exception:  # noqa: BLE001 — a missing metric is blank, not a crash
             val = ""
-        updates.append((_a1(labels[label], col), [["" if val is None else val]]))
+        if val == "" or val is None:
+            val = ""
+        elif is_percent(label):
+            val = round(float(val) / 100.0, 5)
+        updates.append((_a1(labels[label], col), [[val]]))
 
     if dry_run:
         print("[weekly_sheet] DRY RUN {} · column {} ({}):".format(
@@ -510,12 +553,22 @@ def write_week(ws, rep, week_end, dry_run=False):
     return col, len(updates)
 
 
-SECTION_TINT = {"Week": (0.86, 0.86, 0.86), "Reach": (0.90, 0.94, 0.99), "Booking": (0.90, 0.96, 0.91),
+SECTION_TINT = {"Week": (0.86, 0.86, 0.86),
+                "Why they didn't book": (0.99, 0.89, 0.89),
+                "Follow-up": (0.89, 0.95, 0.99), "Reach": (0.90, 0.94, 0.99), "Booking": (0.90, 0.96, 0.91),
                 "Show": (0.98, 0.95, 0.88), "Speed": (0.93, 0.91, 0.98),
                 "Dropped": (0.99, 0.91, 0.91), "What they ask": (0.95, 0.95, 0.95),
                 "Flags": (0.99, 0.93, 0.85)}
 WIDE_ROW = "Most asked → what we usually reply"
 WRAP_ROWS = (WIDE_ROW, "1st-interview days covered")
+
+
+def is_percent(label):
+    """A row whose value is a percentage. Those cells are written as the
+    FRACTION and given a percent number format, so the sheet shows "54.0%"
+    instead of a bare 54 that reads like a count — and the underlying value
+    stays a real number that sorts and charts."""
+    return "%" in label
 
 
 def _rgb(t):
@@ -562,6 +615,14 @@ def _format(ws, last_col, last_row, label_rows):
                       dict(label, backgroundColor=_rgb(SECTION_TINT.get(
                           section, (0.95, 0.95, 0.95)))))
 
+        pct = {"numberFormat": {"type": "PERCENT", "pattern": "0.0%"}}
+        for _sec, name, _fn in ROWS:
+            if not is_percent(name):
+                continue
+            r = label_rows.get(name)
+            if r:
+                ws.format("{}:{}".format(_a1(r, FIRST_WEEK_COL), _a1(r, last_col)),
+                          dict(body, **pct))
         for name in WRAP_ROWS:
             r = label_rows.get(name)
             if r:
