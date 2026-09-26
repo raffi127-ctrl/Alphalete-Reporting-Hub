@@ -26,6 +26,7 @@ import datetime as dt
 import sys
 
 from automations.recruiter_retention import run as wk
+from automations.shared.workbooks import ALL_IN_ONE_RAF
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -35,7 +36,7 @@ except Exception:
 # The shared pull captures Booked too (the weekly report ignores it).
 wk.SECTIONS.setdefault("interviews booked", "B")
 
-SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
+SHEET_ID = ALL_IN_ONE_RAF
 TAB = "Daily 1st rd Recruiter %"
 
 # Run-manifest id (matches the orchestrator's verify.report_id) so the morning

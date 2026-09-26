@@ -8,11 +8,12 @@ pointing this at another office would silently lose its safety net.
 from __future__ import annotations
 
 import os
+from automations.shared.workbooks import ALL_IN_ONE_RAF
 
 # --- the birthday store -----------------------------------------------------
 # 'All in One Local Office - Raf' -- the same workbook as 'Terminated Reps', so
 # the store and the suppression list are one open/auth away from each other.
-STORE_SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
+STORE_SHEET_ID = ALL_IN_ONE_RAF
 STORE_TAB = "DOB LUCY"
 
 # Column titles, row 1. Everything is found BY LABEL -- never by index -- so a

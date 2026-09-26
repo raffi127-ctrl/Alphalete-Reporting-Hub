@@ -34,8 +34,9 @@ from typing import Dict, List, Optional
 
 from automations.reps_gross_paycheck import names
 from automations.reps_gross_paycheck.week import md
+from automations.shared.workbooks import ALL_IN_ONE_RAF
 
-SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
+SHEET_ID = ALL_IN_ONE_RAF
 TAB = "Raf PNL 2026"
 
 FIRST_NAME_COL = 4          # col E, 0-based

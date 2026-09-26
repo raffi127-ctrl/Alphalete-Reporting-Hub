@@ -19,10 +19,11 @@ lookup goes through `header_index`, which matches case/space-insensitively and
 raises with the real header list when a label goes missing.
 """
 from __future__ import annotations
+from automations.shared.workbooks import ALL_IN_ONE_RAF
 
 # --- workbooks -------------------------------------------------------------
 WORKBOOK_ID = "1paNO-wVPCUadHTmhlo0cXqnyRljMnvjqgY15SuGGV3s"   # "lucy practice"
-ALL_IN_ONE_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"  # All in One - Raf
+ALL_IN_ONE_ID = ALL_IN_ONE_RAF  # All in One - Raf
 COMMISSION_FOLDER_ID = "1-90sJRYFH3HbIuhAAS0O8kCOTrAPZ8lU"      # live weekly copies
 #: Raf's folder — finished weeks get MOVED here. Step 1 keeps the two most
 #: recent workbooks in COMMISSION_FOLDER_ID and archives everything older

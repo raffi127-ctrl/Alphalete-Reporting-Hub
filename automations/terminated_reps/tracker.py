@@ -38,8 +38,9 @@ from dataclasses import dataclass
 
 from automations.recruiting_report.fill import open_by_key
 from automations.terminated_reps.board import Termination, norm_name, to_date
+from automations.shared.workbooks import ALL_IN_ONE_RAF
 
-TRACKER_SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
+TRACKER_SHEET_ID = ALL_IN_ONE_RAF
 TAB = "Terminated Reps"
 
 # Every 2026 row on the tab is 'Raf' (813 of them) or the historical 'Hogue'

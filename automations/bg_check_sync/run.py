@@ -27,8 +27,9 @@ from automations.bg_check_sync import (parse, match, email_source,
                                       fail_alert,
                                        name_gate, ov_name_sync, slack_post)
 from automations.shared import name_case
+from automations.shared.workbooks import ALL_IN_ONE_RAF
 
-SPREADSHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
+SPREADSHEET_ID = ALL_IN_ONE_RAF
 ROLLING_TAB = "D2D OBCL"
 _DATE_RE = re.compile(r"^\s*\d{1,2}/\d{1,2}/\d{2,4}\s*$")
 

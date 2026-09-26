@@ -97,8 +97,9 @@ except Exception:  # noqa: BLE001
 
 from automations.alphalete_sales_board import calc, config as C, fill
 from automations.rep_sales_fill import board as B
+from automations.shared.workbooks import ALL_IN_ONE_RAF
 
-FORM_SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
+FORM_SHEET_ID = ALL_IN_ONE_RAF
 FORM_TAB = "ATT Sales Transfers"
 STATE_PATH = Path.home() / ".config" / "recruiting-report" / "sale_transfers_state.json"
 HAND_DONE_PATH = Path(__file__).with_name("sale_transfers_hand_done.json")

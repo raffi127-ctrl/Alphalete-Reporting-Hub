@@ -23,9 +23,10 @@ _ensure("openpyxl")
 _ensure("pypdf")
 import openpyxl
 from pypdf import PdfWriter
+from automations.shared.workbooks import ALL_IN_ONE_RAF
 
 SALES_SHEET_ID   = "1MC9pfKryQrRtcMthUBL2hOciDCaa83U059pz0N2CmHc"
-RECRUIT_SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
+RECRUIT_SHEET_ID = ALL_IN_ONE_RAF
 SALES_GLOB   = os.path.expanduser("~/Downloads/Alphalete SALES BOARD 2025*.xlsx")
 RECRUIT_GLOB = os.path.expanduser("~/Downloads/All in One Local Office - Raf*.xlsx")
 RECRUIT_TAB  = "2nd rds %s"

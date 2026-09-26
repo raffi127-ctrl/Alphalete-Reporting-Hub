@@ -37,8 +37,9 @@ from patchright.sync_api import TimeoutError as PWTimeout
 from automations.shared.tableau_patchright import appstream_direct_session
 from automations.recruiting_report import fetch_office as fo
 from automations.recruiting_report.fill import open_by_key
+from automations.shared.workbooks import ALL_IN_ONE_RAF
 
-SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
+SHEET_ID = ALL_IN_ONE_RAF
 TAB = "1st rd Recruiter %"        # sheet tab (Hub card: "Ongoing 1st Round Recruiter Retention")
 OFFICE_ID, OWNER = "11280", "Rafael Hidalgo"
 REPORT_FIRST = dt.date(2026, 4, 12)   # first week-ENDING-Sunday column

@@ -18,10 +18,11 @@ import datetime as dt
 
 # The sales board -- same workbook the 5-minute sweep writes.
 from automations.alphalete_sales_board.config import SPREADSHEET_ID  # noqa: F401
+from automations.shared.workbooks import ALL_IN_ONE_RAF
 
 # 'All in One Local Office - Raf' -- the recruiting book. Its 'D2D OBCL <m>.<d>'
 # tabs are one per classroom Monday and carry the applicant's home city.
-OBCL_BOOK_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
+OBCL_BOOK_ID = ALL_IN_ONE_RAF
 OBCL_TAB_PREFIX = "D2D OBCL"
 
 # The line-up tab lives in the SALES BOARD workbook, one per week, titled with

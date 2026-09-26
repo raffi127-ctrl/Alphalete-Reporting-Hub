@@ -14,8 +14,9 @@ import sys
 
 from automations.recruiting_report import fill
 from automations.bg_check_sync import parse, match
+from automations.shared.workbooks import ALL_IN_ONE_RAF
 
-SPREADSHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
+SPREADSHEET_ID = ALL_IN_ONE_RAF
 ROLLING_TAB = "D2D OBCL"
 
 

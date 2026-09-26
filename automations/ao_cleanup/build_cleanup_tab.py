@@ -26,8 +26,9 @@ import sys
 from typing import Dict, List, Optional, Tuple
 
 from automations.brand_audit.sheets import client
+from automations.shared.workbooks import ALL_IN_ONE_RAF
 
-WORKBOOK_KEY = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"  # All in One Local Office - Raf
+WORKBOOK_KEY = ALL_IN_ONE_RAF  # All in One Local Office - Raf
 SOURCE_TAB = "Terminated Reps"
 TARGET_TAB = "AO Workspace Cleanup"
 

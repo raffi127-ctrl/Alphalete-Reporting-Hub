@@ -36,9 +36,10 @@ import sys
 
 from automations.shared import obcl_charts
 from automations.shared import obcl_tabs
+from automations.shared.workbooks import ALL_IN_ONE_RAF
 
 # Same workbook the Blue Ink report and bg_check_sync write to.
-SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
+SHEET_ID = ALL_IN_ONE_RAF
 DATED_TAB_PREFIX = "D2D OBCL"
 
 COL_FIRST = "Name"

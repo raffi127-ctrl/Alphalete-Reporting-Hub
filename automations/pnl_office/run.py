@@ -45,8 +45,9 @@ from gspread.utils import rowcol_to_a1
 
 from automations.recruiting_report.fill import open_by_key, OAUTH_TOKEN_PATH, SCOPES
 from automations.shared import sheets_export as _sx
+from automations.shared.workbooks import ALL_IN_ONE_RAF
 
-SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
+SHEET_ID = ALL_IN_ONE_RAF
 TAB = "Raf PNL 2026"
 HEADER_ROW = 1
 TOP_LABEL = "Total Loss - Reps"     # first row of the office summary block

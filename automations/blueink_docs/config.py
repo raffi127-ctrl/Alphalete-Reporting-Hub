@@ -10,10 +10,12 @@ import json
 import os
 from pathlib import Path
 
+from automations.shared.workbooks import ALL_IN_ONE_RAF
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # "All in One Local Office - Raf" -- the same workbook bg_check_sync writes to.
-SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
+SHEET_ID = ALL_IN_ONE_RAF
 
 # A new tab per week: "D2D OBCL 8.24", "D2D OBCL 8.31", ... The rolling
 # undated "D2D OBCL" tab is deliberately NOT used as a source: it stacks every

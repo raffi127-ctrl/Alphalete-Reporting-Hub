@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+from automations.shared.workbooks import ALL_IN_ONE_RAF
 
 
 def _norm_name(s: str) -> str:
@@ -36,7 +37,7 @@ def _we_key(week_mdy: str) -> str:
 # --------------------------------------------------------------------------
 # Raf Captain Override — Google Sheet (Raf PNL 2026, row 335)
 # --------------------------------------------------------------------------
-RAF_PNL_WORKBOOK = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
+RAF_PNL_WORKBOOK = ALL_IN_ONE_RAF
 RAF_PNL_TAB = "Raf PNL 2026"
 RAF_CAPTAIN_LABEL = "Captain Override"   # find the row BY this label — never hardcode
 RAF_CAPTAIN_ROW = 335        # legacy fallback only (Raf inserts rows; the row drifts)
