@@ -16,6 +16,7 @@ local JSON cache per office.
   ... run.py --office 11280,11580                     # both offices, that same week
   ... run.py --week 2                                 # the week before that
   ... run.py --office 11280 --days 3                  # last 3 non-Sunday days instead
+  ... run.py --office 11280 --bookings-only           # who booked, no chat dialogs (fast)
   ... run.py --office 11280 --dates 09-23-2026,09-24-2026
   ... run.py --limit 3                                # first 3 applicants per office (probe)
   ... run.py --dry-run                                # scrape, print counts, no sheet write
@@ -307,7 +308,7 @@ def _write_tab(records, meta: str, office: str):
     return tab, len(rows)
 
 
-def _scrape_office(page, tok, office, dates, date_strs, limit):
+def _scrape_office(page, tok, office, dates, date_strs, limit, bookings_only=False):
     """Everything for ONE office: switch to it, walk each date's table, scrape.
     Dates in different calendar weeks are handled — the banner is re-checked
     per date, so a window that straddles a Sunday still reads clean."""
@@ -337,6 +338,17 @@ def _scrape_office(page, tok, office, dates, date_strs, limit):
             rec = dict(row)
             rec.pop("idx", None)
             rec["office"] = office
+            if bookings_only:
+                # The day table ALREADY carries everything the audit needs from
+                # this page: who booked, by whom, their phone and the outcome.
+                # The per-applicant dialog is the only slow part (~3s each, and
+                # Raf's office is hundreds a week) and its chat history is now
+                # pulled far more cheaply — and more completely — off the SMS
+                # List Report. Skip it.
+                rec["thread"] = []
+                records.append(rec)
+                scraped += 1
+                continue
             try:
                 if not _open_history(page, row):
                     raise RuntimeError("history link not found")
@@ -383,6 +395,11 @@ def main(argv=None):
                          "finished (the default when nothing else is given), 2 = "
                          "the one before it")
     ap.add_argument("--limit", type=int, default=0, help="stop after N applicants per office")
+    ap.add_argument("--bookings-only", action="store_true",
+                    help="skip each applicant's chat dialog and keep only the "
+                         "booking row (who booked, by whom, phone, outcome). "
+                         "Seconds per day instead of minutes — use it when the "
+                         "messages come from the p=336 log instead")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
 
@@ -407,7 +424,8 @@ def main(argv=None):
             raise RuntimeError("no rqst token on the console page")
         for office in offices:
             per_office[office] = _scrape_office(page, tok, office, dates,
-                                                date_strs, a.limit)
+                                                date_strs, a.limit,
+                                                bookings_only=a.bookings_only)
 
     OUTPUT_DIR.mkdir(exist_ok=True)
     rc = 0
