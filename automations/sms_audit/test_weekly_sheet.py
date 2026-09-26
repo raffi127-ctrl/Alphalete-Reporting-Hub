@@ -323,3 +323,33 @@ class ColumnOrderTest(unittest.TestCase):
         col, _ = W.write_week(_Tab("t"), self._rep(), dt.date(2026, 9, 18),
                               dry_run=True)
         self.assertEqual(col, 4)
+
+
+class CoverageRowTest(unittest.TestCase):
+    """Every column says which days it is built from. Carlos's WE 9/4 is three
+    days and WE 9/25 is five, so 185 beside 373 reads like volume doubling
+    when it is 3 days against 5. The window guard checks the data falls INSIDE
+    the week; it cannot know what a full week should be."""
+
+    def _rep(self, dates):
+        return {"dates": dates}
+
+    def test_it_names_the_day_count_and_the_span(self):
+        cell = W.days_cell(self._rep(["09-02-2026", "09-03-2026", "09-04-2026"]))
+        self.assertEqual(cell, "3 days · 9/2 – 9/4")
+
+    def test_a_missing_saturday_shows_as_five_days(self):
+        cell = W.days_cell(self._rep(["09-21-2026", "09-22-2026", "09-23-2026",
+                                      "09-24-2026", "09-25-2026"]))
+        self.assertTrue(cell.startswith("5 days"), cell)
+
+    def test_a_full_week_says_six(self):
+        cell = W.days_cell(self._rep(["09-19-2026", "09-21-2026", "09-22-2026",
+                                      "09-23-2026", "09-24-2026", "09-25-2026"]))
+        self.assertTrue(cell.startswith("6 days"), cell)
+
+    def test_no_dates_is_blank_not_a_zero(self):
+        self.assertEqual(W.days_cell(self._rep([])), "")
+
+    def test_it_is_the_first_row_so_it_is_read_before_the_numbers(self):
+        self.assertEqual(W.ROWS[0][1], "Interview days in this column")

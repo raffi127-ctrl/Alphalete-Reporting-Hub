@@ -121,7 +121,25 @@ def _q_count(bucket):
     return _msg(lambda r: r["questions"].get(bucket, 0))
 
 
+def days_cell(rep):
+    """Which interview days this column is actually built from.
+
+    Without this the sheet invites the wrong read: Carlos's WE 9/4 is three
+    days (that pull only asked for Wed/Thu/Fri) and WE 9/25 is five (Saturday
+    9/19 had no First Interview section at all), so 185 next to 373 looks like
+    volume doubling when it is 3 days against 5. The window guard checks the
+    data falls INSIDE the week; it cannot know what a full week should be, so
+    the column says what it covers and a person decides."""
+    first, last = data_window(rep)
+    if first is None:
+        return ""
+    n = len({d for d in (rep.get("dates") or [])})
+    return "{} days · {}/{} – {}/{}".format(n, first.month, first.day,
+                                            last.month, last.day)
+
+
 ROWS = [
+    ("Week", "Interview days in this column", days_cell),
     ("Reach", "People texted", lambda r: _f(r, "contacted", "")),
     ("Reach", "Replied to us", lambda r: _f(r, "replied", "")),
     ("Reach", "Reply rate %", lambda r: _rate(_f(r, "replied"), _f(r, "contacted"))),
@@ -412,7 +430,7 @@ def write_week(ws, rep, week_end, dry_run=False):
     return col, len(updates)
 
 
-SECTION_TINT = {"Reach": (0.90, 0.94, 0.99), "Booking": (0.90, 0.96, 0.91),
+SECTION_TINT = {"Week": (0.86, 0.86, 0.86), "Reach": (0.90, 0.94, 0.99), "Booking": (0.90, 0.96, 0.91),
                 "Show": (0.98, 0.95, 0.88), "Speed": (0.93, 0.91, 0.98),
                 "Dropped": (0.99, 0.91, 0.91), "What they ask": (0.95, 0.95, 0.95),
                 "Flags": (0.99, 0.93, 0.85)}
