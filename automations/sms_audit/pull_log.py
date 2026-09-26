@@ -87,7 +87,7 @@ def diagnose(page):
     """Everything about the filter form, in one shot. A failed Search is a
     guessing game otherwise, and every guess costs a queue round trip."""
     return page.evaluate(
-        """() => {
+        r"""() => {
              const q = s => [...document.querySelectorAll(s)];
              return {
                url: location.href,
@@ -141,9 +141,9 @@ def _set_range(page, lo, hi):
     what survives the page renaming its fields, which an id-only match would
     not."""
     filled = page.evaluate(
-        """([lo, hi]) => {
+        r"""([lo, hi]) => {
              const ins = [...document.querySelectorAll('input[type=text], input:not([type])')];
-             const dated = ins.filter(i => /^\\d{2}-\\d{2}-\\d{4}$/.test((i.value||'').trim()));
+             const dated = ins.filter(i => /^\d{2}-\d{2}-\d{4}$/.test((i.value||'').trim()));
              let from = dated[0], to = dated[1];
              if (!from || !to) {
                const byName = n => ins.find(i =>
@@ -190,9 +190,9 @@ def _submit(page, lo, hi):
          lambda: page.locator("button:has-text('Search')").first.click(timeout=5000)),
         ("Enter in the To field",
          lambda: page.evaluate(
-             """() => {
+             r"""() => {
                   const ins = [...document.querySelectorAll('input')].filter(
-                    i => /^\\d{2}-\\d{2}-\\d{4}$/.test((i.value||'').trim()));
+                    i => /^\d{2}-\d{2}-\d{4}$/.test((i.value||'').trim()));
                   const to = ins[1] || ins[0];
                   if (!to) return;
                   to.focus();
@@ -201,9 +201,9 @@ def _submit(page, lo, hi):
                 }""")),
         ("submit the enclosing form",
          lambda: page.evaluate(
-             """() => {
+             r"""() => {
                   const ins = [...document.querySelectorAll('input')].filter(
-                    i => /^\\d{2}-\\d{2}-\\d{4}$/.test((i.value||'').trim()));
+                    i => /^\d{2}-\d{2}-\d{4}$/.test((i.value||'').trim()));
                   const f = ins[0] && ins[0].form;
                   if (f) f.submit();
                 }""")),
@@ -247,7 +247,7 @@ def _scrape_grid(page):
     """Rows as dicts keyed by the header text, so a column moving does not
     silently shift every field one to the left."""
     return page.evaluate(
-        """(wanted) => {
+        r"""(wanted) => {
              const tbl = [...document.querySelectorAll('table')].find(
                t => t.offsetParent !== null && /Recipient Phone/.test(t.innerText)
                     && /Sent By/.test(t.innerText));
@@ -257,7 +257,7 @@ def _scrape_grid(page):
                                       || /Recipient Phone/.test(r.innerText));
              if (!head) return {error: 'no header row'};
              const names = [...head.querySelectorAll('th, td')].map(
-               c => (c.innerText || '').replace(/\\s+/g, ' ').trim().toLowerCase()
+               c => (c.innerText || '').replace(/\s+/g, ' ').trim().toLowerCase()
                      .replace(/[^a-z ]/g, '').trim());
              const out = [];
              for (const tr of rows) {
@@ -267,7 +267,7 @@ def _scrape_grid(page):
                const rec = {};
                tds.forEach((td, i) => {
                  const key = wanted[names[i]];
-                 if (key) rec[key] = (td.innerText || '').replace(/\\s+/g, ' ').trim();
+                 if (key) rec[key] = (td.innerText || '').replace(/\s+/g, ' ').trim();
                });
                if (rec.type || rec.body) out.push(rec);
              }
