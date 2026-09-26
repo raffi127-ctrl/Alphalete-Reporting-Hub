@@ -79,3 +79,24 @@ class DueTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GuestCalloutTest(unittest.TestCase):
+    def setUp(self):
+        import pathlib, tempfile
+        from unittest import mock
+        self.p = mock.patch.object(G, "STATE_PATH", pathlib.Path(tempfile.mkdtemp()) / "s.json"); self.p.start()
+
+    def tearDown(self):
+        self.p.stop()
+
+    def test_from_a_gap_list_with_the_hosts_credit_checks(self):
+        gaps = [{"name": "Nick Smith", "minutesSinceLastKnock": 45},
+                {"name": "Ana Pitching", "minutesSinceLastKnock": 50},
+                {"name": "Jose Ruiz", "minutesSinceLastKnock": 9}]
+        first = G.guest_callout("rafael_hidalgo", "Carlos Hidalgo", gaps, {"NICK SMITH": 1, "ANA PITCHING": 1}, NOW)
+        self.assertIn("Nick", first); self.assertIn("Ana", first)      # first hour: no previous -> both idle
+        again = G.guest_callout("rafael_hidalgo", "Carlos Hidalgo", gaps, {"NICK SMITH": 1, "ANA PITCHING": 2}, NOW.replace(minute=20))
+        self.assertEqual(again, "")                                     # within the hour: quiet
+        later = G.guest_callout("rafael_hidalgo", "Carlos Hidalgo", gaps, {"NICK SMITH": 1, "ANA PITCHING": 2}, NOW + dt.timedelta(hours=1))
+        self.assertIn("Nick", later); self.assertNotIn("Ana", later)   # Ana ran a credit check since

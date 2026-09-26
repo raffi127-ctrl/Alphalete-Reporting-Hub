@@ -1409,6 +1409,21 @@ def _send_guest_boards(cfg: Dict, guest_due: Dict, guest_boards: Dict,
         previous, first_of_day = _previous_gap_names(state_key, day)
         body, names = gap_text(g_gaps, previous, first_of_day,
                                header="%s — %s" % (C.GAP_TEXT_HEADER, guest))
+        # LUCY'S HOURLY CALL-OUT rides this text (Megan 2026-09-26: "carlos'
+        # reps that are on Raf's dispo ... should be on this"). Their credit
+        # checks land on the host's SaraPlus, which the sales board sweep
+        # already reads -- so the cross-check is that sweep's state.
+        try:
+            from automations.icd_alerts import gap_callouts as _GC
+            from automations.alphalete_sales_board import state as _SBS
+            _recs = ((_SBS.load().get("_records") or {}).get(day.isoformat()) or {})
+            _line = _GC.guest_callout(cfg["key"], guest, g_gaps, _recs,
+                                      dt.datetime.now(), remember=send)
+            if _line:
+                body = (body + "\n\n" + _line) if body else _line
+                _log("  %s: call-out for %s -> %s" % (cfg["key"], guest, _line.splitlines()[0]))
+        except Exception as e:  # noqa: BLE001 -- the call-out never costs the board
+            _log("  %s: call-out for %s skipped: %s" % (cfg["key"], guest, type(e).__name__))
         if not png and not body:
             # Never post blank: their reps have not knocked and nobody is
             # over the threshold. Said out loud so a quiet room is visible.

@@ -142,6 +142,49 @@ def line(office_key: str, callouts: List[Dict], now: dt.datetime) -> str:
     return head + "\n" + "\n".join(bullets)
 
 
+def pick_from_gaps(gaps: List[Dict], records_now: Dict[str, int], records_prev: Dict[str, int]) -> List[Dict]:
+    """Like pick(), but from an already-computed gap list ({name,
+    minutesSinceLastKnock}) -- what gap_alerts holds for Carlos's reps on Raf's
+    OwnerVille. Same rule: over the line AND no activity since last hour."""
+    now_n = {_key(k): int(v or 0) for k, v in (records_now or {}).items()}
+    prev_n = {_key(k): int(v or 0) for k, v in (records_prev or {}).items()}
+    out = []
+    for g in gaps or []:
+        name = str(g.get("name") or "").strip()
+        try:
+            mins = int(g.get("minutesSinceLastKnock") or 0)
+        except (TypeError, ValueError):
+            continue
+        if not name or mins < GAP_MIN or mins > GAP_MAX:
+            continue
+        if now_n.get(_key(name), 0) > prev_n.get(_key(name), 0):
+            continue
+        out.append({"name": name, "mins": mins})
+    out.sort(key=lambda x: -x["mins"])
+    return out
+
+
+def guest_callout(host_key: str, guest: str, gaps: List[Dict], records_now: Dict[str, int],
+                  now: dt.datetime, *, remember: bool = True) -> str:
+    """Lucy's hourly line for a GUEST office's reps (Carlos's 14 on Raf's
+    OwnerVille, Megan 2026-09-26), to ride the gap text their rooms already
+    get every 15 minutes. Once an hour; "" the rest of the time or when
+    nobody qualifies. `records_now` is the host's SaraPlus credit checks per
+    rep (the sales board sweep's), which is where those reps' checks land."""
+    key = "guest:%s:%s" % (host_key, _key(guest).replace(" ", "-"))
+    state = _state()
+    st = state.get(key) or {}
+    if not due(st, now):
+        return ""
+    prev = (st.get("records") or {}) if st.get("day") == now.date().isoformat() else dict(records_now or {})
+    text = line(key, pick_from_gaps(gaps, records_now, prev), now)
+    if remember:
+        state[key] = {"day": now.date().isoformat(), "last_at": now.isoformat(timespec="seconds"),
+                      "records": dict(records_now or {})}
+        _save(state)
+    return text
+
+
 def _state() -> Dict:
     try:
         return json.loads(STATE_PATH.read_text())
@@ -210,7 +253,10 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
         st = state.get(key) or {}
         if not due(st, now):
             continue
-        prev = st.get("records") or {} if st.get("day") == now.date().isoformat() else {}
+        # FIRST HOUR OF THE DAY: no snapshot yet, so nobody can be "fresh"
+        # against it -- judge on the gap alone. Comparing against {} instead
+        # exempted everyone with a single credit check all morning.
+        prev = (st.get("records") or {}) if st.get("day") == now.date().isoformat() else dict(records)
         callouts = pick(rows, records, prev, now)
         text = line(key, callouts, now)
         state[key] = {"day": now.date().isoformat(), "last_at": now.isoformat(timespec="seconds"),
