@@ -12,7 +12,17 @@ before touching anything; when in doubt, read the files named below.
 - **Mac mini** (you are here): git push rights, Google auth, service creds/sessions.
   Repo `/Users/carloshidalgo/recruiting-report`, python `.venv/bin/python`.
 - **Lucy 2** (MacBook): runs scheduled automations. Repo `/Users/lucy2/recruiting-report`,
-  python `.venv/bin/python3.9`. Reachable ONLY through the sheet queue below — no SSH.
+  python `.venv/bin/python3.9`. **SSH (`lucy2@`) since 2026-09-19** — same network as
+  the rest of the fleet (`shared/fleet.py`). The sheet queue below is still the normal
+  path and the one to reach for: it is what the launchd poller reads, it leaves a record
+  of who asked for what, and it works when the laptop's lid is shut. SSH is the escape
+  hatch for the things a whitelisted action cannot do.
+- **WHO HOLDS LUCY 2 IS NOT RECORDED ANYWHERE, and this file does not record it
+  either.** "Carlos's MacBook" above describes the DATA the box works (his org / B2B)
+  and the OwnerVille login it signs in as (`chidalgo`) — not whose desk it sits on.
+  Raf has had the MacBook in hand while it ran Carlos's offices. Reading custody out of
+  a login cost a session a wrong answer on 2026-09-25; see the note on Lucy 2 in
+  `automations/shared/fleet.py`. If you need to know who physically has a box, ask.
 - **GitHub**: `raffi127-ctrl/Alphalete-Reporting-Hub`. mini → GitHub → Lucy 2.
 - **Google Workspace**: report output sheets + the Lucy-2 command queue sheet.
 
