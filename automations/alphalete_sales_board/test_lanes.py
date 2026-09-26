@@ -97,6 +97,25 @@ class TerminatedTest(unittest.TestCase):
         self.assertEqual(ups, [{"range": "G3:G4", "values": [["Bo"], [""]],
                                 "old": "2 name(s)"}])
 
+    def test_paused_touches_only_formulas_never_the_list(self):
+        # Maud 9/26: terminated part off -> only tab + end row move; the
+        # existing list and ISNA condition are left exactly as they are.
+        forms, vals = _grid(F, F, excl=True)
+        vals.append(["", "", "", "", "", "", "Ana"])
+        t = {"current": ("Sales Board WE 10.4", 99), "last": ("Sales Board WE 9.27", 88)}
+        ups = L.plan(forms, vals, t, ["Bo"], exclude_terminated=False)
+        self.assertEqual(sorted(u["range"] for u in ups), ["A3", "B3", "D3", "E3"])
+        for u in ups:
+            self.assertEqual(u["values"][0][0].count("ISNA(MATCH("), 1)
+
+    def test_paused_does_not_add_the_condition(self):
+        forms, vals = _grid(F, F)
+        t = {"current": ("Sales Board WE 10.4", 99), "last": ("Sales Board WE 9.27", 88)}
+        ups = L.plan(forms, vals, t, ["Bo"], exclude_terminated=False)
+        self.assertTrue(ups)
+        for u in ups:
+            self.assertNotIn("ISNA", u["values"][0][0])
+
 
 if __name__ == "__main__":
     unittest.main()

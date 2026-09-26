@@ -39,6 +39,12 @@ Terminated in EITHER week drops the rep from BOTH blocks: the lanes are about
 who is still on the team. A 'T' the reader flags as a contradiction (a T next
 to real numbers the same day) is NOT a termination and stays in the lanes.
 
+PAUSED (Maud 2026-09-26): she is editing the lanes by hand ("who erase what I
+am doing") and asked to stop the terminated part only. With
+EXCLUDE_TERMINATED off the job never writes the 'Terminated (auto)' column and
+never adds or re-adds the ISNA(MATCH(...)) condition -- whatever is in the
+formulas stays as she left it. The week roll and the end row keep running.
+
 Same tab every week (Maud + Rafael 2026-09-24: "re-writing on the same tab").
 
     python -m automations.alphalete_sales_board.lanes            # preview
@@ -63,6 +69,8 @@ CURRENT_LABEL = "current week"
 LAST_LABEL = "last week"
 EXCL_LABEL = "terminated (auto)"
 EXCL_HEADER = "Terminated (auto)"
+# Off since Maud 2026-09-26 -- see PAUSED in the module docstring.
+EXCLUDE_TERMINATED = False
 
 # 'Sales Board WE 9.27'!C4:C87 -- the tab name, then a plain A1 range.
 REF_RE = re.compile(r"'(%s [^']*)'!(\$?[A-Z]+\$?)(\d+):(\$?[A-Z]+\$?)(\d+)"
@@ -181,7 +189,8 @@ def repoint(formula: str, tab: str, end_row: int) -> str:
 
 def plan(lanes_formulas: List[List[str]], lanes_values: List[List[str]],
          targets: Dict[str, Tuple[str, int]],
-         excluded: Optional[List[str]] = None) -> List[Dict]:
+         excluded: Optional[List[str]] = None,
+         exclude_terminated: bool = True) -> List[Dict]:
     """Cell updates that bring every lane formula onto `targets` and the
     'Terminated (auto)' list onto `excluded`.
 
@@ -190,6 +199,8 @@ def plan(lanes_formulas: List[List[str]], lanes_values: List[List[str]],
     row0, blocks = find_blocks(lanes_values)
     frow = lanes_formulas[row0] if row0 < len(lanes_formulas) else []
     updates = []
+    if not exclude_terminated:
+        return _repoint_only(frow, row0, blocks, targets)
 
     xc, found = find_excl_col(lanes_values, row0, blocks)
     xl = _col_letter(xc)
@@ -214,6 +225,24 @@ def plan(lanes_formulas: List[List[str]], lanes_values: List[List[str]],
                 raise RuntimeError("%s%d has no formula (%r) -- not guessing one"
                                    % (_col_letter(c), row0 + 1, old))
             new = repoint(with_exclusion(str(old), xl, row0 + 1), tab, end)
+            if new != old:
+                updates.append({"range": "%s%d" % (_col_letter(c), row0 + 1),
+                                "values": [[new]], "old": old})
+    return updates
+
+
+def _repoint_only(frow, row0, blocks, targets) -> List[Dict]:
+    """Tab name + end row only; the formulas and col M are otherwise left
+    exactly as they are."""
+    updates = []
+    for key, cols in blocks.items():
+        tab, end = targets[key]
+        for c in cols:
+            old = frow[c] if c < len(frow) else ""
+            if not str(old).startswith("="):
+                raise RuntimeError("%s%d has no formula (%r) -- not guessing one"
+                                   % (_col_letter(c), row0 + 1, old))
+            new = repoint(str(old), tab, end)
             if new != old:
                 updates.append({"range": "%s%d" % (_col_letter(c), row0 + 1),
                                 "values": [[new]], "old": old})
@@ -268,6 +297,9 @@ def main(argv=None) -> int:
             return 2
         targets[key] = (ws.title, end - 1)
         cols[key] = col_c
+        if not EXCLUDE_TERMINATED:
+            _log("%-7s -> %r rows to %d" % (key, ws.title, end - 1))
+            continue
         monday = BD.week_sunday(day - dt.timedelta(days=back)) - dt.timedelta(days=6)
         try:
             term.update(terminated_bases(grid, ws.title, monday))
@@ -277,18 +309,23 @@ def main(argv=None) -> int:
         _log("%-7s -> %r rows to %d" % (key, ws.title, end - 1))
 
     excluded = []
-    for key in ("current", "last"):
+    for key in (("current", "last") if EXCLUDE_TERMINATED else ()):
         for v in excluded_names(cols[key], targets[key][1], term):
             if v not in excluded:
                 excluded.append(v)
-    _log("terminated, kept off the lanes: %s"
-         % (", ".join(v.strip() for v in excluded) or "none"))
+    if EXCLUDE_TERMINATED:
+        _log("terminated, kept off the lanes: %s"
+             % (", ".join(v.strip() for v in excluded) or "none"))
+    else:
+        _log("terminated filter PAUSED (Maud 9/26) -- col M and the ISNA "
+             "condition left as they are")
 
     values = lanes.get_all_values()
     formulas = lanes.get("A1:Z%d" % max(len(values), 1),
                          value_render_option="FORMULA")
     try:
-        updates = plan(formulas, values, targets, excluded)
+        updates = plan(formulas, values, targets, excluded,
+                       exclude_terminated=EXCLUDE_TERMINATED)
     except (RuntimeError, ValueError) as e:
         _log("REFUSED: %s" % e)
         return 2
