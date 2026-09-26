@@ -46,8 +46,9 @@ class WhoCounts(unittest.TestCase):
 
     def test_message_names_them(self):
         msg = fa.message(fa.failures([QUINCY]))
-        self.assertIn("Quincy Williams", msg)
-        self.assertIn("FAILED", msg)
+        self.assertEqual(msg, "🚨 Background check FAILED — this week's new "
+                              "start\n• Quincy Williams — Score FAIL — in "
+                              "adverse-action review")
 
 
 class OnlyThisWeek(unittest.TestCase):

@@ -81,9 +81,8 @@ def message(rows: Sequence) -> str:
     head = ("🚨 Background check FAILED — this week's new start"
             if len(rows) == 1 else
             f"🚨 Background check FAILED — {len(rows)} of this week's new starts")
-    lines = [head] + [f"• {n} — {what}" for n, what in rows]
-    lines.append("Not cleared to be owner submitted. Needs a look today.")
-    return "\n".join(lines)
+    # Megan 2026-09-26: headline + one line per person, nothing after it.
+    return "\n".join([head] + [f"• {n} — {what}" for n, what in rows])
 
 
 def send(decisions: Sequence, week: str, *, is_current_week: bool,
