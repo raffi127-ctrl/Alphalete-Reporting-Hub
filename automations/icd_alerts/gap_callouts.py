@@ -62,30 +62,30 @@ STATE_PATH = Path.home() / ".config" / "recruiting-report" / "icd_gap_callouts.j
 # popper", "finger poppin' ninja" -- is somebody NOT working, and the offices
 # say it constantly, so Lucy does too.
 LINES = (
-    "Snicklemeberries! {names} — {m}+ min without a dispo. Finger poppin' or knocking?",
-    "{names}: {m}+ min off the doors and nothing on the board. Master finger poppers in the making.",
-    "Finger poppin' ninjas spotted: {names}. {m}+ min since a door. Doors don't knock themselves.",
-    "{names} — {m}+ min, no dispo, no sale. Coffee break's over — go find the money.",
-    "Snicklemeberries, {names}. {m}+ min of silence. Knock something.",
-    "{m}+ minutes and not a single dispo from {names}. I'm watching 👀",
-    "No doors and no sales from {names} for {m}+ min. Everything okay, or just admiring the neighborhood?",
-    "{names} — {m}+ min off the doors. The board's not going to fill itself.",
-    "Quiet check: {names} — {m}+ min without a door. Y'all finger poppin' each other out there?",
-    "{names} — {m}+ min without a dispo. Lucy sees you, finger poppers.",
+    "Snicklemeberries! 🫐 {names} — {m}+ min without a dispo. Finger poppin' or knocking? 🚪👀",
+    "{names}: {m}+ min off the doors and nothing on the board 📋❌ Master finger poppers in the making 🤌",
+    "🥷 Finger poppin' ninjas spotted: {names}. {m}+ min since a door. Doors don't knock themselves 🚪",
+    "{names} — {m}+ min, no dispo, no sale. ☕ Coffee break's over — go find the money 💰",
+    "Snicklemeberries 🫐 {names}. {m}+ min of silence 🤫 Knock something 🚪",
+    "⏱️ {m}+ minutes and not a single dispo from {names}. I'm watching 👀",
+    "No doors 🚪 and no sales 💸 from {names} for {m}+ min. Everything okay, or just admiring the neighborhood? 🏡",
+    "{names} — {m}+ min off the doors. The board's not going to fill itself 📋⚡",
+    "Quiet check 🤫 {names} — {m}+ min without a door. Y'all finger poppin' each other out there? 🤌🤌",
+    "{names} — {m}+ min without a dispo. Lucy sees you, finger poppers 👀🤌",
     # BENEFIT OF THE DOUBT (Megan 2026-09-26): a quiet rep may be inside with
     # a customer. Half the pool leaves that door open.
-    "{names} — {m}+ min without a dispo. Must be cooking up something good in there… right?",
-    "{names}: {m}+ min off the doors. Either y'all are working a sale or finger poppin'. Which one?",
-    "No dispo from {names} in {m}+ min. Locked in with a customer, or locked out of the truck?",
-    "{names} — {m}+ min quiet. If that's a sale being cooked, take your time. If not… 👀",
+    "{names} — {m}+ min without a dispo. Must be cooking up something good in there… right? 👨‍🍳🔥",
+    "{names}: {m}+ min off the doors. Either y'all are working a sale 💰 or finger poppin' 🤌 Which one?",
+    "No dispo from {names} in {m}+ min. Locked in with a customer 🔒 or locked out of the truck? 🚚",
+    "{names} — {m}+ min quiet. If that's a sale being cooked 🍳 take your time. If not… 👀",
     # EN ESPAÑOL TAMBIÉN (Megan 2026-09-26: "make lucy bilingual"). Same
     # pool, so some hours land in Spanish and some in English.
-    "¡Snicklemeberries! {names} — {m}+ min sin dispo. ¿Finger poppin' o tocando puertas?",
-    "{names}: {m}+ min sin tocar una puerta. Las puertas no se tocan solas.",
-    "{names} — {m}+ min sin dispo y sin venta. Se acabó el cafecito — a buscar el dinero.",
-    "{m}+ minutos y ni un dispo de {names}. Los estoy viendo 👀",
-    "{names} — {m}+ min callados. Si están cocinando una venta, tómense su tiempo. Si no… 👀",
-    "Ojo, {names}: {m}+ min sin puertas. ¿Trabajando una venta o de finger poppers?",
+    "¡Snicklemeberries! 🫐 {names} — {m}+ min sin dispo. ¿Finger poppin' o tocando puertas? 🚪👀",
+    "{names}: {m}+ min sin tocar una puerta 🚪 Las puertas no se tocan solas 🤷",
+    "{names} — {m}+ min sin dispo y sin venta. ☕ Se acabó el cafecito — a buscar el dinero 💰",
+    "⏱️ {m}+ minutos y ni un dispo de {names}. Los estoy viendo 👀",
+    "{names} — {m}+ min callados 🤫 Si están cocinando una venta 🍳 tómense su tiempo. Si no… 👀",
+    "Ojo 👁️ {names}: {m}+ min sin puertas. ¿Trabajando una venta 💰 o de finger poppers? 🤌",
 )
 
 
@@ -234,12 +234,12 @@ PACE_KNOCKS_PER_HOUR = 25
 PACE_MIN_SPAN_MIN = 60
 
 PACE_LINES = (
-    "Snicklepop!! {names} averaging {avg}+ doors an hour. That's how it's done ⚡",
-    "{names} — {avg} doors/hr. Somebody's definitely not finger poppin' 🔥",
-    "Pace check: {names} at {avg} doors an hour. Keep that foot on the gas.",
-    "{avg} doors/hr from {names}. The neighborhood knows your name by now.",
-    "¡Snicklepop! {names} tocando {avg} puertas por hora. Así se hace 🔥",
-    "{names} a {avg} puertas por hora. Eso no es finger poppin', eso es trabajo.",
+    "Snicklepop!! ⚡ {names} averaging {avg}+ doors an hour 🚪🚪🚪 That's how it's done 🔥",
+    "{names} — {avg} doors/hr 🏃💨 Somebody's definitely not finger poppin' 🔥",
+    "Pace check ⏱️ {names} at {avg} doors an hour. Keep that foot on the gas 🚀",
+    "{avg} doors/hr from {names} 🚪🔥 The neighborhood knows your name by now 🏡",
+    "¡Snicklepop! ⚡ {names} tocando {avg} puertas por hora 🚪🚪🚪 Así se hace 🔥",
+    "{names} a {avg} puertas por hora 🏃💨 Eso no es finger poppin', eso es trabajo 💪",
 )
 
 
