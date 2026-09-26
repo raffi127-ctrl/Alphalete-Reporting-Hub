@@ -78,6 +78,27 @@ if [ -d .git ] && [ ! -f "$PULL_STAMP" ]; then
 fi
 
 mkdir -p "$LOG_DIR"
+
+# AND THE HUB'S CADENCE CACHE, once a day, on its own stamp.
+#
+# The Hub card reads each office's destinations and cadences out of
+# output/.icd_relay_schedule.json, never live -- a Sheets round trip at Hub
+# import hung every card in the app (2026-09-12). Until now the only thing that
+# wrote that file was `icd_alerts.approve`, so a cadence changed any other way
+# left the Hub quoting the old number at an owner indefinitely. Cyrus went 15 ->
+# 30 on 2026-09-26 and the card would not have noticed.
+#
+# HERE, because this box already reads exactly those approved columns every tick
+# and this file is gitignored, so it cannot travel with a pull -- it has to be
+# rebuilt on whatever machine serves the Hub. Own stamp rather than riding the
+# pull's: a day the pull is skipped is not a day the cadences should go stale.
+# Best-effort and silent; an office's alerts must never wait on a Hub card.
+SCHED_STAMP="$LOG_DIR/.sched-cache-$(date +%Y-%m-%d)"
+if [ ! -f "$SCHED_STAMP" ]; then
+  touch "$SCHED_STAMP"
+  "$VENV_PY" -m automations.icd_alerts.schedule_cache --refresh \
+    >> "$LOG_DIR/icd-schedule-cache.log" 2>&1 || true
+fi
 LOG_FILE="$LOG_DIR/icd-alerts-poster-$(date +%Y-%m-%d).log"
 
 export NO_PROXY='*'
