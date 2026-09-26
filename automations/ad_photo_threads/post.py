@@ -483,9 +483,10 @@ def publish(rep: collect.DayReport, channel: str, *, cl=None,
         except Exception as e:                   # noqa: BLE001 — never costs the photos
             print(f"  header update failed for {item['title']!r}: {str(e)[:160]}")
 
-    # Threads a PERSON pinned (Lucy's token has no pins:write — Eve pins by
-    # hand, 2026-09-21): once this week's threads exist, last week's are hers
-    # to unpin. Listed once each, including ads that stopped running. Read
+    # Threads a PERSON has to pin, because Lucy's own pin was refused (she
+    # pins them herself since 2026-09-25 — see config.PIN_REMINDER_USER): once
+    # this week's threads exist, last week's are hers to unpin. Normally empty.
+    # Listed once each, including ads that stopped running. Read
     # from state, not from this run, so a run that died after opening a
     # thread still gets it into the next run's reminder.
     if not pilot:

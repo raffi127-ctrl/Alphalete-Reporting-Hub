@@ -47,9 +47,13 @@ POST_WEEKDAYS = {0, 1, 2, 3, 4}
 # week's % removed / avg stars. False = the old fresh-thread-every-week.
 ONE_THREAD_PER_AD = True
 
-# Lucy's token has no pins:write, so Eve pins the week's threads by hand
-# (2026-09-21). Whenever a run opens new threads, Lucy DMs her the links to
-# pin, plus last week's to unpin. Stops by itself once Lucy can pin.
+# Eve's by-hand pin fallback, from the 2026-09-21..09-25 window when Lucy's
+# token had no pins:write: whenever a run opened new threads, Lucy DMd her the
+# links to pin, plus last week's to unpin. `pins:write` landed 2026-09-25 and
+# the threads pin themselves now, so this went quiet on its own -- a thread
+# that pinned is never in the reminder. Kept because a pin Slack refuses (Lucy
+# not in the channel, a workspace that revokes the scope) falls back here
+# instead of silently leaving the channel unpinned.
 PIN_REMINDER_USER = "U088E2KJEV8"   # Evelyn Sobrino
 
 # Each candidate line is labelled with the ApplicantStream it came from, BY
