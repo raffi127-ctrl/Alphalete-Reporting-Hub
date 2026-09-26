@@ -207,33 +207,41 @@ matches what you're about to touch.
 ## 5b. Reading the applicant texts (the SMS audit)
 
 Raf asked on 2026-09-26 for an audit of the applicant text stream; Carlos asked
-for his office beside it. Two read-only pieces, both on Lucy 2's AppStream
-session, both landing in the control sheet:
+for his office beside it. Raf has **three** accounts — 11280, 23965, 24065.
+Everything is read-only on AppStream, runs on Lucy 2, and lands one tab per
+account.
 
 | Piece | Page | Writes |
 | --- | --- | --- |
-| `sms_thread_dump` | p=105 Weekly Calendar → each booking's Applicant History → **SMS Sent** | tab `SMS Dump <office>` + `output/sms_thread_dump_<office>.json` |
-| `as_templates_probe --all` | p=332 SMS Templates, every Edit link | tab `AS Templates <office>` |
-| `sms_audit.analyze` | *(reads the tabs — no AppStream)* | `output/sms-audit-<date>.md` |
-| `sms_audit.templates` | *(reads the tabs — no AppStream)* | prints findings, exit 1 if any |
+| `sms_audit.pull_log` | **p=336 SMS List Report** | tab `SMS Log <office>` + `output/sms_log_<office>.json` |
+| `sms_thread_dump --bookings-only` | p=105 Weekly Calendar | tab `SMS Dump <office>` + `output/sms_thread_dump_<office>.json` |
+| `as_templates_probe --all` | p=332 SMS Templates | tab `AS Templates <office>` |
+| `sms_audit.analyze` | *(reads the tabs)* | `output/sms-audit-<date>.md` |
+| `sms_audit.weekly_sheet` | *(reads the tabs)* | **Applicant Correspondence Audit (ACA)**, a column per week |
+| `sms_audit.templates` | *(reads the tabs)* | prints findings, exit 1 if any |
 
 ```
-lucy rerun sms_thread_dump --office 11280,11580 --days 3 --machine "Lucy 2"
-python -m automations.sms_audit.analyze --office 11280,11580
+lucy rerun sms_thread_dump --office "11280,23965,24065,11580" --bookings-only --machine "Lucy 2"
+lucy rerun sms_log         --office "11280,23965,24065,11580" --machine "Lucy 2"
+python -m automations.sms_audit.weekly_sheet --office 11280,23965,24065,11580
 ```
 
-Both pulls now write **one tab per office** — they used to share a single tab,
-so probing a second office silently cleared the first and a comparison could
-never hold both halves at once.
+**p=336 is the source, p=105 is the outcome.** The calendar walk only sees
+applicants who BOOKED — the people most likely to have been left on read are
+invisible to it — and its chat history has no sender column. The SMS List
+Report has every message for a date range with `Sent By` (AI Messaging vs a
+named recruiter) and delivery `Status`. `analyze` joins the two on phone
+number, which is the only way to say who out of everyone contacted ended up
+booked. `--bookings-only` exists because the dialog walk costs ~3s per
+applicant and Raf books ~830 a week: the full walk timed out at 45 minutes on
+one office, the fast one did four in nine.
 
-**What the calendar walk cannot tell you.** The Chat History has no sender
-column, so a free-typed message could be a recruiter or the conversational AI;
-and only applicants who *booked* appear at all. Both limits are lifted by the
-**SMS List Report (p=336)** — every message for a date range with `Sent By`,
-`Source` and `Status`, plus an Export to CSV. Nothing reads it yet; it is the
-obvious next pull. `p=1500` (AI SMS Automation) already totals **AI Bookings vs
-Other Bookings** natively, which is the same split §1 of the audit computes
-from two weaker signals.
+**Gotchas worth knowing before touching it** (the module README has the rest):
+the p=336 filter form has FOUR date fields and the server reads the two hidden
+ones; injected JS must be a raw Python string or a regex silently breaks; a
+week column can be a partial week, so every column states its own coverage;
+and blank is not zero — a bookings-only pull has no messages, so questions and
+flags are unmeasured, not absent.
 
 ## 6. Standing rules
 
