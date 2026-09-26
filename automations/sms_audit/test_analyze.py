@@ -346,3 +346,70 @@ class BookingsOnlyTest(unittest.TestCase):
                      booked_by="A. Messaging")]
         mix = A.booking_mix(recs)
         self.assertEqual((mix["disagree"], mix["unconfirmed"]), (1, 0))
+
+
+class AnswerNotNextMessageTest(unittest.TestCase):
+    """An ANSWER is a free-typed reply within two hours. The first version
+    took the next outbound message full stop and produced nonsense: "Is this
+    a real job / who are you?" answered by the "3rd Left Message - Call List"
+    template, "What is the job?" answered by "Directions" — scheduled blasts
+    that fired on their own timer minutes later (Megan 2026-09-26)."""
+
+    def _one(self, thread):
+        return A.question_responses([_rec(thread)])[0]
+
+    def test_a_scheduled_template_is_not_an_answer(self):
+        row = self._one([
+            ["In", "", "is this a real job?", "09/23 9:00 AM"],
+            ["Out", "3rd Left Message - Call List", "hi there", "09/23 9:05 AM"]])
+        self.assertEqual(row["answered"], 0)
+        self.assertEqual(row["no_reply"], 1)
+        self.assertEqual(row["blast"], "3rd Left Message - Call List")
+
+    def test_a_typed_reply_is_an_answer(self):
+        row = self._one([
+            ["In", "", "what is the pay?", "09/23 9:00 AM"],
+            ["Out", "", "Our HR manager goes over pay on the call.", "09/23 9:04 AM"]])
+        self.assertEqual(row["answered"], 1)
+        self.assertEqual(row["no_reply"], 0)
+        self.assertIn("HR manager", row["reply"])
+
+    def test_a_typed_reply_two_days_later_is_not_an_answer(self):
+        row = self._one([
+            ["In", "", "what is the pay?", "09/23 9:00 AM"],
+            ["Out", "", "hey, still interested?", "09/25 9:00 AM"]])
+        self.assertEqual(row["answered"], 0)
+        self.assertEqual(row["no_reply"], 1)
+
+    def test_a_typed_reply_after_a_blast_still_counts(self):
+        # the blast fired first, a person then actually answered inside the
+        # window — that is an answer, and the blast is not the story
+        row = self._one([
+            ["In", "", "is this remote?", "09/23 9:00 AM"],
+            ["Out", "Friendly Reminder 1", "starting soon", "09/23 9:01 AM"],
+            ["Out", "", "Yes, the first round is over Zoom.", "09/23 9:20 AM"]])
+        self.assertEqual(row["answered"], 1)
+        self.assertEqual(row["no_reply"], 0)
+
+    def test_the_applicants_name_is_folded_out_of_the_answer(self):
+        rows = A.question_responses([
+            _rec([["In", "", "what is the pay?", "09/23 9:00 AM"],
+                  ["Out", "", "Thanks Ashley, HR covers pay.", "09/23 9:01 AM"]],
+                 name="Ashley Smith"),
+            _rec([["In", "", "what is the pay?", "09/23 9:00 AM"],
+                  ["Out", "", "Thanks Marco, HR covers pay.", "09/23 9:01 AM"]],
+                 name="Marco Diaz")])
+        self.assertEqual(rows[0]["answered"], 2)
+        self.assertEqual(rows[0]["reply_n"], 2)     # ONE response, not two
+        self.assertIn("[name]", rows[0]["reply"])
+
+
+class JoinMissTest(unittest.TestCase):
+    def test_a_booking_with_no_messages_is_reported(self):
+        convos = {"4698762121": {"phone": "4698762121", "msgs": []}}
+        booked = {"4698762121": {}, "5550001111": {}}
+        self.assertEqual(A.join_misses(convos, booked), ["5550001111"])
+
+    def test_a_clean_join_reports_nothing(self):
+        convos = {"4698762121": {"phone": "4698762121", "msgs": []}}
+        self.assertEqual(A.join_misses(convos, {"4698762121": {}}), [])

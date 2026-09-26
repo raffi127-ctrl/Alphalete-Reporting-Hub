@@ -417,23 +417,36 @@ IS_QUESTION = re.compile(r"^\s*(what|when|where|who|why|how|is|are|do|does|did|c
                          r"could|will|would|should|may|am i|i have a question)\b", re.I)
 
 
-def question_responses(recs, convos=None):
-    """For each kind of question: how often it is asked, and WHAT WE SEND BACK.
+ANSWER_WINDOW_MIN = 120
 
-    The reply is the first outbound message after the question. A templated
-    one is named by its template; a typed one is folded to its opening words,
-    because "Great. What email should I send the Zoom link to?" typed 35 times
-    is one response, not 35. Questions that got no reply at all are counted
-    too — that is the most important response of the lot."""
+
+def question_responses(recs, convos=None):
+    """For each kind of question: how often it is asked, and WHAT WE ACTUALLY
+    ANSWER — which is not the same as the next message we happen to send.
+
+    The first version took the next outbound message full stop, and produced
+    nonsense: "Is this a real job / who are you?" answered by the "3rd Left
+    Message - Call List" template, "What is the job?" answered by
+    "Directions". Those are scheduled blasts that fired on their own timer
+    minutes later. They are not replies to anything (Megan 2026-09-26).
+
+    So an ANSWER is a **free-typed** outbound message sent within
+    ANSWER_WINDOW_MIN of the question. A templated one is a blast whatever its
+    timing, and nothing at all after two hours is not a response either. When
+    no answer arrives we say so, and name the template that did go out
+    instead — "they asked if it was a real job and got the 3rd left-message
+    template" is a finding, not an answer, and it should read that way.
+    """
     asked = collections.Counter()
-    replies = collections.defaultdict(collections.Counter)
+    answers = collections.defaultdict(collections.Counter)
+    unanswered = collections.Counter()
+    instead = collections.defaultdict(collections.Counter)
     examples = {}
 
     def _generalise(body, who):
-        """Take the applicant's own name out of a typed reply before folding.
-        "Great, thanks Ashley. What email…" and "Great, thanks Marco. What
-        email…" are ONE response; leaving the name in makes every reply
-        unique and the whole column useless."""
+        """Take the applicant's own name out before folding. "Great, thanks
+        Ashley…" and "Great, thanks Marco…" are ONE response; leaving the name
+        in makes every reply unique and the column useless."""
         words = " ".join((body or "").split())
         first = (who or "").strip().split(" ")[0]
         if len(first) > 2:
@@ -441,48 +454,58 @@ def question_responses(recs, convos=None):
                            flags=re.I)
         return words
 
-    def _walk(seq, getter, who=""):
-        for i, m in enumerate(seq):
-            if getter(m, "dir") != "In":
+    def _walk(seq, who=""):
+        """seq: [(when, 'In'|'Out', template, body)] in order."""
+        for i, (when, dirn, _t, body) in enumerate(seq):
+            if dirn != "In":
                 continue
-            body = getter(m, "body") or ""
             if "?" not in body and not IS_QUESTION.match(body):
                 continue
-            b = bucket_of(body)
-            if not b:
+            bucket = bucket_of(body)
+            if not bucket:
                 continue
-            asked[b] += 1
-            examples.setdefault(b, body.strip().replace("\n", " ")[:120])
-            nxt = next((x for x in seq[i + 1:] if getter(x, "dir") == "Out"), None)
-            if nxt is None:
-                replies[b]["(no reply)"] += 1
-                continue
-            tmpl = getter(nxt, "template")
-            if tmpl:
-                replies[b][tmpl] += 1
+            asked[bucket] += 1
+            examples.setdefault(bucket, body.strip().replace("\n", " ")[:120])
+
+            typed = blast = None
+            for w2, d2, t2, b2 in seq[i + 1:]:
+                if d2 != "Out":
+                    continue
+                if (w2 - when).total_seconds() > ANSWER_WINDOW_MIN * 60:
+                    break
+                if t2:
+                    blast = blast or t2
+                else:
+                    typed = b2
+                    break
+            if typed is not None:
+                answers[bucket]["\u201c{}\u201d".format(_generalise(typed, who))] += 1
             else:
-                words = _generalise(getter(nxt, "body"), who)
-                replies[b]["“{}…”".format(words[:70])] += 1
+                unanswered[bucket] += 1
+                if blast:
+                    instead[bucket][blast] += 1
 
     if convos:
         for c in convos.values():
-            _walk(c["msgs"], lambda m, k: m["dir"] if k == "dir" else m.get(
-                "template" if k == "template" else "body"), c.get("name", ""))
+            _walk([(m["when"], m["dir"], m["template"], m["body"])
+                   for m in c["msgs"]], c.get("name", ""))
     else:
         for r in recs:
-            seq = messages(r)
-            _walk(seq, lambda m, k: m[1] if k == "dir" else (
-                m[2] if k == "template" else m[3]), r.get("name", ""))
+            _walk(messages(r), r.get("name", ""))
 
     out = []
-    for b, n in asked.most_common():
-        top = replies[b].most_common(1)
+    for bucket, n in asked.most_common():
+        top = answers[bucket].most_common(1)
+        blast = instead[bucket].most_common(1)
         out.append({
-            "question": b, "asked": n,
+            "question": bucket, "asked": n,
             "reply": top[0][0] if top else "",
             "reply_n": top[0][1] if top else 0,
-            "no_reply": replies[b].get("(no reply)", 0),
-            "example": examples.get(b, ""),
+            "answered": sum(answers[bucket].values()),
+            "no_reply": unanswered[bucket],
+            "blast": blast[0][0] if blast else "",
+            "blast_n": blast[0][1] if blast else 0,
+            "example": examples.get(bucket, ""),
         })
     return out
 
@@ -613,6 +636,17 @@ def anomalies(recs):
     return found
 
 
+def join_misses(convos, booked):
+    """Bookings whose phone never appears in the message log.
+
+    The funnel joins the two sources on phone number, so a miss silently
+    becomes "this applicant was never booked". A handful is normal (a dummy
+    number on the booking row); a lot means the join is broken and every
+    booking figure below it is wrong."""
+    seen = {c["phone"] for c in convos.values()}
+    return [k for k in booked if k not in seen]
+
+
 def funnel(convos):
     """Everyone we texted, not just the ones who booked — the whole point of
     pulling the log. Counts the conversations, who replied, who ended up with a
@@ -678,8 +712,10 @@ def log_delivery(rows):
     return c
 
 
-def audit_log(rows, convos, office):
+def audit_log(rows, convos, office, booked=None):
     fun = funnel(convos)
+    fun["join_misses"] = len(join_misses(convos, booked or {}))
+    fun["booked_rows"] = len(booked or {})
     lanes = log_reply_speed(convos)
     return {
         "office": office,
@@ -762,6 +798,10 @@ def render_log(rep, who):
             f["shown_human"], f["booked_human"], _pct(f["shown_human"], f["booked_human"])))
     add("- **{:,} were texted and never booked** ({})".format(
         f["never_booked"], _pct(f["never_booked"], f["contacted"])))
+    if f.get("join_misses"):
+        add("- *{} of {} bookings had no message in the log (usually a dummy "
+            "number on the booking row). They are counted as booked, not as "
+            "contacted.*".format(f["join_misses"], f.get("booked_rows", 0)))
     add("")
     add("**Reply speed, by who actually sent it** (the log names the sender — "
         "“AI Messaging” or a person):")
@@ -1032,7 +1072,7 @@ def main(argv=None):
             convos = log_conversations(rows, booked_index(recs))
             print("[sms_audit] {}: {} log rows → {} conversations from {}"
                   .format(o, len(rows), len(convos), lsrc), flush=True)
-            rep["log"] = audit_log(rows, convos, o)
+            rep["log"] = audit_log(rows, convos, o, booked_index(recs))
         else:
             print("[sms_audit] {}: no full log ({}) — booked applicants only"
                   .format(o, lsrc), flush=True)

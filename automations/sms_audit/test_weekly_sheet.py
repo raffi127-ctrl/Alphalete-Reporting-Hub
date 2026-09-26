@@ -225,26 +225,27 @@ class QuestionCellTest(unittest.TestCase):
             {"question": "What is the pay?", "asked": 2,
              "reply": "“Our HR manager…”", "no_reply": 0}]))
         self.assertLess(cell.index("reschedule"), cell.index("pay"))
-        self.assertTrue(cell.startswith("45 x"))
+        self.assertTrue(cell.startswith("1. Can we reschedule"), cell)
+        self.assertIn("asked 45x", cell)
 
     def test_the_reply_rides_with_its_question(self):
         cell = W.question_cell(self._rep([
             {"question": "What is the pay?", "asked": 2,
              "reply": "1st Interview - Reschedule", "no_reply": 0}]))
         self.assertIn("What is the pay?", cell)
-        self.assertIn("-> 1st Interview - Reschedule", cell)
+        self.assertIn("1st Interview - Reschedule", cell)
 
     def test_questions_that_got_no_reply_are_called_out(self):
         cell = W.question_cell(self._rep([
             {"question": "What is the pay?", "asked": 5, "reply": "x",
              "no_reply": 3}]))
-        self.assertIn("(3 got no reply)", cell)
+        self.assertIn("3 got no answer", cell)
 
     def test_the_unbucketed_ones_are_the_last_line(self):
         cell = W.question_cell(self._rep(
             [{"question": "What is the pay?", "asked": 5, "reply": "x",
               "no_reply": 0}], other=49))
-        self.assertTrue(cell.rstrip().endswith("49 x  (didn't fit a bucket)"))
+        self.assertTrue(cell.rstrip().endswith("(didn't fit a bucket — 49x)"), cell)
 
     def test_a_week_with_no_questions_is_empty_not_a_header(self):
         self.assertEqual(W.question_cell(self._rep([])), "")
@@ -267,10 +268,10 @@ class NoMessagesIsBlankTest(unittest.TestCase):
     def test_questions_and_flags_are_blank_not_zero(self):
         rep = self._bookings_only()
         by_label = {label: fn for _s, label, fn in W.ROWS}
-        for label in ("Questions asked", "Didn't fit a bucket",
+        for label in ("Questions asked", "Questions we couldn't group",
                       "Most asked → what we usually reply",
-                      "Left unanswered", "Texts outside 8am–9pm",
-                      "Texted after they said stop", "Dead links sent"):
+                      "Left unanswered", "Texts sent before 8am or after 9pm",
+                      "Texted after they said stop", "Broken links sent"):
             self.assertEqual(by_label[label](rep), "", label)
 
     def test_the_booking_rows_are_still_real(self):
@@ -286,7 +287,7 @@ class NoMessagesIsBlankTest(unittest.TestCase):
         by_label = {label: fn for _s, label, fn in W.ROWS}
         # nobody asked anything, and we read every message to find that out
         self.assertEqual(by_label["Questions asked"](rep), 0)
-        self.assertEqual(by_label["Texts outside 8am–9pm"](rep), 0)
+        self.assertEqual(by_label["Texts sent before 8am or after 9pm"](rep), 0)
 
 
 class ColumnOrderTest(unittest.TestCase):
@@ -326,30 +327,35 @@ class ColumnOrderTest(unittest.TestCase):
 
 
 class CoverageRowTest(unittest.TestCase):
-    """Every column says which days it is built from. Carlos's WE 9/4 is three
-    days and WE 9/25 is five, so 185 beside 373 reads like volume doubling
-    when it is 3 days against 5. The window guard checks the data falls INSIDE
-    the week; it cannot know what a full week should be."""
+    """Every column says which days it is built from, against how many it
+    should have. **Saturday books no first rounds** — second interviews run
+    then (Megan 2026-09-26) — so a first-interview week is five days, Mon-Fri,
+    and an empty Saturday is normal rather than a gap. Carlos's WE 9/4 is
+    three of those five, so 185 beside 373 is not volume doubling."""
 
     def _rep(self, dates):
         return {"dates": dates}
 
-    def test_it_names_the_day_count_and_the_span(self):
-        cell = W.days_cell(self._rep(["09-02-2026", "09-03-2026", "09-04-2026"]))
-        self.assertEqual(cell, "3 days · 9/2 – 9/4")
-
-    def test_a_missing_saturday_shows_as_five_days(self):
+    def test_five_weekdays_is_a_complete_week(self):
         cell = W.days_cell(self._rep(["09-21-2026", "09-22-2026", "09-23-2026",
                                       "09-24-2026", "09-25-2026"]))
-        self.assertTrue(cell.startswith("5 days"), cell)
+        self.assertTrue(cell.startswith("5 of 5 weekdays"), cell)
+        self.assertNotIn("missing", cell)
 
-    def test_a_full_week_says_six(self):
+    def test_a_missing_weekday_is_named(self):
+        cell = W.days_cell(self._rep(["09-02-2026", "09-03-2026", "09-04-2026"]),
+                           dt.date(2026, 9, 4))
+        self.assertTrue(cell.startswith("3 of 5 weekdays"), cell)
+        self.assertIn("missing Mon 8/31, Tue 9/1", cell)
+
+    def test_a_saturday_booking_shows_as_extra_not_as_the_norm(self):
         cell = W.days_cell(self._rep(["09-19-2026", "09-21-2026", "09-22-2026",
                                       "09-23-2026", "09-24-2026", "09-25-2026"]))
-        self.assertTrue(cell.startswith("6 days"), cell)
+        self.assertTrue(cell.startswith("5 of 5 weekdays"), cell)
+        self.assertIn("plus Sat 9/19", cell)
 
     def test_no_dates_is_blank_not_a_zero(self):
         self.assertEqual(W.days_cell(self._rep([])), "")
 
     def test_it_is_the_first_row_so_it_is_read_before_the_numbers(self):
-        self.assertEqual(W.ROWS[0][1], "Interview days in this column")
+        self.assertEqual(W.ROWS[0][1], "1st-interview days covered")

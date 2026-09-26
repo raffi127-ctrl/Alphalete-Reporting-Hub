@@ -77,23 +77,42 @@ def _rate(n, d):
     return "" if not d or n is None else round(100.0 * n / d, 1)
 
 
+QUESTION_REPLY_CHARS = 56
+
+
 def question_cell(rep):
-    """The week's questions as ONE multi-line cell, most asked first, each
-    with the reply we most often send back. Empty when nothing was asked."""
+    """The week's questions as one scannable block, most asked first.
+
+    Each entry: the question with how often it was asked and how often it got
+    a real answer, the answer itself indented under it, and — when some got
+    none — a line naming the scheduled template that went out instead. That
+    last line is the finding: "they asked if it was a real job and got the
+    3rd left-message blast" is not an answer and should not read like one."""
     table = rep.get("question_table") or []
     if not table:
         return ""
-    lines = []
-    for row in table:
-        reply = row["reply"] or "—"
-        line = "{} x  {}\n        -> {}".format(row["asked"], row["question"], reply)
-        if row["no_reply"]:
-            line += "  ({} got no reply)".format(row["no_reply"])
-        lines.append(line)
+    out = []
+    for n, row in enumerate(table, 1):
+        head = "{}. {} — asked {}x".format(n, row["question"], row["asked"])
+        if row.get("answered"):
+            head += ", answered {}".format(row["answered"])
+        lines = [head]
+        if row.get("reply"):
+            reply = row["reply"].strip().strip("\u201c\u201d\"")
+            if len(reply) > QUESTION_REPLY_CHARS:
+                reply = reply[:QUESTION_REPLY_CHARS].rstrip(" .,") + "\u2026"
+            lines.append("     \u21b3 {}".format(reply))
+        if row.get("no_reply"):
+            note = "     \u26a0 {} got no answer".format(row["no_reply"])
+            if row.get("blast"):
+                note += " \u2014 the \u201c{}\u201d template went out instead".format(
+                    row["blast"])
+            lines.append(note)
+        out.append("\n".join(lines))
     other = len(rep.get("questions_other") or [])
     if other:
-        lines.append("{} x  (didn't fit a bucket)".format(other))
-    return "\n".join(lines)
+        out.append("(didn't fit a bucket \u2014 {}x)".format(other))
+    return "\n\n".join(out)
 
 
 def _msg(fn):
@@ -121,29 +140,53 @@ def _q_count(bucket):
     return _msg(lambda r: r["questions"].get(bucket, 0))
 
 
-def days_cell(rep):
-    """Which interview days this column is actually built from.
+def days_cell(rep, week_end=None):
+    """Which interview days this column is built from, against how many it
+    SHOULD have.
+
+    Saturday typically books no first rounds — it is second interviews that
+    run then (Megan 2026-09-26) — so a recruiting week holds **five**
+    first-interview days, Monday to Friday, and an empty Saturday is normal
+    rather than a gap. A missing weekday is the thing worth seeing, and it is
+    named.
 
     Without this the sheet invites the wrong read: Carlos's WE 9/4 is three
-    days (that pull only asked for Wed/Thu/Fri) and WE 9/25 is five (Saturday
-    9/19 had no First Interview section at all), so 185 next to 373 looks like
-    volume doubling when it is 3 days against 5. The window guard checks the
-    data falls INSIDE the week; it cannot know what a full week should be, so
-    the column says what it covers and a person decides."""
-    first, last = data_window(rep)
-    if first is None:
+    days (that pull only asked for Wed/Thu/Fri) against WE 9/25's five, so
+    185 beside 373 looks like volume doubling when it is 3 days against 5."""
+    days = set()
+    for raw in rep.get("dates") or []:
+        try:
+            days.add(dt.datetime.strptime(raw, "%m-%d-%Y").date())
+        except ValueError:
+            continue
+    if not days:
         return ""
-    n = len({d for d in (rep.get("dates") or [])})
-    return "{} days · {}/{} – {}/{}".format(n, first.month, first.day,
-                                            last.month, last.day)
+    week_end = week_end or max(days)
+    while week_end.weekday() != 4:            # the Friday that closes the week
+        week_end += dt.timedelta(days=1)
+    weekdays = [week_end - dt.timedelta(days=n) for n in range(4, -1, -1)]
+    have = [d for d in weekdays if d in days]
+    missing = [d for d in weekdays if d not in days]
+    extra = sorted(d for d in days if d not in weekdays)
+
+    cell = "{} of 5 weekdays · {}/{} – {}/{}".format(
+        len(have), min(days).month, min(days).day, max(days).month, max(days).day)
+    if missing:
+        cell += "\nmissing {}".format(", ".join(
+            "{} {}/{}".format(d.strftime("%a"), d.month, d.day) for d in missing))
+    if extra:
+        cell += "\nplus {}".format(", ".join(
+            "{} {}/{}".format(d.strftime("%a"), d.month, d.day) for d in extra))
+    return cell
 
 
 ROWS = [
-    ("Week", "Interview days in this column", days_cell),
+    ("Week", "1st-interview days covered", days_cell),
     ("Reach", "People texted", lambda r: _f(r, "contacted", "")),
     ("Reach", "Replied to us", lambda r: _f(r, "replied", "")),
     ("Reach", "Reply rate %", lambda r: _rate(_f(r, "replied"), _f(r, "contacted"))),
     ("Reach", "Messages sent + received", lambda r: (r.get("log") or {}).get("rows", "")),
+    ("Reach", "Bookings with no texts on file", lambda r: _f(r, "join_misses", "")),
 
     ("Booking", "Booked a 1st interview", lambda r: _f(r, "booked", r["threads"])),
     ("Booking", "Booked by the AI", lambda r: _f(r, "booked_ai", r["mix"]["ai"])),
@@ -168,31 +211,31 @@ ROWS = [
 
     ("Dropped", "Left unanswered",
      _msg(lambda r: len(((r.get("log") or {}).get("unanswered")) or r["unanswered"]))),
-    ("Dropped", "…of those, never booked",
+    ("Dropped", "…of those, never booked an interview",
      lambda r: sum(1 for u in ((r.get("log") or {}).get("unanswered") or [])
                    if not u.get("booked")) if r.get("log") else ""),
 
     ("What they ask", "Questions asked", _msg(lambda r: r["questions_total"])),
-    ("What they ask", "Didn't fit a bucket", _msg(lambda r: len(r["questions_other"]))),
+    ("What they ask", "Questions we couldn't group", _msg(lambda r: len(r["questions_other"]))),
     # ONE cell for the week (Megan 2026-09-26): the whole ranked list lives in
     # the week's own box instead of eleven fixed rows nobody could scan. Most
     # asked first, and what we usually send back on the same line — the two
     # halves of the question only mean something together.
     ("What they ask", "Most asked → what we usually reply",
      _msg(lambda r: question_cell(r))),
-    ("Flags", "Texts outside 8am–9pm",
+    ("Flags", "Texts sent before 8am or after 9pm",
      _msg(lambda r: len(r["anomalies"].get(
          "Texted outside 8am–9pm (TCPA quiet hours)", [])))),
-    ("Flags", "Applicants over the carrier limit",
+    ("Flags", "Applicants texted 4+ times, no reply",
      _msg(lambda r: len(r["anomalies"].get(
          "Over the carrier limit — 4+ separate texts with no reply between", [])))),
     ("Flags", "Texted after they said stop",
      _msg(lambda r: len(r["anomalies"].get(
          "Kept texting after they asked us to stop / said no", [])))),
-    ("Flags", "Dead links sent",
+    ("Flags", "Broken links sent",
      _msg(lambda r: len(r["anomalies"].get(
          "Dead link — the web address is spelled with a look-alike letter", [])))),
-    ("Flags", "Not delivered",
+    ("Flags", "Texts that never arrived",
      lambda r: sum(v for k, v in ((r.get("log") or {}).get("delivery") or {}).items()
                    if k.lower() != "delivered") if r.get("log") else ""),
 ]
@@ -435,6 +478,7 @@ SECTION_TINT = {"Week": (0.86, 0.86, 0.86), "Reach": (0.90, 0.94, 0.99), "Bookin
                 "Dropped": (0.99, 0.91, 0.91), "What they ask": (0.95, 0.95, 0.95),
                 "Flags": (0.99, 0.93, 0.85)}
 WIDE_ROW = "Most asked → what we usually reply"
+WRAP_ROWS = (WIDE_ROW, "1st-interview days covered")
 
 
 def _rgb(t):
@@ -481,10 +525,11 @@ def _format(ws, last_col, last_row, label_rows):
                       dict(label, backgroundColor=_rgb(SECTION_TINT.get(
                           section, (0.95, 0.95, 0.95)))))
 
-        wide = label_rows.get(WIDE_ROW)
-        if wide:
-            ws.format("{}:{}".format(_a1(wide, FIRST_WEEK_COL), _a1(wide, last_col)),
-                      wrapped)
+        for name in WRAP_ROWS:
+            r = label_rows.get(name)
+            if r:
+                ws.format("{}:{}".format(_a1(r, FIRST_WEEK_COL), _a1(r, last_col)),
+                          wrapped)
         ws.freeze(rows=HEADER_ROW, cols=2)
         _widths(ws, last_col)
     except Exception as e:  # noqa: BLE001
@@ -498,7 +543,7 @@ def _widths(ws, last_col):
         {"updateDimensionProperties": {
             "range": {"sheetId": ws.id, "dimension": "COLUMNS",
                       "startIndex": 0, "endIndex": 1},
-            "properties": {"pixelSize": 110}, "fields": "pixelSize"}},
+            "properties": {"pixelSize": 132}, "fields": "pixelSize"}},
         {"updateDimensionProperties": {
             "range": {"sheetId": ws.id, "dimension": "COLUMNS",
                       "startIndex": 1, "endIndex": 2},
@@ -506,7 +551,7 @@ def _widths(ws, last_col):
         {"updateDimensionProperties": {
             "range": {"sheetId": ws.id, "dimension": "COLUMNS",
                       "startIndex": FIRST_WEEK_COL - 1, "endIndex": last_col},
-            "properties": {"pixelSize": 430}, "fields": "pixelSize"}},
+            "properties": {"pixelSize": 470}, "fields": "pixelSize"}},
     ]
     ws.spreadsheet.batch_update({"requests": reqs})
 
@@ -536,8 +581,9 @@ def build_report(office, suffix=""):
     rep = A.audit(recs, office)
     rows, lsrc = A.load_log(office)
     if rows:
-        rep["log"] = A.audit_log(rows, A.log_conversations(rows, A.booked_index(recs)),
-                                 office)
+        booked = A.booked_index(recs)
+        rep["log"] = A.audit_log(rows, A.log_conversations(rows, booked), office,
+                                 booked)
     return rep, "{} + {}".format(src, lsrc if rows else "no full log")
 
 
