@@ -1383,6 +1383,19 @@ def _guest_gaps(gaps: List[Dict], rows: List[Dict]) -> List[Dict]:
     return [g for g in gaps if _norm_rep(g.get("name")) in mine]
 
 
+def _last_tick_of_day(cfg: Dict, now: Optional[dt.datetime] = None) -> bool:
+    """Is this the last gap tick inside the office's window today -- i.e. the
+    next one would fall past the bell? That is when the day's board is the
+    day's final report."""
+    local = C.office_now(cfg, now)
+    win = C.office_window(cfg, local.weekday())
+    if not win:
+        return False
+    (eh, em) = win[1]
+    end = local.replace(hour=eh, minute=em, second=0, microsecond=0)
+    return local <= end < local + dt.timedelta(minutes=C.TICK_MINUTES)
+
+
 def _send_guest_boards(cfg: Dict, guest_due: Dict, guest_boards: Dict,
                        all_gaps: List[Dict], day: dt.date, *, send: bool,
                        failures: List[str]) -> None:
@@ -1424,7 +1437,10 @@ def _send_guest_boards(cfg: Dict, guest_due: Dict, guest_boards: Dict,
                 from automations.icd_alerts import post as _P
                 _gkey = _GC.GUEST_SLACK_KEY.get(_GC._key(guest), "")
                 _rooms = [c.id for c in (_P.approved_channels().get(_gkey) or [])]
-                for _msg in (_line, _GC.pace_callout("guest:%s:%s" % (cfg["key"], _gkey), g_rows, dt.datetime.now(), remember=send)):
+                _praise = ""
+                if _last_tick_of_day(cfg):
+                    _praise = _GC.pace_callout("guest:%s:%s" % (cfg["key"], _gkey), g_rows, dt.datetime.now(), remember=send)
+                for _msg in (_line, _praise):
                     if not _msg:
                         continue
                     _log("  %s: call-out for %s -> %s: %s"
@@ -1721,7 +1737,12 @@ def tick(day: dt.date, *, send: bool, only: str = "",
                 _line = _GC.guest_callout(cfg["key"], "own", gaps, _recs,
                                           dt.datetime.now(), remember=send)
                 from automations.icd_alerts import post as _P
-                for _msg in (_line, _GC.pace_callout(cfg["key"], rows, dt.datetime.now(), remember=send)):
+                # THE POSITIVE ONE ON THE LAST TICK OF THE DAY (Megan
+                # 2026-09-26): the day's numbers, after the final report.
+                _praise = ""
+                if _last_tick_of_day(cfg):
+                    _praise = _GC.pace_callout(cfg["key"], rows, dt.datetime.now(), remember=send)
+                for _msg in (_line, _praise):
                     if not _msg:
                         continue
                     _log("  %s: call-out -> %s: %s" % (cfg["key"], _room, _msg.splitlines()[0]))

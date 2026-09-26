@@ -76,7 +76,7 @@ LINES = (
     # a customer. Half the pool leaves that door open.
     "{names} — {m}+ min without a dispo. Must be cooking up something good in there… right? 👨‍🍳🔥",
     "{names}: {m}+ min off the doors. Either y'all are working a sale 💰 or finger poppin' 🤌 Which one?",
-    "No dispo from {names} in {m}+ min. Locked in with a customer 🔒 or locked out of the truck? 🚚",
+    "No dispo from {names} in {m}+ min. In a house with a customer 🏠 or in the car scrolling? 📱",
     "{names} — {m}+ min quiet. If that's a sale being cooked 🍳 take your time. If not… 👀",
     # EN ESPAÑOL TAMBIÉN (Megan 2026-09-26: "make lucy bilingual"). Same
     # pool, so some hours land in Spanish and some in English.
@@ -287,18 +287,33 @@ def pace_line(office_key: str, reps: List[Dict], now: dt.datetime) -> str:
 
 
 def pace_callout(office_key: str, rows: List[Dict], now: dt.datetime, *, remember: bool = True) -> str:
-    """The positive line for reps not yet praised today, or ""."""
+    """The positive line, ONCE A DAY, on the day's numbers -- Megan 2026-09-26:
+    "25+ doors should be if they are at that for the day - so after the final
+    knock report it pulled". The caller decides when the day is over (the
+    last tick of the office's window, or the last relay after the bell);
+    this remembers that the day was judged so it is never judged twice, even
+    when nobody hit the bar."""
     key = "pace:%s" % office_key
     state = _state()
     st = state.get(key) or {}
-    done = set(st.get("praised") or []) if st.get("day") == now.date().isoformat() else set()
-    fresh = [r for r in pace(rows, now) if _key(r["name"]) not in done]
-    text = pace_line(office_key, fresh, now)
-    if text and remember:
-        state[key] = {"day": now.date().isoformat(),
-                      "praised": sorted(done | {_key(r["name"]) for r in fresh})}
+    if st.get("day") == now.date().isoformat():
+        return ""
+    text = pace_line(office_key, pace(rows, now), now)
+    if remember:
+        state[key] = {"day": now.date().isoformat(), "judged_at": now.isoformat(timespec="seconds")}
         _save(state)
     return text
+
+
+def after_the_bell(office, now: dt.datetime, within_min: int = 120) -> bool:
+    """Is `now` past this office's field day (today), and within `within_min`
+    of it -- the window in which the day's last relay is the day's report?"""
+    if now.weekday() == 6 or (now.weekday() == 5 and not getattr(office, "saturday", True)):
+        return False
+    end = office.sat_end if now.weekday() == 5 else office.day_end
+    h, m = [int(x) for x in str(end).split(":")[:2]]
+    end_at = now.replace(hour=h, minute=m, second=0, microsecond=0)
+    return end_at < now <= end_at + dt.timedelta(minutes=within_min)
 
 
 def _state() -> Dict:
@@ -391,8 +406,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
                 P._slack(ch, text)
             except Exception as e:  # noqa: BLE001
                 log("%-14s FAILED to post to %s: %s" % (key, ch, type(e).__name__))
-    # THE POSITIVE ONE rides the same tick on its own memory (once per rep
-    # per day), so a strong hour is named even when nobody is idle.
+    # THE POSITIVE ONE, after the bell: the day's numbers, once a day.
     for key in sorted(approved_ch):
         if only and key != only:
             continue
@@ -401,10 +415,12 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
                           and key not in CALLOUT_EXTRA_OFFICES):
             continue
         now = K._office_now(office)
-        if not K.in_field_hours(office, now):
+        if not after_the_bell(office, now):
             continue
+        # THE DAY'S LAST RELAY IS THE DAY'S REPORT: the machine stops sweeping
+        # at the bell, so "too old" does not apply here.
         krow = knocks.get(key) or next((r for k, r in knocks.items() if k.startswith(key) or key.startswith(k)), None)
-        if not krow or K._too_old(krow[K.KN_RECEIVED]):
+        if not krow:
             continue
         try:
             rows = M.to_rows(json.loads(krow[K.KN_ROWS] or "[]"), json.loads(krow[K.KN_TRACKER] or "[]"))

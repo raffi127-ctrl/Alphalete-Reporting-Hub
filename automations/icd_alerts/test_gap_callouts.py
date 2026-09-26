@@ -129,4 +129,14 @@ class PaceTest(unittest.TestCase):
         with mock.patch.object(G, "STATE_PATH", pathlib.Path(tempfile.mkdtemp()) / "s.json"):
             first = G.pace_callout("kash", self.ROWS, NOW)
             self.assertIn("Ana", first); self.assertIn("31", first)
-            self.assertEqual(G.pace_callout("kash", self.ROWS, NOW.replace(minute=30)), "")
+            self.assertEqual(G.pace_callout("kash", self.ROWS, NOW.replace(minute=30)), "")   # judged once a day
+            self.assertNotEqual(G.pace_callout("kash", self.ROWS, NOW + dt.timedelta(days=1)), "")
+
+    def test_after_the_bell(self):
+        from automations.icd_alerts import offices as O
+        o = O.AlertOffice(key="x", owner="x", label="x", channels=(), timezone="America/Chicago",
+                          day_start="13:30", day_end="20:30", sat_start="10:45", sat_end="17:00", saturday=True)
+        self.assertFalse(G.after_the_bell(o, dt.datetime(2026, 9, 25, 20, 0)))   # Fri, still knocking
+        self.assertTrue(G.after_the_bell(o, dt.datetime(2026, 9, 25, 20, 45)))   # Fri, 15 past the bell
+        self.assertFalse(G.after_the_bell(o, dt.datetime(2026, 9, 25, 23, 0)))   # too long after
+        self.assertFalse(G.after_the_bell(o, dt.datetime(2026, 9, 27, 18, 0)))   # Sunday
