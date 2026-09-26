@@ -290,31 +290,49 @@ def _live_bucket(ch_state: dict) -> str:
     return dated[-1] if dated else ""
 
 
-def pin_backfill(channels: Optional[List[str]] = None, *, cl=None,
-                 dry_run: bool = True, pace: float = 3.2,
-                 logfn=print) -> Dict[str, dict]:
-    """Pin the ad threads that were opened before Lucy could pin them.
+def last_active(ad: dict) -> Optional[dt.date]:
+    """The most recent day this ad put a 1st round in its thread, or None if it
+    never has. `days` holds ISO strings, same as header_week reads them."""
+    days = ad.get("days") or []
+    try:
+        return max(dt.date.fromisoformat(d) for d in days) if days else None
+    except ValueError:
+        return None                   # a hand-edited day: treat as never active
 
-    `_pin` only fires the moment a thread is OPENED, so every thread that
-    already existed when `pins:write` landed on Lucy's token (2026-09-25)
-    stays unpinned for good: a later run finds the thread alive and never
-    revisits the pin. This is the one-time pass that closes that gap, and it
-    is safe to run again -- `already_pinned` is not an error.
 
-    Only the LIVE bucket is pinned (see _live_bucket): pinning the dated weeks
-    under it would pin the same threads twice and fill the channel's pins with
-    history. Channels come from state; pass `channels` to limit it. Anything
-    that is not a real channel id is skipped -- the bookkeeping keys, and DMs,
-    where a pin buys nothing.
+def reconcile_pins(channels: Optional[List[str]] = None, *,
+                   today: Optional[dt.date] = None, cl=None,
+                   dry_run: bool = True, stale_days: Optional[int] = None,
+                   pace: float = 3.2, logfn=print) -> Dict[str, dict]:
+    """Make a channel's pins say "these are the ads we're running now".
+
+    An ad whose thread has had a 1st round within STALE_PIN_DAYS is pinned; one
+    that has gone quiet longer than that is unpinned. Both directions matter:
+    without the re-pin, an ad that goes quiet and then starts producing again
+    would stay unpinned for good, because `_pin` only fires the moment a thread
+    is OPENED and a revived ad reuses its old thread.
+
+    Unpinning is NOT deleting. The thread, its photos and its history stay in
+    the channel exactly as they were -- only the pin goes -- so nothing here
+    loses anyone's work, and a pin that was removed by hand is put back if the
+    ad is still running (state is corrected to match what Slack accepted).
+
+    Only the LIVE bucket is touched (see _live_bucket): the dated weeks under
+    it are history, the same rule retire_week uses. Anything that is not a real
+    channel id is skipped -- bookkeeping keys, and DMs, where a pin buys
+    nothing.
 
     A dry run writes NOTHING: not to Slack, not to state, and it never even
     builds a client. It returns the same shape as a real run so the two read
     alike.
 
-    pins.add is a Tier-2 method (~20/min) and this walks hundreds of threads,
-    so calls are paced and a `ratelimited` refusal backs off and retries
-    rather than being recorded as a failed pin.
+    pins.add/remove are Tier-2 methods (~20/min), so calls are paced and a
+    `ratelimited` refusal backs off and retries rather than being recorded as a
+    failure. Only threads that actually CHANGE cost a call, so the nightly pass
+    is normally free.
     """
+    today = today or collect.central_today()
+    stale = config.STALE_PIN_DAYS if stale_days is None else stale_days
     state = _load_state()
     if not dry_run:
         cl = cl or collect._client()
@@ -326,8 +344,8 @@ def pin_backfill(channels: Optional[List[str]] = None, *, cl=None,
             continue                      # bookkeeping keys, DMs, test scratch
         bucket_key = _live_bucket(ch_state)
         ads = ((ch_state.get("weeks") or {}).get(bucket_key) or {})
-        res = {"bucket": bucket_key, "pinned": [], "already": [],
-               "failed": {}, "no_thread": []}
+        res = {"bucket": bucket_key, "pinned": [], "unpinned": [],
+               "failed": {}, "kept": 0, "no_thread": []}
         for key in sorted(ads, key=lambda k: (ads[k].get("title") or k).lower()):
             ad = ads[key]
             title = ad.get("title") or key
@@ -335,13 +353,15 @@ def pin_backfill(channels: Optional[List[str]] = None, *, cl=None,
             if not ts:
                 res["no_thread"].append(title)
                 continue
-            if ad.get("pinned"):
-                res["already"].append(title)
+            last = last_active(ad)
+            want = last is not None and (today - last).days <= stale
+            if want == bool(ad.get("pinned")):
+                res["kept"] += 1
                 continue
             if dry_run:
-                res["pinned"].append(title)
+                res["pinned" if want else "unpinned"].append(title)
                 continue
-            err = _pin(cl, ch, ts, True)
+            err = _pin(cl, ch, ts, want)
             wait = 30.0
             for _ in range(3):
                 if not err or "ratelimited" not in err.lower():
@@ -349,20 +369,21 @@ def pin_backfill(channels: Optional[List[str]] = None, *, cl=None,
                 logfn("  rate limited; waiting %.0fs" % wait)
                 time.sleep(wait)
                 wait *= 2
-                err = _pin(cl, ch, ts, True)
+                err = _pin(cl, ch, ts, want)
             if err:
                 res["failed"][title] = err
-                logfn("  PIN FAILED %s: %s" % (title, err))
+                logfn("  %s FAILED %s: %s"
+                      % ("PIN" if want else "UNPIN", title, err))
                 continue
-            res["pinned"].append(title)
-            ad["pinned"] = True
+            res["pinned" if want else "unpinned"].append(title)
+            ad["pinned"] = want
             _save_state(state)   # resumable: an interrupted pass keeps what it did
             time.sleep(pace)
         out[ch] = res
-        logfn("%s [%s]: %d %s, %d already, %d failed, %d without a thread"
-              % (ch, bucket_key or "-", len(res["pinned"]),
-                 "to pin" if dry_run else "pinned", len(res["already"]),
-                 len(res["failed"]), len(res["no_thread"])))
+        if res["pinned"] or res["unpinned"] or res["failed"]:
+            logfn("%s [%s]: %d pinned, %d unpinned, %d failed, %d unchanged"
+                  % (ch, bucket_key or "-", len(res["pinned"]),
+                     len(res["unpinned"]), len(res["failed"]), res["kept"]))
     return out
 
 

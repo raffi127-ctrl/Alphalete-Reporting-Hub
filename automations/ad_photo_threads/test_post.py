@@ -589,18 +589,28 @@ class UnmergeTests(PublishTests):
         self.assertEqual(cl.gone, [])
 
 
-class PinBackfillTests(unittest.TestCase):
-    """The one-time pass that pins threads opened before Lucy had pins:write."""
+class PinReconcileTests(unittest.TestCase):
+    """Pins follow the ads: recent ad pinned, quiet ad unpinned, revived ad
+    pinned again. TODAY is 2026-09-25 and the stale window is 10 days."""
+
+    TODAY = dt.date(2026, 9, 25)
 
     STATE = {
         "C0AAA": {"weeks": {
-            "2026-09-14": {"old": {"thread_ts": "1.0", "title": "Last week"}},
+            "2026-09-14": {"old": {"thread_ts": "1.0", "title": "Last week",
+                                   "days": ["2026-09-15"]}},
             "forever": {
-                "b": {"thread_ts": "3.0", "title": "Beta"},
-                "a": {"thread_ts": "2.0", "title": "Alpha", "pinned": True},
-                "c": {"thread_ts": "", "title": "No thread yet"},
+                "fresh": {"thread_ts": "2.0", "title": "Fresh",
+                          "days": ["2026-09-24"], "pinned": True},
+                "new": {"thread_ts": "3.0", "title": "Newly running",
+                        "days": ["2026-09-25"]},
+                "quiet": {"thread_ts": "4.0", "title": "Gone quiet",
+                          "days": ["2026-09-01"], "pinned": True},
+                "never": {"thread_ts": "5.0", "title": "Never ran", "days": []},
+                "nothread": {"thread_ts": "", "title": "No thread yet"},
             }}},
-        "D0DM1": {"weeks": {"forever": {"x": {"thread_ts": "9.0", "title": "DM"}}}},
+        "D0DM1": {"weeks": {"forever": {"x": {"thread_ts": "9.0", "title": "DM",
+                                              "days": ["2026-09-25"]}}}},
         "_scheduled_merges_done": {"2026-09-21": True},
     }
 
@@ -613,35 +623,56 @@ class PinBackfillTests(unittest.TestCase):
             post.STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
             post._save_state(json.loads(json.dumps(self.STATE)))
             cl = kw.pop("cl", FakeSlack())
-            got = post.pin_backfill(cl=cl, logfn=lambda *_: None, **kw)
+            kw.setdefault("today", self.TODAY)
+            kw.setdefault("stale_days", 10)
+            got = post.reconcile_pins(cl=cl, logfn=lambda *_: None, **kw)
             return got, cl, post._load_state()
 
-    def test_dry_run_lists_without_pinning_or_saving(self):
+    def test_dry_run_lists_both_directions_and_writes_nothing(self):
         got, cl, state = self._run(dry_run=True)
-        self.assertEqual(got["C0AAA"]["pinned"], ["Beta"])
-        self.assertEqual(got["C0AAA"]["already"], ["Alpha"])
-        self.assertEqual(got["C0AAA"]["no_thread"], ["No thread yet"])
-        self.assertEqual(cl.pins, [])                       # Slack untouched
-        self.assertFalse(state["C0AAA"]["weeks"]["forever"]["b"].get("pinned"))
+        self.assertEqual(got["C0AAA"]["pinned"], ["Newly running"])
+        self.assertEqual(got["C0AAA"]["unpinned"], ["Gone quiet"])
+        self.assertEqual(cl.pins, [])
+        self.assertFalse(state["C0AAA"]["weeks"]["forever"]["new"].get("pinned"))
+        self.assertTrue(state["C0AAA"]["weeks"]["forever"]["quiet"]["pinned"])
 
-    def test_apply_pins_the_live_bucket_only_and_records_it(self):
+    def test_apply_pins_the_running_ad_and_unpins_the_quiet_one(self):
         got, cl, state = self._run(dry_run=False, pace=0)
-        self.assertEqual(cl.pins, [("add", "3.0")])         # not "1.0": history
-        self.assertEqual(got["C0AAA"]["pinned"], ["Beta"])
-        self.assertTrue(state["C0AAA"]["weeks"]["forever"]["b"]["pinned"])
+        self.assertEqual(sorted(cl.pins), [("add", "3.0"), ("remove", "4.0")])
+        fv = state["C0AAA"]["weeks"]["forever"]
+        self.assertTrue(fv["new"]["pinned"])
+        self.assertFalse(fv["quiet"]["pinned"])
 
-    def test_dms_and_bookkeeping_keys_are_skipped(self):
+    def test_an_ad_already_in_the_right_state_costs_no_call(self):
+        got, cl, _ = self._run(dry_run=False, pace=0)
+        self.assertNotIn(("add", "2.0"), cl.pins)      # Fresh: pinned, still running
+        self.assertEqual(got["C0AAA"]["kept"], 2)      # Fresh + Never ran
+
+    def test_history_weeks_and_dms_are_left_alone(self):
         got, cl, _ = self._run(dry_run=False, pace=0)
         self.assertEqual(sorted(got), ["C0AAA"])
-        self.assertNotIn(("add", "9.0"), cl.pins)
+        for _, ts in cl.pins:
+            self.assertNotIn(ts, ("1.0", "9.0"))
 
-    def test_a_refused_pin_is_reported_not_recorded(self):
+    def test_a_revived_ad_is_pinned_again(self):
+        """The whole reason reconcile replaces a one-way backfill: _pin only
+        fires when a thread is OPENED, so a revived ad reusing its old thread
+        would otherwise stay unpinned for good."""
+        revived = json.loads(json.dumps(self.STATE))
+        ad = revived["C0AAA"]["weeks"]["forever"]["quiet"]
+        ad["pinned"], ad["days"] = False, ["2026-09-01", "2026-09-25"]
+        with mock.patch.object(self, "STATE", revived):
+            got, cl, state = self._run(dry_run=False, pace=0)
+        self.assertIn(("add", "4.0"), cl.pins)
+        self.assertTrue(state["C0AAA"]["weeks"]["forever"]["quiet"]["pinned"])
+
+    def test_a_refused_call_is_reported_not_recorded(self):
         cl = FakeSlack()
         cl.pins_add = lambda **kw: (_ for _ in ()).throw(
             RuntimeError("{'ok': False, 'error': 'not_in_channel'}"))
         got, _, state = self._run(dry_run=False, pace=0, cl=cl)
-        self.assertIn("Beta", got["C0AAA"]["failed"])
-        self.assertFalse(state["C0AAA"]["weeks"]["forever"]["b"].get("pinned"))
+        self.assertIn("Newly running", got["C0AAA"]["failed"])
+        self.assertFalse(state["C0AAA"]["weeks"]["forever"]["new"].get("pinned"))
 
     def test_rate_limit_backs_off_then_succeeds(self):
         cl, calls = FakeSlack(), []
@@ -653,6 +684,12 @@ class PinBackfillTests(unittest.TestCase):
             cl.pins.append(("add", kw["timestamp"]))
         cl.pins_add = flaky
         got, _, state = self._run(dry_run=False, pace=0, cl=cl)
-        self.assertEqual(len(calls), 2)                     # retried, not failed
+        self.assertEqual(len(calls), 2)
         self.assertEqual(got["C0AAA"]["failed"], {})
-        self.assertTrue(state["C0AAA"]["weeks"]["forever"]["b"]["pinned"])
+        self.assertTrue(state["C0AAA"]["weeks"]["forever"]["new"]["pinned"])
+
+    def test_last_active_survives_a_hand_edited_day(self):
+        self.assertIsNone(post.last_active({"days": ["not-a-date"]}))
+        self.assertIsNone(post.last_active({}))
+        self.assertEqual(post.last_active({"days": ["2026-09-01", "2026-09-20"]}),
+                         dt.date(2026, 9, 20))

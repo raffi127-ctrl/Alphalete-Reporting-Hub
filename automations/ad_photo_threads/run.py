@@ -212,6 +212,17 @@ def _nightly_office(o: dict, day: Optional[dt.date], explicit_date: bool) -> Non
             print("Late photos:", late)
     except Exception as e:                    # noqa: BLE001 — never costs the post
         print(f"late-photo check failed: {type(e).__name__}: {str(e)[:160]}")
+    # Pins follow the ads: tonight's thread is pinned by publish(), and an ad
+    # that has gone quiet for STALE_PIN_DAYS loses its pin here, so the channel
+    # never accumulates a year of them. Costs a Slack call only when something
+    # actually changes, which on most nights is nothing.
+    try:
+        got = post.reconcile_pins([channel], today=day, dry_run=False)
+        r = got.get(channel) or {}
+        if r.get("pinned") or r.get("unpinned"):
+            print("Pins: +%d / -%d" % (len(r["pinned"]), len(r["unpinned"])))
+    except Exception as e:                    # noqa: BLE001 — never costs the post
+        print(f"pin reconcile failed: {type(e).__name__}: {str(e)[:160]}")
 
 
 def main(argv=None) -> int:
@@ -250,10 +261,14 @@ def main(argv=None) -> int:
                       help="Undo a wrong --merge-dups move of AD_TITLE: delete "
                            "the moved replies (--reply-ts) and post its days "
                            "again in a thread of its own.")
-    mode.add_argument("--pin-backfill", action="store_true",
-                      help="One-time: pin the ad threads that were opened "
-                           "before Lucy had pins:write. Lists them and "
-                           "touches nothing unless you add --apply.")
+    mode.add_argument("--pins", "--pin-backfill", action="store_true",
+                      dest="pins",
+                      help="Make the pins match the ads we're running: pin a "
+                           "thread that had a 1st round recently, unpin one "
+                           "that has gone quiet (config.STALE_PIN_DAYS). "
+                           "Unpinning never deletes the thread. Lists what it "
+                           "would do and touches nothing unless you add "
+                           "--apply.")
     mode.add_argument("--merge-dups", action="store_true",
                       help="Fold this week's duplicate threads (an ad title "
                            "pasted without its first words) into the real one "
@@ -265,8 +280,8 @@ def main(argv=None) -> int:
                     help="With --add-notes: say what would be edited, edit nothing.")
     ap.add_argument("--channel", help="Slack channel id to post into.")
     ap.add_argument("--apply", action="store_true",
-                    help="With --pin-backfill: really pin. Without it the "
-                         "backfill only lists what it would pin.")
+                    help="With --pins: really pin/unpin. Without it the "
+                         "pass only lists what it would change.")
     ap.add_argument("--reply-ts", help="With --unmerge: the moved replies' ts, comma-separated.")
     ap.add_argument("--test-dm", action="store_true",
                     help="Post into the test group DM (config.TEST_DM_USERS + Lucy).")
@@ -316,25 +331,30 @@ def main(argv=None) -> int:
         print("Unmerge:", post.unmerge(a.channel or config.LIVE_CHANNEL_ID,
                                        a.unmerge, ts))
         return 0
-    if a.pin_backfill:
+    if a.pins:
         from automations.ad_photo_threads import post
-        got = post.pin_backfill([a.channel] if a.channel else None,
-                                dry_run=not a.apply)
-        head = "PINNED" if a.apply else "WOULD PIN"
-        total = sum(len(r["pinned"]) for r in got.values())
+        got = post.reconcile_pins([a.channel] if a.channel else None,
+                                  today=day, dry_run=not a.apply)
+        verb = ("PINNED", "UNPINNED") if a.apply else ("WOULD PIN", "WOULD UNPIN")
+        np = sum(len(r["pinned"]) for r in got.values())
+        nu = sum(len(r["unpinned"]) for r in got.values())
         for ch, r in sorted(got.items()):
-            if not (r["pinned"] or r["failed"]):
+            if not (r["pinned"] or r["unpinned"] or r["failed"]):
                 continue
             print("\n%s  [%s]" % (ch, r["bucket"] or "-"))
             for t in r["pinned"]:
-                print("  %s  %s" % (head, t))
+                print("  %-11s %s" % (verb[0], t))
+            for t in r["unpinned"]:
+                print("  %-11s %s" % (verb[1], t))
             for t, err in sorted(r["failed"].items()):
-                print("  FAILED    %s: %s" % (t, err))
-        print("\n%s: %d thread(s) across %d channel(s)"
-              % (head.title(), total, len(got)))
-        if not a.apply:
-            print("Nothing was pinned and nothing was saved. "
-                  "Re-run with --pin-backfill --apply to do it.")
+                print("  %-11s %s: %s" % ("FAILED", t, err))
+        print("\n%s: %d to pin, %d to unpin, across %d channel(s)"
+              % ("Done" if a.apply else "Would change", np, nu, len(got)))
+        if not np and not nu:
+            print("Pins already match the ads that are running. Nothing to do.")
+        elif not a.apply:
+            print("Nothing was changed and nothing was saved. "
+                  "Re-run with --pins --apply to do it.")
         return 0
     if a.merge_dups:
         from automations.ad_photo_threads import config, post

@@ -54,6 +54,15 @@ ONE_THREAD_PER_AD = True
 # that pinned is never in the reminder. Kept because a pin Slack refuses (Lucy
 # not in the channel, a workspace that revokes the scope) falls back here
 # instead of silently leaving the channel unpinned.
+# An ad with no 1st round in this many days is treated as no longer running,
+# and its thread is unpinned -- so a channel's pins stay "the ads we're running
+# now" instead of growing forever (Slack caps a channel at 100 pins). Calendar
+# days, so it has to clear a weekend and a slow week: 21 is three weeks with no
+# single interview. It never deletes the thread -- the history stays in the
+# channel, only the pin goes -- and the moment that ad produces a 1st round
+# again the thread is pinned back (post.reconcile_pins).
+STALE_PIN_DAYS = 21
+
 PIN_REMINDER_USER = "U088E2KJEV8"   # Evelyn Sobrino
 
 # Each candidate line is labelled with the ApplicantStream it came from, BY
