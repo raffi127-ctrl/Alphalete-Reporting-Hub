@@ -28,6 +28,7 @@ import re
 import unicodedata
 from pathlib import Path
 from typing import Dict, List, Optional
+from automations.shared.names import fold_accents
 
 ROSTER_PATH = Path(__file__).resolve().parent / "leaders.json"
 
@@ -44,11 +45,10 @@ def _norm(name: str) -> str:
     Accents are folded, NOT stripped: "De'Avioñ Allen" -> 'deavion allen' and
     'Anh Đinh' -> 'anh dinh' (before, the ñ/Đ were dropped, taking the letter
     with them, so accented OBCL names never matched their roster leader)."""
-    s = unicodedata.normalize("NFKD", name or "")
-    # a few letters NFKD doesn't decompose to ASCII + a combining mark:
-    s = (s.replace("đ", "d").replace("Đ", "d").replace("ø", "o")
-          .replace("Ø", "o").replace("ł", "l").replace("Ł", "l"))
-    s = "".join(c for c in s if not unicodedata.combining(c))  # drop the accents
+    # This module's hand-written letter table is now automations/shared/names
+    # -- it was the ONLY correct copy of four, and the other three each had a
+    # silent match failure because of it.
+    s = fold_accents(name)
     s = re.sub(r"[^a-z0-9 ]+", "", s.lower())
     return re.sub(r"\s+", " ", s).strip()
 

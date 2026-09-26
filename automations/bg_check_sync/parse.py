@@ -19,6 +19,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from typing import Optional
+from automations.shared.names import fold_accents
 
 # ---- status constants (must match the sheet's column-K vocabulary) ----------
 SENT = "Sent"
@@ -193,8 +194,10 @@ def classify(sender: str, subject: str, body: str, date: str = "",
 def norm(name: str) -> str:
     """Fold case, strip accents and punctuation for tolerant name matching.
     'Durañona' -> 'duranona', 'Dawkins - Jones' -> 'dawkins jones'."""
-    s = unicodedata.normalize("NFKD", _clean(name))
-    s = "".join(c for c in s if not unicodedata.combining(c))
-    s = s.lower()
+    # Accent fold shared with the rest of the family
+    # (automations/shared/names) -- this module's own copy turned "Anh Đinh"
+    # into 'anh inh', so her Sterling result never matched her checklist row
+    # and her BG status never synced (found 2026-09-26).
+    s = fold_accents(_clean(name)).lower()
     s = re.sub(r"[^a-z0-9 ]+", " ", s)
     return re.sub(r"\s+", " ", s).strip()

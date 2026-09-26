@@ -20,6 +20,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from typing import Any, List, Optional, Sequence, Set, Tuple
+from automations.shared.names import fold_accents
 
 # Parentheticals that decorate a name instead of nicknaming the person. 'Wk 2',
 # 'NC' and 'Chan RT' are status, not what anybody calls them.
@@ -30,8 +31,10 @@ def norm(s: Any) -> str:
     """'Terrance "Dior" Dandy (Wk 2)' -> 'terrance dandy'."""
     t = re.sub(r"\(.*?\)", " ", str(s or ""))
     t = re.sub(r"[\"'‘’“”]", " ", t)
-    t = unicodedata.normalize("NFKD", t)
-    t = "".join(ch for ch in t if not unicodedata.combining(ch))
+    # Accent fold shared (automations/shared/names): the copy here dropped
+    # Đ/ø/ł with the letter, leaving a name that matched nothing and a blank
+    # Location / Team on the sales board (found 2026-09-26).
+    t = fold_accents(t)
     t = re.sub(r"[^a-zA-Z0-9]+", " ", t)
     return " ".join(t.lower().split())
 

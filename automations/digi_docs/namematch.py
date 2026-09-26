@@ -34,6 +34,7 @@ from __future__ import annotations
 import difflib
 import re
 import unicodedata
+from automations.shared.names import fold_accents
 
 # How close two FIRST names must be before a unique surname match is allowed to
 # call them one person. 0.80 keeps Cortney/Courtney (0.86) and drops
@@ -47,9 +48,10 @@ def norm(s: str) -> str:
     Accents come off by decomposing and dropping the combining marks, so ñ -> n
     without a per-character table.
     """
-    s = unicodedata.normalize("NFKD", s or "")
-    s = "".join(c for c in s if not unicodedata.combining(c))
-    s = s.lower().replace("'", "").replace("’", "")
+    # Accent fold shared (automations/shared/names): the copy here dropped
+    # Đ/ø/ł entirely, so "Anh Đinh" folded to 'anh inh' and never matched her
+    # OwnerVille record -- no document bundle, silently (found 2026-09-26).
+    s = fold_accents(s).lower().replace("'", "").replace("’", "")
     s = re.sub(r"[^a-z0-9 ]+", " ", s)
     return re.sub(r"\s+", " ", s).strip()
 
