@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 from automations.blueink_docs import config
+from automations.shared import new_start_eligibility as eligibility
 
 _DATE_RE = re.compile(r"^\s*\d{1,2}[./]\d{1,2}([./]\d{2,4})?\s*$")
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -109,29 +110,25 @@ def normalize_phone(raw: str) -> str:
     return "+" + digits
 
 
-def final_status_is_unrecognised(final_status: str) -> bool:
-    """A non-blank Final Status that is neither a known-bad outcome nor a
-    known-good one. It still sends -- but the caller shouts about it."""
-    v = _norm(final_status)
-    if not v:
-        return False
-    if any(m in v for m in config.FINAL_STATUS_BLOCK_MARKERS):
-        return False
-    return not any(ok in v for ok in config.FINAL_STATUS_KNOWN_OK)
+# The family-wide rule (automations/shared/new_start_eligibility), re-exported
+# so callers keep importing it from here.
+final_status_is_unrecognised = eligibility.final_status_is_unrecognised
 
 
 def _skip_reason(final_status: str, bg_status: str, friday: str,
                  email: str) -> str:
-    """Why this person must NOT be sent docs -- or "" if they should be."""
-    folded = _norm(final_status)
-    if any(m in folded for m in config.FINAL_STATUS_BLOCK_MARKERS):
-        # Quit before/during classroom, failed BGC, terminated, no show,
-        # rescheduling: they aren't starting, so no docs.
-        return f"Final Status: {final_status}"
-    if _norm(bg_status) in config.BG_STATUS_BLOCK:
-        return f"BG Status: {bg_status}"
-    if _norm(friday) in config.FRIDAY_BLOCK:
-        return f"Friday Confirmation: {friday}"
+    """Why this person must NOT be sent docs -- or "" if they should be.
+
+    Two layers, deliberately: "they are not starting" is the family-wide rule
+    and lives in shared.new_start_eligibility; the email checks below are ours
+    alone, because a missing address stops a PACKET and nothing else. The
+    follow-up report reads the same first layer and skips the second -- someone
+    with no email on the sheet is still starting, and their leader is still
+    owed a text.
+    """
+    reason = eligibility.not_starting(final_status, bg_status, friday)
+    if reason:
+        return reason
     if not email:
         return "no email on the sheet"
     if not _EMAIL_RE.match(email):

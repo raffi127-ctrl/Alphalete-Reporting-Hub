@@ -49,52 +49,21 @@ COL_TRAINER = "Trainer"
 # excluded someone who WAS starting. So it's a block-list now (Megan's call,
 # 2026-08-24): name the outcomes that stop a send, let everything else through.
 #
-# Matched as SUBSTRINGS of the case/accent-folded value, so "Quit before
-# Classroom", "Quit during Classroom" and a future "Quit - CR" all hit "quit"
-# without needing the exact wording.
-FINAL_STATUS_BLOCK_MARKERS = (
-    "quit",           # Quit before / during Classroom
-    "failed",         # Failed BGC
-    "terminat",       # Terminated
-    "no show", "noshow", "no-show",
-    "resched",        # RESCHEDULING
-    "declin",         # Declined
-    "backed out",
+# THE RULE ITSELF MOVED to automations/shared/new_start_eligibility.py on
+# 2026-09-26 -- it is the same question every step on the OBCL tab has to
+# answer, and there were three disagreeing copies of it. Re-exported under the
+# original names so nothing that reads config.FINAL_STATUS_BLOCK_MARKERS et al
+# has to change. Edit the shared module, not this.
+#
+# Note what did NOT move: the email checks in roster._skip_reason. "No email
+# address" is a Blue Ink send problem, not a fact about whether the person is
+# starting -- the follow-up report still owes their leader a text.
+from automations.shared.new_start_eligibility import (  # noqa: E402
+    BG_STATUS_BLOCK,
+    FINAL_STATUS_BLOCK_MARKERS,
+    FINAL_STATUS_KNOWN_OK,
+    FRIDAY_BLOCK,
 )
-
-# Values we've seen that are FINE -- someone who reached one of these is still
-# starting and still needs docs. Anything in Final Status that matches neither
-# this nor the block markers still SENDS (that's what a block-list means), but
-# gets printed as a loud unrecognised-value warning, so a new bad outcome gets
-# caught by a human on the next run instead of silently mailing the wrong
-# person forever. That warning is the safety net the blank-only rule used to be.
-FINAL_STATUS_KNOWN_OK = (
-    "showed up to cr",
-    # All seen on 8/24 as the day progressed. Every one of these means the
-    # person is still with us -- they mark PROGRESS, not an exit -- so they
-    # must not block, and naming them here keeps the unrecognised-value warning
-    # for values that are genuinely new.
-    "activations email sent",
-    "owner submitted",
-    "needs blueink",
-    "started",
-)
-
-# BG Status values that disqualify. These are two of the ten options in the
-# column's dropdown; the rest (Passed, Sent, Taken - Pending, Review,
-# Unperformable, Expired, Pending (Name Issue)) still get docs, because docs
-# go out while the background check is still moving.
-BG_STATUS_BLOCK = {"failed", "adverse action"}
-
-# Friday Confirmation values that disqualify (Megan 2026-08-24). Someone who
-# declined the Friday confirmation isn't showing up Monday, so they don't get
-# docs -- same logic as the Final Status rule. "Failed Background" here is the
-# same call: it caught Joshua Applegate, whose Final Status was blank and whose
-# BG Status said only "Unperformable", so neither of the other two rules saw
-# him. The column's remaining values (Confirmed: OTP, Confirmed: Via Sms, BOB
-# Friday, NA: Sent Text) all still send -- "NA: Sent Text" means the
-# confirmation text went out and nobody has answered yet, which is not a no.
-FRIDAY_BLOCK = {"declined", "failed background"}
 
 # --- Blue Ink ---------------------------------------------------------------
 # Account: alphaletemarketing@gmail.com. The private API key is read from a

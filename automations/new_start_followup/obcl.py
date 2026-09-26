@@ -18,6 +18,7 @@ import re
 from typing import Dict, List, Optional
 
 from automations.recruiting_report import fill
+from automations.shared import new_start_eligibility as eligibility
 
 SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
 
@@ -42,10 +43,16 @@ STATUS_HEADER = "Final Status"
 CONFIRMATION_HEADER = "Friday Confirmation"
 BG_STATUS_HEADER = "BG Status : Last Checked"
 
-# Statuses that mean "this person is not actually starting Monday", so their
-# interviewer shouldn't be counted as owing them a text.
-DROPPED_STATUSES = {"declined", "cancelled", "canceled", "no show", "rescheduled",
-                    "failed background", "failed bgc"}
+# DROPPED_STATUSES REMOVED 2026-09-26. "Not actually starting Monday" is a
+# FAMILY-WIDE rule and lives in automations/shared/new_start_eligibility
+# (`not_starting`). This module used to carry its own set of six exact Final
+# Status values while Blue Ink and Digi Docs used a longer substring list, so
+# somebody Terminated / Quit / Backed Out / Adverse Action was skipped for
+# documents while their interviewer was still counted as owing them a text.
+#
+# Don't reintroduce a bare list here: the old code tested every status cell
+# against every list, which let a Final Status word block on a Friday
+# Confirmation cell. `not_starting` checks each column against its own rule.
 
 
 class NewStart:
@@ -80,24 +87,23 @@ class NewStart:
         return a == b or a.startswith(b) or b.startswith(a)
 
     @property
-    def dropped(self) -> bool:
-        """Not actually starting Monday, so their interviewer owes no text.
+    def drop_reason(self) -> str:
+        """Why they are not starting (naming the column), or "" if they are.
 
-        Substring as well as exact: the screenshot path matches "Declined " and
-        "Failed Background" the same way (screenshot_roster.DROPPED_MARKERS),
-        and the two sources disagreeing about who counts is worse than either
-        rule on its own.
+        The shared family rule, so this module, Blue Ink, Digi Docs and the
+        Slack/Skool email all agree about who counts. Each column is checked as
+        the column it is -- the old code folded all three together and tested
+        every value against every list, which let a Final Status word block on
+        a Friday Confirmation cell and vice versa.
         """
-        from automations.new_start_followup import screenshot_roster
-        for raw in (self.status, self.confirmation, self.bg_status):
-            value = " ".join((raw or "").lower().split())
-            if not value:
-                continue
-            if value in DROPPED_STATUSES:
-                return True
-            if any(m in value for m in screenshot_roster.DROPPED_MARKERS):
-                return True
-        return False
+        return eligibility.not_starting(final_status=self.status,
+                                        bg_status=self.bg_status,
+                                        friday=self.confirmation)
+
+    @property
+    def dropped(self) -> bool:
+        """Not actually starting Monday, so their interviewer owes no text."""
+        return bool(self.drop_reason)
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return "NewStart({!r}, {!r}, {!r})".format(self.interviewer, self.name, self.status)

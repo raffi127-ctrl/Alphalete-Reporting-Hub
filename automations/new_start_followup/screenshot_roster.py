@@ -12,6 +12,7 @@ Anh Đinh etc. come back with real accents; roster._norm folds them for matching
 from __future__ import annotations
 
 import base64
+import datetime as dt
 import json
 import mimetypes
 import os
@@ -25,10 +26,12 @@ import requests
 from automations.shared import slack_metrics_post as smp
 from automations.shared import slack_retry
 from automations.brand_audit import credentials
+from automations.shared import new_start_eligibility as eligibility
+from automations.shared.new_start_steps import SLACK_CHANNEL_ID
 
 # Moved from #rafs-office-recruiting (C06881A7WLV, retired) on 2026-08-21 — Aisha now
 # posts the weekly thread in #rafs-office-recruiting-11280.
-CHANNEL_ID = os.environ.get("NSF_CHANNEL_ID", "C0AUAS88FGW")
+CHANNEL_ID = os.environ.get("NSF_CHANNEL_ID", SLACK_CHANNEL_ID)
 # Aisha's weekly post — matched loosely on wording (she has some variance).
 POST_RE = re.compile(r"new\s*starts?.*scheduled.*monday", re.I)
 MODEL = "claude-opus-4-8"
@@ -100,14 +103,23 @@ _PROMPT = (
 # declined the position or failed the BGC, can we make it where it doesn't tag
 # those folks please."
 #
-# Substring matching, not an exact set: the sheet's wording drifts ("Declined",
-# "Declined ", "Failed Background", "Failed BGC"), and a status we fail to
-# recognise means tagging somebody about a person who isn't coming — the exact
-# complaint. The inverse risk (dropping a real new start) is bounded because
-# these two phrases don't appear in any live status: the others are Confirmed:
-# OTP / Confirmed: Via Sms / BOB Friday / NA: Sent Text / Sent / Passed /
-# Taken - Pending / Review.
-DROPPED_MARKERS = ("declin", "failed background", "failed bgc", "failed bg check")
+# THE STATUSES NOW COME OFF THE SHEET, NOT THIS IMAGE (Megan 2026-09-26: "as
+# long as we read the correct statuses — but it has to be after Aisha posts the
+# screenshot because that's when she has updated the sheet"). So the post is the
+# GATE and the FUNNEL SPLIT, and `enrich_from_sheet` replaces every status on
+# every row with the live cell. Two reasons that is strictly better:
+#
+#   1. This schema never captured Final Status at all — only Friday Confirmation
+#      and BG Status. "Quit before Classroom", "Terminated" and "Backed Out"
+#      were invisible here, so those leaders were still being tagged.
+#   2. A status read off a JPEG is a status somebody has to re-read every time
+#      the wording drifts. The cell is the cell.
+#
+# The screenshot's own status fields are kept as the FALLBACK for a row the
+# sheet has no match for, so a late-renamed name can never delete a new start.
+# DROPPED_MARKERS REMOVED 2026-09-26 — `is_dropped` calls
+# shared.new_start_eligibility.not_starting, which is also what Blue Ink, Digi
+# Docs and the Slack/Skool email use.
 
 
 class RosterNotPostedYet(RuntimeError):
@@ -125,11 +137,85 @@ class RosterNotPostedYet(RuntimeError):
 
 
 def is_dropped(row: dict) -> bool:
-    for field in ("confirmation", "bg_status"):
-        value = " ".join((row.get(field) or "").lower().split())
-        if any(marker in value for marker in DROPPED_MARKERS):
-            return True
-    return False
+    """Not starting, so nobody is owed a text about them.
+
+    Reads each status as the column it is, via the family-wide rule in
+    shared.new_start_eligibility — the same one Blue Ink, Digi Docs and the
+    Slack/Skool email use, so one tab cannot produce two answers.
+    """
+    return bool(eligibility.not_starting(
+        final_status=row.get("final_status") or "",
+        bg_status=row.get("bg_status") or "",
+        friday=row.get("confirmation") or ""))
+
+
+def enrich_from_sheet(rows: List[dict], monday, sheet_id: str = "") -> List[str]:
+    """Overwrite each row's statuses with the live OBCL cells. Returns notes.
+
+    The screenshot says WHO is in this funnel; the sheet says how each of them
+    is doing. Matching is on the folded "first last" (roster._norm), the same
+    key the leader lookup uses.
+
+    ADVISORY, never fatal: if the sheet can't be read the rows keep the values
+    the screenshot gave them and the caller gets a warning. Losing the statuses
+    costs accuracy; raising here would cost the whole roll call.
+
+    A name the sheet doesn't have keeps its screenshot statuses too — Aisha adds
+    and renames rows, and a failed match must never silently delete a new start
+    who is starting.
+
+    Where the sheet holds the same name TWICE and the rows disagree about
+    whether they are starting, nobody is dropped and the disagreement is
+    reported. Duplicate rows are exactly what Raf flagged in the first place,
+    and a leader nudged about someone who isn't coming is a smaller harm than a
+    real new start nobody reaches out to.
+    """
+    from automations.new_start_followup import obcl
+    from automations.new_start_followup import roster as roster_mod
+
+    notes = []  # type: List[str]
+    try:
+        _, tab, starts = obcl.read_new_starts(
+            monday, **({"sheet_id": sheet_id} if sheet_id else {}))
+    except Exception as exc:  # noqa: BLE001 — advisory, see the docstring
+        notes.append("WARNING: couldn't read the OBCL sheet for statuses ({}); "
+                     "using the screenshot's own status columns, which do not "
+                     "include Final Status.".format(exc))
+        return notes
+
+    by_key = {}  # type: dict
+    for st in starts:
+        by_key.setdefault(roster_mod._norm(st.name), []).append(st)
+
+    matched = unmatched = 0
+    for row in rows:
+        key = roster_mod._norm("{} {}".format(row.get("name", ""),
+                                              row.get("last_name", "")))
+        hits = by_key.get(key) or []
+        if not hits:
+            unmatched += 1
+            notes.append("not on {}: {} {} — keeping the screenshot's statuses"
+                         .format(tab, row.get("name", ""),
+                                 row.get("last_name", "")))
+            continue
+        matched += 1
+        reasons = {st.drop_reason for st in hits}
+        if len(hits) > 1 and len(reasons) > 1:
+            notes.append(
+                "{} {} is on {} {} times and the rows disagree ({}) — NOT "
+                "dropped; somebody should tidy the tab".format(
+                    row.get("name", ""), row.get("last_name", ""), tab,
+                    len(hits), " / ".join(sorted(r or "(starting)"
+                                                 for r in reasons))))
+            row["final_status"] = row["bg_status"] = row["confirmation"] = ""
+            continue
+        st = hits[0]
+        row["final_status"] = st.status
+        row["bg_status"] = st.bg_status
+        row["confirmation"] = st.confirmation
+    notes.insert(0, "[roster] statuses read off {}: {} matched, {} not on the "
+                    "tab".format(tab, matched, unmatched))
+    return notes
 
 
 def all_interviewers(rows):
@@ -158,10 +244,16 @@ def owed_counts(rows):
         intv = (r.get("interviewer") or "").strip()
         if not intv:
             continue
-        if is_dropped(r):
+        reason = eligibility.not_starting(
+            final_status=r.get("final_status") or "",
+            bg_status=r.get("bg_status") or "",
+            friday=r.get("confirmation") or "")
+        if reason:
+            # The reason NAMES ITS COLUMN ("Final Status: Quit before
+            # Classroom"), because "?" was what this printed whenever the
+            # blocking value was one the screenshot never carried.
             dropped.append("{} — {} {} ({})".format(
-                intv, r.get("name", ""), r.get("last_name", ""),
-                (r.get("confirmation") or r.get("bg_status") or "?").strip()))
+                intv, r.get("name", ""), r.get("last_name", ""), reason))
             continue
         owed[intv] = owed.get(intv, 0) + 1
     return owed, dropped
@@ -322,12 +414,45 @@ def _cache_path(img: dict) -> Path:
     return CACHE_DIR / ("%s.json" % key)
 
 
+def _with_sheet_statuses(rows: List[dict], monday_iso: Optional[str],
+                         from_sheet: bool) -> List[dict]:
+    """Apply enrich_from_sheet and print its notes. Never raises."""
+    if not from_sheet:
+        return rows
+    if not monday_iso:
+        # Without a week we cannot pick the tab, and guessing the newest one is
+        # how last week's statuses get stamped onto this week (the 8/22 near
+        # miss). Leave the screenshot's own values and say so.
+        print("[roster] no week given, so statuses stay as the screenshot read "
+              "them (no Final Status).")
+        return rows
+    try:
+        monday = dt.date.fromisoformat(monday_iso)
+    except ValueError:
+        print("[roster] couldn't read {!r} as a date; statuses stay as the "
+              "screenshot read them.".format(monday_iso))
+        return rows
+    for line in enrich_from_sheet(rows, monday):
+        print("   " + line if not line.startswith("[") else line)
+    return rows
+
+
 def fetch_roster_rows(monday_iso: Optional[str] = None,
                       poster: Optional[str] = None,
-                      use_cache: bool = True) -> List[dict]:
-    """End-to-end: find the weekly screenshot, download it, OCR it.
-    Returns [{'interviewer','name','last_name','confirmation','bg_status'}].
-    Raises if no post/image found."""
+                      use_cache: bool = True,
+                      from_sheet: bool = True) -> List[dict]:
+    """End-to-end: find the weekly screenshot, OCR it, then take the STATUSES
+    off the OBCL sheet.
+
+    Returns [{'interviewer','name','last_name','confirmation','bg_status',
+              'final_status'}]. Raises RosterNotPostedYet if Aisha hasn't
+    posted — which is also what makes reading the sheet safe: her post is how
+    we know the sheet is current for this week (Megan 2026-09-26).
+
+    The OCR half is cached per image; the status half is re-read EVERY call,
+    because statuses move through the week and the image doesn't.
+    `from_sheet=False` is for tests and for showing what the picture alone said.
+    """
     client = smp._client()
     img = _find_roster_image(client, monday_iso, poster=poster)
     if not img:
@@ -347,7 +472,7 @@ def fetch_roster_rows(monday_iso: Optional[str] = None,
             if rows and all("confirmation" in r for r in rows):
                 print("[roster] using cached OCR of {} ({} rows)".format(
                     img.get("name", "?"), len(rows)))
-                return rows
+                return _with_sheet_statuses(rows, monday_iso, from_sheet)
         except Exception as exc:  # noqa: BLE001 — a bad cache just means re-read
             print("[roster] ignoring unreadable OCR cache ({}).".format(exc))
 
@@ -367,7 +492,10 @@ def fetch_roster_rows(monday_iso: Optional[str] = None,
             path.unlink()
         except Exception:
             pass
-    return rows
+    # The CACHE stores what the picture said; the rows we hand back carry the
+    # sheet's live statuses. Enriching after the write on purpose, so a cache
+    # entry is never a snapshot of a status that has since changed.
+    return _with_sheet_statuses(rows, monday_iso, from_sheet)
 
 
 def diagnose() -> int:
