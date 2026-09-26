@@ -1419,19 +1419,22 @@ def _send_guest_boards(cfg: Dict, guest_due: Dict, guest_boards: Dict,
             _recs = ((_SBS.load().get("_records") or {}).get(day.isoformat()) or {})
             _line = _GC.guest_callout(cfg["key"], guest, g_gaps, _recs,
                                       dt.datetime.now(), remember=send)
-            if _line:
+            if True:
                 # SLACK, NOT THE TEXT: the guest's own ECO alert channel.
                 from automations.icd_alerts import post as _P
                 _gkey = _GC.GUEST_SLACK_KEY.get(_GC._key(guest), "")
                 _rooms = [c.id for c in (_P.approved_channels().get(_gkey) or [])]
-                _log("  %s: call-out for %s -> %s: %s"
-                     % (cfg["key"], guest, ", ".join(_rooms) or "(no slack room)", _line.splitlines()[0]))
-                if send:
-                    for _ch in _rooms:
-                        try:
-                            _P._slack(_ch, _line)
-                        except Exception as _e:  # noqa: BLE001
-                            _log("  %s: call-out to %s FAILED: %s" % (cfg["key"], _ch, type(_e).__name__))
+                for _msg in (_line, _GC.pace_callout("guest:%s:%s" % (cfg["key"], _gkey), g_rows, dt.datetime.now(), remember=send)):
+                    if not _msg:
+                        continue
+                    _log("  %s: call-out for %s -> %s: %s"
+                         % (cfg["key"], guest, ", ".join(_rooms) or "(no slack room)", _msg.splitlines()[0]))
+                    if send:
+                        for _ch in _rooms:
+                            try:
+                                _P._slack(_ch, _msg)
+                            except Exception as _e:  # noqa: BLE001
+                                _log("  %s: call-out to %s FAILED: %s" % (cfg["key"], _ch, type(_e).__name__))
         except Exception as e:  # noqa: BLE001 -- the call-out never costs the board
             _log("  %s: call-out for %s skipped: %s" % (cfg["key"], guest, type(e).__name__))
         if not png and not body:
@@ -1717,11 +1720,13 @@ def tick(day: dt.date, *, send: bool, only: str = "",
                 _recs = ((_SBS.load().get("_records") or {}).get(day.isoformat()) or {})
                 _line = _GC.guest_callout(cfg["key"], "own", gaps, _recs,
                                           dt.datetime.now(), remember=send)
-                if _line:
-                    _log("  %s: call-out -> %s: %s" % (cfg["key"], _room, _line.splitlines()[0]))
+                from automations.icd_alerts import post as _P
+                for _msg in (_line, _GC.pace_callout(cfg["key"], rows, dt.datetime.now(), remember=send)):
+                    if not _msg:
+                        continue
+                    _log("  %s: call-out -> %s: %s" % (cfg["key"], _room, _msg.splitlines()[0]))
                     if send:
-                        from automations.icd_alerts import post as _P
-                        _P._slack(_room, _line)
+                        _P._slack(_room, _msg)
         except Exception as _e:  # noqa: BLE001
             _log("  %s: call-out skipped: %s" % (cfg["key"], type(_e).__name__))
         previous, first_of_day = _previous_gap_names(cfg["key"], day)

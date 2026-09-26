@@ -112,3 +112,21 @@ class GuestCalloutTest(unittest.TestCase):
         self.assertEqual(again, "")                                     # within the half hour: quiet
         later = G.guest_callout("rafael_hidalgo", "Carlos Hidalgo", gaps, {"NICK SMITH": 1, "ANA PITCHING": 2}, NOW + dt.timedelta(minutes=30))
         self.assertIn("Nick", later); self.assertNotIn("Ana", later)   # Ana ran a credit check since
+
+
+class PaceTest(unittest.TestCase):
+    ROWS = [{"Rep": "Ana Fast", "Total Knocks": "62", "First Knock": "12:00 PM", "Last Knock": "2:00 PM"},   # 31/hr
+            {"Rep": "Bo Slow", "Total Knocks": "20", "First Knock": "12:00 PM", "Last Knock": "2:00 PM"},    # 10/hr
+            {"Rep": "Cy Short", "Total Knocks": "9", "First Knock": "2:40 PM", "Last Knock": "2:55 PM"}]     # 36/hr but 15 min
+
+    def test_25_an_hour_over_an_hour(self):
+        out = G.pace(self.ROWS, NOW)
+        self.assertEqual([(r["name"], r["avg"]) for r in out], [("Ana Fast", 31)])
+
+    def test_praised_once_a_day(self):
+        import pathlib, tempfile
+        from unittest import mock
+        with mock.patch.object(G, "STATE_PATH", pathlib.Path(tempfile.mkdtemp()) / "s.json"):
+            first = G.pace_callout("kash", self.ROWS, NOW)
+            self.assertIn("Ana", first); self.assertIn("31", first)
+            self.assertEqual(G.pace_callout("kash", self.ROWS, NOW.replace(minute=30)), "")

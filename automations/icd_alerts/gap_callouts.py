@@ -45,7 +45,7 @@ from automations.icd_alerts import knocks_map as M, knocks_post as K, offices as
 # count moved this hour is working, not idle. Names capped so a slow Saturday
 # is a call-out, not a roll call.
 CALLOUT_CAMPAIGNS = {"att", "nds"}   # D2D only; B2B and Box offices are out (Megan 2026-09-26)
-CALLOUT_EXTRA_OFFICES = {"ryan"}      # ... except an office that asked (Ryan, 2026-09-26)
+CALLOUT_EXTRA_OFFICES = {"ryan", "roshan"}   # ... except offices that asked (Ryan, Roshan 2026-09-26)
 INLINE_NAMES = 3      # more than this and every name goes on its own bullet (Megan: name them, no '6 more')
 # CARLOS'S NUMBERS (2026-09-26): "30 mins plus. But if they've had a credit
 # check in the last 30 mins they're not finger popping." So the check runs
@@ -225,6 +225,82 @@ def guest_callout(host_key: str, guest: str, gaps: List[Dict], records_now: Dict
     return text
 
 
+# THE POSITIVE ONE (Megan 2026-09-26: "a positive call out for someone avg
+# 25+ doors/hour knocked"). Knocks/Hr the way the board reads it -- total
+# knocks over the raw span, first knock to last (render.py, per Raf and
+# Megan) -- and only once the span is an hour, so five doors in ten minutes
+# is not "30 an hour". Each rep is praised ONCE a day.
+PACE_KNOCKS_PER_HOUR = 25
+PACE_MIN_SPAN_MIN = 60
+
+PACE_LINES = (
+    "Snicklepop!! {names} averaging {avg}+ doors an hour. That's how it's done ⚡",
+    "{names} — {avg} doors/hr. Somebody's definitely not finger poppin' 🔥",
+    "Pace check: {names} at {avg} doors an hour. Keep that foot on the gas.",
+    "{avg} doors/hr from {names}. The neighborhood knows your name by now.",
+    "¡Snicklepop! {names} tocando {avg} puertas por hora. Así se hace 🔥",
+    "{names} a {avg} puertas por hora. Eso no es finger poppin', eso es trabajo.",
+)
+
+
+def _span_minutes(first: str, last: str, now: dt.datetime):
+    a = K._minutes_since(first, now)
+    b = K._minutes_since(last, now)
+    if a is None or b is None:
+        return None
+    return a - b
+
+
+def pace(rows: List[Dict], now: dt.datetime) -> List[Dict]:
+    """[{name, avg}] for reps at PACE_KNOCKS_PER_HOUR+ over an hour or more."""
+    out = []
+    for r in rows:
+        name = str(r.get("Rep") or "").strip()
+        try:
+            knocks = int(str(r.get("Total Knocks") or "0").replace(",", "") or 0)
+        except ValueError:
+            continue
+        span = _span_minutes(str(r.get("First Knock") or ""), str(r.get("Last Knock") or ""), now)
+        if not name or not span or span < PACE_MIN_SPAN_MIN or knocks <= 0:
+            continue
+        avg = knocks / (span / 60.0)
+        if avg >= PACE_KNOCKS_PER_HOUR:
+            out.append({"name": name, "avg": int(avg)})
+    out.sort(key=lambda x: -x["avg"])
+    return out
+
+
+def pace_line(office_key: str, reps: List[Dict], now: dt.datetime) -> str:
+    if not reps:
+        return ""
+    seed = "pace|%s|%s|%d" % (office_key, now.date().isoformat(), now.hour)
+    template = PACE_LINES[zlib.crc32(seed.encode("utf-8")) % len(PACE_LINES)]
+    spanish = _is_spanish(template)
+    firsts = []
+    for r in reps:
+        f = _first(r["name"])
+        if f and f not in firsts:
+            firsts.append(f)
+    joiner = " y " if spanish else " and "
+    names = firsts[0] if len(firsts) == 1 else ", ".join(firsts[:-1]) + joiner + firsts[-1]
+    return template.format(names=names, avg=min(r["avg"] for r in reps))
+
+
+def pace_callout(office_key: str, rows: List[Dict], now: dt.datetime, *, remember: bool = True) -> str:
+    """The positive line for reps not yet praised today, or ""."""
+    key = "pace:%s" % office_key
+    state = _state()
+    st = state.get(key) or {}
+    done = set(st.get("praised") or []) if st.get("day") == now.date().isoformat() else set()
+    fresh = [r for r in pace(rows, now) if _key(r["name"]) not in done]
+    text = pace_line(office_key, fresh, now)
+    if text and remember:
+        state[key] = {"day": now.date().isoformat(),
+                      "praised": sorted(done | {_key(r["name"]) for r in fresh})}
+        _save(state)
+    return text
+
+
 def _state() -> Dict:
     try:
         return json.loads(STATE_PATH.read_text())
@@ -315,6 +391,37 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
                 P._slack(ch, text)
             except Exception as e:  # noqa: BLE001
                 log("%-14s FAILED to post to %s: %s" % (key, ch, type(e).__name__))
+    # THE POSITIVE ONE rides the same tick on its own memory (once per rep
+    # per day), so a strong hour is named even when nobody is idle.
+    for key in sorted(approved_ch):
+        if only and key != only:
+            continue
+        office = O.get(key)
+        if not office or (str(getattr(office, "campaign", "") or "att").strip().lower() not in CALLOUT_CAMPAIGNS
+                          and key not in CALLOUT_EXTRA_OFFICES):
+            continue
+        now = K._office_now(office)
+        if not K.in_field_hours(office, now):
+            continue
+        krow = knocks.get(key) or next((r for k, r in knocks.items() if k.startswith(key) or key.startswith(k)), None)
+        if not krow or K._too_old(krow[K.KN_RECEIVED]):
+            continue
+        try:
+            rows = M.to_rows(json.loads(krow[K.KN_ROWS] or "[]"), json.loads(krow[K.KN_TRACKER] or "[]"))
+        except ValueError:
+            continue
+        praise = pace_callout(key, rows, now, remember=send)
+        if not praise:
+            continue
+        dests = [c.id for c in (approved_ch.get(key) or [])]
+        log("%-14s -> %s: %s" % (key, ", ".join(dests) or "-", praise))
+        said.append(praise)
+        if send:
+            for ch in dests:
+                try:
+                    P._slack(ch, praise)
+                except Exception as e:  # noqa: BLE001
+                    log("%-14s FAILED to post to %s: %s" % (key, ch, type(e).__name__))
     if send:
         _save(state)
     return said
