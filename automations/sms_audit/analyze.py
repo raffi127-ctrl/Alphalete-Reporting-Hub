@@ -910,7 +910,7 @@ def delivery_reasons(rows):
 def log_reply_speed(convos):
     """Reply speed with the sender actually known. 'human' here means a named
     person in Sent By — not an inference from who booked."""
-    lanes = {"ai": [], "human": []}
+    speeds = {"ai": [], "human": []}
     for c in convos.values():
         msgs = c["msgs"]
         for i, m in enumerate(msgs):
@@ -922,8 +922,8 @@ def log_reply_speed(convos):
             gap = (nxt["when"] - m["when"]).total_seconds() / 60.0
             if gap < 0 or gap > 24 * 60:
                 continue
-            lanes["ai" if is_ai(nxt) else "human"].append(gap)
-    return lanes
+            speeds["ai" if is_ai(nxt) else "human"].append(gap)
+    return speeds
 
 
 def log_unanswered(convos, min_wait_min=ANSWER_WINDOW_MIN):
@@ -965,13 +965,13 @@ def audit_log(rows, convos, office, booked=None):
     fun["drop"] = drop["buckets"]
     fun["curve"] = drop["curve"]
     fun["booked_rows"] = len(booked or {})
-    lanes = log_reply_speed(convos)
+    speeds = log_reply_speed(convos)
     return {
         "office": office,
         "rows": len(rows),
         "funnel": fun,
-        "speed_ai": _stat(lanes["ai"]),
-        "speed_human": _stat(lanes["human"]),
+        "speed_ai": _stat(speeds["ai"]),
+        "speed_human": _stat(speeds["human"]),
         "unanswered": log_unanswered(convos),
         "delivery": log_delivery(rows),
     }
