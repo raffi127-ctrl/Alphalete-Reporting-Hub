@@ -68,6 +68,7 @@ HEADER_MAP = {
     "status": "status", "sent by": "sent_by",
 }
 CELL_CAP = 45000
+WRITE_CHUNK = 4000        # rows per update call — see _write_tab
 
 
 def _rqst(page):
@@ -295,7 +296,17 @@ def _write_tab(records, meta, office):
     rows = [[meta] + [""] * (len(COLUMNS) - 1), list(COLUMNS)]
     for r in records:
         rows.append([str(r.get(c, ""))[:CELL_CAP] for c in COLUMNS])
-    ws.update(values=rows, range_name="A1", raw=True)
+    # One ordinary DAY in Raf's office is ~3,500 messages, so a week is ~20,000
+    # rows and a single update is a multi-megabyte request that times out
+    # halfway and leaves the tab holding part of a week with no sign of it.
+    # Chunked, and the local JSON is written first either way, so a failed
+    # sheet write costs a re-upload rather than the pull.
+    for start in range(0, len(rows), WRITE_CHUNK):
+        chunk = rows[start:start + WRITE_CHUNK]
+        ws.update(values=chunk, range_name="A{}".format(start + 1), raw=True)
+        if len(rows) > WRITE_CHUNK:
+            print("[sms_log]   wrote rows {}-{} of {}".format(
+                start + 1, start + len(chunk), len(rows)), flush=True)
     return tab, len(rows)
 
 
