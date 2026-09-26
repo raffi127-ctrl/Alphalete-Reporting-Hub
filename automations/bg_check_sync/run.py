@@ -24,6 +24,7 @@ import sys
 
 from automations.recruiting_report import fill
 from automations.bg_check_sync import (parse, match, email_source,
+                                      fail_alert,
                                        name_gate, ov_name_sync, slack_post)
 from automations.shared import name_case
 
@@ -415,6 +416,24 @@ def process_week(sh, monday, events, *, dry_run, do_post, repost, now,
     for d in changes:
         print(f"  {d.person.last}, {d.person.first} : "
               f"{d.person.current or '(blank)'} -> {d.new_status}")
+
+    # A FAILED background check on THIS week's cohort gets texted straight away
+    # (Megan 2026-09-26, after Quincy Williams failed on the 25th and nobody was
+    # told). Only the week in flight, only once per person per week, and never
+    # allowed to take the sync down — the col-K write is the job.
+    try:
+        alert = fail_alert.send(decisions, week,
+                                is_current_week=(monday == _active_monday(
+                                    now.date() if now else None)),
+                                dry_run=dry_run or not do_post)
+        if alert.get("texted"):
+            print(f"[bg-fail] {'WOULD text' if alert['dry_run'] else 'texted'} "
+                  f"{alert.get('chat') or fail_alert.GROUP}: "
+                  f"{', '.join(alert['texted'])}")
+        if alert.get("error"):
+            print(f"[bg-fail] ⚠ text FAILED to send: {alert['error']}")
+    except Exception as e:  # noqa: BLE001
+        print(f"[bg-fail] ⚠ alert skipped ({type(e).__name__}: {str(e)[:120]})")
 
     # Sterling is the truth: anyone we have already MATCHED gets their checklist
     # spelling brought up to the name their check ran under. No gate — the match
