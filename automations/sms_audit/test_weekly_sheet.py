@@ -9,6 +9,7 @@ from __future__ import annotations
 import datetime as dt
 import unittest
 
+from automations.sms_audit import analyze as A
 from automations.sms_audit import weekly_sheet as W
 
 
@@ -170,3 +171,65 @@ class WindowGuardTest(unittest.TestCase):
     def test_the_window_is_read_off_the_data_not_the_request(self):
         self.assertEqual(W.data_window(self._rep(["09-04-2026", "09-02-2026"])),
                          (dt.date(2026, 9, 2), dt.date(2026, 9, 4)))
+
+
+class WeekHeaderTest(unittest.TestCase):
+    """'WE 9/25' — week ending, the way recruiting says it (Megan). The header
+    has to round-trip: next week's run finds this week's column by READING it
+    back, so a header it cannot parse silently starts a duplicate column."""
+
+    def test_the_header_reads_the_way_recruiting_says_it(self):
+        self.assertEqual(W.week_header(dt.date(2026, 9, 25)), "WE 9/25")
+        self.assertEqual(W.week_header(dt.date(2026, 10, 2)), "WE 10/2")
+
+    def test_no_zero_padding_and_no_glibc_strftime(self):
+        # %-m/%-d is glibc-only and every report here runs on Windows too
+        self.assertEqual(W.week_header(dt.date(2026, 9, 4)), "WE 9/4")
+
+    def test_it_round_trips(self):
+        for d in (dt.date(2026, 9, 4), dt.date(2026, 9, 25), dt.date(2026, 10, 2)):
+            self.assertEqual(W.parse_week_header(W.week_header(d)), d)
+
+    def test_the_year_is_recovered_from_the_friday_rule(self):
+        # a week-ending date is always a Friday, and a month/day only lands on
+        # one every 6-11 years, so the short form is not ambiguous in practice
+        self.assertEqual(W.parse_week_header("WE 9/25"), dt.date(2026, 9, 25))
+        self.assertEqual(dt.date(2026, 9, 25).weekday(), 4)
+
+    def test_older_header_spellings_still_resolve(self):
+        # columns written before the format changed must keep their place
+        self.assertEqual(W.parse_week_header("09/04/26"), dt.date(2026, 9, 4))
+        self.assertEqual(W.parse_week_header("WE 9/25/26"), dt.date(2026, 9, 25))
+
+    def test_a_label_is_not_a_week(self):
+        for junk in ("People texted", "", "Reach", "Q: What is the pay?"):
+            self.assertIsNone(W.parse_week_header(junk))
+
+
+class QuestionRowsTest(unittest.TestCase):
+    """Every question gets its own row (Megan). A single "top question" row
+    hides the thing worth acting on — that reschedule went 38% to 51%."""
+
+    def test_there_is_a_row_per_bucket(self):
+        labels = {label for _s, label, _fn in W.ROWS}
+        for bucket, _pat in A.QUESTION_BUCKETS:
+            self.assertIn(W._q_label(bucket), labels)
+
+    def test_the_unbucketed_ones_are_counted_too(self):
+        self.assertIn("Q: something else", {l for _s, l, _f in W.ROWS})
+
+    def test_a_bucket_reads_its_own_count(self):
+        import collections
+        rep = {"questions": collections.Counter({"What is the pay?": 7}),
+               "questions_other": [1, 2, 3]}
+        by_label = {label: fn for _s, label, fn in W.ROWS}
+        self.assertEqual(by_label["Q: What is the pay?"](rep), 7)
+        self.assertEqual(by_label["Q: something else"](rep), 3)
+
+    def test_a_question_nobody_asked_is_zero_not_blank(self):
+        # zero is a real measurement here: we read every message and nobody
+        # asked it. That is different from the log-only metrics.
+        import collections
+        rep = {"questions": collections.Counter(), "questions_other": []}
+        by_label = {label: fn for _s, label, fn in W.ROWS}
+        self.assertEqual(by_label["Q: What is the pay?"](rep), 0)

@@ -15,7 +15,8 @@ home is made by hand and named once.
 
 LAYOUT, and why it is this way. Column A is the section, **column B is the
 metric label**, and every column from C rightwards is one recruiting week
-headed by the Friday it ended (Sat-Fri — see `sms_thread_dump._recruiting_week`).
+headed **WE m/d** — the Friday it ended (Sat-Fri, see
+`sms_thread_dump._recruiting_week`).
 Nothing is addressed by index: a metric is found by its column-B label and a
 week by its header date, both created on the fly when missing, because a
 template someone re-orders by hand must not start writing pay into the show
@@ -27,6 +28,7 @@ from __future__ import annotations  # Lucy/mini run Python 3.9 — keep lazy
 import argparse
 import datetime as dt
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -75,6 +77,16 @@ def _rate(n, d):
     return "" if not d or n is None else round(100.0 * n / d, 1)
 
 
+def _q_label(bucket):
+    """'Q: Can we reschedule / a different time?' — prefixed so the question
+    rows read as a group and cannot collide with a metric label."""
+    return "Q: {}".format(bucket)
+
+
+def _q_count(bucket):
+    return lambda r: r["questions"].get(bucket, 0)
+
+
 ROWS = [
     ("Reach", "People texted", lambda r: _f(r, "contacted", "")),
     ("Reach", "Replied to us", lambda r: _f(r, "replied", "")),
@@ -109,10 +121,17 @@ ROWS = [
                    if not u.get("booked")) if r.get("log") else ""),
 
     ("What they ask", "Questions asked", lambda r: r["questions_total"]),
-    ("What they ask", "Top question",
-     lambda r: r["questions"].most_common(1)[0][0] if r["questions"] else ""),
-    ("What they ask", "Top question, count",
-     lambda r: r["questions"].most_common(1)[0][1] if r["questions"] else ""),
+] + [
+    # Every question spelled out, one row each, so a week-over-week read shows
+    # what is RISING — "reschedule went 38% → 51%" is the thing worth acting
+    # on, and a single "top question" row hides it. The bucket list lives in
+    # analyze.QUESTION_BUCKETS; adding one there adds a row here, and because
+    # rows are found by label an added bucket slots in without moving the
+    # existing weeks.
+    ("What they ask", _q_label(label), _q_count(label))
+    for label, _pat in A.QUESTION_BUCKETS
+] + [
+    ("What they ask", "Q: something else", lambda r: len(r["questions_other"])),
 
     ("Flags", "Texts outside 8am–9pm",
      lambda r: len(r["anomalies"].get("Texted outside 8am–9pm (TCPA quiet hours)", []))),
@@ -191,14 +210,57 @@ def _label_rows(values):
     return out
 
 
+def week_header(week_end):
+    """'WE 9/25' — week ending, the way recruiting says it (Megan 2026-09-26).
+    No %-m/%-d: that strftime is glibc-only and every report here has to run
+    on Windows too."""
+    return "WE {}/{}".format(week_end.month, week_end.day)
+
+
+def parse_week_header(text):
+    """'WE 9/25' -> date(2026, 9, 25). Also accepts 'WE 9/25/26' and a bare
+    date, so columns written before the header changed still resolve.
+
+    The year is not in the short form, and it does not need to be: a
+    week-ending date is ALWAYS a Friday, and a given month/day only lands on a
+    Friday every 6-11 years. So the year is the most recent one, not in the
+    future, where that month/day is a Friday — unique for any sheet anyone
+    will actually keep."""
+    t = (text or "").strip()
+    m = re.match(r"^(?:WE\s+)?(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?$", t, re.I)
+    if not m:
+        return None
+    mo, day = int(m.group(1)), int(m.group(2))
+    if m.group(3):
+        yr = int(m.group(3))
+        yr += 2000 if yr < 100 else 0
+        try:
+            return dt.date(yr, mo, day)
+        except ValueError:
+            return None
+    today = dt.date.today()
+    for yr in range(today.year + 1, today.year - 12, -1):
+        try:
+            cand = dt.date(yr, mo, day)
+        except ValueError:
+            continue
+        if cand.weekday() == 4 and cand <= today + dt.timedelta(days=7):
+            return cand
+    return None
+
+
 def _week_columns(values):
-    """{friday-date: 1-indexed column} off the header row, using the same date
-    parser the Focus Report's week lookup uses."""
+    """{week-ending date: 1-indexed column} off the header row."""
     if len(values) < HEADER_ROW:
         return {}
-    return {d: c for d, c in
-            _fill.find_sunday_columns(values, header_row_idx=HEADER_ROW - 1).items()
-            if c >= FIRST_WEEK_COL}
+    out = {}
+    for col, raw in enumerate(values[HEADER_ROW - 1], start=1):
+        if col < FIRST_WEEK_COL:
+            continue
+        d = parse_week_header(str(raw))
+        if d:
+            out[d] = col
+    return out
 
 
 def _a1(row, col):
@@ -264,7 +326,7 @@ def write_week(ws, rep, week_end, dry_run=False):
     col = weeks.get(week_end)
     if col is None:
         col = max([FIRST_WEEK_COL - 1] + list(weeks.values())) + 1
-        updates.append((_a1(HEADER_ROW, col), [[week_end.strftime("%m/%d/%y")]]))
+        updates.append((_a1(HEADER_ROW, col), [[week_header(week_end)]]))
 
     for section, label, fn in ROWS:
         try:
