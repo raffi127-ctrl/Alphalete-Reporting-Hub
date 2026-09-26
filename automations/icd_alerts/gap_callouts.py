@@ -490,7 +490,23 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
                 except Exception as e:  # noqa: BLE001
                     log("%-14s FAILED to post to %s: %s" % (key, ch, type(e).__name__))
     if send:
-        _save(state)
+        # MERGE, NEVER CLOBBER. `state` is the snapshot taken at the TOP of this
+        # run, and pace_callout() persists its own `pace:<office>` marker
+        # mid-run off a FRESH read. A plain _save(state) here wrote that marker
+        # straight back out of existence, so the next tick saw the day as
+        # unjudged and said the same thing again -- every 60 seconds, for the
+        # whole 120-minute after_the_bell window. Cyrus's #ambient-sales-1 got
+        # the identical "25 doors/hr" line five times at 5:43 PM (2026-09-26),
+        # and aya and kash were in the same window.
+        #
+        # It clobbered BOTH WAYS: pace_callout's own _save writes a dict that
+        # predates this run's negative-loop markers, and then this line threw
+        # away its pace keys. Re-reading and layering this run's own updates on
+        # top keeps both, and is safe because `state` cannot contain a pace key
+        # written after it was loaded.
+        merged = _state()
+        merged.update(state)
+        _save(merged)
     return said
 
 

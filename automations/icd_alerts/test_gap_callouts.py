@@ -178,3 +178,45 @@ class WhoIsCalledOut(unittest.TestCase):
 
     def test_the_d2d_campaigns_still_get_them(self):
         self.assertEqual(G.CALLOUT_CAMPAIGNS, {"att", "nds"})
+
+
+class TheDayIsJudgedOnce(unittest.TestCase):
+    """The state file must survive a full run(), both markers intact.
+
+    pace_callout() persists `pace:<office>` mid-run off a fresh disk read,
+    while run() holds a snapshot taken before that. Saving the snapshot at the
+    end erased the marker, so the next tick judged the day again -- every 60
+    seconds for the whole 120-minute after_the_bell window (Cyrus's channel,
+    five identical posts at 5:43 PM, 2026-09-26).
+    """
+
+    def setUp(self):
+        import pathlib, tempfile
+        from unittest import mock
+        self.p = mock.patch.object(
+            G, "STATE_PATH", pathlib.Path(tempfile.mkdtemp()) / "s.json")
+        self.p.start()
+        self.addCleanup(self.p.stop)
+
+    def test_a_pace_marker_survives_a_snapshot_save(self):
+        snapshot = G._state()                 # what run() holds
+        snapshot["cyrus"] = {"day": "2026-09-26", "last_at": "2026-09-26T17:40:00"}
+        # pace_callout persists its own marker off a FRESH read, mid-run:
+        fresh = G._state()
+        fresh["pace:cyrus"] = {"day": "2026-09-26"}
+        G._save(fresh)
+        # ...and then run()'s tail save must not undo it.
+        merged = G._state()
+        merged.update(snapshot)
+        G._save(merged)
+        after = G._state()
+        self.assertIn("pace:cyrus", after)     # the bug: this key vanished
+        self.assertIn("cyrus", after)          # and this one must still land
+
+    def test_pace_callout_says_it_once_then_stays_quiet(self):
+        rows = [{"Rep": "Logan", "Last Knock": "4:00 PM"}]
+        now = dt.datetime(2026, 9, 26, 17, 43)
+        first = G.pace_callout("cyrus", rows, now)
+        self.assertEqual(G.pace_callout("cyrus", rows, now), "")
+        self.assertEqual(G.pace_callout("cyrus", rows, now + dt.timedelta(minutes=1)), "")
+        self.assertNotEqual(G.pace_callout("cyrus", rows, now + dt.timedelta(days=1)), first or "x")
