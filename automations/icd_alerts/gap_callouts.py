@@ -45,7 +45,23 @@ from automations.icd_alerts import knocks_map as M, knocks_post as K, offices as
 # count moved this hour is working, not idle. Names capped so a slow Saturday
 # is a call-out, not a roll call.
 CALLOUT_CAMPAIGNS = {"att", "nds"}   # D2D only; B2B and Box offices are out (Megan 2026-09-26)
-CALLOUT_EXTRA_OFFICES = {"ryan", "roshan"}   # ... except offices that asked (Ryan, Roshan 2026-09-26)
+# ... except offices that ASKED. Ryan asked and is in (2026-09-26).
+#
+# ROSHAN ASKED TO BE TAKEN BACK OUT, same day she went in (Raf, 2026-09-26:
+# "Roshan wants her call outs from Lucy stopped" → "Just stop the call outs").
+# Removing the key is the whole switch: her campaign is `b2b_box`, which is not
+# in CALLOUT_CAMPAIGNS, so both gates below now skip her — the 30-minute gap
+# call-out AND the positive end-of-day one.
+#
+# DELIBERATELY NOT DONE ANY OTHER WAY. Her channel stays approved and her
+# relay untouched, so she KEEPS her credit-check/sales alerts and her hourly
+# knock board — same room, #sapphire-office-sales, both from other modules.
+# Un-approving her channel or clearing a "Wanted" column would have stopped
+# all three and the relay would have fought it back: writing an office's own
+# columns is what cleared Cyrus's approval (2026-09-15) and Colten's
+# (2026-09-22). This constant is ours, in git, and nothing on her laptop can
+# revert it.
+CALLOUT_EXTRA_OFFICES = {"ryan"}
 INLINE_NAMES = 3      # more than this and every name goes on its own bullet (Megan: name them, no '6 more')
 # CARLOS'S NUMBERS (2026-09-26): "30 mins plus. But if they've had a credit
 # check in the last 30 mins they're not finger popping." So the check runs

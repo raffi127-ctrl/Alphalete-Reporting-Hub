@@ -152,3 +152,29 @@ class PaceTest(unittest.TestCase):
         self.assertTrue(G.after_the_bell(o, dt.datetime(2026, 9, 25, 20, 45)))   # Fri, 15 past the bell
         self.assertFalse(G.after_the_bell(o, dt.datetime(2026, 9, 25, 23, 0)))   # too long after
         self.assertFalse(G.after_the_bell(o, dt.datetime(2026, 9, 27, 18, 0)))   # Sunday
+
+
+class WhoIsCalledOut(unittest.TestCase):
+    """Who the call-outs reach, and who they must NOT.
+
+    Both gates in run() are `campaign in CALLOUT_CAMPAIGNS or key in
+    CALLOUT_EXTRA_OFFICES`, so an office on a non-D2D campaign is on ONLY while
+    its key sits in the opt-in set. That makes the set the whole switch, and it
+    is the reason stopping an office needs nothing in the relay or the sheet.
+    """
+
+    def test_roshan_is_off_by_request(self):
+        # Raf 2026-09-26: "Roshan wants her call outs from Lucy stopped."
+        self.assertNotIn("roshan", G.CALLOUT_EXTRA_OFFICES)
+
+    def test_roshan_is_not_let_back_in_by_her_campaign(self):
+        # The opt-out only holds while b2b_box stays OUT of the campaign set.
+        # If Box is ever switched on org-wide, she comes back silently — which
+        # is exactly the kind of quiet re-enable this test exists to catch.
+        self.assertNotIn("b2b_box", G.CALLOUT_CAMPAIGNS)
+
+    def test_ryan_who_also_asked_is_untouched(self):
+        self.assertIn("ryan", G.CALLOUT_EXTRA_OFFICES)
+
+    def test_the_d2d_campaigns_still_get_them(self):
+        self.assertEqual(G.CALLOUT_CAMPAIGNS, {"att", "nds"})
