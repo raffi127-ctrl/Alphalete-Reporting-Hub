@@ -26,7 +26,9 @@ import sys
 from typing import Optional
 
 # Same channel bg_check_sync + the new-start threads use.
-CHANNEL_ID = "C0AUAS88FGW"     # #rafs-office-recruiting-11280
+from automations.shared.new_start_steps import SLACK_CHANNEL_ID
+
+CHANNEL_ID = SLACK_CHANNEL_ID  # #rafs-office-recruiting-11280
 
 # Stable first line — the find/scan side keys off this exact phrase, so
 # reword the BODY freely but never this marker.

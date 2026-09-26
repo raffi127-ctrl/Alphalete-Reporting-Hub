@@ -20,11 +20,12 @@ import os
 from typing import List, Tuple
 
 from automations.shared import slack_metrics_post as smp
+from automations.shared.new_start_steps import SLACK_CHANNEL_ID
 
 # #rafs-office-recruiting-11280 -- the new-start family's room
 # (automations/shared/new_start_steps.SLACK_CHANNEL). PRIVATE: a bot that
 # isn't invited fails with channel_not_found.
-CHANNEL = os.environ.get("SLACK_SKOOL_SLACK_CHANNEL", "C0AUAS88FGW")
+CHANNEL = os.environ.get("SLACK_SKOOL_SLACK_CHANNEL", SLACK_CHANNEL_ID)
 
 HEADER = "Slack / Skool Email"
 

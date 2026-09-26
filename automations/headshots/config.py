@@ -14,7 +14,10 @@ import os
 
 # #rafs-office-recruiting-11280 — same office channel the
 # new-start threads + BG-status posts live in.
-CHANNEL_ID = os.environ.get("HEADSHOTS_CHANNEL_ID", "").strip() or "C0AUAS88FGW"
+from automations.shared.new_start_steps import SLACK_CHANNEL_ID
+
+CHANNEL_ID = (os.environ.get("HEADSHOTS_CHANNEL_ID", "").strip()
+              or SLACK_CHANNEL_ID)
 
 # Finished image geometry. 4:5 portrait is what badge/roadmap headshots use.
 PHOTO_W = 1200

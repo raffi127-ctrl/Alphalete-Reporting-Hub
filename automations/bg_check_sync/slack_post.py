@@ -21,6 +21,7 @@ from pathlib import Path
 
 from automations.shared import slack_metrics_post as smp
 from automations.bg_check_sync import parse
+from automations.shared.new_start_steps import SLACK_CHANNEL_ID
 
 # 2026-08-22: Raf is retiring #rafs-office-recruiting (C06881A7WLV), so the post
 # now goes ONLY to his office channel. The room is PRIVATE: lucy_reporting
@@ -29,7 +30,7 @@ from automations.bg_check_sync import parse
 # another room's update down.
 # BGSYNC_SLACK_CHANNEL overrides, comma-separated, for a scratch-channel test.
 CHANNELS = [
-    ("#rafs-office-recruiting-11280", "C0AUAS88FGW"),
+    ("#rafs-office-recruiting-11280", SLACK_CHANNEL_ID),
 ]
 _env = os.environ.get("BGSYNC_SLACK_CHANNEL", "").strip()
 if _env:

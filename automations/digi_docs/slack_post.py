@@ -10,6 +10,7 @@ import os
 from typing import List, Tuple
 
 from automations.digi_docs import config
+from automations.shared.new_start_steps import SLACK_CHANNEL_ID
 
 # #rafs-office-recruiting-11280 — confirmed by Megan
 # 2026-08-25, not just inherited from blueink_docs because it sits next
@@ -18,7 +19,7 @@ from automations.digi_docs import config
 # THIS IS THE CHANNEL FOR WORK, NOT FOR FAULTS. It is an OFFICE channel: the
 # people in it act on "here is who still needs doing by hand". They are not the
 # people who fix a crashed run.
-CHANNEL = os.environ.get("DIGI_DOCS_SLACK_CHANNEL", "C0AUAS88FGW")
+CHANNEL = os.environ.get("DIGI_DOCS_SLACK_CHANNEL", SLACK_CHANNEL_ID)
 
 # WHERE RUN-LEVEL FAULTS GO (Megan 2026-09-02: "if something is an error it goes
 # into the correct channel"). #claudecorrections-and-requests — the standing home

@@ -24,10 +24,11 @@ from typing import Dict, List, Optional
 
 from automations.shared import slack_metrics_post as smp
 from automations.shared import slack_retry
+from automations.shared.new_start_steps import SLACK_CHANNEL_ID
 
 # Moved from #rafs-office-recruiting (C06881A7WLV, retired) on 2026-08-21 — Aisha now
 # posts the weekly thread in #rafs-office-recruiting-11280.
-CHANNEL_ID = os.environ.get("NSF_SLACK_CHANNEL", "C0AUAS88FGW")
+CHANNEL_ID = os.environ.get("NSF_SLACK_CHANNEL", SLACK_CHANNEL_ID)
 
 # TWO FUNNELS since the week of 8/24 (Megan 2026-08-22: "apply this to
 # tiffani's thread each week as well"). Each recruiter posts her own

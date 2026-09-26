@@ -42,6 +42,13 @@ DATED_TAB_PREFIX = "D2D OBCL"
 
 # Where every step reports what still needs doing by hand.
 SLACK_CHANNEL = "#rafs-office-recruiting-11280"
+# The same room's id. Every module in the family posts here and each one carried
+# its own copy of this string (eight of them on 2026-09-26) -- when the channel
+# moved on 2026-08-21 that was eight edits, and the retired id
+# (#rafs-office-recruiting, C06881A7WLV) is still commented in half of them.
+# One constant, so the next move is one edit. Each module keeps its own env
+# override for scratch-channel tests.
+SLACK_CHANNEL_ID = "C0AUAS88FGW"
 
 # NOTE: there is deliberately NO family-wide card id. Each Step carries its own
 # `card`, and runners pass THAT to hub_activity.log_completed — which keys on

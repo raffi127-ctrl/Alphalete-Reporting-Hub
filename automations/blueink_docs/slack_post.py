@@ -26,11 +26,12 @@ import os
 from typing import List, Tuple
 
 from automations.shared import slack_metrics_post as smp
+from automations.shared.new_start_steps import SLACK_CHANNEL_ID
 
 # #rafs-office-recruiting-11280 -- confirmed by Megan
 # 2026-08-24. Same room bg_check_sync posts to, so Lucy is already a member;
 # it is PRIVATE, and a bot that isn't invited fails with channel_not_found.
-CHANNEL = os.environ.get("BLUEINK_SLACK_CHANNEL", "C0AUAS88FGW")
+CHANNEL = os.environ.get("BLUEINK_SLACK_CHANNEL", SLACK_CHANNEL_ID)
 
 HEADER = "Blueink Status Update"
 
