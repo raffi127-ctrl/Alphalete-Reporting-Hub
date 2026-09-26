@@ -1,6 +1,6 @@
 output/
 *.xlsx
-service-account.json
+service-account.json*
 oauth-token.json
 ownerville-creds.json
 # ...and their timestamped BACKUPS. The bare names above were ignored but
@@ -11,12 +11,28 @@ ownerville-creds.json
 *.bak.*
 *-creds.json*
 *-token.json*
+# EVERY SECRET RULE BELOW ENDS IN '*', FOR THE SAME REASON. A bare filename does
+# not match a COPY, and the copies are made BY HAND -- nothing in the code mints
+# them -- with whatever suffix the person was thinking of that day. That has now
+# leaked three separate live credentials into this PUBLIC repo:
+#
+#   ownerville-creds.json.bak.20260802-230835   (found 2026-08-12)
+#   .appstream_storage_state.json.stale-065520  (found 2026-09-02)
+#   .ownerville_storage_state.json.stale-1616   (found 2026-09-26, committed
+#                                                2026-09-04 by a broad `git add`)
+#
+# Each time the rule for the ORIGINAL name existed and was correct. `*.bak` and
+# `*.bak.*` above caught the first shape; `.stale-<n>` and `-bak` suffixes are
+# not bak files and slipped straight past. So the rule is now the shape, not the
+# name: if a path is sensitive, its rule ends in '*'.
+#
+# Checked when widened: no tracked file is swallowed by any of them.
 brand-audit-keys.json
 vantura-payroll-webapp.json
 .venv/
 __pycache__/
 *.pyc
-.env
+.env*
 .DS_Store
 # Browser profiles — all variants (.browser_profile, _holder, _zoho, …) hold
 # live session cookies (auth). Sensitive; never commit.
@@ -71,8 +87,8 @@ automations/shared/.appstream_storage_state*
 automations/shared/.ownerville_storage_state*
 # Credico storage_state export — contains live SESSION cookies (auth). Sensitive;
 # the repo is PUBLIC. Never commit.
-.credico_storage_state.json
-automations/shared/.credico_storage_state.json
+.credico_storage_state.json*
+automations/shared/.credico_storage_state.json*
 output/_credico_profile/
 # Sara Plus scrape (b2b_sales_board) — the browser profile and the storage_state
 # both hold Carlos's live SESSION cookies (auth). The repo is PUBLIC, and 661
@@ -86,8 +102,8 @@ automations/b2b_sales_board/.saraplus_profile/
 # one `git add .` from a public repo (2026-09-03).
 .saraplus_b2b_profile/
 automations/uploaded/.saraplus_b2b_profile/
-.saraplus_storage_state.json
-automations/b2b_sales_board/.saraplus_storage_state.json
+.saraplus_storage_state.json*
+automations/b2b_sales_board/.saraplus_storage_state.json*
 # Probe screenshots — throwaway debug captures written beside the _probe_*.py
 # scripts (ignored below). They show live account data.
 automations/*/_probe_*.png
@@ -138,7 +154,7 @@ automations/recruiting_report/all-offices.json
 .machine-profile
 
 # Streamlit secrets (never commit — contains access codes, SMTP + service-account creds)
-.streamlit/secrets.toml
+.streamlit/secrets.toml*
 
 # swag_welcome: keep the raw personal handwriting sample + build debug art off the public repo
 # (the derived glyph library IS committed, so the tool still works)
@@ -147,12 +163,12 @@ resources/swag/glyphs/_debug/
 
 # ApplicantStream/Applicant Tracker Google service-account key (live private key,
 # repo is PUBLIC) — distributed out-of-band, NEVER commit. Also the browser session.
-applicant-tracker-service-account.json
+applicant-tracker-service-account.json*
 applicant-tracker-service-account.json.bak.*
-automations/applicant_tracker/service_account.json
+automations/applicant_tracker/service_account.json*
 automations/applicant_tracker/.browser_profile*
 automations/applicant_tracker/downloads/
-automations/applicant_tracker/.env
+automations/applicant_tracker/.env*
 
 # Thread Builder runtime cache (regenerated from the Thread Plans sheet by
 # thread_builder.sync; the sheet is the source of truth, not git).
@@ -162,8 +178,8 @@ output/thread_plans_store.json
 # alphaletemarketing@gmail.com account, which can SEND documents. The repo is
 # PUBLIC. Never commit. Seeded by `python -m automations.blueink_docs.session
 # --login` (a human logs in once; nothing types a password).
-.blueink_storage_state.json
-automations/blueink_docs/.blueink_storage_state.json
+.blueink_storage_state.json*
+automations/blueink_docs/.blueink_storage_state.json*
 # ...and the persistent Chrome profile the --login seed writes. It holds the
 # SAME live session (cookies for an account that can send legally-binding
 # documents), and `git add <dir>` sweeps its thousands of files in without
@@ -179,8 +195,8 @@ automations/blueink_docs/.blueink_profile*
 # above. Seeded by `python -m automations.slack_skool_email.slack_invite
 # --login`; both spellings listed because the file is written next to the
 # module, not at the repo root.
-.slack_storage_state.json
-automations/slack_skool_email/.slack_storage_state.json
+.slack_storage_state.json*
+automations/slack_skool_email/.slack_storage_state.json*
 .slack_profile*
 automations/slack_skool_email/.slack_profile*
 
