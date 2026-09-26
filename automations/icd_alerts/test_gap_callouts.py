@@ -45,7 +45,7 @@ class LineTest(unittest.TestCase):
 
     def test_single_name(self):
         s = G.line("carlos", [{"name": "Nick Smith", "mins": 22}], NOW)
-        self.assertIn("Nick", s); self.assertNotIn(" and ", s); self.assertIn("20+", s)
+        self.assertIn("Nick", s); self.assertNotIn("Nick and", s); self.assertNotIn("and Nick", s); self.assertIn("20+", s)
 
     def test_a_crowd_is_a_bulleted_list_with_every_name(self):
         c = [{"name": "Breana A", "mins": 47}, {"name": "Gary B", "mins": 31}, {"name": "Kandice C", "mins": 25},

@@ -45,6 +45,7 @@ from automations.icd_alerts import knocks_map as M, knocks_post as K, offices as
 # count moved this hour is working, not idle. Names capped so a slow Saturday
 # is a call-out, not a roll call.
 CALLOUT_CAMPAIGNS = {"att", "nds"}   # D2D only; B2B and Box offices are out (Megan 2026-09-26)
+CALLOUT_EXTRA_OFFICES = {"ryan"}      # ... except an office that asked (Ryan, 2026-09-26)
 INLINE_NAMES = 3      # more than this and every name goes on its own bullet (Megan: name them, no '6 more')
 CALLOUT_EVERY_MIN = 60
 GAP_MIN = 15
@@ -74,6 +75,14 @@ LINES = (
     "{names}: {m}+ min off the doors. Either y'all are working a sale or finger poppin'. Which one?",
     "No dispo from {names} in {m}+ min. Locked in with a customer, or locked out of the truck?",
     "{names} — {m}+ min quiet. If that's a sale being cooked, take your time. If not… 👀",
+    # EN ESPAÑOL TAMBIÉN (Megan 2026-09-26: "make lucy bilingual"). Same
+    # pool, so some hours land in Spanish and some in English.
+    "¡Snicklemeberries! {names} — {m}+ min sin dispo. ¿Finger poppin' o tocando puertas?",
+    "{names}: {m}+ min sin tocar una puerta. Las puertas no se tocan solas.",
+    "{names} — {m}+ min sin dispo y sin venta. Se acabó el cafecito — a buscar el dinero.",
+    "{m}+ minutos y ni un dispo de {names}. Los estoy viendo 👀",
+    "{names} — {m}+ min callados. Si están cocinando una venta, tómense su tiempo. Si no… 👀",
+    "Ojo, {names}: {m}+ min sin puertas. ¿Trabajando una venta o de finger poppers?",
 )
 
 
@@ -233,7 +242,8 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
             continue
         # D2D AT&T AND NDS ONLY (Megan 2026-09-26: "Att & NDS", "not B2B").
         # The B2B offices -- Carlos's two, Ryan's and Roshan's Box -- are out.
-        if str(getattr(office, "campaign", "") or "att").strip().lower() not in CALLOUT_CAMPAIGNS:
+        if (str(getattr(office, "campaign", "") or "att").strip().lower() not in CALLOUT_CAMPAIGNS
+                and key not in CALLOUT_EXTRA_OFFICES):
             continue
         now = K._office_now(office)
         if not K.in_field_hours(office, now):
