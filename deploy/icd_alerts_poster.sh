@@ -104,6 +104,10 @@ rc=$?
 KNOCK_ARGS=""
 case " $* " in *" --send "*) KNOCK_ARGS="--send" ;; esac
 "$VENV_PY" -m automations.icd_alerts.knocks_post $KNOCK_ARGS >> "$LOG_FILE" 2>&1
+# LUCY'S HOURLY CALL-OUTS (Carlos 2026-09-26): reps 15+ min off the doors with
+# no fresh credit check, once an hour per opted-in office. Decides its own
+# hour inside; a quiet hour says nothing.
+"$VENV_PY" -m automations.icd_alerts.gap_callouts $KNOCK_ARGS >> "$LOG_FILE" 2>&1
 rk=$?
 [ "$rc" -eq 0 ] && rc=$rk
 

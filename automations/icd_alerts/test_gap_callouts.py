@@ -1,0 +1,67 @@
+"""Lucy's hourly call-outs: gap + no fresh credit check, once an hour, never
+blank (Carlos / Megan, 2026-09-26)."""
+import datetime as dt
+import unittest
+
+from automations.icd_alerts import gap_callouts as G
+
+NOW = dt.datetime(2026, 9, 26, 15, 0)
+ROWS = [{"Rep": "Nick Smith", "Last Knock": "2:15 PM"},      # 45 min
+        {"Rep": "Christian Doe", "Last Knock": "2:20 PM"},   # 40 min
+        {"Rep": "Jose Ruiz", "Last Knock": "2:50 PM"},       # 10 min
+        {"Rep": "Ana Pitching", "Last Knock": "2:00 PM"}]    # 60 min but a fresh credit check
+
+
+class PickTest(unittest.TestCase):
+    def test_gap_without_a_fresh_credit_check(self):
+        out = G.pick(ROWS, {"NICK SMITH": 2, "ANA PITCHING": 3}, {"NICK SMITH": 2, "ANA PITCHING": 2}, NOW)
+        self.assertEqual([c["name"] for c in out], ["Nick Smith", "Christian Doe"])
+        self.assertEqual(out[0]["mins"], 45)
+
+    def test_under_fifteen_is_left_alone(self):
+        out = G.pick(ROWS[2:3], {}, {}, NOW)
+        self.assertEqual(out, [])
+
+    def test_a_fresh_credit_check_exempts(self):
+        out = G.pick([ROWS[3]], {"ANA PITCHING": 1}, {}, NOW)
+        self.assertEqual(out, [])
+
+
+class LineTest(unittest.TestCase):
+    def test_names_and_rounded_minutes(self):
+        s = G.line("carlos", [{"name": "Nick Smith", "mins": 45}, {"name": "CHRISTIAN DOE", "mins": 43}], NOW)
+        self.assertIn("Nick and Christian", s)
+        self.assertIn("40+", s)
+
+    def test_single_name(self):
+        s = G.line("carlos", [{"name": "Nick Smith", "mins": 22}], NOW)
+        self.assertIn("Nick", s); self.assertNotIn(" and ", s); self.assertIn("20+", s)
+
+    def test_a_crowd_is_capped(self):
+        c = [{"name": "R%d X" % i, "mins": 30} for i in range(9)]
+        s = G.line("carlos-b2batt", c, NOW)
+        self.assertIn("and 5 more", s)
+        self.assertLessEqual(s.count(","), 4)
+
+    def test_nobody_is_no_message(self):
+        self.assertEqual(G.line("carlos", [], NOW), "")
+
+    def test_same_hour_repeats_next_hour_differs(self):
+        c = [{"name": "Nick Smith", "mins": 45}]
+        a = G.line("carlos", c, NOW); b = G.line("carlos", c, NOW.replace(minute=30))
+        self.assertEqual(a, b)
+        seen = {G.line("carlos", c, NOW.replace(hour=h)) for h in range(13, 21)}
+        self.assertGreater(len(seen), 1)
+
+
+class DueTest(unittest.TestCase):
+    def test_first_of_day_is_due(self):
+        self.assertTrue(G.due(None, NOW)); self.assertTrue(G.due({"day": "2026-09-25", "last_at": "2026-09-25T20:00:00"}, NOW))
+
+    def test_within_the_hour_is_not(self):
+        self.assertFalse(G.due({"day": "2026-09-26", "last_at": "2026-09-26T14:30:00"}, NOW))
+        self.assertTrue(G.due({"day": "2026-09-26", "last_at": "2026-09-26T13:59:00"}, NOW))
+
+
+if __name__ == "__main__":
+    unittest.main()
