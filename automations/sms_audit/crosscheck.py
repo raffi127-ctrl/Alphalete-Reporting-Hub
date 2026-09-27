@@ -70,11 +70,33 @@ def totals(parsed, idxs):
     return sch, su
 
 
-def ours(office, suffix=""):
-    """What the audit says, from the files already on disk."""
-    recs, src = A.load_office(office, suffix)
+def ours(office, lo, hi, suffix=""):
+    """What the audit says for THIS week, from the files already on disk.
+
+    The suffix defaults to the week's own tag, and the dates in whatever
+    loads are checked against the window before a single number is compared.
+    Both halves of that matter: the UNSUFFIXED file is one slot that every
+    pull overwrites, so after a backfill it holds the last week pulled, not
+    this one. Comparing against it reported "11580 booked: AppStream 373 vs
+    ours 281" — AppStream's week 1 against our week 6, a mismatch invented
+    entirely by reading the wrong file. A cross-check that can do that is
+    worse than none, because it cries wolf at the exact moment it is meant
+    to be trusted."""
+    tag = suffix or "w{:%m%d}".format(hi)
+    recs, src = A.load_office(office, tag)
+    if not recs and not suffix:
+        recs, src = A.load_office(office, "")
     if not recs:
         return None, None, src
+    days = []
+    for raw in {r.get("date", "") for r in recs if r.get("date")}:
+        try:
+            days.append(dt.datetime.strptime(raw, "%m-%d-%Y").date())
+        except ValueError:
+            continue
+    if days and not (lo <= min(days) and max(days) <= hi):
+        return None, None, ("{} covers {} → {}, not this week"
+                            .format(src, min(days), max(days)))
     booked = len(recs)
     shown = sum(1 for r in recs
                 if r.get("status") and "No Show" not in r["status"])
@@ -110,7 +132,7 @@ def main(argv=None):
                 s, u = totals(_parse(page), idxs)
                 sch += s
                 su += u
-            mine, shown, src = ours(office, a.suffix)
+            mine, shown, src = ours(office, lo, hi, a.suffix)
             if mine is None:
                 print("[crosscheck] {}: no local pull to compare ({})".format(
                     office, src), flush=True)

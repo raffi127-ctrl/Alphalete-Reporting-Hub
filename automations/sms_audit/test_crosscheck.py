@@ -8,6 +8,7 @@ report is for."""
 import datetime as dt
 import unittest
 
+import automations.sms_audit.crosscheck as C
 from automations.sms_audit.crosscheck import _slices, totals
 
 
@@ -66,3 +67,42 @@ class TotalTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OursReadsTheRightWeekTest(unittest.TestCase):
+    """The cross-check compared AppStream's week 1 against whatever sat in the
+    UNSUFFIXED local file, which a backfill leaves holding the last week
+    pulled. It reported "11580 booked: AppStream 373 vs ours 281" — two
+    different weeks, a mismatch invented by reading the wrong file. A
+    cross-check that cries wolf is worse than none."""
+
+    LO, HI = dt.date(2026, 9, 19), dt.date(2026, 9, 25)
+
+    def _patch(self, recs, seen):
+        def fake(office, suffix=""):
+            seen.append(suffix)
+            return recs.get(suffix, []), "file[{}]".format(suffix)
+        return fake
+
+    def test_it_asks_for_the_weeks_own_tag_first(self):
+        seen = []
+        recs = {"w0925": [{"date": "09-22-2026", "status": "Showed Up"}]}
+        C.A.load_office = self._patch(recs, seen)
+        booked, shown, _src = C.ours("11580", self.LO, self.HI)
+        self.assertEqual(seen[0], "w0925")
+        self.assertEqual((booked, shown), (1, 1))
+
+    def test_a_file_from_another_week_is_refused_not_compared(self):
+        recs = {"": [{"date": "08-18-2026", "status": "Showed Up"}]}
+        C.A.load_office = self._patch(recs, [])
+        booked, shown, why = C.ours("11580", self.LO, self.HI)
+        self.assertIsNone(booked)
+        self.assertIsNone(shown)
+        self.assertIn("not this week", why)
+
+    def test_no_show_does_not_count_as_shown(self):
+        recs = {"w0925": [{"date": "09-22-2026", "status": "No Show"},
+                          {"date": "09-23-2026", "status": "Showed Up"}]}
+        C.A.load_office = self._patch(recs, [])
+        booked, shown, _ = C.ours("11580", self.LO, self.HI)
+        self.assertEqual((booked, shown), (2, 1))
