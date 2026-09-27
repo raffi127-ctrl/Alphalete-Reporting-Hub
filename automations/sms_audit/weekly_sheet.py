@@ -82,9 +82,15 @@ QUESTION_REPLY_CHARS = 56
 WIDE_ROW = "Most asked → what we usually reply"
 # Rows whose cell holds a paragraph rather than a number: they wrap, sit
 # left-aligned and top-aligned, and the row grows to fit them.
-WRAP_ROWS = (WIDE_ROW, "Days of 1st rounds in this column")
+WRAP_ROWS = (WIDE_ROW,)
+# Wrapped like the questions cell, but centred, bold and a size up: it is a
+# two-line header for the whole column, not a paragraph to read through
+# (Megan 2026-09-27).
+HEADLINE_ROWS = ("Days of 1st rounds in this column",)
 WARN = "\u26a0"                      # the ⚠ that opens a "got no answer" line
 RED = {"red": 0.72, "green": 0.11, "blue": 0.11}
+BLUE = {"red": 0.05, "green": 0.31, "blue": 0.75}
+UNBUCKETED = "(didn't fit a bucket"
 
 
 def question_cell(rep):
@@ -134,15 +140,12 @@ def question_cell(rep):
 # entries stay for good, they cost nothing and removing one silently splits a
 # row in two the next time somebody rebuilds an old tab.
 RENAMED = {
-    'Typical wait for an AI reply (minutes)': 'Typical Response Time — AI (minutes)',
-    'Typical wait for a person to reply (minutes)': 'Typical Response Time — a person (minutes)',
-    'How often a person answers within 5 minutes': "% of a person's responses within 5 minutes",
-    'Booked without a single text first': 'Booked off a call with no text first',
+    "% of a person's responses within 5 minutes": "Of a person's responses, % within 5 minutes",
     '% of bookings made by the AI': '% of 1st rounds booked by the AI',
     '% of interviews booked by the AI': '% of 1st rounds booked by the AI',
     '% of people texted who booked': '% of people we texted who booked',
-    '% of recruiter replies within 5 minutes': "% of a person's responses within 5 minutes",
-    '% of replies by a person within 5 minutes': "% of a person's responses within 5 minutes",
+    '% of recruiter replies within 5 minutes': "Of a person's responses, % within 5 minutes",
+    '% of replies by a person within 5 minutes': "Of a person's responses, % within 5 minutes",
     '% of them who booked': '% of blast people who booked',
     '% of them who replied': '% of blast people who replied',
     '% that failed — 1st text to them': 'Of our FIRST text to someone, % that fail',
@@ -153,7 +156,8 @@ RENAMED = {
     '1st-interview days covered': 'Days of 1st rounds in this column',
     'AI reply, median minutes': 'Typical Response Time — AI (minutes)',
     'AI share of bookings %': '% of 1st rounds booked by the AI',
-    'Applicants left waiting on a reply': 'Applicants left waiting 2+ hours',
+    'Applicants left waiting 2+ hours': 'Applicants left waiting 2+ hours for a response',
+    'Applicants left waiting on a reply': 'Applicants left waiting 2+ hours for a response',
     'Applicants over the carrier limit': 'Applicants texted 4+ times with no reply',
     'Applicants texted 4+ times, no reply': 'Applicants texted 4+ times with no reply',
     'Booked a 1st interview': '1st Rounds Booked',
@@ -163,13 +167,13 @@ RENAMED = {
     'Bookings with no texts on file': '1st Rounds booked with no texts on file',
     'Days of interviews in this column': 'Days of 1st rounds in this column',
     'Dead links sent': 'Broken links sent',
-    "Didn't fit a bucket": "Questions we couldn't group",
     'Got 2+ texts, never replied': 'We kept texting, they never replied',
     'Got ONE text and nothing more': 'We texted once and never again',
+    'How often a person answers within 5 minutes': "Of a person's responses, % within 5 minutes",
     'Interview days in this column': 'Days of 1st rounds in this column',
     'Interviews booked': '1st Rounds Booked',
     'Interviews booked with no texts on file': '1st Rounds booked with no texts on file',
-    'Left unanswered': 'Applicants left waiting 2+ hours',
+    'Left unanswered': 'Applicants left waiting 2+ hours for a response',
     'Messages sent + received': 'Total texts (sent + received)',
     'Minutes for a person to reply (typical)': 'Typical Response Time — a person (minutes)',
     'Minutes for a recruiter to reply (typical)': 'Typical Response Time — a person (minutes)',
@@ -182,7 +186,7 @@ RENAMED = {
     'People in the normal flow': 'People not on the cold list',
     'People texted': 'People we texted',
     'People who texted back': 'People who texted us back',
-    "Person's replies within 5 min %": "% of a person's responses within 5 minutes",
+    "Person's replies within 5 min %": "Of a person's responses, % within 5 minutes",
     "Person's reply, median minutes": 'Typical Response Time — a person (minutes)',
     'Replied to us': 'People who texted us back',
     'Reply rate %': '% who texted back',
@@ -200,6 +204,8 @@ RENAMED = {
     'Texts that never arrived': "TOTAL texts that didn't arrive",
     'Too soon to tell (texted in the last 3 days)': 'Too recent to judge (texted in the last 3 days)',
     'Total messages (sent + received)': 'Total texts (sent + received)',
+    'Typical wait for a person to reply (minutes)': 'Typical Response Time — a person (minutes)',
+    'Typical wait for an AI reply (minutes)': 'Typical Response Time — AI (minutes)',
     '…booked by a recruiter': '— booked by a person',
     '…booked by the AI': '— booked by the AI',
     '…of those, never booked': '— of those, never booked an interview',
@@ -415,9 +421,6 @@ ROWS = [
     ("Texts it takes to book", "Most common number of texts before booking",
      lambda r: (lambda t: t["most_common"] if t else "")(
          ((r.get("log") or {}).get("funnel", {}) or {}).get("to_book"))),
-    ("Texts it takes to book", "Booked off a call with no text first",
-     lambda r: (lambda t: t["zero"] if t else "")(
-         ((r.get("log") or {}).get("funnel", {}) or {}).get("to_book"))),
     ("Texts it takes to book", "Booked before this week — can't tell",
      lambda r: (lambda t: t["carried_in"] if t else "")(
          ((r.get("log") or {}).get("funnel", {}) or {}).get("to_book"))),
@@ -441,17 +444,16 @@ ROWS = [
      lambda r: _median((r.get("log") or {}).get("speed_ai"))),
     ("How fast we reply", "Typical Response Time — a person (minutes)",
      lambda r: _median((r.get("log") or {}).get("speed_human"))),
-    ("How fast we reply", "% of a person's responses within 5 minutes",
+    ("How fast we reply", "Of a person's responses, % within 5 minutes",
      lambda r: _within5((r.get("log") or {}).get("speed_human"))),
 
-    ("People we left hanging", "Applicants left waiting 2+ hours",
+    ("People we left hanging", "Applicants left waiting 2+ hours for a response",
      _msg(lambda r: len(((r.get("log") or {}).get("unanswered")) or r["unanswered"]))),
     ("People we left hanging", "— of those, never booked an interview",
      lambda r: sum(1 for u in ((r.get("log") or {}).get("unanswered") or [])
                    if not u.get("booked")) if r.get("log") else ""),
 
     ("What applicants ask", "Questions asked", _msg(lambda r: r["questions_total"])),
-    ("What applicants ask", "Questions we couldn't group", _msg(lambda r: len(r["questions_other"]))),
     # ONE cell for the week (Megan 2026-09-26): the whole ranked list lives in
     # the week's own box instead of eleven fixed rows nobody could scan. Most
     # asked first, and what we usually send back on the same line — the two
@@ -871,6 +873,15 @@ def _format(ws, last_col, last_row, label_rows):
             if r:
                 ws.format("{}:{}".format(_a1(r, FIRST_WEEK_COL), _a1(r, last_col)),
                           wrapped)
+        headline = {"textFormat": {"fontFamily": "Georgia", "fontSize": 13,
+                                   "bold": True},
+                    "horizontalAlignment": "CENTER",
+                    "verticalAlignment": "MIDDLE", "wrapStrategy": "WRAP"}
+        for name in HEADLINE_ROWS:
+            r = label_rows.get(name)
+            if r:
+                ws.format("{}:{}".format(_a1(r, FIRST_WEEK_COL), _a1(r, last_col)),
+                          headline)
         _borders(ws, last_col, last_row, section_tops)
         ws.freeze(rows=HEADER_ROW, cols=2)
         _widths(ws, last_col, last_row)
@@ -899,15 +910,21 @@ def warning_runs(text):
     bigger one. Returns [] when there is nothing to colour."""
     base = {"foregroundColor": {"red": 0, "green": 0, "blue": 0}, "bold": False}
     red = {"foregroundColor": RED, "bold": True}
-    runs, pos, any_red = [], 0, False
+    # the ungrouped tally is the one line that says "there is more here than
+    # the buckets caught" — blue so it is not missed (Megan 2026-09-27)
+    blue = {"foregroundColor": BLUE, "bold": True}
+    runs, pos, painted = [], 0, False
     for line in text.split("\n"):
-        if line.lstrip().startswith(WARN):
-            runs.append({"startIndex": pos + (len(line) - len(line.lstrip())),
-                         "format": red})
+        stripped = line.lstrip()
+        colour = (red if stripped.startswith(WARN)
+                  else blue if stripped.startswith(UNBUCKETED) else None)
+        if colour:
+            runs.append({"startIndex": pos + (len(line) - len(stripped)),
+                         "format": colour})
             runs.append({"startIndex": pos + len(line), "format": base})
-            any_red = True
+            painted = True
         pos += len(line) + 1
-    if not any_red:
+    if not painted:
         return []
     if not runs or runs[0]["startIndex"] != 0:
         runs.insert(0, {"startIndex": 0, "format": base})

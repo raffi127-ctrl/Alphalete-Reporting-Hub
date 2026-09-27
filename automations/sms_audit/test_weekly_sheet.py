@@ -269,9 +269,9 @@ class NoMessagesIsBlankTest(unittest.TestCase):
     def test_questions_and_flags_are_blank_not_zero(self):
         rep = self._bookings_only()
         by_label = {label: fn for _s, label, fn in W.ROWS}
-        for label in ("Questions asked", "Questions we couldn't group",
+        for label in ("Questions asked",
                       "Most asked → what we usually reply",
-                      "Applicants left waiting 2+ hours",
+                      "Applicants left waiting 2+ hours for a response",
                       "Texted someone after they said stop", "Broken links sent"):
             self.assertEqual(by_label[label](rep), "", label)
 
@@ -381,7 +381,8 @@ class PlainLabelTest(unittest.TestCase):
             if "%" not in label:
                 continue
             low = label.lower()
-            self.assertTrue(any(w in low for w in (" who ", " that ", " of ")),
+            self.assertTrue(any(w in low for w in (" who ", " that ", " of ", "of "))
+                            and len(label.split()) > 2,
                             "{!r} does not say what it is a percentage "
                             "of".format(label))
 
@@ -680,3 +681,34 @@ class GroupDepthTest(unittest.TestCase):
         ordered = sorted(W.COLLAPSIBLE, key=lambda g: -len(g[1]))
         sizes = [len(kids) for _s, kids in ordered]
         self.assertEqual(sizes, sorted(sizes, reverse=True))
+
+
+class UnbucketedIsBlueTest(unittest.TestCase):
+    """Megan 2026-09-27: "make this text blue or a bold color to stand out so
+    it's seen." The ungrouped tally is the one line saying there is more in
+    the week than the buckets caught — it should not read as a footnote."""
+
+    TXT = ("1. Pay? — asked 2x, answered 1\n"
+           "     ⚠ 1 got no reply here and never booked\n\n"
+           "(didn't fit a bucket — 42x)")
+
+    def _runs(self):
+        return W.warning_runs(self.TXT)
+
+    def test_the_ungrouped_line_is_blue(self):
+        blue = [r for r in self._runs()
+                if r["format"].get("foregroundColor", {}).get("blue", 0) > 0.5]
+        self.assertEqual(len(blue), 1)
+        self.assertTrue(self.TXT[blue[0]["startIndex"]:].startswith("(didn't fit"))
+
+    def test_the_warning_stays_red_not_blue(self):
+        red = [r for r in self._runs()
+               if r["format"].get("foregroundColor", {}).get("red", 0) > 0.5]
+        self.assertEqual(len(red), 1)
+        self.assertTrue(self.TXT[red[0]["startIndex"]:].startswith("⚠"))
+
+    def test_a_cell_with_only_an_ungrouped_line_still_gets_painted(self):
+        self.assertTrue(W.warning_runs("(didn't fit a bucket — 9x)"))
+
+    def test_an_ordinary_cell_is_left_alone(self):
+        self.assertEqual(W.warning_runs("1. Pay? — asked 2x, answered 2"), [])
