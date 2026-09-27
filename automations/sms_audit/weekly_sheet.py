@@ -105,11 +105,20 @@ def question_cell(rep):
                 reply = reply[:QUESTION_REPLY_CHARS].rstrip(" .,") + "\u2026"
             lines.append("     \u21b3 {}".format(reply))
         if row.get("no_reply"):
-            note = "     \u26a0 {} got no answer".format(row["no_reply"])
+            # Red is reserved for silence. A scheduled template firing is not
+            # an ANSWER to the question, but the applicant did hear from us,
+            # so it is not the same failure and it should not shout (Megan
+            # 2026-09-26: "if a template went out instead then these don't
+            # need to be red because that is still a response"). The marker
+            # differs so the formatter can tell them apart without parsing
+            # the sentence.
             if row.get("blast"):
-                note += " \u2014 the \u201c{}\u201d template went out instead".format(
-                    row["blast"])
-            lines.append(note)
+                lines.append("     \u00b7 {} got the \u201c{}\u201d template "
+                             "instead of an answer".format(row["no_reply"],
+                                                           row["blast"]))
+            else:
+                lines.append("     \u26a0 {} got no answer at all".format(
+                    row["no_reply"]))
         out.append("\n".join(lines))
     other = len(rep.get("questions_other") or [])
     if other:
@@ -891,8 +900,13 @@ def _bmp_only(text):
 
 def warning_runs(text):
     """Format runs that paint every "⚠ … got no answer" line red and leave
-    the rest of the cell alone (Megan 2026-09-26). Returns [] when there is
-    nothing to colour, so the caller can skip the write."""
+    the rest of the cell alone.
+
+    Only ⚠ lines — questions that got NOTHING back — are red. A question
+    answered by a scheduled template gets a "·" line and stays black: the
+    applicant heard from us, they just did not get their question answered,
+    and colouring both the same made the smaller problem look like the
+    bigger one. Returns [] when there is nothing to colour."""
     base = {"foregroundColor": {"red": 0, "green": 0, "blue": 0}, "bold": False}
     red = {"foregroundColor": RED, "bold": True}
     runs, pos, any_red = [], 0, False

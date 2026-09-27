@@ -619,3 +619,31 @@ class CollapsibleTest(unittest.TestCase):
             i = order.index(summary)
             self.assertEqual(order[i + 1:i + 1 + len(children)], children,
                              "{!r}'s detail rows are not contiguous under it".format(summary))
+
+
+class TemplateIsNotSilenceTest(unittest.TestCase):
+    """Megan: "if a template went out instead then these don't need to be red
+    because that is still a response." Red is reserved for silence — a
+    scheduled template is not an ANSWER, but the applicant did hear from us,
+    and colouring both the same made the smaller problem look like the
+    bigger one."""
+
+    def _cell(self, blast):
+        return W.question_cell({
+            "question_table": [{"question": "What is the pay?", "asked": 5,
+                                "reply": "HR covers it", "answered": 3,
+                                "no_reply": 2, "blast": blast}],
+            "questions_other": [], "messages": 900, "log": {}})
+
+    def test_silence_is_red(self):
+        cell = self._cell("")
+        self.assertIn("⚠ 2 got no answer at all", cell)
+        self.assertTrue([r for r in W.warning_runs(cell) if r["format"].get("bold")])
+
+    def test_a_template_instead_is_black(self):
+        cell = self._cell("Friendly Reminder 1")
+        self.assertIn("got the “Friendly Reminder 1” template", cell)
+        self.assertEqual(W.warning_runs(cell), [])
+
+    def test_the_template_line_still_says_it_was_not_an_answer(self):
+        self.assertIn("instead of an answer", self._cell("Directions"))
