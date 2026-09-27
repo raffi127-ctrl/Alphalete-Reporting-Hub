@@ -66,8 +66,11 @@ SHEET_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
 # 'Org Active Headcount' by Eve on 2026-09-13 (the old 'Org Active Headcount
 # Board', gid 1937067034, is hidden). Opened by GID so the next rename cannot
 # silently point the run at nothing; the name is only the fallback + log label.
+# 2026-09-27 (Eve, Rafael approved): the App Avg copy of the tab, built as
+# 'Copy of Org Active Headcount TEST', took over as production under this same
+# name; the old one (gid 1529537631) was renamed to be deleted.
 TAB = "Org Active Headcount"
-TAB_GID = 1529537631
+TAB_GID = 2128728532
 # A duplicate of the live tab, for trying a change before it touches the real
 # one (Eve 2026-09-20, the J/K/L redesign). Opened BY NAME: it is made by hand
 # with 'Duplicate', so its gid is different on every copy. It does not exist
@@ -88,6 +91,7 @@ def open_tab(sandbox: bool = False):
         return sh.get_worksheet_by_id(TAB_GID)
     except Exception:                                              # noqa: BLE001
         return next(w for w in sh.worksheets() if w.title.strip() == TAB)
+APP_AVG = "app avg"
 DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 WE_LONG = re.compile(r"^WE\s+(\d{2})\.(\d{2})$", re.I)
 WE_ANY = re.compile(r"^WE\s+(\d{1,2})\.(\d{1,2})$", re.I)
@@ -216,6 +220,10 @@ def _daily_block(g, hdr: int, cols: Dict[str, int],
            "lastw": opt("last week"),
            "prevw": opt("previous week"),
            "camp": cols.get("campaign")}
+    # APP AVG (Rafael 2026-09-27): each day may carry an 'App Avg' column right
+    # after it. None per day on a tab without them, so every caller reads both.
+    out["avg"] = [k + 1 if _c(g, hdr, k + 1).lower() == APP_AVG else None
+                  for k in out["days"]]
     r = hdr + 1
     while r <= len(g) and not _c(g, r, 2):
         r += 1
@@ -261,16 +269,26 @@ def find_delta(g) -> dict:
     while r <= len(g) and _c(g, r, 2):
         rows.append((r, _c(g, r, 2)))
         r += 1
-    return {"hdr": dh, "sub": sub, "this": this_c, "last": last_c, "rows": rows, "totals": r}
+    # The WEEK triplet is the first 'This week' of the sub-header row. It used
+    # to be taken as Monday's column minus 3; the App Avg triplet (Rafael
+    # 2026-09-27) now sits between the two.
+    week = next(k for k in range(1, this_c[0])
+                if _c(g, sub, k).lower() in ("this week", "total this week"))
+    avg = next((k for k in range(week + 1, this_c[0])
+                if _c(g, dh, k).lower() == APP_AVG and _c(g, sub, k).lower() == "this week"), None)
+    return {"hdr": dh, "sub": sub, "this": this_c, "last": last_c, "rows": rows,
+            "totals": r, "week": week, "avg": avg}
 
 
 def find_ongoing(g) -> dict:
     hdr = next(r for r in range(1, len(g) + 1)
                if "ongoing headcount" in _c(g, r, 1).lower() and WE_LONG.match(_c(g, r, 3)))
-    wcols, k = [], 3
+    wcols, avgs, k = [], [], 3
     while WE_LONG.match(_c(g, hdr, k)):
         wcols.append((k, _c(g, hdr, k)))
-        k += 1
+        a = k + 1 if _c(g, hdr, k + 1).lower() == APP_AVG else None
+        avgs.append(a)
+        k += 2 if a else 1
     r = hdr + 1
     while r <= len(g) and not _c(g, r, 2):
         r += 1
@@ -280,7 +298,7 @@ def find_ongoing(g) -> dict:
         r += 1
     if _c(g, r, 1).lower() != "totals":
         raise ValueError(f"ongoing block: no 'TOTALS' row after the ICDs (row {r})")
-    return {"hdr": hdr, "wcols": wcols, "rows": rows, "totals": r}
+    return {"hdr": hdr, "wcols": wcols, "avg": avgs, "rows": rows, "totals": r}
 
 
 def find_summary(g, below: int) -> dict:
@@ -309,13 +327,25 @@ def plan_roll(V, F, closed: dt.date, new_sunday: dt.date) -> dict:
     # 1 ongoing WE columns: shift C..last -> D..last+1 (ICD rows), new header in C
     og = find_ongoing(V)
     wc = og["wcols"]
+    # With App Avg columns every week is a PAIR, so the history moves two over.
+    pairs = bool(og["avg"]) and all(og["avg"])
+    step = 2 if pairs else 1
     values.append((f"{A(wc[0][0])}{og['hdr']}", f"WE {new_sunday.month:02d}.{new_sunday.day:02d}"))
-    for col, label in wc:
-        values.append((f"{A(col + 1)}{og['hdr']}", label))
+    for i, (col, label) in enumerate(wc):
+        values.append((f"{A(col + step)}{og['hdr']}", label))
+        if pairs:
+            values.append((f"{A(og['avg'][i] + step)}{og['hdr']}", "App Avg"))
     for r in og["rows"]:
-        for col, _ in reversed(wc):
-            values.append((f"{A(col + 1)}{r}", _c(V, r, col)))
-    new_last = wc[-1][0] + 1
+        for i in reversed(range(len(wc))):
+            values.append((f"{A(wc[i][0] + step)}{r}", _c(V, r, wc[i][0])))
+            if pairs:
+                values.append((f"{A(og['avg'][i] + step)}{r}", _c(V, r, og["avg"][i])))
+    if pairs:
+        # the averages' TOTALS are values, not a =SUM: they move with their week
+        for i in reversed(range(len(wc))):
+            values.append((f"{A(og['avg'][i] + step)}{og['totals']}",
+                           _c(V, og["totals"], og["avg"][i])))
+    new_last = wc[-1][0] + step
     first, last = og["rows"][0], og["rows"][-1]
     if not _c(F, og["totals"], new_last):
         values.append((f"{A(new_last)}{og['totals']}", f"=SUM({A(new_last)}{first}:{A(new_last)}{last})"))
@@ -348,13 +378,24 @@ def plan_roll(V, F, closed: dt.date, new_sunday: dt.date) -> dict:
     # figure comes out of RUNNING WEEK TOTALS; without that column the history
     # row ends on Sunday, because the week's final is also in the Ongoing
     # block's TOTALS row under that same week (WE 9.13 -> 548 in both).
-    day_vals = [_c(V, dl["totals"], k) for k in dl["days"]]
-    stack_values = day_vals + ([_c(V, dl["totals"], dl["run"])] if dl["run"] else [])
-    # 5 clear the days + the new week's day numbers
-    clear = [f"{A(dl['days'][0])}{dl['rows'][0][0]}:{A(dl['days'][-1])}{dl['rows'][-1][0]}"]
+    # Laid out BY COLUMN from C: each day's total, that day's total App Avg
+    # next to it when the tab has one (Eve 2026-09-27: the history keeps the
+    # daily total average from now on), then RUNNING WEEK.
+    at = {k: _c(V, dl["totals"], k) for k in dl["days"]}
+    for a in dl["avg"]:
+        if a:
+            at[a] = _c(V, dl["totals"], a)
+    if dl["run"]:
+        at[dl["run"]] = _c(V, dl["totals"], dl["run"])
+    stack_values = [at.get(k, "") for k in range(3, max(at) + 1)]
+    # 5 clear the days (and their App Avg) + the new week's day numbers
+    right = max([dl["days"][-1]] + [a for a in dl["avg"] if a])
+    clear = [f"{A(dl['days'][0])}{dl['rows'][0][0]}:{A(right)}{dl['rows'][-1][0]}"]
     monday = new_sunday - dt.timedelta(days=6)
     for i, k in enumerate(dl["days"]):
         values.append((f"{A(k)}{dl['daynum']}", (monday + dt.timedelta(days=i)).day))
+        if dl["avg"][i]:
+            values.append((f"{A(dl['avg'][i])}{dl['daynum']}", (monday + dt.timedelta(days=i)).day))
     stack = find_stack(V, dl["totals"])
     return {"values": values, "clear": clear,
             "stack_top": stack[0] if stack else dl["totals"] + 1,
@@ -362,6 +403,9 @@ def plan_roll(V, F, closed: dt.date, new_sunday: dt.date) -> dict:
             "stack_values": stack_values,
             "last_col": dl["run"] or dl["days"][-1],
             "summary": find_summary(V, dl["hdr"]),
+            "daily_days": dl["days"],
+            # the new last Ongoing pair takes the format of the pair before it
+            "og_new": ((og["hdr"], og["totals"], new_last + step - 1, step) if pairs else None),
             "stack_already": bool(stack) and _c(V, stack[0], 1) == f"WE {closed.month}.{closed.day}"}
 
 
@@ -383,6 +427,17 @@ def apply_roll(ws, V, F, closed, new_sunday, logfn=print) -> None:
     _retry(ws.batch_update, [{"range": a, "values": [[v]]} for a, v in p["values"]],
            value_input_option="USER_ENTERED")
     logfn(f"  roll 1-3/5 ongoing WE columns, K/L freeze, delta 'Last week': {len(p['values'])} cell(s)")
+    if p.get("og_new"):
+        r0, r1, c1, step = p["og_new"]            # c1 = new last column (1-based)
+        try:
+            _retry(sh.batch_update, {"requests": [{"copyPaste": {
+                "source": {"sheetId": ws.id, "startRowIndex": r0 - 1, "endRowIndex": r1,
+                           "startColumnIndex": c1 - 2 * step, "endColumnIndex": c1 - step},
+                "destination": {"sheetId": ws.id, "startRowIndex": r0 - 1, "endRowIndex": r1,
+                                "startColumnIndex": c1 - step, "endColumnIndex": c1},
+                "pasteType": "PASTE_FORMAT"}}]})
+        except Exception as e:                                     # noqa: BLE001
+            logfn(f"  (format of the new Ongoing week skipped: {type(e).__name__})")
     _retry(ws.batch_clear, p["clear"])
     logfn(f"  roll 4/5 cleared {p['clear']} and wrote the new day numbers")
     if p["stack_already"]:
@@ -400,10 +455,12 @@ def apply_roll(ws, V, F, closed, new_sunday, logfn=print) -> None:
         logfn(f"  (format of the new history row skipped: {type(e).__name__})")
     s = p["summary"]
     formulas = []
-    for k in s["days"]:
-        formulas.append({"range": f"{A(k)}{s['last']}", "values": [[f"={A(k)}${top}"]]})
+    # summary column i (Mon..Sun) reads the daily block's day i: the same
+    # letter only while the days sat side by side, not with App Avg between.
+    for k, dk in zip(s["days"], p["daily_days"]):
+        formulas.append({"range": f"{A(k)}{s['last']}", "values": [[f"={A(dk)}${top}"]]})
         formulas.append({"range": f"{A(k)}{s['avg']}",
-                         "values": [[f"=AVERAGE({A(k)}${top}:{A(k)}${top + 3})"]]})
+                         "values": [[f"=AVERAGE({A(dk)}${top}:{A(dk)}${top + 3})"]]})
     _retry(ws.batch_update, formulas, value_input_option="USER_ENTERED")
     logfn(f"  roll 5/5 inserted history row {p['stack_label']} at row {top}; "
           f"HC (Last Week) / 4 Week AVG now read rows {top}..{top + 3}")
@@ -599,6 +656,134 @@ def plan_day(V, day: dt.date, today: dt.date, logfn=print,
     return out
 
 
+# ---------------------------------------------------------------- app avg --
+# Rafael 2026-09-27: next to each headcount, the App Avg the trackers print as
+# 'Sales Per Rep Avg' -- the week's apps so far divided by that day's heads
+# (Rafael Sat 9/26: 225 / 45 = 5.0 on both). The apps come from the 'All
+# Campaigns Org Sales Board' tab of this same workbook, which the morning batch
+# fills long before this run (order 16 vs 58). Every App Avg cell belongs to
+# this job: they are recomputed each run, so a late sale shows up the next day.
+ALL_CAMPAIGNS_GID = 546263838
+_WE_ANY_C = re.compile(r"^WE\s+\d{1,2}\.\d{1,2}$", re.I)
+
+
+def _avg(units, heads) -> object:
+    """units / heads to one decimal; 0 heads is an average of 0 (Eve 2026-09-27),
+    and a day with no headcount number has no average."""
+    if heads is None:
+        return ""
+    return 0 if heads == 0 else round((units or 0) / heads, 1)
+
+
+def _units_delta(ac) -> Optional[dict]:
+    """The All Campaigns tab's delta box: per owner, each day's This week /
+    Last week units. Found by its 'Monday' over 'This week' / 'Last week'."""
+    for r in range(1, len(ac)):
+        ks = [k for k in range(1, len(ac[r - 1]) + 1) if _c(ac, r, k).lower() == "monday"
+              and _c(ac, r + 1, k).lower() == "this week" and _c(ac, r + 1, k + 1).lower() == "last week"]
+        if not ks:
+            continue
+        last = []
+        for d in DAYS:
+            k = next((k for k in range(1, len(ac[r - 1]) + 1) if _c(ac, r, k).lower() == d), None)
+            if k is None:
+                return None
+            last.append(k + 1)
+        rows, rr = {}, r + 2
+        while rr <= len(ac) and _c(ac, rr, 2):
+            rows.setdefault(_c(ac, rr, 2).lower(), rr)
+            rr += 1
+        return {"last": last, "rows": rows}
+    return None
+
+
+def plan_avgs(V, ac, logfn=print) -> List[Tuple[str, object]]:
+    """[(a1, value)] for every App Avg cell whose value should change. Empty on a
+    tab without App Avg columns, or when the All Campaigns tab is on another
+    week (it rolls on its own schedule; mixing weeks would divide this week's
+    heads into last week's apps)."""
+    dl = find_daily(V)
+    if not any(dl["avg"]):
+        return []
+    og, dx = find_ongoing(V), find_delta(V)
+    ac_we = next((_c(ac, r, 3) for r in range(1, len(ac) + 1) if _WE_ANY_C.match(_c(ac, r, 3))), "")
+    if ac_we.replace(" ", "").lower() != og["wcols"][0][1].replace(" ", "").lower():
+        logfn(f"  App Avg: All Campaigns is on {ac_we!r}, this tab on {og['wcols'][0][1]!r} "
+              "-- not computed this run")
+        return []
+    ad = find_daily(ac)
+    units = {n.lower(): [_num(_c(ac, r, k)) or 0 for k in ad["days"]] for r, n, _ in ad["rows"]}
+    out: List[Tuple[str, object]] = []
+
+    def put(r, k, v):
+        """Queue the cell only when what it SHOWS differs ('5.0', '-15.25%')."""
+        if not k:
+            return
+        cur = _c(V, r, k)
+        if v == "":
+            if cur != "":
+                out.append((f"{A(k)}{r}", ""))
+            return
+        try:
+            shown = _num_f(cur) / (100 if cur.endswith("%") else 1)
+        except ValueError:
+            shown = None
+        if shown is None or abs(shown - float(v)) > 1e-6:
+            out.append((f"{A(k)}{r}", v))
+
+    # the daily block, and its Totals row (all apps / all heads)
+    filled = [i for i, k in enumerate(dl["days"]) if _num(_c(V, dl["totals"], k)) is not None]
+    latest = {}
+    for r, name, _ in dl["rows"]:
+        u = units.get(name.lower(), [0] * 7)
+        for i, k in enumerate(dl["days"]):
+            v = _avg(sum(u[:i + 1]), _num(_c(V, r, k)))
+            put(r, dl["avg"][i], v)
+            if filled and i == filled[-1]:
+                latest[name.lower()] = v
+    tot_latest = ""
+    for i, k in enumerate(dl["days"]):
+        v = _avg(sum(sum(u[:i + 1]) for u in units.values()), _num(_c(V, dl["totals"], k)))
+        put(dl["totals"], dl["avg"][i], v)
+        if filled and i == filled[-1]:
+            tot_latest = v
+    if not filled:
+        return out
+    # the Ongoing block's current week = the latest day's average
+    if og["avg"] and og["avg"][0]:
+        for r in og["rows"]:
+            put(r, og["avg"][0], latest.get(_c(V, r, 2).lower(), ""))
+        put(og["totals"], og["avg"][0], tot_latest)
+    # the delta box: this week vs the same day last week
+    if dx["avg"]:
+        ud = _units_delta(ac)
+        day = filled[-1]
+        lw_col = dx["last"][day]
+        tot_u = 0.0
+        for r, name in dx["rows"]:
+            ar = ud["rows"].get(name.lower()) if ud else None
+            u = sum(_num(_c(ac, ar, k)) or 0 for k in ud["last"][:day + 1]) if ar else 0
+            tot_u += u
+            this, last = latest.get(name.lower(), ""), _avg(u, _num(_c(V, r, lw_col)))
+            put(r, dx["avg"], this)
+            put(r, dx["avg"] + 1, last)
+            put(r, dx["avg"] + 2, round((this - last) / last, 4)
+                if isinstance(this, (int, float)) and isinstance(last, (int, float)) and last else 0)
+        if ud:
+            tot_u = sum(sum(_num(_c(ac, ar, k)) or 0 for k in ud["last"][:day + 1])
+                        for ar in ud["rows"].values())
+        this, last = tot_latest, _avg(tot_u, _num(_c(V, dx["totals"], lw_col)))
+        put(dx["totals"], dx["avg"], this)
+        put(dx["totals"], dx["avg"] + 1, last)
+        put(dx["totals"], dx["avg"] + 2, round((this - last) / last, 4)
+            if isinstance(this, (int, float)) and isinstance(last, (int, float)) and last else 0)
+    return out
+
+
+def _num_f(s) -> float:
+    return float(str(s).replace(",", "").replace("%", "").strip())
+
+
 # ------------------------------------------------------------------- sort --
 
 def _block_last_col(g, rows: List[int], floor: int) -> int:
@@ -649,7 +834,7 @@ def sort_requests(sheet_id: int, g) -> List[dict]:
         # Delta), which is the one sitting immediately left of Monday's — three
         # columns over. Not matched by its caption: Eve renamed that header
         # from 'Total this week' to 'This week' on 2026-09-20.
-        ([r for r, _ in dx["rows"]], dx["this"][0] - 3, dx["last"][-1] + 1),
+        ([r for r, _ in dx["rows"]], dx["week"], dx["last"][-1] + 1),
     ]
     out = []
     for rows, key, floor in blocks:
@@ -713,6 +898,20 @@ def run(apply_changes: bool = False, today: Optional[dt.date] = None,
         total += len(ups)
     logfn(f"{'wrote' if apply_changes else 'would write'} {total} day cell(s)")
 
+    # App Avg next to every headcount (no-op on a tab without the columns)
+    try:
+        ac = ws.spreadsheet.get_worksheet_by_id(ALL_CAMPAIGNS_GID).get_all_values()
+        avg_ups = plan_avgs(V, ac, logfn=logfn)
+    except Exception as e:                                         # noqa: BLE001
+        logfn(f"  App Avg NOT computed -- {type(e).__name__}: {e}")
+        avg_ups = []
+        broken.append(None)
+    logfn(f"{'wrote' if apply_changes else 'would write'} {len(avg_ups)} App Avg cell(s)")
+    if apply_changes and avg_ups:
+        _retry(ws.batch_update, [{"range": a, "values": [[v]]} for a, v in avg_ups],
+               value_input_option="USER_ENTERED")
+        V = ws.get_all_values()
+
     # LAST: the boxes rank on the numbers the fill just wrote.
     reqs = sort_requests(ws.id, V)
     logfn(f"{'sorting' if apply_changes else 'would sort'} {len(reqs)} box(es) "
@@ -726,7 +925,8 @@ def run(apply_changes: bool = False, today: Optional[dt.date] = None,
     # depends_on this run. A source that simply has not posted yet does not
     # land here — it leaves the cell empty without raising.
     if broken:
-        logfn(f"FAILED: {', '.join(f'{d:%a %m/%d}' for d in broken)} could not be read")
+        logfn(f"FAILED: {', '.join(f'{d:%a %m/%d}' if d else 'App Avg' for d in broken)} "
+              "could not be read")
         return 1
     return 0
 

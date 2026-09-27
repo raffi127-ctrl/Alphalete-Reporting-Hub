@@ -67,7 +67,7 @@ LOGS = REPO / "output" / "logs"
 
 SHEET_ID = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"
 BOARD_TAB = "Org Active Headcount"      # renamed from '... Test 2' 2026-09-13
-BOARD_GID = 1529537631                  # opened by gid: survives the next rename
+BOARD_GID = 2128728532                  # opened by gid (App Avg tab since 2026-09-27)
 
 # tracker spec id (tableau_screenshots.pages) -> the board's 'Campaign' value
 TRACKERS = {"att_country": "fiber", "nds": "nds",

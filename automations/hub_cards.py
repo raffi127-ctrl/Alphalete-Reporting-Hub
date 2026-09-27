@@ -1867,7 +1867,7 @@ AUTOMATED_REPORTS = [
         ),
         "sheet_url": ("https://docs.google.com/spreadsheets/d/"
                       "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E/edit"
-                      "?gid=1529537631#gid=1529537631"),
+                      "?gid=2128728532#gid=2128728532"),
         "assignees": ["Lucy 1"],
         # Lucy 1's Slack token is the one that can download the tracker PNGs.
         "run_machine": "Lucy 1",

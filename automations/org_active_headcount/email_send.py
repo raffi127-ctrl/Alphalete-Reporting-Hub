@@ -68,7 +68,8 @@ def board_range(g) -> str:
     that fit. Widen this to `og['wcols'][-1][0]` to put the other three back."""
     dl = d.find_daily(g)
     stack = d.find_stack(g, dl["totals"])
-    return f"A1:{d.A(dl['days'][-1])}{stack[-1] if stack else dl['totals']}"
+    right = dl["avg"][-1] or dl["days"][-1]          # Sunday's App Avg when there is one
+    return f"A1:{d.A(right)}{stack[-1] if stack else dl['totals']}"
 
 
 def delta_range(g, today: Optional[dt.date] = None) -> str:
@@ -109,7 +110,7 @@ def totals_mismatch(g) -> List[str]:
     if filled:
         last = day_tot[filled[-1]]
         ongoing = d._num(d._c(g, og["totals"], og["wcols"][0][0]))
-        week = d._num(d._c(g, dx["totals"], dx["this"][0] - 3))
+        week = d._num(d._c(g, dx["totals"], dx["week"]))
         if ongoing != last:
             out.append(f"week: Ongoing {og['wcols'][0][1]} {ongoing} vs daily Totals {last}")
         if week != last:
