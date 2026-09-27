@@ -1005,15 +1005,23 @@ def _collapse(ws, label_rows):
     # outermost first — Sheets derives a group's depth from the ones already
     # covering its rows, so a nested block added before its parent comes out
     # at the wrong level
+    made = []
     for _summary, children in sorted(COLLAPSIBLE, key=lambda g: -len(g[1])):
         rows = sorted(label_rows[c] for c in children if c in label_rows)
         if len(rows) < 2 or rows[-1] - rows[0] != len(rows) - 1:
             continue          # not a contiguous block — grouping would be wrong
+        lo, hi = rows[0] - 1, rows[-1]
+        # A group's DEPTH is how many groups already enclose it, and the API
+        # rejects an update whose depth does not match exactly ("there is no
+        # group at depth 1 that spans …; it is over …"). Outermost is built
+        # first, so counting the enclosing ones gives the right number.
+        depth = 1 + sum(1 for a, b in made if a <= lo and hi <= b)
+        made.append((lo, hi))
         rng = {"sheetId": ws.id, "dimension": "ROWS",
-               "startIndex": rows[0] - 1, "endIndex": rows[-1]}
+               "startIndex": lo, "endIndex": hi}
         reqs.append({"addDimensionGroup": {"range": rng}})
         reqs.append({"updateDimensionGroup": {
-            "dimensionGroup": {"range": rng, "depth": 1, "collapsed": True},
+            "dimensionGroup": {"range": rng, "depth": depth, "collapsed": True},
             "fields": "collapsed"}})
     if reqs:
         ws.spreadsheet.batch_update({"requests": reqs})

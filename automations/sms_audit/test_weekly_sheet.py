@@ -692,3 +692,30 @@ class NestedGroupTest(unittest.TestCase):
     def test_without_a_log_those_rows_are_blank_not_zero(self):
         by = {l: f for _s, l, f in W.ROWS}
         self.assertEqual(by["— carrier rejected every text"]({"log": None}), "")
+
+
+class GroupDepthTest(unittest.TestCase):
+    """A group's DEPTH is how many groups enclose it, and the API rejects an
+    update whose depth is wrong outright: "there is no group at depth 1 that
+    spans 22:25; it is over 16:26". Hardcoding 1 silently lost every group on
+    the sheet, because one bad request fails the whole batch."""
+
+    def _depths(self, blocks):
+        """Mirror of the depth arithmetic in _collapse."""
+        made, out = [], []
+        for lo, hi in blocks:
+            out.append(1 + sum(1 for a, b in made if a <= lo and hi <= b))
+            made.append((lo, hi))
+        return out
+
+    def test_an_enclosed_block_is_one_level_deeper(self):
+        self.assertEqual(self._depths([(15, 26), (21, 25)]), [1, 2])
+
+    def test_siblings_stay_at_the_same_level(self):
+        self.assertEqual(self._depths([(15, 26), (56, 63)]), [1, 1])
+
+    def test_outermost_is_built_first_or_the_arithmetic_breaks(self):
+        # counting enclosures only works if the enclosing group already exists
+        ordered = sorted(W.COLLAPSIBLE, key=lambda g: -len(g[1]))
+        sizes = [len(kids) for _s, kids in ordered]
+        self.assertEqual(sizes, sorted(sizes, reverse=True))
