@@ -42,13 +42,36 @@ class RafStaysOnOurMachines(unittest.TestCase):
     PATHS = ("automations/gap_alerts/run.py",
              "automations/gap_alerts/config.py")
 
+    # THE ONE CARVE-OUT IN THE CARVE-OUT (Megan 2026-09-26): Raf asked for
+    # Lucy's call-outs on his own reps and on Carlos's guests, so gap_alerts
+    # borrows the call-out WORDING (gap_callouts) and the Slack client
+    # (post._slack) from icd_alerts. Neither touches the relay workbook.
+    # What stays forbidden is the relay itself, so the second assertion
+    # names its readers by symbol rather than by module.
+    ALLOWED = {"automations.icd_alerts",
+               "automations.icd_alerts.gap_callouts",
+               "automations.icd_alerts.post"}
+    # approved_channels is NOT on this list on purpose: Carlos's guest
+    # call-outs land in the room his Sara+ alerts already use, and that room
+    # is looked up from the Office Channels tab (Megan 2026-09-26). That is a
+    # channel id, not a rep's counts -- Raf's board never reads a relay row.
+    RELAY_SYMBOLS = ("RELAY_SPREADSHEET_ID", "approved_knocks",
+                     "approved_texts", "RELAY_TAB", "KNOCKS_TAB",
+                     "open_by_key")
+
     def test_gap_alerts_does_not_read_the_icd_relay(self):
         for rel in self.PATHS:
             mods = _imports(ROOT / rel)
-            leaked = [m for m in mods if "icd_alerts" in m or "icd_signup" in m]
+            leaked = [m for m in mods
+                      if ("icd_alerts" in m or "icd_signup" in m) and m not in self.ALLOWED]
             self.assertEqual(leaked, [], "%s now reads the ICD relay. Raf's "
                                          "reports are not supposed to change "
                                          "(Megan 2026-09-12)." % rel)
+            text = (ROOT / rel).read_text()
+            used = [s for s in self.RELAY_SYMBOLS if s in text]
+            self.assertEqual(used, [], "%s reaches into the ICD relay (%s). "
+                                       "Raf's boards come from OwnerVille, "
+                                       "never the relay." % (rel, used))
 
 
 class AOStaysOnOurMachines(unittest.TestCase):

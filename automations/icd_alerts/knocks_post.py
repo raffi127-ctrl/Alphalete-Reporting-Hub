@@ -85,9 +85,24 @@ def _office_now(office) -> dt.datetime:
     return O.office_now(office)
 
 
+# SATURDAY BOARDS STOP AT 6PM, EVERY OFFICE (Megan 2026-09-27: "Sat turn off
+# all knock boards at 6pm local time"). An office's own Saturday hours still
+# apply -- this only caps them. Read on the office's clock; Colten, Isaiah
+# and Khalil are the ones whose Saturday runs past it.
+SAT_BOARD_STOP_HHMM = (18, 0)
+
+
+def _past_saturday_cap(now: dt.datetime) -> bool:
+    return now.weekday() == 5 and (now.hour, now.minute) > SAT_BOARD_STOP_HHMM
+
+
 def in_field_hours(office, now: Optional[dt.datetime] = None) -> bool:
     """Only post while THIS office's reps are out. One definition, in
-    offices.py, because each office carries its own window now."""
+    offices.py, because each office carries its own window now -- plus the
+    org-wide Saturday 6pm cap on boards."""
+    now = now or _office_now(office)
+    if _past_saturday_cap(now):
+        return False
     return O.in_field_hours(office, now)
 
 
@@ -176,6 +191,9 @@ def _after_hours_slot(office, now: dt.datetime) -> bool:
     """Are we inside a fixed slot's grace window that falls after this
     office's field hours today, within RECAP_AFTER_MIN of their end?"""
     if now.weekday() == 6 or (now.weekday() == 5 and not office.saturday):
+        return False
+    if _past_saturday_cap(now):
+        # The 6pm Saturday cap is a stop, not a bell: no recap rides past it.
         return False
     end = office.sat_end if now.weekday() == 5 else office.day_end
     eh, em = _hm(end)
