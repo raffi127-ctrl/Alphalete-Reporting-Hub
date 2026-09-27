@@ -926,3 +926,78 @@ class ColumnFitTest(unittest.TestCase):
         self.assertTrue(dashed, "no em-dash metric rows to guard")
         for l in dashed:
             self.assertNotIn(l, W.WRAP_ROWS)
+
+
+class SheetWidePersonGroupTest(unittest.TestCase):
+    """Megan 2026-09-27: "when we hit the + to expand it should expand for
+    everyone — show all names."
+
+    The fold was built from the report being written, so it spanned only the
+    senders that week. Carlos's tab holds seven people across six weeks and
+    the last week written had two — the + wrapped two, and the other five sat
+    outside it looking like separate folds."""
+
+    def _labels(self):
+        rows = ["Texts with a spelling mistake", "Texts with bad grammar",
+                "Texts with the wrong verb form", "Texts with a doubled word",
+                "Texts missing a space after a full stop",
+                "Texts using lowercase 'i'",
+                "— Elena Camarco", "— Andrea Camargo", "— Litzy Rodriguez",
+                "— Valeria Rodea", "— Sandy Samaniego", "— Erika Gonzalez",
+                "— Carlos Hidalgo",
+                "Direct questions dodged", "Answers pushed to a later call",
+                "Replies using texting shorthand",
+                "— Elena Camarco (questions)", "— Sandy Samaniego (questions)"]
+        return {lab: i for i, lab in enumerate(rows, start=54)}
+
+    def _sections(self):
+        out = {}
+        for lab in self._labels():
+            if "question" in lab.lower() or lab.startswith("Direct") \
+                    or lab.startswith("Answers") or lab.startswith("Replies"):
+                out[lab] = "Questions handled badly"
+            else:
+                out[lab] = "Text quality"
+        return out
+
+    def test_the_fold_covers_every_person_on_the_tab(self):
+        groups = dict(W.sheet_person_groups(self._labels(), self._sections()))
+        self.assertEqual(len(groups["Texts using lowercase 'i'"]), 7)
+
+    def test_an_em_dash_row_from_another_section_is_not_swept_in(self):
+        # "— booked by the AI" and "— carrier rejected every text" open with
+        # the same em-dash. Taking them made the block non-contiguous and
+        # _collapse dropped the group entirely, so the fold vanished.
+        labels = dict(self._labels())
+        sections = dict(self._sections())
+        for lab, sec, row in (("— booked by the AI", "1st Rounds", 16),
+                              ("— carrier rejected every text",
+                               "Why they didn't book", 27)):
+            labels[lab] = row
+            sections[lab] = sec
+        kids = dict(W.sheet_person_groups(labels, sections))[
+            "Texts using lowercase 'i'"]
+        self.assertEqual(len(kids), 7)
+        self.assertNotIn("— booked by the AI", kids)
+        rows = [labels[k] for k in kids]
+        self.assertEqual(rows[-1] - rows[0], len(rows) - 1)
+
+    def test_the_two_sections_do_not_take_each_others_people(self):
+        groups = dict(W.sheet_person_groups(self._labels()))
+        errs = groups["Texts using lowercase 'i'"]
+        asks = groups["Replies using texting shorthand"]
+        self.assertNotIn("— Elena Camarco (questions)", errs)
+        self.assertNotIn("— Elena Camarco", asks)
+        self.assertEqual(len(asks), 2)
+
+    def test_the_kids_are_in_sheet_order_so_the_block_is_contiguous(self):
+        labels = self._labels()
+        kids = dict(W.sheet_person_groups(labels))["Texts using lowercase 'i'"]
+        rows = [labels[k] for k in kids]
+        self.assertEqual(rows, sorted(rows))
+        self.assertEqual(rows[-1] - rows[0], len(rows) - 1)
+
+    def test_a_tab_with_no_person_rows_yet_makes_no_group(self):
+        labels = {"Texts using lowercase 'i'": 59,
+                  "Replies using texting shorthand": 62}
+        self.assertEqual(W.sheet_person_groups(labels), [])

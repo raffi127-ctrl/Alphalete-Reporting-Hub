@@ -543,7 +543,7 @@ IS_QUESTION = re.compile(r"^\s*(what|when|where|who|why|how|is|are|do|does|did|c
 ANSWER_WINDOW_MIN = 120
 
 
-def question_responses(recs, convos=None):
+def question_responses(recs, convos=None, top_n=1):
     """For each kind of question: how often it is asked, and WHAT WE ACTUALLY
     ANSWER — which is not the same as the next message we happen to send.
 
@@ -634,6 +634,10 @@ def question_responses(recs, convos=None):
             "question": bucket, "asked": n,
             "reply": top[0][0] if top else "",
             "reply_n": top[0][1] if top else 0,
+            # The commonest reply alone answers "what do we say"; the next
+            # few answer "do we say the SAME thing" — which is the question
+            # when the point is to write one good answer and reuse it.
+            "replies": answers[bucket].most_common(top_n),
             "answered": sum(answers[bucket].values()),
             "no_reply": unanswered[bucket],
             "no_reply_unbooked": unanswered_unbooked[bucket],

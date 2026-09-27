@@ -394,6 +394,58 @@ PERSON_SECTIONS = {"Text quality": "errors",
                    "Questions handled badly": "dodged"}
 
 
+def _label_sections(values):
+    """{column-B label: its column-A section}. The section is what tells a
+    person row apart from a static one — "— booked by the AI" and "— carrier
+    rejected every text" both open with the same em-dash."""
+    out = {}
+    for row in values:
+        if len(row) > 1 and str(row[1]).strip():
+            out[str(row[1]).strip()] = str(row[0]).strip()
+    return out
+
+
+def sheet_person_groups(labels, sections=None):
+    """The fold for each per-person section, built from the rows ALREADY ON
+    THE SHEET rather than from this week's senders.
+
+    Megan 2026-09-27: "when we hit the + to expand it should expand for
+    everyone — show all names." It did not, because the group was built from
+    the report being written: Carlos's tab has seven people across six weeks,
+    the last week written had two, so the + wrapped two of seven and the
+    other five sat outside it looking like separate folds.
+
+    Senders change week to week and the sheet keeps every one of them, so the
+    only correct span is every person row in the section, whichever week put
+    it there."""
+    out = []
+    others = [v for v in PERSON_SUFFIX.values() if v]
+    for section, which in PERSON_SECTIONS.items():
+        anchor = next((l for s, l, _f in reversed(ROWS) if s == section), None)
+        if not anchor or anchor not in labels:
+            continue
+        suffix = PERSON_SUFFIX[which]
+        kids = []
+        for lab in labels:
+            if not lab.startswith(PERSON_PREFIX):
+                continue
+            # The SECTION is what makes a person row a person row. Matching on
+            # the em-dash alone swept up "— booked by the AI" and "— carrier
+            # rejected every text" from other sections, which made the block
+            # non-contiguous and _collapse dropped the whole group — the fold
+            # silently vanished rather than covering too much.
+            if sections is not None and sections.get(lab) != section:
+                continue
+            if suffix:
+                if lab.endswith(suffix):
+                    kids.append(lab)
+            elif not any(lab.endswith(o) for o in others):
+                kids.append(lab)
+        if kids:
+            out.append((anchor, sorted(kids, key=lambda l: labels[l])))
+    return out
+
+
 def build_rows(rep):
     """ROWS with a row per PERSON at the FOOT of the section it belongs to
     (Megan 2026-09-27: "the expansion should be at the bottom of this
@@ -1084,8 +1136,13 @@ def write_week(ws, rep, week_end, dry_run=False):
         ws.resize(rows=next_row + 2, cols=ws.col_count)
     ws.batch_update([{"range": rng, "values": vals} for rng, vals in updates],
                     value_input_option="USER_ENTERED")
-    _format(ws, col, next_row - 1, labels, rows_spec, person_groups,
-            person_labels)
+    # Every person row on the tab, not just the ones this week produced —
+    # the others are real rows with real content from earlier weeks and want
+    # the same centring and the same fold.
+    all_groups = sheet_person_groups(
+        labels, _label_sections(values)) or person_groups
+    all_person = {l for _s, kids in all_groups for l in kids} | person_labels
+    _format(ws, col, next_row - 1, labels, rows_spec, all_groups, all_person)
     qrow = labels.get(WIDE_ROW)
     if qrow:
         _paint_warnings(ws, qrow, col, question_cell(rep))
@@ -1101,7 +1158,7 @@ def write_week(ws, rep, week_end, dry_run=False):
     if painted:
         # an updateCells write inside a collapsed group clears its collapsed
         # flag, so the fold is re-applied once the painting is done
-        _collapse(ws, labels, person_groups)
+        _collapse(ws, labels, all_groups)
     return col, len(updates)
 
 
