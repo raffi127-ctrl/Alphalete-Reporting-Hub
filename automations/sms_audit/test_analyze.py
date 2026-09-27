@@ -1046,3 +1046,72 @@ class GrammarAndPrecisionTest(unittest.TestCase):
         details = [e["detail"] for e in A.text_errors(convos)
                    if e["kind"] == "spelling"]
         self.assertFalse(any("onboarding" in d for d in details), details)
+
+
+class DoubledWordTest(unittest.TestCase):
+    """Megan 2026-09-27: "we work with AT&T so this isn't a double word
+    here." The & splits the brand into a token that matches the preceding
+    preposition, so "at AT&T" looked like "at at"."""
+
+    def _errs(self, body):
+        base = dt.datetime(2026, 9, 21, 9, 0)
+        return A.text_errors({"a": {
+            "phone": "1", "name": "x", "booked": False, "booked_by": "",
+            "outcome": "", "msgs": [{"when": base, "dir": "Out", "template": "",
+                                     "body": body, "sent_by": "Jorge",
+                                     "source": "", "status": "Delivered"}]}})
+
+    def test_at_att_is_not_a_doubled_word(self):
+        errs = self._errs("this is George with the Talent Team at AT&T.")
+        self.assertEqual([e for e in errs if e["kind"] == "doubled word"], [])
+
+    def test_a_word_before_any_acronym_is_not_doubled(self):
+        errs = self._errs("send it to IT for review")
+        self.assertEqual([e for e in errs if e["kind"] == "doubled word"], [])
+
+    def test_a_real_repeat_is_still_caught(self):
+        errs = self._errs("We are in the the Frisco area.")
+        self.assertTrue([e for e in errs if e["kind"] == "doubled word"])
+
+
+class ShortYesIsAnAnswerTest(unittest.TestCase):
+    """A short, direct yes IS the answer, wherever the question word sits.
+    "My apologies… is it fine if I have regular clothes on?" answered "That
+    is totally fine!" was called a dodge because the reply carries no
+    clothing words and the question does not OPEN with "is"."""
+
+    def _convos(self, q, a):
+        base = dt.datetime(2026, 9, 21, 9, 0)
+        return {"a": {"phone": "1", "name": "Jose", "booked": False,
+                      "booked_by": "", "outcome": "",
+                      "msgs": [
+                          {"when": base, "dir": "In", "template": "", "body": q,
+                           "sent_by": "", "source": "", "status": "Delivered"},
+                          {"when": base + dt.timedelta(minutes=3), "dir": "Out",
+                           "template": "", "body": a, "sent_by": "Erika",
+                           "source": "", "status": "Delivered"}]}}
+
+    def test_a_yes_buried_mid_question_still_counts(self):
+        out = A.dodged_questions(self._convos(
+            "My apologies, I'm on campus, is it fine if I have regular "
+            "clothes on?", "That is totally fine!"))
+        self.assertEqual(out, [])
+
+    def test_a_choice_question_is_not_answered_by_yes(self):
+        out = A.dodged_questions(self._convos(
+            "Is this position salary based or commission based?",
+            "That is totally fine!"))
+        self.assertEqual([x["kind"] for x in out], ["dodged"])
+
+    def test_a_long_reply_is_judged_on_its_content_not_its_opening(self):
+        out = A.dodged_questions(self._convos(
+            "What is the pay?",
+            "Yes! " + "We will go over everything about the role and the "
+            "team and the office and the schedule when you come in. " * 2))
+        self.assertEqual([x["kind"] for x in out], ["dodged"])
+
+    def test_the_question_and_reply_are_kept_whole(self):
+        q = "Hi there, " + "I have a fairly long question about the role. " * 6
+        out = A.dodged_questions(self._convos(q, "You can call this number."))
+        self.assertTrue(out)
+        self.assertEqual(out[0]["question"], " ".join(q.split()))

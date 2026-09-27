@@ -367,18 +367,31 @@ def error_runs(rep):
 
 
 def dodged_cell(rep):
-    """The question, the answer it got, and who sent it."""
+    """The question, the answer it got, who sent the answer and WHICH
+    APPLICANT asked (Megan 2026-09-27). Grouped by sender like the spelling
+    cell — the same person turns up repeatedly and that is the finding."""
     rows = (rep.get("log") or {}).get("dodged")
     if rows is None:
         return ""
     if not rows:
         return "No dodged questions found."
+    by_sender = collections.OrderedDict()
+    for e in rows:
+        by_sender.setdefault(e["sender"], []).append(e)
+    order = sorted(by_sender, key=lambda k: -len(by_sender[k]))
     out = []
-    for e in rows[:20]:
-        out.append("{} — {}\n     Q: {}\n     A: {}".format(
-            e["sender"], e["kind"], e["question"], e["reply"]))
-    if len(rows) > 20:
-        out.append("…and {} more.".format(len(rows) - 20))
+    for sender in order:
+        items = by_sender[sender]
+        lines = ["{} — {} question{}".format(
+            sender, len(items), "" if len(items) == 1 else "s")]
+        for e in items[:8]:
+            lines.append("     {} asked [{}]:".format(
+                e.get("name") or "(no name)", e["kind"]))
+            lines.append("       Q: {}".format(e["question"]))
+            lines.append("       A: {}".format(e["reply"]))
+        if len(items) > 8:
+            lines.append("     …and {} more.".format(len(items) - 8))
+        out.append("\n".join(lines))
     return _bmp_only("\n\n".join(out))
 
 

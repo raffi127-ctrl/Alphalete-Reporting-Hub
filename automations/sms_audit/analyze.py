@@ -1216,7 +1216,23 @@ def applicant_reply_speed(convos):
 
 TYPO_RARE = 2        # a word this rare in a whole week is not house style
 TYPO_COMMON = 25     # …and this common is what it was probably meant to be
-DOUBLED = re.compile(r"\b(\w+)\s+\1\b", re.I)
+DOUBLED = re.compile(r"\b(\w+)\s+(\1)\b", re.I)
+
+
+def _real_doubled(text):
+    """A genuinely repeated word, not a word that happens to precede an
+    acronym. "the Talent Team at AT&T" is not "at at" (Megan 2026-09-27:
+    "we work with AT&T so this isn't a double word here") — the & splits the
+    brand into a token that matches the preceding word."""
+    for m in DOUBLED.finditer(text):
+        first, second = m.group(1), m.group(2)
+        after = text[m.end():m.end() + 1]
+        if after == "&":
+            continue                       # AT&T, R&D, H&R
+        if second.isupper() and not first.isupper():
+            continue                       # a word then an acronym
+        return m
+    return None
 NO_SPACE = re.compile(r"[a-z]{2}[.!?][A-Z][a-z]")
 LONE_I = re.compile(r"(?<![\w'])i(?![\w'])")
 # "the base salary is determine on your experience" — a participle left bare
@@ -1396,7 +1412,7 @@ def text_errors(convos):
                           "detail": ("{} → {}".format(w, near[0]) if near
                                      else "{} (not a word)".format(w)),
                           "name": c.get("name", "")})
-        d = DOUBLED.search(body)
+        d = _real_doubled(body)
         if d:
             found.append({"kind": "doubled word", "sender": who, "body": body,
                           "detail": d.group(0), "name": c.get("name", "")})
@@ -1445,7 +1461,9 @@ ANSWER_KEYWORDS = {
     "Which role / which company is this?": r"role|position|alphalete|vantura|"
                                            r"at&?t|company|indeed|applied",
     "Hours, training, is it paid?": r"hour|training|paid|schedule|full.time|"
-                                    r"part.time|shift|week",
+                                    r"part.time|shift|week|monday|tuesday|"
+                                    r"wednesday|thursday|friday|saturday|"
+                                    r"\d{1,2}:\d{2}|am\b|pm\b",
     "How long is the interview / what's next?": r"minute|hour|next|second|"
                                                 r"follow|step|after",
     "What should I wear / bring?": r"wear|dress|attire|business|casual|"
@@ -1509,18 +1527,26 @@ def dodged_questions(convos):
             rb = reply["body"] or ""
             who = reply.get("sent_by") or ("AI Messaging" if is_ai(reply)
                                            else "(not recorded)")
-            row = {"question": " ".join(body.split())[:140],
-                   "reply": " ".join(rb.split())[:200],
+            # the WHOLE question and the whole reply (Megan 2026-09-27: "we
+            # need to see the full question here") — a question cut at 140
+            # characters is exactly the part that says what was being asked
+            row = {"question": " ".join(body.split()),
+                   "reply": " ".join(rb.split()),
                    "sender": who, "bucket": bucket or "(other)",
                    "name": c.get("name", "")}
+            short_yes = (len(rb) <= 90 and AFFIRMS.search(rb)
+                         and " or " not in body.lower())
             if DEFLECTIONS.search(rb):
                 out.append(dict(row, kind="deflected"))
+            # A short, direct yes or no IS the answer, wherever the question
+            # word sits. "…is it fine if I have regular clothes on?" answered
+            # "That is totally fine!" was being called a dodge because the
+            # reply contains no clothing words, and the question does not
+            # OPEN with "is" (Megan 2026-09-27). Not for an "A or B?"
+            # question, which a yes does not answer.
             elif (bucket in ANSWER_KEYWORDS
                   and not re.search(ANSWER_KEYWORDS[bucket], rb, re.I)
-                  # " … A or B?" is a choice, not a yes/no — an affirmation
-                  # does not answer it
-                  and not (YES_NO.match(body) and " or " not in body.lower()
-                           and AFFIRMS.search(rb))):
+                  and not short_yes):
                 out.append(dict(row, kind="dodged"))
             if INFORMAL.search(rb):
                 out.append(dict(row, kind="informal"))
