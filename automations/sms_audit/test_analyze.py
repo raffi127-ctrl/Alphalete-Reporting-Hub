@@ -723,3 +723,54 @@ class BestHourTest(unittest.TestCase):
         self.assertEqual(A.clock(13), "1pm")
         self.assertEqual(A.clock(0), "12am")
         self.assertEqual(A.clock(12), "12pm")
+
+
+class TextsToBookTest(unittest.TestCase):
+    """Megan 2026-09-26: "how many texts do people who book for a 1st round
+    receive from us on average BEFORE setting up the interview — so the
+    directional / 2nd interview texts wouldn't be counted here." The booking
+    moment is the earliest post-booking template: Directions and the
+    confirmations cannot fire until an interview exists."""
+
+    def _c(self, seq, booked=True):
+        """seq: [(minutes, 'In'|'Out', template)]"""
+        base = dt.datetime(2026, 9, 21, 9, 0)
+        return {"phone": "4698762121", "name": "x", "booked": booked,
+                "booked_by": "", "outcome": "",
+                "msgs": [{"when": base + dt.timedelta(minutes=m), "dir": d,
+                          "template": t, "body": "x", "sent_by": "",
+                          "source": "", "status": "Delivered"}
+                         for m, d, t in seq]}
+
+    def test_texts_after_the_booking_are_not_counted(self):
+        out = A.texts_to_book({"a": self._c([
+            (0, "Out", ""), (5, "In", ""), (10, "Out", ""),
+            (20, "Out", "Directions"),          # <- booked here
+            (30, "Out", "Friendly Reminder 1"),
+            (40, "Out", "2nd Interview Invite")])})
+        self.assertEqual(out["average"], 2.0)
+
+    def test_inbound_messages_are_not_texts_we_sent(self):
+        out = A.texts_to_book({"a": self._c([
+            (0, "Out", ""), (1, "In", ""), (2, "In", ""),
+            (10, "Out", "Directions AI")])})
+        self.assertEqual(out["average"], 1.0)
+
+    def test_booked_straight_off_a_phone_call_counts_as_zero(self):
+        out = A.texts_to_book({"a": self._c([(0, "Out", "Directions")])})
+        self.assertEqual(out["zero"], 1)
+        self.assertEqual(out["average"], 0.0)
+
+    def test_people_who_never_booked_are_not_in_it(self):
+        self.assertIsNone(A.texts_to_book({"a": self._c([(0, "Out", "")], booked=False)}))
+
+    def test_a_booking_with_no_marker_is_left_out_not_counted_as_zero(self):
+        # no Directions, no confirmation — we cannot say when it was booked,
+        # and guessing zero would drag the average down
+        self.assertIsNone(A.texts_to_book({"a": self._c([(0, "Out", ""), (5, "Out", "")])}))
+
+    def test_the_earliest_marker_wins_not_the_last(self):
+        out = A.texts_to_book({"a": self._c([
+            (0, "Out", ""), (10, "Out", "First Interview Confirmation"),
+            (20, "Out", ""), (30, "Out", "Directions")])})
+        self.assertEqual(out["average"], 1.0)

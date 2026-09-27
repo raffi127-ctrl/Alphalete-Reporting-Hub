@@ -130,16 +130,12 @@ def question_cell(rep):
 # entries stay for good, they cost nothing and removing one silently splits a
 # row in two the next time somebody rebuilds an old tab.
 RENAMED = {
-    '% of THOSE who booked': 'Texted 2+ times — % who booked',
     '% of bookings made by the AI': '% of interviews booked by the AI',
     '% of people texted who booked': '% of people we texted who booked',
     '% of recruiter replies within 5 minutes': 'How often a person answers within 5 minutes',
     '% of replies by a person within 5 minutes': 'How often a person answers within 5 minutes',
-    '% of the followed-up group who booked': 'Texted 2+ times — % who booked',
-    '% of the once-only group who booked': 'Texted once — % who booked',
     '% of them who booked': '% of blast people who booked',
     '% of them who replied': '% of blast people who replied',
-    '% of those who booked': 'Texted once — % who booked',
     '% that failed — 1st text to them': '% that failed — our FIRST text to them',
     '% that failed — later texts to them': '% that failed — our later texts to them',
     '% who showed — recruiter bookings': '% who showed — booked by a person',
@@ -171,10 +167,6 @@ RENAMED = {
     'Number not valid': 'Phone number not valid',
     'People in the normal flow': 'People not on the cold list',
     'People texted': 'People we texted',
-    'People we texted 2 or more times': 'Texted 2+ times — how many people',
-    'People we texted only ONCE': 'Texted once — how many people',
-    'People who got 2+ texts': 'Texted 2+ times — how many people',
-    'People who got exactly 1 text': 'Texted once — how many people',
     'People who texted back': 'People who texted us back',
     "Person's replies within 5 min %": 'How often a person answers within 5 minutes',
     "Person's reply, median minutes": 'Typical wait for a person to reply (minutes)',
@@ -341,6 +333,14 @@ def _lane_pct(which, field):
     return read
 
 
+def _unreached(status):
+    """People (not texts) for whom every message failed this way."""
+    def read(rep):
+        u = ((rep.get("log") or {}).get("funnel", {}) or {}).get("unreached")
+        return u.get(status, 0) if u is not None else ""
+    return read
+
+
 def _why(status):
     def read(rep):
         d = (rep.get("log") or {}).get("funnel", {}).get("delivery")
@@ -452,6 +452,16 @@ ROWS = [
     ("Why they didn't book", "We talked, then it went quiet", _drop("talked, then stopped")),
     ("Why they didn't book", "They said no", _drop("said no")),
     ("Why they didn't book", "Our texts never reached them", _drop("never reached them")),
+    # per PERSON, not per text: someone whose four texts all bounced is one
+    # lost applicant, not four
+    ("Why they didn't book", "— carrier rejected every text",
+     _unreached("Failed")),
+    ("Why they didn't book", "— still stuck in the queue",
+     _unreached("Requeued")),
+    ("Why they didn't book", "— no phone number on file",
+     _unreached("Dummy Phone")),
+    ("Why they didn't book", "— phone number not valid",
+     _unreached("Failed - Phone Not Valid")),
     ("Why they didn't book", "Too recent to judge (texted in the last 3 days)",
      _drop("too soon to tell")),
 
@@ -470,10 +480,20 @@ ROWS = [
     ("Normal applicants (not the cold list)", "% of normal applicants who booked",
      _lane_pct("live", "booked")),
 
-    ("Does texting them again help?", "Texted once — how many people", _curve("one", "people")),
-    ("Does texting them again help?", "Texted once — % who booked", _curve_pct("one", "booked")),
-    ("Does texting them again help?", "Texted 2+ times — how many people", _curve("many", "people")),
-    ("Does texting them again help?", "Texted 2+ times — % who booked", _curve_pct("many", "booked")),
+    # Megan 2026-09-26: the follow-up split was less useful than knowing what
+    # it actually COSTS to get an interview on the calendar. Booked people
+    # only, and only the texts sent BEFORE the booking — the directions and
+    # 2nd-interview texts are the consequence of a booking, not the work that
+    # produced it.
+    ("Texts it takes to book", "Average texts before they book",
+     lambda r: (lambda t: round(t["average"], 1) if t else "")(
+         ((r.get("log") or {}).get("funnel", {}) or {}).get("to_book"))),
+    ("Texts it takes to book", "Most common number of texts before booking",
+     lambda r: (lambda t: t["most_common"] if t else "")(
+         ((r.get("log") or {}).get("funnel", {}) or {}).get("to_book"))),
+    ("Texts it takes to book", "Booked without a single text first",
+     lambda r: (lambda t: t["zero"] if t else "")(
+         ((r.get("log") or {}).get("funnel", {}) or {}).get("to_book"))),
 
     ("Did they show up?", "Showed up to their interview", lambda r: _f(r, "shown", "")),
     ("Did they show up?", "% who showed — AI bookings",
@@ -793,7 +813,7 @@ SECTION_TINT = {"This week": (0.86, 0.86, 0.86),
                 "Normal applicants (not the cold list)": (0.88, 0.96, 0.90),
                 "Why texts never arrive": (0.99, 0.91, 0.86),
                 "Why they didn't book": (0.99, 0.89, 0.89),
-                "Does texting them again help?": (0.89, 0.95, 0.99), "Who we texted": (0.90, 0.94, 0.99), "Interviews booked": (0.90, 0.96, 0.91),
+                "Texts it takes to book": (0.89, 0.95, 0.99), "Who we texted": (0.90, 0.94, 0.99), "Interviews booked": (0.90, 0.96, 0.91),
                 "Did they show up?": (0.98, 0.95, 0.88), "How fast we reply": (0.93, 0.91, 0.98),
                 "People we left hanging": (0.99, 0.91, 0.91), "What applicants ask": (0.95, 0.95, 0.95),
                 "Problems to fix": (0.99, 0.93, 0.85)}
@@ -808,6 +828,26 @@ WRAP_ROWS = (WIDE_ROW, "Days of interviews in this column", "ISSUES WE SEE")
 # follow it. Collapsed by default — the point is that the tab stays short
 # until somebody asks why.
 COLLAPSIBLE = [
+    ("People we texted who never booked", [
+        "We texted once and never again",
+        "We kept texting, they never replied",
+        "They wrote last, we never answered",
+        "We talked, then it went quiet",
+        "They said no",
+        "Our texts never reached them",
+        "— carrier rejected every text",
+        "— still stuck in the queue",
+        "— no phone number on file",
+        "— phone number not valid",
+        "Too recent to judge (texted in the last 3 days)",
+    ]),
+    # nested inside the block above: the reasons fold away on their own
+    ("Our texts never reached them", [
+        "— carrier rejected every text",
+        "— still stuck in the queue",
+        "— no phone number on file",
+        "— phone number not valid",
+    ]),
     ("TOTAL texts that didn't arrive", [
         "Carrier rejected it (Failed)",
         "Still stuck in the queue (Requeued)",
@@ -962,7 +1002,10 @@ def _collapse(ws, label_rows):
     for grp in (sheet or {}).get("rowGroups", []) or []:
         reqs.append({"deleteDimensionGroup": {"range": dict(grp["range"],
                                                             sheetId=ws.id)}})
-    for _summary, children in COLLAPSIBLE:
+    # outermost first — Sheets derives a group's depth from the ones already
+    # covering its rows, so a nested block added before its parent comes out
+    # at the wrong level
+    for _summary, children in sorted(COLLAPSIBLE, key=lambda g: -len(g[1])):
         rows = sorted(label_rows[c] for c in children if c in label_rows)
         if len(rows) < 2 or rows[-1] - rows[0] != len(rows) - 1:
             continue          # not a contiguous block — grouping would be wrong

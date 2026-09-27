@@ -975,6 +975,79 @@ def worst_hours_label(convos, bottom=2):
                       for r in rows[-bottom:])
 
 
+# Templates that only fire once an interview EXISTS. The earliest one in a
+# thread is the moment the booking happened — Megan 2026-09-26: "if someone
+# gets directions, that means they were booked for an interview."
+POST_BOOKING_TEMPLATES = {
+    "Directions", "Directions AI", "First Interview Confirmation",
+    "Friendly Reminder 1", "Friendly Reminder 2", "Showed Up - Interview",
+    "No Show - Interview", "2nd Interview Invite", "Second Interview Confirmation",
+    "Showed Up - 2nd", "No Show - 2nd Interview", "FDOT/BOB", "Brought on Board",
+    "1st Interview - Reschedule", "2nd Interview - Reschedule", "Lobby Q Invite",
+    "Showed Up - FDOT/BOB", "No Show - FDOT/BOB", "Third Interview Confirmation",
+}
+
+
+def unreached_reasons(convos):
+    """For the PEOPLE we never reached, why — counted per person, not per
+    text (Megan 2026-09-26: "there should be a + expansion here of why they
+    didn't get reached").
+
+    Deliberately a different cut from delivery_reasons(): that one counts
+    messages across everybody, this one counts the applicants for whom every
+    single text failed, filed under whatever went wrong most often for them.
+    Someone whose four texts all bounced is ONE lost applicant, not four."""
+    out = collections.Counter()
+    for c in convos.values():
+        if c.get("booked"):
+            continue
+        outs = [m for m in c["msgs"] if m["dir"] == "Out"]
+        if not outs:
+            continue
+        if any((m.get("status") or "").strip().lower() == "delivered" for m in outs):
+            continue
+        worst = collections.Counter((m.get("status") or "?").strip() for m in outs)
+        out[worst.most_common(1)[0][0]] += 1
+    return out
+
+
+def texts_to_book(convos):
+    """How many texts it takes to get a first interview on the calendar.
+
+    Megan 2026-09-26: "how many texts do people who book for a 1st round
+    receive from us on average BEFORE setting up the interview — so the
+    directional / 2nd interview texts wouldn't be counted here."
+
+    So: booked people only, and only the outbound messages sent BEFORE the
+    booking. The booking moment is the earliest post-booking template in the
+    thread — Directions and the confirmations cannot fire until an interview
+    exists, which makes them a reliable marker without needing a booking
+    timestamp the log does not carry. A thread with no such marker is left
+    out rather than counted as zero."""
+    counts = []
+    for c in convos.values():
+        if not c.get("booked"):
+            continue
+        msgs = sorted(c["msgs"], key=lambda m: m["when"])
+        marks = [m["when"] for m in msgs
+                 if m["dir"] == "Out" and m["template"] in POST_BOOKING_TEMPLATES]
+        if not marks:
+            continue
+        first = min(marks)
+        counts.append(sum(1 for m in msgs if m["dir"] == "Out" and m["when"] < first))
+    if not counts:
+        return None
+    dist = collections.Counter(counts)
+    return {
+        "n": len(counts),
+        "average": sum(counts) / float(len(counts)),
+        "median": statistics.median(counts),
+        "most_common": dist.most_common(1)[0][0],
+        "zero": dist.get(0, 0),
+        "dist": dist,
+    }
+
+
 def delivery_reasons(rows):
     """WHY a text never arrived (Megan 2026-09-26: "we need to know why it
     never reached them").
@@ -1065,6 +1138,8 @@ def audit_log(rows, convos, office, booked=None):
     fun["lanes"] = lanes(convos, rows)
     fun["delivery"] = delivery_reasons(rows)
     fun["windows"] = send_windows(convos)
+    fun["to_book"] = texts_to_book(convos)
+    fun["unreached"] = unreached_reasons(convos)
     fun["best_hours"] = best_hours_label(convos)
     fun["worst_hours"] = worst_hours_label(convos)
     drop = dropoff(convos)

@@ -665,3 +665,30 @@ class OutcomeNotTemplateTest(unittest.TestCase):
         # same template, opposite outcomes, opposite colours
         self.assertEqual(W.warning_runs(self._cell(0, 2)), [])
         self.assertTrue(W.warning_runs(self._cell(2, 0)))
+
+
+class NestedGroupTest(unittest.TestCase):
+    """Megan wanted "Our texts never reached them" to expand as well, and it
+    already sits inside the "never booked" block — so the groups nest."""
+
+    def test_the_inner_block_is_inside_the_outer_one(self):
+        order = [l for _s, l, _f in W.ROWS]
+        outer = dict(W.COLLAPSIBLE)["People we texted who never booked"]
+        inner = dict(W.COLLAPSIBLE)["Our texts never reached them"]
+        for label in inner:
+            self.assertIn(label, outer, label)
+
+    def test_the_outer_block_is_built_first(self):
+        # Sheets derives depth from the groups already covering those rows
+        ordered = sorted(W.COLLAPSIBLE, key=lambda g: -len(g[1]))
+        self.assertEqual(ordered[0][0], "People we texted who never booked")
+
+    def test_a_person_is_counted_once_however_many_texts_bounced(self):
+        by = {l: f for _s, l, f in W.ROWS}
+        rep = {"log": {"funnel": {"unreached": {"Failed": 98, "Requeued": 11}}}}
+        self.assertEqual(by["— carrier rejected every text"](rep), 98)
+        self.assertEqual(by["— phone number not valid"](rep), 0)
+
+    def test_without_a_log_those_rows_are_blank_not_zero(self):
+        by = {l: f for _s, l, f in W.ROWS}
+        self.assertEqual(by["— carrier rejected every text"]({"log": None}), "")
