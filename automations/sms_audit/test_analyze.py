@@ -852,3 +852,139 @@ class CarriedInBookingTest(unittest.TestCase):
         out = A.texts_to_book({"a": self._c([(0, "In", ""), (10, "Out", "Directions")])})
         self.assertEqual(out["zero"], 1)
         self.assertEqual(out["carried_in"], 0)
+
+
+class ApplicantReplySpeedTest(unittest.TestCase):
+    """Megan 2026-09-27: "shouldn't this be how fast the applicant replies? or
+    maybe avg response time of an applicant." The section measures OUR speed;
+    theirs is the other half — it is how long the conversation window stays
+    open, and a recruiter answering an hour later has missed them."""
+
+    def _c(self, seq):
+        base = dt.datetime(2026, 9, 21, 9, 0)
+        return {"phone": "4698762121", "name": "x", "booked": False,
+                "booked_by": "", "outcome": "",
+                "msgs": [{"when": base + dt.timedelta(minutes=m), "dir": d,
+                          "template": "", "body": "x", "sent_by": "",
+                          "source": "", "status": st}
+                         for m, d, st in seq]}
+
+    def test_it_measures_from_our_text_to_their_answer(self):
+        gaps = A.applicant_reply_speed({"a": self._c([
+            (0, "Out", "Delivered"), (12, "In", "Delivered")])})
+        self.assertEqual(gaps, [12.0])
+
+    def test_a_text_that_never_arrived_cannot_be_answered(self):
+        self.assertEqual(A.applicant_reply_speed({"a": self._c([
+            (0, "Out", "Failed"), (12, "In", "Delivered")])}), [])
+
+    def test_an_answer_two_days_later_is_not_a_reply_to_that_text(self):
+        self.assertEqual(A.applicant_reply_speed({"a": self._c([
+            (0, "Out", "Delivered"), (60 * 48, "In", "Delivered")])}), [])
+
+    def test_our_own_messages_are_not_their_replies(self):
+        self.assertEqual(A.applicant_reply_speed({"a": self._c([
+            (0, "Out", "Delivered"), (5, "Out", "Delivered")])}), [])
+
+
+class TextErrorTest(unittest.TestCase):
+    """Megan 2026-09-27: "can you see if there are any texts that are
+    answered grammatically incorrect… and who sent the text". Typos come from
+    the corpus itself — a word used twice all week that is one edit from a
+    word used twenty-five times — filtered against a system word list,
+    because rarity alone flagged "Oct", "info" and "area"."""
+
+    def _convos(self, msgs, name="Jane Doe"):
+        base = dt.datetime(2026, 9, 21, 9, 0)
+        return {"a": {"phone": "4698762121", "name": name, "booked": False,
+                      "booked_by": "", "outcome": "",
+                      "msgs": [{"when": base + dt.timedelta(minutes=i),
+                                "dir": "Out", "template": "", "body": b,
+                                "sent_by": who, "source": "", "status": "Delivered"}
+                               for i, (b, who) in enumerate(msgs)]}}
+
+    def test_a_doubled_word_is_caught_with_its_sender(self):
+        errs = A.text_errors(self._convos([("We are in the the Frisco area.", "Dee")]))
+        d = [e for e in errs if e["kind"] == "doubled word"]
+        self.assertEqual(len(d), 1)
+        self.assertEqual(d[0]["sender"], "Dee")
+
+    def test_a_missing_space_after_a_full_stop_is_caught(self):
+        errs = A.text_errors(self._convos([("not a remote position.Are you in?", "Sandy")]))
+        self.assertTrue([e for e in errs if e["kind"] == "missing space"])
+
+    def test_a_template_is_not_a_persons_typing(self):
+        base = dt.datetime(2026, 9, 21, 9, 0)
+        convos = {"a": {"phone": "1", "name": "x", "booked": False,
+                        "booked_by": "", "outcome": "",
+                        "msgs": [{"when": base, "dir": "Out",
+                                  "template": "Directions", "body": "the the",
+                                  "sent_by": "Sandy", "source": "",
+                                  "status": "Delivered"}]}}
+        self.assertEqual(A.text_errors(convos), [])
+
+    def test_an_applicants_own_message_is_not_our_mistake(self):
+        base = dt.datetime(2026, 9, 21, 9, 0)
+        convos = {"a": {"phone": "1", "name": "x", "booked": False,
+                        "booked_by": "", "outcome": "",
+                        "msgs": [{"when": base, "dir": "In", "template": "",
+                                  "body": "the the", "sent_by": "", "source": "",
+                                  "status": "Delivered"}]}}
+        self.assertEqual(A.text_errors(convos), [])
+
+    def test_a_real_word_is_never_a_typo(self):
+        if not A.spellcheck_available():
+            self.skipTest("no word list on this machine")
+        self.assertTrue(A._known("info", A._dictionary()))
+        self.assertTrue(A._known("rescheduled", A._dictionary()))
+        self.assertFalse(A._known("intrested", A._dictionary()))
+
+
+class DodgedQuestionTest(unittest.TestCase):
+    """Megan 2026-09-27: "we need to know if someone asks a direct question
+    and the recruiter skirts around it or doesn't answer it in a professional
+    way." """
+
+    def _convos(self, q, a, who="Sandy"):
+        base = dt.datetime(2026, 9, 21, 9, 0)
+        return {"a": {"phone": "1", "name": "x", "booked": False,
+                      "booked_by": "", "outcome": "",
+                      "msgs": [
+                          {"when": base, "dir": "In", "template": "", "body": q,
+                           "sent_by": "", "source": "", "status": "Delivered"},
+                          {"when": base + dt.timedelta(minutes=5), "dir": "Out",
+                           "template": "", "body": a, "sent_by": who,
+                           "source": "", "status": "Delivered"}]}}
+
+    def test_an_off_topic_answer_is_a_dodge(self):
+        out = A.dodged_questions(self._convos(
+            "Is this position salary based or commission based?",
+            "You can call this number or text us at anytime."))
+        self.assertEqual([x["kind"] for x in out], ["dodged"])
+        self.assertEqual(out[0]["sender"], "Sandy")
+
+    def test_an_on_topic_answer_is_not(self):
+        out = A.dodged_questions(self._convos(
+            "What is the pay?", "The base salary is $800-$1200 weekly."))
+        self.assertEqual(out, [])
+
+    def test_yes_answers_a_yes_no_question_without_repeating_it(self):
+        # "is it fine if I wear regular clothes?" -> "That is totally fine!"
+        out = A.dodged_questions(self._convos(
+            "is it fine if I have regular clothes on?", "That is totally fine!"))
+        self.assertEqual(out, [])
+
+    def test_pushing_the_answer_to_a_call_is_flagged_separately(self):
+        out = A.dodged_questions(self._convos(
+            "What is the pay?", "The hiring manager will go over that on the call."))
+        self.assertEqual([x["kind"] for x in out], ["deflected"])
+
+    def test_texting_shorthand_is_flagged(self):
+        out = A.dodged_questions(self._convos(
+            "What is the pay?", "idk, the base salary is $800 weekly"))
+        self.assertIn("informal", [x["kind"] for x in out])
+
+    def test_a_question_with_no_known_vocabulary_is_left_alone(self):
+        out = A.dodged_questions(self._convos(
+            "Did you know my maiden name is Pena?", "Ha, small world!"))
+        self.assertEqual(out, [])

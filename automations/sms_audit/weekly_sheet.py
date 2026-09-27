@@ -80,11 +80,11 @@ def _rate(n, d):
     return "" if not d or n is None else round(100.0 * n / d, 1)
 
 
-QUESTION_REPLY_CHARS = 56
 WIDE_ROW = "Most asked → what we usually reply"
 # Rows whose cell holds a paragraph rather than a number: they wrap, sit
 # left-aligned and top-aligned, and the row grows to fit them.
-WRAP_ROWS = (WIDE_ROW,)
+WRAP_ROWS = (WIDE_ROW, "Spelling and grammar — what, and who sent it",
+             "Dodged questions — what, and who sent it")
 # Wrapped like the questions cell, but centred, bold and a size up: it is a
 # two-line header for the whole column, not a paragraph to read through
 # (Megan 2026-09-27).
@@ -113,9 +113,12 @@ def question_cell(rep):
             head += ", answered {}".format(row["answered"])
         lines = [head]
         if row.get("reply"):
+            # The whole reply, not a preview (Megan 2026-09-27: "we need to
+            # see the full response here"). Cutting it at 56 characters hid
+            # the half that says whether the answer was any good — the cell
+            # wraps and the row auto-sizes, so length costs nothing but
+            # height.
             reply = row["reply"].strip().strip("\u201c\u201d\"")
-            if len(reply) > QUESTION_REPLY_CHARS:
-                reply = reply[:QUESTION_REPLY_CHARS].rstrip(" .,") + "\u2026"
             lines.append("     \u21b3 {}".format(reply))
         # What matters is whether they ENDED UP BOOKED, not which template
         # fired. Megan 2026-09-26: "this prob means that they got a phone
@@ -142,12 +145,12 @@ def question_cell(rep):
 # entries stay for good, they cost nothing and removing one silently splits a
 # row in two the next time somebody rebuilds an old tab.
 RENAMED = {
-    "% of a person's responses within 5 minutes": "Of a person's responses, % within 5 minutes",
+    "% of a person's responses within 5 minutes": "Of a recruiter's responses, % within 5 minutes",
     '% of bookings made by the AI': '% of 1st rounds booked by the AI',
     '% of interviews booked by the AI': '% of 1st rounds booked by the AI',
     '% of people texted who booked': '% of people we texted who booked',
-    '% of recruiter replies within 5 minutes': "Of a person's responses, % within 5 minutes",
-    '% of replies by a person within 5 minutes': "Of a person's responses, % within 5 minutes",
+    '% of recruiter replies within 5 minutes': "Of a recruiter's responses, % within 5 minutes",
+    '% of replies by a person within 5 minutes': "Of a recruiter's responses, % within 5 minutes",
     '% of them who booked': '% of blast people who booked',
     '% of them who replied': '% of blast people who replied',
     '% that failed — 1st text to them': 'Of our FIRST text to someone, % that fail',
@@ -170,24 +173,25 @@ RENAMED = {
     'Dead links sent': 'Broken links sent',
     'Got 2+ texts, never replied': 'We kept texting, they never replied',
     'Got ONE text and nothing more': 'We texted once and never again',
-    'How often a person answers within 5 minutes': "Of a person's responses, % within 5 minutes",
+    'How often a person answers within 5 minutes': "Of a recruiter's responses, % within 5 minutes",
     'Interview days in this column': 'Days of 1st rounds in this column',
     'Interviews booked with no texts on file': '1st Rounds booked with no texts on file',
     'Left unanswered': 'Applicants left waiting 2+ hours for a response',
     'Messages sent + received': 'Total texts (sent + received)',
-    'Minutes for a person to reply (typical)': 'Typical Response Time — a person (minutes)',
-    'Minutes for a recruiter to reply (typical)': 'Typical Response Time — a person (minutes)',
+    'Minutes for a person to reply (typical)': 'Typical Response Time — a recruiter (minutes)',
+    'Minutes for a recruiter to reply (typical)': 'Typical Response Time — a recruiter (minutes)',
     'Minutes for the AI to reply (typical)': 'Typical Response Time — AI (minutes)',
     'Never booked': 'People we texted who never booked',
     'Never reached them (texts failed)': 'Our texts never reached them',
     'No number on file (Dummy Phone)': 'No phone number on file (Dummy Phone)',
     'Not delivered': "TOTAL texts that didn't arrive",
     'Number not valid': 'Phone number not valid',
+    "Of a person's responses, % within 5 minutes": "Of a recruiter's responses, % within 5 minutes",
     'People in the normal flow': 'People not on the cold list',
     'People texted': 'People we texted',
     'People who texted back': 'People who texted us back',
-    "Person's replies within 5 min %": "Of a person's responses, % within 5 minutes",
-    "Person's reply, median minutes": 'Typical Response Time — a person (minutes)',
+    "Person's replies within 5 min %": "Of a recruiter's responses, % within 5 minutes",
+    "Person's reply, median minutes": 'Typical Response Time — a recruiter (minutes)',
     'Replied to us': 'People who texted us back',
     'Reply rate %': '% who texted back',
     'Said no / not interested': 'They said no',
@@ -204,7 +208,8 @@ RENAMED = {
     'Texts that never arrived': "TOTAL texts that didn't arrive",
     'Too soon to tell (texted in the last 3 days)': 'Too recent to judge (texted in the last 3 days)',
     'Total messages (sent + received)': 'Total texts (sent + received)',
-    'Typical wait for a person to reply (minutes)': 'Typical Response Time — a person (minutes)',
+    'Typical Response Time — a person (minutes)': 'Typical Response Time — a recruiter (minutes)',
+    'Typical wait for a person to reply (minutes)': 'Typical Response Time — a recruiter (minutes)',
     'Typical wait for an AI reply (minutes)': 'Typical Response Time — AI (minutes)',
     '…booked by a recruiter': '— booked by a person',
     '…booked by the AI': '— booked by the AI',
@@ -249,6 +254,55 @@ def _win_pct(key):
             return ""
         return round(100.0 * w["replied"] / w["sent"], 1)
     return read
+
+
+def _errs(kind):
+    def read(rep):
+        e = (rep.get("log") or {}).get("errors")
+        return sum(1 for x in e if x["kind"] == kind) if e is not None else ""
+    return read
+
+
+def _dodge(kind):
+    def read(rep):
+        d = (rep.get("log") or {}).get("dodged")
+        return sum(1 for x in d if x["kind"] == kind) if d is not None else ""
+    return read
+
+
+def errors_cell(rep):
+    """Every typed mistake with the person who sent it. Lowercase "i" is
+    counted but not listed — 565 in a week is a habit to raise once, not 565
+    lines to read."""
+    errs = (rep.get("log") or {}).get("errors")
+    if errs is None:
+        return ""
+    listed = [e for e in errs if e["kind"] != "lowercase i"]
+    if not listed:
+        return "No spelling or grammar mistakes found."
+    out = []
+    for e in listed[:25]:
+        out.append("{} — {}\n     {}\n     \u2192 \u201c{}\u201d".format(
+            e["sender"], e["kind"], e["detail"], e["body"][:180]))
+    if len(listed) > 25:
+        out.append("…and {} more.".format(len(listed) - 25))
+    return _bmp_only("\n\n".join(out))
+
+
+def dodged_cell(rep):
+    """The question, the answer it got, and who sent it."""
+    rows = (rep.get("log") or {}).get("dodged")
+    if rows is None:
+        return ""
+    if not rows:
+        return "No dodged questions found."
+    out = []
+    for e in rows[:20]:
+        out.append("{} — {}\n     Q: {}\n     A: {}".format(
+            e["sender"], e["kind"], e["question"], e["reply"]))
+    if len(rows) > 20:
+        out.append("…and {} more.".format(len(rows) - 20))
+    return _bmp_only("\n\n".join(out))
 
 
 def _lane(which, field):
@@ -454,9 +508,12 @@ ROWS = [
 
     ("How fast we reply", "Typical Response Time — AI (minutes)",
      lambda r: _median((r.get("log") or {}).get("speed_ai"))),
-    ("How fast we reply", "Typical Response Time — a person (minutes)",
+    ("How fast we reply", "Typical Response Time — a recruiter (minutes)",
      lambda r: _median((r.get("log") or {}).get("speed_human"))),
-    ("How fast we reply", "Of a person's responses, % within 5 minutes",
+    ("How fast we reply", "Typical Response Time — the APPLICANT (minutes)",
+     lambda r: (lambda st: round(st["median"], 1) if st else "")(
+         ((r.get("log") or {}) or {}).get("speed_applicant"))),
+    ("How fast we reply", "Of a recruiter's responses, % within 5 minutes",
      lambda r: _within5((r.get("log") or {}).get("speed_human"))),
 
     ("People we left hanging", "Applicants left waiting 2+ hours for a response",
@@ -472,6 +529,25 @@ ROWS = [
     # halves of the question only mean something together.
     ("What applicants ask", "Most asked → what we usually reply",
      _msg(lambda r: question_cell(r))),
+    # Megan 2026-09-27: "can you see if there are any texts that are answered
+    # grammatically incorrect… and who sent the text", and "we need to know if
+    # someone asks a direct question and the recruiter skirts around it".
+    ("Text quality", "Texts with a spelling mistake", _errs("spelling")),
+    ("Text quality", "Texts with a doubled word", _errs("doubled word")),
+    ("Text quality", "Texts missing a space after a full stop",
+     _errs("missing space")),
+    ("Text quality", "Texts using lowercase 'i'", _errs("lowercase i")),
+    ("Text quality", "Spelling and grammar — what, and who sent it",
+     errors_cell),
+
+    ("Questions handled badly", "Direct questions dodged", _dodge("dodged")),
+    ("Questions handled badly", "Answers pushed to a later call",
+     _dodge("deflected")),
+    ("Questions handled badly", "Replies using texting shorthand",
+     _dodge("informal")),
+    ("Questions handled badly", "Dodged questions — what, and who sent it",
+     dodged_cell),
+
     ("Problems to fix", "Applicants texted 4+ times with no reply",
      _msg(lambda r: len(r["anomalies"].get(
          "Over the carrier limit — 4+ separate texts with no reply between", [])))),
@@ -742,12 +818,14 @@ def write_week(ws, rep, week_end, dry_run=False):
 # 0.90/0.94/0.99 are the same colour to a human eye. Kept light enough that
 # black Georgia stays legible on every one.
 SECTION_TINT = {
+    'Cold list'                              : (0.97, 0.89, 0.66),
+    'Not the cold list'                      : (0.64, 0.92, 0.87),
+    'Text quality'                           : (0.93, 0.87, 0.97),
+    'Questions handled badly'                : (0.99, 0.88, 0.85),
     'This week'                               : (0.85, 0.85, 0.86),
     'Who we texted'                           : (0.72, 0.84, 0.98),
     '1st Rounds'                              : (0.74, 0.92, 0.75),
     "Why they didn't book"                    : (0.98, 0.76, 0.75),
-    'Cold list (mass text blast)'             : (0.97, 0.89, 0.66),
-    'Normal applicants (not the cold list)'   : (0.64, 0.92, 0.87),
     'Why texts never arrive'                  : (0.95, 0.74, 0.92),
     'Texts it takes to book'                  : (0.83, 0.75, 0.97),
     'Did they show up?'                       : (0.97, 0.99, 0.55),

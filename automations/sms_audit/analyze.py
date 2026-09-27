@@ -1188,6 +1188,287 @@ def log_reply_speed(convos):
     return speeds
 
 
+def applicant_reply_speed(convos):
+    """How long the APPLICANT takes to answer US — the mirror of
+    log_reply_speed (Megan 2026-09-27: "or maybe avg response time of an
+    applicant").
+
+    Measured from each outbound that actually arrived to their next message.
+    It is how long the conversation window stays open: an applicant who
+    answers in four minutes is at their phone now, and a recruiter replying
+    an hour later has missed them."""
+    gaps = []
+    for c in convos.values():
+        msgs = sorted(c["msgs"], key=lambda m: m["when"])
+        for i, m in enumerate(msgs):
+            if m["dir"] != "Out":
+                continue
+            if (m.get("status") or "").strip().lower() != "delivered":
+                continue
+            nxt = next((x for x in msgs[i + 1:] if x["dir"] == "In"), None)
+            if not nxt:
+                continue
+            gap = (nxt["when"] - m["when"]).total_seconds() / 60.0
+            if 0 < gap <= 24 * 60:
+                gaps.append(gap)
+    return gaps
+
+
+TYPO_RARE = 2        # a word this rare in a whole week is not house style
+TYPO_COMMON = 25     # …and this common is what it was probably meant to be
+DOUBLED = re.compile(r"\b(\w+)\s+\1\b", re.I)
+NO_SPACE = re.compile(r"[a-z]{2}[.!?][A-Z][a-z]")
+LONE_I = re.compile(r"(?<![\w'])i(?![\w'])")
+
+
+# A system word list, when the machine has one. Rarity plus edit-distance
+# alone flagged "Oct", "info", "area" and "got" — ordinary words that happen
+# to sit one letter from a word this office uses more often. A real word is
+# never a typo, whatever its frequency here. Missing (Windows), the spelling
+# check is skipped rather than guessed at, and the sheet says so.
+DICT_PATHS = ("/usr/share/dict/words", "/usr/dict/words")
+# web2 is a 1934 word list: it has no contractions, no clippings and no
+# modern usage, so these would each read as a typo forever.
+DICT_EXTRA = {
+    "info", "email", "emails", "emailed", "online", "zoom", "ok", "okay",
+    "reschedule", "rescheduled", "rescheduling", "texting", "texted", "app",
+    "apps", "cellphone", "voicemail", "website", "login", "spam", "hi",
+    "hey", "thanks", "pls", "appt", "asap", "min", "mins", "hrs", "id",
+}
+# a suspect word is not a typo if it is an ordinary inflection of a real one
+SUFFIXES = ("s", "es", "ed", "d", "ing", "ly", "er", "est")
+# Two offices text in Spanish. An English word list calls every word of it a
+# typo, so a message that reads as Spanish is skipped for spelling.
+SPANISH = re.compile(r"\b(que|para|con|por|una|los|las|está|estás|puede|"
+                     r"puedes|hola|gracias|dias|días|entrevista|trabajo|"
+                     r"mañana|hoy|hablar|correo|sí|tienes|sobre)\b", re.I)
+
+
+def _dictionary():
+    for path in DICT_PATHS:
+        try:
+            with open(path, "r", encoding="utf-8", errors="ignore") as fh:
+                return {w.strip().lower() for w in fh if w.strip()}
+        except OSError:
+            continue
+    return None
+
+
+def _edit1(a, b):
+    """True when one insertion, deletion or substitution turns a into b."""
+    if abs(len(a) - len(b)) > 1:
+        return False
+    if len(a) == len(b):
+        return sum(x != y for x, y in zip(a, b)) == 1
+    short, long_ = (a, b) if len(a) < len(b) else (b, a)
+    i = j = diff = 0
+    while i < len(short) and j < len(long_):
+        if short[i] == long_[j]:
+            i += 1
+        else:
+            diff += 1
+            if diff > 1:
+                return False
+        j += 1
+    return True
+
+
+def _known(word, words):
+    """In the list, in the extras, or a plain inflection of something in
+    either — "rescheduled" must not read as a typo because a 1934 dictionary
+    only has "reschedule"."""
+    if word in words or word in DICT_EXTRA:
+        return True
+    for suf in SUFFIXES:
+        if word.endswith(suf) and len(word) > len(suf) + 2:
+            stem = word[:-len(suf)]
+            if stem in words or stem in DICT_EXTRA or (stem + "e") in words:
+                return True
+    return False
+
+
+def text_errors(convos):
+    """Outbound messages a person typed that read as mistakes, with WHO sent
+    them (Megan 2026-09-27: "can you see if there are any texts that are
+    answered grammatically incorrect… and who sent the text").
+
+    Typos are found from the corpus itself rather than a dictionary: a word
+    used once or twice all week that is one edit away from a word used
+    twenty-five times is almost certainly a slip of that word ("onny" for
+    "only", "reschdule" for "reschedule"). That needs no spellcheck
+    dependency, has no opinion about names or slang, and cannot fire on a
+    word the office simply uses a lot.
+
+    Templates are skipped — a mistake in one of those is a template to fix,
+    not a person's typing, and it would otherwise be reported once per send.
+    """
+    typed = []
+    for c in convos.values():
+        for m in c["msgs"]:
+            if m["dir"] != "Out" or m["template"]:
+                continue
+            if is_ai(m):
+                continue
+            typed.append((m, c))
+
+    words = _dictionary()
+    freq = collections.Counter()
+    for m, _c in typed:
+        for w in re.findall(r"[A-Za-z']{3,}", (m["body"] or "").lower()):
+            freq[w] += 1
+    common = {w for w, n in freq.items() if n >= TYPO_COMMON}
+
+    # every applicant first name in the office, so "Hey Sami" is not a typo
+    first_names = set()
+    for c in convos.values():
+        for part in (c.get("name") or "").split():
+            if len(part) > 2:
+                first_names.add(part.lower())
+
+    found = []
+    for m, c in typed:
+        body = " ".join((m["body"] or "").split())
+        who = m.get("sent_by") or "(not recorded)"
+        seen = set()
+        spanish = len(SPANISH.findall(body)) >= 2
+        for w in re.findall(r"[A-Za-z']{3,}", body):
+            lw = w.lower()
+            if words is None or spanish:
+                break                      # no word list, or not English
+            if w[0].isupper() or "'" in w:
+                continue                   # a name, an abbreviation, a contraction
+            if lw in first_names:
+                continue                   # this applicant's own name
+            if _known(lw, words):
+                continue                   # a real word is never a typo
+            if lw in common or freq[lw] > TYPO_RARE or lw in seen:
+                continue
+            near = [g for g in common if _edit1(lw, g)]
+            if near:
+                seen.add(lw)
+                found.append({"kind": "spelling", "sender": who, "body": body,
+                              "detail": "{} → {}".format(w, near[0]),
+                              "name": c.get("name", "")})
+        d = DOUBLED.search(body)
+        if d:
+            found.append({"kind": "doubled word", "sender": who, "body": body,
+                          "detail": d.group(0), "name": c.get("name", "")})
+        if NO_SPACE.search(body):
+            found.append({"kind": "missing space", "sender": who, "body": body,
+                          "detail": NO_SPACE.search(body).group(0),
+                          "name": c.get("name", "")})
+        if LONE_I.search(body):
+            found.append({"kind": "lowercase i", "sender": who, "body": body,
+                          "detail": "i", "name": c.get("name", "")})
+    return found
+
+
+def spellcheck_available():
+    """Whether this machine has a word list. Without one the spelling check
+    is skipped, and a sheet that silently reported zero typos would be
+    claiming something it never looked for."""
+    return _dictionary() is not None
+
+
+# What an honest answer to each kind of question has to at least mention.
+# A reply that contains none of these did not answer what was asked — it is
+# the machine-checkable half of Megan's 2026-09-27 ask: "we need to know if
+# someone asks a direct question and the recruiter skirts around it".
+ANSWER_KEYWORDS = {
+    "What is the pay?": r"\$|\bpay|salary|hourly|commission|weekly|base|"
+                        r"per hour|compensat",
+    "Is this remote / where is the office?": r"remote|zoom|virtual|office|"
+                                             r"address|located|location|in person|"
+                                             r"onsite|irving|frisco|suite|street|"
+                                             r"hwy|highway",
+    "What is the job / what do you do?": r"role|position|sales|marketing|"
+                                         r"customer|represent|residential|"
+                                         r"campaign|entry level|account|field",
+    "Which role / which company is this?": r"role|position|alphalete|vantura|"
+                                           r"at&?t|company|indeed|applied",
+    "Hours, training, is it paid?": r"hour|training|paid|schedule|full.time|"
+                                    r"part.time|shift|week",
+    "How long is the interview / what's next?": r"minute|hour|next|second|"
+                                                r"follow|step|after",
+    "What should I wear / bring?": r"wear|dress|attire|business|casual|"
+                                   r"professional|bring|resume|notebook",
+}
+# Phrases that answer a question by not answering it.
+DEFLECTIONS = re.compile(
+    r"(go over (that|it|everything|the details) (on|during|in) the|"
+    r"discuss(ed)? (that|it) (on|during|in) the|"
+    r"(manager|director|hr) will (go over|explain|cover|discuss)|"
+    r"can'?t (really )?(discuss|go into|get into) (that|it)|"
+    r"not able to (discuss|share) (that|it)|"
+    r"you'?ll (find out|learn|see) (that|it|more)|"
+    r"all of that (will be|is) (covered|gone over|discussed))", re.I)
+# A yes/no question is answered by yes or no — it does not have to repeat
+# the subject. "Is it fine if I wear regular clothes?" -> "That is totally
+# fine!" is a good answer, and keyword matching alone called it a dodge.
+YES_NO = re.compile(r"^\s*(is|are|can|could|do|does|did|will|would|should|"
+                    r"may|am)\b", re.I)
+# Only an explicit yes or no counts. "You can call this number any time" is
+# not an answer to "salary or commission?", and a loose list let it pass.
+AFFIRMS = re.compile(r"\b(yes|yep|yeah|sure|absolutely|of course|correct|"
+                     r"that('?s| is) (totally )?(fine|okay|ok)|no problem|"
+                     r"not a problem|definitely|certainly|unfortunately|"
+                     r"nope|no\b)", re.I)
+
+
+# Texting shorthand that should not go out under the company's name.
+INFORMAL = re.compile(r"(?<![\w'])(u|ur|r|thx|yea|yeah|nah|idk|lol|lmao|"
+                      r"cuz|kinda|gonna|wanna|yep|nope|omg)(?![\w'])", re.I)
+
+
+def dodged_questions(convos):
+    """A direct question, and a reply that did not answer it — with who sent
+    the reply (Megan 2026-09-27).
+
+    Three separate things, reported apart because they need different fixes:
+      dodged      the reply mentions nothing the question was about
+      deflected   the reply explicitly pushes the answer to a later call
+      informal    texting shorthand going out under the company's name
+
+    Only questions with a known vocabulary are checked: a bucket with no
+    entry in ANSWER_KEYWORDS is left alone rather than guessed at."""
+    out = []
+    for c in convos.values():
+        msgs = sorted(c["msgs"], key=lambda m: m["when"])
+        for i, m in enumerate(msgs):
+            if m["dir"] != "In":
+                continue
+            body = m["body"] or ""
+            if "?" not in body and not IS_QUESTION.match(body):
+                continue
+            bucket = bucket_of(body)
+            reply = next((x for x in msgs[i + 1:]
+                          if x["dir"] == "Out" and not x["template"]), None)
+            if reply is None:
+                continue
+            gap = (reply["when"] - m["when"]).total_seconds() / 60.0
+            if gap > ANSWER_WINDOW_MIN:
+                continue
+            rb = reply["body"] or ""
+            who = reply.get("sent_by") or ("AI Messaging" if is_ai(reply)
+                                           else "(not recorded)")
+            row = {"question": " ".join(body.split())[:140],
+                   "reply": " ".join(rb.split())[:200],
+                   "sender": who, "bucket": bucket or "(other)",
+                   "name": c.get("name", "")}
+            if DEFLECTIONS.search(rb):
+                out.append(dict(row, kind="deflected"))
+            elif (bucket in ANSWER_KEYWORDS
+                  and not re.search(ANSWER_KEYWORDS[bucket], rb, re.I)
+                  # " … A or B?" is a choice, not a yes/no — an affirmation
+                  # does not answer it
+                  and not (YES_NO.match(body) and " or " not in body.lower()
+                           and AFFIRMS.search(rb))):
+                out.append(dict(row, kind="dodged"))
+            if INFORMAL.search(rb):
+                out.append(dict(row, kind="informal"))
+    return out
+
+
 def log_unanswered(convos, min_wait_min=ANSWER_WINDOW_MIN):
     """Conversations sitting on an applicant message nobody answered — now
     across EVERYONE contacted, which is where the ones who never booked live."""
@@ -1240,6 +1521,9 @@ def audit_log(rows, convos, office, booked=None):
         "funnel": fun,
         "speed_ai": _stat(speeds["ai"]),
         "speed_human": _stat(speeds["human"]),
+        "speed_applicant": _stat(applicant_reply_speed(convos)),
+        "errors": text_errors(convos),
+        "dodged": dodged_questions(convos),
         "unanswered": log_unanswered(convos),
         "delivery": log_delivery(rows),
     }
