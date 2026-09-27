@@ -56,6 +56,8 @@ WORKBOOK_TITLE = "Applicant Text Audit"
 DEFAULT_WORKBOOK = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
 FIRST_WEEK_COL = 3          # A = section, B = metric label, C+ = weeks
 WEEK_COL_WIDTH = 470        # wide enough to read the questions paragraph
+MAX_SECTION_COL = 168       # column A holds a section name and nothing else
+LABEL_PAD = 22              # auto-resize under-measures bold Georgia
 HEADER_ROW = 2              # row 1 is the title line, row 2 the week headers
 
 # (section, label, how to read it off the audit). A metric whose source is
@@ -160,7 +162,6 @@ RENAMED = {
     'Applicants left waiting on a reply': 'Applicants left waiting 2+ hours for a response',
     'Applicants over the carrier limit': 'Applicants texted 4+ times with no reply',
     'Applicants texted 4+ times, no reply': 'Applicants texted 4+ times with no reply',
-    'Booked a 1st interview': '1st Rounds Booked',
     'Booked by a recruiter': '— booked by a person',
     'Booked by the AI': '— booked by the AI',
     'Bookings with no message logged': '1st Rounds booked with no texts on file',
@@ -171,7 +172,6 @@ RENAMED = {
     'Got ONE text and nothing more': 'We texted once and never again',
     'How often a person answers within 5 minutes': "Of a person's responses, % within 5 minutes",
     'Interview days in this column': 'Days of 1st rounds in this column',
-    'Interviews booked': '1st Rounds Booked',
     'Interviews booked with no texts on file': '1st Rounds booked with no texts on file',
     'Left unanswered': 'Applicants left waiting 2+ hours for a response',
     'Messages sent + received': 'Total texts (sent + received)',
@@ -362,6 +362,18 @@ ROWS = [
     ("Who we texted", "% who texted back", lambda r: _rate(_f(r, "replied"), _f(r, "contacted"))),
     ("Who we texted", "Total texts (sent + received)", lambda r: (r.get("log") or {}).get("rows", "")),
     ("Who we texted", "1st Rounds booked with no texts on file", lambda r: _f(r, "join_misses", "")),
+    ("Why texts never arrive", "TOTAL texts that didn't arrive",
+     lambda r: sum(v for k, v in ((r.get("log") or {}).get("delivery") or {}).items()
+                   if k.lower() != "delivered") if r.get("log") else ""),
+    # Megan: "we need to know why it never reached them."
+    ("Why texts never arrive", "Carrier rejected it (Failed)", _why("Failed")),
+    ("Why texts never arrive", "Still stuck in the queue (Requeued)", _why("Requeued")),
+    ("Why texts never arrive", "No phone number on file (Dummy Phone)", _why("Dummy Phone")),
+    ("Why texts never arrive", "Ran out of SMS credits",
+     _why("Insufficient SMS Credits")),
+    ("Why texts never arrive", "Phone number not valid",
+     _why("Failed - Phone Not Valid")),
+
 
     ("1st Rounds", "1st Rounds Booked", lambda r: _f(r, "booked", r["threads"])),
     ("1st Rounds", "— booked by the AI", lambda r: _f(r, "booked_ai", r["mix"]["ai"])),
@@ -400,14 +412,14 @@ ROWS = [
     # re-engagement blast. Holding the two in one number is what made the
     # whole office look broken: Raf's cold list books at 8%, his live flow at
     # 74%, and Carlos runs no blast at all.
-    ("Cold list (mass text blast)", "People on the blast", _lane("cold", "people")),
-    ("Cold list (mass text blast)", "% of blast people who replied", _lane_pct("cold", "replied")),
-    ("Cold list (mass text blast)", "% of blast people who booked", _lane_pct("cold", "booked")),
+    ("Cold list", "People on the blast", _lane("cold", "people")),
+    ("Cold list", "% of blast people who replied", _lane_pct("cold", "replied")),
+    ("Cold list", "% of blast people who booked", _lane_pct("cold", "booked")),
 
-    ("Normal applicants (not the cold list)", "People not on the cold list", _lane("live", "people")),
-    ("Normal applicants (not the cold list)", "% of normal applicants who replied",
+    ("Not the cold list", "People not on the cold list", _lane("live", "people")),
+    ("Not the cold list", "% of normal applicants who replied",
      _lane_pct("live", "replied")),
-    ("Normal applicants (not the cold list)", "% of normal applicants who booked",
+    ("Not the cold list", "% of normal applicants who booked",
      _lane_pct("live", "booked")),
 
     # Megan 2026-09-26: the follow-up split was less useful than knowing what
@@ -475,18 +487,6 @@ ROWS = [
     ("Problems to fix", "Broken links sent",
      _msg(lambda r: len(r["anomalies"].get(
          "Dead link — the web address is spelled with a look-alike letter", [])))),
-    ("Why texts never arrive", "TOTAL texts that didn't arrive",
-     lambda r: sum(v for k, v in ((r.get("log") or {}).get("delivery") or {}).items()
-                   if k.lower() != "delivered") if r.get("log") else ""),
-    # Megan: "we need to know why it never reached them."
-    ("Why texts never arrive", "Carrier rejected it (Failed)", _why("Failed")),
-    ("Why texts never arrive", "Still stuck in the queue (Requeued)", _why("Requeued")),
-    ("Why texts never arrive", "No phone number on file (Dummy Phone)", _why("Dummy Phone")),
-    ("Why texts never arrive", "Ran out of SMS credits",
-     _why("Insufficient SMS Credits")),
-    ("Why texts never arrive", "Phone number not valid",
-     _why("Failed - Phone Not Valid")),
-
 ]
 
 
@@ -1044,13 +1044,31 @@ def _widths(ws, last_col, last_row):
             "sheetId": ws.id, "dimension": dim,
             "startIndex": start_i, "endIndex": end_i}}}
 
+    def _fixed(start_i, end_i, px):
+        return {"updateDimensionProperties": {
+            "range": {"sheetId": ws.id, "dimension": "COLUMNS",
+                      "startIndex": start_i, "endIndex": end_i},
+            "properties": {"pixelSize": px}, "fields": "pixelSize"}}
+
     ws.spreadsheet.batch_update({"requests": [
         _auto("COLUMNS", 0, 2),
-        {"updateDimensionProperties": {
-            "range": {"sheetId": ws.id, "dimension": "COLUMNS",
-                      "startIndex": FIRST_WEEK_COL - 1, "endIndex": last_col},
-            "properties": {"pixelSize": WEEK_COL_WIDTH}, "fields": "pixelSize"}},
+        _fixed(FIRST_WEEK_COL - 1, last_col, WEEK_COL_WIDTH),
     ]})
+
+    # Auto-resize under-measures bold Georgia — column B came back at exactly
+    # the width of its longest label and still clipped it — so read the sizes
+    # back and add padding. Column A is capped as well: it only ever holds a
+    # section name, and sized to the longest one it was 327px of dead space
+    # (Megan 2026-09-27, "Raf doesn't like all that dead space").
+    meta = ws.spreadsheet.fetch_sheet_metadata(
+        {"includeGridData": "true",
+         "ranges": "'{}'!A1:B1".format(ws.title)})
+    sizes = [c.get("pixelSize", 0) for c in
+             meta["sheets"][0]["data"][0].get("columnMetadata", [])]
+    a = min(sizes[0] + LABEL_PAD, MAX_SECTION_COL) if sizes else MAX_SECTION_COL
+    b = (sizes[1] + LABEL_PAD) if len(sizes) > 1 else 420
+    ws.spreadsheet.batch_update({"requests": [_fixed(0, 1, a), _fixed(1, 2, b)]})
+
     # separate call so the widths are committed before the heights are measured
     ws.spreadsheet.batch_update({"requests": [_auto("ROWS", 0, last_row)]})
 
