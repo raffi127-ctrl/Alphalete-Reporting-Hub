@@ -79,6 +79,10 @@ def _rate(n, d):
 
 
 QUESTION_REPLY_CHARS = 56
+WIDE_ROW = "Most asked → what we usually reply"
+# Rows whose cell holds a paragraph rather than a number: they wrap, sit
+# left-aligned and top-aligned, and the row grows to fit them.
+WRAP_ROWS = (WIDE_ROW, "Days of 1st rounds in this column")
 WARN = "\u26a0"                      # the ⚠ that opens a "got no answer" line
 RED = {"red": 0.72, "green": 0.11, "blue": 0.11}
 
@@ -428,15 +432,6 @@ ROWS = [
     # They get a better one — 38% vs 31% for Raf, 41% vs 34% for Carlos — so
     # this sits here as performance rather than on the problems list, with
     # the number visible instead of a label to take on trust.
-    ("When we text", "Texts sent 6–8am", _win("6-8am", "sent")),
-    ("When we text", "% of those that got a reply", _win_pct("6-8am")),
-    ("When we text", "Texts sent 8am–12pm", _win("8am-12pm", "sent")),
-    ("When we text", "% of the 8am–12pm ones that got a reply", _win_pct("8am-12pm")),
-    ("When we text", "Texts sent 12–5pm", _win("12-5pm", "sent")),
-    ("When we text", "% of the 12–5pm ones that got a reply", _win_pct("12-5pm")),
-    ("When we text", "Texts sent 5–9pm", _win("5-9pm", "sent")),
-    ("When we text", "% of the 5–9pm ones that got a reply", _win_pct("5-9pm")),
-    ("When we text", "Texts sent after 9pm", _win("after 9pm", "sent")),
     ("When we text", "BEST hours to text (reply rate)",
      lambda r: ((r.get("log") or {}).get("funnel", {}) or {}).get("best_hours", "")),
     ("When we text", "Worst hours to text (reply rate)",
@@ -737,18 +732,29 @@ def write_week(ws, rep, week_end, dry_run=False):
     return col, len(updates)
 
 
-SECTION_TINT = {"This week": (0.86, 0.86, 0.86),
-                "When we text": (0.90, 0.94, 0.99),
-                "Cold list (mass text blast)": (0.93, 0.90, 0.86),
-                "Normal applicants (not the cold list)": (0.88, 0.96, 0.90),
-                "Why texts never arrive": (0.99, 0.91, 0.86),
-                "Why they didn't book": (0.99, 0.89, 0.89),
-                "Texts it takes to book": (0.89, 0.95, 0.99), "Who we texted": (0.90, 0.94, 0.99), "1st Rounds": (0.90, 0.96, 0.91),
-                "Did they show up?": (0.98, 0.95, 0.88), "How fast we reply": (0.93, 0.91, 0.98),
-                "People we left hanging": (0.99, 0.91, 0.91), "What applicants ask": (0.95, 0.95, 0.95),
-                "Problems to fix": (0.99, 0.93, 0.85)}
-WIDE_ROW = "Most asked → what we usually reply"
-WRAP_ROWS = (WIDE_ROW, "Days of 1st rounds in this column")
+# One clearly distinct hue per section, and a heavy rule between sections
+# (Megan 2026-09-26: "make sure the cell colors are clearly different and
+# separated so it's easy to see the sections"). The first pass used near-white
+# tints that were several shades of the same pale blue — with fourteen
+# sections and a dozen week columns, two sections reading 0.89/0.95/0.99 and
+# 0.90/0.94/0.99 are the same colour to a human eye. Kept light enough that
+# black Georgia stays legible on every one.
+SECTION_TINT = {
+    'This week'                               : (0.85, 0.85, 0.86),
+    'Who we texted'                           : (0.72, 0.84, 0.98),
+    '1st Rounds'                              : (0.74, 0.92, 0.75),
+    "Why they didn't book"                    : (0.98, 0.76, 0.75),
+    'Cold list (mass text blast)'             : (0.97, 0.89, 0.66),
+    'Normal applicants (not the cold list)'   : (0.64, 0.92, 0.87),
+    'Why texts never arrive'                  : (0.95, 0.74, 0.92),
+    'Texts it takes to book'                  : (0.83, 0.75, 0.97),
+    'Did they show up?'                       : (0.97, 0.99, 0.55),
+    'How fast we reply'                       : (0.86, 0.77, 0.63),
+    'When we text'                            : (0.62, 0.86, 0.72),
+    'People we left hanging'                  : (0.78, 0.78, 0.80),
+    'What applicants ask'                     : (0.88, 0.96, 0.68),
+    'Problems to fix'                         : (0.99, 0.71, 0.5),
+}
 
 # Rows that fold away behind a + in the gutter (Megan 2026-09-26: "this texts
 # that never arrive section I want like a + sign expansion to see the why
@@ -826,19 +832,31 @@ def _format(ws, last_col, last_row, label_rows):
         ws.format("A1:{}".format(_a1(1, max(last_col, 3))), title)
         ws.format("{}:{}".format(_a1(HEADER_ROW, 1), _a1(HEADER_ROW, last_col)), head)
         ws.format("{}:{}".format(_a1(HEADER_ROW + 1, 1), _a1(last_row, 2)), label)
+        # (the section tint below paints over the background of both of
+        # these, and only the background)
         ws.format("{}:{}".format(_a1(HEADER_ROW + 1, FIRST_WEEK_COL),
                                  _a1(last_row, last_col)), body)
 
-        # one tint per section, applied to the whole band so a section reads as
-        # a block rather than a run of identical rows
+        # One tint per section, carried ACROSS THE WHOLE ROW rather than
+        # stopping at the label (Megan 2026-09-26: "color on the cells should
+        # carry over so the lines are easy to read"). With ten-odd weeks
+        # side by side, a band that stops at column B leaves the numbers in
+        # an undifferentiated field and the eye loses the row.
+        #
+        # Background only, applied AFTER the text formats: ws.format merges
+        # the fields it is given, so this tints without undoing the bold
+        # labels or the centred numbers.
+        section_tops = []
         for section in {sec for sec, _l, _f in ROWS}:
             rows = sorted(label_rows[l] for sec2, l, _f in ROWS
                           if sec2 == section and l in label_rows)
             if not rows:
                 continue
-            ws.format("{}:{}".format(_a1(rows[0], 1), _a1(rows[-1], 2)),
-                      dict(label, backgroundColor=_rgb(SECTION_TINT.get(
-                          section, (0.95, 0.95, 0.95)))))
+            tint = {"backgroundColor": _rgb(SECTION_TINT.get(
+                section, (0.95, 0.95, 0.95)))}
+            ws.format("{}:{}".format(_a1(rows[0], 1), _a1(rows[-1], last_col)),
+                      tint)
+            section_tops.append(rows[0])
 
         pct = {"numberFormat": {"type": "PERCENT", "pattern": "0.0%"}}
         for _sec, name, _fn in ROWS:
@@ -853,6 +871,7 @@ def _format(ws, last_col, last_row, label_rows):
             if r:
                 ws.format("{}:{}".format(_a1(r, FIRST_WEEK_COL), _a1(r, last_col)),
                           wrapped)
+        _borders(ws, last_col, last_row, section_tops)
         ws.freeze(rows=HEADER_ROW, cols=2)
         _widths(ws, last_col, last_row)
         _collapse(ws, label_rows)
@@ -953,6 +972,39 @@ def _collapse(ws, label_rows):
             "fields": "collapsed"}})
     if reqs:
         ws.spreadsheet.batch_update({"requests": reqs})
+
+
+def _borders(ws, last_col, last_row, section_tops=()):
+    """A line around every cell (Megan 2026-09-26: "add borders to
+    everything"). With ten-odd weeks side by side and some very tall wrapped
+    cells, the eye needs the grid — the tint alone bands a whole section, it
+    does not separate one metric from the next inside it."""
+    grey = {"style": "SOLID", "color": {"red": 0.72, "green": 0.72, "blue": 0.74}}
+    dark = {"style": "SOLID_MEDIUM",
+            "color": {"red": 0.35, "green": 0.38, "blue": 0.43}}
+    ws.spreadsheet.batch_update({"requests": [
+        {"updateBorders": {
+            "range": {"sheetId": ws.id, "startRowIndex": HEADER_ROW - 1,
+                      "endRowIndex": last_row, "startColumnIndex": 0,
+                      "endColumnIndex": last_col},
+            "innerHorizontal": grey, "innerVertical": grey,
+            "top": dark, "bottom": dark, "left": dark, "right": dark}},
+        # the label block reads as one unit against the weeks beside it
+        {"updateBorders": {
+            "range": {"sheetId": ws.id, "startRowIndex": HEADER_ROW - 1,
+                      "endRowIndex": last_row, "startColumnIndex": 0,
+                      "endColumnIndex": 2},
+            "right": dark}},
+    ] + [
+        # a heavy rule where each section starts, so the bands separate even
+        # where two hues sit close together
+        {"updateBorders": {
+            "range": {"sheetId": ws.id, "startRowIndex": top - 1,
+                      "endRowIndex": top, "startColumnIndex": 0,
+                      "endColumnIndex": last_col},
+            "top": dark}}
+        for top in sorted(section_tops) if top > HEADER_ROW
+    ]})
 
 
 def _widths(ws, last_col, last_row):
