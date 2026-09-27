@@ -1219,6 +1219,30 @@ TYPO_COMMON = 25     # …and this common is what it was probably meant to be
 DOUBLED = re.compile(r"\b(\w+)\s+\1\b", re.I)
 NO_SPACE = re.compile(r"[a-z]{2}[.!?][A-Z][a-z]")
 LONE_I = re.compile(r"(?<![\w'])i(?![\w'])")
+# "the base salary is determine on your experience" — a participle left bare
+# Common written-English slips, each one high-precision on purpose: a
+# pattern that fires on ordinary casual texting is worse than no pattern.
+# Drawn from what the week actually contained — Sandy's one message held six
+# of these (Megan 2026-09-27: "this has way more issues than spacing").
+GRAMMAR_PATTERNS = [
+    (r"\byour\s+(looking|going|doing|welcome|interested|able|available|"
+     r"coming|ready|not|still|the best)\b", "your → you're"),
+    (r"\b(could|would|should)\s+of\b", "of → have"),
+    (r"\balot\b", "alot → a lot"),
+    (r"\bwill you like\b", "will you like → would you like"),
+    (r"\bthere\s+(interested|going|coming|able|is a lot)\b", "there → they're"),
+    (r"\bits\s+(a|the|been|going to|not)\b", "its → it's"),
+    (r"\ba\s+(?!one|once|unique|uniform|univers|user|useful|used|european)"
+     r"[aeiou]\w{2,}", "a → an"),
+    (r"\bthe rage\b", "rage → range"),
+    (r"\bto\s+(day|morrow|night)\b", "to day → today"),
+    (r"\bi\s+seen\b", "i seen → I saw"),
+]
+
+BARE_VERB = re.compile(r"\b(is|are|was|were|be|been)\s+"
+                       r"(determine|base|design|suppose|use|require|schedule|"
+                       r"locate|pay|interest|expect|assign|involve|includ)\b",
+                       re.I)
 
 
 # A system word list, when the machine has one. Rarity plus edit-distance
@@ -1234,9 +1258,13 @@ DICT_EXTRA = {
     "reschedule", "rescheduled", "rescheduling", "texting", "texted", "app",
     "apps", "cellphone", "voicemail", "website", "login", "spam", "hi",
     "hey", "thanks", "pls", "appt", "asap", "min", "mins", "hrs", "id",
+    "anytime", "anymore", "everyday", "followup", "sign-up", "ok", "cant",
+    "dont", "im", "ive", "youre", "thats", "wont", "didnt", "isnt",
 }
 # a suspect word is not a typo if it is an ordinary inflection of a real one
 SUFFIXES = ("s", "es", "ed", "d", "ing", "ly", "er", "est")
+# links and addresses are not prose; every part of one reads as a typo
+URLISH = re.compile(r"\S*(?:https?://|www\.|@|\.com|\.us|\.org)\S*", re.I)
 # Two offices text in Spanish. An English word list calls every word of it a
 # typo, so a message that reads as Spanish is skipped for spelling.
 SPANISH = re.compile(r"\b(que|para|con|por|una|los|las|está|estás|puede|"
@@ -1279,6 +1307,9 @@ def _known(word, words):
     only has "reschedule"."""
     if word in words or word in DICT_EXTRA:
         return True
+    if word.endswith("ies") and len(word) > 4:      # worries -> worry
+        if word[:-3] + "y" in words:
+            return True
     for suf in SUFFIXES:
         if word.endswith(suf) and len(word) > len(suf) + 2:
             stem = word[:-len(suf)]
@@ -1314,7 +1345,8 @@ def text_errors(convos):
     words = _dictionary()
     freq = collections.Counter()
     for m, _c in typed:
-        for w in re.findall(r"[A-Za-z']{3,}", (m["body"] or "").lower()):
+        for w in re.findall(r"[A-Za-z'\u2019]{3,}",
+                            URLISH.sub(" ", m["body"] or "").lower()):
             freq[w] += 1
     common = {w for w, n in freq.items() if n >= TYPO_COMMON}
 
@@ -1328,27 +1360,42 @@ def text_errors(convos):
     found = []
     for m, c in typed:
         body = " ".join((m["body"] or "").split())
+        prose = URLISH.sub(" ", body)
         who = m.get("sent_by") or "(not recorded)"
         seen = set()
         spanish = len(SPANISH.findall(body)) >= 2
-        for w in re.findall(r"[A-Za-z']{3,}", body):
+        for w in re.findall(r"[A-Za-z'\u2019]{3,}", prose):
             lw = w.lower()
             if words is None or spanish:
                 break                      # no word list, or not English
-            if w[0].isupper() or "'" in w:
+            if w[0].isupper() or "'" in w or "\u2019" in w:
                 continue                   # a name, an abbreviation, a contraction
             if lw in first_names:
                 continue                   # this applicant's own name
             if _known(lw, words):
                 continue                   # a real word is never a typo
-            if lw in common or freq[lw] > TYPO_RARE or lw in seen:
+            if lw in seen:
                 continue
+            # House vocabulary is not a typo: a word this office uses often —
+            # "onboarding", "blueinkmail", "fadv" — is simply not in a 1934
+            # word list. A real slip is one person, once or twice.
+            if freq[lw] > TYPO_RARE:
+                continue
+            # The word list is the authority, not how often the office
+            # happens to use the correct spelling. Requiring a COMMON
+            # near-match missed "backround" outright, because "background"
+            # appears six times in the week and the threshold was
+            # twenty-five (Megan 2026-09-27: "this has way more issues than
+            # spacing"). A near-match is now only used to SUGGEST the fix.
+            seen.add(lw)
             near = [g for g in common if _edit1(lw, g)]
-            if near:
-                seen.add(lw)
-                found.append({"kind": "spelling", "sender": who, "body": body,
-                              "detail": "{} → {}".format(w, near[0]),
-                              "name": c.get("name", "")})
+            if not near:
+                near = [g for g, n in freq.items()
+                        if n > TYPO_RARE and _edit1(lw, g)]
+            found.append({"kind": "spelling", "sender": who, "body": body,
+                          "detail": ("{} → {}".format(w, near[0]) if near
+                                     else "{} (not a word)".format(w)),
+                          "name": c.get("name", "")})
         d = DOUBLED.search(body)
         if d:
             found.append({"kind": "doubled word", "sender": who, "body": body,
@@ -1356,6 +1403,17 @@ def text_errors(convos):
         if NO_SPACE.search(body):
             found.append({"kind": "missing space", "sender": who, "body": body,
                           "detail": NO_SPACE.search(body).group(0),
+                          "name": c.get("name", "")})
+        for pat, label in GRAMMAR_PATTERNS:
+            g = re.search(pat, body, re.I)
+            if g:
+                found.append({"kind": "grammar", "sender": who, "body": body,
+                              "detail": "{} ({})".format(g.group(0), label),
+                              "name": c.get("name", "")})
+        bv = BARE_VERB.search(body)
+        if bv:
+            found.append({"kind": "verb form", "sender": who, "body": body,
+                          "detail": '{} → {}d'.format(bv.group(0), bv.group(0)),
                           "name": c.get("name", "")})
         if LONE_I.search(body):
             found.append({"kind": "lowercase i", "sender": who, "body": body,

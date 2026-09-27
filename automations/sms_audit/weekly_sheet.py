@@ -26,6 +26,7 @@ else.
 from __future__ import annotations  # Lucy/mini run Python 3.9 — keep lazy
 
 import argparse
+import collections
 import datetime as dt
 import json
 import re
@@ -271,22 +272,98 @@ def _dodge(kind):
 
 
 def errors_cell(rep):
-    """Every typed mistake with the person who sent it. Lowercase "i" is
-    counted but not listed — 565 in a week is a habit to raise once, not 565
-    lines to read."""
+    """Every typed mistake with the person who sent it, the offending text
+    shown IN RED inside the message rather than called out on a line of its
+    own (Megan 2026-09-27: "instead of having these sections and making this
+    larger just put the issues in red text").
+
+    Returns the text only; `error_runs` computes the red spans from the same
+    data so the two cannot drift apart."""
+    text, _runs = _errors_text_and_runs(rep)
+    return text
+
+
+def _offender(detail):
+    """The actual offending text out of a detail string: "weren → were" is
+    the word "weren", "on.Is" is itself, "is determine → is determined" is
+    "is determine"."""
+    for sep in (" \u2192 ", " (not a word)", " ("):
+        if sep in detail:
+            return detail.split(sep)[0]
+    return detail
+
+
+def _errors_text_and_runs(rep):
+    """Grouped by WHO SENT THEM (Megan 2026-09-27: "this should be grouped by
+    who sent them") — one person's habits read as a coaching note, the same
+    lines interleaved read as noise. Worst offender first.
+
+    Each message appears ONCE however many problems it holds, with every
+    offending fragment red inside it: Sandy's salary message alone carries a
+    bare verb, two misspellings, two missing spaces and a your/you're."""
     errs = (rep.get("log") or {}).get("errors")
     if errs is None:
-        return ""
+        return "", []
     listed = [e for e in errs if e["kind"] != "lowercase i"]
     if not listed:
-        return "No spelling or grammar mistakes found."
-    out = []
-    for e in listed[:25]:
-        out.append("{} — {}\n     {}\n     \u2192 \u201c{}\u201d".format(
-            e["sender"], e["kind"], e["detail"], e["body"][:180]))
-    if len(listed) > 25:
-        out.append("…and {} more.".format(len(listed) - 25))
-    return _bmp_only("\n\n".join(out))
+        return "No spelling or grammar mistakes found.", []
+
+    by_sender = collections.OrderedDict()
+    for e in listed:
+        by_sender.setdefault(e["sender"], collections.OrderedDict())
+        by_sender[e["sender"]].setdefault(e["body"], []).append(e)
+    order = sorted(by_sender, key=lambda k: -sum(
+        len(v) for v in by_sender[k].values()))
+
+    red = {"foregroundColor": RED, "bold": True}
+    base = {"foregroundColor": {"red": 0, "green": 0, "blue": 0}, "bold": False}
+    parts, runs, pos = [], [], 0
+    for sender in order:
+        msgs = by_sender[sender]
+        n = sum(len(v) for v in msgs.values())
+        head = "{} — {} issue{} in {} text{}".format(
+            sender, n, "" if n == 1 else "s", len(msgs),
+            "" if len(msgs) == 1 else "s")
+        chunk_lines = [head]
+        local = []
+        offset = len(head) + 1
+        for body, entries in list(msgs.items())[:8]:
+            kinds = ", ".join(sorted({e["kind"] for e in entries}))
+            line = "     \u201c{}\u201d  [{}]".format(_bmp_only(body), kinds)
+            for e in entries:
+                off = _bmp_only(_offender(e["detail"]))
+                at = line.find(off)
+                if at < 0:
+                    at = line.lower().find(off.lower())
+                if at >= 0 and off:
+                    local.append((offset + at, offset + at + len(off)))
+            chunk_lines.append(line)
+            offset += len(line) + 1
+        if len(msgs) > 8:
+            chunk_lines.append("     …and {} more text(s).".format(len(msgs) - 8))
+        chunk = "\n".join(chunk_lines)
+        for a, b in local:
+            runs.append({"startIndex": pos + a, "format": red})
+            runs.append({"startIndex": pos + b, "format": base})
+        parts.append(chunk)
+        pos += len(chunk) + 2
+    return "\n\n".join(parts), runs
+
+
+def error_runs(rep):
+    """Red spans for errors_cell, built from the same pass that built it."""
+    text, runs = _errors_text_and_runs(rep)
+    out, seen = [], set()
+    for r in sorted(runs, key=lambda r: r["startIndex"]):
+        if r["startIndex"] >= len(text) or r["startIndex"] in seen:
+            continue
+        seen.add(r["startIndex"])
+        out.append(r)
+    if out and out[0]["startIndex"] != 0:
+        out.insert(0, {"startIndex": 0,
+                       "format": {"foregroundColor": {"red": 0, "green": 0,
+                                                      "blue": 0}, "bold": False}})
+    return out
 
 
 def dodged_cell(rep):
@@ -807,6 +884,9 @@ def write_week(ws, rep, week_end, dry_run=False):
     qrow = labels.get(WIDE_ROW)
     if qrow:
         _paint_warnings(ws, qrow, col, question_cell(rep))
+    erow = labels.get("Spelling and grammar — what, and who sent it")
+    if erow:
+        _paint(ws, erow, col, errors_cell(rep), error_runs(rep))
     return col, len(updates)
 
 
@@ -1014,6 +1094,19 @@ def warning_runs(text):
         seen.add(r["startIndex"])
         out.append(r)
     return out
+
+
+def _paint(ws, row, col, text, runs):
+    """Rewrite one cell with explicit formatting runs. ws.update cannot carry
+    them, so this is a second, targeted write of the same text."""
+    if not runs:
+        return
+    ws.spreadsheet.batch_update({"requests": [{"updateCells": {
+        "rows": [{"values": [{"userEnteredValue": {"stringValue": text},
+                              "textFormatRuns": runs}]}],
+        "fields": "userEnteredValue,textFormatRuns",
+        "start": {"sheetId": ws.id, "rowIndex": row - 1,
+                  "columnIndex": col - 1}}}]})
 
 
 def _paint_warnings(ws, row, col, text):

@@ -988,3 +988,61 @@ class DodgedQuestionTest(unittest.TestCase):
         out = A.dodged_questions(self._convos(
             "Did you know my maiden name is Pena?", "Ha, small world!"))
         self.assertEqual(out, [])
+
+
+class GrammarAndPrecisionTest(unittest.TestCase):
+    """Megan 2026-09-27, on one of Sandy's texts: "this has way more issues
+    than spacing." It held six — a bare verb, two misspellings, two missing
+    spaces and a your/you're — and the checker had found one."""
+
+    SANDY = ("We offer a weekly salary pay for the role the base salary is "
+             "determine on your backround experience plus bonuses or "
+             "commission.Is an average between $800-$1200 weekly.Does that "
+             "fall between the rage your looking for?")
+
+    def _convos(self, body, who="Sandy"):
+        base = dt.datetime(2026, 9, 21, 9, 0)
+        return {"a": {"phone": "1", "name": "Jane Doe", "booked": False,
+                      "booked_by": "", "outcome": "",
+                      "msgs": [{"when": base, "dir": "Out", "template": "",
+                                "body": body, "sent_by": who, "source": "",
+                                "status": "Delivered"}]}}
+
+    def test_that_one_text_yields_several_kinds(self):
+        kinds = {e["kind"] for e in A.text_errors(self._convos(self.SANDY))}
+        for expected in ("spelling", "grammar", "missing space", "verb form"):
+            self.assertIn(expected, kinds, expected)
+
+    def test_a_misspelling_is_caught_even_when_the_right_word_is_rare(self):
+        """"background" appears six times in the week; requiring a COMMON
+        near-match meant "backround" was never flagged."""
+        if not A.spellcheck_available():
+            self.skipTest("no word list on this machine")
+        details = [e["detail"] for e in A.text_errors(self._convos(self.SANDY))]
+        self.assertTrue(any("backround" in d for d in details), details)
+
+    def test_your_youre_is_caught(self):
+        details = [e["detail"] for e in A.text_errors(
+            self._convos("Your welcome, let me know what your looking for"))]
+        self.assertTrue(any("you're" in d for d in details), details)
+
+    def test_a_curly_apostrophe_is_still_an_apostrophe(self):
+        # "wasn’t" was being read as the non-word "wasn"
+        errs = A.text_errors(self._convos("This wasn’t an easy decision."))
+        self.assertEqual([e for e in errs if e["kind"] == "spelling"], [])
+
+    def test_a_link_is_not_prose(self):
+        errs = A.text_errors(self._convos(
+            "Here is the link https://us02web.zoom.us/j/123 and "
+            "noreply@blueinkmail.com"))
+        self.assertEqual([e for e in errs if e["kind"] == "spelling"], [])
+
+    def test_house_vocabulary_is_not_a_typo(self):
+        # a word the office uses constantly is not one person's slip
+        body = "Your onboarding packet is ready."
+        convos = self._convos(body)
+        for i in range(6):
+            convos["p%d" % i] = self._convos(body)["a"]
+        details = [e["detail"] for e in A.text_errors(convos)
+                   if e["kind"] == "spelling"]
+        self.assertFalse(any("onboarding" in d for d in details), details)
