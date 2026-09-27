@@ -34,7 +34,10 @@ WHAT IT WILL NOT DO -- every one of these is REPORTED instead, for a person:
   * move a sale the FROM row does not have (moving it anyway would invent a
     sale on one row and a negative on the other);
   * guess a name: a TO or FROM that matches no row, or several, is left alone;
-  * touch a day carrying a roll-call status ('X', 'T', ...);
+  * touch a TO day carrying a roll-call status other than a plain 'X'
+    ('T', 'RT', ...). An 'X' on the TO's day is WRITTEN OVER (Eve
+    2026-09-27, Amjad Malhas <- Hayden Wilson 9/26): the X is cleared and the
+    sale goes in -- the person the sale belongs to was working after all;
   * move half a form row: all of its products move, or none do;
   * act on a "Your Name" that is not a person -- 'bonus', '$50', 'owners pay'
     are bonus entries, not transfers, and are skipped silently;
@@ -411,6 +414,21 @@ def plan(grid, day: dt.date, transfers: List[Dict],
         # (usually Int), and the whole day is a status day.
         return any(B.is_status(B.cell(grid, r, c)) for c in cols.values())
 
+    def x_day(r) -> bool:
+        # Only a plain 'X' is written over; any other status still blocks.
+        found = [B.cell(grid, r, c).strip().upper() for c in cols.values()
+                 if B.is_status(B.cell(grid, r, c))]
+        return bool(found) and all(v == "X" for v in found)
+
+    def clear_x(r):
+        # TO's X day becomes a working day: every X in the block goes blank,
+        # the other cells keep what they hold.
+        for c in cols.values():
+            if (r, c) in cur and cur[(r, c)] is not None:
+                continue
+            raw = B.cell(grid, r, c)
+            cur[(r, c)] = 0 if raw.strip().upper() == "X" else _num(raw)
+
     def value(r, c):
         if (r, c) not in cur:
             raw = B.cell(grid, r, c)
@@ -438,14 +456,17 @@ def plan(grid, day: dt.date, transfers: List[Dict],
 
         problem = ""
         from_status = False
+        to_x = False
         for m, qty in t["metrics"].items():
             c = cols.get(m)
             if not c:
                 problem = "no %s column in the day block" % m
                 break
             if value(to_row, c) is None:
-                problem = "%s's day carries a roll-call status" % t["to"]
-                break
+                if not x_day(to_row):
+                    problem = "%s's day carries a roll-call status" % t["to"]
+                    break
+                to_x = True
             if from_row is not None:
                 have = value(from_row, c)
                 if have is None:
@@ -464,6 +485,8 @@ def plan(grid, day: dt.date, transfers: List[Dict],
 
         if from_status:
             from_row = None
+        if to_x:
+            clear_x(to_row)
         for m, qty in t["metrics"].items():
             c = cols[m]
             cur[(to_row, c)] = value(to_row, c) + qty
@@ -475,6 +498,8 @@ def plan(grid, day: dt.date, transfers: List[Dict],
             src = "%s (off that day -- sale was on no row)" % t["from"]
         else:
             src = B.cell(grid, from_row, B.NAME_COL).strip()
+        if to_x:
+            notes.append("%s: moved -- wrote over %s's X" % (label, t["to"]))
         moved.append(dict(t, from_board=src,
                           to_board=B.cell(grid, to_row, B.NAME_COL).strip()))
 
@@ -526,7 +551,8 @@ ALERTED_PATH = STATE_PATH.with_name("sale_transfers_alerted.json")
 def needs_person(note: str) -> bool:
     """A note about one form row that a person has to act on."""
     return ("row " in note and "[sandbox]" not in note
-            and "counted once" not in note and "nothing to move" not in note)
+            and "counted once" not in note and "nothing to move" not in note
+            and "wrote over" not in note)
 
 
 def alert(problems: List[str], dry_run: bool = False) -> None:

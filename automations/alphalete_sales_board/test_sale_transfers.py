@@ -167,9 +167,29 @@ def test_manager_login_is_plus_only():
 def test_to_with_status_is_left_alone():
     form = _form(("Kenneth Guzman", "Anthony Marchetti", "9/16/2026", "Upgrade", "a", "1", ""))
     todo, _n, _l = _todo(form)
-    grid = _grid([_row("Kenneth Guzman", intr="X"), _row("Anthony Marchetti", up="1")])
+    grid = _grid([_row("Kenneth Guzman", intr="T"), _row("Anthony Marchetti", up="1")])
     ups, moved, notes = T.plan(grid, WED, todo)
     assert ups == [] and "roll-call" in notes[0], notes
+
+
+def test_to_with_x_is_written_over():
+    # Eve 9/27 (Amjad Malhas <- Hayden Wilson): an X on TO's day is cleared
+    # and the sale goes in; FROM still loses it.
+    form = _form(("Amjad Malhas", "Hayden Wilson", "9/16/2026", "New Internet", "a", "1", ""))
+    todo, _n, _l = _todo(form)
+    grid = _grid([_row("Amjad Malhas", up="x"), _row("Hayden Wilson", intr="3")])
+    ups, moved, notes = T.plan(grid, WED, todo)
+    assert _cells(ups) == {"E4": "1", "F4": "", "E5": "2"}, (_cells(ups), notes)
+    assert len(moved) == 1 and "wrote over" in notes[0], notes
+    assert not T.needs_person(notes[0]), notes      # handled, nobody paged
+
+
+def test_to_x_not_cleared_when_the_move_fails():
+    form = _form(("Amjad Malhas", "Hayden Wilson", "9/16/2026", "New Internet", "a", "1", ""))
+    todo, _n, _l = _todo(form)
+    grid = _grid([_row("Amjad Malhas", intr="X"), _row("Hayden Wilson")])
+    ups, moved, notes = T.plan(grid, WED, todo)
+    assert ups == [] and moved == [] and "NOT moved" in notes[0], notes
 
 
 def test_duplicate_submission_counted_once_and_state_skips():
