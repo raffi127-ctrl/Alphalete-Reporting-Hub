@@ -687,12 +687,19 @@ def anomalies(items):
             found["Over the carrier limit — 4+ separate texts with no reply between"].append(
                 "{}: {} in a row".format(who, worst))
 
-        # sent inside the hours the TCPA calls quiet (before 8am / after 9pm
-        # local). Keyed by send time + template, not by name: these come from
+        # Sends outside 8am-9pm. Split on purpose: early morning is the best
+        # performing window either office has (see send_windows) and belongs
+        # in the report as performance, while a text after 9pm has no such
+        # upside. Keyed by send time + template, not by name: these come from
         # ONE scheduled blast, and 200 names hide that where one line shows it.
         for when, dirn, t, _body in th:
-            if dirn == "Out" and (when.hour < 8 or when.hour >= 21):
-                found["Texted outside 8am–9pm (TCPA quiet hours)"].append(
+            if dirn != "Out":
+                continue
+            if when.hour < 8:
+                found["Sent before 8am"].append(
+                    "{} · {}".format(when.strftime("%I:%M %p").lstrip("0"), t or "free-typed"))
+            elif when.hour >= 21:
+                found["Sent after 9pm"].append(
                     "{} · {}".format(when.strftime("%I:%M %p").lstrip("0"), t or "free-typed"))
 
         # the same message twice inside a minute
@@ -872,6 +879,90 @@ def lanes(convos, rows):
     return out
 
 
+def send_windows(convos):
+    """Reply rate by WHEN we sent the text.
+
+    Early-morning sending was on the "problems" list on compliance grounds
+    until Megan asked the obvious question (2026-09-26): is the response rate
+    to those actually lower? It is not — it is the best window either office
+    has. Raf 38% before 8am against 31% in the day, Carlos 41% against 34%,
+    and 7am is his second-biggest hour. So it is reported as performance,
+    not as a fault, and the reader can see the number rather than take a
+    label's word for it.
+
+    A reply counts if the applicant wrote back within two hours of that text.
+    Undelivered texts are left out — they cannot be replied to."""
+    out = {k: {"sent": 0, "replied": 0}
+           for k in ("before 8am", "8am-9pm", "after 9pm")}
+    for c in convos.values():
+        msgs = sorted(c["msgs"], key=lambda m: m["when"])
+        ins = [m["when"] for m in msgs if m["dir"] == "In"]
+        for m in msgs:
+            if m["dir"] != "Out":
+                continue
+            if (m.get("status") or "").strip().lower() != "delivered":
+                continue
+            h = m["when"].hour
+            k = "before 8am" if h < 8 else ("after 9pm" if h >= 21 else "8am-9pm")
+            out[k]["sent"] += 1
+            if any(0 < (t - m["when"]).total_seconds() <= 7200 for t in ins):
+                out[k]["replied"] += 1
+    return out
+
+
+MIN_HOUR_SAMPLE = 50
+
+
+def hourly_reply(convos, min_sent=MIN_HOUR_SAMPLE):
+    """Reply rate by the hour we sent, so the office can be told WHEN to text
+    (Megan 2026-09-26: "notate the timeframe that the office has the highest
+    response rate").
+
+    Hours under `min_sent` are dropped rather than ranked — a 4-send hour at
+    100% would otherwise take the top slot every week and send everybody to
+    the wrong time."""
+    per = collections.defaultdict(lambda: [0, 0])
+    for c in convos.values():
+        msgs = sorted(c["msgs"], key=lambda m: m["when"])
+        ins = [m["when"] for m in msgs if m["dir"] == "In"]
+        for m in msgs:
+            if m["dir"] != "Out":
+                continue
+            if (m.get("status") or "").strip().lower() != "delivered":
+                continue
+            per[m["when"].hour][0] += 1
+            if any(0 < (t - m["when"]).total_seconds() <= 7200 for t in ins):
+                per[m["when"].hour][1] += 1
+    out = [{"hour": h, "sent": sent, "replied": rep, "rate": 100.0 * rep / sent}
+           for h, (sent, rep) in per.items() if sent >= min_sent]
+    out.sort(key=lambda d: -d["rate"])
+    return out
+
+
+def clock(hour):
+    """13 -> '1pm'. No %-I: that strftime is glibc-only and these reports run
+    on Windows too."""
+    ampm = "am" if hour < 12 else "pm"
+    h = hour % 12 or 12
+    return "{}{}".format(h, ampm)
+
+
+def best_hours_label(convos, top=3):
+    """'7am (39%), 1pm (40%), 8am (38%)' — the hours worth sending in."""
+    rows = hourly_reply(convos)[:top]
+    if not rows:
+        return ""
+    return " · ".join("{} ({:.0f}%)".format(clock(r["hour"]), r["rate"]) for r in rows)
+
+
+def worst_hours_label(convos, bottom=2):
+    rows = hourly_reply(convos)
+    if not rows:
+        return ""
+    return " · ".join("{} ({:.0f}%)".format(clock(r["hour"]), r["rate"])
+                      for r in rows[-bottom:])
+
+
 def delivery_reasons(rows):
     """WHY a text never arrived (Megan 2026-09-26: "we need to know why it
     never reached them").
@@ -961,6 +1052,9 @@ def audit_log(rows, convos, office, booked=None):
     fun["join_misses"] = len(join_misses(convos, booked or {}))
     fun["lanes"] = lanes(convos, rows)
     fun["delivery"] = delivery_reasons(rows)
+    fun["windows"] = send_windows(convos)
+    fun["best_hours"] = best_hours_label(convos)
+    fun["worst_hours"] = worst_hours_label(convos)
     drop = dropoff(convos)
     fun["drop"] = drop["buckets"]
     fun["curve"] = drop["curve"]

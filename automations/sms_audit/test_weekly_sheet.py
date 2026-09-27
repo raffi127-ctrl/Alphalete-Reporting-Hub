@@ -270,7 +270,7 @@ class NoMessagesIsBlankTest(unittest.TestCase):
         by_label = {label: fn for _s, label, fn in W.ROWS}
         for label in ("Questions asked", "Questions we couldn't group",
                       "Most asked → what we usually reply",
-                      "Applicants left waiting 2+ hours", "Texts sent before 8am or after 9pm",
+                      "Applicants left waiting 2+ hours",
                       "Texted someone after they said stop", "Broken links sent"):
             self.assertEqual(by_label[label](rep), "", label)
 
@@ -287,7 +287,7 @@ class NoMessagesIsBlankTest(unittest.TestCase):
         by_label = {label: fn for _s, label, fn in W.ROWS}
         # nobody asked anything, and we read every message to find that out
         self.assertEqual(by_label["Questions asked"](rep), 0)
-        self.assertEqual(by_label["Texts sent before 8am or after 9pm"](rep), 0)
+        self.assertEqual(by_label["Broken links sent"](rep), 0)
 
 
 class ColumnOrderTest(unittest.TestCase):

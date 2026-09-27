@@ -145,20 +145,24 @@ class LookAlikeLinkTest(unittest.TestCase):
 
 
 class QuietHoursTest(unittest.TestCase):
+    """Early morning and late night are counted apart: early is the best
+    send window either office has, late has no upside to weigh against it."""
+
     def test_the_seven_am_blast_groups_by_time_and_template_not_by_name(self):
         recs = [_rec([["Out", "First Interview Confirmation", "x", "09/23 7:00 AM"]],
                      name="A"),
                 _rec([["Out", "First Interview Confirmation", "x", "09/23 7:00 AM"]],
                      name="B")]
         found = A.anomalies(A.as_items(recs))
-        hits = found["Texted outside 8am–9pm (TCPA quiet hours)"]
+        hits = found["Sent before 8am"]
         self.assertEqual(len(hits), 2)
         self.assertEqual(len(set(hits)), 1)  # one cause, not two findings
         self.assertIn("7:00 AM", hits[0])
 
     def test_business_hours_are_not_flagged(self):
         found = A.anomalies(A.as_items([_rec([["Out", "", "x", "09/23 10:00 AM"]])]))
-        self.assertNotIn("Texted outside 8am–9pm (TCPA quiet hours)", found)
+        self.assertNotIn("Sent before 8am", found)
+        self.assertNotIn("Sent after 9pm", found)
 
 
 class OptOutTest(unittest.TestCase):
@@ -647,3 +651,75 @@ class DeliveryReasonTest(unittest.TestCase):
     def test_no_messages_gives_no_rate_rather_than_zero(self):
         d = A.delivery_reasons([])
         self.assertIsNone(d["first_rate"])
+
+
+class SendWindowTest(unittest.TestCase):
+    """Megan: "is the response rate to them lower or higher? I think this
+    might be a positive and not an issue." It is higher — 38% before 8am
+    against 31% in the day for Raf — so early sending is reported as
+    performance, not as a fault."""
+
+    def _convo(self, hours, reply_after=None):
+        base = dt.datetime(2026, 9, 21, 0, 0)
+        msgs = [{"when": base + dt.timedelta(hours=h), "dir": "Out",
+                 "template": "", "body": "hi", "sent_by": "", "source": "",
+                 "status": "Delivered"} for h in hours]
+        if reply_after is not None:
+            msgs.append({"when": base + dt.timedelta(hours=reply_after, minutes=30),
+                         "dir": "In", "template": "", "body": "yes", "sent_by": "",
+                         "source": "", "status": "Delivered"})
+        return {"a": {"phone": "4698762121", "name": "x", "booked": False,
+                      "booked_by": "", "outcome": "", "msgs": msgs}}
+
+    def test_the_windows_split_at_8am_and_9pm(self):
+        w = A.send_windows(self._convo([7, 13, 22]))
+        self.assertEqual(w["before 8am"]["sent"], 1)
+        self.assertEqual(w["8am-9pm"]["sent"], 1)
+        self.assertEqual(w["after 9pm"]["sent"], 1)
+
+    def test_a_reply_within_two_hours_counts_for_that_window(self):
+        w = A.send_windows(self._convo([7], reply_after=7))
+        self.assertEqual(w["before 8am"]["replied"], 1)
+
+    def test_an_undelivered_text_cannot_be_replied_to(self):
+        c = self._convo([7])
+        c["a"]["msgs"][0]["status"] = "Failed"
+        self.assertEqual(A.send_windows(c)["before 8am"]["sent"], 0)
+
+
+class BestHourTest(unittest.TestCase):
+    """Megan: "notate the timeframe that the office has the highest response
+    rate." Thin hours are dropped — a 4-send hour at 100% would take the top
+    slot every week and send the office to the wrong time."""
+
+    def _convos(self, spec):
+        """spec: {hour: (sent, replied)}"""
+        base, out = dt.datetime(2026, 9, 21, 0, 0), {}
+        i = 0
+        for hour, (sent, replied) in spec.items():
+            for k in range(sent):
+                i += 1
+                msgs = [{"when": base + dt.timedelta(hours=hour), "dir": "Out",
+                         "template": "", "body": "hi", "sent_by": "", "source": "",
+                         "status": "Delivered"}]
+                if k < replied:
+                    msgs.append({"when": base + dt.timedelta(hours=hour, minutes=10),
+                                 "dir": "In", "template": "", "body": "y",
+                                 "sent_by": "", "source": "", "status": "Delivered"})
+                out[str(i)] = {"phone": str(i), "name": "x", "booked": False,
+                               "booked_by": "", "outcome": "", "msgs": msgs}
+        return out
+
+    def test_a_thin_hour_cannot_win(self):
+        convos = self._convos({7: (4, 4), 13: (100, 40)})
+        self.assertEqual(A.best_hours_label(convos), "1pm (40%)")
+
+    def test_hours_are_ranked_by_rate_not_volume(self):
+        convos = self._convos({7: (60, 30), 13: (400, 40)})
+        self.assertTrue(A.best_hours_label(convos).startswith("7am (50%)"))
+
+    def test_the_clock_reads_like_a_person_wrote_it(self):
+        self.assertEqual(A.clock(7), "7am")
+        self.assertEqual(A.clock(13), "1pm")
+        self.assertEqual(A.clock(0), "12am")
+        self.assertEqual(A.clock(12), "12pm")

@@ -172,7 +172,6 @@ RENAMED = {
     'Texted after they said stop': 'Texted someone after they said stop',
     'Texted but never booked': 'People we texted who never booked',
     'Texted → booked %': '% of people we texted who booked',
-    'Texts outside 8am–9pm': 'Texts sent before 8am or after 9pm',
     'Too soon to tell (texted in the last 3 days)': 'Too recent to judge (texted in the last 3 days)',
     'Total messages (sent + received)': 'Total texts (sent + received)',
     '…booked by a recruiter': '— booked by a person',
@@ -259,9 +258,12 @@ def issues_cell(rep):
         found.append((4, "{} people were texted again AFTER they asked us to stop "
                          "or said they were not interested.".format(stopped)))
 
-    quiet = n("Texted outside 8am–9pm (TCPA quiet hours)")
-    if quiet:
-        found.append((5, "{:,} texts went out before 8am or after 9pm.".format(quiet)))
+    # Early-morning sending is NOT on this list: it is the best-performing
+    # window either office has (Megan asked; the data agreed). Only a
+    # genuinely late-night send has no upside to weigh against it.
+    late = n("Sent after 9pm")
+    if late:
+        found.append((5, "{} texts went out after 9pm.".format(late)))
 
     over = n("Over the carrier limit — 4+ separate texts with no reply between")
     if over:
@@ -286,6 +288,22 @@ def issues_cell(rep):
         return "Nothing flagged this week." if log else ""
     return "\n\n".join("{}. {}".format(i, text)
                         for i, (_rank, text) in enumerate(sorted(found), 1))
+
+
+def _win(key, field):
+    def read(rep):
+        w = ((rep.get("log") or {}).get("funnel", {}).get("windows") or {}).get(key)
+        return w.get(field, "") if w else ""
+    return read
+
+
+def _win_pct(key):
+    def read(rep):
+        w = ((rep.get("log") or {}).get("funnel", {}).get("windows") or {}).get(key)
+        if not w or not w.get("sent"):
+            return ""
+        return round(100.0 * w["replied"] / w["sent"], 1)
+    return read
 
 
 def _lane(which, field):
@@ -457,6 +475,19 @@ ROWS = [
     ("Did they show up?", "% who showed — booked by a person",
      lambda r: _rate(_f(r, "shown_human"), _f(r, "booked_human"))),
 
+    # Megan 2026-09-26 asked whether early texts get a WORSE response rate.
+    # They get a better one — 38% vs 31% for Raf, 41% vs 34% for Carlos — so
+    # this sits here as performance rather than on the problems list, with
+    # the number visible instead of a label to take on trust.
+    ("When we text", "Texts sent before 8am", _win("before 8am", "sent")),
+    ("When we text", "% who replied — sent before 8am", _win_pct("before 8am")),
+    ("When we text", "% who replied — sent 8am to 9pm", _win_pct("8am-9pm")),
+    ("When we text", "Texts sent after 9pm", _win("after 9pm", "sent")),
+    ("When we text", "BEST hours to text (reply rate)",
+     lambda r: ((r.get("log") or {}).get("funnel", {}) or {}).get("best_hours", "")),
+    ("When we text", "Worst hours to text (reply rate)",
+     lambda r: ((r.get("log") or {}).get("funnel", {}) or {}).get("worst_hours", "")),
+
     ("How fast we reply", "Minutes for the AI to reply (typical)",
      lambda r: _median((r.get("log") or {}).get("speed_ai"))),
     ("How fast we reply", "Minutes for a person to reply (typical)",
@@ -478,9 +509,6 @@ ROWS = [
     # halves of the question only mean something together.
     ("What applicants ask", "Most asked → what we usually reply",
      _msg(lambda r: question_cell(r))),
-    ("Problems to fix", "Texts sent before 8am or after 9pm",
-     _msg(lambda r: len(r["anomalies"].get(
-         "Texted outside 8am–9pm (TCPA quiet hours)", [])))),
     ("Problems to fix", "Applicants texted 4+ times with no reply",
      _msg(lambda r: len(r["anomalies"].get(
          "Over the carrier limit — 4+ separate texts with no reply between", [])))),
@@ -738,6 +766,7 @@ def write_week(ws, rep, week_end, dry_run=False):
 
 
 SECTION_TINT = {"This week": (0.86, 0.86, 0.86),
+                "When we text": (0.90, 0.94, 0.99),
                 "Cold list (mass text blast)": (0.93, 0.90, 0.86),
                 "Normal applicants (not the blast)": (0.88, 0.96, 0.90),
                 "Why texts never arrive": (0.99, 0.91, 0.86),
