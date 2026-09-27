@@ -1323,7 +1323,10 @@ def _collapse(ws, label_rows, extra_groups=()):
     for _summary, children in sorted(list(COLLAPSIBLE) + list(extra_groups),
                                      key=lambda g: -len(g[1])):
         rows = sorted(label_rows[c] for c in children if c in label_rows)
-        if len(rows) < 2 or rows[-1] - rows[0] != len(rows) - 1:
+        # One row is a perfectly good group: an office with a single
+        # offender still wants their detail folded away (Megan 2026-09-27,
+        # on Sandy's lone dodged-question row sitting open).
+        if not rows or rows[-1] - rows[0] != len(rows) - 1:
             continue          # not a contiguous block — grouping would be wrong
         lo, hi = rows[0] - 1, rows[-1]
         # A group's DEPTH is how many groups already enclose it, and the API

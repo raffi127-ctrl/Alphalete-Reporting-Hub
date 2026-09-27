@@ -825,3 +825,36 @@ class PersonLabelCollisionTest(unittest.TestCase):
         labels = [l for _s, l, _f in rows]
         self.assertEqual(len(labels), len(set(labels)))
         self.assertEqual(len(groups), 2)
+
+
+class SinglePersonGroupTest(unittest.TestCase):
+    """An office with one offender still wants their detail folded away.
+    Requiring two rows left Sandy's lone dodged-question row sitting open
+    with no + beside it (Megan 2026-09-27: "it needs the expansion still")."""
+
+    def _rep(self, senders):
+        import collections as _c
+        dodged = [{"kind": "dodged", "sender": s, "name": "J",
+                   "question": "pay?", "reply": "call us",
+                   "bucket": "What is the pay?"} for s in senders]
+        return {"log": {"errors": [], "dodged": dodged,
+                        "funnel": {"drop": {}, "curve": {}, "delivery": {},
+                                   "lanes": {}, "windows": {}}},
+                "anomalies": {}, "questions": _c.Counter(), "questions_other": [],
+                "questions_total": 0, "question_table": [], "unanswered": [],
+                "messages": 5, "threads": 1, "mix": {"ai": 0, "human": 1},
+                "dates": ["09-25-2026"]}
+
+    def test_one_sender_still_makes_a_group(self):
+        _rows, groups = W.build_rows(self._rep(["Sandy"]))
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(len(dict(groups)["Replies using texting shorthand"]), 1)
+
+    def test_a_one_row_block_is_contiguous(self):
+        # the contiguity test must not reject a block of one
+        rows = [63]
+        self.assertTrue(rows and rows[-1] - rows[0] == len(rows) - 1)
+
+    def test_no_senders_makes_no_group(self):
+        _rows, groups = W.build_rows(self._rep([]))
+        self.assertEqual(groups, [])
