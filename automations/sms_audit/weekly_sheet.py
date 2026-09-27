@@ -57,8 +57,11 @@ WORKBOOK_TITLE = "Applicant Text Audit"
 DEFAULT_WORKBOOK = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
 FIRST_WEEK_COL = 3          # A = section, B = metric label, C+ = weeks
 WEEK_COL_WIDTH = 470        # wide enough to read the questions paragraph
-MAX_SECTION_COL = 168       # column A holds a section name and nothing else
-LABEL_PAD = 22              # auto-resize under-measures bold Georgia
+MAX_SECTION_COL = 215       # column A holds a section name and nothing
+                            # else — wide enough for the longest of them
+                            # ("People we left hanging"), no wider
+LABEL_PAD = 42              # auto-resize under-measures bold Georgia, and
+                            # it under-measures it badly at 12pt
 HEADER_ROW = 2              # row 1 is the title line, row 2 the week headers
 
 # (section, label, how to read it off the audit). A metric whose source is
@@ -955,6 +958,7 @@ def check_window(rep, week_end):
 def write_week(ws, rep, week_end, dry_run=False):
     updates_rename = []
     rows_spec, person_groups = build_rows(rep)
+    person_labels = {l for _s, kids in person_groups for l in kids}
     """Put this week's numbers in this week's column, creating the column and
     any missing metric rows. Re-running the same week overwrites that column
     and leaves every other one alone."""
@@ -1047,7 +1051,8 @@ def write_week(ws, rep, week_end, dry_run=False):
         ws.resize(rows=next_row + 2, cols=ws.col_count)
     ws.batch_update([{"range": rng, "values": vals} for rng, vals in updates],
                     value_input_option="USER_ENTERED")
-    _format(ws, col, next_row - 1, labels, rows_spec, person_groups)
+    _format(ws, col, next_row - 1, labels, rows_spec, person_groups,
+            person_labels)
     qrow = labels.get(WIDE_ROW)
     if qrow:
         _paint_warnings(ws, qrow, col, question_cell(rep))
@@ -1144,7 +1149,7 @@ def _rgb(t):
 
 
 def _format(ws, last_col, last_row, label_rows, rows_spec=ROWS,
-            person_groups=()):
+            person_groups=(), person_labels=()):
     """Make it readable: a title, a frozen label column, each section tinted so
     the eye can find it, numbers centred, and the one tall question cell
     wrapped and left-aligned because a centred paragraph is unreadable.
@@ -1204,8 +1209,7 @@ def _format(ws, last_col, last_row, label_rows, rows_spec=ROWS,
             if r:
                 ws.format("{}:{}".format(_a1(r, FIRST_WEEK_COL), _a1(r, last_col)),
                           dict(body, **pct))
-        for name in [n for n in WRAP_ROWS] + [
-                l for _s, l, _f in rows_spec if l.startswith(PERSON_PREFIX)]:
+        for name in list(WRAP_ROWS) + list(person_labels):
             r = label_rows.get(name)
             if r:
                 ws.format("{}:{}".format(_a1(r, FIRST_WEEK_COL), _a1(r, last_col)),

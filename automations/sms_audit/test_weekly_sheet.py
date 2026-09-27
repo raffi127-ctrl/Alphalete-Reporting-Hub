@@ -858,3 +858,32 @@ class SinglePersonGroupTest(unittest.TestCase):
     def test_no_senders_makes_no_group(self):
         _rows, groups = W.build_rows(self._rep([]))
         self.assertEqual(groups, [])
+
+
+class ColumnFitTest(unittest.TestCase):
+    """Megan 2026-09-27: "not expanded to fit the text still". Column A is
+    sized by the longest SECTION name and capped; column B by the longest
+    LABEL. Auto-resize under-measures bold Georgia badly at 12pt, so both
+    get padding on top of it — and the cap has to clear the longest section
+    or it clips ("People we left hangi")."""
+
+    CHAR_PX = 8.4      # bold Georgia 12pt, measured off the rendered sheet
+
+    def test_the_cap_on_column_A_clears_the_longest_section(self):
+        longest = max((s for s, _l, _f in W.ROWS), key=len)
+        self.assertGreaterEqual(W.MAX_SECTION_COL, len(longest) * self.CHAR_PX,
+                                "column A cap clips {!r}".format(longest))
+
+    def test_the_week_column_clears_the_longest_label(self):
+        # column B is auto-sized then padded; the pad has to be worth having
+        self.assertGreaterEqual(W.LABEL_PAD, 30)
+
+    def test_a_person_row_wraps_but_an_em_dash_metric_does_not(self):
+        """"— booked by the AI" starts with the same dash as "— Sandy
+        Samaniego", and a prefix test left those two numbers left-aligned
+        in a column of centred ones."""
+        labels = [l for _s, l, _f in W.ROWS]
+        dashed = [l for l in labels if l.startswith(W.PERSON_PREFIX)]
+        self.assertTrue(dashed, "no em-dash metric rows to guard")
+        for l in dashed:
+            self.assertNotIn(l, W.WRAP_ROWS)
