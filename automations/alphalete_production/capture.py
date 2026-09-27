@@ -750,6 +750,30 @@ def _render(ss, source_ws, grid, spec, today, out_dir, token, team=None):
         _delete_gid(ss, gid)
 
 
+LANES_TAB = "Lanes"
+
+
+def lanes_range(grid) -> str:
+    """A1 down to the last filled row, across to the last filled column. The
+    lanes are spilled FILTERs, so their length changes every day."""
+    last_r = max((r for r, row in enumerate(grid) if any(v.strip() for v in row)),
+                 default=0)
+    last_c = max((c for row in grid for c, v in enumerate(row) if v.strip()),
+                 default=0)
+    return "A1:%s%d" % (col_letter(last_c), last_r + 1)
+
+
+def _render_lanes(ss, spec, out_dir: Path, token) -> Path:
+    """The 'Lanes' tab exactly as Maud built it. Read-only: no temp copy, no
+    filters -- the tab already shows what it should."""
+    ws = next((w for w in ss.worksheets()
+               if w.title.strip().lower() == LANES_TAB.lower()), None)
+    if ws is None:
+        raise RuntimeError("no %r tab on the sales board" % LANES_TAB)
+    rng = lanes_range(ws.get_all_values())
+    return _export_png(ws.id, rng, out_dir / f"{spec['id']}.png", token)
+
+
 def team_list(grid) -> List[str]:
     team_col = next(c for c in range(len(grid[0])) if _cell(grid, 0, c).strip() == "Team")
     tot_row = _totals_row(grid)
@@ -788,6 +812,8 @@ def capture_all(sections, today: dt.date, out_dir: Path, only=None,
                     meta = dict(spec, title=f"{team} {spec['title']}", team=team)
                     png = _render(ss, ws, grid, spec, today, out_dir, token, team=team)
                     out.append((meta, png))
+            elif spec["kind"] == "lanes":
+                out.append((dict(spec), _render_lanes(ss, spec, out_dir, token)))
             elif spec["kind"] == "zeros":
                 # Escalating Zero Streak: one image per depth (1 Day / 2 Days / …),
                 # walked across prior-week tabs. Fans out like Team Sales.
