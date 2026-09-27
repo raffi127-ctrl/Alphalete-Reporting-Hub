@@ -745,13 +745,27 @@ class PerPersonRowTest(unittest.TestCase):
         self.assertIn("— Sandy", labels)
         self.assertIn("— Jorge", labels)
 
-    def test_the_senders_sit_under_the_count_they_explain(self):
-        rows, groups = W.build_rows(self._rep())
-        labels = [l for _s, l, _f in rows]
-        i = labels.index("Texts with a spelling mistake")
-        self.assertEqual(labels[i + 1], "— Sandy")
-        self.assertIn(("Texts with a spelling mistake", ["— Sandy", "— Jorge"]),
-                      [(a, b) for a, b in groups])
+    def test_the_senders_sit_at_the_FOOT_of_their_section(self):
+        """Megan 2026-09-27: "the expansion should be at the bottom of this
+        section." Directly under the count it explained, the fold sat in the
+        middle and the remaining counts read as part of the expansion."""
+        rows, _groups = W.build_rows(self._rep())
+        quality = [l for sec, l, _f in rows if sec == "Text quality"]
+        self.assertTrue(quality[-2:] == ["— Sandy", "— Jorge"], quality)
+        self.assertEqual(quality[0], "Texts with a spelling mistake")
+
+    def test_both_sections_get_the_same_treatment(self):
+        rows, _groups = W.build_rows(self._rep())
+        for section in ("Text quality", "Questions handled badly"):
+            labels = [l for sec, l, _f in rows if sec == section]
+            self.assertTrue(labels[-1].startswith(W.PERSON_PREFIX),
+                            "{}: {}".format(section, labels))
+
+    def test_the_group_hangs_off_the_last_count_in_the_section(self):
+        _rows, groups = W.build_rows(self._rep())
+        anchors = [a for a, _k in groups]
+        self.assertIn("Texts using lowercase 'i'", anchors)
+        self.assertIn("Replies using texting shorthand", anchors)
 
     def test_worst_offender_first(self):
         _rows, groups = W.build_rows(self._rep())

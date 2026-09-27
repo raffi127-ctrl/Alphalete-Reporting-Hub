@@ -365,28 +365,53 @@ def person_runs(entries, text):
     return out
 
 
+# Which per-person breakdown belongs at the foot of which section.
+PERSON_SECTIONS = {"Text quality": "errors",
+                   "Questions handled badly": "dodged"}
+
+
 def build_rows(rep):
-    """ROWS with a row per PERSON spliced under the two counts they explain
-    (Megan 2026-09-27: "group by person with + expansion to see theirs").
+    """ROWS with a row per PERSON at the FOOT of the section it belongs to
+    (Megan 2026-09-27: "the expansion should be at the bottom of this
+    section").
+
+    Sitting directly under the count it explained put the fold in the middle
+    of the section, so the remaining counts read as if they were part of the
+    expansion. At the foot, the section reads as its numbers and then, once,
+    the detail behind a +.
 
     Senders change week to week, so these rows cannot live in the static
     list — they are built from the report and created by label like any
-    other row."""
+    other row, worst offender first."""
     rows, groups = [], []
+    pending = None
     for section, label, fn in ROWS:
+        if pending and section != pending[0]:
+            rows.extend(pending[1])
+            if pending[2]:
+                groups.append(pending[2])
+            pending = None
         rows.append((section, label, fn))
-        which = ("errors" if label == "Texts with a spelling mistake"
-                 else "dodged" if label == "Direct questions dodged" else None)
-        if not which:
-            continue
-        kids = []
-        for sender, entries in by_person(rep, which).items():
-            child = person_label(sender, which)
-            rows.append((section, child,
-                         (lambda es, w: lambda _r: person_cell(es, w))(entries, which)))
-            kids.append(child)
-        if kids:
-            groups.append((label, kids))
+        if section in PERSON_SECTIONS and pending is None:
+            which = PERSON_SECTIONS[section]
+            kids, extra = [], []
+            for sender, entries in by_person(rep, which).items():
+                child = person_label(sender, which)
+                extra.append((section, child,
+                              (lambda es, w: lambda _r: person_cell(es, w))(
+                                  entries, which)))
+                kids.append(child)
+            # the group is anchored on the LAST count in the section, which
+            # is the row the + will sit beside
+            pending = (section, extra, (label, kids) if kids else None)
+        elif pending and section == pending[0]:
+            # a later row in the same section becomes the anchor instead
+            pending = (section, pending[1],
+                       (label, pending[2][1]) if pending[2] else None)
+    if pending:
+        rows.extend(pending[1])
+        if pending[2]:
+            groups.append(pending[2])
     return rows, groups
 
 
