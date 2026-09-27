@@ -394,6 +394,26 @@
       "timeout_minutes": 60,
       "machine": "Lucy 2"
     },
+    "sms_crosscheck": {
+      "on_scheduler": false,
+      "_note": "MANUAL-ONLY (Megan 2026-09-27: \"double check that the mapping of how you're pulling all these numbers is correct\"). Holds the SMS audit's booked/showed figures against AppStream's OWN count of them on the Retention Report (p=701), which no other part of the audit reads. verify.py proves the numbers are internally consistent \u2014 every split adds back up to its parent, every field comes out of the column it claims \u2014 but only this can catch the whole pull being short a day in the same direction, because an internally consistent pull that missed Thursday still balances. p=701 is locked to Sun-Sat and recruiting runs Sat-Fri, so one recruiting week is assembled from TWO p=701 weeks: the Saturday of the first plus Sun-Fri of the second. READ-ONLY \u2014 writes no tab, no sheet, no Slack. Compares against the files already in output/, so run it AFTER the pulls. Args: --office 11280,23965,24065,11580, --week N, --suffix wMMDD. Exit 1 on a mismatch.",
+      "display_name": "SMS audit cross-check (vs Retention Report p=701)",
+      "source_type": "appstream",
+      "data_sources": [],
+      "command": [
+        "automations.sms_audit.crosscheck"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 45,
+      "machine": "Lucy 2"
+    },
     "probe_calls": {
       "on_scheduler": false,
       "_note": "ONE-TIME PROBE (Megan 2026-09-26): find where AppStream keeps CALL outcomes and whether they carry a timestamp. She wants the hour with the highest phone-call answer rate beside the hour with the highest text reply rate; p=336 is texts only and p=701 is per-day totals, so neither can answer it. Dumps every Reports-menu link plus each candidate page's filter form and grid header into tab 'Call Probe <office>'. READ-ONLY. Delete module + entry once the real puller exists. Args: --office, --dry-run.",

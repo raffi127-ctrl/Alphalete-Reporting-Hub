@@ -168,6 +168,24 @@ class WindowGuardTest(unittest.TestCase):
         rep = self._rep(["09-19-2026"])
         self.assertIsNone(W.check_window(rep, dt.date(2026, 9, 25)))
 
+    def test_a_log_from_another_week_is_refused(self):
+        # The half that used to go unguarded: the bookings walk is the right
+        # week, the message log is not, and every number the log feeds — reply
+        # speeds, questions, flags — would have been filed under this column.
+        rep = self._rep(["09-21-2026", "09-25-2026"])
+        rep["log_window"] = ("09-19-2026", "09-25-2026")
+        self.assertIsNone(W.check_window(rep, dt.date(2026, 9, 25)))
+        rep["log_window"] = ("08-29-2026", "09-04-2026")
+        msg = W.check_window(rep, dt.date(2026, 9, 25))
+        self.assertIsNotNone(msg)
+        self.assertIn("2026-08-29", msg)
+
+    def test_both_halves_feed_the_window(self):
+        rep = self._rep(["09-21-2026"])
+        rep["log_window"] = ("09-19-2026", "09-25-2026")
+        self.assertEqual(W.data_window(rep),
+                         (dt.date(2026, 9, 19), dt.date(2026, 9, 25)))
+
     def test_no_dates_cannot_be_checked_so_is_not_blocked(self):
         self.assertIsNone(W.check_window({"dates": []}, dt.date(2026, 9, 25)))
 

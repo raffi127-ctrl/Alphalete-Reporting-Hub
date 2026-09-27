@@ -925,10 +925,15 @@ def _a1(row, col):
 
 
 def data_window(rep):
-    """(first, last) date the pulled data actually covers, off the calendar
-    walk's own date column. None when the report carries no dates."""
+    """(first, last) date the pulled data actually covers — BOTH halves.
+
+    The booking walk's date column and the message log's own timestamps each
+    get a vote, because a column is only in the right place if both of them
+    are. Checking the calendar alone left the log unguarded: the suffix that
+    picks a backfilled week picks two files, and a mismatched pair reads as
+    correct right up until someone notices two columns are identical."""
     ds = []
-    for raw in rep.get("dates") or []:
+    for raw in list(rep.get("dates") or []) + list(rep.get("log_window") or []):
         try:
             ds.append(dt.datetime.strptime(raw, "%m-%d-%Y").date())
         except ValueError:
@@ -1461,6 +1466,16 @@ def build_report(office, suffix=""):
     rep = A.audit(recs, office, convos)
     if convos:
         rep["log"] = A.audit_log(rows, convos, office, booked)
+        # The message log's OWN span, so check_window can hold it to the same
+        # column header as the booking walk. Without this the guard only ever
+        # saw the calendar's dates, and a right-week bookings file paired with
+        # a wrong-week log passed it silently — which is how WE 9/4 once took
+        # its reply speeds and questions from WE 9/25.
+        stamps = [m["when"] for c in convos.values() for m in c["msgs"]
+                  if m.get("when")]
+        if stamps:
+            rep["log_window"] = (min(stamps).date().strftime("%m-%d-%Y"),
+                                 max(stamps).date().strftime("%m-%d-%Y"))
     return rep, "{} + {}".format(src, lsrc if rows else "no full log")
 
 

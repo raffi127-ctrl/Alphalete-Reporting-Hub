@@ -154,3 +154,43 @@ Date". p=1520 Phone Burner returns nothing even when submitted, and p=1530
 "AI Live Calls" is broken server-side. So there is no call-answer-rate by
 hour available from AppStream reporting — do not go looking again without
 new information.
+
+## Checking that the numbers come from where they claim
+
+Megan, 2026-09-27: *"double check that the mapping of how you're pulling all
+these numbers is correct."* Two commands answer that, and they answer
+different halves of it.
+
+```
+python -m automations.sms_audit.verify              # internal, no network
+python -m automations.sms_audit.verify --map        # the row-by-row source map
+lucy rerun sms_crosscheck --machine "Lucy 2"        # against AppStream itself
+```
+
+**`verify.py` is the internal proof.** It asserts the identities that have to
+hold if the mapping is right — booked = AI + recruiter, contacted = booked +
+not booked, the drop-off buckets = everyone unbooked, cold + live = contacted,
+delivered + undelivered = everything sent — and then re-derives a sample of
+the figures straight from the raw scraped rows instead of from the audit's own
+structures, so a field read out of the wrong column disagrees with itself
+instead of agreeing. It also holds every row on the sheet to a `LINEAGE`
+entry naming its page, its column and its rule; **a new row with no entry
+fails the run**, which is what stops the map going stale. Exit 1 on any
+failure, writes nothing.
+
+**`crosscheck.py` is the outside proof, and it is the only one that matters
+for a whole-pipeline error.** Everything above still balances if the calendar
+walk quietly missed a day. The Retention Report (p=701) counts first
+interviews off AppStream's own table, with no reference to the calendar or
+the SMS log, so it is an independent second opinion. It needs Lucy 2's warm
+session. Watch the week boundary: **p=701 is locked to Sun-Sat and recruiting
+runs Sat-Fri**, so one recruiting week is the Saturday of one p=701 week plus
+the Sunday-to-Friday of the next — two pulls, and an off-by-one there reads
+as a mismatch blamed on the pull.
+
+**The window guard covers BOTH halves.** `check_window` used to read only the
+booking walk's dates, so a right-week bookings file paired with a wrong-week
+log passed silently — each half internally fine, the column quietly mixing
+two weeks. That is how WE 9/4 once took its reply speeds and questions from
+WE 9/25, and it was caught by eye, not by code. `build_report` now stamps the
+log's own span onto the report as `log_window`, and both feed `data_window`.
