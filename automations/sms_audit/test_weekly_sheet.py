@@ -769,7 +769,7 @@ class PerPersonRowTest(unittest.TestCase):
 
     def test_worst_offender_first(self):
         _rows, groups = W.build_rows(self._rep())
-        kids = dict(groups)["Texts with a spelling mistake"]
+        kids = dict(groups)["Texts using lowercase 'i'"]
         self.assertEqual(kids[0], "— Sandy")      # 3 issues vs Jorge's 1
 
     def test_lowercase_i_is_counted_but_not_shown_in_the_cell(self):
