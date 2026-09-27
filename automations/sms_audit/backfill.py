@@ -1,0 +1,188 @@
+"""Backfill — pull and file several past recruiting weeks for several
+accounts, one week at a time.
+
+Megan 2026-09-27: "I want the past full 6 weeks ran and filled for these 4
+accounts."
+
+WHY A DRIVER AND NOT SIX HAND RUNS. Both pulls write to ONE slot per office —
+tab "SMS Log <office>" and output/sms_log_<office>.json — and the next week
+overwrites it. So a week has to be pulled, brought down to a local file
+STAMPED WITH ITS WEEK, and written into the sheet before the following week
+is pulled. Six weeks times four accounts times two pulls is forty-eight
+steps in a fixed order; doing that by hand is how a week ends up filed under
+the wrong column.
+
+  python -m automations.sms_audit.backfill --office 11280,23965,24065,11580 --weeks 6
+  ... backfill.py --weeks 6 --skip-pull      # re-file from files already down
+  ... backfill.py --weeks 2 --dry-run        # print the plan, touch nothing
+
+Each week runs: queue the bookings walk on Lucy 2 → wait → download →
+queue the message log → wait → download → write that week's column. The
+download is stamped `w<N>` so `weekly_sheet --suffix w<N>` finds both halves
+of the SAME week — mismatching them is what once gave a column its reply
+speeds from a different week entirely.
+
+Nothing here writes to Slack, and every AppStream read is read-only.
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
+REPO = Path(__file__).resolve().parents[2]
+OUTPUT_DIR = REPO / "output"
+CONTROL_SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
+MACHINE = "Lucy 2"
+POLL_SECONDS = 45
+WAIT_MINUTES = 40
+
+
+def _py():
+    venv = REPO / ".venv" / "bin" / "python"
+    return str(venv) if venv.exists() else sys.executable
+
+
+def _run(args, **kw):
+    return subprocess.run([_py(), "-m"] + args, cwd=str(REPO),
+                          capture_output=True, text=True,
+                          env=dict(_env(), PYTHONPATH="."), **kw)
+
+
+def _env():
+    import os
+    return os.environ.copy()
+
+
+def enqueue(action_args):
+    out = _run(["automations.day_orchestrator.mini_control", "--by", "Megan",
+                "--enqueue"] + action_args + ["--machine", MACHINE])
+    print("   queued: {}".format(" ".join(action_args))[:200], flush=True)
+    return out.returncode == 0
+
+
+def _tab_meta(tab):
+    """Row 1 of a pull's tab is its meta line — the range it covers."""
+    from automations.recruiting_report import fill as _fill
+    try:
+        ws = _fill._client().open_by_key(CONTROL_SHEET_ID).worksheet(tab)
+        return ws.acell("A1").value or ""
+    except Exception:  # noqa: BLE001 — tab not created yet
+        return ""
+
+
+def wait_for(tabs, want, minutes=WAIT_MINUTES):
+    """Block until every tab's meta line mentions `want` (the week's dates).
+
+    Waiting on the META rather than on the queue row is deliberate: the queue
+    says a job finished, the meta says WHICH WEEK is now sitting in the tab,
+    and only the second one is safe to download."""
+    deadline = time.time() + minutes * 60
+    while time.time() < deadline:
+        missing = [t for t in tabs if want not in _tab_meta(t)]
+        if not missing:
+            return True
+        print("   waiting on {} ({} left)".format(
+            ", ".join(missing[:3]), len(missing)), flush=True)
+        time.sleep(POLL_SECONDS)
+    print("   TIMED OUT after {} min — {} still stale".format(minutes, missing),
+          flush=True)
+    return False
+
+
+def download(prefix, tab_prefix, office, tag):
+    """Bring a pull's tab down to output/<prefix>_<office>_<tag>.json."""
+    from automations.recruiting_report import fill as _fill
+    ws = _fill._client().open_by_key(CONTROL_SHEET_ID).worksheet(
+        "{} {}".format(tab_prefix, office))
+    vals = ws.get_all_values()
+    if len(vals) < 3:
+        return 0
+    hdr = vals[1]
+    if prefix == "sms_thread_dump":
+        recs = []
+        for row in vals[2:]:
+            d = dict(zip(hdr, row))
+            try:
+                d["thread"] = json.loads(d.pop("thread_json") or "[]")
+            except ValueError:
+                d["thread"] = []
+            d["office"] = office
+            recs.append(d)
+    else:
+        recs = [dict(zip(hdr, r)) for r in vals[2:] if any(r)]
+    path = OUTPUT_DIR / "{}_{}_{}.json".format(prefix, office, tag)
+    path.write_text(json.dumps(recs, ensure_ascii=False))
+    return len(recs)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--office", default="11280,23965,24065,11580")
+    ap.add_argument("--weeks", type=int, default=6,
+                    help="how many complete recruiting weeks back to fill")
+    ap.add_argument("--from-week", type=int, default=1,
+                    help="1 = the week just finished")
+    ap.add_argument("--skip-pull", action="store_true",
+                    help="file from files already downloaded")
+    ap.add_argument("--dry-run", action="store_true")
+    a = ap.parse_args(argv)
+
+    from automations.sms_thread_dump.run import _recruiting_week
+    offices = [o.strip() for o in a.office.split(",") if o.strip()]
+    plan = []
+    for back in range(a.from_week, a.from_week + a.weeks):
+        lo, hi = _recruiting_week(back=back)
+        plan.append((back, lo, hi, "w{:%m%d}".format(hi)))
+
+    print("[backfill] {} offices x {} weeks".format(len(offices), len(plan)),
+          flush=True)
+    for back, lo, hi, tag in plan:
+        print("   week -{}: {} → {}  tag {}".format(back, lo, hi, tag), flush=True)
+    if a.dry_run:
+        return 0
+
+    olist = ",".join(offices)
+    for back, lo, hi, tag in plan:
+        started = dt.datetime.now()
+        print("\n[backfill] === week ending {} (tag {}) ===".format(hi, tag),
+              flush=True)
+        if not a.skip_pull:
+            enqueue(["rerun", "sms_thread_dump", "--office", olist,
+                     "--bookings-only", "--week", str(back)])
+            wait_for(["SMS Dump {}".format(o) for o in offices], str(hi.strftime("%m-%d-%Y")))
+            for o in offices:
+                n = download("sms_thread_dump", "SMS Dump", o, tag)
+                print("   {} bookings → {}".format(n, o), flush=True)
+
+            enqueue(["rerun", "sms_log", "--office", olist, "--week", str(back)])
+            wait_for(["SMS Log {}".format(o) for o in offices],
+                     "{}..{}".format(lo.strftime("%m-%d-%Y"), hi.strftime("%m-%d-%Y")))
+            for o in offices:
+                n = download("sms_log", "SMS Log", o, tag)
+                print("   {} messages → {}".format(n, o), flush=True)
+
+        for o in offices:
+            r = _run(["automations.sms_audit.weekly_sheet", "--office", o,
+                      "--week", str(back), "--suffix", tag])
+            line = [x for x in (r.stdout or "").splitlines()
+                    if "cells" in x or "REFUSED" in x or "nothing to read" in x]
+            print("   {}".format(line[0] if line else (r.stderr or "")[-160:]),
+                  flush=True)
+        print("[backfill] week {} done in {}".format(
+            hi, dt.datetime.now() - started), flush=True)
+    print("\n[backfill] finished", flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
