@@ -671,20 +671,22 @@ class SendWindowTest(unittest.TestCase):
         return {"a": {"phone": "4698762121", "name": "x", "booked": False,
                       "booked_by": "", "outcome": "", "msgs": msgs}}
 
-    def test_the_windows_split_at_8am_and_9pm(self):
-        w = A.send_windows(self._convo([7, 13, 22]))
-        self.assertEqual(w["before 8am"]["sent"], 1)
-        self.assertEqual(w["8am-9pm"]["sent"], 1)
+    def test_the_day_splits_into_bands_an_office_can_act_on(self):
+        w = A.send_windows(self._convo([7, 10, 14, 19, 22]))
+        self.assertEqual(w["6-8am"]["sent"], 1)
+        self.assertEqual(w["8am-12pm"]["sent"], 1)
+        self.assertEqual(w["12-5pm"]["sent"], 1)
+        self.assertEqual(w["5-9pm"]["sent"], 1)
         self.assertEqual(w["after 9pm"]["sent"], 1)
 
     def test_a_reply_within_two_hours_counts_for_that_window(self):
         w = A.send_windows(self._convo([7], reply_after=7))
-        self.assertEqual(w["before 8am"]["replied"], 1)
+        self.assertEqual(w["6-8am"]["replied"], 1)
 
     def test_an_undelivered_text_cannot_be_replied_to(self):
         c = self._convo([7])
         c["a"]["msgs"][0]["status"] = "Failed"
-        self.assertEqual(A.send_windows(c)["before 8am"]["sent"], 0)
+        self.assertEqual(A.send_windows(c)["6-8am"]["sent"], 0)
 
 
 class BestHourTest(unittest.TestCase):
@@ -756,10 +758,11 @@ class TextsToBookTest(unittest.TestCase):
             (10, "Out", "Directions AI")])})
         self.assertEqual(out["average"], 1.0)
 
-    def test_booked_straight_off_a_phone_call_counts_as_zero(self):
-        out = A.texts_to_book({"a": self._c([(0, "Out", "Directions")])})
-        self.assertEqual(out["zero"], 1)
-        self.assertEqual(out["average"], 0.0)
+    def test_a_marker_with_nothing_before_it_is_not_a_zero(self):
+        """Superseded by CarriedInBookingTest: a thread whose first in-window
+        message IS the booking marker was booked before the window opened, so
+        its opening texts are outside the pull and it cannot be scored."""
+        self.assertIsNone(A.texts_to_book({"a": self._c([(0, "Out", "Directions")])}))
 
     def test_people_who_never_booked_are_not_in_it(self):
         self.assertIsNone(A.texts_to_book({"a": self._c([(0, "Out", "")], booked=False)}))
@@ -812,3 +815,40 @@ class BreakdownSumsToParentTest(unittest.TestCase):
         d = A.dropoff(convos, window_end=dt.date(2026, 9, 30))
         self.assertEqual(d["unreached_why"]["Failed"], 1)
         self.assertEqual(d["unreached_why"]["Requeued"], 0)
+
+
+class CarriedInBookingTest(unittest.TestCase):
+    """Megan: "this doesn't seem likely because when an applicant's resume is
+    processed they are automatically sent a text?" Right — a booking with no
+    text before it was almost always booked BEFORE the window opened, so its
+    opening texts are outside the pull. 94 of Raf's 111 had their first
+    in-window message at Monday 06:45, a confirmation for last week's
+    interview. Counting those as "booked with zero texts" was wrong."""
+
+    def _c(self, seq):
+        base = dt.datetime(2026, 9, 21, 9, 0)
+        return {"phone": "4698762121", "name": "x", "booked": True,
+                "booked_by": "", "outcome": "",
+                "msgs": [{"when": base + dt.timedelta(minutes=m), "dir": d,
+                          "template": t, "body": "x", "sent_by": "",
+                          "source": "", "status": "Delivered"}
+                         for m, d, t in seq]}
+
+    def test_a_marker_with_nothing_before_it_is_carried_in(self):
+        out = A.texts_to_book({"a": self._c([(0, "Out", "First Interview Confirmation")])})
+        self.assertIsNone(out)   # nothing measurable at all
+
+    def test_it_is_counted_separately_not_as_zero(self):
+        out = A.texts_to_book({
+            "carried": self._c([(0, "Out", "First Interview Confirmation")]),
+            "real": self._c([(0, "Out", ""), (10, "Out", ""),
+                             (20, "Out", "Directions")])})
+        self.assertEqual(out["carried_in"], 1)
+        self.assertEqual(out["n"], 1)
+        self.assertEqual(out["average"], 2.0)
+
+    def test_a_genuine_phone_booking_still_counts_as_zero(self):
+        # they DID say something first — we just never texted before booking
+        out = A.texts_to_book({"a": self._c([(0, "In", ""), (10, "Out", "Directions")])})
+        self.assertEqual(out["zero"], 1)
+        self.assertEqual(out["carried_in"], 0)

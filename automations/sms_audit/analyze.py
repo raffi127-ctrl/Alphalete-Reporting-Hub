@@ -995,8 +995,12 @@ def send_windows(convos):
 
     A reply counts if the applicant wrote back within two hours of that text.
     Undelivered texts are left out — they cannot be replied to."""
-    out = {k: {"sent": 0, "replied": 0}
-           for k in ("before 8am", "8am-9pm", "after 9pm")}
+    # Buckets an office can act on. "before 8am" on its own was too broad
+    # (Megan 2026-09-26) — it lumped the 7am blast in with everything early
+    # and said nothing at all about the shape of the rest of the day.
+    bands = [("midnight-6am", 0, 6), ("6-8am", 6, 8), ("8am-12pm", 8, 12),
+             ("12-5pm", 12, 17), ("5-9pm", 17, 21), ("after 9pm", 21, 24)]
+    out = {name: {"sent": 0, "replied": 0} for name, _a, _b in bands}
     for c in convos.values():
         msgs = sorted(c["msgs"], key=lambda m: m["when"])
         ins = [m["when"] for m in msgs if m["dir"] == "In"]
@@ -1006,10 +1010,12 @@ def send_windows(convos):
             if (m.get("status") or "").strip().lower() != "delivered":
                 continue
             h = m["when"].hour
-            k = "before 8am" if h < 8 else ("after 9pm" if h >= 21 else "8am-9pm")
-            out[k]["sent"] += 1
+            name = next((n for n, a, b in bands if a <= h < b), None)
+            if not name:
+                continue
+            out[name]["sent"] += 1
             if any(0 < (t - m["when"]).total_seconds() <= 7200 for t in ins):
-                out[k]["replied"] += 1
+                out[name]["replied"] += 1
     return out
 
 
@@ -1092,7 +1098,7 @@ def texts_to_book(convos):
     exists, which makes them a reliable marker without needing a booking
     timestamp the log does not carry. A thread with no such marker is left
     out rather than counted as zero."""
-    counts = []
+    counts, carried_in = [], 0
     for c in convos.values():
         if not c.get("booked"):
             continue
@@ -1102,6 +1108,17 @@ def texts_to_book(convos):
         if not marks:
             continue
         first = min(marks)
+        # If NOTHING in the window precedes the marker, we did not see the
+        # conversation that produced the booking — it happened before the
+        # window opened. Counting that as "booked with zero texts" is wrong,
+        # and Megan caught it: "this doesn't seem likely because when an
+        # applicant's resume is processed they are automatically sent a
+        # text?" Right — 94 of those 111 had their first in-window message at
+        # Monday 06:45, a confirmation for an interview booked the previous
+        # week. They are excluded and counted separately, not scored as zero.
+        if not any(m["when"] < first for m in msgs):
+            carried_in += 1
+            continue
         counts.append(sum(1 for m in msgs if m["dir"] == "Out" and m["when"] < first))
     if not counts:
         return None
@@ -1112,6 +1129,7 @@ def texts_to_book(convos):
         "median": statistics.median(counts),
         "most_common": dist.most_common(1)[0][0],
         "zero": dist.get(0, 0),
+        "carried_in": carried_in,
         "dist": dist,
     }
 

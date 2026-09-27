@@ -102,7 +102,7 @@ class BlankNotZeroTest(unittest.TestCase):
         by_label = {label: fn for _s, label, fn in W.ROWS}
         self.assertEqual(by_label["People we texted"](rep), "")
         self.assertEqual(by_label["% who texted back"](rep), "")
-        self.assertEqual(by_label["Typical wait for an AI reply (minutes)"](rep), "")
+        self.assertEqual(by_label["Typical Response Time — AI (minutes)"](rep), "")
 
     def test_a_rate_over_nothing_is_blank_not_zero(self):
         self.assertEqual(W._rate(0, 0), "")
@@ -409,7 +409,7 @@ class RenameTest(unittest.TestCase):
             def get_all_values(self):
                 return [["Applicant text audit"], ["", "", "WE 9/18"],
                         ["Reach", "People texted", "100"],
-                        ["Speed", "Typical wait for an AI reply (minutes)", "1"]]
+                        ["Speed", "Typical Response Time — AI (minutes)", "1"]]
         col, _n = W.write_week(_Tab("t"), self._rep(), dt.date(2026, 9, 25),
                                dry_run=True)
         self.assertEqual(col, 4)   # the old week keeps its column
