@@ -5,7 +5,9 @@
     <key>Label</key>
     <string>com.alphalete.push-report-hourly</string>
 
-    <!-- Hourly resume-push report DM to Carlos (2026-09-24: "every hour report
+    <!-- TWICE-DAILY (Carlos 2026-09-27: "switch it to twice a day... once at 1 pm
+         and then one at 8 pm") resume-push report to the group chat. Was hourly
+         (2026-09-24: "every hour report
          back to me"). RUNS ON LUCY 2. install_agent.py rewrites the laptop
          placeholder path:
            python -m automations.day_orchestrator.install_agent push-report-hourly
@@ -30,21 +32,8 @@
 
     <key>StartCalendarInterval</key>
     <array>
-        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>15</integer></dict>
-        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>15</integer></dict>
-        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>15</integer></dict>
-        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>15</integer></dict>
-        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>15</integer></dict>
-        <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>15</integer></dict>
-        <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>15</integer></dict>
-        <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>15</integer></dict>
-        <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>15</integer></dict>
-        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>15</integer></dict>
-        <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>15</integer></dict>
-        <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>15</integer></dict>
-        <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>15</integer></dict>
-        <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>15</integer></dict>
-        <dict><key>Hour</key><integer>22</integer><key>Minute</key><integer>15</integer></dict>
+        <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
     </array>
 
     <key>StandardOutPath</key>
