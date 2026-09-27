@@ -1149,3 +1149,37 @@ class WhenIsAnsweredByATimeTest(unittest.TestCase):
             "What is the pay and when will that be?",
             "Our headquarters are in Irving."))
         self.assertEqual([x["kind"] for x in out], ["dodged"])
+
+
+class JobTitleAnswersTheRoleTest(unittest.TestCase):
+    """Megan 2026-09-27: "What position?" answered "This is for the Entry
+    Level Account Representative." Naming the job IS naming the role, even
+    without the word "position" in the reply."""
+
+    def _pair(self, q, a):
+        base = dt.datetime(2026, 9, 21, 9, 0)
+        return {"a": {"phone": "1", "name": "Maria", "booked": False,
+                      "booked_by": "", "outcome": "",
+                      "msgs": [
+                          {"when": base, "dir": "In", "template": "", "body": q,
+                           "sent_by": "", "source": "", "status": "Delivered"},
+                          {"when": base + dt.timedelta(minutes=2), "dir": "Out",
+                           "template": "", "body": a, "sent_by": "M",
+                           "source": "", "status": "Delivered"}]}}
+
+    def test_a_job_title_answers_what_position(self):
+        self.assertEqual(A.dodged_questions(self._pair(
+            "What position?",
+            "This is for the Entry Level Account Representative.")), [])
+
+    def test_other_titles_count_too(self):
+        for title in ("Sales Associate", "Brand Ambassador",
+                      "Appointment Setter", "Account Manager"):
+            self.assertEqual(A.dodged_questions(self._pair(
+                "What position is this for?", "It is the " + title)), [],
+                title)
+
+    def test_a_reply_naming_no_job_is_still_a_dodge(self):
+        out = A.dodged_questions(self._pair(
+            "What position?", "Our office is in Irving, see you then!"))
+        self.assertEqual([x["kind"] for x in out], ["dodged"])

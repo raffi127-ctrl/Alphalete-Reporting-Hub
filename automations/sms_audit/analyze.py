@@ -1448,6 +1448,12 @@ def spellcheck_available():
 # A reply that contains none of these did not answer what was asked — it is
 # the machine-checkable half of Megan's 2026-09-27 ask: "we need to know if
 # someone asks a direct question and the recruiter skirts around it".
+# Words that name a job. A reply that gives the title has answered "what
+# position?", whatever other vocabulary it does or does not use.
+JOB_TITLE = (r"representative|associate|assistant|manager|consultant|"
+             r"specialist|agent|advisor|coordinator|trainee|technician|"
+             r"entry.level|account exec|brand ambassador|setter|recruiter")
+
 ANSWER_KEYWORDS = {
     "What is the pay?": r"\$|\bpay|salary|hourly|commission|weekly|base|"
                         r"per hour|compensat",
@@ -1455,11 +1461,16 @@ ANSWER_KEYWORDS = {
                                              r"address|located|location|in person|"
                                              r"onsite|in-person|full-time|part-time|irving|frisco|suite|street|"
                                              r"hwy|highway",
+    # naming the job IS naming the role — "This is for the Entry Level
+    # Account Representative" answers "What position?" without using the
+    # word "position" (Megan 2026-09-27)
+    "Which role / which company is this?": r"role|position|alphalete|vantura|"
+                                           r"at&?t|company|indeed|applied|"
+                                           + JOB_TITLE,
     "What is the job / what do you do?": r"role|position|sales|marketing|"
                                          r"customer|represent|residential|"
-                                         r"campaign|entry level|account|field",
-    "Which role / which company is this?": r"role|position|alphalete|vantura|"
-                                           r"at&?t|company|indeed|applied",
+                                         r"campaign|entry level|account|field|"
+                                         + JOB_TITLE,
     "Hours, training, is it paid?": r"hour|training|paid|schedule|full.time|"
                                     r"part.time|shift|week|monday|tuesday|"
                                     r"wednesday|thursday|friday|saturday|"
