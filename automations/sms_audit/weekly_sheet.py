@@ -78,6 +78,8 @@ def _rate(n, d):
 
 
 QUESTION_REPLY_CHARS = 56
+WARN = "\u26a0"                      # the ⚠ that opens a "got no answer" line
+RED = {"red": 0.72, "green": 0.11, "blue": 0.11}
 
 
 def question_cell(rep):
@@ -120,10 +122,14 @@ def question_cell(rep):
 # entries stay for good, they cost nothing and removing one silently splits a
 # row in two the next time somebody rebuilds an old tab.
 RENAMED = {
+    'People in the normal flow': 'People not on the cold list',
+    'Minutes for the AI to reply (typical)': 'Typical wait for an AI reply (minutes)',
+    'Minutes for a person to reply (typical)': 'Typical wait for a person to reply (minutes)',
+    '% of replies by a person within 5 minutes': 'How often a person answers within 5 minutes',
     '% of THOSE who booked': '% of the followed-up group who booked',
     '% of bookings made by the AI': '% of interviews booked by the AI',
     '% of people texted who booked': '% of people we texted who booked',
-    '% of recruiter replies within 5 minutes': '% of replies by a person within 5 minutes',
+    '% of recruiter replies within 5 minutes': 'How often a person answers within 5 minutes',
     '% of them who booked': '% of blast people who booked',
     '% of them who replied': '% of blast people who replied',
     '% of those who booked': '% of the once-only group who booked',
@@ -131,7 +137,7 @@ RENAMED = {
     '% that failed — later texts to them': '% that failed — our later texts to them',
     '% who showed — recruiter bookings': '% who showed — booked by a person',
     '1st-interview days covered': 'Days of interviews in this column',
-    'AI reply, median minutes': 'Minutes for the AI to reply (typical)',
+    'AI reply, median minutes': 'Typical wait for an AI reply (minutes)',
     'AI share of bookings %': '% of interviews booked by the AI',
     'Applicants left waiting on a reply': 'Applicants left waiting 2+ hours',
     'Applicants over the carrier limit': 'Applicants texted 4+ times with no reply',
@@ -148,7 +154,7 @@ RENAMED = {
     'Interview days in this column': 'Days of interviews in this column',
     'Left unanswered': 'Applicants left waiting 2+ hours',
     'Messages sent + received': 'Total texts (sent + received)',
-    'Minutes for a recruiter to reply (typical)': 'Minutes for a person to reply (typical)',
+    'Minutes for a recruiter to reply (typical)': 'Typical wait for a person to reply (minutes)',
     'Never booked': 'People we texted who never booked',
     'Never reached them (texts failed)': 'Our texts never reached them',
     'No number on file (Dummy Phone)': 'No phone number on file (Dummy Phone)',
@@ -158,8 +164,8 @@ RENAMED = {
     'People who got 2+ texts': 'People we texted 2 or more times',
     'People who got exactly 1 text': 'People we texted only ONCE',
     'People who texted back': 'People who texted us back',
-    "Person's replies within 5 min %": '% of replies by a person within 5 minutes',
-    "Person's reply, median minutes": 'Minutes for a person to reply (typical)',
+    "Person's replies within 5 min %": 'How often a person answers within 5 minutes',
+    "Person's reply, median minutes": 'Typical wait for a person to reply (minutes)',
     'Replied to us': 'People who texted us back',
     'Reply rate %': '% who texted back',
     'Said no / not interested': 'They said no',
@@ -445,24 +451,11 @@ ROWS = [
     ("Cold list (mass text blast)", "% of blast people who replied", _lane_pct("cold", "replied")),
     ("Cold list (mass text blast)", "% of blast people who booked", _lane_pct("cold", "booked")),
 
-    ("Normal applicants (not the blast)", "People in the normal flow", _lane("live", "people")),
-    ("Normal applicants (not the blast)", "% of normal applicants who replied",
+    ("Normal applicants (not the cold list)", "People not on the cold list", _lane("live", "people")),
+    ("Normal applicants (not the cold list)", "% of normal applicants who replied",
      _lane_pct("live", "replied")),
-    ("Normal applicants (not the blast)", "% of normal applicants who booked",
+    ("Normal applicants (not the cold list)", "% of normal applicants who booked",
      _lane_pct("live", "booked")),
-
-    # Megan: "we need to know why it never reached them."
-    ("Why texts never arrive", "Carrier rejected it (Failed)", _why("Failed")),
-    ("Why texts never arrive", "Still stuck in the queue (Requeued)", _why("Requeued")),
-    ("Why texts never arrive", "No phone number on file (Dummy Phone)", _why("Dummy Phone")),
-    ("Why texts never arrive", "Ran out of SMS credits",
-     _why("Insufficient SMS Credits")),
-    ("Why texts never arrive", "Phone number not valid",
-     _why("Failed - Phone Not Valid")),
-    ("Why texts never arrive", "% that failed — our FIRST text to them",
-     _why_rate("first_rate")),
-    ("Why texts never arrive", "% that failed — our later texts to them",
-     _why_rate("later_rate")),
 
     ("Does following up work?", "People we texted only ONCE", _curve("one", "people")),
     ("Does following up work?", "% of the once-only group who booked", _curve_pct("one", "booked")),
@@ -488,11 +481,11 @@ ROWS = [
     ("When we text", "Worst hours to text (reply rate)",
      lambda r: ((r.get("log") or {}).get("funnel", {}) or {}).get("worst_hours", "")),
 
-    ("How fast we reply", "Minutes for the AI to reply (typical)",
+    ("How fast we reply", "Typical wait for an AI reply (minutes)",
      lambda r: _median((r.get("log") or {}).get("speed_ai"))),
-    ("How fast we reply", "Minutes for a person to reply (typical)",
+    ("How fast we reply", "Typical wait for a person to reply (minutes)",
      lambda r: _median((r.get("log") or {}).get("speed_human"))),
-    ("How fast we reply", "% of replies by a person within 5 minutes",
+    ("How fast we reply", "How often a person answers within 5 minutes",
      lambda r: _within5((r.get("log") or {}).get("speed_human"))),
 
     ("People we left hanging", "Applicants left waiting 2+ hours",
@@ -521,6 +514,19 @@ ROWS = [
     ("Problems to fix", "Texts that never arrived",
      lambda r: sum(v for k, v in ((r.get("log") or {}).get("delivery") or {}).items()
                    if k.lower() != "delivered") if r.get("log") else ""),
+    # Megan: "we need to know why it never reached them."
+    ("Why texts never arrive", "Carrier rejected it (Failed)", _why("Failed")),
+    ("Why texts never arrive", "Still stuck in the queue (Requeued)", _why("Requeued")),
+    ("Why texts never arrive", "No phone number on file (Dummy Phone)", _why("Dummy Phone")),
+    ("Why texts never arrive", "Ran out of SMS credits",
+     _why("Insufficient SMS Credits")),
+    ("Why texts never arrive", "Phone number not valid",
+     _why("Failed - Phone Not Valid")),
+    ("Why texts never arrive", "% that failed — our FIRST text to them",
+     _why_rate("first_rate")),
+    ("Why texts never arrive", "% that failed — our later texts to them",
+     _why_rate("later_rate")),
+
 ]
 
 
@@ -762,13 +768,16 @@ def write_week(ws, rep, week_end, dry_run=False):
     ws.batch_update([{"range": rng, "values": vals} for rng, vals in updates],
                     value_input_option="USER_ENTERED")
     _format(ws, col, next_row - 1, labels)
+    qrow = labels.get(WIDE_ROW)
+    if qrow:
+        _paint_warnings(ws, qrow, col, question_cell(rep))
     return col, len(updates)
 
 
 SECTION_TINT = {"This week": (0.86, 0.86, 0.86),
                 "When we text": (0.90, 0.94, 0.99),
                 "Cold list (mass text blast)": (0.93, 0.90, 0.86),
-                "Normal applicants (not the blast)": (0.88, 0.96, 0.90),
+                "Normal applicants (not the cold list)": (0.88, 0.96, 0.90),
                 "Why texts never arrive": (0.99, 0.91, 0.86),
                 "Why they didn't book": (0.99, 0.89, 0.89),
                 "Does following up work?": (0.89, 0.95, 0.99), "Who we texted": (0.90, 0.94, 0.99), "Interviews booked": (0.90, 0.96, 0.91),
@@ -777,6 +786,25 @@ SECTION_TINT = {"This week": (0.86, 0.86, 0.86),
                 "Problems to fix": (0.99, 0.93, 0.85)}
 WIDE_ROW = "Most asked → what we usually reply"
 WRAP_ROWS = (WIDE_ROW, "Days of interviews in this column", "ISSUES WE SEE")
+
+# Rows that fold away behind a + in the gutter (Megan 2026-09-26: "this texts
+# that never arrive section I want like a + sign expansion to see the why
+# reason breakdowns"). Each entry is a summary row and the detail rows that
+# explain it; the detail sits DIRECTLY under the summary in ROWS so the group
+# reads as an expansion of that number rather than a block that happens to
+# follow it. Collapsed by default — the point is that the tab stays short
+# until somebody asks why.
+COLLAPSIBLE = [
+    ("Texts that never arrived", [
+        "Carrier rejected it (Failed)",
+        "Still stuck in the queue (Requeued)",
+        "No phone number on file (Dummy Phone)",
+        "Ran out of SMS credits",
+        "Phone number not valid",
+        "% that failed — our FIRST text to them",
+        "% that failed — our later texts to them",
+    ]),
+]
 
 
 def is_percent(label):
@@ -846,8 +874,88 @@ def _format(ws, last_col, last_row, label_rows):
                           wrapped)
         ws.freeze(rows=HEADER_ROW, cols=2)
         _widths(ws, last_col)
+        _collapse(ws, label_rows)
     except Exception as e:  # noqa: BLE001
         print("[weekly_sheet] formatting skipped: {}".format(e), flush=True)
+
+
+def _bmp_only(text):
+    """Drop characters outside the basic plane.
+
+    textFormatRuns index by UTF-16 code unit, so one emoji in an applicant's
+    reply shifts every run after it and the red lands on the wrong words. The
+    cell is our own summary text, so dropping them costs nothing."""
+    return "".join(ch for ch in (text or "") if ord(ch) < 0x10000)
+
+
+def warning_runs(text):
+    """Format runs that paint every "⚠ … got no answer" line red and leave
+    the rest of the cell alone (Megan 2026-09-26). Returns [] when there is
+    nothing to colour, so the caller can skip the write."""
+    base = {"foregroundColor": {"red": 0, "green": 0, "blue": 0}, "bold": False}
+    red = {"foregroundColor": RED, "bold": True}
+    runs, pos, any_red = [], 0, False
+    for line in text.split("\n"):
+        if line.lstrip().startswith(WARN):
+            runs.append({"startIndex": pos + (len(line) - len(line.lstrip())),
+                         "format": red})
+            runs.append({"startIndex": pos + len(line), "format": base})
+            any_red = True
+        pos += len(line) + 1
+    if not any_red:
+        return []
+    if not runs or runs[0]["startIndex"] != 0:
+        runs.insert(0, {"startIndex": 0, "format": base})
+    # the API wants them strictly increasing, and a run past the end is an error
+    out, seen = [], set()
+    for r in sorted(runs, key=lambda r: r["startIndex"]):
+        if r["startIndex"] >= len(text) or r["startIndex"] in seen:
+            continue
+        seen.add(r["startIndex"])
+        out.append(r)
+    return out
+
+
+def _paint_warnings(ws, row, col, text):
+    """Rewrite one cell with its red runs. ws.update cannot carry formatting
+    runs, so this is a second, targeted write of the same text."""
+    runs = warning_runs(text)
+    if not runs:
+        return
+    ws.spreadsheet.batch_update({"requests": [{"updateCells": {
+        "rows": [{"values": [{"userEnteredValue": {"stringValue": text},
+                              "textFormatRuns": runs}]}],
+        "fields": "userEnteredValue,textFormatRuns",
+        "start": {"sheetId": ws.id, "rowIndex": row - 1,
+                  "columnIndex": col - 1}}}]})
+
+
+def _collapse(ws, label_rows):
+    """Fold each detail block behind a + in the row gutter.
+
+    Existing groups are removed first: re-running would otherwise stack a new
+    group on the same rows every time and the gutter would grow a column of
+    +'s. Best-effort — a sheet without grouping support still has every row,
+    just always visible."""
+    meta = ws.spreadsheet.fetch_sheet_metadata()
+    sheet = next((sh for sh in meta.get("sheets", [])
+                  if sh["properties"]["sheetId"] == ws.id), None)
+    reqs = []
+    for grp in (sheet or {}).get("rowGroups", []) or []:
+        reqs.append({"deleteDimensionGroup": {"range": dict(grp["range"],
+                                                            sheetId=ws.id)}})
+    for _summary, children in COLLAPSIBLE:
+        rows = sorted(label_rows[c] for c in children if c in label_rows)
+        if len(rows) < 2 or rows[-1] - rows[0] != len(rows) - 1:
+            continue          # not a contiguous block — grouping would be wrong
+        rng = {"sheetId": ws.id, "dimension": "ROWS",
+               "startIndex": rows[0] - 1, "endIndex": rows[-1]}
+        reqs.append({"addDimensionGroup": {"range": rng}})
+        reqs.append({"updateDimensionGroup": {
+            "dimensionGroup": {"range": rng, "depth": 1, "collapsed": True},
+            "fields": "collapsed"}})
+    if reqs:
+        ws.spreadsheet.batch_update({"requests": reqs})
 
 
 def _widths(ws, last_col):

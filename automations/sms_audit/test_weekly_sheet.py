@@ -102,7 +102,7 @@ class BlankNotZeroTest(unittest.TestCase):
         by_label = {label: fn for _s, label, fn in W.ROWS}
         self.assertEqual(by_label["People we texted"](rep), "")
         self.assertEqual(by_label["% who texted back"](rep), "")
-        self.assertEqual(by_label["Minutes for the AI to reply (typical)"](rep), "")
+        self.assertEqual(by_label["Typical wait for an AI reply (minutes)"](rep), "")
 
     def test_a_rate_over_nothing_is_blank_not_zero(self):
         self.assertEqual(W._rate(0, 0), "")
@@ -404,7 +404,7 @@ class RenameTest(unittest.TestCase):
             def get_all_values(self):
                 return [["Applicant text audit"], ["", "", "WE 9/18"],
                         ["Reach", "People texted", "100"],
-                        ["Speed", "AI reply, median minutes", "1"]]
+                        ["Speed", "Typical wait for an AI reply (minutes)", "1"]]
         col, _n = W.write_week(_Tab("t"), self._rep(), dt.date(2026, 9, 25),
                                dry_run=True)
         self.assertEqual(col, 4)   # the old week keeps its column
@@ -553,3 +553,69 @@ class RenameChainTest(unittest.TestCase):
             self.assertNotIn(old, live,
                              "{!r} is both a current row and something to rename "
                              "away from".format(old))
+
+
+class RedWarningTest(unittest.TestCase):
+    """Megan: "can we make it so this 'got no answer' is in red font." Only
+    those lines — the rest of the cell stays black."""
+
+    TXT = ("1. Pay? — asked 2x, answered 1\n"
+           "     ↳ HR covers it\n"
+           "     ⚠ 1 got no answer\n\n"
+           "2. Zoom? — asked 3x, answered 3\n"
+           "     ↳ here is the link")
+
+    def test_the_warning_line_is_red_and_the_rest_is_not(self):
+        runs = W.warning_runs(self.TXT)
+        red = [r for r in runs if r["format"].get("bold")]
+        self.assertEqual(len(red), 1)
+        self.assertTrue(self.TXT[red[0]["startIndex"]:].startswith("⚠"))
+
+    def test_the_colour_turns_off_at_the_end_of_that_line(self):
+        runs = W.warning_runs(self.TXT)
+        red = next(r for r in runs if r["format"].get("bold"))
+        after = next(r for r in runs if r["startIndex"] > red["startIndex"])
+        self.assertFalse(after["format"].get("bold"))
+        self.assertEqual(self.TXT[red["startIndex"]:after["startIndex"]].strip(),
+                         "⚠ 1 got no answer")
+
+    def test_a_cell_with_nothing_to_flag_gets_no_runs_at_all(self):
+        self.assertEqual(W.warning_runs("1. Pay? — asked 2x, answered 2"), [])
+
+    def test_runs_are_strictly_increasing_and_inside_the_text(self):
+        runs = W.warning_runs(self.TXT)
+        idx = [r["startIndex"] for r in runs]
+        self.assertEqual(idx, sorted(set(idx)))
+        self.assertTrue(all(0 <= i < len(self.TXT) for i in idx))
+
+    def test_every_warning_line_gets_its_own_run(self):
+        txt = ("1. A — asked 1x\n     ⚠ 1 got no answer\n\n"
+               "2. B — asked 1x\n     ⚠ 1 got no answer")
+        self.assertEqual(len([r for r in W.warning_runs(txt)
+                              if r["format"].get("bold")]), 2)
+
+    def test_an_emoji_cannot_shift_the_colour_onto_the_wrong_words(self):
+        # textFormatRuns index by UTF-16 unit, so one emoji in an applicant's
+        # reply would move every run after it
+        self.assertNotIn("\U0001F600", W._bmp_only("hi \U0001F600 there"))
+        self.assertEqual(W._bmp_only("café ⚠"), "café ⚠")
+
+
+class CollapsibleTest(unittest.TestCase):
+    """Megan: "this texts that never arrive section I want like a + sign
+    expansion to see the why reason breakdowns." A group only works if the
+    detail rows sit directly under the summary they explain."""
+
+    def test_every_detail_row_is_a_real_row(self):
+        live = {l for _s, l, _f in W.ROWS}
+        for summary, children in W.COLLAPSIBLE:
+            self.assertIn(summary, live, summary)
+            for c in children:
+                self.assertIn(c, live, c)
+
+    def test_the_detail_block_sits_directly_under_its_summary(self):
+        order = [l for _s, l, _f in W.ROWS]
+        for summary, children in W.COLLAPSIBLE:
+            i = order.index(summary)
+            self.assertEqual(order[i + 1:i + 1 + len(children)], children,
+                             "{!r}'s detail rows are not contiguous under it".format(summary))
