@@ -591,7 +591,25 @@ def _mirror_env(o: Office, *, manual_channel: bool) -> list:
     return _off.extra_channel_ids(o.key)
 
 
-def _mirror_gaps(client, primary_chan: str, mirror_ids: list, today: dt.date):
+# ---- The copy check is the LAST thing a run does, and the board it is most
+# likely to call missing is the one posted seconds earlier. Slack returns from
+# files_upload_v2 when the UPLOAD finishes and posts the share message once it
+# has finished PROCESSING the file (the same lag wait_for_share exists for), so
+# a thread read fired immediately after the last mirror upload can come back
+# without it. PROVEN on trang 2026-09-27: the primary got
+# ":camera_with_flash: Tableau Metrics" at ...480.50, the copy landed in
+# #freshsuccess-team at ...482.83, and this check had already called it missing
+# — an incident for a board that was in the channel the whole time.
+#
+# So a gap is only a gap once it SETTLES: re-read the short channels until the
+# window closes. Costs nothing on a clean run (the first pass finds nothing and
+# returns), and only the already-failing path waits.
+_MIRROR_SETTLE_S = 30.0
+_MIRROR_SETTLE_POLL_S = 3.0
+
+
+def _mirror_gaps(client, primary_chan: str, mirror_ids: list, today: dt.date,
+                 *, settle_s: float = _MIRROR_SETTLE_S):
     """Boards that reached the primary thread but NOT its copy in each mirror
     channel: [(channel_id, [missing first lines])].
 
@@ -610,19 +628,35 @@ def _mirror_gaps(client, primary_chan: str, mirror_ids: list, today: dt.date):
                             for m in msgs[1:]) if k]
 
     ts = smp.find_metrics_thread_ts(client, today, channel_id=primary_chan)
-    want = _keys(primary_chan, ts)
-    gaps = []
-    for dst in mirror_ids:
-        twin = smp._mirror_thread_ts(client, primary_chan, ts, dst, today,
-                                     create=False)
-        if not twin:
-            gaps.append((dst, ["(no copy of today's thread at all)"]))
-            continue
-        have = set(_keys(dst, twin))
-        missing = [k for k in dict.fromkeys(want) if k not in have]
-        if missing:
-            gaps.append((dst, missing))
-    return gaps
+    deadline = time.monotonic() + max(0.0, settle_s)
+    pending = list(mirror_ids)
+    gaps: list = []
+    while True:
+        # `want` is re-read every round, not frozen on the first pass: a primary
+        # board still settling at that moment would drop out of the wanted set
+        # and take a REAL gap for it with it — the false-green direction, which
+        # is the worse way to be wrong [[feedback_green_means_delivered]].
+        want = _keys(primary_chan, ts)
+        gaps, still = [], []
+        for dst in pending:
+            twin = smp._mirror_thread_ts(client, primary_chan, ts, dst, today,
+                                         create=False)
+            if not twin:
+                gaps.append((dst, ["(no copy of today's thread at all)"]))
+                still.append(dst)
+                continue
+            have = set(_keys(dst, twin))
+            missing = [k for k in dict.fromkeys(want) if k not in have]
+            if missing:
+                gaps.append((dst, missing))
+                still.append(dst)
+        if not still or time.monotonic() >= deadline:
+            return gaps
+        print(f"  … copy check: {len(still)} channel(s) short — re-reading in "
+              f"{_MIRROR_SETTLE_POLL_S:.0f}s (Slack may still be posting the "
+              f"last file)", flush=True)
+        pending = still
+        time.sleep(_MIRROR_SETTLE_POLL_S)
 
 
 def _run_one(label: str, cmd: list[str], env: dict) -> tuple[bool, str]:

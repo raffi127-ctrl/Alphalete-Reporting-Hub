@@ -814,6 +814,74 @@ def _bg_check_has_new_emails():
         return None
 
 
+def _declared_start_hours(cfg, target_date) -> dict:
+    """Registry ids whose EARLIEST start on `target_date` is DECLARED, per an
+    explicit `standalone_start_hour` in schedule_config. Returns {id: hour}; the
+    didn't-run branch uses it instead of the hour it guessed from the log.
+
+    `standalone_weekdays` says WHICH DAYS a plist-scheduled report runs. This says
+    WHAT TIME it runs on each of them — the other half of the same guess, and the
+    half nothing could pin until now.
+
+    WHY. `_historical_expected` carries ONE start_hour per card id, read off the
+    most recent same-weekday. That is fine for a card with one plist, and wrong
+    for a card whose modes run at different times on different days. New-Start
+    Follow-Up is the case: every mode publishes under the card id
+    `new-start-followup` — the Tue-Fri daily reminder at 09:00, the Saturday roll
+    call at 08:00, and Raf's Sunday ✅ checklist at 13:00
+    (com.alphalete.new-start-followup-sun, Weekday 0). On Sun 2026-09-20 a
+    read-only `--mode status` run landed at 09:44 alongside the real 13:00
+    checklist, so last-Sunday's EARLIEST hour was 9, and on Sun 2026-09-27 the
+    watcher posted "New-Start Follow-Up — didn't run today on the mini · usually
+    starts ~9:00" at 11:07 — two hours before the report was due, on a mini that
+    was ticking fine (its 30-minute thread-reply scan had run at 08:00, 08:31,
+    09:01 … 11:30, all exit 0). Nobody had to break anything: one stray morning
+    row on one Sunday is the whole story, and the same stray on any card with a
+    late slot tells the same lie.
+
+    SAME CLASS, DIFFERENT AXIS, so it gets the house cure: a DECLARATION, not a
+    cleverer guess (`standalone_weekdays`, `standalone_monthdays`,
+    `hand_run_only`, `logs_on_event_only` are the others).
+    [[reference_hub_signals_lie]]
+
+    Declare it as a plain hour when every day is the same:
+        "standalone_start_hour": 13
+    or per weekday (Python weekday(): Mon=0 … Sun=6) when they differ:
+        "standalone_start_hour": {"1": 9, "2": 9, "3": 9, "4": 9, "5": 8, "6": 13}
+    A weekday left out of the map keeps the historical guess, so a partial
+    declaration is safe. Exempts nothing: a report that really is missing still
+    alerts, just not before its own start time. Matched by the same
+    id/card-alias fan-out as _orchestrator_ids, since Activity rows are written
+    under the CARD id."""
+    try:
+        from automations.day_orchestrator.hub_publish import _HUB_CARD
+    except Exception:  # noqa: BLE001
+        _HUB_CARD = {}
+    try:
+        from automations.day_orchestrator.hub_coverage import CURATED_ALIAS, slug
+    except Exception:  # noqa: BLE001
+        CURATED_ALIAS, slug = {}, lambda r: r.replace("_", "-").strip("-")
+    wd = target_date.weekday()
+    out = {}
+    for rid, rep_raw in (cfg.raw.get("reports", {}) or {}).items():
+        decl = rep_raw.get("standalone_start_hour")
+        if isinstance(decl, dict):
+            # keys may be written "6" or 6 — a hand-typed JSON key is a string
+            hour = decl.get(str(wd), decl.get(wd))
+        elif isinstance(decl, bool):
+            hour = None          # a typo'd true/false is not an hour
+        elif isinstance(decl, int):
+            hour = decl
+        else:
+            hour = None
+        if not isinstance(hour, int) or isinstance(hour, bool) or not 0 <= hour <= 23:
+            continue             # not declared for today → keep the guess
+        for cand in (rid, _HUB_CARD.get(rid), CURATED_ALIAS.get(rid), slug(rid)):
+            if cand:
+                out[cand] = hour
+    return out
+
+
 def _historical_expected(rows, target_date, lookback_weeks: int = 3, min_days: int = 2,
                          daily_window: int = 7, daily_min_days: int = 5):
     """Which reports NORMALLY run on this weekday — the baseline for 'didn't run at
@@ -1415,9 +1483,14 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
     #    Orchestrator reports are skipped: the day orchestrator fires its own
     #    "didn't run today" (MISSED) alert at the noon backstop.
     now = dt.datetime.now()
+    declared_hours = _declared_start_hours(cfg, target_date)
     for cid, info in _historical_expected(rows, target_date).items():
         if cid in ran_ids or cid in skip or cid in already or cid in offday:
             continue
+        # A DECLARED start time beats the one read off the log (see
+        # _declared_start_hours): one stray early row must not move the deadline.
+        if cid in declared_hours:
+            info = dict(info, start_hour=declared_hours[cid])
         if now.hour < info["start_hour"] + _DIDNT_RUN_GRACE_HOURS:
             continue   # too early to call it missing
         # An event-driven report (bg_check_sync) with no run today usually just

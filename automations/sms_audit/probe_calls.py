@@ -193,6 +193,21 @@ def main(argv=None):
                 page.wait_for_timeout(2500)
                 shape = _page_shape(page)
                 _emit(rows, "  after submit: {} grid rows".format(shape["rows"]))
+                # The Activity column came back holding only "First Interview
+                # Date" and "Second Interview Date" — calendar bookings, no
+                # call outcome. Before concluding the page cannot answer the
+                # call question, read what its OWN filter says it can show:
+                # if "No Answer" or "Left Message" is in the dropdown, the
+                # report can produce them and the default view simply does
+                # not. If it is not there, the page is a booking log.
+                opts = page.evaluate(
+                    r"""() => [...document.querySelectorAll('select')].map(sel => ({
+                          name: sel.name || sel.id || '?',
+                          options: [...sel.options].map(o => (o.text || '').trim())
+                                     .filter(Boolean).slice(0, 60)}))""")
+                for sel in opts:
+                    _emit(rows, "  SELECT {}: {}".format(
+                        sel["name"], " | ".join(sel["options"])[:900]))
                 _emit(rows, "  HEADER : {}".format(shape["header"][:700]))
                 for smp in shape["sample"]:
                     _emit(rows, "  row    : {}".format(smp[:700]))
