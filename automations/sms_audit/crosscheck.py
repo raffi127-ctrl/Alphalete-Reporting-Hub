@@ -28,6 +28,12 @@ Getting that wrong by one day is the same mistake the report is checking for,
 so the days are named in the output and printed beside the totals.
 
 READ-ONLY. Writes nothing — not the sheet, not Slack, not a tab.
+
+WHERE IT CAN RUN. The AppStream session lives on Lucy 2; the per-week booking
+files are written wherever the backfill ran. So a run on Lucy 2 can only
+compare the weeks whose files that machine happens to hold, and it says which
+offices it skipped rather than reporting a pass it did not earn. To compare
+every week, run the backfill and this on the same machine.
 """
 from __future__ import annotations  # Lucy 2 runs Python 3.9 — keep lazy
 
@@ -120,6 +126,7 @@ def main(argv=None):
             sun, ", ".join(d.strftime("%a %m/%d") for d in days)), flush=True)
 
     bad = 0
+    compared, skipped = [], []
     with appstream_direct_session(verbose=True) as page:
         page.wait_for_timeout(3000)
         page.wait_for_selector("#searchMC", timeout=20000)
@@ -134,9 +141,11 @@ def main(argv=None):
                 su += u
             mine, shown, src = ours(office, lo, hi, a.suffix)
             if mine is None:
-                print("[crosscheck] {}: no local pull to compare ({})".format(
-                    office, src), flush=True)
+                print("[crosscheck] {}: NOT COMPARED — no local pull for this "
+                      "week ({})".format(office, src), flush=True)
+                skipped.append(office)
                 continue
+            compared.append(office)
             ok_b = abs(sch - mine) <= TOLERANCE
             ok_s = abs(su - shown) <= TOLERANCE
             bad += (not ok_b) + (not ok_s)
@@ -146,11 +155,24 @@ def main(argv=None):
             print("             {}  showed: AppStream {} vs ours {}  {}"
                   .format(" " * len(office), su, shown,
                           "ok" if ok_s else "MISMATCH"), flush=True)
-    print("\n[crosscheck] {}".format(
-        "every office agrees with AppStream's own count" if not bad
-        else "{} figure(s) DISAGREE — the pull is missing or double-counting "
-             "days".format(bad)), flush=True)
-    return 1 if bad else 0
+    # Say what was actually checked. "Every office agrees" printed on its own
+    # reads identically whether four offices matched or none were compared at
+    # all, and a run that compared nothing is the one most worth noticing.
+    print("\n[crosscheck] compared {} ({}), skipped {} ({})".format(
+        len(compared), ", ".join(compared) or "none",
+        len(skipped), ", ".join(skipped) or "none"), flush=True)
+    if bad:
+        print("[crosscheck] {} figure(s) DISAGREE — the pull is missing or "
+              "double-counting days".format(bad), flush=True)
+        return 1
+    if not compared:
+        print("[crosscheck] NOTHING WAS COMPARED — this is not a pass. The "
+              "per-week booking files live where the backfill ran; this "
+              "machine has only whatever its own tabs last held.", flush=True)
+        return 1
+    print("[crosscheck] the {} office(s) compared agree with AppStream's own "
+          "count".format(len(compared)), flush=True)
+    return 0
 
 
 if __name__ == "__main__":
