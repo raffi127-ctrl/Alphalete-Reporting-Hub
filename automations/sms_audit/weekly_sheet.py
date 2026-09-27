@@ -87,6 +87,14 @@ WIDE_ROW = "Most asked → what we usually reply"
 WRAP_ROWS = (WIDE_ROW,)
 # a per-person row carries their own texts, so it wraps too
 PERSON_PREFIX = "\u2014 "
+# A sender appears in BOTH per-person sections, and rows are found by label —
+# so the two need different ones or the second is silently skipped as
+# already present.
+PERSON_SUFFIX = {"errors": "", "dodged": " (questions)"}
+
+
+def person_label(sender, which):
+    return "{}{}{}".format(PERSON_PREFIX, sender, PERSON_SUFFIX[which])
 # Wrapped like the questions cell, but centred, bold and a size up: it is a
 # two-line header for the whole column, not a paragraph to read through
 # (Megan 2026-09-27).
@@ -373,7 +381,7 @@ def build_rows(rep):
             continue
         kids = []
         for sender, entries in by_person(rep, which).items():
-            child = PERSON_PREFIX + sender
+            child = person_label(sender, which)
             rows.append((section, child,
                          (lambda es, w: lambda _r: person_cell(es, w))(entries, which)))
             kids.append(child)
@@ -865,6 +873,21 @@ def _week_columns(values):
     return out
 
 
+CELL_RE = re.compile(r"^([A-Z]+)(\d+)$")
+
+
+def _is_cell(ref):
+    return bool(CELL_RE.match(ref))
+
+
+def _shift(ref, at):
+    """Move an A1 reference down one row when it sits at or below `at` — the
+    pending writes were addressed before the insert moved their rows."""
+    m = CELL_RE.match(ref)
+    col, row = m.group(1), int(m.group(2))
+    return "{}{}".format(col, row + 1 if row >= at else row)
+
+
 def _a1(row, col):
     letters = ""
     while col:
@@ -923,12 +946,36 @@ def write_week(ws, rep, week_end, dry_run=False):
     if not values or not (values[0] and str(values[0][0]).strip()):
         updates.append(("A1", [["Applicant text audit — one row per metric, "
                                 "one column per recruiting week (Sat–Fri)"]]))
+    # A label that does not exist yet has to be INSERTED where it belongs,
+    # not appended. The per-person rows only appear once a log has been
+    # pulled, so on a tab that already holds an earlier week they would land
+    # under everything else — Megan 2026-09-27 found four of them stranded
+    # below "Problems to fix" instead of inside "Text quality". Appending is
+    # still right for a brand-new row at the end of the layout.
     next_row = max(len(values), HEADER_ROW) + 1
-    for section, label, _fn in rows_spec:
-        if label not in labels:
-            labels[label] = next_row
-            updates.append((_a1(next_row, 1), [[section, label]]))
+    for i, (section, label, _fn) in enumerate(rows_spec):
+        if label in labels:
+            continue
+        before = next((labels[l] for _s, l, _f in reversed(rows_spec[:i])
+                       if l in labels), None)
+        at = (before + 1) if before is not None else next_row
+        if before is not None and at <= max(labels.values(), default=0):
+            if not dry_run:
+                ws.spreadsheet.batch_update({"requests": [{"insertDimension": {
+                    "range": {"sheetId": ws.id, "dimension": "ROWS",
+                              "startIndex": at - 1, "endIndex": at},
+                    "inheritFromBefore": True}}]})
+            for k in list(labels):
+                if labels[k] >= at:
+                    labels[k] += 1
+            updates = [((_shift(r, at)) if _is_cell(r) else r, v)
+                       for r, v in updates]
             next_row += 1
+        else:
+            at = next_row
+            next_row += 1
+        labels[label] = at
+        updates.append((_a1(at, 1), [[section, label]]))
 
     # --- the week's column ---
     col = weeks.get(week_end)
@@ -981,7 +1028,7 @@ def write_week(ws, rep, week_end, dry_run=False):
         _paint_warnings(ws, qrow, col, question_cell(rep))
     for which in ("errors", "dodged"):
         for sender, entries in by_person(rep, which).items():
-            r = labels.get(PERSON_PREFIX + sender)
+            r = labels.get(person_label(sender, which))
             if not r:
                 continue
             text = person_cell(entries, which)

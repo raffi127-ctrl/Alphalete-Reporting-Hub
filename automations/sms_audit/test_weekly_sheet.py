@@ -782,3 +782,32 @@ class PerPersonRowTest(unittest.TestCase):
         rows, groups = W.build_rows(rep)
         self.assertEqual(groups, [])
         self.assertFalse([l for _s, l, _f in rows if l.startswith("— S")])
+
+
+class PersonLabelCollisionTest(unittest.TestCase):
+    """The same sender turns up in both per-person sections. Rows are found
+    by label, so without distinct labels the second section's row is
+    silently skipped as already present — Sandy had a spelling row and no
+    dodged row at all."""
+
+    def test_the_two_sections_give_a_sender_different_labels(self):
+        self.assertNotEqual(W.person_label("Sandy", "errors"),
+                            W.person_label("Sandy", "dodged"))
+
+    def test_both_rows_are_built_for_one_sender(self):
+        rep = {"log": {"errors": [{"kind": "spelling", "sender": "Sandy",
+                                   "body": "onny", "detail": "onny → only",
+                                   "name": "J"}],
+                       "dodged": [{"kind": "dodged", "sender": "Sandy",
+                                   "name": "J", "question": "pay?",
+                                   "reply": "call us", "bucket": "What is the pay?"}],
+                       "funnel": {"drop": {}, "curve": {}, "delivery": {},
+                                  "lanes": {}, "windows": {}}},
+               "anomalies": {}, "questions": __import__("collections").Counter(),
+               "questions_other": [], "questions_total": 0, "question_table": [],
+               "unanswered": [], "messages": 5, "threads": 1,
+               "mix": {"ai": 0, "human": 1}, "dates": ["09-25-2026"]}
+        rows, groups = W.build_rows(rep)
+        labels = [l for _s, l, _f in rows]
+        self.assertEqual(len(labels), len(set(labels)))
+        self.assertEqual(len(groups), 2)
