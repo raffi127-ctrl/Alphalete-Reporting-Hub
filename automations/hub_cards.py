@@ -912,12 +912,17 @@ AUTOMATED_REPORTS = [
         "emoji": "🛰️",
         # Alphalete red — this is the ICD-facing ecosystem, not an internal report.
         "color": "#B91C1C",
-        # Lucy 3 HOLDS LUCY REPORTING'S SLACK USER TOKEN, and that is the whole
-        # reason this runs there. post.py refuses to --send unless auth_test()
-        # returns Lucy Reporting, so a wrong box fails loudly rather than
-        # posting every ICD's alerts under Megan's name.
-        "assignees": ["Lucy 3"],
-        "run_machine": "Lucy 3",
+        # LUCY 1 SINCE 2026-09-22 (this said Lucy 3 until 2026-09-27, and the
+        # "didn't run today" ticket's paste block sent a reader to check a
+        # LaunchAgent on a box that no longer has one). It moved because the
+        # poster also TEXTS boards and standings, and texts from Lucy 3 reached
+        # some phones and not others; Lucy 1 is the fleet's iMessage box. Lucy 1
+        # also HOLDS LUCY REPORTING'S SLACK USER TOKEN -- post.py refuses to
+        # --send unless auth_test() returns Lucy Reporting, so a wrong box fails
+        # loudly rather than posting every ICD's alerts under Megan's name.
+        # Lucy 1 is the original Mac mini, so alerts about it say "the mini".
+        "assignees": ["Lucy 1"],
+        "run_machine": "Lucy 1",
         # NO run_rerun_id ON PURPOSE. The only registered action is
         # install_icd_alerts_poster_agent, which reinstalls the LaunchAgent --
         # not a re-run of the report. A button that silently reinstalls when
@@ -926,7 +931,10 @@ AUTOMATED_REPORTS = [
         "schedule": {
             "frequency": "daily",
             "time": "8:00 AM",
-            "time_label": "every 2 min · 8 AM–11 PM · Mon–Sat",
+            # Ticks EVERY DAY (StartInterval 60, 8 AM–11 PM). Sunday posts no
+            # numbers -- in_field_hours is False for every office -- so the
+            # label says Mon–Sat, which is when an owner actually hears from it.
+            "time_label": "every minute · 8 AM–11 PM · numbers Mon–Sat",
             "estimated_minutes": 1,
         },
         "description": (
