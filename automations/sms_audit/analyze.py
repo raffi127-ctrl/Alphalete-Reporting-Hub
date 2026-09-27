@@ -824,6 +824,7 @@ def _dropoff_inner(convos, too_soon):
     Plus the follow-up curve, which is the finding in Raf's office: people
     who got ONE text booked at 0%, people who got two or more booked at 47%."""
     out = collections.Counter()
+    why = collections.Counter()
     for c in convos.values():
         if c["booked"]:
             continue
@@ -835,6 +836,13 @@ def _dropoff_inner(convos, too_soon):
         ins = [m for m in msgs if m["dir"] == "In"]
         if outs and not any((m.get("status") or "").lower() == "delivered" for m in outs):
             out["never reached them"] += 1
+            # tallied HERE, on exactly the people this bucket holds, so the
+            # breakdown always sums to its parent. Computed separately it did
+            # not: the parent applies the too-recent hold-out and a second
+            # pass over the same conversations did not, so the rows under
+            # "Our texts never reached them" added up to more than it.
+            worst = collections.Counter((m.get("status") or "?").strip() for m in outs)
+            why[worst.most_common(1)[0][0]] += 1
         elif ins and any(SAID_NO.search(m["body"] or "") for m in ins):
             out["said no"] += 1
         elif not ins:
@@ -855,7 +863,7 @@ def _dropoff_inner(convos, too_soon):
             "replied": sum(1 for c in grp if any(m["dir"] == "In" for m in c["msgs"])),
             "booked": sum(1 for c in grp if c["booked"]),
         }
-    return {"buckets": out, "curve": curve}
+    return {"buckets": out, "curve": curve, "unreached_why": why}
 
 
 MASS_SOURCE = "Mass SMS"
@@ -988,29 +996,6 @@ POST_BOOKING_TEMPLATES = {
 }
 
 
-def unreached_reasons(convos):
-    """For the PEOPLE we never reached, why — counted per person, not per
-    text (Megan 2026-09-26: "there should be a + expansion here of why they
-    didn't get reached").
-
-    Deliberately a different cut from delivery_reasons(): that one counts
-    messages across everybody, this one counts the applicants for whom every
-    single text failed, filed under whatever went wrong most often for them.
-    Someone whose four texts all bounced is ONE lost applicant, not four."""
-    out = collections.Counter()
-    for c in convos.values():
-        if c.get("booked"):
-            continue
-        outs = [m for m in c["msgs"] if m["dir"] == "Out"]
-        if not outs:
-            continue
-        if any((m.get("status") or "").strip().lower() == "delivered" for m in outs):
-            continue
-        worst = collections.Counter((m.get("status") or "?").strip() for m in outs)
-        out[worst.most_common(1)[0][0]] += 1
-    return out
-
-
 def texts_to_book(convos):
     """How many texts it takes to get a first interview on the calendar.
 
@@ -1139,11 +1124,12 @@ def audit_log(rows, convos, office, booked=None):
     fun["delivery"] = delivery_reasons(rows)
     fun["windows"] = send_windows(convos)
     fun["to_book"] = texts_to_book(convos)
-    fun["unreached"] = unreached_reasons(convos)
+
     fun["best_hours"] = best_hours_label(convos)
     fun["worst_hours"] = worst_hours_label(convos)
     drop = dropoff(convos)
     fun["drop"] = drop["buckets"]
+    fun["unreached"] = drop["unreached_why"]
     fun["curve"] = drop["curve"]
     fun["booked_rows"] = len(booked or {})
     speeds = log_reply_speed(convos)

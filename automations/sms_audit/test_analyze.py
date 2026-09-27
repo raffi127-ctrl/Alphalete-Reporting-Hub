@@ -774,3 +774,41 @@ class TextsToBookTest(unittest.TestCase):
             (0, "Out", ""), (10, "Out", "First Interview Confirmation"),
             (20, "Out", ""), (30, "Out", "Directions")])})
         self.assertEqual(out["average"], 1.0)
+
+
+class BreakdownSumsToParentTest(unittest.TestCase):
+    """A + expansion that does not add up to the row above it is worse than
+    no expansion. The unreachable reasons are tallied inside the same loop
+    that fills the bucket, so they cannot drift — computed separately they
+    did: the parent applied the too-recent hold-out and the second pass did
+    not, and 87 expanded into 110."""
+
+    def _c(self, day, statuses, booked=False):
+        base = dt.datetime(2026, 9, day, 9, 0)
+        return {"phone": "469876212%d" % day, "name": "x", "booked": booked,
+                "booked_by": "", "outcome": "",
+                "msgs": [{"when": base + dt.timedelta(minutes=i * 10), "dir": "Out",
+                          "template": "", "body": "x", "sent_by": "", "source": "",
+                          "status": st} for i, st in enumerate(statuses)]}
+
+    def test_the_reasons_add_up_to_the_bucket(self):
+        convos = {"a": self._c(21, ["Failed", "Failed"]),
+                  "b": self._c(22, ["Requeued"]),
+                  "c": self._c(23, ["Dummy Phone"])}
+        d = A.dropoff(convos, window_end=dt.date(2026, 9, 30))
+        self.assertEqual(sum(d["unreached_why"].values()),
+                         d["buckets"]["never reached them"])
+
+    def test_a_held_out_person_is_in_neither(self):
+        # texted on the last day: too recent to judge, so not in the bucket
+        # AND not in the breakdown
+        convos = {"late": self._c(25, ["Failed"])}
+        d = A.dropoff(convos, window_end=dt.date(2026, 9, 25))
+        self.assertEqual(d["buckets"].get("never reached them", 0), 0)
+        self.assertEqual(sum(d["unreached_why"].values()), 0)
+
+    def test_a_person_is_filed_under_their_commonest_failure(self):
+        convos = {"a": self._c(21, ["Failed", "Failed", "Requeued"])}
+        d = A.dropoff(convos, window_end=dt.date(2026, 9, 30))
+        self.assertEqual(d["unreached_why"]["Failed"], 1)
+        self.assertEqual(d["unreached_why"]["Requeued"], 0)
