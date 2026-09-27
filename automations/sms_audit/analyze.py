@@ -1377,6 +1377,52 @@ def _known(word, words):
     return False
 
 
+def _same_copy(body, name):
+    """One saved message, however many people it went to.
+
+    Strip the applicant's own name out of it, drop everything that is not a
+    letter, and lowercase the rest. "Hey Preston , …" and "Hey Cassandra , …"
+    then collapse to one piece of copy, which is what they are."""
+    out = body or ""
+    for part in (name or "").split():
+        if len(part) > 2:
+            out = re.sub(re.escape(part), " ", out, flags=re.I)
+    # Then keep only the words that START LOWERCASE. Stripping the name off
+    # the conversation record is not enough on its own — 13 of Dante's 565
+    # went to applicants with no name stored, so "Christopher" stayed in and
+    # each one keyed as its own message. Names are capitalised and the rest
+    # of a saved line is not, so the lowercase words ARE the copy's
+    # signature, and they are identical however the greeting ends.
+    return " ".join(w.lower() for w in re.findall(r"[A-Za-z'\u2019]+", out)
+                    if w[:1].islower())
+
+
+def _fold_repeats(found):
+    """Collapse the same mistake in the same copy by the same person into ONE
+    entry carrying how many people it went to.
+
+    Megan 2026-09-27, on Raf's 565 lowercase-'i' texts: count the things
+    there are to FIX, not the sends. Those 565 were SIX messages — 560 of
+    them one saved line of Dante's ("…so i wanted to see you were still on
+    the job search…"). Counted per send, one sentence nobody had fixed read
+    as a team-wide collapse in writing standards, and buried the 34 genuinely
+    separate mistakes in Carlos's office underneath it.
+
+    A template is already skipped upstream. This catches the copy that
+    behaves like one without being filed as one — which is most of it."""
+    out = collections.OrderedDict()
+    for e in found:
+        key = (e["sender"], e["kind"], e["detail"],
+               _same_copy(e["body"], e.get("name")))
+        if key in out:
+            out[key]["sent"] += 1
+        else:
+            e = dict(e)
+            e["sent"] = 1
+            out[key] = e
+    return list(out.values())
+
+
 def text_errors(convos):
     """Outbound messages a person typed that read as mistakes, with WHO sent
     them (Megan 2026-09-27: "can you see if there are any texts that are
@@ -1391,6 +1437,9 @@ def text_errors(convos):
 
     Templates are skipped — a mistake in one of those is a template to fix,
     not a person's typing, and it would otherwise be reported once per send.
+    Copy that behaves like a template without being filed as one is folded
+    the same way by `_fold_repeats`: one entry per distinct wording, carrying
+    a `sent` count. The number on the sheet is things to fix, not sends.
     """
     typed = []
     for c in convos.values():
@@ -1487,7 +1536,7 @@ def text_errors(convos):
         if LONE_I.search(body):
             found.append({"kind": "lowercase i", "sender": who, "body": body,
                           "detail": "i", "name": c.get("name", "")})
-    return found
+    return _fold_repeats(found)
 
 
 def spellcheck_available():

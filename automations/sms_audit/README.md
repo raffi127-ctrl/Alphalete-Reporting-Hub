@@ -194,3 +194,29 @@ log passed silently — each half internally fine, the column quietly mixing
 two weeks. That is how WE 9/4 once took its reply speeds and questions from
 WE 9/25, and it was caught by eye, not by code. `build_report` now stamps the
 log's own span onto the report as `log_window`, and both feed `data_window`.
+
+## The Text quality rows count WORDINGS, not sends
+
+Megan 2026-09-27, on Raf's 565 lowercase-'i' texts: count the things there
+are to **fix**. Those 565 were six messages — 560 of them one saved line of
+Dante's ("…so **i** wanted to see you were still on the job search…"). Per
+send, one unfixed sentence read as a team-wide collapse in writing standards
+and buried the 34 genuinely separate mistakes in Carlos's office.
+
+`_fold_repeats` collapses the same mistake in the same copy by the same
+person into one entry carrying a `sent` count, and the fold prints "this same
+message went to 564 people". The **signature is the lowercase words**:
+stripping the applicant's name off the conversation record is not enough on
+its own, because 13 of those 564 went to applicants with no name stored, so
+the name stayed in the body and each keyed as its own message. Names are
+capitalised and the rest of a saved line is not.
+
+Two knock-on changes fell out of it:
+
+- **Lowercase 'i' is listed in the fold again.** It was counted but hidden,
+  because 565 of them was one habit to raise rather than 565 lines to read.
+  Folded it is two lines — and it had to come back, because the single worst
+  item in Raf's office IS a lowercase 'i'.
+- **"Worst offender" means most applicants affected**, not most entries.
+  Counting entries put Dante last on one mistake when that mistake reached
+  564 people and everything above it reached one each.

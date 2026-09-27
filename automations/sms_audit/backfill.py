@@ -63,11 +63,70 @@ def _env():
     return os.environ.copy()
 
 
+CONTROL_TAB = "Mini Control - {}".format(MACHINE)
+TERMINAL = ("done", "failed")
+
+
 def enqueue(action_args):
     out = _run(["automations.day_orchestrator.mini_control", "--by", "Megan",
                 "--enqueue"] + action_args + ["--machine", MACHINE])
     print("   queued: {}".format(" ".join(action_args))[:200], flush=True)
     return out.returncode == 0
+
+
+def _queue_rows():
+    from automations.recruiting_report import fill as _fill
+    try:
+        ws = _fill._client().open_by_key(CONTROL_SHEET_ID).worksheet(CONTROL_TAB)
+        return ws.get_all_records()
+    except Exception as e:  # noqa: BLE001 — a transient read must not end the run
+        # Said out loud: an empty read and a job still running look the same
+        # to the caller, and this sheet does hit its 60-reads-a-minute cap
+        # while a pull is writing thousands of rows into it.
+        print("   (queue read failed: {} — retrying)".format(
+            type(e).__name__), flush=True)
+        return []
+
+
+def wait_queue(args_text, minutes=WAIT_MINUTES):
+    """Block until the newest queue row carrying `args_text` has FINISHED.
+
+    The tab meta alone cannot tell a job that is still running from one that
+    ran and wrote nothing: a pull that scrapes no rows leaves the tab alone
+    on purpose, so its meta never advances and a meta-only wait burns the
+    whole timeout on a job that ended minutes ago. That cost 40 minutes a
+    week on 24065, which is a new account with no bookings that far back.
+
+    So the queue answers "is it over" and the meta answers "which week is in
+    the tab" — the second is still the only thing safe to download from."""
+    deadline = time.time() + minutes * 60
+    while time.time() < deadline:
+        hits = [r for r in _queue_rows() if args_text in str(r.get("Args", ""))]
+        if hits:
+            status = str(hits[-1].get("Status", "")).strip().lower()
+            if status in TERMINAL:
+                print("   queue says {} ({})".format(status, args_text[:60]),
+                      flush=True)
+                return status
+        time.sleep(POLL_SECONDS)
+    print("   queue never finished after {} min".format(minutes), flush=True)
+    return "timeout"
+
+
+def fresh_tabs(tabs, want):
+    """Of `tabs`, the ones whose meta now names the week we asked for.
+
+    A tab that did not advance is NOT an error — an office with no bookings
+    in that week leaves its tab untouched by design. It is skipped for the
+    week and said out loud, rather than downloaded and filed under a column
+    it did not come from."""
+    ok, stale = [], []
+    for t in tabs:
+        (ok if want in _tab_meta(t) else stale).append(t)
+    for t in stale:
+        print("   {} did not advance — no data for this week, skipping"
+              .format(t), flush=True)
+    return ok
 
 
 def _tab_meta(tab):
@@ -78,25 +137,6 @@ def _tab_meta(tab):
         return ws.acell("A1").value or ""
     except Exception:  # noqa: BLE001 — tab not created yet
         return ""
-
-
-def wait_for(tabs, want, minutes=WAIT_MINUTES):
-    """Block until every tab's meta line mentions `want` (the week's dates).
-
-    Waiting on the META rather than on the queue row is deliberate: the queue
-    says a job finished, the meta says WHICH WEEK is now sitting in the tab,
-    and only the second one is safe to download."""
-    deadline = time.time() + minutes * 60
-    while time.time() < deadline:
-        missing = [t for t in tabs if want not in _tab_meta(t)]
-        if not missing:
-            return True
-        print("   waiting on {} ({} left)".format(
-            ", ".join(missing[:3]), len(missing)), flush=True)
-        time.sleep(POLL_SECONDS)
-    print("   TIMED OUT after {} min — {} still stale".format(minutes, missing),
-          flush=True)
-    return False
 
 
 def download(prefix, tab_prefix, office, tag):
@@ -156,22 +196,42 @@ def main(argv=None):
         started = dt.datetime.now()
         print("\n[backfill] === week ending {} (tag {}) ===".format(hi, tag),
               flush=True)
+        filed = list(offices)
         if not a.skip_pull:
+            dump_args = ("sms_thread_dump --office {} --bookings-only --week {}"
+                         .format(olist, back))
             enqueue(["rerun", "sms_thread_dump", "--office", olist,
                      "--bookings-only", "--week", str(back)])
-            wait_for(["SMS Dump {}".format(o) for o in offices], str(hi.strftime("%m-%d-%Y")))
+            wait_queue(dump_args)
+            ready = fresh_tabs(["SMS Dump {}".format(o) for o in offices],
+                               hi.strftime("%m-%d-%Y"))
+            got = {t.rsplit(" ", 1)[1] for t in ready}
             for o in offices:
+                if o not in got:
+                    continue
                 n = download("sms_thread_dump", "SMS Dump", o, tag)
                 print("   {} bookings → {}".format(n, o), flush=True)
 
+            log_args = "sms_log --office {} --week {}".format(olist, back)
             enqueue(["rerun", "sms_log", "--office", olist, "--week", str(back)])
-            wait_for(["SMS Log {}".format(o) for o in offices],
-                     "{}..{}".format(lo.strftime("%m-%d-%Y"), hi.strftime("%m-%d-%Y")))
+            wait_queue(log_args)
+            ready = fresh_tabs(["SMS Log {}".format(o) for o in offices],
+                               "{}..{}".format(lo.strftime("%m-%d-%Y"),
+                                               hi.strftime("%m-%d-%Y")))
+            got_log = {t.rsplit(" ", 1)[1] for t in ready}
             for o in offices:
+                if o not in got_log:
+                    continue
                 n = download("sms_log", "SMS Log", o, tag)
                 print("   {} messages → {}".format(n, o), flush=True)
+            # an office needs BOTH halves of the week to be filed at all
+            filed = [o for o in offices if o in got and o in got_log]
+            for o in offices:
+                if o not in filed:
+                    print("   {}: no data for this week — column left alone"
+                          .format(o), flush=True)
 
-        for o in offices:
+        for o in filed:
             r = _run(["automations.sms_audit.weekly_sheet", "--office", o,
                       "--week", str(back), "--suffix", tag])
             line = [x for x in (r.stdout or "").splitlines()

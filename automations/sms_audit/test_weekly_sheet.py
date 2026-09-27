@@ -790,10 +790,31 @@ class PerPersonRowTest(unittest.TestCase):
         kids = dict(groups)["Texts using lowercase 'i'"]
         self.assertEqual(kids[0], "— Sandy")      # 3 issues vs Jorge's 1
 
-    def test_lowercase_i_is_counted_but_not_shown_in_the_cell(self):
+    def test_lowercase_i_is_listed_like_every_other_mistake(self):
+        # It used to be counted but hidden — 565 in a week was one habit to
+        # raise, not 565 lines to read. Once repeated copy folds into one
+        # entry per wording that is two lines, and the worst single item in
+        # Raf's office IS a lowercase i, so hiding it hid the only fix.
         entries = W.by_person(self._rep(), "errors")["Sandy"]
-        self.assertEqual(len(entries), 3)         # the lowercase i is excluded
-        self.assertNotIn("i will", W.person_cell(entries, "errors"))
+        self.assertEqual(len(entries), 4)
+        self.assertIn("i will", W.person_cell(entries, "errors"))
+
+    def test_the_fold_says_how_many_people_one_message_went_to(self):
+        rep = self._rep()
+        for e in rep["log"]["errors"]:
+            if e["sender"] == "Jorge":
+                e["sent"] = 564
+        cell = W.person_cell(W.by_person(rep, "errors")["Jorge"], "errors")
+        self.assertIn("went to 564 people", cell)
+        self.assertIn("sent 564 times in all", cell)
+
+    def test_worst_offender_is_the_one_who_reached_most_people(self):
+        # One mistake sent to 564 outranks three sent to one person each:
+        # it is one fix, and it is the one that reached the office.
+        rep = self._rep()
+        for e in rep["log"]["errors"]:
+            e["sent"] = 564 if e["sender"] == "Jorge" else 1
+        self.assertEqual(list(W.by_person(rep, "errors"))[0], "Jorge")
 
     def test_a_persons_cell_reds_their_own_mistakes(self):
         entries = W.by_person(self._rep(), "errors")["Jorge"]

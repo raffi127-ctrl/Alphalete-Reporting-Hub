@@ -1244,3 +1244,58 @@ class SpellcheckPrecisionTest(unittest.TestCase):
             "¿A qué correo te envío el enlace de Zoom?"), [])
         self.assertEqual(self._spellings(
             "Te dejaron entrar de nuevo pero no respondiste."), [])
+
+
+class FoldRepeatsTest(unittest.TestCase):
+    """Megan 2026-09-27: count the things there are to FIX, not the sends.
+
+    Raf's 565 lowercase-'i' texts were six messages — 560 of them one saved
+    line of Dante's. Per send, one unfixed sentence read as a team-wide
+    collapse in writing standards and buried Carlos's 34 separate mistakes."""
+
+    COPY = ("Hey {} , I tried calling a few times about your application. "
+            "My names Dani, so i wanted to see you were still looking?")
+
+    def _e(self, name, sender="Dante", kind="lowercase i", detail="i"):
+        return {"kind": kind, "sender": sender, "detail": detail,
+                "body": self.COPY.format(name), "name": name}
+
+    def test_one_saved_line_to_many_people_is_one_entry(self):
+        got = A._fold_repeats([self._e("Preston"), self._e("Cassandra"),
+                               self._e("Mia")])
+        self.assertEqual(len(got), 1)
+        self.assertEqual(got[0]["sent"], 3)
+
+    def test_it_folds_even_when_no_name_is_on_record(self):
+        # 13 of Dante's 564 went to applicants with no name stored, so the
+        # name stayed in the body and each keyed as its own message.
+        a, b = self._e("Preston"), self._e("Christopher")
+        b["name"] = ""
+        self.assertEqual(len(A._fold_repeats([a, b])), 1)
+
+    def test_two_people_sending_the_same_copy_stay_apart(self):
+        a, b = self._e("Preston"), self._e("Preston", sender="Leticia")
+        got = A._fold_repeats([a, b])
+        self.assertEqual(len(got), 2)
+        self.assertEqual({x["sent"] for x in got}, {1})
+
+    def test_two_different_mistakes_in_one_message_stay_apart(self):
+        a = self._e("Preston")
+        b = self._e("Preston", kind="spelling", detail="intrested → interested")
+        self.assertEqual(len(A._fold_repeats([a, b])), 2)
+
+    def test_genuinely_different_messages_are_not_merged(self):
+        a = self._e("Preston")
+        b = dict(a, body="Your welcome, see you then")
+        self.assertEqual(len(A._fold_repeats([a, b])), 2)
+
+    def test_every_entry_carries_a_sent_count(self):
+        for e in A._fold_repeats([self._e("Preston")]):
+            self.assertEqual(e["sent"], 1)
+
+    def test_the_signature_ignores_capitalised_words_only(self):
+        # names are capitalised; the copy's lowercase words are its identity
+        self.assertEqual(A._same_copy("Hey Preston , so i wanted", ""),
+                         A._same_copy("Hey Cassandra , so i wanted", ""))
+        self.assertNotEqual(A._same_copy("so i wanted", ""),
+                            A._same_copy("so i needed", ""))

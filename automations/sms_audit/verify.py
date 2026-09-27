@@ -150,7 +150,14 @@ LINEAGE = {
  "Texts with a spelling mistake":
    "LOG Body of Out rows with SMS Type blank (free-typed) and Sent By a "
    "person; a word is only flagged when the office's own vocabulary holds a "
-   "near neighbour AND the system word list does not know the word",
+   "near neighbour AND the system word list does not know the word. "
+   "COUNTS DISTINCT WORDINGS, not sends: one saved line re-sent to 564 "
+   "people is 1 here, and the fold says how many it went to",
+ "Texts with bad grammar":
+   "the same Out rows — a fixed list of patterns: your/you're, could of, "
+   "alot, will you like, there/they're, its/it's, a/an, to day",
+ "Texts with the wrong verb form":
+   "the same Out rows — is/are/was + a bare verb, as in 'is determine'",
  "Texts with a doubled word": "the same Out rows — a word repeated",
  "Texts missing a space after a full stop": "the same Out rows",
  "Texts using lowercase 'i'": "the same Out rows",

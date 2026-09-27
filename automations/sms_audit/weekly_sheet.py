@@ -307,17 +307,27 @@ def _offender(detail):
 
 def by_person(rep, which):
     """{sender: their own entries}, worst first. `which` is "errors" or
-    "dodged"."""
+    "dodged".
+
+    Lowercase "i" used to be counted but kept OUT of the fold, because 565 of
+    them in a week was one habit to raise rather than 565 lines to read. Once
+    repeated copy is folded into one entry per wording that is two lines, so
+    it is listed like everything else — and it has to be, because the worst
+    one in Raf's office IS a lowercase "i": a single saved line of Dante's
+    that went to 564 applicants. Hiding it left the only fixable thing in
+    that office invisible."""
     items = (rep.get("log") or {}).get(which)
     if not items:
         return collections.OrderedDict()
-    if which == "errors":
-        items = [e for e in items if e["kind"] != "lowercase i"]
     grouped = collections.OrderedDict()
     for e in items:
         grouped.setdefault(e["sender"], []).append(e)
-    return collections.OrderedDict(
-        sorted(grouped.items(), key=lambda kv: -len(kv[1])))
+    # Worst = most applicants affected, not most entries. Counting entries
+    # put Dante last on one mistake, when that one mistake reached 564
+    # people and everything above it reached one each.
+    return collections.OrderedDict(sorted(
+        grouped.items(),
+        key=lambda kv: (-sum(e.get("sent", 1) for e in kv[1]), -len(kv[1]))))
 
 
 def person_cell(entries, which):
@@ -326,12 +336,23 @@ def person_cell(entries, which):
         by_body = collections.OrderedDict()
         for e in entries:
             by_body.setdefault(e["body"], []).append(e)
-        lines = ["{} issue{} in {} text{}".format(
+        sends = sum(e.get("sent", 1) for e in entries)
+        head = "{} mistake{} in {} message{}".format(
             len(entries), "" if len(entries) == 1 else "s",
-            len(by_body), "" if len(by_body) == 1 else "s")]
+            len(by_body), "" if len(by_body) == 1 else "s")
+        # The counts are per WORDING now, so without this the reader cannot
+        # tell one slip in a line nobody sends from one slip in a line that
+        # went to 564 people — and the second is the urgent one.
+        if sends > len(by_body):
+            head += " \u2014 sent {} times in all".format(sends)
+        lines = [head]
         for body, es in by_body.items():
-            lines.append("\u201c{}\u201d  [{}]".format(
-                _bmp_only(body), ", ".join(sorted({x["kind"] for x in es}))))
+            n = max(x.get("sent", 1) for x in es)
+            line = "\u201c{}\u201d  [{}]".format(
+                _bmp_only(body), ", ".join(sorted({x["kind"] for x in es})))
+            if n > 1:
+                line += "  \u2014 this same message went to {} people".format(n)
+            lines.append(line)
         return "\n\n".join(lines)
     lines = ["{} question{}".format(len(entries),
                                     "" if len(entries) == 1 else "s")]
@@ -437,8 +458,9 @@ def _errors_text_and_runs(rep):
     for e in listed:
         by_sender.setdefault(e["sender"], collections.OrderedDict())
         by_sender[e["sender"]].setdefault(e["body"], []).append(e)
-    order = sorted(by_sender, key=lambda k: -sum(
-        len(v) for v in by_sender[k].values()))
+    order = sorted(by_sender, key=lambda k: (
+        -sum(e.get("sent", 1) for v in by_sender[k].values() for e in v),
+        -sum(len(v) for v in by_sender[k].values())))
 
     red = {"foregroundColor": RED, "bold": True}
     base = {"foregroundColor": {"red": 0, "green": 0, "blue": 0}, "bold": False}
@@ -446,7 +468,7 @@ def _errors_text_and_runs(rep):
     for sender in order:
         msgs = by_sender[sender]
         n = sum(len(v) for v in msgs.values())
-        head = "{} — {} issue{} in {} text{}".format(
+        head = "{} — {} mistake{} in {} message{}".format(
             sender, n, "" if n == 1 else "s", len(msgs),
             "" if len(msgs) == 1 else "s")
         chunk_lines = [head]
@@ -744,6 +766,12 @@ ROWS = [
     # grammatically incorrect… and who sent the text", and "we need to know if
     # someone asks a direct question and the recruiter skirts around it".
     ("Text quality", "Texts with a spelling mistake", _errs("spelling")),
+    # Megan 2026-09-27: "there should be a count for bad grammar here too."
+    # Both of these were already being FOUND and shown inside the per-person
+    # fold — "[grammar]", "[verb form]" — with no count above it, so the
+    # section's numbers came to less than the issues it listed.
+    ("Text quality", "Texts with bad grammar", _errs("grammar")),
+    ("Text quality", "Texts with the wrong verb form", _errs("verb form")),
     ("Text quality", "Texts with a doubled word", _errs("doubled word")),
     ("Text quality", "Texts missing a space after a full stop",
      _errs("missing space")),
