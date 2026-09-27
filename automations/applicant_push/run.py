@@ -247,10 +247,9 @@ def run(live: bool = False, limit: int = None, max_actions: int = None,
 # Resume Pushing login — Carlos: "push resumes for all three of Raf's applicant
 # streams". This set and that login assignment are the two independent bounds on
 # an irreversible send; keep them in step.
-# 2026-09-24 late (Carlos): back ON for his 11580 and Raf's MAIN 11280
-# ("lucy is fine to keep pushing for myself and raf rafael 11280"); Raf's
-# 23965 + 24065 stay PAUSED for now.
-PUSH_ALLOWED = {"23467", "11901", "11580", "11280"}
+# 2026-09-27 (Carlos): Raf's 2nd + 3rd funnels un-paused ("good to go ahead
+# and start pushing for [Raf]'s second and third funnel") — all six live.
+PUSH_ALLOWED = {"23467", "11901", "11580", "11280", "23965", "24065"}
 
 
 def _dm_shots(shots_dir, office) -> None:
