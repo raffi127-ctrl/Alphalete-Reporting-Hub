@@ -647,3 +647,44 @@ class TemplateIsNotSilenceTest(unittest.TestCase):
 
     def test_the_template_line_still_says_it_was_not_an_answer(self):
         self.assertIn("instead of an answer", self._cell("Directions"))
+
+
+class NeedsARealAnswerTest(unittest.TestCase):
+    """Megan, on "Is this a real job / who are you?" answered by the 3rd Left
+    Message template: "except for this one — this should have been answered."
+    A scheduling template genuinely answers a reschedule request; it cannot
+    answer who we are or what the job pays."""
+
+    def _cell(self, question, blast):
+        return W.question_cell({
+            "question_table": [{"question": question, "asked": 3,
+                                "reply": "", "answered": 0, "no_reply": 1,
+                                "blast": blast,
+                                "needs_a_person": question in A.NEEDS_A_PERSON}],
+            "questions_other": [], "messages": 900, "log": {}})
+
+    def test_a_trust_question_answered_by_a_template_is_still_red(self):
+        cell = self._cell("Is this a real job / who are you?",
+                          "3rd Left Message - Call List")
+        self.assertIn("needed a real answer", cell)
+        self.assertTrue([r for r in W.warning_runs(cell) if r["format"].get("bold")])
+
+    def test_a_reschedule_answered_by_the_reschedule_template_is_not(self):
+        cell = self._cell("Can we reschedule / a different time?",
+                          "1st Interview - Reschedule")
+        self.assertNotIn("needed a real answer", cell)
+        self.assertEqual(W.warning_runs(cell), [])
+
+    def test_the_list_is_about_what_a_template_could_possibly_contain(self):
+        for q in ("What is the pay?", "What is the job / what do you do?",
+                  "Which role / which company is this?", "I never got the email"):
+            self.assertIn(q, A.NEEDS_A_PERSON, q)
+        for q in ("Can we reschedule / a different time?",
+                  "How do I join the Zoom / link trouble?",
+                  "Are you there? (chasing us for a reply)"):
+            self.assertNotIn(q, A.NEEDS_A_PERSON, q)
+
+    def test_every_name_on_the_list_is_a_real_bucket(self):
+        buckets = {label for label, _pat in A.QUESTION_BUCKETS}
+        for q in A.NEEDS_A_PERSON:
+            self.assertIn(q, buckets, q)

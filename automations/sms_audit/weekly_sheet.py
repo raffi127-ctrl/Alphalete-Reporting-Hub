@@ -112,13 +112,19 @@ def question_cell(rep):
             # need to be red because that is still a response"). The marker
             # differs so the formatter can tell them apart without parsing
             # the sentence.
-            if row.get("blast"):
+            if not row.get("blast"):
+                lines.append("     \u26a0 {} got no answer at all".format(
+                    row["no_reply"]))
+            elif row.get("needs_a_person"):
+                # a scheduling template cannot answer "is this a real job" —
+                # this one still needed a person
+                lines.append("     \u26a0 {} got the \u201c{}\u201d template "
+                             "instead \u2014 this one needed a real answer"
+                             .format(row["no_reply"], row["blast"]))
+            else:
                 lines.append("     \u00b7 {} got the \u201c{}\u201d template "
                              "instead of an answer".format(row["no_reply"],
                                                            row["blast"]))
-            else:
-                lines.append("     \u26a0 {} got no answer at all".format(
-                    row["no_reply"]))
         out.append("\n".join(lines))
     other = len(rep.get("questions_other") or [])
     if other:

@@ -137,6 +137,26 @@ QUESTION_BUCKETS = [
 ]
 
 
+# Questions a scheduled template CANNOT answer, so a template firing instead
+# is still a failure and still shows red (Megan 2026-09-26, on "Is this a real
+# job / who are you?" answered by the 3rd Left Message template: "except for
+# this one — this should have been answered").
+#
+# The test is whether any template we own could contain the answer. A
+# reschedule request is genuinely answered by the reschedule template and a
+# link problem by Directions; but nobody's confusion about who we are, what
+# the job is, or what it pays is resolved by a scheduling blast — those need
+# a person, and a template landing on them is the applicant being brushed off.
+NEEDS_A_PERSON = {
+    "Is this a real job / who are you?",
+    "Which role / which company is this?",
+    "What is the pay?",
+    "What is the job / what do you do?",
+    "Hours, training, is it paid?",
+    "I never got the email",
+}
+
+
 # ---------------------------------------------------------------- loading ----
 
 def _ts(stamp, year):
@@ -545,6 +565,7 @@ def question_responses(recs, convos=None):
             "no_reply": unanswered[bucket],
             "blast": blast[0][0] if blast else "",
             "blast_n": blast[0][1] if blast else 0,
+            "needs_a_person": bucket in NEEDS_A_PERSON,
             "example": examples.get(bucket, ""),
         })
     return out
