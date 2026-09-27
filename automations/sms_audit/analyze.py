@@ -1453,7 +1453,7 @@ ANSWER_KEYWORDS = {
                         r"per hour|compensat",
     "Is this remote / where is the office?": r"remote|zoom|virtual|office|"
                                              r"address|located|location|in person|"
-                                             r"onsite|irving|frisco|suite|street|"
+                                             r"onsite|in-person|full-time|part-time|irving|frisco|suite|street|"
                                              r"hwy|highway",
     "What is the job / what do you do?": r"role|position|sales|marketing|"
                                          r"customer|represent|residential|"
@@ -1496,6 +1496,40 @@ INFORMAL = re.compile(r"(?<![\w'])(u|ur|r|thx|yea|yeah|nah|idk|lol|lmao|"
                       r"cuz|kinda|gonna|wanna|yep|nope|omg)(?![\w'])", re.I)
 
 
+def buckets_of(body):
+    """EVERY bucket a message touches, not just the first.
+
+    "what position is it for in AT&T? and it is commission and bonus based
+    job only or it is hourly based" asks two things, and answering either is
+    answering it. Filing it under one bucket made a reply about pay look
+    like a dodge of a question about the role (Megan 2026-09-27)."""
+    return [label for label, pat in QUESTION_BUCKETS
+            if re.search(pat, body, re.I)]
+
+
+# A question about WHEN is answered by a time, whatever bucket it landed in.
+# "Yes when will that be?" answered "Are you available tomorrow at 9:45?" was
+# being called a dodge because the bucket's vocabulary has no clock in it
+# (Megan 2026-09-27: "she's clarifying so looks like an answer").
+ASKS_WHEN = re.compile(r"\b(when|what time|what day|how soon|which day)\b", re.I)
+GIVES_TIME = re.compile(r"\d{1,2}:\d{2}|\b\d{1,2}\s?(am|pm)\b|"
+                        r"\b(today|tomorrow|tonight|monday|tuesday|wednesday|"
+                        r"thursday|friday|saturday|sunday|next week|this week)\b",
+                        re.I)
+
+
+def _answers(bucket, norm, flat):
+    """Does this reply mention what the question was about? Checked against
+    the text as written AND with hyphens and spaces stripped, so "on-site",
+    "on site" and "onsite" all count as the same word."""
+    pat = ANSWER_KEYWORDS.get(bucket)
+    if not pat:
+        return False
+    if re.search(pat, norm, re.I):
+        return True
+    return bool(re.search(pat.replace("-", "").replace(" ", ""), flat, re.I))
+
+
 def dodged_questions(convos):
     """A direct question, and a reply that did not answer it — with who sent
     the reply (Megan 2026-09-27).
@@ -1525,6 +1559,12 @@ def dodged_questions(convos):
             if gap > ANSWER_WINDOW_MIN:
                 continue
             rb = reply["body"] or ""
+            # hyphens are typing, not meaning: "on-site", "on site" and
+            # "onsite" are one word, and the keyword lists cannot carry every
+            # spelling of each (Megan 2026-09-27, on three correct answers
+            # that were flagged)
+            rb_norm = re.sub(r"\s*-\s*", "-", " ".join(rb.split()))
+            rb_flat = rb_norm.replace("-", "").replace(" ", "")
             who = reply.get("sent_by") or ("AI Messaging" if is_ai(reply)
                                            else "(not recorded)")
             # the WHOLE question and the whole reply (Megan 2026-09-27: "we
@@ -1534,9 +1574,12 @@ def dodged_questions(convos):
                    "reply": " ".join(rb.split()),
                    "sender": who, "bucket": bucket or "(other)",
                    "name": c.get("name", "")}
-            short_yes = (len(rb) <= 90 and AFFIRMS.search(rb)
-                         and " or " not in body.lower())
-            if DEFLECTIONS.search(rb):
+            choice = re.search(r"\b(is|are|do|does|will|would|should)\b"
+                               r"[^?]{0,70}\bor\b[^?]{0,50}\?", body, re.I)
+            short_yes = len(rb) <= 90 and AFFIRMS.search(rb) and not choice
+            answered_here = any(_answers(b, rb_norm, rb_flat)
+                                for b in buckets_of(body))
+            if DEFLECTIONS.search(rb) and not answered_here:
                 out.append(dict(row, kind="deflected"))
             # A short, direct yes or no IS the answer, wherever the question
             # word sits. "…is it fine if I have regular clothes on?" answered
@@ -1544,8 +1587,11 @@ def dodged_questions(convos):
             # reply contains no clothing words, and the question does not
             # OPEN with "is" (Megan 2026-09-27). Not for an "A or B?"
             # question, which a yes does not answer.
+            elif (ASKS_WHEN.search(body) and GIVES_TIME.search(rb)):
+                pass                       # they asked when; we gave a time
             elif (bucket in ANSWER_KEYWORDS
-                  and not re.search(ANSWER_KEYWORDS[bucket], rb, re.I)
+                  and not any(_answers(b, rb_norm, rb_flat)
+                              for b in buckets_of(body))
                   and not short_yes):
                 out.append(dict(row, kind="dodged"))
             if INFORMAL.search(rb):

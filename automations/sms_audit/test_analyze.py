@@ -1111,7 +1111,41 @@ class ShortYesIsAnAnswerTest(unittest.TestCase):
         self.assertEqual([x["kind"] for x in out], ["dodged"])
 
     def test_the_question_and_reply_are_kept_whole(self):
-        q = "Hi there, " + "I have a fairly long question about the role. " * 6
+        q = ("Hi there, before we talk I wanted to ask one thing. "
+             "What is the pay for this role? " + "I ask because I am "
+             "comparing a few offers at the moment. " * 4)
         out = A.dodged_questions(self._convos(q, "You can call this number."))
         self.assertTrue(out)
         self.assertEqual(out[0]["question"], " ".join(q.split()))
+
+
+class WhenIsAnsweredByATimeTest(unittest.TestCase):
+    """Megan 2026-09-27, on "Yes when will that be?" answered "Are you
+    available tomorrow at 9:45?": "she's clarifying so looks like an
+    answer." A question about WHEN is answered by a time, whatever bucket
+    the question landed in."""
+
+    def _convos(self, q, a):
+        base = dt.datetime(2026, 9, 21, 9, 0)
+        return {"a": {"phone": "1", "name": "Tiffani", "booked": False,
+                      "booked_by": "", "outcome": "",
+                      "msgs": [
+                          {"when": base, "dir": "In", "template": "", "body": q,
+                           "sent_by": "", "source": "", "status": "Delivered"},
+                          {"when": base + dt.timedelta(minutes=2), "dir": "Out",
+                           "template": "", "body": a, "sent_by": "Tiffani B",
+                           "source": "", "status": "Delivered"}]}}
+
+    def test_a_clock_time_answers_when(self):
+        self.assertEqual(A.dodged_questions(self._convos(
+            "Yes when will that be?", "Are you available tomorrow at 9:45?")), [])
+
+    def test_a_weekday_answers_when(self):
+        self.assertEqual(A.dodged_questions(self._convos(
+            "when will that be?", "We can do Thursday if that works.")), [])
+
+    def test_a_when_question_with_no_time_in_the_reply_is_still_a_dodge(self):
+        out = A.dodged_questions(self._convos(
+            "What is the pay and when will that be?",
+            "Our headquarters are in Irving."))
+        self.assertEqual([x["kind"] for x in out], ["dodged"])

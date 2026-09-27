@@ -84,8 +84,9 @@ def _rate(n, d):
 WIDE_ROW = "Most asked → what we usually reply"
 # Rows whose cell holds a paragraph rather than a number: they wrap, sit
 # left-aligned and top-aligned, and the row grows to fit them.
-WRAP_ROWS = (WIDE_ROW, "Spelling and grammar — what, and who sent it",
-             "Dodged questions — what, and who sent it")
+WRAP_ROWS = (WIDE_ROW,)
+# a per-person row carries their own texts, so it wraps too
+PERSON_PREFIX = "\u2014 "
 # Wrapped like the questions cell, but centred, bold and a size up: it is a
 # two-line header for the whole column, not a paragraph to read through
 # (Megan 2026-09-27).
@@ -293,6 +294,94 @@ def _offender(detail):
     return detail
 
 
+def by_person(rep, which):
+    """{sender: their own entries}, worst first. `which` is "errors" or
+    "dodged"."""
+    items = (rep.get("log") or {}).get(which)
+    if not items:
+        return collections.OrderedDict()
+    if which == "errors":
+        items = [e for e in items if e["kind"] != "lowercase i"]
+    grouped = collections.OrderedDict()
+    for e in items:
+        grouped.setdefault(e["sender"], []).append(e)
+    return collections.OrderedDict(
+        sorted(grouped.items(), key=lambda kv: -len(kv[1])))
+
+
+def person_cell(entries, which):
+    """One person's own texts, to sit in their row behind the +."""
+    if which == "errors":
+        by_body = collections.OrderedDict()
+        for e in entries:
+            by_body.setdefault(e["body"], []).append(e)
+        lines = ["{} issue{} in {} text{}".format(
+            len(entries), "" if len(entries) == 1 else "s",
+            len(by_body), "" if len(by_body) == 1 else "s")]
+        for body, es in by_body.items():
+            lines.append("\u201c{}\u201d  [{}]".format(
+                _bmp_only(body), ", ".join(sorted({x["kind"] for x in es}))))
+        return "\n\n".join(lines)
+    lines = ["{} question{}".format(len(entries),
+                                    "" if len(entries) == 1 else "s")]
+    for e in entries:
+        lines.append("{} asked [{}]:\n   Q: {}\n   A: {}".format(
+            e.get("name") or "(no name)", e["kind"],
+            _bmp_only(e["question"]), _bmp_only(e["reply"])))
+    return "\n\n".join(lines)
+
+
+def person_runs(entries, text):
+    """Red spans over each offending fragment inside one person's cell."""
+    red = {"foregroundColor": RED, "bold": True}
+    base = {"foregroundColor": {"red": 0, "green": 0, "blue": 0}, "bold": False}
+    runs = []
+    for e in entries:
+        off = _bmp_only(_offender(e.get("detail", "")))
+        if not off:
+            continue
+        at = text.find(off)
+        if at < 0:
+            at = text.lower().find(off.lower())
+        if at >= 0:
+            runs.append({"startIndex": at, "format": red})
+            runs.append({"startIndex": at + len(off), "format": base})
+    out, seen = [], set()
+    for r in sorted(runs, key=lambda r: r["startIndex"]):
+        if r["startIndex"] >= len(text) or r["startIndex"] in seen:
+            continue
+        seen.add(r["startIndex"])
+        out.append(r)
+    if out and out[0]["startIndex"] != 0:
+        out.insert(0, {"startIndex": 0, "format": base})
+    return out
+
+
+def build_rows(rep):
+    """ROWS with a row per PERSON spliced under the two counts they explain
+    (Megan 2026-09-27: "group by person with + expansion to see theirs").
+
+    Senders change week to week, so these rows cannot live in the static
+    list — they are built from the report and created by label like any
+    other row."""
+    rows, groups = [], []
+    for section, label, fn in ROWS:
+        rows.append((section, label, fn))
+        which = ("errors" if label == "Texts with a spelling mistake"
+                 else "dodged" if label == "Direct questions dodged" else None)
+        if not which:
+            continue
+        kids = []
+        for sender, entries in by_person(rep, which).items():
+            child = PERSON_PREFIX + sender
+            rows.append((section, child,
+                         (lambda es, w: lambda _r: person_cell(es, w))(entries, which)))
+            kids.append(child)
+        if kids:
+            groups.append((label, kids))
+    return rows, groups
+
+
 def _errors_text_and_runs(rep):
     """Grouped by WHO SENT THEM (Megan 2026-09-27: "this should be grouped by
     who sent them") — one person's habits read as a coaching note, the same
@@ -327,7 +416,7 @@ def _errors_text_and_runs(rep):
         chunk_lines = [head]
         local = []
         offset = len(head) + 1
-        for body, entries in list(msgs.items())[:8]:
+        for body, entries in msgs.items():
             kinds = ", ".join(sorted({e["kind"] for e in entries}))
             line = "     \u201c{}\u201d  [{}]".format(_bmp_only(body), kinds)
             for e in entries:
@@ -339,8 +428,6 @@ def _errors_text_and_runs(rep):
                     local.append((offset + at, offset + at + len(off)))
             chunk_lines.append(line)
             offset += len(line) + 1
-        if len(msgs) > 8:
-            chunk_lines.append("     …and {} more text(s).".format(len(msgs) - 8))
         chunk = "\n".join(chunk_lines)
         for a, b in local:
             runs.append({"startIndex": pos + a, "format": red})
@@ -384,13 +471,11 @@ def dodged_cell(rep):
         items = by_sender[sender]
         lines = ["{} — {} question{}".format(
             sender, len(items), "" if len(items) == 1 else "s")]
-        for e in items[:8]:
+        for e in items:
             lines.append("     {} asked [{}]:".format(
                 e.get("name") or "(no name)", e["kind"]))
             lines.append("       Q: {}".format(e["question"]))
             lines.append("       A: {}".format(e["reply"]))
-        if len(items) > 8:
-            lines.append("     …and {} more.".format(len(items) - 8))
         out.append("\n".join(lines))
     return _bmp_only("\n\n".join(out))
 
@@ -627,16 +712,12 @@ ROWS = [
     ("Text quality", "Texts missing a space after a full stop",
      _errs("missing space")),
     ("Text quality", "Texts using lowercase 'i'", _errs("lowercase i")),
-    ("Text quality", "Spelling and grammar — what, and who sent it",
-     errors_cell),
 
     ("Questions handled badly", "Direct questions dodged", _dodge("dodged")),
     ("Questions handled badly", "Answers pushed to a later call",
      _dodge("deflected")),
     ("Questions handled badly", "Replies using texting shorthand",
      _dodge("informal")),
-    ("Questions handled badly", "Dodged questions — what, and who sent it",
-     dodged_cell),
 
     ("Problems to fix", "Applicants texted 4+ times with no reply",
      _msg(lambda r: len(r["anomalies"].get(
@@ -825,6 +906,7 @@ def check_window(rep, week_end):
 
 def write_week(ws, rep, week_end, dry_run=False):
     updates_rename = []
+    rows_spec, person_groups = build_rows(rep)
     """Put this week's numbers in this week's column, creating the column and
     any missing metric rows. Re-running the same week overwrites that column
     and leaves every other one alone."""
@@ -842,7 +924,7 @@ def write_week(ws, rep, week_end, dry_run=False):
         updates.append(("A1", [["Applicant text audit — one row per metric, "
                                 "one column per recruiting week (Sat–Fri)"]]))
     next_row = max(len(values), HEADER_ROW) + 1
-    for section, label, _fn in ROWS:
+    for section, label, _fn in rows_spec:
         if label not in labels:
             labels[label] = next_row
             updates.append((_a1(next_row, 1), [[section, label]]))
@@ -862,7 +944,7 @@ def write_week(ws, rep, week_end, dry_run=False):
             col = max([FIRST_WEEK_COL - 1] + list(weeks.values())) + 1
         updates.append((_a1(HEADER_ROW, col), [[week_header(week_end)]]))
 
-    for section, label, fn in ROWS:
+    for section, label, fn in rows_spec:
         try:
             val = fn(rep)
         except Exception:  # noqa: BLE001 — a missing metric is blank, not a crash
@@ -893,13 +975,17 @@ def write_week(ws, rep, week_end, dry_run=False):
         ws.resize(rows=next_row + 2, cols=ws.col_count)
     ws.batch_update([{"range": rng, "values": vals} for rng, vals in updates],
                     value_input_option="USER_ENTERED")
-    _format(ws, col, next_row - 1, labels)
+    _format(ws, col, next_row - 1, labels, rows_spec, person_groups)
     qrow = labels.get(WIDE_ROW)
     if qrow:
         _paint_warnings(ws, qrow, col, question_cell(rep))
-    erow = labels.get("Spelling and grammar — what, and who sent it")
-    if erow:
-        _paint(ws, erow, col, errors_cell(rep), error_runs(rep))
+    for which in ("errors", "dodged"):
+        for sender, entries in by_person(rep, which).items():
+            r = labels.get(PERSON_PREFIX + sender)
+            if not r:
+                continue
+            text = person_cell(entries, which)
+            _paint(ws, r, col, text, person_runs(entries, text))
     return col, len(updates)
 
 
@@ -979,7 +1065,8 @@ def _rgb(t):
     return {"red": t[0], "green": t[1], "blue": t[2]}
 
 
-def _format(ws, last_col, last_row, label_rows):
+def _format(ws, last_col, last_row, label_rows, rows_spec=ROWS,
+            person_groups=()):
     """Make it readable: a title, a frozen label column, each section tinted so
     the eye can find it, numbers centred, and the one tall question cell
     wrapped and left-aligned because a centred paragraph is unreadable.
@@ -1020,8 +1107,8 @@ def _format(ws, last_col, last_row, label_rows):
         # the fields it is given, so this tints without undoing the bold
         # labels or the centred numbers.
         section_tops = []
-        for section in {sec for sec, _l, _f in ROWS}:
-            rows = sorted(label_rows[l] for sec2, l, _f in ROWS
+        for section in {sec for sec, _l, _f in rows_spec}:
+            rows = sorted(label_rows[l] for sec2, l, _f in rows_spec
                           if sec2 == section and l in label_rows)
             if not rows:
                 continue
@@ -1032,14 +1119,15 @@ def _format(ws, last_col, last_row, label_rows):
             section_tops.append(rows[0])
 
         pct = {"numberFormat": {"type": "PERCENT", "pattern": "0.0%"}}
-        for _sec, name, _fn in ROWS:
+        for _sec, name, _fn in rows_spec:
             if not is_percent(name):
                 continue
             r = label_rows.get(name)
             if r:
                 ws.format("{}:{}".format(_a1(r, FIRST_WEEK_COL), _a1(r, last_col)),
                           dict(body, **pct))
-        for name in WRAP_ROWS:
+        for name in [n for n in WRAP_ROWS] + [
+                l for _s, l, _f in rows_spec if l.startswith(PERSON_PREFIX)]:
             r = label_rows.get(name)
             if r:
                 ws.format("{}:{}".format(_a1(r, FIRST_WEEK_COL), _a1(r, last_col)),
@@ -1056,7 +1144,7 @@ def _format(ws, last_col, last_row, label_rows):
         _borders(ws, last_col, last_row, section_tops)
         ws.freeze(rows=HEADER_ROW, cols=2)
         _widths(ws, last_col, last_row)
-        _collapse(ws, label_rows)
+        _collapse(ws, label_rows, person_groups)
     except Exception as e:  # noqa: BLE001
         print("[weekly_sheet] formatting skipped: {}".format(e), flush=True)
 
@@ -1136,7 +1224,7 @@ def _paint_warnings(ws, row, col, text):
                   "columnIndex": col - 1}}}]})
 
 
-def _collapse(ws, label_rows):
+def _collapse(ws, label_rows, extra_groups=()):
     """Fold each detail block behind a + in the row gutter.
 
     Existing groups are removed first: re-running would otherwise stack a new
@@ -1154,7 +1242,8 @@ def _collapse(ws, label_rows):
     # covering its rows, so a nested block added before its parent comes out
     # at the wrong level
     made = []
-    for _summary, children in sorted(COLLAPSIBLE, key=lambda g: -len(g[1])):
+    for _summary, children in sorted(list(COLLAPSIBLE) + list(extra_groups),
+                                     key=lambda g: -len(g[1])):
         rows = sorted(label_rows[c] for c in children if c in label_rows)
         if len(rows) < 2 or rows[-1] - rows[0] != len(rows) - 1:
             continue          # not a contiguous block — grouping would be wrong

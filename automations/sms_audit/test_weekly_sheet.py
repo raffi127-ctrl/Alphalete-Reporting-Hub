@@ -712,3 +712,73 @@ class UnbucketedIsBlueTest(unittest.TestCase):
 
     def test_an_ordinary_cell_is_left_alone(self):
         self.assertEqual(W.warning_runs("1. Pay? — asked 2x, answered 2"), [])
+
+
+class PerPersonRowTest(unittest.TestCase):
+    """Megan 2026-09-27: "group by person with + expansion to see theirs."
+    Senders change week to week, so these rows cannot live in the static
+    list — they are built from the report and created by label like any
+    other row."""
+
+    def _rep(self):
+        import collections as _c
+        errs = ([{"kind": "spelling", "sender": "Sandy", "body": "onny via zoom",
+                  "detail": "onny → only", "name": "Jane"}] * 3 +
+                [{"kind": "doubled word", "sender": "Jorge", "body": "the the area",
+                  "detail": "the the", "name": "Bob"}] +
+                [{"kind": "lowercase i", "sender": "Sandy", "body": "i will",
+                  "detail": "i", "name": "Jane"}])
+        dodged = [{"kind": "dodged", "sender": "Sandy", "name": "Jose",
+                   "question": "What is the pay?", "reply": "Call us.",
+                   "bucket": "What is the pay?"}]
+        return {"log": {"errors": errs, "dodged": dodged,
+                        "funnel": {"drop": {}, "curve": {}, "delivery": {},
+                                   "lanes": {}, "windows": {}}},
+                "anomalies": {}, "questions": _c.Counter(), "questions_other": [],
+                "questions_total": 0, "question_table": [], "unanswered": [],
+                "messages": 10, "threads": 1, "mix": {"ai": 0, "human": 1},
+                "dates": ["09-25-2026"]}
+
+    def test_a_row_is_added_for_each_sender(self):
+        rows, _groups = W.build_rows(self._rep())
+        labels = [l for _s, l, _f in rows]
+        self.assertIn("— Sandy", labels)
+        self.assertIn("— Jorge", labels)
+
+    def test_the_senders_sit_under_the_count_they_explain(self):
+        rows, groups = W.build_rows(self._rep())
+        labels = [l for _s, l, _f in rows]
+        i = labels.index("Texts with a spelling mistake")
+        self.assertEqual(labels[i + 1], "— Sandy")
+        self.assertIn(("Texts with a spelling mistake", ["— Sandy", "— Jorge"]),
+                      [(a, b) for a, b in groups])
+
+    def test_worst_offender_first(self):
+        _rows, groups = W.build_rows(self._rep())
+        kids = dict(groups)["Texts with a spelling mistake"]
+        self.assertEqual(kids[0], "— Sandy")      # 3 issues vs Jorge's 1
+
+    def test_lowercase_i_is_counted_but_not_shown_in_the_cell(self):
+        entries = W.by_person(self._rep(), "errors")["Sandy"]
+        self.assertEqual(len(entries), 3)         # the lowercase i is excluded
+        self.assertNotIn("i will", W.person_cell(entries, "errors"))
+
+    def test_a_persons_cell_reds_their_own_mistakes(self):
+        entries = W.by_person(self._rep(), "errors")["Jorge"]
+        text = W.person_cell(entries, "errors")
+        runs = W.person_runs(entries, text)
+        red = [r for r in runs if r["format"].get("bold")]
+        self.assertEqual(len(red), 1)
+        self.assertTrue(text[red[0]["startIndex"]:].startswith("the the"))
+
+    def test_the_dodged_cell_names_the_applicant(self):
+        entries = W.by_person(self._rep(), "dodged")["Sandy"]
+        self.assertIn("Jose asked", W.person_cell(entries, "dodged"))
+
+    def test_an_office_with_no_mistakes_adds_no_rows(self):
+        rep = self._rep()
+        rep["log"]["errors"] = []
+        rep["log"]["dodged"] = []
+        rows, groups = W.build_rows(rep)
+        self.assertEqual(groups, [])
+        self.assertFalse([l for _s, l, _f in rows if l.startswith("— S")])
