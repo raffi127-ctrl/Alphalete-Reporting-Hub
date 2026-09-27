@@ -122,14 +122,11 @@ def question_cell(rep):
 # entries stay for good, they cost nothing and removing one silently splits a
 # row in two the next time somebody rebuilds an old tab.
 RENAMED = {
-    'People in the normal flow': 'People not on the cold list',
-    'Minutes for the AI to reply (typical)': 'Typical wait for an AI reply (minutes)',
-    'Minutes for a person to reply (typical)': 'Typical wait for a person to reply (minutes)',
-    '% of replies by a person within 5 minutes': 'How often a person answers within 5 minutes',
     '% of THOSE who booked': '% of the followed-up group who booked',
     '% of bookings made by the AI': '% of interviews booked by the AI',
     '% of people texted who booked': '% of people we texted who booked',
     '% of recruiter replies within 5 minutes': 'How often a person answers within 5 minutes',
+    '% of replies by a person within 5 minutes': 'How often a person answers within 5 minutes',
     '% of them who booked': '% of blast people who booked',
     '% of them who replied': '% of blast people who replied',
     '% of those who booked': '% of the once-only group who booked',
@@ -154,12 +151,15 @@ RENAMED = {
     'Interview days in this column': 'Days of interviews in this column',
     'Left unanswered': 'Applicants left waiting 2+ hours',
     'Messages sent + received': 'Total texts (sent + received)',
+    'Minutes for a person to reply (typical)': 'Typical wait for a person to reply (minutes)',
     'Minutes for a recruiter to reply (typical)': 'Typical wait for a person to reply (minutes)',
+    'Minutes for the AI to reply (typical)': 'Typical wait for an AI reply (minutes)',
     'Never booked': 'People we texted who never booked',
     'Never reached them (texts failed)': 'Our texts never reached them',
     'No number on file (Dummy Phone)': 'No phone number on file (Dummy Phone)',
-    'Not delivered': 'Texts that never arrived',
+    'Not delivered': "TOTAL texts that didn't arrive",
     'Number not valid': 'Phone number not valid',
+    'People in the normal flow': 'People not on the cold list',
     'People texted': 'People we texted',
     'People who got 2+ texts': 'People we texted 2 or more times',
     'People who got exactly 1 text': 'People we texted only ONCE',
@@ -178,6 +178,7 @@ RENAMED = {
     'Texted after they said stop': 'Texted someone after they said stop',
     'Texted but never booked': 'People we texted who never booked',
     'Texted → booked %': '% of people we texted who booked',
+    'Texts that never arrived': "TOTAL texts that didn't arrive",
     'Too soon to tell (texted in the last 3 days)': 'Too recent to judge (texted in the last 3 days)',
     'Total messages (sent + received)': 'Total texts (sent + received)',
     '…booked by a recruiter': '— booked by a person',
@@ -511,7 +512,7 @@ ROWS = [
     ("Problems to fix", "Broken links sent",
      _msg(lambda r: len(r["anomalies"].get(
          "Dead link — the web address is spelled with a look-alike letter", [])))),
-    ("Problems to fix", "Texts that never arrived",
+    ("Why texts never arrive", "TOTAL texts that didn't arrive",
      lambda r: sum(v for k, v in ((r.get("log") or {}).get("delivery") or {}).items()
                    if k.lower() != "delivered") if r.get("log") else ""),
     # Megan: "we need to know why it never reached them."
@@ -795,7 +796,7 @@ WRAP_ROWS = (WIDE_ROW, "Days of interviews in this column", "ISSUES WE SEE")
 # follow it. Collapsed by default — the point is that the tab stays short
 # until somebody asks why.
 COLLAPSIBLE = [
-    ("Texts that never arrived", [
+    ("TOTAL texts that didn't arrive", [
         "Carrier rejected it (Failed)",
         "Still stuck in the queue (Requeued)",
         "No phone number on file (Dummy Phone)",
