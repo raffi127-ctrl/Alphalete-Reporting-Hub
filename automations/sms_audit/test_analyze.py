@@ -1001,12 +1001,22 @@ class GrammarAndPrecisionTest(unittest.TestCase):
              "fall between the rage your looking for?")
 
     def _convos(self, body, who="Sandy"):
+        """One message, plus a handful of ordinary ones carrying the words a
+        correction is drawn from. The checker takes its corrections from the
+        office's OWN vocabulary, so a one-message corpus has nothing to
+        suggest — which is the design, not a gap: a dictionary search for
+        near-matches produced "callback → fallback" and "paid → pail"."""
         base = dt.datetime(2026, 9, 21, 9, 0)
+        filler = ("Your background and experience are a great fit, and we "
+                  "are interested in your background for this role.")
+        msgs = [{"when": base + dt.timedelta(minutes=i), "dir": "Out",
+                 "template": "", "body": filler, "sent_by": who,
+                 "source": "", "status": "Delivered"} for i in range(6)]
+        msgs.append({"when": base + dt.timedelta(minutes=30), "dir": "Out",
+                     "template": "", "body": body, "sent_by": who,
+                     "source": "", "status": "Delivered"})
         return {"a": {"phone": "1", "name": "Jane Doe", "booked": False,
-                      "booked_by": "", "outcome": "",
-                      "msgs": [{"when": base, "dir": "Out", "template": "",
-                                "body": body, "sent_by": who, "source": "",
-                                "status": "Delivered"}]}}
+                      "booked_by": "", "outcome": "", "msgs": msgs}}
 
     def test_that_one_text_yields_several_kinds(self):
         kinds = {e["kind"] for e in A.text_errors(self._convos(self.SANDY))}
@@ -1183,3 +1193,54 @@ class JobTitleAnswersTheRoleTest(unittest.TestCase):
         out = A.dodged_questions(self._pair(
             "What position?", "Our office is in Irving, see you then!"))
         self.assertEqual([x["kind"] for x in out], ["dodged"])
+
+
+class SpellcheckPrecisionTest(unittest.TestCase):
+    """web2 is a 1934 BASE-FORM word list. It has no "paid", "using",
+    "planning", "callback", "coordinate" or "download" in it, so treating
+    "absent from the dictionary" as "misspelled" flagged ordinary words and
+    then matched them to whatever sat one letter away — "using → suing",
+    "paid → pail", "callback → fallback" (Megan 2026-09-27: "I think this
+    spelling is correct?").
+
+    The dictionary is a VETO now, never the source of a correction: a word
+    it contains is never a typo, and a correction only ever comes from what
+    this office actually writes."""
+
+    def _corpus(self, body):
+        base = dt.datetime(2026, 9, 21, 9, 0)
+        filler = "We will join the Zoom using the browser, standby please."
+        msgs = [{"when": base + dt.timedelta(minutes=i), "dir": "Out",
+                 "template": "", "body": filler, "sent_by": "Dee",
+                 "source": "", "status": "Delivered"} for i in range(6)]
+        msgs.append({"when": base + dt.timedelta(minutes=30), "dir": "Out",
+                     "template": "", "body": body, "sent_by": "Dee",
+                     "source": "", "status": "Delivered"})
+        return {"a": {"phone": "1", "name": "x", "booked": False,
+                      "booked_by": "", "outcome": "", "msgs": msgs}}
+
+    def _spellings(self, body):
+        return [e["detail"] for e in A.text_errors(self._corpus(body))
+                if e["kind"] == "spelling"]
+
+    def test_ordinary_modern_words_are_not_typos(self):
+        for word in ("standby", "using", "download", "callback", "paid",
+                     "planning", "coordinate"):
+            self.assertEqual(
+                self._spellings("You can join {} now".format(word)), [],
+                word)
+
+    def test_a_correction_is_always_named(self):
+        for detail in self._spellings("Sorry, I will be on standbi"):
+            self.assertIn("→", detail)
+
+    def test_a_transposition_is_one_typo(self):
+        # "perfer" for "prefer" is the commonest slip there is
+        self.assertTrue(A._edit1("perfer", "prefer"))
+        self.assertTrue(A._edit1("teh", "the"))
+
+    def test_spanish_is_not_spellchecked_against_an_english_list(self):
+        self.assertEqual(self._spellings(
+            "¿A qué correo te envío el enlace de Zoom?"), [])
+        self.assertEqual(self._spellings(
+            "Te dejaron entrar de nuevo pero no respondiste."), [])

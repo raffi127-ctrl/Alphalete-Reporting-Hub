@@ -1026,6 +1026,7 @@ def write_week(ws, rep, week_end, dry_run=False):
     qrow = labels.get(WIDE_ROW)
     if qrow:
         _paint_warnings(ws, qrow, col, question_cell(rep))
+    painted = False
     for which in ("errors", "dodged"):
         for sender, entries in by_person(rep, which).items():
             r = labels.get(person_label(sender, which))
@@ -1033,6 +1034,11 @@ def write_week(ws, rep, week_end, dry_run=False):
                 continue
             text = person_cell(entries, which)
             _paint(ws, r, col, text, person_runs(entries, text))
+            painted = True
+    if painted:
+        # an updateCells write inside a collapsed group clears its collapsed
+        # flag, so the fold is re-applied once the painting is done
+        _collapse(ws, labels, person_groups)
     return col, len(updates)
 
 

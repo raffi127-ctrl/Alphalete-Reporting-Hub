@@ -1215,7 +1215,10 @@ def applicant_reply_speed(convos):
 
 
 TYPO_RARE = 2        # a word this rare in a whole week is not house style
-TYPO_COMMON = 25     # …and this common is what it was probably meant to be
+TYPO_COMMON = 5      # …and this common is what it was probably meant to be.
+                     # Five, not twenty-five: "background" appears six times
+                     # in a week and "backround" has to be measurable against
+                     # it (Megan 2026-09-27).
 DOUBLED = re.compile(r"\b(\w+)\s+(\1)\b", re.I)
 
 
@@ -1276,6 +1279,13 @@ DICT_EXTRA = {
     "hey", "thanks", "pls", "appt", "asap", "min", "mins", "hrs", "id",
     "anytime", "anymore", "everyday", "followup", "sign-up", "ok", "cant",
     "dont", "im", "ive", "youre", "thats", "wont", "didnt", "isnt",
+    # web2 predates all of these, and every one of them is ordinary now
+    "download", "downloads", "upload", "uploads", "internet", "wifi",
+    "smartphone", "laptop", "screenshot", "logon", "signup", "checkin",
+    "zoom", "google", "indeed", "facebook", "whatsapp", "iphone", "android",
+    "workplace", "coworker", "coworkers", "workday", "timeframe",
+    "paperwork", "onboarding", "rescheduled", "resend", "unsubscribe",
+    "voicemails", "texts", "chat", "chats", "inbox", "spam", "attachment",
 }
 # a suspect word is not a typo if it is an ordinary inflection of a real one
 SUFFIXES = ("s", "es", "ed", "d", "ing", "ly", "er", "est")
@@ -1283,23 +1293,56 @@ SUFFIXES = ("s", "es", "ed", "d", "ing", "ly", "er", "est")
 URLISH = re.compile(r"\S*(?:https?://|www\.|@|\.com|\.us|\.org)\S*", re.I)
 # Two offices text in Spanish. An English word list calls every word of it a
 # typo, so a message that reads as Spanish is skipped for spelling.
-SPANISH = re.compile(r"\b(que|para|con|por|una|los|las|está|estás|puede|"
-                     r"puedes|hola|gracias|dias|días|entrevista|trabajo|"
-                     r"mañana|hoy|hablar|correo|sí|tienes|sobre)\b", re.I)
+SPANISH = re.compile(
+    r"\b(que|qué|para|con|por|una|uno|los|las|del|est[áa]s?|puede[s]?|hola|"
+    r"gracias|d[íi]as|entrevista|trabajo|ma[ñn]ana|hoy|hablar|correo|s[íi]|"
+    r"tienes|sobre|pero|nuevo|nueva|tu|tus|te|se|su|sus|muy|bien|como|cuando|"
+    r"donde|m[áa]s|aqu[íi]|ahora|entrar|favor|tener|c[áa]mara|disponible|"
+    r"horario|env[íi]o|informaci[óo]n|compa[ñn][íi]a|gustar[íi]a|puedo|"
+    r"queremos|estamos|somos|tambi[ée]n|desde|hasta|antes|despu[ée]s)\b", re.I)
+# ¿ and ¡ appear in no English sentence
+SPANISH_MARKS = re.compile(r"[¿¡]")
+
+
+def _strip_accents(word):
+    import unicodedata as _u
+    return "".join(c for c in _u.normalize("NFD", word)
+                   if not _u.combining(c))
 
 
 def _dictionary():
+    """The word list, with diacritics stripped. web2 is a 1934 dictionary
+    and spells a whole family of words the old way — "coördinate",
+    "coöperate" — so "coordinate" read as a misspelling until the accents
+    came off (Megan 2026-09-27: "what grammar is wrong here?")."""
     for path in DICT_PATHS:
         try:
             with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-                return {w.strip().lower() for w in fh if w.strip()}
+                out = set()
+                for line in fh:
+                    w = line.strip().lower()
+                    if not w:
+                        continue
+                    out.add(w)
+                    flat = _strip_accents(w)
+                    if flat != w:
+                        out.add(flat)
+                return out
         except OSError:
             continue
     return None
 
 
 def _edit1(a, b):
-    """True when one insertion, deletion or substitution turns a into b."""
+    """True when ONE insertion, deletion, substitution or transposition
+    turns a into b. Transposition matters: "perfer" for "prefer" is the
+    commonest typing slip there is and two plain edits apart."""
+    if len(a) == len(b):
+        diff = [i for i, (x, y) in enumerate(zip(a, b)) if x != y]
+        if len(diff) == 2 and diff[1] == diff[0] + 1:
+            i = diff[0]
+            if a[i] == b[i + 1] and a[i + 1] == b[i]:
+                return True
     if abs(len(a) - len(b)) > 1:
         return False
     if len(a) == len(b):
@@ -1327,7 +1370,7 @@ def _known(word, words):
         if word[:-3] + "y" in words:
             return True
     for suf in SUFFIXES:
-        if word.endswith(suf) and len(word) > len(suf) + 2:
+        if word.endswith(suf) and len(word) > len(suf) + 1:
             stem = word[:-len(suf)]
             if stem in words or stem in DICT_EXTRA or (stem + "e") in words:
                 return True
@@ -1379,7 +1422,8 @@ def text_errors(convos):
         prose = URLISH.sub(" ", body)
         who = m.get("sent_by") or "(not recorded)"
         seen = set()
-        spanish = len(SPANISH.findall(body)) >= 2
+        spanish = (len(SPANISH.findall(body)) >= 2
+                   or bool(SPANISH_MARKS.search(body)))
         for w in re.findall(r"[A-Za-z'\u2019]{3,}", prose):
             lw = w.lower()
             if words is None or spanish:
@@ -1404,13 +1448,22 @@ def text_errors(convos):
             # twenty-five (Megan 2026-09-27: "this has way more issues than
             # spacing"). A near-match is now only used to SUGGEST the fix.
             seen.add(lw)
+            # Only report a typo we can NAME a correction for. web2 has real
+            # gaps — it has no "coordinate" at all — and "not a word" on a
+            # word that plainly is one is worse than missing a typo (Megan
+            # 2026-09-27). The correction is looked for in the office's own
+            # vocabulary first, then in the dictionary.
+            # The correction must come from the office's OWN vocabulary.
+            # Searching the dictionary for a neighbour produced nonsense —
+            # "callback → fallback", "paid → pail", "using → suing" — because
+            # web2 is a 1934 BASE-FORM list with no "paid", "using" or
+            # "planning" in it at all, so ordinary words looked unknown and
+            # then got matched to whatever sat one letter away.
             near = [g for g in common if _edit1(lw, g)]
             if not near:
-                near = [g for g, n in freq.items()
-                        if n > TYPO_RARE and _edit1(lw, g)]
+                continue
             found.append({"kind": "spelling", "sender": who, "body": body,
-                          "detail": ("{} → {}".format(w, near[0]) if near
-                                     else "{} (not a word)".format(w)),
+                          "detail": "{} → {}".format(w, near[0]),
                           "name": c.get("name", "")})
         d = _real_doubled(body)
         if d:
