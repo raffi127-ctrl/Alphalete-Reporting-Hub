@@ -293,6 +293,23 @@ def gap_text(gaps: List[Dict], previous: set, first_of_day: bool = False,
     return (header or C.GAP_TEXT_HEADER) + "\n\n" + "\n".join(lines), names
 
 
+def _past_stop(dest: Dict, cfg: Optional[Dict] = None,
+               now: Optional[dt.datetime] = None) -> bool:
+    """Has this destination's own stop time for today passed? `sat_stop`
+    ("17:30") caps Saturdays; `stop` caps every day. Read on the office's
+    clock. No stop set = never past it."""
+    local = C.office_now(cfg or {}, now)
+    key = "sat_stop" if local.weekday() == 5 else "stop"
+    text = str(dest.get(key) or dest.get("stop") or "").strip()
+    if not text:
+        return False
+    try:
+        h, m = [int(x) for x in text.split(":")[:2]]
+    except ValueError:
+        return False
+    return (local.hour, local.minute) > (h, m)
+
+
 def _dest_due(dest: Dict, now: Optional[dt.datetime] = None,
               cfg: Optional[Dict] = None) -> bool:
     """Is THIS destination owed a board on this tick?
@@ -1575,7 +1592,8 @@ def tick(day: dt.date, *, send: bool, only: str = "",
         # his board silently never fires on an hour Raf's rooms are quiet.
         guest_due = {}
         for _g, _dests in C.guest_destinations(cfg).items():
-            _d = [d for d in _dests if (only or force) or _dest_due(d, cfg=cfg)]
+            _d = [d for d in _dests
+                  if not _past_stop(d, cfg) and ((only or force) or _dest_due(d, cfg=cfg))]
             if _d:
                 guest_due[_g] = _d
         if not due and not guest_due:

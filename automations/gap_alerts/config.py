@@ -132,9 +132,15 @@ RAF = {
     # of them offset_min 15 the way Raf's Partners room has it, rather than
     # dropping either back to 30.
     "guests": {
+        # SATURDAY STOPS AT 5:30 (Carlos, 2026-09-27: "can lucy stop all
+        # disposition post/texts on saturdays by 530pm. unless its a sales
+        # post/text"). Raf's own window runs to 8pm, and these rooms rode it.
+        # `sat_stop` is the last minute a disposition board, gap list or
+        # call-out may leave for this room on a Saturday; sale alerts are a
+        # different job and are untouched.
         "Carlos Hidalgo": [
-            {"kind": "imessage", "name": "NEW A Players", "cadence_min": 15},
-            {"kind": "imessage", "name": "ATT B2B Leaders", "cadence_min": 15},
+            {"kind": "imessage", "name": "NEW A Players", "cadence_min": 15, "sat_stop": "17:30"},
+            {"kind": "imessage", "name": "ATT B2B Leaders", "cadence_min": 15, "sat_stop": "17:30"},
         ],
     },
     "destinations": [
