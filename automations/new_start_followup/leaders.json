@@ -279,16 +279,16 @@
       "_note": "Added 2026-09-06. The OBCL spells her 'Nima Aweida'; Slack is 'Nima hijaz' (Megan confirmed off the @-autocomplete). Without the alias she landed in 'needs a manual reach-out' every week."
     },
     {
-      "slack_id": "U09RNEP07DW",
-      "name": "Noemi Rivera",
+      "slack_id": "U0BHJ2FR2CV",
+      "name": "Noemi Ontiveros",
       "short": "Noemi",
       "obcl_names": [
-        "Noemi Rivera",
         "Noemi Ontiveros",
+        "Noemi Rivera",
         "Ivette Henson"
       ],
       "phone": "",
-      "_note": "Added 2026-08-22 from Aisha's manual tag reply in the 8/24-week thread. Slack shows her legal name 'Ivette Henson' (Raf 2026-09-06), so a hand-tag of hers resolves to that and has to map back here."
+      "_note": "Added 2026-08-22 from Aisha's manual tag reply in the 8/24-week thread. Slack shows her legal name 'Ivette Henson' (Raf 2026-09-06), so a hand-tag of hers resolves to that and has to map back here. ID CORRECTED 2026-09-27: she has TWO Slack accounts and the hand-tag had picked the dead one -- U09RNEP07DW 'Noemi Rivera' (noemirivera824@gmail.com) last posted anywhere in Dec 2025. The live account is U0BHJ2FR2CV 'Noemi Ontiveros' (Apple private-relay email), which is what replies 'Sent' in the thread (9/23, 9/26). Tagging the dead id meant her reply never matched, so she was re-nudged at 10:15 and listed as still-owing on the Sunday checklist two weeks running."
     },
     {
       "slack_id": "U0A64Q4KZM0",
