@@ -92,3 +92,65 @@ copied. Raf's three accounts all point at `C0AUAS88FGW`
 channel. Per-ICD routing needs those real channel ids added to that table.
 
 Nothing here posts to Slack.
+
+## What the weekly sheet holds
+
+**Applicant Correspondence Audit (ACA)** — one tab per account, one column
+per Sat-Fri week, headed `WE 9/25`. Sections, in order: This week (with the
+days the column actually covers) · Who we texted · Why texts never arrive ⊞ ·
+1st Rounds · Why they didn't book ⊞ (with Our texts never reached them ⊞
+nested) · Cold list · Not the cold list · Texts it takes to book · Did they
+show up? · When we text · How fast we reply · People we left hanging · What
+applicants ask · Text quality ⊞ · Questions handled badly ⊞ · Problems to fix.
+
+⊞ is a collapsible group, closed by default.
+
+## Things that will bite
+
+**The form has four date fields.** p=336's `startDate`/`endDate` are the
+visible boxes in `MM-DD-YYYY`; `startDate2`/`endDate2` are hidden, in
+`MM/DD/YYYY`, and the server reads the hidden pair. p=704 has the same trap
+(`activityDate` / `activityDate2`). Setting only the visible one leaves the
+report on today while the boxes on screen show the week you asked for.
+
+**Injected JavaScript must be a raw Python string.** `[^\n]` in a normal
+literal reaches the page as a real newline inside a regex character class —
+a syntax error that kills the whole evaluate. `test_pull_log` AST-walks the
+module and fails on it.
+
+**A week column can be a partial week**, and a booking can be carried in from
+the week before. Both are stated on the tab rather than averaged away: a
+thread whose first in-window message IS the booking marker was booked before
+the window opened and is excluded from "texts it takes to book".
+
+**Blank is not zero.** A `--bookings-only` walk has no messages, so questions
+and flags are unmeasured, not absent.
+
+**Adding a row does not reorder an existing tab** — a missing label is
+inserted at its place in the layout, and the pending writes are shifted to
+match. Rows are found BY LABEL, so no two rows may share one; a rename goes
+in `RENAMED`, pointing at the final name, never at another rename.
+
+**A nested group is depth 2.** The API rejects a depth-1 update on it and
+fails the whole batch, losing every group on the sheet. And an `updateCells`
+write inside a collapsed group clears the fold, so it is re-applied after
+painting.
+
+**The system word list is a 1934 BASE-FORM dictionary.** It has no "paid",
+"using", "planning", "callback", "download" or "coordinate". It is a VETO
+only — a word it contains is never a typo — and every correction comes from
+the office's own vocabulary. Searching it for near neighbours produced
+"using → suing" and "paid → pail".
+
+**The dodged-question check is a heuristic.** It treats a question as
+answered when the reply names a job title, gives a time to a "when" question,
+says a short direct yes (unless the question is a real "A or B?"), or
+mentions anything any part of the question was about, hyphens and spacing
+ignored. Read that section as a shortlist to eyeball, not a verdict.
+
+**The Activity Report (p=704) is a booking log, not a call log.** Its
+Activity column holds only "First Interview Date" and "Second Interview
+Date". p=1520 Phone Burner returns nothing even when submitted, and p=1530
+"AI Live Calls" is broken server-side. So there is no call-answer-rate by
+hour available from AppStream reporting — do not go looking again without
+new information.
