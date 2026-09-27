@@ -100,6 +100,10 @@ def _page_shape(page):
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="probe_calls")
     ap.add_argument("--office", default="11280")
+    ap.add_argument("--submit", default="",
+                    help="also SUBMIT the date-filtered pages for this date "
+                         "(MM-DD-YYYY) and dump what comes back — p=704 and "
+                         "p=1520 render an empty grid until you do")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
 
@@ -148,6 +152,53 @@ def main(argv=None):
             _emit(rows, "  HEADER : {}".format(shape["header"][:600]))
             for smp in shape["sample"]:
                 _emit(rows, "  row    : {}".format(smp[:600]))
+
+        # The two pages worth submitting: p=704 Activity Report (date form,
+        # Get Report, Download as CSV) and p=1520 Phone Burner Transactions.
+        # Both come back empty on a bare load, which is why the first probe
+        # could not tell whether they carry a per-call timestamp.
+        for pid in ("704", "1520"):
+            if not a.submit:
+                break
+            try:
+                page.goto("https://www.applicantstream.com/index.cfm?rqst={}&p={}"
+                          .format(tok, pid), wait_until="domcontentloaded",
+                          timeout=30000)
+                page.wait_for_timeout(2500)
+                filled = page.evaluate(
+                    r"""(d) => {
+                          const ins = [...document.querySelectorAll('input')];
+                          const dated = ins.filter(i =>
+                            /^\d{2}[-/]\d{2}[-/]\d{4}$/.test((i.value || '').trim())
+                            || /date/i.test((i.name || '') + (i.id || '')));
+                          dated.forEach(i => {
+                            i.value = /\//.test(i.value) ? d.replace(/-/g, '/') : d;
+                            i.dispatchEvent(new Event('change', {bubbles: true}));
+                          });
+                          return dated.map(i => (i.name || i.id || '?') + '=' + i.value)
+                                      .join(' | ') || 'no date field';
+                        }""", a.submit)
+                _emit(rows, "")
+                _emit(rows, "##### p={} SUBMITTED for {} — set {}".format(
+                    pid, a.submit, filled))
+                for name in ("Get Report", "Go", "Search", "Submit"):
+                    try:
+                        page.get_by_role("button", name=name, exact=False).first.click(
+                            timeout=4000)
+                        _emit(rows, "  clicked {!r}".format(name))
+                        break
+                    except Exception:
+                        continue
+                page.wait_for_load_state("networkidle")
+                page.wait_for_timeout(2500)
+                shape = _page_shape(page)
+                _emit(rows, "  after submit: {} grid rows".format(shape["rows"]))
+                _emit(rows, "  HEADER : {}".format(shape["header"][:700]))
+                for smp in shape["sample"]:
+                    _emit(rows, "  row    : {}".format(smp[:700]))
+            except Exception as e:  # noqa: BLE001
+                _emit(rows, "##### p={} submit FAILED {}: {}".format(
+                    pid, type(e).__name__, str(e).splitlines()[0][:140]))
 
     if a.dry_run:
         print("[probe_calls] DRY RUN — {} lines, no sheet write".format(len(rows)),
