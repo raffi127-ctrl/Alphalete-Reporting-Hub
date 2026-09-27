@@ -161,7 +161,13 @@ def _goto_week_containing(page, tok, target: dt.date):
     page.goto(f"https://www.applicantstream.com/index.cfm?p=105&rqst={tok}")
     page.wait_for_load_state("networkidle")
     time.sleep(1.5)
-    for _ in range(6):
+    # 16, not 6. The old cap spent one iteration CHECKING the current week
+    # and so could only shift five times — one short of six weeks back, which
+    # is exactly where the 2026-09-27 backfill stopped: it reached the week of
+    # 08-17 looking for 08-15 and gave up one click from it. Sixteen covers a
+    # quarter; the loop exits the moment it arrives, so a bigger cap is free.
+    seen = None
+    for _ in range(16):
         lo, hi = _banner_week(page)
         if not lo:
             raise RuntimeError("no 'Calendar for Week' banner — not on p=105?")
@@ -169,6 +175,12 @@ def _goto_week_containing(page, tok, target: dt.date):
         hi_d = dt.datetime.strptime(hi, "%m-%d-%Y").date()
         if lo_d <= target <= hi_d:
             return (lo, hi)
+        if (lo, hi) == seen:
+            # the banner stopped moving — an unclickable arrow, not distance.
+            # Fail now rather than spend the rest of the cap on a dead page.
+            raise RuntimeError(
+                f"calendar stuck on {lo}–{hi}, cannot reach {target}")
+        seen = (lo, hi)
         _shift_week(page, back=target < lo_d)
     raise RuntimeError(f"couldn't reach week containing {target} (banner {lo}–{hi})")
 
