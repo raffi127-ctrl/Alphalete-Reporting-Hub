@@ -130,7 +130,8 @@ def question_cell(rep):
 # entries stay for good, they cost nothing and removing one silently splits a
 # row in two the next time somebody rebuilds an old tab.
 RENAMED = {
-    '% of bookings made by the AI': '% of interviews booked by the AI',
+    '% of bookings made by the AI': '% of 1st rounds booked by the AI',
+    '% of interviews booked by the AI': '% of 1st rounds booked by the AI',
     '% of people texted who booked': '% of people we texted who booked',
     '% of recruiter replies within 5 minutes': 'How often a person answers within 5 minutes',
     '% of replies by a person within 5 minutes': 'How often a person answers within 5 minutes',
@@ -141,22 +142,25 @@ RENAMED = {
     '% that failed — our FIRST text to them': 'Of our FIRST text to someone, % that fail',
     '% that failed — our later texts to them': 'Of LATER texts to the same person, % that fail',
     '% who showed — recruiter bookings': '% who showed — booked by a person',
-    '1st-interview days covered': 'Days of interviews in this column',
+    '1st-interview days covered': 'Days of 1st rounds in this column',
     'AI reply, median minutes': 'Typical wait for an AI reply (minutes)',
-    'AI share of bookings %': '% of interviews booked by the AI',
+    'AI share of bookings %': '% of 1st rounds booked by the AI',
     'Applicants left waiting on a reply': 'Applicants left waiting 2+ hours',
     'Applicants over the carrier limit': 'Applicants texted 4+ times with no reply',
     'Applicants texted 4+ times, no reply': 'Applicants texted 4+ times with no reply',
-    'Booked a 1st interview': 'Interviews booked',
+    'Booked a 1st interview': '1st Rounds Booked',
     'Booked by a recruiter': '— booked by a person',
     'Booked by the AI': '— booked by the AI',
-    'Bookings with no message logged': 'Interviews booked with no texts on file',
-    'Bookings with no texts on file': 'Interviews booked with no texts on file',
+    'Bookings with no message logged': '1st Rounds booked with no texts on file',
+    'Bookings with no texts on file': '1st Rounds booked with no texts on file',
+    'Days of interviews in this column': 'Days of 1st rounds in this column',
     'Dead links sent': 'Broken links sent',
     "Didn't fit a bucket": "Questions we couldn't group",
     'Got 2+ texts, never replied': 'We kept texting, they never replied',
     'Got ONE text and nothing more': 'We texted once and never again',
-    'Interview days in this column': 'Days of interviews in this column',
+    'Interview days in this column': 'Days of 1st rounds in this column',
+    'Interviews booked': '1st Rounds Booked',
+    'Interviews booked with no texts on file': '1st Rounds booked with no texts on file',
     'Left unanswered': 'Applicants left waiting 2+ hours',
     'Messages sent + received': 'Total texts (sent + received)',
     'Minutes for a person to reply (typical)': 'Typical wait for a person to reply (minutes)',
@@ -177,7 +181,8 @@ RENAMED = {
     'Said no / not interested': 'They said no',
     'Show rate, AI bookings %': '% who showed — AI bookings',
     'Show rate, recruiter bookings %': '% who showed — booked by a person',
-    'Showed up': 'Showed up to their interview',
+    'Showed up': 'Showed up to their 1st round',
+    'Showed up to their interview': 'Showed up to their 1st round',
     'Still queued (Requeued)': 'Still stuck in the queue (Requeued)',
     'THEY spoke last — we never answered': 'They wrote last, we never answered',
     'Talked, then it just stopped': 'We talked, then it went quiet',
@@ -337,20 +342,20 @@ def days_cell(rep, week_end=None):
 
 
 ROWS = [
-    ("This week", "Days of interviews in this column", days_cell),
+    ("This week", "Days of 1st rounds in this column", days_cell),
     ("Who we texted", "People we texted", lambda r: _f(r, "contacted", "")),
     ("Who we texted", "People who texted us back", lambda r: _f(r, "replied", "")),
     ("Who we texted", "% who texted back", lambda r: _rate(_f(r, "replied"), _f(r, "contacted"))),
     ("Who we texted", "Total texts (sent + received)", lambda r: (r.get("log") or {}).get("rows", "")),
-    ("Who we texted", "Interviews booked with no texts on file", lambda r: _f(r, "join_misses", "")),
+    ("Who we texted", "1st Rounds booked with no texts on file", lambda r: _f(r, "join_misses", "")),
 
-    ("Interviews booked", "Interviews booked", lambda r: _f(r, "booked", r["threads"])),
-    ("Interviews booked", "— booked by the AI", lambda r: _f(r, "booked_ai", r["mix"]["ai"])),
-    ("Interviews booked", "— booked by a person", lambda r: _f(r, "booked_human", r["mix"]["human"])),
-    ("Interviews booked", "% of interviews booked by the AI",
+    ("1st Rounds", "1st Rounds Booked", lambda r: _f(r, "booked", r["threads"])),
+    ("1st Rounds", "— booked by the AI", lambda r: _f(r, "booked_ai", r["mix"]["ai"])),
+    ("1st Rounds", "— booked by a person", lambda r: _f(r, "booked_human", r["mix"]["human"])),
+    ("1st Rounds", "% of 1st rounds booked by the AI",
      lambda r: _rate(_f(r, "booked_ai", r["mix"]["ai"]), _f(r, "booked", r["threads"]))),
-    ("Interviews booked", "% of people we texted who booked", lambda r: _rate(_f(r, "booked"), _f(r, "contacted"))),
-    ("Interviews booked", "People we texted who never booked", lambda r: _f(r, "never_booked", "")),
+    ("1st Rounds", "% of people we texted who booked", lambda r: _rate(_f(r, "booked"), _f(r, "contacted"))),
+    ("1st Rounds", "People we texted who never booked", lambda r: _f(r, "never_booked", "")),
 
     # Megan 2026-09-26: "our goal is to book as many of our applicants as we
     # can — we really need to find out why each office isn't booking more."
@@ -406,7 +411,7 @@ ROWS = [
      lambda r: (lambda t: t["zero"] if t else "")(
          ((r.get("log") or {}).get("funnel", {}) or {}).get("to_book"))),
 
-    ("Did they show up?", "Showed up to their interview", lambda r: _f(r, "shown", "")),
+    ("Did they show up?", "Showed up to their 1st round", lambda r: _f(r, "shown", "")),
     ("Did they show up?", "% who showed — AI bookings",
      lambda r: _rate(_f(r, "shown_ai"), _f(r, "booked_ai"))),
     ("Did they show up?", "% who showed — booked by a person",
@@ -726,12 +731,12 @@ SECTION_TINT = {"This week": (0.86, 0.86, 0.86),
                 "Normal applicants (not the cold list)": (0.88, 0.96, 0.90),
                 "Why texts never arrive": (0.99, 0.91, 0.86),
                 "Why they didn't book": (0.99, 0.89, 0.89),
-                "Texts it takes to book": (0.89, 0.95, 0.99), "Who we texted": (0.90, 0.94, 0.99), "Interviews booked": (0.90, 0.96, 0.91),
+                "Texts it takes to book": (0.89, 0.95, 0.99), "Who we texted": (0.90, 0.94, 0.99), "1st Rounds": (0.90, 0.96, 0.91),
                 "Did they show up?": (0.98, 0.95, 0.88), "How fast we reply": (0.93, 0.91, 0.98),
                 "People we left hanging": (0.99, 0.91, 0.91), "What applicants ask": (0.95, 0.95, 0.95),
                 "Problems to fix": (0.99, 0.93, 0.85)}
 WIDE_ROW = "Most asked → what we usually reply"
-WRAP_ROWS = (WIDE_ROW, "Days of interviews in this column")
+WRAP_ROWS = (WIDE_ROW, "Days of 1st rounds in this column")
 
 # Rows that fold away behind a + in the gutter (Megan 2026-09-26: "this texts
 # that never arrive section I want like a + sign expansion to see the why

@@ -112,9 +112,9 @@ class BlankNotZeroTest(unittest.TestCase):
     def test_the_calendar_walk_still_fills_the_booking_rows(self):
         rep = {"log": None, "threads": 10, "mix": {"ai": 6, "human": 4}}
         by_label = {label: fn for _s, label, fn in W.ROWS}
-        self.assertEqual(by_label["Interviews booked"](rep), 10)
+        self.assertEqual(by_label["1st Rounds Booked"](rep), 10)
         self.assertEqual(by_label["— booked by the AI"](rep), 6)
-        self.assertEqual(by_label["% of interviews booked by the AI"](rep), 60.0)
+        self.assertEqual(by_label["% of 1st rounds booked by the AI"](rep), 60.0)
 
 
 class TabNameTest(unittest.TestCase):
@@ -278,7 +278,7 @@ class NoMessagesIsBlankTest(unittest.TestCase):
     def test_the_booking_rows_are_still_real(self):
         rep = self._bookings_only()
         by_label = {label: fn for _s, label, fn in W.ROWS}
-        self.assertEqual(by_label["Interviews booked"](rep), 832)
+        self.assertEqual(by_label["1st Rounds Booked"](rep), 832)
         self.assertEqual(by_label["— booked by the AI"](rep), 364)
 
     def test_with_messages_a_zero_is_a_real_zero(self):
@@ -359,7 +359,7 @@ class CoverageRowTest(unittest.TestCase):
         self.assertEqual(W.days_cell(self._rep([])), "")
 
     def test_it_is_the_first_row_so_it_is_read_before_the_numbers(self):
-        self.assertEqual(W.ROWS[0][1], "Days of interviews in this column")
+        self.assertEqual(W.ROWS[0][1], "Days of 1st rounds in this column")
 
 
 class PlainLabelTest(unittest.TestCase):
@@ -424,7 +424,7 @@ class PercentCellTest(unittest.TestCase):
         self.assertTrue(W.is_percent("% who texted back"))
         self.assertTrue(W.is_percent("% who showed — AI bookings"))
         self.assertFalse(W.is_percent("People we texted"))
-        self.assertFalse(W.is_percent("Interviews booked"))
+        self.assertFalse(W.is_percent("1st Rounds Booked"))
 
     def test_a_percent_is_stored_as_its_fraction(self):
         import collections
@@ -467,7 +467,7 @@ class PercentCellTest(unittest.TestCase):
         rows = {label: W._a1(i, 3) for i, (_s, label, _f)
                 in enumerate(W.ROWS, start=W.HEADER_ROW + 1)}
         # 6 of 10 bookings are the AI's -> 60% stored as 0.6, not 60
-        self.assertEqual(by_range[rows["% of interviews booked by the AI"]], 0.6)
+        self.assertEqual(by_range[rows["% of 1st rounds booked by the AI"]], 0.6)
         self.assertEqual(by_range[rows["— booked by the AI"]], 6)
 
     def test_a_blank_percent_stays_blank_not_zero(self):
