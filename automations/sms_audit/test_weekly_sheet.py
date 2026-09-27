@@ -501,45 +501,6 @@ class UniqueLabelTest(unittest.TestCase):
             self.assertNotIn("of them", label.lower(), label)
 
 
-class IssuesCellTest(unittest.TestCase):
-    """Megan: "add a row on there of issues that you see." Every other row is
-    a number somebody has to interpret; this one says what the numbers mean."""
-
-    def _rep(self, **log):
-        base = {"funnel": {"drop": {}, "curve": {}, "delivery": {}}}
-        base["funnel"].update(log.pop("funnel", {}))
-        base.update(log)
-        return {"log": base, "anomalies": log.pop("anomalies", {})}
-
-    def test_a_clean_week_says_so_instead_of_listing_zeros(self):
-        self.assertEqual(W.issues_cell(self._rep()), "Nothing flagged this week.")
-
-    def test_no_log_means_no_claim_at_all(self):
-        self.assertEqual(W.issues_cell({"log": None, "anomalies": {}}), "")
-
-    def test_running_out_of_credits_is_listed_first(self):
-        rep = self._rep(funnel={"delivery": {
-            "by_status": {"Insufficient SMS Credits": 17}, "sent": 0,
-            "undelivered": 0}})
-        self.assertTrue(W.issues_cell(rep).startswith("1. 17 texts were never sent"))
-
-    def test_a_broken_link_names_the_fix(self):
-        rep = {"log": {"funnel": {"drop": {}, "curve": {}, "delivery": {}}},
-               "anomalies": {"Dead link — the web address is spelled with a "
-                             "look-alike letter": [1] * 714}}
-        out = W.issues_cell(rep)
-        self.assertIn("714 texts carried a BROKEN LINK", out)
-        self.assertIn("Fix the template", out)
-
-    def test_the_one_text_finding_only_fires_when_none_of_them_booked(self):
-        rep = self._rep(funnel={"curve": {"one": {"people": 100, "booked": 0},
-                                          "many": {"people": 100, "booked": 60}}})
-        self.assertIn("not one of them booked", W.issues_cell(rep))
-        rep2 = self._rep(funnel={"curve": {"one": {"people": 100, "booked": 3},
-                                           "many": {"people": 100, "booked": 60}}})
-        self.assertNotIn("not one of them booked", W.issues_cell(rep2))
-
-
 class RenameChainTest(unittest.TestCase):
     """A rename map is only useful if it lands somewhere real. Reword a label
     twice and the first entry points at the intermediate name, which no longer

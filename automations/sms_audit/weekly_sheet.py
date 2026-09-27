@@ -136,8 +136,10 @@ RENAMED = {
     '% of replies by a person within 5 minutes': 'How often a person answers within 5 minutes',
     '% of them who booked': '% of blast people who booked',
     '% of them who replied': '% of blast people who replied',
-    '% that failed — 1st text to them': '% that failed — our FIRST text to them',
-    '% that failed — later texts to them': '% that failed — our later texts to them',
+    '% that failed — 1st text to them': 'Of our FIRST text to someone, % that fail',
+    '% that failed — later texts to them': 'Of LATER texts to the same person, % that fail',
+    '% that failed — our FIRST text to them': 'Of our FIRST text to someone, % that fail',
+    '% that failed — our later texts to them': 'Of LATER texts to the same person, % that fail',
     '% who showed — recruiter bookings': '% who showed — booked by a person',
     '1st-interview days covered': 'Days of interviews in this column',
     'AI reply, median minutes': 'Typical wait for an AI reply (minutes)',
@@ -212,93 +214,6 @@ def _curve_pct(which, field):
             return ""
         return round(100.0 * c[field] / c["people"], 1)
     return read
-
-
-def issues_cell(rep):
-    """One cell: what is actually wrong this week, worst first, in words.
-
-    Megan 2026-09-26: "add a row on there of issues that you see." Every
-    other row is a number somebody has to interpret; this row says what the
-    numbers mean and roughly what it would take to fix. Only real findings
-    appear — a clean week says so rather than printing a list of zeros.
-
-    Ranked by how much it costs, not by how alarming it sounds."""
-    log = rep.get("log") or {}
-    fun = log.get("funnel") or {}
-    drop = fun.get("drop") or {}
-    curve = fun.get("curve") or {}
-    deliv = fun.get("delivery") or {}
-    an = rep.get("anomalies") or {}
-    found = []
-
-    def n(anom):
-        return len(an.get(anom, []))
-
-    broken = n("Dead link — the web address is spelled with a look-alike letter")
-    if broken:
-        found.append((1, "{:,} texts carried a BROKEN LINK. The web address is "
-                         "spelled with a look-alike letter, so it opens nothing. "
-                         "Fix the template, not the texts.".format(broken)))
-
-    once = (curve.get("one") or {}).get("people")
-    if once and (curve["one"].get("booked") or 0) == 0:
-        found.append((2, "{:,} people got ONE text and nothing more, and not one "
-                         "of them booked. Everyone we texted twice or more booked "
-                         "at {:.0f}%.".format(
-                             once,
-                             100.0 * (curve.get("many") or {}).get("booked", 0)
-                             / max((curve.get("many") or {}).get("people", 1), 1))))
-
-    if deliv.get("undelivered") and deliv.get("sent"):
-        line = "{:,} texts never arrived ({:.0f}% of everything sent)".format(
-            deliv["undelivered"], 100.0 * deliv["undelivered"] / deliv["sent"])
-        if deliv.get("first_rate") is not None and deliv.get("later_rate"):
-            line += (". It gets worse the more we send the same person — {:.0f}% "
-                     "fail on our first text, {:.0f}% on later ones, which is the "
-                     "carrier throttling the number".format(
-                         deliv["first_rate"], deliv["later_rate"]))
-        found.append((3, line + "."))
-
-    credits = (deliv.get("by_status") or {}).get("Insufficient SMS Credits", 0)
-    if credits:
-        found.append((0, "{} texts were never sent because the office RAN OUT OF "
-                         "SMS CREDITS.".format(credits)))
-
-    stopped = n("Kept texting after they asked us to stop / said no")
-    if stopped:
-        found.append((4, "{} people were texted again AFTER they asked us to stop "
-                         "or said they were not interested.".format(stopped)))
-
-    # Early-morning sending is NOT on this list: it is the best-performing
-    # window either office has (Megan asked; the data agreed). Only a
-    # genuinely late-night send has no upside to weigh against it.
-    late = n("Sent after 9pm")
-    if late:
-        found.append((5, "{} texts went out after 9pm.".format(late)))
-
-    over = n("Over the carrier limit — 4+ separate texts with no reply between")
-    if over:
-        found.append((6, "{:,} applicants got 4 or more texts without ever "
-                         "replying — the pattern that gets a number flagged as "
-                         "spam.".format(over)))
-
-    waiting = drop.get("we never answered")
-    if waiting:
-        found.append((7, "{} people wrote to us last and never got an answer."
-                         .format(waiting)))
-
-    merge = n("A merge field never filled in — the applicant got the raw tag")
-    if merge:
-        found.append((8, "{} texts went out with an unfilled merge tag in them."
-                         .format(merge)))
-    braces = n("Merge braces {{ }} printed around the text")
-    if braces:
-        found.append((9, "{} texts printed {{ }} around the date.".format(braces)))
-
-    if not found:
-        return "Nothing flagged this week." if log else ""
-    return "\n\n".join("{}. {}".format(i, text)
-                        for i, (_rank, text) in enumerate(sorted(found), 1))
 
 
 def _win(key, field):
@@ -423,10 +338,6 @@ def days_cell(rep, week_end=None):
 
 ROWS = [
     ("This week", "Days of interviews in this column", days_cell),
-    # Megan 2026-09-26: "add a row on there of issues that you see." Every
-    # other row is a number somebody has to interpret; this one says what the
-    # numbers mean, worst first.
-    ("This week", "ISSUES WE SEE", issues_cell),
     ("Who we texted", "People we texted", lambda r: _f(r, "contacted", "")),
     ("Who we texted", "People who texted us back", lambda r: _f(r, "replied", "")),
     ("Who we texted", "% who texted back", lambda r: _rate(_f(r, "replied"), _f(r, "contacted"))),
@@ -541,6 +452,12 @@ ROWS = [
     ("Problems to fix", "Texted someone after they said stop",
      _msg(lambda r: len(r["anomalies"].get(
          "Kept texting after they asked us to stop / said no", [])))),
+    # a pair, not a breakdown: they are rates, and putting them in the list
+    # of counts made people look for them to add up to the total above
+    ("Problems to fix", "Of our FIRST text to someone, % that fail",
+     _why_rate("first_rate")),
+    ("Problems to fix", "Of LATER texts to the same person, % that fail",
+     _why_rate("later_rate")),
     ("Problems to fix", "Broken links sent",
      _msg(lambda r: len(r["anomalies"].get(
          "Dead link — the web address is spelled with a look-alike letter", [])))),
@@ -555,10 +472,6 @@ ROWS = [
      _why("Insufficient SMS Credits")),
     ("Why texts never arrive", "Phone number not valid",
      _why("Failed - Phone Not Valid")),
-    ("Why texts never arrive", "% that failed — our FIRST text to them",
-     _why_rate("first_rate")),
-    ("Why texts never arrive", "% that failed — our later texts to them",
-     _why_rate("later_rate")),
 
 ]
 
@@ -818,7 +731,7 @@ SECTION_TINT = {"This week": (0.86, 0.86, 0.86),
                 "People we left hanging": (0.99, 0.91, 0.91), "What applicants ask": (0.95, 0.95, 0.95),
                 "Problems to fix": (0.99, 0.93, 0.85)}
 WIDE_ROW = "Most asked → what we usually reply"
-WRAP_ROWS = (WIDE_ROW, "Days of interviews in this column", "ISSUES WE SEE")
+WRAP_ROWS = (WIDE_ROW, "Days of interviews in this column")
 
 # Rows that fold away behind a + in the gutter (Megan 2026-09-26: "this texts
 # that never arrive section I want like a + sign expansion to see the why
@@ -854,8 +767,6 @@ COLLAPSIBLE = [
         "No phone number on file (Dummy Phone)",
         "Ran out of SMS credits",
         "Phone number not valid",
-        "% that failed — our FIRST text to them",
-        "% that failed — our later texts to them",
     ]),
 ]
 

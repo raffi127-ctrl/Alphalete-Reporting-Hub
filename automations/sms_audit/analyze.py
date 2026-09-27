@@ -52,6 +52,7 @@ OUTPUT_DIR = REPO_ROOT / "output"
 CONTROL_SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
 TAB_PREFIX = "SMS Dump"          # the calendar walk, per office
 LOG_TAB_PREFIX = "SMS Log"       # the p=336 full log, per office
+ACTIVITY_TAB_PREFIX = "Activity" # the p=704 timestamped actions, per office
 
 AI_BOOKER = "A. Messaging"       # the automation's name in the calendar's Booked By
 AI_TEMPLATE = "Directions AI"    # fires only after an AI booking
@@ -240,6 +241,88 @@ def load_log(office, suffix=""):
         return [], "tab '{}' (empty)".format(tab)
     hdr = vals[1]
     return [dict(zip(hdr, row)) for row in vals[2:] if any(row)], "tab '{}'".format(tab)
+
+
+def load_activity(office, suffix=""):
+    """Timestamped actions for the office, from the p=704 Activity Report
+    pull: local output/activity_<office>.json first, else the sheet tab."""
+    local = OUTPUT_DIR / "activity_{}{}.json".format(
+        office, "_" + suffix if suffix else "")
+    if local.exists():
+        return json.loads(local.read_text()), "output/{}".format(local.name)
+    if suffix:
+        return [], "no output/{}".format(local.name)
+    from automations.recruiting_report import fill as _fill
+    tab = "{} {}".format(ACTIVITY_TAB_PREFIX, office)
+    try:
+        ws = _fill._client().open_by_key(CONTROL_SHEET_ID).worksheet(tab)
+    except Exception:  # noqa: BLE001 — not pulled for this office yet
+        return [], "no tab '{}'".format(tab)
+    vals = ws.get_all_values()
+    if len(vals) < 3:
+        return [], "tab '{}' (empty)".format(tab)
+    hdr = vals[1]
+    return [dict(zip(hdr, r)) for r in vals[2:] if any(r)], "tab '{}'".format(tab)
+
+
+def activity_vocabulary(rows):
+    """{activity name: count}. The first thing to do with a new pull: the
+    page's Activity column is a controlled list, but which values it actually
+    uses is a question for the data, not a guess."""
+    return collections.Counter((r.get("activity") or "?").strip() for r in rows)
+
+
+def _activity_ts(stamp):
+    """'09-25-2026 08:15 AM' -> datetime."""
+    m = re.match(r"\s*(\d{2})-(\d{2})-(\d{4})\s+(\d{1,2}):(\d{2})\s*([AaPp])",
+                 stamp or "")
+    if not m:
+        return None
+    h = int(m.group(4)) % 12 + (12 if m.group(6).lower() == "p" else 0)
+    try:
+        return dt.datetime(int(m.group(3)), int(m.group(1)), int(m.group(2)),
+                           h, int(m.group(5)))
+    except ValueError:
+        return None
+
+
+# Filled in from activity_vocabulary() once a real pull exists — deliberately
+# NOT guessed. An attempt is any recorded dial; an answer is one where a human
+# picked up. Anything not listed is neither, so an unmapped value is invisible
+# rather than silently counted as a miss.
+CALL_ANSWERED = set()
+CALL_MISSED = set()
+
+
+def call_hours(rows):
+    """Answer rate by the hour the call was placed — the call-side twin of
+    hourly_reply(). Returns [] until CALL_ANSWERED/CALL_MISSED are filled in
+    from a real pull, because an empty mapping would otherwise report a 0%
+    answer rate for every hour, which is a claim rather than a gap."""
+    if not (CALL_ANSWERED or CALL_MISSED):
+        return []
+    per = collections.defaultdict(lambda: [0, 0])
+    for r in rows:
+        act = (r.get("activity") or "").strip()
+        if act not in CALL_ANSWERED and act not in CALL_MISSED:
+            continue
+        when = _activity_ts(r.get("at"))
+        if not when:
+            continue
+        per[when.hour][0] += 1
+        if act in CALL_ANSWERED:
+            per[when.hour][1] += 1
+    out = [{"hour": h, "calls": n, "answered": a, "rate": 100.0 * a / n}
+           for h, (n, a) in per.items() if n >= MIN_HOUR_SAMPLE]
+    out.sort(key=lambda d: -d["rate"])
+    return out
+
+
+def best_call_hours_label(rows, top=3):
+    got = call_hours(rows)[:top]
+    if not got:
+        return ""
+    return " · ".join("{} ({:.0f}%)".format(clock(r["hour"]), r["rate"]) for r in got)
 
 
 def booked_index(recs):
