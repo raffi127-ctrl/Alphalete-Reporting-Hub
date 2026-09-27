@@ -137,26 +137,6 @@ QUESTION_BUCKETS = [
 ]
 
 
-# Questions a scheduled template CANNOT answer, so a template firing instead
-# is still a failure and still shows red (Megan 2026-09-26, on "Is this a real
-# job / who are you?" answered by the 3rd Left Message template: "except for
-# this one — this should have been answered").
-#
-# The test is whether any template we own could contain the answer. A
-# reschedule request is genuinely answered by the reschedule template and a
-# link problem by Directions; but nobody's confusion about who we are, what
-# the job is, or what it pays is resolved by a scheduling blast — those need
-# a person, and a template landing on them is the applicant being brushed off.
-NEEDS_A_PERSON = {
-    "Is this a real job / who are you?",
-    "Which role / which company is this?",
-    "What is the pay?",
-    "What is the job / what do you do?",
-    "Hours, training, is it paid?",
-    "I never got the email",
-}
-
-
 # ---------------------------------------------------------------- loading ----
 
 def _ts(stamp, year):
@@ -500,6 +480,7 @@ def question_responses(recs, convos=None):
     asked = collections.Counter()
     answers = collections.defaultdict(collections.Counter)
     unanswered = collections.Counter()
+    unanswered_unbooked = collections.Counter()
     instead = collections.defaultdict(collections.Counter)
     examples = {}
 
@@ -514,7 +495,7 @@ def question_responses(recs, convos=None):
                            flags=re.I)
         return words
 
-    def _walk(seq, who=""):
+    def _walk(seq, who="", booked=False):
         """seq: [(when, 'In'|'Out', template, body)] in order."""
         for i, (when, dirn, _t, body) in enumerate(seq):
             if dirn != "In":
@@ -542,16 +523,25 @@ def question_responses(recs, convos=None):
                 answers[bucket]["\u201c{}\u201d".format(_generalise(typed, who))] += 1
             else:
                 unanswered[bucket] += 1
+                # Whether they ENDED UP BOOKED is the honest test, not which
+                # template fired. Megan 2026-09-26: "this prob means that they
+                # got a phone call to discuss. If someone gets directions,
+                # that means they were booked for an interview." The text log
+                # is not the whole conversation — the call list is the other
+                # half of it, and an applicant who asked what the job is and
+                # then booked plainly got an answer somewhere.
+                if not booked:
+                    unanswered_unbooked[bucket] += 1
                 if blast:
                     instead[bucket][blast] += 1
 
     if convos:
         for c in convos.values():
             _walk([(m["when"], m["dir"], m["template"], m["body"])
-                   for m in c["msgs"]], c.get("name", ""))
+                   for m in c["msgs"]], c.get("name", ""), c.get("booked", False))
     else:
         for r in recs:
-            _walk(messages(r), r.get("name", ""))
+            _walk(messages(r), r.get("name", ""), True)
 
     out = []
     for bucket, n in asked.most_common():
@@ -563,9 +553,10 @@ def question_responses(recs, convos=None):
             "reply_n": top[0][1] if top else 0,
             "answered": sum(answers[bucket].values()),
             "no_reply": unanswered[bucket],
+            "no_reply_unbooked": unanswered_unbooked[bucket],
+            "no_reply_booked": unanswered[bucket] - unanswered_unbooked[bucket],
             "blast": blast[0][0] if blast else "",
             "blast_n": blast[0][1] if blast else 0,
-            "needs_a_person": bucket in NEEDS_A_PERSON,
             "example": examples.get(bucket, ""),
         })
     return out

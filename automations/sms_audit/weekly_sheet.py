@@ -55,6 +55,7 @@ WORKBOOK_TITLE = "Applicant Text Audit"
 # somewhere readable rather than failing.
 DEFAULT_WORKBOOK = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
 FIRST_WEEK_COL = 3          # A = section, B = metric label, C+ = weeks
+WEEK_COL_WIDTH = 470        # wide enough to read the questions paragraph
 HEADER_ROW = 2              # row 1 is the title line, row 2 the week headers
 
 # (section, label, how to read it off the audit). A metric whose source is
@@ -104,27 +105,19 @@ def question_cell(rep):
             if len(reply) > QUESTION_REPLY_CHARS:
                 reply = reply[:QUESTION_REPLY_CHARS].rstrip(" .,") + "\u2026"
             lines.append("     \u21b3 {}".format(reply))
-        if row.get("no_reply"):
-            # Red is reserved for silence. A scheduled template firing is not
-            # an ANSWER to the question, but the applicant did hear from us,
-            # so it is not the same failure and it should not shout (Megan
-            # 2026-09-26: "if a template went out instead then these don't
-            # need to be red because that is still a response"). The marker
-            # differs so the formatter can tell them apart without parsing
-            # the sentence.
-            if not row.get("blast"):
-                lines.append("     \u26a0 {} got no answer at all".format(
-                    row["no_reply"]))
-            elif row.get("needs_a_person"):
-                # a scheduling template cannot answer "is this a real job" —
-                # this one still needed a person
-                lines.append("     \u26a0 {} got the \u201c{}\u201d template "
-                             "instead \u2014 this one needed a real answer"
-                             .format(row["no_reply"], row["blast"]))
-            else:
-                lines.append("     \u00b7 {} got the \u201c{}\u201d template "
-                             "instead of an answer".format(row["no_reply"],
-                                                           row["blast"]))
+        # What matters is whether they ENDED UP BOOKED, not which template
+        # fired. Megan 2026-09-26: "this prob means that they got a phone
+        # call to discuss. If someone gets directions, that means they were
+        # booked for an interview." The texts are half the conversation; the
+        # call list is the other half. Someone who asked what the job is and
+        # then booked got an answer somewhere, and flagging that as a failure
+        # was reading the text channel as if it were the whole story.
+        if row.get("no_reply_unbooked"):
+            lines.append("     \u26a0 {} got no reply here and never booked"
+                         .format(row["no_reply_unbooked"]))
+        if row.get("no_reply_booked"):
+            lines.append("     \u00b7 {} got no reply here but booked anyway "
+                         "(handled on a call)".format(row["no_reply_booked"]))
         out.append("\n".join(lines))
     other = len(rep.get("questions_other") or [])
     if other:
@@ -137,14 +130,16 @@ def question_cell(rep):
 # entries stay for good, they cost nothing and removing one silently splits a
 # row in two the next time somebody rebuilds an old tab.
 RENAMED = {
-    '% of THOSE who booked': '% of the followed-up group who booked',
+    '% of THOSE who booked': 'Texted 2+ times — % who booked',
     '% of bookings made by the AI': '% of interviews booked by the AI',
     '% of people texted who booked': '% of people we texted who booked',
     '% of recruiter replies within 5 minutes': 'How often a person answers within 5 minutes',
     '% of replies by a person within 5 minutes': 'How often a person answers within 5 minutes',
+    '% of the followed-up group who booked': 'Texted 2+ times — % who booked',
+    '% of the once-only group who booked': 'Texted once — % who booked',
     '% of them who booked': '% of blast people who booked',
     '% of them who replied': '% of blast people who replied',
-    '% of those who booked': '% of the once-only group who booked',
+    '% of those who booked': 'Texted once — % who booked',
     '% that failed — 1st text to them': '% that failed — our FIRST text to them',
     '% that failed — later texts to them': '% that failed — our later texts to them',
     '% who showed — recruiter bookings': '% who showed — booked by a person',
@@ -176,8 +171,10 @@ RENAMED = {
     'Number not valid': 'Phone number not valid',
     'People in the normal flow': 'People not on the cold list',
     'People texted': 'People we texted',
-    'People who got 2+ texts': 'People we texted 2 or more times',
-    'People who got exactly 1 text': 'People we texted only ONCE',
+    'People we texted 2 or more times': 'Texted 2+ times — how many people',
+    'People we texted only ONCE': 'Texted once — how many people',
+    'People who got 2+ texts': 'Texted 2+ times — how many people',
+    'People who got exactly 1 text': 'Texted once — how many people',
     'People who texted back': 'People who texted us back',
     "Person's replies within 5 min %": 'How often a person answers within 5 minutes',
     "Person's reply, median minutes": 'Typical wait for a person to reply (minutes)',
@@ -473,10 +470,10 @@ ROWS = [
     ("Normal applicants (not the cold list)", "% of normal applicants who booked",
      _lane_pct("live", "booked")),
 
-    ("Does following up work?", "People we texted only ONCE", _curve("one", "people")),
-    ("Does following up work?", "% of the once-only group who booked", _curve_pct("one", "booked")),
-    ("Does following up work?", "People we texted 2 or more times", _curve("many", "people")),
-    ("Does following up work?", "% of the followed-up group who booked", _curve_pct("many", "booked")),
+    ("Does texting them again help?", "Texted once — how many people", _curve("one", "people")),
+    ("Does texting them again help?", "Texted once — % who booked", _curve_pct("one", "booked")),
+    ("Does texting them again help?", "Texted 2+ times — how many people", _curve("many", "people")),
+    ("Does texting them again help?", "Texted 2+ times — % who booked", _curve_pct("many", "booked")),
 
     ("Did they show up?", "Showed up to their interview", lambda r: _f(r, "shown", "")),
     ("Did they show up?", "% who showed — AI bookings",
@@ -796,7 +793,7 @@ SECTION_TINT = {"This week": (0.86, 0.86, 0.86),
                 "Normal applicants (not the cold list)": (0.88, 0.96, 0.90),
                 "Why texts never arrive": (0.99, 0.91, 0.86),
                 "Why they didn't book": (0.99, 0.89, 0.89),
-                "Does following up work?": (0.89, 0.95, 0.99), "Who we texted": (0.90, 0.94, 0.99), "Interviews booked": (0.90, 0.96, 0.91),
+                "Does texting them again help?": (0.89, 0.95, 0.99), "Who we texted": (0.90, 0.94, 0.99), "Interviews booked": (0.90, 0.96, 0.91),
                 "Did they show up?": (0.98, 0.95, 0.88), "How fast we reply": (0.93, 0.91, 0.98),
                 "People we left hanging": (0.99, 0.91, 0.91), "What applicants ask": (0.95, 0.95, 0.95),
                 "Problems to fix": (0.99, 0.93, 0.85)}
@@ -889,7 +886,7 @@ def _format(ws, last_col, last_row, label_rows):
                 ws.format("{}:{}".format(_a1(r, FIRST_WEEK_COL), _a1(r, last_col)),
                           wrapped)
         ws.freeze(rows=HEADER_ROW, cols=2)
-        _widths(ws, last_col)
+        _widths(ws, last_col, last_row)
         _collapse(ws, label_rows)
     except Exception as e:  # noqa: BLE001
         print("[weekly_sheet] formatting skipped: {}".format(e), flush=True)
@@ -979,24 +976,35 @@ def _collapse(ws, label_rows):
         ws.spreadsheet.batch_update({"requests": reqs})
 
 
-def _widths(ws, last_col):
-    """Column A narrow (a section name), B wide enough for the longest metric
-    label, and every week column wide enough for the question paragraph."""
-    reqs = [
-        {"updateDimensionProperties": {
-            "range": {"sheetId": ws.id, "dimension": "COLUMNS",
-                      "startIndex": 0, "endIndex": 1},
-            "properties": {"pixelSize": 132}, "fields": "pixelSize"}},
-        {"updateDimensionProperties": {
-            "range": {"sheetId": ws.id, "dimension": "COLUMNS",
-                      "startIndex": 1, "endIndex": 2},
-            "properties": {"pixelSize": 265}, "fields": "pixelSize"}},
+def _widths(ws, last_col, last_row):
+    """Size everything to the text it holds (Megan 2026-09-26: "make sure all
+    cells are fit to size of the text they contain").
+
+    The label columns are AUTO-sized — a fixed width clipped "Normal
+    applicants (not the cold list)" and "Too recent to judge (texted in the
+    last 3 days)", and the longest label changes whenever one is reworded, so
+    a number here would go stale the next time somebody edits a row.
+
+    The week columns keep a fixed width on purpose: auto-sizing ignores
+    wrapping, so it would stretch the questions cell to one enormous line
+    instead of a readable paragraph. They are sized once, and then the ROWS
+    are auto-sized — which does respect wrapping — so a tall wrapped cell
+    grows its row rather than hiding its last half. Order matters: row height
+    depends on column width, so the columns are set first."""
+    def _auto(dim, start_i, end_i):
+        return {"autoResizeDimensions": {"dimensions": {
+            "sheetId": ws.id, "dimension": dim,
+            "startIndex": start_i, "endIndex": end_i}}}
+
+    ws.spreadsheet.batch_update({"requests": [
+        _auto("COLUMNS", 0, 2),
         {"updateDimensionProperties": {
             "range": {"sheetId": ws.id, "dimension": "COLUMNS",
                       "startIndex": FIRST_WEEK_COL - 1, "endIndex": last_col},
-            "properties": {"pixelSize": 470}, "fields": "pixelSize"}},
-    ]
-    ws.spreadsheet.batch_update({"requests": reqs})
+            "properties": {"pixelSize": WEEK_COL_WIDTH}, "fields": "pixelSize"}},
+    ]})
+    # separate call so the widths are committed before the heights are measured
+    ws.spreadsheet.batch_update({"requests": [_auto("ROWS", 0, last_row)]})
 
 
 class _EmptyTab(object):

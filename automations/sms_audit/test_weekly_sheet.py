@@ -221,7 +221,8 @@ class QuestionCellTest(unittest.TestCase):
     def test_most_asked_comes_first(self):
         cell = W.question_cell(self._rep([
             {"question": "Can we reschedule / a different time?", "asked": 45,
-             "reply": "1st Interview - Reschedule", "no_reply": 2},
+             "reply": "1st Interview - Reschedule", "no_reply": 2,
+             "no_reply_unbooked": 2, "no_reply_booked": 0},
             {"question": "What is the pay?", "asked": 2,
              "reply": "“Our HR manager…”", "no_reply": 0}]))
         self.assertLess(cell.index("reschedule"), cell.index("pay"))
@@ -238,8 +239,8 @@ class QuestionCellTest(unittest.TestCase):
     def test_questions_that_got_no_reply_are_called_out(self):
         cell = W.question_cell(self._rep([
             {"question": "What is the pay?", "asked": 5, "reply": "x",
-             "no_reply": 3}]))
-        self.assertIn("3 got no answer", cell)
+             "no_reply": 3, "no_reply_unbooked": 3, "no_reply_booked": 0}]))
+        self.assertIn("3 got no reply here and never booked", cell)
 
     def test_the_unbucketed_ones_are_the_last_line(self):
         cell = W.question_cell(self._rep(
@@ -374,11 +375,15 @@ class PlainLabelTest(unittest.TestCase):
                 self.assertNotIn(word, low, label)
 
     def test_a_percent_row_says_what_of_what(self):
+        """A bare "%" tells nobody the denominator. Every percentage label
+        has to name the group it is a percentage OF."""
         for _sec, label, _fn in W.ROWS:
-            if "%" in label:
-                self.assertTrue(label.startswith("%") or "%" in label.split()[-1],
-                                "{!r} does not read as a percentage of "
-                                "something".format(label))
+            if "%" not in label:
+                continue
+            low = label.lower()
+            self.assertTrue(any(w in low for w in (" who ", " that ", " of ")),
+                            "{!r} does not say what it is a percentage "
+                            "of".format(label))
 
 
 class RenameTest(unittest.TestCase):
@@ -621,70 +626,42 @@ class CollapsibleTest(unittest.TestCase):
                              "{!r}'s detail rows are not contiguous under it".format(summary))
 
 
-class TemplateIsNotSilenceTest(unittest.TestCase):
-    """Megan: "if a template went out instead then these don't need to be red
-    because that is still a response." Red is reserved for silence — a
-    scheduled template is not an ANSWER, but the applicant did hear from us,
-    and colouring both the same made the smaller problem look like the
-    bigger one."""
+class OutcomeNotTemplateTest(unittest.TestCase):
+    """Megan 2026-09-26: "this prob means that they got a phone call to
+    discuss. If someone gets directions, that means they were booked for an
+    interview." The texts are half the conversation; the call list is the
+    other half. So the test is whether the applicant ENDED UP BOOKED, not
+    which template happened to fire — reading the text channel as the whole
+    story turned people who had advanced into a red flag."""
 
-    def _cell(self, blast):
+    def _cell(self, unbooked, booked):
         return W.question_cell({
-            "question_table": [{"question": "What is the pay?", "asked": 5,
-                                "reply": "HR covers it", "answered": 3,
-                                "no_reply": 2, "blast": blast}],
+            "question_table": [{"question": "What is the pay?", "asked": 9,
+                                "reply": "HR covers it", "answered": 4,
+                                "no_reply": unbooked + booked,
+                                "no_reply_unbooked": unbooked,
+                                "no_reply_booked": booked,
+                                "blast": "Friendly Reminder 1"}],
             "questions_other": [], "messages": 900, "log": {}})
 
-    def test_silence_is_red(self):
-        cell = self._cell("")
-        self.assertIn("⚠ 2 got no answer at all", cell)
-        self.assertTrue([r for r in W.warning_runs(cell) if r["format"].get("bold")])
-
-    def test_a_template_instead_is_black(self):
-        cell = self._cell("Friendly Reminder 1")
-        self.assertIn("got the “Friendly Reminder 1” template", cell)
+    def test_someone_who_booked_anyway_is_not_a_failure(self):
+        cell = self._cell(0, 2)
+        self.assertIn("booked anyway", cell)
         self.assertEqual(W.warning_runs(cell), [])
 
-    def test_the_template_line_still_says_it_was_not_an_answer(self):
-        self.assertIn("instead of an answer", self._cell("Directions"))
-
-
-class NeedsARealAnswerTest(unittest.TestCase):
-    """Megan, on "Is this a real job / who are you?" answered by the 3rd Left
-    Message template: "except for this one — this should have been answered."
-    A scheduling template genuinely answers a reschedule request; it cannot
-    answer who we are or what the job pays."""
-
-    def _cell(self, question, blast):
-        return W.question_cell({
-            "question_table": [{"question": question, "asked": 3,
-                                "reply": "", "answered": 0, "no_reply": 1,
-                                "blast": blast,
-                                "needs_a_person": question in A.NEEDS_A_PERSON}],
-            "questions_other": [], "messages": 900, "log": {}})
-
-    def test_a_trust_question_answered_by_a_template_is_still_red(self):
-        cell = self._cell("Is this a real job / who are you?",
-                          "3rd Left Message - Call List")
-        self.assertIn("needed a real answer", cell)
+    def test_someone_who_never_booked_is(self):
+        cell = self._cell(3, 0)
+        self.assertIn("never booked", cell)
         self.assertTrue([r for r in W.warning_runs(cell) if r["format"].get("bold")])
 
-    def test_a_reschedule_answered_by_the_reschedule_template_is_not(self):
-        cell = self._cell("Can we reschedule / a different time?",
-                          "1st Interview - Reschedule")
-        self.assertNotIn("needed a real answer", cell)
-        self.assertEqual(W.warning_runs(cell), [])
+    def test_both_show_and_only_the_loss_is_red(self):
+        cell = self._cell(3, 2)
+        red = [cell[r["startIndex"]:] for r in W.warning_runs(cell)
+               if r["format"].get("bold")]
+        self.assertEqual(len(red), 1)
+        self.assertTrue(red[0].startswith("⚠ 3 got no reply here and never booked"))
 
-    def test_the_list_is_about_what_a_template_could_possibly_contain(self):
-        for q in ("What is the pay?", "What is the job / what do you do?",
-                  "Which role / which company is this?", "I never got the email"):
-            self.assertIn(q, A.NEEDS_A_PERSON, q)
-        for q in ("Can we reschedule / a different time?",
-                  "How do I join the Zoom / link trouble?",
-                  "Are you there? (chasing us for a reply)"):
-            self.assertNotIn(q, A.NEEDS_A_PERSON, q)
-
-    def test_every_name_on_the_list_is_a_real_bucket(self):
-        buckets = {label for label, _pat in A.QUESTION_BUCKETS}
-        for q in A.NEEDS_A_PERSON:
-            self.assertIn(q, buckets, q)
+    def test_the_template_name_no_longer_decides_anything(self):
+        # same template, opposite outcomes, opposite colours
+        self.assertEqual(W.warning_runs(self._cell(0, 2)), [])
+        self.assertTrue(W.warning_runs(self._cell(2, 0)))
