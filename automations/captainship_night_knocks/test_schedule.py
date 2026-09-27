@@ -170,9 +170,18 @@ class Weekends(unittest.TestCase):
         p.start()
         self.addCleanup(p.stop)
 
-    def test_saturday_still_sends(self):
-        got = replay(ROSTER, day=(2026, 9, 5))[21]
-        self.assertEqual([d.label for d in got], ["Central"])
+    def test_saturday_sends_at_six_local(self):
+        # Raf 2026-09-27: Saturdays go out at 6 PM local, not 9.
+        got = replay(ROSTER, day=(2026, 9, 5), hours=range(15, 24))
+        self.assertEqual([d.label for d in got[17]], ["Eastern"])
+        self.assertEqual([d.label for d in got[18]], ["Central"])
+        self.assertEqual([d.label for d in got[20]], ["Pacific"])
+        self.assertEqual(got[21], [])
+        self.assertEqual(got[18][0].fire_local.hour, 18)
+
+    def test_friday_is_still_nine_local(self):
+        got = replay(ROSTER, day=(2026, 9, 4))
+        self.assertEqual([d.label for d in got[21]], ["Central"])
 
     def test_sunday_night_sends_nothing(self):
         self.assertEqual(S.due(at_central(2026, 9, 6, 21), ROSTER), [])

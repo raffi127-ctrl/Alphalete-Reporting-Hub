@@ -31,6 +31,16 @@ from automations.captainship_night_knocks import zones as Z
 # it is local and not one org-wide fire.
 HOUR, MINUTE = 21, 0
 
+# SATURDAY IS 6:00 PM local, not 9. Raf 2026-09-27, by mail: "On Saturdays,
+# let's have this email come out at 6 local time since the guys finish the
+# field earlier on Saturdays". Same office-local clock, just an earlier hour.
+SATURDAY_HOUR = 18
+
+
+def fire_hour(local_date: dt.date) -> int:
+    """The local hour this day's wave goes out: 6 PM Saturday, else 9 PM."""
+    return SATURDAY_HOUR if local_date.weekday() == 5 else HOUR
+
 # How late a wave may still go out. MUST be >= the tick or a wave can fall
 # between two passes and never fire.
 #
@@ -70,10 +80,10 @@ class Due:
 
 
 def _fire_instant(zone: str, local_date: dt.date) -> dt.datetime:
-    """The UTC instant at which `zone` hits 9 PM on `local_date`."""
+    """The UTC instant at which `zone` hits its send hour on `local_date`."""
     tz = ZoneInfo(zone)
     return dt.datetime.combine(
-        local_date, dt.time(HOUR, MINUTE), tzinfo=tz
+        local_date, dt.time(fire_hour(local_date), MINUTE), tzinfo=tz
     ).astimezone(dt.timezone.utc)
 
 
