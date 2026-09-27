@@ -7,7 +7,7 @@ This is the ONE edit-to-add config file. Each section is a dict:
   react   -- Slack reaction shortcode (added onto the parent)
   kind    -- which capture recipe (see capture.py):
              daily | team_totals | team_totals_detail | field_status | energy |
-             team | highrollers | zeros | ranking | new_starts
+             team | highrollers | zeros | ranking | new_starts | lanes
   sort    -- for 'ranking' kind: the running-week metric header to sort by (APPS/INT/NL)
   weekdays-- optional: post this section only on these weekdays (Mon=0). Absent
              means every day. See sections_for().
@@ -46,6 +46,11 @@ SECTIONS = [
      "emoji": "\U0001F4F6", "react": "signal_strength", "kind": "ranking", "sort": "NL"},
     {"id": "new_starts", "title": "New Starts", "weekdays": (1, 2, 3, 4, 5, 6),
      "emoji": "\U0001F195", "react": "new", "kind": "new_starts"},
+    # Raf 9/26 (via Eve): Maud's 'Lanes' tab, as-is, in the daily thread.
+    # Monday 4am it still shows last week as 'Current Week' -- the tab only
+    # rolls once Eve builds the new Sales Board tab (see sales board lanes.py).
+    {"id": "lanes", "title": "Lanes",
+     "emoji": "\U0001F6E3️", "react": "motorway", "kind": "lanes"},
 ]
 
 ALL_WEEKDAYS = (0, 1, 2, 3, 4, 5, 6)
