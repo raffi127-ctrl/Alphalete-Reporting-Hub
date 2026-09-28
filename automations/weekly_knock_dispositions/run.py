@@ -45,7 +45,8 @@ from automations.weekly_knock_dispositions import apps as A
 from automations.weekly_knock_dispositions import board as B
 from automations.weekly_knock_dispositions import pull as P
 from automations.weekly_knock_dispositions import teams as TEAMS
-from automations.weekly_knock_dispositions.offices import enabled, key_of
+from automations.weekly_knock_dispositions.offices import (
+    enabled, for_this_login, key_of, own_office_owner)
 
 REPORT_ID = "weekly_knock_dispositions"
 # NO card of its own (Megan 2026-08-22): the Sunday board reports onto the
@@ -284,7 +285,7 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
         dry_run: bool = True, preview_dm: str | None = None,
         fresh: bool = False, no_teams: bool = False) -> int:
     started_at = dt.datetime.now()
-    offices = enabled(only)
+    offices = for_this_login(enabled(only), own_office_owner())
     all_names = [key_of(o) for o in enabled(None)]
     if not dry_run and any(o.get("preview_only") for o in offices):
         # Carlos's B2B boards (offices.CARLOS_B2B) have no posting target

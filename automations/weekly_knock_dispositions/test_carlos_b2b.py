@@ -33,6 +33,19 @@ class CarlosB2BTest(unittest.TestCase):
         self.assertEqual(rc, 0)
         dl.assert_not_called()
 
+    def test_carlos_login_reads_as_master(self):
+        rows = O.enabled(["Carlos Hidalgo"])
+        got = O.for_this_login(rows, "Carlos Hidalgo")
+        self.assertEqual({o["ov"] for o in got}, {"master"})
+        self.assertEqual({o["ov"] for o in rows}, {"impersonate"})  # copies
+
+    def test_other_login_keeps_impersonating(self):
+        rows = O.enabled(["Carlos Hidalgo", "Rafael Hidalgo"])
+        got = O.for_this_login(rows, "Rafael Hidalgo")
+        self.assertEqual([o["ov"] for o in got if o.get("b2b")],
+                         ["impersonate", "impersonate"])
+        self.assertIs(O.for_this_login(rows, None), rows)
+
     def test_unknown_name_still_loud(self):
         with self.assertRaises(SystemExit):
             O.enabled(["Nobody Here"])

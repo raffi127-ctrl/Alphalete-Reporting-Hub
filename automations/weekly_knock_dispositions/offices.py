@@ -210,6 +210,33 @@ CARLOS_B2B = [
 ]
 
 
+def own_office_owner() -> str | None:
+    """The owner whose office THIS machine's ownerville login already is
+    (fleet: Lucy 2 = chidalgo = Carlos Hidalgo), or None. Only a machine that
+    carries a .machine-profile marker answers — an unmarked box defaults to
+    "Lucy 1" in session_holder, and guessing wrong here means reading the
+    wrong office."""
+    try:
+        from automations.shared import fleet
+        from automations.shared import session_holder as sh
+        if not sh._MACHINE_MARKER.read_text().strip():
+            return None
+        m = fleet.get(sh._this_machine())
+        return (m.owner_display_name or None) if m else None
+    except Exception:  # noqa: BLE001 — no answer = impersonate as usual
+        return None
+
+
+def for_this_login(rows: list[dict], owner: str | None) -> list[dict]:
+    """A B2B row whose owner IS the session's login reads it as master — there
+    is nobody to impersonate (Lucy 2 is logged in as Carlos, 2026-09-28: the
+    sample ran there because Lucy 1's queue was stuck). Pure."""
+    if not owner:
+        return rows
+    return [dict(r, ov="master") if (r.get("b2b")
+            and r["name"].lower() == owner.lower()) else r for r in rows]
+
+
 def key_of(cfg: dict) -> str:
     """The id a row is pulled, cached and rendered under — "key" when the
     owner has more than one board (Carlos's two campaigns), else the name."""
