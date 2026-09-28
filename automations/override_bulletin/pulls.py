@@ -38,6 +38,8 @@ def _we_key(week_mdy: str) -> str:
 # Raf Captain Override — Google Sheet (Raf PNL 2026, row 335)
 # --------------------------------------------------------------------------
 RAF_PNL_WORKBOOK = ALL_IN_ONE_RAF
+# Legacy title only; the tab is resolved by gid (workbooks.main_pnl_tab) because
+# it was renamed twice on 2026-09-28.
 RAF_PNL_TAB = "Raf PNL 2026"
 RAF_CAPTAIN_LABEL = "Captain Override"   # find the row BY this label — never hardcode
 RAF_CAPTAIN_ROW = 335        # legacy fallback only (Raf inserts rows; the row drifts)
@@ -67,7 +69,9 @@ def raf_captain_override(week_mdy: str, ws=None):
     week column or the label isn't present."""
     if ws is None:
         from automations.recruiting_report import fill as _fill
-        ws = _fill._client().open_by_key(RAF_PNL_WORKBOOK).worksheet(RAF_PNL_TAB)
+        from automations.shared.workbooks import main_pnl_tab
+        _book = _fill._client().open_by_key(RAF_PNL_WORKBOOK)
+        ws = _book.worksheet(main_pnl_tab(_book))
     vals = ws.get_all_values()
     header = vals[0]
     want = _we_key(week_mdy)

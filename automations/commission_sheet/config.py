@@ -39,6 +39,8 @@ TAB_REPS = "3. Add Reps and Set Commission"
 TAB_CONFIRM = "4. Confirm DD Details and Add Bonuses"
 TAB_PNL = "PNL"
 TAB_TRANSFERS = "ATT Sales Transfers"   # in ALL_IN_ONE
+# Legacy title only; resolved by gid at call time via workbooks.main_pnl_tab,
+# because this tab was renamed twice on 2026-09-28.
 TAB_YEAR_PNL = "Raf PNL 2026"           # in ALL_IN_ONE
 
 # Crosstab tabs carry headers on row 1 and data from row 3 (row 2 is the

@@ -136,7 +136,9 @@ def _source_rows(workbook_id: str) -> Tuple[dt.date, List[Row]]:
 
 def _target(all_in_one_id: str):
     from automations.recruiting_report.fill import open_by_key
-    return open_by_key(all_in_one_id).worksheet(C.TAB_YEAR_PNL)
+    from automations.shared.workbooks import main_pnl_tab
+    book = open_by_key(all_in_one_id)
+    return book.worksheet(main_pnl_tab(book))
 
 
 def analyze(workbook_id: str = C.WORKBOOK_ID,
@@ -149,9 +151,9 @@ def analyze(workbook_id: str = C.WORKBOOK_ID,
     hits = [i for i, c in enumerate(header) if nrm(c) == nrm(banner)]
     if not hits:
         have = [c for c in header if str(c).strip().upper().startswith("WE ")]
-        raise KeyError(f"No {banner!r} banner on {C.TAB_YEAR_PNL}. Weeks present: {have}")
+        raise KeyError(f"No {banner!r} banner on {ws.title!r}. Weeks present: {have}")
     if len(hits) > 1:
-        raise KeyError(f"{banner!r} appears {len(hits)} times on {C.TAB_YEAR_PNL}")
+        raise KeyError(f"{banner!r} appears {len(hits)} times on {ws.title!r}")
     base = hits[0]
     plan = Plan(week=week, banner=banner,
                 brought_col=col_letter(base), paid_col=col_letter(base + 1))

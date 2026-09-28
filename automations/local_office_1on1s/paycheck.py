@@ -39,7 +39,21 @@ from typing import Dict, List, Optional, Tuple
 from automations.reps_gross_paycheck import names, pnl as pnl_mod
 
 SHEET_ID = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
-TABS = ["Raf PNL 2026", "MJ-Alphaletes PNL 2026", "OG-Alphaletes PNL 2026"]
+
+# BY GID, NOT BY NAME. The main P&L was called 'Raf PNL 2026' until 2026-09-28,
+# when it was renamed 'Bas-PNL 2026' — same gid, same 1262x174 grid, same
+# numbers. Four other modules hardcode the old title and break on that rename
+# (reps_gross_paycheck.pnl, pnl_office.run, commission_sheet.config,
+# override_bulletin.pulls). A gid survives a rename; a title does not.
+# The office P&L plus the per-sub-leader books under Alphaletes. A rep's money
+# moves from the main book to their sub-book when their leader gets one — see
+# the handoff above — so all of them are read and merged.
+GIDS = {
+    1300001293: "main",             # 'RAF PNL 2026'; briefly 'Bas-PNL 2026'
+    721228956:  "Bas-Alphaletes",   # added 2026-09-28
+    325879371:  "MJ-Alphaletes",
+    1122999014: "OG-Alphaletes",
+}
 
 
 @dataclass
@@ -55,9 +69,21 @@ class Merged:
         return self.source.get((names.key(who), sunday), "")
 
 
+def tab_titles(spreadsheet) -> List[str]:
+    """Resolve GIDS to whatever the tabs are called today, in GIDS order."""
+    by_id = {ws.id: ws.title for ws in spreadsheet.worksheets()}
+    missing = [g for g in GIDS if g not in by_id]
+    if missing:
+        raise KeyError(
+            "P&L tab(s) gone from %s: %s. A rename is fine — this looks them "
+            "up by gid — so a miss means the tab was DELETED."
+            % (SHEET_ID, ", ".join(f"gid {g} ({GIDS[g]})" for g in missing)))
+    return [by_id[g] for g in GIDS]
+
+
 def load(spreadsheet, tabs: List[str] = None) -> Merged:
     out = Merged()
-    for tab in (tabs or TABS):
+    for tab in (tabs or tab_titles(spreadsheet)):
         p = pnl_mod.load(spreadsheet, tab=tab)
         for person in p.people.values():
             k = names.key(person.raw)

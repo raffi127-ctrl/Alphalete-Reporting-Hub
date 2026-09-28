@@ -566,3 +566,304 @@ Streit entirely.
    mislabelled template, or a different number Raf wants?
 2. **Written go on the four tab deletions** (`Velocity`, `Safiya`,
    `Thomas`, `Edgar `) — back up to `output/` first.
+
+
+---
+
+# Templates REBUILT by Megan, 2026-09-28
+
+This supersedes the "Box variants — four, not two" and "Week-header traps"
+sections above for anything built from here on.
+
+    gid 0           'Individual Template'          (was 'Template - Fiber')
+    gid 151758116   'TEAM Template'                (was 'A-player - Template')
+    gid 548296152   'OLD of A-player - Template'   backup, do not read
+
+## Headers are now clean
+
+22 week columns, C through X, **`08/02` … `12/27`** — uniformly zero-padded
+`MM/DD`, no `WE` prefix. Verified with `weeks.read_header`: **22 of 22 are
+Sundays, 0 suspect, on both templates.** Both typos this spec documented
+(`WE  9/4`, `08/06`) are gone.
+
+`Individual Template` also adds **`B1 = 'WE (SUN)'`**, which states the
+convention in the sheet instead of leaving it to be inferred.
+
+The old headers survive on the tabs that were NOT rebuilt — `weeks.py`
+still flags `WE  9/4` on `Se7en Sins`. Rebuilding those tabs from the
+template removes the problem at the source; the guard stays because hand
+typing continues.
+
+## Two templates, and what is in each
+
+**`Individual Template` — ONE box, r1-42.** Knocking block r2-14, then
+`1. Sales` r15-22, `2. Recruiting` **r23-29 = the EXPANDED SEVEN**,
+`3. Training` r30-32, `4. Culture` r33-38, `5. Finances` r39-41,
+`Goal / Focus` r42.
+
+**This confirms the Loom reading.** Raf's rebuild kept the seven separate
+recruiting rows and dropped the condensed ratio form, exactly as 1:42
+said. Row 25 is now spelled `2nd rds closed` (was `2nd rds close`) — the
+row that becomes a count, fed from `BOB # / Accepted`.
+
+**`TEAM Template` — TWO boxes.**
+- **Box 1, r1-41** — the team leader's box: condensed personal rows, NO
+  knocking, plus `Team Structure - All` / `- Leaders` (r24-25) and the
+  `Owner 1on1's` roll-up (r26-40).
+- **Box 2, r43-84** — identical in shape to `Individual Template`:
+  knocking block r44-56, then sales, the expanded seven r65-71, culture,
+  finances.
+
+**Working assumption** (flagged, not confirmed): a team tab is box 1 once
+for the leader who runs the team, then one `Individual Template` box per
+other leader on it. That matches Raf at 3:13-3:33 — "a tab per team… it
+just creates a box for each one… only for leaders" — and explains why the
+TEAM template carries an individual box as the pattern to repeat. If Raf
+means the leader gets BOTH boxes, only the per-tab box count changes, not
+any source mapping.
+
+## Still open
+
+1. **`New starts Retention %`** (r29 / r71) vs the source's `NS Showed %`.
+2. **`Alphaletes` and `Mindset Engine` were deleted and NOT restored.**
+   Their hand-typed Culture/Atmo rows, goals, `Money Saved?` and
+   `BreakEven` have no source to regenerate from. Version history is
+   still the only route back.
+
+
+## Sections are added on promotion, moved on termination
+
+Megan, 2026-09-28: *"so each time a new Lvl 1 leader is promoted (see
+mind map mapping) then they would get a section added here. If someone is
+terminated, you can move their section to the terminated tab. Just
+built."*
+
+**A "section" is a box.** The roster is not a fixed list — it changes as
+people are promoted and terminated, and the run reconciles it every time.
+
+### Who gets one: Level 1 and above
+
+"Lvl 1 leader" names the rung on the board's own ladder
+(`promotion_checkin.config.LADDER`):
+
+    In Training -> Entry Level -> [Level 1] -> Level 2 -> Mastermind
+                                   ^^^^^^^ from here up
+
+That is exactly the test `gap_alerts/leaders.py` already applies — the
+first two rungs excluded — so reuse it rather than writing a third
+leadership check. "See mind map mapping" points at
+`sales_board_mind_map`, which reads `Leadership Status` off the sales
+board. One source, already parsed.
+
+**A newly promoted Level 1 gets a section appended** on their team's tab.
+Detection is a diff: leaders on the board today vs sections on the tab.
+
+### Terminated: MOVE the section, do not delete it
+
+This supersedes the earlier "report the stale box and leave it" note.
+Terminated sections go to the **`TERMINATED` tab** (gid 1477021547),
+which Megan created empty on 2026-09-28 — sections append to it.
+
+Order matters, because a move is a copy plus a delete and the delete is
+the part that cannot be undone:
+
+1. snapshot the section to `output/` first;
+2. append it to `TERMINATED`;
+3. **read it back and verify it landed**, cell for cell;
+4. only then clear it from the team tab.
+
+A failure at any step leaves the source section untouched. Nothing is
+cleared on the strength of a write that returned without error —
+[[feedback_green_means_delivered]].
+
+Who counts as terminated is unchanged: `reps_gross_paycheck.plan.gone`,
+the master `Terminated Reps` log AND the board, with board presence
+outranking a historical log row (the Tadana Manyangadze rehire case).
+
+### What a section contains — ASSUMPTION, flagged
+
+Megan's screenshot circles BOTH boxes on `TEAM Template`. Read together
+with Raf at 0:53 — *"two different templates: one for your average rep,
+and then two once a rep is running their own team"* — the consistent
+reading is:
+
+- **Level 1+ leader, no team of their own** -> one `Individual Template`
+  box.
+- **Leader running a team** -> the `TEAM Template` PAIR: the team box
+  (r1-41, with `Owner 1on1's`) followed by their individual box
+  (r43-84).
+
+This is the only reading under which the `Owner 1on1's` roll-up is
+meaningful — it is a team's numbers, so it belongs only to someone who
+has a team. If Raf means every leader gets both boxes, only the per-tab
+box count changes; no source mapping moves.
+
+
+## Tabs rebuilt 2026-09-28, and what fills section 1
+
+Megan: *"every level 1 is on a team. You need to duplicate the team
+template and name each one for the teams that we have"* and *"the rep
+name on the first section would be the team leader - this one would be
+Al"*.
+
+So `TEAM Template` is the TAB template, not a per-leader one. Done:
+
+- backed up `Se7en Sins` / `Ceaseless` / `Hashiras` to
+  `output/1on1s-backup-2026-09-28/` (334 / 386 / 226 non-empty rows) and
+  renamed them `OLD of ...`, matching Megan's own naming for the template;
+- duplicated `TEAM Template` into five tabs: `Alphaletes` (gid 1146858681),
+  `Se7en Sins` (200188059), `Ceaseless` (1027210157), `Hashiras`
+  (1813952831), `Mindset Engine` (1113038138).
+
+**Section 1's `Rep Name?` is the TEAM HEAD** — and the head comes from the
+trainer chain, via `sales_board_mind_map.plan_teams`, NOT from the board's
+`Team` column. The mind map says why in as many words: the Team column
+*"is typed per row and drifts from the trainer chain the moment somebody
+switches trainers"*. An earlier grouping in this build used that column
+and was wrong.
+
+Off `Sales Board WE 9.27`:
+
+    Se7en Sins       Algemar Kennel     9 first gens  24 members  19 live
+    Hashiras         Basil Elhassan     7             17          15
+    Ceaseless        Willie Henderson   7             17          11
+    Mindset Engine   Andrew Sanborn     4             12           7
+    Alphaletes       (none)             5             16          12
+
+Megan's "this one would be Al" = **Algemar Kennel**, which the tree
+produced unprompted. Note he has NO ROW on the sales board — he is an
+off-board head the Trainer cells name. `read_leaders` therefore does not
+list him, and a roster built only from Level 1+ board rows would leave
+Se7en Sins' section 1 blank. Same for Basil Elhassan on Hashiras.
+
+### Open: Alphaletes has no single head
+
+`plan_teams` returns no lead for it, deliberately — *"Alphaletes has
+several heads and so shows none, which is how Raf's office actually runs
+it."* Its 5 first gens are separate lines, not one leader's. So section 1
+on the `Alphaletes` tab has no name to put in `Rep Name?` and Raf has to
+say who it is (or that the team genuinely has none, in which case section
+1 there is the team roll-up with an empty name).
+
+
+## Spot-check against Raf's hand-typed numbers (Megan's idea, 2026-09-28)
+
+*"you can also use some of the old numbers to spot check that you're
+pulling the correct data"* — done against `OLD of Se7en Sins`.
+
+### Gross Paycheck: 3/3, and it pins the OFFSET
+
+    1on1 column   Raf typed    P&L week that carries it
+    WE 8/02       $770         WE 7/26   $770.00
+    WE 8/23       $976.00      WE 8/16   $976.00
+    WE 9/13       $557.00      WE 9/06   $557.00
+
+Every one is the P&L week **ONE BEHIND** the column it sits in. The row
+label says so — `Gross Paycheck last week?` — and
+`reps_gross_paycheck/week.py` already computes it ("what a rep collects on
+Thursday is what settled the week before"). Use `week.source_week()`;
+do not fill the same-week value. Without this check the whole row would
+have gone in one column off, with plausible-looking numbers.
+
+### The template example is Anthony Marchetti, WE 8/23
+
+`Template - Fiber`'s `8/11` / `72%` / `4/10` / `40%` are his real WE 8/23
+figures, which confirms the ratio mapping: `8/11` is BOB# over Job
+offered (72.7% -> `72%`) and `4/10` is showed over scheduled (`40%`).
+
+### CONFLICT: the hand-fill was WEEKLY, the source is MONTHLY
+
+Anthony's recruiting rows differ in every week column:
+
+    2nd Closing numbers   8/02: 7/12   8/09: 2/4   8/16: 7/10   8/23: 8/11
+    2nd Closing %         8/02: 58%    8/09: 50%   8/16: 70%    8/23: 72%
+
+Each ratio matches its own percentage, so these are four genuine WEEKLY
+readings — not one monthly figure repeated, and not a running total
+(12, 4, 10, 11 does not accumulate).
+
+But the only source for these numbers, `2nd rds %'s`, is **monthly**. And
+Raf in the Loom says monthly is what he wants: *"where it sits for the
+month. This is monthly, so it doesn't have to be weekly... when I was
+filling it out manually, it would be for the month."*
+
+So his STATED intent and his ACTUAL hand-fill disagree. Options:
+ a. write the month's figure into each week column of that month —
+    matches what Raf said, and is all the available source supports;
+ b. find a weekly source for the funnel — nothing in the repo has one at
+    per-leader grain today (`funnel_board` is per office, and its
+    AppStream pull would have to be extended to `tr.adminRow`);
+ c. leave the seven recruiting rows manual.
+
+Not decidable from here — it is Raf's call. **(a) is the assumption until
+he says otherwise**, and it will make four identical values appear across
+a month, which is a visible change from how the sheet reads today.
+
+### Also found: a hand-entry error automation would have prevented
+
+Anthony's WE 9/13 reads `2nd Closing numbers = 4` and `2nd Closing % = 2`.
+A closing percentage of 2 is not a percentage.
+
+
+## Alphaletes: Raf leads it, group section only
+
+Megan, 2026-09-28: *"Raf is the ALphaletes leader but he won't have any
+personal production info - so just fill out the group section for what
+you can and the individuals"*.
+
+So on the `Alphaletes` tab, section 1:
+
+    Rep Name?                    Raf (Rafael Hidalgo)
+    Team Structure - All/Leaders FILL
+    Owner 1on1's block r26-40    FILL  (Active Reps, Leaders, New Starts
+                                 started/alive, retention, and the team's
+                                 New INTS / Upgrades / DTV's / Wireless /
+                                 Total Apps / averages / goals)
+    1. Sales .. 5. Finances      LEAVE EMPTY — he has no personal
+                                 production, and a zero there would read as
+                                 "sold nothing" rather than "not applicable"
+                                 [[feedback_dont_explain_away_a_zero]]
+
+Every other leader on the team gets a normal individual section below.
+
+This also explains why `plan_teams` returns no head for Alphaletes: Raf
+runs it, and Raf is not a row on the sales board's rep roster. Same shape
+as Algemar Kennel on Se7en Sins and Basil Elhassan on Hashiras — the
+off-board heads. The difference is only that Raf is not named in Trainer
+cells either, so the tree cannot infer him; he is configuration.
+
+## The P&L tab renames, and the four modules that broke
+
+On 2026-09-28 the office P&L tab (gid 1300001293) was renamed twice while
+this build was running: `Raf PNL 2026` -> `Bas-PNL 2026` -> `RAF PNL 2026`.
+Same gid, same 1262x174 grid, same numbers. The third name differs from
+the first ONLY IN CASE, and `gspread.worksheet()` is case-sensitive, so a
+literal match fails just as hard as on a real rename.
+
+Four live modules had the title hardcoded and would have thrown
+`WorksheetNotFound` on their next scheduled run:
+
+    reps_gross_paycheck/pnl.py      Thursdays
+    pnl_office/run.py               Fridays 10:00
+    commission_sheet/config.py      (used by pnl.py + apex.py)
+    override_bulletin/pulls.py
+
+All four now resolve through `shared.workbooks.main_pnl_tab(book)`, which
+looks the tab up **by gid** and falls back to any title it has been known
+by, matched case-insensitively — the fallback being what a DUPLICATED
+workbook needs, since a copy keeps titles but not gids. Verified live:
+`reps_gross_paycheck.pnl.load()` reads 408 people / 53 weeks, and
+`pnl_office._tab()` returns `'RAF PNL 2026'`.
+
+There are now FOUR P&L books, not three — a `Bas-Alphaletes PNL 2026`
+(gid 721228956) appeared the same day. `local_office_1on1s/paycheck.py`
+reads all four by gid: 2,111 cells, 0 conflicts.
+
+## Recruiting rows relabelled
+
+Megan: *"rename it to say monthly so we know"*. The section label in col A
+is now **`2. Recruiting (Monthly)`** on all seven tabs — both templates
+and the five team tabs (`Individual Template` r25; `TEAM Template` and
+each team tab r8 and r67). One label per box covers all seven rows, and
+it settles the monthly-vs-weekly ambiguity in the sheet itself rather
+than in a doc nobody reads.

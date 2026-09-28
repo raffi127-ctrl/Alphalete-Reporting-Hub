@@ -48,7 +48,20 @@ from automations.shared import sheets_export as _sx
 from automations.shared.workbooks import ALL_IN_ONE_RAF
 
 SHEET_ID = ALL_IN_ONE_RAF
+# Legacy title, kept as the fallback in workbooks.main_pnl_tab. The tab was
+# renamed twice on 2026-09-28 — 'Bas-PNL 2026', then 'RAF PNL 2026' in a
+# different case — so every use goes through _tab(), which resolves by gid.
 TAB = "Raf PNL 2026"
+_TAB_CACHED = None
+
+
+def _tab() -> str:
+    """The P&L tab's CURRENT title, resolved once per process by gid."""
+    global _TAB_CACHED
+    if _TAB_CACHED is None:
+        from automations.shared.workbooks import main_pnl_tab
+        _TAB_CACHED = main_pnl_tab(open_by_key(SHEET_ID))
+    return _TAB_CACHED
 HEADER_ROW = 1
 TOP_LABEL = "Total Loss - Reps"     # first row of the office summary block
 BOT_LABEL = "Gross Profit"          # last row of the office summary block
@@ -79,19 +92,20 @@ def _sheet_meta(token: str):
     gid made `export?format=pdf` answer 400. Hidden rows come from the same call
     so the console preview + the filled-gate see exactly what the PNG shows.
     """
+    tab = _tab()
     url = (f"https://sheets.googleapis.com/v4/spreadsheets/{SHEET_ID}"
-           f"?includeGridData=true&ranges={requests.utils.quote(TAB)}!A1:A600"
+           f"?includeGridData=true&ranges={requests.utils.quote(tab)}!A1:A600"
            f"&fields=sheets(properties(sheetId,title),data(rowMetadata(hiddenByUser,hiddenByFilter)))")
     r = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=60)
     r.raise_for_status()
     for sh in r.json().get("sheets", []):
-        if sh["properties"]["title"] != TAB:
+        if sh["properties"]["title"] != tab:
             continue
         meta = (sh.get("data") or [{}])[0].get("rowMetadata") or []
         hidden = {i for i, m in enumerate(meta, start=1)
                   if m.get("hiddenByUser") or m.get("hiddenByFilter")}
         return sh["properties"]["sheetId"], hidden
-    raise SystemExit(f"tab {TAB!r} not found in the workbook")
+    raise SystemExit(f"tab {tab!r} not found in the workbook")
 
 
 def _cell(vals, r, c) -> str:
@@ -240,7 +254,7 @@ def post_to_slack(png: Path, caption: str, filename: str, dry_run: bool) -> list
 
 
 def build(today: dt.date, override: str | None, token: str):
-    ws = open_by_key(SHEET_ID).worksheet(TAB)
+    ws = open_by_key(SHEET_ID).worksheet(_tab())
     vals = ws.get_all_values()
     cols = we_columns(vals, today.year)
     if not cols:

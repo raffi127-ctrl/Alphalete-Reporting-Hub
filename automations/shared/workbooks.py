@@ -33,3 +33,49 @@ from __future__ import annotations
 # recruiter-retention pulls, the birthday store and the sales-board transfer
 # form are all tabs in here.
 ALL_IN_ONE_RAF = "1Ez-mbROADd5aCWbLak6kQkNapb-BEk9W81n2ln6DVB4"
+
+
+# ---------------------------------------------------------------------------
+# The office P&L tab, resolved by GID rather than by title.
+#
+# It was 'Raf PNL 2026' until 2026-09-28, when it was renamed 'Bas-PNL 2026'.
+# Same gid, same 1262x174 grid, same numbers — only the name moved. Four live
+# modules had the old title hardcoded and would have thrown WorksheetNotFound
+# on their next scheduled run (reps_gross_paycheck Thursday, pnl_office Friday
+# 10am, commission_sheet, override_bulletin).
+#
+# The repo's standing rule is to find things by label rather than by index,
+# because labels survive edits that indices do not. A tab TITLE is the one
+# label here that has now proved it drifts, and a gid is the thing that does
+# not — so the P&L tab is found by gid, with the titles it has been known by
+# as a fallback for a workbook copy where gids differ.
+# [[feedback_no_hardcoded_columns]]
+MAIN_PNL_GID = 1300001293
+# Every title this tab has been known by. Matched CASE-INSENSITIVELY: the
+# 2026-09-28 rename went 'Raf PNL 2026' -> 'Bas-PNL 2026' -> 'RAF PNL 2026',
+# and gspread's worksheet() is case-sensitive, so a same-name-different-case
+# rename breaks a literal match exactly like a real rename does.
+MAIN_PNL_KNOWN_TITLES = ("RAF PNL 2026", "Raf PNL 2026", "Bas-PNL 2026")
+
+
+def main_pnl_tab(spreadsheet) -> str:
+    """The current title of the office P&L tab in `spreadsheet`.
+
+    Resolved by gid first. Falls back to any title it has historically had,
+    which is what a DUPLICATED workbook (a sandbox copy) needs, since a copy
+    keeps the titles but not the gids.
+    """
+    sheets = spreadsheet.worksheets()
+    for ws in sheets:
+        if ws.id == MAIN_PNL_GID:
+            return ws.title
+    by_fold = {ws.title.strip().lower(): ws.title for ws in sheets}
+    for title in MAIN_PNL_KNOWN_TITLES:
+        hit = by_fold.get(title.strip().lower())
+        if hit:
+            return hit
+    raise KeyError(
+        "No P&L tab in this workbook: gid %d is absent and none of %s is "
+        "present. Tabs: %s"
+        % (MAIN_PNL_GID, ", ".join(map(repr, MAIN_PNL_KNOWN_TITLES)),
+           sorted(by_fold.values())[:20]))

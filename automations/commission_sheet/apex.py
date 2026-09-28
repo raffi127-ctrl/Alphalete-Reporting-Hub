@@ -112,7 +112,9 @@ def plan(week: Optional[dt.date] = None,
     """Read the week's Got Paid column and split it by destination."""
     from automations.recruiting_report.fill import open_by_key
     week = week or _last_sunday()
-    ws = open_by_key(all_in_one_id).worksheet(C.TAB_YEAR_PNL)
+    from automations.shared.workbooks import main_pnl_tab
+    _book = open_by_key(all_in_one_id)
+    ws = _book.worksheet(main_pnl_tab(_book))
 
     banner = banner_for(week)
     header = ws.get("A1:GZ1")[0]
@@ -120,7 +122,7 @@ def plan(week: Optional[dt.date] = None,
     if len(hits) != 1:
         have = [c for c in header if str(c).strip().upper().startswith("WE ")]
         raise KeyError(f"{banner!r} matched {len(hits)} banner(s) on "
-                       f"{C.TAB_YEAR_PNL}. Weeks present: {have}")
+                       f"{ws.title!r}. Weeks present: {have}")
     paid_col = col_letter(hits[0] + 1)          # Brought In, Got Paid, P/L
 
     people = ws.get(f"A{FIRST_REP_ROW}:F600")

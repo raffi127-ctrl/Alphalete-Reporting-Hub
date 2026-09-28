@@ -37,6 +37,9 @@ from automations.reps_gross_paycheck.week import md
 from automations.shared.workbooks import ALL_IN_ONE_RAF
 
 SHEET_ID = ALL_IN_ONE_RAF
+# Legacy title, kept only as the fallback inside workbooks.main_pnl_tab. The
+# tab was renamed twice on 2026-09-28 ('Bas-PNL 2026', then 'RAF PNL 2026' with
+# a different case), so it is resolved BY GID at call time, never by this name.
 TAB = "Raf PNL 2026"
 
 FIRST_NAME_COL = 4          # col E, 0-based
@@ -138,9 +141,16 @@ def _week_columns(row1: List[str], row2: List[str],
     return out
 
 
-def load(spreadsheet, tab: str = TAB, start_year: int = 2026) -> Pnl:
-    """Read every named row on the PNL tab into a Pnl."""
+def load(spreadsheet, tab: Optional[str] = None, start_year: int = 2026) -> Pnl:
+    """Read every named row on the PNL tab into a Pnl.
+
+    `tab=None` resolves the office P&L by gid, which survives the renames this
+    tab has had. Pass a title explicitly only to read a DIFFERENT P&L.
+    """
     from automations.recruiting_report.fill import _retry
+    from automations.shared.workbooks import main_pnl_tab
+    if tab is None:
+        tab = main_pnl_tab(spreadsheet)
     ws = spreadsheet.worksheet(tab)
     grid = _retry(ws.get_all_values)
     if len(grid) < 3:
