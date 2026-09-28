@@ -22,23 +22,31 @@
         <string>/Users/megan/1st Claude Folder</string>
     </dict>
 
-    <!-- 11:30 / 16:00 every day, machine LOCAL time (mini is Central).
-         TWO entries (not 3) on purpose: the nightly schedule_guard only self-heals
-         timed jobs with <=2 StartCalendarInterval entries (it treats 3+ as
-         high-frequency pollers and skips them). A 3-entry version fell fully off
-         launchd 2026-07-20 and nothing brought it back, so keep it at 2 to stay
-         under the guard. 11:30 = the Monday must-run when the week's thread
-         starts; 16:00 = the afternoon run that does the Friday repost (hour>=12). -->
+    <!-- HOURLY on the hour, 8am–9pm, machine LOCAL time (mini is Central).
+         Raf 2026-09-28: onboarding can't wait ~18h for the next pass, so catch
+         results within the hour they land (Malaika passed 6:17pm, after the old
+         4pm run, and sat "Sent" overnight). Light job (email + Sheets + Slack,
+         no browser) so hourly is cheap. EVERY interval carries an Hour on
+         purpose: the nightly schedule_guard only skips Hour-LESS pollers now, so
+         a schedule where each entry names an Hour STAYS self-healed regardless of
+         count (the old "<=2 entries" rule is gone). Friday repost still fires on
+         the first hour>=12 pass; the once-a-day repost guard covers the rest. -->
     <key>StartCalendarInterval</key>
     <array>
-        <dict>
-            <key>Hour</key><integer>11</integer>
-            <key>Minute</key><integer>30</integer>
-        </dict>
-        <dict>
-            <key>Hour</key><integer>16</integer>
-            <key>Minute</key><integer>0</integer>
-        </dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>0</integer></dict>
     </array>
 
     <key>StandardOutPath</key>
