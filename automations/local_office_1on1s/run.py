@@ -168,7 +168,15 @@ def main(argv=None) -> int:
         if head_sec is None:
             gaps.append(f"{team}: no section for the head {rost.head!r}")
         else:
-            hrows = LO.label_rows(grid, head_sec)
+            # The team block's rows MUST be looked up inside the block. Four
+            # of its labels repeat the head's personal sales rows above it, and
+            # a section-wide lookup writes the team's totals onto the person.
+            owner_at = LO.block_start(grid, head_sec, "Owner 1on1's")
+            hrows = LO.label_rows(grid, head_sec, first=owner_at)
+            if owner_at is None:
+                notes.append(f"{team}: no \"Owner 1on1's\" block on the team box "
+                             f"— team totals not written, they would land on "
+                             f"the head's personal rows")
             hhdr = W.read_header(head_sec.header, year=wks[-1].year)
             n = 0
             for wk in wks:
@@ -184,6 +192,8 @@ def main(argv=None) -> int:
                 if wsales is not None:
                     live = [m.name for m in rw.members if not m.terminated]
                     cells.update(TB.sales_totals(live, wsales))
+                if owner_at is None:
+                    continue
                 for label, value in cells.items():
                     r = LO.find_row(hrows, label)
                     if r is None:
@@ -193,7 +203,17 @@ def main(argv=None) -> int:
                     n += 1
             print(f"    {rost.head + ' (team box)':<32} {n:>3} cells")
 
-        for name in rost.leaders:
+        # THE HEAD IS A PERSON, NOT JUST A ROOF. Their box carries their OWN
+        # sales / recruiting / training / finances above the team block, and
+        # only Raf is group-only — Megan 2026-09-28: "Raf is the ALphaletes
+        # leader but he won't have any personal production info". Filling the
+        # team block and stopping there left Algemar Kennel, Willie Henderson,
+        # Basil Elhassan and Andrew Sanborn with four empty sections apiece.
+        people_to_fill = list(rost.leaders)
+        if rost.head and not rost.head_group_only:
+            people_to_fill.insert(0, rost.head)
+
+        for name in people_to_fill:
             sec = by_name.get(PEO.key(name))
             if sec is None:
                 gaps.append(f"{team}: no section for {name}")
@@ -201,7 +221,10 @@ def main(argv=None) -> int:
             hdr = W.read_header(sec.header, year=wks[-1].year)
             for bad in [h for h in hdr if not h.ok]:
                 notes.append(f"{team} r{sec.start}: header {bad.raw!r} — {bad.suspect}")
-            rows = LO.label_rows(grid, sec)
+            # A head's personal rows stop where their team block begins, for
+            # the same duplicate-label reason.
+            own_end = LO.block_start(grid, sec, "Owner 1on1's")
+            rows = LO.label_rows(grid, sec, last=(own_end - 1) if own_end else None)
 
             rn, note = PEO.resolve(name, rec_names)
             if note:
@@ -209,6 +232,37 @@ def main(argv=None) -> int:
             filled = F.for_leader(name, wks, pay=pay, months=months,
                                   pay_name=name, rec_name=rn)
             gaps.extend(filled.gaps)
+
+            # 3. Training / Team Building — never wired until now, blank for
+            # everyone in every box. 'Trained This week?' is how many people
+            # name this person as their Trainer on THAT week's board and are in
+            # their first week; 'Retained?' is how many of those are still not
+            # terminated. Both come from the roster this run already builds per
+            # week, so there is no new source to read.
+            for wk in wks:
+                rw = week_rosters.get(wk, {}).get(team)
+                if rw is None:
+                    continue
+                # Trainer cells are spelled informally — 'lakeaih' where the
+                # leader is 'Lakeaih Gregory' — so an exact key comparison
+                # drops real trainees. resolve() accepts a unique first-name
+                # hit and refuses an ambiguous one.
+                trained = []
+                for m in rw.members:
+                    if not TB._is_week_one(m.level) or not m.trainer:
+                        continue
+                    if PEO.key(m.trainer) == PEO.key(name):
+                        trained.append(m)
+                        continue
+                    hit, _ = PEO.resolve(m.trainer, [name])
+                    if hit is not None:
+                        trained.append(m)
+                if trained:
+                    filled.add("Trained This week?", wk, str(len(trained)),
+                               f"WE {wk:%-m/%-d} board: first-week reps trained by {name}")
+                    filled.add("Retained?", wk,
+                               str(sum(1 for m in trained if not m.terminated)),
+                               f"WE {wk:%-m/%-d} board: of those, not terminated")
 
             # products + knocks, per week
             for wk, (wsales, wdays) in weekly.items():

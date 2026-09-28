@@ -51,6 +51,10 @@ class Member:
     level: str
     is_leader: bool
     terminated: bool
+    # Who trained them, as the board's Trainer cell spells it. Carried because
+    # 'Trained This week?' asks how many first-week reps name a given leader —
+    # a question only this column answers.
+    trainer: str = ""
 
 
 @dataclass
@@ -92,7 +96,8 @@ def build(today: Optional[dt.date] = None, *, tab: Optional[str] = None,
         head = lead_name or HEAD_OVERRIDE.get(team, "")
         ms = [Member(name=m.display, level=(m.level or "").lower(),
                      is_leader=(m.level or "").lower() in LEADER_LEVELS,
-                     terminated=m.terminated)
+                     terminated=m.terminated,
+                     trainer=str(getattr(m, "trainer", "") or "").strip())
               for m in members]
         leaders = [m.name for m in ms
                    if m.is_leader and not m.terminated and m.name != head]

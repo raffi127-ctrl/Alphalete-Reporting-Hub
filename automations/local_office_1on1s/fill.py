@@ -37,7 +37,13 @@ MONTHS = ["january", "february", "march", "april", "may", "june", "july",
           "august", "september", "october", "november", "december"]
 
 # label on the section  ->  key in second_rounds.WANT
+#
+# TWO BOXES, TWO VOCABULARIES. The individual box (Individual Template) carries
+# the EXPANDED seven rows; the TEAM box at the top of each tab carries Raf's
+# older CONDENSED four. Mapping only the expanded set left every team box's
+# whole recruiting block blank — the labels simply never matched.
 RECRUITING = {
+    # expanded — Individual Template r23-29
     "2nd rds Conducted":        "conducted",
     "Job Offered":              "offered",
     "2nd rds closed":           "bob_num",     # Raf: "that should be a number"
@@ -45,6 +51,10 @@ RECRUITING = {
     "New Starts Scheduled":     "ns_sched",
     "New Starts Showed":        "ns_showed",
     "New starts Retention %":   "ns_pct",      # source is 'NS Showed %' — see spec
+    # condensed — TEAM Template box 1
+    "2nd Closing numbers":      "bob_num",
+    "2nd Closing %":            "bob_pct",
+    "New Starts showed / Scheduled": "ns_showed",
 }
 
 # EVERY ROW THIS REPORT OWNS. A row here is cleared when the run has no value
@@ -74,6 +84,10 @@ OWNED = [
     "Mon - Friday AVG Last Knock", "Saturday Avg Doors / Day",
     "Saturday First knock", "Saturday Last Knock",
     "Saturday avg Talk To's Day",
+    # 2. Recruiting — the TEAM box's condensed spellings
+    "2nd Closing numbers", "2nd Closing %", "New Starts showed / Scheduled",
+    # 3. Training / Team Building
+    "Trained This week?", "Retained?",
     # 5. Finances — the one money row with a source
     "Gross Paycheck last week?",
 ]

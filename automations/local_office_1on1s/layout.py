@@ -73,14 +73,38 @@ def find_sections(grid: List[List[str]]) -> List[Section]:
     return out
 
 
-def label_rows(grid: List[List[str]], sec: Section) -> Dict[str, int]:
-    """{folded col-B label: row} for one section, first occurrence wins."""
+def label_rows(grid: List[List[str]], sec: Section,
+               first: Optional[int] = None,
+               last: Optional[int] = None) -> Dict[str, int]:
+    """{folded col-B label: row} for one section, first occurrence wins.
+
+    `first`/`last` narrow the window, and narrowing is NOT optional on a TEAM
+    box: it carries 'Upgrades', "DTV's", 'Wireless Lines' and 'Total Apps'
+    TWICE — once as the head's own sales near the top, once inside the
+    `Owner 1on1's` roll-up below. First-occurrence-wins then resolves the
+    TEAM's totals onto the head's PERSONAL rows, which is how Algemar Kennel
+    came to show 102 personal apps and 23 personal wireless lines: his team's
+    week, printed as his own. Wrong and entirely plausible, which is the worst
+    kind. [[feedback_read_actual_content]]
+    """
     out: Dict[str, int] = {}
-    for r in range(sec.start + 1, sec.end + 1):
+    lo = max(sec.start + 1, first or 0)
+    hi = min(sec.end, last or sec.end)
+    for r in range(lo, hi + 1):
         lab = fold(_cell(grid, r, LABEL_COL))
         if lab and lab not in out:
             out[lab] = r
     return out
+
+
+def block_start(grid: List[List[str]], sec: Section, marker: str) -> Optional[int]:
+    """The row where col A starts a named block inside a section, e.g. the
+    TEAM box's "Owner 1on1's". None when this section has no such block."""
+    want = fold(marker)
+    for r in range(sec.start, sec.end + 1):
+        if fold(_cell(grid, r, MARKER_COL)) == want:
+            return r
+    return None
 
 
 def find_row(rows: Dict[str, int], label: str) -> Optional[int]:
