@@ -17,6 +17,27 @@ def _grid(cur, last, excl=False):
     return forms, vals
 
 
+class LanesWeekTest(unittest.TestCase):
+    """Monday keeps the two closed weeks (Rafael 9/28); Tuesday rolls."""
+
+    def test_monday_stays_on_the_closed_week(self):
+        import datetime as dt
+        from automations.alphalete_sales_board import fill
+        mon = dt.date(2026, 9, 28)
+        self.assertEqual(fill.tab_title(L.lanes_week(mon)), "Sales Board WE 9.27")
+        self.assertEqual(fill.tab_title(L.lanes_week(mon) - dt.timedelta(days=7)),
+                         "Sales Board WE 9.20")
+
+    def test_tuesday_to_sunday_roll(self):
+        import datetime as dt
+        from automations.alphalete_sales_board import fill
+        for d in range(29, 31):
+            self.assertEqual(fill.tab_title(L.lanes_week(dt.date(2026, 9, d))),
+                             "Sales Board WE 10.4")
+        self.assertEqual(fill.tab_title(L.lanes_week(dt.date(2026, 10, 4))),
+                         "Sales Board WE 10.4")
+
+
 class RepointTest(unittest.TestCase):
     def test_swaps_tab_and_end_row_keeps_conditions(self):
         out = L.repoint(F, "Sales Board WE 10.4", 90)

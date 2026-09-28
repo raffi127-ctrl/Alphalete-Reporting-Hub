@@ -5,9 +5,9 @@
 #   bash deploy/alphalete_lanes.sh             # PREVIEW, writes nothing
 #   bash deploy/alphalete_lanes.sh --apply     # write
 #
-# Monday: flips the lanes on the first tick after Eve builds the new
-# 'Sales Board WE <m>.<d>' tab (~6:00-7:30 CT). Other days: re-points the end
-# row if a rep row was added above TOTALS. Writes nothing when nothing moved.
+# Monday: keeps the two CLOSED weeks all day (A-players meeting, Rafael 9/28).
+# Tuesday: flips to the new 'Sales Board WE <m>.<d>' tab on the first tick.
+# Every day: re-points the end row if a rep row was added above TOTALS. Writes nothing when nothing moved.
 # See automations/alphalete_sales_board/lanes.py.
 
 set -u

@@ -15,9 +15,15 @@ those ten formulas so that
 Maud's conditions are never rebuilt -- only the tab name and the end row are
 substituted, so a change she makes to a lane survives the roll.
 
-WHY IT RUNS ALL WEEK, not just Monday. Monday: Eve builds the new Sales Board
-tab by hand between ~6:00 and 7:30 CT, so there is no fixed minute to flip at;
-the job simply flips on the first tick after the tab exists. Rest of the week:
+MONDAY STILL SHOWS THE TWO CLOSED WEEKS (Rafael 2026-09-28). Monday morning
+the A-players meeting uses the lanes to decide who gets terminated; the brand
+new week has no numbers yet and would drop everyone into Exit. So all Monday
+'Current Week' stays on the week that closed Sunday and 'Last week' on the one
+before; the roll to the new tab happens on Tuesday's first tick.
+
+WHY IT RUNS ALL WEEK. Eve builds the new Sales Board tab by hand Monday
+~6:00-7:30 CT; Tuesday the job flips on the first tick (and if that tab is
+somehow still missing, keeps waiting until it exists). Rest of the week:
 a rep added in a row inserted right above TOTALS lands OUTSIDE C4:C87 (Sheets
 only grows a range for rows inserted inside it) and would vanish from every
 lane. Every tick re-reads where TOTALS is and fixes the end row. When nothing
@@ -249,6 +255,13 @@ def _repoint_only(frow, row0, blocks, targets) -> List[Dict]:
     return updates
 
 
+def lanes_week(day: dt.date) -> dt.date:
+    """The day whose week is 'Current Week' on the lanes. Monday counts as the
+    Sunday before, so the lanes keep the two closed weeks for the A-players
+    meeting -- see MONDAY in the module docstring."""
+    return day - dt.timedelta(days=1) if day.weekday() == 0 else day
+
+
 def _find_ws(book_ws, title: str):
     want = title.strip().lower()
     for ws in book_ws:
@@ -277,15 +290,16 @@ def main(argv=None) -> int:
         _log("no %r tab on the sales board -- nothing to do" % TAB)
         return 2
 
-    cur_title = fill.tab_title(day)
-    last_title = fill.tab_title(day - dt.timedelta(days=7))
+    anchor = lanes_week(day)
+    cur_title = fill.tab_title(anchor)
+    last_title = fill.tab_title(anchor - dt.timedelta(days=7))
     targets, cols, term = {}, {}, set()
     for key, title, back in (("current", cur_title, 0),
                              ("last", last_title, 7)):
         ws = _find_ws(worksheets, title)
         if ws is None:
-            # Monday before Eve has built the new tab: leave the lanes alone,
-            # the next tick flips them once it exists.
+            # The new week's tab isn't built yet: leave the lanes alone, the
+            # next tick flips them once it exists.
             _log("%r not there yet -- waiting, nothing written" % title)
             return 0
         grid = ws.get_values(value_render_option="UNFORMATTED_VALUE")
@@ -300,7 +314,7 @@ def main(argv=None) -> int:
         if not EXCLUDE_TERMINATED:
             _log("%-7s -> %r rows to %d" % (key, ws.title, end - 1))
             continue
-        monday = BD.week_sunday(day - dt.timedelta(days=back)) - dt.timedelta(days=6)
+        monday = BD.week_sunday(anchor - dt.timedelta(days=back)) - dt.timedelta(days=6)
         try:
             term.update(terminated_bases(grid, ws.title, monday))
         except Exception as e:           # a layout the reader can't parse
