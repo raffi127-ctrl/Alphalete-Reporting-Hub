@@ -44,6 +44,21 @@ CHECKBOXES = set(COLUMNS[7:])
 # cell background is plain white). So the picture carries its own palette,
 # matched by eye to the OBCL's chips (Megan 2026-09-22: "missing the colors we
 # need on final status"). (fill, text). Unknown status = plain white/black.
+# Classroom is a dropdown chip too, so the API hands back plain white for it
+# exactly as it does for Final Status. These are the chip colours sampled from
+# Megan's own screenshot of the OBCL (2026-09-28), so the picture matches the
+# sheet. A classroom not listed here draws plain, never a guessed colour.
+CLASSROOM_COLORS = {
+    "aimee":  (251, 230, 168),
+    "al":     (247, 209, 202),
+    "bas":    (246, 202, 174),
+    "drew":   (217, 236, 192),
+    "jd":     (198, 224, 244),
+    "mj":     (226, 208, 240),
+    "safiya": (85, 52, 129),
+    "willie": (53, 113, 78),
+}
+
 STATUS_COLORS = {
     "showed up to cr":        ((39, 106, 64), (255, 255, 255)),
     "owner submitted":        ((205, 235, 139), (0, 0, 0)),
@@ -119,7 +134,10 @@ def collect(ws, values) -> List[dict]:
                                for k in ("red", "green", "blue"))
             rec[c] = {"v": vals[c], "bg": bg}
         out.append(rec)
-    out.sort(key=lambda x: (_start_key(x["Start Time"]["v"]),
+    # Grouped by classroom (Megan 2026-09-28: "group them by that person"),
+    # and by start time inside each group as before.
+    out.sort(key=lambda x: (classroom_key(x["Classroom"]["v"]),
+                            _start_key(x["Start Time"]["v"]),
                             x["Name"]["v"].lower()))
     return out
 
@@ -163,6 +181,64 @@ def _rgb(bg, default=(255, 255, 255)):
     return tuple(int(x * 255) for x in bg) if bg else default
 
 
+def _luma(rgb) -> float:
+    r, g, b = (c / 255 for c in rgb)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _ink_for(fill):
+    """Black or white, whichever can be read on `fill` (Safiya and Willie are
+    dark chips; the rest are pastels)."""
+    return (0, 0, 0) if _luma(fill) > 0.55 else (255, 255, 255)
+
+
+def classroom_fill(name: str):
+    return CLASSROOM_COLORS.get((name or "").strip().lower())
+
+
+def _contrast(a, b) -> float:
+    """WCAG contrast ratio between two colours (1 = identical, 21 = max)."""
+    la, lb = sorted((_luma(a), _luma(b)))
+    return (lb + 0.05) / (la + 0.05)
+
+
+def classroom_ink(name: str, on=(255, 255, 255)):
+    """The classroom's colour as TEXT on the cell it sits in.
+
+    A pastel chip is invisible as ink, and these name cells are themselves
+    tinted green or pink by the sheet. Simply darkening the chip to WCAG AA
+    (4.5:1) turned every classroom into near-black and lost the one thing the
+    colour is for -- telling them apart. So the hue is kept, the lightness
+    dropped and the saturation raised: a deep version of the same colour, held
+    to 3:1 (AA for bold text, which this is at 22pt).
+    """
+    fill = classroom_fill(name)
+    if not fill:
+        return None
+    import colorsys
+    h, l, sat = colorsys.rgb_to_hls(*[c / 255 for c in fill])
+    # Start from the chip's OWN lightness and go down only as far as it must.
+    # Flattening every classroom to one lightness made MJ (pale lavender) and
+    # Safiya (deep violet) the same ink, which is exactly the distinction the
+    # colour is there to make.
+    sat = max(sat, 0.50)
+    ink = fill
+    for _ in range(24):
+        ink = tuple(int(round(c * 255))
+                    for c in colorsys.hls_to_rgb(h, l, sat))
+        if _contrast(ink, on) >= 3.0 or l <= 0.08:
+            return ink
+        l -= 0.04
+    return ink
+
+
+def classroom_key(name: str):
+    """Sort key: the sheet's own order is alphabetical, and a person with no
+    classroom yet goes last rather than first."""
+    n = (name or "").strip()
+    return (1, "") if not n else (0, n.lower())
+
+
 def render(recs: List[dict], title: str, out: Path) -> Path:
     from PIL import Image, ImageDraw
     f, fh = _font(22), _font(22)
@@ -193,15 +269,23 @@ def render(recs: List[dict], title: str, out: Path) -> Path:
         d.text((x + cw / 2, 56 + hh / 2), h, font=fh, fill="black",
                anchor="mm")
         x += cw
+    rules = []                 # y of each classroom change, drawn last
     for i, r in enumerate(recs):
         y = 56 + hh + i * rh
         x = 0
+        if i and (classroom_key(r["Classroom"]["v"])
+                  != classroom_key(recs[i - 1]["Classroom"]["v"])):
+            rules.append(y)
         for c, cw in zip(COLUMNS, widths):
             cell = r[c]
             fill, ink = _rgb(cell["bg"]), None
             if c == "Final Status":
                 fill, ink = STATUS_COLORS.get(cell["v"].strip().lower(),
                                               (fill, None))
+            elif c == "Classroom":
+                chip = classroom_fill(cell["v"])
+                if chip:
+                    fill, ink = chip, _ink_for(chip)
             d.rectangle([x, y, x + cw, y + rh], fill=fill,
                         outline=(170, 170, 170))
             if c in CHECKBOXES:
@@ -216,11 +300,21 @@ def render(recs: List[dict], title: str, out: Path) -> Path:
                     d.rectangle([bx, by, bx + s, by + s], outline=(90, 90, 90),
                                 width=2)
             else:
-                color = ink or ((255, 0, 255) if c in ("Name", "Last Name")
-                                else "black")
+                # The name carries its classroom's colour, so the groups
+                # read at a glance (Megan 2026-09-28). No classroom yet: the
+                # magenta the picture has always used.
+                color = ink
+                if color is None and c in ("Name", "Last Name"):
+                    color = (classroom_ink(r["Classroom"]["v"], fill)
+                             or (255, 0, 255))
+                color = color or "black"
                 d.text((x + cw / 2, y + rh / 2), cell["v"], font=f,
                        fill=color, anchor="mm")
             x += cw
+    # AFTER the cells: a rule drawn inside the loop is painted over by the
+    # next row's own rectangle.
+    for y in rules:
+        d.line([0, y, W, y], fill=(60, 60, 60), width=3)
     out.parent.mkdir(parents=True, exist_ok=True)
     img.save(out)
     return out
