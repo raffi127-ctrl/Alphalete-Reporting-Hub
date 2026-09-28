@@ -56,6 +56,26 @@ class OfficesTest(unittest.TestCase):
                           ("aya", "America/Indiana/Indianapolis")]:
             self.assertEqual(config.office_zone(config.office(key)), zone, key)
 
+    def test_raf_funnels_each_in_their_own_channel(self):
+        f1, f2, f3 = (config.office(k) for k in ("rafael", "rafael_f2", "rafael_f3"))
+        self.assertEqual([s["office_id"] for s in f1["sources"]], ["11280"])
+        self.assertEqual([s["office_id"] for s in f2["sources"]], ["23965"])
+        self.assertEqual([s["office_id"] for s in f3["sources"]], ["24065"])
+        self.assertEqual(f2["live_channel"], "C0C4VMBEU7P")
+        self.assertEqual(f3["live_channel"], "C0C4UJHR2CB")
+        for o in (f2, f3):
+            self.assertEqual(o["source_channel"], f1["source_channel"])
+
+    def test_raf_funnel_thread_wordings_dont_cross(self):
+        irving = "🦏 Alphalete (Irving) - September 18th- 1st Rounds 🦏"
+        second = "📱 2nd funnel IMessage Test - September 18th - 1st rounds 📱"
+        third = ":sparkles:*3rd funnel  - September 25 - 1st rounds*:sparkles:"
+        rx = {k: config.office(k)["sources"][0]["thread_re"]
+              for k in ("rafael", "rafael_f2", "rafael_f3")}
+        for key, mine in (("rafael", irving), ("rafael_f2", second), ("rafael_f3", third)):
+            for text in (irving, second, third):
+                self.assertEqual(bool(rx[key].search(text)), text == mine, (key, text))
+
     def test_carlos_thread_wording(self):
         rx = config.office("carlos")["sources"][0]["thread_re"]
         self.assertTrue(rx.search(":wolf:*ALPHALETE MARKETING - 1st ROUNDS - SEPTEMBER 23rd*:wolf:"))

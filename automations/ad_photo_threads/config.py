@@ -70,14 +70,16 @@ PIN_REMINDER_USER = "U088E2KJEV8"   # Evelyn Sobrino
 # not the account number"). Names as ApplicantStream shows them (the same
 # names Raf's recruiting to-do uses).
 #
-# Raf 2026-09-21: "1st rds from all 3 funnels are all in the same recruiting
-# funnel" — the third stream (24065 New Recruiter Test) has no thread or tab
-# of its own; its 1st rounds land in the Irving thread + "Rafael Hidalgo" tab,
-# so they carry that row's label.
+# ONE CHANNEL PER FUNNEL (Raf 2026-09-26: "can we have 3 channels for the 3
+# different funnels"). Each funnel is its own entry in OFFICES below, so it
+# gets its own channel, state and pins; the "rafael" entry is Funnel 1 only.
+# Funnel 3 (24065) has had its own daily thread + tab since 9/21 (Camila
+# 9/28); before that the three shared the Irving thread.
 #
 # sheet tab -> the daily Slack thread whose replies carry its screenshots.
 #   "🦏 Alphalete (Irving) - September 18th- 1st Rounds 🦏"
 #   "📱 2nd funnel IMessage Test - September 18th - 1st rounds 📱"
+#   ":sparkles:*3rd funnel  - September 25 - 1st rounds*:sparkles:"
 SOURCES = [
     {
         "office_id": "11280",
@@ -86,12 +88,23 @@ SOURCES = [
         "tab": "Rafael Hidalgo",
         "thread_re": re.compile(r"alphalete\s*\(irving\).*1st\s*round", re.I),
     },
+]
+RAF_FUNNEL_2 = [
     {
         "office_id": "23965",
         "stream": "2nd Funnel iMessage Test",
         "label": "2nd funnel iMessage Test",
         "tab": "Raf Hidalgo 2nd funnel",
         "thread_re": re.compile(r"2nd\s*funnel.*1st\s*round", re.I),
+    },
+]
+RAF_FUNNEL_3 = [
+    {
+        "office_id": "24065",
+        "stream": "New Recruiter Test",
+        "label": "3rd funnel",
+        "tab": "Raf Hidalgo 3rd Funnel",
+        "thread_re": re.compile(r"3rd\s*funnel.*1st\s*round", re.I),
     },
 ]
 
@@ -123,6 +136,30 @@ OFFICES = [
         "live_channel": LIVE_CHANNEL_ID,
         "paused_before": NIGHTLY_PAUSED_BEFORE,
         "sources": SOURCES,
+    },
+    # Raf's other two funnels: same sheet and recruiting channel, each into
+    # its own channel (created by Eve 2026-09-28). Preview first, then live.
+    {
+        "key": "rafael_f2",
+        "owner": "Rafael Hidalgo",
+        "tz": "America/Chicago",
+        "live": False,
+        "sheet_id": SHEET_ID,
+        "source_channel": SOURCE_CHANNEL_ID,
+        "live_channel": "C0C4VMBEU7P",     # #indeed-photos-rafael-hidalgo-funnel-2-23965
+        "paused_before": "",
+        "sources": RAF_FUNNEL_2,
+    },
+    {
+        "key": "rafael_f3",
+        "owner": "Rafael Hidalgo",
+        "tz": "America/Chicago",
+        "live": False,
+        "sheet_id": SHEET_ID,
+        "source_channel": SOURCE_CHANNEL_ID,
+        "live_channel": "C0C4UJHR2CB",     # #indeed-photos-rafael-hidalgo-funnel-3-24065
+        "paused_before": "",
+        "sources": RAF_FUNNEL_3,
     },
     {
         # First office after Rafael (Eve 9/23). Daily thread in
