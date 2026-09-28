@@ -121,9 +121,9 @@ class TheLine(unittest.TestCase):
             "Carlos 11580: 30 pushed · 7 left @ 8:33 PM",
             "Atef 23467: 27 pushed · 2 left @ 8:36 PM",
             "Khalil 11901: 109 pushed · 2 left @ 8:29 PM",
-            "Raf main 11280: 34 pushed · 114 left @ 8:21 PM",
-            "Raf 2nd funnel 23965: 0 pushed · 33 left @ 8:28 PM",
-            "Raf 24065: 24 pushed · 36 left @ 8:34 PM",
+            ":x: Raf main 11280: 34 pushed · 114 left @ 8:21 PM",
+            ":x: Raf 2nd funnel 23965: 0 pushed · 33 left @ 8:28 PM",
+            ":x: Raf 24065: 24 pushed · 36 left @ 8:34 PM",
         ]))
 
     def test_no_military_time_anywhere_in_the_message(self):
@@ -137,6 +137,23 @@ class TheLine(unittest.TestCase):
         for gone in ("pushed today", "left in OAT", "as of"):
             self.assertNotIn(gone, got)
         self.assertIn("30 pushed · 7 left @", got)
+
+
+class BacklogFlag(unittest.TestCase):
+    """Raf, 2026-09-28: red X left of the name when MORE than 10 are waiting."""
+
+    def test_over_ten_gets_the_x(self):
+        got = TheLine()._render(dt.datetime(2026, 9, 24, 20, 37))
+        self.assertIn(":x: Raf main 11280:", got)
+
+    def test_ten_or_under_does_not(self):
+        got = TheLine()._render(dt.datetime(2026, 9, 24, 20, 37))
+        for name in ("Carlos 11580", "Atef 23467", "Khalil 11901"):
+            self.assertIn("\n%s:" % name, got)
+            self.assertNotIn(":x: %s" % name, got)
+
+    def test_threshold_is_strictly_over_ten(self):
+        self.assertEqual(pr.BACKLOG_FLAG_OVER, 10)
 
 
 class TheWindowsGate(unittest.TestCase):

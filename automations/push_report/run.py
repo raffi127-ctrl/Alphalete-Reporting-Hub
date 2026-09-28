@@ -59,6 +59,7 @@ OFFICES = [
 
 STALE_AFTER_MIN = 120
 WINDOW = (7, 22)  # push window, hours local
+BACKLOG_FLAG_OVER = 10  # more than this many left -> red X on the line
 
 
 def _hm12(text: str) -> str:
@@ -150,8 +151,13 @@ def build_report() -> str:
         # A paused office says "paused" where the count would go, rather than
         # "0 pushed" — the zero is true but reads as a failure, and the queue
         # count still matters (it keeps growing while nobody works it).
-        lines.append("%s: %s · %s left @ %s"
-                     % (label, "paused" if is_paused else "%d pushed" % sent,
+        # Raf, 2026-09-28: a red X in front of any office with MORE than 10
+        # still waiting, so the backed-up queues jump out of the list. Paused
+        # offices get it too — their queue keeps growing while nobody works it.
+        flag = ":x: " if left.isdigit() and int(left) > BACKLOG_FLAG_OVER else ""
+        lines.append("%s%s: %s · %s left @ %s"
+                     % (flag, label,
+                        "paused" if is_paused else "%d pushed" % sent,
                         left, at))
         try:
             ts = dt.datetime.strptime(rows[-1][0], "%Y-%m-%d %H:%M:%S")
