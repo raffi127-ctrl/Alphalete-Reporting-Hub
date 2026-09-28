@@ -394,6 +394,26 @@
       "timeout_minutes": 60,
       "machine": "Lucy 2"
     },
+    "sms_call_list": {
+      "on_scheduler": false,
+      "_note": "MANUAL (Megan 2026-09-28): pull an office's CALL LIST (p=501) with each applicant's STATUS \u2014 Open / LM1 / LM2 / LM3 / No Answer. The SMS audit can only see texts, so it read applicants who got one text as abandoned; Megan: \"applicants are called and messaged multiple times though? What is their status in the call list for the ones you say were only contacted once?\" The Retention Report shows the calls happening at volume (577 LM1, 522 LM2, 1011 LM3 in one week) and CLQ exists to mass-text the ones there was no time to ring, so a single text can be the last step of a worked applicant rather than the only contact. Joins to the SMS log on phone. Writes tab 'Call List <office>' + output/call_list_<office>.json. READ-ONLY. Args: --office, --max-pages, --dry-run.",
+      "display_name": "Call list pull (status per applicant, p=501)",
+      "source_type": "appstream",
+      "data_sources": [],
+      "command": [
+        "automations.sms_audit.pull_call_list"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 45,
+      "machine": "Lucy 2"
+    },
     "sms_crosscheck": {
       "on_scheduler": false,
       "_note": "MANUAL-ONLY (Megan 2026-09-27: \"double check that the mapping of how you're pulling all these numbers is correct\"). Holds the SMS audit's booked/showed figures against AppStream's OWN count of them on the Retention Report (p=701), which no other part of the audit reads. verify.py proves the numbers are internally consistent \u2014 every split adds back up to its parent, every field comes out of the column it claims \u2014 but only this can catch the whole pull being short a day in the same direction, because an internally consistent pull that missed Thursday still balances. p=701 is locked to Sun-Sat and recruiting runs Sat-Fri, so one recruiting week is assembled from TWO p=701 weeks: the Saturday of the first plus Sun-Fri of the second. READ-ONLY \u2014 writes no tab, no sheet, no Slack. Compares against the files already in output/, so run it AFTER the pulls. Args: --office 11280,23965,24065,11580, --week N, --suffix wMMDD. Exit 1 on a mismatch.",
