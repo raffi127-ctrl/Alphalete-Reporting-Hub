@@ -390,17 +390,36 @@ def _drive_week_selection(label: str, verbose: bool = False):
         if final != label:         # the box lags the clicks on a slow viz
             page.wait_for_timeout(2500)
             final = _box_text(tbox)
+        if final != label:
+            # `tbox` is the Nth combobox of the viz, picked BEFORE the menu
+            # opened. Tableau re-renders the filter cards when a week is
+            # applied, so the Nth box can now be a different card — look again.
+            again, txt = _find_box(page, viz)
+            if again is not None:
+                final = txt
         if verbose:
             print(f"  [je] Sales Week Ending set to {final}")
+        ticked = [w for w, ch in weeks if ch]
+        if final != label and ticked == [label]:
+            # 2026-09-28, twice (the 06:xx fill AND the 14:30 catch-up): the
+            # menu's last look had ONLY the target ticked, yet the box read
+            # '(None)' — and the 09:07 re-run of the very same view was clean.
+            # The Apply-button fix (d7be0057) didn't stop it. The ticks are the filter's real state; the box text is the
+            # part that lies. So don't drop the section over it: download, and
+            # let fetch() check that the crosstab shows this week and ONLY
+            # this week — the data is the verdict, not the label.
+            if verbose:
+                print(f"  [je] ⚠ box reads {final!r} but the menu had only "
+                      f"{label} ticked — downloading; the crosstab is checked")
+            return
         if final != label:
             # raise so download_crosstab_patchright's retry re-navigates and
             # re-applies the selection on a fresh load. The option dump rides
             # along: a box reading '(Multiple values)' says nothing about WHICH
             # weeks are stuck on, and the menu is gone by the time anyone looks.
-            ticked = [w for w, ch in weeks if ch] or ["(none)"]
             raise RuntimeError(
                 f"JE week select failed: box={final!r} expected {label!r}; "
-                f"ticked weeks: {', '.join(ticked)} "
+                f"ticked weeks: {', '.join(ticked or ['(none)'])} "
                 f"(of {len(weeks)} week option(s))")
 
     return pre_export
@@ -416,7 +435,28 @@ def fetch(out_path: Optional[Path] = None, verbose: bool = False, page=None,
     download_crosstab_patchright(CV_URL, WORKSHEET, out_path, verbose=verbose,
                                  page=page,
                                  pre_export=_drive_week_selection(label, verbose))
+    _check_one_week(out_path, label)
     return out_path
+
+
+def _check_one_week(csv_path: Path, label: str) -> None:
+    """Raise unless the crosstab shows week `label` and no other week.
+
+    The pre-export hook lets a download through when the menu's ticks were
+    right but the combobox text disagreed (see pre_export). This is what makes
+    that safe: a (None) selection exports no header, an (All)/(Multiple
+    values) one repeats several week-ending dates on the 'ICD Office Name'
+    row — either way the section is dropped instead of filled wrong."""
+    rows = _read_rows(csv_path)
+    hdr = next((r for r in rows
+                if any(c.strip() == "ICD Office Name" for c in r)), None)
+    if hdr is None:
+        raise RuntimeError(f"JE crosstab has no 'ICD Office Name' header "
+                           f"({len(rows)} row(s)) — expected week {label}")
+    shown = {m.group(0) for c in hdr for m in [_WE_RE.search(c.strip())] if m}
+    if shown and shown != {label}:
+        raise RuntimeError(f"JE crosstab shows week(s) "
+                           f"{', '.join(sorted(shown))}, expected only {label}")
 
 
 def _read_rows(csv_path: Path) -> list[list[str]]:

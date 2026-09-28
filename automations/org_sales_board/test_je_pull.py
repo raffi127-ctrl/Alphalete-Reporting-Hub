@@ -183,6 +183,9 @@ class FakeFilter:
         self.combo_fails = combo_fails    # how many opens get intercepted
         self.combo_clicks = 0
         self.combo_click_kwargs = []
+        # box_lies: once the menu closes the combobox reads this, whatever is
+        # ticked — box='(None)' with only the target ticked, 2026-09-28 x2.
+        self.box_lies = None
 
     # -- the filter's own behaviour ----------------------------------------
     def is_checked(self, text):
@@ -219,6 +222,8 @@ class FakeFilter:
         self.committed = set(self.checked)
 
     def box_text(self):
+        if self.box_lies and not self.open:
+            return self.box_lies
         shown = self.committed if self.apply_mode else self.checked
         if not shown:
             return "(None)"
@@ -377,6 +382,64 @@ class WeekSelectionTest(unittest.TestCase):
         self.assertIn(TARGET, msg)
         self.assertIn("7/26/2026", msg)     # the stuck weeks, by name
         self.assertIn("4 week option(s)", msg)
+
+    def test_box_reading_none_with_only_the_target_ticked_downloads(self):
+        """2026-09-28 (06:xx fill + 14:30 catch-up): the menu's last look had
+        only the target ticked, the box read '(None)', and Retail JE was
+        dropped. The ticks are the truth — go on to the download, where
+        _check_one_week vets what actually came out."""
+        f = FakeFilter(WEEKS, ["8/9/2026"])
+        f.box_lies = "(None)"
+        _drive(f)                       # must not raise
+        self.assertEqual(f.checked, {TARGET})
+
+    def test_box_lying_still_raises_when_the_ticks_are_wrong(self):
+        f = FakeFilter(WEEKS, ["7/26/2026", TARGET])
+        f.toggle = lambda _t: None          # the untick never lands
+        f.box_lies = "(None)"
+        with self.assertRaises(RuntimeError):
+            _drive(f)
+
+
+class CheckOneWeekTest(unittest.TestCase):
+    """The crosstab is the verdict when the combobox text can't be trusted."""
+
+    def _csv(self, rows):
+        import csv
+        import tempfile
+        from pathlib import Path
+        # Tableau's crosstab shape: UTF-16, tab-separated.
+        fd = tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False,
+                                         newline="", encoding="utf-16-le")
+        with fd:
+            csv.writer(fd, delimiter="	").writerows(rows)
+        self.addCleanup(lambda: Path(fd.name).unlink())
+        return Path(fd.name)
+
+    def test_the_target_week_alone_passes(self):
+        p = self._csv([["", "", "8/10 Mon", "8/11 Tue"],
+                       ["ICD Office Name", "ICD Name", TARGET, TARGET],
+                       ["Office A", "Ann", "3", "4"]])
+        je_pull._check_one_week(p, TARGET)
+
+    def test_several_weeks_raise(self):
+        p = self._csv([["", "", "8/3 Mon", "8/10 Mon"],
+                       ["ICD Office Name", "ICD Name", "8/9/2026", TARGET],
+                       ["Office A", "Ann", "3", "4"]])
+        with self.assertRaises(RuntimeError) as cm:
+            je_pull._check_one_week(p, TARGET)
+        self.assertIn("8/9/2026", str(cm.exception))
+
+    def test_the_wrong_week_raises(self):
+        p = self._csv([["ICD Office Name", "ICD Name", "8/9/2026"],
+                       ["Office A", "Ann", "3"]])
+        with self.assertRaises(RuntimeError):
+            je_pull._check_one_week(p, TARGET)
+
+    def test_an_empty_export_raises(self):
+        p = self._csv([["No data"]])
+        with self.assertRaises(RuntimeError):
+            je_pull._check_one_week(p, TARGET)
 
 
 class OpenDropdownTest(unittest.TestCase):
