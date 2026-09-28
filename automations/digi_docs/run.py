@@ -1020,6 +1020,24 @@ def _write_back(args, ws, send, added, done, refused, *, tinted_dry,
                      "bundle is the send.")
         except Exception:                               # noqa: BLE001
             pass    # a manifest we cannot write must not fail the run
+    # A CLEAN SEND PASS CLOSES THE TICKET (Eve 2026-09-28). The send tick
+    # retries everyone still in REQUIRED ACTION every five minutes, so a name
+    # that timed out at 12:51 usually goes through at 13:15. But only a pass
+    # WITH refusals ever wrote a manifest, so the finding opened by the failing
+    # pass stayed open all day naming people who already had their documents
+    # (9/28: Breija Smith, Ammi Rojas, Kierra Smith). A pass that walked
+    # OwnerVille and refused nobody now writes a clean manifest, and
+    # run_manifest's resolve closes the thread with its ✅.
+    # Only a pass that actually worked people: "nobody due yet" ticks say
+    # nothing about whether earlier refusals got cleared.
+    elif not dry and do_send and send and not refused and not fatal:
+        try:
+            from automations.shared import run_manifest as _rm
+            _rm.write_manifest(
+                "digi_docs", failed=[], ok=True,
+                succeeded=[n for n, _m, _t in done] + list(added))
+        except Exception:                               # noqa: BLE001
+            pass    # a manifest we cannot write must not fail the run
 
     print(f"\nadded {len(added)} · sent {len(done)} · tinted {tinted} · "
           f"refused {len(refused)}")

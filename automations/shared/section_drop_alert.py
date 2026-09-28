@@ -449,10 +449,15 @@ _KINDS = {
         "bullets": True,
         "see_thread": "Named in thread.",
         "detail_header": "*The {n} {what}{s}, and what stopped each one:*",
-        "fix": "each name carries its own reason — work them by hand. "
-               "Re-running `{report_id}` does not clear them.",
-        "tail": "Nobody on this list was processed, and nothing picks them up "
-                "on its own.",
+        # WORDING FIXED 2026-09-28 (Eve). This said "nothing picks them up on
+        # its own", which is false for a send that timed out: the five-minute
+        # tick retries REQUIRED ACTION people and on 9/28 sent three of the
+        # four names within minutes. What IS stuck is a PENDING / not-found
+        # person — their own line says so. A clean later pass closes this.
+        "fix": "each name carries its own reason. A timeout or click error "
+               "is retried by the next send pass; a line that says PENDING or "
+               "not found needs a person. Do NOT re-run `{report_id}` by hand.",
+        "tail": "If a later pass sends everyone, this closes itself with a ✅.",
     },
     # ONE ICD with no value on a run that filled EVERYTHING ELSE (kind
     # 'unfilled_icd' — captainship_cancel_rate today). Nothing dropped, nothing

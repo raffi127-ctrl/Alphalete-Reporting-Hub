@@ -1851,3 +1851,51 @@ class AJustAddedRepGetsAMomentBeforeTheirPortal(_NoNetwork):
         self.assertEqual(["added", "waited", "opened", "portal"], steps)
         self.assertGreaterEqual(order[1][1], 5000,
                                 "a token pause is not a settle")
+class CleanPassClosesTheTicket(_NoNetwork):
+    """Eve 2026-09-28: a timeout at 12:51 went through on the 13:15 tick, but
+    the finding kept naming that person all day, because only a pass WITH
+    refusals ever wrote a manifest. A live send pass that refused nobody now
+    writes a clean one (which is what resolves the thread)."""
+
+    def _write_back(self, *, send, refused, dry=False, do_send=True):
+        from automations.digi_docs import run as R
+        from automations.shared import run_manifest as _rm
+        mark = types.ModuleType("automations.digi_docs.mark")
+        mark.tint = lambda ws, cands, dry_run=True: 0
+        slack = types.ModuleType("automations.digi_docs.slack_post")
+        slack.post = lambda *a, **k: True
+        calls = []
+        ws = types.SimpleNamespace(title="D2D OBCL 9.28", id=0)
+        with mock.patch.object(_rm, "write_manifest",
+                               lambda *a, **k: calls.append(k)), \
+            mock.patch("automations.day_orchestrator.hub_publish."
+                       "write_failure_reason", lambda *a, **k: None), \
+            mock.patch.object(R, "_mark_did_work", lambda *a: None), \
+            mock.patch.dict(sys.modules, {
+                "automations.digi_docs.mark": mark,
+                "automations.digi_docs.slack_post": slack}):
+            R._write_back(_Args(), ws, send, [], [], refused,
+                          tinted_dry=dry, do_send=do_send, fatal="")
+        return calls
+
+    def test_clean_live_pass_writes_a_clean_manifest(self):
+        calls = self._write_back(send=[_Cand()], refused=[])
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["failed"], [])
+        self.assertTrue(calls[0]["ok"])
+
+    def test_refusals_still_open_the_finding(self):
+        calls = self._write_back(send=[_Cand()], refused=["Dana Reyes: x"])
+        self.assertEqual(calls[0]["failed"], ["Dana Reyes: x"])
+        self.assertEqual(calls[0]["kind"], "blocked_person")
+
+    def test_nobody_due_says_nothing(self):
+        self.assertEqual(self._write_back(send=[], refused=[]), [])
+
+    def test_dry_run_says_nothing(self):
+        self.assertEqual(self._write_back(send=[_Cand()], refused=[],
+                                          dry=True), [])
+
+    def test_add_phase_says_nothing(self):
+        self.assertEqual(self._write_back(send=[_Cand()], refused=[],
+                                          do_send=False), [])
