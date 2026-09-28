@@ -1137,9 +1137,10 @@ def audit_stations(sh, last_rep: int, reps, roll, log=_log, alias=None,
     # capitalised tokens sail through _person_shaped. Reported every day since
     # the status was first set (2026-08-06). 'New T' (new territory) is the same
     # column and the same trap — anchored, so a real 'New Tyler Smith' still
-    # gets checked (2026-09-08, A7 and A39).
+    # gets checked (2026-09-08, A7 and A39). 'Need New T' is the same status
+    # value, capitalised (A10/A11, 2026-09-28).
     LABELS = re.compile(r"^(\d|rep #|rep list|store|territory|t extended|"
-                        r"new t$|"
+                        r"(need )?new t$|"
                         r"car rides|"
                         r"stations|legend|off|terminated|new starts|monday|"
                         r"tuesday|wednesday|thursday|friday|in a |in both|"
@@ -1194,9 +1195,16 @@ def audit_stations(sh, last_rep: int, reps, roll, log=_log, alias=None,
         # so skip the ROW rather than chase the label into LABELS.
         return {"pitch", "closing"} <= cells
 
+    # ...and on 2026-09-28 the legend header lost 'Pitch' altogether
+    # ('close | close | | | Getting Bill', r43), so the stage-name test missed
+    # it again. The legend header is always the row right under the
+    # 'Stations' title in col A — anchor on THAT, not on the stage names.
+    legend_hdr = {i + 1 for i, row in enumerate(vals, start=1)
+                  if row and str(row[0]).strip().lower() == "stations"}
+
     unknown = set()
     for i, row in enumerate(vals, start=1):
-        if i < 4 or _header_row(row):
+        if i < 4 or i in legend_hdr or _header_row(row):
             continue
         for j in name_cols:
             c = str(row[j]).strip() if len(row) > j else ""
