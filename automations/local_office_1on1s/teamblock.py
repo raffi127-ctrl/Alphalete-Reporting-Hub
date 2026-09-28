@@ -1,0 +1,127 @@
+"""Section 1's team block — the `Owner 1on1's` roll-up.
+
+Raf, 3:42: *"how many active reps? I would not count a week one an active rep.
+How many leaders? New starts that started, how many are alive, new start
+retention, and then the team, what did they all do? And then this would be
+formulas, I believe."*
+
+WHAT THIS FILLS and what it deliberately does not:
+
+    Team Structure - All        every member of the trainer chain
+    Team Structure - Leaders    those at Level 1+
+    Active Reps                 live members, WEEK ONES EXCLUDED — Raf's rule
+    Leaders                     live members at Level 1+
+    New Starts started          members in their first week
+    New Starts alive?           of those, not terminated
+    New Start Retention         alive / started, blank when none started
+
+    New INTS .. Total Apps      the team's own sales, summed from the board
+    App AVG per rep             left to the SHEET's formula, not computed here
+    New INT AVG per rep         same
+    New INT / Wireless / App Goal   left alone — these are targets somebody
+                                sets, not numbers to derive
+
+A DIVISION WITH NO DENOMINATOR IS BLANK, not 0% — a team that started no new
+starts has no retention rate, and writing 0% would say they lost everyone.
+[[feedback_dont_explain_away_a_zero]]
+
+EVERY WEEK IS COMPUTED FROM THAT WEEK'S BOARD. The first build filled the
+block once from the current roster and wrote the same figures across all nine
+columns — Algemar Kennel read 24/12/13/12/7/6/86% identically every week, which
+says his team never changed for two months (Megan, 2026-09-28: "al's team
+structure can't remain the same all these weeks"). A team box is a HISTORY, so
+each column is built from the `Sales Board WE m.d` tab for that week.
+
+The averages rows already hold `#DIV/0!` formulas on the template, which resolve
+once the counts land. Overwriting them with a computed number would replace a
+live formula with a stale value the next fill has to remember to update.
+"""
+from __future__ import annotations
+
+import datetime as dt
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
+
+# label on the team box  ->  attribute of the computed block
+STRUCTURE = {
+    "Team Structure - All":     "all_count",
+    "Team Structure - Leaders": "leader_count",
+}
+OWNER = {
+    "Active Reps":         "active_reps",
+    "Leaders":             "leader_count",
+    "New Starts started":  "ns_started",
+    "New Starts alive?":   "ns_alive",
+    "New Start Retention": "ns_retention",
+}
+# Never written: goals are set by a human, averages are the sheet's own formulas.
+LEAVE_ALONE = {"new int goal", "wireless goal", "app goal",
+               "app avg per rep", "new int avg per rep"}
+
+WEEK_ONE = ("in training", "1st wk")
+
+
+@dataclass
+class TeamBlock:
+    all_count: int = 0
+    leader_count: int = 0
+    active_reps: int = 0
+    ns_started: int = 0
+    ns_alive: int = 0
+    ns_retention: str = ""
+
+    def as_cells(self) -> Dict[str, str]:
+        out = {}
+        for label, attr in {**STRUCTURE, **OWNER}.items():
+            v = getattr(self, attr)
+            out[label] = "" if v == "" else str(v)
+        return out
+
+
+def _is_week_one(level: str) -> bool:
+    lv = (level or "").lower()
+    return any(w in lv for w in WEEK_ONE)
+
+
+def sales_totals(member_names, wsales) -> Dict[str, str]:
+    """The team's own products for one week: {1on1 row label: value}.
+
+    Summed over the members that week's board actually has a row for. A member
+    with no row contributes nothing rather than a zero — they were not on the
+    board, which is not the same as having sold nothing.
+    """
+    from automations.local_office_1on1s import sales as SA
+    out: Dict[str, str] = {}
+    for label, measure in [("New INTS", "INT"), ("Upgrades", "INT UP"),
+                           ("DTV's", "DTV"), ("Wireless Lines", "NL"),
+                           ("Total Apps", "APPS")]:
+        got = []
+        for n in member_names:
+            v = wsales.get(n, measure)
+            if v is None or v == "-":
+                continue
+            try:
+                got.append(float(str(v).replace(",", "")))
+            except ValueError:
+                pass
+        if got:
+            tot = sum(got)
+            out[label] = str(int(tot)) if abs(tot - round(tot)) < 1e-9 else f"{tot:.1f}"
+    return out
+
+
+def compute(roster_team) -> TeamBlock:
+    ms = roster_team.members
+    live = [m for m in ms if not m.terminated]
+    started = [m for m in ms if _is_week_one(m.level)]
+    alive = [m for m in started if not m.terminated]
+    b = TeamBlock(
+        all_count=len(ms),
+        leader_count=sum(1 for m in live if m.is_leader),
+        active_reps=sum(1 for m in live if not _is_week_one(m.level)),
+        ns_started=len(started),
+        ns_alive=len(alive),
+    )
+    # blank, not 0%, when nobody started
+    b.ns_retention = f"{round(100 * len(alive) / len(started))}%" if started else ""
+    return b

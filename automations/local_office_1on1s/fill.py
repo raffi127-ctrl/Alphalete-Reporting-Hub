@@ -1,0 +1,109 @@
+"""What goes in each cell of an individual section, and where it came from.
+
+Every value carries its source so the run can print workbook -> tab -> row/col
+for any number on the sheet. [[feedback_cite_source_location]]
+
+SOURCES, and the traps each one already cost us:
+
+  Gross Paycheck last week?   the P&Ls, ONE WEEK BEHIND the column it lands in.
+      The label says "last week" and reps_gross_paycheck/week.py says the same:
+      what a rep collects Thursday settled the week before. Proven against
+      Raf's own hand-typed figures 3/3 — Alyssa Moreno's WE 8/02 cell holds the
+      P&L's WE 7/26 ($770), 8/23 holds 8/16 ($976), 9/13 holds 9/06 ($557).
+      Filling the same-week value would be wrong AND look right.
+
+  2. Recruiting (Monthly)      `2nd rds %'s`, the MONTH the week ends in.
+      Monthly is what Raf asked for and all the source has, so the four week
+      columns inside a month carry the same figure — which is why the section
+      label now says "(Monthly)".
+
+  BreakEven / Money Saved / all of 4. Culture / What are we going to do better?
+  / Goal / Focus                MANUAL. Never written. 'Breakeven' exists as a
+      column on every P&L and is empty for all 446 named reps, so it is not a
+      gap this can close.
+
+A CELL WITH NO SOURCE IS LEFT ALONE, never zeroed. A leader who is not in a
+month's block of `2nd rds %'s` was not conducting second rounds that month;
+writing 0 would state that they conducted none, which is a different claim.
+[[feedback_dont_explain_away_a_zero]]
+"""
+from __future__ import annotations
+
+import datetime as dt
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
+
+MONTHS = ["january", "february", "march", "april", "may", "june", "july",
+          "august", "september", "october", "november", "december"]
+
+# label on the section  ->  key in second_rounds.WANT
+RECRUITING = {
+    "2nd rds Conducted":        "conducted",
+    "Job Offered":              "offered",
+    "2nd rds closed":           "bob_num",     # Raf: "that should be a number"
+    "BOB % / 2nd rd closing":   "bob_pct",
+    "New Starts Scheduled":     "ns_sched",
+    "New Starts Showed":        "ns_showed",
+    "New starts Retention %":   "ns_pct",      # source is 'NS Showed %' — see spec
+}
+
+# Never written by this report.
+MANUAL = {
+    "breakeven", "money saved", "what are we going to do better",
+    "listening to x book", "dress code 1 out of", "last week punctuality",
+    "atmo engagement 1 out", "slack / chat engagement 1 out", "networking",
+    "goal / focus for the week",
+}
+
+
+@dataclass
+class Cell:
+    row_label: str
+    week: dt.date
+    value: str
+    source: str
+
+
+@dataclass
+class Filled:
+    cells: List[Cell] = field(default_factory=list)
+    gaps: List[str] = field(default_factory=list)
+
+    def add(self, label, week, value, source):
+        if value is None or value == "":
+            return
+        self.cells.append(Cell(label, week, str(value), source))
+
+
+def month_of(week_ending: dt.date) -> str:
+    return MONTHS[week_ending.month - 1]
+
+
+def for_leader(name: str, weeks: List[dt.date], *, pay, months,
+               pay_name: Optional[str] = None,
+               rec_name: Optional[str] = None) -> Filled:
+    """Everything this build can source for one person, across `weeks`."""
+    out = Filled()
+
+    for wk in weeks:
+        # --- money: the week BEFORE the column it lands in
+        if pay_name:
+            src_week = wk - dt.timedelta(weeks=1)
+            amount = pay.got_paid(pay_name, src_week)
+            if amount is None:
+                out.gaps.append(f"{name}: no Got Paid for WE {src_week:%-m/%-d}")
+            else:
+                out.add("Gross Paycheck last week?", wk, f"${amount:,.2f}",
+                        f"{pay.where(pay_name, src_week)} WE {src_week:%-m/%-d} 'Got Paid'")
+
+        # --- recruiting: the month this week ends in
+        if rec_name:
+            m = month_of(wk)
+            block = months.get(m, {}).get(rec_name.strip().lower())
+            if not block:
+                out.gaps.append(f"{name}: not in the {m} block of \"2nd rds %'s\"")
+            else:
+                for label, k in RECRUITING.items():
+                    out.add(label, wk, block.get(k, ""),
+                            f"\"2nd rds %'s\" {m} block, {label}")
+    return out
