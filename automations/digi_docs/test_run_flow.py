@@ -1617,3 +1617,68 @@ class OneBadPageDoesNotEndTheAdd(_NoNetwork):
         self.assertIn("Bo Diaz", refused[0])
         self.assertIn("TimeoutError", refused[0])
         self.assertIn("send tick will try again", refused[0])
+
+
+class TheBoardKeepsUpWithTheSending(_NoNetwork):
+    """Megan 2026-09-28, mid-batch: "nothing is going green/sent on the OBCL
+    yet?" — eighteen people were being worked and fifteen already had their
+    documents. The tint was one write at the END of the run, so for twenty
+    minutes the board said nobody had been sent."""
+
+    def _send_one(self):
+        import automations.digi_docs as pkg
+        from automations.digi_docs import run as R
+
+        calls = []
+        mark = types.ModuleType("automations.digi_docs.mark")
+
+        def _tint(ws, cands, dry_run=True):
+            calls.append([c.name for c in cands])
+            return len(cands)
+
+        mark.tint = _tint
+        slack = types.ModuleType("automations.digi_docs.slack_post")
+        rec = _Recorder()
+        slack.post = rec.post
+        slack.clear_reported = lambda: None
+        slack.alert_failure = lambda line, dry_run=True: None
+
+        ov = _fake_ov()
+        ov.open_set_status = lambda page, name, **k: (object(), name)
+        ov.docs_row_state = lambda modal: "REQUIRED ACTION"
+        ov.open_docs_portal = lambda page, modal: object()
+        ov.generate_bundle = lambda tab, name, dry_run=True: None
+        ov.confirm_generated = lambda tab, name: True
+        ov.tick_attestations = lambda page, modal, dry_run=True: ["BG"]
+
+        ws = types.SimpleNamespace(title="D2D OBCL 9.28", id=0)
+        from automations.shared import run_manifest as _rm
+        with mock.patch.object(_rm, "write_manifest", lambda *a, **k: None), \
+            mock.patch("automations.day_orchestrator.hub_publish."
+                       "write_failure_reason", lambda *a, **k: None), \
+            mock.patch.dict(sys.modules, {
+                "automations.digi_docs.ownerville": ov,
+                "automations.digi_docs.mark": mark,
+                "automations.digi_docs.slack_post": slack}), \
+            mock.patch.object(pkg, "ownerville", ov, create=True), \
+            mock.patch.object(pkg, "mark", mark, create=True), \
+            mock.patch.object(pkg, "slack_post", slack, create=True), \
+            mock.patch.object(R, "_open_tab", lambda tab="": (ws, [])), \
+            mock.patch.object(R, "_flag_terminated", lambda people: None), \
+            mock.patch.object(R.roster, "candidates", lambda v, t: [_Cand()]), \
+            mock.patch.object(R.roster, "to_send", lambda c: [_Cand()]):
+            R._phases(_Args())
+        return calls
+
+    def test_the_cell_is_tinted_as_the_bundle_goes(self):
+        calls = self._send_one()
+        self.assertTrue(calls, "nothing was tinted at all")
+        self.assertEqual(["Dana Reyes"], calls[0],
+                         "the first tint must be that person, mid-run")
+
+    def test_the_end_of_run_tint_still_runs(self):
+        """Belt and braces: a per-person tint that failed must not leave the
+        board short, so the whole-run paint stays."""
+        calls = self._send_one()
+        self.assertGreaterEqual(len(calls), 2)
+        self.assertIn("Dana Reyes", calls[-1])

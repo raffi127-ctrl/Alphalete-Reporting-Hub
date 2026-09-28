@@ -524,7 +524,7 @@ def _phases(args) -> int:
     try:
         _work(ov, page_ctx=ov.session(headless=not dry), do_add=do_add,
               do_send=do_send, send=send, add_list=add_list, dry=dry,
-              added=added, done=done, refused=refused, args_ns=args)
+              added=added, done=done, refused=refused, args_ns=args, ws=ws)
     except Exception as e:                          # noqa: BLE001
         fatal = f"{type(e).__name__}: {str(e).splitlines()[0][:160]}"
         print(f"\n⛔ the run stopped before it finished — {fatal}")
@@ -533,8 +533,33 @@ def _phases(args) -> int:
                        do_send=do_send, fatal=fatal)
 
 
+def _tint_now(ws, c, dry) -> None:
+    """Green this ONE person's cell, the moment their bundle went.
+
+    Megan 2026-09-21 and again 2026-09-28: "nothing is going green/sent on the
+    OBCL yet?" while a batch was half done. The end-of-run tint is one Sheets
+    write for everybody, which is cheap — but a pass working through eighteen
+    people takes twenty minutes, and for all of it the board says nobody was
+    sent. The office reads that board to know who still needs chasing, so it
+    has to keep up with the sending, not with the run.
+
+    Best-effort and silent: the end-of-run tint still paints everyone who was
+    sent, so a failure here costs nothing but the live update. A bundle that
+    went out must never be reported as not sent because a cell would not
+    colour. [[feedback_green_means_delivered]]
+    """
+    if ws is None or dry:
+        return
+    try:
+        from automations.digi_docs import mark
+        mark.tint(ws, [c], dry_run=False)
+    except Exception as e:                              # noqa: BLE001
+        print(f"     (cell not tinted yet for {c.name}: {type(e).__name__} "
+              f"— the end-of-run tint will catch it)")
+
+
 def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
-          added, done, refused, args_ns=None):
+          added, done, refused, args_ns=None, ws=None):
     """The two phases. Split out only so the caller can wrap the whole thing
     in one try/except without burying the loops inside it.
 
@@ -845,6 +870,8 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                                 f"{str(e).splitlines()[0][:70]}) "
                                 f"This person does NOT need a re-send.", dry)
                     done.append((c.name, matched, ticked))
+                    # The send already happened; say so on the board NOW.
+                    _tint_now(ws, c, dry)
                 except ov.Refused as e:
                     _refuse(refused, str(e), dry)
                 except Exception as e:              # noqa: BLE001
