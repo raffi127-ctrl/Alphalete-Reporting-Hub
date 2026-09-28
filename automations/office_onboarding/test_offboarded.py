@@ -18,6 +18,7 @@ The denylist is what makes an offboard survive that.
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
 from automations.office_onboarding import apply
 
@@ -34,21 +35,24 @@ def _plan(key):
 
 class OffboardedKeysTest(unittest.TestCase):
 
-    def test_drew_is_offboarded(self):
-        self.assertIn("drew", apply.OFFBOARDED_KEYS)
+    def test_drew_is_back(self):
+        # Off the list 2026-09-28: he re-enrolled in a new channel. While he is
+        # listed here the Hub refuses his metrics card and apply drops him.
+        self.assertNotIn("drew", apply.OFFBOARDED_KEYS)
 
-    def test_the_reason_is_recorded(self):
-        """Whoever finds this line in a year needs to know why it's there before
-        deciding to delete it."""
-        why = apply.OFFBOARDED_KEYS["drew"]
-        self.assertTrue(len(why) > 40, why)
-        self.assertIn("2026-08-23", why)
+    def test_every_reason_is_recorded(self):
+        """Whoever finds a line here in a year needs to know why it's there
+        before deciding to delete it."""
+        for key, why in apply.OFFBOARDED_KEYS.items():
+            self.assertTrue(len(why) > 40, (key, why))
+            self.assertRegex(why, r"20\d\d-\d\d-\d\d", (key, why))
 
 
 class DropOffboardedTest(unittest.TestCase):
 
     def test_an_offboarded_office_is_dropped(self):
-        kept, dropped = apply._drop_offboarded([_plan("drew")])
+        with mock.patch.dict(apply.OFFBOARDED_KEYS, {"ztest": "gone 2026-01-01 for the test"}):
+            kept, dropped = apply._drop_offboarded([_plan("ztest")])
         self.assertEqual(kept, [])
         self.assertEqual(len(dropped), 1)
 
@@ -62,10 +66,11 @@ class DropOffboardedTest(unittest.TestCase):
         self.assertEqual(dropped, [])
 
     def test_a_mixed_batch_keeps_the_others(self):
-        plans = [_plan("haytham"), _plan("drew"), _plan("nii")]
-        kept, dropped = apply._drop_offboarded(plans)
+        plans = [_plan("haytham"), _plan("ztest"), _plan("nii")]
+        with mock.patch.dict(apply.OFFBOARDED_KEYS, {"ztest": "gone 2026-01-01 for the test"}):
+            kept, dropped = apply._drop_offboarded(plans)
         self.assertEqual([p["rec"].key for p in kept], ["haytham", "nii"])
-        self.assertEqual([p["rec"].key for p in dropped], ["drew"])
+        self.assertEqual([p["rec"].key for p in dropped], ["ztest"])
 
     def test_an_empty_plan_is_fine(self):
         self.assertEqual(apply._drop_offboarded([]), ([], []))
@@ -77,33 +82,42 @@ class DropOffboardedTest(unittest.TestCase):
         self.assertEqual(dropped, [])
 
 
-class RegistriesAreCleanTest(unittest.TestCase):
-    """The other half: Drew really is out of everything that runs today."""
+class RegistriesHaveDrewBackTest(unittest.TestCase):
+    """The other half, inverted 2026-09-28: Drew is back in everything that
+    posts to his NEW channel -- and still out of the one thing he has no data
+    for (he does not disposition in OwnerVille)."""
 
-    def test_drew_is_not_a_metrics_office(self):
+    NEW_CHANNEL = "C0C4YKN7QGJ"          # #precision-management-att-sales
+    OLD_CHANNEL = "C0A7871FAUV"          # dead since 2026-08-15; never again
+
+    def test_drew_is_a_metrics_office_on_the_new_channel(self):
         from automations.office_metrics import offices
-        self.assertNotIn("drew", offices.OFFICES)
+        self.assertIn("drew", offices.OFFICES)
+        self.assertEqual(offices.OFFICES["drew"].channel_id, self.NEW_CHANNEL)
 
-    def test_drew_has_no_tracker_channel(self):
+    def test_drew_has_his_tracker_channel_and_is_not_paused(self):
         from automations.tableau_screenshots import slack_post
-        self.assertNotIn("drew", slack_post.ORG_CHANNELS)
-        self.assertNotIn("drew", slack_post.ORGS)
+        self.assertEqual(slack_post.ORG_CHANNELS.get("drew"), [self.NEW_CHANNEL])
+        self.assertIn("drew", slack_post.ORGS)
+        self.assertNotIn("drew", slack_post.PAUSED_ORGS)
 
-    def test_drew_is_still_paused_on_the_tracker_side_too(self):
-        """Belt and braces: the registry row is gone AND the pause stands, so
-        re-adding the row alone can't restart the tracker alerts."""
+    def test_the_dead_channel_is_nowhere(self):
+        from automations.office_metrics import offices
         from automations.tableau_screenshots import slack_post
-        self.assertIn("drew", slack_post.PAUSED_ORGS)
+        self.assertNotIn(self.OLD_CHANNEL, [o.channel_id for o in offices.OFFICES.values()])
+        self.assertNotIn(self.OLD_CHANNEL, sum(slack_post.ORG_CHANNELS.values(), []))
 
-    def test_drew_is_excluded_from_weekly_knock_dispositions(self):
+    def test_drew_stays_out_of_weekly_knock_dispositions(self):
+        # No OwnerVille dispositions = no knocks to report (Megan 2026-09-28).
         from automations.weekly_knock_dispositions import offices as wkd
         self.assertIn("drew", wkd._EXCLUDED_KEYS)
 
-    def test_drew_has_no_schedule_entry(self):
+    def test_drew_has_a_schedule_entry_that_is_on(self):
         import json
         raw = json.loads(apply.SCHEDULE_CONFIG.read_text())
-        ids = set(raw.get("reports") or {}) | set(raw)
-        self.assertEqual([i for i in ids if "drew" in i.lower()], [])
+        reports = raw.get("reports") or raw
+        self.assertTrue(reports["drew_metrics"]["on_scheduler"])
+        self.assertNotIn("knocks", " ".join(reports["drew_metrics"].get("base_args", [])))
 
 
 class HubCardIsRefusedTest(unittest.TestCase):
@@ -115,8 +129,10 @@ class HubCardIsRefusedTest(unittest.TestCase):
 
     def test_an_offboarded_report_id_is_offboarded(self):
         from automations.day_orchestrator import hub_coverage as hc
-        self.assertTrue(hc._is_offboarded("drew_metrics"))
-        self.assertTrue(hc._is_offboarded("drew"))
+        with mock.patch.dict(apply.OFFBOARDED_KEYS, {"ztest": "gone 2026-01-01 for the test"}):
+            self.assertTrue(hc._is_offboarded("ztest_metrics"))
+            self.assertTrue(hc._is_offboarded("ztest"))
+        self.assertFalse(hc._is_offboarded("drew_metrics"))   # back 2026-09-28
 
     def test_a_live_office_is_not(self):
         from automations.day_orchestrator import hub_coverage as hc
@@ -128,13 +144,15 @@ class HubCardIsRefusedTest(unittest.TestCase):
     def test_a_prefix_lookalike_is_not_offboarded(self):
         """`drewsomething_metrics` is a different office, not Drew's."""
         from automations.day_orchestrator import hub_coverage as hc
-        self.assertFalse(hc._is_offboarded("drewster_metrics"))
-        self.assertFalse(hc._is_offboarded("andrew_metrics"))
+        with mock.patch.dict(apply.OFFBOARDED_KEYS, {"drew": "for the test only"}):
+            self.assertFalse(hc._is_offboarded("drewster_metrics"))
+            self.assertFalse(hc._is_offboarded("andrew_metrics"))
 
     def test_ensure_library_card_refuses_and_says_why(self):
         from automations.day_orchestrator import hub_coverage as hc
-        ok, msg = hc.ensure_library_card("drew_metrics", "Drew's Daily Metrics",
-                                         dry_run=True)
+        with mock.patch.dict(apply.OFFBOARDED_KEYS, {"ztest": "gone 2026-01-01 for the test"}):
+            ok, msg = hc.ensure_library_card("ztest_metrics", "Z Test Daily Metrics",
+                                             dry_run=True)
         self.assertFalse(ok)
         self.assertIn("offboarded", msg.lower())
 

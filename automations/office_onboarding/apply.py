@@ -56,11 +56,13 @@ ICD_MAPPINGS = (REPO_ROOT / "automations" / "recruiting_report"
 #
 # TO RE-ENROLL an office: delete its line here. Its row on the tab is untouched,
 # so the next `apply --write` wires it back up exactly as before.
-OFFBOARDED_KEYS: Dict[str, str] = {
-    "drew": "Precision Management moved to another Slack workspace; every post "
-            "to C0A7871FAUV failed and alerted daily (Megan 2026-08-23, "
-            "'remove drew' — asked three times).",
-}
+# drew WAS here 2026-08-23 ("Precision Management moved to another Slack
+# workspace; every post to C0A7871FAUV failed and alerted daily -- 'remove
+# drew', asked three times") and came OFF 2026-09-28: he is back, in a new
+# private channel, C0C4YKN7QGJ, with Lucy a member (Megan: "reactivate his
+# metrics and trackers to post in this channel"). His registry entries were
+# re-added by hand, not through the tab.
+OFFBOARDED_KEYS: Dict[str, str] = {}
 
 
 def _drop_offboarded(plans: List[dict]) -> tuple:
