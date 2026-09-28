@@ -102,6 +102,19 @@ class MovePictureTest(unittest.TestCase):
         self.assertEqual(a["A143"], "WEEKLY KNOCKS BOARD")
         self.assertEqual(ws.cleared, ["N143"])     # last week's =IMAGE only
 
+    def test_chart_rows_beside_the_block_still_move_it(self):
+        # Murphy 9/28 re-run: the chart reached the marker row but only in
+        # columns left of the block — the picture still covered its tail.
+        v = _grid(160)
+        for r in range(130, 149):                  # chart rows 131..149, G..H
+            v[r][6], v[r][7] = f"Rep {r}", "NEW INTERNET"
+        v[147][0] = "WEEKLY KNOCKS BOARD"          # marker on row 148
+        ws = FakeWS(v, [])
+        self.assertTrue(self._place(ws))
+        a = {d["range"]: d["values"][0][0] for d in ws.written}
+        self.assertEqual(a["A152"], "WEEKLY KNOCKS BOARD")   # 149 + 2 gap + 1
+        self.assertEqual(ws.cleared, ["A148"])
+
 
 if __name__ == "__main__":
     unittest.main()

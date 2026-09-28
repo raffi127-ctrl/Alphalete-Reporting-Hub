@@ -219,11 +219,11 @@ def _place_picture(ws, week_sunday: dt.date, week_col: int, png: Path,
                                                    frozen + 1)
     # The block may only land on empty cells — last week's block is ours and
     # comes apart first, so its cells don't count.
-    if not fresh and not PL.area_is_empty(values, anchor, end_row, start_col,
-                                          end_col, ignore=old_merges):
-        # Something grew into last week's spot (a longer Production Breakdown,
-        # 2026-09-28): move the block under everything again. Our own marker,
-        # label and old block don't count as "everything".
+    if not fresh:
+        # The block belongs UNDER everything. If something grew into or past
+        # last week's spot (a longer Production Breakdown, 2026-09-28 — even
+        # beside the block, not only inside it), move it under everything
+        # again. Our own marker, label and old block don't count.
         scrub = [list(r) for r in values]
         for c in (0, 1):
             if c < len(scrub[old_row - 1]):
@@ -233,11 +233,13 @@ def _place_picture(ws, week_sunday: dt.date, week_col: int, png: Path,
                 for c in range(m["startColumnIndex"],
                                min(m["endColumnIndex"], len(scrub[r]))):
                     scrub[r][c] = ""
-        anchor = PL.last_used_row(scrub) + PL.GAP_ROWS + 1
-        end_col, end_row = PL.block(col_px, row_px, start_col, anchor, img_w,
-                                    img_h, max_col=int(grid.get("columnCount", 0)) or None)
-        print(f"    row {old_row} is taken now — moving the picture down to "
-              f"row {anchor}.", flush=True)
+        below = PL.last_used_row(scrub)
+        if below >= anchor:
+            anchor = below + PL.GAP_ROWS + 1
+            end_col, end_row = PL.block(col_px, row_px, start_col, anchor, img_w,
+                                        img_h, max_col=int(grid.get("columnCount", 0)) or None)
+            print(f"    row {old_row} is taken now — moving the picture down to "
+                  f"row {anchor}.", flush=True)
     top_left = gspread.utils.rowcol_to_a1(anchor, start_col)
     bottom_right = gspread.utils.rowcol_to_a1(end_row, end_col)
     # An EMPTY merge in the way is a picture block that lost its marker and
