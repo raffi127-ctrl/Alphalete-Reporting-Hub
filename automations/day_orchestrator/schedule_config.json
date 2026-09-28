@@ -12108,6 +12108,44 @@
       "_note": "Office metrics for khalil -> everforward-sales (C0C2E04TY6N). Wired by hand 2026-09-22 (no form). NDS/wireless office (campaign nds_d2d), same boards as colten. switched on 2026-09-22 20:50 after a dry run on Lucy 1 came back green on all six boards (knocks+gaps, wireless churn, activations, order log, cancels, 3 disconnects) -- Megan's rule: never a blank first post. Sheet 'Khalil Mansour - Metrics' 1lN2isHXTc9XNYG4kEvqCn_d-uzyIXxi6NyiLNWWQvpw copied from the Master Metrics Templates.",
       "_onboarded": true
     },
+    "jacob_metrics": {
+      "order": 36.6,
+      "on_scheduler": false,
+      "display_name": "Jacob's Daily Metrics (rockstar-world-sales)",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:order_log"
+      ],
+      "command": [
+        "automations.office_metrics.runner"
+      ],
+      "base_args": [
+        "--office",
+        "jacob",
+        "--live"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P1",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 60,
+      "verify": {
+        "type": "manifest",
+        "report_id": "jacob_metrics"
+      },
+      "_note": "Office metrics for jacob -> rockstar-world-sales (C0BMX2V2XRT). Wired by hand 2026-09-28 (no form). AT&T Fiber D2D office (campaign fiber_d2d), all 11 D2D boards. on_scheduler stays false until a dry run on Lucy 1 proves data on every board -- Megan's rule: never a blank first post. Sheet 'Jacob Dover - Lucy Metrics (Rockstarworld)' 1CeF9wVJt720jA0w2s_Zw1fO51PajDOtWVsS2EYqtMT0 copied from the Master Metrics Templates.",
+      "_onboarded": true
+    },
     "icd_knocks_board_now": {
       "on_scheduler": false,
       "_off_scheduler_note": "Post ONE office's knocks board right now, to every approved destination, ignoring cadence and field hours: `lucy rerun icd_knocks_board_now --office aya --machine \"Lucy 1\"`. Built 2026-09-22 (Megan: 'send Aya's final knock board now please') -- the day's last board had gone from Lucy 3, which her group does not receive. Lucy 1 because texts must leave from there.",

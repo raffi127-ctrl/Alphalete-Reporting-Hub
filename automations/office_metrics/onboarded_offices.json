@@ -448,5 +448,57 @@
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%"
+  },
+  {
+    "key": "jacob",
+    "report_id": "jacob_metrics",
+    "label": "Jacob's Local Office",
+    "owner": "Jacob Dover",
+    "channel_id": "C0BMX2V2XRT",
+    "channel_name": "rockstar-world-sales",
+    "sheet_id": "1CeF9wVJt720jA0w2s_Zw1fO51PajDOtWVsS2EYqtMT0",
+    "knocks_office": "Jacob Dover",
+    "ov_account": "23607",
+    "owner_office": "",
+    "business_name": "Rockstarworld Incorporated",
+    "website": "",
+    "header_label": "",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "knocks",
+      "order_log",
+      "sales_6plus",
+      "cancels",
+      "ongoing_cancel",
+      "disconnects",
+      "churn_ni",
+      "churn_wl",
+      "activations",
+      "abp",
+      "tableau_shot"
+    ],
+    "report_order": {
+      "knocks": 1,
+      "order_log": 2,
+      "sales_6plus": 3,
+      "cancels": 4,
+      "ongoing_cancel": 5,
+      "disconnects": 6,
+      "churn_ni": 7,
+      "churn_wl": 8,
+      "activations": 9,
+      "abp": 10,
+      "tableau_shot": 11
+    },
+    "per_office_views": {},
+    "machine": "Lucy 1",
+    "campaign": "fiber_d2d",
+    "notes": "wired by hand 2026-09-28 (Megan: trackers + metrics to #rockstar-world-sales); AT&T Fiber D2D like christian; all 11 D2D boards",
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%"
   }
 ]
