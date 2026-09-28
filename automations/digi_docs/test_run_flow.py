@@ -1632,7 +1632,7 @@ class TheBoardKeepsUpWithTheSending(_NoNetwork):
         calls = []
         mark = types.ModuleType("automations.digi_docs.mark")
 
-        def _tint(ws, cands, dry_run=True):
+        def _tint(ws, cands, dry_run=True, color=None):
             calls.append([c.name for c in cands])
             return len(cands)
 
@@ -1682,3 +1682,74 @@ class TheBoardKeepsUpWithTheSending(_NoNetwork):
         calls = self._send_one()
         self.assertGreaterEqual(len(calls), 2)
         self.assertIn("Dana Reyes", calls[-1])
+
+
+class PendingGetsItsOwnGreen(_NoNetwork):
+    """Megan 2026-09-28, on Patrick Eaddy: "if there's one pending then it
+    should go a darker green". PENDING means OwnerVille already holds a bundle
+    for them — a blank cell sends the office chasing documents that exist, and
+    our own light green would claim a send we did not make."""
+
+    def _run_with_state(self, state):
+        import automations.digi_docs as pkg
+        from automations.digi_docs import mark as real_mark, run as R
+
+        calls = []
+        mark = types.ModuleType("automations.digi_docs.mark")
+        mark.tint = lambda ws, cands, dry_run=True, color=None: (
+            calls.append((tuple(c.name for c in cands), color)) or len(cands))
+        mark.PENDING_GREEN = real_mark.PENDING_GREEN
+        slack = types.ModuleType("automations.digi_docs.slack_post")
+        rec = _Recorder()
+        slack.post = rec.post
+        slack.clear_reported = lambda: None
+        slack.alert_failure = lambda line, dry_run=True: None
+
+        ov = _fake_ov()
+        ov.open_set_status = lambda page, name, **k: (object(), name)
+        ov.docs_row_state = lambda modal: state
+        ov.open_docs_portal = lambda page, modal: object()
+        ov.generate_bundle = lambda tab, name, dry_run=True: None
+        ov.confirm_generated = lambda tab, name: True
+        ov.tick_attestations = lambda page, modal, dry_run=True: ["BG"]
+
+        ws = types.SimpleNamespace(title="D2D OBCL 9.28", id=0)
+        from automations.shared import run_manifest as _rm
+        with mock.patch.object(_rm, "write_manifest", lambda *a, **k: None), \
+            mock.patch("automations.day_orchestrator.hub_publish."
+                       "write_failure_reason", lambda *a, **k: None), \
+            mock.patch.dict(sys.modules, {
+                "automations.digi_docs.ownerville": ov,
+                "automations.digi_docs.mark": mark,
+                "automations.digi_docs.slack_post": slack}), \
+            mock.patch.object(pkg, "ownerville", ov, create=True), \
+            mock.patch.object(pkg, "mark", mark, create=True), \
+            mock.patch.object(pkg, "slack_post", slack, create=True), \
+            mock.patch.object(R, "_open_tab", lambda tab="": (ws, [])), \
+            mock.patch.object(R, "_flag_terminated", lambda people: None), \
+            mock.patch.object(R.roster, "candidates", lambda v, t: [_Cand()]), \
+            mock.patch.object(R.roster, "to_send", lambda c: [_Cand()]):
+            R._phases(_Args())
+        return calls, rec
+
+    def test_pending_is_tinted_the_darker_green(self):
+        from automations.digi_docs import mark as real_mark
+        calls, _rec = self._run_with_state("PENDING")
+        self.assertIn((("Dana Reyes",), real_mark.PENDING_GREEN), calls)
+
+    def test_pending_is_still_reported_not_swallowed(self):
+        _calls, rec = self._run_with_state("PENDING")
+        self.assertTrue(rec.calls[0]["refused"],
+                        "a colour is not a substitute for saying so")
+        self.assertEqual(0, rec.calls[0]["sent"], "we did not send it")
+
+    def test_completed_is_left_alone(self):
+        calls, _rec = self._run_with_state("COMPLETED")
+        self.assertEqual([], [c for c in calls if c[1] is not None],
+                         "finished paperwork is nobody's to repaint")
+
+    def test_our_own_send_keeps_the_ordinary_green(self):
+        calls, _rec = self._run_with_state("REQUIRED ACTION")
+        self.assertTrue(calls)
+        self.assertTrue(all(color is None for _names, color in calls),
+                        "a send of ours uses the default light green")

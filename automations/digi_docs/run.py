@@ -533,7 +533,7 @@ def _phases(args) -> int:
                        do_send=do_send, fatal=fatal)
 
 
-def _tint_now(ws, c, dry) -> None:
+def _tint_now(ws, c, dry, color=None) -> None:
     """Green this ONE person's cell, the moment their bundle went.
 
     Megan 2026-09-21 and again 2026-09-28: "nothing is going green/sent on the
@@ -552,7 +552,7 @@ def _tint_now(ws, c, dry) -> None:
         return
     try:
         from automations.digi_docs import mark
-        mark.tint(ws, [c], dry_run=False)
+        mark.tint(ws, [c], dry_run=False, color=color)
     except Exception as e:                              # noqa: BLE001
         print(f"     (cell not tinted yet for {c.name}: {type(e).__name__} "
               f"— the end-of-run tint will catch it)")
@@ -810,6 +810,17 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                             print(f"  ⚠ {c.name}: NOT SENT and not finished — "
                                   f"Onboarding Documents is {shown}; nothing "
                                   f"will pick this person up on its own")
+                            # A DARKER GREEN, NOT A BLANK CELL (Megan
+                            # 2026-09-28, on Patrick Eaddy: "if there's one
+                            # pending then it should go a darker green").
+                            # PENDING means OwnerVille already holds a bundle
+                            # for them, so a blank Digi Docs cell sends the
+                            # office chasing documents that exist — but this
+                            # was not our send and still owes a signature, so
+                            # it must not look like the ones we did.
+                            if shown == "PENDING":
+                                from automations.digi_docs import mark as _mk
+                                _tint_now(ws, c, dry, color=_mk.PENDING_GREEN)
                             refused.append(
                                 f"{c.name}: NOT SENT and not finished — "
                                 f"Onboarding Documents is {shown}, which this "

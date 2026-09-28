@@ -23,8 +23,16 @@ from automations.digi_docs import config
 # tabs, so an automated mark is indistinguishable from a manual one.
 LIGHT_GREEN = {"red": 0xD9 / 255, "green": 0xEA / 255, "blue": 0xD3 / 255}
 
+# "light green 2" (#B6D7A8) — one step darker, same family, still black-text
+# readable. Megan 2026-09-28, on Patrick Eaddy: "if there's one pending then it
+# should go a darker green". PENDING means OwnerVille already has a bundle for
+# that person and is waiting on their signature, so the cell must not read as
+# blank (nobody sent them anything) NOR as an ordinary send of ours. It is
+# neither: somebody else's send, still owed a signature.
+PENDING_GREEN = {"red": 0xB6 / 255, "green": 0xD7 / 255, "blue": 0xA8 / 255}
 
-def tint(worksheet, cands: List, *, dry_run: bool = True) -> int:
+
+def tint(worksheet, cands: List, *, dry_run: bool = True, color=None) -> int:
     """Light-green the Digi Docs cell for each candidate. Returns cells tinted.
 
     Best-effort by design: a formatting failure must never make a bundle that
@@ -55,7 +63,8 @@ def tint(worksheet, cands: List, *, dry_run: bool = True) -> int:
             },
             # backgroundColor ONLY. Not userEnteredValue -- writing a value here
             # is what would tick the checkbox somebody else owns.
-            "cell": {"userEnteredFormat": {"backgroundColor": LIGHT_GREEN}},
+            "cell": {"userEnteredFormat": {
+                "backgroundColor": color or LIGHT_GREEN}},
             "fields": "userEnteredFormat.backgroundColor",
         }
     } for c in cells]
