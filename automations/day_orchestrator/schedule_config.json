@@ -465,7 +465,7 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": null,
-      "timeout_minutes": 60,
+      "timeout_minutes": 120,
       "machine": "Lucy 2"
     },
     "sms_call_list": {
