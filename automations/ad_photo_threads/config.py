@@ -66,7 +66,7 @@ STALE_PIN_DAYS = 21
 # Threads that stay UNPINNED for good, {channel: {thread_ts}} -- the nightly
 # pin pass never puts them back. Raf's funnels got their own channels
 # 2026-09-28: these 9 threads in his original channel hold ONLY 2nd-funnel
-# (23965) candidates, now reposted in #indeed-photos-rafael-hidalgo-funnel-2-
+# (23965) candidates, now reposted in #indeed-photos-rafael-hidalgos-funnel-2-
 # 23965 (Eve: "despinnear los hilos que sean de funnel 2 y 3 del canal
 # original"). Nothing is deleted; they stay in the channel as history.
 NEVER_PIN = {
@@ -166,7 +166,7 @@ OFFICES = [
         "live": True,          # 9/28: backfilled + pinned, 0 loose
         "sheet_id": SHEET_ID,
         "source_channel": SOURCE_CHANNEL_ID,
-        "live_channel": "C0C4VMBEU7P",     # #indeed-photos-rafael-hidalgo-funnel-2-23965
+        "live_channel": "C0C4VMBEU7P",     # #indeed-photos-rafael-hidalgos-funnel-2-23965
         "paused_before": "",
         "sources": RAF_FUNNEL_2,
     },
@@ -177,7 +177,7 @@ OFFICES = [
         "live": True,          # 9/28: backfilled + pinned, 0 loose
         "sheet_id": SHEET_ID,
         "source_channel": SOURCE_CHANNEL_ID,
-        "live_channel": "C0C4UJHR2CB",     # #indeed-photos-rafael-hidalgo-funnel-3-24065
+        "live_channel": "C0C4UJHR2CB",     # #indeed-photos-rafael-hidalgos-funnel-3-24065
         "paused_before": "",
         "sources": RAF_FUNNEL_3,
     },
