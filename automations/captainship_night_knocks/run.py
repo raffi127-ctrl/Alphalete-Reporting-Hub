@@ -78,11 +78,17 @@ def default_captains() -> List[str]:
     NDS INCLUDED since 2026-09-15 evening (Eve: "si, hacelo" — the NDS
     captainships' offices get the 9 PM local mail like fiber's). It was held
     out for a few hours because the morning change was all she had asked for;
-    their offices' zones and owner addresses were added in the same change."""
+    their offices' zones and owner addresses were added in the same change.
+
+    B2B HELD OUT (2026-09-28). Their morning report gained the daily knocks
+    that day; the 9 PM mail was not asked for, and it needs each office's zone
+    and owner address first — the same two things NDS needed. Captain.sections
+    also leaves out anything still in config.PREVIEW_KINDS."""
     try:
         from automations.captainship_drafts import config
         keys = [c.key for c in config.CAPTAINS
-                if "daily_knocks" in (config.SECTION_KINDS.get(c.flavor) or [])]
+                if c.flavor != "b2b"
+                and "daily_knocks" in {k for _h, k in c.sections}]
     except Exception:  # noqa: BLE001 — never a night with nobody in it
         keys = []
     if SAMPLE_CAPTAIN in keys:

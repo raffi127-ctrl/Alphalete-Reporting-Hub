@@ -136,6 +136,14 @@ _INTRO = {
         "Product Summary Of Sales",
         "⚠️Captain Team Stats Breakout ⚠️",
         "💰Wireless Ongoing Churn Metrics 💰",
+        # Carlos 2026-09-28 ("is it possible to get an End of week disposition
+        # report?"; Megan: put it in the captainship emails), and the same day
+        # Eve added the daily knocks too — none of these 26 offices got a
+        # knocks report before (Carlos's own office only via Slack). Same two
+        # lines as every other flavor; both attachment-only, the weekly
+        # SUN+MON, and PREVIEW_KINDS holds both back until Eve's "roll out".
+        "Daily Knocks (per owner) 🚪",
+        "Weekly Knock Dispositions (per owner) 🚪",
     ]),
     "nds": ("Hi, team! Below you'll find:", [
         "Product Summary Of Sales",
@@ -205,14 +213,23 @@ SECTION_KINDS = {
     # churn_ni asked for a list that is now always empty, and the section
     # fell back to the "could not be captured" note in all four B2B drafts
     # while the images sat rendered on disk (Eve 2026-08-19).
-    "b2b":    ["product_summary", "teamstats_tableau", "churn_wireless"],
+    # daily_knocks + knock_dispo joined b2b 2026-09-28 (Carlos asked for the
+    # weekly, Eve added the daily). The daily board already draws both B2B
+    # grids (render_owner_daily_board); the weekly pull sums B2B talk-tos over
+    # the same parts the daily does and refuses a B2B pin that didn't take.
+    # No apps columns (B2B sales are not in the D2D PSS crosstab), no Chan line
+    # (he is fiber), no disposition breakdown on the daily SUMMARY (each
+    # owner's board has it). Behind PREVIEW_KINDS until Eve rolls it out.
+    "b2b":    ["product_summary", "teamstats_tableau", "churn_wireless",
+               "daily_knocks", "knock_dispo"],
     # daily_knocks + knock_dispo joined nds 2026-09-15. What kept them out
     # ("wireless-shaped disposition tables") is handled now: the per-owner
     # daily board picks its columns by the row shape
     # (knock_dispo_images.render_owner_daily_board — wireless, gaps-only and
     # house offices all live under these three captains), the summary drops
     # the Talk-To split it can't read, and owner_cfgs leaves the D2D apps off
-    # (NDS sales are not in the PSS crosstab). B2B stays out.
+    # (NDS sales are not in the PSS crosstab). B2B joined 2026-09-28, weekly
+    # only (see "b2b" above).
     "nds":    ["product_summary", "teamstats_tableau", "churn_ni",
                "daily_knocks", "knock_dispo"],
 }
@@ -261,6 +278,24 @@ SECTION_DAYS = {
 # short line by email_build._attachment_only_notes, so a broken pull still
 # holds the send instead of shipping one PDF short.
 ATTACHMENT_ONLY_KINDS = {"knock_dispo", "daily_knocks"}
+
+
+# Sections declared for a flavor but held back until Eve's "looks good, roll
+# out" (CLAUDE.md: preview before rollout). A kind listed here is DROPPED by
+# Captain.sections_on — so the scheduled capture doesn't pull it, the email
+# doesn't show it, and nothing that derives captainships from sections_on
+# (weekly_knocks_focus) picks it up — unless the run asked for previews:
+# `--preview-kinds` on captainship_knocks / captainship_drafts sets the env
+# var below. Rolling out = deleting the flavor's entry here.
+PREVIEW_KINDS: Dict[str, set] = {
+    "b2b": {"daily_knocks", "knock_dispo"},     # 2026-09-28
+}
+PREVIEW_ENV = "CAPTAINSHIP_PREVIEW_KINDS"
+
+
+def previews_on() -> bool:
+    import os
+    return os.environ.get(PREVIEW_ENV, "").strip() == "1"
 
 
 def kind_runs_on(kind: str, today: "dt.date") -> bool:
@@ -455,9 +490,18 @@ class Captain:
         """[(heading, kind), ...] in body order — the intro item text as the
         section heading, zipped with SECTION_KINDS for this flavor. EVERY
         declared section, day-agnostic — the capture/build paths go through
-        sections_on(today) instead, so day-gated sections drop cleanly."""
+        sections_on(today) instead, so day-gated sections drop cleanly.
+
+        Minus PREVIEW_KINDS unless the run asked for previews — HERE, not only
+        in sections_on, because the weekly-PDF attachment (run.py,
+        reply_attachment, weekly_pdf_slack) decides off this list: a preview
+        capture leaves PNGs on disk, and without this the next scheduled draft
+        would attach them to the real email."""
         _, items = _INTRO[self.flavor]
-        return list(zip(items, SECTION_KINDS[self.flavor]))
+        held = (set() if previews_on()
+                else PREVIEW_KINDS.get(self.flavor, set()))
+        return [(h, k) for h, k in zip(items, SECTION_KINDS[self.flavor])
+                if k not in held]
 
     def sections_on(self, today: dt.date) -> List[Tuple[str, str]]:
         """The sections that actually RUN on `today` — `sections` minus any

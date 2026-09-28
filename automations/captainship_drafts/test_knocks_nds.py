@@ -61,8 +61,10 @@ class NdsCarriesBothSections(unittest.TestCase):
             self.assertIn("daily_knocks", kinds, key)
             self.assertNotIn("knock_dispo", kinds, key)   # solo dom + lun
 
-    def test_b2b_still_has_no_knock_sections(self):
-        self.assertNotIn("daily_knocks", config.SECTION_KINDS["b2b"])
+    def test_b2b_knock_sections_are_still_in_preview(self):
+        # B2B declared both knock sections 2026-09-28, held in PREVIEW_KINDS
+        # until Eve rolls them out (test_knocks_b2b pins the gate itself).
+        self.assertIn("daily_knocks", config.PREVIEW_KINDS.get("b2b", set()))
 
     def test_the_night_mail_carries_nds_too(self):
         """Eve 2026-09-15 evening: the 9 PM local mail goes to the NDS

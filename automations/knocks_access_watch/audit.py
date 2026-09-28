@@ -43,9 +43,12 @@ def _captains_with_knocks() -> Tuple[str, ...]:
     access list.
     """
     from automations.captainship_drafts import config as _config
+    # Captain.sections, not SECTION_KINDS: it leaves out a kind still in
+    # config.PREVIEW_KINDS, which is in nobody's report yet, so its owners are
+    # not audited yet either (b2b's weekly, 2026-09-28).
     keys = [c.key for c in _config.CAPTAINS
-            if "daily_knocks" in _config.SECTION_KINDS.get(c.flavor, ())
-            or "knock_dispo" in _config.SECTION_KINDS.get(c.flavor, ())]
+            if {"daily_knocks", "knock_dispo"}
+            & {k for _h, k in c.sections}]
     return tuple(sorted(keys, key=lambda k: (k != "rafael", keys.index(k))))
 
 

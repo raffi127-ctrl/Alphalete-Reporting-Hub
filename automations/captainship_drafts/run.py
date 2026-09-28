@@ -682,7 +682,15 @@ def main(argv=None) -> int:
                          "(their 'Captainship - <Name>' contact group vs the "
                          "fallback list in config.py) and exit. Builds "
                          "nothing, sends nothing.")
+    ap.add_argument("--preview-kinds", action="store_true",
+                    help="Also run sections still held in config.PREVIEW_KINDS "
+                         "(e.g. b2b's weekly knock dispositions) — for the "
+                         "one-captain preview before a rollout. Never on the "
+                         "scheduled run.")
     args = ap.parse_args(argv)
+    if args.preview_kinds:
+        import os
+        os.environ[config.PREVIEW_ENV] = "1"
 
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
     # Set before ANY message is built: email_build reads it while rendering.

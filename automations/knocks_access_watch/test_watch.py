@@ -273,9 +273,11 @@ class CaptainsAreDerivedTests(unittest.TestCase):
 
     def test_every_captain_with_knock_sections_is_audited(self):
         from automations.captainship_drafts import config as C
+        # c.sections leaves out config.PREVIEW_KINDS (b2b's weekly while it
+        # is in preview, 2026-09-28).
         want = {c.key for c in C.CAPTAINS
-                if "daily_knocks" in C.SECTION_KINDS.get(c.flavor, ())
-                or "knock_dispo" in C.SECTION_KINDS.get(c.flavor, ())}
+                if {"daily_knocks", "knock_dispo"}
+                & {k for _h, k in c.sections}}
         self.assertEqual(set(A.CAPTAINS), want)
 
     def test_captains_without_knock_sections_are_not_audited(self):

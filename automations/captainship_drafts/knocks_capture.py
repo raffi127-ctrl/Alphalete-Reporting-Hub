@@ -102,7 +102,15 @@ def main(argv=None) -> int:
                          "impersonation loop again, so use it when the "
                          "boards themselves changed, not to retry a bad "
                          "office.")
+    ap.add_argument("--preview-kinds", action="store_true",
+                    help="Also run sections still held in config.PREVIEW_KINDS "
+                         "(e.g. b2b's weekly knock dispositions) — for the "
+                         "one-captain preview before a rollout. Never on the "
+                         "scheduled run.")
     args = ap.parse_args(argv)
+    if args.preview_kinds:
+        import os
+        os.environ[config.PREVIEW_ENV] = "1"
 
     today = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
     targets = captains_for(today, args.only, args.section)

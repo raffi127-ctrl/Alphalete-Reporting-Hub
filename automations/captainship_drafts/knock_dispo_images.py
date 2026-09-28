@@ -202,11 +202,26 @@ _SUMMARY_DISPO_ORDER = (DAILY_SUMMARY_DISPO[:3] + [_WIRELESS_DISPO]
                         + DAILY_SUMMARY_DISPO[3:])
 
 
+# A key only a B2B grid's rows carry (total_knocks.render.knocks_shape's test).
+_B2B_SIGNATURES = ("Corp Franchise No Opp", "Owner Talked To", "Corp - No Opp")
+
+# The summary's apps block. A B2B captainship has no sales source, so its
+# summary drops these rather than print three blank columns.
+SUMMARY_APPS_HEADERS = {"Total Apps", "Average App per Rep",
+                        "Avg Talk To's per App"}
+
+
 def summary_dispo(captured: list) -> List[str]:
     """The disposition columns the daily summary draws for `captured`
     ([(display, cfg, rows, …), …]). House-only captainships get
     DAILY_SUMMARY_DISPO untouched. Pure."""
     rows = [rec for it in captured for rec in it[2]]
+    # B2B (2026-09-28): neither the house seven nor the wireless bucket is
+    # their vocabulary (Corp Franchise, Owner Talked To, …), and two B2B grids
+    # don't share one either. The summary keeps the knock/talk-to/time block;
+    # each owner's own board right below carries the full breakdown.
+    if any(k in r for r in rows for k in _B2B_SIGNATURES):
+        return []
     if not any(_WIRELESS_DISPO in r for r in rows):
         return list(DAILY_SUMMARY_DISPO)
     return [c for c in _SUMMARY_DISPO_ORDER if any(c in r for r in rows)]
@@ -558,7 +573,8 @@ def owner_names(captain_key: str, grid: Optional[List[List[str]]] = None,
 
 
 def owner_cfgs(names: List[str], aliases_raw: Dict[str, list], *,
-               nds: bool = False) -> List[Tuple[str, dict]]:
+               nds: bool = False, b2b: bool = False
+               ) -> List[Tuple[str, dict]]:
     """[(display_name, pull cfg), …] — the cfg rows pull_office_week takes.
 
     display_name keeps the BOARD's spelling (that's what the email sub-heading
@@ -581,7 +597,11 @@ def owner_cfgs(names: List[str], aliases_raw: Dict[str, list], *,
     reads the NDS crosstab for these owners
     (weekly_knock_dispositions.apps.nds_rep_apps_for_owner, Eve 2026-09-15) and
     ADDS it to the D2D count — an NDS captainship can still hold reps whose
-    orders are fiber (Joseph Delgado under Colten, 2026-09-14). Pure —
+    orders are fiber (Joseph Delgado under Colten, 2026-09-14).
+
+    `b2b=True` (a B2B captainship, weekly only since 2026-09-28) marks
+    apps_source "none": B2B sales are in neither crosstab, so the board draws
+    no apps columns at all instead of a column of zeros. Pure —
     offline-testable."""
     from automations.focus_office_att.aliases import alias_to_canonical, _norm_name
     from automations.weekly_knock_dispositions.offices import (
@@ -598,7 +618,7 @@ def owner_cfgs(names: List[str], aliases_raw: Dict[str, list], *,
             "ov": "master" if is_master else "impersonate",
             "campaign_id": _campaign_for(canonical) or CAMPAIGN_ID,
             "pss_owner": canonical,
-            "apps_source": "nds" if nds else "d2d",
+            "apps_source": ("none" if b2b else "nds" if nds else "d2d"),
         }))
     return out
 
@@ -996,7 +1016,7 @@ def render_daily_summary(captured: list, target: dt.date, out_dir,
                          roster_n: Optional[int] = None,
                          n_covered: Optional[int] = None,
                          chan_apps: Optional[int] = None,
-                         captain=None) -> Path:
+                         captain=None, no_apps: bool = False) -> Path:
     """Draw the daily summary board PNG — AMBER theme, the same one the
     per-owner DAILY TOTAL KNOCKS boards right below it use.
 
@@ -1034,6 +1054,9 @@ def render_daily_summary(captured: list, target: dt.date, out_dir,
     # numbering starts — same `first=` the per-owner boards pass for the same
     # two rows.
     cols = summary_headers(dispo)
+    if no_apps:
+        from automations.weekly_knock_dispositions.board import drop_columns
+        cols, table = drop_columns(cols, table, SUMMARY_APPS_HEADERS)
     disp = list(cols)
     knocks_render.number_rows(cols, disp, table, first=len(bgs))
     who = captain_short(captain)
@@ -1394,8 +1417,13 @@ def capture_sections(captain, today: dt.date, render_dir, *,
         aliases_map = dict(aliases_raw)
     except Exception:  # noqa: BLE001
         aliases_map = {}
-    pairs = owner_cfgs(names, aliases_raw,
-                       nds=getattr(captain, "flavor", "") == "nds")
+    flavor = getattr(captain, "flavor", "")
+    pairs = owner_cfgs(names, aliases_raw, nds=flavor == "nds",
+                       b2b=flavor == "b2b")
+    # B2B (Carlos's weekly, 2026-09-28): no apps source and no Chan line —
+    # Chan is fiber, and his totals over a B2B grid compare nothing.
+    no_apps = bool(pairs) and all(c.get("apps_source") == "none"
+                                  for _d, c in pairs)
 
     # §1's login-free Sales Board renderer holds a LIVE sync playwright in this
     # thread, and a second sync start in the same thread dies with "you are
@@ -1425,7 +1453,7 @@ def capture_sections(captain, today: dt.date, render_dir, *,
     # we_sunday. Failure = apps columns blank / absent, boards flagged
     # INCOMPLETE in their sub-heading — fill-but-flag, never a dead section.
     from automations.weekly_knock_dispositions import apps as A
-    pss_path = _pss_crosstab(we_sunday, logfn=logfn)
+    pss_path = None if no_apps else _pss_crosstab(we_sunday, logfn=logfn)
     # NDS captainships read the NDS workbook's apps as well (owner_cfgs). Only
     # downloaded when this captain actually has such an owner.
     nds_path = (_nds_crosstab(today, logfn=logfn)
@@ -1504,6 +1532,8 @@ def capture_sections(captain, today: dt.date, render_dir, *,
         `complete` is False when a source this owner reads was unavailable —
         that board carries INCOMPLETE; apps is None only when NOTHING came
         down."""
+        if cfg.get("apps_source") == "none":
+            return None, True          # B2B: no sales source, not a failure
         d2d = _d2d_day_apps(cfg["pss_owner"])
         complete = d2d is not None
         if cfg.get("apps_source") != "nds":
@@ -1555,7 +1585,7 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                 CHAN as CHAN_CFG)
             from automations.focus_office_att.aliases import _norm_name as _nn
             _CHAN_CFG = CHAN_CFG
-            if want_weekly:
+            if want_weekly and not no_apps:
                 # Same reasoning as the daily line below — the summary needs
                 # it and the ladder inside makes it at most one pull per
                 # build, usually none (Sunday's cache / Monday's hit).
@@ -1568,7 +1598,7 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                     except Exception as e:  # noqa: BLE001 — apps ≠ the row
                         logfn(f"    ⚠ Chan weekly apps: {type(e).__name__}: "
                               f"{str(e)[:120]}")
-            if want_daily:
+            if want_daily and not no_apps:
                 chan_rows = _chan_daily_rows(page, [], aliases_raw, target,
                                              logfn=logfn)
                 if chan_rows:
@@ -1653,7 +1683,8 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                             # column of it is missing, and the reader has to
                             # be told which — including when only ONE of an
                             # NDS owner's two apps sources came down.
-                            out_daily.append((display if (apps_by_rep is not None
+                            out_daily.append((display if ((apps_by_rep is not None
+                                                           or no_apps)
                                                           and apps_complete)
                                               else f"{display} — ⚠ INCOMPLETE: "
                                                    "apps unavailable", png))
@@ -1721,8 +1752,12 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                         # (An EMPTY pull is never cached — see that module:
                         # an owner with no rows is usually a failed
                         # impersonation, and must be retried, not frozen in.)
-                        hit = KWC.get(cfg["name"], saturday,
-                                      aliases=aliases_raw)
+                        # B2B skips the READ: weeks cached before 2026-09-28
+                        # summed B2B talk-tos with the house rule. It still
+                        # writes, so Monday's re-show reads its own pull.
+                        hit = (None if cfg.get("apps_source") == "none"
+                               else KWC.get(cfg["name"], saturday,
+                                            aliases=aliases_raw))
                         if hit is not None:
                             ov_rows, dispo_cols = hit
                             logfn(f"    ↺ weekly {display}: from week cache")
@@ -1735,7 +1770,9 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                             A.rep_apps_for_owner(pss_path, cfg["pss_owner"],
                                                  aliases_map)
                             if pss_path is not None else None)
-                        week_apps_complete = pss_path is not None
+                        week_apps_complete = (pss_path is not None
+                                              or cfg.get("apps_source")
+                                              == "none")
                         if cfg.get("apps_source") == "nds":
                             # NDS captainship: the NDS workbook's count on top
                             # of the D2D one (owner_cfgs).
@@ -1790,7 +1827,8 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                         png = B.render(display, monday, saturday, rows,
                                        weekly_root / _slug(display),
                                        dispo_cols, gaps_only=gaps_only,
-                                       n_totals=1, n_compare_top=n_top)
+                                       n_totals=1, n_compare_top=n_top,
+                                       no_apps=no_apps)
                         # INCOMPLETE flag rides the display name so it lands
                         # in the sub-heading next to the board it qualifies.
                         label = (display if week_apps_complete
@@ -1855,7 +1893,8 @@ def capture_sections(captain, today: dt.date, render_dir, *,
     if captured_weekly:
         try:
             from automations.weekly_knock_dispositions.board import (
-                COMPARE_ROW_BG, THEME_PLUM, headers_for, totals_row)
+                APPS_COLUMNS, COMPARE_ROW_BG, THEME_PLUM, drop_columns,
+                headers_for, totals_row)
             from automations.focus_office_att.aliases import (
                 _norm_name as _nn)
             from automations.weekly_knock_dispositions.offices import (
@@ -1895,8 +1934,12 @@ def capture_sections(captain, today: dt.date, render_dir, *,
             span = (f"{monday.strftime('%b')} {monday.day} – "
                     f"{saturday.strftime('%b')} {saturday.day}, "
                     f"{saturday.year}")
+            sum_hdr = headers_for(common_cols)
+            if no_apps:
+                sum_hdr, sum_rows = drop_columns(sum_hdr, sum_rows,
+                                                 APPS_COLUMNS)
             png = knocks_render._draw(
-                headers_for(common_cols), sum_rows,
+                sum_hdr, sum_rows,
                 f"CAPTAINSHIP SUMMARY — {span}", THEME_PLUM,
                 weekly_root / "summary"
                 / f"knock_dispo_summary_{saturday.isoformat()}.png",
@@ -1938,7 +1981,7 @@ def capture_sections(captain, today: dt.date, render_dir, *,
                                        roster_n=len(pairs),
                                        n_covered=len(answered_daily),
                                        chan_apps=chan_apps,
-                                       captain=captain)
+                                       captain=captain, no_apps=no_apps)
             out_daily.insert(0, (summary_label + (
                 " — ⚠ INCOMPLETE: some ICDs reused from an earlier run"
                 if daily_partial else ""), png))

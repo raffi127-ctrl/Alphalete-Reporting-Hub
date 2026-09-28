@@ -266,6 +266,21 @@ HEADERS = [
 OPTIONAL_COLUMNS = {COL_SAT_CLOCKED, COL_MF_LEADS, COL_SAT_TALK_PER_DAY,
                     COL_KNOCKS_PER_HR}
 
+# The two columns that need a sales source. A B2B captainship has none (B2B
+# sales are not in the D2D PSS crosstab — Carlos's weekly, 2026-09-28), so its
+# boards pass no_apps=True and these come off, header and all, rather than
+# drawing a column of zeros that reads like nobody sold.
+APPS_COLUMNS = {"Mon–Sat Total Apps",
+                "Mon–Sat Avg Talk To's per App"}
+
+
+def drop_columns(hdr: list[str], rows: list[list[str]], names
+                 ) -> tuple[list[str], list[list[str]]]:
+    """`hdr` and `rows` without the columns named in `names`. Pure."""
+    keep = [i for i, h in enumerate(hdr) if h not in names]
+    return ([hdr[i] for i in keep],
+            [[r[i] for i in keep if i < len(r)] for r in rows])
+
 # After the summary columns comes the full disposition breakdown (Raf
 # 2026-08-22 — his sheet's green columns; the aggregate red ones stay off).
 # Column names arrive LIVE from the scrape (dispo_cols), so a disposition
@@ -991,7 +1006,7 @@ def render(office: str, monday: dt.date, saturday: dt.date,
            rows: list[list[str]], out_dir: Path,
            dispo_cols: list[str] | None = None,
            gaps_only: bool = False, n_totals: int = 1,
-           n_compare_top: int = 0) -> Path:
+           n_compare_top: int = 0, no_apps: bool = False) -> Path:
     """`office` in the title ONLY when non-empty — an office posting in its
     own channel doesn't repeat its name (Megan 2026-08-23). `n_totals`:
     how many trailing rows draw as highlighted totals (host + appended
@@ -1045,6 +1060,8 @@ def render(office: str, monday: dt.date, saturday: dt.date,
         _keep = [i for i in range(len(hdr)) if i not in _drop]
         hdr = [hdr[i] for i in _keep]
         rows = [[r[i] for i in _keep if i < len(r)] for r in rows]
+    if no_apps:
+        hdr, rows = drop_columns(hdr, rows, APPS_COLUMNS)
 
     # Every summary row now sits at the TOP — this office's TOTALS first, then
     # any comparison office under it — so the rep rows are simply everything

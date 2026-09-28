@@ -243,7 +243,8 @@ def _raw_headers(page) -> list[str]:
         }""") or []
 
 
-def _scrape_day_rows(page) -> tuple[list[dict], list[str], list[str]]:
+def _scrape_day_rows(page, campaign_id: str | None = None
+                     ) -> tuple[list[dict], list[str], list[str]]:
     """One record per rep from the CURRENT page's (single-day) table. Returns
     (rows, dispo_columns, talk_to_columns):
 
@@ -277,6 +278,9 @@ def _scrape_day_rows(page) -> tuple[list[dict], list[str], list[str]]:
              and _norm(h) not in _AGGREGATES
              and _norm(h) not in _METADATA]
     talk_to_cols = [h for h, _ in dispo if _norm(h) not in _NO_CONTACT]
+    b2b = _b2b_talk_to_cols(idx, campaign_id, [h for h, _ in dispo])
+    if b2b is not None:
+        talk_to_cols = b2b
 
     try:
         page.wait_for_function(
@@ -327,6 +331,34 @@ def _scrape_day_rows(page) -> tuple[list[dict], list[str], list[str]]:
         except Exception:
             pass
     return out, [h for h, _ in dispo], talk_to_cols
+
+
+def _b2b_talk_to_cols(idx: dict, campaign_id: str | None,
+                      dispo_names: list[str]) -> list[str] | None:
+    """The talk-to columns for a B2B grid, or None when the grid isn't B2B.
+
+    The house rule (every disposition but No answer / Inaccessible) is wrong
+    for the two B2B grids (Carlos, 2026-09-28): it would count "None" (knocked,
+    nothing recorded), "Inaccurate Lead" and the rest as conversations. They
+    take the SAME parts the daily B2B boards sum
+    (rashad_metrics.knocks_pull._B2B_*_TALK_TO_PARTS), so a rep's week is the
+    sum of his days.
+
+    Also the pin check the daily pull already has: a B2B campaign pinned but
+    another grid on screen means every number belongs to another campaign —
+    raise rather than draw it (assert_campaign_grid). Lazy import: that module
+    is the daily scrape and must stay out of this one's import path."""
+    from automations.rashad_metrics import knocks_pull as KP
+    if campaign_id and str(campaign_id).strip() in ("2", "16"):
+        KP.assert_campaign_grid(idx, campaign_id)
+    if KP._is_b2b_att_dispo(idx):
+        parts = KP._B2B_ATT_TALK_TO_PARTS
+    elif KP._is_b2b_box_dispo(idx):
+        parts = KP._B2B_BOX_TALK_TO_PARTS
+    else:
+        return None
+    want = {_norm(p) for p in parts}
+    return [h for h in dispo_names if _norm(h) in want]
 
 
 def _week_tt(page, rqst: str, monday: dt.date, saturday: dt.date,
@@ -440,7 +472,8 @@ def pull_office_week(page, cfg: dict, aliases_raw, monday: dt.date,
         day = monday
         while day <= saturday:
             _navigate_day(page, rqst, day, verbose=verbose)
-            day_rows, day_cols, day_talk = _scrape_day_rows(page)
+            day_rows, day_cols, day_talk = _scrape_day_rows(
+                page, cfg.get("campaign_id"))
             dispo_cols = day_cols or dispo_cols
             talk_to_cols = day_talk or talk_to_cols
             if verbose:
