@@ -658,7 +658,8 @@
       "priority": "P3",
       "freshness_target": null,
       "depends_on": [],
-      "timeout_minutes": 30,
+      "timeout_minutes": 120,
+    "_timeout_note": "120, not 30 (2026-09-28): the lucy rerun path kills the run at timeout_minutes, and a send killed mid-batch can leave a packet half-sent. ~1 min/person plus the Blue Ink screen and retries; a 55-70 person week must never hit it. The launchd Monday job has no cap.",
       "verify": null
     },
     "install_blueink_docs_agent": {
