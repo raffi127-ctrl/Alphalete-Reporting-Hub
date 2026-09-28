@@ -32,6 +32,48 @@ LIGHT_GREEN = {"red": 0xD9 / 255, "green": 0xEA / 255, "blue": 0xD3 / 255}
 PENDING_GREEN = {"red": 0xB6 / 255, "green": 0xD7 / 255, "blue": 0xA8 / 255}
 
 
+def _name_key(s: str) -> str:
+    return " ".join((s or "").split()).lower()
+
+
+def _rows_as_they_are_now(worksheet, cands: List) -> List:
+    """The same people, with the row numbers the tab has RIGHT NOW.
+
+    A row number is read once at the start of a pass and used to paint a cell
+    up to half an hour later — and the office edits this tab all morning.
+    Megan 2026-09-28: Leo Fan had his documents and no green, while Patrick
+    Eaddy, who was never sent, had one. A row inserted or deleted in between
+    shifts everything below it, so the paint lands on the person next door:
+    one gets credit for a bundle nobody sent them, the other gets chased for
+    documents they already have. Look the person up again by NAME before
+    writing. [[feedback_no_hardcoded_columns]]
+
+    Best-effort: if the re-read fails, paint the rows we had rather than
+    skipping the mark entirely.
+    """
+    try:
+        from automations.digi_docs import roster
+        values = worksheet.get_all_values()
+        now = {_name_key(c.name): c for c in roster.candidates(values,
+                                                               worksheet.title)}
+    except Exception as e:                                  # noqa: BLE001
+        print(f"     (could not re-read the tab before tinting: "
+              f"{type(e).__name__} — using the rows read earlier)")
+        return cands
+    out = []
+    for c in cands:
+        fresh = now.get(_name_key(c.name))
+        if fresh is None or not fresh.row:
+            print(f"     ({c.name} is no longer on the tab — not tinting a "
+                  f"row that may now be somebody else)")
+            continue
+        if fresh.row != c.row:
+            print(f"     ({c.name}: row moved {c.row} → {fresh.row} since the "
+                  f"pass started — tinting where they are now)")
+        out.append(fresh)
+    return out
+
+
 def tint(worksheet, cands: List, *, dry_run: bool = True, color=None) -> int:
     """Light-green the Digi Docs cell for each candidate. Returns cells tinted.
 
@@ -39,6 +81,7 @@ def tint(worksheet, cands: List, *, dry_run: bool = True, color=None) -> int:
     already went out look like it didn't. The documents are the thing that
     matters; the marking is bookkeeping.
     """
+    cands = _rows_as_they_are_now(worksheet, cands)
     cells = [c for c in cands if c.row and c.digi_col]
     missing = [c for c in cands if c.row and not c.digi_col]
     if missing:
