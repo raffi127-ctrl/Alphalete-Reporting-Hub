@@ -158,12 +158,12 @@ OFFICES = [
         "sources": SOURCES,
     },
     # Raf's other two funnels: same sheet and recruiting channel, each into
-    # its own channel (created by Eve 2026-09-28). Preview first, then live.
+    # its own channel (created by Eve 2026-09-28). Live since 9/28.
     {
         "key": "rafael_f2",
         "owner": "Rafael Hidalgo",
         "tz": "America/Chicago",
-        "live": False,
+        "live": True,          # 9/28: backfilled + pinned, 0 loose
         "sheet_id": SHEET_ID,
         "source_channel": SOURCE_CHANNEL_ID,
         "live_channel": "C0C4VMBEU7P",     # #indeed-photos-rafael-hidalgo-funnel-2-23965
@@ -174,7 +174,7 @@ OFFICES = [
         "key": "rafael_f3",
         "owner": "Rafael Hidalgo",
         "tz": "America/Chicago",
-        "live": False,
+        "live": True,          # 9/28: backfilled + pinned, 0 loose
         "sheet_id": SHEET_ID,
         "source_channel": SOURCE_CHANNEL_ID,
         "live_channel": "C0C4UJHR2CB",     # #indeed-photos-rafael-hidalgo-funnel-3-24065
