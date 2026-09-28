@@ -540,5 +540,47 @@
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%"
+  },
+  {
+    "key": "maxamad",
+    "report_id": "maxamad_metrics",
+    "label": "Maxamad's Local Office",
+    "owner": "Maxamad Aden",
+    "channel_id": "C0BKZRB4YTH",
+    "channel_name": "maximal-sales",
+    "sheet_id": "1VwzSxAREKh_cnh7CdxCBgzG7_RXP93AfnGDwesdF1-M",
+    "knocks_office": "Maxamad Aden",
+    "ov_account": "",
+    "owner_office": "",
+    "business_name": "Maximal Management",
+    "website": "",
+    "header_label": "",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "knocks",
+      "order_log",
+      "cancels",
+      "disconnects",
+      "churn_wl",
+      "activations"
+    ],
+    "report_order": {
+      "knocks": 1,
+      "order_log": 2,
+      "cancels": 3,
+      "disconnects": 4,
+      "churn_wl": 5,
+      "activations": 6
+    },
+    "per_office_views": {},
+    "machine": "Lucy 1",
+    "campaign": "nds_d2d",
+    "notes": "wired by hand 2026-09-28 (Megan: 'add him to metrics and trackers too'); NDS like khalil; ECO relay keys maxamad / maxamad-nds (enrolled twice); #maximal-sales is a Slack Connect channel shared with his workspace. Sheet 'Maxamad Aden - Metrics' copied from the Master Metrics Templates.",
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%"
   }
 ]

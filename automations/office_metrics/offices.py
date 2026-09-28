@@ -427,6 +427,7 @@ OFFICE_TIMEZONES: dict = {
     "nii":     "America/New_York",             # Wilkes-Barre, PA — EASTERN
     "colten":  "America/New_York",             # Hollywood, FL — EASTERN (ECO sign-up)
     "drew":    "America/New_York",             # Maitland (Orlando), FL — EASTERN
+    "maxamad": "America/Chicago",              # Central (ECO sign-up + Slack profile)
 }
 
 # The fallback for an office nobody has harvested yet. Most of the org is Texas,
