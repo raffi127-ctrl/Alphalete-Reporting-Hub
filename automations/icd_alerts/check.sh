@@ -14,9 +14,14 @@
 # check with prerequisites is a check that can fail for reasons that have
 # nothing to do with the answer.
 #
-# The rule it applies is the same one relay.is_desktop() applies: a battery or
-# not. Not the model name, because Apple Silicon reports generic strings like
-# "Mac14,7" for laptops AND desktops.
+# The rule it applies is the same one relay.is_desktop() applies: ASK THE
+# MACHINE ITS MODEL NAME FIRST ("iMac", "Mac mini", "MacBook Pro" -- what
+# system_profiler prints, not the generic "Mac14,7" identifier), and only fall
+# back to the battery probe when the name is unrecognised. The battery alone
+# turned away Carlos's Mac mini on 2026-09-15 and Max's iMac on 2026-09-28
+# ("laptop (it has a battery)"): some desktops report an AppleSmartBattery,
+# and a probe that can only answer by absence refuses them at the first step.
+# relay.is_desktop() learned this on 9/15; this script had not.
 
 set -u
 
@@ -30,8 +35,23 @@ echo ""
 NAME="$(scutil --get ComputerName 2>/dev/null || hostname 2>/dev/null)"
 echo "  Computer: ${NAME:-unknown}"
 
-if ioreg -rc AppleSmartBattery 2>/dev/null | grep -q AppleSmartBattery; then
-  echo "  Type:     laptop (it has a battery)"
+MODEL="$(system_profiler SPHardwareDataType 2>/dev/null | awk -F': ' '/Model Name/ {print $2; exit}')"
+[ -n "${MODEL:-}" ] && echo "  Model:    ${MODEL}"
+LAPTOP=""
+case "$(printf '%s' "${MODEL:-}" | tr '[:upper:]' '[:lower:]')" in
+  macbook*)                                   LAPTOP="yes" ;;   # laptop, definitively
+  *"mac mini"*|*imac*|*"mac studio"*|*"mac pro"*) LAPTOP="no" ;; # desktop, definitively
+  *)
+    # Unrecognised model: the battery still catches the common case.
+    if ioreg -rc AppleSmartBattery 2>/dev/null | grep -q AppleSmartBattery; then
+      LAPTOP="yes"
+    else
+      LAPTOP="no"
+    fi ;;
+esac
+
+if [ "$LAPTOP" = "yes" ]; then
+  echo "  Type:     laptop"
   echo ""
   echo "  ${BOLD}${RED}This computer cannot be used.${OFF}"
   echo ""
@@ -45,7 +65,7 @@ if ioreg -rc AppleSmartBattery 2>/dev/null | grep -q AppleSmartBattery; then
   exit 1
 fi
 
-echo "  Type:     desktop (no battery)"
+echo "  Type:     desktop"
 echo ""
 echo "  ${BOLD}${GREEN}This computer can be used.${OFF}"
 echo ""
