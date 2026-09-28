@@ -88,16 +88,26 @@ def _scrape(page):
     office has them set), so an index-based read silently shifts."""
     got = page.evaluate(
         r"""(wanted) => {
-             const tbl = [...document.querySelectorAll('table')]
-               .filter(t => t.offsetParent !== null)
-               .filter(t => /status/i.test(t.innerText))
-               .sort((a, b) => b.querySelectorAll('tr').length
-                             - a.querySelectorAll('tr').length)[0];
-             if (!tbl) return {error: 'no grid with a Status column'};
+             // Pick the table by its HEADER, not by page text. Matching on
+             // innerText picked the toolbar — "Excel - 30 Days", "Apply
+             // Filters", "Page 1 of 47" — which mentions plenty and holds
+             // no applicants, and the read came back with zero rows.
+             const headerOf = (t) => [...t.querySelectorAll('tr')].find(tr => {
+               const cells = [...tr.querySelectorAll('th,td')].map(
+                 c => (c.innerText || '').replace(/\s+/g, ' ').trim().toLowerCase());
+               return cells.includes('status') && cells.includes('phone');
+             });
+             let tbl = null, head = null;
+             for (const t of document.querySelectorAll('table')) {
+               const h = headerOf(t);
+               if (!h) continue;
+               if (!tbl || t.querySelectorAll('tr').length
+                           > tbl.querySelectorAll('tr').length) {
+                 tbl = t; head = h;
+               }
+             }
+             if (!tbl) return {error: 'no table whose header has Phone and Status'};
              const trs = [...tbl.querySelectorAll('tr')];
-             const head = trs.find(tr => /status/i.test(tr.innerText)
-                                      && tr.querySelectorAll('th,td').length > 3);
-             if (!head) return {error: 'no header row'};
              const names = [...head.querySelectorAll('th,td')].map(
                c => (c.innerText || '').replace(/\s+/g, ' ').trim().toLowerCase());
              const out = [];
@@ -113,10 +123,14 @@ def _scrape(page):
                });
                if (rec.phone || rec.applicant || rec.first) out.push(rec);
              }
-             return {rows: out, columns: names};
+             const pager = ((document.body.innerText || '')
+                            .match(/Page\s*\d*\s*of\s*\d+/i) || [''])[0];
+             return {rows: out, columns: names, pager: pager};
            }""", HEADER_MAP)
     if got.get("error"):
         raise RuntimeError("grid: {}".format(got["error"]))
+    if got.get("pager"):
+        print("   grid says: {}".format(got["pager"]), flush=True)
     for r in got["rows"]:
         if not r.get("applicant"):
             r["applicant"] = " ".join(
