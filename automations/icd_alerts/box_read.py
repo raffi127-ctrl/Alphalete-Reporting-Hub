@@ -27,6 +27,7 @@ sales. See servicecloud.session_lost().
 from __future__ import annotations
 
 import datetime as dt
+import json
 import re
 from typing import Dict, List, Optional
 
@@ -392,6 +393,157 @@ def fetch_rows(page, days: List[dt.date], log=print,
     return out
 
 
+# ONE CONTRACT, SEVERAL ACCOUNTS (Ryan McSpadden, 2026-09-28, screen recording
+# of Max Allen's WHATACARS AUTO SALES contract: two ESIIDs on Floyd Cir, 6,000
+# and 11,000 kWh, one contract row -- "technically counts as 2 contracts, but
+# the AI is reading it as one"). The contractsList edge we read carries the
+# summed volume (17,000) and nothing about how many accounts are under it.
+#
+# THE FIELD NAMES ARE NOT KNOWN AND CANNOT BE GUESSED IN THE LIVE QUERY: an
+# unknown field makes GraphQL answer with `errors`, rows_from_response then
+# returns NOTHING, and the office's whole day reads as zero. So the schema is
+# asked about SEPARATELY, once per probe id, on the session the office already
+# has (Megan 2026-09-28: "do what makes sense long term ... the most
+# accurate"), and the answer rides the fault pipe home under a "probe-" stage
+# that post.notify_faults files without posting. Field NAMES only -- no
+# customer data leaves the machine. The live query does not change until the
+# answer is in hand.
+PROBE_ID = "box-accounts-2026-09-28"
+PROBE_MARK = C.APP_DIR / "box-schema-probe.txt"
+PROBE_CANDIDATES = (
+    "accounts { id }", "accounts { esiid }", "accounts { account_number }",
+    "accounts_count", "account_count", "number_of_accounts",
+    "customer { id }", "customer { accounts { id } }", "customer_id",
+    "esiids", "esiid", "meters { id }", "service_points { id }",
+    "utility_accounts { id }", "contract_accounts { id }",
+)
+_INTERESTING = ("account", "contract", "customer", "esi", "meter", "service")
+_TYPE_SHAPE = "{ name kind ofType { name kind ofType { name kind } } }"
+
+
+def _gql(page, body: Dict, borrowed=None) -> Dict:
+    """One call through the context, same road as _fetch_page."""
+    headers = dict((borrowed.headers if borrowed else None) or {})
+    headers.setdefault("content-type", "application/json")
+    res = page.request.post(GRAPHQL_URL, headers=headers, data=body)
+    try:
+        payload = res.json()
+    except Exception:  # noqa: BLE001 -- a non-JSON answer is still an answer
+        payload = {"_text": (res.text() or "")[:300]}
+    if not isinstance(payload, dict):
+        payload = {"_raw": str(payload)[:300]}
+    payload.setdefault("_status", res.status)
+    return payload
+
+
+def _type_name(t: Dict) -> str:
+    """The named type under any LIST/NON_NULL wrapping."""
+    seen = 0
+    while isinstance(t, dict) and not t.get("name") and t.get("ofType") and seen < 6:
+        t = t["ofType"]
+        seen += 1
+    return str((t or {}).get("name") or "")
+
+
+def _fields(payload: Dict) -> List[Dict]:
+    return (((payload or {}).get("data") or {}).get("__type") or {}).get("fields") or []
+
+
+def _query_fields(payload: Dict) -> List[Dict]:
+    return ((((payload or {}).get("data") or {}).get("__schema") or {})
+            .get("queryType") or {}).get("fields") or []
+
+
+def _short(payload: Dict) -> str:
+    """One line about an answer: the error text, or that it worked. Data is
+    cut to the KEYS it came back with -- names, never values."""
+    errs = (payload or {}).get("errors") or []
+    if errs:
+        return "ERR " + "; ".join(str((e or {}).get("message") or e)[:120] for e in errs[:2])
+    data = (payload or {}).get("data")
+    if data is None:
+        return "no data (%s)" % ((payload or {}).get("_status"))
+    return "OK keys=%s" % _keys(data)
+
+
+def _keys(obj, depth: int = 0) -> str:
+    if depth > 4:
+        return "..."
+    if isinstance(obj, dict):
+        return "{" + ", ".join("%s:%s" % (k, _keys(v, depth + 1)) for k, v in list(obj.items())[:12]) + "}"
+    if isinstance(obj, list):
+        return "[%d x %s]" % (len(obj), _keys(obj[0], depth + 1) if obj else "")
+    return type(obj).__name__
+
+
+def _type_fields_line(page, type_name: str, borrowed) -> List[Dict]:
+    q = "{ __type(name: %s) { fields { name type %s } } }" % (json.dumps(type_name), _TYPE_SHAPE)
+    return _fields(_gql(page, {"query": q}, borrowed))
+
+
+def probe_accounts_schema(page, borrowed=None, log=print) -> Optional[str]:
+    """Ask My Service Cloud how a contract's accounts are exposed. Returns the
+    report text, or None when this probe id already ran here. NEVER raises."""
+    try:
+        if PROBE_MARK.exists() and PROBE_MARK.read_text().strip() == PROBE_ID:
+            return None
+    except Exception:  # noqa: BLE001
+        pass
+    lines = ["probe %s" % PROBE_ID]
+    try:
+        # 1. Root query fields that sound relevant, with their return types.
+        roots = _gql(page, {"query": "{ __schema { queryType { fields { name type %s } } } }" % _TYPE_SHAPE}, borrowed)
+        rf = _query_fields(roots)
+        if not rf:
+            lines.append("introspection: " + _short(roots))
+        hits = [f for f in rf if any(k in (f.get("name") or "").lower() for k in _INTERESTING)]
+        lines.append("root fields (%d total): %s" % (
+            len(rf), ", ".join("%s:%s" % (f.get("name"), _type_name(f.get("type") or {})) for f in hits)[:1500]))
+        # 2. Follow contractsList -> its type -> edges -> the edge type's fields.
+        cl = next((f for f in rf if f.get("name") == SC.GRAPHQL_OPERATION), None)
+        edge_type = ""
+        if cl:
+            list_type = _type_name(cl.get("type") or {})
+            edges = next((f for f in _type_fields_line(page, list_type, borrowed) if f.get("name") == "edges"), None)
+            edge_type = _type_name((edges or {}).get("type") or {})
+            lines.append("%s -> %s, edges -> %s" % (SC.GRAPHQL_OPERATION, list_type, edge_type or "?"))
+        if edge_type:
+            ef = _type_fields_line(page, edge_type, borrowed)
+            lines.append("edge fields (%d): %s" % (
+                len(ef), ", ".join("%s:%s" % (f.get("name"), _type_name(f.get("type") or {})) for f in ef)[:3000]))
+            # 3. One level down into anything that sounds like an account.
+            for f in ef:
+                nm = (f.get("name") or "").lower()
+                tn = _type_name(f.get("type") or {})
+                if tn and any(k in nm or k in tn.lower() for k in ("account", "customer", "esi", "meter", "service")):
+                    sub = _type_fields_line(page, tn, borrowed)
+                    lines.append("  %s (%s): %s" % (f.get("name"), tn, ", ".join(
+                        "%s:%s" % (g.get("name"), _type_name(g.get("type") or {})) for g in sub)[:1500]))
+        # 4. Belt and braces: likely spellings on a ONE-row query, reported
+        #    as worked / did not, never with the row.
+        for cand in PROBE_CANDIDATES:
+            q = GRAPHQL_QUERY.replace("contract_id\n", "contract_id %s\n" % cand, 1)
+            body = {"query": q, "variables": {"input": {"page": 1, "per_page": 1, "search": "",
+                    "sorting": [{"name": "id", "direction": "DESCENDING"}]}}}
+            lines.append("try %-32s %s" % (cand, _short(_gql(page, body, borrowed))[:300]))
+    except Exception as e:  # noqa: BLE001 -- a probe must never cost the read
+        lines.append("probe stopped: %s: %s" % (type(e).__name__, str(e)[:200]))
+    text = "\n".join(lines)
+    try:
+        PROBE_MARK.parent.mkdir(parents=True, exist_ok=True)
+        PROBE_MARK.write_text(PROBE_ID)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from automations.icd_alerts import relay as R
+        R.report_fault("probe-box-accounts", "Box accounts schema probe (%s)" % PROBE_ID,
+                       text[:20000], log=log)
+        log("schema probe sent (%d lines)" % len(lines))
+    except Exception as e:  # noqa: BLE001
+        log("schema probe could not be sent: %s" % type(e).__name__)
+    return text
+
+
 def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
              log=print, back_days: int = 6) -> Dict:
     """Today's Box work, in the shape every other surface already reads.
@@ -464,6 +616,9 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
                     " on the session cookies alone")
             rows = fetch_rows(page, days, log=log, borrowed=borrowed)
             log("contracts fetched: %d row(s) across the window" % len(rows))
+            # After the real read, never before it: the answer is wanted,
+            # the day's numbers are needed.
+            probe_accounts_schema(page, borrowed, log=log)
         finally:
             ctx.close()
 

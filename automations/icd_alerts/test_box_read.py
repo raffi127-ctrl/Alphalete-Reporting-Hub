@@ -382,3 +382,28 @@ class HowLoudIsDecidedPerContract(unittest.TestCase):
         self.assertIn("51,000", said)
         self.assertIn("kWh", said)
         self.assertNotIn("$", said)
+
+
+class TheAccountsProbeReadsIntrospection(unittest.TestCase):
+    """The schema probe (Ryan 2026-09-28) must unwrap GraphQL type wrappers,
+    never confuse an error envelope with an answer, and never carry data."""
+
+    def test_named_type_is_found_under_list_and_non_null(self):
+        t = {"name": None, "kind": "NON_NULL",
+             "ofType": {"name": None, "kind": "LIST",
+                        "ofType": {"name": "Contract", "kind": "OBJECT"}}}
+        self.assertEqual(B._type_name(t), "Contract")
+        self.assertEqual(B._type_name({"name": "Int", "kind": "SCALAR"}), "Int")
+        self.assertEqual(B._type_name({}), "")
+
+    def test_short_tells_an_error_from_data_and_keeps_only_keys(self):
+        self.assertTrue(B._short({"errors": [{"message": "Cannot query field x"}]}).startswith("ERR"))
+        ok = B._short({"data": {"contractsList": {"edges": [{"contract_id": 4471, "business_name": "WHATACARS"}]}}})
+        self.assertTrue(ok.startswith("OK"))
+        self.assertNotIn("WHATACARS", ok)
+        self.assertNotIn("4471", ok)
+        self.assertIn("no data", B._short({"_status": 401}))
+
+    def test_candidates_never_touch_the_live_query(self):
+        for cand in B.PROBE_CANDIDATES:
+            self.assertNotIn(cand, B.GRAPHQL_QUERY)

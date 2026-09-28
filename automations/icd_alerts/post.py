@@ -1967,6 +1967,18 @@ def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
         # ask_office_to_sign_in existed from 2026-09-15 and NOTHING CALLED
         # IT, which is the same way the laptop and silent-machine detectors
         # sat dead: written, tested, shipped, never reached. This is the call.
+        # A PROBE IS NOT A FAULT. An agent answering a question we asked it
+        # (box_read.probe_accounts_schema) files its answer through this pipe
+        # because it is the only road home. Marked as handled, never posted:
+        # the answer is read off the ICD Faults tab by whoever asked.
+        if str(f["stage"] or "").startswith("probe-"):
+            log("PROBE  %-10s %s -- filed, not posted" % (f["office"], f["stage"]))
+            try:
+                tab.update_cell(f["rownum"], F_POSTED + 1, stamp)
+            except Exception as e:  # noqa: BLE001
+                log("could not mark the probe row: %s" % type(e).__name__)
+            continue
+
         if str(f["stage"] or "").startswith("signin-"):
             system = f["stage"].split("-", 1)[1]
             try:
