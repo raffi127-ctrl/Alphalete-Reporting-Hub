@@ -554,13 +554,14 @@ def _rows_ok(rows) -> bool:
 def build_pdf(results: dict, out_path, qualifiers: dict,
               week_end: "dt.date | None" = None, summary: "str | None" = None,
               promotions: "list | None" = None, rr: bool = True,
-              org_apps="auto") -> Path:
+              org_apps="auto", chat: bool = True) -> Path:
     """Render the Leader's Call widescreen deck from a run's `results` dict.
 
     results: {section_title: [(rep, owner, value)]}. Empty/None sections are
     skipped. `qualifiers` maps section_title -> sub-title (e.g. "12+ Apps").
     week_end (the recognized week's Sunday) and summary are derived if omitted.
-    rr=False drops the closing R&R trip slide.
+    rr=False drops the closing R&R trip slide; chat=False drops the weekly
+    #top-leaders-alphalete-org promo slide (leaders_call.chat_slide).
     org_apps: the org's total apps for the week on the cover (leaders_call.org_apps
     .OrgApps). "auto" (default) reads it off the Alphalete ORG Sales Board for
     week_end; None leaves the cover without the stat. A board read that fails is
@@ -626,6 +627,17 @@ def build_pdf(results: dict, out_path, qualifiers: dict,
             story += [PageBreak(), RRSlide(week_label)]
         except Exception as e:
             print(f"   \u26a0 R&R slide skipped: {e}")
+
+    # THE LAST SLIDE (Megan 2026-09-28): the weekly "join the chat" promo for
+    # #top-leaders-alphalete-org (Raf's ask the same day) — every deck, after
+    # R&R while that slide lasts. Fail-soft like R&R: a missing screenshot
+    # asset never costs the deck.
+    if chat:
+        try:
+            from automations.leaders_call.chat_slide import ChatSlide
+            story += [PageBreak(), ChatSlide()]
+        except Exception as e:
+            print(f"   \u26a0 chat promo slide skipped: {e}")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     doc = SimpleDocTemplate(str(out_path), pagesize=(PAGE_W, PAGE_H),

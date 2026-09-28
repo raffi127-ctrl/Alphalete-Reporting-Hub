@@ -249,3 +249,7 @@ automations/uploaded/.ov_laptop_seed/
 # reach it — different name, not a variant of that stem.
 automations/uploaded/.appstream_probe_*/
 manager_run.sh
+
+# Raf's phone screenshot of the private #top-leaders-alphalete-org chat
+# (leaders_call/chat_slide.py). Stays off GitHub; copied to the mini by hand.
+resources/top-leaders-chat-phone.png
