@@ -231,6 +231,8 @@ def _tag_thread_header(smp, cfg: dict, thread_ts: str,
     offices'): a permanent Sunday line saying his weekly board is in the
     replies (Megan 2026-08-23) — that header is rebuilt daily by
     other_office_knocks, which doesn't know about this report."""
+    if cfg.get("b2b"):
+        return      # the ICD knocks poster owns that thread's header
     if cfg.get("thread_title"):
         _append_header_line(
             smp, thread_ts,
@@ -612,14 +614,15 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                     # 2026-08-22). A DM problem never fails the run.
                     resp = smp.dm_user_with_file(
                         Path(png), user=preview_dm, as_bot=False,
-                        comment=f"📋 PREVIEW — {CARD_NAME} — {cfg['name']} — "
+                        comment=f"📋 PREVIEW — {CARD_NAME} — "
+                                f"{cfg.get('board_title') or key_of(cfg)} — "
                                 f"{span}{extra} (dry-run; nothing posted to "
                                 "the channel)",
-                        file_name=f"{Path(png).stem}_{_slug(cfg['name'])}.png")
-                    print(f"[wkd]   preview DM {cfg['name']}: "
+                        file_name=f"{Path(png).stem}_{_slug(key_of(cfg))}.png")
+                    print(f"[wkd]   preview DM {key_of(cfg)}: "
                           f"{'✅' if resp.get('ok') else resp}", flush=True)
                 except Exception as e:  # noqa: BLE001
-                    print(f"[wkd]   ⚠ preview DM {cfg['name']} failed: "
+                    print(f"[wkd]   ⚠ preview DM {key_of(cfg)} failed: "
                           f"{type(e).__name__}: {str(e)[:160]}", flush=True)
         print(f"[wkd] {'⚠' if failed else '✅'} finished (dry-run)"
               + (f" — failed: {', '.join(failed)}" if failed else "")
@@ -666,7 +669,9 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                 # opens it before we run; ensure_named_thread reuses it.
                 head = smp.ensure_named_thread(
                     cfg["thread_title"], slack_today,
-                    lines=[f":door: {name} — weekly knock dispositions"])
+                    lines=(None if cfg.get("b2b") else
+                           [f":door: {name} — weekly knock dispositions"]),
+                    channel_id=cfg.get("channel_id") or None)
             else:
                 head = smp.ensure_metrics_thread(slack_today)
             thread_ts = head.get("thread_ts")
@@ -682,7 +687,8 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
             # Office name only where the board isn't in the office's own
             # thread (Chan's rides a shared thread) — redundant otherwise
             # (Megan 2026-08-23).
-            _who = f"{name} — " if cfg.get("thread_title") else ""
+            _who = (f"{cfg['board_title']} — " if cfg.get("board_title")
+                    else f"{name} — " if cfg.get("thread_title") else "")
             comment = f"📋 {CARD_NAME} — {_who}{span}{extra}"
             if term_flag:
                 comment += f"\n{term_flag}"
@@ -694,7 +700,7 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                 resp = smp.post_reply_with_image(
                     Path(png), comment=comment, today=slack_today,
                     thread_ts=thread_ts, wait_visible=True,
-                    file_name=f"{Path(png).stem}_{_slug(name)}.png")
+                    file_name=f"{Path(png).stem}_{_slug(name)}.png")  # name = key
             if resp.get("ok"):
                 print(f"[wkd] ✅ posted {name}.", flush=True)
             else:

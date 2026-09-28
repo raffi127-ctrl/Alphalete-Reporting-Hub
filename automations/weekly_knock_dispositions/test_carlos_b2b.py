@@ -23,6 +23,16 @@ class CarlosB2BTest(unittest.TestCase):
         self.assertTrue(all(o["name"] == "Carlos Hidalgo" for o in got))
         self.assertTrue(all(o.get("b2b") for o in got))
 
+    def test_posts_into_the_icd_knocks_thread(self):
+        from automations.icd_alerts import knocks_post as KP
+        for o in O.CARLOS_B2B:
+            self.assertEqual(o["channel_id"], "C0AJQA8P716")
+            self.assertIn(o["channel_id"], KP.THREADED_CHANNELS)
+            self.assertEqual(o["thread_title"], KP.THREAD_TITLE)
+        self.assertEqual([o["board_title"] for o in O.CARLOS_B2B],
+                         ["Carlos's Local Office (B2B AT&T)",
+                          "Carlos's Local Office (B2B Box)"])
+
     def test_box_key_alone(self):
         got = O.enabled(["Carlos Hidalgo (B2B Box)"])
         self.assertEqual([o["campaign_id"] for o in got], ["16"])

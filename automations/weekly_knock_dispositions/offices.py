@@ -196,16 +196,25 @@ def all_offices() -> list[dict]:
 # comparison row (a D2D office's totals mean nothing next to a B2B grid).
 # preview_only=True: out of the Sunday run until Carlos OKs the sample and
 # the posting target is wired — reachable only by --office, dry-run only.
+# WHERE THEY GO (Eve 2026-09-28): the same room and thread as his daily ICD
+# knocks boards (icd_alerts.knocks_post) — #a-players-b2b, inside that day's
+# "Knocks and Dispositions" thread (Carlos 2026-09-24 asked for one thread a
+# day there). Titles match those boards: "Carlos's Local Office (B2B Box)".
+CARLOS_ROOM = "C0AJQA8P716"                       # #a-players-b2b
+CARLOS_THREAD = "Knocks and Dispositions"         # = knocks_post.THREAD_TITLE
+
 CARLOS_B2B = [
     {"key": "Carlos Hidalgo", "name": "Carlos Hidalgo", "ov": "impersonate",
      "campaign_id": "2", "pss_owner": None, "b2b": True,
-     "board_title": "B2B AT&T SBS", "preview_only": True,
-     "channel_id": "", "channel_name": "", "header_label": "",
+     "board_title": "Carlos's Local Office (B2B AT&T)", "preview_only": True,
+     "channel_id": CARLOS_ROOM, "channel_name": "#a-players-b2b",
+     "thread_title": CARLOS_THREAD, "header_label": "",
      "slack_token_file": ""},
     {"key": "Carlos Hidalgo (B2B Box)", "name": "Carlos Hidalgo",
      "ov": "impersonate", "campaign_id": "16", "pss_owner": None, "b2b": True,
-     "board_title": "B2B Box", "preview_only": True,
-     "channel_id": "", "channel_name": "", "header_label": "",
+     "board_title": "Carlos's Local Office (B2B Box)", "preview_only": True,
+     "channel_id": CARLOS_ROOM, "channel_name": "#a-players-b2b",
+     "thread_title": CARLOS_THREAD, "header_label": "",
      "slack_token_file": ""},
 ]
 
