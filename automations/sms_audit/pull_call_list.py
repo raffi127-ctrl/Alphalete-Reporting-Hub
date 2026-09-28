@@ -1,5 +1,12 @@
-"""Call List pull — every applicant on an office's call list with their
-STATUS (Open / LM1 / LM2 / LM3 / No Answer), off `index.cfm?p=501`.
+"""Call Hub pull — every applicant on an office's call list with their
+STATUS (OPEN / LM1 / LM2 / LM3 / No Answer / On Hold), off the CALL HUB,
+`index.cfm?p=4000`.
+
+THE PAGE IS p=4000, NOT p=501. Call List > Call Hub. p=501 is the old Call
+List and its grid is not in the DOM at all — four scraping attempts found
+only its toolbar, because there was nothing else to find. Megan pointed at
+the right page (2026-09-28); nothing in the repo recorded it, and
+applicant_tracker's own note ("Call List 501") is what sent me there.
 
 WHY (Megan 2026-09-28). The SMS audit found 4,342 people on 11280 who got
 exactly one text, and 4 of them booked. I called that abandoned. Megan:
@@ -233,8 +240,11 @@ def main(argv=None):
             fo._switch_office(page, office, "")
             page.wait_for_timeout(1500)
             tok = _rqst(page) or tok
-            page.goto("https://www.applicantstream.com/index.cfm?rqst={}&p=501"
+            page.goto("https://www.applicantstream.com/index.cfm?rqst={}&p=4000"
                       .format(tok), wait_until="domcontentloaded", timeout=40000)
+            # A React grid, not a ColdFusion table — give it time to paint
+            # and scroll it, because only the visible rows are in the DOM.
+            page.wait_for_timeout(6000)
             page.wait_for_load_state("networkidle")
             time.sleep(2.0)
             d = diagnose(page)
@@ -243,8 +253,7 @@ def main(argv=None):
             for t in d["tables"][:2]:
                 print("   table {} rows | {}".format(t["rows"], t["head"][:200]),
                       flush=True)
-            _submit(page)
-            records, cols = [], []
+            records, cols, seen = [], [], set()
             for n in range(a.max_pages):
                 try:
                     got, cols = _scrape(page)
@@ -255,8 +264,18 @@ def main(argv=None):
                 records.extend(got)
                 print("   page {}: {} rows (total {})".format(
                     n + 1, len(got), len(records)), flush=True)
-                if not _next_page(page):
-                    break
+                before = len(seen)
+                for r in got:
+                    key = (r.get("phone") or "") + "|" + (r.get("applicant") or "")
+                    if key not in seen:
+                        seen.add(key)
+                page.evaluate(
+                    "() => { const el = document.scrollingElement || "
+                    "document.body; el.scrollTop = el.scrollHeight; "
+                    "window.dispatchEvent(new Event('scroll')); }")
+                page.wait_for_timeout(1800)
+                if len(seen) == before:
+                    break          # scrolling stopped adding anyone
                 page.wait_for_load_state("networkidle")
                 time.sleep(1.5)
             if not records:
