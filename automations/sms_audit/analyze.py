@@ -527,6 +527,32 @@ def _stat(vals):
     }
 
 
+QUOTED = re.compile("[\u201c\"][^\u201d\"]{12,}[\u201d\"]")
+
+
+def applicant_words(body):
+    """The applicant's OWN words — anything they quoted back stripped out.
+
+    A tapback arrives as text with our message inside it: 👍 to "Thanks
+    Michele. Could you please verify that your email address is …?" The
+    question mark is OURS, so the whole thing read as the applicant asking
+    something, and the AI's next message was scored as a bad answer to a
+    question nobody asked (Megan 2026-09-27: "this seems like a question we
+    asked, not the applicant").
+
+    Stripping quoted spans rather than matching "Liked"/"Loved"/"👍 to"
+    covers every reaction wording and every client, and leaves a real
+    question intact when someone quotes us AND asks something of their own.
+    Twelve characters minimum so an ordinary quoted word survives."""
+    return QUOTED.sub(" ", body or "").strip()
+
+
+def asks_something(body):
+    """Is the applicant asking us a question, in their own words?"""
+    own = applicant_words(body)
+    return ("?" in own or bool(IS_QUESTION.match(own))), own
+
+
 def bucket_of(body):
     """Which question bucket a message falls in, or None. First match wins —
     the list is ordered specific-to-general on purpose."""
@@ -564,6 +590,8 @@ def question_responses(recs, convos=None, top_n=1):
     answers = collections.defaultdict(collections.Counter)
     unanswered = collections.Counter()
     unanswered_unbooked = collections.Counter()
+    acked = collections.Counter()
+    acked_text = collections.defaultdict(collections.Counter)
     instead = collections.defaultdict(collections.Counter)
     examples = {}
 
@@ -583,13 +611,19 @@ def question_responses(recs, convos=None, top_n=1):
         for i, (when, dirn, _t, body) in enumerate(seq):
             if dirn != "In":
                 continue
-            if "?" not in body and not IS_QUESTION.match(body):
+            is_q, own = asks_something(body)
+            if not is_q:
                 continue
-            bucket = bucket_of(body)
+            bucket = bucket_of(own)
             if not bucket:
                 continue
+            body = own
             asked[bucket] += 1
-            examples.setdefault(bucket, body.strip().replace("\n", " ")[:120])
+            # The WHOLE question. Cut at 120 characters the example for
+            # "How do I join the Zoom" read as a reschedule message, because
+            # the Zoom sentence was past the cut (Megan 2026-09-27: "that
+            # response breakdown doesn't seem accurate").
+            examples.setdefault(bucket, " ".join(body.split()))
 
             typed = blast = None
             for w2, d2, t2, b2 in seq[i + 1:]:
@@ -603,7 +637,28 @@ def question_responses(recs, convos=None, top_n=1):
                     typed = b2
                     break
             if typed is not None:
-                answers[bucket]["\u201c{}\u201d".format(_generalise(typed, who))] += 1
+                # DOES IT ANSWER? A typed reply inside two hours was being
+                # counted as an answer whatever it said, so "Awesome!",
+                # "Yes" and "Sure" were the commonest "answers" to "How do I
+                # join the Zoom?" and the answered rate was badly overstated
+                # (Megan 2026-09-27). The test is the one the dodged-question
+                # check already uses, so the two cannot disagree: the reply
+                # mentions what the question was about, or gives a time to a
+                # "when", or is a short direct yes to a yes/no question.
+                norm = re.sub(r"\s*-\s*", "-", " ".join(typed.split()))
+                flat = norm.replace("-", "").replace(" ", "")
+                choice = re.search(r"\b(is|are|do|does|will|would|should)\b"
+                                   r"[^?]{0,70}\bor\b[^?]{0,50}\?", body, re.I)
+                real = (any(_answers(b, norm, flat) for b in buckets_of(body))
+                        or (ASKS_WHEN.search(body) and GIVES_TIME.search(norm))
+                        or (len(typed) <= 90 and AFFIRMS.search(typed)
+                            and not choice))
+                line = "\u201c{}\u201d".format(_generalise(typed, who))
+                if real:
+                    answers[bucket][line] += 1
+                else:
+                    acked[bucket] += 1
+                    acked_text[bucket][line] += 1
             else:
                 unanswered[bucket] += 1
                 # Whether they ENDED UP BOOKED is the honest test, not which
@@ -639,6 +694,15 @@ def question_responses(recs, convos=None, top_n=1):
             # when the point is to write one good answer and reuse it.
             "replies": answers[bucket].most_common(top_n),
             "answered": sum(answers[bucket].values()),
+            # A typed reply that did not address the question — "Awesome!" to
+            # "how do I join the Zoom?". Counted apart rather than folded
+            # into either side: it is not an answer, but it is not silence.
+            "acknowledged": acked[bucket],
+            "acknowledged_top": acked_text[bucket].most_common(2),
+            # Whether we can judge this bucket at all. Seven of the fifteen
+            # have an answer vocabulary; for the rest a typed reply is
+            # reported as a reply and nothing stronger is claimed.
+            "judgeable": bucket in ANSWER_KEYWORDS,
             "no_reply": unanswered[bucket],
             "no_reply_unbooked": unanswered_unbooked[bucket],
             "no_reply_booked": unanswered[bucket] - unanswered_unbooked[bucket],
@@ -1587,10 +1651,41 @@ ANSWER_KEYWORDS = {
                                    r"professional|bring|resume|notebook",
 }
 # Phrases that answer a question by not answering it.
+# US COMMITTING TO RING THEM is a correct handling: "I am going to give you a
+# call soon to go over your application" (Megan 2026-09-27: "this technically
+# was answered correctly as we would want to hop on a call with them to
+# discuss"). Somebody is picking up the phone, and that is the outcome we
+# want from the text thread.
+#
+# This is NARROW on purpose. "The Hiring Manager can answer that during the
+# interview" is NOT this — it pushes the answer away with nobody committed to
+# anything, and Megan said so plainly when I tried to fold the two together:
+# "no, I did not say that deflection is fine." That stays a failure.
+# FIRST PERSON ONLY. "The hiring manager will go over that on the call" is a
+# deflection wearing a call's clothes — nobody has committed to ringing
+# anyone. An earlier version matched the bare phrase "on the call" and so
+# waved through exactly the replies Megan rejected.
+CALL_PROMISE = re.compile(
+    r"\b(i|we)\b[^.?!]{0,30}\b("
+    r"(give|giving) you a (quick |brief )?call|"
+    r"call you( back| shortly| soon| in a bit| right)?|"
+    r"hop on a (quick )?call|jump on a call|"
+    r"reach out (to you )?(by|via) phone|"
+    r"(am |'?m |will be |'?ll be )?going to call|"
+    r"('| wi)?ll (be )?call(ing)?)", re.I)
+
 DEFLECTIONS = re.compile(
     r"(go over (that|it|everything|the details) (on|during|in) the|"
     r"discuss(ed)? (that|it) (on|during|in) the|"
-    r"(manager|director|hr) will (go over|explain|cover|discuss)|"
+    # "can answer", not just "will go over" — fourteen of nineteen supposed
+    # dodges were "The Hiring Manager can answer that", which is the same
+    # hand-off to a person Megan called correct, worded differently.
+    r"(hiring )?(manager|director|recruiter|hr)\b[^.?!]{0,40}\b"
+    r"(can|will|would|is able to|be able to|to)\s+"
+    r"(go over|goes over|explain|cover|discuss|answer|clarify|walk|provide|"
+    r"give|share|reach out|get in touch|contact|call)|"
+    r"(i|we)('| wi)?ll have the (hiring )?(manager|recruiter) |"
+    r"that'?s something the (hiring )?(manager|recruiter)|"
     r"can'?t (really )?(discuss|go into|get into) (that|it)|"
     r"not able to (discuss|share) (that|it)|"
     r"you'?ll (find out|learn|see) (that|it|more)|"
@@ -1628,11 +1723,61 @@ def buckets_of(body):
 # "Yes when will that be?" answered "Are you available tomorrow at 9:45?" was
 # being called a dodge because the bucket's vocabulary has no clock in it
 # (Megan 2026-09-27: "she's clarifying so looks like an answer").
+# A question SHAPE and the shape of its answer. The keyword lists say what a
+# topic is about; these say what an answer to that kind of question looks
+# like, whatever words it uses. "How much time should I set aside for this
+# meeting?" answered "It will be about 30 minutes" was called a dodge because
+# the Hours vocabulary knows clock times and the word "hour", not durations
+# (Megan 2026-09-27: "this was also answered").
+ASKS_DURATION = re.compile(
+    r"\b(how long|how much time|how many (minutes|hours)|"
+    r"time should i (set aside|block|allow|plan)|duration)\b", re.I)
+GIVES_DURATION = re.compile(
+    r"\b\d{1,3}\s*-?\s*(min|mins|minute|minutes|hour|hours|hr|hrs)\b|"
+    r"\b(half an hour|an hour|a couple of hours)\b", re.I)
+
 ASKS_WHEN = re.compile(r"\b(when|what time|what day|how soon|which day)\b", re.I)
 GIVES_TIME = re.compile(r"\d{1,2}:\d{2}|\b\d{1,2}\s?(am|pm)\b|"
                         r"\b(today|tomorrow|tonight|monday|tuesday|wednesday|"
                         r"thursday|friday|saturday|sunday|next week|this week)\b",
                         re.I)
+
+
+# Words we say in nearly every message, so sharing one proves nothing.
+ECHO_STOP = set("""
+about after also always anything appointment are available back been before
+being best call called calling can company confirm could details did does
+doing email everything from getting give going good great have hear hello
+here hiring hope information interested interview interviews job just know
+let like looking make manager more most much need next not now once only
+open opportunity other our out over please position possible questions
+reach really role same schedule scheduled see send sent set should side some
+soon sorry start still sure take talk team tell text thank thanks that the
+their them then there these they this those time today tomorrow very want
+was way week well were what when where which will with work working would
+your yours you
+""".split())
+
+
+def _echoes_question(question, reply):
+    """Does the reply pick up a distinctive word the question used?
+
+    The keyword lists are fixed vocabularies, so they only know the places
+    and terms someone thought to add. "Is the job at Plano or nearby
+    locations?" answered "The role is listed for Plano, TX" was called a
+    dodge because Plano is not Irving or Frisco (Megan 2026-09-27:
+    "technically this was answered as well").
+
+    Echoing a word the applicant used is engagement with what they asked,
+    whatever the word is — so this catches every city, campaign and job
+    title without anyone maintaining a list. Ubiquitous words are excluded,
+    or "role" and "time" would make everything look answered."""
+    q = {w for w in re.findall(r"[a-z][a-z'&.-]{3,}", (question or "").lower())
+         if w not in ECHO_STOP}
+    if not q:
+        return False
+    r = set(re.findall(r"[a-z][a-z'&.-]{3,}", (reply or "").lower()))
+    return bool(q & r)
 
 
 def _answers(bucket, norm, flat):
@@ -1645,6 +1790,9 @@ def _answers(bucket, norm, flat):
     if re.search(pat, norm, re.I):
         return True
     return bool(re.search(pat.replace("-", "").replace(" ", ""), flat, re.I))
+
+
+ANSWER_SHAPES = ((ASKS_WHEN, GIVES_TIME), (ASKS_DURATION, GIVES_DURATION))
 
 
 def dodged_questions(convos):
@@ -1664,8 +1812,8 @@ def dodged_questions(convos):
         for i, m in enumerate(msgs):
             if m["dir"] != "In":
                 continue
-            body = m["body"] or ""
-            if "?" not in body and not IS_QUESTION.match(body):
+            is_q, body = asks_something(m["body"] or "")
+            if not is_q:
                 continue
             bucket = bucket_of(body)
             reply = next((x for x in msgs[i + 1:]
@@ -1687,16 +1835,51 @@ def dodged_questions(convos):
             # the WHOLE question and the whole reply (Megan 2026-09-27: "we
             # need to see the full question here") — a question cut at 140
             # characters is exactly the part that says what was being asked
+            # THE REST OF THE EXCHANGE. A single question-and-reply pair
+            # misrepresents what happened (Megan 2026-09-27: "I feel like
+            # we're missing part of this convo?"). Alonso asked where the
+            # locations were FOUR times over three hours and was answered on
+            # the fourth; shown as one pair it reads as a single miss, and
+            # the reply it was paired with was actually answering his email
+            # from a minute earlier. So each case carries the messages
+            # around it, and whether an answer turned up later.
+            ctx = []
+            for x in msgs[max(0, i - 1):i + 7]:
+                ctx.append({"dir": x["dir"],
+                            "when": x["when"],
+                            "sender": x.get("sent_by") or "",
+                            "template": bool(x["template"]),
+                            "body": " ".join((x["body"] or "").split())})
+            later = False
+            for x in msgs[i + 1:]:
+                if x["dir"] != "Out":
+                    continue
+                if (x["when"] - m["when"]).total_seconds() > 24 * 3600:
+                    break
+                xb = " ".join((x["body"] or "").split())
+                xn = re.sub(r"\s*-\s*", "-", xb)
+                if any(_answers(b, xn, xn.replace("-", "").replace(" ", ""))
+                       for b in buckets_of(body)):
+                    later = True
+                    break
+            asked_again = sum(
+                1 for x in msgs[i + 1:]
+                if x["dir"] == "In" and bucket_of(
+                    applicant_words(x["body"] or "")) == bucket)
             row = {"question": " ".join(body.split()),
                    "reply": " ".join(rb.split()),
                    "sender": who, "bucket": bucket or "(other)",
-                   "name": c.get("name", "")}
+                   "name": c.get("name", ""), "context": ctx,
+                   "answered_later": later, "asked_again": asked_again}
             choice = re.search(r"\b(is|are|do|does|will|would|should)\b"
                                r"[^?]{0,70}\bor\b[^?]{0,50}\?", body, re.I)
             short_yes = len(rb) <= 90 and AFFIRMS.search(rb) and not choice
-            answered_here = any(_answers(b, rb_norm, rb_flat)
-                                for b in buckets_of(body))
-            if DEFLECTIONS.search(rb) and not answered_here:
+            answered_here = (any(_answers(b, rb_norm, rb_flat)
+                                 for b in buckets_of(body))
+                             or _echoes_question(body, rb))
+            if CALL_PROMISE.search(rb) and not answered_here:
+                pass                # we said we would ring them — that counts
+            elif DEFLECTIONS.search(rb) and not answered_here:
                 out.append(dict(row, kind="deflected"))
             # A short, direct yes or no IS the answer, wherever the question
             # word sits. "…is it fine if I have regular clothes on?" answered
@@ -1704,11 +1887,11 @@ def dodged_questions(convos):
             # reply contains no clothing words, and the question does not
             # OPEN with "is" (Megan 2026-09-27). Not for an "A or B?"
             # question, which a yes does not answer.
-            elif (ASKS_WHEN.search(body) and GIVES_TIME.search(rb)):
-                pass                       # they asked when; we gave a time
+            elif any(asks.search(body) and gives.search(rb)
+                     for asks, gives in ANSWER_SHAPES):
+                pass          # the answer has the shape the question wanted
             elif (bucket in ANSWER_KEYWORDS
-                  and not any(_answers(b, rb_norm, rb_flat)
-                              for b in buckets_of(body))
+                  and not answered_here
                   and not short_yes):
                 out.append(dict(row, kind="dodged"))
             if INFORMAL.search(rb):

@@ -965,7 +965,10 @@ class DodgedQuestionTest(unittest.TestCase):
 
     def test_an_on_topic_answer_is_not(self):
         out = A.dodged_questions(self._convos(
-            "What is the pay?", "The base salary is $800-$1200 weekly."))
+            # Megan 2026-09-27 ruled out the word "base"; the wording here
+            # is the current approved line, so the fixture does not teach
+            # copy the business has moved off.
+            "What is the pay?", "Weekly pay ranging from $1,000-$1,500."))
         self.assertEqual(out, [])
 
     def test_yes_answers_a_yes_no_question_without_repeating_it(self):
@@ -981,7 +984,7 @@ class DodgedQuestionTest(unittest.TestCase):
 
     def test_texting_shorthand_is_flagged(self):
         out = A.dodged_questions(self._convos(
-            "What is the pay?", "idk, the base salary is $800 weekly"))
+            "What is the pay?", "idk, weekly pay is $1,000-$1,500"))
         self.assertIn("informal", [x["kind"] for x in out])
 
     def test_a_question_with_no_known_vocabulary_is_left_alone(self):

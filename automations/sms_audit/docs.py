@@ -38,6 +38,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt, RGBColor
 
 from automations.sms_audit import analyze as A
+from automations.sms_audit import rebuttals as R
 
 OUTPUT = Path(__file__).resolve().parents[2] / "output"
 OFFICES = collections.OrderedDict([
@@ -146,87 +147,132 @@ def _qa(d, label, text, colour=None):
 
 # ------------------------------------------------------- document one -------
 
-def ai_failures(by_week, weeks):
-    """Every AI reply that handled a direct question badly, all four accounts.
-
-    Grouped by WHAT WAS ASKED rather than by the failure kind, because that
-    is the unit of feedback: "when someone asks where the office is, here is
-    what the AI does" is a sentence the vendor can act on. The kind is tagged
-    on each example so the two readings are both available."""
-    rows = []
+def scored(by_week, ai_only=True):
+    """Every applicant question that HAS an approved answer, and what we
+    actually sent back — scored against that answer, not against a guess."""
+    out = []
     for tag, convos in by_week.items():
-        # per OFFICE, not per week — dodged_questions returns the reply and
-        # who sent it but not which account it came from, and "which account"
-        # is half the feedback ("39 of the 44 are one office").
-        for office, name in OFFICES.items():
-            mine = {k: v for k, v in convos.items() if k[0] == office}
-            if not mine:
-                continue
-            for e in A.dodged_questions(mine):
-                if "ai messaging" not in (e.get("sender") or "").lower():
+        for (office, _k), c in convos.items():
+            msgs = sorted(c["msgs"], key=lambda m: m["when"])
+            for i, m in enumerate(msgs):
+                if m["dir"] != "In":
                     continue
-                rows.append(dict(e, week=tag, office_name=name))
-    return rows
+                is_q, own = A.asks_something(m["body"] or "")
+                if not is_q:
+                    continue
+                nxt = next((x for x in msgs[i + 1:]
+                            if x["dir"] == "Out" and not x["template"]), None)
+                if nxt is None:
+                    continue
+                if (nxt["when"] - m["when"]).total_seconds() > 7200:
+                    continue
+                if ai_only and not A.is_ai(nxt):
+                    continue
+                verdict = R.score(own, nxt["body"] or "")
+                if not verdict:
+                    continue
+                topic, how, approved = verdict
+                out.append({
+                    "week": tag, "office": OFFICES[office],
+                    "name": c.get("name", ""), "question": own,
+                    "reply": " ".join((nxt["body"] or "").split()),
+                    "topic": topic, "verdict": how, "approved": approved,
+                    "sender": nxt.get("sent_by") or "AI Messaging"})
+    return out
+
+
+VERDICT = {"gave_it": "Gave the approved answer",
+           "deflected": "Pushed it to the hiring manager or the interview",
+           "ignored": "Never engaged with the question"}
 
 
 def build_ai_doc(by_week, weeks, path):
-    rows = ai_failures(by_week, weeks)
-    span = "{} – {}".format(week_label(weeks[0]), week_label(weeks[-1]))
-    d = _doc("AI replies that handled a question badly",
-             "All four accounts · {} · {} weeks · built {:%d %b %Y}\n"
-             "Every case below is a reply sent by AI Messaging, not by a "
-             "recruiter.".format(span, len(weeks), dt.date.today()))
+    rows = scored(by_week, ai_only=True)
+    human = scored(by_week, ai_only=False)
+    human = [r for r in human if "ai messaging" not in r["sender"].lower()]
+    span = "{} \u2013 {}".format(week_label(weeks[0]), week_label(weeks[-1]))
+    d = _doc("Where the AI is not giving our approved answer",
+             "All four accounts \u00b7 {} \u00b7 {} weeks \u00b7 built "
+             "{:%d %b %Y}".format(span, len(weeks), dt.date.today()))
 
-    _h(d, "What this is")
+    _h(d, "How this is judged")
     d.add_paragraph(
-        "An applicant asked a direct question and the AI's reply did not "
-        "answer it. Three things are counted, and they need different fixes: "
-        "the reply answered nothing that was asked, the reply pushed the "
-        "answer to the interview or a call, or the reply used texting "
-        "shorthand under the company's name. A reply only counts if it "
-        "arrived within two hours of the question — anything later is not a "
-        "response to it.")
+        "Not by whether a reply seems responsive \u2014 by whether it gave "
+        "the answer the company has already decided on. Every question "
+        "below has an approved answer in the ARS Processes 2026 doc, under "
+        "REBUTTALS and the SMS Templates table. A reply counts as correct "
+        "when it carries those facts, in any wording; a recruiter who says "
+        "it their own way has answered.")
+    d.add_paragraph(
+        "That doc is live and still being edited \u2014 this is a snapshot "
+        "taken 26 Sep 2026. Re-pull it before treating any number here as "
+        "final.")
 
-    _h(d, "The six weeks at a glance")
-    kinds = collections.Counter(r["kind"] for r in rows)
-    _table(d, ["Week", "Cases"],
-           [[week_label(t), sum(1 for r in rows if r["week"] == t)]
-            for t in weeks] + [["TOTAL", len(rows)]])
-    _table(d, ["What went wrong", "Cases"],
-           [[KIND_TITLE.get(k, k), n] for k, n in kinds.most_common()])
-    accts = collections.Counter(r["office_name"] for r in rows)
-    _table(d, ["Account", "Cases"],
-           [[n, accts.get(n, 0)] for n in OFFICES.values()])
+    g = sum(1 for r in rows if r["verdict"] == "gave_it")
+    hg = sum(1 for r in human if r["verdict"] == "gave_it")
+    _h(d, "The headline")
+    _table(d, ["Who replied", "Questions", "Gave the approved answer",
+               "Deflected", "Ignored it"],
+           [["The AI", len(rows), "{} ({:.0f}%)".format(
+               g, 100.0 * g / len(rows) if rows else 0),
+             sum(1 for r in rows if r["verdict"] == "deflected"),
+             sum(1 for r in rows if r["verdict"] == "ignored")],
+            ["A recruiter", len(human), "{} ({:.0f}%)".format(
+                hg, 100.0 * hg / len(human) if human else 0),
+             sum(1 for r in human if r["verdict"] == "deflected"),
+             sum(1 for r in human if r["verdict"] == "ignored")]])
 
-    _h(d, "Grouped by what the applicant asked")
-    topics = collections.Counter(r["bucket"] for r in rows)
-    order = [t for t, _n in topics.most_common() if t != "(other)"]
-    if "(other)" in topics:
-        order.append("(other)")
-    for topic in order:
-        mine = [r for r in rows if r["bucket"] == topic]
-        head = topic if topic != "(other)" else "Did not fit a known topic"
-        _h(d, "{}  —  {} case{}".format(head, len(mine),
-                                        "" if len(mine) == 1 else "s"),
-           size=12, space_before=14)
-        kc = collections.Counter(r["kind"] for r in mine)
-        p = d.add_paragraph()
-        r = p.add_run(" · ".join("{}: {}".format(KIND_TITLE.get(k, k), n)
-                                 for k, n in kc.most_common()))
-        r.font.size = Pt(9)
-        r.font.color.rgb = GREY
-        for e in mine:
+    _h(d, "By question, all six weeks")
+    rowsout = []
+    for topic, _q, _a, _m in R.REBUTTALS:
+        mine = [r for r in rows if r["topic"] == topic]
+        if not mine:
+            continue
+        gi = sum(1 for r in mine if r["verdict"] == "gave_it")
+        rowsout.append([topic, len(mine), gi,
+                        sum(1 for r in mine if r["verdict"] == "deflected"),
+                        sum(1 for r in mine if r["verdict"] == "ignored"),
+                        "{:.0f}%".format(100.0 * gi / len(mine))])
+    rowsout.sort(key=lambda r: int(r[1]), reverse=True)
+    _table(d, ["Question", "Asked", "Gave it", "Deflected", "Ignored",
+               "% right"], rowsout)
+
+    _h(d, "Week by week")
+    _table(d, ["Week", "Questions", "Gave it", "% right"],
+           [[week_label(t),
+             sum(1 for r in rows if r["week"] == t),
+             sum(1 for r in rows if r["week"] == t
+                 and r["verdict"] == "gave_it"),
+             "{:.0f}%".format(
+                 100.0 * sum(1 for r in rows if r["week"] == t
+                             and r["verdict"] == "gave_it")
+                 / max(1, sum(1 for r in rows if r["week"] == t)))]
+            for t in weeks])
+
+    for topic, _q, _a, _m in R.REBUTTALS:
+        bad = [r for r in rows if r["topic"] == topic
+               and r["verdict"] != "gave_it"]
+        if not bad:
+            continue
+        _h(d, "{}  \u2014  {} reply/replies that missed it".format(
+            topic, len(bad)), size=13, space_before=16)
+        _qa(d, "Our approved answer:", bad[0]["approved"])
+        for e in bad[:12]:
             p = d.add_paragraph()
             p.paragraph_format.space_before = Pt(8)
             p.paragraph_format.space_after = Pt(0)
-            meta = "{} · {}{}".format(
-                week_label(e["week"]), e.get("name") or "(no name)",
-                "  [{}]".format(KIND_TITLE.get(e["kind"], e["kind"])))
-            r = p.add_run(meta)
+            r = p.add_run("{} \u00b7 {} \u00b7 {}  [{}]".format(
+                week_label(e["week"]), e["office"],
+                e["name"] or "(no name)", VERDICT[e["verdict"]]))
             r.font.size = Pt(9)
             r.font.color.rgb = GREY
             _qa(d, "They asked:", e["question"])
             _qa(d, "AI replied:", e["reply"], RED)
+        if len(bad) > 12:
+            p = d.add_paragraph()
+            r = p.add_run("\u2026 and {} more of the same.".format(len(bad) - 12))
+            r.font.size = Pt(9)
+            r.font.color.rgb = GREY
 
     d.save(str(path))
     return len(rows), path
