@@ -195,6 +195,35 @@
     }
   },
   "reports": {
+    "local_1on1s_fill": {
+      "on_scheduler": true,
+      "machine": "Lucy 1",
+      "display_name": "Local Office 1on1s \u2014 fill the five team tabs",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.local_office_1on1s.run"
+      ],
+      "base_args": [
+        "--write"
+      ],
+      "cadence": {
+        "weekdays": [
+          6,
+          0
+        ]
+      },
+      "order": 37.5,
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [
+        "local_1on1s_knock_backfill"
+      ],
+      "timeout_minutes": 45,
+      "verify": null,
+      "close_on": "exit_zero",
+      "_note": "Sunday AND Monday, which is what Raf asked for in the Loom: \"I would like it to be filled out on Sunday morning with the data as of Sunday morning. And then it can also be filled out again Monday because sometimes the reps do sales on Sunday.\" Same cells both days, not a second post. IT RUNS HERE RATHER THAN ON A LAPTOP because the knock block's best source is shared.knock_week_cache, which is written by local_1on1s_knock_backfill on whichever machine holds the ownerville session \u2014 running the fill anywhere else silently falls back to the sales board, which carries no knock TIMES and nothing before ~WE 9/6. Writes only the five team tabs of \"1on1's - Local Office - Rafs\"; no Slack, no email. Every manual row (all of 4. Culture / Atmo / HTP, What are we going to do better?, BreakEven, Money Saved?, Goal / Focus) is left alone, and a cell with no source is left blank rather than zeroed."
+    },
     "local_1on1s_knock_backfill": {
       "on_scheduler": false,
       "machine": "Lucy 1",

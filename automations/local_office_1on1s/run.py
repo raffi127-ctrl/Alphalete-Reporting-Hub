@@ -21,9 +21,9 @@ import sys
 from collections import defaultdict
 
 from automations.local_office_1on1s import (fill as F, layout as LO,
-                                            paycheck as PC, people as PEO,
-                                            roster as R, sales as SA,
-                                            second_rounds as SR,
+                                            ov_knocks as OV, paycheck as PC,
+                                            people as PEO, roster as R,
+                                            sales as SA, second_rounds as SR,
                                             teamblock as TB, weeks as W)
 
 BOOK = "1KhCZ4fzIbXh9LKWeHMfvfswcHdlXEa14IK5KsmRgwZM"
@@ -96,6 +96,26 @@ def main(argv=None) -> int:
             notes_boot.append(f"roster for WE {wk:%-m/%-d} ({t}): {e}")
     print(f"  week rosters: {len(week_rosters)}/{len(wks)}")
 
+    # OWNERVILLE OUTRANKS THE BOARD FOR THE KNOCK BLOCK, where it is cached.
+    # The board answers 9 of the 13 rows and only from ~WE 9.6 ('Sales Board
+    # WE 8.2'/'8.16'/'8.30' carry no TK or Talk-To's columns at all), and it
+    # records no TIMES, so 'Mon-Fri AVG First/Last Knock' and the two Saturday
+    # ones can only come from here. A 1on1 column is week-ending SUNDAY; the
+    # ownerville week is the Mon-Sat before it, keyed by that SATURDAY.
+    ov_weeks = {}
+    for wk in wks:
+        got = OV.week(wk - dt.timedelta(days=1), logfn=lambda *a: None)
+        if got:
+            ov_weeks[wk] = got
+    print(f"  ownerville knocks: {len(ov_weeks)}/{len(wks)} weeks from cache")
+    if not ov_weeks:
+        notes_boot.append(
+            "no ownerville knock weeks cached on THIS machine — the knock block "
+            "falls back to the sales board, which has no times and nothing "
+            "before ~WE 9/6. The cache is written where the pull ran: run "
+            "`lucy rerun local_1on1s_knock_backfill`, and run this fill on the "
+            "same machine.")
+
     book = open_by_key(BOOK)
 
     gaps, notes, wrote = [], list(notes_boot), 0
@@ -157,10 +177,17 @@ def main(argv=None) -> int:
                                   pay_name=name, rec_name=rn)
             gaps.extend(filled.gaps)
 
-            # products + knocks, per week, off that week's sales board
+            # products + knocks, per week
             for wk, (wsales, wdays) in weekly.items():
                 for lab, val, src in SA.cells_for(name, wsales):
                     filled.add(lab, wk, val, src)
+
+                rec = ov_weeks.get(wk, {}).get(PEO.key(name))
+                if rec is not None:
+                    for lab, val, src in OV.cells_for(rec, f"WE {wk:%-m/%-d}"):
+                        filled.add(lab, wk, val, src)
+                    continue          # ownerville answered the knock block
+
                 d = wdays.get(PEO.key(name))
                 if d is None:
                     gaps.append(f"{name}: no row on the WE {wk:%-m/%-d} sales board")
