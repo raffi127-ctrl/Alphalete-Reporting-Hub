@@ -224,7 +224,9 @@ def _write_tab(records, meta, office):
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--office", default="11280", help="one id or a comma list")
-    ap.add_argument("--max-pages", type=int, default=60)
+    ap.add_argument("--max-pages", type=int, default=250,
+                    help="scroll steps; the hub adds ~20 rows a step, so "
+                         "1,300 applicants needs ~70")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
 
@@ -269,10 +271,28 @@ def main(argv=None):
                     key = (r.get("phone") or "") + "|" + (r.get("applicant") or "")
                     if key not in seen:
                         seen.add(key)
+                # Scroll the GRID's own container, not the page. Scrolling
+                # document.scrollingElement moved nothing and the read
+                # stopped at 40 of 1,307 rows, which looked like a finished
+                # answer. Walk up from the table to the first ancestor that
+                # actually overflows.
                 page.evaluate(
-                    "() => { const el = document.scrollingElement || "
-                    "document.body; el.scrollTop = el.scrollHeight; "
-                    "window.dispatchEvent(new Event('scroll')); }")
+                    r"""() => {
+                         const tbl = [...document.querySelectorAll('table')]
+                           .sort((a, b) => b.querySelectorAll('tr').length
+                                         - a.querySelectorAll('tr').length)[0];
+                         let el = tbl;
+                         while (el && el !== document.body) {
+                           if (el.scrollHeight > el.clientHeight + 40) break;
+                           el = el.parentElement;
+                         }
+                         const target = (el && el !== document.body)
+                           ? el : (document.scrollingElement || document.body);
+                         target.scrollTop = target.scrollHeight;
+                         target.dispatchEvent(new Event('scroll',
+                           {bubbles: true}));
+                         window.dispatchEvent(new Event('scroll'));
+                       }""")
                 page.wait_for_timeout(1800)
                 if len(seen) == before:
                     break          # scrolling stopped adding anyone
