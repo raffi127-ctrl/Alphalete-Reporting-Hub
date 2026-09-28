@@ -219,9 +219,13 @@ def _is_our_post(m: dict, me: str | None) -> bool:
 
 
 # ---- OwnerVille upload (Phase 2) ---------------------------------------------
-def _ov_upload_note(name: str, photo, act: dict) -> str:
+def _ov_upload_note(name: str, photo, act: dict, *,
+                    replace: bool = False) -> str:
     """Upload to the rep's OV profile; return the line to append to the
-    thread reply. Never raises — an OV problem must not stop the photo post."""
+    thread reply. Never raises — an OV problem must not stop the photo post.
+
+    `replace` is only ever set by redo(): a photo already on file is
+    overwritten instead of left alone."""
     from automations.headshots import config as _cfg
     if not _cfg.OV_UPLOAD_ENABLED:
         return ""
@@ -238,13 +242,13 @@ def _ov_upload_note(name: str, photo, act: dict) -> str:
         _t.sleep(3)
         try:
             res = upload(name, photo, dry_run=False, headless=True,
-                         verbose=True)
+                         verbose=True, replace=replace)
         except Exception as first:  # noqa: BLE001
             print(f"  OV attempt 1 failed for {name} ({type(first).__name__}:"
                   f" {str(first)[:100]}) — settling 20s and retrying once")
             _t.sleep(20)
             res = upload(name, photo, dry_run=False, headless=True,
-                         verbose=True)
+                         verbose=True, replace=replace)
             print(f"  OV retry succeeded for {name}")
         act["ov"] = res
         # A forgiven typo must be VISIBLE — say whose profile it landed on.
@@ -252,7 +256,9 @@ def _ov_upload_note(name: str, photo, act: dict) -> str:
                   if res.get("matched_as") else "")
         if res["status"] == "uploaded":
             ok = "" if res.get("verified") else " (verify pill manually)"
-            return (f"\nOwnerVille: uploaded to their profile ✅{ok}{as_who}"
+            what = ("replaced the photo on their profile"
+                    if res.get("replaced") else "uploaded to their profile")
+            return (f"\nOwnerVille: {what} ✅{ok}{as_who}"
                     + _sheet_note(name, act))
         if res["status"] == "already_uploaded":
             return ("\nOwnerVille: a photo is already on their profile — "
@@ -323,6 +329,69 @@ def _week_anchors(cl, channel: str) -> list[dict]:
         if a and all(a["ts"] != b["ts"] for b in anchors):
             anchors.append(a)
     return anchors
+
+
+def _name_key_of(s: str) -> str:
+    from automations.headshots.ov_upload import _name_key
+    return _name_key(s or "")
+
+
+def redo(name: str, *, dry_run: bool = True,
+         channel: str | None = None) -> dict:
+    """Re-make ONE person's headshot from their ORIGINAL submitted photo.
+
+    Megan 2026-09-28, after the bun bug cut Jordan Jones off at the eyes:
+    "redo jordan's". Her reply is marked done and will never reprocess, and
+    the archived PNG is the bad one — so this goes back to the photo she
+    actually posted, runs it through the fixed pipeline, REPLACES the photo
+    on her OwnerVille profile and posts the new headshot in the thread.
+
+    Replacing is the point, so this is a named-person command only and is
+    never part of the tick.
+    """
+    channel = channel or config.CHANNEL_ID
+    cl = _client()
+    me = None
+    try:
+        me = cl.auth_test().get("user_id")
+    except Exception:
+        pass
+
+    want = _name_key_of(name)
+    found = None                          # newest submission wins
+    for anchor in _week_anchors(cl, channel):
+        for m in cl.conversations_replies(
+                channel=channel, ts=anchor["ts"],
+                limit=200).get("messages", []):
+            if m.get("ts") == anchor["ts"] or _is_our_post(m, me):
+                continue
+            imgs = _image_files(m)
+            if not imgs:
+                continue
+            got = name_from_caption(m.get("text", ""))
+            if got and _name_key_of(got) == want:
+                if found is None or m["ts"] > found[0]["ts"]:
+                    found = (m, imgs[0], anchor, got)
+    if found is None:
+        return {"status": "no_submission", "name": name,
+                "reason": "no photo reply in this week's or last week's "
+                          "thread"}
+
+    m, img, anchor, got = found
+    out_p = process_one(_download_image(img), got)
+    if dry_run:
+        return {"status": "would_redo", "name": got, "ts": m["ts"],
+                "file": str(out_p)}
+
+    act: dict = {}
+    ov = _ov_upload_note(got, out_p, act, replace=True)
+    with open(out_p, "rb") as fh:
+        cl.files_upload_v2(
+            channel=channel, thread_ts=anchor["ts"], file=fh,
+            filename=out_p.name,
+            initial_comment=f"*{got}* — headshot redone ⤵{ov}")
+    return {"status": "redone", "name": got, "ts": m["ts"],
+            "file": str(out_p), **act}
 
 
 def scan(*, dry_run: bool = True, channel: str | None = None) -> list[dict]:
@@ -496,10 +565,19 @@ def main(argv: list[str] | None = None) -> int:
                     help="process ONE local photo instead of polling Slack")
     ap.add_argument("--name", default=None,
                     help="the person's name (with --file)")
+    ap.add_argument("--redo", default=None, metavar="FIRST LAST",
+                    help="re-make ONE person's headshot from the photo they "
+                         "posted and REPLACE it on their OwnerVille profile "
+                         "(for one that came out wrong)")
     args = ap.parse_args(argv)
 
     if args.diag:
         return diag(channel=args.channel)
+
+    if args.redo:
+        res = redo(args.redo, dry_run=args.dry_run, channel=args.channel)
+        print(res)
+        return 0 if res["status"] in ("redone", "would_redo") else 1
 
     if args.file:
         if not args.name:

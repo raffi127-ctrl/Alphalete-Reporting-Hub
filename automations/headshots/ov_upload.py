@@ -459,12 +459,19 @@ def _click_any(scope, label: str, *, page=None, timeout: int = 12000) -> None:
 
 
 def upload(name: str, photo: Path | None, *, dry_run: bool = True,
-           headless: bool = True, verbose: bool = True) -> dict:
+           headless: bool = True, verbose: bool = True,
+           replace: bool = False) -> dict:
     """Find the rep and upload `photo` to their profile. Returns a result
     dict: {status: uploaded|already_uploaded|not_found|dry_run_found, ...}.
 
     Never overwrites: a rep whose pill is already green is reported and
     SKIPPED. dry_run stops after locating the rep + reading the pill.
+
+    `replace=True` uploads over a green pill — for a photo that went up
+    WRONG (Jordan Jones' crop, 2026-09-28) and has to be corrected. It is
+    never the default and never automatic: a human asks for that person by
+    name, because the guard is the only thing standing between a good photo
+    already on file and whatever this run produces.
     """
     from automations.shared.tableau_patchright import ownerville_session
     with ownerville_session(headless=headless, verbose=verbose,
@@ -482,9 +489,11 @@ def upload(name: str, photo: Path | None, *, dry_run: bool = True,
             return {"status": "already_uploaded" if pill == "uploaded"
                     else "dry_run_found", "name": name,
                     "campaign": campaign, "pill": pill, **extra}
-        if pill == "uploaded":
+        if pill == "uploaded" and not replace:
             return {"status": "already_uploaded", "name": name,
                     "campaign": campaign, **extra}
+        if pill == "uploaded" and verbose:
+            print(f"  {name}: a photo is already on file — REPLACING it")
         if photo is None or not Path(photo).exists():
             raise OVUploadError(f"photo file missing: {photo}")
 
@@ -530,7 +539,9 @@ def upload(name: str, photo: Path | None, *, dry_run: bool = True,
         row2, _, _ = find_rep(page, name, verbose=False)
         verified = row2 is not None and _photo_pill(row2) == "uploaded"
         return {"status": "uploaded", "name": name, "campaign": campaign,
-                "verified": verified, **extra}
+                "verified": verified, "replaced": bool(replace and
+                                                       pill == "uploaded"),
+                **extra}
 
 
 def archived_headshot(name: str) -> Path | None:
@@ -592,6 +603,9 @@ def main(argv=None) -> int:
                          "for --name (retry the OV leg on its own)")
     ap.add_argument("--dry-run", action="store_true",
                     help="find the rep + report the photo pill, change nothing")
+    ap.add_argument("--replace", action="store_true",
+                    help="upload OVER a photo already on the profile — only "
+                         "for correcting one that went up wrong")
     ap.add_argument("--headed", action="store_true",
                     help="show the browser (debug)")
     ap.add_argument("--announce", action="store_true",
@@ -607,8 +621,8 @@ def main(argv=None) -> int:
             print(f"no archived headshot for {args.name!r} in output/headshots/")
             return 1
         print(f"using archived headshot: {photo}")
-    res = upload(args.name, photo,
-                 dry_run=args.dry_run, headless=not args.headed)
+    res = upload(args.name, photo, dry_run=args.dry_run,
+                 headless=not args.headed, replace=args.replace)
     print(res)
     if args.announce or args.announce_dry:
         announce(res, dry_run=args.announce_dry)
