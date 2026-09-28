@@ -1561,3 +1561,59 @@ class SentTodayIsNotReopened(_NoNetwork):
         _run(self._ov(opens), rec, args)
         from automations.digi_docs import run as R
         self.assertEqual(set(), R._sent_today())
+
+
+class OneBadPageDoesNotEndTheAdd(_NoNetwork):
+    """2026-09-28: a bare TimeoutError in the Add Sales Rep picker ended the
+    10:30 pass on its first person. All 53 went unadded, so nobody had their
+    onboarding email and every send tick had to add, create and send inside
+    somebody's last half hour. The send loop has survived this since 8/25."""
+
+    def _add(self, fail_on):
+        import contextlib
+        import automations.digi_docs as _pkg
+        from automations.digi_docs import ownerville as _real, run as _run
+
+        class _OV:
+            Refused = RuntimeError
+            present = staticmethod(_real.present)
+
+            def __init__(s):
+                s.asked = []
+
+            def snapshot(s, page, **kw):
+                return set(), False
+
+            def add_sales_rep(s, page, name, **kw):
+                s.asked.append(name)
+                if name == fail_on:
+                    raise TimeoutError(
+                        "Locator.wait_for: Timeout 20000ms exceeded.")
+                return "added"
+
+        ov = _OV()
+        stub = types.ModuleType("automations.digi_docs.slack_post")
+        stub.alert_failure = lambda line, dry_run=True: None
+        people = [type("C", (), {"name": n})()
+                  for n in ("Ana Lopez", "Bo Diaz", "Cy Nguyen")]
+        added, refused = [], []
+        with mock.patch.dict(
+                sys.modules, {"automations.digi_docs.slack_post": stub}), \
+             mock.patch.object(_pkg, "slack_post", stub, create=True):
+            _run._work(ov, page_ctx=contextlib.nullcontext(object()),
+                       do_add=True, do_send=False, send=[], add_list=people,
+                       dry=False, added=added, done=[], refused=refused)
+        return ov, added, refused
+
+    def test_the_rest_are_still_added(self):
+        ov, added, refused = self._add("Ana Lopez")
+        self.assertEqual(["Ana Lopez", "Bo Diaz", "Cy Nguyen"], ov.asked,
+                         "the pass must go on to everybody else")
+        self.assertEqual(["Bo Diaz", "Cy Nguyen"], added)
+
+    def test_the_one_that_failed_is_named_with_its_reason(self):
+        _ov, _added, refused = self._add("Bo Diaz")
+        self.assertEqual(1, len(refused))
+        self.assertIn("Bo Diaz", refused[0])
+        self.assertIn("TimeoutError", refused[0])
+        self.assertIn("send tick will try again", refused[0])

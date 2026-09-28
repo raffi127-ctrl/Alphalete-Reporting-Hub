@@ -649,6 +649,20 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                                 f"campaign picker has not caught up yet "
                                 f"({e2}). The send tick will add them.",
                                 dry, alert=False)
+                except Exception as e:                      # noqa: BLE001
+                    # ONE PERSON'S PAGE MUST NOT END THE ADD (2026-09-28). The
+                    # send loop has had this since 8/25; the add loop caught
+                    # only its own Refused, so a bare "TimeoutError:
+                    # Locator.wait_for: Timeout 20000ms exceeded" in the Add
+                    # Sales Rep picker killed the 10:30 pass on its FIRST
+                    # person and left all 53 unadded — nobody got their
+                    # onboarding email and every send tick then had to add,
+                    # create and send inside somebody's last 30 minutes.
+                    _refuse(refused,
+                            f"{c.name}: {type(e).__name__}: "
+                            f"{str(e).splitlines()[0][:110]} — not added here; "
+                            f"the send tick will try again before their start.",
+                            dry, alert=False)
 
         if created:
             print(f"  created {len(created)} employee record(s) in "
