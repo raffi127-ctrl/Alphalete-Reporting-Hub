@@ -198,6 +198,21 @@ class PublishTests(unittest.TestCase):
         self.assertIn("archives/C1/p1006|", txt)
         self.assertIn("Unpin last week's", txt)
 
+    def test_no_reminder_when_the_retry_pin_works(self):
+        # 9/28: Eve got a DM for 3 threads that were already pinned. A pin
+        # that's refused once and then goes through never reaches her.
+        cl, tries = FakeSlack(), []
+        def flaky(**kw):
+            tries.append(kw["timestamp"])
+            if len(tries) == 1:
+                raise RuntimeError("ratelimited")
+        cl.pins_add = flaky
+        c = post.publish(_rep(), "C1", cl=cl)
+        self.assertEqual((c["to_pin"], len(tries)), ([], 2))
+        self.assertFalse(post.send_pin_reminder("C1", dt.date(2026, 9, 18), c))
+        wk = next(iter(post._load_state()["C1"]["weeks"].values()))
+        self.assertTrue(all(a["pinned"] for a in wk.values()))
+
     def test_no_reminder_when_lucy_can_pin(self):
         c = post.publish(_rep(), "C1", cl=FakeSlack())
         self.assertEqual((c["to_pin"], c["to_unpin"]), ([], []))

@@ -512,12 +512,29 @@ def publish(rep: collect.DayReport, channel: str, *, cl=None,
     # Listed once each, including ads that stopped running. Read
     # from state, not from this run, so a run that died after opening a
     # thread still gets it into the next run's reminder.
+    # Lucy tries the pin AGAIN before asking Eve: 9/28 she got a DM for 3
+    # funnel-2 threads that were already pinned (the first pin was refused, a
+    # later pass pinned them, state still said "unpinned"). Only a pin Slack
+    # refuses right now reaches her -- never a NEVER_PIN thread or an ad gone
+    # quiet (reconcile_pins leaves those unpinned on purpose).
+    repinned = False
     if not pilot:
         for key, ad in wk.items():
-            if ad.get("thread_ts") and not ad.get("pinned") \
-                    and not ad.get("pin_reminded"):
-                counts["to_pin"].append((ad.get("title") or key, ad["thread_ts"]))
-                ad["pin_reminded"] = True
+            ts = ad.get("thread_ts")
+            if not ts or ad.get("pinned") or ad.get("pin_reminded"):
+                continue
+            if ts in (config.NEVER_PIN.get(channel) or ()):
+                continue
+            last = last_active(ad)
+            if last is None or (rep.day - last).days > config.STALE_PIN_DAYS:
+                continue
+            if _pin(cl, channel, ts, True) is None:     # already_pinned counts
+                ad["pinned"] = repinned = True
+                continue
+            counts["to_pin"].append((ad.get("title") or key, ts))
+            ad["pin_reminded"] = True
+    if repinned:
+        _save_state(state)
     if counts["to_pin"] and not config.ONE_THREAD_PER_AD:
         prev = sorted(w for w in weeks if w < monday.isoformat())
         if prev:
