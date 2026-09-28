@@ -12,7 +12,10 @@ tabs, which is exactly why a block parked at column C was invisible.
 Found by a column-A marker, never by a row number (CLAUDE.md): the first run
 puts the marker a couple of rows under the last used row; every later run
 finds the marker, takes last week's block apart and builds this week's on the
-same row, so the block never walks DOWN the tab.
+same row, so the block never walks DOWN the tab — UNLESS something now sits in
+the block's way (2026-09-28: Michael Murphy's and Nuri Burgos's Production
+Breakdown grew into the picture row and wiped it). Then the block moves under
+everything again instead of failing.
 
 Never left of the frozen columns: Google refuses a merge that crosses the
 frozen edge (A:B are frozen on the office tabs).
@@ -96,6 +99,27 @@ def area_is_empty(values: Sequence[Sequence[str]], r1: int, r2: int,
             if str(row[c - 1]).strip() and not any(_inside(r, c, m) for m in ignore):
                 return False
     return True
+
+
+def empty_merges_in(merges: List[dict], values: Sequence[Sequence[str]],
+                    sheet_id: int, r1: int, r2: int, c1: int, c2: int,
+                    min_col: int) -> List[dict]:
+    """Merges touching rows r1..r2 x cols c1..c2 (1-indexed, inclusive) that
+    hold nothing at all — a picture block that lost its marker and its =IMAGE
+    (Eric Zech / Hasani Lynch, 2026-09-28). The new block can't be merged
+    across them, and being empty they are safe to take apart. Never left of
+    `min_col` (the frozen columns)."""
+    out = []
+    for m in merges:
+        if m.get("sheetId") != sheet_id:
+            continue
+        mr1, mr2 = m["startRowIndex"] + 1, m["endRowIndex"]
+        mc1, mc2 = m["startColumnIndex"] + 1, m["endColumnIndex"]
+        if mc1 < min_col or mr2 < r1 or mr1 > r2 or mc2 < c1 or mc1 > c2:
+            continue
+        if area_is_empty(values, mr1, mr2, mc1, mc2):
+            out.append(m)
+    return out
 
 
 def merges_on_row(merges: List[dict], sheet_id: int, row: int,
