@@ -129,6 +129,66 @@ def parse(rows, today: Optional[dt.date] = None,
     return out, sorted(set(cols.values()))
 
 
+def org_day_totals(rows, today: Optional[dt.date] = None) -> Dict[dt.date, int]:
+    """{day: sales} summed over EVERY owner's reps — one entry per day column
+    in the export, 0 when nobody sold. Grand-total rows are skipped so nothing
+    counts twice."""
+    today = today or dt.date.today()
+    hdr_i, cols = None, {}
+    for i, row in enumerate(rows[:4]):
+        found = {j: day_of(h, today) for j, h in enumerate(row)}
+        found = {j: d for j, d in found.items() if d}
+        if found:
+            hdr_i, cols = i, found
+            break
+    if hdr_i is None:
+        return {}
+    names = [_norm(h) for h in rows[hdr_i]]
+    i_rep = names.index("rep name") if "rep name" in names else 0
+    i_own = names.index("owner name") if "owner name" in names else 1
+    out = {d: 0 for d in cols.values()}
+    for r in rows[hdr_i + 1:]:
+        rep = _norm(r[i_rep] if i_rep < len(r) else "")
+        own = _norm(r[i_own] if i_own < len(r) else "")
+        if not rep or rep in _GRAND or own in _GRAND:
+            continue
+        for j, d in cols.items():
+            v = str(r[j] if j < len(r) else "").strip().replace(",", "")
+            try:
+                out[d] += max(0, int(float(v))) if v else 0
+            except ValueError:
+                continue
+    return out
+
+
+def org_sold_on(day: dt.date, verbose: bool = True) -> Optional[bool]:
+    """Did ANY owner sell BOX on `day`, per the Rep Lvl tracker? True/False,
+    or None when the pull fails or the export doesn't carry that day.
+
+    What the stale-feed gate asks on a Monday (window._behind_completed_day):
+    Carlos's own feed can't show a refresh when his team sold nothing on
+    Sunday, but the org-wide tracker can — Carlos read it off this view on
+    2026-09-28 (dom 09-27: 4 sales, none his)."""
+    from automations.alphalete_org_report.opt_nds import _read_tab_csv
+    dest = OUTPUT_DIR / "box_tracker_replvl_org_{}.csv".format(
+        dt.date.today().isoformat())
+    try:
+        pull(dest, week_for(day), verbose=verbose)
+        totals = org_day_totals(_read_tab_csv(dest))
+    except Exception as exc:  # noqa: BLE001 — unknown, never a crash
+        print("org tracker check: pull failed ({}) — can't tell".format(
+            str(exc).splitlines()[0][:120] if str(exc) else repr(exc)),
+            flush=True)
+        return None
+    if day not in totals:
+        print("org tracker check: {} not in the export — can't tell".format(day),
+              flush=True)
+        return None
+    print("org tracker check: {} sale(s) org-wide on {}".format(
+        totals[day], day), flush=True)
+    return totals[day] > 0
+
+
 def merge(existing: List[List[str]], counts: Dict[Tuple[str, dt.date], int],
           days: List[dt.date]) -> List[List[str]]:
     """The tab's new body: old rows for days this pull does NOT cover, plus

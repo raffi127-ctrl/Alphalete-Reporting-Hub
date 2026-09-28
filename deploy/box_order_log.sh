@@ -90,6 +90,21 @@ echo "[$(date)] box-order-log starting (mode: ${MODE:-dry-run})" > "$LOG_FILE"
 "$VENV_PY" -u -m automations.box_order_log.run $MODE >> "$LOG_FILE" 2>&1
 ST=$?
 
+# RETRY UNTIL 11:00 (Carlos 2026-09-28: "Lucy hasn't sent anything out for the
+# box metrics thread"). 8:30 was the LAST pass, so when the send gate held it
+# (exit 3: the feed hadn't landed yet — Mondays, Tableau runs an hour late) the
+# day simply had no thread, even once Tableau caught up at ~9:30. Now the late
+# pass keeps trying every 30 min until 11:00. Exit 3 only: a crash is not
+# something waiting fixes, and the 7:00 deferral already has 8:30 behind it.
+if [ "$ST" -eq 3 ] && [ "$(date +%H)" -ge 8 ] && [ "${1:-}" != "--dry" ]; then
+    while [ "$ST" -eq 3 ] && [ "$(date +%H)" -lt 11 ]; do
+        echo "[$(date)] send gate held (exit 3) — retrying in 30 min"              >> "$LOG_FILE"
+        sleep 1800
+        "$VENV_PY" -u -m automations.box_order_log.run $MODE >> "$LOG_FILE" 2>&1
+        ST=$?
+    done
+fi
+
 # BACK-UP (2026-09-16): the order log didn't come through clean, so pull the
 # BoxDailyTracker-RepLvl counts into the hidden "Lucy Box Tracker" tab. The
 # Vantura board's 09:30 BOX pass falls back to it (raise-only) when the log

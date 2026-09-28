@@ -1096,7 +1096,18 @@ def main(argv: Optional[list] = None) -> int:
     # front of the whole channel. Skip the post and fail loudly instead — the
     # Sheet merge already ran above and keeps its newer rows, so nothing good is
     # lost. Same net as run_owner's send gate. See window.should_block_send.
-    _block = window_mod.should_block_send(max(dated) if dated else None, today)
+    # A Monday whose Sunday Carlos's team didn't sell reads as "not moved" to
+    # the gate, however fresh Tableau is — so let it ask the org-wide tracker
+    # whether the day landed (only pulled when the gate is about to block).
+    # --from-file is an offline replay: no live pull behind it.
+    _org_sold = None
+    if not args.from_file:
+        from . import tracker_backup as _tb
+
+        def _org_sold(day):
+            return _tb.org_sold_on(day, verbose=verbose)
+    _block = window_mod.should_block_send(max(dated) if dated else None, today,
+                                          org_sold_on=_org_sold)
     if _block:
         print("\n✗ NOT posting to {} — {}".format(chan_name, _block),
               file=sys.stderr, flush=True)

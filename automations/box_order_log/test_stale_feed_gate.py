@@ -91,6 +91,46 @@ class QuietSundayMustStillSend(_Tmp):
         self.assertEqual(W.should_block_send(TUE, today=TUE), "")
 
 
+class MondayAfterAFreshSunday(_Tmp):
+    """The 2026-09-28 miss: Sunday's 7:00 pass already reached Saturday, Carlos's
+    team sold nothing Sunday, so Monday's REFRESHED pull still ends on Saturday
+    and reads "not moved". The org-wide tracker settles it."""
+
+    def setUp(self):
+        super().setUp()
+        self._history(SUN, prior=FRI, mx=SAT)       # Sunday saw Saturday
+
+    def test_without_the_tracker_it_blocks_all_day(self):
+        self.assertIn("STALE FEED", W.should_block_send(SAT, today=MON))
+
+    def test_other_owners_sold_sunday_so_it_sends(self):
+        asked = []
+
+        def sold(day):
+            asked.append(day)
+            return True
+        self.assertEqual(W.should_block_send(SAT, today=MON, org_sold_on=sold), "")
+        self.assertEqual(asked, [SUN])
+
+    def test_nobody_sold_sunday_still_blocks(self):
+        self.assertTrue(W.should_block_send(SAT, today=MON,
+                                            org_sold_on=lambda d: False))
+
+    def test_tracker_unknown_still_blocks(self):
+        self.assertTrue(W.should_block_send(SAT, today=MON,
+                                            org_sold_on=lambda d: None))
+
+    def test_tracker_crash_still_blocks_and_never_raises(self):
+        def boom(day):
+            raise RuntimeError("tableau down")
+        self.assertTrue(W.should_block_send(SAT, today=MON, org_sold_on=boom))
+
+    def test_tracker_is_not_pulled_when_the_feed_is_current(self):
+        def never(day):
+            raise AssertionError("pulled the tracker for nothing")
+        self.assertEqual(W.should_block_send(SUN, today=MON, org_sold_on=never), "")
+
+
 class FailsOpen(_Tmp):
     """This gate can refuse to deliver, so every uncertainty resolves to SEND."""
 

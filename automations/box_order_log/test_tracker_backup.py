@@ -51,6 +51,32 @@ class ParseTest(unittest.TestCase):
                          ({}, []))
 
 
+class OrgDayTotalsTest(unittest.TestCase):
+    # The 2026-09-28 view: Carlos blank on Sunday, other owners sold.
+    ROWS = [
+        ["Rep Name", "Owner Name", "Sat (09-26)", "Sun (09-27)", "Grand Total"],
+        ["Grand Total", "", "59", "4", "63"],
+        ["Esmeralda", "Carlos Hidalgo", "4", "", "4"],
+        ["Rep A", "Joy Gray", "10", "1", "11"],
+        ["Rep B", "Roshan Ahmad", "7", "1", "8"],
+        ["Rep C", "William Fritz", "5", "2", "7"],
+    ]
+
+    def test_every_owner_counts_and_grand_total_does_not(self):
+        got = tb.org_day_totals(self.ROWS, dt.date(2026, 9, 28))
+        self.assertEqual(got, {dt.date(2026, 9, 26): 26,
+                               dt.date(2026, 9, 27): 4})
+
+    def test_a_day_nobody_sold_is_zero_not_missing(self):
+        rows = [r[:3] + [""] for r in self.ROWS]
+        rows[0][3] = "Sun (09-27)"
+        got = tb.org_day_totals(rows, dt.date(2026, 9, 28))
+        self.assertEqual(got[dt.date(2026, 9, 27)], 0)
+
+    def test_no_day_columns_is_empty(self):
+        self.assertEqual(tb.org_day_totals([["Rep Name", "Owner Name"]]), {})
+
+
 class WeekForTest(unittest.TestCase):
     def test_box_weeks_close_on_sunday(self):
         self.assertEqual(tb.week_for(dt.date(2026, 9, 15)),

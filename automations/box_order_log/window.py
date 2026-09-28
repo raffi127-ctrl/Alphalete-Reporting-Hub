@@ -79,7 +79,7 @@ import datetime as dt
 import json
 import re
 from pathlib import Path
-from typing import Optional, Sequence, Tuple
+from typing import Callable, Optional, Sequence, Tuple
 
 # Where this module's own small state lives (the extract's high-water mark).
 # Repo-relative so it follows the checkout on every machine.
@@ -857,7 +857,14 @@ def _extract_moved_today(newest: dt.date, today: dt.date) -> Optional[bool]:
     return newest.isoformat() > prior_s
 
 
-def _behind_completed_day(newest: dt.date, today: dt.date) -> str:
+# "Did anybody in the ORG sell on `day`?" — True/False, or None when it can't
+# tell. Supplied by the caller (run.py pulls the Box Daily Tracker - Rep Lvl
+# crosstab), asked ONLY when the stale-feed rule is about to block.
+DaySold = Callable[[dt.date], Optional[bool]]
+
+
+def _behind_completed_day(newest: dt.date, today: dt.date,
+                          org_sold_on: Optional[DaySold] = None) -> str:
     """'' when the feed has reached the newest COMPLETED reporting day (or has
     demonstrably refreshed past a no-sales day); a loud reason when it hasn't.
 
@@ -881,6 +888,22 @@ def _behind_completed_day(newest: dt.date, today: dt.date) -> str:
         # Moved today => refreshed, `target` just has no Box rows. Unknown =>
         # no history to judge by; say nothing and let the calendar rule decide.
         return ""
+    # THE MONDAY TRAP (Carlos 2026-09-28: "Lucy hasn't sent anything out for
+    # the box metrics thread"). "Moved" can't see a refresh that adds no NEW
+    # DATE: Sunday's own 7:00 pass already reached Saturday, Carlos's team sold
+    # nothing on Sunday, so Monday's refreshed pull still ends on Saturday and
+    # reads "not moved" — every Monday, all day, however fresh Tableau was.
+    # Carlos knew it had refreshed because the Box Daily Tracker's Sunday column
+    # had OTHER owners' sales in it; ask the same thing. Any sale on `target`
+    # anywhere in the org = the extract has that day = Carlos's empty Sunday is
+    # real. Unknown (pull failed) keeps the block — this only ever loosens.
+    if org_sold_on is not None:
+        try:
+            sold = org_sold_on(target)
+        except Exception:  # noqa: BLE001 — a failed probe must not change the verdict
+            sold = None
+        if sold:
+            return ""
     return ("STALE FEED: newest sale is {} but {} is a completed day with no "
             "rows, and the extract has not moved since before today — refusing "
             "to send numbers that would report the week short. This is what "
@@ -891,7 +914,8 @@ def _behind_completed_day(newest: dt.date, today: dt.date) -> str:
 
 def should_block_send(newest: Optional[dt.date],
                       today: Optional[dt.date] = None,
-                      min_days_behind: int = BLOCK_SEND_MIN_DAYS_BEHIND) -> str:
+                      min_days_behind: int = BLOCK_SEND_MIN_DAYS_BEHIND,
+                      org_sold_on: Optional[DaySold] = None) -> str:
     """Return a loud reason string when a pull is too capped to DELIVER, else ''.
 
     This is the safety net the 2026-08-07 fix lacked: `release_pinned_filters`
@@ -929,7 +953,7 @@ def should_block_send(newest: Optional[dt.date],
     # identical in one pull, so the discriminator is whether the extract moved
     # FURTHER today than anything seen before today. Moved => refreshed, the
     # target day is simply empty, send. Didn't move => genuinely stale, block.
-    stale = _behind_completed_day(newest, today)
+    stale = _behind_completed_day(newest, today, org_sold_on)
     if stale:
         return stale
     if behind < min_days_behind:
