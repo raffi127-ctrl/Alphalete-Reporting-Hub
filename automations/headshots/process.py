@@ -5,7 +5,8 @@ Pipeline (all local, no paid API):
   2. Cut the person out with rembg's people-trained model (u2net_human_seg,
      downloads once to ~/.u2net/).
   3. Crop to head-and-shoulders using the cutout mask itself: the top of the
-     mask is the head, the first big widening below it is the shoulder flare.
+     mask is the head, and the shoulder line is the first row wide enough to
+     BE the shoulders (near the mask's widest point).
      A full-body dress-code-style photo and a chest-up selfie both land on
      the same framing. If the heuristic can't find a sane crop it falls back
      to fitting the whole person.
@@ -71,8 +72,10 @@ def head_shoulders_box(cutout: Image.Image) -> tuple[int, int, int, int] | None:
     """Head-and-shoulders crop box from the subject mask, or None to keep all.
 
     The head is the top of the mask; scanning down, the shoulder line is the
-    first row whose width jumps well past the head's width. Crop ends a bit
-    below the shoulders so the frame reads as a badge headshot.
+    first row that reaches most of the subject's full width. Crop ends a bit
+    below the shoulders so the frame reads as a badge headshot. A photo that
+    is ALREADY head-and-shoulders has its shoulder line far down the mask —
+    that returns None on purpose, and the whole subject is kept.
     """
     rows = _mask_rows(cutout.getchannel("A"))
     if len(rows) < 40:
@@ -84,18 +87,26 @@ def head_shoulders_box(cutout: Image.Image) -> tuple[int, int, int, int] | None:
 
     widths = {y: r - l + 1 for y, l, r in rows}
     ys = sorted(widths)
-    # Head width = the widest row in the first 12% of the subject (crown to
-    # roughly mid-face). Hair spikes are fine — shoulders are far wider.
-    band = [widths[y] for y in ys if y <= top + subj_h * 0.12]
-    head_w = max(band) if band else 0
-    if head_w <= 0:
+    w_max = max(widths.values())
+    if w_max <= 0:
         return None
 
+    # The shoulders are the subject's WIDEST part, so the shoulder line is the
+    # first row that gets near the full width of the mask.
+    #
+    # This used to measure a "head width" in the top 12% of the subject and
+    # call the first row 1.55x wider the shoulders. A top-knot bun broke it
+    # (Jordan Jones, 2026-09-28): the band saw only the bun (573px), 1.55x of
+    # that is 888px, and her FOREHEAD is 888px — so the crop ended at her
+    # eyes and the headshot had no face in it. Any narrow crown — a bun, a
+    # ponytail, a cap — did the same thing. Nothing above the shoulders comes
+    # close to the shoulders' own width, so this reads the picture instead of
+    # guessing a ratio.
     shoulder_y = None
     for y in ys:
         if y <= top + subj_h * 0.05:
             continue
-        if widths[y] >= head_w * 1.55:
+        if widths[y] >= w_max * 0.70:
             shoulder_y = y
             break
     # No flare found inside the top half -> already a tight face crop (or
@@ -104,7 +115,11 @@ def head_shoulders_box(cutout: Image.Image) -> tuple[int, int, int, int] | None:
         return None
 
     head_h = shoulder_y - top
-    if head_h < subj_h * 0.04:          # degenerate: flare right at the top
+    # Head-top to shoulder is roughly a sixth of a standing body and much more
+    # of a chest-up photo. Anything under a tenth is the mask widening for
+    # some other reason (hair, a hand, a second person) — keep the whole
+    # subject rather than cut a face in half.
+    if head_h < subj_h * 0.10:
         return None
     bottom = min(rows[-1][0], int(shoulder_y + head_h * 1.05))
 

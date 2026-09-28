@@ -144,12 +144,23 @@ def name_from_caption(text: str) -> str | None:
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     if not cleaned:
         return None
+    # A hyphenated surname typed with spaces around the hyphen — JD posted
+    # "Damarrion Hawkins - Brown" (2026-09-28) and the bare "-" made this a
+    # 4-word caption with a non-name word in it, so the bot asked "who is
+    # it?" about a caption that named him. The OBCL spells these the same
+    # way ("Manuel Quiroz - Lebron"), so the spacing is house style, not a
+    # typo. Joining is safe: _name_key flattens both spellings anyway.
+    cleaned = re.sub(r"(?<=[A-Za-z])\s*[-\u2010-\u2015]\s*(?=[A-Za-z])",
+                     "-", cleaned)
     words = cleaned.split()
     if not 2 <= len(words) <= 4:
         return None
     if any(not re.fullmatch(r"[A-Za-z][A-Za-z.'-]*", w) for w in words):
         return None
-    if any(w.lower().strip(".") in _NOT_NAMES for w in words):
+    # Chatter check runs on each HYPHEN PART, so joining can't sneak a
+    # non-name through ("headshot - John Smith" stays a question).
+    parts = [q for w in words for q in w.split("-")]
+    if any(q.lower().strip(".") in _NOT_NAMES for q in parts):
         return None
     return titlecase_name(cleaned)
 
