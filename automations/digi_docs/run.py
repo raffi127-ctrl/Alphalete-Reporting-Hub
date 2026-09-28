@@ -320,6 +320,11 @@ def _record_sent(name: str) -> None:
 # could land late, so from then on the error goes out loud like any other.
 SHEET_BUSY_GRACE_MIN = 30
 
+# How long a rep added during the SEND pass gets before we open their document
+# portal. See the send loop: two people failed inside the portal on 2026-09-28
+# seconds after being added, and both sent fine on the next tick.
+SETTLE_AFTER_ADD_MS = 8000
+
 
 def sheet_busy_marker_path() -> str:
     import datetime as _dt
@@ -784,6 +789,16 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                                 page, c.name, dry_run=dry, known_absent=False)
                         if outcome in ("added", "dry", "exists"):
                             added.append(c.name)
+                        # LET A BRAND-NEW REP SETTLE (2026-09-28). Breija Smith
+                        # and Ammi Rojas were both added seconds earlier and
+                        # then failed inside the portal — one on "no clickable
+                        # 'Get Documents for Selected Bundle'", the other on a
+                        # 20s wait — and both went through on the next tick.
+                        # Baker Al Mutlaq did the same on 9/14. OwnerVille
+                        # needs a moment before a just-added rep's documents
+                        # page is real. A pause cannot double-send; retrying
+                        # the generate could, so this waits instead.
+                        page.wait_for_timeout(SETTLE_AFTER_ADD_MS)
                         # ONE retry, never a loop: if they still cannot be
                         # found after being added, that is a real refusal.
                         modal, matched = ov.open_set_status(page, c.name)

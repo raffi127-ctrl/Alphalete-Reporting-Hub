@@ -58,11 +58,17 @@ def _fake_ov(*, session_raises=None):
     ov.Refused = Refused
     ov.config = types.SimpleNamespace(DOCS_NEEDED_STATE="REQUIRED ACTION")
 
+    class _FakePage:
+        """Only what the run actually calls on a page outside ownerville."""
+
+        def wait_for_timeout(self, ms):
+            pass
+
     class _Session:
         def __enter__(self):
             if session_raises:
                 raise session_raises
-            return object()
+            return _FakePage()
 
         def __exit__(self, *a):
             return False
@@ -1753,3 +1759,75 @@ class PendingGetsItsOwnGreen(_NoNetwork):
         self.assertTrue(calls)
         self.assertTrue(all(color is None for _names, color in calls),
                         "a send of ours uses the default light green")
+
+
+class AJustAddedRepGetsAMomentBeforeTheirPortal(_NoNetwork):
+    """2026-09-28: Breija Smith and Ammi Rojas were added during the send pass
+    and failed inside the portal seconds later — "no clickable 'Get Documents
+    for Selected Bundle'" and a 20s timeout — then both sent on the next tick.
+    Baker Al Mutlaq, 9/14, the same. A pause cannot double-send; retrying the
+    generate could."""
+
+    def test_it_waits_after_adding_before_opening_the_portal(self):
+        import contextlib
+        import automations.digi_docs as _pkg
+        from automations.digi_docs import ownerville as _real, run as _run
+
+        order = []
+
+        class _Page:
+            def wait_for_timeout(s, ms):
+                order.append(("waited", ms))
+
+        class _OV:
+            Refused = RuntimeError
+            present = staticmethod(_real.present)
+            config = types.SimpleNamespace(DOCS_NEEDED_STATE="REQUIRED ACTION")
+
+            def __init__(s):
+                s.opens = 0
+
+            def open_set_status(s, page, name, **kw):
+                s.opens += 1
+                if s.opens == 1:
+                    raise s.Refused(f"{name}: not found in OwnerVille "
+                                    "(tried ['RES-AT&T'])")
+                order.append(("opened", name))
+                return object(), name
+
+            def add_sales_rep(s, page, name, **kw):
+                order.append(("added", name))
+                return "added"
+
+            def docs_row_state(s, modal):
+                return "REQUIRED ACTION"
+
+            def open_docs_portal(s, page, modal):
+                order.append(("portal", None))
+                return object()
+
+            def generate_bundle(s, tab, name, dry_run=True):
+                return None
+
+            def confirm_generated(s, tab, name):
+                return True
+
+            def tick_attestations(s, page, modal, dry_run=True):
+                return ["BG"]
+
+        ov = _OV()
+        stub = types.ModuleType("automations.digi_docs.slack_post")
+        stub.alert_failure = lambda line, dry_run=True: None
+        person = type("C", (), {"name": "Breija Smith", "row": 3,
+                                "digi_col": 12})()
+        with mock.patch.dict(
+                sys.modules, {"automations.digi_docs.slack_post": stub}), \
+             mock.patch.object(_pkg, "slack_post", stub, create=True):
+            _run._work(ov, page_ctx=contextlib.nullcontext(_Page()),
+                       do_add=False, do_send=True, send=[person], add_list=[],
+                       dry=False, added=[], done=[], refused=[])
+
+        steps = [s[0] for s in order]
+        self.assertEqual(["added", "waited", "opened", "portal"], steps)
+        self.assertGreaterEqual(order[1][1], 5000,
+                                "a token pause is not a settle")
