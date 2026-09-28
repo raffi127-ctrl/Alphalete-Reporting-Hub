@@ -253,7 +253,7 @@ def test_hardcoded_offices_translate_to_the_destinations_they_always_had():
     raf = C.destinations(C.office("rafael"))
     kinds = [d["kind"] for d in raf]
     assert "imessage" in kinds and "slack" in kinds
-    assert any(d.get("name") == "Alphalete Partners" for d in raf)
+    assert any(d.get("name") == "Knocking Chat A-Players" for d in raf)
     assert all(int(d["cadence_min"]) > 0 for d in raf)
     assert [d["kind"] for d in C.destinations(C.office("calvin"))] == ["imessage"]
 

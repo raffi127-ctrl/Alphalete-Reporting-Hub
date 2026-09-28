@@ -4,7 +4,8 @@ RUNS ON LUCY 1 — Messages there is signed in as alphaletereporting@gmail.com.
 Raf's 2026-08-23 ask:
 
     Alphalete owners - Real CHAT : all the trackers + Org WOW sales board
-    Alphalete A-Team chat        : Org WOW sales board only
+    Knocking Chat A-Players      : Org WOW sales board only (was the A-Team
+                                   chat until Raf, 2026-09-28)
 
 Sources (nothing is re-captured — no extra Tableau hits):
   * trackers  — the PNGs Lucy 3 already posted to #alphalete-sales today,

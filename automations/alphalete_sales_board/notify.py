@@ -1,8 +1,9 @@
 """The leaderboard text, the hype line, and where each of them goes.
 
 TWO ROOMS, TWO CADENCES (from the system this ports):
-  * Alphalete Partners  -- the full leaderboard on EVERY sweep that found a
-    new sale, so the owners watch the day fill in;
+  * Knocking Chat A-Players -- the full leaderboard on EVERY sweep that found
+    a new sale, so the room watches the day fill in (was Alphalete Partners
+    until Raf moved it, 2026-09-28);
   * Alphalete Lvl 1's   -- the same leaderboard ONCE a day, at the end of
     selling (Mon-Fri 8:00pm, Sat 4:00pm). The reps get one clean scoreboard,
     not thirty running updates.

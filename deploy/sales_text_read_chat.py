@@ -19,7 +19,10 @@ has, reading this file.
 Deliberately narrow: one chat, matched by name; only rows after the last one
 handled; a hard limit; read-only connection.
 
-    python3 sales_text_read_chat.py "Alphalete Partners" [out.json]
+    python3 sales_text_read_chat.py "Knocking Chat A-Players" [out.json]
+
+(The chat was "Alphalete Partners" until Raf moved everything, 2026-09-28.
+last_rowid carries over: chat.db ROWIDs are global, so only newer lines count.)
 """
 import json
 import os
@@ -39,7 +42,7 @@ PAIR_RE = re.compile(r"^\s*(" + NAME + r")\s*={1,2}\s*(" + NAME + r")\s*[.!]?\s*
 
 
 def main(argv):
-    needle = argv[1] if len(argv) > 1 else "Alphalete Partners"
+    needle = argv[1] if len(argv) > 1 else "Knocking Chat A-Players"
     out_path = argv[2] if len(argv) > 2 else OUT
     try:
         with open(out_path) as fh:

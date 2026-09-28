@@ -734,7 +734,7 @@ def _record_failure(err: str, *, dry_run: bool) -> None:
             resp = client.chat_postMessage(
                 channel=CORRECTIONS_CHANNEL,
                 text=("Rep Gap Alerts has failed %d ticks in a row — the "
-                      "Partners chat is not getting gap cards." % streak))
+                      "Knocking chat is not getting gap cards." % streak))
             client.chat_postMessage(
                 channel=CORRECTIONS_CHANNEL, thread_ts=resp["ts"],
                 text=("```\n%s\n```\nRe-run once the cause is clear:\n"
@@ -1357,7 +1357,8 @@ def pull_board(cfg: Dict, day: dt.date, out_dir: Path,
     NOTHING NEW IS SCRAPED OR DRAWN HERE. knocks_intraday already builds this
     exact board for the CURRENT day, so this calls the same pull and the same
     renderer. What is different is only the trigger (every 15 minutes) and the
-    destination (the Alphalete Partners chat).
+    destination (Raf's iMessage room — the Knocking Chat A-Players since
+    2026-09-28, the Alphalete Partners chat before that).
 
     The office is pulled through `pull_offices_days`, which checks
     `is_master_office` first: on Lucy 1 the login IS Raf's office, and

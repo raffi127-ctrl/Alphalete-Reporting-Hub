@@ -77,7 +77,7 @@ def handle(ws, grid, board_names: Sequence[str], pending_sara: Sequence[str],
                    "row." % (left, right))
             log("  chat reply: %s / %s already resolve to %r" % (left, right, already))
             sent.append(msg)
-            N.text_group(C.GROUP_PARTNERS, msg, dry_run=not send, log=log)
+            N.text_group(C.REPLY_GROUP, msg, dry_run=not send, log=log)
             continue
 
         sara, board, why = replies.resolve(left, right, board_names, candidates)
@@ -99,7 +99,7 @@ def handle(ws, grid, board_names: Sequence[str], pending_sara: Sequence[str],
                 msg = ("I couldn't tell which is which in “%s = %s” — %s"
                        % (left, right, why))
                 sent.append(msg)
-                N.text_group(C.GROUP_PARTNERS, msg, dry_run=not send, log=log)
+                N.text_group(C.REPLY_GROUP, msg, dry_run=not send, log=log)
             continue
 
         note = ""
@@ -136,7 +136,7 @@ def handle(ws, grid, board_names: Sequence[str], pending_sara: Sequence[str],
                % (left, right, note))
         log("  alias from chat: %s -> %s" % (sara, board))
         sent.append(msg)
-        N.text_group(C.GROUP_PARTNERS, msg, dry_run=not send, log=log)
+        N.text_group(C.REPLY_GROUP, msg, dry_run=not send, log=log)
 
     feed["pending"] = still
     if send:

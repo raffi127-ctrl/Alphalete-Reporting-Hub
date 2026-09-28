@@ -718,8 +718,8 @@ _INFRA_AGENTS = {
     # permanently-white "no run logged" tile this set exists to prevent.
     "appstream-autorenew",
     # The Sales Board sweep's privileged iMessage READER (Megan 2026-09-01).
-    # deploy/sales_text_read_chat.py reads new lines out of the "Alphalete
-    # Partners" chat and writes them to a file — no Sheets, no Slack, no send.
+    # deploy/sales_text_read_chat.py reads new lines out of the "Knocking Chat
+    # A-Players" chat (Alphalete Partners until 2026-09-28) and writes them to a file — no Sheets, no Slack, no send.
     # It exists as its own launchd job only because Full Disk Access is granted
     # to a BINARY: it must run under the granted Python.app, not the venv's bash
     # wrapper. It publishes nothing, fires every 5 minutes (288 times a day),

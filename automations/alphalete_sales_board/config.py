@@ -93,28 +93,38 @@ SLACK_CHANNEL = "C068PH3RFSM"          # #alphalete-sales
 GROUP_PARTNERS = "Alphalete Partners"   # the 7-person partners chat
 GROUP_LVL1 = "Alphalete lvl 1"          # the 29-person reps chat
 GROUP_A_TEAM = "Alphalete A-Team Chat"  # the 20-person A-Team chat
+# Raf's new room (2026-09-28, #l10-alphalete "Knocking chat" thread): "Can we
+# move the posting that Lucy does for my Alphaletes Partners chat and
+# Alphaletes A-Team Players chat, and just move it over onto this Knocking Chat
+# A-Players" -- and, asked whether that meant the knock gap cards only, "all of
+# it". So every board that went to Partners OR the A-Team goes here instead,
+# and neither old room gets a board from Lucy any more.
+GROUP_KNOCKING = "Knocking Chat A-Players"
 
 # WHO GETS WHAT.
-#   every sweep that finds a sale -> the Partners chat (they watch it fill in)
-#   once a day, end of selling    -> the reps AND the A-Team. Confirmed in the
-#     field 2026-08-26: "Yea 8 on weekdays and 4 on Saturday" — the A-Team chat
-#     has been getting that same alert all along, so leaving it out would have
-#     quietly dropped 20 people the day the old system was switched off.
-LIVE_GROUPS = [GROUP_PARTNERS]
-END_OF_DAY_GROUPS = [GROUP_LVL1, GROUP_A_TEAM]
+#   every sweep that finds a sale -> the Knocking chat (was Partners)
+#   once a day, end of selling    -> the reps AND the Knocking chat (was the
+#     A-Team). Confirmed in the field 2026-08-26: "Yea 8 on weekdays and 4 on
+#     Saturday".
+#   the roster line ("X sold with no row on the board") rides the live board
+#     as it always did, and the "Bo=Kelvinton" reply loop (apply_replies +
+#     deploy/sales_text_read_chat.py) reads and answers in the same room --
+#     Raf's "all of it" (2026-09-28) includes the paperwork.
+LIVE_GROUPS = [GROUP_KNOCKING]
+END_OF_DAY_GROUPS = [GROUP_LVL1, GROUP_KNOCKING]
+# Where the reply loop listens and answers. Must match the chat name the
+# sales-text-reader LaunchAgent is given (deploy/com.alphalete.sales-text-reader.plist).
+REPLY_GROUP = GROUP_KNOCKING
 
-# The half-hour Times of Sales snapshot goes to the PARTNERS chat -- the room
-# already carrying the sales texts (Megan 2026-08-27, with a screenshot of that
-# chat). The system this ports sent it to the A-Team chat instead; that was its
-# habit, not a requirement, and splitting the two updates across two rooms would
-# mean the people watching the board fill in are the one group who never see the
-# pace. Same room, so the leaderboard and the snapshot read as one story.
-TIMES_GROUPS = [GROUP_PARTNERS]
+# The half-hour Times of Sales snapshot rides with the live leaderboard (Megan
+# 2026-08-27): the people watching the board fill in are the ones who should
+# see the pace, so it moved to the Knocking chat with it (Raf 2026-09-28).
+TIMES_GROUPS = [GROUP_KNOCKING]
 
 WEEKLY_GOAL = 80
 
 # The Lvl 1's chat gets ONE leaderboard a day, at the end of selling: Mon-Fri
-# 8:00pm, Saturday 4:00pm. The Partners chat gets every sweep that found a sale.
+# 8:00pm, Saturday 4:00pm. The Knocking chat gets every sweep that found a sale.
 LVL1_WINDOWS = {0: (20, 0), 1: (20, 0), 2: (20, 0), 3: (20, 0), 4: (20, 0),
                 5: (16, 0)}
 # WIDER THAN THE TICK, ON PURPOSE. The sweep fires every 5 minutes and this

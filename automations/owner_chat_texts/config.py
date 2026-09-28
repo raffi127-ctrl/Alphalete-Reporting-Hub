@@ -1,7 +1,8 @@
 """Which images text into which OWNER iMessage chats — Raf's 2026-08-23 ask.
 
     Alphalete owners - Real CHAT : all the trackers + the Org WOW sales board
-    Alphalete A-Team chat        : the Org WOW sales board only
+    Knocking Chat A-Players      : the Org WOW sales board only
+                                   (was the A-Team chat until Raf, 2026-09-28)
 
 RUNS ON LUCY 1 — Messages there is signed in as alphaletereporting@gmail.com
 (Megan 2026-08-23). This is a THIRD iMessage machine: Lucy 2 texts the B2B
@@ -33,10 +34,13 @@ from pathlib import Path
 # rather than texting the wrong room.
 GROUP_OWNERS_REAL = "Alphalete Owners"
 GROUP_A_TEAM = "Alphalete A-Team Chat"
+# Raf 2026-09-28: everything Lucy posted to the A-Team (and Partners) chat
+# moves to his new "Knocking Chat A-Players" room -- "all of it".
+GROUP_KNOCKING = "Knocking Chat A-Players"
 
 # Routing.
 TRACKER_GROUPS = [GROUP_OWNERS_REAL]
-BOARD_GROUPS = [GROUP_OWNERS_REAL, GROUP_A_TEAM]
+BOARD_GROUPS = [GROUP_OWNERS_REAL, GROUP_KNOCKING]
 
 # "All the Trackers" = exactly what #alphalete-sales carries each morning: the
 # default org-wide set, in post order. Read from tableau_screenshots so a

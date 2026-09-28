@@ -66,7 +66,7 @@ RAF = {
     "name": "Rafael Hidalgo",
     "ov": "master",
     "campaign_id": "3",
-    "group": "Alphalete Partners",
+    "group": "Knocking Chat A-Players",
     "label": "",           # blank = no office name on the card (Raf's own room)
     "compare": True,       # Chan's teal TOTAL line
     # Raf's office only. "Our slack lvl 1 chat" is HIS org's channel; Calvin is
@@ -96,6 +96,12 @@ RAF = {
     # half-cadence later (:15/:45). Neither room loses a board: each still
     # gets one every 30 minutes, and no minute of the day carries both.
     #
+    # ONE iMESSAGE ROOM NOW (Raf, 2026-09-28, #l10-alphalete "Knocking chat"):
+    # "move the posting that Lucy does for my Alphaletes Partners chat and
+    # Alphaletes A-Team Players chat ... onto this Knocking Chat A-Players" —
+    # "all of it". Both rooms above are replaced by that one, every 30 on the
+    # office's own anchors; no offset, there is nothing left to dodge.
+    #
     # `leader_tags` — tag the office's LEADERS on the day's first Slack post
     # (Megan 2026-09-20). RAF ONLY, and the flag is what keeps it that way:
     # gap_alerts.leaders reads the 'Alphalete SALES BOARD 2025' workbook, which
@@ -121,9 +127,11 @@ RAF = {
     # he has now asked for it tighter, which is the number that note said to
     # change.
     #
-    # NO SECOND PULL. Raf's own rooms already put this office on a 15-minute
-    # tick (A-Team at :00/:30, Partners at :15/:45), so these rooms ride ticks
-    # that already happen — same scrape, more sends.
+    # ONE PULL A TICK. Raf's own room is on :00/:30 only since 2026-09-28
+    # (the Knocking chat replaced Partners+A-Team), so on :15/:45 this office
+    # is pulled for these rooms alone — the same pull count as when Partners
+    # held those anchors. run.py keeps the office in the plan when only a
+    # guest room is owed.
     #
     # BOTH ROOMS LAND ON THE SAME ANCHOR, on purpose and unchanged: they shared
     # one before at 60 and they share one at 15. The overlap between them is
@@ -144,14 +152,13 @@ RAF = {
         ],
     },
     "destinations": [
-        {"kind": "imessage", "name": "Alphalete Partners",
-         "cadence_min": 30, "offset_min": 15},
-        {"kind": "imessage", "name": "Alphalete A-Team Chat", "cadence_min": 30},
+        {"kind": "imessage", "name": "Knocking Chat A-Players",
+         "cadence_min": 30},
         # `thread_daily` — ONE post a day in the channel, every later board a
         # reply inside it (Megan 2026-09-20: "versus the chat being filled
         # up"). 30 minutes across a 1:30pm-10pm weekday is ~17 boards, and they
-        # were 17 separate messages. iMessage has no threads, so the two
-        # Partners/A-Team rooms are untouched.
+        # were 17 separate messages. iMessage has no threads, so the
+        # iMessage room is untouched.
         {"kind": "slack", "channel_id": SLACK_HOURLY_CHANNEL,
          "cadence_min": 30, "thread_daily": True},
     ],

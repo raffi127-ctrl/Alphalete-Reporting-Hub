@@ -40,9 +40,9 @@ class RoomsAreConfigured(unittest.TestCase):
         his = {d.get("name") for d in C.destinations(RAF)}
         theirs = {d["name"] for d in C.guest_destinations(RAF)[GUEST]}
         self.assertFalse(his & theirs)
-        # 'NEW A Players' is a DIFFERENT room from Raf's 'Alphalete A-Team
-        # Chat🔥🔥' — similar names, 15 vs 23 people.
-        self.assertIn("Alphalete A-Team Chat", his)
+        # 'NEW A Players' is a DIFFERENT room from Raf's 'Knocking Chat
+        # A-Players' (his A-Team room until 2026-09-28) — similar names.
+        self.assertIn("Knocking Chat A-Players", his)
 
     def test_narrowing_to_one_guest(self):
         self.assertEqual(list(C.guest_destinations(RAF, GUEST)), [GUEST])

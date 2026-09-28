@@ -1,5 +1,9 @@
-"""Raf's three destinations — all at 30, the two iMessage rooms ALTERNATING —
-and nobody else's changed.
+"""Raf's two destinations — one iMessage room and the lvl 1 Slack channel, both
+at 30 — and nobody else's changed.
+
+Raf, 2026-09-28 (#l10-alphalete "Knocking chat"): move everything Lucy posted to
+the Partners and A-Team chats onto the new "Knocking Chat A-Players" room — "all
+of it". The two alternating rooms below are history; one room replaces both.
 
 Raf, 2026-09-01 in the #l10-alphalete thread: "Can we change it to every
 30minutes for the lvl 1 chat please? Can we also post it in the A-players ever
@@ -29,8 +33,14 @@ def _dests(key):
 
 
 class RafsDestinations(unittest.TestCase):
-    def test_the_owners_room_is_every_30_not_15(self):
-        self.assertIn(("imessage", "Alphalete Partners", 30), _dests("rafael"))
+    def test_the_knocking_chat_is_every_30(self):
+        self.assertIn(("imessage", "Knocking Chat A-Players", 30),
+                      _dests("rafael"))
+
+    def test_partners_and_a_team_get_nothing_any_more(self):
+        names = [d[1] for d in _dests("rafael") if d[0] == "imessage"]
+        self.assertNotIn("Alphalete Partners", names)
+        self.assertNotIn("Alphalete A-Team Chat", names)
 
     def test_the_lvl1_slack_channel_is_every_30_not_hourly(self):
         slack = [d for d in _dests("rafael") if d[0] == "slack"]
@@ -38,17 +48,12 @@ class RafsDestinations(unittest.TestCase):
         self.assertEqual(slack[0][1], C.SLACK_HOURLY_CHANNEL)
         self.assertEqual(slack[0][2], 30, "was 60; Raf asked for 30")
 
-    def test_the_a_team_chat_is_added_every_30(self):
-        self.assertIn(("imessage", "Alphalete A-Team Chat", 30),
-                      _dests("rafael"))
-
-    def test_the_a_team_name_is_the_emoji_free_prefix(self):
-        """resolve_group refuses on 0 or 2+ hits rather than guessing. The live
-        chat is 'Alphalete A-Team Chat🔥🔥'; this prefix matches it uniquely,
-        and a separate 'NEW A Players' chat must NOT be what we hit."""
+    def test_the_needle_cannot_hit_carlos_new_a_players(self):
+        """resolve_group is a case-insensitive substring match. Carlos's
+        'NEW A Players' room must never be what Raf's needle lands on."""
         names = [d[1] for d in _dests("rafael") if d[0] == "imessage"]
-        self.assertIn("Alphalete A-Team Chat", names)
-        self.assertNotIn("NEW A Players", names)
+        self.assertEqual(names, ["Knocking Chat A-Players"])
+        self.assertNotIn(names[0].lower(), "new a players")
 
     def test_the_slack_channel_id_is_explicit(self):
         """dest_channel never falls back to the module default — an absent id
@@ -78,8 +83,7 @@ class NobodyElseMoved(unittest.TestCase):
         was scoped to Raf's — this pins the whole list so neither leaks."""
         self.assertEqual(
             _dests("rafael"),
-            [("imessage", "Alphalete Partners", 30),
-             ("imessage", "Alphalete A-Team Chat", 30),
+            [("imessage", "Knocking Chat A-Players", 30),
              ("slack", C.SLACK_HOURLY_CHANNEL, 30)])
 
     def test_no_other_office_posts_to_rafs_slack_channel(self):
@@ -93,30 +97,20 @@ class NobodyElseMoved(unittest.TestCase):
                                     cfg["key"])
 
 
-class TheTwoRoomsAlternate(unittest.TestCase):
-    """The actual ask: each iMessage room every 30 minutes, never the same tick.
-
-    Walked over a real day of 5-minute wakes rather than asserted on the config
-    numbers, because "every 30, opposite halves" is a property of the ANCHOR
-    math (run._dest_anchor), not of the cadence field — two rooms both reading
-    30 is exactly the shape that was double-pinging before offset_min existed.
-    """
+class TheKnockingChatCadence(unittest.TestCase):
+    """One room, every 30, on the office's own anchors — walked over a real
+    day of 5-minute wakes, because cadence is a property of the ANCHOR math
+    (run._dest_anchor), not of the config number."""
 
     def setUp(self):
         self.cfg = next(c for c in C.OFFICES if c["key"] == "rafael")
         dests = C.destinations(self.cfg)
-        self.partners = next(d for d in dests
-                             if d.get("name") == "Alphalete Partners")
-        self.ateam = next(d for d in dests
-                          if d.get("name") == "Alphalete A-Team Chat")
+        self.room = next(d for d in dests
+                         if d.get("name") == "Knocking Chat A-Players")
+        self.slack = next(d for d in dests if d["kind"] == "slack")
 
     def _fire_minutes(self, dest):
-        """Wall-clock minutes-of-day on which this destination's anchor CHANGES
-        — i.e. the ticks it would actually send on, walking the 5-minute grid
-        the wrapper wakes Python on."""
         day = dt.datetime(2026, 9, 21, 0, 0)     # a Monday
-        # Seeded from the tick BEFORE midnight, or minute 0 counts as a fire
-        # for every destination and the very first gap reads short.
         fires = []
         last = R._dest_anchor(dest, self.cfg,
                               day - dt.timedelta(minutes=C.WAKE_MINUTES))
@@ -128,32 +122,16 @@ class TheTwoRoomsAlternate(unittest.TestCase):
             last = cur
         return fires
 
-    def test_each_room_fires_every_30_minutes(self):
-        for label, dest in (("partners", self.partners),
-                            ("a-team", self.ateam)):
-            fires = self._fire_minutes(dest)
-            gaps = {b - a for a, b in zip(fires, fires[1:])}
-            self.assertEqual(gaps, {30}, "%s: %s" % (label, sorted(gaps)))
+    def test_the_room_fires_every_30_minutes(self):
+        fires = self._fire_minutes(self.room)
+        self.assertEqual({b - a for a, b in zip(fires, fires[1:])}, {30})
 
-    def test_no_tick_ever_sends_to_both_rooms(self):
-        """The double ping, stated directly."""
-        both = set(self._fire_minutes(self.partners)) & set(
-            self._fire_minutes(self.ateam))
-        self.assertEqual(both, set(), sorted(both))
-
-    def test_partners_is_a_half_cadence_behind_the_a_team(self):
-        """Opposite halves of the hour, not merely different minutes: 15 apart
-        is what makes the two rooms evenly spaced instead of 5-and-25."""
-        p0 = self._fire_minutes(self.partners)[1]
-        a0 = self._fire_minutes(self.ateam)[1]
-        self.assertEqual((p0 - a0) % 30, 15, "partners %d, a-team %d" % (p0, a0))
-
-    def test_the_slack_channel_is_untouched_by_the_offset(self):
-        """Only the Partners ROW carries offset_min; lvl1 keeps the office's
-        own anchors, so this change cannot have quietly moved a Slack post."""
-        self.assertEqual(C.dest_offset(
-            next(d for d in C.destinations(self.cfg) if d["kind"] == "slack"),
-            self.cfg), C.office_offset(self.cfg))
+    def test_no_offset_left_on_the_room(self):
+        """The :15/:45 shift existed only to keep Partners off the A-Team's
+        ticks; with one room it would just move the board for no reason."""
+        self.assertNotIn("offset_min", self.room)
+        self.assertEqual(self._fire_minutes(self.room),
+                         self._fire_minutes(self.slack))
 
 
 class DestOffsetRules(unittest.TestCase):
