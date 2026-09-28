@@ -161,6 +161,29 @@ def _drive_week_selection(label: str, verbose: bool = False):
         except Exception:  # noqa: BLE001
             pass
 
+    def _apply(page, viz):
+        """Press the menu's 'Apply' button, if the filter has one.
+
+        2026-09-28: the menu's last look had ONLY the target week ticked, yet
+        the box read '(None)' after the menu closed — on all three attempts,
+        and Retail JE was dropped. That is a filter in apply-on-button mode:
+        the ticks in the menu are pending, the box shows what was committed,
+        and the Escape in _close_dropdown is Cancel, so every tick was thrown
+        away. Clicking Apply first commits them; on a filter without the
+        button this finds nothing and does nothing. Bounded, never raises."""
+        try:
+            btn = viz.locator("button, [role=button], .tab-button").filter(
+                has_text=_re.compile(r"^\s*(Apply|Aplicar)\s*$", _re.I)).first
+            if not btn.count():
+                return False
+            btn.click(timeout=5000)
+            page.wait_for_timeout(1500)
+            if verbose:
+                print("  [je] pressed the week menu's Apply button")
+            return True
+        except Exception:  # noqa: BLE001 — the box check below is the verdict
+            return False
+
     _ROW = 'div.FIItem[role="checkbox"]'
 
     def _rows(viz):
@@ -360,6 +383,7 @@ def _drive_week_selection(label: str, verbose: bool = False):
                 _set(viz, page, w, False)
 
         weeks = _weeks(viz)        # last look while the menu is still open
+        _apply(page, viz)          # commit BEFORE Escape — Escape is Cancel
         _close_dropdown(page, viz)  # collapse (never via the combobox — see above)
         page.wait_for_timeout(2500)
         final = _box_text(tbox)

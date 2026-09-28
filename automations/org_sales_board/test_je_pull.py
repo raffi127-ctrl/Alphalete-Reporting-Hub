@@ -167,9 +167,14 @@ class FakeFilter:
     """
 
     def __init__(self, weeks, checked, has_only_link=False, other_options=(),
-                 combo_fails=0):
+                 combo_fails=0, apply_mode=False):
         self.weeks = list(weeks)
         self.checked = set(checked)
+        # apply_mode: ticks in the menu are PENDING until the Apply button;
+        # the box shows what was committed and Escape cancels (2026-09-28).
+        self.apply_mode = apply_mode
+        self.committed = set(checked)
+        self.applies = 0
         self.has_only_link = has_only_link
         self.other = {o: True for o in other_options}
         self.open = False
@@ -209,11 +214,18 @@ class FakeFilter:
         self.clicks += 1
         self.checked = {text}
 
+    def apply(self):
+        self.applies += 1
+        self.committed = set(self.checked)
+
     def box_text(self):
-        if len(self.checked) == len(self.weeks):
+        shown = self.committed if self.apply_mode else self.checked
+        if not shown:
+            return "(None)"
+        if len(shown) == len(self.weeks):
             return "(All)"
-        if len(self.checked) == 1:
-            return next(iter(self.checked))
+        if len(shown) == 1:
+            return next(iter(shown))
         return "(Multiple values)"
 
     # -- Playwright surface -------------------------------------------------
@@ -233,7 +245,25 @@ class FakeFilter:
             return _Loc(rows)
         if "tab-glass" in selector:
             return _Loc([])
+        if "button" in selector:
+            if self.open and self.apply_mode:
+                return _Loc([_ApplyButton(self)])
+            return _Loc([])
         return _Loc([])
+
+
+class _ApplyButton:
+    def __init__(self, filt):
+        self.filt = filt
+
+    def inner_text(self):
+        return "Apply"
+
+    def count(self):
+        return 1
+
+    def click(self, **_kw):
+        self.filt.apply()
 
 
 class FakePage:
@@ -246,6 +276,8 @@ class FakePage:
 
     def press(self, _key):
         self.filt.open = False           # Escape collapses the menu
+        if self.filt.apply_mode:         # ...and cancels what wasn't applied
+            self.filt.checked = set(self.filt.committed)
 
 
 WEEKS = ["7/26/2026", "8/2/2026", "8/9/2026", "8/16/2026"]
@@ -316,6 +348,22 @@ class WeekSelectionTest(unittest.TestCase):
         f.box_text = lambda: "(All)"
         _drive(f)
         self.assertTrue(all(f.other.values()))
+
+    def test_apply_button_commits_before_the_menu_closes(self):
+        """THE 2026-09-28 FAILURE. Only the target was ticked in the menu, the
+        box read '(None)' once it closed: the ticks were pending, and Escape
+        cancelled them. Press Apply first."""
+        f = FakeFilter(WEEKS, ["8/9/2026"], apply_mode=True)
+        _drive(f)
+        self.assertEqual(f.committed, {TARGET})
+        self.assertEqual(f.box_text(), TARGET)
+        self.assertEqual(f.applies, 1)
+
+    def test_no_apply_button_means_no_apply_click(self):
+        f = FakeFilter(WEEKS, ["8/9/2026"])
+        _drive(f)
+        self.assertEqual(f.checked, {TARGET})
+        self.assertEqual(f.applies, 0)
 
     def test_raises_with_the_stuck_weeks_named(self):
         """A filter that refuses to converge must say WHICH weeks are stuck —
