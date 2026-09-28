@@ -195,7 +195,8 @@ def main(argv=None) -> int:
                 for lab, val, src in SA.day_cells(d, wsales.tab):
                     filled.add(lab, wk, val, src)
 
-            placed = 0
+            # What this run actually has, keyed by the cell it lands in.
+            have = {}
             for cell in filled.cells:
                 r = LO.find_row(rows, cell.row_label)
                 col = W.find(hdr, cell.week)
@@ -204,9 +205,31 @@ def main(argv=None) -> int:
                     continue
                 if col is None:
                     continue           # that week has no column on this tab
-                updates.append({"range": f"{_a1(col.col)}{r}", "values": [[cell.value]]})
-                placed += 1
-            print(f"    {name:<32} {placed:>3} cells")
+                have[(r, col.col)] = cell.value
+
+            # OWNED ROWS ARE REWRITTEN, NOT TOPPED UP. A cell this report owns
+            # and has no value for is CLEARED, so a number cannot outlive the
+            # source that produced it — the fabricated '0.0%' survived its own
+            # fix because nothing overwrote it. Only fill.OWNED is in scope;
+            # every manual row is untouched.
+            placed = cleared = 0
+            for label in F.OWNED:
+                r = LO.find_row(rows, label)
+                if r is None:
+                    continue
+                for wcol in [c for c in hdr if c.ok and c.sunday in wks]:
+                    v = have.get((r, wcol.col))
+                    if v is None:
+                        if LO._cell(grid, r, wcol.col).strip():
+                            updates.append({"range": f"{_a1(wcol.col)}{r}",
+                                            "values": [[""]]})
+                            cleared += 1
+                    else:
+                        updates.append({"range": f"{_a1(wcol.col)}{r}",
+                                        "values": [[v]]})
+                        placed += 1
+            print(f"    {name:<32} {placed:>3} cells"
+                  + (f", {cleared} cleared" if cleared else ""))
 
         if not a.write:
             print(f"  PREVIEW — {len(updates)} cells not written")

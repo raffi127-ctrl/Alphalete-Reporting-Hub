@@ -85,6 +85,39 @@ def _email_team(team: str, png_path: Path, day: dt.date, *,
         print(f"  ⚠ Email {team} failed: {e}")
 
 
+NONE_TEXT = "📅 No Sales Scheduled 6+ Days Out"
+
+
+def _post_none_or_refuse(csv_path: Path, who: str, *, do_post: bool) -> int:
+    """No 6+ rows for this owner. Never post the empty table (Megan's standing
+    rule: no blank boards in Slack). Post the one-line 'none' — same shape as
+    '🚫 No New Canceled Orders' — ONLY when the export proves the day loaded
+    (it holds orders for the day, just none 6+ out). Otherwise the zero may be
+    missing data: post nothing and exit 1 so the runner's retry + failure alert
+    handle it instead of a false 'none'."""
+    n = pull.orders_in_export(csv_path)
+    if n == 0:
+        print(f"✗ {who}: 0 rows AND the export holds no orders for the day at "
+              "all — can't tell a real zero from data that hasn't loaded. "
+              "Posting NOTHING.")
+        return 1
+    print(f"  ✓ real zero: export has {n} order(s) for the day, none 6+ days "
+          f"out for {who}")
+    try:
+        res = slack_metrics_post.post_reply_text_only(
+            NONE_TEXT, react_emoji="calendar",
+            today=pull.central_today(), dry_run=not do_post)
+        print(f"  ✓ Slack ({'LIVE' if do_post else 'DRY-RUN'}): {res}")
+        if not res.get("dry_run") and not res.get("ok", True):
+            print("✗ Slack post FAILED.")
+            return 1
+    except slack_metrics_post.SlackPostError as e:
+        print(f"  ⚠ Slack post failed: {e}")
+        return 1
+    print("=== done ===")
+    return 0
+
+
 def _run_single_owner(owner: str, day: dt.date, *,
                       post_slack: bool, dry_run: bool) -> int:
     """One-office cut: pull the org-wide ALLREPS Order Log, filter to a SINGLE
@@ -106,6 +139,9 @@ def _run_single_owner(owner: str, day: dt.date, *,
     print(f"Step 2: Parse + filter (Days to Appointment >= 6, Owner = {owner})…")
     rows = pull.parse_and_filter(csv_path, owner=owner)
     print(f"  ✓ {owner}: {len(rows)} rows")
+
+    if not rows:
+        return _post_none_or_refuse(csv_path, owner, do_post=do_post)
 
     print("Step 3: Render PNG…")
     img = Path(tempfile.gettempdir()) / f"scheduled_6days_single_{tag}.png"
@@ -218,17 +254,25 @@ def main(argv=None) -> int:
                   title=f"Scheduled 6 days out — Rafael Hidalgo (Local Office) "
                         f"({tag})",
                   color_by="Rep")
-    try:
-        res = slack_metrics_post.post_reply_with_image(
-            local_png,
-            comment="📅 Scheduled 6 days out",
-            react_emoji="calendar",
-            today=pull.central_today(),
-            dry_run=slack_dry,
-        )
-        print(f"  ✓ Slack ({'DRY-RUN' if slack_dry else 'LIVE'}): {res}")
-    except slack_metrics_post.SlackPostError as e:
-        print(f"  ⚠ Slack post failed: {e}")
+    # An empty Local Office cut never goes out as an empty table: the 'none'
+    # line when the export proves the day loaded, nothing (and exit 1 after the
+    # emails) when it can't — see _post_none_or_refuse.
+    rc = 0
+    if not local_rows:
+        rc = _post_none_or_refuse(raf_csv, "Rafael Hidalgo (Local Office)",
+                                  do_post=not slack_dry)
+    else:
+        try:
+            res = slack_metrics_post.post_reply_with_image(
+                local_png,
+                comment="📅 Scheduled 6 days out",
+                react_emoji="calendar",
+                today=pull.central_today(),
+                dry_run=slack_dry,
+            )
+            print(f"  ✓ Slack ({'DRY-RUN' if slack_dry else 'LIVE'}): {res}")
+        except slack_metrics_post.SlackPostError as e:
+            print(f"  ⚠ Slack post failed: {e}")
 
     print("Step 6: Email each captainship its full PNG…")
     _email_team("raf", raf_png, day,
@@ -237,7 +281,7 @@ def main(argv=None) -> int:
                 send_email=args.send_email, test_to=args.email_test_to)
 
     print("=== done ===")
-    return 0
+    return rc
 
 
 if __name__ == "__main__":

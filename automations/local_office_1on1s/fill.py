@@ -47,6 +47,37 @@ RECRUITING = {
     "New starts Retention %":   "ns_pct",      # source is 'NS Showed %' — see spec
 }
 
+# EVERY ROW THIS REPORT OWNS. A row here is cleared when the run has no value
+# for it, so a number from a previous run cannot outlive its source.
+#
+# Why that is needed: the fill is additive by design — it writes what it has and
+# leaves everything else alone, which is what protects the manual rows. But it
+# also meant a wrong value SURVIVED its own fix. The fabricated '0.0%' talk-to
+# rate was stopped at the source, the run re-ran, and the sheet still showed
+# 0.0% because nothing overwrote the cell the earlier run had written.
+#
+# Clearing is scoped to exactly these labels. Nothing outside the list is ever
+# blanked, so the Culture rows, BreakEven, Money Saved and the weekly goal are
+# untouchable. [[feedback_dont_touch_user_data]]
+OWNED = [
+    # 1. Sales
+    "New INT", "Upgrades", "DTV's", "Wireless Lines", "Total Apps",
+    # 2. Recruiting (Monthly)
+    "2nd rds Conducted", "Job Offered", "2nd rds closed",
+    "BOB % / 2nd rd closing", "New Starts Scheduled", "New Starts Showed",
+    "New starts Retention %",
+    # the knocking block
+    "Monday - Friday Total Knocks", "Monday - Friday AVG Doors knocked / Day",
+    "Monday - Friday Total Talk Too's", "Monday % Talk To's Per knocks",
+    "Mon - Friday avg Talk To's Day", "Monday - Saturday Total Apps",
+    "AVG Talk Too's per App", "Mon - Friday AVG First Knock",
+    "Mon - Friday AVG Last Knock", "Saturday Avg Doors / Day",
+    "Saturday First knock", "Saturday Last Knock",
+    "Saturday avg Talk To's Day",
+    # 5. Finances — the one money row with a source
+    "Gross Paycheck last week?",
+]
+
 # Never written by this report.
 MANUAL = {
     "breakeven", "money saved", "what are we going to do better",

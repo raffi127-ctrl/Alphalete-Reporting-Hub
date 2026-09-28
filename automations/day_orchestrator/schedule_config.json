@@ -12164,7 +12164,7 @@
     },
     "jacob_metrics": {
       "order": 36.6,
-      "on_scheduler": false,
+      "on_scheduler": true,
       "display_name": "Jacob's Daily Metrics (rockstar-world-sales)",
       "source_type": "tableau",
       "data_sources": [
@@ -12197,7 +12197,7 @@
         "type": "manifest",
         "report_id": "jacob_metrics"
       },
-      "_note": "Office metrics for jacob -> rockstar-world-sales (C0BMX2V2XRT). Wired by hand 2026-09-28 (no form). AT&T Fiber D2D office (campaign fiber_d2d), all 11 D2D boards. on_scheduler stays false until a dry run on Lucy 1 proves data on every board -- Megan's rule: never a blank first post. Sheet 'Jacob Dover - Lucy Metrics (Rockstarworld)' 1CeF9wVJt720jA0w2s_Zw1fO51PajDOtWVsS2EYqtMT0 copied from the Master Metrics Templates.",
+      "_note": "Office metrics for jacob -> rockstar-world-sales (C0BMX2V2XRT). Wired by hand 2026-09-28 (no form). AT&T Fiber D2D office (campaign fiber_d2d), all 11 D2D boards. Switched ON 2026-09-28 after the Lucy 1 dry run: 9 boards with real data (499-row order log, 22/18 churn reps, 16-rep ongoing cancel, ABP 28/28, Tableau Metrics); knocks + 6+ were REAL zeros for Sunday 9/27 (6+ now posts a one-line 'none' only when the export proves the day loaded). Sheet 'Jacob Dover - Lucy Metrics (Rockstarworld)' 1CeF9wVJt720jA0w2s_Zw1fO51PajDOtWVsS2EYqtMT0 copied from the Master Metrics Templates.",
       "_onboarded": true
     },
     "icd_knocks_board_now": {

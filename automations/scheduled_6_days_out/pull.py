@@ -124,6 +124,24 @@ def fetch_crosstab_allreps(day: dt.date,
     return out_path
 
 
+def orders_in_export(csv_path: Path) -> int:
+    """How many order rows the export holds for the day — every owner, every
+    product, before any 6+ filter.
+
+    This is the proof that an empty board is a REAL zero (Megan 2026-09-28:
+    "if it's empty/skipped then there truly has to be 0 data — not just missing
+    data"). The pull is pinned to ONE day, so an extract that hasn't loaded that
+    day comes back with no rows at all, and a filter to 0 rows looks exactly
+    like a quiet day. When the export has orders for the day and none of them
+    are 6+ days out, the zero is real; when it has none, we can't tell."""
+    try:
+        with open(csv_path, "r", encoding="utf-16-le") as f:
+            rows = list(csv.reader(f, delimiter="\t"))
+    except (OSError, UnicodeError):
+        return 0
+    return sum(1 for r in rows[1:] if any((c or "").strip() for c in r))
+
+
 def _parse_days(raw: str) -> Optional[int]:
     """'6', '6.0', ' 12 ' → int; blanks / non-numeric → None (row dropped)."""
     s = (raw or "").strip().replace(",", "")
