@@ -24,9 +24,9 @@ recorded here and not there is a ruling nothing enforces.
 | | |
 |---|---|
 | **ARS doc says** | line 1035 and line 1088: "We offer a weekly salary pay for the role (**the base salary is determined on your background/experience**) plus bonuses or commission." Line 1036 adds "paid training between **$16-$21 an hour**". |
-| **Megan says** | "We offer weekly pay ranging from **$1,000–$1,500** plus bonuses or commission." |
+| **Megan says** | "We offer weekly pay ranging from **$1,000–$1,500** plus bonuses or commission." **Either pay answer is fine** — the weekly range, or the doc's paid-training figure of $16–$21 an hour (Megan 2026-09-27: "Pay could be either of those answers"). Only the word "base" is ruled out. |
 | **Ruling** | Raf, relayed by Megan 2026-09-27. Asked directly whether bookers should say there is a base weekly pay: *"No, just weekly pay ranging from $1,000-$1500."* |
-| **Note** | The ARS doc contradicts itself — line 165 already says $1,000–$1,500. The REBUTTALS table is the stale half. |
+| **Note** | The two figures in the doc are not a contradiction; they are two valid ways to answer. The fault is the word "base", which the REBUTTALS table still teaches. |
 | **Measured** | 25 messages in the six weeks to 2026-09-25 told applicants there is a base pay. All from people, none from the AI: Jorge Pena 19, Sandy Samaniego 3, Erika Gonzalez 2, Camilo Ovalle 1. |
 
 ### 2. Location — name the role they applied to, then the address

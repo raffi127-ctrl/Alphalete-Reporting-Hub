@@ -16,17 +16,12 @@ CHANGES = [
   "We offer a weekly salary pay for the role (the base salary is determined "
   "on your background/experience) plus bonuses or commission.",
   "We offer weekly pay ranging from $1,000–$1,500 plus bonuses or "
-  "commission. Is that something you're okay with?",
-  "Raf: don't say there's a base. Line 165 of the same doc already says "
-  "$1,000–$1,500, so the doc contradicts itself. 25 messages in the last "
-  "six weeks told applicants there is a base pay."),
-
- ("Exact pay rate", "REBUTTALS table, line 1036",
-  "I know we originally start paid training between $16-$21 an hour plus "
-  "commission.",
-  "Remove, or restate as weekly pay of $1,000–$1,500.",
-  "Two different pay answers in the same table. Bookers pick whichever "
-  "they read first."),
+  "commission. Is that something you're okay with?  (Or the paid-training "
+  "answer on line 1036 — $16–$21 an hour plus commission. Either is fine; "
+  "it is only the word \"base\" that has to go.)",
+  "Raf: don't say there's a base. 25 messages in the last six weeks told "
+  "applicants there is a base pay — 19 of them from one person — and the "
+  "doc is where they got the wording."),
 
  ("Location", "REBUTTALS table, line 1038",
   "Our main office is located in *OfficeLocation*, however, you applied for "
@@ -69,10 +64,29 @@ def build(path):
     r = d.add_paragraph().add_run("ARS Processes doc — proposed changes")
     r.bold = True; r.font.size = Pt(20)
     p = d.add_paragraph()
-    r = p.add_run("For Carlos · {:%d %b %Y} · six changes\n"
-                  "Each one: what it says now, what we propose, and why."
-                  .format(dt.date.today()))
+    r = p.add_run("For Carlos · {:%d %b %Y}".format(dt.date.today()))
     r.font.size = Pt(10); r.font.color.rgb = GREY
+
+    # Carlos reads this cold. Say what prompted it and what the numbers
+    # are before the first change, or the "why" lines have nothing to
+    # stand on (Megan 2026-09-27: "so I can send to carlos").
+    p = d.add_paragraph()
+    p.paragraph_format.space_before = Pt(10)
+    r = p.add_run(
+        "We pulled every applicant text across four recruiting accounts "
+        "for the six weeks ending 25 September \u2014 about 55,000 messages "
+        "\u2014 and checked what we actually reply against the approved "
+        "answers in ARS Processes 2026. Several gaps trace back to the doc "
+        "itself rather than to any one person \u2014 the pay line teaches "
+        "wording we no longer use, and the second-interview address reads "
+        "as though it applies to every office.")
+    r.font.size = Pt(11)
+    p = d.add_paragraph()
+    r = p.add_run(
+        "Five changes below. Each one gives the line as it stands, what we "
+        "would put in its place, and the reason. Numbers are from those "
+        "six weeks.")
+    r.font.size = Pt(11)
 
     for n, (title, where, now, prop, why) in enumerate(CHANGES, 1):
         p = d.add_paragraph(); p.paragraph_format.space_before = Pt(18)

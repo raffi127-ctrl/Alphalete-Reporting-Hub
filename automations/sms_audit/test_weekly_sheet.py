@@ -1001,3 +1001,60 @@ class SheetWidePersonGroupTest(unittest.TestCase):
         labels = {"Texts using lowercase 'i'": 59,
                   "Replies using texting shorthand": 62}
         self.assertEqual(W.sheet_person_groups(labels), [])
+
+
+class WhoToTalkToTest(unittest.TestCase):
+    """Megan 2026-09-27: "we need a section on the sheet of who to talk to
+    and about what like you did here." One row per person behind the +,
+    each listing what to raise and how often it happened."""
+
+    def _rep(self):
+        return {"office": "11280", "dates": ["09-22-2026"], "threads": 1,
+                "log": {"coaching": [
+                    {"sender": "Maria Quintero", "issue": "Sent the wrong "
+                     "office address", "count": 23, "example": "Unit 232"},
+                    {"sender": "Maria Quintero", "issue": "Shouted in "
+                     "capitals", "count": 14, "example": "ALPHALETE"},
+                    {"sender": "Jorge Pena", "issue": "Told applicants there "
+                     "is a base pay", "count": 6, "example": "base pay"},
+                ]}}
+
+    def test_the_section_counts_people_not_issues(self):
+        rep = self._rep()
+        by = {l: f for _s, l, f in W.ROWS}
+        self.assertEqual(by["People to talk to"](rep), 2)
+        self.assertEqual(by["Things to raise in total"](rep), 43)
+
+    def test_a_person_row_per_person_at_the_foot_of_the_section(self):
+        _rows, groups = W.build_rows(self._rep())
+        kids = dict(groups).get("Things to raise in total")
+        self.assertIsNotNone(kids, dict(groups))
+        self.assertEqual(len(kids), 2)
+        self.assertTrue(all(k.endswith(" (to talk to)") for k in kids), kids)
+
+    def test_worst_first(self):
+        _rows, groups = W.build_rows(self._rep())
+        self.assertIn("Maria", dict(groups)["Things to raise in total"][0])
+
+    def test_the_cell_says_what_to_raise_and_how_often(self):
+        entries = W.by_person(self._rep(), "coaching")["Maria Quintero"]
+        cell = W.person_cell(entries, "coaching")
+        self.assertIn("2 things to raise", cell)
+        self.assertIn("37 messages", cell)
+        self.assertIn("Sent the wrong office address — 23 times", cell)
+        self.assertIn("Unit 232", cell)
+
+    def test_a_person_with_one_thing_reads_singular(self):
+        rep = {"log": {"coaching": [{"sender": "Ana", "issue": "Shouted in "
+                                     "capitals", "count": 1,
+                                     "example": "ALPHALETE"}]}}
+        cell = W.person_cell(W.by_person(rep, "coaching")["Ana"], "coaching")
+        self.assertIn("1 thing to raise", cell)
+        self.assertIn("1 message", cell)
+        self.assertIn("1 time", cell)
+
+    def test_the_two_person_sections_keep_their_own_people(self):
+        # a sender can appear in text quality AND here; the labels must not
+        # collide or one row silently overwrites the other
+        self.assertNotEqual(W.person_label("Jorge Pena", "errors"),
+                            W.person_label("Jorge Pena", "coaching"))

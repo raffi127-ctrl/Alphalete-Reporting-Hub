@@ -175,6 +175,14 @@ LINEAGE = {
    "LOG Status on each phone's earliest Out row",
  "Of LATER texts to the same person, % that fail":
    "LOG Status on every Out row after the first",
+ "People to talk to":
+   "LOG \u2014 distinct senders with at least one thing to raise, across the "
+   "checks Megan has ruled on: base pay, wrong office address, address "
+   "with no suite, shouting in capitals, and pushing a job question to "
+   "the hiring manager",
+ "Things to raise in total":
+   "LOG \u2014 every one of those, counted, so one person with six is not "
+   "read as six people with one",
  "Broken links sent":
    "LOG Body of Out rows — a URL whose HOST contains a non-ASCII character, "
    "which is how the dead Zoom link read as normal to every human eye",

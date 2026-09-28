@@ -93,7 +93,8 @@ PERSON_PREFIX = "\u2014 "
 # A sender appears in BOTH per-person sections, and rows are found by label —
 # so the two need different ones or the second is silently skipped as
 # already present.
-PERSON_SUFFIX = {"errors": "", "dodged": " (questions)"}
+PERSON_SUFFIX = {"errors": "", "dodged": " (questions)",
+                 "coaching": " (to talk to)"}
 
 
 def person_label(sender, which):
@@ -354,6 +355,22 @@ def person_cell(entries, which):
                 line += "  \u2014 this same message went to {} people".format(n)
             lines.append(line)
         return "\n\n".join(lines)
+    if which == "coaching":
+        # Megan 2026-09-27 asked for this as a list she can act on, so it
+        # reads as "raise this, it happened N times", not as a metric.
+        total = sum(e.get("count", 1) for e in entries)
+        lines = ["{} thing{} to raise \u00b7 {} message{}".format(
+            len(entries), "" if len(entries) == 1 else "s",
+            total, "" if total == 1 else "s")]
+        for e in sorted(entries, key=lambda x: -x.get("count", 1)):
+            line = "{} \u2014 {} time{}".format(
+                e["issue"], e.get("count", 1),
+                "" if e.get("count", 1) == 1 else "s")
+            if e.get("example"):
+                line += "\n   e.g. \u201c{}\u201d".format(
+                    _bmp_only(str(e["example"]))[:110])
+            lines.append(line)
+        return "\n\n".join(lines)
     lines = ["{} question{}".format(len(entries),
                                     "" if len(entries) == 1 else "s")]
     for e in entries:
@@ -391,7 +408,8 @@ def person_runs(entries, text):
 
 # Which per-person breakdown belongs at the foot of which section.
 PERSON_SECTIONS = {"Text quality": "errors",
-                   "Questions handled badly": "dodged"}
+                   "Questions handled badly": "dodged",
+                   "Who to talk to": "coaching"}
 
 
 def _label_sections(values):
@@ -847,6 +865,17 @@ ROWS = [
      _why_rate("first_rate")),
     ("Problems to fix", "Of LATER texts to the same person, % that fail",
      _why_rate("later_rate")),
+    # Megan 2026-09-27: "we need a section on the sheet of who to talk to
+    # and about what". One row per person behind the +, each listing what
+    # to raise with them and how often it happened.
+    ("Who to talk to", "People to talk to",
+     lambda r: (lambda co: len({e["sender"] for e in co}) if co is not None
+                else "")((r.get("log") or {}).get("coaching"))),
+    ("Who to talk to", "Things to raise in total",
+     lambda r: (lambda co: sum(e.get("count", 1) for e in co)
+                if co is not None else "")(
+                    (r.get("log") or {}).get("coaching"))),
+
     ("Problems to fix", "Broken links sent",
      _msg(lambda r: len(r["anomalies"].get(
          "Dead link — the web address is spelled with a look-alike letter", [])))),
@@ -1186,6 +1215,9 @@ SECTION_TINT = {
     'People we left hanging'                  : (0.78, 0.78, 0.80),
     'What applicants ask'                     : (0.88, 0.96, 0.68),
     'Problems to fix'                         : (0.99, 0.71, 0.5),
+    # A teal nobody else uses — this is the section someone acts on, so it
+    # should not read as a neighbour of "Problems to fix" above it.
+    'Who to talk to'                          : (0.56, 0.80, 0.80),
 }
 
 # Rows that fold away behind a + in the gutter (Megan 2026-09-26: "this texts

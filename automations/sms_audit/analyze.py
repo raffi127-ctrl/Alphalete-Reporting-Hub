@@ -1929,6 +1929,72 @@ def log_delivery(rows):
     return c
 
 
+def address_no_suite(office, text):
+    """An address that names the street but leaves the suite off."""
+    from automations.sms_audit import rebuttals as _R
+    want = _R.OFFICE_ADDRESS.get(office)
+    if not want:
+        return None
+    body = " ".join((text or "").split())
+    m = _R._STREET.search(body)
+    if not m or _R.wrong_address(office, body):
+        return None            # no address, or already flagged as wrong
+    return None if _R._UNIT.search(body) else m.group(0).strip()
+
+
+# What to raise with each person, and how often they did it. Megan
+# 2026-09-27: "we need a section on the sheet of who to talk to and about
+# what". Only things she has actually ruled on go in here — a coaching list
+# built out of guesses is worse than none, and the whole audit spent a day
+# learning that.
+COACHING = (
+    ("Told applicants there is a base pay",
+     lambda o, b: __import__("automations.sms_audit.rebuttals", fromlist=["x"])
+     .says_base_pay(b)),
+    ("Sent the wrong office address",
+     lambda o, b: __import__("automations.sms_audit.rebuttals", fromlist=["x"])
+     .wrong_address(o, b)),
+    ("Left the suite off the address", address_no_suite),
+    ("Shouted in capitals",
+     lambda o, b: __import__("automations.sms_audit.rebuttals", fromlist=["x"])
+     .shouts(b)),
+)
+
+
+def who_to_talk_to(convos, office):
+    """One entry per person per issue, worst first.
+
+    Flat entries with a `sender`, so the sheet groups them the same way it
+    groups text errors and dodged questions."""
+    found = collections.defaultdict(lambda: collections.defaultdict(list))
+    for c in convos.values():
+        for m in c["msgs"]:
+            if m["dir"] != "Out":
+                continue
+            who = m.get("sent_by") or ("AI Messaging" if is_ai(m) else "")
+            if not who:
+                continue
+            body = " ".join((m["body"] or "").split())
+            for label, test in COACHING:
+                hit = test(office, body)
+                if hit:
+                    found[who][label].append(hit)
+
+    # deflecting a job question is a per-person fault too
+    for e in dodged_questions(convos):
+        if e["kind"] == "deflected" and e.get("sender"):
+            found[e["sender"]]["Pushed a job question to the hiring manager"] \
+                .append(e["question"][:70])
+
+    out = []
+    for who, issues in found.items():
+        for label, hits in issues.items():
+            out.append({"sender": who, "issue": label, "count": len(hits),
+                        "example": hits[0]})
+    out.sort(key=lambda e: -e["count"])
+    return out
+
+
 def audit_log(rows, convos, office, booked=None):
     fun = funnel(convos)
     fun["join_misses"] = len(join_misses(convos, booked or {}))
@@ -1955,6 +2021,7 @@ def audit_log(rows, convos, office, booked=None):
         "errors": text_errors(convos),
         "dodged": dodged_questions(convos),
         "unanswered": log_unanswered(convos),
+        "coaching": who_to_talk_to(convos, office),
         "delivery": log_delivery(rows),
     }
 
