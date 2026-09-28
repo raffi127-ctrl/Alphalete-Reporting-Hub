@@ -265,6 +265,11 @@ _HUB_CARD = {
     # "he shouldn't get his own card. It should just be added to the one we
     # have"). The library row hub_coverage --sync had made for him was deleted.
     "drew_metrics": "office-metrics",
+    # nii + trang had self-registered their own Report Library cards; folded
+    # onto the one card 2026-09-28 (Megan: "consolidate"). Their library rows
+    # were deleted.
+    "nii_metrics": "office-metrics",
+    "trang_metrics": "office-metrics",
     # Rashad's other office-metrics variants (review post / order-log / churn pull)
     # — all consolidate under the single office-metrics card, not their own cards
     # (Megan 2026-07-27: "all metrics → 1 hub card like it was").
