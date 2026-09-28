@@ -327,9 +327,9 @@ SECTION_OVERRIDES: dict = {
     # it to his office NUMBER 22583 (Megan 2026-08-12) — validated live at 4am (a
     # failed impersonation just omits the board, never posts blank).
     # BACK 2026-09-28 in #precision-management-att-sales (C0C4YKN7QGJ); the
-    # same six boards as isaiah/khalil, disconnects included.
-    "drew": ("knocks_gaps", "churn", "rep_activations", "order_log",
-             "cancels", "disconnects"),
+    # same boards as isaiah/khalil MINUS Time Gaps -- he does not disposition
+    # in OwnerVille, so there are no knocks to draw (Megan 2026-09-28).
+    "drew": ("churn", "rep_activations", "order_log", "cancels", "disconnects"),
 }
 
 # Onboarded office keys whose metrics come from the NDS-SN (RES-ATT-OOF) workbook

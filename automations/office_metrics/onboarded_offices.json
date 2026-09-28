@@ -520,7 +520,6 @@
       "yellow": 75
     },
     "enrolled_reports": [
-      "knocks",
       "order_log",
       "cancels",
       "disconnects",
@@ -528,17 +527,16 @@
       "activations"
     ],
     "report_order": {
-      "knocks": 1,
-      "order_log": 2,
-      "cancels": 3,
-      "disconnects": 4,
-      "churn_wl": 5,
-      "activations": 6
+      "order_log": 1,
+      "cancels": 2,
+      "disconnects": 3,
+      "churn_wl": 4,
+      "activations": 5
     },
     "per_office_views": {},
     "machine": "Lucy 1",
     "campaign": "nds_d2d",
-    "notes": "REACTIVATED by hand 2026-09-28 (Megan: 'reactivate his metrics and trackers to post in this channel') after the 8/23 removal -- his old channel C0A7871FAUV went unreadable; the new one is the private #precision-management-att-sales he enrolled in Lucy ECO with. Same boards as khalil/isaiah (NDS). Sheet 'Drew Tepper- Metrics' is his original.",
+    "notes": "REACTIVATED by hand 2026-09-28 (Megan: 'reactivate his metrics and trackers to post in this channel') after the 8/23 removal -- his old channel C0A7871FAUV went unreadable; the new one is the private #precision-management-att-sales he enrolled in Lucy ECO with. Same boards as khalil/isaiah (NDS). Sheet 'Drew Tepper- Metrics' is his original. NO knocks board (Megan 2026-09-28: 'he doesn't use the dispos in OV so prob won't have knock data') -- the dry run's one missing board was exactly that. drew_metrics switched on 2026-09-28 after the other five came back with data on Lucy 1.",
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%"

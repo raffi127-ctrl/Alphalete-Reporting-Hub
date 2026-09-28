@@ -12186,7 +12186,7 @@
     },
     "drew_metrics": {
       "order": 36.6,
-      "on_scheduler": false,
+      "on_scheduler": true,
       "display_name": "Drew's Daily Metrics (precision-management-att-sales)",
       "source_type": "tableau",
       "data_sources": [
@@ -12219,7 +12219,7 @@
         "type": "manifest",
         "report_id": "drew_metrics"
       },
-      "_note": "Office metrics for drew -> #precision-management-att-sales (C0C4YKN7QGJ, private, Lucy a member). REACTIVATED by hand 2026-09-28 after the 8/23 removal (his old channel went unreadable). NDS/wireless office (campaign nds_d2d), same boards as khalil/isaiah. on_scheduler stays false until a dry run on Lucy 1 comes back with data on every board -- Megan's rule: never a blank first post. Sheet 'Drew Tepper- Metrics' 11_gwSfFZcA26H8LeAg83rMIpMVBylgzPvJ_mnN1i0l4 (his original).",
+      "_note": "Office metrics for drew -> #precision-management-att-sales (C0C4YKN7QGJ, private, Lucy a member). REACTIVATED by hand 2026-09-28 after the 8/23 removal (his old channel went unreadable). NDS/wireless office (campaign nds_d2d), same boards as khalil/isaiah. SWITCHED ON 2026-09-28 15:45 after a dry run on Lucy 1 (rerun-2026-09-28-153206) came back with data on all five boards (wireless churn, activations, order log, cancels, disconnects). No knocks board: he does not disposition in OwnerVille (Megan). Megan's rule held: never a blank first post. Sheet 'Drew Tepper- Metrics' 11_gwSfFZcA26H8LeAg83rMIpMVBylgzPvJ_mnN1i0l4 (his original).",
       "_onboarded": true
     },
     "jacob_metrics": {
