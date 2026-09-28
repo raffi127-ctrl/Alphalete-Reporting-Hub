@@ -74,3 +74,19 @@ class PlacementTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EmptyMergesTest(unittest.TestCase):
+    def test_an_empty_merge_in_the_way_is_found_a_full_one_is_not(self):
+        values = [[""] * 10 for _ in range(20)]
+        values[3][5] = "Malikye Lacey"
+        empty = {"sheetId": 1, "startRowIndex": 9, "endRowIndex": 15,
+                 "startColumnIndex": 4, "endColumnIndex": 8}
+        full = {"sheetId": 1, "startRowIndex": 2, "endRowIndex": 5,
+                "startColumnIndex": 5, "endColumnIndex": 6}
+        frozen = {"sheetId": 1, "startRowIndex": 9, "endRowIndex": 12,
+                  "startColumnIndex": 0, "endColumnIndex": 1}
+        other_tab = dict(empty, sheetId=2)
+        got = P.empty_merges_in([empty, full, frozen, other_tab], values, 1,
+                                1, 20, 1, 10, min_col=3)
+        self.assertEqual(got, [empty])

@@ -224,6 +224,38 @@ def _unmerge_reqs_for(sh, sid: int, top0: int, cols0) -> List[dict]:
     return reqs
 
 
+def rows_to_push(col_a: List[str], rep_last_now: int, rep_last_new: int,
+                 gap: int = 2) -> Tuple[Optional[int], int]:
+    """(marker row, blank rows to insert above it) so the chart's new last
+    row keeps `gap` blank rows above the weekly knocks picture. (None, 0) when
+    the tab has no picture, the picture sits above the chart, or it is
+    already inside the chart (the picture report moves itself out of that)."""
+    from automations.weekly_knocks_focus.placement import find_marker
+    marker = find_marker(col_a)
+    if marker is None or marker <= rep_last_now:
+        return marker, 0
+    return marker, max(0, rep_last_new + gap + 1 - marker)
+
+
+def _push_picture_down(sh, sid: int, grid: List[List[str]], rep_last_now: int,
+                       rep_last_new: int) -> int:
+    col_a = [r[0] if r else "" for r in grid]
+    marker, n = rows_to_push(col_a, rep_last_now, rep_last_new)
+    if not n:
+        return 0
+    try:
+        rfill._retry(sh.batch_update, {"requests": [{"insertDimension": {
+            "range": {"sheetId": sid, "dimension": "ROWS",
+                      "startIndex": marker - 1, "endIndex": marker - 1 + n},
+            "inheritFromBefore": False}}]})
+    except Exception as e:  # noqa: BLE001 — the chart matters more
+        print(f"  ⚠ couldn't push the knocks picture down ({e}); the "
+              "chart may cover it — weekly_knocks_focus moves it next run.",
+              flush=True)
+        return 0
+    return n
+
+
 # --------------------------------------------- main per-tab processor
 def fill_for_tab(sh, ws, parsed: Dict[str, dict],
                  aliases_map: Dict[str, List[str]],
@@ -264,6 +296,13 @@ def fill_for_tab(sh, ws, parsed: Dict[str, dict],
     n_old = len(chart["rep_rows"])
     n_new = len(display)
     n_mixed = sum(1 for d in display if d["first_in_pair"] and d["rep_count"] > 1)
+
+    # ----- keep clear of the weekly knocks board picture (2026-09-28)
+    # weekly_knocks_focus parks a picture under everything on the tab. A
+    # longer week here used to write straight over it (Michael Murphy, Nuri
+    # Burgos: the =IMAGE was wiped). Push it down with blank rows instead.
+    pushed = _push_picture_down(sh, sid, grid, chart["rep_last"],
+                                chart["rep_first"] + n_new - 1)
 
     # Total row
     tot_days = {d: 0 for d in DAY_ORDER}
@@ -447,4 +486,5 @@ def fill_for_tab(sh, ws, parsed: Dict[str, dict],
     return {"tab": tab, "status": "OK", "n_rows": n_new,
             "n_reps": len({d["rep"] for d in display}),
             "n_mixed": n_mixed, "chart2_deleted": chart2_deleted,
-            "fmt": fmt_status, "extra_deleted": extra}
+            "fmt": fmt_status, "extra_deleted": extra,
+            "picture_pushed": pushed}

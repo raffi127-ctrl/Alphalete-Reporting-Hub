@@ -213,20 +213,49 @@ def _place_picture(ws, week_sunday: dt.date, week_col: int, png: Path,
     end_col, end_row = PL.block(col_px, row_px, start_col, anchor, img_w, img_h,
                                 max_col=int(grid.get("columnCount", 0)) or None)
 
+    merges = sheet.get("merges", [])
+    old_row = None if fresh else anchor
+    old_merges = [] if fresh else PL.merges_on_row(merges, ws.id, anchor,
+                                                   frozen + 1)
+    # The block may only land on empty cells — last week's block is ours and
+    # comes apart first, so its cells don't count.
+    if not fresh and not PL.area_is_empty(values, anchor, end_row, start_col,
+                                          end_col, ignore=old_merges):
+        # Something grew into last week's spot (a longer Production Breakdown,
+        # 2026-09-28): move the block under everything again. Our own marker,
+        # label and old block don't count as "everything".
+        scrub = [list(r) for r in values]
+        for c in (0, 1):
+            if c < len(scrub[old_row - 1]):
+                scrub[old_row - 1][c] = ""
+        for m in old_merges:
+            for r in range(m["startRowIndex"], min(m["endRowIndex"], len(scrub))):
+                for c in range(m["startColumnIndex"],
+                               min(m["endColumnIndex"], len(scrub[r]))):
+                    scrub[r][c] = ""
+        anchor = PL.last_used_row(scrub) + PL.GAP_ROWS + 1
+        end_col, end_row = PL.block(col_px, row_px, start_col, anchor, img_w,
+                                    img_h, max_col=int(grid.get("columnCount", 0)) or None)
+        print(f"    row {old_row} is taken now — moving the picture down to "
+              f"row {anchor}.", flush=True)
     top_left = gspread.utils.rowcol_to_a1(anchor, start_col)
     bottom_right = gspread.utils.rowcol_to_a1(end_row, end_col)
-    old_merges = PL.merges_on_row(sheet.get("merges", []), ws.id, anchor,
-                                  frozen + 1)
+    # An EMPTY merge in the way is a picture block that lost its marker and
+    # =IMAGE (Eric Zech / Hasani Lynch, 2026-09-28): take it apart too, or
+    # the new merge would half-overlap it.
+    orphans = [m for m in PL.empty_merges_in(merges, values, ws.id, anchor,
+                                             end_row, start_col, end_col,
+                                             frozen + 1)
+               if m not in old_merges]
     print(f"    picture: {png.name} ({img_w}x{img_h}) -> {top_left}:{bottom_right}"
-          f" ({'new block' if fresh else 'moves the one on row ' + str(anchor)})",
+          f" ({'new block' if fresh else 'moves the one on row ' + str(old_row)})"
+          + (f", clears {len(orphans)} empty leftover block(s)" if orphans else ""),
           flush=True)
     if end_row > int(grid.get("rowCount", 0)):
         print(f"[wkf] ❌ picture needs rows to {end_row} but the tab stops at "
               f"{grid.get('rowCount')} — not adding rows (workbook cell cap).",
               flush=True)
         return False
-    # The block may only land on empty cells — last week's block is ours and
-    # comes apart first, so its cells don't count.
     if not PL.area_is_empty(values, anchor, end_row, start_col, end_col,
                             ignore=old_merges):
         print(f"[wkf] ❌ cells in {top_left}:{bottom_right} are not empty — "
@@ -239,7 +268,7 @@ def _place_picture(ws, week_sunday: dt.date, week_col: int, png: Path,
     url = f"https://lh3.googleusercontent.com/d/{file_id}"
     requests = [{"unmergeCells": {"range": {k: m[k] for k in (
         "sheetId", "startRowIndex", "endRowIndex",
-        "startColumnIndex", "endColumnIndex")}}} for m in old_merges]
+        "startColumnIndex", "endColumnIndex")}}} for m in old_merges + orphans]
     requests.append({"mergeCells": {"mergeType": "MERGE_ALL", "range": {
         "sheetId": ws.id, "startRowIndex": anchor - 1, "endRowIndex": end_row,
         "startColumnIndex": start_col - 1, "endColumnIndex": end_col}}})
@@ -247,12 +276,27 @@ def _place_picture(ws, week_sunday: dt.date, week_col: int, png: Path,
     # Last week's =IMAGE sits in its block's top-left cell; once unmerged it
     # would draw as a stray picture, so it is cleared (unless it IS this
     # week's top-left, which the write below replaces anyway).
+    # Only a cell that shows nothing (an =IMAGE reads as "") — a number
+    # something else wrote there is not ours to clear.
+    def _shown(r0, c0):
+        return str(values[r0][c0]).strip() if r0 < len(values) and \
+            c0 < len(values[r0]) else ""
     stale = [gspread.utils.rowcol_to_a1(m["startRowIndex"] + 1,
                                         m["startColumnIndex"] + 1)
-             for m in old_merges]
+             for m in old_merges
+             if not _shown(m["startRowIndex"], m["startColumnIndex"])]
     stale = [a1 for a1 in stale if a1 != top_left]
     if stale:
         ws.batch_clear(stale)
+    # Moved down: the old marker + label go too (only if they're still ours).
+    if old_row is not None and old_row != anchor:
+        row = values[old_row - 1] if old_row <= len(values) else []
+        mine = [f"{col}{old_row}" for i, col, ok in (
+            (0, "A", lambda v: PL._norm(v) == PL.MARKER),
+            (1, "B", lambda v: str(v).startswith("Weekly Knock Dispositions")))
+            if i < len(row) and ok(row[i])]
+        if mine:
+            ws.batch_clear(mine)
     label = f"Weekly Knock Dispositions — WE {week_sunday.month}/{week_sunday.day}/{week_sunday.year % 100}"
     ws.batch_update([
         {"range": f"A{anchor}", "values": [[PL.MARKER]]},
