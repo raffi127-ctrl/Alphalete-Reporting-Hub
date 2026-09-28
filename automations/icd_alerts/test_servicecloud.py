@@ -1718,7 +1718,7 @@ class TheTextApprovalCanActuallyBeRun(unittest.TestCase):
     def test_the_flag_reaches_cmd_texts(self):
         """A flag that parses and routes nowhere is the same bug wearing a
         command-line argument."""
-        self.assertIn("cmd_texts(args.office)", self.src)
+        self.assertIn("cmd_texts(args.office", self.src)
 
     def test_every_approval_path_is_reachable(self):
         """If a fourth kind of destination is added, it belongs here too."""

@@ -207,10 +207,10 @@ for _xorg, _xcids in EXTRA_ORG_CHANNELS.items():
 # guards the day's thread can't run and the trackers skipped the channel every
 # morning — four days of incidents, two reports each. Megan 2026-08-18:
 # "anything that's just precision management we can skip for now".
-PAUSED_ORGS: dict[str, str] = {
-    "drew": "#precisionmanagement-nds-sales unreadable since 2026-08-15 "
-            "(channel_not_found) — paused by Megan 2026-08-18",
-}
+# drew came BACK 2026-09-28 in a new private channel,
+# #precision-management-att-sales (C0C4YKN7QGJ), with Lucy a member (Megan:
+# "reactivate his metrics and trackers to post in this channel").
+PAUSED_ORGS: dict[str, str] = {}
 for _paused_key in PAUSED_ORGS:
     ORG_CHANNELS.pop(_paused_key, None)
     ORG_EMAILS.pop(_paused_key, None)

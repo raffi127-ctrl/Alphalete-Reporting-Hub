@@ -281,7 +281,7 @@ def _col_letter(n: int) -> str:
     return out
 
 
-def cmd_texts(office_key: str) -> int:
+def cmd_texts(office_key: str, standings_only: bool = False) -> int:
     """Sign off an office's iMessage group(s).
 
     WHAT THIS CAN AND CANNOT CHECK. A Slack room can be resolved from
@@ -344,8 +344,16 @@ def cmd_texts(office_key: str) -> int:
         print("\nNothing was written.")
         return 1
 
+    if standings_only:
+        # SCOREBOARD TEXTS ONLY: the standings on every sale, never the knock
+        # board or the gap list (Drew Tepper 2026-09-28, via Megan).
+        # knocks_post.boards_for_texts reads this.
+        for r in resolved:
+            r["standings_only"] = True
     _write_texts_approval(office_key, resolved)
-    print("\nApproved %d group(s) for %s." % (len(resolved), office_key))
+    print("\nApproved %d group(s) for %s%s." % (
+        len(resolved), office_key,
+        " -- scoreboard texts only, no knock board or gap list" if standings_only else ""))
     if not can_check:
         print("")
         print("THE NAMES ARE UNVERIFIED. Nothing here could look them up. If "
@@ -494,6 +502,9 @@ def main(argv=None) -> int:
     # that would approve it -- so the one thing he was waiting for could not
     # be done at all (2026-09-16). Written, tested, shipped, unreachable: the
     # same shape as ask_office_to_sign_in and the laptop detectors.
+    ap.add_argument("--standings-only", action="store_true",
+                    help="with --texts: the group gets the sales scoreboard "
+                         "text only -- no knock board, no gap list")
     ap.add_argument("--texts", action="store_true",
                     help="approve the iMessage GROUPS this office asked to be "
                          "texted, instead of a Slack channel")
@@ -501,7 +512,7 @@ def main(argv=None) -> int:
     if not args.office:
         return cmd_list()
     if args.texts:
-        rc = cmd_texts(args.office)
+        rc = cmd_texts(args.office, standings_only=args.standings_only)
     elif args.knocks:
         rc = cmd_knocks(args.office)
     else:

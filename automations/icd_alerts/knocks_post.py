@@ -149,6 +149,14 @@ def wants_gaps(dest: Dict) -> bool:
     return int(dest.get(GAPS_IN_SLACK_KEY) or 0) > 0
 
 
+def boards_for_texts(texts) -> List[Dict]:
+    """The text groups that get the KNOCK BOARD from here. A group approved
+    `standings_only` (Drew Tepper, 2026-09-28 via Megan: scoreboard texts,
+    no knock board, no gap list) is skipped: its standings come from post.py
+    on every sale and nothing here is sent to it."""
+    return [t for t in (texts or []) if not t.get("standings_only")]
+
+
 def gaps_due(dest: Dict, last_gaps: Optional[dt.datetime],
              board_posted: Optional[dt.datetime], now: dt.datetime) -> bool:
     """Does the board about to go to THIS room carry the typed gap list?
@@ -354,7 +362,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
             # (2026-09-15).
             beat = next((int(d.get("cadence_min") or 0) for d in dests
                          if int(d.get("cadence_min") or 0) > 0), 0)
-            for t in (texts.get(key) or []):
+            for t in boards_for_texts(texts.get(key)):
                 t = dict(t)
                 if int(t.get("cadence_min") or 0) <= 0 and beat:
                     t["cadence_min"] = beat

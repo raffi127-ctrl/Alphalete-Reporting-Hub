@@ -183,5 +183,24 @@
       "quantum_fiber",
       "vzftr"
     ]
+  },
+  {
+    "key": "drew",
+    "label": "#precision-management-att-sales",
+    "owner": "Drew Tepper",
+    "channel_ids": [
+      "C0C4YKN7QGJ"
+    ],
+    "trackers": [
+      "att_country",
+      "att_country_internet_only",
+      "nds",
+      "b2b_att_country",
+      "b2b_att_country_cru",
+      "b2b_d2d_consolidated",
+      "b2b_box",
+      "quantum_fiber",
+      "vzftr"
+    ]
   }
 ]

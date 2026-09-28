@@ -742,7 +742,12 @@ def approved_texts(book=None) -> Dict[str, List[Dict]]:
                          "group": name,
                          "chat_guid": str(g.get("chat_guid") or "").strip(),
                          "require_handles": handles,
-                         "cadence_min": int(g.get("cadence_min") or 0)})
+                         "cadence_min": int(g.get("cadence_min") or 0),
+                         # SCOREBOARD TEXTS ONLY (Drew Tepper, 2026-09-28 via
+                         # Megan): no knock board and no gap list to this
+                         # group. The standings text below is unaffected;
+                         # knocks_post.boards_for_texts skips it.
+                         "standings_only": bool(g.get("standings_only"))})
         if good:
             out[key] = good
     return out

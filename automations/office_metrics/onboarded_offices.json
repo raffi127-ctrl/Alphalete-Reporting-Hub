@@ -500,5 +500,47 @@
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%"
+  },
+  {
+    "key": "drew",
+    "report_id": "drew_metrics",
+    "label": "Drew's Local Office",
+    "owner": "Drew Tepper",
+    "channel_id": "C0C4YKN7QGJ",
+    "channel_name": "precision-management-att-sales",
+    "sheet_id": "11_gwSfFZcA26H8LeAg83rMIpMVBylgzPvJ_mnN1i0l4",
+    "knocks_office": "Precision management Drew Tepper",
+    "ov_account": "",
+    "owner_office": "",
+    "business_name": "Precision Management Team",
+    "website": "https://precisionmanagementteam.com/?utm_source=ig&utm_medium=social&utm_content=link_in_bio",
+    "header_label": "",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "knocks",
+      "order_log",
+      "cancels",
+      "disconnects",
+      "churn_wl",
+      "activations"
+    ],
+    "report_order": {
+      "knocks": 1,
+      "order_log": 2,
+      "cancels": 3,
+      "disconnects": 4,
+      "churn_wl": 5,
+      "activations": 6
+    },
+    "per_office_views": {},
+    "machine": "Lucy 1",
+    "campaign": "nds_d2d",
+    "notes": "REACTIVATED by hand 2026-09-28 (Megan: 'reactivate his metrics and trackers to post in this channel') after the 8/23 removal -- his old channel C0A7871FAUV went unreadable; the new one is the private #precision-management-att-sales he enrolled in Lucy ECO with. Same boards as khalil/isaiah (NDS). Sheet 'Drew Tepper- Metrics' is his original.",
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%"
   }
 ]
