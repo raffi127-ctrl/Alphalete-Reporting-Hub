@@ -376,6 +376,20 @@ class StationsLegendHeaderRow(unittest.TestCase):
             self._stations_with_legend("Getting Bill", rep_name="Zed Unknownperson"))
         self.assertIn("Zed Unknownperson", reported)
 
+    def test_legend_header_without_pitch_is_skipped(self):
+        """2026-09-28: r43 became 'close | close | | | Getting Bill' — no
+        'Pitch' — and was reported again. The row under the 'Stations' title
+        is the header whatever its labels say."""
+        rows = [[""] * 95 for _ in range(7)]
+        rows[3][0] = "Stations"
+        rows[4][0] = "close"
+        rows[4][1] = "close"
+        rows[4][4] = "Getting Bill"
+        rows[5][0] = "Zed Unknownperson"
+        reported = self._names_reported((rows, []))
+        self.assertNotIn("Getting Bill", reported)
+        self.assertIn("Zed Unknownperson", reported)
+
     def test_an_ordinary_row_is_not_mistaken_for_the_legend_header(self):
         """Only a row carrying BOTH stage labels is a header; one of them next
         to a real name is still a row of names."""
@@ -1109,7 +1123,7 @@ class StationsNameHygiene(unittest.TestCase):
                                         [(5, "Casey Rep")], [], log=lambda *a: None)
 
     def test_territory_status_values_are_not_names(self):
-        for status in ("New T", "T Extended"):
+        for status in ("New T", "T Extended", "Need New T"):  # +9/28 A10/A11
             self.assertEqual(self._findings(status), [],
                              "%r is a Territory Status value" % status)
 
