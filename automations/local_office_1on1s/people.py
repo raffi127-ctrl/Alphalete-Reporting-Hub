@@ -42,6 +42,15 @@ def first(raw: str) -> str:
     return k.split(" ")[0] if k else ""
 
 
+def _alias(k: str) -> str:
+    """Run a normalized key through the shared rep alias map, if it has one."""
+    try:
+        from automations.reps_gross_paycheck import names as RN
+        return RN.key(k)
+    except Exception:
+        return k
+
+
 def resolve(raw: str, candidates: Iterable[str]) -> Tuple[Optional[str], str]:
     """(matched candidate, note). note is '' on a clean match."""
     want = key(raw)
@@ -67,6 +76,19 @@ def resolve(raw: str, candidates: Iterable[str]) -> Tuple[Optional[str], str]:
             return next(iter(uniq.values())), ""
         if len(uniq) > 1:
             return None, f"{raw!r} matches {len(uniq)} people"
+
+    # THE SHARED ALIAS LIST, last. 'Ben K' is Benjamin Kushpit and no rule
+    # derives that — 'Ben' is not a prefix match anything should trust, since
+    # the next Ben to start would silently inherit his rows. It is a fact
+    # somebody records once, in the list the repo already keeps for reps
+    # (reps_gross_paycheck/aliases.json, written with names.save_alias), so
+    # there is ONE alias habit rather than a second store here.
+    # [[feedback_alias_list]]
+    aliased = _alias(want)
+    if aliased and aliased != want:
+        for c in cands:
+            if _alias(key(c)) == aliased or key(c) == aliased:
+                return c, f"{raw!r} matched through the shared alias list"
 
     # a first-name-only box ('Hayden', 'pranish')
     if len(parts) == 1:
