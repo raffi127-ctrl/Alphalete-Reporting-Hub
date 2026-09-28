@@ -1911,69 +1911,6 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
-        "id": "carlos-captainship-headcount",
-        "name": "Carlos Captainship Headcount",
-        "creator": "Maud",
-        "emoji": "🧮",
-        "color": "#FF6B6B",
-        "category": "📊 Metrics",
-        "description": "Adds this week's column to the 'Captainship Head count' tab of the All In One - CARLOS sheet — each active owner's Rep Count from Tableau, retotaled and sorted high→low — then DMs a 4-week screenshot to Carlos + Maud on Slack.",
-        "breakdown": (
-            "WHAT IT DOES\n"
-            "**•** Inserts a fresh leftmost week column.\n"
-            "**•** Fills each **active** owner's **Rep Count**, pulled live "
-            "from Tableau.\n"
-            "**•** DMs a screenshot of the past 4 weeks to **Carlos + Maud** "
-            "on Slack (as Lucy).\n\n"
-            "WHEN IT RUNS\n"
-            "**Mondays.** Each run fills the just-ended week. Re-running the "
-            "same week refreshes the numbers in place (no duplicate column).\n\n"
-            "IF THE ROSTER CHANGES\n"
-            "The run only fills the owners already listed (rows 2–12). If it "
-            "prints a **⚠ NOT FOUND** owner, that person may have left "
-            "Carlos' team — move+hide their row. To add a new owner, add a "
-            "row with their short name; it fills on the next run."
-        ),
-        # Deep-links straight to the 'Captainship Head count' tab (the tab this
-        # run writes to), not the workbook's default first tab.
-        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1xQQLzE8mU-a4lpk1IK3WolTPlFxavuMzdK3jA7NGga8/edit"
-                      "?gid=732054054#gid=732054054"),
-        "assignees": ["Lucy 2"],
-        # Runs on Lucy 2 (Carlos' Neo Laptop) — its Tableau session + the Monday
-        # 7am launchd job (com.alphalete.carlos-captainship-headcount-mon) live
-        # there. A Hub "play" from ANY machine routes the run to Lucy 2 via the
-        # mini-control queue (run_rerun_id = the schedule_config id `rerun` resolves).
-        "run_machine": "Lucy 2",
-        "run_rerun_id": "carlos_captainship_headcount",
-        # Self-running weekly launchd job: it doesn't report a per-day completion
-        # to the Hub, so keep it out of the "due today / not completed" tallies.
-        "self_scheduled": False,
-        "schedule": {
-            "frequency": "weekly",
-            "weekdays": [0],  # Monday
-            "time": "4 AM flow (when data's ready)",
-            "estimated_minutes": 3,
-        },
-        # Tableau login is unattended (ownerville SSO via patchright) — no
-        # pre-flight clicks needed.
-        "checklist": [],
-        "post_run": {
-            "message_success": "✅ Captainship Headcount done — this week's column filled, total recomputed, owners sorted, and the 4-week screenshot DM'd to Carlos + Maud on Slack. Review any ⚠ roster flags in the log.",
-            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
-        },
-        "actions": [
-            {
-                "label": "Run This Week",
-                "icon": "▶",
-                "primary": True,
-                "help": "Fills the most recent WE Sunday column from Tableau (idempotent — refreshes if it already exists), then DMs a 4-week screenshot to Carlos + Maud on Slack.",
-                "module": "automations.carlos_captainship_headcount.run",
-                "args_fn": lambda: [],
-            },
-        ],
-    },
-    {
         "id": "raf-captainship-bonus",
         "name": "Raf Captainship Bonus",
         "creator": "Maud",
@@ -2085,60 +2022,6 @@ AUTOMATED_REPORTS = [
                 "help": "For today: flips STF→X on the Sales Board for any rep who worked under 3 hours or never showed. Writes to the board.",
                 "module": "automations.stf_field_check.run",
                 "args_fn": lambda: ["--write"],
-            },
-        ],
-    },
-    {
-        "id": "carlos-captainship-bonus",
-        "name": "Carlos B2B Captainship Bonus",
-        "creator": "Maud",
-        "emoji": "💰",
-        "color": "#6AA84F",
-        "category": "📊 Metrics",
-        "description": "Adds this week's column to the 'Carlos B2B Captainship' tab of the All In One - CARLOS sheet — each rep's activations + the four churn / activation / non-payment metrics from Tableau, recomputes Money Made, re-points the chart, and DMs the PDF to Carlos + Maud on Slack.",
-        "breakdown": (
-            "WHAT IT DOES\n"
-            "**•** Inserts a fresh leftmost week column (this past Sunday, "
-            "e.g. `WE 7.5`).\n"
-            "**•** Fills each **active** rep's **weekly activations** for "
-            "Carlos' B2B team, plus the **team 0-30 churn %**, **Carlos' "
-            "personal 0-30 churn %**, **31-60 activation %**, and "
-            "**non-payment %**.\n"
-            "**•** Auto-syncs the roster: **adds** a row for a new rep and "
-            "**hides** one who left the team.\n"
-            "**•** DMs **Carlos Captainship WE <date>.pdf** (5 weeks + "
-            "chart) to Carlos + Maud on Slack.\n\n"
-            "WHEN IT RUNS\n"
-            "**Tuesdays.** Each run fills the just-ended week. Re-running the "
-            "same week refreshes in place (no duplicate column)."
-        ),
-        # Deep-links to the 'Carlos B2B Captainship' tab this run writes to.
-        "sheet_url": ("https://docs.google.com/spreadsheets/d/"
-                      "1xQQLzE8mU-a4lpk1IK3WolTPlFxavuMzdK3jA7NGga8/edit"
-                      "?gid=310459982#gid=310459982"),
-        "assignees": ["Lucy 2"],
-        # Runs in Lucy 2's Tuesday 4am orchestrator flow, readiness-gated on the
-        # Captain Team week (grand activations > 0) with a 10am fail-open floor
-        # so it's never later than its old send time (Megan 2026-07-28).
-        "schedule": {
-            "frequency": "weekly",
-            "weekdays": [1],  # Tuesday
-            "time": "4 AM flow (out by 10am)",
-            "estimated_minutes": 5,
-        },
-        "checklist": [],
-        "post_run": {
-            "message_success": "✅ Carlos B2B Captainship Bonus done — column filled, roster synced, Money Made recomputed, chart re-pointed, PDF DM'd to Carlos + Maud on Slack.",
-            "message_failed": "❌ Run failed. Check the log above, fix the issue, then run again.",
-        },
-        "actions": [
-            {
-                "label": "Run This Week",
-                "icon": "▶",
-                "primary": True,
-                "help": "Fills the most recent WE Sunday column from Tableau, syncs the roster, and saves the PDF (idempotent — refreshes if it already exists).",
-                "module": "automations.carlos_captainship_bonus.run",
-                "args_fn": lambda: [],
             },
         ],
     },
