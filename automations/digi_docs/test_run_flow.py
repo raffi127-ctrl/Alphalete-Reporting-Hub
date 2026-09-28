@@ -138,6 +138,17 @@ class _NoNetwork(unittest.TestCase):
     sends."""
 
     def setUp(self):
+        # THE SENT LIST IS A REAL FILE (2026-09-28). These tests run with
+        # live=True, so a send inside one of them wrote
+        # output/logs/.digi-docs-sent-<today> in the repo — and the next test
+        # read it back and skipped its own person. Give every test its own.
+        import tempfile
+        from automations.digi_docs import run as _R
+        _led = f"{tempfile.mkdtemp()}/.digi-docs-sent"
+        _p = mock.patch.object(_R, "sent_ledger_path", lambda: _led)
+        _p.start()
+        self.addCleanup(_p.stop)
+
         def _boom(*a, **k):
             raise AssertionError(
                 "a test reached the REAL Slack sender — stub it")
@@ -1742,6 +1753,15 @@ class PendingGetsItsOwnGreen(_NoNetwork):
         from automations.digi_docs import mark as real_mark
         calls, _rec = self._run_with_state("PENDING")
         self.assertIn((("Dana Reyes",), real_mark.PENDING_GREEN), calls)
+
+    def test_our_own_send_is_not_repainted_darker(self):
+        """A bundle WE generated reads PENDING too, until they sign. Its cell
+        is already our green, and repainting it darker would say somebody else
+        sent it."""
+        from automations.digi_docs import run as R
+        with mock.patch.object(R, "_sent_today", lambda: {"dana reyes"}):
+            calls, _rec = self._run_with_state("PENDING")
+        self.assertEqual([], [c for c in calls if c[1] is not None])
 
     def test_pending_is_still_reported_not_swallowed(self):
         _calls, rec = self._run_with_state("PENDING")

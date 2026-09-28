@@ -833,7 +833,15 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                             # office chasing documents that exist — but this
                             # was not our send and still owes a signature, so
                             # it must not look like the ones we did.
-                            if shown == "PENDING":
+                            #
+                            # NOT FOR OUR OWN SENDS. A bundle we generated
+                            # reads PENDING too, from the moment it goes until
+                            # they sign. Those cells are already OUR green and
+                            # must stay that way — repainting them darker says
+                            # "somebody else sent this" about a send of ours.
+                            # The day's sent list is what tells them apart.
+                            if (shown == "PENDING"
+                                    and _ledger_key(c.name) not in _sent_today()):
                                 from automations.digi_docs import mark as _mk
                                 _tint_now(ws, c, dry, color=_mk.PENDING_GREEN)
                             refused.append(
