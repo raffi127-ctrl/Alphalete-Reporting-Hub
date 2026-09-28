@@ -167,9 +167,9 @@ def _submit(page):
            }""")
     print("   submit: {}".format(got), flush=True)
     try:
-        page.wait_for_load_state("networkidle")
+        page.wait_for_load_state("networkidle", timeout=8000)
     except Exception:  # noqa: BLE001
-        pass
+        pass          # a polling SPA never goes idle; do not wait 30s for it
     time.sleep(2.5)
     return got
 
@@ -244,10 +244,14 @@ def main(argv=None):
             tok = _rqst(page) or tok
             page.goto("https://www.applicantstream.com/index.cfm?rqst={}&p=4000"
                       .format(tok), wait_until="domcontentloaded", timeout=40000)
-            # A React grid, not a ColdFusion table — give it time to paint
-            # and scroll it, because only the visible rows are in the DOM.
+            # NO networkidle here. The hub is a React app that keeps polling,
+            # so it never goes idle and the wait just times out after 30s and
+            # kills the run. Wait for the grid itself instead.
+            try:
+                page.wait_for_selector("table", timeout=30000)
+            except Exception:  # noqa: BLE001
+                pass
             page.wait_for_timeout(6000)
-            page.wait_for_load_state("networkidle")
             time.sleep(2.0)
             d = diagnose(page)
             print("[call_list] {} diagnose: {}".format(office, d["pager"]),
@@ -296,7 +300,10 @@ def main(argv=None):
                 page.wait_for_timeout(1800)
                 if len(seen) == before:
                     break          # scrolling stopped adding anyone
-                page.wait_for_load_state("networkidle")
+                try:
+                    page.wait_for_load_state("networkidle", timeout=8000)
+                except Exception:  # noqa: BLE001
+                    pass
                 time.sleep(1.5)
             if not records:
                 print("[call_list] {}: nothing scraped — dumping the page so "
