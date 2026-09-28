@@ -23,7 +23,7 @@ SOURCE_CHANNEL_ID = "C0AUAS88FGW"
 # like the recruiting channel getting so clogged up"). The 1st-rounds threads
 # are still READ from SOURCE_CHANNEL_ID. The first night's posts in the old
 # channel were taken out with `--retire-channel C0AUAS88FGW`.
-LIVE_CHANNEL_ID = "C0C3LCLKZTN"
+LIVE_CHANNEL_ID = "C0C3LCLKZTN"   # now #indeed-photos-rafael-hidalgos-funnel-1-11280 (renamed 9/28)
 
 # The scheduled tick posts nothing for days BEFORE this date (an explicit
 # `--nightly --date` still runs). 2026-09-21: the first night in the new
@@ -70,7 +70,7 @@ STALE_PIN_DAYS = 21
 # 23965 (Eve: "despinnear los hilos que sean de funnel 2 y 3 del canal
 # original"). Nothing is deleted; they stay in the channel as history.
 NEVER_PIN = {
-    "C0C3LCLKZTN": {
+    "C0C3LCLKZTN": {     # #indeed-photos-rafael-hidalgos-funnel-1-11280
         "1790374959.057739",
         "1790286176.187119",
         "1790202283.500999",
