@@ -259,7 +259,8 @@ def _send_via_ui(workbook, worksheet, people: List[NewStart],
                  really_send: bool, headless: bool = True) -> int:
     """The live path. One browser for the whole batch -- relaunching per person
     would roughly double a run that already takes ~a minute each."""
-    rows, failures, sent = [], 0, []
+    failures, sent = 0, []
+    log = ledger.Writer(workbook)
     problems: List[tuple] = []
     sent_failed: List[str] = []        # send failures ONLY -- `problems` later
                                        # collects skips and held-backs too, and
@@ -275,7 +276,7 @@ def _send_via_ui(workbook, worksheet, people: List[NewStart],
                     print(f"  [{i}/{len(people)}] {r.status:<26} "
                           f"{person.name:<26} {person.email:<36} {r.bundle_id}")
                     if really_send:
-                        rows.append(ledger.row_for(person, r.bundle_id, r.status))
+                        row = ledger.row_for(person, r.bundle_id, r.status)
                         sent.append(person)
                 except Exception as exc:          # one bad row can't stop the batch
                     failures += 1
@@ -284,14 +285,16 @@ def _send_via_ui(workbook, worksheet, people: List[NewStart],
                     sent_failed.append(person.name)
                     print(f"  [{i}/{len(people)}] FAILED  {person.name:<26} {why}")
                     if really_send:
-                        rows.append(ledger.row_for(person, "", "failed", why[:200]))
-                finally:
-                    # Per-person, before the next one starts: a crash mid-batch
-                    # must never leave a sent person looking unsent.
-                    if really_send and rows:
-                        ledger.record(workbook, rows[-1:])
+                        row = ledger.row_for(person, "", "failed", why[:200])
+                # Per-person, before the next one starts: a crash mid-batch
+                # must never leave a sent person looking unsent. A write that
+                # FAILS is held and retried, never raised -- the packet has
+                # already gone, and on 2026-09-28 raising here stranded 41.
+                if really_send:
+                    log.add(row)
         finally:
             browser.close()
+    unlogged = log.finish() if really_send else []
 
     if really_send:
         try:
@@ -306,11 +309,13 @@ def _send_via_ui(workbook, worksheet, people: List[NewStart],
     # who didn't, and a count can only be turned back into names by slicing
     # to_send -- which silently attributes the wrong people, because the ones
     # that failed are scattered through the batch, not at the end of it.
-    return failures, len(sent), problems, [p.name for p in sent], sent_failed
+    return (failures, len(sent), problems, [p.name for p in sent], sent_failed,
+            unlogged)
 
 
 def _send(workbook, worksheet, people: List[NewStart], is_test: bool) -> int:
-    rows, failures, sent = [], 0, []
+    failures, sent = 0, []
+    log = ledger.Writer(workbook)
     template = config.template_id()
     for p in people:
         try:
@@ -318,17 +323,20 @@ def _send(workbook, worksheet, people: List[NewStart], is_test: bool) -> int:
                 name=p.name, email=p.email, phone=p.phone,
                 template_id_=template, is_test=is_test)
             print(f"  sent  {p.name:<28} {p.email:<38} bundle {bundle.bundle_id}")
-            rows.append(ledger.row_for(p, bundle.bundle_id, bundle.status,
-                                       "test bundle" if is_test else ""))
+            row = ledger.row_for(p, bundle.bundle_id, bundle.status,
+                                 "test bundle" if is_test else "")
             sent.append(p)
         except Exception as exc:                      # keep the batch going
             failures += 1
             print(f"  FAIL  {p.name:<28} {exc}")
-            rows.append(ledger.row_for(p, "", "failed", str(exc)[:200]))
-        finally:
-            # Written per-person, not at the end: a crash halfway through must
-            # not leave already-sent people looking unsent on the next run.
-            ledger.record(workbook, rows[-1:])
+            row = ledger.row_for(p, "", "failed", str(exc)[:200])
+        # Written per-person, not at the end: a crash halfway through must
+        # not leave already-sent people looking unsent on the next run.
+        log.add(row)
+    unlogged = log.finish()
+    if unlogged:
+        print(f"\nSent but NOT written to the {config.LEDGER_TAB!r} tab: "
+              f"{', '.join(unlogged)}")
 
     # Light green on the first name of everyone who actually got docs -- only
     # after the sends, and only for the ones that succeeded, so the tint on the
@@ -831,8 +839,9 @@ def _main(argv=None) -> int:
     else:
         print(f"\nSENDING to {len(to_send)} people through the web app "
               f"(~1 min each, so roughly {max(1, len(to_send))} minutes)...")
-        failures, sent_count, problems, sent_names, failed_names = _send_via_ui(
-            workbook, ws, to_send, really_send=True, headless=not args.headed)
+        (failures, sent_count, problems, sent_names, failed_names,
+         unlogged) = _send_via_ui(workbook, ws, to_send, really_send=True,
+                                  headless=not args.headed)
 
         # Anyone who SHOULD have docs and doesn't. Deliberate exclusions (quit,
         # failed background, declined) are the report working correctly, so
@@ -849,6 +858,17 @@ def _main(argv=None) -> int:
         # go. Missing means those marks can't be written -- worth saying out
         # loud, but never a reason to withhold somebody's paperwork.
         warnings = []
+        if unlogged:
+            # Delivered, but our log doesn't say so. Not a re-send risk (Blue
+            # Ink's own history check holds anyone with a live packet), but
+            # nobody should find the gap by accident.
+            print(f"\nSent but NOT written to the {config.LEDGER_TAB!r} tab "
+                  f"({len(unlogged)}): {', '.join(unlogged)}")
+            warnings.append(
+                "%d packet(s) went out but couldn't be written to the *%s* tab "
+                "(Google Sheets quota): %s. They are delivered -- nothing to "
+                "re-send -- just missing from the log."
+                % (len(unlogged), config.LEDGER_TAB, ", ".join(unlogged)))
         if any(not pp.blueink_col for pp in to_send):
             warnings.append(
                 "No *%s* column on `%s`, so sent packets could not be marked "

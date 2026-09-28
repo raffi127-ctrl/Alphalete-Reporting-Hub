@@ -161,6 +161,60 @@ def record(workbook, rows: List[list]) -> None:
     open_ledger(workbook).append_rows(rows, value_input_option="RAW")
 
 
+class Writer:
+    """Per-person ledger writes that can never abort the batch.
+
+    The packet has ALREADY gone out by the time its row is written, so a
+    failed write loses a log line, not a delivery. On 2026-09-28 one 429 on
+    the shared alphaletereporting@ read quota (the append re-fetched the tab
+    every person) crashed the whole Monday send after 14 of 55, and 41 new
+    starts got nothing. Now:
+
+    - the tab is looked up ONCE per run, not once per person (~55 fewer reads);
+    - a row that won't write is held and goes up with the next person's row;
+    - `finish()` makes a last attempt, and whatever still won't write is
+      handed back BY NAME so the Slack summary can say so.
+
+    A sent-but-unlogged person can't be double-sent next run: Blue Ink's own
+    14-day history check (recent_ui.screen) holds anyone with a live packet,
+    whoever or whatever sent it.
+    """
+
+    def __init__(self, workbook, final_wait: float = 60.0):
+        self.workbook = workbook
+        self.final_wait = final_wait
+        self._ws = None
+        self.pending: List[list] = []
+
+    def add(self, row: list) -> bool:
+        self.pending.append(row)
+        return self.flush()
+
+    def flush(self) -> bool:
+        if not self.pending:
+            return True
+        try:
+            if self._ws is None:
+                self._ws = open_ledger(self.workbook)
+            self._ws.append_rows(self.pending, value_input_option="RAW")
+        except Exception as exc:                     # noqa: BLE001
+            first = (str(exc).strip().splitlines() or [type(exc).__name__])[0]
+            print(f"     (couldn't write to the {config.LEDGER_TAB!r} tab: "
+                  f"{first[:160]} -- holding {len(self.pending)} row(s), "
+                  f"will retry; the batch carries on)")
+            return False
+        self.pending = []
+        return True
+
+    def finish(self, sleep=None) -> List[str]:
+        """Last attempt(s) at anything held. Returns the names still unlogged."""
+        if self.pending and not self.flush() and self.final_wait:
+            import time
+            (sleep or time.sleep)(self.final_wait)   # let the per-minute quota reset
+            self.flush()
+        return [(r + [""] * len(HEADER))[COL_NAME] for r in self.pending]
+
+
 def row_for(person: NewStart, bundle_id: str, status: str, note: str = "") -> list:
     return [_now(), person.tab, person.name, person.email,
             bundle_id, status, _now(), note]
