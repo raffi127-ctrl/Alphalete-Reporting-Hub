@@ -867,3 +867,58 @@ and the five team tabs (`Individual Template` r25; `TEAM Template` and
 each team tab r8 and r67). One label per box covers all seven rows, and
 it settles the monthly-vs-weekly ambiguity in the sheet itself rather
 than in a doc nobody reads.
+
+
+## P&L tabs are DISCOVERED, and discovery immediately earned its keep
+
+Megan, 2026-09-28: *"you should just recognize when more PNLs get added"*.
+
+`paycheck.discover()` now finds P&L tabs by SHAPE, not from a list: any
+tab whose title looks like a P&L, is not named test/old/copy/backup, and
+actually carries `First Name` + `Last Name` on row 2. A new sub-P&L is
+picked up with no edit. The run reports what it read AND what it skipped,
+so an appearing book is visible rather than silent.
+
+First run found the four live books and skipped two tests — one of which,
+`Maudy TEST PNL 2026`, had appeared since the previous check an hour
+earlier. A hardcoded list was already out of date twice in one day.
+
+### And it caught a broken book: Bas-Alphaletes is 7 weeks offset
+
+Discovery took conflicts from 0 to **19** — all on **WE 9/20**, all
+between `RAF PNL 2026` and `Bas-Alphaletes PNL 2026`, across five
+different teams. Systematic, not data entry.
+
+Tested on six people, 6/6: **Bas-Alphaletes' `WE 9/20` column holds
+exactly what `RAF PNL 2026` carries at `WE 8/02`** — a seven-week offset
+between that book's week headers and its data.
+
+    Anthony Marchetti   Bas 9/20 $1,140  =  RAF 08/02 $1,140
+    Nima Aweida         Bas 9/20 $1,170  =  RAF 08/02 $1,170
+    Jessie Gomez        Bas 9/20   $810  =  RAF 08/02   $810
+    Alyssa Moreno       Bas 9/20   $500  =  RAF 08/02   $500
+    Pranish Shrestha    Bas 9/20 $1,200  =  RAF 08/02 $1,200
+    Bill Hirwa          Bas 9/20   $300  =  RAF 08/02   $300
+
+**RAF PNL is the correct one**, and this is not a coin-flip: the earlier
+spot-check matched Raf's own hand-typed 1on1 paychecks against RAF PNL
+3/3 (Alyssa $770 / $976 / $557). Bas-Alphaletes is the book that is wrong.
+
+**Resolved** — Megan 2026-09-28: *"They must be testing something on the
+pnl tabs — just pull the data you know is correct."*
+
+A disagreement now resolves to the OFFICE BOOK (`RAF PNL 2026`, gid
+1300001293), which is the one known correct: it matched Raf's hand-typed
+paychecks 3/3, while Bas-Alphaletes is a clean 7-week offset. The losing
+value is recorded, not discarded silently.
+
+This is deliberately NOT "the office book always wins". Where the office
+book has **no value at all**, a sub-book is not disagreeing with it — it
+is CARRYING that week, which is the normal handoff and is left alone.
+Verified after the change: Hayden Wilson still reads WE 8/30 $800 from
+RAF and WE 9/13 $1,460 / WE 9/20 $750 from OG-Alphaletes; Ana Griffin
+still reads September from MJ. 2,114 cells, 19 overridden.
+
+**Still worth Raf fixing:** `Bas-Alphaletes PNL 2026`'s week columns are
+7 to the right of where its headers say. The override makes the 1on1
+report correct; it does not make that book correct.
