@@ -52,6 +52,7 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
 
     from automations.focus_office_att.aliases import load_aliases
+    from automations.local_office_1on1s import ov_knocks as OV
     from automations.shared import knock_week_cache as KC
     from automations.shared.tableau_patchright import ownerville_session
     from automations.weekly_knock_dispositions import offices as OFF, pull as P
@@ -68,7 +69,7 @@ def main(argv=None) -> int:
 
     todo = []
     for sat in sats:
-        if not a.force and KC.get(office, sat, aliases=aliases):
+        if not a.force and (OV.store_get(sat) or KC.get(office, sat, aliases=aliases)):
             print(f"  WE {sat:%-m/%-d}: already cached — skipped", flush=True)
             continue
         todo.append(sat)
@@ -98,6 +99,11 @@ def main(argv=None) -> int:
                 print(f"  WE {sat:%-m/%-d}: EMPTY — not cached", flush=True)
                 failed.append(sat)
                 continue
+            # OUR store first: shared.knock_week_cache.put() prunes to the
+            # newest THREE weeks on every write, so a nine-week backfill that
+            # only wrote there would keep the last three and silently discard
+            # August — which is exactly what happened on 2026-09-28.
+            OV.store_put(sat, rows, cols)
             KC.put(office, sat, rows, cols, aliases=aliases)
             print(f"  WE {sat:%-m/%-d}: {len(rows)} reps cached", flush=True)
             ok.append(sat)

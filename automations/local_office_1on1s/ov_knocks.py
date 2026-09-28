@@ -32,11 +32,58 @@ time over the days they actually knocked.
 from __future__ import annotations
 
 import datetime as dt
+import json
+import os
+import pathlib
 from typing import Dict, List, Optional, Tuple
 
 from automations.local_office_1on1s import people as PEO
 
 OFFICE = "Rafael Hidalgo"          # wkd.offices.RAF — the rhidalgo login IS 11280
+
+# A STORE OF OUR OWN, because shared.knock_week_cache is a 3-WEEK ROLLING
+# CACHE. Its put() calls prune(keep_weeks=3) on every write — deliberately:
+# "three weeks is enough that a late catch-up rerun of an older week still
+# hits, and small enough that the directory stays a handful of files". That
+# is right for what it is for (the Sunday board and the captainship build
+# sharing one pull of the SAME week) and wrong for a nine-week backfill: the
+# 2026-09-28 run pulled 9/9 weeks and each write deleted the oldest, so the
+# fill found 3 and August read as if ownerville had no data.
+#
+# Widening the shared cache would change behaviour for reports that rely on it
+# staying small. This report keeps its own history instead and still READS the
+# shared cache first, so a week the Sunday board already paid for costs
+# nothing. [[feedback_no_cross_report_data_reuse]]
+STORE = pathlib.Path(__file__).resolve().parents[2] / "output" / "1on1s_knock_history"
+
+
+def _store_path(saturday: dt.date) -> pathlib.Path:
+    return STORE / f"{saturday.isoformat()}.json"
+
+
+def store_get(saturday: dt.date) -> Optional[List[dict]]:
+    try:
+        raw = json.loads(_store_path(saturday).read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 — a missing or broken file is just a miss
+        return None
+    rows = raw.get("rows")
+    return rows if isinstance(rows, list) and rows else None
+
+
+def store_put(saturday: dt.date, rows: List[dict], dispo_cols: List[str]) -> None:
+    """Record a pull. An EMPTY result is never written — an empty week is
+    almost always a failed pull, and freezing one in would hide the failure
+    behind a week that looks legitimately quiet."""
+    if not rows:
+        return
+    STORE.mkdir(parents=True, exist_ok=True)
+    tmp = _store_path(saturday).with_suffix(".tmp")
+    tmp.write_text(json.dumps({"saturday": saturday.isoformat(),
+                               "office": OFFICE,
+                               "rows": rows,
+                               "dispo_cols": dispo_cols}, default=str),
+                   encoding="utf-8")
+    os.replace(tmp, _store_path(saturday))
 
 
 def _keys():
@@ -128,10 +175,16 @@ def week(saturday: dt.date, *, page=None, cfg=None, aliases=None,
     Cache first. A live pull needs an open ownerville `page`; without one this
     returns None rather than opening a browser as a side effect of a fill.
     """
+    rows = store_get(saturday)
+    if rows:
+        logfn(f"    knocks WE {saturday:%-m/%-d}: history ({len(rows)} reps)")
+        return by_person(rows)
+
     from automations.shared import knock_week_cache as KC
     hit = KC.get(OFFICE, saturday, aliases=aliases)
     if hit:
-        logfn(f"    knocks WE {saturday:%-m/%-d}: cache hit ({len(hit[0])} reps)")
+        logfn(f"    knocks WE {saturday:%-m/%-d}: shared cache ({len(hit[0])} reps)")
+        store_put(saturday, hit[0], hit[1])       # keep it before prune eats it
         return by_person(hit[0])
     if page is None:
         return None
@@ -141,5 +194,6 @@ def week(saturday: dt.date, *, page=None, cfg=None, aliases=None,
     rows, cols = P.pull_office_week(page, cfg or OFF.RAF, aliases, monday,
                                     saturday, verbose=False)
     if rows:
+        store_put(saturday, rows, cols)
         KC.put(OFFICE, saturday, rows, cols, aliases=aliases)
     return by_person(rows)
