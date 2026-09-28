@@ -259,9 +259,19 @@ def row_from_edge(edge: Dict) -> Dict:
         # else (null on the wire, the legacy query) is left blank and reads
         # as one downstream. NEVER the numbers themselves -- a count is all
         # the board needs and all that leaves the machine.
-        COL_ACCOUNTS: (len(edge["accounts"])
-                       if isinstance(edge.get("accounts"), list) else ""),
+        COL_ACCOUNTS: _count_accounts(edge),
     }
+
+
+def _count_accounts(edge: Dict):
+    """The customer's account list if the API filled it, else the contract's
+    own, else blank (reads as one). A count, never the numbers."""
+    cust = edge.get("customer") or {}
+    for lst in ((cust.get("accounts") if isinstance(cust, dict) else None),
+                edge.get("accounts")):
+        if isinstance(lst, list):
+            return len(lst)
+    return ""
 
 
 def rows_from_response(payload: Dict) -> List[Dict]:
@@ -309,18 +319,21 @@ MAX_PAGES = 40          # 4000 contracts. A stop, not an expectation.
 # than guessed: the API's field names are not the grid's column headings, and
 # a reader written off the headings would have found neither the agent nor the
 # sale date.
-# `accounts { account_number }` was PROVEN on the live API by the 2026-09-28
-# probe from Roshan's machine (the edge type is ContractList, its `accounts`
-# are QtQuoteAccount rows, and `account_number` is a field on them;
-# introspection is switched off, so it was found by asking). GRAPHQL_QUERY_LEGACY
-# is the query as it was, and _fetch_page falls back to it the moment the API
+# WHERE THE ACCOUNTS ARE, found by asking (introspection is switched off).
+# Round 1 of the 2026-09-28 probe (Roshan's machine): the contract row has an
+# `accounts` list (QtQuoteAccount, with account_number). Round 2: that list
+# is NULL on every one of 300 rows -- the list endpoint never fills it. What
+# IS filled is `customer { accounts { account_number } }` (ContractAccount),
+# which is the ACCOUNTS section Ryan scrolled through on the customer page:
+# one entry per meter/ESIID. So that is what is read. GRAPHQL_QUERY_LEGACY is
+# the query as it was, and _fetch_page falls back to it the moment the API
 # answers the new one with errors -- a schema change on their side must cost
 # the account count, never the day.
 GRAPHQL_QUERY = """query ($input: ContractsListQueryInput) {
   contractsList(input: $input) {
     edges {
       contract_id
-      accounts { account_number }
+      customer { accounts { account_number } }
       business_name
       adjusted_annual_volume
       created_date
@@ -488,19 +501,14 @@ def fetch_rows(page, days: List[dt.date], log=print,
 # that post.notify_faults files without posting. Field NAMES only -- no
 # customer data leaves the machine. The live query does not change until the
 # answer is in hand.
-PROBE_ID = "box-accounts-2026-09-28b"
+PROBE_ID = "box-accounts-2026-09-28c"
 PROBE_MARK = C.APP_DIR / "box-schema-probe.txt"
 # Round 1 (2026-09-28, Roshan's machine) settled: `accounts { account_number }`
 # is valid on the edge; `accounts_count`, `esiid`, `id` are not; `customer {
 # accounts { ... } }` exists (type ContractAccount) with fields unknown.
 # Round 2 asks what the window's rows actually CARRY, as counts.
-PROBE_CANDIDATES = (
-    "customer { accounts { account_number } }",
-    "customer { accounts { esiid } }",
-    "customer { accounts { annual_volume } }",
-    "accounts { annual_volume }",
-    "accounts { status }",
-)
+# Round 3 is the counts report alone: does the live read now carry them?
+PROBE_CANDIDATES = ()
 
 
 def _gql(page, body: Dict, borrowed=None) -> Dict:
@@ -537,7 +545,7 @@ def _short(payload: Dict) -> str:
 
 
 def _keys(obj, depth: int = 0) -> str:
-    if depth > 4:
+    if depth > 7:
         return "..."
     if isinstance(obj, dict):
         return "{" + ", ".join("%s:%s" % (k, _keys(v, depth + 1)) for k, v in list(obj.items())[:12]) + "}"

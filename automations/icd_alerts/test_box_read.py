@@ -451,13 +451,20 @@ class TheLiveReadCarriesTheAccountCount(unittest.TestCase):
         self.assertEqual(row[B.COL_ACCOUNTS], 2)
         self.assertNotIn("1044", str(row))
 
+    def test_the_customers_accounts_win_because_the_rows_own_list_is_never_filled(self):
+        e = self._edge(None)
+        e["customer"] = {"accounts": [{"account_number": "a"}, {"account_number": "b"}, {"account_number": "c"}]}
+        self.assertEqual(B.row_from_edge(e)[B.COL_ACCOUNTS], 3)
+        e["customer"] = {"accounts": None}
+        self.assertEqual(B.row_from_edge(e)[B.COL_ACCOUNTS], "")
+
     def test_null_accounts_is_blank_which_reads_as_one(self):
         row = B.row_from_edge(self._edge(None))
         self.assertEqual(row[B.COL_ACCOUNTS], "")
         self.assertEqual(B._accounts(row), 1)
 
     def test_legacy_query_has_no_accounts_and_the_new_one_does(self):
-        self.assertIn("accounts { account_number }", B.GRAPHQL_QUERY)
+        self.assertIn("customer { accounts { account_number } }", B.GRAPHQL_QUERY)
         self.assertNotIn("accounts", B.GRAPHQL_QUERY_LEGACY)
         self.assertTrue(B.payload_ok({"data": {"contractsList": {"edges": []}}}))
         self.assertFalse(B.payload_ok({"errors": [{"message": "Cannot query field"}]}))
