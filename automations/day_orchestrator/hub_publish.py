@@ -297,8 +297,9 @@ _HUB_CARD = {
     # that call publish_done from their wrapper. They ran fine for weeks but their
     # cards never went green — they were simply missing from this map, so Megan had
     # no way to tell a successful run from a silent miss (2026-07-14).
-    "carlos_captainship_bonus": "carlos-captainship-bonus",
-    "carlos_captainship_headcount": "carlos-captainship-headcount",
+    # carlos_captainship_bonus + carlos_captainship_headcount: RETIRED
+    # 2026-09-28 (cc571fe removed both cards); their map entries went with
+    # them so the card check does not point at cards that no longer exist.
     "raf_captainship_bonus": "raf-captainship-bonus",
     # STF Field Check: standalone 11pm LaunchAgent on the mini that calls
     # publish_done from deploy/stf_field_check_11pm.sh — map so the card pill
