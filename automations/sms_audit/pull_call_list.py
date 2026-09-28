@@ -140,6 +140,47 @@ def _scrape(page):
     return got["rows"], got["columns"]
 
 
+def _submit(page):
+    """Click Search / Apply Filters and wait.
+
+    The THIRD page in this app that renders its header and pager but no
+    body until something is submitted — p=336 needed its dates plus
+    Search, p=704 needed Get Report, and this one needs Apply Filters.
+    Assume it of any AppStream grid that comes back with a header and
+    zero rows."""
+    got = page.evaluate(
+        r"""() => {
+             const btns = [...document.querySelectorAll(
+               'input[type=submit], input[type=button], button, a')];
+             const hit = btns.find(b => /^(search|apply filters|go)$/i.test(
+               ((b.innerText || b.value || '').trim())));
+             if (!hit) return 'no search button';
+             hit.click();
+             return 'clicked ' + ((hit.innerText || hit.value || '').trim());
+           }""")
+    print("   submit: {}".format(got), flush=True)
+    try:
+        page.wait_for_load_state("networkidle")
+    except Exception:  # noqa: BLE001
+        pass
+    time.sleep(2.5)
+    return got
+
+
+def _dump_tables(page):
+    """Every table with its first rows — so a failed read is diagnosed from
+    one run instead of a round trip per guess."""
+    return page.evaluate(
+        r"""() => [...document.querySelectorAll('table')].map((t, i) => ({
+             i: i, rows: t.querySelectorAll('tr').length,
+             vis: t.offsetParent !== null,
+             first: [...t.querySelectorAll('tr')].slice(0, 3).map(
+               tr => [...tr.querySelectorAll('th,td')].map(
+                 c => (c.innerText || '').replace(/\s+/g, ' ').trim()
+               ).join(' | ').slice(0, 220))
+           })).filter(x => x.rows > 1).slice(0, 8)""")
+
+
 def _next_page(page):
     """Click to the next page of the grid; False when there is no next."""
     return page.evaluate(
@@ -202,6 +243,7 @@ def main(argv=None):
             for t in d["tables"][:2]:
                 print("   table {} rows | {}".format(t["rows"], t["head"][:200]),
                       flush=True)
+            _submit(page)
             records, cols = [], []
             for n in range(a.max_pages):
                 try:
@@ -218,7 +260,14 @@ def main(argv=None):
                 page.wait_for_load_state("networkidle")
                 time.sleep(1.5)
             if not records:
-                print("[call_list] {}: nothing scraped".format(office), flush=True)
+                print("[call_list] {}: nothing scraped — dumping the page so "
+                      "the next attempt is not another guess".format(office),
+                      flush=True)
+                for t in _dump_tables(page):
+                    print("   table {} ({} rows, visible={})".format(
+                        t["i"], t["rows"], t["vis"]), flush=True)
+                    for line in t["first"]:
+                        print("      {}".format(line), flush=True)
                 rc = 1
                 continue
             print("[call_list] {} columns seen: {}".format(office, cols),
