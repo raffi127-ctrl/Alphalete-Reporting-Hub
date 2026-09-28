@@ -922,3 +922,29 @@ still reads September from MJ. 2,114 cells, 19 overridden.
 **Still worth Raf fixing:** `Bas-Alphaletes PNL 2026`'s week columns are
 7 to the right of where its headers say. The override makes the 1on1
 report correct; it does not make that book correct.
+
+
+## Absence from `2nd rds %'s` means ZERO, not "untracked"
+
+Megan, 2026-09-28: *"the ones missing from 2nd rounds just haven't done any
+of them."*
+
+So a leader with no row in a month's block conducted no second rounds that
+month. The tab is not behind on them; there is nothing to record.
+
+This settles a question the fill could not answer on its own. A missing row
+is ambiguous in principle — it could mean "did none" or "nobody has filled
+this in yet" — and the run has been reporting it as a GAP, which reads as a
+data problem. It is not one for: **Keegan Miller, Hank Tran, Andres Mejia,
+Samajai Hoy** (August), and **Samajai Hoy** (September).
+
+The cells stay BLANK rather than being written as 0. Blank is what the sheet
+has always shown for these people, it is what Raf reads as "nothing to talk
+about here", and a 0 conducted would sit beside a 0 offered and a 0 closed
+and read like a performance record rather than an absence of activity. If Raf
+would rather see explicit zeros in a 1on1 — they are a fair talking point —
+that is a one-line change, but it should be his call rather than inferred.
+
+What DOES change: these stop being reported as gaps. A gap list that names
+people who are simply inactive trains the reader to skip it, which is how a
+real gap gets missed.

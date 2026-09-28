@@ -37,6 +37,39 @@ def _a1(col: int) -> str:
     return s
 
 
+_TERM_LOG = {}
+
+
+def _terminated_on_or_before(name: str, week: dt.date) -> bool:
+    """Is this person in the master Terminated Reps log by `week`?
+
+    The log is append-only and never cleared on a rehire, so a date alone does
+    not prove someone is gone today — but for one WEEK it answers exactly the
+    right question: had they left by then? Loaded once per run.
+    """
+    if not _TERM_LOG:
+        try:
+            from automations.reps_gross_paycheck import (names as RN,
+                                                         terminated_log as TL)
+            from automations.recruiting_report.fill import open_by_key
+            from automations.shared.workbooks import ALL_IN_ONE_RAF
+            # load() gives {join key: LogEntry}, keyed by reps_gross_paycheck's
+            # OWN normaliser and holding the LAST departure. We want the
+            # EARLIEST one on or before the week in question, so re-key by the
+            # entry's date and keep the oldest.
+            for k, entry in TL.load(open_by_key(ALL_IN_ONE_RAF)).items():
+                if entry.we and (k not in _TERM_LOG or entry.we < _TERM_LOG[k]):
+                    _TERM_LOG[k] = entry.we
+            _TERM_LOG["_key"] = RN.key
+        except Exception:                       # a log we cannot read != gone
+            _TERM_LOG["_failed"] = True
+    if _TERM_LOG.get("_failed"):
+        return False
+    keyer = _TERM_LOG.get("_key")
+    when = _TERM_LOG.get(keyer(name) if keyer else name)
+    return bool(when and when <= week)
+
+
 def last_completed_sunday(today: dt.date) -> dt.date:
     """The most recent Sunday that has already ended."""
     return today - dt.timedelta(days=(today.weekday() + 1) % 7 or 7)
@@ -199,8 +232,20 @@ def main(argv=None) -> int:
                     for lab, val, src in OV.cells_for(rec, f"WE {wk:%-m/%-d}"):
                         filled.add(lab, wk, val, src)
                 elif d is None:
-                    gaps.append(f"{name}: no row on the WE {wk:%-m/%-d} sales "
-                                f"board and no ownerville week cached")
+                    # TERMINATED AND MISSING-FROM-THE-BOARD ARE NOT THE SAME
+                    # THING, and a blank week looks identical either way.
+                    # Megan 2026-09-28: "if they aren't on that week's board
+                    # they most likely got terminated - you should be looking
+                    # at the terminated rep tab." So it is checked rather than
+                    # assumed: on WE 9/20 four reps were off the board and NONE
+                    # of them were in the 2,688-row log — that tab is simply
+                    # short (67 rows against 77 and 80 either side).
+                    gaps.append(
+                        f"{name}: no row on the WE {wk:%-m/%-d} sales board"
+                        + (" — TERMINATED per the master log"
+                           if _terminated_on_or_before(name, wk)
+                           else " and NOT in the terminated log, so the board "
+                                "itself is missing them"))
 
             # What this run actually has, keyed by the cell it lands in.
             have = {}
