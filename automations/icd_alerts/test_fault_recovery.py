@@ -29,6 +29,13 @@ class RecoveredStagesTest(unittest.TestCase):
                                {"relay": dt.datetime(2026, 9, 24, 9, 39), "knocks": None}, now=NOW)
         self.assertEqual(v, {"sweep": False})
 
+    def test_a_setup_fault_is_answered_by_the_first_clean_sweep(self):
+        # Drew 2026-09-28: "SaraPlus did not verify during setup" at 14:47,
+        # records relayed at 14:59 -- the thread must close itself.
+        v = P.recovered_stages([{"stage": "install", "last": "9/24/2026 9:10:54"}],
+                               {"relay": dt.datetime(2026, 9, 24, 9, 29), "knocks": None}, now=NOW)
+        self.assertEqual(v, {"install": True})
+
     def test_knocks_faults_need_the_knocks_relay(self):
         v = P.recovered_stages([{"stage": "knocks-slow", "last": "9/24/2026 9:10:54"}],
                                {"relay": dt.datetime(2026, 9, 24, 9, 29), "knocks": None}, now=NOW)

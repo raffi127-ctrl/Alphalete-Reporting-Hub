@@ -1809,7 +1809,14 @@ RECOVERY_GRACE_MIN = 5
 # Which relay proves a stage is reading again.
 _RECOVERY_PROOF = {"sweep": "relay", "box": "relay", "knocks": "knocks",
                    "signin-saraplus": "relay", "signin-servicecloud": "relay",
-                   "signin-ownerville": "knocks", "login": "relay"}
+                   "signin-ownerville": "knocks", "login": "relay",
+                   # A setup fault ("SaraPlus did not verify during setup")
+                   # is answered by the same thing a sweep fault is: the
+                   # office's records arriving. Drew Tepper 2026-09-28: the
+                   # install verify failed at 14:47 and his 14:59 sweep read
+                   # SaraPlus fine, and the thread sat open with nothing to
+                   # close it.
+                   "install": "relay"}
 
 
 def recovered_stages(faults: List[Dict], proof_at: Dict[str, Optional[dt.datetime]],
