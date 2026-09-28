@@ -762,10 +762,36 @@ def main(argv: Optional[list] = None) -> int:
     # stays the fail-open floor: a genuinely late day or a no-prior-day-sales
     # day (e.g. a Monday with no Sunday sales) still posts there. Data-timed,
     # not clock-timed — and never a missed day.
+    # "Did anyone in the ORG sell BOX on this day?" off the Box Daily Tracker -
+    # Rep Lvl — the proof a day has landed when Carlos's own team sold nothing
+    # on it (Sundays, mostly). Pulled at most once per day asked, and only when
+    # a gate below is about to hold. --from-file is an offline replay: no live
+    # pull behind it, so it never asks.
+    _org_sold = None
+    if not args.from_file:
+        from . import tracker_backup as _tb
+        _org_seen = {}
+
+        def _org_sold(day):
+            if day not in _org_seen:
+                _org_seen[day] = _tb.org_sold_on(day, verbose=verbose)
+            return _org_seen[day]
+
     if args.require_fresh and args.post:
         expected = today - dt.timedelta(days=1)      # prior day's finalised sales
         newest = max(dated) if dated else None
-        if newest is None or newest < expected:
+        # MONDAYS AT 7 (Carlos 2026-09-28: "so we could have everything Monday
+        # morning"). His team almost never sells Sunday, so "newest >= Sunday"
+        # was never true on a Monday and the thread always waited for 8:30,
+        # however early Tableau refreshed. Other owners DO sell Sundays: if the
+        # org tracker already has sales on `expected`, the day has landed and
+        # Carlos's empty Sunday is real — post now.
+        landed, via_org = window_mod.early_day_landed(newest, expected, _org_sold)
+        if landed and via_org:
+            print("box extract has no {} rows for Carlos, but the org tracker "
+                  "does — the day landed; posting now".format(expected),
+                  flush=True)
+        elif not landed:
             print("box extract not fresh yet (newest sale {}, need >= {}) — "
                   "deferring the post to the 8:30 fallback".format(
                       newest, expected), flush=True)
@@ -1097,15 +1123,9 @@ def main(argv: Optional[list] = None) -> int:
     # Sheet merge already ran above and keeps its newer rows, so nothing good is
     # lost. Same net as run_owner's send gate. See window.should_block_send.
     # A Monday whose Sunday Carlos's team didn't sell reads as "not moved" to
-    # the gate, however fresh Tableau is — so let it ask the org-wide tracker
-    # whether the day landed (only pulled when the gate is about to block).
-    # --from-file is an offline replay: no live pull behind it.
-    _org_sold = None
-    if not args.from_file:
-        from . import tracker_backup as _tb
-
-        def _org_sold(day):
-            return _tb.org_sold_on(day, verbose=verbose)
+    # the gate, however fresh Tableau is — so it asks the same org tracker
+    # (`_org_sold`, defined at the 7:00 freshness gate; cached, so a day the
+    # 7:00 check already asked isn't pulled twice).
     _block = window_mod.should_block_send(max(dated) if dated else None, today,
                                           org_sold_on=_org_sold)
     if _block:

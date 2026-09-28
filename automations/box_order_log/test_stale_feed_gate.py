@@ -131,6 +131,35 @@ class MondayAfterAFreshSunday(_Tmp):
         self.assertEqual(W.should_block_send(SUN, today=MON, org_sold_on=never), "")
 
 
+class SevenAmOnAMonday(unittest.TestCase):
+    """Carlos 2026-09-28: have it Monday morning, not at the 8:30 fallback."""
+
+    def test_carlos_reached_yesterday_is_a_plain_yes_and_asks_nobody(self):
+        def never(day):
+            raise AssertionError("asked the tracker for nothing")
+        self.assertEqual(W.early_day_landed(SUN, SUN, never), (True, False))
+
+    def test_empty_sunday_but_the_org_sold_posts_at_seven(self):
+        self.assertEqual(W.early_day_landed(SAT, SUN, lambda d: True),
+                         (True, True))
+
+    def test_nobody_sold_or_tableau_not_in_yet_waits_for_830(self):
+        self.assertEqual(W.early_day_landed(SAT, SUN, lambda d: False),
+                         (False, False))
+        self.assertEqual(W.early_day_landed(SAT, SUN, lambda d: None),
+                         (False, False))
+
+    def test_a_tracker_crash_waits_and_never_raises(self):
+        def boom(day):
+            raise RuntimeError("tableau down")
+        self.assertEqual(W.early_day_landed(SAT, SUN, boom), (False, False))
+
+    def test_no_dated_sales_or_no_tracker_waits(self):
+        self.assertEqual(W.early_day_landed(None, SUN, lambda d: True),
+                         (False, False))
+        self.assertEqual(W.early_day_landed(SAT, SUN, None), (False, False))
+
+
 class FailsOpen(_Tmp):
     """This gate can refuse to deliver, so every uncertainty resolves to SEND."""
 

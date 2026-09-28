@@ -863,6 +863,28 @@ def _extract_moved_today(newest: dt.date, today: dt.date) -> Optional[bool]:
 DaySold = Callable[[dt.date], Optional[bool]]
 
 
+def early_day_landed(newest: Optional[dt.date], expected: dt.date,
+                     org_sold_on: Optional[DaySold] = None) -> Tuple[bool, bool]:
+    """The 7:00 pass's question: has `expected` (yesterday) landed?
+    Returns (landed, via_org).
+
+    Carlos's own feed reaching it is the plain yes. When it doesn't — his team
+    sold nothing that day, which is nearly every Sunday — the org-wide tracker
+    having sales on it is also a yes (via_org=True). No sales at all, or a
+    tracker that can't answer, stays a no: the 8:30 pass is the floor. The
+    tracker is only asked when Carlos's feed falls short."""
+    if newest is None:
+        return False, False
+    if newest >= expected:
+        return True, False
+    if org_sold_on is None:
+        return False, False
+    try:
+        return (True, True) if org_sold_on(expected) else (False, False)
+    except Exception:  # noqa: BLE001 — a failed probe = not proven, defer
+        return False, False
+
+
 def _behind_completed_day(newest: dt.date, today: dt.date,
                           org_sold_on: Optional[DaySold] = None) -> str:
     """'' when the feed has reached the newest COMPLETED reporting day (or has
