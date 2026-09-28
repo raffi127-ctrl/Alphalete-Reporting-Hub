@@ -355,6 +355,8 @@ def reconcile_pins(channels: Optional[List[str]] = None, *,
                 continue
             last = last_active(ad)
             want = last is not None and (today - last).days <= stale
+            if ts in (config.NEVER_PIN.get(ch) or ()):
+                want = False
             if want == bool(ad.get("pinned")):
                 res["kept"] += 1
                 continue

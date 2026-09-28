@@ -63,6 +63,26 @@ ONE_THREAD_PER_AD = True
 # again the thread is pinned back (post.reconcile_pins).
 STALE_PIN_DAYS = 21
 
+# Threads that stay UNPINNED for good, {channel: {thread_ts}} -- the nightly
+# pin pass never puts them back. Raf's funnels got their own channels
+# 2026-09-28: these 9 threads in his original channel hold ONLY 2nd-funnel
+# (23965) candidates, now reposted in #indeed-photos-rafael-hidalgo-funnel-2-
+# 23965 (Eve: "despinnear los hilos que sean de funnel 2 y 3 del canal
+# original"). Nothing is deleted; they stay in the channel as history.
+NEVER_PIN = {
+    "C0C3LCLKZTN": {
+        "1790374959.057739",
+        "1790286176.187119",
+        "1790202283.500999",
+        "1790042743.886049",
+        "1790042733.551589",
+        "1790042574.882689",
+        "1790042560.829789",
+        "1790042548.055569",
+        "1790042487.094939",
+    },
+}
+
 PIN_REMINDER_USER = "U088E2KJEV8"   # Evelyn Sobrino
 
 # Each candidate line is labelled with the ApplicantStream it came from, BY

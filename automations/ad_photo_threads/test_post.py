@@ -666,6 +666,14 @@ class PinReconcileTests(unittest.TestCase):
         self.assertIn(("add", "4.0"), cl.pins)
         self.assertTrue(state["C0AAA"]["weeks"]["forever"]["quiet"]["pinned"])
 
+    def test_never_pin_thread_is_unpinned_even_while_running(self):
+        """Raf's 2nd-funnel threads left in his original channel (9/28): the
+        ad still runs, but in another channel -- the pin must go and stay gone."""
+        with mock.patch.dict(post.config.NEVER_PIN, {"C0AAA": {"2.0"}}):
+            got, cl, state = self._run(dry_run=False, pace=0)
+        self.assertIn(("remove", "2.0"), cl.pins)
+        self.assertFalse(state["C0AAA"]["weeks"]["forever"]["fresh"]["pinned"])
+
     def test_a_refused_call_is_reported_not_recorded(self):
         cl = FakeSlack()
         cl.pins_add = lambda **kw: (_ for _ in ()).throw(
