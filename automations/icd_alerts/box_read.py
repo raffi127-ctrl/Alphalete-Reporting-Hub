@@ -105,6 +105,20 @@ def initiated_on(value: str) -> Optional[dt.date]:
         return None
 
 
+COL_ACCOUNTS = "Accounts"      # how many accounts (meters/ESIIDs) the contract covers
+
+
+def _accounts(row: Dict) -> int:
+    """How many sales this contract row is worth: its account count, never
+    below 1. Missing, blank or unreadable means one -- the old rule -- so a
+    reader that does not carry the count cannot make a rep's day shrink."""
+    try:
+        n = int(float(str(row.get(COL_ACCOUNTS) or "").strip() or 1))
+    except (TypeError, ValueError):
+        return 1
+    return n if n >= 1 else 1
+
+
 def _volume(value) -> int:
     """'51,000' -> 51000. Anything unreadable is zero, never a guess."""
     digits = re.sub(r"[^0-9]", "", str(value or ""))
@@ -144,12 +158,22 @@ def tally_window(rows: List[Dict], days: List[dt.date]) -> Dict:
         # belongs in both -- "working" is every real contract, "sales" is the
         # ones that closed. Counting them as either/or would make a rep's
         # working number FALL as their sales rose.
+        # ONE CONTRACT CAN BE SEVERAL SALES. A business with two meters signs
+        # one contract covering two accounts, and the office counts that as
+        # two (Ryan 2026-09-28: "technically 2 m for the business, so it's
+        # technically 2 contracts"). The row carries how many; a row that
+        # does not know says 1, which is what every contract was before.
+        each = _accounts(row)
         if SC.is_logged(status):
-            bucket["records"][rep] = bucket["records"].get(rep, 0) + 1
+            bucket["records"][rep] = bucket["records"].get(rep, 0) + each
         if SC.is_completed(status):
             got = bucket["sales"].setdefault(
                 rep, {"Sales": 0, "Volume": 0, "Big": 0, "Huge": 0})
-            got["Sales"] += 1
+            got["Sales"] += each
+            # The volume is the CONTRACT's, already summed across its
+            # accounts (17,000 = 11,000 + 6,000 on Max's), so it is added
+            # once. The tiers below are per contract too: one big deal with
+            # two meters is one big deal.
             got["Volume"] += _volume(row.get("Adjusted Annual Volume"))
             # HOW LOUD, decided per CONTRACT and carried as counts. The bar is
             # one contract's term and volume, not the rep's day, so it cannot
@@ -220,6 +244,7 @@ def row_from_edge(edge: Dict) -> Dict:
                    if x).strip()
     sub = edge.get(SC.FIELD_SUBSTATUS) or {}
     return {
+        SC.COL_CONTRACT_ID: edge.get(SC.FIELD_CONTRACT_ID) or "",
         SC.COL_AGENT: rep,
         SC.COL_INITIATED: edge.get(SC.FIELD_INITIATED) or "",
         SC.COL_SUBSTATUS: (sub or {}).get("substatus") or "",
@@ -230,6 +255,12 @@ def row_from_edge(edge: Dict) -> Dict:
         # from "a term of zero".
         SC.COL_TERM: edge.get(SC.FIELD_TERM, ""),
         SC.COL_BUSINESS: edge.get(SC.FIELD_BUSINESS) or "",
+        # How many accounts the contract covers. A list is counted; anything
+        # else (null on the wire, the legacy query) is left blank and reads
+        # as one downstream. NEVER the numbers themselves -- a count is all
+        # the board needs and all that leaves the machine.
+        COL_ACCOUNTS: (len(edge["accounts"])
+                       if isinstance(edge.get("accounts"), list) else ""),
     }
 
 
@@ -240,10 +271,16 @@ def rows_from_response(payload: Dict) -> List[Dict]:
     a partial page read as a whole one is how an office's number comes out low
     with nothing to say why.
     """
-    data = ((payload or {}).get("data") or {}).get("contractsList") or {}
-    if (payload or {}).get("errors") or (data.get("errors") or []):
+    if not payload_ok(payload):
         return []
+    data = ((payload or {}).get("data") or {}).get("contractsList") or {}
     return [row_from_edge(e) for e in (data.get("edges") or [])]
+
+
+def payload_ok(payload: Dict) -> bool:
+    """Did the API answer the query, as opposed to complaining about it?"""
+    data = ((payload or {}).get("data") or {}).get("contractsList") or {}
+    return not ((payload or {}).get("errors") or (data.get("errors") or []))
 
 
 # HOW THE ROWS ARE FETCHED, and why it is done from inside the page.
@@ -272,7 +309,30 @@ MAX_PAGES = 40          # 4000 contracts. A stop, not an expectation.
 # than guessed: the API's field names are not the grid's column headings, and
 # a reader written off the headings would have found neither the agent nor the
 # sale date.
+# `accounts { account_number }` was PROVEN on the live API by the 2026-09-28
+# probe from Roshan's machine (the edge type is ContractList, its `accounts`
+# are QtQuoteAccount rows, and `account_number` is a field on them;
+# introspection is switched off, so it was found by asking). GRAPHQL_QUERY_LEGACY
+# is the query as it was, and _fetch_page falls back to it the moment the API
+# answers the new one with errors -- a schema change on their side must cost
+# the account count, never the day.
 GRAPHQL_QUERY = """query ($input: ContractsListQueryInput) {
+  contractsList(input: $input) {
+    edges {
+      contract_id
+      accounts { account_number }
+      business_name
+      adjusted_annual_volume
+      created_date
+      term
+      agent { name { first_name last_name } email }
+      contract_substatus { substatus }
+    }
+    errors { error_message }
+  }
+}"""
+
+GRAPHQL_QUERY_LEGACY = """query ($input: ContractsListQueryInput) {
   contractsList(input: $input) {
     edges {
       contract_id
@@ -338,14 +398,19 @@ class _Borrowed:
                    for k in ("authorization", "x-auth-token", "cookie"))
 
 
-def _body(n: int) -> Dict:
-    return {"query": GRAPHQL_QUERY,
+def _body(n: int, query: str = GRAPHQL_QUERY) -> Dict:
+    return {"query": query,
             "variables": {"input": {
                 "page": n, "per_page": PER_PAGE, "search": "",
                 "sorting": [{"name": "id", "direction": "DESCENDING"}]}}}
 
 
-def _fetch_page(page, n: int, borrowed=None) -> List[Dict]:
+# Set once a page has fallen back, so the log says it once and the rest of the
+# read does not ask the failing query again.
+_LEGACY = {"on": False}
+
+
+def _fetch_page(page, n: int, borrowed=None, log=print) -> List[Dict]:
     """One page of contracts, through the CONTEXT's own request API.
 
     NOT page.evaluate. A fetch issued from inside the page is a cross-origin
@@ -356,13 +421,28 @@ def _fetch_page(page, n: int, borrowed=None) -> List[Dict]:
     """
     headers = dict((borrowed.headers if borrowed else None) or {})
     headers.setdefault("content-type", "application/json")
-    res = page.request.post(GRAPHQL_URL, headers=headers, data=_body(n))
+    query = GRAPHQL_QUERY_LEGACY if _LEGACY["on"] else GRAPHQL_QUERY
+    res = page.request.post(GRAPHQL_URL, headers=headers, data=_body(n, query))
     if not res.ok:
         raise AccountProblem(
             "My Service Cloud refused the request for this office's sales "
             "(HTTP %d). Nothing is wrong with the numbers -- we could not "
             "ask for them." % res.status)
-    return rows_from_response(res.json())
+    payload = res.json()
+    if not payload_ok(payload) and query is GRAPHQL_QUERY:
+        # THE ACCOUNT COUNT IS OPTIONAL, THE DAY IS NOT. If their schema has
+        # moved under the accounts field, ask the old way and carry on.
+        _LEGACY["on"] = True
+        log("the accounts field was refused -- reading contracts the old "
+            "way (every contract counts once): %s" % _short(payload)[:200])
+        res = page.request.post(GRAPHQL_URL, headers=headers,
+                                data=_body(n, GRAPHQL_QUERY_LEGACY))
+        if not res.ok:
+            raise AccountProblem(
+                "My Service Cloud refused the request for this office's "
+                "sales (HTTP %d)." % res.status)
+        payload = res.json()
+    return rows_from_response(payload)
 
 
 def fetch_rows(page, days: List[dt.date], log=print,
@@ -380,7 +460,7 @@ def fetch_rows(page, days: List[dt.date], log=print,
     oldest = min(days)
     out: List[Dict] = []
     for n in range(1, MAX_PAGES + 1):
-        rows = _fetch_page(page, n, borrowed)
+        rows = _fetch_page(page, n, borrowed, log=log)
         if not rows:
             break
         out.extend(rows)
@@ -408,17 +488,19 @@ def fetch_rows(page, days: List[dt.date], log=print,
 # that post.notify_faults files without posting. Field NAMES only -- no
 # customer data leaves the machine. The live query does not change until the
 # answer is in hand.
-PROBE_ID = "box-accounts-2026-09-28"
+PROBE_ID = "box-accounts-2026-09-28b"
 PROBE_MARK = C.APP_DIR / "box-schema-probe.txt"
+# Round 1 (2026-09-28, Roshan's machine) settled: `accounts { account_number }`
+# is valid on the edge; `accounts_count`, `esiid`, `id` are not; `customer {
+# accounts { ... } }` exists (type ContractAccount) with fields unknown.
+# Round 2 asks what the window's rows actually CARRY, as counts.
 PROBE_CANDIDATES = (
-    "accounts { id }", "accounts { esiid }", "accounts { account_number }",
-    "accounts_count", "account_count", "number_of_accounts",
-    "customer { id }", "customer { accounts { id } }", "customer_id",
-    "esiids", "esiid", "meters { id }", "service_points { id }",
-    "utility_accounts { id }", "contract_accounts { id }",
+    "customer { accounts { account_number } }",
+    "customer { accounts { esiid } }",
+    "customer { accounts { annual_volume } }",
+    "accounts { annual_volume }",
+    "accounts { status }",
 )
-_INTERESTING = ("account", "contract", "customer", "esi", "meter", "service")
-_TYPE_SHAPE = "{ name kind ofType { name kind ofType { name kind } } }"
 
 
 def _gql(page, body: Dict, borrowed=None) -> Dict:
@@ -436,22 +518,10 @@ def _gql(page, body: Dict, borrowed=None) -> Dict:
     return payload
 
 
-def _type_name(t: Dict) -> str:
-    """The named type under any LIST/NON_NULL wrapping."""
-    seen = 0
-    while isinstance(t, dict) and not t.get("name") and t.get("ofType") and seen < 6:
-        t = t["ofType"]
-        seen += 1
-    return str((t or {}).get("name") or "")
 
 
-def _fields(payload: Dict) -> List[Dict]:
-    return (((payload or {}).get("data") or {}).get("__type") or {}).get("fields") or []
 
 
-def _query_fields(payload: Dict) -> List[Dict]:
-    return ((((payload or {}).get("data") or {}).get("__schema") or {})
-            .get("queryType") or {}).get("fields") or []
 
 
 def _short(payload: Dict) -> str:
@@ -476,12 +546,22 @@ def _keys(obj, depth: int = 0) -> str:
     return type(obj).__name__
 
 
-def _type_fields_line(page, type_name: str, borrowed) -> List[Dict]:
-    q = "{ __type(name: %s) { fields { name type %s } } }" % (json.dumps(type_name), _TYPE_SHAPE)
-    return _fields(_gql(page, {"query": q}, borrowed))
 
 
-def probe_accounts_schema(page, borrowed=None, log=print) -> Optional[str]:
+def account_count_report(rows: List[Dict]) -> str:
+    """'42 rows: blank=3, 1=35, 2=3, 4=1' -- what the live read carries."""
+    tally: Dict[str, int] = {}
+    for r in rows or []:
+        k = str(r.get(COL_ACCOUNTS) if r.get(COL_ACCOUNTS) not in ("", None) else "blank")
+        tally[k] = tally.get(k, 0) + 1
+    multi = ["%sx%s" % (r.get(SC.COL_CONTRACT_ID) or "?", r.get(COL_ACCOUNTS))
+             for r in rows or [] if isinstance(r.get(COL_ACCOUNTS), int) and r.get(COL_ACCOUNTS) > 1]
+    return "%d rows: %s%s" % (len(rows or []), ", ".join(
+        "%s=%d" % (k, tally[k]) for k in sorted(tally, key=lambda x: (x == "blank", x))),
+        ("; multi: " + ", ".join(multi[:20])) if multi else "")
+
+
+def probe_accounts_schema(page, borrowed=None, log=print, rows=None) -> Optional[str]:
     """Ask My Service Cloud how a contract's accounts are exposed. Returns the
     report text, or None when this probe id already ran here. NEVER raises."""
     try:
@@ -489,38 +569,10 @@ def probe_accounts_schema(page, borrowed=None, log=print) -> Optional[str]:
             return None
     except Exception:  # noqa: BLE001
         pass
-    lines = ["probe %s" % PROBE_ID]
+    lines = ["probe %s" % PROBE_ID, "live read carries: " + account_count_report(rows or [])]
     try:
-        # 1. Root query fields that sound relevant, with their return types.
-        roots = _gql(page, {"query": "{ __schema { queryType { fields { name type %s } } } }" % _TYPE_SHAPE}, borrowed)
-        rf = _query_fields(roots)
-        if not rf:
-            lines.append("introspection: " + _short(roots))
-        hits = [f for f in rf if any(k in (f.get("name") or "").lower() for k in _INTERESTING)]
-        lines.append("root fields (%d total): %s" % (
-            len(rf), ", ".join("%s:%s" % (f.get("name"), _type_name(f.get("type") or {})) for f in hits)[:1500]))
-        # 2. Follow contractsList -> its type -> edges -> the edge type's fields.
-        cl = next((f for f in rf if f.get("name") == SC.GRAPHQL_OPERATION), None)
-        edge_type = ""
-        if cl:
-            list_type = _type_name(cl.get("type") or {})
-            edges = next((f for f in _type_fields_line(page, list_type, borrowed) if f.get("name") == "edges"), None)
-            edge_type = _type_name((edges or {}).get("type") or {})
-            lines.append("%s -> %s, edges -> %s" % (SC.GRAPHQL_OPERATION, list_type, edge_type or "?"))
-        if edge_type:
-            ef = _type_fields_line(page, edge_type, borrowed)
-            lines.append("edge fields (%d): %s" % (
-                len(ef), ", ".join("%s:%s" % (f.get("name"), _type_name(f.get("type") or {})) for f in ef)[:3000]))
-            # 3. One level down into anything that sounds like an account.
-            for f in ef:
-                nm = (f.get("name") or "").lower()
-                tn = _type_name(f.get("type") or {})
-                if tn and any(k in nm or k in tn.lower() for k in ("account", "customer", "esi", "meter", "service")):
-                    sub = _type_fields_line(page, tn, borrowed)
-                    lines.append("  %s (%s): %s" % (f.get("name"), tn, ", ".join(
-                        "%s:%s" % (g.get("name"), _type_name(g.get("type") or {})) for g in sub)[:1500]))
-        # 4. Belt and braces: likely spellings on a ONE-row query, reported
-        #    as worked / did not, never with the row.
+        # Likely spellings on a ONE-row query, reported as worked / did
+        # not, never with the row.
         for cand in PROBE_CANDIDATES:
             q = GRAPHQL_QUERY.replace("contract_id\n", "contract_id %s\n" % cand, 1)
             body = {"query": q, "variables": {"input": {"page": 1, "per_page": 1, "search": "",
@@ -618,7 +670,7 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
             log("contracts fetched: %d row(s) across the window" % len(rows))
             # After the real read, never before it: the answer is wanted,
             # the day's numbers are needed.
-            probe_accounts_schema(page, borrowed, log=log)
+            probe_accounts_schema(page, borrowed, log=log, rows=rows)
         finally:
             ctx.close()
 

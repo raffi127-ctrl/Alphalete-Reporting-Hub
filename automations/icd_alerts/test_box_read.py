@@ -388,14 +388,6 @@ class TheAccountsProbeReadsIntrospection(unittest.TestCase):
     """The schema probe (Ryan 2026-09-28) must unwrap GraphQL type wrappers,
     never confuse an error envelope with an answer, and never carry data."""
 
-    def test_named_type_is_found_under_list_and_non_null(self):
-        t = {"name": None, "kind": "NON_NULL",
-             "ofType": {"name": None, "kind": "LIST",
-                        "ofType": {"name": "Contract", "kind": "OBJECT"}}}
-        self.assertEqual(B._type_name(t), "Contract")
-        self.assertEqual(B._type_name({"name": "Int", "kind": "SCALAR"}), "Int")
-        self.assertEqual(B._type_name({}), "")
-
     def test_short_tells_an_error_from_data_and_keeps_only_keys(self):
         self.assertTrue(B._short({"errors": [{"message": "Cannot query field x"}]}).startswith("ERR"))
         ok = B._short({"data": {"contractsList": {"edges": [{"contract_id": 4471, "business_name": "WHATACARS"}]}}})
@@ -407,3 +399,101 @@ class TheAccountsProbeReadsIntrospection(unittest.TestCase):
     def test_candidates_never_touch_the_live_query(self):
         for cand in B.PROBE_CANDIDATES:
             self.assertNotIn(cand, B.GRAPHQL_QUERY)
+
+
+class AContractWithSeveralAccountsIsSeveralSales(unittest.TestCase):
+    """Ryan 2026-09-28: Max's WHATACARS contract covers two meters and counts
+    as two contracts. The volume is the contract's and is added once."""
+
+    DAY = dt.date(2026, 9, 28)
+
+    def _row(self, accounts, status="Sold - Completed"):
+        return {SC.COL_AGENT: "Max Allen", SC.COL_INITIATED: "09/28/2026 12:28 PM",
+                SC.COL_SUBSTATUS: status, "Adjusted Annual Volume": 17000,
+                SC.COL_TERM: 12, B.COL_ACCOUNTS: accounts}
+
+    def _sold(self):
+        return next(s for s in SC.COMPLETED_STATUSES)
+
+    def test_two_accounts_are_two_sales_and_one_volume(self):
+        got = B.tally([self._row(2, self._sold())], self.DAY)
+        self.assertEqual(got["sales"]["Max Allen"]["Sales"], 2)
+        self.assertEqual(got["sales"]["Max Allen"]["Volume"], 17000)
+        self.assertEqual(got["records"]["Max Allen"], 2)
+
+    def test_a_row_without_the_count_is_still_one(self):
+        row = self._row(None, self._sold()); row.pop(B.COL_ACCOUNTS)
+        got = B.tally([row], self.DAY)
+        self.assertEqual(got["sales"]["Max Allen"]["Sales"], 1)
+        for bad in ("", "0", "x", -3):
+            self.assertEqual(B._accounts({B.COL_ACCOUNTS: bad}), 1)
+
+    def test_tiers_stay_per_contract(self):
+        row = self._row(3, self._sold()); row[SC.COL_TERM] = 36; row["Adjusted Annual Volume"] = 25000
+        got = B.tally([row], self.DAY)
+        self.assertEqual(got["sales"]["Max Allen"]["Sales"], 3)
+        self.assertEqual(got["sales"]["Max Allen"]["Big"], 1)
+        self.assertEqual(got["sales"]["Max Allen"]["Huge"], 1)
+
+
+class TheLiveReadCarriesTheAccountCount(unittest.TestCase):
+    """Round 1 of the probe proved `accounts { account_number }` on the edge.
+    The row carries the COUNT; the numbers never leave the machine."""
+
+    def _edge(self, accounts):
+        return {"contract_id": 1, "accounts": accounts, "business_name": "X",
+                "adjusted_annual_volume": 17000, "created_date": "09/28/2026 12:28 PM",
+                "term": 12, "agent": {"name": {"first_name": "Max", "last_name": "Allen"}},
+                "contract_substatus": {"substatus": "TPV Passed"}}
+
+    def test_two_accounts_count_two_and_carry_no_numbers(self):
+        row = B.row_from_edge(self._edge([{"account_number": "1044"}, {"account_number": "1045"}]))
+        self.assertEqual(row[B.COL_ACCOUNTS], 2)
+        self.assertNotIn("1044", str(row))
+
+    def test_null_accounts_is_blank_which_reads_as_one(self):
+        row = B.row_from_edge(self._edge(None))
+        self.assertEqual(row[B.COL_ACCOUNTS], "")
+        self.assertEqual(B._accounts(row), 1)
+
+    def test_legacy_query_has_no_accounts_and_the_new_one_does(self):
+        self.assertIn("accounts { account_number }", B.GRAPHQL_QUERY)
+        self.assertNotIn("accounts", B.GRAPHQL_QUERY_LEGACY)
+        self.assertTrue(B.payload_ok({"data": {"contractsList": {"edges": []}}}))
+        self.assertFalse(B.payload_ok({"errors": [{"message": "Cannot query field"}]}))
+
+    def test_a_refused_accounts_field_falls_back_to_the_old_query(self):
+        calls = []
+
+        class Res:
+            ok = True
+            status = 200
+            def __init__(self, payload): self._p = payload
+            def json(self): return self._p
+
+        class Req:
+            def post(self, url, headers=None, data=None):
+                calls.append(data["query"])
+                if "accounts" in data["query"]:
+                    return Res({"errors": [{"message": "Cannot query field accounts"}]})
+                return Res({"data": {"contractsList": {"edges": [
+                    {"contract_id": 1, "created_date": "09/28/2026 12:28 PM",
+                     "agent": {"name": {"first_name": "Max", "last_name": "Allen"}},
+                     "contract_substatus": {"substatus": "TPV Passed"}}], "errors": []}}})
+
+        class Page:
+            request = Req()
+
+        B._LEGACY["on"] = False
+        try:
+            rows = B._fetch_page(Page(), 1, None, log=lambda *a: None)
+        finally:
+            B._LEGACY["on"] = False
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][B.COL_ACCOUNTS], "")
+        self.assertEqual(len(calls), 2)
+        self.assertIn("accounts", calls[0]); self.assertNotIn("accounts", calls[1])
+
+    def test_the_counts_report_is_counts_only(self):
+        rows = [{B.COL_ACCOUNTS: 2, SC.COL_CONTRACT_ID: 4471}, {B.COL_ACCOUNTS: 1}, {B.COL_ACCOUNTS: ""}, {B.COL_ACCOUNTS: 1}]
+        self.assertEqual(B.account_count_report(rows), "4 rows: 1=2, 2=1, blank=1; multi: 4471x2")
