@@ -73,24 +73,40 @@ def cells_for(rec: Dict, tab_note: str) -> List[Tuple[str, str, str]]:
     def num(v):
         return None if v is None else (str(int(v)) if float(v) == int(v) else f"{v:.1f}")
 
-    if mf_knocks:
-        add("Monday - Friday Total Knocks", num(sum(mf_knocks)), "sum Mon-Fri knocks")
-    if mf_talk:
-        add("Monday - Friday Total Talk Too's", num(sum(mf_talk)), "sum Mon-Fri talk-to's")
+    # A LIST OF ZEROS IS NOT DATA. `if mf_talk:` is true for [0,0,0,0,0], which
+    # is what a week with no talk-to rows looks like, and that produced
+    # 'Monday % Talk To's Per knocks = 0.0%' beside a BLANK talk-to count —
+    # a rate stated for a week nothing was recorded. The board path
+    # (sales.day_cells) had the same arithmetic and was fixed there; this copy
+    # was not, which is why it came back. Both now require a real observation.
+    # [[feedback_dont_explain_away_a_zero]]
+    tk_sum = sum(mf_knocks) if mf_knocks else None
+    tt_sum = sum(mf_talk) if mf_talk else None
+    have_tt = bool(mf_talk) and tt_sum is not None and tt_sum > 0
+
+    if tk_sum:
+        add("Monday - Friday Total Knocks", num(tk_sum), "sum Mon-Fri knocks")
+    if have_tt:
+        add("Monday - Friday Total Talk Too's", num(tt_sum), "sum Mon-Fri talk-to's")
     # AVERAGES DIVIDE BY DAYS ACTUALLY KNOCKED, never by 5 — a rep who knocked
     # three days did not average their week over five.
-    if mf_days and mf_knocks:
+    if mf_days and tk_sum:
         add("Monday - Friday AVG Doors knocked / Day",
-            num(sum(mf_knocks) / mf_days), f"Mon-Fri knocks / {mf_days} days knocked")
-    if mf_days and mf_talk:
+            num(tk_sum / mf_days), f"Mon-Fri knocks / {mf_days} days knocked")
+    if mf_days and have_tt:
         add("Mon - Friday avg Talk To's Day",
-            num(sum(mf_talk) / mf_days), f"Mon-Fri talk-to's / {mf_days} days knocked")
-    if mf_knocks and sum(mf_knocks) and mf_talk:
+            num(tt_sum / mf_days), f"Mon-Fri talk-to's / {mf_days} days knocked")
+    if tk_sum and have_tt:
         add("Monday % Talk To's Per knocks",
-            f"{100 * sum(mf_talk) / sum(mf_knocks):.1f}%", "talk-to's / knocks, Mon-Fri")
+            f"{100 * tt_sum / tk_sum:.1f}%", "talk-to's / knocks, Mon-Fri")
 
-    add("Saturday Avg Doors / Day", num(sat_knocks), "Saturday knocks")
-    add("Saturday avg Talk To's Day", num(sat_talk), "Saturday talk-to's")
+    # Same rule on Saturday: a 0 here means "no talk-to rows that day", not
+    # "spoke to nobody". Knocks of 0 are equally uninformative — the rep did
+    # not work Saturday, which the blank says and a 0 misstates.
+    if sat_knocks:
+        add("Saturday Avg Doors / Day", num(sat_knocks), "Saturday knocks")
+    if sat_talk:
+        add("Saturday avg Talk To's Day", num(sat_talk), "Saturday talk-to's")
 
     # The four the sales board can never answer.
     add("Mon - Friday AVG First Knock", rec.get(C_FIRST), "avg daily first knock")
