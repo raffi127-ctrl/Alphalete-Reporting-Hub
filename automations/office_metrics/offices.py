@@ -425,6 +425,8 @@ OFFICE_TIMEZONES: dict = {
     "trang":   "America/Chicago",              # San Antonio, TX
     "isaiah":  "America/Chicago",              # Dallas, TX
     "nii":     "America/New_York",             # Wilkes-Barre, PA — EASTERN
+    "colten":  "America/New_York",             # Hollywood, FL — EASTERN (ECO sign-up)
+    "drew":    "America/New_York",             # Maitland (Orlando), FL — EASTERN
 }
 
 # The fallback for an office nobody has harvested yet. Most of the org is Texas,

@@ -54,12 +54,16 @@ CITIES = {
     "houston": ("Houston, TX", 29.7604, -95.3698, "America/Chicago"),
     "indianapolis": ("Indianapolis, IN", 39.7684, -86.1581, "America/New_York"),
     "miami": ("Hollywood / Miami, FL", 26.0112, -80.1495, "America/New_York"),
+    # drew / Precision Management: 800 Trafalgar Ct, Maitland FL 32751 (their
+    # site's contact page, 2026-09-28) -- the Orlando area.
+    "orlando": ("Maitland / Orlando, FL", 28.6275, -81.3631, "America/New_York"),
 }
 OFFICE_CITY = {
     "kash": "dfw", "cyrus": "dfw", "carlos": "dfw", "carlos-b2batt": "dfw",
     "ryan": "dfw", "khalil": "dfw", "khalil-nds": "dfw",
     "roshan": "houston", "aya": "indianapolis", "colten": "miami",
     "isaiah": "dfw",            # Legacy office, Dallas (office_metrics has him Central)
+    "drew": "orlando",          # back 2026-09-28; #precision-management-att-sales
 }
 
 
