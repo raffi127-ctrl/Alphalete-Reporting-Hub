@@ -2954,7 +2954,10 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": null,
-      "timeout_minutes": 20
+      "timeout_minutes": 20,
+      "hand_run_only": true,
+      "close_on": "exit_zero",
+      "_watch_note": "Eve 2026-09-28: the 4:30 PM nightly is its own LaunchAgent and never writes Hub Activity, so every Activity row is a hand/queued rerun (9/21-9/28 backfills) -- the watcher read those as a daily ~8:00 report and opened a false \"didn't run today\". A rerun posts to Slack threads nothing checks from outside, so a clean exit closes it."
     },
     "bg_check_sync_post": {
       "on_scheduler": true,
