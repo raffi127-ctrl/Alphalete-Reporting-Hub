@@ -182,18 +182,25 @@ def main(argv=None) -> int:
                 for lab, val, src in SA.cells_for(name, wsales):
                     filled.add(lab, wk, val, src)
 
+                # BOARD FIRST, THEN OWNERVILLE ON TOP. Ownerville is the better
+                # source and wins every row it produces (later writes take the
+                # cell), but it does not produce ALL of them: 'Monday - Saturday
+                # Total Apps' and 'AVG Talk Too's per App' come only from the
+                # board's per-day Apps. Letting ownerville short-circuit the
+                # board blanked both rows in every week — a regression that
+                # traded two rows for the nine it fixed.
+                d = wdays.get(PEO.key(name))
+                if d is not None:
+                    for lab, val, src in SA.day_cells(d, wsales.tab):
+                        filled.add(lab, wk, val, src)
+
                 rec = ov_weeks.get(wk, {}).get(PEO.key(name))
                 if rec is not None:
                     for lab, val, src in OV.cells_for(rec, f"WE {wk:%-m/%-d}"):
                         filled.add(lab, wk, val, src)
-                    continue          # ownerville answered the knock block
-
-                d = wdays.get(PEO.key(name))
-                if d is None:
-                    gaps.append(f"{name}: no row on the WE {wk:%-m/%-d} sales board")
-                    continue
-                for lab, val, src in SA.day_cells(d, wsales.tab):
-                    filled.add(lab, wk, val, src)
+                elif d is None:
+                    gaps.append(f"{name}: no row on the WE {wk:%-m/%-d} sales "
+                                f"board and no ownerville week cached")
 
             # What this run actually has, keyed by the cell it lands in.
             have = {}
