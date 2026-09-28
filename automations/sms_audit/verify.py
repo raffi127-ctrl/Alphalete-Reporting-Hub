@@ -140,7 +140,7 @@ LINEAGE = {
    "cap. Undelivered texts are excluded — they cannot be replied to",
  "Of a recruiter's responses, % within 5 minutes":
    "LOG — the recruiter gaps above, share under 5 minutes",
- "Applicants left waiting 2+ hours for a response":
+ "Applicants left waiting 2+ hours for a text back":
    "LOG — the last row is In and nothing went back inside 2 hours",
  "— of those, never booked an interview": "those people, absent from CAL",
  "Questions asked": "LOG Body of In rows containing a question",

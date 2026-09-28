@@ -159,6 +159,10 @@ def question_cell(rep):
 # entries stay for good, they cost nothing and removing one silently splits a
 # row in two the next time somebody rebuilds an old tab.
 RENAMED = {
+    # Megan 2026-09-28: the sheet sees texts, and a row that says only
+    # "a response" invites the reading that nobody got back to them at all.
+    "Applicants left waiting 2+ hours for a response":
+        "Applicants left waiting 2+ hours for a text back",
     "% of a person's responses within 5 minutes": "Of a recruiter's responses, % within 5 minutes",
     '% of bookings made by the AI': '% of 1st rounds booked by the AI',
     '% of interviews booked by the AI': '% of 1st rounds booked by the AI',
@@ -175,8 +179,8 @@ RENAMED = {
     '1st-interview days covered': 'Days of 1st rounds in this column',
     'AI reply, median minutes': 'Typical Response Time — AI (minutes)',
     'AI share of bookings %': '% of 1st rounds booked by the AI',
-    'Applicants left waiting 2+ hours': 'Applicants left waiting 2+ hours for a response',
-    'Applicants left waiting on a reply': 'Applicants left waiting 2+ hours for a response',
+    'Applicants left waiting 2+ hours': 'Applicants left waiting 2+ hours for a text back',
+    'Applicants left waiting on a reply': 'Applicants left waiting 2+ hours for a text back',
     'Applicants over the carrier limit': 'Applicants texted 4+ times with no reply',
     'Applicants texted 4+ times, no reply': 'Applicants texted 4+ times with no reply',
     'Booked by a recruiter': '— booked by a person',
@@ -190,7 +194,7 @@ RENAMED = {
     'How often a person answers within 5 minutes': "Of a recruiter's responses, % within 5 minutes",
     'Interview days in this column': 'Days of 1st rounds in this column',
     'Interviews booked with no texts on file': '1st Rounds booked with no texts on file',
-    'Left unanswered': 'Applicants left waiting 2+ hours for a response',
+    'Left unanswered': 'Applicants left waiting 2+ hours for a text back',
     'Messages sent + received': 'Total texts (sent + received)',
     'Minutes for a person to reply (typical)': 'Typical Response Time — a recruiter (minutes)',
     'Minutes for a recruiter to reply (typical)': 'Typical Response Time — a recruiter (minutes)',
@@ -819,7 +823,7 @@ ROWS = [
     ("How fast we reply", "Of a recruiter's responses, % within 5 minutes",
      lambda r: _within5((r.get("log") or {}).get("speed_human"))),
 
-    ("People we left hanging", "Applicants left waiting 2+ hours for a response",
+    ("People we left hanging", "Applicants left waiting 2+ hours for a text back",
      _msg(lambda r: len(((r.get("log") or {}).get("unanswered")) or r["unanswered"]))),
     ("People we left hanging", "— of those, never booked an interview",
      lambda r: sum(1 for u in ((r.get("log") or {}).get("unanswered") or [])
@@ -1086,9 +1090,22 @@ def write_week(ws, rep, week_end, dry_run=False):
 
     updates = list(updates_rename)
     # --- the skeleton: title, section names, metric labels ---
-    if not values or not (values[0] and str(values[0][0]).strip()):
-        updates.append(("A1", [["Applicant text audit — one row per metric, "
-                                "one column per recruiting week (Sat–Fri)"]]))
+    # Always rewritten, not only on a blank sheet: the scope line below is
+    # the thing that stops the whole sheet being misread, and a sheet
+    # created before it existed would never get it.
+    #
+    # Megan 2026-09-28, after a day of it: this sheet sees TEXTS. It read
+    # "4,342 people got one text" as abandonment when 93% of them had been
+    # called and left messages, and the call is invisible here. Every row
+    # says "texted", but the section headings do not, so the scope goes at
+    # the top where nobody has to infer it.
+    updates.append(("A1", [[
+        "Applicant text audit — one row per metric, one column per "
+        "recruiting week (Sat–Fri).   THIS IS THE TEXT LOG ONLY: it cannot "
+        "see phone calls or emails. Most applicants here were also called — "
+        "the call list (Call List \u203a Call Hub) holds their LM1/LM2/LM3 "
+        "status, and a row like \u201cwe texted once and never again\u201d "
+        "is about texts, not about whether anyone followed up."]]))
     # A label that does not exist yet has to be INSERTED where it belongs,
     # not appended. The per-person rows only appear once a log has been
     # pulled, so on a tab that already holds an earlier week they would land
