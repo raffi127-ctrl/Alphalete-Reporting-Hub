@@ -45,7 +45,7 @@ from automations.weekly_knock_dispositions import apps as A
 from automations.weekly_knock_dispositions import board as B
 from automations.weekly_knock_dispositions import pull as P
 from automations.weekly_knock_dispositions import teams as TEAMS
-from automations.weekly_knock_dispositions.offices import enabled
+from automations.weekly_knock_dispositions.offices import enabled, key_of
 
 REPORT_ID = "weekly_knock_dispositions"
 # NO card of its own (Megan 2026-08-22): the Sunday board reports onto the
@@ -285,7 +285,16 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
         fresh: bool = False, no_teams: bool = False) -> int:
     started_at = dt.datetime.now()
     offices = enabled(only)
-    all_names = [o["name"] for o in enabled(None)]
+    all_names = [key_of(o) for o in enabled(None)]
+    if not dry_run and any(o.get("preview_only") for o in offices):
+        # Carlos's B2B boards (offices.CARLOS_B2B) have no posting target
+        # yet — a live run must never be where that gets decided.
+        print("[wkd] ⤳ preview-only office(s) dropped from a LIVE run: "
+              + ", ".join(key_of(o) for o in offices
+                          if o.get("preview_only")), flush=True)
+        offices = [o for o in offices if not o.get("preview_only")]
+        if not offices:
+            return 0
     monday, saturday, we_sunday = _week(anchor)
     print(f"[wkd] {CARD_NAME} — {monday} → {saturday} "
           f"({len(offices)} office(s): "
@@ -304,7 +313,10 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
     # --- 1. The org-wide PSS crosstab, once for every office ---------------
     pss_path = None
     try:
-        pss_path = A.download(we_sunday)
+        # Only when a board in this run reads it — a B2B-only run (Carlos's
+        # campaign boards) has no apps column, so no Tableau session at all.
+        if any(o.get("pss_owner") is not None for o in offices):
+            pss_path = A.download(we_sunday)
     except Exception as e:  # noqa: BLE001 — apps go blank, boards still post
         print(f"[wkd] ⚠ PSS crosstab failed ({type(e).__name__}: "
               f"{str(e)[:160]}) — apps columns will be blank, boards flagged "
@@ -342,10 +354,16 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
     # --fresh skips the reads — writes still happen, so a corrected re-pull
     # replaces what the next reader sees.
     _by_name = {o["name"]: o for o in all_offices()}
+
+    def _targets(cfg: dict) -> list[str]:
+        # No D2D comparison row on a B2B board (same call as the captainship
+        # B2B boards, cb7bdb8b: "no chan line").
+        return [] if cfg.get("b2b") else compare_targets(key_of(cfg))
+
     _wanted_compare = {other for cfg in offices
-                       for other in compare_targets(cfg["name"])
+                       for other in _targets(cfg)
                        if other in _by_name}
-    _in_scope = {o["name"] for o in offices}
+    _in_scope = {key_of(o) for o in offices}
     cache_hits: dict[str, tuple[list, list]] = {}
     if not fresh:
         for _n in sorted(_in_scope | _wanted_compare):
@@ -356,7 +374,7 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
     # machine) is never pulled, so it must not be what keeps the session open
     # — otherwise a fully-cached run on a machine without trang's FRESH
     # SUCCESS token still launches Chrome for nothing.
-    need_live = any(o["name"] not in cache_hits and _cross_ws_token(o) != "skip"
+    need_live = any(key_of(o) not in cache_hits and _cross_ws_token(o) != "skip"
                     for o in offices) or any(
         n not in cache_hits and n not in _in_scope for n in _wanted_compare)
     if cache_hits:
@@ -375,7 +393,7 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                         verbose=True, profile_dir=PROFILE_DIR))
                     if need_live else None)
             for cfg in offices:
-                name = cfg["name"]
+                name = key_of(cfg)
                 try:
                     tok_path = _cross_ws_token(cfg)
                     if tok_path == "skip":
@@ -418,7 +436,7 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
             # rides EVERY board (COMPARE_TOTALS_EVERYONE), so on a scoped
             # rerun this is the pull the week cache most reliably saves.
             for cfg in offices:
-                for other in compare_targets(cfg["name"]):
+                for other in _targets(cfg):
                     if other in pulled or other in compare_pulled:
                         continue
                     o_cfg = _by_name.get(other)
@@ -444,9 +462,9 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
     except Exception as e:  # noqa: BLE001 — the session itself never opened
         print(f"[wkd] ❌ ownerville session failed: {type(e).__name__}: {e}",
               flush=True)
-        failed = [o["name"] for o in offices]
+        failed = [key_of(o) for o in offices]
         if not dry_run:
-            _write_manifest(all_names, [o["name"] for o in offices], failed)
+            _write_manifest(all_names, failed, failed)
             _publish_outcome("failed", f"{CARD_NAME} — ownerville session "
                              "failed", [str(e)[:300]], started_at=started_at)
         return 1
@@ -481,13 +499,15 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
             extra = ""
             if gaps_only:
                 extra = " — knock times + gaps (wireless office)"
+            elif cfg.get("b2b"):
+                extra = ""          # B2B has no apps source — by design
             elif cfg.get("pss_owner") is None:
                 extra = " — ⚠ INCOMPLETE: apps not wired (NDS)"
             elif pss_path is None:
                 extra = " — ⚠ INCOMPLETE: apps unavailable"
             office_apps = _office_apps(cfg)
             if not ov_rows and not office_apps:
-                if cfg.get("pss_owner") is None:
+                if cfg.get("pss_owner") is None and not cfg.get("b2b"):
                     print(f"[wkd] ⤳ {name}: no disposition or Time Tracker "
                           "data + apps not wired — SKIPPED.", flush=True)
                     skipped.append(name)
@@ -505,7 +525,7 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
             # numbers be added above each team name as well please").
             compare_rows: list[list[str]] = []
             _lookup = {**pulled, **compare_pulled}
-            for other in compare_targets(name):
+            for other in _targets(cfg):
                 if other in _lookup and not gaps_only:
                     o_cfg, o_rows, _ = _lookup[other]
                     compare_rows.append(B.totals_row(
@@ -528,12 +548,14 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
             # Office name in title/comment only when the board lands
             # somewhere that isn't the office's own thread (Chan) — saying
             # it in their own channel is redundant (Megan 2026-08-23).
-            title_office = name if cfg.get("thread_title") else ""
+            title_office = (cfg.get("board_title")
+                            or (name if cfg.get("thread_title") else ""))
             out_dir = OUT_DIR / _slug(name)
             png = B.render(title_office, monday, saturday, rows, out_dir,
                            dispo_cols, gaps_only=gaps_only,
                            n_totals=n_totals,
-                           n_compare_top=len(compare_rows))
+                           n_compare_top=len(compare_rows),
+                           no_apps=bool(cfg.get("b2b")))
             boards.append((cfg, png, extra))
             # The same week's OFFICE TOTALS, next to the PNG, for
             # weekly_knocks_focus — it writes them into the office's Focus
@@ -573,7 +595,7 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
         for cfg, png, extra in boards:
             what = str(png) if png else "'No data available' line"
             where = cfg.get("channel_name") or "#alphalete-sales"
-            print(f"[wkd]   would post: {cfg['name']} → {where} Metrics "
+            print(f"[wkd]   would post: {key_of(cfg)} → {where} Metrics "
                   f"thread: {what}{extra}", flush=True)
         if preview_dm:
             # DM the rendered board(s) to Megan as Lucy — the gated-preview
@@ -606,7 +628,7 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
 
     if not boards:
         print("[wkd] ❌ nothing to post — every office failed.", flush=True)
-        _write_manifest(all_names, [o["name"] for o in offices], failed)
+        _write_manifest(all_names, [key_of(o) for o in offices], failed)
         _publish_outcome("failed", f"{CARD_NAME} — nothing posted",
                          [f"Every office failed: {', '.join(failed)}"],
                          started_at=started_at)
@@ -623,7 +645,7 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
     from automations.shared import slack_metrics_post as smp
     slack_today = central_today()
     for cfg, png, extra in boards:
-        name = cfg["name"]
+        name = key_of(cfg)
         keep_chan, keep_label = smp.CHANNEL_ID, smp.HEADER_LABEL
         keep_tok = os.environ.get("SLACK_USER_TOKEN")
         try:
@@ -686,7 +708,7 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
             else:
                 os.environ["SLACK_USER_TOKEN"] = keep_tok
 
-    ran = [o["name"] for o in offices if o["name"] not in skipped]
+    ran = [key_of(o) for o in offices if key_of(o) not in skipped]
     # Structural skips aren't "expected" either — else every full run would
     # look like a scoped re-run to the manifest merge.
     _write_manifest([n for n in all_names if n not in skipped], ran, failed,
@@ -722,6 +744,10 @@ def main(argv=None) -> int:
     ap.add_argument("--preview", action="store_true",
                     help="dry-run, then DM the rendered board(s) to Megan "
                          "as Lucy (no channel post)")
+    ap.add_argument("--preview-to", default=None, metavar="SLACK_USER_ID",
+                    help="with --preview: DM this Slack user instead of "
+                         "Megan (e.g. Eve checking a sample before it goes "
+                         "to the office owner)")
     ap.add_argument("--fix-headers", action="store_true",
                     help="tag today's thread headers only — no pulls, no "
                          "board posts (safe after boards already went out)")
@@ -746,7 +772,8 @@ def main(argv=None) -> int:
               if args.date else None)
     return run(anchor, only=args.office,
                dry_run=(args.dry_run or args.preview or not args.live),
-               preview_dm=(MEGAN if args.preview else None),
+               preview_dm=((args.preview_to or MEGAN) if args.preview
+                           else None),
                fresh=args.fresh, no_teams=args.no_teams)
 
 

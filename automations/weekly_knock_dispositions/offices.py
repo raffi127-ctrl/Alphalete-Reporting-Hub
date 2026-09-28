@@ -183,14 +183,64 @@ def all_offices() -> list[dict]:
     return rows
 
 
+# Carlos Hidalgo's LOCAL office (11580), B2B (Carlos in #a-players-b2b,
+# 2026-09-28: "sunday if i could get a disposition on the rep level for monday
+# - saturday with totals and averages on the aplayers and sales slack" — "not
+# for the captainship, for the local office"). He knocks BOTH B2B campaigns
+# (knocks_pull.MULTI_CAMPAIGN), so it is one board per campaign — one row
+# each, told apart by "key" (the pull/cache/output id); "name" stays the
+# owner ownerville impersonates. The AT&T row keeps the bare name as its key
+# on purpose: the captainship build caches Carlos's week under that name with
+# the same AT&T pin, so this report reads it instead of re-pulling.
+# b2b=True: no apps columns (B2B sales aren't in the D2D PSS) and no Chan
+# comparison row (a D2D office's totals mean nothing next to a B2B grid).
+# preview_only=True: out of the Sunday run until Carlos OKs the sample and
+# the posting target is wired — reachable only by --office, dry-run only.
+CARLOS_B2B = [
+    {"key": "Carlos Hidalgo", "name": "Carlos Hidalgo", "ov": "impersonate",
+     "campaign_id": "2", "pss_owner": None, "b2b": True,
+     "board_title": "B2B AT&T SBS", "preview_only": True,
+     "channel_id": "", "channel_name": "", "header_label": "",
+     "slack_token_file": ""},
+    {"key": "Carlos Hidalgo (B2B Box)", "name": "Carlos Hidalgo",
+     "ov": "impersonate", "campaign_id": "16", "pss_owner": None, "b2b": True,
+     "board_title": "B2B Box", "preview_only": True,
+     "channel_id": "", "channel_name": "", "header_label": "",
+     "slack_token_file": ""},
+]
+
+
+def key_of(cfg: dict) -> str:
+    """The id a row is pulled, cached and rendered under — "key" when the
+    owner has more than one board (Carlos's two campaigns), else the name."""
+    return cfg.get("key") or cfg["name"]
+
+
 def enabled(only: list[str] | None = None) -> list[dict]:
-    """The offices this run covers. `only` (from --office) filters by name,
-    case-insensitively — an unknown name is a loud error, not a silent
-    skip."""
-    rows = all_offices()
+    """The offices this run covers. `only` (from --office) filters by key
+    (= name for every one-board office), case-insensitively — an unknown name
+    is a loud error, not a silent skip. preview_only rows join only when named
+    — "Carlos Hidalgo" names both of his campaign boards."""
+    rows = [r for r in all_offices() if not r.get("preview_only")]
     if not only:
         return rows
-    by_name = {r["name"].lower(): r for r in rows}
+    rows = rows + [dict(r) for r in CARLOS_B2B]
+    by_name: dict[str, list[dict]] = {}
+    for r in rows:
+        by_name.setdefault(key_of(r).lower(), []).append(r)
+        if r.get("preview_only") and r["name"].lower() != key_of(r).lower():
+            by_name.setdefault(r["name"].lower(), []).append(r)
+    out, unknown = [], []
+    for w in only:
+        hit = by_name.get(w.lower())
+        (out.extend(x for x in hit if x not in out) if hit
+         else unknown.append(w))
+    if unknown:
+        raise SystemExit(
+            f"Unknown office(s) {unknown} — not in the active set "
+            f"{[key_of(r) for r in rows]}. (Enrolled offices join the set "
+            "when INCLUDE_ENROLLED / WKD_INCLUDE_ENROLLED=1 is on.)")
+    return out
     out, unknown = [], []
     for w in only:
         row = by_name.get(w.lower())

@@ -4700,6 +4700,8 @@
       "depends_on": [],
       "_depends_note": "ALL EIGHT depends_on REMOVED 2026-08-25 and replaced by the cadence.not_before 06:15 clock fence above. They were org_sales_board, captainship_churn, owners_metrics_churn, captainship_activations, captainship_cancel_rate, captainship_activation_rate, captainship_abp_6days, captainship_raf_metrics - EVERY ONE of them runs on Lucy 1, and this build now runs on Lucy 3. Day state is per machine (output/day_state/<date>.json is local), so Lucy 3 cannot see any of their statuses. Since deps.py landed (2026-08-24) a HARD depends_on in that bucket does not silently vanish, it BLOCKS: DepEdge.blocks is true for an unenforceable depends_on, so this report would have sat PENDING every morning, been retired MISSED_NOT_READY by the noon backstop, and the twelve captainship reports would simply never have been built. Leaving them in was not an option in either direction - before 8/24 they were dropped silently and the build ran on unfilled tabs; after 8/24 they deadlock. The clock fence is what a cross-machine ordering can actually be. validate() at startup would have flagged all eight as ERROR; it now has nothing to say about this entry.",
       "verify": null,
+      "close_on": "exit_zero",
+      "_close_on_note": "2026-09-28 (Eve): this job only BUILDS the previews on Lucy 3's local disk; exit 0 already means every selected captain built (run.py returns 1 on any failure). Delivery belongs to captainship_drafts_review / captainship-drafts-approved, which carry their own tickets.",
       "report_id": "captainship-drafts"
     },
     "captainship_drafts_review": {
