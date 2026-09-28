@@ -195,6 +195,31 @@
     }
   },
   "reports": {
+    "local_1on1s_knock_backfill": {
+      "on_scheduler": false,
+      "machine": "Lucy 1",
+      "display_name": "Local Office 1on1s \u2014 OwnerVille knock backfill (manual)",
+      "source_type": "ownerville",
+      "data_sources": [],
+      "command": [
+        "automations.local_office_1on1s.ov_backfill"
+      ],
+      "base_args": [
+        "--weeks",
+        "9"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "order": null,
+      "priority": "P4",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 120,
+      "verify": null,
+      "close_on": "exit_zero",
+      "_note": "MANUAL ONLY (weekdays [] = never scheduled). Fills shared.knock_week_cache for Rafael Hidalgo so the Local Office 1on1s knocking block can be filled. READ-ONLY apart from the cache: no Sheet, no Slack, no email, and a week already cached at the current schema is skipped, so re-running is free. It has to run HERE rather than on a laptop: .ownerville_storage_state.json only ages on a machine with no session holder (15 days stale on Megan's Mac, 2026-09-28) and tableau_patchright says reseeding it by hand is not the fix. Budget ~12 ownerville round trips per week \u2014 six single-day Disposition pulls plus six Time Tracker calls \u2014 because the ranged view's First/Last Knock are the window's first and most recent timestamps, not averages, so only the per-day loop yields a true daily average. The board cannot replace this: 'Sales Board WE 8.2'/'8.16'/'8.30' carry no TK or Talk-To's columns at all, and no board tab carries knock TIMES."
+    },
     "imessage_identity_probe": {
       "on_scheduler": false,
       "machine": "Lucy 3",
