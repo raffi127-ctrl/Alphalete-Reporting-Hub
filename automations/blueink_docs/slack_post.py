@@ -65,11 +65,16 @@ def _held_phrase(why: str) -> str:
 
 def build_thread(sent: int, problems: List[Tuple[str, str]],
                  warnings: List[str] = None,
-                 held: List[Tuple[str, str]] = None) -> str:
+                 held: List[Tuple[str, str]] = None,
+                 earlier: List[str] = None) -> str:
     """The reply body. `problems` is [(person name, why)]; `held` is
     [(person name, verdict)] for people we deliberately did NOT send because
     Blue Ink already shows them a packet."""
     lines = ["*%d* new start%s sent" % (sent, "" if sent == 1 else "s")]
+    # This week's packets that an EARLIER run (or the team) already sent. Done,
+    # nothing to do -- a count, not a list; they are not "carried over".
+    if earlier:
+        lines.append("*%d* already sent earlier this week" % len(earlier))
     lines.append("*%d* failed to send" % len(problems))
     if problems:
         lines.append("")
@@ -105,9 +110,9 @@ def _warn_lines(warnings) -> list:
 
 def post(sent: int, problems: List[Tuple[str, str]], *,
          warnings: List[str] = None, held: List[Tuple[str, str]] = None,
-         dry_run: bool = True) -> None:
+         earlier: List[str] = None, dry_run: bool = True) -> None:
     """Header to the channel, detail in its thread."""
-    body = build_thread(sent, problems, warnings, held)
+    body = build_thread(sent, problems, warnings, held, earlier)
     if dry_run:
         print("\n--- Slack (dry run, NOT posted) -> %s ---" % CHANNEL)
         print(HEADER)

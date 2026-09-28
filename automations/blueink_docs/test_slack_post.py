@@ -101,7 +101,7 @@ def test_ledger_held_people_are_tinted_and_named():
     try:
         carried = [(_Person("Le'derius Arnold", 50), "Sent 9/7/26"),
                    (_Person("Billy Garvin", 3), "Sent 8/31/26")]
-        pairs, problems = run._handle_held(_WS(), [], {}, carried)
+        pairs, problems, _ = run._handle_held(_WS(), [], {}, carried)
     finally:
         run.mark.highlight = real
 
@@ -127,7 +127,7 @@ def test_both_kinds_of_hold_appear_together():
     run.mark.highlight = lambda ws, people, color=None: len(people)
     try:
         hand_sent = _Person("Bailey Soda", 54, "baileysoda@gmail.com")
-        pairs, problems = run._handle_held(
+        pairs, problems, _ = run._handle_held(
             _WS(), [hand_sent], {"baileysoda@gmail.com": "Sent 9/12/26"},
             [(_Person("Le'derius Arnold", 50), "Sent 9/7/26")])
     finally:
@@ -149,10 +149,41 @@ def test_an_ambiguous_same_name_hold_is_still_a_problem():
     run.mark.highlight = lambda ws, people, color=None: len(people)
     try:
         pp = _Person("Ana Lopez", 7, "ana@x.com")
-        pairs, problems = run._handle_held(
+        pairs, problems, _ = run._handle_held(
             _WS(), [pp], {"ana@x.com": "same name, different address"},
             [(_Person("Billy Garvin", 3), "Sent 8/31/26")])
     finally:
         run.mark.highlight = real
     assert problems == [("Ana Lopez", "same name, different address")]
     assert [n for n, _ in pairs] == ["Billy Garvin"]
+
+
+def test_a_hold_from_this_week_is_not_carried_over():
+    # 2026-09-28: 14 sent at 7:30, crash, rerun. Those 14 are THIS week's
+    # sends -- light blue and a count, not the "earlier week" blue and list.
+    from automations.blueink_docs import run
+
+    class _WS:
+        title = "D2D OBCL 9.28"
+
+    calls = []
+    real = run.mark.highlight
+    run.mark.highlight = (lambda ws, people, color=None:
+                          calls.append(([p.name for p in people], color))
+                          or len(people))
+    try:
+        alexa = _Person("Alexa Diaz", 18, "diazalexa2627@gmail.com")
+        pairs, problems, this_week = run._handle_held(
+            _WS(), [alexa], {"diazalexa2627@gmail.com": "Sent 9/28/26"},
+            [(_Person("Cameron Bandy", 3), "Sent 9/28/26"),
+             (_Person("Billy Garvin", 4), "Sent 9/21/26")])
+    finally:
+        run.mark.highlight = real
+    assert this_week == ["Alexa Diaz", "Cameron Bandy"]
+    assert pairs == [("Billy Garvin", "Sent 9/21/26")]
+    assert (["Alexa Diaz", "Cameron Bandy"], None) in calls          # send blue
+    assert (["Billy Garvin"], run.mark.CARRIED_BLUE) in calls
+    body = sp.build_thread(41, [], None, pairs, this_week)
+    assert "*2* already sent earlier this week" in body
+    assert "*1* not sent — already had a packet:" in body
+    assert "Alexa Diaz" not in body

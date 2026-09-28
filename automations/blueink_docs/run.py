@@ -23,6 +23,7 @@ crash mid-batch can never re-send the people already done.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import sys
 from typing import List
 
@@ -38,6 +39,7 @@ from automations.blueink_docs.roster import (NewStart, current_tab,
                                              describe_other_week_charts,
                                              unparsed_email_rows)
 from automations.recruiting_report import fill
+from automations.shared import obcl_tabs
 
 
 def _workbook():
@@ -353,6 +355,25 @@ def _send(workbook, worksheet, people: List[NewStart], is_test: bool) -> int:
     return failures
 
 
+def _sent_this_week(verdict: str, tab_title: str) -> bool:
+    """Is a hold's packet from THIS tab's week, not an earlier one?
+
+    The verdict ends in the packet's date ("Sent 9/28/26"). The dated tab is
+    named for its Monday start day, so a packet on or after that Monday is
+    this week's -- an earlier run of today's send, or the team hand-sending
+    it. Unreadable date or undated tab -> False: the old "carried" reading.
+    """
+    start = obcl_tabs.tab_date(tab_title)
+    parts = (verdict or "").split()
+    if not start or len(parts) != 2:
+        return False
+    try:
+        when = dt.datetime.strptime(parts[1], "%m/%d/%y").date()
+    except ValueError:
+        return False
+    return when >= start
+
+
 def _handle_held(worksheet, to_send_all: List[NewStart], held: dict,
                  carried: List[tuple] = None):
     """Deal with everyone Blue Ink already shows a packet for.
@@ -377,8 +398,14 @@ def _handle_held(worksheet, to_send_all: List[NewStart], held: dict,
     runs -- so without this they were the one kind of hold that stayed
     invisible, which is the bug Megan hit on 2026-09-14.
 
-    Returns ([(name, verdict)] for the clean ones, [(name, why)] to add to
-    problems).
+    A hold whose packet is from THIS week isn't carried over at all -- it's
+    this week's send reached by an earlier run (2026-09-28: 14 sent at 7:30,
+    a crash, then a rerun painted all 14 the "earlier week" blue and Slack
+    listed them as "already had a packet"). Those get the ordinary send blue
+    and come back as a bare count, not in the carried list.
+
+    Returns ([(name, verdict)] for the carried ones, [(name, why)] to add to
+    problems, [names] already sent this week).
     """
     ok, problems, verdict = [], [], {}
     for pp in to_send_all:
@@ -393,16 +420,23 @@ def _handle_held(worksheet, to_send_all: List[NewStart], held: dict,
     for pp, why in (carried or []):
         ok.append(pp)
         verdict[id(pp)] = why
-    if ok:
+    fresh = [pp for pp in ok
+             if _sent_this_week(verdict.get(id(pp), ""), worksheet.title)]
+    fresh_ids = {id(pp) for pp in fresh}
+    ok = [pp for pp in ok if id(pp) not in fresh_ids]
+    for group, color, what in ((fresh, None, "sent earlier this week, light blue"),
+                               (ok, mark.CARRIED_BLUE, "carried-over, deeper blue")):
+        if not group:
+            continue
         try:
-            tinted = mark.highlight(worksheet, ok, color=mark.CARRIED_BLUE)
+            tinted = mark.highlight(worksheet, group, color=color)
             if tinted:
-                print(f"\nTinted {tinted} carried-over packet(s) deeper blue "
-                      f"on {worksheet.title!r}.")
+                print(f"\nTinted {tinted} {what} on {worksheet.title!r}.")
         except Exception as exc:
             # Cosmetic. Never worth failing a run that mailed the right people.
-            print(f"\nCouldn't tint the carried-over packets: {exc}")
-    return ([(pp.name, verdict.get(id(pp), "")) for pp in ok], problems)
+            print(f"\nCouldn't tint the held packets ({what}): {exc}")
+    return ([(pp.name, verdict.get(id(pp), "")) for pp in ok], problems,
+            [pp.name for pp in fresh])
 
 
 def _repaint(workbook, worksheet, people: List[NewStart]) -> int:
@@ -815,15 +849,16 @@ def _main(argv=None) -> int:
         # one quiet Monday away. Falling straight out here would tint nothing
         # and say nothing in Slack, and a silent channel reads exactly like a
         # job that never fired. So mark them and post anyway.
-        held_pairs, held_problems = _handle_held(ws, to_send_all, held, carried)
-        if held_pairs or held_problems:
+        held_pairs, held_problems, this_week = _handle_held(
+            ws, to_send_all, held, carried)
+        if held_pairs or held_problems or this_week:
             try:
                 _sync_completed(ws, people)
             except Exception as exc:
                 print(f"Couldn't refresh completed packets: {exc}")
             try:
                 slack_post.post(0, held_problems, held=held_pairs,
-                                dry_run=not args.slack)
+                                earlier=this_week, dry_run=not args.slack)
             except Exception as exc:
                 print(f"\nThe Slack summary failed ({exc}).")
         # A week where everyone already has their packet IS a delivered run --
@@ -851,7 +886,8 @@ def _main(argv=None) -> int:
             if pp.eligible or "email" not in pp.skip_reason:
                 continue
             problems.append((pp.name, pp.skip_reason))
-        held_pairs, held_problems = _handle_held(ws, to_send_all, held, carried)
+        held_pairs, held_problems, this_week = _handle_held(
+            ws, to_send_all, held, carried)
         problems += held_problems
 
         # The Blue Ink column is where the green tint and the signed checkbox
@@ -889,7 +925,8 @@ def _main(argv=None) -> int:
 
         try:
             slack_post.post(sent_count, problems, warnings=warnings,
-                            held=held_pairs, dry_run=not args.slack)
+                            held=held_pairs, earlier=this_week,
+                            dry_run=not args.slack)
         except Exception as exc:
             print(f"\nThe Slack summary failed ({exc}). The sends themselves "
                   "are fine and logged -- this is only the notification.")
