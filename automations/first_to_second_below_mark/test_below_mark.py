@@ -330,14 +330,17 @@ class ColourRule(unittest.TestCase):
 
     def test_the_qualify_bands_differ_by_the_offices_goal(self):
         green, grey, red = self.plan()[9]
-        self.assertIn("$F4<0.55,J4>=0.6,J4<=0.7", green[0])      # 50% goal
-        self.assertIn("$F4>=0.55,J4>=0.65,J4<=0.8", green[0])    # 60% goal
+        self.assertIn("$F4<0.55,J4>=0.6)", green[0])      # 50% goal
+        self.assertIn("$F4>=0.55,J4>=0.65)", green[0])    # 60% goal
         self.assertIn("$F4<0.55,J4>=0.55,J4<0.6", grey[0])
         self.assertIn("$F4>=0.55,J4>=0.6,J4<0.65", grey[0])
 
-    def test_over_qualifying_is_red_too(self):
-        # Red is "not in either band", so 85% on a 60% goal is red, not green.
-        red = self.plan()[9][2]
+    def test_over_qualifying_is_green_not_red(self):
+        # Rafael 2026-09-29: no ceiling. 85% on a 60% goal is green.
+        green, _, red = self.plan()[9]
+        for formula in (green[0], red[0]):
+            self.assertNotIn("<=0.7", formula)
+            self.assertNotIn("<=0.8", formula)
         self.assertTrue(red[0].startswith('=AND(J4<>"",NOT('))
         self.assertEqual(red[1], rep.CF_RED)
 

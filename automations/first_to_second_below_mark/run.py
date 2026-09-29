@@ -499,9 +499,9 @@ def _fmt_requests(sid: int, headers: List[str], n_rows: int, week_labels: List[s
 # the same row rather than a flat number.
 #
 #   Qualify % (column J)          50% goal        60% goal
-#     green                       60 - 70%        65 - 80%
+#     green                       60%+            65%+
 #     grey                        55 - 59.9%      60 - 64.9%
-#     red                         <=54.9% or >70% <=59.9% or >80%
+#     red                         <=54.9%         <=59.9%
 #
 #   Answer/book ratio (cols O, P) green 80%+, grey 75-79.9%, red <=74.9%
 #
@@ -511,8 +511,9 @@ def _fmt_requests(sid: int, headers: List[str], n_rows: int, week_labels: List[s
 # what that means in practice: every office sits at 0% Not Contacted today, and
 # 0% is below 74.9%, so P reads red across the board.
 #
-# Red at BOTH ends on qualify is deliberate: over-qualifying just pushes the bad
-# candidates into the second round and sinks that retention instead.
+# No red on the HIGH end any more (Rafael, 2026-09-29): qualifying too many used
+# to turn red (>70% / >80%); he dropped that ceiling from the KPI sheet, so a high
+# qualify % is simply green.
 CF_GREEN = {"red": 0.576, "green": 0.769, "blue": 0.490}     # the tab's own green
 CF_GREY = {"red": 0.718, "green": 0.718, "blue": 0.718}
 CF_DARK_FG = {"red": 0.0, "green": 0.0, "blue": 0.0}
@@ -530,14 +531,14 @@ def _qualify_rules(cell: str, goal: str, present: Optional[str] = None) -> List[
     `present` is the cell to test for emptiness, which is not always `cell`:
     Declined Retention is judged through `(1-K4)`, and `(1-K4)<>""` is true even
     on a blank row, which would paint every empty row red."""
-    green = (f'OR(AND({goal}{GOAL_LOW},{cell}>=0.6,{cell}<=0.7),'
-             f'AND({goal}{GOAL_HIGH},{cell}>=0.65,{cell}<=0.8))')
+    green = (f'OR(AND({goal}{GOAL_LOW},{cell}>=0.6),'
+             f'AND({goal}{GOAL_HIGH},{cell}>=0.65))')
     grey = (f'OR(AND({goal}{GOAL_LOW},{cell}>=0.55,{cell}<0.6),'
             f'AND({goal}{GOAL_HIGH},{cell}>=0.6,{cell}<0.65))')
     # Red is "has a value and is in neither band", so nothing can fall through
     # uncoloured and quietly look fine.
-    in_band = (f'OR(AND({goal}{GOAL_LOW},{cell}>=0.55,{cell}<=0.7),'
-               f'AND({goal}{GOAL_HIGH},{cell}>=0.6,{cell}<=0.8))')
+    in_band = (f'OR(AND({goal}{GOAL_LOW},{cell}>=0.55),'
+               f'AND({goal}{GOAL_HIGH},{cell}>=0.6))')
     red = f'AND({present or cell}<>"",NOT({in_band}))'
     return [(f"={green}", CF_GREEN, CF_DARK_FG),
             (f"={grey}", CF_GREY, CF_DARK_FG),
