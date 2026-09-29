@@ -32,7 +32,7 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
-from automations.first_round_scorecards import fathom, grade
+from automations.first_round_scorecards import doc, fathom, grade
 
 CHANNEL_ID = "C0C42793AKS"          # #ars-recruiting-numbers (Eve, 2026-09-29)
 EVE_USER_ID = "U088E2KJEV8"         # preview DMs
@@ -71,11 +71,14 @@ def emoji(score: int) -> str:
     return "🟢" if score >= 90 else ("🟡" if score >= 70 else "🔴")
 
 
-def reply_text(m: Dict, result: Optional[Dict], *, skipped: str = "") -> str:
+def reply_text(m: Dict, result: Optional[Dict], *, skipped: str = "",
+               doc_link: str = "") -> str:
     """One interview = one reply. Short on purpose: the score, what was missed,
-    the coaching, and the recording to check it against."""
+    the coaching, then the full audit (a Google Doc) and the recording."""
     head = f"*{_clock(fathom.start_ct(m))} CT* · {fathom.minutes(m)} min"
     link = f"<{m.get('share_url') or m.get('url')}|Watch the recording>"
+    if doc_link:
+        link = f"📄 <{doc_link}|Full audit>  ·  {link}"
     if skipped:
         return f"{head}\n⚪ Not scored — {skipped}\n{link}"
     s = grade.score(result)
@@ -184,7 +187,19 @@ def post(day: dt.date, graded: Dict[str, List], *, preview: bool) -> int:
             failed += 1
             continue
         for m, result, skipped in todo:
-            text = reply_text(m, result, skipped=skipped)
+            doc_link = ""
+            if result:
+                # the full audit first: a reply without its doc would be marked
+                # posted and never get one, so a failed upload skips the reply
+                # and the next tick retries it
+                try:
+                    doc_link = doc.upload(m, name, result)
+                except Exception as exc:  # noqa: BLE001
+                    print(f"  {name} {_clock(fathom.start_ct(m))}: audit doc FAILED "
+                          f"{type(exc).__name__}: {exc} - not posted")
+                    failed += 1
+                    continue
+            text = reply_text(m, result, skipped=skipped, doc_link=doc_link)
             try:
                 resp = client.chat_postMessage(channel=channel, thread_ts=ts, text=text,
                                                unfurl_links=False, unfurl_media=False)
@@ -229,6 +244,11 @@ def main(argv=None) -> int:
         print(f"\n=== {thread_title(name)} ({len(rows)}) ===")
         for m, result, skipped in rows:
             print(reply_text(m, result, skipped=skipped))
+            if result and not args.post:
+                OUT_DIR.mkdir(parents=True, exist_ok=True)
+                page = OUT_DIR / f"{day}_{fathom.start_ct(m):%H%M}_{name}.html"
+                page.write_text(doc.build_html(m, name, result), encoding="utf-8")
+                print(f"    full audit (dry-run copy): {page}")
             if result:
                 for key, q, _ in grade.ITEMS:
                     it = result["items"][key]

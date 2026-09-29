@@ -1,7 +1,7 @@
 """python -m unittest automations.first_round_scorecards.test_run"""
 import unittest
 
-from automations.first_round_scorecards import grade, run
+from automations.first_round_scorecards import doc, grade, run
 
 MEETING = {"recording_id": 1, "recording_start_time": "2026-09-29T15:47:15Z",
            "recording_end_time": "2026-09-29T16:02:55Z",
@@ -14,7 +14,9 @@ def result(**happened):
     for k, v in happened.items():
         items[k]["happened"] = v
     return {"is_interview": True, "not_interview_reason": "", "applicants": ["Nakechia"],
-            "items": items, "coaching": ["Do the schedule section.", "Keep the pay on script."]}
+            "items": items, "coaching": ["Do the schedule section.", "Keep the pay on script."],
+            "applicant_questions": [{"topic": "Door to door", "question": "Is this in the field? @4:10",
+                                     "answer": "Yes, face to face with clients. @4:15"}]}
 
 
 class ScoreTest(unittest.TestCase):
@@ -53,6 +55,24 @@ class ReplyTest(unittest.TestCase):
 
     def test_thread_title(self):
         self.assertEqual(run.thread_title("Valentina"), "Valentina's 1st Round Scorecards")
+
+
+class DocTest(unittest.TestCase):
+    def test_reply_links_the_full_audit(self):
+        text = run.reply_text(MEETING, result(), doc_link="https://docs.google.com/d/1")
+        self.assertIn("📄 <https://docs.google.com/d/1|Full audit>", text)
+
+    def test_doc_has_every_item_and_timestamps_link_to_the_moment(self):
+        page = doc.build_html(MEETING, "Valentina", result(schedule=False))
+        for _, question, _ in grade.ITEMS:
+            self.assertIn(question.split("(")[0][:30], page)
+        self.assertIn("Scorecard: <span", page)
+        self.assertIn('href="https://fathom.video/share/x?timestamp=250">@4:10</a>', page)
+        self.assertIn("Door to door", page)
+
+    def test_doc_name(self):
+        self.assertEqual(doc.doc_name(MEETING, "Valentina"),
+                         "Valentina — Sep 29 10:47 AM — 1st rd audit")
 
 
 class DueTest(unittest.TestCase):

@@ -1,0 +1,142 @@
+"""The full audit of one interview, as a Google Doc -- the link in each Slack reply.
+
+Same layout as the manual pilot's docs (Sep 22-24, Rafael's 9/24 feedback):
+plain full-width text, no tables -- header, scorecard + coaching, the red
+flags, the must-dos, then the applicants' questions.
+
+Drive: alphaletereporting's own Drive through the fiber_activations token
+(drive.file scope -- it only touches files it created). One folder
+'1st Round AI Audits', a subfolder per day ('2026-09-29'), one doc per
+interview. A re-run updates the doc in place, so the link already posted keeps
+working. SHARE_WITH gives those people read access to the top folder (the
+day folders and docs inherit it); nothing is ever shared with 'anyone with
+the link'.
+"""
+from __future__ import annotations
+
+import html
+import io
+import re
+from typing import Dict, List
+
+from automations.first_round_scorecards import fathom, grade
+
+FOLDER_NAME = "1st Round AI Audits"
+FOLDER_MIME = "application/vnd.google-apps.folder"
+DOC_MIME = "application/vnd.google-apps.document"
+SHARE_WITH: List[str] = []          # emails that get read access to the folder
+GREEN, RED, YELLOW = "#38761d", "#cc0000", "#bf9000"
+_TS = re.compile(r"@(\d{1,2}):(\d{2})(?::(\d{2}))?")
+
+
+def _linked(text: str, share: str) -> str:
+    """Escape the note and turn every '@12:29' into a link to that moment."""
+    def go(m):
+        h, mi, se = m.group(1), m.group(2), m.group(3)
+        secs = int(h) * 3600 + int(mi) * 60 + int(se) if se else int(h) * 60 + int(mi)
+        return f'<a href="{share}?timestamp={secs}">{m.group(0)}</a>'
+    return _TS.sub(go, html.escape(text))
+
+
+def build_html(m: Dict, name: str, result: Dict) -> str:
+    s = grade.score(result)
+    share = m.get("share_url") or m.get("url") or ""
+    start = fathom.start_ct(m)
+    col = GREEN if s["score"] >= 90 else (YELLOW if s["score"] >= 70 else RED)
+    who = ", ".join(a for a in result.get("applicants") or [] if a.strip()) or "—"
+    speaker = (m.get("recorded_by") or {}).get("name") or ""
+    out = ['<html><head><meta charset="utf-8"></head><body style="font-family:Arial;font-size:11pt">',
+           f"<h1>1st Round AI Audit — {html.escape(name)}, {start:%b %d} {start.strftime('%I:%M %p').lstrip('0')}</h1>",
+           f"<p><b>Interview:</b> {start:%a, %b %d, %Y} · <b>Start time:</b> "
+           f"{start.strftime('%I:%M %p').lstrip('0')} CT · {fathom.minutes(m)} min · "
+           f'<a href="{share}">Fathom recording</a></p>',
+           f"<p><b>Interviewer:</b> {html.escape(name)} ({html.escape(speaker)}) · "
+           f"<b>Applicants:</b> {html.escape(who)}</p>",
+           f'<h2>Scorecard: <span style="color:{col}">{s["score"]} / 100 {_emoji(s["score"])}</span></h2>',
+           f"<p>🚩 Red flags: <b>{s['red_hit']} of 5</b> happened · ✅ Must-dos: "
+           f"<b>{s['musts_done']} of 6</b> done</p>",
+           "<p><i>11 items (5 red flags + 6 must-dos). Score = % of items passed. Red flag: "
+           "YES = bad. Must-do: YES = good, only if fully done. 90+ 🟢 · 70–89 🟡 · under 70 🔴</i></p>",
+           "<p><b>Coaching points:</b></p><ul>"
+           + "".join(f"<li>{html.escape(c)}</li>" for c in result.get("coaching") or [])
+           + "</ul>"]
+    n = 0
+    for kind, title in (("red", "🚩 Red flags — should NOT happen"),
+                        ("must", "✅ Must-dos — should happen")):
+        out.append(f"<h2>{title}</h2>")
+        for key, question, k in grade.ITEMS:
+            if k != kind:
+                continue
+            n += 1
+            it = (result.get("items") or {}).get(key) or {}
+            yes = bool(it.get("happened"))
+            good = (not yes) if kind == "red" else yes
+            flag = " 🚩" if kind == "red" and yes else ""
+            out.append(f'<h3>{n}. {html.escape(question)} — <span style="color:{GREEN if good else RED}">'
+                       f'{"YES" if yes else "NO"}{flag}</span></h3>')
+            out.append(f"<p>{_linked(it.get('note') or '', share)}</p>")
+            if key == "commute":
+                out.append("<p><i>Address in the Zoom chat: chat messages are not in the Fathom "
+                           "transcript, so this is only caught if she says it out loud.</i></p>")
+    out.append("<h2>❓ Applicants' questions</h2>")
+    qs = result.get("applicant_questions") or []
+    if not qs:
+        out.append("<p>None of the usual questions came up (door to door, benefits, flexible "
+                   "schedule, scam, hourly pay, specific city).</p>")
+    for q in qs:
+        out.append(f"<p><b>{html.escape(q.get('topic') or '')}:</b> {_linked(q.get('question') or '', share)}"
+                   f"<br><b>Answer:</b> {_linked(q.get('answer') or '', share)}</p>")
+    out.append("</body></html>")
+    return "\n".join(out)
+
+
+def _emoji(score: int) -> str:
+    return "🟢" if score >= 90 else ("🟡" if score >= 70 else "🔴")
+
+
+def doc_name(m: Dict, name: str) -> str:
+    start = fathom.start_ct(m)
+    return f"{name} — {start:%b %d} {start.strftime('%I:%M %p').lstrip('0')} — 1st rd audit"
+
+
+def _service():
+    from googleapiclient.discovery import build
+    from automations.fiber_activations import drive_auth
+    return build("drive", "v3", credentials=drive_auth.load_credentials(), cache_discovery=False)
+
+
+def _folder(svc, name: str, parent: str = "") -> str:
+    q = f"name = '{name}' and mimeType = '{FOLDER_MIME}' and trashed = false"
+    if parent:
+        q += f" and '{parent}' in parents"
+    found = svc.files().list(q=q, spaces="drive", fields="files(id)").execute().get("files", [])
+    if found:
+        return found[0]["id"]
+    body = {"name": name, "mimeType": FOLDER_MIME, **({"parents": [parent]} if parent else {})}
+    fid = svc.files().create(body=body, fields="id").execute()["id"]
+    if not parent:
+        for email in SHARE_WITH:
+            svc.permissions().create(fileId=fid, sendNotificationEmail=False,
+                                     body={"type": "user", "role": "reader",
+                                           "emailAddress": email}).execute()
+    return fid
+
+
+def upload(m: Dict, name: str, result: Dict, svc=None) -> str:
+    """Create (or update in place) the interview's doc -> its link."""
+    from googleapiclient.http import MediaIoBaseUpload
+    svc = svc or _service()
+    top = _folder(svc, FOLDER_NAME)
+    day = _folder(svc, fathom.start_ct(m).date().isoformat(), top)
+    title = doc_name(m, name)
+    media = MediaIoBaseUpload(io.BytesIO(build_html(m, name, result).encode("utf-8")),
+                              mimetype="text/html", resumable=False)
+    q = f"name = '{title.replace(chr(39), chr(92) + chr(39))}' and '{day}' in parents and trashed = false"
+    existing = svc.files().list(q=q, spaces="drive", fields="files(id)").execute().get("files", [])
+    if existing:
+        fid = existing[0]["id"]
+        svc.files().update(fileId=fid, media_body=media).execute()
+    else:
+        fid = svc.files().create(body={"name": title, "parents": [day], "mimeType": DOC_MIME},
+                                 media_body=media, fields="id").execute()["id"]
+    return svc.files().get(fileId=fid, fields="webViewLink").execute()["webViewLink"]

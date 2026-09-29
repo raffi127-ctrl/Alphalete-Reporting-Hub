@@ -86,7 +86,11 @@ The interviewer is the speaker named in the request (the Zoom account name, e.g.
 THE SCRIPT
 {SCRIPT}
 {RULES}
-For every item give a one-sentence note in plain English, with the timestamp (like @12:29) and at most one short quote. Then 2 or 3 short coaching points for the interviewer: most important first, what to fix and what to keep doing. Plain, simple words -- the readers are not technical.
+For every item write a note of 1-3 sentences in plain English: what she actually said, as a quote with its timestamp (like @12:29), and -- when it falls short -- what the script says instead. If the item never came up, say so. Then 2 or 3 short coaching points for the interviewer: most important first, what to fix and what to keep doing.
+
+Also list the applicants' questions on these topics, each with the interviewer's answer as said (quote + timestamp): door to door / field work, benefits, flexible schedule, is this a scam, hourly pay, working in a specific city. Leave the list empty if none came up.
+
+Plain, simple words -- the readers are not technical.
 
 If the recording is not a 1st round interview (empty, a test, a different kind of meeting, or it stops before the interview really starts), set is_interview to false and explain in not_interview_reason."""
 
@@ -95,7 +99,8 @@ _ITEM_SCHEMA = {"type": "object", "additionalProperties": False,
                 "properties": {"happened": {"type": "boolean"}, "note": {"type": "string"}}}
 SCHEMA = {
     "type": "object", "additionalProperties": False,
-    "required": ["is_interview", "not_interview_reason", "applicants", "items", "coaching"],
+    "required": ["is_interview", "not_interview_reason", "applicants", "items", "coaching",
+                 "applicant_questions"],
     "properties": {
         "is_interview": {"type": "boolean"},
         "not_interview_reason": {"type": "string"},
@@ -104,6 +109,11 @@ SCHEMA = {
                   "required": [k for k, _, _ in ITEMS],
                   "properties": {k: _ITEM_SCHEMA for k, _, _ in ITEMS}},
         "coaching": {"type": "array", "items": {"type": "string"}},
+        "applicant_questions": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False,
+            "required": ["topic", "question", "answer"],
+            "properties": {"topic": {"type": "string"}, "question": {"type": "string"},
+                           "answer": {"type": "string"}}}},
     },
 }
 
