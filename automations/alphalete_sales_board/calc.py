@@ -36,6 +36,7 @@ from __future__ import annotations
 from typing import Dict, List, Optional, Tuple
 
 from automations.alphalete_sales_board import config as C
+from automations.total_knocks import guests
 from automations.rep_sales_fill.board import _norm_name
 
 METRICS = ("Int", "Int Up", "DTV", "NL")
@@ -125,7 +126,17 @@ def calculate(agents: List[Dict], board_names: List[str],
         m = metrics_for(a)
         if not any(m.values()):
             continue
-        why = C.EXCLUDE_REPS.get(str(a.get("name", "")).strip().upper())
+        # A GUEST OFFICE'S REP, selling under this office's SaraPlus code.
+        # Same bucket as EXCLUDE_REPS and for the same reason: they are not a
+        # missing roster row, so reporting them as unmatched on all 150 sweeps
+        # is how a REAL missing rep stops being noticed. Dropping them here
+        # takes them off the board fill, out of the sold list, out of TOTALS
+        # and out of the team lines at once — every one of those reads this
+        # function's output.
+        guest = guests.guest_for(C.GUEST_HOST, str(a.get("name", "")))
+        why = (("%s's rep, selling under %s's code" % (guest, C.GUEST_HOST))
+               if guest else
+               C.EXCLUDE_REPS.get(str(a.get("name", "")).strip().upper()))
         if why:
             # Named, counted, and NOT reported as a problem -- see EXCLUDE_REPS.
             excluded.append("%s (%s)" % (a.get("name", ""), why))

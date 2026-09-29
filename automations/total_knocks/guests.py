@@ -236,3 +236,46 @@ def report(host: str, rows, *, logfn=print) -> None:
         claimed, missing = match_rows(rows, roster(host, guest))
         logfn(f"[guests] {host} -> {guest}: {len(claimed)} matched"
               + (f", MISSING {', '.join(missing)}" if missing else ""))
+
+
+def guest_for(host: str, name: str) -> str:
+    """The guest office `name` belongs to under `host`, or "".
+
+    ONE NAME AT A TIME, for the callers that have no grid to split — the
+    SaraPlus sales sweep asks "is this seller one of Carlos's?" about a single
+    ALL-CAPS name (Raf 2026-09-29: "can we make it where carlos's reps that
+    are selling in my code don't get added to my sales board"). Same four
+    passes as `match_rows`, so a rep who comes off the knock board comes off
+    the sales board too — one roster, one answer, no second list to keep.
+
+    A name claimed by TWO guest offices returns "" — with more than one guest
+    under a host that is genuinely ambiguous, and a sale credited to the wrong
+    office is worse than one left where it is. A sale dropped in error is
+    invisible to everybody; a sale left on the host's board is visible and
+    gets corrected out loud.
+    """
+    n = (name or "").strip()
+    if not n or not has_guests(host):
+        return ""
+    keys = {_norm(n), _plain(n)}
+    short = _short(n)
+    toks = _plain(n).split()
+    hits = set()
+    for guest in guests_of(host):
+        for r in roster(host, guest):
+            rk = {_norm(r), _plain(r)}
+            if keys & rk:
+                hits.add(guest)
+                break
+            rs = _short(r) or _plain(r)
+            if rs and rs in (short or _plain(n)):
+                hits.add(guest)
+                break
+            if short and rs == short:
+                hits.add(guest)
+                break
+            rt = _plain(r).split()
+            if _subseq(rt, toks) or _subseq(toks, rt):
+                hits.add(guest)
+                break
+    return hits.pop() if len(hits) == 1 else ""

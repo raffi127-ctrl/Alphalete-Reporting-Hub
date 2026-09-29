@@ -56,6 +56,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 from automations.alphalete_sales_board import calc
 from automations.alphalete_sales_board import config as C
+from automations.total_knocks import guests
 
 TAB = "Times of Sales"
 
@@ -201,6 +202,13 @@ def totals(agents: Sequence[Dict]) -> Dict[str, int]:
     """
     new_internet = dtv = total = 0
     for a in agents:
+        # …EXCEPT another owner's reps selling under this office's code. A
+        # rep with no board row yet is still this office's pace; one of
+        # Carlos's is not this office at all (Raf 2026-09-29). Left in, the
+        # snapshot and the board's TOTALS would disagree by exactly those
+        # sales, off the SAME sweep — one place to look, two answers.
+        if guests.guest_for(C.GUEST_HOST, str(a.get("name", ""))):
+            continue
         m = calc.metrics_for(a)
         new_internet += m["Int"]
         dtv += m["DTV"]

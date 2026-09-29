@@ -62,6 +62,19 @@ EXCLUDE_REPS = {
     "JOSHUA MASCORRO": "sales manager, not on the board roster (Megan 2026-08-26)",
 }
 
+# WHOSE BOARD THIS IS. Reps who sell under this office's SaraPlus code but
+# belong to another owner are kept off it — Raf 2026-09-29: "can we make it
+# where carlos's reps that are selling in my code don't get added to my sales
+# board please?" He sent the sold list with Jorge Gramajo on it and
+# 'Unassigned: 1' under the team lines, which is what one of Carlos's reps
+# looks like from his side: a sale on his board, on nobody's team.
+#
+# THE ROSTER IS NOT COPIED HERE. It is the ONE list the knock boards already
+# split on (total_knocks.guests.GUEST_REPS), so a rep Carlos adds or drops
+# moves on the sales board and the knock boards together, from one edit. See
+# calc.calculate.
+GUEST_HOST = "Rafael Hidalgo"
+
 # SaraPlus spelling -> the name as col C carries it. Only rows where the LETTERS
 # differ belong here; parentheticals like '(Wk3)' are stripped before matching.
 NAME_MAP: Dict[str, str] = {

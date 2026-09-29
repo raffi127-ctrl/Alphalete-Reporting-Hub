@@ -416,6 +416,19 @@ def main(argv=None) -> int:
         _log(f"ownerville answered for {pulled_day}, not {day} -- writing nothing")
         return 75
 
+    # REPS WHO KNOCK UNDER THIS OFFICE BUT BELONG TO ANOTHER OWNER never reach
+    # the board (Raf 2026-09-29: "carlos's reps that are selling in my code
+    # don't get added to my sales board"). Knocks are the same claim as sales
+    # here — this writes the TK and Talk-To columns of the very row his ask is
+    # about, and Jorge Gramajo's 34 knocks were on it. Same roster the knock
+    # boards and the SaraPlus sweep split on, so one edit moves all three.
+    # Existing cells are left alone: this fill only ever raises.
+    # Whose board this is, read from the ONE place that declares it — the
+    # same workbook the SaraPlus sweep writes.
+    from automations.alphalete_sales_board.config import GUEST_HOST
+    from automations.total_knocks import guests as _guests
+    records, _guested = _guests.split(GUEST_HOST, records, logfn=_log)
+
     def _counts(column):
         out = {}
         for rec in records:
