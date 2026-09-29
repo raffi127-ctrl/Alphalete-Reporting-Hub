@@ -560,6 +560,17 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool,
                 N.slack(N.records_line(rep, records.get(rep, up), up),
                         dry_run=not send, log=_log)
 
+    # CARLOS'S FOURTEEN, to HIS chats (Carlos 2026-09-29) -- AFTER everything
+    # of Raf's has gone out, and walled off: a failure here costs this feed
+    # and nothing else. See guest_feed.
+    try:
+        from automations.alphalete_sales_board import guest_feed
+        data = guest_feed.run(data, day, agents, records, rec_gained,
+                              raf_baseline=baseline, send=send,
+                              apply_writes=apply_writes, log=_log)
+    except Exception as e:  # noqa: BLE001
+        _log("guest feed skipped: %s: %s" % (type(e).__name__, str(e)[:160]))
+
     if C.lvl1_due() and not S.lvl1_sent(data, day):
         # One resolve+send per room. A group that can't be resolved must not
         # cost the others their scoreboard, so each is attempted on its own.
