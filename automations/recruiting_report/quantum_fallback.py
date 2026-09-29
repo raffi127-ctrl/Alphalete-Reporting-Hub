@@ -21,6 +21,12 @@ Sources (workbook `AT&T Quantum Fiber Sales Tracker`, RES-LumenSalesTrackervMZ):
   - `RES-Quantum Fiber Headcount by ICD`       -> Active Headcount on Tableau
 Both are weekly (last ~5 weeks), same as the Angel Padilla tab.
 
+It also CHECKS (Eve, 2026-09-29: "anotalo como cola del focus report para
+hacerlo solo") that every AppStream office of the tab — the top box and each
+sibling box — got its recruiting for the week from the Focus Report run. An
+empty box = exit 1, which the orchestrator raises in the corrections channel
+by itself; a clean Monday stays quiet.
+
 Total Apps and the AVG rows are formulas: never written. Rows by column-B
 label inside the OPT block, weeks by the date header. Runs on a Lucy (Tableau).
 """
@@ -129,6 +135,58 @@ def decide(ni_value: str, ni_note: str) -> str:
     return "quantum"
 
 
+# Raw AppStream counts the recruiting fill writes as values (the % rows can be
+# formulas that read 0% on an empty week, so they prove nothing).
+RECRUITING_PROOF = ("pull", "first_booked")
+
+
+def recruiting_filled(values: List[List[str]], col: int,
+                      metric_rows: Dict[str, int]) -> bool:
+    """True when this section's raw recruiting counts are there for the week
+    (`col` 1-based). A 0 counts as filled — AppStream said zero. Pure."""
+    rows = [metric_rows[k] for k in RECRUITING_PROOF if k in metric_rows]
+    if not rows:
+        return False
+    for r in rows:
+        row = values[r - 1] if r - 1 < len(values) else []
+        if col - 1 >= len(row) or str(row[col - 1]).strip() == "":
+            return False
+    return True
+
+
+def check_recruiting(sh, ws, week: dt.date) -> List[str]:
+    """Monday self-check (Eve, 2026-09-29): every AppStream office of this tab
+    (primary box + siblings) got its recruiting for `week` from the Focus
+    Report run. Returns one problem line per empty box; [] = all good."""
+    from automations.recruiting_report import fill
+
+    entry = next((c for c in fill.load_mapping().get("confirmed", [])
+                  if c.get("sheet_tab") == ws.title), None)
+    if not entry:
+        return ["%s: not confirmed in office-mapping.json" % ws.title]
+    values = fill._retry(ws.get_all_values)
+    col = fill.find_sunday_columns(values, header_row_idx=0).get(week)
+    if col is None:
+        return ["%s: no WE %s column" % (ws.title, week)]
+    problems = []
+    for oid in [entry["office_id"]] + list(entry.get("siblings", [])):
+        if oid == entry["office_id"]:
+            anchor = 1
+        else:
+            anchor = fill.find_office_section_anchor(ws, oid)
+            if not anchor:
+                problems.append("%s office %s: no box anchor in column A" % (ws.title, oid))
+                continue
+        rows = fill.find_office_metric_rows(ws, anchor_row=anchor, max_rows=30)
+        ok = recruiting_filled(values, col, rows)
+        print("RECRUITING | %s | office %s | WE %s | %s"
+              % (ws.title, oid, week, "filled" if ok else "EMPTY"))
+        if not ok:
+            problems.append("%s office %s: recruiting empty for WE %s"
+                            % (ws.title, oid, week))
+    return problems
+
+
 def _most_recent_sunday(today: Optional[dt.date] = None) -> dt.date:
     today = today or dt.date.today()
     return today - dt.timedelta(days=(today.weekday() + 1) % 7)
@@ -194,6 +252,14 @@ def _download(views_needed) -> Dict[str, List[List[str]]]:
     return grids
 
 
+def _verdict(problems: List[str]) -> int:
+    """Exit 1 on any empty recruiting box, so the orchestrator raises it in
+    #claudecorrections-and-requests on its own; a clean Monday stays quiet."""
+    for p in problems:
+        print("PROBLEM | " + p)
+    return 1 if problems else 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--week", help="WE Sunday YYYY-MM-DD (default: last Sunday).")
@@ -211,9 +277,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     sh = fill.open_sheet()
     print("[quantum] WE %s · write=%s · %d tab(s)" % (week, args.write, len(TABS)))
 
+    problems: List[str] = []
     pending = {}
     for tab in TABS:
         ws = fill._retry(sh.worksheet, tab)
+        problems += check_recruiting(sh, ws, week)
         col, ni_row, hc_row, ni_val, note = _tab_cells(sh, ws, week)
         if decide(ni_val, note) == "att":
             print("ATT FIBER | %s | WE %s | New Internets = %s from AT&T -> "
@@ -222,11 +290,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             continue
         pending[tab] = (ws, col, ni_row, hc_row, ni_val)
 
+    rc = _verdict(problems)
     if not pending:
-        return 0
+        return rc
 
     grids = _download([(SALES_VIEW, SALES_SHEET), (HC_VIEW, HC_SHEET)])
-    rc = 0
     for tab, (ws, col, ni_row, hc_row, ni_val) in pending.items():
         cfg = TABS[tab]
         ni = quantum_sales(grids[SALES_SHEET], cfg["sales_key"], week)

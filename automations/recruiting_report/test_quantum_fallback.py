@@ -46,5 +46,26 @@ class QuantumFallbackTest(unittest.TestCase):
         self.assertEqual(Q.decide("203", Q.NOTE), "quantum")
 
 
+class RecruitingCheckTest(unittest.TestCase):
+    ROWS = {"pull": 2, "first_booked": 3, "total_applies": 4}
+    GRID = [["", "WE SUNDAY", "9/20/26", "9/27/26"],
+            ["", "Sent To Call List", "636", ""],
+            ["", "1ST BOOKED", "0", ""],
+            ["", "Total Applies", "861", "0"]]
+
+    def test_filled_week(self):
+        self.assertTrue(Q.recruiting_filled(self.GRID, 3, self.ROWS))
+
+    def test_empty_week_even_if_formula_rows_show_zero(self):
+        self.assertFalse(Q.recruiting_filled(self.GRID, 4, self.ROWS))
+
+    def test_no_metric_rows_is_not_filled(self):
+        self.assertFalse(Q.recruiting_filled(self.GRID, 3, {}))
+
+    def test_verdict(self):
+        self.assertEqual(Q._verdict([]), 0)
+        self.assertEqual(Q._verdict(["x"]), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

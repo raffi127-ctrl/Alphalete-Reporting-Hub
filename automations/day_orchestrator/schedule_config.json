@@ -921,7 +921,7 @@
     },
     "quantum_fallback": {
       "on_scheduler": true,
-      "_note": "ADDED 2026-09-29 (Eve). Nigel Marshall is moving from Quantum Fiber (Lumen) to AT&T Fiber. Runs right after the Monday ATT Focus Report: if the ATT run wrote New Internets > 0 on his tab for last week, AT&T fiber has started and nothing is touched; otherwise it writes New Internets + Active Headcount on Tableau from the Quantum tracker (RES-Quantum Fiber ICD Week Ending Sales / Headcount by ICD) with a cell note. Tabs live in quantum_fallback.TABS; drop Nigel from there once ATT fiber has fully taken over. Manual: lucy rerun quantum_fallback (dry) / --write.",
+      "_note": "ADDED 2026-09-29 (Eve). Nigel Marshall is moving from Quantum Fiber (Lumen) to AT&T Fiber. Runs right after the Monday ATT Focus Report: if the ATT run wrote New Internets > 0 on his tab for last week, AT&T fiber has started and nothing is touched; otherwise it writes New Internets + Active Headcount on Tableau from the Quantum tracker (RES-Quantum Fiber ICD Week Ending Sales / Headcount by ICD) with a cell note. It also checks that every AppStream box of the tab (top + siblings) got its recruiting for the week and exits 1 if one is empty, so the miss surfaces in the corrections channel without anyone looking. Tabs live in quantum_fallback.TABS; drop Nigel from there once ATT fiber has fully taken over. Manual: lucy rerun quantum_fallback (dry) / --write.",
       "display_name": "Focus — Quantum fallback while an ICD moves to AT&T Fiber",
       "source_type": "tableau",
       "data_sources": [],
