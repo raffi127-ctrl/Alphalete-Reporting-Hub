@@ -317,6 +317,7 @@ def _lane_owns(action: str, lane: str) -> bool:
 # Args column, so a password left sitting there is a password on screen. Older
 # secret actions ask the queuer to redact by hand; these don't rely on memory.
 SECRET_ACTIONS = {"set_appstream_alt_creds", "set_appstream_creds",
+                  "set_posted_state",   # a 30KB blob -- blank the cell on finish
                   "set_ownerville_creds",
                   "set_appstream_account",
                   "set_doubleentry_creds",
@@ -4536,6 +4537,83 @@ def _action_push_cred_file(args: str) -> tuple[bool, str]:
                   "Args blank on landing")
 
 
+# "ALREADY POSTED" STATE FOR THE SINGLE-OWNER CUTS (2026-09-29, office metrics
+# moving Lucy 1 -> Lucy 4). Canceled Orders and Disconnects post only rows that
+# are NEW since the last run, remembered per owner in output/<report>/_posted/
+# (shared/single_owner_dedup). A runner without that memory posts every row in
+# the 30-day window as if it were new -- so the memory has to travel with the
+# reports. Same route as push_cred_file (the queue, no LAN needed); the payload
+# is a gzipped tar of just those two folders, base64'd into the Args cell.
+POSTED_STATE_DIRS = ("canceled_orders/_posted", "disconnects/_posted")
+_POSTED_STATE_MAX_CHARS = 45_000   # a Sheet cell holds 50,000
+
+
+def _action_push_posted_state(args: str) -> tuple[bool, str]:
+    """Push this machine's single-owner 'already posted' state to another
+    runner. Args: '<target machine>'."""
+    import base64, io, tarfile
+    target = (args or "").strip().strip("'\"").strip()
+    if not target:
+        return False, "push_posted_state needs '<target machine>'"
+    if target.lower() == _this_box().strip().lower():
+        return False, "target is THIS machine — nothing to push"
+    out = REPO_ROOT / "output"
+    have = [d for d in POSTED_STATE_DIRS if (out / d).is_dir()]
+    if not have:
+        return False, "no _posted state on this machine — nothing to push"
+    buf = io.BytesIO()
+    n = 0
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        for d in have:
+            for f in sorted((out / d).glob("*.json")):
+                tar.add(str(f), arcname=f"{d}/{f.name}")
+                n += 1
+    payload = base64.b64encode(buf.getvalue()).decode("ascii")
+    if len(payload) > _POSTED_STATE_MAX_CHARS:
+        return False, (f"state is {len(payload)} chars — too big for one Sheet "
+                       "cell; copy it by hand")
+    enqueue("set_posted_state", payload, by=f"push from {_machine_profile()}",
+            machine=target, auto=True)
+    return True, f"queued {n} file(s) from {', '.join(have)} onto '{target}' ({len(payload)} chars)"
+
+
+def _action_set_posted_state(args: str) -> tuple[bool, str]:
+    """Unpack a pushed 'already posted' state. Only ever writes *.json inside
+    output/{canceled_orders,disconnects}/_posted; backs up what is there first;
+    never replaces a file that is NEWER here than the pushed copy."""
+    import base64, io, shutil, tarfile
+    raw = (args or "").strip().strip("'\"")
+    try:
+        data = base64.b64decode(raw, validate=True)
+        tar = tarfile.open(fileobj=io.BytesIO(data), mode="r:gz")
+    except Exception as e:  # noqa: BLE001
+        return False, f"payload unreadable: {type(e).__name__}"
+    out = REPO_ROOT / "output"
+    stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    wrote, kept = 0, 0
+    with tar:
+        for m in tar.getmembers():
+            d, _, name = m.name.rpartition("/")
+            if (not m.isfile() or d not in POSTED_STATE_DIRS or "/" in name
+                    or not name.endswith(".json") or name.startswith(".")):
+                return False, f"refused: unexpected member {m.name!r} — nothing written"
+        for m in tar.getmembers():
+            dst = out / m.name
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if dst.exists():
+                if dst.stat().st_mtime > m.mtime:
+                    kept += 1
+                    continue
+                bak = out / "_posted_backup" / stamp / m.name
+                bak.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(dst, bak)
+            with tar.extractfile(m) as src, open(dst, "wb") as fh:
+                fh.write(src.read())
+            os.utime(dst, (m.mtime, m.mtime))
+            wrote += 1
+    return True, f"installed {wrote} file(s); kept {kept} newer local file(s)"
+
+
 def _action_set_cred_file(args: str) -> tuple[bool, str]:
     """Install a pushed credential file at its whitelisted path (see
     _CRED_FILES). In SECRET_ACTIONS, so the Args cell blanks on finish.
@@ -8272,6 +8350,8 @@ ACTIONS = {
     "set_slack_user_token": _action_set_slack_user_token,
     "push_slack_tokens": _action_push_slack_tokens,
     "push_cred_file": _action_push_cred_file,
+    "push_posted_state": _action_push_posted_state,
+    "set_posted_state": _action_set_posted_state,
     "set_cred_file": _action_set_cred_file,
     "set_office_slack_token": _action_set_office_slack_token,
     "set_dd_bot_token": _action_set_dd_bot_token,
