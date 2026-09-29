@@ -11,6 +11,7 @@ who these DMs arrive from).
 from __future__ import annotations
 
 import datetime as dt
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -65,6 +66,43 @@ def _caption(today: dt.date, summary: Optional[str]) -> str:
     return f"{head}\n{summary}" if summary else head
 
 
+_RETRY_WAIT_S = 20
+
+
+def _is_timeout(error) -> bool:
+    """A Slack call that timed out (connect or read) — as opposed to Slack
+    answering with an error, which a retry won't fix."""
+    import socket
+    from urllib.error import URLError
+    reason = error.reason if isinstance(error, URLError) else error
+    return (isinstance(reason, (socket.timeout, TimeoutError))
+            or "timed out" in str(error).lower())
+
+
+def _with_timeout_retry(call, tries: int = 3):
+    """Run an idempotent Slack call, retrying only on a timeout."""
+    for attempt in range(tries):
+        try:
+            return call()
+        except Exception as e:  # noqa: BLE001
+            if attempt == tries - 1 or not _is_timeout(e):
+                raise
+            time.sleep(_RETRY_WAIT_S)
+
+
+def _caption_posted_since(client, channel: str, caption: str,
+                          since: float) -> bool:
+    """Is a message with this exact caption already in the DM since ``since``?
+    Raises if the DM can't be read — the caller treats that as "unknown"."""
+    resp = _with_timeout_retry(lambda: client.conversations_history(
+        channel=channel, oldest=str(since - 5), limit=20))
+    if not resp.get("ok"):
+        raise smp.SlackPostError(
+            f"conversations.history failed: {resp.get('error')}")
+    return any((m.get("text") or "").strip() == caption.strip()
+               for m in resp.get("messages") or [])
+
+
 def post_focus_screenshots(
     png_paths,
     recipients: dict,
@@ -106,8 +144,11 @@ def post_focus_screenshots(
 
     client = smp._client()
 
-    # Open (or reuse) the multi-person DM with the listed users.
-    resp = client.conversations_open(users=",".join(user_ids))
+    # Open (or reuse) the multi-person DM with the listed users. Opening is
+    # idempotent — the same users always get the same DM back — so a timeout
+    # here is safe to just try again.
+    resp = _with_timeout_retry(
+        lambda: client.conversations_open(users=",".join(user_ids)))
     if not resp.get("ok"):
         raise smp.SlackPostError(f"conversations.open failed: {resp.get('error')}")
     channel = resp["channel"]["id"]
@@ -121,11 +162,34 @@ def post_focus_screenshots(
         }
         for i, p in enumerate(paths, 1)
     ]
-    up = client.files_upload_v2(
-        channel=channel,
-        file_uploads=file_uploads,
-        initial_comment=caption,
-    )
+    # 2026-09-29: both DMs (Colten, Jairo) died at once on "The read operation
+    # timed out" — a Slack blip, not a data problem. An upload that times out
+    # may still have landed, and a blind re-send would put the report in the
+    # DM twice. So before trying again, look at the DM: if today's caption is
+    # already there, it went through. If we can't look, don't guess — raise.
+    started = time.time()
+
+    def _upload():
+        return client.files_upload_v2(
+            channel=channel,
+            file_uploads=file_uploads,
+            initial_comment=caption,
+        )
+
+    try:
+        up = _upload()
+    except Exception as first:  # noqa: BLE001 — re-raised below unless safe
+        if not _is_timeout(first):
+            raise
+        time.sleep(_RETRY_WAIT_S)
+        try:
+            landed = _caption_posted_since(client, channel, caption, started)
+        except Exception:  # noqa: BLE001 — can't tell, so don't risk a double
+            raise first
+        if landed:
+            up = {"ok": True}
+        else:
+            up = _upload()
     if not up.get("ok"):
         raise smp.SlackPostError(f"files.upload failed: {up.get('error')}")
 
