@@ -1448,12 +1448,20 @@ def _send_guest_boards(cfg: Dict, guest_due: Dict, guest_boards: Dict,
             from automations.icd_alerts import gap_callouts as _GC
             from automations.alphalete_sales_board import state as _SBS
             _recs = ((_SBS.load().get("_records") or {}).get(day.isoformat()) or {})
-            _line = _GC.guest_callout(cfg["key"], guest, g_gaps, _recs,
-                                      dt.datetime.now(), remember=send)
-            if True:
+            # THE CALL-OUT CUTOFF (5pm Sat, 8:30pm Mon-Fri, per-office
+            # override) on the office's clock, keyed by the guest's own ECO
+            # office. Gates the call-out only -- the board and gap text below
+            # keep their own window.
+            _gkey = _GC.GUEST_SLACK_KEY.get(_GC._key(guest), "")
+            _open = _GC.callouts_allowed(C.office_now(cfg), _gkey)
+            if not _open:
+                _log("  %s: call-out for %s skipped — past the %s call-out cutoff"
+                     % (cfg["key"], guest, _GC.cutoff_label(C.office_now(cfg), _gkey)))
+            _line = (_GC.guest_callout(cfg["key"], guest, g_gaps, _recs,
+                                       dt.datetime.now(), remember=send) if _open else "")
+            if _open:
                 # SLACK, NOT THE TEXT: the guest's own ECO alert channel.
                 from automations.icd_alerts import post as _P
-                _gkey = _GC.GUEST_SLACK_KEY.get(_GC._key(guest), "")
                 _rooms = [c.id for c in (_P.approved_channels().get(_gkey) or [])]
                 _praise = ""
                 if _last_tick_of_day(cfg):
@@ -1750,6 +1758,13 @@ def tick(day: dt.date, *, send: bool, only: str = "",
         try:
             from automations.icd_alerts import gap_callouts as _GC
             _room = _GC.HOST_SLACK.get(cfg["key"])
+            # THE CALL-OUT CUTOFF (5pm Sat, 8:30pm Mon-Fri, per-office
+            # override) on the office's clock. The gap list below is a report,
+            # not a call-out, and keeps its own window.
+            if _room and not _GC.callouts_allowed(C.office_now(cfg), cfg["key"]):
+                _log("  %s: call-out skipped — past the %s call-out cutoff"
+                     % (cfg["key"], _GC.cutoff_label(C.office_now(cfg), cfg["key"])))
+                _room = None
             if _room:
                 from automations.alphalete_sales_board import state as _SBS
                 _recs = ((_SBS.load().get("_records") or {}).get(day.isoformat()) or {})

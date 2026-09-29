@@ -359,14 +359,47 @@ def pace_callout(office_key: str, rows: List[Dict], now: dt.datetime, *, remembe
 # Saturdays"). A HARD wall on the office's own clock, not a tweak to anybody's
 # bell: Cyrus's Saturday bell is 17:15 and the after-the-bell window ran to
 # 19:15, which is how call-outs were still landing at 6pm on a Saturday. Every
-# office, both kinds of call-out, weekdays untouched.
+# office, both kinds of call-out. Weekdays have their own wall, just below.
 SATURDAY = 5
 SATURDAY_CUTOFF_H = 17
 
+# MONDAY-FRIDAY STOPS AT 8:30 (Raf, 2026-09-28: an 8:30 PM cutoff for Lucy's
+# call-outs, every office, on the office's own clock, "unless they've asked for
+# a different time"). Same hard wall as Saturday's, both kinds of call-out --
+# the gap line and the positive pace line. Boards, metrics and the gap list on
+# the board caption are NOT call-outs and are untouched. Sunday is untouched
+# too: field hours already keep it silent.
+WEEKDAY_CUTOFF = "20:30"
+# AN OFFICE THAT ASKED FOR A DIFFERENT WEEKDAY TIME: office key -> "HH:MM" on
+# their own clock. Empty on purpose -- as of 2026-09-28 no office has asked
+# (Carlos's `sat_stop` 17:30 in gap_alerts/config.py is a Saturday cap on his
+# guest rooms' boards and lists, and it still applies). The keys are the ECO
+# office keys, plus gap_alerts' host key ("rafael") for Raf's own reps.
+CALLOUT_CUTOFF_OVERRIDES: Dict[str, str] = {}
 
-def callouts_allowed(now: dt.datetime) -> bool:
-    """False once Saturday hits 5pm local. Weekdays are unaffected."""
-    return not (now.weekday() == SATURDAY and now.hour >= SATURDAY_CUTOFF_H)
+
+def callout_cutoff(now: dt.datetime, office_key: Optional[str] = None):
+    """(hour, minute) past which no call-out leaves today, on the office's own
+    clock -- or None when there is no wall (Sunday)."""
+    if now.weekday() == SATURDAY:
+        return (SATURDAY_CUTOFF_H, 0)
+    if now.weekday() == 6:
+        return None
+    text = CALLOUT_CUTOFF_OVERRIDES.get(str(office_key or "").strip().lower()) or WEEKDAY_CUTOFF
+    return O._hm(text)
+
+
+def callouts_allowed(now: dt.datetime, office_key: Optional[str] = None) -> bool:
+    """False at or after the day's cutoff on the office's clock: 5pm Saturday,
+    8:30pm Monday-Friday (or the office's own weekday time). `now` must already
+    be the OFFICE's local time."""
+    cut = callout_cutoff(now, office_key)
+    return cut is None or (now.hour, now.minute) < cut
+
+
+def cutoff_label(now: dt.datetime, office_key: Optional[str] = None) -> str:
+    cut = callout_cutoff(now, office_key)
+    return "no cutoff" if cut is None else "%d:%02d" % cut
 
 
 # NEVER THE SAME LINE TWICE INTO ONE ROOM INSIDE THIS MANY MINUTES. The backstop
@@ -539,9 +572,9 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
                 and key not in CALLOUT_EXTRA_OFFICES):
             continue
         now = K._office_now(office)
-        if not callouts_allowed(now):
-            log("%-14s Saturday past %d:00 — call-outs are done for the week"
-                % (key, SATURDAY_CUTOFF_H))
+        if not callouts_allowed(now, key):
+            log("%-14s past the %s call-out cutoff (%s their time) — done for the day"
+                % (key, cutoff_label(now, key), now.strftime("%a %H:%M")))
             continue
         if not K.in_field_hours(office, now):
             log("%-14s outside field hours (%s their time)" % (key, now.strftime("%a %H:%M")))
@@ -598,7 +631,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
                           and key not in CALLOUT_EXTRA_OFFICES):
             continue
         now = K._office_now(office)
-        if not callouts_allowed(now):
+        if not callouts_allowed(now, key):
             continue
         if not after_the_bell(office, now):
             continue

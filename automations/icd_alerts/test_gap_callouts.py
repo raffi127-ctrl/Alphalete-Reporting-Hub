@@ -241,11 +241,81 @@ class SaturdayStopsAtFive(unittest.TestCase):
         self.assertFalse(G.callouts_allowed(dt.datetime(2026, 9, 26, 18, 1)))
         self.assertFalse(G.callouts_allowed(dt.datetime(2026, 9, 26, 19, 14)))
 
-    def test_weekdays_are_untouched(self):
-        for hour in (17, 18, 19, 20, 21):
+    def test_weekday_evenings_are_not_cut_at_five(self):
+        # Saturday's wall is Saturday's. A weekday runs to its own 8:30.
+        for hour in (17, 18, 19):
             self.assertTrue(G.callouts_allowed(dt.datetime(2026, 9, 25, hour, 30)),
                             "Friday %d:30 must still call out" % hour)
         self.assertTrue(G.callouts_allowed(dt.datetime(2026, 9, 28, 20, 0)))   # Mon
+
+
+class WeekdaysStopAtEightThirty(unittest.TestCase):
+    """Raf 2026-09-28: call-outs stop at 8:30 PM, Monday-Friday, every office,
+    on the office's own clock, unless the office asked for a different time."""
+
+    MON = dt.date(2026, 9, 28)
+
+    def _at(self, day, h, m):
+        return dt.datetime(day.year, day.month, day.day, h, m)
+
+    def test_829_fires_and_831_is_blocked_every_weekday(self):
+        for offset in range(5):                      # Mon..Fri
+            d = self.MON + dt.timedelta(days=offset)
+            self.assertTrue(G.callouts_allowed(self._at(d, 20, 29)), d)
+            self.assertFalse(G.callouts_allowed(self._at(d, 20, 31)), d)
+
+    def test_830_itself_is_the_wall(self):
+        self.assertFalse(G.callouts_allowed(self._at(self.MON, 20, 30)))
+        self.assertFalse(G.callouts_allowed(self._at(self.MON, 22, 5)))
+
+    def test_every_office_gets_the_default(self):
+        for key in ("kash", "cyrus", "colten", "rafael", "carlos", ""):
+            self.assertEqual(G.callout_cutoff(self._at(self.MON, 12, 0), key), (20, 30), key)
+
+    def test_saturday_still_cuts_at_five(self):
+        sat = dt.datetime(2026, 10, 3, 16, 59)
+        self.assertTrue(G.callouts_allowed(sat))
+        self.assertFalse(G.callouts_allowed(sat.replace(hour=17, minute=0)))
+        self.assertFalse(G.callouts_allowed(sat.replace(hour=20, minute=29)))
+
+    def test_sunday_gains_no_new_rule(self):
+        # Sunday was never walled here; field hours keep it quiet. Unchanged.
+        self.assertIsNone(G.callout_cutoff(dt.datetime(2026, 10, 4, 21, 0)))
+        self.assertTrue(G.callouts_allowed(dt.datetime(2026, 10, 4, 21, 0)))
+
+    def test_an_office_override_uses_its_own_time(self):
+        from unittest import mock
+        with mock.patch.dict(G.CALLOUT_CUTOFF_OVERRIDES, {"cyrus": "19:45"}):
+            self.assertTrue(G.callouts_allowed(self._at(self.MON, 19, 44), "cyrus"))
+            self.assertFalse(G.callouts_allowed(self._at(self.MON, 19, 46), "cyrus"))
+            # Everybody else keeps 8:30.
+            self.assertTrue(G.callouts_allowed(self._at(self.MON, 20, 29), "kash"))
+            self.assertFalse(G.callouts_allowed(self._at(self.MON, 20, 31), "kash"))
+            # A later override is honoured too.
+        with mock.patch.dict(G.CALLOUT_CUTOFF_OVERRIDES, {"cyrus": "21:15"}):
+            self.assertTrue(G.callouts_allowed(self._at(self.MON, 21, 0), "cyrus"))
+            self.assertFalse(G.callouts_allowed(self._at(self.MON, 21, 15), "cyrus"))
+
+    def test_an_override_never_moves_saturday(self):
+        from unittest import mock
+        with mock.patch.dict(G.CALLOUT_CUTOFF_OVERRIDES, {"cyrus": "21:15"}):
+            self.assertFalse(G.callouts_allowed(dt.datetime(2026, 10, 3, 17, 30), "cyrus"))
+
+    def test_run_skips_an_office_past_its_cutoff(self):
+        """The run() gate reads the office's OWN clock: an Eastern office at
+        8:31 its time is walled while the machine's clock still says 7:31."""
+        from unittest import mock
+        office = mock.Mock(campaign="att")
+        book = mock.Mock()
+        book.worksheet.return_value.get_all_values.return_value = [[]]
+        logged = []
+        with mock.patch.object(G.P, "approved_channels", return_value={"zed": [mock.Mock(id="C1")]}), \
+                mock.patch.object(G.O, "get", return_value=office), \
+                mock.patch.object(G.K, "_office_now", return_value=self._at(self.MON, 20, 31)), \
+                mock.patch.object(G.K, "in_field_hours", side_effect=AssertionError("gate must come first")), \
+                mock.patch.object(G, "_say", side_effect=AssertionError("must not post")):
+            G.run(self.MON, send=True, book=book, log=logged.append)
+        self.assertTrue(any("cutoff" in l for l in logged), logged)
 
 
 class TheRoomItselfIsTheBackstop(unittest.TestCase):
