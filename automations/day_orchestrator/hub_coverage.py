@@ -229,6 +229,26 @@ _RETIRED: frozenset = frozenset({
     # Both spellings for the same reason as owner-showdown.
     "other-office-knocks",
     "other_office_knocks",
+    # Carlos Captainship Bonus (Tue) + Headcount (Mon) + the daily bonus
+    # projection DM. Maud, 2026-09-28: stop running + sending them. cc571fe
+    # shut the scheduler door (on_scheduler:false) and removed the cards but
+    # never listed them here, so the machine_digest watcher kept expecting
+    # them off the Activity log and posted "Carlos B2B Captainship Bonus —
+    # didn't run today on Lucy 2 · usually starts ~4:00" on Tue 9/29. Both
+    # spellings for the same reason as owner-showdown. The -tue / -mon agent
+    # names too: their deploy/ plists are still on disk, and the plist sync
+    # checks is_internal on the AGENT name, so without them it would
+    # auto-register a "Carlos Captainship Bonus Tue" card right back.
+    "carlos-captainship-bonus",
+    "carlos_captainship_bonus",
+    "carlos-captainship-bonus-tue",
+    "carlos_captainship_bonus_tue",
+    "carlos-captainship-headcount",
+    "carlos_captainship_headcount",
+    "carlos-captainship-headcount-mon",
+    "carlos_captainship_headcount_mon",
+    "carlos-bonus-projection",
+    "carlos_bonus_projection",
 })
 
 
