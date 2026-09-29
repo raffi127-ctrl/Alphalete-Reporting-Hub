@@ -213,7 +213,8 @@ def main() -> int:
 
     pnl_book = open_by_key(pnl_mod.SHEET_ID)
     pnl = pnl_mod.load(pnl_book)
-    print(f"  PNL people: {len(pnl.people)} across {len(pnl.weeks)} weeks")
+    print(f"  PNL people: {len(pnl.people)} across {len(pnl.weeks)} weeks "
+          f"(tabs: {', '.join(pnl.tabs)})")
 
     # Second opinion on who's gone. Lives in the same workbook as the PNL, so
     # it costs one extra read, and it catches the reps whose board row never

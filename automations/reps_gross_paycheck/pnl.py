@@ -1,4 +1,8 @@
-"""The money side: 'Got Paid' out of 'Raf PNL 2026'.
+"""The money side: 'Got Paid' out of the P&L tabs.
+
+Since 2026-09-29 the reps are split across 'Bas-', 'MJ-' and 'OG-Alphaletes
+PNL 2026'; the old single office tab ('RAF PNL 2026 (OLD)') is read last, for
+history only. See load(). Every tab has the same layout:
 
 Layout (read, never written):
 
@@ -71,6 +75,8 @@ class Person:
     paid: Dict[dt.date, float] = field(default_factory=dict)
     conflicts: Dict[dt.date, list] = field(default_factory=dict)
     employed: str = ""
+    # week -> (tab, 1-based row, 0-based col) of the cell `paid` came from
+    src: Dict[dt.date, tuple] = field(default_factory=dict)
 
 
 @dataclass
@@ -78,6 +84,7 @@ class Pnl:
     people: Dict[str, Person]
     weeks: Dict[dt.date, int]          # week-ending Sunday -> 'Got Paid' col
     tab: str = TAB
+    tabs: List[str] = field(default_factory=list)   # every tab read, in priority order
 
     def got_paid(self, join_key: str, sunday: dt.date) -> Optional[float]:
         p = self.people.get(join_key)
@@ -86,11 +93,15 @@ class Pnl:
     def source_path(self, join_key: str, sunday: dt.date) -> str:
         """The full 'where did this number come from' string Eve asks for."""
         p = self.people.get(join_key)
-        rows = ",".join(str(r) for r in p.rows) if p else "?"
-        col = self.weeks.get(sunday)
-        return (f"All in One Local Office - Raf -> '{self.tab}' -> "
+        hit = p.src.get(sunday) if p else None
+        if hit:
+            tab, row, col = hit
+        else:
+            tab, row, col = self.tab, (",".join(str(r) for r in p.rows) if p else "?"), \
+                self.weeks.get(sunday)
+        return (f"All in One Local Office - Raf -> '{tab}' -> "
                 f"header 'WE {md(sunday)}' -> col {_a1(col)} 'Got Paid' -> "
-                f"row {rows}")
+                f"row {row}")
 
 
 def _a1(col_zero_based) -> str:
@@ -142,15 +153,51 @@ def _week_columns(row1: List[str], row2: List[str],
 
 
 def load(spreadsheet, tab: Optional[str] = None, start_year: int = 2026) -> Pnl:
-    """Read every named row on the PNL tab into a Pnl.
+    """Read the P&L 'Got Paid' grid(s) into a Pnl.
 
-    `tab=None` resolves the office P&L by gid, which survives the renames this
-    tab has had. Pass a title explicitly only to read a DIFFERENT P&L.
+    `tab=None` (what the weekly fill uses) merges EVERY per-rep P&L tab. Since
+    2026-09-29 the reps live in the Bas- / MJ- / OG-Alphaletes PNL tabs and the
+    single office tab ('RAF PNL 2026 (OLD)') is no longer filled (Eve/Maud). The
+    OLD tab is still read, LAST, for history: over 6/28-9/20 every week it shares
+    with the new tabs agreed to the cent, and it alone still carries anyone the
+    new tabs left out. The new tabs win any disagreement — the OLD one's
+    future weeks are dead cells. Pass a title to read ONE tab only.
     """
-    from automations.recruiting_report.fill import _retry
-    from automations.shared.workbooks import main_pnl_tab
     if tab is None:
-        tab = main_pnl_tab(spreadsheet)
+        return _load_merged(spreadsheet, start_year)
+    return _load_one(spreadsheet, tab, start_year)
+
+
+def _load_merged(spreadsheet, start_year: int) -> Pnl:
+    # Same discovery the 1on1 paycheck uses: by shape, so a 4th sub-P&L is
+    # picked up without an edit here. Lazy import — that module imports this one.
+    from automations.local_office_1on1s.paycheck import discover
+    found = discover(spreadsheet)
+    order = [t for t in found.tabs if t != found.main] + [found.main]
+    merged = Pnl(people={}, weeks={}, tab=found.main, tabs=order)
+    for t in order:
+        p = _load_one(spreadsheet, t, start_year)
+        for sunday, col in p.weeks.items():
+            merged.weeks.setdefault(sunday, col)
+        for k, person in p.people.items():
+            into = merged.people.get(k)
+            if into is None:
+                person.rows = [f"{t}!{r}" for r in person.rows]
+                merged.people[k] = person
+                continue
+            into.rows += [f"{t}!{r}" for r in person.rows]
+            into.employed = into.employed or person.employed
+            for sunday, v in person.paid.items():
+                if sunday not in into.paid:
+                    into.paid[sunday] = v
+                    into.src[sunday] = person.src[sunday]
+                elif abs(into.paid[sunday] - v) > 0.005:
+                    into.conflicts.setdefault(sunday, [into.paid[sunday]]).append(v)
+    return merged
+
+
+def _load_one(spreadsheet, tab: str, start_year: int) -> Pnl:
+    from automations.recruiting_report.fill import _retry
     ws = spreadsheet.worksheet(tab)
     grid = _retry(ws.get_all_values)
     if len(grid) < 3:
@@ -188,6 +235,7 @@ def load(spreadsheet, tab: Optional[str] = None, start_year: int = 2026) -> Pnl:
                 continue
             if sunday not in person.paid:
                 person.paid[sunday] = v
+                person.src[sunday] = (tab, i + 1, col)
             elif abs(person.paid[sunday] - v) > 0.005:
                 person.conflicts.setdefault(sunday, [person.paid[sunday]]).append(v)
-    return Pnl(people=people, weeks=weeks)
+    return Pnl(people=people, weeks=weeks, tab=tab, tabs=[tab])
