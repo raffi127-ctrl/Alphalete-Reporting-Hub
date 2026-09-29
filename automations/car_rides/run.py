@@ -686,7 +686,9 @@ def _territory_row(page, name: str):
     """The row whose NAME cell is exactly `name`. get_by_text(exact=False)
     clicked 'joelle 9/28' for territory 'joelle' (2026-09-29): the date-named
     one sits first in the table, held no Eva chip, and the edit died on Save."""
-    cell = page.locator("#territoryTable tbody td:first-child",
+    # `has=` is resolved INSIDE each row, so the cell selector must be
+    # row-relative — a '#territoryTable …' prefix never matches (9/29 10:30).
+    cell = page.locator("td:first-child",
                         has_text=re.compile(r"^\s*" + re.escape(name) + r"\s*$"))
     return page.locator("#territoryTable tbody tr").filter(has=cell).first
 
