@@ -1,23 +1,19 @@
 """PNL for the Office — weekly Slack post (Item 3 of the VA-Slack replacements).
 
 Screenshots the office P&L summary (Total Loss - Reps / Total Profit / Gross
-Profit) for a given week-ending from the `Raf PNL 2026` tab, as an exact-sheet
-PNG, and posts it to Slack as Lucy.
+Profit) for a given week-ending from the `RAF PNL 2026 (NEW)` tab, as an
+exact-sheet PNG, and posts it to Slack as Lucy.
 
-Source: 'All in One Local Office - Raf' workbook -> tab 'Raf PNL 2026'.
-  - Row 1 has WE headers every 3 cols: "WE 7/12" at the group's first column;
-    the group is Brought In | Got Paid | Profit/Loss.
-  - The office summary sits in the group's 2nd col (labels) + 3rd col (values):
-    e.g. WE 8/16 header CY1 -> labels CZ356:CZ365, values DA356:DA365.
-  Columns/rows are found by DATE header + row LABEL, never hardcoded. The tab's
-  gid is looked up by title too — it changed once already and the hardcoded one
-  made the PDF export 400.
-  - The cost breakdown between "Total Loss - Reps" and "Total Profit" (Admin
-    Support / Chef / Food Cost / ... / Total Investments) is a COLLAPSED row
-    group in the Sheet. Google's PDF export honors that, so the exported range
-    renders only the 3 visible rows — the same block Raf sees on screen. If
-    someone expands the group, the PNG grows those rows back; that's the Sheet
-    talking, not a bug here.
+Source: 'All in One Local Office - Raf' workbook -> tab 'RAF PNL 2026 (NEW)'
+(Eve, 2026-09-29; the old 3-cols-per-week tab is now 'RAF PNL 2026 (OLD)').
+  - Labels live in column A; row 1 has one "WE 9/27" header per week column.
+    e.g. WE 9/20 = column DI -> labels A38:A40, values DI38:DI40.
+  - Labels and values aren't side by side, so the PNG is two exports (label
+    strip + week strip) at the same scale, stitched together.
+  Columns/rows are found by DATE header + row LABEL, never hardcoded. The tab is
+  found by gid (its title keeps getting renamed), title as a fallback.
+  - Rows collapsed/hidden inside the block are skipped by the PDF export and by
+    the filled-gate alike: the PNG shows what Raf sees on screen.
 
 Schedule: LIVE — Fridays 10:00am CST on the mini, retrying q25m until
 the target week's column is filled.
@@ -48,21 +44,27 @@ from automations.shared import sheets_export as _sx
 from automations.shared.workbooks import ALL_IN_ONE_RAF
 
 SHEET_ID = ALL_IN_ONE_RAF
-# Legacy title, kept as the fallback in workbooks.main_pnl_tab. The tab was
-# renamed twice on 2026-09-28 — 'Bas-PNL 2026', then 'RAF PNL 2026' in a
-# different case — so every use goes through _tab(), which resolves by gid.
-TAB = "Raf PNL 2026"
+# The screenshot moved to the NEW tab on 2026-09-29. Only this report did: the
+# other P&L readers (workbooks.main_pnl_tab) still point at the OLD tab's gid.
+TAB_GID = 821853035
+TAB = "RAF PNL 2026 (NEW)"          # fallback for a sandbox copy (gids differ)
 _TAB_CACHED = None
 
 
 def _tab() -> str:
-    """The P&L tab's CURRENT title, resolved once per process by gid."""
+    """The screenshot tab's CURRENT title, resolved once per process by gid."""
     global _TAB_CACHED
     if _TAB_CACHED is None:
-        from automations.shared.workbooks import main_pnl_tab
-        _TAB_CACHED = main_pnl_tab(open_by_key(SHEET_ID))
+        sheets = open_by_key(SHEET_ID).worksheets()
+        hit = [w.title for w in sheets if w.id == TAB_GID]
+        if not hit:
+            hit = [w.title for w in sheets if w.title.strip().lower() == TAB.lower()]
+        if not hit:
+            raise SystemExit(f"P&L tab not found: gid {TAB_GID} / {TAB!r}")
+        _TAB_CACHED = hit[0]
     return _TAB_CACHED
 HEADER_ROW = 1
+LABEL_COL = 1                       # column A holds the row labels
 TOP_LABEL = "Total Loss - Reps"     # first row of the office summary block
 BOT_LABEL = "Gross Profit"          # last row of the office summary block
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "pnl_office"
@@ -113,13 +115,20 @@ def _cell(vals, r, c) -> str:
 
 
 def we_columns(vals, year: int):
-    """Return [(col_index, date, label)] for every WE header in row 1."""
+    """Return [(col_index, date, label)] for every WE header in row 1.
+
+    Headers run left-to-right in date order and the last one ('WE 1/3') is
+    next year's, so a month going backwards bumps the year."""
     out = []
     row = vals[HEADER_ROW - 1] if len(vals) >= HEADER_ROW else []
+    prev_mo = 0
     for c, cell in enumerate(row, start=1):
         m = _WE_RE.match(cell.strip())
         if m:
             mo, da = int(m.group(1)), int(m.group(2))
+            if mo < prev_mo:
+                year += 1
+            prev_mo = mo
             out.append((c, dt.date(year, mo, da), cell.strip()))
     return out
 
@@ -141,9 +150,9 @@ def pick_target(cols, today: dt.date, override: str | None):
 
 
 def summary_range(vals, header_col: int):
-    """Find the summary block for a WE group by label. Returns (a1_range,
-    label_col, value_col, top_row, bot_row)."""
-    label_col, value_col = header_col + 1, header_col + 2
+    """Find the summary block by column-A label. Returns ([label_range,
+    value_range], label_col, value_col, top_row, bot_row)."""
+    label_col, value_col = LABEL_COL, header_col
     top = bot = None
     for r in range(1, len(vals) + 1):
         v = _cell(vals, r, label_col).strip()
@@ -154,7 +163,7 @@ def summary_range(vals, header_col: int):
             break
     if top is None or bot is None:
         raise SystemExit(f"summary labels not found under column {rowcol_to_a1(1, header_col)}")
-    rng = f"{rowcol_to_a1(top, label_col)}:{rowcol_to_a1(bot, value_col)}"
+    rng = [f"{rowcol_to_a1(top, c)}:{rowcol_to_a1(bot, c)}" for c in (label_col, value_col)]
     return rng, label_col, value_col, top, bot
 
 
@@ -173,17 +182,21 @@ def is_filled(vals, value_col: int, rows) -> bool:
     return any(_money(_cell(vals, r, value_col)) != 0.0 for r in rows)
 
 
-def export_png(rng: str, out_path: Path, token: str, gid: int) -> Path:
+def export_png(ranges: list, out_path: Path, token: str, gid: int) -> Path:
+    """Export each range at the SAME scale (100%, not fit-to-width, or the
+    narrow value strip gets blown up) and stitch them left to right."""
     import fitz  # PyMuPDF
     from PIL import Image, ImageChops
-    base = (f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=pdf"
-            f"&gid={gid}&range={rng}&gridlines=false&sheetnames=false"
-            f"&printtitle=false&pagenumbers=false&fzr=false"
-            f"&top_margin=0.05&bottom_margin=0.05&left_margin=0.05&right_margin=0.05")
 
-    def _fetch(extra):
+    def _url(rng):
+        return (f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=pdf"
+                f"&gid={gid}&range={rng}&gridlines=false&sheetnames=false"
+                f"&printtitle=false&pagenumbers=false&fzr=false&portrait=false&scale=1"
+                f"&top_margin=0.05&bottom_margin=0.05&left_margin=0.05&right_margin=0.05")
+
+    def _fetch(rng):
         for attempt in range(5):
-            r = requests.get(base + extra, headers={"Authorization": f"Bearer {token}"}, timeout=90)
+            r = requests.get(_url(rng), headers={"Authorization": f"Bearer {token}"}, timeout=90)
             if r.status_code == 429:
                 time.sleep(5 * (attempt + 1))
                 continue
@@ -192,19 +205,26 @@ def export_png(rng: str, out_path: Path, token: str, gid: int) -> Path:
             return _sx.check_pdf(r.content, where=f"export {rng}")
         raise RuntimeError(f"export {rng}: throttled (429) after retries")
 
-    doc = fitz.open(stream=_fetch("&portrait=false&fitw=true"), filetype="pdf")
-
-    def _trim(im):
+    def _trim(im, pad):
         bg = Image.new("RGB", im.size, (255, 255, 255))
         bb = ImageChops.difference(im, bg).getbbox()
         if not bb:
             return im
-        pad = 6
         return im.crop((max(0, bb[0] - pad), max(0, bb[1] - pad),
                         min(im.width, bb[2] + pad), min(im.height, bb[3] + pad)))
 
-    pm = doc[0].get_pixmap(dpi=220)
-    img = _trim(Image.open(io.BytesIO(pm.tobytes("png"))).convert("RGB"))
+    parts = []
+    for rng in ranges:
+        doc = fitz.open(stream=_fetch(rng), filetype="pdf")
+        pm = doc[0].get_pixmap(dpi=220)
+        parts.append(_trim(Image.open(io.BytesIO(pm.tobytes("png"))).convert("RGB"), 0))
+    pad = 6
+    img = Image.new("RGB", (sum(p.width for p in parts) + 2 * pad,
+                            max(p.height for p in parts) + 2 * pad), "white")
+    x = pad
+    for p in parts:
+        img.paste(p, (x, pad))
+        x += p.width
     out_path.parent.mkdir(parents=True, exist_ok=True)
     img.save(out_path)
     return out_path
