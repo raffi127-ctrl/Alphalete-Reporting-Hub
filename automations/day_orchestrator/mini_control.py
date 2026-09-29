@@ -284,6 +284,7 @@ READONLY_ACTIONS = {"push_appstream_fleet",
                     "login_check",
                     "logtail", "daystate", "git_status", "git_diff",
                     "slack_channel", "slack_find", "slack_thread",
+                    "focus_dm_check",
                     # Messages lookups: they read the chat list and send nothing.
                     "find_group", "group_members", "text_resolve"}
 
@@ -2747,6 +2748,61 @@ def _action_slack_channel(args: str) -> tuple[bool, str]:
         out.append(f"  history: FAILED → {_code(e)}")
     out.append("READ-ONLY — nothing posted.")
     # A probe that RAN is a success even when the answer is "no access".
+    return True, "\n".join(out)
+
+
+def _action_focus_dm_check(args: str) -> tuple[bool, str]:
+    """READ-ONLY: did the Daily Recruiting Focus screenshots land in each
+    captainship's group DM on a given day?
+
+      focus_dm_check [YYYY-MM-DD]      default: today
+
+    Why (2026-09-29): Colten's and Jairo's DMs both logged "The read operation
+    timed out" — which can mean Slack never got the upload OR that it posted and
+    only the ANSWER got lost. Only Lucy is in those DMs, the log can't tell the
+    two apart, and they have no stored channel id. conversations.open with the
+    same users hands back the existing DM without posting anything, so this
+    opens it and looks for that day's caption."""
+    import ssl as _ssl
+    try:
+        day = (dt.date.fromisoformat(args.strip()) if (args or "").strip()
+               else dt.date.today())
+    except ValueError:
+        return False, "focus_dm_check takes an optional date: YYYY-MM-DD"
+    try:
+        import certifi
+        from slack_sdk import WebClient
+        from automations.shared.slack_metrics_post import _load_token
+        from automations.recruiting_report import focus_slack
+        client = WebClient(token=_load_token(),
+                           ssl=_ssl.create_default_context(cafile=certifi.where()))
+    except Exception as e:  # noqa: BLE001
+        return False, f"setup FAILED: {type(e).__name__} {str(e)[:120]}"
+
+    caption = focus_slack._caption(day, None)
+    start = dt.datetime.combine(day, dt.time()).timestamp()
+    out = [f"{day.isoformat()} — looking for {caption!r}"]
+    for cs, recipients in focus_slack.FOCUS_DM_RECIPIENTS.items():
+        try:
+            ch = client.conversations_open(
+                users=",".join(recipients.values()))["channel"]["id"]
+            msgs = client.conversations_history(
+                channel=ch, oldest=str(start), latest=str(start + 86400),
+                limit=50).get("messages") or []
+            hits = [m for m in msgs
+                    if (m.get("text") or "").startswith(caption)]
+            if hits:
+                m = hits[-1]   # oldest match; history is newest-first
+                when = dt.datetime.fromtimestamp(float(m["ts"])).strftime("%H:%M")
+                out.append(f"  {cs}: SENT at {when} ({len(m.get('files') or [])} "
+                           f"image(s)){' ×' + str(len(hits)) if len(hits) > 1 else ''}")
+            else:
+                out.append(f"  {cs}: NOT SENT ({len(msgs)} other msg(s) that day)")
+        except Exception as e:  # noqa: BLE001
+            data = getattr(getattr(e, "response", None), "data", {}) or {}
+            out.append(f"  {cs}: can't read → "
+                       f"{data.get('error') or type(e).__name__ + ' ' + str(e)[:60]}")
+    out.append("READ-ONLY — nothing posted.")
     return True, "\n".join(out)
 
 
@@ -8291,6 +8347,7 @@ ACTIONS = {
     "slack_whoami": _action_slack_whoami,
     "slack_channel": _action_slack_channel,
     "slack_find": _action_slack_find,
+    "focus_dm_check": _action_focus_dm_check,
     "slack_thread": _action_slack_thread,
     "slack_delete": _action_slack_delete,
     "slack_dedupe": _action_slack_dedupe,
