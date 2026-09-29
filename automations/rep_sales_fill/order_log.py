@@ -27,13 +27,15 @@ import re
 from pathlib import Path
 from typing import Dict, List
 
-# The ALL REPS custom view, NOT the bare sheet (2026-09-29): the sheet's
-# "Original" state was saved filtered to one owner + one rep (Austin Eldredge /
-# Joey Biase), so its .csv carried 9 rows a week and every other rep read as
-# "no sales". ALL REPS is the view canceled_orders / country_metrics already use.
+# Eve's "Sales Board Original" custom view (2026-09-29), NOT the bare sheet and
+# NOT ALL REPS. The bare sheet's "Original" is saved filtered to one owner + one
+# rep (Austin Eldredge / Joey Biase) -- 9 rows a week, everyone else read as
+# "no sales". ALL REPS filters Start/End by ACTIVATION (Posted Date), so a
+# week's fresh sales are not in it yet. This view filters by SALE date, every
+# owner, every product.
 VIEW_CSV = ("https://us-east-1.online.tableau.com/t/sci/views/"
             "ATTTRACKER2_1-D2D/ORDERLOG/"
-            "117748c0-9487-45e8-a5d4-c447093718d5/ALLREPS.csv")
+            "78466c86-905b-4553-9d55-5206170c7e56/SalesBoardOriginal.csv")
 
 # Column captions we need. Looked up by label at read time, never by position:
 # the same log in the B2B workbook exports 47 columns and the order drifts.
