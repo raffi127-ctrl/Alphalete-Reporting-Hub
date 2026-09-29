@@ -430,6 +430,34 @@ def _drive_week_selection(label: str, verbose: bool = False):
     return pre_export
 
 
+# The only sheet JE's view still renders when the pinned week has no rows.
+_EMPTY_VIEW_THUMBS = ("latest update",)
+
+
+def empty_week_dialog(err: BaseException, today: Optional[dt.date] = None) -> bool:
+    """True when the crosstab failed because JE's view is EMPTY on the week's
+    first completed day — JE hasn't posted it, same as a week missing from the
+    dropdown, so it is a wait, not a failure.
+
+    Tue 2026-09-29, all day: "Couldn't find the 'Daily Sales by ICD' sheet in
+    the Crosstab dialog — saw 1 thumb(s): ['Latest Update']". The dropdown path
+    (left_view_week) never ran: the view rendered with nothing but its
+    'Latest Update' sheet, and Retail JE dropped at 07:53 and again at 14:30.
+
+    Narrow on purpose: only while the reporting week has at most ONE completed
+    day, and only when the dialog listed nothing or just 'Latest Update' — a
+    dialog naming any other sheet is a renamed/changed view and still raises.
+    No noon cut-off (unlike BOX): JE is a day behind all Tuesday, which is why
+    the not-current-week skip has none either."""
+    from automations.org_sales_board import section_pull, week as _wk
+    if len(_wk.completed_days(today or dt.date.today())) > 1:
+        return False
+    thumbs = section_pull._thumbs_listed(str(err))
+    if thumbs is None:
+        return False
+    return all(t.strip().lower() in _EMPTY_VIEW_THUMBS for t in thumbs)
+
+
 def fetch(out_path: Optional[Path] = None, verbose: bool = False, page=None,
           today: Optional[dt.date] = None) -> Path:
     """Download the JE 'Daily Sales by ICD' crosstab, driving the

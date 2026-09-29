@@ -433,6 +433,36 @@ class UnpostedWeekFetchTest(unittest.TestCase):
         check.assert_not_called()
 
 
+class EmptyWeekDialogTest(unittest.TestCase):
+    """Tue 2026-09-29: JE's view rendered only 'Latest Update' for the unposted
+    week, the crosstab died, and Retail JE dropped at 07:53 and 14:30."""
+
+    TUE = __import__("datetime").date(2026, 9, 29)
+    WED = __import__("datetime").date(2026, 9, 30)
+    EMPTY = RuntimeError("Couldn't find the 'Daily Sales by ICD' sheet in the "
+                         "Crosstab dialog — saw 1 thumb(s): ['Latest Update']. "
+                         "The view may have changed.")
+
+    def test_tuesday_empty_view_is_a_wait(self):
+        self.assertTrue(je_pull.empty_week_dialog(self.EMPTY, self.TUE))
+
+    def test_zero_thumbs_on_tuesday_is_a_wait(self):
+        e = RuntimeError("Couldn't find the 'Daily Sales by ICD' sheet — saw 0 thumb(s): []")
+        self.assertTrue(je_pull.empty_week_dialog(e, self.TUE))
+
+    def test_wednesday_empty_view_still_fails(self):
+        self.assertFalse(je_pull.empty_week_dialog(self.EMPTY, self.WED))
+
+    def test_another_sheet_listed_is_a_rename_and_fails(self):
+        e = RuntimeError("Couldn't find the 'Daily Sales by ICD' sheet — saw 2 "
+                         "thumb(s): ['Latest Update', 'Daily Sales by Rep']")
+        self.assertFalse(je_pull.empty_week_dialog(e, self.TUE))
+
+    def test_any_other_error_fails(self):
+        e = TimeoutError("Locator.wait_for: Timeout 120000ms exceeded.")
+        self.assertFalse(je_pull.empty_week_dialog(e, self.TUE))
+
+
 class CheckOneWeekTest(unittest.TestCase):
     """The crosstab is the verdict when the combobox text can't be trusted."""
 

@@ -117,7 +117,16 @@ def _adapter_je_retail(ctx: AdapterContext) -> PullDict:
         csv_path = ctx.from_csv
         ctx.logfn(f"  [je] offline CSV {csv_path}")
     else:
-        csv_path = je_pull.fetch(page=ctx.page, today=ctx.today, verbose=True)
+        try:
+            csv_path = je_pull.fetch(page=ctx.page, today=ctx.today, verbose=True)
+        except Exception as e:  # noqa: BLE001 — re-raised unless it's the empty week
+            if not je_pull.empty_week_dialog(e, ctx.today):
+                raise
+            ctx.logfn(
+                f"  ⚠ JE's view is empty for this week — JE hasn't posted it "
+                f"yet (a day behind); skipping JE fill. Self-heals on the next "
+                f"run once JE posts the week. Dialog said: {str(e)[:200]}")
+            return {}
     parsed = je_pull.parse(csv_path, today=ctx.today)
     we = parsed.get("week_ending")
     if not parsed.get("is_current_week"):
