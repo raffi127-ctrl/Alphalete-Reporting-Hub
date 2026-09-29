@@ -97,5 +97,43 @@ class OnlyThisWeek(unittest.TestCase):
                          if fa.STATE.exists() else {}, {})
 
 
+class PooledCurrentWindow(unittest.TestCase):
+    """2026-09-28 regression: Joe Patton was on BOTH the in-flight week and next
+    Monday's roster. run.py texted per week -> TWO messages, and the ledger's
+    week|name key let Joe be named in each. The fix pools every current-week
+    decision and sends ONE deduped text (run.py._run), so this asserts the
+    behaviour fail_alert.send must give when handed that pooled list."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        patch = mock.patch.object(fa, "STATE",
+                                  Path(self.tmp.name) / "texted.json")
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_person_on_two_weeks_is_named_once_in_one_text(self):
+        week_a = [D("Jordan", "Jones", "Review", True),
+                  D("Joe", "Patton", "Review", True)]
+        week_b = [D("Roberto", "Arriaga", "Review", True),
+                  D("Joe", "Patton", "Review", True)]     # same guy, next week
+        pooled = week_a + week_b
+        sent = []
+
+        def fake_send(group, text, images, *, dry_run, allow_textonly):
+            sent.append(text)
+            return {"ok": True, "resolved_name": group, "participants": 15}
+        with mock.patch("automations.b2b_dispositions.text_post.send_to_group",
+                        fake_send):
+            res = fa.send(pooled, "9/28", is_current_week=True, dry_run=False)
+
+        self.assertEqual(len(sent), 1)                       # ONE text, not two
+        self.assertEqual(res["texted"].count("Joe Patton"), 1)   # Joe once
+        self.assertEqual(sorted(res["texted"]),
+                         ["Joe Patton", "Jordan Jones", "Roberto Arriaga"])
+        self.assertEqual(sent[0].count("Joe Patton"), 1)     # once in the body
+        self.assertIn("3 of this week", sent[0])
+
+
 if __name__ == "__main__":
     unittest.main()

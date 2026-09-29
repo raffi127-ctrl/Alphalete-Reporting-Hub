@@ -344,7 +344,8 @@ def ov_targets_for(roster, matched, state, out: list) -> None:
 def process_week(sh, monday, events, *, dry_run, do_post, repost, now,
                  do_slack=True, rolling_vals=None, claimed_ids=None,
                  ov_targets=None, pending_asks=None, names_from=None,
-                 refresh_asks=False, far_unbacked=None, sanity_problems=None):
+                 refresh_asks=False, far_unbacked=None, sanity_problems=None,
+                 fail_decisions=None):
     """Update col K on both tabs for ONE week, and (if do_slack) post/edit its
     Slack thread. Returns a short summary dict. Empty weeks are skipped."""
     week = _fmt_week(monday)
@@ -420,23 +421,21 @@ def process_week(sh, monday, events, *, dry_run, do_post, repost, now,
 
     # A FAILED background check on THIS week's cohort gets texted straight away
     # (Megan 2026-09-26, after Quincy Williams failed on the 25th and nobody was
-    # told). Only the week in flight, only once per person per week, and never
-    # allowed to take the sync down — the col-K write is the job.
+    # told). "This week" is the in-flight week PLUS next Monday's cohort — so a
+    # person can land in TWO current weeks at once (a rolling-tab block dated one
+    # week and a dated tab the next). We must NOT text per week: that sends two
+    # messages and names a two-week person (Joe Patton, 2026-09-28) once in each.
+    # Instead every current-week failure is COLLECTED here and the whole run
+    # sends ONE deduped text after the loop (see _run). Only the week in flight
+    # counts, and the col-K write is the job — an alert hiccup never takes it down.
     try:
         _today = (now.date() if now else dt.date.today())
         _this_mon = _monday_of(_today)
-        alert = fail_alert.send(decisions, week,
-                                is_current_week=monday in (
-                                    _this_mon, _this_mon + dt.timedelta(days=7)),
-                                dry_run=dry_run or not do_post)
-        if alert.get("texted"):
-            print(f"[bg-fail] {'WOULD text' if alert['dry_run'] else 'texted'} "
-                  f"{alert.get('chat') or fail_alert.GROUP}: "
-                  f"{', '.join(alert['texted'])}")
-        if alert.get("error"):
-            print(f"[bg-fail] ⚠ text FAILED to send: {alert['error']}")
+        if fail_decisions is not None and monday in (
+                _this_mon, _this_mon + dt.timedelta(days=7)):
+            fail_decisions.extend(decisions)
     except Exception as e:  # noqa: BLE001
-        print(f"[bg-fail] ⚠ alert skipped ({type(e).__name__}: {str(e)[:120]})")
+        print(f"[bg-fail] ⚠ collect skipped ({type(e).__name__}: {str(e)[:120]})")
 
     # Sterling is the truth: anyone we have already MATCHED gets their checklist
     # spelling brought up to the name their check ran under. No gate — the match
@@ -621,6 +620,7 @@ def _run(args) -> None:
     pending_asks: list = [] if args.ov else None
     far_unbacked: list = []
     sanity_problems: list = []
+    fail_decisions: list = []   # current-week BG failures, texted ONCE post-loop
     for monday in weeks:
         do_slack = monday in slack_weeks
         # Friday-afternoon repost applies only to the UPCOMING week's thread.
@@ -631,7 +631,28 @@ def _run(args) -> None:
                      rolling_vals=rolling_vals, claimed_ids=claimed_ids,
                      ov_targets=ov_targets, pending_asks=pending_asks,
                      names_from=names_from, refresh_asks=args.refresh_asks,
-                     far_unbacked=far_unbacked, sanity_problems=sanity_problems)
+                     far_unbacked=far_unbacked, sanity_problems=sanity_problems,
+                     fail_decisions=fail_decisions)
+
+    # ONE fail text per run for the whole current-week window (in-flight week +
+    # next Monday's cohort), each person named once. Sending per week instead
+    # doubled the text and duped anyone on both weeks' rosters (Joe Patton,
+    # 2026-09-28). failures() dedupes by person across the pooled decisions, and
+    # the ledger is keyed on this Monday so same-day reruns stay idempotent.
+    try:
+        alert = fail_alert.send(fail_decisions, _fmt_week(_monday_of(now.date())),
+                                is_current_week=True,
+                                dry_run=args.dry_run or not args.post)
+        if alert.get("texted"):
+            print(f"[bg-fail] {'WOULD text' if alert['dry_run'] else 'texted'} "
+                  f"{alert.get('chat') or fail_alert.GROUP}: "
+                  f"{', '.join(alert['texted'])}")
+        if alert.get("already"):
+            print(f"[bg-fail] already texted this week: {', '.join(alert['already'])}")
+        if alert.get("error"):
+            print(f"[bg-fail] ⚠ text FAILED to send: {alert['error']}")
+    except Exception as e:  # noqa: BLE001
+        print(f"[bg-fail] ⚠ alert skipped ({type(e).__name__}: {str(e)[:120]})")
 
     try:
         state = name_gate.load_state()
