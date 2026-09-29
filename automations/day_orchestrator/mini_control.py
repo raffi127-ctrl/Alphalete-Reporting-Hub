@@ -693,7 +693,7 @@ def _action_rerun(args: str) -> tuple[bool, str]:
     probe = _probe_reason(
         (cfg.raw.get("reports", {}) or {}).get(report_id) or {}, extra)
     _publish_rerun_done(report_id, getattr(r, "display_name", report_id),
-                        ok, hub_run_id, probe)
+                        ok, hub_run_id, probe, manual=is_manual())
     if probe:
         # Say it in the result cell, where the person who queued the row reads:
         # otherwise "exit 0" on a probe looks exactly like a fix that landed —
@@ -706,7 +706,7 @@ def _action_rerun(args: str) -> tuple[bool, str]:
 
 
 def _publish_rerun_done(report_id: str, display_name: str, ok: bool,
-                        hub_run_id, probe: str) -> None:
+                        hub_run_id, probe: str, *, manual: bool = False) -> None:
     """Close the Hub pill for a rerun — and keep a PROBE silent in BOTH
     directions.
 
@@ -724,13 +724,43 @@ def _publish_rerun_done(report_id: str, display_name: str, ok: bool,
     Best-effort: Hub publishing must never fail the rerun."""
     try:
         from automations.day_orchestrator import hub_publish
+        status = hub_publish.final_status(report_id, ok)
         hub_publish.publish_done(
             report_id, display_name,
-            status=hub_publish.final_status(report_id, ok), run_id=hub_run_id,
+            status=status, run_id=hub_run_id,
             alert_on_fail=not probe,
             clear_failure=not probe)
     except Exception:  # noqa: BLE001 — Hub publish must never fail the rerun
-        pass
+        return
+    if manual and status != "success":
+        _release_pending(report_id)
+
+
+def _release_pending(report_id: str) -> None:
+    """A person's rerun ended WITHOUT the ✅ — take its :pending: back off.
+
+    publish_running(manual=True) put :pending: on the thread when the rerun
+    started ("somebody is on this"), and only a clean run's ✅ ever took it off.
+    A rerun that ends partial/failed left it standing — and triage treats a
+    :pending: it didn't place as a person mid-fix and never grades that post
+    again. 2026-09-29: christian/jacob/joseph_metrics were re-run at 14:08,
+    held again on Tableau's Order Log being behind, and sat :pending: all
+    evening instead of turning purple ("no deberian estar cerrados ya? o con
+    circulo violeta por problemas de tableau" — Eve).
+
+    The rerun WAS the work; once it's over the ticket is open and nobody's. So
+    un-mark it and re-run triage right away (its last timed pass is 16:15), which
+    gives the post its real answer: purple for a Tableau hold, red for the rest.
+    Best-effort — never fails the rerun."""
+    try:
+        from automations.shared import incident_thread as inc
+        if not inc.mark_not_working(report_id):
+            return
+        from automations.shared import incident_triage as tri
+        tri.run()
+    except Exception as e:  # noqa: BLE001
+        print("  - couldn't release :pending: on {} ({}: {})".format(
+            report_id, type(e).__name__, str(e)[:80]))
 
 
 def _action_onboard_apply(args: str) -> tuple[bool, str]:

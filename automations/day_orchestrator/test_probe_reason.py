@@ -69,7 +69,7 @@ class ProbePublish(unittest.TestCase):
     a Tableau locator and posted "closed a run with status FAILED" to
     #claudecorrections nine minutes after the real run had been resolved."""
 
-    def _publish(self, ok, probe):
+    def _publish(self, ok, probe, manual=False, released=None):
         """Install the fake on BOTH resolution paths.
 
         THE BUG THIS FIXES (2026-09-04). `_publish_rerun_done` does
@@ -96,7 +96,12 @@ class ProbePublish(unittest.TestCase):
             # create=True because BOTH orders have to work: run this file alone
             # and the package has no such attribute yet (the sys.modules entry is
             # what bites); run the whole suite and it does.
-            mini_control._publish_rerun_done("r", "R", ok, "run-1", probe)
+            with mock.patch.object(
+                    mini_control, "_release_pending",
+                    lambda rid: (released if released is not None
+                                 else []).append(rid)):
+                mini_control._publish_rerun_done("r", "R", ok, "run-1", probe,
+                                                 manual=manual)
         self.assertIsNotNone(
             fake.kwargs,
             "the stub was bypassed — the REAL hub_publish just ran, which is "
@@ -117,6 +122,30 @@ class ProbePublish(unittest.TestCase):
         self.assertTrue(kw["alert_on_fail"])
         kw = self._publish(ok=True, probe="")
         self.assertTrue(kw["clear_failure"])
+
+
+class RerunReleasesPending(unittest.TestCase):
+    """A person's rerun puts :pending: on the thread when it starts; if it
+    ends without the ✅ it has to take it back off, or triage treats the post
+    as someone mid-fix and never colours it (2026-09-29: christian/jacob/
+    joseph_metrics sat :pending: all evening on a Tableau Order Log hold)."""
+
+    _publish = ProbePublish._publish
+
+    def test_failed_manual_rerun_releases_the_mark(self):
+        got = []
+        self._publish(ok=False, probe="", manual=True, released=got)
+        self.assertEqual(got, ["r"])
+
+    def test_clean_manual_rerun_leaves_it_to_the_checkmark(self):
+        got = []
+        self._publish(ok=True, probe="", manual=True, released=got)
+        self.assertEqual(got, [])
+
+    def test_machine_rerun_never_touches_a_persons_mark(self):
+        got = []
+        self._publish(ok=False, probe="", manual=False, released=got)
+        self.assertEqual(got, [])
 
 
 if __name__ == "__main__":
