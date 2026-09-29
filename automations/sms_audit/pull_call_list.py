@@ -188,6 +188,51 @@ def _dump_tables(page):
            })).filter(x => x.rows > 1).slice(0, 8)""")
 
 
+def export(page, office):
+    """Click the hub's own Export and read the file it downloads.
+
+    Scrolling the grid reached 40 rows of 1,307 and reported success, which
+    is the worst kind of wrong. The page exports the WHOLE list in one
+    click, so the export is the source and the scraper is not. The file is
+    an HTML table named .xls.
+
+    Megan had to do this by hand to get today's answer; a weekly report that
+    depends on somebody remembering to export goes stale silently, which is
+    the failure this whole audit keeps finding elsewhere."""
+    import html as _html
+    with page.expect_download(timeout=120000) as got:
+        clicked = page.evaluate(
+            r"""() => {
+                 const b = [...document.querySelectorAll(
+                   'button, a, input[type=button], input[type=submit]')]
+                   .find(x => /^export$/i.test(
+                     ((x.innerText || x.value || '').trim())));
+                 if (!b) return 'no Export button';
+                 b.click();
+                 return 'clicked';
+               }""")
+        if clicked != "clicked":
+            raise RuntimeError(clicked)
+    path = got.value.path()
+    text = io.open(path, encoding="utf-8", errors="replace").read()
+    rows = re.findall(r"<tr[^>]*>(.*?)</tr>", text, re.S | re.I)
+    out = []
+    for row in rows[1:]:
+        cells = [_html.unescape(re.sub(r"<[^>]+>", "", c)).strip()
+                 for c in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>",
+                                     row, re.S | re.I)]
+        if len(cells) < 10:
+            continue
+        out.append({"applicant": " ".join(x for x in cells[:2] if x),
+                    "job_board": cells[2], "email": cells[3],
+                    "phone": cells[4], "entered": cells[-2],
+                    "status": cells[-1]})
+    # keep a copy where the xlsx builders already look
+    (OUTPUT_DIR / "callList_{}.xls".format(office)).write_text(
+        text, encoding="utf-8")
+    return out
+
+
 def _next_page(page):
     """Click to the next page of the grid; False when there is no next."""
     return page.evaluate(
@@ -259,8 +304,15 @@ def main(argv=None):
             for t in d["tables"][:2]:
                 print("   table {} rows | {}".format(t["rows"], t["head"][:200]),
                       flush=True)
+            # the export first: it is the whole list, in one click
             records, cols, seen = [], [], set()
-            for n in range(a.max_pages):
+            try:
+                records = export(page, office)
+                print("   export: {} rows".format(len(records)), flush=True)
+            except Exception as e:  # noqa: BLE001 — fall back to scrolling
+                print("   export failed ({}), scrolling instead".format(
+                    str(e).splitlines()[0][:80]), flush=True)
+            for n in range(0 if records else a.max_pages):
                 try:
                     got, cols = _scrape(page)
                 except Exception as e:  # noqa: BLE001

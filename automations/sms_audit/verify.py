@@ -108,6 +108,15 @@ LINEAGE = {
  "— still stuck in the queue": "LOG Status, on the people in that row",
  "— no phone number on file": "LOG Status, on the people in that row",
  "— phone number not valid": "LOG Status, on the people in that row",
+ "One text, but we called or emailed too":
+   "LOG + the call list + Email Tracking \u2014 one text, no reply, but they "
+   "ARE on the call list or were emailed. They were not dropped",
+ "Texts failed, but we reached them another way":
+   "LOG + the call list + Email Tracking \u2014 every text bounced, but a "
+   "call or an email got through",
+ "We answered by email, not by text":
+   "LOG + Email Tracking \u2014 they wrote last and no text went back, but "
+   "an email did, after their message",
  "Too recent to judge (texted in the last 3 days)":
    "LOG Sent At — first texted within 3 days of the window's end, so next "
    "week's calendar may still book them; held out of every bucket above",
@@ -371,6 +380,57 @@ def outside(res, office, recs, rep):
         flush=True)
 
 
+
+# ---------------------------------------------------- second sources -------
+# Megan 2026-09-28: "we just need to make sure we're feeding people 100%
+# accurate data."
+#
+# A row is only as trustworthy as the thing that can contradict it. Every
+# number here was arithmetically right all day and several were badly wrong,
+# because nothing independent was checking the CLAIM. So each row is tagged
+# with what could catch it being wrong, and the rows with nothing are named
+# rather than left looking as solid as the rest.
+SECOND_SOURCE = {
+    # bookings and shows — AppStream's own Retention Report counts these
+    # from its own table and knows nothing about our calendar walk
+    "1st Rounds Booked": "p=701 Retention Report",
+    "— booked by the AI": "p=701 Retention Report",
+    "— booked by a person": "p=701 Retention Report",
+    "Showed up to their 1st round": "p=701 Retention Report",
+    "% of 1st rounds booked by the AI": "p=701 Retention Report",
+    # the why-they-didn't-book buckets, now cross-cut by two other channels
+    "We texted once and never again": "call list + Email Tracking",
+    "One text, but we called or emailed too": "call list + Email Tracking",
+    "Our texts never reached them": "call list + Email Tracking",
+    "Texts failed, but we reached them another way": "call list + Email Tracking",
+    "They wrote last, we never answered": "Email Tracking",
+    "We answered by email, not by text": "Email Tracking",
+    "Applicants left waiting 2+ hours for a text back": "Email Tracking",
+    # house-standard checks Megan ruled on directly
+    "Texts with bad grammar": "Megan's review, 2026-09-27",
+    "Texts with a spelling mistake": "Megan's review, 2026-09-27",
+    "Direct questions dodged": "Megan's review, 2026-09-27",
+    "People to talk to": "Megan's rulings (megan-overrides.md)",
+    "Things to raise in total": "Megan's rulings (megan-overrides.md)",
+}
+
+
+def second_sources(res):
+    """Name the rows nothing can contradict. Not a failure — a disclosure."""
+    from automations.sms_audit import weekly_sheet as W
+    labels = [lab for _s, lab, _f in W.ROWS]
+    unchecked = [l for l in labels if l not in SECOND_SOURCE]
+    stale = [l for l in SECOND_SOURCE if l not in labels]
+    _check(res, "no second-source entry names a row that is gone",
+           not stale, "stale: {}".format(stale))
+    print("\n  {} of {} rows have something that could catch them being "
+          "wrong.".format(len(labels) - len(unchecked), len(labels)), flush=True)
+    print("  The rest rest on the pull alone \u2014 right by construction, "
+          "unfalsifiable in practice:", flush=True)
+    for lab in unchecked:
+        print("      {}".format(lab), flush=True)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--office", default="11280,23965,24065,11580")
@@ -385,6 +445,7 @@ def main(argv=None):
 
     res = []
     lineage(res)
+    second_sources(res)
     for office in [o.strip() for o in a.office.split(",") if o.strip()]:
         recs, src1 = A.load_office(office, a.suffix)
         rows, src2 = A.load_log(office, a.suffix)

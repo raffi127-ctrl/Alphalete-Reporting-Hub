@@ -34,6 +34,7 @@ from __future__ import annotations  # Lucy/mini run Python 3.9 — keep lazy
 
 import argparse
 import collections
+import html as _html
 import datetime as dt
 import json
 import re
@@ -917,7 +918,76 @@ SAID_NO = re.compile(r"\b(not interested|no longer interested|stop|unsubscribe|"
 BOOKING_LAG_DAYS = 3
 
 
-def dropoff(convos, window_end=None):
+def load_contact(office):
+    """What we know about reaching this person OUTSIDE the text log.
+
+    Megan 2026-09-28: "we just need to make sure we're feeding people 100%
+    accurate data." Measured against calls and email, every bucket in "Why
+    they didn't book" was majority wrong — 83% of "we kept texting, they
+    never replied" had been emailed or called, and so had 55% of "our texts
+    never reached them". The numbers were right and the meaning was inverted,
+    which is why none of them could be caught by eye.
+
+    Returns {"email": {phone10: [sent datetimes]},
+             "call":  {phone10: call-list status}}
+    Missing files give empty dicts, and every caller must treat that as
+    "unknown", never as "no contact" — that is the whole bug, one level up.
+    """
+    email, call = collections.defaultdict(list), {}
+    path = OUTPUT_DIR / "email_tracking_{}.json".format(office)
+    if path.exists():
+        for r in json.loads(path.read_text(encoding="utf-8")):
+            ph = "".join(c for c in (r.get("phone") or "") if c.isdigit())[-10:]
+            if not ph:
+                continue
+            when = None
+            for fmt in ("%m/%d/%Y %I:%M %p", "%m-%d-%Y %I:%M %p",
+                        "%m/%d/%Y", "%m-%d-%Y"):
+                try:
+                    when = dt.datetime.strptime((r.get("sent") or "").strip(), fmt)
+                    break
+                except ValueError:
+                    continue
+            email[ph].append(when)
+    import re as _re
+    for folder in (Path.home() / "Downloads", OUTPUT_DIR):
+        f = folder / "callList_{}.xls".format(office)
+        if not f.exists():
+            continue
+        text = f.read_text(encoding="utf-8", errors="replace")
+        for row in _re.findall(r"<tr[^>]*>(.*?)</tr>", text, _re.S | _re.I):
+            cells = [_html.unescape(_re.sub(r"<[^>]+>", "", c)).strip()
+                     for c in _re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>",
+                                          row, _re.S | _re.I)]
+            if len(cells) < 10:
+                continue
+            ph = "".join(c for c in cells[4] if c.isdigit())[-10:]
+            if ph:
+                call[ph] = cells[-1]
+        break
+    return {"email": dict(email), "call": call}
+
+
+CALLED = ("Left Message", "OPEN", "Open", "On Hold", "No Answer")
+
+
+def reached_another_way(contact, phone, after=None):
+    """(emailed, called) for this phone — optionally only counting email
+    sent AFTER a moment, which is what makes "we never answered" checkable."""
+    if not contact:
+        return (False, False)
+    ph = (phone or "")[-10:]
+    sends = contact.get("email", {}).get(ph) or []
+    if after is not None:
+        emailed = any(w and w > after for w in sends)
+    else:
+        emailed = bool(sends)
+    status = (contact.get("call", {}) or {}).get(ph, "")
+    called = bool(status) and status.startswith(CALLED)
+    return (emailed, called)
+
+
+def dropoff(convos, window_end=None, contact=None):
     """WHY the people we texted did not book — Megan's actual question
     (2026-09-26): "our goal is to book as many of our applicants as we can…
     we really need to find out why each office isn't booking more."
@@ -954,10 +1024,10 @@ def dropoff(convos, window_end=None):
         outs = [m["when"] for m in c["msgs"] if m["dir"] == "Out"]
         return bool(outs) and min(outs).date() > cutoff
 
-    return _dropoff_inner(convos, _too_soon)
+    return _dropoff_inner(convos, _too_soon, contact)
 
 
-def _dropoff_inner(convos, too_soon):
+def _dropoff_inner(convos, too_soon, contact=None):
     """WHY the people we texted did not book — Megan's actual question
     (2026-09-26): "our goal is to book as many of our applicants as we can…
     we really need to find out why each office isn't booking more."
@@ -985,7 +1055,29 @@ def _dropoff_inner(convos, too_soon):
         msgs = c["msgs"]
         outs = [m for m in msgs if m["dir"] == "Out"]
         ins = [m for m in msgs if m["dir"] == "In"]
-        if outs and not any((m.get("status") or "").lower() == "delivered" for m in outs):
+
+        # EVERY BUCKET BELOW USED TO BE TEXT-ONLY, and measured against the
+        # call list and email tracking every one of them was majority wrong:
+        # 83% of "we kept texting, they never replied" had been emailed or
+        # called, and so had 55% of "our texts never reached them". The count
+        # was right and the claim was inverted, which is why none of it could
+        # be spotted by reading the sheet (Megan 2026-09-28).
+        #
+        # So a person we reached another way never lands in a bucket that
+        # says we failed to reach them. With no contact data loaded nothing
+        # changes — unknown is not the same as "no contact", and treating it
+        # as such is the original bug.
+        last_in = max([m["when"] for m in ins], default=None)
+        emailed, called = reached_another_way(contact, c["phone"])
+        emailed_after, _c2 = reached_another_way(contact, c["phone"], last_in)
+        other = emailed or called
+
+        if outs and not any((m.get("status") or "").lower() == "delivered"
+                            for m in outs):
+            if other:
+                # the text bounced, but a call or an email got there
+                out["texts failed, reached another way"] += 1
+                continue
             out["never reached them"] += 1
             # tallied HERE, on exactly the people this bucket holds, so the
             # breakdown always sums to its parent. Computed separately it did
@@ -997,9 +1089,20 @@ def _dropoff_inner(convos, too_soon):
         elif ins and any(SAID_NO.search(m["body"] or "") for m in ins):
             out["said no"] += 1
         elif not ins:
-            out["one text only" if len(outs) <= 1 else "never replied"] += 1
+            if len(outs) <= 1 and not other:
+                out["one text only"] += 1
+            elif len(outs) <= 1:
+                out["one text, but we called or emailed too"] += 1
+            else:
+                out["never replied"] += 1
         elif msgs[-1]["dir"] == "In" and not CLOSER.match((msgs[-1]["body"] or "").strip()):
-            out["we never answered"] += 1
+            # an email after their last message IS an answer — 117 of the 806
+            # in this bucket had one, and the row called every one of them a
+            # failure to reply
+            if emailed_after:
+                out["we answered by email, not by text"] += 1
+            else:
+                out["we never answered"] += 1
         else:
             out["talked, then stopped"] += 1
 
@@ -1995,7 +2098,7 @@ def who_to_talk_to(convos, office):
     return out
 
 
-def audit_log(rows, convos, office, booked=None):
+def audit_log(rows, convos, office, booked=None, contact=None):
     fun = funnel(convos)
     fun["join_misses"] = len(join_misses(convos, booked or {}))
     fun["lanes"] = lanes(convos, rows)
@@ -2005,7 +2108,9 @@ def audit_log(rows, convos, office, booked=None):
 
     fun["best_hours"] = best_hours_label(convos)
     fun["worst_hours"] = worst_hours_label(convos)
-    drop = dropoff(convos)
+    contact = contact if contact is not None else load_contact(office)
+    fun["has_contact"] = bool(contact.get("email") or contact.get("call"))
+    drop = dropoff(convos, contact=contact)
     fun["drop"] = drop["buckets"]
     fun["unreached"] = drop["unreached_why"]
     fun["curve"] = drop["curve"]

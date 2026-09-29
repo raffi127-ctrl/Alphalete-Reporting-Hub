@@ -768,6 +768,18 @@ ROWS = [
     ("Why they didn't book", "Too recent to judge (texted in the last 3 days)",
      _drop("too soon to tell")),
 
+    # Megan 2026-09-28. These three exist because the buckets above were
+    # text-only and therefore wrong for most people in them: 993 of the
+    # 1,217 "texted once and never again" had been called or emailed too,
+    # and 73 of the 87 "never reached" had been reached. They are not extra
+    # detail — they are the people the old rows were accusing us of
+    # dropping.
+    ("Why they didn't book", "One text, but we called or emailed too",
+     _drop("one text, but we called or emailed too")),
+    ("Why they didn't book", "Texts failed, but we reached them another way",
+     _drop("texts failed, reached another way")),
+    ("Why they didn't book", "We answered by email, not by text",
+     _drop("we answered by email, not by text")),
     # Megan 2026-09-26: "there should be a 2nd section below for the cold
     # list". The log says which is which — Source "Mass SMS" is the bulk
     # re-engagement blast. Holding the two in one number is what made the
@@ -1257,6 +1269,9 @@ COLLAPSIBLE = [
         "— no phone number on file",
         "— phone number not valid",
         "Too recent to judge (texted in the last 3 days)",
+        "One text, but we called or emailed too",
+        "Texts failed, but we reached them another way",
+        "We answered by email, not by text",
     ]),
     # nested inside the block above: the reasons fold away on their own
     ("Our texts never reached them", [
@@ -1599,7 +1614,8 @@ def build_report(office, suffix=""):
         convos = A.log_conversations(rows, booked)
     rep = A.audit(recs, office, convos)
     if convos:
-        rep["log"] = A.audit_log(rows, convos, office, booked)
+        rep["log"] = A.audit_log(rows, convos, office, booked,
+                                 A.load_contact(office))
         # The message log's OWN span, so check_window can hold it to the same
         # column header as the booking walk. Without this the guard only ever
         # saw the calendar's dates, and a right-week bookings file paired with
