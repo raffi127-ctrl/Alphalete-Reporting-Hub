@@ -583,7 +583,13 @@
       "as_owner": "Austin Eldredge",
       "reason": "tab added 2026-09-02 (Pat's captainship, fiber; Supreme Impact Inc dba Eclipse California). No AppStream office yet, so rows 2-23 (recruiting) cannot fill. Present in Tableau's ATT/INT/Metrics/PRODUCT SALES views as 'Austin Eldredge', so the OPT + metrics half fills.",
       "promote_when_visible": true
+    },
+    {
+      "sheet_tab": "Nigel Marshall",
+      "as_owner": "Nigel Marshall",
+      "reason": "tab added 2026-09-28 (Raf's request: Nigel is coming from Lumen over to AT&T Fiber; VP Executives Inc.). AppStream access requested by Raf and approved by Nigel that day, but the live office list (253 offices, 2026-09-28) does not show his office yet, so rows 2-23 (recruiting) cannot fill until it appears. Promotes itself (with backfill) the day AppStream sees him.",
+      "promote_when_visible": true
     }
   ],
-  "sales_only_count": 3
+  "sales_only_count": 4
 }
