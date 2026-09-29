@@ -42,6 +42,14 @@ MONTHS = ["january", "february", "march", "april", "may", "june", "july",
 # the EXPANDED seven rows; the TEAM box at the top of each tab carries Raf's
 # older CONDENSED four. Mapping only the expanded set left every team box's
 # whole recruiting block blank — the labels simply never matched.
+# Which of the recruiting rows are COUNTS. A leader with no row in the month's
+# block conducted none (Megan 2026-09-28: "the ones missing from 2nd rounds
+# just haven't done any of them"), and Raf wants that shown as 0 rather than
+# blank — a real zero he can talk about, not an empty cell that reads as "we
+# don't know". The PERCENTAGES stay blank in that case: 0 out of 0 is not 0%,
+# it is undefined, and printing 0% would state a closing rate nobody has.
+COUNT_ROWS = {"conducted", "offered", "bob_num", "ns_sched", "ns_showed"}
+
 RECRUITING = {
     # expanded — Individual Template r23-29
     "2nd rds Conducted":        "conducted",
@@ -151,7 +159,14 @@ def for_leader(name: str, weeks: List[dt.date], *, pay, months,
             m = month_of(wk)
             block = months.get(m, {}).get(rec_name.strip().lower())
             if not block:
-                out.gaps.append(f"{name}: not in the {m} block of \"2nd rds %'s\"")
+                # Not a gap — they conducted none. Counts read 0, rates stay
+                # blank. Deliberately NOT reported as missing data: a gap list
+                # full of merely-inactive people is how a real gap gets missed.
+                for label, k in RECRUITING.items():
+                    if k in COUNT_ROWS:
+                        out.add(label, wk, "0",
+                                f"absent from the {m} block of \"2nd rds %'s\" "
+                                f"— conducted none")
             else:
                 for label, k in RECRUITING.items():
                     out.add(label, wk, block.get(k, ""),
