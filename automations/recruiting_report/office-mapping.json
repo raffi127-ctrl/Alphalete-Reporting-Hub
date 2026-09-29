@@ -1,5 +1,5 @@
 {
-  "confirmed_count": 54,
+  "confirmed_count": 56,
   "needs_review_count": 0,
   "skip_count": 34,
   "confirmed": [
@@ -414,6 +414,16 @@
       "siblings": [
         "23858"
       ]
+    },
+    {
+      "sheet_tab": "Christian Esposito",
+      "office_id": "23038",
+      "as_owner": "Christian Esposito",
+      "as_company": "Resound, Inc.",
+      "confidence": 1.0,
+      "promoted_from_sales_only": true,
+      "was_sales_only_reason": "tab added by Eve 2026-09-01. No AppStream office \u2014 the knocks access sweep classified him as not in the office directory (output/knocks-ownerville-access-2026-08-24.md) and all-offices.json has no match, so rows 2-23 (recruiting) cannot fill. Present in Tableau's ATT/INT/Metrics/PRODUCT SALES views as 'Christian Esposito' (Wayne's captainship, fiber), so the OPT + metrics half fills. 2026-09-14: AppStream shows office 23783 'Resound, Inc. 2nd' under his name, but it has been EMPTY since AS week 8/16 (Eve checked by hand) \u2014 his real office is 23038, access requested that day. Promotion is PINNED to 23038 (promote_office_id) so 23783 is never used again, and replace_zeros_only makes the promotion backfill overwrite only the blank/0 cells that 23783 left (Sheet WE 8/16 \u2192 9/13), never the real July data.",
+      "replace_zeros_only": true
     }
   ],
   "needs_review": [],
@@ -421,35 +431,35 @@
     {
       "sheet_tab": "Kimberly Rodriguez",
       "office_id": "23576",
-      "reason": "oficina cerrada — Illumane, Inc. shut down 2026-09-09 (Terminated ICDs). Tab BORRADA 2026-09-14 con OK de Rafael (\"any owners shut down, you can get rid of them right away\"); backup en output/focus_report_deleted_tabs_2026-09-14/ (Eve, 2026-09-14)",
+      "reason": "oficina cerrada \u2014 Illumane, Inc. shut down 2026-09-09 (Terminated ICDs). Tab BORRADA 2026-09-14 con OK de Rafael (\"any owners shut down, you can get rid of them right away\"); backup en output/focus_report_deleted_tabs_2026-09-14/ (Eve, 2026-09-14)",
       "retired": "2026-09-14"
     },
     {
       "sheet_tab": "Jesus Hawthorne",
-      "reason": "sale de todos lados — fuera de todas las distros (2026-08-24) y de la capitanía de Pat (2026-09-07). Tab BORRADA 2026-09-14 a pedido de Eve; backup en output/focus_report_deleted_tabs_2026-09-14/. Antes estaba en sales_only (Eve, 2026-09-14)",
+      "reason": "sale de todos lados \u2014 fuera de todas las distros (2026-08-24) y de la capitan\u00eda de Pat (2026-09-07). Tab BORRADA 2026-09-14 a pedido de Eve; backup en output/focus_report_deleted_tabs_2026-09-14/. Antes estaba en sales_only (Eve, 2026-09-14)",
       "retired": "2026-09-14"
     },
     {
       "sheet_tab": "Eric Martinez",
       "office_id": "20721",
-      "reason": "oficina cerrada — Spartan Capital, Inc. Megan avisó la baja el 2026-09-10 (\"is shut down\"). Esa misma mañana knocks_access_watch posteó Office Access LOST: salió del knock board de la capitanía de Chan Park, era alcanzable como 20721 y pasó a 'not on the list'. Está en la pestaña 'Terminated ICDs' del AUTOMATION MASTER con fecha 2026-09-10 (Megan, 2026-09-10)",
+      "reason": "oficina cerrada \u2014 Spartan Capital, Inc. Megan avis\u00f3 la baja el 2026-09-10 (\"is shut down\"). Esa misma ma\u00f1ana knocks_access_watch poste\u00f3 Office Access LOST: sali\u00f3 del knock board de la capitan\u00eda de Chan Park, era alcanzable como 20721 y pas\u00f3 a 'not on the list'. Est\u00e1 en la pesta\u00f1a 'Terminated ICDs' del AUTOMATION MASTER con fecha 2026-09-10 (Megan, 2026-09-10)",
       "retired": "2026-09-10"
     },
     {
       "sheet_tab": "Melik El Jaiez",
       "office_id": "23265",
-      "reason": "oficina cerrada — AppStream dejó de ofrecerla y Tableau dejó de listarla en la misma fecha: headcount activo 6→5→4→(nada), última venta WE 8/2, embudo vacío desde WE 8/9. La 'denegación' de AppStream es consecuencia del cierre, no un permiso perdido (Eve, 2026-09-07)",
+      "reason": "oficina cerrada \u2014 AppStream dej\u00f3 de ofrecerla y Tableau dej\u00f3 de listarla en la misma fecha: headcount activo 6\u21925\u21924\u2192(nada), \u00faltima venta WE 8/2, embudo vac\u00edo desde WE 8/9. La 'denegaci\u00f3n' de AppStream es consecuencia del cierre, no un permiso perdido (Eve, 2026-09-07)",
       "retired": "2026-09-07"
     },
     {
       "sheet_tab": "Jason Strid",
       "office_id": "21712",
-      "reason": "oficina cerrada — mismo patrón que Melik El Jaiez: headcount activo 6→1→(nada), última venta WE 7/26, embudo vacío desde WE 7/12 (Eve, 2026-09-07)",
+      "reason": "oficina cerrada \u2014 mismo patr\u00f3n que Melik El Jaiez: headcount activo 6\u21921\u2192(nada), \u00faltima venta WE 7/26, embudo vac\u00edo desde WE 7/12 (Eve, 2026-09-07)",
       "retired": "2026-09-07"
     },
     {
       "sheet_tab": "Calvin Ribero (B2B)",
-      "reason": "duplicate of 'Calvin Ribera (BOX)' — that tab is the live one (renamed 2026-08-31 when he moved off the B2B template to BOX); this copy keeps its data and is hidden",
+      "reason": "duplicate of 'Calvin Ribera (BOX)' \u2014 that tab is the live one (renamed 2026-08-31 when he moved off the B2B template to BOX); this copy keeps its data and is hidden",
       "retired": "2026-08-31"
     },
     {
@@ -571,14 +581,6 @@
       "reason": "no AppStream office (sales-only, no recruiting)"
     },
     {
-      "sheet_tab": "Christian Esposito",
-      "as_owner": "Christian Esposito",
-      "reason": "tab added by Eve 2026-09-01. No AppStream office \u2014 the knocks access sweep classified him as not in the office directory (output/knocks-ownerville-access-2026-08-24.md) and all-offices.json has no match, so rows 2-23 (recruiting) cannot fill. Present in Tableau's ATT/INT/Metrics/PRODUCT SALES views as 'Christian Esposito' (Wayne's captainship, fiber), so the OPT + metrics half fills. 2026-09-14: AppStream shows office 23783 'Resound, Inc. 2nd' under his name, but it has been EMPTY since AS week 8/16 (Eve checked by hand) — his real office is 23038, access requested that day. Promotion is PINNED to 23038 (promote_office_id) so 23783 is never used again, and replace_zeros_only makes the promotion backfill overwrite only the blank/0 cells that 23783 left (Sheet WE 8/16 → 9/13), never the real July data.",
-      "promote_when_visible": true,
-      "promote_office_id": "23038",
-      "replace_zeros_only": true
-    },
-    {
       "sheet_tab": "Austin Eldredge",
       "as_owner": "Austin Eldredge",
       "reason": "tab added 2026-09-02 (Pat's captainship, fiber; Supreme Impact Inc dba Eclipse California). No AppStream office yet, so rows 2-23 (recruiting) cannot fill. Present in Tableau's ATT/INT/Metrics/PRODUCT SALES views as 'Austin Eldredge', so the OPT + metrics half fills.",
@@ -591,5 +593,5 @@
       "promote_when_visible": true
     }
   ],
-  "sales_only_count": 4
+  "sales_only_count": 3
 }
