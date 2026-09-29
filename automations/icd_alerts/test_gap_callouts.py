@@ -2,6 +2,7 @@
 blank (Carlos / Megan, 2026-09-26)."""
 import datetime as dt
 import unittest
+from unittest import mock
 
 from automations.icd_alerts import gap_callouts as G
 
@@ -320,3 +321,36 @@ class TheRoomItselfIsTheBackstop(unittest.TestCase):
                 mock.patch.object(G, "already_said", lambda *a, **k: False):
             G._say("C0B1DHEFVLH", self.LINE, self.NOW, lambda *_a: None)
         self.assertEqual(posted, [("C0B1DHEFVLH", self.LINE)])
+
+
+class TheDedupeSurvivesSlacksEmoji(unittest.TestCase):
+    """2026-09-28: Slack returned ':stopwatch:' for our ⏱️, exact match failed,
+    the same pace line posted twenty times."""
+
+    def test_shortcode_and_emoji_compare_equal(self):
+        ours = "Pace check ⏱️ Gabriel at 25 doors an hour. Keep that foot on the gas 🚀"
+        theirs = "Pace check :stopwatch: Gabriel at 25 doors an hour. Keep that foot on the gas :rocket:"
+        self.assertEqual(G._norm(ours), G._norm(theirs))
+        self.assertNotEqual(G._norm(ours), G._norm(ours.replace("25", "26")))
+
+    def test_already_said_matches_through_the_shortcodes(self):
+        class C:
+            def conversations_history(self, **kw):
+                return {"messages": [{"text": "Pace check :stopwatch: Gabriel at 25 doors an hour. Keep that foot on the gas :rocket:"}]}
+        self.assertTrue(G.already_said("C1", "Pace check ⏱️ Gabriel at 25 doors an hour. Keep that foot on the gas 🚀",
+                                       dt.datetime(2026, 9, 28, 20, 0), client=C()))
+
+
+class TheStateFileIsAtomicAndNeverSilentlyEmpty(unittest.TestCase):
+    def test_a_corrupt_file_is_set_aside_not_read_as_empty_forever(self):
+        import tempfile, pathlib
+        with tempfile.TemporaryDirectory() as d:
+            path = pathlib.Path(d) / "s.json"
+            path.write_text("{not json")
+            with mock.patch.object(G, "STATE_PATH", path):
+                self.assertEqual(G._state(), {})
+                self.assertFalse(path.exists())                       # moved aside
+                self.assertTrue(any(p.name.startswith("s.corrupt-") for p in pathlib.Path(d).iterdir()))
+                G._save({"pace:x": {"day": "2026-09-28"}})
+                self.assertEqual(G._state()["pace:x"]["day"], "2026-09-28")
+                self.assertFalse(any(".tmp-" in p.name for p in pathlib.Path(d).iterdir()))

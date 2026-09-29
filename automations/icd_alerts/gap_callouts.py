@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 import sys
 import zlib
 from pathlib import Path
@@ -380,6 +381,18 @@ def callouts_allowed(now: dt.datetime) -> bool:
 DUP_WINDOW_MIN = 90
 
 
+def _norm(text) -> str:
+    """Words only. Slack hands a posted line back with its emoji turned into
+    :shortcodes: (our ⏱️ came back as ':stopwatch:'), so an exact comparison
+    never matched and already_said() said "not yet" to a line already in the
+    room twenty times (2026-09-28). Letters, digits and spaces are what the
+    two copies have in common, so that is what is compared."""
+    import re as _re
+    plain = _re.sub(r":[a-z0-9_+\-]+:", " ", (text or "").lower())   # :stopwatch: -> gone
+    keep = "".join(ch if (ch.isalnum() or ch.isspace()) else " " for ch in plain)
+    return " ".join(keep.split())
+
+
 def already_said(channel_id: str, text: str, now: dt.datetime, client=None) -> bool:
     """Is this EXACT line already in this room from the last DUP_WINDOW_MIN?
 
@@ -395,9 +408,9 @@ def already_said(channel_id: str, text: str, now: dt.datetime, client=None) -> b
         oldest = (now - dt.timedelta(minutes=DUP_WINDOW_MIN)).timestamp()
         res = client.conversations_history(channel=channel_id, oldest=str(oldest),
                                            limit=60) or {}
-        want = (text or "").strip()
+        want = _norm(text)
         for m in res.get("messages") or []:
-            if (m.get("text") or "").strip() == want:
+            if _norm(m.get("text")) == want:
                 return True
         return False
     except Exception as e:  # noqa: BLE001
@@ -428,18 +441,37 @@ def after_the_bell(office, now: dt.datetime, within_min: int = 120) -> bool:
 
 
 def _state() -> Dict:
+    """The markers: which office was called out when, and which day's pace
+    was judged. A CORRUPT FILE IS SET ASIDE AND SAID OUT LOUD, never silently
+    read as empty: on 2026-09-28 four overlapping runs wrote it at once, the
+    result was not JSON, every read after that returned {} -- no office had
+    ever been judged -- and Colten's room got the same pace line twenty times
+    over the next hour, on every tick, lock or no lock."""
     try:
         return json.loads(STATE_PATH.read_text())
-    except (OSError, ValueError):
+    except OSError:
+        return {}
+    except ValueError:
+        try:
+            aside = STATE_PATH.with_suffix(".corrupt-%s.json" % dt.datetime.now().strftime("%Y%m%d-%H%M%S"))
+            STATE_PATH.replace(aside)
+            print("[callouts] STATE FILE WAS NOT JSON -- moved to %s and starting "
+                  "empty; today's markers are gone" % aside.name, flush=True)
+        except OSError:
+            pass
         return {}
 
 
 def _save(state: Dict) -> None:
+    """Whole file or nothing: write beside it, then rename into place, so a
+    reader never sees half a file and two writers cannot interleave."""
     try:
         STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        STATE_PATH.write_text(json.dumps(state, indent=2, sort_keys=True))
-    except OSError:
-        pass
+        tmp = STATE_PATH.with_suffix(".tmp-%d" % os.getpid())
+        tmp.write_text(json.dumps(state, indent=2, sort_keys=True))
+        os.replace(tmp, STATE_PATH)
+    except OSError as e:
+        print("[callouts] could not save the state file: %s: %s" % (type(e).__name__, e), flush=True)
 
 
 def due(state_for_office: Optional[Dict], now: dt.datetime) -> bool:
