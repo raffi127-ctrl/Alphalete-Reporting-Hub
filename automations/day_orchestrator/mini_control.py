@@ -4341,6 +4341,11 @@ _CRED_FILES = {
     # is PUBLIC), so `lucy update` will never carry it.
     "saraplus-creds":
         lambda: Path.home() / ".config" / "recruiting-report" / "saraplus-creds.json",
+    # Fathom API key(s) -- one per Zoom account that records 1st rounds -- for
+    # the 1st Round Scorecards post (first_round_scorecards.fathom). Lives in
+    # ~/.config, outside the repo, so `lucy update` never carries it.
+    "fathom-creds":
+        lambda: Path.home() / ".config" / "recruiting-report" / "fathom-creds.json",
     # CARLOS's SaraPlus login, for the B2B Customer Contacts report on Lucy 2
     # (rc_contact_sync.config.creds). Deliberately NOT the key above: that one
     # is alphaletemarketing@gmail.com, a different dealer whose Detail Reports

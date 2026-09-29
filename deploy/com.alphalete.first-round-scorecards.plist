@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.alphalete.first-round-scorecards</string>
+    <!-- PATHS ARE MEGAN'S LAPTOP and are rewritten at install time by
+         `lucy rerun install_first_round_scorecards_agent`. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/first_round_scorecards.sh</string>
+        <string>--due</string>
+        <string>--post</string>
+    </array>
+    <key>WorkingDirectory</key><string>/Users/megan/1st Claude Folder</string>
+    <key>EnvironmentVariables</key><dict><key>PYTHONPATH</key><string>/Users/megan/1st Claude Folder</string></dict>
+    <!-- Every 30 min; the 6 PM Central Mon-Fri gate is in run.py (--due), not here. -->
+    <key>StartInterval</key><integer>1800</integer>
+    <key>StandardOutPath</key><string>/tmp/com.alphalete.first-round-scorecards.out</string>
+    <key>StandardErrorPath</key><string>/tmp/com.alphalete.first-round-scorecards.err</string>
+    <key>RunAtLoad</key><false/>
+</dict>
+</plist>
