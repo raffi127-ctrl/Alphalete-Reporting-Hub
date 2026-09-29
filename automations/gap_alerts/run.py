@@ -1401,17 +1401,16 @@ def _guest_gaps(gaps: List[Dict], rows: List[Dict]) -> List[Dict]:
     return [g for g in gaps if _norm_rep(g.get("name")) in mine]
 
 
-def _last_tick_of_day(cfg: Dict, now: Optional[dt.datetime] = None) -> bool:
-    """Is this the last gap tick inside the office's window today -- i.e. the
-    next one would fall past the bell? That is when the day's board is the
-    day's final report."""
+def _praise_tick(cfg: Dict, office_key: str,
+                 now: Optional[dt.datetime] = None) -> bool:
+    """Is this the tick for the day's positive call-out? The last tick before
+    the office's window ends OR the call-out cutoff hits, whichever is first
+    (Raf 2026-09-28: "Keep the praise one" -- the 8:30 wall had swallowed it,
+    because this window runs to 10pm)."""
+    from automations.icd_alerts import gap_callouts as _GC
     local = C.office_now(cfg, now)
     win = C.office_window(cfg, local.weekday())
-    if not win:
-        return False
-    (eh, em) = win[1]
-    end = local.replace(hour=eh, minute=em, second=0, microsecond=0)
-    return local <= end < local + dt.timedelta(minutes=C.TICK_MINUTES)
+    return bool(win) and _GC.praise_tick(local, office_key, win[1], C.TICK_MINUTES)
 
 
 def _send_guest_boards(cfg: Dict, guest_due: Dict, guest_boards: Dict,
@@ -1464,7 +1463,7 @@ def _send_guest_boards(cfg: Dict, guest_due: Dict, guest_boards: Dict,
                 from automations.icd_alerts import post as _P
                 _rooms = [c.id for c in (_P.approved_channels().get(_gkey) or [])]
                 _praise = ""
-                if _last_tick_of_day(cfg):
+                if _praise_tick(cfg, _gkey):
                     _praise = _GC.pace_callout("guest:%s:%s" % (cfg["key"], _gkey), g_rows, dt.datetime.now(), remember=send)
                 for _msg in (_line, _praise):
                     if not _msg:
@@ -1474,7 +1473,12 @@ def _send_guest_boards(cfg: Dict, guest_due: Dict, guest_boards: Dict,
                     if send:
                         for _ch in _rooms:
                             try:
-                                _P._slack(_ch, _msg)
+                                # The praise also asks the ROOM before it
+                                # posts (fails closed), on top of its marker.
+                                if _msg is _praise:
+                                    _GC._say(_ch, _msg, dt.datetime.now(), _log)
+                                else:
+                                    _P._slack(_ch, _msg)
                             except Exception as _e:  # noqa: BLE001
                                 _log("  %s: call-out to %s FAILED: %s" % (cfg["key"], _ch, type(_e).__name__))
         except Exception as e:  # noqa: BLE001 -- the call-out never costs the board
@@ -1772,16 +1776,20 @@ def tick(day: dt.date, *, send: bool, only: str = "",
                                           dt.datetime.now(), remember=send)
                 from automations.icd_alerts import post as _P
                 # THE POSITIVE ONE ON THE LAST TICK OF THE DAY (Megan
-                # 2026-09-26): the day's numbers, after the final report.
+                # 2026-09-26): the day's numbers -- the last tick before the
+                # window ends or the call-out cutoff, whichever is first.
                 _praise = ""
-                if _last_tick_of_day(cfg):
+                if _praise_tick(cfg, cfg["key"]):
                     _praise = _GC.pace_callout(cfg["key"], rows, dt.datetime.now(), remember=send)
                 for _msg in (_line, _praise):
                     if not _msg:
                         continue
                     _log("  %s: call-out -> %s: %s" % (cfg["key"], _room, _msg.splitlines()[0]))
                     if send:
-                        _P._slack(_room, _msg)
+                        if _msg is _praise:
+                            _GC._say(_room, _msg, dt.datetime.now(), _log)
+                        else:
+                            _P._slack(_room, _msg)
         except Exception as _e:  # noqa: BLE001
             _log("  %s: call-out skipped: %s" % (cfg["key"], type(_e).__name__))
         previous, first_of_day = _previous_gap_names(cfg["key"], day)

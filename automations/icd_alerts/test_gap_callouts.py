@@ -461,3 +461,115 @@ class AMarkerWrittenMidRunSurvivesTheRun(unittest.TestCase):
         src = inspect.getsource(G.run)
         self.assertNotIn("merged.update(state)", src)
         self.assertNotIn("_save(state)", src)
+
+
+class ThePraiseLandsBeforeTheWall(unittest.TestCase):
+    """Raf 2026-09-28: "Keep the praise one." The positive pace line goes out
+    in the last minutes before the cutoff (or after an early bell), ONCE; the
+    gap call-outs stay hard-cut at the cutoff."""
+
+    from types import SimpleNamespace as _NS
+    LATE = _NS(day_end="21:15", sat_end="17:15", saturday=True, campaign="att")    # cyrus-shaped
+    EARLY = _NS(day_end="19:30", sat_end="16:30", saturday=True, campaign="b2b_box")  # ryan-shaped
+    MON = dt.date(2026, 9, 28)
+    SAT = dt.date(2026, 10, 3)
+
+    def _at(self, day, h, m):
+        return dt.datetime(day.year, day.month, day.day, h, m)
+
+    # -- the every-minute poster ------------------------------------------
+    def test_weekday_praise_is_the_last_minutes_before_830(self):
+        w = G.praise_window
+        self.assertFalse(w(self.LATE, self._at(self.MON, 20, 19)))
+        self.assertTrue(w(self.LATE, self._at(self.MON, 20, 20)))
+        self.assertTrue(w(self.LATE, self._at(self.MON, 20, 29)))
+
+    def test_no_praise_at_or_after_the_cutoff(self):
+        for h, m in ((20, 30), (20, 31), (21, 20), (22, 0)):
+            self.assertFalse(G.praise_window(self.LATE, self._at(self.MON, h, m)), (h, m))
+
+    def test_saturday_praise_is_just_before_five(self):
+        self.assertFalse(G.praise_window(self.LATE, self._at(self.SAT, 16, 49)))
+        self.assertTrue(G.praise_window(self.LATE, self._at(self.SAT, 16, 55)))
+        self.assertFalse(G.praise_window(self.LATE, self._at(self.SAT, 17, 0)))
+        self.assertFalse(G.praise_window(self.LATE, self._at(self.SAT, 17, 20)))
+
+    def test_an_early_bell_keeps_its_after_the_bell_praise_capped_by_the_wall(self):
+        self.assertFalse(G.praise_window(self.EARLY, self._at(self.MON, 19, 29)))
+        self.assertTrue(G.praise_window(self.EARLY, self._at(self.MON, 19, 45)))
+        self.assertFalse(G.praise_window(self.EARLY, self._at(self.MON, 20, 30)))
+        self.assertTrue(G.praise_window(self.EARLY, self._at(self.SAT, 16, 45)))
+        self.assertFalse(G.praise_window(self.EARLY, self._at(self.SAT, 17, 0)))
+
+    def test_it_follows_an_office_override(self):
+        from unittest import mock
+        with mock.patch.dict(G.CALLOUT_CUTOFF_OVERRIDES, {"cyrus": "19:45"}):
+            self.assertTrue(G.praise_window(self.LATE, self._at(self.MON, 19, 40), "cyrus"))
+            self.assertFalse(G.praise_window(self.LATE, self._at(self.MON, 19, 45), "cyrus"))
+            self.assertFalse(G.praise_window(self.LATE, self._at(self.MON, 20, 25), "cyrus"))
+
+    def test_sunday_and_a_saturday_off_office_get_nothing(self):
+        self.assertFalse(G.praise_window(self.LATE, self._at(dt.date(2026, 10, 4), 20, 25)))
+        off = self._NS(day_end="21:15", sat_end="17:15", saturday=False)
+        self.assertFalse(G.praise_window(off, self._at(self.SAT, 16, 55)))
+
+    # -- the quarter-hour gap_alerts runner (Raf's own reps, Carlos's) ------
+    def test_gap_alerts_praise_is_the_last_tick_before_the_cutoff(self):
+        t = G.praise_tick
+        self.assertFalse(t(self._at(self.MON, 20, 0), "rafael", (22, 0), 15))
+        self.assertTrue(t(self._at(self.MON, 20, 15), "rafael", (22, 0), 15))
+        self.assertFalse(t(self._at(self.MON, 20, 30), "rafael", (22, 0), 15))
+        self.assertFalse(t(self._at(self.MON, 21, 45), "rafael", (22, 0), 15))   # the old last tick
+        self.assertTrue(t(self._at(self.SAT, 16, 45), "rafael", (20, 0), 15))
+        self.assertFalse(t(self._at(self.SAT, 17, 0), "rafael", (20, 0), 15))
+        self.assertFalse(t(self._at(self.SAT, 19, 45), "rafael", (20, 0), 15))
+
+    def test_gap_alerts_window_ending_first_keeps_the_old_last_tick(self):
+        self.assertTrue(G.praise_tick(self._at(self.MON, 19, 30), "x", (19, 30), 15))
+        self.assertFalse(G.praise_tick(self._at(self.MON, 19, 15), "x", (19, 30), 15))
+
+    # -- end to end through run(): once, and the nag stays cut ---------------
+    def _run_at(self, when, posted, logged):
+        import json as _json
+        from unittest import mock
+        row = ["cyrus", self.MON.isoformat(), "[]", "[]", "0", "2026-09-28 20:00", "", ""]
+        tabs = {G.K.KNOCKS_TAB: [["hdr"], row], G.P.RELAY_TAB: [["hdr"]]}
+        book = mock.Mock()
+        book.worksheet.side_effect = lambda name: mock.Mock(get_all_values=mock.Mock(return_value=tabs.get(name, [["hdr"]])))
+        with mock.patch.object(G.P, "approved_channels", return_value={"cyrus": [mock.Mock(id="C1")]}), \
+                mock.patch.object(G.O, "get", return_value=self.LATE), \
+                mock.patch.object(G.K, "_office_now", return_value=when), \
+                mock.patch.object(G.K, "in_field_hours", return_value=True), \
+                mock.patch.object(G.K, "_too_old", return_value=False), \
+                mock.patch.object(G.M, "to_rows", return_value=[{"Rep": "Nick Smith"}]), \
+                mock.patch.object(G, "pick", return_value=[{"name": "Nick Smith", "mins": 45}]), \
+                mock.patch.object(G, "pace", return_value=[{"name": "Nick Smith", "avg": 31}]), \
+                mock.patch.object(G, "already_said", return_value=False), \
+                mock.patch.object(G.P, "_slack", lambda ch, t: posted.append((when, t))):
+            G.run(self.MON, send=True, book=book, log=logged.append)
+
+    def test_praise_posts_once_before_the_wall_and_the_nag_stays_cut(self):
+        import pathlib, tempfile
+        from unittest import mock
+        posted, logged = [], []
+        with mock.patch.object(G, "STATE_PATH", pathlib.Path(tempfile.mkdtemp()) / "s.json"):
+            # Every minute from 20:20 to 20:40, like the poster.
+            for minute in range(20, 41):
+                self._run_at(self._at(self.MON, 20, minute), posted, logged)
+        praise = [p for p in posted if "Nick" in p[1] and "31" in p[1]]
+        nags = [p for p in posted if "45" in p[1]]
+        self.assertEqual(len(praise), 1, posted)
+        self.assertEqual(praise[0][0], self._at(self.MON, 20, 20))
+        # The nag may still post before 8:30 (on its own 30-min cadence), and
+        # never at or after it.
+        self.assertTrue(all(w < self._at(self.MON, 20, 30) for w, _t in nags), nags)
+        self.assertTrue(any("cutoff" in l for l in logged))
+
+    def test_nothing_at_all_after_the_cutoff(self):
+        import pathlib, tempfile
+        from unittest import mock
+        posted, logged = [], []
+        with mock.patch.object(G, "STATE_PATH", pathlib.Path(tempfile.mkdtemp()) / "s.json"):
+            for h, m in ((20, 30), (20, 45), (21, 16), (21, 30)):
+                self._run_at(self._at(self.MON, h, m), posted, logged)
+        self.assertEqual(posted, [])

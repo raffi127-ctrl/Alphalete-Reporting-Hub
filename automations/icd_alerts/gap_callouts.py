@@ -402,6 +402,53 @@ def cutoff_label(now: dt.datetime, office_key: Optional[str] = None) -> str:
     return "no cutoff" if cut is None else "%d:%02d" % cut
 
 
+# THE PRAISE LANDS BEFORE THE WALL (Raf, 2026-09-28: "Keep the praise one").
+# The positive pace line used to wait for the bell, and almost every office's
+# bell is at or after the cutoff -- so the wall silenced it. When the field day
+# runs up to (or past) the cutoff, the praise goes in the last PRAISE_LEAD_MIN
+# before it instead; an office whose day ends earlier keeps its after-the-bell
+# timing, still capped by the wall. The gap call-outs are NOT moved: they stop
+# hard at the cutoff. ONCE A DAY is still pace_callout's `pace:<office>` marker
+# (plus the lock and the room de-dupe) -- this only decides WHEN it may fire.
+PRAISE_LEAD_MIN = 10
+
+
+def _at(now: dt.datetime, hm) -> dt.datetime:
+    return now.replace(hour=hm[0], minute=hm[1], second=0, microsecond=0)
+
+
+def praise_window(office, now: dt.datetime, office_key: Optional[str] = None,
+                  lead_min: int = PRAISE_LEAD_MIN) -> bool:
+    """May the day's positive line go out now? For the every-minute poster.
+    `now` is the office's local time."""
+    cut = callout_cutoff(now, office_key)
+    if cut is None or (now.weekday() == SATURDAY and not getattr(office, "saturday", True)):
+        return False
+    cut_at = _at(now, cut)
+    if now >= cut_at:
+        return False
+    end_at = _at(now, O._hm(office.sat_end if now.weekday() == SATURDAY else office.day_end))
+    if end_at < cut_at - dt.timedelta(minutes=lead_min):
+        return after_the_bell(office, now)
+    return now >= cut_at - dt.timedelta(minutes=lead_min)
+
+
+def praise_tick(now: dt.datetime, office_key: Optional[str], window_end_hm,
+                tick_min: int) -> bool:
+    """The same rule for a fixed-cadence runner (gap_alerts, every tick_min):
+    is this the LAST tick before whichever comes first -- the office window's
+    end (inclusive, the old last-tick-of-day rule) or the call-out cutoff
+    (exclusive)? `now` is the office's local time."""
+    cut = callout_cutoff(now, office_key)
+    if cut is None or not window_end_hm:
+        return False
+    cut_at, end_at = _at(now, cut), _at(now, window_end_hm)
+    step = dt.timedelta(minutes=tick_min)
+    if end_at < cut_at:
+        return now <= end_at < now + step
+    return cut_at - step <= now < cut_at
+
+
 # NEVER THE SAME LINE TWICE INTO ONE ROOM INSIDE THIS MANY MINUTES. The backstop
 # for "that cannot happen in any office" (Raf, 2026-09-26), and it is deliberately
 # NOT our state file: it asks SLACK what is already in the room, so it still
@@ -622,7 +669,9 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
                 _say(ch, text, now, log)
             except Exception as e:  # noqa: BLE001
                 log("%-14s FAILED to post to %s: %s" % (key, ch, type(e).__name__))
-    # THE POSITIVE ONE, after the bell: the day's numbers, once a day.
+    # THE POSITIVE ONE, at the end of the day: the day's numbers, once a day --
+    # in the last minutes before the cutoff, or after the bell when the day
+    # ends earlier than that (praise_window).
     for key in sorted(approved_ch):
         if only and key != only:
             continue
@@ -633,10 +682,11 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
         now = K._office_now(office)
         if not callouts_allowed(now, key):
             continue
-        if not after_the_bell(office, now):
+        if not praise_window(office, now, key):
             continue
         # THE DAY'S LAST RELAY IS THE DAY'S REPORT: the machine stops sweeping
-        # at the bell, so "too old" does not apply here.
+        # at the bell, so "too old" does not apply here. Before the bell it is
+        # simply the latest relay.
         krow = knocks.get(key) or next((r for k, r in knocks.items() if k.startswith(key) or key.startswith(k)), None)
         if not krow:
             continue
