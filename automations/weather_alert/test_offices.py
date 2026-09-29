@@ -53,6 +53,33 @@ class OfficeWeatherTest(unittest.TestCase):
             n = W.post_offices(client, dry_run=False, dfw_summary=_s())
         self.assertEqual(posts, ["C4"]); self.assertEqual(n, 1)
 
+    def test_every_metrics_channel_has_a_city(self):
+        """Megan 2026-09-29: every metrics channel gets the forecast."""
+        from automations.office_metrics import offices as O
+        for key, o in O.OFFICES.items():
+            if not o.channel_id:
+                continue                  # email-only office
+            city = W.OFFICE_CITY.get(key) or W.METRICS_CITY.get(key)
+            self.assertIsNotNone(city, f"{key}: add it to METRICS_CITY")
+            self.assertIn(city, W.CITIES, key)
+
+    def test_metrics_channels_are_in_the_fan_out(self):
+        from automations.office_metrics import offices as O
+        rooms = {ch for _k, _c, chans, *_ in W.metrics_posts() for ch in chans}
+        for key, o in O.OFFICES.items():
+            if o.channel_id:
+                self.assertIn(o.channel_id, rooms, key)
+
+    def test_other_workspace_room_uses_its_own_token(self):
+        posts = []
+        default = mock.Mock(); default.chat_postMessage.side_effect = lambda **k: posts.append(("ao", k["channel"]))
+        other = mock.Mock(); other.chat_postMessage.side_effect = lambda **k: posts.append(("fs", k["channel"]))
+        rows = [("kash", "dfw", ["C1"]), ("trang", "dfw", ["C9"], "slack-token-freshsuccess")]
+        with mock.patch.object(W, "office_posts", return_value=rows), \
+             mock.patch.object(W, "_workspace_client", return_value=other):
+            W.post_offices(default, dry_run=False, dfw_summary=_s())
+        self.assertEqual(posts, [("ao", "C1"), ("fs", "C9")])
+
 
 if __name__ == "__main__":
     unittest.main()

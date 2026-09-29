@@ -14,6 +14,7 @@ token (~/.config/recruiting-report/slack-user-token) to post.
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 import sys
 import time
 
@@ -60,6 +61,14 @@ CITIES = {
     # maxamad / Maximal Management: San Antonio per his OwnerVille office
     # address (harvest_zones, 2026-09-28).
     "san_antonio": ("San Antonio, TX", 29.4241, -98.4936, "America/Chicago"),
+    # Metrics-only offices (below): cities from the person-checked comments in
+    # captainship_night_knocks/zones.py.
+    "lubbock": ("Lubbock, TX", 33.5779, -101.8552, "America/Chicago"),
+    "southfield": ("Southfield / Detroit, MI", 42.4734, -83.2219, "America/Detroit"),
+    "corpus_christi": ("Corpus Christi, TX", 27.8006, -97.3964, "America/Chicago"),
+    "austin": ("Austin, TX", 30.2672, -97.7431, "America/Chicago"),
+    "wilkes_barre": ("Wilkes-Barre, PA", 41.2459, -75.8813, "America/New_York"),
+    "memphis": ("Memphis, TN", 35.1495, -90.0490, "America/Chicago"),
 }
 OFFICE_CITY = {
     "kash": "dfw", "cyrus": "dfw", "carlos": "dfw", "carlos-b2batt": "dfw",
@@ -71,6 +80,19 @@ OFFICE_CITY = {
     # the same #maximal-sales, and both are approved. Listing both would post
     # the forecast twice into one room. Re-key if his machine relays as -nds.
     "maxamad": "san_antonio",
+}
+
+# EVERY METRICS CHANNEL GETS IT TOO (Megan 2026-09-29: "all metrics channels
+# should also be getting the lucy weather post"). Channels come from
+# office_metrics.offices, so a new metrics office is covered the day it is
+# added -- as long as it has a city: OFFICE_CITY above, else this map.
+# test_offices fails for a metrics office with neither. Email-only offices
+# (Joseph, Christian) have no channel and are skipped.
+METRICS_CITY = {
+    "rashad": "lubbock", "hammad": "southfield", "salik": "southfield",
+    "cody": "corpus_christi", "haytham": "austin", "trang": "san_antonio",
+    "nii": "wilkes_barre", "jacob": "memphis",
+    "jairo": "miami",           # Profits Management, Miami (305)
 }
 
 
@@ -235,7 +257,36 @@ def office_posts() -> list:
         chans = [c.id for c in (approved.get(key) or [])]
         if chans:
             out.append((key, city, chans))
+    return out + metrics_posts()
+
+
+def metrics_posts() -> list:
+    """[(office_key, city_key, [channel_id], token_file)] for every Slack
+    metrics office. token_file is set only for a channel in another workspace
+    (trang -> FRESH SUCCESS); empty means the machine's own Lucy token."""
+    from automations.office_metrics import offices as O
+    out = []
+    for key, o in O.OFFICES.items():
+        if not o.channel_id:
+            continue                      # email-only office
+        city = OFFICE_CITY.get(key) or METRICS_CITY.get(key)
+        if not city:
+            print(f"[weather] {key}: metrics office with no city -- skipped", flush=True)
+            continue
+        out.append((key, city, [o.channel_id], o.slack_token_file))
     return out
+
+
+def _workspace_client(token_file: str):
+    """A client for a channel in another Slack workspace, or None if this
+    machine doesn't hold that workspace's token."""
+    path = Path.home() / ".config" / "recruiting-report" / token_file
+    if not path.exists():
+        return None
+    import certifi, ssl
+    from slack_sdk import WebClient
+    return WebClient(token=path.read_text(encoding="utf-8-sig").strip(),
+                     ssl=ssl.create_default_context(cafile=certifi.where()))
 
 
 def post_offices(client, *, dry_run: bool, dfw_summary: dict | None = None) -> int:
@@ -244,7 +295,8 @@ def post_offices(client, *, dry_run: bool, dfw_summary: dict | None = None) -> i
     many posts went out (or would have)."""
     summaries = {"dfw": dfw_summary} if dfw_summary else {}
     sent, seen = 0, set()
-    for key, city, chans in office_posts():
+    for key, city, chans, *rest in office_posts():
+        token_file = rest[0] if rest else ""
         label, lat, lon, tz = CITIES[city]
         if city not in summaries:
             try:
@@ -264,7 +316,11 @@ def post_offices(client, *, dry_run: bool, dfw_summary: dict | None = None) -> i
                 sent += 1
                 continue
             try:
-                client.chat_postMessage(channel=ch, text=msg)
+                room_client = _workspace_client(token_file) if token_file else client
+                if room_client is None:
+                    print(f"[weather] {key} -> {ch} skipped: no {token_file} on this machine", flush=True)
+                    continue
+                room_client.chat_postMessage(channel=ch, text=msg)
                 print(f"[weather] posted {label} to {ch} ({key}) ✓", flush=True)
                 sent += 1
             except Exception as e:  # noqa: BLE001
