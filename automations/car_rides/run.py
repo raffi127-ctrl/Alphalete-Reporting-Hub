@@ -683,14 +683,16 @@ def _not_offered(texts: list) -> bool:
 
 
 def _territory_row(page, name: str):
-    """The row whose NAME cell is exactly `name`. get_by_text(exact=False)
-    clicked 'joelle 9/28' for territory 'joelle' (2026-09-29): the date-named
-    one sits first in the table, held no Eva chip, and the edit died on Save."""
-    # `has=` is resolved INSIDE each row, so the cell selector must be
-    # row-relative — a '#territoryTable …' prefix never matches (9/29 10:30).
-    cell = page.locator("td:first-child",
-                        has_text=re.compile(r"^\s*" + re.escape(name) + r"\s*$"))
-    return page.locator("#territoryTable tbody tr").filter(has=cell).first
+    """The clickable NAME of the territory called exactly `name`.
+
+    get_by_text(exact=False) clicked 'joelle 9/28' for territory 'joelle'
+    (2026-09-29): the date-named one sits first in the table, held no Eva
+    chip, and the edit died on Save. And it has to be the name span itself —
+    the cell also holds an eye icon (map show/hide), and clicking the row or
+    the cell's centre opens nothing (9/29 10:50)."""
+    return page.locator(
+        "#territoryTable tbody td:first-child span.territory-option",
+        has_text=re.compile(r"^\s*" + re.escape(name) + r"\s*$")).first
 
 
 def apply_edit(page, edit: dict, log=_log, not_on_roster: list | None = None) -> bool:

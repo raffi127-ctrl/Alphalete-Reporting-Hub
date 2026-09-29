@@ -266,11 +266,11 @@ class ARemoveIsIdempotent(unittest.TestCase):
         self.assertIn("timeout=10_000", src)
 
 
-class TheRowLocatorIsRowRelative(unittest.TestCase):
+class TheRowClickLandsOnTheName(unittest.TestCase):
     """2026-09-29 10:30: `has=` resolves inside each row, so a
     '#territoryTable …' cell selector matched nothing and every open timed out."""
 
-    def test_the_cell_selector_has_no_table_prefix(self):
+    def test_it_clicks_the_name_span(self):
         import inspect
         src = inspect.getsource(run._territory_row)
-        self.assertIn('page.locator("td:first-child"', src)
+        self.assertIn("span.territory-option", src)
