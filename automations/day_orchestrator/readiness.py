@@ -56,7 +56,7 @@ def session_status(stale_after_minutes: int = 20) -> Tuple[bool, float, str]:
     """(warm, age_minutes, reason). Warm = the holder's exported ownerville
     storage_state file was refreshed within `stale_after_minutes`. The holder
     re-exports every few minutes while the session is live; a stale file means
-    the session went down and needs a re-seed on the mini."""
+    the holder stopped re-exporting — restart it (lucy restart_holder)."""
     try:
         from automations.shared.tableau_patchright import OWNERVILLE_STORAGE_STATE as ov
     except Exception as e:  # import shouldn't fail, but never crash the probe
@@ -69,7 +69,7 @@ def session_status(stale_after_minutes: int = 20) -> Tuple[bool, float, str]:
     if age_min > stale_after_minutes:
         return False, age_min, (
             f"ownerville session stale ({age_min:.0f}m since last export; "
-            f"holder may be down) — re-seed the mini")
+            f"session-holder not running) — restart the holder")
     return True, age_min, "warm"
 
 

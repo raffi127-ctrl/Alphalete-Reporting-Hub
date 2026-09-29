@@ -94,7 +94,9 @@ def send_session_alert(cfg, ds, reason, *, channel="email", dry_run=False):
            f"install_session_holder_agent --machine \"{machine}\"`), then a human "
            "seeds it once in the holder's window — Screen Sharing is fine."
            if never_seeded else
-           f"Log back in on {machine}'s session-holder window to re-seed it.")
+           "A stale export means the session-holder is not running — it does "
+           "not mean the session expired. Restart it: `lucy restart_holder "
+           f"--machine \"{machine}\"`. Its login clears Cloudflare on its own.")
     subj = f"⚠️ ownerville session {what.lower()} on {machine} ({_d(ds)})"
     text = (
         f"The day orchestrator on {machine} has no usable ownerville session "
