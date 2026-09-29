@@ -271,6 +271,7 @@ _HUB_CARD = {
     # have"). The library row hub_coverage --sync had made for him was deleted.
     "drew_metrics": "office-metrics",
     "maxamad_metrics": "office-metrics",   # 2026-09-28, same card as everyone
+    "jairo_metrics": "office-metrics",     # 2026-09-29, same card as everyone
     # nii + trang had self-registered their own Report Library cards; folded
     # onto the one card 2026-09-28 (Megan: "consolidate"). Their library rows
     # were deleted.

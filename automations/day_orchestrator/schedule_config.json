@@ -12429,6 +12429,45 @@
       "_note": "Office metrics for maxamad -> #maximal-sales (C0BKZRB4YTH, Slack Connect, Lucy a member). Wired by hand 2026-09-28 (no form). NDS/wireless office (campaign nds_d2d), same boards as khalil. SWITCHED ON 2026-09-28 19:05 after a dry run on Lucy 1 (rerun-2026-09-28-185647) came back 'All wired metrics ok' on every board. Megan's rule held: never a blank first post. Sheet 'Maxamad Aden - Metrics' 1VwzSxAREKh_cnh7CdxCBgzG7_RXP93AfnGDwesdF1-M copied from the Master Metrics Templates.",
       "_onboarded": true
     },
+    "jairo_metrics": {
+      "order": 36.62,
+      "machine": "Lucy 4",
+      "on_scheduler": false,
+      "display_name": "Jairo's Daily Metrics (profitsmanagement-att-sales)",
+      "source_type": "tableau",
+      "data_sources": [
+        "tableau:order_log"
+      ],
+      "command": [
+        "automations.office_metrics.runner"
+      ],
+      "base_args": [
+        "--office",
+        "jairo",
+        "--live"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P1",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 60,
+      "verify": {
+        "type": "manifest",
+        "report_id": "jairo_metrics"
+      },
+      "_note": "Office metrics for jairo -> #profitsmanagement-att-sales (C0C67A2U0RW, private, Lucy a member). Wired by hand 2026-09-29 (no form). NDS/wireless office (campaign nds_d2d), same boards as khalil. on_scheduler stays false until a dry run on Lucy 1 comes back with data on every board -- Megan's rule: never a blank first post. Sheet 'Jairo Ruiz - Metrics' 1sLTMK4BFzAzKxwUzi-x7NPDiWCYd4yEKXZrIrZ5CI9w copied from the Master Metrics Templates.",
+      "_onboarded": true
+    },
     "jacob_metrics": {
       "order": 36.6,
       "machine": "Lucy 4",
