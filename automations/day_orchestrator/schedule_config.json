@@ -448,6 +448,27 @@
       "timeout_minutes": 60,
       "machine": "Lucy 2"
     },
+    "sms_audit_weekly": {
+      "on_scheduler": true,
+      "_note": "SATURDAY (Megan 2026-09-28). Refills the ACA sheet for the recruiting week that closed the day before. Raf asked for this in #l10-alphalete on 2026-09-26 \u2014 \"Can we teach LUCY to go through all the text messsages that I have for the sake of learning\" \u2014 and the Sat-Fri boundary is Megan's (\"Week runs Sat-Friday for recruiting\"), so Saturday is the first day the week is complete. Runs the four pulls in order then writes the four tabs: sms_thread_dump (bookings, p=105) \u2192 sms_log (texts, p=336) \u2192 sms_call_list (LM1/LM2/LM3, p=4000 Call Hub, via its Export) \u2192 sms_email_tracking (sends + opens, p=792) \u2192 weekly_sheet. THE LAST TWO ARE NOT OPTIONAL: without them the \"why they didn't book\" buckets revert to text-only, which measured 55-83% WRONG on 2026-09-28 \u2014 every count arithmetically right and the meaning inverted. If a pull fails, the sheet still writes but those rows read as text-only, so a failure here is a correctness fault, not a missing nice-to-have.",
+      "display_name": "Applicant SMS audit \u2014 weekly refill",
+      "source_type": "appstream",
+      "data_sources": [],
+      "command": [
+        "automations.sms_audit.weekly_run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": [5]
+      },
+      "start_hour": 7,
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 180,
+      "machine": "Lucy 2"
+    },
     "sms_email_tracking": {
       "on_scheduler": false,
       "_note": "MANUAL (Megan 2026-09-28): pull Email Tracking Data (p=792) \u2014 every email the office sent, to whom, and whether it was opened. Closes the caveat every SMS-audit list carries (\"this is the text log, it cannot see email\"), which matters because a person who was emailed is not a person we failed to contact. Joins to the SMS log on Phone. TWO TRAPS: the Status filter defaults to \"Not Opened Yet\", so a naive read returns a subset that looks like a full answer \u2014 it is set to All first; and Date Sent takes ONE day, so a window is one submission per day. READ-ONLY. Writes tab 'Email Tracking <office>' + output/email_tracking_<office>.json. Args: --office, --dates FROM,TO, --week N, --dry-run.",
