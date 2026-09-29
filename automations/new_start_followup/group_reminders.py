@@ -34,6 +34,8 @@ from typing import Optional
 # Substring needle for AppleScript's case-insensitive `contains` — stops
 # before the "'s🔥🔥" so quoting/emoji never enter the script literal.
 IMESSAGE_GROUP = "Alphalete lvl 1"
+# Raf 2026-09-29: that room "doesn't get used" -- Lucy stops texting it.
+IMESSAGE_ON = False
 
 # #alphalete-lvl1-chat (private; Raf's channel, ~79 members).
 SLACK_CHANNEL = "C09JG28CD27"
@@ -73,15 +75,20 @@ def send_all(slot: str, text: str, *, day: Optional[dt.date] = None,
         out["skipped"] = "already sent %s" % m.read_text().strip()[:19]
         return out
 
-    # iMessage half — resolve even on dry-run (proves the group needle).
-    try:
-        from automations.b2b_dispositions import text_post as tp
-        res = tp.send_text_to_group(IMESSAGE_GROUP, text, dry_run=dry_run)
-        out["imessage"] = "%s %r (chat %s, %s participants)" % (
-            "WOULD TEXT" if dry_run else "TEXTED", res.get("resolved_name"),
-            res.get("chat_id"), res.get("participants"))
-    except Exception as e:  # noqa: BLE001 — never blocks the Slack half
-        out["errors"].append("imessage: %s: %s" % (type(e).__name__, str(e)[:200]))
+    # iMessage half — OFF (Raf 2026-09-29: "Can we stop all post on this
+    # channel, it doesn't get used", about the Lvl 1's iMessage room). Slack
+    # #alphalete-lvl1-chat is the room they actually use, so it stays.
+    if not IMESSAGE_ON:
+        out["imessage"] = "off (Raf 9/29: Lvl 1's iMessage not used)"
+    else:
+        try:
+            from automations.b2b_dispositions import text_post as tp
+            res = tp.send_text_to_group(IMESSAGE_GROUP, text, dry_run=dry_run)
+            out["imessage"] = "%s %r (chat %s, %s participants)" % (
+                "WOULD TEXT" if dry_run else "TEXTED", res.get("resolved_name"),
+                res.get("chat_id"), res.get("participants"))
+        except Exception as e:  # noqa: BLE001 — never blocks the Slack half
+            out["errors"].append("imessage: %s: %s" % (type(e).__name__, str(e)[:200]))
 
     # Slack half.
     try:

@@ -111,7 +111,11 @@ GROUP_KNOCKING = "Knocking Chat A-Players"
 #     deploy/sales_text_read_chat.py) reads and answers in the same room --
 #     Raf's "all of it" (2026-09-28) includes the paperwork.
 LIVE_GROUPS = [GROUP_KNOCKING]
-END_OF_DAY_GROUPS = [GROUP_LVL1, GROUP_KNOCKING]
+# Raf 2026-09-29: "Can we stop all post on this channel, it doesn't get used"
+# (with a screenshot of the Lvl 1's iMessage room) -- so the end-of-day
+# scoreboard no longer texts the Lvl 1's. GROUP_LVL1 stays defined only so the
+# test can pin that nothing sends there.
+END_OF_DAY_GROUPS = [GROUP_KNOCKING]
 # Where the reply loop listens and answers. Must match the chat name the
 # sales-text-reader LaunchAgent is given (deploy/com.alphalete.sales-text-reader.plist).
 REPLY_GROUP = GROUP_KNOCKING

@@ -22,3 +22,13 @@ def test_the_reply_reader_listens_where_the_answers_go():
     plist = (ROOT / "deploy" / "com.alphalete.sales-text-reader.plist").read_text()
     assert "<string>%s</string>" % C.REPLY_GROUP in plist
     assert "Alphalete Partners" not in plist
+
+
+def test_nothing_texts_the_lvl1_imessage_room():
+    """Raf 2026-09-29: "Can we stop all post on this channel, it doesn't get
+    used" -- the Lvl 1's iMessage room gets nothing from Lucy (Slack
+    #alphalete-lvl1-chat is a different room and keeps its posts)."""
+    from automations.new_start_followup import group_reminders as GR
+    boards = C.LIVE_GROUPS + C.END_OF_DAY_GROUPS + C.TIMES_GROUPS + [C.REPLY_GROUP]
+    assert C.GROUP_LVL1 not in boards
+    assert GR.IMESSAGE_ON is False
