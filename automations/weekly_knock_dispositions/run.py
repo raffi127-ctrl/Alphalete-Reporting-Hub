@@ -289,15 +289,15 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
     started_at = dt.datetime.now()
     offices = for_this_login(enabled(only), own_office_owner())
     all_names = [key_of(o) for o in enabled(None)]
-    if not dry_run and any(o.get("preview_only") for o in offices):
-        # Carlos's B2B boards (offices.CARLOS_B2B) have no posting target
-        # yet — a live run must never be where that gets decided.
-        print("[wkd] ⤳ preview-only office(s) dropped from a LIVE run: "
-              + ", ".join(key_of(o) for o in offices
-                          if o.get("preview_only")), flush=True)
-        offices = [o for o in offices if not o.get("preview_only")]
-        if not offices:
-            return 0
+    # A run of ONLY own-run offices (Carlos's B2B boards, their own Lucy 2
+    # entry) files its manifest + incident under THEIR report id, so a clean
+    # Carlos run can never close the Lucy 1 run's ticket, or the reverse.
+    global REPORT_ID, INCIDENT_KEY
+    _own = {o.get("report_id") for o in offices}
+    if offices and len(_own) == 1 and None not in _own:
+        REPORT_ID = _own.pop()
+        INCIDENT_KEY = f"standalone-{REPORT_ID}"
+        all_names = [key_of(o) for o in offices]
     monday, saturday, we_sunday = _week(anchor)
     print(f"[wkd] {CARD_NAME} — {monday} → {saturday} "
           f"({len(offices)} office(s): "
@@ -701,6 +701,23 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
                     Path(png), comment=comment, today=slack_today,
                     thread_ts=thread_ts, wait_visible=True,
                     file_name=f"{Path(png).stem}_{_slug(name)}.png")  # name = key
+            for extra_ch in (cfg.get("also_channels") or []):
+                if png is None or not resp.get("ok"):
+                    break
+                # Loose, not threaded — the room's own shape for his daily
+                # boards (only #a-players-b2b threads them).
+                try:
+                    r2 = smp.post_reply_with_image(
+                        Path(png), comment=comment, today=slack_today,
+                        channel_id=extra_ch, top_level=True,
+                        wait_visible=True,
+                        file_name=f"{Path(png).stem}_{_slug(name)}.png")
+                except Exception as e:  # noqa: BLE001
+                    r2 = {"ok": False, "error": f"{type(e).__name__}: {e}"}
+                if not r2.get("ok"):
+                    print(f"[wkd] ⚠ {name}: post to {extra_ch} failed: "
+                          f"{str(r2)[:160]}", flush=True)
+                    resp = r2
             if resp.get("ok"):
                 print(f"[wkd] ✅ posted {name}.", flush=True)
             else:

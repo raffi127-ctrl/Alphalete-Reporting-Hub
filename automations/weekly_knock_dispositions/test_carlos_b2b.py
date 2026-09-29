@@ -13,7 +13,7 @@ class CarlosB2BTest(unittest.TestCase):
     def test_not_in_the_sunday_set(self):
         keys = [O.key_of(o) for o in O.enabled(None)]
         self.assertNotIn("Carlos Hidalgo (B2B Box)", keys)
-        self.assertFalse(any(o.get("preview_only") for o in O.enabled(None)))
+        self.assertFalse(any(o.get("own_run") for o in O.enabled(None)))
 
     def test_named_run_gets_both_campaigns(self):
         got = O.enabled(["carlos hidalgo"])
@@ -37,11 +37,21 @@ class CarlosB2BTest(unittest.TestCase):
         got = O.enabled(["Carlos Hidalgo (B2B Box)"])
         self.assertEqual([o["campaign_id"] for o in got], ["16"])
 
-    def test_live_run_drops_them_before_any_pull(self):
-        with mock.patch.object(R.A, "download") as dl:
-            rc = R.run(None, only=["Carlos Hidalgo"], dry_run=False)
-        self.assertEqual(rc, 0)
-        dl.assert_not_called()
+    def test_own_report_id_and_both_rooms(self):
+        for o in O.CARLOS_B2B:
+            self.assertEqual(o["report_id"], O.CARLOS_REPORT_ID)
+            self.assertEqual(o["also_channels"], ["C07J46MQNUX"])
+        import json
+        from pathlib import Path
+        cfg = json.loads((Path(R.__file__).resolve().parents[1]
+                          / "day_orchestrator" / "schedule_config.json")
+                         .read_text(encoding="utf-8"))["reports"]
+        e = cfg[O.CARLOS_REPORT_ID]
+        self.assertEqual(e["machine"], "Lucy 2")
+        self.assertEqual(e["cadence"]["weekdays"], [6])
+        self.assertEqual(e["base_args"], ["--live", "--office",
+                                          "Carlos Hidalgo"])
+        self.assertEqual(e["verify"]["report_id"], O.CARLOS_REPORT_ID)
 
     def test_carlos_login_reads_as_master(self):
         rows = O.enabled(["Carlos Hidalgo"])

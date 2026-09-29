@@ -3538,6 +3538,37 @@
       "machine": "Lucy 1",
       "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
+    "weekly_knock_dispositions_carlos_b2b": {
+      "order": 36.5,
+      "on_scheduler": true,
+      "_note": "ADDED 2026-09-28 (Eve; Carlos OK'd the sample: 'This is great thank you!'). Carlos's LOCAL office (11580, B2B) weekly per-rep dispositions, Mon-Sat with totals and averages, one board per campaign (B2B AT&T SBS + B2B Box) - his ask in #a-players-b2b: 'sunday if i could get a disposition on the rep level for monday - saturday with totals and averages on the aplayers and sales slack'. Same module as weekly_knock_dispositions, scoped to offices.CARLOS_B2B (own_run rows, never in the Lucy 1 run). Posts into that Sunday's 'Knocks and Dispositions' thread in #a-players-b2b (the thread his daily ICD knocks boards use) and loose in #alphalete-gp-sales. LUCY 2 because it is logged in as Carlos (chidalgo): its sample read both campaigns, Lucy 1's impersonated one came back Box only. Own report_id so its manifest + incident never touch the Lucy 1 run's. Lucy 2 does not auto-pull: after a change here, `lucy update --machine \"Lucy 2\"`.",
+      "display_name": "Weekly Knock Dispositions - Carlos B2B (Sunday)",
+      "source_type": "appstream",
+      "data_sources": [],
+      "command": [
+        "automations.weekly_knock_dispositions.run"
+      ],
+      "base_args": [
+        "--live",
+        "--office",
+        "Carlos Hidalgo"
+      ],
+      "cadence": {
+        "not_before": "08:00",
+        "weekdays": [
+          6
+        ]
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 60,
+      "verify": {
+        "type": "manifest",
+        "report_id": "weekly_knock_dispositions_carlos_b2b"
+      },
+      "machine": "Lucy 2"
+    },
     "weekly_dispo_pdf_slack": {
       "order": 36.6,
       "on_scheduler": true,

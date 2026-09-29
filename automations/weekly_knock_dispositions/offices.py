@@ -194,27 +194,37 @@ def all_offices() -> list[dict]:
 # the same AT&T pin, so this report reads it instead of re-pulling.
 # b2b=True: no apps columns (B2B sales aren't in the D2D PSS) and no Chan
 # comparison row (a D2D office's totals mean nothing next to a B2B grid).
-# preview_only=True: out of the Sunday run until Carlos OKs the sample and
-# the posting target is wired — reachable only by --office, dry-run only.
+# own_run=True: LIVE since Carlos OK'd the sample (2026-09-28, "This is great
+# thank you!"), but NOT in Lucy 1's Sunday run — it has its own scheduler
+# entry, weekly_knock_dispositions_carlos_b2b, on LUCY 2. Lucy 2 is logged in
+# as Carlos (chidalgo) and read BOTH campaigns; Lucy 1's impersonated sample
+# the same day came back with Box only. Its own report_id keeps its manifest
+# and its incident apart from the Lucy 1 run's.
 # WHERE THEY GO (Eve 2026-09-28): the same room and thread as his daily ICD
 # knocks boards (icd_alerts.knocks_post) — #a-players-b2b, inside that day's
 # "Knocks and Dispositions" thread (Carlos 2026-09-24 asked for one thread a
 # day there). Titles match those boards: "Carlos's Local Office (B2B Box)".
+# ALSO loose in #alphalete-gp-sales — Carlos asked for "the aplayers and sales
+# slack", and that room takes his daily boards loose, not threaded.
 CARLOS_ROOM = "C0AJQA8P716"                       # #a-players-b2b
+CARLOS_SALES_ROOM = "C07J46MQNUX"                 # #alphalete-gp-sales
+CARLOS_REPORT_ID = "weekly_knock_dispositions_carlos_b2b"
 CARLOS_THREAD = "Knocks and Dispositions"         # = knocks_post.THREAD_TITLE
 
 CARLOS_B2B = [
     {"key": "Carlos Hidalgo", "name": "Carlos Hidalgo", "ov": "impersonate",
      "campaign_id": "2", "pss_owner": None, "b2b": True,
-     "board_title": "Carlos's Local Office (B2B AT&T)", "preview_only": True,
+     "board_title": "Carlos's Local Office (B2B AT&T)", "own_run": True,
      "channel_id": CARLOS_ROOM, "channel_name": "#a-players-b2b",
      "thread_title": CARLOS_THREAD, "header_label": "",
+     "also_channels": [CARLOS_SALES_ROOM], "report_id": CARLOS_REPORT_ID,
      "slack_token_file": ""},
     {"key": "Carlos Hidalgo (B2B Box)", "name": "Carlos Hidalgo",
      "ov": "impersonate", "campaign_id": "16", "pss_owner": None, "b2b": True,
-     "board_title": "Carlos's Local Office (B2B Box)", "preview_only": True,
+     "board_title": "Carlos's Local Office (B2B Box)", "own_run": True,
      "channel_id": CARLOS_ROOM, "channel_name": "#a-players-b2b",
      "thread_title": CARLOS_THREAD, "header_label": "",
+     "also_channels": [CARLOS_SALES_ROOM], "report_id": CARLOS_REPORT_ID,
      "slack_token_file": ""},
 ]
 
@@ -255,16 +265,16 @@ def key_of(cfg: dict) -> str:
 def enabled(only: list[str] | None = None) -> list[dict]:
     """The offices this run covers. `only` (from --office) filters by key
     (= name for every one-board office), case-insensitively — an unknown name
-    is a loud error, not a silent skip. preview_only rows join only when named
+    is a loud error, not a silent skip. own_run rows join only when named
     — "Carlos Hidalgo" names both of his campaign boards."""
-    rows = [r for r in all_offices() if not r.get("preview_only")]
+    rows = [r for r in all_offices() if not r.get("own_run")]
     if not only:
         return rows
     rows = rows + [dict(r) for r in CARLOS_B2B]
     by_name: dict[str, list[dict]] = {}
     for r in rows:
         by_name.setdefault(key_of(r).lower(), []).append(r)
-        if r.get("preview_only") and r["name"].lower() != key_of(r).lower():
+        if r.get("own_run") and r["name"].lower() != key_of(r).lower():
             by_name.setdefault(r["name"].lower(), []).append(r)
     out, unknown = [], []
     for w in only:
