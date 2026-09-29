@@ -217,6 +217,25 @@ class PickingTheRightPerson(unittest.TestCase):
         opts = ["Chris Vela", "Chris Vela"]
         self.assertEqual(len(run._pick_option("Chris Vela", opts)), 2)
 
+    def test_a_shared_first_name_is_not_the_same_person(self):
+        """2026-09-29 08:35: board 'Luis Enrique Servellon' was off the roster,
+        typing 'Luis' returned only 'Luis Valenciano', and he was added."""
+        self.assertEqual(run._pick_option("Luis Enrique Servellon",
+                                          ["Luis Valenciano"]), [])
+
+    def test_a_nickname_with_the_same_surname_still_matches(self):
+        self.assertEqual(run._pick_option("Nick Smedra",
+                                          ["Nicholas Smedra"]), [0])
+
+    def test_an_alias_surname_still_matches(self):
+        self.assertEqual(run._pick_option("Jayden Willingham",
+                                          ["Jayden Luna"]), [0])
+
+    def test_no_results_means_off_the_roster(self):
+        self.assertTrue(run._not_offered(["No results found"]))
+        self.assertTrue(run._not_offered([]))
+        self.assertFalse(run._not_offered(["Luis Valenciano"]))
+
 
 class ARemoveIsIdempotent(unittest.TestCase):
     """2026-09-24, the 12:34 live pass: its ONLY failure was the plan removing

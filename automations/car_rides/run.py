@@ -352,8 +352,39 @@ def _select_campaign(page, campaign: str, log=_log) -> bool:
     return False
 
 
+def _show_all_rows(page, log=_log) -> None:
+    """Put every territory on one page via the table's own length picker.
+
+    THE DATATABLES-API PATH NEVER RAN (found 2026-09-29). patchright evaluates
+    in an isolated world where the page's jQuery doesn't exist, so
+    _HARVEST_JS always fell back to `tbody` = page 1 = the first 10 rows. Every
+    run since July reconciled 10 territories and never saw the rest (AT&T had
+    13, BOX 15). Picking the largest length is a real UI change the page's own
+    DataTables handles, so it works from any world, and the rows stay
+    clickable for apply_edit."""
+    sel = page.locator("select[name=territoryTable_length]")
+    try:
+        if not sel.count():
+            return
+        biggest = sel.evaluate("s => s.options[s.options.length - 1].value")
+        sel.select_option(biggest)
+        page.wait_for_timeout(2_000)
+    except Exception as e:  # noqa: BLE001 — the pager check below catches it
+        log(f"could not widen the territory table: {e!r}")
+
+
 def list_territories(page, log=_log) -> list[dict]:
-    """All territories, every page at once, via the DataTables API."""
+    """All territories, every page at once."""
+    _show_all_rows(page, log)
+    pages = page.evaluate(
+        "() => [...document.querySelectorAll('.dataTables_paginate a,"
+        " .dataTables_paginate span a')].filter(a => /^\\d+$/.test("
+        "(a.innerText||'').trim())).length")
+    if pages and pages > 1:
+        # Refuse rather than plan from part of the list: a territory we can't
+        # see looks missing, and its leader gets flagged "needs new team".
+        raise RuntimeError(f"territory table still shows {pages} pages after "
+                           "widening — refusing to plan from page 1 only")
     info = page.evaluate(_HARVEST_JS)
     got = [r for r in info.get("rows", []) if r.get("name")]
     log(f"territory list: {len(got)} entries via {info.get('via')}")
@@ -610,7 +641,12 @@ def _pick_option(rep: str, texts: list) -> list:
 
     A rung that matches two people does NOT fall through to a looser one — it
     stops, because a tie at high confidence is a real ambiguity and the looser
-    rung can only widen it."""
+    rung can only widen it.
+
+    Rung 3 also needs the SURNAMES to agree (2026-09-29). names_match alone
+    added "Luis Valenciano" to `andrew` for board "Luis Enrique Servellon":
+    Servellon wasn't on the roster, "luis" was the only token that matched,
+    and one option is not the same as the right option."""
     exact = [i for i, t in enumerate(texts) if _norm(t) == _norm(rep)]
     if exact:
         return exact
@@ -618,12 +654,50 @@ def _pick_option(rep: str, texts: list) -> list:
     subset = [i for i, t in enumerate(texts) if want and want <= _tokens(t)]
     if subset:
         return subset
-    return [i for i, t in enumerate(texts) if names_match(rep, t)]
+    return [i for i, t in enumerate(texts)
+            if names_match(rep, t) and _surnames_agree(rep, t)]
 
 
-def apply_edit(page, edit: dict, log=_log) -> bool:
+def _surnames_agree(board_name: str, ov_name: str) -> bool:
+    """Last name vs last name (or OwnerVille's last initial). A one-word board
+    name has no surname to disagree with. Alias groups count, so board
+    "Jayden Willingham" still agrees with OwnerVille's "Jayden L." (Luna)."""
+    b, o = _norm(board_name).split(), _norm(ov_name).split()
+    if len(b) < 2 or len(o) < 2:
+        return True
+    bl, ol = b[-1], o[-1]
+    kin = {bl}.union(*[g for g in ALIAS_GROUPS if bl in g])
+    if len(ol) == 1:
+        return any(k.startswith(ol) for k in kin)
+    return any(_tok_eq(k, ol) for k in kin)
+
+
+# What select2 shows when the typed name is not an option at all.
+_NO_RESULTS_RE = re.compile(r"^no results found$", re.I)
+
+
+def _not_offered(texts: list) -> bool:
+    """True = OwnerVille does not list this person for this campaign at all
+    (the rep is off its roster), as opposed to listing someone ambiguous."""
+    return not texts or all(_NO_RESULTS_RE.match(t or "") for t in texts)
+
+
+def _territory_row(page, name: str):
+    """The row whose NAME cell is exactly `name`. get_by_text(exact=False)
+    clicked 'joelle 9/28' for territory 'joelle' (2026-09-29): the date-named
+    one sits first in the table, held no Eva chip, and the edit died on Save."""
+    cell = page.locator("#territoryTable tbody td:first-child",
+                        has_text=re.compile(r"^\s*" + re.escape(name) + r"\s*$"))
+    return page.locator("#territoryTable tbody tr").filter(has=cell).first
+
+
+def apply_edit(page, edit: dict, log=_log, not_on_roster: list | None = None) -> bool:
     """Open one territory, add/remove chips, Escape, Save, verify. True=verified.
-    Conservative: any element we can't confidently find -> False (caller flags)."""
+    Conservative: any element we can't confidently find -> False (caller flags).
+
+    A rep OwnerVille doesn't offer at all is appended to `not_on_roster` and
+    skipped; the rest of the edit still saves. That is a roster fix only
+    Carlos can make, not a failed run."""
     name = edit["territory"]
     # A modal left over from the edit BEFORE this one would intercept the row
     # click and burn 30s per territory. Fail in about two seconds instead.
@@ -631,7 +705,7 @@ def apply_edit(page, edit: dict, log=_log) -> bool:
         log(f"  open {name!r}: an earlier modal is still covering the page")
         return False
     try:
-        row = page.get_by_text(name, exact=False).first
+        row = _territory_row(page, name)
         row.click()
         page.wait_for_timeout(2_500)
         if not _modal_open(page):
@@ -683,6 +757,14 @@ def apply_edit(page, edit: dict, log=_log) -> bool:
                 ".select2-container--open .select2-results__option")
             texts = [opts.nth(i).inner_text().strip()
                      for i in range(min(opts.count(), 20))]
+            if _not_offered(texts):
+                log(f"  {rep!r} is not on OwnerVille's roster for this "
+                    "campaign — skipped (Carlos adds them in OwnerVille)")
+                if not_on_roster is not None:
+                    not_on_roster.append(rep)
+                page.keyboard.press("Escape")    # close the dropdown only
+                page.wait_for_timeout(500)
+                continue
             hits = _pick_option(rep, texts)
             if len(hits) != 1:
                 raise RuntimeError(
@@ -694,7 +776,12 @@ def apply_edit(page, edit: dict, log=_log) -> bool:
             page.keyboard.press("Escape")    # select2 gotcha: close BEFORE Save
             page.wait_for_timeout(500)
             log(f"  added {rep!r} as {texts[hits[0]]!r}")
-        page.keyboard.press("Escape")
+        # Escape only when a dropdown is actually open. With none open, Escape
+        # closes the whole Edit Layer modal and Save is gone (joelle, 9/29:
+        # "element is not visible" for 30s on a remove-only edit).
+        if page.locator(".select2-container--open").count():
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(300)
         page.get_by_role("button", name=re.compile(r"^save$", re.I)).first.click()
         page.wait_for_timeout(3_000)
         return True
@@ -852,6 +939,7 @@ def _clear_for_next_edit(page, camp: str, log=_log) -> bool:
         if not _select_campaign(page, camp):
             log(f"  {camp}: campaign not found after the reload")
             return False
+        _show_all_rows(page, log)      # or rows past the first 10 can't be clicked
         return _dismiss_modal(page, log)
     except Exception as e:  # noqa: BLE001
         log(f"  {camp}: reload failed: {e!r}")
@@ -940,7 +1028,11 @@ def main(argv: list[str] | None = None) -> int:
                         _fail(f"{camp}: campaign selector not found — "
                               "skipped (run --probe on Lucy 2)")
                         continue
-                    terrs = list_territories(page)
+                    try:
+                        terrs = list_territories(page)
+                    except RuntimeError as e:
+                        _fail(f"{camp}: {e}")
+                        continue
                     if not terrs:
                         _fail(f"{camp}: 0 territories loaded — skipped, "
                               "not re-authing (per rules)")
@@ -970,7 +1062,15 @@ def main(argv: list[str] | None = None) -> int:
                                       "stopped after this point, nothing was "
                                       "left half-applied")
                                 break
-                            ok = apply_edit(page, e)
+                            off_roster: list[str] = []
+                            ok = apply_edit(page, e, not_on_roster=off_roster)
+                            if off_roster:
+                                msg = (f"{camp}: {', '.join(off_roster)} not on "
+                                       f"OwnerVille's {camp} roster — can't add "
+                                       f"to {e['territory']!r} until Carlos "
+                                       "adds them in OwnerVille")
+                                flags.append(msg)
+                                findings.append(msg)
                             if ok:
                                 changes[key] += 1
                             else:
