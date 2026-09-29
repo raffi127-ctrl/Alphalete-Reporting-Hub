@@ -65,7 +65,8 @@ def _fmt12(hm) -> str:
 
 def _capture_hourly(page, rqst: str, out_dir: Path, slot: str,
                     dry_run: bool, today: dt.date) -> List[Dict]:
-    """Today's Activity + Time Tracker for both campaigns -> ONE thread spec.
+    """Today's Activity + Time Tracker for cfg.HOURLY_CAMPAIGNS (Box only since
+    Carlos 2026-09-29) -> ONE thread spec.
     Each hour is its own thread ("Hourly Activity 7/30/26 - 4 PM") with a single
     reply carrying both campaign images (Megan 7/30)."""
     paths, notes = [], []
@@ -74,7 +75,7 @@ def _capture_hourly(page, rqst: str, out_dir: Path, slot: str,
     # group, so attribution can't be positional: a stitch failure changes what
     # lands in `paths` and index 0 would stop meaning "AT&T".
     by_campaign: Dict[str, List] = {}
-    for campaign in cfg.CAMPAIGNS:
+    for campaign in cfg.HOURLY_CAMPAIGNS:
         cap.ensure_campaign(page, rqst, campaign)  # sticky global — flip it first
         ta = cap.capture_todays_activity(page, rqst, campaign, out_dir, dump=dry_run)
         tt = cap.capture_time_tracker(page, rqst, campaign, out_dir, dump=dry_run)

@@ -50,6 +50,12 @@ CAMPAIGN_TAG = {CAMPAIGN_ATT: "AT&T", CAMPAIGN_BOX: "Box"}
 # Box from a prior switch, so ATT-then-Box keeps the default-state read honest.
 CAMPAIGNS = [CAMPAIGN_ATT, CAMPAIGN_BOX]
 
+# The HOURLY post (Today's Activity + Reps Over 15 Min Gap) is BOX ONLY
+# (Carlos 2026-09-29: "D1a completely stop" — the AT&T hourly board). The
+# end-of-day territory post still captures both campaigns from CAMPAIGNS.
+# To bring the AT&T hourly back, put CAMPAIGN_ATT back in this list.
+HOURLY_CAMPAIGNS = [CAMPAIGN_BOX]
+
 # --- Slack delivery -----------------------------------------------------------
 # #alphalete-gp-sales ONLY (Carlos 2026-09-21, #l10-alphalete: "lucy sends
 # these two screenshots in my aplayers chat. can we have her stop please").
