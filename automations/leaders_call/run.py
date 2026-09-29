@@ -803,6 +803,12 @@ def parse_revenue(camp: Campaign, rows: list[list[str]]) -> list[tuple]:
             owner = g(owner_i)
             if _name_tokens(owner) not in _REVENUE_OWNER_KEYS:
                 continue                       # keep only local-office owners
+            # An owner listed as their OWN rep is owner-level money (Captain
+            # Bonus, New-ICD Referral Bonus, overrides), not rep revenue. On
+            # 9/28 that put Colten Wright / Jairo Ruiz / Karrington Moody at
+            # #1-3 of Top Revenue (Megan). Recognition is reps only.
+            if _name_tokens(rep) == _name_tokens(owner):
+                continue
             total = sum(_num(r[i]) or 0 for i in money_cols if i < len(r))
             if total >= camp.threshold:
                 out.append((rep, owner, total))

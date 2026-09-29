@@ -186,6 +186,28 @@ class NDSMultiweekTest(unittest.TestCase):
             lc.parse_product_sales_multiweek(self._camp(), rolled)
 
 
+# DD 'Sheet 7 (5)': Account | Owner | Rep | Alliance | Commission | Change? | measure | Grand Total | RES-ATT
+REVENUE = [
+    ["Account.Name", "cl.ICD Owner Name", "Sales Rep", "Strategic Alliance",
+     "Commission Description", "Record Change?", "", "Grand Total to ICD",
+     "RES-ATT"],
+    ["South Shore", "Colten Wright", "Colten Wright", "Total", "Total", "",
+     "Total $ to ICD", "$18,913.00", ""],
+    ["Alphalete", "Rafael Hidalgo", "Ana Griffin", "Total", "Total", "",
+     "Total $ to ICD", "$3,368.00", ""],
+]
+
+
+class RevenueOwnerSelfRowTest(unittest.TestCase):
+    def test_owner_as_own_rep_is_not_rep_revenue(self):
+        """An owner's own-code row is Captain/Referral bonus money — it put three
+        owners at #1-3 of Top Revenue on 9/28. Reps only."""
+        camp = _camp(key="revenue", threshold=2000, parser="revenue")
+        with mock.patch.object(lc, "_REVENUE_OWNER_KEYS",
+                               {("colten", "wright"), ("rafael", "hidalgo")}):
+            out = lc.parse_revenue(camp, REVENUE)
+        self.assertEqual([r[0] for r in out], ["Ana Griffin"])
+
 
 if __name__ == "__main__":
     unittest.main()
