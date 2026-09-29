@@ -369,3 +369,25 @@ class ARewordedRepeatIsStillARepeat(unittest.TestCase):
                 return {"messages": [{"text": "8 of y'all — 30+ min without a dispo. Lucy sees you, finger poppers 👀🤌\n• Jorge — 161 min\n• Ashley — 156 min"}]}
         self.assertTrue(G.already_said("C1", "Quiet check 🤫 8 of y'all — 30+ min without a door. Y'all finger poppin' each other out there? 🤌🤌\n• Jorge — 161 min\n• Ashley — 156 min",
                                        dt.datetime(2026, 9, 28, 20, 30), client=C()))
+
+
+class AMarkerWrittenMidRunSurvivesTheRun(unittest.TestCase):
+    """2026-09-28 third cause: run()'s end-of-run save put yesterday's pace
+    marker back over today's. A marker is now layered onto a fresh read."""
+
+    def test_remember_never_puts_an_old_value_back(self):
+        import tempfile, pathlib
+        with tempfile.TemporaryDirectory() as d:
+            path = pathlib.Path(d) / "s.json"
+            with mock.patch.object(G, "STATE_PATH", path):
+                G._save({"pace:aya": {"day": "2026-09-27"}, "colten": {"day": "2026-09-28"}})
+                stale = G._state()                                  # what a run loaded at its top
+                G._remember("pace:aya", {"day": "2026-09-28"})      # pace judged mid-run
+                G._remember("colten", stale["colten"])              # the run writes ITS key only
+                self.assertEqual(G._state()["pace:aya"]["day"], "2026-09-28")
+
+    def test_run_has_no_snapshot_save(self):
+        import inspect
+        src = inspect.getsource(G.run)
+        self.assertNotIn("merged.update(state)", src)
+        self.assertNotIn("_save(state)", src)

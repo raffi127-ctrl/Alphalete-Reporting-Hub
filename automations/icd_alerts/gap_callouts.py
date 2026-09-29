@@ -235,9 +235,8 @@ def guest_callout(host_key: str, guest: str, gaps: List[Dict], records_now: Dict
     prev = (st.get("records") or {}) if st.get("day") == now.date().isoformat() else dict(records_now or {})
     text = line(key, pick_from_gaps(gaps, records_now, prev), now)
     if remember:
-        state[key] = {"day": now.date().isoformat(), "last_at": now.isoformat(timespec="seconds"),
-                      "records": dict(records_now or {})}
-        _save(state)
+        _remember(key, {"day": now.date().isoformat(), "last_at": now.isoformat(timespec="seconds"),
+                        "records": dict(records_now or {})})
     return text
 
 
@@ -352,8 +351,7 @@ def pace_callout(office_key: str, rows: List[Dict], now: dt.datetime, *, remembe
         return ""
     text = pace_line(office_key, pace(rows, now, campaign), now, campaign)
     if remember:
-        state[key] = {"day": now.date().isoformat(), "judged_at": now.isoformat(timespec="seconds")}
-        _save(state)
+        _remember(key, {"day": now.date().isoformat(), "judged_at": now.isoformat(timespec="seconds")})
     return text
 
 
@@ -483,6 +481,21 @@ def _state() -> Dict:
         return {}
 
 
+def _remember(key: str, value: Dict) -> None:
+    """Write ONE marker: fresh read, set the key, save. Never a snapshot.
+
+    THE 2026-09-28 REPEATS, THIRD CAUSE. run() loaded the whole file at its
+    top, pace_callout() wrote today's `pace:<office>` mid-run, and run()'s
+    end-of-run merge layered its top-of-run snapshot back over the file --
+    including that office's pace marker from YESTERDAY, which it had loaded.
+    Next tick: not judged today. Post. Every tick, for every office that had
+    ever been judged before. A marker is written by re-reading the file and
+    setting only itself, so nothing can put an old value back."""
+    fresh = _state()
+    fresh[key] = value
+    _save(fresh)
+
+
 def _save(state: Dict) -> None:
     """Whole file or nothing: write beside it, then rename into place, so a
     reader never sees half a file and two writers cannot interleave."""
@@ -561,6 +574,8 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
         text = line(key, callouts, now)
         state[key] = {"day": now.date().isoformat(), "last_at": now.isoformat(timespec="seconds"),
                       "records": records}
+        if send:
+            _remember(key, state[key])
         if not text:
             log("%-14s nobody over %d min without a credit check -- nothing to say" % (key, GAP_MIN))
             continue
@@ -608,24 +623,9 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
                     _say(ch, praise, now, log)
                 except Exception as e:  # noqa: BLE001
                     log("%-14s FAILED to post to %s: %s" % (key, ch, type(e).__name__))
-    if send:
-        # MERGE, NEVER CLOBBER. `state` is the snapshot taken at the TOP of this
-        # run, and pace_callout() persists its own `pace:<office>` marker
-        # mid-run off a FRESH read. A plain _save(state) here wrote that marker
-        # straight back out of existence, so the next tick saw the day as
-        # unjudged and said the same thing again -- every 60 seconds, for the
-        # whole 120-minute after_the_bell window. Cyrus's #ambient-sales-1 got
-        # the identical "25 doors/hr" line five times at 5:43 PM (2026-09-26),
-        # and aya and kash were in the same window.
-        #
-        # It clobbered BOTH WAYS: pace_callout's own _save writes a dict that
-        # predates this run's negative-loop markers, and then this line threw
-        # away its pace keys. Re-reading and layering this run's own updates on
-        # top keeps both, and is safe because `state` cannot contain a pace key
-        # written after it was loaded.
-        merged = _state()
-        merged.update(state)
-        _save(merged)
+    # NO SNAPSHOT SAVE HERE. Every marker was written the moment it was
+    # decided (_remember), off a fresh read; saving this run's top-of-run
+    # snapshot now would put yesterday's pace markers back (2026-09-28).
     return said
 
 
