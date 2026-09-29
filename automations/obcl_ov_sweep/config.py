@@ -24,11 +24,23 @@ COLUMNS = ("Digi Docs", "Onboarding Quizzes", "Headshot Photo", "UID Request",
 # sent through Slack; this catches ones uploaded straight into OwnerVille.
 
 # Columns this sweep will never UN-tick, however clearly OwnerVille disagrees.
-# See sweep.stale_ticks for the reasoning; in short, Owner Submit un-ticks put
-# somebody back in a queue whose action cannot be withdrawn, and Headshot Photo
-# has a second writer (the Headshot Bot) that ticks it from Slack photos -- the
-# two agreed to tick ON only so neither can undo the other.
-NEVER_UNTICK = ("Owner Submit", "Headshot Photo")
+# Only one: un-ticking Owner Submit puts somebody back in a queue whose action
+# is an attestation to the campaign that cannot be withdrawn. Everything else,
+# Headshot Photo included, is clearable (Megan 2026-09-28: "Yes, headshots
+# included").
+#
+# HEADSHOT PHOTO HAS A SECOND WRITER, so read this before touching it. The
+# Headshot Bot ticks it every 5 minutes for photos that came through Slack, and
+# the two writers had agreed to tick ON ONLY so neither could undo the other.
+# With un-ticking on, a box the bot ticks and OwnerVille does not show can flip
+# on a 5-minute cycle: sweep clears it, bot re-ticks, forever, burning a Sheets
+# write each way. That only happens if the bot ticks WITHOUT its upload landing
+# in OwnerVille's Upload Documents -- which is itself a real discrepancy worth
+# seeing, not something to paper over. The gate below is how we find out: the
+# dry list says how many Headshot Photo rows disagree before anything is
+# cleared. If that number is large, the two sources disagree systematically and
+# THAT is the bug to fix -- do not just switch un-ticking on.
+NEVER_UNTICK = ("Owner Submit",)
 
 # UN-TICKING IS GATED (Megan 2026-09-28: "you can uncheck if it's not true").
 # While False the run REPORTS every stale tick and changes nothing, so the first

@@ -517,12 +517,19 @@ class UnTickingStaleBoxes(unittest.TestCase):
         self.assertEqual(sweep.stale_ticks(p, {"Owner Submit": False}), [])
         self.assertIn("Owner Submit", config.NEVER_UNTICK)
 
-    def test_headshot_photo_is_never_cleared(self):
-        """Two writers: the Headshot Bot ticks it from Slack photos. They agreed
-        to tick ON only so neither can undo the other."""
+    def test_headshot_photo_is_clearable(self):
+        """Megan 2026-09-28: "Yes, headshots included". It is the one clearable
+        column with a SECOND writer (the Headshot Bot, every 5 min), so a box it
+        ticks without the upload landing in OwnerVille will FLIP on a 5-minute
+        cycle. That is a real disagreement to look at, not a reason to skip the
+        column -- see config.NEVER_UNTICK."""
         p = self._person({"Headshot Photo": True})
-        self.assertEqual(sweep.stale_ticks(p, {"Headshot Photo": False}), [])
-        self.assertIn("Headshot Photo", config.NEVER_UNTICK)
+        self.assertEqual(sweep.stale_ticks(p, {"Headshot Photo": False}),
+                         ["Headshot Photo"])
+        self.assertNotIn("Headshot Photo", config.NEVER_UNTICK)
+
+    def test_owner_submit_is_the_only_thing_never_cleared(self):
+        self.assertEqual(config.NEVER_UNTICK, ("Owner Submit",))
 
     def test_a_column_not_on_this_chart_is_skipped(self):
         p = self._person({"UID Request": True}, cols={"Digi Docs": 5})

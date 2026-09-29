@@ -153,14 +153,13 @@ def stale_ticks(p: Person, done: Dict[str, object]) -> List[str]:
        cannot be withdrawn -- a false untick there is the one mistake in this
        module that cannot be taken back. A disagreement on that column is for a
        human to look at.
-    4. HEADSHOT PHOTO IS NEVER UNTICKED. It has two sources: the Headshot Bot
-       ticks it for photos sent through Slack, this sweep for ones uploaded
-       straight into OwnerVille. They agreed to tick ON only so the two can
-       never undo each other (config.COLUMNS, 2026-09-21); unticking here would
-       break that and start a fight the bot would win at the next 5-minute tick.
-
-    What is left -- Digi Docs, Onboarding Quizzes, UID Request -- are the columns
-    whose only truth is OwnerVille's View Progress row.
+    Headshot Photo IS clearable (Megan 2026-09-28: "Yes, headshots included"),
+    but it is the one column here with a SECOND WRITER: the Headshot Bot ticks
+    it every 5 minutes for photos that arrived through Slack. If the bot ever
+    ticks without its upload showing in OwnerVille's Upload Documents, that box
+    will flip on a 5-minute cycle -- cleared here, re-ticked there. See
+    config.NEVER_UNTICK: the gated dry list is how we find out whether the two
+    sources disagree at all before any of it is switched on.
     """
     return [c for c in config.COLUMNS
             if c not in config.NEVER_UNTICK
