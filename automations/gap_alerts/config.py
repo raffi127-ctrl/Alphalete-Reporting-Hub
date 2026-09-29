@@ -139,6 +139,9 @@ RAF = {
     # tick — that was true hourly too. If Carlos asks for that halved, give ONE
     # of them offset_min 15 the way Raf's Partners room has it, rather than
     # dropping either back to 30.
+    # "team" names a guest's posts: "Fiber Team Knocks — 3:00 PM" for the
+    # board and "Fiber 15 min gaps — 3 PM" for the list (Carlos 2026-09-29).
+    "guest_teams": {"Carlos Hidalgo": "Fiber"},
     "guests": {
         # SATURDAY STOPS AT 5:30 (Carlos, 2026-09-27: "can lucy stop all
         # disposition post/texts on saturdays by 530pm. unless its a sales

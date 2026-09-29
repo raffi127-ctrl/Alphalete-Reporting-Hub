@@ -1429,21 +1429,38 @@ def _praise_tick(cfg: Dict, office_key: str,
     return bool(win) and _GC.praise_tick(local, office_key, win[1], C.TICK_MINUTES)
 
 
+def _clock_now() -> str:
+    now = C.office_now({})
+    hour = now.hour % 12 or 12
+    return "%d:%02d %s" % (hour, now.minute, "AM" if now.hour < 12 else "PM")
+
+
+def _guest_board_header(cfg: Dict, guest: str) -> str:
+    """'Fiber Team Knocks — 3:00 PM' for a guest with a team name, else the
+    old '<guest> knocks'."""
+    team = (cfg.get("guest_teams") or {}).get(guest)
+    return "%s — %s" % (("%s Team Knocks" % team) if team else
+                        ("%s Knocks" % guest), _clock_now())
+
+
+def _guest_gap_header(cfg: Dict, guest: str) -> str:
+    """'Fiber 15 min gaps — 3 PM' (same shape as Box's list), else the old
+    '15 min of gaps — <guest>'."""
+    team = (cfg.get("guest_teams") or {}).get(guest)
+    if not team:
+        return "%s — %s" % (C.GAP_TEXT_HEADER, guest)
+    return "%s 15 min gaps — %s" % (team, _clock_now().replace(":00", ""))
+
+
 def _post_guest_slack(dest: Dict, guest: str, png, body: str, day: dt.date,
-                      *, send: bool) -> None:
-    """One guest board (+ its gap list as the caption) to a Slack channel, as
-    its own post headed "<title> — 3:00 PM"; threaded under "<thread_title> —
-    <date>" only when the destination names a thread_title."""
+                      *, send: bool, header: str = "") -> None:
+    """A guest's board and its gap list to a Slack channel as TWO posts (the
+    board headed "<header>", then the typed list), loose in the room unless
+    the destination names a thread_title."""
     ch = C.dest_channel(dest)
     if not ch:
         raise ValueError("slack destination has no channel_id")
-    now = C.office_now({})
-    hour = now.hour % 12 or 12
-    caption = "*%s — %d:%02d %s*" % (
-        dest.get("title") or dest.get("thread_title") or "Knocks",
-        hour, now.minute, "AM" if now.hour < 12 else "PM")
-    if body:
-        caption += "\n\n" + body
+    caption = "*%s*" % (header or dest.get("title") or "%s Knocks" % guest)
     if not send:
         _log("  %s slack:%s PREVIEW — nothing sent" % (guest, dest.get("name") or ch))
         return
@@ -1456,8 +1473,8 @@ def _post_guest_slack(dest: Dict, guest: str, png, body: str, day: dt.date,
     if png:
         client.files_upload_v2(channel=ch, file=str(png),
                                initial_comment=caption, thread_ts=ts)
-    else:
-        client.chat_postMessage(channel=ch, text=caption, thread_ts=ts)
+    if body:
+        client.chat_postMessage(channel=ch, text=body, thread_ts=ts)
     _log("  %s SLACK -> %s%s" % (guest, dest.get("name") or ch,
                                  " (thread)" if ts else ""))
 
@@ -1487,7 +1504,7 @@ def _send_guest_boards(cfg: Dict, guest_due: Dict, guest_boards: Dict,
         state_key = "%s:%s" % (cfg["key"], _norm_rep(guest).replace(" ", "-"))
         previous, first_of_day = _previous_gap_names(state_key, day)
         body, names = gap_text(g_gaps, previous, first_of_day,
-                               header="%s — %s" % (C.GAP_TEXT_HEADER, guest))
+                               header=_guest_gap_header(cfg, guest))
         # LUCY'S HOURLY CALL-OUT rides this text (Megan 2026-09-26: "carlos'
         # reps that are on Raf's dispo ... should be on this"). Their credit
         # checks land on the host's SaraPlus, which the sales board sweep
@@ -1549,7 +1566,8 @@ def _send_guest_boards(cfg: Dict, guest_due: Dict, guest_boards: Dict,
                     # A GUEST'S SLACK ROOM (Carlos 2026-09-29, FIB-1): the
                     # same board and gap list, inside one thread a day when
                     # the destination names one.
-                    _post_guest_slack(dest, guest, png, body, day, send=send)
+                    _post_guest_slack(dest, guest, png, body, day, send=send,
+                                      header=_guest_board_header(cfg, guest))
                     took.append(dest)
                     continue
                 if dest.get("kind") != "imessage":
@@ -1568,10 +1586,18 @@ def _send_guest_boards(cfg: Dict, guest_due: Dict, guest_boards: Dict,
                         "%s %s %s: no iMessage from a LaunchAgent on %s"
                         % (cfg["key"], guest, where, C.this_machine()))
                     continue
-                res = tp.send_to_group(dest["name"], body,
-                                       [png] if png else [],
-                                       dry_run=not send,
-                                       allow_textonly=not png)
+                # THE BOARD AND THE GAP LIST ARE SEPARATE MESSAGES (Carlos
+                # 2026-09-29: "gaps and knocks board should be separate").
+                # Board first (FIB-1), then the typed list (FIB-3).
+                res = {}
+                if png:
+                    res = tp.send_to_group(dest["name"],
+                                           _guest_board_header(cfg, guest),
+                                           [png], dry_run=not send)
+                if body:
+                    res = tp.send_to_group(dest["name"], body, [],
+                                           dry_run=not send,
+                                           allow_textonly=True)
                 _log("  %s %s -> %r (%s participants)%s"
                      % (guest, "TEXT" if send else "PREVIEW",
                         res.get("resolved_name"), res.get("participants"),

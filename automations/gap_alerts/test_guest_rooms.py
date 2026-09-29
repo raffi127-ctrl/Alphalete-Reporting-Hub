@@ -103,19 +103,25 @@ class Sending(unittest.TestCase):
         fails = []
         R._send_guest_boards(RAF, C.guest_destinations(RAF), self._boards(),
                              GAPS, DAY, send=False, failures=fails)
+        # TWO messages per room since 2026-09-29: the board, then the list.
         self.assertEqual([s["name"] for s in self.sent],
-                         ["NEW A Players", "ATT B2B Leaders"])
+                         ["NEW A Players", "NEW A Players",
+                          "ATT B2B Leaders", "ATT B2B Leaders"])
         self.assertTrue(all(s["dry_run"] for s in self.sent))
         self.assertEqual(fails, [])
 
-    def test_the_text_carries_their_gaps_and_the_board(self):
+    def test_the_board_and_the_gap_list_are_separate_messages(self):
+        # Carlos 2026-09-29: "gaps and knocks board should be separate".
         R._send_guest_boards(RAF, C.guest_destinations(RAF), self._boards(),
                              GAPS, DAY, send=False, failures=[])
-        body = self.sent[0]["text"]
-        self.assertIn(GUEST, body)                 # whose list this is
-        self.assertIn("Christian Perez", body)
-        self.assertNotIn("Hank Tran", body)        # Raf's rep, Raf's room
-        self.assertEqual(self.sent[0]["images"], [Path("carlos.png")])
+        board, gaps = self.sent[0], self.sent[1]
+        self.assertEqual(board["images"], [Path("carlos.png")])
+        self.assertIn("Fiber Team Knocks", board["text"])
+        self.assertNotIn("Christian Perez", board["text"])
+        self.assertEqual(gaps["images"], [])
+        self.assertIn("Fiber 15 min gaps", gaps["text"])  # whose list this is
+        self.assertIn("Christian Perez", gaps["text"])
+        self.assertNotIn("Hank Tran", gaps["text"])       # Raf's rep, Raf's room
 
     def test_nothing_due_sends_nothing(self):
         R._send_guest_boards(RAF, {}, self._boards(), GAPS, DAY,
