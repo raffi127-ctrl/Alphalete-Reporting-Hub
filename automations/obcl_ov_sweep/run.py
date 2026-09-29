@@ -262,8 +262,14 @@ def main(argv=None) -> int:
                 ready.append(p)
             elif state == "bg_pending":
                 bg_wait.append(p)
+        # Why NOT ready, not just that they aren't. "nothing new" used to be the
+        # whole answer, so "why hasn't <name> been owner submitted?" could only
+        # be answered by opening OwnerVille by hand (Megan, 2026-09-28).
+        gaps = (ov_table.missing_for_owner_submit(heads, cells)
+                if "Owner Submit" in p.open_columns and not is_ready else [])
         log.append({"row": p.row, "obcl": p.name, "ov": ov_name,
                     "done": done, "tick": new, "ready": is_ready,
+                    "waiting_on": gaps,
                     "cells": {h.replace("\n", " "): c["text"].replace("\n", " ")
                               for h, c in zip(heads, cells)}})
         mark = ", ".join(new) if new else "nothing new"
@@ -271,6 +277,12 @@ def main(argv=None) -> int:
             mark += "  🔵 ready for Owner Submit"
         elif bg_wait and bg_wait[-1] is p:
             mark += "  🟡 only the background check is pending"
+        elif gaps is None:
+            mark += ("  ⚪ a View Progress column could not be read — no "
+                     "opinion on whether they're ready")
+        elif gaps:
+            # Named in OwnerVille's own wording, so it can be found on the page.
+            mark += "  ⏳ OwnerVille still needs: " + ", ".join(gaps)
         print(f"  row {p.row:>3}  {p.name:<28} → {mark}")
 
     for p in missing:

@@ -132,6 +132,34 @@ def ready_for_owner_submit(headers: List[str], cells: List[dict]):
     return True
 
 
+def missing_for_owner_submit(headers: List[str], cells: List[dict]):
+    """The required steps that are NOT green, in View Progress order.
+
+    [] means ready. None means a header could not be read — never guess from a
+    short read. This is the "why not" behind `ready_for_owner_submit`, and it
+    exists because the sweep could say a person was not ready without saying
+    what they were waiting on: the log read "nothing new" and the question
+    "why hasn't <name> been owner submitted?" could only be answered by opening
+    OwnerVille by hand (Megan asked exactly that on 2026-09-28).
+
+    Worth knowing when reading the answer: FOUR of these steps have no column on
+    the OBCL tab at all -- login created, background check, drug test and
+    service -- so a row whose every checkbox is TRUE can still be correctly held
+    back. And the tab's "BG Status : Last Checked" is NOT this "background
+    check": that column comes from Sterling's emails via bg_check_sync, while
+    this one is OwnerVille's own attestation. Sterling passing somebody does not
+    turn this step green.
+    """
+    out = []
+    for w in READY_FOR_OWNER_SUBMIT:
+        i = header_index(headers, w)
+        if i is None or i >= len(cells):
+            return None
+        if not _judge(w)(cells[i].get("text", ""), cells[i].get("html", "")):
+            out.append(w)
+    return out
+
+
 def owner_submit_state(headers: List[str], cells: List[dict]):
     """'ready' — every step before Owner Submit is done (BLUE);
     'bg_pending' — all done except Background Check, which is still Pending

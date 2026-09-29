@@ -423,3 +423,56 @@ class FullyOnboarded(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WhyNotOwnerSubmitted(unittest.TestCase):
+    """The sweep has to say what a person is WAITING ON, not just that they
+    aren't ready. Before 2026-09-28 the log said "nothing new" and the question
+    could only be answered by opening OwnerVille by hand."""
+
+    HEADS = ["Login Created", "Onboarding Documents", "Background Check",
+             "Drug Test", "FTC DirecTV Compliance Training",
+             "AT&T Protective Advantage Course", "AT&T Broadband Facts",
+             "AT&T Protecting CPNI", "AT&T Compliance", "2024 Consent Decree",
+             "Upload Documents", "AT&T UID Request", "Service"]
+    DONE = {"text": "09/28/26 11:00 AM", "html": ""}
+    PHOTO = {"text": "✓ Photo", "html": "text-green"}
+
+    def _cells(self, **over):
+        cells = []
+        for h in self.HEADS:
+            cells.append(dict(self.PHOTO if h == "Upload Documents" else self.DONE))
+        for label, val in over.items():
+            i = [h.lower().replace(" ", "_").replace("&", "").replace("'", "")
+                 for h in self.HEADS]
+            for n, h in enumerate(self.HEADS):
+                if h.lower().startswith(label.replace("_", " ")):
+                    cells[n] = val
+        return cells
+
+    def test_nothing_missing_means_ready(self):
+        from automations.obcl_ov_sweep import ov_table
+        self.assertEqual(
+            ov_table.missing_for_owner_submit(self.HEADS, self._cells()), [])
+
+    def test_it_names_the_step_that_is_blocking(self):
+        from automations.obcl_ov_sweep import ov_table
+        cells = self._cells(drug={"text": "Pending", "html": ""})
+        self.assertEqual(
+            ov_table.missing_for_owner_submit(self.HEADS, cells), ["drug test"])
+
+    def test_a_step_with_no_obcl_column_still_blocks(self):
+        """login created / background check / drug test / service have NO column
+        on the tab, which is why an all-TRUE row can be correctly held back."""
+        from automations.obcl_ov_sweep import ov_table
+        for label, step in (("login", "login created"), ("service", "service"),
+                            ("background", "background check")):
+            cells = self._cells(**{label: {"text": "", "html": ""}})
+            self.assertIn(step,
+                          ov_table.missing_for_owner_submit(self.HEADS, cells))
+
+    def test_an_unread_column_is_none_not_an_empty_list(self):
+        """None must not read as 'ready' — never paint on a short read."""
+        from automations.obcl_ov_sweep import ov_table
+        self.assertIsNone(
+            ov_table.missing_for_owner_submit(self.HEADS[:4], self._cells()[:4]))
