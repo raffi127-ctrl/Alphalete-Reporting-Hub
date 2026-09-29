@@ -107,6 +107,7 @@ EXCLUDE: set = {
     # cascada llega hasta aca. Max Powell no tenia fila aca; se pinnea igual.
     "ana griffin",          # 2026-09-15 (ALPHALETE ORG retail)
     "max powell",           # 2026-09-15 (Luis)
+    "kimberly rodriguez",   # 2026-09-29 (Chan) — oficina cerrada, two-week zero rule
 }
 
 

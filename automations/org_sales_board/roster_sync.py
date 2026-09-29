@@ -82,5 +82,8 @@ EXCLUDE = (
     # así que la regla del banner del 2026-09-08 ya no la retiene.
     "Ana Griffin",          # ALPHALETE ORG — Retail Internet + Retail NL
     "Max Powell",           # Luis' captainship — B2B - All Units
+    # --- two-week zero rule, 2026-09-29 (Eve). Oficina 23576 cerrada el 9/9;
+    # cero en WE 09.27 y WE 09.20, ult. venta WE 09.13.
+    "Kimberly Rodriguez",   # Chan's captainship — Fiber New Internet + All Units
 )
 

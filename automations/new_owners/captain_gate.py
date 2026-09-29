@@ -120,6 +120,9 @@ EXCLUDE: Dict[str, tuple] = {
     # en 0 en B2B - All Units de Luis (ultima venta WE 08.30) y no tiene filas
     # en ningun otro cuadro del board.
     "Luis":   ("Max Powell",),                           # 2026-09-15
+    # 2026-09-29 (Eve), two-week zero rule: oficina 23576 cerrada el 9/9,
+    # cero en WE 09.27 y WE 09.20 en las dos cajas Fiber de Chan.
+    "Chan":   ("Kimberly Rodriguez",),                   # 2026-09-29
 }
 
 
