@@ -1458,6 +1458,61 @@ def run_captainship(captainship: str, args, week_start: dt.date,
     }
 
 
+def _send_focus_dms(targets, results_by_cs: dict, today: dt.date, log) -> None:
+    """DM each captainship tab's screenshots to its group DM. Best-effort:
+    a failure on one tab is logged and reported to #claudecorrections, never
+    raised. Shared by the normal run and --dms-only."""
+    from automations.recruiting_report import focus_shot, focus_slack
+    sh = fill.open_by_key(DAILY_FOCUS_SPREADSHEET_ID)
+    _dm_failures: List[str] = []
+    for cs, recipients in focus_slack.FOCUS_DM_RECIPIENTS.items():
+        if cs not in targets:
+            continue
+        try:
+            ws = find_captainship_worksheet(sh, cs)
+            if ws is None:
+                raise RuntimeError(f"{cs} tab not found — skipping Slack DM.")
+            # Split into one image per 3 owners so the DM is easy to read.
+            # focus_SHOT, not focus_render: the shots are exported by Google
+            # (exact borders / wrapped headers / the black "Office Focus
+            # Report" band) instead of redrawn cell-by-cell with PIL. The
+            # redraw silently dropped all three — most visibly it painted the
+            # black header white, so its white text vanished — and these DMs
+            # had carried that the whole time (Megan 2026-08-30: "they've been
+            # missed/messed up the whole time").
+            slug = cs.lower().replace(" ", "-")
+            pngs = focus_shot.render_tab_grouped(
+                sh, ws.title, _OUTPUT_DIR,
+                prefix=f"daily-focus-{slug}-{today.isoformat()}", per=3)
+            summary = None
+            inaccessible = (results_by_cs.get(cs) or {}).get("inaccessible", [])
+            if inaccessible:
+                summary = (f"⚠️ {len(inaccessible)} ICD(s) couldn't be pulled: "
+                           + ", ".join(inaccessible))
+            res = focus_slack.post_focus_screenshots(
+                pngs, recipients, cs, today, summary=summary)
+            log.info("Slack DM sent — %d %s screenshot(s) → %s",
+                     len(pngs), cs, ", ".join(res["recipients"]))
+        except Exception as e:  # noqa: BLE001 — post is best-effort
+            log.warning("%s screenshot DM failed (run still OK): %s", cs, e)
+            _dm_failures.append("{} ({})".format(cs, e))
+
+    # A group-DM that didn't send is a real miss even though the fill
+    # succeeded — Slack it to #claudecorrections-and-requests (Megan
+    # 2026-07-28). Best-effort; never fails the run.
+    if _dm_failures:
+        try:
+            from automations.day_orchestrator import notify
+            from automations.day_orchestrator.registry import load_config
+            _lines = ["☀️ *Daily Recruiting Focus — {} Slack DM(s) didn't "
+                      "send*".format(len(_dm_failures))]
+            _lines += ["• " + f for f in _dm_failures]
+            notify._post_corrections(load_config(), None, _lines,
+                                     dry_run=False, tag="daily-focus-dm-fail")
+        except Exception as e:  # noqa: BLE001 — Slack must not fail the run
+            log.warning("corrections post (DM fail) failed: %s", e)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--captainship", choices=CAPTAINSHIPS + ["all"],
@@ -1482,6 +1537,11 @@ def main() -> int:
     ap.add_argument("--no-slack", action="store_true",
                     help="Skip the per-captainship screenshot group DMs "
                          "(recipients in focus_slack.FOCUS_DM_RECIPIENTS).")
+    ap.add_argument("--dms-only", action="store_true",
+                    help="Only (re)send the screenshot group DMs of the tabs as "
+                         "they are now — no AppStream pull, no fill. For a "
+                         "morning whose DMs didn't go out (Slack timeout, "
+                         "2026-09-29). Check first with `focus_dm_check`.")
     ap.add_argument("--alt-appstream", action="store_true",
                     help="Log in with the ALTERNATE AppStream account (read "
                          "from env APPLICANTSTREAM_USERNAME / "
@@ -1509,6 +1569,9 @@ def main() -> int:
              "section's date row doesn't match current week's Monday)")
 
     targets = CAPTAINSHIPS if args.captainship == "all" else [args.captainship]
+    if args.dms_only:
+        _send_focus_dms(targets, {}, today, log)
+        return 0
     rc = 0
     skipped: List[str] = []
     denied: List[str] = []
@@ -1759,55 +1822,7 @@ def main() -> int:
     # already sent the screenshots; the retry's job is to fill the cells.
     if (not args.dry_run and not args.only and not args.retry_inaccessible
             and not args.no_slack):
-        from automations.recruiting_report import focus_shot, focus_slack
-        sh = fill.open_by_key(DAILY_FOCUS_SPREADSHEET_ID)
-        _dm_failures: List[str] = []
-        for cs, recipients in focus_slack.FOCUS_DM_RECIPIENTS.items():
-            if cs not in targets:
-                continue
-            try:
-                ws = find_captainship_worksheet(sh, cs)
-                if ws is None:
-                    raise RuntimeError(f"{cs} tab not found — skipping Slack DM.")
-                # Split into one image per 3 owners so the DM is easy to read.
-                # focus_SHOT, not focus_render: the shots are exported by Google
-                # (exact borders / wrapped headers / the black "Office Focus
-                # Report" band) instead of redrawn cell-by-cell with PIL. The
-                # redraw silently dropped all three — most visibly it painted the
-                # black header white, so its white text vanished — and these DMs
-                # had carried that the whole time (Megan 2026-08-30: "they've been
-                # missed/messed up the whole time").
-                slug = cs.lower().replace(" ", "-")
-                pngs = focus_shot.render_tab_grouped(
-                    sh, ws.title, _OUTPUT_DIR,
-                    prefix=f"daily-focus-{slug}-{today.isoformat()}", per=3)
-                summary = None
-                inaccessible = (results_by_cs.get(cs) or {}).get("inaccessible", [])
-                if inaccessible:
-                    summary = (f"⚠️ {len(inaccessible)} ICD(s) couldn't be pulled: "
-                               + ", ".join(inaccessible))
-                res = focus_slack.post_focus_screenshots(
-                    pngs, recipients, cs, today, summary=summary)
-                log.info("Slack DM sent — %d %s screenshot(s) → %s",
-                         len(pngs), cs, ", ".join(res["recipients"]))
-            except Exception as e:  # noqa: BLE001 — post is best-effort
-                log.warning("%s screenshot DM failed (run still OK): %s", cs, e)
-                _dm_failures.append("{} ({})".format(cs, e))
-
-        # A group-DM that didn't send is a real miss even though the fill
-        # succeeded — Slack it to #claudecorrections-and-requests (Megan
-        # 2026-07-28). Best-effort; never fails the run.
-        if _dm_failures:
-            try:
-                from automations.day_orchestrator import notify
-                from automations.day_orchestrator.registry import load_config
-                _lines = ["☀️ *Daily Recruiting Focus — {} Slack DM(s) didn't "
-                          "send*".format(len(_dm_failures))]
-                _lines += ["• " + f for f in _dm_failures]
-                notify._post_corrections(load_config(), None, _lines,
-                                         dry_run=False, tag="daily-focus-dm-fail")
-            except Exception as e:  # noqa: BLE001 — Slack must not fail the run
-                log.warning("corrections post (DM fail) failed: %s", e)
+        _send_focus_dms(targets, results_by_cs, today, log)
 
     if rc == 0:
         log.info("=== done ===")
