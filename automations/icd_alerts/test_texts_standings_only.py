@@ -60,3 +60,25 @@ class TheBoardCanRideLessOftenThanTheList(unittest.TestCase):
         row[P.CH_TX_APPROVED] = "TRUE"
         got = P.approved_texts(_Book([hdr, row]))["maxamad"][0]
         self.assertEqual((got["cadence_min"], got["board_min"]), (15, 30))
+
+
+class SwitchedOffOnPurposeIsNeitherPendingNorLost(unittest.TestCase):
+    """Colten 2026-09-29: a board a person switched OFF must not read as an
+    office waiting on Megan, nor as one that 'lost' its approval."""
+
+    def _row(self, key, alerts_flag, knocks_flag):
+        row = [""] * (P.CH_TX_APPROVED + 1)
+        row[P.CH_OFFICE] = key; row[P.CH_ASKED] = "C1"; row[P.CH_ASKED_JSON] = '["C1"]'
+        row[P.CH_APPROVED] = alerts_flag
+        row[P.CH_KN_WANTED] = "C1 every 30"; row[P.CH_KN_JSON] = '[{"channel": "C1", "cadence_min": 30}]'
+        row[P.CH_KN_APPROVED] = knocks_flag
+        return row
+
+    def test_off_is_not_pending(self):
+        book = _Book([[""] * (P.CH_TX_APPROVED + 1), self._row("colten", "TRUE", "OFF"), self._row("new", "", "")])
+        self.assertEqual([r["office"] for r in P.pending_knocks(book)], ["new"])
+        self.assertEqual([r["office"] for r in P.pending_requests(book)], ["new"])
+
+    def test_off_kinds_reads_the_flags(self):
+        book = _Book([[""] * (P.CH_TX_APPROVED + 1), self._row("colten", "TRUE", "OFF"), self._row("x", "OFF", "OFF")])
+        self.assertEqual(P.off_kinds(book), {"colten": {"board"}, "x": {"alerts", "board"}})

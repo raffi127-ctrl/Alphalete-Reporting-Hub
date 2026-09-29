@@ -1008,6 +1008,34 @@ def pending_texts(book=None) -> List[Dict]:
     return out
 
 
+# SWITCHED OFF ON PURPOSE. An approval column reads TRUE (a person signed
+# it off), blank (nobody has yet) -- or OFF: a person took it away and means
+# it. Colten 2026-09-29 ("only sara+ alerts in his slack channel"): clearing
+# his knocks approval to blank made the tab read exactly like an office still
+# waiting on Megan, so the ops room got "waiting on you" AND "switched ON and
+# now OFF" every pass. OFF is neither approved nor pending nor lost.
+def _off(flag) -> bool:
+    return (flag or "").strip().upper() in ("OFF", "DECLINED")
+
+
+def off_kinds(book=None) -> Dict[str, set]:
+    """{office_key: {"alerts"|"board"|"texts", ...}} a person switched off."""
+    if book is None:
+        from automations.recruiting_report.fill import open_by_key
+        book = open_by_key(RELAY_SPREADSHEET_ID)
+    rows = _approval_rows(book) or []
+    out: Dict[str, set] = {}
+    for row in rows[1:]:
+        row = list(row) + [""] * (CH_TX_APPROVED + 1 - len(row))
+        key = (row[CH_OFFICE] or "").strip().lower()
+        if not key:
+            continue
+        for col, kind in ((CH_APPROVED, "alerts"), (CH_KN_APPROVED, "board"), (CH_TX_APPROVED, "texts")):
+            if _off(row[col]):
+                out.setdefault(key, set()).add(kind)
+    return out
+
+
 def pending_knocks(book=None) -> List[Dict]:
     """Offices that asked for a knocks board nobody has signed off yet."""
     if book is None:
@@ -1022,7 +1050,7 @@ def pending_knocks(book=None) -> List[Dict]:
         row = list(row) + [""] * (CH_KN_APPROVED + 1 - len(row))
         wanted = (row[CH_KN_WANTED] or "").strip()
         ok = (row[CH_KN_APPROVED] or "").strip().upper() in ("TRUE", "YES", "Y")
-        if not wanted or wanted == "No knocks board" or ok:
+        if not wanted or wanted == "No knocks board" or ok or _off(row[CH_KN_APPROVED]):
             continue
         try:
             asked = json.loads(row[CH_KN_JSON] or "[]")
@@ -1049,7 +1077,7 @@ def pending_requests(book=None) -> List[Dict]:
         if len(row) <= CH_APPROVED:
             row = list(row) + [""] * (CH_APPROVED + 1 - len(row))
         approved = (row[CH_APPROVED] or "").strip().upper() in ("TRUE", "YES", "Y")
-        if not (row[CH_ASKED] or "").strip() or approved:
+        if not (row[CH_ASKED] or "").strip() or approved or _off(row[CH_APPROVED]):
             continue
         try:
             asked = json.loads(row[CH_ASKED_JSON] or "[]")
@@ -1528,9 +1556,13 @@ def warn_lost_approvals(day: Optional[dt.date] = None, *, send: bool = False,
     except (OSError, ValueError):
         before = {}
 
+    try:
+        off = off_kinds(book)
+    except Exception:  # noqa: BLE001 -- a read failure must not invent a loss
+        off = {}
     lost = []
     for key, had in sorted(before.items()):
-        gone = set(had) - now.get(key, set())
+        gone = set(had) - now.get(key, set()) - off.get(key, set())
         if gone:
             lost.append((key, sorted(gone)))
 
