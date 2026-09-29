@@ -1431,12 +1431,17 @@ def _praise_tick(cfg: Dict, office_key: str,
 
 def _post_guest_slack(dest: Dict, guest: str, png, body: str, day: dt.date,
                       *, send: bool) -> None:
-    """One guest board (+ its gap list as the caption) to a Slack channel,
-    threaded under "<thread_title> — <date>" when the destination has one."""
+    """One guest board (+ its gap list as the caption) to a Slack channel, as
+    its own post headed "<title> — 3:00 PM"; threaded under "<thread_title> —
+    <date>" only when the destination names a thread_title."""
     ch = C.dest_channel(dest)
     if not ch:
         raise ValueError("slack destination has no channel_id")
-    caption = "*%s — %s*" % (dest.get("thread_title") or "Knocks", guest)
+    now = C.office_now({})
+    hour = now.hour % 12 or 12
+    caption = "*%s — %d:%02d %s*" % (
+        dest.get("title") or dest.get("thread_title") or "Knocks",
+        hour, now.minute, "AM" if now.hour < 12 else "PM")
     if body:
         caption += "\n\n" + body
     if not send:

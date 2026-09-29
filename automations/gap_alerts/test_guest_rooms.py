@@ -33,8 +33,18 @@ class RoomsAreConfigured(unittest.TestCase):
     def test_raf_has_carlos_as_a_guest_with_two_imessage_rooms(self):
         rooms = C.guest_destinations(RAF)
         self.assertEqual(list(rooms), [GUEST])
-        self.assertEqual([d["name"] for d in rooms[GUEST]],
+        self.assertEqual([d["name"] for d in rooms[GUEST]
+                          if d["kind"] == "imessage"],
                          ["NEW A Players", "ATT B2B Leaders"])
+
+    def test_carlos_guest_board_also_posts_loose_in_his_sales_room(self):
+        # FIB-1 (Carlos 2026-09-29): hourly 2pm-9pm, its own post, no thread.
+        slack = [d for d in C.guest_destinations(RAF)[GUEST]
+                 if d["kind"] == "slack"]
+        self.assertEqual([d["channel_id"] for d in slack], ["C07J46MQNUX"])
+        self.assertNotIn("thread_title", slack[0])
+        self.assertEqual((slack[0]["start"], slack[0]["stop"]),
+                         ("14:00", "21:00"))
 
     def test_the_guest_rooms_are_not_rafs_rooms(self):
         his = {d.get("name") for d in C.destinations(RAF)}

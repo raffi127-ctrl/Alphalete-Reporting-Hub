@@ -93,6 +93,9 @@ BOARDS_OFF = {"carlos-b2batt"}
 # Offices whose texts carry the board only, no typed gap list: Carlos's Box
 # gaps are their own report now (BOX-3, b2b_dispositions --which gaps).
 NO_GAP_LIST_IN_TEXTS = {"carlos"}
+# A word in front of the header for an office that needs its campaign named
+# (Carlos 2026-09-29: "should be call Box knocks & dispositions - 2:01pm").
+TITLE_PREFIX = {"carlos": "Box"}
 
 
 def _apply_set_times(key: str, dests: List[Dict], now: dt.datetime) -> List[Dict]:
@@ -786,7 +789,9 @@ def _comment(office, rows: List[Dict], now: dt.datetime) -> str:
     IS the office, so naming it in the header is telling a room whose room it
     is, and the counts are in the image directly beneath.
     """
-    return "*%s — %s*  ·  ranked by total knocks" % (_card_title(), _clock(now))
+    prefix = TITLE_PREFIX.get(getattr(office, "key", "") or "", "")
+    return "*%s%s — %s*  ·  ranked by total knocks" % (
+        (prefix + " ") if prefix else "", _card_title(), _clock(now))
 
 
 def _gaps_text(office, rows: List[Dict], now: dt.datetime, *,

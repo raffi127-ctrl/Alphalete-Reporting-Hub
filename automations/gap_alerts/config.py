@@ -156,9 +156,11 @@ RAF = {
             {"kind": "imessage", "name": "ATT B2B Leaders", "cadence_min": 60,
              "start": "14:00", "stop": "21:00", "sat_stop": "17:30"},
             # The Slack copy goes to his sales room, where FIB-2 (the
-            # call-outs) already lands, inside one thread a day.
+            # call-outs) already lands, as its OWN POST, not in a thread
+            # (Carlos 2026-09-29: "have the fiber team knocks outside of a
+            # thread"). `title` heads the post; a `thread_title` would thread it.
             {"kind": "slack", "channel_id": "C07J46MQNUX",
-             "name": "#alphalete-gp-sales", "thread_title": "Fiber Team Knocks",
+             "name": "#alphalete-gp-sales", "title": "Fiber Team Knocks",
              "cadence_min": 60, "start": "14:00", "stop": "21:00",
              "sat_stop": "17:30"},
         ],
