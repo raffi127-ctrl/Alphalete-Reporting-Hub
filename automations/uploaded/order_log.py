@@ -2336,6 +2336,16 @@ async def main(owner_name: str = OWNER_NAME, post_to_slack: bool = True,
             # pull → offload to a worker thread like the shared path above.
             csv_path = await asyncio.to_thread(
                 _allreps_filtered_download, owner_name, tmp_dir)
+            # BEHIND = HELD (Raf 2026-09-29): an Order Log two days short posts
+            # a fraction of the office's rows as if it were the whole day. Judge
+            # the raw org-wide export (cache or download) and hold with a notice
+            # instead. Office-metrics runs only (order_log_hold.ENV).
+            from automations.shared import order_log_hold as _olh
+            _held = _olh.hold_if_stale(tmp_dir / "order_log_allreps.csv",
+                                       "📋 Order Log / 🆕 Rep Activations",
+                                       post=post_to_slack)
+            if _held is not None:
+                return _held
         else:
             # Default owner WITH allow_form_login: keep the legacy form-drive
             # fallback (interactive/debug — hits the Turnstile).

@@ -668,6 +668,10 @@ def _run_one(label: str, cmd: list[str], env: dict) -> tuple[bool, str]:
         elapsed = time.monotonic() - started
         if result.returncode == 0:
             return True, f"{elapsed:5.0f}s"
+        if result.returncode == 75:
+            # order_log_hold: data behind -> notice posted, numbers held. Not
+            # posted, so it stays a miss and the part-retry re-pulls it.
+            return False, f"⏳ HELD — Order Log data behind (exit 75 after {elapsed:.0f}s)"
         return False, f"exit {result.returncode} after {elapsed:.0f}s"
     except subprocess.TimeoutExpired:
         return False, f"TIMED OUT after {PER_METRIC_TIMEOUT_S//60}m"
@@ -1296,6 +1300,12 @@ def main(argv=None, *, office_key: str | None = None) -> int:
         os.environ.pop("METRICS_MIRROR_CHANNELS", None)
 
     base_env = dict(os.environ)
+    # BEHIND = HELD (Raf 2026-09-29): the four sections built on the D2D Order
+    # Log (order_log, sales_6plus, cancels, disconnects) hold with a one-line
+    # notice instead of posting understated numbers when that export is stale.
+    # Every other section is untouched. See shared/order_log_hold.py.
+    from automations.shared import order_log_hold as _olh
+    base_env[_olh.ENV] = "1"
     if not args.fresh:
         base_env["METRICS_XTAB_CACHE"] = str(
             REPO_ROOT / "output" / "metrics_xtab_cache")

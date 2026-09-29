@@ -88,6 +88,9 @@ def _email_team(team: str, png_path: Path, day: dt.date, *,
 NONE_TEXT = "📅 No Sales Scheduled 6+ Days Out"
 
 
+HOLD_LABEL = "📅 Sales Scheduled 6+ Days Out"
+
+
 def _post_none_or_refuse(csv_path: Path, who: str, *, do_post: bool) -> int:
     """No 6+ rows for this owner. Never post the empty table (Megan's standing
     rule: no blank boards in Slack). Post the one-line 'none' — same shape as
@@ -100,6 +103,9 @@ def _post_none_or_refuse(csv_path: Path, who: str, *, do_post: bool) -> int:
         print(f"✗ {who}: 0 rows AND the export holds no orders for the day at "
               "all — can't tell a real zero from data that hasn't loaded. "
               "Posting NOTHING.")
+        from automations.shared import order_log_hold as _olh
+        if _olh.enabled():
+            return _olh.hold(HOLD_LABEL, None, None, post=do_post)
         return 1
     print(f"  ✓ real zero: export has {n} order(s) for the day, none 6+ days "
           f"out for {who}")
@@ -133,7 +139,17 @@ def _run_single_owner(owner: str, day: dt.date, *,
     print(f"=== Scheduled 6 days out — single owner: {owner} — "
           f"data day {day.isoformat()} (Central) ===")
     print("Step 1: Tableau ALLREPS Order Log pull (org-wide, 1-day)…")
-    csv_path = pull.fetch_crosstab_allreps(day, verbose=True)
+    # BEHIND = HELD (Raf 2026-09-29) -- see shared/order_log_hold.py. A one-day
+    # pull for a day the extract hasn't loaded fails with only 'Last Refresh'
+    # in the Crosstab dialog (the view hides its sheet on an empty match): that
+    # is missing data, so hold with a notice rather than fail as "view changed".
+    from automations.shared import order_log_hold as _olh
+    try:
+        csv_path = pull.fetch_crosstab_allreps(day, verbose=True)
+    except RuntimeError as e:
+        if _olh.enabled() and _olh.empty_day_error(e):
+            return _olh.hold(HOLD_LABEL, None, day, post=do_post)
+        raise
     print(f"  ✓ {csv_path}")
 
     print(f"Step 2: Parse + filter (Days to Appointment >= 6, Owner = {owner})…")

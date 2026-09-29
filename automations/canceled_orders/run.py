@@ -73,6 +73,11 @@ def _run_single_owner(owner: str, order_start: dt.date, end: dt.date,
           f"(Order Date {order_start.isoformat()} → {end.isoformat()})...")
     csv_path = pull.fetch_crosstab(order_start, end, verbose=False)
     print(f"  ✓ {csv_path}")
+    # BEHIND = HELD (Raf 2026-09-29) -- see shared/order_log_hold.py.
+    from automations.shared import order_log_hold as _olh
+    _held = _olh.hold_if_stale(csv_path, "🚫 Canceled Orders", post=not dry_run)
+    if _held is not None:
+        return _held
 
     print("Step 2: Parse + filter (Canceled NEW INTERNET ATT, Status Date in "
           f"window, Owner = {owner})...")
