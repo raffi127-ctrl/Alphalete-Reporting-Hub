@@ -217,6 +217,11 @@ _HUB_CARD = {
     # 2026-08-02: "these 2 run on lucy 2 but are on the lucy 1 profile").
     "b2b_dispositions_hourly": "b2b_dispositions",
     "b2b_dispositions_final": "b2b_dispositions",
+    # Carlos's Sunday weekly per-rep dispositions (Lucy 2, 2026-09-28) ride his
+    # existing knocks/dispositions card — Eve: "no hace falta que tenga card
+    # propia en el hub, puede ir junto con los knocks que ya existen para
+    # carlos". Its first run had already self-registered a library card.
+    "weekly_knock_dispositions_carlos_b2b": "b2b_dispositions",
     # board_compare card RETIRED 2026-07-21 (Megan) — Eve hand-verifies the
     # automation instead; module kept for manual reruns but no Hub tile to publish to.
     "leaders_call": "leaders-call",

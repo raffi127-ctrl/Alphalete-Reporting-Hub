@@ -292,11 +292,15 @@ def run(anchor: dt.date | None = None, *, only: list[str] | None = None,
     # A run of ONLY own-run offices (Carlos's B2B boards, their own Lucy 2
     # entry) files its manifest + incident under THEIR report id, so a clean
     # Carlos run can never close the Lucy 1 run's ticket, or the reverse.
-    global REPORT_ID, INCIDENT_KEY
+    global REPORT_ID, INCIDENT_KEY, CARD_ID
     _own = {o.get("report_id") for o in offices}
     if offices and len(_own) == 1 and None not in _own:
         REPORT_ID = _own.pop()
         INCIDENT_KEY = f"standalone-{REPORT_ID}"
+        # A hand run (no orchestrator) logs to the same card hub_publish maps
+        # this report to — Carlos's B2B Dispositions, not the Metrics card.
+        CARD_ID = next((o["hub_card"] for o in offices
+                        if o.get("hub_card")), CARD_ID)
         all_names = [key_of(o) for o in offices]
     monday, saturday, we_sunday = _week(anchor)
     print(f"[wkd] {CARD_NAME} — {monday} → {saturday} "

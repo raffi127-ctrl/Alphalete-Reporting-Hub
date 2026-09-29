@@ -53,6 +53,13 @@ class CarlosB2BTest(unittest.TestCase):
                                           "Carlos Hidalgo"])
         self.assertEqual(e["verify"]["report_id"], O.CARLOS_REPORT_ID)
 
+    def test_no_card_of_its_own(self):
+        from automations.day_orchestrator import hub_coverage as HC
+        self.assertEqual(HC._curated_map().get(O.CARLOS_REPORT_ID),
+                         "b2b_dispositions")
+        self.assertEqual({o["hub_card"] for o in O.CARLOS_B2B},
+                         {"b2b_dispositions"})
+
     def test_carlos_login_reads_as_master(self):
         rows = O.enabled(["Carlos Hidalgo"])
         got = O.for_this_login(rows, "Carlos Hidalgo")

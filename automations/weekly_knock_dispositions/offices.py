@@ -218,6 +218,7 @@ CARLOS_B2B = [
      "channel_id": CARLOS_ROOM, "channel_name": "#a-players-b2b",
      "thread_title": CARLOS_THREAD, "header_label": "",
      "also_channels": [CARLOS_SALES_ROOM], "report_id": CARLOS_REPORT_ID,
+     "hub_card": "b2b_dispositions",
      "slack_token_file": ""},
     {"key": "Carlos Hidalgo (B2B Box)", "name": "Carlos Hidalgo",
      "ov": "impersonate", "campaign_id": "16", "pss_owner": None, "b2b": True,
@@ -225,6 +226,7 @@ CARLOS_B2B = [
      "channel_id": CARLOS_ROOM, "channel_name": "#a-players-b2b",
      "thread_title": CARLOS_THREAD, "header_label": "",
      "also_channels": [CARLOS_SALES_ROOM], "report_id": CARLOS_REPORT_ID,
+     "hub_card": "b2b_dispositions",
      "slack_token_file": ""},
 ]
 
