@@ -42,6 +42,14 @@ EVE_USER_ID = "U088E2KJEV8"         # preview DMs
 INTERVIEWERS = {
     "arszoomp@gmail.com": "Valentina",      # ARS ZOOM 12 (Rafael's funnel pilot)
 }
+# Accounts SEVERAL interviewers share, one per slot (Rafael, 2026-09-29: the
+# main funnel). Who ran each interview is read from the recording itself --
+# the script opens with "My name is ___, I'm one of the hiring managers" --
+# so each person still gets their own thread. One who never said her name
+# lands in the account's thread (the label here) instead of being lost.
+SHARED_ACCOUNTS = {
+    "camilahk@arsinterviewsservice.com": "Main Funnel",   # 'Camila hk' (key from Camila 2026-09-29)
+}
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "first_round_scorecards"
 LEDGER = OUT_DIR / "posted.json"
 MIN_TRANSCRIPT_LINES = 20           # under this it's a test / empty room, not an interview
@@ -54,9 +62,17 @@ POST_AFTER = dt.time(18, 0)
 WEEKDAYS = range(0, 5)
 
 
-def interviewer(m: Dict) -> str:
+def interviewer(m: Dict, result: Optional[Dict] = None) -> str:
+    """Whose thread this interview goes in. A one-person account = that
+    person; a shared account = the name she introduced herself with."""
     rb = m.get("recorded_by") or {}
-    return INTERVIEWERS.get((rb.get("email") or "").lower()) or rb.get("name") or "Unknown"
+    email = (rb.get("email") or "").lower()
+    if email in INTERVIEWERS:
+        return INTERVIEWERS[email]
+    if email in SHARED_ACCOUNTS:
+        said = " ".join((result or {}).get("interviewer_name", "").split()[:1]).strip(" .,")
+        return said.title() if said else SHARED_ACCOUNTS[email]
+    return rb.get("name") or "Unknown"
 
 
 def thread_title(name: str) -> str:
@@ -141,7 +157,7 @@ def build(day: dt.date, *, do_grade: bool, skip=()) -> Dict[str, List]:
     for m in fathom.meetings_on(day):
         if str(m.get("recording_id")) in skip:
             continue
-        name = interviewer(m)
+        name = interviewer(m)            # a shared account's is refined after grading
         n_lines = len(m.get("transcript") or [])
         print(f"{_clock(fathom.start_ct(m))} CT  {name:<12} {fathom.minutes(m):>3} min  "
               f"{n_lines} transcript lines  {m.get('share_url')}")
@@ -157,7 +173,7 @@ def build(day: dt.date, *, do_grade: bool, skip=()) -> Dict[str, List]:
             out.setdefault(name, []).append(
                 (m, None, result.get("not_interview_reason") or "not a 1st round interview"))
             continue
-        out.setdefault(name, []).append((m, result, ""))
+        out.setdefault(interviewer(m, result), []).append((m, result, ""))
     return out
 
 

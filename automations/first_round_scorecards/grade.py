@@ -81,7 +81,7 @@ Applicants asking indirect questions still count (e.g. "are we going to be on th
 
 SYSTEM = f"""You audit 1st round group job interviews (Zoom, recorded by Fathom) for a door-to-door sales company. The interviewer follows a script; you check the transcript against it for the hiring manager, who uses it to coach the interviewer.
 
-The interviewer is the speaker named in the request (the Zoom account name, e.g. "ARS ZOOM 12"). Everyone else is an applicant. The transcript is machine-made: names and numbers can be misheard, so judge by meaning, not exact words.
+The interviewer is the speaker named in the request (the Zoom account name, e.g. "ARS ZOOM 12"). Everyone else is an applicant. Several interviewers can share one Zoom account, so put the interviewer's first name in interviewer_name as she introduces herself ("My name is ___, I'm one of the hiring managers"); leave it empty if she never says it -- never guess. The transcript is machine-made: names and numbers can be misheard, so judge by meaning, not exact words.
 
 THE SCRIPT
 {SCRIPT}
@@ -99,10 +99,11 @@ _ITEM_SCHEMA = {"type": "object", "additionalProperties": False,
                 "properties": {"happened": {"type": "boolean"}, "note": {"type": "string"}}}
 SCHEMA = {
     "type": "object", "additionalProperties": False,
-    "required": ["is_interview", "not_interview_reason", "applicants", "items", "coaching",
-                 "applicant_questions"],
+    "required": ["is_interview", "not_interview_reason", "interviewer_name", "applicants",
+                 "items", "coaching", "applicant_questions"],
     "properties": {
         "is_interview": {"type": "boolean"},
+        "interviewer_name": {"type": "string"},
         "not_interview_reason": {"type": "string"},
         "applicants": {"type": "array", "items": {"type": "string"}},
         "items": {"type": "object", "additionalProperties": False,

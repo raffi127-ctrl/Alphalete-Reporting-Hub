@@ -53,6 +53,15 @@ class ReplyTest(unittest.TestCase):
         other = dict(MEETING, recorded_by={"name": "ARS ZOOM 7", "email": "x@y.com"})
         self.assertEqual(run.interviewer(other), "ARS ZOOM 7")
 
+    def test_shared_account_splits_by_the_name_she_said(self):
+        shared = dict(MEETING, recorded_by={"name": "Camila hk",
+                                            "email": "camilahk@arsinterviewsservice.com"})
+        self.assertEqual(run.interviewer(shared, {"interviewer_name": "perla."}), "Perla")
+        self.assertEqual(run.interviewer(shared, {"interviewer_name": ""}), "Main Funnel")
+        self.assertEqual(run.interviewer(shared), "Main Funnel")
+        # a one-person account ignores the intro
+        self.assertEqual(run.interviewer(MEETING, {"interviewer_name": "Vale"}), "Valentina")
+
     def test_thread_title(self):
         self.assertEqual(run.thread_title("Valentina"), "Valentina's 1st Round Scorecards")
 
