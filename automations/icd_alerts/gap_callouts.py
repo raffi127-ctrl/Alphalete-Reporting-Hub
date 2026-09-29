@@ -393,6 +393,19 @@ def _norm(text) -> str:
     return " ".join(keep.split())
 
 
+def _content_key(text) -> str:
+    """The reps and the numbers in a line, wording dropped -- '' when it has
+    neither, so a line with no names and no numbers is compared by its words."""
+    import re as _re
+    raw = text or ""
+    names = sorted({w for w in _re.findall(r"[A-Z][a-z]+", raw)
+                    if w not in ("Lucy", "Pace", "Quiet", "Keep", "Eso", "Ojo", "Y", "Cx", "Nl")})
+    nums = sorted(_re.findall(r"\d+", _norm(raw)))
+    if not names and not nums:
+        return ""
+    return " ".join(names) + "|" + " ".join(nums)
+
+
 def already_said(channel_id: str, text: str, now: dt.datetime, client=None) -> bool:
     """Is this EXACT line already in this room from the last DUP_WINDOW_MIN?
 
@@ -409,8 +422,16 @@ def already_said(channel_id: str, text: str, now: dt.datetime, client=None) -> b
         res = client.conversations_history(channel=channel_id, oldest=str(oldest),
                                            limit=60) or {}
         want = _norm(text)
+        want_key = _content_key(text)
         for m in res.get("messages") or []:
-            if _norm(m.get("text")) == want:
+            said = m.get("text") or ""
+            if _norm(said) == want:
+                return True
+            # SAME REPS, SAME NUMBERS, DIFFERENT WORDING is still the same
+            # call-out. The lines are picked at random, so a repeat rarely
+            # matches word for word (Maxamad's room, 2026-09-28 20:25: two
+            # templates about the same eight reps in one minute).
+            if want_key and _content_key(said) == want_key:
                 return True
         return False
     except Exception as e:  # noqa: BLE001

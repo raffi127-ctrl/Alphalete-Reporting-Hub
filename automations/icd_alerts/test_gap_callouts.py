@@ -354,3 +354,18 @@ class TheStateFileIsAtomicAndNeverSilentlyEmpty(unittest.TestCase):
                 G._save({"pace:x": {"day": "2026-09-28"}})
                 self.assertEqual(G._state()["pace:x"]["day"], "2026-09-28")
                 self.assertFalse(any(".tmp-" in p.name for p in pathlib.Path(d).iterdir()))
+
+
+class ARewordedRepeatIsStillARepeat(unittest.TestCase):
+    def test_two_templates_about_the_same_reps_match(self):
+        a = "8 of y'all — 30+ min without a dispo. Lucy sees you, finger poppers 👀🤌\n• Jorge — 161 min\n• Ashley — 156 min"
+        b = "Quiet check 🤫 8 of y'all — 30+ min without a door. Y'all finger poppin' each other out there? 🤌🤌\n• Jorge — 161 min\n• Ashley — 156 min"
+        self.assertEqual(G._content_key(a), G._content_key(b))
+        self.assertNotEqual(G._content_key(a), G._content_key(b.replace("156", "157")))
+
+    def test_already_said_catches_the_rewording(self):
+        class C:
+            def conversations_history(self, **kw):
+                return {"messages": [{"text": "8 of y'all — 30+ min without a dispo. Lucy sees you, finger poppers 👀🤌\n• Jorge — 161 min\n• Ashley — 156 min"}]}
+        self.assertTrue(G.already_said("C1", "Quiet check 🤫 8 of y'all — 30+ min without a door. Y'all finger poppin' each other out there? 🤌🤌\n• Jorge — 161 min\n• Ashley — 156 min",
+                                       dt.datetime(2026, 9, 28, 20, 30), client=C()))
