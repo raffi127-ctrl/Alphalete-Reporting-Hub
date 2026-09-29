@@ -747,7 +747,14 @@ def approved_texts(book=None) -> Dict[str, List[Dict]]:
                          # Megan): no knock board and no gap list to this
                          # group. The standings text below is unaffected;
                          # knocks_post.boards_for_texts skips it.
-                         "standings_only": bool(g.get("standings_only"))})
+                         "standings_only": bool(g.get("standings_only")),
+                         # THE BOARD LESS OFTEN THAN THE LIST (Maxamad Aden,
+                         # 2026-09-28: "knock boards every 30 min in slack
+                         # and text, the gap text every 15"). cadence_min is
+                         # how often the group hears from us at all; board_min
+                         # is how often the picture rides along. 0 = every
+                         # time, which is what every group had before.
+                         "board_min": int(g.get("board_min") or 0)})
         if good:
             out[key] = good
     return out

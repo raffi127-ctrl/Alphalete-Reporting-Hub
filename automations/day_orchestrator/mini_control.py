@@ -8038,6 +8038,89 @@ def _action_slack_delete(args: str) -> tuple[bool, str]:
     return True, f"deleted {ts} from {cid}"
 
 
+def _action_slack_dedupe(args: str) -> tuple[bool, str]:
+    """Delete REPEATS of a line Lucy posted, keeping the first -- across every
+    room her call-outs go to, or one room.
+
+      slack_dedupe all 300            # preview: the last 300 min, every call-out room
+      slack_dedupe all 300 --apply    # delete the repeats
+      slack_dedupe C0A32EEEG4Q 120 --apply
+
+    2026-09-28 19:33: four overlapping poster runs put the same pace line
+    four times into #highline-b2b-box-sales and #southshore-d2d-sales
+    (fixed with a run lock, af4a7b2); Megan: "get the dupes deleted asap --
+    check ALL channels". Only messages LUCY posted (chat.delete cannot touch
+    anyone else's), only EXACT repeats of a text inside the window, and the
+    earliest copy always stays. A board post carries its time in the text,
+    so two boards never match; an identical alert line twice inside the
+    window is a repeat by definition. Preview unless --apply."""
+    import ssl as _ssl, time as _time
+    parts = (args or "").split()
+    if not parts:
+        return False, "slack_dedupe <channel_id|all> [minutes] [--apply]"
+    where = parts[0]
+    apply = "--apply" in parts
+    nums = [p for p in parts[1:] if p.isdigit()]
+    minutes = int(nums[0]) if nums else 240
+    try:
+        import certifi
+        from slack_sdk import WebClient
+        from automations.shared.slack_metrics_post import _load_token
+        client = WebClient(token=_load_token(),
+                           ssl=_ssl.create_default_context(cafile=certifi.where()))
+        me = client.auth_test().get("user_id")
+    except Exception as e:  # noqa: BLE001
+        return False, f"slack client: {type(e).__name__} {str(e)[:160]}"
+    if where.lower() == "all":
+        rooms = set()
+        try:
+            from automations.icd_alerts import post as _P, gap_callouts as _GC
+            for chans in _P.approved_channels().values():
+                rooms.update(c.id for c in chans)
+            for chans in _P.approved_knocks().values():
+                rooms.update(d["channel_id"] for d in chans if not str(d.get("channel_id", "")).startswith("imessage"))
+            rooms.update(_GC.HOST_SLACK.values())
+        except Exception as e:  # noqa: BLE001
+            return False, f"could not list the rooms: {type(e).__name__} {str(e)[:160]}"
+        rooms = sorted(rooms)
+    else:
+        rooms = [where]
+    oldest = str(_time.time() - minutes * 60)
+    lines, deleted, kept = [], 0, 0
+    for cid in rooms:
+        try:
+            res = client.conversations_history(channel=cid, oldest=oldest, limit=200) or {}
+        except Exception as e:  # noqa: BLE001
+            lines.append(f"{cid}: cannot read ({type(e).__name__} {str(e)[:80]})")
+            continue
+        mine = [m for m in (res.get("messages") or []) if m.get("user") == me and not m.get("files")]
+        by_text: dict = {}
+        for m in mine:
+            by_text.setdefault((m.get("text") or "").strip(), []).append(m)
+        for text, msgs in by_text.items():
+            if len(msgs) < 2 or not text:
+                continue
+            msgs.sort(key=lambda m: float(m["ts"]))
+            first, dupes = msgs[0], msgs[1:]
+            kept += 1
+            head = text.splitlines()[0][:70]
+            for m in dupes:
+                if apply:
+                    try:
+                        client.chat_delete(channel=cid, ts=m["ts"])
+                        deleted += 1
+                        lines.append(f"{cid} deleted {m['ts']}  {head}")
+                    except Exception as e:  # noqa: BLE001
+                        lines.append(f"{cid} FAILED {m['ts']}: {type(e).__name__} {str(e)[:80]}")
+                else:
+                    deleted += 1
+                    lines.append(f"{cid} would delete {m['ts']}  {head}")
+    verb = "deleted" if apply else "would delete"
+    summary = (f"{len(rooms)} room(s), last {minutes} min: {verb} {deleted} repeat(s) of {kept} line(s)"
+               + ("" if apply else "  [preview -- add --apply]"))
+    return True, summary + ("\n" + "\n".join(lines[:60]) if lines else "")
+
+
 def _action_set_autorun_cap(args: str) -> tuple[bool, str]:
     """Raise TODAY's runaway cap -- `lucy set_autorun_cap 150`.
 
@@ -8210,6 +8293,7 @@ ACTIONS = {
     "slack_find": _action_slack_find,
     "slack_thread": _action_slack_thread,
     "slack_delete": _action_slack_delete,
+    "slack_dedupe": _action_slack_dedupe,
     "clear_untracked": _action_clear_untracked,
     "set_sleep": _action_set_sleep,
     "reboot": _action_reboot,

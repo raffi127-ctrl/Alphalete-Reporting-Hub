@@ -149,6 +149,27 @@ def wants_gaps(dest: Dict) -> bool:
     return int(dest.get(GAPS_IN_SLACK_KEY) or 0) > 0
 
 
+def _board_marker(channel_id: str) -> str:
+    """The Posted-cell key for "when this TEXT group last got the picture"
+    (as opposed to the list alone). Same trick as _gaps_marker."""
+    return "board|%s" % channel_id
+
+
+def board_rides(dest: Dict, last_board: Optional[dt.datetime],
+                now: dt.datetime) -> bool:
+    """Does the picture go with this text, or just the gap list?
+
+    A group approved with `board_min` (Maxamad, 2026-09-28: list every 15,
+    board every 30) gets the board only once that many minutes have passed
+    since the last one it got; the ticks in between carry the list alone.
+    No `board_min` = the board every time, which is what every other group
+    has always had."""
+    every = int(dest.get("board_min") or 0)
+    if every <= 0 or last_board is None:
+        return True
+    return (now - last_board) >= dt.timedelta(minutes=every)
+
+
 def boards_for_texts(texts) -> List[Dict]:
     """The text groups that get the KNOCK BOARD from here. A group approved
     `standings_only` (Drew Tepper, 2026-09-28 via Megan: scoreboard texts,
@@ -474,6 +495,12 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
             for d in due:
                 cid = d["channel_id"]
                 if P.is_text_dest(cid):
+                    if not board_rides(d, posted_at.get(_board_marker(cid)), now):
+                        g = _gaps_text(office, rows_for_board, now, dest=cid,
+                                       remember=False)
+                        log("%-10s %s would get the gap list alone (board every %s min):\n%s\n"
+                            % (key, d.get("channel_name") or cid, d.get("board_min"),
+                               g or "(nobody over the line -- nothing sent)"))
                     continue
                 log("%-10s %s would read:\n%s\n"
                     % (key, d.get("channel_name") or cid, captions[cid]))
@@ -482,6 +509,22 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         for d in due:
             try:
                 if P.is_text_dest(d["channel_id"]):
+                    cid = d["channel_id"]
+                    if not board_rides(d, posted_at.get(_board_marker(cid)), now):
+                        # THE LIST ALONE, no picture, on this tick. A quiet
+                        # stretch sends nothing and still spends the tick.
+                        g = _gaps_text(office, rows_for_board, now, dest=cid)
+                        if g:
+                            from automations.b2b_dispositions import text_post as tp
+                            tp.send_text_to_group(
+                                d.get("group") or d.get("channel_name") or "",
+                                g, dry_run=False, dest=d)
+                            posted_total += 1
+                        else:
+                            log("%-10s %s: nobody over the line -- no text this tick"
+                                % (key, d.get("channel_name") or cid))
+                        posted_at[cid] = now
+                        continue
                     # THE DEST, not just its name: a participant-pinned group
                     # cannot be found by name at all (its members rename it
                     # hourly), and `dest=` keys the ⏰ state on the stable
@@ -489,6 +532,10 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                     _text(d, boards,
                           _gaps_text(office, rows_for_board, now,
                                      dest=d["channel_id"]))
+                    # When the picture last went to this group. Read only by
+                    # board_rides() for a group with board_min; harmless
+                    # bookkeeping for the rest.
+                    posted_at[_board_marker(cid)] = now
                 else:
                     _upload(d["channel_id"], boards,
                             captions[d["channel_id"]])

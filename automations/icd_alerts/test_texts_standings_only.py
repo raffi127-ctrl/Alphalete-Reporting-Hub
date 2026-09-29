@@ -34,3 +34,29 @@ class StandingsOnlyTexts(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheBoardCanRideLessOftenThanTheList(unittest.TestCase):
+    """Maxamad 2026-09-28: gap list to the group every 15, the board every 30."""
+
+    def test_no_setting_means_the_board_every_time(self):
+        import datetime as dt
+        now = dt.datetime(2026, 9, 29, 14, 15)
+        self.assertTrue(KP.board_rides({"cadence_min": 15}, now - dt.timedelta(minutes=15), now))
+        self.assertTrue(KP.board_rides({"cadence_min": 15, "board_min": 0}, now, now))
+
+    def test_board_every_30_on_a_15_minute_list(self):
+        import datetime as dt
+        now = dt.datetime(2026, 9, 29, 14, 15)
+        d = {"cadence_min": 15, "board_min": 30}
+        self.assertTrue(KP.board_rides(d, None, now))                                # first ever
+        self.assertFalse(KP.board_rides(d, now - dt.timedelta(minutes=15), now))     # :00 board, :15 list only
+        self.assertTrue(KP.board_rides(d, now - dt.timedelta(minutes=30), now))      # :30 board again
+
+    def test_the_setting_survives_the_approval_reader(self):
+        hdr = [""] * (P.CH_TX_APPROVED + 1); row = [""] * (P.CH_TX_APPROVED + 1)
+        row[P.CH_OFFICE] = "maxamad"
+        row[P.CH_TX_APPROVED_JSON] = json.dumps([{"group": "Maximal Leaders", "cadence_min": 15, "board_min": 30}])
+        row[P.CH_TX_APPROVED] = "TRUE"
+        got = P.approved_texts(_Book([hdr, row]))["maxamad"][0]
+        self.assertEqual((got["cadence_min"], got["board_min"]), (15, 30))
