@@ -1354,6 +1354,23 @@ def _ledger(kind, view_url, sheet="", cache="miss", extra="", t0=None, ok=True):
 # pulls (same URL + sheet + day) and is a harmless no-op for owner-specific views.
 # Fail-safe throughout: any cache error falls through to a normal live download.
 _XTAB_CACHE_TTL_S = 12 * 3600     # a same-day snapshot; ignore anything older
+# ...but a snapshot the Order Log hold calls STALE is only shared by the offices
+# of the SAME pass. On 2026-09-29 the 06:xx ALLREPS pull came down behind (the
+# view was saved filtered to one rep); the view was fixed by noon, yet every
+# retry until 16:36 read that morning file from cache and held again — jacob,
+# christian, joseph never posted. Past this age a stale cache is a miss, so the
+# retry downloads fresh and the hold can actually clear.
+_XTAB_STALE_TTL_S = 20 * 60
+
+
+def _xtab_cache_is_stale(p: Path) -> bool:
+    """True when the cached export's Order/Status dates are behind (the same
+    verdict order_log_hold posts on). Views without those columns: False."""
+    try:
+        from automations.shared import order_log_hold
+        return order_log_hold.verdict(p).get("verdict") == "stale"
+    except Exception:
+        return False
 
 
 def _xtab_cache_dir() -> Optional[Path]:
@@ -1377,8 +1394,14 @@ def _xtab_cache_lookup(view_url: str, sheet: str, verbose: bool) -> Optional[Pat
         return None
     try:
         p = _xtab_cache_path(root, view_url, sheet)
-        if (p.exists() and p.stat().st_size > 0
-                and (time.time() - p.stat().st_mtime) < _XTAB_CACHE_TTL_S):
+        age = (time.time() - p.stat().st_mtime) if p.exists() else None
+        if (age is not None and age >= _XTAB_STALE_TTL_S
+                and p.stat().st_size > 0 and _xtab_cache_is_stale(p)):
+            print(f"  ↺ crosstab cache SKIP ({sheet}) — cached {int(age // 60)}m ago "
+                  f"and its data was behind; pulling fresh", flush=True)
+            return None
+        if (age is not None and p.stat().st_size > 0
+                and age < _XTAB_CACHE_TTL_S):
             # ALWAYS print the hit, even when the caller pulls with verbose=False
             # (canceled_orders/disconnects do) — a silent dedup is impossible to
             # verify or debug. This only ever fires when the cache is enabled AND
