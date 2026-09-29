@@ -150,21 +150,25 @@ RAF = {
         # call-out may leave for this room on a Saturday; sale alerts are a
         # different job and are untouched.
         "Carlos Hidalgo": [
-            # FIB-1: HOURLY, 2PM TO 9PM, TEXT AND SLACK (Carlos 2026-09-29:
-            # "once every hour on slack and text. starting at 2 until 9pm").
-            # `start` is the first minute a board may leave; `stop` the last
-            # on a weekday, `sat_stop` on Saturday.
-            {"kind": "imessage", "name": "NEW A Players", "cadence_min": 60,
+            # FIB-1 / FIB-3, 2PM TO 9PM, TEXT AND SLACK (Carlos 2026-09-29).
+            # The typed gap list (FIB-3) every 15 minutes; the knocks board
+            # (FIB-1) rides only once an hour (`board_every_min`). `start` is
+            # the first minute anything may leave; `stop` the last on a
+            # weekday, `sat_stop` on Saturday.
+            {"kind": "imessage", "name": "NEW A Players", "cadence_min": 15,
+             "board_every_min": 60,
              "start": "14:00", "stop": "21:00", "sat_stop": "17:30"},
-            {"kind": "imessage", "name": "ATT B2B Leaders", "cadence_min": 60,
+            {"kind": "imessage", "name": "ATT B2B Leaders", "cadence_min": 15,
+             "board_every_min": 60,
              "start": "14:00", "stop": "21:00", "sat_stop": "17:30"},
             # The Slack copy goes to his sales room, where FIB-2 (the
-            # call-outs) already lands, as its OWN POST, not in a thread
+            # call-outs) already lands, as its OWN POSTS, not in a thread
             # (Carlos 2026-09-29: "have the fiber team knocks outside of a
             # thread"). `title` heads the post; a `thread_title` would thread it.
             {"kind": "slack", "channel_id": "C07J46MQNUX",
              "name": "#alphalete-gp-sales", "title": "Fiber Team Knocks",
-             "cadence_min": 60, "start": "14:00", "stop": "21:00",
+             "cadence_min": 15, "board_every_min": 60,
+             "start": "14:00", "stop": "21:00",
              "sat_stop": "17:30"},
         ],
     },

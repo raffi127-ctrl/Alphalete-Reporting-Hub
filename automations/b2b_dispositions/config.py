@@ -134,9 +134,9 @@ TEXT_GROUP_ALL = "NEW A Players"
 # The two post types, as used in the routing key below.
 POST_HOURLY = "hourly"              # activity + time gaps, every hour
 POST_DISPOSITIONS = "dispositions"  # territory stats, once a day at 6:30
-# BOX-3 (Carlos 2026-09-29): the Reps Over 15 Min Gap card is its OWN report
+# BOX-3 (Carlos 2026-09-29): the Reps Over 15 Min Gap list is its OWN report
 # now, split off the hourly Today's Activity post -- Slack and the Box B2B
-# text at 12, 2, 4 and 6 (Sat 12, 2, 4). Its own daily Slack thread.
+# text every 30 minutes, 12 to 6 (Sat 12 to 4). Its own daily Slack thread.
 POST_GAPS = "gaps"
 THREAD_GAPS = "Box 15 Min Gaps"
 
@@ -190,7 +190,9 @@ IMAGE_SEND_DELAY_S = 18
 # posts after 5:30 on Saturdays). The -final agent is retired. The gaps card
 # (BOX-3) also runs at 12, 2 and 4 from com.alphalete.b2b-dispositions-gaps.
 # These slots only label the caption.
-HOURLY_SLOTS = [(12, 0), (14, 0), (16, 0), (18, 0)]
+# BOX-3 is every 30 minutes (Carlos 2026-09-29), so the caption snaps to the
+# half hour: 12:00, 12:30 ... 6:00 (Sat to 4:00).
+HOURLY_SLOTS = [(h, m) for h in range(12, 19) for m in (0, 30)][:-1]
 FINAL_SLOT = (19, 0)
 
 # Weekend shape (Carlos 2026-08-06):
@@ -203,7 +205,7 @@ FINAL_SLOT = (19, 0)
 SUNDAY = 6                      # Python weekday(): Mon=0 … Sun=6
 SATURDAY = 5
 RUN_WEEKDAYS = (0, 1, 2, 3, 4, 5)          # Mon-Sat; Sunday deliberately absent
-SATURDAY_HOURLY_SLOTS = [(12, 0), (14, 0), (16, 0)]
+SATURDAY_HOURLY_SLOTS = [(h, m) for h in range(12, 17) for m in (0, 30)][:-1]
 SATURDAY_FINAL_SLOT = (16, 0)
 
 

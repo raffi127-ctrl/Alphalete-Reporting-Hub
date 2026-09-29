@@ -402,6 +402,32 @@ def _dest_anchor(dest: Dict, cfg: Optional[Dict], now: dt.datetime):
     return at.strftime("%Y-%m-%dT%H:%M")
 
 
+def _board_key(cfg: Optional[Dict], dest: Dict) -> str:
+    return "%s|board|%s" % ((cfg or {}).get("key", "?"), C.dest_label(dest))
+
+
+def _board_due(cfg: Optional[Dict], dest: Dict, now: dt.datetime) -> bool:
+    """Does the PICTURE go to this room on this tick? A room with
+    `board_every_min` (Carlos 2026-09-29: fiber gaps every 15, board every
+    60) gets the board once per that anchor and the typed list on every
+    tick in between. No `board_every_min` = the board every time it is due."""
+    every = int(dest.get("board_every_min") or 0)
+    if every <= 0:
+        return True
+    cur = _dest_anchor(dict(dest, cadence_min=every), cfg, now)
+    return (_state().get("_last_board_anchor") or {}).get(_board_key(cfg, dest)) != cur
+
+
+def _mark_board(cfg: Dict, dest: Dict, now: dt.datetime) -> None:
+    every = int(dest.get("board_every_min") or 0)
+    if every <= 0:
+        return
+    data = _state()
+    data.setdefault("_last_board_anchor", {})[_board_key(cfg, dest)] = \
+        _dest_anchor(dict(dest, cadence_min=every), cfg, now)
+    _save_state(data)
+
+
 def _last_dest_anchor(cfg: Optional[Dict], dest: Dict):
     key = "%s|%s" % ((cfg or {}).get("key", "?"), C.dest_label(dest))
     return (_state().get("_last_anchor") or {}).get(key)
@@ -1558,17 +1584,26 @@ def _send_guest_boards(cfg: Dict, guest_due: Dict, guest_boards: Dict,
         _log("  %s -> %s: %d rep(s) over %d min%s"
              % (cfg["key"], guest, len(names), C.GAP_THRESHOLD_MIN,
                 "" if png else " (no board — text only)"))
-        took = []
+        took, boarded = [], []
         for dest in dests:
+            # THE BOARD ON ITS OWN CLOCK (board_every_min); the list every tick.
+            d_png = png if _board_due(cfg, dest, dt.datetime.now()) else None
+            if not d_png and not body:
+                # Nothing for this room on this tick (no board owed, nobody
+                # over the line): spend the anchor quietly, send nothing.
+                took.append(dest)
+                continue
             where = C.dest_label(dest)
             try:
                 if dest.get("kind") == "slack":
                     # A GUEST'S SLACK ROOM (Carlos 2026-09-29, FIB-1): the
                     # same board and gap list, inside one thread a day when
                     # the destination names one.
-                    _post_guest_slack(dest, guest, png, body, day, send=send,
+                    _post_guest_slack(dest, guest, d_png, body, day, send=send,
                                       header=_guest_board_header(cfg, guest))
                     took.append(dest)
+                    if d_png:
+                        boarded.append(dest)
                     continue
                 if dest.get("kind") != "imessage":
                     _log("  %s %s: only iMessage and Slack are wired for a "
@@ -1590,10 +1625,10 @@ def _send_guest_boards(cfg: Dict, guest_due: Dict, guest_boards: Dict,
                 # 2026-09-29: "gaps and knocks board should be separate").
                 # Board first (FIB-1), then the typed list (FIB-3).
                 res = {}
-                if png:
+                if d_png:
                     res = tp.send_to_group(dest["name"],
                                            _guest_board_header(cfg, guest),
-                                           [png], dry_run=not send)
+                                           [d_png], dry_run=not send)
                 if body:
                     res = tp.send_to_group(dest["name"], body, [],
                                            dry_run=not send,
@@ -1603,6 +1638,8 @@ def _send_guest_boards(cfg: Dict, guest_due: Dict, guest_boards: Dict,
                         res.get("resolved_name"), res.get("participants"),
                         "" if send else " — nothing sent"))
                 took.append(dest)
+                if d_png:
+                    boarded.append(dest)
             except Exception as e:  # noqa: BLE001 — one room ≠ the rest
                 failures.append("%s %s %s: %s: %s"
                                 % (cfg["key"], guest, where,
@@ -1612,6 +1649,9 @@ def _send_guest_boards(cfg: Dict, guest_due: Dict, guest_boards: Dict,
         if send and took:
             _mark_dest_anchors(cfg, took, dt.datetime.now())
             _remember_gap_names(state_key, day, names)
+        if send:
+            for dest in boarded:
+                _mark_board(cfg, dest, dt.datetime.now())
 
 
 def tick(day: dt.date, *, send: bool, only: str = "",
