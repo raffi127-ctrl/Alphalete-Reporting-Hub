@@ -268,6 +268,28 @@ _EXPECTED_MISS_LINE = (
     "yet, or an owner with no Sheet tab. Re-running will not change it; it "
     "fills itself on the next run once the access lands.")
 
+# HELD ON A BEHIND ORDER LOG, NOT FAILED (2026-09-29). office_metrics.runner
+# labels a section that shared/order_log_hold.py held (Tableau's D2D Order Log
+# not caught up -> no understated numbers, exit 75) as
+# "❌  Order Log  (⏳ HELD — Order Log data behind …)". Nothing here matched it,
+# so joseph_metrics' held Order Log + Cancels went "the reason isn't in the
+# log", then "Needs one of you … Re-running will not fix it" at noon — for a
+# run that did exactly what it should and posts itself once Tableau catches up.
+# Only when EVERY ❌ line is such a hold: one real failure next to a hold is
+# still a failure. Before the age rule, like the other notices — a feed can
+# stay behind past midnight, and the tableau-stale incident owns that alarm.
+_ORDER_LOG_HELD = "⏳ held — order log data behind"
+
+_ORDER_LOG_HELD_LINE = (
+    "*Nothing to do.* Tableau's Order Log hasn't caught up, so these sections "
+    "were held instead of posting short numbers. They post on their own on a "
+    "later run once Tableau has the data.")
+
+
+def _only_order_log_holds(tail: str) -> bool:
+    missed = [l for l in (tail or "").splitlines() if "❌" in l]
+    return bool(missed) and all(_ORDER_LOG_HELD in l for l in missed)
+
 # THE ALERT ALREADY SAID A PERSON HAS TO DO IT (2026-09-24). Some incidents
 # are not a guess at all: the producer knows the fix is somebody signing in or
 # ticking a box, and stamps `needs-human` on its own marker (see
@@ -655,6 +677,10 @@ def classify(key: str, *, day: Optional[dt.date] = None,
     #     the run SAID, not which producer opened it. Before the age rule: a
     #     pending OV account stays pending for weeks, and the age rule would
     #     paint that red every morning.
+    if _only_order_log_holds(tail):
+        return Verdict(key, WAITING,
+                       "Tableau's Order Log is behind; the sections are held.",
+                       line=_ORDER_LOG_HELD_LINE)
     if "expected, no action" in (tail or "").lower():
         return Verdict(key, WAITING,
                        "It ran and delivered; what is missing is expected.",

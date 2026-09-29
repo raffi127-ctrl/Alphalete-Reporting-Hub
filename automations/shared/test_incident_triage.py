@@ -84,6 +84,23 @@ class Buckets(unittest.TestCase):
         v = _classify(tail="exit 75 — ran, held with a note (see orch.log)")
         self.assertEqual(v.bucket, tri.WAITING)
 
+    def test_a_behind_order_log_hold_waits_even_after_noon(self):
+        """joseph_metrics 2026-09-29: Order Log + Cancels held on a stale
+        Tableau export read 'Needs one of you' at the noon cut-off."""
+        tail = ("  ✅  Knocks  (  40s)\n"
+                "  ❌  Order Log  (⏳ HELD — Order Log data behind (exit 75 after 90s))\n"
+                "  ❌  Canceled Orders  (⏳ HELD — Order Log data behind (exit 75 after 60s))")
+        for hour in (6, 14):
+            v = _classify(key="drop-joseph_metrics", tail=tail, hour=hour)
+            self.assertEqual(v.bucket, tri.WAITING)
+            self.assertIn("Tableau", tri.line_for(v))
+
+    def test_a_real_failure_next_to_a_hold_is_not_waiting(self):
+        tail = ("  ❌  Order Log  (⏳ HELD — Order Log data behind (exit 75 after 90s))\n"
+                "  ❌  Wireless Churn  (exit 1 after 30s)")
+        v = _classify(key="drop-joseph_metrics", tail=tail, hour=14)
+        self.assertEqual(v.bucket, tri.NEEDS_YOU)
+
     def test_a_google_500_is_a_blip_like_502_and_503(self):
         """The real 2026-09-12 drop: `daily_production_el: APIError: [500]:
         Internal error encountered.` 502 and 503 were listed and 500 was not, so
