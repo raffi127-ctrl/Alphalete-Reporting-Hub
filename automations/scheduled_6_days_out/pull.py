@@ -43,15 +43,19 @@ def yesterday_central() -> dt.date:
 WORKSHEET = "A.Order Log"
 MIN_DAYS_TO_APPT = 6
 
-# Org-wide ALLREPS Order Log view (all reps) — the SAME view canceled_orders /
-# disconnects pull. It honors Start/End Date by URL and exposes every column this
-# report maps (Owner Name, Rep, Customer, Phone, Days to Appointment, Tech
-# Install). Used for single-owner cuts (e.g. Rashad) so we can filter to one
-# Owner Name client-side instead of needing a per-owner custom view.
+# Org-wide 'Sales Board Original' Order Log view (every owner, every product).
+# Start/End Date = SALE date, and it exposes every column this report maps
+# (Owner Name, Rep, Customer, Phone, Days to Appointment, Tech Install). Used for
+# single-owner cuts (e.g. Rashad) so we can filter to one Owner Name
+# client-side instead of needing a per-owner custom view.
+# NOT ALLREPS (117748c0-…): that one filters Start/End by ACTIVATION date, and
+# a sale 6+ days from its install is by definition not activated yet — so it
+# could never list one, and on a day Tableau hadn't posted activations (9/28)
+# it rendered empty ("saw only Last Refresh") and dropped the metric (9/29).
 ALLREPS_VIEW_URL_TMPL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER2_1-D2D/ORDERLOG/"
-    "117748c0-9487-45e8-a5d4-c447093718d5/ALLREPS?:iid=1"
+    "78466c86-905b-4553-9d55-5206170c7e56/SalesBoardOriginal?:iid=1"
     "&Start%20Date={start}&End%20Date={end}"
 )
 
