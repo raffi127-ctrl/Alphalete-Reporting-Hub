@@ -245,7 +245,7 @@ def main(argv=None) -> int:
         # Everyone not on page 1 was searched for directly, so the page-1
         # shortfall no longer leaves anyone unread.
         complete = True
-    writes, log, ready, bg_wait = [], [], [], []
+    writes, log, ready, bg_wait, unticks = [], [], [], [], []
     for p in todo:
         ov_name = matched.get(p.row)
         if not ov_name:
@@ -255,6 +255,12 @@ def main(argv=None) -> int:
         new = sweep.earned(p, done)
         for col in new:
             writes.append((p, col))
+        # Boxes the sheet claims that OwnerVille says are NOT done. Only on a
+        # COMPLETE read: half a View Progress looks exactly like a person who
+        # has done nothing, and this is the one write here that destroys work.
+        if complete:
+            for col in sweep.stale_ticks(p, done):
+                unticks.append((p, col))
         state = ov_table.owner_submit_state(heads, cells)
         is_ready = state == "ready"
         if "Owner Submit" in p.open_columns and "Owner Submit" not in new:
@@ -303,6 +309,19 @@ def main(argv=None) -> int:
           f"(ready to submit): {len(ready)}"
           + (f" — {', '.join(p.name for p in ready)}" if ready else ""))
 
+    untick_live = args.tick and config.UNTICK_STALE_LIVE
+    if unticks:
+        verb = "UN-TICKING" if untick_live else "WOULD un-tick"
+        print(f"\n{verb} {len(unticks)} box(es) the sheet claims and "
+              f"OwnerVille does not:")
+        for p, col in unticks:
+            print(f"  row {p.row:>3}  {p.name:<28} {col}")
+        if not untick_live:
+            print("  (gated: config.UNTICK_STALE_LIVE = False — nothing "
+                  "cleared. Read the list, then flip it.)")
+    elif complete:
+        print("\nNo stale ticks: every box on the tab matches OwnerVille.")
+
     if ready and args.submit:
         _submit(ready, writes, live=args.tick)
         _alert_failures(args.tick)
@@ -319,9 +338,33 @@ def main(argv=None) -> int:
         where = {_key(p): p for p in fresh}
         writes = [(where[_key(p)], c) for p, c in writes
                   if _key(p) in where and c in where[_key(p)].cols]
+        # Same relocation for un-ticks: a row that moved is found where it is
+        # now, one that vanished is dropped rather than cleared blind.
+        unticks = [(where[_key(p)], c) for p, c in unticks
+                   if _key(p) in where and c in where[_key(p)].cols]
         ready = [where[_key(p)] for p in ready if _key(p) in where]
         bg_wait = [where[_key(p)] for p in bg_wait if _key(p) in where]
         everyone = fresh
+    if untick_live and unticks:
+        # BACK UP FIRST. Overwriting a mapped cell is allowed; doing it with no
+        # way back is not, and nobody can tell from the tab what a box said an
+        # hour ago.
+        stamp = dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+        backup = (ROOT / "output" /
+                  f"obcl-unticks-{ws.title.replace(' ', '-')}-{stamp}.json")
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        backup.write_text(json.dumps(
+            {"tab": ws.title, "when": stamp, "note": "values BEFORE un-ticking",
+             "cleared": [{"row": p.row, "name": p.name, "column": c,
+                          "was": "TRUE"} for p, c in unticks]},
+            indent=2), encoding="utf-8")
+        print(f"  backup of what was cleared: {backup}")
+        ws.batch_update(
+            [{"range": gspread.utils.rowcol_to_a1(p.row, p.cols[c]),
+              "values": [["FALSE"]]} for p, c in unticks],
+            value_input_option="USER_ENTERED")
+        print(f"  un-ticked {len(unticks)} box(es).")
+
     if args.tick and writes:
         ws.batch_update(
             [{"range": gspread.utils.rowcol_to_a1(p.row, p.cols[c]),

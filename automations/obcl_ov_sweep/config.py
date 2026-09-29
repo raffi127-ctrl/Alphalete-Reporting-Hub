@@ -23,6 +23,19 @@ COLUMNS = ("Digi Docs", "Onboarding Quizzes", "Headshot Photo", "UID Request",
 # Headshot Photo added 2026-09-21 (Megan): the Headshot Bot ticks it for photos
 # sent through Slack; this catches ones uploaded straight into OwnerVille.
 
+# Columns this sweep will never UN-tick, however clearly OwnerVille disagrees.
+# See sweep.stale_ticks for the reasoning; in short, Owner Submit un-ticks put
+# somebody back in a queue whose action cannot be withdrawn, and Headshot Photo
+# has a second writer (the Headshot Bot) that ticks it from Slack photos -- the
+# two agreed to tick ON only so neither can undo the other.
+NEVER_UNTICK = ("Owner Submit", "Headshot Photo")
+
+# UN-TICKING IS GATED (Megan 2026-09-28: "you can uncheck if it's not true").
+# While False the run REPORTS every stale tick and changes nothing, so the first
+# list is read by a person before any box is cleared. Ticking the wrong box on
+# is a no-op; clearing the wrong box erases work somebody did.
+UNTICK_STALE_LIVE = False
+
 # Final Status words that mean this person is not going through onboarding —
 # no point spending an OwnerVille lookup on them. "Owner submitted" is skipped
 # too, but separately (sweep.owner_submitted) — it's finished, not gone.

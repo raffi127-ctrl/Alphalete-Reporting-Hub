@@ -476,3 +476,59 @@ class WhyNotOwnerSubmitted(unittest.TestCase):
         from automations.obcl_ov_sweep import ov_table
         self.assertIsNone(
             ov_table.missing_for_owner_submit(self.HEADS[:4], self._cells()[:4]))
+
+
+class UnTickingStaleBoxes(unittest.TestCase):
+    """Ticking a box that was already true costs nothing. Clearing one erases
+    somebody's work, so stale_ticks is deliberately much more cautious than
+    `earned`. Megan 2026-09-28: "you can uncheck if it's not true"."""
+
+    def _person(self, ticked, cols=None):
+        from automations.obcl_ov_sweep.sweep import Person
+        cols = cols or {c: i + 5 for i, c in enumerate(config.COLUMNS)}
+        return Person(first="Ammi", last="Rojas", row=9, cols=cols,
+                      ticked=dict(ticked))
+
+    def test_it_clears_a_box_ownerville_says_is_not_done(self):
+        """The Ammi Rojas case: UID Request TRUE on the tab, never granted in
+        OwnerVille, so she sat unsubmitted with a fully green row."""
+        p = self._person({"UID Request": True})
+        self.assertEqual(sweep.stale_ticks(p, {"UID Request": False}),
+                         ["UID Request"])
+
+    def test_an_unread_column_never_unticks(self):
+        """done_columns answers None when the header was not read. None is not
+        evidence of anything."""
+        p = self._person({"UID Request": True})
+        self.assertEqual(sweep.stale_ticks(p, {"UID Request": None}), [])
+
+    def test_a_box_ownerville_agrees_with_is_left_alone(self):
+        p = self._person({"UID Request": True})
+        self.assertEqual(sweep.stale_ticks(p, {"UID Request": True}), [])
+
+    def test_an_untickedbox_is_not_an_untick(self):
+        p = self._person({"UID Request": False})
+        self.assertEqual(sweep.stale_ticks(p, {"UID Request": False}), [])
+
+    def test_owner_submit_is_never_cleared(self):
+        """Un-ticking it puts the person back in the submit queue, and that
+        attestation cannot be withdrawn."""
+        p = self._person({"Owner Submit": True})
+        self.assertEqual(sweep.stale_ticks(p, {"Owner Submit": False}), [])
+        self.assertIn("Owner Submit", config.NEVER_UNTICK)
+
+    def test_headshot_photo_is_never_cleared(self):
+        """Two writers: the Headshot Bot ticks it from Slack photos. They agreed
+        to tick ON only so neither can undo the other."""
+        p = self._person({"Headshot Photo": True})
+        self.assertEqual(sweep.stale_ticks(p, {"Headshot Photo": False}), [])
+        self.assertIn("Headshot Photo", config.NEVER_UNTICK)
+
+    def test_a_column_not_on_this_chart_is_skipped(self):
+        p = self._person({"UID Request": True}, cols={"Digi Docs": 5})
+        self.assertEqual(sweep.stale_ticks(p, {"UID Request": False}), [])
+
+    def test_it_ships_gated(self):
+        """The first list of un-ticks is read by a person before anything is
+        cleared."""
+        self.assertFalse(config.UNTICK_STALE_LIVE)

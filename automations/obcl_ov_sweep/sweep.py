@@ -128,6 +128,47 @@ def earned(p: Person, done: Dict[str, object]) -> List[str]:
     return [c for c in p.open_columns if done.get(c) is True]
 
 
+def stale_ticks(p: Person, done: Dict[str, object]) -> List[str]:
+    """Boxes ticked on the OBCL that OwnerVille positively says are NOT done.
+
+    The inverse of `earned`, and deliberately much more cautious than it, because
+    ticking a box that was already true costs nothing while UN-ticking one
+    erases somebody's work.
+
+    WHY THIS EXISTS. Ammi Rojas' row had UID Request = TRUE while OwnerVille had
+    never granted the UID, so she sat unsubmitted with every box on her row
+    green and nothing to explain it (Megan, 2026-09-28: "you can uncheck if it's
+    not true"). A checkbox the sweep only ever ticks ON can never recover from a
+    premature hand-tick.
+
+    FOUR RULES, each one a way to erase real work:
+
+    1. A literal False only. `done_columns` answers True / False / None, and
+       None means the header was not read -- never an untick.
+    2. The caller must pass a COMPLETE View Progress read, and must not call
+       this for anybody not found in OwnerVille. Half a read looks exactly like
+       a person who has done nothing.
+    3. OWNER SUBMIT IS NEVER UNTICKED. Un-ticking it puts the person back in the
+       submit queue, and the submit is an attestation to the campaign that
+       cannot be withdrawn -- a false untick there is the one mistake in this
+       module that cannot be taken back. A disagreement on that column is for a
+       human to look at.
+    4. HEADSHOT PHOTO IS NEVER UNTICKED. It has two sources: the Headshot Bot
+       ticks it for photos sent through Slack, this sweep for ones uploaded
+       straight into OwnerVille. They agreed to tick ON only so the two can
+       never undo each other (config.COLUMNS, 2026-09-21); unticking here would
+       break that and start a fight the bot would win at the next 5-minute tick.
+
+    What is left -- Digi Docs, Onboarding Quizzes, UID Request -- are the columns
+    whose only truth is OwnerVille's View Progress row.
+    """
+    return [c for c in config.COLUMNS
+            if c not in config.NEVER_UNTICK
+            and c in p.cols
+            and p.ticked.get(c)
+            and done.get(c) is False]
+
+
 def sheet_bg_pending(p: Person) -> bool:
     """Owner Submit YELLOW straight off the sheet (Megan 2026-09-21: "that
     group of pending BGs"): every other sweep box on the row is ticked — Digi
