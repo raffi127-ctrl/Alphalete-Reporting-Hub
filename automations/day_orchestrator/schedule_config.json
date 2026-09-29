@@ -7235,6 +7235,7 @@
     },
     "rashad_metrics": {
       "order": 27,
+      "machine": "Lucy 4",
       "on_scheduler": true,
       "_disabled_reason": "BUILDING 2026-06-28. 4 of 7 metrics wired (order_log, canceled_orders, disconnects, sales_6plus) via the org-wide-pull → filter-to-Rashad pattern. Posts AS Lucy by reusing the SAME Slack token path as daily_metrics (no separate token — on the mini that file is Lucy). Remaining 3 are FLAGGED, each needs a Tableau asset that doesn't exist: ongoing_cancel (a Rashad/org-wide cancel-rates view — current RafExpanded is Raf-only computed), churn (a Rashad churn view — INTLocalOffice bakes owner=Raf; also sheet-coupled, needs a Rashad tab or direct-render), knocks_gaps (Rashad's rep roster — Disposition-by-Rep has no owner column). Flip true only after a clean dry-run of the 4 wired on the mini + Megan's go-ahead (and the 3 flagged either built or accepted as omitted).",
       "display_name": "Rashad's Daily Metrics (#elevate-sales)",
@@ -7273,6 +7274,7 @@
     },
     "aya_metrics": {
       "order": 28,
+      "machine": "Lucy 4",
       "on_scheduler": true,
       "display_name": "Aya's Daily Metrics (#indelible-sales)",
       "source_type": "tableau",
@@ -7819,6 +7821,7 @@
     },
     "cyrus_metrics": {
       "order": 29,
+      "machine": "Lucy 4",
       "on_scheduler": true,
       "display_name": "Cyrus's Daily Metrics (#ambient-sales-1)",
       "source_type": "tableau",
@@ -7860,6 +7863,7 @@
     },
     "hammad_metrics": {
       "order": 30,
+      "machine": "Lucy 4",
       "on_scheduler": true,
       "display_name": "Hammad's Daily Metrics (#elite-prime-sales)",
       "source_type": "tableau",
@@ -7901,6 +7905,7 @@
     },
     "kash_metrics": {
       "order": 31,
+      "machine": "Lucy 4",
       "on_scheduler": true,
       "display_name": "Kash's Daily Metrics (#palace-sales)",
       "source_type": "tableau",
@@ -7942,6 +7947,7 @@
     },
     "salik_metrics": {
       "order": 34,
+      "machine": "Lucy 4",
       "on_scheduler": true,
       "display_name": "Salik's Daily Metrics (#elite-prime-sales)",
       "source_type": "tableau",
@@ -7983,6 +7989,7 @@
     },
     "cody_metrics": {
       "order": 36,
+      "machine": "Lucy 4",
       "on_scheduler": true,
       "display_name": "Cody's Daily Metrics (#aeon-sales)",
       "source_type": "tableau",
@@ -8023,6 +8030,7 @@
     },
     "nii_metrics": {
       "order": 36.1,
+      "machine": "Lucy 4",
       "on_scheduler": true,
       "display_name": "Nii's Daily Metrics (nii-teiko-tagoe-office)",
       "source_type": "tableau",
@@ -10319,6 +10327,7 @@
     },
     "haytham_metrics": {
       "order": 32,
+      "machine": "Lucy 4",
       "on_scheduler": true,
       "display_name": "Haytham's Daily Metrics (horizon-edge-sales)",
       "source_type": "tableau",
@@ -10358,6 +10367,7 @@
     },
     "isaiah_metrics": {
       "order": 33,
+      "machine": "Lucy 4",
       "on_scheduler": true,
       "display_name": "Isaiah's Daily Metrics (Legacy-Office-Sales)",
       "source_type": "tableau",
@@ -10436,6 +10446,7 @@
     },
     "trang_metrics": {
       "order": 35,
+      "machine": "Lucy 4",
       "on_scheduler": true,
       "display_name": "trang's Daily Metrics (#freshsuccess-all-leaders + #freshsuccess-team)",
       "source_type": "tableau",
@@ -11879,6 +11890,7 @@
     },
     "joseph_metrics": {
       "order": 36.56,
+      "machine": "Lucy 4",
       "on_scheduler": true,
       "display_name": "Joseph's Daily Metrics (email: joseph@loganlegacygroup.com)",
       "source_type": "tableau",
@@ -11937,6 +11949,7 @@
     },
     "christian_metrics": {
       "order": 36.57,
+      "machine": "Lucy 4",
       "on_scheduler": true,
       "display_name": "Christian's Daily Metrics (email: resoundinc@gmail.com)",
       "source_type": "tableau",
@@ -12168,6 +12181,7 @@
     },
     "colten_metrics": {
       "order": 36.58,
+      "machine": "Lucy 4",
       "on_scheduler": true,
       "display_name": "Colten's Daily Metrics (southshore-d2d-sales)",
       "source_type": "tableau",
@@ -12277,6 +12291,7 @@
     },
     "khalil_metrics": {
       "order": 36.59,
+      "machine": "Lucy 4",
       "on_scheduler": true,
       "display_name": "Khalil's Daily Metrics (everforward-sales)",
       "source_type": "tableau",
@@ -12315,6 +12330,7 @@
     },
     "drew_metrics": {
       "order": 36.6,
+      "machine": "Lucy 4",
       "on_scheduler": true,
       "display_name": "Drew's Daily Metrics (precision-management-att-sales)",
       "source_type": "tableau",
@@ -12353,6 +12369,7 @@
     },
     "maxamad_metrics": {
       "order": 36.61,
+      "machine": "Lucy 4",
       "on_scheduler": true,
       "display_name": "Maxamad's Daily Metrics (maximal-sales)",
       "source_type": "tableau",
@@ -12391,6 +12408,7 @@
     },
     "jacob_metrics": {
       "order": 36.6,
+      "machine": "Lucy 4",
       "on_scheduler": true,
       "display_name": "Jacob's Daily Metrics (rockstar-world-sales)",
       "source_type": "tableau",
