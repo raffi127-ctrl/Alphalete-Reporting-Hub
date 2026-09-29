@@ -134,6 +134,11 @@ TEXT_GROUP_ALL = "NEW A Players"
 # The two post types, as used in the routing key below.
 POST_HOURLY = "hourly"              # activity + time gaps, every hour
 POST_DISPOSITIONS = "dispositions"  # territory stats, once a day at 6:30
+# BOX-3 (Carlos 2026-09-29): the Reps Over 15 Min Gap card is its OWN report
+# now, split off the hourly Today's Activity post -- Slack and the Box B2B
+# text at 12, 2, 4 and 6 (Sat 12, 2, 4). Its own daily Slack thread.
+POST_GAPS = "gaps"
+THREAD_GAPS = "Box 15 Min Gaps"
 
 # (campaign, post-type) -> the groups that get it.
 # Emptying a list is how you stop texting that pair — nothing else changes.
@@ -158,6 +163,9 @@ TEXT_ROUTES = {
     (CAMPAIGN_ATT, POST_DISPOSITIONS): [],
     (CAMPAIGN_BOX, POST_HOURLY): [],
     (CAMPAIGN_BOX, POST_DISPOSITIONS): [],
+    # ON (Carlos 2026-09-29): the Box gaps card texts Box B2B every run.
+    (CAMPAIGN_BOX, POST_GAPS): [TEXT_GROUP_BOX],
+    (CAMPAIGN_ATT, POST_GAPS): [],
 }
 
 # Seconds to wait after handing Messages an image. TdB proved a group image send
@@ -179,9 +187,10 @@ IMAGE_SEND_DELAY_S = 18
 # ONCE A DAY SINCE 2026-09-29 (Carlos: "D1B post once a day at 6pm", Territory
 # Stats "at 6pm"). ONE agent (com.alphalete.b2b-dispositions-hourly, now
 # --which all) fires Mon-Fri 6pm and Sat 4pm (his 9/27 rule: no disposition
-# posts after 5:30 on Saturdays). The -final agent is retired. These slots
-# only label the caption.
-HOURLY_SLOTS = [(18, 0)]
+# posts after 5:30 on Saturdays). The -final agent is retired. The gaps card
+# (BOX-3) also runs at 12, 2 and 4 from com.alphalete.b2b-dispositions-gaps.
+# These slots only label the caption.
+HOURLY_SLOTS = [(12, 0), (14, 0), (16, 0), (18, 0)]
 FINAL_SLOT = (19, 0)
 
 # Weekend shape (Carlos 2026-08-06):
@@ -194,7 +203,7 @@ FINAL_SLOT = (19, 0)
 SUNDAY = 6                      # Python weekday(): Mon=0 … Sun=6
 SATURDAY = 5
 RUN_WEEKDAYS = (0, 1, 2, 3, 4, 5)          # Mon-Sat; Sunday deliberately absent
-SATURDAY_HOURLY_SLOTS = [(16, 0)]
+SATURDAY_HOURLY_SLOTS = [(12, 0), (14, 0), (16, 0)]
 SATURDAY_FINAL_SLOT = (16, 0)
 
 

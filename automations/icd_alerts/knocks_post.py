@@ -71,6 +71,61 @@ GAPS_IN_SLACK_KEY = "gaps_min"
 SLOT_GRACE_MIN = 40
 
 
+# SET TIMES PER OFFICE, IN CODE (Carlos 2026-09-29). His Box board (BOX-1)
+# goes to Slack every two hours 12-6 and to the Box B2B text once, at 6. The
+# code wins over the 'Office Channels' sheet here the same way offices.py's
+# table does, so this needs no sheet edit -- and it is one place to look.
+# "sat" is Saturday (his rule: nothing after 5:30 on a Saturday); Sunday is
+# never. Keys: "slack" = every Slack room the office is approved for,
+# "text" = every text group.
+SET_TIMES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
+    "carlos": {
+        "slack": {"weekday": ["12:00", "14:00", "16:00", "18:00"],
+                  "sat": ["12:00", "14:00", "16:00"]},
+        "text": {"weekday": ["18:00"], "sat": ["16:00"]},
+    },
+}
+# Offices whose board is NOT texted at all. Slack is untouched.
+TEXTS_OFF: set = set()
+# Offices whose board is OFF EVERYWHERE, Slack and text (Carlos 2026-09-29:
+# "ATT 1 - stop", his B2B AT&T board). The relay keeps running; nothing posts.
+BOARDS_OFF = {"carlos-b2batt"}
+# Offices whose texts carry the board only, no typed gap list: Carlos's Box
+# gaps are their own report now (BOX-3, b2b_dispositions --which gaps).
+NO_GAP_LIST_IN_TEXTS = {"carlos"}
+
+
+def _apply_set_times(key: str, dests: List[Dict], now: dt.datetime) -> List[Dict]:
+    """TEXTS_OFF and SET_TIMES applied to one office's destination list.
+    A destination with `times` is due at those clock times only (see is_due)."""
+    if key in TEXTS_OFF:
+        dests = [d for d in dests if not P.is_text_dest(d["channel_id"])]
+    plan = SET_TIMES.get(key)
+    if not plan:
+        return dests
+    day = "sat" if now.weekday() == 5 else "weekday"
+    out = []
+    for d in dests:
+        kind = "text" if P.is_text_dest(d["channel_id"]) else "slack"
+        d = dict(d)
+        d["times"] = list(((plan.get(kind) or {}).get(day)) or [])
+        if now.weekday() == 6:
+            d["times"] = []
+        out.append(d)
+    return out
+
+
+def _set_time_now(dests: List[Dict], now: dt.datetime) -> bool:
+    """Is any destination inside one of its own set times' grace window?"""
+    for d in dests:
+        for text in d.get("times") or []:
+            h, m = _hm(text)
+            slot = now.replace(hour=h, minute=m, second=0, microsecond=0)
+            if slot <= now <= slot + dt.timedelta(minutes=SLOT_GRACE_MIN):
+                return True
+    return False
+
+
 def _slots():
     try:
         from automations.disposition_signup.schema import CODY_SLOTS
@@ -119,6 +174,8 @@ def is_due(dest: Dict, last_posted: Optional[dt.datetime],
     Never posted = due. That is what makes an approval take effect on the next
     tick rather than an hour later.
     """
+    if "times" in dest:
+        return _slot_due(last_posted, now, dest["times"])
     cadence = int(dest.get("cadence_min") or 0)
     if cadence == 0:
         return _slot_due(last_posted, now)
@@ -243,9 +300,10 @@ def _after_hours_slot(office, now: dt.datetime) -> bool:
 RECAP_AFTER_MIN = 60
 
 
-def _slot_due(last_posted: Optional[dt.datetime], now: dt.datetime) -> bool:
+def _slot_due(last_posted: Optional[dt.datetime], now: dt.datetime,
+              slots: Optional[List[str]] = None) -> bool:
     """Fixed times: due if we are just past a slot and have not posted since it."""
-    for text in _slots():
+    for text in (_slots() if slots is None else slots):
         h, m = _hm(text)
         slot = now.replace(hour=h, minute=m, second=0, microsecond=0)
         if slot <= now <= slot + dt.timedelta(minutes=SLOT_GRACE_MIN):
@@ -346,6 +404,10 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         if not office or not O.is_enrolled(key):
             log("%-10s relayed knocks but is not enrolled -- ignored" % key)
             continue
+        if key in BOARDS_OFF:
+            log("%-10s board switched off (knocks_post.BOARDS_OFF) -- not posted"
+                % key)
+            continue
 
         # A BOARD BUILT ON FROZEN NUMBERS IS WORSE THAN NO BOARD.
         #
@@ -388,6 +450,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                 if int(t.get("cadence_min") or 0) <= 0 and beat:
                     t["cadence_min"] = beat
                 dests.append(t)
+        dests = _apply_set_times(key, dests, _office_now(office))
         if not dests:
             log("%-10s %s rep row(s) relayed, but no knocks destination is "
                 "approved yet" % (key, row[KN_COUNT] or "?"))
@@ -401,8 +464,10 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         # time)"). A slot the office chose is not a board nobody asked for,
         # so a fixed-time destination may post within the slot's grace
         # after hours; a cadence destination still stops at the bell.
-        recap = (any(int(d.get("cadence_min") or 0) == 0 for d in dests)
-                 and _after_hours_slot(office, now))
+        recap = ((any(int(d.get("cadence_min") or 0) == 0 and "times" not in d
+                      for d in dests)
+                  and _after_hours_slot(office, now))
+                 or (_set_time_now(dests, now) and not _past_saturday_cap(now)))
         if not force and not in_field_hours(office, now) and not recap:
             log("%-10s outside field hours (%s their time)"
                 % (key, now.strftime("%a %H:%M")))
@@ -530,6 +595,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                     # hourly), and `dest=` keys the ⏰ state on the stable
                     # address rather than a name that churns.
                     _text(d, boards,
+                          "" if key in NO_GAP_LIST_IN_TEXTS else
                           _gaps_text(office, rows_for_board, now,
                                      dest=d["channel_id"]))
                     # When the picture last went to this group. Read only by

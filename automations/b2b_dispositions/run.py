@@ -65,44 +65,67 @@ def _fmt12(hm) -> str:
 
 def _capture_hourly(page, rqst: str, out_dir: Path, slot: str,
                     dry_run: bool, today: dt.date) -> List[Dict]:
-    """Today's Activity + Time Tracker for cfg.HOURLY_CAMPAIGNS (Box only since
-    Carlos 2026-09-29) -> ONE thread spec.
-    Each hour is its own thread ("Hourly Activity 7/30/26 - 4 PM") with a single
-    reply carrying both campaign images (Megan 7/30)."""
+    """BOX-2: Today's Activity (knock counts) for cfg.HOURLY_CAMPAIGNS, as a
+    reply in the day's "Hourly Activity" thread. Since 2026-09-29 the 15-min
+    gap card is its own report (_capture_gaps) -- Carlos: "the total knocks
+    report and the 15 min gaps should be looked at as separate reports"."""
     paths, notes = [], []
-    # campaign -> its own image(s). The Slack reply carries both campaigns
-    # together, but the iMessage routing sends each campaign to a DIFFERENT
-    # group, so attribution can't be positional: a stitch failure changes what
-    # lands in `paths` and index 0 would stop meaning "AT&T".
     by_campaign: Dict[str, List] = {}
     for campaign in cfg.HOURLY_CAMPAIGNS:
         cap.ensure_campaign(page, rqst, campaign)  # sticky global — flip it first
         ta = cap.capture_todays_activity(page, rqst, campaign, out_dir, dump=dry_run)
-        tt = cap.capture_time_tracker(page, rqst, campaign, out_dir, dump=dry_run)
         tag = cfg.CAMPAIGN_TAG[campaign]
         combined = out_dir / f"hourly_{cap._slug(tag)}.png"
         try:
-            cap.stitch_vertical(
-                [(cfg.PANEL_TODAYS_ACTIVITY, ta["path"]),
-                 (cfg.PANEL_TIME_TRACKER, tt["path"])],
-                title=f"{tag} — {slot}", out_path=combined)
+            cap.stitch_vertical([(cfg.PANEL_TODAYS_ACTIVITY, ta["path"])],
+                                title=f"{tag} — {slot}", out_path=combined)
             paths.append(combined)
-            # Slack gets the two panels stitched into one tall image; the TEXT
-            # gets them as TWO separate pictures (Carlos 8/6 — the stitched one
-            # is unreadable on a phone). Same content, different packaging.
-            by_campaign[campaign] = [ta["path"], tt["path"]]
         except Exception as e:  # noqa: BLE001
-            print(f"  {tag} stitch failed ({type(e).__name__}) — Today's Activity "
-                  f"only", flush=True)
+            print(f"  {tag} title failed ({type(e).__name__}) — raw panel",
+                  flush=True)
             paths.append(ta["path"])
-            by_campaign[campaign] = [ta["path"], tt["path"]]
-        notes.append(f"{tag}[TA:{ta.get('how')} TT:{tt.get('how')} "
-                     f"camp_ok={ta.get('campaign_ok') and tt.get('campaign_ok')}]")
-    # The TEXT still carries the slot in its own title — only Slack collapses
-    # into one dated thread, where the slot moves to the reply caption.
+        by_campaign[campaign] = [ta["path"]]
+        notes.append(f"{tag}[TA:{ta.get('how')} camp_ok={ta.get('campaign_ok')}]")
     title = sp.thread_title(cfg.THREAD_HOURLY, slot, today)
     return [{"title": title, "paths": paths, "kind": cfg.POST_HOURLY,
              "slot": slot, "daily_thread": cfg.THREAD_HOURLY,
+             "by_campaign": by_campaign, "meta": {"note": " ".join(notes)}}]
+
+
+def _capture_gaps(page, rqst: str, out_dir: Path, slot: str,
+                  dry_run: bool, today: dt.date) -> List[Dict]:
+    """BOX-3: the Reps Over 15 Min Gap card for cfg.HOURLY_CAMPAIGNS, into the
+    day's "Box 15 Min Gaps" thread and (with --text) the Box B2B group.
+
+    NEVER AN EMPTY CARD. Nobody over 15 minutes is good news, not news -- a
+    "no reps over 15 min gap" picture every two hours is how a room learns to
+    mute the alert that matters [[feedback_never_post_blank]]."""
+    paths, notes = [], []
+    by_campaign: Dict[str, List] = {}
+    for campaign in cfg.HOURLY_CAMPAIGNS:
+        cap.ensure_campaign(page, rqst, campaign)  # sticky global — flip it first
+        tt = cap.capture_time_tracker(page, rqst, campaign, out_dir, dump=dry_run)
+        tag = cfg.CAMPAIGN_TAG[campaign]
+        notes.append(f"{tag}[TT:{tt.get('how')} over={tt.get('count')} "
+                     f"camp_ok={tt.get('campaign_ok')}]")
+        if not tt.get("count"):
+            print(f"  {tag}: nobody over 15 min — no gaps card this run",
+                  flush=True)
+            continue
+        card = out_dir / f"gaps_{cap._slug(tag)}.png"
+        try:
+            cap.add_title_header(tt["path"], f"{tag} 15 Min Gaps — {slot}", card)
+        except Exception as e:  # noqa: BLE001
+            print(f"  {tag} title failed ({type(e).__name__}) — raw card",
+                  flush=True)
+            card = tt["path"]
+        paths.append(card)
+        by_campaign[campaign] = [card]
+    if not paths:
+        return []
+    title = sp.thread_title(cfg.THREAD_GAPS, slot, today)
+    return [{"title": title, "paths": paths, "kind": cfg.POST_GAPS,
+             "slot": slot, "daily_thread": cfg.THREAD_GAPS,
              "by_campaign": by_campaign, "meta": {"note": " ".join(notes)}}]
 
 
@@ -167,9 +190,10 @@ def _post_specs(specs: List[Dict], today: dt.date, dry_run: bool,
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="B2B Dispositions -> Slack")
-    ap.add_argument("--which", choices=["hourly", "dispositions", "all"],
-                    default="all", help="hourly = Today's Activity + Time "
-                    "Tracker; dispositions = per-territory; all = both")
+    ap.add_argument("--which", choices=["hourly", "gaps", "dispositions", "all"],
+                    default="all", help="hourly = Today's Activity (BOX-2); "
+                    "gaps = 15-min gap card (BOX-3); dispositions = "
+                    "per-territory (BOX-4); all = all three")
     ap.add_argument("--final", action="store_true",
                     help="tag the hourly shots as the 6:30 Final")
     ap.add_argument("--send", action="store_true",
@@ -334,6 +358,8 @@ def main(argv=None) -> int:
         rqst = cap.capture_rqst(page)
         if args.which in ("hourly", "all"):
             specs += _capture_hourly(page, rqst, out_dir, slot, dry_run, today)
+        if args.which in ("gaps", "all"):
+            specs += _capture_gaps(page, rqst, out_dir, slot, dry_run, today)
         if args.which in ("dispositions", "all"):
             specs += _capture_dispositions(page, rqst, out_dir, dry_run,
                                            limit=args.limit, slot=slot, today=today)

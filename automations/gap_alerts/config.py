@@ -147,8 +147,20 @@ RAF = {
         # call-out may leave for this room on a Saturday; sale alerts are a
         # different job and are untouched.
         "Carlos Hidalgo": [
-            {"kind": "imessage", "name": "NEW A Players", "cadence_min": 15, "sat_stop": "17:30"},
-            {"kind": "imessage", "name": "ATT B2B Leaders", "cadence_min": 15, "sat_stop": "17:30"},
+            # FIB-1: HOURLY, 2PM TO 9PM, TEXT AND SLACK (Carlos 2026-09-29:
+            # "once every hour on slack and text. starting at 2 until 9pm").
+            # `start` is the first minute a board may leave; `stop` the last
+            # on a weekday, `sat_stop` on Saturday.
+            {"kind": "imessage", "name": "NEW A Players", "cadence_min": 60,
+             "start": "14:00", "stop": "21:00", "sat_stop": "17:30"},
+            {"kind": "imessage", "name": "ATT B2B Leaders", "cadence_min": 60,
+             "start": "14:00", "stop": "21:00", "sat_stop": "17:30"},
+            # The Slack copy goes to his sales room, where FIB-2 (the
+            # call-outs) already lands, inside one thread a day.
+            {"kind": "slack", "channel_id": "C07J46MQNUX",
+             "name": "#alphalete-gp-sales", "thread_title": "Fiber Team Knocks",
+             "cadence_min": 60, "start": "14:00", "stop": "21:00",
+             "sat_stop": "17:30"},
         ],
     },
     "destinations": [

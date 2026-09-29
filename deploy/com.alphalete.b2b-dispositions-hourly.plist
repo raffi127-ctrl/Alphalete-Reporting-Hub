@@ -7,7 +7,9 @@
 
     <!-- ONCE A DAY since 2026-09-29 (Carlos): Box Today's Activity + 15-min
          gaps into "Hourly Activity", plus Box Territory Stats (one picture per
-         territory) into "Territory Stats". The -final agent is retired. Path is the laptop placeholder; on Lucy 2,
+         territory) into "Territory Stats", plus the 6pm Box 15-min gaps card
+         (Slack + Box B2B text; --text). The -final agent is retired. The 12/2/4
+         gaps runs are com.alphalete.b2b-dispositions-gaps. Path is the laptop placeholder; on Lucy 2,
          install_agent.py rewrites it to the mini's repo path:
          python -m automations.day_orchestrator.install_agent b2b-dispositions-hourly -->
     <key>ProgramArguments</key>
@@ -17,6 +19,7 @@
         <string>--which</string>
         <string>all</string>
         <string>--send</string>
+        <string>--text</string>
     </array>
 
     <key>WorkingDirectory</key>

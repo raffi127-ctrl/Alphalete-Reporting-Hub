@@ -8404,7 +8404,7 @@
       "base_args": [],
       "cadence": {
         "weekdays": [],
-        "not_before": "16:00"
+        "not_before": "12:00"
       },
       "priority": "P3",
       "freshness_target": null,
@@ -12230,6 +12230,29 @@
       ],
       "base_args": [
         "b2b-dispositions-hourly"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
+    },
+    "install_b2b_dispositions_gaps_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Install/refresh com.alphalete.b2b-dispositions-gaps on LUCY 2: Carlos's BOX-3, the Box 15-min gaps card (2026-09-29) to the 'Box 15 Min Gaps' Slack thread + the Box B2B text at Mon-Fri 12/2/4pm and Sat 12/2pm. The 6pm (Sat 4pm) gaps run rides the -hourly agent's --which all. install_agent only rewrites and reloads the plist.",
+      "machine": "Lucy 2",
+      "display_name": "Install B2B Dispositions gaps agent (12/2/4)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "b2b-dispositions-gaps"
       ],
       "cadence": {
         "weekdays": []

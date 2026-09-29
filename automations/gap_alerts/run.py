@@ -310,6 +310,22 @@ def _past_stop(dest: Dict, cfg: Optional[Dict] = None,
     return (local.hour, local.minute) > (h, m)
 
 
+def _before_start(dest: Dict, cfg: Optional[Dict] = None,
+                  now: Optional[dt.datetime] = None) -> bool:
+    """Is it still before this destination's own `start` ("14:00") today, on
+    the office's clock? No start set = never before it. The mirror of
+    _past_stop (Carlos 2026-09-29: his fiber board "starting at 2")."""
+    text = str(dest.get("start") or "").strip()
+    if not text:
+        return False
+    local = C.office_now(cfg or {}, now)
+    try:
+        h, m = [int(x) for x in text.split(":")[:2]]
+    except ValueError:
+        return False
+    return (local.hour, local.minute) < (h, m)
+
+
 def _dest_due(dest: Dict, now: Optional[dt.datetime] = None,
               cfg: Optional[Dict] = None) -> bool:
     """Is THIS destination owed a board on this tick?
@@ -1413,6 +1429,34 @@ def _praise_tick(cfg: Dict, office_key: str,
     return bool(win) and _GC.praise_tick(local, office_key, win[1], C.TICK_MINUTES)
 
 
+def _post_guest_slack(dest: Dict, guest: str, png, body: str, day: dt.date,
+                      *, send: bool) -> None:
+    """One guest board (+ its gap list as the caption) to a Slack channel,
+    threaded under "<thread_title> — <date>" when the destination has one."""
+    ch = C.dest_channel(dest)
+    if not ch:
+        raise ValueError("slack destination has no channel_id")
+    caption = "*%s — %s*" % (dest.get("thread_title") or "Knocks", guest)
+    if body:
+        caption += "\n\n" + body
+    if not send:
+        _log("  %s slack:%s PREVIEW — nothing sent" % (guest, dest.get("name") or ch))
+        return
+    from automations.shared import slack_metrics_post as smp
+    ts = None
+    if dest.get("thread_title"):
+        ts = smp.ensure_named_thread(dest["thread_title"], day,
+                                     channel_id=ch).get("thread_ts")
+    client = smp._client()
+    if png:
+        client.files_upload_v2(channel=ch, file=str(png),
+                               initial_comment=caption, thread_ts=ts)
+    else:
+        client.chat_postMessage(channel=ch, text=caption, thread_ts=ts)
+    _log("  %s SLACK -> %s%s" % (guest, dest.get("name") or ch,
+                                 " (thread)" if ts else ""))
+
+
 def _send_guest_boards(cfg: Dict, guest_due: Dict, guest_boards: Dict,
                        all_gaps: List[Dict], day: dt.date, *, send: bool,
                        failures: List[str]) -> None:
@@ -1496,11 +1540,16 @@ def _send_guest_boards(cfg: Dict, guest_due: Dict, guest_boards: Dict,
         for dest in dests:
             where = C.dest_label(dest)
             try:
+                if dest.get("kind") == "slack":
+                    # A GUEST'S SLACK ROOM (Carlos 2026-09-29, FIB-1): the
+                    # same board and gap list, inside one thread a day when
+                    # the destination names one.
+                    _post_guest_slack(dest, guest, png, body, day, send=send)
+                    took.append(dest)
+                    continue
                 if dest.get("kind") != "imessage":
-                    # Slack for a guest would need a channel of their own and
-                    # a thread of their own; say so rather than dropping it.
-                    _log("  %s %s: only iMessage is wired for a guest room "
-                         "— skipped" % (guest, where))
+                    _log("  %s %s: only iMessage and Slack are wired for a "
+                         "guest room — skipped" % (guest, where))
                     continue
                 if not (dest.get("name") or "").strip():
                     _log("  %s %s has no chat name — skipped" % (guest, where))
@@ -1606,7 +1655,8 @@ def tick(day: dt.date, *, send: bool, only: str = "",
         guest_due = {}
         for _g, _dests in C.guest_destinations(cfg).items():
             _d = [d for d in _dests
-                  if not _past_stop(d, cfg) and ((only or force) or _dest_due(d, cfg=cfg))]
+                  if not _past_stop(d, cfg) and not _before_start(d, cfg)
+                  and ((only or force) or _dest_due(d, cfg=cfg))]
             if _d:
                 guest_due[_g] = _d
         if not due and not guest_due:

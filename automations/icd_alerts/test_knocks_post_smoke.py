@@ -75,7 +75,10 @@ class RunReachesTheCampaignGuard(unittest.TestCase):
                 mock.patch.object(KP, "_render",
                                   return_value=([], "b2b_box")), \
                 mock.patch.object(KP, "_comment", return_value="x"), \
-                mock.patch.object(KP, "in_field_hours", return_value=True):
+                mock.patch.object(KP, "in_field_hours", return_value=True), \
+                mock.patch.object(KP, "SET_TIMES", {}):
+            # SET_TIMES off: the fixture's office key is "carlos", whose real
+            # set times would make "is it due?" depend on the wall clock.
             KP.run(day, send=False, log=lines.append)
         return seen, lines
 
