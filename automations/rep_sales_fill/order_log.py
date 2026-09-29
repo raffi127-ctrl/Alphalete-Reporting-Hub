@@ -27,8 +27,13 @@ import re
 from pathlib import Path
 from typing import Dict, List
 
+# The ALL REPS custom view, NOT the bare sheet (2026-09-29): the sheet's
+# "Original" state was saved filtered to one owner + one rep (Austin Eldredge /
+# Joey Biase), so its .csv carried 9 rows a week and every other rep read as
+# "no sales". ALL REPS is the view canceled_orders / country_metrics already use.
 VIEW_CSV = ("https://us-east-1.online.tableau.com/t/sci/views/"
-            "ATTTRACKER2_1-D2D/ORDERLOG.csv")
+            "ATTTRACKER2_1-D2D/ORDERLOG/"
+            "117748c0-9487-45e8-a5d4-c447093718d5/ALLREPS.csv")
 
 # Column captions we need. Looked up by label at read time, never by position:
 # the same log in the B2B workbook exports 47 columns and the order drifts.
