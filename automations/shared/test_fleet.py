@@ -210,7 +210,9 @@ class TheRosterItselfIsSane(unittest.TestCase):
         self.assertIn("Lucy 4", fleet.RUNNERS)
         self.assertFalse(m.holds_appstream)
         self.assertFalse(m.runs_appstream)
-        self.assertIsNone(m.morning_clock_since)
+        # morning_clock_since went live 2026-09-29 (office metrics moved here,
+        # first 4am batch 9/30), so it is no longer part of the pinned state.
+        self.assertIn("Lucy 4", fleet.MORNING_CLOCK_MACHINES)
         # can_text went live 2026-09-19 (line + image delivered from the probe),
         # so it is no longer part of the not-yet-live state this test pins.
         self.assertTrue(m.can_text)

@@ -175,8 +175,11 @@ MACHINES: Tuple[Machine, ...] = (
         # box, and the probe's line AND image both arrived in Admin Staff (Megan
         # confirmed). It first sent "Not Delivered" — iMessage activation on a new
         # Mac; a Messages sign-out, restart and sign-in cleared it, not the grant.
+        # morning_clock_since set 2026-09-29: the 18 office metrics moved here
+        # (e0a7b01) and its day-orchestrator + heartbeat agents went in the same
+        # day, so 9/30 is its first 4am batch — watched from that first morning.
         holds_appstream=False, runs_appstream=False, can_text=True,
-        morning_clock_since=None, office_onboarding_choice=False,
+        morning_clock_since="2026-09-30", office_onboarding_choice=False,
         note="provisioned 2026-09-17; workflows/lucy4-provisioning.md. "
              "Capabilities flip at go-live, one at a time.",
     ),
