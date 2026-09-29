@@ -2084,6 +2084,49 @@ def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
     return faults
 
 
+SIGNUP_REPEAT_MIN = 60
+
+
+def collapse_signups(fresh, seen: Dict, now: dt.datetime):
+    """One announcement per person, not one per click.
+
+    Jairo Ruiz, 2026-09-29: the form was submitted ~15 times in 20 minutes
+    (jairo, jairo-nds, jairo2..jairo15 -- the form appends a number when the
+    key exists) and the relay wrote a few of those rows twice. The ops room
+    got eighteen "New sign-up -- Jairo Ruiz" posts. Two rules:
+      * the same key + submitted_at twice in one tick is one sign-up;
+      * a sign-up from a contact already announced in the last
+        SIGNUP_REPEAT_MIN minutes is recorded, not announced.
+    `seen` gains a `contact|<email>` stamp per announcement. Returns
+    (announce, [(record, why), ...])."""
+    def _contact(r):
+        raw = (getattr(r, "contact", "") or "").strip().lower()
+        return raw.split()[0] if raw else ""
+
+    def _when(text):
+        try:
+            return dt.datetime.fromisoformat(str(text)[:19])
+        except (TypeError, ValueError):
+            return None
+
+    announce, skipped, taken = [], [], set()
+    for r in fresh:
+        rk = "%s|%s" % (r.office_key, r.submitted_at)
+        if rk in taken:
+            skipped.append((r, "same sign-up twice in one tick"))
+            continue
+        taken.add(rk)
+        c = _contact(r)
+        if c:
+            last = _when((seen or {}).get("contact|%s" % c))
+            if last is not None and now - last < dt.timedelta(minutes=SIGNUP_REPEAT_MIN):
+                skipped.append((r, "%s was announced %d min ago" % (c, int((now - last).total_seconds() // 60))))
+                continue
+            seen["contact|%s" % c] = now.isoformat(timespec="seconds")
+        announce.append(r)
+    return announce, skipped
+
+
 SIGNUPS_SEEN_PATH = (Path.home() / ".config" / "recruiting-report"
                      / "icd_alerts_signups_seen.json")
 
@@ -2154,7 +2197,14 @@ def notify_new_signups(*, send: bool = False, book=None, log=print) -> List:
 
     fresh = [r for r in pending
              if seen.get("%s|%s" % (r.office_key, r.submitted_at)) is None]
+    fresh, skipped = collapse_signups(fresh, seen, dt.datetime.now())
+    for r, why in skipped:
+        log("SIGN-UP: %-10s %s -- not announced (%s)" % (r.office_key, r.owner, why))
+        seen["%s|%s" % (r.office_key, r.submitted_at)] = "skipped: " + why
     if not fresh:
+        if skipped:
+            SIGNUPS_SEEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+            SIGNUPS_SEEN_PATH.write_text(json.dumps(seen, indent=2, sort_keys=True))
         return []
 
     for r in fresh:

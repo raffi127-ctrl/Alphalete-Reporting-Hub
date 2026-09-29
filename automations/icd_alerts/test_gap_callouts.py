@@ -573,3 +573,12 @@ class ThePraiseLandsBeforeTheWall(unittest.TestCase):
             for h, m in ((20, 30), (20, 45), (21, 16), (21, 30)):
                 self._run_at(self._at(self.MON, h, m), posted, logged)
         self.assertEqual(posted, [])
+
+
+class AnOfficeCanOptOutOfCallOuts(unittest.TestCase):
+    def test_colten_is_out_although_nds_is_in(self):
+        self.assertIn("nds", G.CALLOUT_CAMPAIGNS)
+        self.assertIn("colten", G.CALLOUT_OPT_OUT)
+        import inspect
+        src = inspect.getsource(G.run)
+        self.assertGreaterEqual(src.count("CALLOUT_OPT_OUT"), 2, "both the gap loop and the pace loop must check it")

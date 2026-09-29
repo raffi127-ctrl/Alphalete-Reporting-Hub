@@ -94,7 +94,13 @@ def _known_channel_ids() -> Dict[str, str]:
             name = getattr(off, "channel_name", "")
             cid = getattr(off, "channel_id", "")
             if name and cid:
-                out[name.lower()] = cid
+                # Stored with or without the '#': both spellings key the map,
+                # or "everforward-sales" misses "#everforward-sales" and the
+                # lookup falls through to paging the whole workspace, which
+                # is what rate-limited Isaiah's re-approval on 2026-09-29.
+                bare = name.lower().lstrip("#")
+                out[bare] = cid
+                out["#" + bare] = cid
     except Exception:  # noqa: BLE001
         pass
     return out

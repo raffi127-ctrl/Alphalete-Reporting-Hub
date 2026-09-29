@@ -63,6 +63,12 @@ CALLOUT_CAMPAIGNS = {"att", "nds"}   # D2D only; B2B and Box offices are out (Me
 # (2026-09-22). This constant is ours, in git, and nothing on her laptop can
 # revert it.
 CALLOUT_EXTRA_OFFICES = {"ryan"}
+# ... and offices that asked OUT although their campaign is in. Colten
+# 2026-09-29 (via Megan): "knock boards and call outs removed from his slack
+# channel. He should only have sara+ alerts there". His knock board was
+# switched off on the tab the same minute; this is the call-out half, both
+# the 30-minute gap line and the end-of-day pace line.
+CALLOUT_OPT_OUT = {"colten"}
 INLINE_NAMES = 3      # more than this and every name goes on its own bullet (Megan: name them, no '6 more')
 # CARLOS'S NUMBERS (2026-09-26): "30 mins plus. But if they've had a credit
 # check in the last 30 mins they're not finger popping." So the check runs
@@ -615,6 +621,8 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
             continue
         # D2D AT&T AND NDS ONLY (Megan 2026-09-26: "Att & NDS", "not B2B").
         # The B2B offices -- Carlos's two, Ryan's and Roshan's Box -- are out.
+        if key in CALLOUT_OPT_OUT:
+            continue
         if (str(getattr(office, "campaign", "") or "att").strip().lower() not in CALLOUT_CAMPAIGNS
                 and key not in CALLOUT_EXTRA_OFFICES):
             continue
@@ -676,6 +684,8 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
         if only and key != only:
             continue
         office = O.get(key)
+        if key in CALLOUT_OPT_OUT:
+            continue
         if not office or (str(getattr(office, "campaign", "") or "att").strip().lower() not in CALLOUT_CAMPAIGNS
                           and key not in CALLOUT_EXTRA_OFFICES):
             continue
