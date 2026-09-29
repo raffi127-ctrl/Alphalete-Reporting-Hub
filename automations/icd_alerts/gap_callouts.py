@@ -576,11 +576,39 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
     return said
 
 
+# ONE COPY AT A TIME. On 2026-09-28 at 7:33pm the pace line landed FOUR times
+# in #highline-b2b-box-sales and four times in #southshore-d2d-sales, all in
+# the same minute: several poster runs overlapped, each asked Slack "is this
+# line already there?" before any of the others had posted, and each said no.
+# already_said() cannot see a message that does not exist yet, and the state
+# file cannot stop a race it is written from inside of. post.py has held a
+# pid lock since day one; this leg never did. An exclusive lock on one file,
+# held for the run: a second copy finds it taken and leaves without posting.
+LOCK_PATH = Path.home() / ".config" / "recruiting-report" / "icd_gap_callouts.lock"
+
+
+def _take_lock():
+    """The lock's open file handle, or None when another copy holds it."""
+    import fcntl
+    LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    fh = open(LOCK_PATH, "a+")
+    try:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        fh.close()
+        return None
+    return fh
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Lucy's hourly gap call-outs")
     ap.add_argument("--send", action="store_true")
     ap.add_argument("--office")
     args = ap.parse_args(argv)
+    lock = _take_lock()
+    if lock is None:
+        print("[callouts] another copy is running -- leaving without posting", flush=True)
+        return 0
     run(send=args.send, only=args.office)
     if not args.send:
         print("DRY RUN -- nothing posted, nothing remembered.")
