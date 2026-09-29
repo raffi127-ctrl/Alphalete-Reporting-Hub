@@ -4346,6 +4346,10 @@ _CRED_FILES = {
     # ~/.config, outside the repo, so `lucy update` never carries it.
     "fathom-creds":
         lambda: Path.home() / ".config" / "recruiting-report" / "fathom-creds.json",
+    # alphaletereporting's FULL-drive token (first_round_scorecards.drive_auth):
+    # the audit docs go in Rafael's folder, which the drive.file token can't see.
+    "drive-full-reporting-token":
+        lambda: Path.home() / ".config" / "recruiting-report" / "drive-full-reporting-token.json",
     # CARLOS's SaraPlus login, for the B2B Customer Contacts report on Lucy 2
     # (rc_contact_sync.config.creds). Deliberately NOT the key above: that one
     # is alphaletemarketing@gmail.com, a different dealer whose Detail Reports

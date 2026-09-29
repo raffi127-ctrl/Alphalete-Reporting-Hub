@@ -4,27 +4,27 @@ Same layout as the manual pilot's docs (Sep 22-24, Rafael's 9/24 feedback):
 plain full-width text, no tables -- header, scorecard + coaching, the red
 flags, the must-dos, then the applicants' questions.
 
-Drive: alphaletereporting's own Drive through the fiber_activations token
-(drive.file scope -- it only touches files it created). One folder
-'1st Round AI Audits', a subfolder per day ('2026-09-29'), one doc per
-interview. A re-run updates the doc in place, so the link already posted keeps
-working. SHARE_WITH gives those people read access to the top folder (the
-day folders and docs inherit it); nothing is ever shared with 'anyone with
-the link'.
+Drive (Eve, 2026-09-29): Rafael's folder "1st rd Transcribes", where the
+people who read them already have access -- so nothing is shared by code.
+Inside it, one folder per interviewer, then one per day, then one doc per
+interview:  1st rd Transcribes / Valentina / 2026-09-29 / <doc>.
+Interviewer first: the coaching is per person, and so are the Slack threads.
+(Camila's hand-uploaded transcripts, by date, sit next to them; the bot reads
+Fathom directly and doesn't use them.) A re-run updates the doc in place, so
+the link already posted keeps working. Written with its own full-drive token,
+see drive_auth.py.
 """
 from __future__ import annotations
 
 import html
 import io
 import re
-from typing import Dict, List
+from typing import Dict
 
 from automations.first_round_scorecards import fathom, grade
 
-FOLDER_NAME = "1st Round AI Audits"
 FOLDER_MIME = "application/vnd.google-apps.folder"
 DOC_MIME = "application/vnd.google-apps.document"
-SHARE_WITH: List[str] = []          # emails that get read access to the folder
 GREEN, RED, YELLOW = "#38761d", "#cc0000", "#bf9000"
 _TS = re.compile(r"@(\d{1,2}):(\d{2})(?::(\d{2}))?")
 
@@ -99,39 +99,31 @@ def doc_name(m: Dict, name: str) -> str:
     return f"{name} — {start:%b %d} {start.strftime('%I:%M %p').lstrip('0')} — 1st rd audit"
 
 
-def _service():
-    from googleapiclient.discovery import build
-    from automations.fiber_activations import drive_auth
-    return build("drive", "v3", credentials=drive_auth.load_credentials(), cache_discovery=False)
+def _q(text: str) -> str:
+    return text.replace("\\", "\\\\").replace("'", "\\'")
 
 
-def _folder(svc, name: str, parent: str = "") -> str:
-    q = f"name = '{name}' and mimeType = '{FOLDER_MIME}' and trashed = false"
-    if parent:
-        q += f" and '{parent}' in parents"
+def _folder(svc, name: str, parent: str) -> str:
+    q = (f"name = '{_q(name)}' and mimeType = '{FOLDER_MIME}' and trashed = false "
+         f"and '{parent}' in parents")
     found = svc.files().list(q=q, spaces="drive", fields="files(id)").execute().get("files", [])
     if found:
         return found[0]["id"]
-    body = {"name": name, "mimeType": FOLDER_MIME, **({"parents": [parent]} if parent else {})}
-    fid = svc.files().create(body=body, fields="id").execute()["id"]
-    if not parent:
-        for email in SHARE_WITH:
-            svc.permissions().create(fileId=fid, sendNotificationEmail=False,
-                                     body={"type": "user", "role": "reader",
-                                           "emailAddress": email}).execute()
-    return fid
+    return svc.files().create(body={"name": name, "mimeType": FOLDER_MIME, "parents": [parent]},
+                              fields="id").execute()["id"]
 
 
 def upload(m: Dict, name: str, result: Dict, svc=None) -> str:
     """Create (or update in place) the interview's doc -> its link."""
     from googleapiclient.http import MediaIoBaseUpload
-    svc = svc or _service()
-    top = _folder(svc, FOLDER_NAME)
-    day = _folder(svc, fathom.start_ct(m).date().isoformat(), top)
+    from automations.first_round_scorecards import drive_auth
+    svc = svc or drive_auth.service()
+    person = _folder(svc, name, drive_auth.AUDIT_FOLDER_ID)
+    day = _folder(svc, fathom.start_ct(m).date().isoformat(), person)
     title = doc_name(m, name)
     media = MediaIoBaseUpload(io.BytesIO(build_html(m, name, result).encode("utf-8")),
                               mimetype="text/html", resumable=False)
-    q = f"name = '{title.replace(chr(39), chr(92) + chr(39))}' and '{day}' in parents and trashed = false"
+    q = f"name = '{_q(title)}' and '{day}' in parents and trashed = false"
     existing = svc.files().list(q=q, spaces="drive", fields="files(id)").execute().get("files", [])
     if existing:
         fid = existing[0]["id"]
