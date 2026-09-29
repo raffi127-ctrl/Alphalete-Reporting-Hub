@@ -919,6 +919,33 @@
       "order": 38,
       "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
+    "quantum_fallback": {
+      "on_scheduler": true,
+      "_note": "ADDED 2026-09-29 (Eve). Nigel Marshall is moving from Quantum Fiber (Lumen) to AT&T Fiber. Runs right after the Monday ATT Focus Report: if the ATT run wrote New Internets > 0 on his tab for last week, AT&T fiber has started and nothing is touched; otherwise it writes New Internets + Active Headcount on Tableau from the Quantum tracker (RES-Quantum Fiber ICD Week Ending Sales / Headcount by ICD) with a cell note. Tabs live in quantum_fallback.TABS; drop Nigel from there once ATT fiber has fully taken over. Manual: lucy rerun quantum_fallback (dry) / --write.",
+      "display_name": "Focus — Quantum fallback while an ICD moves to AT&T Fiber",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.recruiting_report.quantum_fallback"
+      ],
+      "base_args": [
+        "--write"
+      ],
+      "cadence": {
+        "weekdays": [
+          0
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "after": [
+        "att_focus_raf"
+      ],
+      "verify": null,
+      "timeout_minutes": 30,
+      "order": 37.6
+    },
     "mobrium_list": {
       "on_scheduler": true,
       "_note": "Mobrium List (the review-request list) weekly upkeep, Fridays 10:00 CST. Removes reps who are gone and adds the week's new starts to the 'Mobrium List' tab of 'All in One Local Office - Raf' (the same workbook 'Terminated Reps' lives in). REMOVAL is decided by the 'Terminated Reps' tab plus this week's SALES BOARD, with two vetoes: a tracker note of FFP keeps them (Eve's rule), and so does a live OwnerVille roster entry when the termination is 7+ days old — that is a rehire (Tadana Manyangadze, terminated 5/29 and training new starts in August). The 7-day floor matters: OwnerVille lags a day or two behind a termination, so without it someone let go that morning reads as rehired (Karla Lopez, 2026-08-07). ADDITIONS come from the board's 'New Starts/Raf' box, and their Email AND Phone are read from OwnerVille's Sales Reps page (p=20) via its getRepList endpoint — the board's own email column drifts out of step with its names (on WE 8.9 'David Redmon' carried Carlo Ferrino's address), so it is used only for people OwnerVille has never heard of, and only when the address plausibly belongs to them. Anyone left without details is added anyway and named in the run output. New people are INSERTED in first-name order, not appended. Idempotent: a second pass the same day changes nothing. NEEDS A LIVE OWNERVILLE SESSION on the machine — it will not re-login unattended (Cloudflare), and it exits 1 rather than write rows with no phone numbers. base_args are '--real --i-mean-it' because this is the only report that DELETES rows a human maintains; the before-state is snapshotted to output/mobrium_list/ on every run, which is the only undo. depends_on terminated_reps so the day's terminations are already filed when this reads the tracker tab.",
