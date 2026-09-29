@@ -602,7 +602,6 @@
       "yellow": 75
     },
     "enrolled_reports": [
-      "knocks",
       "order_log",
       "cancels",
       "disconnects",
@@ -610,17 +609,16 @@
       "activations"
     ],
     "report_order": {
-      "knocks": 1,
-      "order_log": 2,
-      "cancels": 3,
-      "disconnects": 4,
-      "churn_wl": 5,
-      "activations": 6
+      "order_log": 1,
+      "cancels": 2,
+      "disconnects": 3,
+      "churn_wl": 4,
+      "activations": 5
     },
     "per_office_views": {},
     "machine": "Lucy 1",
     "campaign": "nds_d2d",
-    "notes": "wired by hand 2026-09-29 (Megan: 'Jairo also needs metrics and trackers set up to post'); NDS like khalil; ECO relay key jairo15; private #profitsmanagement-att-sales, Lucy a member. Sheet 'Jairo Ruiz - Metrics' copied from the Master Metrics Templates.",
+    "notes": "wired by hand 2026-09-29 (Megan: 'Jairo also needs metrics and trackers set up to post'); NDS like khalil; ECO relay key jairo15; private #profitsmanagement-att-sales, Lucy a member. Sheet 'Jairo Ruiz - Metrics' copied from the Master Metrics Templates. Knocks board held back 2026-09-29: the dry run had no knock data yet (installed that day); add 'knocks' back once his ECO relay shows knock rows. jairo_metrics switched on after the other five came back with data.",
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%"

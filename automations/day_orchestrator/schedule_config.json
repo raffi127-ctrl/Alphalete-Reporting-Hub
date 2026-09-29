@@ -12432,7 +12432,7 @@
     "jairo_metrics": {
       "order": 36.62,
       "machine": "Lucy 4",
-      "on_scheduler": false,
+      "on_scheduler": true,
       "display_name": "Jairo's Daily Metrics (profitsmanagement-att-sales)",
       "source_type": "tableau",
       "data_sources": [
@@ -12465,7 +12465,7 @@
         "type": "manifest",
         "report_id": "jairo_metrics"
       },
-      "_note": "Office metrics for jairo -> #profitsmanagement-att-sales (C0C67A2U0RW, private, Lucy a member). Wired by hand 2026-09-29 (no form). NDS/wireless office (campaign nds_d2d), same boards as khalil. on_scheduler stays false until a dry run on Lucy 1 comes back with data on every board -- Megan's rule: never a blank first post. Sheet 'Jairo Ruiz - Metrics' 1sLTMK4BFzAzKxwUzi-x7NPDiWCYd4yEKXZrIrZ5CI9w copied from the Master Metrics Templates.",
+      "_note": "Office metrics for jairo -> #profitsmanagement-att-sales (C0C67A2U0RW, private, Lucy a member). Wired by hand 2026-09-29 (no form). NDS/wireless office (campaign nds_d2d), same boards as khalil. SWITCHED ON 2026-09-29 17:55 after a dry run (rerun-2026-09-29-174639) came back with data on five boards; the knocks board is held back until his relay shows knock rows. Megan's rule held: never a blank first post. Sheet 'Jairo Ruiz - Metrics' 1sLTMK4BFzAzKxwUzi-x7NPDiWCYd4yEKXZrIrZ5CI9w copied from the Master Metrics Templates.",
       "_onboarded": true
     },
     "jacob_metrics": {
