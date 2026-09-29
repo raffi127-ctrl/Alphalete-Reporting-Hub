@@ -67,7 +67,15 @@ HOURLY: dict = {"trang": "C07QS80KJL8"}
 # His knock counts / Talk-To / Sale columns stay blank — ownerville has no
 # Disposition page for a wireless office — but First/Last Knock, Gaps and Total
 # Gaps are all real. [[project_isaiah_legacy_wireless]]
-BLOCKED: dict = {}
+BLOCKED: dict = {
+    # drew came BACK into office_metrics.OFFICES on 2026-09-28, which enrolled
+    # him in the 9 PM slot automatically. His first night failed: his
+    # knocks_office alias resolves to office NUMBER '22583', which ownerville's
+    # Office Access search can't find. Beyond that, Megan the same day: he
+    # "does not disposition in OwnerVille, so there are no knocks to draw"
+    # (office_metrics.SECTION_OVERRIDES drops his Time Gaps for that reason).
+    "drew": "no OwnerVille dispositions (Megan 2026-09-28) — nothing to draw",
+}
 
 # RAF IS NOT IN office_metrics.OFFICES, and that is not an oversight to fix
 # there. His local office was folded onto the shared office-metrics CARD in July
