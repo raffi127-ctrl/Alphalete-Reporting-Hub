@@ -253,6 +253,13 @@ _RETIRED: frozenset = frozenset({
     "carlos_captainship_headcount_mon",
     "carlos-bonus-projection",
     "carlos_bonus_projection",
+    # Car-Rides Cleanup. Carlos, 2026-09-29: "can we turn it off for now
+    # please". PAUSED, not deleted: the Lucy 2 LaunchAgent was removed via
+    # `lucy rerun install_car_rides_agent --remove`; cadence weekdays [] in
+    # schedule_config. Revive = `rerun install_car_rides_agent` + take these
+    # out + restore weekdays 0-5.
+    "car-rides",
+    "car_rides",
 })
 
 

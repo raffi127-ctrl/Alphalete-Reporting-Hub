@@ -1635,14 +1635,7 @@
       ],
       "base_args": [],
       "cadence": {
-        "weekdays": [
-          0,
-          1,
-          2,
-          3,
-          4,
-          5
-        ],
+        "weekdays": [],
         "not_before": "08:30"
       },
       "priority": "P3",
