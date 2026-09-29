@@ -16,8 +16,8 @@ WHAT THIS FILLS and what it deliberately does not:
     New Start Retention         alive / started, blank when none started
 
     New INTS .. Total Apps      the team's own sales, summed from the board
-    App AVG per rep             left to the SHEET's formula, not computed here
-    New INT AVG per rep         same
+    App AVG per rep             computed here (Megan 2026-09-28: "you can
+    New INT AVG per rep         calculate the avg and remove the formulas")
     New INT / Wireless / App Goal   left alone — these are targets somebody
                                 sets, not numbers to derive
 
@@ -54,9 +54,8 @@ OWNER = {
     "New Starts alive?":   "ns_alive",
     "New Start Retention": "ns_retention",
 }
-# Never written: goals are set by a human, averages are the sheet's own formulas.
-LEAVE_ALONE = {"new int goal", "wireless goal", "app goal",
-               "app avg per rep", "new int avg per rep"}
+# Never written: goals are targets a human sets, not numbers to derive.
+LEAVE_ALONE = {"new int goal", "wireless goal", "app goal"}
 
 WEEK_ONE = ("in training", "1st wk")
 
@@ -83,7 +82,7 @@ def _is_week_one(level: str) -> bool:
     return any(w in lv for w in WEEK_ONE)
 
 
-def sales_totals(member_names, wsales) -> Dict[str, str]:
+def sales_totals(member_names, wsales, active_reps: int = 0) -> Dict[str, str]:
     """The team's own products for one week: {1on1 row label: value}.
 
     Summed over the members that week's board actually has a row for. A member
@@ -107,6 +106,24 @@ def sales_totals(member_names, wsales) -> Dict[str, str]:
         if got:
             tot = sum(got)
             out[label] = str(int(tot)) if abs(tot - round(tot)) < 1e-9 else f"{tot:.1f}"
+
+    # PER-REP AVERAGES, computed rather than left to the sheet's formulas
+    # (Megan 2026-09-28). They divide by ACTIVE REPS — week ones excluded, per
+    # Raf — because that is the denominator the row beside them reports. No
+    # active reps means no average: a division with no denominator is blank,
+    # never 0, which would read as "the team averaged nothing".
+    # [[feedback_dont_explain_away_a_zero]]
+    def _avg(total_label: str, out_label: str):
+        if not active_reps or total_label not in out:
+            return
+        try:
+            v = float(out[total_label]) / active_reps
+        except (TypeError, ValueError, ZeroDivisionError):
+            return
+        out[out_label] = str(int(v)) if abs(v - round(v)) < 1e-9 else f"{v:.1f}"
+
+    _avg("Total Apps", "App AVG per rep")
+    _avg("New INTS", "New INT AVG per rep")
     return out
 
 

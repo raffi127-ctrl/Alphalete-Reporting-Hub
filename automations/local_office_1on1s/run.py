@@ -191,7 +191,7 @@ def main(argv=None) -> int:
                 wsales = weekly.get(wk, (None, None))[0]
                 if wsales is not None:
                     live = [m.name for m in rw.members if not m.terminated]
-                    cells.update(TB.sales_totals(live, wsales))
+                    cells.update(TB.sales_totals(live, wsales, rw.active_reps))
                 if owner_at is None:
                     continue
                 for label, value in cells.items():

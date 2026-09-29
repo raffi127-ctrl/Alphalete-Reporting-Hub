@@ -90,6 +90,11 @@ OWNED = [
     "Trained This week?", "Retained?",
     # 5. Finances — the one money row with a source
     "Gross Paycheck last week?",
+    # the Owner 1on1's roll-up, including the two per-rep averages that used
+    # to be sheet formulas
+    "Team Structure - All", "Team Structure - Leaders", "Active Reps",
+    "Leaders", "New Starts started", "New Starts alive?", "New Start Retention",
+    "New INTS", "App AVG per rep", "New INT AVG per rep",
 ]
 
 # Never written by this report.
