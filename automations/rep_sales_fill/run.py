@@ -241,6 +241,10 @@ def pull(sunday: dt.date, rep: str, dest: Path, sheet: str,
     return download_crosstab_patchright(url, sheet, dest, verbose=True)
 
 
+class EmptyOrderLog(RuntimeError):
+    """Tableau answered 200 with an empty body: no row at all in the window."""
+
+
 def pull_order_log(start: dt.date, end: dt.date, dest: Path) -> Path:
     """Download the D2D ORDER LOG as a DIRECT .csv through real Chrome.
 
@@ -275,7 +279,11 @@ def pull_order_log(start: dt.date, end: dt.date, dest: Path) -> Path:
                 r = page.context.request.get(url, timeout=300_000)
                 body = r.body() or b""
                 _log(f"  [csv] status={r.status} bytes={len(body):,}")
-                if r.status != 200 or len(body) < 200:
+                if r.status == 200 and len(body) < 200:
+                    raise EmptyOrderLog(
+                        f"order-log export vacio: status={r.status} "
+                        f"bytes={len(body)}")
+                if r.status != 200:
                     raise RuntimeError(
                         f"order-log export fallo: status={r.status} "
                         f"bytes={len(body)}")
@@ -501,8 +509,22 @@ def run_rt(a, day: dt.date, sunday: dt.date, names=None) -> int:
         src = Path(a.from_file)
         _log(f"  leyendo {src} (offline)")
     else:
-        src = pull_order_log(monday, sunday,
-                             OUT_DIR / f"orderlog_{sunday.isoformat()}.csv")
+        try:
+            src = pull_order_log(monday, sunday,
+                                 OUT_DIR / f"orderlog_{sunday.isoformat()}.csv")
+        except EmptyOrderLog as exc:
+            # Tuesday 2026-09-29, 04:07-06:08: three runs closing MONDAY got a
+            # 1-byte export and died as "didn't finish". Nothing was broken --
+            # the window is Mon..Sun and Monday is its only day with data, so
+            # before Tableau publishes Monday the whole week is legitimately
+            # empty. Same thing as the no-sale-dated-day hold below. Any other
+            # closing day has earlier days in the window, so empty there is a
+            # real break and keeps failing loudly.
+            if day != monday:
+                raise
+            _log(f"  !! {exc} -- the week has no sale yet; Tableau has not "
+                 f"published {day.isoformat()}. HOLDING, nothing written.")
+            return 75
 
     # HAS TABLEAU PUBLISHED THE DAY? Judged on the whole log, not on one rep:
     # a road-trip rep with nothing that day is normal. Sunday is exempt -- the
