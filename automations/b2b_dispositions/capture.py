@@ -548,7 +548,7 @@ def capture_time_tracker(page, rqst: str, campaign: str,
     render_gap_card(over, out)
     return {"view": "time_tracker", "campaign": campaign, "tag": tag,
             "path": out, "how": "rendered", "campaign_ok": True,
-            "on_screen": campaign, "count": len(over)}
+            "on_screen": campaign, "count": len(over), "over": over}
 
 
 def _int(v) -> int:

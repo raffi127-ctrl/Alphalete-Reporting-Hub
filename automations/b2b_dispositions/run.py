@@ -92,41 +92,51 @@ def _capture_hourly(page, rqst: str, out_dir: Path, slot: str,
              "by_campaign": by_campaign, "meta": {"note": " ".join(notes)}}]
 
 
+def gaps_text(over: List[Dict], tag: str, slot: str) -> str:
+    """BOX-3 as TYPED TEXT, the same shape as the fiber team's gap text
+    (Carlos 2026-09-29: "i want it to come in typed out like the fib one",
+    "i dont want the screenshot for it"). Longest gap first -- the person who
+    has been dark longest is the point of the message."""
+    lines = []
+    for r in sorted(over, key=lambda r: (-cap._int(r.get("minutesSinceLastKnock")),
+                                         (r.get("name") or "").strip().lower())):
+        name = (r.get("name") or "").strip()
+        if name:
+            lines.append("%s - %d min" % (name, cap._int(r.get("minutesSinceLastKnock"))))
+    if not lines:
+        return ""
+    return "%s 15 min gaps — %s\n\n%s" % (tag, (slot or "").replace(":00", ""), "\n".join(lines))
+
+
 def _capture_gaps(page, rqst: str, out_dir: Path, slot: str,
                   dry_run: bool, today: dt.date) -> List[Dict]:
-    """BOX-3: the Reps Over 15 Min Gap card for cfg.HOURLY_CAMPAIGNS, into the
-    day's "Box 15 Min Gaps" thread and (with --text) the Box B2B group.
+    """BOX-3: who is over 15 minutes since their last knock, for
+    cfg.HOURLY_CAMPAIGNS, TYPED OUT (no picture) into the day's "Box 15 Min
+    Gaps" thread and (with --text) the Box B2B group.
 
-    NEVER AN EMPTY CARD. Nobody over 15 minutes is good news, not news -- a
-    "no reps over 15 min gap" picture every two hours is how a room learns to
-    mute the alert that matters [[feedback_never_post_blank]]."""
-    paths, notes = [], []
+    NEVER AN EMPTY MESSAGE. Nobody over 15 minutes is good news, not news
+    [[feedback_never_post_blank]]."""
+    texts, notes = [], []
     by_campaign: Dict[str, List] = {}
     for campaign in cfg.HOURLY_CAMPAIGNS:
         cap.ensure_campaign(page, rqst, campaign)  # sticky global — flip it first
         tt = cap.capture_time_tracker(page, rqst, campaign, out_dir, dump=dry_run)
         tag = cfg.CAMPAIGN_TAG[campaign]
-        notes.append(f"{tag}[TT:{tt.get('how')} over={tt.get('count')} "
-                     f"camp_ok={tt.get('campaign_ok')}]")
-        if not tt.get("count"):
-            print(f"  {tag}: nobody over 15 min — no gaps card this run",
+        notes.append(f"{tag}[over={tt.get('count')}]")
+        body = gaps_text(tt.get("over") or [], tag, slot)
+        if not body:
+            print(f"  {tag}: nobody over 15 min — no gaps message this run",
                   flush=True)
             continue
-        card = out_dir / f"gaps_{cap._slug(tag)}.png"
-        try:
-            cap.add_title_header(tt["path"], f"{tag} 15 Min Gaps — {slot}", card)
-        except Exception as e:  # noqa: BLE001
-            print(f"  {tag} title failed ({type(e).__name__}) — raw card",
-                  flush=True)
-            card = tt["path"]
-        paths.append(card)
-        by_campaign[campaign] = [card]
-    if not paths:
+        texts.append(body)
+        by_campaign[campaign] = []
+    if not texts:
         return []
     title = sp.thread_title(cfg.THREAD_GAPS, slot, today)
-    return [{"title": title, "paths": paths, "kind": cfg.POST_GAPS,
-             "slot": slot, "daily_thread": cfg.THREAD_GAPS,
-             "by_campaign": by_campaign, "meta": {"note": " ".join(notes)}}]
+    return [{"title": title, "paths": [], "text": "\n\n".join(texts),
+             "kind": cfg.POST_GAPS, "slot": slot,
+             "daily_thread": cfg.THREAD_GAPS, "by_campaign": by_campaign,
+             "meta": {"note": " ".join(notes)}}]
 
 
 def _capture_dispositions(page, rqst: str, out_dir: Path,
@@ -178,7 +188,11 @@ def _post_specs(specs: List[Dict], today: dt.date, dry_run: bool,
     --repost."""
     out = []
     for s in specs:
-        if s.get("daily_thread") and not repost:
+        if s.get("text") and not s.get("paths"):
+            out.append(sp.post_daily_thread_text(
+                s["daily_thread"], s.get("slot", ""), s["text"], today,
+                dry_run=dry_run))
+        elif s.get("daily_thread") and not repost:
             out.append(sp.post_daily_thread(
                 s["daily_thread"], s.get("slot", ""), s["paths"], today,
                 dry_run=dry_run))

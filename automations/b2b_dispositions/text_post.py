@@ -452,7 +452,13 @@ def send_specs(specs: List[Dict], *, dry_run: bool = True) -> Dict:
             # rest — they're independent audiences.
             for group in groups:
                 try:
-                    res = send_to_group(group, title, paths, dry_run=dry_run)
+                    if spec.get("text") and not paths:
+                        # TYPED, no picture (BOX-3 gaps list, 2026-09-29).
+                        res = send_to_group(group, spec["text"], [],
+                                            dry_run=dry_run,
+                                            allow_textonly=True)
+                    else:
+                        res = send_to_group(group, title, paths, dry_run=dry_run)
                     res["campaign"] = campaign
                     res["kind"] = kind
                     sent.append(res)
@@ -495,6 +501,7 @@ def write_manifest(spec: Dict, out_dir, slot: str):
     payload = {
         "kind": spec.get("kind"),
         "title": spec.get("title"),
+        "text": spec.get("text") or "",
         "slot": slot,
         "by_campaign": {c: [str(x) for x in paths]
                         for c, paths in (spec.get("by_campaign") or {}).items()},
@@ -521,6 +528,7 @@ def send_manifest(path, *, dry_run: bool = True) -> Dict:
                 "ok": True, "sent": [], "errors": [], "skipped_routes": []}
     data = json.loads(p.read_text(encoding="utf-8"))
     spec = {"kind": data.get("kind"), "title": data.get("title"),
+            "text": data.get("text") or "",
             "by_campaign": data.get("by_campaign") or {}}
     res = send_specs([spec], dry_run=dry_run)
     if res.get("ok") and not dry_run:

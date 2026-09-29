@@ -109,7 +109,12 @@ def _reply_exists(client, channel: str, parent_ts: str, caption: str) -> bool:
     for m in resp.get("messages", []):
         if m.get("ts") == parent_ts:
             continue
-        if caption and caption in (m.get("text") or ""):
+        # THE CAPTION STARTS THE REPLY, so match the start: "2 PM" is a
+        # substring of "12 PM", which skipped the 2pm post once the noon one
+        # was in the thread (found 2026-09-29).
+        txt = (m.get("text") or "").strip()
+        if caption and (txt == caption or txt.startswith(caption + " ")
+                        or txt.startswith(caption + "\n")):
             return True
     return False
 
@@ -146,7 +151,12 @@ def _reply_exists(client, channel: str, parent_ts: str, caption: str) -> bool:
     for m in resp.get("messages", []):
         if m.get("ts") == parent_ts:
             continue
-        if caption and caption in (m.get("text") or ""):
+        # THE CAPTION STARTS THE REPLY, so match the start: "2 PM" is a
+        # substring of "12 PM", which skipped the 2pm post once the noon one
+        # was in the thread (found 2026-09-29).
+        txt = (m.get("text") or "").strip()
+        if caption and (txt == caption or txt.startswith(caption + " ")
+                        or txt.startswith(caption + "\n")):
             return True
     return False
 
@@ -379,6 +389,47 @@ def post_thread(title: str, paths: List, today: Optional[dt.date] = None, *,
             results.append({"channel": clabel, "ts": ts,
                             "ok": up_ok,
                             "mode": "repost" if repost else "new"})
+        except Exception as e:  # noqa: BLE001
+            results.append({"channel": clabel, "ok": False,
+                            "error": f"{type(e).__name__}: {str(e)[:140]}"})
+    return {"title": title, "ok": all(r.get("ok") for r in results),
+            "channels": results}
+
+
+def post_daily_thread_text(prefix: str, slot: str, body: str,
+                           today: Optional[dt.date] = None, *,
+                           dry_run: bool = False,
+                           channels: Optional[List[str]] = None,
+                           mentions: Optional[List[str]] = None) -> Dict:
+    """post_daily_thread for a TYPED reply instead of images (BOX-3, the Box
+    15-min gaps list, Carlos 2026-09-29). Same dated parent, same slot caption
+    and tags, same once-per-slot idempotency."""
+    today = today or dt.date.today()
+    channels = channels or cfg.CHANNELS
+    mentions = cfg.SLACK_MENTION_USERS if mentions is None else mentions
+    title = day_title(prefix, today)
+    caption = reply_caption(slot, mentions)
+    slot_key = (slot or "").replace(":00", "")
+    text = caption + "\n\n" + body
+    if dry_run:
+        return {"dry_run": True, "title": title, "text": text,
+                "channels": [cfg.CHANNEL_LABEL.get(c, c) for c in channels]}
+    client = smp._client()
+    results = []
+    for channel in channels:
+        clabel = cfg.CHANNEL_LABEL.get(channel, channel)
+        try:
+            ts = _find_parent_ts(client, channel, title, today)
+            if ts is None:
+                ts = client.chat_postMessage(channel=channel,
+                                             text=f"*{title}*").get("ts")
+            elif _reply_exists(client, channel, ts, slot_key):
+                results.append({"channel": clabel, "skipped": True, "ok": True})
+                continue
+            resp = client.chat_postMessage(channel=channel, text=text,
+                                           thread_ts=ts)
+            results.append({"channel": clabel, "ts": ts,
+                            "ok": resp.get("ok", True)})
         except Exception as e:  # noqa: BLE001
             results.append({"channel": clabel, "ok": False,
                             "error": f"{type(e).__name__}: {str(e)[:140]}"})
