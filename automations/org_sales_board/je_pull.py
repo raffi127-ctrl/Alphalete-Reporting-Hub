@@ -331,11 +331,13 @@ def _drive_week_selection(label: str, verbose: bool = False):
         return bool(_weeks(viz))
 
     def pre_export(page, viz):
+        pre_export.left_view_week = False   # reset: the download retry re-runs us
         tbox, cur = _find_box(page, viz)
         if tbox is None:
             if verbose:
                 print("  [je] ⚠ 'Sales Week Ending' dropdown not found — "
                       "leaving whatever week the view shows")
+            pre_export.left_view_week = True
             return
         if cur == label:
             return   # already on the target week
@@ -356,6 +358,7 @@ def _drive_week_selection(label: str, verbose: bool = False):
                 print(f"  [je] ⚠ no week options under {cur!r} — not touching "
                       "it; leaving the view's own week")
             _close_dropdown(page, viz)
+            pre_export.left_view_week = True
             return
         if label not in [w for w, _ in weeks]:
             # JE hasn't posted this week yet — nothing to select. Close + bail;
@@ -364,6 +367,7 @@ def _drive_week_selection(label: str, verbose: bool = False):
                 print(f"  [je] week {label} not in the dropdown yet "
                       "(JE hasn't posted it) — leaving selection unchanged")
             _close_dropdown(page, viz)
+            pre_export.left_view_week = True
             return
 
         _only(page, viz, label)    # fast path; the loop below verifies it
@@ -422,6 +426,7 @@ def _drive_week_selection(label: str, verbose: bool = False):
                 f"ticked weeks: {', '.join(ticked or ['(none)'])} "
                 f"(of {len(weeks)} week option(s))")
 
+    pre_export.left_view_week = False
     return pre_export
 
 
@@ -432,10 +437,16 @@ def fetch(out_path: Optional[Path] = None, verbose: bool = False, page=None,
     view's pinned week is unreliable — see module docstring)."""
     out_path = out_path or Path(tempfile.gettempdir()) / "je_daily_sales.csv"
     label = _week_label(today or dt.date.today())
+    hook = _drive_week_selection(label, verbose)
     download_crosstab_patchright(CV_URL, WORKSHEET, out_path, verbose=verbose,
-                                 page=page,
-                                 pre_export=_drive_week_selection(label, verbose))
-    _check_one_week(out_path, label)
+                                 page=page, pre_export=hook)
+    # When the hook LEFT the view on its own week (JE hasn't posted this week —
+    # every Tuesday — or the filter card wasn't there), the crosstab is SUPPOSED
+    # to show another week: parse() flags it not-current and the adapter fills
+    # nothing. Checking it here raised instead and dropped Retail JE on
+    # Tue 2026-09-29 ("shows week(s) 7/5/2026, expected only 10/4/2026").
+    if not hook.left_view_week:
+        _check_one_week(out_path, label)
     return out_path
 
 

@@ -401,6 +401,38 @@ class WeekSelectionTest(unittest.TestCase):
             _drive(f)
 
 
+class UnpostedWeekFetchTest(unittest.TestCase):
+    """Tue 2026-09-29: JE hadn't posted WE 10/4, the hook left the view on its
+    own (old) week as designed, and fetch()'s one-week check then raised —
+    Retail JE dropped every Tuesday. An unposted week must reach parse(),
+    which flags it not-current so nothing is written."""
+
+    def test_hook_flags_that_it_left_the_view_week(self):
+        f = FakeFilter(WEEKS[:-1], ["8/9/2026"])     # target not posted yet
+        hook = je_pull._drive_week_selection(TARGET)
+        hook(FakePage(f), f)
+        self.assertTrue(hook.left_view_week)
+
+    def test_hook_does_not_flag_a_week_it_drove(self):
+        f = FakeFilter(WEEKS, ["8/9/2026"])
+        hook = je_pull._drive_week_selection(TARGET)
+        hook(FakePage(f), f)
+        self.assertFalse(hook.left_view_week)
+
+    def test_fetch_skips_the_check_when_the_week_is_unposted(self):
+        from unittest import mock
+        f = FakeFilter(WEEKS[:-1], ["8/9/2026"])
+
+        def fake_download(url, sheet, out, verbose=False, page=None,
+                          pre_export=None):
+            pre_export(FakePage(f), f)
+
+        with mock.patch.object(je_pull, "download_crosstab_patchright",
+                               fake_download),              mock.patch.object(je_pull, "_week_label", return_value=TARGET),              mock.patch.object(je_pull, "_check_one_week") as check:
+            je_pull.fetch(page=object())
+        check.assert_not_called()
+
+
 class CheckOneWeekTest(unittest.TestCase):
     """The crosstab is the verdict when the combobox text can't be trusted."""
 

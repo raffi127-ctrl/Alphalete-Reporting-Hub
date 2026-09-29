@@ -394,6 +394,22 @@ def is_empty_crosstab_dialog(err: BaseException) -> bool:
     return all(t.lower().startswith(NON_DATA_THUMBS) for t in thumbs)
 
 
+def is_missing_sheet_dialog(err: BaseException) -> bool:
+    """True for ANY "couldn't find <sheet> in the Crosstab dialog — saw N
+    thumb(s)" failure, whatever the dialog listed.
+
+    Only meaningful next to empty_week_expected(). BoxDailyTracker keeps its
+    sibling sheets ('Current vs Prior Weeks', 'Daily Tracker Metrics (Churn)',
+    'Latest Update', …) rendered on an empty week, so the dialog listed 5 of
+    them and no 'Daily Tracker Sales' on Tue 2026-09-29 — not the 0 thumbs of
+    August. From the dialog alone that is indistinguishable from a rename (the
+    week pin is a URL param Tableau ignores silently when its caption changes).
+    It doesn't need to be told apart: on a Tuesday morning BOX is blank on the
+    board either way, and the 14:30 catchup — past CATCHUP_HHMM — still fails
+    loudly on it. So the only thing this changes is WHEN a rename alerts."""
+    return _thumbs_listed(str(err)) is not None
+
+
 def empty_week_expected(spec: ScrapeSpec, today: Optional[dt.date] = None,
                         now: Optional[dt.datetime] = None) -> bool:
     """True when `spec`'s pinned week CANNOT have data yet, so an empty view is

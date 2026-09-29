@@ -152,14 +152,20 @@ def _make_section_adapter(spec_key: str):
                 # when their week isn't posted. Anything else (a dialog that
                 # listed OTHER sheets, any other error, or an empty one past
                 # noon) still raises and is reported as a dropped section.
-                if not (section_pull.is_empty_crosstab_dialog(e)
-                        and section_pull.empty_week_expected(spec, today)):
+                # A dialog listing only the OTHER sheets (Tue 2026-09-29:
+                # 5 BOX siblings) is the same wait during that window — see
+                # section_pull.is_missing_sheet_dialog.
+                if not (section_pull.empty_week_expected(spec, today)
+                        and (section_pull.is_empty_crosstab_dialog(e)
+                             or section_pull.is_missing_sheet_dialog(e))):
                     raise
                 ctx.logfn(
                     f"  ⚠ {spec.section_label} hasn't published this week yet "
                     f"(day behind) — the pinned view is empty, so Tableau's "
-                    f"Crosstab dialog lists no sheets. Not filling it; the "
-                    f"14:30 board-catchup pulls it. Self-heals.")
+                    f"Crosstab dialog has no {spec.crosstab_sheet!r}. Not "
+                    f"filling it; the 14:30 board-catchup pulls it (and fails "
+                    f"loudly if it's still missing then). Dialog said: "
+                    f"{str(e)[:300]}")
                 return {}
         # The ICD sales-board site needs SETTLED per-day numbers, and this
         # pull already has them — the fiber crosstab is one row per owner per

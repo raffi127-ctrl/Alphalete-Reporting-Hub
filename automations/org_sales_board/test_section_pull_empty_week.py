@@ -46,6 +46,30 @@ class EmptyDialogTest(unittest.TestCase):
         self.assertFalse(sp.is_empty_crosstab_dialog(RENAMED))
 
 
+SIBLINGS_ONLY = RuntimeError(
+    "Couldn't find the 'Daily Tracker Sales' sheet in the Crosstab dialog — "
+    "saw 5 thumb(s): ['Current vs Prior Weeks', 'Daily Tracker Metrics "
+    "(Churn)', 'Latest Update', 'Daily Tracker Metrics', 'Weekly Totals']. "
+    "The view may have changed.")
+
+
+class MissingSheetDialogTest(unittest.TestCase):
+    """Tue 2026-09-29: the empty BOX week listed 5 sibling sheets, not 0."""
+
+    def test_siblings_only_dialog_is_a_missing_sheet(self):
+        self.assertTrue(sp.is_missing_sheet_dialog(SIBLINGS_ONLY))
+        self.assertTrue(sp.is_missing_sheet_dialog(EMPTY))
+
+    def test_siblings_only_is_still_not_an_empty_viz(self):
+        # The narrow check is unchanged — the widening is gated on
+        # empty_week_expected() in the adapter, not here.
+        self.assertFalse(sp.is_empty_crosstab_dialog(SIBLINGS_ONLY))
+
+    def test_other_errors_are_not_a_missing_sheet(self):
+        self.assertFalse(sp.is_missing_sheet_dialog(
+            RuntimeError("Timeout 30000ms exceeded")))
+
+
 class EmptyWeekExpectedTest(unittest.TestCase):
     def test_tuesday_morning_box_is_a_wait(self):
         self.assertTrue(
