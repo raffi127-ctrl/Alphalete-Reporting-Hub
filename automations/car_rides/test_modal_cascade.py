@@ -274,3 +274,13 @@ class TheRowClickLandsOnTheName(unittest.TestCase):
         import inspect
         src = inspect.getsource(run._territory_row)
         self.assertIn("span.territory-option", src)
+
+
+class ARepMissingFromTheRosterIsSkippedNotFailed(unittest.TestCase):
+    """2026-09-29 11:00: 'Eduardo Alvarez' matched 0 of 17 options — the full,
+    unfiltered roster — so the whole `rodolfo` edit failed and never saved."""
+
+    def test_zero_hits_takes_the_skip_path(self):
+        import inspect
+        src = inspect.getsource(run.apply_edit)
+        self.assertIn("_not_offered(texts) or not hits", src)

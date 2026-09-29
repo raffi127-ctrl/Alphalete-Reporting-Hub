@@ -761,7 +761,11 @@ def apply_edit(page, edit: dict, log=_log, not_on_roster: list | None = None) ->
                 ".select2-container--open .select2-results__option")
             texts = [opts.nth(i).inner_text().strip()
                      for i in range(min(opts.count(), 20))]
-            if _not_offered(texts):
+            hits = _pick_option(rep, texts)
+            # Zero hits is also "not offered": the 2nd add in an edit can come
+            # back with the WHOLE roster unfiltered (17 names, 9/29 11:00) and
+            # the rep simply isn't in it. Skipping adds nobody, so it's safe.
+            if _not_offered(texts) or not hits:
                 log(f"  {rep!r} is not on OwnerVille's roster for this "
                     "campaign — skipped (Carlos adds them in OwnerVille)")
                 if not_on_roster is not None:
@@ -769,7 +773,6 @@ def apply_edit(page, edit: dict, log=_log, not_on_roster: list | None = None) ->
                 page.keyboard.press("Escape")    # close the dropdown only
                 page.wait_for_timeout(500)
                 continue
-            hits = _pick_option(rep, texts)
             if len(hits) != 1:
                 raise RuntimeError(
                     "{!r} matched {} of {} option(s) in Assigned Sales Rep(s) "
