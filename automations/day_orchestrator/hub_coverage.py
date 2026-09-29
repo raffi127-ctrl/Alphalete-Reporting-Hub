@@ -95,6 +95,10 @@ def slug(report_id: str) -> str:
 # sync() recreates them. jiraiya_bot is deliberately NOT here (Megan wants the /dd
 # + promo listener visible as a card). Swept 2026-08-02. [[reference_hub_card_rendering_rules]]
 _NOT_A_REPORT = frozenset({
+    # Local Office 1on1s knock backfill (2026-09-29): scheduled Sun+Mon only
+    # because local_1on1s_fill depends_on it. It fills a cache, nothing a
+    # person reads; its runs belong to the 1on1s fill, not a card of its own.
+    "local_1on1s_knock_backfill",
     # background machinery (not a report anyone runs)
     "day_orchestrator", "card_scheduler", "session_holder", "keep_awake",
     "mini_control", "board_probe", "orchestrator_schedule_guard", "lucy2_digest",

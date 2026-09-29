@@ -225,9 +225,9 @@
       "_note": "Sunday AND Monday, which is what Raf asked for in the Loom: \"I would like it to be filled out on Sunday morning with the data as of Sunday morning. And then it can also be filled out again Monday because sometimes the reps do sales on Sunday.\" Same cells both days, not a second post. IT RUNS HERE RATHER THAN ON A LAPTOP because the knock block's best source is shared.knock_week_cache, which is written by local_1on1s_knock_backfill on whichever machine holds the ownerville session \u2014 running the fill anywhere else silently falls back to the sales board, which carries no knock TIMES and nothing before ~WE 9/6. Writes only the five team tabs of \"1on1's - Local Office - Rafs\"; no Slack, no email. Every manual row (all of 4. Culture / Atmo / HTP, What are we going to do better?, BreakEven, Money Saved?, Goal / Focus) is left alone, and a cell with no source is left blank rather than zeroed."
     },
     "local_1on1s_knock_backfill": {
-      "on_scheduler": false,
+      "on_scheduler": true,
       "machine": "Lucy 1",
-      "display_name": "Local Office 1on1s \u2014 OwnerVille knock backfill (manual)",
+      "display_name": "Local Office 1on1s \u2014 OwnerVille knock backfill",
       "source_type": "ownerville",
       "data_sources": [],
       "command": [
@@ -238,16 +238,19 @@
         "9"
       ],
       "cadence": {
-        "weekdays": []
+        "weekdays": [
+          6,
+          0
+        ]
       },
-      "order": null,
+      "order": 37.4,
       "priority": "P4",
       "freshness_target": null,
       "depends_on": [],
       "timeout_minutes": 120,
       "verify": null,
       "close_on": "exit_zero",
-      "_note": "MANUAL ONLY (weekdays [] = never scheduled). Fills shared.knock_week_cache for Rafael Hidalgo so the Local Office 1on1s knocking block can be filled. READ-ONLY apart from the cache: no Sheet, no Slack, no email, and a week already cached at the current schema is skipped, so re-running is free. It has to run HERE rather than on a laptop: .ownerville_storage_state.json only ages on a machine with no session holder (15 days stale on Megan's Mac, 2026-09-28) and tableau_patchright says reseeding it by hand is not the fix. Budget ~12 ownerville round trips per week \u2014 six single-day Disposition pulls plus six Time Tracker calls \u2014 because the ranged view's First/Last Knock are the window's first and most recent timestamps, not averages, so only the per-day loop yields a true daily average. The board cannot replace this: 'Sales Board WE 8.2'/'8.16'/'8.30' carry no TK or Talk-To's columns at all, and no board tab carries knock TIMES."
+      "_note": "SCHEDULED Sun+Mon right before local_1on1s_fill (order 37.4 < 37.5), which depends_on it (2026-09-29: it used to be manual-only, so the orchestrator flagged that dependency as one that can never be satisfied and the fill would BLOCK). Only the newest completed Mon-Sat week is actually pulled; every older week is already cached and skipped, and Monday's run finds Sunday's pull cached and is a no-op. Still hand-runnable with `lucy rerun local_1on1s_knock_backfill`. Fills shared.knock_week_cache for Rafael Hidalgo so the Local Office 1on1s knocking block can be filled. READ-ONLY apart from the cache: no Sheet, no Slack, no email, and a week already cached at the current schema is skipped, so re-running is free. It has to run HERE rather than on a laptop: .ownerville_storage_state.json only ages on a machine with no session holder (15 days stale on Megan's Mac, 2026-09-28) and tableau_patchright says reseeding it by hand is not the fix. Budget ~12 ownerville round trips per week \u2014 six single-day Disposition pulls plus six Time Tracker calls \u2014 because the ranged view's First/Last Knock are the window's first and most recent timestamps, not averages, so only the per-day loop yields a true daily average. The board cannot replace this: 'Sales Board WE 8.2'/'8.16'/'8.30' carry no TK or Talk-To's columns at all, and no board tab carries knock TIMES."
     },
     "imessage_identity_probe": {
       "on_scheduler": false,
