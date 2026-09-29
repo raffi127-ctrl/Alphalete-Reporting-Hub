@@ -74,6 +74,22 @@ class TheHold(_Quiet):
                              today=TODAY, poster=self.poster)
         self.assertEqual((rc, self.posted), (75, []))
 
+    def test_an_appointment_dated_today_does_not_make_it_fresh(self):
+        # The 2026-09-29 8:54 export: no orders after 9/26, one install
+        # appointment ('first available') dated today.
+        d = pathlib.Path(tempfile.mkdtemp()) / "x.csv"
+        rows = [["Owner Name", "sp.Order Date (copy)", "Status Date", "spe.dtr First Available Date"],
+                ["A", "9/26/2026", "9/27/2026", "9/29/2026"]]
+        d.write_text("\n".join("\t".join(r) for r in rows), encoding="utf-16")
+        self.assertEqual(H.verdict(d, today=TODAY)["verdict"], "stale")
+        self.assertEqual(H.hold_if_stale(d, "📋 Order Log", post=True, today=TODAY,
+                                         poster=self.poster), 75)
+
+    def test_an_export_with_no_order_dates_is_not_judged(self):
+        d = pathlib.Path(tempfile.mkdtemp()) / "x.csv"
+        d.write_text("Owner Name\tRep\nA\tB", encoding="utf-16")
+        self.assertIsNone(H.hold_if_stale(d, "x", post=True, today=TODAY, poster=self.poster))
+
     def test_off_unless_the_runner_turns_it_on(self):
         with mock.patch.dict(os.environ, {H.ENV: ""}):
             self.assertIsNone(H.hold_if_stale(_export(dt.date(2026, 9, 20)), "x", post=True,

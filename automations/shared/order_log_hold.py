@@ -11,7 +11,8 @@ with nothing in the channel to say so.
 WHAT THIS DOES. The four office-metrics sections built on that one view --
 Order Log, Canceled Orders, Disconnects, Sales Scheduled 6+ Days Out -- call
 hold_if_stale() on the export they are about to post from (fresh download or
-cache, it judges the FILE). When the same freshness verdict says "stale", the
+cache, it judges the FILE). When its newest ORDER or STATUS date is older than
+yesterday (the STALE PULL warning's bar, on the columns that mean a sale), the
 section posts ONE short notice into today's Metrics thread instead of its
 numbers and exits HELD_EXIT (75, EX_TEMPFAIL -- the house "held, not crashed"
 code). Every other section posts as normal: only the section that read the
@@ -55,12 +56,37 @@ def enabled() -> bool:
     return (os.environ.get(ENV) or "").strip().lower() in ("1", "true", "yes")
 
 
+# JUDGED ON THE ORDER LOG'S OWN EVENT DATES ONLY. tableau_freshness takes the
+# newest date in ANY date column, and this export carries install-appointment
+# columns ('spe.dtr First Available Date') that routinely hold TODAY: at 8:54 on
+# 2026-09-29 one such row made an export with zero orders after 9/26 read as
+# "fresh". An order or a status change is what a day of selling leaves behind.
+EVENT_COLUMNS = ("sp.Order Date (copy)", "Status Date")
+MAX_DAYS_BEHIND = 1       # same bar as the STALE PULL warning: yesterday must be in
+
+
 def verdict(csv_path, today: Optional[dt.date] = None) -> dict:
-    """tableau_freshness's own verdict on this export -- the same rule that
-    prints the STALE PULL warning, so the hold and the warning never disagree."""
+    """{'verdict': 'fresh'|'stale'|'unknown', 'newest', 'needs'} for this
+    export, from its Order Date / Status Date columns alone."""
     from automations.shared import tableau_freshness as tf
-    return tf.check_export(csv_path, view_url=ORDER_LOG_VIEW, sheet=ORDER_LOG_SHEET,
-                           today=today)
+    today = today or dt.date.today()
+    needs = today - dt.timedelta(days=MAX_DAYS_BEHIND)
+    header, rows = tf._rows(csv_path)
+    cols = [i for i, h in enumerate(header or [])
+            if (h or "").strip().lstrip("\ufeff") in EVENT_COLUMNS]
+    if not cols:
+        return {"verdict": "unknown", "newest": None, "needs": needs}
+    newest = None
+    for r in rows:
+        for i in cols:
+            if i < len(r):
+                d = tf.parse_date(r[i], today=today)
+                if d is not None and d <= today and (newest is None or d > newest):
+                    newest = d
+    if newest is None:
+        return {"verdict": "unknown", "newest": None, "needs": needs}
+    return {"verdict": "fresh" if newest >= needs else "stale",
+            "newest": newest, "needs": needs}
 
 
 def notice_text(label: str, newest=None, needs=None) -> str:
