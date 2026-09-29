@@ -124,7 +124,7 @@ def assemble(week_mdy, roster, captains, *, regular, captain, special, ws=None,
       section2 = {row: value}    — CAPTAIN/SPECIAL captain & special sub-rows
       unmatched = [display_name] — active people absent from the regular pull
     """
-    from automations.override_bulletin.pulls import raf_captain_override, _num_locale
+    from automations.override_bulletin.pulls import _num_locale
     section1, section2, unmatched = {}, {}, []
 
     # PRESERVE-ON-EMPTY: re-filling a PAST week (e.g. run --week 7.19 --force, or a
@@ -153,10 +153,9 @@ def assemble(week_mdy, roster, captains, *, regular, captain, special, ws=None,
         hit = roster.get(k)
         return hit[2] if hit else k
     for key, rows in captains.items():
+        # Every captain, Rafael included, comes from the DD pull (Rafael moved
+        # off the Raf PNL tab on 2026-09-29 — it is no longer filled).
         cap = captain.get(key)
-        # Raf's captain override comes from the Raf PNL, not the DD pull.
-        if key == canon("Rafael Hidalgo", aliases):
-            cap = raf_captain_override(week_mdy, ws=None)
         spc = special.get(key)
         # A source that couldn't re-supply this past week keeps what's on the sheet.
         if cap is None and rows.get("captain"):
@@ -174,9 +173,10 @@ def assemble(week_mdy, roster, captains, *, regular, captain, special, ws=None,
         #
         # Only when the DD pull SUCCEEDED (it came back with other captains) —
         # an empty pull means the source is down, and zeroing every captain then
-        # would publish six fake zeros. Rafael is excluded because his captain
-        # override comes from the Raf PNL, not this pull, so `captain` says
-        # nothing about whether HIS source answered.
+        # would publish six fake zeros. Rafael is excluded: he always earns a
+        # five-figure captain override, so DD missing him is a source gap to
+        # flag ("not sourced yet"), not a real $0 (he moved to DD 2026-09-29
+        # without a live check that DD carries his rows).
         #
         # SPECIAL is deliberately NOT zero-filled: the VA leaves those blank when
         # the captain has no special that week (Colten/Carlos are blank ~3 weeks

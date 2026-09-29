@@ -23,7 +23,8 @@ from automations.override_bulletin import markers as M
 from automations.override_bulletin import pulls as P
 from automations.override_bulletin.pulls import _norm_name
 
-# The captains whose captain override comes from DD (Raf's is from the PNL).
+# The captains whose captain override comes from DD. Rafael too since
+# 2026-09-29 (Eve): the Raf PNL tab it used to come from is no longer filled.
 #
 # THE WEEKLY FILL NO LONGER FILTERS ON THIS LIST — `pull_all` asks the DD
 # download for every owner it carries and `fill.assemble` then looks up only the
@@ -36,8 +37,8 @@ from automations.override_bulletin.pulls import _norm_name
 # It survives for the paths that need names BEFORE a download exists: --dd-probe,
 # backtrack's period-forced re-read and special_probe. Keep it in step with
 # section 2 of the tab; nothing but those probes depends on it being complete.
-DD_CAPTAINS = ["Carlos Hidalgo", "Colten Wright", "Khalil Mansour",
-               "Jairo Ruiz", "Eveliz Wright", "Atef Choudhury"]
+DD_CAPTAINS = ["Rafael Hidalgo", "Carlos Hidalgo", "Colten Wright",
+               "Khalil Mansour", "Jairo Ruiz", "Eveliz Wright", "Atef Choudhury"]
 LEDGER_SPECIAL = "Special Override"   # needle refined to period at call time
 LEDGER_CREDICO = "Credico"
 

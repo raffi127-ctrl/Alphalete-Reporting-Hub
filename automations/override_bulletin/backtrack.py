@@ -161,20 +161,20 @@ def raf_fresh_for_week(week_mdy, *, period_num=None, page=None, verbose=True):
     These are the two components backtrack could NOT re-source before — it trusted
     whatever section 2 already held, so a special the VA later REVISED sat stale
     (his 7.12-6.14 froze ~$3k high after a downward revision, 2026-08-01). Both are
-    full-history sources, unlike the DD captains: captain from Raf PNL (by label),
-    special from Payout-Raf-wow (matched by the week's Processed-Week date).
+    full-history sources, unlike the DD captains. Only the special is re-pulled
+    now (Payout-Raf-wow, matched by the week's Processed-Week date); captain is
+    always None — see below.
 
     `period_num` is the RETAIL period the week lives in — pass the value from the
     summary scan, NOT the calendar month: near a period edge a week (6.21, 6.28)
     sits in the NEXT retail period (7), so Raf-wow's month-6 export wouldn't carry
     it. We still try the month period as a fallback candidate. Best effort — a
     flaky/absent pull returns None and the caller keeps the on-sheet value."""
+    # Captain is NOT re-pulled here any more. It came from the Raf PNL, which
+    # stopped being filled on 2026-09-29 (Eve) — its new weeks read $0.00, and
+    # re-pulling that would zero his captain. It now comes from DD like the other
+    # captains (Rafael is in run.DD_CAPTAINS), so the DD loop below handles it.
     cap = spec = None
-    try:
-        cap = P.raf_captain_override(week_mdy)
-    except Exception as e:  # noqa: BLE001
-        if verbose:
-            print("  (raf captain unavailable: {})".format(type(e).__name__))
     try:
         m, d, y = week_mdy.split(".")
         wh = "{}/{}/20{}".format(int(m), int(d), y[-2:])

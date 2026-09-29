@@ -6,18 +6,18 @@ Raf-only pieces), so fill.py can assemble section-1/section-2 and report anyone
 it can't match. See FILL_SOURCES.md for the full spec.
 
 WEEK KEYS. The override sheet labels weeks m.d.yy ("7.12.26"). Sources use their
-own conventions (Raf PNL "WE 7/12"; DD Detail runs a day behind). Each pull maps
+own conventions (DD Detail runs a day behind). Each pull maps
 the sheet's week to its source internally; callers pass the sheet label.
 
 The Tableau pulls MUST run on Lucy 1 (Raf's login — only Raf's org views see the
-whole downline) and are built on download_crosstab_patchright. The Raf-PNL pull
-below is a plain Google-Sheets read and runs anywhere.
+whole downline) and are built on download_crosstab_patchright. Rafael's
+captain override comes from DD like every other captain since 2026-09-29 — the
+Raf PNL tab it used to be read from is no longer filled.
 """
 from __future__ import annotations
 
 import datetime as dt
 import re
-from automations.shared.workbooks import ALL_IN_ONE_RAF
 
 
 def _norm_name(s: str) -> str:
@@ -26,67 +26,6 @@ def _norm_name(s: str) -> str:
     specialized marketing, inc.]' and ' Carlos Hidalgo ' both -> 'carlos hidalgo'."""
     s = (s or "").split("[")[0].split("(")[0]
     return " ".join(s.lower().split())
-
-
-def _we_key(week_mdy: str) -> str:
-    """'7.12.26' -> 'WE 7/12' (the Raf PNL header form)."""
-    m, d, _y = week_mdy.split(".")
-    return f"WE {int(m)}/{int(d)}"
-
-
-# --------------------------------------------------------------------------
-# Raf Captain Override — Google Sheet (Raf PNL 2026, row 335)
-# --------------------------------------------------------------------------
-RAF_PNL_WORKBOOK = ALL_IN_ONE_RAF
-# Legacy title only; the tab is resolved by gid (workbooks.main_pnl_tab) because
-# it was renamed twice on 2026-09-28.
-RAF_PNL_TAB = "Raf PNL 2026"
-RAF_CAPTAIN_LABEL = "Captain Override"   # find the row BY this label — never hardcode
-RAF_CAPTAIN_ROW = 335        # legacy fallback only (Raf inserts rows; the row drifts)
-
-
-def _money(raw):
-    if raw is None:
-        return None
-    s = str(raw).replace("$", "").replace(",", "").strip()
-    try:
-        return float(s)
-    except ValueError:
-        return None
-
-
-def raf_captain_override(week_mdy: str, ws=None):
-    """Raf's Captain Override for the given sheet week (e.g. '7.12.26').
-
-    Reads Raf PNL 2026 at the target week's WE block. Each block lays its rows out
-    as [WE-header | label | value | ...], so the amount sits in the WE-header
-    column + 2 and the label 'Captain Override' one cell left of it (base + 1).
-
-    The row is found BY that label, never hardcoded: Raf inserts rows into the PNL
-    (it drifted from 335 to 348 the week of 2026-07-26 — row 335 became "JD's
-    Bonus" $2,357.92 while the real Captain Override was $16,267.50), so a fixed
-    row silently reads a neighbouring line. Returns the amount, or None if the
-    week column or the label isn't present."""
-    if ws is None:
-        from automations.recruiting_report import fill as _fill
-        from automations.shared.workbooks import main_pnl_tab
-        _book = _fill._client().open_by_key(RAF_PNL_WORKBOOK)
-        ws = _book.worksheet(main_pnl_tab(_book))
-    vals = ws.get_all_values()
-    header = vals[0]
-    want = _we_key(week_mdy)
-    base = next((i for i, h in enumerate(header) if (h or "").strip() == want), None)
-    if base is None:
-        return None
-    lcol, vcol = base + 1, base + 2          # label | Profit/Loss value of the block
-    for row in vals:
-        if lcol < len(row) and (row[lcol] or "").strip() == RAF_CAPTAIN_LABEL:
-            return _money(row[vcol]) if vcol < len(row) else None
-    # Label not found in this block (unexpected) — fall back to the legacy row so
-    # we return *something* rather than silently zeroing, but this path is wrong if
-    # the sheet shifted; the label search above is the correct one.
-    row = vals[RAF_CAPTAIN_ROW - 1] if RAF_CAPTAIN_ROW - 1 < len(vals) else []
-    return _money(row[vcol]) if vcol < len(row) else None
 
 
 # --------------------------------------------------------------------------
