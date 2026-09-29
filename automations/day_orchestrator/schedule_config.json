@@ -4694,8 +4694,8 @@
       "report_id": "captainship-knock-access"
     },
     "knocks_source_check": {
-      "order": 36.595,
-      "_order_position_note": "AFTER EVERY per-office Daily Metrics job, because it reports on boards those runs have already posted. Asking earlier is asking before the answer exists. It sat at 36.2 from 2026-09-17, which was after the block as the block stood that day (27-36.1) — the block has since grown a tail (joseph 36.56, christian 36.57, colten 36.58, khalil 36.59), so from 2026-09-24 it runs at 36.595, after khalil and before weekly_dispo_pdf_slack (36.6). Colten was the one it caught: enrolled in ECO on 09-21, graded at 07:35 against a board his runner did not draw until 07:40, every morning.",
+      "order": 36.65,
+      "_order_position_note": "AFTER EVERY per-office Daily Metrics job, because it reports on boards those runs have already posted. Asking earlier is asking before the answer exists. It sat at 36.2 from 2026-09-17, which was after the block as the block stood that day (27-36.1) — the block has since grown a tail (joseph 36.56, christian 36.57, colten 36.58, khalil 36.59), so from 2026-09-24 it runs at 36.595, after khalil and before weekly_dispo_pdf_slack (36.6). Grew again 2026-09-28 (drew/jacob 36.6, maxamad 36.61), so from 2026-09-29 it runs at 36.65, after maxamad and before weekly_knocks_focus (36.7). Colten was the one it caught: enrolled in ECO on 09-21, graded at 07:35 against a board his runner did not draw until 07:40, every morning.",
       "on_scheduler": true,
       "display_name": "Knocks Source Check (own machine vs scrape)",
       "command": [

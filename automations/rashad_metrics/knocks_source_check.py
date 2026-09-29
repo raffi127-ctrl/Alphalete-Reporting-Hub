@@ -155,11 +155,35 @@ def board_time(office_key: str, day: dt.date, hub_values=None):
     return got[0][0], got[-1][0]
 
 
-def offices_to_check() -> List:
-    """Offices on BOTH sides: relaying their own knocks AND getting metrics.
+def draws_knocks_board(office_key: str) -> bool:
+    """Does this office's metrics thread carry a Knocks / Time Gaps board?
 
-    An office with no metrics thread has no board for this to be about, and an
-    office not enrolled in ECO has nothing to relay.
+    Same gate the runner applies (SECTION_OVERRIDES wins, then the office's
+    enrolled subset, else every board). Drew is on ECO and on metrics but does
+    not disposition in OwnerVille, so his thread has NO knocks board and his
+    relay is empty by design -- grading him was a guaranteed false FAULT
+    every morning (2026-09-29, the day after he came back).
+    """
+    from automations.office_metrics import offices as OM
+    from automations.office_metrics.runner import OWNER_KEY_TO_SLUG
+    slug = OWNER_KEY_TO_SLUG.get("knocks", "knocks_gaps")
+    if office_key in OM.SECTION_OVERRIDES:
+        picked = OM.SECTION_OVERRIDES[office_key]
+    else:
+        picked = (OM.ONBOARDED_EXTRA.get(office_key, {})
+                  .get("enrolled_reports") or [])
+        if not picked:
+            return True
+    return slug in {OWNER_KEY_TO_SLUG.get(k, k) for k in picked}
+
+
+def offices_to_check() -> List:
+    """Offices on BOTH sides: relaying their own knocks AND getting a metrics
+    knocks board.
+
+    An office with no metrics thread -- or a thread with no knocks board in it
+    -- has no board for this to be about, and an office not enrolled in ECO has
+    nothing to relay.
     """
     from automations.icd_alerts import offices as O
     try:
@@ -167,7 +191,8 @@ def offices_to_check() -> List:
     except Exception:  # noqa: BLE001
         return []
     metrics = dict(OM.OFFICES)
-    return [(o, metrics[o.key]) for o in O.active() if o.key in metrics]
+    return [(o, metrics[o.key]) for o in O.active()
+            if o.key in metrics and draws_knocks_board(o.key)]
 
 
 def check_office(eco, metrics_row, day: dt.date, values=None,

@@ -683,9 +683,21 @@ class MorningSourceCheck(unittest.TestCase):
         from automations.icd_alerts import offices as O
         from automations.office_metrics import offices as OM
         metrics, eco = dict(OM.OFFICES), {o.key for o in O.active()}
-        expected = {k for k in metrics if k in eco}
+        expected = {k for k in metrics if k in eco
+                    and self.C.draws_knocks_board(k)}
         self.assertEqual({o.key for o, _ in self.C.offices_to_check()},
                          expected)
+
+    def test_an_office_with_no_knocks_board_is_not_graded(self):
+        """Drew is on ECO and on metrics, but his thread has no knocks board
+        (he does not disposition in OwnerVille). His empty relay is by design;
+        grading him failed the check every morning with a fake FAULT."""
+        from automations.office_metrics import offices as OM
+        self.assertNotIn("knocks_gaps", OM.SECTION_OVERRIDES["drew"])
+        self.assertFalse(self.C.draws_knocks_board("drew"))
+        self.assertTrue(self.C.draws_knocks_board("isaiah"))
+        self.assertNotIn("drew",
+                         {o.key for o, _ in self.C.offices_to_check()})
 
 
 class _Metrics:
