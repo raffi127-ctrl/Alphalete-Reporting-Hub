@@ -225,6 +225,22 @@ OFFICES: Dict[str, AlertOffice] = {
         sat_start="10:45", sat_end="20:00", saturday=True,
         campaign="nds",
     ),
+    # THE SAME STRAY, ONE WEEK LATER (2026-09-28). Maxamad Aden submitted the
+    # form twice a minute apart, as "maxamad" and "maxamad-nds", and his iMac
+    # installed as "maxamad" (first relay 19:44). Both had been approved so
+    # whichever key he used would be live; this is the one he did not use,
+    # switched off the same way Khalil's was so it never reports itself as a
+    # quiet office. Everything he actually gets rides the "maxamad" row from
+    # the sign-up tab.
+    "maxamad-nds": AlertOffice(
+        key="maxamad-nds", owner="Maxamad Aden", label="Maxamad's Local Office",
+        channels=(),
+        timezone="America/Chicago", active=False, platform="mac",
+        slack_user_id="U09SDDHGWQH",     # Maxamad
+        day_start="13:30", day_end="20:30",
+        sat_start="10:45", sat_end="18:00", saturday=True,
+        campaign="nds",
+    ),
     # NEVER RELAYED, NOT ONCE, and switched off for it (Megan 2026-09-16).
     # A test enrolment that stayed on the books: left active it reported
     # itself as a quiet office every morning, which is a standing false alarm
