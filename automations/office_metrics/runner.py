@@ -1306,6 +1306,9 @@ def main(argv=None, *, office_key: str | None = None) -> int:
     # Every other section is untouched. See shared/order_log_hold.py.
     from automations.shared import order_log_hold as _olh
     base_env[_olh.ENV] = "1"
+    # Which office this is, for the hold's once-a-day notice key -- an email
+    # office has no channel to tell two offices apart by.
+    base_env[_olh.OFFICE_ENV] = o.key
     if not args.fresh:
         base_env["METRICS_XTAB_CACHE"] = str(
             REPO_ROOT / "output" / "metrics_xtab_cache")

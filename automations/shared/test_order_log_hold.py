@@ -69,6 +69,15 @@ class TheHold(_Quiet):
                             today=TODAY, poster=self.poster)
         self.assertEqual(len(self.posted), 2)
 
+    def test_two_email_only_offices_each_get_their_notice(self):
+        # No channel for either (email offices) -- the 2026-09-29 joseph/christian case.
+        with mock.patch.dict(os.environ, {"METRICS_CHANNEL_ID": ""}):
+            for key in ("joseph", "christian"):
+                with mock.patch.dict(os.environ, {H.OFFICE_ENV: key}):
+                    H.hold_if_stale(_export(dt.date(2026, 9, 27)), "📋 Order Log", post=True,
+                                    today=TODAY, poster=self.poster)
+        self.assertEqual(len(self.posted), 2)
+
     def test_dry_run_posts_nothing(self):
         rc = H.hold_if_stale(_export(dt.date(2026, 9, 27)), "📋 Order Log", post=False,
                              today=TODAY, poster=self.poster)
@@ -178,7 +187,9 @@ class TheRunnerOnlyHoldsTheHeldSection(unittest.TestCase):
     def test_the_runner_switches_the_hold_on(self):
         import inspect
         from automations.office_metrics import runner as R
-        self.assertIn("base_env[_olh.ENV] = \"1\"", inspect.getsource(R))
+        src = inspect.getsource(R)
+        self.assertIn("base_env[_olh.ENV] = \"1\"", src)
+        self.assertIn("base_env[_olh.OFFICE_ENV] = o.key", src)
 
 
 if __name__ == "__main__":

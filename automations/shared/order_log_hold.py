@@ -38,6 +38,7 @@ from typing import Optional
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ENV = "METRICS_HOLD_STALE_ORDER_LOG"
+OFFICE_ENV = "METRICS_OFFICE_KEY"   # set by office_metrics.runner
 HELD_EXIT = 75
 
 # The one view all four sections read (canceled_orders/disconnects/
@@ -104,9 +105,14 @@ def _md(d) -> str:
 
 
 def _mark_path(label: str, today: dt.date) -> Path:
+    """One notice per OFFICE + channel + section a day. The office is in the
+    key because email-only offices have no channel: on 2026-09-29 joseph's and
+    christian's runs both keyed as "default", and the second office's held
+    notices were never sent."""
+    report = os.environ.get(OFFICE_ENV) or "office"
     channel = os.environ.get("METRICS_CHANNEL_ID") or "default"
     slug = "".join(ch if ch.isalnum() else "-" for ch in label.lower()).strip("-")[:40]
-    return MARK_DIR / today.isoformat() / ("%s--%s.json" % (channel, slug))
+    return MARK_DIR / today.isoformat() / ("%s--%s--%s.json" % (report, channel, slug))
 
 
 def hold(label: str, newest=None, needs=None, *, post: bool,
