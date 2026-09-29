@@ -611,6 +611,30 @@ def _day_key(cell: str) -> str:
     return cell
 
 
+def _approval_rows(book):
+    """The Office Channels rows, [] header-only, or None when the tab does not
+    exist yet. ANY OTHER FAILURE RAISES.
+
+    2026-09-28 20:36: a Sheets read failed on Lucy 1 (quota, most likely --
+    three sessions were reading the workbook at once), this swallowed it into
+    {}, and the poster then treated EVERY office as unapproved: Kash's,
+    Carlos's and Khalil's credit checks went to Megan's DM as "no Slack channel
+    set yet" and were marked posted, so their teams never saw them. A read
+    that fails must hold the tick -- nothing posted, the next minute retries
+    -- never re-route a whole fleet's alerts. Only a genuinely missing tab is
+    "nothing approved".
+    """
+    try:
+        return book.worksheet(CHANNELS_TAB).get_all_values()
+    except Exception as e:  # noqa: BLE001
+        name = type(e).__name__
+        if name == "WorksheetNotFound":
+            return None
+        raise RuntimeError("could not read the '%s' tab (%s: %s) -- holding this "
+                           "tick rather than treating every office as unapproved"
+                           % (CHANNELS_TAB, name, str(e)[:120])) from e
+
+
 def approved_channels(book=None) -> Dict[str, List]:
     """{office_key: [Channel]} for every office a human has signed off.
 
@@ -623,9 +647,8 @@ def approved_channels(book=None) -> Dict[str, List]:
     if book is None:
         from automations.recruiting_report.fill import open_by_key
         book = open_by_key(RELAY_SPREADSHEET_ID)
-    try:
-        rows = book.worksheet(CHANNELS_TAB).get_all_values()
-    except Exception:  # noqa: BLE001 — no tab yet is not a failure
+    rows = _approval_rows(book)
+    if rows is None:
         return {}
 
     out = {}
@@ -657,9 +680,8 @@ def approved_knocks(book=None) -> Dict[str, List[Dict]]:
     if book is None:
         from automations.recruiting_report.fill import open_by_key
         book = open_by_key(RELAY_SPREADSHEET_ID)
-    try:
-        rows = book.worksheet(CHANNELS_TAB).get_all_values()
-    except Exception:  # noqa: BLE001
+    rows = _approval_rows(book)
+    if rows is None:
         return {}
     out = {}
     for row in rows[1:]:
@@ -710,9 +732,8 @@ def approved_texts(book=None) -> Dict[str, List[Dict]]:
     if book is None:
         from automations.recruiting_report.fill import open_by_key
         book = open_by_key(RELAY_SPREADSHEET_ID)
-    try:
-        rows = book.worksheet(CHANNELS_TAB).get_all_values()
-    except Exception:  # noqa: BLE001
+    rows = _approval_rows(book)
+    if rows is None:
         return {}
     out = {}
     for row in rows[1:]:

@@ -105,3 +105,24 @@ class CloseRecoveredFaultsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AFailedApprovalReadHoldsTheTick(unittest.TestCase):
+    """2026-09-28 20:36: a Sheets read failure was swallowed into "nobody is
+    approved" and three offices' credit checks went to Megan's DM."""
+
+    class _Missing:
+        def worksheet(self, name):
+            e = type("WorksheetNotFound", (Exception,), {})()
+            raise e
+
+    class _Down:
+        def worksheet(self, name):
+            raise ConnectionError("429 quota")
+
+    def test_a_missing_tab_is_nothing_approved(self):
+        self.assertEqual(P.approved_channels(self._Missing()), {})
+
+    def test_any_other_failure_raises(self):
+        with self.assertRaises(RuntimeError):
+            P.approved_channels(self._Down())
