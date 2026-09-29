@@ -8396,7 +8396,7 @@
       "base_args": [],
       "cadence": {
         "weekdays": [],
-        "not_before": "12:00"
+        "not_before": "16:00"
       },
       "priority": "P3",
       "freshness_target": null,
@@ -12203,6 +12203,53 @@
       },
       "_note": "Office metrics for colten -> southshore-d2d-sales. Onboarded via office_onboarding on 2026-09-22 14:01 UTC. Machine Lucy 1 (view owners). NDS/wireless office (campaign nds_d2d): Time Gaps, Wireless Churn, Rep Activations, Order Log, Cancels. Held off until a dry-run on Lucy 1 proved data on every board (2026-09-22: 13 reps knocking, 584 wireless orders, 103 reps with churn data, 3 cancels) — Megan's rule: never a blank first post. order 36.58 = after harvest_prime warms the crosstab cache.",
       "_onboarded": true
+    },
+    "install_b2b_dispositions_hourly_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Install/refresh com.alphalete.b2b-dispositions-hourly on LUCY 2. Since 2026-09-29 (Carlos) it is the ONLY B2B Dispositions agent: Mon-Fri 6pm + Sat 4pm, --which all --send (Box hourly + Box Territory Stats). install_agent only rewrites and reloads the plist.",
+      "machine": "Lucy 2",
+      "display_name": "Install B2B Dispositions agent (6pm)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "b2b-dispositions-hourly"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
+    },
+    "remove_b2b_dispositions_final_agent": {
+      "on_scheduler": false,
+      "_off_scheduler_note": "Unload + delete com.alphalete.b2b-dispositions-final on LUCY 2 (retired 2026-09-29: Carlos moved everything to one 6pm post, which the -hourly agent now does). Leaving it loaded would post a second time at 7pm.",
+      "machine": "Lucy 2",
+      "display_name": "Remove B2B Dispositions 7pm final agent",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "b2b-dispositions-final",
+        "--remove"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": {
+        "type": "not_configured"
+      }
     },
     "remove_icd_alerts_poster_agent": {
       "on_scheduler": false,

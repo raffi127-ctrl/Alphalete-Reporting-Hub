@@ -369,10 +369,15 @@ def post_thread(title: str, paths: List, today: Optional[dt.date] = None, *,
             if ts is None:
                 parent = client.chat_postMessage(channel=channel, text=f"*{title}*")
                 ts = parent.get("ts")
-            up = client.files_upload_v2(file_uploads=uploads, channel=channel,
-                                        thread_ts=ts)
+            # Slack takes at most 10 files per message, and Territory Stats
+            # is one picture per territory (2026-09-29) — so batches of 10.
+            up_ok = True
+            for k in range(0, len(uploads), 10):
+                up = client.files_upload_v2(file_uploads=uploads[k:k + 10],
+                                            channel=channel, thread_ts=ts)
+                up_ok = up_ok and up.get("ok", True)
             results.append({"channel": clabel, "ts": ts,
-                            "ok": up.get("ok", True),
+                            "ok": up_ok,
                             "mode": "repost" if repost else "new"})
         except Exception as e:  # noqa: BLE001
             results.append({"channel": clabel, "ok": False,

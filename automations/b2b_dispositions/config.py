@@ -56,6 +56,10 @@ CAMPAIGNS = [CAMPAIGN_ATT, CAMPAIGN_BOX]
 # To bring the AT&T hourly back, put CAMPAIGN_ATT back in this list.
 HOURLY_CAMPAIGNS = [CAMPAIGN_BOX]
 
+# The TERRITORY STATS post is BOX ONLY too (Carlos 2026-09-29: "D2A stop
+# posting"). To bring the AT&T territories back, add CAMPAIGN_ATT here.
+DISPOSITION_CAMPAIGNS = [CAMPAIGN_BOX]
+
 # --- Slack delivery -----------------------------------------------------------
 # #alphalete-gp-sales ONLY (Carlos 2026-09-21, #l10-alphalete: "lucy sends
 # these two screenshots in my aplayers chat. can we have her stop please").
@@ -77,7 +81,9 @@ CHANNEL_LABEL = {
 #     image so Slack stays clean (Megan wanted fewer, taller images for mobile).
 #   * "B2B Dispositions" — one Territory Stats image PER territory, at 6:30pm.
 THREAD_HOURLY = "Hourly Activity"
-THREAD_DISPOSITIONS = "B2B Dispositions"
+# Renamed "B2B Dispositions" -> "Territory Stats" (Carlos 2026-09-29), and
+# the territories now post one picture each instead of one tall stack.
+THREAD_DISPOSITIONS = "Territory Stats"
 
 # --- Slack threading + mentions (Carlos 2026-08-06) ---------------------------
 # Carlos: "every hour it creates a new thread. Can you have it only create one
@@ -169,7 +175,13 @@ IMAGE_SEND_DELAY_S = 18
 # makes the last one read as the wrap-up it is. Keep this in step with
 # StartCalendarInterval in deploy/com.alphalete.b2b-dispositions-final.plist —
 # this constant only labels the caption; the plist is what actually fires.
-HOURLY_SLOTS = [(12, 0), (13, 0), (14, 0), (15, 0), (16, 0), (17, 0), (18, 0)]
+#
+# ONCE A DAY SINCE 2026-09-29 (Carlos: "D1B post once a day at 6pm", Territory
+# Stats "at 6pm"). ONE agent (com.alphalete.b2b-dispositions-hourly, now
+# --which all) fires Mon-Fri 6pm and Sat 4pm (his 9/27 rule: no disposition
+# posts after 5:30 on Saturdays). The -final agent is retired. These slots
+# only label the caption.
+HOURLY_SLOTS = [(18, 0)]
 FINAL_SLOT = (19, 0)
 
 # Weekend shape (Carlos 2026-08-06):
@@ -182,7 +194,7 @@ FINAL_SLOT = (19, 0)
 SUNDAY = 6                      # Python weekday(): Mon=0 … Sun=6
 SATURDAY = 5
 RUN_WEEKDAYS = (0, 1, 2, 3, 4, 5)          # Mon-Sat; Sunday deliberately absent
-SATURDAY_HOURLY_SLOTS = [(12, 0), (13, 0), (14, 0), (15, 0)]
+SATURDAY_HOURLY_SLOTS = [(16, 0)]
 SATURDAY_FINAL_SLOT = (16, 0)
 
 

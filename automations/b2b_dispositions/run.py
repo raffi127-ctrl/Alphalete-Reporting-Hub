@@ -109,17 +109,17 @@ def _capture_hourly(page, rqst: str, out_dir: Path, slot: str,
 def _capture_dispositions(page, rqst: str, out_dir: Path,
                           dry_run: bool, limit: int = 0,
                           slot: str = "", today: Optional[dt.date] = None) -> List[Dict]:
+    """Territory Stats: one picture PER TERRITORY (Carlos 2026-09-29: "one
+    screenshot per territory so it's easier to read"), for
+    cfg.DISPOSITION_CAMPAIGNS, into ONE dated "Territory Stats" thread. Each
+    picture carries its own "<campaign> — <territory>" header. Until 9/29 a
+    campaign's territories were stacked into one tall image. `limit` > 0 caps
+    territories per campaign for a quick preview."""
     today = today or _central_now().date()
-    """Territory Stats: capture every territory per campaign, then STACK a
-    campaign's territories into ONE tall image (each keeps its name header). One
-    reply carries both campaign stacks (Megan 7/30 — 2 images at 6:30, not 18
-    posts). `limit` > 0 caps territories per campaign for a quick preview."""
-    stacks, notes = [], []
+    paths, notes = [], []
     # See _capture_hourly: per-campaign attribution for the iMessage routing.
-    # This one matters even more — the stack-failure branch below appends N
-    # territory images instead of 1, so positional order breaks outright.
     by_campaign: Dict[str, List] = {}
-    for campaign in cfg.CAMPAIGNS:
+    for campaign in cfg.DISPOSITION_CAMPAIGNS:
         cap.ensure_campaign(page, rqst, campaign)  # sticky global — flip it first
         terrs = cap.list_territories(page, rqst, campaign)
         tag = cfg.CAMPAIGN_TAG[campaign]
@@ -134,23 +134,13 @@ def _capture_dispositions(page, rqst: str, out_dir: Path,
             terr_paths.append(res["path"])
         if not terr_paths:
             continue
-        stack = out_dir / f"dispositions_{cap._slug(tag)}.png"
-        try:
-            cap.stack_images(terr_paths, stack)
-            stacks.append(stack)
-            by_campaign[campaign] = [stack]
-        except Exception as e:  # noqa: BLE001
-            print(f"  {tag} stack failed ({type(e).__name__})", flush=True)
-            stacks.extend(terr_paths)  # fall back to individual images
-            by_campaign[campaign] = list(terr_paths)
+        paths.extend(terr_paths)
+        by_campaign[campaign] = list(terr_paths)
         notes.append(f"{tag}={len(terr_paths)}")
-    if not stacks:
+    if not paths:
         return []
-    # Dispositions posts once a day, so "(Final)" is meaningless here (Megan
-    # 7/30) — that tag only belongs on the hourly. Strip it.
-    clean_slot = (slot or "6:30 PM").replace(" (Final)", "")
-    title = sp.thread_title(cfg.THREAD_DISPOSITIONS, clean_slot, today)
-    return [{"title": title, "paths": stacks, "kind": cfg.POST_DISPOSITIONS,
+    title = sp.day_title(cfg.THREAD_DISPOSITIONS, today)
+    return [{"title": title, "paths": paths, "kind": cfg.POST_DISPOSITIONS,
              "by_campaign": by_campaign, "meta": {"note": " ".join(notes)}}]
 
 
