@@ -4348,6 +4348,28 @@
       },
       "_note": "Colten Wright's daily org scoreboard (asked 2026-09-29, preview approved 2026-09-30): his 12 market managers by day, last 4 weeks, deltas — ONE image texted to the 'SOUTHSHORE ORG' iMessage chat (29 people) from LUCY 1, the fleet's iMessage box. Own pulls (NDS 'Thisweekandlast' view, WIRELESS+AIR; B2B spec week-pinned), no reuse of the board's files. TIMING (Megan 2026-09-30: '7am EST'): not_before 05:54 Central builds the board (~3-4 min of pulls), then --send-at 06:00 holds the text to 06:00 Central = 7:00 Eastern. The hold is kept to a couple of minutes ON PURPOSE: the orchestrator runs reports one at a time, so a long hold would stall every report behind it. If the pass reaches it late, it sends as soon as it's built (up to ~7:15 ET). A late run still sends — it never waits for tomorrow. Once a day: output/southshore_org_board/<day>/texted.sent. History (the 4-week rows) lives in output/southshore_org_board/history.json on Lucy 1."
     },
+    "southshore_org_board_dry": {
+      "on_scheduler": false,
+      "machine": "Lucy 1",
+      "display_name": "Southshore Org Sales Board — dry run (Hub Run button)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.southshore_org_board.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 30,
+      "verify": {
+        "type": "not_configured"
+      },
+      "_note": "What the Hub card's Run button fires: the full pull + render + group lookup with NO --send, so pressing it never texts the 29-person chat. weekdays [] = never auto-run. The real daily send is 'southshore_org_board'."
+    },
     "delta_lastweek_backfill": {
       "order": 8.15,
       "on_scheduler": false,
@@ -7303,7 +7325,7 @@
       "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "aya_metrics": {
-      "order": 28,
+      "order": 26.1,
       "machine": "Lucy 4",
       "on_scheduler": true,
       "display_name": "Aya's Daily Metrics (#indelible-sales)",
@@ -7892,7 +7914,7 @@
       "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "hammad_metrics": {
-      "order": 30,
+      "order": 26.2,
       "machine": "Lucy 4",
       "on_scheduler": true,
       "display_name": "Hammad's Daily Metrics (#elite-prime-sales)",
@@ -7976,7 +7998,7 @@
       "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "salik_metrics": {
-      "order": 34,
+      "order": 26.3,
       "machine": "Lucy 4",
       "on_scheduler": true,
       "display_name": "Salik's Daily Metrics (#elite-prime-sales)",
@@ -8059,7 +8081,7 @@
       "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },
     "nii_metrics": {
-      "order": 36.1,
+      "order": 26.4,
       "machine": "Lucy 4",
       "on_scheduler": true,
       "display_name": "Nii's Daily Metrics (nii-teiko-tagoe-office)",
@@ -12210,7 +12232,7 @@
       "verify": null
     },
     "colten_metrics": {
-      "order": 36.58,
+      "order": 26.5,
       "machine": "Lucy 4",
       "on_scheduler": true,
       "display_name": "Colten's Daily Metrics (southshore-d2d-sales)",
@@ -12382,7 +12404,7 @@
       "_onboarded": true
     },
     "drew_metrics": {
-      "order": 36.6,
+      "order": 26.6,
       "machine": "Lucy 4",
       "on_scheduler": true,
       "display_name": "Drew's Daily Metrics (precision-management-att-sales)",
@@ -12460,7 +12482,7 @@
       "_onboarded": true
     },
     "jairo_metrics": {
-      "order": 36.62,
+      "order": 26.7,
       "machine": "Lucy 4",
       "on_scheduler": true,
       "display_name": "Jairo's Daily Metrics (profitsmanagement-att-sales)",
