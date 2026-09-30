@@ -177,6 +177,8 @@ def is_due(dest: Dict, last_posted: Optional[dt.datetime],
     Never posted = due. That is what makes an approval take effect on the next
     tick rather than an hour later.
     """
+    if final_due(dest, last_posted, now):
+        return True
     if "times" in dest:
         return _slot_due(last_posted, now, dest["times"])
     cadence = int(dest.get("cadence_min") or 0)
@@ -312,6 +314,42 @@ def _slot_due(last_posted: Optional[dt.datetime], now: dt.datetime,
         if slot <= now <= slot + dt.timedelta(minutes=SLOT_GRACE_MIN):
             return last_posted is None or last_posted < slot
     return False
+
+
+# THE FINAL BOARD OF THE NIGHT, per destination (Roshan/Amin 2026-09-29: "a
+# final disposition report at like 7pm every night, so we can have a full day
+# to breakdown with the reps"). The approved JSON carries `final_at` ("19:00",
+# the office's clock) beside `cadence_min`: the room keeps its interval boards
+# during field hours AND gets one more at that time, even after the bell.
+#
+# Mon-Fri only. Saturday keeps Megan's 6pm stop (SAT_BOARD_STOP_HHMM) -- a
+# final is still a board past it -- and Sunday is not a selling day. The
+# relay is fresh until the agent's 21:30 window closes, so a final up to then
+# draws the live day, not a leftover reading.
+FINAL_KEY = "final_at"
+
+
+def _final_slot(dest: Dict, now: dt.datetime) -> Optional[dt.datetime]:
+    """Today's final-board moment for this room, or None if it has none."""
+    text = (dest.get(FINAL_KEY) or "").strip()
+    if not text or now.weekday() >= 5:
+        return None
+    try:
+        h, m = _hm(text)
+    except Exception:  # noqa: BLE001 — a typo in the tab is no final, not a crash
+        return None
+    return now.replace(hour=h, minute=m, second=0, microsecond=0)
+
+
+def final_due(dest: Dict, last_posted: Optional[dt.datetime],
+              now: dt.datetime) -> bool:
+    """Just past this room's final time, and nothing posted there since it."""
+    slot = _final_slot(dest, now)
+    if slot is None:
+        return False
+    if not (slot <= now <= slot + dt.timedelta(minutes=SLOT_GRACE_MIN)):
+        return False
+    return last_posted is None or last_posted < slot
 
 
 def _parse_when(text: str) -> Optional[dt.datetime]:
@@ -471,7 +509,15 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                       for d in dests)
                   and _after_hours_slot(office, now))
                  or (_set_time_now(dests, now) and not _past_saturday_cap(now)))
-        if not force and not in_field_hours(office, now) and not recap:
+        # A room's own final board may post after the bell too -- but ONLY
+        # that room: the rest of the office's rooms still stop at the bell.
+        last = _posted_map(row[KN_POSTED])
+        finals = [d for d in dests
+                  if final_due(d, last.get(d["channel_id"]), now)]
+        after_bell = not in_field_hours(office, now)
+        if after_bell and finals and not recap and not force:
+            dests = finals
+        if not force and after_bell and not recap and not finals:
             log("%-10s outside field hours (%s their time)"
                 % (key, now.strftime("%a %H:%M")))
             continue
@@ -557,7 +603,9 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                 listed_gaps[cid] = _gaps_text(office, rows_for_board, now,
                                               dest=cid, slack=True,
                                               remember=send)
-            captions[cid] = caption_for(comment, listed_gaps.get(cid, ""))
+            head = (_final_comment(now) if final_due(d, posted_at.get(cid), now)
+                    else comment)
+            captions[cid] = caption_for(head, listed_gaps.get(cid, ""))
 
         if not send:
             for d in due:
@@ -792,6 +840,13 @@ def _comment(office, rows: List[Dict], now: dt.datetime) -> str:
     prefix = TITLE_PREFIX.get(getattr(office, "key", "") or "", "")
     return "*%s%s — %s*  ·  ranked by total knocks" % (
         (prefix + " ") if prefix else "", _card_title(), _clock(now))
+
+
+def _final_comment(now: dt.datetime) -> str:
+    """The same header, said to be the day's last one -- so the room knows
+    this is the board to break the day down from, not another hourly."""
+    return "*Final %s — %s*  ·  ranked by total knocks" % (_card_title(),
+                                                           _clock(now))
 
 
 def _gaps_text(office, rows: List[Dict], now: dt.datetime, *,

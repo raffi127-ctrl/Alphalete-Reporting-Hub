@@ -25,6 +25,7 @@ import argparse
 import datetime as dt
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
@@ -892,6 +893,46 @@ def set_knocks_gaps(office_key: str, minutes: int, book=None,
                 # same, but a room whose setting was removed should read like
                 # every other room that never had one.
                 d.pop("gaps_min", None)
+        if not hit:
+            return False
+        tab.update(values=[[json.dumps(dests)]], range_name="K%d" % i)
+        return True
+    return False
+
+
+def set_knocks_final(office_key: str, hhmm: str, book=None,
+                     channel_id: str = "") -> bool:
+    """The room's FINAL board of the night, Mon-Fri, on the office's clock
+    ("19:00"); "" removes it. See knocks_post.FINAL_KEY.
+
+    Same column, same reasons, same shape as set_knocks_gaps: OUR column K
+    only, never the approval flag, never a hand-edited JSON cell.
+    """
+    hhmm = (hhmm or "").strip()
+    if hhmm and not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", hhmm):
+        raise ValueError("final time must be HH:MM, got %r" % hhmm)
+    if book is None:
+        from automations.recruiting_report.fill import open_by_key
+        book = open_by_key(RELAY_SPREADSHEET_ID)
+    tab = book.worksheet(CHANNELS_TAB)
+    key = office_key.strip().lower()
+    want = (channel_id or "").strip()
+    for i, row in enumerate(tab.get_all_values()[1:], start=2):
+        if (row[CH_OFFICE] or "").strip().lower() != key:
+            continue
+        try:
+            dests = json.loads(row[CH_KN_APPROVED_JSON] or "[]")
+        except ValueError:
+            return False
+        hit = False
+        for d in dests:
+            if want and (d.get("channel_id") or "").strip() != want:
+                continue
+            hit = True
+            if hhmm:
+                d["final_at"] = hhmm
+            else:
+                d.pop("final_at", None)
         if not hit:
             return False
         tab.update(values=[[json.dumps(dests)]], range_name="K%d" % i)
