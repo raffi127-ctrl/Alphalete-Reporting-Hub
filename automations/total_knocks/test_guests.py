@@ -113,7 +113,7 @@ class SplitTests(unittest.TestCase):
         said = []
         G.split(HOST, rows("Nicholas Smedra"), logfn=said.append)
         line = " ".join(said)
-        self.assertIn("13 rostered rep(s) not on the grid", line)
+        self.assertIn("14 rostered rep(s) not on the grid", line)
         self.assertIn("Jorge Gramajo", line)
 
     def test_empty_day(self):
