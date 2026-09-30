@@ -955,3 +955,40 @@ class AZeroLaptopsIsNotAnAllClear(unittest.TestCase):
                 self._row({}, "kash", "icd_alerts/1")]
         rows[0][1], rows[1][1] = "2026-09-10", "2026-09-13"
         self.assertEqual([o["office"] for o in self._run(rows)], ["kash"])
+
+
+class BackFromSilenceTests(unittest.TestCase):
+    """Shoutouts only land while they are news (Eve 2026-09-30, Carlos's mini
+    dark from 11:01 until that night)."""
+
+    DAY = dt.date(2026, 9, 30)
+
+    def test_a_steady_relay_is_not_a_return(self):
+        seen = {}
+        self.assertFalse(P.back_from_silence("carlos", self.DAY,
+                                             "9/30/2026 10:45:00", seen))
+        self.assertFalse(P.back_from_silence("carlos", self.DAY,
+                                             "9/30/2026 11:00:00", seen))
+
+    def test_hours_dark_then_back_is_a_return(self):
+        seen = {}
+        P.back_from_silence("carlos", self.DAY, "9/30/2026 11:01:25", seen)
+        self.assertTrue(P.back_from_silence("carlos", self.DAY,
+                                            "9/30/2026 20:15:00", seen))
+        # ...and only the first relay back: the next one is live again.
+        self.assertFalse(P.back_from_silence("carlos", self.DAY,
+                                             "9/30/2026 20:30:00", seen))
+
+    def test_a_new_day_is_not_a_return(self):
+        seen = {"carlos": {"day": "2026-09-29", "received": "9/29/2026 21:00:00"}}
+        self.assertFalse(P.back_from_silence("carlos", self.DAY,
+                                             "9/30/2026 10:30:00", seen))
+
+    def test_an_office_never_seen_has_no_gap(self):
+        self.assertFalse(P.back_from_silence("carlos", self.DAY,
+                                             "9/30/2026 20:15:00", {}))
+
+    def test_an_unreadable_stamp_changes_nothing(self):
+        seen = {"carlos": {"day": "2026-09-30", "received": "9/30/2026 11:01:25"}}
+        self.assertFalse(P.back_from_silence("carlos", self.DAY, "", seen))
+        self.assertEqual(seen["carlos"]["received"], "9/30/2026 11:01:25")

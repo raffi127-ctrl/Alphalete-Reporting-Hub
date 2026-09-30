@@ -1166,6 +1166,55 @@ from automations.shared.sale_hype import (  # noqa: E402
     gifs_sent as _gifs_sent, GIF_BUDGET)
 
 
+# WHEN THE POSTER LAST SAW EACH OFFICE'S RELAY, so a machine coming back from
+# an outage can be told apart from one that has been relaying all along.
+LAST_SEEN_PATH = (Path.home() / ".config" / "recruiting-report"
+                  / "icd_alerts_last_seen.json")
+
+
+def back_from_silence(key: str, day: dt.date, received: str,
+                      seen: Dict) -> bool:
+    """Is this relay the first one after a gap longer than STALE_MINUTES?
+
+    A SHOUTOUT IS ONLY WORTH SENDING WHILE IT IS NEWS. Carlos's mini went dark
+    at 11:01 on 2026-09-30 and was due back that night; every sale made in
+    between would have been announced at once, hours late, the moment it
+    reconnected -- and the point of a shoutout is that it lands when the sale
+    does (Eve, same day). decide_sales() already holds back a backlog when
+    NOTHING had been posted yet that day; this covers the other case, a
+    machine that had been announcing and then went quiet.
+
+    Updates `seen` in place. Only a gap on the SAME day counts: a new day is
+    already a baseline, and an office never seen before has no gap to judge.
+    """
+    was = seen.get(key) or {}
+    now = _parse_received(received)
+    if now is None:
+        return False
+    seen[key] = {"day": day.isoformat(), "received": received}
+    if was.get("day") != day.isoformat():
+        return False
+    before = _parse_received(was.get("received", ""))
+    if before is None:
+        return False
+    return (now - before) > dt.timedelta(minutes=STALE_MINUTES)
+
+
+def _load_seen() -> Dict:
+    try:
+        return json.loads(LAST_SEEN_PATH.read_text())
+    except Exception:  # noqa: BLE001 — no memory means no gap to judge
+        return {}
+
+
+def _save_seen(seen: Dict) -> None:
+    try:
+        LAST_SEEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+        LAST_SEEN_PATH.write_text(json.dumps(seen, indent=2))
+    except Exception:  # noqa: BLE001 — at worst one late shoutout, as before
+        pass
+
+
 def run(day: Optional[dt.date] = None, *, send: bool = False,
         only: Optional[str] = None, log=print) -> Dict:
     day = day or dt.date.today()
@@ -1185,6 +1234,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         return {"offices": 0, "posted": 0}
 
     posted = considered = 0
+    seen = _load_seen()
     for rownum, row in rows:
         key = (row[COL_OFFICE] or "").strip().lower()
         if only and key != only.strip().lower():
@@ -1196,6 +1246,11 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
             log("%-10s relayed but is not enrolled/active -- ignored" % key)
             continue
         considered += 1
+        # A dry run must not move the clock, or the real tick after it would
+        # see no gap and announce the backlog anyway.
+        catching_up = back_from_silence(
+            key, day, (row[COL_RECEIVED] or "").strip(),
+            seen if send else dict(seen))
 
         records = _loads(row[COL_RECORDS]) or {}
         last = _loads(row[COL_LAST_POSTED] if len(row) > COL_LAST_POSTED else "")
@@ -1223,8 +1278,24 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         # here so a pattern is visible rather than one odd afternoon.
         record_backslides(key, backslid(sales, last_sales, office.campaign),
                           day, log=log)
+        if catching_up and (lines or sold):
+            # ONE MESSAGE, NOT A SHOUTOUT PER SALE (Eve 2026-09-30): what sold
+            # while the machine was dark still gets said, but as the day's
+            # standings with a flame on who moved, labelled as a catch-up.
+            # The credit checks are dropped: an early warning hours late
+            # warns nobody.
+            log("%-10s back after more than %d min quiet -- %d sale(s) in "
+                "one catch-up post, %d stale credit check line(s) dropped"
+                % (key, STALE_MINUTES, len(sold), len(lines)))
+            lines = []
         hype_lines, gifs_used = [], 0
-        if sold:
+        if sold and catching_up:
+            board = scoreboard_text(merged_sales, sold, office.campaign, show)
+            hype_lines = [
+                "_Catching up — sales made while the office computer was "
+                "offline:_\n" + (board or ", ".join(
+                    (show(r) if show else r) for r in sold))]
+        elif sold:
             from automations.shared import sale_hype as H
             # BATCHED, so no sentence repeats inside the post -- and keyed on
             # the ROOM, so it does not repeat in the next post either. Three
@@ -1303,13 +1374,15 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                 except Exception as e:  # noqa: BLE001
                     log("%-10s FAILED to post to %s: %s: %s"
                         % (key, channel.name, type(e).__name__, str(e)[:120]))
-        if lines or hype_lines or baseline or sales_baseline:
+        if lines or hype_lines or baseline or sales_baseline or catching_up:
             tab.update_cell(rownum, COL_LAST_POSTED + 1, json.dumps(merged))
             tab.update_cell(rownum, COL_LAST_POSTED_SALES + 1,
                             json.dumps(merged_sales))
             tab.update_cell(rownum, COL_POSTED_AT + 1,
                             dt.datetime.now().isoformat(timespec="seconds"))
 
+    if send:
+        _save_seen(seen)
     if not send:
         log("\nDRY RUN -- nothing posted and nothing recorded. Re-run with "
             "--send once the above looks right.")
