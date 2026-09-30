@@ -156,7 +156,12 @@ def main():
         if dropped:
             _alert_dropped(dropped, captures)      # thread is live but SHORT
         else:
-            rendered = {m.get("id") for m, _ in captures}
+            # A fan-out section's images carry suffixed ids (zero_streak_1,
+            # zero_streak_7 …) — count the SECTION as rendered, or a clean
+            # zero_streak rerun reads as "still missing" forever (9/30).
+            ids = {m.get("id") or "" for m, _ in captures}
+            rendered = ids | {s["id"] for s in sections
+                              if any(i.startswith(s["id"] + "_") for i in ids)}
             still = _still_open(rendered) if args.only else []
             if still:
                 # A `--only` rerun fixed ITS section but the thread is still
