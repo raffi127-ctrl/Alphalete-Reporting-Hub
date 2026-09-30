@@ -71,12 +71,13 @@ class LateJoinTest(unittest.TestCase):
         data = {"late": rows(SHACTY, SHAWN), "read": ["22583"], "failed": {"21151": "x"}}
         self.assertEqual(run.thread_title(), "Late Join Audit")
         text = run.summary_text(data)
-        self.assertIn("*2 Late Joins* across 1 offices · ❌ *1 marked before the 5-min grace*",
+        self.assertIn("*2 Late Joins* across 1 offices · 🔴 *1 marked before the 5-min grace*",
                       text)
-        self.assertIn("• Mariana Echeverry: 1 Late Join · ❌ 1 too early", text)
+        self.assertIn("• Mariana Echeverry: 1 Late Join · 🔴 1 too early", text)
         self.assertIn("• Gabriela Sorto: 1 Late Join", text)
         self.assertIn("⚠️ 1 marked Late Join but AppStream says they showed up", text)
         self.assertIn("Couldn't read office 21151", text)
+        self.assertTrue(text.endswith("_Rule: a Late Join is fair only 5+ min after the slot_"))
         (owner, oid), got = run.by_office(data)[0]
         office = run.office_text(owner, oid, got)
         self.assertEqual(office.splitlines()[:2],

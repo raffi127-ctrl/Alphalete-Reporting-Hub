@@ -185,11 +185,12 @@ def _line(r: Dict) -> str:
 
 
 def summary_text(data: Dict) -> str:
-    """The first reply: the day's totals, then who marked them (worst first)."""
+    """The first reply: the day's totals, then who marked them (worst first).
+    A small 🔴 here, not ❌ (Eve 9/30); the source is in the module docstring."""
     late = data["late"]
     bad = [r for r in late if r["too_early"]]
     lines = [f"*{len(late)} Late Join{'s' if len(late) != 1 else ''}* across "
-             f"{len(by_office(data))} offices · ❌ *{len(bad)} marked before the "
+             f"{len(by_office(data))} offices · 🔴 *{len(bad)} marked before the "
              f"{GRACE_MIN}-min grace*"]
     per = {}
     for r in late:
@@ -199,15 +200,13 @@ def summary_text(data: Dict) -> str:
         per[who][1] += r["too_early"]
     for who, (n, b) in sorted(per.items(), key=lambda kv: (-kv[1][1], -kv[1][0])):
         lines.append(f"• {who}: {n} Late Join{'s' if n != 1 else ''}"
-                     f"{f' · ❌ {b} too early' if b else ''}")
+                     f"{f' · 🔴 {b} too early' if b else ''}")
     showed = sum(r["showed_up"] for r in late)
     if showed:
         lines.append(f"⚠️ {showed} marked Late Join but AppStream says they showed up")
     if data.get("failed"):
         lines.append(f"_Couldn't read office {', '.join(sorted(data['failed']))}_")
-    lines.append(f"_Rule: a Late Join is fair only {GRACE_MIN}+ min after the slot "
-                 f"(Rafael 9/30). Source: AppStream → Calendar → day view → First "
-                 f"Interviews → Follow Up Status / By / Time._")
+    lines.append(f"_Rule: a Late Join is fair only {GRACE_MIN}+ min after the slot_")
     return "\n".join(lines)
 
 
