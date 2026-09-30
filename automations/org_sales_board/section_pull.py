@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+import dataclasses
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -107,6 +108,12 @@ class ScrapeSpec:
     #   BOX's Sunday column came up blank on the board every single week).
     #   Confirm a new spec's caption in the view's own filter card before
     #   trusting week_pin.
+
+    week_row: bool = False       # the crosstab carries MORE THAN ONE WEEK side
+    #   by side (NDS 'Thisweekandlast': this week + last week, each Monday..
+    #   Sunday) with a week-ending date row above the weekday names. Weekday
+    #   names alone would fold both Mondays onto one date, so keep only the
+    #   columns whose week-ending date is the REPORTING week's Sunday.
 
     day_behind: bool = False     # this source publishes YESTERDAY's sales later
     #   today, so on the day the reporting week rolls (Tuesday) the pinned week
@@ -253,6 +260,18 @@ def parse_crosstab_byday(
     # Mon (05-25)).
     day_cols = {i: d for i, h in enumerate(header)
                 if (d := _day_for_header(h, monday))}
+    if spec.week_row:
+        # Keep only the reporting week's columns (see ScrapeSpec.week_row).
+        want = _wk.reporting_sunday(today)
+        chrome = rows[hdr_idx - 1] if hdr_idx else []
+
+        def _we(ci):
+            try:
+                m, d, y = (int(x) for x in chrome[ci].strip().split("/"))
+                return dt.date(y, m, d)
+            except (IndexError, ValueError):
+                return None
+        day_cols = {i: d for i, d in day_cols.items() if _we(i) == want}
     if not day_cols:
         raise ValueError(
             f"{spec.section_label}: no day columns in crosstab header "
@@ -530,6 +549,28 @@ NDS_SPEC = ScrapeSpec(
     #   it served this-week's empty Monday → 0 cells filled, Megan 2026-06-08).
     #   No-op if this workbook ignores the filter; harmless either way.
     out_name="org_sales_board_nds_byday.csv",
+)
+
+# The DAILY board fill reads NDS off 'Thisweekandlast' instead (Megan
+# 2026-09-30: Colten's Southshore Org board must not cost a second pull). It is
+# the same Product Sales Summary(Rep) sheet with every product broken out per
+# rep, this week AND last week. The board keeps ONLY the WIRELESS rows — the
+# same number WIRELESSONLY gives it — and orchestrate hands the file to
+# southshore_org_board, which counts WIRELESS + AIR like Colten's own report.
+# Not week-pinnable: its week filter is 'Sales Week' with relative labels, and
+# the pin field blanks it. `week_row` picks the reporting week's columns off
+# the date row instead (on a Monday that is 'Last Week' — the closing week).
+# NDS_SPEC stays for everything that pins a PAST week (newcomer_lastweek,
+# sunday_coverage, icd_sales_board.tableau_days).
+NDS_BOARD_SPEC = dataclasses.replace(
+    NDS_SPEC,
+    view_url=_BASE + ("NDS-SNRES-ATT-OOFWorkbook/ProductSalesSummaryRep/"
+                      "5e31de75-1d1c-4f23-b234-4148516134c0/Thisweekandlast"),
+    total_label="",
+    include_products=("WIRELESS",),
+    week_row=True,
+    week_pin=False,
+    out_name="org_sales_board_nds_twl.csv",
 )
 
 B2B_SPEC = ScrapeSpec(

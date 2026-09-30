@@ -1,18 +1,17 @@
-"""Southshore Org Sales Board — pull, render, text to Colten's org chat.
+"""Southshore Org Sales Board — render + text to Colten's org chat.
 
-Runs on LUCY 1 in the 4am batch, right after the Org Sales Board.
+Runs on LUCY 1 after the Org Sales Board, OFF THAT BOARD'S DOWNLOADS: the
+board's daily fill hands over today's NDS + B2B crosstabs (orchestrate →
+data.adopt), so this costs no Tableau pull (Megan 2026-09-30).
 
-  # dry-run (DEFAULT): pull + render + resolve the group, text NOTHING
+  # dry-run (DEFAULT): render from the board's files + find the chat, text NOTHING
   python -m automations.southshore_org_board.run
 
-  # live: text the board, then drop today's .sent marker
-  python -m automations.southshore_org_board.run --send
-
-  # the schedule: build at 05:45, text at 06:00 Central (7am Eastern)
+  # the schedule: text at 06:00 Central (7am Eastern)
   python -m automations.southshore_org_board.run --send --send-at 06:00
 
-  # redraw from the files already pulled today (no Tableau)
-  python -m automations.southshore_org_board.run --skip-pull
+  # RECOVERY ONLY — the board's files are missing today: pull our own
+  python -m automations.southshore_org_board.run --pull
 
 The week shown is the Org Sales Board's reporting week (rolls Tuesday): on
 Monday the text carries last week complete; Tue–Sun, this week through
@@ -39,19 +38,19 @@ def _today() -> dt.date:
     return (dt.datetime.now(_CENTRAL) if _CENTRAL else dt.datetime.now()).date()
 
 
-def build(today: dt.date, *, skip_pull: bool = False, verbose: bool = False):
-    """Pull, update history, render. Returns (png, summary dict)."""
+def build(today: dt.date, *, pull: bool = False, verbose: bool = False):
+    """Read the board's files (or pull, for recovery), update history, render.
+    Returns (png, summary dict)."""
     from automations.org_sales_board import week as wk
     monday = wk.reporting_monday(today)
     week = data.week_of(monday)
     done = [d for d in week if d < today]
     out_dir = cfg.OUTPUT_DIR / today.isoformat()
 
-    if skip_pull:
-        nds_path = out_dir / "nds_thisweekandlast.csv"
-        b2b_path = out_dir / "b2b_byday.csv"
-    else:
+    if pull:
         nds_path, b2b_path = data.pull(today, out_dir, verbose=verbose)
+    else:
+        nds_path, b2b_path = data.adopted(today)
     nds = data.parse_twl(nds_path)
     b2b = data.parse_b2b(b2b_path, today)
     if not nds:
@@ -129,8 +128,9 @@ def main(argv=None) -> int:
                     help="text the board (default: dry-run, texts nothing)")
     ap.add_argument("--dry-run", action="store_true",
                     help="explicit dry-run (already the default)")
-    ap.add_argument("--skip-pull", action="store_true",
-                    help="redraw from today's already-pulled files")
+    ap.add_argument("--pull", action="store_true",
+                    help="RECOVERY ONLY: pull Tableau ourselves because the "
+                         "Org Sales Board didn't hand over today's files")
     ap.add_argument("--force", action="store_true",
                     help="text again although today's marker says it went — "
                          "ONLY when the first text was wrong")
@@ -152,7 +152,7 @@ def main(argv=None) -> int:
         return 0
 
     try:
-        png, s = build(today, skip_pull=args.skip_pull, verbose=args.verbose)
+        png, s = build(today, pull=args.pull, verbose=args.verbose)
     except Exception as e:  # noqa: BLE001
         msg = f"{type(e).__name__}: {str(e)[:300]}"
         print(f"  FAILED: {msg}", flush=True)

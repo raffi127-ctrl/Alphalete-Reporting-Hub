@@ -88,7 +88,7 @@ def twl_dates(path: Path) -> List[dt.date]:
 
 # ------------------------------------------------------------------- pull
 def pull(today: dt.date, out_dir: Path, verbose: bool = False):
-    """Download both sources. Returns (nds_path, b2b_path). Separate browser
+    """RECOVERY ONLY — normally the Org Sales Board's pull is adopted. Download both sources. Returns (nds_path, b2b_path). Separate browser
     sessions: a second download in the same session was dropping its page
     (2026-09-29, every pull after the first)."""
     from automations.org_sales_board import section_pull as sp
@@ -124,6 +124,35 @@ def pull(today: dt.date, out_dir: Path, verbose: bool = False):
         else:
             raise RuntimeError(f"{label} pull failed after {PULL_TRIES} tries: {err}")
     return nds_path, b2b_path
+
+
+# ------------------------------------------------------ the board's files
+_ADOPTED = {"nds": "nds_thisweekandlast.csv", "b2b": "b2b_byday.csv"}
+
+
+def adopt(kind: str, src: Path, today: dt.date) -> Path:
+    """Called by the Org Sales Board's daily fill right after it downloads its
+    NDS ('Thisweekandlast') and B2B crosstabs: keep a copy for today's
+    Southshore board so it never pulls Tableau itself."""
+    import shutil
+    dst = cfg.OUTPUT_DIR / today.isoformat() / _ADOPTED[kind]
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(src, dst)
+    return dst
+
+
+def adopted(today: dt.date):
+    """Today's files from the board. Missing = the board's pull didn't land,
+    and that FAILS (never a board drawn from yesterday's files)."""
+    out = cfg.OUTPUT_DIR / today.isoformat()
+    paths = [out / _ADOPTED["nds"], out / _ADOPTED["b2b"]]
+    missing = [p.name for p in paths if not (p.exists() and p.stat().st_size)]
+    if missing:
+        raise RuntimeError(
+            f"the Org Sales Board hasn't handed over today's {missing} — did "
+            f"org_sales_board fail its NDS/B2B section? Recover with "
+            f"`python -m automations.southshore_org_board.run --pull --send`")
+    return paths[0], paths[1]
 
 
 def parse_b2b(path: Path, today: dt.date) -> OwnerDays:

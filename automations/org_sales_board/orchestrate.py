@@ -144,7 +144,12 @@ def _make_section_adapter(spec_key: str):
     off its ScrapeSpec. One scrape → engine shape via section_pull."""
     def _adapter(ctx: AdapterContext) -> PullDict:
         from automations.org_sales_board import section_pull
-        spec = section_pull.SPECS[spec_key]
+        # NDS reads 'Thisweekandlast' on the daily fill (WIRELESS rows only —
+        # proven identical to WIRELESSONLY, 50 owners / 97 cells, 2026-09-30) so
+        # the same download also feeds Colten's Southshore Org board. See
+        # section_pull.NDS_BOARD_SPEC.
+        spec = (section_pull.NDS_BOARD_SPEC if spec_key == "nds"
+                else section_pull.SPECS[spec_key])
         today = ctx.today or dt.date.today()
         if ctx.from_csv:
             csv_path = ctx.from_csv
@@ -176,6 +181,19 @@ def _make_section_adapter(spec_key: str):
                     f"loudly if it's still missing then). Dialog said: "
                     f"{str(e)[:300]}")
                 return {}
+        # Colten's Southshore Org board is built from THIS download — no pull
+        # of its own (Megan 2026-09-30: "it shouldn't be an extra pull or extra
+        # time added"). Hand it today's NDS + B2B files. Never fatal: the
+        # board's fill is this job's real work, and a missed hand-off fails
+        # loudly on the Southshore side instead.
+        if spec_key in ("nds", "b2b") and not ctx.from_csv:
+            try:
+                from automations.southshore_org_board import data as _sso
+                _sso.adopt(spec_key, csv_path, today)
+                ctx.logfn(f"  [{spec_key}] handed to southshore_org_board")
+            except Exception as e:  # noqa: BLE001
+                ctx.logfn(f"  ⚠ [{spec_key}] couldn't hand the file to "
+                          f"southshore_org_board: {type(e).__name__}: {e}")
         # The ICD sales-board site needs SETTLED per-day numbers, and this
         # pull already has them — the fiber crosstab is one row per owner per
         # product with a column per weekday. Storing them here costs no extra

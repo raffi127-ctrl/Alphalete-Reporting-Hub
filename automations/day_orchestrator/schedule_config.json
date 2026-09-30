@@ -4316,7 +4316,7 @@
       "machine": "Lucy 1",
       "on_scheduler": true,
       "display_name": "Southshore Org Sales Board (Colten's org text)",
-      "source_type": "tableau",
+      "source_type": "local",
       "data_sources": [],
       "command": [
         "automations.southshore_org_board.run"
@@ -4336,17 +4336,19 @@
           5,
           6
         ],
-        "not_before": "05:54"
+        "not_before": "05:59"
       },
       "priority": "P2",
       "freshness_target": null,
-      "depends_on": [],
-      "timeout_minutes": 30,
+      "depends_on": [
+        "org_sales_board"
+      ],
+      "timeout_minutes": 10,
       "verify": {
         "type": "manifest",
         "report_id": "southshore_org_board"
       },
-      "_note": "Colten Wright's daily org scoreboard (asked 2026-09-29, preview approved 2026-09-30): his 12 market managers by day, last 4 weeks, deltas — ONE image texted to the 'SOUTHSHORE ORG' iMessage chat (29 people) from LUCY 1, the fleet's iMessage box. Own pulls (NDS 'Thisweekandlast' view, WIRELESS+AIR; B2B spec week-pinned), no reuse of the board's files. TIMING (Megan 2026-09-30: '7am EST'): not_before 05:54 Central builds the board (~3-4 min of pulls), then --send-at 06:00 holds the text to 06:00 Central = 7:00 Eastern. The hold is kept to a couple of minutes ON PURPOSE: the orchestrator runs reports one at a time, so a long hold would stall every report behind it. If the pass reaches it late, it sends as soon as it's built (up to ~7:15 ET). A late run still sends — it never waits for tomorrow. Once a day: output/southshore_org_board/<day>/texted.sent. History (the 4-week rows) lives in output/southshore_org_board/history.json on Lucy 1."
+      "_note": "Colten Wright's daily org scoreboard (asked 2026-09-29, preview approved 2026-09-30): his 12 market managers by day, last 4 weeks, deltas — ONE image texted to the 'SOUTHSHORE ORG' iMessage chat (29 people) from LUCY 1. NO PULL OF ITS OWN (Megan 2026-09-30: 'it shouldn't be an extra pull or extra time added'): org_sales_board's daily fill downloads NDS off 'Thisweekandlast' (board keeps WIRELESS only — proven identical to WIRELESSONLY, 0 diffs over 50 owners / 97 cells, and 11/11 on a Monday read) and B2B as always, then hands both files over (orchestrate -> southshore_org_board.data.adopt). This job only draws + texts, in seconds. depends_on org_sales_board; not_before 05:59 + --send-at 06:00 Central = 7:00 Eastern (a sub-minute hold — the orchestrator is serial). Missing hand-off = FAILS loudly, never draws from yesterday; recover with `--pull --send`. Once a day: output/southshore_org_board/<day>/texted.sent. History (4-week rows) in output/southshore_org_board/history.json on Lucy 1."
     },
     "southshore_org_board_dry": {
       "on_scheduler": false,
@@ -4368,7 +4370,7 @@
       "verify": {
         "type": "not_configured"
       },
-      "_note": "What the Hub card's Run button fires: the full pull + render + group lookup with NO --send, so pressing it never texts the 29-person chat. weekdays [] = never auto-run. The real daily send is 'southshore_org_board'."
+      "_note": "What the Hub card's Run button fires: render from the Org Sales Board's files + group lookup with NO --send, so pressing it never texts the 29-person chat. weekdays [] = never auto-run. The real daily send is 'southshore_org_board'."
     },
     "delta_lastweek_backfill": {
       "order": 8.15,
