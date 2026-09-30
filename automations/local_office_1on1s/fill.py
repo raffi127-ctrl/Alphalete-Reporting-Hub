@@ -58,12 +58,21 @@ RECRUITING = {
     "BOB % / 2nd rd closing":   "bob_pct",
     "New Starts Scheduled":     "ns_sched",
     "New Starts Showed":        "ns_showed",
-    "New starts Retention %":   "ns_pct",      # source is 'NS Showed %' — see spec
+    # 'New starts Retention %' is NOT in this map. It looked like the source's
+    # 'NS Showed %' and is a different number. Raf, 2026-09-28: "this is
+    # judging how many new starts they kept that were assigned to their team.
+    # So if seven sins is training 7 people this week, how many of those people
+    # are still around, that's the new start retention." That is retained over
+    # trained, which run.py already computes from the Trainer column — a show
+    # rate would have been quietly wrong in a row Raf reads every week.
     # condensed — TEAM Template box 1
     "2nd Closing numbers":      "bob_num",
     "2nd Closing %":            "bob_pct",
     "New Starts showed / Scheduled": "ns_showed",
 }
+
+# The row computed from the Trainer chain rather than the recruiting tab.
+RETENTION_ROW = "New starts Retention %"
 
 # EVERY ROW THIS REPORT OWNS. A row here is cleared when the run has no value
 # for it, so a number from a previous run cannot outlive its source.

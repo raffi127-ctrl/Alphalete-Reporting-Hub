@@ -258,11 +258,18 @@ def main(argv=None) -> int:
                     if hit is not None:
                         trained.append(m)
                 if trained:
+                    kept = sum(1 for m in trained if not m.terminated)
                     filled.add("Trained This week?", wk, str(len(trained)),
                                f"WE {wk:%-m/%-d} board: first-week reps trained by {name}")
-                    filled.add("Retained?", wk,
-                               str(sum(1 for m in trained if not m.terminated)),
+                    filled.add("Retained?", wk, str(kept),
                                f"WE {wk:%-m/%-d} board: of those, not terminated")
+                    # Raf's definition, not the recruiting tab's show rate:
+                    # "how many new starts they kept that were assigned to
+                    # their team... how many of those people are still around".
+                    filled.add(F.RETENTION_ROW, wk,
+                               f"{round(100 * kept / len(trained))}%",
+                               f"WE {wk:%-m/%-d}: {kept} of {len(trained)} "
+                               f"new starts trained by {name} still on the board")
 
             # products + knocks, per week
             for wk, (wsales, wdays) in weekly.items():
