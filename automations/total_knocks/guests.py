@@ -72,6 +72,7 @@ GUEST_REPS: dict = {
             "Andrew De La Torre",
             "Danniel Alvarenga",
             "Luis Servellon",
+            "Jacob Ortega",             # Carlos 2026-09-30: "add jacob ortega"
         ],
     },
 }
