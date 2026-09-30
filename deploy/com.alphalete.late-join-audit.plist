@@ -14,7 +14,7 @@
     </array>
     <key>WorkingDirectory</key><string>/Users/megan/1st Claude Folder</string>
     <key>EnvironmentVariables</key><dict><key>PYTHONPATH</key><string>/Users/megan/1st Claude Folder</string></dict>
-    <!-- Every 30 min; the 6:30 PM Central Mon-Sat gate is in run.py (--due), not here. -->
+    <!-- Every 30 min; the 8 PM Central Mon-Sat gate is in run.py (--due), not here. -->
     <key>StartInterval</key><integer>1800</integer>
     <key>StandardOutPath</key><string>/tmp/com.alphalete.late-join-audit.out</string>
     <key>StandardErrorPath</key><string>/tmp/com.alphalete.late-join-audit.err</string>

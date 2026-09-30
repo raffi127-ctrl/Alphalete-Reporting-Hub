@@ -1,5 +1,5 @@
 #!/bin/bash
-# Late Join Audit -- once a day, Mon-Sat after 6:30 PM CT, Lucy checks every
+# Late Join Audit -- once a day, Mon-Sat after 8 PM CT, Lucy checks every
 # 1st round "Late Join" in AppStream against the slot (5-min grace, Rafael
 # 2026-09-30) and posts one thread in #ars-recruiting-numbers. Evenings, not
 # mornings (Eve 2026-09-30: the morning is for the important reports). Ticks
