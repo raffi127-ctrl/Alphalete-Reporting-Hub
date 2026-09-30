@@ -2623,6 +2623,57 @@ AUTOMATED_REPORTS = [
         "checklist": [],
     },
     {
+        "id": "southshore-org-board",
+        "name": "Southshore Org Sales Board → SOUTHSHORE ORG text",
+        "creator": "Megan & Claude",
+        "emoji": "\U0001F4F2",
+        "color": "#1C3A63",
+        "category": "\U0001F4CA Metrics",
+        "description": (
+            "Colten Wright's org scoreboard, texted every morning at 7:00 AM ET "
+            "into the \"SOUTHSHORE ORG\" iMessage chat from Lucy 1: his 12 "
+            "market managers by day, Units / Last Week / Prev Week, the Org "
+            "Total, the last 4 weeks by day, and vs Prior Week / vs 4 Week AVG."
+        ),
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "At **6:54 AM ET** Lucy 1 pulls Tableau, draws ONE image (the "
+            "layout Colten approved 9/30) and texts it into **SOUTHSHORE ORG** "
+            "(29 people) at **7:00 AM ET**.\n\n"
+            "WHERE THE NUMBERS COME FROM\n"
+            "• **10 NDS owners** — NDS-SN (RES-ATT-OOF) Workbook → Product Sales "
+            "Summary(Rep) → saved view **Thisweekandlast** → sheet **Sales By "
+            "ICD (Weekly View)**, **WIRELESS + AIR** rows (that is what his own "
+            "report counts — it matched to the unit).\n"
+            "• **Eveliz Wright + Valeria Tristan** (B2B) — ATTTRACKER-B2B → "
+            "**Sales By ICD (ATT) (V2)**, week-pinned.\n"
+            "• **Last 4 weeks** — Tableau only serves this week and last, so "
+            "each closed week is saved on Lucy 1. 9/6–9/27 came from Colten's "
+            "own report; from W.E. 10.4 on it is all Tableau.\n\n"
+            "ROSTER\n"
+            "His 12, exactly as his report lists them — wider than the Org "
+            "Sales Board's 'Colten Org' (which leaves out Karrington Moody "
+            "and Justin Fermin).\n\n"
+            "SAFETY\n"
+            "Texts **once a day** (a per-day marker), never an all-zero board, "
+            "and finds the chat by NAME every send. A failed run posts to "
+            "**#claudecorrections-and-requests**. The **Run** button is a "
+            "DRY RUN — it pulls, draws and finds the chat but texts no one."
+        ),
+        "assignees": ["Lucy 1"],
+        "run_machine": "Lucy 1",
+        # Registry entry WITHOUT --send, so the button can never text 29 people.
+        "run_rerun_id": "southshore_org_board_dry",
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "daily",
+            "time": "7:00 AM",
+            "time_label": "7:00 AM ET (6:00 AM CT)",
+            "estimated_minutes": 5,
+        },
+        "checklist": [],
+    },
+    {
         "id": "lucy-weather-forecast",
         "name": "Lucy Weather Forecast",
         "creator": "Megan",

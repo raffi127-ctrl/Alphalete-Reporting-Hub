@@ -368,6 +368,9 @@ _HUB_CARD = {
     "owner_chat_texts_trackers": "owner-chat-texts",
     "owner_chat_texts_board": "owner-chat-texts",
     "owner_chat_texts": "owner-chat-texts",
+    # Colten's org board: the 7am send and the Run button's dry run are one card.
+    "southshore_org_board": "southshore-org-board",
+    "southshore_org_board_dry": "southshore-org-board",
     # gap_alerts self-reports via hub_activity under the card id, but a `lucy
     # rerun gap_alerts` publishes under the SCHEDULE id — both have to land on
     # the one card or the Hub grows a hyphen/underscore twin.
