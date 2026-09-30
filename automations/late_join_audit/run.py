@@ -12,8 +12,9 @@ against a 5-minute grace:
 Where it comes from: AppStream Calendar day view (p=102), FIRST INTERVIEWS
 table, one row per candidate: Time (the slot, office clock), Show Up, Done By,
 Follow Up Status (= "Late Join"), Follow Up By (who marked it) and Follow Up
-Time ("Tue,29 01:16 PM" -- shown in the BROWSER's time zone, not the office's:
-Lucy 2's browser is read with Intl and converted to each office's zone).
+Time ("Tue,29 01:16 PM" -- shown on the LOGGED-IN ACCOUNT's clock, not the
+office's: Lucy's AppStream account reads Pacific, converted to each office's
+zone; see MARK_TZ).
 
 Posted to #ars-recruiting-numbers (Eve, 2026-09-30): one thread per OFFICE per
 day, "Drew Tepper's Late Join Audit — September 29th 2026" (like the
@@ -46,6 +47,12 @@ CHANNEL_ID = "C0C42793AKS"          # #ars-recruiting-numbers (Eve, 2026-09-30)
 EVE_USER_ID = "U088E2KJEV8"         # preview DMs
 GRACE_MIN = 5                       # Rafael, 2026-09-30: "5 minutes of grace for now"
 DEFAULT_TZ = "America/Chicago"
+# The clock AppStream shows Follow Up Time on for Lucy's account. NOT the
+# browser's (Intl said Central on Lucy 2 and gave marks 2 hours before the
+# slot). Pinned by two marks people saw live on 9/29: Shacty 01:16 PM here =
+# 4:16 PM in Drew's Eastern office (Analay), Priscilla 06:49 AM = 8:49 AM in
+# Raf's Central office (#rafs-office-recruiting-11280).
+MARK_TZ = "America/Los_Angeles"
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "late_join_audit"
 LEDGER = OUT_DIR / "posted.json"
 # South Shore recruits through Colten's AppStream office, which the org roster
@@ -144,9 +151,7 @@ def read_day(day: dt.date, only: Optional[List[str]] = None) -> Dict:
         tok = dump._rqst(page)
         if not tok:
             raise RuntimeError("no rqst token on the AppStream console page")
-        browser_tz = ZoneInfo(page.evaluate(
-            "() => Intl.DateTimeFormat().resolvedOptions().timeZone") or DEFAULT_TZ)
-        print(f"browser clock: {browser_tz}")
+        browser_tz = ZoneInfo(MARK_TZ)
         for owner, oid in offices():
             if only and oid not in only:
                 continue

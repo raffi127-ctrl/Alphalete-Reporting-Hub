@@ -54,6 +54,15 @@ class LateJoinTest(unittest.TestCase):
         other[15] = "SELECT=None"
         self.assertEqual(rows(other), [])
 
+    def test_central_office_priscilla(self):
+        # Raf's office (Central): 06:49 AM on Lucy's clock = 8:49 AM there,
+        # as #rafs-office-recruiting-11280 said at the time
+        row = list(SHACTY)
+        row[2], row[17] = "8:45 AM", "Tue,29 06:49 AM"
+        r = run.rows_to_late_joins([HDR, row], "Rafael Hidalgo", "11280", DAY,
+                                   ZoneInfo(run.MARK_TZ))[0]
+        self.assertEqual((r["marked"], r["minutes"]), ("8:49 AM", 4))
+
     def test_mark_on_the_next_day(self):
         m = run.parse_marked("Wed,30 08:01 AM", DAY, PT)
         self.assertEqual(m.date(), dt.date(2026, 9, 30))
