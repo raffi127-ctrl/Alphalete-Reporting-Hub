@@ -102,6 +102,12 @@ class SkippedTest(unittest.TestCase):
         self.assertIn('?timestamp=217">@3:37</a>', page)
 
 
+class KeyPiecesTest(unittest.TestCase):
+    def test_every_portion_has_its_key_pieces_in_the_prompt(self):
+        for k, _ in grade.PORTIONS:
+            self.assertIn(f"- {k}: {grade.KEY_PIECES[k]}", grade.SYSTEM)
+
+
 class VerbiageTest(unittest.TestCase):
     def test_nakechia_as_rafael_counted_it(self):
         # 5 skipped + 2 in the wrong words: the 2 are NOT skips, and they cost

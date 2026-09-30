@@ -116,7 +116,23 @@ How to answer each item (strictly YES or NO; partly done = NO):
 Applicants asking indirect questions still count (e.g. "are we going to be on the field?" = asking if it's door to door).
 """
 
-PORTION_KEYS = ", ".join(k for k, _ in PORTIONS)
+# What makes a portion "said" at all. Missing one of these = skipped; all of
+# them there but the rest dropped or worded differently = incorrect verbiage.
+# (9/30 first run: the right $65-80k without "within 4-6 months" came back
+# as a skip -- Rafael counts that as said, just not word for word.)
+KEY_PIECES = {
+    "face_to_face": "face to face with clients / not a call center or retail job",
+    "management": "a management role, with a time frame",
+    "pay_entry": "a weekly, performance-based paycheck with the $1,000-1,500 average",
+    "pay_assistant": "the $65-80k salary for assistant manager",
+    "pay_executive": "the $250k for the top position",
+    "schedule": "day shifts, 40 hours a week and Saturdays",
+    "commute": "asking if the commute works for an EVERYDAY job",
+    "check_ins": "each of the three questions",
+    "wrap_up": "the call before 5pm today, business professional attire, notebook and "
+               "pen, and 'if you don't get a call we went a different direction'",
+}
+PORTION_KEYS = "\n".join(f"- {k}: {KEY_PIECES[k]}" for k, _ in PORTIONS)
 
 SYSTEM = f"""You audit 1st round group job interviews (Zoom, recorded by Fathom) for a door-to-door sales company. The interviewer follows a script; you check the transcript against it for the hiring manager, who uses it to coach the interviewer.
 
@@ -127,9 +143,11 @@ THE SCRIPT
 {RULES}
 For every item write a note of 1-3 sentences in plain English: what she actually said, as a quote with its timestamp (like @12:29), and -- when it falls short -- what the script says instead. If the item never came up, say so. Then 2 or 3 short coaching points for the interviewer: most important first, what to fix and what to keep doing.
 
-Then list in skipped_portions every script portion she did not say the way the script says it, by its key ({PORTION_KEYS}), with a kind:
-- skipped: she never said it, or left out a piece of it (a missing number, title, question or instruction). check_ins = all three check-in questions; wrap_up = every piece of the wrap-up.
-- incorrect_verbiage: she covered every piece, but in different wording that changes a fact -- a number, a time frame, a title or a promise (e.g. "six months" for "6-8 months", "management role" for "Executive Manager"). Ordinary rephrasing that keeps the same facts is NOT incorrect verbiage: leave it off the list.
+Then list in skipped_portions every script portion she did not say the way the script says it, by its key, with a kind. Each portion's KEY pieces:
+{PORTION_KEYS}
+Kinds:
+- skipped: she never said it, or left out one of its KEY pieces.
+- incorrect_verbiage: every KEY piece is there, but something else in the portion is wrong or left out -- a different number, time frame or title, or a detail of the script line dropped (e.g. "six months" for "6-8 months", "management role" for "Executive Manager", the $65-80k without "within the first 4-6 months"). Ordinary rephrasing that keeps every fact of the line is NOT incorrect verbiage: leave it off the list.
 note = one short sentence: for skipped, what she said instead or that it never came up; for incorrect_verbiage, her exact words as a quote. Always with the timestamp. Empty list if she said every portion right.
 
 Also list the applicants' questions on these topics, each with the interviewer's answer as said (quote + timestamp): door to door / field work, benefits, flexible schedule, is this a scam, hourly pay, working in a specific city. Leave the list empty if none came up.
