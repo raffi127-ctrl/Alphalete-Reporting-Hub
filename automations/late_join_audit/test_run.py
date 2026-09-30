@@ -93,5 +93,26 @@ class LateJoinTest(unittest.TestCase):
         self.assertNotIn("", ids)
 
 
+class DueTest(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self._saved = (run.LEDGER, run.OUT_DIR)
+        run.OUT_DIR = Path(tempfile.mkdtemp())
+        run.LEDGER = run.OUT_DIR / "posted.json"
+
+    def tearDown(self):
+        run.LEDGER, run.OUT_DIR = self._saved
+
+    def test_evening_gate(self):
+        at = lambda d, h, m=0: dt.datetime(2026, 9, d, h, m, tzinfo=ZoneInfo(run.DEFAULT_TZ))
+        self.assertFalse(run.due(at(30, 18, 0)))       # Wednesday before 6:30 PM
+        self.assertTrue(run.due(at(30, 18, 30)))       # Wednesday 6:30 PM
+        self.assertTrue(run.due(at(26, 19)))           # Saturday: some offices interview
+        self.assertFalse(run.due(at(27, 19)))          # Sunday
+        run._mark_done(dt.date(2026, 9, 30))
+        self.assertFalse(run.due(at(30, 19)))          # already posted today
+
+
 if __name__ == "__main__":
     unittest.main()

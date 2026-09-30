@@ -453,8 +453,9 @@
       "machine": "Lucy 2"
     },
     "late_join_audit": {
-      "on_scheduler": true,
-      "_note": "Rafael 2026-09-30: every 1st round 'Late Join' in AppStream (day view p=102, every org office) checked against the slot with a 5-min grace; thread 'Late Join Audit — <date>' in #ars-recruiting-numbers (Eve 9/30). READ-ONLY on AppStream. Args: --date YYYY-MM-DD, --office id,id. Posts a day once (output/late_join_audit/posted.json). SCHEDULED (Eve 9/30): every morning from 08:00 posts YESTERDAY (a day with no Late Joins posts nothing).",
+      "on_scheduler": false,
+      "hand_run_only": true,
+      "_note": "Rafael 2026-09-30: every 1st round 'Late Join' in AppStream (day view p=102, every org office) checked against the slot with a 5-min grace; thread 'Late Join Audit — <date>' in #ars-recruiting-numbers (Eve 9/30). READ-ONLY on AppStream. Args: --date YYYY-MM-DD, --office id,id. Posts a day once (output/late_join_audit/posted.json). The real clock is deploy/late_join_audit.sh (LaunchAgent com.alphalete.late-join-audit on Lucy 2, every 30 min, posts TODAY once after 6:30 PM CT Mon-Sat; Eve 9/30: evenings, not the busy morning). This entry is the hand-run handle. A day with no Late Joins posts nothing.",
       "display_name": "Late Join Audit \u2014 post",
       "source_type": "appstream",
       "data_sources": [],
@@ -463,16 +464,7 @@
       ],
       "base_args": ["--post"],
       "cadence": {
-        "weekdays": [
-          0,
-          1,
-          2,
-          3,
-          4,
-          5,
-          6
-        ],
-        "not_before": "08:00"
+        "weekdays": []
       },
       "priority": "P3",
       "freshness_target": null,
@@ -500,6 +492,28 @@
       "depends_on": [],
       "verify": null,
       "timeout_minutes": 60,
+      "machine": "Lucy 2"
+    },
+    "install_late_join_audit_agent": {
+      "on_scheduler": false,
+      "_note": "One-shot installer for com.alphalete.late-join-audit (Lucy 2) — see late_join_audit. Run `lucy rerun install_late_join_audit_agent` after `lucy update`.",
+      "display_name": "Install Late Join Audit agent (every 30 min, posts after 6:30 PM CT)",
+      "source_type": "none",
+      "data_sources": [],
+      "command": [
+        "automations.day_orchestrator.install_agent"
+      ],
+      "base_args": [
+        "late-join-audit"
+      ],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 15,
       "machine": "Lucy 2"
     },
     "sms_log": {

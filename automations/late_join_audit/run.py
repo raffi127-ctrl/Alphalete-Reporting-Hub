@@ -18,12 +18,15 @@ zone; see MARK_TZ).
 
 Posted to #ars-recruiting-numbers (Rafael, 2026-09-30): ONE thread per day,
 'Late Join Audit — September 29th 2026' -- the summary, then one reply per
-office that had Late Joins. Runs the day AFTER (default --date = yesterday).
+office that had Late Joins. Posted the SAME evening (Eve 9/30: mornings are
+busy with the important reports): deploy/late_join_audit.sh ticks every 30
+min on Lucy 2 and --due lets it through once a day, after POST_AFTER.
 READ-ONLY on AppStream. Runs on Lucy 2.
 
     python -m automations.late_join_audit.run --date 2026-09-29            # dry-run: print
     python -m automations.late_join_audit.run --date 2026-09-29 --preview-to-eve --post
     python -m automations.late_join_audit.run --post                       # LIVE, today
+    python -m automations.late_join_audit.run --due --post                 # the evening tick
 """
 from __future__ import annotations
 
@@ -55,6 +58,11 @@ DEFAULT_TZ = "America/Chicago"
 MARK_TZ = "America/Los_Angeles"
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "late_join_audit"
 LEDGER = OUT_DIR / "posted.json"
+# The evening gate: past the last 1st round slot (3:45 PM CT on Raf's funnels)
+# with room for the late marks. Mon-Sat: some offices interview on Saturday,
+# and a day with no Late Joins posts nothing anyway.
+POST_AFTER = dt.time(18, 30)
+WEEKDAYS = range(0, 6)
 # South Shore recruits through Colten's AppStream office, which the org roster
 # lists without an id (ad_photo_threads.config has it)
 EXTRA_OFFICES = [("Colten Wright", "14733")]
@@ -241,6 +249,20 @@ def _ledger() -> Dict:
         return {}
 
 
+def due(now: dt.datetime) -> bool:
+    """The tick's gate: Mon-Sat, past POST_AFTER (Central), day not posted."""
+    return (now.weekday() in WEEKDAYS and now.time() >= POST_AFTER
+            and now.date().isoformat() not in _ledger().get("_days_done", []))
+
+
+def _mark_done(day: dt.date) -> None:
+    led = _ledger()
+    if day.isoformat() not in led.get("_days_done", []):
+        led["_days_done"] = (led.get("_days_done", []) + [day.isoformat()])[-60:]
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    LEDGER.write_text(json.dumps(led, indent=1), encoding="utf-8")
+
+
 def post(day: dt.date, data: Dict, *, preview: bool) -> int:
     """ONE thread per day (Rafael, 2026-09-30: "not something that needs
     consistent monitoring", pick the all-in-one): the day's summary, then one
@@ -270,26 +292,26 @@ def post(day: dt.date, data: Dict, *, preview: bool) -> int:
                                        unfurl_links=False, unfurl_media=False)
         failed += 0 if resp.get("ok") else 1
     if not preview and not failed:
-        led = _ledger()
-        led["_days_done"] = (led.get("_days_done", []) + [day.isoformat()])[-60:]
-        OUT_DIR.mkdir(parents=True, exist_ok=True)
-        LEDGER.write_text(json.dumps(led, indent=1), encoding="utf-8")
+        _mark_done(day)
     print(f"posted {len(texts) - failed}/{len(texts)} replies")
     return 1 if failed else 0
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="late_join_audit.run")
-    ap.add_argument("--date", help="YYYY-MM-DD (default: YESTERDAY, Central)")
+    ap.add_argument("--date", help="YYYY-MM-DD (default: today, Central)")
+    ap.add_argument("--due", action="store_true",
+                    help="evening tick: only Mon-Sat after 6:30 PM CT, once a day")
     ap.add_argument("--office", default="", help="comma list of office ids (default: all org)")
     ap.add_argument("--post", action="store_true", help="actually post (default: dry-run)")
     ap.add_argument("--preview-to-eve", action="store_true", help="post in Eve's DM instead")
     ap.add_argument("--cached", action="store_true",
                     help="reuse this machine's last read of that day (no AppStream)")
     args = ap.parse_args(argv)
-    # Rafael 9/30: "a full audit for all of yesterday ... then do that daily"
-    day = (dt.date.fromisoformat(args.date) if args.date
-           else dt.datetime.now(ZoneInfo(DEFAULT_TZ)).date() - dt.timedelta(days=1))
+    now = dt.datetime.now(ZoneInfo(DEFAULT_TZ))
+    if args.due and not due(now):
+        return 0
+    day = dt.date.fromisoformat(args.date) if args.date else now.date()
     only = [o.strip() for o in args.office.split(",") if o.strip()] or None
     print(f"Late Join Audit for {day:%a %b %d, %Y}")
     cache = OUT_DIR / f"{day}.json"
@@ -311,6 +333,8 @@ def main(argv=None) -> int:
         return 0
     if not data["late"] and not data["failed"]:
         print("no Late Joins that day - nothing to post")     # a quiet day, not a failure
+        if not args.preview_to_eve:
+            _mark_done(day)                                   # so the next ticks rest
         return 0
     return post(day, data, preview=args.preview_to_eve)
 
