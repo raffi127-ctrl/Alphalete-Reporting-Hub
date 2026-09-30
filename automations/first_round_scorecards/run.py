@@ -22,6 +22,13 @@ MUST POST FROM THE MINI: on Eve's Windows the Slack token is Evelyn's own.
 
 --refresh is for a change to the scorecard itself: the replies people already
 have open show the new version, instead of a second reply to pick between.
+
+    ... --date 2026-09-22 --post --docs-only   # a past day: ONLY the audit docs
+                                               # (Drive), nothing in Slack
+
+--docs-only is for days before the bot posted (the Sep 17-24 manual pilot):
+their docs land in <interviewer>/<date> in the current format, no thread is
+opened for an old day (Eve, 2026-09-30).
 """
 from __future__ import annotations
 
@@ -288,6 +295,23 @@ def post(day: dt.date, graded: Dict[str, List], *, preview: bool,
     return 1 if failed else 0
 
 
+def docs_only(graded: Dict[str, List]) -> int:
+    """Write each graded interview's audit doc, nothing in Slack."""
+    failed = 0
+    for name, rows in graded.items():
+        for m, result, skipped in rows:
+            if not result:
+                print(f"  {name} {_clock(fathom.start_ct(m))}: no doc ({skipped})")
+                continue
+            try:
+                print(f"  {name} {_clock(fathom.start_ct(m))}: {doc.upload(m, name, result)}")
+            except Exception as exc:  # noqa: BLE001
+                print(f"  {name} {_clock(fathom.start_ct(m))}: audit doc FAILED "
+                      f"{type(exc).__name__}: {exc}")
+                failed += 1
+    return 1 if failed else 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="first_round_scorecards.run")
     ap.add_argument("--date", help="YYYY-MM-DD (default: today, Central)")
@@ -297,6 +321,8 @@ def main(argv=None) -> int:
     ap.add_argument("--refresh", action="store_true",
                     help="re-grade interviews already posted that day and EDIT their "
                          "replies + docs in place (same links, no new post)")
+    ap.add_argument("--docs-only", action="store_true",
+                    help="with --post: write the audit docs only, no Slack (a past day)")
     ap.add_argument("--no-grade", action="store_true", help="list the recordings only, no AI")
     ap.add_argument("--due", action="store_true",
                     help="scheduled tick: only on a weekday after 6 PM CT, once a day")
@@ -305,7 +331,7 @@ def main(argv=None) -> int:
     if args.due and not due(now):
         return 0
     day = dt.date.fromisoformat(args.date) if args.date else now.date()
-    live = args.post and not args.preview_to_eve and not args.no_grade
+    live = args.post and not args.preview_to_eve and not args.no_grade and not args.docs_only
 
     print(f"1st Round Scorecards for {day:%a %b %d, %Y}")
     graded = build(day, do_grade=not args.no_grade,
@@ -332,6 +358,9 @@ def main(argv=None) -> int:
     if not args.post or args.no_grade:
         print("DRY-RUN: nothing posted")
         return 0
+    if args.docs_only:
+        print("AUDIT DOCS ONLY (nothing in Slack)")
+        return docs_only(graded)
     where = "Eve's DM (preview)" if args.preview_to_eve else "#ars-recruiting-numbers"
     print(f"POSTING to {where}")
     rc = post(day, graded, preview=args.preview_to_eve, refresh=args.refresh)

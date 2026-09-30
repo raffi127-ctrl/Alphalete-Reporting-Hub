@@ -263,5 +263,17 @@ class DueTest(unittest.TestCase):
         self.assertFalse(run.due(at(29, 19)))          # already posted today
 
 
+class DocsOnlyTest(unittest.TestCase):
+    def test_writes_docs_and_never_touches_slack(self):
+        from unittest import mock
+        graded = {"Valentina": [(MEETING, result(), ""), (MEETING, None, "empty")]}
+        with mock.patch.object(run, "build", return_value=graded),                 mock.patch.object(doc, "upload", return_value="https://docs/x") as up,                 mock.patch.object(run, "post") as posted,                 mock.patch.object(run, "_mark_day_done") as marked:
+            rc = run.main(["--date", "2026-09-22", "--post", "--docs-only"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(up.call_count, 1)          # the ungraded one gets no doc
+        posted.assert_not_called()
+        marked.assert_not_called()                  # a past day stays un-posted
+
+
 if __name__ == "__main__":
     unittest.main()
