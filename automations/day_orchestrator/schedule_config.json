@@ -4311,6 +4311,43 @@
       },
       "_warn": "Scheduled on the SANDBOX 'Copy of' tab ONLY. The real VA tab stays guarded (--real refuses live runs + a Copy-of-only assert); a real-tab cutover needs that guard relaxed first — do NOT point this at the real tab unattended without that work."
     },
+    "southshore_org_board": {
+      "order": 15.1,
+      "machine": "Lucy 1",
+      "on_scheduler": true,
+      "display_name": "Southshore Org Sales Board (Colten's org text)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.southshore_org_board.run"
+      ],
+      "base_args": [
+        "--send",
+        "--send-at",
+        "06:00"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "not_before": "05:54"
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "timeout_minutes": 30,
+      "verify": {
+        "type": "manifest",
+        "report_id": "southshore_org_board"
+      },
+      "_note": "Colten Wright's daily org scoreboard (asked 2026-09-29, preview approved 2026-09-30): his 12 market managers by day, last 4 weeks, deltas — ONE image texted to the 'SOUTHSHORE ORG' iMessage chat (29 people) from LUCY 1, the fleet's iMessage box. Own pulls (NDS 'Thisweekandlast' view, WIRELESS+AIR; B2B spec week-pinned), no reuse of the board's files. TIMING (Megan 2026-09-30: '7am EST'): not_before 05:54 Central builds the board (~3-4 min of pulls), then --send-at 06:00 holds the text to 06:00 Central = 7:00 Eastern. The hold is kept to a couple of minutes ON PURPOSE: the orchestrator runs reports one at a time, so a long hold would stall every report behind it. If the pass reaches it late, it sends as soon as it's built (up to ~7:15 ET). A late run still sends — it never waits for tomorrow. Once a day: output/southshore_org_board/<day>/texted.sent. History (the 4-week rows) lives in output/southshore_org_board/history.json on Lucy 1."
+    },
     "delta_lastweek_backfill": {
       "order": 8.15,
       "on_scheduler": false,
