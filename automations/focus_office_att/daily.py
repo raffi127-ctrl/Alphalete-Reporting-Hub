@@ -1103,10 +1103,17 @@ def _notify_failure(headline: str, detail: str, log_file: str) -> None:
 # (Eve's run sat at 62 min before someone stopped it, 2026-05-31). Generous
 # vs. the ~15 min normal total, so a legit slow Monday won't false-trip.
 PHASE_TIMEOUT_EXIT = 124  # conventional "timed out" exit code
-PHASE2_TIMEOUT_S = 60 * 60  # was 40 — a full 30-owner scrape (~1.5 min/owner of
+PHASE2_TIMEOUT_S = 90 * 60  # was 40 — a full 30-owner scrape (~1.5 min/owner of
 # impersonation overhead, incl. the heavy master owner) runs ~48 min and got
 # killed at owner 26 (Eve 2026-06-18). The checkpoint resumes a kill, but bump
 # the cap so a normal full run completes without tripping it + filing a glitch.
+# 2026-09-30: 60 → 90. Since 9/22 every owner on Lucy 3 pays 1-3 min of Sheets
+# 429 waits (alphaletereporting@ shares one 60 reads/min budget with Lucy 2 and
+# Lucy 4), so a normal weekday runs ~2.2 min/owner ≈ 53 min for 24 — right at
+# the edge. 9/30 added slow ownerville impersonation (20-90s vs 5-10s) and the
+# first pass hit 60 at owner 23 of 24, every owner healthy. A HUNG owner is
+# already cut by run_all_owners' 5-min PER_OWNER_TIMEOUT_S, so this cap only
+# has to stop a runaway phase. 90 + Phase 3's 35 stays inside the registry's 195.
 # MONDAY IS A DIFFERENT JOB. On the shift day Phase 2 scrapes a WHOLE WEEK
 # (--week-start, to finish last week now that Sunday has landed) instead of one
 # day (--daily-window), so it costs ~2.5 min/owner instead of ~1.5. 26 owners
