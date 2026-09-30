@@ -58,16 +58,19 @@ class LateJoinTest(unittest.TestCase):
         m = run.parse_marked("Wed,30 08:01 AM", DAY, PT)
         self.assertEqual(m.date(), dt.date(2026, 9, 30))
 
-    def test_summary_counts_per_person(self):
+    def test_one_thread_per_office_summary_first(self):
         data = {"late": rows(SHACTY, SHAWN), "read": ["22583"], "failed": {}}
-        text = run.summary_text(DAY, data)
-        self.assertIn("*2 Late Joins* across 1 offices · ❌ *1 marked before the 5-min grace*",
-                      text)
+        (key, got), = run.by_office(data)
+        self.assertEqual(key, ("Drew Tepper", "22583"))
+        self.assertEqual(run.thread_title("Drew Tepper"), "Drew Tepper's Late Join Audit")
+        text = run.summary_text(got)
+        self.assertIn("*2 Late Joins* · ❌ *1 marked before the 5-min grace*", text)
         self.assertIn("• Mariana Echeverry: 1 Late Join · ❌ 1 too early", text)
         self.assertIn("• Gabriela Sorto: 1 Late Join", text)
         self.assertIn("⚠️ 1 marked Late Join but AppStream says they showed up", text)
-        office = run.office_text("Drew Tepper", "22583", data["late"])
-        self.assertTrue(office.splitlines()[1].startswith("❌ *Shacty Amezquita*"))
+        self.assertTrue(run._line(got[0]).startswith("❌ *Shacty Amezquita* · slot 4:15 PM · "
+                                                     "marked 4:16 PM (1 min after) by "
+                                                     "Mariana Echeverry"))
 
     def test_offices_include_colten(self):
         ids = [o for _, o in run.offices()]
