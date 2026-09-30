@@ -29,7 +29,7 @@ import json
 from pathlib import Path
 from typing import List
 
-from automations.office_metrics.offices import OFFICES, Office
+from automations.office_metrics.offices import ONBOARDED_EXTRA, OFFICES, Office
 
 # The two afternoon slots are Cody's alone (Megan 2026-08-25). Widening this is
 # a one-line change: the schedule, the pull and the posting are all already
@@ -253,6 +253,23 @@ def _has_channel(offices: List[Office]) -> List[Office]:
     return [o for o in offices if (o.channel_id or "").strip()]
 
 
+def _wants_knocks(offices: List[Office]) -> List[Office]:
+    """Drop onboarded offices that left "knocks" off their form.
+
+    OPTED OUT = NOT OWED A BOARD (2026-09-29). Adding an office to
+    office_metrics.OFFICES enrols it in the 9 PM slot, so an owner who ticked
+    every metric EXCEPT the knock board still got one attempted. Drew (9/28) and
+    Jairo (9/29) both failed their first night that way — neither dispositions
+    in OwnerVille under a name it can find — and each opened
+    failure-knocks_intraday for a board they never asked for. Reading the form's
+    own `enrolled_reports` makes the opt-out the one place to look; the day an
+    owner adds "knocks" back, they're enrolled again on their own. Hardcoded
+    offices have no ONBOARDED_EXTRA row and are left as they are."""
+    return [o for o in offices
+            if o.key not in ONBOARDED_EXTRA
+            or "knocks" in (ONBOARDED_EXTRA[o.key].get("enrolled_reports") or [])]
+
+
 def enrolled(slot_key: str) -> List[Office]:
     """Offices owed `slot_key`'s board, in registry order.
 
@@ -263,9 +280,9 @@ def enrolled(slot_key: str) -> List[Office]:
         # OFFICES so nothing else in the codebase inherits him. See RAF_OFFICE.
         # HOURLY offices are excluded — their 9 PM hourly tick IS their eod board,
         # so riding this slot too would double-post (Megan 2026-09-16).
-        return _drop_enrolled(_has_channel(
+        return _drop_enrolled(_has_channel(_wants_knocks(
             [OFFICES[k] for k in OFFICES if k not in BLOCKED and k not in HOURLY]
-            + [RAF_OFFICE]))
+            + [RAF_OFFICE])))
     elif slot_key in ("first", "money"):
         keys = [k for k in INTRADAY_KEYS if k not in HOURLY]
     elif slot_key.startswith("h"):
@@ -273,8 +290,8 @@ def enrolled(slot_key: str) -> List[Office]:
         keys = [k for k in HOURLY if k in OFFICES and k not in BLOCKED]
     else:
         return []
-    return _drop_enrolled(_has_channel([OFFICES[k] for k in keys
-                                        if k in OFFICES and k not in BLOCKED]))
+    return _drop_enrolled(_has_channel(_wants_knocks(
+        [OFFICES[k] for k in keys if k in OFFICES and k not in BLOCKED])))
 
 
 def channel_for(office) -> str:

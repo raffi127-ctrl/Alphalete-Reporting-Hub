@@ -146,6 +146,29 @@ class RosterIsaiah(unittest.TestCase):
         for key, why in roster.BLOCKED.items():
             self.assertTrue(str(why).strip(), "%s is blocked with no reason" % key)
 
+
+class RosterFormOptOut(unittest.TestCase):
+    """2026-09-29: jairo's form left "knocks" off, but joining office_metrics
+    enrolled him in the 9 PM slot anyway — his name isn't in ownerville, the run
+    exited 1 and opened failure-knocks_intraday (drew, 9/28, same way)."""
+
+    def test_an_office_that_left_knocks_off_its_form_gets_no_board(self):
+        from automations.knocks_intraday import roster
+        from automations.office_metrics.offices import ONBOARDED_EXTRA
+        opted_out = {k for k, v in ONBOARDED_EXTRA.items()
+                     if "knocks" not in (v.get("enrolled_reports") or [])}
+        for slot in ("first", "money", "eod", "h21"):
+            got = {o.key for o in roster.enrolled(slot)}
+            self.assertFalse(got & opted_out, "%s: %s" % (slot, got & opted_out))
+
+    def test_jairo_is_not_in_the_eod_slot(self):
+        from automations.knocks_intraday import roster
+        self.assertNotIn("jairo", {o.key for o in roster.enrolled("eod")})
+
+    def test_an_office_that_kept_knocks_still_gets_it(self):
+        from automations.knocks_intraday import roster
+        self.assertIn("colten", {o.key for o in roster.enrolled("eod")})
+
     def test_a_gaps_only_office_renders_one_real_board(self):
         """The claim the old block rested on, pinned: gaps-only rows must route
         to the TeleMapper board and produce ONE image, not a 'no rows' render."""
