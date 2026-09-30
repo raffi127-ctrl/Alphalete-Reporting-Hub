@@ -139,10 +139,20 @@ def _label_row(grid, needle) -> int:
 
 
 def _sun_apps_col(grid) -> int:
-    """The Sunday (last day of week) Apps column -- terminated reps carry F/T here."""
-    return next(c for c in range(len(grid[0]))
-                if _cell(grid, 0, c).strip() == "SUN"
-                and _cell(grid, 2, c).strip().lower() == "apps")
+    """The Sunday (last day of week) Apps column -- terminated reps carry F/T here.
+    Apps is the FIRST column of the SUN block, so a blanked row-3 header (9/30: DC3
+    typed over with " " on WE 10.4) falls back to the SUN column itself instead of
+    a StopIteration that dropped all 11 sections."""
+    sun = [c for c in range(len(grid[0])) if _cell(grid, 0, c).strip() == "SUN"]
+    for c in sun:
+        if _cell(grid, 2, c).strip().lower() == "apps":
+            return c
+    for c in sun:
+        if not _cell(grid, 2, c).strip():
+            print("[alphalete_production] warn: SUN Apps header blank at %s3 -- "
+                  "using the SUN column" % col_letter(c))
+            return c
+    raise StopIteration("no SUN / Apps column in row 1/3")
 
 
 class DayCols(NamedTuple):
