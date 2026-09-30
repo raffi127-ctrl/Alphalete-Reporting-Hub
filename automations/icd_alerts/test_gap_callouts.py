@@ -181,6 +181,35 @@ class WhoIsCalledOut(unittest.TestCase):
         self.assertEqual(G.CALLOUT_CAMPAIGNS, {"att", "nds"})
 
 
+class BoxOfficesGetB2BTalk(unittest.TestCase):
+    """Ryan 2026-09-30: Box reps walk into businesses, not neighborhoods."""
+
+    C = [{"name": "Emanuel A", "mins": 35}, {"name": "Pedro B", "mins": 35}]
+
+    def test_box_lines_come_from_the_b2b_pool(self):
+        for h in range(9, 21):
+            s = G.line("ryan", self.C, NOW.replace(hour=h), "b2b_box")
+            self.assertNotIn("neighborhood", s)
+            self.assertNotIn("doors", s)
+            self.assertIn("Emanuel", s)
+
+    def test_d2d_keeps_the_door_lines(self):
+        self.assertIs(G.lines_for("att"), G.LINES)
+        self.assertIs(G.lines_for(None), G.LINES)
+        self.assertIs(G.lines_for("b2b_box"), G.B2B_LINES)
+
+    def test_every_b2b_line_formats_and_spanish_joins_with_y(self):
+        for t in G.B2B_LINES:
+            s = t.format(names="Ana y Jose" if G._is_spanish(t) else "Ana and Jose", m=30)
+            self.assertIn("30+", s)
+        self.assertTrue(any(G._is_spanish(t) for t in G.B2B_LINES))
+        self.assertTrue(any(not G._is_spanish(t) for t in G.B2B_LINES))
+
+    def test_run_passes_the_campaign(self):
+        import inspect
+        self.assertIn('line(key, callouts, now, getattr(office, "campaign", None))', inspect.getsource(G.run))
+
+
 class TheDayIsJudgedOnce(unittest.TestCase):
     """The state file must survive a full run(), both markers intact.
 

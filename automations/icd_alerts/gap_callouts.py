@@ -110,6 +110,35 @@ LINES = (
     "Ojo 👁️ {names}: {m}+ min sin puertas. ¿Trabajando una venta 💰 o de finger poppers? 🤌",
 )
 
+# B2B / BOX TALK (Ryan McSpadden 2026-09-30: "Can we change these to more B2B
+# talk? 'Just admiring the businesses?' 'Just hanging out with gatekeepers?'").
+# A Box rep walks into businesses, not up to houses, so the doors/neighborhood
+# lines above read wrong there. Same voice, same {names}/{m}; picked instead of
+# LINES when the office's campaign is b2b_box. The D2D offices keep LINES.
+B2B_LINES = (
+    "No walk-ins 🏢 and no sales 💸 from {names} for {m}+ min. Everything okay, or just admiring the businesses? 👀",
+    "{names} — {m}+ min without a dispo. Just hanging out with gatekeepers? 🚧🤝",
+    "Snicklemeberries! 🫐 {names} — {m}+ min without a dispo. Finger poppin' or talking to owners? 🏢👀",
+    "{names}: {m}+ min and nothing on the board 📋❌ The decision maker isn't going to find you 🤌",
+    "🥷 Finger poppin' ninjas spotted: {names}. {m}+ min since a business. Storefronts don't walk in themselves 🏪",
+    "{names} — {m}+ min, no dispo, no sale. ☕ Coffee break's over — go find the owner 💼",
+    "⏱️ {m}+ minutes and not a single dispo from {names}. Front desk got you stuck? 👀",
+    "{names} — {m}+ min quiet. Window shopping on Main Street? 🛍️ Walk in 🏢",
+    "{names} — {m}+ min without a dispo. Must be in with the owner cooking up something good… right? 👨‍🍳🔥",
+    "No dispo from {names} in {m}+ min. Sitting down with a decision maker? 💼",
+    "{names} — {m}+ min without a dispo. Lucy sees you, finger poppers 👀🤌",
+    # EN ESPAÑOL TAMBIÉN, like LINES.
+    "¡Snicklemeberries! 🫐 {names} — {m}+ min sin dispo. ¿Finger poppin' o hablando con dueños? 🏢👀",
+    "{names} — {m}+ min sin dispo y sin venta. ¿Charlando con la recepcionista? 🚧",
+    "⏱️ {m}+ minutos y ni un dispo de {names}. Los estoy viendo 👀",
+    "{names} — {m}+ min callados 🤫 Si están con el dueño 💼 tómense su tiempo. Si no… 👀",
+)
+
+
+def lines_for(campaign=None):
+    """The call-out pool for an office's campaign: B2B talk for Box, doors for D2D."""
+    return B2B_LINES if str(campaign or "").strip().lower() == "b2b_box" else LINES
+
 
 def _key(name: str) -> str:
     return " ".join(str(name or "").split()).lower()
@@ -164,7 +193,7 @@ def _is_spanish(template: str) -> bool:
     return any(mk in template for mk in _SPANISH_MARKERS)
 
 
-def line(office_key: str, callouts: List[Dict], now: dt.datetime) -> str:
+def line(office_key: str, callouts: List[Dict], now: dt.datetime, campaign=None) -> str:
     """One sentence in the house voice, chosen by office + hour so a re-run
     repeats itself and neighbouring hours don't."""
     if not callouts:
@@ -177,7 +206,8 @@ def line(office_key: str, callouts: List[Dict], now: dt.datetime) -> str:
     m = min(c["mins"] for c in callouts)
     m = (m // 5) * 5                       # "40+", not "43+"
     seed = "callout|%s|%s|%d" % (office_key, now.date().isoformat(), now.hour)
-    template = LINES[zlib.crc32(seed.encode("utf-8")) % len(LINES)]
+    pool = lines_for(campaign)
+    template = pool[zlib.crc32(seed.encode("utf-8")) % len(pool)]
     spanish = _is_spanish(template)
     if len(firsts) <= INLINE_NAMES:
         joiner = " y " if spanish else " and "
@@ -659,7 +689,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
         # exempted everyone with a single credit check all morning.
         prev = (st.get("records") or {}) if st.get("day") == now.date().isoformat() else dict(records)
         callouts = pick(rows, records, prev, now)
-        text = line(key, callouts, now)
+        text = line(key, callouts, now, getattr(office, "campaign", None))
         state[key] = {"day": now.date().isoformat(), "last_at": now.isoformat(timespec="seconds"),
                       "records": records}
         if send:
