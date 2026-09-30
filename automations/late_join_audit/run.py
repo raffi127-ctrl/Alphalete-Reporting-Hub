@@ -20,7 +20,7 @@ Posted to #ars-recruiting-numbers (Rafael, 2026-09-30): ONE thread per day,
 'Late Join Audit — September 29th 2026' -- the summary, then one reply per
 office that had Late Joins. Posted the SAME evening (Eve 9/30: mornings are
 busy with the important reports): deploy/late_join_audit.sh ticks every 30
-min on Lucy 2 and --due lets it through once a day, after POST_AFTER (8 PM CT, Eve 9/30).
+min on Lucy 2 and --due lets it through once a day, after POST_AFTER (5:30 PM CT, Rafael 9/30).
 READ-ONLY on AppStream. Runs on Lucy 2.
 
     python -m automations.late_join_audit.run --date 2026-09-29            # dry-run: print
@@ -58,11 +58,11 @@ DEFAULT_TZ = "America/Chicago"
 MARK_TZ = "America/Los_Angeles"
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "late_join_audit"
 LEDGER = OUT_DIR / "posted.json"
-# The evening gate, 8 PM CT (Eve 9/30: 6:30 was still early): well past the
+# The evening gate, 5:30 PM CT (Rafael 9/30: interviews wrap up ~4): past the
 # last 1st round slot (3:45 PM CT on Raf's funnels)
 # with room for the late marks. Mon-Sat: some offices interview on Saturday,
 # and a day with no Late Joins posts nothing anyway.
-POST_AFTER = dt.time(20, 0)
+POST_AFTER = dt.time(17, 30)
 WEEKDAYS = range(0, 6)
 # South Shore recruits through Colten's AppStream office, which the org roster
 # lists without an id (ad_photo_threads.config has it)
@@ -302,7 +302,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="late_join_audit.run")
     ap.add_argument("--date", help="YYYY-MM-DD (default: today, Central)")
     ap.add_argument("--due", action="store_true",
-                    help="evening tick: only Mon-Sat after 8 PM CT, once a day")
+                    help="evening tick: only Mon-Sat after 5:30 PM CT, once a day")
     ap.add_argument("--office", default="", help="comma list of office ids (default: all org)")
     ap.add_argument("--post", action="store_true", help="actually post (default: dry-run)")
     ap.add_argument("--preview-to-eve", action="store_true", help="post in Eve's DM instead")
