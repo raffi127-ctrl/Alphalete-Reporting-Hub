@@ -5506,6 +5506,7 @@
       "timeout_minutes": 5
     },
     "applicant_push": {
+      "close_on": "exit_zero",
       "on_scheduler": false,
       "machine": "Lucy 2",
       "_off_scheduler_note": "UNIFIED office-11580 (Carlos) recruiting push: runs the BATCH stage (Resume Pushing — extract resumes + send-to-AI) then the LEFTOVERS stage (OAT — send/remove/re-text/flag the one-app-at-a-time queue) on ONE warm real-Chrome/CDP AppStream session. Merges resume_pushing + oat_processing so a single warm/Indeed re-login serves both and they stop fighting over the session. cadence.weekdays [] = the 4am orchestrator NEVER auto-runs it; real schedule is the launchd job com.alphalete.applicant-push (q10min 7am-10pm CST daily, installed via install_applicant_push_agent). This entry gives `lucy rerun applicant_push --dry-run` (safe probe) and `lucy rerun applicant_push` (LIVE) a path, and backs the Hub card's Run button. SEND/REMOVE/RE-TEXT ARE IRREVERSIBLE — always --dry-run first. source_type 'appstream' so rerun runs the chrome-guard first. A batch Indeed-Turnstile wedge does NOT stop the leftovers stage.",
@@ -5534,6 +5535,7 @@
       "_standalone_weekdays_note": "Mon-Fri, added 2026-09-05. NOT a schedule change - the plist is untouched. This pins the missed-run watcher's guess, which is the only thing that reads it. Carlos's weekend quiet window (applicant_push.window.quiet_window: Fri 1PM -> Sun 1PM CST, shipped 2026-09-04) makes the module DECLINE with exit 75, and deploy/applicant_push.sh deliberately publishes NOTHING for a decline - so on the FIRST Saturday machine_digest saw no Activity row and posted 'didn't run today on Lucy 2' for both offices at 09:07. A correct skip read as a miss. Saturday never runs; Sunday cannot run before 1PM while _historical_expected has learned a ~7AM start, so both days come off the didn't-run GUESS only. FAILED / INCOMPLETE / STUCK stay watched every day, so a weekend run that actually breaks still alerts. Accepted cost: a genuinely absent Sunday-afternoon run is not flagged until Monday. Remove this if the quiet window is ever lifted."
     },
     "applicant_push_atef": {
+      "close_on": "exit_zero",
       "on_scheduler": false,
       "machine": "Lucy 2",
       "_off_scheduler_note": "Applicant Push for office 23467 (Atef Choudhury / Domin8 Acquisitions) — the SAME module and flow as applicant_push, pointed at a second office via --office 23467. Carlos asked 2026-08-26 for Atef's resumes to be pushed on the same schedule as his. NOT a new login: the flow signs in with the shared fleet 'Raf - Captain' AppStream session and switches office, and that account sees both. Each office has its OWN Chrome profile/port, day-files, Sheet diag tabs, log and Hub card (automations/applicant_push/offices.py) so the two never overwrite each other. Real schedule is the SAME launchd job com.alphalete.applicant-push, whose wrapper alternates offices one per tick (11580 -> 23467 -> ...), so each office gets a pass every ~10 min inside the 7am-10pm CST window; there is NO second LaunchAgent to install. This entry exists so `lucy rerun applicant_push_atef --dry-run` (safe probe) and the Hub card's Run button have a path. SEND/REMOVE/RE-TEXT ARE IRREVERSIBLE - always --dry-run first. source_type 'appstream' so rerun runs the chrome-guard first.",
@@ -12152,6 +12154,7 @@
       "_machine_note": "Lucy 4 since 2026-09-19, with Raf's three streams. The rollup reads each stream's flagged snapshot off the LOCAL disk, so it must run on the box that walks them."
     },
     "applicant_push_khalil": {
+      "close_on": "exit_zero",
       "on_scheduler": false,
       "machine": "Lucy 2",
       "_off_scheduler_note": "One office of the unified recruiting push. The REAL schedule is the launchd job com.alphalete.applicant-push on Lucy 2 (q5min 7AM-10PM daily), which rotates through the offices that machine owns - see ROTATION_BY_MACHINE in automations/applicant_push/offices.py. cadence.weekdays [] = the 4am orchestrator never runs it. This entry exists so the missed-run watcher knows which machine owns this office and which days it is expected, and so `lucy rerun applicant_push_khalil --dry-run` has a path. SEND/REMOVE/RE-TEXT ARE IRREVERSIBLE - always --dry-run first.",
@@ -12183,6 +12186,7 @@
       "_standalone_weekdays_note": "Mon-Fri. NOT a schedule change - the plist is untouched. This pins the missed-run watcher's GUESS, which is the only thing that reads it. Carlos's weekend quiet window (applicant_push.window.quiet_window: Fri 1PM -> Sun 1PM CST) makes every live pass DECLINE with exit 75, and deploy/applicant_push.sh publishes NOTHING for a decline - so on a weekend the watcher sees no Activity row and calls a correct skip a miss. It did exactly that on Sun 2026-09-20 at ~09:00 for applicant_push_khalil and applicant_push_raf_funnel2, the two per-office ids that had no entry here (Carlos's and Atef's, which do, stayed quiet). Saturday never runs; Sunday cannot run before 1PM while _historical_expected has learned a ~7AM start. FAILED / INCOMPLETE / STUCK stay watched every day, so a weekend run that really breaks still alerts."
     },
     "applicant_push_rafael": {
+      "close_on": "exit_zero",
       "on_scheduler": false,
       "machine": "Lucy 4",
       "_off_scheduler_note": "One office of the unified recruiting push. The REAL schedule is the launchd job com.alphalete.applicant-push on Lucy 4 (q5min 7AM-10PM daily), which rotates through the offices that machine owns - see ROTATION_BY_MACHINE in automations/applicant_push/offices.py. cadence.weekdays [] = the 4am orchestrator never runs it. This entry exists so the missed-run watcher knows which machine owns this office and which days it is expected, and so `lucy rerun applicant_push_rafael --dry-run` has a path. SEND/REMOVE/RE-TEXT ARE IRREVERSIBLE - always --dry-run first.",
@@ -12214,6 +12218,7 @@
       "_standalone_weekdays_note": "Mon-Fri. NOT a schedule change - the plist is untouched. This pins the missed-run watcher's GUESS, which is the only thing that reads it. Carlos's weekend quiet window (applicant_push.window.quiet_window: Fri 1PM -> Sun 1PM CST) makes every live pass DECLINE with exit 75, and deploy/applicant_push.sh publishes NOTHING for a decline - so on a weekend the watcher sees no Activity row and calls a correct skip a miss. It did exactly that on Sun 2026-09-20 at ~09:00 for applicant_push_khalil and applicant_push_raf_funnel2, the two per-office ids that had no entry here (Carlos's and Atef's, which do, stayed quiet). Saturday never runs; Sunday cannot run before 1PM while _historical_expected has learned a ~7AM start. FAILED / INCOMPLETE / STUCK stay watched every day, so a weekend run that really breaks still alerts."
     },
     "applicant_push_raf_funnel2": {
+      "close_on": "exit_zero",
       "on_scheduler": false,
       "machine": "Lucy 4",
       "_off_scheduler_note": "One office of the unified recruiting push. The REAL schedule is the launchd job com.alphalete.applicant-push on Lucy 4 (q5min 7AM-10PM daily), which rotates through the offices that machine owns - see ROTATION_BY_MACHINE in automations/applicant_push/offices.py. cadence.weekdays [] = the 4am orchestrator never runs it. This entry exists so the missed-run watcher knows which machine owns this office and which days it is expected, and so `lucy rerun applicant_push_raf_funnel2 --dry-run` has a path. SEND/REMOVE/RE-TEXT ARE IRREVERSIBLE - always --dry-run first.",
@@ -12245,6 +12250,7 @@
       "_standalone_weekdays_note": "Mon-Fri. NOT a schedule change - the plist is untouched. This pins the missed-run watcher's GUESS, which is the only thing that reads it. Carlos's weekend quiet window (applicant_push.window.quiet_window: Fri 1PM -> Sun 1PM CST) makes every live pass DECLINE with exit 75, and deploy/applicant_push.sh publishes NOTHING for a decline - so on a weekend the watcher sees no Activity row and calls a correct skip a miss. It did exactly that on Sun 2026-09-20 at ~09:00 for applicant_push_khalil and applicant_push_raf_funnel2, the two per-office ids that had no entry here (Carlos's and Atef's, which do, stayed quiet). Saturday never runs; Sunday cannot run before 1PM while _historical_expected has learned a ~7AM start. FAILED / INCOMPLETE / STUCK stay watched every day, so a weekend run that really breaks still alerts."
     },
     "applicant_push_raf_recruiter_test": {
+      "close_on": "exit_zero",
       "on_scheduler": false,
       "machine": "Lucy 4",
       "_off_scheduler_note": "One office of the unified recruiting push. The REAL schedule is the launchd job com.alphalete.applicant-push on Lucy 4 (q5min 7AM-10PM daily), which rotates through the offices that machine owns - see ROTATION_BY_MACHINE in automations/applicant_push/offices.py. cadence.weekdays [] = the 4am orchestrator never runs it. This entry exists so the missed-run watcher knows which machine owns this office and which days it is expected, and so `lucy rerun applicant_push_raf_recruiter_test --dry-run` has a path. SEND/REMOVE/RE-TEXT ARE IRREVERSIBLE - always --dry-run first.",
