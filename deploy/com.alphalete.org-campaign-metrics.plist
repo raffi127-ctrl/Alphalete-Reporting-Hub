@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.org-campaign-metrics</string>
+    <!-- Path is the laptop placeholder; install_agent.py rewrites it on Lucy 2
+         (python -m automations.day_orchestrator.install_agent org-campaign-metrics).
+         DAILY 8:30am CT: after the Box extract lands (~7-8am). Standalone agent
+         on purpose — the Report-Library 8:30 card missed its grace window every
+         morning behind hours-long card runs (found 2026-09-30). -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/org_campaign_metrics.sh</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>30</integer></dict>
+    </array>
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/org-campaign-metrics.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/org-campaign-metrics.launchd.err.log</string>
+</dict>
+</plist>
