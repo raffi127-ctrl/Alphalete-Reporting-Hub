@@ -224,6 +224,25 @@ class RefreshTest(unittest.TestCase):
         self.assertEqual((calls[0][1]["channel"], calls[0][1]["ts"]), ("C0C42793AKS", "111.222"))
 
 
+class FlagTest(unittest.TestCase):
+    def test_low_score_tags_camila_and_perla(self):
+        low = result(schedule=False, off_script_pay=True, retail=True, nine_to_five=True,
+                     mon_fri=True, base_pay=True)
+        self.assertLessEqual(grade.score(low)["score"], run.FLAG_AT)
+        text = run.reply_text(MEETING, low, tag=True)
+        self.assertIn("<@U07FWSYP3NV> <@U07R68ZGHT6>", text)
+        # the preview DM never tags
+        self.assertNotIn("<@", run.reply_text(MEETING, low, tag=False))
+
+    def test_exactly_50_is_tagged_51_is_not(self):
+        from unittest import mock
+        base = grade.score(result())
+        for pts, tagged in ((50, True), (51, False)):
+            with mock.patch.object(run.grade, "score", return_value=dict(base, score=pts)):
+                text = run.reply_text(MEETING, result(), tag=True)
+            self.assertEqual("<@U07FWSYP3NV>" in text, tagged, pts)
+
+
 class DocTest(unittest.TestCase):
     def test_reply_links_the_full_audit(self):
         text = run.reply_text(MEETING, result(), doc_link="https://docs.google.com/d/1")

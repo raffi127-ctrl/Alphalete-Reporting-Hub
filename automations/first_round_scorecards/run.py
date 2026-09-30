@@ -48,6 +48,12 @@ from automations.first_round_scorecards import appstream, doc, fathom, grade
 
 CHANNEL_ID = "C0C42793AKS"          # #ars-recruiting-numbers (Eve, 2026-09-29)
 EVE_USER_ID = "U088E2KJEV8"         # preview DMs
+# A score of this or less tags them in that interview's reply, so the low ones
+# stand out among every interview of the day (Camila via Eve, 2026-09-30;
+# Eve: "50 o menos").
+FLAG_AT = 50
+FLAG_WHO = ("U07FWSYP3NV",          # Camila Hornos Kraschinsky
+            "U07R68ZGHT6")          # Perla Falabella
 # Fathom account (the Zoom login that records) -> who interviews on it.
 # A new recording account = its key in fathom-creds.json + a line here; an
 # account missing here shows under its Zoom name until someone adds it.
@@ -100,7 +106,7 @@ def emoji(score: int) -> str:
 
 
 def reply_text(m: Dict, result: Optional[Dict], *, skipped: str = "",
-               doc_link: str = "") -> str:
+               doc_link: str = "", tag: bool = False) -> str:
     """One interview = one reply. Short on purpose: the score, what was missed,
     the coaching, then the full audit (a Google Doc) and the recording."""
     head = f"*Started {_clock(fathom.start_ct(m))} CT*"
@@ -119,6 +125,8 @@ def reply_text(m: Dict, result: Optional[Dict], *, skipped: str = "",
         lines.append(f"⚠️ Started {appstream.early_by(m)} min before the scheduled time")
     lines += [f"*Score: {s['score']}/100* {emoji(s['score'])}",
               f"🚩 Red flags: {s['red_hit']} of 5  ·  ✅ Must-dos: {s['musts_done']} of 6"]
+    if tag and s["score"] <= FLAG_AT:
+        lines.append(f"🔔 {FLAG_AT} pts or under: " + " ".join(f"<@{u}>" for u in FLAG_WHO))
     kind = {key: k for key, _, k in grade.ITEMS}
     red = [grade.SHORT[k] for k in s["missed"] if kind[k] == "red"]
     miss = [grade.SHORT[k] for k in s["missed"] if kind[k] == "must"]
@@ -264,7 +272,9 @@ def post(day: dt.date, graded: Dict[str, List], *, preview: bool,
                           f"{type(exc).__name__}: {exc} - not posted")
                     failed += 1
                     continue
-            text = reply_text(m, result, skipped=skipped, doc_link=doc_link)
+            # no tags in Eve's preview DM: they'd ping for a draft
+            text = reply_text(m, result, skipped=skipped, doc_link=doc_link,
+                              tag=not preview)
             was = done.get(str(m.get("recording_id"))) if refresh and not preview else None
             if was:
                 # already in the thread: edit that reply, don't add a second one
