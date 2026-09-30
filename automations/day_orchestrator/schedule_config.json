@@ -452,6 +452,48 @@
       "timeout_minutes": 30,
       "machine": "Lucy 2"
     },
+    "late_join_audit": {
+      "on_scheduler": false,
+      "hand_run_only": true,
+      "_note": "Rafael 2026-09-30: every 1st round 'Late Join' in AppStream (day view p=102, every org office) checked against the slot with a 5-min grace; thread 'Late Join Audit — <date>' in #ars-recruiting-numbers (Eve 9/30). READ-ONLY on AppStream. Args: --date YYYY-MM-DD, --office id,id. Posts a day once (output/late_join_audit/posted.json).",
+      "display_name": "Late Join Audit \u2014 post",
+      "source_type": "appstream",
+      "data_sources": [],
+      "command": [
+        "automations.late_join_audit.run"
+      ],
+      "base_args": ["--post"],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 60,
+      "machine": "Lucy 2"
+    },
+    "late_join_audit_preview": {
+      "on_scheduler": false,
+      "hand_run_only": true,
+      "_note": "Same as late_join_audit, but the whole post goes to Eve's Slack DM (for checking a change first).",
+      "display_name": "Late Join Audit \u2014 preview to Eve",
+      "source_type": "appstream",
+      "data_sources": [],
+      "command": [
+        "automations.late_join_audit.run"
+      ],
+      "base_args": ["--preview-to-eve", "--post"],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 60,
+      "machine": "Lucy 2"
+    },
     "sms_log": {
       "on_scheduler": false,
       "_note": "MANUAL-ONLY (Raf 2026-09-26): pull the FULL SMS log for an office off the p=336 SMS List Report \u2014 every message in and out for a date range, with 'Sent By' (AI Messaging vs a named recruiter) and delivery Status. This is the source sms_thread_dump cannot be: the calendar walk only sees applicants who BOOKED, and the people left on read are exactly the ones who did not (Megan 2026-09-26). Writes tab 'SMS Log <office>' + output/sms_log_<office>.json. READ-ONLY on AppStream. Default window is the last full Sat-Fri recruiting week. Args: --office 11280,23965,24065 (comma list), --owner \"Rafael Hidalgo\", --dates FROM,TO (MM-DD-YYYY), --week N, --dry-run. Feeds `python -m automations.sms_audit.analyze`, which joins it to the calendar walk on phone number to say who ultimately booked.",
