@@ -172,13 +172,15 @@ def read_day(day: dt.date, only: Optional[List[str]] = None) -> Dict:
 
 
 def _line(r: Dict) -> str:
+    """One Late Join. Plain name, italic details: in the office reply it sits
+    under the bold 🏢 header, so office and detail read apart (Eve 9/30)."""
     mark = "❌" if r["too_early"] else "✅"
     when = (f"marked {r['marked']} ({r['minutes']} min after)" if r["minutes"] is not None
             else "marked time unreadable")
     by = f" by {r['by']}" if r["by"] else ""
-    out = f"{mark} *{r['name']}* · slot {r['slot']} · {when}{by}"
+    out = f"{mark} {r['name']} · _slot {r['slot']} · {when}{by}_"
     if r["showed_up"]:
-        out += " · ⚠️ AppStream says they showed up"
+        out += " · ⚠️ _AppStream says they showed up_"
     return out
 
 
@@ -219,11 +221,14 @@ def by_office(data: Dict) -> List[tuple]:
 
 
 def office_text(owner: str, office: str, rows: List[Dict]) -> str:
+    """🏢 bold office header + italic count, then its Late Joins as a quote
+    block, so each office stands apart in the one thread (Eve 9/30)."""
     bad = sum(r["too_early"] for r in rows)
-    head = (f"*{owner}* ({office}) · {len(rows)} Late Join{'s' if len(rows) != 1 else ''}"
-            f"{f' · ❌ {bad} too early' if bad else ''}")
+    head = [f"🏢 *{owner}* ({office})",
+            f"_{len(rows)} Late Join{'s' if len(rows) != 1 else ''}"
+            f"{f' · ❌ {bad} too early' if bad else ''}_"]
     rows = sorted(rows, key=lambda r: not r["too_early"])     # stable: slot order kept
-    return "\n".join([head] + [_line(r) for r in rows])
+    return "\n".join(head + [f"> {_line(r)}" for r in rows])
 
 
 def thread_title() -> str:

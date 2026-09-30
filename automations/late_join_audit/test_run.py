@@ -44,7 +44,7 @@ class LateJoinTest(unittest.TestCase):
         self.assertEqual(r["minutes"], 5)
         self.assertFalse(r["too_early"])
         self.assertTrue(r["showed_up"])
-        self.assertIn("⚠️ AppStream says they showed up", run._line(r))
+        self.assertIn("⚠️ _AppStream says they showed up_", run._line(r))
 
     def test_only_first_interviews(self):
         self.assertEqual(len(rows(SHACTY, SHAWN)), 2)
@@ -79,10 +79,11 @@ class LateJoinTest(unittest.TestCase):
         self.assertIn("Couldn't read office 21151", text)
         (owner, oid), got = run.by_office(data)[0]
         office = run.office_text(owner, oid, got)
-        self.assertTrue(office.startswith("*Drew Tepper* (22583) · 2 Late Joins · ❌ 1 too early"))
-        self.assertTrue(office.splitlines()[1].startswith(
-            "❌ *Shacty Amezquita* · slot 4:15 PM · marked 4:16 PM (1 min after) by "
-            "Mariana Echeverry"))
+        self.assertEqual(office.splitlines()[:2],
+                         ["🏢 *Drew Tepper* (22583)", "_2 Late Joins · ❌ 1 too early_"])
+        self.assertTrue(office.splitlines()[2].startswith(
+            "> ❌ Shacty Amezquita · _slot 4:15 PM · marked 4:16 PM (1 min after) by "
+            "Mariana Echeverry_"))
 
     def test_offices_include_colten(self):
         ids = [o for _, o in run.offices()]
