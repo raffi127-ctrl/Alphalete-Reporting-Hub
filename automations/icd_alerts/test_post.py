@@ -992,3 +992,16 @@ class BackFromSilenceTests(unittest.TestCase):
         seen = {"carlos": {"day": "2026-09-30", "received": "9/30/2026 11:01:25"}}
         self.assertFalse(P.back_from_silence("carlos", self.DAY, "", seen))
         self.assertEqual(seen["carlos"]["received"], "9/30/2026 11:01:25")
+
+    def test_a_poster_with_no_memory_uses_the_open_quiet_notice(self):
+        # Deployed mid-outage: nothing in `seen`, but warn_quiet already said
+        # the office went quiet after 11:01.
+        self.assertTrue(P.back_from_silence(
+            "carlos", self.DAY, "9/30/2026 20:15:00", {},
+            quiet_since="9/30/2026 11:01:25"))
+
+    def test_a_quiet_notice_is_not_needed_when_the_poster_remembers(self):
+        seen = {"carlos": {"day": "2026-09-30", "received": "9/30/2026 20:00:00"}}
+        self.assertFalse(P.back_from_silence(
+            "carlos", self.DAY, "9/30/2026 20:15:00", seen,
+            quiet_since="9/30/2026 11:01:25"))

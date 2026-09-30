@@ -1173,7 +1173,7 @@ LAST_SEEN_PATH = (Path.home() / ".config" / "recruiting-report"
 
 
 def back_from_silence(key: str, day: dt.date, received: str,
-                      seen: Dict) -> bool:
+                      seen: Dict, quiet_since: str = "") -> bool:
     """Is this relay the first one after a gap longer than STALE_MINUTES?
 
     A SHOUTOUT IS ONLY WORTH SENDING WHILE IT IS NEWS. Carlos's mini went dark
@@ -1186,6 +1186,11 @@ def back_from_silence(key: str, day: dt.date, received: str,
 
     Updates `seen` in place. Only a gap on the SAME day counts: a new day is
     already a baseline, and an office never seen before has no gap to judge.
+
+    `quiet_since` is the check-in an OPEN quiet notice (warn_quiet) says the
+    outage started after. It stands in when this poster has no memory of the
+    office today -- its first tick after a restart or a deploy, which is how
+    Carlos's return on 2026-09-30 would otherwise have gone unrecognised.
     """
     was = seen.get(key) or {}
     now = _parse_received(received)
@@ -1193,7 +1198,7 @@ def back_from_silence(key: str, day: dt.date, received: str,
         return False
     seen[key] = {"day": day.isoformat(), "received": received}
     if was.get("day") != day.isoformat():
-        return False
+        was = {"received": quiet_since}
     before = _parse_received(was.get("received", ""))
     if before is None:
         return False
@@ -1235,6 +1240,9 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
 
     posted = considered = 0
     seen = _load_seen()
+    quiet_today = _warned().get(day.isoformat()) or {}
+    if not isinstance(quiet_today, dict):   # the oldest once-a-day shape
+        quiet_today = {}
     for rownum, row in rows:
         key = (row[COL_OFFICE] or "").strip().lower()
         if only and key != only.strip().lower():
@@ -1248,9 +1256,12 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         considered += 1
         # A dry run must not move the clock, or the real tick after it would
         # see no gap and announce the backlog anyway.
+        outage = quiet_today.get(key)
         catching_up = back_from_silence(
             key, day, (row[COL_RECEIVED] or "").strip(),
-            seen if send else dict(seen))
+            seen if send else dict(seen),
+            quiet_since=(outage.get("last") or "")
+            if isinstance(outage, dict) and not outage.get("back") else "")
 
         records = _loads(row[COL_RECORDS]) or {}
         last = _loads(row[COL_LAST_POSTED] if len(row) > COL_LAST_POSTED else "")
