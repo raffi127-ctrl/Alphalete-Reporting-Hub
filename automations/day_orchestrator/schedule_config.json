@@ -431,6 +431,27 @@
       "timeout_minutes": 120,
       "machine": "Lucy 2"
     },
+    "late_join_probe": {
+      "on_scheduler": false,
+      "hand_run_only": true,
+      "_note": "Rafael 2026-09-30: before the Late Join audit is built, dump one day's First Interview rows (every cell: status chosen, who set it, when) off the p=105 Weekly Calendar to control-sheet tab 'Late Join Probe'. READ-ONLY on AppStream. Args: --office 22583,11280 --date MM-DD-YYYY --limit N.",
+      "display_name": "Late Join audit - probe (AppStream columns)",
+      "source_type": "appstream",
+      "data_sources": [],
+      "command": [
+        "automations.late_join_audit.probe"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 30,
+      "machine": "Lucy 2"
+    },
     "sms_log": {
       "on_scheduler": false,
       "_note": "MANUAL-ONLY (Raf 2026-09-26): pull the FULL SMS log for an office off the p=336 SMS List Report \u2014 every message in and out for a date range, with 'Sent By' (AI Messaging vs a named recruiter) and delivery Status. This is the source sms_thread_dump cannot be: the calendar walk only sees applicants who BOOKED, and the people left on read are exactly the ones who did not (Megan 2026-09-26). Writes tab 'SMS Log <office>' + output/sms_log_<office>.json. READ-ONLY on AppStream. Default window is the last full Sat-Fri recruiting week. Args: --office 11280,23965,24065 (comma list), --owner \"Rafael Hidalgo\", --dates FROM,TO (MM-DD-YYYY), --week N, --dry-run. Feeds `python -m automations.sms_audit.analyze`, which joins it to the calendar walk on phone number to say who ultimately booked.",
