@@ -409,7 +409,7 @@ class ForeverThreadTests(PublishTests):
         cl = FakeSlack()
         post.publish(rep, "D1", cl=cl)
         self.assertIn("- 0% Removed", cl.updates[-1]["text"])
-        self.assertIn("this week", cl.updates[-1]["text"])
+        self.assertIn("WE 9.27", cl.updates[-1]["text"])     # Carlos 9/30
 
     def test_backfilling_last_week_keeps_this_weeks_header(self):
         rep = _rep(); rep.day = dt.date(2026, 9, 21)

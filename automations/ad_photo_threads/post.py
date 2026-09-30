@@ -128,7 +128,9 @@ def parent_text(title: str, monday: dt.date, pilot: bool = False,
         if stats.get("avg_stars") is not None:
             head += f" / Avg {stats['avg_stars']:g}⭐"
         if config.ONE_THREAD_PER_AD:
-            head += " this week"
+            # Carlos 9/30: the week-ending Sunday, not "this week" -> "WE 9.20"
+            we = monday + dt.timedelta(days=6)
+            head += f" WE {we.month}.{we.day}"
     return f"{PILOT_TAG if pilot else ''}*{head}*"
 
 
