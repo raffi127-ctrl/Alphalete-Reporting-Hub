@@ -233,6 +233,29 @@ def match_rep(log_key: str, rows: dict[str, int]):
     return None
 
 
+# Reps on the D2D (Verizon) board still sell AT&T B2B under their own name.
+# Carlos 2026-09-30: they stay listed as Verizon — their log sales go on no
+# Sales Board row, and that is NOT a hole to flag (Giovanni Monreal / Luis
+# Valenciano). A rep on neither board is still flagged.
+D2D_TAB = "D2D Sales Board"
+
+
+def d2d_reps(sh) -> dict[str, int]:
+    """{normalised rep name: row} on the D2D board (col B, from row 5)."""
+    names = sh.worksheet(D2D_TAB).col_values(NAME_COL)
+    return {_norm(n): r for r, n in enumerate(names, 1)
+            if r > 4 and n.strip()}
+
+
+def split_d2d(unmatched, d2d: dict[str, int]):
+    """(still unmatched, on the D2D board) — matched the same way as the
+    Sales Board (exact or first+last token)."""
+    keep, on_d2d = [], []
+    for key, n in unmatched:
+        (on_d2d if match_rep(key, d2d) else keep).append((key, n))
+    return keep, on_d2d
+
+
 # ------------------------------------------------------------------ run --
 def counts_box_tracker(sh, day: dt.date) -> dict[str, float]:
     """BACK-UP BOX counts off the Rep Lvl tracker tab (box_order_log.
@@ -245,7 +268,8 @@ def counts_box_tracker(sh, day: dt.date) -> dict[str, float]:
     return out
 
 
-def run_campaign(sh, g, day: dt.date, campaign: str, counts_fn=None) -> dict:
+def run_campaign(sh, g, day: dt.date, campaign: str, counts_fn=None,
+                 d2d=None) -> dict:
     rows = campaign_rows(g, campaign)
     home = home_campaigns(g)
     counts = dict((counts_fn or CAMPAIGNS[campaign])(sh, day))
@@ -268,6 +292,7 @@ def run_campaign(sh, g, day: dt.date, campaign: str, counts_fn=None) -> dict:
             matched[board_key] = int(n)
         else:
             unmatched.append((key, int(n)))
+    unmatched, on_d2d = split_d2d(unmatched, d2d or {})
 
     _log("")
     _log(f"--- {campaign} — {_md(day)} (order log) ---")
@@ -286,6 +311,8 @@ def run_campaign(sh, g, day: dt.date, campaign: str, counts_fn=None) -> dict:
         else:
             delta = f"   <- board has {on_board or '(blank)'}"
         _log(f"  {_cell(g, row, NAME_COL):<28} {n:>2}{delta}")
+    for key, n in on_d2d:
+        _log(f"  (on the D2D/Verizon board, not filled: {key} — {n})")
     for key, n in unmatched:
         _log(f"  ! IN THE LOG BUT ON NO {campaign} ROW: {key} — {n}. "
              "IN NO TOTAL until the rep is added to the board.")
@@ -433,8 +460,9 @@ def main(argv=None) -> int:
         else:
             _log(f"BOX: the tracker back-up doesn't cover {days[-1]} either")
 
+    d2d = d2d_reps(sh)
     results = [run_campaign(sh, g, d, c,
-                            backup.get(c) if d == days[-1] else None)
+                            backup.get(c) if d == days[-1] else None, d2d)
                for d in days for c in campaigns]
     for res in results:
         res["covered"] = not (res["campaign"] in uncovered

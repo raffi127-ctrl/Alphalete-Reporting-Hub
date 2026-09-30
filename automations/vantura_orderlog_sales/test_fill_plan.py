@@ -67,3 +67,17 @@ class HomeCampaignTest(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class D2DRepsNotFlaggedTest(unittest.TestCase):
+    """Carlos 2026-09-30: Verizon (D2D board) reps stay off the Sales Board —
+    their AT&T log sales are not a 'no row' hole."""
+
+    def test_d2d_rep_is_not_unmatched(self):
+        d2d = {"giovanni monreal": 18, "luis valenciano": 12}
+        keep, on_d2d = run.split_d2d(
+            [("giovanni monreal", 5), ("luis valenciano", 2),
+             ("nobody anywhere", 1)], d2d)
+        self.assertEqual(keep, [("nobody anywhere", 1)])
+        self.assertEqual([k for k, _n in on_d2d],
+                         ["giovanni monreal", "luis valenciano"])

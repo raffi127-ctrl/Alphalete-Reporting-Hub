@@ -37,8 +37,9 @@ class ManifestTest(unittest.TestCase):
                 mock.patch.object(run, "covers", return_value=covered), \
                 mock.patch.object(run, "week_ok", return_value=week_ok), \
                 mock.patch.object(run, "run_campaign",
-                                  side_effect=lambda sh, g, d, c, fn=None:
-                                  _result(c)), \
+                                  side_effect=lambda sh, g, d, c, fn=None,
+                                  d2d=None: _result(c)), \
+                mock.patch.object(run, "d2d_reps", return_value={}), \
                 mock.patch.object(run, "fill_plan", return_value=[]), \
                 mock.patch.object(run, "ensure_board_shape"), \
                 mock.patch.object(run, "_log"), \
