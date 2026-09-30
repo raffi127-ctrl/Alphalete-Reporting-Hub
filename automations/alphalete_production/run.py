@@ -68,7 +68,12 @@ def _alert_dropped(dropped: list, captures: list) -> None:
                     "Starts table on the week's Sales Board tab has no names in "
                     "it yet — re-run it once the classroom is filled in."),
             "message": (f"Alphalete Production posted but is short {len(ids)} "
-                        f"section(s): {only}")})
+                        f"section(s): {only}"),
+            # kind="section"'s stock headline ends "it did NOT post" — never
+            # true here: this alert only fires AFTER post_all() returned ok. On
+            # 9/30 the 🐺 parent + Lanes were in both channels while the alert
+            # said nothing posted.
+            "tail_headline": "the thread posted SHORT."})
 
 
 def main():

@@ -41,6 +41,7 @@ import datetime as dt
 import io
 import re
 import time
+import traceback
 from pathlib import Path
 from typing import List, NamedTuple, Optional, Tuple
 
@@ -834,9 +835,14 @@ def capture_all(sections, today: dt.date, out_dir: Path, only=None,
                 png = _render(ss, ws, grid, spec, today, out_dir, token)
                 out.append((dict(spec), png))
         except Exception as e:              # noqa: BLE001 — one bad section != dead post
-            failed.append((spec["id"], f"{type(e).__name__}: {e}"))
+            # WHERE it died, not just what. A header miss is a bare
+            # `StopIteration:` with no message — on 9/30 all 11 sections failed
+            # that way and the log couldn't say which lookup came up empty.
+            tb = traceback.extract_tb(e.__traceback__)
+            where = f" (at {tb[-1].name}:{tb[-1].lineno})" if tb else ""
+            failed.append((spec["id"], f"{type(e).__name__}: {e}{where}"))
             print(f"[alphalete_production] SECTION FAILED, skipping {spec['id']}: "
-                  f"{type(e).__name__}: {str(e)[:200]}", flush=True)
+                  f"{type(e).__name__}: {str(e)[:200]}{where}", flush=True)
     if failed:
         print("[alphalete_production] %d/%d section(s) failed: %s"
               % (len(failed), len(sections),
