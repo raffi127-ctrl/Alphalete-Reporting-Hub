@@ -43,6 +43,39 @@ SHORT = {                      # how a missed item reads in the Slack post
     "pay": "explaining the pay",
 }
 
+# The script, cut into the portions an interviewer can skip (Rafael,
+# 2026-09-30: "skipped portions: 5", each with the script line she skipped).
+# Same granularity he counted by hand: the three check-ins are ONE portion,
+# the whole wrap-up is ONE. A portion said only in part counts as skipped,
+# like the must-dos. Not scored -- it's the list she re-reads before the next
+# interview. The line shown is copied from here, never written by the model.
+PORTIONS = [
+    ("face_to_face", "All interactions with them are face to face, so we do not do "
+                     "call center or inside of a retailer type of work."),
+    ("management", "Ultimately we want to put someone into a Management role within "
+                   "6-8 months to manage their own team and clients."),
+    ("pay_entry", "For entry level team members we start with a weekly paycheck, this "
+                  "is a performance based-role with an average paycheck from $1000 - "
+                  "$1500 plus bonuses and commission."),
+    ("pay_assistant", "As soon as someone gets into that assistant manager position "
+                      "(within the first 4-6 months) we move to a salary role, "
+                      "between 65k - 80k a year."),
+    ("pay_executive", "At the Executive Manager position ... we are talking about $250k "
+                      "plus bonuses and commission plus the profits from the revenue."),
+    ("schedule", "All the positions we are looking to fill in are FULL TIME, IN PERSON, "
+                 "DAY SHIFTS. We are talking about a minimum of 40 hours a week, with the "
+                 "possibility of working on Saturdays to make more bonuses."),
+    ("commute", "Remember that we are located in (CITY), is that a sustainable commute "
+                "for you for an everyday job?"),
+    ("check_ins", "Does this sound aligned with what you are looking for? / Overall, is "
+                  "this a comfortable compensation rate for you? / Is that alright with you?"),
+    ("wrap_up", "If you are selected you'll get a phone call before 5pm today from our "
+                "recruitment team in order to schedule a 2nd interview. I would recommend "
+                "dressing business professional attire for that and bringing a notebook "
+                "and pen. If you don't get a phone call it just means we went a "
+                "different direction."),
+]
+
 SCRIPT = """\
 COMPANY BACKGROUND (key lines)
 - "The positions we are looking to fill are in-person, full time ... All interactions with them are face to face, so we do not do call center or inside of a retailer type of work."
@@ -79,6 +112,8 @@ How to answer each item (strictly YES or NO; partly done = NO):
 Applicants asking indirect questions still count (e.g. "are we going to be on the field?" = asking if it's door to door).
 """
 
+PORTION_KEYS = ", ".join(k for k, _ in PORTIONS)
+
 SYSTEM = f"""You audit 1st round group job interviews (Zoom, recorded by Fathom) for a door-to-door sales company. The interviewer follows a script; you check the transcript against it for the hiring manager, who uses it to coach the interviewer.
 
 The interviewer is the speaker named in the request (the Zoom account name, e.g. "ARS ZOOM 12"). Everyone else is an applicant. Several interviewers can share one Zoom account, so put the interviewer's first name in interviewer_name as she introduces herself ("My name is ___, I'm one of the hiring managers"); leave it empty if she never says it -- never guess. The transcript is machine-made: names and numbers can be misheard, so judge by meaning, not exact words.
@@ -88,19 +123,24 @@ THE SCRIPT
 {RULES}
 For every item write a note of 1-3 sentences in plain English: what she actually said, as a quote with its timestamp (like @12:29), and -- when it falls short -- what the script says instead. If the item never came up, say so. Then 2 or 3 short coaching points for the interviewer: most important first, what to fix and what to keep doing.
 
+Then, for every script portion under "portions" ({PORTION_KEYS}), say whether she said it. said=true only if she covered ALL of it (by meaning, not exact words); partly said or skipped = false. check_ins = all three check-in questions; wrap_up = every piece of the wrap-up. note = one short sentence: what she said instead, with its timestamp, or that it never came up.
+
 Also list the applicants' questions on these topics, each with the interviewer's answer as said (quote + timestamp): door to door / field work, benefits, flexible schedule, is this a scam, hourly pay, working in a specific city. Leave the list empty if none came up.
 
 Plain, simple words -- the readers are not technical.
 
 If the recording is not a 1st round interview (empty, a test, a different kind of meeting, or it stops before the interview really starts), set is_interview to false and explain in not_interview_reason."""
 
+_PORTION_SCHEMA = {"type": "object", "additionalProperties": False,
+                   "required": ["said", "note"],
+                   "properties": {"said": {"type": "boolean"}, "note": {"type": "string"}}}
 _ITEM_SCHEMA = {"type": "object", "additionalProperties": False,
                 "required": ["happened", "note"],
                 "properties": {"happened": {"type": "boolean"}, "note": {"type": "string"}}}
 SCHEMA = {
     "type": "object", "additionalProperties": False,
     "required": ["is_interview", "not_interview_reason", "interviewer_name", "applicants",
-                 "items", "coaching", "applicant_questions"],
+                 "items", "portions", "coaching", "applicant_questions"],
     "properties": {
         "is_interview": {"type": "boolean"},
         "interviewer_name": {"type": "string"},
@@ -109,6 +149,9 @@ SCHEMA = {
         "items": {"type": "object", "additionalProperties": False,
                   "required": [k for k, _, _ in ITEMS],
                   "properties": {k: _ITEM_SCHEMA for k, _, _ in ITEMS}},
+        "portions": {"type": "object", "additionalProperties": False,
+                     "required": [k for k, _ in PORTIONS],
+                     "properties": {k: _PORTION_SCHEMA for k, _ in PORTIONS}},
         "coaching": {"type": "array", "items": {"type": "string"}},
         "applicant_questions": {"type": "array", "items": {
             "type": "object", "additionalProperties": False,
@@ -137,6 +180,14 @@ def score(result: Dict) -> Dict:
             missed.append(key)
     return {"score": round(100 * passed / len(ITEMS)), "passed": passed,
             "red_hit": red_hit, "musts_done": musts_done, "missed": missed}
+
+
+def skipped(result: Dict) -> List[tuple]:
+    """[(key, script line, note)] for each portion she didn't fully say, in
+    script order. A result graded before portions existed has none."""
+    got = result.get("portions") or {}
+    return [(k, line, got[k].get("note") or "") for k, line in PORTIONS
+            if k in got and not got[k].get("said")]
 
 
 def grade(transcript: str, *, interviewer_speaker: str, client=None) -> Dict:

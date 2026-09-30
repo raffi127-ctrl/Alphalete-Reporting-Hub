@@ -1,7 +1,8 @@
 """python -m unittest automations.first_round_scorecards.test_run"""
+import datetime as dt
 import unittest
 
-from automations.first_round_scorecards import doc, grade, run
+from automations.first_round_scorecards import appstream, doc, grade, run
 
 MEETING = {"recording_id": 1, "recording_start_time": "2026-09-29T15:47:15Z",
            "recording_end_time": "2026-09-29T16:02:55Z",
@@ -9,11 +10,14 @@ MEETING = {"recording_id": 1, "recording_start_time": "2026-09-29T15:47:15Z",
            "recorded_by": {"name": "ARS ZOOM 12", "email": "arszoomp@gmail.com"}}
 
 
-def result(**happened):
+def result(said=None, **happened):
     items = {k: {"happened": kind == "must", "note": ""} for k, _, kind in grade.ITEMS}
     for k, v in happened.items():
         items[k]["happened"] = v
-    return {"is_interview": True, "not_interview_reason": "", "applicants": ["Nakechia"],
+    portions = {k: {"said": True, "note": ""} for k, _ in grade.PORTIONS}
+    for k, v in (said or {}).items():
+        portions[k] = {"said": v, "note": "" if v else "Never came up. @3:37"}
+    return {"is_interview": True, "portions": portions, "not_interview_reason": "", "applicants": ["Nakechia"],
             "items": items, "coaching": ["Do the schedule section.", "Keep the pay on script."],
             "applicant_questions": [{"topic": "Door to door", "question": "Is this in the field? @4:10",
                                      "answer": "Yes, face to face with clients. @4:15"}]}
@@ -64,6 +68,120 @@ class ReplyTest(unittest.TestCase):
 
     def test_thread_title(self):
         self.assertEqual(run.thread_title("Valentina"), "Valentina's 1st Round Scorecards")
+
+
+# Nakechia's 9/29 interview as Rafael counted it by hand: 5 skipped portions
+NAKECHIA = {"face_to_face": False, "schedule": False, "commute": False,
+            "check_ins": False, "wrap_up": False}
+
+
+class SkippedTest(unittest.TestCase):
+    def test_reply_counts_skipped_portions_and_quotes_the_script(self):
+        text = run.reply_text(MEETING, result(said=NAKECHIA))
+        self.assertIn("⏭️ *Skipped portions: 5*", text)
+        self.assertIn('• _"All interactions with them are face to face', text)
+        self.assertIn("we went a different direction.\"_", text)
+        # script order, not the order the model happened to answer in
+        order = [text.index(line[:25]) for k, line in grade.PORTIONS if k in NAKECHIA]
+        self.assertEqual(order, sorted(order))
+
+    def test_nothing_skipped_no_line(self):
+        self.assertNotIn("Skipped portions", run.reply_text(MEETING, result()))
+
+    def test_old_result_without_portions_still_posts(self):
+        r = result()
+        del r["portions"]
+        self.assertNotIn("Skipped portions", run.reply_text(MEETING, r))
+        self.assertNotIn("Skipped portions", doc.build_html(MEETING, "Valentina", r))
+
+    def test_doc_lists_each_with_the_note(self):
+        page = doc.build_html(MEETING, "Valentina", result(said=NAKECHIA))
+        self.assertIn("Skipped portions: 5", page)
+        self.assertIn('?timestamp=217">@3:37</a>', page)
+
+
+class ScheduledTest(unittest.TestCase):
+    BOOKED = [{"office": "11280", "time": "10:45 AM", "name": "Nakechia Miller"},
+              {"office": "11280", "time": "10:45 AM", "name": "Kevin Brown"},
+              {"office": "11280", "time": "12:15 PM", "name": "Ana Julia Avina"}]
+    STARTED = dt.datetime(2026, 9, 29, 10, 47, 15, tzinfo=run.fathom.CT)
+
+    def test_matches_a_misheard_name(self):
+        slot = appstream.scheduled_for(["Nakeshia Miller"], self.BOOKED, self.STARTED)
+        self.assertEqual(slot.strftime("%H:%M"), "10:45")
+
+    def test_other_person_same_first_name_no_match(self):
+        self.assertIsNone(appstream.scheduled_for(["Nakechia Johnson"], self.BOOKED,
+                                                  self.STARTED))
+
+    def test_reply_shows_scheduled_and_started(self):
+        m = dict(MEETING, scheduled_ct=self.STARTED.replace(minute=45, second=0))
+        text = run.reply_text(m, result())
+        self.assertIn("*Started 10:47 AM CT* · scheduled 10:45 AM · 16 min", text)
+        self.assertNotIn("before the scheduled time", text)      # 2 min late is fine
+
+    def test_started_early_is_flagged(self):
+        m = dict(MEETING, scheduled_ct=self.STARTED.replace(hour=11, minute=0, second=0))
+        text = run.reply_text(m, result())
+        self.assertIn("⚠️ Started 12 min before the scheduled time", text)
+        self.assertIn("Started 12 min before", doc.build_html(m, "Valentina", result()))
+
+    def test_not_on_appstream_vs_not_read(self):
+        self.assertIn("scheduled not on AppStream",
+                      run.reply_text(dict(MEETING, scheduled_ct=""), result()))
+        self.assertNotIn("scheduled", run.reply_text(MEETING, result()))
+
+
+class RefreshTest(unittest.TestCase):
+    """--refresh edits the reply already in the thread instead of adding one."""
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self._saved = (run.LEDGER, run.OUT_DIR, run.doc.upload)
+        run.OUT_DIR = Path(tempfile.mkdtemp())
+        run.LEDGER = run.OUT_DIR / "posted.json"
+        run.doc.upload = lambda *a, **k: "https://docs.google.com/d/1"
+        run._remember(1, dt.date(2026, 9, 29), "C0C42793AKS", "111.222")
+
+    def tearDown(self):
+        run.LEDGER, run.OUT_DIR, run.doc.upload = self._saved
+
+    def test_refresh_edits_in_place(self):
+        import sys
+        import types
+        calls = []
+
+        class Client:
+            def chat_update(self, **kw):
+                calls.append(("update", kw))
+                return {"ok": True}
+
+            def chat_postMessage(self, **kw):
+                calls.append(("post", kw))
+                return {"ok": True, "ts": "999"}
+
+        fake = types.SimpleNamespace(_client=Client, _ordinal=str,
+                                     ensure_named_thread=lambda *a, **k: {"thread_ts": "100.1"})
+        saved = sys.modules.get("automations.shared.slack_metrics_post")
+        sys.modules["automations.shared.slack_metrics_post"] = fake
+        import automations.shared as shared_pkg
+        had = getattr(shared_pkg, "slack_metrics_post", None)
+        shared_pkg.slack_metrics_post = fake
+        try:
+            rc = run.post(dt.date(2026, 9, 29), {"Valentina": [(MEETING, result(), "")]},
+                          preview=False, refresh=True)
+        finally:
+            if saved is not None:
+                sys.modules["automations.shared.slack_metrics_post"] = saved
+            else:
+                sys.modules.pop("automations.shared.slack_metrics_post", None)
+            if had is not None:
+                shared_pkg.slack_metrics_post = had
+            else:
+                delattr(shared_pkg, "slack_metrics_post")
+        self.assertEqual(rc, 0)
+        self.assertEqual([c[0] for c in calls], ["update"])
+        self.assertEqual((calls[0][1]["channel"], calls[0][1]["ts"]), ("C0C42793AKS", "111.222"))
 
 
 class DocTest(unittest.TestCase):

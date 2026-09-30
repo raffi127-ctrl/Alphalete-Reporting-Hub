@@ -21,7 +21,7 @@ import io
 import re
 from typing import Dict
 
-from automations.first_round_scorecards import fathom, grade
+from automations.first_round_scorecards import appstream, fathom, grade
 
 FOLDER_MIME = "application/vnd.google-apps.folder"
 DOC_MIME = "application/vnd.google-apps.document"
@@ -45,11 +45,17 @@ def build_html(m: Dict, name: str, result: Dict) -> str:
     col = GREEN if s["score"] >= 90 else (YELLOW if s["score"] >= 70 else RED)
     who = ", ".join(a for a in result.get("applicants") or [] if a.strip()) or "—"
     speaker = (m.get("recorded_by") or {}).get("name") or ""
+    sched = appstream.scheduled_text(m)
+    sched = f" · <b>Scheduled (AppStream):</b> {html.escape(sched)}" if sched else ""
+    early = appstream.early_by(m)
+    early = (f'<p style="color:{RED}"><b>⚠️ Started {early} min before the scheduled '
+             f"time.</b></p>") if early else ""
+    gaps = grade.skipped(result)
     out = ['<html><head><meta charset="utf-8"></head><body style="font-family:Arial;font-size:11pt">',
            f"<h1>1st Round AI Audit — {html.escape(name)}, {start:%b %d} {start.strftime('%I:%M %p').lstrip('0')}</h1>",
            f"<p><b>Interview:</b> {start:%a, %b %d, %Y} · <b>Start time:</b> "
-           f"{start.strftime('%I:%M %p').lstrip('0')} CT · {fathom.minutes(m)} min · "
-           f'<a href="{share}">Fathom recording</a></p>',
+           f"{start.strftime('%I:%M %p').lstrip('0')} CT{sched} · {fathom.minutes(m)} min · "
+           f'<a href="{share}">Fathom recording</a></p>' + early,
            f"<p><b>Interviewer:</b> {html.escape(name)} ({html.escape(speaker)}) · "
            f"<b>Applicants:</b> {html.escape(who)}</p>",
            f'<h2>Scorecard: <span style="color:{col}">{s["score"]} / 100 {_emoji(s["score"])}</span></h2>',
@@ -60,6 +66,14 @@ def build_html(m: Dict, name: str, result: Dict) -> str:
            "<p><b>Coaching points:</b></p><ul>"
            + "".join(f"<li>{html.escape(c)}</li>" for c in result.get("coaching") or [])
            + "</ul>"]
+    if "portions" in result:
+        # Rafael 9/30: the count, and each skipped script line word for word
+        out.append(f"<h2>⏭️ Skipped portions: {len(gaps)}</h2>")
+        if not gaps:
+            out.append("<p>She said every part of the script.</p>")
+        for n_gap, (_, line, note) in enumerate(gaps, 1):
+            out.append(f"<p><b>{n_gap}.</b> <i>\"{html.escape(line)}\"</i>"
+                       + (f"<br>{_linked(note, share)}" if note else "") + "</p>")
     n = 0
     for kind, title in (("red", "🚩 Red flags — should NOT happen"),
                         ("must", "✅ Must-dos — should happen")):

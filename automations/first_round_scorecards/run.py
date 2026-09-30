@@ -17,6 +17,11 @@ MUST POST FROM THE MINI: on Eve's Windows the Slack token is Evelyn's own.
     python -m automations.first_round_scorecards.run --post           # LIVE: the channel
     python -m automations.first_round_scorecards.run --due --post     # the scheduled tick
     ... --date 2026-09-28                                             # another day
+    ... --date 2026-09-29 --post --refresh     # re-grade a day already posted: EDITS
+                                               # the same replies + docs, no new post
+
+--refresh is for a change to the scorecard itself: the replies people already
+have open show the new version, instead of a second reply to pick between.
 """
 from __future__ import annotations
 
@@ -32,7 +37,7 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
-from automations.first_round_scorecards import doc, fathom, grade
+from automations.first_round_scorecards import appstream, doc, fathom, grade
 
 CHANNEL_ID = "C0C42793AKS"          # #ars-recruiting-numbers (Eve, 2026-09-29)
 EVE_USER_ID = "U088E2KJEV8"         # preview DMs
@@ -91,7 +96,10 @@ def reply_text(m: Dict, result: Optional[Dict], *, skipped: str = "",
                doc_link: str = "") -> str:
     """One interview = one reply. Short on purpose: the score, what was missed,
     the coaching, then the full audit (a Google Doc) and the recording."""
-    head = f"*{_clock(fathom.start_ct(m))} CT* · {fathom.minutes(m)} min"
+    head = f"*Started {_clock(fathom.start_ct(m))} CT*"
+    if appstream.scheduled_text(m):
+        head += f" · scheduled {appstream.scheduled_text(m)}"
+    head += f" · {fathom.minutes(m)} min"
     link = f"<{m.get('share_url') or m.get('url')}|Watch the recording>"
     if doc_link:
         link = f"📄 <{doc_link}|Full audit>  ·  {link}"
@@ -99,9 +107,11 @@ def reply_text(m: Dict, result: Optional[Dict], *, skipped: str = "",
         return f"{head}\n⚪ Not scored — {skipped}\n{link}"
     s = grade.score(result)
     who = ", ".join(a for a in result.get("applicants") or [] if a.strip())
-    lines = [f"{head}{f' · {who}' if who else ''}",
-             f"*Score: {s['score']}/100* {emoji(s['score'])}",
-             f"🚩 Red flags: {s['red_hit']} of 5  ·  ✅ Must-dos: {s['musts_done']} of 6"]
+    lines = [f"{head}{f' · {who}' if who else ''}"]
+    if appstream.early_by(m):
+        lines.append(f"⚠️ Started {appstream.early_by(m)} min before the scheduled time")
+    lines += [f"*Score: {s['score']}/100* {emoji(s['score'])}",
+              f"🚩 Red flags: {s['red_hit']} of 5  ·  ✅ Must-dos: {s['musts_done']} of 6"]
     kind = {key: k for key, _, k in grade.ITEMS}
     red = [grade.SHORT[k] for k in s["missed"] if kind[k] == "red"]
     miss = [grade.SHORT[k] for k in s["missed"] if kind[k] == "must"]
@@ -109,6 +119,11 @@ def reply_text(m: Dict, result: Optional[Dict], *, skipped: str = "",
         lines.append(f"🚩 {' · '.join(red)}")
     if miss:
         lines.append(f"❌ Missed: {' · '.join(miss)}")
+    gaps = grade.skipped(result)
+    if gaps:
+        # the script line itself, copied from grade.PORTIONS (Rafael 9/30)
+        lines.append(f"⏭️ *Skipped portions: {len(gaps)}*")
+        lines += [f"• _\"{line}\"_" for _, line, _ in gaps]
     coaching = [c.strip() for c in result.get("coaching") or [] if c.strip()][:3]
     if coaching:
         lines.append("*Coaching:*")
@@ -174,21 +189,43 @@ def build(day: dt.date, *, do_grade: bool, skip=()) -> Dict[str, List]:
                 (m, None, result.get("not_interview_reason") or "not a 1st round interview"))
             continue
         out.setdefault(interviewer(m, result), []).append((m, result, ""))
+    if do_grade:
+        _add_scheduled(day, out)
     return out
+
+
+def _add_scheduled(day: dt.date, graded: Dict[str, List]) -> None:
+    """Put each graded interview's AppStream slot on its meeting (scheduled_ct).
+    AppStream down = the replies go out without it (logged), never held back:
+    the score is the point of the post."""
+    rows = [(m, r) for rs in graded.values() for m, r, _ in rs if r]
+    if not rows:
+        return
+    try:
+        bookings = appstream.booked(day)
+    except Exception as exc:  # noqa: BLE001
+        print(f"AppStream not read ({type(exc).__name__}: {exc}) - no scheduled times")
+        return
+    print(f"AppStream: {len(bookings)} 1st rounds booked on {day}")
+    for m, r in rows:
+        m["scheduled_ct"] = appstream.scheduled_for(
+            r.get("applicants") or [], bookings, fathom.start_ct(m)) or ""
 
 
 def _dm_channel(client) -> str:
     return client.conversations_open(users=EVE_USER_ID)["channel"]["id"]
 
 
-def post(day: dt.date, graded: Dict[str, List], *, preview: bool) -> int:
+def post(day: dt.date, graded: Dict[str, List], *, preview: bool,
+         refresh: bool = False) -> int:
     from automations.shared import slack_metrics_post as smp
     client = smp._client()
     channel = _dm_channel(client) if preview else CHANNEL_ID
     done = _ledger()
     failed = 0
     for name, rows in graded.items():
-        todo = [r for r in rows if preview or str(r[0].get("recording_id")) not in done]
+        todo = [r for r in rows if preview or refresh
+                or str(r[0].get("recording_id")) not in done]
         if not todo:
             print(f"  {name}: all {len(rows)} already posted")
             continue
@@ -216,6 +253,20 @@ def post(day: dt.date, graded: Dict[str, List], *, preview: bool) -> int:
                     failed += 1
                     continue
             text = reply_text(m, result, skipped=skipped, doc_link=doc_link)
+            was = done.get(str(m.get("recording_id"))) if refresh and not preview else None
+            if was:
+                # already in the thread: edit that reply, don't add a second one
+                try:
+                    resp = client.chat_update(channel=was["channel"], ts=was["ts"], text=text)
+                except Exception as exc:  # noqa: BLE001
+                    print(f"  {name} {_clock(fathom.start_ct(m))}: EDIT FAILED "
+                          f"{type(exc).__name__}: {exc}")
+                    failed += 1
+                    continue
+                print(f"  {name} {_clock(fathom.start_ct(m))}: "
+                      f"{'edited in place' if resp.get('ok') else 'EDIT FAILED'}")
+                failed += 0 if resp.get("ok") else 1
+                continue
             try:
                 resp = client.chat_postMessage(channel=channel, thread_ts=ts, text=text,
                                                unfurl_links=False, unfurl_media=False)
@@ -238,6 +289,9 @@ def main(argv=None) -> int:
     ap.add_argument("--post", action="store_true", help="actually post (default: dry-run)")
     ap.add_argument("--preview-to-eve", action="store_true",
                     help="post in Eve's DM instead of the channel")
+    ap.add_argument("--refresh", action="store_true",
+                    help="re-grade interviews already posted that day and EDIT their "
+                         "replies + docs in place (same links, no new post)")
     ap.add_argument("--no-grade", action="store_true", help="list the recordings only, no AI")
     ap.add_argument("--due", action="store_true",
                     help="scheduled tick: only on a weekday after 6 PM CT, once a day")
@@ -250,7 +304,7 @@ def main(argv=None) -> int:
 
     print(f"1st Round Scorecards for {day:%a %b %d, %Y}")
     graded = build(day, do_grade=not args.no_grade,
-                   skip=set(_ledger()) if live else ())
+                   skip=set(_ledger()) if live and not args.refresh else ())
     if not graded:
         print("no 1st round to post (none recorded, or all already posted)")
         if live:
@@ -275,7 +329,7 @@ def main(argv=None) -> int:
         return 0
     where = "Eve's DM (preview)" if args.preview_to_eve else "#ars-recruiting-numbers"
     print(f"POSTING to {where}")
-    rc = post(day, graded, preview=args.preview_to_eve)
+    rc = post(day, graded, preview=args.preview_to_eve, refresh=args.refresh)
     if live and rc == 0:
         _mark_day_done(day)
     return rc
