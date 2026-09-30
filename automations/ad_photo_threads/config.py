@@ -249,6 +249,11 @@ _MORE = [
      "C0AUUT7JH33", "C0C41A9G6JG", r"sapphire\s*marketing.*1st\s*round"),
     ("ryan", "Ryan McSpadden", ARS_R_TO_Z, "Ryan McSpadden", "22820", "Highline Management Team",
      "C0794R5TLG5", "C0C3G97JN1M", r"highline\s*management.*1st\s*round"),
+    # Raf 9/30: Nii's office too, Nicole (NLR) in the channel. Daily thread
+    # "*NEXT HORIZON GROUP* *- 1st ROUNDS - September 28th*". The office's own
+    # #nii-teiko-tagoe-office (C0BMETPJT70) is metrics only, not this.
+    ("nii", "Nii Tagoe", ARS_M_TO_Q, "Nii Teiko", "23275", "Next Horizon Group, Inc.",
+     "C0AVA8LSGLQ", "C0C5KNZ424T", r"next\s*horizon.*1st\s*round"),
     # SOUTH SHORE | PROFITS - Report (New), same folder as the ARS books (Eve
     # 9/23). Drew's live tab is " Drew Tepper New" -- leading space and all;
     # his old "Drew Tepper" tab stopped in September. Samuel, Jose and Colten
