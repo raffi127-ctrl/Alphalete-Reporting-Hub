@@ -120,6 +120,17 @@ fluff. I need clear visuals and concise communications.
   new report / add it to the shared library without my approval — no
   sign-off gate. (Sandbox + `--dry-run` while building still apply; this
   lifts only the approval gate, not the correctness checks.)
+- **Recruiting/booker work → read `resources/recruiting-context/` FIRST.**
+  Any new report or automation that touches recruiting (ApplicantStream,
+  call lists, bookers, 1st/2nd round, BOB, interview audits, SMS/email to
+  applicants): before designing, read its `README.md`, then
+  `megan-overrides.md` (it WINS over the ARS doc where they disagree),
+  then the relevant parts of `ars-processes-2026.md` and the matching
+  `transcripts/`. Nobody has to ask — Raf's doc + 41 Looms live there
+  (Megan, #l10-alphalete, 2026-09-26). The videos are from Sept 2024:
+  trust the process shape, re-check click paths/button names against
+  today's ApplicantStream. The Doc is live — re-pull it for anything
+  that matters.
 
 # Specific reports in the codebase
 
