@@ -100,8 +100,10 @@ def _ask(img_bytes: bytes, media_type: str, size: Tuple[int, int],
         from automations.brand_audit import credentials
         client = anthropic.Anthropic(api_key=credentials.anthropic_api_key())
     w, h = size
+    # 16000, not 4000 (9/30): a crowded Zoom grid in Nii's 9/18 shots ran
+    # out of room twice ("model stopped: max_tokens") and the day never posted.
     resp = client.messages.create(
-        model=model or MODEL, max_tokens=4000, system=_SYSTEM,
+        model=model or MODEL, max_tokens=16000, system=_SYSTEM,
         output_config={"format": {"type": "json_schema", "schema": _SCHEMA}},
         messages=[{"role": "user", "content": [
             {"type": "image", "source": {
