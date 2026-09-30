@@ -24,7 +24,7 @@ class RosterTests(unittest.TestCase):
     def test_carlos_is_raf_s_guest(self):
         self.assertEqual(G.guests_of(HOST), [GUEST])
         self.assertTrue(G.has_guests(HOST))
-        self.assertEqual(len(G.roster(HOST, GUEST)), 14)
+        self.assertEqual(len(G.roster(HOST, GUEST)), 15)
 
     def test_an_office_with_no_guests_pays_nothing(self):
         self.assertFalse(G.has_guests("Chan Park"))
@@ -56,7 +56,7 @@ class MatchingTests(unittest.TestCase):
         # names in GUEST_REPS have drifted from ownerville's spelling.
         host, guest = G.split(HOST, rows(*G.roster(HOST, GUEST)))
         self.assertEqual(host, [])
-        self.assertEqual(len(guest[GUEST]), 14)
+        self.assertEqual(len(guest[GUEST]), 15)
 
     def test_two_de_la_torres_stay_apart(self):
         host, guest = G.split(HOST, rows("Aaron De La Torre",
