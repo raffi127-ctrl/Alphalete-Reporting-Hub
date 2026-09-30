@@ -3,7 +3,9 @@
 The scorecard is the one Rafael signed off on in the manual pilot (Sep 22-24):
 5 red flags that should NOT happen + 6 must-dos that should. Every answer is
 strictly YES / NO -- partly done counts as NOT done (Rafael, 2026-09-22).
-Score = % of the 11 items passed. 90+ green, 70-89 yellow, under 70 red.
+Score = % of the 11 items passed, minus half an item for every script
+portion said in the wrong words ("incorrect verbiage", Rafael 2026-09-30).
+90+ green, 70-89 yellow, under 70 red.
 
 The model only answers the questions; the score is counted here, so it can
 never drift from the rule above.
@@ -76,6 +78,8 @@ PORTIONS = [
                 "different direction."),
 ]
 
+VERBIAGE_COST = 0.5                 # items lost per portion in the wrong words
+
 SCRIPT = """\
 COMPANY BACKGROUND (key lines)
 - "The positions we are looking to fill are in-person, full time ... All interactions with them are face to face, so we do not do call center or inside of a retailer type of work."
@@ -123,7 +127,10 @@ THE SCRIPT
 {RULES}
 For every item write a note of 1-3 sentences in plain English: what she actually said, as a quote with its timestamp (like @12:29), and -- when it falls short -- what the script says instead. If the item never came up, say so. Then 2 or 3 short coaching points for the interviewer: most important first, what to fix and what to keep doing.
 
-Then list in skipped_portions every script portion she did NOT fully say, by its key ({PORTION_KEYS}). A portion partly said counts as skipped (judge by meaning, not exact words). check_ins = all three check-in questions; wrap_up = every piece of the wrap-up. note = one short sentence: what she said instead, with its timestamp, or that it never came up. Empty list if she said every portion.
+Then list in skipped_portions every script portion she did not say the way the script says it, by its key ({PORTION_KEYS}), with a kind:
+- skipped: she never said it, or left out a piece of it (a missing number, title, question or instruction). check_ins = all three check-in questions; wrap_up = every piece of the wrap-up.
+- incorrect_verbiage: she covered every piece, but in different wording that changes a fact -- a number, a time frame, a title or a promise (e.g. "six months" for "6-8 months", "management role" for "Executive Manager"). Ordinary rephrasing that keeps the same facts is NOT incorrect verbiage: leave it off the list.
+note = one short sentence: for skipped, what she said instead or that it never came up; for incorrect_verbiage, her exact words as a quote. Always with the timestamp. Empty list if she said every portion right.
 
 Also list the applicants' questions on these topics, each with the interviewer's answer as said (quote + timestamp): door to door / field work, benefits, flexible schedule, is this a scam, hourly pay, working in a specific city. Leave the list empty if none came up.
 
@@ -151,8 +158,10 @@ SCHEMA = {
         # large", 2026-09-30)
         "skipped_portions": {"type": "array", "items": {
             "type": "object", "additionalProperties": False,
-            "required": ["portion", "note"],
+            "required": ["portion", "kind", "note"],
             "properties": {"portion": {"type": "string", "enum": [k for k, _ in PORTIONS]},
+                           "kind": {"type": "string",
+                                    "enum": ["skipped", "incorrect_verbiage"]},
                            "note": {"type": "string"}}}},
         "coaching": {"type": "array", "items": {"type": "string"}},
         "applicant_questions": {"type": "array", "items": {
@@ -166,7 +175,7 @@ SCHEMA = {
 
 def score(result: Dict) -> Dict:
     """Count the score from the model's answers -> {score, passed, red_hit,
-    musts_done, missed: [keys that lost points]}."""
+    musts_done, verbiage, missed: [keys that lost points]}."""
     items = result.get("items") or {}
     passed, red_hit, musts_done, missed = 0, 0, 0, []
     for key, _, kind in ITEMS:
@@ -180,18 +189,34 @@ def score(result: Dict) -> Dict:
             passed += 1
         else:
             missed.append(key)
-    return {"score": round(100 * passed / len(ITEMS)), "passed": passed,
-            "red_hit": red_hit, "musts_done": musts_done, "missed": missed}
+    wrong_words = len(verbiage(result))
+    pts = max(0.0, passed - VERBIAGE_COST * wrong_words)
+    return {"score": round(100 * pts / len(ITEMS)), "passed": passed,
+            "red_hit": red_hit, "musts_done": musts_done, "verbiage": wrong_words,
+            "missed": missed}
+
+
+def _gaps(result: Dict, kind: str) -> List[tuple]:
+    """[(key, script line, note)] for the portions of that kind, in script
+    order (a portion named twice counts once, skipped wins). A result graded
+    before portions existed has none; one graded before verbiage existed has
+    only skips."""
+    got: Dict[str, tuple] = {}
+    for g in result.get("skipped_portions") or []:
+        k, gk = g.get("portion"), g.get("kind") or "skipped"
+        if k not in got or gk == "skipped":
+            got[k] = (gk, g.get("note") or "")
+    return [(k, line, got[k][1]) for k, line in PORTIONS
+            if k in got and got[k][0] == kind]
 
 
 def skipped(result: Dict) -> List[tuple]:
-    """[(key, script line, note)] for each portion she didn't fully say, in
-    script order (a portion named twice counts once). A result graded before
-    portions existed has none."""
-    notes: Dict[str, str] = {}
-    for g in result.get("skipped_portions") or []:
-        notes.setdefault(g.get("portion"), g.get("note") or "")
-    return [(k, line, notes[k]) for k, line in PORTIONS if k in notes]
+    return _gaps(result, "skipped")
+
+
+def verbiage(result: Dict) -> List[tuple]:
+    """Portions said in full but in the wrong words -- each costs half an item."""
+    return _gaps(result, "incorrect_verbiage")
 
 
 def grade(transcript: str, *, interviewer_speaker: str, client=None) -> Dict:

@@ -62,7 +62,8 @@ def build_html(m: Dict, name: str, result: Dict) -> str:
            f"<p>🚩 Red flags: <b>{s['red_hit']} of 5</b> happened · ✅ Must-dos: "
            f"<b>{s['musts_done']} of 6</b> done</p>",
            "<p><i>11 items (5 red flags + 6 must-dos). Score = % of items passed. Red flag: "
-           "YES = bad. Must-do: YES = good, only if fully done. 90+ 🟢 · 70–89 🟡 · under 70 🔴</i></p>",
+           "YES = bad. Must-do: YES = good, only if fully done. Each script portion in "
+           "incorrect verbiage: minus half an item. 90+ 🟢 · 70–89 🟡 · under 70 🔴</i></p>",
            "<p><b>Coaching points:</b></p><ul>"
            + "".join(f"<li>{html.escape(c)}</li>" for c in result.get("coaching") or [])
            + "</ul>"]
@@ -74,6 +75,14 @@ def build_html(m: Dict, name: str, result: Dict) -> str:
         for n_gap, (_, line, note) in enumerate(gaps, 1):
             out.append(f"<p><b>{n_gap}.</b> <i>\"{html.escape(line)}\"</i>"
                        + (f"<br>{_linked(note, share)}" if note else "") + "</p>")
+        wrong = grade.verbiage(result)
+        if wrong:
+            out.append(f"<h2>✏️ Incorrect verbiage: {len(wrong)}</h2>"
+                       f"<p><i>Said, but in different words than the script. Each one "
+                       f"costs half an item of the score.</i></p>")
+        for n_gap, (_, line, note) in enumerate(wrong, 1):
+            out.append(f"<p><b>{n_gap}. She said:</b> {_linked(note, share)}"
+                       f"<br><b>Script:</b> <i>\"{html.escape(line)}\"</i></p>")
     n = 0
     for kind, title in (("red", "🚩 Red flags — should NOT happen"),
                         ("must", "✅ Must-dos — should happen")):

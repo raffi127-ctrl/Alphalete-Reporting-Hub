@@ -124,6 +124,11 @@ def reply_text(m: Dict, result: Optional[Dict], *, skipped: str = "",
         # the script line itself, copied from grade.PORTIONS (Rafael 9/30)
         lines.append(f"⏭️ *Skipped portions: {len(gaps)}*")
         lines += [f"• _\"{line}\"_" for _, line, _ in gaps]
+    wrong = grade.verbiage(result)
+    if wrong:
+        # what she said next to the script line; each one cost points
+        lines.append(f"✏️ *Incorrect verbiage: {len(wrong)}* (-{grade.VERBIAGE_COST:g} item each)")
+        lines += [f"• She said: {note}\n    Script: _\"{line}\"_" for _, line, note in wrong]
     coaching = [c.strip() for c in result.get("coaching") or [] if c.strip()][:3]
     if coaching:
         lines.append("*Coaching:*")

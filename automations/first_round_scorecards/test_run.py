@@ -10,13 +10,15 @@ MEETING = {"recording_id": 1, "recording_start_time": "2026-09-29T15:47:15Z",
            "recorded_by": {"name": "ARS ZOOM 12", "email": "arszoomp@gmail.com"}}
 
 
-def result(said=None, **happened):
+def result(said=None, verbiage=(), **happened):
     items = {k: {"happened": kind == "must", "note": ""} for k, _, kind in grade.ITEMS}
     for k, v in happened.items():
         items[k]["happened"] = v
     # the model names portions in any order; the post shows them in script order
-    gaps = [{"portion": k, "note": "Never came up. @3:37"}
+    gaps = [{"portion": k, "kind": "skipped", "note": "Never came up. @3:37"}
             for k, v in reversed(list((said or {}).items())) if not v]
+    gaps += [{"portion": k, "kind": "incorrect_verbiage", "note": '"six months" @09:08'}
+             for k in verbiage]
     return {"is_interview": True, "skipped_portions": gaps, "not_interview_reason": "", "applicants": ["Nakechia"],
             "items": items, "coaching": ["Do the schedule section.", "Keep the pay on script."],
             "applicant_questions": [{"topic": "Door to door", "question": "Is this in the field? @4:10",
@@ -98,6 +100,38 @@ class SkippedTest(unittest.TestCase):
         page = doc.build_html(MEETING, "Valentina", result(said=NAKECHIA))
         self.assertIn("Skipped portions: 5", page)
         self.assertIn('?timestamp=217">@3:37</a>', page)
+
+
+class VerbiageTest(unittest.TestCase):
+    def test_nakechia_as_rafael_counted_it(self):
+        # 5 skipped + 2 in the wrong words: the 2 are NOT skips, and they cost
+        # half an item each -> 7 of 11 items passed, minus 1 = 55
+        r = result(said=NAKECHIA, verbiage=["management", "pay_executive"],
+                   schedule=False, wrap_up=False, check_ins=False, commute=False)
+        self.assertEqual(len(grade.skipped(r)), 5)
+        self.assertEqual(grade.score(r)["score"], 55)
+        text = run.reply_text(MEETING, r)
+        self.assertIn("⏭️ *Skipped portions: 5*", text)
+        self.assertIn("✏️ *Incorrect verbiage: 2* (-0.5 item each)", text)
+        self.assertIn('• She said: "six months" @09:08', text)
+        self.assertIn("Score: 55/100", text)
+        page = doc.build_html(MEETING, "Valentina", r)
+        self.assertIn("Incorrect verbiage: 2", page)
+        self.assertIn('?timestamp=548">@09:08</a>', page)
+
+    def test_no_verbiage_same_score_as_before(self):
+        self.assertEqual(grade.score(result(schedule=False))["score"], 91)
+
+    def test_old_skip_without_kind_is_a_skip(self):
+        r = result()
+        r["skipped_portions"] = [{"portion": "commute", "note": ""}]
+        self.assertEqual(len(grade.skipped(r)), 1)
+        self.assertEqual(grade.verbiage(r), [])
+
+    def test_never_below_zero(self):
+        everything = [k for k, _ in grade.PORTIONS]
+        r = result(verbiage=everything, **{k: kind == "red" for k, _, kind in grade.ITEMS})
+        self.assertEqual(grade.score(r)["score"], 0)
 
 
 class ScheduledTest(unittest.TestCase):
