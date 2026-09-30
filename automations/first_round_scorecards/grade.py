@@ -123,7 +123,7 @@ THE SCRIPT
 {RULES}
 For every item write a note of 1-3 sentences in plain English: what she actually said, as a quote with its timestamp (like @12:29), and -- when it falls short -- what the script says instead. If the item never came up, say so. Then 2 or 3 short coaching points for the interviewer: most important first, what to fix and what to keep doing.
 
-Then, for every script portion under "portions" ({PORTION_KEYS}), say whether she said it. said=true only if she covered ALL of it (by meaning, not exact words); partly said or skipped = false. check_ins = all three check-in questions; wrap_up = every piece of the wrap-up. note = one short sentence: what she said instead, with its timestamp, or that it never came up.
+Then list in skipped_portions every script portion she did NOT fully say, by its key ({PORTION_KEYS}). A portion partly said counts as skipped (judge by meaning, not exact words). check_ins = all three check-in questions; wrap_up = every piece of the wrap-up. note = one short sentence: what she said instead, with its timestamp, or that it never came up. Empty list if she said every portion.
 
 Also list the applicants' questions on these topics, each with the interviewer's answer as said (quote + timestamp): door to door / field work, benefits, flexible schedule, is this a scam, hourly pay, working in a specific city. Leave the list empty if none came up.
 
@@ -131,16 +131,13 @@ Plain, simple words -- the readers are not technical.
 
 If the recording is not a 1st round interview (empty, a test, a different kind of meeting, or it stops before the interview really starts), set is_interview to false and explain in not_interview_reason."""
 
-_PORTION_SCHEMA = {"type": "object", "additionalProperties": False,
-                   "required": ["said", "note"],
-                   "properties": {"said": {"type": "boolean"}, "note": {"type": "string"}}}
 _ITEM_SCHEMA = {"type": "object", "additionalProperties": False,
                 "required": ["happened", "note"],
                 "properties": {"happened": {"type": "boolean"}, "note": {"type": "string"}}}
 SCHEMA = {
     "type": "object", "additionalProperties": False,
     "required": ["is_interview", "not_interview_reason", "interviewer_name", "applicants",
-                 "items", "portions", "coaching", "applicant_questions"],
+                 "items", "skipped_portions", "coaching", "applicant_questions"],
     "properties": {
         "is_interview": {"type": "boolean"},
         "interviewer_name": {"type": "string"},
@@ -149,9 +146,14 @@ SCHEMA = {
         "items": {"type": "object", "additionalProperties": False,
                   "required": [k for k, _, _ in ITEMS],
                   "properties": {k: _ITEM_SCHEMA for k, _, _ in ITEMS}},
-        "portions": {"type": "object", "additionalProperties": False,
-                     "required": [k for k, _ in PORTIONS],
-                     "properties": {k: _PORTION_SCHEMA for k, _ in PORTIONS}},
+        # a list of keys, not one yes/no object per portion: nine more nested
+        # objects made the API reject the schema ("compiled grammar is too
+        # large", 2026-09-30)
+        "skipped_portions": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False,
+            "required": ["portion", "note"],
+            "properties": {"portion": {"type": "string", "enum": [k for k, _ in PORTIONS]},
+                           "note": {"type": "string"}}}},
         "coaching": {"type": "array", "items": {"type": "string"}},
         "applicant_questions": {"type": "array", "items": {
             "type": "object", "additionalProperties": False,
@@ -184,10 +186,12 @@ def score(result: Dict) -> Dict:
 
 def skipped(result: Dict) -> List[tuple]:
     """[(key, script line, note)] for each portion she didn't fully say, in
-    script order. A result graded before portions existed has none."""
-    got = result.get("portions") or {}
-    return [(k, line, got[k].get("note") or "") for k, line in PORTIONS
-            if k in got and not got[k].get("said")]
+    script order (a portion named twice counts once). A result graded before
+    portions existed has none."""
+    notes: Dict[str, str] = {}
+    for g in result.get("skipped_portions") or []:
+        notes.setdefault(g.get("portion"), g.get("note") or "")
+    return [(k, line, notes[k]) for k, line in PORTIONS if k in notes]
 
 
 def grade(transcript: str, *, interviewer_speaker: str, client=None) -> Dict:

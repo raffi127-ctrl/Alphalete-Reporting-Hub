@@ -14,10 +14,10 @@ def result(said=None, **happened):
     items = {k: {"happened": kind == "must", "note": ""} for k, _, kind in grade.ITEMS}
     for k, v in happened.items():
         items[k]["happened"] = v
-    portions = {k: {"said": True, "note": ""} for k, _ in grade.PORTIONS}
-    for k, v in (said or {}).items():
-        portions[k] = {"said": v, "note": "" if v else "Never came up. @3:37"}
-    return {"is_interview": True, "portions": portions, "not_interview_reason": "", "applicants": ["Nakechia"],
+    # the model names portions in any order; the post shows them in script order
+    gaps = [{"portion": k, "note": "Never came up. @3:37"}
+            for k, v in reversed(list((said or {}).items())) if not v]
+    return {"is_interview": True, "skipped_portions": gaps, "not_interview_reason": "", "applicants": ["Nakechia"],
             "items": items, "coaching": ["Do the schedule section.", "Keep the pay on script."],
             "applicant_questions": [{"topic": "Door to door", "question": "Is this in the field? @4:10",
                                      "answer": "Yes, face to face with clients. @4:15"}]}
@@ -90,7 +90,7 @@ class SkippedTest(unittest.TestCase):
 
     def test_old_result_without_portions_still_posts(self):
         r = result()
-        del r["portions"]
+        del r["skipped_portions"]
         self.assertNotIn("Skipped portions", run.reply_text(MEETING, r))
         self.assertNotIn("Skipped portions", doc.build_html(MEETING, "Valentina", r))
 

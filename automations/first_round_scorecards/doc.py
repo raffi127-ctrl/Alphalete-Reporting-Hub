@@ -66,7 +66,7 @@ def build_html(m: Dict, name: str, result: Dict) -> str:
            "<p><b>Coaching points:</b></p><ul>"
            + "".join(f"<li>{html.escape(c)}</li>" for c in result.get("coaching") or [])
            + "</ul>"]
-    if "portions" in result:
+    if "skipped_portions" in result:
         # Rafael 9/30: the count, and each skipped script line word for word
         out.append(f"<h2>⏭️ Skipped portions: {len(gaps)}</h2>")
         if not gaps:
