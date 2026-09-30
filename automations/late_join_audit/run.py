@@ -309,6 +309,9 @@ def main(argv=None) -> int:
     if not args.post:
         print("DRY-RUN: nothing posted")
         return 0
+    if not data["late"] and not data["failed"]:
+        print("no Late Joins that day - nothing to post")     # a quiet day, not a failure
+        return 0
     return post(day, data, preview=args.preview_to_eve)
 
 
