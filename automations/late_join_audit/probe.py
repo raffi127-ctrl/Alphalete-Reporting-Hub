@@ -57,11 +57,72 @@ _ROWS_JS = """(dstr) => {
 }"""
 
 
+# the day view (p=102): one table per section ("FIRST INTERVIEWS ...") with a
+# 'Booked By' header -- where the interviewers pick Late Join and the row shows
+# who set it and when (Analay's screenshots, 2026-09-30)
+_DAY_JS = """() => {
+  const cell = td => {
+    const sel = [...td.querySelectorAll('select')].map(
+      s => 'SELECT=' + (s.options[s.selectedIndex] ? s.options[s.selectedIndex].text : ''));
+    const radios = [...td.querySelectorAll('input[type=radio]')].map(
+      r => (r.checked ? '(x)' : '( )') + (r.value || ''));
+    let txt = (td.innerText || '').trim().replace(/\\s+/g, ' ');
+    if (sel.length) txt = sel.join(' | ');
+    return [txt, ...radios].filter(Boolean).join(' ; ');
+  };
+  const out = [];
+  for (const tb of document.querySelectorAll('table')) {
+    const hdr = tb.rows[0] ? [...tb.rows[0].cells].map(c => (c.innerText || '').trim()) : [];
+    if (hdr.findIndex(h => /booked by/i.test(h)) < 0) continue;
+    let section = '';
+    for (let el = tb.previousElementSibling; el && !section; el = el.previousElementSibling) {
+      const t = (el.innerText || '').trim();
+      if (/INTERVIEW|FIRST DAY/i.test(t)) section = t.slice(0, 60);
+    }
+    out.push(['SECTION', section, ...hdr]);
+    for (const r of [...tb.rows].slice(1)) out.push(['ROW', section, ...[...r.cells].map(cell)]);
+  }
+  return out;
+}"""
+
+
+def _day_view(page, tok, day: dt.date):
+    """Open p=102 on `day` the way a human does (audit_friday._dump_calendar):
+    click the date box, type, Enter -- the picker ignores a set value."""
+    ds = day.strftime("%m-%d-%Y")
+    page.goto(f"https://applicantstream.com/index.cfm?rqst={tok}&p=102",
+              wait_until="domcontentloaded", timeout=45000)
+    page.wait_for_timeout(5000)
+    for _ in range(3):
+        try:
+            loc = page.locator("input[name='calDate']").first
+            loc.click(timeout=8000)
+            page.wait_for_timeout(1000)
+            loc.press("Meta+a")
+            loc.press_sequentially(ds, delay=60)
+            try:
+                with page.expect_navigation(timeout=20000, wait_until="domcontentloaded"):
+                    loc.press("Enter")
+            except Exception:  # noqa: BLE001
+                pass
+            page.wait_for_timeout(4000)
+        except Exception:  # noqa: BLE001
+            page.wait_for_timeout(2000)
+        banner = page.evaluate("() => { const m=(document.body.innerText||'').match("
+                               "/Calendars for [0-9-]+/); return m ? m[0] : ''; }")
+        if ds in banner:
+            return page.evaluate(_DAY_JS)
+        print(f"[late_join_probe]   banner {banner!r} != {ds}, retrying", flush=True)
+    raise RuntimeError(f"day view never showed {ds}")
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="late_join_audit.probe")
     ap.add_argument("--office", default="22583", help="comma list")
     ap.add_argument("--date", default="", help="MM-DD-YYYY (default today)")
     ap.add_argument("--limit", type=int, default=40, help="rows per office")
+    ap.add_argument("--view", choices=["day", "week"], default="day",
+                    help="day = p=102 (statuses + who set them), week = p=105")
     a = ap.parse_args(argv)
     day = (dt.datetime.strptime(a.date, "%m-%d-%Y").date() if a.date
            else dt.date.today())
@@ -75,9 +136,12 @@ def main(argv=None) -> int:
                       f"&newOfficeId={office}")
             page.wait_for_load_state("networkidle")
             time.sleep(1.0)
-            dump._goto_week_containing(page, tok, day)
-            n = dump._expand_day(page, ds)
-            got = page.evaluate(_ROWS_JS, ds) if n >= 0 else []
+            if a.view == "day":
+                got, n = _day_view(page, tok, day), -2
+            else:
+                dump._goto_week_containing(page, tok, day)
+                n = dump._expand_day(page, ds)
+                got = page.evaluate(_ROWS_JS, ds) if n >= 0 else []
             print(f"[late_join_probe] {office} {ds}: header says {n}, rows {len(got)}", flush=True)
             late = [r for r in got if any("Late" in c for c in r)]
             print(f"[late_join_probe] {office}: {len(late)} rows mention Late", flush=True)
