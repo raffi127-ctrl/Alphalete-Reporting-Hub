@@ -372,8 +372,14 @@ def main(argv=None) -> int:
             rn, note = PEO.resolve(name, rec_names)
             if note:
                 notes.append(f"{team}: {note}")
+            # `rn or name`: a leader who is in NO month of `2nd rds %'s` must
+            # still get zeros, not blanks. resolve() returns None for somebody
+            # absent from the tab entirely, and passing that skipped the whole
+            # recruiting block — so "conducted none" and "not in the tab"
+            # produced different output when they mean the same thing. Passing
+            # their own name lets the month lookup miss and write the zeros.
             filled = F.for_leader(name, wks, pay=pay, months=months,
-                                  pay_name=name, rec_name=rn)
+                                  pay_name=name, rec_name=rn or name)
             gaps.extend(filled.gaps)
 
             # 3. Training / Team Building — never wired until now, blank for
