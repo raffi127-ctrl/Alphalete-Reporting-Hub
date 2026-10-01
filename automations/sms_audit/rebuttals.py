@@ -146,7 +146,8 @@ REFUSES = re.compile(
 DEFERS = re.compile(
     r"((hiring )?manager|recruiter|director|hr)\b[^.?!]{0,40}\b"
     r"(can|will|would|is able to|to)\s+"
-    r"(go over|explain|cover|discuss|answer|clarify|walk|provide|give|share)|"
+    r"(go over|go through|run through|explain|cover|discuss|answer|"
+    r"clarify|walk|provide|give|share)|"
     r"(i|we)('| wi)?ll have the (hiring )?(manager|recruiter)|"
     r"that'?s something the (hiring )?(manager|recruiter)|"
     r"(go over|discuss|cover) (that|it|those|all of that|the details) "
