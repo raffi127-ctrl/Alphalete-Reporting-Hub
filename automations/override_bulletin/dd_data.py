@@ -254,7 +254,13 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
                "campaign": (r[2] or "").strip() if len(r) > 2 else "",
                "org": (r[3] or "").strip() if len(r) > 3 else "",
                "total": money(r[tot_col]) if tot_col < len(r) else 0.0,
-               "weeks": [money(r[i]) if i < len(r) else 0.0 for i, _ in wk_cols[:WOW_WEEKS]]}
+               # A NEGATIVE week (chargebacks > deposits) is left OUT, not
+               # subtracted (Eve 2026-10-01: "no sumamos los negativos, los
+               # dejamos afuera" — Brandon Stallkamp -$266 on WE 9.27.26). As 0
+               # the row drops out of the tables like any quiet owner, and the
+               # headline below takes the same money back off 'Total - Raf'.
+               "weeks": [max(money(r[i]), 0.0) if i < len(r) else 0.0
+                         for i, _ in wk_cols[:WOW_WEEKS]]}
         icds.append(row)
         by_key[row["key"]] = row
 
@@ -339,6 +345,24 @@ def load(ws=None, tree_ws=None, aliases=None, credico="auto"):
                          and wk_cols[0][0] < len(r)), None)
     special_week = round(sum(r["weeks"][0] for r in special), 2)
     headline = headline_tab
+    # 'Total - Raf' is a plain SUM, so it nets every negative owner row in.
+    # Negatives are left out (see the roster above) — add them back, counting
+    # only the owner rows the SUM covers (everything above 'Total - Raf').
+    if headline is not None:
+        negatives = 0.0
+        for r in vals[1:]:
+            nm = (r[0] or "").strip().lower() if r else ""
+            if nm.startswith("total - raf"):
+                break
+            if nm and not nm.startswith("total") and wk_cols[0][0] < len(r):
+                negatives += min(money(r[wk_cols[0][0]]), 0.0)
+        if negatives:
+            headline = round(headline - negatives, 2)
+            problems.append(
+                "ORG. TOTAL DD leaves out ${:,.2f} of negative owner weeks "
+                "('Total - Raf' {} -> {}) — negatives are not counted".format(
+                    -negatives, "${:,.2f}".format(headline_tab),
+                    "${:,.2f}".format(headline)))
     if special_week:
         problems.append(
             "ORG. TOTAL DD = ${:,.2f}, the tab's 'Total - Raf' (=SUM(F2:F131)) "
