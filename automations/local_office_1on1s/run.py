@@ -454,8 +454,9 @@ def main(argv=None) -> int:
                 # kept none, which is exactly the week worth talking about in a
                 # 1on1. The dash is now only for a week with no new starts at
                 # all, by either count.
+                _blk3 = classrooms.get(wk) or {}
                 _sched = OB.for_week(obcl, wk, name,
-                                     on_board=lambda n, _b=block: PEO.key(n) in _b)
+                                     on_board=lambda n, _b=_blk3: PEO.key(n) in _b)
                 _had_any = bool(trained) or bool(_sched and _sched[0])
                 if trained:
                     _ret = f"{round(100 * kept / len(trained))}%"
