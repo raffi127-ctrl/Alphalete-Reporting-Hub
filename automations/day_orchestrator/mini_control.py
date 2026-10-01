@@ -4430,6 +4430,12 @@ _CRED_FILES = {
     # here whenever CROSS_WS_TOKEN_FILES gains one, or the next machine repeats it.
     "slack-token-freshsuccess":
         lambda: Path.home() / ".config" / "recruiting-report" / "slack-token-freshsuccess",
+    # AO workspace READ token (user xoxp-, app 'AO Cleanup') for the monthly
+    # AO Slack channel cleanup (ao_cleanup.slack_read.TOKEN_PATH). Born on
+    # Eve's Windows; the job is scheduled on Lucy 1, which never had it, so
+    # the first scheduled run (2026-10-01) died exit 2 on NoReadToken.
+    "slack-read-token":
+        lambda: Path.home() / ".config" / "recruiting-report" / "slack-read-token",
     # Leader phone overlay for the New-Start texts (personal numbers — never
     # in git; the repo is PUBLIC). Filled on the laptop from
     # alphaletereception@'s Google Contacts (new_start_followup.contacts_google
