@@ -74,6 +74,16 @@ RECRUITING = {
 # The row computed from the Trainer chain rather than the recruiting tab.
 RETENTION_ROW = "New starts Retention %"
 
+# Labels that exist in ONE box variant only. A TEAM box carries the condensed
+# recruiting spellings and an individual box the expanded ones, so each kind of
+# section is always missing the other's rows. Reporting that as a gap produced
+# three false notes per individual section, and a notes list full of expected
+# misses is how a real one gets skipped. [[feedback_fill_but_flag]]
+VARIANT_ONLY = {
+    "2nd closing numbers", "2nd closing %", "new starts showed / scheduled",
+    "new / app goal",
+}
+
 # EVERY ROW THIS REPORT OWNS. A row here is cleared when the run has no value
 # for it, so a number from a previous run cannot outlive its source.
 #

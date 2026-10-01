@@ -21,9 +21,10 @@ import sys
 from collections import defaultdict
 
 from automations.local_office_1on1s import (fill as F, layout as LO,
-                                            ov_knocks as OV, paycheck as PC,
-                                            people as PEO, roster as R,
-                                            sales as SA, second_rounds as SR,
+                                            obcl as OB, ov_knocks as OV,
+                                            paycheck as PC, people as PEO,
+                                            roster as R, sales as SA,
+                                            second_rounds as SR,
                                             teamblock as TB, weeks as W)
 
 BOOK = "1KhCZ4fzIbXh9LKWeHMfvfswcHdlXEa14IK5KsmRgwZM"
@@ -118,6 +119,18 @@ def main(argv=None) -> int:
     for c in pay.conflicts:
         print(f"       ! {c}")
     _teams, months = SR.read(allinone.worksheet(SR.TAB).get_all_values())
+
+    # New starts come from the ONBOARDING CHECKLIST, weekly, not from the
+    # monthly recruiting tab. Megan 2026-10-01: "scheduled and showed new
+    # starts should be weekly not monthly" — the OBCL has one row per
+    # scheduled new start, dated, attributed to whoever did their 2nd round.
+    try:
+        obcl = OB.read(allinone.worksheet(OB.TAB).get_all_values())
+        print(f"  OBCL: {len(obcl)} week block(s)")
+    except Exception as e:                      # no OBCL ≠ no report
+        obcl = {}
+        notes_boot.append(f"OBCL unreadable ({e}) — new starts fall back to "
+                          f"the monthly figure")
     rec_names = sorted({n for m in months.values() for n in m})
 
     rosters = R.build(logfn=print)
@@ -356,6 +369,23 @@ def main(argv=None) -> int:
                             f"trained by {name} still on the board") if trained
                            else f"WE {wk:%-m/%-d}: no new starts assigned to {name}")
 
+            # NEW STARTS, WEEKLY, AFTER the monthly block so these win the
+            # cell. Only these two rows move to the OBCL: it holds a row per
+            # person who was SCHEDULED, so it cannot count second rounds that
+            # never became a new start — the other recruiting rows stay monthly.
+            for wk in wks:
+                got = OB.for_week(obcl, wk, name)
+                if got is None:
+                    continue
+                sched, showed = got
+                filled.add("New Starts Scheduled", wk, str(sched),
+                           f"OBCL week of {wk:%-m/%-d}: rows with {name} as "
+                           f"2nd Round Interviewer")
+                filled.add("New Starts Showed", wk, str(showed),
+                           f"OBCL week of {wk:%-m/%-d}: of those, reached classroom")
+                filled.add("New Starts showed / Scheduled", wk,
+                           f"{showed}/{sched}", f"OBCL week of {wk:%-m/%-d}")
+
             # products + knocks, per week
             for wk, (wsales, wdays) in weekly.items():
                 for lab, val, src in SA.cells_for(name, wsales):
@@ -415,7 +445,8 @@ def main(argv=None) -> int:
                 r = LO.find_row(rows, cell.row_label)
                 col = W.find(hdr, cell.week)
                 if r is None:
-                    notes.append(f"{team} {name}: no row {cell.row_label!r}")
+                    if LO.fold(cell.row_label) not in F.VARIANT_ONLY:
+                        notes.append(f"{team} {name}: no row {cell.row_label!r}")
                     continue
                 if col is None:
                     continue           # that week has no column on this tab
