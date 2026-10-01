@@ -626,9 +626,23 @@ class TheWordingFollowsTheServiceCloudAccount(unittest.TestCase):
             self.assertEqual(G.pace_units(camp)[0], "talk-to's")
             self.assertEqual(G.pace_target(camp), G.PACE_BOX_TT_PER_HOUR)
 
+    def test_every_b2b_campaign_gets_business_talk_whatever_it_sells(self):
+        # Megan 2026-10-01: any B2B enrollment regardless of campaign.
+        from automations.icd_alerts import config as C
+        for camp in C.B2B_CAMPAIGNS + ("b2b_att", "B2B_Att", "b2b_fiber"):
+            self.assertTrue(G.is_b2b(camp), camp)
+            self.assertIs(G.lines_for(camp), G.B2B_LINES)
+            self.assertIs(G.pace_lines_for(camp), G.B2B_PACE_LINES)
+        self.assertEqual(G.pace_units("b2b_att"), ("walk-ins", "visitas"))
+        # Only Box is judged on talk-to's; b2b_att is still counted on its knocks.
+        self.assertFalse(G.is_box("b2b_att"))
+        self.assertEqual(G.pace_target("b2b_att"), G.PACE_KNOCKS_PER_HOUR)
+
     def test_d2d_keeps_doors(self):
-        for camp in ("att", "nds", None, ""):
+        for camp in ("att", "nds", "energy", None, ""):
             self.assertFalse(G.is_box(camp))
+            self.assertFalse(G.is_b2b(camp))
+            self.assertIs(G.lines_for(camp), G.LINES)
             self.assertIs(G.pace_lines_for(camp), G.PACE_LINES)
 
     def test_a_campaign_added_to_the_account_later_is_covered(self):

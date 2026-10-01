@@ -139,19 +139,23 @@ B2B_LINES = (
 def is_box(campaign=None) -> bool:
     """Is this office's activity read from My Service Cloud?
 
-    ONE SWITCH FOR THE WORDING (Megan 2026-10-01: "anyone getting alerts on
-    the Service Cloud account should have the B2B wording going forward").
-    Keyed on config.SERVICECLOUD_CAMPAIGNS -- the list of campaigns whose
-    alerts come off that account -- so a campaign added there later gets the
-    business talk, the talk-to pace and the talk-to units in the same
-    moment, with nothing in this file to remember.
+    Keyed on config.SERVICECLOUD_CAMPAIGNS. Decides the Box-only maths: the
+    pace is judged on the board's Actual Talk To's, not doors. The WORDING is
+    wider than this -- see is_b2b (every B2B enrollment, Megan 2026-10-01).
     """
     return str(campaign or "").strip().lower() in C.SERVICECLOUD_CAMPAIGNS
 
 
+def is_b2b(campaign=None) -> bool:
+    """Does this office sell to businesses? ANY B2B enrollment, whatever the
+    campaign (Megan 2026-10-01) -- config.is_b2b_campaign is the one rule."""
+    return C.is_b2b_campaign(campaign)
+
+
 def lines_for(campaign=None):
-    """The call-out pool for an office's campaign: B2B talk for Box, doors for D2D."""
-    return B2B_LINES if is_box(campaign) else LINES
+    """The call-out pool for an office's campaign: B2B talk for every B2B
+    office, doors for D2D."""
+    return B2B_LINES if is_b2b(campaign) else LINES
 
 
 def _key(name: str) -> str:
@@ -329,7 +333,7 @@ B2B_PACE_LINES = (
 
 def pace_lines_for(campaign=None):
     """The pace-recognition pool: business talk for Box, doors for D2D."""
-    return B2B_PACE_LINES if is_box(campaign) else PACE_LINES
+    return B2B_PACE_LINES if is_b2b(campaign) else PACE_LINES
 
 
 def _span_minutes(first: str, last: str, now: dt.datetime):
@@ -367,6 +371,8 @@ def pace_units(campaign=None):
     """(english, spanish) for the line."""
     if is_box(campaign):
         return "talk-to's", "conversaciones"
+    if is_b2b(campaign):
+        return "walk-ins", "visitas"
     return "doors", "puertas"
 
 

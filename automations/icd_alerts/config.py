@@ -119,6 +119,17 @@ NO_SARAPLUS = ("energy", "b2b_box")
 # which is the mistake that cost Carlos his SaraPlus question.
 SERVICECLOUD_CAMPAIGNS = ("b2b_box",)
 
+# WHO SELLS TO BUSINESSES. Megan 2026-10-01: "any B2B enrollment regardless
+# of campaign should get B2B wording" -- the call-outs say owners, gatekeepers
+# and storefronts instead of doors and neighborhoods for every one of these.
+# A campaign key starting with "b2b" counts even if it is not listed yet.
+B2B_CAMPAIGNS = ("b2b_att", "b2b_box")
+
+
+def is_b2b_campaign(campaign) -> bool:
+    key = str(campaign or "").strip().lower()
+    return key in B2B_CAMPAIGNS or key in SERVICECLOUD_CAMPAIGNS or key.startswith("b2b")
+
 
 def uses_servicecloud() -> bool:
     """Does ANY campaign on this machine sign into My Service Cloud?
