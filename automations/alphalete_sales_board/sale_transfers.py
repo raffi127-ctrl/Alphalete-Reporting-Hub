@@ -220,6 +220,19 @@ QTY_WORDS = (
 )
 
 
+def _by_number(part: str) -> List[str]:
+    """'new int 1 dtv 1' -> ['new int 1', 'dtv 1']; '1 int 2 dtv' ->
+    ['1 int', '2 dtv']. With no comma/bar between products, each number
+    closes its product (or opens it, when the answer starts with a number)."""
+    if len(re.findall(r"\d+", part)) < 2:
+        return [part]
+    if re.match(r"\s*\d", part):
+        return [c for c in re.split(r"(?=\b\d+\b)", part) if c.strip()]
+    chunks = re.findall(r"\D*\d+", part)
+    chunks[-1] += part[sum(map(len, chunks)):]   # words after the last number
+    return chunks
+
+
 def quantities(text: str, ticked: Dict[str, int]) -> Tuple[Dict[str, int], str]:
     """({metric: qty}, problem) from the quantity answer. problem != '' means
     it could not be read for sure -- the row is then not moved at all."""
@@ -231,7 +244,7 @@ def quantities(text: str, ticked: Dict[str, int]) -> Tuple[Dict[str, int], str]:
         return {}, "quantity %r does not say which product" % raw
     out: Dict[str, int] = {}
     covered = set()
-    for part in re.split(r"[|,;/\n]+", low):
+    for part in (c for p in re.split(r"[|,;/\n]+", low) for c in _by_number(p)):
         if not part.strip():
             continue
         metric = next((m for w, m in QTY_WORDS

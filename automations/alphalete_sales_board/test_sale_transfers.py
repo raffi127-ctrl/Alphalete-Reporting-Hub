@@ -103,6 +103,11 @@ def test_quantity_answer_wins():
     assert T.quantities("New Int – 3 | Upg – 2 | DTV – 1 | NL – 1", ticked)         == ({"Int": 3, "Int Up": 2, "DTV": 1, "NL": 1}, "")
     assert T.quantities("New Int 1 gig - 2, 2 phones", {"Int": 1, "NL": 1})         == ({"Int": 2, "NL": 2}, "")
     assert T.quantities("3", {"Int": 1}) == ({"Int": 3}, "")
+    # No dash/comma between products: the numbers split them.
+    assert T.quantities("New int 1 dtv 1", {"Int": 1, "DTV": 1}) == ({"Int": 1, "DTV": 1}, "")
+    assert T.quantities("1 new int 2 dtv", {"Int": 1, "DTV": 1}) == ({"Int": 1, "DTV": 2}, "")
+    assert T.quantities("Int - 2 DTV - 1 NL - 3", {"Int": 1, "DTV": 1, "NL": 1}) == ({"Int": 2, "DTV": 1, "NL": 3}, "")
+    assert T.quantities("int 1 gig 1 dtv 1", {"Int": 1, "DTV": 1}) == ({"Int": 1, "DTV": 1}, "")
 
 
 def test_quantity_answer_unreadable_or_off_moves_nothing():
