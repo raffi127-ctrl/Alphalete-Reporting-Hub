@@ -149,6 +149,37 @@ Worth noting where offices differ: Spanish is worst at 11580 (9.5), pay
 is worst at 23965 (9.4), and "does not remember applying" is almost
 entirely 11280. The per-office form is the point.
 
+## 11280's escalation rows as of 2026-10-01
+
+Set against the top ten things applicants actually say. Eight answered,
+two blocked by the platform.
+
+| Applicant asks | Row | Routing | State |
+|---|---|---|---|
+| Call me instead | Request to talk via Phone | Escalate | done |
+| Not interested / opt out | User Not Interested | Escalate | done |
+| Spanish | Non-English Language Detected | Silent Only | **blocked** |
+| What is the job | Confusion About Role Type | Escalate | done |
+| | Job Description | Clarify | done |
+| Pay / commission | Compensation | Escalate | done |
+| Remote? | Remote Work | Clarify | done |
+| Scam / is this real | Mentions "Scam" | Silent Only | **blocked, message written** |
+| Commute too far | Commute Distance Rejection | Escalate | done |
+| Directions / which suite | Applicant Requested Directions | Escalate | done |
+| Does not remember applying | Does Not Remember Applying | Clarify | done |
+
+Two faults found while checking, both worth repeating on any other
+office:
+
+- **A merge variable with a space in it passes validation.** The
+  directions message read `office Address1`, which would have sent those
+  literal words instead of the street. The validator checks tone,
+  question count and claims; it does not check that variables resolve.
+- **A row can hold a message it will never send.** Mentions "Scam" is
+  Silent Only, and AppStream still let the message be saved. The note
+  "Message disabled for Silent escalation" appears on every row and is
+  not a status, so it is easy to miss which rows are actually muted.
+
 ## Checking an office
 
 1. AI assistant name matches the Await Call template signature
