@@ -115,7 +115,8 @@ def esc(t):
             .replace(">", "&gt;").replace('"', "&quot;"))
 
 
-def write_report(office, tmpl, msgs, moved, tab, path):
+def write_report(office, tmpl, msgs, moved, tab, path,
+                 wlabels=None):
     o = office
     L = []
     add = L.append
@@ -310,6 +311,7 @@ def write_report(office, tmpl, msgs, moved, tab, path):
         add("<p class='none'>Not enough weeks pulled.</p>")
     else:
         periods = list(tab)
+        wl = wlabels or {}
         names = R.known_names(o["office"])
         bookers = sorted({b for p in tab for (b, k) in tab[p] if k == "n"},
                          key=lambda b: -sum(tab[p][(b, "n")] for p in tab))[:12]
@@ -318,10 +320,20 @@ def write_report(office, tmpl, msgs, moved, tab, path):
             n = tab[p][(b, "n")]
             return "{:.0f}%".format(100.0 * tab[p][(b, "s")] / n) if n else "&mdash;"
 
-        add("<p class='lede'>Of the interviews each person booked, the share "
-            "where the applicant actually turned up.</p>")
+        add("<p class='lede'>Every row is one person who books interviews. "
+            "Every number is <b>the share of the 1st-round interviews they "
+            "booked where the applicant actually turned up</b> &mdash; so "
+            "AI Messaging&rsquo;s 45% means 45 out of every 100 interviews "
+            "the bot booked that week were attended.</p>")
+        add("<p class='none'>Columns are recruiting weeks, Monday to Friday. "
+            "An interview counts as attended unless AppStream marks it "
+            "<i>No Show</i>; Interview Completed and Brought on Board both "
+            "count as attended. From the AppStream Retention Report "
+            "(p=701), pulled weekly to "
+            "output/sms_thread_dump_{}_&lt;week&gt;.json.</p>".format(
+                esc(o["office"])))
         add("<div class='scroll'><table><tr><th>Who booked it</th>" +
-            "".join("<th>{}</th>".format(esc(R.week_label(p)))
+            "".join("<th>{}</th>".format(esc(wl.get(p) or R.week_label(p)))
                     for p in periods) + "</tr>")
         for b in bookers:
             add("<tr><td>{}</td>{}</tr>".format(
@@ -330,9 +342,9 @@ def write_report(office, tmpl, msgs, moved, tab, path):
                         for p in periods)))
         add("</table></div>")
 
-        add("<details><summary>How many bookings each percentage is based "
+        add("<details><summary>How many interviews each percentage is based "
             "on</summary><div class='scroll'><table><tr><th>Who booked it</th>"
-            + "".join("<th>{}</th>".format(esc(R.week_label(p)))
+            + "".join("<th>{}</th>".format(esc(wl.get(p) or R.week_label(p)))
                       for p in periods) + "</tr>")
         for b in bookers:
             add("<tr><td>{}</td>{}</tr>".format(
@@ -406,7 +418,8 @@ def main(argv=None):
         tab = R.table(rows, "week") if rows else {}
         moved = R.changes(tab) if tab else []
         path = report_path(o["office"])
-        write_report(o, tmpl, msgs, moved, tab, path)
+        write_report(o, tmpl, msgs, moved, tab, path,
+                     R.week_labels(rows) if rows else {})
         nt = len(tmpl[0]) if tmpl else 0
         nm = (len(msgs["errors"]) + len(msgs["dodged"])) if msgs else 0
         big = [m for m in moved if m[1] - m[2] <= -R.DROP]

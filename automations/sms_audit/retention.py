@@ -93,6 +93,39 @@ def week_label(tag):
     return "{} {}".format(da, MONTHS[mo]) if 1 <= mo <= 12 else tag
 
 
+def week_spans(rows):
+    """{tag: (first interview date, last)} taken from the interviews
+    themselves, not from the tag. A tag is the FRIDAY the recruiting week
+    ends, so "w0821" labelled a column that actually covers 17-21 Aug —
+    read as a start date it is four days wrong."""
+    span = {}
+    for tag, d, _b, _s in rows:
+        if not d:
+            continue
+        try:
+            when = dt.datetime.strptime(d, "%m-%d-%Y").date()
+        except ValueError:
+            continue
+        lo, hi = span.get(tag, (when, when))
+        span[tag] = (min(lo, when), max(hi, when))
+    return span
+
+
+def span_label(pair):
+    lo, hi = pair
+    if lo == hi:
+        return "{} {}".format(lo.day, MONTHS[lo.month])
+    if lo.month == hi.month:
+        return "{}\u2013{} {}".format(lo.day, hi.day, MONTHS[lo.month])
+    return "{} {} \u2013 {} {}".format(lo.day, MONTHS[lo.month],
+                                       hi.day, MONTHS[hi.month])
+
+
+def week_labels(rows):
+    """{tag: '17-21 Aug'} for column headers."""
+    return {t: span_label(pair) for t, pair in week_spans(rows).items()}
+
+
 def known_names(office):
     """The full names AppStream puts in Sent By, for un-abbreviating the
     bookers."""
