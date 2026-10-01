@@ -23,6 +23,12 @@ Columns, one row per office:
     owner         whose office
     address       where interviews are actually conducted, suite included
     phone         the recruiting number applicants should see
+    campaign      D2D / B2B / In store / In office — what this office
+                  actually runs. Megan 2026-10-01: "We can ask on the
+                  auditor what campaign they are to tailor their audit".
+                  The approved answer to "what is the job" names the
+                  locations available, and naming the wrong one is how an
+                  applicant turns up expecting a desk.
     r1_mode       "In person" or "Zoom" — how 1st rounds are run
     zoom          the 1st-round Zoom room, when r1_mode is Zoom
     zoom_id       its meeting id
@@ -45,7 +51,7 @@ from pathlib import Path
 CONTROL_SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
 TAB = "Recruiting Audit Offices"
 CACHE = Path(__file__).resolve().parents[2] / "output" / "audit_offices.json"
-COLUMNS = ["office", "icd_name", "owner", "address", "phone",
+COLUMNS = ["office", "icd_name", "owner", "address", "phone", "campaign",
            "r1_mode", "zoom", "zoom_id",
            "r2_mode", "zoom2", "zoom2_id",
            "job_ad_cities", "active", "email", "slack_user", "updated"]
@@ -55,7 +61,8 @@ COLUMNS = ["office", "icd_name", "owner", "address", "phone",
 SEED = [
     {"office": "11280", "icd_name": "Rafael Hidalgo", "owner": "Rafael Hidalgo",
      "address": "3100 Premier Drive, Suite 207, Irving, Texas 75063",
-     "phone": "", "zoom": "https://us02web.zoom.us/j/2935077152",
+     "phone": "", "campaign": "D2D",
+     "zoom": "https://us02web.zoom.us/j/2935077152",
      "zoom_id": "2935077152",
      "job_ad_cities": "Irving, Arlington, Garland, Carrollton, Denton, "
                       "Fort Worth, Frisco, Grand Prairie, Plano, Dallas",

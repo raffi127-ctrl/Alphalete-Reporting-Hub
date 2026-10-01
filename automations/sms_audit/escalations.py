@@ -27,6 +27,8 @@ from __future__ import annotations  # Lucy runs Python 3.9 — keep lazy
 
 import json
 import re
+
+from automations.sms_audit import sms_text as _sms
 from pathlib import Path
 
 OUTPUT = Path(__file__).resolve().parents[2] / "output"
@@ -71,6 +73,15 @@ WHY = {
         "Raf, via Megan on 2026-09-27: weekly pay $1,000–$1,500, never a "
         "“base”, and not “depending on background/experience”. "
         "This row teaches the wording that was retired."),
+    "NOT PLAIN TEXT": (
+        "Curly quotes, so the text costs double",
+        "AppStream warns about this in its own editor. A curly apostrophe "
+        "or dash forces the message into Unicode, where a segment is 70 "
+        "characters instead of 160. Retype it as a plain one."),
+    "TOO LONG": (
+        "Longer than two segments",
+        "Two segments is the target. Use the officeAddress1 / officeCity "
+        "variables rather than typing the address out."),
     "SHOUTING": (
         "Written in block capitals",
         "Block capitals read as shouting and trip spam filters."),
@@ -154,6 +165,8 @@ def lint(rows, office=None):
         if PAY_TOPIC.search(msg) and PAY_BAD.search(msg):
             findings.append((
                 "PAY WORDING", "{}: “{}”".format(where, msg[:160])))
+        findings += _sms.findings(where, msg)
+
         shout = R.shouts(msg)
         if shout:
             findings.append((

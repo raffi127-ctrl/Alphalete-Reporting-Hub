@@ -26,6 +26,8 @@ from __future__ import annotations
 import argparse
 import collections
 import re
+
+from automations.sms_audit import sms_text as _sms
 import sys
 import unicodedata
 from pathlib import Path
@@ -164,6 +166,17 @@ WHY = {
         "Unfinished merge code in the message",
         "Applicants are receiving the raw placeholder instead of their own "
         "name or time."),
+    "NOT PLAIN TEXT": (
+        "Curly quotes, so the text costs double",
+        "A curly apostrophe or dash pasted in from Word forces the whole "
+        "message into Unicode, where one segment is 70 characters instead "
+        "of 160. The message splits into more pieces than it needs to, and "
+        "every extra piece is another chance of it not arriving. Retype "
+        "the quote or dash as a plain one."),
+    "TOO LONG": (
+        "Longer than two segments",
+        "A long text splits into more pieces, and a person reading it on a "
+        "phone sees it arrive in parts. Two segments is the target."),
     "PLACEHOLDER": (
         "A test message that is switched on",
         "This template is live and its body is placeholder text. If "
@@ -249,6 +262,8 @@ def lint(bodies, states, office=None):
 
         if re.search(r"\{\{|\}\}|\bnull\b|%%", body):
             findings.append(("MERGE", "{}: “{}”".format(where, body[:90])))
+
+        findings += _sms.findings(where, body)
 
         if (states.get(section) == "Activated"
                 and re.match(r"^\s*(test|testing|asdf|xxx+|placeholder)\b"

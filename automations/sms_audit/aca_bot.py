@@ -60,14 +60,18 @@ def _text(block_id, label, initial="", hint="", optional=False,
 
 
 MODES = ["In person", "Zoom"]
+# Megan 2026-10-01: Raf's 11280 is D2D, and the approved "what is the job"
+# answer names the locations available. Naming the wrong one is how an
+# applicant turns up expecting a desk.
+CAMPAIGNS = ["D2D", "B2B", "In store", "In office", "Mixed"]
 
 
-def _select(block_id, label, initial=""):
-    """A mode picker that REDRAWS the form when it changes — dispatch_action
-    is what makes Slack tell us, and without it the Zoom fields could only
+def _select(block_id, label, initial="", options=None):
+    """A picker that REDRAWS the form when it changes — dispatch_action is
+    what makes Slack tell us, and without it the Zoom fields could only
     appear after a submit."""
     opts = [{"text": {"type": "plain_text", "text": m}, "value": m}
-            for m in MODES]
+            for m in (options or MODES)]
     el = {"type": "static_select", "action_id": "v", "options": opts}
     for o in opts:
         if o["value"].lower() == (initial or "").strip().lower():
@@ -101,6 +105,8 @@ def form_modal(prefill=None):
               "thing we find"),
         _text("phone", "Recruiting phone number", p.get("phone", ""),
               optional=True),
+        _select("campaign", "What does this office run?",
+                p.get("campaign", ""), options=CAMPAIGNS),
         _select("r1_mode", "1st rounds \u2014 in person or Zoom?", r1),
     ]
     if r1.lower().startswith("zoom"):
