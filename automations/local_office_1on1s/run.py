@@ -273,8 +273,10 @@ def main(argv=None) -> int:
                 # new start interviewed by any of them counts once for the team.
                 t_sched = t_showed = 0
                 seen_any = False
+                _blk2 = classrooms.get(wk) or {}
                 for who in [rost.head] + list(rost.leaders):
-                    got = OB.for_week(obcl, wk, who)
+                    got = OB.for_week(obcl, wk, who,
+                                      on_board=lambda n, _b=_blk2: PEO.key(n) in _b)
                     if got:
                         seen_any = True
                         t_sched += got[0]
@@ -443,8 +445,10 @@ def main(argv=None) -> int:
                 for wk in wks:
                     ts = tsh = 0
                     any_ = False
+                    _blk = classrooms.get(wk) or {}
                     for who in [rost.head] + list(rost.leaders):
-                        got = OB.for_week(obcl, wk, who)
+                        got = OB.for_week(obcl, wk, who,
+                                          on_board=lambda n, _b=_blk: PEO.key(n) in _b)
                         if got:
                             any_ = True
                             ts += got[0]
@@ -459,7 +463,10 @@ def main(argv=None) -> int:
             # person who was SCHEDULED, so it cannot count second rounds that
             # never became a new start — the other recruiting rows stay monthly.
             for wk in wks:
-                got = OB.for_week(obcl, wk, name)
+                # presence in THAT week's New Starts block = attended day 1
+                block = classrooms.get(wk) or {}
+                got = OB.for_week(obcl, wk, name,
+                                  on_board=lambda n, _b=block: PEO.key(n) in _b)
                 if got is None:
                     continue
                 sched, showed = got
