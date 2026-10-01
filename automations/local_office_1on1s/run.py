@@ -291,19 +291,30 @@ def main(argv=None) -> int:
                     hit, _ = PEO.resolve(m.trainer, [name])
                     if hit is not None:
                         trained.append(m)
-                if trained:
-                    kept = sum(1 for m in trained if not m.terminated)
-                    filled.add("Trained This week?", wk, str(len(trained)),
-                               f"WE {wk:%-m/%-d} board: first-week reps trained by {name}")
-                    filled.add("Retained?", wk, str(kept),
-                               f"WE {wk:%-m/%-d} board: of those, not terminated")
-                    # Raf's definition, not the recruiting tab's show rate:
-                    # "how many new starts they kept that were assigned to
-                    # their team... how many of those people are still around".
-                    filled.add(F.RETENTION_ROW, wk,
-                               f"{round(100 * kept / len(trained))}%",
-                               f"WE {wk:%-m/%-d}: {kept} of {len(trained)} "
-                               f"new starts trained by {name} still on the board")
+                kept = sum(1 for m in trained if not m.terminated)
+                filled.add("Trained This week?", wk, str(len(trained)),
+                           f"WE {wk:%-m/%-d} board: first-week reps trained by {name}")
+                filled.add("Retained?", wk, str(kept),
+                           f"WE {wk:%-m/%-d} board: of those, not terminated")
+                # Raf's definition, not the recruiting tab's show rate: "how
+                # many new starts they kept that were assigned to their team...
+                # how many of those people are still around".
+                #
+                # NO NEW STARTS READS '-', NOT 0% AND NOT BLANK. Megan
+                # 2026-10-01: "if the % is 0 because no one is scheduled it
+                # should just have a line or something". 0% says they kept
+                # nobody, which is a different and worse claim than "there was
+                # nobody to keep"; blank says the report never ran. A dash is
+                # the convention already used elsewhere in this repo for
+                # "checked, nothing to report" (reps_gross_paycheck writes '-'
+                # for a rep with no money rather than leaving the cell empty).
+                # The 0s in Trained and Retained beside it carry the count.
+                # [[feedback_dont_explain_away_a_zero]]
+                filled.add(F.RETENTION_ROW, wk,
+                           f"{round(100 * kept / len(trained))}%" if trained else "-",
+                           (f"WE {wk:%-m/%-d}: {kept} of {len(trained)} new starts "
+                            f"trained by {name} still on the board") if trained
+                           else f"WE {wk:%-m/%-d}: no new starts assigned to {name}")
 
             # products + knocks, per week
             for wk, (wsales, wdays) in weekly.items():
