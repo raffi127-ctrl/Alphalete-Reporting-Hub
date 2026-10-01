@@ -1139,6 +1139,7 @@
       "freshness_target": null,
       "depends_on": [],
       "verify": null,
+      "close_on": "exit_zero",
       "timeout_minutes": 40,
       "machine": "Lucy 2"
     },
