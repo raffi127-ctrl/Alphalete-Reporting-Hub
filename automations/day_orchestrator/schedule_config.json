@@ -4923,6 +4923,40 @@
       "verify": null,
       "report_id": "captainship-knocks"
     },
+    "captainship_board_topoff": {
+      "order": 1.05,
+      "machine": "Lucy 3",
+      "on_scheduler": true,
+      "display_name": "Captainship Board Top-Off (late sales)",
+      "_note": "Eve 2026-10-01, after Austin Eldredge (Pat's captainship): 'my numbers are very off for yesterday'. The mail had his Wednesday at 7 NI / 9 units; Tableau had 16 / 22. The 05:20 board fill reads Tableau before the last day is complete (Pat's whole team, Starr, Tony, Sahil and Jess were short that day) and only the NEXT morning's fill heals it - after the mail went out. This re-pulls the three program views right before the drafts are built and ONLY RAISES completed-day captainship cells that Tableau now has higher: never lowers, never touches today, re-sorts only the captainship blocks + delta boxes (never the campaign sections Lucy 1's 06:52 BOX top-off writes). Logs every raised cell - that log is how we learn whether 06:30 is late enough. captainship_drafts runs `after` this: same machine, so enforced, and soft, so a failed top-off never holds the drafts.",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.org_sales_board.captainship_topoff"
+      ],
+      "base_args": [],
+      "cadence": {
+        "not_before": "06:30",
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "after": [
+        "captainship_knocks"
+      ],
+      "depends_on": [],
+      "timeout_minutes": 20,
+      "verify": null,
+      "close_on": "exit_zero"
+    },
     "captainship_drafts": {
       "timeout_minutes": 210,
       "_timeout_note": "90 -> 210 (2026-08-23 night): the six fiber-side drafts now carry the Daily Knocks section (per-owner ownerville pulls) every day, and Sun+Mon ALSO the weekly knock_dispo section (6 day-pulls per owner). The 2-captain both-sections validation ran ~34m with sheets+tableau SKIPPED - six captains with everything real needs the headroom; 210 still fails a genuine hang before the review window closes.",
@@ -4958,9 +4992,10 @@
       "priority": "P2",
       "freshness_target": null,
       "after": [
-        "captainship_knocks"
+        "captainship_knocks",
+        "captainship_board_topoff"
       ],
-      "_after_note": "The build reads the capture's per-captain manifest, so it must never run ahead of it. THIS GATE SURVIVES THE MOVE and is now the only enforced ordering here: captainship_knocks moved to Lucy 3 in the same change, so it is same-machine, in this runner's day state, and deps.py classifies it KIND_LOCAL. Still SOFT rather than depends_on, for the original reason: a FAILED capture must not strand the drafts - they fall back to pulling the knock sections themselves, exactly as before the 8/24 split. Each pass simply skips this build until the capture is terminal, then runs it within 12 min.",
+      "_after_note": "captainship_board_topoff added 2026-10-01 (Eve, Austin Eldredge's short Wednesday): the build must screenshot the board AFTER late sales are raised onto it. Soft like the capture - a failed top-off just means the 05:20 numbers. The build reads the capture's per-captain manifest, so it must never run ahead of it. THIS GATE SURVIVES THE MOVE and is now the only enforced ordering here: captainship_knocks moved to Lucy 3 in the same change, so it is same-machine, in this runner's day state, and deps.py classifies it KIND_LOCAL. Still SOFT rather than depends_on, for the original reason: a FAILED capture must not strand the drafts - they fall back to pulling the knock sections themselves, exactly as before the 8/24 split. Each pass simply skips this build until the capture is terminal, then runs it within 12 min.",
       "depends_on": [],
       "_depends_note": "ALL EIGHT depends_on REMOVED 2026-08-25 and replaced by the cadence.not_before 06:15 clock fence above. They were org_sales_board, captainship_churn, owners_metrics_churn, captainship_activations, captainship_cancel_rate, captainship_activation_rate, captainship_abp_6days, captainship_raf_metrics - EVERY ONE of them runs on Lucy 1, and this build now runs on Lucy 3. Day state is per machine (output/day_state/<date>.json is local), so Lucy 3 cannot see any of their statuses. Since deps.py landed (2026-08-24) a HARD depends_on in that bucket does not silently vanish, it BLOCKS: DepEdge.blocks is true for an unenforceable depends_on, so this report would have sat PENDING every morning, been retired MISSED_NOT_READY by the noon backstop, and the twelve captainship reports would simply never have been built. Leaving them in was not an option in either direction - before 8/24 they were dropped silently and the build ran on unfilled tabs; after 8/24 they deadlock. The clock fence is what a cross-machine ordering can actually be. validate() at startup would have flagged all eight as ERROR; it now has nothing to say about this entry.",
       "verify": null,
