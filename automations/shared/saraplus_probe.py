@@ -27,6 +27,12 @@ def main(argv=None) -> int:
     ap.add_argument("--chromium", action="store_true",
                     help="full Chromium (channel='chromium'), hidden")
     ap.add_argument("--headed", action="store_true")
+    ap.add_argument("--reuse", action="store_true",
+                    help="after a real login, CLOSE the browser, reopen the same "
+                         "profile and see whether SaraPlus still treats it as signed "
+                         "in -- the question behind Kash's 'Only one login at a time' "
+                         "(2026-09-30): the ICD reader signs in with the password on "
+                         "every 2-minute sweep. Read-only.")
     args = ap.parse_args(argv)
     from patchright.sync_api import sync_playwright
     from automations.shared import saraplus as S
@@ -51,8 +57,29 @@ def main(argv=None) -> int:
                 except S.SaraError as e:
                     print("RESULT: %s: %s" % (type(e).__name__, str(e)[:700]))
                 print("final url: %s" % page.url)
+                landed = page.url
             finally:
                 ctx.close()
+            if args.reuse:
+                # SAME PROFILE, NEW BROWSER: what does SaraPlus do with the
+                # cookies it left behind? Three landings are tried, and each
+                # is reported as the url it ended on plus whether the login
+                # form is on it.
+                ctx = p.chromium.launch_persistent_context(str(prof), **kw)
+                try:
+                    page = ctx.new_page()
+                    for label, url in (("dealer home", landed.split("DealerPages/")[0] + "DealerPages/" if "DealerPages/" in landed else landed),
+                                       ("login page", S.LOGIN_URL)):
+                        try:
+                            page.goto(url, wait_until="networkidle", timeout=60000)
+                            page.wait_for_timeout(2500)
+                            form = page.locator("#ctl00_MainContent_txtUserName").count()
+                            print("REUSE %-11s -> %s  | login form on page: %s"
+                                  % (label, page.url, "YES" if form else "no"))
+                        except Exception as e:  # noqa: BLE001
+                            print("REUSE %-11s -> %s: %s" % (label, type(e).__name__, str(e)[:160]))
+                finally:
+                    ctx.close()
     finally:
         shutil.rmtree(prof, ignore_errors=True)
     return 0
