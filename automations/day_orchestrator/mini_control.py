@@ -7519,13 +7519,22 @@ def _action_group_members(args: str) -> tuple[bool, str]:
         chats = tp.list_chats()
     except Exception as e:  # noqa: BLE001
         return False, "could not list chats: %s: %s" % (type(e).__name__, str(e)[:120])
+    # BY NAME, OR BY A PHONE NUMBER IN IT. A group somebody just added Lucy
+    # to shows on her Mac as "+1 (313) 688-5585 and 3 People" until the name
+    # syncs, if it ever does (Jacob Dover's chat, 2026-10-01) -- and a chat
+    # with no name can only be found by who is in it. Digits only, so
+    # "313-688-5585", "3136885585" and "+13136885585" all match.
+    digits = "".join(ch for ch in name if ch.isdigit())
     lines = []
     for c in chats:
-        if name.lower() in (c.get("name") or "").lower():
+        handles = c.get("handles") or []
+        by_name = name.lower() in (c.get("name") or "").lower()
+        by_handle = bool(digits) and len(digits) >= 7 and any(
+            digits in "".join(ch for ch in str(h) if ch.isdigit()) for h in handles)
+        if by_name or by_handle:
             lines.append("%s || name=%s || %d handles: %s"
-                         % (c["id"], c.get("name"), len(c.get("handles") or []),
-                            ", ".join(c.get("handles") or [])))
-    return True, ("\n".join(lines) or "(no chat whose name contains %r)" % name)[-1800:]
+                         % (c["id"], c.get("name"), len(handles), ", ".join(handles)))
+    return True, ("\n".join(lines) or "(no chat whose name or numbers contain %r)" % name)[-1800:]
 
 
 def _action_sara_probe(args: str) -> tuple[bool, str]:
