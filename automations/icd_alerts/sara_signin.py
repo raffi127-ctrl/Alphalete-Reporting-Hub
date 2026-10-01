@@ -107,7 +107,19 @@ def run(log=print) -> int:
     # thing the schedule does -- and say which way it went. Megan: "isn't
     # there something she can run now to make sure it's working before people
     # actually hit the field today??"
-    return verify_hidden_read(log=log)
+    rc = verify_hidden_read(log=log)
+    if rc == 0:
+        # THE PERSON'S FIX IS TRIED AT ONCE. hold_sara() stands the sweeps
+        # down for 30 minutes after a wall; a code typed here at 11:45 that
+        # left the hold in place had Rashad's first row waiting on the clock
+        # until 12:11 (2026-10-01). The verified read above IS the proof the
+        # wall is gone, so the hold has nothing left to protect.
+        try:
+            from automations.icd_alerts import sara_read as SR
+            SR.clear_sara_hold()
+        except Exception:  # noqa: BLE001 -- never turn "done" into a failure
+            pass
+    return rc
 
 
 def verify_hidden_read(log=print) -> int:

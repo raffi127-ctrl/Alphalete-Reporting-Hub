@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import datetime as dt
 import unittest
+from unittest import mock
 
 from automations.icd_alerts import config as C
 from automations.icd_alerts import sara_read as R
@@ -352,3 +353,28 @@ class AChallengedMachineReadsWithFullChromeTest(unittest.TestCase):
     def test_the_visible_window_is_left_alone(self):
         self.path.write_text("Mozilla/5.0 Chrome/148.0.0.0")
         self.assertNotIn("channel", self._kwargs(headless=False)[-1])
+
+
+class ATypedCodeClearsTheHoldAtOnce(unittest.TestCase):
+    """Rashad 2026-10-01: the code was typed, the verify passed, and the sweep
+    still sat out the 30-minute hold from the last wall."""
+
+    def test_verified_signin_clears_the_hold(self):
+        from automations.icd_alerts import sara_read as SR
+        cleared = []
+        with mock.patch.object(X, "_window", lambda log=print: 0), \
+             mock.patch.object(X, "verify_hidden_read", lambda log=print: 0), \
+             mock.patch.object(X.C, "creds", lambda: {}), \
+             mock.patch.object(SR, "clear_sara_hold", lambda: cleared.append(1)):
+            self.assertEqual(X.run(log=lambda *a: None), 0)
+        self.assertEqual(cleared, [1])
+
+    def test_a_failed_verify_leaves_the_hold(self):
+        from automations.icd_alerts import sara_read as SR
+        cleared = []
+        with mock.patch.object(X, "_window", lambda log=print: 0), \
+             mock.patch.object(X, "verify_hidden_read", lambda log=print: 1), \
+             mock.patch.object(X.C, "creds", lambda: {}), \
+             mock.patch.object(SR, "clear_sara_hold", lambda: cleared.append(1)):
+            self.assertEqual(X.run(log=lambda *a: None), 1)
+        self.assertEqual(cleared, [])
