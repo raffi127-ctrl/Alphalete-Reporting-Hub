@@ -77,6 +77,8 @@ def main(argv=None):
     ap.add_argument("--weeks", type=int, default=24)
     ap.add_argument("--label", default=LABEL)
     ap.add_argument("--headless", action="store_true")
+    ap.add_argument("--fuzzy", action="store_true",
+                    help="also print CANDIDATE rows: same last name + first 3 letters of first name")
     a = ap.parse_args(argv)
 
     want = {_norm(n): n.strip() for n in a.names.split(";") if n.strip()}
@@ -138,6 +140,12 @@ def main(argv=None):
                     if len(r) <= max(fi, li):
                         continue
                     full = _norm(r[fi] + " " + r[li])
+                    if a.fuzzy and full not in want:
+                        for k, v in want.items():
+                            kf, kl = k.split(" ", 1)[0], k.rsplit(" ", 1)[-1]
+                            if _norm(r[li]) == kl and _norm(r[fi])[:3] == kf[:3]:
+                                print("CANDIDATE %s ~ %s %s | week of %s | %s" % (
+                                    v, r[fi], r[li], wk, r[ai] if ai < len(r) else "?"), flush=True)
                     if full in want and want[full] not in found:
                         found[want[full]] = {"week_of": str(wk), "ad": r[ai] if ai < len(r) else "?",
                                              "row": r[:ai + 1]}
