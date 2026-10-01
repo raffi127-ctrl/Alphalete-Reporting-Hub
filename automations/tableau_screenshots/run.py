@@ -759,6 +759,11 @@ def main(argv=None) -> int:
                     help="Comma-separated Slack user id(s)/emails/names. Capture "
                          "then DM the full thread (header + real images) to them "
                          "for review, posting NOTHING to the channels.")
+    ap.add_argument("--discover-sheets", action="store_true",
+                    help="Read-only: print the crosstab worksheet names each "
+                         "selected board's view offers (pair with --only). For "
+                         "wiring a freshness check without guessing sheet names. "
+                         "No capture, no post.")
     ap.add_argument("--inspect", action="store_true",
                     help="Read-only: dump each view's dashboard tab strip + "
                          "Download→Image dialog so we can target a single page. "
@@ -869,7 +874,8 @@ def main(argv=None) -> int:
     #   --only       bypassed entirely: naming a board means you want that board.
     held: dict = {}
     still_behind: dict = {}
-    if args.retitle_only or args.inspect or args.no_freshness_gate:
+    if args.retitle_only or args.inspect or args.no_freshness_gate \
+            or args.discover_sheets:
         pass
     elif args.late_only or args.notice:
         from automations.tableau_screenshots import freshness as _fr
@@ -994,6 +1000,21 @@ def main(argv=None) -> int:
     # allow_form_login=False -> unattended reuse-only; fails fast (with the
     # re-export message) if the warm session is cold, instead of touching the
     # Cloudflare Turnstile.
+    if args.discover_sheets:
+        from automations.recruiting_report.opt_phase import list_crosstab_sheets
+        with tableau_session(headless=args.headless, allow_form_login=False,
+                             verbose=True, profile_dir=PROFILE_DIR) as page:
+            for spec in selected:
+                if not spec.get("url"):
+                    continue
+                try:
+                    names = list_crosstab_sheets(spec["url"], page=page)
+                    print(f"SHEETS|{spec['id']}|" + " ; ".join(names), flush=True)
+                except Exception as e:                # noqa: BLE001
+                    print(f"SHEETS|{spec['id']}|FAILED {type(e).__name__}: "
+                          f"{str(e)[:120]}", flush=True)
+        return 0
+
     if args.inspect:
         infos = []
         with tableau_session(headless=args.headless, allow_form_login=False,
