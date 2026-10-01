@@ -88,3 +88,51 @@ class TheFaultSummaryKeepsItsInstruction(unittest.TestCase):
             msg = str(R._as_owner_problem(e))
             if msg:
                 self.assertLessEqual(len(msg), RL.FAULT_SUMMARY_MAX, msg)
+
+
+class ALoginPageThatNeverLoadsBecomesTheOwnersProblem(unittest.TestCase):
+    """Cyrus's laptop 2026-09-29..10-01: hundreds of 30-second login timeouts
+    a day with no hold. After three in a row it is an AccountProblem (hold +
+    the sign-in window); a login that works clears the count."""
+
+    class _PWTimeout(Exception):
+        pass
+    _PWTimeout.__name__ = "TimeoutError"
+
+    def _run(self, fails, path):
+        calls = []
+        def login(*a, **k):
+            calls.append(1)
+            if len(calls) <= fails:
+                raise self._PWTimeout("Timeout 30000ms exceeded. waiting for navigation until 'load'")
+            return "BASE/"
+        with mock.patch.object(R, "LOGIN_TIMEOUTS_PATH", path), \
+             mock.patch.object(R, "SESSION_PATH", path.parent / "s.txt"), \
+             mock.patch.object(R.C, "creds", lambda: {"email": "e", "password": "p"}), \
+             mock.patch.object(S, "_login", login):
+            return [self._one() for _ in range(fails + 1)]
+
+    def _one(self):
+        try:
+            return R._sign_in_raw(object(), log=lambda *a: None)
+        except Exception as e:  # noqa: BLE001
+            return type(e).__name__
+
+    def test_third_timeout_in_a_row_is_an_account_problem(self):
+        with tempfile.TemporaryDirectory() as d:
+            got = self._run(3, pathlib.Path(d) / "t.txt")
+        self.assertEqual(got[:3], ["TimeoutError", "TimeoutError", "AccountProblem"])
+        self.assertEqual(got[3], "BASE/")
+
+    def test_a_working_login_clears_the_count(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = pathlib.Path(d) / "t.txt"
+            got = self._run(2, path)
+            self.assertEqual(got, ["TimeoutError", "TimeoutError", "BASE/"])
+            self.assertFalse(path.exists())
+
+    def test_the_message_fits_the_relay_and_names_the_window(self):
+        from automations.icd_alerts import relay as RL
+        msg = R.LOGIN_TIMEOUT_MESSAGE % 3
+        self.assertLessEqual(len(msg), RL.FAULT_SUMMARY_MAX)
+        self.assertIn("window", msg)

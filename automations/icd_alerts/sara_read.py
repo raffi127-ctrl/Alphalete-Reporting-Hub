@@ -165,11 +165,61 @@ def _sign_in_raw(page, log=print) -> str:
         if base:
             return base
         _forget_session()
-    base = S._login(page, cr["email"], cr["password"],
-                    creds_hint="the SaraPlus login saved on this computer",
-                    log=log)
+    try:
+        base = S._login(page, cr["email"], cr["password"],
+                        creds_hint="the SaraPlus login saved on this computer",
+                        log=log)
+    except Exception as e:  # noqa: BLE001 -- only the login-page timeout is ours
+        if _is_login_timeout(e):
+            n = _note_login_timeout()
+            if n >= LOGIN_TIMEOUTS_BEFORE_HOLD:
+                raise AccountProblem(LOGIN_TIMEOUT_MESSAGE % n) from e
+        raise
+    _clear_login_timeouts()
     _remember_session(base)
     return base
+
+
+# A LOGIN PAGE THAT NEVER FINISHES LOADING. Cyrus's laptop, 2026-09-29 ->
+# 10-01: 148, 214 and 115 sweeps a day, every one a 30-second timeout on the
+# login button, no hold between them because a TimeoutError is not an
+# AccountProblem. Hundreds of half-logins a day is how a slow link earns a
+# throttle. After a few in a row it becomes the owner's problem: the same
+# hold the passcode wall gets, and the sign-in window offered to whoever is
+# at the machine so a person can SEE what SaraPlus is doing from there.
+LOGIN_TIMEOUTS_BEFORE_HOLD = 3
+LOGIN_TIMEOUT_MESSAGE = (
+    "SaraPlus's login page did not finish loading from this computer, %d "
+    "times in a row. Your password was not rejected. Check that this "
+    "computer's internet is working.\n\nA SaraPlus window opens on this "
+    "computer by itself when someone is at it -- if SaraPlus loads there, "
+    "sign in and it heals; if it does not, that is the problem to fix.")
+LOGIN_TIMEOUTS_PATH = C.APP_DIR / "saraplus-login-timeouts.txt"
+
+
+def _is_login_timeout(e: Exception) -> bool:
+    return type(e).__name__ == "TimeoutError"
+
+
+def _note_login_timeout() -> int:
+    try:
+        n = int((LOGIN_TIMEOUTS_PATH.read_text() or "0").strip() or 0)
+    except (OSError, ValueError):
+        n = 0
+    n += 1
+    try:
+        LOGIN_TIMEOUTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        LOGIN_TIMEOUTS_PATH.write_text(str(n))
+    except OSError:
+        pass
+    return n
+
+
+def _clear_login_timeouts() -> None:
+    try:
+        LOGIN_TIMEOUTS_PATH.unlink()
+    except OSError:
+        pass
 
 
 SESSION_PATH = C.APP_DIR / "saraplus-session.txt"
