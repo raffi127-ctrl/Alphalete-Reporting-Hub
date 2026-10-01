@@ -447,12 +447,28 @@ def main(argv=None) -> int:
                 # for a rep with no money rather than leaving the cell empty).
                 # The 0s in Trained and Retained beside it carry the count.
                 # [[feedback_dont_explain_away_a_zero]]
-                filled.add(F.RETENTION_ROW, wk,
-                           f"{round(100 * kept / len(trained))}%" if trained
-                           else F.NONE_MARK,
-                           (f"WE {wk:%-m/%-d}: {kept} of {len(trained)} new starts "
-                            f"trained by {name} still on the board") if trained
-                           else f"WE {wk:%-m/%-d}: no new starts assigned to {name}")
+                # A DASH MEANS NOBODY, 0% MEANS NOBODY MADE IT. Megan
+                # 2026-10-01, on a week showing 1 scheduled and 0 showed:
+                # "that's 0% not a dash". Dashing whenever Trained is 0 was too
+                # blunt — it hid the weeks where a leader HAD new starts and
+                # kept none, which is exactly the week worth talking about in a
+                # 1on1. The dash is now only for a week with no new starts at
+                # all, by either count.
+                _sched = OB.for_week(obcl, wk, name,
+                                     on_board=lambda n, _b=block: PEO.key(n) in _b)
+                _had_any = bool(trained) or bool(_sched and _sched[0])
+                if trained:
+                    _ret = f"{round(100 * kept / len(trained))}%"
+                    _why = (f"WE {wk:%-m/%-d}: {kept} of {len(trained)} new "
+                            f"starts trained by {name} still on the board")
+                elif _had_any:
+                    _ret = "0%"
+                    _why = (f"WE {wk:%-m/%-d}: {_sched[0]} new start(s) scheduled "
+                            f"by {name}, none assigned to them still on the board")
+                else:
+                    _ret = F.NONE_MARK
+                    _why = f"WE {wk:%-m/%-d}: no new starts for {name}"
+                filled.add(F.RETENTION_ROW, wk, _ret, _why)
 
             # ON THE HEAD'S SECTION, 'New Starts showed / Scheduled' is the
             # TEAM's figure, not his own. The row sits in his recruiting block
