@@ -809,6 +809,21 @@ class TheLogItReads(unittest.TestCase):
         self.assertEqual(v.bucket, tri.NEEDS_YOU)
         self.assertIn("Tableau view", v.reason)
 
+    def test_standalone_launchagent_log_is_read(self):
+        """bg_check_sync runs on its own LaunchAgent: no orch- file, but its
+        wrapper's bg-check-sync-<date>-HHMMSS.log held the 429 (2026-10-01)."""
+        repo = self._repo(
+            "bg-check-sync-{}-100003.log".format(DAY.isoformat()),
+            "gspread.exceptions.APIError: APIError: [429]: Quota exceeded")
+        with mock.patch.object(tri, "REPO_ROOT", repo), \
+             mock.patch.object(tri, "_reports", return_value={}), \
+             mock.patch.object(tri, "reruns_itself", return_value=True):
+            v = tri.classify("failure-bg_check_sync", day=DAY,
+                             opened=DAY.isoformat(), now_hour=10)
+        self.assertEqual(v.bucket, tri.LUCY)
+        self.assertIn("rate-limited", v.reason)
+        self.assertNotIn("no log", v.reason)
+
     def test_no_log_anywhere_does_not_claim_one_was_read(self):
         """Triage grades incidents from all three machines but reads logs off
         the local disk, so "the reason isn't in the log" is a claim about a file

@@ -425,6 +425,22 @@ def _log_tail(rid: str, day: dt.date, n: int = 80) -> str:
                 p.read_text(errors="replace").splitlines()[-n:]).lower()
         except Exception:  # noqa: BLE001 — absent under this spelling; try next
             continue
+    # A report on its OWN LaunchAgent never goes through the orchestrator, so it
+    # has no orch- file — its wrapper writes `<dashed-id>-<date>[-HHMMSS].log`
+    # (deploy/bg_check_sync.sh: bg-check-sync-2026-10-01-100003.log). Without
+    # this, bg_check_sync's 2026-10-01 Sheets 429 — sitting in that file —
+    # came out as "there's no log for it on this machine". Newest run wins.
+    logs = REPO_ROOT / "output" / "logs"
+    for name in _log_id_spellings(rid):
+        stem = name.replace("_", "-")
+        try:
+            found = sorted(logs.glob(f"{stem}-{day.isoformat()}*.log"),
+                           key=lambda f: f.stat().st_mtime)
+            if found:
+                return "\n".join(found[-1].read_text(errors="replace")
+                                 .splitlines()[-n:]).lower()
+        except Exception:  # noqa: BLE001 — unreadable; try next spelling
+            continue
     return ""  # no log under any spelling — caller decides what that means
 
 

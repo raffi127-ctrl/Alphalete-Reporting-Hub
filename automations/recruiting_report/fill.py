@@ -307,7 +307,17 @@ def _client() -> gspread.Client:
                 "Sheets OAuth token invalid and can't refresh — re-run the "
                 "one-time authorization:  "
                 "python -m automations.recruiting_report.sheets_auth")
-    return gspread.authorize(creds)
+    gc = gspread.authorize(creds)
+    # gspread's default is NO timeout: a reply Google never sends blocks the
+    # run forever. On 2026-10-01 a bg_check_sync rerun sat 11+ min in one
+    # socket read with zero output — and launchd won't start the next hourly
+    # run while it lives. 30s to connect, 180s to read: a stall now raises
+    # Timeout, which _install_global_retry re-tries for reads.
+    try:
+        gc.http_client.set_timeout((30, 180))
+    except AttributeError:  # older gspread — keep the old (no-timeout) behavior
+        pass
+    return gc
 
 
 # Opened workbooks, by key. Each open costs a fetch_sheet_metadata round trip,
