@@ -222,7 +222,19 @@ def main(argv=None) -> int:
             # of its labels repeat the head's personal sales rows above it, and
             # a section-wide lookup writes the team's totals onto the person.
             owner_at = LO.block_start(grid, head_sec, "Owner 1on1's")
-            hrows = LO.label_rows(grid, head_sec, first=owner_at)
+            # The window starts at 'Team Structure - All', NOT at the Owner
+            # marker: those two structure rows sit just ABOVE the block and
+            # were pushed out of range by narrowing to it. Everything the team
+            # box owns lives from there down; the head's personal rows, which
+            # repeat four of these labels, are all above it.
+            struct_at = None
+            for _r in range(head_sec.start + 1, head_sec.end + 1):
+                if LO.fold(LO._cell(grid, _r, LO.LABEL_COL)).startswith("team structure"):
+                    struct_at = _r
+                    break
+            hrows = LO.label_rows(grid, head_sec,
+                                  first=min(x for x in (struct_at, owner_at) if x)
+                                  if (struct_at or owner_at) else None)
             if owner_at is None:
                 notes.append(f"{team}: no \"Owner 1on1's\" block on the team box "
                              f"— team totals not written, they would land on "
@@ -238,6 +250,29 @@ def main(argv=None) -> int:
                 if wcol is None:
                     continue
                 cells = TB.compute(rw).as_cells()
+
+                # THE TEAM BOX ROW IS THE WHOLE TEAM, not the head's own
+                # interviews. Megan 2026-10-01: "this number is the number on
+                # the OBCL of people on this team that had people who were
+                # scheduled to start and those that actually get marked showed
+                # to classroom". Summed over every leader on the team, so a
+                # new start interviewed by any of them counts once for the team.
+                t_sched = t_showed = 0
+                seen_any = False
+                for who in [rost.head] + list(rost.leaders):
+                    got = OB.for_week(obcl, wk, who)
+                    if got:
+                        seen_any = True
+                        t_sched += got[0]
+                        t_showed += got[1]
+                if seen_any:
+                    # 'New Starts showed / Scheduled' is NOT set here: that row
+                    # sits in the head's recruiting block, above this window,
+                    # and is written in his personal pass. Setting it in both
+                    # places produced a guaranteed "no row" note every run.
+                    cells["New Starts started"] = str(t_sched)
+                    cells["New Starts alive?"] = str(t_showed)
+
                 wsales = weekly.get(wk, (None, None))[0]
                 if wsales is not None:
                     live = [m.name for m in rw.members if not m.terminated]
@@ -283,11 +318,19 @@ def main(argv=None) -> int:
                 notes.append(f"{team} r{sec.start}: header {bad.raw!r} — {bad.suspect}")
             # A head's personal rows stop where their team block begins, for
             # the same duplicate-label reason.
-            own_end = LO.block_start(grid, sec, "Owner 1on1's")
+            # A head's personal rows stop where the team block begins, which
+            # is the 'Team Structure' pair rather than the Owner marker below
+            # it — same boundary, read from the other side.
+            own_end = None
+            for _r in range(sec.start + 1, sec.end + 1):
+                if LO.fold(LO._cell(grid, _r, LO.LABEL_COL)).startswith("team structure"):
+                    own_end = _r
+                    break
+            own_end = own_end or LO.block_start(grid, sec, "Owner 1on1's")
             rows = LO.label_rows(grid, sec, last=(own_end - 1) if own_end else None)
 
-            group_only = (PEO.key(name) == PEO.key(rost.head)
-                          and rost.head_group_only)
+            is_head = PEO.key(name) == PEO.key(rost.head)
+            group_only = is_head and rost.head_group_only
             if group_only:
                 # No sources read for them; `have` stays empty and the owned
                 # rows below are cleared. Megan 2026-09-28: "he won't have any
@@ -376,6 +419,26 @@ def main(argv=None) -> int:
                            (f"WE {wk:%-m/%-d}: {kept} of {len(trained)} new starts "
                             f"trained by {name} still on the board") if trained
                            else f"WE {wk:%-m/%-d}: no new starts assigned to {name}")
+
+            # ON THE HEAD'S SECTION, 'New Starts showed / Scheduled' is the
+            # TEAM's figure, not his own. The row sits in his recruiting block
+            # (above the team block), but Megan 2026-10-01 defined it as "the
+            # number on the OBCL of people on this team" — so it is summed over
+            # the head and every leader under him.
+            if is_head:
+                for wk in wks:
+                    ts = tsh = 0
+                    any_ = False
+                    for who in [rost.head] + list(rost.leaders):
+                        got = OB.for_week(obcl, wk, who)
+                        if got:
+                            any_ = True
+                            ts += got[0]
+                            tsh += got[1]
+                    if any_:
+                        filled.add("New Starts showed / Scheduled", wk,
+                                   f"{tsh}/{ts}",
+                                   f"OBCL week of {wk:%-m/%-d}: whole team")
 
             # NEW STARTS, WEEKLY, AFTER the monthly block so these win the
             # cell. Only these two rows move to the OBCL: it holds a row per

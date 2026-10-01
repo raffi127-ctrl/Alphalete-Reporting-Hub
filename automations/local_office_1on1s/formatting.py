@@ -70,6 +70,7 @@ def manual_rows(grid: List[List[str]]) -> List[int]:
 
 
 WHITE = {"red": 1.0, "green": 1.0, "blue": 1.0}
+NO_BORDER = {"style": "NONE"}
 HARD_RIGHT = 44            # col AR — nothing on these tabs goes beyond it
 
 
@@ -108,15 +109,23 @@ def requests_for(grid: List[List[str]], sheet_id: int,
                                     "startColumnIndex": first_week_col - 1,
                                     "endColumnIndex": right},
                     "pasteType": "PASTE_FORMAT"}})
-            # everything past the last dated column goes back to plain
+            # Everything past the last dated column goes back to plain —
+            # BACKGROUND *AND* BORDERS. PASTE_FORMAT copies the label cell's
+            # borders along with its colour, so clearing only the fill left the
+            # grid lines marching off into the empty columns (Megan 2026-10-01:
+            # "borders are still in the blank space").
             if right < HARD_RIGHT:
                 out.append({"repeatCell": {
                     "range": {"sheetId": sheet_id,
                               "startRowIndex": r - 1, "endRowIndex": r,
                               "startColumnIndex": right,
                               "endColumnIndex": HARD_RIGHT},
-                    "cell": {"userEnteredFormat": {"backgroundColor": WHITE}},
-                    "fields": "userEnteredFormat.backgroundColor"}})
+                    "cell": {"userEnteredFormat": {
+                        "backgroundColor": WHITE,
+                        "borders": {"top": NO_BORDER, "bottom": NO_BORDER,
+                                    "left": NO_BORDER, "right": NO_BORDER}}},
+                    "fields": ("userEnteredFormat.backgroundColor,"
+                               "userEnteredFormat.borders")}})
     return out
 
 

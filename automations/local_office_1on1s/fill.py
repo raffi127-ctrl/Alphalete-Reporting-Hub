@@ -80,8 +80,13 @@ RETENTION_ROW = "New starts Retention %"
 # three false notes per individual section, and a notes list full of expected
 # misses is how a real one gets skipped. [[feedback_fill_but_flag]]
 VARIANT_ONLY = {
+    # TEAM box only
     "2nd closing numbers", "2nd closing %", "new starts showed / scheduled",
     "new / app goal",
+    # Individual box only — a TEAM box carries the condensed four instead, so
+    # these are always "missing" from one of the two kinds of section.
+    "2nd rds conducted", "job offered", "2nd rds closed",
+    "bob % / 2nd rd closing", "new starts scheduled", "new starts showed",
 }
 
 # EVERY ROW THIS REPORT OWNS. A row here is cleared when the run has no value
