@@ -1366,3 +1366,33 @@ class PersonaTest(unittest.TestCase):
         states = {"Await Call": "Not Activated", "No Answer": "Activated"}
         _f, personas = self.T.lint(bodies, states, None)
         self.assertEqual(dict(personas), {"Dani Pena": 1})
+
+
+class EscalationCallPromiseTest(unittest.TestCase):
+    """Megan 2026-10-01: escalation IS the handoff. Promising a call is
+    fine; promising WHEN is what gets broken."""
+
+    def setUp(self):
+        from automations.sms_audit import escalations as E
+        self.E = E
+
+    def test_a_timed_promise_is_a_finding(self):
+        for m in ("we can have a member from our team give you a call "
+                  "shortly!",
+                  "Someone will reach out to you within the hour.",
+                  "We will call you back today."):
+            self.assertTrue(self.E.ESC_CALL_PROMISE.search(m), m)
+
+    def test_the_bare_handoff_is_not(self):
+        for m in ("Of course — I'll have someone from our team give you a "
+                  "call.",
+                  "Thanks for letting us know. Please share the applicant's "
+                  "best contact number, and a member of our team can follow "
+                  "up directly."):
+            self.assertIsNone(self.E.ESC_CALL_PROMISE.search(m), m)
+
+    def test_a_question_applicants_ask_met_with_silence_is_a_finding(self):
+        rows = [{"name": "Confusion About Role Type", "category": "",
+                 "description": "", "message": "", "routing": "Silent"}]
+        kinds = [k for k, _m in self.E.lint(rows)]
+        self.assertIn("SILENT AND BLANK", kinds)

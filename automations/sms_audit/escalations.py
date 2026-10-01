@@ -61,10 +61,11 @@ WHY = {
         "ruling stands: deflection is not fine. Answer the question, then "
         "invite them."),
     "PROMISES A CALL": (
-        "Promises a call",
-        "This promises somebody will ring them. Applicants are already "
-        "complaining that the call never came. Ask for a time instead of "
-        "promising one."),
+        "Promises a call by a certain time",
+        "Handing a phone request to a person is right \u2014 that is what "
+        "Escalate is for. The problem is the timing word. Applicants are "
+        "already complaining the call never came by when we said. Say we "
+        "will call; do not say when."),
     "PAY WORDING": (
         "Pay wording does not match Raf's ruling",
         "Raf, via Megan on 2026-09-27: weekly pay $1,000–$1,500, never a "
@@ -83,14 +84,24 @@ PAY_BAD = re.compile(
     r"background\s*/\s*experience)", re.I)
 PAY_TOPIC = re.compile(r"(pay|salar|earn|compensat|\$)", re.I)
 
-# analyze.CALL_PROMISE is deliberately first-person ("I will call you"),
-# because in a thread the point is whether THAT recruiter promised it.
-# A canned answer promises on behalf of the office, so the third-person
-# phrasings count here too: "a member from our team will give you a call".
+# Megan 2026-10-01, correcting me on the phone row: "We shouldn't have them
+# pick a time, a recruiter will lose track. It seems an escalation call is
+# that the text is highlighted so a recruiter knows to get to it."
+#
+# So handing a phone request to a person is the RIGHT answer, not a
+# deflection — Escalate is the mechanism. What breaks is the TIME WORD.
+# "we'll give you a call" is a promise the highlight can keep; "we'll give
+# you a call shortly" is the one that produced "no one called me. I waited
+# for over an hour." Only the timed version is a finding.
+SOON = (r"shortly|soon|today|right away|right now|in a (few|couple)|"
+        r"within the (hour|next)|momentarily|asap|straight away|"
+        r"in \d+ ?(min|hour)")
 ESC_CALL_PROMISE = re.compile(
-    r"(give you a call|will call you|call you (back|shortly|soon|today)|"
+    r"((give you a call|call you|reach out to you|get back to you|"
     r"(someone|somebody|a member|our team|the team)[^.]{0,40}"
-    r"(call|reach out|contact|follow up)|reach out to you)", re.I)
+    r"(call|reach out|contact|follow up))[^.!?]{0,30}(" + SOON + r"))"
+    r"|((" + SOON + r")[^.!?]{0,30}(give you a call|call you|reach out))",
+    re.I)
 
 
 def load(office):

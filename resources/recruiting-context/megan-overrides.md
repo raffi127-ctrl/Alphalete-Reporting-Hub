@@ -127,6 +127,18 @@ on the day.
 neither here nor in the Grand Prairie count, where job-ad titles read as
 address errors. Check the messages around it before calling anything a fault.
 
+### 8. Escalation IS the handoff — never put a clock on a call
+
+| | |
+|---|---|
+| **AppStream says** | AI Settings → Escalations, *Request to talk via Phone*, routed Escalate: "Most certainly, we can have a member from our team give you a call **shortly**!" |
+| **Megan says** | "We shouldn't have them pick a time, a recruiter will lose track. It seems an escalation call is that the text is highlighted so a recruiter knows to get to it." (2026-10-01) |
+| **Ruling** | Routing a phone request to a person is the CORRECT answer, not a deflection — Escalate highlights the thread and a recruiter works it. Two things are wrong: a **time word** ("shortly", "soon", "today", "within the hour"), because nothing holds that promise; and **asking the applicant to pick a time**, because nothing holds that either. Say we will call. Do not say when. |
+| **Approved** | "Of course — I'll have someone from our team give you a call." |
+| **Why it matters** | This is the difference between a deflection and a handoff, and I had it wrong: I first proposed asking the applicant for a time, which invents a commitment no system tracks. |
+| **Measured** | Complaints last week include *"Excuse me but no one called me. I waited for over an hour. I am no longer interested."* |
+| **In code** | `escalations.ESC_CALL_PROMISE` flags only a call promise carrying a time word. The bare promise passes. |
+
 ## Open — needs a ruling
 
 ### Is an accurate but clipped answer a fail on its own?
