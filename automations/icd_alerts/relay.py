@@ -628,6 +628,9 @@ def _scrub(text: str, rec: Optional[Dict] = None) -> str:
     return out[:1500]
 
 
+FAULT_SUMMARY_MAX = 600
+
+
 def report_fault(stage: str, summary: str, detail: str = "",
                  day: Optional[dt.date] = None, log=None,
                  office_key: str = "") -> bool:
@@ -670,7 +673,11 @@ def report_fault(stage: str, summary: str, detail: str = "",
             "fault": {
                 "day": (day or C.today()).isoformat(),
                 "stage": str(stage or "")[:40],
-                "summary": _scrub(summary, rec)[:300],
+                # 600, not 300: the passcode-wall message's second sentence
+                # is the instruction ("Sign in THERE and type in the emailed
+                # code") and 300 cut it mid-word in Rashad's channel
+                # (2026-10-01 10:38). The traceback still rides in `detail`.
+                "summary": _scrub(summary, rec)[:FAULT_SUMMARY_MAX],
                 "detail": _scrub(detail, rec),
                 "agent": AGENT_VERSION,
                 "platform": "%s %s" % (platform.system(), platform.release()),

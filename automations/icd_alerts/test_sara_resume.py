@@ -65,3 +65,26 @@ class SignInRawTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheFaultSummaryKeepsItsInstruction(unittest.TestCase):
+    """The passcode-wall message tells the owner what to do in its SECOND
+    sentence; a 300-character cap cut it mid-word in Rashad's channel
+    (2026-10-01). Every AccountProblem text must fit the relay's cap whole."""
+
+    def test_every_account_problem_message_fits_the_cap(self):
+        from automations.icd_alerts import relay as RL
+        from automations.shared import saraplus as SP
+        probes = []
+        for cls in ("SaraPasscodeWall", "SaraPasswordChangeRequired", "SaraPasswordWall"):
+            c = getattr(SP, cls, None)
+            if c is not None:
+                try:
+                    probes.append(c("x"))
+                except TypeError:
+                    pass
+        self.assertTrue(probes)
+        for e in probes:
+            msg = str(R._as_owner_problem(e))
+            if msg:
+                self.assertLessEqual(len(msg), RL.FAULT_SUMMARY_MAX, msg)
