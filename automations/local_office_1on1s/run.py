@@ -244,7 +244,21 @@ def main(argv=None) -> int:
             for wk in wks:
                 rw = week_rosters.get(wk, {}).get(team)
                 if rw is None:
-                    gaps.append(f"{team}: no roster for WE {wk:%-m/%-d} — team box left blank")
+                    # SKIPPING IS NOT THE SAME AS BLANKING. A week with no
+                    # roster was being passed over, so the team block kept
+                    # whatever an earlier run had put there — 'New Starts
+                    # started' read 7/7/7 beside a 'showed / Scheduled' of
+                    # 4/4, 2/2, 8/8, which is worse than empty because the two
+                    # rows contradict each other. Clear what we own for that
+                    # week instead. [[feedback_dont_explain_away_a_zero]]
+                    gaps.append(f"{team}: no roster for WE {wk:%-m/%-d} — team box cleared")
+                    wcol0 = W.find(hhdr, wk)
+                    if wcol0 is not None:
+                        for label in list(TB.STRUCTURE) + list(TB.OWNER):
+                            rr = LO.find_row(hrows, label)
+                            if rr and LO._cell(grid, rr, wcol0.col).strip():
+                                updates.append({"range": f"{_a1(wcol0.col)}{rr}",
+                                                "values": [[""]]})
                     continue
                 wcol = W.find(hhdr, wk)
                 if wcol is None:
