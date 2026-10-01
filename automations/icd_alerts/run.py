@@ -100,6 +100,21 @@ def cmd_set_login(headless: bool = True) -> int:
                         "few minutes.\n\nNothing else to do.")
             print("OK")
             return 0
+        if "code it emails" in str(result.get("message", "")):
+            # NOT A PASSWORD PROBLEM, so do not ask for it again (Rashad,
+            # 2026-10-01: three retypes of a working password). Open the
+            # browser the code has to be typed in; it verifies before
+            # saying done.
+            from automations.icd_alerts import sara_signin
+            ask.message("Your password is fine — SaraPlus just wants to "
+                        "confirm this computer with a code it emailed you.\n\n"
+                        "A SaraPlus window will open next: sign in there and "
+                        "type that code.")
+            if sara_signin.run(log=_log) == 0:
+                sara_read.clear_sara_hold()
+                print("OK")
+                return 0
+            return 1
         if attempt == 3:
             break
         try:

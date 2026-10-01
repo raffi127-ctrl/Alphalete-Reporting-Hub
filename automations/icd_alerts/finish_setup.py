@@ -88,6 +88,12 @@ def _boot_job(log) -> str:
     return "skipped — someone will need to log in after a restart"
 
 
+def is_passcode_wall(e) -> bool:
+    """SaraPlus's 'confirm this computer' challenge, by its own message: the
+    password was accepted and a code is wanted in the agent's browser."""
+    return "code it emails" in str(e) or "emailed code" in str(e)
+
+
 def _saraplus(log) -> str:
     """Only when this machine reads SaraPlus, and only when it cannot.
 
@@ -119,6 +125,15 @@ def _saraplus(log) -> str:
             return "already working"
     except Exception as e:  # noqa: BLE001 — any failure means ASK
         log("  %s" % str(e)[:200])
+        if is_passcode_wall(e):
+            # THE PASSWORD IS FINE. SaraPlus accepted it and wants an emailed
+            # code typed in THIS browser. Asking for the password here had
+            # Rashad type his three times on 2026-10-01 and end on "that
+            # password did not work either" -- for a password that worked.
+            # The one thing that clears it is the window the code goes in.
+            from automations.icd_alerts import sara_signin
+            return ("done" if sara_signin.run(log=log) == 0
+                    else "still needs the emailed code typed in the SaraPlus window")
 
     log("")
     log("  SaraPlus is not letting this computer in. If you have just set a")

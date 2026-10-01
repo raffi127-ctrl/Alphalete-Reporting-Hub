@@ -1180,6 +1180,7 @@ class OneLinkThatDoesWhateverIsMissing(unittest.TestCase):
         said = []
         with mock.patch.object(self.F, "_update", lambda log: "up to date"), \
              mock.patch.object(self.F, "_boot_job", lambda log: "already done"), \
+             mock.patch.object(self.F, "_never_sleeps", lambda log: "done"), \
              mock.patch.object(self.F, "_saraplus", lambda log: "already working"), \
              mock.patch.object(self.F, "_service_cloud",
                                lambda log: "not needed for this office"):
@@ -1197,6 +1198,7 @@ class OneLinkThatDoesWhateverIsMissing(unittest.TestCase):
 
         with mock.patch.object(self.F, "_update", lambda log: "up to date"), \
              mock.patch.object(self.F, "_boot_job", boom), \
+             mock.patch.object(self.F, "_never_sleeps", lambda log: "done"), \
              mock.patch.object(self.F, "_saraplus", lambda log: "already working"), \
              mock.patch.object(self.F, "_service_cloud",
                                lambda log: reached.append(1) or "done"):
@@ -1208,6 +1210,7 @@ class OneLinkThatDoesWhateverIsMissing(unittest.TestCase):
         said = []
         with mock.patch.object(self.F, "_update", lambda log: "up to date"), \
              mock.patch.object(self.F, "_boot_job", lambda log: "skipped"), \
+             mock.patch.object(self.F, "_never_sleeps", lambda log: "done"), \
              mock.patch.object(self.F, "_saraplus", lambda log: "already working"), \
              mock.patch.object(self.F, "_service_cloud", lambda log: "done"):
             rc = self.F.run(log=said.append)
@@ -2507,3 +2510,51 @@ class AboveTheBarIsAlsoTheTopTierTest(unittest.TestCase):
         a = H.gif_for("Vianey Silva", dt.date(2026, 9, 17), 500000)
         b = H.gif_for("Vianey Silva", dt.date(2026, 9, 17), 500000)
         self.assertEqual(a, b)
+
+
+class ThePasscodeWallOpensTheWindowNotThePasswordBox(unittest.TestCase):
+    """Rashad, 2026-10-01: the installer's SaraPlus check hit the 'confirm this
+    computer' wall, asked for his password three times and ended on 'that
+    password did not work either'. The password worked. The wall is cleared
+    only in the agent's own browser, so that window is what must open."""
+
+    def setUp(self):
+        from automations.icd_alerts import finish_setup as F, run as R, sara_read as SR
+        self.F, self.R, self.SR = F, R, SR
+
+    def test_finish_setup_opens_the_window_and_never_asks_for_a_password(self):
+        from automations.icd_alerts import sara_signin
+        wall = self.SR.AccountProblem(
+            "SaraPlus wants to confirm this computer with a code it emails you. "
+            "Your password is fine — do NOT change it.")
+        opened, asked = [], []
+        def boom(**kw):
+            raise wall
+        with mock.patch.object(self.F.C, "uses_saraplus", lambda: True), \
+             mock.patch.object(self.SR, "check_account", boom), \
+             mock.patch.object(sara_signin, "run", lambda log=print: opened.append(1) or 0), \
+             mock.patch.object(self.R, "cmd_set_login", lambda **kw: asked.append(1) or 1):
+            said = self.F._saraplus(lambda *a: None)
+        self.assertEqual(said, "done")
+        self.assertEqual(opened, [1])
+        self.assertEqual(asked, [])
+
+    def test_a_refused_password_still_asks_for_the_password(self):
+        from automations.icd_alerts import sara_signin
+        opened, asked = [], []
+        def boom(**kw):
+            raise self.SR.AccountProblem("SaraPlus did not accept that password.")
+        with mock.patch.object(self.F.C, "uses_saraplus", lambda: True), \
+             mock.patch.object(self.SR, "check_account", boom), \
+             mock.patch.object(sara_signin, "run", lambda log=print: opened.append(1) or 0), \
+             mock.patch.object(self.R, "cmd_set_login", lambda **kw: asked.append(1) or 0):
+            said = self.F._saraplus(lambda *a: None)
+        self.assertEqual(said, "done")
+        self.assertEqual(asked, [1])
+        self.assertEqual(opened, [])
+
+    def test_set_login_on_the_wall_opens_the_window_instead_of_retrying(self):
+        import inspect
+        src = inspect.getsource(self.R.cmd_set_login)
+        self.assertIn('"code it emails" in str(result.get("message"', src)
+        self.assertIn("sara_signin.run(", src)
