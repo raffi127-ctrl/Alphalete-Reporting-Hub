@@ -698,7 +698,9 @@ RECIPIENTS: dict = {
         # (B2B - All Units en 0 WE 09.13 / 09.06). Salio del grupo vivo
         # "Luis' Captainship" el mismo dia; si queda aca seed_groups lo repone.
         "albert.rubio1228@gmail.com", "CarlosHidalgo349@gmail.com",
-        "aventus.marketinginc@gmail.com", "dylanjtwaddle@gmail.com",
+        # OUT 2026-10-01: aventus.marketinginc@ (Cruz Venegas) — paso a la
+        # capitania de Luke; Eve lo saco del grupo "Luis' Captainship".
+        "dylanjtwaddle@gmail.com",
         "harman100703@gmail.com", "lusalazar619@gmail.com",
         "maudmiller4@gmail.com",
         "mihir.vadlamani@gmail.com", "raffi127@gmail.com",
@@ -864,8 +866,13 @@ RECIPIENTS["jess"] = [
 # las capitanias B2B; los owners de su equipo entran cuando exista su caja en el
 # Org Sales Board.
 RECIPIENTS["luke"] = [
+    # Copia del grupo vivo el 2026-10-01 (lo armo Eve). Adrian Sarabia falta:
+    # Eve esta esperando su mail.
     "takeoffenterprisesinc@gmail.com",  # Luke Baldwin
+    "aventus.marketinginc@gmail.com",   # Cruz Venegas (viene de Luis)
+    "dpisikian@gmail.com",              # David Pisikian
     "CarlosHidalgo349@gmail.com",
+    "dylanjtwaddle@gmail.com",
     "maudmiller4@gmail.com",
     "raffi127@gmail.com",
 ]
