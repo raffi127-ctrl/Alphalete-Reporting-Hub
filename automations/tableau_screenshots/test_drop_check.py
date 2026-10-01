@@ -82,6 +82,41 @@ class TestFiberHistory(unittest.TestCase):
         self.assertIsNone(fr.history_shortfall(text, WED, frac=0.5))
 
 
+def att(wed: str) -> str:
+    """AT&T "Current Vs Prior Weeks", as the 10/1 11:47 dump read it."""
+    return "\n".join([
+        "\tMonday\tTuesday\tWednesday\tGrand Total",
+        f"Sales (This Week)\t1,287\t1,362\t{wed}\t4,029",
+        "vs Prior Wk \t7%\t14%\t10%\t11%",
+        "vs 4 wk avg\t-2%\t5%\t7%\t3%",
+        "Sales (Last Week)\t1,198\t1,190\t1,258\t3,646",
+        "Sales (4 wk avg)\t1,315\t1,296\t1,292\t3,902",
+    ])
+
+
+class TestAttVsAvg(unittest.TestCase):
+    def test_this_mornings_1110_is_held(self):
+        why = fr.vs_avg_sheet_shortfall(att("1,110"), WED, frac=0.88)
+        self.assertIsNotNone(why)
+        self.assertIn(fr.DROP_MARK, why)
+        self.assertIn("86%", why)
+        self.assertIn("not refreshed", why)
+
+    def test_finished_1380_passes(self):
+        self.assertIsNone(fr.vs_avg_sheet_shortfall(att("1,380"), WED, frac=0.88))
+
+    def test_blank_day_is_zero(self):
+        self.assertIsNotNone(fr.vs_avg_sheet_shortfall(att(""), WED, frac=0.88))
+
+    def test_weekday_not_on_sheet_is_silent(self):
+        self.assertIsNone(fr.vs_avg_sheet_shortfall(
+            att("1,110"), dt.date(2026, 10, 1), frac=0.88))      # Thursday
+
+    def test_wired_on_the_att_extract(self):
+        conf = fr.EXTRACTS["tableau:tracker_att"]["stable_total"]
+        self.assertEqual(conf["avg_sheet"], "Current Vs Prior Weeks")
+
+
 class TestGateWiring(unittest.TestCase):
     """The history check runs AFTER a passing coverage date and turns it into a
     hold; a passing history keeps the old READY verdict."""

@@ -127,6 +127,11 @@ EXTRACTS = {
                          "ATTTRACKER2_1-D2D/D2D1-PAGERV4?:iid=1"),
             "sheet": "Summary Product by Day",
             "min_total": 1,
+            # Held below 88% of the weekday's 4-wk avg, off the same view's
+            # "Current Vs Prior Weeks" sheet (10/1: 1,110 = 86% of 1,292 went
+            # out; finished 1,380). Real days run ~-2%..+7% vs that average.
+            "avg_sheet": "Current Vs Prior Weeks",
+            "avg_frac": 0.88,
         },
         "fallback_hhmm": DEFAULT_FALLBACK_HHMM,
         "boards": ["att_country", "att_country_internet_only"],
@@ -540,6 +545,47 @@ def same_day_avg_shortfall(text: str, target: dt.date, total: float, *,
     return None
 
 
+def vs_avg_sheet_shortfall(text: str, target: dt.date, *,
+                           frac: float) -> Optional[str]:
+    """Drop reason off an AT&T "Current Vs Prior Weeks" sheet, or None:
+                          Monday | Tuesday | Wednesday | Grand Total
+        Sales (This Week)  1,287 | 1,362   | 1,380
+        Sales (4 wk avg)   1,315 | 1,296   | 1,292
+    Weekday by header, rows by label — never by index.
+
+    WHY (2026-10-01). AT&T Country Wednesday went out at 1,110 (86% of its
+    1,292 average; finished 1,380) — the week-median floor can't see a 14% short
+    day. A blank this-week cell is 0 (nothing loaded), not unreadable."""
+    rows = [r.split("\t") for r in (text or "").splitlines() if r.strip()]
+    want = _WEEKDAYS[target.weekday()].lower()
+    col = None
+    for row in rows:
+        cells = [(c or "").strip().lower() for c in row]
+        if want in cells:
+            col = cells.index(want)
+            break
+    if col is None:
+        return None
+
+    def _row(prefix):
+        for row in rows:
+            if (row[0] if row else "").strip().lower().startswith(prefix):
+                return row
+        return None
+
+    mine, avg_row = _row("sales (this week)"), _row("sales (4 wk avg)")
+    if not mine or not avg_row or len(avg_row) <= col:
+        return None
+    avg = _num(avg_row[col])
+    total = (_num(mine[col]) if len(mine) > col else None) or 0.0
+    if not avg or total >= frac * avg:
+        return None
+    return ("%s %s: %s = %g is only %.0f%% of its 4-week %s average of %g — "
+            "the day is part-loaded — extract not refreshed"
+            % (DROP_MARK, target.strftime("%a"), target.isoformat(), total,
+               100.0 * total / avg, _WEEKDAYS[target.weekday()], avg))
+
+
 def history_shortfall(text: str, target: dt.date, *, frac: float,
                       min_weeks: int = 3) -> Optional[str]:
     """Why the target day is too far under the same weekday of prior weeks, or
@@ -706,6 +752,10 @@ def _check_stable_total(extract_id: str, cfg: dict, target: dt.date,
             short = None
         if short:
             return False, short
+    if conf.get("avg_sheet"):
+        short = _avg_sheet_check(extract_id, conf, target, page=page, log=log)
+        if short:
+            return False, short
     if len(series) < 2:
         return False, ("%s = %g, first sample of the day — no proof it has "
                        "finished loading — extract not refreshed"
@@ -785,6 +835,27 @@ def _check_last_update(extract_id: str, cfg: dict, target: dt.date, *,
         return True, why
     return False, ("%s only reaches %s, need %s — extract not refreshed"
                    % (field, got.isoformat(), target.isoformat()))
+
+
+def _avg_sheet_check(extract_id: str, conf: dict, target: dt.date, *,
+                     page=None, log=lambda m: None) -> Optional[str]:
+    """Drop reason off the extract's this-week-vs-4wk-avg sheet, or None.
+    Fail-open on any pull/parse trouble."""
+    from automations.shared.tableau_patchright import download_crosstab_patchright
+    out = OUT_DIR / "_freshness" / ("%s_avg.csv" % extract_id.replace(":", "_"))
+    try:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        path = download_crosstab_patchright(conf["view_url"], conf["avg_sheet"],
+                                            out, verbose=False, page=page)
+        short = vs_avg_sheet_shortfall(_read_crosstab_text(Path(path)), target,
+                                       frac=float(conf.get("avg_frac", 0.88)))
+    except Exception as e:                  # noqa: BLE001 — a probe flake never holds
+        log("avg sheet %r not readable (%s) — drop check skipped"
+            % (conf["avg_sheet"], type(e).__name__))
+        return None
+    if short:
+        log(short)
+    return short
 
 
 def _history_check(extract_id: str, cfg: dict, target: dt.date, *, page=None,
