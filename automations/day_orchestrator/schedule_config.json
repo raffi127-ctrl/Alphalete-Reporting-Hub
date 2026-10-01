@@ -1122,6 +1122,26 @@
       "timeout_minutes": 40,
       "machine": "Lucy 1"
     },
+    "applicant_find_ad": {
+      "on_scheduler": false,
+      "_note": "READ-ONLY one-off (Carlos 2026-10-01): which ad did these people apply from? Walks one office's weekly Retention report (p=701) backwards from --before and reads the 'Sent to Call List' detail pages (p=715). Writes nothing. Built because the org tracker's Call List tab only starts 2026-06-08. `lucy rerun applicant_find_ad --office 19833 --before 2026-06-07 --weeks 24 --names \"A B;C D\"`, then `logtail applicant_find_ad FOUND`. Runs headed on the shared rcaptain patchright session (headless trips Cloudflare) — don't queue it inside the 1am/1pm chains.",
+      "display_name": "Applicant Tracker: find which ad someone applied from (one-off)",
+      "source_type": "appstream",
+      "data_sources": [],
+      "command": [
+        "automations.applicant_tracker.find_ad"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P2",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 40,
+      "machine": "Lucy 2"
+    },
     "applicant_sync_morning": {
       "on_scheduler": true,
       "_note": "MORNING phase (reads YESTERDAY: Export Call List + Update 2R Status). MOVED INTO THE 4am FLOW (Megan 2026-07-28): runs in the orchestrator's sequential pass on Lucy 1, gated `after` daily_focus. WHY this is now safe from the old collision — daily_focus and this share the SAME rcaptain ApplicantStream login, and back when this was a SEPARATE 6:45am launchd it could overlap the still-running 4am batch (16/17 + no-session-token failures). The orchestrator runs reports ONE AT A TIME, and `after: daily_focus` makes this PENDING until daily_focus reaches a terminal state, so the two logins can never be concurrent. `after` (not depends_on) is deliberate: a FAILED/absent daily_focus (e.g. Saturday, when focus isn't scheduled) must NOT strand the sync — the login is free either way. order 2 keeps it right behind daily_focus (order 1) so the Call List lands early. The standalone com.alphalete.applicant-morning launchd is retired via disable_applicant_morning_agent (must be booted out or the Call List double-appends — no de-dupe). base_args ['morning']; reports completion as card 'applicant-tracker-sync' (pill → orange).",
