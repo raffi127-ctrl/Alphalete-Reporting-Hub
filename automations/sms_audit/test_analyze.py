@@ -1443,3 +1443,39 @@ class SmsTextTest(unittest.TestCase):
     def test_plain_ascii_counts_160_to_a_segment(self):
         self.assertEqual(self.X.measure("a" * 160)["segments"], 1)
         self.assertEqual(self.X.measure("a" * 161)["segments"], 2)
+
+
+class MovingOfficeTest(unittest.TestCase):
+    """Megan 2026-10-01: "we are moving to a new frisco locatoin tomorrow".
+    Changing the address must not make six weeks of correct messages
+    wrong, and must not let a stale one pass afterwards."""
+
+    def setUp(self):
+        import datetime as dt
+        self.dt = dt
+        RB.set_address_history(
+            "11280",
+            current="7250 Dallas Pkwy, Suite 400, Frisco, Texas 75034",
+            previous="3100 Premier Drive, Suite 207, Irving, Texas 75063",
+            changed=dt.date(2026, 10, 2))
+        self.old = "Our office is at 3100 Premier Dr, Suite 207, Irving, TX."
+        self.new = "Our office is at 7250 Dallas Pkwy, Suite 400, Frisco, TX."
+
+    def tearDown(self):
+        RB.ADDRESS_HISTORY.pop("11280", None)
+
+    def test_the_old_address_was_right_before_the_move(self):
+        self.assertIsNone(
+            RB.wrong_address("11280", self.old, self.dt.date(2026, 9, 25)))
+
+    def test_the_old_address_is_wrong_after_the_move(self):
+        self.assertIsNotNone(
+            RB.wrong_address("11280", self.old, self.dt.date(2026, 10, 3)))
+
+    def test_the_new_address_is_right_after_the_move(self):
+        self.assertIsNone(
+            RB.wrong_address("11280", self.new, self.dt.date(2026, 10, 3)))
+
+    def test_an_office_that_never_moved_is_unaffected(self):
+        self.assertIsNone(RB.wrong_address(
+            "11580", "We are at 1901 N Highway 360, Suite 610."))

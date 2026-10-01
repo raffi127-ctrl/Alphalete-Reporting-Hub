@@ -298,11 +298,51 @@ _STREET = re.compile(r"(\d{3,5})\s+([A-Za-z0-9.' ]{3,28}?)\s*"
 _UNIT = re.compile(r"(Unit|Suite|Ste\.?)\s*(\w+)", re.I)
 
 
-def wrong_address(office, text):
+# An office that MOVES makes every past message wrong overnight unless the
+# audit knows when it moved. Megan 2026-10-01: "we are moving to a new
+# frisco locatoin tomorrow". Without this, changing the address would have
+# flagged six weeks of correct Irving messages as sending people to the
+# wrong building — and once the move lands, a message still saying Irving
+# would quietly pass.
+#
+# {office: [(effective_from or None, address)]}, oldest first. `None` means
+# "since forever". Filled from the office row when there is one.
+ADDRESS_HISTORY = {}
+
+
+def address_on(office, when=None):
+    """The address this office was using on `when` (a date). Falls back to
+    OFFICE_ADDRESS when nothing has moved."""
+    hist = ADDRESS_HISTORY.get(office)
+    if not hist:
+        return OFFICE_ADDRESS.get(office)
+    best = None
+    for start, addr in hist:
+        if start is None or (when is not None and when >= start):
+            best = addr
+        elif when is None:
+            # no date to judge by: the CURRENT address is the last one
+            # whose start has already arrived
+            import datetime as _dt
+            if start <= _dt.date.today():
+                best = addr
+    return best or OFFICE_ADDRESS.get(office)
+
+
+def set_address_history(office, current, previous=None, changed=None):
+    """Record a move. `changed` is the date `current` took effect."""
+    if previous and changed:
+        ADDRESS_HISTORY[office] = [(None, previous), (changed, current)]
+    elif current:
+        ADDRESS_HISTORY[office] = [(None, current)]
+
+
+def wrong_address(office, text, when=None):
     """The offending address in this message, or None.
 
-    Flags a street number or a suite that is not this office's."""
-    want = OFFICE_ADDRESS.get(office)
+    Flags a street number or a suite that is not this office's ON THE DAY
+    the message was sent."""
+    want = address_on(office, when)
     if not want:
         return None
     body = " ".join((text or "").split())
