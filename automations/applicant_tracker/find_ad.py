@@ -106,8 +106,15 @@ def main(argv=None):
                 f.weekStart.value = dash; HTMLFormElement.prototype.submit.call(f); }""",
                           [wk.strftime("%m/%d/%Y"), wk.strftime("%m-%d-%Y")])
             page.wait_for_load_state("domcontentloaded")
-            page.wait_for_timeout(2500)
-            info = page.evaluate(JS_ROW_LINKS, a.label)
+            # The weekly grid renders slowly (funnel_board waits up to 150s on
+            # its sibling report). First run read 23 of 24 weeks before the
+            # label row existed and saw nothing — poll for the row instead.
+            info = {"head": [], "labels": [], "links": []}
+            for _ in range(60):
+                page.wait_for_timeout(2000)
+                info = page.evaluate(JS_ROW_LINKS, a.label)
+                if info["links"]:
+                    break
             if w == 0:
                 print("head=%r labels=%r" % (info["head"], info["labels"][:30]), flush=True)
             links = info["links"]
