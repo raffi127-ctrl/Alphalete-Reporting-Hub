@@ -971,8 +971,8 @@ CAPTAINS: List[Captain] = [
     # sale de la vista all-teams cortada por su caja del board
     # (owners_metrics_churn.pull.make_b2b_board_roster_parser); su §2 dice
     # "Not available yet" hasta que SmartCircle cree "Luke's Team" en Tableau.
-    # title_bg provisorio: igualarlo al color de su caja en el board.
-    Captain("luke", "Luke", "b2b", title_bg="#1F4E79", to=_to("luke"), churn=[
+    # title_bg = la banda de su caja en el Org Sales Board (#A64B2A).
+    Captain("luke", "Luke", "b2b", title_bg="#A64B2A", to=_to("luke"), churn=[
         ChurnSource(_own.open_ws_b2b_luke, _ni_render, "Wireless Churn",
                     title_prefix="WIRELESS CHURN"),
     ]),
