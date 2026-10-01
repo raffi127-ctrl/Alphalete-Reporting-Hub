@@ -2,7 +2,22 @@
 import datetime as dt
 import unittest
 
-from automations.first_round_scorecards import appstream, doc, grade, run
+from automations.first_round_scorecards import appstream, doc, grade, run, zooms
+
+# Camila's ZOOMS INFO tab, trimmed: tests never read the real Sheet
+ZOOMS_TAB = [
+    ["33", "ZOOM 1", "ZOOM 3", "ZOOM 8"],
+    ["", "504 877 4019", "711 240 6133", "660 341 8230"],
+    ["MORNINGS", "Jamis Garay", "Joe Logan", "Jennifer Figueroa"],
+    ["", "", "", ""],
+    ["AFTERNOONS", "", "", ""],
+    ["", "", "Cyrus Wade", "Mercy Ohiokhai"],
+    ["", "ZOOM 1", "ZOOM 3 ", "ZOOM 8"],
+    ["", "arszooma@gmail.com", "arszoomc@gmail.com", "arszoomh@gmail.com"],
+    ["", "pw", "pw", "pw"],
+    ["", "KEY1", "KEY3", "whsec_abc"],
+]
+zooms._accounts = zooms.parse(ZOOMS_TAB)
 
 MEETING = {"recording_id": 1, "recording_start_time": "2026-09-29T15:47:15Z",
            "recording_end_time": "2026-09-29T16:02:55Z",
@@ -63,10 +78,16 @@ class ReplyTest(unittest.TestCase):
         shared = dict(MEETING, recorded_by={"name": "Camila hk",
                                             "email": "camilahk@arsinterviewsservice.com"})
         self.assertEqual(run.interviewer(shared, {"interviewer_name": "perla."}), "Perla")
-        self.assertEqual(run.interviewer(shared, {"interviewer_name": ""}), "Main Funnel")
-        self.assertEqual(run.interviewer(shared), "Main Funnel")
-        # a one-person account ignores the intro
-        self.assertEqual(run.interviewer(MEETING, {"interviewer_name": "Vale"}), "Valentina")
+        # not in the trimmed tab here: its Zoom name
+        self.assertEqual(run.interviewer(shared, {"interviewer_name": ""}), "Camila hk")
+        # ZOOM 12 isn't only Valentina's anymore (10/1): the intro wins there too
+        self.assertEqual(run.interviewer(MEETING, {"interviewer_name": "Nakechia"}), "Nakechia")
+        self.assertEqual(run.interviewer(MEETING), "Valentina")
+
+    def test_sheet_zoom_splits_by_name_falls_back_to_the_zoom(self):
+        z3 = dict(MEETING, recorded_by={"name": "ARS ZOOM 3", "email": "arszoomc@gmail.com"})
+        self.assertEqual(run.interviewer(z3, {"interviewer_name": "Camila"}), "Camila")
+        self.assertEqual(run.interviewer(z3), "ZOOM 3")
 
     def test_thread_title(self):
         self.assertEqual(run.thread_title("Valentina"), "Valentina's 1st Round Scorecards")
@@ -292,6 +313,40 @@ class DocsOnlyTest(unittest.TestCase):
         self.assertEqual(up.call_count, 1)          # the ungraded one gets no doc
         posted.assert_not_called()
         marked.assert_not_called()                  # a past day stays un-posted
+
+
+class ZoomsTest(unittest.TestCase):
+    def test_tab_parsed_by_labels(self):
+        z = zooms.parse(ZOOMS_TAB)
+        self.assertEqual(z["arszooma@gmail.com"],
+                         {"zoom": "ZOOM 1", "morning": "Jamis Garay",
+                          "afternoon": "Jamis Garay", "key": "KEY1"})   # all day
+        self.assertEqual(z["arszoomc@gmail.com"]["afternoon"], "Cyrus Wade")
+        self.assertEqual(z["arszoomh@gmail.com"]["key"], "")            # a webhook secret
+
+    def test_owner_by_time_of_day(self):
+        z3 = dict(MEETING, recorded_by={"email": "ArsZoomC@gmail.com"})
+        # 11:15 = last morning slot, 11:45 = first afternoon one (Camila)
+        am = dt.datetime(2026, 10, 1, 11, 18, tzinfo=run.fathom.CT)
+        self.assertEqual(zooms.owner(z3, am), "Joe Logan")
+        self.assertEqual(zooms.owner(z3, am.replace(minute=41)), "Cyrus Wade")
+        self.assertEqual(zooms.owner(dict(MEETING, recorded_by={"email": "x@y.com"}), am), "")
+
+    def test_reply_and_doc_name_the_office(self):
+        m = dict(MEETING, owner="Joe Logan")
+        self.assertIn("*Joe Logan's office* · *Started", run.reply_text(m, None, skipped="x"))
+        self.assertNotIn("office", run.reply_text(MEETING, None, skipped="x"))
+
+    def test_sheet_keys_only_when_asked(self):
+        from automations.first_round_scorecards import fathom
+        real = fathom._file_keys
+        fathom._file_keys = lambda: ["FILEKEY"]
+        try:
+            self.assertEqual(fathom.api_keys(with_sheet=False), ["FILEKEY"])
+            self.assertEqual(fathom.api_keys(with_sheet=True), ["FILEKEY", "KEY1", "KEY3"])
+        finally:
+            fathom._file_keys = real
+        self.assertTrue(fathom.SHEET_KEYS_LIVE)       # every Zoom in the channel (Eve 10/1)
 
 
 if __name__ == "__main__":

@@ -57,7 +57,8 @@ def build_html(m: Dict, name: str, result: Dict) -> str:
            f"{start.strftime('%I:%M %p').lstrip('0')} CT{sched} · {fathom.minutes(m)} min · "
            f'<a href="{share}">Fathom recording</a></p>' + early,
            f"<p><b>Interviewer:</b> {html.escape(name)} ({html.escape(speaker)}) · "
-           f"<b>Applicants:</b> {html.escape(who)}</p>",
+           + (f"<b>Office:</b> {html.escape(m['owner'])} · " if m.get("owner") else "")
+           + f"<b>Applicants:</b> {html.escape(who)}</p>",
            f'<h2>Scorecard: <span style="color:{col}">{s["score"]} / 100 {_emoji(s["score"])}</span></h2>',
            f"<p>🚩 Red flags: <b>{s['red_hit']} of 5</b> happened · ✅ Must-dos: "
            f"<b>{s['musts_done']} of 6</b> done</p>",

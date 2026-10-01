@@ -44,7 +44,7 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
-from automations.first_round_scorecards import appstream, doc, fathom, grade
+from automations.first_round_scorecards import appstream, doc, fathom, grade, zooms
 
 CHANNEL_ID = "C0C42793AKS"          # #ars-recruiting-numbers (Eve, 2026-09-29)
 EVE_USER_ID = "U088E2KJEV8"         # preview DMs
@@ -57,17 +57,20 @@ FLAG_WHO = ("U07FWSYP3NV",          # Camila Hornos Kraschinsky
 # Fathom account (the Zoom login that records) -> who interviews on it.
 # A new recording account = its key in fathom-creds.json + a line here; an
 # account missing here shows under its Zoom name until someone adds it.
-INTERVIEWERS = {
-    "arszoomp@gmail.com": "Valentina",      # ARS ZOOM 12 (Rafael's funnel pilot)
-}
+INTERVIEWERS: Dict[str, str] = {}
+# Every Zoom in Camila's ZOOMS INFO tab is shared too: interviewers rotate
+# between them, the tab only says whose OFFICE each one serves (zooms.py).
 # Accounts SEVERAL interviewers share, one per slot (Rafael, 2026-09-29: the
 # main funnel). Who ran each interview is read from the recording itself --
 # the script opens with "My name is ___, I'm one of the hiring managers" --
 # so each person still gets their own thread. One who never said her name
 # lands in the account's thread (the label here) instead of being lost.
 SHARED_ACCOUNTS = {
-    "camilahk@arsinterviewsservice.com": "Main Funnel",   # 'Camila hk' (key from Camila 2026-09-29)
+    "arszoomp@gmail.com": "Valentina",      # ARS ZOOM 12 (Rafael's funnel pilot, only her until 10/1)
 }
+# Grading one interview takes ~a minute; ~100 a day with every Zoom on.
+GRADE_WORKERS = 6
+GRADE_FAILED: List = []                 # recording ids whose grading errored this run
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "first_round_scorecards"
 LEDGER = OUT_DIR / "posted.json"
 MIN_TRANSCRIPT_LINES = 20           # under this it's a test / empty room, not an interview
@@ -87,10 +90,11 @@ def interviewer(m: Dict, result: Optional[Dict] = None) -> str:
     email = (rb.get("email") or "").lower()
     if email in INTERVIEWERS:
         return INTERVIEWERS[email]
-    if email in SHARED_ACCOUNTS:
-        said = " ".join((result or {}).get("interviewer_name", "").split()[:1]).strip(" .,")
-        return said.title() if said else SHARED_ACCOUNTS[email]
-    return rb.get("name") or "Unknown"
+    said = " ".join((result or {}).get("interviewer_name", "").split()[:1]).strip(" .,")
+    if said:
+        return said.title()
+    return (SHARED_ACCOUNTS.get(email) or zooms.zoom_of(m).get("zoom")
+            or rb.get("name") or "Unknown")
 
 
 def thread_title(name: str) -> str:
@@ -110,6 +114,8 @@ def reply_text(m: Dict, result: Optional[Dict], *, skipped: str = "",
     """One interview = one reply. Short on purpose: the score, what was missed,
     the coaching, then the full audit (a Google Doc) and the recording."""
     head = f"*Started {_clock(fathom.start_ct(m))} CT*"
+    if m.get("owner"):
+        head = f"*{m['owner']}'s office* · {head}"
     if appstream.scheduled_text(m):
         head += f" · scheduled {appstream.scheduled_text(m)}"
     head += f" · {fathom.minutes(m)} min"
@@ -184,34 +190,49 @@ def due(now: dt.datetime) -> bool:
             and now.date().isoformat() not in _ledger().get("_days_done", []))
 
 
-def build(day: dt.date, *, do_grade: bool, skip=()) -> Dict[str, List]:
+def build(day: dt.date, *, do_grade: bool, skip=(),
+          with_sheet: bool = fathom.SHEET_KEYS_LIVE) -> Dict[str, List]:
     """{interviewer: [(meeting, result or None, skipped reason)]}, oldest first.
     Recordings in `skip` (already posted) are left out, so a retry after a
     failed post doesn't pay to grade them again."""
+    from concurrent.futures import ThreadPoolExecutor
+    meetings = [m for m in fathom.meetings_on(day, with_sheet=with_sheet)
+                if str(m.get("recording_id")) not in skip]
+    for m in meetings:
+        m["owner"] = zooms.owner(m, fathom.start_ct(m))
+    with ThreadPoolExecutor(max_workers=GRADE_WORKERS) as pool:
+        rows = list(pool.map(lambda m: _grade_one(m, do_grade), meetings))
     out: Dict[str, List] = {}
-    for m in fathom.meetings_on(day):
-        if str(m.get("recording_id")) in skip:
-            continue
-        name = interviewer(m)            # a shared account's is refined after grading
-        n_lines = len(m.get("transcript") or [])
-        print(f"{_clock(fathom.start_ct(m))} CT  {name:<12} {fathom.minutes(m):>3} min  "
-              f"{n_lines} transcript lines  {m.get('share_url')}")
-        if n_lines < MIN_TRANSCRIPT_LINES:
-            out.setdefault(name, []).append((m, None, "the recording has almost no transcript"))
-            continue
-        if not do_grade:
-            out.setdefault(name, []).append((m, None, "(not graded: --no-grade)"))
-            continue
-        speaker = (m.get("recorded_by") or {}).get("name") or ""
-        result = grade.grade(fathom.transcript_text(m), interviewer_speaker=speaker)
-        if not result.get("is_interview", True):
-            out.setdefault(name, []).append(
-                (m, None, result.get("not_interview_reason") or "not a 1st round interview"))
-            continue
-        out.setdefault(interviewer(m, result), []).append((m, result, ""))
+    for name, row in rows:                # meetings came oldest first
+        if row:
+            out.setdefault(name, []).append(row)
     if do_grade:
         _add_scheduled(day, out)
     return out
+
+
+def _grade_one(m: Dict, do_grade: bool):
+    """(thread name, (meeting, result or None, skipped reason)) for one recording."""
+    name = interviewer(m)            # a shared account's is refined after grading
+    n_lines = len(m.get("transcript") or [])
+    print(f"{_clock(fathom.start_ct(m))} CT  {name:<12} {fathom.minutes(m):>3} min  "
+          f"{n_lines} transcript lines  {m.get('share_url')}")
+    if n_lines < MIN_TRANSCRIPT_LINES:
+        return name, (m, None, "the recording has almost no transcript")
+    if not do_grade:
+        return name, (m, None, "(not graded: --no-grade)")
+    speaker = (m.get("recorded_by") or {}).get("name") or ""
+    try:
+        result = grade.grade(fathom.transcript_text(m), interviewer_speaker=speaker)
+    except Exception as exc:  # noqa: BLE001
+        # one bad grade must not sink the other ~100: it's left out (not
+        # posted, so not in the ledger) and the next tick grades it again
+        print(f"  grading FAILED {_clock(fathom.start_ct(m))} {name}: {type(exc).__name__}: {exc}")
+        GRADE_FAILED.append(m.get("recording_id"))
+        return name, None
+    if not result.get("is_interview", True):
+        return name, (m, None, result.get("not_interview_reason") or "not a 1st round interview")
+    return interviewer(m, result), (m, result, "")
 
 
 def _add_scheduled(day: dt.date, graded: Dict[str, List]) -> None:
@@ -344,8 +365,11 @@ def main(argv=None) -> int:
     live = args.post and not args.preview_to_eve and not args.no_grade and not args.docs_only
 
     print(f"1st Round Scorecards for {day:%a %b %d, %Y}")
+    # every Zoom in Camila's sheet: dry-runs + Eve's preview always, the
+    # channel while fathom.SHEET_KEYS_LIVE is on
     graded = build(day, do_grade=not args.no_grade,
-                   skip=set(_ledger()) if live and not args.refresh else ())
+                   skip=set(_ledger()) if live and not args.refresh else (),
+                   with_sheet=fathom.SHEET_KEYS_LIVE or not live)
     if not graded:
         print("no 1st round to post (none recorded, or all already posted)")
         if live:
@@ -374,6 +398,9 @@ def main(argv=None) -> int:
     where = "Eve's DM (preview)" if args.preview_to_eve else "#ars-recruiting-numbers"
     print(f"POSTING to {where}")
     rc = post(day, graded, preview=args.preview_to_eve, refresh=args.refresh)
+    if GRADE_FAILED:
+        print(f"{len(GRADE_FAILED)} interview(s) not graded (AI error) - the next tick retries them")
+        rc = 1
     if live and rc == 0:
         _mark_day_done(day)
     return rc
