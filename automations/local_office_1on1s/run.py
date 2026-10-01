@@ -70,6 +70,27 @@ def _terminated_on_or_before(name: str, week: dt.date) -> bool:
     return bool(when and when <= week)
 
 
+def _latest(filled, label: str, week: dt.date):
+    """The value this run last put in `label` for `week`, as a number.
+
+    Later adds win, which is the same rule run.py applies when it maps cells,
+    so this sees ownerville's figure where ownerville supplied one and the
+    board's where it did not.
+    """
+    out = None
+    for c in filled.cells:
+        if c.week == week and LO.fold(c.row_label) == LO.fold(label):
+            try:
+                out = float(str(c.value).replace(",", "").replace("%", ""))
+            except ValueError:
+                pass
+    return out
+
+
+def _num(v: float) -> str:
+    return str(int(v)) if abs(v - round(v)) < 1e-9 else f"{v:.1f}"
+
+
 def last_completed_sunday(today: dt.date) -> dt.date:
     """The most recent Sunday that has already ended."""
     return today - dt.timedelta(days=(today.weekday() + 1) % 7 or 7)
@@ -106,7 +127,7 @@ def main(argv=None) -> int:
     boardbook = open_by_key(BD.SHEET_ID)
     tabs_by_week = SA.week_tabs([w.title for w in boardbook.worksheets()],
                                 wks[-1].year)
-    weekly = {}
+    weekly, classrooms = {}, {}
     for wk in wks:
         t = tabs_by_week.get(wk)
         if not t:
@@ -114,6 +135,14 @@ def main(argv=None) -> int:
             continue
         g = boardbook.worksheet(t).get_all_values()
         weekly[wk] = (SA.read_week(g, t, wk), SA.read_days(g, t))
+        # The board's 'Classroom / Trainers' block — who showed to day 1 that
+        # week, and whose team they are on. Kept per week because Trained and
+        # Retained are measured off it, not off the roster.
+        try:
+            from automations.sales_board_mind_map import run as _MM
+            classrooms[wk] = _MM.classroom_trainers(g)
+        except Exception as e:                      # a week with no block
+            notes_boot.append(f"WE {wk:%-m/%-d}: no classroom block ({e})")
     print(f"  sales boards: {len(weekly)}/{len(wks)} weeks")
 
     # A TEAM BOX IS A HISTORY. Each week's structure comes from THAT week's
@@ -277,21 +306,32 @@ def main(argv=None) -> int:
                 rw = week_rosters.get(wk, {}).get(team)
                 if rw is None:
                     continue
+                # TRAINED = SHOWED TO DAY 1 CLASSROOM, not "every first-week
+                # rep on the roster". Megan 2026-10-01: "trained = showed to
+                # day 1 classroom / retained: not marked terminated by sunday
+                # pull for this audit". The board's own 'Classroom / Trainers'
+                # block is that list — a roster week-one may never have shown,
+                # and counting them would credit a leader with somebody who
+                # did not turn up.
+                #
                 # Trainer cells are spelled informally — 'lakeaih' where the
-                # leader is 'Lakeaih Gregory' — so an exact key comparison
-                # drops real trainees. resolve() accepts a unique first-name
-                # hit and refuses an ambiguous one.
+                # leader is 'Lakeaih Gregory' — so matching goes through
+                # resolve(), which accepts a unique first-name hit and refuses
+                # an ambiguous one.
                 trained = []
-                for m in rw.members:
-                    if not TB._is_week_one(m.level) or not m.trainer:
+                for who, trainer in (classrooms.get(wk) or {}).items():
+                    if not trainer:
                         continue
-                    if PEO.key(m.trainer) == PEO.key(name):
-                        trained.append(m)
-                        continue
-                    hit, _ = PEO.resolve(m.trainer, [name])
-                    if hit is not None:
-                        trained.append(m)
-                kept = sum(1 for m in trained if not m.terminated)
+                    if PEO.key(trainer) != PEO.key(name):
+                        hit, _ = PEO.resolve(trainer, [name])
+                        if hit is None:
+                            continue
+                    trained.append(who)
+                # RETAINED = not marked terminated by this audit's Sunday
+                # pull. Checked against the master log as at that week, which
+                # is the same question asked of a missing board row.
+                kept = sum(1 for who in trained
+                           if not _terminated_on_or_before(who, wk))
                 filled.add("Trained This week?", wk, str(len(trained)),
                            f"WE {wk:%-m/%-d} board: first-week reps trained by {name}")
                 filled.add("Retained?", wk, str(kept),
@@ -337,6 +377,22 @@ def main(argv=None) -> int:
                 if rec is not None:
                     for lab, val, src in OV.cells_for(rec, f"WE {wk:%-m/%-d}"):
                         filled.add(lab, wk, val, src)
+
+                    # AVG TALK TO'S PER APP NEEDS BOTH SOURCES AT ONCE: the
+                    # talk-to's from ownerville, the apps from the board. It
+                    # was computed only inside the board path, which carries no
+                    # talk-to's before ~WE 9/6, so it sat blank for every
+                    # August week while the talk-to counts right above it were
+                    # populated from ownerville. Megan 2026-10-01 asked for it.
+                    _apps = _latest(filled, "Monday - Saturday Total Apps", wk)
+                    _tt = _latest(filled, "Monday - Friday Total Talk Too's", wk)
+                    _sat = _latest(filled, "Saturday avg Talk To's Day", wk)
+                    if _apps and _tt is not None:
+                        total_tt = _tt + (_sat or 0)
+                        filled.add("AVG Talk Too's per App", wk,
+                                   _num(total_tt / _apps),
+                                   f"WE {wk:%-m/%-d}: ownerville talk-to's / "
+                                   f"board apps")
                 elif d is None:
                     # TERMINATED AND MISSING-FROM-THE-BOARD ARE NOT THE SAME
                     # THING, and a blank week looks identical either way.
