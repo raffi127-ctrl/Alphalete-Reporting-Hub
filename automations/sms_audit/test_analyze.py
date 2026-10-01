@@ -1515,3 +1515,28 @@ class ProofreadTest(unittest.TestCase):
                   "the adPostingTitle role through jobBoard. Does that sound "
                   "right?"):
             self.assertEqual(A.proofread(m), [], m)
+
+
+class PayWordingTest(unittest.TestCase):
+    """Ruling 1 is narrower than it first reads: only the word "base" is out.
+    Megan confirmed on 2026-10-01, shown the live message."""
+
+    def _kinds(self, msg):
+        from automations.sms_audit import escalations as E
+        return [k for k, _m in E.lint([{"name": "Compensation", "category": "",
+                                        "description": "", "routing": "Clarify",
+                                        "message": msg}])]
+
+    def test_the_live_message_passes(self):
+        self.assertNotIn("PAY WORDING", self._kinds(
+            "On average, our employees earn between $1,000 to $1,500 per "
+            "week, depending on background/experience. Was there a specific "
+            "pay rate you were seeking?"))
+
+    def test_a_figure_under_the_floor_is_a_fault(self):
+        self.assertIn("PAY WORDING", self._kinds(
+            "On average, our employees earn between $800 to $1,500 per week."))
+
+    def test_the_word_base_is_a_fault(self):
+        self.assertIn("PAY WORDING", self._kinds(
+            "We offer a weekly base salary plus commission."))

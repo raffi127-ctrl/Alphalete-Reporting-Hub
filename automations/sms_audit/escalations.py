@@ -94,9 +94,13 @@ WHY = {
         "The address here is not where this office interviews."),
 }
 
-PAY_BAD = re.compile(
-    r"(\$\s?[2-9]\d{2}\b|\bbase\b|depending on (your )?background|"
-    r"background\s*/\s*experience)", re.I)
+# Ruling 1 in megan-overrides.md is narrower than I first read it: "Either
+# pay answer is fine ... ONLY the word 'base' is ruled out." I had also been
+# flagging "depending on background/experience", which is the ARS doc's
+# phrasing around the word rather than the word itself. Megan, shown the
+# live message on 2026-10-01: "I think this is worded okay." So the check is
+# the word "base", and a weekly figure under the $1,000 floor.
+PAY_BAD = re.compile(r"(\$\s?[1-9]\d{2}\b(?!\d)|\bbase\b)", re.I)
 PAY_TOPIC = re.compile(r"(pay|salar|earn|compensat|\$)", re.I)
 
 # Megan 2026-10-01, correcting me on the phone row: "We shouldn't have them

@@ -27,6 +27,7 @@ recorded here and not there is a ruling nothing enforces.
 | **Megan says** | "We offer weekly pay ranging from **$1,000–$1,500** plus bonuses or commission." **Either pay answer is fine** — the weekly range, or the doc's paid-training figure of $16–$21 an hour (Megan 2026-09-27: "Pay could be either of those answers"). Only the word "base" is ruled out. |
 | **Ruling** | Raf, relayed by Megan 2026-09-27. Asked directly whether bookers should say there is a base weekly pay: *"No, just weekly pay ranging from $1,000-$1500."* |
 | **Note** | The two figures in the doc are not a contradiction; they are two valid ways to answer. The fault is the word "base", which the REBUTTALS table still teaches. |
+| **Confirmed 2026-10-01** | Shown the live AppStream message *"On average, our employees earn between $1,000 to $1,500 per week, depending on background/experience. Was there a specific pay rate you were seeking?"*, Megan: **"I think this is worded okay."** So "depending on background/experience" is NOT itself a fault — it is the phrasing the ARS doc wrapped around the word, not the word. `escalations.PAY_BAD` had been flagging it and was relaxed to match: the check is the word "base", or a weekly figure under $1,000. |
 | **Measured** | 25 messages in the six weeks to 2026-09-25 told applicants there is a base pay. All from people, none from the AI: Jorge Pena 19, Sandy Samaniego 3, Erika Gonzalez 2, Camilo Ovalle 1. |
 
 ### 2. Location — name the role they applied to, then the address
