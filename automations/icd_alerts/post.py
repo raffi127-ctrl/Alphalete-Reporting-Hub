@@ -1541,15 +1541,25 @@ def ask_office_to_sign_in(office_key: str, when: str = "", *,
     # step on Khalil's computer for two days while this DM went to him and to
     # us -- the one person who could act was the only one not told.
     helpers = list(O.helpers_for(office_key))
-    sent_to = []
+    people = []
     for uid in [owner] + helpers + list(O.APPROVERS):
-        if not uid or uid in sent_to:
-            continue
-        try:
-            _dm(uid, text)
-            sent_to.append(uid)
-        except Exception as e:  # noqa: BLE001 — one failed DM must not stop
-            log("could not DM %s: %s" % (uid, type(e).__name__))
+        if uid and uid not in people:
+            people.append(uid)
+    # ONE GROUP DM, NOT A DM EACH (Megan 2026-09-30: "should have been dmd to
+    # Me/Roshan/Eve so that she could fix it without me"). Separate DMs meant
+    # Eve saw it alone, with no thread the owner was in -- so walking the
+    # owner through it went through Megan. Falls back to one-by-one only if
+    # Slack will not open the group.
+    try:
+        _group_dm(people, text)
+    except Exception as e:  # noqa: BLE001
+        log("could not open the group DM (%s) — sending one by one"
+            % type(e).__name__)
+        for uid in people:
+            try:
+                _dm(uid, text)
+            except Exception as e2:  # noqa: BLE001 — one failed DM must not stop
+                log("could not DM %s: %s" % (uid, type(e2).__name__))
     if not owner:
         # WORTH SAYING. Without the owner's Slack id this reached us and not
         # the person who has to walk to the machine.
@@ -3060,6 +3070,18 @@ def _dm(user_id: str, text: str) -> None:
     client = smp._client()
     channel = client.conversations_open(users=user_id)["channel"]["id"]
     client.chat_postMessage(channel=channel, text=text)
+
+
+def _group_dm(user_ids: List[str], text: str) -> None:
+    """One conversation with all of these people (plus Lucy) and send.
+    conversations.open with several users returns the existing group DM for
+    exactly that set, so the same office's alerts keep landing in one chat."""
+    from automations.shared import slack_metrics_post as smp
+    client = smp._client()
+    channel = client.conversations_open(
+        users=",".join(user_ids))["channel"]["id"]
+    client.chat_postMessage(channel=channel, text=text,
+                            unfurl_links=False, unfurl_media=False)
 
 
 def main(argv=None) -> int:

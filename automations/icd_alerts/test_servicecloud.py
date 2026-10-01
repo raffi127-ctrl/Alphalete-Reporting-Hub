@@ -404,6 +404,22 @@ class ALostSessionAsksTheOfficeNotTheTeam(unittest.TestCase):
                          "a session stays gone until somebody walks to the "
                          "computer, so this would fire every two minutes")
 
+    def test_it_is_one_group_dm_with_the_owner_megan_and_eve(self):
+        """Megan 2026-09-30: Roshan's went out as separate DMs, so Eve could
+        not walk Roshan through it without Megan in the middle."""
+        from unittest import mock
+        groups, singles = [], []
+        with mock.patch.object(self.P, "_group_dm",
+                               lambda u, t: groups.append(list(u))), \
+             mock.patch.object(self.P, "_dm",
+                               lambda u, t: singles.append(u)):
+            self.P.ask_office_to_sign_in("roshan", send=True,
+                                         log=lambda *_: None)
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(set(groups[0]),
+                         {"U066B1ZUT4J", "U04G5HJBGFN", "U088E2KJEV8"})
+        self.assertEqual(singles, [])
+
     def test_another_office_is_not_silenced_by_the_first(self):
         self.P.ask_office_to_sign_in("ryan", send=False, log=lambda *_: None)
         said = []
