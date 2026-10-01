@@ -866,9 +866,9 @@ RECIPIENTS["jess"] = [
 # las capitanias B2B; los owners de su equipo entran cuando exista su caja en el
 # Org Sales Board.
 RECIPIENTS["luke"] = [
-    # Copia del grupo vivo el 2026-10-01 (lo armo Eve). Adrian Sarabia falta:
-    # Eve esta esperando su mail.
+    # Copia del grupo vivo el 2026-10-01 (lo armo Eve).
     "takeoffenterprisesinc@gmail.com",  # Luke Baldwin
+    "asarabia@paydenterprise.com",      # Adrian Sarabia
     "aventus.marketinginc@gmail.com",   # Cruz Venegas (viene de Luis)
     "dpisikian@gmail.com",              # David Pisikian
     "CarlosHidalgo349@gmail.com",
