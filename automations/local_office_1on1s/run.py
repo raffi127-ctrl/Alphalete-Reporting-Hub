@@ -418,10 +418,21 @@ def main(argv=None) -> int:
                 # is the same question asked of a missing board row.
                 kept = sum(1 for who in trained
                            if not _terminated_on_or_before(who, wk))
-                filled.add("Trained This week?", wk, str(len(trained)),
-                           f"WE {wk:%-m/%-d} board: first-week reps trained by {name}")
-                filled.add("Retained?", wk, str(kept),
-                           f"WE {wk:%-m/%-d} board: of those, not terminated")
+                # NOBODY ASSIGNED READS A DASH, not 0. Megan 2026-10-01, of the
+                # recruiting rows and then "same for trained/retained": a dash
+                # says the report looked and there was nothing, where 0 claims
+                # they were given people and kept none. Same mark the retention
+                # row below uses, so the three read consistently.
+                filled.add("Trained This week?", wk,
+                           str(len(trained)) if trained else F.NONE_MARK,
+                           f"WE {wk:%-m/%-d} board: first-week reps trained by {name}"
+                           if trained else
+                           f"WE {wk:%-m/%-d}: nobody assigned to {name}")
+                filled.add("Retained?", wk,
+                           str(kept) if trained else F.NONE_MARK,
+                           f"WE {wk:%-m/%-d} board: of those, not terminated"
+                           if trained else
+                           f"WE {wk:%-m/%-d}: nobody assigned to {name}")
                 # Raf's definition, not the recruiting tab's show rate: "how
                 # many new starts they kept that were assigned to their team...
                 # how many of those people are still around".
@@ -437,7 +448,8 @@ def main(argv=None) -> int:
                 # The 0s in Trained and Retained beside it carry the count.
                 # [[feedback_dont_explain_away_a_zero]]
                 filled.add(F.RETENTION_ROW, wk,
-                           f"{round(100 * kept / len(trained))}%" if trained else "-",
+                           f"{round(100 * kept / len(trained))}%" if trained
+                           else F.NONE_MARK,
                            (f"WE {wk:%-m/%-d}: {kept} of {len(trained)} new starts "
                             f"trained by {name} still on the board") if trained
                            else f"WE {wk:%-m/%-d}: no new starts assigned to {name}")

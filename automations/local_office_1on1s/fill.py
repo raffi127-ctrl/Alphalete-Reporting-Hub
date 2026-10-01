@@ -44,10 +44,17 @@ MONTHS = ["january", "february", "march", "april", "may", "june", "july",
 # whole recruiting block blank — the labels simply never matched.
 # Which of the recruiting rows are COUNTS. A leader with no row in the month's
 # block conducted none (Megan 2026-09-28: "the ones missing from 2nd rounds
-# just haven't done any of them"), and Raf wants that shown as 0 rather than
-# blank — a real zero he can talk about, not an empty cell that reads as "we
-# don't know". The PERCENTAGES stay blank in that case: 0 out of 0 is not 0%,
-# it is undefined, and printing 0% would state a closing rate nobody has.
+# just haven't done any of them").
+#
+# That reads as a DASH, not 0 and not blank — Megan 2026-10-01: "if they didn't
+# do 2nd rounds that week then there should be a dash or something in that
+# cell". Blank looks like the report failed to find them; a dash says it looked
+# and there was nothing. It matches what the retention row already does, and
+# what reps_gross_paycheck writes for a rep with no money that week.
+#
+# The PERCENTAGES stay blank: 0 out of 0 is not 0%, it is undefined, and
+# printing 0% would state a closing rate nobody has.
+NONE_MARK = "-"
 COUNT_ROWS = {"conducted", "offered", "bob_num", "ns_sched", "ns_showed"}
 
 RECRUITING = {
@@ -188,7 +195,7 @@ def for_leader(name: str, weeks: List[dt.date], *, pay, months,
                 # full of merely-inactive people is how a real gap gets missed.
                 for label, k in RECRUITING.items():
                     if k in COUNT_ROWS:
-                        out.add(label, wk, "0",
+                        out.add(label, wk, NONE_MARK,
                                 f"absent from the {m} block of \"2nd rds %'s\" "
                                 f"— conducted none")
             else:
