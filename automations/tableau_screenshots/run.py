@@ -764,6 +764,9 @@ def main(argv=None) -> int:
                          "selected board's view offers (pair with --only). For "
                          "wiring a freshness check without guessing sheet names. "
                          "No capture, no post.")
+    ap.add_argument("--dump-sheet", default=None, metavar="SHEET",
+                    help="With --discover-sheets: also download this crosstab "
+                         "sheet and print it, to see its layout. Read-only.")
     ap.add_argument("--inspect", action="store_true",
                     help="Read-only: dump each view's dashboard tab strip + "
                          "Download→Image dialog so we can target a single page. "
@@ -1010,6 +1013,17 @@ def main(argv=None) -> int:
                 try:
                     names = list_crosstab_sheets(spec["url"], page=page)
                     print(f"SHEETS|{spec['id']}|" + " ; ".join(names), flush=True)
+                    if args.dump_sheet:
+                        from automations.shared.tableau_patchright import \
+                            download_crosstab_patchright
+                        from automations.tableau_screenshots import freshness as _fr
+                        dump = out_dir / "_dump" / f"{spec['id']}.csv"
+                        dump.parent.mkdir(parents=True, exist_ok=True)
+                        path = download_crosstab_patchright(
+                            spec["url"], args.dump_sheet, dump, verbose=False,
+                            page=page)
+                        for line in _fr._read_crosstab_text(Path(path)).splitlines():
+                            print(f"DUMP|{line}", flush=True)
                 except Exception as e:                # noqa: BLE001
                     print(f"SHEETS|{spec['id']}|FAILED {type(e).__name__}: "
                           f"{str(e)[:120]}", flush=True)
