@@ -1,0 +1,127 @@
+"""Which offices the recruiting auditor checks, and what "correct" is for each.
+
+Megan 2026-10-01: "Need to be able to enter in the office info like address
+and phone and links to make sure they are correct."
+
+WHY A SHEET AND NOT A FILE. The auditor can only catch a wrong address if
+somebody has told it the right one. That is a fact about the business, it
+changes when an office moves, and the person who knows it should not have to
+edit JSON — so it lives in a tab anyone can type into. The repo keeps a
+cache so a run still works when Sheets is slow or rate-limited, and says
+which it used.
+
+The tab is created with its headers and the four known offices the first
+time this runs, so there is never a blank page to guess at.
+
+Columns, one row per office:
+    office        AppStream office id, e.g. 11280
+    label         what to call it in a report
+    owner         whose office
+    address       the FULL correct address, suite included
+    phone         the office number applicants should see
+    zoom          the interview room link — the one that is correct
+    zoom_id       its meeting id
+    job_ad_cities cities that legitimately appear in job ads, comma separated
+    active        yes/no — no keeps the row without auditing it
+"""
+from __future__ import annotations  # Lucy runs Python 3.9 — keep lazy
+
+import json
+import sys
+from pathlib import Path
+
+CONTROL_SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
+TAB = "Recruiting Audit Offices"
+CACHE = Path(__file__).resolve().parents[2] / "output" / "audit_offices.json"
+COLUMNS = ["office", "label", "owner", "address", "phone", "zoom", "zoom_id",
+           "job_ad_cities", "active"]
+
+# What we already know, from six weeks of their own traffic. Seeded so the
+# tab is never an empty form; every one of these is editable in the sheet.
+SEED = [
+    {"office": "11280", "label": "Rafael Hidalgo", "owner": "Rafael Hidalgo",
+     "address": "3100 Premier Drive, Suite 207, Irving, Texas 75063",
+     "phone": "", "zoom": "https://us02web.zoom.us/j/2935077152",
+     "zoom_id": "2935077152",
+     "job_ad_cities": "Irving, Arlington, Garland, Carrollton, Denton, "
+                      "Fort Worth, Frisco, Grand Prairie, Plano, Dallas",
+     "active": "yes"},
+    {"office": "23965", "label": "Rafael 2nd Funnel", "owner": "Rafael Hidalgo",
+     "address": "3100 Premier Drive, Suite 207, Irving, Texas 75063",
+     "phone": "", "zoom": "https://us05web.zoom.us/j/3106023771",
+     "zoom_id": "3106023771", "job_ad_cities": "", "active": "yes"},
+    {"office": "24065", "label": "Raf New Recruiter", "owner": "Rafael Hidalgo",
+     "address": "3100 Premier Drive, Suite 207, Irving, Texas 75063",
+     "phone": "", "zoom": "https://us06web.zoom.us/j/7946102046",
+     "zoom_id": "", "job_ad_cities": "", "active": "yes"},
+    {"office": "11580", "label": "Carlos Hidalgo", "owner": "Carlos Hidalgo",
+     "address": "1901 N Highway 360, Suite 610, Grand Prairie, Texas 75050",
+     "phone": "", "zoom": "https://us02web.zoom.us/j/6224221431",
+     "zoom_id": "6224221431", "job_ad_cities": "", "active": "yes"},
+]
+
+
+def _ws():
+    from automations.recruiting_report import fill as _fill
+    sh = _fill._client().open_by_key(CONTROL_SHEET_ID)
+    try:
+        return sh.worksheet(TAB)
+    except Exception:  # noqa: BLE001 — first run: build it, seeded
+        ws = sh.add_worksheet(TAB, rows=60, cols=len(COLUMNS) + 1)
+        rows = [COLUMNS] + [[o.get(c, "") for c in COLUMNS] for o in SEED]
+        ws.update(values=rows, range_name="A1", raw=True)
+        return ws
+
+
+def load(use_cache_on_failure=True):
+    """[office dicts], active ones only. Falls back to the cached copy and
+    says so, rather than auditing nothing because Sheets was busy."""
+    try:
+        rows = _ws().get_all_values()
+        hdr = [h.strip().lower() for h in rows[0]]
+        out = []
+        for r in rows[1:]:
+            d = dict(zip(hdr, r))
+            if not (d.get("office") or "").strip():
+                continue
+            out.append({c: (d.get(c) or "").strip() for c in COLUMNS})
+        CACHE.parent.mkdir(exist_ok=True)
+        CACHE.write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
+        src = "the '{}' tab".format(TAB)
+    except Exception as e:  # noqa: BLE001
+        if not use_cache_on_failure or not CACHE.exists():
+            raise
+        out = json.loads(CACHE.read_text(encoding="utf-8"))
+        src = "the CACHED copy ({}: {})".format(type(e).__name__,
+                                                str(e).splitlines()[0][:60])
+    active = [o for o in out if (o.get("active") or "yes").lower() != "no"]
+    return active, src
+
+
+def missing_fields(office):
+    """What this office has not told us, so the audit can say which checks
+    it is NOT running rather than passing them silently."""
+    gaps = []
+    if not office.get("address"):
+        gaps.append("address — cannot check the address in templates")
+    if not office.get("phone"):
+        gaps.append("phone — cannot check the number in templates")
+    if not office.get("zoom"):
+        gaps.append("zoom link — cannot check interview links")
+    return gaps
+
+
+def main(argv=None):
+    offices, src = load()
+    print("[offices] {} active, from {}".format(len(offices), src))
+    for o in offices:
+        gaps = missing_fields(o)
+        print("  {:<7} {:<22} {}".format(
+            o["office"], o["label"][:22],
+            "OK" if not gaps else "missing: " + "; ".join(
+                g.split(" — ")[0] for g in gaps)))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

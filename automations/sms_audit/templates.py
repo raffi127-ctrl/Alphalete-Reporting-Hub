@@ -97,12 +97,69 @@ def parse_activation(text):
     return states
 
 
-def lint(bodies, states):
+def lint(bodies, states, office=None):
+    """`office` is a row from offices.py — the address, phone and Zoom link
+    this office is SUPPOSED to be sending. Without it the checks that need a
+    right answer are skipped and said out loud, never passed quietly
+    (Megan 2026-10-01: "enter in the office info ... to make sure they are
+    correct")."""
+    from automations.sms_audit import rebuttals as R
     findings = []
     personas = collections.Counter()
+    office = office or {}
+    want_zoom = (office.get("zoom") or "").strip()
+    want_id = (office.get("zoom_id") or "").strip()
+    want_addr = (office.get("address") or "").strip()
+    want_phone = "".join(c for c in (office.get("phone") or "") if c.isdigit())
 
     for section, name, body in bodies:
         where = "{} / {}".format(section, name)
+
+        # --- against what this office says is correct ---------------------
+        if want_zoom:
+            for url in re.findall(r"https?://[\w.-]*zoom\.us/j/\d+", body):
+                if url.rstrip("/") != want_zoom.rstrip("/"):
+                    findings.append((
+                        "WRONG ROOM",
+                        "{}: sends {} — this office's room is {}. Applicants "
+                        "land in a meeting nobody is hosting.".format(
+                            where, url, want_zoom)))
+        if want_id and re.search(r"Meeting ID[:\s]*([\d  ]{8,})", body):
+            got = "".join(c for c in re.search(
+                r"Meeting ID[:\s]*([\d  ]{8,})", body).group(1) if c.isdigit())
+            if got and got != want_id:
+                findings.append((
+                    "WRONG MEETING ID",
+                    "{}: says {} — this office's id is {}.".format(
+                        where, got, want_id)))
+        if want_addr:
+            bad = R.wrong_address(office.get("office", ""), body)
+            if bad:
+                findings.append((
+                    "WRONG ADDRESS",
+                    "{}: sends \u201c{}\u201d — this office is {}.".format(
+                        where, bad, want_addr)))
+        if want_phone:
+            for got in re.findall(r"\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}", body):
+                digits = "".join(c for c in got if c.isdigit())[-10:]
+                if digits != want_phone[-10:]:
+                    findings.append((
+                        "CHECK PHONE",
+                        "{}: shows {} — the office number on file is {}.".format(
+                            where, got, office.get("phone"))))
+
+        # --- house rules Megan ruled on (megan-overrides.md) ---------------
+        shout = R.shouts(body)
+        if shout:
+            findings.append(("SHOUTING",
+                             "{}: \u201c{}\u201d in block capitals.".format(
+                                 where, shout)))
+        base = R.says_base_pay(body)
+        if base:
+            findings.append(("BASE PAY",
+                             "{}: says \u201c{}\u201d. Raf: never say there "
+                             "is a base \u2014 weekly pay $1,000-$1,500.".format(
+                                 where, base)))
 
         for url in re.findall(r"https?://\S+", body):
             host = url.split("/")[2] if "://" in url else ""
