@@ -146,6 +146,10 @@ EXTRACTS = {
                          "NDS-SNRES-ATT-OOFWorkbook/NDSDailyTracker?:iid=1"),
             "sheet": "New/Port/Air",
             "min_total": 1,
+            # Held below 85% of the weekday's own 4-wk average (10/1: 956 = 83%
+            # of 1,154 went out; finished day 1,362). A real weak day trips it
+            # too -- that's a held board + an alert, never a wrong board.
+            "same_day_avg_frac": 0.85,
         },
         "fallback_hhmm": DEFAULT_FALLBACK_HHMM,
         "boards": ["nds"],
@@ -185,10 +189,15 @@ EXTRACTS = {
             # so gating on SFDC would have passed the exact morning that failed.
             "field": "Latest Activities Data Update",
         },
-        # Still the WEAKER check: coverage, not stability. It caught 8/26 (the
-        # workbook said 8/24 outright), but a partially-loaded quantum day would
-        # pass it the way NDS/AT&T passed theirs. Upgrading needs a per-day sheet
-        # off this view — `--discover quantum_fiber` lists the candidates.
+        # ...and the day it reaches must look FINISHED (10/1: "reaches 9/30"
+        # with Wednesday at 7 sales). Same view, the 6-week-by-weekday sheet.
+        "history_floor": {
+            "sheet": "1-Pager (6wk History)",
+            "frac": 0.5,
+            "min_weeks": 3,
+        },
+        # Coverage alone caught 8/26 (the workbook said 8/24 outright) but passed
+        # 10/1's half-loaded Wednesday — hence history_floor above.
         "fallback_hhmm": DEFAULT_FALLBACK_HHMM,
         "boards": ["quantum_fiber"],
     },
@@ -486,6 +495,104 @@ def volume_shortfall(text: str, target: dt.date, total: float, *,
                _WEEKDAYS[max(base).weekday()][:3], median))
 
 
+# Every drop verdict carries this word, so run.py can tell "part-loaded" (alert
+# loudly, other reports read the same workbook) from "not reached yet".
+DROP_MARK = "DROP"
+
+
+def _median(vals: List[float]) -> float:
+    vals = sorted(vals)
+    mid = len(vals) // 2
+    return vals[mid] if len(vals) % 2 else (vals[mid - 1] + vals[mid]) / 2.0
+
+
+def same_day_avg_shortfall(text: str, target: dt.date, total: float, *,
+                           frac: float) -> Optional[str]:
+    """Why `total` is too far under the target weekday's own 4-week average, or
+    None to allow it. For the NDS "New/Port/Air" layout, whose day row carries a
+    "4 Wk Avg ..." column (found by header, never by index).
+
+    WHY (2026-10-01). The week-median floor above compares Wednesday to Mon/Tue
+    of the same week, and a part-loaded Wednesday of 956 was 84% of that — well
+    clear of 0.5. Against its own weekday it was 956 vs a 4-week average of 1,154
+    (83%); the finished day was 1,362. Same-weekday is the tighter baseline
+    because NDS has a real weekly shape the week median smears out."""
+    rows = [r.split("\t") for r in (text or "").splitlines() if r.strip()]
+    col = None
+    for row in rows:
+        col = next((i for i, c in enumerate(row)
+                    if (c or "").strip().lower().startswith("4 wk avg")), None)
+        if col is not None:
+            break
+    if col is None:
+        return None
+    want = _WEEKDAYS[target.weekday()].lower()
+    for row in rows:
+        if (row[0] if row else "").strip().lower() != want or len(row) <= col:
+            continue
+        avg = _num(row[col])
+        if not avg or total >= frac * avg:
+            return None
+        return ("%s %s: %s = %g is only %.0f%% of its 4-week %s average of %g — "
+                "the day is part-loaded — extract not refreshed"
+                % (DROP_MARK, target.strftime("%a"), target.isoformat(), total,
+                   100.0 * total / avg, _WEEKDAYS[target.weekday()], avg))
+    return None
+
+
+def history_shortfall(text: str, target: dt.date, *, frac: float,
+                      min_weeks: int = 3) -> Optional[str]:
+    """Why the target day is too far under the same weekday of prior weeks, or
+    None. For the Fiber board's "1-Pager (6wk History)" sheet:
+        Order WE  | Mon | Tue | Wed | ... | Sun | Total
+        10/4/2026 | 143 | 146 | 7   |
+        9/27/2026 | 171 | 186 | 171 | ...
+    Rows are week-ending SUNDAYS, so the target's row is target + (6 - weekday).
+
+    WHY (2026-10-01). Fiber's "Last Update" sheet read 9/30 while Wednesday showed
+    7 sales against 171/169/176/197/206 — coverage said done, the number said
+    4%. The finished day was 126 (72%): Fiber swings, so the floor is loose and
+    only a landslide trips it. Sunday is skipped (16-45 sales; too small to call).
+    A blank target cell is 0 — nothing loaded — not "unreadable"."""
+    import re
+    if target.weekday() == 6:
+        return None
+    rows = [r.split("\t") for r in (text or "").splitlines() if r.strip()]
+    abbr = _WEEKDAYS[target.weekday()][:3].lower()
+    col = None
+    for row in rows:
+        cells = [(c or "").strip().lower() for c in row]
+        if abbr in cells and any("order we" in c for c in cells):
+            col = cells.index(abbr)
+            break
+    if col is None:
+        return None
+    week_end = target + dt.timedelta(days=6 - target.weekday())
+    mine, base = None, []
+    for row in rows:
+        m = re.match(r"\s*(\d{1,2})/(\d{1,2})/(\d{4})\s*$", row[0] if row else "")
+        if not m:
+            continue
+        try:
+            d = dt.date(int(m.group(3)), int(m.group(1)), int(m.group(2)))
+        except ValueError:
+            continue
+        val = _num(row[col]) if len(row) > col else None
+        if d == week_end:
+            mine = val or 0.0
+        elif d < week_end and val:
+            base.append(val)
+    if mine is None or len(base) < min_weeks:
+        return None
+    med = _median(base)
+    if med <= 0 or mine >= frac * med:
+        return None
+    return ("%s %s: %s = %g is only %.0f%% of a normal %s (median %g over the "
+            "last %d weeks) — the day is part-loaded — extract not refreshed"
+            % (DROP_MARK, target.strftime("%a"), target.isoformat(), mine,
+               100.0 * mine / med, _WEEKDAYS[target.weekday()], med, len(base)))
+
+
 def _read_local_stability(today: dt.date) -> Dict[str, list]:
     """Just this machine's file."""
     try:
@@ -591,6 +698,14 @@ def _check_stable_total(extract_id: str, cfg: dict, target: dt.date,
         short = None                         # never break the gate
     if short:
         return False, short
+    if conf.get("same_day_avg_frac"):
+        try:
+            short = same_day_avg_shortfall(text, target, total,
+                                           frac=float(conf["same_day_avg_frac"]))
+        except Exception:                    # noqa: BLE001 — never break the gate
+            short = None
+        if short:
+            return False, short
     if len(series) < 2:
         return False, ("%s = %g, first sample of the day — no proof it has "
                        "finished loading — extract not refreshed"
@@ -662,10 +777,41 @@ def _check_last_update(extract_id: str, cfg: dict, target: dt.date, *,
                       "wording may have changed)" % (field, conf["sheet"]))
     log("%s reports %s = %s" % (conf["sheet"], field, got.isoformat()))
     if got >= target:
-        return True, "%s reaches %s (need >= %s)" % (field, got.isoformat(),
-                                                     target.isoformat())
+        why = "%s reaches %s (need >= %s)" % (field, got.isoformat(),
+                                              target.isoformat())
+        short = _history_check(extract_id, cfg, target, page=page, log=log)
+        if short:
+            return False, short
+        return True, why
     return False, ("%s only reaches %s, need %s — extract not refreshed"
                    % (field, got.isoformat(), target.isoformat()))
+
+
+def _history_check(extract_id: str, cfg: dict, target: dt.date, *, page=None,
+                   log=lambda m: None) -> Optional[str]:
+    """The drop reason off the extract's per-weekday history sheet, or None.
+    A coverage date says the day ARRIVED, not that it FINISHED (Fiber 10/1:
+    "reaches 9/30", Wednesday = 7). Fail-open on any pull/parse trouble."""
+    conf = cfg.get("history_floor")
+    if not conf:
+        return None
+    from automations.shared.tableau_patchright import download_crosstab_patchright
+    out = OUT_DIR / "_freshness" / ("%s_history.csv" % extract_id.replace(":", "_"))
+    try:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        path = download_crosstab_patchright(
+            conf.get("view_url") or cfg["last_update"]["view_url"],
+            conf["sheet"], out, verbose=False, page=page)
+        short = history_shortfall(_read_crosstab_text(Path(path)), target,
+                                  frac=float(conf.get("frac", 0.5)),
+                                  min_weeks=int(conf.get("min_weeks", 3)))
+    except Exception as e:                  # noqa: BLE001 — a probe flake never holds
+        log("history sheet %r not readable (%s) — drop check skipped"
+            % (conf["sheet"], type(e).__name__))
+        return None
+    if short:
+        log(short)
+    return short
 
 
 def check_extract(extract_id: str, today: Optional[dt.date] = None, *,
@@ -807,6 +953,60 @@ def stale_boards(board_ids, today: Optional[dt.date] = None, *,
             if b in set(board_ids or ()):
                 stale[b] = why
     return stale, verdicts
+
+
+def extract_for_drop(board_id: str) -> Optional[str]:
+    """The extract id whose data a board rides on, or None."""
+    return next((eid for eid, e in EXTRACTS.items()
+                 if board_id in e.get("boards", ())), None)
+
+
+def workbook_of(extract_id: str) -> Optional[str]:
+    """'NDS-SNRES-ATT-OOFWorkbook' off the extract's view url."""
+    import re
+    cfg = EXTRACTS.get(extract_id) or {}
+    url = ((cfg.get("stable_total") or {}).get("view_url")
+           or (cfg.get("last_update") or {}).get("view_url") or "")
+    m = re.search(r"/views/([^/?#]+)/", url)
+    return m.group(1) if m else None
+
+
+def downstream_reports(extract_id: str) -> List[str]:
+    """Display names of the scheduled reports whose code reads the same Tableau
+    workbook — the ones a part-loaded day may ALSO have fed (Megan 2026-10-01:
+    "this messes up multiple things"). Found by scanning the code at alert time,
+    so a report wired to the workbook later is listed without anyone updating a
+    list. Best-effort: [] on any trouble."""
+    wb = workbook_of(extract_id)
+    if not wb:
+        return []
+    root = Path(__file__).resolve().parents[1]          # automations/
+    pkgs = set()
+    try:
+        for py in root.rglob("*.py"):
+            if py.name.startswith("test_") or py.relative_to(root).parts[0] in (
+                    "tableau_screenshots", "shared", "day_orchestrator"):
+                continue                    # shared helpers would match everything
+            try:
+                if wb in py.read_text(encoding="utf-8", errors="ignore"):
+                    pkgs.add(py.relative_to(root).parts[0])
+            except OSError:
+                continue
+        cfg = json.loads((root / "day_orchestrator" / "schedule_config.json")
+                         .read_text(encoding="utf-8"))
+    except Exception:                       # noqa: BLE001 — an alert detail
+        return []
+    names = []
+    for rid, r in (cfg.get("reports") or {}).items():
+        if not isinstance(r, dict) or not r.get("on_scheduler"):
+            continue
+        if not (r.get("cadence") or {}).get("weekdays"):
+            continue                        # [] = never auto-runs
+        mod = (r.get("command") or [""])[0]
+        parts = mod.split(".")
+        if len(parts) > 1 and parts[0] == "automations" and parts[1] in pkgs:
+            names.append(r.get("display_name") or rid)
+    return sorted(set(names))
 
 
 # ---------------- held-board handoff to the ~7am catch-up ----------------

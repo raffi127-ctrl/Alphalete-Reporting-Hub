@@ -433,6 +433,44 @@ def _held_handoff_note(today: dt.date, now: dt.datetime) -> str:
             % (name, hhmm, rest))
 
 
+def _drop_alert_lines(held: dict) -> list:
+    """The PART-LOADED section of the held alert: which workbook came in short,
+    and every other scheduled report that reads it. Megan 2026-10-01, after NDS +
+    Fiber went to 23 channels half-loaded: "we need an alert — not just that it
+    will try to auto rerun — this messes up multiple things". A held tracker is
+    the one report that noticed; the rest ran on the same short data silently.
+    If the drop is REAL (a genuinely slow day), post anyway with
+    --no-freshness-gate."""
+    from automations.tableau_screenshots import freshness as fr
+    by_extract: dict = {}
+    for bid, why in held.items():
+        if fr.DROP_MARK not in (why or ""):
+            continue
+        eid = fr.extract_for_drop(bid)
+        if eid:
+            by_extract.setdefault(eid, []).append(bid)
+    if not by_extract:
+        return []
+    out = ["", ":rotating_light: *PART-LOADED TABLEAU DATA — not just a late "
+               "tracker.* The day landed short, so anything else that read "
+               "this workbook this morning may be wrong too:"]
+    for eid, bids in by_extract.items():
+        wb = fr.workbook_of(eid) or eid
+        others = fr.downstream_reports(eid)
+        metrics = [n for n in others if "Daily Metrics" in n]
+        if len(metrics) > 2:            # 20 office lines would bury the rest
+            others = ([n for n in others if n not in metrics]
+                      + [f"{len(metrics)} office Daily Metrics reports"])
+        out.append(f"• `{wb}` — check/re-run once it fills: "
+                   + (", ".join(others) if others else "(no other scheduled "
+                      "report reads it)"))
+    boards = ",".join(b for bids in by_extract.values() for b in bids)
+    out.append("If the low number is REAL (slow day), post it anyway: "
+               f"`python -m automations.tableau_screenshots.run --only {boards} "
+               "--fresh --no-freshness-gate`")
+    return out
+
+
 def _alert_held(today: dt.date, held: dict, *, dry_run: bool) -> None:
     """Tell #claudecorrections-and-requests, in real time, that a board was held
     for a stale extract (Megan's standing rule: every fail / glitch / missed part
@@ -449,6 +487,7 @@ def _alert_held(today: dt.date, held: dict, *, dry_run: bool) -> None:
         "`python -m automations.tableau_screenshots.run --only "
         + ",".join(held) + " --fresh`",
     ]
+    lines += _drop_alert_lines(held)
     try:
         from automations.day_orchestrator import notify
         # An extract that's late today is usually late tomorrow too, and this
