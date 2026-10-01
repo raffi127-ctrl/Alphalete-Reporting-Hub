@@ -626,6 +626,12 @@ def main(argv=None) -> int:
                          "in Drive, WITHOUT posting again. For when the board "
                          "is corrected after the link went out. Wins over "
                          "--post.")
+    ap.add_argument("--resend", action="store_true",
+                    help="the board was corrected AFTER today's email went "
+                         "out: refresh the PDF in place (same link), then mail "
+                         "the corrected images to the real distro again and "
+                         "say so in the thread. A person asked for it, so it "
+                         "skips the once-a-day lock. Wins over --post.")
     ap.add_argument("--check", action="store_true",
                     help="look for an authorised checkmark; with --send, mail "
                          "the reviewed images when it is there.")
@@ -678,6 +684,22 @@ def main(argv=None) -> int:
         print(f"✓ refreshed in place, existing link still valid: {link}",
               flush=True)
         return 0
+    if args.resend:
+        # Eve 2026-10-01: Tableau updated late, the 05:20 fill was short and
+        # the morning email had already gone. --check would refuse (SENT_MARK
+        # is in the thread), so a corrected send needs its own explicit path.
+        # Refresh first: build_preview rewrites the manifest --send-reviewed
+        # mails from, and the PDF behind the link matches what goes out.
+        link = upload_pdf(build_pdf(today, build_preview(today)))
+        print(f"✓ refreshed in place: {link}", flush=True)
+        rc = send_reviewed(today, distro=True)
+        if rc == 0:
+            confirm_sent(today, "Eve — corrected re-send",
+                         to_note="Alphalete Org Owners distro",
+                         channel=args.channel)
+        else:
+            report_failure(today, rc, args.channel)
+        return rc
     if args.post:
         post_review(upload_pdf(build_pdf(today, build_preview(today))),
                     today, args.channel)
