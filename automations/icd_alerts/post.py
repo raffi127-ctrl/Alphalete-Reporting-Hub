@@ -1220,6 +1220,20 @@ def _save_seen(seen: Dict) -> None:
         pass
 
 
+# OWNERS WHO DO NOT WANT THE CREDIT-CHECK LINES. Everything else stays: sales,
+# the standings to their text group, knock boards, call-outs. The checks are
+# still RECORDED (Last Posted moves with them), so switching an office back on
+# announces what is new from that moment rather than replaying the day --
+# the same shape as the Box presale rule above it.
+#   rashad  -- Rashad Reed, at enrollment (Megan 2026-10-01: "he does NOT want
+#              the credit check alerts")
+NO_CREDIT_CHECK_ALERTS = {"rashad"}
+
+
+def credit_checks_wanted(office_key: str) -> bool:
+    return str(office_key or "").strip().lower() not in NO_CREDIT_CHECK_ALERTS
+
+
 def run(day: Optional[dt.date] = None, *, send: bool = False,
         only: Optional[str] = None, log=print) -> Dict:
     day = day or dt.date.today()
@@ -1273,7 +1287,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         # 2026-09-16). The state is still RECORDED -- `merged` goes to the
         # sheet either way -- so turning it back on announces what is new
         # from that moment rather than replaying the day.
-        if not H_SHAPE(office.campaign).presale_ping:
+        if not H_SHAPE(office.campaign).presale_ping or not credit_checks_wanted(key):
             lines = []
 
         # Sales ride the same row and the same rules. An office still on the

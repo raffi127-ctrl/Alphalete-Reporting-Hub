@@ -1006,3 +1006,19 @@ class BackFromSilenceTests(unittest.TestCase):
         self.assertFalse(P.back_from_silence(
             "carlos", self.DAY, "9/30/2026 20:15:00", seen,
             quiet_since="9/30/2026 11:01:25"))
+
+
+class AnOwnerCanDeclineTheCreditCheckLines(unittest.TestCase):
+    """Megan 2026-10-01: Rashad enrolled and does NOT want the credit-check
+    alerts. Sales and everything else are untouched."""
+
+    def test_rashad_is_out_and_everyone_else_is_in(self):
+        self.assertFalse(P.credit_checks_wanted("rashad"))
+        self.assertFalse(P.credit_checks_wanted(" Rashad "))
+        for k in ("kash", "ryan", "drew", "", None):
+            self.assertTrue(P.credit_checks_wanted(k))
+
+    def test_run_drops_the_lines_through_the_same_gate_as_box(self):
+        import inspect
+        src = inspect.getsource(P.run)
+        self.assertIn("presale_ping or not credit_checks_wanted(key)", src)
