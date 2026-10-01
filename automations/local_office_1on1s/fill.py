@@ -205,6 +205,16 @@ def for_leader(name: str, weeks: List[dt.date], *, pay, months,
                                 f"— conducted none")
             else:
                 for label, k in RECRUITING.items():
-                    out.add(label, wk, block.get(k, ""),
+                    v = block.get(k, "")
+                    # A COUNT CELL LEFT EMPTY IN A MONTH THEY ARE LISTED IN IS
+                    # A ZERO. The source types a number or nothing — it does
+                    # not write 0 — so Andres Mejia read 'conducted 2, offered
+                    # 1, closed (blank)' for September, which looks like the
+                    # report failed on one row of three. Megan 2026-10-01:
+                    # "should be 0 if 0". Rates are left alone: the source
+                    # gives those its own way, and 0 of 0 is not 0%.
+                    if v == "" and k in COUNT_ROWS:
+                        v = MONTHLY_NONE
+                    out.add(label, wk, v,
                             f"\"2nd rds %'s\" {m} block, {label}")
     return out
