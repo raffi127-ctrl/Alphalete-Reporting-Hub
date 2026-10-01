@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from automations.icd_alerts import knocks_map as M, knocks_post as K, offices as O, post as P
+from automations.icd_alerts import config as C
 
 # EVERY OFFICE WITH AN APPROVED ALERT CHANNEL (Megan 2026-09-26: "roll out
 # for everyone"), Slack only -- the room its SaraPlus / Service Cloud alerts
@@ -135,9 +136,22 @@ B2B_LINES = (
 )
 
 
+def is_box(campaign=None) -> bool:
+    """Is this office's activity read from My Service Cloud?
+
+    ONE SWITCH FOR THE WORDING (Megan 2026-10-01: "anyone getting alerts on
+    the Service Cloud account should have the B2B wording going forward").
+    Keyed on config.SERVICECLOUD_CAMPAIGNS -- the list of campaigns whose
+    alerts come off that account -- so a campaign added there later gets the
+    business talk, the talk-to pace and the talk-to units in the same
+    moment, with nothing in this file to remember.
+    """
+    return str(campaign or "").strip().lower() in C.SERVICECLOUD_CAMPAIGNS
+
+
 def lines_for(campaign=None):
     """The call-out pool for an office's campaign: B2B talk for Box, doors for D2D."""
-    return B2B_LINES if str(campaign or "").strip().lower() == "b2b_box" else LINES
+    return B2B_LINES if is_box(campaign) else LINES
 
 
 def _key(name: str) -> str:
@@ -300,6 +314,23 @@ PACE_LINES = (
     "{names} a {avg} {unit_es} por hora 🏃💨 Eso no es finger poppin', eso es trabajo 💪",
 )
 
+# The same recognition in business talk for the Service Cloud offices (Megan
+# 2026-10-01). The D2D pool above says doors and neighborhoods; a Box rep is
+# judged on talk-to's inside businesses.
+B2B_PACE_LINES = (
+    "Snicklepop!! ⚡ {names} averaging {avg}+ {unit} an hour 🏢🏢🏢 That's how it's done 🔥",
+    "{names} — {avg} {unit}/hr 🏃💨 Somebody's definitely not finger poppin' 🔥",
+    "Pace check ⏱️ {names} at {avg} {unit} an hour. Keep walking in 🚀",
+    "{avg} {unit}/hr from {names} 🏢🔥 Every owner on the block knows your name by now 💼",
+    "¡Snicklepop! ⚡ {names} con {avg} {unit_es} por hora 🏢🏢🏢 Así se hace 🔥",
+    "{names} a {avg} {unit_es} por hora 🏃💨 Eso no es finger poppin', eso es trabajo 💪",
+)
+
+
+def pace_lines_for(campaign=None):
+    """The pace-recognition pool: business talk for Box, doors for D2D."""
+    return B2B_PACE_LINES if is_box(campaign) else PACE_LINES
+
 
 def _span_minutes(first: str, last: str, now: dt.datetime):
     a = K._minutes_since(first, now)
@@ -323,18 +354,18 @@ def pace_metric(row: Dict, campaign=None) -> int:
     """The number a rep's hour is judged on: doors, or on Box the board's own
     Actual Talk To's (knocks minus the nobody-home buckets)."""
     knocks = _num(row, "Total Knocks")
-    if str(campaign or "").strip().lower() == "b2b_box":
+    if is_box(campaign):
         return max(knocks - sum(_num(row, k) for k in BOX_TT_SUBTRAHENDS), 0)
     return knocks
 
 
 def pace_target(campaign=None) -> int:
-    return PACE_BOX_TT_PER_HOUR if str(campaign or "").strip().lower() == "b2b_box" else PACE_KNOCKS_PER_HOUR
+    return PACE_BOX_TT_PER_HOUR if is_box(campaign) else PACE_KNOCKS_PER_HOUR
 
 
 def pace_units(campaign=None):
     """(english, spanish) for the line."""
-    if str(campaign or "").strip().lower() == "b2b_box":
+    if is_box(campaign):
         return "talk-to's", "conversaciones"
     return "doors", "puertas"
 
@@ -361,7 +392,8 @@ def pace_line(office_key: str, reps: List[Dict], now: dt.datetime, campaign=None
         return ""
     unit_en, unit_es = pace_units(campaign)
     seed = "pace|%s|%s|%d" % (office_key, now.date().isoformat(), now.hour)
-    template = PACE_LINES[zlib.crc32(seed.encode("utf-8")) % len(PACE_LINES)]
+    pool = pace_lines_for(campaign)
+    template = pool[zlib.crc32(seed.encode("utf-8")) % len(pool)]
     spanish = _is_spanish(template)
     firsts = []
     for r in reps:

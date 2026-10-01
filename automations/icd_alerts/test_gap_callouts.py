@@ -611,3 +611,38 @@ class AnOfficeCanOptOutOfCallOuts(unittest.TestCase):
         import inspect
         src = inspect.getsource(G.run)
         self.assertGreaterEqual(src.count("CALLOUT_OPT_OUT"), 2, "both the gap loop and the pace loop must check it")
+
+
+class TheWordingFollowsTheServiceCloudAccount(unittest.TestCase):
+    """Megan 2026-10-01: anyone whose alerts come off the Service Cloud account
+    gets the B2B wording. The switch is config.SERVICECLOUD_CAMPAIGNS."""
+
+    def test_every_servicecloud_campaign_gets_business_talk(self):
+        from automations.icd_alerts import config as C
+        for camp in C.SERVICECLOUD_CAMPAIGNS:
+            self.assertTrue(G.is_box(camp), camp)
+            self.assertIs(G.lines_for(camp), G.B2B_LINES)
+            self.assertIs(G.pace_lines_for(camp), G.B2B_PACE_LINES)
+            self.assertEqual(G.pace_units(camp)[0], "talk-to's")
+            self.assertEqual(G.pace_target(camp), G.PACE_BOX_TT_PER_HOUR)
+
+    def test_d2d_keeps_doors(self):
+        for camp in ("att", "nds", None, ""):
+            self.assertFalse(G.is_box(camp))
+            self.assertIs(G.pace_lines_for(camp), G.PACE_LINES)
+
+    def test_a_campaign_added_to_the_account_later_is_covered(self):
+        from automations.icd_alerts import config as C
+        with mock.patch.object(C, "SERVICECLOUD_CAMPAIGNS", ("b2b_box", "b2b_energy")):
+            self.assertIs(G.lines_for("b2b_energy"), G.B2B_LINES)
+            self.assertEqual(G.pace_units("b2b_energy")[0], "talk-to's")
+
+    def test_box_pace_recognition_never_says_doors(self):
+        rows = [{"Rep": "Bo Box", "Total Knocks": 40, "Corp - No Opp": 2, "Inaccessible": 1,
+                 "Inaccurate Lead": 0, "First Knock": "8:00 AM", "Last Knock": "11:00 AM"}]
+        for h in range(24):
+            n = NOW.replace(hour=h)
+            s = G.pace_line("ryan", G.pace(rows, n, "b2b_box"), n, "b2b_box")
+            if s:
+                for bad in ("door", "puerta", "neighborhood", "🚪"):
+                    self.assertNotIn(bad, s.lower(), s)
