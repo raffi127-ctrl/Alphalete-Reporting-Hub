@@ -15,12 +15,20 @@ time this runs, so there is never a blank page to guess at.
 
 Columns, one row per office:
     office        AppStream office id, e.g. 11280
-    label         what to call it in a report
+    icd_name      the ICD's name EXACTLY as OwnerVille spells it. Not a
+                  friendly label: it is what joins this audit to every other
+                  report, and a spelling that differs from OV silently fails
+                  to match (Megan 2026-10-01). A genuine variant belongs in
+                  the shared ICD alias sheet, not retyped differently here.
     owner         whose office
-    address       the FULL correct address, suite included
-    phone         the office number applicants should see
-    zoom          the interview room link — the one that is correct
+    address       where interviews are actually conducted, suite included
+    phone         the recruiting number applicants should see
+    r1_mode       "In person" or "Zoom" — how 1st rounds are run
+    zoom          the 1st-round Zoom room, when r1_mode is Zoom
     zoom_id       its meeting id
+    r2_mode       "In person" or "Zoom" — how 2nd rounds are run
+    zoom2         the 2nd-round Zoom room, when r2_mode is Zoom
+    zoom2_id      its meeting id
     job_ad_cities cities that legitimately appear in job ads, comma separated
     active        yes/no — no keeps the row without auditing it
     email         where to send their copy of the audit
@@ -37,28 +45,30 @@ from pathlib import Path
 CONTROL_SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
 TAB = "Recruiting Audit Offices"
 CACHE = Path(__file__).resolve().parents[2] / "output" / "audit_offices.json"
-COLUMNS = ["office", "label", "owner", "address", "phone", "zoom", "zoom_id",
+COLUMNS = ["office", "icd_name", "owner", "address", "phone",
+           "r1_mode", "zoom", "zoom_id",
+           "r2_mode", "zoom2", "zoom2_id",
            "job_ad_cities", "active", "email", "slack_user", "updated"]
 
 # What we already know, from six weeks of their own traffic. Seeded so the
 # tab is never an empty form; every one of these is editable in the sheet.
 SEED = [
-    {"office": "11280", "label": "Rafael Hidalgo", "owner": "Rafael Hidalgo",
+    {"office": "11280", "icd_name": "Rafael Hidalgo", "owner": "Rafael Hidalgo",
      "address": "3100 Premier Drive, Suite 207, Irving, Texas 75063",
      "phone": "", "zoom": "https://us02web.zoom.us/j/2935077152",
      "zoom_id": "2935077152",
      "job_ad_cities": "Irving, Arlington, Garland, Carrollton, Denton, "
                       "Fort Worth, Frisco, Grand Prairie, Plano, Dallas",
      "active": "yes"},
-    {"office": "23965", "label": "Rafael 2nd Funnel", "owner": "Rafael Hidalgo",
+    {"office": "23965", "icd_name": "Rafael 2nd Funnel", "owner": "Rafael Hidalgo",
      "address": "3100 Premier Drive, Suite 207, Irving, Texas 75063",
      "phone": "", "zoom": "https://us05web.zoom.us/j/3106023771",
      "zoom_id": "3106023771", "job_ad_cities": "", "active": "yes"},
-    {"office": "24065", "label": "Raf New Recruiter", "owner": "Rafael Hidalgo",
+    {"office": "24065", "icd_name": "Raf New Recruiter", "owner": "Rafael Hidalgo",
      "address": "3100 Premier Drive, Suite 207, Irving, Texas 75063",
      "phone": "", "zoom": "https://us06web.zoom.us/j/7946102046",
      "zoom_id": "", "job_ad_cities": "", "active": "yes"},
-    {"office": "11580", "label": "Carlos Hidalgo", "owner": "Carlos Hidalgo",
+    {"office": "11580", "icd_name": "Carlos Hidalgo", "owner": "Carlos Hidalgo",
      "address": "1901 N Highway 360, Suite 610, Grand Prairie, Texas 75050",
      "phone": "", "zoom": "https://us02web.zoom.us/j/6224221431",
      "zoom_id": "6224221431", "job_ad_cities": "", "active": "yes"},
@@ -77,12 +87,23 @@ def _ws():
         return ws
 
 
+def _migrate(ws, hdr):
+    """Rename the old 'label' header in place. The tab is edited by hand, so
+    a column rename has to carry the data, not start a second column."""
+    if "label" in hdr and "icd_name" not in hdr:
+        ws.update(values=[[("icd_name" if h == "label" else h) for h in hdr]],
+                  range_name="A1", raw=True)
+        return [("icd_name" if h == "label" else h) for h in hdr]
+    return hdr
+
+
 def load(use_cache_on_failure=True):
     """[office dicts], active ones only. Falls back to the cached copy and
     says so, rather than auditing nothing because Sheets was busy."""
     try:
-        rows = _ws().get_all_values()
-        hdr = [h.strip().lower() for h in rows[0]]
+        ws = _ws()
+        rows = ws.get_all_values()
+        hdr = _migrate(ws, [h.strip().lower() for h in rows[0]])
         out = []
         for r in rows[1:]:
             d = dict(zip(hdr, r))
@@ -154,16 +175,36 @@ def save(office):
     return office, created
 
 
+def rounds(office):
+    """[(label, mode, link, link_id)] for the rounds this office runs."""
+    return [("1st round", (office.get("r1_mode") or "").strip(),
+             (office.get("zoom") or "").strip(),
+             (office.get("zoom_id") or "").strip()),
+            ("2nd round", (office.get("r2_mode") or "").strip(),
+             (office.get("zoom2") or "").strip(),
+             (office.get("zoom2_id") or "").strip())]
+
+
 def missing_fields(office):
     """What this office has not told us, so the audit can say which checks
-    it is NOT running rather than passing them silently."""
+    it is NOT running rather than passing them silently.
+
+    A round run IN PERSON needs no Zoom link, and asking for one would make
+    a correct setup look incomplete — so the link is only missing when that
+    round is actually run over Zoom."""
     gaps = []
     if not office.get("address"):
-        gaps.append("address — cannot check the address in templates")
+        gaps.append("interview address — cannot check the address in templates")
     if not office.get("phone"):
-        gaps.append("phone — cannot check the number in templates")
-    if not office.get("zoom"):
-        gaps.append("zoom link — cannot check interview links")
+        gaps.append("recruiting phone — cannot check the number in templates")
+    for label, mode, link, _lid in rounds(office):
+        if not mode:
+            gaps.append("{} — not told whether it is in person or Zoom"
+                        .format(label))
+        elif mode.lower().startswith("zoom") and not link:
+            gaps.append("{} Zoom link — {} is run over Zoom and no link is "
+                        "on file, so interview links are unchecked"
+                        .format(label, label))
     return gaps
 
 
@@ -173,7 +214,7 @@ def main(argv=None):
     for o in offices:
         gaps = missing_fields(o)
         print("  {:<7} {:<22} {}".format(
-            o["office"], o["label"][:22],
+            o["office"], o.get("icd_name", "")[:22],
             "OK" if not gaps else "missing: " + "; ".join(
                 g.split(" — ")[0] for g in gaps)))
     return 0

@@ -57,8 +57,24 @@ class ModalTest(unittest.TestCase):
 
     def test_the_form_asks_for_everything_a_check_needs(self):
         ids = {b.get("block_id") for b in B.form_modal()["blocks"]}
-        for need in ("office", "address", "phone", "zoom", "email"):
+        for need in ("office", "address", "phone", "r1_mode", "r2_mode",
+                     "email"):
             self.assertIn(need, ids, need)
+
+    def test_a_zoom_link_is_asked_for_only_when_the_round_is_on_zoom(self):
+        """An office that interviews in person has no Zoom link to get
+        wrong, and asking for one teaches them to paste something useless
+        (Megan 2026-10-01)."""
+        person = {b.get("block_id") for b in
+                  B.form_modal(prefill={"r1_mode": "In person",
+                                       "r2_mode": "In person"})["blocks"]}
+        self.assertNotIn("zoom", person)
+        self.assertNotIn("zoom2", person)
+        on_zoom = {b.get("block_id") for b in
+                   B.form_modal(prefill={"r1_mode": "Zoom",
+                                        "r2_mode": "In person"})["blocks"]}
+        self.assertIn("zoom", on_zoom)
+        self.assertNotIn("zoom2", on_zoom)
 
     def test_a_returning_office_is_read_back_not_retyped(self):
         v = B.confirm_modal({"office": "11280", "label": "Raf",

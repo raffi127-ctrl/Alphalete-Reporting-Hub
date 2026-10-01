@@ -2002,6 +2002,116 @@ def dodged_questions(convos):
     return out
 
 
+# What applicants complain about, in their own words. Megan 2026-10-01:
+# "what common complaints from applicants are". Ordered most specific
+# first — a message saying the link is broken is about the link, even
+# though it also says nobody got back to them.
+COMPLAINTS = (
+    ("The Zoom link didn't work",
+     r"(link (is |was )?(broken|dead|not work|doesn'?t work|won'?t work|"
+     r"invalid|expired)|can'?t (get|log) in(to)? the (zoom|meeting)|"
+     r"(zoom|meeting) (link )?(not work|doesn'?t work|won'?t open)|"
+     r"invalid meeting|meeting (id )?(not valid|doesn'?t work))"),
+    ("Nobody was in the meeting",
+     r"(no ?one (is|was) (there|here|in the)|nobody (is|was) (there|here|in)|"
+     r"waiting in the (zoom|meeting|room)|been waiting (in|on) the|"
+     r"still in the (waiting room|meeting)|let me in)"),
+    ("Nobody got back to them",
+     r"(no ?one (has )?(answer|respond|got back|called)|nobody (answer|"
+     r"respond|got back|called)|still (waiting|haven'?t heard)|"
+     r"haven'?t heard (back|from)|never (heard|got) (back|a call)|"
+     r"did (you|anyone) (get|see) my)"),
+    ("They think it's a scam",
+     r"(is this (a )?(scam|real|legit|spam)|sounds like a scam|"
+     r"seems like a scam|scam likely|think(ing)? (this|it'?s) (is )?(a )?scam)"),
+    ("They were called too many times",
+     r"(stop (calling|texting|messaging)|too many (calls|texts|messages)|"
+     r"keep (calling|texting)|quit (calling|texting)|"
+     r"called me \d+ times|harass)"),
+    ("They never got the email",
+     r"(never (got|received) (the|an|any) email|didn'?t (get|receive) "
+     r"(the|an|any) email|no email|email never came|check(ed)? my spam)"),
+    ("Confused about the job",
+     r"(what (exactly )?(is|was) (this|the) (job|position|role)\?|"
+     r"don'?t (understand|know) what (this|the job)|"
+     r"confus(ed|ing)|not sure what (this|the job|position))"),
+    ("Unhappy with how they were treated",
+     r"(rude|unprofessional|disrespect|waste of (my )?time|ridiculous|"
+     r"poorly|very unorganiz|unorganis|disappoint)"),
+)
+_COMPLAINTS = tuple((lbl, re.compile(pat, re.I)) for lbl, pat in COMPLAINTS)
+
+
+# A complaint is about US. Half the first matches were applicants
+# apologising about THEMSELVES — "I apologize for the unprofessional",
+# "I didn't want to disappoint you guys", "I'm not trying to be rude",
+# "I didn't mean any disrespect" — and one was someone waiting at a
+# doctor's. Counting those as complaints would have had the report tell an
+# office its applicants were unhappy when they were being polite.
+SELF_DIRECTED = re.compile(
+    r"(i'?m (very |so )?sorry|i apolog|my apolog|sorry (for|about)|"
+    r"i did ?n'?t mean|i'?m not trying to|not trying to be|of me\b|"
+    r"on my (part|end)|i did ?n'?t want to|i hope (i|that)|"
+    r"forgive me|my bad)", re.I)
+# "still waiting" is only about us when it is about hearing from us.
+NEEDS_US = {"Nobody got back to them": re.compile(
+    r"(from (you|your|yall|y'?all|the (office|team|recruiter))|"
+    r"back (from|to) (me|us)|(call|text|email|reply|response|answer)\w*|"
+    r"interview|application)", re.I)}
+
+
+# A matched phrase that already names the contact needs no further proof.
+SELF_SUFFICIENT = re.compile(
+    r"(call|text|email|respond|answer|got back|heard)", re.I)
+
+
+def _about_us(label, body, match):
+    """Is this complaint aimed at us, or is the applicant apologising?"""
+    start = max(0, match.start() - 90)
+    window = body[start:match.end() + 60]
+    if SELF_DIRECTED.search(window):
+        return False
+    need = NEEDS_US.get(label)
+    if need and not SELF_SUFFICIENT.search(match.group(0)):
+        # Only the VAGUE phrasings need the forward check. "still waiting"
+        # could be for anything — it passed a wide window on a message about
+        # a doctor, because "change the interview time" sat earlier in it.
+        # But "no one called me" already names the contact; requiring another
+        # us-word after it threw away a real complaint ("no one called me. I
+        # waited for over an hour. I am no longer interested.").
+        if not need.search(body[match.end():match.end() + 40]):
+            return False
+    return True
+
+
+def complaints(convos):
+    """{label: [{'name','body','when'}]} — what applicants said went wrong.
+
+    Inbound only, and FIRST MATCH WINS so one message is one complaint:
+    counting a message under every pattern it touches turns thirty unhappy
+    people into ninety."""
+    out = collections.defaultdict(list)
+    for c in convos.values():
+        for m in c["msgs"]:
+            if m["dir"] != "In":
+                continue
+            body = " ".join((m["body"] or "").split())
+            if len(body) < 8:
+                continue
+            for label, pat in _COMPLAINTS:
+                g = pat.search(body)
+                if not g:
+                    continue
+                if not _about_us(label, body, g):
+                    break          # matched, but it is not a complaint
+                out[label].append({"name": c.get("name", ""),
+                                   "body": body[:220],
+                                   "when": m["when"]})
+                break
+    return collections.OrderedDict(
+        sorted(out.items(), key=lambda kv: -len(kv[1])))
+
+
 def log_unanswered(convos, min_wait_min=ANSWER_WINDOW_MIN):
     """Conversations sitting on an applicant message nobody answered — now
     across EVERYONE contacted, which is where the ones who never booked live."""
@@ -2081,19 +2191,28 @@ def who_to_talk_to(convos, office):
             for label, test in COACHING:
                 hit = test(office, body)
                 if hit:
-                    found[who][label].append(hit)
+                    # the offending fragment AND the whole message. Megan
+                    # 2026-10-01: a person has to be able to expand their
+                    # row and read what they actually sent — "shouted in
+                    # capitals x14" is a number to argue with, the message
+                    # is not.
+                    found[who][label].append((hit, body))
 
     # deflecting a job question is a per-person fault too
     for e in dodged_questions(convos):
         if e["kind"] == "deflected" and e.get("sender"):
             found[e["sender"]]["Pushed a job question to the hiring manager"] \
-                .append(e["question"][:70])
+                .append(("they asked: " + e["question"][:90], e["reply"]))
 
     out = []
     for who, issues in found.items():
         for label, hits in issues.items():
-            out.append({"sender": who, "issue": label, "count": len(hits),
-                        "example": hits[0]})
+            out.append({
+                "sender": who, "issue": label, "count": len(hits),
+                "example": hits[0][0],
+                # a handful, not all of them: enough to recognise the habit,
+                # few enough that nobody scrolls past the point
+                "examples": [{"hit": h, "body": b} for h, b in hits[:5]]})
     out.sort(key=lambda e: -e["count"])
     return out
 

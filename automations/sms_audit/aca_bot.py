@@ -59,37 +59,75 @@ def _text(block_id, label, initial="", hint="", optional=False,
     return b
 
 
+MODES = ["In person", "Zoom"]
+
+
+def _select(block_id, label, initial=""):
+    """A mode picker that REDRAWS the form when it changes — dispatch_action
+    is what makes Slack tell us, and without it the Zoom fields could only
+    appear after a submit."""
+    opts = [{"text": {"type": "plain_text", "text": m}, "value": m}
+            for m in MODES]
+    el = {"type": "static_select", "action_id": "v", "options": opts}
+    for o in opts:
+        if o["value"].lower() == (initial or "").strip().lower():
+            el["initial_option"] = o
+    return {"type": "input", "block_id": block_id, "element": el,
+            "dispatch_action": True,
+            "label": {"type": "plain_text", "text": label}}
+
+
 def form_modal(prefill=None):
-    """The short form. Short on purpose — every field here is one the audit
-    cannot do its job without."""
+    """The form. Zoom link fields appear only for a round actually run over
+    Zoom — asking an in-person office for a link makes a correct setup look
+    incomplete, and a blank one would then read as a missing check."""
     p = prefill or {}
+    r1 = (p.get("r1_mode") or "").strip()
+    r2 = (p.get("r2_mode") or "").strip()
+    blocks = [
+        {"type": "section", "text": {"type": "mrkdwn", "text":
+         "*One time per office.* We check what your templates and your "
+         "recruiters actually send against what you tell us here, so an "
+         "answer left blank means that check does not run."}},
+        _text("office", "ApplicantStream office ID", p.get("office", ""),
+              "The number in the top bar, e.g. 11280"),
+        _text("label", "ICD name \u2014 exactly as OwnerVille spells it",
+              p.get("icd_name", ""),
+              "Must match OV: it is what joins this to every other report. "
+              "A real variant goes in the ICD alias sheet."),
+        _text("address", "Address where interviews are conducted",
+              p.get("address", ""),
+              "Including the suite \u2014 a wrong suite is the most common "
+              "thing we find"),
+        _text("phone", "Recruiting phone number", p.get("phone", ""),
+              optional=True),
+        _select("r1_mode", "1st rounds \u2014 in person or Zoom?", r1),
+    ]
+    if r1.lower().startswith("zoom"):
+        blocks += [
+            _text("zoom", "1st round Zoom link", p.get("zoom", ""),
+                  "Paste it, don't retype it \u2014 a look-alike character "
+                  "in a pasted link is invisible and the link is dead",
+                  placeholder="https://us02web.zoom.us/j/..."),
+            _text("zoom_id", "1st round meeting ID", p.get("zoom_id", ""),
+                  optional=True),
+        ]
+    blocks.append(_select("r2_mode", "2nd rounds \u2014 in person or Zoom?", r2))
+    if r2.lower().startswith("zoom"):
+        blocks += [
+            _text("zoom2", "2nd round Zoom link", p.get("zoom2", ""),
+                  placeholder="https://us02web.zoom.us/j/..."),
+            _text("zoom2_id", "2nd round meeting ID", p.get("zoom2_id", ""),
+                  optional=True),
+        ]
+    blocks.append(_text("email", "Email the report to", p.get("email", ""),
+                        "We send a copy as well as posting it here"))
     return {
         "type": "modal", "callback_id": FORM,
         "title": {"type": "plain_text", "text": "Recruiting Audit"},
         "submit": {"type": "plain_text", "text": "Run it"},
         "close": {"type": "plain_text", "text": "Cancel"},
-        "blocks": [
-            {"type": "section", "text": {"type": "mrkdwn", "text":
-             "*One time per office.* We check what your templates and your "
-             "recruiters actually send against what you tell us here, so an "
-             "answer left blank means that check does not run."}},
-            _text("office", "ApplicantStream office ID", p.get("office", ""),
-                  "The number in the top bar, e.g. 11280"),
-            _text("label", "Office name", p.get("label", "")),
-            _text("address", "Full office address",
-                  p.get("address", ""),
-                  "Including the suite — a wrong suite is the most common "
-                  "thing we find"),
-            _text("phone", "Office phone number", p.get("phone", ""),
-                  optional=True),
-            _text("zoom", "Interview Zoom link", p.get("zoom", ""),
-                  "Paste it, don't retype it", optional=True,
-                  placeholder="https://us02web.zoom.us/j/..."),
-            _text("zoom_id", "Zoom meeting ID", p.get("zoom_id", ""),
-                  optional=True),
-            _text("email", "Email the report to", p.get("email", ""),
-                  "We send a copy as well as posting it here"),
-        ],
+        "blocks": blocks,
     }
 
 
@@ -99,9 +137,14 @@ def confirm_modal(office):
         v = (office.get(k) or "").strip()
         return "*{}*\n{}".format(label, v if v else "_not given — that check "
                                  "is not running_")
-    lines = [row("label", "Office"), row("address", "Address"),
-             row("phone", "Phone"), row("zoom", "Zoom link"),
-             row("zoom_id", "Meeting ID"), row("email", "Email it to")]
+    lines = [row("icd_name", "ICD name"),
+             row("address", "Interviews conducted at"),
+             row("phone", "Recruiting phone"),
+             row("r1_mode", "1st rounds"), row("r2_mode", "2nd rounds")]
+    for key, lbl in (("zoom", "1st round Zoom"), ("zoom2", "2nd round Zoom")):
+        if (office.get(key) or "").strip():
+            lines.append(row(key, lbl))
+    lines.append(row("email", "Email it to"))
     return {
         "type": "modal", "callback_id": CONFIRM,
         "private_metadata": office.get("office", ""),
@@ -127,11 +170,15 @@ def confirm_modal(office):
 
 
 def values_of(view):
-    """Form values, flattened."""
+    """Form values, flattened — text inputs AND the mode selects."""
     out = {}
     for bid, block in (view.get("state", {}).get("values") or {}).items():
         for _aid, el in block.items():
-            out[bid] = (el.get("value") or "").strip()
+            if el.get("type") == "static_select":
+                out[bid] = ((el.get("selected_option") or {})
+                            .get("value") or "").strip()
+            else:
+                out[bid] = (el.get("value") or "").strip()
     return out
 
 
@@ -151,10 +198,12 @@ def save_and_run(user_id, vals, web=None):
     """Store the row, run the audit, return (office, report path)."""
     from automations.sms_audit import icd_audit as IA
     row = dict(vals)
+    if "label" in row:                     # the form's block id
+        row["icd_name"] = row.pop("label")
     row["slack_user"] = user_id
     row.setdefault("active", "yes")
     office, _created = O.save(row)
-    path = IA.OUTPUT / "icd-audit-{}.md".format(office["office"])
+    path = IA.report_path(office["office"])
     IA.main(["--office", office["office"]])
     return office, path
 
@@ -167,10 +216,10 @@ def deliver(web, user_id, office, path):
         web.files_upload_v2(
             channel=user_id, file=str(path),
             filename=path.name, title="Recruiting Audit — {}".format(
-                office.get("label") or office.get("office")),
+                office.get("icd_name") or office.get("office")),
             initial_comment="Here is the audit for *{}*. It opens with any "
                             "check we could NOT run and why.".format(
-                                office.get("label") or office.get("office")))
+                                office.get("icd_name") or office.get("office")))
         sent.append("Slack")
     except Exception as e:  # noqa: BLE001
         sent.append("Slack FAILED ({})".format(type(e).__name__))
@@ -180,12 +229,12 @@ def deliver(web, user_id, office, path):
             from automations.shared import report_email as RE
             msg = RE.build_message(
                 subject="Recruiting Audit — {}".format(
-                    office.get("label") or office.get("office")),
+                    office.get("icd_name") or office.get("office")),
                 to=[to], title="Recruiting Audit",
                 blocks=[], attach=True, files=[(path.name, path)],
                 intro_html="<p>The audit for <b>{}</b> is attached. It opens "
                            "with any check we could not run, and why.</p>"
-                           .format(office.get("label") or office.get("office")))
+                           .format(office.get("icd_name") or office.get("office")))
             RE.send_message(msg)
             sent.append("email to {}".format(to))
         except Exception as e:  # noqa: BLE001
@@ -203,6 +252,8 @@ def wants(req):
         return p.get("command", "").lstrip("/").lower() in COMMANDS
     if req.type == "interactive":
         if p.get("type") == "block_actions":
+            if p.get("view", {}).get("callback_id") == FORM:
+                return True
             return any(a.get("action_id") == "aca_change_btn"
                        for a in p.get("actions", []))
         if p.get("type") == "view_submission":
@@ -216,6 +267,16 @@ def handle(client, req):
     if req.type == "slash_commands" and p.get("command", "").lstrip("/").lower() \
             in COMMANDS:
         on_command(client, req, p.get("user_id", ""))
+        return True
+    # a mode select changed — redraw with or without that round's Zoom
+    # fields, carrying everything already typed so nothing is lost
+    if req.type == "interactive" and p.get("type") == "block_actions" \
+            and (p.get("view", {}).get("callback_id") == FORM):
+        vals = values_of(p["view"])
+        if "label" in vals:
+            vals["icd_name"] = vals.pop("label")
+        client.web_client.views_update(view_id=p["view"]["id"],
+                                       view=form_modal(vals))
         return True
     if req.type == "interactive" and p.get("type") == "block_actions" \
             and any(a.get("action_id") == "aca_change_btn"
@@ -252,7 +313,7 @@ def _background(client, user_id, vals):
         web.chat_postMessage(
             channel=user_id,
             text="Audit for *{}* — {}.{}".format(
-                office.get("label") or office.get("office"),
+                office.get("icd_name") or office.get("office"),
                 ", ".join(sent), note))
     except Exception as e:  # noqa: BLE001
         traceback.print_exc()

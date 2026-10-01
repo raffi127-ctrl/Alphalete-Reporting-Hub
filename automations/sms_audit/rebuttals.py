@@ -200,15 +200,63 @@ SHOUTING = re.compile(
 LABEL = re.compile(r"^[A-Z0-9 ]{2,20}:")
 
 
+# A company signature is not shouting either. "ALPHALETE MARKETING, INC"
+# is how the business is spelled, and flagging it told Leticia Robinson she
+# shouted five times for typing her employer's name. A run made up ENTIRELY
+# of brand words and corporate vocabulary is a name; one word of anything
+# else and it is back to being a shout.
+CORPORATE = set("""ALPHALETE VANTURA INC LLC CORP CORPORATION LTD CO
+COMPANY GROUP MARKETING ENTERPRISES SOLUTIONS HOLDINGS THE AND OF""".split())
+
+
+def _is_company_name(run):
+    words = [w for w in re.split(r"[^A-Z0-9&]+", run.upper()) if w]
+    return bool(words) and all(w in CORPORATE for w in words)
+
+
+# An address or link is not shouting. AppStream echoes the applicant's own
+# email back in capitals ("verify that your email address is
+# VEGAMARTHA01@GMAIL.COM") and every one of the last three flags was that.
+ADDRESSY = re.compile(r"\S+@\S+|https?://\S+|\S+\.(?:com|net|org|io|co|edu)\b",
+                      re.I)
+
+
+def _addressy_spans(body):
+    return [(m.start(), m.end()) for m in ADDRESSY.finditer(body)]
+
+
+_JOB_RE = None
+
+
+def _is_job_title(run):
+    """Is this capitalised run the job NAME rather than shouting?
+
+    AppStream carries the job ad's own title into the templates, and the ads
+    are written in capitals: "ENTRY LEVEL CUSTOMER REPRESENTATIVE". Every one
+    of Aisha Ceron's 14 "shouts" in 11280 was that string — a recruiter told
+    she shouts 14 times would rightly say she wrote none of them. Same trap
+    as the 36 "sent people to Grand Prairie" messages that were job-ad
+    titles. Single-sourced off analyze.JOB_TITLE so the two lists cannot
+    drift; imported late because analyze imports this module."""
+    global _JOB_RE
+    if _JOB_RE is None:
+        from automations.sms_audit.analyze import JOB_TITLE
+        _JOB_RE = re.compile(JOB_TITLE, re.I)
+    return bool(_JOB_RE.search(run))
+
+
 def shouts(text):
     """The shouted run in this message, or None."""
     body = " ".join((text or "").split())
+    skip = _addressy_spans(body)
     for m in SHOUTING.finditer(body):
         tail = body[m.end():m.end() + 2]
         if tail.startswith(":"):
             continue                      # a field label, not shouting
+        if any(a < m.end() and m.start() < b for a, b in skip):
+            continue                      # inside an email address or link
         got = m.group(0).strip(" ,.&-")
-        if got:
+        if got and not _is_job_title(got) and not _is_company_name(got):
             return got
     return None
 

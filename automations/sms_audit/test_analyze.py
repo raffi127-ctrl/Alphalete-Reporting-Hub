@@ -9,6 +9,7 @@ import datetime as dt
 import unittest
 
 from automations.sms_audit import analyze as A
+from automations.sms_audit import rebuttals as RB
 
 
 def _rec(thread, booked_by="A. Messaging", status="Interview Completed",
@@ -1302,3 +1303,29 @@ class FoldRepeatsTest(unittest.TestCase):
                          A._same_copy("Hey Cassandra , so i wanted", ""))
         self.assertNotEqual(A._same_copy("so i wanted", ""),
                             A._same_copy("so i needed", ""))
+
+
+class ShoutingFalsePositiveTest(unittest.TestCase):
+    """Megan 2026-10-01: the expandable examples exist so a recruiter can
+    argue with a count. The first three they would have argued with were
+    all ours, so each is pinned here."""
+
+    def test_a_job_ad_title_in_caps_is_not_shouting(self):
+        # all 14 of Aisha Ceron's "shouts" in 11280 were this string
+        self.assertIsNone(RB.shouts(
+            "Congrats on being invited to a second interview for the "
+            "ENTRY LEVEL CUSTOMER REPRESENTATIVE role!"))
+
+    def test_the_company_signature_is_not_shouting(self):
+        self.assertIsNone(RB.shouts("Sent by ALPHALETE MARKETING, INC"))
+        self.assertIsNone(RB.shouts("VANTURA SOLUTIONS LLC"))
+
+    def test_an_uppercased_email_is_not_shouting(self):
+        self.assertIsNone(RB.shouts(
+            "Could you please verify that your email address is "
+            "VEGAMARTHA01@GMAIL.COM?"))
+
+    def test_real_shouting_still_counts(self):
+        self.assertEqual(RB.shouts("You MUST BE ON TIME"), "MUST BE ON TIME")
+        self.assertEqual(
+            RB.shouts("DO NOT BE LATE for KAYLA.TERAN6122@GMAIL.COM"), "LATE")
