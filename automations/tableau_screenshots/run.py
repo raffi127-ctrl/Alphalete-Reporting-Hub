@@ -366,7 +366,10 @@ def _hold_stale_boards(today: dt.date, *, dry_run: bool,
                                         "all boards posted.", dry_run=dry_run)
         except Exception:  # noqa: BLE001 — closing must never sink a good run
             pass
-    fr.write_held(today, held)
+    # Never from a dry run: the settle passes act on this file, and a 10:11
+    # dry run on 2026-10-01 left 7 already-posted boards marked "held".
+    if not dry_run:
+        fr.write_held(today, held)
     if held:
         pages_mod.mark_late(held.keys())
         handoff = _held_handoff_note(today, dt.datetime.now())
