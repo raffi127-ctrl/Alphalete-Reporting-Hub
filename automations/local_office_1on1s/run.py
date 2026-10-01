@@ -197,6 +197,14 @@ def main(argv=None) -> int:
     for team in (a.tabs or R.TEAMS):
         rost = rosters[team]
         ws = book.worksheet(team)
+        # Make room before reading the layout: a week with no column cannot be
+        # filled, and the tabs were only built out to 12/27 by hand.
+        try:
+            from automations.local_office_1on1s import formatting as FMT
+            if FMT.ensure_week_columns(book, team, wks, logfn=print):
+                pass
+        except Exception as e:                      # never block a fill
+            notes.append(f"{team}: could not add week columns ({e})")
         grid = ws.get_all_values()
         secs = LO.find_sections(grid)
         by_name = {PEO.key(s.name): s for s in secs if s.name.strip()}
