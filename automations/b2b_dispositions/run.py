@@ -425,7 +425,14 @@ def main(argv=None) -> int:
             print("\nTEXT SKIPPED — the Slack post failed, so there's nothing to "
                   "mirror. Fix the post first.", flush=True)
             return 1
-        ok = _handoff_text(specs, out_dir, slot) and ok
+        # A failed hand-off does NOT fail the run: the post is already in the
+        # channel. 10/1 2:30 PM a Sheets ReadTimeout on the queue write turned
+        # a clean post into a red card + a "needs one of you" incident. No
+        # retry either — the timeout can land after the row was written, and
+        # a second enqueue would text the group twice.
+        if not _handoff_text(specs, out_dir, slot):
+            print("\nTEXT NOT QUEUED — Slack post is fine; this slot's text "
+                  "was skipped (see HANDOFF FAILED above).", flush=True)
     return 0 if ok else 1
 
 
