@@ -150,6 +150,22 @@ def _handler(client, req):
     from slack_sdk.socket_mode.response import SocketModeResponse
     print(f"[req] type={req.type} cmd={req.payload.get('command')} "
           f"ptype={req.payload.get('type')}", flush=True)
+
+    # /aca — the Applicant Comms Audit form (automations.sms_audit.aca_bot).
+    # A branch, per this module's own rule: one listener, one app, one token.
+    # Acked FIRST and wrapped, because an exception in a feature must never
+    # take the listener down for /dd and /knocks.
+    try:
+        from automations.sms_audit import aca_bot as _aca
+        if _aca.wants(req):
+            client.send_socket_mode_response(
+                SocketModeResponse(envelope_id=req.envelope_id))
+            _aca.handle(client, req)
+            return
+    except Exception as e:                    # noqa: BLE001
+        print(f"[aca] FAILED {type(e).__name__}: {e}", flush=True)
+        return
+
     if req.type == "slash_commands" and req.payload.get("command") == "/dd":
         client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
         try:

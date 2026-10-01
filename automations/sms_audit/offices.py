@@ -23,9 +23,13 @@ Columns, one row per office:
     zoom_id       its meeting id
     job_ad_cities cities that legitimately appear in job ads, comma separated
     active        yes/no — no keeps the row without auditing it
+    email         where to send their copy of the audit
+    slack_user    who filled it in, so /ACA knows them next time
+    updated       when they last confirmed it
 """
 from __future__ import annotations  # Lucy runs Python 3.9 — keep lazy
 
+import datetime as dt
 import json
 import sys
 from pathlib import Path
@@ -34,7 +38,7 @@ CONTROL_SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
 TAB = "Recruiting Audit Offices"
 CACHE = Path(__file__).resolve().parents[2] / "output" / "audit_offices.json"
 COLUMNS = ["office", "label", "owner", "address", "phone", "zoom", "zoom_id",
-           "job_ad_cities", "active"]
+           "job_ad_cities", "active", "email", "slack_user", "updated"]
 
 # What we already know, from six weeks of their own traffic. Seeded so the
 # tab is never an empty form; every one of these is editable in the sheet.
@@ -96,6 +100,58 @@ def load(use_cache_on_failure=True):
                                                 str(e).splitlines()[0][:60])
     active = [o for o in out if (o.get("active") or "yes").lower() != "no"]
     return active, src
+
+
+def find(office_id=None, slack_user=None):
+    """The stored row for an office id or the person who filled it in.
+
+    /ACA asks once and remembers: the second time someone runs it we show
+    what we hold and ask if it is still right, rather than making them type
+    an address they already gave us (Megan 2026-10-01)."""
+    rows, _src = load(use_cache_on_failure=True)
+    for o in rows:
+        if office_id and o.get("office") == str(office_id).strip():
+            return o
+        if slack_user and o.get("slack_user") == slack_user:
+            return o
+    return None
+
+
+def save(office):
+    """Insert or update one office row, by office id. Returns (row, created).
+
+    Writes the whole row every time rather than patching cells: the tab is
+    edited by hand too, and a partial write against a column someone moved
+    is how a config silently points at the wrong field."""
+    ws = _ws()
+    rows = ws.get_all_values()
+    hdr = [h.strip().lower() for h in rows[0]]
+    office = dict(office)
+    office["updated"] = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    want = str(office.get("office", "")).strip()
+    at = None
+    for i, r in enumerate(rows[1:], start=2):
+        d = dict(zip(hdr, r))
+        if (d.get("office") or "").strip() == want:
+            at = i
+            merged = {c: (office.get(c) if office.get(c) not in (None, "")
+                          else (d.get(c) or "")) for c in COLUMNS}
+            office = merged
+            break
+    line = [[office.get(c, "") for c in COLUMNS]]
+    if at is None:
+        at = len(rows) + 1
+        ws.update(values=line, range_name="A{}".format(at), raw=True)
+        created = True
+    else:
+        ws.update(values=line, range_name="A{}".format(at), raw=True)
+        created = False
+    if CACHE.exists():
+        try:
+            CACHE.unlink()          # stale the cache, never serve a stale row
+        except OSError:
+            pass
+    return office, created
 
 
 def missing_fields(office):
