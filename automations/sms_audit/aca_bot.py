@@ -1,4 +1,8 @@
-"""`/aca` on Jiraiya — an office fills a short form once, gets its audit back.
+"""`/recruiting-audit` on Jiraiya — an office fills a form once, gets its audit.
+
+Megan 2026-10-01 asked for the command to read "/Recruiting Audit". Slack
+slash commands cannot contain a space, so it is `/recruiting-audit`, with
+`/aca` kept as a short alias for anyone already using it.
 
 Megan 2026-10-01: "they send //ACA and Jiriyah pops open a short form for
 them to fill out (should only need to do it once per office and you log it)
@@ -31,6 +35,9 @@ from pathlib import Path
 
 from automations.sms_audit import offices as O
 
+# Slack has no spaces in a command, so "/Recruiting Audit" is this. Aliases
+# are cheap and a wrong guess at the name is a dead end for whoever typed it.
+COMMANDS = ("recruiting-audit", "recruitingaudit", "recruiting_audit", "aca")
 FORM = "aca_form"
 CONFIRM = "aca_confirm"
 OUTPUT = Path(__file__).resolve().parents[2] / "output"
@@ -58,7 +65,7 @@ def form_modal(prefill=None):
     p = prefill or {}
     return {
         "type": "modal", "callback_id": FORM,
-        "title": {"type": "plain_text", "text": "Applicant Comms Audit"},
+        "title": {"type": "plain_text", "text": "Recruiting Audit"},
         "submit": {"type": "plain_text", "text": "Run it"},
         "close": {"type": "plain_text", "text": "Cancel"},
         "blocks": [
@@ -98,7 +105,7 @@ def confirm_modal(office):
     return {
         "type": "modal", "callback_id": CONFIRM,
         "private_metadata": office.get("office", ""),
-        "title": {"type": "plain_text", "text": "Applicant Comms Audit"},
+        "title": {"type": "plain_text", "text": "Recruiting Audit"},
         "submit": {"type": "plain_text", "text": "Yes, still correct"},
         "close": {"type": "plain_text", "text": "Cancel"},
         "blocks": [
@@ -159,7 +166,7 @@ def deliver(web, user_id, office, path):
     try:
         web.files_upload_v2(
             channel=user_id, file=str(path),
-            filename=path.name, title="Applicant Comms Audit — {}".format(
+            filename=path.name, title="Recruiting Audit — {}".format(
                 office.get("label") or office.get("office")),
             initial_comment="Here is the audit for *{}*. It opens with any "
                             "check we could NOT run and why.".format(
@@ -172,9 +179,9 @@ def deliver(web, user_id, office, path):
         try:
             from automations.shared import report_email as RE
             msg = RE.build_message(
-                subject="Applicant Comms Audit — {}".format(
+                subject="Recruiting Audit — {}".format(
                     office.get("label") or office.get("office")),
-                to=[to], title="Applicant Comms Audit",
+                to=[to], title="Recruiting Audit",
                 blocks=[], attach=True, files=[(path.name, path)],
                 intro_html="<p>The audit for <b>{}</b> is attached. It opens "
                            "with any check we could not run, and why.</p>"
@@ -193,7 +200,7 @@ def wants(req):
     the envelopes that belong to /aca and /dd keeps working."""
     p = req.payload or {}
     if req.type == "slash_commands":
-        return p.get("command", "").lstrip("/").lower() in ("aca", "acaudit")
+        return p.get("command", "").lstrip("/").lower() in COMMANDS
     if req.type == "interactive":
         if p.get("type") == "block_actions":
             return any(a.get("action_id") == "aca_change_btn"
@@ -207,7 +214,7 @@ def handle(client, req):
     """Return True when this request was ours."""
     p = req.payload or {}
     if req.type == "slash_commands" and p.get("command", "").lstrip("/").lower() \
-            in ("aca", "acaudit"):
+            in COMMANDS:
         on_command(client, req, p.get("user_id", ""))
         return True
     if req.type == "interactive" and p.get("type") == "block_actions" \

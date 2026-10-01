@@ -17,9 +17,13 @@ class Req:
 class WantsTest(unittest.TestCase):
 
     def test_it_claims_its_own_command(self):
-        self.assertTrue(B.wants(Req("slash_commands", {"command": "/aca"})))
-        self.assertTrue(B.wants(Req("slash_commands", {"command": "aca"})))
-        self.assertTrue(B.wants(Req("slash_commands", {"command": "/ACA"})))
+        # Megan asked for "/Recruiting Audit"; Slack forbids the space, so
+        # the real command is /recruiting-audit and the rest are aliases so
+        # a near-miss is not a dead end for whoever typed it.
+        for cmd in ("/recruiting-audit", "/Recruiting-Audit",
+                    "/recruitingaudit", "/recruiting_audit", "/aca", "aca"):
+            self.assertTrue(B.wants(Req("slash_commands", {"command": cmd})),
+                            cmd)
 
     def test_it_leaves_other_commands_alone(self):
         for cmd in ("/dd", "/knocks", "/promo", "/something"):

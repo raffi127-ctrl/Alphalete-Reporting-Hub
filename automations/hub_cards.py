@@ -1031,6 +1031,65 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "recruiting-audit",
+        "name": "Recruiting Audit — /recruiting-audit",
+        "creator": "Megan & Claude",
+        "emoji": "\U0001F50E",
+        "color": "#0F6E64",
+        "category": "\U0001F4F2 Ops",
+        "assignees": ["Lucy 2"],
+        "sheet_url": "",
+        "description": (
+            "An office types /recruiting-audit in Slack, fills a short form "
+            "once, and gets back a document: what their AppStream templates "
+            "and their recruiters actually send, checked against their own "
+            "address, phone and Zoom link \u2014 plus retention by who booked "
+            "it. Emailed as well as posted."
+        ),
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**\u2022** `/recruiting-audit` opens a short form \u2014 office "
+            "id, address, phone, Zoom link, meeting id, and where to email "
+            "it. **Once per office**; after that it reads back what we hold "
+            "and asks *is this still correct*.\n"
+            "**\u2022** Checks the office's **AppStream templates**: dead "
+            "links (the Cyrillic z\u043eom.us went out 4,783 times before a "
+            "human spotted it), the wrong Zoom room, a wrong suite, block "
+            "capitals, \u201cbase pay\u201d wording Raf ruled out, and "
+            "activated templates with no opt-out.\n"
+            "**\u2022** Checks what **recruiters actually sent**: grammar, "
+            "spelling, questions dodged or pushed to the hiring manager, and "
+            "a per-person list of what to raise.\n"
+            "**\u2022** Shows **retention by who booked it**, each booker "
+            "against their own trailing average \u2014 the split that found "
+            "the AI going 52% to 26% in a day while every human held.\n\n"
+            "WHAT IT WILL NOT DO\n"
+            "**\u2022** A field left blank in the form **disables its check "
+            "and says so**, in the report and in the Slack reply. Nothing "
+            "passes for want of data \u2014 the audit can only call an "
+            "address wrong if somebody told it the right one.\n"
+            "**\u2022** It reads texts, calls and email. It cannot see what "
+            "happened inside the interview.\n\n"
+            "WHERE IT RUNS\n"
+            "**\u2022** A branch in the Jiraiya listener (the same bot as "
+            "`/dd` and `/knocks`) \u2014 one app, one token, no second "
+            "process. The weekly refill runs Saturday 7am on Lucy 2."
+        ),
+        "assignee_note": (
+            "Jiraiya answers the slash command; the Saturday refill and all "
+            "AppStream pulls run on Lucy 2, which holds the session."
+        ),
+        "self_scheduled": True,
+        "hide_schedule": False,
+        "schedule": {
+            "frequency": "weekly",
+            "time": "7:00 AM",
+            "time_label": "Sat 7 AM \u00b7 on demand via /recruiting-audit",
+            "estimated_minutes": 45,
+        },
+        "checklist": [],
+    },
+    {
         "id": "interview-audit-bot",
         "name": "2nd Round Interview Auditor — AO (24/7)",
         "creator": "Raf & Claude",
