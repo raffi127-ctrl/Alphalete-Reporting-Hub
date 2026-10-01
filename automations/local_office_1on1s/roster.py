@@ -41,8 +41,20 @@ TEAMS = ["Alphaletes", "Se7en Sins", "Ceaseless", "Hashiras", "Mindset Engine"]
 # Heads the trainer chain cannot produce. Only Alphaletes: Raf is not a row on
 # the board and trains nobody directly on it, so nothing in the tree reaches him.
 HEAD_OVERRIDE = {"Alphaletes": "Raf"}
-# Heads with no personal production to fill — their section is the team block only.
-GROUP_ONLY = {"Raf"}
+# Heads whose box is the TEAM BLOCK ONLY — no personal sales, recruiting,
+# training or finances. Named, not derived.
+#
+# Deriving it from "has no row on the sales board" was tried and over-reached:
+# it caught Basil Elhassan too, and Megan 2026-10-01 was explicit — "Al doesn't
+# have any sales", then "NO, all of the other leaders should have personal
+# sales". So this is a fact about these two people, not a rule about off-board
+# heads, and a third one has to be added here deliberately.
+#
+# Basil Elhassan is the awkward case worth knowing about: he has NO row on the
+# sales board (checked WE 9.27, not under 'Bas' either), so his personal rows
+# fill from nothing and read blank until he is added to the board. That is a
+# gap in the board, not a decision here.
+GROUP_ONLY = {"Raf", "Algemar Kennel"}
 
 
 @dataclass
@@ -90,7 +102,7 @@ def build(today: Optional[dt.date] = None, *, tab: Optional[str] = None,
     logfn(f"  roster off {title!r}")
 
     out: Dict[str, TeamRoster] = {}
-    for team, _branches, _lead, lead_name, first, members in groups:
+    for team, _branches, lead, lead_name, first, members in groups:
         if team not in TEAMS:
             continue                      # 'New starts · no trainer yet' etc.
         head = lead_name or HEAD_OVERRIDE.get(team, "")
