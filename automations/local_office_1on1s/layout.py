@@ -107,6 +107,39 @@ def block_start(grid: List[List[str]], sec: Section, marker: str) -> Optional[in
     return None
 
 
+# A parenthetical the sheet appends for emphasis — '2nd rds Conducted
+# (Monthly)', 'Job Offered (Monthly)'. It is wording drift on the SAME row, not
+# a different row, so an exact match looks through it.
+_PAREN_TAIL = re.compile(r"\s*\([^)]*\)\s*$")
+
+
+def exact_row(rows: Dict[str, int], label: str) -> Optional[int]:
+    """Match a label that must NOT be allowed to fuzzy-match a sibling row.
+
+    find_row's prefix tolerance is right for drift like 'Dress Code 1 out of 3'
+    vs '/5', and wrong when one real label is a prefix of another real one:
+    'New Starts showed / Scheduled' resolved onto 'New Starts Showed' and the
+    ratio overwrote the count. So the labels in fill.VARIANT_ONLY come here for
+    an exact match instead.
+
+    Exact was TOO strict, though. Megan asked for 'avg monthly' wording on the
+    recruiting rows, the tab's labels became '2nd rds Conducted (Monthly)', and
+    the exact lookup stopped finding them — so four rows were computed, dropped,
+    and reported as nothing, because a VARIANT_ONLY label missing from a box is
+    a normal condition whose note is suppressed. Produced, discarded, silent.
+    A trailing parenthetical is therefore ignored, which still cannot collide:
+    stripping '(...)' off 'new starts showed' never yields
+    'new starts showed / scheduled'.
+    """
+    want = fold(label)
+    if want in rows:
+        return rows[want]
+    for have, r in rows.items():
+        if _PAREN_TAIL.sub("", have) == want:
+            return r
+    return None
+
+
 def find_row(rows: Dict[str, int], label: str) -> Optional[int]:
     """Match a wanted label against a section's actual labels.
 
