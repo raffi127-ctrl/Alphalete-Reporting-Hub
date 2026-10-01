@@ -119,6 +119,10 @@ NOT_ON_TEAM: Dict[str, tuple] = {
     "Colten": ("Milan Godbolt", "Marcos Barbosa", "Fernando Munoz",
                "Fernando Muñoz"),
     "Eveliz": ("Lizette Ruiz", "Lizette Ruiz-Conejo"),
+    # 2026-10-01 (Eve): Cruz Venegas paso a la capitania de Luke Baldwin. La
+    # vista de churn de Luis (B2BLuis_Churn) lo sigue trayendo mientras
+    # SmartCircle no lo mueva; sin el pin su fila vuelve a la tab de Luis.
+    "Luis": ("Cruz Venegas",),
 }
 
 

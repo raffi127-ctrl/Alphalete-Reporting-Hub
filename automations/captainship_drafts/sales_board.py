@@ -71,6 +71,8 @@ CAPTAIN_TOKEN = {
     # para este modulo: el draft sale sin la seccion 1 y `owner_names` no puede
     # leer su roster, asi que tampoco hay boards de knocks.
     "pat": "pat", "jess": "jess",
+    # 2026-10-01: Luke Baldwin (B2B), caja nueva en el Org Sales Board.
+    "luke": "luke",
 }
 
 _DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday",

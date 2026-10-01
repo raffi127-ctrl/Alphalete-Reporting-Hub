@@ -859,6 +859,16 @@ RECIPIENTS["jess"] = [
     "maudmiller4@gmail.com",         # Maud Miller
     # OUT 2026-09-07: Angel Arias y Mary Maya — fuera de la capitania de Jess.
 ]
+# Luke Baldwin, 2026-10-01 (Carlos lo pidio por mail). FALLBACK: el vivo es el
+# grupo "Luke's Captainship" (distro.GROUPS). Arranca con Luke + los que reciben
+# las capitanias B2B; los owners de su equipo entran cuando exista su caja en el
+# Org Sales Board.
+RECIPIENTS["luke"] = [
+    "takeoffenterprisesinc@gmail.com",  # Luke Baldwin
+    "CarlosHidalgo349@gmail.com",
+    "maudmiller4@gmail.com",
+    "raffi127@gmail.com",
+]
 
 
 for _lst in RECIPIENTS.values():
@@ -957,6 +967,15 @@ CAPTAINS: List[Captain] = [
         ChurnSource(_own.open_ws_b2b_atef, _ni_render, "Wireless Churn",
                     title_prefix="WIRELESS CHURN"),
     ]),
+    # Luke Baldwin, 2026-10-01: mismo correo que Carlos (3 secciones). Su churn
+    # sale de la vista all-teams cortada por su caja del board
+    # (owners_metrics_churn.pull.make_b2b_board_roster_parser); su §2 dice
+    # "Not available yet" hasta que SmartCircle cree "Luke's Team" en Tableau.
+    # title_bg provisorio: igualarlo al color de su caja en el board.
+    Captain("luke", "Luke", "b2b", title_bg="#1F4E79", to=_to("luke"), churn=[
+        ChurnSource(_own.open_ws_b2b_luke, _ni_render, "Wireless Churn",
+                    title_prefix="WIRELESS CHURN"),
+    ]),
     # ----- NDS -----
     Captain("khalil", "Khalil", "nds", title_bg="#EA4335", to=_to("khalil"), churn=[
         ChurnSource(_own.open_ws_nds_khalil, _ni_render, "New Internet Churn"),
@@ -1031,7 +1050,7 @@ _GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("Fiber 2", ("wayne", "starr")),
     ("Fiber 3", ("tony", "chan", "sahil")),
     ("Fiber 4", ("pat", "jess")),
-    ("B2B", ("carlos", "eveliz", "luis", "atef")),
+    ("B2B", ("carlos", "eveliz", "luis", "atef", "luke")),
     ("NDS", ("khalil", "colten", "jairo")),
 )
 _PER_CAPTAIN = [

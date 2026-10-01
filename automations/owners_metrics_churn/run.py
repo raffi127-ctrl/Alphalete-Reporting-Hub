@@ -200,6 +200,13 @@ REPORTS = [
     ("atef", "Atef Choudhury (B2B)",
      pull.fetch_b2b_atef, fill.open_ws_b2b_atef,
      "owners_b2b_atef.csv", pull.parse_b2b, pull.B2B_PERIODS),
+    # Luke Baldwin (2026-10-01): no own view yet, so the all-teams wireless view
+    # cut to the owners on his Org Sales Board block. No block yet → this tab
+    # is skipped and flagged; the others fill as usual.
+    ("luke", "Luke Baldwin (B2B)",
+     pull.fetch_b2b_luke, fill.open_ws_b2b_luke,
+     "owners_b2b_luke.csv", pull.make_b2b_board_roster_parser("Luke"),
+     pull.B2B_PERIODS),
     # ----- NDS (Phase 3) -----
     ("khalil", "Khalil Mansour (NDS)",
      pull.fetch_nds_khalil, fill.open_ws_nds_khalil,
@@ -480,7 +487,7 @@ def _run_fill_phase(label: str, open_ws_fn, parsed: dict, periods: tuple,
 ONLY_GROUPS = {
     "wireless": ["wayne-wl", "starr-wl", "chan-wl", "tony-wl", "sahil-wl"],
     "fiber":    ["wayne", "starr", "chan", "tony", "sahil"],
-    "b2b":      ["carlos", "eveliz", "luis", "atef"],
+    "b2b":      ["carlos", "eveliz", "luis", "atef", "luke"],
     "nds":      ["khalil", "colten", "jairo"],
 }
 
@@ -596,7 +603,13 @@ def main(argv=None) -> int:
     for slug, label, _fetch_fn, open_ws_fn, _csv_name, parse_fn, periods in selected:
         if slug not in csvs:
             continue   # pull failed/skipped above — already flagged
-        parsed = parse_fn(csvs[slug])
+        try:
+            parsed = parse_fn(csvs[slug])
+        except Exception as e:  # noqa: BLE001 — one tab must not kill the rest
+            print(f"  ⚠ {label}: parse FAILED — skipping (the rest continue). "
+                  f"{str(e).splitlines()[0][:160]}")
+            failed.append(label)
+            continue
         _raw_names = sorted(parsed.get("reps", {}).keys())
         parsed = _apply_aliases(parsed, aliases)
         _aliased_names = sorted(parsed.get("reps", {}).keys())

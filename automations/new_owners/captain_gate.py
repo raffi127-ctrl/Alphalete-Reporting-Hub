@@ -119,7 +119,10 @@ EXCLUDE: Dict[str, tuple] = {
     # 2026-09-15 (Eve), two-week zero rule: Max Powell cerro WE 09.13 y WE 09.06
     # en 0 en B2B - All Units de Luis (ultima venta WE 08.30) y no tiene filas
     # en ningun otro cuadro del board.
-    "Luis":   ("Max Powell",),                           # 2026-09-15
+    # 2026-10-01 (Eve): Cruz Venegas pasa a la capitania nueva de LUKE BALDWIN.
+    # Sale de las cajas de Luis; su historia en las columnas cerradas se queda.
+    "Luis":   ("Max Powell",                             # 2026-09-15
+               "Cruz Venegas"),                          # 2026-10-01
     # 2026-09-29 (Eve), two-week zero rule: oficina 23576 cerrada el 9/9,
     # cero en WE 09.27 y WE 09.20 en las dos cajas Fiber de Chan.
     "Chan":   ("Kimberly Rodriguez",),                   # 2026-09-29

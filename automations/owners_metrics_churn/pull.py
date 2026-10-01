@@ -723,6 +723,50 @@ def make_b2b_captainship_parser(roster):
     return _parse
 
 
+def make_b2b_board_roster_parser(captain: str):
+    """make_b2b_captainship_parser, with the roster read from the captain's
+    block on the Org Sales Board at PARSE time instead of typed here.
+
+    For a B2B captainship that has no own CHURNRATES view yet — Luke Baldwin,
+    2026-10-01 (Carlos asked for his captainship report; the board block is
+    the roster of record, built by Eve). An owner added to or taken off the
+    block lands on the tab the next morning with no code edit. Names are
+    compared through the ICD Aliases sheet, so a board spelling ("Jeff Starr")
+    still catches the Tableau one ("Jeffrey Starr").
+
+    Raises if the block is missing or empty (board_roster refuses) — the runner
+    skips this tab and flags it instead of filling it with the whole B2B org.
+    The day his view exists, swap this for a plain fetch + parse_b2b, the way
+    Atef's went on 2026-09-03."""
+    def _parse(csv_path: Path) -> dict:
+        from automations.carlos_captainship_headcount.roster import board_roster
+        from automations.focus_office_att.aliases import load_aliases
+        aliases = load_aliases()
+        canon = lambda n: " ".join(  # noqa: E731
+            str(alias_to_canonical(n, aliases) or n).lower().split())
+        roster = {canon(n) for n in board_roster(captain)}
+        keep = [n for n in parse_b2b(csv_path)["reps"] if canon(n) in roster]
+        if not keep:
+            raise RuntimeError(
+                f"none of {captain}'s board owners are in the all-teams churn "
+                f"file — a dead view or a spelling the ICD Aliases sheet "
+                f"doesn't cover; NOT filling his tab with nothing")
+        return make_b2b_captainship_parser(keep)(csv_path)
+
+    _parse.__name__ = f"parse_b2b_board_{captain.lower()}"
+    _parse.program = "b2b"
+    return _parse
+
+
+def fetch_b2b_luke(out_path: Optional[Path] = None,
+                   verbose: bool = False, page=None) -> Path:
+    """Luke has no own view: the all-teams wireless view, to its own file so it
+    never races the moved-rep backfill's copy."""
+    return fetch_b2b_allteams(
+        out_path or Path(tempfile.gettempdir()) / "owners_b2b_luke.csv",
+        verbose=verbose, page=page)
+
+
 # ----- NDS (Phase 3) -------------------------------------------------
 # Different Tableau workbook (NDS-SNRES-ATT-OOFWorkbook/CHURNRATES)
 # AND a different worksheet name in the Crosstab dialog

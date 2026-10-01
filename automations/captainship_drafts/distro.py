@@ -82,6 +82,9 @@ GROUPS: dict = {
     # [[project_captainship-fiber4-daily-send]] [[project_captainship-review-gate]]
     "pat":    "Pat's Captainship",
     "jess":   "Jess's Captainship",
+    # 2026-10-01: Luke Baldwin (B2B). El grupo hay que crearlo en Contactos;
+    # mientras no exista cae a config.RECIPIENTS["luke"].
+    "luke":   "Luke's Captainship",
 }
 
 GROUP_PREFIX = "Captainship - "

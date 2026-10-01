@@ -114,6 +114,10 @@ TAB_B2B_LUIS   = "Churn - Luis Salazar (B2B)"   # renamed to match the others 20
 # 2026-09-03, when he finally got his own Tableau view (B2B_ATEF_URL) and
 # started reading it like the other three captainships.
 TAB_B2B_ATEF   = "Churn - Atef Choudhury (B2B)"
+# Luke Baldwin's captainship, 2026-10-01 (Carlos asked). Copy of Atef's tab cut
+# down to Luke's own row; the rest of his owners are inserted by the daily run
+# from the board block (pull.make_b2b_board_roster_parser).
+TAB_B2B_LUKE   = "Churn - Luke Baldwin (B2B)"
 
 
 def open_ws_b2b_carlos():
@@ -130,6 +134,10 @@ def open_ws_b2b_luis():
 
 def open_ws_b2b_atef():
     return _shared.open_by_key(SHEET_ID).worksheet(TAB_B2B_ATEF)
+
+
+def open_ws_b2b_luke():
+    return _shared.open_by_key(SHEET_ID).worksheet(TAB_B2B_LUKE)
 
 
 # ----- NDS tabs (Phase 3) --------------------------------------------
