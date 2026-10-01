@@ -199,10 +199,20 @@ def lint(bodies, states, office=None):
     want_addr = (office.get("address") or "").strip()
     want_phone = "".join(c for c in (office.get("phone") or "") if c.isdigit())
 
+    seen_labels = collections.Counter()
     for section, name, body in bodies:
         # "Await Call AI / Await Call AI Template #1" said it twice.
         where = (name if name.startswith(section)
                  else "{} / {}".format(section, name))
+        # A section can hold two bodies under ONE name — First Interview
+        # Confirmation has the message and the "Here's the link again"
+        # follow-up. Both printed as the same line, so a reader could not
+        # tell which one to go and edit.
+        seen_labels[where] += 1
+        if seen_labels[where] > 1:
+            opening = " ".join((body or "").split())[:34]
+            where = "{} (the one starting \u201c{}\u2026\u201d)".format(
+                where, opening)
 
         # --- against what this office says is correct ---------------------
         if want_zoom:

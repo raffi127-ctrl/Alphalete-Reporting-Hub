@@ -1396,3 +1396,50 @@ class EscalationCallPromiseTest(unittest.TestCase):
                  "description": "", "message": "", "routing": "Silent"}]
         kinds = [k for k, _m in self.E.lint(rows)]
         self.assertIn("SILENT AND BLANK", kinds)
+
+
+class TemplateLabelTest(unittest.TestCase):
+    def setUp(self):
+        from automations.sms_audit import templates as T
+        self.T = T
+
+    def test_a_section_is_not_repeated_inside_its_own_name(self):
+        bodies = [("Await Call AI", "Await Call AI Template #1", "hi STOP")]
+        _f, _p = self.T.lint(bodies, {"Await Call AI": "Activated"}, None)
+        found = self.T.lint(
+            [("Await Call AI", "Await Call AI Template #1", "hi")],
+            {"Await Call AI": "Activated"}, None)[0]
+        self.assertEqual(found[0][1], "Await Call AI Template #1")
+
+    def test_two_bodies_under_one_name_are_told_apart(self):
+        """First Interview Confirmation holds the message AND the
+        'Here's the link again' follow-up, both under one name."""
+        bodies = [("First Interview Confirmation", "Tmpl #1", "all set"),
+                  ("First Interview Confirmation", "Tmpl #1",
+                   "Here is the link again: https://x")]
+        got = [m for _k, m in self.T.lint(
+            bodies, {"First Interview Confirmation": "Activated"}, None)[0]]
+        self.assertNotEqual(got[0], got[1])
+        self.assertIn("Here is the link again", got[1])
+
+
+class SmsTextTest(unittest.TestCase):
+    def setUp(self):
+        from automations.sms_audit import sms_text as X
+        self.X = X
+
+    def test_one_curly_quote_halves_the_room(self):
+        plain = self.X.measure("a" * 150)
+        self.assertEqual(plain["segments"], 1)
+        curly = self.X.measure("a" * 149 + "’")
+        self.assertEqual(curly["segments"], 3)
+        self.assertTrue(curly["unicode"])
+
+    def test_clean_swaps_it_back(self):
+        fixed = self.X.clean("Here’s the link — now")
+        self.assertEqual(fixed, "Here's the link - now")
+        self.assertFalse(self.X.measure(fixed)["unicode"])
+
+    def test_plain_ascii_counts_160_to_a_segment(self):
+        self.assertEqual(self.X.measure("a" * 160)["segments"], 1)
+        self.assertEqual(self.X.measure("a" * 161)["segments"], 2)
