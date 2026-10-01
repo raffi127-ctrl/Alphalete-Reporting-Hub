@@ -80,6 +80,31 @@ So about two thirds of applicants were too slow to take the time they were
 offered, and the AI has to offer again — extra round trips on a channel
 already losing 11% of its texts.
 
+### What 11280 was changed to, 2026-10-01
+
+**Offered 60 · Accepted 5 · Ghosting 60** — a 55-minute acceptance window
+instead of 5.
+
+The window was widened by lowering the *accepted* cut-off, not by pushing
+the offered time further out, because same-day interviews show up far
+better at this office:
+
+| Booked for | Booked | Show rate |
+|---|---|---|
+| Same day | 1,901 | **57%** |
+| Next day | 1,801 | 42% |
+| 2–3 days | 781 | 38% |
+| 4+ days | 84 | 39% |
+
+A longer offered buffer would start spilling bookings into tomorrow and
+cost more than the wider window gains. 60 minutes keeps it same day.
+
+**The trade-off:** at accepted = 5 an applicant can take a slot five
+minutes before it starts. That only happens to someone replying ~55
+minutes late, but the office has to be willing to run it. If the team gets
+caught out, accepted = 15 gives a 45-minute window (about 57% of
+applicants) with 15 minutes' notice guaranteed.
+
 **Ghosting Threshold (minutes)**
 Silence for this long puts a ghost icon on the conversation so a recruiter can
 re-engage. 11280 is at 45, by which point 58% of applicants have replied
