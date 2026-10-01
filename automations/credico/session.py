@@ -128,6 +128,20 @@ def session_expiry(path=None):
     return (exp, _days_left(exp)) if exp is not None else (None, None)
 
 
+def _token_is_live(state, now=None):
+    """True when the saved state carries a Credico token that hasn't expired.
+
+    `--login` reuses a persistent browser profile, so an EXPIRED token from the
+    last login is still sitting in its localStorage: the SPA paints the
+    dashboard and the old "any localStorage = logged in" check saved that dead
+    token straight back (2026-10-01). A token we can't date counts as live —
+    the post-save note still prints whatever date it has."""
+    if _auth_blob(state) is None:
+        return False
+    exp = _state_expiry(state)
+    return exp is None or exp > (now or datetime.now(timezone.utc))
+
+
 def _expiry_note(exp, days=None):
     """One line a human can act on, for logs and error messages."""
     if exp is None:
@@ -182,6 +196,14 @@ def save_login(timeout_min: int = 10, verbose: bool = True) -> Path:
             viewport={"width": 1500, "height": 950})
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.goto(DASHBOARD, wait_until="domcontentloaded")
+        if _auth_blob(ctx.storage_state()) is not None                 and not _token_is_live(ctx.storage_state()):
+            # Leftover token from the last login: drop it so Credico shows
+            # its login screen instead of a dashboard that only looks alive.
+            print("Old (expired) Credico token found in the browser profile — "
+                  "clearing it so you get the login screen.", flush=True)
+            page.evaluate(f"localStorage.removeItem({json.dumps(AUTH_KEY)})")
+            page.goto(DASHBOARD, wait_until="domcontentloaded")
+            page.reload(wait_until="domcontentloaded")
         deadline = timeout_min * 60
         waited = 0
         while waited < deadline:
@@ -192,9 +214,9 @@ def save_login(timeout_min: int = 10, verbose: bool = True) -> Path:
             page.wait_for_timeout(3000)          # let the SPA settle / set its token
             # "No password field" alone is too weak — a still-loading SPA passes it.
             # Require the auth token to actually exist in localStorage.
+            # ...and that token must not be the expired one from last time.
             try:
-                has_token = sum(len(o.get("localStorage", []))
-                                for o in ctx.storage_state().get("origins", [])) > 0
+                has_token = _token_is_live(ctx.storage_state())
             except Exception:  # noqa: BLE001
                 has_token = False
             if _looks_logged_in(page, verbose=False) and has_token:

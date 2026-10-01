@@ -65,6 +65,22 @@ class ExpiryReading(unittest.TestCase):
                                            "origins": []}))
 
 
+class LoginRejectsTheOldToken(unittest.TestCase):
+    """2026-10-01: --login saved the expired token left in its browser profile
+    back to disk because the dashboard painted. Only a live token counts."""
+
+    def test_expired_token_is_not_a_login(self):
+        old = datetime.now(timezone.utc) - timedelta(days=6)
+        self.assertFalse(S._token_is_live(_state(old)))
+
+    def test_fresh_token_is_a_login(self):
+        new = datetime.now(timezone.utc) + timedelta(days=14)
+        self.assertTrue(S._token_is_live(_state(new)))
+
+    def test_no_token_is_not_a_login(self):
+        self.assertFalse(S._token_is_live({"origins": []}))
+
+
 class WhatWeTellTheHuman(unittest.TestCase):
     def test_expired_says_the_date_and_how_long_ago(self):
         exp = datetime.now(timezone.utc) - timedelta(days=6)
