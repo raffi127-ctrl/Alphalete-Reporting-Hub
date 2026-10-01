@@ -17,6 +17,7 @@ it learn everything so that it gets context please?"*
 | [video-index.md](video-index.md) | All 42 training Looms: real Loom title, recording date, length, Skool day, and a link to each transcript. |
 | [transcripts/](transcripts/) | 41 transcripts (~15,700 words), one per video, plus a single combined file. |
 | [videos.json](videos.json) | Same, machine-readable. |
+| [appstream-ai-settings.md](appstream-ai-settings.md) | **Current, not 2024.** What every field on AI tab → AI Settings does, from eStream's own walkthrough, plus the faults found auditing 11280 on 2026-10-01 — including the two timeslot buffers that decide whether an applicant can accept the time the AI offers. Megan checked several offices and none were set correctly. |
 
 ## Source of truth — re-pull before trusting this
 
