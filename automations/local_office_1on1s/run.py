@@ -212,6 +212,16 @@ def main(argv=None) -> int:
         people_to_fill = list(rost.leaders)
         if rost.head and not rost.head_group_only:
             people_to_fill.insert(0, rost.head)
+        elif rost.head:
+            # A GROUP-ONLY HEAD STILL NEEDS THEIR PERSONAL ROWS CLEARED.
+            # Skipping them entirely meant those rows were never written AND
+            # never cleared, so Raf's box kept the team totals an earlier bug
+            # had put there — his personal 'Total Apps' read 83/93/72/55/64
+            # while the corrected team block beside it read 65 for the same
+            # week. Removing the bad write does nothing about the bad value
+            # already in the cell. He is filled with NOTHING, which is the
+            # point: the clearing pass runs and every owned personal row empties.
+            people_to_fill.insert(0, rost.head)
 
         for name in people_to_fill:
             sec = by_name.get(PEO.key(name))
@@ -225,6 +235,30 @@ def main(argv=None) -> int:
             # the same duplicate-label reason.
             own_end = LO.block_start(grid, sec, "Owner 1on1's")
             rows = LO.label_rows(grid, sec, last=(own_end - 1) if own_end else None)
+
+            group_only = (PEO.key(name) == PEO.key(rost.head)
+                          and rost.head_group_only)
+            if group_only:
+                # No sources read for them; `have` stays empty and the owned
+                # rows below are cleared. Megan 2026-09-28: "he won't have any
+                # personal production info".
+                filled = F.Filled()
+                rows = LO.label_rows(
+                    grid, sec,
+                    last=((LO.block_start(grid, sec, "Owner 1on1's") or 0) - 1) or None)
+                have = {}
+                placed = cleared = 0
+                for label in F.OWNED:
+                    r = LO.find_row(rows, label)
+                    if r is None:
+                        continue
+                    for wcol in [c for c in hdr if c.ok and c.sunday in wks]:
+                        if LO._cell(grid, r, wcol.col).strip():
+                            updates.append({"range": f"{_a1(wcol.col)}{r}",
+                                            "values": [[""]]})
+                            cleared += 1
+                print(f"    {name + ' (group only)':<32} {cleared:>3} cleared")
+                continue
 
             rn, note = PEO.resolve(name, rec_names)
             if note:
