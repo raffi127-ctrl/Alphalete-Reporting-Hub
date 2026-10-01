@@ -566,31 +566,29 @@ def insert_missing_reps(
     })
 
     # Re-resolve sections in case insertions changed downstream row numbers.
-    # Cheaper than a full re-scan: walk the insert requests from bottom up
-    # and shift any section whose header_row sits below the insert point.
-    sorted_inserts_top_down = sorted(insert_requests, key=lambda r: r["_anchor"])
-    for req in sorted_inserts_top_down:
-        delta = len(req["_names"])
-        for p, s in sections.items():
-            if s["header_row"] > req["_anchor"]:
-                s["header_row"] += delta
-                s["office_avg_row"] += delta
-                s["rep_header_row"] += delta
-                if s.get("goal_row"):
-                    s["goal_row"] += delta
-                s["rep_rows"] = {
-                    name: (row + delta if row > req["_anchor"] else row)
-                    for name, row in s["rep_rows"].items()
-                }
-            # Ghost rows shift on their own row number, not the section's: one
-            # can sit BELOW this section's insert anchor (the bottom-most named
-            # rep) and still belong to this section. A stale index here would
-            # aim write_today's clear at the wrong row.
-            if s.get("blank_name_rows"):
-                s["blank_name_rows"] = [
-                    (r + delta if r > req["_anchor"] else r)
-                    for r in s["blank_name_rows"]
-                ]
+    # Every row moves down by the rows inserted ABOVE ITS ORIGINAL position.
+    # Compare ORIGINAL rows to the (original) anchors — never a row that an
+    # earlier insert already shifted: a header pushed past a lower anchor got
+    # shifted AGAIN, so from the third section down every header pointed rows
+    # too low and sortRange sorted across section borders. That scrambled Luke
+    # Baldwin's brand-new tab (4 reps inserted into 5 sections, 2026-10-01).
+    def _moved(row: int) -> int:
+        return row + sum(len(r["_names"]) for r in insert_requests
+                         if row > r["_anchor"])
+
+    for p, s in sections.items():
+        s["header_row"] = _moved(s["header_row"])
+        s["office_avg_row"] = _moved(s["office_avg_row"])
+        s["rep_header_row"] = _moved(s["rep_header_row"])
+        if s.get("goal_row"):
+            s["goal_row"] = _moved(s["goal_row"])
+        s["rep_rows"] = {name: _moved(row) for name, row in s["rep_rows"].items()}
+        # Ghost rows shift on their own row number, not the section's: one
+        # can sit BELOW this section's insert anchor (the bottom-most named
+        # rep) and still belong to this section. A stale index here would
+        # aim write_today's clear at the wrong row.
+        if s.get("blank_name_rows"):
+            s["blank_name_rows"] = [_moved(r) for r in s["blank_name_rows"]]
     # Add the freshly-inserted reps to their section's rep_rows map at
     # the same FINAL positions the names were written to.
     for req in insert_requests:
