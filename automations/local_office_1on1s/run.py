@@ -483,6 +483,26 @@ def main(argv=None) -> int:
                 for lab, val, src in SA.cells_for(name, wsales):
                     filled.add(lab, wk, val, src)
 
+                # NO SALES READS 0 — BUT ONLY IF THEY WERE ON THE BOARD THAT
+                # WEEK. Megan 2026-10-01: "Bas will have some sometimes - mark
+                # 0 for everyone if it's none", then "only 0 if they have a
+                # board row that week".
+                #
+                # The distinction is the whole point: a 0 says they sold
+                # nothing, and that is only true of somebody who was here.
+                # Keegan Miller, Hank Tran, Ciniya Weatherspoon and Andres
+                # Mejia have no row in early August because they had not
+                # started — writing 0 there would put a performance figure
+                # against weeks they were not employed. Those stay blank.
+                #
+                # Written before the real figures so an actual board number
+                # overwrites the 0.
+                if wdays.get(PEO.key(name)) is not None:
+                    for lab in SA.SALES:
+                        filled.add(lab, wk, "0",
+                                   f"on the WE {wk:%-m/%-d} board with no "
+                                   f"{lab} — none sold")
+
                 # BOARD FIRST, THEN OWNERVILLE ON TOP. Ownerville is the better
                 # source and wins every row it produces (later writes take the
                 # cell), but it does not produce ALL of them: 'Monday - Saturday
