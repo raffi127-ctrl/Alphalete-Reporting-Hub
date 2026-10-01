@@ -1359,6 +1359,42 @@ def log_reply_speed(convos):
     return speeds
 
 
+def reply_speed_by_sender(convos, min_n=10):
+    """How fast each recruiter answers an applicant, by name.
+
+    Megan 2026-10-01: "we also should have response times of recruiters in
+    here". log_reply_speed only split AI from human, which tells an office
+    nothing about WHO to talk to. Same measurement, one row per person:
+    from the applicant's message to that person's next outbound.
+
+    Anyone under `min_n` replies is left out — three replies is not a
+    response time."""
+    per = collections.defaultdict(list)
+    for c in convos.values():
+        msgs = sorted(c["msgs"], key=lambda m: m["when"])
+        for i, m in enumerate(msgs):
+            if m["dir"] != "In":
+                continue
+            nxt = next((x for x in msgs[i + 1:] if x["dir"] == "Out"), None)
+            if not nxt:
+                continue
+            gap = (nxt["when"] - m["when"]).total_seconds() / 60.0
+            if gap < 0 or gap > 24 * 60:
+                continue
+            who = nxt.get("sent_by") or ("AI Messaging" if is_ai(nxt) else "")
+            if who:
+                per[who].append(gap)
+    out = []
+    for who, gaps in per.items():
+        if len(gaps) < min_n:
+            continue
+        st = _stat(gaps)
+        st["who"] = who
+        out.append(st)
+    out.sort(key=lambda d: d["median"])
+    return out
+
+
 def applicant_reply_speed(convos):
     """How long the APPLICANT takes to answer US — the mirror of
     log_reply_speed (Megan 2026-09-27: "or maybe avg response time of an

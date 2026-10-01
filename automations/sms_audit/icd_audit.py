@@ -32,6 +32,7 @@ except Exception:
     pass
 
 from automations.sms_audit import analyze as A
+from automations.sms_audit import call_list as CL
 from automations.sms_audit import offices as O
 from automations.sms_audit import retention as R
 from automations.sms_audit import rebuttals as RB
@@ -75,6 +76,7 @@ def message_findings(office):
             "worst_hours": A.worst_hours_label(convos),
             "hours": A.hourly_reply(convos),
             "complaints": A.complaints(convos),
+            "speed": A.reply_speed_by_sender(convos),
             "delivery": A.delivery_reasons(log)}
 
 
@@ -105,8 +107,21 @@ blockquote{margin:.5em 0 .5em 1em;padding:.35em .8em;border-left:3px solid #bbb;
 blockquote .hit{display:block;color:#a00;font-size:.85em;margin-bottom:.2em}
 .gap{background:#fff8e1;border:1px solid #e6c200;padding:.8em 1em;border-radius:4px}
 .none{color:#666;font-style:italic}
+.big{font-size:3.1em;font-weight:bold;margin:.1em 0 0;line-height:1}
+.big.ok{color:#156E46}
+.big.miss{color:#A8322A}
 .lede{margin:.2em 0 .8em}
 """
+
+
+def _mins(m):
+    """4.0 -> '4 min', 95 -> '1 hr 35 min'. No bare decimals in a document
+    somebody reads out loud."""
+    m = int(round(m))
+    if m < 60:
+        return "{} min".format(m)
+    return "{} hr {} min".format(m // 60, m % 60) if m % 60 else \
+        "{} hr".format(m // 60)
 
 
 def esc(t):
@@ -116,7 +131,7 @@ def esc(t):
 
 
 def write_report(office, tmpl, msgs, moved, tab, path,
-                 wlabels=None):
+                 wlabels=None, conv=None, window=None):
     o = office
     L = []
     add = L.append
@@ -140,6 +155,49 @@ def write_report(office, tmpl, msgs, moved, tab, path,
             "running.</p></div>")
 
     # ---------------- templates ----------------
+    # Megan 2026-10-01: "This is the MAIN thing we need to get as high as
+    # possible - goal at 80%+". So it opens the document, above everything
+    # else the auditor found.
+    add("<h2>Resumes received &rarr; 1st rounds booked</h2>")
+    if not conv or not conv.get("ok"):
+        add("<p class='none'>Not measured: {}.</p>".format(
+            esc((conv or {}).get("why", "no data"))))
+        add("<p class='none'>It needs the Call List export "
+            "(Call Hub &rarr; Export, saved as callList_{}.xls) and the "
+            "Activity Report pull.</p>".format(esc(o["office"])))
+    else:
+        hit = conv["rate"] >= conv["goal"]
+        add("<p class='big {}'>{:.0f}%</p>".format(
+            "ok" if hit else "miss", conv["rate"]))
+        add("<p class='lede'><b>{:,} of the {:,} people whose resume came in "
+            "got booked into a 1st round.</b> The goal is {:.0f}%.</p>".format(
+                conv["booked"], conv["applied"], conv["goal"]))
+        if hit:
+            add("<p>Above goal.</p>")
+        else:
+            add("<p><b>{:,} more bookings that week would have hit "
+                "{:.0f}%.</b></p>".format(conv["short_by"], conv["goal"]))
+        st = CL.stuck(o["office"], window[0], window[1]) if window else []
+        if st:
+            add("<p class='lede'>The {:,} who were not booked are sitting "
+                "here:</p>".format(conv["waiting"]))
+            add("<div class='scroll'><table><tr><th>Where they are</th>"
+                "<th>How many</th><th>Share</th></tr>")
+            for r in st:
+                add("<tr><td>{}</td><td class='n'>{:,}</td>"
+                    "<td class='n'>{:.0f}%</td></tr>".format(
+                        esc(r["status"]), r["n"], r["share"]))
+            add("</table></div>")
+        add("<p class='none'>Booked = First Interview Date rows in the "
+            "AppStream Activity Report (p=704). Resumes received = the "
+            "people still on the Call List export (p=4000 &rarr; Export, "
+            "pulled {:%d %b}) plus the ones booked \u2014 everyone is saved "
+            "to the call list when their resume arrives and comes off it "
+            "once they are booked. <b>That last part is an assumption:</b> "
+            "if this office also clears people off the list by hand, the "
+            "percentage reads higher than it is.</p>".format(conv["pulled"]))
+    add("")
+
     add("<h2>Templates</h2>")
     if tmpl is None:
         add("<p class='none'>No templates pulled for this office yet.</p>")
@@ -148,22 +206,23 @@ def write_report(office, tmpl, msgs, moved, tab, path,
         if not findings:
             add("<p>Nothing flagged.</p>")
         else:
-            by = collections.Counter(k for k, _m in findings)
-            add("<div class='scroll'><table><tr><th>What</th>"
-                "<th>How many</th></tr>")
-            for k, n in by.most_common():
-                add("<tr><td>{}</td><td class='n'>{}</td></tr>".format(
-                    esc(k), n))
-            add("</table></div>")
             bykind = collections.defaultdict(list)
             for kind, msg in findings:
                 bykind[kind].append(msg)
-            for kind, msgs_ in sorted(bykind.items(), key=lambda kv: -len(kv[1])):
-                add("<details><summary>{} ({})</summary><ul>".format(
-                    esc(kind), len(msgs_)))
+            # One block per problem: what it is in plain words, why it
+            # matters said ONCE, then which templates. The old version
+            # repeated its own boilerplate on all seven lines.
+            for kind, msgs_ in sorted(bykind.items(),
+                                      key=lambda kv: -len(kv[1])):
+                title, why = T.WHY.get(kind, (kind, ""))
+                add("<h3>{} &mdash; {} template{}</h3>".format(
+                    esc(title), len(msgs_), "" if len(msgs_) == 1 else "s"))
+                if why:
+                    add("<p>{}</p>".format(esc(why)))
+                add("<ul>")
                 for m in msgs_:
                     add("<li>{}</li>".format(esc(m)))
-                add("</ul></details>")
+                add("</ul>")
         if personas and len(personas) > 1:
             add("<p><b>Applicants hear from {} different names.</b> The live "
                 "templates sign {} \u2014 so the same applicant can get two "
@@ -249,6 +308,36 @@ def write_report(office, tmpl, msgs, moved, tab, path,
                         esc(A.clock(r["hour"])), r["sent"], r["replied"],
                         r["rate"]))
             add("</table></div></details>")
+
+        # ---------------- how fast they reply ----------------
+        add("<h2>How fast recruiters reply</h2>")
+        sp = msgs.get("speed") or []
+        if not sp:
+            add("<p class='none'>Nobody has enough replies on record to time "
+                "them.</p>")
+        else:
+            add("<p class='lede'>From an applicant\u2019s message to that "
+                "person\u2019s next text back. Fastest first. Anyone with "
+                "fewer than 10 replies is left out.</p>")
+            add("<div class='scroll'><table><tr><th>Who</th>"
+                "<th>Replies</th><th>Usual wait</th><th>Within 5 min</th>"
+                "<th>Over 4 hours</th></tr>")
+            for r in sp:
+                add("<tr><td>{}</td><td class='n'>{:,}</td>"
+                    "<td class='n'>{}</td><td class='n'>{:.0f}%</td>"
+                    "<td class='n'>{:.0f}%</td></tr>".format(
+                        esc(r["who"]), r["n"], _mins(r["median"]),
+                        r["within_5"], r["over_4h"]))
+            add("</table></div>")
+            slow = [r for r in sp if r["over_4h"] >= 10]
+            if slow:
+                add("<p>{} leave more than one reply in ten over four "
+                    "hours: {}. An applicant who has moved on by then is "
+                    "not coming back.</p>".format(
+                        "One person leaves" if len(slow) == 1
+                        else "{} people leave".format(len(slow)),
+                        esc(", ".join("{} ({:.0f}%)".format(
+                            r["who"], r["over_4h"]) for r in slow))))
 
         # ---------------- complaints ----------------
         add("<h2>What applicants complained about</h2>")
@@ -385,6 +474,15 @@ def write_report(office, tmpl, msgs, moved, tab, path,
     return path
 
 
+def latest_window(rows):
+    """(first, last) interview date of the most recent week pulled, so the
+    conversion is measured over the same days the rest of the report is."""
+    spans = R.week_spans(rows or [])
+    if not spans:
+        return None
+    return spans[list(R.table(rows, "week"))[-1]]
+
+
 def report_path(office_id):
     """One place that knows the filename, so the bot and the runner agree."""
     return OUTPUT / "icd-audit-{}.html".format(office_id)
@@ -418,8 +516,11 @@ def main(argv=None):
         tab = R.table(rows, "week") if rows else {}
         moved = R.changes(tab) if tab else []
         path = report_path(o["office"])
+        window = latest_window(rows)
+        conv = CL.conversion(o["office"], window[0], window[1]) if window \
+            else None
         write_report(o, tmpl, msgs, moved, tab, path,
-                     R.week_labels(rows) if rows else {})
+                     R.week_labels(rows) if rows else {}, conv, window)
         nt = len(tmpl[0]) if tmpl else 0
         nm = (len(msgs["errors"]) + len(msgs["dodged"])) if msgs else 0
         big = [m for m in moved if m[1] - m[2] <= -R.DROP]

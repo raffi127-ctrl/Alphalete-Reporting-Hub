@@ -118,6 +118,59 @@ def parse_activation(text):
     return states
 
 
+# Megan 2026-10-01: "I don't understand what you're trying to say in this
+# section." Every finding was repeating its own boilerplate — seven lines
+# each ending "AppStream's own deliverability checklist, item 3" — and the
+# kind was a code, not a sentence. The code stays as the key; the report
+# prints the title and says the reason once for the whole group.
+WHY = {
+    "NO OPT-OUT": (
+        "No way to stop the texts",
+        "These messages never tell people how to stop them. Add one line \u2014 "
+        "\u201cReply STOP to opt out\u201d. Phone carriers look for it, and texts "
+        "without it get blocked far more often, which is where undelivered "
+        "texts come from."),
+    "WRONG ROOM": (
+        "Sends people to the wrong Zoom room",
+        "The link in these does not match the room this office gave us. "
+        "Applicants who tap it land in a meeting nobody is hosting."),
+    "WRONG MEETING ID": (
+        "Wrong meeting ID",
+        "The written-out meeting ID does not match this office\u2019s room. "
+        "Anyone who types it in instead of tapping the link ends up "
+        "somewhere else."),
+    "WRONG ADDRESS": (
+        "Wrong office address",
+        "These send an address that is not where this office interviews. "
+        "People drive to the wrong building and do not come back."),
+    "CHECK PHONE": (
+        "A phone number we do not recognise",
+        "The number in these is not the recruiting number on file. Either "
+        "the template is wrong or the number on file is out of date \u2014 "
+        "worth one look either way."),
+    "SHOUTING": (
+        "Written in block capitals",
+        "Block capitals read as shouting, and they trip spam filters. Job "
+        "titles and company names are not counted here."),
+    "BASE PAY": (
+        "Says there is a base pay",
+        "Raf\u2019s rule: never say there is a base. The pay is $1,000\u2013$1,500 "
+        "weekly. Saying \u201cbase\u201d sets up an argument on day one."),
+    "DEAD LINK": (
+        "A link that cannot work",
+        "The web address is spelled with a look-alike character, so it "
+        "resolves to nothing. Every applicant who taps it gets an error."),
+    "MERGE": (
+        "Unfinished merge code in the message",
+        "Applicants are receiving the raw placeholder instead of their own "
+        "name or time."),
+    "PLACEHOLDER": (
+        "A test message that is switched on",
+        "This template is live and its body is placeholder text. If "
+        "AppStream reaches this step, that is what the applicant gets."),
+}
+
+
 def lint(bodies, states, office=None):
     """`office` is a row from offices.py — the address, phone and Zoom link
     this office is SUPPOSED to be sending. Without it the checks that need a
@@ -134,7 +187,9 @@ def lint(bodies, states, office=None):
     want_phone = "".join(c for c in (office.get("phone") or "") if c.isdigit())
 
     for section, name, body in bodies:
-        where = "{} / {}".format(section, name)
+        # "Await Call AI / Await Call AI Template #1" said it twice.
+        where = (name if name.startswith(section)
+                 else "{} / {}".format(section, name))
 
         # --- against what this office says is correct ---------------------
         if want_zoom:
@@ -142,8 +197,7 @@ def lint(bodies, states, office=None):
                 if url.rstrip("/") != want_zoom.rstrip("/"):
                     findings.append((
                         "WRONG ROOM",
-                        "{}: sends {} — this office's room is {}. Applicants "
-                        "land in a meeting nobody is hosting.".format(
+                        "{}: sends {} \u2014 this office\u2019s room is {}.".format(
                             where, url, want_zoom)))
         if want_id and re.search(r"Meeting ID[:\s]*([\d  ]{8,})", body):
             got = "".join(c for c in re.search(
@@ -188,22 +242,25 @@ def lint(bodies, states, office=None):
             if odd:
                 findings.append((
                     "DEAD LINK",
-                    "{}: {} — the host is spelled with {}. It does not resolve; "
-                    "every applicant who taps it gets nothing.".format(
+                    "{}: {} \u2014 the host is spelled with {}.".format(
                         where, url,
                         ", ".join("{!r} ({})".format(c, unicodedata.name(c, "?"))
                                   for c in odd))))
 
         if re.search(r"\{\{|\}\}|\bnull\b|%%", body):
-            findings.append(("MERGE", "{}: leftover merge markup in the body — "
-                                      "“{}”".format(where, body[:90])))
+            findings.append(("MERGE", "{}: “{}”".format(where, body[:90])))
+
+        if (states.get(section) == "Activated"
+                and re.match(r"^\s*(test|testing|asdf|xxx+|placeholder)\b"
+                             r"[\s.!]*$", body, re.I)):
+            findings.append(("PLACEHOLDER",
+                             "{}: the whole body is \u201c{}\u201d.".format(
+                                 where, body.strip()[:40])))
 
         if states.get(section) == "Activated" and not re.search(
                 r"\bstop\b", body, re.I):
             findings.append(("NO OPT-OUT",
-                             "{}: activated, no “Reply STOP to opt out”. "
-                             "AppStream's own deliverability checklist, item 3."
-                             .format(where)))
+                             "{}".format(where)))
 
         # Only templates that are switched ON. A name sitting in a
         # deactivated template is nobody's experience of this office —
