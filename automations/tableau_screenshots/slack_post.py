@@ -959,15 +959,21 @@ def _post_to_channel_unlocked(client, channel: str, captures: list, pages: list,
     # A late tracker just landed -> drop its "(data lands ~7am)" note from the
     # header, so the thread stops advertising something it's already delivered.
     # Best-effort: the image is what matters, and a stale note beats a failed run.
-    if not thread["created"] and (set(mine) & set(late_all or ())):
+    # `updated` on an EXISTING thread re-renders the header too, so a same-day
+    # fix (--replace --updated) tags the morning parent instead of only a new
+    # one (Megan 2026-10-01: NDS + Fiber went out half-loaded, re-posted in place
+    # with the header marked UPDATED). Boards already in the thread are never
+    # "still coming" -- without `already`, a NDS-only rerun would re-promise Box.
+    if not thread["created"] and ((set(mine) & set(late_all or ())) or updated):
         try:
+            still_owed = [i for i in pending_late if i not in already]
             parent, contents = _split_header(channel, pages, today,
-                                             pending_late, note, updated)
+                                             still_owed, note, updated)
             if contents:
                 # Short-header channel: the list (and its late notes) lives in
                 # the thread's first reply — refresh that, not the parent.
                 _update_contents_reply(client, channel, thread_ts, contents)
-            else:
+            if not contents or updated:
                 client.chat_update(channel=channel, ts=thread_ts, text=parent)
         except Exception as e:  # noqa: BLE001
             print(f"  {channel}: header note not cleared ({type(e).__name__}) — "
