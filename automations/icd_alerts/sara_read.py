@@ -154,9 +154,47 @@ def _sign_in_raw(page, log=print) -> str:
     heal impossible to trigger.
     """
     cr = C.creds()
-    return S._login(page, cr["email"], cr["password"],
+    # RESUME FIRST, LOG IN SECOND. The dealer root from the last successful
+    # login is kept next to the profile; if SaraPlus still honours it, no
+    # password is typed this sweep (see saraplus.resume_session). Only when
+    # it does not -- a new day, a kicked session, a rotated profile -- does
+    # the real login run, and its root is remembered for the next sweep.
+    remembered = _remembered_session()
+    if remembered:
+        base = S.resume_session(page, remembered, log=log)
+        if base:
+            return base
+        _forget_session()
+    base = S._login(page, cr["email"], cr["password"],
                     creds_hint="the SaraPlus login saved on this computer",
                     log=log)
+    _remember_session(base)
+    return base
+
+
+SESSION_PATH = C.APP_DIR / "saraplus-session.txt"
+
+
+def _remembered_session() -> str:
+    try:
+        return SESSION_PATH.read_text().strip()
+    except OSError:
+        return ""
+
+
+def _remember_session(base: str) -> None:
+    try:
+        SESSION_PATH.parent.mkdir(parents=True, exist_ok=True)
+        SESSION_PATH.write_text(base or "")
+    except OSError:
+        pass
+
+
+def _forget_session() -> None:
+    try:
+        SESSION_PATH.unlink()
+    except OSError:
+        pass
 
 
 def _sign_in(page, log=print, interactive: bool = False) -> str:
@@ -277,6 +315,7 @@ def _heal_and_login(p, headless: bool, log=print):
         log("SaraPlus served its Change Password page -- testing whether it "
             "is this profile or the account")
         S.rotate_profile(C.PROFILE_DIR, log=log)
+        _forget_session()
         try:
             return _open()
         except S.SaraError as second:

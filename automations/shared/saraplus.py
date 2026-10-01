@@ -764,6 +764,42 @@ def rotate_profile(profile_dir, log=print):
     return str(kept)
 
 
+def resume_session(page, base: str, log=print):
+    """Reopen a REMEMBERED dealer root without typing the password.
+
+    Returns the base when SaraPlus still honours it, else None -- never
+    raises. PROVEN on Lucy 1, 2026-10-01 (saraplus_probe --reuse): a profile
+    that signed in, closed and reopened lands on
+    .../e/(S(<session>))/DealerPages/ with no login form, while the generic
+    login page just shows ui.saraplus.com again. The session id lives in the
+    url, so the url is what has to be remembered.
+
+    WHY (Kash, 2026-09-30): the ICD reader typed the password on every
+    2-minute sweep -- ~30 logins an hour on his account -- and his own phone
+    met "Only one login at a time is allowed", while every bounced session
+    earned the reader a fresh "confirm this computer" wall. One held session,
+    resumed each sweep, is one login.
+    """
+    if not base:
+        return None
+    url = base.rstrip("/")
+    if not url.endswith("DealerPages"):
+        url += "/DealerPages/"
+    try:
+        page.goto(url, wait_until="networkidle", timeout=60000)
+        page.wait_for_timeout(1500)
+        landed = page.url or ""
+    except Exception as e:  # noqa: BLE001 -- a failed resume is just "log in"
+        log("SaraPlus session could not be resumed (%s) -- logging in" % type(e).__name__)
+        return None
+    low = landed.lower()
+    if "dealerpages/" in low and "ui.saraplus.com" not in low and "login" not in low and SECURITY_PATH not in low:
+        log("SaraPlus session resumed -- no password typed")
+        return base
+    log("SaraPlus did not honour the remembered session (landed on %s) -- logging in" % landed[:90])
+    return None
+
+
 def login_healing(playwright, profile_dir, email: str, password: str, *,
                   headless: bool = True,
                   creds_hint: str = "the saved SaraPlus login", log=print):
