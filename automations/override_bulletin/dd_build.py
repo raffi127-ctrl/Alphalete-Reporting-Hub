@@ -171,7 +171,7 @@ def _css():
      cards into the columns; CSS just distributes them. */
   .orggrid {{ display:flex; gap:16px; align-items:stretch; margin-top:26px; }}
   .orgcol {{ flex:1; display:flex; flex-direction:column;
-    justify-content:space-between; }}
+    justify-content:space-between; gap:14px; }}
   .orgcard {{ break-inside:avoid; }}
   /* Content-FIT, not stretched. The tables used to be width:100%, so a short
      "rank · name · $wire" row was spread across the whole card and left a wide
@@ -414,12 +414,21 @@ def _org_tables(podium):
     # height and justify-content:space-between spreads its cards to fill it, so
     # Colten drops to Raf's bottom and the five small orgs on the right space out —
     # the block reads as one full square of orgs (Megan 2026-07-25).
+    # A column may never run taller than the tallest single card (Raf's org):
+    # space-between has nothing left to spread, so the cards sit glued together
+    # and the column hangs below the others. WE 9.27.26 did that — Lizette's
+    # $275 row put Colten+Carlos+Jairo at 38 rows against Raf's 37 (Eve
+    # 2026-10-01: "los cuadros se ven encimados"). Each extra card also costs
+    # about a row of gap, so that is counted too.
     total_h = sum(h for _, h in cards)
     target = total_h / 3 if total_h else 1
+    cap = max(h for _, h in cards)
     cols, colh, ci = [[], [], []], [0, 0, 0], 0
     for html, h in cards:
-        if ci < 2 and colh[ci] >= target:
+        if ci < 2 and colh[ci] and (colh[ci] >= target or colh[ci] + 1 + h > cap):
             ci += 1
+        if cols[ci]:
+            colh[ci] += 1
         cols[ci].append(html)
         colh[ci] += h
     # No section heading, no inline key here — the '* adoption' legend lives at
