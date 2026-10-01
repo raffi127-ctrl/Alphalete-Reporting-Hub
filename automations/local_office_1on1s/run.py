@@ -324,6 +324,31 @@ def main(argv=None) -> int:
             # point: the clearing pass runs and every owned personal row empties.
             people_to_fill.insert(0, rost.head)
 
+        # WHO TO FILL COMES FROM THE WEEKS BEING AUDITED, NOT FROM TODAY.
+        # `rosters` is built for today, so a leader who came off the board
+        # between the last audit week and this run vanished from the fill
+        # completely — their section was never written AND never cleared, so it
+        # kept whatever manual.py had lifted out of the OLD tabs and nothing
+        # reported a gap, because a person absent from today's roster is not a
+        # missing section. Rhea McKee led Hashiras every one of these nine
+        # weeks and is off the 10/1 board: her box showed stale hand-typed
+        # second-round numbers that looked more filled-in than the leaders
+        # whose real rows were being dropped. [[feedback_fill_but_flag]]
+        _known = {PEO.key(p) for p in people_to_fill}
+        for _wk in wks:
+            _rw = week_rosters.get(_wk, {}).get(team)
+            if not _rw:
+                continue
+            for _p in [_rw.head] + list(_rw.leaders):
+                if not _p or PEO.key(_p) in _known:
+                    continue
+                _known.add(PEO.key(_p))
+                people_to_fill.append(_p)
+                notes.append(
+                    f"{team}: {_p} led during these weeks but is not on "
+                    f"today's board — filled for the weeks they held it. If "
+                    f"they left, move their section to the Terminated tab.")
+
         for name in people_to_fill:
             sec = by_name.get(PEO.key(name))
             if sec is None:
@@ -597,7 +622,7 @@ def main(argv=None) -> int:
                 # right for drift like 'Dress Code 1 out of 3' vs '/5'; it is
                 # wrong when one label is a prefix of another REAL row.
                 if LO.fold(cell.row_label) in F.VARIANT_ONLY:
-                    r = rows.get(LO.fold(cell.row_label))
+                    r = LO.exact_row(rows, cell.row_label)
                 else:
                     r = LO.find_row(rows, cell.row_label)
                 col = W.find(hdr, cell.week)
@@ -616,7 +641,15 @@ def main(argv=None) -> int:
             # every manual row is untouched.
             placed = cleared = 0
             for label in F.OWNED:
-                r = LO.find_row(rows, label)
+                # RESOLVE EXACTLY AS THE WRITE DID. A VARIANT_ONLY label that
+                # find_row is allowed to fuzzy-match lands this clearing pass on
+                # a DIFFERENT row than the values went to — 'New Starts showed /
+                # Scheduled' prefix-matches the individual box's 'New Starts
+                # Showed'. Same rule both sides, or clearing fights writing.
+                if LO.fold(label) in F.VARIANT_ONLY:
+                    r = LO.exact_row(rows, label)
+                else:
+                    r = LO.find_row(rows, label)
                 if r is None:
                     continue
                 for wcol in [c for c in hdr if c.ok and c.sunday in wks]:
