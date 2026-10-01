@@ -149,6 +149,31 @@ RAW_FIRST_DATA_ROW = 2
 # below (~rows 154-210), located by their labels — never by hardcoded rows.
 PNL_TAB = "Copy of Carlos PNL 2026"
 PNL_REP_FIRST, PNL_REP_LAST = 3, 195  # +24 rows inserted 9/6 (9 new reps + 15 spares)
+# PNL_REP_LAST is only a sanity fallback since 10/1: the z-EXTRA replenisher in
+# Payroll.gs inserts roster rows whenever spares run low, so the real bottom is
+# found live each run (the stale constant is how 8 paid reps fell off the P&L
+# the week of 9/27).
+
+
+def _pnl_rep_last(pnl, log=_log) -> int:
+    """Bottom row of the rep roster, found live: the last row (from 3 down)
+    before the first row whose A, D and E cells are all blank."""
+    grid = pnl.get(f"A{PNL_REP_FIRST}:E400")
+    last = PNL_REP_FIRST - 1
+    for i, row in enumerate(grid, start=PNL_REP_FIRST):
+        a = str(row[0]).strip() if len(row) > 0 else ""
+        d = str(row[3]).strip() if len(row) > 3 else ""
+        e = str(row[4]).strip() if len(row) > 4 else ""
+        if not a and not d and not e:
+            break
+        last = i
+    if last < PNL_REP_FIRST:
+        raise RuntimeError(
+            "P&L: could not locate the rep roster (rows 3+ all blank?)")
+    if last != PNL_REP_LAST:
+        log(f"P&L roster bottom: row {last} "
+            f"(constant {PNL_REP_LAST} is stale — roster grew)")
+    return last
 
 
 def _week_num(week: dt.date) -> float:
@@ -403,9 +428,9 @@ def _locate_block(pnl, week: dt.date, log=_log) -> dict:
             "and re-run.")
     blk = {"brought": _col_letter(c), "paid": _col_letter(c + 1),
            "profit": _col_letter(c + 2), "header": hdr}
-    labels = pnl.get(f"{blk['paid']}150:{blk['paid']}290")
+    labels = pnl.get(f"{blk['paid']}150:{blk['paid']}400")
     seq = [(i, (r[0].strip() if r and r[0] else ""))
-           for i, r in enumerate(labels, start=150)]  # window widened 9/6 (+24 shift)
+           for i, r in enumerate(labels, start=150)]  # widened 10/1: roster grows
 
     def find(label, after, alts=()):
         for row, v in seq:
@@ -503,10 +528,12 @@ def _level2_bonus(week: dt.date, raw_range: tuple[int, int], *, write: bool,
 # labels in the paid column, values in the profit column, mirroring the
 # summary blocks above. Backfilled by hand for 6/21-7/12; the weekly run
 # writes it for each new week. Anchored at fixed rows per Carlos's spec.
-REV_TITLE_ROW = 260
 # 2026-07-23 v2 (Carlos): Lead Disposition revenue belongs under BOX (still
 # never paid — BOX's Paid Out mask excludes it). No separate section.
-REV_CAMPAIGNS = (("B2B", 262), ("BOX", 268), ("Base", 274))
+# 10/1: the block's rows are no longer fixed constants — they are derived from
+# the located 'Carlos DD B2B' label (+31 to the title, campaigns at +2/+8/+14)
+# and validated against the previous week's written title, because the roster
+# replenisher shifts everything below it when it inserts rows.
 REV_METRICS = ("Revenue Brought In", "Paid Out", "Payroll Tax", "Profit")
 
 # House style (read off the hand-built summary blocks 2026-07-19): dark
@@ -530,7 +557,8 @@ def _col_index(a1: str) -> int:
     return n - 1
 
 
-def _format_rev_block(sh, sheet_id: int, blk: dict, log=_log) -> None:
+def _format_rev_block(sh, sheet_id: int, blk: dict, rev_title: int,
+                      rev_campaigns, log=_log) -> None:
     """Apply the house style to the week's Revenue-by-Campaign block so a new
     week looks like the hand-formatted 6/21-7/12 ones."""
     p, f = _col_index(blk["paid"]), _col_index(blk["profit"])
@@ -565,10 +593,10 @@ def _format_rev_block(sh, sheet_id: int, blk: dict, log=_log) -> None:
             "top": solid, "bottom": solid, "left": solid, "right": solid,
             "innerHorizontal": solid, "innerVertical": solid}}
 
-    reqs = [repeat(REV_TITLE_ROW, REV_TITLE_ROW, p, f,
+    reqs = [repeat(rev_title, rev_title, p, f,
                    cell_fmt(_HDR_BG, True, True)),
-            borders(REV_TITLE_ROW, REV_TITLE_ROW)]
-    for _name, hdr in REV_CAMPAIGNS:
+            borders(rev_title, rev_title)]
+    for _name, hdr in rev_campaigns:
         reqs.append(repeat(hdr, hdr, p, f, cell_fmt(_HDR_BG, True, True)))
         for i, bg in enumerate(_VALUE_BGS, start=1):
             bold = i == 4  # Profit row bold, like the TOTAL rows above
@@ -578,7 +606,7 @@ def _format_rev_block(sh, sheet_id: int, blk: dict, log=_log) -> None:
         reqs.append(borders(hdr, hdr + 4))
     sh.batch_update({"requests": reqs})
     log(f"  formatted revenue block ({blk['paid']}/{blk['profit']} "
-        f"rows {REV_TITLE_ROW}-{REV_CAMPAIGNS[-1][1] + 4})")
+        f"rows {rev_title}-{rev_campaigns[-1][1] + 4})")
 
 
 def _repoint_pnl(week: dt.date, raw_range: tuple[int, int], *, write: bool,
@@ -591,6 +619,24 @@ def _repoint_pnl(week: dt.date, raw_range: tuple[int, int], *, write: bool,
     sh = open_by_key(sheet_id)
     pnl = sh.worksheet(PNL_TAB)
     blk = _locate_block(pnl, week, log=log)
+    rep_last = _pnl_rep_last(pnl, log=log)
+
+    # The Revenue-by-Campaign block sits a fixed distance below the located
+    # 'Carlos DD B2B' label (both shift together when the replenisher inserts
+    # roster rows). Validate against the PREVIOUS week's already-written title
+    # before writing anything — never guess rows (10/1).
+    rev_title = blk["dd_b2b"] + 31
+    prev_paid_1b = _col_index(blk["paid"]) + 1 - 3
+    if prev_paid_1b >= 2:
+        prev_paid = _col_letter(prev_paid_1b)
+        chk = pnl.acell(f"{prev_paid}{rev_title}").value
+        if str(chk or "").strip() != "Revenue by Campaign":
+            raise RuntimeError(
+                f"P&L: expected 'Revenue by Campaign' at {prev_paid}{rev_title} "
+                "(previous week) — summary layout shifted; refusing to guess "
+                "the revenue-block rows")
+    rev_campaigns = tuple((n, rev_title + off)
+                          for n, off in (("B2B", 2), ("BOX", 8), ("Base", 14)))
 
     s, e = raw_range
     E = f"RAW!$E${s}:$E${e}"
@@ -609,9 +655,9 @@ def _repoint_pnl(week: dt.date, raw_range: tuple[int, int], *, write: bool,
     base = f'(({J}="RES-BASE POWER-Energy")*(1-{_cap}))'
     lead = "0"
     non_b2b = f'(({J}="B2B-ATT-SBS")*(1-{_cap}))'
-    rep_c = f"$C{PNL_REP_FIRST}:$C{PNL_REP_LAST}"
+    rep_c = f"$C{PNL_REP_FIRST}:$C{rep_last}"
     brought_rng = (f"{blk['brought']}{PNL_REP_FIRST}:"
-                   f"{blk['brought']}{PNL_REP_LAST}")
+                   f"{blk['brought']}{rep_last}")
 
     formulas = {
         f"{blk['profit']}{blk['b2b_total']}":
@@ -630,12 +676,12 @@ def _repoint_pnl(week: dt.date, raw_range: tuple[int, int], *, write: bool,
 
     # Revenue-by-Campaign block (rows 215-233): labels in the paid column,
     # revenue / paid-out / tax / profit values in the profit column.
-    labels = {f"{blk['paid']}{REV_TITLE_ROW}": "Revenue by Campaign"}
+    labels = {f"{blk['paid']}{rev_title}": "Revenue by Campaign"}
     # (revenue mask, paid mask): BOX revenue includes never-paid Lead Dispo
     camp_mask = {"B2B": (non_b2b, non_b2b),
                  "BOX": (f"({box}+{lead})", f"({box})"),
                  "Base": (f"({base})", f"({base})")}
-    for name, hdr_row in REV_CAMPAIGNS:
+    for name, hdr_row in rev_campaigns:
         labels[f"{blk['paid']}{hdr_row}"] = name
         for i, metric in enumerate(REV_METRICS, start=1):
             labels[f"{blk['paid']}{hdr_row + i}"] = metric
@@ -647,16 +693,18 @@ def _repoint_pnl(week: dt.date, raw_range: tuple[int, int], *, write: bool,
         # understates real payroll (2026-07-28).
         formulas[f"{P}{r0+1}"] = (
             f'=SUMIF({rep_c},"{name}",{blk["paid"]}{PNL_REP_FIRST}:'
-            f'{blk["paid"]}{PNL_REP_LAST})')
+            f'{blk["paid"]}{rep_last})')
         formulas[f"{P}{r0+2}"] = f"={P}{r0+1}*0.12"
         formulas[f"{P}{r0+3}"] = f"={P}{r0}-{P}{r0+1}-{P}{r0+2}"
 
-    # Captainship revenue (Carlos 2026-07-23): label-driven 'Captain' slot
-    # (row shifts with the ledger — locate by label, currently CM206/CN206).
-    cap_scan = pnl.get(f"{blk['paid']}214:{blk['paid']}238")
+    # Captainship revenue (Carlos 2026-07-23): label-driven 'Captain' slot.
+    # Window anchored to the located 'Carlos DD B2B' row (was fixed 214:238,
+    # which drifts whenever the roster grows — 10/1).
+    cap_lo, cap_hi = blk["dd_b2b"] - 15, blk["dd_b2b"] + 9
+    cap_scan = pnl.get(f"{blk['paid']}{cap_lo}:{blk['paid']}{cap_hi}")
     for off, rowv in enumerate(cap_scan or []):
         if rowv and str(rowv[0]).strip().lower() == "captain":
-            formulas[f"{blk['profit']}{214 + off}"] = (
+            formulas[f"{blk['profit']}{cap_lo + off}"] = (
                 f'=SUMPRODUCT(ISNUMBER(SEARCH("Captain",{E}))*{H})')
             break
 
@@ -672,7 +720,7 @@ def _repoint_pnl(week: dt.date, raw_range: tuple[int, int], *, write: bool,
     log(f"  WROTE {len(formulas)} formulas + revenue-block labels into "
         f"block {blk['header']}")
     try:  # cosmetics must never fail the payroll run
-        _format_rev_block(sh, pnl.id, blk, log=log)
+        _format_rev_block(sh, pnl.id, blk, rev_title, rev_campaigns, log=log)
     except Exception as e:  # noqa: BLE001
         log(f"  (revenue-block formatting skipped: {type(e).__name__}: "
             f"{str(e)[:100]})")
@@ -738,9 +786,10 @@ def _refresh_and_check(week: dt.date, raw_range: tuple[int, int], *,
         vals += [""] * ((r2 - r1 + 1) - len(vals))
         return vals
 
-    camp = col_vals("C", PNL_REP_FIRST, PNL_REP_LAST)
-    brought = col_vals(blk["brought"], PNL_REP_FIRST, PNL_REP_LAST)
-    paid = col_vals(blk["paid"], PNL_REP_FIRST, PNL_REP_LAST)
+    rep_last = _pnl_rep_last(pnl, log=log)
+    camp = col_vals("C", PNL_REP_FIRST, rep_last)
+    brought = col_vals(blk["brought"], PNL_REP_FIRST, rep_last)
+    paid = col_vals(blk["paid"], PNL_REP_FIRST, rep_last)
 
     def num(v):
         return float(v) if isinstance(v, (int, float)) else 0.0
@@ -777,15 +826,15 @@ def _refresh_and_check(week: dt.date, raw_range: tuple[int, int], *,
                 "another week (picker parked elsewhere); tie-out skipped")
         cv = comm_ws.get("A3:C60")
         ct = next((r for r in cv if r and r[0] == "TOTAL"), None)
-        lbls = pnl.get(f"{blk['paid']}150:{blk['paid']}290")
+        lbls = pnl.get(f"{blk['paid']}150:{blk['paid']}400")
         lmap = {str(r[0]).strip(): i for i, r in enumerate(lbls, 150) if r and r[0]}
         pd = money(pnl.acell(f"{blk['profit']}{lmap['Carlos Total DD']}",
                              value_render_option="UNFORMATTED_VALUE").value)
         pp = money(pnl.acell(f"{blk['profit']}{lmap['Carlos Total Payroll']}",
                              value_render_option="UNFORMATTED_VALUE").value)
         cb, cc = money(ct[1]), money(ct[2])
-        roster = pnl.get(f"C{PNL_REP_FIRST}:E{PNL_REP_LAST}")
-        spares = (PNL_REP_LAST - PNL_REP_FIRST + 1) - sum(
+        roster = pnl.get(f"C{PNL_REP_FIRST}:E{rep_last}")
+        spares = (rep_last - PNL_REP_FIRST + 1) - sum(
             1 for r in roster if r and any(str(c).strip() for c in r))
         d1, d2 = cb - pd, cc - pp
         if abs(d1) < 1 and abs(d2) < 1:
