@@ -127,6 +127,32 @@ def _saraplus(log) -> str:
         else "still needs a working SaraPlus password"
 
 
+def _never_sleeps(log) -> str:
+    """Sleep off for good, and back ON by itself after a power cut.
+
+    The caffeinate helper only holds while somebody is logged in -- and the
+    boot job exists precisely so nobody has to be. Without the real pmset
+    setting, a Mac that restarts to the login screen can sleep there, and
+    one that loses power stays off (Carlos, 2026-09-30: dark from 11:01 all
+    day). One password box covers both. Asked only when the answer is no.
+    """
+    try:
+        from automations.icd_alerts import stay_awake
+    except Exception:  # noqa: BLE001 — older copy, update failed
+        return "not available yet"
+    import platform
+    if platform.system() != "Darwin":
+        return "not needed on this computer"
+    if stay_awake.pmset_ok() and stay_awake.powers_back_on() is not False:
+        return "already done"
+    log("")
+    log("  This computer can still go to sleep, or stay off after a power")
+    log("  cut. You will see the normal Mac password box once.")
+    if stay_awake.apply_pmset():
+        return "done"
+    return "skipped — needs the Mac password"
+
+
 def _service_cloud(log) -> str:
     """Only for the offices that sell through it, and only when it is out."""
     try:
@@ -151,6 +177,7 @@ def run(log=print) -> int:
 
     steps: List = [("Latest version", _update),
                    ("Starts on its own", _boot_job),
+                   ("Never sleeps", _never_sleeps),
                    ("SaraPlus sign-in", _saraplus),
                    ("Box sales sign-in", _service_cloud)]
     results = []

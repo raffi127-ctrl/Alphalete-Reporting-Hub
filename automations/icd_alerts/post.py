@@ -1458,6 +1458,10 @@ SIGNIN_ASK = (
 SIGNIN_PAGE = ("https://raffi127-ctrl.github.io/"
                "Alphalete-Reporting-Hub/signin.html")
 INSTALL_PAGE = "https://raffi127-ctrl.github.io/Alphalete-Reporting-Hub/"
+# The one-line finish_setup page (docs/setup.html): boot job, sleep off,
+# power back on. NOT startup.html -- that one installs only the boot job.
+FINISH_SETUP_PAGE = ("https://raffi127-ctrl.github.io/Alphalete-Reporting-Hub/"
+                "setup.html")
 
 # THE FIX IS NOT THE SAME FOR ALL THREE, so the message must not pretend it
 # is (Megan 2026-09-15: "we should build this alert message for sara+ and OV
@@ -1590,6 +1594,28 @@ def warn_machine_facts(day: Optional[dt.date] = None, *, send: bool = False,
         for m in laptops:
             lines.append("   • %s — %s" % (m["office"], m["name"]))
 
+    # WON'T COME BACK BY ITSELF. Said BEFORE the restart or the sleep, which
+    # is the only time it is cheap to fix: one line on their machine
+    # (python -m automations.icd_alerts.finish_setup) does both.
+    try:
+        risks = restart_risks(day, book=book)
+    except Exception:  # noqa: BLE001 — never lose the laptop line to this
+        risks = []
+    for why, head in (
+            ("restart", "*Won't come back after a restart* — it stops at "
+                        "the login screen until somebody logs in:"),
+            ("sleep", "*Can fall asleep* — the channel stops when it does:"),
+            ("power", "*Stays off after a power cut* — it has to be "
+                      "switched back on by hand:")):
+        hit = [r for r in risks if why in r["why"]]
+        if hit:
+            lines.append(head)
+            for m in hit:
+                lines.append("   • %s — %s" % (m["office"], m["name"]))
+    if risks:
+        lines.append("_One fix for all of these, once, on their computer: "
+                     "%s (it asks for the Mac password)._" % FINISH_SETUP_PAGE)
+
     # NOT THE "too old to say what machine" LIST (Megan 2026-09-15: "We don't
     # need this"). It is true and it is not actionable: she knows which
     # offices are behind, and it fixes itself the moment they update. An alert
@@ -1602,7 +1628,9 @@ def warn_machine_facts(day: Optional[dt.date] = None, *, send: bool = False,
         log(l)
     if not send:
         return lines
-    key = "machines|%s" % "|".join(sorted(m["office"] for m in laptops))
+    key = "machines|%s" % "|".join(
+        sorted(m["office"] for m in laptops)
+        + sorted("%s:%s" % (r["office"], ",".join(r["why"])) for r in risks))
     if _once_a_day(MACHINE_FACTS_PATH, key, day):
         return lines
     _slack(O.OPS_CHANNEL,
@@ -2660,6 +2688,81 @@ def laptop_offices(day: Optional[dt.date] = None, book=None,
     return out
 
 
+def restart_risks(day: Optional[dt.date] = None, book=None,
+                  days: int = 3) -> List[Dict]:
+    """Machines that will NOT recover by themselves, from what they last said.
+
+    Three ways a desktop goes dark with nobody noticing until the quiet nudge:
+      * "restart" -- after a restart (macOS update, power blip) it stops at
+        the login screen, because neither the boot job nor auto-login is on.
+      * "sleep"   -- it is allowed to go to sleep (or only kept awake while
+        somebody is logged in).
+      * "power"   -- after a power cut it stays OFF.
+
+    Carlos's Mac went quiet at 11:01 on 2026-09-30 and stayed dark all day,
+    and whether it would have come back from a restart was unknowable: the
+    machine said so on every relay and nothing kept the answer. This reads
+    the answer now that the relay keeps it.
+
+    NEWEST ANSWER PER MACHINE, from the last `days` days -- an office that
+    has since installed the boot job must drop off the list the next sweep,
+    not sit on it because of last week's row. None (an agent too old to say)
+    is never a risk; that is silent_machines()'s question, not this one.
+    """
+    from automations.recruiting_report.fill import open_by_key
+
+    day = day or dt.date.today()
+    book = book or open_by_key(RELAY_SPREADSHEET_ID)
+    oldest = (day - dt.timedelta(days=days)).isoformat()
+    active = {o.key for o in O.active()}
+    latest: Dict[tuple, tuple] = {}
+    for tab, col in ((RELAY_TAB, COL_MACHINES), (KNOCKS_TAB, KN_MACHINES)):
+        try:
+            got = book.worksheet(tab).get_all_values()
+        except Exception:  # noqa: BLE001
+            continue
+        for row in got[1:]:
+            if not row or not (row[COL_OFFICE] or "").strip():
+                continue
+            office = (row[COL_OFFICE] or "").strip().lower()
+            d = _day_key(row[COL_DAY])
+            if office not in active or not (oldest <= d <= day.isoformat()):
+                continue
+            for mid, info in machines_for(row, col).items():
+                if not isinstance(info, dict):
+                    continue
+                k = (office, mid)
+                prev = latest.get(k)
+                # Same day: merge the two tabs' answers -- the knocks tab may
+                # carry starts_itself while the relay tab carries only name.
+                if prev and prev[0] == d:
+                    merged = dict(prev[1])
+                    merged.update({x: y for x, y in info.items()
+                                   if y is not None})
+                    latest[k] = (d, merged)
+                elif not prev or d > prev[0]:
+                    latest[k] = (d, dict(info))
+    out = []
+    for (office, mid), (d, info) in sorted(latest.items()):
+        why = []
+        if info.get("starts_itself") is False:
+            why.append("restart")
+        # EITHER sleep answer. never_sleeps is true while the login-only
+        # helper runs; sleep_off is the setting that still holds at the
+        # login screen after a restart, which is when the boot job runs.
+        if ((info.get("never_sleeps") is False
+                or info.get("sleep_off") is False)
+                and office not in LAPTOP_ACKNOWLEDGED):
+            why.append("sleep")
+        if info.get("powers_back_on") is False:
+            why.append("power")
+        if why:
+            out.append({"office": office, "id": mid,
+                        "name": info.get("name") or mid, "why": why,
+                        "filevault": info.get("filevault")})
+    return out
+
+
 def silent_machines(day: Optional[dt.date] = None, book=None) -> List[Dict]:
     """Offices whose agent is too old to say what machine it runs on.
 
@@ -2926,6 +3029,16 @@ def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
     # The first nudge for an office opens a thread; every repeat lands under
     # it, so the channel shows ONE line per office no matter how long it is
     # down, and the history is all in one place.
+    # WAS THIS MACHINE ALREADY KNOWN NOT TO RECOVER? Read once, and only on
+    # a tick that is actually posting. Turns "it went quiet" into "it went
+    # quiet and it will NOT come back by itself" -- a different urgency.
+    try:
+        risk_by = {}
+        for r in restart_risks(day):
+            risk_by.setdefault(r["office"], set()).update(r["why"])
+    except Exception:  # noqa: BLE001 — never lose a quiet notice to this
+        risk_by = {}
+
     stamp = now.isoformat(timespec="seconds")
     for q in fresh:
         key = q["office"]
@@ -2947,7 +3060,8 @@ def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
                 "missed arrives when the %s is back online._"
                 % (sales_system_for(O.get(key)),
                    machine_words(key in laptops)["noun"]),
-                "_Updates follow in this thread until it is back._"]))
+                "_Updates follow in this thread until it is back._"]
+                + ([_risk_note(risk_by[key])] if risk_by.get(key) else [])))
         try:
             ts = _slack(O.OPS_CHANNEL, text, thread_ts=parent)
         except Exception as e:  # noqa: BLE001 — one office must not stop the rest
@@ -2960,6 +3074,18 @@ def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
 
     _save_warned(data, day, sent)
     return fresh
+
+
+def _risk_note(why) -> str:
+    """One line on a quiet notice: what this machine was ALREADY known for."""
+    said = {"restart": "won't come back after a restart (stops at the login "
+                       "screen)",
+            "sleep": "can fall asleep",
+            "power": "stays off after a power cut"}
+    parts = [said[w] for w in ("restart", "sleep", "power") if w in why]
+    return (":rotating_light: This computer was already flagged: it %s. "
+            "Someone has to go to it — then run %s once so it doesn't "
+            "happen again." % ("; it ".join(parts), FINISH_SETUP_PAGE))
 
 
 def _save_warned(data: Dict, day: dt.date, sent: Dict) -> None:

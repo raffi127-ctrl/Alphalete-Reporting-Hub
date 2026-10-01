@@ -456,6 +456,7 @@ class QuietNudgeThreading(unittest.TestCase):
         with mock.patch.object(P, "WARNED_PATH", self.tmp), \
              mock.patch.object(P, "_slack", self.fake_slack), \
              mock.patch.object(P, "_dm", lambda *a, **k: None), \
+             mock.patch.object(P, "restart_risks", lambda *a, **k: []), \
              mock.patch.object(P, "quiet_offices",
                                lambda *a, **k: [dict(q) for q in self.quiet]), \
              mock.patch.object(P, "check_ins",

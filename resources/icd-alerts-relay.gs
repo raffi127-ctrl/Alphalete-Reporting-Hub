@@ -125,7 +125,8 @@ function doPost(e) {
                      name: String(body.machine_name || ''),
                      desktop: body.desktop,
                      os: String(body.os || ''),
-                     never_sleeps: body.never_sleeps});
+                     never_sleeps: body.never_sleeps,
+                     facts: _restartFacts(body)});
       // WHAT THEY ASKED FOR IS RECORDED HERE TOO. This used to live only in
       // the records path below, and a Box, Energy Wells or NDS office never
       // reaches it -- they have no SaraPlus, so they never post records at
@@ -143,7 +144,7 @@ function doPost(e) {
             String(body.local_time || ''), String(body.agent || ''),
             JSON.stringify(body.sales || {}),
             String(body.machine || ''), String(body.machine_name || ''),
-            body.desktop === true, String(body.os || ''));
+            body.desktop === true, String(body.os || ''), _restartFacts(body));
 
     _recordRequests(office, body);
 
@@ -246,7 +247,7 @@ function _keyIsGood(office, key) {
 }
 
 function _upsert(office, day, recordsJson, localTime, agent, salesJson,
-                 machine, machineName, desktop, osName) {
+                 machine, machineName, desktop, osName, facts) {
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);          // two offices can relay in the same second
   try {
@@ -275,7 +276,7 @@ function _upsert(office, day, recordsJson, localTime, agent, salesJson,
         // rather than as corruption.
         _ensureCols(sh, 11);   // column 9 below is past the created header too
         sh.getRange(i + 1, 9).setValue(salesJson || '{}');
-        _mergeMachine(sh, i + 1, machine, machineName, desktop, osName);
+        _mergeMachine(sh, i + 1, machine, machineName, desktop, osName, facts);
         return;
       }
     }
@@ -289,7 +290,7 @@ function _upsert(office, day, recordsJson, localTime, agent, salesJson,
     // machine to relay merged into an empty cell and looked like the only one.
     // Caught live 2026-09-13 -- two machines relayed and only the second
     // appeared.
-    _mergeMachine(sh, sh.getLastRow(), machine, machineName, desktop, osName);
+    _mergeMachine(sh, sh.getLastRow(), machine, machineName, desktop, osName, facts);
   } finally {
     lock.releaseLock();
   }
@@ -518,6 +519,10 @@ function _mergeKnockMachine(sh, rowNum, agent, machine) {
     os: machine.os || '',
     never_sleeps: machine.never_sleeps
   };
+  var facts = machine.facts || {};
+  for (var k in facts) {
+    if (facts[k] !== undefined && facts[k] !== null) cur[machine.id][k] = facts[k];
+  }
   sh.getRange(rowNum, 10).setValue(JSON.stringify(cur));
 }
 
@@ -603,7 +608,18 @@ function _upsertFault(office, day, stage, summary, detail, localTime,
   }
 }
 
-function _mergeMachine(sh, rowNum, machine, machineName, desktop, osName) {
+// WILL IT COME BACK AFTER A RESTART? The machine has answered this on every
+// relay for weeks and nothing kept it -- so when Carlos's Mac went quiet all
+// day on 2026-09-30 nobody could say whether it would have recovered on its
+// own. Kept as sent: undefined (an older agent) stays absent rather than
+// turning into false, because "never asked" must not read as "answered no".
+function _restartFacts(body) {
+  return {starts_itself: body.starts_itself, sleep_off: body.sleep_off,
+          powers_back_on: body.powers_back_on, auto_login: body.auto_login,
+          filevault: body.filevault};
+}
+
+function _mergeMachine(sh, rowNum, machine, machineName, desktop, osName, facts) {
   // MERGED, NEVER OVERWRITTEN. The whole point is to see BOTH machines: an
   // office can install on a back-office PC as a backup, and last-writer-wins
   // would hide whichever one wrote second. Column 11, appended, so nothing
@@ -618,6 +634,11 @@ function _mergeMachine(sh, rowNum, machine, machineName, desktop, osName) {
   } catch (err) { seen = {}; }
   seen[machine] = {name: machineName || '', last: new Date().toISOString(),
                    desktop: desktop === true, os: osName || ''};
+  if (facts) {
+    for (var k in facts) {
+      if (facts[k] !== undefined && facts[k] !== null) seen[machine][k] = facts[k];
+    }
+  }
   cell.setValue(JSON.stringify(seen));
 }
 

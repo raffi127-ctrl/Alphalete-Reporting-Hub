@@ -188,6 +188,31 @@ def pmset_ok() -> bool:
     return all(vals.get(k) == v for k, v in PMSET_WANTED.items())
 
 
+def powers_back_on() -> Optional[bool]:
+    """Does this Mac switch itself back ON after a power cut?
+
+    pmset's `autorestart`, which apply_pmset() sets alongside sleep -- but
+    only if somebody typed the password. A desktop without it stays OFF after
+    a blip, and the boot job never gets its chance: a dark channel all day,
+    no error anywhere (the shape of Carlos's 2026-09-30, though nothing could
+    prove it then -- which is why this is now asked).
+
+    None when the machine does not list the setting at all (laptops), never
+    False for a question it cannot answer.
+    """
+    if platform.system() != "Darwin":
+        return None
+    try:
+        out = _run(["pmset", "-g", "custom"]).stdout.decode("utf-8", "replace")
+    except Exception:  # noqa: BLE001
+        return None
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[0] == "autorestart":
+            return parts[1] == "1"
+    return None
+
+
 # --- the gap we report but do not close -------------------------------------
 def autologin_on() -> Optional[bool]:
     """True/False, or None when we genuinely cannot tell.

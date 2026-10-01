@@ -243,6 +243,56 @@ def _auto_login() -> Optional[bool]:
         return None
 
 
+def _starts_itself() -> Optional[bool]:
+    """Will the alerts come back on their own after this Mac restarts?
+
+    THE QUESTION auto_login ONLY HALF ANSWERS. We never turn auto-login on --
+    the boot job (boot_schedule) is how a Mac comes back with nobody at the
+    keyboard -- so an office with FileVault on and the boot job installed
+    reads auto_login=False and is perfectly safe. Either one is enough.
+
+    "Installed" means loaded AND pointing at a Python that works: Khalil's
+    was loaded and dying every two minutes (2026-09-16).
+
+    Carlos's Mac went quiet at 11:01 on 2026-09-30 and stayed quiet all day,
+    and nobody could say whether it would have come back from a restart,
+    because the machine reported this and the relay threw it away.
+
+    None = could not tell (Windows, an odd sandbox), never False.
+    """
+    if platform.system() != "Darwin":
+        return None
+    try:
+        from automations.icd_alerts import boot_schedule
+        if boot_schedule.loaded() and boot_schedule.runs_the_right_python():
+            return True
+    except Exception:  # noqa: BLE001 — older copy, odd machine
+        return None
+    return bool(_auto_login())
+
+
+def _recovery_facts() -> dict:
+    """Will this machine come back by itself? Three separate ways it won't.
+
+      starts_itself  -- after a restart (boot job, or auto-login)
+      sleep_off      -- sleep switched off for good, not only while logged in
+      powers_back_on -- switches itself on after a power cut
+
+    Each None when it cannot tell. Sent on BOTH calls, because a Box or NDS
+    office only ever makes the knocks one.
+    """
+    out = {"starts_itself": _starts_itself(),
+           "sleep_off": None, "powers_back_on": None}
+    if platform.system() == "Darwin":
+        try:
+            from automations.icd_alerts import stay_awake
+            out["sleep_off"] = bool(stay_awake.pmset_ok())
+            out["powers_back_on"] = stay_awake.powers_back_on()
+        except Exception:  # noqa: BLE001 — older copy, odd machine
+            pass
+    return out
+
+
 def _filevault() -> Optional[bool]:
     """Is the disk encrypted? If so, auto-login cannot be turned on."""
     if platform.system() != "Darwin":
@@ -352,6 +402,7 @@ def payload(records: Dict[str, int], day: dt.date,
         "auto_login": _auto_login(),
         "filevault": _filevault(),
     }
+    body.update(_recovery_facts())
     # Where the owner ASKED for their alerts. Sent every sweep, not once, so
     # re-running the installer is how somebody changes their mind -- there is
     # no other route, and "run it again" is an instruction anyone can follow.
@@ -499,6 +550,11 @@ def send_knocks(rows, day: Optional[dt.date] = None, *, time_tracker=None,
     body["desktop"] = is_desktop()
     body["os"] = platform.system() or ""
     body["never_sleeps"] = _never_sleeps()
+    # And whether it comes back after a restart. Box/NDS offices only ever
+    # make THIS call, so without it Carlos's answer had nowhere to ride.
+    body["auto_login"] = _auto_login()
+    body["filevault"] = _filevault()
+    body.update(_recovery_facts())
 
     payload_json = json.dumps(body)
     if len(json.dumps(rows)) > MAX_KNOCKS_CHARS:

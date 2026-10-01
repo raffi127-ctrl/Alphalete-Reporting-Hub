@@ -98,14 +98,16 @@ class TheMachineFactsAreSaidWhenThereIsSomethingToSay(unittest.TestCase):
 
     def test_nothing_to_report_says_nothing(self):
         with mock.patch.object(P, "laptop_offices", return_value=[]), \
-                mock.patch.object(P, "silent_machines", return_value=[]):
+                mock.patch.object(P, "silent_machines", return_value=[]), \
+                mock.patch.object(P, "restart_risks", return_value=[]):
             self.assertEqual(
                 P.warn_machine_facts(send=False, log=lambda *_: None), [])
 
     def test_a_laptop_is_named(self):
         with mock.patch.object(P, "laptop_offices", return_value=[
                     {"office": "someone", "name": "MacBook Air"}]), \
-                mock.patch.object(P, "silent_machines", return_value=[]):
+                mock.patch.object(P, "silent_machines", return_value=[]), \
+                mock.patch.object(P, "restart_risks", return_value=[]):
             out = P.warn_machine_facts(send=False, log=lambda *_: None)
         self.assertTrue(any("MacBook Air" in l for l in out))
 
@@ -116,7 +118,8 @@ class TheMachineFactsAreSaidWhenThereIsSomethingToSay(unittest.TestCase):
         channel, which is how the ones that matter get missed."""
         with mock.patch.object(P, "laptop_offices", return_value=[]), \
                 mock.patch.object(P, "silent_machines", return_value=[
-                    {"office": "cyrus", "agent": "icd_alerts/2"}]):
+                    {"office": "cyrus", "agent": "icd_alerts/2"}]), \
+                mock.patch.object(P, "restart_risks", return_value=[]):
             out = P.warn_machine_facts(send=False, log=lambda *_: None)
         self.assertEqual(out, [],
                          "it still announces offices nobody can do anything "
