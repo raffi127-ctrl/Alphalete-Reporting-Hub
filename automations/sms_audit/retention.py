@@ -28,6 +28,7 @@ import argparse
 import collections
 import datetime as dt
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -74,6 +75,56 @@ def load(office, weeks=None, extra=()):
             rows.append(("recent", r.get("date", ""),
                          r.get("booked_by") or "(not recorded)", shown(r)))
     return rows
+
+
+MONTHS = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+          "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def week_label(tag):
+    """'w0821' -> '21 Aug'. Nobody outside this repo knows what w0821 is,
+    and the retention table was the one place the report still showed it
+    (Megan 2026-10-01: "this is confusing"). No year on purpose: these are
+    column headers six weeks wide, and a year in each would be noise."""
+    m = re.match(r"^w(\d{2})(\d{2})$", (tag or "").strip())
+    if not m:
+        return tag
+    mo, da = int(m.group(1)), int(m.group(2))
+    return "{} {}".format(da, MONTHS[mo]) if 1 <= mo <= 12 else tag
+
+
+def known_names(office):
+    """The full names AppStream puts in Sent By, for un-abbreviating the
+    bookers."""
+    try:
+        log, _src = A.load_log(office)
+    except Exception:  # noqa: BLE001 — no pull is not a failure
+        return set()
+    return {(r.get("sent_by") or "").strip() for r in (log or [])
+            if (r.get("sent_by") or "").strip()}
+
+
+def expand_name(abbrev, names):
+    """'A. Messaging' -> 'AI Messaging', 'A. Ceron' -> 'Aisha Ceron'.
+
+    The booking report abbreviates first names and the message log does
+    not, so the same person read as two people across the document — and
+    "A. Messaging" read as a person at all, when it is the bot. Only an
+    unambiguous match expands; two Cerons with an A and it stays short."""
+    m = re.match(r"^([A-Za-z])\.\s*(.+)$", (abbrev or "").strip())
+    if not m:
+        return abbrev
+    initial, rest = m.group(1).upper(), m.group(2).strip().lower()
+    hits = []
+    for n in names:
+        low = n.lower()
+        if not low.endswith(rest) or n[:1].upper() != initial:
+            continue
+        head = low[:-len(rest)]
+        if head and not head.endswith(" "):
+            continue                      # "mceron" is not "ceron"
+        hits.append(n)
+    return hits[0] if len(hits) == 1 else abbrev
 
 
 def table(rows, by="week"):

@@ -44,7 +44,28 @@ PROBE_TAB_PREFIX = "AS Templates"         # per-office: "AS Templates 11280"
 BODY_HEAD = re.compile(r"^\[(?P<section>[^/\]]+?)\s*/\s*(?P<name>[^\]]+?)\]\s+textarea\s+(\d+):\s*$")
 # phase 1 prints the section list with its activation state
 ACTIVATION = re.compile(r"^(?P<name>.+?Template #\d+|\S.*?)\s*\t?\s*(?P<state>Not Activated|Activated)\b")
-PERSONA = re.compile(r"\b(?:this is|it'?s)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)")
+# The lead-in is case-folded by hand, the NAME is not. The 2nd Left Message
+# opens "It's Dani reaching out again" and a case-sensitive "it'?s" walked
+# past it — but re.I on the whole pattern then caught "Dani reaching" and
+# "you", because [A-Z][a-z]+ stops meaning capitalised.
+PERSONA = re.compile(
+    r"\b(?:[Tt]his is|[Ii]t'?s|[Ii]t is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)")
+
+
+def fold_personas(counter):
+    """"Dani" and "Dani Pena" are one person signing two ways, not two
+    people. A first name that is the first name of exactly one fuller name
+    folds into it; two Danis on record and it stays separate."""
+    full = [n for n in counter if " " in n]
+    out = collections.Counter()
+    for name, n in counter.items():
+        if " " not in name:
+            match = [f for f in full if f.split()[0].lower() == name.lower()]
+            if len(match) == 1:
+                out[match[0]] += n
+                continue
+        out[name] += n
+    return out
 
 
 def load_text(path=None, office=None):
@@ -184,10 +205,16 @@ def lint(bodies, states, office=None):
                              "AppStream's own deliverability checklist, item 3."
                              .format(where)))
 
-        for p in PERSONA.findall(body):
-            personas[p.strip()] += 1
+        # Only templates that are switched ON. A name sitting in a
+        # deactivated template is nobody's experience of this office —
+        # counting them said "applicants get a different person each
+        # message" when the live templates all signed one person
+        # (Megan 2026-10-01).
+        if states.get(section) == "Activated":
+            for p in PERSONA.findall(body):
+                personas[p.strip()] += 1
 
-    return findings, personas
+    return findings, fold_personas(personas)
 
 
 def main(argv=None):

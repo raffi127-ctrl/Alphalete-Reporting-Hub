@@ -86,7 +86,12 @@ h2{font-size:1.15em;margin:2em 0 .5em;border-bottom:2px solid #111;
    padding-bottom:.2em}
 h3{font-size:1em;margin:1.4em 0 .4em}
 .date{color:#666;margin:0 0 1.5em}
-table{border-collapse:collapse;margin:.6em 0 1em;font-size:.95em}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:.6em 0 1em}
+table{border-collapse:collapse;font-size:.95em}
+ul{padding-left:1.4em;margin:.4em 0}
+li{margin:.25em 0}
+@media (max-width:640px){body{margin:1.2em auto;font-size:15px}
+  table{font-size:.88em}th,td{padding:.25em .45em}}
 th,td{border:1px solid #ccc;padding:.3em .7em;text-align:left}
 th{background:#f2f2f2}
 td.n{text-align:right}
@@ -143,11 +148,12 @@ def write_report(office, tmpl, msgs, moved, tab, path):
             add("<p>Nothing flagged.</p>")
         else:
             by = collections.Counter(k for k, _m in findings)
-            add("<table><tr><th>What</th><th>How many</th></tr>")
+            add("<div class='scroll'><table><tr><th>What</th>"
+                "<th>How many</th></tr>")
             for k, n in by.most_common():
                 add("<tr><td>{}</td><td class='n'>{}</td></tr>".format(
                     esc(k), n))
-            add("</table>")
+            add("</table></div>")
             bykind = collections.defaultdict(list)
             for kind, msg in findings:
                 bykind[kind].append(msg)
@@ -158,11 +164,19 @@ def write_report(office, tmpl, msgs, moved, tab, path):
                     add("<li>{}</li>".format(esc(m)))
                 add("</ul></details>")
         if personas and len(personas) > 1:
-            add("<p><b>{} different names front this office:</b> {}. "
-                "Applicants get a different person each message.</p>".format(
+            add("<p><b>Applicants hear from {} different names.</b> The live "
+                "templates sign {} \u2014 so the same applicant can get two "
+                "messages from two people.</p>".format(
                     len(personas),
-                    esc(", ".join("{} ({})".format(n, c)
-                                  for n, c in personas.most_common()))))
+                    esc(", ".join("{} ({} template{})".format(
+                        n, c, "" if c == 1 else "s")
+                        for n, c in personas.most_common()))))
+        elif personas:
+            who, c = personas.most_common(1)[0]
+            add("<p>All {} live template{} sign <b>{}</b>. Only switched-on "
+                "templates are counted \u2014 a name sitting in a "
+                "deactivated one is nobody\u2019s experience of this "
+                "office.</p>".format(c, "" if c == 1 else "s", esc(who)))
 
     # ---------------- recruiter texts ----------------
     add("<h2>Recruiter texts</h2>")
@@ -174,13 +188,14 @@ def write_report(office, tmpl, msgs, moved, tab, path):
         ek = collections.Counter(e["kind"] for e in msgs["errors"])
         dk = collections.Counter(e["kind"] for e in msgs["dodged"])
         if ek or dk:
-            add("<table><tr><th>What</th><th>How many</th></tr>")
+            add("<div class='scroll'><table><tr><th>What</th>"
+                "<th>How many</th></tr>")
             for k, n in ek.most_common():
                 add("<tr><td>{}</td><td class='n'>{}</td></tr>".format(esc(k), n))
             for k, n in dk.most_common():
                 add("<tr><td>questions {}</td><td class='n'>{}</td></tr>".format(
                     esc(k), n))
-            add("</table>")
+            add("</table></div>")
         else:
             add("<p>Nothing flagged.</p>")
 
@@ -225,14 +240,14 @@ def write_report(office, tmpl, msgs, moved, tab, path):
                 "that got an answer within two hours. Hours with under {} "
                 "delivered texts are left out.</p>".format(A.MIN_HOUR_SAMPLE))
             add("<details><summary>Every hour, ranked</summary>")
-            add("<table><tr><th>Hour sent</th><th>Delivered</th>"
+            add("<div class='scroll'><table><tr><th>Hour sent</th><th>Delivered</th>"
                 "<th>Replied</th><th>Rate</th></tr>")
             for r in hours:
                 add("<tr><td>{}</td><td class='n'>{:,}</td><td class='n'>{:,}"
                     "</td><td class='n'>{:.0f}%</td></tr>".format(
                         esc(A.clock(r["hour"])), r["sent"], r["replied"],
                         r["rate"]))
-            add("</table></details>")
+            add("</table></div></details>")
 
         # ---------------- complaints ----------------
         add("<h2>What applicants complained about</h2>")
@@ -270,12 +285,13 @@ def write_report(office, tmpl, msgs, moved, tab, path):
             bad = [(k, v) for k, v in d["by_status"].most_common()
                    if k.lower() != "delivered"]
             if bad:
-                add("<table><tr><th>What AppStream recorded</th>"
+                add("<div class='scroll'><table>"
+                    "<tr><th>What AppStream recorded</th>"
                     "<th>How many</th></tr>")
                 for k, v in bad:
                     add("<tr><td>{}</td><td class='n'>{:,}</td></tr>".format(
                         esc(k), v))
-                add("</table>")
+                add("</table></div>")
             fr, lr = d.get("first_rate"), d.get("later_rate")
             if fr is not None and lr is not None:
                 add("<p><b>Why:</b> {:.0f}% of first texts to a person fail, "
@@ -289,37 +305,68 @@ def write_report(office, tmpl, msgs, moved, tab, path):
                 add("</p>")
 
     # ---------------- retention ----------------
-    add("<h2>Retention &mdash; who booked them</h2>")
+    add("<h2>Did the people they booked show up?</h2>")
     if not tab:
         add("<p class='none'>Not enough weeks pulled.</p>")
     else:
         periods = list(tab)
-        add("<p class='none'>Show rate, then how many bookings it is off.</p>")
-        add("<table><tr><th>Booker</th>" +
-            "".join("<th>{}</th>".format(esc(p)) for p in periods) + "</tr>")
+        names = R.known_names(o["office"])
         bookers = sorted({b for p in tab for (b, k) in tab[p] if k == "n"},
-                         key=lambda b: -sum(tab[p][(b, "n")] for p in tab))
-        for b in bookers[:12]:
-            cells = []
-            for p in periods:
-                n = tab[p][(b, "n")]
-                cells.append("<td class='n'>{}</td>".format(
-                    "{:.0f}% / {}".format(100.0 * tab[p][(b, "s")] / n, n)
-                    if n else "&mdash;"))
-            add("<tr><td>{}</td>{}</tr>".format(esc(b), "".join(cells)))
-        add("</table>")
-        if moved:
-            add("<h3>What moved in the latest week</h3>")
-            add("<p class='lede'>Each booker against their OWN trailing "
-                "average &mdash; bookers differ permanently, so only a change "
-                "is news.</p><ul>")
-            for b, rate, trail, n in moved:
+                         key=lambda b: -sum(tab[p][(b, "n")] for p in tab))[:12]
+
+        def pct(p, b):
+            n = tab[p][(b, "n")]
+            return "{:.0f}%".format(100.0 * tab[p][(b, "s")] / n) if n else "&mdash;"
+
+        add("<p class='lede'>Of the interviews each person booked, the share "
+            "where the applicant actually turned up.</p>")
+        add("<div class='scroll'><table><tr><th>Who booked it</th>" +
+            "".join("<th>{}</th>".format(esc(R.week_label(p)))
+                    for p in periods) + "</tr>")
+        for b in bookers:
+            add("<tr><td>{}</td>{}</tr>".format(
+                esc(R.expand_name(b, names)),
+                "".join("<td class='n'>{}</td>".format(pct(p, b))
+                        for p in periods)))
+        add("</table></div>")
+
+        add("<details><summary>How many bookings each percentage is based "
+            "on</summary><div class='scroll'><table><tr><th>Who booked it</th>"
+            + "".join("<th>{}</th>".format(esc(R.week_label(p)))
+                      for p in periods) + "</tr>")
+        for b in bookers:
+            add("<tr><td>{}</td>{}</tr>".format(
+                esc(R.expand_name(b, names)),
+                "".join("<td class='n'>{}</td>".format(
+                    tab[p][(b, "n")] or "&mdash;") for p in periods)))
+        add("</table></div><p class='none'>A week under {} bookings is left "
+            "out of the comparison below &mdash; five bookings at 20% is one "
+            "bad morning, not a trend.</p></details>".format(R.MIN_N))
+
+        # Only actual movement. The old list printed every booker including
+        # "33% (was 33%)", which is the opposite of news (Megan 2026-10-01).
+        real = [m for m in (moved or []) if abs(m[1] - m[2]) >= R.DROP]
+        add("<h3>What changed in the latest week</h3>")
+        if not real:
+            add("<p>Nobody moved more than {:.0f} points against their own "
+                "usual rate.</p>".format(R.DROP))
+        else:
+            add("<p class='lede'>Each person against their OWN usual rate, "
+                "not against each other &mdash; bookers differ permanently, "
+                "so only a change is news.</p><ul>")
+            for b, rate, trail, n in real:
                 dd = rate - trail
-                mark = (" <b>&mdash; down {:.0f} points</b>".format(-dd)
-                        if dd <= -R.DROP else "")
-                add("<li>{}: {:.0f}% (was {:.0f}%) on {} bookings{}</li>".format(
-                    esc(b), rate, trail, n, mark))
+                add("<li><b>{}</b> &mdash; {:.0f}% this week against a usual "
+                    "{:.0f}%. <b>{} {:.0f} points</b>, on {} booking{}.</li>"
+                    .format(esc(R.expand_name(b, names)), rate, trail,
+                            "Down" if dd < 0 else "Up", abs(dd), n,
+                            "" if n == 1 else "s"))
             add("</ul>")
+            steady = len(moved or []) - len(real)
+            if steady:
+                add("<p class='none'>{} other booker{} stayed within {:.0f} "
+                    "points of their usual.</p>".format(
+                        steady, "" if steady == 1 else "s", R.DROP))
 
     add("</body></html>")
     path.write_text("\n".join(x for x in L if x), encoding="utf-8")

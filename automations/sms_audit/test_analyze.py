@@ -1329,3 +1329,40 @@ class ShoutingFalsePositiveTest(unittest.TestCase):
         self.assertEqual(RB.shouts("You MUST BE ON TIME"), "MUST BE ON TIME")
         self.assertEqual(
             RB.shouts("DO NOT BE LATE for KAYLA.TERAN6122@GMAIL.COM"), "LATE")
+
+
+class PersonaTest(unittest.TestCase):
+    """Megan 2026-10-01 asked what "4 different names front this office"
+    meant. Checking turned up three bugs behind it, each pinned here."""
+
+    def setUp(self):
+        from automations.sms_audit import templates as T
+        self.T = T
+
+    def test_a_lowercase_lead_in_still_finds_the_name(self):
+        self.assertEqual(
+            self.T.PERSONA.findall("Hey, It's Dani reaching out again."),
+            ["Dani"])
+
+    def test_the_name_must_still_be_capitalised(self):
+        # re.I on the whole pattern caught "Dani reaching" and "you"
+        self.assertEqual(self.T.PERSONA.findall("it's you I wanted"), [])
+
+    def test_a_first_name_folds_into_the_full_name(self):
+        import collections
+        folded = self.T.fold_personas(
+            collections.Counter({"Dani": 2, "Dani Pena": 1}))
+        self.assertEqual(dict(folded), {"Dani Pena": 3})
+
+    def test_two_danis_do_not_fold(self):
+        import collections
+        folded = self.T.fold_personas(
+            collections.Counter({"Dani": 1, "Dani Pena": 1, "Dani Lamb": 1}))
+        self.assertEqual(folded["Dani"], 1)
+
+    def test_a_deactivated_template_names_nobody(self):
+        bodies = [("Await Call", "#1", "Hey, this is Aisha with Alphalete!"),
+                  ("No Answer", "#1", "Hey, this is Dani Pena.")]
+        states = {"Await Call": "Not Activated", "No Answer": "Activated"}
+        _f, personas = self.T.lint(bodies, states, None)
+        self.assertEqual(dict(personas), {"Dani Pena": 1})
