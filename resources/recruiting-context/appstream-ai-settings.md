@@ -20,7 +20,7 @@ Hours · Escalations · Settings · AI Voice Settings · Check Compliance.
 |---|---|---|
 | **Name your AI Assistant** | The name the AI gives when asked "who am I talking to?" | **Must match the name in your Await Call message.** 11280 had the AI named *Aisha* while all three live SMS templates signed *Dani Pena*. |
 | **Escalation Contact Title** | Used when the AI hands off: "I'll get my *Hiring Manager* to help answer that." | — |
-| **Escalation Contact Person Name** | The name given if they ask who that person is. | **Must be different from the AI assistant name**, or someone who asks both questions hears one person. 11280 had both set to *Aisha* until 2026-10-01. |
+| **Escalation Contact Person Name** | The name given if they ask who that person is. | **Must be different from the AI assistant name**, or someone who asks both questions hears one person. 11280 had both set to *Aisha* until 2026-10-01. Megan's rule (2026-10-01): the AI assistant name is a **persona** and need not be a real person; the escalation contact must be **the actual human who will place the call**, because that is who the applicant ends up speaking to. Note the AI currently says only the title in the handoff — across six weeks at 11280 it never gave the name once, so the field is set and unused. Raised with eStream. |
 | **How long are your interviews?** | The answer the AI gives to "how long is it?" | — |
 | **Allow AI to provide address to applicant** | Toggle. | — |
 | **Interview Type** | In-person / Phone Call / Google Meet / Zoom Meeting. | **One setting for an office that runs two rounds.** 11280 runs Zoom 1st rounds and in-person 2nd rounds and can only say one. Raised with eStream 2026-10-01. |
@@ -111,6 +111,43 @@ re-engage. 11280 is at 45, by which point 58% of applicants have replied
 anyway — so roughly 4 in 10 conversations get flagged.
 
 ---
+
+## The proposal put to eStream
+
+[office-message-setup-mockup.html](office-message-setup-mockup.html) —
+a working mockup of a per-office setup form. The ICD enters their own
+details once and the AI's escalation messages are generated from them,
+which answers the validator's objection: it rejects specific claims
+because it cannot tell whether they are true for a given office, and
+facts the office supplied and signed off on are verified by definition.
+
+Open it in a browser; typing in any field rebuilds the ten messages on
+the right. Fields marked NEW do not exist in AppStream today: suite,
+campaign type, pay range, per-round interview type, a second Zoom link,
+and languages recruited in. It also cross-checks the pair of timeslot
+buffers and warns when the AI persona and the escalation contact share
+a name.
+
+The ten messages it generates are the top ten things applicants
+actually say, measured across all four accounts (36,326 inbound
+messages, six weeks to 25 Sep), per 1,000 inbound:
+
+| | per 1k |
+|---|---|
+| Call me instead | 8.9 |
+| Not interested / opt out | 7.2 |
+| Spanish | 6.7 |
+| What is the job / role | 6.2 |
+| Pay / commission | 5.7 |
+| Remote? | 4.3 |
+| Scam / is this real | 3.1 |
+| Commute too far | 2.2 |
+| Directions / which suite | 2.1 |
+| Does not remember applying | 1.1 |
+
+Worth noting where offices differ: Spanish is worst at 11580 (9.5), pay
+is worst at 23965 (9.4), and "does not remember applying" is almost
+entirely 11280. The per-office form is the point.
 
 ## Checking an office
 

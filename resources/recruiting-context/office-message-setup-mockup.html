@@ -1,0 +1,407 @@
+<title>Office Message Setup</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  color-scheme: light;
+  --paper:#F7F6F3; --card:#FFFFFF; --ink:#1A1C1A; --muted:#5E635E;
+  --line:#E2E0D9; --rule:#CFCCC2;
+  --accent:#0E6B5A; --accent-soft:#E3EFEB; --accent-ink:#0A5547;
+  --amber:#8A6212; --amber-soft:#FAF1DC;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  color-scheme: dark;
+  --paper:#15171A; --card:#1D2024; --ink:#EDEBE5; --muted:#9BA29B;
+  --line:#2D3238; --rule:#3A4047;
+  --accent:#5BBFA8; --accent-soft:#13302A; --accent-ink:#8FD9C6;
+  --amber:#D6AE66; --amber-soft:#2B2416;
+}}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --paper:#15171A; --card:#1D2024; --ink:#EDEBE5; --muted:#9BA29B;
+  --line:#2D3238; --rule:#3A4047;
+  --accent:#5BBFA8; --accent-soft:#13302A; --accent-ink:#8FD9C6;
+  --amber:#D6AE66; --amber-soft:#2B2416;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);
+  font-family:"IBM Plex Sans",system-ui,sans-serif;font-size:15px;line-height:1.55;
+  padding:0 16px;padding-block:30px 70px}
+.wrap{max-width:1120px;margin:0 auto}
+h1{font-size:25px;font-weight:600;letter-spacing:-.015em;margin:0 0 6px;text-wrap:balance}
+.lede{color:var(--muted);font-size:14px;margin:0 0 8px;max-width:72ch}
+.pitch{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--accent);
+  border-radius:0 9px 9px 0;padding:14px 17px;margin:16px 0 26px;font-size:14px}
+.pitch b{color:var(--accent-ink)}
+:root[data-theme="dark"] .pitch b,:root:not([data-theme="light"]) .pitch b{color:var(--accent)}
+.split{display:grid;grid-template-columns:355px 1fr;gap:22px;align-items:start}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:17px;
+  position:sticky;top:12px}
+h2{font-size:11.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--accent);margin:0 0 13px;font-family:"IBM Plex Mono",monospace}
+h2.mt{margin-top:22px;padding-top:16px;border-top:1px solid var(--line)}
+label{display:block;font-size:12px;font-weight:600;margin:10px 0 3px;color:var(--muted)}
+input,select{width:100%;font:inherit;font-size:14px;padding:7px 9px;border-radius:7px;
+  border:1px solid var(--line);background:var(--paper);color:var(--ink)}
+input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.suffixed{display:flex;align-items:center;gap:7px}
+.suffixed select{flex:1 1 auto;min-width:0}
+.suffix{font-size:13px;color:var(--muted);white-space:nowrap}
+.explain{font-size:12.5px;color:var(--muted);margin:12px 0 0;
+  border-left:2px solid var(--rule);padding-left:11px}
+.explain b{color:var(--ink)}
+.help{font-size:12px;color:var(--muted);margin:4px 0 0;line-height:1.45}
+.help b{color:var(--ink)}
+.rec{background:var(--accent-soft);border-radius:8px;padding:11px 13px;
+  margin:14px 0 0;font-size:12.5px;line-height:1.5}
+.rec b{color:var(--accent-ink)}
+:root[data-theme="dark"] .rec b{color:var(--accent)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .rec b{color:var(--accent)}}
+.explain .ex{display:block;font-family:"IBM Plex Mono",monospace;font-size:11.5px;
+  background:var(--accent-soft);color:var(--ink);border-radius:5px;
+  padding:7px 9px;margin:6px 0}
+.new{display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:9.5px;
+  letter-spacing:.06em;background:var(--amber-soft);color:var(--amber);
+  padding:1px 5px;border-radius:3px;margin-left:5px;vertical-align:1px}
+.out{display:flex;flex-direction:column;gap:13px}
+.msg{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:15px 17px}
+.mhead{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:9px}
+.mname{font-size:14.5px;font-weight:600;flex:1 1 auto}
+.chip{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.05em;
+  padding:2px 6px;border-radius:4px;border:1px solid var(--line);color:var(--muted);
+  white-space:nowrap}
+pre.body.editing{outline:2px solid var(--accent);outline-offset:1px;background:var(--card)}
+pre.body{font-family:"IBM Plex Mono",monospace;font-size:12.5px;line-height:1.5;margin:0;
+  padding:12px 13px;white-space:pre-wrap;word-break:break-word;
+  background:var(--accent-soft);border-radius:7px;color:var(--ink)}
+.foot{display:flex;align-items:center;gap:9px;margin-top:9px}
+.count{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted);flex:1 1 auto;
+  font-variant-numeric:tabular-nums}
+button{font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;border-radius:6px;
+  padding:5px 13px;transition:background .12s}
+.approve{border:1px solid var(--accent);background:var(--accent);color:#fff}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .approve{color:#0B1412}}
+:root[data-theme="dark"] .approve{color:#0B1412}
+.approve.done{background:var(--card);color:var(--accent)}
+.edit{border:1px solid var(--line);background:transparent;color:var(--muted)}
+.note{color:var(--muted);font-size:12.5px;margin:9px 0 0}
+.win{font-size:12.5px;border-radius:7px;padding:9px 11px;margin:10px 0 0;
+  border-left:3px solid var(--accent);background:var(--accent-soft)}
+.win.warn{border-left-color:var(--amber);background:var(--amber-soft)}
+.win.bad{border-left-color:#A8322A;background:#F8E8E6;color:#5C1E18}
+:root[data-theme="dark"] .win.bad{background:#331D1A;color:#E9B5AD;border-left-color:#E98B81}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .win.bad{
+  background:#331D1A;color:#E9B5AD;border-left-color:#E98B81}}
+@media (max-width:860px){.split{grid-template-columns:1fr}.panel{position:static}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <h1>Office Message Setup</h1>
+  <p class="lede">A proposed addition to AppStream AI Settings. One form per
+  office, filled in once by the ICD.</p>
+
+  <div class="pitch"><b>Why this solves the validator problem.</b> Today the
+  validator rejects specific claims because it cannot tell whether they are
+  true for a given office. If the office supplies the facts and signs off on
+  the wording, they are verified by definition — the system generates the
+  messages from what was entered, the ICD approves each one, and nothing has
+  to be argued with sentence by sentence. Fields marked <span class="new">NEW</span>
+  do not exist today.</p>
+
+  <div class="split">
+    <div class="panel">
+      <h2>Office details</h2>
+      <label for="f-name">ICD name, as it appears in OwnerVille</label>
+      <input id="f-name" value="Rafael Hidalgo">
+      <label for="f-ai">Name your AI assistant</label>
+      <input id="f-ai" value="Aisha">
+      <p class="help"><b>We do not recommend using one of your recruiting
+      team member's names.</b> An escalation only works if it hands the applicant to
+      someone new. If the AI texts as Dani and then tells the applicant
+      that Dani will call them, you have just handed them to the person
+      they were already talking to. <b>Make one up</b> — it is the one
+      field on this page where you get to have fun.</p>
+      <label for="f-addr">Street address of office / where interviews are conducted</label>
+      <input id="f-addr" value="3100 Premier Dr">
+      <label for="f-suite">Suite / unit <span class="new">NEW</span></label>
+      <input id="f-suite" value="Suite 207">
+      <div class="two">
+        <div><label for="f-city">City</label><input id="f-city" value="Irving"></div>
+        <div><label for="f-state">State</label><input id="f-state" value="TX"></div>
+      </div>
+      <div class="two">
+        <div><label for="f-zip">Zip</label><input id="f-zip" value="75063"></div>
+        <div><label for="f-phone">Recruiting phone number</label><input id="f-phone" value="469 942 9110"></div>
+      </div>
+
+      <h2 class="mt">The role</h2>
+      <label for="f-camp">Campaign type <span class="new">NEW</span></label>
+      <select id="f-camp">
+        <option>D2D</option><option>B2B</option><option>Retail</option>
+      </select>
+      <label for="f-client">Client</label>
+      <input id="f-client" value="AT&T">
+      <div class="two">
+        <div><label for="f-low">Weekly pay from <span class="new">NEW</span></label><input id="f-low" value="$1,000"></div>
+        <div><label for="f-high">to</label><input id="f-high" value="$1,500"></div>
+      </div>
+
+      <h2 class="mt">Interviews</h2>
+      <div class="two">
+        <div><label for="f-r1">1st round is conducted via <span class="new">PER ROUND</span></label>
+          <select id="f-r1"><option>Zoom</option><option>In person</option>
+            <option>Phone call</option></select></div>
+        <div><label for="f-len">Length</label>
+          <div class="suffixed">
+            <select id="f-len">
+              <option>10-15</option><option>15-20</option>
+              <option selected>20-30</option><option>30-45</option>
+              <option>45-60</option>
+            </select><span class="suffix">minutes</span>
+          </div></div>
+      </div>
+      <div id="z1">
+        <label for="f-zoom">1st round Zoom link</label>
+        <input id="f-zoom" value="https://us02web.zoom.us/j/2935077152">
+      </div>
+      <label for="f-r2">2nd round is conducted via <span class="new">PER ROUND</span></label>
+      <select id="f-r2"><option>Zoom</option><option>In person</option>
+        <option>Phone call</option></select>
+      <div id="z2">
+        <label for="f-zoom2">2nd round Zoom link <span class="new">NEW</span></label>
+        <input id="f-zoom2" value="https://us02web.zoom.us/j/8814402219">
+      </div>
+
+      <h2 class="mt">Who the AI is</h2>
+      <p class="help">Two names, doing two different jobs. The first is a
+      persona the AI texts under. The second is <b>a real person on your
+      team</b> — the one who will actually pick up the phone.</p>
+      <label for="f-esct">Escalation contact title</label>
+      <input id="f-esct" list="titles" value="Talent Coordinator">
+      <datalist id="titles">
+        <option>Talent Coordinator</option>
+        <option>Talent Acquisition Coordinator</option>
+        <option>Hiring Coordinator</option>
+        <option>Interview Coordinator</option>
+        <option>Recruiting Coordinator</option>
+        <option>Onboarding Coordinator</option>
+      </datalist>
+      <p class="help">Pick one of the suggestions or type your own.
+      <b>Not "Hiring Manager"</b> — that is the ICD, who is never on the
+      phone with an applicant before an interview, so the title promises a
+      call from someone who will not make it. Use the title that fits
+      whoever actually rings them.</p>
+      <label for="f-escn">Escalation contact name — the person who really calls</label>
+      <input id="f-escn" value="Lucy">
+      <div id="whoex"></div>
+
+      <h2 class="mt">Timing</h2>
+      <p class="help">These two settings decide something easy to miss: how
+      long an applicant actually has to take the time they were offered.
+      Both are counted backwards from the interview, so they only make sense
+      together.</p>
+
+      <label for="f-off">First slot the AI offers, minutes from now</label>
+      <input id="f-off" type="number" value="60">
+      <p class="help">Your prep time. At 60, someone texting at 9:30 is
+      offered 10:30 as the earliest.</p>
+
+      <label for="f-acc">Cut-off before that slot, minutes</label>
+      <input id="f-acc" type="number" value="5">
+      <p class="help">How close to the interview someone can still accept.
+      <b>Counted backwards, so a bigger number gives them less time.</b> At 5
+      they can take a 10:30 slot up until 10:25.</p>
+
+      <div id="window"></div>
+
+      <label for="f-ghost">Flag as ghosting after, minutes</label>
+      <input id="f-ghost" type="number" value="60">
+      <p class="help">Silence this long puts a ghost icon on the thread so
+      someone can re-engage. <b>Most applicants take around an hour to
+      reply, so we do not suggest anything shorter than 60</b> — below that
+      you are flagging people who are simply busy.</p>
+      <div class="rec"><b>Where to start: 60 / 5 / 60.</b> That offers an
+      interview an hour out and gives the applicant 55 minutes to take it.
+      An hour keeps it <b>same day</b>, which matters more than it sounds:
+      measured across 4,500 interviews at one office, same-day bookings
+      showed up 57% of the time against 42% the next day and 38% two to
+      three days out. Pushing the first slot further out to buy a bigger
+      window costs more than it gains.<br><br>If your team cannot take
+      someone accepting five minutes before the slot starts, raise the
+      cut-off to 15 — you still get a 45-minute window.</div>
+
+      <h2 class="mt">Reach</h2>
+      <label for="f-lang">Languages you recruit in <span class="new">NEW</span></label>
+      <select id="f-lang">
+        <option>English and Spanish</option><option>English only</option>
+      </select>
+    </div>
+
+    <div class="out" id="out"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var ids=["f-name","f-ai","f-addr","f-suite","f-city","f-state","f-zip","f-phone",
+           "f-camp","f-client","f-low","f-high","f-r1","f-len",
+           "f-zoom","f-r2","f-zoom2","f-lang","f-esct","f-escn",
+           "f-off","f-acc","f-ghost"];
+  function v(id){var el=document.getElementById(id);return el?String(el.value).trim():"";}
+  function esc(s){var d=document.createElement("div");d.textContent=s==null?"":s;return d.innerHTML;}
+
+  var GSM=/^[@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&'()*+,\-./0-9:;<=>?¡A-ZÄÖÑÜ§¿a-zäöñüà^{}\\[~\]|€]*$/;
+  function seg(t){
+    var ok=GSM.test(t), n=t.length;
+    if(!ok) return n<=70?1:Math.ceil(n/67);
+    var u=0; for(var i=0;i<n;i++){ u += "^{}\\[~]|€".indexOf(t[i])>=0?2:1; }
+    return u<=160?1:Math.ceil(u/153);
+  }
+
+  function campaignLine(){
+    var c=v("f-camp");
+    if(c==="B2B") return "visiting local businesses, handling new sales and upgrades";
+    if(c==="Retail") return "in store with customers, handling new sales and upgrades";
+    return "meeting customers face to face, handling new sales and upgrades";
+  }
+  function addr(){
+    var p=[v("f-addr")]; if(v("f-suite")) p.push(v("f-suite"));
+    return p.join(", ")+", "+v("f-city")+" "+v("f-state")+" "+v("f-zip");
+  }
+
+  function build(){
+    var out=[];
+    out.push(["Confusion About Role Type","COMPANY_INFO",
+      "Great question! You applied for our adPostingTitle listing with "+v("f-client")+
+      ". You'd be "+campaignLine()+". Does that still sound like a fit?"]);
+    out.push(["Compensation","COMPENSATION_BENEFITS",
+      "Great question! Weekly pay runs "+v("f-low")+" to "+v("f-high")+
+      ". Was there a specific pay rate you were seeking?"]);
+    out.push(["Applicant Requested Directions","SCHEDULING",
+      "Happy to help! We're at "+addr()+". See you there!"]);
+    out.push(["Remote Work","WORK_ARRANGEMENTS",
+      v("f-camp")==="Retail"
+        ? "No, this is an in store role here in "+v("f-city")+
+          ". Is that a good commute for you?"
+        : "No, this is an in person role based out of our office in "+
+          v("f-city")+". Is that a good commute for you?"]);
+    out.push(["Does Not Remember Applying","REJECTION",
+      "Thanks for checking! Our records show an application through jobBoard "+
+      "for our open adPostingTitle role. Does that sound right?"]);
+    out.push(["Mentions “Scam”","FRAUD_DETECTION",
+      "I understand wanting to check. We are officeName and our office is at "+
+      addr()+". You are welcome to look us up and I'm happy to answer any "+
+      "questions you may have!"]);
+    out.push(["User Not Interested / Wants to Opt Out","REJECTION",
+      "No problem at all - I'll take you off our list. Thanks for letting "+
+      "us know, and best of luck!"]);
+    out.push(["Commute Distance Rejection","QUALIFICATIONS",
+      "Totally understand! We are in "+v("f-city")+", "+v("f-state")+
+      " and all our work is around the area. Is that drive doable for you?"]);
+    out.push(["Request to talk via Phone","COMMUNICATION",
+      "Of course \u2014 I'll pass this along so our "+v("f-esct")+
+      " can follow up by phone."]);
+    if(v("f-lang")==="English and Spanish"){
+      out.push(["Non-English Language Detected","TECHNICAL",
+        "¡Hola! Sí, podemos continuar en español. Solicitó nuestro puesto con "+
+        v("f-client")+". ¿En qué le puedo ayudar?"]);
+    }
+    return out;
+  }
+
+  function checks(){
+    document.getElementById("z1").hidden = v("f-r1")!=="Zoom";
+    document.getElementById("z2").hidden = v("f-r2")!=="Zoom";
+    var w=[];
+    var off=parseInt(v("f-off"),10)||0, acc=parseInt(v("f-acc"),10)||0;
+    var mins=off-acc;
+    var cls = mins<15 ? "bad" : (mins<30 ? "warn" : "ok");
+    var verdict = mins<15
+      ? "Too short. Most applicants take 20 to 30 minutes to answer a text, "+
+        "so most will be too late for the slot they were just offered and "+
+        "the AI has to start over."
+      : (mins<30
+        ? "Tight. It will work for the fast repliers and miss the rest."
+        : "Comfortable. This covers how long most applicants take to reply.");
+    w.push('<div class="win '+cls+'"><b>Applicants get '+mins+' minute'+
+      (mins===1?'':'s')+' to accept.</b> '+esc(verdict)+'</div>');
+    document.getElementById("window").innerHTML=w.join("");
+
+    var ai=v("f-ai")||"your AI", t=v("f-esct")||"Talent Coordinator",
+        nm=v("f-escn")||"that person", cl=v("f-client")||"AT&T";
+    var e='<div class="explain"><b>The AI gets a persona. The escalation '+
+      'contact is a real person.</b> Every text opens as <b>'+esc(ai)+
+      '</b>, which is a name for the texting assistant and does not have to '+
+      'belong to anyone. When something escalates, <b>'+esc(nm)+'</b> is the '+
+      'person who will actually ring the applicant \u2014 so use the name of '+
+      'someone on your team who takes those calls.'+
+      '<span class="ex">Hey Christopher, this is '+esc(ai)+'. You applied for '+
+      'our adPostingTitle role via jobBoard \u2014 do you have a couple of '+
+      'minutes to get your interview set up?</span>'+
+      '<span class="ex">Thanks for letting me know. I\u2019ll have the '+
+      esc(t)+' reach out to you by phone.</span>'+
+      '<b>'+esc(ai)+'</b> also has to match the name your Await Call template '+
+      'signs, or an applicant meets two people in their first two texts.</div>';
+    if(ai.toLowerCase()===nm.toLowerCase()){
+      e+='<div class="win bad"><b>'+esc(ai)+' is both the AI persona and the '+
+        'real contact.</b> The handoff then reads as the assistant passing '+
+        'the applicant to itself. Give the AI its own name.</div>';
+    }
+    document.getElementById("whoex").innerHTML=e;
+  }
+
+  var edits={};
+
+  function render(){
+    checks();
+    var html=build().map(function(r,i){
+      if(Object.prototype.hasOwnProperty.call(edits,r[0])) r[2]=edits[r[0]];
+      var s=seg(r[2]);
+      return '<div class="msg"><div class="mhead"><span class="mname">'+esc(r[0])+
+        '</span><span class="chip">'+esc(r[1])+'</span></div>'+
+        '<pre class="body">'+esc(r[2])+'</pre>'+
+        '<div class="foot"><span class="count">'+r[2].length+' characters · '+
+        s+' segment'+(s===1?'':'s')+'</span>'+
+        '<button class="edit" type="button" data-n="'+esc(r[0])+'">Edit</button>'+
+        '<button class="approve" type="button" data-i="'+i+'">Approve</button></div></div>';
+    }).join("");
+    var o=document.getElementById("out");
+    o.innerHTML=html;
+    o.querySelectorAll("button.approve").forEach(function(b){
+      b.addEventListener("click",function(){
+        b.textContent="Approved"; b.classList.add("done");
+      });
+    });
+    o.querySelectorAll("button.edit").forEach(function(b){
+      b.addEventListener("click",function(){
+        var card=b.closest(".msg"), pre=card.querySelector("pre.body"),
+            cnt=card.querySelector(".count"), name=b.getAttribute("data-n");
+        if(b.textContent==="Edit"){
+          pre.contentEditable="true";
+          pre.classList.add("editing");
+          pre.focus();
+          var r=document.createRange(); r.selectNodeContents(pre);
+          var sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+          sel.collapseToEnd();
+          b.textContent="Done";
+          pre.addEventListener("input",function(){
+            var t=pre.textContent, n=seg(t);
+            cnt.textContent=t.length+" characters \u00b7 "+n+" segment"+(n===1?"":"s");
+          });
+        } else {
+          pre.contentEditable="false";
+          pre.classList.remove("editing");
+          edits[name]=pre.textContent;
+          b.textContent="Edit";
+        }
+      });
+    });
+  }
+  ids.forEach(function(id){
+    var el=document.getElementById(id);
+    if(el) el.addEventListener(el.tagName==="SELECT"?"change":"input",render);
+  });
+  render();
+})();
+</script>

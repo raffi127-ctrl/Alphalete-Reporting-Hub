@@ -63,7 +63,8 @@ MODES = ["In person", "Zoom"]
 # Megan 2026-10-01: Raf's 11280 is D2D, and the approved "what is the job"
 # answer names the locations available. Naming the wrong one is how an
 # applicant turns up expecting a desk.
-CAMPAIGNS = ["D2D", "B2B", "In store", "In office", "Mixed"]
+# Megan 2026-10-01: the house terms, and only these three.
+CAMPAIGNS = ["D2D", "B2B", "Retail"]
 
 
 def _select(block_id, label, initial="", options=None):
