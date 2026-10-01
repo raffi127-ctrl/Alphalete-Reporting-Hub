@@ -192,6 +192,10 @@ def build_rows(members, users, terminated, channel_order, active=None,
         people.sort(key=lambda p: (p[1] == "", p[0], p[2]))
 
         for _, name, uid, u in people:
+            # Already deactivated in AO = the cleanup is done for them; the
+            # monthly refresh drops the row (Eve, 2026-10-01).
+            if u.get("deleted"):
+                continue
             term = terminated.get(_key(name)) if name else None
             notes = []
             # FIRST, so the whole block can be filtered out in one go: someone
@@ -209,8 +213,6 @@ def build_rows(members, users, terminated, channel_order, active=None,
                 # Slack Connect: they belong to ANOTHER workspace, so "Remove
                 # from AO" means nothing for them — only the channel applies.
                 notes.append("EXTERNAL - another workspace, not in AO")
-            if u.get("deleted"):
-                notes.append("Slack account already deactivated")
             if u.get("bot"):
                 notes.append("Bot / app")
             if u.get("restricted"):
@@ -262,6 +264,29 @@ def existing_ticks(ws, index):
         out[(uid, chan)] = [cell(CHECKBOX_LABELS[0]).upper() == "TRUE",
                             cell(CHECKBOX_LABELS[1]).upper() == "TRUE"]
     return out
+
+
+def existing_manual(ws, index):
+    """{(slack id, channel): {label: value}} for every column we do NOT write
+    ('Doubt?', 'Notes from Raf', 'Other Team (Raf PNL)', anything Eve adds).
+
+    Those are typed by hand next to a person. A rebuild changes the row order,
+    so leaving them in place pins Eve's "No" on whoever lands on that row next.
+    They ride along with the person instead, same as Rafael's ticks."""
+    managed = {l for l, _ in COLUMNS} | set(CHECKBOX_LABELS)
+    manual = [l for l in index if l not in managed]
+    if not manual or "Slack ID" not in index or "Channel" not in index:
+        return {}, manual
+    last = _col_letter(max(index.values()))
+    out = {}
+    for row in ws.get_values("A%d:%s%d" % (FIRST_DATA_ROW, last, ws.row_count)):
+        def cell(label):
+            i = index.get(label)
+            return row[i] if i is not None and i < len(row) else ""
+        uid, chan = cell("Slack ID").strip(), cell("Channel").strip()
+        if uid and chan:
+            out[(uid, chan)] = {l: cell(l) for l in manual}
+    return out, manual
 
 
 def read_layout(ws):
@@ -346,10 +371,13 @@ def channel_order(rule, fallback):
     return [v for v in vals if v] or list(fallback)
 
 
-def write_tab(gc, sh, ws, rows, index, rule, ticks=None):  # noqa: C901
-    """Write only the columns we recognise, one range each. Never row 1, never
-    a format, never a colour."""
+def write_tab(gc, sh, ws, rows, index, rule, ticks=None,  # noqa: C901
+              manual=None, manual_labels=()):
+    """Write only the columns we recognise, one range each, plus the
+    hand-typed columns carried along with their person. Never row 1, never a
+    format, never a colour."""
     ticks = ticks or {}
+    manual = manual or {}
     needed = FIRST_DATA_ROW + len(rows) - 1
     if ws.row_count < needed:
         ws.add_rows(needed - ws.row_count)
@@ -370,6 +398,12 @@ def write_tab(gc, sh, ws, rows, index, rule, ticks=None):  # noqa: C901
                                                 col, needed),
                      "values": [[ticks.get((r["uid"], r["channel"]),
                                            (False, False))[n]] for r in rows]})
+    for label in manual_labels:
+        col = _col_letter(index[label])
+        data.append({"range": "%s!%s%d:%s%d" % (ws.title, col, FIRST_DATA_ROW,
+                                                col, needed),
+                     "values": [[manual.get((r["uid"], r["channel"]), {})
+                                 .get(label, "")] for r in rows]})
     sh.values_batch_update({"valueInputOption": "USER_ENTERED", "data": data})
 
     # Clear leftovers below, VALUES only — formatting and banding stay put.
@@ -458,7 +492,10 @@ def main(argv=None):
     ticks = existing_ticks(ws, index)
     kept = sum(1 for r in rows if any(ticks.get((r["uid"], r["channel"]), (0, 0))))
     print("tildes de Rafael conservadas: %d" % kept)
-    last = write_tab(gc, sh, ws, rows, index, rule, ticks)
+    manual, manual_labels = existing_manual(ws, index)
+    print("columnas a mano que viajan con la persona: %s"
+          % (", ".join(manual_labels) or "ninguna"))
+    last = write_tab(gc, sh, ws, rows, index, rule, ticks, manual, manual_labels)
     print("\nescrito hasta la fila %d en '%s'" % (last, ws.title))
     return 0
 
