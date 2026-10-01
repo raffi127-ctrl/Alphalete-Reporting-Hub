@@ -216,6 +216,32 @@ def covers(sh, campaign: str, day: dt.date) -> bool:
     return any(r[i].strip() == want for r in rows[1:])
 
 
+# RE-PULL (Eve 2026-10-01). att_order_log writes "Lucy At&t Data" ONCE, in the
+# 4am batch. On 10/1 it ran at 04:14 before Tableau had 9/30, so every pass of
+# the ladder fail-opened on an empty day and nothing ever brought the late
+# sales in. From the fail-open floor on, a live pass that still finds no rows
+# re-pulls the log itself (raise-only, so a later re-pull just tops up).
+REPULL_TIMEOUT_S = 25 * 60       # att_order_log's own orchestrator timeout
+
+
+def repull_att() -> bool:
+    """Re-run att_order_log --sheet. True if it exited 0. Never raises."""
+    import subprocess
+    _log("B2B: still no rows past the floor — re-pulling the ATT order log")
+    try:
+        r = subprocess.run(
+            [sys.executable, "-m", "automations.att_order_log.run", "--sheet"],
+            capture_output=True, text=True, timeout=REPULL_TIMEOUT_S)
+    except Exception as e:  # noqa: BLE001 — the fill goes on with what's there
+        _log(f"  ! re-pull failed to run: {e!r}")
+        return False
+    for line in (r.stdout or "").splitlines()[-3:]:
+        _log(f"  att_order_log: {line}")
+    if r.returncode != 0:
+        _log(f"  ! re-pull exited {r.returncode}")
+    return r.returncode == 0
+
+
 def match_rep(log_key: str, rows: dict[str, int]):
     """Order-log name -> board row key. Exact, then first+last token, then a
     first-name-only board row (the board has an 'Esmeralda')."""
@@ -430,6 +456,11 @@ def main(argv=None) -> int:
     uncovered = set()
     for c in campaigns:
         if covers(sh, c, days[-1]):
+            ready.append(c)
+        elif (c == "B2B" and a.fill and a.yes and not rolled_past
+              and now_t >= B2B_FAILOPEN and repull_att()
+              and covers(sh, c, days[-1])):
+            _log(f"B2B: re-pulled the order log — it now reaches {days[-1]}")
             ready.append(c)
         elif rolled_past:
             _log(f"{c}: board already rolled past {days[-1]}'s week and the "
