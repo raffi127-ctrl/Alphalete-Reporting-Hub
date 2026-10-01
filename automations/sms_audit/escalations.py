@@ -82,6 +82,10 @@ WHY = {
         "Longer than two segments",
         "Two segments is the target. Use the officeAddress1 / officeCity "
         "variables rather than typing the address out."),
+    "GRAMMAR": (
+        "Reads as a mistake",
+        "A canned message goes out hundreds of times, so one slip here is "
+        "not one typo \u2014 it is every applicant who hits this situation."),
     "SHOUTING": (
         "Written in block capitals",
         "Block capitals read as shouting and trip spam filters."),
@@ -138,6 +142,7 @@ def lint(rows, office=None):
     both the same way."""
     from automations.sms_audit import rebuttals as R
     from automations.sms_audit.analyze import CALL_PROMISE
+    from automations.sms_audit import analyze as _A
     office = office or {}
     findings = []
     for r in rows:
@@ -166,6 +171,11 @@ def lint(rows, office=None):
             findings.append((
                 "PAY WORDING", "{}: “{}”".format(where, msg[:160])))
         findings += _sms.findings(where, msg)
+
+        for kind, detail in _A.proofread(msg):
+            findings.append((
+                "GRAMMAR", "{}: {} \u2014 \u201c{}\u201d".format(
+                    where, kind, detail)))
 
         shout = R.shouts(msg)
         if shout:

@@ -1479,3 +1479,39 @@ class MovingOfficeTest(unittest.TestCase):
     def test_an_office_that_never_moved_is_unaffected(self):
         self.assertIsNone(RB.wrong_address(
             "11580", "We are at 1901 N Highway 360, Suite 610."))
+
+
+class ProofreadTest(unittest.TestCase):
+    """Megan 2026-10-01 caught "...over text but It's entry level..." by eye
+    in a canned message. The grammar checks only ever ran on recruiter
+    typing, so nothing was watching the templates or the AI's answers."""
+
+    def test_a_capital_mid_sentence_is_caught(self):
+        kinds = [k for k, _d in A.proofread(
+            "The full listing will be on your Indeed profile, it's a lot to "
+            "review over text but It's entry level with full paid training!")]
+        self.assertIn("capital mid-sentence", kinds)
+
+    def test_the_corrected_version_is_clean(self):
+        self.assertEqual(A.proofread(
+            "Happy to explain! You'd be meeting AT&T customers face to face. "
+            "It's entry level with full paid training. The full listing is on "
+            "your Indeed profile - too much to fit in a text!"), [])
+
+    def test_a_proper_noun_after_a_lowercase_word_is_not_a_mistake(self):
+        for ok in ("our client AT&T is the carrier",
+                   "we are hiring for Alphalete Marketing",
+                   "meet us in Irving on Tuesday"):
+            self.assertEqual(
+                [k for k, _d in A.proofread(ok) if k == "capital mid-sentence"],
+                [], ok)
+
+    def test_every_approved_escalation_message_is_clean(self):
+        for m in ("No problem at all - I'll take you off our list. Thanks for "
+                  "letting us know, and best of luck!",
+                  "Happy to help! We're at 3100 Premier Dr, Suite 207, Irving "
+                  "TX 75063. See you there!",
+                  "Thanks for checking! Our records show an application for "
+                  "the adPostingTitle role through jobBoard. Does that sound "
+                  "right?"):
+            self.assertEqual(A.proofread(m), [], m)

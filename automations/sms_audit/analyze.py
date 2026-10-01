@@ -1746,6 +1746,53 @@ def text_errors(convos):
     return _fold_repeats(found)
 
 
+# A capital in the middle of a sentence, on a word that is never a name.
+# Megan 2026-10-01 spotted "...over text but It's entry level..." by eye in a
+# canned message; the grammar checks only ever ran on recruiter typing, so
+# nothing was watching the templates and escalation messages.
+MIDCAP = re.compile(
+    r"\b[a-z']+ (It|Its|It's|The|They|And|But|We|We're|You|You're|This|That|"
+    r"Is|Are|Was|Our|Your|Of|For|With|From|Will|Can)\b")
+
+# Two independent clauses welded with a comma.
+SPLICE = re.compile(
+    r"\b(it'?s|that'?s|there'?s|we'?re|you'?re|they'?re|he'?s|she'?s)\b"
+    r"[^.!?]{6,70}, (it'?s|that'?s|we'?re|you'?re|they'?re|this is|that is)\b",
+    re.I)
+
+
+def proofread(body):
+    """[(kind, detail)] for ONE message — the same checks text_errors runs on
+    a recruiter's typing, usable on a template or a canned AI answer where
+    there is no conversation to walk. Spelling is left out: it needs the
+    week's corpus to decide what is a typo."""
+    out = []
+    body = " ".join((body or "").split())
+    if not body:
+        return out
+    d = _real_doubled(body)
+    if d:
+        out.append(("doubled word", d.group(0)))
+    if NO_SPACE.search(body):
+        out.append(("missing space", NO_SPACE.search(body).group(0)))
+    for pat, label in GRAMMAR_PATTERNS:
+        g = re.search(pat, body, re.I)
+        if g:
+            out.append(("grammar", "{} ({})".format(g.group(0), label)))
+    bv = BARE_VERB.search(body)
+    if bv:
+        out.append(("verb form", "{} \u2192 {}d".format(bv.group(0), bv.group(0))))
+    if LONE_I.search(body):
+        out.append(("lowercase i", "i on its own"))
+    m = MIDCAP.search(body)
+    if m:
+        out.append(("capital mid-sentence", m.group(0)))
+    sp = SPLICE.search(body)
+    if sp:
+        out.append(("comma splice", sp.group(0)[:60]))
+    return out
+
+
 def spellcheck_available():
     """Whether this machine has a word list. Without one the spelling check
     is skipped, and a sheet that silently reported zero typos would be
