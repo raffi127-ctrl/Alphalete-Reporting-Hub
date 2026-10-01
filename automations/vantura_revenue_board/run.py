@@ -30,8 +30,12 @@ box_order_log left on disk at 7:00 / 8:30. Before 7:00 the BOX half is
 SKIPPED, not held: the newest csv is yesterday's pull and can never carry the
 target day, so holding there just published a `partial` run every morning.
 
-HOLDS (exit 75, the LaunchAgent ladder retries): export has no rows for the
-target day yet, the BOX csv has not reached the day yet (until 9:35, after
+LIVE passes skip the AT&T half entirely (2026-10-01): the B2B Metrics runner
+posts that board from its own pull, so the early passes are no-ops that exit 0.
+The AT&T half only renders for dry runs / --no-post / --dm.
+
+HOLDS (exit 75, the LaunchAgent ladder retries): (preview only) export has no
+rows for the target day yet, the BOX csv has not reached the day yet (until 9:35, after
 which an empty day is a real zero — and on a MONDAY the day it must reach is
 SATURDAY, because BOX sells to businesses and they are shut on Sunday), or
 the Vantura Production thread hasn't been posted yet. Not included anywhere:
@@ -719,7 +723,17 @@ def main(argv=None) -> int:
     tag = f"{upto.month}.{upto.day}"
 
     # ---------------- AT&T ----------------
-    if a.only != "box":
+    # A LIVE pass never posts the ATT board — the B2B Metrics runner owns it
+    # (see the skip below) and pulls/prices its own copy. So a live pass has
+    # no reason to pull the export or wait on it: 2026-10-01 the 05:20 and
+    # 05:50 passes HELD for 9/30 rows they were never going to post, went
+    # `partial`, and the watcher opened a ticket with nothing wrong. Dry runs,
+    # --no-post and --dm still render it (previews / tests).
+    live = a.post and not a.dm and not a.no_post
+    if a.only != "box" and live:
+        print("ATT: skipped on a live pass — the B2B Metrics runner posts "
+              "the ATT Revenue Board")
+    elif a.only != "box":
         if a.csv:
             src_csv = Path(a.csv)
         else:
