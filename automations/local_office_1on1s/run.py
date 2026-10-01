@@ -442,7 +442,17 @@ def main(argv=None) -> int:
             # What this run actually has, keyed by the cell it lands in.
             have = {}
             for cell in filled.cells:
-                r = LO.find_row(rows, cell.row_label)
+                # A VARIANT-ONLY LABEL MUST MATCH EXACTLY. 'New Starts showed /
+                # Scheduled' is the TEAM box's condensed row, and find_row's
+                # prefix tolerance resolved it onto the individual box's 'New
+                # Starts Showed' — so the ratio overwrote the count and that
+                # row read '3/3' where it should read '3'. The tolerance is
+                # right for drift like 'Dress Code 1 out of 3' vs '/5'; it is
+                # wrong when one label is a prefix of another REAL row.
+                if LO.fold(cell.row_label) in F.VARIANT_ONLY:
+                    r = rows.get(LO.fold(cell.row_label))
+                else:
+                    r = LO.find_row(rows, cell.row_label)
                 col = W.find(hdr, cell.week)
                 if r is None:
                     if LO.fold(cell.row_label) not in F.VARIANT_ONLY:
