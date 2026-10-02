@@ -385,13 +385,19 @@ _TITLE_ONLY = {
     },
 }
 
+# The tick skips an office's days before this date (an explicit `--nightly
+# --date` still posts). Khalil 10/2: his channel is re-posted 9/1 -> 10/2
+# from the queue in day order; the 4:30 tick posting 10/2 in the middle would
+# land it above September.
+_PAUSED_BEFORE = {"khalil": "2026-10-03"}
+
 OFFICES += [
     {
         "key": key, "owner": owner, "tz": _TZ.get(key), "live": key in _LIVE,
         "title_aliases": _ALIASES.get(key, {}),
         "title_only": _TITLE_ONLY.get(key, {}),
         "sheet_id": book, "source_channel": src, "live_channel": live,
-        "paused_before": "",
+        "paused_before": _PAUSED_BEFORE.get(key, ""),
         "sources": [{"office_id": oid, "stream": company, "label": company,
                      "tab": tab, "thread_re": re.compile(rx, re.I)}],
     }
