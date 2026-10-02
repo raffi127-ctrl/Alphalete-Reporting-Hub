@@ -150,7 +150,10 @@ def _alert_near(plan: mplan.Plan, *, real: bool, dry_run: bool = False) -> None:
             from automations.day_orchestrator import notify
             notify.post_alert(NEAR_TITLE, near_body(plan), tag="mobrium_list",
                               incident=NEAR_INCIDENT_KEY, label="Mobrium List",
-                              dry_run=dry_run)
+                              # Only a person can say "same person" — without
+                              # this, triage read the post as a failure and
+                              # replied "Lucy has this… re-runs it" (10/2).
+                              needs_human=True, dry_run=dry_run)
             print(f"  posted {len(plan.near) + len(plan.flagged)} name(s) "
                   f"to Slack for a human to decide")
         else:

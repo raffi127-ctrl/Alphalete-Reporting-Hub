@@ -46,6 +46,16 @@ class NearMissesGoToSlack(unittest.TestCase):
         self.assertIn("Charley Perez", "\n".join(post.call_args.args[1]))
         res.assert_not_called()
 
+    def test_it_says_a_person_has_to_decide(self):
+        """2026-10-02: without the flag, triage replied "Lucy has this… she
+        re-runs it" under Terrance Dandy — no re-run decides 'same person'."""
+        plan = _plan(near=[P.NearMiss(_entry("Terrance", "Dandy"),
+                                      'Terrance "Dior" Dandy (Wk 3)')])
+        with mock.patch.object(notify, "post_alert") as post, \
+                mock.patch.object(incident_thread, "resolve_if_open"):
+            R._alert_near(plan, real=True)
+        self.assertTrue(post.call_args.kwargs.get("needs_human"))
+
     def test_a_contradicted_board_mark_is_posted_too(self):
         plan = _plan(flagged=[P.Flagged(_entry("Ivan", "Soto"), "WE 9.13: T + sale")])
         with mock.patch.object(notify, "post_alert") as post, \
