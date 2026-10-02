@@ -873,7 +873,7 @@ def post_reply_with_image(
 
 def file_landed_in_thread(client, file_id: str, channel_id: str,
                           thread_ts: str, *, comment: str = "",
-                          tries: int = 4, delay: float = 2.0):
+                          tries: int = 11, delay: float = 3.0):
     """Did an uploaded file actually BECOME a message in that thread?
 
     True / False when we can tell; None when Slack can't answer (missing scope,
@@ -901,6 +901,13 @@ def file_landed_in_thread(client, file_id: str, channel_id: str,
     asynchrony b2b_metrics' POST_SETTLE_SEC works around for ordering). A
     freshly-posted file can legitimately need a couple of seconds to show a
     share, so a single immediate check would invent misses.
+
+    ~30s window, not ~6s (2026-10-02). New Internet Churn 90-day was uploaded
+    at 05:37:25 and its share message appeared at 05:37:36 — 11s later. The
+    old 4×2s poll gave up first, called it a miss, and the alert told Lucy to
+    re-post a board that was already in the thread (a re-run = duplicate). A
+    board that really landed costs nothing extra here: the loop returns on the
+    first read that finds it.
 
     READS THE THREAD, not files.info. Built on the same call `wait_for_share`
     uses, for two reasons: it tests what a READER actually sees (which is the
