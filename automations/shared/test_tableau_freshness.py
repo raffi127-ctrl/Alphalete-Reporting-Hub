@@ -586,3 +586,9 @@ class OrgOverrideSummaryIsAPeriodScan(unittest.TestCase):
             "OverridesICDView/NETSUITESECURITYLEDGERSFDC → Ledger"))
         self.assertTrue(tf.is_period_scan_source(
             "OverridesICDView/ORGOVERRIDESUMMARY → ORG Override Summary"))
+
+    def test_raf_wow_is_a_period_scan(self):
+        # 2026-10-02 false "IDENTICAL 3 days running": backtrack's past-week
+        # re-pulls set the day's fingerprint.
+        self.assertTrue(tf.is_period_scan_source(
+            "ResATTSpecialDealOverride-Raf/RafOverrideBonus → Payout- Raf wow"))

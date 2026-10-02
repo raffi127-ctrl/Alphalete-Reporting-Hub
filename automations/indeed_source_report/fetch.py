@@ -101,6 +101,45 @@ def _submit(page, timeout):
             raise
 
 
+# Row count of the biggest table that carries the Source Report header — the same
+# pick _one_pass scrapes, counted in-page so a poll costs one round-trip.
+_TABLE_ROWS_JS = """() => {
+  let n = 0;
+  for (const t of document.querySelectorAll('table')) {
+    if ((t.innerText || '').includes('Email Subject'))
+      n = Math.max(n, t.querySelectorAll('tr').length);
+  }
+  return n;
+}"""
+
+
+def _wait_for_table(page, timeout, poll=2000):
+    """Wait until the Source Report table is on the page AND has stopped growing.
+
+    A FIXED 1.8s WAIT LOST RAFAEL HIDALGO (11280) ON 2026-10-02. His report is
+    the slow one, so his post always takes the "click landed during timeout"
+    path in _submit — and on that path the response is still being built when
+    networkidle returns (it answers for the page we are leaving, not the one
+    on its way). 1.8s later there was no table yet, both attempts, and the
+    office dropped with "no Source Report table came back" at 01:39 — the same
+    office that had pulled 68 rows fine at 17:00 the day before. So: poll for
+    the table, and once it is there, require two equal row counts in a row so
+    a half-streamed table is never scraped. Returns the last count (0 = never
+    showed up; the caller raises the usual error)."""
+    waited, last = 0, 0
+    while waited <= timeout:
+        try:
+            n = page.evaluate(_TABLE_ROWS_JS)
+        except Exception:  # noqa: BLE001 — mid-navigation: context was replaced
+            n = 0
+        if n and n == last:
+            return n
+        last = n
+        page.wait_for_timeout(poll)
+        waited += poll
+    return last
+
+
 def _one_pass(page, tok, start, end, timeout):
     """A single load → set period → post → scrape cycle."""
     page.goto("%s?p=702&rqst=%s" % (BASE, tok), timeout=60000)
@@ -117,7 +156,7 @@ def _one_pass(page, tok, start, end, timeout):
         cb.check()          # gives the Email Inbox column, needed for accounts
     _submit(page, timeout=30000)
     page.wait_for_load_state("networkidle", timeout=timeout)
-    page.wait_for_timeout(1800)
+    _wait_for_table(page, timeout)
     best, n = None, 0
     for t in page.query_selector_all("table"):
         rows = len(t.query_selector_all("tr"))

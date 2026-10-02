@@ -1338,7 +1338,8 @@ def _approver_mentions() -> str:
 
 
 def _incident_post(cfg, *, key, title, body, details=None, followup=None,
-                   day=None, dry_run=False, tag="", label="", reaction=None):
+                   day=None, dry_run=False, tag="", label="", reaction=None,
+                   needs_human=False):
     """Post a problem as an INCIDENT: the first time it opens a top-level message,
     every repeat replies in that message's thread instead of adding another post
     (Eve 2026-08-14 — the channel had a new near-identical message per report per
@@ -1355,7 +1356,8 @@ def _incident_post(cfg, *, key, title, body, details=None, followup=None,
         return _inc.open_or_followup(key=key, title=title, body=body,
                                      details=details, followup=followup,
                                      label=label, channel=ch, day=day,
-                                     reaction=reaction, dry_run=dry_run)
+                                     reaction=reaction, dry_run=dry_run,
+                                     needs_human=needs_human)
     except Exception as e:  # noqa: BLE001 — fall back to a plain post
         print(f"[notify] incident post failed ({tag or key}): {e}", flush=True)
         return None
@@ -1437,7 +1439,7 @@ def _post_corrections(cfg, title, body_lines, dry_run, *, tag, thread_ts=None):
 
 
 def post_alert(title, body_lines, *, tag, dry_run=False, cfg=None,
-               incident=None, label=""):
+               incident=None, label="", needs_human=False):
     """Public one-shot alert into #claudecorrections-and-requests, for a REPORT
     module that hits a problem the orchestrator can't see from the outside — e.g.
     the country trackers holding a board because its Tableau extract is stale.
@@ -1456,7 +1458,12 @@ def post_alert(title, body_lines, *, tag, dry_run=False, cfg=None,
 
     `label` is the human name of what's failing ("BOX Order Log — Roshan"): it's
     what the reply says when this alert joins a thread another witness (or another
-    office of the same report) already opened."""
+    office of the same report) already opened.
+
+    `needs_human` (incident posts only) marks it as one no re-run fixes, so the
+    triage line says "Needs one of you" instead of "Lucy has this" — a list of
+    names waiting on a person's call is not a failure Lucy can retry
+    (Mobrium near-miss, 2026-10-02)."""
     if cfg is None:
         try:
             from automations.day_orchestrator import registry
@@ -1467,7 +1474,8 @@ def post_alert(title, body_lines, *, tag, dry_run=False, cfg=None,
             return None
     if incident:
         inc = _incident_post(cfg, key=incident, title=title, body=body_lines,
-                             dry_run=dry_run, tag=tag, label=label)
+                             dry_run=dry_run, tag=tag, label=label,
+                             needs_human=needs_human)
         if inc:
             return inc.get("ts")
     return _post_corrections(cfg, title, body_lines, dry_run, tag=tag)

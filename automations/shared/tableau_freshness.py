@@ -786,8 +786,19 @@ ONE_OWNER_MARKERS = (
 # already filled, so a summary that stops rolling means NO send, not a send
 # with old numbers. ⚠ Name the VIEW; other sheets of OverridesICDView (the
 # NetSuite ledger) keep being judged.
+#
+# RafOverrideBonus ("Payout- Raf wow") is the same shape, one step worse:
+# backtrack re-pulls it for each of the last 5 weeks on EVERY pass (HOLD passes
+# included), so the day's fingerprint is the oldest — closed — period. Thread
+# `drop-tableau-stale-resattspecialdealoverride-raf-…`, 2026-10-02 ("IDENTICAL
+# data 3 days running") while that morning's bulletin carried a fresh special
+# for WE 9.27.26 ($29,500 vs $36,768 on 9.20). Guarded the same way: the
+# special is matched by its Processed Week header, so a feed that stops
+# rolling leaves the cell BLANK ("not sourced yet" in the review), never a
+# repeat of last week's number.
 PERIOD_SCAN_MARKERS = (
     "orgoverridesummary",
+    "rafoverridebonus",
 )
 
 

@@ -33,8 +33,10 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -252,19 +254,34 @@ def upload_pdf(pdf: Path, verbose: bool = True,
                                     "mimeType": folder_mime},
                               fields="id").execute()["id"])
 
-    media = MediaFileUpload(str(pdf), mimetype="application/pdf", resumable=False)
     q = f"name = '{pdf.name}' and '{fid}' in parents and trashed = false"
-    existing = svc.files().list(q=q, spaces="drive",
-                                fields="files(id)").execute().get("files", [])
-    if existing:
-        # Same name = same day. Update in place so a rebuild keeps the link the
-        # reviewers may already be looking at.
-        file_id = existing[0]["id"]
-        svc.files().update(fileId=file_id, media_body=media).execute()
-    else:
-        file_id = svc.files().create(
-            body={"name": pdf.name, "parents": [fid]},
-            media_body=media, fields="id").execute()["id"]
+    # A read timeout mid-upload killed the Country board on 2026-10-02. Retry,
+    # but re-list each time: a create that timed out may still have landed,
+    # and a blind second create would leave two PDFs with two links.
+    for attempt in range(3):
+        media = MediaFileUpload(str(pdf), mimetype="application/pdf",
+                                resumable=False)
+        try:
+            existing = svc.files().list(
+                q=q, spaces="drive",
+                fields="files(id)").execute().get("files", [])
+            if existing:
+                # Same name = same day. Update in place so a rebuild keeps the
+                # link the reviewers may already be looking at.
+                file_id = existing[0]["id"]
+                svc.files().update(fileId=file_id, media_body=media).execute()
+            else:
+                file_id = svc.files().create(
+                    body={"name": pdf.name, "parents": [fid]},
+                    media_body=media, fields="id").execute()["id"]
+            break
+        except (socket.timeout, TimeoutError, ConnectionError):
+            if attempt == 2:
+                raise
+            if verbose:
+                print(f"  Drive upload timed out — retry {attempt + 2}/3",
+                      flush=True)
+            time.sleep(10 * (attempt + 1))
 
     link = svc.files().get(fileId=file_id,
                            fields="webViewLink").execute()["webViewLink"]

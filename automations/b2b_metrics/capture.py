@@ -341,9 +341,13 @@ def revenue_board_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
         pull_orderlog(monday, upto, src_csv)
     per_rep, _unpriced = rb.load_priced(src_csv, monday, upto)
     if not rb.att_day_ready(per_rep, upto):
-        raise RuntimeError(
-            "revenue board: export has no rows for {} yet — retry later"
-            .format(upto))
+        # A WAIT, not a failure (10/2 ticket): before 06:25 the export often
+        # lacks yesterday's rows, and the 7:45 pass renders it fine. Raised as
+        # OrderLogNotFresh so the runner DEFERS it and holds the alert until
+        # after the floor pass, instead of paging for something that heals.
+        days = [d for rec in per_rep.values() for d, v in rec["days"].items()
+                if v]
+        raise OrderLogNotFresh(max(days) if days else None, upto)
     rows, office = rb.build_rows(per_rep, monday, upto)
     out = Path(out_dir) / "Revenue Board {}.{}.png".format(upto.month,
                                                            upto.day)
