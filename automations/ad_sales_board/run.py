@@ -80,7 +80,8 @@ def ads_for_week(html):
     the substitution here is belt-and-braces — it stays because `rescued_total`
     is counted off this same HTML, and because a plain text substitution on the
     HTML reaches the table cells the subjects live in."""
-    return parse.ads_for_month(names.WRAPPER.sub("", html))
+    return parse.ads_for_month(names.WRAPPER.sub("", html),
+                               fold_cityless=not fetch.GROUP_SUBJECT)
 
 
 def _owner_expect():

@@ -263,8 +263,16 @@ def merge_across_cities(groups):
     return res
 
 
-def ads_for_month(html):
-    """Merged, city-resolved ad rows for one office-month, plus any flags."""
+def ads_for_month(html, fold_cityless=True):
+    """Merged, city-resolved ad rows for one office-month, plus any flags.
+
+    fold_cityless=False (the board's group-by-subject mode): a subject with
+    no location stays its own '?' row instead of being folded into a located
+    ad. The fold guesses DIFFERENTLY on a one-day window than a weekly one
+    (whichever cities happen to appear that day), which made the same emails
+    land on different rows in the day grid vs the weekly pull — Iron's
+    Arlington row showed day cells summing 47 against a weekly 5 (2026-10-02).
+    Consistent-and-unattributed beats precise-looking-and-contradictory."""
     ads = load_table(html)
     # LONGEST variant for display (2026-10-02): subjects arrive with and
     # without the "(Spanish Required)" qualifier, and showing the shortest
@@ -272,7 +280,10 @@ def ads_for_month(html):
     # Keys are unaffected — they use base_role, which strips qualifiers.
     m = merge(ads, lambda a: (a['inbox'], a['base'].lower(), a['city'].lower()),
               lambda g: show(max(g['titles'], key=len)))
-    m, flags = apply_city_rule(m)
+    if fold_cityless:
+        m, flags = apply_city_rule(m)
+    else:
+        flags = []
     m.sort(key=lambda g: -g['rec']['apps'])
     return m, flags
 
