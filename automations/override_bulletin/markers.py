@@ -141,7 +141,11 @@ def set_marker(ws, kind, period, col, *, dry_run=True):
     if row is None:
         raise RuntimeError("no {!r} annotation row on {!r}".format(
             _ROW_LABELS[kind], ws.title))
-    a1 = "{}{}".format(F._col_letter(col), row)
+    # Accept the column letter too: write_week hands back "G", and a letter fed
+    # to _col_letter dies on `"G" % 26` — which silently killed this marker on
+    # every fill from 2026-08-01 to 2026-10-02 (run.py swallows the error).
+    letter = col.strip().upper() if isinstance(col, str) else F._col_letter(col)
+    a1 = "{}{}".format(letter, row)
     if dry_run:
         print("[dry-run] would set {} marker {} at {} (red/pending)".format(
             kind, period, a1))

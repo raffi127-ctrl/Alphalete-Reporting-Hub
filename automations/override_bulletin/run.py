@@ -326,7 +326,15 @@ def run(week_mdy=None, *, tab=F.SANDBOX_TAB, write=False, verbose=True,
                 pyear = year if cur_per > 1 else year - 1
                 prior = f"P{pnum}-{pyear}"
                 if not M.has_marker(ws, M.SPECIAL, prior):
-                    M.set_marker(ws, M.SPECIAL, prior, col, dry_run=not write)
+                    # The 0-based INDEX, not `col`: write_week returns the column
+                    # LETTER ("G"), and set_marker turns an index into a letter.
+                    # Passing the letter raised TypeError ("G" % 26) on every fill
+                    # since 2026-08-01, the except below ate it, and P8-2026 and
+                    # P9-2026 both never got their marker — so neither special was
+                    # ever placed on the bot's tab (Eve fixed WE 9.13.26 by hand,
+                    # 2026-10-02).
+                    M.set_marker(ws, M.SPECIAL, prior, F.week_col(ws, week_mdy),
+                                 dry_run=not write)
                     print(f"auto-set SPECIAL marker {prior} on {week_mdy} "
                           f"(first week of period {cur_per})")
     except Exception as e:  # noqa: BLE001
