@@ -155,10 +155,12 @@ def summary_range(vals, header_col: int):
     label_col, value_col = LABEL_COL, header_col
     top = bot = None
     for r in range(1, len(vals) + 1):
-        v = _cell(vals, r, label_col).strip()
-        if v == TOP_LABEL:
+        # Case-insensitive: the sheet relabelled "Gross Profit" -> "GROSS PROFIT"
+        # on 2026-10-02 and the Friday post never went out.
+        v = " ".join(_cell(vals, r, label_col).split()).casefold()
+        if v == TOP_LABEL.casefold():
             top = r
-        elif v == BOT_LABEL and top is not None:
+        elif v == BOT_LABEL.casefold() and top is not None:
             bot = r
             break
     if top is None or bot is None:
