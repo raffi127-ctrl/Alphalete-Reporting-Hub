@@ -195,6 +195,65 @@
     }
   },
   "reports": {
+    "carlos_security_ledger": {
+      "on_scheduler": true,
+      "machine": "Lucy 2",
+      "display_name": "Carlos P&L - Security ledger + captain bonus (Tableau)",
+      "source_type": "tableau",
+      "data_sources": [],
+      "command": [
+        "automations.carlos_security_ledger.run"
+      ],
+      "base_args": [
+        "--via",
+        "hub"
+      ],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "not_before": "05:30"
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "_note": "Carlos's personal P&L sheet (1ngQtKRN...): NetSuite Security Ledger rows + Captain's Bonus line + Tiller balances -> tabs 'Security Ledger' / 'Captain Bonus (Tableau)' / 'Balances'. Added 2026-10-02 (Carlos). Tiller->Ledger sync is carlos_tiller_sync; the Apex payroll pull runs on Carlos's own Mac (needs his Apex login)."
+    },
+    "carlos_tiller_sync": {
+      "on_scheduler": true,
+      "machine": "Lucy 2",
+      "display_name": "Carlos P&L - Tiller bank feed -> Ledger",
+      "source_type": "sheets",
+      "data_sources": [],
+      "command": [
+        "automations.carlos_finance.tiller_sync"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "not_before": "05:00"
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "_note": "Appends new Tiller transactions to Carlos's P&L Ledger (manual category edits preserved) and rolls week/month columns. Idempotent; also runs 06:30/13:30 on Carlos's Mac. Added 2026-10-02."
+    },
     "local_1on1s_fill": {
       "on_scheduler": true,
       "machine": "Lucy 1",
