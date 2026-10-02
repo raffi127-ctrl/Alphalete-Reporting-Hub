@@ -393,8 +393,9 @@ class BoardTest(unittest.TestCase):
 
     def test_tab_order_newest_first(self):
         from automations.first_round_scorecards import board
-        tabs = ["Week of Sep 21", "Week of Sep 28", "Notes"]
+        tabs = ["WE 9.27", "WE 10.4", "Notes"]
         # an old week written last must not land in front of the newer one
         self.assertEqual(board.tab_index(dt.date(2026, 9, 21), tabs), 1)
         self.assertEqual(board.tab_index(dt.date(2026, 9, 28), tabs), 0)
-        self.assertEqual(board.tab_week("Week of Jan 4", dt.date(2026, 12, 28)), dt.date(2027, 1, 4))
+        self.assertEqual(board.tab_name(dt.date(2026, 9, 28)), "WE 10.4")
+        self.assertEqual(board.tab_week("WE 1.3", dt.date(2026, 12, 28)), dt.date(2026, 12, 28))

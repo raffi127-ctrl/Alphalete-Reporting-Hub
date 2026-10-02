@@ -9,7 +9,7 @@ Read straight from the audit docs the daily post already writes
 "Scorecard: N / 100" and "Office: X". So the board needs no state of its own,
 a --refresh that rewrote a doc shows up here, and any past week can be built.
 Already-read docs are cached by modifiedTime, so a re-run only exports the new
-ones. One tab per week ("Week of Sep 28"), newest first; a re-run rewrites
+ones. One tab per week ("WE 10.4", the Sunday it ends), newest first; a re-run rewrites
 only that week's tab and puts it back in date order.
 
     python -m automations.first_round_scorecards.board                 # this week, print only
@@ -137,20 +137,22 @@ def table(week_of: dt.date, rows: List[Dict]) -> List[Dict]:
 
 
 def tab_name(week_of: dt.date) -> str:
-    return f"Week of {week_of:%b} {week_of.day}"
+    """'WE 10.4': the Sunday the week ends, like the other weekly reports' tabs."""
+    sun = week_of + dt.timedelta(days=6)
+    return f"WE {sun.month}.{sun.day}"
 
 
 def tab_week(title: str, near: dt.date) -> Optional[dt.date]:
-    """'Week of Sep 28' -> that Monday (the year closest to `near`), else None."""
-    m = re.fullmatch(r"Week of (\w{3}) (\d{1,2})", title)
+    """'WE 10.4' -> that week's Monday (the year closest to `near`), else None."""
+    m = re.fullmatch(r"WE (\d{1,2})\.(\d{1,2})", title.strip())
     if not m:
         return None
     try:
-        days = [dt.datetime.strptime(f"{m.group(1)} {m.group(2)} {y}", "%b %d %Y").date()
+        suns = [dt.date(y, int(m.group(1)), int(m.group(2)))
                 for y in (near.year - 1, near.year, near.year + 1)]
     except ValueError:
         return None
-    return min(days, key=lambda d: abs((d - near).days))
+    return min(suns, key=lambda d: abs((d - near).days)) - dt.timedelta(days=6)
 
 
 def tab_index(week_of: dt.date, titles: List[str]) -> int:
