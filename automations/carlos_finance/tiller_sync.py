@@ -53,6 +53,31 @@ def unser(n) -> dt.date:
     return EPOCH + dt.timedelta(days=int(n))
 
 
+class _Retrying:
+    """Wraps the Sheets `spreadsheets()` resource so every .execute() retries on 429 / 5xx with backoff
+    (the Lucy orchestrator can run several Sheets-heavy jobs close together)."""
+    def __init__(self, inner): self._inner = inner
+    def __getattr__(self, name):
+        attr = getattr(self._inner, name)
+        if callable(attr):
+            def wrapped(*a, **k):
+                res = attr(*a, **k)
+                return _Retrying(res) if hasattr(res, "execute") or hasattr(res, "get") else res
+            return wrapped
+        return attr
+    def execute(self, *a, **k):
+        import time as _t
+        from googleapiclient.errors import HttpError
+        delay = 5
+        for attempt in range(6):
+            try:
+                return self._inner.execute(*a, **k)
+            except HttpError as e:
+                if e.resp.status in (429, 500, 502, 503) and attempt < 5:
+                    log(f"Sheets API {e.resp.status} — retrying in {delay}s"); _t.sleep(delay); delay *= 2; continue
+                raise
+
+
 def _svc():
     from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
@@ -60,7 +85,7 @@ def _svc():
     creds = Credentials.from_authorized_user_info(json.load(open(TOKEN)))
     if creds.expired and creds.refresh_token:
         creds.refresh(Request())
-    return build("sheets", "v4", credentials=creds).spreadsheets()
+    return _Retrying(build("sheets", "v4", credentials=creds).spreadsheets())
 
 
 def _parse_date(s) -> dt.date | None:
