@@ -280,10 +280,15 @@ def main(argv=None):
                          "week-definition migrations (e.g. the Wed→Mon switch); "
                          "every kept week must be re-pulled afterwards")
     ap.add_argument("--headed", action="store_true")
-    ap.add_argument("--group-subject", action="store_true",
-                    help="check Group-by-Original-Subject on p=702: same-title ads in "
-                         "different locations stay separate (and the office is treated "
-                         "as city-split for this run, whatever CITY_AGNOSTIC says)")
+    # DEFAULT ON since 2026-10-02 (Carlos: "once the location changes it's a
+    # new ad") — the 2-hourly ticks must keep the split or every refresh
+    # re-merges what the flag built. --no-group-subject restores the old
+    # merged pull for debugging.
+    ap.add_argument("--group-subject", action="store_true", default=True,
+                    help="check Group-by-Original-Subject on p=702 (DEFAULT): same-title "
+                         "ads in different locations stay separate rows")
+    ap.add_argument("--no-group-subject", dest="group_subject",
+                    action="store_false", help="legacy merged pull")
     a = ap.parse_args(argv)
     global SPLIT_CITIES
     if a.group_subject:
