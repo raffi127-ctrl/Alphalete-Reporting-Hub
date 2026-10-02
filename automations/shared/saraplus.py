@@ -764,6 +764,9 @@ def rotate_profile(profile_dir, log=print):
     return str(kept)
 
 
+RESUME_PROOF_MS = 15_000
+
+
 def resume_session(page, base: str, log=print):
     """Reopen a REMEMBERED dealer root without typing the password.
 
@@ -793,11 +796,26 @@ def resume_session(page, base: str, log=print):
         log("SaraPlus session could not be resumed (%s) -- logging in" % type(e).__name__)
         return None
     low = landed.lower()
-    if "dealerpages/" in low and "ui.saraplus.com" not in low and "login" not in low and SECURITY_PATH not in low:
-        log("SaraPlus session resumed -- no password typed")
-        return base
-    log("SaraPlus did not honour the remembered session (landed on %s) -- logging in" % landed[:90])
-    return None
+    if not ("dealerpages/" in low and "ui.saraplus.com" not in low
+            and "login" not in low and SECURITY_PATH not in low):
+        log("SaraPlus did not honour the remembered session (landed on %s) -- logging in" % landed[:90])
+        return None
+    # THE URL IS NOT PROOF. 2026-10-02: every office whose session had expired
+    # overnight still landed on a .../DealerPages/ url, was called "resumed",
+    # and then failed every report all day ("the Service dropdown never
+    # appeared, so the page we are on is not the Order Dashboard") -- eight
+    # offices dark until 1pm, and nothing ever logged in again because the
+    # resume kept "working". A session is live only if the page the reports
+    # run on actually opens, so open it and look for the control they need.
+    root = base if base.endswith("/") else base + "/"
+    try:
+        page.goto(root + HUB_PATH, wait_until="domcontentloaded", timeout=60000)
+        page.wait_for_selector(COMBO_INPUT, timeout=RESUME_PROOF_MS)
+    except Exception as e:  # noqa: BLE001 -- no dashboard = no session
+        log("SaraPlus kept the url but not the session (%s) -- logging in" % type(e).__name__)
+        return None
+    log("SaraPlus session resumed -- no password typed")
+    return base
 
 
 def login_healing(playwright, profile_dir, email: str, password: str, *,

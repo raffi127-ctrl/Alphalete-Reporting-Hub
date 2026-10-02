@@ -584,9 +584,17 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
         ctx, page, base = _heal_and_login(p, headless, log=log)
         try:
 
-            records = S.parse_records(
-                S._run_report(page, base, day, C.SERVICE_INTERNET,
-                              S.GRID_INTERNET, log=log))
+            try:
+                records = S.parse_records(
+                    S._run_report(page, base, day, C.SERVICE_INTERNET,
+                                  S.GRID_INTERNET, log=log))
+            except Exception:
+                # A READ THAT FAILS NEVER KEEPS ITS SESSION. Whatever went
+                # wrong, the next sweep types the password instead of
+                # resuming the same thing -- so one bad session costs one
+                # sweep, not the day (2026-10-02).
+                _forget_session()
+                raise
             log("credit-check pass: %d rep(s)" % len(records))
 
             sales = {}

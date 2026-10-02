@@ -51,7 +51,8 @@ from pathlib import Path
 CONTROL_SHEET_ID = "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw"
 TAB = "Recruiting Audit Offices"
 CACHE = Path(__file__).resolve().parents[2] / "output" / "audit_offices.json"
-COLUMNS = ["office", "icd_name", "owner", "address", "phone", "campaign",
+COLUMNS = ["office", "icd_name", "owner", "address",
+           "address_prev", "address_changed", "phone", "campaign",
            "r1_mode", "zoom", "zoom_id",
            "r2_mode", "zoom2", "zoom2_id",
            "job_ad_cities", "active", "email", "slack_user", "updated"]

@@ -565,25 +565,33 @@ def main(argv=None) -> int:
                 for lab, val, src in SA.cells_for(name, wsales):
                     filled.add(lab, wk, val, src)
 
-                # NO SALES READS 0 — BUT ONLY IF THEY WERE ON THE BOARD THAT
-                # WEEK. Megan 2026-10-01: "Bas will have some sometimes - mark
-                # 0 for everyone if it's none", then "only 0 if they have a
-                # board row that week".
+                # ON THE BOARD WITH NOTHING SOLD READS 0; NO BOARD ROW READS
+                # A DASH. Megan 2026-10-02, in three steps: "should have 0 if
+                # no sales", then "sales that are 0 ... should be 0 for
+                # everyone", then "no, if they don't have a board row it should
+                # have a dash".
                 #
-                # The distinction is the whole point: a 0 says they sold
-                # nothing, and that is only true of somebody who was here.
-                # Keegan Miller, Hank Tran, Ciniya Weatherspoon and Andres
-                # Mejia have no row in early August because they had not
-                # started — writing 0 there would put a performance figure
-                # against weeks they were not employed. Those stay blank.
+                # The two cases are genuinely different and the sheet now says
+                # which is which. A 0 is a measurement: they were on the board
+                # and sold nothing. A dash is the absence of one: there is no
+                # row to read. Keegan Miller, Hank Tran, Ciniya Weatherspoon
+                # and Andres Mejia have no row in early August because they had
+                # not started yet, and Algemar Kennel is on the board once in
+                # nine weeks — a 0 in those cells would be a performance figure
+                # for a week nobody measured. Blank was no better: it is what an
+                # unfilled cell looks like, so it read as "the report failed".
+                #
+                # No exception for terminated weeks: a dash is not a claim
+                # about performance, so it stays true after somebody leaves.
                 #
                 # Written before the real figures so an actual board number
-                # overwrites the 0.
-                if wdays.get(PEO.key(name)) is not None:
-                    for lab in SA.SALES:
-                        filled.add(lab, wk, "0",
-                                   f"on the WE {wk:%-m/%-d} board with no "
-                                   f"{lab} — none sold")
+                # overwrites either mark.
+                _on_board = wdays.get(PEO.key(name)) is not None
+                for lab in SA.SALES:
+                    filled.add(lab, wk, "0" if _on_board else F.NONE_MARK,
+                               f"on the WE {wk:%-m/%-d} board with no {lab} "
+                               f"— none sold" if _on_board else
+                               f"no WE {wk:%-m/%-d} board row — nothing to count")
 
                 # BOARD FIRST, THEN OWNERVILLE ON TOP. Ownerville is the better
                 # source and wins every row it produces (later writes take the

@@ -103,7 +103,7 @@ BOARD_PUSH = [
     ("1n2d5vDiwwj6d3bFBIe5OcuEWEEc1OFn2Hp28wuaSFOY", ["Joey Ramirez"]),
     ("1LOi7JPQ8j0qlbe3PvgZumaHuWCd2HKLNYDRGZOBxrnE", ["Vincent Smith"]),
     ("1oVqhWqb7_TW_B9aH0peIsmp2NHMtKdXKjpOE3-7PNnQ", ["Sabrina Alicea"]),
-    ("14_T4fySyQhRPsyWZLGEs6Sarc0jyJ4oD-gV8E97WZU8", None),   # None = captainship
+    # Captainship Dashboard row removed 2026-10-02 — Carlos trashed it 9/7.
 ]
 
 

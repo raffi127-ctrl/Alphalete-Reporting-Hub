@@ -57,6 +57,32 @@ def template_findings(office):
     return (findings, personas), None
 
 
+def apply_address_history(office):
+    """Tell the address checks when this office moved, before anything
+    reads a message.
+
+    Without this, the day an office types its new address in, every
+    correct message it sent from the old one reads as sending people to
+    the wrong building — and a message still naming the old address after
+    the move passes quietly. Megan's move to Frisco is 2026-10-02."""
+    prev = (office.get("address_prev") or "").strip()
+    when = (office.get("address_changed") or "").strip()
+    cur = (office.get("address") or "").strip()
+    if not cur:
+        return None
+    changed = None
+    if prev and when:
+        for fmt in ("%m-%d-%Y", "%Y-%m-%d", "%m/%d/%Y"):
+            try:
+                changed = dt.datetime.strptime(when, fmt).date()
+                break
+            except ValueError:
+                continue
+    RB.set_address_history(office["office"], cur,
+                           prev if changed else None, changed)
+    return changed
+
+
 def message_findings(office):
     """Grammar, deflection and the house rules, from the week already on
     disk. Returns None when nothing has been pulled."""
@@ -570,6 +596,10 @@ def main(argv=None):
             tmpl, why = template_findings(o)
             if why:
                 print("   {}: {}".format(o["office"], why), flush=True)
+        moved_on = apply_address_history(o)
+        if moved_on:
+            print("   {}: address history applied, moved {:%d %b}".format(
+                o["office"], moved_on), flush=True)
         msgs = message_findings(o)
         rows = R.load(o["office"])
         tab = R.table(rows, "week") if rows else {}

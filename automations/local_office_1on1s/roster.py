@@ -42,19 +42,27 @@ TEAMS = ["Alphaletes", "Se7en Sins", "Ceaseless", "Hashiras", "Mindset Engine"]
 # the board and trains nobody directly on it, so nothing in the tree reaches him.
 HEAD_OVERRIDE = {"Alphaletes": "Raf"}
 # Heads whose box is the TEAM BLOCK ONLY — no personal sales, recruiting,
-# training or finances. Named, not derived.
+# training or finances.
 #
-# Deriving it from "has no row on the sales board" was tried and over-reached:
-# it caught Basil Elhassan too, and Megan 2026-10-01 was explicit — "Al doesn't
-# have any sales", then "NO, all of the other leaders should have personal
-# sales". So this is a fact about these two people, not a rule about off-board
-# heads, and a third one has to be added here deliberately.
+# RAF AND ONLY RAF. Megan 2026-10-02: "I told you everyone but Raf will have
+# personal data", and on 2026-09-28: "Raf is the ALphaletes leader but he won't
+# have any personal production info."
 #
-# Basil Elhassan is the awkward case worth knowing about: he has NO row on the
-# sales board (checked WE 9.27, not under 'Bas' either), so his personal rows
-# fill from nothing and read blank until he is added to the board. That is a
-# gap in the board, not a decision here.
-GROUP_ONLY = {"Raf", "Algemar Kennel"}
+# Algemar Kennel was wrongly in here. Megan said "Al doesn't have any sales" on
+# 2026-10-01 and that was read as "his box is the team block" when it meant his
+# numbers were zero — so his whole personal half was suppressed instead of
+# filled. The same message also said "NO, all of the other leaders should have
+# personal sales", which should have settled it. A head with nothing to show
+# gets ZEROS and a gap note, never a blanked-out box: the two look identical on
+# the tab and only one of them is honest. [[feedback_empty_means_proven_zero]]
+#
+# Nobody else goes in here without Megan saying so.
+#
+# Two heads the board does not carry, which reads as blank personal rows plus a
+# per-week gap — a board problem, not a decision here: Basil Elhassan has no row
+# at all (checked WE 9.27, not under 'Bas' either), and Algemar Kennel appears
+# only on WE 8.2, as zeros.
+GROUP_ONLY = {"Raf"}
 
 
 @dataclass

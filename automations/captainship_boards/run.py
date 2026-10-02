@@ -686,15 +686,16 @@ def main(argv=None) -> int:
     else:
         reps_all, agg_all, all_owner_day = parse_orderlog(src, monday, upto)
 
-    try:
-        master = open_sheet(C.MASTER_ID, "the Captainship Dashboard")
-    except Exception as e:  # noqa: BLE001 — dashboard not shared to this
-        # machine's Sheets user yet: still update the 11 sales boards, skip
-        # the Focus Report sections loudly.
-        master = None
-        log(f"!! cannot open the Captainship Dashboard ({type(e).__name__}) "
-            "— Focus Report sections SKIPPED; share the dashboard to this "
-            "machine's Sheets account to enable them")
+    master = None   # None when the dashboard is retired: sales boards only
+    if C.MASTER_ID is not None:
+        try:
+            master = open_sheet(C.MASTER_ID, "the Captainship Dashboard")
+        except Exception as e:  # noqa: BLE001 — dashboard not shared to this
+            # machine's Sheets user yet: still update the 11 sales boards,
+            # skip the Focus Report sections loudly.
+            log(f"!! cannot open the Captainship Dashboard ({type(e).__name__}) "
+                "— Focus Report sections SKIPPED; share the dashboard to this "
+                "machine's Sheets account to enable them")
     failures = []
     for label, (export_name, board_id) in C.OWNERS.items():
         rep_days = reps_all.get(export_name, {})

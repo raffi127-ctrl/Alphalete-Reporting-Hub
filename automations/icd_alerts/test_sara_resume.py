@@ -13,12 +13,16 @@ BASE = "https://www.saraplus.com/e/(S(abc123))/"
 
 
 class _Page:
-    def __init__(self, land):
-        self._land = land; self.url = ""; self.visited = []
+    def __init__(self, land, dashboard=True):
+        self._land = land; self.url = ""; self.visited = []; self._dashboard = dashboard
     def goto(self, url, **kw):
         self.visited.append(url); self.url = self._land
     def wait_for_timeout(self, ms):
         pass
+    def wait_for_selector(self, sel, **kw):
+        self.waited = sel
+        if not self._dashboard:
+            raise TimeoutError("Timeout 15000ms exceeded.")
 
 
 class ResumeSessionTest(unittest.TestCase):
@@ -136,3 +140,24 @@ class ALoginPageThatNeverLoadsBecomesTheOwnersProblem(unittest.TestCase):
         msg = R.LOGIN_TIMEOUT_MESSAGE % 3
         self.assertLessEqual(len(msg), RL.FAULT_SUMMARY_MAX)
         self.assertIn("window", msg)
+
+
+class TheUrlIsNotProofOfASession(unittest.TestCase):
+    """2026-10-02: expired sessions still landed on .../DealerPages/, were
+    called resumed, and eight offices failed every report until 1pm."""
+
+    def test_a_dead_session_that_keeps_its_url_is_not_resumed(self):
+        page = _Page(BASE + "DealerPages/", dashboard=False)
+        self.assertIsNone(S.resume_session(page, BASE, log=lambda *a: None))
+        self.assertEqual(page.waited, S.COMBO_INPUT)
+
+    def test_a_live_session_proves_itself_on_the_report_page(self):
+        page = _Page(BASE + "DealerPages/")
+        self.assertEqual(S.resume_session(page, BASE, log=lambda *a: None), BASE)
+        self.assertTrue(page.visited[-1].endswith(S.HUB_PATH))
+
+    def test_a_failed_read_forgets_the_session(self):
+        import inspect
+        src = inspect.getsource(R.read_day)
+        i = src.index("S._run_report(page, base, day, C.SERVICE_INTERNET")
+        self.assertIn("_forget_session()", src[i:i + 700])

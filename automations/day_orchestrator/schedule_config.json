@@ -10640,7 +10640,7 @@
       "order": 33,
       "machine": "Lucy 4",
       "on_scheduler": true,
-      "display_name": "Isaiah's Daily Metrics (Legacy-Office-Sales)",
+      "display_name": "Isaiah's Daily Metrics (everforward-sales)",
       "source_type": "tableau",
       "data_sources": [
         "tableau:order_log"
@@ -10672,7 +10672,7 @@
         "type": "manifest",
         "report_id": "isaiah_metrics"
       },
-      "_note": "Office metrics for isaiah -> Legacy-Office-Sales. Onboarded via office_onboarding on 2026-08-05 01:53 UTC. Machine Lucy 1 (view owners).",
+      "_note": "Office metrics for isaiah -> everforward-sales since 2026-10-02 (Francia/Megan: shares the channel with khalil, own labeled thread, like salik+hammad; offices.CHANNEL_OVERRIDES). Was Legacy-Office-Sales. Onboarded via office_onboarding on 2026-08-05 01:53 UTC. Machine Lucy 1 (view owners).",
       "_onboarded": true,
       "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
     },

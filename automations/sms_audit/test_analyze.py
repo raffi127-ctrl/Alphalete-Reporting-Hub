@@ -1684,3 +1684,56 @@ class PullAiSettingsLabelTest(unittest.TestCase):
                  if k.endswith(("_buffer", "_threshold"))}
         self.assertEqual(prefs, {"offered_buffer", "accepted_buffer",
                                  "ghosting_threshold"})
+
+
+class AddressHistoryWiringTest(unittest.TestCase):
+    """The date-aware address check existed but nothing populated it, so
+    it was dead outside its own tests. Megan's office moved 2026-10-02."""
+
+    def setUp(self):
+        from automations.sms_audit import icd_audit as IA
+        self.IA = IA
+        self.row = {
+            "office": "TESTMOVE",
+            "address": "7250 Dallas Pkwy, Suite 400, Frisco, Texas 75034",
+            "address_prev": "3100 Premier Drive, Suite 207, Irving, Texas 75063",
+            "address_changed": "10-02-2026"}
+
+    def tearDown(self):
+        RB.ADDRESS_HISTORY.pop("TESTMOVE", None)
+
+    def test_the_office_row_drives_the_history(self):
+        import datetime as dt
+        self.assertEqual(self.IA.apply_address_history(self.row),
+                         dt.date(2026, 10, 2))
+        old = "We are at 3100 Premier Dr, Suite 207, Irving TX."
+        self.assertIsNone(
+            RB.wrong_address("TESTMOVE", old, dt.date(2026, 9, 25)))
+        self.assertIsNotNone(
+            RB.wrong_address("TESTMOVE", old, dt.date(2026, 10, 3)))
+
+    def test_an_office_that_never_moved_sets_one_address(self):
+        row = dict(self.row, address_prev="", address_changed="")
+        self.assertIsNone(self.IA.apply_address_history(row))
+        self.assertIsNone(RB.wrong_address(
+            "TESTMOVE", "We are at 7250 Dallas Pkwy, Suite 400."))
+
+    def test_a_blank_address_changes_nothing(self):
+        self.assertIsNone(self.IA.apply_address_history(
+            {"office": "TESTMOVE", "address": ""}))
+
+    def test_a_date_we_cannot_read_does_not_silently_backdate(self):
+        """A garbled date must not leave the OLD address looking current."""
+        row = dict(self.row, address_changed="soon")
+        self.assertIsNone(self.IA.apply_address_history(row))
+        self.assertIsNotNone(RB.wrong_address(
+            "TESTMOVE", "We are at 3100 Premier Dr, Suite 207."))
+
+
+class CoachingTakesTheMessageDateTest(unittest.TestCase):
+    def test_every_coaching_test_accepts_a_date(self):
+        for label, test in A.COACHING:
+            try:
+                test("11280", "hello there", None)
+            except TypeError as e:  # noqa: PERF203
+                self.fail("{} does not take a date: {}".format(label, e))

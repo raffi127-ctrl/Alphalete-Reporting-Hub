@@ -27,7 +27,9 @@ OWNERS = {
     # Added 2026-08-26 (Carlos). Tableau owner line: "SABRINA ALICEA [alisei, inc.]".
     "Sabrina Alicea":  ("SABRINA ALICEA",  "1oVqhWqb7_TW_B9aH0peIsmp2NHMtKdXKjpOE3-7PNnQ"),
 }
-MASTER_ID = "14_T4fySyQhRPsyWZLGEs6Sarc0jyJ4oD-gV8E97WZU8"   # Captainship Dashboard
+# Captainship Dashboard (14_T4fySyQ…) — Carlos trashed it 9/7, gone for good
+# 9/28. None = skip the Focus Report / recruiting sections (Eve 2026-10-02).
+MASTER_ID = None
 
 # What counts as a SALE (Carlos 2026-09-07): only what the D2D1 tracker
 # counts, so boards + Focus Reports line up with it. The raw ORDERLOG also
