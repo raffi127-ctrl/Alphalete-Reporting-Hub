@@ -1540,3 +1540,95 @@ class PayWordingTest(unittest.TestCase):
     def test_the_word_base_is_a_fault(self):
         self.assertIn("PAY WORDING", self._kinds(
             "We offer a weekly base salary plus commission."))
+
+
+class AiSettingsTest(unittest.TestCase):
+    """Megan 2026-10-01: "I checked multiple offices, all were not set
+    correctly." 11280's state that morning is the fixture."""
+
+    def setUp(self):
+        from automations.sms_audit import ai_settings as S
+        self.S = S
+        self.office = {"office": "11280", "r1_mode": "Zoom",
+                       "r2_mode": "In person",
+                       "address": "3100 Premier Drive, Suite 207, Irving, "
+                                  "Texas 75063"}
+        self.bad_info = {
+            "ai_assistant_name": "Aisha", "escalation_contact_name": "Aisha",
+            "escalation_contact_title": "Hiring Manager",
+            "interview_type": "Zoom Meeting",
+            "office_address1": "3100 Premier Dr"}
+        self.bad_prefs = {"offered_buffer": "15", "accepted_buffer": "10",
+                          "ghosting_threshold": "45"}
+
+    def _kinds(self, **kw):
+        kw.setdefault("office", self.office)
+        kw.setdefault("median_reply", 26.0)
+        return [k for k, _m in self.S.lint(
+            kw.pop("info", self.bad_info), kw.pop("prefs", self.bad_prefs),
+            **kw)]
+
+    def test_it_finds_every_fault_11280_had(self):
+        got = self._kinds(template_names=["Dani Pena"])
+        for expect in ("WINDOW TOO SHORT", "SAME NAME", "NAME MISMATCH",
+                       "WRONG TITLE", "ONE INTERVIEW TYPE", "ADDRESS"):
+            self.assertIn(expect, got, expect)
+
+    def test_the_window_is_the_difference_not_either_number(self):
+        self.assertEqual(self.S.window({"offered_buffer": "60",
+                                        "accepted_buffer": "5"}), 55)
+        self.assertEqual(self.S.window({"offered_buffer": "15",
+                                        "accepted_buffer": "10"}), 5)
+
+    def test_a_corrected_office_is_quiet(self):
+        good = {"ai_assistant_name": "Aisha",
+                "escalation_contact_name": "Lucy",
+                "escalation_contact_title": "Talent Coordinator",
+                "interview_type": "Zoom Meeting",
+                "office_address1": "3100 Premier Dr, Suite 207"}
+        prefs = {"offered_buffer": "60", "accepted_buffer": "5",
+                 "ghosting_threshold": "60"}
+        office = dict(self.office, r2_mode="Zoom")
+        self.assertEqual(
+            self.S.lint(good, prefs, office, 26.0, ["Aisha"]), [])
+
+    def test_matching_the_template_signature_is_not_a_fault(self):
+        """It is the state AppStream's own setup video asks for."""
+        good = {"ai_assistant_name": "Aisha",
+                "escalation_contact_name": "Lucy",
+                "escalation_contact_title": "Talent Coordinator",
+                "office_address1": "3100 Premier Dr, Suite 207"}
+        kinds = [k for k, _m in self.S.lint(
+            good, {"offered_buffer": "60", "accepted_buffer": "5"},
+            dict(self.office, r2_mode="Zoom"), 26.0, ["Aisha"])]
+        self.assertNotIn("AI IS A REAL PERSON", kinds)
+
+    def test_a_real_sender_lending_their_name_IS_a_fault(self):
+        good = {"ai_assistant_name": "Aisha",
+                "escalation_contact_name": "Lucy",
+                "escalation_contact_title": "Talent Coordinator",
+                "office_address1": "3100 Premier Dr, Suite 207"}
+        kinds = [k for k, _m in self.S.lint(
+            good, {"offered_buffer": "60", "accepted_buffer": "5"},
+            dict(self.office, r2_mode="Zoom"), 26.0, ["Aisha"],
+            human_senders=["Aisha Ceron", "Jorge Pena"])]
+        self.assertIn("AI IS A REAL PERSON", kinds)
+
+    def test_a_new_office_with_no_history_is_not_guessed_at(self):
+        good = {"ai_assistant_name": "Nova",
+                "escalation_contact_name": "Lucy",
+                "escalation_contact_title": "Talent Coordinator",
+                "office_address1": "3100 Premier Dr, Suite 207"}
+        office = dict(self.office, r2_mode="Zoom")
+        self.assertEqual(self.S.lint(
+            good, {"offered_buffer": "60", "accepted_buffer": "5"},
+            office, None, None), [])
+        kinds = [k for k, _m in self.S.lint(
+            good, {"offered_buffer": "15", "accepted_buffer": "10"},
+            office, None, None)]
+        self.assertIn("WINDOW TOO SHORT", kinds)
+
+    def test_not_pulled_is_said_not_passed(self):
+        self.assertEqual(
+            [k for k, _m in self.S.lint(None, None, self.office)],
+            ["NOT PULLED"])
