@@ -74,6 +74,12 @@ def pretty(title: str) -> str:
     return t
 
 
+def _flat(text: str) -> str:
+    """`norm` without brackets, for the whole-word phrase match of an office's
+    title list ("(Spanish required" cut short still reads as the phrase)."""
+    return re.sub(r"\s+", " ", norm(text).replace("(", " ").replace(")", " ")).strip()
+
+
 def _other_city(a: str, b: str) -> bool:
     """Same title, same state, a DIFFERENT city: two ads, not a typo. 9/25
     Isaiah: "... irving tx" vs "... garland tx" scored 0.93 and the merge
@@ -93,12 +99,20 @@ class TitleBook:
     """The running ads, learned from the sheet's own title column."""
 
     def __init__(self, titles: Iterable[str],
-                 aliases: Optional[Dict[str, str]] = None):
+                 aliases: Optional[Dict[str, str]] = None,
+                 only: Optional[Dict[str, List[str]]] = None):
         # Office-confirmed equivalences, {spelling: the ad it is} (config
         # TITLE_ALIASES; Colten's team 9/24 sent their live ad list, so the
         # title typed without its city folds onto the one ad with that title).
         self.aliases = {norm(a): norm(b) for a, b in (aliases or {}).items()
                         if norm(a) and norm(b)}
+        # An office's own list of ads, {title shown: [phrases]} (config
+        # TITLE_ONLY; Carlos 10/2 for Khalil: "a thread ... just based on the
+        # title and not taking into account the location"). A row belongs to
+        # the ad whose phrase it contains, whatever city/company is around it;
+        # a row on no listed ad gets no thread.
+        self._only = [(norm(shown), shown, [_flat(p) for p in phrases])
+                      for shown, phrases in (only or {}).items()]
         raw = [t for t in titles if norm(t)]
         self.counts: Counter = Counter(self.aliases.get(norm(t), norm(t)) for t in raw)
         # Most common raw spelling per key — that is what gets displayed.
@@ -149,8 +163,25 @@ class TitleBook:
                 return close[0][1]
         return None
 
+    def _only_hit(self, text: str) -> Optional[str]:
+        blob = f" {_flat(text)} "
+        hits = [(len(p), key) for key, _, phrases in self._only for p in phrases
+                if p and f" {p} " in blob]
+        return max(hits)[1] if hits else None
+
     def resolve(self, title: str) -> Optional[str]:
         """The ad key this title belongs to, or None if it can't be told."""
+        if not self._only:
+            return self._resolve_ad(title)
+        # The phrase in the row itself; else the ad its spelling folds onto
+        # (a typo, an alias) -- and that ad's phrase.
+        hit = self._only_hit(title)
+        if hit or not norm(title):
+            return hit
+        ad = self._resolve_ad(title)
+        return self._only_hit(ad) if ad else None
+
+    def _resolve_ad(self, title: str) -> Optional[str]:
         key = norm(title)
         if not key:
             return None
@@ -165,9 +196,14 @@ class TitleBook:
         """An ad named somewhere in free text (the candidate's Slack line) —
         the fallback for a sheet row with a blank title. Longest ad wins, so
         "... (spanish required) arlington tx" beats "... arlington tx"."""
+        if self._only:
+            return self._only_hit(text)
         blob = norm(text)
         hits = [a for a in self.ads if a in blob]
         return max(hits, key=len) if hits else None
 
     def display(self, key: str) -> str:
+        shown = next((s for k, s, _ in self._only if k == key), None)
+        if shown:
+            return shown
         return pretty(self._spelling.get(key, key))

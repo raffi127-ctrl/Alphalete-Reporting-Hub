@@ -359,3 +359,42 @@ class ZoomsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BoardTest(unittest.TestCase):
+    def test_parse_doc(self):
+        from automations.first_round_scorecards import board
+        text = ("Interviewer: Amy (ARS ZOOM 4) · Office: Ellen Dent · Applicants: x\n"
+                "Scorecard: 42 / 100 🔴")
+        self.assertEqual(board.parse_doc(text), {"score": 42, "office": "Ellen Dent"})
+        self.assertIsNone(board.parse_doc("nothing here")["score"])
+
+    def test_table_averages_and_order(self):
+        from automations.first_round_scorecards import board
+        mon = dt.date(2026, 9, 28)
+        rows = [{"interviewer": "Amy", "date": "2026-09-28", "score": 40, "office": "Ellen Dent"},
+                {"interviewer": "Amy", "date": "2026-09-28", "score": 50, "office": "Ellen Dent"},
+                {"interviewer": "Amy", "date": "2026-10-01", "score": 60, "office": "Ellen Dent"},
+                {"interviewer": "ZOOM 4", "date": "2026-10-01", "score": 90, "office": ""},
+                {"interviewer": "Eva", "date": "2026-10-02", "score": 70, "office": "Tre Mitchell"}]
+        lines = board.table(mon, rows)
+        # people by week average, an unnamed Zoom last even with a higher score
+        self.assertEqual([p["name"] for p in lines], ["Eva", "Amy", "ZOOM 4"])
+        amy = lines[1]
+        self.assertEqual(amy["days"], [45, None, None, 60, None])
+        self.assertEqual((amy["week"], amy["n"]), (50, 3))
+        grid = board.values(mon, lines)
+        self.assertEqual(grid[-1][1], "TEAM")
+        self.assertEqual(grid[-1][-2:], [62, 5])     # (40+50+60+90+70)/5
+
+    def test_monday(self):
+        from automations.first_round_scorecards import board
+        self.assertEqual(board.monday(dt.date(2026, 10, 2)), dt.date(2026, 9, 28))
+
+    def test_tab_order_newest_first(self):
+        from automations.first_round_scorecards import board
+        tabs = ["Week of Sep 21", "Week of Sep 28", "Notes"]
+        # an old week written last must not land in front of the newer one
+        self.assertEqual(board.tab_index(dt.date(2026, 9, 21), tabs), 1)
+        self.assertEqual(board.tab_index(dt.date(2026, 9, 28), tabs), 0)
+        self.assertEqual(board.tab_week("Week of Jan 4", dt.date(2026, 12, 28)), dt.date(2027, 1, 4))
