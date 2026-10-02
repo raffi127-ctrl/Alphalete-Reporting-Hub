@@ -403,6 +403,14 @@ def main(argv=None) -> int:
         rc = 1
     if live and rc == 0:
         _mark_day_done(day)
+    if live:
+        # the week's board reads the docs just written; a board failure must
+        # not hold the post (it's rebuilt whole on the next run)
+        from automations.first_round_scorecards import board
+        try:
+            print(f"BOARD: {board.update(day)}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"BOARD FAILED {type(exc).__name__}: {exc}")
     return rc
 
 
