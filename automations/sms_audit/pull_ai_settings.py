@@ -26,6 +26,14 @@ resources/recruiting-context/appstream-ai-settings.md):
   lucy rerun sms_ai_settings --office 11280 --machine "Lucy 2"
   ... pull_ai_settings.py --office 11280 --dry-run
 
+RUNS ON THE 'Lucy Reports' LOGIN (Megan 2026-10-01). The name has a space
+in it, and it is one of only two AppStream accounts left — the other is
+'Lucy Resume Pushing'. That is a property of the machine's configured
+profile, not something this module selects: appstream_direct_session's
+`account=` argument picks a separate CAPTURE profile used for seeding a
+session, not for running one. So if a box is signed in as the wrong
+account, re-seed the box; do not pass `account` here.
+
 READ-ONLY. Writes output/ai_settings_<office>.json and
 output/escalations_<office>.json. It changes nothing in AppStream.
 """
