@@ -23,6 +23,7 @@ from __future__ import annotations  # Lucy runs Python 3.9 — keep lazy
 import argparse
 import collections
 import datetime as dt
+import statistics
 import sys
 from pathlib import Path
 
@@ -32,7 +33,9 @@ except Exception:
     pass
 
 from automations.sms_audit import analyze as A
+from automations.sms_audit import ai_settings as AIS
 from automations.sms_audit import call_list as CL
+from automations.sms_audit import escalations as ESC
 from automations.sms_audit import offices as O
 from automations.sms_audit import retention as R
 from automations.sms_audit import rebuttals as RB
@@ -77,6 +80,13 @@ def message_findings(office):
             "hours": A.hourly_reply(convos),
             "complaints": A.complaints(convos),
             "speed": A.reply_speed_by_sender(convos),
+            "median_reply": (statistics.median(A.applicant_reply_speed(convos))
+                             if A.applicant_reply_speed(convos) else None),
+            "human_senders": sorted({
+                (m.get("sent_by") or "").strip()
+                for c in convos.values() for m in c["msgs"]
+                if (m.get("sent_by") or "").strip()
+                and not A.is_ai(m)}),
             "delivery": A.delivery_reasons(log)}
 
 
@@ -130,8 +140,23 @@ def esc(t):
             .replace(">", "&gt;").replace('"', "&quot;"))
 
 
+def settings_findings(office, median_reply=None, template_names=None,
+                      human_senders=None):
+    """The AI Settings page and the AI's own canned answers, which is
+    where most of what the message audit sees downstream is decided."""
+    oid = office["office"]
+    info, prefs = AIS.load(oid)
+    setting = AIS.lint(info, prefs, office, median_reply, template_names,
+                       human_senders)
+    rows, src = ESC.load(oid)
+    esc = ESC.lint(rows, office) if src else [
+        ("NOT PULLED", "no escalation rows pulled for this office")]
+    return {"settings": setting, "escalations": esc, "rows": len(rows),
+            "window": AIS.window(prefs or {})}
+
+
 def write_report(office, tmpl, msgs, moved, tab, path,
-                 wlabels=None, conv=None, window=None):
+                 wlabels=None, conv=None, window=None, ai=None):
     o = office
     L = []
     add = L.append
@@ -196,6 +221,40 @@ def write_report(office, tmpl, msgs, moved, tab, path,
             "once they are booked. <b>That last part is an assumption:</b> "
             "if this office also clears people off the list by hand, the "
             "percentage reads higher than it is.</p>".format(conv["pulled"]))
+    add("")
+
+    # The AI's own settings and canned answers come before the templates:
+    # one row here is what a thousand conversations end up saying.
+    add("<h2>The AI&rsquo;s settings</h2>")
+    if not ai:
+        add("<p class='none'>Not pulled for this office yet.</p>")
+    else:
+        for label, items, why in (("Settings", ai["settings"], AIS.WHY),
+                                  ("Its canned answers", ai["escalations"],
+                                   ESC.WHY)):
+            add("<h3>{}</h3>".format(esc(label)))
+            if not items:
+                add("<p>Nothing flagged.</p>")
+                continue
+            bykind = collections.defaultdict(list)
+            for kind, text in items:
+                bykind[kind].append(text)
+            for kind, texts in sorted(bykind.items(),
+                                      key=lambda kv: -len(kv[1])):
+                title, reason = why.get(kind, (kind, ""))
+                add("<h4 style='margin:14px 0 4px;font-size:14.5px'>{}{}</h4>"
+                    .format(esc(title),
+                            "" if len(texts) == 1
+                            else " &mdash; {}".format(len(texts))))
+                if reason:
+                    add("<p>{}</p>".format(esc(reason)))
+                add("<ul>")
+                for t in texts:
+                    add("<li>{}</li>".format(esc(t)))
+                add("</ul>")
+        if ai.get("window") is not None:
+            add("<p class='none'>Applicants get {} minutes to accept a time "
+                "(the first buffer minus the second).</p>".format(ai["window"]))
     add("")
 
     add("<h2>Templates</h2>")
@@ -519,8 +578,17 @@ def main(argv=None):
         window = latest_window(rows)
         conv = CL.conversion(o["office"], window[0], window[1]) if window \
             else None
+        median = None
+        senders = None
+        if msgs is not None:
+            median = msgs.get("median_reply")
+            senders = msgs.get("human_senders")
+        signs = None
+        if tmpl and tmpl[1]:
+            signs = list(tmpl[1])
+        ai = settings_findings(o, median, signs, senders)
         write_report(o, tmpl, msgs, moved, tab, path,
-                     R.week_labels(rows) if rows else {}, conv, window)
+                     R.week_labels(rows) if rows else {}, conv, window, ai)
         nt = len(tmpl[0]) if tmpl else 0
         nm = (len(msgs["errors"]) + len(msgs["dodged"])) if msgs else 0
         big = [m for m in moved if m[1] - m[2] <= -R.DROP]

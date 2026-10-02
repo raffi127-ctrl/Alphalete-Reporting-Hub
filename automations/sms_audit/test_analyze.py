@@ -1632,3 +1632,55 @@ class AiSettingsTest(unittest.TestCase):
         self.assertEqual(
             [k for k, _m in self.S.lint(None, None, self.office)],
             ["NOT PULLED"])
+
+
+class PullAiSettingsLabelTest(unittest.TestCase):
+    """The scrape reads fields by their visible label, so the label->key
+    map is the one thing that silently empties the audit if the page
+    rewords something. These are the labels as they appear today."""
+
+    LABELS = {
+        "Name your AI Assitant *": "ai_assistant_name",
+        "Escalation Contact Title *": "escalation_contact_title",
+        "Escalation Contact Person Name *": "escalation_contact_name",
+        "How long are your interviews? *": "interview_length",
+        "Office Name": "office_name",
+        "AI Recruiting Company Name *": "ai_company_name",
+        "Office Address *": "office_address1",
+        "Office City *": "office_city",
+        "Office State *": "office_state",
+        "Office Zip *": "office_zip",
+        "Office Phone *": "office_phone",
+        "Timeslot Buffer - For Times Offered by AI (in minutes) *":
+            "offered_buffer",
+        "Timeslot Buffer - For Times Accepted by Candidates (in minutes) *":
+            "accepted_buffer",
+        "Ghosting Threshold (In minutes) *": "ghosting_threshold",
+    }
+
+    @staticmethod
+    def norm(s):
+        """Same normalisation the injected JS does."""
+        import re as _re
+        return _re.sub(r"\s+", " ",
+                       _re.sub(r"[^A-Za-z0-9 ]", " ", s or "")).strip().lower()
+
+    def test_every_real_label_maps_to_a_key(self):
+        from automations.sms_audit import pull_ai_settings as P
+        for label, key in self.LABELS.items():
+            self.assertEqual(P.FIELDS.get(self.norm(label)), key, label)
+
+    def test_their_typo_and_the_fixed_spelling_both_work(self):
+        from automations.sms_audit import pull_ai_settings as P
+        for spelling in ("Name your AI Assitant", "Name your AI Assistant"):
+            self.assertEqual(P.FIELDS.get(self.norm(spelling)),
+                             "ai_assistant_name", spelling)
+
+    def test_buffers_and_threshold_land_in_preferences(self):
+        """main() routes a key to preferences by its suffix, so the suffix
+        is load-bearing."""
+        from automations.sms_audit import pull_ai_settings as P
+        prefs = {k for k in P.FIELDS.values()
+                 if k.endswith(("_buffer", "_threshold"))}
+        self.assertEqual(prefs, {"offered_buffer", "accepted_buffer",
+                                 "ghosting_threshold"})
