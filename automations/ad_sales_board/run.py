@@ -244,8 +244,7 @@ def rows_for(manager, label, week_start, ads, name_rows, day_recv):
         tot_recv = [(a if a != "" else 0) + b if b != "" else a
                     for a, b in zip(tot_recv, recv)]
         out.append([manager, label, parse.account_name(g["inbox"]), g["inbox"],
-                    g["title"], (g["city"] or ("?" if not agnostic else "")),
-                    g["rec"]["apps"], g["rec"]["scl"],
+                    g["title"], g["city"], g["rec"]["apps"], g["rec"]["scl"],
                     len(got) if fed else "", ", ".join(got), iso]
                    + day_cells(days) + [rank] + list(recv)
                    + [g["rec"][f] for f in METRIC_FIELDS])

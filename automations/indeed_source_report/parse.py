@@ -104,11 +104,27 @@ def norm_city(c):
     return '%s, %s' % (name.strip(), st.strip().upper())
 
 
-def split_city(subject):
-    s = LOCSUF.sub('', subject.strip()).strip().rstrip(',').strip()
+MULTILOC = re.compile(r'[\s,\-–]+\s*(multiple locations)\s*$', re.I)
+
+
+def split_city(subject, keep_multi=False):
+    raw = subject.strip()
+    locsuf = LOCSUF.search(raw)
+    s = LOCSUF.sub('', raw).strip().rstrip(',').strip()
+    multi = MULTILOC.search(s)
+    if multi:
+        s = MULTILOC.sub('', s).strip().rstrip(',-–').strip()
     m = re.match(r"^(.*),\s*([A-Za-z .'-]+),\s*([A-Z]{2})$", s)
     if m:
         return m.group(1).strip(), norm_city('%s, %s' % (m.group(2).strip(), m.group(3)))
+    if keep_multi:
+        # Group-by-subject board mode (Carlos 2026-10-02): whatever location
+        # text the subject carries IS the location — "3 locations",
+        # "Multiple Locations" — shown as-is, never folded, never dropped.
+        if multi:
+            return s, 'Multiple Locations'
+        if locsuf:
+            return s, locsuf.group(0).strip(' ,')
     return s, ''
 
 
@@ -133,7 +149,7 @@ def account_name(inbox):
     return re.sub(r'(inc|llc|group|marketing)$', r' \1', dom).replace('-', ' ').title()
 
 
-def load_table(html):
+def load_table(html, keep_multi=False):
     """Parse one Source Report table into per-ad records."""
     d = pd.read_html(io.StringIO(html))[0]
     ads = []
@@ -150,7 +166,7 @@ def load_table(html):
             continue
         if not re.search(r'[A-Z]', subj):
             continue                       # all-lowercase = a sentence, not an ad title
-        title, city = split_city(clean(subj))
+        title, city = split_city(clean(subj), keep_multi=keep_multi)
 
         def col(*names):
             for n in names:
