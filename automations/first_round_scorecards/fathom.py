@@ -116,6 +116,9 @@ def meetings_on(day: dt.date, *, with_sheet: bool = SHEET_KEYS_LIVE) -> List[Dic
                 if not (start <= _utc(began) < end):
                     continue
                 seen.add(m.get("recording_id"))
+                # which key saw it: a Zoom with no login in the sheet is matched
+                # by this (zooms.zoom_of) -- only the tail, never the whole key
+                m["fathom_key_tail"] = key[-12:]
                 out.append(m)
             cursor = page.get("next_cursor")
             if not cursor:

@@ -47,15 +47,19 @@ def parse(rows: List[List[str]]) -> Dict[str, Dict[str, str]]:
     out = {}
     for c in range(1, width):
         email = cell(logins, c).lower()
+        key = cell(logins + 2, c)                      # login, password, then the key
+        if key.startswith("whsec_") or " " in key:     # a webhook secret / a note, not a key
+            key = ""
         if "@" not in email:
-            continue
+            # no login typed in (Carlos' Zoom, 10/2) but a key: its recordings
+            # are still known -- by the key that fetched them (zoom_of)
+            if not key:
+                continue
+            email = "key:" + key[-12:]
         morning = next((cell(r, c) for r in range(am, pm) if cell(r, c)), "")
         afternoon = next((cell(r, c) for r in range(pm, logins - 1) if cell(r, c)), "")
         # the name row right above the logins ('ZOOM 4'), else the top header
         zoom = cell(logins - 1, c) or cell(0, c)
-        key = cell(logins + 2, c)                      # login, password, then the key
-        if key.startswith("whsec_") or " " in key:     # a webhook secret / a note, not a key
-            key = ""
         out[email] = {"zoom": " ".join(zoom.split()), "morning": morning,
                       "afternoon": afternoon or morning, "key": key}
     return out
@@ -84,7 +88,9 @@ def accounts() -> Dict[str, Dict[str, str]]:
 
 def zoom_of(m: Dict) -> Dict[str, str]:
     email = ((m.get("recorded_by") or {}).get("email") or "").lower()
-    return accounts().get(email) or {}
+    acc = accounts()
+    return (acc.get(email) or acc.get("key:" + (m.get("fathom_key_tail") or "-"))
+            or {})
 
 
 def owner(m: Dict, start_ct: dt.datetime) -> str:
