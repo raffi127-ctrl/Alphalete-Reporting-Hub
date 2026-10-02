@@ -284,7 +284,8 @@ def build(day: dt.date, *, sh=None, cl=None) -> DayReport:
     book = TitleBook(
         (r[config.COL_TITLE] for rows in tabs.values() for r in rows
          if (_parse_date(r[config.COL_DATE]) or dt.date.min) >= since),
-        aliases=getattr(config, "TITLE_ALIASES", None))
+        aliases=getattr(config, "TITLE_ALIASES", None),
+        only=getattr(config, "TITLE_ONLY", None))
     rep = DayReport(day=day, book=book)
     rep.missing_tabs = [s["label"] for s in config.SOURCES if s["tab"] not in have]
 

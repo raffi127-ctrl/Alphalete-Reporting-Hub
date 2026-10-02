@@ -361,10 +361,35 @@ _ALIASES = {
     },
 }
 
+# Offices that want ONE thread per ad title, city left out, and only for the
+# ads on their list: {office: {title shown: [phrases that mean that ad]}}.
+# A sheet row belongs to the ad whose phrase it contains (whole words,
+# brackets ignored), longest phrase first; a row on no listed ad gets no
+# thread. Carlos 10/2 in #indeed-photos-khalil-mansours-office: "a thread of
+# the screenshots from an ad just based on the title and not taking into
+# account the location ... for the whole month of september", with a
+# screenshot of Khalil's live ads ("if theres two of the same one we only
+# need one thread"). A new ad Khalil starts needs a line here.
+_TITLE_ONLY = {
+    "khalil": {
+        "AT&T Retail Associate - Sales (Spanish Required)": ["retail associate sales spanish required"],
+        "Wireless Service Associate (Spanish Needed)": ["wireless service associate"],
+        "AT&T Sales Representative (Spanish Required)": ["at&t sales representative spanish required"],
+        "Sales Leadership Trainee": ["sales leadership trainee"],
+        "Outside Sales Representative (Spanish Required)": ["outside sales representative spanish required"],
+        "Event Marketing and Sales Assistant (Spanish Required)": ["event marketing and sales assistant"],
+        "Entry Level Assistant Manager (Spanish Required)": ["entry level assistant manager"],
+        "AT&T Wireless Associate (Spanish)": ["at&t wireless associate spanish"],
+        "Entry Level Sales Manager": ["entry level sales manager"],
+        "Entry Level Account Manager (Spanish Required)": ["entry level account manager"],
+    },
+}
+
 OFFICES += [
     {
         "key": key, "owner": owner, "tz": _TZ.get(key), "live": key in _LIVE,
         "title_aliases": _ALIASES.get(key, {}),
+        "title_only": _TITLE_ONLY.get(key, {}),
         "sheet_id": book, "source_channel": src, "live_channel": live,
         "paused_before": "",
         "sources": [{"office_id": oid, "stream": company, "label": company,
@@ -391,6 +416,7 @@ def office_zone(o: dict) -> str:
 
 
 TITLE_ALIASES: dict = {}
+TITLE_ONLY: dict = {}
 
 # One-shot duplicate-thread merges the 30-minute agent runs on the first tick
 # on/after the date (Central) -- off the Mini Control queue and its daily limit.
@@ -407,8 +433,9 @@ SCHEDULED_MERGES = {
 def use(o: dict) -> None:
     """Point this module's globals at office `o` for the rest of the pass."""
     global SHEET_ID, SOURCE_CHANNEL_ID, LIVE_CHANNEL_ID, NIGHTLY_PAUSED_BEFORE, SOURCES
-    global TITLE_ALIASES
+    global TITLE_ALIASES, TITLE_ONLY
     TITLE_ALIASES = o.get("title_aliases") or {}
+    TITLE_ONLY = o.get("title_only") or {}
     SHEET_ID = o["sheet_id"]
     SOURCE_CHANNEL_ID = o["source_channel"]
     LIVE_CHANNEL_ID = o["live_channel"]

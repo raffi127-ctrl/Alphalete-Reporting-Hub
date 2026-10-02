@@ -165,3 +165,54 @@ class AliasTests(unittest.TestCase):
         a = "AT&T Retail Associate (Bilingual Spanish Required) – Arlington TX"
         book = TitleBook([a] * 9 + [a.replace("Arlington", "Arlingotn")] * 3)
         self.assertEqual(len(book.ads), 1)
+
+
+class TitleOnlyTests(unittest.TestCase):
+    """Carlos 10/2 (Khalil): one thread per title, city left out, only the
+    listed ads."""
+    ONLY = {
+        "Entry Level Sales Manager": ["entry level sales manager"],
+        "AT&T Sales Representative (Spanish Required)": ["at&t sales representative spanish required"],
+        "Outside Sales Representative (Spanish Required)": ["outside sales representative spanish required"],
+        "AT&T Wireless Associate (Spanish)": ["at&t wireless associate spanish"],
+        "Entry Level Account Manager (Spanish Required)": ["entry level account manager"],
+    }
+    G = "AT&T Wireless Associate (Spanish), Garland, TX"
+
+    def setUp(self):
+        self.book = TitleBook(["Entry Level Sales Manager, Denton, TX"] * 3 + [self.G] * 3
+                              + ["AT&T Sales Representative (Spanish Required), 2 locations"] * 3,
+                              aliases={"AT&T Wireless Associate, Garland, TX": self.G},
+                              only=self.ONLY)
+
+    def test_cities_and_company_fold_onto_one_title(self):
+        keys = {self.book.resolve(t) for t in (
+            "Entry Level Sales Manager, 2 locations",
+            "Entry Level Sales Manager ? Lewisville TX ? Everforward Management",
+            "Entry-Level Sales Manager, Denton, TX.",
+            "Full time. Entry Level Sales Manager ? Lewisville TX")}
+        self.assertEqual(len(keys), 1)
+        self.assertEqual(self.book.display(keys.pop()), "Entry Level Sales Manager")
+
+    def test_off_list_title_gets_no_thread(self):
+        self.assertIsNone(self.book.resolve("AT&T Account Representative, Carrollton, TX"))
+        self.assertIsNone(self.book.resolve("AT&T Wireless Associate (Bilingual Spanish Required), Euless, TX"))
+
+    def test_outside_sales_is_not_att_sales(self):
+        self.assertNotEqual(self.book.resolve("Outside Sales Representative (Spanish Required), Dallas, TX"),
+                            self.book.resolve("AT&T sales representative (Spanish required), Duncanville, TX"))
+
+    def test_alias_and_typo_still_reach_the_listed_ad(self):
+        want = self.book.resolve(self.G)
+        self.assertEqual(self.book.resolve("AT&T Wireless Associate, Garland, TX"), want)
+        self.assertEqual(self.book.resolve("T&T Sales Representative (Spanish Required), 2 locations"),
+                         self.book.resolve("AT&T Sales Representative (Spanish Required), 2 locations"))
+
+    def test_bracket_cut_short(self):
+        self.assertEqual(self.book.display(self.book.resolve("Entry-level account manager (Spanish required")),
+                         "Entry Level Account Manager (Spanish Required)")
+
+    def test_find_in_text(self):
+        self.assertEqual(self.book.display(self.book.find_in_text(
+            "Ana Ruiz :white_check_mark: 3 :star: Entry Level Sales Manager ? Denton TX")),
+            "Entry Level Sales Manager")
