@@ -188,7 +188,9 @@ def main(argv=None):
     offices = [o.strip() for o in str(a.office).split(",") if o.strip()]
     OUTPUT_DIR.mkdir(exist_ok=True)
     rc = 0
-    with appstream_direct_session(verbose=True) as page:
+    # Step aside rather than queue behind a report. An audit is never
+    # worth making a live pull wait for the one AppStream session.
+    with appstream_direct_session(verbose=True, yield_if_busy=True) as page:
         page.wait_for_timeout(3000)
         tok = _rqst(page)
         if not tok:

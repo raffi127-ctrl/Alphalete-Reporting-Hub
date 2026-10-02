@@ -198,7 +198,7 @@
     "local_1on1s_fill": {
       "on_scheduler": true,
       "machine": "Lucy 1",
-      "display_name": "Local Office 1on1s \u2014 fill the five team tabs",
+      "display_name": "Local Office 1on1s — fill the five team tabs",
       "source_type": "local",
       "data_sources": [],
       "command": [
@@ -222,12 +222,12 @@
       "timeout_minutes": 45,
       "verify": null,
       "close_on": "exit_zero",
-      "_note": "Sunday AND Monday, which is what Raf asked for in the Loom: \"I would like it to be filled out on Sunday morning with the data as of Sunday morning. And then it can also be filled out again Monday because sometimes the reps do sales on Sunday.\" Same cells both days, not a second post. IT RUNS HERE RATHER THAN ON A LAPTOP because the knock block's best source is shared.knock_week_cache, which is written by local_1on1s_knock_backfill on whichever machine holds the ownerville session \u2014 running the fill anywhere else silently falls back to the sales board, which carries no knock TIMES and nothing before ~WE 9/6. Writes only the five team tabs of \"1on1's - Local Office - Rafs\"; no Slack, no email. Every manual row (all of 4. Culture / Atmo / HTP, What are we going to do better?, BreakEven, Money Saved?, Goal / Focus) is left alone, and a cell with no source is left blank rather than zeroed."
+      "_note": "Sunday AND Monday, which is what Raf asked for in the Loom: \"I would like it to be filled out on Sunday morning with the data as of Sunday morning. And then it can also be filled out again Monday because sometimes the reps do sales on Sunday.\" Same cells both days, not a second post. IT RUNS HERE RATHER THAN ON A LAPTOP because the knock block's best source is shared.knock_week_cache, which is written by local_1on1s_knock_backfill on whichever machine holds the ownerville session — running the fill anywhere else silently falls back to the sales board, which carries no knock TIMES and nothing before ~WE 9/6. Writes only the five team tabs of \"1on1's - Local Office - Rafs\"; no Slack, no email. Every manual row (all of 4. Culture / Atmo / HTP, What are we going to do better?, BreakEven, Money Saved?, Goal / Focus) is left alone, and a cell with no source is left blank rather than zeroed."
     },
     "local_1on1s_knock_backfill": {
       "on_scheduler": true,
       "machine": "Lucy 1",
-      "display_name": "Local Office 1on1s \u2014 OwnerVille knock backfill",
+      "display_name": "Local Office 1on1s — OwnerVille knock backfill",
       "source_type": "ownerville",
       "data_sources": [],
       "command": [
@@ -250,7 +250,7 @@
       "timeout_minutes": 120,
       "verify": null,
       "close_on": "exit_zero",
-      "_note": "SCHEDULED Sun+Mon right before local_1on1s_fill (order 37.4 < 37.5), which depends_on it (2026-09-29: it used to be manual-only, so the orchestrator flagged that dependency as one that can never be satisfied and the fill would BLOCK). Only the newest completed Mon-Sat week is actually pulled; every older week is already cached and skipped, and Monday's run finds Sunday's pull cached and is a no-op. Still hand-runnable with `lucy rerun local_1on1s_knock_backfill`. Fills shared.knock_week_cache for Rafael Hidalgo so the Local Office 1on1s knocking block can be filled. READ-ONLY apart from the cache: no Sheet, no Slack, no email, and a week already cached at the current schema is skipped, so re-running is free. It has to run HERE rather than on a laptop: .ownerville_storage_state.json only ages on a machine with no session holder (15 days stale on Megan's Mac, 2026-09-28) and tableau_patchright says reseeding it by hand is not the fix. Budget ~12 ownerville round trips per week \u2014 six single-day Disposition pulls plus six Time Tracker calls \u2014 because the ranged view's First/Last Knock are the window's first and most recent timestamps, not averages, so only the per-day loop yields a true daily average. The board cannot replace this: 'Sales Board WE 8.2'/'8.16'/'8.30' carry no TK or Talk-To's columns at all, and no board tab carries knock TIMES."
+      "_note": "SCHEDULED Sun+Mon right before local_1on1s_fill (order 37.4 < 37.5), which depends_on it (2026-09-29: it used to be manual-only, so the orchestrator flagged that dependency as one that can never be satisfied and the fill would BLOCK). Only the newest completed Mon-Sat week is actually pulled; every older week is already cached and skipped, and Monday's run finds Sunday's pull cached and is a no-op. Still hand-runnable with `lucy rerun local_1on1s_knock_backfill`. Fills shared.knock_week_cache for Rafael Hidalgo so the Local Office 1on1s knocking block can be filled. READ-ONLY apart from the cache: no Sheet, no Slack, no email, and a week already cached at the current schema is skipped, so re-running is free. It has to run HERE rather than on a laptop: .ownerville_storage_state.json only ages on a machine with no session holder (15 days stale on Megan's Mac, 2026-09-28) and tableau_patchright says reseeding it by hand is not the fix. Budget ~12 ownerville round trips per week — six single-day Disposition pulls plus six Time Tracker calls — because the ranged view's First/Last Knock are the window's first and most recent timestamps, not averages, so only the per-day loop yields a true daily average. The board cannot replace this: 'Sales Board WE 8.2'/'8.16'/'8.30' carry no TK or Talk-To's columns at all, and no board tab carries knock TIMES."
     },
     "imessage_identity_probe": {
       "on_scheduler": false,
@@ -456,13 +456,15 @@
       "on_scheduler": false,
       "hand_run_only": true,
       "_note": "Rafael 2026-09-30: every 1st round 'Late Join' in AppStream (day view p=102, every org office) checked against the slot with a 5-min grace; thread 'Late Join Audit — <date>' in #ars-recruiting-numbers (Eve 9/30). READ-ONLY on AppStream. Args: --date YYYY-MM-DD, --office id,id. Posts a day once (output/late_join_audit/posted.json). The real clock is deploy/late_join_audit.sh (LaunchAgent com.alphalete.late-join-audit on Lucy 2, every 30 min, posts TODAY once after 5:30 PM CT Mon-Sat; Rafael 9/30: interviews wrap ~4; not the busy morning). This entry is the hand-run handle. A day with no Late Joins posts nothing.",
-      "display_name": "Late Join Audit \u2014 post",
+      "display_name": "Late Join Audit — post",
       "source_type": "appstream",
       "data_sources": [],
       "command": [
         "automations.late_join_audit.run"
       ],
-      "base_args": ["--post"],
+      "base_args": [
+        "--post"
+      ],
       "cadence": {
         "weekdays": []
       },
@@ -477,13 +479,16 @@
       "on_scheduler": false,
       "hand_run_only": true,
       "_note": "Same as late_join_audit, but the whole post goes to Eve's Slack DM (for checking a change first).",
-      "display_name": "Late Join Audit \u2014 preview to Eve",
+      "display_name": "Late Join Audit — preview to Eve",
       "source_type": "appstream",
       "data_sources": [],
       "command": [
         "automations.late_join_audit.run"
       ],
-      "base_args": ["--preview-to-eve", "--post"],
+      "base_args": [
+        "--preview-to-eve",
+        "--post"
+      ],
       "cadence": {
         "weekdays": []
       },
@@ -518,7 +523,7 @@
     },
     "sms_log": {
       "on_scheduler": false,
-      "_note": "MANUAL-ONLY (Raf 2026-09-26): pull the FULL SMS log for an office off the p=336 SMS List Report \u2014 every message in and out for a date range, with 'Sent By' (AI Messaging vs a named recruiter) and delivery Status. This is the source sms_thread_dump cannot be: the calendar walk only sees applicants who BOOKED, and the people left on read are exactly the ones who did not (Megan 2026-09-26). Writes tab 'SMS Log <office>' + output/sms_log_<office>.json. READ-ONLY on AppStream. Default window is the last full Sat-Fri recruiting week. Args: --office 11280,23965,24065 (comma list), --owner \"Rafael Hidalgo\", --dates FROM,TO (MM-DD-YYYY), --week N, --dry-run. Feeds `python -m automations.sms_audit.analyze`, which joins it to the calendar walk on phone number to say who ultimately booked.",
+      "_note": "MANUAL-ONLY (Raf 2026-09-26): pull the FULL SMS log for an office off the p=336 SMS List Report — every message in and out for a date range, with 'Sent By' (AI Messaging vs a named recruiter) and delivery Status. This is the source sms_thread_dump cannot be: the calendar walk only sees applicants who BOOKED, and the people left on read are exactly the ones who did not (Megan 2026-09-26). Writes tab 'SMS Log <office>' + output/sms_log_<office>.json. READ-ONLY on AppStream. Default window is the last full Sat-Fri recruiting week. Args: --office 11280,23965,24065 (comma list), --owner \"Rafael Hidalgo\", --dates FROM,TO (MM-DD-YYYY), --week N, --dry-run. Feeds `python -m automations.sms_audit.analyze`, which joins it to the calendar walk on phone number to say who ultimately booked.",
       "display_name": "SMS log pull (every applicant text, p=336)",
       "source_type": "appstream",
       "data_sources": [],
@@ -538,8 +543,8 @@
     },
     "sms_audit_weekly": {
       "on_scheduler": true,
-      "_note": "SATURDAY (Megan 2026-09-28). Refills the ACA sheet for the recruiting week that closed the day before. Raf asked for this in #l10-alphalete on 2026-09-26 \u2014 \"Can we teach LUCY to go through all the text messsages that I have for the sake of learning\" \u2014 and the Sat-Fri boundary is Megan's (\"Week runs Sat-Friday for recruiting\"), so Saturday is the first day the week is complete. Runs the four pulls in order then writes the four tabs: sms_thread_dump (bookings, p=105) \u2192 sms_log (texts, p=336) \u2192 sms_call_list (LM1/LM2/LM3, p=4000 Call Hub, via its Export) \u2192 sms_email_tracking (sends + opens, p=792) \u2192 weekly_sheet. THE LAST TWO ARE NOT OPTIONAL: without them the \"why they didn't book\" buckets revert to text-only, which measured 55-83% WRONG on 2026-09-28 \u2014 every count arithmetically right and the meaning inverted. If a pull fails, the sheet still writes but those rows read as text-only, so a failure here is a correctness fault, not a missing nice-to-have.",
-      "display_name": "Applicant SMS audit \u2014 weekly refill",
+      "_note": "SATURDAY (Megan 2026-09-28). Refills the ACA sheet for the recruiting week that closed the day before. Raf asked for this in #l10-alphalete on 2026-09-26 — \"Can we teach LUCY to go through all the text messsages that I have for the sake of learning\" — and the Sat-Fri boundary is Megan's (\"Week runs Sat-Friday for recruiting\"), so Saturday is the first day the week is complete. Runs the four pulls in order then writes the four tabs: sms_thread_dump (bookings, p=105) → sms_log (texts, p=336) → sms_call_list (LM1/LM2/LM3, p=4000 Call Hub, via its Export) → sms_email_tracking (sends + opens, p=792) → weekly_sheet. THE LAST TWO ARE NOT OPTIONAL: without them the \"why they didn't book\" buckets revert to text-only, which measured 55-83% WRONG on 2026-09-28 — every count arithmetically right and the meaning inverted. If a pull fails, the sheet still writes but those rows read as text-only, so a failure here is a correctness fault, not a missing nice-to-have.",
+      "display_name": "Applicant SMS audit — weekly refill",
       "source_type": "appstream",
       "data_sources": [],
       "command": [
@@ -547,7 +552,9 @@
       ],
       "base_args": [],
       "cadence": {
-        "weekdays": [5]
+        "weekdays": [
+          5
+        ]
       },
       "start_hour": 7,
       "priority": "P2",
@@ -559,7 +566,7 @@
     },
     "sms_email_tracking": {
       "on_scheduler": false,
-      "_note": "MANUAL (Megan 2026-09-28): pull Email Tracking Data (p=792) \u2014 every email the office sent, to whom, and whether it was opened. Closes the caveat every SMS-audit list carries (\"this is the text log, it cannot see email\"), which matters because a person who was emailed is not a person we failed to contact. Joins to the SMS log on Phone. TWO TRAPS: the Status filter defaults to \"Not Opened Yet\", so a naive read returns a subset that looks like a full answer \u2014 it is set to All first; and Date Sent takes ONE day, so a window is one submission per day. READ-ONLY. Writes tab 'Email Tracking <office>' + output/email_tracking_<office>.json. Args: --office, --dates FROM,TO, --week N, --dry-run.",
+      "_note": "MANUAL (Megan 2026-09-28): pull Email Tracking Data (p=792) — every email the office sent, to whom, and whether it was opened. Closes the caveat every SMS-audit list carries (\"this is the text log, it cannot see email\"), which matters because a person who was emailed is not a person we failed to contact. Joins to the SMS log on Phone. TWO TRAPS: the Status filter defaults to \"Not Opened Yet\", so a naive read returns a subset that looks like a full answer — it is set to All first; and Date Sent takes ONE day, so a window is one submission per day. READ-ONLY. Writes tab 'Email Tracking <office>' + output/email_tracking_<office>.json. Args: --office, --dates FROM,TO, --week N, --dry-run.",
       "display_name": "Email tracking pull (sends + opens, p=792)",
       "source_type": "appstream",
       "data_sources": [],
@@ -579,7 +586,7 @@
     },
     "sms_call_list": {
       "on_scheduler": false,
-      "_note": "MANUAL (Megan 2026-09-28): pull an office's CALL LIST (p=501) with each applicant's STATUS \u2014 Open / LM1 / LM2 / LM3 / No Answer. The SMS audit can only see texts, so it read applicants who got one text as abandoned; Megan: \"applicants are called and messaged multiple times though? What is their status in the call list for the ones you say were only contacted once?\" The Retention Report shows the calls happening at volume (577 LM1, 522 LM2, 1011 LM3 in one week) and CLQ exists to mass-text the ones there was no time to ring, so a single text can be the last step of a worked applicant rather than the only contact. Joins to the SMS log on phone. Writes tab 'Call List <office>' + output/call_list_<office>.json. READ-ONLY. Args: --office, --max-pages, --dry-run.",
+      "_note": "MANUAL (Megan 2026-09-28): pull an office's CALL LIST (p=501) with each applicant's STATUS — Open / LM1 / LM2 / LM3 / No Answer. The SMS audit can only see texts, so it read applicants who got one text as abandoned; Megan: \"applicants are called and messaged multiple times though? What is their status in the call list for the ones you say were only contacted once?\" The Retention Report shows the calls happening at volume (577 LM1, 522 LM2, 1011 LM3 in one week) and CLQ exists to mass-text the ones there was no time to ring, so a single text can be the last step of a worked applicant rather than the only contact. Joins to the SMS log on phone. Writes tab 'Call List <office>' + output/call_list_<office>.json. READ-ONLY. Args: --office, --max-pages, --dry-run.",
       "display_name": "Call list pull (status per applicant, p=501)",
       "source_type": "appstream",
       "data_sources": [],
@@ -597,9 +604,29 @@
       "timeout_minutes": 45,
       "machine": "Lucy 2"
     },
+    "sms_ai_settings": {
+      "on_scheduler": false,
+      "_note": "MANUAL (Megan 2026-10-01): pull an office's AI SETTINGS page (p=1504) — Office Info, AI Preferences and the whole Escalations table. Megan checked several offices and none were set correctly, and until this existed every check was a screenshot. Two of the settings decide whether an applicant can accept the time the AI offers: the timeslot buffers are both counted BACKWARDS from the appointment, so the window is offered minus accepted — 11280 was on 15 and 10, five minutes, against a 26-minute median reply. Audited by ai_settings.lint and escalations.lint, which are rendered at the top of the ICD audit. Rows the platform locks show 'Silent Only' instead of radios and are reported as such, so 'nobody set this' reads differently from 'nobody CAN set this'. Writes output/ai_settings_<office>.json + output/escalations_<office>.json. READ-ONLY. Args: --office, --dry-run.",
+      "display_name": "AI settings pull (Office Info + escalations, p=1504)",
+      "source_type": "appstream",
+      "data_sources": [],
+      "command": [
+        "automations.sms_audit.pull_ai_settings"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 20,
+      "machine": "Lucy 2"
+    },
     "sms_crosscheck": {
       "on_scheduler": false,
-      "_note": "MANUAL-ONLY (Megan 2026-09-27: \"double check that the mapping of how you're pulling all these numbers is correct\"). Holds the SMS audit's booked/showed figures against AppStream's OWN count of them on the Retention Report (p=701), which no other part of the audit reads. verify.py proves the numbers are internally consistent \u2014 every split adds back up to its parent, every field comes out of the column it claims \u2014 but only this can catch the whole pull being short a day in the same direction, because an internally consistent pull that missed Thursday still balances. p=701 is locked to Sun-Sat and recruiting runs Sat-Fri, so one recruiting week is assembled from TWO p=701 weeks: the Saturday of the first plus Sun-Fri of the second. READ-ONLY \u2014 writes no tab, no sheet, no Slack. Compares against the files already in output/, so run it AFTER the pulls. Args: --office 11280,23965,24065,11580, --week N, --suffix wMMDD. Exit 1 on a mismatch.",
+      "_note": "MANUAL-ONLY (Megan 2026-09-27: \"double check that the mapping of how you're pulling all these numbers is correct\"). Holds the SMS audit's booked/showed figures against AppStream's OWN count of them on the Retention Report (p=701), which no other part of the audit reads. verify.py proves the numbers are internally consistent — every split adds back up to its parent, every field comes out of the column it claims — but only this can catch the whole pull being short a day in the same direction, because an internally consistent pull that missed Thursday still balances. p=701 is locked to Sun-Sat and recruiting runs Sat-Fri, so one recruiting week is assembled from TWO p=701 weeks: the Saturday of the first plus Sun-Fri of the second. READ-ONLY — writes no tab, no sheet, no Slack. Compares against the files already in output/, so run it AFTER the pulls. Args: --office 11280,23965,24065,11580, --week N, --suffix wMMDD. Exit 1 on a mismatch.",
       "display_name": "SMS audit cross-check (vs Retention Report p=701)",
       "source_type": "appstream",
       "data_sources": [],
@@ -639,7 +666,7 @@
     },
     "sms_activity": {
       "on_scheduler": false,
-      "_note": "MANUAL (Megan 2026-09-26): pull the AppStream Activity Report (p=704) \u2014 every recorded action on an applicant with its TIME and who did it. This is the only page that timestamps individual actions, which is what makes a call-answer-rate BY HOUR possible; p=336 is texts only, p=701 is per-day totals, p=1520 Phone Burner returns nothing, and p=1530 AI Live Calls is broken server-side. The page renders empty until submitted and carries the date TWICE (activityDate MM-DD-YYYY + activityDate2 MM/DD/YYYY); it takes ONE day at a time, so a week is seven submissions. Writes tab 'Activity <office>' + output/activity_<office>.json. READ-ONLY. Args: --office, --dates FROM,TO, --week N, --dry-run.",
+      "_note": "MANUAL (Megan 2026-09-26): pull the AppStream Activity Report (p=704) — every recorded action on an applicant with its TIME and who did it. This is the only page that timestamps individual actions, which is what makes a call-answer-rate BY HOUR possible; p=336 is texts only, p=701 is per-day totals, p=1520 Phone Burner returns nothing, and p=1530 AI Live Calls is broken server-side. The page renders empty until submitted and carries the date TWICE (activityDate MM-DD-YYYY + activityDate2 MM/DD/YYYY); it takes ONE day at a time, so a week is seven submissions. Writes tab 'Activity <office>' + output/activity_<office>.json. READ-ONLY. Args: --office, --dates FROM,TO, --week N, --dry-run.",
       "display_name": "Activity report pull (timestamped actions, p=704)",
       "source_type": "appstream",
       "data_sources": [],
@@ -862,7 +889,7 @@
       "freshness_target": null,
       "depends_on": [],
       "timeout_minutes": 120,
-    "_timeout_note": "120, not 30 (2026-09-28): the lucy rerun path kills the run at timeout_minutes, and a send killed mid-batch can leave a packet half-sent. ~1 min/person plus the Blue Ink screen and retries; a 55-70 person week must never hit it. The launchd Monday job has no cap.",
+      "_timeout_note": "120, not 30 (2026-09-28): the lucy rerun path kills the run at timeout_minutes, and a send killed mid-batch can leave a packet half-sent. ~1 min/person plus the Blue Ink screen and retries; a 55-70 person week must never hit it. The launchd Monday job has no cap.",
       "verify": null
     },
     "install_blueink_docs_agent": {
@@ -1772,7 +1799,7 @@
       "depends_on": [],
       "timeout_minutes": 30,
       "verify": null,
-      "_verify_note": "2026-09-24 (Eve): the module now writes a run-manifest (run._file_manifest), which is what delivery_check reads \u2014 `_from_manifest`, under this same config key \u2014 so failure-car_rides closes itself on a clean pass instead of sitting open with \"ran clean, but nothing can confirm it DELIVERED\". DELIBERATELY STILL null, the same as vantura_board_audit and digi_docs, and it is NOT close_on: exit_zero either. This report can end a perfectly good pass with BOARD FINDINGS for Carlos (\"no territory found \u2014 needs new team\", \"ambiguous, skipped\"), which it files as kind 'finding', ok=false. delivery_check._from_manifest knows that shape means \"ran and delivered, with findings to review\" and closes the ticket; reconcile._verify_manifest does NOT \u2014 it reads ok=false as a failure \u2014 and _from_verifier is asked FIRST, so wiring a manifest verifier here would hold the ticket open on exactly the mornings the run worked, with no re-run able to clear it (a human fixes the board). captainship_cancel_rate has a manifest verifier AND writes kind 'unfilled_icd', so it carries that contradiction today; fix _verify_manifest there, not by re-wiring this one."
+      "_verify_note": "2026-09-24 (Eve): the module now writes a run-manifest (run._file_manifest), which is what delivery_check reads — `_from_manifest`, under this same config key — so failure-car_rides closes itself on a clean pass instead of sitting open with \"ran clean, but nothing can confirm it DELIVERED\". DELIBERATELY STILL null, the same as vantura_board_audit and digi_docs, and it is NOT close_on: exit_zero either. This report can end a perfectly good pass with BOARD FINDINGS for Carlos (\"no territory found — needs new team\", \"ambiguous, skipped\"), which it files as kind 'finding', ok=false. delivery_check._from_manifest knows that shape means \"ran and delivered, with findings to review\" and closes the ticket; reconcile._verify_manifest does NOT — it reads ok=false as a failure — and _from_verifier is asked FIRST, so wiring a manifest verifier here would hold the ticket open on exactly the mornings the run worked, with no re-run able to clear it (a human fixes the board). captainship_cancel_rate has a manifest verifier AND writes kind 'unfilled_icd', so it carries that contradiction today; fix _verify_manifest there, not by re-wiring this one."
     },
     "install_car_rides_agent": {
       "on_scheduler": false,
@@ -3348,9 +3375,23 @@
     "new_start_followup": {
       "on_scheduler": true,
       "_note": "MANUAL: `lucy rerun new_start_followup` prints who has/hasn't texted their new starts. READ-ONLY — posts nothing (no --live); the Saturday/Sunday posts run off their own launchd agents. Also the Hub card's run_rerun_id. weekdays [] = manual only.",
-      "standalone_weekdays": [1, 2, 3, 4, 5, 6],
+      "standalone_weekdays": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
       "_standalone_weekdays_note": "Python weekday(): Tue-Sun, no Monday. Every mode of this report publishes under the ONE card id `new-start-followup`, and Monday is the one day none of them fires: the daily reminder is Tue-Fri (new_start_daily_reminder, weekdays [1,2,3,4] — Raf, no Monday, 'it's about YESTERDAY'S closes and nobody closes Sunday'), the roll call / texts / nudge are Saturday, the ✅ checklist is Sunday. Declared so the missed-run watcher stops reading four ~09:00 weekday rows as 'a daily report' and expecting a Monday run that no plist has ever scheduled. Off-day exemption covers the DIDN'T-RUN check only — a Monday hand-rerun that FAILS still alerts.",
-      "standalone_start_hour": {"1": 9, "2": 9, "3": 9, "4": 9, "5": 8, "6": 13},
+      "standalone_start_hour": {
+        "1": 9,
+        "2": 9,
+        "3": 9,
+        "4": 9,
+        "5": 8,
+        "6": 13
+      },
       "_standalone_start_hour_note": "The other half of the same guess: WHAT TIME, per day. One card id, three clocks — com.alphalete.new-start-followup-rollcall Sat 08:00, new_start_daily_reminder Tue-Fri from 09:00, com.alphalete.new-start-followup-sun Sun 13:00 (Raf's numbered ✅ checklist). _historical_expected carries ONE hour per card, read off the most recent same-weekday, so a stray `--mode status` row at 09:44 on Sun 2026-09-20 made last-Sunday's earliest hour 9 and the watcher posted 'New-Start Follow-Up — didn't run today on the mini · usually starts ~9:00' at 11:07 on Sun 2026-09-27 — two hours BEFORE the checklist was due, on a mini whose 30-minute thread scan had run clean all morning. Sat 08:00 matches what the log already shows; it is declared anyway so the next stray early row cannot move Saturday's deadline either. Keep in sync with the plists' Hour if any slot moves. Pins the didn't-run DEADLINE only — it never exempts anything, and FAILED / INCOMPLETE / STUCK are untouched.",
       "display_name": "New-Start Follow-Up — who's sent?",
       "source_type": "local",
@@ -4899,9 +4940,19 @@
       ],
       "base_args": [],
       "cadence": {
-        "weekdays": [0, 1, 2, 3, 4, 5, 6]
+        "weekdays": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
       },
-      "after": ["captainship_knocks"],
+      "after": [
+        "captainship_knocks"
+      ],
       "depends_on": [],
       "timeout_minutes": 20,
       "priority": "P3",
@@ -9497,7 +9548,7 @@
           4
         ],
         "hour": 15,
-        "how": "On the Hub, open New Starts \u2192 Apex and press \"Get this week's setup\" \u2014 then the Fill Apex bookmark."
+        "how": "On the Hub, open New Starts → Apex and press \"Get this week's setup\" — then the Fill Apex bookmark."
       },
       "data_sources": [],
       "depends_on": [],
@@ -11239,7 +11290,14 @@
       "cadence": {
         "weekdays": []
       },
-      "standalone_weekdays": [0, 1, 2, 3, 4, 5],
+      "standalone_weekdays": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
       "_standalone_weekdays_note": "Mon-Sat. The agent TICKS every day (the wrapper has no Sunday exit on purpose, so a Sunday sign-up or fault is still announced), but it only writes a Hub Activity row on a tick that actually DID something -- posted a credit-check line, warned an office went quiet, or failed -- and on Sunday none of those can happen: icd_alerts.offices.in_field_hours is False on Sunday for every office and post.warn_quiet returns on Sunday. So a Sunday has no rows, and machine_digest._historical_expected read that as a MISS: Sun 2026-09-27 it posted 'ICD Credit-Check Alerts -- didn't run today on the mini - usually starts ~9:00' while the agent had ticked all morning, exit 0, every office logged 'outside field hours (Sun)' (verified in Lucy 1's own output/logs/icd-alerts-poster-2026-09-27.log). What taught it Sunday was the PREVIOUS Sunday, 9/20, which happened to publish two rows at 09:48. Same bug and same fix as icd_start_dates. Exempts the DIDN'T-RUN guess ONLY -- a Sunday tick that fails, runs partial or hangs still alerts. NOT logs_on_event_only: Mon-Sat this report writes 90-280 rows a day, so the didn't-run watch is real coverage there and worth keeping.",
       "priority": "P3",
       "freshness_target": null,
