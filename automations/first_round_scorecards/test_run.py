@@ -366,7 +366,8 @@ class BoardTest(unittest.TestCase):
         from automations.first_round_scorecards import board
         text = ("Interviewer: Amy (ARS ZOOM 4) · Office: Ellen Dent · Applicants: x\n"
                 "Scorecard: 42 / 100 🔴")
-        self.assertEqual(board.parse_doc(text), {"score": 42, "office": "Ellen Dent"})
+        d = board.parse_doc(text)
+        self.assertEqual((d["score"], d["office"]), (42, "Ellen Dent"))
         self.assertIsNone(board.parse_doc("nothing here")["score"])
 
     def test_table_averages_and_order(self):
@@ -385,7 +386,7 @@ class BoardTest(unittest.TestCase):
         self.assertEqual((amy["week"], amy["n"]), (50, 3))
         grid = board.values(mon, lines)
         self.assertEqual(grid[-1][1], "TEAM")
-        self.assertEqual(grid[-1][-2:], [62, 5])     # (40+50+60+90+70)/5
+        self.assertEqual(grid[-1][8:10], [62, 5])     # (40+50+60+90+70)/5
 
     def test_monday(self):
         from automations.first_round_scorecards import board
@@ -399,3 +400,29 @@ class BoardTest(unittest.TestCase):
         self.assertEqual(board.tab_index(dt.date(2026, 9, 28), tabs), 0)
         self.assertEqual(board.tab_name(dt.date(2026, 9, 28)), "WE 10.4")
         self.assertEqual(board.tab_week("WE 1.3", dt.date(2026, 12, 28)), dt.date(2026, 12, 28))
+
+    def test_parse_flags_missed_coaching(self):
+        from automations.first_round_scorecards import board
+        text = ("Scorecard: 50 / 100 🔴\nCoaching points:\n"
+                "* Do not skip the schedule. Say full time.\n* Use the exact wrap-up.\n"
+                "⏭️ Skipped portions: 1\n1. \"All interactions...\"\n"
+                "🚩 Red flags — should NOT happen\n"
+                "5. Did she quote pay different from the script? — YES 🚩\n"
+                "1. Did she say the job is inside a retail store? — NO\n"
+                "✅ Must-dos — should happen\n"
+                "8. Did she cover the schedule (full time, in person, day shifts, 40 hrs, Saturdays)? — NO\n"
+                "9. Did she do the wrap-up script? — YES\n")
+        d = board.parse_doc(text)
+        self.assertEqual(d["flags"], ["pay different from the script"])
+        self.assertEqual(d["missed"], ["schedule section"])
+        self.assertEqual(d["coaching"], ["Do not skip the schedule. Say full time.",
+                                         "Use the exact wrap-up."])
+        line = board.table(dt.date(2026, 9, 21), [
+            {"interviewer": "Amy", "date": "2026-09-21", "time": "09:00", "score": 50,
+             "office": "", **d},
+            {"interviewer": "Amy", "date": "2026-09-22", "time": "09:00", "score": 60,
+             "office": "", "flags": ["pay different from the script"], "missed": [],
+             "coaching": ["Keep it up!"]}])[0]
+        self.assertEqual(line["flags"], "pay different from the script ×2")
+        self.assertEqual(line["missed"], "schedule section ×1")
+        self.assertEqual(line["coaching"], "• Keep it up!")     # the latest interview's

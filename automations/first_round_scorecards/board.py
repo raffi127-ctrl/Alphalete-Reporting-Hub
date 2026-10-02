@@ -34,7 +34,7 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
-from automations.first_round_scorecards import drive_auth, fathom
+from automations.first_round_scorecards import drive_auth, fathom, grade
 
 BOARD_SHEET_ID = "1bPPYSr73QWwfzsW3BziyJyXysnj-segpCGUE1P447-s"  # TEST - 1st Round Scorecards Board
 FOLDER_MIME = "application/vnd.google-apps.folder"
@@ -42,6 +42,10 @@ CACHE = Path(__file__).resolve().parents[2] / "output" / "first_round_scorecards
 DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri")
 _SCORE = re.compile(r"Scorecard:\s*(\d+)\s*/\s*100")
 _OFFICE = re.compile(r"Office:\s*(.+?)\s*·")
+# "3. Did she say the schedule is 9-5? — YES 🚩" (and "— NO" for a missed must-do)
+_ITEM = re.compile(r"^\d+\.\s*(.+?)\s+—\s+(YES|NO)\b", re.M)
+_TIME = re.compile(r"(\d{1,2}:\d{2} [AP]M)")
+PARSE_VERSION = 2               # bump when parse_doc reads more: the cache re-reads every doc
 # a thread with no name said in the intro lands under its Zoom ("ZOOM 13",
 # "Drew's Zoom") or "Main Funnel": still on the board, so nothing is lost, but
 # at the bottom -- it's a Zoom, not a person to coach
@@ -76,15 +80,35 @@ def _cache() -> Dict:
 
 
 def parse_doc(text: str) -> Dict:
-    """{score, office} from an audit doc's text (score None = not found)."""
+    """{score, office, flags, missed, coaching} from an audit doc's text
+    (score None = not found). flags = red flags that happened, missed =
+    must-dos not done, both as the short labels of the Slack post."""
     s = _SCORE.search(text)
     o = _OFFICE.search(text)
+    kinds = {q: (key, kind) for key, q, kind in grade.ITEMS}
+    flags, missed = [], []
+    for q, yes in _ITEM.findall(text):
+        key, kind = kinds.get(q.strip(), (None, None))
+        if kind == "red" and yes == "YES":
+            flags.append(grade.SHORT[key])
+        elif kind == "must" and yes == "NO":
+            missed.append(grade.SHORT[key])
+    coaching, inside = [], False
+    for line in text.splitlines():
+        if line.strip().startswith("Coaching points"):
+            inside = True
+        elif inside and line.lstrip().startswith("*"):
+            coaching.append(line.lstrip()[1:].strip())
+        elif inside and coaching:
+            break
     return {"score": int(s.group(1)) if s else None,
-            "office": o.group(1).strip() if o else ""}
+            "office": o.group(1).strip() if o else "",
+            "flags": flags, "missed": missed, "coaching": coaching}
 
 
 def scores(week_of: dt.date, svc=None) -> List[Dict]:
-    """[{interviewer, date, score, office}] for every audit doc that week."""
+    """[{interviewer, date, time, score, office, flags, missed, coaching}]
+    for every audit doc that week."""
     svc = svc or drive_auth.service()
     days = {(week_of + dt.timedelta(days=i)).isoformat() for i in range(len(DAYS))}
     cache = _cache()
@@ -95,16 +119,21 @@ def scores(week_of: dt.date, svc=None) -> List[Dict]:
                 continue
             for d in _kids(svc, day["id"], False):
                 hit = cache.get(d["id"])
-                if not hit or hit.get("modified") != d["modifiedTime"]:
+                if (not hit or hit.get("modified") != d["modifiedTime"]
+                        or hit.get("v") != PARSE_VERSION):
                     text = svc.files().export(fileId=d["id"], mimeType="text/plain").execute()
-                    hit = {"modified": d["modifiedTime"],
+                    hit = {"modified": d["modifiedTime"], "v": PARSE_VERSION,
                            **parse_doc(text.decode("utf-8", "replace"))}
                     cache[d["id"]] = hit
                 if hit["score"] is None:
                     print(f"  no score in {person['name']}/{day['name']}/{d['name']} - left out")
                     continue
+                t = _TIME.search(d["name"])
                 out.append({"interviewer": person["name"], "date": day["name"],
-                            "score": hit["score"], "office": hit["office"]})
+                            "time": (dt.datetime.strptime(t.group(1), "%I:%M %p").strftime("%H:%M")
+                                     if t else ""),
+                            **{k: hit.get(k) or ([] if k in ("flags", "missed", "coaching") else "")
+                               for k in ("score", "office", "flags", "missed", "coaching")}})
     CACHE.parent.mkdir(parents=True, exist_ok=True)
     CACHE.write_text(json.dumps(cache, indent=1), encoding="utf-8")
     return out
@@ -114,15 +143,36 @@ def _avg(xs: List[int]) -> Optional[int]:
     return round(sum(xs) / len(xs)) if xs else None
 
 
+def _tally(labels: List[str]) -> str:
+    """'pay different from the script ×3, retail ×1' -- most often first."""
+    n: Dict[str, int] = {}
+    for x in labels:
+        n[x] = n.get(x, 0) + 1
+    return ", ".join(f"{x} ×{c}" for x, c in sorted(n.items(), key=lambda kv: (-kv[1], kv[0])))
+
+
+def _first_sentence(text: str) -> str:
+    m = re.match(r"(.+?[.!?])(\s|$)", text.strip())
+    return (m.group(1) if m else text).strip()
+
+
 def table(week_of: dt.date, rows: List[Dict]) -> List[Dict]:
     """One line per interviewer: {name, offices, days: [avg|None]*5, counts,
-    week, n}, best week first, the unnamed Zooms last."""
+    week, n, flags, missed, coaching}, best week first, the unnamed Zooms
+    last. Camila 10/2: score, red flags and coaching tips in one place --
+    flags/missed are the week's tallies, coaching = the first sentence of
+    the top 2 points of her LATEST interview (what to work on now)."""
     by: Dict[str, Dict] = {}
-    for r in rows:
-        p = by.setdefault(r["interviewer"], {"name": r["interviewer"], "per_day": {}, "offices": {}})
+    for r in sorted(rows, key=lambda r: (r["date"], r.get("time") or "")):
+        p = by.setdefault(r["interviewer"], {"name": r["interviewer"], "per_day": {}, "offices": {},
+                                             "flags": [], "missed": [], "coaching": []})
         p["per_day"].setdefault(r["date"], []).append(r["score"])
         if r["office"]:
             p["offices"][r["office"]] = p["offices"].get(r["office"], 0) + 1
+        p["flags"] += r.get("flags") or []
+        p["missed"] += r.get("missed") or []
+        if r.get("coaching"):
+            p["coaching"] = r["coaching"]          # rows are oldest first: the latest wins
     out = []
     for p in by.values():
         dates = [(week_of + dt.timedelta(days=i)).isoformat() for i in range(len(DAYS))]
@@ -131,7 +181,10 @@ def table(week_of: dt.date, rows: List[Dict]) -> List[Dict]:
                     "offices": ", ".join(sorted(p["offices"], key=lambda o: -p["offices"][o])),
                     "days": [_avg(p["per_day"].get(d, [])) for d in dates],
                     "counts": [len(p["per_day"].get(d, [])) for d in dates],
-                    "week": _avg(every), "n": len(every)})
+                    "week": _avg(every), "n": len(every),
+                    "flags": _tally(p["flags"]) or "none",
+                    "missed": _tally(p["missed"]) or "none",
+                    "coaching": "\n".join(f"• {_first_sentence(c)}" for c in p["coaching"][:2])})
     out.sort(key=lambda p: (bool(_NOT_A_PERSON.match(p["name"])), -(p["week"] or 0), p["name"]))
     return out
 
@@ -166,7 +219,8 @@ def values(week_of: dt.date, lines: List[Dict]) -> List[List]:
     fri = week_of + dt.timedelta(days=4)
     head = ["#", "Interviewer", "Office"] + [
         f"{d} {(week_of + dt.timedelta(days=i)):%m/%d}" for i, d in enumerate(DAYS)
-    ] + ["Week Avg", "Interviews"]
+    ] + ["Week Avg", "Interviews", "🚩 Red flags (week)", "Most missed (week)",
+         "Coaching tips (latest interview)"]
     every = [(p["week"], p["n"]) for p in lines if p["n"]]
     team = round(sum(w * n for w, n in every) / sum(n for _, n in every)) if every else ""
     out = [[f"1st Round Scorecards — Week of {week_of:%b} {week_of.day} – {fri:%b} {fri.day}, {fri.year}"],
@@ -175,8 +229,8 @@ def values(week_of: dt.date, lines: List[Dict]) -> List[List]:
            head]
     for i, p in enumerate(lines, 1):
         out.append([i, p["name"], p["offices"]] + ["" if a is None else a for a in p["days"]]
-                   + [p["week"], p["n"]])
-    out.append(["", "TEAM", ""] + [""] * len(DAYS) + [team, sum(p["n"] for p in lines)])
+                   + [p["week"], p["n"], p["flags"], p["missed"], p["coaching"]])
+    out.append(["", "TEAM", ""] + [""] * len(DAYS) + [team, sum(p["n"] for p in lines), "", "", ""])
     return out
 
 
@@ -205,14 +259,16 @@ def write(week_of: dt.date, grid: List[List], sheet_id: str = BOARD_SHEET_ID) ->
     def rgb(c):
         return dict(zip(("red", "green", "blue"), c))
 
-    def cell(v, *, bold=False, bg=None, center=False, size=None, fg=None, italic=False):
+    def cell(v, *, bold=False, bg=None, center=False, size=None, fg=None, italic=False,
+             wrap=False):
         text = {"bold": bold, "italic": italic}
         if size:
             text["fontSize"] = size
         if fg:
             text["foregroundColor"] = rgb(fg)
         fmt = {"textFormat": text, "verticalAlignment": "MIDDLE",
-               "horizontalAlignment": "CENTER" if center else "LEFT"}
+               "horizontalAlignment": "CENTER" if center else "LEFT",
+               "wrapStrategy": "WRAP" if wrap else "OVERFLOW_CELL"}
         if bg:
             fmt["backgroundColor"] = rgb(bg)
         val = {"numberValue": v} if isinstance(v, (int, float)) else {"stringValue": str(v)}
@@ -228,16 +284,20 @@ def write(week_of: dt.date, grid: List[List], sheet_id: str = BOARD_SHEET_ID) ->
              + [cell("", bg=PALE)] * (ncol - 1)},
             {"values": [cell(h, bold=True, fg=WHITE, bg=BLUE, center=i not in (1, 2))
                         for i, h in enumerate(grid[2])]}]
+    week_col = 3 + len(DAYS)                 # the day averages sit between 3 and here
+    text_from = week_col + 2                 # red flags, most missed, coaching: wrapped text
     for j, line in enumerate(grid[3:]):
         team = line[1] == "TEAM"
         # every other row light gray, so a long list stays easy to follow
         band = TEAM_BG if team else (BAND if j % 2 else WHITE)
-        rows.append({"values": [cell(v, bold=team or i in (1, ncol - 2), center=i not in (1, 2),
-                                     bg=(_color(v) if 3 <= i < ncol - 1 else None) or band)
+        rows.append({"values": [cell(v, bold=team or i in (1, week_col),
+                                     center=i not in (1, 2) and i < text_from,
+                                     wrap=i >= text_from,
+                                     bg=(_color(v) if 3 <= i <= week_col else None) or band)
                                 for i, v in enumerate(line)]})
     thin = {"style": "SOLID", "color": rgb((0.80, 0.80, 0.80))}
     edge = {"style": "SOLID_MEDIUM", "color": rgb(NAVY)}
-    widths = [40, 150, 240] + [85] * len(DAYS) + [95, 95]
+    widths = [40, 150, 240] + [85] * len(DAYS) + [95, 95, 230, 230, 420]
     reqs = [{"unmergeCells": {"range": {"sheetId": gid}}},
             {"updateCells": {"range": {"sheetId": gid}, "fields": "*"}},
             {"updateCells": {"start": {"sheetId": gid, "rowIndex": 0, "columnIndex": 0},
@@ -256,8 +316,11 @@ def write(week_of: dt.date, grid: List[List], sheet_id: str = BOARD_SHEET_ID) ->
                 "range": {"sheetId": gid, "dimension": "ROWS", "startIndex": 0, "endIndex": 1},
                 "properties": {"pixelSize": 40}, "fields": "pixelSize"}},
             {"updateDimensionProperties": {
-                "range": {"sheetId": gid, "dimension": "ROWS", "startIndex": 2, "endIndex": nrow},
-                "properties": {"pixelSize": 28}, "fields": "pixelSize"}}]
+                "range": {"sheetId": gid, "dimension": "ROWS", "startIndex": 2, "endIndex": 3},
+                "properties": {"pixelSize": 30}, "fields": "pixelSize"}},
+            # rows grow with the wrapped coaching text
+            {"autoResizeDimensions": {"dimensions": {
+                "sheetId": gid, "dimension": "ROWS", "startIndex": 3, "endIndex": nrow}}}]
     reqs += [{"updateDimensionProperties": {
         "range": {"sheetId": gid, "dimension": "COLUMNS", "startIndex": i, "endIndex": i + 1},
         "properties": {"pixelSize": w}, "fields": "pixelSize"}} for i, w in enumerate(widths)]
