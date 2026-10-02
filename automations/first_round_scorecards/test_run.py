@@ -6,16 +6,16 @@ from automations.first_round_scorecards import appstream, doc, grade, run, zooms
 
 # Camila's ZOOMS INFO tab, trimmed: tests never read the real Sheet
 ZOOMS_TAB = [
-    ["33", "ZOOM 1", "ZOOM 3", "ZOOM 8"],
-    ["", "504 877 4019", "711 240 6133", "660 341 8230"],
-    ["MORNINGS", "Jamis Garay", "Joe Logan", "Jennifer Figueroa"],
-    ["", "", "", ""],
-    ["AFTERNOONS", "", "", ""],
-    ["", "", "Cyrus Wade", "Mercy Ohiokhai"],
-    ["", "ZOOM 1", "ZOOM 3 ", "ZOOM 8"],
-    ["", "arszooma@gmail.com", "arszoomc@gmail.com", "arszoomh@gmail.com"],
-    ["", "pw", "pw", "pw"],
-    ["", "KEY1", "KEY3", "whsec_abc"],
+    ["33", "ZOOM 1", "ZOOM 3", "ZOOM 8", "CARLOS' ZOOM"],
+    ["", "504 877 4019", "711 240 6133", "660 341 8230", ""],
+    ["MORNINGS", "Jamis Garay", "Joe Logan", "Jennifer Figueroa", "Carlos Hidalgo"],
+    ["", "", "", "", ""],
+    ["AFTERNOONS", "", "", "", ""],
+    ["", "", "Cyrus Wade", "Mercy Ohiokhai", ""],
+    ["", "ZOOM 1", "ZOOM 3 ", "ZOOM 8", "Carlos' Zoom"],
+    ["", "arszooma@gmail.com", "arszoomc@gmail.com", "arszoomh@gmail.com", ""],
+    ["", "pw", "pw", "pw", ""],
+    ["", "KEY1", "KEY3", "whsec_abc", "CARLOSKEY0123456789"],
 ]
 zooms._accounts = zooms.parse(ZOOMS_TAB)
 
@@ -88,6 +88,14 @@ class ReplyTest(unittest.TestCase):
         z3 = dict(MEETING, recorded_by={"name": "ARS ZOOM 3", "email": "arszoomc@gmail.com"})
         self.assertEqual(run.interviewer(z3, {"interviewer_name": "Camila"}), "Camila")
         self.assertEqual(run.interviewer(z3), "ZOOM 3")
+
+    def test_zoom_with_no_login_matched_by_its_key(self):
+        # Carlos' Zoom (10/2): key in the tab, login cell empty
+        m = dict(MEETING, recorded_by={"name": "Carlos", "email": "someone@carlos.com"},
+                 fathom_key_tail="CARLOSKEY0123456789"[-12:])
+        self.assertEqual(zooms.owner(m, dt.datetime(2026, 10, 2, 9, 0)), "Carlos Hidalgo")
+        self.assertEqual(run.interviewer(m), "Carlos' Zoom")
+        self.assertIn("CARLOSKEY0123456789", [z["key"] for z in zooms.accounts().values()])
 
     def test_thread_title(self):
         self.assertEqual(run.thread_title("Valentina"), "Valentina's 1st Round Scorecards")
@@ -343,7 +351,7 @@ class ZoomsTest(unittest.TestCase):
         fathom._file_keys = lambda: ["FILEKEY"]
         try:
             self.assertEqual(fathom.api_keys(with_sheet=False), ["FILEKEY"])
-            self.assertEqual(fathom.api_keys(with_sheet=True), ["FILEKEY", "KEY1", "KEY3"])
+            self.assertEqual(fathom.api_keys(with_sheet=True), ["FILEKEY", "KEY1", "KEY3", "CARLOSKEY0123456789"])
         finally:
             fathom._file_keys = real
         self.assertTrue(fathom.SHEET_KEYS_LIVE)       # every Zoom in the channel (Eve 10/1)
