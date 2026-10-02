@@ -2225,15 +2225,18 @@ def log_delivery(rows):
     return c
 
 
-def address_no_suite(office, text):
-    """An address that names the street but leaves the suite off."""
+def address_no_suite(office, text, when=None):
+    """An address that names the street but leaves the suite off.
+
+    `when` is the day the message was sent, so an office that has moved is
+    judged against the address it had THAT DAY."""
     from automations.sms_audit import rebuttals as _R
-    want = _R.OFFICE_ADDRESS.get(office)
+    want = _R.address_on(office, when)
     if not want:
         return None
     body = " ".join((text or "").split())
     m = _R._STREET.search(body)
-    if not m or _R.wrong_address(office, body):
+    if not m or _R.wrong_address(office, body, when):
         return None            # no address, or already flagged as wrong
     return None if _R._UNIT.search(body) else m.group(0).strip()
 
@@ -2243,16 +2246,19 @@ def address_no_suite(office, text):
 # what". Only things she has actually ruled on go in here — a coaching list
 # built out of guesses is worse than none, and the whole audit spent a day
 # learning that.
+# Each test takes (office, body, when). `when` is the date the message was
+# sent: an office that MOVES makes every past message wrong overnight
+# unless the check knows when it moved.
 COACHING = (
     ("Told applicants there is a base pay",
-     lambda o, b: __import__("automations.sms_audit.rebuttals", fromlist=["x"])
+     lambda o, b, w: __import__("automations.sms_audit.rebuttals", fromlist=["x"])
      .says_base_pay(b)),
     ("Sent the wrong office address",
-     lambda o, b: __import__("automations.sms_audit.rebuttals", fromlist=["x"])
-     .wrong_address(o, b)),
+     lambda o, b, w: __import__("automations.sms_audit.rebuttals", fromlist=["x"])
+     .wrong_address(o, b, w)),
     ("Left the suite off the address", address_no_suite),
     ("Shouted in capitals",
-     lambda o, b: __import__("automations.sms_audit.rebuttals", fromlist=["x"])
+     lambda o, b, w: __import__("automations.sms_audit.rebuttals", fromlist=["x"])
      .shouts(b)),
 )
 
@@ -2271,8 +2277,9 @@ def who_to_talk_to(convos, office):
             if not who:
                 continue
             body = " ".join((m["body"] or "").split())
+            sent_on = m["when"].date() if m.get("when") else None
             for label, test in COACHING:
-                hit = test(office, body)
+                hit = test(office, body, sent_on)
                 if hit:
                     # the offending fragment AND the whole message. Megan
                     # 2026-10-01: a person has to be able to expand their
