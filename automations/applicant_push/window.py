@@ -28,4 +28,7 @@ def quiet_window(now) -> bool:
     machine-local (Lucy 2 runs Central). Carlos, 2026-09-04 — supersedes the
     plain Saturday block of 2026-08-31."""
     wd, hr = now.weekday(), now.hour
-    return (wd == 4 and hr >= 13) or wd == 5 or (wd == 6 and hr < 13)
+    # 2026-10-04 ONLY (Carlos, 10/2: "this sunday lets start up at 2pm"): that
+    # Sunday the window ends an hour later. Every other Sunday stays 1 PM.
+    sunday_end = 14 if now.date().isoformat() == "2026-10-04" else 13
+    return (wd == 4 and hr >= 13) or wd == 5 or (wd == 6 and hr < sunday_end)
