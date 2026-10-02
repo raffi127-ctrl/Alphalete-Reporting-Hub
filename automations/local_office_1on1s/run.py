@@ -344,15 +344,37 @@ def main(argv=None) -> int:
                     continue
                 _known.add(PEO.key(_p))
                 people_to_fill.append(_p)
-                notes.append(
-                    f"{team}: {_p} led during these weeks but is not on "
-                    f"today's board — filled for the weeks they held it. If "
-                    f"they left, move their section to the Terminated tab.")
+                # THE MASTER LOG DECIDES WHO LEFT, NOT THE BOARD. Megan
+                # 2026-10-01: "if they aren't on the terminated tab, they are
+                # still active." Off today's board therefore means one of two
+                # different things, and asking her to work out which, report by
+                # report, is the report not doing its job: a terminated leader
+                # is simply history, while an ACTIVE one missing from the board
+                # is a board fault — the same fault already reported per week
+                # for a missing sales-board row.
+                if _terminated_on_or_before(_p, wks[-1]):
+                    notes.append(
+                        f"{team}: {_p} led during these weeks and is "
+                        f"TERMINATED per the master log — their section "
+                        f"belongs on the TERMINATED tab.")
+                else:
+                    notes.append(
+                        f"{team}: {_p} led during these weeks, is off today's "
+                        f"board, and is NOT in the master terminated log — so "
+                        f"they are STILL ACTIVE and the board is missing "
+                        f"them. Section kept and filled.")
 
         for name in people_to_fill:
             sec = by_name.get(PEO.key(name))
             if sec is None:
-                gaps.append(f"{team}: no section for {name}")
+                # A TERMINATED LEADER WITH NO BOX IS THE CORRECT STATE. It was
+                # reported as a gap, which sent Megan looking for eight missing
+                # sections that should not exist — noise that buries the one
+                # case that matters: an ACTIVE leader with nowhere to write.
+                if not _terminated_on_or_before(name, wks[-1]):
+                    gaps.append(f"{team}: no section for {name} — not in the "
+                                f"master terminated log, so they are still "
+                                f"active and need a box on this tab")
                 continue
             hdr = W.read_header(sec.header, year=wks[-1].year)
             for bad in [h for h in hdr if not h.ok]:

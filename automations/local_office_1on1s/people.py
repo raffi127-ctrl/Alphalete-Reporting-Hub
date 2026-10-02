@@ -25,7 +25,36 @@ _MARKER = re.compile(r"\s*\b(?:wk\s*\d+|nc|rt|bo)\b\s*$", re.I)
 _PUNCT = re.compile(r"[^a-z ]+")
 
 
-def key(raw: str) -> str:
+# THE ICD ALIAS SHEET IS WHERE A SPELLING MISMATCH GETS FIXED, so this module
+# has to actually read it or an entry someone adds there does nothing. The
+# trainer chain carried both 'Deavion Allen' and a bare 'Deavion' and the report
+# treated them as two leaders — one with a box, one reported as needing one.
+# Megan approved the alias on 2026-10-01; collapsing it here is what makes that
+# approval take effect. Folded both sides so the Sheet can be typed any way.
+# Cached per process: load_aliases() keeps its own local cache, and key() is
+# called thousands of times a run. [[feedback_alias_list]]
+_ICD: Optional[Dict[str, str]] = None
+
+
+def _icd_map() -> Dict[str, str]:
+    global _ICD
+    if _ICD is None:
+        _ICD = {}
+        try:
+            from automations.focus_office_att import aliases as AL
+            for canon, alist in (AL.load_aliases() or {}).items():
+                ck = _bare(canon)
+                for a in alist or []:
+                    ak = _bare(a)
+                    if ak and ck and ak != ck:
+                        _ICD[ak] = ck
+        except Exception:
+            pass                        # never let the Sheet break a fill
+    return _ICD
+
+
+def _bare(raw: str) -> str:
+    """key() without the alias step — the normaliser the alias map is keyed on."""
     s = _PAREN.sub(" ", str(raw or ""))
     s = " ".join(s.split())
     for _ in range(3):
@@ -35,6 +64,11 @@ def key(raw: str) -> str:
         s = s2
     s = _PUNCT.sub("", s.lower())
     return " ".join(s.split())
+
+
+def key(raw: str) -> str:
+    k = _bare(raw)
+    return _icd_map().get(k, k)
 
 
 def first(raw: str) -> str:
