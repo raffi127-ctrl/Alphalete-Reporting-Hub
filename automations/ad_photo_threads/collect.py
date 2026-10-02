@@ -100,9 +100,17 @@ def _read_tab(sh, tab: str) -> List[Dict[str, str]]:
 
 
 # ---- slack -------------------------------------------------------------------
+# slack_sdk's 30 s default is too short for a reply carrying a day's
+# screenshots: 10/2 five of Khalil's 23 re-posted days died with "The read
+# operation timed out" in files_upload_v2, part-posted.
+SLACK_TIMEOUT_S = 180
+
+
 def _client():
     from automations.shared import slack_metrics_post as smp
-    return smp._client()
+    cl = smp._client()
+    cl.timeout = SLACK_TIMEOUT_S
+    return cl
 
 
 def _day_bounds(day: dt.date):
