@@ -26,16 +26,17 @@
 body{margin:0;background:var(--paper);color:var(--ink);
   font-family:"IBM Plex Sans",system-ui,sans-serif;font-size:15px;line-height:1.55;
   padding:0 16px;padding-block:30px 70px}
-.wrap{max-width:1120px;margin:0 auto}
+.wrap{max-width:1180px;margin:0 auto}
 h1{font-size:25px;font-weight:600;letter-spacing:-.015em;margin:0 0 6px;text-wrap:balance}
 .lede{color:var(--muted);font-size:14px;margin:0 0 8px;max-width:72ch}
 .pitch{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--accent);
   border-radius:0 9px 9px 0;padding:14px 17px;margin:16px 0 26px;font-size:14px}
 .pitch b{color:var(--accent-ink)}
 :root[data-theme="dark"] .pitch b,:root:not([data-theme="light"]) .pitch b{color:var(--accent)}
-.split{display:grid;grid-template-columns:355px 1fr;gap:22px;align-items:start}
-.panel{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:17px;
-  position:sticky;top:12px}
+.split{display:grid;grid-template-columns:minmax(380px,420px) 1fr;gap:26px;
+  align-items:start}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:11px;
+  padding:19px 20px}
 h2{font-size:11.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
   color:var(--accent);margin:0 0 13px;font-family:"IBM Plex Mono",monospace}
 h2.mt{margin-top:22px;padding-top:16px;border-top:1px solid var(--line)}
@@ -43,7 +44,9 @@ label{display:block;font-size:12px;font-weight:600;margin:10px 0 3px;color:var(-
 input,select{width:100%;font:inherit;font-size:14px;padding:7px 9px;border-radius:7px;
   border:1px solid var(--line);background:var(--paper);color:var(--ink)}
 input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px}
-.two{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:9px;align-items:end}
+.two > div{display:flex;flex-direction:column;justify-content:flex-end;height:100%}
+.two label{margin-top:0}
 .suffixed{display:flex;align-items:center;gap:7px}
 .suffixed select{flex:1 1 auto;min-width:0}
 .suffix{font-size:13px;color:var(--muted);white-space:nowrap}
@@ -92,7 +95,7 @@ button{font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;border-radiu
 :root[data-theme="dark"] .win.bad{background:#331D1A;color:#E9B5AD;border-left-color:#E98B81}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .win.bad{
   background:#331D1A;color:#E9B5AD;border-left-color:#E98B81}}
-@media (max-width:860px){.split{grid-template-columns:1fr}.panel{position:static}}
+@media (max-width:900px){.split{grid-template-columns:1fr}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
@@ -149,7 +152,7 @@ button{font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;border-radiu
 
       <h2 class="mt">Interviews</h2>
       <div class="two">
-        <div><label for="f-r1">1st round is conducted via <span class="new">PER ROUND</span></label>
+        <div><label for="f-r1">1st round is conducted via</label>
           <select id="f-r1"><option>Zoom</option><option>In person</option>
             <option>Phone call</option></select></div>
         <div><label for="f-len">Length</label>
@@ -165,7 +168,7 @@ button{font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;border-radiu
         <label for="f-zoom">1st round Zoom link</label>
         <input id="f-zoom" value="https://us02web.zoom.us/j/2935077152">
       </div>
-      <label for="f-r2">2nd round is conducted via <span class="new">PER ROUND</span></label>
+      <label for="f-r2">2nd round is conducted via</label>
       <select id="f-r2"><option>Zoom</option><option>In person</option>
         <option>Phone call</option></select>
       <div id="z2">
@@ -293,6 +296,10 @@ button{font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;border-radiu
       "I understand wanting to check. We are officeName and our office is at "+
       addr()+". You are welcome to look us up and I'm happy to answer any "+
       "questions you may have!"]);
+    out.push(["Interview Format (1-on-1 vs Group)","SCHEDULING",
+      "Yes, it's a small group! Sometimes a couple of others, sometimes "+
+      "just you. Either way we want you to feel comfortable and get all "+
+      "your questions answered. Can't wait to meet you!"]);
     out.push(["User Not Interested / Wants to Opt Out","REJECTION",
       "No problem at all - I'll take you off our list. Thanks for letting "+
       "us know, and best of luck!"]);
