@@ -193,7 +193,10 @@ def ad_key(inbox, title, city, agnostic):
     one-day pull that captured it. City-agnostic managers merge cities, so
     their key skips the (joined, order-sensitive) city string."""
     k = (inbox, parse.base_role(title).lower())
-    return k if agnostic else k + (str(city).lower(),)
+    # "" and "?" are the same bucket: subjects with no location at all.
+    # The "?" keeps that volume visibly separate on a city-split board
+    # instead of looking like a second, shorter-named ad.
+    return k if agnostic else k + ((str(city).lower() or "?"),)
 
 
 def rows_for(manager, label, week_start, ads, name_rows, day_recv):
@@ -240,7 +243,8 @@ def rows_for(manager, label, week_start, ads, name_rows, day_recv):
         tot_recv = [(a if a != "" else 0) + b if b != "" else a
                     for a, b in zip(tot_recv, recv)]
         out.append([manager, label, parse.account_name(g["inbox"]), g["inbox"],
-                    g["title"], g["city"], g["rec"]["apps"], g["rec"]["scl"],
+                    g["title"], (g["city"] or ("?" if not agnostic else "")),
+                    g["rec"]["apps"], g["rec"]["scl"],
                     len(got) if fed else "", ", ".join(got), iso]
                    + day_cells(days) + [rank] + list(recv)
                    + [g["rec"][f] for f in METRIC_FIELDS])

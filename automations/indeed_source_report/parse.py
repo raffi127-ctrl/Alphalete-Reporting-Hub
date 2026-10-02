@@ -266,8 +266,12 @@ def merge_across_cities(groups):
 def ads_for_month(html):
     """Merged, city-resolved ad rows for one office-month, plus any flags."""
     ads = load_table(html)
+    # LONGEST variant for display (2026-10-02): subjects arrive with and
+    # without the "(Spanish Required)" qualifier, and showing the shortest
+    # made the same ad look like two differently-named ones on the board.
+    # Keys are unaffected — they use base_role, which strips qualifiers.
     m = merge(ads, lambda a: (a['inbox'], a['base'].lower(), a['city'].lower()),
-              lambda g: show(min(g['titles'], key=len)))
+              lambda g: show(max(g['titles'], key=len)))
     m, flags = apply_city_rule(m)
     m.sort(key=lambda g: -g['rec']['apps'])
     return m, flags
