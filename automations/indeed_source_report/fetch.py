@@ -140,20 +140,49 @@ def _wait_for_table(page, timeout, poll=2000):
     return last
 
 
+# Group the report by Original Subject as well (Carlos 2026-10-02): subjects
+# carry the posting's location, so same-title ads in different cities stay
+# separate rows — "once the location changes it's a new ad". Off by default;
+# ad_sales_board turns it on per run with --group-subject.
+GROUP_SUBJECT = False
+
+
 def _one_pass(page, tok, start, end, timeout):
     """A single load → set period → post → scrape cycle."""
     page.goto("%s?p=702&rqst=%s" % (BASE, tok), timeout=60000)
     page.wait_for_load_state("networkidle", timeout=45000)
     page.wait_for_timeout(900)
     owner = owner_name(page)
+    # Checkboxes BEFORE the dates (Carlos, 2026-10-02): toggling them after
+    # can reset the period fields on some office schemas.
+    cb = page.query_selector("#breakDownByEmail")
+    if cb and not cb.is_checked():
+        cb.check()          # gives the Email Inbox column, needed for accounts
+    if GROUP_SUBJECT:
+        gb = page.query_selector("#groupByOriginalSubject")
+        if gb is None:
+            # id unknown on this schema — find the checkbox by its label text
+            for c in page.query_selector_all("input[type=checkbox]"):
+                try:
+                    around = c.evaluate(
+                        "e => (e.parentElement ? e.parentElement.innerText : '')")
+                except Exception:  # noqa: BLE001
+                    around = ""
+                if "original subject" in (around or "").lower():
+                    gb = c
+                    print("     (subject checkbox found by label; id=%r)"
+                          % c.get_attribute("id"), flush=True)
+                    break
+        if gb is None:
+            raise RuntimeError("Group-by-Original-Subject checkbox not found "
+                               "on this office's p=702 form")
+        if not gb.is_checked():
+            gb.check()
     page.fill("#startDate", start)
     page.fill("#endDate", end)
     # The visible inputs are mirrored into hidden mm/dd/yyyy fields the form posts.
     page.eval_on_selector("#startDate2", 'e=>e.value="%s"' % start.replace("-", "/"))
     page.eval_on_selector("#endDate2", 'e=>e.value="%s"' % end.replace("-", "/"))
-    cb = page.query_selector("#breakDownByEmail")
-    if cb and not cb.is_checked():
-        cb.check()          # gives the Email Inbox column, needed for accounts
     _submit(page, timeout=30000)
     page.wait_for_load_state("networkidle", timeout=timeout)
     _wait_for_table(page, timeout)
