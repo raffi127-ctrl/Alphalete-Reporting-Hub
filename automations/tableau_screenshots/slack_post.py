@@ -210,7 +210,15 @@ for _xorg, _xcids in EXTRA_ORG_CHANNELS.items():
 # drew came BACK 2026-09-28 in a new private channel,
 # #precision-management-att-sales (C0C4YKN7QGJ), with Lucy a member (Megan:
 # "reactivate his metrics and trackers to post in this channel").
-PAUSED_ORGS: dict[str, str] = {}
+#
+# isaiah / #legacy-office-sales (C06ACH05BC6): Francia 2026-10-02 asked for
+# Isaiah's morning trackers in #everforward-sales instead. That channel already
+# gets the identical 9-board thread as khalil's org, so moving isaiah's row there
+# would post the same boards twice — pausing his row IS the move. His office
+# metrics thread is separate (office_metrics) and still goes to Legacy.
+PAUSED_ORGS: dict[str, str] = {
+    "isaiah": "moved to #everforward-sales (khalil's thread) — Francia 2026-10-02",
+}
 for _paused_key in PAUSED_ORGS:
     ORG_CHANNELS.pop(_paused_key, None)
     ORG_EMAILS.pop(_paused_key, None)

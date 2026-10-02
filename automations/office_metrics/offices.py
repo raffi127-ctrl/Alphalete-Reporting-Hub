@@ -373,6 +373,27 @@ EXTRA_CHANNEL_PLANS: dict = {
 }
 
 
+# PRIMARY-channel moves for onboarded offices, applied on top of
+# onboarded_offices.json. Committed here for the same reason as the tables
+# above: onboard_apply regenerates that file from the sheet and would put the
+# old channel back. Office key -> {"channel_id","channel_name","header_label"}.
+#
+# Two offices sharing one channel is the Salik + Hammad shape
+# (#elite-prime-sales): each posts its OWN thread, told apart by header_label —
+# validate() refuses the share unless BOTH offices carry one.
+#
+# isaiah + khalil (Francia 2026-10-02, Megan: "everforward should get both
+# isaiah and khalil's metrics — like we do for salik and hammad"): Isaiah's
+# thread moves from Legacy-Office-Sales (C06ACH05BC6) into #everforward-sales
+# next to Khalil's.
+CHANNEL_OVERRIDES: dict = {
+    "isaiah": {"channel_id": "C0C2E04TY6N", "channel_name": "everforward-sales",
+               "header_label": "Isaiah Revelle"},
+    "khalil": {"channel_id": "C0C2E04TY6N", "channel_name": "everforward-sales",
+               "header_label": "Khalil Mansour"},
+}
+
+
 def extra_channels(key: str) -> list:
     """The extra channels `key` mirrors its metrics thread into (ids + names)."""
     return [dict(x) for x in (EXTRA_CHANNEL_PLANS.get(key) or [])
@@ -496,6 +517,10 @@ def _merge_onboarded() -> None:
             fld = _VIEW_FIELD.get(rk)
             if fld and url:
                 kw[fld] = url
+        _move = CHANNEL_OVERRIDES.get(key)
+        if _move:
+            kw.update({f: _move[f] for f in
+                       ("channel_id", "channel_name", "header_label") if _move.get(f)})
         # Per-channel fan-out: build channel_plans ONLY when there are 2+ plans AND
         # every one has a resolved channel_id (Megan sets these on finalize). If any
         # id is missing, fan-out stays OFF and the office posts everything to its
