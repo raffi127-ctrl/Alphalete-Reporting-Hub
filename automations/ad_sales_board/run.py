@@ -460,6 +460,13 @@ def main(argv=None):
                     rescued = len(names.WRAPPER.findall(html))
                     rescued_total += rescued
                     ads, _flags = ads_for_week(html)
+                    if fetch.GROUP_SUBJECT and a.dry_run:
+                        for _g in ads:
+                            print("  [subjects] %s | city=%r | %d | %s"
+                                  % (_g["inbox"][:30], _g["city"],
+                                     _g["rec"]["apps"],
+                                     " || ".join(sorted(set(_g["titles"]))[:4])[:200]),
+                                  flush=True)
                     if agnostic:
                         ads = parse.merge_across_cities(ads)
                     weekly.append((label, start, ads, nrows, rescued))
