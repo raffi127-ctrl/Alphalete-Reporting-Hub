@@ -33,6 +33,10 @@ from . import names, sheet, weeks
 # rows_for order. Raw counts, never ratios: the Funnel view divides sums.
 METRIC_FIELDS = ("removed", "b1", "s1", "b2", "s2", "tb", "ts", "nb", "ns")
 
+# --group-subject sets this: location-split ads mean NO cross-city merging
+# anywhere in the run, including rows_for and the carry read.
+SPLIT_CITIES = False
+
 CARD_ID = "ad-sales-board"
 CARD_NAME = "Ad Sales Board (weekly Source Report)"
 # Same `standalone-` family prefix as the monthly job, for the same reason: the
@@ -206,7 +210,7 @@ def rows_for(manager, label, week_start, ads, name_rows, day_recv):
 
     `day_recv` maps ad_key -> 7-slot list (int or "") of received counts."""
     iso = week_start.isoformat()
-    agnostic = manager in CITY_AGNOSTIC
+    agnostic = manager in CITY_AGNOSTIC and not SPLIT_CITIES
     names_for, days_for, unmatched, unmatched_days = names.attach(
         ads, name_rows, agnostic, week_start)
     fed = bool(name_rows)
@@ -276,7 +280,17 @@ def main(argv=None):
                          "week-definition migrations (e.g. the Wed→Mon switch); "
                          "every kept week must be re-pulled afterwards")
     ap.add_argument("--headed", action="store_true")
+    ap.add_argument("--group-subject", action="store_true",
+                    help="check Group-by-Original-Subject on p=702: same-title ads in "
+                         "different locations stay separate (and the office is treated "
+                         "as city-split for this run, whatever CITY_AGNOSTIC says)")
     a = ap.parse_args(argv)
+    global SPLIT_CITIES
+    if a.group_subject:
+        fetch.GROUP_SUBJECT = True
+        SPLIT_CITIES = True
+        print("[ad_sales_board] GROUP BY ORIGINAL SUBJECT on — "
+              "location-split ads", flush=True)
     run_started = dt.datetime.now()
     today = dt.date.today()
 
@@ -371,7 +385,8 @@ def main(argv=None):
             continue
         slots = [_int_or_blank(v) for v in r[19:26]]
         carry.setdefault((r[0], r[1]), {})[
-            ad_key(r[3], r[4], r[5], r[0] in CITY_AGNOSTIC)] = slots
+            ad_key(r[3], r[4], r[5],
+                   r[0] in CITY_AGNOSTIC and not SPLIT_CITIES)] = slots
 
     from automations.shared.tableau_patchright import appstream_direct_session
     fresh, failures = {}, []      # fresh[(manager, label)] = data rows
@@ -392,7 +407,7 @@ def main(argv=None):
         for oid, name in targets:
             try:
                 fetch.select_office(page, tok, oid)
-                agnostic = name in CITY_AGNOSTIC
+                agnostic = name in CITY_AGNOSTIC and not SPLIT_CITIES
                 want_owner = expect.get(str(oid))
                 weekly = []
                 for label, start, end in wins:
