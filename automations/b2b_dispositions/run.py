@@ -189,9 +189,11 @@ def _post_specs(specs: List[Dict], today: dt.date, dry_run: bool,
     out = []
     for s in specs:
         if s.get("text") and not s.get("paths"):
+            # NO TAGS on the gaps list (Carlos 2026-10-03: "you can also
+            # stop tagging people").
             out.append(sp.post_daily_thread_text(
                 s["daily_thread"], s.get("slot", ""), s["text"], today,
-                dry_run=dry_run))
+                dry_run=dry_run, mentions=[]))
         elif s.get("daily_thread") and not repost:
             out.append(sp.post_daily_thread(
                 s["daily_thread"], s.get("slot", ""), s["paths"], today,

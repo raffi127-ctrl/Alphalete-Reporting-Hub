@@ -315,15 +315,30 @@ def _before_start(dest: Dict, cfg: Optional[Dict] = None,
     """Is it still before this destination's own `start` ("14:00") today, on
     the office's clock? No start set = never before it. The mirror of
     _past_stop (Carlos 2026-09-29: his fiber board "starting at 2")."""
-    text = str(dest.get("start") or "").strip()
+    local = C.office_now(cfg or {}, now)
+    key = "sat_start" if local.weekday() == 5 else "start"
+    text = str(dest.get(key) or dest.get("start") or "").strip()
     if not text:
         return False
-    local = C.office_now(cfg or {}, now)
     try:
         h, m = [int(x) for x in text.split(":")[:2]]
     except ValueError:
         return False
     return (local.hour, local.minute) < (h, m)
+
+
+def _guest_window_open(cfg: Dict, now: Optional[dt.datetime] = None) -> bool:
+    """Is any GUEST room of this office inside its own start/stop right now?
+    A guest's hours can open before the host's (Carlos's crew at 10:30 on a
+    Saturday, Raf's own window at 10:45), so a tick may run the office for the
+    guests alone -- the host's rooms still answer to the host's window."""
+    if now is None:
+        now = dt.datetime.now()
+    for dests in C.guest_destinations(cfg).values():
+        for d in dests:
+            if not _before_start(d, cfg, now) and not _past_stop(d, cfg, now):
+                return True
+    return False
 
 
 def _dest_due(dest: Dict, now: Optional[dt.datetime] = None,
@@ -1480,9 +1495,11 @@ def _guest_gap_header(cfg: Dict, guest: str) -> str:
 
 def _post_guest_slack(dest: Dict, guest: str, png, body: str, day: dt.date,
                       *, send: bool, header: str = "") -> None:
-    """A guest's board and its gap list to a Slack channel as TWO posts (the
-    board headed "<header>", then the typed list), loose in the room unless
-    the destination names a thread_title."""
+    """A guest's board and its gap list to a Slack channel as TWO posts: the
+    board loose in the room headed "<header>", the typed list inside one
+    thread a day named by `gaps_thread_title` (Carlos 2026-10-03, "like the
+    one you have for box"), or loose too when the destination names none.
+    `thread_title` threads both. No tags on either."""
     ch = C.dest_channel(dest)
     if not ch:
         raise ValueError("slack destination has no channel_id")
@@ -1491,18 +1508,22 @@ def _post_guest_slack(dest: Dict, guest: str, png, body: str, day: dt.date,
         _log("  %s slack:%s PREVIEW — nothing sent" % (guest, dest.get("name") or ch))
         return
     from automations.shared import slack_metrics_post as smp
-    ts = None
-    if dest.get("thread_title"):
-        ts = smp.ensure_named_thread(dest["thread_title"], day,
-                                     channel_id=ch).get("thread_ts")
     client = smp._client()
+    both_ts = None
+    if dest.get("thread_title"):
+        both_ts = smp.ensure_named_thread(dest["thread_title"], day,
+                                          channel_id=ch).get("thread_ts")
     if png:
         client.files_upload_v2(channel=ch, file=str(png),
-                               initial_comment=caption, thread_ts=ts)
+                               initial_comment=caption, thread_ts=both_ts)
     if body:
-        client.chat_postMessage(channel=ch, text=body, thread_ts=ts)
+        gaps_ts = both_ts
+        if not gaps_ts and dest.get("gaps_thread_title"):
+            gaps_ts = smp.ensure_named_thread(dest["gaps_thread_title"], day,
+                                              channel_id=ch).get("thread_ts")
+        client.chat_postMessage(channel=ch, text=body, thread_ts=gaps_ts)
     _log("  %s SLACK -> %s%s" % (guest, dest.get("name") or ch,
-                                 " (thread)" if ts else ""))
+                                 " (thread)" if both_ts else ""))
 
 
 def _send_guest_boards(cfg: Dict, guest_due: Dict, guest_boards: Dict,
@@ -1697,7 +1718,8 @@ def tick(day: dt.date, *, send: bool, only: str = "",
         # The stamp on the card is the OFFICE'S clock (see slot_label_for);
         # `slot` above stays the machine's, for the log.
         slot = C.slot_label_for(cfg)
-        if not (only or force) and not C.in_office_window(cfg):
+        host_open = (only or force) or C.in_office_window(cfg)
+        if not host_open and not _guest_window_open(cfg):
             # Per-office, on the OFFICE'S clock: an enrolled office can sit in
             # another timezone or keep different field hours, and the job-level
             # gate only asks whether ANYONE is out right now.
@@ -1707,9 +1729,11 @@ def tick(day: dt.date, *, send: bool, only: str = "",
         # WHICH destinations want this tick. If none do, the office is not
         # pulled at all — driving OwnerVille for a board nobody will be sent is
         # the one cost this job cannot afford at ~40 wakes a day.
+        # OUTSIDE THE HOST'S WINDOW nothing of the host's is due: the office
+        # is being pulled for a guest room whose own hours are open.
         dests = C.destinations(cfg)
         due = [d for d in dests
-               if (only or force) or _dest_due(d, cfg=cfg)]
+               if host_open and ((only or force) or _dest_due(d, cfg=cfg))]
         # Drop anything the intraday job is about to post to that same channel.
         # Checked even on a hand-run: --only is for re-sending a board, never
         # for sending the room two of them.
@@ -1882,7 +1906,7 @@ def tick(day: dt.date, *, send: bool, only: str = "",
         # sales board sweep's credit checks. Never costs the gap list.
         try:
             from automations.icd_alerts import gap_callouts as _GC
-            _room = _GC.HOST_SLACK.get(cfg["key"])
+            _room = _GC.HOST_SLACK.get(cfg["key"]) if C.in_office_window(cfg) else None
             # THE CALL-OUT CUTOFF (5pm Sat, 8:30pm Mon-Fri, per-office
             # override) on the office's clock. The gap list below is a report,
             # not a call-out, and keeps its own window.
@@ -2476,7 +2500,8 @@ def main(argv=None) -> int:
             return 1
         return probe(day, cfg, headless=not args.headed)
 
-    if not args.force and not C.any_office_in_window():
+    if not args.force and not C.any_office_in_window() and not any(
+            _guest_window_open(o) for o in C.enabled()):
         # ANY office, not the org window: offices bring their own timezone and
         # hours now, so the job runs whenever somebody's field is out and each
         # office re-checks its own window in tick().
