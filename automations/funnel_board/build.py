@@ -1766,7 +1766,8 @@ GKEY = 0
 F += [
     # clean the gap first: the amber/grey column striping above runs rows 2..NG
     # and would otherwise band straight through the space between the boxes
-    fmt(GOALS, len(_ORG_PART) + 1, _CAP_HEADER_AT - 2, 0, len(GOALS_HEAD),
+    fmt(GOALS, len(_ORG_PART) + 1,
+        max(_CAP_HEADER_AT - 2, len(_ORG_PART) + 2), 0, len(GOALS_HEAD),
         {"userEnteredFormat": {"backgroundColor": rgb("#FFFFFF"), "borders": {}}},
         "userEnteredFormat(backgroundColor,borders)"),
     fmt(GOALS, _LG - 1, _LG, 1, 6, {"userEnteredFormat": {
@@ -1788,12 +1789,15 @@ F += [
         "wrapStrategy": "CLIP"}},
         "userEnteredFormat(textFormat,horizontalAlignment,wrapStrategy)"),
     # scrub the key's old home below the captainship box: values are blanked
-    # via LEGEND_VALUES, formats here
-    fmt(GOALS, NG + 1, NG + 12, 0, 8, {"userEnteredFormat": {
-        "backgroundColor": rgb("#FFFFFF"), "borders": {}}},
+    # via LEGEND_VALUES, formats here. Anchored below the legend TOO, not just
+    # the box: on a single-roster book (SCI split) the box ends above the
+    # legend, and an NG-anchored scrub would white the legend right back out.
+    fmt(GOALS, max(NG + 1, _LG + 11), max(NG + 12, _LG + 22), 0, 8,
+        {"userEnteredFormat": {
+            "backgroundColor": rgb("#FFFFFF"), "borders": {}}},
         "userEnteredFormat(backgroundColor,borders)"),
 ]
-LEGEND_VALUES.append({"range": "Goals!B%d" % (NG + 3),
+LEGEND_VALUES.append({"range": "Goals!B%d" % (max(NG + 3, _LG + 13)),
                       "values": [[""] * 6 for _ in range(9)]})
 LEGEND_VALUES.append({"range": "Goals!B%d" % _LG, "values": [
     ["WHICH CELLS MATTER"],
@@ -1826,26 +1830,32 @@ F += [
 _GN = len(GOALS_HEAD)
 _CAP_TITLE_R = _CAP_HEADER_AT - 1          # 1-based title-bar row (31)
 F += [
-    # captainship title bar
-    fmt(GOALS, _CAP_TITLE_R - 1, _CAP_TITLE_R, 1, _GN, {"userEnteredFormat": {
-        "backgroundColor": rgb(ACCENT), "textFormat": txt("#FFFFFF", True, 12),
-        "horizontalAlignment": "LEFT", "verticalAlignment": "MIDDLE"}},
-        "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)"),
-    {"updateDimensionProperties": {"range": {"sheetId": GOALS, "dimension": "ROWS",
-                                             "startIndex": _CAP_TITLE_R - 1,
-                                             "endIndex": _CAP_TITLE_R},
-                                   "properties": {"pixelSize": 34}, "fields": "pixelSize"}},
-    # its header row gets the same dark treatment as the org header in row 1
-    fmt(GOALS, _CAP_HEADER_AT - 1, _CAP_HEADER_AT, 1, _GN, {"userEnteredFormat": {
-        "backgroundColor": rgb(INK), "textFormat": txt("#FFFFFF", True, 11),
-        "horizontalAlignment": "RIGHT", "wrapStrategy": "WRAP"}},
-        "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,wrapStrategy)"),
-    # a medium border box around each section
+    # a medium border box around the org section
     {"updateBorders": {"range": gr(GOALS, 0, len(_ORG_PART) + 1, 1, _GN),
                        "top": bdm(), "bottom": bdm(), "left": bdm(), "right": bdm()}},
-    {"updateBorders": {"range": gr(GOALS, _CAP_TITLE_R - 1, NG, 1, _GN),
-                       "top": bdm(), "bottom": bdm(), "left": bdm(), "right": bdm()}},
 ]
+# The captainship box only exists when there are captainship people (SCI
+# split 2026-10-02: a single-roster book has no second box, and dressing one
+# anyway 400'd the whole batch — NG < _CAP_TITLE_R inverts the border range).
+if _CAP_PART:
+    F += [
+        # captainship title bar
+        fmt(GOALS, _CAP_TITLE_R - 1, _CAP_TITLE_R, 1, _GN, {"userEnteredFormat": {
+            "backgroundColor": rgb(ACCENT), "textFormat": txt("#FFFFFF", True, 12),
+            "horizontalAlignment": "LEFT", "verticalAlignment": "MIDDLE"}},
+            "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)"),
+        {"updateDimensionProperties": {"range": {"sheetId": GOALS, "dimension": "ROWS",
+                                                 "startIndex": _CAP_TITLE_R - 1,
+                                                 "endIndex": _CAP_TITLE_R},
+                                       "properties": {"pixelSize": 34}, "fields": "pixelSize"}},
+        # its header row gets the same dark treatment as the org header in row 1
+        fmt(GOALS, _CAP_HEADER_AT - 1, _CAP_HEADER_AT, 1, _GN, {"userEnteredFormat": {
+            "backgroundColor": rgb(INK), "textFormat": txt("#FFFFFF", True, 11),
+            "horizontalAlignment": "RIGHT", "wrapStrategy": "WRAP"}},
+            "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,wrapStrategy)"),
+        {"updateBorders": {"range": gr(GOALS, _CAP_TITLE_R - 1, NG, 1, _GN),
+                           "top": bdm(), "bottom": bdm(), "left": bdm(), "right": bdm()}},
+    ]
 
 # ---- Manager Matrix: the metric is chosen at runtime, so each rule is gated on
 # the picker. Values there are TEXT ("54%"), hence VALUE() with an IFERROR guard.

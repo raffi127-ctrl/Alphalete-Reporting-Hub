@@ -284,3 +284,34 @@ flags are unmeasured, not absent.
     can fire (another session's commit 57658443).
   - Duplicate 7pm README tasks exist: recruiting-readme-update (this file) and
     another session's daily-readme-update (repo root README.md) — consolidate.
+
+- **2026-10-02 — THE CAPTAINSHIP SPLIT (Carlos).** The 15 captainship-only
+  owners moved off the Alphalete Recruiting Dashboard into their own workbook,
+  the **SCI Recruiting Dashboard** (`1aWWdtMtv1ivZa8fv10cbEzJJUNrO7h9YA8fVvfiRqlg`,
+  a pruned Drive copy: the 8 visible report tabs + their hidden stores,
+  scrubbed to the 15). Carlos and Atef were in both rosters and stay org-only
+  (rule: in both → org wins).
+  - `funnel_board/roster.py`: production `CAPTAINSHIP = []`; the 15 live in
+    `deploy/sci-roster.json` as the SCI book's ORG (office-id lore preserved
+    in the roster comment).
+  - `build.py ACTIVE_GROUPS`: group pickers only offer non-empty rosters;
+    preserved picks of a dead group coerce to Org; the Goals captainship box
+    is skipped when empty. Alphalete pickers = Org / South Shore now.
+  - Every deploy wrapper that feeds these tabs (`funnel_board_hourly.sh`,
+    `indeed_source_report.sh`, `ad_sales_board.sh`, `org_campaign_metrics.sh`)
+    runs an **SCI pass after the Alphalete pass** (env: `FUNNEL_SSID` /
+    `INDEED_SOURCE_SPREADSHEET_ID` / `ORG_CAMPAIGN_SSID` +
+    `RECRUITING_ROSTER_JSON=deploy/sci-roster.json`); exits OR'd. So the 1 AM /
+    1 PM chains and every intraday cadence cover BOTH books with no schedule
+    changes. Chain step cap bumped 2400s → 3600s for the double pass.
+  - Manual handle: `lucy rerun sci_recruiting` (`--steps funnel|indeed|adsales`)
+    — exists because `rerun` can't set env vars.
+  - `captainship_boards`: the Alphalete Sales Board/Roll Call week stamp is
+    REMOVED (tabs deleted with the split); `update_recruiting` reads BOTH
+    Daily Logs (Atef from Alphalete, the owners from SCI). Owner-board fleet
+    fill and everything Vantura: untouched.
+  - GOTCHA carried forward: the SCI book is a COPY, so the bound Goal Sync
+    script, Campaign Log, Info Box and all validations copied with it. Its
+    first funnel build coerces pickers to Org; its Daily Log guard stamp was
+    inherited from the copy, so the first SCI run pings one false "drift"
+    notice to #claudecorrections — expected, once.
