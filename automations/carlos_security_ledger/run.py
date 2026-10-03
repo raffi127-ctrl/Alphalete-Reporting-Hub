@@ -363,7 +363,7 @@ def override_weeks(rows: list[list]) -> dict:
     return out if seen else {}
 
 
-def pull_overrides_hub(periods: list[int]) -> list[list]:
+def pull_overrides_hub(periods: list[int], page=None) -> list[list]:
     """[week serial, period label, amount] per (week, period) from Tableau. A week near a month edge sits in two periods; both count."""
     from automations.shared.tableau_patchright import download_crosstab_patchright
     from automations.override_bulletin.pulls import read_crosstab, _with_filter, ORG_SUMMARY_VIEW, ORG_SUMMARY_SHEET
@@ -373,7 +373,7 @@ def pull_overrides_hub(periods: list[int]) -> list[list]:
         label = f"Period {dt.date.today().year}-{n}"
         path = OUT_DIR / f"Override_Summary_P{n}.csv"
         try:
-            download_crosstab_patchright(_with_filter(ORG_SUMMARY_VIEW, "Period", label), ORG_SUMMARY_SHEET, path, verbose=False)
+            download_crosstab_patchright(_with_filter(ORG_SUMMARY_VIEW, "Period", label), ORG_SUMMARY_SHEET, path, verbose=False, page=page)
             got = override_weeks(read_crosstab(path))
         except Exception as e:  # noqa: BLE001
             log(f"override summary {label}: no crosstab ({str(e)[:90]})")
@@ -395,17 +395,26 @@ def write_overrides(svc, via_hub: bool) -> str:
     today = dt.date.today().isoformat()
     keep = {(r[0], r[2]): r for r in have}
     got = 0
-    for n in periods:
-        fresh = pull_overrides_hub([n])
-        if not fresh:
-            continue
-        got += len(fresh)
-        for wk, label, amt in fresh:
-            keep[(wk, label)] = [wk, wk + 6, label, amt, today, OVR_SOURCE]
-        rows = sorted(keep.values(), key=lambda r: (-r[0], str(r[2])))
-        svc.values().clear(spreadsheetId=PNL_SHEET_ID, range=f"'{OVR_TAB}'!A2:F2000").execute()
-        svc.values().update(spreadsheetId=PNL_SHEET_ID, range=f"'{OVR_TAB}'!A1:F{len(rows) + 1}", valueInputOption="RAW",
-                            body={"values": [OVR_HEADER] + rows}).execute()
+    def _run(page=None):
+        nonlocal got
+        for n in periods:
+            fresh = pull_overrides_hub([n], page=page)
+            if not fresh:
+                continue
+            got += len(fresh)
+            for wk, label, amt in fresh:
+                keep[(wk, label)] = [wk, wk + 6, label, amt, today, OVR_SOURCE]
+            rows = sorted(keep.values(), key=lambda r: (-r[0], str(r[2])))
+            svc.values().clear(spreadsheetId=PNL_SHEET_ID, range=f"'{OVR_TAB}'!A2:F2000").execute()
+            svc.values().update(spreadsheetId=PNL_SHEET_ID, range=f"'{OVR_TAB}'!A1:F{len(rows) + 1}", valueInputOption="RAW",
+                                body={"values": [OVR_HEADER] + rows}).execute()
+    try:   # one Tableau sign-in for every period; fall back to a sign-in per period if the shared session won't open
+        from automations.shared.tableau_patchright import tableau_session
+        with tableau_session(headless=True, verbose=False) as pg:
+            _run(pg)
+    except Exception as e:  # noqa: BLE001
+        log(f"shared Tableau session failed ({str(e)[:90]}); pulling period by period")
+        _run(None)
     if not got:
         return "override weekly: Tableau returned nothing this run — tab left as is"
     return f"override weekly: {got} week-rows refreshed from periods {periods}; {len(keep)} on the tab"
