@@ -237,11 +237,19 @@ def main(argv=None) -> int:
     ap.add_argument("--repost", action="store_true",
                     help="add images to TODAY's existing same-titled thread "
                          "(re-post corrected photos) instead of a new thread")
+    ap.add_argument("--morning", action="store_true",
+                    help="7:30 set-up: open today's threads in #alphalete-gp-sales "
+                         "(with yesterday's final board + territories), pin them, "
+                         "unpin yesterday's. --send to do it; dry by default")
     ap.add_argument("--fix-disp-title", action="store_true",
                     help="retitle today's dispositions parent to drop '(Final)'")
     ap.add_argument("--limit", type=int, default=0,
                     help="cap territories per campaign (dispositions preview)")
     args = ap.parse_args(argv)
+
+    if getattr(args, "morning", False):
+        from automations.b2b_dispositions import morning
+        return morning.run(_central_now().date(), send=bool(args.send))
 
     if getattr(args, "fix_disp_title", False):
         today = _central_now().date()

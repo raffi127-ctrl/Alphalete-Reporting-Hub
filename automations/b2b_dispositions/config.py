@@ -83,7 +83,7 @@ CHANNEL_LABEL = {
 THREAD_HOURLY = "Hourly Activity"
 # Renamed "B2B Dispositions" -> "Territory Stats" (Carlos 2026-09-29), and
 # the territories now post one picture each instead of one tall stack.
-THREAD_DISPOSITIONS = "Territory Stats"
+THREAD_DISPOSITIONS = "Box Territory Stats"   # Carlos 2026-10-03
 
 # --- Slack threading + mentions (Carlos 2026-08-06) ---------------------------
 # Carlos: "every hour it creates a new thread. Can you have it only create one

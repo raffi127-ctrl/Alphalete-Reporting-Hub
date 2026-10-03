@@ -93,9 +93,11 @@ BOARDS_OFF = {"carlos-b2batt"}
 # Offices whose texts carry the board only, no typed gap list: Carlos's Box
 # gaps are their own report now (BOX-3, b2b_dispositions --which gaps).
 NO_GAP_LIST_IN_TEXTS = {"carlos"}
-# A word in front of the header for an office that needs its campaign named
-# (Carlos 2026-09-29: "should be call Box knocks & dispositions - 2:01pm").
-TITLE_PREFIX = {"carlos": "Box"}
+# A whole header of its own for an office (Carlos 2026-10-03: "Lets call
+# 'Box Knocks Board' when we post it"). Replaces the shared
+# "Knocks & Dispositions" header and its "ranked by" tail for that office.
+BOARD_TITLE = {"carlos": "Box Knocks Board"}
+TITLE_PREFIX: Dict[str, str] = {}
 
 
 def _apply_set_times(key: str, dests: List[Dict], now: dt.datetime) -> List[Dict]:
@@ -837,7 +839,10 @@ def _comment(office, rows: List[Dict], now: dt.datetime) -> str:
     IS the office, so naming it in the header is telling a room whose room it
     is, and the counts are in the image directly beneath.
     """
-    prefix = TITLE_PREFIX.get(getattr(office, "key", "") or "", "")
+    key = getattr(office, "key", "") or ""
+    if key in BOARD_TITLE:
+        return "*%s — %s*" % (BOARD_TITLE[key], _clock(now))
+    prefix = TITLE_PREFIX.get(key, "")
     return "*%s%s — %s*  ·  ranked by total knocks" % (
         (prefix + " ") if prefix else "", _card_title(), _clock(now))
 
@@ -1037,10 +1042,16 @@ def _text(dest, boards, caption: str = "") -> None:
 # 2026-09-24, in #a-players-b2b: "these screenshots on the Aplayers chat can
 # they just go into one thread please!" -- a board every half hour was burying
 # the room. Add a channel id here to thread another room the same way.
-THREADED_CHANNELS = {"C0AJQA8P716"}   # #a-players-b2b
 # "and", NOT "&": Slack stores an ampersand as "&amp;", so a header with one
 # never matches find_named_thread_ts and every tick would open a new thread.
 THREAD_TITLE = "Knocks and Dispositions"
+# channel -> the title of its one-thread-a-day. #alphalete-gp-sales joined
+# 2026-10-03 (Carlos: "make a thread called 'Box knocks Board - Todays date'
+# and every 2 hours post in there"); b2b_dispositions --morning opens that
+# thread at 7:30 with yesterday's final board, and pins it.
+THREAD_TITLES = {"C0AJQA8P716": THREAD_TITLE,          # #a-players-b2b
+                 "C07J46MQNUX": "Box Knocks Board"}    # #alphalete-gp-sales
+THREADED_CHANNELS = set(THREAD_TITLES)
 
 
 def _day_thread_ts(smp, channel_id: str) -> Optional[str]:
@@ -1049,7 +1060,7 @@ def _day_thread_ts(smp, channel_id: str) -> Optional[str]:
     if channel_id not in THREADED_CHANNELS:
         return None
     try:
-        return smp.ensure_named_thread(THREAD_TITLE, dt.date.today(),
+        return smp.ensure_named_thread(THREAD_TITLES[channel_id], dt.date.today(),
                                        channel_id=channel_id).get("thread_ts")
     except Exception as e:  # noqa: BLE001
         print("  day thread for %s unavailable (%s: %s) -- posting loose"

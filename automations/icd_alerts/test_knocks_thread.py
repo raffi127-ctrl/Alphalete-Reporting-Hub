@@ -98,7 +98,10 @@ class CarlosAPlayersIsTheOneThreadedRoom(unittest.TestCase):
     """One opt-in room, not a second rollout: the list stays Carlos's."""
 
     def test_only_a_players_is_threaded(self):
-        self.assertEqual(K.THREADED_CHANNELS, {"C0AJQA8P716"})
+        # #alphalete-gp-sales joined 2026-10-03 (Carlos: "Box Knocks Board"
+        # thread), each room with its own title.
+        self.assertEqual(K.THREADED_CHANNELS, {"C0AJQA8P716", "C07J46MQNUX"})
+        self.assertEqual(K.THREAD_TITLES["C07J46MQNUX"], "Box Knocks Board")
 
     def test_a_players_boards_land_in_the_day_thread(self):
         client = _Client()

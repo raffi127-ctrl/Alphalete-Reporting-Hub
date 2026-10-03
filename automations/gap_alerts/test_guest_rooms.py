@@ -116,7 +116,7 @@ class Sending(unittest.TestCase):
                              GAPS, DAY, send=False, failures=[])
         board, gaps = self.sent[0], self.sent[1]
         self.assertEqual(board["images"], [Path("carlos.png")])
-        self.assertIn("Fiber Team Knocks", board["text"])
+        self.assertIn("Fiber Knocks Board", board["text"])
         self.assertNotIn("Christian Perez", board["text"])
         self.assertEqual(gaps["images"], [])
         self.assertIn("Fiber 15 min gaps", gaps["text"])  # whose list this is

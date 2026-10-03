@@ -1480,7 +1480,8 @@ def _guest_board_header(cfg: Dict, guest: str) -> str:
     """'Fiber Team Knocks — 3:00 PM' for a guest with a team name, else the
     old '<guest> knocks'."""
     team = (cfg.get("guest_teams") or {}).get(guest)
-    return "%s — %s" % (("%s Team Knocks" % team) if team else
+    # "Fiber Knocks Board" on Slack AND in the texts (Carlos 2026-10-03).
+    return "%s — %s" % (("%s Knocks Board" % team) if team else
                         ("%s Knocks" % guest), _clock_now())
 
 

@@ -284,7 +284,7 @@ def guest_callout(host_key: str, guest: str, gaps: List[Dict], records_now: Dict
     key = "guest:%s:%s" % (host_key, _key(guest).replace(" ", "-"))
     state = _state()
     st = state.get(key) or {}
-    if not due(st, now):
+    if not due(st, now, CALLOUT_EVERY_OVERRIDES.get(key)):
         return ""
     prev = (st.get("records") or {}) if st.get("day") == now.date().isoformat() else dict(records_now or {})
     text = line(key, pick_from_gaps(gaps, records_now, prev), now)
@@ -662,11 +662,18 @@ def _save(state: Dict) -> None:
         print("[callouts] could not save the state file: %s: %s" % (type(e).__name__, e), flush=True)
 
 
-def due(state_for_office: Optional[Dict], now: dt.datetime) -> bool:
+# Per-key cadence, where a room asked for its own (Carlos 2026-10-03: his
+# crew's call-outs "about every hour"). Keys as the state file spells them.
+CALLOUT_EVERY_OVERRIDES = {"guest:rafael:carlos-hidalgo": 60}
+
+
+def due(state_for_office: Optional[Dict], now: dt.datetime,
+        every: Optional[int] = None) -> bool:
     if not state_for_office or state_for_office.get("day") != now.date().isoformat():
         return True
     last = P._parse_when(state_for_office.get("last_at") or "")
-    return last is None or (now - last) >= dt.timedelta(minutes=CALLOUT_EVERY_MIN)
+    return last is None or (now - last) >= dt.timedelta(
+        minutes=every or CALLOUT_EVERY_MIN)
 
 
 def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
