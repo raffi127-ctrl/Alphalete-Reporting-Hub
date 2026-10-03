@@ -106,3 +106,14 @@ def run(data: Dict, day: dt.date, agents: List[Dict], records: Dict[str, int],
                         for k in S.METRICS}
         data.setdefault(SECTION, {})[day.isoformat()] = was
     return data
+
+
+def standings_now(day: Optional[dt.date] = None) -> str:
+    """READ-ONLY: the fourteen's standings as of the last sweep, from the
+    state file -- no SaraPlus login. For 'who has a sale right now'."""
+    day = day or dt.date.today()
+    data = S.load()
+    today = (data.get(SECTION) or {}).get(day.isoformat()) or {}
+    if not today:
+        return "no sales recorded for %s's reps on %s yet" % (GUEST, day.isoformat())
+    return "%s (as of last sweep)\n\n%s" % (HEADER, N.leaderboard(today, []))

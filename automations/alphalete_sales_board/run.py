@@ -762,6 +762,9 @@ def main(argv=None) -> int:
     ap.add_argument("--catch-up", action="store_true",
                     help="also re-read the previous selling day and top up its "
                          "block (the live sweep does this by itself once a day)")
+    ap.add_argument("--guest-standings", action="store_true",
+                    help="READ-ONLY: print Carlos's crew's standings from the "
+                         "last sweep's state (no login, posts nothing)")
     ap.add_argument("--refresh", action="store_true",
                     help="the 2am pass: ONLY the previous-day top-up, no live "
                          "sweep, no texts; exits at once if it already ran")
@@ -779,6 +782,10 @@ def main(argv=None) -> int:
                     help="READ-ONLY: log in and dump what the ReportingHub page "
                          "actually contains (for when a selector goes missing)")
     args = ap.parse_args(argv)
+    if getattr(args, "guest_standings", False):
+        from automations.alphalete_sales_board import guest_feed
+        print(guest_feed.standings_now(), flush=True)
+        return 0
 
     if args.probe_grid:
         try:
