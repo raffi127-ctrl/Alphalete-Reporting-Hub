@@ -12650,6 +12650,29 @@
     "type": "not_configured"
    }
   },
+  "sales_board_standings": {
+    "on_scheduler": false,
+    "_off_scheduler_note": "READ-ONLY, no login, posts nothing: prints today's standings from the sales board's STATE FILE (Raf's board + Carlos's crew with --all). Its own id and module so the sweep's pid lock (which matches automations.alphalete_sales_board.run) never refuses it -- a sweep holds that lock most of every 5-minute cycle. `lucy rerun sales_board_standings --machine \"Lucy 1\"`.",
+    "machine": "Lucy 1",
+    "display_name": "Sales board standings (read-only)",
+    "source_type": "local",
+    "data_sources": [],
+    "command": [
+      "automations.alphalete_sales_board.guest_feed"
+    ],
+    "base_args": [
+      "--all"
+    ],
+    "cadence": {
+      "weekdays": []
+    },
+    "priority": "P3",
+    "freshness_target": null,
+    "depends_on": [],
+    "verify": {
+      "type": "not_configured"
+    }
+  },
   "remove_b2b_dispositions_final_agent": {
    "on_scheduler": false,
    "_off_scheduler_note": "Unload + delete com.alphalete.b2b-dispositions-final on LUCY 2 (retired 2026-09-29: Carlos moved everything to one 6pm post, which the -hourly agent now does). Leaving it loaded would post a second time at 7pm.",
