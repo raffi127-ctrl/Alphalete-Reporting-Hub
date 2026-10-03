@@ -35,6 +35,9 @@ VIEW = "https://us-east-1.online.tableau.com/#/site/sci/views/OverridesICDView/N
 PNL_SHEET_ID = os.environ.get("CARLOS_PNL_SHEET_ID", "1ngQtKRNeuGV_FDBp-d9boZmxp6cO3T4IKa7k2NdiLq0")
 TAB = "Security Ledger"
 CAP_TAB = "Captain Bonus (Tableau)"
+OVR_TAB = "Override Weekly (Tableau)"
+OVR_HEADER = ["Week (Sun)", "P&L week ending (Sat)", "Period", "Standard override", "Pulled", "Source"]
+OVR_SOURCE = "Tableau → Overrides ICD View → ORG Override Summary (Carlos Hidalgo, all campaign rows)"
 TILLER_ID = "1D2mjKSRNCM3fleq8e7uJyRuIotVqMfEW6baC7DV9fAE"
 BAL_TAB = "Balances"
 HUB_WB = "1IpDs2BGLByiJCMZ7tAAMFanYVn5DEDVxCYqPGz8Wu6E"   # Alphalete Org/Captainship Reports (override_bulletin fills it weekly from Tableau)
@@ -331,7 +334,78 @@ def update_balances(svc) -> str:
     return f"balances: {n} of {expected} accounts updated from Tiller"
 
 
-def write(rows: list[list], balance: float | None) -> None:
+def override_weeks(rows: list[list]) -> dict:
+    """{week serial: amount} for Carlos from one ORG Override Summary crosstab (all his campaign rows summed per week column)."""
+    from automations.override_bulletin.pulls import _WK_HDR, _num_locale
+    cols = {}
+    hdr_row = None
+    for ri, r in enumerate(rows[:6]):
+        for ci, c in enumerate(r):
+            m = _WK_HDR.match(str(c).strip())
+            if m:
+                y = int(m.group(3)); y += 2000 if y < 100 else 0
+                cols[ci] = dt.date(y, int(m.group(1)), int(m.group(2))).toordinal() - EPOCH.toordinal()
+                hdr_row = ri
+        if cols:
+            break
+    out, mine, seen = {}, False, False
+    for r in rows[(hdr_row or 0) + 1:]:
+        name = str(r[0]).strip() if r else ""
+        if name:
+            mine = name.lower().split("[")[0].split("(")[0].strip() == OWNER
+        if not mine:
+            continue
+        seen = True
+        for ci, wk in cols.items():
+            v = _num_locale(r[ci]) if ci < len(r) else None
+            if v is not None:
+                out[wk] = round(out.get(wk, 0.0) + v, 2)
+    return out if seen else {}
+
+
+def pull_overrides_hub(periods: list[int]) -> list[list]:
+    """[week serial, period label, amount] per (week, period) from Tableau. A week near a month edge sits in two periods; both count."""
+    from automations.shared.tableau_patchright import download_crosstab_patchright
+    from automations.override_bulletin.pulls import read_crosstab, _with_filter, ORG_SUMMARY_VIEW, ORG_SUMMARY_SHEET
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    out = []
+    for n in periods:
+        label = f"Period {dt.date.today().year}-{n}"
+        path = OUT_DIR / f"Override_Summary_P{n}.csv"
+        try:
+            download_crosstab_patchright(_with_filter(ORG_SUMMARY_VIEW, "Period", label), ORG_SUMMARY_SHEET, path, verbose=False)
+            got = override_weeks(read_crosstab(path))
+        except Exception as e:  # noqa: BLE001
+            log(f"override summary {label}: no crosstab ({str(e)[:90]})")
+            continue
+        log(f"override summary {label}: {len(got)} weeks" + (f", newest {dt.date.fromordinal(EPOCH.toordinal() + max(got))} = {got[max(got)]:,.2f}" if got else ""))
+        out += [[wk, label, amt] for wk, amt in got.items()]
+    return out
+
+
+def write_overrides(svc, via_hub: bool) -> str:
+    """Upsert the weekly standard override by (week, period). First run backfills every period of the year."""
+    have = svc.values().get(spreadsheetId=PNL_SHEET_ID, range=f"'{OVR_TAB}'!A2:F", valueRenderOption="UNFORMATTED_VALUE").execute().get("values", [])
+    have = [r for r in have if len(r) >= 4 and isinstance(r[0], (int, float))]
+    if not via_hub:
+        return f"override weekly: skipped (Lucy pulls it); {len(have)} rows on the tab"
+    m = dt.date.today().month
+    periods = list(range(1, min(13, m + 1) + 1)) if not have else [x for x in (m - 1, m, m + 1) if 1 <= x <= 13]
+    fresh = pull_overrides_hub(periods)
+    if not fresh:
+        return "override weekly: Tableau returned nothing this run — tab left as is"
+    today = dt.date.today().isoformat()
+    keep = {(r[0], r[2]): r for r in have}
+    for wk, label, amt in fresh:
+        keep[(wk, label)] = [wk, wk + 6, label, amt, today, OVR_SOURCE]
+    rows = sorted(keep.values(), key=lambda r: (-r[0], str(r[2])))
+    svc.values().clear(spreadsheetId=PNL_SHEET_ID, range=f"'{OVR_TAB}'!A2:F2000").execute()
+    svc.values().update(spreadsheetId=PNL_SHEET_ID, range=f"'{OVR_TAB}'!A1:F{len(rows) + 1}", valueInputOption="RAW",
+                        body={"values": [OVR_HEADER] + rows}).execute()
+    return f"override weekly: {len(fresh)} week-rows refreshed from periods {periods}; {len(rows)} on the tab"
+
+
+def write(rows: list[list], balance: float | None, via_hub: bool = False) -> None:
     from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
     from googleapiclient.discovery import build
@@ -346,6 +420,10 @@ def write(rows: list[list], balance: float | None) -> None:
     svc.values().update(spreadsheetId=PNL_SHEET_ID, range=f"'{TAB}'!L1:O1", valueInputOption="RAW", body={"values": note}).execute()
     log(write_captain_table(svc, captain_rows(OUT_DIR / "DD_Detail.csv")))
     log(update_balances(svc))
+    try:
+        log(write_overrides(svc, via_hub))
+    except Exception as e:  # noqa: BLE001
+        log(f"override weekly failed (rest of the run is fine): {str(e)[:160]}")
 
 
 def main(argv=None) -> int:
@@ -375,7 +453,7 @@ def main(argv=None) -> int:
         for r in rows[:5]:
             log(f"  {r[1][:50]:50s} {r[2]:22s} {r[4]:>12,.2f}")
         return 0
-    write(rows, balance)
+    write(rows, balance, via_hub=(args.via == "hub" and not args.from_files))
     log(f"wrote '{TAB}' ({len(rows)} rows) + balance")
     return 0
 

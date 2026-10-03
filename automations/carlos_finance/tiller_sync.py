@@ -249,10 +249,9 @@ def roll_calendar(svc, today: dt.date, dry_run: bool) -> list[str]:
             _roll_column(svc, props[tab], f'="{nxt}"', False)
             props = _sheet_meta(svc)
     if rolled_week and not dry_run:
-        d4 = svc.values().get(spreadsheetId=PNL, range="'Business Weekly'!D4", valueRenderOption="UNFORMATTED_VALUE").execute().get("values", [[None]])[0][0]
-        if isinstance(d4, (int, float)):
-            svc.values().update(spreadsheetId=PNL, range="Dashboard!B4", valueInputOption="RAW", body={"values": [[d4]]}).execute()
-            msgs.append(f"Dashboard now on week ending {unser(d4)}")
+        # Dashboard follows the in-progress week ("this week so far"); picking another week in B4 still works
+        svc.values().update(spreadsheetId=PNL, range="Dashboard!B4", valueInputOption="USER_ENTERED", body={"values": [["='Business Weekly'!C4"]]}).execute()
+        msgs.append("Dashboard reset to the in-progress week")
     return msgs
 
 
