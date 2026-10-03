@@ -358,8 +358,13 @@ def _is_term(v: str) -> bool:
     return v == "t" or "termin" in v
 
 
+# A workbook's board tab(s): the owner boards have one "Sales Board"; the
+# Vantura master has three of that shape since 2026-10-02 (B2B / BOX / D2D).
+BOARD_TABS = ("Sales Board", "BOX Sales Board", "D2D Sales Board")
+
+
 def terminated_names(sh) -> set:
-    """Names marked T/Terminated on this workbook's Sales Board (Field
+    """Names marked T/Terminated on this workbook's Sales Board tab(s) (Field
     Status col or a literal T in a day cell) or Roll Call (Status col or a
     T in the Mon-Sat attendance cells). Carlos 2026-08-23."""
     out = set()
@@ -367,8 +372,8 @@ def terminated_names(sh) -> set:
         tabs = {ws.title: ws for ws in sh.worksheets()}
     except Exception:  # noqa: BLE001
         return out
-    if "Sales Board" in tabs:
-        rows = tabs["Sales Board"].get_values("A1:P250")
+    for tab in [t for t in BOARD_TABS if t in tabs]:
+        rows = tabs[tab].get_values("A1:P250")
         hdr_i = next((i for i, r in enumerate(rows)
                       if any(_n(c).upper() == "REP" for c in r)), None)
         if hdr_i is not None:
@@ -424,8 +429,8 @@ def board_sellers_and_roster(sh):
         tabs = {ws.title for ws in sh.worksheets()}
     except Exception:  # noqa: BLE001
         return sellers, roster
-    if "Sales Board" in tabs:
-        rows = sh.worksheet("Sales Board").get_values("A1:P250")
+    for tab in [t for t in BOARD_TABS if t in tabs]:
+        rows = sh.worksheet(tab).get_values("A1:P250")
         hdr_i = next((i for i, r in enumerate(rows)
                       if any(_n(c).upper() == "REP" for c in r)), None)
         if hdr_i is not None:

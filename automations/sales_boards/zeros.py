@@ -48,6 +48,13 @@ it keeps column A's rep numbers pristine (render_all renumbers them to a 1..N
 rank). The day cells are conditionally formatted on value (=AND(ISNUMBER(E5),E5=0)
 -> pink, ="X" -> grey), so a borrowed day recolours itself correctly — which is
 also why the window has to be written into E..K and nowhere else.
+
+THREE BOARD TABS (2026-10-02): the B2B and BOX reps now sit on separate tabs
+("Sales Board" / "BOX Sales Board", vantura_boards). One throwaway copy per
+tab, streak levels computed over the union, and each level's image stacks the
+tabs' blocks under one header (B2B then BOX, the rank continuing across) — so
+it is still the single image per level, grouped by campaign, that Carlos asked
+for on 7/23.
 """
 from __future__ import annotations
 
@@ -214,14 +221,14 @@ def walk_streak(vals: dict, anchor: dt.date, cap: int) -> int:
     return n
 
 
-def render_zeros(sh, src_ws, sheet_id, token, yday, out_dir: Path) -> dict:
-    """Build one image per streak depth. Returns {level: {"path", "reps",
-    "campaigns"}} — empty if nobody rolled a zero on the anchor day.
+def _tmp_name(i: int) -> str:
+    return TMP_TAB if i == 0 else f"{TMP_TAB}{i + 1}"
 
-    Creates and deletes its own throwaway tab; the live board is never touched.
-    """
-    out_dir.mkdir(parents=True, exist_ok=True)
-    g = _retry(src_ws.get_all_values)
+
+def _read_tab(sh, ws, days, span, anchor, exact, norm, log=print) -> dict:
+    """One board tab's share of the streak walk: its grid, rep rows, the shown
+    window per row and each row's streak. Pure reads — nothing is written."""
+    g = _retry(ws.get_all_values)
     ts, _te = R.totals_range(g)
     first, last = R.rep_region(g, ts)
     board_we = R.cell(g, 2, 2).strip()
@@ -230,7 +237,7 @@ def render_zeros(sh, src_ws, sheet_id, token, yday, out_dir: Path) -> dict:
     for wd, nm in enumerate(DAY_NAMES):
         c = R.day_column(g, nm)
         if c is None:
-            raise SystemExit(f"no '{nm}' column on the board "
+            raise SystemExit(f"no '{nm}' column on {ws.title!r} "
                              f"(row {R.DAY_HEADER_ROW} renamed?)")
         board_day_col[wd] = c
 
@@ -238,17 +245,6 @@ def render_zeros(sh, src_ws, sheet_id, token, yday, out_dir: Path) -> dict:
             if R.cell(g, r, R.NAME_COL).strip()
             and R.cell(g, r, CAMPAIGN_COL).strip() in R.PROGRAMS]
 
-    # Anchor on the most recent WEEKDAY (anchor_day skips Sat + Sun), so a Sunday
-    # or Monday run both anchor on Friday and carry Friday's streaks forward. The
-    # walk still reads across the weekend (span includes Sat/Sun) so a weekend
-    # SALE breaks a run, but neither weekend day is ever a column.
-    anchor = anchor_day(yday)
-    days = mandatory_days(anchor, MAX_DAYS)        # shown columns, oldest first
-    span = [anchor - dt.timedelta(days=i) for i in range(LOOKBACK_CAL_DAYS)]  # incl. weekends
-
-    exact, norm = load_week_data(sh)
-    print(f"  zeros: window {days[0]:%a %m/%d} → {days[-1]:%a %m/%d} "
-          f"({len(days)} selling days, weekends skipped; board week = {board_we})")
     window, streaks, gaps = {}, {}, {}
     for r in rows:
         if R.is_terminated(g, r):
@@ -260,10 +256,46 @@ def render_zeros(sh, src_ws, sheet_id, token, yday, out_dir: Path) -> dict:
         streaks[r] = walk_streak(vals, anchor, MAX_DAYS)
         if miss:
             gaps[R.cell(g, r, R.NAME_COL).strip()] = miss
+    return {"ws": ws, "g": g, "first": first, "last": last,
+            "rng": list(range(first, last + 1)), "board_we": board_we,
+            "window": window, "streaks": streaks, "gaps": gaps}
 
-    if not any(streaks.values()):
+
+def render_zeros(sh, src_ws, sheet_id, token, yday, out_dir: Path) -> dict:
+    """Build one image per streak depth. Returns {level: {"path", "reps",
+    "campaigns"}} — empty if nobody rolled a zero on the anchor day.
+
+    `src_ws` is one board worksheet or a list of them (B2B then BOX); every
+    level's image stacks the boards' blocks under one header, rank continuing
+    across, so the grouped-by-campaign image survives the three-tab split.
+
+    Creates and deletes its own throwaway tab(s); the live boards are never
+    touched.
+    """
+    tabs = list(src_ws) if isinstance(src_ws, (list, tuple)) else [src_ws]
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Anchor on the most recent WEEKDAY (anchor_day skips Sat + Sun), so a Sunday
+    # or Monday run both anchor on Friday and carry Friday's streaks forward. The
+    # walk still reads across the weekend (span includes Sat/Sun) so a weekend
+    # SALE breaks a run, but neither weekend day is ever a column.
+    anchor = anchor_day(yday)
+    days = mandatory_days(anchor, MAX_DAYS)        # shown columns, oldest first
+    span = [anchor - dt.timedelta(days=i) for i in range(LOOKBACK_CAL_DAYS)]  # incl. weekends
+
+    exact, norm = load_week_data(sh)
+    boards = [_read_tab(sh, ws, days, span, anchor, exact, norm) for ws in tabs]
+    board_we = next((b["board_we"] for b in boards if b["board_we"]), "")
+    print(f"  zeros: window {days[0]:%a %m/%d} → {days[-1]:%a %m/%d} "
+          f"({len(days)} selling days, weekends skipped; board week = {board_we}; "
+          f"{', '.join(ws.title for ws in tabs)})")
+
+    if not any(s for b in boards for s in b["streaks"].values()):
         print("  zeros: nobody rolled a zero on the anchor day — no images")
         return {}
+    gaps = {}
+    for b in boards:
+        gaps.update(b["gaps"])
     if gaps:
         # Not an error: almost always a new hire with no history. Surfaced so a
         # streak that stops early is explainable (STANDING: flag non-matches).
@@ -272,55 +304,60 @@ def render_zeros(sh, src_ws, sheet_id, token, yday, out_dir: Path) -> dict:
               f"so their streak stops there: "
               f"{', '.join(names[:6])}{' …' if len(names) > 6 else ''}")
 
-    for w in sh.worksheets():                  # sweep an orphan from a crashed run
-        if w.title == TMP_TAB:
+    names = {_tmp_name(i) for i in range(len(boards))}
+    for w in sh.worksheets():                  # sweep orphans from a crashed run
+        if w.title in names:
             sh.del_worksheet(w)
-    tmp = sh.duplicate_sheet(src_ws.id, new_sheet_name=TMP_TAB)
-    gid, width = tmp.id, tmp.col_count
+    cols = [R.FIRST_DAY_COL + i for i in range(len(days))]
+    c0, c1 = _letter(cols[0]), _letter(cols[-1])
+    sc = _letter(STREAK_COL)
     result = {}
     try:
-        sh.batch_update({"requests": [{"clearBasicFilter": {"sheetId": gid}}]})
-        cols = [R.FIRST_DAY_COL + i for i in range(len(days))]
-        c0, c1 = _letter(cols[0]), _letter(cols[-1])
-        sc = _letter(STREAK_COL)
-        rng = list(range(first, last + 1))
+        for i, b in enumerate(boards):
+            tmp = sh.duplicate_sheet(b["ws"].id, new_sheet_name=_tmp_name(i))
+            b["tmp"], b["gid"], b["width"] = tmp, tmp.id, tmp.col_count
+            sh.batch_update({"requests": [{"clearBasicFilter": {"sheetId": tmp.id}}]})
+            g, first, last, rng = b["g"], b["first"], b["last"], b["rng"]
+            tmp.batch_update([
+                # Freeze Current Week BEFORE overwriting the days — col C is =SUM(E:K),
+                # so a cross-week window would otherwise silently redefine it.
+                {"range": f"C{first}:C{last}",
+                 "values": [[R.cell(g, r, CURRENT_WEEK_COL)] for r in rng]},
+                # Dated headers: two Wednesdays in one window only tell apart by date.
+                {"range": f"{c0}{R.DAY_HEADER_ROW}:{c1}{R.DAY_HEADER_ROW}",
+                 "values": [[f"{d.strftime('%a')} {d.month}/{d.day}" for d in days]]},
+                {"range": f"{c0}{first}:{c1}{last}",
+                 "values": [b["window"].get(r, [""] * len(days)) for r in rng]},
+                # The streak can't be recomputed from the shown cells (a Sunday sale
+                # breaks a run without being a column), so park it in a blank column
+                # well right of the export — sortRange carries it with its row, which
+                # is how it survives the regroup below.
+                {"range": f"{sc}{first}:{sc}{last}",
+                 "values": [[b["streaks"].get(r, 0)] for r in rng]},
+            ], value_input_option="USER_ENTERED")
 
-        tmp.batch_update([
-            # Freeze Current Week BEFORE overwriting the days — col C is =SUM(E:K),
-            # so a cross-week window would otherwise silently redefine it.
-            {"range": f"C{first}:C{last}",
-             "values": [[R.cell(g, r, CURRENT_WEEK_COL)] for r in rng]},
-            # Dated headers: two Wednesdays in one window only tell apart by date.
-            {"range": f"{c0}{R.DAY_HEADER_ROW}:{c1}{R.DAY_HEADER_ROW}",
-             "values": [[f"{d.strftime('%a')} {d.month}/{d.day}" for d in days]]},
-            {"range": f"{c0}{first}:{c1}{last}",
-             "values": [window.get(r, [""] * len(days)) for r in rng]},
-            # The streak can't be recomputed from the shown cells (a Sunday sale
-            # breaks a run without being a column), so park it in a blank column
-            # well right of the export — sortRange carries it with its row, which
-            # is how it survives the regroup below.
-            {"range": f"{sc}{first}:{sc}{last}",
-             "values": [[streaks.get(r, 0)] for r in rng]},
-        ], value_input_option="USER_ENTERED")
-
-        # Day columns past the window still hold this week's leftovers — hide them.
-        R.set_cols_hidden(sh, gid, [c for c in range(R.FIRST_DAY_COL, R.LAST_DAY_COL + 1)
-                                    if c not in cols], True)
-        # Group by campaign, then alphabetical inside it — the row fills are already
-        # colour-coded per campaign, so grouping makes the blocks read at a glance.
-        R.sort_region(sh, gid, first, last, [(CAMPAIGN_COL, True), (R.NAME_COL, True)], width)
-
-        g2 = _retry(tmp.get_all_values)
-        scored = {r: int(R.cell(g2, r, STREAK_COL) or 0) for r in rng}
+            # Day columns past the window still hold this week's leftovers — hide them.
+            R.set_cols_hidden(sh, b["gid"],
+                              [c for c in range(R.FIRST_DAY_COL, R.LAST_DAY_COL + 1)
+                               if c not in cols], True)
+            # Group by campaign, then alphabetical inside it — the row fills are
+            # already colour-coded per campaign, so grouping makes the blocks read
+            # at a glance (a no-op on a single-campaign tab, kept for a mis-filed row).
+            R.sort_region(sh, b["gid"], first, last,
+                          [(CAMPAIGN_COL, True), (R.NAME_COL, True)], b["width"])
+            b["g2"] = _retry(tmp.get_all_values)
+            b["scored"] = {r: int(R.cell(b["g2"], r, STREAK_COL) or 0) for r in rng}
 
         # Levels are nested (everyone at n+1 is also at n), so a level whose roster
         # is identical to the next one deeper says strictly less than that one —
         # post only the deeper. Without this, one rep on a 7-day run would ship
         # four near-identical images (4/5/6/7 Days). The manual post did the same:
         # her 7.22 post has no BOX 3-day image because it duplicated her BOX 2-day.
+        # Rosters span the boards: {(board index, row)}.
         rosters = {}
         for n in range(1, len(days) + 1):
-            keep = {r for r, s in scored.items() if s >= n}
+            keep = {(i, r) for i, b in enumerate(boards)
+                    for r, s in b["scored"].items() if s >= n}
             if not keep:
                 print(f"  zeros: nobody at {n} in a row — deepest level is {n - 1}")
                 break
@@ -335,33 +372,45 @@ def render_zeros(sh, src_ws, sheet_id, token, yday, out_dir: Path) -> dict:
             keep = rosters[n]
             # show exactly the n days called out — the rightmost n of the window
             older = cols[:len(days) - n]
-            R.set_cols_hidden(sh, gid, older, True)
-            hide = [r for r in rng if r not in keep]
-            R.set_rows_hidden(sh, gid, hide, True)
-            # Rank the VISIBLE rows 1..N (Megan 7/23). Column A holds each rep's own
-            # board number, so a filtered view would otherwise show jumps (18, 20,
-            # 10, 21 …). Same helper the Sales Boards use.
-            R.renumber(tmp, first, last, keep)
-            # Header is exported per level, INSIDE the column hiding — exporting it
-            # once up front gave it all 7 day columns while the body had n, so the
-            # two didn't line up and Campaign sat under the wrong heading.
-            header = R.export(sheet_id, gid,
-                              f"A{R.DAY_HEADER_ROW}:{LAST_SHOWN_COL}{R.DAY_HEADER_ROW}", token)
-            body = R.export(sheet_id, gid,
-                            f"A{min(keep)}:{LAST_SHOWN_COL}{max(keep)}", token)
-            w = max(header.width, body.width)
-            img = R.stitch([R.title_bar(w, title_for(n, days)), header, body])
+            header, bodies, camps, rank = None, [], set(), 1
+            for i, b in enumerate(boards):
+                keep_b = {r for bi, r in keep if bi == i}
+                R.set_cols_hidden(sh, b["gid"], older, True)
+                # Header is exported per level, INSIDE the column hiding — exporting
+                # it once up front gave it all 7 day columns while the body had n,
+                # so the two didn't line up and Campaign sat under the wrong heading.
+                # The tabs share one geometry, so the first board's header serves.
+                if header is None:
+                    header = R.export(sheet_id, b["gid"],
+                                      f"A{R.DAY_HEADER_ROW}:{LAST_SHOWN_COL}{R.DAY_HEADER_ROW}",
+                                      token)
+                if keep_b:
+                    hide = [r for r in b["rng"] if r not in keep_b]
+                    R.set_rows_hidden(sh, b["gid"], hide, True)
+                    # Rank the VISIBLE rows 1..N (Megan 7/23), continuing across the
+                    # boards. Column A holds each rep's own board number, so a
+                    # filtered view would otherwise show jumps (18, 20, 10, 21 …).
+                    R.renumber(b["tmp"], b["first"], b["last"], keep_b, start=rank)
+                    rank += len(keep_b)
+                    bodies.append(R.export(sheet_id, b["gid"],
+                                           f"A{min(keep_b)}:{LAST_SHOWN_COL}{max(keep_b)}",
+                                           token))
+                    camps |= {R.cell(b["g2"], r, CAMPAIGN_COL).strip() for r in keep_b}
+                    R.set_rows_hidden(sh, b["gid"], hide, False)
+                R.set_cols_hidden(sh, b["gid"], older, False)
+            w = max(p.width for p in [header] + bodies)
+            img = R.stitch([R.title_bar(w, title_for(n, days)), header] + bodies)
             path = out_dir / f"Zeros ({n}).png"
             img.save(path)
-            camps = sorted({R.cell(g2, r, CAMPAIGN_COL).strip() for r in keep})
+            camps = sorted(camps)
             result[n] = {"path": path, "reps": len(keep), "campaigns": camps}
             print(f"  zeros L{n}: {len(keep):2} reps ({', '.join(camps)}) -> {path.name}")
-            R.set_rows_hidden(sh, gid, hide, False)
-            R.set_cols_hidden(sh, gid, older, False)
             time.sleep(1.2)
     finally:
-        sh.del_worksheet(tmp)
-        print("  zeros temp tab removed")
+        for b in boards:
+            if b.get("tmp") is not None:
+                sh.del_worksheet(b["tmp"])
+        print("  zeros temp tab(s) removed")
     return result
 
 

@@ -39,10 +39,15 @@ from pathlib import Path
 
 from automations.vantura_slack_sales import parse as P
 from automations.vantura_slack_sales.parse import TZ
+from automations.vantura_boards import MAIN_TAB, is_stat_label, tab_for
 
 CHANNEL = ("#alphalete-gp-sales", "C07J46MQNUX")
 SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"
-TAB = "Sales Board"
+# THREE BOARD TABS (2026-10-02): each campaign's reps live on their own tab
+# with identical geometry — "Sales Board" (B2B, also the gold week cell),
+# "BOX Sales Board", "D2D Sales Board" (Verizon). Reads and writes go to
+# vantura_boards.tab_for(campaign); TAB is the main one.
+TAB = MAIN_TAB
 
 # Before this hour a run is closing out YESTERDAY, not filling today — the
 # office lines up ~10:45am and nobody sells before it.
@@ -432,33 +437,39 @@ def office_tally(posts, day: dt.date, campaign: str):
 
 
 # --------------------------------------------------------------- sheet ---
-def board_grid():
-    from automations.recruiting_report.fill import open_by_key
-    ws = open_by_key(SHEET_ID).worksheet(TAB)
-    return ws, ws.get("A1:N110")
+def board_grid(campaign: str = "B2B"):
+    """(worksheet, grid) of the campaign's own board tab. A1:P200 — wide
+    enough for any roster; everything below the rep block is cut off by
+    totals_row, never by the read."""
+    from automations.recruiting_report.fill import open_by_key, _retry
+    ws = _retry(open_by_key(SHEET_ID).worksheet, tab_for(campaign))
+    return ws, _retry(ws.get, "A1:P200")
 
 
 def _cell(g, r, c):
     return g[r - 1][c - 1] if r - 1 < len(g) and c - 1 < len(g[r - 1]) else ""
 
 
-# The per-campaign TOTAL rows at the bottom of the rep list carry the SAME
-# campaign label in col L as the reps do, so they have to be cut off by the
-# start of the totals block — same anchor sales_boards/render.py uses.
+# The per-campaign TOTAL row at the bottom of the rep list carries the SAME
+# campaign label in col L as the reps do, so it has to be cut off by the start
+# of the totals block — the tab's subtotal label ("AT&T (B2B)" / "BOX" /
+# "Verizon"), same anchor sales_boards/render.py uses.
 TOTALS_TOP = "AT&T (B2B)"
 
 
 def totals_row(g) -> int:
     for r in range(DAY_HEADER_ROW + 1, len(g) + 1):
-        if _cell(g, r, NAME_COL).strip() == TOTALS_TOP:
+        if is_stat_label(_cell(g, r, NAME_COL)):
             return r
-    raise SystemExit(f"totals block ({TOTALS_TOP!r}) not found on the tab")
+    raise SystemExit("totals block (AT&T (B2B) / BOX / Verizon … TOTAL) not "
+                     "found on the tab")
 
 
-def ensure_board_shape(sh, g, log=_log) -> None:
+def ensure_board_shape(sh, g, tab: str = TAB, log=_log) -> None:
     """Heal what goes stale when a human appends a rep row (Carlos 2026-09-03:
     rows 43-46 sat outside the VA's basic filter with no grid borders, so
-    filtering by campaign silently skipped them).
+    filtering by campaign silently skipped them). Per board tab: `g` is that
+    tab's grid.
 
     * basic filter: header row 4 through the LAST rep row, cols B:Q — reset
       ONLY when the range is wrong, because a reset drops the active criteria.
@@ -469,7 +480,7 @@ def ensure_board_shape(sh, g, log=_log) -> None:
     meta = sh.fetch_sheet_metadata(
         {"fields": "sheets(properties(title,sheetId),basicFilter)"})
     sheet = next((s for s in meta["sheets"]
-                  if s["properties"]["title"] == TAB), None)
+                  if s["properties"]["title"] == tab), None)
     if not sheet:
         return
     sid = sheet["properties"]["sheetId"]
@@ -480,9 +491,9 @@ def ensure_board_shape(sh, g, log=_log) -> None:
     reqs = []
     if {k: have.get(k) for k in want} != want:
         reqs.append({"setBasicFilter": {"filter": {"range": want}}})
-        log(f"board shape: filter was rows {have.get('startRowIndex', 0) + 1}"
-            f"-{have.get('endRowIndex', '?')} — reset to "
-            f"{DAY_HEADER_ROW}-{last_rep} (criteria cleared)")
+        log(f"board shape ({tab}): filter was rows "
+            f"{have.get('startRowIndex', 0) + 1}-{have.get('endRowIndex', '?')}"
+            f" — reset to {DAY_HEADER_ROW}-{last_rep} (criteria cleared)")
     side = {"style": "SOLID", "width": 1}
     reqs.append({"updateBorders": {
         "range": {"sheetId": sid, "startRowIndex": DAY_HEADER_ROW,
@@ -503,11 +514,14 @@ def ensure_board_shape(sh, g, log=_log) -> None:
 
 
 def campaign_rows(g, campaign: str) -> dict[str, int]:
-    """{normalised rep name: row} for one campaign.
+    """{normalised rep name: row} for one campaign, off THAT campaign's board
+    grid (board_grid(campaign)).
 
     Found by the campaign label in col L, never by row number — reps are added
-    and removed weekly and the tab is sorted globally. Stops at the totals
-    block, whose rows are formula-driven and must never be written.
+    and removed weekly and the tab is sorted. Stops at the totals block, whose
+    rows are formula-driven and must never be written. The label check is
+    kept on a single-campaign tab on purpose: a rep mis-filed onto the wrong
+    board is left alone rather than written under the wrong campaign.
     """
     out = {}
     for r in range(DAY_HEADER_ROW + 1, totals_row(g)):
@@ -519,6 +533,8 @@ def campaign_rows(g, campaign: str) -> dict[str, int]:
 
 def week_ok(g, day: dt.date):
     """(ok, shown, want) — is the board showing the week that CONTAINS `day`?
+    `g` is the MAIN board's grid: the gold cell is typed on "Sales Board"
+    only (the other boards' B2 mirror it by formula).
 
     The board holds ONE week at a time, chosen by the gold WE cell (B2). The
     day columns are just Monday..Sunday, so nothing in them says which week
@@ -726,8 +742,12 @@ def main(argv=None) -> int:
     _log(f"{len(posts)} messages, {directory and len(directory)} known users, "
          + ", ".join(f"{k} {v}" for k, v in by_camp.items()) + " sale posts")
 
-    ws, g = board_grid()
-    results = [run_campaign(posts, g, d, c) for d in days for c in campaigns]
+    # One grid per campaign — each off its own board tab. The week gate and
+    # the Monday roll note read the MAIN board (the gold cell lives there).
+    boards = {c: board_grid(c) for c in campaigns}          # c -> (ws, grid)
+    g = boards["B2B"][1] if "B2B" in boards else board_grid("B2B")[1]
+    results = [run_campaign(posts, boards[c][1], d, c)
+               for d in days for c in campaigns]
 
     # A poster we can't name sells into the day TOTAL but onto NO rep's row, and
     # the 5:10am board post renders that hole. It used to be a log line nobody
@@ -791,9 +811,10 @@ def main(argv=None) -> int:
             _log(f"{res['campaign']} {res['day']}: no column for that weekday "
                  "on the tab — nothing written")
             continue
-        plan = fill_plan(g, res)
+        ws, cg = boards[res["campaign"]]
+        plan = fill_plan(cg, res)
         _log(f"{res['campaign']} {_md(res['day'])} — {len(plan)} cell(s) "
-             "would change:")
+             f"would change on {ws.title!r}:")
         for rep, a1, cur, new, note in plan:
             _log(f"  {a1}  {rep:<28} {cur} -> {new}{note}")
         if not a.yes:
@@ -804,7 +825,8 @@ def main(argv=None) -> int:
                     for _rep, a1, _cur, new, _note in plan])
             _log(f"  wrote {len(plan)} cell(s)")
     if a.yes:
-        ensure_board_shape(ws.spreadsheet, g)
+        for ws, cg in boards.values():
+            ensure_board_shape(ws.spreadsheet, cg, ws.title)
     if not a.yes:
         _log("DRY RUN — re-run with --yes to write")
 

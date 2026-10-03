@@ -18,11 +18,20 @@ row gets its "Verizon" campaign prefill back. Never touches terminated rows,
 never duplicates (skips if the name is already on the target board); a full
 target board is logged loudly and skipped, never overwritten. Day values are
 written USER_ENTERED so numbers stay numbers for the SUM/SUMIFS totals.
+
+RETIRED as an automatic job 2026-09-07 (the bound Apps Script moves reps
+natively); kept as a manual reconcile. Since the 2026-10-02 three-board split
+BOTH boards end their rep block at a totals label ("AT&T (B2B)" / "Verizon",
+then "TOTAL", then the stats), so the row scans stop there — a fixed row
+range would have handed the D2D stats rows out as "empty" slots. BOX reps now
+live on "BOX Sales Board" and are not part of this sync.
 """
 from __future__ import annotations
 
-D2D_TAB = "D2D Sales Board"
-D2D_FIRST, D2D_LAST = 5, 34
+from automations.vantura_boards import BOARD_TABS, is_stat_label
+
+D2D_TAB = BOARD_TABS["Verizon"]
+D2D_FIRST = 5
 
 
 def _norm(s):
@@ -34,14 +43,17 @@ def _cell(g, r, i):
     return (row[i] if len(row) > i else "").strip()
 
 
-def _main_block(g):
+def _rep_block(g):
+    """Rows 5.. up to the board's totals label in col B (never past it)."""
     out = []
-    for r in range(5, len(g) + 1):
-        b = _cell(g, r, 1)
-        if b.replace(" ", "").upper().startswith("AT&T(B2B)"):
+    for r in range(D2D_FIRST, len(g) + 1):
+        if is_stat_label(_cell(g, r, 1)):
             break
         out.append(r)
     return out
+
+
+_main_block = _rep_block
 
 
 def _grab(g, r):
@@ -60,7 +72,7 @@ def ensure_campaign_rosters(sh, log=print) -> None:
     gm = main.get_all_values()
     gd = d2d.get_all_values()
     main_rows = _main_block(gm)
-    d2d_rows = list(range(D2D_FIRST, D2D_LAST + 1))
+    d2d_rows = _rep_block(gd)
     d2d_names = {_norm(_cell(gd, r, 1)) for r in d2d_rows if _cell(gd, r, 1)}
     main_names = {_norm(_cell(gm, r, 1)) for r in main_rows if _cell(gm, r, 1)}
     d2d_empty = [r for r in d2d_rows if not _cell(gd, r, 1)]

@@ -113,17 +113,15 @@ def newest_box_csv(d: Path = None):
 
 
 def board_box_reps():
+    """The BOX roster — off its own "BOX Sales Board" tab since 2026-10-02
+    (vantura_boards.read_board stops at the tab's totals label)."""
     from automations.recruiting_report.fill import open_by_key
+    from automations.vantura_boards import BOARD_TABS, read_board
     from automations.vantura_payout_estimate.run import BOARD_ID
-    g = open_by_key(BOARD_ID).worksheet("Sales Board").get_all_values()
-    reps = set()
-    for r in g[4:]:
-        name = (r[1] if len(r) > 1 else "").strip()
-        if name.startswith("AT&T"):
-            break
-        if name and (r[11] if len(r) > 11 else "").strip() == "BOX":
-            reps.add(norm_name(name))
-    return reps
+    sh = open_by_key(BOARD_ID)
+    return {norm_name(r["name"])
+            for r in read_board(sh.worksheet(BOARD_TABS["BOX"]))
+            if r["campaign"] == "BOX"}
 
 
 def price_box(sale):

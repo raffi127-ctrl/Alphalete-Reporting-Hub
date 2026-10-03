@@ -1,5 +1,12 @@
 """Vantura Master Sales Board - roll the board onto the new week.
 
+THREE BOARDS, ONE ROLL (2026-10-02): the reps live on three per-campaign tabs
+with identical geometry - "Sales Board" (B2B), "BOX Sales Board" and "D2D
+Sales Board" (Verizon; see automations/vantura_boards.py). Every step below
+runs over all three, except the flip: the gold week cell is B2 on "Sales
+Board" only (the other two read it with ='Sales Board'!$B$2), so WeekData!J:K,
+the gold cell and its dropdown are written once, on the main tab.
+
 The board holds ONE week at a time. On Monday the 5:00am pass closes SUNDAY and
 the 4:00pm pass fills MONDAY, which already belongs to the NEXT week - so the
 board has to be rolled in between, or the fill HOLDS (exit 75) and every held
@@ -20,9 +27,10 @@ A full roll is five things, in this order:
      blanks verbatim: that is how every earlier week is stored).
   2. LAST WK - col D of each rep row gets that rep's closing-week total (= col
      C today, which is =SUM(E:K)).
-  3. LAST WK, PER CAMPAIGN - col D on the AT&T (B2B) and BOX totals rows. Their
-     C neighbours are SUMIFS, but these two are HAND-TYPED literals, so nothing
-     else moves them; they are copied from what C showed before the reset.
+  3. LAST WK, PER CAMPAIGN - col D on each board's subtotal row (AT&T (B2B) /
+     BOX / Verizon). Their C neighbours are SUMIFS, but these are HAND-TYPED
+     literals, so nothing else moves them; they are copied from what C showed
+     before the reset.
   4. RESET the day cells back to the INDEX formula. With the gold cell still on
      the OLD week the board must render IDENTICALLY (it now reads its own
      archive) - that equality is the safety check, and the roll stops there
@@ -62,8 +70,10 @@ import sys
 from pathlib import Path
 
 from automations.recruiting_report.fill import open_by_key, _retry
-from automations.sales_boards.run import SHEET_ID, TAB as BOARD
+from automations.sales_boards.run import SHEET_ID
 from automations.sales_boards.zeros import we_label
+from automations.vantura_boards import (BOARD_TABS, MAIN_TAB as BOARD,
+                                        READ_RANGE, is_stat_label)
 
 WEEKDATA, STATIONS = "WeekData", "Stations"
 WE_CELL = "B2"                  # gold week selector
@@ -111,12 +121,16 @@ def sunday_of(serial):
 
 
 class Board:
-    """The board's shape, read once and found by LABEL - the header row's own
-    titles and its '#' column. Templates get rows inserted; indices don't
-    survive that."""
+    """One board tab's shape, read once and found by LABEL - the header row's
+    own titles. Templates get rows inserted; indices don't survive that.
 
-    def __init__(self, grid):
+    `campaign` is the tab's campaign ('B2B' / 'BOX' / 'Verizon') and `tab` its
+    title; both ride along into the snapshot so a rolled-forward render can
+    put each rep back on the board they came from."""
+
+    def __init__(self, grid, campaign: str = "", tab: str = ""):
         self.grid = grid
+        self.campaign, self.tab = campaign, tab
         self.hdr_row = next((i for i in range(1, len(grid) + 1)
                              for c in range(1, len(grid[i - 1]) + 1)
                              if self.cell(i, c) == HDR_NAME), 0)
@@ -139,30 +153,35 @@ class Board:
             raise SystemExit("Mon..Sun are not seven adjacent columns: %s"
                              % self.c_days)
 
-        # Rep rows carry a '#' and run unbroken from the header down; the
-        # first row without one ends the block.
+        # Rep rows run from the header down to the first TOTALS LABEL in the
+        # name column ("AT&T (B2B)" / "BOX" / "Verizon" - the row that opens
+        # the subtotal block). NOT to the first row without a '#': the
+        # subtotal rows carry one too (48/49/50 on the live boards). NOT to
+        # the first blank row either: a cleared row inside the block is
+        # skipped, not a stop (2026-09-14 that stop saw 6 reps of 46).
         self.reps = []
         r = self.hdr_row + 1
-        while (r <= len(grid) and self.cell(r, self.c_num)
-               and self.cell(r, self.c_name)):
-            self.reps.append(self.read_row(r))
+        while r <= len(grid) and not is_stat_label(self.cell(r, self.c_name)):
+            if self.cell(r, self.c_name):
+                self.reps.append(self.read_row(r))
             r += 1
         if not self.reps:
-            raise SystemExit("no rep rows found under row %d" % self.hdr_row)
+            raise SystemExit("no rep rows found under row %d%s"
+                             % (self.hdr_row, " on %s" % tab if tab else ""))
 
-        # Then the campaign subtotals, down to TOTAL or the blank line under it.
-        # Bounded on purpose: the stats block further down also carries campaign
-        # names in col L ('Apps', the headcount table), and writing 'Last Wk'
-        # into one of those rows would land on somebody's data.
-        rep_camps = set(x["campaign"] for x in self.reps if x["campaign"])
+        # Then the campaign subtotal (one per board now), down to TOTAL or the
+        # blank line under it. Bounded on purpose: the stats block further
+        # down also carries campaign names ('Apps', the headcount table), and
+        # writing 'Last Wk' into one of those rows would land on somebody's
+        # data. Keyed by the BOARD's campaign - the D2D subtotal row has no
+        # label in col L, so the row's own campaign cell can't be the key.
         self.campaigns = {}
         while r <= len(grid):
             name = self.cell(r, self.c_name)
             if not name or name.upper() == "TOTAL":
                 break
             row = self.read_row(r)
-            if row["campaign"] in rep_camps:
-                self.campaigns[row["campaign"]] = row
+            self.campaigns[campaign or row["campaign"] or name] = row
             r += 1
 
     def cell(self, r: int, c: int) -> str:
@@ -174,7 +193,8 @@ class Board:
                 "days": [self.cell(r, c) for c in self.c_days],
                 "this_wk": self.cell(r, self.c_this),
                 "last_wk": self.cell(r, self.c_last),
-                "campaign": self.cell(r, self.c_camp)}
+                "campaign": self.cell(r, self.c_camp),
+                "tab": self.tab}
 
     def day_formulas(self, row: int) -> list:
         """The seven day cells as they are born - INDEX into WeekData, keyed on
@@ -196,7 +216,23 @@ def archived_reps(keys, label: str) -> int:
     return sum(1 for k in keys if k.rsplit("|", 1)[-1].strip() == label)
 
 
-def audit_rolled(sb, wd, sunday) -> int:
+def read_boards(sh) -> dict:
+    """{campaign: Board} for the three tabs. All three must exist: rolling
+    some of the boards and not the others would leave reps on two different
+    weeks, so a missing tab stops the roll before anything is written."""
+    out = {}
+    for camp, tab in BOARD_TABS.items():
+        try:
+            ws = _retry(sh.worksheet, tab)
+        except Exception as e:  # noqa: BLE001 — WorksheetNotFound and kin
+            raise SystemExit("no %r tab on the sheet (%s) - every board rolls "
+                             "together, so refusing to roll any of them."
+                             % (tab, type(e).__name__))
+        out[camp] = Board(_retry(ws.get, READ_RANGE), campaign=camp, tab=tab)
+    return out
+
+
+def audit_rolled(boards, wd, sunday) -> int:
     """The gold cell is on today's week - but was it ROLLED, or did somebody
     just pick the week from the dropdown?
 
@@ -207,8 +243,9 @@ def audit_rolled(sb, wd, sunday) -> int:
     2026-08-17 went, and it looks exactly like a healthy board. Saying
     "nothing to do" here would let it stand, so: check that the week BEFORE
     this one made it into WeekData, and if it didn't, say what to do.
-    """
-    b = Board(_retry(sb.get, "A1:Z60"))
+
+    `boards` is the three Boards (any iterable of them)."""
+    reps = [r for b in boards for r in b.reps]
     keys = [k.strip() for k in _retry(wd.col_values, 1) if k.strip()]
     prev = we_label(sunday - dt.timedelta(days=7))
     n_prev, n_this = archived_reps(keys, prev), archived_reps(keys, we_label(sunday))
@@ -217,7 +254,7 @@ def audit_rolled(sb, wd, sunday) -> int:
               "Nothing to do." % (prev, n_prev))
         return 0
 
-    literals = [r["name"] for r in b.reps if any(v for v in r["days"])]
+    literals = [r["name"] for r in reps if any(v for v in r["days"])]
     print("\n!! ROLLED BY HAND? Week %s is on the gold cell, but %s has NO "
           "archived rows in WeekData." % (we_label(sunday), prev))
     print("   That is what picking the week from the dropdown leaves behind: "
@@ -255,7 +292,7 @@ def _poke_rollcall_flip():
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="Roll the Vantura Sales Board "
+    ap = argparse.ArgumentParser(description="Roll the Vantura Sales Boards "
                                              "onto the new week.")
     ap.add_argument("--apply", action="store_true",
                     help="write (default: dry run, nothing is touched)")
@@ -313,28 +350,32 @@ def main(argv=None) -> int:
 
     print("board shows %s (week ending %s); rolling to %s (week ending %s)"
           % (old_we, old_sunday, new_we, new_sunday))
+    # The three boards, read up front: both the audit and the roll need them,
+    # and a tab that is missing has to stop everything (read_boards).
+    boards = read_boards(sh)
+    for camp, b in boards.items():
+        print("%s: %d rep rows (%d-%d); campaign subtotal: %s"
+              % (b.tab, len(b.reps), b.reps[0]["row"], b.reps[-1]["row"],
+                 ", ".join("%s = row %d" % (c, r["row"])
+                           for c, r in sorted(b.campaigns.items(),
+                                              key=lambda kv: kv[1]["row"]))
+                 or "none"))
     if old_we == today_label:
         print("that IS the week holding today (%s)." % today)
-        return audit_rolled(sb, wd, old_sunday)
+        return audit_rolled(boards.values(), wd, old_sunday)
     if new_we != today_label and not args.force:
         print("but today (%s) sits in week %s, not %s. Rolling one week would "
               "leave the board on the wrong week - re-run with --force if that "
               "is really what you want." % (today, today_label, new_we))
         return 2
 
-    grid = _retry(sb.get, "A1:Z60")
-    b = Board(grid)
-    print("%d rep rows (%d-%d); campaign totals: %s"
-          % (len(b.reps), b.reps[0]["row"], b.reps[-1]["row"],
-             ", ".join("%s = row %d" % (c, r["row"])
-                       for c, r in sorted(b.campaigns.items(),
-                                          key=lambda kv: kv[1]["row"]))
-             or "none"))
+    tabs = {camp: _retry(sh.worksheet, b.tab) for camp, b in boards.items()}
+    all_reps = [r for b in boards.values() for r in b.reps]
 
-    if not any(r["days"][6] for r in b.reps):
+    if not any(r["days"][6] for r in all_reps):
         msg = ("SUNDAY is blank for all %d reps - the 5:00am pass that closes "
                "the week may not have run yet, and archiving now would store "
-               "the week a day short." % len(b.reps))
+               "the week a day short." % len(all_reps))
         if not args.force:
             print("\n!! %s\n   Re-run with --force if Sunday really was a zero."
                   % msg)
@@ -343,39 +384,59 @@ def main(argv=None) -> int:
 
     # ------------------------------------------------------------- 1. archive
     have = set(k.strip() for k in _retry(wd.col_values, 1))
-    new_rows = [["%s|%s" % (r["name"], old_we)] + [as_number(v) for v in r["days"]]
-                for r in b.reps if "%s|%s" % (r["name"], old_we) not in have]
+    new_rows = []
+    for r in all_reps:
+        key = "%s|%s" % (r["name"], old_we)
+        if key in have:
+            continue                 # already archived - or on two boards
+        have.add(key)
+        new_rows.append([key] + [as_number(v) for v in r["days"]])
     print("\n1. archive %s: %d new WeekData row(s), %d already there"
-          % (old_we, len(new_rows), len(b.reps) - len(new_rows)))
+          % (old_we, len(new_rows), len(all_reps) - len(new_rows)))
     for row in new_rows[:3]:
         print("     e.g.", row)
 
     # --------------------------------------------------- 2. 'Last Wk' per rep
-    d_rng = b.rng(b.c_last)
-    d_vals = [[as_number(r["this_wk"])] for r in b.reps]
-    changed = sum(1 for r, v in zip(b.reps, d_vals) if str(v[0]) != r["last_wk"])
-    print("\n2. 'Last Wk' %s <- each rep's %s total (%d of %d change)"
-          % (d_rng, old_we, changed, len(b.reps)))
+    # Per board: each one is its own range on its own tab.
+    d_writes = {}                    # camp -> (range, values)
+    print("\n2. 'Last Wk' <- each rep's %s total:" % old_we)
+    for camp, b in boards.items():
+        d_rng = b.rng(b.c_last)
+        d_vals = [[as_number(r["this_wk"])] for r in b.reps]
+        changed = sum(1 for r, v in zip(b.reps, d_vals)
+                      if str(v[0]) != r["last_wk"])
+        d_writes[camp] = (d_rng, d_vals)
+        print("     %s!%s (%d of %d change)"
+              % (b.tab, d_rng, changed, len(b.reps)))
 
     # ---------------------------------------------- 3. 'Last Wk' per campaign
-    camp_writes = sorted(b.campaigns.items(), key=lambda kv: kv[1]["row"])
-    print("\n3. 'Last Wk' on the campaign totals (hand-typed literals - the "
+    camp_writes = [(camp, b, r)
+                   for camp, b in boards.items()
+                   for _c, r in sorted(b.campaigns.items(),
+                                       key=lambda kv: kv[1]["row"])]
+    print("\n3. 'Last Wk' on the campaign subtotals (hand-typed literals - the "
           "roll is the only thing that moves them):")
-    if not camp_writes:
-        # Forgetting these is exactly how the board sat on 145/66 (week 8.23)
-        # after the 9.6 roll, so say it out loud instead of skipping in silence.
-        print("     !! none found under the reps - if the board HAS campaign "
-              "subtotal rows, their 'Last Wk' will stay on the old week.")
-    for camp, r in camp_writes:
-        print("     %s%d  %-14s %s -> %s"
-              % (a1(b.c_last), r["row"], camp, r["last_wk"] or "(blank)",
+    for camp, b in boards.items():
+        if not b.campaigns:
+            # Forgetting these is exactly how the board sat on 145/66 (week
+            # 8.23) after the 9.6 roll, so say it out loud instead of
+            # skipping in silence.
+            print("     !! %s: no subtotal row found under the reps - if the "
+                  "board HAS one, its 'Last Wk' will stay on the old week."
+                  % b.tab)
+    for camp, b, r in camp_writes:
+        print("     %s!%s%d  %-14s %s -> %s"
+              % (b.tab, a1(b.c_last), r["row"], camp, r["last_wk"] or "(blank)",
                  r["this_wk"] or "0"))
 
     # -------------------------------------------- 4. day cells back to formula
-    day_rng = b.rng(b.c_days[0], b.c_days[-1])
-    literals = sum(1 for r in b.reps for v in r["days"] if v != "")
-    print("\n4. reset %s to the INDEX formula (%d literal cell(s) today)"
-          % (day_rng, literals))
+    day_rngs = {camp: b.rng(b.c_days[0], b.c_days[-1])
+                for camp, b in boards.items()}
+    print("\n4. reset the day cells to the INDEX formula:")
+    for camp, b in boards.items():
+        literals = sum(1 for r in b.reps for v in r["days"] if v != "")
+        print("     %s!%s (%d literal cell(s) today)"
+              % (b.tab, day_rngs[camp], literals))
 
     # ------------------------------------------------------------- 5. the flip
     keep = [w for w in weeks if w[0] != new_we][:PICKER_ROWS - 1]
@@ -384,7 +445,8 @@ def main(argv=None) -> int:
     labels = [new_we] + [l for l, _, _ in keep]
     print("\n5. WeekData!J2:K%d <- %s / %s on top, the rest shifted down"
           % (len(new_jk) + 1, new_we, new_sunday))
-    print("   %s <- TEXT %r (RAW)" % (WE_CELL, new_we))
+    print("   %s!%s <- TEXT %r (RAW); the other boards' B2 read it by formula"
+          % (BOARD, WE_CELL, new_we))
     print("   dropdown <- %s" % ", ".join(labels))
     print("   Stations!%s <- TEXT %r (was %r)"
           % (STATIONS_WE, new_we,
@@ -403,7 +465,9 @@ def main(argv=None) -> int:
         "sheet_id": SHEET_ID, "from_week": old_we, "to_week": new_we,
         WE_CELL: shown,
         "stations_S2": str(_retry(st.acell, STATIONS_WE).value or ""),
-        "weekdata_JK": picker, "reps": b.reps, "campaigns": b.campaigns,
+        "weekdata_JK": picker, "reps": all_reps,
+        "campaigns": {camp: r for camp, _b, r in camp_writes},
+        "tabs": {camp: b.tab for camp, b in boards.items()},
     }, indent=1), encoding="utf-8")
     print("\nsnapshot -> %s" % snap_path)
 
@@ -412,37 +476,46 @@ def main(argv=None) -> int:
                table_range="A1")
         print("WROTE %d archive row(s) into %s" % (len(new_rows), WEEKDATA))
 
-    _retry(sb.update, values=d_vals, range_name=d_rng,
-           value_input_option="USER_ENTERED")
-    print("WROTE %s" % d_rng)
+    for camp, (d_rng, d_vals) in d_writes.items():
+        _retry(tabs[camp].update, values=d_vals, range_name=d_rng,
+               value_input_option="USER_ENTERED")
+        print("WROTE %s!%s" % (boards[camp].tab, d_rng))
 
-    for camp, r in camp_writes:
+    for camp, b, r in camp_writes:
         cell = "%s%d" % (a1(b.c_last), r["row"])
-        _retry(sb.update, values=[[as_number(r["this_wk"] or 0)]],
+        _retry(tabs[camp].update, values=[[as_number(r["this_wk"] or 0)]],
                range_name=cell, value_input_option="USER_ENTERED")
-        print("WROTE %s (%s = %s)" % (cell, camp, r["this_wk"] or 0))
+        print("WROTE %s!%s (%s = %s)" % (b.tab, cell, camp, r["this_wk"] or 0))
 
-    _retry(sb.update, values=[b.day_formulas(r["row"]) for r in b.reps],
-           range_name=day_rng, value_input_option="USER_ENTERED")
-    print("WROTE %s (formulas)" % day_rng)
+    for camp, b in boards.items():
+        _retry(tabs[camp].update,
+               values=[b.day_formulas(r["row"]) for r in b.reps],
+               range_name=day_rngs[camp], value_input_option="USER_ENTERED")
+        print("WROTE %s!%s (formulas)" % (b.tab, day_rngs[camp]))
 
-    # The safety check: still on the old week, so the board has to read back
-    # the same values off its own archive.
-    back = _retry(sb.get, day_rng)
+    # The safety check: still on the old week, so every board has to read
+    # back the same values off its own archive.
     bad = []
-    for r, got in zip(b.reps, list(back) + [[]] * len(b.reps)):
-        got = [str(x).strip() for x in (list(got) + [""] * 7)[:7]]
-        if got != r["days"]:
-            bad.append((r["name"], r["days"], got))
+    for camp, b in boards.items():
+        back = _retry(tabs[camp].get, day_rngs[camp])
+        rows = {r["row"]: r for r in b.reps}
+        first = b.reps[0]["row"]
+        for i, got in enumerate(list(back) + [[]] * len(b.reps)):
+            r = rows.get(first + i)
+            if r is None:
+                continue             # a blank row inside the block
+            got = [str(x).strip() for x in (list(got) + [""] * 7)[:7]]
+            if got != r["days"]:
+                bad.append((b.tab, r["name"], r["days"], got))
     if bad:
         print("\n!! %d rep row(s) do NOT read back the same after the reset - "
               "the archive did not take. STOPPING BEFORE THE FLIP; %s is still "
               "what the board shows, nothing is lost." % (len(bad), old_we))
-        for name, was, got in bad[:8]:
-            print("   %-28s was %s -> now %s" % (name, was, got))
+        for tab, name, was, got in bad[:8]:
+            print("   %-16s %-28s was %s -> now %s" % (tab, name, was, got))
         return 3
-    print("OK - all %d rep rows read back identical off the %s archive"
-          % (len(b.reps), old_we))
+    print("OK - all %d rep rows on %d boards read back identical off the %s "
+          "archive" % (len(all_reps), len(boards), old_we))
 
     _retry(wd.update, values=new_jk, range_name="J2:K%d" % (len(new_jk) + 1),
            value_input_option="USER_ENTERED")
@@ -471,8 +544,8 @@ def main(argv=None) -> int:
                      {"numberFormat": {"type": "TEXT"}}},
             "fields": "userEnteredFormat.numberFormat"}},
     ]})
-    print("WROTE %s = %r (text, cell pinned to TEXT) + dropdown list"
-          % (WE_CELL, new_we))
+    print("WROTE %s!%s = %r (text, cell pinned to TEXT) + dropdown list"
+          % (BOARD, WE_CELL, new_we))
 
     _retry(st.update, values=[[new_we]], range_name=STATIONS_WE,
            value_input_option="RAW")
@@ -485,11 +558,13 @@ def main(argv=None) -> int:
           % (WE_CELL, _retry(sb.acell, WE_CELL).value, STATIONS_WE,
              _retry(st.acell, STATIONS_WE).value))
     print("headers:", _retry(sb.get, "C2:K3"))
-    tot = _retry(sb.get, b.rng(b.c_this, b.c_last))
-    print("'This Wk' non-zero rows:",
-          [t[0] for t in tot if t and str(t[0]).strip() not in ("", "0")]
-          or "none - clean")
-    print("'Last Wk' first 5:", [t[1] if len(t) > 1 else "" for t in tot[:5]])
+    for camp, b in boards.items():
+        tot = _retry(tabs[camp].get, b.rng(b.c_this, b.c_last))
+        print("%s 'This Wk' non-zero rows:" % b.tab,
+              [t[0] for t in tot if t and str(t[0]).strip() not in ("", "0")]
+              or "none - clean")
+        print("%s 'Last Wk' first 5:" % b.tab,
+              [t[1] if len(t) > 1 else "" for t in tot[:5]])
     return 0
 
 

@@ -44,7 +44,8 @@ TAB_DATA = "Lucy At&t Data"           # hidden; created on first run
 PROTECTED_TABS = (
     "Box Order Log", "Lucy Box Order Log", "Lucy Box Data",
     "Churn", "Churn - Atef", "LUCY CHURN", "Activations",
-    "Sales Board", "WeekData", "Roll Call", "RollCallData", "Stations",
+    "Sales Board", "BOX Sales Board", "D2D Sales Board",   # the three boards (2026-10-02)
+    "WeekData", "Roll Call", "RollCallData", "Stations", "BOX Stations",
     "Commission", "Commission Calculator", "Rates", "Adjustments", "RAW",
     "Copy of Carlos PNL 2026", "Name Aliases", "NoRevPay", "Daily Update",
     "JE Sales by Store", "Report an Issue",

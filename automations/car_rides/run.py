@@ -15,8 +15,10 @@ Reuses the existing Lucy 2 routes (do NOT rebuild these):
                        this run FLAGS it and stops (never touches the Turnstile).
 
 WHAT A RUN DOES:
-  1. Read the Stations car-ride boxes (rows 5-25 AT&T, 28-38 BOX) -> leader ->
-     [riders], locating the Leader / Rep #1-4 columns BY HEADER (not position).
+  1. Read the car-ride boxes — AT&T on "Stations" A5:E14, BOX on "BOX
+     Stations" A5:E15 (the renamed 'D2D Stations' tab, 2026-10-02) -> leader
+     -> [riders], locating the Leader / Rep #1-4 columns BY HEADER (not
+     position).
   2. Open v2.ownerville.com Territory Assignment (index.cfm?p=158), campaign
      "B2B AT&T SBS" then "B2B-BOX-Energy".
   3. Enumerate every territory (all pages). Compute the reconciliation plan:
@@ -87,9 +89,18 @@ STATIONS_GID = 1999003555
 # car rides, Rep #4 dropped, boxes tightened. Headers still found by name.
 # Ride boxes sized leaders-minus-2 (Carlos 2026-09-03 pm): ATT 9 rows,
 # BOX 11. Headers still found by name inside the range.
+# 2026-10-02 (three-board split): the BOX box moved to its OWN tab, "BOX
+# Stations" (the old 'D2D Stations' tab renamed, same gid 1984019054):
+# header row 5 ('Car Ride Leader | Rep #2 | Rep #3 | Rep #4', col A blank),
+# rides rows 6-15, B leader / C..E riders. The lower section of "Stations"
+# is Verizon now, which this report does not reconcile. Each box names its
+# tab by gid (title as the fallback).
+BOX_STATIONS_GID = 1984019054
 BOXES = {
-    "att": {"range": "A5:E14",  "campaign": "B2B AT&T SBS"},
-    "box": {"range": "A30:E41", "campaign": "B2B-BOX-Energy"},  # 9/4: BOX moved up 2 (daily A53 lineup-writer collision)
+    "att": {"range": "A5:E14", "campaign": "B2B AT&T SBS",
+            "gid": STATIONS_GID, "tab": "Stations"},
+    "box": {"range": "A5:E15", "campaign": "B2B-BOX-Energy",
+            "gid": BOX_STATIONS_GID, "tab": "BOX Stations"},
 }
 LEADER_HDR_RE = re.compile(r"leader", re.I)
 # "Rep #1".."Rep #4" — the trailing digit is what keeps "Rep List" out.
@@ -192,14 +203,17 @@ def read_expected(log=_log) -> dict[str, dict[str, list[str]]]:
     """-> {"att": {leader: [riders]}, "box": {...}} from the live board."""
     from automations.recruiting_report.fill import open_by_key
     sh = open_by_key(SHEET_ID)
-    ws = next((w for w in sh.worksheets() if w.id == STATIONS_GID), None)
-    if ws is None:
-        ws = sh.worksheet("Stations")
+    tabs = list(sh.worksheets())
     out: dict[str, dict[str, list[str]]] = {}
     for key, box in BOXES.items():
+        # Each box lives on its own tab since 2026-10-02 — by gid, title as
+        # the fallback (a rename keeps the gid; a re-create keeps the title).
+        ws = next((w for w in tabs if w.id == box["gid"]), None)
+        if ws is None:
+            ws = sh.worksheet(box["tab"])
         rows = ws.get(box["range"]) or []
         if not rows:
-            raise RuntimeError(f"Stations {box['range']} came back empty — "
+            raise RuntimeError(f"{ws.title} {box['range']} came back empty — "
                                "range/tab drift, refusing to reconcile.")
         header = [str(c).strip().lower() for c in rows[0]]
         # Find the columns by NAME. The old check only asked whether "leader"
@@ -211,9 +225,9 @@ def read_expected(log=_log) -> dict[str, dict[str, list[str]]]:
         rider_i = [i for i, h in enumerate(header) if RIDER_HDR_RE.search(h)]
         if lead_i is None or not rider_i:
             raise RuntimeError(
-                f"Stations {box['range']} header row is {rows[0]!r} — expected a "
-                "'Territory Leader' column and 'Rep #1..4' columns. Box moved; "
-                "fix BOXES.")
+                f"{ws.title} {box['range']} header row is {rows[0]!r} — expected "
+                "a 'Territory Leader' / 'Car Ride Leader' column and 'Rep #1..4' "
+                "columns. Box moved; fix BOXES.")
         exp = {}
         for r in rows[1:]:
             # gspread trims trailing empties, so rows are ragged — index-check.

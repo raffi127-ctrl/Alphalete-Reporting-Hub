@@ -41,6 +41,12 @@ def _patch(monkey, *, posted, box_ts="box-ts", b2b_ts="b2b-ts"):
     monkey["sys"].modules["automations.b2b_quality"] = pkg
     monkey["sys"].modules["automations.b2b_quality.run"] = bq
     monkey["sys"].modules["automations.shared.slack_metrics_post"] = smp
+    # `import automations.b2b_quality.run as bq` walks ATTRIBUTES from the
+    # real top-level package, so if the real b2b_quality was imported earlier
+    # in the same process (another test file does) the sys.modules swap alone
+    # is bypassed and the checker reads the real, empty thread state.
+    import automations as _pkg
+    _pkg.b2b_quality = pkg
     monkey["run"].box_thread_ts = lambda client, chan, day: box_ts
     monkey["run"]._already_replied = \
         lambda client, cid, ts, plain: plain in posted
@@ -48,17 +54,19 @@ def _patch(monkey, *, posted, box_ts="box-ts", b2b_ts="b2b-ts"):
 
 def _run(posted, programs, *, corrected=False, box_ts="box-ts", b2b_ts="b2b-ts"):
     import sys
+    import automations as _pkg
 
     saved = (R.box_thread_ts, R._already_replied,
              sys.modules.get("automations.b2b_quality.run"),
              sys.modules.get("automations.shared.slack_metrics_post"),
-             sys.modules.get("automations.b2b_quality"))
+             sys.modules.get("automations.b2b_quality"),
+             getattr(_pkg, "b2b_quality", None))
     try:
         _patch({"sys": sys, "run": R}, posted=posted, box_ts=box_ts,
                b2b_ts=b2b_ts)
         return R._day_already_posted(DAY, YDAY, programs, corrected)
     finally:
-        (R.box_thread_ts, R._already_replied, m1, m2, m3) = saved
+        (R.box_thread_ts, R._already_replied, m1, m2, m3, attr) = saved
         for name, mod in (("automations.b2b_quality.run", m1),
                           ("automations.shared.slack_metrics_post", m2),
                           ("automations.b2b_quality", m3)):
@@ -66,6 +74,11 @@ def _run(posted, programs, *, corrected=False, box_ts="box-ts", b2b_ts="b2b-ts")
                 sys.modules.pop(name, None)
             else:
                 sys.modules[name] = mod
+        if attr is None:
+            if hasattr(_pkg, "b2b_quality"):
+                delattr(_pkg, "b2b_quality")
+        else:
+            _pkg.b2b_quality = attr
 
 
 B2B_IN = {"B2B Sales Board 9.6"}

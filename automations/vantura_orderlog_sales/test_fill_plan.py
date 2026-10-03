@@ -48,21 +48,44 @@ class BoxFillPlanTest(unittest.TestCase):
 
 class HomeCampaignTest(unittest.TestCase):
     """Nico's sales follow his row's col-L label, not a hardcoded campaign
-    (2026-09-19: row re-filed B2B, BOX pass flagged 5 sales unmatched)."""
+    (2026-09-19: row re-filed B2B, BOX pass flagged 5 sales unmatched).
+    Since the three-board split each campaign's rows come off its own tab,
+    so home_campaigns looks across {campaign: grid}."""
+
+    GRIDS = {"B2B": "b2b-grid", "BOX": "box-grid"}
 
     def test_row_label_wins(self):
         with unittest.mock.patch.object(run, "campaign_rows",
                                         side_effect=lambda g, c: (
                                             {"nico murrugarra": 13}
                                             if c == "B2B" else {})):
-            self.assertEqual(run.home_campaigns(None)["nico murrugarra"],
+            self.assertEqual(run.home_campaigns(self.GRIDS)["nico murrugarra"],
                              "B2B")
 
     def test_no_row_keeps_fallback(self):
         with unittest.mock.patch.object(run, "campaign_rows",
                                         return_value={}):
-            self.assertEqual(run.home_campaigns(None)["nico murrugarra"],
+            self.assertEqual(run.home_campaigns(self.GRIDS)["nico murrugarra"],
                              "BOX")
+
+    def test_each_campaign_is_looked_up_on_its_own_grid(self):
+        """The BOX tab's grid is asked for BOX rows, the main tab's for B2B —
+        never the other way round."""
+        seen = []
+
+        def rows(g, c):
+            seen.append((g, c))
+            return {}
+
+        with unittest.mock.patch.object(run, "campaign_rows", side_effect=rows):
+            run.home_campaigns(self.GRIDS)
+        self.assertEqual(sorted(seen), [("b2b-grid", "B2B"), ("box-grid", "BOX")])
+
+    def test_a_missing_grid_is_skipped(self):
+        with unittest.mock.patch.object(run, "campaign_rows",
+                                        return_value={}):
+            self.assertEqual(run.home_campaigns({"BOX": "box-grid"})
+                             ["nico murrugarra"], "BOX")
 
 
 if __name__ == "__main__":  # pragma: no cover

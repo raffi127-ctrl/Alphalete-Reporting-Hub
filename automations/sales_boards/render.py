@@ -1,6 +1,7 @@
 """Rendering core for the program Sales Boards (B2B / Base / JE / BOX).
 
-Produces the VA's two images per program off the `Sales Board` tab:
+Produces the VA's two images per program off that program's board tab
+("Sales Board" for B2B, "BOX Sales Board" for BOX — vantura_boards.tab_for):
   (a) WEEKLY   — # / REP / Current Week / Last Wk, ranked by Current Week desc
   (b) HIGHROLLERS — # / REP / <yesterday's day>, only reps who sold that day,
       ranked by that day's count
@@ -10,11 +11,18 @@ and the PDF export honours it, so cropping raw rows returns whatever she last
 filtered to. We duplicate the tab, clear the filter on the COPY, reshape it per
 program, export, then delete it. The real tab is never touched.
 
-WHY WE HIDE ROWS INSTEAD OF SLICING A RANGE: campaigns are NOT contiguous. The
-sheet is sorted globally (24 interleaved runs observed 2026-07-18), so there is
-no per-campaign row block to crop. For each program we hide every rep row that
-isn't that campaign; the survivors collapse together and export as one clean
-table directly above the totals block — exactly the VA's filtered view.
+WHY WE HIDE ROWS INSTEAD OF SLICING A RANGE: campaigns were NOT contiguous on
+the old single board (sorted globally, 24 interleaved runs observed
+2026-07-18), so there was no per-campaign row block to crop. For each program
+we hide every rep row that isn't that campaign; the survivors collapse together
+and export as one clean table directly above the totals block — exactly the
+VA's filtered view. Since the 2026-10-02 split each tab holds ONE campaign, so
+the campaign hide is a no-op there — only terminated reps get hidden — but it
+is kept: a rep mis-filed onto the wrong tab still renders on the right board.
+
+THE TOTALS BLOCK is per tab: "AT&T (B2B)" .. "TOTAL" on the main board, "BOX"
+.. "TOTAL" on the BOX board (and "Verizon" .. "TOTAL" on the D2D board, which
+this report does not post).
 """
 from __future__ import annotations
 
@@ -28,6 +36,7 @@ from gspread.utils import rowcol_to_a1
 
 from automations.recruiting_report.fill import _retry
 from automations.shared import sheets_export as _sx
+from automations.vantura_boards import SUBTOTAL_LABELS
 
 NAME_COL = 2                 # col B — REP / totals labels
 CAMPAIGN_COL = 12            # col L
@@ -35,6 +44,9 @@ CURRENT_WEEK_COL = 3         # col C
 WEEKLY_LAST_COL = "D"        # crop weekly through Last Wk
 DAY_HEADER_ROW = 4           # row carrying Monday..Sunday
 FIRST_DAY_COL, LAST_DAY_COL = 5, 11    # cols E..K
+# The totals block opens with the tab's campaign subtotal label and closes
+# with TOTAL: "AT&T (B2B)" on the main board, "BOX" / "Verizon" on the others.
+TOTALS_TOPS = tuple(v.lower() for v in SUBTOTAL_LABELS.values())
 TOTALS_TOP, TOTALS_BOTTOM = "AT&T (B2B)", "TOTAL"
 PROGRAMS = ["B2B", "Base", "JE", "BOX"]
 
@@ -45,13 +57,14 @@ def cell(g, r, c):
 
 def totals_range(g):
     top = bot = None
-    for r in range(1, len(g) + 1):
+    for r in range(DAY_HEADER_ROW + 1, len(g) + 1):
         b = cell(g, r, NAME_COL).strip()
-        if b == TOTALS_TOP and top is None:
+        if b.lower() in TOTALS_TOPS and top is None:
             top = r
-        if b == TOTALS_BOTTOM and top is not None:
+        if b.upper() == TOTALS_BOTTOM and top is not None:
             return top, r
-    raise SystemExit("totals block (AT&T (B2B) … TOTAL) not found")
+    raise SystemExit("totals block (%s … TOTAL) not found"
+                     % " / ".join(SUBTOTAL_LABELS.values()))
 
 
 def rep_region(g, totals_top):
@@ -119,10 +132,12 @@ def sort_region(sh, sheet_id, first, last, specs, width):
                       for c, asc in specs]}}]})
 
 
-def renumber(tmp, first, last, keep):
-    """Rewrite col A as a 1..N rank over the VISIBLE (kept) rows — the sheet
-    stores each rep's ID there, so a filtered view would show skipped numbers."""
-    col, rank = [], 0
+def renumber(tmp, first, last, keep, start: int = 1):
+    """Rewrite col A as a start..N rank over the VISIBLE (kept) rows — the
+    sheet stores each rep's ID there, so a filtered view would show skipped
+    numbers. `start` lets a second board's block continue the first's count
+    (the zeros image stacks the B2B and BOX tabs)."""
+    col, rank = [], start - 1
     for r in range(first, last + 1):
         if r in keep:
             rank += 1

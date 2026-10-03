@@ -1,6 +1,7 @@
 """Where the Vantura week roll can quietly go wrong.
 
-Two of these pin bugs that were live while the module was being written:
+Pins bugs that were live while the module was being written, plus the shape
+of the three-board split (2026-10-02):
 
   * the campaign subtotals under the reps were found by "any row below the reps
     with something in col L" — on the real board that also matched the stats
@@ -9,7 +10,11 @@ Two of these pin bugs that were live while the module was being written:
   * the gold cell's dropdown was rendered off the NUMBERS in WeekData!J, which
     cannot hold a trailing zero: the week ending 9/20 came out "9.2", and
     picking it would key every day cell `<REP>|9.2` while the fill writes
-    `<REP>|9.20` — the same blank-board failure as 2026-08-24.
+    `<REP>|9.20` — the same blank-board failure as 2026-08-24;
+  * the rep block used to end at the first row without a '#'. Each board's
+    subtotal row carries one too (48/49/50 live), and a cleared row inside the
+    block used to STOP the read (2026-09-14: 6 reps of 46). It ends at the
+    totals label now, and only there.
 
 Run:  python -m automations.sales_boards.test_week_roll
 """
@@ -22,11 +27,14 @@ from automations.sales_boards.zeros import we_label
 
 HDR = ["#", "REP", "Current Week", "Last Wk", "Monday", "Tuesday", "Wednesday",
        "Thursday", "Friday", "Saturday", "Sunday", "Campaign"]
+LABEL = {"B2B": "AT&T (B2B)", "BOX": "BOX", "Verizon": "Verizon"}
 
 
-def _grid():
-    """The real board's shape: header, reps with a '#', campaign subtotals and
-    TOTAL without one, then the stats block that also names campaigns."""
+def _grid(campaign="B2B"):
+    """One board tab's real shape: header, reps (the '#' is a static id),
+    a cleared row inside the block, the campaign subtotal and TOTAL — which
+    carry a '#' too — then the stats block that also names campaigns."""
+    camp_l = campaign if campaign != "Verizon" else ""   # D2D's label row has no col L
     return [
         ["", "", "Vantura Master Salesboard"],
         ["WE", "8.30", " Week Ending 8.30"],
@@ -34,42 +42,69 @@ def _grid():
          "THU (27)", "FRI (28)", "SAT (29)", "SUN (30)"],
         HDR,
         ["1", "Diego Borres", "24", "19", "4", "5", "X", "6", "9", "", "",
-         "B2B"],
+         campaign],
         ["2", "Nico Murrugarra", "0", "3", "F", "F", "F", "F", "F", "", "",
-         "B2B"],
-        ["3", "Juliett Ortega", "1", "0", "", "", "1", "", "", "", "", "BOX"],
-        ["", "AT&T (B2B)", "24", "145", "4", "5", "0", "6", "9", "0", "0",
-         "B2B"],
-        ["", "BOX", "1", "66", "0", "0", "1", "0", "0", "0", "0", "BOX"],
-        ["", "TOTAL", "25", "211", "4", "5", "1", "6", "9", "0", "0"],
+         campaign],
         [],
-        ["", "% on the Board", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "", "",
+        ["35", "Juliett Ortega", "1", "0", "", "", "1", "", "", "", "",
+         campaign],
+        ["48", LABEL[campaign], "25", "145", "4", "5", "1", "6", "9", "0", "0",
+         camp_l],
+        ["50", "TOTAL", "25", "211", "4", "5", "1", "6", "9", "0", "0"],
+        ["51"],
+        ["52", "% on the Board", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "", "",
          "Headcount by Campaign", "Apps"],
-        ["", "All AT&T B2B Reps", "0", "0", "0", "0", "0", "0", "", "",
-         "AT&T (B2B)", "B2B"],
+        ["53", "All AT&T B2B Reps", "0", "0", "0", "0", "0", "0", "", "",
+         "AT&T (B2B)", campaign],
     ]
 
 
-def test_reps_stop_where_the_numbering_stops():
+def test_reps_stop_at_the_subtotal_label_not_at_the_numbering():
+    """Row 9 ('AT&T (B2B)') carries a '#' like a rep row; it is the end of the
+    block, not a rep."""
     b = W.Board(_grid())
-    assert [r["row"] for r in b.reps] == [5, 6, 7], [r["row"] for r in b.reps]
+    assert [r["row"] for r in b.reps] == [5, 6, 8], [r["row"] for r in b.reps]
     assert b.reps[1]["days"] == ["F", "F", "F", "F", "F", "", ""]
 
 
-def test_campaign_rows_do_not_reach_the_stats_block():
+def test_a_cleared_row_inside_the_block_is_skipped_not_a_stop():
+    """2026-09-14: a blank separator made the old read see 6 reps of 46."""
     b = W.Board(_grid())
-    assert {c: r["row"] for c, r in b.campaigns.items()} == {"B2B": 8, "BOX": 9}
+    assert [r["name"] for r in b.reps] == ["Diego Borres", "Nico Murrugarra",
+                                          "Juliett Ortega"]
+    assert b.rng(b.c_last) == "D5:D8"       # the write span covers the gap
+
+
+def test_each_board_stops_at_its_own_label():
+    for camp in ("B2B", "BOX", "Verizon"):
+        b = W.Board(_grid(camp), campaign=camp)
+        assert len(b.reps) == 3, (camp, [r["name"] for r in b.reps])
+        assert list(b.campaigns) == [camp], (camp, b.campaigns)
+        assert b.campaigns[camp]["row"] == 9
+
+
+def test_campaign_row_does_not_reach_the_stats_block():
+    b = W.Board(_grid(), campaign="B2B")
+    assert {c: r["row"] for c, r in b.campaigns.items()} == {"B2B": 9}
     # row 13 also says "B2B" in the campaign column, below TOTAL and a blank.
     assert all(r["row"] < 10 for r in b.campaigns.values())
 
 
+def test_d2d_subtotal_is_keyed_by_the_boards_campaign():
+    """The D2D label row has no campaign in col L — the key is the BOARD's
+    campaign, never the row's."""
+    b = W.Board(_grid("Verizon"), campaign="Verizon", tab="D2D Sales Board")
+    assert b.campaigns["Verizon"]["name"] == "Verizon"
+    assert b.campaigns["Verizon"]["campaign"] == ""
+    assert all(r["tab"] == "D2D Sales Board" for r in b.reps)
+
+
 def test_campaign_last_wk_comes_from_what_the_board_showed():
-    b = W.Board(_grid())
-    # 145/66 was week 8.23 and is what stayed on the board when the first roll
-    # forgot these two cells; the closing week is 24/1.
+    b = W.Board(_grid(), campaign="B2B")
+    # 145 was week 8.23 and is what stayed on the board when the first roll
+    # forgot this cell; the closing week is 25.
     assert b.campaigns["B2B"]["last_wk"] == "145"
-    assert b.campaigns["B2B"]["this_wk"] == "24"
-    assert b.campaigns["BOX"]["this_wk"] == "1"
+    assert b.campaigns["B2B"]["this_wk"] == "25"
 
 
 def test_columns_are_found_by_header_not_by_index():
@@ -81,7 +116,9 @@ def test_columns_are_found_by_header_not_by_index():
 
 
 def test_day_formula_keys_on_the_rep_name_and_the_gold_cell():
-    b = W.Board(_grid())
+    """Same formula on every board: the BOX / D2D tabs' B2 read the main
+    board's gold cell by formula, so $B$2 is right there too."""
+    b = W.Board(_grid("BOX"), campaign="BOX")
     first = b.day_formulas(5)[0]
     assert 'MATCH($B5&"|"&$B$2' in first, first
     assert first.startswith('=IFERROR(INDEX(WeekData!$B$2:$B$5000,')
@@ -114,7 +151,7 @@ def test_a1():
 
 
 class _Tab:
-    """Just enough worksheet for audit_rolled: a grid and column A."""
+    """Just enough worksheet for audit_rolled: column A."""
 
     def __init__(self, grid, col_a=()):
         self._grid, self._col_a = grid, list(col_a)
@@ -126,33 +163,41 @@ class _Tab:
         return self._col_a
 
 
-def _rolled_grid(days):
+def _rolled_grid(days, campaign="B2B"):
     """The board on week 9.6, with `days` typed into the first rep's row."""
-    g = [row[:] for row in _grid()]
+    g = [row[:] for row in _grid(campaign)]
     g[1][1] = "9.6"
-    for r in (4, 5, 6):
+    for r in (4, 5, 7):
         g[r][4:11] = ["", "", "", "", "", "", ""]
     g[4][4:11] = days
     return g
 
 
+def _boards(days):
+    """The three boards, rolled, with `days` on the main board's first rep."""
+    return [W.Board(_rolled_grid(days), campaign="B2B", tab="Sales Board"),
+            W.Board(_rolled_grid([""] * 7, "BOX"), campaign="BOX",
+                    tab="BOX Sales Board"),
+            W.Board(_rolled_grid([""] * 7, "Verizon"), campaign="Verizon",
+                    tab="D2D Sales Board")]
+
+
 def test_audit_passes_when_the_closing_week_was_archived():
-    sb = _Tab(_rolled_grid([""] * 7))
     wd = _Tab([], ["KEY"] + ["Rep %d|8.30" % i for i in range(3)])
-    assert W.audit_rolled(sb, wd, dt.date(2026, 9, 6)) == 0
+    assert W.audit_rolled(_boards([""] * 7), wd, dt.date(2026, 9, 6)) == 0
 
 
 def test_audit_catches_a_board_flipped_from_the_dropdown():
     """The label moved to 9.6, 8.30 was never archived, and last week's typed
     numbers are still sitting in the day cells."""
-    sb = _Tab(_rolled_grid(["4", "5", "", "6", "9", "", ""]))
     wd = _Tab([], ["KEY"] + ["Rep %d|8.23" % i for i in range(3)])
-    assert W.audit_rolled(sb, wd, dt.date(2026, 9, 6)) == 4
+    assert W.audit_rolled(_boards(["4", "5", "", "6", "9", "", ""]), wd,
+                          dt.date(2026, 9, 6)) == 4
 
 
 def test_audit_stays_quiet_on_a_board_with_no_history():
-    sb = _Tab(_rolled_grid([""] * 7))
-    assert W.audit_rolled(sb, _Tab([], []), dt.date(2026, 9, 6)) == 0
+    assert W.audit_rolled(_boards([""] * 7), _Tab([], []),
+                          dt.date(2026, 9, 6)) == 0
 
 
 def test_archived_reps_counts_only_the_asked_week():

@@ -12,6 +12,10 @@ logic via the recruiting-report auth.
 
 Col P (Leadership Status) is deliberately NOT hard-protected, and this runs as
 the board owner's auth anyway. Only exact-name matches are promoted.
+
+Since 2026-10-02 the reps sit on three tabs of one shape — "Sales Board"
+(B2B), "BOX Sales Board", "D2D Sales Board" (Verizon) — so the list spans all
+three and a promotion is written on the tab the rep's row is on.
 """
 from __future__ import annotations
 
@@ -21,44 +25,41 @@ import sys
 
 SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"
 WK_TAG = re.compile(r"^\d+(st|nd|rd|th) Wk$")
-CAMPS = ("B2B", "BOX", "JE", "Base")
+CAMPS = ("B2B", "BOX", "JE", "Base", "Verizon")
 
 
-def _board():
+def _sheet():
     from automations.recruiting_report.fill import open_by_key
-    return open_by_key(SHEET_ID).worksheet("Sales Board")
+    return open_by_key(SHEET_ID)
 
 
-def _reps(vals):
-    for r in range(5, 69):
-        row = vals[r - 1] if len(vals) >= r else []
-        name = str(row[1]).strip() if len(row) > 1 else ""
-        camp = str(row[11]).strip() if len(row) > 11 else ""
-        if name and camp in CAMPS:
-            tag = str(row[13]).strip() if len(row) > 13 else ""
-            status = str(row[15]).strip() if len(row) > 15 else ""
-            yield r, name, camp, tag, status
+def _reps(sh):
+    """(tab, row, name, campaign, tag, status) for every rep on the boards."""
+    from automations.vantura_boards import all_reps
+    for rep in all_reps(sh):
+        if rep["name"] and rep["campaign"] in CAMPS:
+            yield (rep["tab"], rep["row"], rep["name"], rep["campaign"],
+                   rep["field"], rep["lead"])
 
 
 def list_candidates() -> list[dict]:
-    vals = _board().get("A1:P75")
     return [{"name": n, "campaign": c, "tag": t, "status": s}
-            for _, n, c, t, s in _reps(vals)
+            for _tab, _r, n, c, t, s in _reps(_sheet())
             if s in ("In Training", "Entry Level")]
 
 
 def promote(names: list[str]) -> dict:
-    sb = _board()
-    vals = sb.get("A1:P75")
+    sh = _sheet()
     want = {" ".join(x.lower().split()) for x in names}
-    updates, promoted = [], []
-    for r, n, _c, _t, s in _reps(vals):
+    updates, promoted = {}, []
+    for tab, r, n, _c, _t, s in _reps(sh):
         if " ".join(n.lower().split()) in want and s in ("In Training",
                                                          "Entry Level"):
-            updates.append({"range": f"P{r}", "values": [["Level 1"]]})
+            updates.setdefault(tab, []).append(
+                {"range": f"P{r}", "values": [["Level 1"]]})
             promoted.append(n)
-    if updates:
-        sb.batch_update(updates, value_input_option="USER_ENTERED")
+    for tab, ups in updates.items():
+        sh.worksheet(tab).batch_update(ups, value_input_option="USER_ENTERED")
     not_found = [x for x in names
                  if " ".join(x.lower().split())
                  not in {" ".join(p.lower().split()) for p in promoted}]

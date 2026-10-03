@@ -26,6 +26,13 @@ exceptions:
     Same one-number rewrite a human ran on 7/20, 8/11 and 9/07. See
     `_fix_stats_ranges` for what it refuses to touch.
 
+THREE BOARD TABS (2026-10-02): the reps live on "Sales Board" (B2B), "BOX
+Sales Board" and "D2D Sales Board" (Verizon) — identical geometry, rep block
+ending at each tab's totals label (automations/vantura_boards.py). Every board
+check below runs per tab: rep rows, the 'T' termination sync, the stats-range
+repair and drift checks (each tab's summary formulas against THAT tab's last
+rep), the bounded-Roll-Call-range check. Findings name the tab.
+
   python -m automations.vantura_board_audit.run                  # audit + fix + report
   python -m automations.vantura_board_audit.run --dry-run        # print only
   python -m automations.vantura_board_audit.run --no-auto-close  # don't close terminations
@@ -37,6 +44,9 @@ import argparse
 import datetime as dt
 import re
 import sys
+
+from automations.vantura_boards import (BOARD_TABS, MAIN_TAB, parse_board,
+                                        stat_row)
 
 REPORT_ID = "vantura-board-audit"
 SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"
@@ -68,8 +78,16 @@ RANGE_TOK = re.compile(r"\$?[A-Z]{1,2}\$?(\d+):\$?[A-Z]{1,2}\$?(\d+)\b")
 # reported — noisy if JE is in fact dead, silent if it isn't. Noisy is the
 # right failure here: it asks the question instead of burying it. Take JE out
 # only once Carlos says JE is off the board too.
-BOARD_CAMPAIGNS = {"B2B", "BOX", "JE"}
-ROLL_CAMPAIGN_COL = 2                  # Roll Call col C, header 'Campaign'
+#
+# 'Verizon' joined 2026-10-02: the D2D Sales Board is one of the three boards
+# this audit scans now, so an Active Verizon person without a D2D row is a
+# real hole, same as B2B/BOX.
+BOARD_CAMPAIGNS = {"B2B", "BOX", "JE", "Verizon"}
+# Roll Call's Campaign column is found BY HEADER (_roll_cols); this is only
+# the fallback. It is col D (index 3) since 2026-09-17, when 'Leadership' was
+# inserted at C — the old fixed index 2 read the leadership level as the
+# campaign, so every Active rep with one was skipped as "not on this board".
+ROLL_CAMPAIGN_COL = 3
 
 # --- the stats-range REPAIR (2026-09-07, Eve) ------------------------------
 # Same range as RANGE_TOK, but with the optional sheet qualifier in front, so
@@ -150,6 +168,15 @@ STORE_TAB = "RollCallData"
 STORE_STATUS_COL = 7                  # RollCallData col H, header 'Status'
 ROLL_HEADERS = {"status": "status", "name": "roll call", "gone": "date gone"}
 ROLL_FALLBACK = {"status": 1, "name": 4, "gone": 13}   # cols B / E / N (Leadership at C since 9/17)
+ROLL_CAMPAIGN_HDR = "campaign"
+# One board read: wide enough for any roster (the parse stops at the totals
+# label), 43 columns so the AQ helper column is in the formula scan.
+BOARD_RANGE_A1 = "A1:AQ200"
+BOARD_WIDTH = 43
+# The two Stations tabs: the main one (AT&T on top, Verizon below since
+# 2026-10-02) and the BOX one (the old 'D2D Stations' tab, renamed).
+STATIONS_TABS = (("Stations", "A1:CL135", "STATIONS"),
+                 ("BOX Stations", "A1:Y60", "BOX STATIONS"))
 BOARD_DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday",
               "saturday", "sunday"]
 
@@ -328,21 +355,21 @@ def _tag_date(tag):
     return None
 
 
-def _board_day_cols(board, log=_log):
-    """Sales Board Monday..Sunday column indexes, in week order, BY HEADER.
+def _board_day_cols(board, log=_log, tab=MAIN_TAB):
+    """A board's Monday..Sunday column indexes, in week order, BY HEADER.
     Empty list when the header row isn't found — the 'T' sync then stays off
     rather than reading whatever sits at E..K today."""
     for r in board[:8]:
         low = {str(c).strip().lower(): j for j, c in enumerate(r)}
         if all(d in low for d in BOARD_DAYS):
             return [low[d] for d in BOARD_DAYS]
-    log("Sales Board: no Monday..Sunday header row — 'T' termination sync OFF")
+    log(f"{tab}: no Monday..Sunday header row — 'T' termination sync OFF")
     return []
 
 
-def _board_terminations(board, day_cols, week_end, log=_log):
-    """{normalised name: (board row, termination date or None)} for every rep
-    whose day cells carry the 'T' termination mark.
+def _board_terminations(board, day_cols, week_end, log=_log, tab=MAIN_TAB):
+    """{normalised name: (board row, termination date or None, tab)} for every
+    rep whose day cells carry the 'T' termination mark.
 
     The date is derived from the week-ending tag and WHICH day the run starts
     on — Samantha Rodriguez sold Mon-Wed and went 'T' from Thursday, and
@@ -366,12 +393,12 @@ def _board_terminations(board, day_cols, week_end, log=_log):
             continue
         rest = marks[first:]
         if any(m not in (TERM_MARK, "") for m in rest):
-            log(f"board r{i} {name}: {TERM_MARK!r} followed by {rest!r} — not a "
+            log(f"{tab} r{i} {name}: {TERM_MARK!r} followed by {rest!r} — not a "
                 "clean termination, leaving the roll alone")
             continue
         when = (week_end - dt.timedelta(days=len(marks) - 1 - first)
                 if week_end else None)
-        out[_norm(name)] = (i, when)
+        out[_norm(name)] = (i, when, tab)
     return out
 
 
@@ -444,10 +471,14 @@ def _roll_cols(roll, log=_log):
         hdr = {str(c).strip().lower(): j for j, c in enumerate(r)}
         got = {k: hdr.get(v) for k, v in ROLL_HEADERS.items()}
         if all(v is not None for v in got.values()):
+            # Campaign rides along by header too (col D since 9/17); it is
+            # read-only here, so a missing label falls back rather than
+            # switching auto-close off.
+            got["campaign"] = hdr.get(ROLL_CAMPAIGN_HDR, ROLL_CAMPAIGN_COL)
             return got, True
     log("Roll Call header row not found (Status / Roll Call / Date Gone) — "
         "reading at today's positions, auto-close OFF this run")
-    return dict(ROLL_FALLBACK), False
+    return dict(ROLL_FALLBACK, campaign=ROLL_CAMPAIGN_COL), False
 
 
 def _close_terminations(ws, roll, cols, resolved, write, log=_log,
@@ -507,8 +538,9 @@ def _close_terminations(ws, roll, cols, resolved, write, log=_log,
         # 1. the board says T
         mark = _board_mark(_norm(who))
         if mark:
-            brow, when = mark
-            why = f"Sales Board r{brow} marks {TERM_MARK!r}"
+            brow, when = mark[0], mark[1]
+            btab = mark[2] if len(mark) > 2 else MAIN_TAB
+            why = f"{btab} r{brow} marks {TERM_MARK!r}"
             if when:
                 why += f" from {when.month}/{when.day}/{when.year}"
                 if not gone:
@@ -593,8 +625,10 @@ def _close_terminations(ws, roll, cols, resolved, write, log=_log,
     return closed, held + missed
 
 
-def _fix_stats_ranges(ws, board, board_form, last_rep, write, log=_log):
-    """Realign the summary boxes' rep-block ranges to 5:last_rep, in place.
+def _fix_stats_ranges(ws, board, board_form, last_rep, write, log=_log,
+                      tab=MAIN_TAB):
+    """Realign the summary boxes' rep-block ranges to 5:last_rep, in place —
+    on ONE board tab (`tab`), against THAT tab's last rep.
 
     WHY THIS WRITES (2026-09-07, Eve). The drift comes back every time reps are
     added past the end of the block — 2026-07-20, 2026-08-11, 2026-09-07 — and
@@ -629,7 +663,7 @@ def _fix_stats_ranges(ws, board, board_form, last_rep, write, log=_log):
 
             def _sub(m):
                 sheet, c1, r1, c2, r2 = m.groups()
-                if sheet and sheet != "Sales Board":
+                if sheet and sheet != tab:
                     return m.group(0)
                 a, b = int(r1), int(r2)
                 if not (5 <= a <= 20 and 40 <= b <= 100):
@@ -671,7 +705,7 @@ def _fix_stats_ranges(ws, board, board_form, last_rep, write, log=_log):
 
     # Read back before believing it. A no-op write (protected range) would
     # otherwise clear the finding AND leave the board wrong — worst of both.
-    back = ws.get("A1:AQ110", value_render_option="FORMULA")
+    back = ws.get(BOARD_RANGE_A1, value_render_option="FORMULA")
     fixed, held = [], []
     for a1, old, new, i, j in plan:
         got = (str(back[i - 1][j])
@@ -689,23 +723,62 @@ def _fix_stats_ranges(ws, board, board_form, last_rep, write, log=_log):
     return fixed, held
 
 
+def _read_boards(sh, log=_log):
+    """{tab: {camp, ws, vals, form, reps[(row, name)], last_rep}} for every
+    board tab that exists and has a rep block. A tab that is missing (the
+    split is rolled out tab by tab) or empty is logged and skipped, never
+    fatal — the other boards still get their audit."""
+    def _pad(rows, width=BOARD_WIDTH):
+        # Sheets TRIMS trailing empty cells, so a rep row that stops at col L
+        # comes back 12 wide and every `len(r) > j` guard downstream reads it
+        # as "no such column". That silently dropped Kyara (r50) and Tara
+        # Ecklof (r51) out of the rep list on 2026-08-06 — which then made
+        # the Stations tab report her as "matches nobody on the board" when
+        # she is sitting right there on it. Pad to the requested width; a
+        # real blank and a trimmed blank are the same thing everywhere here.
+        return [list(r) + [""] * (width - len(r)) for r in rows]
+
+    out = {}
+    for camp, tab in BOARD_TABS.items():
+        try:
+            ws = sh.worksheet(tab)
+        except Exception as e:  # noqa: BLE001 — WorksheetNotFound and kin
+            log(f"no {tab!r} tab ({type(e).__name__}) — {camp} reps not "
+                "audited this run")
+            continue
+        vals = _pad(ws.get(BOARD_RANGE_A1))
+        form = _pad(ws.get(BOARD_RANGE_A1, value_render_option="FORMULA"))
+        # rep block = header row to the tab's totals label, blank names
+        # skipped (vantura_boards.parse_board) — never the campaign TOTAL
+        # rows, which carry a SUMIFS in col C and a number in col A.
+        reps = [(r["row"], r["name"]) for r in parse_board(vals, tab=tab)]
+        if not reps:
+            log(f"{tab}: no rep rows found — layout changed? skipping this board")
+            continue
+        # A rep-shaped row (name + 'Nth Wk' tag) BELOW the totals label is
+        # invisible to every automation — the fills, the roll and the boards
+        # all stop reading at that label. The old single-board audit refused
+        # to realign ranges over a TOTAL row sitting inside the block; now the
+        # block ends there by definition, so the stray is reported instead.
+        end = stat_row(vals)
+        strays = [(i, str(r[1]).strip()) for i, r in enumerate(vals, start=1)
+                  if i > end and len(r) > 13 and str(r[1]).strip()
+                  and WK_TAG.match(str(r[13]).strip())]
+        out[tab] = {"camp": camp, "ws": ws, "vals": vals, "form": form,
+                    "reps": reps, "last_rep": max(i for i, _ in reps),
+                    "end": end, "strays": strays}
+    return out
+
+
 def audit(write: bool, log=_log, auto_close: bool = True,
           fix_ranges: bool = True) -> int:
     from automations.recruiting_report.fill import open_by_key
     sh = open_by_key(SHEET_ID)
-    # Sheets TRIMS trailing empty cells, so a rep row that stops at col L comes
-    # back 12 wide and every `len(r) > j` guard downstream reads it as "no such
-    # column". That silently dropped Kyara (r50) and Tara Ecklof (r51) out of
-    # the rep list on 2026-08-06 — which then made the Stations tab report her
-    # as "matches nobody on the board" when she is sitting right there on it.
-    # Pad to the requested width; a real blank and a trimmed blank are the same
-    # thing everywhere in this file.
-    def _pad(rows, width=43):          # A1:AQ = 43 columns
-        return [list(r) + [""] * (width - len(r)) for r in rows]
 
-    board = _pad(sh.worksheet("Sales Board").get("A1:AQ110"))
-    board_form = _pad(sh.worksheet("Sales Board").get(
-        "A1:AQ110", value_render_option="FORMULA"))
+    boards = _read_boards(sh, log=log)
+    if not boards:
+        log("no rep rows found on any board — layout changed? aborting without report")
+        return 2
     roll_ws = sh.worksheet("Roll Call")
     roll = roll_ws.get_all_values()
     # One column resolution for the whole run, by header — the roll's Status /
@@ -713,40 +786,38 @@ def audit(write: bool, log=_log, auto_close: bool = True,
     # auto-close below WRITES one of them.
     roll_cols, roll_hdr_ok = _roll_cols(roll, log=log)
     R_STATUS, R_NAME = roll_cols["status"], roll_cols["name"]
+    R_CAMP = roll_cols.get("campaign", ROLL_CAMPAIGN_COL)
     alias = _alias_map(sh, log=log)
 
-    # rep block = rows >=5 with a name and a week tag, or (for tag-less manual
-    # strays like the old 'Nico M' row) a campaign — but never the campaign
-    # TOTAL rows, which carry a SUMIFS in col C.
-    def _is_rep(i, r):
-        if i < 5 or len(r) < 15 or not str(r[1]).strip():
-            return False
-        cf = str(board_form[i - 1][2]) if len(board_form[i - 1]) > 2 else ""
-        if "SUMIFS" in cf.upper():
-            return False
-        return bool(WK_TAG.match(str(r[13]).strip())
-                    or str(r[11]).strip() in ("B2B", "BOX", "JE", "Base"))
-
-    reps = [(i, str(r[1]).strip()) for i, r in enumerate(board, start=1)
-            if _is_rep(i, r)]
-    if not reps:
-        log("no rep rows found — layout changed? aborting without report")
-        return 2
-    last_rep = max(i for i, _ in reps)
+    # (tab, row, name) across the boards, in tab order
+    reps = [(tab, i, name) for tab, b in boards.items() for i, name in b["reps"]]
 
     findings = []
+
+    # 0. strays: rep rows that fell below the tab's totals label (see
+    #    _read_boards) — nothing reads them, so say so before anything else.
+    for tab, b in boards.items():
+        for i, name in b["strays"]:
+            label = str(b["vals"][b["end"] - 1][1]).strip() \
+                if len(b["vals"]) >= b["end"] else "totals"
+            findings.append(
+                f"REP BELOW THE TOTALS: '{name}' ({tab} r{i}) sits under the "
+                f"'{label}' row (r{b['end']}) that ends the rep block — the "
+                "fills, the week roll and the board posts all stop reading "
+                "there, so this rep is invisible to every automation. Move "
+                "the row up into the block (Alphalete > Realign).")
 
     # 1. off-menu adds: board rep with no roll-call row (script's prefix rule)
     roll_names = _with_aliases(
         {_norm(r[R_NAME]) for r in roll
          if len(r) > R_NAME and str(r[R_NAME]).strip()}, alias)
-    for i, name in reps:
+    for tab, i, name in reps:
         n = _norm(name)
         hit = n in roll_names or any(
             k.startswith(n + " ") or n.startswith(k + " ") for k in roll_names)
         if not hit:
             findings.append(
-                f"OFF-MENU ADD? '{name}' (board r{i}) has no Roll Call row — "
+                f"OFF-MENU ADD? '{name}' ({tab} r{i}) has no Roll Call row — "
                 "tenure tag is frozen and stats may miss them. Re-add via "
                 "Alphalete menu > Add (or add their Roll Call row).")
 
@@ -767,10 +838,17 @@ def audit(write: bool, log=_log, auto_close: bool = True,
         j = roll_cols["gone"]
         return str(r[j]).strip() if len(r) > j else ""
 
-    board_terms = _board_terminations(
-        board, _board_day_cols(board, log=log),
-        _tag_date(str(sh.worksheet("Sales Board").acell("B2").value or "")),
-        log=log)
+    # The week tag lives in the gold cell on the MAIN board only (the other
+    # boards mirror it by formula); a board's 'T' marks are read per tab.
+    week_end = None
+    if MAIN_TAB in boards:
+        week_end = _tag_date(str(
+            boards[MAIN_TAB]["ws"].acell("B2").value or ""))
+    board_terms = {}
+    for tab, b in boards.items():
+        board_terms.update(_board_terminations(
+            b["vals"], _board_day_cols(b["vals"], log=log, tab=tab), week_end,
+            log=log, tab=tab))
     try:
         store_terms = _store_terminations(
             sh.worksheet(STORE_TAB).get_all_values(), log=log)
@@ -796,7 +874,7 @@ def audit(write: bool, log=_log, auto_close: bool = True,
     #     mid-morning with no alert): every roll person whose status shows
     #     "Active" must have a board row. "New Start" status is exempt (they
     #     join the board at the week roll); Terminated/blank are irrelevant.
-    board_names = _with_aliases({_norm(n) for _, n in reps}, alias)
+    board_names = _with_aliases({_norm(n) for _, _, n in reps}, alias)
     du_status, sales_by_rep, raw_weeks = _load_activity(sh, log=log, alias=alias)
     # "still selling" = sold in either of the last two CLOSED weeks. One week is
     # too tight (a rep can miss a week and be fine); the current week is never
@@ -818,8 +896,7 @@ def audit(write: bool, log=_log, auto_close: bool = True,
         if n in EXEMPT:
             continue
         # not scoreboarded here at all -> "missing from the board" is meaningless
-        camp = (str(r[ROLL_CAMPAIGN_COL]).strip()
-                if len(r) > ROLL_CAMPAIGN_COL else "")
+        camp = (str(r[R_CAMP]).strip() if len(r) > R_CAMP else "")
         if camp and camp not in BOARD_CAMPAIGNS:
             log(f"campaign {camp!r} is not on this board — skipping "
                 f"{str(r[R_NAME]).strip()} (roll r{ri})")
@@ -870,83 +947,94 @@ def audit(write: bool, log=_log, auto_close: bool = True,
             log(f"not on board (no sales yet, {cohort}w old, Daily Update "
                 f"{du or 'blank'}): {who}")
 
-    # 2. stats-range drift: summary formulas whose rep-block range ends off.
-    #    The repair runs FIRST and rewrites board_form in place, so the check
+    # 2. stats-range drift: summary formulas whose rep-block range ends off —
+    #    PER BOARD, each tab's formulas against that tab's own last rep. The
+    #    repair runs FIRST and rewrites board_form in place, so the check
     #    below reports only what could not be (or was not to be) fixed — the
-    #    detector text is unchanged, and a refusal always says why.
-    range_fixed, range_held = _fix_stats_ranges(
-        sh.worksheet("Sales Board"), board, board_form, last_rep,
-        write and fix_ranges, log=log)
-    held_why = "; ".join(sorted({w for _, _, w in range_held if w}))
-    for i, row in enumerate(board_form, start=1):
-        for c in row:
-            c = str(c)
-            if not c.startswith("="):
-                continue
-            for m in RANGE_TOK.finditer(c):
-                a, b = int(m.group(1)), int(m.group(2))
-                # start-drift (top-inserted rows push 5 -> 6/7/...) is just as
-                # real as end-drift — 2026-07-20 the whole % box read 7:68
-                if 5 <= a <= 20 and 40 <= b <= 100 and (a != 5
-                                                        or b != last_rep):
-                    findings.append(
-                        f"STATS-RANGE DRIFT: formula on board r{i} covers rows "
-                        f"{a}:{b} but the rep block is 5:{last_rep} — "
-                        "summary counts are excluding reps again. Run "
-                        "Alphalete > Realign / Health Check."
-                        + (f" (auto-repair declined: {held_why})"
-                           if held_why else ""))
+    #    detector text is unchanged, and a refusal always says why. One drift
+    #    finding per board is enough — it's systemic.
+    range_fixed = []                  # (tab, a1, old, new)
+    for tab, b in boards.items():
+        fixed, held = _fix_stats_ranges(
+            b["ws"], b["vals"], b["form"], b["last_rep"],
+            write and fix_ranges, log=log, tab=tab)
+        range_fixed += [(tab, a1, old, new) for a1, old, new in fixed]
+        held_why = "; ".join(sorted({w for _, _, w in held if w}))
+        drifted = False
+        for i, row in enumerate(b["form"], start=1):
+            for c in row:
+                c = str(c)
+                if not c.startswith("="):
+                    continue
+                for m in QUAL_RANGE.finditer(c):
+                    sheet, _c1, r1, _c2, r2 = m.groups()
+                    if sheet and sheet != tab:
+                        continue      # another tab's block: not this board's drift
+                    a, z = int(r1), int(r2)
+                    # start-drift (top-inserted rows push 5 -> 6/7/...) is just
+                    # as real as end-drift — 2026-07-20 the whole % box read 7:68
+                    if 5 <= a <= 20 and 40 <= z <= 100 and (a != 5
+                                                            or z != b["last_rep"]):
+                        findings.append(
+                            f"STATS-RANGE DRIFT: formula on {tab} r{i} covers "
+                            f"rows {a}:{z} but the rep block is 5:{b['last_rep']}"
+                            " — summary counts are excluding reps again. Run "
+                            "Alphalete > Realign / Health Check."
+                            + (f" (auto-repair declined: {held_why})"
+                               if held_why else ""))
+                        drifted = True
+                        break
+                if drifted:
                     break
-            else:
-                continue
-            break
-        else:
-            continue
-        break  # one drift finding is enough — it's systemic
+            if drifted:
+                break
 
     # 2b. cross-sheet anchor drift (added 2026-07-21): board formulas that
     #     reference BOUNDED Roll Call ranges shift when rows are inserted at
     #     the roll top (the New-Starts box read $B$22:$B$491 and showed 0).
     #     Everything should use full-column refs ('Roll Call'!$B:$B).
-    #     Reported as ONE grouped finding that COUNTS the cells and names them
-    #     in A1. It used to stop at the first hit ("one finding is enough; they
-    #     come in batches") and print it as r71c17 — which read as a single
-    #     stray cell. It is the whole New-Starts box: 15 cells, Q71:Q88. Eve
-    #     fairly pushed back that nobody inserts roll rows by hand (they come
-    #     from the board's own button), so spell out the OTHER half of the risk
-    #     that actually applies here — a bounded range also misses rows appended
-    #     past its END, and the roll has already grown past row 400.
+    #     Reported as ONE grouped finding per board that COUNTS the cells and
+    #     names them in A1. It used to stop at the first hit ("one finding is
+    #     enough; they come in batches") and print it as r71c17 — which read
+    #     as a single stray cell. It is the whole New-Starts box: 15 cells,
+    #     Q71:Q88. Eve fairly pushed back that nobody inserts roll rows by
+    #     hand (they come from the board's own button), so spell out the
+    #     OTHER half of the risk that actually applies here — a bounded range
+    #     also misses rows appended past its END, and the roll has already
+    #     grown past row 400.
     BOUNDED_ROLL = re.compile(
         r"'Roll Call'!\$[A-Z]{1,2}\$(\d+):\$?[A-Z]{1,2}\$(\d+)")
-    hits, bound_end = [], None
-    for i, row in enumerate(board_form, start=1):
-        for j, c in enumerate(row):
-            c = str(c)
-            if not c.startswith("=") or "INDIRECT" in c.upper():
-                continue
-            m = BOUNDED_ROLL.search(c)
-            if m:
-                hits.append("%s%d" % (_a1col(j), i))
-                end = int(m.group(2))
-                bound_end = end if bound_end is None else min(bound_end, end)
-    if hits:
-        roll_last = max((k for k, r in enumerate(roll, start=1)
-                         if len(r) > R_NAME and str(r[R_NAME]).strip()),
-                        default=0)
-        over = ""
-        if bound_end and roll_last > bound_end:
-            over = (f" The Roll Call already carries names down to r{roll_last}, "
-                    f"past the r{bound_end} these stop at — anyone added below "
-                    "that counts as 0 with no error.")
-        shown = ", ".join(hits[:8]) + (" …" if len(hits) > 8 else "")
-        findings.append(
-            f"ROLL-REF DRIFT RISK: {len(hits)} board cell(s) reference a bounded "
-            f"Roll Call range ({shown}). Rewrite with full-column refs "
-            "('Roll Call'!$B:$B): a bounded range misses rows appended past its "
-            f"end AND shifts when rows go in above its start.{over}")
+    roll_last = max((k for k, r in enumerate(roll, start=1)
+                     if len(r) > R_NAME and str(r[R_NAME]).strip()),
+                    default=0)
+    for tab, b in boards.items():
+        hits, bound_end = [], None
+        for i, row in enumerate(b["form"], start=1):
+            for j, c in enumerate(row):
+                c = str(c)
+                if not c.startswith("=") or "INDIRECT" in c.upper():
+                    continue
+                m = BOUNDED_ROLL.search(c)
+                if m:
+                    hits.append("%s%d" % (_a1col(j), i))
+                    end = int(m.group(2))
+                    bound_end = end if bound_end is None else min(bound_end, end)
+        if hits:
+            over = ""
+            if bound_end and roll_last > bound_end:
+                over = (f" The Roll Call already carries names down to r{roll_last}, "
+                        f"past the r{bound_end} these stop at — anyone added below "
+                        "that counts as 0 with no error.")
+            shown = ", ".join(hits[:8]) + (" …" if len(hits) > 8 else "")
+            findings.append(
+                f"ROLL-REF DRIFT RISK: {len(hits)} {tab} cell(s) reference a "
+                f"bounded Roll Call range ({shown}). Rewrite with full-column "
+                "refs ('Roll Call'!$B:$B): a bounded range misses rows appended "
+                f"past its end AND shifts when rows go in above its start.{over}")
 
-    findings += audit_stations(sh, last_rep, reps, roll, log=log, alias=alias,
-                               name_col=R_NAME)
+    last_rep = max(b["last_rep"] for b in boards.values())
+    findings += audit_stations(sh, last_rep, [(i, n) for _t, i, n in reps], roll,
+                               log=log, alias=alias, name_col=R_NAME)
 
     from automations.shared import run_manifest
 
@@ -962,16 +1050,22 @@ def audit(write: bool, log=_log, auto_close: bool = True,
     # Same rule for the range repair: 82 silently rewritten cells followed by
     # "clean" reads exactly like a day with nothing wrong.
     if range_fixed:
-        cells = ", ".join(a1 for a1, _, _ in range_fixed[:6]) + (
-            " …" if len(range_fixed) > 6 else "")
-        fixed_note = (f"realigned {len(range_fixed)} summary formula(s) to rows "
-                      f"5:{last_rep} ({cells})")
+        notes = []
+        for tab, b in boards.items():
+            mine = [a1 for t, a1, _, _ in range_fixed if t == tab]
+            if not mine:
+                continue
+            cells = ", ".join(mine[:6]) + (" …" if len(mine) > 6 else "")
+            notes.append(f"realigned {len(mine)} summary formula(s) on {tab} "
+                         f"to rows 5:{b['last_rep']} ({cells})")
+        fixed_note = " | ".join(notes)
         log(fixed_note)
         closed_note = (closed_note + " | " + fixed_note if closed_note
                        else fixed_note)
 
+    blocks = ", ".join(f"{tab} 5:{b['last_rep']}" for tab, b in boards.items())
     if not findings:
-        log(f"audit clean: {len(reps)} reps checked, block ends r{last_rep}, "
+        log(f"audit clean: {len(reps)} reps checked ({blocks}), "
             "stations OK" + (f"; {len(closed)} termination(s) auto-closed"
                              if closed else "")
             + (f"; {len(range_fixed)} summary range(s) realigned"
@@ -1038,7 +1132,10 @@ def audit(write: bool, log=_log, auto_close: bool = True,
 def audit_stations(sh, last_rep: int, reps, roll, log=_log, alias=None,
                    name_col: int = 3) -> list[str]:
     """Stations-tab invariants (added 2026-07-19 after the audit that found
-    all of these broken at once):
+    all of these broken at once), over BOTH stations tabs — "Stations" (AT&T
+    on top, the Verizon car rides / stations below since 2026-10-02) and "BOX
+    Stations" (the renamed 'D2D Stations' tab, BOX car rides rows 6-15 under
+    the header on row 5, stations rows 17-24):
       1. no formula-error cells (#REF!/#N/A/... — e.g. the deleted week-label
          ref that silently emptied the new-start lists for months)
       2. checklist formulas V5/X5/Z5 filter the board from $B$5 (they had
@@ -1046,20 +1143,41 @@ def audit_stations(sh, last_rep: int, reps, roll, log=_log, alias=None,
          $D$3 and compare $R$2 (not a stale range / literal #REF!)
       3. Rep List FILTERs (F col, all sections + Mon-Fri lineup blocks) start
          at $B$5 — top-inserted board rows push these ranges down over time
-      4. Stations week label R2 == Sales Board B2
+      4. Stations week label (Q2, main tab only) == Sales Board B2
       5. name hygiene: every human name in the car-ride / skill / lineup /
          OFF-list cells must match a board rep or a roll-call person (catches
          'aracely'-style typos and stale identities that break matching)
+    `reps` is [(row, name)] across every board.
     """
+    week_board = str(sh.worksheet(MAIN_TAB).acell("B2").value or "").strip()
+    known = _with_aliases(
+        {_n(n) for _, n in reps} | {
+            _n(r[name_col]) for r in roll
+            if len(r) > name_col and str(r[name_col]).strip()},
+        alias or {})
     out = []
-    stn = sh.worksheet("Stations")
-    vals = stn.get("A1:CL135")
-    form = stn.get("A1:CL135", value_render_option="FORMULA")
+    for tab, rng, prefix in STATIONS_TABS:
+        try:
+            stn = sh.worksheet(tab)
+        except Exception as e:  # noqa: BLE001 — a tab not there (yet) is skipped
+            log(f"(no {tab!r} tab: {type(e).__name__}) — its checks skipped")
+            continue
+        out += _audit_stations_tab(
+            prefix, stn.get(rng), stn.get(rng, value_render_option="FORMULA"),
+            week_board, known, week_cell=(tab == STATIONS_TABS[0][0]))
+    return out
 
+
+def _audit_stations_tab(prefix, vals, form, week_board, known,
+                        week_cell=True) -> list[str]:
+    """The checks for ONE stations tab; findings open with `prefix:`. The
+    row-2 week-label check (4.) only applies where week_roll writes the label
+    — the main tab's Q2 — so `week_cell` is False for BOX Stations."""
+    out = []
     for i, row in enumerate(vals, start=1):
         for j, c in enumerate(row):
             if any(e in str(c) for e in ("#REF!", "#N/A", "#VALUE!", "#NAME?")):
-                out.append(f"STATIONS: error value {c!r} at r{i}c{j+1} — a "
+                out.append(f"{prefix}: error value {c!r} at r{i}c{j+1} — a "
                            "formula reference broke (deleted row/col?).")
 
     # The checklist / new-start / Rep List cells used to be PINNED here by
@@ -1070,24 +1188,28 @@ def audit_stations(sh, last_rep: int, reps, roll, log=_log, alias=None,
     # bogus findings every single day, and the col-F loop silently checked empty
     # cells. Locate them BY FORMULA CONTENT instead — same rule as the rest of
     # the repo: labels/shape survive a re-layout, indices don't. (2026-07-30)
-    week_board = str(sh.worksheet("Sales Board").acell("B2").value or "").strip()
     week_ref = ""   # local row-2 week cell, e.g. "$S$2"
     row2 = vals[1] if len(vals) > 1 else []
     for j, c in enumerate(row2):
         if week_board and str(c).strip() == week_board:
             week_ref = "$%s$2" % _a1col(j)
             break
-    if week_board and not week_ref:
-        out.append("STATIONS: no row-2 cell carries the Sales Board week "
+    if week_cell and week_board and not week_ref:
+        out.append(f"{prefix}: no row-2 cell carries the Sales Board week "
                    f"{week_board!r} — the week label moved or went stale.")
 
     # a roll filter may compare the week either via the local row-2 cell or
     # straight across to 'Sales Board'!$B$2 — both are in use and both are fine.
-    week_ok = [w for w in (week_ref, "'Sales Board'!$B$2") if w]
-    # a board *list* is a RANGE over the name column ($B$5:$B$56). Matching the
-    # bare prefix '$B$' also caught the roll filters' week comparison
-    # ('Sales Board'!$B$2), reporting three healthy formulas as drifted.
-    BOARD_RANGE = re.compile(r"'Sales Board'!\$B\$(\d+):")
+    # (The BOX / D2D boards' B2 mirror the main one by formula, so a filter
+    # comparing against either of those is the same check.)
+    week_ok = [w for w in (week_ref, "'Sales Board'!$B$2",
+                           "'BOX Sales Board'!$B$2", "'D2D Sales Board'!$B$2")
+               if w]
+    # a board *list* is a RANGE over a board's name column ($B$5:$B$56) —
+    # any of the three boards. Matching the bare prefix '$B$' also caught the
+    # roll filters' week comparison ('Sales Board'!$B$2), reporting three
+    # healthy formulas as drifted.
+    BOARD_RANGE = re.compile(r"'(?:BOX |D2D )?Sales Board'!\$B\$(\d+):")
     n_board = n_roll = n_formula = 0
     for i, row in enumerate(form, start=1):
         for j, c in enumerate(row):
@@ -1101,7 +1223,7 @@ def audit_stations(sh, last_rep: int, reps, roll, log=_log, alias=None,
                 n_board += 1
                 bad = sorted({s for s in starts if s != "5"})
                 if bad:
-                    out.append(f"STATIONS: board list {at} starts at row "
+                    out.append(f"{prefix}: board list {at} starts at row "
                                f"{'/'.join(bad)} instead of 5 — top reps are "
                                "being dropped again.")
             # only a formula that filters on "New Start" IS a new-start list.
@@ -1111,23 +1233,18 @@ def audit_stations(sh, last_rep: int, reps, roll, log=_log, alias=None,
             if "'Roll Call'!$D$" in c and '"New Start"' in c:
                 n_roll += 1
                 if "$D$3:" not in c or "#REF" in c:
-                    out.append(f"STATIONS: new-start list {at} formula drifted "
+                    out.append(f"{prefix}: new-start list {at} formula drifted "
                                "(needs the roll $D$3 range; no #REF).")
                 elif week_ok and not any(w in c for w in week_ok):
-                    out.append(f"STATIONS: new-start list {at} no longer "
+                    out.append(f"{prefix}: new-start list {at} no longer "
                                "compares the current week cell.")
     # a re-layout that WIPES the filters would otherwise read as clean. Only
     # meaningful once the tab has formulas at all (an empty grid is a fixture).
     if n_formula and (not n_board or not n_roll):
-        out.append(f"STATIONS: expected board+roll filter formulas, found "
+        out.append(f"{prefix}: expected board+roll filter formulas, found "
                    f"{n_board} board / {n_roll} roll — the tab was re-laid out "
                    "and these checks are no longer looking at anything.")
 
-    known = _with_aliases(
-        {_n(n) for _, n in reps} | {
-            _n(r[name_col]) for r in roll
-            if len(r) > name_col and str(r[name_col]).strip()},
-        alias or {})
     def matches(name):
         n = _n(name)
         return (n in known or any(k.startswith(n + " ") or n.startswith(k + " ")
@@ -1219,7 +1336,7 @@ def audit_stations(sh, last_rep: int, reps, roll, log=_log, alias=None,
     # run logged "1 finding logged" and appended nothing. Leading with the
     # name puts the distinguishing text inside the dedupe key.
     for c, i in sorted(unknown)[:8]:
-        out.append(f"STATIONS: {c!r} (r{i}) matches nobody on the board or the "
+        out.append(f"{prefix}: {c!r} (r{i}) matches nobody on the board or the "
                    "roll — typo or stale identity.")
     return out
 

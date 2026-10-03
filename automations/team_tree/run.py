@@ -6,8 +6,11 @@ AT&T" and "Alphalete BOX" — where the parent of every rep is the Trainer
 column, and node color is the rep's Leadership Status.
 
 The rules, all from Carlos on 2026-08-30 (session d3e813de):
-  * Sales Board tab rows from r5: A=#, B=REP, L=Campaign, M=Trainer,
-    P=Leadership Status. Terminated rows are skipped entirely.
+  * Board rows from r5: A=#, B=REP, L=Campaign, M=Trainer, P=Leadership
+    Status. Terminated rows are skipped entirely. Since 2026-10-02 the reps
+    sit on THREE tabs of that shape — "Sales Board" (B2B), "BOX Sales Board",
+    "D2D Sales Board" (Verizon) — read together via vantura_boards.all_reps;
+    Verizon reps draw on the B2B tree, as anything-not-BOX always has.
   * Nico Murrugarra and Sebastian Avellaneda RUN the office — they never
     appear as tree nodes and count in nothing. Anyone they trained (or whose
     trainer is themselves / unresolvable) is a first-gen branch off the root.
@@ -134,22 +137,17 @@ def _parse_date(s: str, today: dt.date) -> "dt.date | None":
 def build(today: dt.date):
     sh = _open_sheet()
 
-    # ---- Sales Board: the active roster --------------------------------
-    board = sh.worksheet("Sales Board").get("A1:P60")
-    week = ""
+    # ---- Sales Boards: the active roster, all three tabs ---------------
+    from automations.vantura_boards import all_reps, week_label
+    week = week_label(sh)
     reps: list[Rep] = []
-    for row in board:
-        row += [""] * (16 - len(row))
-        if _norm(row[0]) == "we":
-            week = row[1].strip()
-        name = row[1].strip()
-        # data rows carry a numeric # in col A
-        if not row[0].strip().isdigit() or not name:
-            continue
-        status = _norm(row[15])
+    for rep in all_reps(sh):
+        name, status = rep["name"], _norm(rep["lead"])
         if status == "terminated" or _norm(name) in EXCLUDED:
             continue
-        reps.append(Rep(name, row[11].strip().upper(), row[12].strip(), status))
+        # Two trees only: BOX, and everything else (B2B + Verizon) on B2B.
+        camp = "BOX" if rep["campaign"].strip().upper() == "BOX" else "B2B"
+        reps.append(Rep(name, camp, rep["trainer"], status))
 
     by_norm = {_norm(r.name): r for r in reps}
 

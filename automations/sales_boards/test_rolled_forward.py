@@ -6,6 +6,10 @@ offer was flipping the LIVE gold cell back and forth around a post. The roll's
 snapshot holds the closing week's board; these pin how it is found and how it
 is written back onto the temp copy.
 
+Since the three-board split (2026-10-02) the snapshot carries every board's
+reps, each tagged with its tab, and a temp copy of ONE tab only takes the
+reps that belong to it.
+
 Run:  python -m automations.sales_boards.test_rolled_forward
 """
 from __future__ import annotations
@@ -23,19 +27,19 @@ DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
 
 
 def _grid():
-    """A rolled board: B2 on 9.20, day cells blank (formulas), 'Last Wk' holding
-    the closing week's totals, one rep added after the roll — and the blank
-    separator row the live board grew on 2026-09-14 between B2B and BOX."""
+    """A rolled BOX board: B2 on 9.20, day cells blank (formulas), 'Last Wk'
+    holding the closing week's totals, one rep added after the roll — and a
+    blank row inside the block (the live board grew one on 2026-09-14)."""
     return [
         [""],
         ["WE", "9.20"],
         ["#", "REP", "Current Week", "Last Wk"] + DAYS + ["Campaign"],
-        ["1", "ANA", "0", "6"] + [""] * 7 + ["B2B"],
-        ["2", "NEW GUY", "0", ""] + [""] * 7 + ["B2B"],
+        ["1", "BEA", "0", "5"] + [""] * 7 + ["BOX"],
+        ["2", "NEW GUY", "0", ""] + [""] * 7 + ["BOX"],
         [],
-        ["3", "BEA", "0", "5"] + [""] * 7 + ["BOX"],
-        ["", "BOX", "0", "5"] + [""] * 7 + ["BOX"],
-        ["", "TOTAL"],
+        ["3", "CAL", "0", "2"] + [""] * 7 + ["BOX"],
+        ["49", "BOX", "0", "5"] + [""] * 7 + ["BOX"],
+        ["50", "TOTAL"],
         ["", "BOX", "Apps"],               # stats block: must never be written
     ]
 
@@ -44,37 +48,70 @@ SNAP = {
     "from_week": "9.13", "to_week": "9.20",
     "reps": [
         {"name": "ANA", "days": ["1", "", "2", "", "", "F", "3"],
-         "last_wk": "7", "campaign": "B2B"},
+         "last_wk": "7", "campaign": "B2B", "tab": "Sales Board"},
         {"name": "BEA", "days": ["", "", "", "", "", "", "5"],
-         "last_wk": "9", "campaign": "BOX"},
-        {"name": "GONE", "days": ["1"] * 7, "last_wk": "4", "campaign": "BOX"},
+         "last_wk": "9", "campaign": "BOX", "tab": "BOX Sales Board"},
+        {"name": "CAL", "days": ["", "1", "", "", "", "", ""],
+         "last_wk": "4", "campaign": "BOX", "tab": "BOX Sales Board"},
+        {"name": "GONE", "days": ["1"] * 7, "last_wk": "4", "campaign": "BOX",
+         "tab": "BOX Sales Board"},
     ],
-    "campaigns": {"BOX": {"row": 8, "name": "BOX", "last_wk": "30"}},
+    "campaigns": {
+        "B2B": {"row": 21, "name": "AT&T (B2B)", "last_wk": "80",
+                "tab": "Sales Board"},
+        "BOX": {"row": 8, "name": "BOX", "last_wk": "30",
+                "tab": "BOX Sales Board"},
+    },
+    "tabs": {"B2B": "Sales Board", "BOX": "BOX Sales Board"},
 }
 
 
 def test_rewind_puts_the_closing_week_back_by_label():
-    writes, gone = R.rewind_writes(_grid(), SNAP)
+    writes, gone = R.rewind_writes(_grid(), SNAP, tab="BOX Sales Board")
     got = {w["range"]: w["values"] for w in writes}
-    assert got["E4:K4"] == [[1, "", 2, "", "", "F", 3]], got
-    assert got["D4"] == [[7]], got           # Last Wk = the week BEFORE 9.13
+    assert got["E4:K4"] == [["", "", "", "", "", "", 5]], got
+    assert got["D4"] == [[9]], got           # Last Wk = the week BEFORE 9.13
     assert got["D8"] == [[30]], got          # campaign total's hand-typed Last Wk
     assert gone == ["GONE"], gone
 
 
-def test_rewind_reaches_reps_below_a_blank_row():
-    """week_roll's Board stops at the first blank row; on the live board that
-    was 6 reps of 46, with every BOX rep below the gap."""
-    writes, _ = R.rewind_writes(_grid(), SNAP)
+def test_rewind_takes_only_this_tabs_reps():
+    """ANA is a B2B rep on the main board: on the BOX copy she is neither
+    written nor 'missing' — and the B2B subtotal's Last Wk is not written
+    onto the BOX tab's label row either."""
+    writes, gone = R.rewind_writes(_grid(), SNAP, tab="BOX Sales Board")
+    assert "ANA" not in gone, gone
     got = {w["range"]: w["values"] for w in writes}
-    assert got["E7:K7"] == [["", "", "", "", "", "", 5]], got
-    assert got["D7"] == [[9]], got
+    assert [[30]] == got["D8"]
+    assert all(v != [[80]] for v in got.values()), got
+
+
+def test_rewind_reaches_reps_below_a_blank_row():
+    """A stop-at-blank reader saw 6 reps of 46 on the live board; the copy
+    is scanned from the header to TOTAL, blank rows included."""
+    writes, _ = R.rewind_writes(_grid(), SNAP, tab="BOX Sales Board")
+    got = {w["range"]: w["values"] for w in writes}
+    assert got["E7:K7"] == [["", 1, "", "", "", "", ""]], got
+    assert got["D7"] == [[4]], got
     assert "D10" not in got, got             # below TOTAL: the stats block
 
 
 def test_rewind_leaves_a_rep_added_after_the_roll_alone():
-    writes, _ = R.rewind_writes(_grid(), SNAP)
+    writes, _ = R.rewind_writes(_grid(), SNAP, tab="BOX Sales Board")
     assert not any(w["range"].endswith("5") for w in writes), writes
+
+
+def test_an_untagged_snapshot_is_used_whole():
+    """A snapshot written before the split carries no tabs: every rep is
+    tried, and the ones not on this copy are simply reported."""
+    old = {"from_week": "9.13", "to_week": "9.20",
+           "reps": [dict(r, tab=None) for r in SNAP["reps"]],
+           "campaigns": {k: dict(v, tab=None)
+                         for k, v in SNAP["campaigns"].items()}}
+    writes, gone = R.rewind_writes(_grid(), old, tab="BOX Sales Board")
+    got = {w["range"]: w["values"] for w in writes}
+    assert got["E4:K4"] == [["", "", "", "", "", "", 5]], got
+    assert sorted(gone) == ["ANA", "GONE"], gone
 
 
 def _write(d: Path, name: str, blob) -> None:

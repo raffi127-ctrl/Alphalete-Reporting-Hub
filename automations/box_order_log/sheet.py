@@ -33,7 +33,8 @@ TAB_DATA = "Lucy Box Data"
 
 # Tabs this module must never write to, whatever else changes.
 PROTECTED_TABS = ("Box Order Log", "Churn", "Churn - Atef", "LUCY CHURN",
-                  "Activations", "Sales Board", "WeekData")
+                  "Activations", "Sales Board", "BOX Sales Board",
+                  "D2D Sales Board", "BOX Stations", "WeekData")
 
 WEEKS = 6
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Vantura Sales Board morning close-out from the ORDER LOGS, on LUCY 2.
 # Reads "Lucy At&t Data" (+ "Lucy Box Data" from the 2026-09-01 cutover) and
-# writes yesterday's day column on the "Sales Board" tab — the authoritative
+# writes yesterday's day column on each campaign's board tab ("Sales Board" for B2B, "BOX Sales Board" for BOX) — the authoritative
 # close-out Carlos asked for 2026-08-30 ("this morning you would have looked
 # at yesterday's order log and filled in the proper sales").
 #

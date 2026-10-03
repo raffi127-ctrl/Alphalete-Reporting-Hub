@@ -16,8 +16,14 @@ the thread where their audience already reads:
 Both in #alphalete-gp-sales AND #a-players-b2b; Zero Streaks ride the
 A-Players B2B Metrics thread.
 
+THREE BOARD TABS (2026-10-02): the reps live on per-campaign tabs with the
+same geometry — "Sales Board" (B2B), "BOX Sales Board", "D2D Sales Board"
+(Verizon; see automations/vantura_boards.py). Each program renders off ITS
+tab; the week gate reads the gold cell on "Sales Board" (the only place it is
+typed — the other boards mirror it by formula).
+
 Rendering lives in render.py — see its header for why we duplicate the tab and
-hide rows per campaign instead of cropping ranges (campaigns are NOT contiguous).
+hide rows per campaign instead of cropping ranges.
 
 Reads the PROD sheet as of go-live (2026-07-18); set SALES_BOARD_SHEET_ID to the
 sandbox id to build against a copy. DRY-RUN by default — posting needs --post.
@@ -43,13 +49,16 @@ from automations.recruiting_report.fill import open_by_key, _retry
 from automations.pnl_office.run import _token
 from automations.sales_boards import render as R
 from automations.sales_boards import zeros as Z
+from automations.vantura_boards import MAIN_TAB, tab_for
 
 SANDBOX_SHEET_ID = "15QzcyFqTzX9RYNJ2SvT_HOiyQsMU1v90wHjSUHA_cNc"   # re-copied 7/18
 PROD_SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"
 # PROD by default as of go-live (Megan 2026-07-18). Set SALES_BOARD_SHEET_ID to
 # the sandbox id to build against a copy again.
 SHEET_ID = os.environ.get("SALES_BOARD_SHEET_ID", PROD_SHEET_ID)
-TAB = "Sales Board"
+# The main board: B2B reps + the gold week cell. Each program renders off
+# vantura_boards.tab_for(program) — BOX off "BOX Sales Board".
+TAB = MAIN_TAB
 TEMP_TAB = "_sb_render_tmp"          # ephemeral copy we create + delete
 
 # Boards that post to the thread. Sourced from render.PROGRAMS but with JE and
@@ -484,16 +493,21 @@ def roll_snapshot(want: str, on_sunday, out_dir: Path = OUT_DIR):
     return None
 
 
-def rewind_writes(grid, snap) -> tuple:
+def rewind_writes(grid, snap, tab: str = "") -> tuple:
     """(value writes, snapshot reps no longer on the board) that put the
     closing week back on a COPY of a rolled board.
 
     Columns are found by the header row's labels and rows by NAME, never by
-    index — and deliberately NOT through week_roll's Board, whose rep block
-    ends at the first blank row: on 2026-09-14 a blank separator between the
-    B2B and BOX reps (row 11) made it see 6 reps of 46, which would have
-    rewound B2B and left every BOX rep on the new week. Scans everything from
-    the header down to TOTAL instead.
+    index. Scans everything from the header down to TOTAL, blank rows
+    included: on 2026-09-14 a blank separator (row 11) made a stop-at-blank
+    reader see 6 reps of 46, which would have rewound B2B and left every BOX
+    rep on the new week.
+
+    `tab` names the board the copy was duplicated from: the roll's snapshot
+    carries every board's reps (each tagged with its tab), and only the ones
+    from THIS tab belong on this copy — a rep from another board is neither
+    written nor "missing". A snapshot from before the three-board split has
+    no tags and is used whole.
 
     Only rows the snapshot knows are written: a rep added after the roll keeps
     his INDEX formulas, which read blank for the old week — correct, he wasn't
@@ -529,9 +543,14 @@ def rewind_writes(grid, snap) -> tuple:
         if name:
             by_name.setdefault(name, r)
 
+    def _mine(entry) -> bool:
+        return not tab or not entry.get("tab") or entry.get("tab") == tab
+
     first, last, col_last = a1(c_days[0]), a1(c_days[-1]), a1(c_last)
     writes, missing = [], []
     for rep in snap.get("reps") or []:
+        if not _mine(rep):
+            continue
         row = by_name.get(rep.get("name"))
         if row is None:
             missing.append(rep.get("name"))
@@ -542,6 +561,8 @@ def rewind_writes(grid, snap) -> tuple:
         writes.append({"range": f"{col_last}{row}",
                        "values": [[as_number(rep.get("last_wk", ""))]]})
     for info in (snap.get("campaigns") or {}).values():
+        if not _mine(info):
+            continue
         row = by_name.get(info.get("name"))
         if row is not None:
             writes.append({"range": f"{col_last}{row}",
@@ -697,13 +718,17 @@ def main(argv=None) -> int:
         [p for p in PROGRAMS if p != "BOX"]
 
     sh = open_by_key(SHEET_ID)
-    src = _retry(lambda: sh.worksheet(TAB))
+    # One tab per program (vantura_boards): B2B off "Sales Board", BOX off
+    # "BOX Sales Board". The gold week cell is on the main tab only.
+    tabs = {p: tab_for(p) for p in programs}
+    main_ws = _retry(lambda: sh.worksheet(TAB))
     print(f"sheet: {SHEET_ID[:12]}… "
-          f"({'SANDBOX' if SHEET_ID == SANDBOX_SHEET_ID else 'PROD'})  tab={TAB}")
+          f"({'SANDBOX' if SHEET_ID == SANDBOX_SHEET_ID else 'PROD'})  "
+          + "  ".join(f"{p}={t!r}" for p, t in tabs.items()))
 
     # GATE: the board must be showing the week that contains YESTERDAY before we
     # render anything (on Monday that's last week's completed week).
-    ok, shown, want = check_we(_retry(src.get_all_values), yday)
+    ok, shown, want = check_we(_retry(main_ws.get, "A1:C3"), yday)
     sunday, _ = expected_we(yday)
     print(f"week check: board WE={shown!r}, need {want!r} "
           f"(week ending {sunday:%a %m/%d} — covers {yday:%a %m/%d})")
@@ -759,31 +784,45 @@ def main(argv=None) -> int:
     for w in sh.worksheets():                 # clear any orphan from a crashed run
         if w.title == TEMP_TAB:
             sh.del_worksheet(w)
-    # Zeros render on their OWN throwaway tab — they overwrite the day columns with
-    # a cross-week window, which would corrupt the boards if the two shared a copy.
-    # (Not on a rolled board: zeros read the live gold cell, which has moved on.
-    # The 5:10 pass posts them before the roll anyway.)
+    # Zeros render on their OWN throwaway tabs — they overwrite the day columns
+    # with a cross-week window, which would corrupt the boards if the two shared
+    # a copy. They read EVERY program's board (B2B + BOX), whichever program
+    # this pass renders, so the one grouped-by-campaign image per level
+    # (Carlos 7/23) survives the split; a later pass dedupes on the caption.
+    # (Not on a rolled board: zeros read the live gold cell, which has moved
+    # on. The 5:10 pass posts them before the roll anyway.)
     zrs = {} if (args.corrected or snap) else \
-        Z.render_zeros(sh, src, SHEET_ID, _token(), yday, OUT_DIR)
+        Z.render_zeros(sh, [_retry(lambda t=t: sh.worksheet(t))
+                            for t in dict.fromkeys(tab_for(p) for p in PROGRAMS)],
+                       SHEET_ID, _token(), yday, OUT_DIR)
 
     imgs = {p: {} for p in programs}
     if not args.only_zeros:
-        tmp = sh.duplicate_sheet(src.id, new_sheet_name=TEMP_TAB)
-        try:
-            sh.batch_update({"requests": [{"clearBasicFilter": {"sheetId": tmp.id}}]})
-            if snap:
-                writes, gone = rewind_writes(_retry(tmp.get_all_values), snap)
-                _retry(tmp.batch_update, writes, value_input_option="USER_ENTERED")
-                # RAW, so 9.20 stays "9.20" for the title and the formulas' keys.
-                _retry(tmp.update, values=[[want]], range_name="B2",
-                       value_input_option="RAW")
-                print(f"temp copy rewound to {want}: {len(writes)} range(s)"
-                      + (f"; not on the board any more: {', '.join(gone)}"
-                         if gone else ""))
-            imgs = R.render_all(sh, tmp, SHEET_ID, _token(), yday, OUT_DIR, programs)
-        finally:
-            sh.del_worksheet(tmp)
-            print("temp tab removed")
+        # One temp copy per board tab, rendering the programs that live on it.
+        by_tab = {}
+        for p in programs:
+            by_tab.setdefault(tabs[p], []).append(p)
+        for tab, progs in by_tab.items():
+            src = _retry(lambda t=tab: sh.worksheet(t))
+            tmp = sh.duplicate_sheet(src.id, new_sheet_name=TEMP_TAB)
+            try:
+                sh.batch_update({"requests": [{"clearBasicFilter": {"sheetId": tmp.id}}]})
+                if snap:
+                    writes, gone = rewind_writes(_retry(tmp.get_all_values),
+                                                 snap, tab=tab)
+                    _retry(tmp.batch_update, writes, value_input_option="USER_ENTERED")
+                    # RAW, so 9.20 stays "9.20" for the title and the formulas' keys.
+                    _retry(tmp.update, values=[[want]], range_name="B2",
+                           value_input_option="RAW")
+                    print(f"temp copy of {tab!r} rewound to {want}: {len(writes)} "
+                          "range(s)"
+                          + (f"; not on the board any more: {', '.join(gone)}"
+                             if gone else ""))
+                imgs.update(R.render_all(sh, tmp, SHEET_ID, _token(), yday,
+                                         OUT_DIR, progs))
+            finally:
+                sh.del_worksheet(tmp)
+                print(f"temp tab removed ({tab})")
 
     made = sum(len(v) for v in imgs.values()) + len(zrs)
     if not args.post:

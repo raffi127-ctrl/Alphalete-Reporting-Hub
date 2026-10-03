@@ -133,10 +133,11 @@ def _stations_with_unknown_name():
     return rows, form
 
 
-def _board_with_days(rows, week="8.16"):
-    """A Sales Board carrying the real column shape the 'T' sync reads:
+def _board_with_days(rows, week="8.16", campaign="B2B"):
+    """A board tab carrying the real column shape the 'T' sync reads:
     r4 is the header row (B 'REP', E..K 'Monday'..'Sunday', L 'Campaign'),
-    rep rows from r5. `rows` is [(name, [7 day cells])].
+    rep rows from r5. `rows` is [(name, [7 day cells])]. `campaign` is the
+    tab's campaign label (col L) — "BOX" for a BOX Sales Board fixture.
 
     Returns (values, formulas, week) — the week tag goes in B2, which is what
     the termination DATE is derived from."""
@@ -152,8 +153,8 @@ def _board_with_days(rows, week="8.16"):
         r[1] = name
         for k, cell in enumerate(days):
             r[4 + k] = cell
-        r[11] = "B2B"
-        r[13] = "1st Wk"                                 # -> _is_rep True
+        r[11] = campaign
+        r[13] = "1st Wk"                                 # a rep row's tenure tag
         values.append(r)
     formulas = [[""] * 20 for _ in values]               # no "=" -> no drift
     return values, formulas, week
@@ -702,8 +703,13 @@ class AutoCloseTerminations(unittest.TestCase):
     def test_missing_headers_block_the_write(self):
         """The repo rule is label lookup over indexes, and it matters most when
         writing: a guessed column after a re-layout overwrites real data."""
-        roll = _roll_with_open_termination()
-        roll[0] = ["", "", "", "", ""]          # header row gone
+        # Header row gone -> the audit reads at today's fallback positions
+        # (B / E / N, the 2026-09-17 layout), so lay the rows out that way:
+        # a blank 'Leadership' column at C pushes the name to E and Date
+        # Gone to N, exactly as the live roll is.
+        roll = [["", "", "", "", ""]] + [
+            _pad(list(r[:2]) + [""] + list(r[2:]), 14)
+            for r in _roll_with_open_termination()[1:]]
         sheet = self._sheet(roll)
         rc, _, _ = self._run(sheet, [])
         self.assertEqual(rc, 0)
@@ -1063,17 +1069,27 @@ class StatsRangeAutoRepair(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertEqual(sheet.worksheet("Sales Board").written, [])
 
-    def test_total_row_inside_the_block_refuses_and_says_why(self):
-        """A TOTAL row inside 5:last_rep means the block ran into the campaign
-        subtotals; widening a range over those double-counts."""
+    def test_total_row_ends_the_block_and_reps_below_it_are_reported(self):
+        """Since the three-board split (2026-10-02) a totals label in col B
+        ENDS the rep block — every automation stops reading there — so a
+        TOTAL row can never sit 'inside' it. The reps under it are the
+        problem now: invisible to the fills, the roll and the boards. They
+        are reported as strays, and the ranges realign to the block that is
+        actually read (5:39), never widened over the TOTAL row."""
         sheet = self._sheet({(51, 2): self._drifted()}, total_row=40)
         rc, _, _ = self._run(sheet, [])
         self.assertEqual(rc, 0)
-        self.assertEqual(sheet.worksheet("Sales Board").written, [],
-                         "must refuse to write over a TOTAL row")
+        self.assertEqual(
+            dict(sheet.worksheet("Sales Board").written).get("C51"),
+            '=SUMIFS(C$5:C$39,$L$5:$L$39,"B2B")',
+            "ranges realign to the block above the TOTAL row")
         found = self._findings(sheet)
-        self.assertTrue(any("STATS-RANGE DRIFT" in f and "declined" in f
-                            for f in found), found)
+        strays = [f for f in found if "REP BELOW THE TOTALS" in f]
+        self.assertEqual(len(strays), 5, found)          # Rep 41..Rep 45
+        self.assertTrue(any("'Rep 41' (Sales Board r41)" in f for f in strays),
+                        strays)
+        self.assertFalse(any("STATS-RANGE DRIFT" in f for f in found),
+                         "the repair took, so no drift finding is left")
 
     def test_cross_sheet_range_is_never_rewritten(self):
         """'Roll Call'!$B$5:$B$43 is finding 2b, whose fix is a full-column
@@ -1101,6 +1117,190 @@ class StatsRangeAutoRepair(unittest.TestCase):
         self.assertEqual(sheet.worksheet("Sales Board").written, [])
         self.assertTrue(any("declined" in f and "re-layout" in f
                             for f in self._findings(sheet)))
+
+
+class ThreeBoards(unittest.TestCase):
+    """2026-10-02: the reps live on THREE tabs of one shape — "Sales Board"
+    (B2B), "BOX Sales Board", "D2D Sales Board" (Verizon). Every board check
+    runs per tab and names the tab; a tab that is not there yet is skipped
+    (the other tests cover that path — their fixtures carry the main tab
+    only and still pass)."""
+
+    _run = ExitCodeSemantics._run
+
+    @staticmethod
+    def _roll_header_917():
+        """The Roll Call header as it is since 2026-09-17: 'Leadership' went
+        in at C, pushing Campaign to D and the name to E."""
+        h = _pad([""], 14)
+        h[0], h[1], h[2], h[3], h[4] = ("Week Ending", "Status", "Leadership",
+                                        "Campaign", "Roll Call")
+        h[13] = "Date Gone"
+        return h
+
+    @classmethod
+    def _roll_row(cls, name, campaign, status="Active", leadership="",
+                  week="1.4"):
+        r = _pad([""], 14)
+        r[0], r[1], r[2], r[3], r[4] = week, status, leadership, campaign, name
+        return r
+
+    def _sheet(self, main_rows, box_rows=(), d2d_rows=(), roll=None,
+               box_stations=None, main_form=None, box_form=None):
+        mv, mf, wk = _board_with_days(main_rows, campaign="B2B")
+        bv, bf, _ = _board_with_days(box_rows, campaign="BOX")
+        dv, df, _ = _board_with_days(d2d_rows, campaign="Verizon")
+        st_v, st_f = _stations_clean()
+        st_v[1][16] = wk                 # Stations!Q2 — the week label week_roll writes
+        tabs = {
+            "Sales Board": _FakeWS(mv, main_form or mf, b2=wk),
+            "BOX Sales Board": _FakeWS(bv, box_form or bf, b2=wk),
+            "D2D Sales Board": _FakeWS(dv, df, b2=wk),
+            "Roll Call": _FakeWS(roll if roll is not None else
+                                 [self._roll_header_917()]),
+            "Report an Issue": _FakeWS([]),
+            "Stations": _FakeWS(st_v, st_f),
+        }
+        if box_stations is not None:
+            tabs["BOX Stations"] = _FakeWS(*box_stations)
+        return _FakeSheet(tabs)
+
+    def _appended(self, sheet):
+        return [str(r[3]) for r in sheet.worksheet("Report an Issue").appended]
+
+    def test_a_box_T_closes_the_roll_and_names_the_box_tab(self):
+        """The 'T' sync reads every board: a BOX rep T'd on the BOX tab
+        closes her roll row, and the trace says which tab said so."""
+        roll = [self._roll_header_917(),
+                self._roll_row("Casey Rep", "B2B"),
+                self._roll_row("Boxy Rep", "BOX")]
+        sheet = self._sheet([("Casey Rep", ["1", "0", "2", "", "", "", ""])],
+                            box_rows=[("Boxy Rep", ["T"] * 7)], roll=roll)
+        rc, wm, _ = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        self.assertEqual(sheet.worksheet("Roll Call").written,
+                         [("B3", "Terminated")])
+        self.assertIn("BOX Sales Board r5", wm.call_args.kwargs.get("note") or "")
+
+    def test_reps_on_every_tab_count_as_on_the_board(self):
+        """Active roll people with a row on ANY of the three tabs are not
+        'missing from the board' — and one with no row anywhere still is,
+        Verizon included now that the D2D board is scanned."""
+        roll = [self._roll_header_917(),
+                self._roll_row("Casey Rep", "B2B"),
+                self._roll_row("Boxy Rep", "BOX"),
+                self._roll_row("Vee Person", "Verizon"),
+                self._roll_row("Gone Person", "Verizon")]
+        sheet = self._sheet([("Casey Rep", [""] * 7)],
+                            box_rows=[("Boxy Rep", [""] * 7)],
+                            d2d_rows=[("Vee Person", [""] * 7)], roll=roll)
+        rc, _, _ = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        found = " ".join(self._appended(sheet))
+        self.assertIn("Gone Person", found)
+        for who in ("Casey Rep", "Boxy Rep", "Vee Person"):
+            self.assertNotIn(who, found, who)
+
+    def test_roll_campaign_is_read_from_col_D_by_header(self):
+        """Since 2026-09-17 the campaign is col D. Reading col C (the
+        leadership level, as the audit did until 2026-10-02) made every
+        Active rep with a level look like an untracked campaign and skipped
+        them — this B2B person with no board row was never reported."""
+        roll = [self._roll_header_917(),
+                self._roll_row("Casey Rep", "B2B", leadership="Level 1"),
+                self._roll_row("Pat Offboard", "B2B", leadership="Level 1"),
+                self._roll_row("Base Person", "Base", leadership="Level 1")]
+        sheet = self._sheet([("Casey Rep", [""] * 7)], roll=roll)
+        rc, _, _ = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        found = " ".join(self._appended(sheet))
+        self.assertIn("Pat Offboard", found)
+        self.assertNotIn("Base Person", found, "Base is still untracked")
+
+    def test_each_tab_realigns_to_its_own_last_rep(self):
+        """The BOX tab's summary formulas are checked against the BOX tab's
+        last rep, the main tab's against its own — and a BOX-tab formula
+        that reads the MAIN board's block is neither rewritten nor flagged."""
+        main_rows = [("Rep %02d" % i, [""] * 7) for i in range(5, 46)]   # r5-45
+        box_rows = [("Box %02d" % i, [""] * 7) for i in range(5, 13)]    # r5-12
+        roll = [self._roll_header_917()]
+        roll += [self._roll_row(n, "B2B") for n, _ in main_rows]
+        roll += [self._roll_row(n, "BOX") for n, _ in box_rows]
+        mf = [[""] * 20 for _ in range(52)]
+        bf = [[""] * 20 for _ in range(52)]
+        mf[50][2] = '=SUMIFS(C$5:C$43,$L$5:$L$43,"B2B")'
+        bf[50][2] = '=SUMIFS(C$5:C$43,$L$5:$L$43,"BOX")'
+        bf[50][3] = "=SUMPRODUCT(('Sales Board'!$L$5:$L$43=\"B2B\"))"
+        sheet = self._sheet(main_rows, box_rows=box_rows, roll=roll,
+                            main_form=mf, box_form=bf)
+        rc, _, _ = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        self.assertEqual(dict(sheet.worksheet("Sales Board").written),
+                         {"C51": '=SUMIFS(C$5:C$45,$L$5:$L$45,"B2B")'})
+        self.assertEqual(dict(sheet.worksheet("BOX Sales Board").written),
+                         {"C51": '=SUMIFS(C$5:C$12,$L$5:$L$12,"BOX")'})
+        self.assertFalse(any("STATS-RANGE DRIFT" in f
+                             for f in self._appended(sheet)))
+
+    def test_box_stations_names_are_checked_without_a_week_label_finding(self):
+        """The BOX car rides live on 'BOX Stations' now (the old D2D tab):
+        its names are checked like the main tab's, but it carries no row-2
+        week cell, so that check must not fire for it."""
+        rows = [[""] * 20 for _ in range(8)]
+        rows[4][1:5] = ["Car Ride Leader", "Rep #2", "Rep #3", "Rep #4"]
+        rows[5][1] = "Casey Rep"
+        rows[6][1] = "Zed Unknownperson"
+        sheet = self._sheet([("Casey Rep", [""] * 7)],
+                            roll=[self._roll_header_917(),
+                                  self._roll_row("Casey Rep", "B2B")],
+                            box_stations=(rows, []))
+        rc, _, _ = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        found = self._appended(sheet)
+        self.assertTrue(any(f.startswith("BOX STATIONS: 'Zed Unknownperson' (r7)")
+                            for f in found), found)
+        self.assertFalse(any("Car Ride Leader" in f for f in found), found)
+        self.assertFalse(any("row-2 cell" in f for f in found), found)
+
+
+class StationsBoardLists(unittest.TestCase):
+    """A Rep List FILTER may read any of the three boards' name columns;
+    all of them have to start at row 5."""
+
+    def _findings(self, cells, tab="Stations"):
+        rows = [[""] * 30 for _ in range(6)]
+        form = [[""] * 30 for _ in range(6)]
+        for col, f in cells.items():
+            form[5][col] = f
+        sheet = _FakeSheet({tab: _FakeWS(rows, form),
+                            "Sales Board": _FakeWS([], [], b2="")})
+        return audit_run.audit_stations(sheet, 5, [(5, "Casey Rep")], [],
+                                        log=lambda *a: None)
+
+    NEW_START = ('=IFERROR(FILTER(INDIRECT("\'Roll Call\'!$E$3:$E$1046"),'
+                 'INDIRECT("\'Roll Call\'!$D$3:$D$1046")="BOX",'
+                 'INDIRECT("\'Roll Call\'!$A$3:$A$1046")&""=\'Sales Board\'!$B$2&"",'
+                 'INDIRECT("\'Roll Call\'!$B$3:$B$1046")="New Start"),"")')
+
+    def test_box_board_list_from_row_5_is_fine(self):
+        f = ("=IFERROR(SORT(FILTER('BOX Sales Board'!$B$5:$B$60,"
+             "'BOX Sales Board'!$L$5:$L$60=\"BOX\")),\"\")")
+        self.assertEqual(self._findings({7: f, 22: self.NEW_START},
+                                        tab="BOX Stations"), [])
+
+    def test_a_drifted_box_board_list_is_caught(self):
+        f = ("=IFERROR(SORT(FILTER('BOX Sales Board'!$B$7:$B$60,"
+             "'BOX Sales Board'!$L$7:$L$60=\"BOX\")),\"\")")
+        found = self._findings({7: f, 22: self.NEW_START}, tab="BOX Stations")
+        self.assertTrue(any("BOX STATIONS: board list H6 starts at row 7" in x
+                            for x in found), found)
+
+    def test_d2d_board_list_on_the_main_tab(self):
+        f = ("=IFERROR(SORT(FILTER('D2D Sales Board'!$B$6:$B$60,"
+             "'D2D Sales Board'!$L$6:$L$60=\"Verizon\")),\"\")")
+        found = self._findings({7: f, 22: self.NEW_START})
+        self.assertTrue(any("STATIONS: board list H6 starts at row 6" in x
+                            for x in found), found)
 
 
 class StationsNameHygiene(unittest.TestCase):

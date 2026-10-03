@@ -278,14 +278,13 @@ def npa(payload: str) -> dict:
         target += dt.timedelta(days=7)
         week_str = f"{float(f'{target.month}.{target.day}'):g}"
 
-    # roster: Commission reps + Sales Board + Roll Call names, alias-bridged —
-    # a rep with no line this week must still resolve.
+    # roster: Commission reps + the three Sales Board tabs + Roll Call names,
+    # alias-bridged — a rep with no line this week must still resolve.
     roster = {_nrm(r["name"]): r["name"] for r in reps}
     try:
-        for r in sh.worksheet("Sales Board").get("B5:B60"):
-            nm = str(r[0]).strip() if r else ""
-            if nm:
-                roster.setdefault(_nrm(nm), nm)
+        from automations.vantura_boards import all_reps
+        for rep in all_reps(sh):
+            roster.setdefault(_nrm(rep["name"]), rep["name"])
     except Exception:  # noqa: BLE001
         pass
     try:

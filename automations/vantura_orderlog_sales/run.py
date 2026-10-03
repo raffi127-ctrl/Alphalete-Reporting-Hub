@@ -28,12 +28,14 @@ morning close-out reads THEM instead of counting Slack posts:
 Base is GONE — the campaign ended (Carlos 2026-08-30); no Base rows remain on
 the board and vantura_slack_sales no longer parses it either.
 
-Board mechanics are vantura_slack_sales' own, imported from it: same tab, same
-label anchors, same wrong-week gate, and THE FILL ONLY EVER RAISES A NUMBER —
-a board cell higher than the log (a hand entry, a sale routed another way)
-stands. The log lags the same evening's late sales, which is exactly why the
-evening Slack passes stay: this is the authoritative morning close-out, they
-are the live intraday ticker.
+Board mechanics are vantura_slack_sales' own, imported from it: same tabs
+(one per campaign since 2026-10-02 — B2B on "Sales Board", BOX on "BOX Sales
+Board", vantura_boards.tab_for), same label anchors, same wrong-week gate off
+the main board's gold cell, and THE FILL ONLY EVER RAISES A NUMBER — a board
+cell higher than the log (a hand entry, a sale routed another way) stands.
+The log lags the same evening's late sales, which is exactly why the evening
+Slack passes stay: this is the authoritative morning close-out, they are the
+live intraday ticker.
 
   python -m automations.vantura_orderlog_sales.run                # yesterday
   python -m automations.vantura_orderlog_sales.run --date 2026-08-29
@@ -50,10 +52,11 @@ import datetime as dt
 import sys
 
 from automations.vantura_slack_sales.run import (
-    SHEET_ID, TAB, NAME_COL, TZ,
+    SHEET_ID, NAME_COL, TZ,
     _cell, _log, _md, _norm,
     board_grid, campaign_rows, day_column, ensure_board_shape, week_ok,
 )
+from automations.vantura_boards import BOARD_TABS, read_board
 
 REPORT_ID = "vantura_orderlog_sales"            # schedule_config id
 
@@ -110,12 +113,16 @@ HOME_CAMPAIGN = {
 }
 
 
-def home_campaigns(g) -> dict[str, str]:
+def home_campaigns(grids) -> dict[str, str]:
     """HOME_CAMPAIGN, re-pointed at whichever campaign the rep's board row is
-    labelled with today. A rep on no row keeps the fallback (and gets flagged
-    by that pass, as before)."""
+    labelled with today. `grids` is {campaign: that campaign's board grid}
+    (each campaign has its own tab now). A rep on no row keeps the fallback
+    (and gets flagged by that pass, as before)."""
     out = dict(HOME_CAMPAIGN)
     for camp in CAMPAIGNS:
+        g = (grids or {}).get(camp)
+        if g is None:
+            continue
         rows = campaign_rows(g, camp)
         for key in HOME_CAMPAIGN:
             if match_rep(key, rows):
@@ -263,14 +270,14 @@ def match_rep(log_key: str, rows: dict[str, int]):
 # Carlos 2026-09-30: they stay listed as Verizon — their log sales go on no
 # Sales Board row, and that is NOT a hole to flag (Giovanni Monreal / Luis
 # Valenciano). A rep on neither board is still flagged.
-D2D_TAB = "D2D Sales Board"
+D2D_TAB = BOARD_TABS["Verizon"]
 
 
 def d2d_reps(sh) -> dict[str, int]:
-    """{normalised rep name: row} on the D2D board (col B, from row 5)."""
-    names = sh.worksheet(D2D_TAB).col_values(NAME_COL)
-    return {_norm(n): r for r, n in enumerate(names, 1)
-            if r > 4 and n.strip()}
+    """{normalised rep name: row} on the D2D board — its rep block only, the
+    totals / stats rows under it never read as people."""
+    return {_norm(r["name"]): r["row"]
+            for r in read_board(sh.worksheet(D2D_TAB))}
 
 
 def split_d2d(unmatched, d2d: dict[str, int]):
@@ -294,10 +301,13 @@ def counts_box_tracker(sh, day: dt.date) -> dict[str, float]:
     return out
 
 
-def run_campaign(sh, g, day: dt.date, campaign: str, counts_fn=None,
+def run_campaign(sh, grids, day: dt.date, campaign: str, counts_fn=None,
                  d2d=None) -> dict:
+    """`grids` is {campaign: board grid}; this campaign's rows come off its
+    own tab, the home-campaign re-pointing looks across both."""
+    g = grids[campaign]
     rows = campaign_rows(g, campaign)
-    home = home_campaigns(g)
+    home = home_campaigns(grids)
     counts = dict((counts_fn or CAMPAIGNS[campaign])(sh, day))
     for key in [k for k in counts
                 if home.get(k, campaign) != campaign]:
@@ -440,7 +450,12 @@ def main(argv=None) -> int:
 
     from automations.recruiting_report.fill import open_by_key, _retry
     sh = open_by_key(SHEET_ID)
-    ws, g = board_grid()
+    # BOTH campaigns' boards, whatever this pass fills: the home-campaign
+    # re-pointing (Nico) has to see every board to find his row. The week
+    # gate reads the main board — the gold cell is typed there only.
+    boards = {c: board_grid(c) for c in CAMPAIGNS}          # c -> (ws, grid)
+    grids = {c: cg for c, (_w, cg) in boards.items()}
+    g = grids["B2B"]
 
     # Monday: the week roll flips the board at 05:15 (Carlos 2026-09-18), so
     # every pass after it sees NEXT week while closing out Sunday. A campaign
@@ -492,7 +507,7 @@ def main(argv=None) -> int:
             _log(f"BOX: the tracker back-up doesn't cover {days[-1]} either")
 
     d2d = d2d_reps(sh)
-    results = [run_campaign(sh, g, d, c,
+    results = [run_campaign(sh, grids, d, c,
                             backup.get(c) if d == days[-1] else None, d2d)
                for d in days for c in campaigns]
     for res in results:
@@ -516,9 +531,10 @@ def main(argv=None) -> int:
         if res["col"] is None:
             _log(f"{res['campaign']} {res['day']}: no column for that weekday")
             continue
-        plan = fill_plan(g, res)
+        ws, cg = boards[res["campaign"]]
+        plan = fill_plan(cg, res)
         _log(f"{res['campaign']} {_md(res['day'])} — {len(plan)} cell(s) "
-             "would change:")
+             f"would change on {ws.title!r}:")
         for rep, a1, cur, new, note in plan:
             _log(f"  {a1}  {rep:<28} {cur} -> {new}{note}")
         if a.yes and plan:
@@ -530,7 +546,9 @@ def main(argv=None) -> int:
             if res["campaign"] == "BOX" and res["day"] == today - dt.timedelta(days=1):
                 box_corrected = True
     if a.yes:
-        ensure_board_shape(sh, g)
+        for c in campaigns:
+            ws, cg = boards[c]
+            ensure_board_shape(sh, cg, ws.title)
     if not a.yes:
         _log("DRY RUN — re-run with --yes to write")
 

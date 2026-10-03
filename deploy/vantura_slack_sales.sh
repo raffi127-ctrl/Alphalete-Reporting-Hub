@@ -1,7 +1,7 @@
 #!/bin/bash
 # Vantura Sales Board fill from #alphalete-gp-sales, on LUCY 2 (Carlos's mac).
 # Counts Base / BOX / AT&T sales out of the channel's posts and writes the day
-# column on the "Sales Board" tab.
+# column on each campaign's board tab ("Sales Board" for B2B, "BOX Sales Board" for BOX).
 #
 # CADENCE (Megan 2026-07-23): 4,5,6,7,8,9pm fill the day IN PROGRESS so the
 # board is live through the evening; 5:00am closes out the PREVIOUS day, which
