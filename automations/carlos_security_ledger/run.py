@@ -390,19 +390,25 @@ def write_overrides(svc, via_hub: bool) -> str:
     if not via_hub:
         return f"override weekly: skipped (Lucy pulls it); {len(have)} rows on the tab"
     m = dt.date.today().month
-    periods = list(range(1, min(13, m + 1) + 1)) if not have else [x for x in (m - 1, m, m + 1) if 1 <= x <= 13]
-    fresh = pull_overrides_hub(periods)
-    if not fresh:
-        return "override weekly: Tableau returned nothing this run — tab left as is"
+    # newest first; each period is its own Tableau session (~1-4 min), so save after every one — a timeout keeps what it got
+    periods = [x for x in ((m, m - 1, m + 1) if have else (m, m - 1, m - 2, m + 1)) if 1 <= x <= 13]
     today = dt.date.today().isoformat()
     keep = {(r[0], r[2]): r for r in have}
-    for wk, label, amt in fresh:
-        keep[(wk, label)] = [wk, wk + 6, label, amt, today, OVR_SOURCE]
-    rows = sorted(keep.values(), key=lambda r: (-r[0], str(r[2])))
-    svc.values().clear(spreadsheetId=PNL_SHEET_ID, range=f"'{OVR_TAB}'!A2:F2000").execute()
-    svc.values().update(spreadsheetId=PNL_SHEET_ID, range=f"'{OVR_TAB}'!A1:F{len(rows) + 1}", valueInputOption="RAW",
-                        body={"values": [OVR_HEADER] + rows}).execute()
-    return f"override weekly: {len(fresh)} week-rows refreshed from periods {periods}; {len(rows)} on the tab"
+    got = 0
+    for n in periods:
+        fresh = pull_overrides_hub([n])
+        if not fresh:
+            continue
+        got += len(fresh)
+        for wk, label, amt in fresh:
+            keep[(wk, label)] = [wk, wk + 6, label, amt, today, OVR_SOURCE]
+        rows = sorted(keep.values(), key=lambda r: (-r[0], str(r[2])))
+        svc.values().clear(spreadsheetId=PNL_SHEET_ID, range=f"'{OVR_TAB}'!A2:F2000").execute()
+        svc.values().update(spreadsheetId=PNL_SHEET_ID, range=f"'{OVR_TAB}'!A1:F{len(rows) + 1}", valueInputOption="RAW",
+                            body={"values": [OVR_HEADER] + rows}).execute()
+    if not got:
+        return "override weekly: Tableau returned nothing this run — tab left as is"
+    return f"override weekly: {got} week-rows refreshed from periods {periods}; {len(keep)} on the tab"
 
 
 def write(rows: list[list], balance: float | None, via_hub: bool = False) -> None:
