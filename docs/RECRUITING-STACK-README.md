@@ -13,7 +13,8 @@ works + what typically breaks after a change, so the next change starts here).
 
 | Piece | Where |
 | --- | --- |
-| The workbook | **Alphalete Recruiting Dashboard**, Sheets id `111Bmxx1JvT1UFXaLin7gPH53149WBZhMe0r7CHirHbA` |
+| The workbook | **Alphalete Recruiting Dashboard**, Sheets id `111Bmxx1JvT1UFXaLin7gPH53149WBZhMe0r7CHirHbA` — org + South Shore ONLY since the 2026-10-02 split |
+| The captainship workbook | **SCI Recruiting Dashboard**, Sheets id `1aWWdtMtv1ivZa8fv10cbEzJJUNrO7h9YA8fVvfiRqlg` — the 15 captainship-only owners; same 8 report tabs, filled by an SCI pass inside every deploy wrapper (roster: `deploy/sci-roster.json`) |
 | The code | this repo (`raffi127-ctrl/Alphalete-Reporting-Hub`), checkout `~/recruiting-report` on the mini |
 | The runner | **Lucy 2** (MacBook). No SSH — driven only via the Google-Sheet queue (`1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw`, tab "Mini Control - Lucy 2") |
 | Bound Apps Script | "Goal Sync" project on the workbook — goal two-way mirror, Ad Plan format mirror (`adPlanMirror_`), campaign-zone logic |
@@ -32,11 +33,12 @@ works + what typically breaks after a change, so the next change starts here).
 | Ad Sales Board | `ad_sales_board` — stacked Mon→Sun weeks, names per ad per DAY from one-day p=702 pulls | daily in the chains |
 | Manager Matrix | funnel_board build (every manager × week, metric picker B1) | with funnel_board |
 | City Zip Code Research | hand/one-off research + hidden 'City Zip Data' | manual |
-| Sales Board / Roll Call / Stations / Daily Update / Leaders Retention | migrated captainship views; `captainship_boards` 6:30 AM fill, `daily_update_fill` 8:45 PM, week stamp written daily by captainship_boards (RAW, see §4) | daily |
+| Leaders Retention | last surviving migrated captainship view (Sales Board / Roll Call / Stations / Daily Update were DELETED in the 2026-10-02 split; their week stamp is gone from captainship_boards too). Kept pending Carlos's call | static |
 
 Hidden load-bearing tabs: per-manager first-name tabs (Ad Plan sources), `Indeed Ad Data`,
-`Ad Sales Data`, `Campaign Log`, `Daily Log`, `WE`, `City Zip Data`, `Mirror Config`,
-`SRC WD`/`SRC RCD`, `0Config`. **Do not delete or "clean up" hidden tabs** — most
+`Ad Sales Data`, `Campaign Log`, `Daily Log`, `WE`, `City Zip Data`, `Info Box`,
+`0Config` (`Mirror Config` / `SRC WD` / `SRC RCD` died with the mirror views in the
+2026-10-02 split). **Do not delete or "clean up" hidden tabs** — most
 formulas on the visible tabs point into them.
 
 ## 3. The schedule (all times Lucy 2 local, CST)
