@@ -75,7 +75,7 @@ def message(today: Dict[str, Dict[str, int]], prev, records: Dict[str, int],
     checks = {rep: up for rep, up in rec_gained.items() if is_guest(rep)}
     if checks and not raf_baseline:
         parts.append("\n".join(
-            N.records_line(rep, records.get(rep, up), up).replace(":mag:", "\U0001F50D")
+            "Fiber — " + N.records_line(rep, records.get(rep, up), up).replace(":mag:", "\U0001F50D")
             for rep, up in sorted(checks.items())))
     return "\n\n".join(parts)
 

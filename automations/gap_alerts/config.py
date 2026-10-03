@@ -175,6 +175,7 @@ RAF = {
              # The gap LIST goes inside one thread a day, like Box's
              # (Carlos 2026-10-03); the board stays a loose post.
              "gaps_thread_title": "Fiber 15 Min Gaps",
+             "board_thread_title": "Fiber Knocks Board",
              "cadence_min": 15, "board_every_min": 60,
              "start": "14:00", "sat_start": "10:30", "stop": "21:00",
              "sat_stop": "17:30"},

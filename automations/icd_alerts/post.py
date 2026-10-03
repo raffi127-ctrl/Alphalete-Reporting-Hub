@@ -1234,6 +1234,11 @@ def credit_checks_wanted(office_key: str) -> bool:
     return str(office_key or "").strip().lower() not in NO_CREDIT_CHECK_ALERTS
 
 
+# office key -> a label in front of each Slack line (Carlos 2026-10-03:
+# "everything posted should have the campaign name first").
+LINE_PREFIX = {"carlos": "Box — ", "carlos-b2batt": "AT&T — "}
+
+
 def run(day: Optional[dt.date] = None, *, send: bool = False,
         only: Optional[str] = None, log=print) -> Dict:
     day = day or dt.date.today()
@@ -1376,7 +1381,9 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
             # SALES FIRST. A rep's sale is the louder news and the credit
             # checks are the early warning behind it; in one message the order
             # is the story.
-            text = "\n".join(hype_lines + lines)
+            # CAMPAIGN FIRST on every line of Carlos's rooms (2026-10-03).
+            _pre = LINE_PREFIX.get(key, "")
+            text = "\n".join(_pre + l for l in (hype_lines + lines))
             targets, held = O.destinations(office, approved.get(key))
             if held:
                 # Say whose they are and why they are here, because the person

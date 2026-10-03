@@ -1515,8 +1515,12 @@ def _post_guest_slack(dest: Dict, guest: str, png, body: str, day: dt.date,
         both_ts = smp.ensure_named_thread(dest["thread_title"], day,
                                           channel_id=ch).get("thread_ts")
     if png:
+        board_ts = both_ts
+        if not board_ts and dest.get("board_thread_title"):
+            board_ts = smp.ensure_named_thread(dest["board_thread_title"], day,
+                                               channel_id=ch).get("thread_ts")
         client.files_upload_v2(channel=ch, file=str(png),
-                               initial_comment=caption, thread_ts=both_ts)
+                               initial_comment=caption, thread_ts=board_ts)
     if body:
         gaps_ts = both_ts
         if not gaps_ts and dest.get("gaps_thread_title"):
@@ -1572,6 +1576,9 @@ def _send_guest_boards(cfg: Dict, guest_due: Dict, guest_boards: Dict,
                      % (cfg["key"], guest, _GC.cutoff_label(C.office_now(cfg), _gkey)))
             _line = (_GC.guest_callout(cfg["key"], guest, g_gaps, _recs,
                                        dt.datetime.now(), remember=send) if _open else "")
+            _team = (cfg.get("guest_teams") or {}).get(guest)
+            if _line and _team:
+                _line = "%s — %s" % (_team, _line)      # campaign first (Carlos 2026-10-03)
             if _open:
                 # SLACK, NOT THE TEXT: the guest's own ECO alert channel.
                 from automations.icd_alerts import post as _P
@@ -1579,6 +1586,8 @@ def _send_guest_boards(cfg: Dict, guest_due: Dict, guest_boards: Dict,
                 _praise = ""
                 if _praise_tick(cfg, _gkey):
                     _praise = _GC.pace_callout("guest:%s:%s" % (cfg["key"], _gkey), g_rows, dt.datetime.now(), remember=send)
+                    if _praise and _team:
+                        _praise = "%s — %s" % (_team, _praise)
                 for _msg in (_line, _praise):
                     if not _msg:
                         continue

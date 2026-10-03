@@ -51,15 +51,25 @@ CHANNEL = "C07J46MQNUX"                      # #alphalete-gp-sales
 # b2b_dispositions-style threads: "<prefix> M/D/YY"
 DAY_THREADS = [cfg.THREAD_HOURLY, cfg.THREAD_GAPS, cfg.THREAD_DISPOSITIONS]
 # shared-style threads: "<prefix> — Month Dth YYYY" (what Lucy 1 looks up)
-NAMED_THREADS = ["Box Knocks Board", "Fiber 15 Min Gaps"]
+NAMED_THREADS = ["Box Knocks Board", "Fiber Knocks Board", "Fiber 15 Min Gaps"]
+# Old thread names still in the room today -> retitled in place rather than
+# left as an empty twin (Carlos 2026-10-03: "you just posted something called
+# hourly activity with nothing in it").
+RENAMED = {"Hourly Activity": cfg.THREAD_HOURLY}
 # Spelling of the thread BOX-1's Lucy 1 board replies into. Must match
 # icd_alerts.knocks_post.THREAD_TITLES["C07J46MQNUX"].
 BOX_BOARD_THREAD = "Box Knocks Board"
 # Order of the parents in the room, top to bottom.
 ORDER = [("named", BOX_BOARD_THREAD), ("day", cfg.THREAD_DISPOSITIONS),
          ("day", cfg.THREAD_HOURLY), ("day", cfg.THREAD_GAPS),
-         ("named", "Fiber 15 Min Gaps")]
-ALL_PREFIXES = DAY_THREADS + NAMED_THREADS
+         ("named", "Fiber Knocks Board"), ("named", "Fiber 15 Min Gaps")]
+ALL_PREFIXES = DAY_THREADS + NAMED_THREADS + list(RENAMED)
+
+
+# Parents this run OPENED (vs found). Yesterday's board and pictures go in
+# only on the open, so a re-run (or a hand run after the 7:30 one) never
+# posts them twice.
+_OPENED: set = set()
 
 
 def _ensure_day_parent(client, prefix: str, today: dt.date, log) -> Optional[str]:
@@ -68,6 +78,15 @@ def _ensure_day_parent(client, prefix: str, today: dt.date, log) -> Optional[str
     if ts:
         log("  %s: already up" % title)
         return ts
+    _OPENED.add(prefix)
+    for old, new in RENAMED.items():
+        if new != prefix:
+            continue
+        old_ts = sp._find_parent_ts(client, CHANNEL, sp.day_title(old, today), today)
+        if old_ts:
+            client.chat_update(channel=CHANNEL, ts=old_ts, text="*%s*" % title)
+            log("  %s: retitled from %s" % (title, sp.day_title(old, today)))
+            return old_ts
     ts = client.chat_postMessage(channel=CHANNEL, text="*%s*" % title).get("ts")
     log("  %s: opened" % title)
     return ts
@@ -75,6 +94,8 @@ def _ensure_day_parent(client, prefix: str, today: dt.date, log) -> Optional[str
 
 def _ensure_named_parent(prefix: str, today: dt.date, log) -> Optional[str]:
     out = smp.ensure_named_thread(prefix, today, channel_id=CHANNEL)
+    if not out.get("existed"):
+        _OPENED.add(prefix)
     log("  %s — %s: %s" % (prefix, _long(today),
                            "already up" if out.get("existed") else "opened"))
     return out.get("thread_ts")
@@ -190,7 +211,8 @@ def run(today: Optional[dt.date] = None, *, send: bool, log=print) -> int:
             log("  %s: FAILED to open (%s: %s)" % (prefix, type(e).__name__, str(e)[:120]))
     # Yesterday's final Box board into today's Box Knocks Board thread.
     try:
-        board = _yesterday_box_board(client, yday, log)
+        board = (_yesterday_box_board(client, yday, log)
+                 if BOX_BOARD_THREAD in _OPENED else None)
         if board and parents.get(BOX_BOARD_THREAD):
             client.files_upload_v2(channel=CHANNEL, file=str(board),
                                    filename=board.name,
@@ -201,7 +223,8 @@ def run(today: Optional[dt.date] = None, *, send: bool, log=print) -> int:
         log("  yesterday's board skipped: %s: %s" % (type(e).__name__, str(e)[:120]))
     # Yesterday's territory pictures into today's Territory Stats thread.
     try:
-        terrs = _yesterday_territories(yday)
+        terrs = (_yesterday_territories(yday)
+                 if cfg.THREAD_DISPOSITIONS in _OPENED else [])
         ts = parents.get(cfg.THREAD_DISPOSITIONS)
         if terrs and ts:
             for k in range(0, len(terrs), 10):
@@ -210,7 +233,7 @@ def run(today: Optional[dt.date] = None, *, send: bool, log=print) -> int:
                     channel=CHANNEL, thread_ts=ts,
                     initial_comment=("*Territory stats — %s (final)*" % sp._short_mdy(yday)) if k == 0 else None)
             log("  posted %d of yesterday's territory picture(s)" % len(terrs))
-        elif ts:
+        elif ts and cfg.THREAD_DISPOSITIONS in _OPENED:
             log("  no territory pictures from yesterday on this machine")
     except Exception as e:  # noqa: BLE001
         log("  yesterday's territories skipped: %s: %s" % (type(e).__name__, str(e)[:120]))

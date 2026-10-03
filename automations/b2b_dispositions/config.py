@@ -80,7 +80,7 @@ CHANNEL_LABEL = {
 #     Reps Over 15 Min Gap card), posted hourly. Combined into one phone-friendly
 #     image so Slack stays clean (Megan wanted fewer, taller images for mobile).
 #   * "B2B Dispositions" — one Territory Stats image PER territory, at 6:30pm.
-THREAD_HOURLY = "Hourly Activity"
+THREAD_HOURLY = "Box Today's Activity"   # was "Hourly Activity" (Carlos 2026-10-03: campaign first)
 # Renamed "B2B Dispositions" -> "Territory Stats" (Carlos 2026-09-29), and
 # the territories now post one picture each instead of one tall stack.
 THREAD_DISPOSITIONS = "Box Territory Stats"   # Carlos 2026-10-03
