@@ -74,9 +74,65 @@
    "Stefan Cameron",
    "23264",
    "Stefan Cameron"
+  ],
+  [
+   "Luke Baldwin",
+   "20958",
+   "Luke Baldwin"
+  ],
+  [
+   "Adrian Sarabia",
+   "22895",
+   "Adrian Sarabia"
+  ],
+  [
+   "David Pisikian",
+   "21658",
+   "David Pisikian"
+  ],
+  [
+   "Cruz Venegas",
+   "22442",
+   "Cruz Venegas"
   ]
  ],
  "captainship": [],
  "south_shore_names": [],
- "campaign_only": []
+ "campaign_only": [],
+ "org_label": "Owners",
+ "board_groups": [
+  {
+   "label": "Owners",
+   "members": [
+    "Jamis Garay",
+    "Jackie LeRoy",
+    "Noah Dubale",
+    "Jeff Starr",
+    "Kinsey Guenther",
+    "Vincent Smith",
+    "George Hipolito",
+    "Justin Wood",
+    "Joshua Murphy",
+    "Joey Ramirez",
+    "Dhyey Patel",
+    "Sabrina Alicea",
+    "Alexander Badawi",
+    "Nicolas Lujan",
+    "Stefan Cameron",
+    "Luke Baldwin",
+    "Adrian Sarabia",
+    "David Pisikian",
+    "Cruz Venegas"
+   ]
+  },
+  {
+   "label": "Luke Baldwin",
+   "members": [
+    "Luke Baldwin",
+    "Adrian Sarabia",
+    "David Pisikian",
+    "Cruz Venegas"
+   ]
+  }
+ ]
 }

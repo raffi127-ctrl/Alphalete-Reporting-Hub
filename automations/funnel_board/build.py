@@ -28,9 +28,10 @@ from automations.org_campaign_metrics.layout import (  # noqa: E402
 # only its ORG — an empty group in a picker renders a blank board and a
 # preserved pick of it would stick there. Every group dropdown and every
 # preserved-group coercion below goes through this list.
-_GROUP_SIZES = {"Org": len(ORG_NAMES), "Captainship": len(CAPTAINSHIP_NAMES),
+from automations.funnel_board.roster import ORG_LABEL  # noqa: E402
+_GROUP_SIZES = {ORG_LABEL: len(ORG_NAMES), "Captainship": len(CAPTAINSHIP_NAMES),
                 "South Shore": len(SOUTH_SHORE_NAMES)}
-ACTIVE_GROUPS = [g for g, n in _GROUP_SIZES.items() if n > 0] or ["Org"]
+ACTIVE_GROUPS = [g for g, n in _GROUP_SIZES.items() if n > 0] or [ORG_LABEL]
 
 SSID = os.environ.get("FUNNEL_SSID", "1Y3RxPbWhJrpV_hyK53zwswIcPQAGanU2EY17MVUSbtU")
 API = "https://sheets.googleapis.com/v4/spreadsheets/" + SSID
@@ -693,8 +694,8 @@ try:
     _mgrp = (_mg[0][0] if _mg and _mg[0] else "").strip()
 except Exception:  # noqa: BLE001
     _mgrp = ""
-if _mgrp not in ("Org", "Captainship") or _mgrp not in ACTIVE_GROUPS:
-    _mgrp = "Org"
+if _mgrp not in (ORG_LABEL, "Captainship") or _mgrp not in ACTIVE_GROUPS:
+    _mgrp = ORG_LABEL
 values.append({"range": "'Manager Matrix'!D1", "values": [["GROUP:", _mgrp]]})
 # Hide the unused matrix rows for the preserved group (same fix as the board).
 # F doesn't exist yet at this point in the module — park the requests and
@@ -940,8 +941,12 @@ def build_board(sid, title, heading, roster, total_label, ad_box=True):
     # the name in column A, so the whole grid follows the picker. Rows are laid
     # out for the longer roster; blank-name rows render empty via guards and
     # contribute nothing to the SUBTOTAL totals.
-    _BOARD_ORG = [n for n in ORG_NAMES if n != "Drew Tepper"]
-    MAXR = max(len(_BOARD_ORG), len(CAPTAINSHIP_NAMES), len(SOUTH_SHORE_NAMES))
+    # Groups are config now (roster.BOARD_GROUPS / the roster-JSON override):
+    # ordered (label, members), first = default view. The SCI book runs
+    # ("Owners", all) + one group per captain (Carlos 2026-10-03); this book
+    # order also fixes each group's hidden park column AA, AB, AC, ...
+    from automations.funnel_board.roster import BOARD_GROUPS as _BG
+    MAXR = max(len(m) for _, m in _BG)
     M1 = M0 + MAXR - 1
     TOTR = M1 + 1
     # Hidden ingredient columns for the TOTAL row's ratios. SUMIFS cannot take a
@@ -973,11 +978,17 @@ def build_board(sid, title, heading, roster, total_label, ad_box=True):
 
 
 
-    _SPILL = ('=IF($F$1="Captainship",'
-              'FILTER($AB$100:$AB$140,$AB$100:$AB$140<>""),'
-              'IF($F$1="South Shore",'
-              'FILTER($AC$100:$AC$140,$AC$100:$AC$140<>""),'
-              'FILTER($AA$100:$AA$140,$AA$100:$AA$140<>"")))')
+    # Nested IF over the non-default groups; the default (first) group is the
+    # final else. Each group's names park in its own hidden column from AA.
+    def _park_col(gi):
+        return a1(26 + gi)                      # 26 = column AA
+    _SPILL = 'FILTER($%s$100:$%s$140,$%s$100:$%s$140<>"")' % (
+        (_park_col(0),) * 4)
+    for _gi in range(len(_BG) - 1, 0, -1):
+        _pc = _park_col(_gi)
+        _SPILL = ('IF($F$1="%s",FILTER($%s$100:$%s$140,$%s$100:$%s$140<>""),%s)'
+                  % (_BG[_gi][0], _pc, _pc, _pc, _pc, _SPILL))
+    _SPILL = "=" + _SPILL
     for mi in range(MAXR):
         r = M0 + mi
         namecell = _SPILL if mi == 0 else ""
@@ -985,9 +996,13 @@ def build_board(sid, title, heading, roster, total_label, ad_box=True):
                      + ['=IF($A%d="","",%s)' % (r, cell(k, key, r)[1:])
                         for (_, k, key) in BCOLS])
 
-    trow = ['=IF($F$1="Captainship","CAPTAINSHIP TOTAL",'
-            'IF($F$1="South Shore","SOUTH SHORE TOTAL","OFFICE TOTAL"))'
-            if total_label else total_label]
+    # Total-row label per group: the default group keeps the legacy
+    # "OFFICE TOTAL", every other group reads "<LABEL> TOTAL".
+    _tl = '"OFFICE TOTAL"'
+    for _gi in range(len(_BG) - 1, 0, -1):
+        _tl = ('IF($F$1="%s","%s TOTAL",%s)'
+               % (_BG[_gi][0], _BG[_gi][0].upper(), _tl))
+    trow = [("=" + _tl) if total_label else total_label]
     for i, (h, kind, key) in enumerate(BCOLS):
         c = a1(B0 + i)
         if kind == "pctd":
@@ -1010,12 +1025,12 @@ def build_board(sid, title, heading, roster, total_label, ad_box=True):
     # Board rosters (Carlos 2026-09-14): AA = Org — WITHOUT Drew Tepper, who
     # shows under South Shore on this tab only (he stays in ORG for data and
     # every other view) — AB = Captainship, AC = South Shore.
-    _park_n = max(len(_BOARD_ORG), len(CAPTAINSHIP_NAMES), len(SOUTH_SHORE_NAMES))
-    values.append({"range": "'%s'!AA100" % title, "values":
-                   [[_BOARD_ORG[i] if i < len(_BOARD_ORG) else "",
-                     CAPTAINSHIP_NAMES[i] if i < len(CAPTAINSHIP_NAMES) else "",
-                     SOUTH_SHORE_NAMES[i] if i < len(SOUTH_SHORE_NAMES) else ""]
-                    for i in range(_park_n)]})
+    # One park column per group, AA onward, padded with "" so a shrunken
+    # roster can't leave a stale tail behind; plus 4 spare all-blank columns
+    # so a REMOVED group's old park is wiped too.
+    _park_rows = [[(m[i] if i < len(m) else "") for _, m in _BG] + [""] * 4
+                  for i in range(max(MAXR, 41))]
+    values.append({"range": "'%s'!AA100" % title, "values": _park_rows})
     # The GROUP picker is the USER'S cell: a rebuild must never reset it, or
     # the hourly pass flips whoever is looking at Captainship back to Org.
     # Read what is there and write the same thing back (default Org only when
@@ -1025,15 +1040,15 @@ def build_board(sid, title, heading, roster, total_label, ad_box=True):
         _grp = (_g[0][0] if _g and _g[0] else "").strip()
     except Exception:  # noqa: BLE001 — an unreadable picker must not kill the build
         _grp = ""
-    if _grp not in ("Org", "Captainship", "South Shore") or _grp not in ACTIVE_GROUPS:
-        _grp = "Org"
+    _labels = [l for l, _ in _BG]
+    if _grp not in _labels:
+        _grp = _labels[0]
     values.append({"range": "'%s'!E1" % title, "values": [["GROUP:", _grp]]})
     # A shorter group used to show its unused manager rows as an empty band
     # down to the TOTAL row (Carlos 2026-09-15). Hide the tail for the
     # preserved group here; goal_sync.gs tidyGroupRows_ does the same the
     # moment a human flips the picker.
-    _lens = {"Org": len(_BOARD_ORG), "Captainship": len(CAPTAINSHIP_NAMES),
-             "South Shore": len(SOUTH_SHORE_NAMES)}
+    _lens = {l: len(m) for l, m in _BG}
     _used = _lens.get(_grp, MAXR)
     F.append({"updateDimensionProperties": {"range": {
         "sheetId": sid, "dimension": "ROWS",
@@ -1046,7 +1061,7 @@ def build_board(sid, title, heading, roster, total_label, ad_box=True):
             "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}})
     F.append({"setDataValidation": {"range": gr(sid, 0, 1, 5, 6), "rule": {
         "condition": {"type": "ONE_OF_LIST",
-                      "values": [{"userEnteredValue": g} for g in ACTIVE_GROUPS]},
+                      "values": [{"userEnteredValue": g} for g in _labels]},
         "showCustomUi": True, "strict": True}}})
     F.append(fmt(sid, 0, 1, 4, 6, {"userEnteredFormat": {
         "textFormat": txt(INK, True, 12), "backgroundColor": rgb(WARN_BG)}},
@@ -1356,11 +1371,11 @@ def build_trend(sid, title, heading, roster):
         _r1 = [str(v).strip() for v in (_r1[0] if _r1 else [])]
         _cur = next((v for v in _r1 if v in _names), "")
         _grp = next((v for v in _r1
-                     if v in ("Org", "Captainship") and v in ACTIVE_GROUPS), "")
+                     if v in (ORG_LABEL, "Captainship") and v in ACTIVE_GROUPS), "")
     except Exception:  # noqa: BLE001
         pass
     trend[0][0] = _cur or roster[0]
-    trend[0][1] = _grp or "Org"
+    trend[0][1] = _grp or ORG_LABEL
     trend[0][3] = ""                     # old "GROUP:" label — wiped
     trend[0][4] = ""                     # old E1 group dropdown — wiped
     trend[1][0] = "Click + above a week to open Mon–Sun" + NOTE
@@ -1438,7 +1453,7 @@ def build_trend(sid, title, heading, roster):
     F.append({"setDataValidation": {"range": gr(sid, 0, 1, 1, 2), "rule": {
         "condition": {"type": "ONE_OF_LIST",
                       "values": [{"userEnteredValue": g} for g in ACTIVE_GROUPS
-                                 if g in ("Org", "Captainship")]},
+                                 if g in (ORG_LABEL, "Captainship")]},
         "showCustomUi": True, "strict": True}}})
     # the group dropdown used to be E1 — clear its rule and paint so a stale
     # chip doesn't linger inside the first collapsed week group
@@ -1690,7 +1705,7 @@ F += [
     {"setDataValidation": {"range": gr(MATRIX, 0, 1, 4, 5), "rule": {
         "condition": {"type": "ONE_OF_LIST",
                       "values": [{"userEnteredValue": g} for g in ACTIVE_GROUPS
-                                 if g in ("Org", "Captainship")]},
+                                 if g in (ORG_LABEL, "Captainship")]},
         "showCustomUi": True, "strict": True}}},
 ]
 

@@ -139,6 +139,24 @@ BOARD_TITLE = "Captainship Recruiting Dashboard"
 TREND_TITLE = "Captainship Focus Report"
 AD_VIEW_TITLE = "Captain Ship Ad View"
 
+# What the FIRST (everyone) group is called in the pickers. "Org" here;
+# the SCI book overrides it to "Owners" (Carlos 2026-10-03). Formulas only
+# ever compare against the OTHER labels ("Captainship", a captain's name),
+# so the first group's label is pure display and safe to rename per book.
+ORG_LABEL = "Org"
+
+# The Recruiting Dashboard GROUP picker, generalized (Carlos 2026-10-03:
+# "see all of the owners at once... then add captains; view just their
+# captainship"). Ordered (label, members) pairs; the FIRST entry is the
+# default view and the coercion fallback. Drew Tepper's dashboard-only move
+# to South Shore (2026-09-14) lives here now: he stays in ORG for data and
+# every other view.
+BOARD_GROUPS = [(ORG_LABEL, [n for n in ORG_NAMES if n != "Drew Tepper"])]
+if CAPTAINSHIP_NAMES:
+    BOARD_GROUPS.append(("Captainship", CAPTAINSHIP_NAMES))
+if SOUTH_SHORE_NAMES:
+    BOARD_GROUPS.append(("South Shore", SOUTH_SHORE_NAMES))
+
 
 # ---------------------------------------------------------------------------
 # STANDALONE / MANAGER-KIT OVERRIDE (2026-09-21). When RECRUITING_ROSTER_JSON
@@ -162,3 +180,14 @@ if _OVR:
     SOUTH_SHORE_NAMES = list(_cfg.get("south_shore_names",
                              [n for n, _, _ in _cfg.get("south_shore", [])]))
     CAMPAIGN_ONLY = list(_cfg.get("campaign_only", []))
+    ORG_LABEL = _cfg.get("org_label", "Org")
+    if _cfg.get("board_groups"):
+        BOARD_GROUPS = [(g["label"], list(g["members"]))
+                        for g in _cfg["board_groups"]]
+    else:
+        BOARD_GROUPS = [(ORG_LABEL,
+                         [n for n in ORG_NAMES if n != "Drew Tepper"])]
+        if CAPTAINSHIP_NAMES:
+            BOARD_GROUPS.append(("Captainship", CAPTAINSHIP_NAMES))
+        if SOUTH_SHORE_NAMES:
+            BOARD_GROUPS.append(("South Shore", SOUTH_SHORE_NAMES))
