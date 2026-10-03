@@ -7289,6 +7289,28 @@
       },
       "timeout_minutes": 90
     },
+    "owner_rep_audit": {
+      "on_scheduler": false,
+      "standalone_watch": false,
+      "_note": "Monthly owner rep audit (Eve 2026-10-02): owners confirm who left by DM, Lucy deactivates in AO Slack, unanswered lists go to Evelyn in #l10-alphalete. OFF the scheduler while it is rehearsed: run by hand with `lucy rerun owner_rep_audit --live --test-to U088E2KJEV8 --only 22177 --machine \"Lucy 1\"` (everything goes to Evelyn, nobody is removed). Lucy 1 because the Lucy DM token and the AO admin token both live there. To go live: on_scheduler true, cadence weekdays [0..6] (it runs daily and does what the day needs), base_args [\"--live\"].",
+      "display_name": "Owner Rep Audit (monthly)",
+      "source_type": "local",
+      "data_sources": [],
+      "command": [
+        "automations.owner_rep_audit.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "machine": "Lucy 1",
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "close_on": "exit_zero",
+      "timeout_minutes": 60,
+      "verify": null
+    },
     "leaders_call": {
       "on_scheduler": false,
       "_off_scheduler_note": "Run by the dedicated com.alphalete.leaders-call-mon launchd job at Mon 10:00am CST (deploy/leaders_call_mon.sh), NOT the morning orchestrator, so it fires at a fixed 10am. Maud 2026-06-29.",
