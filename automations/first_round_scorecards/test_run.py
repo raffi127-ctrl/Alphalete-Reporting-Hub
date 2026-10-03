@@ -426,3 +426,31 @@ class BoardTest(unittest.TestCase):
         self.assertEqual(line["flags"], "pay different from the script ×2")
         self.assertEqual(line["missed"], "schedule section ×1")
         self.assertEqual(line["coaching"], "• Keep it up!")     # the latest interview's
+
+    def test_same_person_candidates_and_merge(self):
+        from automations.first_round_scorecards import board
+        r = lambda who, office: {"interviewer": who, "date": "2026-10-01", "time": "", "score": 50,
+                                 "office": office, "flags": [], "missed": [], "coaching": []}
+        rows = [r("Eva", "Tre Mitchell")] * 3 + [r("Iva", "Tre Mitchell"), r("Amy", "Ellen Dent"),
+                r("Ana", "Tre Mitchell"), r("ZOOM 4", "Tre Mitchell"), r("Eve", "Other Office")]
+        c = board.candidates(rows, [])
+        # same office + similar name; a Zoom row or another office never pairs
+        self.assertIn(["Eva", "Iva", "Tre Mitchell", 3, 1, ""], c)
+        self.assertFalse(any("ZOOM 4" in x[:2] or "Eve" in x[:2] for x in c))
+        # already asked (either order) = not asked again
+        self.assertNotIn("Iva", [x[1] for x in board.candidates(rows, [["Iva", "Eva", "", "", "", "NO"]])])
+        m = board.merges([["Eva", "Iva", "", "", "", "YES"], ["Eva", "Ana", "", "", "", "no"],
+                          ["Eve", "Eva", "", "", "", "yes"]])
+        self.assertEqual(m, {"Iva": "Eve", "Eva": "Eve"})        # chains resolve
+        merged = board.apply_merges(rows, {"Iva": "Eva"})
+        self.assertEqual(sum(x["interviewer"] == "Eva" for x in merged), 4)
+
+    def test_same_person_one_row_per_name_and_accents(self):
+        from automations.first_round_scorecards import board
+        r = lambda who: {"interviewer": who, "date": "2026-10-01", "time": "", "score": 50,
+                         "office": "Salik Mallick", "flags": [], "missed": [], "coaching": []}
+        rows = [r("Elfina")] * 9 + [r("Alfina"), r("Lucina"), r("Ulfina")]
+        self.assertEqual([x[:2] for x in board.candidates(rows, [])],
+                         [["Elfina", "Alfina"], ["Elfina", "Lucina"], ["Elfina", "Ulfina"]])
+        got = board.apply_merges([r("Angela"), r("Angela"), r("Ángela")], {})
+        self.assertEqual({x["interviewer"] for x in got}, {"Angela"})

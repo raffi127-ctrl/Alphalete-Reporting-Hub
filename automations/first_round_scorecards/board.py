@@ -328,12 +328,166 @@ def write(week_of: dt.date, grid: List[List], sheet_id: str = BOARD_SHEET_ID) ->
     return f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit#gid={gid}"
 
 
+# ---- "Same person?" -------------------------------------------------------
+# The interviewer's name comes from the intro in the recording, and the
+# transcript mishears it: "Eva" one day, "Iva" the next, same office -> two
+# rows with half a week each. Lucy lists the likely pairs herself (same
+# office, similar names); Camila or Perla only pick YES / NO (Eve, 2026-10-02:
+# they say whether it's the same person, they don't build the list). A YES
+# folds the second name into the first on every week's board. Rows are only
+# ever appended -- an answer someone gave is never rewritten.
+SAME_TAB = "Same person?"
+SAME_HEAD = ["Name on the board", "Other name Lucy heard", "Office", "Interviews (first name)",
+             "Interviews (other name)", "Same person?"]
+SAME_SIMILAR = 0.5           # difflib ratio: Eva/Iva 0.67, Emilia/Evelia 0.67, Camila/Candela 0.62
+
+
+def _sheets():
+    from googleapiclient.discovery import build
+    return build("sheets", "v4", credentials=drive_auth.load_credentials(), cache_discovery=False)
+
+
+def read_same(svc=None, sheet_id: str = BOARD_SHEET_ID) -> List[List[str]]:
+    """The tab's answer rows ([] when the tab doesn't exist yet)."""
+    svc = svc or _sheets()
+    try:
+        got = svc.spreadsheets().values().get(spreadsheetId=sheet_id,
+                                              range=f"'{SAME_TAB}'!A3:F").execute()
+    except Exception as exc:  # noqa: BLE001
+        if "Unable to parse range" in str(exc):
+            return []
+        raise
+    return [(r + [""] * 6)[:6] for r in got.get("values", [])]
+
+
+def merges(answers: List[List[str]]) -> Dict[str, str]:
+    """{other name: name it folds into} for every YES (chains resolved)."""
+    out = {r[1].strip(): r[0].strip() for r in answers
+           if r[5].strip().upper() == "YES" and r[0].strip() and r[1].strip()}
+    for k in list(out):
+        seen = {k}
+        while out[k] in out and out[k] not in seen:
+            seen.add(out[k])
+            out[k] = out[out[k]]
+    return out
+
+
+def _plain(name: str) -> str:
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFD", name)
+                   if unicodedata.category(c) != "Mn").casefold().strip()
+
+
+def apply_merges(rows: List[Dict], m: Dict[str, str]) -> List[Dict]:
+    """YES answers first; then names that differ only by accents or capitals
+    ('Ángela' / 'Angela') join on their own -- nobody needs to be asked."""
+    rows = [{**r, "interviewer": m.get(r["interviewer"], r["interviewer"])} for r in rows]
+    n: Dict[str, int] = {}
+    for r in rows:
+        n[r["interviewer"]] = n.get(r["interviewer"], 0) + 1
+    main: Dict[str, str] = {}
+    for name in sorted(n, key=lambda x: (-n[x], x)):
+        main.setdefault(_plain(name), name)
+    return [{**r, "interviewer": main[_plain(r["interviewer"])]} for r in rows]
+
+
+def candidates(rows: List[Dict], answers: List[List[str]]) -> List[List]:
+    """New pairs to ask about: two named interviewers (not a Zoom) who served
+    the same office with similar names, not asked before in either order.
+    The one with more interviews is the name kept."""
+    import difflib
+    asked = {frozenset((r[0].strip(), r[1].strip())) for r in answers}
+    n: Dict[str, int] = {}
+    offices: Dict[str, set] = {}
+    for r in rows:
+        if _NOT_A_PERSON.match(r["interviewer"]):
+            continue
+        n[r["interviewer"]] = n.get(r["interviewer"], 0) + 1
+        if r["office"]:
+            offices.setdefault(r["interviewer"], set()).add(r["office"])
+    names = sorted(n, key=lambda x: (-n[x], x))
+    out = []
+    # each name is asked about ONCE, next to the busiest similar name above it
+    # (Elfina 9 / Alfina 1 / Lucina 1 / Ulfina 1 = 3 rows, not every pair);
+    # a YES chain folds the rest in (merges())
+    for i, b in enumerate(names):
+        best = None
+        for a in names[:i]:
+            shared = offices.get(a, set()) & offices.get(b, set())
+            ratio = difflib.SequenceMatcher(None, a.lower(), b.lower()).ratio()
+            if shared and ratio >= SAME_SIMILAR:
+                best = (a, shared)
+                break                              # names[] is busiest first
+        if best and frozenset((best[0], b)) not in asked:
+            a, shared = best
+            out.append([a, b, ", ".join(sorted(shared)), n[a], n[b], ""])
+            asked.add(frozenset((a, b)))
+    return out
+
+
+def write_same(new: List[List], svc=None, sheet_id: str = BOARD_SHEET_ID) -> None:
+    """Make the tab if needed (last, with a YES/NO dropdown) and append `new`."""
+    svc = svc or _sheets()
+    meta = svc.spreadsheets().get(spreadsheetId=sheet_id, fields="sheets.properties").execute()
+    tabs = {s["properties"]["title"]: s["properties"]["sheetId"] for s in meta["sheets"]}
+    if SAME_TAB not in tabs:
+        r = svc.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body={"requests": [
+            {"addSheet": {"properties": {"title": SAME_TAB, "index": len(tabs),
+                                         "gridProperties": {"frozenRowCount": 2}}}}]}).execute()
+        gid = r["replies"][0]["addSheet"]["properties"]["sheetId"]
+        rgb = lambda c: dict(zip(("red", "green", "blue"), c))  # noqa: E731
+        head = [{"userEnteredValue": {"stringValue": h},
+                 "userEnteredFormat": {"backgroundColor": rgb(BLUE), "horizontalAlignment": "CENTER",
+                                       "wrapStrategy": "WRAP", "verticalAlignment": "MIDDLE",
+                                       "textFormat": {"bold": True, "foregroundColor": rgb(WHITE)}}}
+                for h in SAME_HEAD]
+        title = [{"userEnteredValue": {"stringValue":
+                  "Lucy heard these names in the same office and thinks they may be ONE person "
+                  "(the recording misheard the name). Pick YES or NO in the last column. "
+                  "YES = the board joins them under the first name."},
+                  "userEnteredFormat": {"backgroundColor": rgb(NAVY), "wrapStrategy": "WRAP",
+                                        "textFormat": {"bold": True, "foregroundColor": rgb(WHITE)}}}]
+        svc.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body={"requests": [
+            {"updateCells": {"start": {"sheetId": gid, "rowIndex": 0, "columnIndex": 0},
+                             "rows": [{"values": title}, {"values": head}], "fields": "*"}},
+            {"mergeCells": {"range": {"sheetId": gid, "startRowIndex": 0, "endRowIndex": 1,
+                                      "startColumnIndex": 0, "endColumnIndex": 6},
+                            "mergeType": "MERGE_ALL"}},
+            {"updateDimensionProperties": {"range": {"sheetId": gid, "dimension": "ROWS",
+                                                     "startIndex": 0, "endIndex": 1},
+                                           "properties": {"pixelSize": 48}, "fields": "pixelSize"}},
+            {"setDataValidation": {"range": {"sheetId": gid, "startRowIndex": 2, "endRowIndex": 500,
+                                             "startColumnIndex": 5, "endColumnIndex": 6},
+                                   "rule": {"condition": {"type": "ONE_OF_LIST", "values": [
+                                       {"userEnteredValue": "YES"}, {"userEnteredValue": "NO"}]},
+                                       "showCustomUi": True, "strict": True}}},
+            *[{"updateDimensionProperties": {"range": {"sheetId": gid, "dimension": "COLUMNS",
+                                                       "startIndex": i, "endIndex": i + 1},
+                                             "properties": {"pixelSize": w}, "fields": "pixelSize"}}
+              for i, w in enumerate([170, 170, 240, 110, 110, 120])],
+        ]}).execute()
+    if new:
+        svc.spreadsheets().values().append(
+            spreadsheetId=sheet_id, range=f"'{SAME_TAB}'!A3:F", valueInputOption="RAW",
+            insertDataOption="INSERT_ROWS", body={"values": new}).execute()
+
+
 def update(day: dt.date, *, write_sheet: bool = True) -> str:
     week_of = monday(day)
-    grid = values(week_of, table(week_of, scores(week_of)))
+    rows = scores(week_of)
+    answers = read_same() if write_sheet else []
+    rows = apply_merges(rows, merges(answers))
+    grid = values(week_of, table(week_of, rows))
     for line in grid:
         print("  ".join("" if v is None else str(v) for v in line))
-    return write(week_of, grid) if write_sheet else ""
+    if not write_sheet:
+        return ""
+    link = write(week_of, grid)
+    new = candidates(rows, answers)
+    for c in new:
+        print(f"  same person? {c[0]} / {c[1]} ({c[2]})")
+    write_same(new)
+    return link
 
 
 def main(argv=None) -> int:
