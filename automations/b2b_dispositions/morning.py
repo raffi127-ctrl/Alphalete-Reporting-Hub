@@ -241,3 +241,42 @@ def run(today: Optional[dt.date] = None, *, send: bool, log=print) -> int:
         _pin(client, ts, log)
     _unpin_old(client, today, log)
     return 0
+
+
+LUCY_BOT_USER = "U0BCG8F9B5Z"     # the only author whose posts this may touch
+
+
+def delete_loose(prefix: str, today: Optional[dt.date] = None, *, send: bool,
+                 log=print) -> int:
+    """Delete TODAY's loose (top-level, not-a-thread-parent) posts of OURS in
+    #alphalete-gp-sales whose text starts with `prefix` -- the ones that went
+    out before their thread existed (Carlos 2026-10-03: "delete the post from
+    today that should be outside of a thread ... only deleting things you
+    posted"). Only Lucy's own messages, only today, only that prefix, never a
+    thread parent (its replies would be orphaned)."""
+    today = today or dt.date.today()
+    client = smp._client()
+    oldest = dt.datetime.combine(today, dt.time.min).timestamp()
+    hist = client.conversations_history(channel=CHANNEL, oldest=str(oldest), limit=500)
+    hits = [m for m in hist.get("messages", [])
+            if m.get("user") == LUCY_BOT_USER
+            and (m.get("text") or "").lstrip("*").startswith(prefix)
+            and not m.get("reply_count")
+            and not m.get("thread_ts")]
+    for m in hits:
+        head = (m.get("text") or "").replace("\n", " ")[:60]
+        if not send:
+            log("  would delete: %s" % head)
+            continue
+        for f in m.get("files") or []:
+            try:
+                client.files_delete(file=f["id"])
+            except Exception as e:  # noqa: BLE001
+                log("  file %s not deleted: %s" % (f.get("id"), str(e)[:80]))
+        try:
+            client.chat_delete(channel=CHANNEL, ts=m["ts"])
+            log("  deleted: %s" % head)
+        except Exception as e:  # noqa: BLE001
+            log("  NOT deleted (%s): %s" % (str(e)[:80], head))
+    log("%d loose post(s) matched %r today" % (len(hits), prefix))
+    return 0

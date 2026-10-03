@@ -241,11 +241,19 @@ def main(argv=None) -> int:
                     help="7:30 set-up: open today's threads in #alphalete-gp-sales "
                          "(with yesterday's final board + territories), pin them, "
                          "unpin yesterday's. --send to do it; dry by default")
+    ap.add_argument("--delete-loose", metavar="PREFIX",
+                    help="delete TODAY's loose posts of Lucy's in #alphalete-gp-sales "
+                         "that start with PREFIX (never thread parents). --send to do it")
     ap.add_argument("--fix-disp-title", action="store_true",
                     help="retitle today's dispositions parent to drop '(Final)'")
     ap.add_argument("--limit", type=int, default=0,
                     help="cap territories per campaign (dispositions preview)")
     args = ap.parse_args(argv)
+
+    if getattr(args, "delete_loose", None):
+        from automations.b2b_dispositions import morning
+        return morning.delete_loose(args.delete_loose, _central_now().date(),
+                                    send=bool(args.send))
 
     if getattr(args, "morning", False):
         from automations.b2b_dispositions import morning
