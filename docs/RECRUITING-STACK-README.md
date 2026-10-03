@@ -317,3 +317,33 @@ flags are unmeasured, not absent.
     first funnel build coerces pickers to Org; its Daily Log guard stamp was
     inherited from the copy, so the first SCI run pings one false "drift"
     notice to #claudecorrections — expected, once.
+
+- **2026-10-03 — Owners groups + Luke Baldwin's captainship (SCI book), and
+  two Source-Report data repairs.**
+  - The Recruiting Dashboard GROUP picker is now CONFIG: `roster.BOARD_GROUPS`
+    (ordered label → members; first = default), overridable per book via the
+    roster JSON (`board_groups`, `org_label`). SCI shows **Owners** (everyone)
+    plus one group per captain — first: **Luke Baldwin** (Adrian Sarabia,
+    David Pisikian, Cruz Venegas; roster read from Tableau's
+    "B2B Captain's Teams (SFDC)" filter = Luke's Team — the old
+    "Captain's Bonus Teams v2" field name is DEAD, SmartCircle renamed it).
+    Alphalete renders unchanged (Org + South Shore). Park columns now AA..
+    one per group, blank-padded 4 spare columns so removed groups wipe.
+  - **GOTCHA (cost a day of wrong numbers): never compact a data tab by
+    rewriting a partial column slice.** The 10/2 split scrub rewrote
+    'Indeed Ad Data' A:H only — columns I:U kept their old row positions, so
+    every frozen month below the first dropped row showed the wrong funnel
+    numbers per ad (Carlos caught it on Jamis's September). Fix = re-pull the
+    frozen months (`indeed_source_report --month YYYY-MM` / the sci_recruiting
+    equivalent) + clear the orphaned tail. ALSO: August+September were garbled
+    on BOTH books independently of the scrub — written by pre-2026-08-27 code
+    before the '[Action required]' subject-unwrap fix; the month re-pull healed
+    that too (June–Sep re-pulled on Alphalete, Aug–Sep on SCI).
+  - SCI Focus Report history backfilled to 2025-12-29 (40-week funnel re-pull,
+    3 batches of 5 + 1 of 4). Luke's trio only reaches ~Sep 7 — AppStream has
+    nothing earlier for those offices (verified: the run targeted all 40
+    weeks). The ALPHALETE book still only reaches ~Aug 24 (pre-existing
+    truncation) — same backfill works there if Carlos asks.
+  - Cruz Venegas: office 22442 refuses the AppStream office switch from
+    LucyReports (2 attempts) — oid blanked in deploy/sci-roster.json so
+    switcher discovery resolves him by name; until then he reads zero.
