@@ -50,4 +50,19 @@ echo "[$(date)] ad-sales-board START $*" >> "$LOG"
 "$VENV_PY" -m automations.ad_sales_board.run "$@" >> "$LOG" 2>&1
 rc=$?
 echo "[$(date)] ad-sales-board END rc=$rc" >> "$LOG"
+
+# ---- SCI PASS (captainship split, Carlos 2026-10-02) ------------------------
+# Second run against the SCI Recruiting Dashboard with the 15 captainship-only
+# owners as its org (deploy/sci-roster.json). The sheet id rides the same env
+# the indeed report uses — ad_sales_board borrows its sheet module. Sequential
+# on purpose — one AppStream session at a time; exit OR'd so a failed SCI pass
+# is visible.
+SCI_SSID="1aWWdtMtv1ivZa8fv10cbEzJJUNrO7h9YA8fVvfiRqlg"
+echo "[$(date)] ad-sales-board SCI START $*" >> "$LOG"
+INDEED_SOURCE_SPREADSHEET_ID="$SCI_SSID" \
+    RECRUITING_ROSTER_JSON="$(pwd)/deploy/sci-roster.json" \
+    "$VENV_PY" -m automations.ad_sales_board.run "$@" >> "$LOG" 2>&1
+rc_sci=$?
+echo "[$(date)] ad-sales-board SCI END rc=$rc_sci" >> "$LOG"
+[ $rc -eq 0 ] && rc=$rc_sci
 exit $rc

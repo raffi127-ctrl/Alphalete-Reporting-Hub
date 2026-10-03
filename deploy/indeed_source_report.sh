@@ -32,4 +32,17 @@ echo "[$(date)] indeed-source-report START $*" >> "$LOG"
 "$VENV_PY" -m automations.indeed_source_report.run "$@" >> "$LOG" 2>&1
 rc=$?
 echo "[$(date)] indeed-source-report END rc=$rc" >> "$LOG"
+
+# ---- SCI PASS (captainship split, Carlos 2026-10-02) ------------------------
+# Second run against the SCI Recruiting Dashboard with the 15 captainship-only
+# owners as its org (deploy/sci-roster.json). Sequential on purpose — one
+# AppStream session at a time. Exit is OR'd so a failed SCI pass is visible.
+SCI_SSID="1aWWdtMtv1ivZa8fv10cbEzJJUNrO7h9YA8fVvfiRqlg"
+echo "[$(date)] indeed-source-report SCI START $*" >> "$LOG"
+INDEED_SOURCE_SPREADSHEET_ID="$SCI_SSID" \
+    RECRUITING_ROSTER_JSON="$(pwd)/deploy/sci-roster.json" \
+    "$VENV_PY" -m automations.indeed_source_report.run "$@" >> "$LOG" 2>&1
+rc_sci=$?
+echo "[$(date)] indeed-source-report SCI END rc=$rc_sci" >> "$LOG"
+[ $rc -eq 0 ] && rc=$rc_sci
 exit $rc

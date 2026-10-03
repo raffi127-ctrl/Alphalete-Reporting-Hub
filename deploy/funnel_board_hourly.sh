@@ -60,6 +60,22 @@ fi
 ST=$?
 echo "[$(date)] funnel_board/hourly finished exit=$ST" >> "$LOG_FILE"
 
+# ---- SCI PASS (captainship split, Carlos 2026-10-02) ------------------------
+# The 15 captainship-only owners report in their own workbook now, the SCI
+# Recruiting Dashboard. Same module, second run: the roster override swaps the
+# org for deploy/sci-roster.json and FUNNEL_SSID points the build at the SCI
+# book. Runs AFTER the Alphalete pass so the two never share the AppStream
+# session; every trigger of this wrapper (hourly plist, 1am chain) covers both
+# books. Its exit is OR'd in — a dead SCI pass must not hide behind a green
+# Alphalete one.
+SCI_SSID="1aWWdtMtv1ivZa8fv10cbEzJJUNrO7h9YA8fVvfiRqlg"
+echo "[$(date)] funnel_board/hourly SCI pass starting" >> "$LOG_FILE"
+FUNNEL_SSID="$SCI_SSID" RECRUITING_ROSTER_JSON="$(pwd)/deploy/sci-roster.json" \
+    "${CMD[@]}" >> "$LOG_FILE" 2>&1
+ST_SCI=$?
+echo "[$(date)] funnel_board/hourly SCI pass finished exit=$ST_SCI" >> "$LOG_FILE"
+[ $ST -eq 0 ] && ST=$ST_SCI
+
 # Deliberately NOT publishing a Hub card per pass. 16 rows a day would bury the
 # once-daily reports in the digest; the 4am orchestrator pass still publishes and
 # is what the Hub tracks. A failing hourly pass shows up as a stale timestamp on

@@ -39,6 +39,7 @@ MASTER_ID = None
 # 'AIR' = Tableau's 2026-09-23 rename of 'AIR/AWB'; both kept.
 COUNTED_PRODUCTS = {"NEW INTERNET", "WIRELESS", "AIR/AWB", "AIR"}
 ORG_TRACKER_ID = "111Bmxx1JvT1UFXaLin7gPH53149WBZhMe0r7CHirHbA"  # Alphalete Recruiting Dashboard (Daily Log lives here; READ-ONLY)
+SCI_TRACKER_ID = "1aWWdtMtv1ivZa8fv10cbEzJJUNrO7h9YA8fVvfiRqlg"  # SCI Recruiting Dashboard — the captainship owners' Daily Log since the 2026-10-02 split (READ-ONLY here)
 
 def mt_tab(label: str) -> str:
     return "MT · " + label.split()[0]
