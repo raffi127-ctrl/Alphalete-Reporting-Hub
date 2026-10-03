@@ -341,9 +341,22 @@ def main(argv=None) -> int:
     ap.add_argument("--live", action="store_true", help="actually post (default dry-run)")
     ap.add_argument("--days", type=int, default=3)
     ap.add_argument("--limit", type=int, default=10, help="max posts per run")
+    ap.add_argument("--posts-b64", default="",
+                    help="base64 JSON [{biz,cid,rep,note}] prepared on the mini "
+                         "(Shikamaru reads Carlos's inbox there) — skips IMAP")
+    ap.add_argument("--drops-b64", default="",
+                    help="base64 JSON [str] drop lines for Carlos's DM digest")
     args = ap.parse_args(argv)
 
-    cands, drops, skipped = collect(args.days)
+    if args.posts_b64:
+        import base64
+        cands = json.loads(base64.b64decode(args.posts_b64).decode("utf-8"))
+        drops = (json.loads(base64.b64decode(args.drops_b64).decode("utf-8"))
+                 if args.drops_b64 else [])
+        skipped = []
+        _say("using %d handed-off candidates (mini bridge), IMAP skipped" % len(cands))
+    else:
+        cands, drops, skipped = collect(args.days)
     _say("candidates: %d | drops(digest only): %d | outside skipped: %d"
          % (len(cands), len(drops), len(skipped)))
 
