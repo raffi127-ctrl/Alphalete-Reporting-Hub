@@ -44,7 +44,11 @@ TAB_DATA = "Lucy At&t Data"           # hidden; created on first run
 PROTECTED_TABS = (
     "Box Order Log", "Lucy Box Order Log", "Lucy Box Data",
     "Churn", "Churn - Atef", "LUCY CHURN", "Activations",
-    "Sales Board", "BOX Sales Board", "D2D Sales Board",   # the three boards (2026-10-02)
+    # the three boards (2026-10-02), under today's titles AND the ones they
+    # had before the 2026-10-03 rename (Sales Board -> NDS Sales Board, D2D
+    # Sales Board -> Verizon Sales Board)
+    "NDS Sales Board", "BOX Sales Board", "Verizon Sales Board",
+    "Sales Board", "D2D Sales Board",
     "WeekData", "Roll Call", "RollCallData", "Stations", "BOX Stations",
     "Commission", "Commission Calculator", "Rates", "Adjustments", "RAW",
     "Copy of Carlos PNL 2026", "Name Aliases", "NoRevPay", "Daily Update",

@@ -72,14 +72,16 @@ def norm_name(n: str):
 
 
 def board_b2b_reps():
-    """The B2B roster off the main "Sales Board" tab (B2B-only since the
-    2026-10-02 split; vantura_boards.read_board stops at its totals label)."""
+    """The AT&T roster off the main "NDS Sales Board" tab (AT&T-only since
+    the 2026-10-02 split; the program is NDS on the sheet since 2026-10-03,
+    and read_board reads a leftover "B2B" row as NDS too; it stops at the
+    tab's totals label)."""
     from automations.recruiting_report.fill import open_by_key
-    from automations.vantura_boards import BOARD_TABS, read_board
+    from automations.vantura_boards import MAIN_CAMPAIGN, board_ws, read_board
     sh = open_by_key(BOARD_ID)
     return {norm_name(r["name"])
-            for r in read_board(sh.worksheet(BOARD_TABS["B2B"]))
-            if r["campaign"] == "B2B"}
+            for r in read_board(board_ws(sh, MAIN_CAMPAIGN))
+            if r["campaign"] == MAIN_CAMPAIGN}
 
 
 def price(row):

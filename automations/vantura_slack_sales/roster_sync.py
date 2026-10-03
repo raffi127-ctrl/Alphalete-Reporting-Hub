@@ -4,10 +4,10 @@ The D2D (Verizon) board is a separate TAB, so "assign someone Verizon" needs
 an actual row move — the bound script never learned this (it predates the
 tab). This runs alongside ensure_board_shape on every live fill pass:
 
-  * main "Sales Board" rep whose Campaign (L) says Verizon  -> row MOVES to
-    "D2D Sales Board" (name, last wk, this week's day cells, trainer, field
-    status VALUE, team, leadership travel; the main row is blanked).
-  * "D2D Sales Board" rep whose Campaign is NOT Verizon -> moves back the
+  * main "NDS Sales Board" rep whose Campaign (L) says Verizon -> row MOVES
+    to "Verizon Sales Board" (name, last wk, this week's day cells, trainer,
+    field status VALUE, team, leadership travel; the main row is blanked).
+  * "Verizon Sales Board" rep whose Campaign is NOT Verizon -> moves back the
     same way (into the first empty main-board row).
   * live-week Roll Call person with campaign Verizon, status Active or
     New Start, not on either board -> ADDED to the first empty D2D row
@@ -21,14 +21,17 @@ written USER_ENTERED so numbers stay numbers for the SUM/SUMIFS totals.
 
 RETIRED as an automatic job 2026-09-07 (the bound Apps Script moves reps
 natively); kept as a manual reconcile. Since the 2026-10-02 three-board split
-BOTH boards end their rep block at a totals label ("AT&T (B2B)" / "Verizon",
+BOTH boards end their rep block at a totals label ("AT&T NDS" / "Verizon",
 then "TOTAL", then the stats), so the row scans stop there — a fixed row
-range would have handed the D2D stats rows out as "empty" slots. BOX reps now
-live on "BOX Sales Board" and are not part of this sync.
+range would have handed the Verizon stats rows out as "empty" slots. BOX reps
+now live on "BOX Sales Board" and are not part of this sync. The tabs are
+"NDS Sales Board" / "Verizon Sales Board" since 2026-10-03 (board_ws still
+finds them under the old titles).
 """
 from __future__ import annotations
 
-from automations.vantura_boards import BOARD_TABS, is_stat_label
+from automations.vantura_boards import (BOARD_TABS, MAIN_CAMPAIGN, board_ws,
+                                        is_stat_label)
 
 D2D_TAB = BOARD_TABS["Verizon"]
 D2D_FIRST = 5
@@ -65,8 +68,8 @@ def _grab(g, r):
 def ensure_campaign_rosters(sh, log=print) -> None:
     from automations.recruiting_report.fill import _retry
     try:
-        main = sh.worksheet("Sales Board")
-        d2d = sh.worksheet(D2D_TAB)
+        main = board_ws(sh, MAIN_CAMPAIGN)
+        d2d = board_ws(sh, "Verizon")
     except Exception:
         return                       # D2D tab absent -> nothing to sync
     gm = main.get_all_values()
@@ -109,7 +112,7 @@ def ensure_campaign_rosters(sh, log=print) -> None:
         place(d2d, tr, name, "Verizon", _grab(gm, r))
         clear_row(main, r, "")
         d2d_names.add(_norm(name))
-        log(f"roster sync: {name} moved Sales Board r{r} -> {D2D_TAB} r{tr}")
+        log(f"roster sync: {name} moved {main.title} r{r} -> {d2d.title} r{tr}")
 
     # D2D -> main (flipped away from Verizon)
     for r in d2d_rows:
@@ -127,7 +130,7 @@ def ensure_campaign_rosters(sh, log=print) -> None:
         place(main, tr, name, camp, _grab(gd, r))
         clear_row(d2d, r, "Verizon")
         main_names.add(_norm(name))
-        log(f"roster sync: {name} moved {D2D_TAB} r{r} -> Sales Board r{tr}")
+        log(f"roster sync: {name} moved {d2d.title} r{r} -> {main.title} r{tr}")
 
     # Roll Call live-week Verizon people on neither board -> add to D2D
     try:
@@ -154,7 +157,7 @@ def ensure_campaign_rosters(sh, log=print) -> None:
              "values": [["Verizon", trainer, "1st Wk", "", "In Training"]]},
         ], value_input_option="USER_ENTERED")
         d2d_names.add(_norm(name))
-        log(f"roster sync: {name} added to {D2D_TAB} r{tr} from Roll Call")
+        log(f"roster sync: {name} added to {d2d.title} r{tr} from Roll Call")
 
 
 # ---------------------------------------------------------------- standalone

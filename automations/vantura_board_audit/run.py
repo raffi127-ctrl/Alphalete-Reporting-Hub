@@ -26,12 +26,15 @@ exceptions:
     Same one-number rewrite a human ran on 7/20, 8/11 and 9/07. See
     `_fix_stats_ranges` for what it refuses to touch.
 
-THREE BOARD TABS (2026-10-02): the reps live on "Sales Board" (B2B), "BOX
-Sales Board" and "D2D Sales Board" (Verizon) — identical geometry, rep block
-ending at each tab's totals label (automations/vantura_boards.py). Every board
-check below runs per tab: rep rows, the 'T' termination sync, the stats-range
-repair and drift checks (each tab's summary formulas against THAT tab's last
-rep), the bounded-Roll-Call-range check. Findings name the tab.
+THREE BOARD TABS (2026-10-02): the reps live on "NDS Sales Board" (the AT&T
+program — NDS on the sheet since 2026-10-03, "B2B" before; old Roll Call rows
+still say B2B and read as NDS), "BOX Sales Board" and "Verizon Sales Board" —
+identical geometry, rep block ending at each tab's totals label
+(automations/vantura_boards.py; a board still under its old title is found
+too). Every board check below runs per tab: rep rows, the 'T' termination
+sync, the stats-range repair and drift checks (each tab's summary formulas
+against THAT tab's last rep), the bounded-Roll-Call-range check. Findings
+name the tab.
 
   python -m automations.vantura_board_audit.run                  # audit + fix + report
   python -m automations.vantura_board_audit.run --dry-run        # print only
@@ -45,8 +48,10 @@ import datetime as dt
 import re
 import sys
 
-from automations.vantura_boards import (BOARD_TABS, MAIN_TAB, parse_board,
-                                        stat_row)
+from automations.vantura_boards import (ALL_BOARD_TABS, BOARD_TABS,
+                                        MAIN_CAMPAIGN, MAIN_TAB, board_ws,
+                                        campaign_of, canon_campaign,
+                                        parse_board, stat_row)
 
 REPORT_ID = "vantura-board-audit"
 SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"
@@ -79,10 +84,14 @@ RANGE_TOK = re.compile(r"\$?[A-Z]{1,2}\$?(\d+):\$?[A-Z]{1,2}\$?(\d+)\b")
 # right failure here: it asks the question instead of burying it. Take JE out
 # only once Carlos says JE is off the board too.
 #
-# 'Verizon' joined 2026-10-02: the D2D Sales Board is one of the three boards
-# this audit scans now, so an Active Verizon person without a D2D row is a
-# real hole, same as B2B/BOX.
-BOARD_CAMPAIGNS = {"B2B", "BOX", "JE", "Verizon"}
+# 'Verizon' joined 2026-10-02: the Verizon Sales Board is one of the three
+# boards this audit scans now, so an Active Verizon person without a row
+# there is a real hole, same as NDS/BOX.
+#
+# 'NDS' is the AT&T program's label since 2026-10-03 (it was 'B2B'). Roll
+# Call values go through vantura_boards.canon_campaign before this check, so
+# the 316 historical 'B2B' rows read as NDS and stay tracked.
+BOARD_CAMPAIGNS = {"NDS", "BOX", "JE", "Verizon"}
 # Roll Call's Campaign column is found BY HEADER (_roll_cols); this is only
 # the fallback. It is col D (index 3) since 2026-09-17, when 'Leadership' was
 # inserted at C — the old fixed index 2 read the leadership level as the
@@ -625,6 +634,15 @@ def _close_terminations(ws, roll, cols, resolved, write, log=_log,
     return closed, held + missed
 
 
+def _same_board(sheet: str, tab: str) -> bool:
+    """A formula's sheet qualifier names `tab` — spelled either way a board
+    has been titled ('Sales Board' and 'NDS Sales Board' are one board)."""
+    if sheet == tab:
+        return True
+    camp = campaign_of(sheet)
+    return bool(camp) and camp == campaign_of(tab)
+
+
 def _fix_stats_ranges(ws, board, board_form, last_rep, write, log=_log,
                       tab=MAIN_TAB):
     """Realign the summary boxes' rep-block ranges to 5:last_rep, in place —
@@ -663,7 +681,7 @@ def _fix_stats_ranges(ws, board, board_form, last_rep, write, log=_log,
 
             def _sub(m):
                 sheet, c1, r1, c2, r2 = m.groups()
-                if sheet and sheet != tab:
+                if sheet and not _same_board(sheet, tab):
                     return m.group(0)
                 a, b = int(r1), int(r2)
                 if not (5 <= a <= 20 and 40 <= b <= 100):
@@ -741,11 +759,14 @@ def _read_boards(sh, log=_log):
     out = {}
     for camp, tab in BOARD_TABS.items():
         try:
-            ws = sh.worksheet(tab)
+            # today's title first, then the one the board had before the
+            # 2026-10-03 rename; `tab` below is whichever was found
+            ws = board_ws(sh, camp)
         except Exception as e:  # noqa: BLE001 — WorksheetNotFound and kin
             log(f"no {tab!r} tab ({type(e).__name__}) — {camp} reps not "
                 "audited this run")
             continue
+        tab = getattr(ws, "title", None) or tab
         vals = _pad(ws.get(BOARD_RANGE_A1))
         form = _pad(ws.get(BOARD_RANGE_A1, value_render_option="FORMULA"))
         # rep block = header row to the tab's totals label, blank names
@@ -841,9 +862,10 @@ def audit(write: bool, log=_log, auto_close: bool = True,
     # The week tag lives in the gold cell on the MAIN board only (the other
     # boards mirror it by formula); a board's 'T' marks are read per tab.
     week_end = None
-    if MAIN_TAB in boards:
-        week_end = _tag_date(str(
-            boards[MAIN_TAB]["ws"].acell("B2").value or ""))
+    main_board = next((b for b in boards.values()
+                       if b["camp"] == MAIN_CAMPAIGN), None)
+    if main_board is not None:
+        week_end = _tag_date(str(main_board["ws"].acell("B2").value or ""))
     board_terms = {}
     for tab, b in boards.items():
         board_terms.update(_board_terminations(
@@ -896,7 +918,8 @@ def audit(write: bool, log=_log, auto_close: bool = True,
         if n in EXEMPT:
             continue
         # not scoreboarded here at all -> "missing from the board" is meaningless
-        camp = (str(r[R_CAMP]).strip() if len(r) > R_CAMP else "")
+        # (canon: a historical 'B2B' roll row is the NDS program)
+        camp = canon_campaign(r[R_CAMP] if len(r) > R_CAMP else "")
         if camp and camp not in BOARD_CAMPAIGNS:
             log(f"campaign {camp!r} is not on this board — skipping "
                 f"{str(r[R_NAME]).strip()} (roll r{ri})")
@@ -968,7 +991,7 @@ def audit(write: bool, log=_log, auto_close: bool = True,
                     continue
                 for m in QUAL_RANGE.finditer(c):
                     sheet, _c1, r1, _c2, r2 = m.groups()
-                    if sheet and sheet != tab:
+                    if sheet and not _same_board(sheet, tab):
                         continue      # another tab's block: not this board's drift
                     a, z = int(r1), int(r2)
                     # start-drift (top-inserted rows push 5 -> 6/7/...) is just
@@ -1149,7 +1172,13 @@ def audit_stations(sh, last_rep: int, reps, roll, log=_log, alias=None,
          'aracely'-style typos and stale identities that break matching)
     `reps` is [(row, name)] across every board.
     """
-    week_board = str(sh.worksheet(MAIN_TAB).acell("B2").value or "").strip()
+    try:
+        week_board = str(board_ws(sh, MAIN_CAMPAIGN).acell("B2").value
+                         or "").strip()
+    except Exception as e:  # noqa: BLE001 — no main board: the week check is off
+        log(f"(no {MAIN_TAB!r} tab: {type(e).__name__}) — Stations week "
+            "label check skipped")
+        week_board = ""
     known = _with_aliases(
         {_n(n) for _, n in reps} | {
             _n(r[name_col]) for r in roll
@@ -1199,17 +1228,20 @@ def _audit_stations_tab(prefix, vals, form, week_board, known,
                    f"{week_board!r} — the week label moved or went stale.")
 
     # a roll filter may compare the week either via the local row-2 cell or
-    # straight across to 'Sales Board'!$B$2 — both are in use and both are fine.
-    # (The BOX / D2D boards' B2 mirror the main one by formula, so a filter
-    # comparing against either of those is the same check.)
-    week_ok = [w for w in (week_ref, "'Sales Board'!$B$2",
-                           "'BOX Sales Board'!$B$2", "'D2D Sales Board'!$B$2")
+    # straight across to 'NDS Sales Board'!$B$2 — both are in use and both are
+    # fine. (The BOX / Verizon boards' B2 mirror the main one by formula, so a
+    # filter comparing against either of those is the same check.) Every
+    # title a board has had counts: Sheets rewrites qualifiers on a rename,
+    # but a formula typed against the old name on a not-yet-renamed copy is
+    # still the same check.
+    week_ok = [w for w in [week_ref] + ["'%s'!$B$2" % t for t in ALL_BOARD_TABS]
                if w]
     # a board *list* is a RANGE over a board's name column ($B$5:$B$56) —
     # any of the three boards. Matching the bare prefix '$B$' also caught the
-    # roll filters' week comparison ('Sales Board'!$B$2), reporting three
+    # roll filters' week comparison ('NDS Sales Board'!$B$2), reporting three
     # healthy formulas as drifted.
-    BOARD_RANGE = re.compile(r"'(?:BOX |D2D )?Sales Board'!\$B\$(\d+):")
+    BOARD_RANGE = re.compile(r"'(?:%s)'!\$B\$(\d+):"
+                             % "|".join(re.escape(t) for t in ALL_BOARD_TABS))
     n_board = n_roll = n_formula = 0
     for i, row in enumerate(form, start=1):
         for j, c in enumerate(row):

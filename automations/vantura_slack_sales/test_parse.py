@@ -290,18 +290,25 @@ def test_sara_overwrite():
         g[3][1], g[3][4], g[3][11] = "REP", "Monday", "Campaign"
         for i, (name, val) in enumerate(cells.items()):
             r = 4 + i
-            g[r][1], g[r][4], g[r][11] = name, val, "B2B"
+            # the AT&T rows say "NDS" since 2026-10-03; a leftover "B2B" row
+            # is the same campaign (vantura_boards.canon_campaign)
+            g[r][1], g[r][4], g[r][11] = name, val, "B2B" if i == 2 else "NDS"
         g[4 + len(cells)][1] = R.TOTALS_TOP
         return g
 
     g = grid({"Jacob Ortega": "7", "Nick Smedra": "2", "Diego Borres": "3"})
     rows = R.campaign_rows(g, "B2B")
+    bad = []
+    if set(rows) != {"jacob ortega", "nick smedra", "diego borres"}:
+        bad.append(f"campaign_rows('B2B') must find the NDS rows and the "
+                   f"legacy B2B row alike: {sorted(rows)}")
+    if R.campaign_rows(g, "NDS") != rows:
+        bad.append("campaign_rows('NDS') and ('B2B') must agree")
     # Sara: Jacob down 7->5, Nick up 2->4, Diego absent (left), extra rep unknown
     writes, flags = S.plan_overwrite(g, 5, rows,
                                      {"Jacob Ortega": 5, "Nick Smedra": 4,
                                       "Ghost Rep": 2})
     got = {w[0]: w[3] for w in writes}
-    bad = []
     if got != {"Jacob Ortega": 5, "Nick Smedra": 4}:
         bad.append(f"writes wrong: {got}")
     if not any("Diego Borres" in f and "LEFT" in f for f in flags):

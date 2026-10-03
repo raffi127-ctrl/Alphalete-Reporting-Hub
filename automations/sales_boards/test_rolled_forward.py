@@ -8,7 +8,8 @@ is written back onto the temp copy.
 
 Since the three-board split (2026-10-02) the snapshot carries every board's
 reps, each tagged with its tab, and a temp copy of ONE tab only takes the
-reps that belong to it.
+reps that belong to it. A snapshot from before the 2026-10-03 rename tags
+the old titles ("Sales Board" / "D2D Sales Board"); they still match.
 
 Run:  python -m automations.sales_boards.test_rolled_forward
 """
@@ -48,7 +49,7 @@ SNAP = {
     "from_week": "9.13", "to_week": "9.20",
     "reps": [
         {"name": "ANA", "days": ["1", "", "2", "", "", "F", "3"],
-         "last_wk": "7", "campaign": "B2B", "tab": "Sales Board"},
+         "last_wk": "7", "campaign": "NDS", "tab": "NDS Sales Board"},
         {"name": "BEA", "days": ["", "", "", "", "", "", "5"],
          "last_wk": "9", "campaign": "BOX", "tab": "BOX Sales Board"},
         {"name": "CAL", "days": ["", "1", "", "", "", "", ""],
@@ -57,12 +58,12 @@ SNAP = {
          "tab": "BOX Sales Board"},
     ],
     "campaigns": {
-        "B2B": {"row": 21, "name": "AT&T (B2B)", "last_wk": "80",
-                "tab": "Sales Board"},
+        "NDS": {"row": 21, "name": "AT&T NDS", "last_wk": "80",
+                "tab": "NDS Sales Board"},
         "BOX": {"row": 8, "name": "BOX", "last_wk": "30",
                 "tab": "BOX Sales Board"},
     },
-    "tabs": {"B2B": "Sales Board", "BOX": "BOX Sales Board"},
+    "tabs": {"NDS": "NDS Sales Board", "BOX": "BOX Sales Board"},
 }
 
 
@@ -76,8 +77,8 @@ def test_rewind_puts_the_closing_week_back_by_label():
 
 
 def test_rewind_takes_only_this_tabs_reps():
-    """ANA is a B2B rep on the main board: on the BOX copy she is neither
-    written nor 'missing' — and the B2B subtotal's Last Wk is not written
+    """ANA is an NDS rep on the main board: on the BOX copy she is neither
+    written nor 'missing' — and the NDS subtotal's Last Wk is not written
     onto the BOX tab's label row either."""
     writes, gone = R.rewind_writes(_grid(), SNAP, tab="BOX Sales Board")
     assert "ANA" not in gone, gone
@@ -112,6 +113,39 @@ def test_an_untagged_snapshot_is_used_whole():
     got = {w["range"]: w["values"] for w in writes}
     assert got["E4:K4"] == [["", "", "", "", "", "", 5]], got
     assert sorted(gone) == ["ANA", "GONE"], gone
+
+
+def _nds_grid():
+    """The renamed main board, rolled: ANA plus a rep added after the roll."""
+    return [
+        [""],
+        ["WE", "9.20"],
+        ["#", "REP", "Current Week", "Last Wk"] + DAYS + ["Campaign"],
+        ["1", "ANA", "0", "7"] + [""] * 7 + ["NDS"],
+        ["2", "NEW GUY", "0", ""] + [""] * 7 + ["NDS"],
+        ["48", "AT&T NDS", "0", "80"] + [""] * 7 + ["NDS"],
+        ["50", "TOTAL"],
+    ]
+
+
+def test_a_snapshot_tagged_with_the_old_tab_titles_still_rewinds():
+    """A roll made before the 2026-10-03 rename tagged ANA "Sales Board";
+    the temp copy is duplicated from "NDS Sales Board". Same board, so she
+    is written back — and the BOX reps still are not."""
+    old = {"from_week": "9.13", "to_week": "9.20",
+           "reps": [dict(r, tab={"NDS Sales Board": "Sales Board"}.get(r["tab"], r["tab"]))
+                    for r in SNAP["reps"]],
+           "campaigns": {"B2B": dict(SNAP["campaigns"]["NDS"], tab="Sales Board"),
+                         "BOX": SNAP["campaigns"]["BOX"]}}
+    writes, gone = R.rewind_writes(_nds_grid(), old, tab="NDS Sales Board")
+    got = {w["range"]: w["values"] for w in writes}
+    assert got["E4:K4"] == [[1, "", 2, "", "", "F", 3]], got
+    assert got["D4"] == [[7]], got
+    assert "D6" not in got or got["D6"] == [[80]], got
+    assert gone == [], gone                      # BEA / CAL / GONE are BOX reps
+    assert R.same_tab("Sales Board", "NDS Sales Board")
+    assert R.same_tab("D2D Sales Board", "Verizon Sales Board")
+    assert not R.same_tab("BOX Sales Board", "NDS Sales Board")
 
 
 def _write(d: Path, name: str, blob) -> None:

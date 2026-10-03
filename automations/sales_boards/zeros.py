@@ -15,8 +15,9 @@ TWO differences from how she used to post it, both from Carlos's 7/23 Loom:
 WHAT COUNTS AS A ZERO: a literal numeric 0 for that day. 'X'/'x' (didn't work),
 'T' (terminated) and blank (no data) are NOT zeros — you can't roll a zero on a day
 you didn't sell. Reconciled against the board's own counter: on the 7.26 week the
-sheet's "AT&T (B2B) — Rolled a Zero" reads 7 for Monday, and there are exactly 7
-B2B rep rows carrying a literal 0 in the Monday column.
+sheet's "AT&T NDS — Rolled a Zero" (then "AT&T (B2B) — Rolled a Zero") reads 7
+for Monday, and there are exactly 7 AT&T rep rows carrying a literal 0 in the
+Monday column.
 
 WEEKENDS (Sunday — Megan 7/23; Saturday — Megan 7/26, "post on Sunday for
 Mon-Sat"): neither weekend day is a mandatory work day, so neither counts as a
@@ -49,12 +50,13 @@ rank). The day cells are conditionally formatted on value (=AND(ISNUMBER(E5),E5=
 -> pink, ="X" -> grey), so a borrowed day recolours itself correctly — which is
 also why the window has to be written into E..K and nowhere else.
 
-THREE BOARD TABS (2026-10-02): the B2B and BOX reps now sit on separate tabs
-("Sales Board" / "BOX Sales Board", vantura_boards). One throwaway copy per
-tab, streak levels computed over the union, and each level's image stacks the
-tabs' blocks under one header (B2B then BOX, the rank continuing across) — so
-it is still the single image per level, grouped by campaign, that Carlos asked
-for on 7/23.
+THREE BOARD TABS (2026-10-02): the AT&T and BOX reps now sit on separate tabs
+("NDS Sales Board" / "BOX Sales Board", vantura_boards — the AT&T program is
+NDS on the sheet since 2026-10-03; the --program key is still B2B). One
+throwaway copy per tab, streak levels computed over the union, and each
+level's image stacks the tabs' blocks under one header (NDS then BOX, the rank
+continuing across) — so it is still the single image per level, grouped by
+campaign, that Carlos asked for on 7/23.
 """
 from __future__ import annotations
 
@@ -67,6 +69,7 @@ from gspread.utils import rowcol_to_a1
 
 from automations.recruiting_report.fill import _retry
 from automations.sales_boards import render as R
+from automations.vantura_boards import canon_campaign
 
 TMP_TAB = "_sb_zeros_tmp"
 WEEK_DATA_TAB = "WeekData"
@@ -243,7 +246,7 @@ def _read_tab(sh, ws, days, span, anchor, exact, norm, log=print) -> dict:
 
     rows = [r for r in range(first, last + 1)
             if R.cell(g, r, R.NAME_COL).strip()
-            and R.cell(g, r, CAMPAIGN_COL).strip() in R.PROGRAMS]
+            and canon_campaign(R.cell(g, r, CAMPAIGN_COL)) in R.PROGRAM_CAMPAIGNS]
 
     window, streaks, gaps = {}, {}, {}
     for r in rows:
@@ -265,7 +268,7 @@ def render_zeros(sh, src_ws, sheet_id, token, yday, out_dir: Path) -> dict:
     """Build one image per streak depth. Returns {level: {"path", "reps",
     "campaigns"}} — empty if nobody rolled a zero on the anchor day.
 
-    `src_ws` is one board worksheet or a list of them (B2B then BOX); every
+    `src_ws` is one board worksheet or a list of them (NDS then BOX); every
     level's image stacks the boards' blocks under one header, rank continuing
     across, so the grouped-by-campaign image survives the three-tab split.
 

@@ -39,14 +39,17 @@ from pathlib import Path
 
 from automations.vantura_slack_sales import parse as P
 from automations.vantura_slack_sales.parse import TZ
-from automations.vantura_boards import MAIN_TAB, is_stat_label, tab_for
+from automations.vantura_boards import (MAIN_CAMPAIGN, MAIN_TAB,
+                                        SUBTOTAL_LABELS, board_ws,
+                                        canon_campaign, is_stat_label, tab_for)
 
 CHANNEL = ("#alphalete-gp-sales", "C07J46MQNUX")
 SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"
 # THREE BOARD TABS (2026-10-02): each campaign's reps live on their own tab
-# with identical geometry — "Sales Board" (B2B, also the gold week cell),
-# "BOX Sales Board", "D2D Sales Board" (Verizon). Reads and writes go to
-# vantura_boards.tab_for(campaign); TAB is the main one.
+# with identical geometry — "NDS Sales Board" (the AT&T program, NDS on the
+# sheet since 2026-10-03; this module's campaign key is still "B2B" and
+# tab_for maps it), "BOX Sales Board", "Verizon Sales Board". Reads and
+# writes go to vantura_boards.board_ws(campaign); TAB is the main one.
 TAB = MAIN_TAB
 
 # Before this hour a run is closing out YESTERDAY, not filling today — the
@@ -438,11 +441,12 @@ def office_tally(posts, day: dt.date, campaign: str):
 
 # --------------------------------------------------------------- sheet ---
 def board_grid(campaign: str = "B2B"):
-    """(worksheet, grid) of the campaign's own board tab. A1:P200 — wide
-    enough for any roster; everything below the rep block is cut off by
+    """(worksheet, grid) of the campaign's own board tab (B2B -> the NDS
+    board; a board not yet renamed is found under its old title). A1:P200 —
+    wide enough for any roster; everything below the rep block is cut off by
     totals_row, never by the read."""
     from automations.recruiting_report.fill import open_by_key, _retry
-    ws = _retry(open_by_key(SHEET_ID).worksheet, tab_for(campaign))
+    ws = board_ws(open_by_key(SHEET_ID), campaign)
     return ws, _retry(ws.get, "A1:P200")
 
 
@@ -452,17 +456,18 @@ def _cell(g, r, c):
 
 # The per-campaign TOTAL row at the bottom of the rep list carries the SAME
 # campaign label in col L as the reps do, so it has to be cut off by the start
-# of the totals block — the tab's subtotal label ("AT&T (B2B)" / "BOX" /
-# "Verizon"), same anchor sales_boards/render.py uses.
-TOTALS_TOP = "AT&T (B2B)"
+# of the totals block — the tab's subtotal label ("AT&T NDS" / "BOX" /
+# "Verizon"; the pre-rename "AT&T (B2B)" still counts), same anchor
+# sales_boards/render.py uses.
+TOTALS_TOP = SUBTOTAL_LABELS[MAIN_CAMPAIGN]
 
 
 def totals_row(g) -> int:
     for r in range(DAY_HEADER_ROW + 1, len(g) + 1):
         if is_stat_label(_cell(g, r, NAME_COL)):
             return r
-    raise SystemExit("totals block (AT&T (B2B) / BOX / Verizon … TOTAL) not "
-                     "found on the tab")
+    raise SystemExit("totals block (%s … TOTAL) not found on the tab"
+                     % " / ".join(SUBTOTAL_LABELS.values()))
 
 
 def ensure_board_shape(sh, g, tab: str = TAB, log=_log) -> None:
@@ -521,19 +526,22 @@ def campaign_rows(g, campaign: str) -> dict[str, int]:
     and removed weekly and the tab is sorted. Stops at the totals block, whose
     rows are formula-driven and must never be written. The label check is
     kept on a single-campaign tab on purpose: a rep mis-filed onto the wrong
-    board is left alone rather than written under the wrong campaign.
+    board is left alone rather than written under the wrong campaign. Labels
+    compare through vantura_boards.canon_campaign, so campaign "B2B" finds
+    the rows that say "NDS" (today) and "B2B" (before 2026-10-03) alike.
     """
+    want = canon_campaign(campaign)
     out = {}
     for r in range(DAY_HEADER_ROW + 1, totals_row(g)):
         name = _cell(g, r, NAME_COL).strip()
-        if name and _cell(g, r, CAMPAIGN_COL).strip() == campaign:
+        if name and canon_campaign(_cell(g, r, CAMPAIGN_COL)) == want:
             out[_norm(name)] = r
     return out
 
 
 def week_ok(g, day: dt.date):
     """(ok, shown, want) — is the board showing the week that CONTAINS `day`?
-    `g` is the MAIN board's grid: the gold cell is typed on "Sales Board"
+    `g` is the MAIN board's grid: the gold cell is typed on "NDS Sales Board"
     only (the other boards' B2 mirror it by formula).
 
     The board holds ONE week at a time, chosen by the gold WE cell (B2). The

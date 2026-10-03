@@ -1,6 +1,6 @@
 #!/bin/bash
 # Campaign roster sync -> Vantura Master (every 30 min on LUCY 2).
-# Moves reps between the main Sales Board and the D2D (Verizon) board when
+# Moves reps between the main NDS Sales Board and the Verizon Sales Board when
 # their Campaign column / Roll Call campaign says so. See the module docstring.
 set -u
 cd "$(dirname "$0")/.." || exit 1

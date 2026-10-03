@@ -116,11 +116,11 @@ def board_box_reps():
     """The BOX roster — off its own "BOX Sales Board" tab since 2026-10-02
     (vantura_boards.read_board stops at the tab's totals label)."""
     from automations.recruiting_report.fill import open_by_key
-    from automations.vantura_boards import BOARD_TABS, read_board
+    from automations.vantura_boards import board_ws, read_board
     from automations.vantura_payout_estimate.run import BOARD_ID
     sh = open_by_key(BOARD_ID)
     return {norm_name(r["name"])
-            for r in read_board(sh.worksheet(BOARD_TABS["BOX"]))
+            for r in read_board(board_ws(sh, "BOX"))
             if r["campaign"] == "BOX"}
 
 

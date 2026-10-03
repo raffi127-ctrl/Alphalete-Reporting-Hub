@@ -12,8 +12,10 @@ Call (the authoritative current-campaign source Carlos pointed at), matched by
 name through the master's Name Aliases both ways, newest week wins. When a
 person isn't on the Roll Call yet (typically Orientation Scheduled), the Daily
 Update's own Campaign column is the fallback. Campaigns are canonicalized to
-the Roll Call vocabulary — B2B / BOX / BASE / JE — so "B2B ATT" and "Box"
-don't produce a second spelling.
+the Roll Call vocabulary — NDS / BOX / BASE / JE — so "Box" and "nds" don't
+produce a second spelling. The AT&T program is NDS since 2026-10-03 (Carlos);
+"B2B" / "B2B ATT" are its old spellings (historical Roll Call rows, old Daily
+Update rows) and fold onto NDS too, so nobody keeps a "(B2B)" contact.
 
 Matching an existing contact: by phone (last 10 digits) first, then by
 normalized base name (its own parenthetical stripped). An existing contact is
@@ -93,13 +95,15 @@ def _e164(s) -> str:
 
 
 def _canon_campaign(raw: str) -> str:
-    """Fold every spelling onto the Roll Call vocabulary: B2B / BOX / BASE / JE.
-    Unknown values pass through upper-cased rather than being dropped."""
+    """Fold every spelling onto the Roll Call vocabulary: NDS / BOX / BASE / JE.
+    "B2B" (and "B2B ATT") is the AT&T program's pre-2026-10-03 spelling and
+    folds onto NDS. Unknown values pass through upper-cased rather than being
+    dropped."""
     u = str(raw or "").strip().upper()
     if not u:
         return ""
-    if "B2B" in u:
-        return "B2B"
+    if "NDS" in u or "B2B" in u:
+        return "NDS"
     if "BOX" in u:
         return "BOX"
     if "BASE" in u:

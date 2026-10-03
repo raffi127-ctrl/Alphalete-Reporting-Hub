@@ -29,9 +29,11 @@ Base is GONE — the campaign ended (Carlos 2026-08-30); no Base rows remain on
 the board and vantura_slack_sales no longer parses it either.
 
 Board mechanics are vantura_slack_sales' own, imported from it: same tabs
-(one per campaign since 2026-10-02 — B2B on "Sales Board", BOX on "BOX Sales
-Board", vantura_boards.tab_for), same label anchors, same wrong-week gate off
-the main board's gold cell, and THE FILL ONLY EVER RAISES A NUMBER — a board
+(one per campaign since 2026-10-02 — B2B on "NDS Sales Board" (the AT&T
+program is NDS on the sheet since 2026-10-03; the campaign key here stays
+B2B), BOX on "BOX Sales Board", vantura_boards.tab_for), same label anchors,
+same wrong-week gate off the main board's gold cell, and THE FILL ONLY EVER
+RAISES A NUMBER — a board
 cell higher than the log (a hand entry, a sale routed another way) stands.
 The log lags the same evening's late sales, which is exactly why the evening
 Slack passes stay: this is the authoritative morning close-out, they are the
@@ -56,7 +58,7 @@ from automations.vantura_slack_sales.run import (
     _cell, _log, _md, _norm,
     board_grid, campaign_rows, day_column, ensure_board_shape, week_ok,
 )
-from automations.vantura_boards import BOARD_TABS, read_board
+from automations.vantura_boards import BOARD_TABS, board_ws, read_board
 
 REPORT_ID = "vantura_orderlog_sales"            # schedule_config id
 
@@ -266,18 +268,18 @@ def match_rep(log_key: str, rows: dict[str, int]):
     return None
 
 
-# Reps on the D2D (Verizon) board still sell AT&T B2B under their own name.
-# Carlos 2026-09-30: they stay listed as Verizon — their log sales go on no
-# Sales Board row, and that is NOT a hole to flag (Giovanni Monreal / Luis
+# Reps on the Verizon board still sell AT&T under their own name. Carlos
+# 2026-09-30: they stay listed as Verizon — their log sales go on no NDS
+# board row, and that is NOT a hole to flag (Giovanni Monreal / Luis
 # Valenciano). A rep on neither board is still flagged.
 D2D_TAB = BOARD_TABS["Verizon"]
 
 
 def d2d_reps(sh) -> dict[str, int]:
-    """{normalised rep name: row} on the D2D board — its rep block only, the
-    totals / stats rows under it never read as people."""
+    """{normalised rep name: row} on the Verizon board — its rep block only,
+    the totals / stats rows under it never read as people."""
     return {_norm(r["name"]): r["row"]
-            for r in read_board(sh.worksheet(D2D_TAB))}
+            for r in read_board(board_ws(sh, "Verizon"))}
 
 
 def split_d2d(unmatched, d2d: dict[str, int]):

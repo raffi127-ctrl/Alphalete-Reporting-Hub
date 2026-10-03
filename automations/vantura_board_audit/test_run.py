@@ -98,6 +98,8 @@ class _FakeWS(object):
 class _FakeSheet(object):
     def __init__(self, worksheets):
         self._ws = worksheets
+        for name, ws in worksheets.items():
+            ws.title = name            # gspread worksheets know their title
 
     def worksheet(self, name):
         return self._ws[name]
@@ -113,7 +115,7 @@ def _board_with_one_rep():
     blank = [""] * 20
     rep = _pad([""] * 20, 20)
     rep[1] = "Casey Rep"      # col B name
-    rep[11] = "B2B"           # col L campaign
+    rep[11] = "NDS"           # col L campaign
     rep[13] = "1st Wk"        # col N week tag -> _is_rep True
     values = [blank, blank, blank, blank, rep]        # rows 1-5
     formulas = [[""] * 20 for _ in range(5)]          # no "=" anywhere -> no drift
@@ -133,7 +135,7 @@ def _stations_with_unknown_name():
     return rows, form
 
 
-def _board_with_days(rows, week="8.16", campaign="B2B"):
+def _board_with_days(rows, week="8.16", campaign="NDS"):
     """A board tab carrying the real column shape the 'T' sync reads:
     r4 is the header row (B 'REP', E..K 'Monday'..'Sunday', L 'Campaign'),
     rep rows from r5. `rows` is [(name, [7 day cells])]. `campaign` is the
@@ -221,7 +223,7 @@ def _roll_matching():
 def _sheet(stations_values, stations_form):
     board_v, board_f = _board_with_one_rep()
     return _FakeSheet({
-        "Sales Board": _FakeWS(board_v, board_f, b2=""),
+        "NDS Sales Board": _FakeWS(board_v, board_f, b2=""),
         "Roll Call": _FakeWS(_roll_matching()),
         "Report an Issue": _FakeWS([]),         # empty -> every finding is NEW
         "Stations": _FakeWS(stations_values, stations_form),
@@ -433,7 +435,7 @@ class ReportAnIssueDedupe(unittest.TestCase):
         board_v, board_f = _board_with_one_rep()
         st_v, st_f = _stations_clean()
         return _FakeSheet({
-            "Sales Board": _FakeWS(board_v, board_f, b2=""),
+            "NDS Sales Board": _FakeWS(board_v, board_f, b2=""),
             "Roll Call": _FakeWS(_roll_with_open_termination()),
             "Report an Issue": _FakeWS([_ISSUE_HEADER] + list(issue_rows)),
             "Stations": _FakeWS(st_v, st_f),
@@ -515,11 +517,11 @@ class UntrackedCampaignsAreSkipped(unittest.TestCase):
         stray[3] = "Pat Offboard"      # col D name
         roll = [
             _roll_header(),
-            ["", "Active", "B2B", "Casey Rep"],
+            ["", "Active", "NDS", "Casey Rep"],
             stray,
         ]
         return _FakeSheet({
-            "Sales Board": _FakeWS(board_v, board_f, b2=""),
+            "NDS Sales Board": _FakeWS(board_v, board_f, b2=""),
             "Roll Call": _FakeWS(roll),
             "Report an Issue": _FakeWS([]),
             "Stations": _FakeWS(st_v, st_f),
@@ -538,17 +540,21 @@ class UntrackedCampaignsAreSkipped(unittest.TestCase):
     def test_tracked_campaign_still_produces_the_finding(self):
         """Control: the SAME row under a tracked campaign must still fire, so
         the test above proves the campaign skip did the work rather than some
-        unrelated fixture detail swallowing the finding."""
-        sheet = self._sheet_with_roll("B2B")
-        rc, wm, mc = self._run(sheet, [])
-        self.assertEqual(rc, 0)
-        appended = sheet.worksheet("Report an Issue").appended
-        self.assertTrue(
-            any("Pat Offboard" in " ".join(map(str, r)) for r in appended),
-            "a tracked-campaign rep with no board row must still be reported — "
-            "if this fails the skip test above has stopped covering anything")
-        self.assertTrue(wm.called)
-        self.assertFalse(mc.called)
+        unrelated fixture detail swallowing the finding. "NDS" is the AT&T
+        program's label since 2026-10-03; a historical "B2B" roll row is the
+        same program and must stay tracked."""
+        for campaign in ("NDS", "B2B"):
+            sheet = self._sheet_with_roll(campaign)
+            rc, wm, mc = self._run(sheet, [])
+            self.assertEqual(rc, 0)
+            appended = sheet.worksheet("Report an Issue").appended
+            self.assertTrue(
+                any("Pat Offboard" in " ".join(map(str, r)) for r in appended),
+                "a tracked-campaign rep (%s) with no board row must still be "
+                "reported — if this fails the skip test above has stopped "
+                "covering anything" % campaign)
+            self.assertTrue(wm.called)
+            self.assertFalse(mc.called)
 
     def test_blank_campaign_is_still_checked(self):
         """Blank is ambiguous, not 'untracked' — skipping it would be the same
@@ -578,7 +584,7 @@ class AutoCloseTerminations(unittest.TestCase):
         board_v, board_f = _board_with_one_rep()
         st_v, st_f = _stations_clean()
         return _FakeSheet({
-            "Sales Board": _FakeWS(board_v, board_f, b2=""),
+            "NDS Sales Board": _FakeWS(board_v, board_f, b2=""),
             "Roll Call": _FakeWS(roll),
             "Report an Issue": _FakeWS([]),
             "Stations": _FakeWS(st_v, st_f),
@@ -739,7 +745,7 @@ class BoardTerminationMark(unittest.TestCase):
         bv, bf, wk = _board_with_days(board_rows, week)
         st_v, st_f = _stations_clean()
         tabs = {
-            "Sales Board": _FakeWS(bv, bf, b2=wk),
+            "NDS Sales Board": _FakeWS(bv, bf, b2=wk),
             "Roll Call": _FakeWS(roll),
             "Report an Issue": _FakeWS([]),
             "Stations": _FakeWS(st_v, st_f),
@@ -834,7 +840,7 @@ class BoardTerminationMark(unittest.TestCase):
         bv[3] = [""] * 20                      # wipe the header row
         st_v, st_f = _stations_clean()
         sheet = _FakeSheet({
-            "Sales Board": _FakeWS(bv, bf, b2=wk),
+            "NDS Sales Board": _FakeWS(bv, bf, b2=wk),
             "Roll Call": _FakeWS(self._roll("Casey Rep")),
             "Report an Issue": _FakeWS([]),
             "Stations": _FakeWS(st_v, st_f),
@@ -887,7 +893,7 @@ class StoreCloseTerminations(unittest.TestCase):
         board_v, board_f = _board_with_one_rep()
         st_v, st_f = _stations_clean()
         return _FakeSheet({
-            "Sales Board": _FakeWS(board_v, board_f, b2=""),
+            "NDS Sales Board": _FakeWS(board_v, board_f, b2=""),
             "Roll Call": _FakeWS(roll),
             "Report an Issue": _FakeWS([]),
             "Stations": _FakeWS(st_v, st_f),
@@ -981,7 +987,7 @@ class StatsRangeAutoRepair(unittest.TestCase):
             v, f = [""] * width, [""] * width
             if 5 <= i <= self.LAST_REP:
                 v[1] = "Rep %02d" % i          # col B name
-                v[11] = "B2B"                  # col L campaign
+                v[11] = "NDS"                  # col L campaign
                 v[13] = "1st Wk"               # col N week tag -> _is_rep
             if total_row and i == total_row:
                 v[1] = "TOTAL"
@@ -1003,18 +1009,18 @@ class StatsRangeAutoRepair(unittest.TestCase):
         board_v, board_f = self._board(summary, total_row=total_row)
         st_v, st_f = _stations_clean()
         return _FakeSheet({
-            "Sales Board": _FakeWS(board_v, board_f, b2=""),
+            "NDS Sales Board": _FakeWS(board_v, board_f, b2=""),
             "Roll Call": _FakeWS(self._roll()),
             "Report an Issue": _FakeWS([]),
             "Stations": _FakeWS(st_v, st_f),
         })
 
     def _drifted(self):
-        return '=SUMIFS(C$5:C$%d,$L$5:$L$%d,"B2B")' % (self.DRIFT_END,
+        return '=SUMIFS(C$5:C$%d,$L$5:$L$%d,"NDS")' % (self.DRIFT_END,
                                                        self.DRIFT_END)
 
     def _realigned(self):
-        return '=SUMIFS(C$5:C$%d,$L$5:$L$%d,"B2B")' % (self.LAST_REP,
+        return '=SUMIFS(C$5:C$%d,$L$5:$L$%d,"NDS")' % (self.LAST_REP,
                                                        self.LAST_REP)
 
     def _findings(self, sheet):
@@ -1024,7 +1030,7 @@ class StatsRangeAutoRepair(unittest.TestCase):
         sheet = self._sheet({(51, 2): self._drifted()})
         rc, wm, mc = self._run(sheet, [])
         self.assertEqual(rc, 0)
-        self.assertEqual(dict(sheet.worksheet("Sales Board").written).get("C51"),
+        self.assertEqual(dict(sheet.worksheet("NDS Sales Board").written).get("C51"),
                          self._realigned())
         self.assertEqual(self._findings(sheet), [],
                          "a repaired drift must not also be reported")
@@ -1036,11 +1042,11 @@ class StatsRangeAutoRepair(unittest.TestCase):
     def test_start_drift_is_realigned_too(self):
         """Rows inserted at the top push 5 -> 7 (the whole % box read 7:68 on
         2026-07-20). Both ends come back to 5:last_rep."""
-        sheet = self._sheet({(51, 2): '=SUMPRODUCT(($L$7:$L$43="B2B"))'})
+        sheet = self._sheet({(51, 2): '=SUMPRODUCT(($L$7:$L$43="NDS"))'})
         rc, _, _ = self._run(sheet, [])
         self.assertEqual(rc, 0)
-        self.assertEqual(dict(sheet.worksheet("Sales Board").written).get("C51"),
-                         '=SUMPRODUCT(($L$5:$L$%d="B2B"))' % self.LAST_REP)
+        self.assertEqual(dict(sheet.worksheet("NDS Sales Board").written).get("C51"),
+                         '=SUMPRODUCT(($L$5:$L$%d="NDS"))' % self.LAST_REP)
 
     def test_repair_leaves_a_trace_in_the_manifest(self):
         """A run that silently rewrote cells and then said 'clean' reads like a
@@ -1057,7 +1063,7 @@ class StatsRangeAutoRepair(unittest.TestCase):
         sheet = self._sheet({(51, 2): self._drifted()})
         rc, _, _ = self._run(sheet, ["--no-fix-ranges"])
         self.assertEqual(rc, 0)
-        self.assertEqual(sheet.worksheet("Sales Board").written, [])
+        self.assertEqual(sheet.worksheet("NDS Sales Board").written, [])
         found = self._findings(sheet)
         self.assertTrue(any("STATS-RANGE DRIFT" in f for f in found), found)
         self.assertFalse(any("declined" in f for f in found),
@@ -1067,7 +1073,7 @@ class StatsRangeAutoRepair(unittest.TestCase):
         sheet = self._sheet({(51, 2): self._drifted()})
         rc, _, _ = self._run(sheet, ["--dry-run"])
         self.assertEqual(rc, 0)
-        self.assertEqual(sheet.worksheet("Sales Board").written, [])
+        self.assertEqual(sheet.worksheet("NDS Sales Board").written, [])
 
     def test_total_row_ends_the_block_and_reps_below_it_are_reported(self):
         """Since the three-board split (2026-10-02) a totals label in col B
@@ -1080,13 +1086,13 @@ class StatsRangeAutoRepair(unittest.TestCase):
         rc, _, _ = self._run(sheet, [])
         self.assertEqual(rc, 0)
         self.assertEqual(
-            dict(sheet.worksheet("Sales Board").written).get("C51"),
-            '=SUMIFS(C$5:C$39,$L$5:$L$39,"B2B")',
+            dict(sheet.worksheet("NDS Sales Board").written).get("C51"),
+            '=SUMIFS(C$5:C$39,$L$5:$L$39,"NDS")',
             "ranges realign to the block above the TOTAL row")
         found = self._findings(sheet)
         strays = [f for f in found if "REP BELOW THE TOTALS" in f]
         self.assertEqual(len(strays), 5, found)          # Rep 41..Rep 45
-        self.assertTrue(any("'Rep 41' (Sales Board r41)" in f for f in strays),
+        self.assertTrue(any("'Rep 41' (NDS Sales Board r41)" in f for f in strays),
                         strays)
         self.assertFalse(any("STATS-RANGE DRIFT" in f for f in found),
                          "the repair took, so no drift finding is left")
@@ -1098,13 +1104,13 @@ class StatsRangeAutoRepair(unittest.TestCase):
         sheet = self._sheet({(51, 2): fml})
         rc, _, _ = self._run(sheet, [])
         self.assertEqual(rc, 0)
-        self.assertEqual(sheet.worksheet("Sales Board").written, [])
+        self.assertEqual(sheet.worksheet("NDS Sales Board").written, [])
 
     def test_clean_board_writes_nothing(self):
         sheet = self._sheet({(51, 2): self._realigned()})
         rc, _, mc = self._run(sheet, [])
         self.assertEqual(rc, 0)
-        self.assertEqual(sheet.worksheet("Sales Board").written, [])
+        self.assertEqual(sheet.worksheet("NDS Sales Board").written, [])
         self.assertTrue(mc.called, "already aligned -> a plain clean run")
 
     def test_over_the_cap_refuses(self):
@@ -1114,14 +1120,15 @@ class StatsRangeAutoRepair(unittest.TestCase):
         sheet = self._sheet(summary)
         rc, _, _ = self._run(sheet, [])
         self.assertEqual(rc, 0)
-        self.assertEqual(sheet.worksheet("Sales Board").written, [])
+        self.assertEqual(sheet.worksheet("NDS Sales Board").written, [])
         self.assertTrue(any("declined" in f and "re-layout" in f
                             for f in self._findings(sheet)))
 
 
 class ThreeBoards(unittest.TestCase):
-    """2026-10-02: the reps live on THREE tabs of one shape — "Sales Board"
-    (B2B), "BOX Sales Board", "D2D Sales Board" (Verizon). Every board check
+    """2026-10-02: the reps live on THREE tabs of one shape — "NDS Sales
+    Board" (the AT&T program; "Sales Board" until the 2026-10-03 rename),
+    "BOX Sales Board", "Verizon Sales Board" ("D2D Sales Board" before). Every board check
     runs per tab and names the tab; a tab that is not there yet is skipped
     (the other tests cover that path — their fixtures carry the main tab
     only and still pass)."""
@@ -1147,15 +1154,15 @@ class ThreeBoards(unittest.TestCase):
 
     def _sheet(self, main_rows, box_rows=(), d2d_rows=(), roll=None,
                box_stations=None, main_form=None, box_form=None):
-        mv, mf, wk = _board_with_days(main_rows, campaign="B2B")
+        mv, mf, wk = _board_with_days(main_rows, campaign="NDS")
         bv, bf, _ = _board_with_days(box_rows, campaign="BOX")
         dv, df, _ = _board_with_days(d2d_rows, campaign="Verizon")
         st_v, st_f = _stations_clean()
         st_v[1][16] = wk                 # Stations!Q2 — the week label week_roll writes
         tabs = {
-            "Sales Board": _FakeWS(mv, main_form or mf, b2=wk),
+            "NDS Sales Board": _FakeWS(mv, main_form or mf, b2=wk),
             "BOX Sales Board": _FakeWS(bv, box_form or bf, b2=wk),
-            "D2D Sales Board": _FakeWS(dv, df, b2=wk),
+            "Verizon Sales Board": _FakeWS(dv, df, b2=wk),
             "Roll Call": _FakeWS(roll if roll is not None else
                                  [self._roll_header_917()]),
             "Report an Issue": _FakeWS([]),
@@ -1172,7 +1179,7 @@ class ThreeBoards(unittest.TestCase):
         """The 'T' sync reads every board: a BOX rep T'd on the BOX tab
         closes her roll row, and the trace says which tab said so."""
         roll = [self._roll_header_917(),
-                self._roll_row("Casey Rep", "B2B"),
+                self._roll_row("Casey Rep", "NDS"),
                 self._roll_row("Boxy Rep", "BOX")]
         sheet = self._sheet([("Casey Rep", ["1", "0", "2", "", "", "", ""])],
                             box_rows=[("Boxy Rep", ["T"] * 7)], roll=roll)
@@ -1187,7 +1194,7 @@ class ThreeBoards(unittest.TestCase):
         'missing from the board' — and one with no row anywhere still is,
         Verizon included now that the D2D board is scanned."""
         roll = [self._roll_header_917(),
-                self._roll_row("Casey Rep", "B2B"),
+                self._roll_row("Casey Rep", "NDS"),
                 self._roll_row("Boxy Rep", "BOX"),
                 self._roll_row("Vee Person", "Verizon"),
                 self._roll_row("Gone Person", "Verizon")]
@@ -1207,8 +1214,8 @@ class ThreeBoards(unittest.TestCase):
         Active rep with a level look like an untracked campaign and skipped
         them — this B2B person with no board row was never reported."""
         roll = [self._roll_header_917(),
-                self._roll_row("Casey Rep", "B2B", leadership="Level 1"),
-                self._roll_row("Pat Offboard", "B2B", leadership="Level 1"),
+                self._roll_row("Casey Rep", "NDS", leadership="Level 1"),
+                self._roll_row("Pat Offboard", "NDS", leadership="Level 1"),
                 self._roll_row("Base Person", "Base", leadership="Level 1")]
         sheet = self._sheet([("Casey Rep", [""] * 7)], roll=roll)
         rc, _, _ = self._run(sheet, [])
@@ -1224,19 +1231,19 @@ class ThreeBoards(unittest.TestCase):
         main_rows = [("Rep %02d" % i, [""] * 7) for i in range(5, 46)]   # r5-45
         box_rows = [("Box %02d" % i, [""] * 7) for i in range(5, 13)]    # r5-12
         roll = [self._roll_header_917()]
-        roll += [self._roll_row(n, "B2B") for n, _ in main_rows]
+        roll += [self._roll_row(n, "NDS") for n, _ in main_rows]
         roll += [self._roll_row(n, "BOX") for n, _ in box_rows]
         mf = [[""] * 20 for _ in range(52)]
         bf = [[""] * 20 for _ in range(52)]
-        mf[50][2] = '=SUMIFS(C$5:C$43,$L$5:$L$43,"B2B")'
+        mf[50][2] = '=SUMIFS(C$5:C$43,$L$5:$L$43,"NDS")'
         bf[50][2] = '=SUMIFS(C$5:C$43,$L$5:$L$43,"BOX")'
-        bf[50][3] = "=SUMPRODUCT(('Sales Board'!$L$5:$L$43=\"B2B\"))"
+        bf[50][3] = "=SUMPRODUCT(('NDS Sales Board'!$L$5:$L$43=\"NDS\"))"
         sheet = self._sheet(main_rows, box_rows=box_rows, roll=roll,
                             main_form=mf, box_form=bf)
         rc, _, _ = self._run(sheet, [])
         self.assertEqual(rc, 0)
-        self.assertEqual(dict(sheet.worksheet("Sales Board").written),
-                         {"C51": '=SUMIFS(C$5:C$45,$L$5:$L$45,"B2B")'})
+        self.assertEqual(dict(sheet.worksheet("NDS Sales Board").written),
+                         {"C51": '=SUMIFS(C$5:C$45,$L$5:$L$45,"NDS")'})
         self.assertEqual(dict(sheet.worksheet("BOX Sales Board").written),
                          {"C51": '=SUMIFS(C$5:C$12,$L$5:$L$12,"BOX")'})
         self.assertFalse(any("STATS-RANGE DRIFT" in f
@@ -1252,7 +1259,7 @@ class ThreeBoards(unittest.TestCase):
         rows[6][1] = "Zed Unknownperson"
         sheet = self._sheet([("Casey Rep", [""] * 7)],
                             roll=[self._roll_header_917(),
-                                  self._roll_row("Casey Rep", "B2B")],
+                                  self._roll_row("Casey Rep", "NDS")],
                             box_stations=(rows, []))
         rc, _, _ = self._run(sheet, [])
         self.assertEqual(rc, 0)
@@ -1261,6 +1268,50 @@ class ThreeBoards(unittest.TestCase):
                             for f in found), found)
         self.assertFalse(any("Car Ride Leader" in f for f in found), found)
         self.assertFalse(any("row-2 cell" in f for f in found), found)
+
+
+class LegacyTitles(unittest.TestCase):
+    """A copy of the board that still carries the pre-2026-10-03 titles
+    ("Sales Board" / "D2D Sales Board", col L "B2B") audits exactly like the
+    renamed one: the boards are found under their old names, findings name
+    the tab as it is actually titled, and "B2B" roll rows stay tracked."""
+
+    _run = ExitCodeSemantics._run
+
+    def _sheet(self):
+        mv, mf, wk = _board_with_days([("Casey Rep", [""] * 7)], campaign="B2B")
+        bv, bf, _ = _board_with_days([("Boxy Rep", ["T"] * 7)], campaign="BOX")
+        dv, df, _ = _board_with_days([("Vee Person", [""] * 7)],
+                                     campaign="Verizon")
+        st_v, st_f = _stations_clean()
+        st_v[1][16] = wk
+        roll = [ThreeBoards._roll_header_917(),
+                ThreeBoards._roll_row("Casey Rep", "B2B"),
+                ThreeBoards._roll_row("Boxy Rep", "BOX"),
+                ThreeBoards._roll_row("Vee Person", "Verizon"),
+                ThreeBoards._roll_row("Gone Person", "B2B")]
+        return _FakeSheet({
+            "Sales Board": _FakeWS(mv, mf, b2=wk),
+            "BOX Sales Board": _FakeWS(bv, bf, b2=wk),
+            "D2D Sales Board": _FakeWS(dv, df, b2=wk),
+            "Roll Call": _FakeWS(roll),
+            "Report an Issue": _FakeWS([]),
+            "Stations": _FakeWS(st_v, st_f),
+        })
+
+    def test_old_titles_are_audited_as_the_same_boards(self):
+        sheet = self._sheet()
+        rc, wm, _ = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        # the BOX 'T' still closes the roll, named by the tab's real title
+        self.assertEqual(sheet.worksheet("Roll Call").written,
+                         [("B3", "Terminated")])
+        self.assertIn("BOX Sales Board r5", wm.call_args.kwargs.get("note") or "")
+        found = " ".join(str(r[3]) for r in
+                         sheet.worksheet("Report an Issue").appended)
+        self.assertIn("Gone Person", found)          # B2B row = NDS: tracked
+        for who in ("Casey Rep", "Boxy Rep", "Vee Person"):
+            self.assertNotIn(who, found, who)
 
 
 class StationsBoardLists(unittest.TestCase):
@@ -1273,7 +1324,7 @@ class StationsBoardLists(unittest.TestCase):
         for col, f in cells.items():
             form[5][col] = f
         sheet = _FakeSheet({tab: _FakeWS(rows, form),
-                            "Sales Board": _FakeWS([], [], b2="")})
+                            "NDS Sales Board": _FakeWS([], [], b2="")})
         return audit_run.audit_stations(sheet, 5, [(5, "Casey Rep")], [],
                                         log=lambda *a: None)
 
@@ -1296,11 +1347,27 @@ class StationsBoardLists(unittest.TestCase):
                             for x in found), found)
 
     def test_d2d_board_list_on_the_main_tab(self):
+        """A list still spelled against the Verizon board's OLD title ('D2D
+        Sales Board', renamed 2026-10-03) is still a board list."""
         f = ("=IFERROR(SORT(FILTER('D2D Sales Board'!$B$6:$B$60,"
              "'D2D Sales Board'!$L$6:$L$60=\"Verizon\")),\"\")")
         found = self._findings({7: f, 22: self.NEW_START})
         self.assertTrue(any("STATIONS: board list H6 starts at row 6" in x
                             for x in found), found)
+
+    def test_renamed_boards_lists(self):
+        """The 2026-10-03 titles: 'NDS Sales Board' / 'Verizon Sales Board'
+        lists from row 5 are fine, from row 6 are caught — and a new-start
+        filter comparing the week against 'NDS Sales Board'!$B$2 is fine."""
+        ok_nds = ("=IFERROR(SORT(FILTER('NDS Sales Board'!$B$5:$B$60,"
+                  "'NDS Sales Board'!$L$5:$L$60=\"NDS\")),\"\")")
+        bad_vz = ("=IFERROR(SORT(FILTER('Verizon Sales Board'!$B$6:$B$60,"
+                  "'Verizon Sales Board'!$L$6:$L$60=\"Verizon\")),\"\")")
+        ns = self.NEW_START.replace("'Sales Board'!$B$2", "'NDS Sales Board'!$B$2")
+        self.assertEqual(self._findings({7: ok_nds, 22: ns}), [])
+        found = self._findings({7: bad_vz, 22: ns})
+        self.assertEqual(len(found), 1, found)
+        self.assertIn("STATIONS: board list H6 starts at row 6", found[0])
 
 
 class StationsNameHygiene(unittest.TestCase):
@@ -1316,7 +1383,7 @@ class StationsNameHygiene(unittest.TestCase):
             rows.append([""] * 95)
         rows[6][0] = cell                      # r7, col A (the real address)
         return _FakeSheet({"Stations": _FakeWS(rows, form),
-                           "Sales Board": _FakeWS([], [], b2="")})
+                           "NDS Sales Board": _FakeWS([], [], b2="")})
 
     def _findings(self, cell):
         return audit_run.audit_stations(self._stations(cell), 5,
@@ -1353,7 +1420,7 @@ class StationsRollFilters(unittest.TestCase):
         for col, f in cells.items():
             form[4][col] = f
         sheet = _FakeSheet({"Stations": _FakeWS(rows, form),
-                            "Sales Board": _FakeWS([], [], b2="")})
+                            "NDS Sales Board": _FakeWS([], [], b2="")})
         return audit_run.audit_stations(sheet, 5, [(5, "Casey Rep")], [],
                                         log=lambda *a: None)
 

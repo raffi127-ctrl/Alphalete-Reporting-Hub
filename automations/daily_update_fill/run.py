@@ -359,8 +359,12 @@ def _is_term(v: str) -> bool:
 
 
 # A workbook's board tab(s): the owner boards have one "Sales Board"; the
-# Vantura master has three of that shape since 2026-10-02 (B2B / BOX / D2D).
-BOARD_TABS = ("Sales Board", "BOX Sales Board", "D2D Sales Board")
+# Vantura master has three of that shape since 2026-10-02 — "NDS Sales
+# Board" / "BOX Sales Board" / "Verizon Sales Board" since the 2026-10-03
+# rename (the old "Sales Board" / "D2D Sales Board" titles stay listed for a
+# copy that still carries them). Whichever of these a workbook has is read.
+BOARD_TABS = ("Sales Board", "NDS Sales Board", "BOX Sales Board",
+              "D2D Sales Board", "Verizon Sales Board")
 
 
 def terminated_names(sh) -> set:

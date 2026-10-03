@@ -27,14 +27,17 @@ from automations.sales_boards.zeros import we_label
 
 HDR = ["#", "REP", "Current Week", "Last Wk", "Monday", "Tuesday", "Wednesday",
        "Thursday", "Friday", "Saturday", "Sunday", "Campaign"]
-LABEL = {"B2B": "AT&T (B2B)", "BOX": "BOX", "Verizon": "Verizon"}
+LABEL = {"NDS": "AT&T NDS", "BOX": "BOX", "Verizon": "Verizon"}
+LEGACY_LABEL = {"NDS": "AT&T (B2B)"}      # the subtotal label until 2026-10-03
 
 
-def _grid(campaign="B2B"):
+def _grid(campaign="NDS", label=None, col_l=None):
     """One board tab's real shape: header, reps (the '#' is a static id),
     a cleared row inside the block, the campaign subtotal and TOTAL — which
     carry a '#' too — then the stats block that also names campaigns."""
-    camp_l = campaign if campaign != "Verizon" else ""   # D2D's label row has no col L
+    label = label or LABEL[campaign]
+    col_l = campaign if col_l is None else col_l     # what the rep rows say in L
+    camp_l = col_l if campaign != "Verizon" else ""   # Verizon's label row has no col L
     return [
         ["", "", "Vantura Master Salesboard"],
         ["WE", "8.30", " Week Ending 8.30"],
@@ -42,25 +45,25 @@ def _grid(campaign="B2B"):
          "THU (27)", "FRI (28)", "SAT (29)", "SUN (30)"],
         HDR,
         ["1", "Diego Borres", "24", "19", "4", "5", "X", "6", "9", "", "",
-         campaign],
+         col_l],
         ["2", "Nico Murrugarra", "0", "3", "F", "F", "F", "F", "F", "", "",
-         campaign],
+         col_l],
         [],
         ["35", "Juliett Ortega", "1", "0", "", "", "1", "", "", "", "",
-         campaign],
-        ["48", LABEL[campaign], "25", "145", "4", "5", "1", "6", "9", "0", "0",
+         col_l],
+        ["48", label, "25", "145", "4", "5", "1", "6", "9", "0", "0",
          camp_l],
         ["50", "TOTAL", "25", "211", "4", "5", "1", "6", "9", "0", "0"],
         ["51"],
         ["52", "% on the Board", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "", "",
          "Headcount by Campaign", "Apps"],
-        ["53", "All AT&T B2B Reps", "0", "0", "0", "0", "0", "0", "", "",
-         "AT&T (B2B)", campaign],
+        ["53", "All AT&T NDS Reps", "0", "0", "0", "0", "0", "0", "", "",
+         "AT&T NDS", col_l],
     ]
 
 
 def test_reps_stop_at_the_subtotal_label_not_at_the_numbering():
-    """Row 9 ('AT&T (B2B)') carries a '#' like a rep row; it is the end of the
+    """Row 9 ('AT&T NDS') carries a '#' like a rep row; it is the end of the
     block, not a rep."""
     b = W.Board(_grid())
     assert [r["row"] for r in b.reps] == [5, 6, 8], [r["row"] for r in b.reps]
@@ -76,7 +79,7 @@ def test_a_cleared_row_inside_the_block_is_skipped_not_a_stop():
 
 
 def test_each_board_stops_at_its_own_label():
-    for camp in ("B2B", "BOX", "Verizon"):
+    for camp in ("NDS", "BOX", "Verizon"):
         b = W.Board(_grid(camp), campaign=camp)
         assert len(b.reps) == 3, (camp, [r["name"] for r in b.reps])
         assert list(b.campaigns) == [camp], (camp, b.campaigns)
@@ -84,27 +87,27 @@ def test_each_board_stops_at_its_own_label():
 
 
 def test_campaign_row_does_not_reach_the_stats_block():
-    b = W.Board(_grid(), campaign="B2B")
-    assert {c: r["row"] for c, r in b.campaigns.items()} == {"B2B": 9}
-    # row 13 also says "B2B" in the campaign column, below TOTAL and a blank.
+    b = W.Board(_grid(), campaign="NDS")
+    assert {c: r["row"] for c, r in b.campaigns.items()} == {"NDS": 9}
+    # row 13 also says "NDS" in the campaign column, below TOTAL and a blank.
     assert all(r["row"] < 10 for r in b.campaigns.values())
 
 
 def test_d2d_subtotal_is_keyed_by_the_boards_campaign():
     """The D2D label row has no campaign in col L — the key is the BOARD's
     campaign, never the row's."""
-    b = W.Board(_grid("Verizon"), campaign="Verizon", tab="D2D Sales Board")
+    b = W.Board(_grid("Verizon"), campaign="Verizon", tab="Verizon Sales Board")
     assert b.campaigns["Verizon"]["name"] == "Verizon"
     assert b.campaigns["Verizon"]["campaign"] == ""
-    assert all(r["tab"] == "D2D Sales Board" for r in b.reps)
+    assert all(r["tab"] == "Verizon Sales Board" for r in b.reps)
 
 
 def test_campaign_last_wk_comes_from_what_the_board_showed():
-    b = W.Board(_grid(), campaign="B2B")
+    b = W.Board(_grid(), campaign="NDS")
     # 145 was week 8.23 and is what stayed on the board when the first roll
     # forgot this cell; the closing week is 25.
-    assert b.campaigns["B2B"]["last_wk"] == "145"
-    assert b.campaigns["B2B"]["this_wk"] == "25"
+    assert b.campaigns["NDS"]["last_wk"] == "145"
+    assert b.campaigns["NDS"]["this_wk"] == "25"
 
 
 def test_columns_are_found_by_header_not_by_index():
@@ -116,7 +119,7 @@ def test_columns_are_found_by_header_not_by_index():
 
 
 def test_day_formula_keys_on_the_rep_name_and_the_gold_cell():
-    """Same formula on every board: the BOX / D2D tabs' B2 read the main
+    """Same formula on every board: the BOX / Verizon tabs' B2 read the main
     board's gold cell by formula, so $B$2 is right there too."""
     b = W.Board(_grid("BOX"), campaign="BOX")
     first = b.day_formulas(5)[0]
@@ -163,7 +166,7 @@ class _Tab:
         return self._col_a
 
 
-def _rolled_grid(days, campaign="B2B"):
+def _rolled_grid(days, campaign="NDS"):
     """The board on week 9.6, with `days` typed into the first rep's row."""
     g = [row[:] for row in _grid(campaign)]
     g[1][1] = "9.6"
@@ -175,11 +178,11 @@ def _rolled_grid(days, campaign="B2B"):
 
 def _boards(days):
     """The three boards, rolled, with `days` on the main board's first rep."""
-    return [W.Board(_rolled_grid(days), campaign="B2B", tab="Sales Board"),
+    return [W.Board(_rolled_grid(days), campaign="NDS", tab="NDS Sales Board"),
             W.Board(_rolled_grid([""] * 7, "BOX"), campaign="BOX",
                     tab="BOX Sales Board"),
             W.Board(_rolled_grid([""] * 7, "Verizon"), campaign="Verizon",
-                    tab="D2D Sales Board")]
+                    tab="Verizon Sales Board")]
 
 
 def test_audit_passes_when_the_closing_week_was_archived():
@@ -205,6 +208,25 @@ def test_archived_reps_counts_only_the_asked_week():
     assert W.archived_reps(keys, "8.30") == 2
     assert W.archived_reps(keys, "8.3") == 1
     assert W.archived_reps(keys, "9.13") == 0
+
+
+def test_a_pre_rename_board_still_parses_as_nds():
+    """2026-10-03: the AT&T program is NDS on the sheet, but the 10-2 backup
+    copy (and a not-yet-relabelled board) still says "AT&T (B2B)" on the
+    subtotal row and "B2B" in col L. Both read as the NDS board."""
+    from automations.vantura_boards import (canon_campaign, parse_board,
+                                            tab_for)
+    g = _grid("NDS", label=LEGACY_LABEL["NDS"], col_l="B2B")
+    b = W.Board(g, campaign="NDS", tab="Sales Board")
+    assert [r["name"] for r in b.reps] == ["Diego Borres", "Nico Murrugarra",
+                                          "Juliett Ortega"]
+    assert b.campaigns["NDS"]["name"] == "AT&T (B2B)"
+    assert b.campaigns["NDS"]["row"] == 9
+    reps = parse_board(g, tab="Sales Board")
+    assert [r["campaign"] for r in reps] == ["NDS"] * 3
+    assert [r["campaign_raw"] for r in reps] == ["B2B"] * 3
+    assert canon_campaign("B2B") == canon_campaign("nds") == "NDS"
+    assert tab_for("B2B") == tab_for("NDS") == "NDS Sales Board"
 
 
 def _main() -> int:

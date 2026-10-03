@@ -8,9 +8,11 @@ column, and node color is the rep's Leadership Status.
 The rules, all from Carlos on 2026-08-30 (session d3e813de):
   * Board rows from r5: A=#, B=REP, L=Campaign, M=Trainer, P=Leadership
     Status. Terminated rows are skipped entirely. Since 2026-10-02 the reps
-    sit on THREE tabs of that shape — "Sales Board" (B2B), "BOX Sales Board",
-    "D2D Sales Board" (Verizon) — read together via vantura_boards.all_reps;
-    Verizon reps draw on the B2B tree, as anything-not-BOX always has.
+    sit on THREE tabs of that shape — "NDS Sales Board" (the AT&T program,
+    NDS on the sheet since 2026-10-03; the tree's internal key stays "B2B"
+    and it is titled "AT&T NDS"), "BOX Sales Board", "Verizon Sales Board" —
+    read together via vantura_boards.all_reps; Verizon reps draw on the AT&T
+    tree, as anything-not-BOX always has.
   * Nico Murrugarra and Sebastian Avellaneda RUN the office — they never
     appear as tree nodes and count in nothing. Anyone they trained (or whose
     trainer is themselves / unresolvable) is a first-gen branch off the root.
@@ -78,6 +80,9 @@ CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 # A screenshot normally lands in 2-5s. Past SHOT_TIMEOUT the launch is stuck,
 # and a second, fresh launch beats waiting longer on the first.
 SHOT_TIMEOUT, SHOT_ATTEMPTS = 45, 2
+# The two trees' internal keys -> what the picture calls them. "B2B" is the
+# AT&T program, which the office calls NDS since 2026-10-03.
+TREE_LABEL = {"B2B": "AT&T NDS", "BOX": "BOX"}
 
 
 def _norm(s: str) -> str:
@@ -263,7 +268,7 @@ def _branch_html(r: Rep) -> str:
 def render_html(week, reps, roots, scheduled) -> str:
     css = (Path(__file__).parent / "style.css").read_text()
     sections = []
-    for camp, title in (("B2B", "Alphalete B2B AT&amp;T"),
+    for camp, title in (("B2B", "Alphalete AT&amp;T NDS"),
                         ("BOX", "Alphalete BOX")):
         branches = "".join(_branch_html(r) for r in roots
                            if r.campaign == camp)
@@ -283,7 +288,7 @@ def render_html(week, reps, roots, scheduled) -> str:
         ns = sum(1 for _, _, second in scheduled
                  if second is not None and id(second) in team)
         cards.append(f"""<div class="leader-card">
-  <div class="who">{_node(ld)}<span class="camp">{ld.campaign}</span></div>
+  <div class="who">{_node(ld)}<span class="camp">{html.escape(TREE_LABEL.get(ld.campaign, ld.campaign))}</span></div>
   <dl><dt>Total active</dt><dd>{active}</dd>
   <dt>Leaders</dt><dd>{lead}</dd>
   <dt>In training</dt><dd>{training}</dd>
@@ -294,7 +299,7 @@ def render_html(week, reps, roots, scheduled) -> str:
         sub = [r for r in reps if r.campaign == camp]
         active, lead, training = stats(sub)
         ns = sum(1 for _, c, _ in scheduled if c == camp)
-        boxes.append(f"""<div class="office-box"><div class="title">{camp}</div>
+        boxes.append(f"""<div class="office-box"><div class="title">{html.escape(TREE_LABEL.get(camp, camp))}</div>
   <dl><dt>Total active</dt><dd>{active}</dd>
   <dt>Leaders</dt><dd>{lead}</dd>
   <dt>In training</dt><dd>{training}</dd>
@@ -453,7 +458,7 @@ def post(png: Path, week: str, *, dm: bool) -> dict:
         channel=channel, file=str(png),
         filename=f"alphalete-team-tree-{week or 'week'}.png",
         initial_comment=(f"Alphalete team tree — week ending {week}: "
-                         "B2B AT&T + BOX by trainer, color = leadership "
+                         "AT&T NDS + BOX by trainer, color = leadership "
                          "status, Level 2+ leader stats and office totals."))
     return {"ok": resp.get("ok"), "channel": channel}
 

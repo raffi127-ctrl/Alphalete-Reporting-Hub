@@ -1,11 +1,12 @@
 """Vantura Master Sales Board - roll the board onto the new week.
 
 THREE BOARDS, ONE ROLL (2026-10-02): the reps live on three per-campaign tabs
-with identical geometry - "Sales Board" (B2B), "BOX Sales Board" and "D2D
-Sales Board" (Verizon; see automations/vantura_boards.py). Every step below
-runs over all three, except the flip: the gold week cell is B2 on "Sales
-Board" only (the other two read it with ='Sales Board'!$B$2), so WeekData!J:K,
-the gold cell and its dropdown are written once, on the main tab.
+with identical geometry - "NDS Sales Board" (the AT&T program, NDS on the
+sheet since 2026-10-03), "BOX Sales Board" and "Verizon Sales Board" (see
+automations/vantura_boards.py). Every step below runs over all three, except
+the flip: the gold week cell is B2 on "NDS Sales Board" only (the other two
+read it with ='NDS Sales Board'!$B$2), so WeekData!J:K, the gold cell and its
+dropdown are written once, on the main tab.
 
 The board holds ONE week at a time. On Monday the 5:00am pass closes SUNDAY and
 the 4:00pm pass fills MONDAY, which already belongs to the NEXT week - so the
@@ -27,7 +28,7 @@ A full roll is five things, in this order:
      blanks verbatim: that is how every earlier week is stored).
   2. LAST WK - col D of each rep row gets that rep's closing-week total (= col
      C today, which is =SUM(E:K)).
-  3. LAST WK, PER CAMPAIGN - col D on each board's subtotal row (AT&T (B2B) /
+  3. LAST WK, PER CAMPAIGN - col D on each board's subtotal row (AT&T NDS /
      BOX / Verizon). Their C neighbours are SUMIFS, but these are HAND-TYPED
      literals, so nothing else moves them; they are copied from what C showed
      before the reset.
@@ -73,7 +74,7 @@ from automations.recruiting_report.fill import open_by_key, _retry
 from automations.sales_boards.run import SHEET_ID
 from automations.sales_boards.zeros import we_label
 from automations.vantura_boards import (BOARD_TABS, MAIN_TAB as BOARD,
-                                        READ_RANGE, is_stat_label)
+                                        READ_RANGE, board_ws, is_stat_label)
 
 WEEKDATA, STATIONS = "WeekData", "Stations"
 WE_CELL = "B2"                  # gold week selector
@@ -124,7 +125,7 @@ class Board:
     """One board tab's shape, read once and found by LABEL - the header row's
     own titles. Templates get rows inserted; indices don't survive that.
 
-    `campaign` is the tab's campaign ('B2B' / 'BOX' / 'Verizon') and `tab` its
+    `campaign` is the tab's campaign ('NDS' / 'BOX' / 'Verizon') and `tab` its
     title; both ride along into the snapshot so a rolled-forward render can
     put each rep back on the board they came from."""
 
@@ -154,8 +155,9 @@ class Board:
                              % self.c_days)
 
         # Rep rows run from the header down to the first TOTALS LABEL in the
-        # name column ("AT&T (B2B)" / "BOX" / "Verizon" - the row that opens
-        # the subtotal block). NOT to the first row without a '#': the
+        # name column ("AT&T NDS" / "BOX" / "Verizon" - the row that opens
+        # the subtotal block; the pre-rename "AT&T (B2B)" still counts, see
+        # vantura_boards.STAT_LABELS). NOT to the first row without a '#': the
         # subtotal rows carry one too (48/49/50 on the live boards). NOT to
         # the first blank row either: a cleared row inside the block is
         # skipped, not a stop (2026-09-14 that stop saw 6 reps of 46).
@@ -173,8 +175,8 @@ class Board:
         # blank line under it. Bounded on purpose: the stats block further
         # down also carries campaign names ('Apps', the headcount table), and
         # writing 'Last Wk' into one of those rows would land on somebody's
-        # data. Keyed by the BOARD's campaign - the D2D subtotal row has no
-        # label in col L, so the row's own campaign cell can't be the key.
+        # data. Keyed by the BOARD's campaign - the Verizon subtotal row has
+        # no label in col L, so the row's own campaign cell can't be the key.
         self.campaigns = {}
         while r <= len(grid):
             name = self.cell(r, self.c_name)
@@ -223,12 +225,15 @@ def read_boards(sh) -> dict:
     out = {}
     for camp, tab in BOARD_TABS.items():
         try:
-            ws = _retry(sh.worksheet, tab)
+            # today's title first, then the one the board had before the
+            # 2026-10-03 rename (vantura_boards.LEGACY_TABS)
+            ws = board_ws(sh, camp)
         except Exception as e:  # noqa: BLE001 — WorksheetNotFound and kin
             raise SystemExit("no %r tab on the sheet (%s) - every board rolls "
                              "together, so refusing to roll any of them."
                              % (tab, type(e).__name__))
-        out[camp] = Board(_retry(ws.get, READ_RANGE), campaign=camp, tab=tab)
+        out[camp] = Board(_retry(ws.get, READ_RANGE), campaign=camp,
+                          tab=ws.title)
     return out
 
 
@@ -304,7 +309,8 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     sh = open_by_key(SHEET_ID)
-    sb, wd, st = (_retry(sh.worksheet, t) for t in (BOARD, WEEKDATA, STATIONS))
+    sb = board_ws(sh, BOARD)
+    wd, st = (_retry(sh.worksheet, t) for t in (WEEKDATA, STATIONS))
 
     shown = str(_retry(sb.acell, WE_CELL).value or "").strip()
     picker = [r for r in _retry(wd.get, "J2:K%d" % (PICKER_ROWS + 1),
@@ -446,7 +452,7 @@ def main(argv=None) -> int:
     print("\n5. WeekData!J2:K%d <- %s / %s on top, the rest shifted down"
           % (len(new_jk) + 1, new_we, new_sunday))
     print("   %s!%s <- TEXT %r (RAW); the other boards' B2 read it by formula"
-          % (BOARD, WE_CELL, new_we))
+          % (sb.title, WE_CELL, new_we))
     print("   dropdown <- %s" % ", ".join(labels))
     print("   Stations!%s <- TEXT %r (was %r)"
           % (STATIONS_WE, new_we,

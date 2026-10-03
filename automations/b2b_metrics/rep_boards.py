@@ -197,14 +197,15 @@ def parse_office_churn(grid: list,
 # ------------------------------------------------------------- active roster
 def active_reps(log=print) -> set:
     """Normalised names with a Vantura Sales Board rep row — the working
-    roster — expanded through the Name Aliases tab. The B2B board is its own
-    "Sales Board" tab since 2026-10-02; read_board stops at the totals label,
-    so the SUMIFS subtotal / stats rows never read as reps."""
+    roster — expanded through the Name Aliases tab. The AT&T board is its own
+    "NDS Sales Board" tab since 2026-10-02 (titled "Sales Board" until the
+    2026-10-03 rename; board_ws finds either); read_board stops at the
+    totals label, so the SUMIFS subtotal / stats rows never read as reps."""
     from automations.recruiting_report.fill import open_by_key
-    from automations.vantura_boards import BOARD_TABS, read_board
+    from automations.vantura_boards import MAIN_CAMPAIGN, board_ws, read_board
     sh = open_by_key(SALES_BOARD_SHEET)
     names = {_norm(r["name"])
-             for r in read_board(sh.worksheet(BOARD_TABS["B2B"]))}
+             for r in read_board(board_ws(sh, MAIN_CAMPAIGN))}
     try:
         for r in sh.worksheet("Name Aliases").get_all_values():
             vals = [_norm(c) for c in r if str(c).strip()]

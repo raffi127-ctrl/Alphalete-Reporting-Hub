@@ -13,9 +13,12 @@ logic via the recruiting-report auth.
 Col P (Leadership Status) is deliberately NOT hard-protected, and this runs as
 the board owner's auth anyway. Only exact-name matches are promoted.
 
-Since 2026-10-02 the reps sit on three tabs of one shape — "Sales Board"
-(B2B), "BOX Sales Board", "D2D Sales Board" (Verizon) — so the list spans all
-three and a promotion is written on the tab the rep's row is on.
+Since 2026-10-02 the reps sit on three tabs of one shape — "NDS Sales Board"
+(the AT&T program, NDS on the sheet since 2026-10-03), "BOX Sales Board",
+"Verizon Sales Board" — so the list spans all three and a promotion is
+written on the tab the rep's row is on. The campaign in the JSON is the
+board's canonical label (vantura_boards.canon_campaign): an AT&T rep reads
+"NDS", even off a row that still says "B2B".
 """
 from __future__ import annotations
 
@@ -25,7 +28,7 @@ import sys
 
 SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"
 WK_TAG = re.compile(r"^\d+(st|nd|rd|th) Wk$")
-CAMPS = ("B2B", "BOX", "JE", "Base", "Verizon")
+CAMPS = ("NDS", "B2B", "BOX", "JE", "Base", "Verizon")   # B2B = legacy NDS
 
 
 def _sheet():

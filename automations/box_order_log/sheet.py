@@ -32,9 +32,13 @@ TAB_VIEW = "Lucy Box Order Log"
 TAB_DATA = "Lucy Box Data"
 
 # Tabs this module must never write to, whatever else changes.
+# The three boards are listed under today's titles AND the ones they had
+# before the 2026-10-03 rename (Sales Board -> NDS Sales Board, D2D Sales
+# Board -> Verizon Sales Board).
 PROTECTED_TABS = ("Box Order Log", "Churn", "Churn - Atef", "LUCY CHURN",
-                  "Activations", "Sales Board", "BOX Sales Board",
-                  "D2D Sales Board", "BOX Stations", "WeekData")
+                  "Activations", "NDS Sales Board", "BOX Sales Board",
+                  "Verizon Sales Board", "Sales Board", "D2D Sales Board",
+                  "BOX Stations", "WeekData")
 
 WEEKS = 6
 

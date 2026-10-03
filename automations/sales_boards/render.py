@@ -1,7 +1,8 @@
 """Rendering core for the program Sales Boards (B2B / Base / JE / BOX).
 
 Produces the VA's two images per program off that program's board tab
-("Sales Board" for B2B, "BOX Sales Board" for BOX — vantura_boards.tab_for):
+("NDS Sales Board" for B2B — the AT&T program is NDS on the sheet since
+2026-10-03 — "BOX Sales Board" for BOX; vantura_boards.tab_for):
   (a) WEEKLY   — # / REP / Current Week / Last Wk, ranked by Current Week desc
   (b) HIGHROLLERS — # / REP / <yesterday's day>, only reps who sold that day,
       ranked by that day's count
@@ -20,9 +21,14 @@ VA's filtered view. Since the 2026-10-02 split each tab holds ONE campaign, so
 the campaign hide is a no-op there — only terminated reps get hidden — but it
 is kept: a rep mis-filed onto the wrong tab still renders on the right board.
 
-THE TOTALS BLOCK is per tab: "AT&T (B2B)" .. "TOTAL" on the main board, "BOX"
-.. "TOTAL" on the BOX board (and "Verizon" .. "TOTAL" on the D2D board, which
-this report does not post).
+THE TOTALS BLOCK is per tab: "AT&T NDS" .. "TOTAL" on the main board (the old
+"AT&T (B2B)" label still counts, for the backup copy), "BOX" .. "TOTAL" on the
+BOX board (and "Verizon" .. "TOTAL" on the Verizon board, which this report
+does not post).
+
+CAMPAIGN LABELS are compared through vantura_boards.canon_campaign: program
+"B2B" matches a col-L "NDS" (today's spelling) and a "B2B" (a row from before
+the rename) alike.
 """
 from __future__ import annotations
 
@@ -36,7 +42,8 @@ from gspread.utils import rowcol_to_a1
 
 from automations.recruiting_report.fill import _retry
 from automations.shared import sheets_export as _sx
-from automations.vantura_boards import SUBTOTAL_LABELS
+from automations.vantura_boards import (MAIN_CAMPAIGN, STAT_LABELS,
+                                        SUBTOTAL_LABELS, canon_campaign)
 
 NAME_COL = 2                 # col B — REP / totals labels
 CAMPAIGN_COL = 12            # col L
@@ -45,10 +52,19 @@ WEEKLY_LAST_COL = "D"        # crop weekly through Last Wk
 DAY_HEADER_ROW = 4           # row carrying Monday..Sunday
 FIRST_DAY_COL, LAST_DAY_COL = 5, 11    # cols E..K
 # The totals block opens with the tab's campaign subtotal label and closes
-# with TOTAL: "AT&T (B2B)" on the main board, "BOX" / "Verizon" on the others.
-TOTALS_TOPS = tuple(v.lower() for v in SUBTOTAL_LABELS.values())
-TOTALS_TOP, TOTALS_BOTTOM = "AT&T (B2B)", "TOTAL"
+# with TOTAL: "AT&T NDS" on the main board (or the pre-rename "AT&T (B2B)"),
+# "BOX" / "Verizon" on the others.
+TOTALS_TOPS = tuple(sorted(STAT_LABELS - {"total"}))
+TOTALS_TOP, TOTALS_BOTTOM = SUBTOTAL_LABELS[MAIN_CAMPAIGN], "TOTAL"
 PROGRAMS = ["B2B", "Base", "JE", "BOX"]
+# The col-L spellings those programs match (B2B -> NDS on the sheet).
+PROGRAM_CAMPAIGNS = {canon_campaign(p) for p in PROGRAMS}
+
+
+def is_program(label, program: str) -> bool:
+    """Does a col-L campaign cell belong to `program`? ("NDS" and the
+    legacy "B2B" both belong to program B2B.)"""
+    return canon_campaign(label) == canon_campaign(program)
 
 
 def cell(g, r, c):
@@ -71,7 +87,8 @@ def rep_region(g, totals_top):
     """(first, last) row of the rep list — any row with a REP name and a known
     campaign, above the totals block. Order-independent."""
     rows = [r for r in range(1, totals_top)
-            if cell(g, r, NAME_COL).strip() and cell(g, r, CAMPAIGN_COL).strip() in PROGRAMS]
+            if cell(g, r, NAME_COL).strip()
+            and canon_campaign(cell(g, r, CAMPAIGN_COL)) in PROGRAM_CAMPAIGNS]
     if not rows:
         raise SystemExit("no rep rows found")
     return min(rows), max(rows)
@@ -246,7 +263,7 @@ def render_all(sh, tmp, sheet_id, token, yday, out_dir: Path, programs=None):
     header_a = export(sheet_id, gid,
                       f"A{DAY_HEADER_ROW}:{WEEKLY_LAST_COL}{DAY_HEADER_ROW}", token)
     for p in programs:
-        keep = {r for r in all_rows if cell(g, r, CAMPAIGN_COL).strip() == p
+        keep = {r for r in all_rows if is_program(cell(g, r, CAMPAIGN_COL), p)
                 and cell(g, r, NAME_COL).strip() and not is_terminated(g, r)}
         if not keep:
             print(f"  ! {p}: no reps — skipped")
@@ -256,7 +273,7 @@ def render_all(sh, tmp, sheet_id, token, yday, out_dir: Path, programs=None):
         renumber(tmp, first, last, keep)
         # Bound the range to VISIBLE rows: if the last row of a range is hidden,
         # the export slides to the next visible one (it bled the totals block's
-        # "AT&T (B2B)" row into the rep table).
+        # "AT&T NDS" row into the rep table).
         body = export(sheet_id, gid,
                       f"A{min(keep)}:{WEEKLY_LAST_COL}{max(keep)}", token)
         tot = export(sheet_id, gid, f"A{ts}:{WEEKLY_LAST_COL}{te}", token)
@@ -288,7 +305,7 @@ def render_all(sh, tmp, sheet_id, token, yday, out_dir: Path, programs=None):
     header_b = export(sheet_id, gid,
                       f"A{DAY_HEADER_ROW}:{last_letter}{DAY_HEADER_ROW}", token)
     for p in programs:
-        keep = {r for r in all_rows if cell(g, r, CAMPAIGN_COL).strip() == p
+        keep = {r for r in all_rows if is_program(cell(g, r, CAMPAIGN_COL), p)
                 and not is_terminated(g, r)
                 and (as_int(cell(g, r, dcol)) or 0) > 0}
         if not keep:

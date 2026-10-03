@@ -83,7 +83,7 @@ def build_message(log_path: str, exit_code: str) -> list[str]:
             f":warning: *{REPORT_NAME}* is HOLDING — the board isn't on the "
             f"week being filled",
             "",
-            f"The gold *WE* cell on the *Sales Board* tab {on}, so nothing was "
+            f"The gold *WE* cell on the *NDS Sales Board* tab {on}, so nothing was "
             f"written — filling now would overwrite that week's column.",
             "",
             f"*Roll the board to {wk} with:* `{ROLL_RERUN}`",
@@ -116,7 +116,7 @@ def build_message(log_path: str, exit_code: str) -> list[str]:
         head = [
             f":rotating_light: *{REPORT_NAME}* failed — exit {exit_code}",
             "",
-            "The BOX / AT&T day columns (BOX Sales Board / Sales Board tabs) "
+            "The BOX / AT&T day columns (BOX Sales Board / NDS Sales Board tabs) "
             "did NOT get filled. If this was the *5:00am* pass, the *5:10am* "
             "Sales Boards post will render an unfilled day.",
         ]

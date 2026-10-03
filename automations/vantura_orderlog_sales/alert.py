@@ -39,7 +39,7 @@ def build_unmatched_message(items) -> list[str]:
     return lines + [
         "",
         "*To fix:* rename the rep's row (col B on the campaign's board tab — "
-        "Sales Board for B2B, BOX Sales Board for BOX) to the order log's "
+        "NDS Sales Board for AT&T/B2B, BOX Sales Board for BOX) to the order log's "
         "name — matching is exact or first+last token — or add the rep's row "
         "if they're new. The next pass fills the day itself.",
         "",

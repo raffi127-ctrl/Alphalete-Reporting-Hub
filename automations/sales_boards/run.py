@@ -17,9 +17,10 @@ Both in #alphalete-gp-sales AND #a-players-b2b; Zero Streaks ride the
 A-Players B2B Metrics thread.
 
 THREE BOARD TABS (2026-10-02): the reps live on per-campaign tabs with the
-same geometry — "Sales Board" (B2B), "BOX Sales Board", "D2D Sales Board"
-(Verizon; see automations/vantura_boards.py). Each program renders off ITS
-tab; the week gate reads the gold cell on "Sales Board" (the only place it is
+same geometry — "NDS Sales Board" (the AT&T program, called NDS on the sheet
+since 2026-10-03; program key still B2B), "BOX Sales Board", "Verizon Sales
+Board" (see automations/vantura_boards.py). Each program renders off ITS tab;
+the week gate reads the gold cell on "NDS Sales Board" (the only place it is
 typed — the other boards mirror it by formula).
 
 Rendering lives in render.py — see its header for why we duplicate the tab and
@@ -49,15 +50,16 @@ from automations.recruiting_report.fill import open_by_key, _retry
 from automations.pnl_office.run import _token
 from automations.sales_boards import render as R
 from automations.sales_boards import zeros as Z
-from automations.vantura_boards import MAIN_TAB, tab_for
+from automations.vantura_boards import MAIN_TAB, board_ws, campaign_of, tab_for
 
 SANDBOX_SHEET_ID = "15QzcyFqTzX9RYNJ2SvT_HOiyQsMU1v90wHjSUHA_cNc"   # re-copied 7/18
 PROD_SHEET_ID = "1Hltk25zTudsaoYJFKvKqWlpT_4MF5_ZZq734XKVCJKY"
 # PROD by default as of go-live (Megan 2026-07-18). Set SALES_BOARD_SHEET_ID to
 # the sandbox id to build against a copy again.
 SHEET_ID = os.environ.get("SALES_BOARD_SHEET_ID", PROD_SHEET_ID)
-# The main board: B2B reps + the gold week cell. Each program renders off
-# vantura_boards.tab_for(program) — BOX off "BOX Sales Board".
+# The main board ("NDS Sales Board"): the AT&T reps + the gold week cell. Each
+# program renders off vantura_boards.tab_for(program) — B2B lands on the NDS
+# tab, BOX on "BOX Sales Board".
 TAB = MAIN_TAB
 TEMP_TAB = "_sb_render_tmp"          # ephemeral copy we create + delete
 
@@ -493,6 +495,15 @@ def roll_snapshot(want: str, on_sunday, out_dir: Path = OUT_DIR):
     return None
 
 
+def same_tab(a: str, b: str) -> bool:
+    """Two board tab titles name the same board — equal, or the old and the
+    new title of one board ("Sales Board" == "NDS Sales Board")."""
+    if a == b:
+        return True
+    ca = campaign_of(str(a or ""))
+    return bool(ca) and ca == campaign_of(str(b or ""))
+
+
 def rewind_writes(grid, snap, tab: str = "") -> tuple:
     """(value writes, snapshot reps no longer on the board) that put the
     closing week back on a COPY of a rolled board.
@@ -507,7 +518,9 @@ def rewind_writes(grid, snap, tab: str = "") -> tuple:
     carries every board's reps (each tagged with its tab), and only the ones
     from THIS tab belong on this copy — a rep from another board is neither
     written nor "missing". A snapshot from before the three-board split has
-    no tags and is used whole.
+    no tags and is used whole; one from before the 2026-10-03 rename tags
+    the old titles ("Sales Board" / "D2D Sales Board"), which still match
+    the renamed tab (vantura_boards.campaign_of knows both spellings).
 
     Only rows the snapshot knows are written: a rep added after the roll keeps
     his INDEX formulas, which read blank for the old week — correct, he wasn't
@@ -544,7 +557,7 @@ def rewind_writes(grid, snap, tab: str = "") -> tuple:
             by_name.setdefault(name, r)
 
     def _mine(entry) -> bool:
-        return not tab or not entry.get("tab") or entry.get("tab") == tab
+        return not tab or not entry.get("tab") or same_tab(entry.get("tab"), tab)
 
     first, last, col_last = a1(c_days[0]), a1(c_days[-1]), a1(c_last)
     writes, missing = [], []
@@ -675,7 +688,7 @@ def _alert_wrong_week(shown: str, want: str, yday, *, post: bool) -> None:
             channel_line=f"*Sales Boards* — gold WE cell reads {shown!r}, "
                          f"needs {want!r}; today's thread was not posted",
             body=[
-                f"The Sales Board gold WE cell (tab 'Sales Board', row 2, right "
+                f"The Sales Board gold WE cell (tab {TAB!r}, row 2, right "
                 f"of the 'WE' label) reads {shown!r}. {yday:%a %m/%d}'s numbers "
                 f"live in week {want!r}, so posting now would ship the wrong "
                 f"week — the run held instead and NOTHING was posted.",
@@ -718,10 +731,12 @@ def main(argv=None) -> int:
         [p for p in PROGRAMS if p != "BOX"]
 
     sh = open_by_key(SHEET_ID)
-    # One tab per program (vantura_boards): B2B off "Sales Board", BOX off
-    # "BOX Sales Board". The gold week cell is on the main tab only.
+    # One tab per program (vantura_boards): B2B off "NDS Sales Board", BOX
+    # off "BOX Sales Board". The gold week cell is on the main tab only.
+    # board_ws falls back to a tab's pre-rename title, so a board that is
+    # not renamed yet still renders.
     tabs = {p: tab_for(p) for p in programs}
-    main_ws = _retry(lambda: sh.worksheet(TAB))
+    main_ws = board_ws(sh, TAB)
     print(f"sheet: {SHEET_ID[:12]}… "
           f"({'SANDBOX' if SHEET_ID == SANDBOX_SHEET_ID else 'PROD'})  "
           + "  ".join(f"{p}={t!r}" for p, t in tabs.items()))
@@ -786,13 +801,13 @@ def main(argv=None) -> int:
             sh.del_worksheet(w)
     # Zeros render on their OWN throwaway tabs — they overwrite the day columns
     # with a cross-week window, which would corrupt the boards if the two shared
-    # a copy. They read EVERY program's board (B2B + BOX), whichever program
+    # a copy. They read EVERY program's board (NDS + BOX), whichever program
     # this pass renders, so the one grouped-by-campaign image per level
     # (Carlos 7/23) survives the split; a later pass dedupes on the caption.
     # (Not on a rolled board: zeros read the live gold cell, which has moved
     # on. The 5:10 pass posts them before the roll anyway.)
     zrs = {} if (args.corrected or snap) else \
-        Z.render_zeros(sh, [_retry(lambda t=t: sh.worksheet(t))
+        Z.render_zeros(sh, [board_ws(sh, t)
                             for t in dict.fromkeys(tab_for(p) for p in PROGRAMS)],
                        SHEET_ID, _token(), yday, OUT_DIR)
 
@@ -803,7 +818,7 @@ def main(argv=None) -> int:
         for p in programs:
             by_tab.setdefault(tabs[p], []).append(p)
         for tab, progs in by_tab.items():
-            src = _retry(lambda t=tab: sh.worksheet(t))
+            src = board_ws(sh, tab)
             tmp = sh.duplicate_sheet(src.id, new_sheet_name=TEMP_TAB)
             try:
                 sh.batch_update({"requests": [{"clearBasicFilter": {"sheetId": tmp.id}}]})
