@@ -97,45 +97,27 @@ SOUTH_SHORE_NAMES = [
     "Marcos Barbosa",
 ]
 
-CAPTAINSHIP = [
-    # Carlos's own office leads it — he sits on the org board too, and asked for
-    # his numbers here as well so the captainship total is the whole team
-    # including him, not the team he manages minus himself.
-    ("Carlos Hidalgo",   "11580", "CARLOS HIDALGO"),      # also on the org board
-    ("Atef Choudhury",   "23467", "Atef Choudhury"),      # also on the org board
-    ("Jamis Garay",      "19592", "Jamis Garay"),
-    # 22358 is not in office-mapping-carlos.json (it has her as sales-only) —
-    # it comes from her own Indeed tracker tab, whose Office ID column matches
-    # the AppStream id exactly for all four of the others. If AppStream refuses
-    # it, the run says so per office and she just stays at zero.
-    ("Jackie LeRoy",     "22358", "Jackie LeRoy"),
-    ("Noah Dubale",      "23356", "Noah Dubale"),
-    ("Jeff Starr",       "15031", "Jeffrey Starr"),
-    ("Kinsey Guenther",  "11906", "Kinsey Guenther"),
-    ("Vincent Smith",    "23318", "Vincent Smith"),
-    ("George Hipolito",  "11296", "George Hipolito"),
-    ("Justin Wood",      "22192", "Justin Wood"),
-    # Two offices answer to "Joshua Murphy" on this login — 21770 Leadsphere
-    # Solutions and 10707 Zealous United. Carlos confirmed 21770 (2026-08-19),
-    # which is also what office-mapping-carlos.json had. Discovery would have
-    # resolved NEITHER here, by design.
-    ("Joshua Murphy",    "21770", "Joshua Murphy"),
-    ("Joey Ramirez",     "23206", "Joey Ramirez"),
-    ("Dhyey Patel",      "22767", "Dhyey Patel"),
-    # Added 2026-08-26 (Carlos). Tableau owner string: "SABRINA ALICEA
-    # [alisei, inc.]". Office 21291 came from the funnel's own switcher
-    # discovery the same evening (28 day-rows backfilled to 8/03 on the
-    # first pull); pinned here so the Indeed source report includes her.
-    ("Sabrina Alicea",   "21291", "Sabrina Alicea"),
-    # Added 2026-09-06 (Carlos): joined the captainship reporting.
-    ("Alexander Badawi", "22662", "Alexander Badawi"),   # Mountain Peak Marketing (office-mapping-carlos.json)
-    # Office id unknown yet — blank oid = run.py discovery pins it from the
-    # AppStream picker on the next funnel run and backfills history.
-    ("Nicolas Lujan",    "",      "Nicolas Lujan"),
-    # Added 2026-09-21 (Carlos): captainship views. Office pinned from
-    # office-mapping-carlos.json (Viridian, Inc., confidence 1.0).
-    ("Stefan Cameron",   "23264", "Stefan Cameron"),
-]
+# THE CAPTAINSHIP LEFT THIS BOOK (Carlos 2026-10-02). The 15 captainship-only
+# owners now report in their own workbook, the SCI Recruiting Dashboard
+# (1aWWdtMtv1ivZa8fv10cbEzJJUNrO7h9YA8fVvfiRqlg) — their roster lives in
+# deploy/sci-roster.json as that book's ORG, fed to the same three modules via
+# the RECRUITING_ROSTER_JSON override below (each deploy wrapper runs an SCI
+# pass after the Alphalete one). Carlos and Atef were in both rosters and stay
+# org-only here, per the split rule: in both -> org wins. This list is EMPTY on
+# purpose so every Alphalete-default run drops the Captainship group everywhere
+# (pickers, Goals box, Source Report, Ad Sales) with no env needed.
+#
+# Hard-won office-id notes preserved from the old list (now in sci-roster.json):
+#   Jackie LeRoy 22358 — NOT in office-mapping-carlos.json (has her sales-only);
+#     id came from her own Indeed tracker tab's Office ID column.
+#   Joshua Murphy 21770 — TWO offices answer to his name (21770 Leadsphere,
+#     10707 Zealous United); Carlos confirmed 21770 (2026-08-19). Discovery
+#     would have resolved neither, by design.
+#   Sabrina Alicea 21291 — from switcher discovery 2026-08-26; Tableau owner
+#     string "SABRINA ALICEA [alisei, inc.]".
+#   Nicolas Lujan "" — office still unknown; blank oid = run.py discovery pins
+#     it from the AppStream picker on an SCI funnel run and backfills history.
+CAPTAINSHIP = []
 
 CAPTAINSHIP_NAMES = [n for n, _, _ in CAPTAINSHIP]
 

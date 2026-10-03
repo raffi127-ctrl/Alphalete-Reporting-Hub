@@ -173,7 +173,11 @@ FAILED=()
 # the real numbers (funnel ~3 min, indeed 11 min, ad_sales 25 min on 9/3) so this
 # only ever fires on a genuine wedge. A killed step is a FAILED step, so the chain
 # still finishes, still publishes, and tomorrow's 1 AM is not blocked behind it.
-STEP_MAX_S=${RECRUITING_CHAIN_STEP_MAX_S:-2400}
+# 2400 -> 3600 (2026-10-02): each step wrapper now runs TWICE per invocation —
+# the Alphalete pass, then the SCI Recruiting Dashboard pass (captainship
+# split). ad_sales was already ~25 min for the combined roster; two logins and
+# two books fit inside 60 min with the same headroom 40 gave one pass.
+STEP_MAX_S=${RECRUITING_CHAIN_STEP_MAX_S:-3600}
 
 for s in "${STEPS[@]}"; do
     echo "[$(date)] --> $s" | tee -a "$LOG"

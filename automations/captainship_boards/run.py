@@ -592,6 +592,18 @@ def update_recruiting(master, monday, write):
     time.sleep(20)   # let the per-board read burst's quota window clear
     org = open_sheet(C.ORG_TRACKER_ID)
     rows = values_get(org, "'Daily Log'!A2:Q9000", render="UNFORMATTED_VALUE")
+    # Captainship split (Carlos 2026-10-02): the captainship-only owners'
+    # funnel rows moved to the SCI Recruiting Dashboard's Daily Log; Atef is
+    # org and stays in the Alphalete one. Read both — the name sets are
+    # disjoint, and the OWNERS match below picks each label from whichever
+    # book carries it. Best-effort like everything in this function: if the
+    # SCI read fails, the Alphalete rows still fill what they can.
+    try:
+        sci = open_sheet(C.SCI_TRACKER_ID)
+        rows += values_get(sci, "'Daily Log'!A2:Q9000",
+                           render="UNFORMATTED_VALUE")
+    except Exception as e:  # noqa: BLE001
+        log(f"  (SCI Daily Log read skipped: {type(e).__name__}: {e})")
     daily = {label: {} for label in C.OWNERS}
     for r in rows:
         if len(r) < 17:
@@ -719,22 +731,11 @@ def main(argv=None) -> int:
             failures.append(f"recruiting: {type(e).__name__}: {e}")
             log(f"  !! recruiting FAILED: {type(e).__name__}: {e}")
 
-    # Advance the org book's mirror-view week pickers (Carlos, 8/25): the
-    # Sales Board / Roll Call view tabs migrated into the Alphalete
-    # Recruiting Dashboard hold their own week label, and a stale (or
-    # number-coerced "8.3") label makes the fresh week look empty. Stamp the
-    # current label as TEXT every morning; best-effort — never fail the run.
-    if args.write:
-        try:
-            org = open_sheet(C.ORG_TRACKER_ID)
-            we_now = C.week_label(monday)
-            values_batch_update(org, [
-                {"range": "'Sales Board'!B3", "values": [[we_now]]},
-                {"range": "'Roll Call'!H2", "values": [[we_now]]},
-            ])
-            log(f"org view pickers -> {we_now}")
-        except Exception as e:  # noqa: BLE001
-            log(f"  (org view picker stamp skipped: {type(e).__name__}: {e})")
+    # The org book's Sales Board / Roll Call week-picker stamp lived here
+    # 2026-08-25 -> 2026-10-02. REMOVED with the captainship split: those
+    # mirror-view tabs are deleted from the Alphalete Recruiting Dashboard
+    # (Carlos: "good to be deleted and the automation for them removed").
+    # The owner-board fleet fill above is untouched.
 
     if failures:
         log(f"finished with {len(failures)} FAILURE(S): {failures}")

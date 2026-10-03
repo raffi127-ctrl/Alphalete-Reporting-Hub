@@ -13001,6 +13001,26 @@
       "depends_on": [],
       "verify": null,
       "timeout_minutes": 15
+    },
+    "sci_recruiting": {
+      "on_scheduler": false,
+      "_note": "SCI Recruiting Dashboard refresh (captainship split, Carlos 2026-10-02): runs funnel_board + indeed_source_report + ad_sales_board against the SCI book (1aWWdtMtv1...) with deploy/sci-roster.json (the 15 captainship-only owners as that book's org). MANUAL HANDLE ONLY - the deploy wrappers already run an SCI pass after every Alphalete pass, so the hourly/chain schedules cover both books; this exists because `lucy rerun` cannot set env vars. `lucy rerun sci_recruiting`; --steps funnel|indeed|adsales to scope, --dry-run forwards to every step.",
+      "display_name": "SCI Recruiting Dashboard refresh",
+      "source_type": "appstream",
+      "data_sources": [],
+      "command": [
+        "automations.sci_dashboard.run"
+      ],
+      "base_args": [],
+      "cadence": {
+        "weekdays": []
+      },
+      "priority": "P3",
+      "freshness_target": null,
+      "depends_on": [],
+      "verify": null,
+      "timeout_minutes": 55,
+      "machine": "Lucy 2"
     }
   },
   "read_only_standalone": {

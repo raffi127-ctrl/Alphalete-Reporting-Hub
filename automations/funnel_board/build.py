@@ -23,6 +23,15 @@ from automations.funnel_board.roster import (  # noqa: E402
 from automations.org_campaign_metrics.layout import (  # noqa: E402
     N_SLOTS as CAMP_SLOTS, ZONE_START as CAMP_ZONE_START)
 
+# A GROUP with nobody in it must not be offered (SCI split, 2026-10-02): the
+# Alphalete book now runs with CAPTAINSHIP empty and the SCI book runs with
+# only its ORG — an empty group in a picker renders a blank board and a
+# preserved pick of it would stick there. Every group dropdown and every
+# preserved-group coercion below goes through this list.
+_GROUP_SIZES = {"Org": len(ORG_NAMES), "Captainship": len(CAPTAINSHIP_NAMES),
+                "South Shore": len(SOUTH_SHORE_NAMES)}
+ACTIVE_GROUPS = [g for g, n in _GROUP_SIZES.items() if n > 0] or ["Org"]
+
 SSID = os.environ.get("FUNNEL_SSID", "1Y3RxPbWhJrpV_hyK53zwswIcPQAGanU2EY17MVUSbtU")
 API = "https://sheets.googleapis.com/v4/spreadsheets/" + SSID
 DATA = os.environ.get("FUNNEL_DATA") or str(
@@ -328,10 +337,13 @@ elif _BAK.exists():
 _ORG_PART = [m for m in MANAGERS if m in ORG_NAMES]
 _CAP_PART = [m for m in MANAGERS if m not in ORG_NAMES]
 _CAP_HEADER_AT = 32            # row where the captainship box header lands
+# No captainship people -> no captainship box at all (SCI split 2026-10-02:
+# both books now run single-roster, so an empty titled box at row 32 would
+# just advertise a group that doesn't exist on that book).
 _GOALS_ORDER = (_ORG_PART
-                + ["__BLANK__"] * (_CAP_HEADER_AT - 3 - len(_ORG_PART))
-                + ["__TITLE__", "__HEADER__"]
-                + _CAP_PART)
+                + (["__BLANK__"] * (_CAP_HEADER_AT - 3 - len(_ORG_PART))
+                   + ["__TITLE__", "__HEADER__"]
+                   + _CAP_PART if _CAP_PART else []))
 
 goal_rows = []
 for m in _GOALS_ORDER:
@@ -681,7 +693,7 @@ try:
     _mgrp = (_mg[0][0] if _mg and _mg[0] else "").strip()
 except Exception:  # noqa: BLE001
     _mgrp = ""
-if _mgrp not in ("Org", "Captainship"):
+if _mgrp not in ("Org", "Captainship") or _mgrp not in ACTIVE_GROUPS:
     _mgrp = "Org"
 values.append({"range": "'Manager Matrix'!D1", "values": [["GROUP:", _mgrp]]})
 # Hide the unused matrix rows for the preserved group (same fix as the board).
@@ -1013,7 +1025,7 @@ def build_board(sid, title, heading, roster, total_label, ad_box=True):
         _grp = (_g[0][0] if _g and _g[0] else "").strip()
     except Exception:  # noqa: BLE001 — an unreadable picker must not kill the build
         _grp = ""
-    if _grp not in ("Org", "Captainship", "South Shore"):
+    if _grp not in ("Org", "Captainship", "South Shore") or _grp not in ACTIVE_GROUPS:
         _grp = "Org"
     values.append({"range": "'%s'!E1" % title, "values": [["GROUP:", _grp]]})
     # A shorter group used to show its unused manager rows as an empty band
@@ -1034,9 +1046,7 @@ def build_board(sid, title, heading, roster, total_label, ad_box=True):
             "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}})
     F.append({"setDataValidation": {"range": gr(sid, 0, 1, 5, 6), "rule": {
         "condition": {"type": "ONE_OF_LIST",
-                      "values": [{"userEnteredValue": "Org"},
-                                 {"userEnteredValue": "Captainship"},
-                                 {"userEnteredValue": "South Shore"}]},
+                      "values": [{"userEnteredValue": g} for g in ACTIVE_GROUPS]},
         "showCustomUi": True, "strict": True}}})
     F.append(fmt(sid, 0, 1, 4, 6, {"userEnteredFormat": {
         "textFormat": txt(INK, True, 12), "backgroundColor": rgb(WARN_BG)}},
@@ -1345,7 +1355,8 @@ def build_trend(sid, title, heading, roster):
         _r1 = S.get(API + "/values/'%s'!A1:E1" % title).json().get("values", [[]])
         _r1 = [str(v).strip() for v in (_r1[0] if _r1 else [])]
         _cur = next((v for v in _r1 if v in _names), "")
-        _grp = next((v for v in _r1 if v in ("Org", "Captainship")), "")
+        _grp = next((v for v in _r1
+                     if v in ("Org", "Captainship") and v in ACTIVE_GROUPS), "")
     except Exception:  # noqa: BLE001
         pass
     trend[0][0] = _cur or roster[0]
@@ -1426,8 +1437,8 @@ def build_trend(sid, title, heading, roster):
                     for i in range(max(len(_pick), len(CAPTAINSHIP_NAMES)))]})
     F.append({"setDataValidation": {"range": gr(sid, 0, 1, 1, 2), "rule": {
         "condition": {"type": "ONE_OF_LIST",
-                      "values": [{"userEnteredValue": "Org"},
-                                 {"userEnteredValue": "Captainship"}]},
+                      "values": [{"userEnteredValue": g} for g in ACTIVE_GROUPS
+                                 if g in ("Org", "Captainship")]},
         "showCustomUi": True, "strict": True}}})
     # the group dropdown used to be E1 — clear its rule and paint so a stale
     # chip doesn't linger inside the first collapsed week group
@@ -1678,8 +1689,8 @@ F += [
         "showCustomUi": True, "strict": True}}},
     {"setDataValidation": {"range": gr(MATRIX, 0, 1, 4, 5), "rule": {
         "condition": {"type": "ONE_OF_LIST",
-                      "values": [{"userEnteredValue": "Org"},
-                                 {"userEnteredValue": "Captainship"}]},
+                      "values": [{"userEnteredValue": g} for g in ACTIVE_GROUPS
+                                 if g in ("Org", "Captainship")]},
         "showCustomUi": True, "strict": True}}},
 ]
 
