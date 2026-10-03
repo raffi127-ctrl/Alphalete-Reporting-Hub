@@ -131,3 +131,8 @@ def all_standings_now(day: Optional[dt.date] = None) -> str:
                  % (N.leaderboard(own, []) if own else "no sales recorded yet"))
     parts.append(standings_now(day))
     return "\n\n".join(parts)
+
+
+if __name__ == "__main__":        # read-only: `--all` = Raf's board too
+    import sys
+    print(all_standings_now() if "--all" in sys.argv else standings_now(), flush=True)
