@@ -117,3 +117,17 @@ def standings_now(day: Optional[dt.date] = None) -> str:
     if not today:
         return "no sales recorded for %s's reps on %s yet" % (GUEST, day.isoformat())
     return "%s (as of last sweep)\n\n%s" % (HEADER, N.leaderboard(today, []))
+
+
+def all_standings_now(day: Optional[dt.date] = None) -> str:
+    """READ-ONLY: everyone on Raf's code as of the last sweep -- his own board
+    (the day's state) and the fourteen -- from the state file, no login."""
+    day = day or dt.date.today()
+    data = S.load()
+    own = {rep: m for rep, m in (data.get(day.isoformat()) or {}).items()
+           if not rep.startswith("_")}
+    parts = []
+    parts.append("Raf's board (as of last sweep)\n\n%s"
+                 % (N.leaderboard(own, []) if own else "no sales recorded yet"))
+    parts.append(standings_now(day))
+    return "\n\n".join(parts)
