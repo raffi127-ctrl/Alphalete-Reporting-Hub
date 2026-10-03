@@ -311,18 +311,24 @@ def update_balances(svc) -> str:
         return "tiller accounts: nothing read"
     hdr = acc[0]
     ib = hdr.index("Last Balance"); ia = hdr.index("Account #"); iu = hdr.index("Last Update") if "Last Update" in hdr else None
-    tb = {str(r[ia]): (r[ib], r[iu] if iu is not None and iu < len(r) else "") for r in acc[1:] if len(r) > max(ib, ia) and str(r[ia]).strip()}
+    def _k(v):   # account numbers with a leading zero (0573, 0021, 0253) come back as 573 / 21 / 253 from one side or the other
+        t = str(v).strip().split(".")[0]
+        return t.zfill(4) if t.isdigit() else t
+    tb = {_k(r[ia]): (r[ib], r[iu] if iu is not None and iu < len(r) else "") for r in acc[1:] if len(r) > max(ib, ia) and str(r[ia]).strip()}
     rows = svc.values().get(spreadsheetId=PNL_SHEET_ID, range=f"'{BAL_TAB}'!A1:E60", valueRenderOption="UNFORMATTED_VALUE").execute().get("values", [])
     data = []
     n = 0
     for i, r in enumerate(rows, start=1):
-        key = str(r[4]).strip() if len(r) > 4 else ""
+        key = _k(r[4]) if len(r) > 4 and str(r[4]).strip() else ""
         if key in tb:
             data.append({"range": f"'{BAL_TAB}'!C{i}", "values": [[tb[key][0]]]}); n += 1
     if data:
         data.append({"range": f"'{BAL_TAB}'!H1", "values": [[f"Tiller balances as of {dt.date.today().isoformat()}"]]})
         svc.values().batchUpdate(spreadsheetId=PNL_SHEET_ID, body={"valueInputOption": "RAW", "data": data}).execute()
-    return f"balances: {n} accounts updated from Tiller"
+    expected = sum(1 for r in rows[1:] if len(r) > 4 and str(r[4]).strip())
+    if n < expected:
+        log(f"WARNING balances: only {n} of {expected} account rows matched Tiller — check account numbers on the Balances tab")
+    return f"balances: {n} of {expected} accounts updated from Tiller"
 
 
 def write(rows: list[list], balance: float | None) -> None:
