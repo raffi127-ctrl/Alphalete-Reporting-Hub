@@ -406,20 +406,18 @@ def write_overrides(svc, via_hub: bool) -> str:
 
 
 def write(rows: list[list], balance: float | None, via_hub: bool = False) -> None:
-    from google.oauth2.credentials import Credentials
-    from google.auth.transport.requests import Request
-    from googleapiclient.discovery import build
-    creds = Credentials.from_authorized_user_info(json.load(open(TOKEN)))
-    if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-    svc = build("sheets", "v4", credentials=creds).spreadsheets()
+    from automations.carlos_finance.tiller_sync import _svc   # Sheets client that retries 429/5xx
+    svc = _svc()
     svc.values().clear(spreadsheetId=PNL_SHEET_ID, range=f"'{TAB}'!A1:J3000").execute()
     svc.values().update(spreadsheetId=PNL_SHEET_ID, range=f"'{TAB}'!A1:J{len(rows) + 1}", valueInputOption="RAW",
                         body={"values": [HEADER] + rows}).execute()
     note = [["Security balance (SFDC Total Balance)", balance if balance is not None else "", "as of", dt.date.today().isoformat()]]
     svc.values().update(spreadsheetId=PNL_SHEET_ID, range=f"'{TAB}'!L1:O1", valueInputOption="RAW", body={"values": note}).execute()
     log(write_captain_table(svc, captain_rows(OUT_DIR / "DD_Detail.csv")))
-    log(update_balances(svc))
+    try:
+        log(update_balances(svc))
+    except Exception as e:  # noqa: BLE001
+        log(f"balances refresh failed (rest of the run is fine): {str(e)[:160]}")
     try:
         log(write_overrides(svc, via_hub))
     except Exception as e:  # noqa: BLE001
