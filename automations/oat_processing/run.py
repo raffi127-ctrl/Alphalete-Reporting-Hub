@@ -3050,6 +3050,19 @@ def lookup_resume_phone(page):
         for _i in range(_polls):
             try:
                 title = (newpg.title() or "").lower()
+                # "We are unable to display this resume. Please download the
+                # original resume." is a DEAD END that never improves — polling
+                # it for the full window is pure wasted time (Carlos 2026-10-04:
+                # "when these come up why do you take so long to just click
+                # download"). Bail to the download path immediately.
+                try:
+                    _top = (newpg.inner_text("body", timeout=1500) or "")
+                except Exception:  # noqa: BLE001
+                    _top = ""
+                if "unable to display this resume" in _top.lower():
+                    _log("    [resume] 'unable to display' page — going "
+                         "straight to the download link")
+                    break
                 # READ THE FRAMES TOO, not just the top document. Indeed's resume
                 # viewer renders the resume itself in a nested frame; the TOP page
                 # holds only the viewer chrome ("<Name>'s Resume", "View candidate",
