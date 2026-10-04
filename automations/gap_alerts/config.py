@@ -1087,10 +1087,35 @@ def office_window(cfg: Dict, weekday: int):
             _hhmm(cfg.get("day_end"), DAY_END_HHMM))
 
 
+# RAF'S OPEN SUNDAYS (Raf via Megan, 2026-10-04: "knock boards and sara alerts
+# run today till 7pm CST as well as next Sunday and then stop on Sunday
+# again"; Megan: "this is only for Raf"). HIS ROOMS ONLY -- every other office,
+# Carlos's guest rooms included, keeps its own Sunday rule. The Sara alerts
+# already run seven days (alphalete_sales_board); this opens the knock boards.
+# A date here is Saturday's start to the 7pm close, Central; a date that has
+# passed does nothing, so Sunday is off again by itself. Delete old dates.
+# The wrapper (deploy/gap_alerts_5min.sh) has to let the job wake on these
+# dates too -- keep the two in step.
+RAF_OPEN_SUNDAYS = {
+    "2026-10-04": ((10, 45), (19, 0)),
+    "2026-10-11": ((10, 45), (19, 0)),
+}
+
+
+def office_window_on(cfg: Dict, day: "dt.date"):
+    """office_window, but by DATE: Raf's open Sundays are the one case where
+    the weekday alone does not decide."""
+    if day.weekday() == 6 and (cfg.get("key") or "") == RAF["key"]:
+        win = RAF_OPEN_SUNDAYS.get(day.isoformat())
+        if win:
+            return win
+    return office_window(cfg, day.weekday())
+
+
 def in_office_window(cfg: Dict, now: Optional[dt.datetime] = None) -> bool:
     """Is this office inside its own selling day, on its own clock?"""
     local = office_now(cfg, now)
-    win = office_window(cfg, local.weekday())
+    win = office_window_on(cfg, local.date())
     if not win:
         return False
     (sh, sm), (eh, em) = win
@@ -1103,7 +1128,7 @@ def office_window_label(cfg: Dict, now: Optional[dt.datetime] = None) -> str:
     """'1:30 PM-10:00 PM America/New_York' — for the log line that explains a
     skipped office."""
     local = office_now(cfg, now)
-    win = office_window(cfg, local.weekday())
+    win = office_window_on(cfg, local.date())
     if not win:
         return "off today"
     return "%s-%s %s" % (_fmt12(win[0]), _fmt12(win[1]),

@@ -1468,7 +1468,7 @@ def _praise_tick(cfg: Dict, office_key: str,
     because this window runs to 10pm)."""
     from automations.icd_alerts import gap_callouts as _GC
     local = C.office_now(cfg, now)
-    win = C.office_window(cfg, local.weekday())
+    win = C.office_window_on(cfg, local.date())
     return bool(win) and _GC.praise_tick(local, office_key, win[1], C.TICK_MINUTES)
 
 
