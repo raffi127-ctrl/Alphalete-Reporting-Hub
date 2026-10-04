@@ -37,6 +37,9 @@ except Exception:  # pragma: no cover — zoneinfo is stdlib on 3.9+
 OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output" / "b2b_dispositions"
 
 
+from automations.shared.day_override import weekday as _wd
+
+
 def _central_now() -> dt.datetime:
     now = dt.datetime.now(_CENTRAL) if _CENTRAL else dt.datetime.now()
     return now
@@ -48,9 +51,9 @@ def slot_label(final: bool, now: Optional[dt.datetime] = None) -> str:
     6:30 final is tagged so the last shot of the day is obvious."""
     now = now or _central_now()
     if final:
-        return f"{_fmt12(cfg.final_slot_for(now.weekday()))} (Final)"
+        return f"{_fmt12(cfg.final_slot_for(_wd(now)))} (Final)"
     # snap to the closest hourly slot
-    best = min(cfg.hourly_slots_for(now.weekday()),
+    best = min(cfg.hourly_slots_for(_wd(now)),
                key=lambda hm: abs((now.hour * 60 + now.minute)
                                   - (hm[0] * 60 + hm[1])))
     return _fmt12(best)
@@ -360,7 +363,7 @@ def main(argv=None) -> int:
     # missed job on the wrong day, which is exactly how a "quiet Sunday" would
     # quietly stop being quiet. Refuse here too, before anything is captured.
     _now = _central_now()
-    if _now.weekday() not in cfg.RUN_WEEKDAYS and not args.dry_run:
+    if _wd(_now) not in cfg.RUN_WEEKDAYS and not args.dry_run:
         print(f"SKIPPED — {_now:%A} is off for this report (Carlos 8/6: no "
               f"Sunday posts or texts). Nothing captured, posted or sent.",
               flush=True)

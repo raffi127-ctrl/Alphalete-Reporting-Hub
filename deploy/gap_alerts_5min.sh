@@ -29,6 +29,9 @@ set -u
 cd "$(dirname "$0")/.." || exit 1
 
 DOW=$(date +%u)     # 1=Mon .. 7=Sun
+# One-off (Carlos 2026-10-04): this Sunday runs on Saturday's envelope. Keep in
+# step with automations/shared/day_override.py; delete once the date has passed.
+[ "$(date +%F)" = "2026-10-04" ] && DOW=6
 HOUR=$(date +%H)
 HOUR=${HOUR#0}
 [ "$DOW" = "7" ] && exit 0                       # Sunday is not a selling day

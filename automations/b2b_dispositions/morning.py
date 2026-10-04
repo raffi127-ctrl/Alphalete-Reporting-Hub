@@ -188,7 +188,8 @@ def _unpin_old(client, today: dt.date, log) -> None:
 def run(today: Optional[dt.date] = None, *, send: bool, log=print) -> int:
     today = today or dt.date.today()
     yday = today - dt.timedelta(days=1)
-    if today.weekday() == 6:
+    from automations.shared.day_override import weekday as _wd
+    if _wd(today) == 6:
         log("Sunday — no threads to open")
         return 0
     if not send:

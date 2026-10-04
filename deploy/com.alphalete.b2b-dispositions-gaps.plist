@@ -101,6 +101,16 @@
         <dict><key>Weekday</key><integer>6</integer><key>Hour</key><integer>14</integer><key>Minute</key><integer>30</integer></dict>
         <dict><key>Weekday</key><integer>6</integer><key>Hour</key><integer>15</integer><key>Minute</key><integer>0</integer></dict>
         <dict><key>Weekday</key><integer>6</integer><key>Hour</key><integer>15</integer><key>Minute</key><integer>30</integer></dict>
+        <!-- Sunday at Saturday's times: normally a no-op (the code skips Sunday),
+             live only on a date in shared/day_override.TREAT_AS_SATURDAY. -->
+        <dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>13</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>13</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>14</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>15</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>15</integer><key>Minute</key><integer>30</integer></dict>
     </array>
 
     <key>StandardOutPath</key>

@@ -108,13 +108,14 @@ def _apply_set_times(key: str, dests: List[Dict], now: dt.datetime) -> List[Dict
     plan = SET_TIMES.get(key)
     if not plan:
         return dests
-    day = "sat" if now.weekday() == 5 else "weekday"
+    from automations.shared.day_override import weekday as _wd
+    day = "sat" if _wd(now) == 5 else "weekday"
     out = []
     for d in dests:
         kind = "text" if P.is_text_dest(d["channel_id"]) else "slack"
         d = dict(d)
         d["times"] = list(((plan.get(kind) or {}).get(day)) or [])
-        if now.weekday() == 6:
+        if _wd(now) == 6:
             d["times"] = []
         out.append(d)
     return out
@@ -153,7 +154,8 @@ SAT_BOARD_STOP_HHMM = (18, 0)
 
 
 def _past_saturday_cap(now: dt.datetime) -> bool:
-    return now.weekday() == 5 and (now.hour, now.minute) > SAT_BOARD_STOP_HHMM
+    from automations.shared.day_override import weekday as _wd
+    return _wd(now) == 5 and (now.hour, now.minute) > SAT_BOARD_STOP_HHMM
 
 
 def in_field_hours(office, now: Optional[dt.datetime] = None) -> bool:

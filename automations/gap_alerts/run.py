@@ -299,7 +299,8 @@ def _past_stop(dest: Dict, cfg: Optional[Dict] = None,
     ("17:30") caps Saturdays; `stop` caps every day. Read on the office's
     clock. No stop set = never past it."""
     local = C.office_now(cfg or {}, now)
-    key = "sat_stop" if local.weekday() == 5 else "stop"
+    from automations.shared.day_override import weekday as _wd
+    key = "sat_stop" if _wd(local) == 5 else "stop"
     text = str(dest.get(key) or dest.get("stop") or "").strip()
     if not text:
         return False
@@ -316,7 +317,8 @@ def _before_start(dest: Dict, cfg: Optional[Dict] = None,
     the office's clock? No start set = never before it. The mirror of
     _past_stop (Carlos 2026-09-29: his fiber board "starting at 2")."""
     local = C.office_now(cfg or {}, now)
-    key = "sat_start" if local.weekday() == 5 else "start"
+    from automations.shared.day_override import weekday as _wd
+    key = "sat_start" if _wd(local) == 5 else "start"
     text = str(dest.get(key) or dest.get("start") or "").strip()
     if not text:
         return False
