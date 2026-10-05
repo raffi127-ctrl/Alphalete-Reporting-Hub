@@ -170,11 +170,37 @@ def main(argv=None):
     if goals_seed:
         CL.upsert_goals(S, goals_seed, dry_run=dry, seed_only=True, log=log)
 
+    if not dry and not a.skip_tableau:
+        attempted = [c for c in ("b2b", "box", "nds") if a.only in (None, c)]
+        _file_manifest([c for c in attempted if c not in failures], failures)
+
     if failures:
         log("!! completed with failures: %s" % ", ".join(failures))
         return 1
     log("done")
     return 0
+
+
+def _file_manifest(succeeded, failed):
+    """Record which campaigns were stamped this run.
+
+    WHY (2026-10-05): verify was null and no manifest was written, so a clean
+    re-run after the monday b2b fix still read "ran clean, but nothing can
+    confirm it DELIVERED" and the incident could not close. The Campaign Log
+    IS observable, so it gets a manifest, not `close_on: exit_zero`.
+
+    alert=False on failure: card_scheduler's publish_done already posted the
+    failure; a second line from the writer would just repeat it."""
+    try:
+        from automations.shared import run_manifest
+        failed = list(failed)
+        retry = (["--write", "--only", failed[0]] if len(failed) == 1
+                 else ["--write"])
+        run_manifest.write_manifest(
+            "org_campaign_metrics", kind="part", failed=failed,
+            succeeded=list(succeeded), retry_args=retry, alert=not failed)
+    except Exception:  # noqa: BLE001 — bookkeeping must not fail the stamp
+        pass
 
 
 if __name__ == "__main__":
