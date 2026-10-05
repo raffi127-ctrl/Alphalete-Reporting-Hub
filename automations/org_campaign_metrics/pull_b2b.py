@@ -286,8 +286,19 @@ def collect_computed(page, today, log=print):
     out_dir.mkdir(parents=True, exist_ok=True)
     dest = out_dir / ("b2b_orderlog_%s.csv" % today.isoformat())
     if not dest.exists() or dest.stat().st_size < 1000:
-        body = _fetch_csv(page, ORDERLOG_CSV % (monday.isoformat(), upto.isoformat()),
-                          log=log)
+        try:
+            body = _fetch_csv(page, ORDERLOG_CSV % (monday.isoformat(), upto.isoformat()),
+                              log=log)
+        except RuntimeError as e:
+            # Monday the window is today-only, and the ORDERLOG has no rows for
+            # it yet: Tableau answers 200 with a 1-byte body. That's "no sales
+            # this week yet", not an outage — it failed every Monday (10/5).
+            # Any other day an empty export still fails loudly.
+            if upto == monday and "status=200" in str(e):
+                log("  [b2b] Monday %s: order log has no rows for the new week "
+                    "yet — nothing to stamp" % monday)
+                return [], []
+            raise
         dest.write_bytes(body)
     else:
         log("  [b2b] reusing today's export %s" % dest.name)
