@@ -49,6 +49,7 @@ class Find(unittest.TestCase):
         txt = R.message(f, R.dt.date(2026, 10, 6))
         self.assertIn("Sabrina Alicea: SI", txt)
         self.assertIn("NDSWeeklyMetricsRep", txt)
+        self.assertIn("Cesar Castillo", txt)
 
 
 if __name__ == "__main__":

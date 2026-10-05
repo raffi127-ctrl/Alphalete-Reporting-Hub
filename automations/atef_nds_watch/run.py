@@ -128,7 +128,9 @@ def message(found: Dict[str, object], today: dt.date) -> str:
               "Fuente: Tableau > NDS-SNRES-ATT-OOFWorkbook > NDSWeeklyMetricsRep "
               "(Owner & Office) y CaptainsTeam.",
               "Ya se puede pasar la capitania de B2B a NDS (lista en memoria: "
-              "project_atef-switch-to-nds-pending). Pedile a Claude que lo haga."]
+              "project_atef-switch-to-nds-pending). Pedile a Claude que lo haga.",
+              "Despues avisale a Cesar Castillo: mientras tanto el postea los "
+              "trackers NDS a mano y pidio que le avisemos (10/5)."]
     return "\n".join(lines)
 
 
