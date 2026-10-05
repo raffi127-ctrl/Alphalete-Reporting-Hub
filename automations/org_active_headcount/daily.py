@@ -92,6 +92,7 @@ def open_tab(sandbox: bool = False):
     except Exception:                                              # noqa: BLE001
         return next(w for w in sh.worksheets() if w.title.strip() == TAB)
 APP_AVG = "app avg"
+RECORD = "record"
 DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 WE_LONG = re.compile(r"^WE\s+(\d{2})\.(\d{2})$", re.I)
 WE_ANY = re.compile(r"^WE\s+(\d{1,2})\.(\d{1,2})$", re.I)
@@ -276,8 +277,12 @@ def find_delta(g) -> dict:
                 if _c(g, sub, k).lower() in ("this week", "total this week"))
     avg = next((k for k in range(week + 1, this_c[0])
                 if _c(g, dh, k).lower() == APP_AVG and _c(g, sub, k).lower() == "this week"), None)
+    # 'Record / Headcount' (Rafael 2026-10-05), between the week triplet and
+    # Monday. Optional: a tab without it simply has no record to fill.
+    record = next((k for k in range(week + 1, this_c[0])
+                   if _c(g, dh, k).lower() == RECORD), None)
     return {"hdr": dh, "sub": sub, "this": this_c, "last": last_c, "rows": rows,
-            "totals": r, "week": week, "avg": avg}
+            "totals": r, "week": week, "avg": avg, "record": record}
 
 
 def find_ongoing(g) -> dict:
@@ -780,6 +785,32 @@ def plan_avgs(V, ac, logfn=print) -> List[Tuple[str, object]]:
     return out
 
 
+def plan_record(V) -> List[Tuple[str, object]]:
+    """[(a1, value)] for the delta box's Record column: each owner's biggest
+    weekly headcount in the Ongoing block (every WE column, this week
+    included), matched by name. Rafael 2026-10-05: "can we have a column that
+    says 'record headcount'". The totals row gets the biggest TOTALS week.
+
+    A value, not a formula: the Ongoing block grows a pair of columns every
+    Tuesday, and a range written today would stop short of next month's weeks.
+    Recomputed every run, so a new high shows up the day it happens. Empty on
+    a tab without the column."""
+    dx = find_delta(V)
+    if not dx["record"]:
+        return []
+    og = find_ongoing(V)
+
+    def best(r):
+        xs = [n for n in (_num(_c(V, r, k)) for k, _ in og["wcols"]) if n is not None]
+        return max(xs) if xs else ""
+
+    rec = {_c(V, r, 2).lower(): best(r) for r in og["rows"]}
+    want = [(r, rec.get(name.lower(), "")) for r, name in dx["rows"]]
+    want.append((dx["totals"], best(og["totals"])))
+    k = dx["record"]
+    return [(f"{A(k)}{r}", v) for r, v in want if _c(V, r, k) != str(v)]
+
+
 def _num_f(s) -> float:
     return float(str(s).replace(",", "").replace("%", "").strip())
 
@@ -909,6 +940,14 @@ def run(apply_changes: bool = False, today: Optional[dt.date] = None,
     logfn(f"{'wrote' if apply_changes else 'would write'} {len(avg_ups)} App Avg cell(s)")
     if apply_changes and avg_ups:
         _retry(ws.batch_update, [{"range": a, "values": [[v]]} for a, v in avg_ups],
+               value_input_option="USER_ENTERED")
+        V = ws.get_all_values()
+
+    # Record headcount, from the Ongoing weeks the fill just completed
+    rec_ups = plan_record(V)
+    logfn(f"{'wrote' if apply_changes else 'would write'} {len(rec_ups)} Record cell(s)")
+    if apply_changes and rec_ups:
+        _retry(ws.batch_update, [{"range": a, "values": [[v]]} for a, v in rec_ups],
                value_input_option="USER_ENTERED")
         V = ws.get_all_values()
 

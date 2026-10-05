@@ -151,3 +151,31 @@ class RollWithPairs(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _with_record():
+    """_hc() after the 'Record / Headcount' column went in right of the week's
+    Delta (Rafael 2026-10-05): only the delta box's rows shift over."""
+    g = _hc()
+    dh = next(i for i, r in enumerate(g) if r and r[0].startswith("All Campaings") and "by" in r[2])
+    for i in range(dh, len(g)):
+        g[i].insert(5, {dh: "Record", dh + 1: "Headcount"}.get(i, ""))
+    g[dh + 2][5] = "40"                    # stale: Rafael's record is really 50
+    return g
+
+
+class RecordHeadcount(unittest.TestCase):
+    def test_delta_box_finds_it_and_keeps_its_other_columns(self):
+        dx = d.find_delta(_with_record())
+        self.assertEqual((dx["week"], dx["record"], dx["avg"], dx["this"][0]), (3, 6, 7, 10))
+
+    def test_record_is_the_best_week_of_the_ongoing_block(self):
+        ups = _cells(d.plan_record(_with_record()))
+        self.assertEqual(ups, {"F21": 50, "F22": 0, "F23": 50})
+
+    def test_email_crop_takes_it_in(self):
+        self.assertEqual(E.delta_range(_with_record()), "A19:I23")
+
+    def test_a_tab_without_it_writes_nothing(self):
+        self.assertIsNone(d.find_delta(_hc())["record"])
+        self.assertEqual(d.plan_record(_hc()), [])
