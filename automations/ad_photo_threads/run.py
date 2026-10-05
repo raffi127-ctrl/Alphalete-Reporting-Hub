@@ -273,6 +273,11 @@ def main(argv=None) -> int:
                       help="Fold this week's duplicate threads (an ad title "
                            "pasted without its first words) into the real one "
                            "in the live channel. With --dry-run-notes: say only.")
+    mode.add_argument("--weekly-sample", metavar="MONDAYS",
+                      help="Carlos's weekly layout (10/5) as extra 'SAMPLE' "
+                           "threads in the office's live channel (or --channel / "
+                           "--dm): comma-separated Mondays, oldest first. "
+                           "--max-ads = how many ads (default 3). Never pins.")
     mode.add_argument("--nightly", action="store_true",
                       help="The scheduled tick: post today to the live channel "
                            "once it's past config.POST_AFTER_CT; otherwise no-op.")
@@ -310,6 +315,17 @@ def main(argv=None) -> int:
     config.use(config.office(a.office or "rafael"))
     day = dt.date.fromisoformat(a.date) if a.date else collect.central_today()
 
+    if a.weekly_sample:
+        from automations.ad_photo_threads import weekly
+        mondays = [dt.date.fromisoformat(m.strip())
+                   for m in a.weekly_sample.split(",") if m.strip()]
+        channel = a.channel or config.LIVE_CHANNEL_ID
+        if a.dm:
+            channel = collect._client().conversations_open(users=a.dm)["channel"]["id"]
+        print("Weekly sample:", weekly.sample(
+            mondays, channel, max_ads=a.max_ads or 3,
+            crop=not a.no_crop))
+        return 0
     if a.watch:
         from automations.ad_photo_threads import config, post
         names = [n.strip() for n in a.watch.split(",") if n.strip()]
