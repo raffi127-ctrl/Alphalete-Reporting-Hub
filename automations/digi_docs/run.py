@@ -805,6 +805,30 @@ def _work(ov, *, page_ctx, do_add, do_send, send, add_list, dry,
                     state = ov.docs_row_state(modal)
                     sendable = getattr(ov.config, "DOCS_SENDABLE_STATES",
                                        (ov.config.DOCS_NEEDED_STATE,))
+                    # PENDING: ASK THE ROW, NOT THE CHIP (2026-10-05). Five
+                    # people sat in the corrections thread as "needs a person"
+                    # because the chip cannot say whether a bundle went. The
+                    # opened row can — see ownerville.docs_generated.
+                    if state == "PENDING" and hasattr(ov, "docs_generated"):
+                        gen, body = ov.docs_generated(modal, page)
+                        print(f"    Onboarding Documents row: "
+                              f"{body[:160] or '(would not open)'}")
+                        if gen is False:
+                            print(f"  ↻ {c.name}: PENDING, but OwnerVille "
+                                  f"says no doc was generated — sending")
+                            state = ov.config.DOCS_NEEDED_STATE
+                        elif gen is True:
+                            # A bundle exists: out, awaiting signature. Not
+                            # ours to chase and not a blocked person.
+                            print(f"  · {c.name}: skipped — a bundle already "
+                                  f"exists (PENDING signature)")
+                            if _ledger_key(c.name) not in _sent_today():
+                                from automations.digi_docs import mark as _mk
+                                _tint_now(ws, c, dry,
+                                          color=_mk.PENDING_GREEN)
+                            continue
+                        # None: the row would not open. Fall through and
+                        # report it exactly as before — never send on a guess.
                     if state not in sendable:
                         shown = state or "unreadable"
                         done_states = getattr(ov.config, "DOCS_DONE_STATES",

@@ -305,6 +305,13 @@ DOCS_DONE_STATES = ("COMPLETED",)
 # the status: look in the portal for whether a bundle already exists.
 DOCS_SENDABLE_STATES = (DOCS_NEEDED_STATE,)
 
+# THAT DISCRIMINATOR (2026-10-05). PENDING itself is still not sendable. A
+# PENDING person who is not on today's sent ledger gets their row opened, and
+# is sent ONLY when OwnerVille's own text there says nothing was generated
+# (ownerville.docs_generated). A row that is open without this line means a
+# bundle exists: darker green, no alert. A row that will not open: reported.
+DOCS_NOT_GENERATED = "not yet generated"
+
 # --- Onboarding Quizzes: NOT automated (Megan 2026-08-25) -----------------
 # No completion sweep, unlike Blue Ink's signed-packet check. The six rows below
 # are the REP's own coursework and stay PENDING long after our run finishes, so

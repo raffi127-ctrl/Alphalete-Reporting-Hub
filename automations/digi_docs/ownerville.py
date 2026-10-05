@@ -566,6 +566,52 @@ def docs_row_state(modal) -> str:
     return _row_state(modal, config.DOCS_ROW)
 
 
+def docs_generated(modal, page) -> tuple:
+    """Has OwnerVille generated a bundle for this rep? (True/False/None, text)
+
+    THE DISCRIMINATOR PENDING NEVER HAD (2026-10-05). The chip reads PENDING
+    both for a packet that is out awaiting signature (Ossaid Abusroor, 9/07)
+    and for one that never went (Megan's four the same day; Dolores Salgado,
+    Jessica Nash, Edith Gonzalez, Kierra Smith, Nicholas Wonzer on 10/05). So
+    the send pass reported every PENDING person and sent nobody.
+
+    The expanded row says it in words: "Digital doc not yet generated." above
+    the portal button when nothing has gone. That is OwnerVille's own answer
+    from the documents side, which is what the 9/07 note said was needed.
+
+      False -> the row SAYS not yet generated: safe to send.
+      True  -> the row is open and does NOT say it: a bundle exists.
+      None  -> the row would not open: decide nothing, report it.
+
+    The text is returned so the log shows what was read either way.
+    """
+    _expand(modal, config.DOCS_ROW, page, verbose=False)
+    if not _revealed(modal, "Access Digital Doc Portal", ms=4000):
+        return None, ""
+    body = ""
+    for row in _status_rows(modal, config.DOCS_ROW):
+        try:
+            if not row.is_visible():
+                continue
+            txt = row.inner_text(timeout=3000) or ""
+        except Exception:                                   # noqa: BLE001
+            continue
+        if "access digital doc portal" in txt.lower():
+            body = " ".join(txt.split())
+            break
+    if config.DOCS_NOT_GENERATED.lower() in body.lower():
+        return False, body
+    try:
+        if modal.get_by_text(config.DOCS_NOT_GENERATED,
+                             exact=False).first.is_visible():
+            return False, body
+    except Exception:                                       # noqa: BLE001
+        pass
+    if not body:
+        return None, ""
+    return True, body
+
+
 def open_docs_portal(page, modal):
     """Expand ONBOARDING DOCUMENTS → gray `Access Digital Doc Portal`.
 
@@ -574,7 +620,10 @@ def open_docs_portal(page, modal):
     isolated world, so any "read the current page" shortcut quietly reads the
     OLD tab.
     """
-    _expand(modal, config.DOCS_ROW, page)
+    # Already open when docs_generated() just read it — clicking the row again
+    # would COLLAPSE it and hide the button.
+    if not _revealed(modal, "Access Digital Doc Portal", ms=500):
+        _expand(modal, config.DOCS_ROW, page)
     with page.context.expect_page(timeout=30000) as popup:
         _click_any(modal, "Access Digital Doc Portal", page=page)
     tab = popup.value

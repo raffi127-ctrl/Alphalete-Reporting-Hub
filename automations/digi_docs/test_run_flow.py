@@ -1045,6 +1045,85 @@ class UnrecognisedDocsStateIsLoudTest(_NoNetwork):
         self.assertIn("ON HOLD", refused[0])
 
 
+class PendingAsksTheRowNotTheChipTest(_NoNetwork):
+    """2026-10-05: five PENDING people sat in the corrections thread as "needs
+    a person" because the chip cannot say whether a bundle went. The opened row
+    can ("Digital doc not yet generated."), so PENDING is decided by that:
+
+      row says not generated -> send
+      row open, no such line -> a bundle exists: darker green, no alert
+      row will not open      -> reported as before, never sent on a guess
+    """
+
+    def _send_one(self, gen):
+        import contextlib
+        import automations.digi_docs as _pkg
+        from automations.digi_docs import config as _cfg, run as _run
+        calls = {"generated": 0, "tints": []}
+
+        class _OV:
+            Refused = RuntimeError
+            config = _cfg
+
+            def open_set_status(self, page, name):
+                return object(), name
+
+            def docs_row_state(self, modal):
+                return "PENDING"
+
+            def docs_generated(self, modal, page):
+                return gen, "ONBOARDING DOCUMENTS PENDING ..."
+
+            def open_docs_portal(self, page, modal):
+                return type("T", (), {"close": lambda s: None})()
+
+            def generate_bundle(self, tab, name, dry_run=True):
+                calls["generated"] += 1
+
+            def confirm_generated(self, tab, name):
+                return True
+
+            def tick_attestations(self, page, modal, dry_run=True):
+                return ["a box"]
+
+        stub = types.ModuleType("automations.digi_docs.slack_post")
+        stub.alert_failure = lambda line, dry_run=True: None
+        done, refused = [], []
+        person = type("C", (), {"name": "Dolores Salgado"})()
+        with mock.patch.dict(
+                sys.modules, {"automations.digi_docs.slack_post": stub}), \
+             mock.patch.object(_pkg, "slack_post", stub, create=True), \
+             mock.patch.object(_run, "_record_sent", lambda n: None), \
+             mock.patch.object(_run, "_sent_today", lambda: set()), \
+             mock.patch.object(_run, "_tint_now",
+                               lambda ws, c, dry, color=None:
+                               calls["tints"].append(color)):
+            _run._work(_OV(), page_ctx=contextlib.nullcontext(object()),
+                       do_add=False, do_send=True, send=[person], add_list=[],
+                       dry=False, added=[], done=done, refused=refused)
+        return calls, done, refused
+
+    def test_not_generated_is_sent(self):
+        calls, done, refused = self._send_one(False)
+        self.assertEqual(1, calls["generated"])
+        self.assertEqual(1, len(done))
+        self.assertEqual([], refused)
+
+    def test_an_existing_bundle_is_never_re_sent_and_not_alerted(self):
+        from automations.digi_docs import mark
+        calls, done, refused = self._send_one(True)
+        self.assertEqual(0, calls["generated"])
+        self.assertEqual([], done)
+        self.assertEqual([], refused)
+        self.assertEqual([mark.PENDING_GREEN], calls["tints"])
+
+    def test_a_row_that_will_not_open_is_reported_not_sent(self):
+        calls, done, refused = self._send_one(None)
+        self.assertEqual(0, calls["generated"])
+        self.assertEqual(1, len(refused))
+        self.assertIn("PENDING", refused[0])
+
+
 class FastAddOnlyTrustsAProvenRosterTest(_NoNetwork):
     """One roster read is the speed-up; PROVING it is the safety.
 
