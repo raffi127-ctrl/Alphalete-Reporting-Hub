@@ -403,6 +403,47 @@ class TheSundayQuietSource(unittest.TestCase):
         self.assertEqual(out["verdict"], "stale")
 
 
+class DropsTrackerHasNoWeekendRows(unittest.TestCase):
+    """2026-10-05: 'newest 2026-10-02, needs 2026-10-03' on a Monday. The view
+    had 825 drops back to 6/2025 and not one on a Saturday or Sunday."""
+
+    DROPS_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+                 "B2BBOXEnergyTracker/DropsTracker?:refresh=yes")
+
+    def setUp(self):
+        self._alerts = []
+        self._real = tf.alert_stale
+        tf.alert_stale = lambda **kw: (self._alerts.append(kw), True)[1]
+        self.tmp = Path(tempfile.mkdtemp())
+
+    def tearDown(self):
+        tf.alert_stale = self._real
+
+    def _check(self, newest, today, name):
+        return tf.check_export(_export(self.tmp, newest, name),
+                               view_url=self.DROPS_URL, sheet="Drops Pull",
+                               today=today)
+
+    def test_monday_10_05_friday_data_is_fresh(self):
+        out = self._check("10/2/2026", dt.date(2026, 10, 5), "a.csv")
+        self.assertEqual(out["verdict"], "fresh")
+        self.assertEqual(out["needs"], dt.date(2026, 10, 2))
+        self.assertEqual(self._alerts, [])
+
+    def test_a_missing_friday_still_shouts_on_monday(self):
+        out = self._check("10/1/2026", dt.date(2026, 10, 5), "b.csv")
+        self.assertEqual(out["verdict"], "stale")
+        self.assertEqual(len(self._alerts), 1)
+
+    def test_only_the_drops_view_loses_saturday(self):
+        self.assertTrue(tf.is_weekday_only_source(
+            "B2BBOXEnergyTracker/DropsTracker → Drops Pull"))
+        self.assertFalse(tf.is_weekday_only_source(
+            "B2BBOXEnergyTracker/BoxOrderLog → Order Log"))
+        self.assertEqual(tf.business_needs(dt.date(2026, 10, 5)),
+                         dt.date(2026, 10, 3))
+
+
 class TheAlertSaysWhatActuallyHappened(unittest.TestCase):
     """A stale SOURCE is not a suppressed report. The wording it borrowed from
     'capped' claimed three things that were false on 8/19 — pin all three."""

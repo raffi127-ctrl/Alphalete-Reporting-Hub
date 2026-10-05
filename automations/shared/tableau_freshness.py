@@ -708,8 +708,29 @@ def is_sunday_quiet_source(label: str) -> bool:
     return any(m in low for m in SUNDAY_QUIET_MARKERS)
 
 
+# Same shape one day wider: a feed with no SATURDAY rows either. The BOX
+# DropsTracker ("Dropped Date") is the supplier's drop processing, and that only
+# runs Mon-Fri. Read off the view on 2026-10-05 (Eve, thread
+# `drop-tableau-stale-b2bboxenergytracker-dropstracker-drops-pull`, "newest
+# 2026-10-02, needs 2026-10-03"): 825 rows back to 2025-06-23, by weekday
+#   Sun 0   Mon 152   Tue 186   Wed 174   Thu 149   Fri 164   Sat 0
+# while the footer said "Latest Sales Data Update: 10/4/2026" — current, with
+# nothing to be current with. So Monday asks for Friday here. Name the VIEW: the
+# rest of the workbook does sell on Saturday.
+WEEKDAY_ONLY_MARKERS = (
+    "dropstracker",
+)
+
+
+def is_weekday_only_source(label: str) -> bool:
+    """Does this view's feed have no Saturday OR Sunday rows to be behind on?"""
+    low = (label or "").lower()
+    return any(m in low for m in WEEKDAY_ONLY_MARKERS)
+
+
 def business_needs(today: dt.date,
-                   max_days_behind: int = DEFAULT_MAX_DAYS_BEHIND) -> dt.date:
+                   max_days_behind: int = DEFAULT_MAX_DAYS_BEHIND,
+                   skip_saturday: bool = False) -> dt.date:
     """`max_days_behind` days back, counting only days this source can carry.
 
     Sundays are skipped, so the bar moves by exactly one day and only on
@@ -726,8 +747,8 @@ def business_needs(today: dt.date,
     left = max(0, max_days_behind)
     while left > 0:
         d -= dt.timedelta(days=1)
-        if d.weekday() != 6:                        # 6 = Sunday
-            left -= 1
+        if d.weekday() != 6 and not (skip_saturday and d.weekday() == 5):
+            left -= 1                               # 5 = Sat, 6 = Sun
     return d
 
 
@@ -996,9 +1017,11 @@ def check_export(path,
         # Counted AFTER the laggy bump so the two compose: whatever the bar is,
         # it is measured over days this source can actually carry data. Only
         # ever loosens, and only ever a Monday. See SUNDAY_QUIET_MARKERS.
-        sunday_quiet = is_sunday_quiet_source(label)
+        weekday_only = is_weekday_only_source(label)
+        sunday_quiet = is_sunday_quiet_source(label) or weekday_only
         if needs is None and sunday_quiet:
-            needs = business_needs(today, max_days_behind)
+            needs = business_needs(today, max_days_behind,
+                                   skip_saturday=weekday_only)
         needs = needs or (today - dt.timedelta(days=max_days_behind))
         # Deliberately does NOT touch `needs`: a week-pinned view is judged on
         # whether its CONTENT moves, and only that bar is loosened.
@@ -1042,6 +1065,7 @@ def check_export(path,
             out["cleared"] = clear_stale(label, label, newest, today)
             if verbose:
                 why = (", weekly source" if weekly else
+                       ", no weekend data" if weekday_only else
                        ", no Sunday data" if sunday_quiet else "")
                 _say("  [freshness] {} — newest {} (ok{}){}".format(
                     label, newest, why,
