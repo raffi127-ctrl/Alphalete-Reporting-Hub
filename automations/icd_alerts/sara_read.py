@@ -187,13 +187,20 @@ def _sign_in_raw(page, log=print) -> str:
 # throttle. After a few in a row it becomes the owner's problem: the same
 # hold the passcode wall gets, and the sign-in window offered to whoever is
 # at the machine so a person can SEE what SaraPlus is doing from there.
+#
+# NOT "CHECK YOUR INTERNET". The page opens fine -- the email and password go
+# in -- it is the press of Login that never comes back. Cyrus, 2026-09-26 ->
+# 10-05: 75 in a row, starting the evening SaraPlus made him set a new
+# password, while the same laptop relayed OwnerVille knocks all day. Telling
+# him to check his wifi sent him after the one thing that was working.
 LOGIN_TIMEOUTS_BEFORE_HOLD = 3
 LOGIN_TIMEOUT_MESSAGE = (
-    "SaraPlus's login page did not finish loading from this computer, %d "
-    "times in a row. Your password was not rejected. Check that this "
-    "computer's internet is working.\n\nA SaraPlus window opens on this "
-    "computer by itself when someone is at it -- if SaraPlus loads there, "
-    "sign in and it heals; if it does not, that is the problem to fix.")
+    "SaraPlus will not finish signing in from this computer -- %d times in a "
+    "row, pressing Login never got through. Your internet is fine. This "
+    "usually starts after a SaraPlus password change.\n\nA SaraPlus window "
+    "opens on this computer by itself when someone is at it: sign in there "
+    "once (and set a new password or enter the code if it asks), then put "
+    "the same password in the Lucy Reports app.")
 LOGIN_TIMEOUTS_PATH = C.APP_DIR / "saraplus-login-timeouts.txt"
 
 

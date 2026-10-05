@@ -16,6 +16,7 @@ way.
 """
 from __future__ import annotations
 
+import threading
 import time
 import unittest
 
@@ -98,6 +99,49 @@ class TheThresholdsAreSaneTest(unittest.TestCase):
         """Two minutes is the tick. Cutting a sweep off at one would kill
         healthy reads on the slowest office."""
         self.assertGreaterEqual(W.DEADLINE_SECONDS, 240)
+
+
+class TheWholeRunHasAHardCeilingTest(unittest.TestCase):
+    """Kash's iMac, 2026-10-02: a run hung past every stage deadline and never
+    exited, so launchd never started another -- three dark days, no fault."""
+
+    def setUp(self):
+        self._kill = W._kill_descendants
+        W._kill_descendants = lambda: None   # never SIGKILL the test runner's kids
+
+    def tearDown(self):
+        W._kill_descendants = self._kill
+
+    def test_a_stuck_run_reports_then_exits(self):
+        filed, exited = [], threading.Event()
+        W.arm_hard_ceiling(0.05, log=lambda *_: None,
+                           report=lambda s, e: filed.append(s),
+                           _exit=lambda code: exited.set())
+        self.assertTrue(exited.wait(5))
+        self.assertEqual(filed, ["run-timeout"])
+
+    def test_a_hung_report_does_not_keep_it_alive(self):
+        """The relay can hang too; the exit must still come."""
+        exited = threading.Event()
+        orig = threading.Thread.join
+        threading.Thread.join = lambda self, timeout=None: None  # skip the 30s
+        try:
+            W.arm_hard_ceiling(0.05, log=lambda *_: None,
+                               report=lambda s, e: time.sleep(60),
+                               _exit=lambda code: exited.set())
+            self.assertTrue(exited.wait(5))
+        finally:
+            threading.Thread.join = orig
+
+    def test_a_run_that_finishes_never_trips_it(self):
+        exited = threading.Event()
+        t = W.arm_hard_ceiling(60, log=lambda *_: None,
+                               _exit=lambda code: exited.set())
+        t.cancel()
+        self.assertFalse(exited.wait(0.2))
+
+    def test_the_ceiling_outlasts_every_stage(self):
+        self.assertGreater(W.HARD_CEILING_SECONDS, 3 * W.DEADLINE_SECONDS)
 
 
 if __name__ == "__main__":

@@ -1922,6 +1922,8 @@ FAULT_STAGE_LABEL = {
     "knocks": "reading OwnerVille",
     "box": "reading My Service Cloud",
     "login": "signing in",
+    # watchdog.arm_hard_ceiling: the whole run, not one read.
+    "run": "its regular check",
 }
 
 

@@ -141,6 +141,13 @@ class ALoginPageThatNeverLoadsBecomesTheOwnersProblem(unittest.TestCase):
         self.assertLessEqual(len(msg), RL.FAULT_SUMMARY_MAX)
         self.assertIn("window", msg)
 
+    def test_the_message_does_not_send_them_after_their_wifi(self):
+        """The login page loads; only the submit never lands (Cyrus 9/26 on,
+        while his knocks relayed fine). 'Check your internet' was wrong."""
+        msg = R.LOGIN_TIMEOUT_MESSAGE % 75
+        self.assertNotIn("Check that this computer's internet", msg)
+        self.assertIn("password", msg)
+
 
 class TheUrlIsNotProofOfASession(unittest.TestCase):
     """2026-10-02: expired sessions still landed on .../DealerPages/, were

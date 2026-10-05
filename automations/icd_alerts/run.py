@@ -518,6 +518,12 @@ def main(argv=None) -> int:
     day = dt.date.fromisoformat(args.day) if args.day else C.today()
     headless = not args.headful
 
+    # THE SCHEDULED RUNS GET A HARD CEILING, the interactive ones do not: a
+    # --set-login or --check has a person waiting on a window. See
+    # watchdog.arm_hard_ceiling -- a run that never exits silences the office.
+    if (args.once or args.knocks or args.box) and not args.dry_run:
+        W.arm_hard_ceiling(log=_log, report=_report)
+
     if args.set_login:
         return cmd_set_login(headless)
     if args.check:
