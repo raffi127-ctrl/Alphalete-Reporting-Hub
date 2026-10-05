@@ -16,8 +16,8 @@ only that week's tab and puts it back in date order.
     python -m automations.first_round_scorecards.board --write         # ... and write the Sheet tab
     python -m automations.first_round_scorecards.board --week 2026-09-21 --write
 
-SANDBOX (Eve's rule for new reports): BOARD_SHEET_ID is the TEST workbook
-until Eve says "use the real Sheet".
+BOARD_SHEET_ID is the real board (Eve, 2026-10-05: the test workbook became
+the real one, same link, "TEST" dropped from its name).
 """
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ except Exception:  # noqa: BLE001
 
 from automations.first_round_scorecards import drive_auth, fathom, grade
 
-BOARD_SHEET_ID = "1bPPYSr73QWwfzsW3BziyJyXysnj-segpCGUE1P447-s"  # TEST - 1st Round Scorecards Board
+BOARD_SHEET_ID = "1bPPYSr73QWwfzsW3BziyJyXysnj-segpCGUE1P447-s"  # 1st Round Scorecards Board (real)
 FOLDER_MIME = "application/vnd.google-apps.folder"
 CACHE = Path(__file__).resolve().parents[2] / "output" / "first_round_scorecards" / "board_cache.json"
 DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri")
