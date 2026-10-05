@@ -545,7 +545,17 @@ def _merge_onboarded() -> None:
 
 _merge_onboarded()
 
-ORDER = list(OFFICES)
+# NOT IN `--all` YET. The 4am `b2b_metrics --all --post` posts every office in
+# ORDER, so a freshly wired office would make its FIRST post there, unchecked --
+# and Megan's rule is a dry run first, never a blank first post. An office
+# listed here still runs by name (`--office <key>`, and its own <key>_metrics
+# entry once that is switched on); it is only kept out of the --all sweep.
+# TO GO LIVE: delete its line here and flip <key>_metrics on_scheduler to true.
+HELD_FROM_ALL = {
+    "eveliz",   # wired 2026-10-05, waiting on its Lucy 2 dry run
+}
+
+ORDER = [k for k in OFFICES if k not in HELD_FROM_ALL]
 
 
 def get(key: str) -> B2BOffice:

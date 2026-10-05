@@ -87,22 +87,29 @@ def _known_channel_ids() -> Dict[str, str]:
     this size to find a channel we already have the id for is the expensive
     way to learn nothing.
     """
+    # BOTH REGISTRIES. A B2B office's room lives in b2b_metrics, not
+    # office_metrics, so reading only the D2D map sent Eveliz's approval
+    # (#south-shore-b2b-sales) to page the workspace and get `ratelimited`
+    # twice on 2026-10-05.
+    import importlib
     out = {}
-    try:
-        from automations.office_metrics import offices as om
-        for off in getattr(om, "OFFICES", {}).values():
-            name = getattr(off, "channel_name", "")
-            cid = getattr(off, "channel_id", "")
-            if name and cid:
-                # Stored with or without the '#': both spellings key the map,
-                # or "everforward-sales" misses "#everforward-sales" and the
-                # lookup falls through to paging the whole workspace, which
-                # is what rate-limited Isaiah's re-approval on 2026-09-29.
-                bare = name.lower().lstrip("#")
-                out[bare] = cid
-                out["#" + bare] = cid
-    except Exception:  # noqa: BLE001
-        pass
+    for mod in ("automations.office_metrics.offices",
+                "automations.b2b_metrics.offices"):
+        try:
+            om = importlib.import_module(mod)
+            for off in getattr(om, "OFFICES", {}).values():
+                name = getattr(off, "channel_name", "")
+                cid = getattr(off, "channel_id", "")
+                if name and cid:
+                    # Stored with or without the '#': both spellings key the
+                    # map, or "everforward-sales" misses "#everforward-sales"
+                    # and the lookup falls through to paging the whole
+                    # workspace (Isaiah's re-approval, 2026-09-29).
+                    bare = name.lower().lstrip("#")
+                    out[bare] = cid
+                    out["#" + bare] = cid
+        except Exception:  # noqa: BLE001
+            pass
     return out
 
 

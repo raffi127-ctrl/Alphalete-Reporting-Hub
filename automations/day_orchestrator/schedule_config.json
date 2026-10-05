@@ -11587,6 +11587,45 @@
    "_onboarded": true,
    "machine": "Lucy 2"
   },
+  "eveliz_metrics": {
+   "order": 36.56,
+   "on_scheduler": false,
+   "display_name": "Eveliz's B2B Metrics (south-shore-b2b-sales)",
+   "source_type": "tableau",
+   "data_sources": [
+    "tableau:order_log"
+   ],
+   "command": [
+    "automations.b2b_metrics.runner"
+   ],
+   "base_args": [
+    "--office",
+    "eveliz",
+    "--post"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P1",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 60,
+   "verify": {
+    "type": "manifest",
+    "report_id": "eveliz_metrics"
+   },
+   "_note": "B2B metrics for eveliz -> south-shore-b2b-sales (C0C5XCW3WFQ). Wired by hand 2026-10-05, mirrors sabrina. on_scheduler stays false until a dry run on Lucy 2 proves data on every board -- Megan's rule: never a blank first post. Sheet 'Eveliz Wright - Metrics' 1iDjxnqQm3l65XHefHFk8CIn3lx_Yz1mvI-60bCMRwBk.",
+   "_onboarded": true,
+   "machine": "Lucy 2"
+  },
   "audit_friday": {
    "on_scheduler": false,
    "machine": "Lucy 2",

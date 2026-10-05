@@ -120,5 +120,66 @@
         "header_label": ""
       }
     ]
+  },
+  {
+    "key": "eveliz",
+    "report_id": "eveliz_metrics",
+    "label": "Eveliz's B2B Office",
+    "owner": "Eveliz Wright",
+    "channel_id": "C0C5XCW3WFQ",
+    "channel_name": "south-shore-b2b-sales",
+    "sheet_id": "1iDjxnqQm3l65XHefHFk8CIn3lx_Yz1mvI-60bCMRwBk",
+    "knocks_office": "Eveliz Wright",
+    "ov_account": "",
+    "owner_office": "EVELIZ WRIGHT [south shore consulting group, inc.]",
+    "business_name": "South Shore Consulting Group, Inc.",
+    "website": "",
+    "header_label": "",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "b2b_sales",
+      "b2b_activation",
+      "b2b_churn_wireless",
+      "b2b_churn_int",
+      "b2b_churn_air",
+      "b2b_customer_churn",
+      "b2b_order_log_att"
+    ],
+    "report_order": {
+      "b2b_sales": 1,
+      "b2b_activation": 2,
+      "b2b_churn_wireless": 3,
+      "b2b_churn_int": 4,
+      "b2b_churn_air": 5,
+      "b2b_customer_churn": 6,
+      "b2b_order_log_att": 7
+    },
+    "per_office_views": {
+      "b2b_churn_wireless": "https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/CHURNRATES/16d47259-17b6-4ad0-8fd7-2de5081945b0/ALLTEAMWireless?Product%20Type%20(Broken%20Out)=AIR/AWB,WIRELESS,NEW%20INTERNET",
+      "b2b_churn_int": "https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/CHURNRATES/16d47259-17b6-4ad0-8fd7-2de5081945b0/ALLTEAMWireless?Product%20Type%20(Broken%20Out)=NEW%20INTERNET",
+      "b2b_churn_air": "https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/CHURNRATES/16d47259-17b6-4ad0-8fd7-2de5081945b0/ALLTEAMWireless?Product%20Type%20(Broken%20Out)=AIR%2FAWB"
+    },
+    "machine": "Lucy 2",
+    "campaign": "b2b_att",
+    "notes": "wired by hand 2026-10-05 (Megan: enroll Eveliz in Lucy Eco + metrics/weather/trackers, dry run first, no blank posts). Sheet 'Eveliz Wright - Metrics' copied from Master Metrics Templates. ECO relay key eveliz (eveliz-b2batt is a duplicate sign-up).",
+    "channel_plans": [
+      {
+        "channel_id": "C0C5XCW3WFQ",
+        "channel_name": "south-shore-b2b-sales",
+        "report_keys": [
+          "b2b_sales",
+          "b2b_activation",
+          "b2b_churn_wireless",
+          "b2b_churn_int",
+          "b2b_churn_air",
+          "b2b_customer_churn",
+          "b2b_order_log_att"
+        ],
+        "header_label": ""
+      }
+    ]
   }
 ]

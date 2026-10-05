@@ -74,6 +74,10 @@ OFFICE_CITY = {
     "kash": "dfw", "cyrus": "dfw", "carlos": "dfw", "carlos-b2batt": "dfw",
     "ryan": "dfw", "khalil": "dfw", "khalil-nds": "dfw",
     "roshan": "houston", "aya": "indianapolis", "colten": "miami",
+    # Eveliz Wright: same South Shore company as colten -- B2B room
+    # #south-shore-b2b-sales (2026-10-05). eveliz-b2batt is a duplicate
+    # sign-up of the same form; only `eveliz` relays, so only it is listed.
+    "eveliz": "miami",
     "isaiah": "dfw",            # Legacy office, Dallas (office_metrics has him Central)
     "drew": "orlando",          # back 2026-09-28; #precision-management-att-sales
     # ONE key only, on purpose: he enrolled twice (maxamad + maxamad-nds) into
