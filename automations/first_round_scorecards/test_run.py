@@ -311,6 +311,52 @@ class DueTest(unittest.TestCase):
         self.assertFalse(run.due(at(29, 19)))          # already posted today
 
 
+class WatchTest(unittest.TestCase):
+    """Eve's one-day DM about a watched Zoom (Carlos' new one, 10/6)."""
+    EMAIL = "carlosoffice@arsinterviewsservice.com"
+    DAY = dt.date(2026, 10, 6)
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self._saved = (run.LEDGER, run.OUT_DIR, run.WATCH)
+        run.OUT_DIR = Path(tempfile.mkdtemp())
+        run.LEDGER = run.OUT_DIR / "posted.json"
+        run.WATCH = {self.EMAIL: ("la Zoom nueva de Carlos", "2026-10-06")}
+
+    def tearDown(self):
+        run.LEDGER, run.OUT_DIR, run.WATCH = self._saved
+
+    def _carlos(self, rid):
+        return dict(MEETING, recording_id=rid, recorded_by={"name": "Carlos", "email": self.EMAIL})
+
+    def test_counts_only_that_zoom(self):
+        graded = {"Miroslava": [(self._carlos(1), result(), ""), (self._carlos(2), result(), ""),
+                                (self._carlos(3), None, "empty")],
+                  "Valentina": [(MEETING, result(), "")]}
+        text = run.watch_text(self.DAY, graded, self.EMAIL, "la Zoom nueva de Carlos")
+        self.assertIn("2 entrevista(s) auditada(s)", text)
+        self.assertIn("10/6", text)
+
+    def test_nothing_recorded_is_news(self):
+        self.assertIn("0 entrevistas", run.watch_text(self.DAY, {}, self.EMAIL, "x"))
+        ungraded = {"Carlos": [(self._carlos(1), None, "empty")]}
+        self.assertIn("ninguna auditada", run.watch_text(self.DAY, ungraded, self.EMAIL, "x"))
+
+    def test_sent_once_and_only_that_day(self):
+        from unittest import mock
+        from automations.shared import slack_metrics_post as smp
+        client = mock.Mock()
+        client.conversations_open.return_value = {"channel": {"id": "D1"}}
+        with mock.patch.object(smp, "_client", return_value=client):
+            run._watch_dm(dt.date(2026, 10, 5), {})           # not its day
+            self.assertEqual(client.chat_postMessage.call_count, 0)
+            run._watch_dm(self.DAY, {})
+            run._watch_dm(self.DAY, {})                        # a later tick
+        self.assertEqual(client.chat_postMessage.call_count, 1)
+        self.assertEqual(client.chat_postMessage.call_args.kwargs["channel"], "D1")
+
+
 class DocsOnlyTest(unittest.TestCase):
     def test_writes_docs_and_never_touches_slack(self):
         from unittest import mock

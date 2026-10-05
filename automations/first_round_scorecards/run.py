@@ -73,6 +73,14 @@ GRADE_WORKERS = 6
 GRADE_FAILED: List = []                 # recording ids whose grading errored this run
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "first_round_scorecards"
 LEDGER = OUT_DIR / "posted.json"
+# One-day "did it get audited?" DMs to Eve after that day's channel post,
+# {Zoom login: (what to call it, YYYY-MM-DD)}. Sent once (ledger
+# "_watch_sent"), also when the Zoom recorded nothing -- that's the news.
+# Carlos' new Zoom (Camila 2026-10-05, first 1st rounds 10/6): Eve wants to
+# hear it worked without going to look in the channel.
+WATCH = {
+    "carlosoffice@arsinterviewsservice.com": ("la Zoom nueva de Carlos", "2026-10-06"),
+}
 MIN_TRANSCRIPT_LINES = 20           # under this it's a test / empty room, not an interview
 # The scheduled tick (every 30 min, deploy/first_round_scorecards.sh) posts the
 # day once, after the last 1st round slot (3:45 PM CT, Camila 2026-09-22) is
@@ -182,6 +190,42 @@ def _mark_day_done(day: dt.date) -> None:
     if day.isoformat() not in data["_days_done"]:
         data["_days_done"] = (data["_days_done"] + [day.isoformat()])[-60:]
     _save(data)
+
+
+def watch_text(day: dt.date, graded: Dict[str, List], email: str, label: str) -> str:
+    rows = [(m, r) for rs in graded.values() for m, r, _ in rs
+            if ((m.get("recorded_by") or {}).get("email") or "").lower() == email]
+    audited = sum(1 for _, r in rows if r)
+    when = f"{day.month}/{day.day}"
+    if audited:
+        return (f"✅ {label[:1].upper() + label[1:]} ({when}): {audited} entrevista(s) auditada(s), "
+                f"en #ars-recruiting-numbers.")
+    if rows:
+        return (f"⚠️ {label[:1].upper() + label[1:]} ({when}): {len(rows)} grabación(es) pero "
+                "ninguna auditada (muy cortas o no eran entrevistas). Revisar.")
+    return (f"⚠️ {label[:1].upper() + label[1:]} ({when}): 0 entrevistas. Fathom no trajo nada "
+            "de esa cuenta. Revisar con Camila si se grabó.")
+
+
+def _watch_dm(day: dt.date, graded: Dict[str, List]) -> None:
+    """Eve's one-time DM for each WATCH Zoom whose day this is."""
+    sent = _ledger().get("_watch_sent", [])
+    for email, (label, on) in WATCH.items():
+        tag = f"{email} {on}"
+        if on != day.isoformat() or tag in sent:
+            continue
+        text = watch_text(day, graded, email, label)
+        try:
+            from automations.shared import slack_metrics_post as smp
+            client = smp._client()
+            client.chat_postMessage(channel=_dm_channel(client), text=text)
+        except Exception as exc:  # noqa: BLE001
+            print(f"WATCH DM FAILED {type(exc).__name__}: {exc}")
+            continue
+        print(f"WATCH DM: {text}")
+        data = _ledger()
+        data["_watch_sent"] = (data.get("_watch_sent", []) + [tag])[-60:]
+        _save(data)
 
 
 def due(now: dt.datetime) -> bool:
@@ -374,6 +418,7 @@ def main(argv=None) -> int:
         print("no 1st round to post (none recorded, or all already posted)")
         if live:
             _mark_day_done(day)
+            _watch_dm(day, {})
         return 0
     for name, rows in graded.items():
         print(f"\n=== {thread_title(name)} ({len(rows)}) ===")
@@ -403,6 +448,7 @@ def main(argv=None) -> int:
         rc = 1
     if live and rc == 0:
         _mark_day_done(day)
+        _watch_dm(day, graded)
     if live:
         # the week's board reads the docs just written; a board failure must
         # not hold the post (it's rebuilt whole on the next run)
