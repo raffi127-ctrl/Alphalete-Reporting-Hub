@@ -1182,6 +1182,7 @@ class OneLinkThatDoesWhateverIsMissing(unittest.TestCase):
              mock.patch.object(self.F, "_boot_job", lambda log: "already done"), \
              mock.patch.object(self.F, "_never_sleeps", lambda log: "done"), \
              mock.patch.object(self.F, "_saraplus", lambda log: "already working"), \
+             mock.patch.object(self.F, "_resume_push", lambda log: "not wanted"), \
              mock.patch.object(self.F, "_service_cloud",
                                lambda log: "not needed for this office"):
             rc = self.F.run(log=said.append)
@@ -1200,6 +1201,7 @@ class OneLinkThatDoesWhateverIsMissing(unittest.TestCase):
              mock.patch.object(self.F, "_boot_job", boom), \
              mock.patch.object(self.F, "_never_sleeps", lambda log: "done"), \
              mock.patch.object(self.F, "_saraplus", lambda log: "already working"), \
+             mock.patch.object(self.F, "_resume_push", lambda log: "not wanted"), \
              mock.patch.object(self.F, "_service_cloud",
                                lambda log: reached.append(1) or "done"):
             rc = self.F.run(log=lambda *_a: None)
@@ -1212,6 +1214,7 @@ class OneLinkThatDoesWhateverIsMissing(unittest.TestCase):
              mock.patch.object(self.F, "_boot_job", lambda log: "skipped"), \
              mock.patch.object(self.F, "_never_sleeps", lambda log: "done"), \
              mock.patch.object(self.F, "_saraplus", lambda log: "already working"), \
+             mock.patch.object(self.F, "_resume_push", lambda log: "not wanted"), \
              mock.patch.object(self.F, "_service_cloud", lambda log: "done"):
             rc = self.F.run(log=said.append)
         self.assertEqual(rc, 1)

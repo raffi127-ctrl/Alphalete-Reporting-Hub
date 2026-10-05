@@ -292,6 +292,17 @@ def appstream_creds() -> Dict[str, str]:
     return {"username": data["username"], "password": data["password"]}
 
 
+def save_appstream_creds(username: str, password: str) -> Path:
+    app_dir()
+    AS_CREDS_PATH.write_text(json.dumps({"username": username,
+                                         "password": password}))
+    try:
+        AS_CREDS_PATH.chmod(0o600)
+    except OSError:
+        pass
+    return AS_CREDS_PATH
+
+
 def install() -> Dict:
     """THE FIRST enrollment on this machine. Kept for everything that still
     thinks one computer means one office -- which was true until an ICD ran

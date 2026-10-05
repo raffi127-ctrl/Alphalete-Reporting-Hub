@@ -560,6 +560,15 @@ def main(argv=None) -> int:
         except Exception as e:  # noqa: BLE001 — never lose a sweep to this
             _log("sales catch-up skipped: %s" % type(e).__name__)
 
+        # RESUME PUSHING, for an office that asked for it. Its own hours
+        # (7am-10pm, every day) and its own process, so it goes ahead of the
+        # gate and never holds up a sweep (Carlos 2026-10-05).
+        try:
+            from automations.icd_alerts import resume_push
+            resume_push.maybe_kick(log=_log)
+        except Exception as e:  # noqa: BLE001 — never lose a sweep to this
+            _log("resume push skipped: %s" % type(e).__name__)
+
         alerting = C.in_selling_window()
         # Sales read noon to midnight every day; alerts keep their own hours.
         # Outside BOTH, nothing to do.

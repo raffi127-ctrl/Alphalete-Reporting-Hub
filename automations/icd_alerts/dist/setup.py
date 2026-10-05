@@ -533,6 +533,35 @@ def appstream_until_it_works(attempts=2):
     return False
 
 
+def resume_helper_ready() -> bool:
+    """Resume Helper into LUCY'S Chrome, then a dry run to prove the push can
+    see their resumes. Their own Chrome having the extension does nothing for
+    Lucy: an extension belongs to one browser profile, and hers is separate.
+    """
+    say("      Lucy's Chrome needs the Resume Helper extension once.")
+    say("      Click 'Add to Chrome' in the window that opens.")
+    proc = subprocess.run(
+        [str(venv_python()), "-m", "automations.icd_alerts.resume_push",
+         "--setup"], cwd=str(APP_DIR))
+    if proc.returncode != 0:
+        say("      Resume Helper was not added -- run this again to retry.")
+        return False
+    say("      checking Lucy can see your resumes (nothing is sent)...")
+    proc = subprocess.run(
+        [str(venv_python()), "-m", "automations.icd_alerts.resume_push"],
+        cwd=str(APP_DIR), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    lines = [l.strip() for l in proc.stdout.decode("utf-8", "replace")
+             .splitlines() if l.strip()]
+    if proc.returncode == 0:
+        say("      " + (lines[-1] if lines else "it can."))
+        say("      from now on it pushes every 10 minutes, 7am to 10pm, in")
+        say("      the background -- click Lucy's Chrome in the Dock to watch.")
+        return True
+    for line in lines[-2:]:
+        say("      " + line)
+    return False
+
+
 def login_until_it_works(attempts=3):
     """Ask, check against the real SaraPlus, and offer another go on a typo.
 
@@ -1171,6 +1200,11 @@ def install_problems(awake=None):
     if wants_push and not (CONFIG_DIR / "appstream-creds.json").exists():
         notes.append("no AppStream login, so Lucy cannot push resumes from "
                      "this computer yet")
+    elif wants_push and not (CONFIG_DIR / "chrome-profile-as" / "Default"
+                             / "Extensions"
+                             / "goofbdglmeckblcbcoffnkdnmpehhhmo").is_dir():
+        notes.append("Resume Helper is not added to Lucy's Chrome, so resumes "
+                     "cannot be pushed yet")
     if not (CONFIG_DIR / "install.json").exists():
         blocking.append("this office's settings were never written")
     if awake and not awake.get("never_sleeps"):
@@ -1259,6 +1293,8 @@ def main() -> int:
     as_ok = None
     if ask_about_resume_pushing():
         as_ok = appstream_until_it_works()
+        if as_ok:
+            as_ok = resume_helper_ready()
 
     step(7, total, "Where your alerts should go")
     ask_for_ov_name()
@@ -1333,8 +1369,8 @@ def main() -> int:
             notes.append("the OwnerVille login did not work, so the knocks "
                          "board will not post yet")
         if as_ok is False and (CONFIG_DIR / "appstream-creds.json").exists():
-            notes.append("the AppStream login did not work, so Lucy cannot "
-                         "push resumes from this computer yet")
+            notes.append("resume pushing is not working yet -- run this "
+                         "again to finish it")
         if blocking:
             # NOT "ALL SET". This office cannot report anything, and telling
             # them otherwise is how one waits a week for a board that was
@@ -1381,10 +1417,10 @@ def main() -> int:
                      "Credit-check alerts are working. The OwnerVille login "
                      "failed, so no knocks/dispositions board will post.")
     if ok and as_ok is False:
-        report_fault("install", "AppStream did not verify during setup",
+        report_fault("install", "resume pushing did not verify during setup",
                      "The office asked for resume pushing on this machine, "
-                     "but its AppStream login did not reach the office "
-                     "console. Nothing else is affected.")
+                     "but its AppStream login, Resume Helper or the dry run "
+                     "did not check out. Nothing else is affected.")
 
     ask.message(done, error=not ok)
     return 0 if ok else 1

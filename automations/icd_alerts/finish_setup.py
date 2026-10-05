@@ -20,6 +20,7 @@ it does whatever that machine is missing, today or in a year:
   * takes a new SaraPlus password, if that account has rotated one
   * signs into My Service Cloud, if this office sells Box and the session
     has gone
+  * sets up resume pushing, if this office wants Lucy to push from here
 
 EVERY STEP IS SKIPPED WHEN IT IS ALREADY DONE, and says so. A machine that is
 fully set up prints four lines and exits -- so it is safe to send to somebody
@@ -184,6 +185,57 @@ def _service_cloud(log) -> str:
     return "done" if box_signin.run(log=log) == 0 else "still needs signing in"
 
 
+def _resume_push(log) -> str:
+    """Resume pushing from this computer (Carlos 2026-10-05). Asked ONCE per
+    machine; a NO is remembered, a YES gets its login, sign-in and Resume
+    Helper checked every time this runs."""
+    try:
+        from automations.icd_alerts import resume_push as RP
+        from automations.icd_alerts import dialogs as ask
+    except Exception:  # noqa: BLE001 — older copy, update failed
+        return "not available yet"
+    rows = C.enrollments()
+    if not rows:
+        return "not needed for this office"
+    if not RP.push_record():
+        if all(r.get("push_resumes") is False for r in rows):
+            return "not wanted"
+        try:
+            yes = ask.choose(
+                "Do you want Lucy to push your resumes (send applicants to "
+                "the AI call list) from this computer?",
+                ["Yes, push my resumes from this computer", "No"]
+            ).startswith("Yes")
+        except ask.Cancelled:
+            return "skipped"
+        for r in rows:
+            r["push_resumes"] = yes if r is rows[0] else False
+            C.add_enrollment(r)
+        if not yes:
+            return "not wanted"
+    if not C.appstream_creds():
+        try:
+            user = ask.text("Your AppStream username (type it exactly, "
+                            "spaces and all):").strip()
+            pwd = ask.password("Your AppStream password:")
+        except ask.Cancelled:
+            return "skipped — needs your AppStream login"
+        if not (user and pwd):
+            return "skipped — needs your AppStream login"
+        C.save_appstream_creds(user, pwd)
+    log("")
+    log("  Checking your AppStream sign-in (about a minute).")
+    if RP.check_login(log=log) != 0:
+        return "still needs signing in"
+    if not RP.extension_installed():
+        log("")
+        log("  Lucy's Chrome needs the Resume Helper extension once.")
+        log("  Click 'Add to Chrome' in the window that opens.")
+        if not RP.setup_extension(log=log):
+            return "still needs Resume Helper added"
+    return "done"
+
+
 def run(log=print) -> int:
     log("")
     log("  Getting this computer fully set up. Anything already done is")
@@ -194,7 +246,8 @@ def run(log=print) -> int:
                    ("Starts on its own", _boot_job),
                    ("Never sleeps", _never_sleeps),
                    ("SaraPlus sign-in", _saraplus),
-                   ("Box sales sign-in", _service_cloud)]
+                   ("Box sales sign-in", _service_cloud),
+                   ("Resume pushing", _resume_push)]
     results = []
     for name, fn in steps:
         try:

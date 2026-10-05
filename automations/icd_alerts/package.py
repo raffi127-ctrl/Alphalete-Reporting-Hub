@@ -73,6 +73,8 @@ AGENT_FILES = [
     # Resume pushing on the office's own machine: the installer's AppStream
     # check runs it, so it has to be there when setup.py is.
     "automations/icd_alerts/as_signin.py",
+    "automations/icd_alerts/resume_push.py",
+    "automations/icd_alerts/push_batch.py",
     "automations/icd_alerts/watchdog.py",
     "automations/icd_alerts/presence.py",
     "automations/icd_alerts/autoprompt.py",
