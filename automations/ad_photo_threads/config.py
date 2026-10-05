@@ -309,6 +309,7 @@ _LIVE = {
     "cyrus",                           # 9/25: re-posted, 9 threads, 0 loose
     "aya",                             # 9/25: re-posted, 9 threads, 0 loose, Eastern
     "nii",                             # 9/30: 9/14-9/30 loaded, 17 threads, 0 loose, Eastern
+    "eveliz",                          # 10/5: 10/1-10/2 loaded, 8 threads pinned, 0 loose, Eastern
 }
 
 # Spellings an office confirmed are one ad, {typed title: the ad's title}.
