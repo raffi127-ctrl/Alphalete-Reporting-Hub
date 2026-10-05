@@ -317,7 +317,8 @@ consistent house style you merely would have designed differently.
 Report blockers (would refuse to send) and minors (would mention but still \
 send). ok = true when there are no blockers. Refer to images by their number \
 and name the section they sit under. Be concrete: "Cancel Rate box ends on \
-10/3, no 10/4 column", not "dates look off"."""
+10/3, no 10/4 column", not "dates look off". Write every section name and \
+problem in English, short (one sentence each) — they are posted to Slack as is."""
 
 
 def _api_client():

@@ -1117,12 +1117,18 @@ def auto_check(today: dt.date, blocks: Sequence["config.Block"],
     # Una falla aguas arriba (un modulo de la cadena de la manana) ya alerto por
     # su lado y no se arregla re-armando el draft: frena a quien toca.
     upstream: Dict[str, str] = {}
-    hit, why = scope_today(today)
+    # The reason goes to Slack, so it is built here in English from the report
+    # ids — scope_today's own `why` is a Spanish log line (Eve 2026-10-05:
+    # "que llegue en inglés los avisos").
+    hit, _why = scope_today(today)
+    ids = wr.blocking_reports([REPORT_ID], today,
+                              own_ids=[REPORT_ID, "captainship_drafts"]) or []
+    names = ", ".join(f"`{i}`" for i in ids) or "a report in the chain"
     if hit is None:
-        upstream = {k: f"could not verify this morning's chain ({why})"
-                    for k in keys}
+        upstream = {k: (f"could not verify this morning's report chain "
+                        f"({names} failed or left no trace)") for k in keys}
     elif hit:
-        upstream = {k: f"an upstream report failed today ({why})"
+        upstream = {k: f"a report this email depends on failed today ({names})"
                     for k in hit if k in keys}
 
     verdicts = A.judge(today, keys, state=state, upstream_held=upstream,

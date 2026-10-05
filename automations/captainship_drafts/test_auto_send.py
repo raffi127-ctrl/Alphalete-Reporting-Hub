@@ -291,6 +291,18 @@ class TestGateFlow(Base):
         self.assertEqual(len(self.alerts), 1)
         self.assertEqual(list(self.alerts[0]), [self.fiber])
 
+    def test_upstream_reason_reaches_slack_in_english(self):
+        _write_eml(self.tmp, self.fiber)
+        with mock.patch.object(self.rg, "scope_today",
+                               lambda *_a, **_k: ({self.fiber},
+                                                  "fallo sin decir que parte")), \
+                mock.patch.object(self.rg.wr, "blocking_reports",
+                                  lambda *_a, **_k: ["captainship_knocks"]):
+            self._run([self.fiber])
+        reason = self.alerts[0][self.fiber][1][0]
+        self.assertIn("captainship_knocks", reason)
+        self.assertNotIn("fallo", reason)
+
     def test_failed_send_is_held_not_locked(self):
         _write_eml(self.tmp, self.b2b)
         self.fail_send = {self.b2b}
