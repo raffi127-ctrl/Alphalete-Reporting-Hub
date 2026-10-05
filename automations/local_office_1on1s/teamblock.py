@@ -91,13 +91,26 @@ def sales_totals(member_names, wsales, active_reps: int = 0) -> Dict[str, str]:
     """
     from automations.local_office_1on1s import sales as SA
     out: Dict[str, str] = {}
-    for label, measure in [("New INTS", "INT"), ("Upgrades", "INT UP"),
-                           ("DTV's", "DTV"), ("Wireless Lines", "NL"),
-                           ("Total Apps", "APPS")]:
+    # THE BOARD RENAMES ITS OWN COLUMNS, so ask for every spelling sales.SALES
+    # knows rather than one hardcoded string. WE 9.27 called the apps column
+    # 'APPS' and WE 10.4 calls it 'Total Apps'; this asked for 'APPS' only, so
+    # the newest week summed nothing and the team's 'Total Apps' row went blank
+    # — taking 'App AVG per rep' with it, since that divides this number. The
+    # per-person path never broke because cells_for already reads the list.
+    # [[feedback_no_hardcoded_columns]]
+    for label, sales_key in [("New INTS", "New INT"), ("Upgrades", "Upgrades"),
+                             ("DTV's", "DTV's"),
+                             ("Wireless Lines", "Wireless Lines"),
+                             ("Total Apps", "Total Apps")]:
         got = []
         for n in member_names:
-            v = wsales.get(n, measure)
-            if v is None or v == "-":
+            v = None
+            for _m in SA.SALES[sales_key]:
+                _v = wsales.get(n, _m)
+                if _v is not None and _v != "-":
+                    v = _v
+                    break
+            if v is None:
                 continue
             try:
                 got.append(float(str(v).replace(",", "")))

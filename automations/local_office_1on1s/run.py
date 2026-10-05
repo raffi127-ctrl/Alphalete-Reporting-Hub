@@ -581,36 +581,29 @@ def main(argv=None) -> int:
 
             # products + knocks, per week
             for wk, (wsales, wdays) in weekly.items():
-                for lab, val, src in SA.cells_for(name, wsales):
-                    filled.add(lab, wk, val, src)
-
                 # ON THE BOARD WITH NOTHING SOLD READS 0; NO BOARD ROW READS
                 # A DASH. Megan 2026-10-02, in three steps: "should have 0 if
                 # no sales", then "sales that are 0 ... should be 0 for
                 # everyone", then "no, if they don't have a board row it should
-                # have a dash".
+                # have a dash". A 0 is a measurement — they were on the board
+                # and sold nothing. A dash is the absence of one.
                 #
-                # The two cases are genuinely different and the sheet now says
-                # which is which. A 0 is a measurement: they were on the board
-                # and sold nothing. A dash is the absence of one: there is no
-                # row to read. Keegan Miller, Hank Tran, Ciniya Weatherspoon
-                # and Andres Mejia have no row in early August because they had
-                # not started yet, and Algemar Kennel is on the board once in
-                # nine weeks — a 0 in those cells would be a performance figure
-                # for a week nobody measured. Blank was no better: it is what an
-                # unfilled cell looks like, so it read as "the report failed".
-                #
-                # No exception for terminated weeks: a dash is not a claim
-                # about performance, so it stays true after somebody leaves.
-                #
-                # Written before the real figures so an actual board number
-                # overwrites either mark.
+                # THIS RUNS BEFORE cells_for, AND THE ORDER IS THE WHOLE POINT.
+                # `have` keeps the LAST write for a cell, so when this block sat
+                # after cells_for it overwrote every real figure with 0 and the
+                # sheet read zero sales for everybody who had a board row.
+                # Noemi Ontiveros showed 0 across ten weeks while the WE 9.27
+                # board had her at New INT 2, Wireless 4, Total Apps 6. These
+                # are placeholders; the real numbers must land on top of them.
                 _on_board = wdays.get(PEO.key(name)) is not None
                 for lab in SA.SALES:
                     filled.add(lab, wk, "0" if _on_board else F.NONE_MARK,
                                f"on the WE {wk:%-m/%-d} board with no {lab} "
                                f"— none sold" if _on_board else
                                f"no WE {wk:%-m/%-d} board row — nothing to count")
+
+                for lab, val, src in SA.cells_for(name, wsales):
+                    filled.add(lab, wk, val, src)
 
                 # BOARD FIRST, THEN OWNERVILLE ON TOP. Ownerville is the better
                 # source and wins every row it produces (later writes take the
