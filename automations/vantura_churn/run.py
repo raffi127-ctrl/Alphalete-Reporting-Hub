@@ -170,13 +170,17 @@ def _activation_cfg():
                     "Atef EXP 2", "SABRINA ALICEA"),
         # EVELIZ -- her own captainship ("Eveliz's Team" in B2B Captain's
         # Teams (SFDC), the same filter captainship_drafts slices her §2 on),
-        # so neither Carlos's nor Atef's saved view carries her. The base
-        # ACTIVATIONRATES view sliced to her team by URL. UNVERIFIED until
-        # `--dump-rep-grid eveliz` on Lucy 2 lists EVELIZ WRIGHT.
+        # so neither Carlos's nor Atef's saved view carries her. EvelizEXP
+        # (Eve, 2026-10-05, saved as Rafael) -- REPLACES the base
+        # ACTIVATIONRATES view sliced by URL, which fell back to the default
+        # dashboard with no 'Activation Office' worksheet and left her E5/F5 +
+        # AE:AF blank on the first staged run. Eve confirmed EVELIZ WRIGHT shows
+        # in the view's grid; other owners in her team are dropped in code by
+        # the prefix. Still UNVERIFIED until `--dump-rep-grid eveliz` on Lucy 2.
         "eveliz": ("https://us-east-1.online.tableau.com/#/site/sci/views/"
-                   "ATTTRACKER-B2B/ACTIVATIONRATES"
-                   "?B2B%20Captain%27s%20Teams%20(SFDC)=Eveliz%27s%20Team",
-                   "", "EVELIZ WRIGHT"),
+                   "ATTTRACKER-B2B/ACTIVATIONRATES/"
+                   "009740e6-6f85-4f81-b037-9e600fd82d25/EvelizEXP?:iid=1",
+                   "EvelizEXP", "EVELIZ WRIGHT"),
     }
 
 
