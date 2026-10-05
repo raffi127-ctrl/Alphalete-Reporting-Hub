@@ -559,6 +559,40 @@ def main(argv=None) -> int:
                                    f"{tsh}/{ts}",
                                    f"OBCL week of {wk:%-m/%-d}: whole team")
 
+                    # THE HEAD'S RETENTION IS THE TEAM'S, like the row above it.
+                    # Megan 2026-10-05, of a team box reading 7/10, 3/9, 5/13
+                    # with a dash beside it: "new start retention % should be
+                    # filled in here". It was computed from the reps the HEAD
+                    # personally trained — nobody, for a head who does not take
+                    # the classroom — so it dashed every week while the team
+                    # plainly had new starts. On this box the recruiting rows
+                    # are team-wide, and this one has to match the numerator it
+                    # sits under: of the new starts who SHOWED, how many are
+                    # still here. Raf's own words — "if seven sins is training
+                    # 7 people this week, how many of those people are still
+                    # around, that's the new start retention."
+                    _shown = []
+                    for who in [rost.head] + list(rost.leaders):
+                        _n = OB.showed_for_week(
+                            obcl, wk, who,
+                            on_board=lambda n, _b=_blk: PEO.key(n) in _b)
+                        if _n:
+                            _shown.extend(_n)
+                    if _shown:
+                        _still = [w for w in _shown
+                                  if not _terminated_on_or_before(w, wk)]
+                        filled.add(F.RETENTION_ROW, wk,
+                                   f"{round(100 * len(_still) / len(_shown))}%",
+                                   f"OBCL week of {wk:%-m/%-d}: {len(_still)} of "
+                                   f"{len(_shown)} new starts who showed are not "
+                                   f"in the terminated log")
+                    elif any_:
+                        # Scheduled somebody, none of them showed. 0%, not a
+                        # dash: there WAS something to keep and none was kept.
+                        filled.add(F.RETENTION_ROW, wk, "0%",
+                                   f"OBCL week of {wk:%-m/%-d}: new starts "
+                                   f"scheduled, none showed")
+
             # NEW STARTS, WEEKLY, AFTER the monthly block so these win the
             # cell. Only these two rows move to the OBCL: it holds a row per
             # person who was SCHEDULED, so it cannot count second rounds that

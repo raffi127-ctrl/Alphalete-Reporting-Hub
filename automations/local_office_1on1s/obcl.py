@@ -215,6 +215,32 @@ def tally(week_rows, on_board=None):
     return sched, showed
 
 
+def showed_names(week_rows, on_board=None) -> List[str]:
+    """The NAMES behind tally()'s `showed` count, same rule exactly.
+
+    Needed because a retention rate is a question about PEOPLE — how many of
+    the ones who showed are still here — and a count cannot answer it.
+    """
+    out: List[str] = []
+    for r in week_rows:
+        if r["status"] in NOT_SHOWED:
+            continue
+        hit = (r["status"] in SHOWED_STATUSES
+               or (on_board is not None and r["name"] and on_board(r["name"])))
+        if hit and r["name"]:
+            out.append(r["name"])
+    return out
+
+
+def showed_for_week(data, week_ending: dt.date, leader: str, on_board=None):
+    """showed_names() for one leader in the week ENDING `week_ending`."""
+    key = PEO.key(leader)
+    for d, wk in data.items():
+        if 0 <= (week_ending - d).days <= 6 and key in wk:
+            return showed_names(wk[key], on_board=on_board)
+    return None
+
+
 def for_week(data, week_ending: dt.date, leader: str, on_board=None):
     """(scheduled, showed) for one leader in the week ENDING `week_ending`.
 
