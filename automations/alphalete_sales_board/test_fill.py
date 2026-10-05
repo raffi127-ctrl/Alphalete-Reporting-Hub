@@ -59,11 +59,44 @@ def test_a_number_is_never_blanked():
     assert any("no se borra" in n or "NO se borra" in n for n in notes), notes
 
 
-def test_roll_call_status_is_never_overwritten():
-    grid = _grid([_row("Jane Doe", mon=("X", "X", "", "", ""))])
+def test_a_letter_other_than_x_is_never_overwritten():
+    # T (terminated), RT (road trips are not counted) ... still block a sale.
+    for letter in ("T", "RT", "CR"):
+        grid = _grid([_row("Jane Doe", mon=("", letter, "", "", ""))])
+        ups, notes = fill.plan(grid, MONDAY,
+                               [{"board_name": "Jane Doe",
+                                 "metrics": {"Int": 3, "Int Up": 0, "DTV": 0, "NL": 0}}])
+        assert ups == [], (letter, ups)
+        assert any("roll-call status" in n for n in notes), notes
+
+
+def test_a_sale_overrides_an_x():
+    # Raf's Loom 2026-10-05: Safiya Mahmoud, Thu 10/1 -- Int cell 'x', SaraPlus
+    # and Tableau both show 1 Int + 1 Video. The source wins: X cleared, sale in.
+    grid = _grid([_row("Jane Doe", mon=("", "x", "", "", ""))])
     ups, notes = fill.plan(grid, MONDAY,
                            [{"board_name": "Jane Doe",
-                             "metrics": {"Int": 3, "Int Up": 0, "DTV": 0, "NL": 0}}])
+                             "metrics": {"Int": 1, "Int Up": 0, "DTV": 1, "NL": 0}}])
+    got = {u["range"]: u["values"][0][0] for u in ups}
+    assert got == {"E4": "1", "G4": "1"}, got
+    assert any("X cleared" in n for n in notes), notes
+
+
+def test_the_x_is_cleared_even_from_a_cell_that_gets_no_sale():
+    # X typed in NL, the sale is an Int: the X goes, so the day reads as worked.
+    grid = _grid([_row("Jane Doe", mon=("", "", "", "", "X"))])
+    ups, _ = fill.plan(grid, MONDAY,
+                       [{"board_name": "Jane Doe",
+                         "metrics": {"Int": 2, "Int Up": 0, "DTV": 0, "NL": 0}}])
+    got = {u["range"]: u["values"][0][0] for u in ups}
+    assert got == {"E4": "2", "H4": ""}, got
+
+
+def test_an_x_with_no_sale_stays():
+    grid = _grid([_row("Jane Doe", mon=("", "X", "", "", ""))])
+    ups, notes = fill.plan(grid, MONDAY,
+                           [{"board_name": "Jane Doe",
+                             "metrics": {"Int": 0, "Int Up": 0, "DTV": 0, "NL": 0}}])
     assert ups == [], ups
     assert any("roll-call status" in n for n in notes), notes
 

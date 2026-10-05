@@ -164,11 +164,27 @@ def plan_day(grid, row: int, cols: Dict[str, int], wanted: Dict[str, int],
     current = {m: cell(grid, row, c).strip() for m, c in cols.items()}
 
     status = {m: v for m, v in current.items() if is_status(v)}
+    # A SALE BEATS AN X (Raf, Loom 2026-10-05). SaraPlus / Tableau are the
+    # truth; an X is a person's guess that the rep was off. Sophia sold an Int
+    # and a DTV on Thu 10/1 under an X and the board never showed it. So when
+    # the ONLY letters on the day are plain X and the source shows a sale, the
+    # X cells are cleared and the sale goes in -- the same call sale_transfers
+    # already makes for a moved sale (Eve 2026-09-27). Every OTHER letter still
+    # blocks: T (terminated), RT (road trips are not counted), CR, STF ...
+    cleared_x = set()
     if status:
-        notes.append("day carries roll-call status "
-                     + ", ".join(f"{m}={v!r}" for m, v in sorted(status.items()))
-                     + " -- left alone")
-        return [], notes
+        only_x = all(v.upper() == "X" for v in status.values())
+        sold = any(wanted.get(m, 0) for m in cols)
+        if not (only_x and sold):
+            notes.append("day carries roll-call status "
+                         + ", ".join(f"{m}={v!r}" for m, v in sorted(status.items()))
+                         + " -- left alone")
+            return [], notes
+        notes.append("day was marked X but the source shows a sale -- X "
+                     "cleared, sale written (SaraPlus/Tableau win over the X)")
+        cleared_x = set(status)
+        for m in cleared_x:
+            current[m] = ""
 
     filled = {m: v for m, v in current.items() if v}
     if filled and not overwrite:
@@ -187,6 +203,9 @@ def plan_day(grid, row: int, cols: Dict[str, int], wanted: Dict[str, int],
         cur = current[metric]
         new = wanted.get(metric, 0)
         new_s = str(new) if new else ""
+        if metric in cleared_x:
+            writes.append((metric, col, "X", new_s))
+            continue
         if cur == new_s:
             continue
         if cur and not cur.isdigit():
