@@ -268,6 +268,12 @@ _MORE = [
      "C0AU9JBCJGK", "C0C3ZJ7FNDP", r"first\s*round\s*thread"),
     ("colten", "Colten Wright", SOUTH_SHORE, "Colten Wright", "14733", "Colten Wright",
      "C0AUAPMEF37", "C0C3ZJ7FTH7", r"first\s*round\s*thread"),
+    # Eveliz Wright (Eve 10/5): her own recruiting room
+    # #eveliz-wright-office-recruiting-18404 started 10/1 with the same
+    # "FIRST ROUND THREAD: mm/dd" thread as Colten; interviewers Diana,
+    # Romina, Lucia F. (ARS). Photos channel created by Eve 10/5.
+    ("eveliz", "Eveliz Wright", SOUTH_SHORE, "Eveliz Wright", "18404", "Eveliz Wright",
+     "C0C5TPWLR2R", "C0C6VCLRAUS", r"first\s*round\s*thread"),
 ]
 
 # Zones the office_tz table (knocks, by owner name) can't place, cross-checked
@@ -276,6 +282,7 @@ _MORE = [
 _TZ = {
     "salik": "America/Detroit",        # Southfield, MI (office_metrics; knocks spells him "Salik Mallick")
     "samuel": "America/New_York",      # ads: Orlando / Kissimmee / Ocoee, FL
+    "eveliz": "America/New_York",      # South Shore, Miami (her Eco sign-up)
     "atef": "America/Denver",          # ads: Denver / Lakewood / Aurora, CO
     "roshan": "America/Chicago",       # ads: Houston / League City, TX
     "ryan": "America/Chicago",         # ads: Arlington / Plano / Dallas, TX
