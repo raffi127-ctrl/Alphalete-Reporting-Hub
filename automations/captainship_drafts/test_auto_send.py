@@ -42,7 +42,7 @@ def _clean_visual(_today, _key):
     return {"ok": True, "issues": []}
 
 
-def _no_tableau():
+def _no_tableau(_today=None):
     return {}, {}, []
 
 
@@ -99,7 +99,7 @@ class TestJudge(Base):
     def test_stale_tracker_holds_only_that_flavor(self):
         _write_eml(self.tmp, self.fiber)
         _write_eml(self.tmp, self.b2b)
-        tab = lambda: ({"tableau:tracker_att": "only through 10/4"}, {}, [])
+        tab = lambda _t: ({"tableau:tracker_att": "only through 10/4"}, {}, [])
         out = A.judge(DAY, [self.fiber, self.b2b], state={},
                       visual=_clean_visual, tableau=tab, verbose=False)
         self.assertTrue(out[self.fiber].blocked)
@@ -108,7 +108,7 @@ class TestJudge(Base):
 
     def test_tracker_caught_up_rebuilds_once(self):
         _write_eml(self.tmp, self.fiber)
-        tab = lambda: ({}, {"tableau:tracker_att": "fresh"}, [])
+        tab = lambda _t: ({}, {"tableau:tracker_att": "fresh"}, [])
         state = {}
         v = A.judge(DAY, [self.fiber], state=state, visual=_clean_visual,
                     tableau=tab, verbose=False)[self.fiber]
@@ -120,7 +120,7 @@ class TestJudge(Base):
 
     def test_frozen_source_hit_by_captainship_holds(self):
         _write_eml(self.tmp, self.b2b)
-        tab = lambda: ({}, {}, ["OrderLog → Sheet (data only through 10/2)"])
+        tab = lambda _t: ({}, {}, ["OrderLog → Sheet (data only through 10/2)"])
         v = A.judge(DAY, [self.b2b], state={}, visual=_clean_visual,
                     tableau=tab, verbose=False)[self.b2b]
         self.assertTrue(v.blocked)
@@ -282,7 +282,7 @@ class TestGateFlow(Base):
     def test_held_gets_link_note_and_one_alert(self):
         _write_eml(self.tmp, self.fiber)
         _write_eml(self.tmp, self.b2b)
-        tab = lambda: ({"tableau:tracker_att": "behind"}, {}, [])
+        tab = lambda _t: ({"tableau:tracker_att": "behind"}, {}, [])
         rc = self._run([self.fiber, self.b2b], tab=tab, ticks=2)
         self.assertEqual(rc, 1)
         self.assertEqual(self.sent, [self.b2b])

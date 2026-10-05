@@ -456,7 +456,7 @@ def judge(today: dt.date, keys: Sequence[str], *, state: dict,
     La revisión visual se guarda por huella del .eml en `state['visual']`: el
     chequeo corre cada 15 minutos y el mismo draft no se vuelve a mandar a la API.
     Un draft re-armado cambia de huella y se revisa de nuevo."""
-    stale, recovered, sources = tableau()
+    stale, recovered, sources = tableau(today)
     vis_cache = state.setdefault("visual", {})
     rebuilt = state.setdefault("rebuilds", {})
     tableau_rebuilt = set(state.setdefault("tableau_rebuilt", []))
