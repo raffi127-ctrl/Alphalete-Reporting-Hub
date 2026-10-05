@@ -264,49 +264,70 @@ def _quality_crosstabs(page, wanted, log):
 
 
 def collect_computed(page, today, log=print):
-    """-> (values, goals) for every computed b2b manager, CURRENT week only.
-    goals is always [] — b2b goals are typed on the org sheet now. History
-    already in the Campaign Log stays put: upserts never delete."""
-    from pathlib import Path as _P
-
-    from automations.att_order_log.run import _fetch_csv
+    """-> (values, goals) for every computed b2b manager: the CURRENT week,
+    plus — on Mondays — the week that just closed (Mon-Sun), re-counted in
+    full so Sunday's sales land in it (Eve 2026-10-05: the Focus Report's
+    closed week must carry the whole week, not whatever the last weekend
+    stamp saw). goals is always [] — b2b goals are typed on the org sheet
+    now. History already in the Campaign Log stays put: upserts never delete."""
     from automations.org_campaign_metrics.run import week_sunday
 
     monday = today - _dt.timedelta(days=today.weekday())
     upto = min(today, monday + _dt.timedelta(days=6))
-    week_iso = week_sunday(today).isoformat()
 
     managers = _managers()
     for mgr in [m for m in managers if L.MANAGER_CAMPAIGN.get(m) != "b2b_att"]:
         log("  [b2b] %s has a board but no b2b_att mapping in layout.py — skipped"
             % mgr)
         managers.pop(mgr)
+    wanted = set(managers.values())
+
+    values = []
+    if today.weekday() == 0:
+        prev_mon = monday - _dt.timedelta(days=7)
+        prev_sun = monday - _dt.timedelta(days=1)
+        per = _orderlog_per_owner(page, prev_mon, prev_sun, wanted, log)
+        values += _to_values(managers, per or {}, {}, prev_sun.isoformat(),
+                             "closed wk", log)
+
+    per = _orderlog_per_owner(page, monday, upto, wanted, log)
+    if per is None:
+        return values, []
+    per_q = _quality_crosstabs(page, wanted, log)
+    values += _to_values(managers, per, per_q, week_sunday(today).isoformat(),
+                         "current", log)
+    return values, []
+
+
+def _orderlog_per_owner(page, monday, upto, wanted, log):
+    """ORDERLOG export for monday..upto, tallied per owner. None = Monday's
+    current week with no rows yet (Tableau answers 200 with a 1-byte body):
+    "no sales this week yet", not an outage. Any other empty export raises."""
+    from pathlib import Path as _P
+
+    from automations.att_order_log.run import _fetch_csv
 
     out_dir = _P(__file__).resolve().parents[2] / "output" / "org_campaign_metrics"
     out_dir.mkdir(parents=True, exist_ok=True)
-    dest = out_dir / ("b2b_orderlog_%s.csv" % today.isoformat())
+    dest = out_dir / ("b2b_orderlog_%s_%s.csv"
+                      % (monday.isoformat(), upto.isoformat()))
     if not dest.exists() or dest.stat().st_size < 1000:
         try:
             body = _fetch_csv(page, ORDERLOG_CSV % (monday.isoformat(), upto.isoformat()),
                               log=log)
         except RuntimeError as e:
-            # Monday the window is today-only, and the ORDERLOG has no rows for
-            # it yet: Tableau answers 200 with a 1-byte body. That's "no sales
-            # this week yet", not an outage — it failed every Monday (10/5).
-            # Any other day an empty export still fails loudly.
             if upto == monday and "status=200" in str(e):
                 log("  [b2b] Monday %s: order log has no rows for the new week "
                     "yet — nothing to stamp" % monday)
-                return [], []
+                return None
             raise
         dest.write_bytes(body)
     else:
-        log("  [b2b] reusing today's export %s" % dest.name)
+        log("  [b2b] reusing export %s" % dest.name)
+    return orderlog_all_owner_slots(dest, monday, upto, wanted, log)
 
-    wanted = set(managers.values())
-    per = orderlog_all_owner_slots(dest, monday, upto, wanted, log)
-    per_q = _quality_crosstabs(page, wanted, log)
 
+def _to_values(managers, per, per_q, week_iso, tag, log):
     slots = L.slots_by_label("b2b_att")
     values = []
     for mgr, exp in managers.items():
@@ -314,10 +335,10 @@ def collect_computed(page, today, log=print):
         named.update(per_q.get(exp, {}))
         values += [(mgr, week_iso, slots[lab], v)
                    for lab, v in named.items() if lab in slots]
-        log("  [b2b] %-18s %2d values  apps=%s hc=%s rank=%s act=%s churn=%s"
-            % (mgr, len(named), named.get("Total Apps", "-"),
+        log("  [b2b] %s %-18s %2d values  apps=%s hc=%s rank=%s act=%s churn=%s"
+            % (tag, mgr, len(named), named.get("Total Apps", "-"),
                named.get("Active Headcount on Tableau", "-"),
                named.get("Rank on the Tracker", "-"),
                named.get("Activation Rate (31–60 Day)", "-"),
                named.get("0–30 Day Churn Rate", "-")))
-    return values, []
+    return values
