@@ -50,7 +50,8 @@ PARSE_VERSION = 2               # bump when parse_doc reads more: the cache re-r
 # "Drew's Zoom") or "Main Funnel": still on the board, so nothing is lost, but
 # at the bottom -- it's a Zoom, not a person to coach
 _NOT_A_PERSON = re.compile(r"^(ZOOM \d+|.*'s Zoom|Main Funnel)$", re.I)
-GREEN, YELLOW, RED = (0.72, 0.88, 0.72), (1.0, 0.90, 0.60), (0.96, 0.72, 0.72)
+# Camila 2026-10-05: under 50 red, exactly 50 blue, over 50 green
+GREEN, BLUE_50, RED = (0.72, 0.88, 0.72), (0.74, 0.84, 0.96), (0.96, 0.72, 0.72)
 NAVY, BLUE, PALE = (0.12, 0.23, 0.42), (0.24, 0.40, 0.65), (0.91, 0.94, 0.98)
 WHITE, BAND, TEAM_BG = (1, 1, 1), (0.94, 0.94, 0.94), (0.85, 0.89, 0.95)
 
@@ -224,7 +225,7 @@ def values(week_of: dt.date, lines: List[Dict]) -> List[List]:
     every = [(p["week"], p["n"]) for p in lines if p["n"]]
     team = round(sum(w * n for w, n in every) / sum(n for _, n in every)) if every else ""
     out = [[f"1st Round Scorecards — Week of {week_of:%b} {week_of.day} – {fri:%b} {fri.day}, {fri.year}"],
-           ["Average score per interview (out of 100). 90+ green · 70–89 yellow · under 70 red. "
+           ["Average score per interview (out of 100). Over 50 green · 50 blue · under 50 red. "
             "Each name's audits are in 1st rd Transcribes / <name>."],
            head]
     for i, p in enumerate(lines, 1):
@@ -237,7 +238,7 @@ def values(week_of: dt.date, lines: List[Dict]) -> List[List]:
 def _color(v) -> Optional[tuple]:
     if not isinstance(v, int):
         return None
-    return GREEN if v >= 90 else (YELLOW if v >= 70 else RED)
+    return GREEN if v > 50 else (BLUE_50 if v == 50 else RED)
 
 
 def write(week_of: dt.date, grid: List[List], sheet_id: str = BOARD_SHEET_ID) -> str:
