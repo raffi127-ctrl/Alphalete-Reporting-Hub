@@ -228,14 +228,20 @@ def _tracker_rank(page, sunday, log):
     rows = _read(dest)
     if not rows:
         raise RuntimeError("Daily Tracker Metrics export came back empty")
-    header = rows[0]
+    # The crosstab grew a grouping row above the real header on 2026-10-05
+    # (['', '', 'ELE', 'ELE', 'Gas', 'Gas', ...]) — find the row that carries
+    # the column names instead of assuming it is row 0.
+    hi = next((i for i, r in enumerate(rows[:5])
+               if _col_exact(r, "Rank") is not None
+               and _col_exact(r, "Owner Name") is not None), None)
+    if hi is None:
+        raise RuntimeError("Daily Tracker Metrics header changed: %r"
+                           % (rows[:3],))
+    header = rows[hi]
     c_rank = _col_exact(header, "Rank")
     c_owner = _col_exact(header, "Owner Name")
-    if c_rank is None or c_owner is None:
-        raise RuntimeError("Daily Tracker Metrics header changed: %r"
-                           % (header,))
     out = {}
-    for r in rows[1:]:
+    for r in rows[hi + 1:]:
         mgr = _match_manager(_cell(r, c_owner))
         rank = _num(_cell(r, c_rank))      # 'Grand Total' chrome row -> None
         if mgr and rank is not None:
