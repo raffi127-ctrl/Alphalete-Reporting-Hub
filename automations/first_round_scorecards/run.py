@@ -54,6 +54,9 @@ EVE_USER_ID = "U088E2KJEV8"         # preview DMs
 FLAG_AT = 50
 FLAG_WHO = ("U07FWSYP3NV",          # Camila Hornos Kraschinsky
             "U07R68ZGHT6")          # Perla Falabella
+# The daily reply in the board's weekly thread lists who averaged under this
+# for the day (Eve, 2026-10-05: "49 o menos").
+BOARD_LOW_UNDER = 50
 # Fathom account (the Zoom login that records) -> who interviews on it.
 # A new recording account = its key in fathom-creds.json + a line here; an
 # account missing here shows under its Zoom name until someone adds it.
@@ -226,6 +229,86 @@ def _watch_dm(day: dt.date, graded: Dict[str, List]) -> None:
         data = _ledger()
         data["_watch_sent"] = (data.get("_watch_sent", []) + [tag])[-60:]
         _save(data)
+
+
+def low_scorers(rows: List[Dict], day: dt.date) -> List[tuple]:
+    """[(interviewer, day average, interviews)] for those under BOARD_LOW_UNDER
+    that day, lowest first -- the same average the board shows. `rows` =
+    board.LAST_ROWS (every audit doc of the week)."""
+    by: Dict[str, List[int]] = {}
+    for r in rows:
+        if r.get("date") == day.isoformat() and r.get("score") is not None:
+            by.setdefault(r["interviewer"], []).append(int(r["score"]))
+    out = [(n, round(sum(p) / len(p)), len(p)) for n, p in by.items()]
+    return sorted([x for x in out if x[1] < BOARD_LOW_UNDER], key=lambda x: (x[1], x[0]))
+
+
+def board_week_text(day: dt.date, link: str) -> str:
+    monday = day - dt.timedelta(days=day.weekday())
+    return (f"📊 *1st Round Scorecards Board — week of {monday:%b} {monday.day}*\n"
+            f"Names, scores and red flags of every interviewer: <{link}|Open the board>\n"
+            "_Each day Lucy adds a reply here once that day's interviews are audited._")
+
+
+def board_day_text(day: dt.date, rows: List[Dict]) -> str:
+    when = f"{day:%a} {day.month}/{day.day}"
+    tags = " ".join(f"<@{u}>" for u in FLAG_WHO)
+    low = low_scorers(rows, day)
+    lines = [f"✅ {when}: every interview is audited and on the board {tags}"]
+    if low:
+        lines.append(f"*Interviewers at {BOARD_LOW_UNDER - 1} pts or under:*")
+        lines += [f"• {n} — {avg} pts ({k} interview{'s' if k > 1 else ''})" for n, avg, k in low]
+    else:
+        lines.append(f"Nobody at {BOARD_LOW_UNDER - 1} pts or under today.")
+    return "\n".join(lines)
+
+
+def _board_post(day: dt.date, link: str, rows: List[Dict]) -> None:
+    """The board lives in Drive only, so Camila asked to be tagged on it (Eve,
+    2026-10-05: not a new post every day with the same link). One pinned
+    thread per week with the board link; each day one reply in it tags
+    Camila + Perla once the day is audited, with who scored low."""
+    data = _ledger()
+    if not link or day.isoformat() in data.get("_board_posted", []):
+        return
+    from automations.shared import slack_metrics_post as smp
+    client = smp._client()
+    week = (day - dt.timedelta(days=day.weekday())).isoformat()
+    weeks = data.get("_board_weeks", {})
+    try:
+        ts = weeks.get(week)
+        if not ts:
+            ts = client.chat_postMessage(channel=CHANNEL_ID, text=board_week_text(day, link),
+                                         unfurl_links=False, unfurl_media=False).get("ts")
+            if not ts:
+                print("BOARD THREAD FAILED")
+                return
+            # the pin is a nicety: a token without pins:write still posts
+            for old in weeks.values():
+                try:
+                    client.pins_remove(channel=CHANNEL_ID, timestamp=old)
+                except Exception:  # noqa: BLE001
+                    pass
+            try:
+                client.pins_add(channel=CHANNEL_ID, timestamp=ts)
+            except Exception as exc:  # noqa: BLE001
+                print(f"BOARD PIN FAILED {type(exc).__name__}: {exc}")
+            weeks = {**weeks, week: ts}
+            data = _ledger()
+            data["_board_weeks"] = dict(sorted(weeks.items())[-8:])
+            _save(data)
+        resp = client.chat_postMessage(channel=CHANNEL_ID, thread_ts=ts,
+                                       text=board_day_text(day, rows))
+    except Exception as exc:  # noqa: BLE001
+        print(f"BOARD POST FAILED {type(exc).__name__}: {exc}")
+        return
+    if not resp.get("ok"):
+        print("BOARD POST FAILED")
+        return
+    print("BOARD POST: tagged Camila + Perla in the week's thread")
+    data = _ledger()
+    data["_board_posted"] = (data.get("_board_posted", []) + [day.isoformat()])[-60:]
+    _save(data)
 
 
 def due(now: dt.datetime) -> bool:
@@ -454,9 +537,13 @@ def main(argv=None) -> int:
         # not hold the post (it's rebuilt whole on the next run)
         from automations.first_round_scorecards import board
         try:
-            print(f"BOARD: {board.update(day)}")
+            link = board.update(day)
+            print(f"BOARD: {link}")
         except Exception as exc:  # noqa: BLE001
             print(f"BOARD FAILED {type(exc).__name__}: {exc}")
+        else:
+            if rc == 0:      # the day is fully audited
+                _board_post(day, link, board.LAST_ROWS)
     return rc
 
 

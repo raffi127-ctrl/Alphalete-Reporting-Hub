@@ -473,11 +473,18 @@ def write_same(new: List[List], svc=None, sheet_id: str = BOARD_SHEET_ID) -> Non
             insertDataOption="INSERT_ROWS", body={"values": new}).execute()
 
 
+# the week's rows the last update() read: run.py lists the day's low scorers
+# from them (every doc of the day, names already merged)
+LAST_ROWS: List[Dict] = []
+
+
 def update(day: dt.date, *, write_sheet: bool = True) -> str:
     week_of = monday(day)
     rows = scores(week_of)
     answers = read_same() if write_sheet else []
     rows = apply_merges(rows, merges(answers))
+    global LAST_ROWS
+    LAST_ROWS = rows
     grid = values(week_of, table(week_of, rows))
     for line in grid:
         print("  ".join("" if v is None else str(v) for v in line))

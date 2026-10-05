@@ -357,6 +357,74 @@ class WatchTest(unittest.TestCase):
         self.assertEqual(client.chat_postMessage.call_args.kwargs["channel"], "D1")
 
 
+class BoardPostTest(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self._saved = (run.LEDGER, run.OUT_DIR)
+        run.OUT_DIR = Path(tempfile.mkdtemp())
+        run.LEDGER = run.OUT_DIR / "posted.json"
+
+    def tearDown(self):
+        run.LEDGER, run.OUT_DIR = self._saved
+
+    DAY = dt.date(2026, 10, 5)
+    ROWS = [{"interviewer": "Valentina", "date": "2026-10-05", "score": 45},
+            {"interviewer": "Valentina", "date": "2026-10-05", "score": 50},   # avg 48
+            {"interviewer": "Elfina", "date": "2026-10-05", "score": 50},      # 50 = not low
+            {"interviewer": "Nakechia", "date": "2026-10-05", "score": 36},
+            {"interviewer": "Gabby", "date": "2026-10-02", "score": 20}]       # other day
+
+    def test_low_scorers_by_day_average(self):
+        self.assertEqual(run.low_scorers(self.ROWS, self.DAY),
+                         [("Nakechia", 36, 1), ("Valentina", 48, 2)])
+
+    def test_day_reply_tags_and_lists(self):
+        text = run.board_day_text(self.DAY, self.ROWS)
+        self.assertIn("<@U07FWSYP3NV>", text)
+        self.assertIn("<@U07R68ZGHT6>", text)
+        self.assertIn("Mon 10/5", text)
+        self.assertIn("49 pts or under", text)
+        self.assertIn("• Nakechia — 36 pts (1 interview)", text)
+        self.assertIn("• Valentina — 48 pts (2 interviews)", text)
+        self.assertNotIn("Elfina", text)
+        self.assertIn("Nobody", run.board_day_text(self.DAY, []))
+
+    def test_one_pinned_thread_a_week_one_reply_a_day(self):
+        from unittest import mock
+        from automations.shared import slack_metrics_post as smp
+        client = mock.Mock()
+        n = iter(range(100))
+        client.chat_postMessage.side_effect = lambda **kw: {"ok": True, "ts": f"1.{next(n)}"}
+        with mock.patch.object(smp, "_client", return_value=client):
+            run._board_post(self.DAY, "", self.ROWS)                  # board not written
+            run._board_post(self.DAY, "https://sheet/x", self.ROWS)   # Mon: thread + reply
+            run._board_post(self.DAY, "https://sheet/x", self.ROWS)   # a rerun: nothing
+            run._board_post(dt.date(2026, 10, 6), "https://sheet/x", [])   # Tue: reply only
+            run._board_post(dt.date(2026, 10, 12), "https://sheet/y", [])  # next week
+        calls = [c.kwargs for c in client.chat_postMessage.call_args_list]
+        self.assertEqual(len(calls), 5)
+        self.assertNotIn("thread_ts", calls[0])
+        self.assertIn("https://sheet/x", calls[0]["text"])
+        self.assertEqual(calls[1]["thread_ts"], "1.0")
+        self.assertEqual(calls[2]["thread_ts"], "1.0")                # Tue in Monday's thread
+        self.assertNotIn("thread_ts", calls[3])                        # new week, new thread
+        self.assertEqual(calls[4]["thread_ts"], "1.3")
+        self.assertEqual([c.kwargs["timestamp"] for c in client.pins_add.call_args_list],
+                         ["1.0", "1.3"])
+        client.pins_remove.assert_called_with(channel=run.CHANNEL_ID, timestamp="1.0")
+
+    def test_no_pin_permission_still_posts(self):
+        from unittest import mock
+        from automations.shared import slack_metrics_post as smp
+        client = mock.Mock()
+        client.chat_postMessage.return_value = {"ok": True, "ts": "1.0"}
+        client.pins_add.side_effect = RuntimeError("missing_scope")
+        with mock.patch.object(smp, "_client", return_value=client):
+            run._board_post(self.DAY, "https://sheet/x", self.ROWS)
+        self.assertEqual(client.chat_postMessage.call_count, 2)
+
+
 class DocsOnlyTest(unittest.TestCase):
     def test_writes_docs_and_never_touches_slack(self):
         from unittest import mock
