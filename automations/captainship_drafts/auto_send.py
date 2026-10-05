@@ -295,10 +295,18 @@ header but no rows.
 2. LATEST DAY (blocker): any table or chart laid out one column (or bar/point) \
 per DAY must include REPORT_DAY as its newest day. Ending on an earlier day is a \
 blocker. A REPORT_DAY column whose cells are ALL blank while the earlier days \
-have numbers is a blocker — except when REPORT_DAY is a Sunday, when a quiet day \
-is normal. Weekly, week-to-date, monthly or cumulative tables do not need a day \
-column; do not flag them for it. Dates may be written 10/4, 10/4/26, Sun 10/4, \
-Oct 4, etc.
+have numbers is a blocker. Weekly, week-to-date, monthly or cumulative tables do \
+not need a day column; do not flag them for it. Dates may be written 10/4, \
+10/4/26, Sun 10/4, Oct 4, etc.
+SUNDAY EXCEPTION: when REPORT_DAY is a Sunday, a quiet day is normal — a blank \
+or zero REPORT_DAY column is fine, and so is a Tableau table (the screenshots \
+with dropdown filters on top) that simply has NO REPORT_DAY column: Tableau \
+drops a day column when nobody has a row that day. Never treat that as a blocker \
+on a Sunday; at most mention it as minor.
+Do not compare SALES with ACTIVATIONS: sales tables (Product Summary, Captain \
+Team units) and activation tables (Tableau "Captain Team Stats", activation \
+weeks) count different things on different days; a sales number on REPORT_DAY \
+says nothing about whether activations exist that day.
 
 3. NUMBER FORMAT (blocker): inside one table, a column's numbers must share one \
 format. Flag raw long decimals (0.4285714) where the rest show %, date serials \
@@ -319,6 +327,11 @@ send). ok = true when there are no blockers. Refer to images by their number \
 and name the section they sit under. Be concrete: "Cancel Rate box ends on \
 10/3, no 10/4 column", not "dates look off". Write every section name and \
 problem in English, short (one sentence each) — they are posted to Slack as is."""
+
+
+# The cache of a visual review is keyed by the draft AND the rules it was judged
+# by: changing _SYSTEM must re-review today's drafts, not reuse the old verdict.
+PROMPT_ID = hashlib.sha256(_SYSTEM.encode("utf-8")).hexdigest()[:8]
 
 
 def _api_client():
@@ -502,6 +515,7 @@ def judge(today: dt.date, keys: Sequence[str], *, state: dict,
     shas = {k: eml_sha(today, k) for k in to_look}
     need = [k for k in to_look
             if not ((vis_cache.get(k) or {}).get("sha") == shas[k]
+                    and (vis_cache.get(k) or {}).get("prompt") == PROMPT_ID
                     and "result" in (vis_cache.get(k) or {}))]
     results: Dict[str, object] = {}
     if need:
@@ -516,7 +530,8 @@ def judge(today: dt.date, keys: Sequence[str], *, state: dict,
             for k, res in pool.map(_one, need):
                 results[k] = res
                 if not isinstance(res, Exception):
-                    vis_cache[k] = {"sha": shas[k], "result": res,
+                    vis_cache[k] = {"sha": shas[k], "prompt": PROMPT_ID,
+                                    "result": res,
                                     "at": dt.datetime.now().isoformat(
                                         timespec="minutes")}
     for key in to_look:
