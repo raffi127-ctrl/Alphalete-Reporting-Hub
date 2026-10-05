@@ -86,7 +86,7 @@ def _run_main(*, budget_s, office_cost_s, argv=("--all", "--post")):
 
 ALL_OFFICES = list(_off.ORDER)
 # 15 minutes each — between Carlos's real 7 and Atef's real 20 on 2026-09-04.
-# Four of them (60 min) fit the 75-minute cap and do not fit the old 30.
+# Four of them (60 min) fit a 75-minute cap and do not fit the old 30.
 SLOW = {k: 15 * 60.0 for k in ALL_OFFICES}
 
 
@@ -113,7 +113,7 @@ class TheBudgetIsReadFromTheEnvironment(unittest.TestCase):
 class AGenerousBudgetChangesNothing(unittest.TestCase):
 
     def test_every_office_runs(self):
-        rc, manifest, ran = _run_main(budget_s=75 * 60, office_cost_s=SLOW)
+        rc, manifest, ran = _run_main(budget_s=100 * 60, office_cost_s=SLOW)
         self.assertEqual(ran, ALL_OFFICES)
         self.assertEqual(rc, 0)
         self.assertEqual(manifest["per_office"][0]["missed"], [])

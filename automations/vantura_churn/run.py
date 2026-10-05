@@ -99,7 +99,10 @@ OWNER_CFG = [
 #
 # eveliz (2026-10-05): staged on arrival, same as sabrina was. Promote after
 # `--dump-rep-grid eveliz` shows her reps and `--owner eveliz` reconciles.
-STAGED: set = {"eveliz"}
+# eveliz was promoted 2026-10-05 (Eve), the day she was staged: on Lucy 2
+# `--dump-rep-grid eveliz` listed EVELIZ WRIGHT off her EvelizEXP view and
+# `--owner eveliz --dry-run` closed exit 0 with both activation files in.
+STAGED: set = set()
 
 
 def _activation_cfg():

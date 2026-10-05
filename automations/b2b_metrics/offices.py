@@ -551,9 +551,7 @@ _merge_onboarded()
 # listed here still runs by name (`--office <key>`, and its own <key>_metrics
 # entry once that is switched on); it is only kept out of the --all sweep.
 # TO GO LIVE: delete its line here and flip <key>_metrics on_scheduler to true.
-HELD_FROM_ALL = {
-    "eveliz",   # wired 2026-10-05, waiting on its Lucy 2 dry run
-}
+HELD_FROM_ALL: set = set()   # eveliz went live 2026-10-05 (Eve), after its Lucy 2 dry run
 
 ORDER = [k for k in OFFICES if k not in HELD_FROM_ALL]
 
