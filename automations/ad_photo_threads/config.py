@@ -47,6 +47,11 @@ POST_WEEKDAYS = {0, 1, 2, 3, 4}
 # week's % removed / avg stars. False = the old fresh-thread-every-week.
 ONE_THREAD_PER_AD = True
 
+# The first day the ad threads hold (every office was loaded from 9/14). The
+# weekly layout's "Total stats for this ad" counts the sheet from here on, so
+# the total matches what the thread shows.
+THREADS_SINCE = "2026-09-14"
+
 # Eve's by-hand pin fallback, from the 2026-09-21..09-25 window when Lucy's
 # token had no pins:write: whenever a run opened new threads, Lucy DMd her the
 # links to pin, plus last week's to unpin. `pins:write` landed 2026-09-25 and

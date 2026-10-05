@@ -50,9 +50,9 @@ class ThreadSlack:
         return [m["text"] for m in self.msgs if m["thread_ts"] == ts and m["ts"] != ts]
 
 
-def cand(name, ok=True, stars="4", ad="frisco"):
+def cand(name, ok=True, stars="4", ad="frisco", q=None):
     return collect.Candidate(name=name, title_raw="x", interviewer="Camila",
-                             qualify="Qualified" if ok else "Not qualified",
+                             qualify=q or ("Qualify" if ok else "Disqualify"),
                              stars=stars, source="Alphalete Marketing", ad=ad,
                              images=[{"id": f"F_{name}"}])
 
@@ -88,15 +88,39 @@ class WeeklyTest(unittest.TestCase):
         self.assertIn("Removed: *2* (50%)", txt)
         self.assertIn("Avg rating: *3.3*", txt)
 
+    def test_removed_split_dq_and_declined(self):
+        txt = weekly.stats_text([cand("A"), cand("B", ok=False),
+                                 cand("C", q="Disqualify - Declined"),
+                                 cand("D", q="Disqualify - Declined")])
+        self.assertIn("Removed: *3* (75%)", txt)
+        self.assertIn("DQ: *1*", txt)
+        self.assertIn("Declined: *2*", txt)
+
+    def test_totals_under_the_week_and_cleared_with_it(self):
+        cl, threads = ThreadSlack(), {}
+        hist = {"frisco": [(MON - dt.timedelta(days=14), cand("Old1", ok=False)),
+                           (MON - dt.timedelta(days=7), cand("Old2")),
+                           (MON, cand("Ana"))]}
+        mon = day(MON, [cand("Ana")])
+        weekly.publish_week([mon], "C1", cl=cl, threads=threads, crop=False, history=hist)
+        weekly.publish_week([mon], "C1", cl=cl, threads=threads, crop=False, history=hist)
+        texts = cl.thread(threads["frisco"])
+        self.assertEqual(len(texts), 2)                   # refresh took the totals down too
+        week, total = texts[1].split("\n\n")
+        self.assertIn("People seen: *1*", week)
+        self.assertTrue(total.startswith("*Total stats for this ad* _(since 9/14)_"))
+        self.assertIn("People seen: *3*", total)
+        self.assertIn("Invited back: *2* (67%)", total)
+
     def test_tuesday_replaces_monday_and_keeps_last_week(self):
         cl, threads = ThreadSlack(), {}
         last = MON - dt.timedelta(days=7)
         weekly.publish_week([day(last, [cand("Old")])], "C1", cl=cl,
-                            threads=threads, crop=False)
+                            threads=threads, crop=False, history={})
         mon = day(MON, [cand("Ana")])
         tue = day(MON + dt.timedelta(days=1), [cand("Bo", ok=False)])
-        weekly.publish_week([mon], "C1", cl=cl, threads=threads, crop=False)
-        got = weekly.publish_week([mon, tue], "C1", cl=cl, threads=threads, crop=False)
+        weekly.publish_week([mon], "C1", cl=cl, threads=threads, crop=False, history={})
+        got = weekly.publish_week([mon, tue], "C1", cl=cl, threads=threads, crop=False, history={})
         self.assertEqual(got["threads_new"], 0)
         self.assertEqual(got["cleared"], 2)               # Monday's list + numbers
         texts = cl.thread(threads["frisco"])
@@ -106,14 +130,15 @@ class WeeklyTest(unittest.TestCase):
         self.assertIn("Ana", texts[2])
         self.assertIn("Bo", texts[2])
         self.assertIn("People seen: *2*", texts[3])
+        self.assertTrue(texts[3].startswith("*Week so far · WE 10.4*"))
 
     def test_person_reply_never_deleted(self):
         cl, threads = ThreadSlack(), {}
         mon = day(MON, [cand("Ana")])
-        weekly.publish_week([mon], "C1", cl=cl, threads=threads, crop=False)
+        weekly.publish_week([mon], "C1", cl=cl, threads=threads, crop=False, history={})
         cl.msgs.append({"ts": "999.1", "thread_ts": threads["frisco"],
                         "text": "WE 10.4 looks good", "user": "UCARLOS", "files": []})
-        weekly.publish_week([mon], "C1", cl=cl, threads=threads, crop=False)
+        weekly.publish_week([mon], "C1", cl=cl, threads=threads, crop=False, history={})
         self.assertIn("WE 10.4 looks good", cl.thread(threads["frisco"]))
 
 

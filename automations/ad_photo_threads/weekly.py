@@ -45,9 +45,6 @@ def week_label(monday: dt.date, through: dt.date) -> str:
     return f"{days} · {week_tag(monday)}"
 
 
-SAMPLE_TAG = "SAMPLE · "
-
-
 def header_text(title: str, prefix: str = "") -> str:
     """Just the ad title in bold (Carlos 10/5: the numbers moved inside)."""
     return f"*{prefix}{title}*"
@@ -58,18 +55,64 @@ def stats_header(monday: dt.date, through: dt.date) -> str:
     return f"*{'Week total' if done else 'Week so far'} · {week_tag(monday)}*"
 
 
+def declined(c: collect.Candidate) -> bool:
+    """The sheet's Qualify column says it: "Disqualify - Declined" (the
+    candidate said no) vs plain "Disqualify" (we said no)."""
+    return "declin" in (c.qualify or "").lower()
+
+
 def stats_text(cands: List[collect.Candidate]) -> str:
-    """The week so far, under the photos. ✅ = invited back to the 2nd round."""
+    """The numbers under the photos. ✅ = invited back to the 2nd round; ❌ is
+    split into DQ and Declined (Maddie 10/5: "if there are a lot of removals
+    we can see if there's more DQ's or more Declines")."""
     s = post.day_stats(cands)
     n, removed = s["n"], s["removed"]
     back = n - removed
+    dec = sum(1 for c in cands if not post._ok(c) and declined(c))
     pct = (lambda k: f" ({round(100.0 * k / n):.0f}%)") if n else (lambda k: "")
     lines = [f"👥 People seen: *{n}*",
              f"✅ Invited back: *{back}*{pct(back)}",
-             f"❌ Removed: *{removed}*{pct(removed)}"]
+             f"❌ Removed: *{removed}*{pct(removed)}",
+             f"      • DQ: *{removed - dec}*",
+             f"      • Declined: *{dec}*"]
     if s["stars"]:
         lines.append(f"⭐ Avg rating: *{sum(s['stars']) / len(s['stars']):.1f}*")
     return "\n".join(lines)
+
+
+def totals_text(history: List[tuple]) -> str:
+    """Carlos 10/5: right under the week, "Total Stats for this AD" -- every
+    week of the thread together. `history` is [(day, candidate)]."""
+    first = min(d for d, _ in history)
+    return (f"*Total stats for this ad* _(since {first.month}/{first.day})_\n"
+            + stats_text([c for _, c in history]))
+
+
+def ad_history(book, since: dt.date, through: dt.date, sh=None
+               ) -> Dict[str, List[tuple]]:
+    """Every sheet row from `since` to `through`, by ad key -- read straight
+    from the interviewers' sheet (no Slack), resolved with the newest week's
+    TitleBook so the totals fold spellings exactly like the threads do."""
+    from automations.recruiting_report.fill import open_by_key
+    sh = sh or open_by_key(config.SHEET_ID)
+    have = {w.title for w in sh.worksheets()}
+    out: Dict[str, List[tuple]] = {}
+    for src in config.SOURCES:
+        if src["tab"] not in have:
+            continue
+        for r in collect._read_tab(sh, src["tab"]):
+            d = collect._parse_date(r[config.COL_DATE])
+            if not d or not (since <= d <= through) or not r[config.COL_NAME]:
+                continue
+            key = book.resolve(r[config.COL_TITLE])
+            if not key:
+                continue
+            out.setdefault(key, []).append((d, collect.Candidate(
+                name=r[config.COL_NAME], title_raw=r[config.COL_TITLE],
+                interviewer=r.get(config.COL_INTERVIEWER, ""),
+                qualify=r.get(config.COL_QUALIFY, ""),
+                stars=r.get(config.COL_STARS, ""), source=src["label"], ad=key)))
+    return out
 
 
 def list_text(label: str, cands: List[collect.Candidate],
@@ -133,8 +176,13 @@ def _clear_week(cl, channel: str, thread_ts: str, me: str, tag: str) -> int:
 def publish_week(reports: List[collect.DayReport], channel: str, *, cl=None,
                  prefix: str = "", max_ads: Optional[int] = None,
                  crop: bool = True, threads: Optional[Dict[str, str]] = None,
-                 only_keys: Optional[List[str]] = None) -> Dict[str, object]:
+                 only_keys: Optional[List[str]] = None,
+                 history: Optional[Dict[str, List[tuple]]] = None
+                 ) -> Dict[str, object]:
     """Post (or re-post) one week's block in each ad's thread.
+
+    `history` = ad_history() for the "Total stats for this ad" lines; left
+    out, it's read from the sheet (config.THREADS_SINCE .. this week).
 
     `reports` are the week's days so far (Monday first). `threads` maps ad key
     -> thread ts and is filled in as headers are opened, so several weeks can
@@ -155,6 +203,9 @@ def publish_week(reports: List[collect.DayReport], channel: str, *, cl=None,
         items = [i for i in items if i["images"]][:max_ads]
     counts = {"threads_new": 0, "blocks": 0, "cleared": 0, "photos": 0,
               "keys": [i["key"] for i in items]}
+    if history is None:
+        history = ad_history(reports[-1].book,
+                             dt.date.fromisoformat(config.THREADS_SINCE), through)
 
     for item in items:
         ts = threads.get(item["key"])
@@ -179,16 +230,23 @@ def publish_week(reports: List[collect.DayReport], channel: str, *, cl=None,
                                        file_uploads=chunk, initial_comment=comment)
                 wait_for_share(cl, channel, ts, _uploaded_file_id(r), text=comment)
             counts["photos"] += len(uploads)
-        cl.chat_postMessage(channel=channel, thread_ts=ts,
-                            text=f"*{tag} so far*\n{stats_text(item['cands'])}")
+        # One message, so the week's tag (in the first line) takes the
+        # totals down with it on tomorrow's refresh.
+        stats = stats_header(monday, through) + "\n" + stats_text(item["cands"])
+        if history.get(item["key"]):
+            stats += "\n\n" + totals_text(history[item["key"]])
+        cl.chat_postMessage(channel=channel, thread_ts=ts, text=stats)
         counts["blocks"] += 1
     return counts
 
 
 def sample(mondays: List[dt.date], channel: str, *, max_ads: int = 3,
-           crop: bool = True, refresh_demo: bool = True, cl=None) -> dict:
+           crop: bool = True, refresh_demo: bool = True, cl=None,
+           name: str = "SAMPLE") -> dict:
     """The preview for Carlos: the same few ads, week after week, in fresh
-    threads headed "SAMPLE · <ad>" -- the real threads stay as they are.
+    threads headed "SAMPLE · <ad>" -- the real threads stay as they are. A
+    second round gets its own `name` ("SAMPLE 2"): the first sample thread
+    holds the team's comments (10/5), so it is never deleted.
     With refresh_demo the newest week is first posted as "Monday"
     only and then replaced by the full week -- the evening refresh, for real,
     so the sample proves the take-down works too.
@@ -207,9 +265,9 @@ def sample(mondays: List[dt.date], channel: str, *, max_ads: int = 3,
         if refresh_demo and reps is weeks[-1]:
             out["refresh_monday"] = publish_week(reps[:1], channel, cl=cl,
                                                  only_keys=pick, crop=crop,
-                                                 threads=threads, prefix=SAMPLE_TAG)
+                                                 threads=threads, prefix=f"{name} · ")
         m = post.week_monday(reps[0].day).isoformat()
         out[m] = publish_week(reps, channel, cl=cl, only_keys=pick, crop=crop,
-                              threads=threads, prefix=SAMPLE_TAG)
+                              threads=threads, prefix=f"{name} · ")
     return out
 

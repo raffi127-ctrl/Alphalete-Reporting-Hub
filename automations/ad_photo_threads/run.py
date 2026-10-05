@@ -293,6 +293,8 @@ def main(argv=None) -> int:
     ap.add_argument("--dm", metavar="USER_IDS",
                     help="Preview into a DM with these Slack ids (comma-separated), "
                          "e.g. --dm U088E2KJEV8 for Eve alone. Tagged [PILOT].")
+    ap.add_argument("--sample-name", default="SAMPLE",
+                    help='With --weekly-sample: the thread header prefix, e.g. "SAMPLE 2".')
     ap.add_argument("--max-ads", type=int,
                     help="Post only the N biggest ads that have photos (a sample).")
     ap.add_argument("--crop-model",
@@ -324,7 +326,7 @@ def main(argv=None) -> int:
             channel = collect._client().conversations_open(users=a.dm)["channel"]["id"]
         print("Weekly sample:", weekly.sample(
             mondays, channel, max_ads=a.max_ads or 3,
-            crop=not a.no_crop))
+            crop=not a.no_crop, name=a.sample_name))
         return 0
     if a.watch:
         from automations.ad_photo_threads import config, post
