@@ -335,12 +335,31 @@ def main(argv=None) -> int:
         # second-round numbers that looked more filled-in than the leaders
         # whose real rows were being dropped. [[feedback_fill_but_flag]]
         _known = {PEO.key(p) for p in people_to_fill}
+        # SOMEBODY WHO CHANGED TEAMS IS FILLED ONCE, IN THE TEAM THEY ARE ON
+        # NOW. Megan 2026-10-05: "Noemi moved from mindset to 7 sins so all of
+        # her prev info should be carried over to her 7 sins box. She should be
+        # deleted from mindset." Her sources are keyed by PERSON, not by team,
+        # so her Se7en Sins box already holds every week including the ones she
+        # led Mindset Engine — the only thing the old team needed was to stop
+        # claiming her. Adding her to Mindset Engine produced a standing "needs
+        # a box on this tab" gap for a box that should never be built.
+        _elsewhere = {PEO.key(_q): _t
+                      for _t, _r in rosters.items() if _t != team
+                      for _q in ([_r.head] + list(_r.leaders)) if _q}
         for _wk in wks:
             _rw = week_rosters.get(_wk, {}).get(team)
             if not _rw:
                 continue
             for _p in [_rw.head] + list(_rw.leaders):
                 if not _p or PEO.key(_p) in _known:
+                    continue
+                _moved_to = _elsewhere.get(PEO.key(_p))
+                if _moved_to:
+                    _known.add(PEO.key(_p))
+                    notes.append(
+                        f"{team}: {_p} led here during these weeks but is on "
+                        f"{_moved_to} now — their whole history is in their "
+                        f"{_moved_to} box, so no box is built here.")
                     continue
                 _known.add(PEO.key(_p))
                 people_to_fill.append(_p)
