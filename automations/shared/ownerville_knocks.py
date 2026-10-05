@@ -63,9 +63,13 @@ def _norm(s) -> str:
 
 
 # --- signing in -------------------------------------------------------------
-def login(page, username: str, password: str, *, log=print) -> None:
-    """Drive the two-step username -> NEXT -> password form with THEIR login."""
-    page.goto(LOGIN_URL, wait_until="domcontentloaded")
+def login(page, username: str, password: str, *, log=print,
+          url: str = LOGIN_URL) -> None:
+    """Drive the two-step username -> NEXT -> password form with THEIR login.
+
+    `url` lets AppStream reuse it: applicantstream.com serves the SAME form,
+    security box and all (resources/lucy-login-standard.md, rule 1)."""
+    page.goto(url, wait_until="domcontentloaded")
     page.wait_for_timeout(3_000)
 
     for role in ("link", "button"):

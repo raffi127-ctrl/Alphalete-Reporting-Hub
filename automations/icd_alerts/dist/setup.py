@@ -6,8 +6,9 @@ between a shell script and a PowerShell script is a line that will be fixed in
 one of them and not the other -- and the Windows half is the one nobody can
 test until an ICD runs it.
 
-WHAT IT ASKS FOR: their SaraPlus login and their OwnerVille login. Nothing
-else. The office key, the relay url and the relay key are already in
+WHAT IT ASKS FOR: their SaraPlus login and their OwnerVille login -- plus
+their AppStream login, only if they want Lucy to push resumes from this
+computer. Nothing else. The office key, the relay url and the relay key are already in
 install.json, filled in when this package was built for this office, so there
 is no code for anyone to mistype. See `automations/icd_alerts/package.py`.
 
@@ -445,6 +446,90 @@ def ownerville_until_it_works(attempts=2):
             return False
         _ask_one("ownerville-creds.json", "OwnerVille", "username",
                  "username", "password", required=False, replace=True)
+    return False
+
+
+PUSH_YES = "Yes, push my resumes from this computer"
+PUSH_NO = "No"
+
+
+def ask_about_resume_pushing():
+    """Should Lucy push this office's resumes from THIS computer? -> bool
+
+    Carlos 2026-10-05: on Lucy 2 the push "takes up the screen" and is slow
+    across that many offices; on the office's own machine they "can always
+    have an eye on it". Asked once per campaign and remembered, so a re-run
+    does not ask a YES again. A NO is asked again on every re-run, because
+    re-running the installer is how somebody changes their mind. A NO is a
+    normal answer -- most offices do not push.
+    """
+    rec = _load_current()
+    if rec.get("push_resumes"):
+        say("      resume pushing: on")
+        return True
+    try:
+        pick = ask.choose(
+            "Do you want Lucy to push your resumes (send applicants to the "
+            "AI call list) from this computer?\n\n"
+            "If yes, she needs your AppStream login.", [PUSH_YES, PUSH_NO])
+    except ask.Cancelled:
+        say("      skipped -- the reporting team will check with you.")
+        return False
+    rec["push_resumes"] = pick == PUSH_YES
+    _save_current(rec)
+    return rec["push_resumes"]
+
+
+def ask_for_appstream(replace=False):
+    """THEIR AppStream login. It sees only their office, which is the point:
+    a push can only reach what the account can see (lucy-login-standard
+    rule 3). Not required -- credit checks and boards work without it."""
+    return _ask_one("appstream-creds.json", "AppStream", "username",
+                    "username", "password", required=False, replace=replace)
+
+
+def check_appstream() -> bool:
+    """Sign in to AppStream for real and reach the office page.
+
+    A WRONG USERNAME DOES NOT ERROR on AppStream: the form submits and a page
+    renders. So the only pass is the office console itself, the same proof
+    the pusher will need. About a minute -- the security box clears itself
+    only if it is left alone for 30 seconds.
+    """
+    if not (CONFIG_DIR / "appstream-creds.json").exists():
+        return False
+    say("      checking the AppStream login (this one takes a minute)...")
+    proc = subprocess.run(
+        [str(venv_python()), "-m", "automations.icd_alerts.as_signin"],
+        cwd=str(APP_DIR), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if proc.returncode == 0:
+        say("      AppStream login works.")
+        return True
+    for line in proc.stdout.decode("utf-8", "replace").splitlines()[-2:]:
+        if line.strip():
+            say(line.strip())
+    return False
+
+
+def appstream_until_it_works(attempts=2):
+    """Ask, check, offer one more go on a typo. -> True / False."""
+    ask_for_appstream()
+    for attempt in range(1, attempts + 1):
+        if check_appstream():
+            return True
+        if attempt == attempts:
+            break
+        try:
+            again = ask.choose(
+                "AppStream did not accept that username and password.\n\n"
+                "Usernames can have spaces in them -- type it exactly as you "
+                "do when you sign in.\n\nWould you like to type it again?",
+                ["Yes, let me try again", "Skip it for now"])
+        except ask.Cancelled:
+            return False
+        if not again.startswith("Yes"):
+            return False
+        ask_for_appstream(replace=True)
     return False
 
 
@@ -1072,6 +1157,20 @@ def install_problems(awake=None):
             # The whole product for Box, Energy Wells and NDS.
             blocking.append("no OwnerVille login is saved, and it is the only "
                             "one this office has -- nothing can be read at all")
+    # RESUME PUSHING IS AN EXTRA, so a missing login is a note: credit
+    # checks and boards still work. But it must be SAID, or an office that
+    # asked for it waits on pushes that are never coming.
+    try:
+        import json as _json
+        _recs = _json.loads((CONFIG_DIR / "install.json").read_text())
+        _recs = _recs if isinstance(_recs, list) else [_recs]
+        wants_push = any(isinstance(r, dict) and r.get("push_resumes")
+                         for r in _recs)
+    except Exception:  # noqa: BLE001
+        wants_push = False
+    if wants_push and not (CONFIG_DIR / "appstream-creds.json").exists():
+        notes.append("no AppStream login, so Lucy cannot push resumes from "
+                     "this computer yet")
     if not (CONFIG_DIR / "install.json").exists():
         blocking.append("this office's settings were never written")
     if awake and not awake.get("never_sleeps"):
@@ -1155,6 +1254,12 @@ def main() -> int:
     # it is the sort of wrongness that costs every other message its weight.
     ov_ok = ownerville_until_it_works() if ok else None
 
+    # RESUME PUSHING, only for the offices that want it (Carlos 2026-10-05).
+    # Same three states as ov_ok: worked, failed, never tried.
+    as_ok = None
+    if ask_about_resume_pushing():
+        as_ok = appstream_until_it_works()
+
     step(7, total, "Where your alerts should go")
     ask_for_ov_name()
     ask_for_channel()
@@ -1227,6 +1332,9 @@ def main() -> int:
         if ov_ok is False and (CONFIG_DIR / "ownerville-creds.json").exists():
             notes.append("the OwnerVille login did not work, so the knocks "
                          "board will not post yet")
+        if as_ok is False and (CONFIG_DIR / "appstream-creds.json").exists():
+            notes.append("the AppStream login did not work, so Lucy cannot "
+                         "push resumes from this computer yet")
         if blocking:
             # NOT "ALL SET". This office cannot report anything, and telling
             # them otherwise is how one waits a week for a board that was
@@ -1272,6 +1380,11 @@ def main() -> int:
         report_fault("install", "OwnerVille did not verify during setup",
                      "Credit-check alerts are working. The OwnerVille login "
                      "failed, so no knocks/dispositions board will post.")
+    if ok and as_ok is False:
+        report_fault("install", "AppStream did not verify during setup",
+                     "The office asked for resume pushing on this machine, "
+                     "but its AppStream login did not reach the office "
+                     "console. Nothing else is affected.")
 
     ask.message(done, error=not ok)
     return 0 if ok else 1

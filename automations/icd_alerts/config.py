@@ -26,6 +26,10 @@ OV_CREDS_PATH = APP_DIR / "ownerville-creds.json"
 # Same contract as the other two -- written on the office's own machine, never
 # sent anywhere.
 SC_CREDS_PATH = APP_DIR / "servicecloud-creds.json"
+# AppStream: only for an office that has Lucy push its resumes from this
+# computer (Carlos 2026-10-05). THEIR login, which sees only their own
+# office -- and a push can only reach what the account can see.
+AS_CREDS_PATH = APP_DIR / "appstream-creds.json"
 # ITS OWN PROFILE, and one that must NEVER be rotated away automatically.
 # sara_read throws a wedged SaraPlus profile out and signs in again, because a
 # SaraPlus login needs only an email and a password. This profile IS the
@@ -65,6 +69,9 @@ PROFILE_DIR = APP_DIR / "chrome-profile"
 # retarget anybody's session, including their own if they are signed in in
 # their normal browser at the same time.
 OV_PROFILE_DIR = APP_DIR / "chrome-profile-ov"
+# Its own profile too: the resume push holds a browser open for minutes, and
+# it must never lock the profile a knocks read or a SaraPlus sweep needs.
+AS_PROFILE_DIR = APP_DIR / "chrome-profile-as"
 LOG_PATH = APP_DIR / "agent.log"
 
 # The service filter and grid that carry credit checks. Imported rather than
@@ -267,6 +274,22 @@ def save_ownerville_creds(username: str, password: str) -> Path:
     except OSError:
         pass
     return OV_CREDS_PATH
+
+
+def appstream_creds() -> Dict[str, str]:
+    """{'username', 'password'} for this office's OWN AppStream login, or {}.
+
+    Empty is a normal answer: most offices do not push resumes from here.
+    """
+    if not AS_CREDS_PATH.exists():
+        return {}
+    try:
+        data = json.loads(AS_CREDS_PATH.read_text())
+    except (OSError, ValueError):
+        return {}
+    if not (data.get("username") and data.get("password")):
+        return {}
+    return {"username": data["username"], "password": data["password"]}
 
 
 def install() -> Dict:

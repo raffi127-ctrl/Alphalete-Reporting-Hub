@@ -70,6 +70,9 @@ AGENT_FILES = [
     # (2026-09-15).
     "automations/icd_alerts/box_signin.py",
     "automations/icd_alerts/sara_signin.py",
+    # Resume pushing on the office's own machine: the installer's AppStream
+    # check runs it, so it has to be there when setup.py is.
+    "automations/icd_alerts/as_signin.py",
     "automations/icd_alerts/watchdog.py",
     "automations/icd_alerts/presence.py",
     "automations/icd_alerts/autoprompt.py",
