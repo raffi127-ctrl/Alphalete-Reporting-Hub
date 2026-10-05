@@ -503,6 +503,78 @@ def _write_approval(office_key: str, resolved) -> None:
                     json.dumps(resolved), "TRUE"])
 
 
+HEALTH_DAYS = 3
+
+
+def health_lines(office_key: str, faults: List[List[str]],
+                 relay: List[List[str]], today: dt.date) -> List[str]:
+    """What this office's MACHINE has been reporting, as lines to print.
+
+    A CHANNEL BEING RIGHT IS NOT THE OFFICE WORKING. Eveliz was approved on
+    2026-10-05 with every room checked, while her iMac had failed its SaraPlus
+    sweep 61 times since 10/3 ("wants to confirm this computer with a code it
+    emails you") and had never relayed a single credit check. Her knocks came
+    from OwnerVille and looked fine, so nobody looked further -- Megan found it.
+    The faults were sitting in 'ICD Faults' the whole time; this prints them
+    at the one moment somebody is guaranteed to be looking at the office.
+
+    Rows are passed in (not read here) so this can be tested without Sheets.
+    """
+    key = office_key.strip().lower()
+    since = today - dt.timedelta(days=HEALTH_DAYS - 1)
+    by_stage: Dict[str, Dict] = {}
+    for row in faults[1:]:
+        if len(row) <= P.F_LAST or row[P.F_OFFICE].strip().lower() != key:
+            continue
+        try:
+            day = dt.date.fromisoformat(row[P.F_DAY].strip()[:10])
+        except ValueError:
+            continue
+        if day < since:
+            continue
+        s = by_stage.setdefault(row[P.F_STAGE].strip() or "?",
+                                {"count": 0, "first": day, "summary": ""})
+        try:
+            s["count"] += int(row[P.F_COUNT] or 1)
+        except ValueError:
+            s["count"] += 1
+        s["first"] = min(s["first"], day)
+        s["summary"] = row[P.F_SUMMARY].strip().splitlines()[0][:160]
+    relayed = any(r and r[0].strip().lower() == key for r in relay[1:])
+
+    out = []
+    if by_stage:
+        out.append("THIS OFFICE'S MACHINE IS FAILING (ICD Faults, last %d days):"
+                   % HEALTH_DAYS)
+        for stage, s in sorted(by_stage.items()):
+            out.append("  - %s: %dx since %s — %s"
+                       % (stage, s["count"], s["first"].isoformat(), s["summary"]))
+    if not relayed:
+        out.append("  - no credit checks EVER relayed (ICD Relay is empty for "
+                   "%s) — fine for a Box/Energy office, broken for AT&T" % key)
+    if out:
+        out.append("The approval stands, but the office is not done. Send "
+                   "them the setup link (docs/setup.html) and say so.")
+    return out
+
+
+def print_machine_health(office_key: str) -> None:
+    """Never fatal: the approval is already written."""
+    try:
+        from automations.recruiting_report.fill import open_by_key
+        book = open_by_key(P.RELAY_SPREADSHEET_ID)
+        lines = health_lines(office_key,
+                             book.worksheet(P.FAULTS_TAB).get_all_values(),
+                             book.worksheet(P.RELAY_TAB).get_all_values(),
+                             dt.date.today())
+    except Exception as e:  # noqa: BLE001
+        print("\n(could not read this office's machine health: %s)" % e)
+        return
+    print("")
+    print("\n".join(lines) if lines else
+          "Machine: no faults in %d days, credit checks arriving." % HEALTH_DAYS)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Approve where an office's alerts post")
     ap.add_argument("office", nargs="?", help="office key, e.g. kash")
@@ -542,6 +614,7 @@ def main(argv=None) -> int:
             schedule_cache.refresh()
         except Exception as e:  # noqa: BLE001
             print("(hub schedule cache not refreshed: %s)" % e)
+        print_machine_health(args.office)
     return rc
 
 
