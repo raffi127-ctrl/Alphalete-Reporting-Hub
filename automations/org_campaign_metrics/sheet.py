@@ -20,6 +20,9 @@ simply never emits their keys.
 from __future__ import annotations
 
 import os
+import time
+
+import requests
 
 from automations.org_campaign_metrics import layout as L
 
@@ -38,9 +41,25 @@ def _call(S, path, payload, method="post"):
     return r.json()
 
 
+def _get(S, url, params=None, tries=3):
+    """GET with retries. Reads are safe to repeat; on 10/5 one Sheets
+    ReadTimeout on the values read killed a --write rerun after all three
+    Tableau pulls had finished (~17 min of work lost)."""
+    for i in range(tries):
+        try:
+            r = S.get(url, params=params)
+            if r.status_code < 500 or i == tries - 1:
+                return r
+        except (requests.exceptions.Timeout,
+                requests.exceptions.ConnectionError):
+            if i == tries - 1:
+                raise
+        time.sleep(5 * (i + 1))
+
+
 def ensure_tab(S, log=print):
     """Create the hidden tab if missing; return its sheetId."""
-    meta = S.get(API, params={"fields": "sheets.properties(title,sheetId)"}).json()
+    meta = _get(S, API, params={"fields": "sheets.properties(title,sheetId)"}).json()
     sid = {s["properties"]["title"]: s["properties"]["sheetId"]
            for s in meta["sheets"]}
     if TAB in sid:
@@ -72,7 +91,7 @@ def write_layout(S, log=print):
 
 
 def _read_block(S, rng, width):
-    rows = S.get(API + "/values/'%s'!%s" % (TAB, rng)).json().get("values", [])
+    rows = _get(S, API + "/values/'%s'!%s" % (TAB, rng)).json().get("values", [])
     out = []
     for r in rows:
         r = list(r) + [""] * (width - len(r))
