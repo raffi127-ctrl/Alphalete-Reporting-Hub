@@ -580,8 +580,8 @@ def docs_generated(modal, page) -> tuple:
     from the documents side, which is what the 9/07 note said was needed.
 
       False -> the row SAYS not yet generated: safe to send.
-      True  -> the row is open and does NOT say it: a bundle exists.
-      None  -> the row would not open: decide nothing, report it.
+      True  -> the row says "generated but ... not yet signed": a bundle exists.
+      None  -> neither phrase, or the row would not open: report it.
 
     The text is returned so the log shows what was read either way.
     """
@@ -607,9 +607,12 @@ def docs_generated(modal, page) -> tuple:
             return False, body
     except Exception:                                       # noqa: BLE001
         pass
-    if not body:
-        return None, ""
-    return True, body
+    # POSITIVE PROOF ONLY (Megan's screenshot, Kierra Smith 2026-10-05): a sent
+    # bundle reads "Digital doc generated but Sales Rep have not yet signed."
+    # Anything else is a wording we have not seen -- report it, never silence.
+    if config.DOCS_GENERATED.lower() in body.lower():
+        return True, body
+    return None, body
 
 
 def open_docs_portal(page, modal):

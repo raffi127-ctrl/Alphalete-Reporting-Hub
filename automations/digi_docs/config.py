@@ -311,6 +311,10 @@ DOCS_SENDABLE_STATES = (DOCS_NEEDED_STATE,)
 # (ownerville.docs_generated). A row that is open without this line means a
 # bundle exists: darker green, no alert. A row that will not open: reported.
 DOCS_NOT_GENERATED = "not yet generated"
+# And the bundle-exists side needs its own words, not just the absence of the
+# line above (seen 2026-10-05 on Kierra Smith: "Digital doc generated but Sales
+# Rep have not yet signed."). Neither phrase = reported, never sent or silenced.
+DOCS_GENERATED = "generated but"
 
 # --- Onboarding Quizzes: NOT automated (Megan 2026-08-25) -----------------
 # No completion sweep, unlike Blue Ink's signed-packet check. The six rows below
