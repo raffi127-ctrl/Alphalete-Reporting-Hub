@@ -6635,6 +6635,40 @@
    "verify": null,
    "report_id": "terminated-icd-notice"
   },
+  "atef_nds_watch": {
+   "close_on": "exit_zero",
+   "order": 62,
+   "on_scheduler": true,
+   "machine": "Lucy 1",
+   "display_name": "Atef NDS watch (B2B -> NDS switch)",
+   "_note": "AVISO, NO ES UN REPORTE (Eve, 2026-10-05). Cesar pidio pasar los trackers de Atef de B2B a NDS; Eve: toda la capitania (Atef, Sabrina Alicea, Dhyey Patel). El 10/5 Tableau NDS no tenia a ninguno ni 'Atef's Team' en NDS Captain Teams, y cambiar antes deja todo vacio. Lee NDSWeeklyMetricsRep + CaptainsTeam (HTTP csv) y le manda UN DM a Eve el primer dia que aparecen (output/atef_nds_watch/announced.json). Lectura sin Colten Wright = exit 1, nunca 'todavia no'. RETIRAR (on_scheduler false + hub_coverage._RETIRED) cuando se haga el cambio.",
+   "command": [
+    "automations.atef_nds_watch.run"
+   ],
+   "base_args": [
+    "--post"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "after": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "source_type": "tableau",
+   "timeout_minutes": 10,
+   "verify": null,
+   "report_id": "atef-nds-watch"
+  },
   "daily_rep_breakdown": {
    "machine": "Lucy 3",
    "_machine_note": "Moved to Lucy 3 2026-08-22 (Megan) — heaviest report comes off Lucy 1's tail. cadence.not_before 05:00 keeps it clear of Lucy 1's 4:00-4:45 ownerville window (SAME rhidalgo account; concurrent logins can kick sessions). Runs ~5:00-6:00 vs the old 7:50-9:25.",
