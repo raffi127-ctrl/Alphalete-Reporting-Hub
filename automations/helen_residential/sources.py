@@ -35,7 +35,11 @@ _OWNER_L = OWNER.lower()
 # ("edge concepts"), which surfaced a sender the name search never did.
 TRACKER_SENDERS = ["anowrouzi@aptel.com", "anowrouzi580@gmail.com"]
 TRACKER_SENDER = TRACKER_SENDERS[0]          # kept for callers/back-compat
-TRACKER_GLOBS = ["RANKED Residential Telecom Tracker*.pdf"]
+# Separator-agnostic on purpose: W.E. 9.19 arrived as
+# 'RANKED_Residential_Telecom_Tracker_WE_9_19.pdf' (underscores, no dots) and
+# the old space-only glob skipped it, so a week that DID arrive was flagged as
+# never sent (2026-10-05).
+TRACKER_GLOBS = ["RANKED*Residential*Telecom*Tracker*.pdf"]
 REPCOUNT_SENDER = "rarchey@thesmartcircle.com"
 REPCOUNT_GLOBS = ["Residential Rep Count*.xlsx"]
 RECRUITING_SENDER = "mdanesi3@gmail.com"
@@ -63,7 +67,9 @@ def to_sheet_sunday(d: dt.date) -> Optional[dt.date]:
 _TRACKER_ROW = re.compile(
     r"Helen Assefaw\s+Edge Concepts\s+[A-Z]{2}\s+[A-Za-z .'-]+?\s+"
     r"([\d,]+)\s+([\d,]+)\b")
-_TRACKER_WEEK = re.compile(r"W\.E\. (\d{1,2})\.(\d{1,2})")
+# 'W.E. 9.12' and 'WE_9_19' -- see TRACKER_GLOBS.
+_TRACKER_WEEK = re.compile(r"W\.?E\.?[\s_]+(\d{1,2})[._](\d{1,2})", re.I)
+_BYDAY = re.compile(r"Campaign[\s_]+Totals", re.I)
 
 
 def parse_tracker(paths: List[Path], year_hint: int) -> Dict[dt.date, dict]:
@@ -76,7 +82,7 @@ def parse_tracker(paths: List[Path], year_hint: int) -> Dict[dt.date, dict]:
 
     best: Dict[dt.date, tuple] = {}     # sunday -> (rank, units, source)
     for f in sorted(paths):
-        if "Campaign Totals" in f.name:
+        if _BYDAY.search(f.name):
             continue                    # org-level daily totals, no ICD rows
         m = _TRACKER_WEEK.search(f.name)
         if not m:
