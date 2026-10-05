@@ -4374,6 +4374,13 @@ _CRED_FILES = {
     # Fathom API key(s) -- one per Zoom account that records 1st rounds -- for
     # the 1st Round Scorecards post (first_round_scorecards.fathom). Lives in
     # ~/.config, outside the repo, so `lucy update` never carries it.
+    # ONLY the Claude API key out of the brand-audit keys.json (Eve 2026-10-05:
+    # the captainship auto-send's visual check runs on Lucy 3, which has its own
+    # keys.json for brand_audit but no anthropic key). Same file as brand_audit
+    # uses; push sends just _CRED_PUSH_FIELDS and set MERGES, so Lucy 3's other
+    # keys are left alone.
+    "brand-audit-anthropic":
+        lambda: Path.home() / ".config" / "brand-audit" / "keys.json",
     "fathom-creds":
         lambda: Path.home() / ".config" / "recruiting-report" / "fathom-creds.json",
     # alphaletereporting's FULL-drive token (first_round_scorecards.drive_auth):
@@ -4542,6 +4549,13 @@ _CRED_FILES_MERGE = {
     "saraplus-creds",
     "slack-skool-creds",
     "new-start-leader-phones",
+    "brand-audit-anthropic",
+}
+
+# Keys pushed for a file-key that shares a file with other secrets: push_cred_file
+# sends ONLY these fields, never the whole file.
+_CRED_PUSH_FIELDS = {
+    "brand-audit-anthropic": ("anthropic_api_key",),
 }
 
 
@@ -4576,6 +4590,18 @@ def _action_push_cred_file(args: str) -> tuple[bool, str]:
         return False, f"couldn't read {path.name} here: {str(e).splitlines()[0][:100]}"
     if not content.strip():
         return False, f"{path.name} is empty on this machine — not pushing"
+    fields = _CRED_PUSH_FIELDS.get(key)
+    if fields:
+        import json as _json
+        try:
+            data = _json.loads(content)
+        except Exception as e:  # noqa: BLE001
+            return False, f"{path.name} isn't readable JSON here ({str(e)[:80]})"
+        picked = {f: data[f] for f in fields if data.get(f)}
+        if not picked:
+            return False, (f"{path.name} here has none of {', '.join(fields)} — "
+                           "not pushing")
+        content = _json.dumps(picked)
     enqueue("set_cred_file", f"{key} {content}",
             by=f"push from {_machine_profile()}", machine=target, auto=True)
     return True, (f"queued {key} ({len(content)} chars) onto '{target}' — "
