@@ -420,7 +420,7 @@ def write_overrides(svc, via_hub: bool) -> str:
     return f"override weekly: {got} week-rows refreshed from periods {periods}; {len(keep)} on the tab"
 
 
-def write(rows: list[list], balance: float | None, via_hub: bool = False) -> None:
+def write(rows: list[list], balance: float | None, via_hub: bool = False):
     from automations.carlos_finance.tiller_sync import _svc   # Sheets client that retries 429/5xx
     svc = _svc()
     svc.values().clear(spreadsheetId=PNL_SHEET_ID, range=f"'{TAB}'!A1:J3000").execute()
@@ -437,6 +437,24 @@ def write(rows: list[list], balance: float | None, via_hub: bool = False) -> Non
         log(write_overrides(svc, via_hub))
     except Exception as e:  # noqa: BLE001
         log(f"override weekly failed (rest of the run is fine): {str(e)[:160]}")
+    return svc
+
+
+def record_delivery(svc, rows: list[list]) -> int:
+    """Proof for the orchestrator that the ledger landed: read the tab back and check it holds every row we
+    wrote, then write today's run manifest. Without one a clean exit can't close the day's incident
+    (delivery_check: 'verify is not wired, no manifest')."""
+    from automations.shared.run_manifest import mark_clean, write_manifest
+    on_sheet = svc.values().get(spreadsheetId=PNL_SHEET_ID, range=f"'{TAB}'!A2:J3000").execute().get("values", [])
+    n = sum(1 for r in on_sheet if r and r[0] != "")
+    if not rows or n != len(rows):
+        note = f"'{TAB}' read-back has {n} rows (wrote {len(rows)})"
+        log("NOT DELIVERED: " + note)
+        write_manifest("carlos_security_ledger", failed=[TAB], kind="step", note=note)
+        return 1
+    mark_clean("carlos_security_ledger", kind="step")
+    log(f"Delivered: '{TAB}' read-back {n} rows")
+    return 0
 
 
 def main(argv=None) -> int:
@@ -466,9 +484,15 @@ def main(argv=None) -> int:
         for r in rows[:5]:
             log(f"  {r[1][:50]:50s} {r[2]:22s} {r[4]:>12,.2f}")
         return 0
-    write(rows, balance, via_hub=(args.via == "hub" and not args.from_files))
+    if not rows:
+        # Never clear the tab for an empty pull — Carlos always has ledger history, so 0 rows is a failed pull.
+        log("NOT DELIVERED: Tableau returned 0 Carlos rows — tab left as is")
+        from automations.shared.run_manifest import write_manifest
+        write_manifest("carlos_security_ledger", failed=[TAB], kind="step", note="Tableau returned 0 Carlos ledger rows; tab left as is")
+        return 1
+    svc = write(rows, balance, via_hub=(args.via == "hub" and not args.from_files))
     log(f"wrote '{TAB}' ({len(rows)} rows) + balance")
-    return 0
+    return record_delivery(svc, rows)
 
 
 if __name__ == "__main__":

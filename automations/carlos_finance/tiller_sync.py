@@ -279,6 +279,26 @@ def main(argv=None) -> int:
         log(f"Ledger written: {len(rows)} rows")
     for m in roll_calendar(svc, today, args.dry_run):
         log(("DRY-RUN " if args.dry_run else "") + m)
+    if not args.dry_run:
+        return _record_delivery(svc, rows, new)
+    return 0
+
+
+def _record_delivery(svc, rows: list[list], new: list[list]) -> int:
+    """Proof for the orchestrator that the Ledger really landed: read it back and check every row we
+    wrote (and every new Txn ID) is on the sheet, then write today's run manifest. Without a manifest a
+    clean exit can't close the day's incident (delivery_check: 'verify is not wired, no manifest')."""
+    from automations.shared.run_manifest import mark_clean, write_manifest
+    on_sheet = read_ledger(svc)
+    ids = {str(r[10]) for r in on_sheet}
+    missing = [str(r[10]) for r in new if str(r[10]) not in ids]
+    if len(on_sheet) < len(rows) or missing:
+        note = f"Ledger read-back has {len(on_sheet)} rows (wrote {len(rows)}); {len(missing)} new txn(s) missing"
+        log("NOT DELIVERED: " + note)
+        write_manifest("carlos_tiller_sync", failed=["Ledger"], kind="step", note=note)
+        return 1
+    mark_clean("carlos_tiller_sync", kind="step")
+    log(f"Delivered: Ledger read-back {len(on_sheet)} rows, all {len(new)} new txn(s) present")
     return 0
 
 
