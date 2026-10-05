@@ -73,10 +73,31 @@ function repaint() {
   var m = f.match(/IMPORTRANGE\(\s*"([^"]+)"\s*,\s*"([^"!]+)!/i);
   var src = null;
   if (m) {
-    try {
-      src = SpreadsheetApp.openByUrl(m[1]).getSheetByName(m[2]);
-    } catch (err) {
-      src = null; // not shared with this account, or sheet gone
+    // PROBE FIRST (2026-10-05): openByUrl on a doc this account cannot open
+    // aborts the WHOLE execution with "You do not have permission to access
+    // the requested document" - try/catch does NOT contain it, which killed
+    // install() on Khalil's tracker. A REST probe with muteHttpExceptions
+    // returns the 403 as a plain response, so the fallback actually runs.
+    var id = (m[1].match(/\/d\/([a-zA-Z0-9_-]+)/) || [])[1];
+    var ok = false;
+    if (id) {
+      try {
+        var resp = UrlFetchApp.fetch(
+          'https://sheets.googleapis.com/v4/spreadsheets/' + id +
+          '?fields=spreadsheetId',
+          { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+            muteHttpExceptions: true });
+        ok = resp.getResponseCode() === 200;
+      } catch (err) {
+        ok = false;
+      }
+    }
+    if (ok) {
+      try {
+        src = SpreadsheetApp.openByUrl(m[1]).getSheetByName(m[2]);
+      } catch (err) {
+        src = null; // sheet/tab gone between probe and open
+      }
     }
   }
 
