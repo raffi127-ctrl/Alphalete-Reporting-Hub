@@ -61,7 +61,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import List, Optional, Sequence, Set, Tuple
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from automations.captainship_drafts import config
 from automations.captainship_drafts import scope as _scope
@@ -563,10 +563,15 @@ def ensure_parent(today: dt.date, channel: Optional[str] = None,
     # the message pinging the old list.
     # SHORT on purpose (Eve, 2026-09-23): no roster of who is in what — every
     # link below already names its captain.
+    from automations.captainship_drafts import auto_send as _A
+    how = ("Every other captain's report already went out on its own; only "
+           "the ones that need a look are posted here. React "
+           ":white_check_mark: on a link to send it as is."
+           if _A.is_on(today) else
+           "React :white_check_mark: on a link to send just that one. "
+           "Nothing goes out until then.")
     text = (f"*Captainship Reports — {reported.month}/{reported.day}*\n"
-            f"{_mentions()} — one link per captainship below. React "
-            f":white_check_mark: on a link to send just that one. Nothing "
-            f"goes out until then.\n"
+            f"{_mentions()} — one link per captainship below. {how}\n"
             f"`{MARKER} {today:%Y-%m-%d}`")
     r = _client().chat_postMessage(channel=_channel(channel), text=text,
                                    unfurl_links=False)
@@ -760,7 +765,7 @@ def remind(today: dt.date, after_hours: float = REMIND_AFTER_HOURS,
     # anything (weekend_release), so reading the reaction alone would nudge
     # Evelyn about reports the captains already have. `sent_keys` is the honest
     # answer and it covers both routes.
-    done = _sent_keys_from(thread)
+    done = _done(today, thread)
     waiting = []
     for block in config.BLOCKS:
         msg = posts.get(block.key)
@@ -825,7 +830,7 @@ def close_day(today: dt.date, channel: Optional[str] = None,
     # by weekend_release. Read on Monday, that reads as a weekend that failed.
     # `sent_keys` is the honest answer to "was this decided" and it covers both
     # routes; the reaction only covers one.
-    done = _sent_keys_from(thread)
+    done = _done(today, thread)
     names = {c.key: c.display_name for c in config.CAPTAINS}
     stuck = []
     for block in config.BLOCKS:
@@ -1092,6 +1097,183 @@ def hold_weekend(parent: dict, block: "config.Block", reason: str,
         print(f"✓ weekend hold said once for {block.key} — {reason}",
               flush=True)
     return True
+
+
+def auto_check(today: dt.date, blocks: Sequence["config.Block"],
+               done: Set[str], *, act: bool = True, verbose: bool = True
+               ) -> Tuple[Set[str], Dict[str, List[str]], Dict[str, List[str]]]:
+    """Revisa a cada capitan todavia sin mandar de `blocks`.
+
+    Devuelve (pueden salir, {frenado: motivos}, {re-armado: lo que se arreglo}).
+    Lo que se arregla re-corriendo se re-arma UNA vez aca mismo y se vuelve a
+    revisar en esta pasada. No postea nada: eso lo decide `auto_day`.
+    `act=False` revisa sin re-armar (la corrida de prueba / --audit)."""
+    from automations.captainship_drafts import auto_send as A
+    keys = [k for b in blocks for k in b.captains if k not in done]
+    if not keys:
+        return set(), {}, {}
+    state = A.load_state(today)
+
+    # Una falla aguas arriba (un modulo de la cadena de la manana) ya alerto por
+    # su lado y no se arregla re-armando el draft: frena a quien toca.
+    upstream: Dict[str, str] = {}
+    hit, why = scope_today(today)
+    if hit is None:
+        upstream = {k: f"could not verify this morning's chain ({why})"
+                    for k in keys}
+    elif hit:
+        upstream = {k: f"an upstream report failed today ({why})"
+                    for k in hit if k in keys}
+
+    verdicts = A.judge(today, keys, state=state, upstream_held=upstream,
+                       verbose=verbose)
+    fixed: Dict[str, List[str]] = {}
+    fix = [k for k, v in verdicts.items() if v.fixable and not v.blocked]
+    if fix and act:
+        A.rebuild(today, fix)
+        tb = set(state.get("tableau_rebuilt") or [])
+        for k in fix:
+            fixed[k] = list(verdicts[k].fixable)
+            if [r for r in verdicts[k].fixable if r != A.TABLEAU_CAUGHT_UP]:
+                state.setdefault("rebuilds", {})[k] = \
+                    state.get("rebuilds", {}).get(k, 0) + 1
+            if A.TABLEAU_CAUGHT_UP in verdicts[k].fixable:
+                tb.add(k)
+        state["tableau_rebuilt"] = sorted(tb)
+        A.save_state(today, state)
+        verdicts.update(A.judge(today, fix, state=state,
+                                upstream_held=upstream, verbose=verbose))
+    A.save_state(today, state)
+    ok = {k for k, v in verdicts.items() if v.send}
+    held = {k: v.reasons() for k, v in verdicts.items() if not v.send}
+    return ok, held, fixed
+
+
+def _post_link(today: dt.date, block: "config.Block", parent: Optional[dict],
+               channel: Optional[str], posts: dict) -> dict:
+    """Pone el link de ESE capitan en el hilo del dia (abriendo el hilo si hace
+    falta) y devuelve el parent. Solo se llama cuando algo fallo."""
+    if parent is None:
+        parent = ensure_parent(today, channel)
+    if block.key not in posts and preview_htmls(today, block):
+        post_block(upload_pdf(build_pdf(today, block),
+                              description=eml_digest(today, block)),
+                   today, block, parent, channel)
+    return parent
+
+
+def auto_day(today: dt.date, blocks: Sequence["config.Block"],
+             channel: Optional[str] = None, *, act: bool = True,
+             verbose: bool = True) -> int:
+    """EL ENVIO AUTOMATICO (Eve 2026-10-05): los Captainship Reports salen solos.
+
+    Eve: "no me tiene que llegar link de revision a no ser que algo de lo que
+    te enliste haya fallado". Entonces, por capitan:
+
+      * todo bien            -> sale solo, SIN postear nada en #revision-emails;
+      * se arreglo re-armando -> sale, y su link queda en el hilo con lo que se
+                                 arreglo (algo fallo, ella lo quiere ver);
+      * frenado              -> link + nota etiquetandola + aviso en el hilo
+                                 DIARIO de #claudecorrections. Un ✅ suyo lo
+                                 manda tal cual (eso sigue en --check).
+
+    EL CANDADO. Un capitan que salio sin hilo no tiene donde anotarse en Slack,
+    asi que se anota en output/state/captainship_autosend/<fecha>.json (todo el
+    ciclo corre en Lucy 3). `_done` junta ese archivo con el hilo.
+
+    ANTES DE LAS 10:00 un capitan sin borrador todavia no se juzga: lo esta
+    armando la cadena de la manana o el agente de las 07:15 (--ensure-posted).
+    Despues de las 10:00 un borrador que falta es una falla como cualquiera.
+    Devuelve 1 mientras alguno siga esperando (para que el .sh recuerde)."""
+    from automations.captainship_drafts import auto_send as A
+    parent = _find_post(today, channel)
+    thread = replies(parent, channel) if parent is not None else []
+    posts = (block_posts(today, parent, channel, thread=thread)
+             if parent is not None else {})
+    done = _done(today, thread)
+    cands = [b for b in blocks
+             if not set(b.captains) <= done
+             and not (b.key in posts and _approver_of(posts[b.key]))]
+    now = dt.datetime.now()
+    early = today == now.date() and (now.hour, now.minute) < (10, 0)
+    waiting: list = []
+    if early:
+        waiting = [b for b in cands
+                   if any(not A._eml(today, k).exists()
+                          for k in b.captains if k not in done)]
+        if waiting and verbose:
+            print(f"  auto-send: not built yet, waiting: "
+                  f"{', '.join(b.key for b in waiting)}", flush=True)
+        cands = [b for b in cands if b not in waiting]
+        if not cands:
+            return 1 if waiting else 0
+    if not cands:
+        return 0
+    ok, held, fixed = auto_check(today, cands, done, act=act, verbose=verbose)
+    print(f"  auto-send: {len(ok)} ready, {len(held)} held, "
+          f"{len(fixed)} rebuilt", flush=True)
+    if not act:
+        return 1 if held or waiting else 0
+
+    # ---- los que estan bien: salen ---------------------------------------
+    if ok:
+        n, got = send_reviewed(today, only=sorted(ok))
+        delivered = set(got) if got is not None else (ok if not n else set())
+        A.mark_local_sent(today, delivered)
+        for k in sorted(ok - delivered):
+            held[k] = ["the email could not be sent (see the run log); "
+                       "it retries on the next check"]
+        for k in sorted(delivered):
+            block = config.block_of(k)
+            if k in fixed or block.key in posts:
+                # Algo fallo antes (re-armado, o estaba frenado con su link):
+                # el hilo dice que ya salio y con que se arreglo.
+                parent = _post_link(today, block, parent, channel, posts)
+                if k in fixed:
+                    _client().chat_postMessage(
+                        channel=_channel(channel), thread_ts=parent["ts"],
+                        text=(f"🔁 *{block.heading}* — rebuilt automatically ("
+                              + "; ".join(fixed[k]) + ") and it came out "
+                              "clean, so it went out. Link above, just so you "
+                              "can see it."))
+                mark_block_sent(parent, block, 0, channel, sent=[k],
+                                delivered=[k])
+
+    # ---- los frenados: link + nota + corrections --------------------------
+    if held:
+        thread = replies(parent, channel) if parent is not None else []
+        posts = (block_posts(today, parent, channel, thread=thread)
+                 if parent is not None else {})
+        state = A.load_state(today)
+        fresh: Dict[str, Tuple[str, List[str], bool]] = {}
+        for k, reasons in held.items():
+            block = config.block_of(k)
+            tag = f"{k}:{A._short('|'.join(reasons))}"
+            if _has_mark(thread, A.HELD_MARKER, tag):
+                continue
+            try:
+                parent = _post_link(today, block, parent, channel, posts)
+            except Exception as e:  # noqa: BLE001 — the note still goes
+                print(f"  ⚠ {k}: could not post its link "
+                      f"({type(e).__name__}: {e})", flush=True)
+                if parent is None:
+                    parent = ensure_parent(today, channel)
+            rebuilt = state.get("rebuilds", {}).get(k, 0) >= A.MAX_REBUILDS
+            _client().chat_postMessage(
+                channel=_channel(channel), thread_ts=parent["ts"],
+                text=(A.hold_text(block.heading, reasons, _mentions(), rebuilt)
+                      + f"\n`{_tagged(A.HELD_MARKER, tag)}`"))
+            fresh[k] = (block.heading, reasons, True)
+        if fresh:
+            A.alert_corrections(today, fresh)
+    return 1 if held or waiting else 0
+
+
+def _done(today: dt.date, thread: list) -> Set[str]:
+    """Quien ya recibio su correo hoy: el hilo (✅ humano o envio con link) MAS
+    lo que el envio automatico mando sin hilo."""
+    from automations.captainship_drafts import auto_send as A
+    return _sent_keys_from(thread) | A.local_sent(today)
 
 
 def find_approval(today: dt.date, channel: Optional[str] = None,
@@ -1409,6 +1591,49 @@ def _alert_deadline_failure(day: dt.date, what, detail: str = "") -> None:
         print(f"  (corrections alert skipped: {e})", flush=True)
 
 
+def record_built(today: dt.date, verbose: bool = True) -> dict:
+    """The delivery manifest under auto-send: with no links posted on a clean
+    day, what this step delivers is the BUILT drafts (the send is --check's).
+    A block with no preview on disk is what failed."""
+    from automations.shared import run_manifest
+    up = [b.key for b in config.BLOCKS if preview_htmls(today, b)]
+    missing = [b.key for b in config.BLOCKS if b.key not in up]
+    note = "{} of {} drafts built (auto-send: links only for problems)".format(
+        len(up), len(config.BLOCKS))
+    run_manifest.write_manifest(
+        REPORT_ID, failed=missing, succeeded=up, kind="block",
+        retry_args=["--ensure-posted"], note=note, alert=not missing)
+    if verbose:
+        print("  delivery manifest: " + note, flush=True)
+    return {"succeeded": up, "failed": missing, "note": note}
+
+
+def ensure_built(today: dt.date, blocks: Sequence["config.Block"], *,
+                 verbose: bool = True) -> int:
+    """--ensure-posted under auto-send: BUILD any block that has no draft yet,
+    post nothing. The 15-minute --check judges and sends; only a problem puts a
+    link in the channel (Eve 2026-10-05). A build that produces nothing still
+    alerts, same as the deadline path always did."""
+    failures: List[str] = []
+    for block in blocks:
+        if preview_htmls(today, block):
+            continue
+        cmd = [sys.executable, "-u", "-m", "automations.captainship_drafts.run",
+               "--dry-run", "--block", block.key, "--date", today.isoformat()]
+        print(f"→ {' '.join(cmd)}", flush=True)
+        rc = subprocess.call(cmd)
+        if not preview_htmls(today, block):
+            failures.append(f"*{block.heading}* — the BUILD exited {rc} and "
+                            f"wrote no draft")
+    if failures:
+        _alert_deadline_failure(today, failures)
+    else:
+        _close_deadline_incident(today, "*Captainship Reports* — every draft "
+                                        "is built")
+    record_built(today, verbose=verbose)
+    return 1 if failures else 0
+
+
 def ensure_posted(today: dt.date, channel: Optional[str] = None,
                   verbose: bool = True, blocks=None) -> int:
     """THE 11:00 DEADLINE (Eve, 2026-08-04: "necesito que estos drafts se armen
@@ -1447,6 +1672,9 @@ def ensure_posted(today: dt.date, channel: Optional[str] = None,
     never made it.
     """
     todo = list(blocks) if blocks else list(config.BLOCKS)
+    from automations.captainship_drafts import auto_send as _A
+    if _A.is_on(today):
+        return ensure_built(today, todo, verbose=verbose)
     parent = None
     existing: dict = {}
     try:
@@ -1612,6 +1840,10 @@ def main(argv=None) -> int:
                          "starts. Mails nobody — the checkmark still does "
                          "that. Driven by deploy/captainship_review.sh at "
                          "10:00 CT.")
+    ap.add_argument("--audit", action="store_true",
+                    help="run the automatic check (auto_send) on every block "
+                         "and PRINT what it would do. Read-only: no rebuild, "
+                         "no Slack post, no send. Works on any --date.")
     ap.add_argument("--pdf-only", action="store_true",
                     help="build the PDF and stop (no Drive, no Slack).")
     ap.add_argument("--preview", action="store_true",
@@ -1642,6 +1874,15 @@ def main(argv=None) -> int:
     else:
         blocks = list(config.BLOCKS)
 
+    if args.audit:
+        # Before --post: `lucy rerun captainship_drafts_review --audit` arrives
+        # as "--post --audit" (base_args) and must stay read-only.
+        ok, held, _fixed = auto_check(today, blocks, set(), act=False)
+        print(f"\n=== auto-check {today}: {len(ok)} would go out, "
+              f"{len(held)} held ===", flush=True)
+        for k, reasons in held.items():
+            print(f"  ✗ {k}: " + " | ".join(reasons), flush=True)
+        return 0
     if args.pdf_only:
         for block in blocks:
             build_pdf(today, block)
@@ -1712,6 +1953,14 @@ def main(argv=None) -> int:
                   f"valid: {link}", flush=True)
         return 0
     if args.post:
+        from automations.captainship_drafts import auto_send as _A
+        if _A.is_on(today, enabled=not args.no_auto):
+            # Auto-send: no links on a clean day. The 15-minute check sends and
+            # posts a link only for a captain something went wrong with.
+            print("— auto-send is on: nothing to post; --check sends and "
+                  "only problems get a link", flush=True)
+            record_built(today)
+            return 0
         parent = ensure_parent(today, args.channel)
         try:
             for block in blocks:
@@ -1739,8 +1988,25 @@ def main(argv=None) -> int:
         # so on a clean Saturday the 07:00 tick finds the chain DONE a quarter
         # of an hour before the 07:15 agent puts the links up. Wait for it — the
         # very next tick sends, with a thread to lock.
+        # EL ENVIO AUTOMATICO (Eve 2026-10-05), los 7 dias desde 10/6. Ocupa
+        # el lugar de weekend_release y del ✅: los que estan bien salen sin
+        # postear nada; solo lo que fallo deja link en el hilo (auto_day).
+        from automations.captainship_drafts import auto_send as _A
+        auto_on = _A.is_on(today, enabled=not args.no_auto)
+        rc_auto = 0
+        if auto_on:
+            rc_auto = auto_day(today, blocks, args.channel, act=args.send)
         parent = _find_post(today, args.channel)
         if parent is None:
+            if auto_on:
+                # A clean day leaves no thread: the Hub card still has to go
+                # green once every captain is out.
+                if {c.key for c in config.CAPTAINS} <= _A.local_sent(today):
+                    RA.ensure_recorded(HUB_CARD_ID, HUB_CARD_NAME,
+                                       (_A.AUTO_ID, _A.AUTO_WHO), day=today)
+                if args.send and not rc_auto:
+                    _A.close_incident(today)
+                return rc_auto
             print(f"— no review thread for {today:%Y-%m-%d} yet; nothing to "
                   f"check (the send lock lives in it)", flush=True)
             return 1
@@ -1752,7 +2018,7 @@ def main(argv=None) -> int:
         # (todo, o la tanda parcial de un rato antes), asi que el que quedo
         # retenido puede salir mas tarde sin que nadie reciba dos copias. Vale
         # entre bloques igual que dentro de uno.
-        done = _sent_keys_from(thread)
+        done = _done(today, thread)
 
         # EL DIA SE JUZGA UNA VEZ, LOS BLOQUES SE MANDAN POR SEPARADO. Both the
         # weekend auto-release and the partial-send scope read the DAY's state,
@@ -1764,7 +2030,7 @@ def main(argv=None) -> int:
         held_why = ""
         unticked = [b for b in blocks if b.key in posts and b.key not in approved
                     and not set(b.captains) <= done]
-        if unticked:
+        if unticked and not auto_on:
             # Sat/Sun nobody is in the channel to tick it. A day whose whole
             # chain is DONE releases itself; anything short of that keeps
             # waiting for a human (Eve 2026-08-12).
@@ -1891,7 +2157,18 @@ def main(argv=None) -> int:
             # lock we just wrote — cheap, and it is the only thing standing
             # between a crash mid-loop and a double send.
             thread = replies(parent, args.channel)
-            done = _sent_keys_from(thread)
+            done = _done(today, thread)
+        if auto_on:
+            # Held blocks have an unapproved link: `pending` already counts them.
+            # Auto-released ones never had one and are not "released" here.
+            pending = sum(1 for b in blocks if b.key in posts
+                          and not set(b.captains) <= _done(
+                              today, replies(parent, args.channel)))
+        if auto_on and args.send and not pending and not failures \
+                and not rc_auto:
+            # Everyone is out (by itself or with a ✅): the day's corrections
+            # thread, if one opened, gets its ✅.
+            _A.close_incident(today)
         if failures:
             # NEVER 1: deploy/captainship_review.sh reads exit 1 as "still
             # waiting for a ✅" and answers it by nudging the channel. Now that
