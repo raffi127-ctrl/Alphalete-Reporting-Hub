@@ -48,12 +48,18 @@ JAMIS_SHEET_ID = "1lDm-ZmV4OjAPipx-lbqQUrd1VifpULzRNP3klGqEZhU"
 # 'Lucy Churn', same as Jamis's.
 SABRINA_SHEET_ID = "1tR3Bhp-o0kxq6p39ilhdQck6FPwqlBjVOjIx5LMuiMk"
 
+# Eveliz Wright (South Shore Consulting Group) -- onboarded 2026-10-05, her
+# "Eveliz Wright - Metrics" board copied from the Master Metrics Templates,
+# whose churn tab is 'Lucy Churn'.
+EVELIZ_SHEET_ID = "1iDjxnqQm3l65XHefHFk8CIn3lx_Yz1mvI-60bCMRwBk"
+
 OWNER_CFG = [
     # (key, owner-name prefix in the crosstab, sheet id, churn tab, has-activations)
     ("carlos", "CARLOS HIDALGO", fill.SHEET_ID, fill.TAB_CHURN_CARLOS, True),
     ("atef", "ATEF CHOUDHURY", ATEF_SHEET_ID, "LUCY CHURN", False),
     ("jamis", "JAMIS GARAY", JAMIS_SHEET_ID, "Lucy Churn", False),
     ("sabrina", "SABRINA ALICEA", SABRINA_SHEET_ID, "Lucy Churn", False),
+    ("eveliz", "EVELIZ WRIGHT", EVELIZ_SHEET_ID, "Lucy Churn", False),
 ]
 
 # Offices NOT yet in the default `--owner both` daily run. They are fully
@@ -90,7 +96,10 @@ OWNER_CFG = [
 # than left on a daily hand-run because STAGED only skips `--owner both`: her
 # churn tab would be empty again at 04:00 tomorrow, and an empty tab does not
 # cost her two sections, it costs the whole thread.
-STAGED: set = set()
+#
+# eveliz (2026-10-05): staged on arrival, same as sabrina was. Promote after
+# `--dump-rep-grid eveliz` shows her reps and `--owner eveliz` reconciles.
+STAGED: set = {"eveliz"}
 
 
 def _activation_cfg():
@@ -159,6 +168,15 @@ def _activation_cfg():
                     "ATTTRACKER-B2B/ACTIVATIONRATES/"
                     "d30e7ebf-2f24-4c7f-9419-b2c713a50abb/AtefEXP2?:iid=1",
                     "Atef EXP 2", "SABRINA ALICEA"),
+        # EVELIZ -- her own captainship ("Eveliz's Team" in B2B Captain's
+        # Teams (SFDC), the same filter captainship_drafts slices her §2 on),
+        # so neither Carlos's nor Atef's saved view carries her. The base
+        # ACTIVATIONRATES view sliced to her team by URL. UNVERIFIED until
+        # `--dump-rep-grid eveliz` on Lucy 2 lists EVELIZ WRIGHT.
+        "eveliz": ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+                   "ATTTRACKER-B2B/ACTIVATIONRATES"
+                   "?B2B%20Captain%27s%20Teams%20(SFDC)=Eveliz%27s%20Team",
+                   "", "EVELIZ WRIGHT"),
     }
 
 
