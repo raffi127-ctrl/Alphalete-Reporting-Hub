@@ -133,6 +133,44 @@ def all_standings_now(day: Optional[dt.date] = None) -> str:
     return "\n\n".join(parts)
 
 
+def week_totals(start: dt.date, end: dt.date) -> str:
+    """READ-ONLY: the crew's sales per day and per rep over [start, end], from
+    the state file (KEEP_DAYS back). A day's crew sales are the guest section
+    plus any crew name still sitting in Raf's day state (how the days before
+    the 9/29 split, or a rep added to the roster later, were recorded)."""
+    data = S.load()
+    per_rep: Dict[str, int] = {}
+    lines = []
+    grand = 0
+    d = start
+    while d <= end:
+        key = d.isoformat()
+        today = dict((data.get(SECTION) or {}).get(key) or {})
+        for rep, m in (data.get(key) or {}).items():
+            if not rep.startswith("_") and is_guest(rep) and rep not in today:
+                today[rep] = m
+        day_total = 0
+        for rep, m in today.items():
+            n = N.rep_total(m)
+            per_rep[rep] = per_rep.get(rep, 0) + n
+            day_total += n
+        grand += day_total
+        lines.append("%s %s: %d" % (d.strftime("%a"), d.strftime("%-m/%-d"), day_total))
+        d += dt.timedelta(days=1)
+    lines.append("")
+    for rep, n in sorted(per_rep.items(), key=lambda kv: (-kv[1], kv[0])):
+        if n:
+            lines.append("%s %d" % (rep, n))
+    lines.append("")
+    lines.append("WEEK TOTAL: %d" % grand)
+    return "\n".join(lines)
+
+
 if __name__ == "__main__":        # read-only: `--all` = Raf's board too
     import sys
-    print(all_standings_now() if "--all" in sys.argv else standings_now(), flush=True)
+    if "--week" in sys.argv:       # --week YYYY-MM-DD YYYY-MM-DD
+        i = sys.argv.index("--week")
+        a, b = dt.date.fromisoformat(sys.argv[i + 1]), dt.date.fromisoformat(sys.argv[i + 2])
+        print(week_totals(a, b), flush=True)
+    else:
+        print(all_standings_now() if "--all" in sys.argv else standings_now(), flush=True)
