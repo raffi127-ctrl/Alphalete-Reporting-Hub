@@ -108,6 +108,13 @@ class WeeklyBar(unittest.TestCase):
             "ATTTRACKER2_1-D2D/FiberLeadPerformance "
             "→ Office New Fiber Lead Penetration By Zip"))
 
+    def test_security_ledger_balance_is_weekly_but_details_are_not(self):
+        # 2026-10-05 false "IDENTICAL 3 days running" on the balance sheet.
+        self.assertTrue(tf.is_weekly_source(
+            "OverridesICDView/NETSUITESECURITYLEDGERSFDC → SFDC Total Balance"))
+        self.assertFalse(tf.is_weekly_source(
+            "OverridesICDView/NETSUITESECURITYLEDGERSFDC → Transaction Details"))
+
     def test_needs_is_the_sunday_before_the_one_that_just_ended(self):
         # Wed 2026-08-19: week just ended 8/16, so one week of lag = 8/09.
         self.assertEqual(tf.weekly_needs(dt.date(2026, 8, 19)),

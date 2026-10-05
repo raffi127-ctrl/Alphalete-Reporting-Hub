@@ -546,6 +546,16 @@ WEEKLY_SOURCE_MARKERS = (
     # export's only date header) — a per-zip metric, not a pull stamp, so
     # the weekly bar still watches it move.
     "leadpenetrationoverview",
+    # NETSUITE SECURITY LEDGER SFDC → SFDC Total Balance: one balance per ICD,
+    # no date column, so only the content check watches it. A balance moves only
+    # when NetSuite posts a transaction, and those post a few times a week at
+    # best — Carlos's own rows show 8- and 16-day gaps (9/23 → 10/1, 7/12 →
+    # 7/28). Thread `drop-tableau-stale-overridesicdview-netsuitesecurity…`,
+    # 2026-10-05 ("IDENTICAL data 3 days running": Sat/Sun/Mon after a Thursday
+    # posting) while the balance that went out ($44,368.71) matched the 10/1
+    # transfer to the cent. ⚠ Name the SHEET: Transaction Details carries a
+    # Date column and keeps the daily bar.
+    "netsuitesecurityledgersfdc → sfdc total balance",
 )
 # A weekly feed still has to move. `needs` becomes the Sunday BEFORE the one
 # that just ended, so ONE missed week is still loud: the deposits post mid-week
