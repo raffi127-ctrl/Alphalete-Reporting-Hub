@@ -155,6 +155,27 @@ UNCOLOURED = ("ICD", "Campaigns")
 RELAY_FED = ("Sara+ Alerts", "Text Scoreboard", "Call-outs",
              "Knock & Dispo Boards")
 
+# OFFICES WE RUN FROM OUR OWN MACHINES, not from an agent on theirs. The page
+# was built out of the ECO registries, so the two biggest offices came back
+# nearly empty: Raf has no ECO agent at all (the Alphalete sweep relays for
+# him) and Carlos's metrics come from b2b_metrics rather than the generic
+# office_metrics runner. Megan 2026-10-05: "carlos has metrics thread and
+# tableau", "raf also has nothing filled out and is active for almost all".
+#
+# Each entry cites the module that actually does it, so this stays checkable
+# rather than becoming a list someone keeps by hand.
+HOUSE_RUN = {
+    "rafaelhidalgo": {
+        # alphalete_sales_board's 5-minute SaraPlus sweep, noon-midnight.
+        "Sara+ Alerts": ALWAYS_ON,
+        # Its half-hour snapshot text to the Partners chat (project
+        # times_of_sales).
+        "Text Scoreboard": (ALWAYS_ON, ["iMessage Alphalete Partners"]),
+        # total_knocks posts the board into the Metrics thread each morning.
+        "Knock & Dispo Boards": ("Daily", ["Slack #alphalete-sales"]),
+    },
+}
+
 
 # WHAT EACH COLUMN MEANS, and a picture where we have one. The screenshots
 # are the Hub's own card images, so they are the real thing rather than a
@@ -345,6 +366,41 @@ def _label_dest(name: str, cid: str) -> str:
     return ("Slack " + name) if name else ""
 
 
+def _text_lines(raw: str) -> list:
+    """'Every 15 Min · iMessage RSW A-players' for each approved text group.
+
+    A TEXT DESTINATION KEYS ITS NAME UNDER `group`, not `channel_name` —
+    which is why the Text Scoreboard column said Active and nothing else for
+    every office that has one (Megan 2026-10-05: "I still don't see text
+    groups").
+
+    ONLY THE GROUP NAME LEAVES THIS FUNCTION. That blob also carries
+    `chat_guid` and `require_handles`, which is a list of PHONE NUMBERS, and
+    this page is served without an access code."""
+    import json
+    try:
+        dests = json.loads(raw or "[]")
+    except ValueError:
+        return []
+    out = []
+    for d in dests:
+        if not isinstance(d, dict):
+            continue
+        name = str(d.get("group") or d.get("channel_name")
+                   or d.get("name") or "").strip()
+        if not name:
+            continue
+        try:
+            mins = int(d.get("cadence_min") or 0)
+        except (TypeError, ValueError):
+            mins = 0
+        when = f"Every {mins} Min" if mins else "Set times"
+        line = f"{when}{FIELD}iMessage {name}"
+        if line not in out:
+            out.append(line)
+    return out
+
+
 def _dest_names(raw: str) -> list:
     """The rooms or groups in an approved-destinations blob, by NAME.
 
@@ -458,7 +514,7 @@ def _channels() -> dict:
                 "alerts": yes(r, P.CH_APPROVED),
                 "knocks": yes(r, P.CH_KN_APPROVED),
                 "texts": yes(r, P.CH_TX_APPROVED),
-                "text_names": _dest_names(
+                "text_names": _text_lines(
                     (r[P.CH_TX_APPROVED_JSON]
                      if len(r) > P.CH_TX_APPROVED_JSON else "")
                     or (r[P.CH_TX_JSON] if len(r) > P.CH_TX_JSON else "")),
@@ -522,6 +578,20 @@ def rows(icds=None) -> list:
         try:
             from automations.office_metrics import offices as OM
             metrics = _by_owner((o.owner, k) for k, o in OM.OFFICES.items())
+            # THREE RUNNERS POST A METRICS THREAD, not one. office_metrics is
+            # the generic one; Carlos, Atef, Jamis, Sabrina and Eveliz come
+            # from b2b_metrics, and Raf from daily_metrics. Reading only the
+            # first called Carlos and Raf un-enrolled.
+            try:
+                from automations.b2b_metrics import offices as BM
+                for k, o in BM.OFFICES.items():
+                    own = getattr(o, "owner", None) or (
+                        o.get("owner") if isinstance(o, dict) else "")
+                    if own:
+                        metrics.setdefault(_letters(own), k)
+            except Exception:   # noqa: BLE001
+                pass
+            metrics.setdefault(_letters("Rafael Hidalgo"), "daily_metrics")
             try:
                 from automations.focus_office_att import aliases as _AL
                 _raw = _AL.load_aliases()
@@ -703,6 +773,18 @@ def rows(icds=None) -> list:
                 # where they are"). Names only — never the channel ids, which
                 # this page has no business carrying.
             })
+        for r in out:
+            house = HOUSE_RUN.get(_letters(r["ICD"]))
+            if not house:
+                continue
+            for col, val in house.items():
+                if r.get(col):
+                    continue          # the registry already answered
+                if isinstance(val, tuple):
+                    r[col] = _with_where(val[0], val[1])
+                else:
+                    r[col] = val
+
         skip = {"ICD", "Campaigns", "LucyECO", "Posts to"}
         for r in out:
             # Nothing has come through this office's machine yet, so anything
