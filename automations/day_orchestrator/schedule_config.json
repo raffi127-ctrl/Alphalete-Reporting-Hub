@@ -13180,28 +13180,6 @@
    "priority": "P2",
    "freshness_target": null,
    "depends_on": []
-  },
-  "nds_activation_by_rep": {
-   "on_scheduler": false,
-   "_note": "MANUAL-ONLY (Carlos 2026-10-05): Activation Rate by Rep for an NDS owner (default Khalil Mansour), computed from the NDS-SN (RES-ATT-OOF) ORDER LOG .csv export with our own 60-day Order Date window (the view's saved window is pinned stale). sold = all lines incl cancels; activated = DTR Active Date present or status Posted/Disconnected; bands = the B2B board's (vantura_churn.fill.BANDS). --push base64s the PNG to the control sheet 'NDS AR Shot'; --dm U...,U... DMs it as Lucy. `lucy rerun nds_activation_by_rep` then `lucy rerun nds_activation_by_rep --dm <ids>` once the shot is verified.",
-   "display_name": "NDS Activation Rate by Rep (Khalil)",
-   "source_type": "local",
-   "data_sources": [],
-   "command": [
-    "automations.nds_activation_by_rep.run"
-   ],
-   "base_args": [
-    "--push"
-   ],
-   "cadence": {
-    "weekdays": []
-   },
-   "priority": "P3",
-   "freshness_target": null,
-   "depends_on": [],
-   "verify": null,
-   "timeout_minutes": 20,
-   "machine": "Lucy 2"
   }
  },
  "read_only_standalone": {
