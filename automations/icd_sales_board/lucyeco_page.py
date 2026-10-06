@@ -147,14 +147,20 @@ def main() -> None:
     picks = [c for c in safe if c in EN.EXPLAINS]
     for chunk in range(0, len(picks), 5):
         for col, box in zip(picks[chunk:chunk + 5], st.columns(5)):
-            words, shot = EN.EXPLAINS[col]
+            words, shots = EN.EXPLAINS[col]
+            # One name or several — call-outs are two different messages, the
+            # nudge and the praise, and showing one of them explains half.
+            shots = [shots] if isinstance(shots, str) else list(shots or [])
             with box.popover(col, use_container_width=True):
                 st.markdown(f"**{col}**")
                 st.write(words)
-                img = _ROOT / "resources" / "report-screenshots" / shot
-                if shot and img.exists():
-                    st.image(str(img), use_container_width=True)
-                else:
+                shown = 0
+                for shot in shots:
+                    img = _ROOT / "resources" / "report-screenshots" / shot
+                    if shot and img.exists():
+                        st.image(str(img), use_container_width=True)
+                        shown += 1
+                if not shown:
                     st.caption("No example image for this one yet.")
     st.write("")
 

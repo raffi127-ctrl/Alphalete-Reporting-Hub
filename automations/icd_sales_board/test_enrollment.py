@@ -4,6 +4,8 @@ from unittest import mock
 
 from automations.icd_sales_board import enrollment as EN
 
+_letters = EN._letters
+
 
 class SafetyTests(unittest.TestCase):
     """This page has NO access code, so what may appear on it is the control."""
@@ -158,8 +160,12 @@ class ResilienceTests(unittest.TestCase):
         with mock.patch.object(EN, "_channels", return_value={}):
             rows = EN.rows()
         self.assertTrue(rows)
-        # Every office reads 'Not Enrolled' — the page still draws.
-        self.assertEqual({r["Sara+ Alerts"] for r in rows}, {EN.NOT_ON})
+        # Every ECO office reads 'Not Enrolled' and the page still draws.
+        # Raf is the exception BY DESIGN: his Sara+ comes from the Alphalete
+        # sweep (HOUSE_RUN), which does not touch the channels registry.
+        eco = {r["Sara+ Alerts"] for r in rows
+               if _letters(r["ICD"]) not in EN.HOUSE_RUN}
+        self.assertEqual(eco, {EN.NOT_ON})
 
 
 if __name__ == "__main__":

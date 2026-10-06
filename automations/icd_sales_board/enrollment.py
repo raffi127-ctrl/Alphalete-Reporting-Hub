@@ -177,7 +177,7 @@ HOUSE_RUN = {
 }
 
 
-# WHAT EACH COLUMN MEANS, and a picture where we have one. The screenshots
+# WHAT EACH COLUMN MEANS, and a picture — or two — where we have them. The screenshots
 # are the Hub's own card images, so they are the real thing rather than a
 # mock-up. A feature with no shot yet gets the words only — better than a
 # broken image, and dropping a PNG in `resources/report-screenshots/` under
@@ -191,9 +191,11 @@ EXPLAINS = {
                         "text-scoreboard.png"),
     "Call-outs": ("Lucy calling out a rep who has gone quiet, and praising "
                   "a good pace, in the office's room.",
-                  "sara-plus-callouts.png"),
+                  ["sara-plus-callouts.png",
+                   "sara-plus-callouts-positive.png"]),
     "Knock & Dispo Boards": ("The knocks and dispositions board, posted on "
-                             "the office's own cadence.", "total-knocks.png"),
+                             "the office's own cadence.",
+                             "knock-dispo-boards.png"),
     "Weather Report": ("The morning forecast for that office's city.",
                        "weather-report.png"),
     "Ad Photo Threads": ("Eve's daily 1st-round screenshots, one Slack "
