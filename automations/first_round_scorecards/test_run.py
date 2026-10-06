@@ -137,6 +137,41 @@ class KeyPiecesTest(unittest.TestCase):
             self.assertIn(f"- {k}: {grade.KEY_PIECES[k]}", grade.SYSTEM)
 
 
+class OfficeScriptTest(unittest.TestCase):
+    """Each office's own pay + schedule (Camila's scripts, 2026-10-06)."""
+
+    def test_owner_as_zooms_info_writes_it(self):
+        self.assertEqual(grade.office_for("Raf Hidalgo\n2nd funnel"), "Rafael Hidalgo")
+        self.assertEqual(grade.office_for("Nii Tagoe"), "Nii Teiko")
+        self.assertEqual(grade.office_for(" jacob  dover "), "Jacob Dover")
+        self.assertEqual(grade.office_for("Joe Logan"), "")     # no script of their own
+        self.assertEqual(grade.office_for(""), "")
+
+    def test_no_script_is_rafaels(self):
+        self.assertEqual(grade.build("")["system"], grade.build("Joe Logan")["system"])
+        self.assertIn("$1000 - $1500", grade.SYSTEM)
+
+    def test_office_numbers_and_schedule_in_its_prompt(self):
+        system = grade.build("Jacob Dover")["system"]
+        self.assertIn("Jacob Dover's office", system)
+        self.assertIn("entry $900-1,200 average weekly paycheck, Assistant Manager $65-75k",
+                      system)
+        self.assertIn("Monday through Friday, from 9:00AM to 8:00PM", system)
+        self.assertNotIn("$1000 - $1500", system)
+
+    def test_monday_friday_not_a_flag_when_the_script_says_it(self):
+        self.assertIn("mon_fri: NO", grade.build("Nii Teiko")["rules"])
+        self.assertIn("mon_fri: YES", grade.build("Jacob Dover")["rules"])
+
+    def test_skipped_line_quotes_the_offices_script(self):
+        r = result(said={"pay_entry": False})
+        r["script_office"] = "Rashad Reed"
+        text = run.reply_text(MEETING, r)
+        self.assertIn("$900 - $1200", text)
+        self.assertNotIn("$1000 - $1500", text)
+        self.assertIn("Script:</b> Rashad Reed's office", doc.build_html(MEETING, "V", r))
+
+
 class VerbiageTest(unittest.TestCase):
     def test_nakechia_as_rafael_counted_it(self):
         # 5 skipped + 2 in the wrong words: the 2 are NOT skips, and they cost

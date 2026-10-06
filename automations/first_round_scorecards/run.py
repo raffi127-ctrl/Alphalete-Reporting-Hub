@@ -350,7 +350,8 @@ def _grade_one(m: Dict, do_grade: bool):
         return name, (m, None, "(not graded: --no-grade)")
     speaker = (m.get("recorded_by") or {}).get("name") or ""
     try:
-        result = grade.grade(fathom.transcript_text(m), interviewer_speaker=speaker)
+        result = grade.grade(fathom.transcript_text(m), interviewer_speaker=speaker,
+                             owner=m.get("owner") or "")
     except Exception as exc:  # noqa: BLE001
         # one bad grade must not sink the other ~100: it's left out (not
         # posted, so not in the ledger) and the next tick grades it again
