@@ -552,6 +552,69 @@ def _report_sales_fault(summary: str, log=print) -> None:
         log("could not report the sales fault")
 
 
+KEEPALIVE_PATH = C.APP_DIR / "saraplus-keepalive.txt"
+KEEPALIVE_EVERY_MIN = 10
+
+
+def keep_session_alive(*, headless: bool = True, log=print,
+                       now: Optional[dt.datetime] = None) -> str:
+    """Overnight, touch the remembered session so it never goes idle.
+
+    WHY (Eveliz, 2026-10-05/06): reads stop at midnight and come back for
+    the 2am close-out. Two idle hours expire the SaraPlus session, so the
+    close-out has to LOG IN -- and on some accounts (Eveliz, Rashad,
+    carlos-b2batt; the other twelve offices never) every fresh login gets
+    the emailed-code wall. She typed the code at 22:56, reads ran clean until
+    midnight, and at 2:01 she was walled again for the whole next day.
+    Holding the session open means the morning never needs a login at all.
+
+    RESUME ONLY, NEVER A LOGIN. A login here is exactly the thing that earns
+    the wall, at 3am with nobody there to clear it. If SaraPlus no longer
+    honours the session, it is forgotten and the next real read logs in as
+    it always has. Never raises: this is housekeeping, not a read.
+
+    Returns what it did, for the log: 'kept', 'lost', 'none', 'not-due',
+    'busy' or 'error'.
+    """
+    now = now or dt.datetime.now()
+    remembered = _remembered_session()
+    if not remembered:
+        return "none"
+    try:
+        last = dt.datetime.fromisoformat(KEEPALIVE_PATH.read_text().strip())
+        if (now - last) < dt.timedelta(minutes=KEEPALIVE_EVERY_MIN):
+            return "not-due"
+    except (OSError, ValueError):
+        pass
+    if signin_in_progress():
+        return "busy"
+    try:
+        KEEPALIVE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        KEEPALIVE_PATH.write_text(now.isoformat(timespec="seconds"))
+    except OSError:
+        pass
+    try:
+        from patchright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            ctx = _context(p, headless)
+            try:
+                page = ctx.pages[0] if ctx.pages else ctx.new_page()
+                base = S.resume_session(page, remembered, log=log)
+            finally:
+                try:
+                    ctx.close()
+                except Exception:  # noqa: BLE001
+                    pass
+    except Exception as e:  # noqa: BLE001 -- housekeeping must never fail a tick
+        log("SaraPlus keep-alive skipped: %s" % type(e).__name__)
+        return "error"
+    if base:
+        return "kept"
+    _forget_session()
+    log("SaraPlus session expired overnight -- the next read will log in")
+    return "lost"
+
+
 def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
              log=print) -> Dict:
     """{'records': {REP: credit checks}, 'sales': {REP: {Int, Int Up, DTV, NL}}}.

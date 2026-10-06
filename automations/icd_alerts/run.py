@@ -590,6 +590,18 @@ def main(argv=None) -> int:
         if args.if_due and not (alerting or C.in_sales_window()):
             # Quiet on purpose. This fires every 15 minutes on somebody's
             # laptop; a line per skip would be the only thing in the log.
+            # EXCEPT THE SARAPLUS SESSION, which must not idle out overnight:
+            # an expired one means a fresh login at the 2am close-out, and on
+            # some accounts every fresh login is an emailed-code wall
+            # (Eveliz, 2026-10-06). See sara_read.keep_session_alive.
+            if not args.dry_run and not sara_read.sara_held_until():
+                try:
+                    did = sara_read.keep_session_alive(headless=headless,
+                                                       log=_log)
+                    if did in ("kept", "lost"):
+                        _log("SaraPlus keep-alive: %s" % did)
+                except Exception:  # noqa: BLE001 — never lose a tick to this
+                    pass
             return 0
         sales_only = bool(args.if_due and not alerting)
         # BOTH, INDEPENDENTLY. SaraPlus and OwnerVille are different systems
