@@ -47,6 +47,13 @@ FIELD = " \u00b7 "
 # "we did not check".
 NOT_ON = "Not Enrolled"
 
+# EVERYTHING THE OFFICE'S OWN MACHINE FEEDS, headed in one colour so the
+# block reads as a block (Megan 2026-10-06). These are the columns that go
+# Pending together when a machine has not reported, and the ones an owner
+# asks about as a set; the rest are things we run for them from our side.
+ECO_GROUP = ("LucyECO", "Sara+ Alerts", "Text Scoreboard", "Call-outs",
+             "Knock & Dispo Boards", "Gap Alerts")
+
 # Two columns the gated sales board adds and the public page never does.
 # They are about chasing an INSTALL, not about what an office receives, and
 # 'last reading' on an open page is a liveness probe of someone's laptop.
@@ -1097,6 +1104,10 @@ _CSS = """<style>
 .eco th,.eco td{border:1px solid #CBD5E1;padding:4px 7px;text-align:center;
   vertical-align:middle;line-height:1.35;white-space:nowrap}
 .eco th{background:#F1F5F9;font-weight:700;font-size:11.5px}
+/* The relay-fed block, tinted as one. A HEADER tint, deliberately outside
+   the green/amber/red the cells use — it groups columns, it does not grade
+   them. */
+.eco th.eco-grp{background:#DBEAFE;color:#1E3A5F}
 .eco td.name{text-align:left;font-weight:600;white-space:nowrap}
 .eco tr:nth-child(even) td{background-image:linear-gradient(rgba(0,0,0,.02),
   rgba(0,0,0,.02))}
@@ -1152,7 +1163,9 @@ def _esc(text: str) -> str:
 def html_table(rows: list, cols: list) -> str:
     """The table as HTML — shared by the public page and the
     sales board's LucyEco view, so the two cannot drift."""
-    head = "".join(f"<th>{_esc(c)}</th>" for c in cols)
+    head = "".join(
+        f'<th class="eco-grp">{_esc(c)}</th>' if c in ECO_GROUP
+        else f"<th>{_esc(c)}</th>" for c in cols)
     body = []
     for r in rows:
         cells = []
