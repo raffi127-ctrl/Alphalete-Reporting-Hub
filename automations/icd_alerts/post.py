@@ -1352,13 +1352,16 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
             hype_lines = H.hype_batch(sold, sales, day, office.campaign,
                                       show=show, room=key)
             hype_lines, gifs_used = _within_gif_budget(hype_lines, day, key)
-        elif sales_baseline and merged_sales and not catching_up:
-            hype_lines = first_read_board(merged_sales, office.campaign, show)
+        # NO STANDINGS BOARD TO SLACK ON A FIRST READ. Tried for one afternoon
+        # (2026-10-06, Eveliz's empty channel) and pulled the same day: Megan,
+        # seeing it land in #figspire -- "I don't think we are supposed to be
+        # putting the scoreboard in slack". The standings are the TEXT
+        # GROUP's board (Raf's partner-chat shape); Slack gets the per-sale
+        # lines as they happen. first_read_board() stays for the texts path.
 
         if baseline:
-            log("%-10s first relay of %s -- recording %d rep(s), %s"
-                % (key, day.isoformat(), len(records),
-                   "posting today's board so far" if hype_lines else "posting nothing"))
+            log("%-10s first relay of %s -- recording %d rep(s), posting nothing"
+                % (key, day.isoformat(), len(records)))
         elif not lines and not hype_lines:
             log("%-10s nothing new (%d rep(s) tracked)" % (key, len(records)))
         else:

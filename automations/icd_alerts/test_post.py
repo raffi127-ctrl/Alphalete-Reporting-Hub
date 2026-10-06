@@ -1042,9 +1042,9 @@ class TheFirstReadOfADayWithSalesPostsOneBoardToSlack(unittest.TestCase):
         self.assertEqual(P.first_read_board(sales, "att"), [])
         self.assertEqual(P.first_read_board({}, "att"), [])
 
-    def test_run_uses_it_only_on_a_sales_baseline_that_is_not_a_catch_up(self):
+    def test_run_never_posts_the_standings_board_to_slack(self):
+        # Megan 2026-10-06: "I don't think we are supposed to be putting the
+        # scoreboard in slack" -- the board is the text group's.
         import inspect
         src = inspect.getsource(P.run)
-        self.assertIn("elif sales_baseline and merged_sales and not catching_up:", src)
-        i = src.index("elif sales_baseline and merged_sales and not catching_up:")
-        self.assertIn("first_read_board(", src[i:i + 200])
+        self.assertNotIn("first_read_board(", src)
