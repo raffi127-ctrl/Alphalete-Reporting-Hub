@@ -52,7 +52,9 @@ class JoinTests(unittest.TestCase):
         # An office that does not have it says so rather than sitting blank.
         rows = EN.rows()
         for col in ("Sara+ Alerts", "Text Scoreboard"):
-            vals = {r[col] for r in rows}
+            # The first line is the status; any lines under it say WHERE it
+            # lands, which is the point of the cell.
+            vals = {str(r[col]).split("\n")[0] for r in rows}
             self.assertIn("Active", vals, f"nobody on {col}")
             # Pending too: the room is approved but the office has never
             # relayed, so nothing is coming through it yet.
@@ -71,7 +73,8 @@ class ApprovedIsNotFlowingTests(unittest.TestCase):
         self.assertTrue(waiting, "nobody pending — cannot check")
         for r in waiting:
             for c in EN.RELAY_FED:
-                self.assertIn(r[c], ("Pending", EN.NOT_ON),
+                self.assertIn(str(r[c]).split("\n")[0],
+                              ("Pending", EN.NOT_ON),
                               f"{r['ICD']} {c} = {r[c]!r}")
 
     def test_our_own_scrapes_are_not_held_back_by_the_relay(self):

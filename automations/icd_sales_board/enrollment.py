@@ -33,8 +33,7 @@ import time
 SAFE_COLUMNS = ["ICD", "Campaigns", "LucyECO", "Sara+ Alerts",
                 "Text Scoreboard", "Call-outs", "Knock & Dispo Boards",
                 "Weather Report", "Ad Photo Threads", "Resume Pushing",
-                "Metrics Thread", "Tableau Trackers", "Dispo Alerts",
-                "Posts to"]
+                "Metrics Thread", "Tableau Trackers", "Gap Alerts"]
 
 # A feature an office does NOT have says so (Megan 2026-10-05: "not just
 # blank - should be light red"). A blank cell is ambiguous between "no" and
@@ -99,7 +98,10 @@ def _window(office, cut=None, sat_cut=None) -> str:
 CALLOUT_CUT = (20, 30)
 CALLOUT_SAT_CUT = (17, 0)
 
-DISPO_WINDOW = "every 15 min, Mon–Sat"         # gap_alerts wrapper gate
+# gap_alerts' own wrapper gate. Named Gap Alerts on the page, not 'Dispo
+# Alerts': it is the reps-over-a-15-minute-gap card, and sitting next to
+# 'Knock & Dispo Boards' the old name read like the same thing twice.
+DISPO_WINDOW = "every 15 min, Mon–Sat"
 # "daily" told nobody anything — every one of these runs daily, so the column
 # was a wall of the same word (Megan 2026-10-05: "instead of daily it should
 # say Enrolled and be in green"). The ones with a real time keep it; these
@@ -136,7 +138,7 @@ BAD_WORDS = (NOT_ON, "Not on")
 WAIT_WORDS = ("Pending", "Partial")
 # Columns that are a fact about the office rather than a yes/no, so they are
 # never coloured: a green name tells you nothing.
-UNCOLOURED = ("ICD", "Campaigns", "Posts to")
+UNCOLOURED = ("ICD", "Campaigns")
 
 # Everything downstream of the office's own machine. A channel can be
 # approved while nothing is coming through it — Eveliz and Rashad are both
@@ -174,7 +176,7 @@ EXPLAINS = {
                        "office-metrics.png"),
     "Tableau Trackers": ("The universal tracker boards, drawn from Tableau "
                          "and posted to the office's room.", ""),
-    "Dispo Alerts": ("The KNOCKS & DISPOSITIONS card — reps over a 15 "
+    "Gap Alerts": ("The KNOCKS & DISPOSITIONS card — reps over a 15 "
                      "minute gap — texted through the day.", ""),
 }
 
@@ -191,6 +193,14 @@ def cell_tone(column: str, value) -> str:
     return "good"
 
 
+def _with_where(schedule: str, names) -> str:
+    """'1pm-8:30pm M-F' / '11am-5pm Sat' / '#everforward-sales'."""
+    if not schedule:
+        return ""
+    lines = [schedule] + [n for n in (names or []) if n]
+    return "\n".join(lines)
+
+
 def _first_office(feeds, alert_office):
     """The alert-office record behind this ICD's first live feed, or None."""
     for f in feeds:
@@ -198,6 +208,31 @@ def _first_office(feeds, alert_office):
         if o is not None:
             return o
     return None
+
+
+def _names_of(feeds, chan, field) -> list:
+    """Every line across this office's feeds, grouped by where it lands.
+
+    An owner with two campaigns posts into the same rooms on two clocks —
+    Carlos's Box feed hourly and his B2B feed every 30 minutes, both into
+    #alphalete-gp-sales. Both lines are true and both belong; sorting by the
+    ROOM keeps the pair together instead of interleaving four rooms."""
+    out = []
+    for f in feeds:
+        for nm in (chan.get(f.key, {}).get(field) or []):
+            if nm not in out:
+                out.append(nm)
+    return sorted(out, key=lambda ln: (ln.split("·")[-1].strip(), ln))
+
+
+def _rooms_for(feeds, approved_rooms) -> list:
+    out = []
+    for f in feeds:
+        for c in (approved_rooms.get(f.key) or []):
+            nm = (getattr(c, "name", "") or "").strip()
+            if nm and nm not in out:
+                out.append(nm)
+    return out
 
 
 def _rooms(feeds, chan, approved_rooms) -> str:
@@ -226,6 +261,27 @@ def _letters(s: str) -> str:
     return re.sub(r"[^a-z]", "", (s or "").lower())
 
 
+def _dest_names(raw: str) -> list:
+    """The rooms or groups in an approved-destinations blob, by NAME.
+
+    THE NAME GOES IN THE CELL WITH THE SCHEDULE (Megan 2026-10-05, with a
+    mock-up: the hours and '#slackchannel' side by side). Knowing an office
+    gets call-outs is half an answer; the other half is where they land."""
+    import json
+    try:
+        dests = json.loads(raw or "[]")
+    except ValueError:
+        return []
+    out = []
+    for d in dests:
+        if not isinstance(d, dict):
+            continue
+        nm = str(d.get("channel_name") or d.get("name") or "").strip()
+        if nm and nm not in out:
+            out.append(nm)
+    return out
+
+
 def _knock_names(raw: str) -> list:
     """The rooms an office's knock boards land in, by name."""
     import json
@@ -241,45 +297,42 @@ def _knock_names(raw: str) -> list:
     return out
 
 
-def _knock_detail(raw: str) -> str:
-    """'Slack + Text, every 30–60m' out of an office's approved destinations.
+def _knock_lines(raw: str) -> list:
+    """One line PER DESTINATION: 'Every 30 Min · #palace-sales'.
 
-    WHERE AND HOW OFTEN, because that is what an owner is actually asking.
-    A destination whose channel id carries the imessage: prefix is a text
-    group, anything else is a Slack room (icd_alerts.post.is_text_dest)."""
+    AN OFFICE'S BOARDS GO TO SEVERAL PLACES ON DIFFERENT CLOCKS (Megan
+    2026-10-05: "Raf has dispo boards in multiple places", with a mock-up of
+    a row per destination). Carlos posts hourly into two rooms; Ryan posts
+    every 30 minutes into one and every 60 into another. Collapsing that to
+    'every 30-60m' and a separate list of names made you pair them up
+    yourself and guess which cadence belonged to which room.
+
+    A destination whose id carries the imessage: prefix is a text group, and
+    it is labelled as one — '#room' and a group name look alike otherwise.
+    """
     import json
     try:
         dests = json.loads(raw or "[]")
     except ValueError:
-        return ""
-    if not dests:
-        return ""
+        return []
     from automations.icd_alerts import post as P
-    kinds, mins = [], []
-    _names = []
+    out = []
     for d in dests:
         if not isinstance(d, dict):
             continue
-        where = ("Text" if P.is_text_dest(str(d.get("channel_id") or ""))
-                 else "Slack")
-        if where not in kinds:
-            kinds.append(where)
-        nm = str(d.get("channel_name") or "").strip()
-        if nm and nm not in _names:
-            _names.append(nm)
+        cid = str(d.get("channel_id") or "")
+        name = str(d.get("channel_name") or d.get("name") or "").strip()
+        if P.is_text_dest(cid):
+            name = (name or P.text_group_of(cid)) + " iMessage"
         try:
-            m = int(d.get("cadence_min") or 0)
+            mins = int(d.get("cadence_min") or 0)
         except (TypeError, ValueError):
-            m = 0
-        if m:
-            mins.append(m)
-    if not kinds:
-        return ""
-    how = ""
-    if mins:
-        lo, hi = min(mins), max(mins)
-        how = (f", every {lo}m" if lo == hi else f", every {lo}–{hi}m")
-    return " + ".join(kinds) + how
+            mins = 0
+        when = f"Every {mins} Min" if mins else "Each slot"
+        line = f"{when} · {name}" if name else when
+        if line not in out:
+            out.append(line)
+    return out
 
 
 def _channels() -> dict:
@@ -307,11 +360,15 @@ def _channels() -> dict:
                 "alerts": yes(r, P.CH_APPROVED),
                 "knocks": yes(r, P.CH_KN_APPROVED),
                 "texts": yes(r, P.CH_TX_APPROVED),
+                "text_names": _dest_names(
+                    (r[P.CH_TX_APPROVED_JSON]
+                     if len(r) > P.CH_TX_APPROVED_JSON else "")
+                    or (r[P.CH_TX_JSON] if len(r) > P.CH_TX_JSON else "")),
                 "knock_names": _knock_names(
                     (r[P.CH_KN_APPROVED_JSON]
                      if len(r) > P.CH_KN_APPROVED_JSON else "")
                     or (r[P.CH_KN_JSON] if len(r) > P.CH_KN_JSON else "")),
-                "knock_detail": _knock_detail(
+                "knock_lines": _knock_lines(
                     (r[P.CH_KN_APPROVED_JSON]
                      if len(r) > P.CH_KN_APPROVED_JSON else "")
                     or (r[P.CH_KN_JSON] if len(r) > P.CH_KN_JSON else "")),
@@ -470,25 +527,29 @@ def rows(icds=None) -> list:
                 "ICD": icd,
                 "Campaigns": st.get("Campaign", ""),
                 "LucyECO": eco_state(st.get("Status", "")),
-                "Sara+ Alerts": ALWAYS_ON if on("alerts") else "",
-                "Text Scoreboard": ALWAYS_ON if on("texts") else "",
+                "Sara+ Alerts": _with_where(
+                    ALWAYS_ON if on("alerts") else "",
+                    _rooms_for(feeds, approved_rooms)),
+                "Text Scoreboard": _with_where(
+                    ALWAYS_ON if on("texts") else "",
+                    _names_of(feeds, chan, "text_names")),
                 # Call-outs ride the alert rooms, so an office with alerts
                 # has them unless it opted out (Colten did, 2026-09-29). The
                 # window is this office's own field hours, stopped at the wall.
-                "Call-outs": (
+                "Call-outs": _with_where(
                     _window(_first_office(feeds, alert_office),
                             CALLOUT_CUT, CALLOUT_SAT_CUT)
                     if on("alerts") and not any(
-                        f.key.lower() in opted_out for f in feeds) else ""),
+                        f.key.lower() in opted_out for f in feeds) else "",
+                    _rooms_for(feeds, approved_rooms)),
                 # Approved with no destinations parsed still means they get
                 # it — show the window rather than a blank that reads as 'not
                 # enrolled' (Drew and Jairo are approved with none listed).
-                "Knock & Dispo Boards": (
-                    "\n".join(x for x in (
-                        next((d for d in (chan.get(f.key, {}).get("knock_detail")
-                                          for f in feeds) if d), ""),
-                        _window(_first_office(feeds, alert_office))) if x)
-                    if on("knocks") else ""),
+                # The window once, then a line per place it lands.
+                "Knock & Dispo Boards": _with_where(
+                    _window(_first_office(feeds, alert_office))
+                    if on("knocks") else "",
+                    _names_of(feeds, chan, "knock_lines")),
                 "Weather Report": ENROLLED if any(
                     f.key in weather for f in feeds) else "",
                 "Ad Photo Threads": ENROLLED if any(
@@ -498,14 +559,13 @@ def rows(icds=None) -> list:
                 "Tableau Trackers": ENROLLED if mkey else "",
                 # A short key is a PREFIX of the full name ('rafael' ->
                 # 'rafaelhidalgo'), which is how that registry names an office.
-                "Dispo Alerts": DISPO_WINDOW if any(
+                "Gap Alerts": DISPO_WINDOW if any(
                     d == me or (len(d) >= 5 and me.startswith(d))
                     for d in dispo) else "",
                 # WHERE IT ALL LANDS, by name (Megan 2026-10-05: "the name of
                 # the slack and imessage chat names on there so they know
                 # where they are"). Names only — never the channel ids, which
                 # this page has no business carrying.
-                "Posts to": _rooms(feeds, chan, approved_rooms),
             })
         skip = {"ICD", "Campaigns", "LucyECO", "Posts to"}
         for r in out:

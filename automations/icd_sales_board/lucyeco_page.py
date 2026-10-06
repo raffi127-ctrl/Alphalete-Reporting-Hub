@@ -86,8 +86,16 @@ def main() -> None:
     # canvas, so CSS cannot reach inside them and a table-wide rule does
     # nothing. Same way the house boards do it (site._centered). The ICD name
     # stays left: a column of centred names is hard to scan down.
-    cfg = {c: st.column_config.Column(alignment="center")
-           for c in safe if c != "ICD"}
+    # NARROW BY DEFAULT. Every feature column holds a short status or two
+    # short lines, so left to size themselves they spread the table far wider
+    # than the screen and you scroll sideways to read a row (Megan 2026-10-05:
+    # "columns still aren't condensed"). Only the name and the room list,
+    # which hold real prose, get room.
+    wide = {"ICD": "medium", "Posts to": "large"}
+    cfg = {c: st.column_config.Column(
+               width=wide.get(c, "small"),
+               alignment="left" if c == "ICD" else "center")
+           for c in safe}
     def _tone(col):
         return [TONE.get(EN.cell_tone(col.name, v), "") for v in col]
 
@@ -113,7 +121,7 @@ def main() -> None:
 
     st.dataframe(
         frame.style.apply(_tone, axis=0),
-        use_container_width=True, hide_index=True, column_config=cfg,
+        hide_index=True, column_config=cfg,
         row_height=56,
         height=min(58 * (len(rows) + 1) + 8, 1200))
 
