@@ -405,7 +405,11 @@ OFFICES: dict = {
         # Skip it here so Domin8 doesn't get it twice in the same channel; the
         # section stays in Carlos's thread only (Carlos 2026-07-27 asked for it
         # in his B2B Metrics post).
-        skip_views=frozenset({"order_tiered_bonus"}),
+        # sales_metrics (Eve 2026-10-06): Atef moved to NDS on 10/5 (Cesar), so
+        # B2B This Week has no rows for him and the section renders BLANK every
+        # morning — a fresh red ticket a day. Out until the NDS switch
+        # (project_atef-switch-to-nds-pending); put it back only if he stays B2B.
+        skip_views=frozenset({"order_tiered_bonus", "sales_metrics"}),
     ),
 }
 
