@@ -557,10 +557,9 @@ RECIPIENTS: dict = {
         # (apply_adds, aditivo) y despues aca, para que seed_groups no lo
         # marque para SACAR — el caso de Juan Botero el 2026-08-28.
         "parkwchan19@gmail.com",
-        # IN 2026-09-15 (Eve): Nuri Burgos (22 Select Inc, 20593) recibe el
-        # reporte de Raf, donde van sus knocks (EXTRA_KNOCK_OWNERS). Ya estaba
-        # en el grupo VIVO; aca para que seed_groups no la marque para SACAR.
-        "nuri@22select.com",
+        # OUT 2026-10-05 (Eve): Nuri Burgos (nuri@22select.com) se paso a la
+        # capitania de CHAN (mail de Chan Park "Adding to my captainship
+        # report"). Sale de aca y del grupo VIVO; ahora esta en "chan".
         # IN 2026-09-24 (Rafael, mail "daily knocks"; Eve lo confirmo):
         # Shealey Miller (maneja la 23858 de Angel Padilla) y Angel reciben
         # este reporte, donde van los knocks de Shealey (EXTRA_KNOCK_OWNERS).
@@ -626,6 +625,11 @@ RECIPIENTS: dict = {
         # este reporte, donde van los knocks de Shealey (EXTRA_KNOCK_OWNERS).
         # Agregados primero al grupo VIVO; aca para que seed_groups no los saque.
         "miller10xbusiness@gmail.com", "padilla10x2001@gmail.com",
+        # IN 2026-10-05 (Eve): Nuri Burgos (22 Select Inc, 20593) se paso de
+        # Raf a la capitania de Chan — filas en las 6 tablas de Chan del Org
+        # Sales Board, asi que sus knocks salen del roster. Agregada primero
+        # al grupo VIVO; aca para que seed_groups no la saque.
+        "nuri@22select.com",
     ],
     "tony": [
         # OUT 2026-09-15 (Eve): kcireus@ — Kobe Cireus sale de la capitania de
@@ -1124,6 +1128,9 @@ DROP_KNOCK_OWNERS: tuple = ()
 # nuri burgos -> rafael, 2026-09-14 (Eve: "agregues los knocks reports de Nuri
 # burgos en la capitania de rafael aunque estrictamente no sea parte de ella").
 # Oficina ownerville 20593 (22 Select Inc), acceso pedido ese dia.
+# OUT 2026-10-05 (Eve): Nuri se paso a la capitania de CHAN y tiene filas en su
+# bloque del Org Sales Board, asi que sus knocks entran por el roster normal de
+# Chan — ya no hace falta esta entrada (y dejarla la mandaria tambien con Raf).
 #
 # shealey miller -> rafael + chan, 2026-09-24 (Rafael, mail "daily knocks":
 # "attach her knocks data to Chan and I's each captainship email"; Eve: "solo
@@ -1133,7 +1140,7 @@ DROP_KNOCK_OWNERS: tuple = ()
 # shared/ownerville_office_pins.py. Sale una sola vez por noche en el mail de
 # las 9 PM aunque este en dos capitanias (state.office_sent).
 EXTRA_KNOCK_OWNERS: Dict[str, Tuple[str, ...]] = {
-    "rafael": ("Nuri Burgos", "Shealey Miller"),
+    "rafael": ("Shealey Miller",),
     "chan": ("Shealey Miller",),
 }
 

@@ -94,9 +94,9 @@ RECIPIENTS: dict[str, List[str]] = {
         # "Raf's Captain Team" group.
         "trang.lecanavan@gmail.com",
         "kesslerzadrian@gmail.com",
-        # IN 2026-09-15 (Eve): Nuri Burgos — same add as
-        # captainship_drafts.config.RECIPIENTS and the live group.
-        "nuri@22select.com",
+        # OUT 2026-10-05 (Eve): Nuri Burgos moved to Chan's captainship —
+        # same removal as captainship_drafts.config.RECIPIENTS and the live
+        # "Raf's Captain Team" group.
         # IN 2026-09-24: Shealey Miller + Angel Padilla — same add as
         # captainship_drafts.config.RECIPIENTS and the live group.
         "miller10xbusiness@gmail.com", "padilla10x2001@gmail.com",
