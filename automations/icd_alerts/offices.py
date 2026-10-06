@@ -456,10 +456,7 @@ def sheet_offices(force: bool = False) -> Dict[str, AlertOffice]:
         try:
             age = time.time() - SHEET_CACHE.stat().st_mtime
             if age < SHEET_CACHE_TTL_S:
-                rows = json.loads(SHEET_CACHE.read_text())
-                return {k: o for k, o in
-                        ((r.get("office_key"), _office_from_signup(r))
-                         for r in rows) if k and o}
+                return _one_per_key(json.loads(SHEET_CACHE.read_text()))
         except Exception:  # noqa: BLE001
             pass
     try:
@@ -475,11 +472,29 @@ def sheet_offices(force: bool = False) -> Dict[str, AlertOffice]:
             SHEET_CACHE.write_text(json.dumps(rows, indent=2, default=str))
         except Exception:  # noqa: BLE001
             pass
-    out = {}
+    return _one_per_key(rows)
+
+
+def _one_per_key(rows: List[Dict]) -> Dict[str, AlertOffice]:
+    """{key: office}, the row with the strongest status speaking for a key.
+
+    BOTH RETURNS GO THROUGH HERE. It used to be `out[o.key] = o` on the fresh
+    read and a dict comprehension on the cached one -- the LAST row won either
+    way, so a pending duplicate under a declined row switched a refused key
+    back on, and its alerts went to Megan's DM (Jairo's strays, 2026-10-05).
+    Same rule as icd_signup.store.one_per_key, ranked off the same table.
+    """
+    from automations.icd_signup.schema import status_rank
+    out: Dict[str, AlertOffice] = {}
+    rank: Dict[str, int] = {}
     for r in rows:
         o = _office_from_signup(r)
-        if o:
+        if not o:
+            continue
+        n = status_rank(r.get("status"))
+        if o.key not in out or n > rank[o.key]:
             out[o.key] = o
+            rank[o.key] = n
     return out
 
 

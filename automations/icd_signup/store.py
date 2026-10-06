@@ -16,7 +16,8 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from automations.icd_signup.schema import (IcdSignup, STATUS_PENDING,
-                                          STATUS_APPROVE_REQUESTED, stamp)
+                                          STATUS_APPROVE_REQUESTED, stamp,
+                                          status_rank)
 
 SIGNUP_TAB = "ICD Signup"
 _HEADER = ["office_key", "owner", "office_label", "contact", "platform",
@@ -200,12 +201,63 @@ def mint_and_record_key(office_key: str, owner: str, book=None) -> str:
     return key
 
 
-def all_signups(book=None) -> List[IcdSignup]:
-    try:
-        rows = _tab(book).get_all_records()
-    except Exception:  # noqa: BLE001 — no sheet access: fall back to local
-        rows = _local()
-    return [IcdSignup.from_row(r) for r in rows if (r.get("owner") or "").strip()]
+def one_per_key(signups: List[IcdSignup]) -> List[IcdSignup]:
+    """One sign-up per office key: the row with the strongest status.
+
+    THE TAB CAN HOLD A KEY MORE THAN ONCE -- a double-click, or two submits in
+    the same second, both append. Without this, whichever row a reader met
+    last decided the office, so a pending duplicate under a declined row
+    switched a refused key back on (Jairo, 2026-10-05). The first row wins a
+    tie, so the original answers stand over a repeat of them.
+    """
+    best: Dict[str, IcdSignup] = {}
+    order: List[str] = []
+    for s_ in signups:
+        k = s_.office_key
+        if k not in best:
+            best[k] = s_
+            order.append(k)
+        elif status_rank(s_.status) > status_rank(best[k].status):
+            best[k] = s_
+    return [best[k] for k in order]
+
+
+def _read_rows(book=None, tries: int = 3) -> List[Dict]:
+    """The tab's rows, or an exception -- never a quiet empty list.
+
+    Retries because the read cap is 60 a minute per Google account, and a
+    burst of submits is exactly when it is hit.
+    """
+    import time
+    last = None
+    for n in range(tries):
+        try:
+            return _tab(book).get_all_records()
+        except Exception as e:  # noqa: BLE001
+            last = e
+            if n + 1 < tries:
+                time.sleep(2 * (n + 1))
+    raise last
+
+
+def all_signups(book=None, strict: bool = False) -> List[IcdSignup]:
+    """Every office that has signed up, one entry per key.
+
+    `strict` raises when the sheet cannot be read instead of falling back to
+    the local drafts. submit() needs that: picking a key off a list that
+    quietly came back EMPTY is how a second "jairo" was handed out sixteen
+    minutes after the first (2026-09-29) -- the read had failed, so every
+    name looked free.
+    """
+    if strict:
+        rows = _read_rows(book)
+    else:
+        try:
+            rows = _tab(book).get_all_records()
+        except Exception:  # noqa: BLE001 — no sheet access: fall back to local
+            rows = _local()
+    return one_per_key([IcdSignup.from_row(r) for r in rows
+                        if (r.get("owner") or "").strip()])
 
 
 def pending(book=None) -> List[IcdSignup]:
@@ -224,7 +276,21 @@ def submit(rec: IcdSignup, book=None) -> IcdSignup:
     be unique across everyone who has ever signed up and the form cannot see
     the others.
     """
-    existing = all_signups(book)
+    try:
+        existing = all_signups(book, strict=True)
+    except Exception:  # noqa: BLE001 — cannot see who is taken: do not guess
+        existing = None
+    if existing is None:
+        # SAVED AS A LOCAL DRAFT, and reported as not landed, rather than
+        # given a key that may already belong to somebody. The form tells
+        # them to ask Megan or Eve, which costs a minute; a reused key costs
+        # a refused office coming back on.
+        rows = _local()
+        rows.append(rec._replace(status=STATUS_PENDING,
+                                 submitted_at=rec.submitted_at or stamp())
+                    .as_row())
+        _save_local(rows)
+        return rec, False
     taken = {s.office_key for s in existing if s.office_key}
     rec = rec._replace(
         office_key=rec.office_key or office_key_for(rec.owner, taken,
@@ -284,13 +350,21 @@ def set_status(office_key: str, status: str, note: str = "", book=None) -> bool:
         c_note = head.index("note")
     except ValueError:
         return False
-    for i, row in enumerate(values[1:], start=2):
-        if len(row) > c_key and (row[c_key] or "").strip().lower() == key:
-            tab.update_cell(i, c_status + 1, status)
-            if note:
-                tab.update_cell(i, c_note + 1, note)
-            return True
-    return False
+    # EVERY ROW FOR THE KEY, not the first one. A key that landed twice
+    # had only its first row declined, and the second -- still pending --
+    # switched it back on (Jairo, 2026-10-05). One batch, so a key with three
+    # rows is still one write against the quota.
+    hits = [i for i, row in enumerate(values[1:], start=2)
+            if len(row) > c_key and (row[c_key] or "").strip().lower() == key]
+    if not hits:
+        return False
+    updates = [{"range": "%s%d" % (_a1_col(c_status + 1), i),
+                "values": [[status]]} for i in hits]
+    if note:
+        updates += [{"range": "%s%d" % (_a1_col(c_note + 1), i),
+                     "values": [[note]]} for i in hits]
+    tab.batch_update(updates)
+    return True
 
 
 def request_approval(office_key: str, by: str = "", book=None) -> bool:
