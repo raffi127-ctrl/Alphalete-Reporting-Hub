@@ -31,8 +31,9 @@ import time
 # The columns this page may ever show. Anything not here is a leak, and the
 # test that checks it is the point of the list existing.
 SAFE_COLUMNS = ["ICD", "Campaigns", "LucyECO", "Sara+ Alerts",
-                "Text Scoreboard", "Knock & Dispo Boards", "Resume Pushing",
-                "Metrics Thread", "Trackers", "Dispo Alerts", "Own Board"]
+                "Text Scoreboard", "Call-outs", "Knock & Dispo Boards",
+                "Weather", "Resume Pushing", "Metrics Thread", "Trackers",
+                "Dispo Alerts", "Own Board"]
 
 # Schedules that are the same wherever the feature is switched on. Each is
 # read off the module that enforces it rather than retyped from memory; where
@@ -43,10 +44,41 @@ SAFE_COLUMNS = ["ICD", "Campaigns", "LucyECO", "Sara+ Alerts",
 # should just say active since it's pretty much 24/7"). The hours still live
 # in icd_alerts.config SALES_* — this is how they READ, not what they are.
 ALWAYS_ON = "Active"
-KNOCK_SLOTS = "9pm local"                      # knocks_intraday: all offices
+# The knocks poster is hour-gated 8–23 in its wrapper; what differs per office
+# is the cadence and the rooms, which come off that office's own approved
+# destinations (Megan 2026-10-05: "a time start-end and every 15 min or
+# whatever they enrolled in and where at - text / slack").
+KNOCK_WINDOW = "8am–11pm"
+# Call-outs ride the alert rooms and stop at a wall on the office's own clock:
+# 8:30pm Mon–Fri, 5pm Saturday, nothing on Sunday (icd_alerts.gap_callouts).
+CALLOUT_WHEN = "to 8:30pm · Sat to 5pm"
+WEATHER_WHEN = "6am daily"                     # weather_alert schedule entry
 DISPO_WINDOW = "every 15 min, Mon–Sat"         # gap_alerts wrapper gate
 RESUME_WHEN = "daily"                          # applicant_push schedule entry
 BOARD_WHEN = "live"
+
+# HOW LucyECO READS ON THIS PAGE (Megan 2026-10-05: "it should be active /
+# not on / or partial/pending"). The rollout list keeps its five states
+# because chasing an install needs to tell 'on an old agent' from 'laptop has
+# been shut for two days'. A page anyone can open needs four words:
+#
+#   Active   reporting, on the current agent
+#   Partial  enrolled and HAS reported, but something is off — an old agent,
+#            or nothing heard for two days. On, not working properly.
+#   Pending  enrolled and has never reported. Waiting on the install.
+#   Not on   no feed at all
+ECO_STATE = {
+    "Live": "Active",
+    "Needs update": "Partial",
+    "Gone quiet": "Partial",
+    "Signed up — not reporting": "Pending",
+    "Not on LucyECO": "Not on",
+}
+
+
+def eco_state(status: str) -> str:
+    """One of Active / Partial / Pending / Not on."""
+    return ECO_STATE.get((status or "").strip(), "Not on")
 
 _CACHE: dict = {}
 _TTL = 600
@@ -56,8 +88,45 @@ def _letters(s: str) -> str:
     return re.sub(r"[^a-z]", "", (s or "").lower())
 
 
+def _knock_detail(raw: str) -> str:
+    """'Slack + Text, every 30–60m' out of an office's approved destinations.
+
+    WHERE AND HOW OFTEN, because that is what an owner is actually asking.
+    A destination whose channel id carries the imessage: prefix is a text
+    group, anything else is a Slack room (icd_alerts.post.is_text_dest)."""
+    import json
+    try:
+        dests = json.loads(raw or "[]")
+    except ValueError:
+        return ""
+    if not dests:
+        return ""
+    from automations.icd_alerts import post as P
+    kinds, mins = [], []
+    for d in dests:
+        if not isinstance(d, dict):
+            continue
+        where = ("Text" if P.is_text_dest(str(d.get("channel_id") or ""))
+                 else "Slack")
+        if where not in kinds:
+            kinds.append(where)
+        try:
+            m = int(d.get("cadence_min") or 0)
+        except (TypeError, ValueError):
+            m = 0
+        if m:
+            mins.append(m)
+    if not kinds:
+        return ""
+    how = ""
+    if mins:
+        lo, hi = min(mins), max(mins)
+        how = (f", every {lo}m" if lo == hi else f", every {lo}–{hi}m")
+    return " + ".join(kinds) + how + f" · {KNOCK_WINDOW}"
+
+
 def _channels() -> dict:
-    """{office key: {alerts, knocks, texts}} off the Office Channels tab."""
+    """{office key: {alerts, knocks, texts, knock_detail}} off Office Channels."""
     key = "channels"
     now = time.time()
     if key in _CACHE and now - _CACHE[key][0] < _TTL:
@@ -77,9 +146,15 @@ def _channels() -> dict:
             k = (r[P.CH_OFFICE] or "").strip().lower() if r else ""
             if not k:
                 continue
-            out[k] = {"alerts": yes(r, P.CH_APPROVED),
-                      "knocks": yes(r, P.CH_KN_APPROVED),
-                      "texts": yes(r, P.CH_TX_APPROVED)}
+            out[k] = {
+                "alerts": yes(r, P.CH_APPROVED),
+                "knocks": yes(r, P.CH_KN_APPROVED),
+                "texts": yes(r, P.CH_TX_APPROVED),
+                "knock_detail": _knock_detail(
+                    (r[P.CH_KN_APPROVED_JSON]
+                     if len(r) > P.CH_KN_APPROVED_JSON else "")
+                    or (r[P.CH_KN_JSON] if len(r) > P.CH_KN_JSON else "")),
+            }
     except Exception:   # noqa: BLE001 — the page shows what it can read
         out = {}
     _CACHE[key] = (now, out)
@@ -152,6 +227,21 @@ def rows(icds=None) -> list:
         except Exception:   # noqa: BLE001
             dispo = set()
         try:
+            # POSITIONALLY, not by unpacking a fixed width: office_posts()
+            # documents a 3-tuple and its metrics half appends 4-tuples, so
+            # `for k, city, chans in ...` raised and the whole column read
+            # empty for every office — a silent blank, not an error.
+            from automations.weather_alert import run as WX
+            weather = {row[0] for row in WX.office_posts()
+                       if len(row) > 2 and row[2]}
+        except Exception:   # noqa: BLE001
+            weather = set()
+        try:
+            from automations.icd_alerts import gap_callouts as GCO
+            opted_out = {str(k).lower() for k in GCO.CALLOUT_OPT_OUT}
+        except Exception:   # noqa: BLE001
+            opted_out = set()
+        try:
             from automations.icd_sales_board import board_access as BA
             boards = {_letters(i) for i in BA.codes().values()}
         except Exception:   # noqa: BLE001
@@ -171,10 +261,22 @@ def rows(icds=None) -> list:
             out.append({
                 "ICD": icd,
                 "Campaigns": st.get("Campaign", ""),
-                "LucyECO": st.get("Status", ""),
+                "LucyECO": eco_state(st.get("Status", "")),
                 "Sara+ Alerts": ALWAYS_ON if on("alerts") else "",
                 "Text Scoreboard": ALWAYS_ON if on("texts") else "",
-                "Knock & Dispo Boards": KNOCK_SLOTS if on("knocks") else "",
+                # Call-outs ride the alert rooms, so an office with alerts
+                # has them unless it opted out (Colten did, 2026-09-29).
+                "Call-outs": (CALLOUT_WHEN if on("alerts") and not any(
+                    f.key.lower() in opted_out for f in feeds) else ""),
+                # Approved with no destinations parsed still means they get
+                # it — show the window rather than a blank that reads as 'not
+                # enrolled' (Drew and Jairo are approved with none listed).
+                "Knock & Dispo Boards": (
+                    next((d for d in (chan.get(f.key, {}).get("knock_detail")
+                                      for f in feeds) if d), KNOCK_WINDOW)
+                    if on("knocks") else ""),
+                "Weather": WEATHER_WHEN if any(
+                    f.key in weather for f in feeds) else "",
                 "Resume Pushing": RESUME_WHEN if me in resume else "",
                 "Metrics Thread": (sched.get(mkey) or "daily") if mkey else "",
                 "Trackers": "daily" if mkey else "",

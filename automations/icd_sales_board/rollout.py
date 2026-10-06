@@ -57,11 +57,22 @@ def _tableau_owners() -> tuple:
     return per_rep, office
 
 
-def _campaigns(feeds) -> str:
+def _campaigns(feeds, live_keys=None) -> str:
     """'Box, AT&T B2B' — the campaigns only. The feed's own key repeated the
-    owner's name, which the ICD column already says (Megan 2026-09-22)."""
+    owner's name, which the ICD column already says (Megan 2026-09-22).
+
+    A KEY THAT HAS NEVER REPORTED IS NOT A CAMPAIGN THEY RUN. Khalil and
+    Maxamad each enrolled twice and read 'NDS Wireless ×2', which looks like
+    two programmes and is one programme and a stray sign-up: khalil-nds is
+    live and khalil never reported; maxamad is live and maxamad-nds never did
+    (Megan asked why, 2026-10-05). Counting only feeds that have actually sent
+    something makes the column say what the office does. If NONE have reported
+    yet they are all shown — a brand-new office should not read as blank."""
+    usable = [f for f in feeds if live_keys is None or f.key in live_keys]
+    if not usable:
+        usable = list(feeds)
     seen: dict = {}
-    for f in feeds:
+    for f in usable:
         seen[f.label] = seen.get(f.label, 0) + 1
     return ", ".join(lab if n == 1 else f"{lab} ×{n}" for lab, n in seen.items())
 
@@ -95,7 +106,9 @@ def status_rows(today: dt.date | None = None, light: bool = False) -> list:
         keys = {E.norm(n) for n in names}
         settled = SHOWS_SETTLED if keys & per_rep else (
             SHOWS_OFFICE if keys & office else SHOWS_NOTHING)
-        base = {"ICD": icd, "Campaign": _campaigns(feeds),
+        reported = {f.key for f in feeds
+                    if (RR.last_reading(f.key) or {}).get("day")}
+        base = {"ICD": icd, "Campaign": _campaigns(feeds, reported),
                 "Board shows": settled}
         if not feeds:
             rows.append(dict(base, Status=NONE,

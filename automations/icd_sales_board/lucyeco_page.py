@@ -59,7 +59,7 @@ def main() -> None:
     rows = [{c: r.get(c, "") for c in safe} for r in rows]
 
     counts = EN.counts(rows)
-    live = sum(1 for r in rows if str(r.get("LucyECO", "")).startswith("Live"))
+    live = sum(1 for r in rows if r.get("LucyECO") == "Active")
     c1, c2, c3 = st.columns(3)
     c1.metric("Offices", len(rows))
     c2.metric("On LucyECO", live)

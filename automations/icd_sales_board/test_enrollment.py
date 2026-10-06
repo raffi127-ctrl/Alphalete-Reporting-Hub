@@ -57,6 +57,27 @@ class JoinTests(unittest.TestCase):
             self.assertNotIn(skip, got)
 
 
+class EcoStateTests(unittest.TestCase):
+    def test_the_five_rollout_states_fold_into_four_words(self):
+        from automations.icd_sales_board import rollout as RO
+        self.assertEqual(EN.eco_state(RO.LIVE), "Active")
+        self.assertEqual(EN.eco_state(RO.UPDATE), "Partial")
+        self.assertEqual(EN.eco_state(RO.QUIET), "Partial")
+        self.assertEqual(EN.eco_state(RO.WAITING), "Pending")
+        self.assertEqual(EN.eco_state(RO.NONE), "Not on")
+
+    def test_every_rollout_status_is_mapped(self):
+        # A state nobody mapped would silently read 'Not on', which is the
+        # one answer that is actively wrong for an enrolled office.
+        from automations.icd_sales_board import rollout as RO
+        for s in RO.ORDER:
+            self.assertIn(s, EN.ECO_STATE, f"{s!r} has no public wording")
+
+    def test_the_page_only_ever_shows_those_four(self):
+        allowed = {"Active", "Partial", "Pending", "Not on"}
+        self.assertTrue(set(r["LucyECO"] for r in EN.rows()) <= allowed)
+
+
 class ResilienceTests(unittest.TestCase):
     def test_an_unreadable_registry_blanks_a_column_not_the_page(self):
         with mock.patch.object(EN, "_channels", return_value={}):
