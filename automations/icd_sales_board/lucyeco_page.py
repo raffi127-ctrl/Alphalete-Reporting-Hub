@@ -66,8 +66,18 @@ def main() -> None:
     c3.metric("Most-used", max(counts, key=counts.get) if counts else "—",
               help="The report the most offices are enrolled in")
 
-    st.dataframe(rows, use_container_width=True, hide_index=True,
-                 height=min(42 * (len(rows) + 1) + 8, 900))
+    # GREEN FOR "THEY HAVE IT". The status words carry no time, so without a
+    # colour the column is a block of identical text you have to read cell by
+    # cell; green lets you run an eye down it. Cells that carry a real
+    # schedule stay plain — there the words ARE the information.
+    import pandas as pd
+
+    frame = pd.DataFrame(rows, columns=safe)
+    green = "background-color:#DCFCE7;color:#065F46;font-weight:600"
+    st.dataframe(
+        frame.style.map(lambda v: green if str(v) in EN.GOOD_WORDS else ""),
+        use_container_width=True, hide_index=True,
+        height=min(42 * (len(rows) + 1) + 8, 900))
 
     st.caption(
         "A cell shows WHEN that report runs for that office; blank means the "

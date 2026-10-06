@@ -54,8 +54,12 @@ KNOCK_WINDOW = "8am–11pm"
 CALLOUT_WHEN = "to 8:30pm · Sat to 5pm"
 WEATHER_WHEN = "6am daily"                     # weather_alert schedule entry
 DISPO_WINDOW = "every 15 min, Mon–Sat"         # gap_alerts wrapper gate
-RESUME_WHEN = "daily"                          # applicant_push schedule entry
-BOARD_WHEN = "live"
+# "daily" told nobody anything — every one of these runs daily, so the column
+# was a wall of the same word (Megan 2026-10-05: "instead of daily it should
+# say Enrolled and be in green"). The ones with a real time keep it; these
+# three just say whether the office has them.
+ENROLLED = "Enrolled"
+BOARD_WHEN = ENROLLED
 
 # HOW LucyECO READS ON THIS PAGE (Megan 2026-10-05: "it should be active /
 # not on / or partial/pending"). The rollout list keeps its five states
@@ -74,6 +78,11 @@ ECO_STATE = {
     "Signed up — not reporting": "Pending",
     "Not on LucyECO": "Not on",
 }
+
+
+# The two words that mean "this office has it". Rendered green, so the page
+# can be read down a column without parsing every cell.
+GOOD_WORDS = (ALWAYS_ON, ENROLLED)
 
 
 def eco_state(status: str) -> str:
@@ -277,9 +286,9 @@ def rows(icds=None) -> list:
                     if on("knocks") else ""),
                 "Weather": WEATHER_WHEN if any(
                     f.key in weather for f in feeds) else "",
-                "Resume Pushing": RESUME_WHEN if me in resume else "",
-                "Metrics Thread": (sched.get(mkey) or "daily") if mkey else "",
-                "Trackers": "daily" if mkey else "",
+                "Resume Pushing": ENROLLED if me in resume else "",
+                "Metrics Thread": ENROLLED if mkey else "",
+                "Trackers": ENROLLED if mkey else "",
                 # A short key is a PREFIX of the full name ('rafael' ->
                 # 'rafaelhidalgo'), which is how that registry names an office.
                 "Dispo Alerts": DISPO_WINDOW if any(
