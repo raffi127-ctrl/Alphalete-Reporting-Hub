@@ -24,6 +24,7 @@ from pathlib import Path
 
 from automations.shared.tableau_patchright import tableau_session
 from automations.captainship_churn import pull, fill
+from automations.shared import churn_mix_guard as _mix
 from automations.focus_office_att.aliases import load_aliases, alias_to_canonical
 
 
@@ -277,11 +278,25 @@ def main(argv=None) -> int:
     all_reps: set = set()
     went_dark_all: dict = {}      # {tab label: {period: [rep names]}}
     dups_all: dict = {}           # {tab label: {period: {rep: [rows]}}}
+    parsed_by_slug = {slug: pull.parse(csvs[slug])
+                      for slug, *_ in selected if slug in csvs}
+    # 2026-10-06: Raf's New Internet view came back with the Wireless numbers
+    # (Tableau's 'Churn View' parameter had flipped) and the run wrote them —
+    # see shared.churn_mix_guard. Only checkable when both pulled this run.
+    ni_is_wl = ("new-internet" in parsed_by_slug and "wireless" in parsed_by_slug
+                and _mix.looks_like_wireless(
+                    parsed_by_slug["new-internet"].get("office_total"),
+                    parsed_by_slug["wireless"].get("office_total")))
     for slug, label, _fetch_fn, open_ws_fn, _csv_name in selected:
-        if slug not in csvs:
+        if slug not in parsed_by_slug:
             continue   # pull failed/skipped above — already flagged
-        parsed = pull.parse(csvs[slug])
-        parsed = _apply_aliases(parsed, aliases)
+        if slug == "new-internet" and ni_is_wl:
+            print(f"  ⚠ {label}: New Internet pull matches the wireless pull — "
+                  f"the Tableau view is showing Wireless. NOT writing it. Set "
+                  f"'Churn View' back to New Internet on RAFSTEAMCHURN.")
+            failed.append(label)
+            continue
+        parsed = _apply_aliases(parsed_by_slug[slug], aliases)
         _wd, _dups = _run_fill_phase(label, open_ws_fn, parsed, today, args)
         if _wd:
             went_dark_all[label] = _wd

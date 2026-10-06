@@ -38,6 +38,7 @@ from automations.shared.tableau_patchright import (
     tableau_session, download_crosstab_patchright)
 from automations.owners_metrics_churn import pull, fill
 from automations.shared import captainship_pins as _pins
+from automations.shared import churn_mix_guard as _mix
 from automations.new_internet_churn import pull as _ni_pull
 from automations.focus_office_att.aliases import load_aliases, alias_to_canonical
 
@@ -307,31 +308,16 @@ def _backfill_moved_owners(program: str, dark_names: list, aliases: dict) -> dic
 
 
 def _wireless_mixed_slugs(parsed_by_slug: dict) -> set:
-    """NI slugs whose captainship total matches their '-wl' twin in every
-    period — the NI view is serving the wireless numbers. "Matches" = same
-    churned count and activations within 3%: on 2026-10-06 Pat's NI and WL
-    totals had identical numerators but denominators ~2% apart (156/1,395 vs
-    156/1,431), so exact equality would have missed it. Real NI and WL totals
-    are nowhere near each other (Pat 0-30 the day before: 83/3,362 vs
-    41/1,246). Needs both pulls in the same run; a lone NI or WL run can't be
-    checked."""
-    def _close(a: dict, b: dict) -> bool:
-        try:
-            na, da = int(a["num"]), int(a["denom"])
-            nb, db = int(b["num"]), int(b["denom"])
-        except (KeyError, TypeError, ValueError):
-            return False
-        return na == nb and da > 0 and abs(da - db) <= 0.03 * max(da, db)
-
+    """NI slugs whose captainship total is their '-wl' twin's in disguise —
+    the NI view is serving the wireless numbers (see shared.churn_mix_guard).
+    Needs both pulls in the same run; a lone NI or WL run can't be checked."""
     out = set()
     for slug, parsed in parsed_by_slug.items():
         twin = parsed_by_slug.get(f"{slug}-wl")
         if slug.endswith("-wl") or twin is None:
             continue
-        ni = parsed.get("office_total") or {}
-        wl = twin.get("office_total") or {}
-        common = [p for p in ni if p in wl]
-        if common and all(_close(ni[p], wl[p]) for p in common):
+        if _mix.looks_like_wireless(parsed.get("office_total"),
+                                    twin.get("office_total")):
             out.add(slug)
     return out
 
@@ -651,7 +637,7 @@ def main(argv=None) -> int:
     wireless_mix_labels: list = []
     for slug, label, *_ in selected:
         if slug in wireless_mix:
-            print(f"  ⚠ {label}: New Internet pull is IDENTICAL to the wireless "
+            print(f"  ⚠ {label}: New Internet pull matches the wireless "
                   f"pull ({slug}-wl) — the Tableau view is showing Wireless. "
                   f"NOT writing it.")
             failed.append(label)
