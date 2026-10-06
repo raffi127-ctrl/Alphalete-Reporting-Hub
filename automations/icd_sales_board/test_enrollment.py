@@ -86,6 +86,36 @@ class ApprovedIsNotFlowingTests(unittest.TestCase):
             self.assertNotEqual(r["Metrics Thread"], "Pending")
 
 
+class NoRawIdsTests(unittest.TestCase):
+    def test_no_cell_carries_a_slack_or_group_id(self):
+        # gap_alerts stores one room by id with no name, and it printed
+        # 'Slack C09JG28CD27' — the exact thing an ungated page must not
+        # carry. Resolved to a name where we know one, 'Slack' where not.
+        import re
+        pat = re.compile(r"\b[CGD][A-Z0-9]{8,}\b")
+        for r in EN.rows():
+            for col, v in r.items():
+                self.assertIsNone(pat.search(str(v)),
+                                  f"{r['ICD']} {col} = {v!r}")
+
+    def test_every_destination_says_slack_or_imessage(self):
+        # A leading '#' was the only clue, and nobody should need to know
+        # that convention to read the page.
+        for r in EN.rows():
+            for col in ("Sara+ Alerts", "Call-outs", "Knock & Dispo Boards",
+                        "Gap Alerts"):
+                for ln in str(r.get(col, "")).split("\n")[1:]:
+                    # The first lines are the window ('1pm-8:30pm M-F',
+                    # '11am-5pm Sat'); a destination is anything else.
+                    if ln.endswith(("M-F", "Sat", "no Sat")):
+                        continue
+                    where = ln.split(EN.FIELD)[-1].strip()
+                    if where:
+                        self.assertTrue(
+                            where.startswith(("Slack", "iMessage")),
+                            f"{r['ICD']} {col}: {ln!r}")
+
+
 class ToneTests(unittest.TestCase):
     def test_a_schedule_is_as_much_a_yes_as_the_word_enrolled(self):
         # Colour by meaning, or every column carrying a time stays white.

@@ -163,26 +163,32 @@ RELAY_FED = ("Sara+ Alerts", "Text Scoreboard", "Call-outs",
 # the name below is all it takes to give it one.
 EXPLAINS = {
     "Sara+ Alerts": ("Every sale and credit check off the office's own "
-                     "SaraPlus, posted to their room as it happens.", ""),
+                     "SaraPlus, posted to their room as it happens.",
+                     "sara-plus-alerts.png"),
     "Text Scoreboard": ("The running scoreboard texted to the office's "
-                        "iMessage group through the day.", ""),
+                        "iMessage group through the day.",
+                        "text-scoreboard.png"),
     "Call-outs": ("Lucy calling out a rep who has gone quiet, and praising "
-                  "a good pace, in the office's room.", ""),
+                  "a good pace, in the office's room.",
+                  "sara-plus-callouts.png"),
     "Knock & Dispo Boards": ("The knocks and dispositions board, posted on "
                              "the office's own cadence.", "total-knocks.png"),
     "Weather Report": ("The morning forecast for that office's city.",
-                       "lucy-weather-forecast.png"),
+                       "weather-report.png"),
     "Ad Photo Threads": ("Eve's daily 1st-round screenshots, one Slack "
                          "thread per Indeed ad, with the ad's % removed and "
-                         "average star rating.", ""),
+                         "average star rating.",
+                         "ad-photo-threads.png"),
     "Resume Pushing": ("Pulling resumes out of ApplicantStream and sending "
                        "them to the AI.", "resume-pushing.png"),
     "Metrics Thread": ("The office's daily metrics thread in Slack.",
-                       "office-metrics.png"),
+                       "office-metrics-thread.png"),
     "Tableau Trackers": ("The universal tracker boards, drawn from Tableau "
-                         "and posted to the office's room.", ""),
+                         "and posted to the office's room.",
+                         "tableau-trackers.png"),
     "Gap Alerts": ("The KNOCKS & DISPOSITIONS card — reps over a 15 "
-                     "minute gap — texted through the day.", ""),
+                     "minute gap — texted through the day.",
+                     "gap-alerts-card.png"),
 }
 
 
@@ -204,6 +210,47 @@ def _with_where(schedule: str, names) -> str:
         return ""
     lines = [schedule] + [n for n in (names or []) if n]
     return "\n".join(lines)
+
+
+def _room_name(channel_id: str) -> str:
+    """A Slack room's name from its id, out of the registries that hold both.
+    '' when nothing knows it — the caller then says 'Slack' and no more."""
+    cid = (channel_id or "").strip()
+    if not cid:
+        return ""
+    key = ("rooms", "byid")
+    import time as _t
+    now = _t.time()
+    if key in _CACHE and now - _CACHE[key][0] < _TTL:
+        return _CACHE[key][1].get(cid, "")
+    byid = {}
+    try:
+        from automations.office_metrics import offices as OM
+        for o in OM.OFFICES.values():
+            if getattr(o, "channel_id", "") and getattr(o, "channel_name", ""):
+                byid[o.channel_id] = o.channel_name
+    except Exception:   # noqa: BLE001
+        pass
+    try:
+        from automations.icd_alerts import post as AP3
+        for chans in (AP3.approved_channels() or {}).values():
+            for c in chans:
+                cid2 = (getattr(c, "id", "") or "").strip()
+                nm = (getattr(c, "name", "") or "").strip()
+                if cid2 and nm:
+                    byid[cid2] = nm
+    except Exception:   # noqa: BLE001
+        pass
+    _CACHE[key] = (now, byid)
+    return byid.get(cid, "")
+
+
+def _gap_rooms(me: str, gap_dests: dict) -> list:
+    """Where this office's gap card goes. Its registry keys by short name."""
+    for key, names in (gap_dests or {}).items():
+        if key == me or (len(key) >= 5 and me.startswith(key)):
+            return names
+    return []
 
 
 def _first_office(feeds, alert_office):
@@ -251,12 +298,16 @@ def _names_of(feeds, chan, field) -> list:
 
 
 def _rooms_for(feeds, approved_rooms) -> list:
+    """The alert rooms, each said to be Slack — same reason as _knock_lines."""
     out = []
     for f in feeds:
         for c in (approved_rooms.get(f.key) or []):
             nm = (getattr(c, "name", "") or "").strip()
-            if nm and nm not in out:
-                out.append(nm)
+            if nm:
+                nm = nm if nm.lower().startswith(("slack", "imessage")) \
+                    else "Slack " + nm
+                if nm not in out:
+                    out.append(nm)
     return out
 
 
@@ -286,6 +337,14 @@ def _letters(s: str) -> str:
     return re.sub(r"[^a-z]", "", (s or "").lower())
 
 
+def _label_dest(name: str, cid: str) -> str:
+    """'Slack #room' or 'iMessage Group' — never a bare name."""
+    from automations.icd_alerts import post as P
+    if P.is_text_dest(cid or ""):
+        return "iMessage " + (name or P.text_group_of(cid or ""))
+    return ("Slack " + name) if name else ""
+
+
 def _dest_names(raw: str) -> list:
     """The rooms or groups in an approved-destinations blob, by NAME.
 
@@ -301,7 +360,9 @@ def _dest_names(raw: str) -> list:
     for d in dests:
         if not isinstance(d, dict):
             continue
-        nm = str(d.get("channel_name") or d.get("name") or "").strip()
+        nm = _label_dest(
+            str(d.get("channel_name") or d.get("name") or "").strip(),
+            str(d.get("channel_id") or ""))
         if nm and nm not in out:
             out.append(nm)
     return out
@@ -347,8 +408,16 @@ def _knock_lines(raw: str) -> list:
             continue
         cid = str(d.get("channel_id") or "")
         name = str(d.get("channel_name") or d.get("name") or "").strip()
+        # SAY WHICH IT IS. A leading '#' is the only thing that marked a
+        # Slack room apart from an iMessage group, and nobody should have to
+        # know that convention to read the page (Megan 2026-10-05: "this is
+        # confusing - should say slack or iMessage"). The label goes in
+        # FRONT, so the column reads Slack/Slack/iMessage down its left edge
+        # rather than hiding the kind at the end of a long room name.
         if P.is_text_dest(cid):
-            name = (name or P.text_group_of(cid)) + " iMessage"
+            name = "iMessage " + (name or P.text_group_of(cid))
+        elif name:
+            name = "Slack " + name
         try:
             mins = int(d.get("cadence_min") or 0)
         except (TypeError, ValueError):
@@ -504,6 +573,42 @@ def rows(icds=None) -> list:
         except Exception:   # noqa: BLE001
             dispo = set()
         try:
+            # Where the gap card actually lands, by name — it was the one
+            # feature saying only WHEN (Megan 2026-10-05).
+            from automations.gap_alerts import config as GC2
+            gap_dests = {}
+            for o in GC2.OFFICES:
+                key = _letters((o.get("key") if isinstance(o, dict)
+                                else getattr(o, "key", "")) or "")
+                # NOT `names` — that is the list of ICDs this function is
+                # looping over, and reusing it here emptied it: the loop ran
+                # zero times and the whole page came back blank with no error
+                # to show for it.
+                dests = []
+                for d in ((o.get("destinations") if isinstance(o, dict)
+                           else getattr(o, "destinations", None)) or []):
+                    nm = _label_dest(str(d.get("name") or "").strip(),
+                                     "imessage:" if d.get("kind") == "imessage"
+                                     else "")
+                    if d.get("kind") == "slack" and not d.get("name"):
+                        # NEVER THE RAW ID. gap_alerts stores this room by id
+                        # with no name, and printing 'Slack C09JG28CD27' put
+                        # exactly the thing this page promises not to carry on
+                        # a link anyone can open. Resolved to a name where we
+                        # know one, and just 'Slack' where we do not — the
+                        # answer people want is which room, and an id is not
+                        # that answer anyway.
+                        nm = "Slack " + _room_name(
+                            str(d.get("channel_id") or "")) \
+                            if _room_name(str(d.get("channel_id") or "")) \
+                            else "Slack"
+                    if nm and nm not in dests:
+                        dests.append(nm)
+                if key:
+                    gap_dests[key] = dests
+        except Exception:   # noqa: BLE001
+            gap_dests = {}
+        try:
             # Eve's ad photo threads — the daily 1st-round screenshots, one
             # Slack thread per Indeed ad. Only the offices switched on.
             from automations.ad_photo_threads import config as APC
@@ -588,9 +693,11 @@ def rows(icds=None) -> list:
                 "Tableau Trackers": ENROLLED if mkey else "",
                 # A short key is a PREFIX of the full name ('rafael' ->
                 # 'rafaelhidalgo'), which is how that registry names an office.
-                "Gap Alerts": DISPO_WINDOW if any(
-                    d == me or (len(d) >= 5 and me.startswith(d))
-                    for d in dispo) else "",
+                "Gap Alerts": _with_where(
+                    DISPO_WINDOW if any(
+                        d == me or (len(d) >= 5 and me.startswith(d))
+                        for d in dispo) else "",
+                    _gap_rooms(me, gap_dests)),
                 # WHERE IT ALL LANDS, by name (Megan 2026-10-05: "the name of
                 # the slack and imessage chat names on there so they know
                 # where they are"). Names only — never the channel ids, which
