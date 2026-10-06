@@ -488,6 +488,69 @@ def activation_by_rep(header, rows, target):
     return out
 
 
+# Tableau's own NDS activation view — owner level, buckets 0-7 / 8-14 / 15-30 /
+# 30-60 / 60+ Days. The OFFICE TOTAL row comes from here, the way Carlos's B2B
+# board takes its total from ATTTRACKER-B2B ACTIVATIONRATES. Why not the order
+# log: on 2026-10-05 Carlos compared Khalil's total to Tableau and it was off —
+# the order log carries far fewer of the older lines (31-60: 276 sold there vs
+# 673 in this view; an Aug 5-Sep 4 pull alone still gave 281, so it is not our
+# window). Recent windows agree (0-7: 257 vs 259), so rep rows stay order-log.
+ACT_VIEW_CSV = ("https://us-east-1.online.tableau.com/t/sci/views/"
+                "DropshipV_2/ACTIVATIONRATES.csv?:refresh=yes")
+_TOTAL_BUCKETS = {"0-30 Day": ("0-7 Days", "8-14 Days", "15-30 Days"),
+                  "31-60 Day": ("30-60 Days",)}
+
+
+def _office_totals(owner: str, verbose: bool = False) -> dict:
+    """{window: (activated, sold)} for one owner from the NDS ACTIVATIONRATES
+    view (pulled once a day, shared by every office). {} if unavailable."""
+    today = dt.date.today().isoformat()
+    cache = Path(tempfile.gettempdir()) / f"nds_activationrates_{today}.csv"
+    if not (cache.exists() and cache.stat().st_size > 200):
+        try:
+            with tableau_session(verbose=verbose) as page:
+                r = page.context.request.get(ACT_VIEW_CSV, timeout=300_000)
+                body = r.body() or b""
+            if r.status != 200 or len(body) < 200:
+                print(f"[nds_orderlog:activation_rate] ACTIVATIONRATES export "
+                      f"status={r.status} bytes={len(body)}", flush=True)
+                return {}
+            cache.write_bytes(body)
+        except Exception as e:  # noqa: BLE001
+            print(f"[nds_orderlog:activation_rate] ACTIVATIONRATES pull failed: {e}",
+                  flush=True)
+            return {}
+    grid = _read_csv(cache)
+    if not grid:
+        return {}
+    h = grid[0]
+    own_i, b_i = _find(h, "owner & office"), _find(h, "sales date bucket")
+    a_i, n_i = _find(h, "activated wireless lines"), _find(h, "wireless lines")
+    if n_i == a_i:   # 'wireless lines' substring-matches the activated column
+        n_i = next((i for i, x in enumerate(h)
+                    if _norm_h(x) == "wireless lines"), None)
+    if None in (own_i, b_i, a_i, n_i):
+        print(f"[nds_orderlog:activation_rate] ACTIVATIONRATES header changed: {h}",
+              flush=True)
+        return {}
+    want = _norm_owner(owner)
+    by_bucket = {}
+    for r in grid[1:]:
+        if _norm_owner(_cell(r, own_i)) != want:
+            continue
+        try:
+            by_bucket[_cell(r, b_i)] = (int(_cell(r, a_i).replace(",", "")),
+                                        int(_cell(r, n_i).replace(",", "")))
+        except ValueError:
+            continue
+    out = {}
+    for window, buckets in _TOTAL_BUCKETS.items():
+        got = [by_bucket[b] for b in buckets if b in by_bucket]
+        if len(got) == len(buckets):
+            out[window] = (sum(a for a, _ in got), sum(n for _, n in got))
+    return out
+
+
 def _render_activation_rate(owner, header, rows, target, out_dir):
     from automations.b2b_metrics.rep_boards import render_table_png
     data = activation_by_rep(header, rows, target)
@@ -504,6 +567,13 @@ def _render_activation_rate(owner, header, rows, target, out_dir):
                 "rate": f"{round(rate * 100, 1)}%", "color": color}
 
     office = data.pop("__office__", {})
+    tableau = _office_totals(owner)
+    for c in cols:   # Tableau's total wins; order-log total only as a fallback
+        if c in tableau:
+            office[c] = tableau[c]
+        else:
+            print(f"[nds_orderlog:activation_rate] {owner}: no Tableau total for "
+                  f"{c} — using the order-log total", flush=True)
     table = [("Office Total (all reps)", "", True,
               {c: _cellfor(c, office.get(c)) for c in cols})]
     for rep in sorted(data, key=lambda k: k.lower()):
@@ -514,7 +584,7 @@ def _render_activation_rate(owner, header, rows, target, out_dir):
     render_table_png(
         "ACTIVATION RATES BY REP",
         f"{owner} — {target.strftime('%B')} {target.day}, {target.year} "
-        "(wireless lines activated/sold, by order date; total = whole office)",
+        "(wireless lines activated/sold; office total = Tableau Activation Rates)",
         cols, table, out)
     return out, len(table) - 1
 
