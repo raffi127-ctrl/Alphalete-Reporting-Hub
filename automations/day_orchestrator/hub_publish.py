@@ -434,6 +434,15 @@ def _ws():
     return _fill._client().open_by_key(HUB_ACTIVITY_SHEET_ID).worksheet(HUB_ACTIVITY_TAB)
 
 
+#: User-column stamp for a run a PERSON queued on a Lucy (Hub play / `lucy rerun`).
+#: Until 2026-10-05 these read "Mini (auto)", identical to a scheduled run, so the
+#: didn't-run watcher (machine_digest._historical_expected) learned a SCHEDULE
+#: from two Monday hand-reruns of a manual-only tool: ps_week_backfill and
+#: production_breakdown both posted "didn't run today · usually starts ~17:00"
+#: for tools no clock has ever fired. The watcher now skips rows carrying this.
+RERUN_USER = "Mini (rerun)"
+
+
 def publish_running(report_id: str, report_name: str, *, manual: bool = False):
     """Append a 'started' row so the Hub shows this mini run as RUNNING (yellow),
     live, from ANY machine's Hub — the dashboard already reads these rows
@@ -441,7 +450,8 @@ def publish_running(report_id: str, report_name: str, *, manual: bool = False):
     publish_done (which flips this same row running->done in place), or None if the
     report has no Hub card / the write failed. Best-effort — never raises.
 
-    `manual=True` means A PERSON started this run, and only then does the report's
+    `manual=True` means A PERSON started this run: the row is stamped RERUN_USER
+    (so it never teaches the watcher a schedule), and only then does the report's
     open alert thread get the :pending: mark (see _mark_working)."""
     card = _resolve_card(report_id, report_name)
     if not card:
@@ -450,7 +460,8 @@ def publish_running(report_id: str, report_name: str, *, manual: bool = False):
     try:
         _ws().append_row(
             [run_id, dt.datetime.now().isoformat(timespec="seconds"), card,
-             report_name, "Mini (auto)", socket.gethostname(), "", "started", ""],
+             report_name, RERUN_USER if manual else "Mini (auto)",
+             socket.gethostname(), "", "started", ""],
             value_input_option="RAW")     # column shape matches dashboard.HUB_ACTIVITY_HEADERS
         if manual:
             _mark_working(report_id)

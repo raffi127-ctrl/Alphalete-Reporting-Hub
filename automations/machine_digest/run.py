@@ -792,6 +792,19 @@ def _is_hand_run(user: str) -> bool:
     return _HAND_RUN_MARK in (user or "").lower()
 
 
+# What hub_publish.RERUN_USER writes for a run a person QUEUED on a Lucy (Hub play,
+# `lucy rerun`). Not _is_hand_run: nobody is watching a queued rerun, so its
+# FAILURE must still page. It only stops the row from counting as a schedule.
+_RERUN_MARK = "(rerun)"
+
+
+def _person_started(user: str) -> bool:
+    """Did a PERSON start this run, either way? Such a row is evidence that
+    somebody wanted the report that day, never that a clock runs it."""
+    u = (user or "").lower()
+    return _HAND_RUN_MARK in u or _RERUN_MARK in u
+
+
 _DIDNT_RUN_GRACE_HOURS = 2   # how long past a report's usual start before "didn't run"
 # How long a standalone report's live 'running' pill (publish_running) may stay
 # OPEN before we treat it as stuck/crashed. Longer than any standalone report's
@@ -893,8 +906,16 @@ def _historical_expected(rows, target_date, lookback_weeks: int = 3, min_days: i
     daily-metrics, now folded into office-metrics) stops appearing and drops out
     within a week, instead of false-flagging 'didn't run' for three.
     Returns {card_id: {'start_hour', 'machine', 'name'}} where start_hour is the
-    earliest it usually starts (so we only flag it missing AFTER its usual time)."""
+    earliest it usually starts (so we only flag it missing AFTER its usual time).
+
+    Rows a PERSON started (_person_started) are dropped up front, from BOTH the
+    weekday and the daily path. A schedule is something a clock does: two Monday
+    ~17:00 hand-reruns of ps_week_backfill and production_breakdown — manual
+    tools nothing ever fires — became "didn't run today · usually starts ~17:00"
+    on Mon 2026-10-05. A scheduled report loses nothing: its clock's own rows
+    still carry "Mini (auto)" (or the agent's stamp)."""
     import datetime as _dt
+    rows = [r for r in rows if not _person_started(str(r.get("User") or ""))]
     last_week = (target_date - _dt.timedelta(days=7)).isoformat()
     dates = {(target_date - _dt.timedelta(days=7 * w)).isoformat()
              for w in range(1, lookback_weeks + 1)}

@@ -842,3 +842,60 @@ class TheMissingPacketAlert(unittest.TestCase):
         from automations.shared import section_drop_alert as sda
         self.assertEqual(sda._incident_key("apex-new-starts", "blocked_person"),
                          "finding-apex-new-starts")
+
+
+class PersonStartedRowsAreNotASchedule(unittest.TestCase):
+    """Mon 2026-10-05: ps_week_backfill and production_breakdown — manual tools no
+    clock fires — posted "didn't run today · usually starts ~17:00" off two Monday
+    ~17:00 reruns somebody queued. A person's run is not a schedule."""
+
+    MONDAYS = [dt.date(2026, 9, 28), dt.date(2026, 9, 21)]
+    TARGET = dt.date(2026, 10, 5)
+
+    def _with_user(self, card, user):
+        rows = _rows(card, self.MONDAYS, hour=17)
+        for r in rows:
+            r["User"] = user
+        return rows
+
+    def test_queued_reruns_do_not_teach_a_schedule(self):
+        rows = self._with_user("ps-week-backfill", "Mini (rerun)")
+        self.assertNotIn("ps-week-backfill", _historical_expected(rows, self.TARGET))
+
+    def test_keyboard_hand_runs_do_not_teach_a_schedule(self):
+        rows = self._with_user("production-breakdown", "Megan (hand-run)")
+        self.assertNotIn("production-breakdown",
+                         _historical_expected(rows, self.TARGET))
+
+    def test_scheduled_rows_still_do(self):
+        rows = self._with_user("weekly-report", "Mini (auto)")
+        self.assertIn("weekly-report", _historical_expected(rows, self.TARGET))
+
+    def test_a_rerun_beside_scheduled_rows_changes_nothing(self):
+        rows = (self._with_user("weekly-report", "Mini (auto)")
+                + self._with_user("weekly-report", "Mini (rerun)"))
+        exp = _historical_expected(rows, self.TARGET)
+        self.assertEqual(exp["weekly-report"]["start_hour"], 17)
+
+    def test_daily_path_ignores_reruns_too(self):
+        rows = _rows("tool", _span(self.TARGET, 1, 7), hour=9)
+        for r in rows:
+            r["User"] = "Mini (rerun)"
+        self.assertNotIn("tool", _historical_expected(rows, self.TARGET))
+
+    def test_publish_running_stamps_a_persons_run(self):
+        from automations.day_orchestrator import hub_publish as hp
+        appended = []
+
+        class _WS:
+            def append_row(self, row, **_k):
+                appended.append(row)
+        real = (hp._ws, hp._resolve_card, hp._mark_working)
+        hp._ws, hp._resolve_card = (lambda: _WS()), (lambda *_a: "card")
+        hp._mark_working = lambda _rid: None
+        try:
+            hp.publish_running("x", "X", manual=True)
+            hp.publish_running("x", "X")
+        finally:
+            hp._ws, hp._resolve_card, hp._mark_working = real
+        self.assertEqual([r[4] for r in appended], ["Mini (rerun)", "Mini (auto)"])

@@ -52,6 +52,8 @@ class ProbeReason(unittest.TestCase):
 class _FakeHubPublish:
     """Stands in for day_orchestrator.hub_publish inside _publish_rerun_done."""
 
+    RERUN_USER = "Mini (rerun)"
+
     def __init__(self):
         self.kwargs = None
 
@@ -141,6 +143,13 @@ class RerunReleasesPending(unittest.TestCase):
         got = []
         self._publish(ok=True, probe="", manual=True, released=got)
         self.assertEqual(got, [])
+
+    def test_a_persons_rerun_is_stamped_as_one(self):
+        """If the start row never landed, publish_done appends its own — that row
+        must not read "Mini (auto)" and teach the watcher a schedule (10/5)."""
+        self.assertEqual(self._publish(ok=True, probe="", manual=True)["user"],
+                         "Mini (rerun)")
+        self.assertEqual(self._publish(ok=True, probe="")["user"], "Mini (auto)")
 
     def test_machine_rerun_never_touches_a_persons_mark(self):
         got = []

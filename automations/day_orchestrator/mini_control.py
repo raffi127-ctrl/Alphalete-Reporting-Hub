@@ -729,7 +729,10 @@ def _publish_rerun_done(report_id: str, display_name: str, ok: bool,
             report_id, display_name,
             status=status, run_id=hub_run_id,
             alert_on_fail=not probe,
-            clear_failure=not probe)
+            clear_failure=not probe,
+            # Only used if the start row never landed and this appends its own:
+            # a person's rerun must not read as a scheduled run there either.
+            user=hub_publish.RERUN_USER if manual else "Mini (auto)")
     except Exception:  # noqa: BLE001 — Hub publish must never fail the rerun
         return
     if manual and status != "success":
