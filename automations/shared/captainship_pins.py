@@ -111,10 +111,18 @@ from typing import Dict, Iterable, Optional
 # marcaban "went dark" y frenaban el reporte. Con el pin, si Tableau lo vuelve
 # a filar bajo Sahil no se re-escribe su fila, y su fila vieja deja de contar
 # como ausencia (ver drop_expected_absent).
+#
+# 2026-10-06: mismo caso, tres en la capitania de PAT. Roberto Luconi (fuera
+# desde 2026-09-08, regla de dos semanas; ultima venta 8/19) y William
+# Sassenberg (fuera de la de Starr desde 2026-08-25; ultima venta 8/09) — Order
+# Log ALLREPS 8/02-10/01, sin ventas despues. Romeo Hise: 0 ventas en 60 dias,
+# desactivado de Slack el 2026-10-01 (Terminated Reps de Raf). Las vistas NI de
+# Pat los soltaron el 10/6 y la tab los marcaba "went dark".
 NOT_ON_TEAM: Dict[str, tuple] = {
     "Raf": ("Steve McElwee",),
     "Sahil": ("Jeremiah Minor",),
-    "Pat": ("Jesus Hawthorne",),
+    "Pat": ("Jesus Hawthorne", "Roberto Luconi", "William Sassenberg",
+            "Romeo Hise"),
     "Jess": ("Angel Arias", "Mary Maya"),
     "Colten": ("Milan Godbolt", "Marcos Barbosa", "Fernando Munoz",
                "Fernando Muñoz"),
