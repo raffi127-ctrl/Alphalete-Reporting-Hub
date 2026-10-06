@@ -684,6 +684,35 @@ def rows(icds=None, admin: bool = False) -> list:
             # photo threads should be on this list"). Three were missing —
             # Salik Hammad, Samuel Acay and Jose Velasquez — because the
             # roster came from the board alone.
+            # EVERY ACTIVE ICD ON THE ORG BULLETIN, which is also every ICD
+            # in a captainship — the bulletin's ORG column IS the captainship
+            # grouping (Raf 9, Carlos 12, Colten 5 …), so one source answers
+            # both (Megan 2026-10-06). 42 of them against the board's 30.
+            try:
+                from automations.icd_sales_board import org_money as _OM2
+                from automations.recruiting_report.fill import (open_by_key,
+                                                                _retry)
+                _g = _retry(open_by_key(_OM2.BOOK)
+                            .worksheet(_OM2.DD_TAB).get_all_values)
+                have = {_letters(n) for n in names}
+                for _r in _g[1:]:
+                    if len(_r) < 2 or not (_r[0] or "").strip():
+                        continue
+                    if (_r[1] or "").strip().upper() != "YES":
+                        continue
+                    nm = " ".join((_r[0] or "").split())
+                    # The bulletin suffixes some with a state — 'Rafael
+                    # Hidalgo TX' is the same person as 'Rafael Hidalgo'.
+                    bare = nm
+                    bits = nm.split()
+                    if len(bits) > 2 and len(bits[-1]) == 2 and bits[-1].isupper():
+                        bare = " ".join(bits[:-1])
+                    if _letters(bare) in have:
+                        continue
+                    names.append(bare)
+                    have.add(_letters(bare))
+            except Exception:   # noqa: BLE001
+                pass
             try:
                 from automations.ad_photo_threads import config as _APC
                 have = {_letters(n) for n in names}
