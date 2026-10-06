@@ -160,6 +160,51 @@ def office_key_for(owner: str, taken=(), campaign: str = "") -> str:
     return "%s%d" % (base, n)
 
 
+def _ident(owner: str, campaign: str) -> tuple:
+    """What makes two sign-ups THE SAME sign-up: the owner and the campaign.
+
+    NOT the office key. office_key_for above is built to avoid collisions, so
+    it hands back a fresh key on every pass -- which means any de-dupe that
+    keys on it cannot ever fire for the case that actually happens.
+
+    Spelling is normalised because somebody filling the form twice types
+    their name twice: "Jamis Garay", "jamis garay" and "Jamis  Garay" are one
+    owner. Campaign falls back to the schema's own default so a blank and an
+    explicit "att" are not read as two different enrolments.
+    """
+    import re
+    who = re.sub(r"[^a-z]", "", (owner or "").lower())
+    camp = re.sub(r"[^a-z0-9]", "", (campaign or "").lower()) or "att"
+    return who, camp
+
+
+def _match(signups, owner: str, campaign: str):
+    """Their existing sign-up for this campaign, or None.
+
+    ONE KEY PER CAMPAIGN SURVIVES THIS. An owner running two campaigns has
+    two identities, so `ryan` and `ryan-box` both stand -- it is only the
+    same owner re-submitting the SAME campaign that is caught.
+    """
+    want = _ident(owner, campaign)
+    if not want[0]:           # no owner name: nothing to match on
+        return None
+    return next((s for s in signups
+                 if _ident(s.owner, s.campaign) == want), None)
+
+
+def existing_signup(owner: str, campaign: str = "att", book=None):
+    """Their sign-up for this campaign if they already have one, else None.
+
+    The form asks this BEFORE submitting so it can say "you are already
+    signed up" and show them the link they already have, instead of handing
+    a row back and calling it a save.
+    """
+    try:
+        return _match(all_signups(book, strict=True), owner, campaign)
+    except Exception:  # noqa: BLE001 -- cannot see the sheet: claim nothing.
+        return None    # submit() guards again, so this cannot mint a twin.
+
+
 # The page that shows them their one line. Same page the invite command hands
 # out, so an office that signs up and an office we enrol by hand end up
 # looking at exactly the same thing.
@@ -187,6 +232,10 @@ def mint_and_record_key(office_key: str, owner: str, book=None) -> str:
     """
     from automations.icd_alerts.enroll import mint_key
 
+    # Normalised before it is compared AND before it is minted: the guard
+    # below lowercases the sheet's side, so an office_key arriving with a
+    # capital or a stray space would slip past it and append a twin.
+    office_key = (office_key or "").strip().lower()
     key = mint_key(office_key)
     book = book or _book()
     tab = book.worksheet("Relay Keys")
@@ -270,7 +319,11 @@ def get(office_key: str, book=None) -> Optional[IcdSignup]:
 
 
 def submit(rec: IcdSignup, book=None) -> IcdSignup:
-    """Append one sign-up as PENDING. Never overwrites an existing row.
+    """Append one sign-up as PENDING, or hand back the one they have.
+
+    Never overwrites an existing row, and never appends a SECOND row for an
+    owner re-submitting a campaign they already signed up for -- that pair
+    is what identity means here, not the office key.
 
     The office key is assigned HERE rather than by the form, because it has to
     be unique across everyone who has ever signed up and the form cannot see
@@ -291,6 +344,18 @@ def submit(rec: IcdSignup, book=None) -> IcdSignup:
                     .as_row())
         _save_local(rows)
         return rec, False
+    # ALREADY SIGNED UP: HAND BACK THE ROW THEY HAVE, MINT NOTHING.
+    # Jamis submitted 13 times and Jairo 17, and every single one minted a
+    # live key, because the office_key those were de-duped on is unique by
+    # construction: `jamis` taken, so `jamis-b2batt`, then `jamis2`,
+    # `jamis3`... The thing that repeats is the PERSON AND THE CAMPAIGN.
+    # Returning their existing row also means a DECLINED office cannot put
+    # itself back on by filling the form again -- which is how five refused
+    # Jairo keys came back (2026-10-05).
+    same = _match(existing, rec.owner, rec.campaign)
+    if same is not None:
+        return same, True
+
     taken = {s.office_key for s in existing if s.office_key}
     rec = rec._replace(
         office_key=rec.office_key or office_key_for(rec.owner, taken,
