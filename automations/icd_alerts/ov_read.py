@@ -41,6 +41,30 @@ class KnocksProblem(RuntimeError):
     """Phrased for whoever is reading it on an owner's laptop."""
 
 
+def _page_evidence(page, seen: List[str]) -> str:
+    """The read's own log lines plus where the page ended up and what it says.
+
+    Best effort on every line: this runs inside a failure, and a probe that
+    itself throws would replace a diagnosable fault with a crash."""
+    out = ["what the read saw:"] + ["  " + ln for ln in seen[-15:]]
+    try:
+        out.append("page url: %s" % page.url)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        out.append("page title: %s" % page.title())
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        body = page.evaluate(
+            "() => (document.body && document.body.innerText || '')"
+            ".replace(/\\s+/g, ' ').trim().slice(0, 400)")
+        out.append("page text: %s" % body)
+    except Exception:  # noqa: BLE001
+        pass
+    return "\n".join(out)
+
+
 def _context(p, headless: bool):
     C.OV_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     ctx = p.chromium.launch_persistent_context(
@@ -119,9 +143,21 @@ def read_knocks(day: Optional[dt.date] = None, *, headless: bool = True,
         if show:
             log("OwnerVille needs signing in again — opening a window briefly")
         ctx = _context(p, headless and not show)
+        # KEEP WHAT THE READ SAW. When the grid never appears, the traceback
+        # says only that -- and from a laptop we cannot open, that was the
+        # whole story. Jamis (2026-10-06): signed in, campaigns pinned, no
+        # table, for four hours, while the same office impersonated from
+        # Lucy 2 served its grid at once. The log lines, the URL the page
+        # ended on and the first words of its body are the difference.
+        seen: List[str] = []
+
+        def _l(msg: str) -> None:
+            seen.append(str(msg))
+            log(msg)
+
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            rqst = _session(page, log=log)
+            rqst = _session(page, log=_l)
             # PIN THE CAMPAIGN FIRST. The campaign is a sticky session-global
             # in OwnerVille, so an unpinned read on a multi-campaign owner
             # returns whatever THEY last clicked. Whether the grid that
@@ -131,12 +167,15 @@ def read_knocks(day: Optional[dt.date] = None, *, headless: bool = True,
             cid = C.CAMPAIGN_IDS.get((campaign or "").strip().lower()) \
                 if campaign else C.campaign_id()
             if cid:
-                K.pin_campaign(page, rqst, cid, log=log)
-            K.navigate(page, rqst, mdy, log=log)
+                K.pin_campaign(page, rqst, cid, log=_l)
+            K.navigate(page, rqst, mdy, log=_l)
             try:
-                rows = K.read_rows(page, log=log)
+                rows = K.read_rows(page, log=_l)
             except K.OwnervilleError as e:
-                raise KnocksProblem(str(e))
+                problem = KnocksProblem(
+                    "%s (what the page showed is in the fault detail)" % e)
+                problem.seen = _page_evidence(page, seen)
+                raise problem
             # Never fatal: the disposition half is still worth handing over,
             # and losing the whole board because the gaps endpoint blipped
             # would be the wrong trade.

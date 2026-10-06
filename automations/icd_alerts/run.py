@@ -478,7 +478,10 @@ def cmd_knocks(headless: bool, dry_run: bool, day: dt.date) -> int:
             continue
         except ov_read.KnocksProblem as e:
             print("\n%s" % e)
-            _report("knocks", e, office_key=key)
+            seen = getattr(e, "seen", "")
+            _report("knocks", e, office_key=key,
+                    detail=(traceback.format_exc() + "\n\n" + seen)
+                    if seen else "")
             worst = 1
             continue
         except RuntimeError as e:
