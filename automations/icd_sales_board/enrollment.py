@@ -108,9 +108,19 @@ CALLOUT_SAT_CUT = (17, 0)
 # gap_alerts' own wrapper gate. Named Gap Alerts on the page, not 'Dispo
 # Alerts': it is the reps-over-a-15-minute-gap card, and sitting next to
 # 'Knock & Dispo Boards' the old name read like the same thing twice.
+def _gap_tick() -> int:
+    try:
+        from automations.gap_alerts import config as GCW
+        return int(getattr(GCW, "TICK_MINUTES", 15) or 15)
+    except Exception:   # noqa: BLE001
+        return 15
+
+
 def _gap_module_window() -> str:
-    """'1:30pm-10pm M-F / 10:45am-8pm Sat, every 15 min', from gap_alerts'
-    own config rather than retyped — it has moved twice."""
+    """'1:30pm-10pm M-F' / '10:45am-8pm Sat', from gap_alerts' own config
+    rather than retyped — it has moved twice. The cadence rides each
+    DESTINATION line, the way every other column does it, instead of
+    floating on a line of its own."""
     try:
         from automations.gap_alerts import config as GCW
         wk, sat = GCW.window_for(0), GCW.window_for(5)
@@ -119,8 +129,6 @@ def _gap_module_window() -> str:
             bits.append(f"{_ampm(wk[0])}-{_ampm(wk[1])} M-F")
         if sat:
             bits.append(f"{_ampm(sat[0])}-{_ampm(sat[1])} Sat")
-        every = getattr(GCW, "TICK_MINUTES", 15)
-        bits.append(f"Every {every} Min")
         return "\n".join(bits)
     except Exception:   # noqa: BLE001
         return "every 15 min, Mon–Sat"
@@ -291,10 +299,10 @@ def _room_name(channel_id: str) -> str:
 
 
 def _gap_rooms(me: str, gap_dests: dict) -> list:
-    """Where this office's gap card goes. Its registry keys by short name."""
+    """Where this office's gap card goes, each with the tick it goes on."""
     for key, names in (gap_dests or {}).items():
         if key == me or (len(key) >= 5 and me.startswith(key)):
-            return names
+            return [f"Every {_gap_tick()} Min{FIELD}{n}" for n in names]
     return []
 
 
