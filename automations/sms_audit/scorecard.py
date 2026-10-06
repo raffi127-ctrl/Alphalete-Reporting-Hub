@@ -88,7 +88,8 @@ def week_stats(office, tag):
         "display": "", "booked": 0, "shown": 0, "texts": 0,
         "typing": 0, "house": 0, "dodged": 0, "replies": [],
         "far_out": 0, "matched": 0,
-        "issues": collections.Counter(), "examples": [], "asked": []})
+        "issues": collections.Counter(), "examples": [], "asked": [],
+        "kinds": collections.Counter(), "typos": []})
 
     def slot(name):
         k = key_of(name)
@@ -118,8 +119,14 @@ def week_stats(office, tag):
 
     for e in A.text_errors(convos):
         d = slot(e.get("sender"))
-        if d is not None:
-            d["typing"] += 1
+        if d is None:
+            continue
+        d["typing"] += 1
+        kind = e.get("kind") or "typing"
+        d["kinds"][kind] += 1
+        if len(d["typos"]) < 40:
+            d["typos"].append((kind.capitalize(), needle_of(e.get("detail")),
+                               e.get("body") or "", e.get("name") or ""))
 
     who_said = {}
     for c in convos.values():
@@ -317,6 +324,11 @@ blockquote{margin:.4em 0 .4em 1em;padding:.3em .7em;border-left:3px solid #bbb;
 .bad{color:#A8322A;font-weight:bold;background:#fdeaea}
 .asked{color:#555;font-size:.9em;font-style:italic}
 .who{color:#555;font-weight:normal}
+details{margin:.35em 0;border:1px solid #ddd;border-radius:4px;
+        padding:.4em .7em;background:#fafafa}
+details[open]{background:#fff}
+summary{cursor:pointer;font-weight:bold}
+summary::marker{color:#888}
 @media (max-width:640px){body{margin:1em auto;font-size:15px}}
 """
 
@@ -327,6 +339,19 @@ def esc(t):
 
 
 ASKED = re.compile(r"^\s*they asked:\s*", re.I)
+
+
+def needle_of(detail):
+    """The words to mark, out of text_errors' description of the fault.
+
+    It writes "your looking (your -> you're)" and "intrested -> interested";
+    only the part before the arrow or the bracket is actually in the
+    message."""
+    d = (detail or "").strip()
+    for sep in (" (", " \u2192 ", " -> "):
+        if sep in d:
+            d = d.split(sep)[0].strip()
+    return d
 
 
 def mark(body, hit):
@@ -446,18 +471,35 @@ def render(person, office, weeks, path):
     add("</table></div>")
 
     last = d[got[-1]] if got else {}
-    shown_any = last.get("examples") or last.get("asked")
-    if shown_any:
-        add("<h2>What was actually sent</h2>")
-        add("<p class='none'>In full, exactly as it went out. The part that "
-            "broke the rule is in red.</p>")
-        for group in (last.get("examples") or [], last.get("asked") or []):
-            for issue, hit, body, name in list(group)[:10]:
-                add("<blockquote><b>{}</b>{}<br>{}</blockquote>".format(
-                    esc(issue),
-                    " <span class='who'>\u2014 {}</span>".format(esc(name))
-                    if name else "",
-                    mark(body, hit)))
+    # Megan 2026-10-06: "Did not answer should be it's own dropdown
+    # section". Three kinds of fault, three fixes, three sections — mixed
+    # together they read as one undifferentiated pile.
+    sections = (
+        ("House rules broken", last.get("examples") or [], ""),
+        ("Questions not answered", last.get("asked") or [],
+         "Did not answer: "),
+        ("Typing and grammar", last.get("typos") or [], ""),
+    )
+    if any(items for _h, items, _p in sections):
+        add("<p class='none'>Open any one to read the texts in full, exactly "
+            "as they went out. The part that broke the rule is in red.</p>")
+    for heading, items, strip in sections:
+        if not items:
+            continue
+        groups = collections.OrderedDict()
+        for issue, hit, body, name in items:
+            label = issue[len(strip):] if strip and issue.startswith(strip) \
+                else issue
+            groups.setdefault(label, []).append((hit, body, name))
+        add("<h2>{} \u2014 {}</h2>".format(esc(heading), len(items)))
+        for label, rows_ in sorted(groups.items(), key=lambda kv: -len(kv[1])):
+            add("<details><summary>{} \u2014 {}</summary>".format(
+                esc(label), len(rows_)))
+            for hit, body, name in rows_:
+                add("<blockquote>{}{}</blockquote>".format(
+                    "<span class='who'>{}</span><br>".format(esc(name))
+                    if name else "", mark(body, hit)))
+            add("</details>")
     add("</body></html>")
     path.write_text("\n".join(L), encoding="utf-8")
     return path

@@ -96,3 +96,29 @@ class Shade(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Needle(unittest.TestCase):
+    """text_errors writes a description, not a slice of the message."""
+
+    def test_a_grammar_detail_keeps_only_the_words_in_the_text(self):
+        self.assertEqual(S.needle_of("your looking (your → you're)"),
+                         "your looking")
+
+    def test_a_spelling_detail_keeps_the_misspelling(self):
+        self.assertEqual(S.needle_of("intrested → interested"),
+                         "intrested")
+
+    def test_an_ascii_arrow_works_too(self):
+        self.assertEqual(S.needle_of("biut -> but"), "biut")
+
+    def test_a_plain_detail_is_left_alone(self):
+        self.assertEqual(S.needle_of("i"), "i")
+
+    def test_blank(self):
+        self.assertEqual(S.needle_of(None), "")
+
+    def test_the_needle_marks_the_real_message(self):
+        got = S.mark("We don't have a exact 9am but we can do a 9:15",
+                     S.needle_of("a exact (a → an)"))
+        self.assertIn("<span class='bad'>a exact</span>", got)
