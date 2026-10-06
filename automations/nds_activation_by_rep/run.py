@@ -114,6 +114,15 @@ def tally(header, rows, today: dt.date, log=print) -> Dict[str, dict]:
         return out.setdefault(key, {b: {"sold": 0, "act": 0}
                                     for b in BUCKETS})[bucket]
 
+    # The .csv export can carry the same order line more than once (every
+    # count on the first render was even — classic doubled-rows export).
+    # Count DISTINCT rows; log how much was dropped so a legit duplicate
+    # pattern would show itself.
+    distinct = list(dict.fromkeys(tuple(r) for r in rows))
+    if len(distinct) != len(rows):
+        log(f"[nds_ar] deduped {len(rows)} export row(s) -> "
+            f"{len(distinct)} distinct")
+    rows = [list(t) for t in distinct]
     used = 0
     for r in rows:
         od = _parse_date(NO._cell(r, i_od))
