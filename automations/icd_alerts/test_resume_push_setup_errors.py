@@ -216,5 +216,60 @@ class AWindowlessChromeIsBroughtBack(unittest.TestCase):
         self.assertIn("Quit", hint)
 
 
+class AFailedProofSaysWhatWasOnScreen(unittest.TestCase):
+    """Drew, 2026-10-06: Lucy signed in, he watched AppStream open, and the
+    check said "never opened". The next failure must show us the page."""
+
+    def _page(self):
+        page = mock.Mock(url="https://applicantstream.com/index.cfm?rqst=SECRET123&p=1")
+        page.title.return_value = "ApplicantStream"
+        page.locator.return_value.count.return_value = 0
+        page.inner_text.return_value = "Welcome   Drew\n Dashboard"
+        ctx = mock.Mock(pages=[page])
+        ctx.cookies.return_value = [{"name": "rqst_SECRET123"}]
+        return page, ctx
+
+    def test_the_page_is_described_and_the_token_never_leaves(self):
+        page, ctx = self._page()
+        with mock.patch.object(RP, "SIGNIN_SHOT", "/nonexistent/x.png"):
+            got = RP.describe_page(page, ctx)
+        self.assertIn("rqst=<hidden>", got)
+        self.assertNotIn("SECRET123", got)
+        self.assertIn("title: ApplicantStream", got)
+        self.assertIn("office switcher #searchMC: 0", got)
+        self.assertIn("session cookies (rqst_): 1", got)
+        self.assertIn("Welcome Drew Dashboard", got)
+
+    def test_a_failed_sign_in_keeps_the_description(self):
+        page, ctx = self._page()
+        with mock.patch.object(RP.C, "appstream_creds",
+                               return_value={"username": "u", "password": "p"}), \
+             mock.patch.object(RP, "PROFILE_DIR", mock.MagicMock()), \
+             mock.patch.object(RP, "_on_console", return_value=False), \
+             mock.patch.object(RP, "LOGIN_POLL_SECONDS", 0), \
+             mock.patch.object(RP, "SIGNIN_SHOT", "/nonexistent/x.png"), \
+             mock.patch("automations.shared.ownerville_knocks.login"):
+            lines = []
+            self.assertFalse(RP.sign_in(page, ctx, log=lines.append))
+        self.assertIn("office switcher #searchMC: 0", RP.LAST_SIGNIN_PAGE)
+        self.assertIn("could not confirm", "\n".join(lines))
+
+    def test_setup_files_the_description_to_the_channel(self):
+        reports = []
+        rows = [{"office_key": "drew", "push_resumes": True}]
+        with mock.patch.object(F.C, "enrollments", return_value=rows), \
+             mock.patch.object(F.C, "appstream_creds",
+                               return_value={"username": "u", "password": "p"}), \
+             mock.patch.object(RP, "push_record", return_value={"office_key": "drew"}), \
+             mock.patch.object(RP, "check_login", return_value=1), \
+             mock.patch.object(RP, "LAST_SIGNIN_PAGE", "title: ApplicantStream"), \
+             mock.patch("automations.icd_alerts.relay.report_fault",
+                        side_effect=lambda st, su, de="", **k: reports.append((su, de))):
+            got = F._resume_push(lambda *_: None)
+        self.assertEqual(got, "still needs signing in")
+        self.assertIn("could not confirm", reports[0][0])
+        self.assertEqual(reports[0][1], "title: ApplicantStream")
+
+
 if __name__ == "__main__":
     unittest.main()

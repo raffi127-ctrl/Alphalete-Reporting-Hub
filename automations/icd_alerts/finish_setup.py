@@ -235,9 +235,10 @@ def _resume_push(log) -> str:
                                 "tried", log=log)
         return "still needs Lucy's Chrome to open"
     if rc != 0:
-        RP.report_setup_failure("the AppStream office page never opened "
-                                "after signing in -- usually a mistyped "
-                                "username or password", log=log)
+        RP.report_setup_failure("Lucy could not confirm the AppStream office "
+                                "page after signing in (page details in the "
+                                "thread)",
+                                getattr(RP, "LAST_SIGNIN_PAGE", ""), log=log)
         return "still needs signing in"
     if not RP.extension_installed():
         log("")

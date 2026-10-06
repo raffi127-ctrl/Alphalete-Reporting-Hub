@@ -458,9 +458,57 @@ def sign_in(page, ctx, log=_log) -> bool:
             log("AppStream is signed in")
             return True
         page.wait_for_timeout(5000)
-    log("the AppStream office page never opened -- usually a mistyped "
-        "username or password")
+    global LAST_SIGNIN_PAGE
+    LAST_SIGNIN_PAGE = describe_page(page, ctx)
+    log("Lucy could not confirm the AppStream office page. What her Chrome "
+        "showed:")
+    for line in LAST_SIGNIN_PAGE.splitlines():
+        log("  " + line)
     return False
+
+
+# WHAT THE PAGE WAS, WHEN THE PROOF FAILS. Drew, 2026-10-06: Lucy signed in --
+# he watched AppStream open -- and the check still said "never opened". The
+# proof is #searchMC, the office SWITCHER, and every account it was learned on
+# sees many offices; an office's own login sees one. Whether that page has no
+# switcher is a guess until we see it, so a failure now says what was there.
+LAST_SIGNIN_PAGE = ""
+SIGNIN_SHOT = C.APP_DIR / "resume-push-signin.png"
+
+
+def _no_tokens(url: str) -> str:
+    """rqst is a live session token: it never leaves the machine."""
+    import re
+    return re.sub(r"(rqst=)[^&#]+", r"\1<hidden>", url or "")
+
+
+def describe_page(page, ctx) -> str:
+    """URL (token hidden), title, the markers that decide signed-in, and the
+    opening text. Never raises; a screenshot stays on this computer."""
+    from automations.shared import ownerville_knocks as K
+    out = []
+
+    def add(label, fn):
+        try:
+            out.append("%s: %s" % (label, fn()))
+        except Exception as e:  # noqa: BLE001
+            out.append("%s: ? (%s)" % (label, type(e).__name__))
+
+    add("url", lambda: _no_tokens(page.url))
+    add("title", lambda: page.title())
+    add("office switcher #searchMC", lambda: page.locator(CONSOLE).count())
+    add("password box", lambda: page.locator(K._PASSWORD_SELECTOR).count())
+    add("security check frame", lambda: page.locator(
+        'iframe[src*="challenges.cloudflare"]').count())
+    add("session cookies (rqst_)", lambda: len(_rqst_tokens(ctx)))
+    add("tabs", lambda: len(ctx.pages))
+    add("text", lambda: " ".join(page.inner_text("body").split())[:300])
+    try:
+        page.screenshot(path=str(SIGNIN_SHOT))
+        out.append("screenshot on this computer: %s" % SIGNIN_SHOT)
+    except Exception:  # noqa: BLE001
+        pass
+    return "\n".join(out)
 
 
 # A CHROME WITH NO WINDOW CANNOT BE DRIVEN. On a Mac, closing Lucy's last
@@ -693,7 +741,8 @@ def push(live: bool, scheduled: bool = False) -> int:
             if not sign_in(page, ctx):
                 result = "login"
                 _report_once(result, "AppStream sign-in failed on the office "
-                                     "machine; resumes are not being pushed")
+                                     "machine; resumes are not being pushed",
+                             LAST_SIGNIN_PAGE)
                 return 1
             try:
                 out = B.run_batch(page, dry_run=not live)
