@@ -253,7 +253,7 @@ def work_on(person, weeks):
         per100 = 100.0 * (now.get("typing") or 0) / now["texts"]
         prevp = (100.0 * (before.get("typing") or 0) / before["texts"]
                  if before and before.get("texts") else None)
-        add("Typing", "{} in {} texts".format(now.get("typing"), now["texts"]),
+        add("Typing and grammar", "{} in {} texts".format(now.get("typing"), now["texts"]),
             GC._band(per100, 0.5, 2, 5, higher_is_better=False),
             "Fix the wording in AppStream." if bot
             else "Read it back before sending.",
@@ -446,7 +446,7 @@ def render(person, office, weeks, path):
          lambda v: "{:,}".format(v), True),
         ("Usual reply", lambda w: (w.get("replies") or {}).get("median"),
          A_mins, False),
-        ("Typing mistakes", lambda w: w.get("typing") or 0,
+        ("Typing and grammar mistakes", lambda w: w.get("typing") or 0,
          lambda v: "{}".format(v), False),
         ("House rules broken", lambda w: w.get("house") or 0,
          lambda v: "{}".format(v), False),

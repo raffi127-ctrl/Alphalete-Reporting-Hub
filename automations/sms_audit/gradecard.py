@@ -162,7 +162,7 @@ def _messages(msgs):
     # were not on the card at all. Two different faults with two different
     # fixes: a typo is coached, a wrong address is a saved reply to edit.
     out.append(_item(
-        "Typing mistakes", g,
+        "Typing and grammar mistakes", g,
         "{} message{}".format(len(errs), "" if len(errs) == 1 else "s"), "0",
         "Coach the sender. Listed below."))
 

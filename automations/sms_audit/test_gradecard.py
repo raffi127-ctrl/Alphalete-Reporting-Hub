@@ -170,7 +170,7 @@ class TypingVersusHouseRules(unittest.TestCase):
         return {i["area"]: i for i in got}
 
     def test_typing_counts_the_typos_not_the_house_rules(self):
-        self.assertIn("2 messages", self._areas()["Typing mistakes"]["number"])
+        self.assertIn("2 messages", self._areas()["Typing and grammar mistakes"]["number"])
 
     def test_house_rules_counts_the_breaches_not_the_typos(self):
         self.assertIn("7 texts", self._areas()["House rules broken"]["number"])
@@ -180,7 +180,7 @@ class TypingVersusHouseRules(unittest.TestCase):
                       self._areas()["House rules broken"]["action"])
 
     def test_typing_says_coach_not_edit_a_template(self):
-        self.assertIn("Coach", self._areas()["Typing mistakes"]["action"])
+        self.assertIn("Coach", self._areas()["Typing and grammar mistakes"]["action"])
 
     def test_no_coaching_still_reports_the_row_as_clean(self):
         msgs = dict(self.MSGS, coaching=[])
