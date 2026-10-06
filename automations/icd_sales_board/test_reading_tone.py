@@ -126,5 +126,44 @@ class TheRedIsDistinct(unittest.TestCase):
         self.assertNotIn("_reading_tone", EN.ADMIN_EXTRA)
 
 
+class TheRenderPathKeepsIt(unittest.TestCase):
+    """Computing the tone is not enough -- it has to survive to the table.
+
+    The sales board narrowed every row to its visible columns before
+    drawing, which dropped _reading_tone, so html_table fell back to the
+    plain rule and painted a 22-hour-cold relay green. Ryan sat there in
+    green through three rounds of "it still isn't red".
+    """
+
+    COLS = ["ICD", "Last reading"]
+
+    def _row(self, tone):
+        return {"ICD": "Ryan Mcspadden", "Last reading": "2026-10-05 20:10",
+                "_reading_tone": tone}
+
+    def test_html_table_uses_the_rows_own_tone(self):
+        html = EN.html_table([self._row("down")], self.COLS)
+        self.assertIn("#DC2626", html)
+
+    def test_without_it_the_cell_is_not_red(self):
+        """Why the renderer must carry it: the plain rule cannot know."""
+        bare = {c: self._row("down")[c] for c in self.COLS}
+        self.assertNotIn("#DC2626", EN.html_table([bare], self.COLS))
+
+    def test_narrowing_to_columns_alone_loses_it(self):
+        """The exact mistake, pinned: this is what the board used to do."""
+        r = self._row("down")
+        narrowed = {c: r.get(c, "") for c in self.COLS}
+        self.assertNotIn("_reading_tone", narrowed)
+        kept = {**narrowed,
+                **{k: v for k, v in r.items() if k.startswith("_")}}
+        self.assertEqual(kept.get("_reading_tone"), "down")
+        self.assertIn("#DC2626", EN.html_table([kept], self.COLS))
+
+    def test_a_private_key_is_never_printed_as_a_column(self):
+        html = EN.html_table([self._row("down")], self.COLS)
+        self.assertNotIn("_reading_tone", html)
+
+
 if __name__ == "__main__":
     unittest.main()

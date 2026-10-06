@@ -2173,8 +2173,16 @@ def _rollout_section() -> None:
                      f"on LucyECO")
         st.caption(" · ".join(f"{k}: {v}" for k, v in state.most_common() if k))
         cols = EN.admin_columns(erows)
-        st.html(EN.html_table([{c: r.get(c, "") for c in cols} for r in erows],
-                              cols))
+        # CARRY THE PRIVATE KEYS THROUGH. Narrowing each row to the visible
+        # columns dropped `_reading_tone`, so html_table fell back to the
+        # plain rule and painted every reading green -- Ryan sat there in
+        # green while 22 hours cold (Megan 2026-10-06: "RYAN STILL ISN'T RED
+        # ON MY VIEW"). Anything underscored is for the renderer, never a
+        # column, so it is kept and never printed.
+        st.html(EN.html_table(
+            [{**{c: r.get(c, "") for c in cols},
+              **{k: v for k, v in r.items() if k.startswith("_")}}
+             for r in erows], cols))
         st.caption(
             "The same table as **lucyeco.streamlit.app/lucyeco** — the link "
             "to send someone, which needs no access code — plus the last "
