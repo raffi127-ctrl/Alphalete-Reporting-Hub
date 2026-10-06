@@ -172,8 +172,18 @@ def read_knocks(day: Optional[dt.date] = None, *, headless: bool = True,
             try:
                 rows = K.read_rows(page, log=_l)
             except K.OwnervilleError as e:
+                # STAMPED WITH THE RELEASE: the relay folds same-summary
+                # faults and keeps the FIRST detail, so a new release's
+                # evidence would otherwise land under the old release's
+                # cut-off text. One row per release, not one per sweep.
+                try:
+                    from automations.icd_alerts import selfupdate as SU
+                    release = SU.applied_release() or "?"
+                except Exception:  # noqa: BLE001
+                    release = "?"
                 problem = KnocksProblem(
-                    "%s (what the page showed is in the fault detail)" % e)
+                    "%s (what the page showed is in the fault detail, "
+                    "release %s)" % (e, release))
                 problem.seen = _page_evidence(page, seen)
                 raise problem
             # Never fatal: the disposition half is still worth handing over,

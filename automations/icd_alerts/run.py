@@ -478,9 +478,14 @@ def cmd_knocks(headless: bool, dry_run: bool, day: dt.date) -> int:
             continue
         except ov_read.KnocksProblem as e:
             print("\n%s" % e)
+            # EVIDENCE FIRST. The relay trims the detail, and a traceback is
+            # long enough to push the page's URL, title and text off the end
+            # (Jamis 2026-10-06: the first evidence row stopped at "page
+            # url: ...p=89&"). The traceback is the same every time; the
+            # evidence is the part nobody has seen.
             seen = getattr(e, "seen", "")
             _report("knocks", e, office_key=key,
-                    detail=(traceback.format_exc() + "\n\n" + seen)
+                    detail=(seen + "\n\n" + traceback.format_exc())
                     if seen else "")
             worst = 1
             continue
