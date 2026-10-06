@@ -64,6 +64,20 @@ HEAD_OVERRIDE = {"Alphaletes": "Raf"}
 # only on WE 8.2, as zeros.
 GROUP_ONLY = {"Raf"}
 
+# ON MEDICAL LEAVE — active, not terminated, and legitimately absent from the
+# sales board. Megan 2026-10-05: "Samajai Hoy is active but on medical leave."
+#
+# Their cells are already right: no board row reads a dash, which is exactly
+# "nothing to count". What was wrong is the GAP it raised — "NOT in the
+# terminated log, so the board itself is missing them" — which says a board
+# needs fixing when nothing does. That is the false-alarm pattern that buried
+# Edgar Camunez and Jacari Melbert under eight bogus missing-section gaps.
+# [[feedback_fill_but_flag]]
+#
+# Named, not derived: nothing in any source records leave. Safe to leave stale
+# — once they are back on the board they have rows, and this never fires.
+ON_LEAVE = {"Samajai Hoy"}
+
 
 @dataclass
 class Member:

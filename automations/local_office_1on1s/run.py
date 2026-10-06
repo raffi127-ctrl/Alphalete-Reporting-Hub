@@ -680,12 +680,23 @@ def main(argv=None) -> int:
                     # assumed: on WE 9/20 four reps were off the board and NONE
                     # of them were in the 2,688-row log — that tab is simply
                     # short (67 rows against 77 and 80 either side).
-                    gaps.append(
-                        f"{name}: no row on the WE {wk:%-m/%-d} sales board"
-                        + (" — TERMINATED per the master log"
-                           if _terminated_on_or_before(name, wk)
-                           else " and NOT in the terminated log, so the board "
-                                "itself is missing them"))
+                    # ON LEAVE IS NOT A MISSING ROW. Megan 2026-10-05:
+                    # "Samajai Hoy is active but on medical leave." Their cells
+                    # already read a dash, which is correct; what was wrong was
+                    # calling it a board fault every week, which is noise that
+                    # buries the real ones. A note, not a gap.
+                    if PEO.key(name) in {PEO.key(p) for p in R.ON_LEAVE}:
+                        notes.append(
+                            f"{name}: no row on the WE {wk:%-m/%-d} sales board "
+                            f"— on medical leave, so there is nothing to count. "
+                            f"Not a board problem.")
+                    else:
+                        gaps.append(
+                            f"{name}: no row on the WE {wk:%-m/%-d} sales board"
+                            + (" — TERMINATED per the master log"
+                               if _terminated_on_or_before(name, wk)
+                               else " and NOT in the terminated log, so the "
+                                    "board itself is missing them"))
 
             # What this run actually has, keyed by the cell it lands in.
             have = {}

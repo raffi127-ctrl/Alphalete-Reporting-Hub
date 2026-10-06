@@ -61,6 +61,10 @@ MONTHS = ["january", "february", "march", "april", "may", "june", "july",
 NONE_MARK = "-"
 MONTHLY_NONE = "0"
 COUNT_ROWS = {"conducted", "offered", "bob_num", "ns_sched", "ns_showed"}
+# The RATE rows. They read 0% only when the thing they divide is itself zero —
+# see the two branches in for_leader().
+RATE_ROWS = {"bob_pct"}
+MONTHLY_NONE_PCT = "0%"
 
 RECRUITING = {
     # expanded — Individual Template r23-29
@@ -195,14 +199,26 @@ def for_leader(name: str, weeks: List[dt.date], *, pay, months,
             m = month_of(wk)
             block = months.get(m, {}).get(rec_name.strip().lower())
             if not block:
-                # Not a gap — they conducted none. Counts read 0, rates stay
-                # blank. Deliberately NOT reported as missing data: a gap list
-                # full of merely-inactive people is how a real gap gets missed.
+                # Not a gap — they conducted none. Deliberately NOT reported as
+                # missing data: a gap list full of merely-inactive people is how
+                # a real gap gets missed.
+                #
+                # THE RATE READS 0% TOO. It used to stay blank on the reasoning
+                # that 0 of 0 is undefined — but the SOURCE writes 0% itself in
+                # the months it bothers to fill, so the same situation displayed
+                # two different ways down one row and the blanks looked like a
+                # failure. Megan 2026-10-05 circled exactly that. 0% here means
+                # "closed none of none", which is a statement about activity,
+                # not a closing rate anybody should be judged on.
                 for label, k in RECRUITING.items():
                     if k in COUNT_ROWS:
                         out.add(label, wk, MONTHLY_NONE,
                                 f"absent from the {m} block of \"2nd rds %'s\" "
                                 f"— conducted none")
+                    elif k in RATE_ROWS:
+                        out.add(label, wk, MONTHLY_NONE_PCT,
+                                f"absent from the {m} block of \"2nd rds %'s\" "
+                                f"— conducted none, so none closed")
             else:
                 for label, k in RECRUITING.items():
                     v = block.get(k, "")
@@ -215,6 +231,14 @@ def for_leader(name: str, weeks: List[dt.date], *, pay, months,
                     # gives those its own way, and 0 of 0 is not 0%.
                     if v == "" and k in COUNT_ROWS:
                         v = MONTHLY_NONE
+                    # An empty RATE reads 0% ONLY when there was nothing to
+                    # divide. With second rounds actually conducted, an empty
+                    # rate cell is a hole in the source and must stay blank —
+                    # writing 0% there would claim they closed none of twenty.
+                    elif v == "" and k in RATE_ROWS:
+                        _conducted = str(block.get("conducted", "")).strip()
+                        if _conducted in ("", "0"):
+                            v = MONTHLY_NONE_PCT
                     out.add(label, wk, v,
                             f"\"2nd rds %'s\" {m} block, {label}")
     return out
