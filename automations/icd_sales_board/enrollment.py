@@ -34,8 +34,8 @@ import time
 # test that checks it is the point of the list existing.
 SAFE_COLUMNS = ["ICD", "Campaigns", "LucyECO", "Sara+ Alerts",
                 "Text Scoreboard", "Call-outs", "Knock & Dispo Boards",
-                "Weather Report", "Ad Photo Threads", "Resume Pushing",
-                "Metrics Thread", "Tableau Trackers", "Gap Alerts"]
+                "Gap Alerts", "Weather Report", "Ad Photo Threads",
+                "Resume Pushing", "Metrics Thread", "Tableau Trackers"]
 
 # Separates the columns inside one cell. The page splits on it to build a
 # small aligned table; anything reading these as plain text still gets a
@@ -108,6 +108,24 @@ CALLOUT_SAT_CUT = (17, 0)
 # gap_alerts' own wrapper gate. Named Gap Alerts on the page, not 'Dispo
 # Alerts': it is the reps-over-a-15-minute-gap card, and sitting next to
 # 'Knock & Dispo Boards' the old name read like the same thing twice.
+def _gap_module_window() -> str:
+    """'1:30pm-10pm M-F / 10:45am-8pm Sat, every 15 min', from gap_alerts'
+    own config rather than retyped — it has moved twice."""
+    try:
+        from automations.gap_alerts import config as GCW
+        wk, sat = GCW.window_for(0), GCW.window_for(5)
+        bits = []
+        if wk:
+            bits.append(f"{_ampm(wk[0])}-{_ampm(wk[1])} M-F")
+        if sat:
+            bits.append(f"{_ampm(sat[0])}-{_ampm(sat[1])} Sat")
+        every = getattr(GCW, "TICK_MINUTES", 15)
+        bits.append(f"Every {every} Min")
+        return "\n".join(bits)
+    except Exception:   # noqa: BLE001
+        return "every 15 min, Mon–Sat"
+
+
 DISPO_WINDOW = "every 15 min, Mon–Sat"
 # "daily" told nobody anything — every one of these runs daily, so the column
 # was a wall of the same word (Megan 2026-10-05: "instead of daily it should
@@ -174,7 +192,9 @@ HOUSE_RUN = {
         # times_of_sales).
         "Text Scoreboard": (ALWAYS_ON, ["iMessage Alphalete Partners"]),
         # total_knocks posts the board into the Metrics thread each morning.
-        "Knock & Dispo Boards": ("Daily", ["Slack #alphalete-sales"]),
+        # total_knocks runs inside daily_metrics, the morning batch.
+        "Knock & Dispo Boards": ("Daily, morning batch",
+                                 ["Slack #alphalete-sales"]),
     },
 }
 
@@ -186,7 +206,7 @@ HOUSE_RUN = {
 # the name below is all it takes to give it one.
 EXPLAINS = {
     "Sara+ Alerts": ("Every sale and credit check off the office's own "
-                     "SaraPlus, posted to their room as it happens.",
+                     "SaraPlus, posted as it happens live.",
                      "sara-plus-alerts.png"),
     "Text Scoreboard": ("The running scoreboard texted to the office's "
                         "iMessage group through the day.",
@@ -200,19 +220,19 @@ EXPLAINS = {
                              "knock-dispo-boards.png"),
     "Weather Report": ("The morning forecast for that office's city.",
                        "weather-report.png"),
-    "Ad Photo Threads": ("Eve's daily 1st-round screenshots, one Slack "
-                         "thread per Indeed ad, with the ad's % removed and "
-                         "average star rating.",
+    "Ad Photo Threads": ("One Slack thread per Indeed ad, headed with that "
+                         "ad's % removed and average star rating. Inside the "
+                         "thread: a reply per day with each candidate "
+                         "interviewed, their rating, their interviewer and "
+                         "the Zoom screenshot cropped to them.",
                          "ad-photo-threads.png"),
     "Resume Pushing": ("Pulling resumes out of ApplicantStream and sending "
                        "them to the AI.", "resume-pushing.png"),
     "Metrics Thread": ("The office's daily metrics thread in Slack.",
                        "office-metrics-thread.png"),
-    "Tableau Trackers": ("The universal tracker boards, drawn from Tableau "
-                         "and posted to the office's room.",
+    "Tableau Trackers": ("The tracker boards, drawn from Tableau.",
                          "tableau-trackers.png"),
-    "Gap Alerts": ("The KNOCKS & DISPOSITIONS card — reps over a 15 "
-                     "minute gap — texted through the day.",
+    "Gap Alerts": ("Reps over a 15 minute gap.",
                      "gap-alerts-card.png"),
 }
 
@@ -628,6 +648,23 @@ def rows(icds=None) -> list:
         from automations.icd_sales_board import profiles as P
         from automations.icd_sales_board import rollout as RO
         names = sorted(icds if icds is not None else P.load())
+        if icds is None:
+            # ANYONE WE RUN SOMETHING FOR BELONGS HERE, not only the offices
+            # on the ORG sales board (Megan 2026-10-05: "anyone getting ad
+            # photo threads should be on this list"). Three were missing —
+            # Salik Hammad, Samuel Acay and Jose Velasquez — because the
+            # roster came from the board alone.
+            try:
+                from automations.ad_photo_threads import config as _APC
+                have = {_letters(n) for n in names}
+                for o in _APC.OFFICES:
+                    own = (o.get("owner") or "").strip()
+                    if o.get("live") and own and _letters(own) not in have:
+                        names.append(own)
+                        have.add(_letters(own))
+                names = sorted(names)
+            except Exception:   # noqa: BLE001
+                pass
         chan = _channels()
         sched = _metrics_schedule()
 
@@ -651,6 +688,8 @@ def rows(icds=None) -> list:
             except Exception:   # noqa: BLE001
                 pass
             metrics.setdefault(_letters("Rafael Hidalgo"), "daily_metrics")
+            emailed = {k for k, o in OM.OFFICES.items()
+                       if getattr(o, "emails_only", False)}
             try:
                 from automations.focus_office_att import aliases as _AL
                 _raw = _AL.load_aliases()
@@ -664,7 +703,7 @@ def rows(icds=None) -> list:
             except Exception:   # noqa: BLE001
                 pass
         except Exception:   # noqa: BLE001
-            metrics = {}
+            metrics, emailed = {}, set()
         # RESUME PUSHING: CONFIGURED IS NOT RUNNING. applicant_push lists 11
         # offices, and every one of its schedule entries is on_scheduler
         # False — it has only just launched and is live for nobody (Megan
@@ -740,8 +779,12 @@ def rows(icds=None) -> list:
         try:
             # Eve's ad photo threads — the daily 1st-round screenshots, one
             # Slack thread per Indeed ad. Only the offices switched on.
+            # BY OWNER, not by feed key. ad_photo_threads calls Raf's office
+            # 'rafael' and the relay calls it 'rafael_hidalgo', so a key join
+            # said he was not on his own ad threads when he has three of them.
             from automations.ad_photo_threads import config as APC
-            ads = {o.get("key") for o in APC.OFFICES if o.get("live")}
+            ads = {_letters(o.get("owner")) for o in APC.OFFICES
+                   if o.get("live") and o.get("owner")}
         except Exception:   # noqa: BLE001
             ads = set()
         try:
@@ -815,10 +858,13 @@ def rows(icds=None) -> list:
                     _names_of(feeds, chan, "knock_lines")),
                 "Weather Report": ENROLLED if any(
                     f.key in weather for f in feeds) else "",
-                "Ad Photo Threads": ENROLLED if any(
-                    f.key in ads for f in feeds) else "",
+                "Ad Photo Threads": ENROLLED if me in ads else "",
                 "Resume Pushing": ENROLLED if me in resume else "",
-                "Metrics Thread": ENROLLED if mkey else "",
+                # An office with no Slack gets the same numbers as one
+                # email a day (office_metrics emails_only) — 'Enrolled' hid
+                # the one thing an owner would ask about it.
+                "Metrics Thread": ("Emailed Daily" if mkey in emailed
+                                   else ENROLLED) if mkey else "",
                 "Tableau Trackers": ENROLLED if mkey else "",
                 # A short key is a PREFIX of the full name ('rafael' ->
                 # 'rafaelhidalgo'), which is how that registry names an office.
@@ -826,7 +872,7 @@ def rows(icds=None) -> list:
                 # four hardcoded offices) or `gaps_min` on an ECO
                 # destination. Either counts.
                 "Gap Alerts": _with_where(
-                    DISPO_WINDOW if any(
+                    _gap_module_window() if any(
                         d == me or (len(d) >= 5 and me.startswith(d))
                         for d in dispo)
                     else (_window(_first_office(feeds, alert_office))
