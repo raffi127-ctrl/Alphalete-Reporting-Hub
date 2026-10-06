@@ -38,6 +38,7 @@ fonts.
 """
 from __future__ import annotations
 
+from automations.shared import sheets_retry as RETRY
 import datetime as dt
 from typing import Dict, List
 
@@ -131,7 +132,7 @@ def requests_for(grid: List[List[str]], sheet_id: int,
 
 def apply(spreadsheet, tab: str, *, logfn=print) -> int:
     ws = spreadsheet.worksheet(tab)
-    reqs = requests_for(ws.get_all_values(), ws.id)
+    reqs = requests_for(RETRY.call(ws.get_all_values, tries=6), ws.id)
     if not reqs:
         logfn(f"  {tab}: no manual rows found — nothing recoloured")
         return 0
@@ -158,7 +159,7 @@ def ensure_week_columns(spreadsheet, tab: str, needed: List, *, logfn=print) -> 
     what the rebuilt templates use ('08/02', not 'WE 8/2').
     """
     ws = spreadsheet.worksheet(tab)
-    grid = ws.get_all_values()
+    grid = RETRY.call(ws.get_all_values, tries=6)
     secs = LO.find_sections(grid)
     if not secs:
         return 0

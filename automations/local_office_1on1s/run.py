@@ -20,6 +20,7 @@ import datetime as dt
 import sys
 from collections import defaultdict
 
+from automations.shared import sheets_retry as RETRY
 from automations.local_office_1on1s import (fill as F, layout as LO,
                                             obcl as OB, ov_knocks as OV,
                                             paycheck as PC, people as PEO,
@@ -58,7 +59,7 @@ def _terminated_on_or_before(name: str, week: dt.date) -> bool:
             # OWN normaliser and holding the LAST departure. We want the
             # EARLIEST one on or before the week in question, so re-key by the
             # entry's date and keep the oldest.
-            for k, entry in TL.load(open_by_key(ALL_IN_ONE_RAF)).items():
+            for k, entry in TL.load(_open(ALL_IN_ONE_RAF)).items():
                 if entry.we and (k not in _TERM_LOG or entry.we < _TERM_LOG[k]):
                     _TERM_LOG[k] = entry.we
             _TERM_LOG["_key"] = RN.key
@@ -97,6 +98,26 @@ def last_completed_sunday(today: dt.date) -> dt.date:
     return today - dt.timedelta(days=(today.weekday() + 1) % 7 or 7)
 
 
+# EVERY SHEETS READ GOES THROUGH THE RETRY. This report opens four workbooks
+# and reads ~30 tabs in a row, so it loses the per-minute read-quota race
+# whenever the mini is busy: on 2026-10-05 it died with a 429 partway through
+# while two of Eve's backfills were running, and a half-written fill is worse
+# than a late one. 6 tries = 1+2+4+8+16 = 31s of backoff, which spans most of a
+# quota window. [[reference_sheets_write_quota_429]]
+_TRIES = 6
+
+
+def _vals(ws):
+    """ws.get_all_values(), retried."""
+    return RETRY.call(ws.get_all_values, tries=_TRIES)
+
+
+def _open(key):
+    """open_by_key(key), retried."""
+    from automations.recruiting_report.fill import open_by_key as _obk
+    return RETRY.call(_obk, key, tries=_TRIES)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--write", action="store_true")
@@ -111,21 +132,21 @@ def main(argv=None) -> int:
     wks = W.sundays_back(last_completed_sunday(today), a.weeks)
     print(f"weeks: {wks[0]:%-m/%-d} .. {wks[-1]:%-m/%-d}  ({len(wks)})")
 
-    allinone = open_by_key(PC.SHEET_ID)
+    allinone = _open(PC.SHEET_ID)
     pay = PC.load(allinone)
     print(f"  P&L: read {', '.join(pay.tabs)}")
     for s in pay.skipped:
         print(f"       skipped {s}")
     for c in pay.conflicts:
         print(f"       ! {c}")
-    _teams, months = SR.read(allinone.worksheet(SR.TAB).get_all_values())
+    _teams, months = SR.read(_vals(allinone.worksheet(SR.TAB)))
 
     # New starts come from the ONBOARDING CHECKLIST, weekly, not from the
     # monthly recruiting tab. Megan 2026-10-01: "scheduled and showed new
     # starts should be weekly not monthly" — the OBCL has one row per
     # scheduled new start, dated, attributed to whoever did their 2nd round.
     try:
-        obcl = OB.read(allinone.worksheet(OB.TAB).get_all_values())
+        obcl = OB.read(_vals(allinone.worksheet(OB.TAB)))
         print(f"  OBCL: {len(obcl)} week block(s)")
     except Exception as e:                      # no OBCL ≠ no report
         obcl = {}
@@ -137,7 +158,7 @@ def main(argv=None) -> int:
 
     # The weekly sales boards: products AND 11 of the 13 knock rows.
     from automations.terminated_reps import board as BD
-    boardbook = open_by_key(BD.SHEET_ID)
+    boardbook = _open(BD.SHEET_ID)
     tabs_by_week = SA.week_tabs([w.title for w in boardbook.worksheets()],
                                 wks[-1].year)
     weekly, classrooms = {}, {}
@@ -146,7 +167,7 @@ def main(argv=None) -> int:
         if not t:
             notes_boot.append(f"no sales board tab for WE {wk:%-m/%-d}")
             continue
-        g = boardbook.worksheet(t).get_all_values()
+        g = _vals(boardbook.worksheet(t))
         weekly[wk] = (SA.read_week(g, t, wk), SA.read_days(g, t))
         # The board's 'Classroom / Trainers' block — who showed to day 1 that
         # week, and whose team they are on. Kept per week because Trained and
@@ -191,7 +212,7 @@ def main(argv=None) -> int:
             "`lucy rerun local_1on1s_knock_backfill`, and run this fill on the "
             "same machine.")
 
-    book = open_by_key(BOOK)
+    book = _open(BOOK)
 
     gaps, notes, wrote = [], list(notes_boot), 0
     for team in (a.tabs or R.TEAMS):
@@ -205,7 +226,7 @@ def main(argv=None) -> int:
                 pass
         except Exception as e:                      # never block a fill
             notes.append(f"{team}: could not add week columns ({e})")
-        grid = ws.get_all_values()
+        grid = _vals(ws)
         secs = LO.find_sections(grid)
         by_name = {PEO.key(s.name): s for s in secs if s.name.strip()}
         print(f"\n{team}  ({len(secs)} sections)")

@@ -90,3 +90,31 @@ def open_sheet(client, sheet_id: str, *, tries: int = _TRIES,
                 raise
             sleeper(base_delay * (2 ** attempt))
     raise last                                        # pragma: no cover
+
+
+def call(fn: Callable, *args, tries: int = _TRIES,
+         base_delay: float = _BASE_DELAY,
+         sleeper: Callable[[float], None] = time.sleep, **kwargs):
+    """Any gspread call, retried through the transient failures.
+
+    `open_sheet` above covers OPENING a workbook, which was the only thing that
+    needed it while every job read one sheet once. A report that reads dozens of
+    tabs in a row loses the same race on the READS instead: local_1on1s_fill
+    died on 2026-10-05 with a 429 on `get_all_values()` partway through, while
+    two other backfills were running on the mini. Same rate limit, same answer,
+    different call — so the retry belongs on the call, not on the open.
+
+    A per-MINUTE quota needs a longer wait than the 4 tries (~7s) that suit a
+    form a human is watching. Readers of many tabs should pass more tries: 6
+    gives 1+2+4+8+16 = 31s, which spans most of a quota window.
+    """
+    last: BaseException
+    for attempt in range(tries):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:                        # noqa: BLE001
+            last = e
+            if attempt == tries - 1 or not is_retryable(e):
+                raise
+            sleeper(base_delay * (2 ** attempt))
+    raise last                                        # pragma: no cover

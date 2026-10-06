@@ -25,6 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
+from automations.shared import sheets_retry as RETRY
 from automations.local_office_1on1s import layout as LO
 
 INDIVIDUAL_TEMPLATE = "Individual Template"
@@ -96,7 +97,7 @@ def apply(spreadsheet, tab: str, p: Plan, *, logfn=print) -> None:
     if not p.append:
         return
 
-    grid = ws.get_all_values()
+    grid = RETRY.call(ws.get_all_values, tries=6)
     secs = LO.find_sections(grid)
     at = max(s.end for s in secs) + 1 + GAP_ROWS      # 1-indexed next free row
 

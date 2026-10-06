@@ -33,6 +33,7 @@ is nothing to carry and the run says so instead of silently doing nothing.
 """
 from __future__ import annotations
 
+from automations.shared import sheets_retry as RETRY
 import datetime as dt
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -158,7 +159,7 @@ def main(argv=None) -> int:
     from automations.recruiting_report.fill import open_by_key
     from automations.local_office_1on1s.run import BOOK
 
-    book = open_by_key(BOOK)
+    book = RETRY.call(open_by_key, BOOK, tries=6)
     titles = [w.title for w in book.worksheets()]
     pairs = [(t, t[len(OLD_PREFIX):]) for t in titles if t.startswith(OLD_PREFIX)]
     pairs = [(o, n) for o, n in pairs if n in titles]
@@ -168,8 +169,8 @@ def main(argv=None) -> int:
 
     total = 0
     for old_title, new_title in pairs:
-        old_grid = book.worksheet(old_title).get_all_values()
-        new_grid = book.worksheet(new_title).get_all_values()
+        old_grid = RETRY.call(book.worksheet(old_title).get_all_values, tries=6)
+        new_grid = RETRY.call(book.worksheet(new_title).get_all_values, tries=6)
         p = plan(old_grid, new_grid, year=a.year, team=new_title)
         print(f"\n{new_title}  <- {old_title}")
         print(f"  {len(p.moves)} value(s) to carry over")
