@@ -496,8 +496,12 @@ def _connect(p, background: bool, url: str = AS_BASE, guard=None):
 
 
 # --- the jobs ------------------------------------------------------------------
+NO_CHROME = 3
+
+
 def check_login(log=_log) -> int:
-    """For the installer: sign in where they can see it. 0 ok, 1 no, 2 none."""
+    """For the installer: sign in where they can see it. 0 ok, 1 no, 2 none,
+    3 Lucy's Chrome would not open (so the login was never even tried)."""
     if not C.appstream_creds():
         log("no AppStream login saved on this computer")
         return 2
@@ -505,8 +509,54 @@ def check_login(log=_log) -> int:
     with sync_playwright() as p:
         browser, ctx, page = _connect(p, background=False)
         if not page:
-            return 1
+            return NO_CHROME
         return 0 if sign_in(page, ctx, log) else 1
+
+
+# --- when the setup check fails ------------------------------------------------
+# Drew, 2026-10-06: the setup screen said "Resume pushing  failed (Error)" and
+# nothing else. "Error" is patchright's base class -- it named the library,
+# not the problem -- and the message holding the real reason was thrown away,
+# with nothing sent to us. Raf was sure the login was right, and it probably
+# was: a wrong login says "still needs signing in", never "failed".
+_CLOSED = ("has been closed", "target closed", "browser closed",
+           "connection closed", "browser has disconnected")
+
+
+def explain_failure(e: BaseException) -> "tuple[str, str]":
+    """(reason, hint) for a crash in the setup check, in plain words.
+
+    The reason goes on the summary line; the hint says what to do. A cause we
+    do not recognise keeps its own full message -- a guess would hide it.
+    """
+    msg = str(e).strip()
+    low = msg.lower()
+    if any(s in low for s in _CLOSED):
+        return ("Lucy's Chrome window was closed before the check finished",
+                "Run this again and leave the Chrome window that opens alone "
+                "until this screen says it is done.")
+    if "connect_over_cdp" in low or ("127.0.0.1:%d" % PORT) in low:
+        return ("could not take control of Lucy's Chrome (port %d)" % PORT,
+                "Quit every Chrome window Lucy opened (right-click Chrome in "
+                "the Dock > Quit), then run this again.")
+    first = msg.splitlines()[0].strip() if msg else ""
+    return ("%s: %s" % (type(e).__name__, first) if first
+            else type(e).__name__, "")
+
+
+def report_setup_failure(summary: str, detail: str = "", log=_log) -> bool:
+    """File a failed setup check to #claudecorrections-and-requests, the same
+    road the scheduled push's faults take. Not de-duplicated like those: a
+    person runs setup by hand, so every failed run is news. Never raises."""
+    try:
+        from automations.icd_alerts import relay as R
+        return R.report_fault("resume_push",
+                              "Resume pushing setup failed: %s" % summary,
+                              detail, log=log,
+                              office_key=str(push_record().get("office_key")
+                                             or ""))
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def setup_extension(log=_log, wait_seconds: int = 300) -> bool:
@@ -649,7 +699,10 @@ def main(argv=None) -> int:
     if args.setup:
         return 0 if setup_extension() else 1
     if args.check_login:
-        return check_login()
+        rc = check_login()
+        if rc == NO_CHROME:
+            _log("could not open Lucy's Chrome, so the login was not tried")
+        return rc
     return push(live=args.live, scheduled=args.scheduled)
 
 
