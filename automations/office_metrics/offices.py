@@ -450,6 +450,8 @@ OFFICE_TIMEZONES: dict = {
     "colten":  "America/New_York",             # Hollywood, FL — EASTERN (ECO sign-up)
     "drew":    "America/New_York",             # Maitland (Orlando), FL — EASTERN
     "maxamad": "America/Chicago",              # Central (ECO sign-up + Slack profile)
+    "jenny":   "America/New_York",             # Figspire Management — EASTERN (Slack profile, 2026-10-06)
+    "luke":    "America/Los_Angeles",          # Takeoff Enterprises — PACIFIC (Slack profile, 2026-10-06)
     "jairo":   "America/New_York",             # Miami, FL — EASTERN (ECO sign-up, 305 number)
 }
 

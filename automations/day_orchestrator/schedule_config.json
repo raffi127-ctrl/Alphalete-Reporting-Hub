@@ -10853,6 +10853,45 @@
    "_onboarded": true,
    "machine": "Lucy 2"
   },
+  "luke_metrics": {
+   "order": 7.91,
+   "machine": "Lucy 2",
+   "on_scheduler": false,
+   "display_name": "Luke's B2B Metrics (channel from ECO sign-up)",
+   "source_type": "tableau",
+   "data_sources": [
+    "tableau:order_log"
+   ],
+   "command": [
+    "automations.b2b_metrics.runner"
+   ],
+   "base_args": [
+    "--office",
+    "luke",
+    "--post"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P1",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 60,
+   "verify": {
+    "type": "manifest",
+    "report_id": "luke_metrics"
+   },
+   "_onboarded": true,
+   "_note": "B2B metrics for luke (Luke Baldwin, Takeoff Enterprises, Pacific). Wired by hand 2026-10-06 (no form), modelled on jamis_metrics. on_scheduler false until a dry run on Lucy 2 proves it; channel comes from his Lucy ECO sign-up; per-office Tableau views pending Carlos. Hub: the consolidated b2b-metrics card."
+  },
   "trang_metrics": {
    "order": 35,
    "machine": "Lucy 4",
@@ -13011,6 +13050,45 @@
    },
    "_note": "Office metrics for jacob -> rockstar-world-sales (C0BMX2V2XRT). Wired by hand 2026-09-28 (no form). AT&T Fiber D2D office (campaign fiber_d2d), all 11 D2D boards. Switched ON 2026-09-28 after the Lucy 1 dry run: 9 boards with real data (499-row order log, 22/18 churn reps, 16-rep ongoing cancel, ABP 28/28, Tableau Metrics); knocks + 6+ were REAL zeros for Sunday 9/27 (6+ now posts a one-line 'none' only when the export proves the day loaded). Sheet 'Jacob Dover - Lucy Metrics (Rockstarworld)' 1CeF9wVJt720jA0w2s_Zw1fO51PajDOtWVsS2EYqtMT0 copied from the Master Metrics Templates.",
    "_onboarded": true
+  },
+  "jenny_metrics": {
+   "order": 36.7,
+   "machine": "Lucy 4",
+   "on_scheduler": false,
+   "display_name": "Jenny's Daily Metrics (channel from ECO sign-up)",
+   "source_type": "tableau",
+   "data_sources": [
+    "tableau:order_log"
+   ],
+   "command": [
+    "automations.office_metrics.runner"
+   ],
+   "base_args": [
+    "--office",
+    "jenny",
+    "--live"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P1",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 60,
+   "verify": {
+    "type": "manifest",
+    "report_id": "jenny_metrics"
+   },
+   "_onboarded": true,
+   "_note": "Office metrics for jenny (Jennifer Figueroa, Figspire Management, Eastern). Wired by hand 2026-10-06 (no form). AT&T Fiber D2D like jacob. on_scheduler false until a dry run on Lucy 4 proves data on every board; channel comes from her Lucy ECO sign-up. Hub: the shared office-metrics card."
   },
   "icd_knocks_board_now": {
    "on_scheduler": false,

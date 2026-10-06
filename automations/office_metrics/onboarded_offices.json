@@ -622,5 +622,57 @@
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%"
+  },
+  {
+    "key": "jenny",
+    "report_id": "jenny_metrics",
+    "label": "Jenny's Local Office",
+    "owner": "Jennifer Figueroa",
+    "channel_id": "U04G5HJBGFN",
+    "channel_name": "megan-dm (hold until the ECO sign-up names the channel)",
+    "sheet_id": "16AVvfmtqCixPFaF2Kq0tGHEmQGSSpcEEIeQ69CUreTQ",
+    "knocks_office": "Jennifer Figueroa",
+    "ov_account": "23132",
+    "owner_office": "",
+    "business_name": "Figspire Management, Inc.",
+    "website": "",
+    "header_label": "",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "knocks",
+      "order_log",
+      "sales_6plus",
+      "cancels",
+      "ongoing_cancel",
+      "disconnects",
+      "churn_ni",
+      "churn_wl",
+      "activations",
+      "abp",
+      "tableau_shot"
+    ],
+    "report_order": {
+      "knocks": 1,
+      "order_log": 2,
+      "sales_6plus": 3,
+      "cancels": 4,
+      "ongoing_cancel": 5,
+      "disconnects": 6,
+      "churn_ni": 7,
+      "churn_wl": 8,
+      "activations": 9,
+      "abp": 10,
+      "tableau_shot": 11
+    },
+    "per_office_views": {},
+    "machine": "Lucy 4",
+    "campaign": "fiber_d2d",
+    "notes": "wired by hand 2026-10-06 (Megan: Jenny Figueroa enrolling in Lucy ECO today, metrics + trackers right away); AT&T Fiber D2D like jacob, all 11 D2D boards; Eastern; channel filled from her ECO sign-up; sheet copied from Master Metrics Templates",
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%"
   }
 ]
