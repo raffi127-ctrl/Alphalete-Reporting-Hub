@@ -121,6 +121,16 @@ def week_stats(office, tag):
         if d is not None:
             d["typing"] += 1
 
+    who_said = {}
+    for c in convos.values():
+        for m in c.get("msgs") or ():
+            b = " ".join((m.get("body") or "").split())
+            if b and b not in who_said:
+                who_said[b] = c.get("name") or ""
+
+    def applicant(body):
+        return who_said.get(" ".join((body or "").split()), "")
+
     for e in A.who_to_talk_to(convos, oid):
         d = slot(e.get("sender"))
         if d is None:
@@ -130,7 +140,8 @@ def week_stats(office, tag):
         d["issues"][e.get("issue") or "?"] += n
         for ex in (e.get("examples") or [])[:3]:
             d["examples"].append((e.get("issue") or "?", ex.get("hit") or "",
-                                  ex.get("body") or ""))
+                                  ex.get("body") or "",
+                                  applicant(ex.get("body"))))
 
     for e in A.dodged_questions(convos):
         d = slot(e.get("sender"))
@@ -141,7 +152,7 @@ def week_stats(office, tag):
             d["asked"].append((
                 "Did not answer: {}".format(e.get("bucket") or "a question"),
                 "they asked: {}".format(e["question"]),
-                e.get("reply") or ""))
+                e.get("reply") or "", e.get("name") or ""))
 
     for st in A.reply_speed_by_sender(convos, min_n=1):
         d = slot(st.get("who"))
@@ -305,6 +316,7 @@ blockquote{margin:.4em 0 .4em 1em;padding:.3em .7em;border-left:3px solid #bbb;
 .none{color:#666;font-style:italic}
 .bad{color:#A8322A;font-weight:bold;background:#fdeaea}
 .asked{color:#555;font-size:.9em;font-style:italic}
+.who{color:#555;font-weight:normal}
 @media (max-width:640px){body{margin:1em auto;font-size:15px}}
 """
 
@@ -439,12 +451,13 @@ def render(person, office, weeks, path):
         add("<h2>What was actually sent</h2>")
         add("<p class='none'>In full, exactly as it went out. The part that "
             "broke the rule is in red.</p>")
-        for issue, hit, body in list(last.get("examples") or [])[:10]:
-            add("<blockquote><b>{}</b><br>{}</blockquote>".format(
-                esc(issue), mark(body, hit)))
-        for issue, hit, body in list(last.get("asked") or [])[:6]:
-            add("<blockquote><b>{}</b><br>{}</blockquote>".format(
-                esc(issue), mark(body, hit)))
+        for group in (last.get("examples") or [], last.get("asked") or []):
+            for issue, hit, body, name in list(group)[:10]:
+                add("<blockquote><b>{}</b>{}<br>{}</blockquote>".format(
+                    esc(issue),
+                    " <span class='who'>\u2014 {}</span>".format(esc(name))
+                    if name else "",
+                    mark(body, hit)))
     add("</body></html>")
     path.write_text("\n".join(L), encoding="utf-8")
     return path
