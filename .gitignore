@@ -253,3 +253,7 @@ manager_run.sh
 # Raf's phone screenshot of the private #top-leaders-alphalete-org chat
 # (leaders_call/chat_slide.py). Stays off GitHub; copied to the mini by hand.
 resources/top-leaders-chat-phone.png
+
+# The LucyEco page keeps its last good answer here so a restart does not
+# cost the first visitor a seventy-second read. Regenerated on demand.
+output/lucyeco-enrollment.json

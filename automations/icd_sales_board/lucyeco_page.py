@@ -37,7 +37,13 @@ st.set_page_config(page_title="Lucy ECOsystem — who gets what",
 
 @st.cache_data(ttl=600, show_spinner="Reading the registries…")
 def _rows():
-    return EN.rows()
+    """The table, from the last snapshot when it is recent enough.
+
+    Two caches on purpose: Streamlit's holds it for ten minutes inside one
+    running app, and the snapshot survives the app RESTARTING — which is what
+    every deploy does, and what made somebody wait seventy seconds for the
+    first view each time."""
+    return EN.rows_cached()
 
 
 _CSS = """<style>
@@ -119,7 +125,7 @@ def main() -> None:
     st.caption("Every office, what it is enrolled in, and when each one runs. "
                "Read-only — nothing here changes anything.")
 
-    rows = _rows()
+    rows, taken = _rows()
     if not rows:
         st.info("Couldn't read the registries just now. Refresh in a minute.",
                 icon="🚧")
@@ -181,8 +187,13 @@ def main() -> None:
         "the report is scheduled that way. "
         + " · ".join(f"**{k}** {v}" for k, v in sorted(counts.items())
                      if v))
-    st.caption(f"Read live from the registries that run these reports, "
-               f"{dt.date.today():%b %d %Y} — not a list anybody maintains by "
+    # Built from ints, never %-I: that flag is Mac-only and this has to run
+    # on Windows too.
+    when = (f"{taken:%b %d}, {taken.hour % 12 or 12}:{taken.minute:02d}"
+            f"{'am' if taken.hour < 12 else 'pm'}") if taken else ""
+    st.caption((f"Read {when} " if when else "Read ")
+               + "from the registries that run these reports — not a list "
+                 "anybody maintains by "
                f"hand, so it cannot drift from what actually runs. To change "
                f"what an office gets, change it where it is set and this "
                f"follows.")

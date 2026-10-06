@@ -25,6 +25,8 @@ what runs, and when. `SAFE_COLUMNS` is the whole contract and a test pins it.
 """
 from __future__ import annotations
 
+import datetime as dt
+import pathlib
 import re
 import time
 
@@ -802,6 +804,59 @@ def rows(icds=None) -> list:
     except Exception:   # noqa: BLE001
         return out
     return out
+
+
+# A COLD READ IS ABOUT SEVENTY SECONDS — eight Sheets reads, serial, each one
+# subject to the per-user rate cap. That is fine for a page nobody is waiting
+# on and awful for a link people open; and the app restarts on every deploy,
+# so somebody always pays it. The last good answer is kept on disk and served
+# instantly while it is recent, which turns the usual visit into no wait at
+# all. It is a CACHE, not a source: if it is missing or stale the registries
+# are read as before.
+SNAPSHOT = (pathlib.Path(__file__).resolve().parents[2]
+            / "output" / "lucyeco-enrollment.json")
+SNAPSHOT_FRESH_MIN = 30
+
+
+def _read_snapshot():
+    """(rows, taken_at) from disk, or (None, None)."""
+    try:
+        import json
+        blob = json.loads(SNAPSHOT.read_text())
+        taken = dt.datetime.fromisoformat(blob["taken_at"])
+        return blob.get("rows") or None, taken
+    except Exception:   # noqa: BLE001 — no snapshot is not an error
+        return None, None
+
+
+def _write_snapshot(rows_: list) -> None:
+    try:
+        import json
+        SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
+        tmp = SNAPSHOT.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(
+            {"taken_at": dt.datetime.now().isoformat(timespec="seconds"),
+             "rows": rows_}, indent=1))
+        tmp.replace(SNAPSHOT)      # atomic: a half-written file reads as none
+    except Exception:   # noqa: BLE001 — a cache we cannot write is not fatal
+        pass
+
+
+def rows_cached(max_age_min: int = SNAPSHOT_FRESH_MIN):
+    """(rows, taken_at). The snapshot while it is recent, else a fresh read.
+
+    `taken_at` is handed back so the page can say how old the answer is —
+    a cached page that does not admit it is a page people stop trusting."""
+    got, taken = _read_snapshot()
+    if got and taken and (dt.datetime.now() - taken
+                          <= dt.timedelta(minutes=max_age_min)):
+        return got, taken
+    fresh = rows()
+    if fresh:
+        _write_snapshot(fresh)
+        return fresh, dt.datetime.now()
+    # A failed read must not throw away a good snapshot.
+    return (got or []), taken
 
 
 def counts(rows_: list) -> dict:
