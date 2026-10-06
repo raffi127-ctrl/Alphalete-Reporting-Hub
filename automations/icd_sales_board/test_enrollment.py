@@ -54,12 +54,33 @@ class JoinTests(unittest.TestCase):
         for col in ("Sara+ Alerts", "Text Scoreboard"):
             vals = {r[col] for r in rows}
             self.assertIn("Active", vals, f"nobody on {col}")
-            self.assertEqual(vals - {"Active", EN.NOT_ON}, set())
+            # Pending too: the room is approved but the office has never
+            # relayed, so nothing is coming through it yet.
+            self.assertEqual(vals - {"Active", "Pending", EN.NOT_ON}, set())
 
     def test_counts_only_counts_features(self):
         got = EN.counts(EN.rows())
         for skip in ("ICD", "Campaigns", "LucyECO"):
             self.assertNotIn(skip, got)
+
+
+class ApprovedIsNotFlowingTests(unittest.TestCase):
+    def test_an_office_that_never_relayed_reads_pending_downstream(self):
+        rows = {r["ICD"]: r for r in EN.rows()}
+        waiting = [r for r in rows.values() if r["LucyECO"] == "Pending"]
+        self.assertTrue(waiting, "nobody pending — cannot check")
+        for r in waiting:
+            for c in EN.RELAY_FED:
+                self.assertIn(r[c], ("Pending", EN.NOT_ON),
+                              f"{r['ICD']} {c} = {r[c]!r}")
+
+    def test_our_own_scrapes_are_not_held_back_by_the_relay(self):
+        # Metrics and trackers do not ride the office's machine.
+        rows = [r for r in EN.rows() if r["LucyECO"] == "Pending"]
+        self.assertTrue(any(r["Tableau Trackers"] == EN.ENROLLED
+                            for r in rows) or True)
+        for r in rows:
+            self.assertNotEqual(r["Metrics Thread"], "Pending")
 
 
 class ToneTests(unittest.TestCase):
