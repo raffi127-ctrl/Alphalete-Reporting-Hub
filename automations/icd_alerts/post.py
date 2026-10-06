@@ -324,6 +324,23 @@ def _box_scoreboard(sales: Dict, fired: List[str], show=None) -> str:
     return "\n".join(lines)
 
 
+def first_read_board(merged_sales: Dict, campaign=None, show=None) -> List[str]:
+    """ONE board to Slack on the first read of a day that already carries
+    sales -- the same picture the text group gets, labelled as a snapshot.
+
+    Megan 2026-10-06, Eveliz: her first good read landed mid-afternoon, the
+    text group got the standings, and #south-shore-b2b-sales got nothing,
+    because a baseline announces no sales (it must not: they are hours old
+    and would read as fresh). A labelled board is not an announcement, and a
+    channel that gets nothing while the texts get a board reads as broken.
+    No hype lines, no flames, no gif. Empty when nobody has sold yet
+    (scoreboard_text returns "" then), so a 10am first read with zeros posts
+    nothing -- never a blank board [[feedback_never_post_blank]].
+    """
+    board = scoreboard_text(merged_sales, [], campaign, show)
+    return ["_Today so far:_\n" + board] if board else []
+
+
 def scoreboard_text(sales: Dict, fired: List[str], campaign=None,
                     show=None) -> str:
     """The day's standings for an office's TEXT GROUP -- Raf's partner-chat
@@ -1335,10 +1352,13 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
             hype_lines = H.hype_batch(sold, sales, day, office.campaign,
                                       show=show, room=key)
             hype_lines, gifs_used = _within_gif_budget(hype_lines, day, key)
+        elif sales_baseline and merged_sales and not catching_up:
+            hype_lines = first_read_board(merged_sales, office.campaign, show)
 
         if baseline:
-            log("%-10s first relay of %s -- recording %d rep(s), posting nothing"
-                % (key, day.isoformat(), len(records)))
+            log("%-10s first relay of %s -- recording %d rep(s), %s"
+                % (key, day.isoformat(), len(records),
+                   "posting today's board so far" if hype_lines else "posting nothing"))
         elif not lines and not hype_lines:
             log("%-10s nothing new (%d rep(s) tracked)" % (key, len(records)))
         else:

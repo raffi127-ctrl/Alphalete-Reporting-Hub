@@ -1022,3 +1022,29 @@ class AnOwnerCanDeclineTheCreditCheckLines(unittest.TestCase):
         import inspect
         src = inspect.getsource(P.run)
         self.assertIn("presale_ping or not credit_checks_wanted(key)", src)
+
+
+class TheFirstReadOfADayWithSalesPostsOneBoardToSlack(unittest.TestCase):
+    """Megan 2026-10-06 (Eveliz): the text group got the standings on her
+    first read, Slack got nothing. Now Slack gets the same board once,
+    labelled, and still nothing when nobody has sold."""
+
+    def test_sales_on_the_first_read_make_one_labelled_board(self):
+        sales = {"Ana B": {"Int": 2, "Int Up": 0, "DTV": 0, "NL": 1},
+                 "Bo C": {"Int": 0, "Int Up": 0, "DTV": 0, "NL": 0}}
+        out = P.first_read_board(sales, "att")
+        self.assertEqual(len(out), 1)
+        self.assertTrue(out[0].startswith("_Today so far:_"))
+        self.assertIn("Ana", out[0])
+
+    def test_zero_sales_post_nothing(self):
+        sales = {"Ana B": {"Int": 0, "Int Up": 0, "DTV": 0, "NL": 0}}
+        self.assertEqual(P.first_read_board(sales, "att"), [])
+        self.assertEqual(P.first_read_board({}, "att"), [])
+
+    def test_run_uses_it_only_on_a_sales_baseline_that_is_not_a_catch_up(self):
+        import inspect
+        src = inspect.getsource(P.run)
+        self.assertIn("elif sales_baseline and merged_sales and not catching_up:", src)
+        i = src.index("elif sales_baseline and merged_sales and not catching_up:")
+        self.assertIn("first_read_board(", src[i:i + 200])
