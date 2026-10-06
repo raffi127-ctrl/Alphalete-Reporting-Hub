@@ -82,12 +82,21 @@ WHY = {
 
 
 def load(office):
-    """({office_info}, {preferences}) or (None, None) when not pulled."""
+    """({office_info}, {preferences}) or (None, None) when not pulled.
+
+    The local file if this machine did the pull, otherwise the control-sheet
+    tab the pull also writes — the pull only runs on Lucy 2, so every other
+    machine has no file and would otherwise read a clean run as "not
+    pulled"."""
     f = OUTPUT / "ai_settings_{}.json".format(office)
-    if not f.exists():
+    if f.exists():
+        d = json.loads(f.read_text(encoding="utf-8"))
+        return d.get("office_info") or {}, d.get("preferences") or {}
+    from automations.sms_audit import ai_settings_tab as TAB
+    info, prefs, _rows, src = TAB.read(office)
+    if not src:
         return None, None
-    d = json.loads(f.read_text(encoding="utf-8"))
-    return d.get("office_info") or {}, d.get("preferences") or {}
+    return info or {}, prefs or {}
 
 
 def _int(v):

@@ -260,6 +260,17 @@ def main(argv=None):
                            ensure_ascii=False, indent=2), encoding="utf-8")
             (OUTPUT_DIR / "escalations_{}.json".format(office)).write_text(
                 json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+            # The JSON above only ever exists on the machine that pulled, and
+            # that is always Lucy 2. The tab is what every other machine
+            # reads, so a clean run is visible everywhere.
+            try:
+                from automations.sms_audit import ai_settings_tab as TAB
+                tab, n = TAB.write(office, info, prefs, rows)
+                print("[ai_settings]   -> {} ({} rows)".format(tab, n),
+                      flush=True)
+            except Exception as e:  # noqa: BLE001
+                print("[ai_settings]   tab write failed, local JSON is "
+                      "written: {}".format(e), flush=True)
     return rc
 
 

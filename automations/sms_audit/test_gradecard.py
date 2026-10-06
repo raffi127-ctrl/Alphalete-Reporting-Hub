@@ -62,13 +62,14 @@ class ShowRate(unittest.TestCase):
     def test_nothing_pulled_is_not_measured(self):
         item, skip = GC._show_rate([])
         self.assertIsNone(item)
-        self.assertIn("no booking records", skip[1])
+        self.assertIn("no bookings pulled", skip[1])
 
 
 class NotPulled(unittest.TestCase):
     """A page nobody pulled is missing data, never a fault and never a pass."""
 
-    def test_settings_not_pulled_is_skipped(self):
+    def test_settings_not_pulled_is_skipped_once(self):
+        """One line about the page, not one per field on it."""
         got, skipped = GC._settings(
             {"settings": [("NOT PULLED", "office 11280")],
              "escalations": [("NOT PULLED", "office 11280")],
@@ -76,7 +77,13 @@ class NotPulled(unittest.TestCase):
         self.assertEqual([i for i in got if i["area"] == "AI settings"], [])
         areas = [a for a, _why in skipped]
         self.assertIn("AI settings", areas)
-        self.assertIn("Acceptance window", areas)
+        self.assertIn("The AI's canned answers", areas)
+        self.assertNotIn("Acceptance window", areas)
+
+    def test_window_missing_from_a_page_we_did_pull_is_its_own_line(self):
+        _got, skipped = GC._settings(
+            {"settings": [("OK", "")], "escalations": [], "window": None})
+        self.assertIn("Acceptance window", [a for a, _why in skipped])
 
     def test_a_real_setting_fault_is_reported(self):
         got, _ = GC._settings(
@@ -116,3 +123,24 @@ class Build(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NoGradelessItems(unittest.TestCase):
+    """An item with no grade is missing data, not a finding.
+
+    `_band` returns None when it is handed None, and one unguarded branch
+    let that reach the sort, where "ABCDF".index(None) killed the run."""
+
+    def test_settings_with_no_window_yields_no_gradeless_item(self):
+        got, _ = GC._settings(
+            {"settings": [("NOT PULLED", "x")], "escalations": [],
+             "window": None})
+        self.assertTrue(all(i["grade"] in "ABCDF" for i in got))
+
+    def test_build_drops_a_gradeless_item(self):
+        card = GC.build(
+            {"office": "x"},
+            ai={"settings": [("NOT PULLED", "x")], "escalations": [],
+                "window": None})
+        for i in card["items"] + card["holding"]:
+            self.assertIn(i["grade"], "ABCDF")

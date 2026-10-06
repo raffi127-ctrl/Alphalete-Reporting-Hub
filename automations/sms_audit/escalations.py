@@ -126,9 +126,15 @@ ESC_CALL_PROMISE = re.compile(
 def load(office):
     """[{name, category, description, message, routing}] or ([], None)."""
     f = OUTPUT / "escalations_{}.json".format(office)
-    if not f.exists():
-        return [], None
-    rows = json.loads(f.read_text(encoding="utf-8"))
+    if f.exists():
+        rows = json.loads(f.read_text(encoding="utf-8"))
+        src = str(f)
+    else:
+        # Pulled on Lucy 2, read anywhere: same tab as the settings.
+        from automations.sms_audit import ai_settings_tab as TAB
+        _i, _p, rows, src = TAB.read(office)
+        if not src:
+            return [], None
     out = []
     for r in rows:
         out.append({
@@ -138,7 +144,7 @@ def load(office):
             "message": (r.get("message") or "").strip(),
             "routing": (r.get("routing") or "").strip(),
         })
-    return out, str(f)
+    return out, src
 
 
 def lint(rows, office=None):
