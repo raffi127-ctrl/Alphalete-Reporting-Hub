@@ -129,9 +129,13 @@ class TestJudge(Base):
 
     def test_visual_blocker_rebuilds_then_holds(self):
         _write_eml(self.tmp, self.b2b)
-        bad = lambda _t, _k: {"ok": False, "issues": [
-            {"image": 3, "section": "Luke's box", "problem": "different font",
-             "severity": "blocker"}]}
+        asked = []
+
+        def bad(_t, _k, prior=()):
+            asked.append(list(prior))
+            return {"ok": False, "issues": [
+                {"image": 3, "section": "Luke's box", "problem": "different font",
+                 "severity": "blocker"}]}
         state = {}
         v = A.judge(DAY, [self.b2b], state=state, visual=bad,
                     tableau=_no_tableau, verbose=False)[self.b2b]
@@ -141,6 +145,37 @@ class TestJudge(Base):
         v = A.judge(DAY, [self.b2b], state=state, visual=bad,
                     tableau=_no_tableau, verbose=False)[self.b2b]
         self.assertEqual(v.blocked, ["Luke's box: different font"])
+        # La segunda mirada sabe qué buscar (10/6: sin eso salió Wayne).
+        self.assertEqual(asked, [[], ["Luke's box: different font"]])
+
+    def test_rebuilt_draft_is_rechecked_for_what_was_found_before(self):
+        _write_eml(self.tmp, self.b2b)
+        state = {"visual_flagged": {self.b2b: ["5. NI churn: copies Wireless"]}}
+        asked = []
+
+        def look(_t, _k, prior=()):
+            asked.append(list(prior))
+            return {"ok": True, "issues": []}
+        A.judge(DAY, [self.b2b], state=state, visual=look,
+                tableau=_no_tableau, verbose=False)
+        self.assertEqual(asked, [["5. NI churn: copies Wireless"]])
+
+    def test_prior_blockers_go_into_the_prompt(self):
+        _write_eml(self.tmp, self.b2b)
+        sent = {}
+        client = mock.Mock()
+
+        def create(**kw):
+            sent.update(kw)
+            r = mock.Mock(stop_reason="end_turn")
+            r.content = [mock.Mock(type="text", text='{"ok": true, "issues": []}')]
+            return r
+        client.messages.create.side_effect = create
+        A.visual_review(DAY, self.b2b, client=client,
+                        prior=["NI churn copies Wireless"])
+        texts = [c["text"] for c in sent["messages"][0]["content"]
+                 if c["type"] == "text"]
+        self.assertTrue(any("NI churn copies Wireless" in t for t in texts))
 
     def test_minor_issue_still_sends(self):
         _write_eml(self.tmp, self.b2b)

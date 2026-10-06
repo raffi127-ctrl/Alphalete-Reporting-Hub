@@ -379,8 +379,16 @@ alignment clearly differ from the other boxes of the same kind in this email \
 (looks pasted in from somewhere else), overlapping or clipped text, unreadably \
 small text, a header row that lost its colour band.
 
+5. COPIED NUMBERS (blocker): two sections that measure different things must \
+not show the same figures. Always compare New Internet churn with Wireless \
+churn for the same bucket (0-30, 30, 60, 90): if the REPORT_DAY column of one \
+repeats the other cell for cell (same %, same counts, same reps), that is a \
+blocker — the data source served the wrong view.
+
 ACCEPTED, never an issue: grey notes saying "no data available" or "not \
-available yet"; zero values that are formatted like their neighbours; a \
+available yet"; a Captain Team Stats board under a grey note saying it shows \
+an earlier week because there are no activations yet this week (its tables \
+end on that week, not on REPORT_DAY, and that is correct); zero values that are formatted like their neighbours; a \
 consistent house style you merely would have designed differently.
 
 Report blockers (would refuse to send) and minors (would mention but still \
@@ -460,15 +468,29 @@ def _visual_content(today: dt.date, key: str) -> list:
     return content
 
 
-def visual_review(today: dt.date, key: str, *, client=None) -> dict:
-    """{'ok': bool, 'issues': [...]} — o una excepción si no se pudo revisar."""
+def visual_review(today: dt.date, key: str, *, client=None,
+                  prior: Sequence[str] = ()) -> dict:
+    """{'ok': bool, 'issues': [...]} — o una excepción si no se pudo revisar.
+
+    `prior` = los bloqueos que una revisión anterior de HOY le encontró a este
+    capitán. Se le piden de vuelta uno por uno: el 10/6 Wayne, Chan y Sahil
+    tenían el churn NI copiado de Wireless, se re-armaron con la misma fuente
+    mala, y la segunda mirada (sin saber qué buscar) los dejó salir."""
     if client is None:
         anthropic, client = _api_client()
     else:
         anthropic = None
     body = {"output_config": {"effort": "high", "format": {
         "type": "json_schema", "schema": _SCHEMA}}}
-    messages = [{"role": "user", "content": _visual_content(today, key)}]
+    content = _visual_content(today, key)
+    if prior:
+        content.insert(1, {"type": "text", "text": (
+            "AN EARLIER REVIEW OF THIS REPORT TODAY FOUND THESE BLOCKERS. It was "
+            "rebuilt since, but a rebuild re-reads the same sources and often "
+            "fixes nothing. Check each one again specifically; if it is still "
+            "there, report it again as a blocker:\n- "
+            + "\n- ".join(prior))})
+    messages = [{"role": "user", "content": content}]
     try:
         resp = client.messages.create(
             model=MODEL, max_tokens=8000, system=_SYSTEM, messages=messages,
@@ -539,6 +561,7 @@ def judge(today: dt.date, keys: Sequence[str], *, state: dict,
     vis_cache = state.setdefault("visual", {})
     rebuilt = state.setdefault("rebuilds", {})
     tableau_rebuilt = set(state.setdefault("tableau_rebuilt", []))
+    flagged = state.setdefault("visual_flagged", {})
     out: Dict[str, Verdict] = {}
     to_look: List[str] = []
     for key in keys:
@@ -588,7 +611,9 @@ def judge(today: dt.date, keys: Sequence[str], *, state: dict,
 
         def _one(k):
             try:
-                return k, visual(today, k)
+                prior = flagged.get(k) or []
+                return k, (visual(today, k, prior=prior) if prior
+                           else visual(today, k))
             except Exception as e:  # noqa: BLE001 - falla cerrado
                 return k, e
         with ThreadPoolExecutor(max_workers=min(4, len(need))) as pool:
@@ -612,6 +637,7 @@ def judge(today: dt.date, keys: Sequence[str], *, state: dict,
         if bad:
             (v.blocked if rebuilt.get(key, 0) >= MAX_REBUILDS
              else v.fixable).extend(bad)
+            flagged[key] = list(dict.fromkeys((flagged.get(key) or []) + bad))
     if verbose:
         for k, v in out.items():
             print(f"  auto-check {k}: "

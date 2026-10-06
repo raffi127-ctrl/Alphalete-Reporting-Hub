@@ -347,6 +347,20 @@ def _empty_week_fallback(page, verbose: bool = False) -> Optional[tuple]:
     return None
 
 
+def week_note_path(png: Path) -> Path:
+    """Sidecar next to a team-stats shot: the ISO week it fell back to, when
+    the board's own week had no activations for this team. Absent = no fallback."""
+    return Path(png).with_suffix(".week.txt")
+
+
+def fallback_week(png: Optional[Path]) -> Optional[dt.date]:
+    try:
+        return dt.date.fromisoformat(
+            week_note_path(png).read_text(encoding="utf-8").strip())
+    except Exception:  # noqa: BLE001 — no sidecar / unreadable = no note
+        return None
+
+
 def _trim_right(path: Path, margin_px: int = 14) -> None:
     """Drop the empty canvas to the right of the board. The rendered viz is as
     wide as the browser window, so without this every team-stats shot carries a
@@ -530,8 +544,15 @@ def _shoot_rendered(page, spec: dict, out_dir: Path, *,
     page.goto(spec["url"], wait_until="domcontentloaded")
     page.wait_for_timeout(_SHOT_HYDRATE_MS)
     fallback = _empty_week_fallback(page, verbose=verbose)
+    note = week_note_path(out)
+    note.unlink(missing_ok=True)
     if fallback:
         field, week = fallback
+        # The email says so in a grey note (email_build), so neither a reader
+        # nor the auto-send check takes "no REPORT_DAY column" for a stale
+        # board. 10/6: a Tuesday — Monday opens a new activation week — held
+        # Jairo, Khalil and Colten for a column that cannot exist yet.
+        note.write_text(week, encoding="utf-8")
         page.goto(f"{spec['url']}&{quote(field)}={quote(week)}",
                   wait_until="domcontentloaded")
         page.wait_for_timeout(_SHOT_HYDRATE_MS)
