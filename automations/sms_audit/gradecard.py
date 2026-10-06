@@ -214,7 +214,7 @@ def _settings(ai):
         out.append(_item(
             "AI settings", "D", "{} fault{}".format(len(bad), "" if len(bad) == 1 else "s"),
             "0",
-            str(bad[0][1])[:70]))
+            "Fix in AI Settings. Listed below."))
     esc = [f for f in (ai.get("escalations") or []) if f and f[0] != "OK"]
     if any(f[0] == "NOT PULLED" for f in esc):
         skipped.append(("The AI's canned answers",
@@ -222,7 +222,7 @@ def _settings(ai):
     elif esc:
         out.append(_item(
             "The AI's canned answers", "D", "{} to fix".format(len(esc)), "0",
-            str(esc[0][1])[:70]))
+            "Edit them in AI Settings, Escalations. Listed below."))
     return [o for o in out if o], skipped
 
 
@@ -297,15 +297,14 @@ def render(card, esc):
     """The grade card as HTML. `esc` is the caller's escaper."""
     L = []
     add = L.append
-    c = card["counts"]
     add("<div class='card'>")
     add("<h2>Grade card</h2>")
     add("<div class='gradebox'><div class='letter {0}'>{0}</div>".format(
         card["overall"]))
-    if card["items"]:
-        add("<div class='verdict'><b>{} to fix</b>, worst first.</div>".format(
-            len(card["items"])))
-    else:
+    # Megan 2026-10-06: no running commentary beside the grade. The table
+    # below is the count and the order, so saying both again is noise. The
+    # empty case still needs a word, or the card is a bare letter.
+    if not card["items"]:
         add("<div class='verdict'>Nothing to fix this week.</div>")
     add("</div>")
 

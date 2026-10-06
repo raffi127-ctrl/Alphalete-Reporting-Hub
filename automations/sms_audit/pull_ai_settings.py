@@ -186,9 +186,51 @@ def scrape_escalations(page):
     }""")
 
 
+# The panes p=1504 is known to carry. Probed in order; the first that
+# yields the buffers is the one the puller should be reading.
+PANES = ("", "settings", "preferences", "office", "escalations")
+
+
+def _probe(page, tok, office):
+    """Print what each pane actually exposes. Writes nothing.
+
+    Added 2026-10-06: the pull came back "0 settings, 0 preferences, 50
+    escalation rows", which says the page loaded and the FIELDS mapping
+    matched nothing. Only the page can say whether the labels were renamed
+    or the fields live on another pane, so ask it rather than guess."""
+    for pane in PANES:
+        try:
+            _open(page, tok, pane)
+            raw = scrape_settings(page) or {}
+        except Exception as e:  # noqa: BLE001
+            print("[probe] {} pane {!r}: FAILED {}".format(office, pane, e),
+                  flush=True)
+            continue
+        fields = raw.get("fields") or {}
+        mapped = {FIELDS[k]: v for k, v in fields.items() if k in FIELDS}
+        print("[probe] {} pane {!r}: {} labelled fields, {} of them mapped"
+              .format(office, pane or "(default)", len(fields), len(mapped)),
+              flush=True)
+        for label in sorted(fields):
+            print("    {:<58} = {:<22} {}".format(
+                label[:58], str(fields[label])[:22],
+                "-> " + FIELDS[label] if label in FIELDS else "UNMAPPED"),
+                flush=True)
+        tabs = page.evaluate(
+            "() => Array.from(document.querySelectorAll("
+            "'a,button,[role=tab]')).map(e => (e.textContent||'').trim())"
+            ".filter(t => t && t.length < 32).slice(0, 40)") or []
+        print("    tabs/buttons: {}".format(", ".join(tabs[:20])), flush=True)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--office", default="11280", help="one id or a comma list")
+    ap.add_argument("--probe", action="store_true",
+                    help="print every label the page exposes, per pane, and "
+                         "write nothing — for when the mapping comes back "
+                         "empty and guessing at label names is the "
+                         "alternative")
     ap.add_argument("--dry-run", action="store_true",
                     help="scrape and print, write nothing")
     a = ap.parse_args(argv)
@@ -208,6 +250,9 @@ def main(argv=None):
             page.wait_for_timeout(1500)
             tok = _rqst(page) or tok
 
+            if a.probe:
+                _probe(page, tok, office)
+                continue
             _open(page, tok)
             raw = scrape_settings(page) or {}
             fields = raw.get("fields") or {}
