@@ -54,6 +54,22 @@ NOT_ON = "Not Enrolled"
 ECO_GROUP = ("LucyECO", "Sara+ Alerts", "Text Scoreboard", "Call-outs",
              "Knock & Dispo Boards", "Gap Alerts")
 
+# HEADER TINTS. The relay-fed block shares one so it reads as a block; the
+# two admin columns share green; everything else gets its own, because they
+# are unrelated reports that happen to sit side by side and a single grey
+# run made them look like one more group (Megan 2026-10-06). These are
+# header colours only — the cells keep green/amber/red for status, and these
+# are deliberately paler so the two languages do not collide.
+HEADER_TINT = {
+    **{c: "#DBEAFE" for c in ECO_GROUP},          # the office's own machine
+    "Last reading": "#BBF7D0", "On latest update": "#BBF7D0",
+    "Weather Report": "#E0F2FE",
+    "Ad Photo Threads": "#F5D0FE",
+    "Resume Pushing": "#FFE4E6",
+    "Metrics Thread": "#FEF08A",
+    "Tableau Trackers": "#FED7AA",
+}
+
 # Two columns the gated sales board adds and the public page never does.
 # They are about chasing an INSTALL, not about what an office receives, and
 # 'last reading' on an open page is a liveness probe of someone's laptop.
@@ -266,8 +282,10 @@ def cell_tone(column: str, value) -> str:
         # Green on the current agent, amber on an older one — an office
         # reporting on a stale build is a thing to chase, not a failure.
         return "good" if v.lower() in ("yes", "y") else "wait"
-    if column in ADMIN_EXTRA:
-        return ""
+    if column == "Last reading":
+        # A reading at all is the good state; an office with none shows
+        # blank, which the caller already reads as nothing to say.
+        return "good"
     if v in BAD_WORDS:
         return "bad"
     if v in WAIT_WORDS:
@@ -1104,10 +1122,8 @@ _CSS = """<style>
 .eco th,.eco td{border:1px solid #CBD5E1;padding:4px 7px;text-align:center;
   vertical-align:middle;line-height:1.35;white-space:nowrap}
 .eco th{background:#F1F5F9;font-weight:700;font-size:11.5px}
-/* The relay-fed block, tinted as one. A HEADER tint, deliberately outside
-   the green/amber/red the cells use — it groups columns, it does not grade
-   them. */
-.eco th.eco-grp{background:#DBEAFE;color:#1E3A5F}
+/* Header tints are set inline per column (HEADER_TINT) — they group and
+   separate the columns; they never grade a value. */
 .eco td.name{text-align:left;font-weight:600;white-space:nowrap}
 .eco tr:nth-child(even) td{background-image:linear-gradient(rgba(0,0,0,.02),
   rgba(0,0,0,.02))}
@@ -1164,8 +1180,8 @@ def html_table(rows: list, cols: list) -> str:
     """The table as HTML — shared by the public page and the
     sales board's LucyEco view, so the two cannot drift."""
     head = "".join(
-        f'<th class="eco-grp">{_esc(c)}</th>' if c in ECO_GROUP
-        else f"<th>{_esc(c)}</th>" for c in cols)
+        f'<th style="background:{HEADER_TINT[c]}">{_esc(c)}</th>'
+        if c in HEADER_TINT else f"<th>{_esc(c)}</th>" for c in cols)
     body = []
     for r in rows:
         cells = []
