@@ -74,6 +74,10 @@ CITIES = {
     "chicago": ("Chicago, IL", 41.8781, -87.6298, "America/Chicago"),
     # jenny / Figspire Management: Louisville, KY (Megan, 2026-10-06).
     "louisville": ("Louisville, KY", 38.2527, -85.7585, "America/New_York"),
+    # luke / Takeoff Enterprises: Santa Clara, CA -- the company's own site
+    # (takeoffenterprise.com) and its CA filing, 2026-10-06. OwnerVille could
+    # not find him under Raf's login (not on the Office Access list).
+    "santa_clara": ("Santa Clara, CA", 37.3541, -121.9552, "America/Los_Angeles"),
 }
 OFFICE_CITY = {
     "kash": "dfw", "cyrus": "dfw", "carlos": "dfw", "carlos-b2batt": "dfw",
@@ -98,6 +102,11 @@ OFFICE_CITY = {
     # Jennifer Figueroa / Figspire, Louisville -- #figspire (2026-10-06). ONE
     # key: her form minted jennifer + jennifer-att into the same room.
     "jennifer": "louisville",
+    # Luke Baldwin / Takeoff Enterprises, Santa Clara -- #takeoff-b2b
+    # (2026-10-06). ONE key: his form minted luke + luke-b2batt + luke2 into
+    # the same room; his metrics office (also `luke`) posts to that room too,
+    # and the per-room de-dupe below keeps it to one forecast.
+    "luke": "santa_clara",
 }
 
 # EVERY METRICS CHANNEL GETS IT TOO (Megan 2026-09-29: "all metrics channels
