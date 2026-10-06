@@ -60,14 +60,20 @@ ECO_GROUP = ("LucyECO", "Sara+ Alerts", "Text Scoreboard", "Call-outs",
 # run made them look like one more group (Megan 2026-10-06). These are
 # header colours only — the cells keep green/amber/red for status, and these
 # are deliberately paler so the two languages do not collide.
+# NO HEADER MAY SIT NEAR A STATUS COLOUR, and no two may sit near each
+# other. Resume Pushing's rose read as the red the cells use for Not
+# Enrolled, and Weather's sky blue was a shade off the group's blue (Megan
+# 2026-10-06). So: one blue for the block, green for the admin pair because
+# that was asked for, then violet / pink / slate / yellow / orange — all far
+# apart in hue, and none of them red.
 HEADER_TINT = {
     **{c: "#DBEAFE" for c in ECO_GROUP},          # the office's own machine
     "Last reading": "#BBF7D0", "On latest update": "#BBF7D0",
-    "Weather Report": "#E0F2FE",
-    "Ad Photo Threads": "#F5D0FE",
-    "Resume Pushing": "#FFE4E6",
-    "Metrics Thread": "#FEF08A",
-    "Tableau Trackers": "#FED7AA",
+    "Weather Report": "#E9D5FF",                  # violet
+    "Ad Photo Threads": "#FBCFE8",                # pink
+    "Resume Pushing": "#E2E8F0",                  # slate — never rose
+    "Metrics Thread": "#FEF08A",                  # yellow
+    "Tableau Trackers": "#FED7AA",                # orange
 }
 
 # Two columns the gated sales board adds and the public page never does.
@@ -719,6 +725,7 @@ def rows(icds=None, admin: bool = False) -> list:
         from automations.icd_sales_board import profiles as P
         from automations.icd_sales_board import rollout as RO
         names = sorted(icds if icds is not None else P.load())
+        bulletin_campaign = {}
         if icds is None:
             # ANYONE WE RUN SOMETHING FOR BELONGS HERE, not only the offices
             # on the ORG sales board (Megan 2026-10-05: "anyone getting ad
@@ -736,6 +743,10 @@ def rows(icds=None, admin: bool = False) -> list:
                 _g = _retry(open_by_key(_OM2.BOOK)
                             .worksheet(_OM2.DD_TAB).get_all_values)
                 have = {_letters(n) for n in names}
+                # The bulletin names each ICD's campaign. An office with no
+                # ECO feed had a blank Campaigns cell — Abel, Roshan and
+                # everyone else we do not relay for (Megan 2026-10-06).
+                bulletin_campaign = {}
                 for _r in _g[1:]:
                     if len(_r) < 2 or not (_r[0] or "").strip():
                         continue
@@ -748,12 +759,15 @@ def rows(icds=None, admin: bool = False) -> list:
                     bits = nm.split()
                     if len(bits) > 2 and len(bits[-1]) == 2 and bits[-1].isupper():
                         bare = " ".join(bits[:-1])
+                    camp = (_r[2] or "").strip() if len(_r) > 2 else ""
+                    if camp:
+                        bulletin_campaign.setdefault(_letters(bare), camp)
                     if _letters(bare) in have:
                         continue
                     names.append(bare)
                     have.add(_letters(bare))
             except Exception:   # noqa: BLE001
-                pass
+                bulletin_campaign = {}
             try:
                 from automations.ad_photo_threads import config as _APC
                 have = {_letters(n) for n in names}
@@ -949,7 +963,10 @@ def rows(icds=None, admin: bool = False) -> list:
             st = status.get(icd, {})
             out.append({
                 "ICD": icd,
-                "Campaigns": st.get("Campaign", ""),
+                # The relay knows the campaign for an office we relay for;
+                # for everyone else the bulletin does.
+                "Campaigns": (st.get("Campaign", "")
+                              or bulletin_campaign.get(me, "")),
                 "LucyECO": eco_state(st.get("Status", "")),
                 "Sara+ Alerts": _with_where(
                     ALWAYS_ON if on("alerts") else "",
