@@ -354,10 +354,14 @@ def revenue_board_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
         days = [d for rec in per_rep.values() for d, v in rec["days"].items()
                 if v]
         raise OrderLogNotFresh(max(days) if days else None, upto)
-    rows, office = rb.build_rows(per_rep, monday, upto)
+    # Tiers are CARLOS'S comp sheet. Other offices aren't on it (Jamis
+    # 2026-10-06, Carlos: "we can just do the base comp for him") — base
+    # line prices only, no Tier / Next Tier columns.
+    tiered = owner_prefix is None
+    rows, office = rb.build_rows(per_rep, monday, upto, tiered=tiered)
     out = Path(out_dir) / "Revenue Board {}.{}.png".format(upto.month,
                                                            upto.day)
-    rb.render(rows, office, monday, upto, out)
+    rb.render(rows, office, monday, upto, out, tiered=tiered)
     log("   \u2713 revenue board [{}]: priced + rendered for the thread"
         .format(o.key if o is not None else "carlos"))
     return out
