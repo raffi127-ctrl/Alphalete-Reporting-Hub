@@ -55,11 +55,32 @@ def _page_evidence(page, seen: List[str]) -> str:
         out.append("page title: %s" % page.title())
     except Exception:  # noqa: BLE001
         pass
+    # WHAT IS ON THE PAGE WHERE THE GRID SHOULD BE. Release .3 showed only the
+    # menu (400 chars of nav) and nothing of the content; Jamis's page title
+    # was right ("MIDSPIRE INC (19592) - Disposition By Rep") and the grid
+    # still never built. So: every table's id/class, every iframe (a grid
+    # inside a frame is invisible to a document query), and the content text
+    # with the navigation stripped out.
     try:
-        body = page.evaluate(
-            "() => (document.body && document.body.innerText || '')"
-            ".replace(/\\s+/g, ' ').trim().slice(0, 400)")
-        out.append("page text: %s" % body)
+        shape = page.evaluate(
+            """() => {
+                const tables = Array.from(document.querySelectorAll('table'))
+                    .map(t => '#' + (t.id || '-') + '.' + (t.className || '-'))
+                    .slice(0, 12).join(' | ');
+                const frames = Array.from(document.querySelectorAll('iframe'))
+                    .map(f => f.id || f.name || f.src || '?').slice(0, 6).join(' | ');
+                const c = document.body ? document.body.cloneNode(true) : null;
+                if (c) c.querySelectorAll(
+                    'nav, header, footer, script, style, #sidebar, .sidebar, '
+                    + '.navbar, .nav, .menu, #menu, .topbar, #header, #footer')
+                    .forEach(e => e.remove());
+                const text = (c ? (c.innerText || c.textContent || '') : '')
+                    .replace(/\\s+/g, ' ').trim().slice(0, 700);
+                return {tables, frames, text};
+            }""")
+        out.append("tables: %s" % (shape.get("tables") or "none"))
+        out.append("iframes: %s" % (shape.get("frames") or "none"))
+        out.append("content text: %s" % (shape.get("text") or ""))
     except Exception:  # noqa: BLE001
         pass
     return "\n".join(out)

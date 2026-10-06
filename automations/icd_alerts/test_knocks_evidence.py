@@ -16,7 +16,9 @@ class _Page:
         return "OwnerVille"
 
     def evaluate(self, _js):
-        return "Please select an office to continue"
+        return {"tables": "#table-dispositions.display",
+                "frames": "",
+                "text": "Please select an office to continue"}
 
 
 class _BrokenPage(_Page):
@@ -37,6 +39,8 @@ class EvidenceTest(unittest.TestCase):
         self.assertIn("page url: https://v2.ownerville.com/index.cfm?p=89", out)
         self.assertIn("page title: OwnerVille", out)
         self.assertIn("Please select an office", out)
+        self.assertIn("tables: #table-dispositions", out)
+        self.assertIn("iframes: none", out)
 
     def test_keeps_only_the_last_15_log_lines(self):
         out = ov_read._page_evidence(_Page(), ["line %d" % i for i in range(40)])
