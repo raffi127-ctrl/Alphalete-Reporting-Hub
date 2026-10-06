@@ -35,6 +35,11 @@ SAFE_COLUMNS = ["ICD", "Campaigns", "LucyECO", "Sara+ Alerts",
                 "Weather Report", "Ad Photo Threads", "Resume Pushing",
                 "Metrics Thread", "Tableau Trackers", "Gap Alerts"]
 
+# Separates the columns inside one cell. The page splits on it to build a
+# small aligned table; anything reading these as plain text still gets a
+# sensible line.
+FIELD = " \u00b7 "
+
 # A feature an office does NOT have says so (Megan 2026-10-05: "not just
 # blank - should be light red"). A blank cell is ambiguous between "no" and
 # "we did not check".
@@ -217,12 +222,32 @@ def _names_of(feeds, chan, field) -> list:
     Carlos's Box feed hourly and his B2B feed every 30 minutes, both into
     #alphalete-gp-sales. Both lines are true and both belong; sorting by the
     ROOM keeps the pair together instead of interleaving four rooms."""
-    out = []
+    seen = {}
+    order = []
     for f in feeds:
-        for nm in (chan.get(f.key, {}).get(field) or []):
-            if nm not in out:
-                out.append(nm)
-    return sorted(out, key=lambda ln: (ln.split("·")[-1].strip(), ln))
+        for ln in (chan.get(f.key, {}).get(field) or []):
+            when, _, where = ln.partition(FIELD)
+            if where not in seen:
+                seen[where] = []
+                order.append(where)
+            if when not in seen[where]:
+                seen[where].append(when)
+    # ONE ROW PER ROOM. An owner running two campaigns into the same room
+    # produced that room twice, once per cadence — Carlos had four lines for
+    # two rooms. The cadences merge onto the room's own row instead.
+    out = []
+    for where in sorted(order):
+        whens = seen[where]
+        def _n(w):
+            digits = "".join(c for c in w if c.isdigit())
+            return int(digits) if digits else 999
+        merged = " & ".join(w.replace("Every ", "").replace(" Min", "")
+                            for w in sorted(whens, key=_n))
+        label = (f"Every {merged} Min" if all(w.startswith("Every ")
+                                              for w in whens)
+                 else " & ".join(whens))
+        out.append(f"{label}{FIELD}{where}" if where else label)
+    return out
 
 
 def _rooms_for(feeds, approved_rooms) -> list:
@@ -329,7 +354,11 @@ def _knock_lines(raw: str) -> list:
         except (TypeError, ValueError):
             mins = 0
         when = f"Every {mins} Min" if mins else "Each slot"
-        line = f"{when} · {name}" if name else when
+        # TWO FIELDS, not one string: the page lays these out as columns so
+        # the cadences line up under each other and the room names line up
+        # under each other. Run together with a '·' they wrapped mid-name and
+        # read as a wall (Megan 2026-10-05: "this looks so sloppy").
+        line = f"{when}{FIELD}{name}" if name else when
         if line not in out:
             out.append(line)
     return out

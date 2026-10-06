@@ -52,6 +52,14 @@ _CSS = """<style>
    '#a-players-b2b' split across two lines was the last thing making this
    look uncondensed. The table scrolls sideways instead, which keeps a row
    readable. */
+/* The two-column layout inside one cell: cadence on the left, where it
+   lands on the right, so several destinations read as rows rather than as a
+   paragraph. Borderless — the outer cell is already the box. */
+.sub{border-collapse:collapse;margin:0 auto}
+.sub td{border:0;padding:0 4px;white-space:nowrap}
+.sub td.k{text-align:right;opacity:.85}
+.sub td.v{text-align:left;font-weight:600}
+.sub td.w{text-align:center;padding-bottom:1px}
 .eco-wrap{overflow-x:auto}
 </style>"""
 
@@ -60,6 +68,26 @@ _TONE_CSS = {
     "wait": "background:#FEF3C7;color:#78350F;font-weight:600",
     "bad": "background:#FEE2E2;color:#991B1B",
 }
+
+
+def _cell_html(value) -> str:
+    """A cell's lines, with any two-field line laid out as columns.
+
+    enrollment separates a cadence from the room it posts to, so they can sit
+    under each other instead of running together and wrapping mid-name. Lines
+    with no separator (a window, a bare status) span the whole cell."""
+    lines = str(value or "").split("\n")
+    if not any(EN.FIELD in ln for ln in lines):
+        return _esc(value)
+    out = []
+    for ln in lines:
+        left, sep, right = ln.partition(EN.FIELD)
+        if sep:
+            out.append(f'<tr><td class="k">{_esc(left)}</td>'
+                       f'<td class="v">{_esc(right)}</td></tr>')
+        else:
+            out.append(f'<tr><td class="w" colspan="2">{_esc(ln)}</td></tr>')
+    return '<table class="sub">' + "".join(out) + "</table>"
 
 
 def _esc(text: str) -> str:
@@ -78,7 +106,7 @@ def _table(rows: list, cols: list) -> str:
             v = r.get(c, "")
             css = _TONE_CSS.get(EN.cell_tone(c, v), "")
             klass = ' class="name"' if c == "ICD" else ""
-            cells.append(f'<td{klass} style="{css}">{_esc(v)}</td>')
+            cells.append(f'<td{klass} style="{css}">{_cell_html(v)}</td>')
         body.append("<tr>" + "".join(cells) + "</tr>")
     return (_CSS + '<div class="eco-wrap"><table class="eco"><thead><tr>'
             + head + "</tr></thead><tbody>" + "".join(body)
@@ -111,33 +139,34 @@ def main() -> None:
     c3.metric("Most-used", max(counts, key=counts.get) if counts else "—",
               help="The report the most offices are enrolled in")
 
-    # GREEN FOR "THEY HAVE IT". The status words carry no time, so without a
-    # colour the column is a block of identical text you have to read cell by
-    # cell; green lets you run an eye down it. Cells that carry a real
-    # schedule stay plain — there the words ARE the information.
-    import pandas as pd
+    # WHAT IS THIS COLUMN? (Megan 2026-10-05: "when I click on 'Text
+    # Scoreboard' I want an image example of what it is"). A table header
+    # cannot be clicked, so the answer sits directly above it as one popover
+    # per feature — same gesture, and it works on a phone.
+    st.caption("What each column means — click one:")
+    picks = [c for c in safe if c in EN.EXPLAINS]
+    for chunk in range(0, len(picks), 5):
+        for col, box in zip(picks[chunk:chunk + 5], st.columns(5)):
+            words, shot = EN.EXPLAINS[col]
+            with box.popover(col, use_container_width=True):
+                st.markdown(f"**{col}**")
+                st.write(words)
+                img = _ROOT / "resources" / "report-screenshots" / shot
+                if shot and img.exists():
+                    st.image(str(img), use_container_width=True)
+                else:
+                    st.caption("No example image for this one yet.")
+    st.write("")
 
-    frame = pd.DataFrame(rows, columns=safe)
-    # GREEN THEY HAVE IT · AMBER ON BUT NOT WORKING YET · RED THEY DO NOT.
-    # A schedule is as much a yes as the word Enrolled, so the rule is by
-    # meaning (enrollment.cell_tone) rather than by matching particular words
-    # — otherwise every column that carries a time would stay white.
-    TONE = {
-        "good": "background-color:#DCFCE7;color:#065F46;font-weight:600",
-        "wait": "background-color:#FEF3C7;color:#78350F;font-weight:600",
-        "bad": "background-color:#FEE2E2;color:#991B1B",
-    }
-    # CENTRED THROUGH column_config, PER COLUMN — these tables render to a
-    # canvas, so CSS cannot reach inside them and a table-wide rule does
-    # nothing. Same way the house boards do it (site._centered). The ICD name
-    # stays left: a column of centred names is hard to scan down.
-    # A REAL TABLE, NOT st.dataframe. That widget draws to a canvas: it
-    # shows a newline as a space and then truncates, so every cell carrying a
-    # window over a room read as one clipped line and the table still looked
-    # uncondensed (Megan 2026-10-05: "columns still aren't condensed", after
-    # the text itself had been shortened). HTML gives real line breaks, real
-    # widths and the house borders — the same reason the sales boards are
-    # drawn this way rather than as a grid.
+    # A REAL TABLE, NOT st.dataframe. That widget draws to a canvas: it shows
+    # a newline as a space and then truncates, so every cell carrying a
+    # window over a room arrived as one clipped line and the page still
+    # looked uncondensed (Megan 2026-10-05) — no amount of shortening the
+    # text would have fixed it. HTML gives real line breaks and the house
+    # borders, the same reason the sales boards are drawn this way. Colour
+    # comes from enrollment.cell_tone, by MEANING: a schedule is as much a
+    # yes as the word Enrolled, so matching particular words would leave
+    # every time-carrying column white.
     st.html(_table(rows, safe))
 
     st.caption(
