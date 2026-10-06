@@ -38,9 +38,11 @@ import datetime as dt
 import hashlib
 import io
 import json
+import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
@@ -136,6 +138,65 @@ def mark_local_sent(today: dt.date, keys) -> None:
 
 def _eml(today: dt.date, key: str) -> Path:
     return _OUTPUT_DIR / f"captainship_draft_{key}_{today:%Y%m%d}.eml"
+
+
+# --------------------------------------------------------------------------
+# mientras se arma: salen los que ya terminaron (Eve 2026-10-06)
+# --------------------------------------------------------------------------
+# Un .eml recién escrito puede estar a medio escribir (el .html va después).
+SETTLE_SECONDS = 90
+
+
+def _etime_seconds(etime: str) -> Optional[int]:
+    """`ps -o etime` → segundos: [[dd-]hh:]mm:ss."""
+    try:
+        days, _, rest = etime.strip().rpartition("-")
+        parts = [int(x) for x in rest.split(":")]
+        while len(parts) < 3:
+            parts.insert(0, 0)
+        h, m, s = parts
+        return (int(days) if days else 0) * 86400 + h * 3600 + m * 60 + s
+    except ValueError:
+        return None
+
+
+def build_started(ps_output: Optional[str] = None) -> Optional[float]:
+    """Cuándo arrancó el armado de capitanías que está corriendo (epoch), o None
+    si no hay ninguno / no se pudo leer. El más viejo manda: el agente de las
+    07:15 (`review_gate --ensure-posted`) es el padre de cada `run.py` que lanza,
+    y un .eml escrito antes de que él arrancara puede ser de un intento que
+    estaba mal (Eve 2026-10-06: ese día la cadena de las 4 AM no los dejó)."""
+    if ps_output is None:
+        try:
+            ps_output = subprocess.run(
+                ["ps", "-axo", "pid=,etime=,command="], capture_output=True,
+                text=True, timeout=20).stdout
+        except Exception:  # noqa: BLE001 — sin ps = no se sabe = esperar
+            return None
+    oldest = None
+    for line in ps_output.splitlines():
+        bits = line.split(None, 2)
+        if len(bits) < 3 or "automations.captainship_drafts" not in bits[2]:
+            continue
+        # El chequeo mismo (y lo que lanza para mandar) no es un armado.
+        if bits[0] == str(os.getpid()) or "--check" in bits[2] \
+                or "--send-reviewed" in bits[2]:
+            continue
+        secs = _etime_seconds(bits[1])
+        if secs is not None and (oldest is None or secs > oldest):
+            oldest = secs
+    return None if oldest is None else time.time() - oldest
+
+
+def fresh_from_build(today: dt.date, key: str, since: float,
+                     now: Optional[float] = None) -> bool:
+    """¿El .eml de este capitán lo escribió el armado en curso y ya se asentó?"""
+    p = _eml(today, key)
+    if not p.exists():
+        return False
+    mtime = p.stat().st_mtime
+    now = time.time() if now is None else now
+    return mtime >= since and now - mtime >= SETTLE_SECONDS
 
 
 def eml_sha(today: dt.date, key: str) -> Optional[str]:

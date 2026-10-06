@@ -11,7 +11,9 @@ Fija las tres condiciones que puso Eve y la regla de qué se re-arma y qué fren
 from __future__ import annotations
 
 import datetime as dt
+import os
 import tempfile
+import time
 import unittest
 from email.message import EmailMessage
 from pathlib import Path
@@ -246,12 +248,13 @@ class TestGateFlow(Base):
         return [config.block_of(k) for k in keys]
 
     def _run(self, keys, tab=_no_tableau, rebuild=lambda *a: 0, act=True,
-             ticks=1):
+             ticks=1, building_since=None):
         with mock.patch.object(A, "rebuild", rebuild), \
                 mock.patch.dict(A.judge.__kwdefaults__,
                                 {"visual": _clean_visual, "tableau": tab}):
             for _ in range(ticks):
-                rc = self.rg.auto_day(DAY, self._blocks(*keys), act=act)
+                rc = self.rg.auto_day(DAY, self._blocks(*keys), act=act,
+                                      building_since=building_since)
         return rc
 
     def test_clean_day_sends_and_posts_nothing(self):
@@ -317,6 +320,91 @@ class TestGateFlow(Base):
         self._run([self.fiber], rebuild=lambda t, k: rebuilt.append(k),
                   act=False)
         self.assertEqual((rebuilt, self.posted, self.sent), ([], [], []))
+
+
+def _age(out: Path, key: str, seconds_ago: float):
+    p = out / f"captainship_draft_{key}_{DAY:%Y%m%d}.eml"
+    t = time.time() - seconds_ago
+    os.utime(p, (t, t))
+
+
+class TestWhileBuilding(TestGateFlow):
+    """Eve 2026-10-06: "que vayan saliendo a medida que se va cerrando cada
+    capitania". Con un armado corriendo sale el que ese armado ya cerro; el que
+    falta, el viejo o el recien escrito esperan; nada se re-arma ni se frena."""
+
+    def setUp(self):
+        super().setUp()
+        self.since = time.time() - 3600          # el armado arranco hace 1 h
+
+    def test_finished_one_goes_the_rest_waits(self):
+        _write_eml(self.tmp, self.fiber)
+        _age(self.tmp, self.fiber, 600)          # lo cerro hace 10 min
+        rc = self._run([self.fiber, self.b2b], building_since=self.since)
+        self.assertEqual(rc, 1)                  # b2b sigue esperando
+        self.assertEqual(self.sent, [self.fiber])
+        self.assertEqual((self.posted, self.alerts), ([], []))
+
+    def test_missing_draft_is_not_a_failure_after_ten(self):
+        late = mock.Mock(wraps=dt.datetime)
+        late.now = lambda: dt.datetime(2026, 10, 6, 11)
+        with mock.patch.object(self.rg.dt, "datetime", late):
+            rc = self._run([self.b2b], building_since=self.since)
+        self.assertEqual(rc, 1)
+        self.assertEqual((self.sent, self.posted, self.alerts), ([], [], []))
+
+    def test_draft_from_before_this_build_waits(self):
+        _write_eml(self.tmp, self.fiber)
+        _age(self.tmp, self.fiber, 7200)         # de antes que arrancara
+        self._run([self.fiber], building_since=self.since)
+        self.assertEqual(self.sent, [])
+
+    def test_draft_still_being_written_waits(self):
+        _write_eml(self.tmp, self.fiber)         # mtime = ahora
+        self._run([self.fiber], building_since=self.since)
+        self.assertEqual(self.sent, [])
+
+    def test_needs_rebuild_waits_without_rebuilding_or_holding(self):
+        _write_eml(self.tmp, self.fiber, pending="Fiber Activations PNG")
+        _age(self.tmp, self.fiber, 600)
+        rebuilt = []
+        rc = self._run([self.fiber], building_since=self.since,
+                       rebuild=lambda t, k: rebuilt.append(k))
+        self.assertEqual(rc, 1)
+        self.assertEqual((rebuilt, self.sent, self.posted, self.alerts),
+                         ([], [], [], []))
+
+    def test_tableau_behind_still_holds(self):
+        _write_eml(self.tmp, self.fiber)
+        _age(self.tmp, self.fiber, 600)
+        tab = lambda _t: ({"tableau:tracker_att": "behind"}, {}, [])
+        self._run([self.fiber], tab=tab, building_since=self.since)
+        self.assertEqual(self.sent, [])
+        self.assertEqual(list(self.alerts[0]), [self.fiber])
+
+
+class TestBuildStarted(unittest.TestCase):
+    PS = ("  101  01:12:30 python -m automations.captainship_drafts.review_gate"
+          " --ensure-posted\n"
+          "  102     05:10 python -m automations.captainship_drafts.run"
+          " --dry-run --block luke\n"
+          "  103     00:02 python -m automations.captainship_drafts.review_gate"
+          " --check --send --building\n"
+          "  104  1-00:00:00 /usr/sbin/cron\n")
+
+    def test_oldest_build_process_wins(self):
+        got = A.build_started(self.PS)
+        self.assertAlmostEqual(time.time() - got, 4350, delta=5)
+
+    def test_the_check_itself_is_not_a_build(self):
+        ps = ("  103  00:02 python -m automations.captainship_drafts.review_gate"
+              " --check --building\n")
+        self.assertIsNone(A.build_started(ps))
+
+    def test_etime_shapes(self):
+        self.assertEqual(A._etime_seconds("05:10"), 310)
+        self.assertEqual(A._etime_seconds("01:12:30"), 4350)
+        self.assertEqual(A._etime_seconds("2-01:00:00"), 176400)
 
 
 if __name__ == "__main__":
