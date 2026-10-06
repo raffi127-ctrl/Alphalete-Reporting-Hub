@@ -1433,6 +1433,25 @@ def _xtab_cache_store(view_url: str, sheet: str, produced: Path) -> None:
         pass                            # caching is best-effort; the pull succeeded
 
 
+def xtab_cache_evict(view_url: str, sheet: str) -> bool:
+    """Drop today's cached copy of (view_url, sheet). For a caller whose parse
+    rejected the file: without this, every re-run for the next 12h is served the
+    same bad bytes, even after the Tableau view is fixed. Never raises."""
+    root = _xtab_cache_dir()
+    if root is None:
+        return False
+    try:
+        p = _xtab_cache_path(root, view_url, sheet)
+        if p.exists():
+            p.unlink()
+            print(f"  x evicted bad crosstab cache ({sheet}) — "
+                  f"{p.parent.name}/{p.name}; next run pulls live", flush=True)
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def _xtab_cache_prune(root: Path, keep_days: int = 3) -> None:
     """Drop dated cache folders older than keep_days. Only removes YYYY-MM-DD dirs
     directly under our own cache root, so it can't touch anything else."""
