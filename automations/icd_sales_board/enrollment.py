@@ -398,7 +398,7 @@ def _text_lines(raw: str) -> list:
             mins = int(d.get("cadence_min") or 0)
         except (TypeError, ValueError):
             mins = 0
-        when = f"Every {mins} Min" if mins else "Set times"
+        when = f"Every {mins} Min" if mins else _slot_times()
         line = f"{when}{FIELD}iMessage {name}"
         if line not in out:
             out.append(line)
@@ -443,6 +443,54 @@ def _knock_names(raw: str) -> list:
     return out
 
 
+def _gap_lines(raw: str) -> list:
+    """'Every 60 Min · Slack #palace-sales' for each destination with gaps on.
+
+    AN ECO OFFICE TURNS GAPS ON PER DESTINATION, as `gaps_min` beside the
+    board's own cadence — not through the gap_alerts module, which only knows
+    the four offices hardcoded in it. Reading only that module showed Raf and
+    nobody else, when Kash has had gaps hourly in his Slack all along (Megan
+    2026-10-05)."""
+    import json
+    try:
+        dests = json.loads(raw or "[]")
+    except ValueError:
+        return []
+    from automations.icd_alerts import post as P
+    out = []
+    for d in dests:
+        if not isinstance(d, dict):
+            continue
+        try:
+            mins = int(d.get("gaps_min") or 0)
+        except (TypeError, ValueError):
+            mins = 0
+        if not mins:
+            continue
+        cid = str(d.get("channel_id") or "")
+        nm = str(d.get("channel_name") or d.get("group") or "").strip()
+        where = ("iMessage " + (nm or P.text_group_of(cid))
+                 if P.is_text_dest(cid) else ("Slack " + nm) if nm else "")
+        line = f"Every {mins} Min{FIELD}{where}" if where \
+            else f"Every {mins} Min"
+        if line not in out:
+            out.append(line)
+    return out
+
+
+def _slot_times() -> str:
+    """'2pm, 5:15pm, 9pm' — the fixed slots, from the schedule that runs them.
+
+    'Set times' told nobody anything (Megan 2026-10-05: "nothing should say
+    set times - it should say the times"). Read from knocks_intraday rather
+    than typed here, so moving a slot moves this."""
+    try:
+        from automations.knocks_intraday.schedule import SLOTS
+        return ", ".join(_ampm((s.hour, s.minute)) for s in SLOTS)
+    except Exception:   # noqa: BLE001
+        return "set times"
+
+
 def _knock_lines(raw: str) -> list:
     """One line PER DESTINATION: 'Every 30 Min · #palace-sales'.
 
@@ -482,7 +530,7 @@ def _knock_lines(raw: str) -> list:
             mins = int(d.get("cadence_min") or 0)
         except (TypeError, ValueError):
             mins = 0
-        when = f"Every {mins} Min" if mins else "Each slot"
+        when = f"Every {mins} Min" if mins else _slot_times()
         # TWO FIELDS, not one string: the page lays these out as columns so
         # the cadences line up under each other and the room names line up
         # under each other. Run together with a '·' they wrapped mid-name and
@@ -526,6 +574,13 @@ def _channels() -> dict:
                     (r[P.CH_KN_APPROVED_JSON]
                      if len(r) > P.CH_KN_APPROVED_JSON else "")
                     or (r[P.CH_KN_JSON] if len(r) > P.CH_KN_JSON else "")),
+                "gap_lines": _gap_lines(
+                    (r[P.CH_KN_APPROVED_JSON]
+                     if len(r) > P.CH_KN_APPROVED_JSON else "")
+                    or (r[P.CH_KN_JSON] if len(r) > P.CH_KN_JSON else ""))
+                + _gap_lines(
+                    (r[P.CH_TX_APPROVED_JSON]
+                     if len(r) > P.CH_TX_APPROVED_JSON else "")),
                 "knock_lines": _knock_lines(
                     (r[P.CH_KN_APPROVED_JSON]
                      if len(r) > P.CH_KN_APPROVED_JSON else "")
@@ -767,11 +822,17 @@ def rows(icds=None) -> list:
                 "Tableau Trackers": ENROLLED if mkey else "",
                 # A short key is a PREFIX of the full name ('rafael' ->
                 # 'rafaelhidalgo'), which is how that registry names an office.
+                # Two ways an office gets these: the gap_alerts module (its
+                # four hardcoded offices) or `gaps_min` on an ECO
+                # destination. Either counts.
                 "Gap Alerts": _with_where(
                     DISPO_WINDOW if any(
                         d == me or (len(d) >= 5 and me.startswith(d))
-                        for d in dispo) else "",
-                    _gap_rooms(me, gap_dests)),
+                        for d in dispo)
+                    else (_window(_first_office(feeds, alert_office))
+                          if _names_of(feeds, chan, "gap_lines") else ""),
+                    _gap_rooms(me, gap_dests)
+                    or _names_of(feeds, chan, "gap_lines")),
                 # WHERE IT ALL LANDS, by name (Megan 2026-10-05: "the name of
                 # the slack and imessage chat names on there so they know
                 # where they are"). Names only — never the channel ids, which
