@@ -2163,54 +2163,33 @@ def _rollout_section() -> None:
             RO.UPDATE: "background-color:#FFF2CC",
             RO.QUIET: "background-color:#F4CCCC",
             RO.WAITING: "background-color:#FCE5CD"}
-    # THE SAME TABLE AS THE PUBLIC PAGE, not a second answer. Two screens
-    # both called LucyEco is how somebody ends up reading last week's wording
-    # and reporting it as a bug (Megan 2026-10-06, looking at this one):
-    # the enrollment grid is rendered from enrollment.py here too, and the
-    # list below it keeps only what is admin-only — last reading, and whether
-    # the agent is current.
+    # ONE TABLE (Megan 2026-10-06: "I don't want 2 different sections").
+    # This view used to draw the enrollment grid and then an admin grid
+    # underneath, which is two answers to one question and sent you to the
+    # older-looking one first. Same table as the public page, plus the two
+    # columns that page must not carry.
     try:
         from automations.icd_sales_board import enrollment as EN
-        erows, taken = EN.rows_cached()
-        if erows:
-            cols = [c for c in EN.SAFE_COLUMNS if any(c in r for r in erows)]
-            st.markdown("**Who gets what**")
-            st.html(EN.html_table(
-                [{c: r.get(c, "") for c in cols} for r in erows], cols))
-            st.caption(
-                "The same table as **lucyeco.streamlit.app/lucyeco**, which "
-                "is the link to send someone — it needs no access code. "
-                + (f"Read {taken:%b %d}, "
-                   f"{taken.hour % 12 or 12}:{taken.minute:02d}"
-                   f"{'am' if taken.hour < 12 else 'pm'}." if taken else ""))
-            st.divider()
-            st.markdown("**Agent detail** — last reading and agent version, "
-                        "which only matter when chasing an install.")
-    except Exception as e:   # noqa: BLE001 — the rollout list still stands
-        st.caption(f"Enrollment table unavailable ({type(e).__name__}).")
-
-    frame = pd.DataFrame(rows, columns=["ICD", "Status", "Board shows",
-                                        "Campaign", "Last reading",
-                                        "On latest update"])
-    st.dataframe(
-        frame.style.apply(lambda col: [tone.get(v, "") for v in col],
-                          subset=["Status"]),
-        use_container_width=True, hide_index=True,
-        height=_grid_height(len(rows)))
-    ready = sum(1 for r in rows if r.get("Board shows") != RO.SHOWS_NOTHING
-                and r.get("Board shows") != RO.SHOWS_OFFICE)
-    st.caption(f"**{ready} ICDs have a board worth sending today** — live, or "
-               f"at least yesterday's settled numbers from Tableau.")
-    st.caption("To give an ICD their board: send "
-               "**lucyeco.streamlit.app/sales-board** and their access code "
-               "from the Board Access tab. Their code opens their office "
-               "only, and is deliberately not printed here.")
-    st.caption(f"Live = reported in the last day on the current agent "
-               f"({RO.CURRENT_AGENT}). Needs update = reporting on an older "
-               f"agent; it updates itself. Gone quiet = no reading for two "
-               f"days or more — check that machine.")
-
-
+        erows, taken = EN.rows_cached_admin()
+        if not erows:
+            st.info("Couldn't read the registries just now.", icon="🚧")
+            return
+        cols = EN.admin_columns(erows)
+        st.html(EN.html_table([{c: r.get(c, "") for c in cols} for r in erows],
+                              cols))
+        st.caption(
+            "The same table as **lucyeco.streamlit.app/lucyeco** — the link "
+            "to send someone, which needs no access code — plus the last "
+            "reading and whether the agent is current, which that page "
+            "deliberately leaves off. "
+            + (f"Read {taken:%b %d}, {taken.hour % 12 or 12}:"
+               f"{taken.minute:02d}{'am' if taken.hour < 12 else 'pm'}."
+               if taken else ""))
+        st.caption("A cell says WHEN that report runs and WHERE it lands. "
+                   "Green they have it, amber on but not working yet, red "
+                   "they do not.")
+    except Exception as e:   # noqa: BLE001
+        st.caption(f"Enrollment table unavailable ({type(e).__name__}: {e})")
 def _paint(html: str) -> None:
     """Put the board on the page WITHOUT a markdown pass.
 

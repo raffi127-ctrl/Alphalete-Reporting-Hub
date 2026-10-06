@@ -47,6 +47,11 @@ FIELD = " \u00b7 "
 # "we did not check".
 NOT_ON = "Not Enrolled"
 
+# Two columns the gated sales board adds and the public page never does.
+# They are about chasing an INSTALL, not about what an office receives, and
+# 'last reading' on an open page is a liveness probe of someone's laptop.
+ADMIN_EXTRA = ["Last reading", "On latest update"]
+
 # Schedules that are the same wherever the feature is switched on. Each is
 # read off the module that enforces it rather than retyped from memory; where
 # that module holds the hours as config, the comment says which.
@@ -248,7 +253,7 @@ EXPLAINS = {
 def cell_tone(column: str, value) -> str:
     """'good' | 'bad' | 'wait' | '' for one cell."""
     v = str(value or "").strip()
-    if column in UNCOLOURED or not v:
+    if column in UNCOLOURED or column in ADMIN_EXTRA or not v:
         return ""
     if v in BAD_WORDS:
         return "bad"
@@ -660,8 +665,13 @@ def _by_owner(pairs) -> dict:
     return {_letters(o): v for o, v in pairs if _letters(o)}
 
 
-def rows(icds=None) -> list:
-    """One row per ICD, every cell a schedule or blank. Never raises."""
+def rows(icds=None, admin: bool = False) -> list:
+    """One row per ICD, every cell a schedule or blank. Never raises.
+
+    `admin` adds ADMIN_EXTRA — the sales board shows one table with them, the
+    public page one without, rather than two tables saying different halves
+    of the same thing (Megan 2026-10-06: "I don't want 2 different
+    sections")."""
     out = []
     try:
         from automations.icd_sales_board import eco_feeds as E
@@ -907,6 +917,9 @@ def rows(icds=None) -> list:
                     if mkey in metrics_room else ENROLLED) if mkey else "",
                 # The trackers ride the same room as the metrics thread; an
                 # email-only office gets them in that same daily mail.
+                **({"Last reading": st.get("Last reading", ""),
+                    "On latest update": st.get("On latest update", "")}
+                   if admin else {}),
                 "Tableau Trackers": (
                     "Emailed Daily" if mkey in emailed else
                     _with_where(ENROLLED, [metrics_room[mkey]])
@@ -941,7 +954,8 @@ def rows(icds=None) -> list:
                 else:
                     r[col] = val
 
-        skip = {"ICD", "Campaigns", "LucyECO", "Posts to"}
+        skip = ({"ICD", "Campaigns", "LucyECO", "Posts to"}
+                | set(ADMIN_EXTRA))
         for r in out:
             # Nothing has come through this office's machine yet, so anything
             # that rides it is set up and waiting, not running.
@@ -1008,6 +1022,12 @@ def _write_snapshot(rows_: list) -> None:
         tmp.replace(SNAPSHOT)      # atomic: a half-written file reads as none
     except Exception:   # noqa: BLE001 — a cache we cannot write is not fatal
         pass
+
+
+def admin_columns(rows_: list) -> list:
+    """The column order for the gated view: the public set, then the two."""
+    return [c for c in SAFE_COLUMNS if any(c in r for r in rows_)] + \
+        [c for c in ADMIN_EXTRA if any(c in r for r in rows_)]
 
 
 def rows_cached(max_age_min: int = SNAPSHOT_FRESH_MIN):
@@ -1101,6 +1121,25 @@ def html_table(rows: list, cols: list) -> str:
             + head + "</tr></thead><tbody>" + "".join(body)
             + "</tbody></table></div>")
 
+
+
+def rows_cached_admin(max_age_min: int = SNAPSHOT_FRESH_MIN):
+    """rows_cached, with the two admin columns. Its own snapshot file, so the
+    public one can never pick up a row that carries them."""
+    global SNAPSHOT
+    pub, SNAPSHOT = SNAPSHOT, SNAPSHOT.with_name("lucyeco-enrollment-admin.json")
+    try:
+        got, taken = _read_snapshot()
+        if got and taken and (dt.datetime.now() - taken
+                              <= dt.timedelta(minutes=max_age_min)):
+            return got, taken
+        fresh = rows(admin=True)
+        if fresh:
+            _write_snapshot(fresh)
+            return fresh, dt.datetime.now()
+        return (got or []), taken
+    finally:
+        SNAPSHOT = pub
 
 
 def counts(rows_: list) -> dict:
