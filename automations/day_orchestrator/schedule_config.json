@@ -7274,6 +7274,8 @@
    "verify": {
     "type": "not_configured"
    },
+   "close_on": "exit_zero",
+   "_close_on_note": "Eve 2026-10-06: a clean exit means the review link is up in #revision-emails. The email itself goes out later on a checkmark via the watcher, not this run.",
    "timeout_minutes": 20
   },
   "hc_retail_daily": {
