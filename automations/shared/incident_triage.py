@@ -518,7 +518,8 @@ def schedule_key(rid: str) -> Optional[str]:
     return idx.get(c) or idx.get(inc._root(c))
 
 
-def reruns_itself(rid: str, *, partial: bool = False) -> bool:
+def reruns_itself(rid: str, *, partial: bool = False,
+                  held: bool = True) -> bool:
     """Will anything re-run `rid` today without a person asking?
 
     `partial` is the `drop-` case — the report ran and MISSED a part, so it is
@@ -535,7 +536,15 @@ def reruns_itself(rid: str, *, partial: bool = False) -> bool:
     r = _reports().get(schedule_key(rid) or rid)
     if not isinstance(r, dict):
         return True
-    if r.get("source_type") == "tableau" or r.get("data_sources"):
+    if r.get("source_type") == "tableau":
+        return True
+    # `data_sources` is a readiness probe: it re-checks a report HELD before it
+    # ran. It does nothing for one that RAN and errored — that is terminal
+    # FAILED on attempt one unless it is tableau. org_active_headcount_email
+    # (source_type api, two slack: probes) died on a Drive 502 on 2026-10-06
+    # and this said "Lucy has this … re-runs it every 25 minutes"; nothing did,
+    # and the ticket sat on :pending: all morning. `held` is False for that case.
+    if held and r.get("data_sources"):
         return True
     # A REPORT WITH ITS OWN LAUNCHAGENT re-runs itself, and nothing above can
     # see that. The two signals here describe the orchestrator's retry loop, so
@@ -763,7 +772,8 @@ def _if_it_reruns(key: str, rid: str, bucket: str, reason: str) -> Verdict:
     stock :pending:/:large_purple_circle: wording tells the reader to walk away,
     and for a report the orchestrator never retries, walking away IS the outage.
     """
-    if reruns_itself(rid, partial=key.startswith("drop-")):
+    if reruns_itself(rid, partial=key.startswith("drop-"),
+                     held=(bucket == WAITING)):
         return Verdict(key, bucket, reason)
     # The command has to carry the SCHEDULE key: `lucy rerun` resolves its
     # argument by exact dict lookup (registry.resolve_report), so the dashed
