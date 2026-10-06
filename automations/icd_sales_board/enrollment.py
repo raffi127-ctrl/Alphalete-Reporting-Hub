@@ -412,6 +412,26 @@ def _collapse(names, groups) -> list:
     return sorted(set(pick.values()))
 
 
+def _has_relayed(feeds, st=None) -> bool:
+    """Has ANY of this office's machines ever checked in?
+
+    An owner can run two feeds (Jamis runs AT&T and Box off one Mac); one
+    of them reporting means the machine is alive. Falls back to the status
+    row's reading, which is how an office with no feed key of its own
+    (Raf, relayed by our sweep) still answers True.
+    """
+    try:
+        from automations.icd_sales_board import relay_read as _RR
+        for f in (feeds or []):
+            key = getattr(f, "key", "") or ""
+            if key and (_RR.last_reading(key) or {}).get("day"):
+                return True
+    except Exception:   # noqa: BLE001
+        pass
+    v = ((st or {}).get("Last reading") or "").strip().lower()
+    return bool(v) and v not in ("never", "-", "—")
+
+
 def _aliases() -> dict:
     """The ICD Aliases table, cached: it is a Sheets read like any other."""
     key = "aliases"
@@ -581,6 +601,9 @@ def _rooms(feeds, chan, approved_rooms) -> str:
             if nm not in names:
                 names.append(nm)
     return ", ".join(names)
+
+
+NOT_ON_ECO = "Not on"
 
 
 def eco_state(status: str) -> str:
@@ -1230,6 +1253,15 @@ def rows(icds=None, admin: bool = False) -> list:
                     if mkey in metrics_room else ENROLLED) if mkey else "",
                 # The trackers ride the same room as the metrics thread; an
                 # email-only office gets them in that same daily mail.
+                # NOT A COLUMN. Whether this office's machine has ever
+                # checked in -- the evidence the Pending rule below needs,
+                # and the public rows have to carry it too.
+                # Asked of the FEED KEYS, not the office name. The status
+                # row is joined by name and misses Jamis entirely, so a
+                # name-based answer called a machine relaying every few
+                # minutes "never relayed" -- the same lie as calling a dead
+                # one Active, just pointing the other way.
+                "_relayed": _has_relayed(feeds, st),
                 **({"Last reading": st.get("Last reading", ""),
                     "On latest update": st.get("On latest update", ""),
                     # NOT A COLUMN -- html_table reads it to colour the cell,
@@ -1276,6 +1308,38 @@ def rows(icds=None, admin: bool = False) -> list:
         skip = ({"ICD", "Campaigns", "LucyECO", "Posts to"}
                 | set(ADMIN_EXTRA))
         for r in out:
+            # NOTHING RIDING A MACHINE CAN BE ACTIVE BEFORE THE MACHINE IS
+            # (Megan 2026-10-06: "luke can't be active for sara alerts if
+            # eco isn't on"). Luke and Jennifer signed up, were approved and
+            # had their rooms set up the same afternoon, so every relay-fed
+            # column read Active with a full schedule -- while their agents
+            # had never once checked in.
+            #
+            # An office with rooms configured and no status at all is not
+            # 'Not on', which reads as nobody ever asked: it is signed up
+            # and waiting on its own machine, exactly like Rashad, who did
+            # read Pending only because he happens to carry a status row.
+            # HOUSE_RUN is exempt -- Raf has no ECO agent and never will,
+            # because our own sweep relays for him.
+            # A MACHINE THAT IS CHECKING IN IS ON, whatever the status
+            # cell says. Jamis and Jennifer both enrolled on 2026-10-06 and
+            # were relaying within the hour, while the status registry --
+            # joined by name, which misses them -- still read 'Not on'.
+            # The reading is first-hand evidence; the cell is a cache of
+            # somebody else's write. Partial and Pending are left alone,
+            # because those say something this cannot.
+            if r.get("_relayed") and r.get("LucyECO") == NOT_ON_ECO:
+                r["LucyECO"] = "Active"
+            # ONLY WHEN THE MACHINE HAS NEVER CHECKED IN. Jamis enrolled
+            # the same day and his status row had not caught up, so a rule
+            # keyed on "no status" called a machine that was relaying every
+            # few minutes Pending -- which is the same lie in the other
+            # direction. The reading is the evidence, not the status cell.
+            if (r.get("LucyECO") not in ("Active", "Pending")
+                    and not r.get("_relayed")
+                    and _letters(r.get("ICD") or "") not in HOUSE_RUN
+                    and any(r.get(c) for c in RELAY_FED)):
+                r["LucyECO"] = "Pending"
             # Nothing has come through this office's machine yet, so anything
             # that rides it is set up and waiting, not running.
             if r.get("LucyECO") == "Pending":
