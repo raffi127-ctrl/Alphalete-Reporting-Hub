@@ -40,6 +40,51 @@ def _rows():
     return EN.rows()
 
 
+_CSS = """<style>
+.eco{border-collapse:collapse;font-size:12.5px;width:100%}
+.eco th,.eco td{border:1px solid #CBD5E1;padding:4px 7px;text-align:center;
+  vertical-align:middle;line-height:1.35;white-space:nowrap}
+.eco th{background:#F1F5F9;font-weight:700;font-size:11.5px}
+.eco td.name{text-align:left;font-weight:600;white-space:nowrap}
+.eco tr:nth-child(even) td{background-image:linear-gradient(rgba(0,0,0,.02),
+  rgba(0,0,0,.02))}
+/* Each line is already as short as it can be, so nothing wraps mid-word —
+   '#a-players-b2b' split across two lines was the last thing making this
+   look uncondensed. The table scrolls sideways instead, which keeps a row
+   readable. */
+.eco-wrap{overflow-x:auto}
+</style>"""
+
+_TONE_CSS = {
+    "good": "background:#DCFCE7;color:#065F46;font-weight:600",
+    "wait": "background:#FEF3C7;color:#78350F;font-weight:600",
+    "bad": "background:#FEE2E2;color:#991B1B",
+}
+
+
+def _esc(text: str) -> str:
+    """Escape, THEN turn newlines into breaks — never the other way round, or
+    the breaks get escaped along with the content."""
+    import html
+    return html.escape(str(text or "")).replace("\n", "<br>")
+
+
+def _table(rows: list, cols: list) -> str:
+    head = "".join(f"<th>{_esc(c)}</th>" for c in cols)
+    body = []
+    for r in rows:
+        cells = []
+        for c in cols:
+            v = r.get(c, "")
+            css = _TONE_CSS.get(EN.cell_tone(c, v), "")
+            klass = ' class="name"' if c == "ICD" else ""
+            cells.append(f'<td{klass} style="{css}">{_esc(v)}</td>')
+        body.append("<tr>" + "".join(cells) + "</tr>")
+    return (_CSS + '<div class="eco-wrap"><table class="eco"><thead><tr>'
+            + head + "</tr></thead><tbody>" + "".join(body)
+            + "</tbody></table></div>")
+
+
 def main() -> None:
     st.markdown("#### Alphalete Marketing")
     st.title("Lucy ECOsystem")
@@ -86,44 +131,14 @@ def main() -> None:
     # canvas, so CSS cannot reach inside them and a table-wide rule does
     # nothing. Same way the house boards do it (site._centered). The ICD name
     # stays left: a column of centred names is hard to scan down.
-    # NARROW BY DEFAULT. Every feature column holds a short status or two
-    # short lines, so left to size themselves they spread the table far wider
-    # than the screen and you scroll sideways to read a row (Megan 2026-10-05:
-    # "columns still aren't condensed"). Only the name and the room list,
-    # which hold real prose, get room.
-    wide = {"ICD": "medium", "Posts to": "large"}
-    cfg = {c: st.column_config.Column(
-               width=wide.get(c, "small"),
-               alignment="left" if c == "ICD" else "center")
-           for c in safe}
-    def _tone(col):
-        return [TONE.get(EN.cell_tone(col.name, v), "") for v in col]
-
-    # WHAT IS THIS COLUMN? (Megan 2026-10-05: "when I click on 'Text
-    # Scoreboard' I want an image example of what it is"). A dataframe header
-    # cannot be clicked — the table is drawn to a canvas — so the answer sits
-    # directly above it as one popover per feature, which is the same gesture
-    # and works on a phone.
-    st.caption("What each column means — click one:")
-    picks = [c for c in safe if c in EN.EXPLAINS]
-    for chunk in range(0, len(picks), 5):
-        for col, box in zip(picks[chunk:chunk + 5], st.columns(5)):
-            words, shot = EN.EXPLAINS[col]
-            with box.popover(col, use_container_width=True):
-                st.markdown(f"**{col}**")
-                st.write(words)
-                img = _ROOT / "resources" / "report-screenshots" / shot
-                if shot and img.exists():
-                    st.image(str(img), use_container_width=True)
-                else:
-                    st.caption("No example image for this one yet.")
-    st.write("")
-
-    st.dataframe(
-        frame.style.apply(_tone, axis=0),
-        hide_index=True, column_config=cfg,
-        row_height=56,
-        height=min(58 * (len(rows) + 1) + 8, 1200))
+    # A REAL TABLE, NOT st.dataframe. That widget draws to a canvas: it
+    # shows a newline as a space and then truncates, so every cell carrying a
+    # window over a room read as one clipped line and the table still looked
+    # uncondensed (Megan 2026-10-05: "columns still aren't condensed", after
+    # the text itself had been shortened). HTML gives real line breaks, real
+    # widths and the house borders — the same reason the sales boards are
+    # drawn this way rather than as a grid.
+    st.html(_table(rows, safe))
 
     st.caption(
         "A cell shows WHEN that report runs for that office; blank means the "
