@@ -155,9 +155,27 @@ def _messages(msgs):
 
     errs = msgs.get("errors") or []
     g = _band(len(errs), 0, 3, 10, higher_is_better=False)
+    # Megan 2026-10-06: "what is house rules in texts?" — it was not house
+    # rules at all. msgs["errors"] is text_errors: grammar, spelling, a
+    # doubled word. The house rules (wrong address, no suite, "base" pay,
+    # pushing a job question to the hiring manager) are who_to_talk_to, and
+    # were not on the card at all. Two different faults with two different
+    # fixes: a typo is coached, a wrong address is a saved reply to edit.
     out.append(_item(
-        "House rules in texts", g, "{} breach{}".format(len(errs), "" if len(errs) == 1 else "es"), "0",
-        "Fix the saved replies."))
+        "Typing mistakes", g,
+        "{} message{}".format(len(errs), "" if len(errs) == 1 else "s"), "0",
+        "Coach the sender. Listed below."))
+
+    coaching = msgs.get("coaching") or []
+    nh = sum(int(e.get("count") or 0) for e in coaching)
+    if coaching or errs:
+        g = _band(nh, 0, 2, 6, higher_is_better=False)
+        worst = max(coaching, key=lambda e: e.get("count") or 0, default=None)
+        out.append(_item(
+            "House rules broken", g,
+            "{} text{}".format(nh, "" if nh == 1 else "s"), "0",
+            "{}. Fix the saved reply.".format(worst["issue"]) if worst
+            else "Fix the saved replies."))
 
     dod = msgs.get("dodged") or {}
     nd = sum(len(v) for v in dod.values()) if isinstance(dod, dict) else len(dod)

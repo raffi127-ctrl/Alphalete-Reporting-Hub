@@ -144,3 +144,46 @@ class NoGradelessItems(unittest.TestCase):
                 "window": None})
         for i in card["items"] + card["holding"]:
             self.assertIn(i["grade"], "ABCDF")
+
+
+class TypingVersusHouseRules(unittest.TestCase):
+    """Two different faults, two different fixes.
+
+    Megan 2026-10-06 asked "what is house rules in texts?" — and it was
+    not house rules. The row was counting text_errors (grammar, spelling)
+    under a house-rules label, and the real breaches (wrong address, no
+    suite, "base" pay) were not on the card at all."""
+
+    MSGS = {
+        "people": 100,
+        "errors": [{"kind": "grammar"}, {"kind": "spelling"}],
+        "dodged": [],
+        "delivery": {},
+        "coaching": [{"issue": "Sent the wrong office address", "count": 3},
+                     {"issue": "Left the suite off the address", "count": 3},
+                     {"issue": "Told applicants there is a base pay",
+                      "count": 1}],
+    }
+
+    def _areas(self):
+        got, _ = GC._messages(self.MSGS)
+        return {i["area"]: i for i in got}
+
+    def test_typing_counts_the_typos_not_the_house_rules(self):
+        self.assertIn("2 messages", self._areas()["Typing mistakes"]["number"])
+
+    def test_house_rules_counts_the_breaches_not_the_typos(self):
+        self.assertIn("7 texts", self._areas()["House rules broken"]["number"])
+
+    def test_house_rules_names_the_worst_one(self):
+        self.assertIn("wrong office address",
+                      self._areas()["House rules broken"]["action"])
+
+    def test_typing_says_coach_not_edit_a_template(self):
+        self.assertIn("Coach", self._areas()["Typing mistakes"]["action"])
+
+    def test_no_coaching_still_reports_the_row_as_clean(self):
+        msgs = dict(self.MSGS, coaching=[])
+        got, _ = GC._messages(msgs)
+        row = [i for i in got if i["area"] == "House rules broken"][0]
+        self.assertEqual(row["grade"], "A")
