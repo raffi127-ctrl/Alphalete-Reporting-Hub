@@ -155,12 +155,30 @@ def read_office_access(page) -> List[List[str]]:
         if len(cells) < 3:
             continue
         rows.append([c.inner_text().strip() for c in cells])
-    if len(rows) <= 25:
+    if len(rows) <= 25 and not _table_is_complete(page, len(rows)):
         raise RuntimeError(
             f"Office Access read came back with only {len(rows)} row(s) — 25 is "
             "the table's default page size, so this is a half-loaded table, not "
             "the access list. Refusing to report it as one")
     return rows
+
+
+def _table_is_complete(page, shown: int) -> bool:
+    """True when the DataTable's own footer says every entry is on screen.
+
+    The short-read guard above was written for Raf's login, which is well past
+    25 offices. A SMALL login (Carlos's on Lucy 2 lists 18) can never pass it,
+    so a one-office campaign_scan from that machine refused to run at all
+    (Jamis, 2026-10-06). The footer reads "Showing 1 to 18 of 18 entries": when
+    the total it states equals the rows we counted, the table is whole."""
+    try:
+        info = page.locator("#promotingOffices_info").first.inner_text(timeout=3000)
+    except Exception:  # noqa: BLE001 — no footer, no proof
+        return False
+    m = re.search(r"of\s+([\d,]+)\s+entries", info or "")
+    if not m:
+        return False
+    return int(m.group(1).replace(",", "")) == shown
 
 
 def classify(rosters_map, office_rows, aliases=None) -> dict:
