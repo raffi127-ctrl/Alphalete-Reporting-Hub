@@ -34,12 +34,22 @@ class JoinTests(unittest.TestCase):
         self.assertEqual(EN._letters("Rafael Hidalgo"), "rafaelhidalgo")
         self.assertTrue("rafaelhidalgo".startswith(EN._letters("rafael")))
 
-    def test_a_cell_is_a_schedule_not_a_tick(self):
+    def test_a_scheduled_feature_shows_when_not_a_tick(self):
         rows = EN.rows()
-        cells = [r["Sara+ Alerts"] for r in rows if r["Sara+ Alerts"]]
+        cells = [r["Knock & Dispo Boards"] for r in rows
+                 if r["Knock & Dispo Boards"]]
         self.assertTrue(cells, "nobody enrolled — cannot check the shape")
         for c in cells:
             self.assertNotIn(c.lower(), ("yes", "true", "x"))
+
+    def test_the_round_the_clock_ones_just_say_active(self):
+        # Noon to midnight plus a 2am catch-up is near enough 24/7 that the
+        # window was noise in a column people scan for "do they have it?".
+        rows = EN.rows()
+        for col in ("Sara+ Alerts", "Text Scoreboard"):
+            on = [r[col] for r in rows if r[col]]
+            self.assertTrue(on, f"nobody on {col}")
+            self.assertEqual(set(on), {"Active"})
 
     def test_counts_only_counts_features(self):
         got = EN.counts(EN.rows())

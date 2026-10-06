@@ -37,7 +37,12 @@ SAFE_COLUMNS = ["ICD", "Campaigns", "LucyECO", "Sara+ Alerts",
 # Schedules that are the same wherever the feature is switched on. Each is
 # read off the module that enforces it rather than retyped from memory; where
 # that module holds the hours as config, the comment says which.
-SARA_WINDOW = "12pm–midnight, +2am catch-up"   # icd_alerts.config SALES_*
+# Sara+ alerts and the text scoreboard run noon to midnight with a 2am
+# catch-up, which is near enough round the clock that printing the window was
+# noise in a column people scan for "do they have it?" (Megan 2026-10-05: "it
+# should just say active since it's pretty much 24/7"). The hours still live
+# in icd_alerts.config SALES_* — this is how they READ, not what they are.
+ALWAYS_ON = "Active"
 KNOCK_SLOTS = "9pm local"                      # knocks_intraday: all offices
 DISPO_WINDOW = "every 15 min, Mon–Sat"         # gap_alerts wrapper gate
 RESUME_WHEN = "daily"                          # applicant_push schedule entry
@@ -167,8 +172,8 @@ def rows(icds=None) -> list:
                 "ICD": icd,
                 "Campaigns": st.get("Campaign", ""),
                 "LucyECO": st.get("Status", ""),
-                "Sara+ Alerts": SARA_WINDOW if on("alerts") else "",
-                "Text Scoreboard": SARA_WINDOW if on("texts") else "",
+                "Sara+ Alerts": ALWAYS_ON if on("alerts") else "",
+                "Text Scoreboard": ALWAYS_ON if on("texts") else "",
                 "Knock & Dispo Boards": KNOCK_SLOTS if on("knocks") else "",
                 "Resume Pushing": RESUME_WHEN if me in resume else "",
                 "Metrics Thread": (sched.get(mkey) or "daily") if mkey else "",
