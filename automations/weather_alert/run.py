@@ -72,6 +72,8 @@ CITIES = {
     # jamis / Midspire: "Chicago Business Development Consulting" is the
     # company's own site title (midspireinc.com, 2026-10-06).
     "chicago": ("Chicago, IL", 41.8781, -87.6298, "America/Chicago"),
+    # jenny / Figspire Management: Louisville, KY (Megan, 2026-10-06).
+    "louisville": ("Louisville, KY", 38.2527, -85.7585, "America/New_York"),
 }
 OFFICE_CITY = {
     "kash": "dfw", "cyrus": "dfw", "carlos": "dfw", "carlos-b2batt": "dfw",
@@ -93,6 +95,9 @@ OFFICE_CITY = {
     # forecast twice. His metrics room #jamis-leaders is a B2B metrics office,
     # which this fan-out does not cover.
     "jamis": "chicago",
+    # Jennifer Figueroa / Figspire, Louisville -- #figspire (2026-10-06). ONE
+    # key: her form minted jennifer + jennifer-att into the same room.
+    "jennifer": "louisville",
 }
 
 # EVERY METRICS CHANNEL GETS IT TOO (Megan 2026-09-29: "all metrics channels
@@ -106,6 +111,7 @@ METRICS_CITY = {
     "cody": "corpus_christi", "haytham": "austin", "trang": "san_antonio",
     "nii": "wilkes_barre", "jacob": "memphis",
     "jairo": "miami",           # Profits Management, Miami (305)
+    "jenny": "louisville",      # Figspire Management (metrics key; ECO key is jennifer)
 }
 
 

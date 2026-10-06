@@ -13056,8 +13056,8 @@
   "jenny_metrics": {
    "order": 36.7,
    "machine": "Lucy 4",
-   "on_scheduler": false,
-   "display_name": "Jenny's Daily Metrics (channel from ECO sign-up)",
+   "on_scheduler": true,
+   "display_name": "Jenny's Daily Metrics (figspire)",
    "source_type": "tableau",
    "data_sources": [
     "tableau:order_log"

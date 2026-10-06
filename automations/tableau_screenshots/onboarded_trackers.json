@@ -262,9 +262,11 @@
   },
   {
     "key": "jenny",
-    "label": "Jenny's Local Office (channel from ECO sign-up)",
+    "label": "#figspire",
     "owner": "Jennifer Figueroa",
-    "channel_ids": [],
+    "channel_ids": [
+      "C0C7807CHMG"
+    ],
     "trackers": [
       "att_country",
       "att_country_internet_only",
