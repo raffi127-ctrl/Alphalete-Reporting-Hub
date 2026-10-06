@@ -3,19 +3,13 @@
   "configurations": [
     {
       "name": "icd-sales-board-site",
-      "runtimeExecutable": ".venv/bin/streamlit",
+      "_note": "autoPort so a second chat can run this without fighting for 8511. Streamlit ignores PORT, so the port is passed through a shell that expands it, falling back to 8511 when nothing assigns one.",
+      "runtimeExecutable": "sh",
       "runtimeArgs": [
-        "run",
-        "automations/icd_sales_board/site.py",
-        "--server.port",
-        "8511",
-        "--server.headless",
-        "true",
-        "--server.fileWatcherType",
-        "none",
-        "--browser.gatherUsageStats",
-        "false"
+        "-c",
+        ".venv/bin/streamlit run automations/icd_sales_board/site.py --server.port \"${PORT:-8511}\" --server.headless true --server.fileWatcherType none --browser.gatherUsageStats false"
       ],
+      "autoPort": true,
       "port": 8511
     },
     {
