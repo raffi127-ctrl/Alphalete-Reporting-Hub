@@ -212,16 +212,19 @@ def _settings(ai):
         # When the whole page is unpulled, the "AI settings" line below
         # already says so — one line about the page, not one per field.
         if pulled:
-            skipped.append(("Acceptance window", "no timeslot buffers on file"))
+            skipped.append(("Time to accept a slot",
+                            "the two time settings are not on file"))
     else:
         # 15 is the floor worth calling serious; below ~7 the
         # window is shorter than almost anyone replies, which is
         # what 11280 ran at (5 min against a 26 min median).
         g = _band(win, 45, 25, 15)
         out.append(_item(
-            "Acceptance window", g, "{} minutes".format(win),
-            "at least as long as this office's median reply",
-            "Lower the ACCEPTED buffer in AI Settings."))
+            "Time to accept a slot", g,
+            "{} minutes".format(win),
+            "longer than people usually take to reply",
+            "Give applicants longer to take the time offered. "
+            "In AI Settings, lower the 'accepted' buffer."))
     setting = ai.get("settings") or []
     if any(f and f[0] == "NOT PULLED" for f in setting):
         skipped.append(("AI settings",

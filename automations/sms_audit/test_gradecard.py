@@ -78,12 +78,12 @@ class NotPulled(unittest.TestCase):
         areas = [a for a, _why in skipped]
         self.assertIn("AI settings", areas)
         self.assertIn("What the AI replies to applicants", areas)
-        self.assertNotIn("Acceptance window", areas)
+        self.assertNotIn("Time to accept a slot", areas)
 
     def test_window_missing_from_a_page_we_did_pull_is_its_own_line(self):
         _got, skipped = GC._settings(
             {"settings": [("OK", "")], "escalations": [], "window": None})
-        self.assertIn("Acceptance window", [a for a, _why in skipped])
+        self.assertIn("Time to accept a slot", [a for a, _why in skipped])
 
     def test_a_real_setting_fault_is_reported(self):
         got, _ = GC._settings(
@@ -93,7 +93,7 @@ class NotPulled(unittest.TestCase):
 
     def test_window_is_graded(self):
         got, _ = GC._settings({"settings": [], "escalations": [], "window": 5})
-        win = [i for i in got if i["area"] == "Acceptance window"][0]
+        win = [i for i in got if i["area"] == "Time to accept a slot"][0]
         self.assertEqual(win["grade"], "F")
 
 

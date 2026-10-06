@@ -187,7 +187,8 @@ def work_on(person, weeks):
         prev = _rate(before, "shown", "booked") if before else None
         add("Show rate", "{:.0f}%".format(show),
             GC._band(show, 55, 48, 40),
-            "Shorten the offered buffer." if bot else "Book nearer the slot.",
+            "Offer sooner interview times." if bot
+            else "Book nearer the slot.",
             "{:.0f}%".format(prev) if prev is not None else None)
 
     if (now.get("texts") or 0) >= MIN_TEXTS:
