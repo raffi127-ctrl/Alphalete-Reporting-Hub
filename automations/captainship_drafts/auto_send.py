@@ -387,7 +387,11 @@ Report blockers (would refuse to send) and minors (would mention but still \
 send). ok = true when there are no blockers. Refer to images by their number \
 and name the section they sit under. Be concrete: "Cancel Rate box ends on \
 10/3, no 10/4 column", not "dates look off". Write every section name and \
-problem in English, short (one sentence each) — they are posted to Slack as is."""
+problem in English, and keep each problem to ~12 words: say WHAT is wrong, \
+not the proof (no averages, unit counts, per-rep numbers) — they are posted to \
+Slack as is. When several columns or boxes of one section share the same fault, \
+report it ONCE ("NI 0-30/30/60/90 columns for 10/6 copy the Wireless ones"), \
+not once per column."""
 
 
 # The cache of a visual review is keyed by the draft AND the rules it was judged
@@ -636,14 +640,20 @@ def _short(text: str) -> str:
 
 def hold_text(heading: str, reasons: Sequence[str], mentions: str,
               rebuilt: bool) -> str:
-    tail = ("It was already rebuilt once automatically and it is still "
-            "wrong, so it is not a one-off." if rebuilt else "")
-    return (f"{mentions} ⚠️ *{heading}* — NOT sent automatically:\n"
-            + "\n".join(f"• {r}" for r in reasons)
-            + (f"\n{tail}" if tail else "")
-            + "\nIf it looks fine to you, ✅ its link and it goes out as is. "
-              "Otherwise fix the source and rebuild it (same link) — the next "
-              "check reviews it again and sends it if it comes out clean.")
+    # Una viñeta por sección: varios motivos de la misma caja van juntos, no
+    # repitiendo "5. New Internet Ongoing Churn Metrics:" en cada línea.
+    by_sec: Dict[str, List[str]] = {}
+    for r in reasons:
+        sec, sep, prob = r.partition(": ")
+        if not sep:
+            sec, prob = "", r
+        by_sec.setdefault(sec, []).append(prob)
+    bullets = [f"• {sec + ': ' if sec else ''}{'; '.join(probs)}"
+               for sec, probs in by_sec.items()]
+    tail = "Rebuilt once, still wrong. " if rebuilt else ""
+    return (f"{mentions} ⚠️ *{heading}* — held:\n" + "\n".join(bullets)
+            + f"\n_{tail}✅ the link to send as is, or fix + rebuild "
+              "(same link)._")
 
 
 def alert_corrections(today: dt.date, held: Dict[str, Tuple[str, List[str], bool]],
