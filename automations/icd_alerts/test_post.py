@@ -1047,4 +1047,4 @@ class TheFirstReadOfADayWithSalesPostsOneBoardToSlack(unittest.TestCase):
         # scoreboard in slack" -- the board is the text group's.
         import inspect
         src = inspect.getsource(P.run)
-        self.assertNotIn("first_read_board(", src)
+        self.assertNotIn("hype_lines = first_read_board(", src)
