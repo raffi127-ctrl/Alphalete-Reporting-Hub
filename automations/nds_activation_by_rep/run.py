@@ -114,15 +114,18 @@ def tally(header, rows, today: dt.date, log=print) -> Dict[str, dict]:
         return out.setdefault(key, {b: {"sold": 0, "act": 0}
                                     for b in BUCKETS})[bucket]
 
-    # The .csv export can carry the same order line more than once (every
-    # count on the first render was even — classic doubled-rows export).
-    # Count DISTINCT rows; log how much was dropped so a legit duplicate
-    # pattern would show itself.
-    distinct = list(dict.fromkeys(tuple(r) for r in rows))
-    if len(distinct) != len(rows):
-        log(f"[nds_ar] deduped {len(rows)} export row(s) -> "
-            f"{len(distinct)} distinct")
-    rows = [list(t) for t in distinct]
+    # The export is Tableau LONG format: every line appears once per Measure
+    # ('Unit Count' + 'Sales (All) (1)' — probed 2026-10-05, all counts came
+    # out doubled). Keep ONE measure row per line.
+    i_mn = NO._find(header, "measure names")
+    if i_mn is not None:
+        measures = sorted({NO._cell(r, i_mn) for r in rows})
+        keep = next((m for m in measures if "unit count" in m.lower()),
+                    measures[0] if measures else "")
+        before = len(rows)
+        rows = [r for r in rows if NO._cell(r, i_mn) == keep]
+        log(f"[nds_ar] long-format export: kept measure {keep!r} "
+            f"({before} -> {len(rows)} row(s); measures: {measures})")
     used = 0
     for r in rows:
         od = _parse_date(NO._cell(r, i_od))
