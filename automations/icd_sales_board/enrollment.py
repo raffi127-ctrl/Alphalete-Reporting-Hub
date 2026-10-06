@@ -299,6 +299,77 @@ def cell_tone(column: str, value) -> str:
     return "good"
 
 
+STALE_AFTER_MIN = 120
+
+
+def reading_tone(stamp: str, office=None, now=None) -> str:
+    """'down' when a relay has gone quiet for over two hours IN SELLING HOURS.
+
+    Megan 2026-10-06: "if the last read time is over 2 hours (if during
+    posting times) then it should go bright red so we know it's down".
+
+    BOTH SIDES OF THIS COMPARISON ARE ON THE OFFICE'S OWN CLOCK. The stamp
+    the relay records is office-local, checked across three timezones on
+    2026-10-06: Aya and Colten read 18:09 while Cyrus, Kash and Maxamad read
+    17:0x at the same instant. Judged against one shared clock every Eastern
+    office would look an hour fresher than it is and every Central one an
+    hour staler -- an hour either side of a two-hour rule decides whether a
+    cell is red.
+
+    OUTSIDE SELLING HOURS A QUIET RELAY IS NOT A FAULT. The machine is quiet
+    because the office is shut, and a column that goes red every evening and
+    all day Sunday is a column nobody reads by Tuesday.
+
+    A blank or unparseable stamp is left to the caller: an office that has
+    never relayed is a different thing from one that stopped, and its
+    LucyECO cell already says Pending.
+    """
+    import datetime as _dt
+    v = str(stamp or "").strip()
+    if not v or v.lower() in ("never", "-", "—"):
+        return ""
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            when = _dt.datetime.strptime(v, fmt)
+            break
+        except ValueError:
+            when = None
+    if when is None:
+        return ""
+    if now is None:
+        try:
+            from automations.icd_alerts import offices as _O
+            now = _O.office_now(office) if office is not None \
+                else _dt.datetime.now()
+        except Exception:   # noqa: BLE001
+            now = _dt.datetime.now()
+
+    def _hm(val, default):
+        try:
+            bits = str(val).split(":")
+            return int(bits[0]), int(bits[1])
+        except Exception:   # noqa: BLE001
+            return default
+
+    start, end = (9, 0), (21, 0)        # a wide default, never a narrow guess
+    sat = True
+    if office is not None:
+        if now.weekday() == 5:          # Saturday keeps its own hours
+            start = _hm(getattr(office, "sat_start", ""), start)
+            end = _hm(getattr(office, "sat_end", ""), end)
+            sat = bool(getattr(office, "saturday", True))
+        else:
+            start = _hm(getattr(office, "day_start", ""), start)
+            end = _hm(getattr(office, "day_end", ""), end)
+    if now.weekday() == 6 or (now.weekday() == 5 and not sat):
+        return "good"                   # shut today: quiet is expected
+    if not (start <= (now.hour, now.minute) <= end):
+        return "good"                   # before open or after close
+    if (now - when).total_seconds() > STALE_AFTER_MIN * 60:
+        return "down"
+    return "good"
+
+
 def _with_where(schedule: str, names) -> str:
     """'1pm-8:30pm M-F' / '11am-5pm Sat' / '#everforward-sales'."""
     if not schedule:
@@ -615,9 +686,21 @@ def _knock_lines(raw: str) -> list:
         # FRONT, so the column reads Slack/Slack/iMessage down its left edge
         # rather than hiding the kind at the end of a long room name.
         if P.is_text_dest(cid):
-            name = "iMessage " + (name or P.text_group_of(cid))
+            grp = (name or P.text_group_of(cid) or "").strip()
+            # '"iMessage " + ""' is truthy and printed a label with no group.
+            name = ("iMessage " + grp) if grp else ""
         elif name:
             name = "Slack " + name
+        # A CADENCE WITH NOWHERE TO GO IS NOT A DESTINATION. Jamis runs two
+        # campaigns off one Mac (Megan 2026-10-06) and the second one has no
+        # approved room yet, so his column carried a bare 'Every 30 Min'
+        # beside the real 'Every 30 Min · Slack #jamis-sales'. That tells a
+        # reader nothing and breaks the rule that every destination says
+        # which app it is. Skipped rather than guessed: this column is where
+        # boards ACTUALLY post, and an office with nothing approved reads as
+        # not enrolled, which is the truth.
+        if not name:
+            continue
         try:
             mins = int(d.get("cadence_min") or 0)
         except (TypeError, ValueError):
@@ -1045,7 +1128,13 @@ def rows(icds=None, admin: bool = False) -> list:
                 # The trackers ride the same room as the metrics thread; an
                 # email-only office gets them in that same daily mail.
                 **({"Last reading": st.get("Last reading", ""),
-                    "On latest update": st.get("On latest update", "")}
+                    "On latest update": st.get("On latest update", ""),
+                    # NOT A COLUMN -- html_table reads it to colour the cell,
+                    # and it is only ever built on the admin rows, so the
+                    # ungated page cannot pick it up.
+                    "_reading_tone": reading_tone(
+                        st.get("Last reading", ""),
+                        _first_office(feeds, alert_office))}
                    if admin else {}),
                 "Tableau Trackers": (
                     "Emailed Daily" if mkey in emailed else
@@ -1203,6 +1292,10 @@ _TONE_CSS = {
     "good": "background:#DCFCE7;color:#065F46;font-weight:600",
     "wait": "background:#FEF3C7;color:#78350F;font-weight:600",
     "bad": "background:#FEE2E2;color:#991B1B",
+    # BRIGHT red, not the pale one 'bad' uses: this is the only cell on the
+    # table that means something is broken RIGHT NOW (Megan 2026-10-06:
+    # "bright red so we know it's down").
+    "down": "background:#DC2626;color:#FFFFFF;font-weight:700",
 }
 
 
@@ -1244,7 +1337,12 @@ def html_table(rows: list, cols: list) -> str:
         cells = []
         for c in cols:
             v = r.get(c, "")
-            css = _TONE_CSS.get(cell_tone(c, v), "")
+            # A tone the ROW worked out wins: staleness needs the office's
+            # clock and selling hours, which cell_tone cannot see from a
+            # column name and a string.
+            tone = (r.get("_reading_tone") or "") if c == "Last reading" \
+                else ""
+            css = _TONE_CSS.get(tone or cell_tone(c, v), "")
             klass = ' class="name"' if c == "ICD" else ""
             cells.append(f'<td{klass} style="{css}">{_cell_html(v)}</td>')
         body.append("<tr>" + "".join(cells) + "</tr>")
