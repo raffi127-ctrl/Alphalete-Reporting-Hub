@@ -94,7 +94,8 @@ def main() -> None:
     st.dataframe(
         frame.style.apply(_tone, axis=0),
         use_container_width=True, hide_index=True, column_config=cfg,
-        height=min(42 * (len(rows) + 1) + 8, 900))
+        row_height=56,
+        height=min(58 * (len(rows) + 1) + 8, 1200))
 
     st.caption(
         "A cell shows WHEN that report runs for that office; blank means the "

@@ -69,16 +69,24 @@ def _ampm(hm) -> str:
 
 
 def _window(office, cut=None, sat_cut=None) -> str:
-    """'11:30am–8:30pm · Sat 11am–5pm' on this office's own clock."""
+    """'11:30am-8:30pm M-F' / '11am-5pm Sat', one per line.
+
+    TWO SHORT LINES, NOT ONE LONG ONE (Megan 2026-10-05, with a mock-up). The
+    day label goes AFTER the hours so the times line up down the column and
+    the eye reads the numbers, not the labels; a column of
+    '11:30am–8:30pm · Sat 11am–5pm' was most of the table's width."""
     def end(val, wall):
         hm = tuple(int(x) for x in str(val).split(":")[:2])
         return min(hm, wall) if wall else hm
     try:
-        day = f"{_ampm(office.day_start)}–{_ampm(end(office.day_end, cut))}"
-        if not getattr(office, "saturday", True):
-            return day + " · no Sat"
-        sat = f"{_ampm(office.sat_start)}–{_ampm(end(office.sat_end, sat_cut))}"
-        return f"{day} · Sat {sat}"
+        lines = [f"{_ampm(office.day_start)}-"
+                 f"{_ampm(end(office.day_end, cut))} M-F"]
+        if getattr(office, "saturday", True):
+            lines.append(f"{_ampm(office.sat_start)}-"
+                         f"{_ampm(end(office.sat_end, sat_cut))} Sat")
+        else:
+            lines.append("no Sat")
+        return "\n".join(lines)
     except Exception:   # noqa: BLE001
         return ""
 # Call-outs ride the alert rooms and stop at a wall on the office's own clock:
@@ -435,7 +443,7 @@ def rows(icds=None) -> list:
                 # it — show the window rather than a blank that reads as 'not
                 # enrolled' (Drew and Jairo are approved with none listed).
                 "Knock & Dispo Boards": (
-                    " · ".join(x for x in (
+                    "\n".join(x for x in (
                         next((d for d in (chan.get(f.key, {}).get("knock_detail")
                                           for f in feeds) if d), ""),
                         _window(_first_office(feeds, alert_office))) if x)
