@@ -324,9 +324,18 @@ def _names_of(feeds, chan, field) -> list:
     ROOM keeps the pair together instead of interleaving four rooms."""
     seen = {}
     order = []
+    plain = []
     for f in feeds:
         for ln in (chan.get(f.key, {}).get(field) or []):
-            when, _, where = ln.partition(FIELD)
+            when, sep, where = ln.partition(FIELD)
+            if not sep:
+                # No cadence on this one — it is a destination on its own
+                # (the text scoreboard goes out live). Merging those as if
+                # they were cadences for one room ran Carlos's three groups
+                # together as 'A & B & C'.
+                if ln not in plain:
+                    plain.append(ln)
+                continue
             if where not in seen:
                 seen[where] = []
                 order.append(where)
@@ -335,7 +344,7 @@ def _names_of(feeds, chan, field) -> list:
     # ONE ROW PER ROOM. An owner running two campaigns into the same room
     # produced that room twice, once per cadence — Carlos had four lines for
     # two rooms. The cadences merge onto the room's own row instead.
-    out = []
+    out = list(plain)
     for where in sorted(order):
         whens = seen[where]
         def _n(w):
@@ -426,8 +435,11 @@ def _text_lines(raw: str) -> list:
             mins = int(d.get("cadence_min") or 0)
         except (TypeError, ValueError):
             mins = 0
-        when = f"Every {mins} Min" if mins else _slot_times()
-        line = f"{when}{FIELD}iMessage {name}"
+        # NO CADENCE HERE. The scoreboard goes out as the sales happen, so a
+        # cadence on it was describing the board that shares the same group,
+        # not the scoreboard (Megan 2026-10-05: "they happen live - should
+        # just say active and where it posts").
+        line = "iMessage " + name
         if line not in out:
             out.append(line)
     return out
@@ -958,11 +970,27 @@ SNAPSHOT = (pathlib.Path(__file__).resolve().parents[2]
 SNAPSHOT_FRESH_MIN = 30
 
 
+def _code_stamp() -> str:
+    """Changes whenever this module does."""
+    try:
+        return str(int(pathlib.Path(__file__).stat().st_mtime))
+    except Exception:   # noqa: BLE001
+        return "0"
+
+
 def _read_snapshot():
-    """(rows, taken_at) from disk, or (None, None)."""
+    """(rows, taken_at) from disk, or (None, None).
+
+    A SNAPSHOT FROM OLDER CODE IS NOT SERVED. The cache made the page fast
+    and also made it show yesterday's WORDING for half an hour after a
+    change — Megan was still seeing 'Set times' minutes after it stopped
+    saying that. The file carries the module's stamp; a mismatch means the
+    snapshot predates the change and is ignored."""
     try:
         import json
         blob = json.loads(SNAPSHOT.read_text())
+        if blob.get("code") != _code_stamp():
+            return None, None
         taken = dt.datetime.fromisoformat(blob["taken_at"])
         return blob.get("rows") or None, taken
     except Exception:   # noqa: BLE001 — no snapshot is not an error
@@ -976,7 +1004,7 @@ def _write_snapshot(rows_: list) -> None:
         tmp = SNAPSHOT.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(
             {"taken_at": dt.datetime.now().isoformat(timespec="seconds"),
-             "rows": rows_}, indent=1))
+             "code": _code_stamp(), "rows": rows_}, indent=1))
         tmp.replace(SNAPSHOT)      # atomic: a half-written file reads as none
     except Exception:   # noqa: BLE001 — a cache we cannot write is not fatal
         pass
