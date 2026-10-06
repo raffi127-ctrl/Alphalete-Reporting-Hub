@@ -88,7 +88,7 @@ def week_stats(office, tag):
         "display": "", "booked": 0, "shown": 0, "texts": 0,
         "typing": 0, "house": 0, "dodged": 0, "replies": [],
         "far_out": 0, "matched": 0,
-        "issues": collections.Counter(), "examples": []})
+        "issues": collections.Counter(), "examples": [], "asked": []})
 
     def slot(name):
         k = key_of(name)
@@ -134,8 +134,14 @@ def week_stats(office, tag):
 
     for e in A.dodged_questions(convos):
         d = slot(e.get("sender"))
-        if d is not None:
-            d["dodged"] += 1
+        if d is None:
+            continue
+        d["dodged"] += 1
+        if e.get("question") and len(d["asked"]) < 6:
+            d["asked"].append((
+                "Did not answer: {}".format(e.get("bucket") or "a question"),
+                "they asked: {}".format(e["question"]),
+                e.get("reply") or ""))
 
     for st in A.reply_speed_by_sender(convos, min_n=1):
         d = slot(st.get("who"))
@@ -213,10 +219,10 @@ def work_on(person, weeks):
         if far is not None and farwas is not None and far - farwas >= 5:
             why = ("You're booking further out than you were \u2014 {:.0f}% "
                    "over a day ahead, was {:.0f}%. Use fear of loss and book "
-                   "them today.".format(far, farwas))
+                   "them same or next day.".format(far, farwas))
         elif far is not None and far >= 25:
             why = ("{:.0f}% of your bookings are over a day out. Use fear of "
-                   "loss and book them today.".format(far))
+                   "loss and book them same or next day.".format(far))
         elif bot:
             why = "Offer sooner interview times."
         else:
@@ -258,7 +264,7 @@ def work_on(person, weeks):
         add("Questions not answered", str(dodged),
             GC._band(dodged, 0, 2, 6, higher_is_better=False),
             "Give it a real answer in AI Settings, Escalations." if bot
-            else "Answer the question, then book.",
+            else "Answer it, then book. The exact ones are below.",
             str((before or {}).get("dodged")) if before else None)
 
     items.sort(key=lambda i: "FDCBA".index(i["grade"]))
@@ -342,8 +348,9 @@ def mark(body, hit):
         out = "{}<span class='bad'>{}</span>{}".format(
             esc(body[:a]), esc(body[a:b]), esc(body[b:]))
     if asked:
+        # No truncation: Megan 2026-10-06 "we need to see exact".
         out = ("<span class='asked'>They asked: {}</span><br>{}".format(
-            esc(asked[:200]), out))
+            esc(asked), out))
     return out
 
 
@@ -427,11 +434,15 @@ def render(person, office, weeks, path):
     add("</table></div>")
 
     last = d[got[-1]] if got else {}
-    if last.get("examples"):
+    shown_any = last.get("examples") or last.get("asked")
+    if shown_any:
         add("<h2>What was actually sent</h2>")
         add("<p class='none'>In full, exactly as it went out. The part that "
             "broke the rule is in red.</p>")
-        for issue, hit, body in last["examples"][:10]:
+        for issue, hit, body in list(last.get("examples") or [])[:10]:
+            add("<blockquote><b>{}</b><br>{}</blockquote>".format(
+                esc(issue), mark(body, hit)))
+        for issue, hit, body in list(last.get("asked") or [])[:6]:
             add("<blockquote><b>{}</b><br>{}</blockquote>".format(
                 esc(issue), mark(body, hit)))
     add("</body></html>")

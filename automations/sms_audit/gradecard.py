@@ -106,7 +106,7 @@ def _show_rate(rows):
     return _item(
         "Showed up", g, "{:.0f}%".format(rate),
         "{:.0f}% (all accounts)".format(SHOW_BENCHMARK),
-        "See booking lead time below."), None
+        "Book them sooner. See booking lead time below."), None
 
 
 def _lead_time(res):
@@ -120,10 +120,10 @@ def _lead_time(res):
     by = {b["label"]: b for b in res["buckets"]}
     near = by.get("under 2 hrs") or by.get("2-6 hrs")
     far = by.get("more than a day")
-    cost = "Book same day."
+    cost = "Booking too far out. Book them same or next day."
     if near and far:
-        cost = "Book same day: {:.0f}% show vs {:.0f}%.".format(
-            near["rate"], far["rate"])
+        cost = ("Booking too far out. Book them same or next day: {:.0f}% show up "
+                "against {:.0f}%.".format(near["rate"], far["rate"]))
     return _item(
         "Booking lead time", g,
         "{:.0f}% booked over a day ahead".format(share),
