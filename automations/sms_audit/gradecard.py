@@ -139,7 +139,7 @@ def _booker_drops(moved):
         return None, None
     worst = min(big, key=lambda m: m[1] - m[2])
     return _item(
-        "Show rate by booker", "D",
+        "Retention Down", "D",
         "{} down to {:.0f}% from {:.0f}%".format(
             worst[0], worst[1], worst[2]),
         "no drop over {:.0f} points".format(R.DROP),
