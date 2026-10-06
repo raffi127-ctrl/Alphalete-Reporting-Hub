@@ -171,6 +171,15 @@ def _report(stage: str, e: Exception, detail: str = "",
                    log=_log, office_key=office_key)
 
 
+def _is_code_wall(e: Exception) -> bool:
+    """True when SaraPlus took the password but wants its emailed code."""
+    wall = getattr(sara_read.S, "SaraPasscodeWall", None)
+    cause = getattr(e, "__cause__", None)
+    if wall is not None and isinstance(cause, wall):
+        return True
+    return "code it emails" in str(e)
+
+
 def cmd_once(headless: bool, dry_run: bool, day: dt.date,
              sales_only: bool = False) -> int:
     # FIRST, AND ONCE A DAY. Getting a fix onto an office's machine used to
@@ -233,7 +242,13 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date,
         return 1
     except sara_read.AccountProblem as e:
         print("\n%s" % e)
-        _report("sweep", e, office_key=att_key)
+        # THE EMAILED-CODE WALL IS A SIGN-IN, not a laptop fault. Filed as
+        # "sweep" it went to the corrections room saying "the office was not
+        # asked to send anything" -- and the one person who could clear it was
+        # never told (Eveliz, 2026-10-03..06). As signin-saraplus the poster
+        # DMs the owner, their helpers, Megan & Eve, once a day.
+        stage = "signin-saraplus" if _is_code_wall(e) else "sweep"
+        _report(stage, e, office_key=att_key)
         sara_read.hold_sara(log=_log)
         # SAME AS THE BOX PATH, and for the SAME reason. Khalil's machine hit
         # SaraPlus's passcode wall 115 times on 2026-09-17 -- five hours of

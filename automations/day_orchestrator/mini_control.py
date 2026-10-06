@@ -5907,15 +5907,35 @@ def _action_post_note(args: str) -> tuple[bool, str]:
     is the same courtesy for a note typed by hand. The ts is the parent's, the
     one in its permalink (…/p1787568657523449 → 1787568657.523449).
 
+    `users=U1,U2,...` IN PLACE OF THE CHANNEL sends a private group DM to those
+    people (Lucy is added by Slack itself). conversations.open hands back the
+    DM they already share, so repeating it never makes a second one. For a
+    note only the owner, Megan and Eve should see (Eve 2026-10-06: Eveliz's
+    SaraPlus code -- "tiene que ir a un DM privado con megan y evelyn").
+
     Not a report and not idempotent — it posts once per queued row. Queue it
     again and the channel gets a second copy."""
     raw = (args or "").strip()
     parts = raw.split(None, 1)
-    if len(parts) < 2 or not parts[0].upper().startswith("C"):
+    to_users = (parts[0].lower().startswith("users=") if parts else False)
+    if len(parts) < 2 or not (to_users or parts[0].upper().startswith("C")):
         return False, ("post_note needs '<channel_id> [thread=<ts>] <text>' "
                        "(channel id looks like C0BK5PRG259 — "
-                       "#claudecorrections-and-requests)")
+                       "#claudecorrections-and-requests), or "
+                       "'users=U1,U2 <text>' for a group DM")
     channel, rest = parts[0].strip(), parts[1].strip()
+    if to_users:
+        ids = [u.strip() for u in channel.split("=", 1)[1].split(",") if u.strip()]
+        if not ids or not all(re.fullmatch(r"U[A-Z0-9]{6,}", u) for u in ids):
+            return False, ("users= wants Slack user ids like "
+                           "U048WU3EUFJ,U04G5HJBGFN, got %r" % channel)
+        try:
+            from automations.shared import slack_metrics_post as smp
+            channel = smp._client().conversations_open(
+                users=",".join(ids))["channel"]["id"]
+        except Exception as e:  # noqa: BLE001
+            return False, (f"couldn't open the DM with {','.join(ids)} "
+                           f"({type(e).__name__}: {str(e).splitlines()[0][:120]})")
     thread_ts = edit_ts = None
     for _ in range(2):          # thread= and edit= are mutually exclusive, but
         low = rest.lower()      # accept them in either position

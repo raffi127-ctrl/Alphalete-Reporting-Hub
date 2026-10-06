@@ -1508,13 +1508,18 @@ SYSTEMS = {
         "why": "",
         "how": "Open this on that computer and press the button:\n" + SIGNIN_PAGE,
     },
+    # ONLY THE EMAILED-CODE WALL is filed as signin-saraplus (run.cmd_once).
+    # A refused password stays a sweep fault and gets the password box on the
+    # machine, so this must not say "the password changed": that is what had
+    # Rashad retype a working password three times (2026-10-01).
     "saraplus": {
         "name": "SaraPlus",
         "what": "Credit checks and sales",
-        "why": " The saved password is not being accepted — it has probably "
-               "changed.",
-        "how": "Open this on that computer and run it again; it will ask for "
-               "the new password:\n" + INSTALL_PAGE,
+        "why": " SaraPlus wants to confirm that computer with a code it "
+               "emails you. The password is fine — do NOT change it.",
+        "how": "On that computer, open this and press the button. A SaraPlus "
+               "window opens: sign in there and type the emailed code:\n"
+               + FINISH_SETUP_PAGE,
     },
     "ownerville": {
         "name": "OwnerVille",
@@ -1947,6 +1952,28 @@ def fault_headline(label: str, stage: str) -> str:
     return ":rotating_light: *%s* — something broke %s." % (label, where)
 
 
+# WHO HAS TO DO SOMETHING, said first. Eve could not tell a post she had to act
+# on from one that clears itself (2026-10-06: "no se darme cuenta cuando yo
+# debo hacer algo"). Matched on the summary, which is the office-facing text
+# from sara_read/box_read/ov_read -- those phrases are the contract.
+_OWNER_MUST_ACT = ("code it emails", "emailed code", "new password",
+                   "did not accept")
+_CLAUDE_MUST_ACT = ("this one is ours", "ours to fix", "ours to look at",
+                    "without saying why")
+
+
+def what_to_do(label: str, summary: str) -> str:
+    """One line on top of a fault post: nothing, the office, or Claude."""
+    s = (summary or "").lower()
+    if any(p in s for p in _OWNER_MUST_ACT):
+        return (":point_right: *Do this:* send this to %s. Only they can fix "
+                "it, on their office computer." % label)
+    if any(p in s for p in _CLAUDE_MUST_ACT):
+        return ":wrench: *Do this:* paste it to Claude. It won't fix itself."
+    return (":large_green_circle: *Nothing to do.* It usually fixes itself. "
+            "No ✅ within an hour? Paste it to Claude.")
+
+
 def stage_words(stage: str) -> str:
     """'knocks-slow' -> 'reading OwnerVille (slow)'. Used for the "Also ...:"
     line when a second problem joins an office's thread."""
@@ -2265,7 +2292,8 @@ def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
         parent = threads.get(key_for(f))
         head = (fault_headline(label, f["stage"]) if not parent else
                 "*Also %s:*" % where)
-        body = [head, "> %s" % f["summary"]]
+        body = [what_to_do(label, f["summary"]), head,
+                "> %s" % f["summary"]]
         if f["count"] and f["count"] not in ("1", ""):
             body.append("_Happened %s times, first at %s._"
                         % (f["count"], f["first"] or "?"))
