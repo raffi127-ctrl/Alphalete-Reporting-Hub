@@ -551,7 +551,11 @@ _merge_onboarded()
 # listed here still runs by name (`--office <key>`, and its own <key>_metrics
 # entry once that is switched on); it is only kept out of the --all sweep.
 # TO GO LIVE: delete its line here and flip <key>_metrics on_scheduler to true.
-HELD_FROM_ALL: set = set()   # eveliz went live 2026-10-05 (Eve), after its Lucy 2 dry run
+# eveliz went live 2026-10-05 (Eve), after its Lucy 2 dry run.
+# luke (2026-10-06): wired by 581cea1b with its destination held to Megan's DM,
+# but left in --all -- the afternoon b2b_metrics rerun tried to upload into a
+# user id and failed the whole office (channel_id must be C/G/D/Z...).
+HELD_FROM_ALL: set = {"luke"}
 
 ORDER = [k for k in OFFICES if k not in HELD_FROM_ALL]
 
