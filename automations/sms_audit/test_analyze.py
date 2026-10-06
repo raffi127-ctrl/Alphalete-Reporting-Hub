@@ -1737,3 +1737,55 @@ class CoachingTakesTheMessageDateTest(unittest.TestCase):
                 test("11280", "hello there", None)
             except TypeError as e:  # noqa: PERF203
                 self.fail("{} does not take a date: {}".format(label, e))
+
+
+class OfficeHeaderMigrationTest(unittest.TestCase):
+    """2026-10-05: save() writes a row positionally in COLUMNS order. When
+    a column was ADDED, the live header still had the old one, so every
+    value after it landed one cell left of its label — the old address
+    under 'phone', the move date under 'zoom'. Nothing errored, the row
+    read back wrong, and the move-aware address check silently did
+    nothing on the day the office moved."""
+
+    class FakeWS:
+        def __init__(self, rows):
+            self.rows = [list(r) for r in rows]
+
+        def get_all_values(self):
+            return [list(r) for r in self.rows]
+
+        def update(self, values=None, range_name=None, raw=True):
+            start = int(range_name[1:]) - 1
+            for i, row in enumerate(values):
+                while len(self.rows) <= start + i:
+                    self.rows.append([])
+                self.rows[start + i] = list(row)
+
+    def test_adding_a_column_relabels_without_moving_data(self):
+        from automations.sms_audit import offices as O
+        old = ["office", "icd_name", "owner", "address", "phone", "zoom",
+               "zoom_id", "job_ad_cities", "active"]
+        ws = self.FakeWS([
+            old,
+            ["11280", "Rafael Hidalgo", "Rafael Hidalgo", "3100 Premier Dr",
+             "", "https://zoom/x", "2935077152", "Irving", "yes"]])
+        hdr = O._migrate(ws, list(old))
+        self.assertEqual(hdr, O.COLUMNS)
+        row = dict(zip(ws.rows[0], ws.rows[1]))
+        # every value kept its MEANING, not its position
+        self.assertEqual(row["address"], "3100 Premier Dr")
+        self.assertEqual(row["zoom"], "https://zoom/x")
+        self.assertEqual(row["zoom_id"], "2935077152")
+        self.assertEqual(row["job_ad_cities"], "Irving")
+        self.assertEqual(row["active"], "yes")
+        # and the new columns exist, empty rather than borrowed
+        self.assertEqual(row["address_prev"], "")
+        self.assertEqual(row["address_changed"], "")
+
+    def test_a_header_already_correct_is_left_alone(self):
+        from automations.sms_audit import offices as O
+        ws = self.FakeWS([list(O.COLUMNS),
+                          ["11280"] + [""] * (len(O.COLUMNS) - 1)])
+        before = [list(r) for r in ws.rows]
+        self.assertEqual(O._migrate(ws, list(O.COLUMNS)), list(O.COLUMNS))
+        self.assertEqual(ws.rows, before)

@@ -96,13 +96,41 @@ def _ws():
 
 
 def _migrate(ws, hdr):
-    """Rename the old 'label' header in place. The tab is edited by hand, so
-    a column rename has to carry the data, not start a second column."""
+    """Bring the tab's header up to COLUMNS, carrying the data with it.
+
+    Two jobs. The rename: 'label' became 'icd_name', and the tab is edited
+    by hand, so a rename has to move the data rather than start a second
+    column.
+
+    And the one that actually bit, on 2026-10-05. save() writes a row in
+    COLUMNS order, positionally, from column A. When a column is ADDED to
+    COLUMNS the live header still has the old one, so every value after
+    the new column lands one cell to the left of its label: writing
+    address_prev put the old address under 'phone' and the move date under
+    'zoom'. Nothing errored. The row read back wrong, and the move-aware
+    address check — the whole point of those two fields — silently did
+    nothing.
+
+    So: if the header is missing anything in COLUMNS, rewrite the header
+    AND re-lay every existing row through its OLD header first, so each
+    value keeps its meaning instead of its position."""
     if "label" in hdr and "icd_name" not in hdr:
-        ws.update(values=[[("icd_name" if h == "label" else h) for h in hdr]],
-                  range_name="A1", raw=True)
-        return [("icd_name" if h == "label" else h) for h in hdr]
-    return hdr
+        hdr = [("icd_name" if h == "label" else h) for h in hdr]
+        ws.update(values=[hdr], range_name="A1", raw=True)
+    named = [h for h in hdr if h]
+    if named == COLUMNS:
+        return hdr
+    rows = ws.get_all_values()
+    out = []
+    for r in rows[1:]:
+        if not (r and (r[0] or "").strip()):
+            continue
+        d = dict(zip(hdr, r))
+        out.append([d.get(c, "") for c in COLUMNS])
+    ws.update(values=[COLUMNS], range_name="A1", raw=True)
+    if out:
+        ws.update(values=out, range_name="A2", raw=True)
+    return list(COLUMNS)
 
 
 def load(use_cache_on_failure=True):
@@ -153,8 +181,8 @@ def save(office):
     edited by hand too, and a partial write against a column someone moved
     is how a config silently points at the wrong field."""
     ws = _ws()
+    hdr = _migrate(ws, [h.strip().lower() for h in ws.get_all_values()[0]])
     rows = ws.get_all_values()
-    hdr = [h.strip().lower() for h in rows[0]]
     office = dict(office)
     office["updated"] = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
     want = str(office.get("office", "")).strip()
