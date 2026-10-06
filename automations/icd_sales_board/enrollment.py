@@ -698,6 +698,24 @@ def rows(icds=None) -> list:
             metrics.setdefault(_letters("Rafael Hidalgo"), "daily_metrics")
             emailed = {k for k, o in OM.OFFICES.items()
                        if getattr(o, "emails_only", False)}
+            # WHICH ROOM (Megan 2026-10-05: "metrics and trackers need to say
+            # what channel"). Some rows carry the '#', some do not.
+            metrics_room = {}
+            for k, o in OM.OFFICES.items():
+                nm = (getattr(o, "channel_name", "") or "").strip()
+                if nm:
+                    metrics_room[k] = "Slack " + (nm if nm.startswith("#")
+                                                  else "#" + nm)
+            # ROSHAN AND ABEL GET THEIRS BY EMAIL, 7-8am, off the per-owner
+            # BOX order log — which also fills their metrics sheet. They are
+            # in no metrics registry, so the page called them un-enrolled
+            # while they have had a mail every morning (Megan 2026-10-05).
+            for owner_key in ("roshan", "abel"):
+                for icd in names:
+                    if _letters(icd).startswith(owner_key):
+                        metrics.setdefault(_letters(icd),
+                                           "box_order_log_" + owner_key)
+                        emailed.add("box_order_log_" + owner_key)
             try:
                 from automations.focus_office_att import aliases as _AL
                 _raw = _AL.load_aliases()
@@ -711,7 +729,7 @@ def rows(icds=None) -> list:
             except Exception:   # noqa: BLE001
                 pass
         except Exception:   # noqa: BLE001
-            metrics, emailed = {}, set()
+            metrics, emailed, metrics_room = {}, set(), {}
         # RESUME PUSHING: CONFIGURED IS NOT RUNNING. applicant_push lists 11
         # offices, and every one of its schedule entries is on_scheduler
         # False — it has only just launched and is live for nobody (Megan
@@ -871,9 +889,16 @@ def rows(icds=None) -> list:
                 # An office with no Slack gets the same numbers as one
                 # email a day (office_metrics emails_only) — 'Enrolled' hid
                 # the one thing an owner would ask about it.
-                "Metrics Thread": ("Emailed Daily" if mkey in emailed
-                                   else ENROLLED) if mkey else "",
-                "Tableau Trackers": ENROLLED if mkey else "",
+                "Metrics Thread": (
+                    "Emailed Daily" if mkey in emailed else
+                    _with_where(ENROLLED, [metrics_room[mkey]])
+                    if mkey in metrics_room else ENROLLED) if mkey else "",
+                # The trackers ride the same room as the metrics thread; an
+                # email-only office gets them in that same daily mail.
+                "Tableau Trackers": (
+                    "Emailed Daily" if mkey in emailed else
+                    _with_where(ENROLLED, [metrics_room[mkey]])
+                    if mkey in metrics_room else ENROLLED) if mkey else "",
                 # A short key is a PREFIX of the full name ('rafael' ->
                 # 'rafaelhidalgo'), which is how that registry names an office.
                 # Two ways an office gets these: the gap_alerts module (its
