@@ -2171,6 +2171,31 @@ def _rollout_section() -> None:
                           subset=["Status"]),
         use_container_width=True, hide_index=True,
         height=_grid_height(len(rows)))
+    # THE SAME TABLE AS THE PUBLIC PAGE, not a second answer. Two screens
+    # both called LucyEco is how somebody ends up reading last week's wording
+    # and reporting it as a bug (Megan 2026-10-06, looking at this one):
+    # the enrollment grid is rendered from enrollment.py here too, and the
+    # list below it keeps only what is admin-only — last reading, and whether
+    # the agent is current.
+    try:
+        from automations.icd_sales_board import enrollment as EN
+        erows, taken = EN.rows_cached()
+        if erows:
+            cols = [c for c in EN.SAFE_COLUMNS if any(c in r for r in erows)]
+            st.markdown("**Who gets what**")
+            st.html(EN.html_table(
+                [{c: r.get(c, "") for c in cols} for r in erows], cols))
+            st.caption(
+                "The same table as **lucyeco.streamlit.app/lucyeco**, which "
+                "is the link to send someone — it needs no access code. "
+                + (f"Read {taken:%b %d}, "
+                   f"{taken.hour % 12 or 12}:{taken.minute:02d}"
+                   f"{'am' if taken.hour < 12 else 'pm'}." if taken else ""))
+            st.divider()
+            st.markdown("**Agent detail**")
+    except Exception as e:   # noqa: BLE001 — the rollout list still stands
+        st.caption(f"Enrollment table unavailable ({type(e).__name__}).")
+
     ready = sum(1 for r in rows if r.get("Board shows") != RO.SHOWS_NOTHING
                 and r.get("Board shows") != RO.SHOWS_OFFICE)
     st.caption(f"**{ready} ICDs have a board worth sending today** — live, or "

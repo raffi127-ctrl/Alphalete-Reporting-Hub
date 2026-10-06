@@ -46,79 +46,6 @@ def _rows():
     return EN.rows_cached()
 
 
-_CSS = """<style>
-.eco{border-collapse:collapse;font-size:12.5px;width:100%}
-.eco th,.eco td{border:1px solid #CBD5E1;padding:4px 7px;text-align:center;
-  vertical-align:middle;line-height:1.35;white-space:nowrap}
-.eco th{background:#F1F5F9;font-weight:700;font-size:11.5px}
-.eco td.name{text-align:left;font-weight:600;white-space:nowrap}
-.eco tr:nth-child(even) td{background-image:linear-gradient(rgba(0,0,0,.02),
-  rgba(0,0,0,.02))}
-/* Each line is already as short as it can be, so nothing wraps mid-word —
-   '#a-players-b2b' split across two lines was the last thing making this
-   look uncondensed. The table scrolls sideways instead, which keeps a row
-   readable. */
-/* The two-column layout inside one cell: cadence on the left, where it
-   lands on the right, so several destinations read as rows rather than as a
-   paragraph. Borderless — the outer cell is already the box. */
-.sub{border-collapse:collapse;margin:0 auto}
-.sub td{border:0;padding:0 4px;white-space:nowrap}
-.sub td.k{text-align:right;opacity:.85}
-.sub td.v{text-align:left;font-weight:600}
-.sub td.w{text-align:center;padding-bottom:1px}
-.eco-wrap{overflow-x:auto}
-</style>"""
-
-_TONE_CSS = {
-    "good": "background:#DCFCE7;color:#065F46;font-weight:600",
-    "wait": "background:#FEF3C7;color:#78350F;font-weight:600",
-    "bad": "background:#FEE2E2;color:#991B1B",
-}
-
-
-def _cell_html(value) -> str:
-    """A cell's lines, with any two-field line laid out as columns.
-
-    enrollment separates a cadence from the room it posts to, so they can sit
-    under each other instead of running together and wrapping mid-name. Lines
-    with no separator (a window, a bare status) span the whole cell."""
-    lines = str(value or "").split("\n")
-    if not any(EN.FIELD in ln for ln in lines):
-        return _esc(value)
-    out = []
-    for ln in lines:
-        left, sep, right = ln.partition(EN.FIELD)
-        if sep:
-            out.append(f'<tr><td class="k">{_esc(left)}</td>'
-                       f'<td class="v">{_esc(right)}</td></tr>')
-        else:
-            out.append(f'<tr><td class="w" colspan="2">{_esc(ln)}</td></tr>')
-    return '<table class="sub">' + "".join(out) + "</table>"
-
-
-def _esc(text: str) -> str:
-    """Escape, THEN turn newlines into breaks — never the other way round, or
-    the breaks get escaped along with the content."""
-    import html
-    return html.escape(str(text or "")).replace("\n", "<br>")
-
-
-def _table(rows: list, cols: list) -> str:
-    head = "".join(f"<th>{_esc(c)}</th>" for c in cols)
-    body = []
-    for r in rows:
-        cells = []
-        for c in cols:
-            v = r.get(c, "")
-            css = _TONE_CSS.get(EN.cell_tone(c, v), "")
-            klass = ' class="name"' if c == "ICD" else ""
-            cells.append(f'<td{klass} style="{css}">{_cell_html(v)}</td>')
-        body.append("<tr>" + "".join(cells) + "</tr>")
-    return (_CSS + '<div class="eco-wrap"><table class="eco"><thead><tr>'
-            + head + "</tr></thead><tbody>" + "".join(body)
-            + "</tbody></table></div>")
-
-
 def main() -> None:
     st.markdown("#### Alphalete Marketing")
     st.title("Lucy ECOsystem")
@@ -179,7 +106,7 @@ def main() -> None:
     # comes from enrollment.cell_tone, by MEANING: a schedule is as much a
     # yes as the word Enrolled, so matching particular words would leave
     # every time-carrying column white.
-    st.html(_table(rows, safe))
+    st.html(EN.html_table(rows, safe))
 
     st.caption(
         "A cell shows WHEN that report runs for that office; blank means the "
