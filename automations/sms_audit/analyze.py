@@ -1444,6 +1444,17 @@ def _real_doubled(text):
         return m
     return None
 NO_SPACE = re.compile(r"[a-z]{2}[.!?][A-Z][a-z]")
+# A URL is not prose and must not be proofread. The survey link every
+# office sends — ".../r/AlphaleteFirstRound?OfficeID=11280" — reads as a
+# missing space ("nd?Of") and the "/i/" in a link reads as a lowercase
+# "i", which between them put three senders at the top of the 2026-10-06
+# recruiter table on nothing but their own survey link.
+_URLISH = re.compile(r"https?://\S+|www\.\S+|\S+@\S+", re.I)
+
+
+def strip_links(body):
+    """`body` with URLs and email addresses blanked, for the typing checks."""
+    return _URLISH.sub(" ", body or "")
 LONE_I = re.compile(r"(?<![\w'])i(?![\w'])")
 # "the base salary is determine on your experience" — a participle left bare
 # Common written-English slips, each one high-precision on purpose: a
@@ -1725,12 +1736,13 @@ def text_errors(convos):
         if d:
             found.append({"kind": "doubled word", "sender": who, "body": body,
                           "detail": d.group(0), "name": c.get("name", "")})
-        if NO_SPACE.search(body):
+        prose = strip_links(body)
+        if NO_SPACE.search(prose):
             found.append({"kind": "missing space", "sender": who, "body": body,
-                          "detail": NO_SPACE.search(body).group(0),
+                          "detail": NO_SPACE.search(prose).group(0),
                           "name": c.get("name", "")})
         for pat, label in GRAMMAR_PATTERNS:
-            g = re.search(pat, body, re.I)
+            g = re.search(pat, prose, re.I)
             if g:
                 found.append({"kind": "grammar", "sender": who, "body": body,
                               "detail": "{} ({})".format(g.group(0), label),
@@ -1770,19 +1782,21 @@ def proofread(body):
     body = " ".join((body or "").split())
     if not body:
         return out
-    d = _real_doubled(body)
+    # Links are not prose \u2014 see strip_links.
+    prose = strip_links(body)
+    d = _real_doubled(prose)
     if d:
         out.append(("doubled word", d.group(0)))
-    if NO_SPACE.search(body):
-        out.append(("missing space", NO_SPACE.search(body).group(0)))
+    if NO_SPACE.search(prose):
+        out.append(("missing space", NO_SPACE.search(prose).group(0)))
     for pat, label in GRAMMAR_PATTERNS:
-        g = re.search(pat, body, re.I)
+        g = re.search(pat, prose, re.I)
         if g:
             out.append(("grammar", "{} ({})".format(g.group(0), label)))
-    bv = BARE_VERB.search(body)
+    bv = BARE_VERB.search(prose)
     if bv:
         out.append(("verb form", "{} \u2192 {}d".format(bv.group(0), bv.group(0))))
-    if LONE_I.search(body):
+    if LONE_I.search(prose):
         out.append(("lowercase i", "i on its own"))
     m = MIDCAP.search(body)
     if m:

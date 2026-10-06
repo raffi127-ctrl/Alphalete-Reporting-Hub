@@ -1789,3 +1789,42 @@ class OfficeHeaderMigrationTest(unittest.TestCase):
         before = [list(r) for r in ws.rows]
         self.assertEqual(O._migrate(ws, list(O.COLUMNS)), list(O.COLUMNS))
         self.assertEqual(ws.rows, before)
+
+
+class LinksAreNotProse(unittest.TestCase):
+    """A URL must not be proofread.
+
+    The survey link every office sends ends ".../AlphaleteFirstRound?
+    OfficeID=11280", which NO_SPACE reads as "nd?Of". On 2026-10-06 that
+    put Miroslava Santos, Alphalete Floater and Alphalete Interviewers at
+    the top of the recruiter typing table on nothing but their own link."""
+
+    SURVEY = "https://www.surveymonkey.com/r/AlphaleteFirstRound?OfficeID=11280"
+
+    def test_the_survey_link_is_clean(self):
+        self.assertEqual(A.proofread(self.SURVEY), [])
+
+    def test_a_zoom_link_is_clean(self):
+        self.assertEqual(
+            A.proofread("Zoom: https://us02web.zoom.us/j/2935077152"), [])
+
+    def test_an_email_address_is_clean(self):
+        self.assertEqual(
+            A.proofread("Email me at first.Last@alphalete.com please"), [])
+
+    def test_a_real_missing_space_still_fires(self):
+        self.assertIn(
+            ("missing space", "ow.Go"),
+            A.proofread("Thank you for letting us know.Good luck!"))
+
+    def test_a_real_fault_beside_a_link_still_fires(self):
+        self.assertIn(
+            ("missing space", "re.Ne"),
+            A.proofread("See https://x.co/a?Bc here.Next week works"))
+
+    def test_a_lowercase_i_in_a_link_is_not_a_fault(self):
+        self.assertEqual(A.proofread("Join https://zoom.us/i/99 now"), [])
+
+    def test_a_real_lowercase_i_still_fires(self):
+        self.assertIn(("lowercase i", "i on its own"),
+                      A.proofread("No i do not have you on the schedule"))
