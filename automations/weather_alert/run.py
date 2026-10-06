@@ -96,8 +96,9 @@ OFFICE_CITY = {
     # Jamis Garay / Midspire, Chicago -- #jamis-sales (Megan 2026-10-06: "Jamis
     # is missing weather report"). ONE key only: he runs Box (jamis10) and
     # AT&T (jamis) on one Mac into the same room; listing both would post the
-    # forecast twice. His metrics room #jamis-leaders is a B2B metrics office,
-    # which this fan-out does not cover.
+    # forecast twice. His B2B metrics + trackers moved into this same room on
+    # 2026-10-06 (Megan); b2b_metrics is not in the metrics fan-out below, so
+    # the room still gets exactly one forecast.
     "jamis": "chicago",
     # Jennifer Figueroa / Figspire, Louisville -- #figspire (2026-10-06). ONE
     # key: her form minted jennifer + jennifer-att into the same room.

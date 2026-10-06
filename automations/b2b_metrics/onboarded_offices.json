@@ -4,8 +4,8 @@
     "report_id": "jamis_metrics",
     "label": "Jamis's B2B Office",
     "owner": "Jamis Garay",
-    "channel_id": "C0BM7P0HPCJ",
-    "channel_name": "Jamis-leaders",
+    "channel_id": "C0C814ZPGMN",
+    "channel_name": "jamis-sales",
     "sheet_id": "1lDm-ZmV4OjAPipx-lbqQUrd1VifpULzRNP3klGqEZhU",
     "knocks_office": "Jamis Garay",
     "ov_account": "19592",
@@ -45,8 +45,8 @@
     "notes": "",
     "channel_plans": [
       {
-        "channel_id": "C0BM7P0HPCJ",
-        "channel_name": "Jamis-leaders",
+        "channel_id": "C0C814ZPGMN",
+        "channel_name": "jamis-sales",
         "report_keys": [
           "b2b_sales",
           "b2b_activation",
