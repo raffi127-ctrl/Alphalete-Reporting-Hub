@@ -36,6 +36,7 @@ from automations.sms_audit import analyze as A
 from automations.sms_audit import ai_settings as AIS
 from automations.sms_audit import call_list as CL
 from automations.sms_audit import escalations as ESC
+from automations.sms_audit import gradecard as GC
 from automations.sms_audit import offices as O
 from automations.sms_audit import retention as R
 from automations.sms_audit import rebuttals as RB
@@ -147,7 +148,7 @@ blockquote .hit{display:block;color:#a00;font-size:.85em;margin-bottom:.2em}
 .big.ok{color:#156E46}
 .big.miss{color:#A8322A}
 .lede{margin:.2em 0 .8em}
-"""
+""" + GC.CSS
 
 
 def _mins(m):
@@ -182,7 +183,8 @@ def settings_findings(office, median_reply=None, template_names=None,
 
 
 def write_report(office, tmpl, msgs, moved, tab, path,
-                 wlabels=None, conv=None, window=None, ai=None):
+                 wlabels=None, conv=None, window=None, ai=None,
+                 rows=None):
     o = office
     L = []
     add = L.append
@@ -194,16 +196,12 @@ def write_report(office, tmpl, msgs, moved, tab, path,
     add("<p class='date'>Account {} · {:%d %b %Y}</p>".format(
         esc(o["office"]), dt.date.today()))
 
-    gaps = O.missing_fields(o)
-    if gaps:
-        add("<h2>Checks NOT run</h2>")
-        add("<div class='gap'><p class='lede'>Nobody has told the auditor "
-            "what is correct for this office, so these are skipped rather "
-            "than passed:</p><ul>")
-        for g in gaps:
-            add("<li>{}</li>".format(esc(g)))
-        add("</ul><p>Run the command again and fill these in, and they start "
-            "running.</p></div>")
+    # Megan 2026-10-06: "the top should breakdown what the most important
+    # things to address are". Everything below is already measured; the card
+    # only ranks it, so the first thing read is the thing to fix.
+    add(GC.render(GC.build(o, conv=conv, msgs=msgs, ai=ai, rows=rows,
+                           moved=moved, tmpl=tmpl,
+                           gaps=O.missing_fields(o)), esc))
 
     # ---------------- templates ----------------
     # Megan 2026-10-01: "This is the MAIN thing we need to get as high as
@@ -618,7 +616,8 @@ def main(argv=None):
             signs = list(tmpl[1])
         ai = settings_findings(o, median, signs, senders)
         write_report(o, tmpl, msgs, moved, tab, path,
-                     R.week_labels(rows) if rows else {}, conv, window, ai)
+                     R.week_labels(rows) if rows else {}, conv, window, ai,
+                     rows=rows)
         nt = len(tmpl[0]) if tmpl else 0
         nm = (len(msgs["errors"]) + len(msgs["dodged"])) if msgs else 0
         big = [m for m in moved if m[1] - m[2] <= -R.DROP]
