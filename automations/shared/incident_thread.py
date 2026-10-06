@@ -1740,8 +1740,13 @@ def ensure_closed(key: str, *, what: str, detail: str = "",
 
 def mark_working(key_or_report: str, *, note: str = "", channel: str = CHANNEL,
                  day: Optional[dt.date] = None, dry_run: bool = False,
-                 scan: bool = True, client=None) -> bool:
-    """":pending: — this one is being worked on right now."
+                 scan: bool = True, client=None,
+                 reaction: str = WORKING_REACTION) -> bool:
+    """":pending: — this one is being worked on right now.
+
+    `reaction` swaps WHICH status mark goes on (mark_waiting passes the purple
+    one); everything else — today's thread only, Lucy only, one status
+    reaction at a time — is the same rule for every mark."
 
     Eve 2026-08-17: two people pull tickets out of this channel, so a problem
     somebody already picked up (or that Claude is mid-fix on) has to say so in
@@ -1813,7 +1818,7 @@ def mark_working(key_or_report: str, *, note: str = "", channel: str = CHANNEL,
             return False
         if dry_run:
             print("[incident] DRY-RUN — would react :{}: on {}".format(
-                WORKING_REACTION, inc["ts"]))
+                reaction, inc["ts"]))
             return True
         # ONLY LUCY MAY MARK IT (Eve 2026-08-19). Slack lets you remove your OWN
         # reaction and nobody else's, and the ✅ side of this — _react_done —
@@ -1832,10 +1837,10 @@ def mark_working(key_or_report: str, *, note: str = "", channel: str = CHANNEL,
             print("[incident] {}: not marking :{}: from {} — only Lucy can "
                   "take it off again, so a mark from here would outlive the "
                   "fix. Queue it on the mini (`lucy incident_working {}`)."
-                  .format(key_or_report, WORKING_REACTION,
+                  .format(key_or_report, reaction,
                           whoami(client) or "this machine", key_or_report))
             return False
-        ok = _react(client, channel, inc["ts"], WORKING_REACTION)
+        ok = _react(client, channel, inc["ts"], reaction)
         # ONE STATUS REACTION AT A TIME (Megan 2026-08-30: "lucy should only
         # have 1 reaction at a time, not 2"). incident_triage._apply already
         # holds that invariant — it puts its bucket's reaction on and takes the
@@ -1848,20 +1853,42 @@ def mark_working(key_or_report: str, *, note: str = "", channel: str = CHANNEL,
         # Best-effort and after the add: if the remove fails, the post wears two
         # reactions, which is exactly today's behaviour — never worse.
         if ok:
-            for _stale in (NEEDS_HUMAN_REACTION, WAITING_REACTION):
-                _react(client, channel, inc["ts"], _stale, remove=True)
+            for _stale in (WORKING_REACTION, WAITING_REACTION,
+                           NEEDS_HUMAN_REACTION):
+                if _stale != reaction:
+                    _react(client, channel, inc["ts"], _stale, remove=True)
         if note:
             try:
                 _send(client, channel, [note], thread_ts=inc["ts"])
             except Exception:  # noqa: BLE001 — the reaction is the point
                 pass
-        print("[incident] {}: marked as being worked on ({})".format(
-            key_or_report, inc["ts"]))
+        print("[incident] {}: marked :{}: ({})".format(
+            key_or_report, reaction, inc["ts"]))
         return ok
     except Exception as e:  # noqa: BLE001
         print("  - couldn't mark {} as being worked on ({}: {})".format(
             key_or_report, type(e).__name__, str(e)[:80]))
         return False
+
+
+def mark_waiting(key_or_report: str, *, note: str = "", channel: str = CHANNEL,
+                 day: Optional[dt.date] = None, dry_run: bool = False,
+                 client=None) -> bool:
+    """":large_purple_circle: — open, but waiting on a SOURCE, not on a person.
+
+    Eve 2026-10-06: b2b_metrics dropped three sections because Tableau's B2B
+    workbook hadn't loaded the current week yet (Last Week rendered fine). The
+    log said "rendered BLANK", which triage can't tell apart from a broken view,
+    so it would have painted it red ("needs a person") — while the only thing
+    left to do was wait and re-run. This lets the person who checked say so.
+
+    Triage leaves a purple it didn't place alone (incident_triage's `_theirs`),
+    so the mark holds until the ✅. A RE-RUN replaces it: the re-run puts
+    :pending: on while it works, and a re-run that still fails takes its marks
+    off and hands the post back to triage — re-mark it if it's still waiting."""
+    return mark_working(key_or_report, note=note, channel=channel, day=day,
+                        dry_run=dry_run, client=client,
+                        reaction=WAITING_REACTION)
 
 
 def _find_any_state(key: str, *, channel: str, client) -> Optional[dict]:
@@ -2358,6 +2385,10 @@ def main(argv=None) -> int:
     ap.add_argument("--working", metavar="KEY_OR_REPORT",
                     help="react :pending: on its post — somebody (or Claude) is "
                          "on it, so the other person doesn't start too")
+    ap.add_argument("--waiting", metavar="KEY_OR_REPORT",
+                    help="react :large_purple_circle: on its post — still open, "
+                         "but waiting on its source (e.g. Tableau hasn't loaded "
+                         "the data yet), not on a person")
     ap.add_argument("--unmark", metavar="KEY_OR_REPORT",
                     help="take the :pending: / waiting mark back OFF its post "
                          "— nobody is on it after all. Leaves the incident's "
@@ -2385,9 +2416,10 @@ def main(argv=None) -> int:
     # edits posts THIS machine wrote, and Slack lets nobody else edit them. Hand
     # it to the mini and the laptop's own stranded posts are never finished —
     # which is exactly the state it exists to clear. Run it on both boxes.
-    if (a.working or a.unmark or a.resolve
+    if (a.working or a.waiting or a.unmark or a.resolve
             or a.resolve_report) and not (a.dry_run or is_lucy()):
         act, arg = (("incident_working", a.working) if a.working else
+                    ("incident_waiting", a.waiting) if a.waiting else
                     ("incident_unmark", a.unmark) if a.unmark else
                     ("incident_resolve", a.resolve or a.resolve_report))
         who = whoami() or "unknown"
@@ -2417,6 +2449,11 @@ def main(argv=None) -> int:
 
     if a.working:
         ok = mark_working(a.working, note=a.note, channel=a.channel,
+                          dry_run=a.dry_run)
+        print("marked" if ok else "nothing open for that key/report")
+        return 0 if ok else 1
+    if a.waiting:
+        ok = mark_waiting(a.waiting, note=a.note, channel=a.channel,
                           dry_run=a.dry_run)
         print("marked" if ok else "nothing open for that key/report")
         return 0 if ok else 1

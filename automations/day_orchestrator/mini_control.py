@@ -262,6 +262,7 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     # here BECAUSE only the mini is Lucy, so they must not eat
                     # the report budget.
                     "incident_resolve", "incident_working", "incident_unmark",
+                    "incident_waiting",
                     "incident_triage", "incident_close_stranded",
                     "find_group",
                     # A HAND-SENT TEXT IS NOT REPORT CHURN: one message per row,
@@ -6116,6 +6117,40 @@ def _action_incident_working(args: str) -> tuple[bool, str]:
     return True, f"{key} marked :pending: — someone is on it"
 
 
+def _action_incident_waiting(args: str) -> tuple[bool, str]:
+    """Mark an open incident thread as WAITING ON ITS SOURCE — a
+    :large_purple_circle: on its post, in place of :pending: / red.
+
+      incident_waiting <key|report_id> [note]
+
+    For a ticket a person has checked and found nothing to fix — the data just
+    hasn't landed (Eve 2026-10-06: Tableau's B2B workbook hadn't loaded the
+    week). Runs here for the same reason as incident_working: the mark has to be
+    Lucy's, or it can never come off again."""
+    raw = (args or "").strip()
+    if not raw:
+        return False, ("incident_waiting needs a key or report id (e.g. "
+                       "b2b_metrics)")
+    parts = raw.split(None, 1)
+    key = parts[0].strip()
+    note = parts[1].strip().replace("\\n", " ") if len(parts) > 1 else ""
+    try:
+        from automations.shared import incident_thread as inc
+    except Exception as e:  # noqa: BLE001
+        return False, (f"couldn't import incident_thread "
+                       f"({type(e).__name__}: {str(e)[:90]})")
+    # Long-lived poller, cached channel history — see incident_working.
+    inc._forget_history(inc.CHANNEL)
+    try:
+        ok = inc.mark_waiting(key, note=note)
+    except Exception as e:  # noqa: BLE001
+        return False, f"mark_waiting failed ({type(e).__name__}: {str(e)[:100]})"
+    if not ok:
+        return False, (f"no OPEN incident for {key!r} — nothing to mark "
+                       f"(it may already be closed)")
+    return True, f"{key} marked purple — waiting on its source"
+
+
 def _action_incident_triage(args: str) -> tuple[bool, str]:
     """Sort every OPEN incident into needs-you / Lucy / waiting, and put the one
     matching reaction on each post.
@@ -8465,6 +8500,7 @@ ACTIONS = {
     "post_note": _action_post_note,
     "incident_resolve": _action_incident_resolve,
     "incident_working": _action_incident_working,
+    "incident_waiting": _action_incident_waiting,
     "incident_triage": _action_incident_triage,
     "incident_unmark": _action_incident_unmark,
     "incident_close_stranded": _action_incident_close_stranded,
@@ -9109,6 +9145,9 @@ def print_help() -> None:
         '  lucy incident_resolve <key> ["note"]\n'
         "                            close an incident thread in #claudecorrections\n"
         "                            (the key is in its '_incident · … · open …_' line)\n"
+        '  lucy incident_waiting <key> ["note"]\n'
+        "                            purple circle on a post — still open, but\n"
+        "                            waiting on its source (Tableau), not a person\n"
         "  lucy incident_unmark <key>\n"
         "                            take the :pending: mark back OFF a post —\n"
         "                            nobody is on it (leaves the incident open)\n"
