@@ -45,25 +45,45 @@ class TheAccessor(unittest.TestCase):
 class TheRosterDropsThem(unittest.TestCase):
     """The filter must be applied AFTER every source has appended."""
 
-    def test_a_retired_name_from_the_bulletin_is_dropped(self):
-        from automations.icd_sales_board import enrollment as EN
-        names = ["Kash Patel", "Ronald Dawson", "Rafael Hidalgo"]
-        gone = {"ronald dawson"}
-        kept = [n for n in names if n.strip().lower() not in gone]
-        self.assertEqual(kept, ["Kash Patel", "Rafael Hidalgo"])
-        # and the real accessor agrees about him
-        self.assertIn("ronald dawson", P.retired_names())
-        self.assertNotIn("kash patel", P.retired_names())
+    # THE SPELLINGS THAT ACTUALLY REACHED THE PAGE. The first version of
+    # this test asserted 'ronald dawson' was absent -- which it was, while
+    # the board's own 'Ron Dawson' sat on the page all afternoon and Megan
+    # said "still not updated!!" twice. A test that checks the string the
+    # retired LIST uses, rather than every string a SOURCE might use,
+    # agrees with the author instead of with the reader.
+    GONE = ["Ron Dawson", "Ronald Dawson", "Cinthya", "Cinthya Reyes",
+            "Ana Griffin", "Ben Burden", "Benjamin Burden", "David Martinez",
+            "Hayden Wilson", "Lizette Ruiz", "Lizette Ruiz-Conejo",
+            "Z Test", "Salik Waqar", "Salik Hammad", "Abel (Ben)",
+            "Maxamed Aden", "Hammad Haque"]
 
-    def test_he_is_absent_from_the_assembled_roster(self):
-        """End to end, against the real registries."""
+    def test_no_retired_person_appears_under_any_spelling(self):
         from automations.icd_sales_board import enrollment as EN
         got = EN.rows()
         if not got:
             self.skipTest("registries unreadable here")
-        who = {(r.get("ICD") or r.get("Office") or "").strip().lower()
-               for r in got}
-        self.assertNotIn("ronald dawson", who)
+        who = {EN._letters(r.get("ICD") or "") for r in got}
+        for spelling in self.GONE:
+            self.assertNotIn(EN._letters(spelling), who, spelling)
+
+    def test_nobody_is_on_the_roster_twice(self):
+        """Two spellings of one person are two rows unless they collapse."""
+        from automations.icd_sales_board import enrollment as EN
+        got = EN.rows()
+        if not got:
+            self.skipTest("registries unreadable here")
+        groups = EN._name_groups()
+
+        def group_of(k):
+            return frozenset(next((g for g in groups if k in g), {k}))
+
+        seen = {}
+        for r in got:
+            nm = (r.get("ICD") or "").strip()
+            g = group_of(EN._letters(nm))
+            self.assertNotIn(g, seen,
+                             "%r and %r are the same person" % (seen.get(g), nm))
+            seen[g] = nm
 
 
 class SignupsReachTheRoster(unittest.TestCase):
@@ -169,6 +189,43 @@ class OnePersonOneRow(unittest.TestCase):
                         "campaign came from the bulletin row and was lost")
         self.assertEqual(r.get("Ad Photo Threads"), EN.ENROLLED,
                          "his ad thread is live under a third spelling")
+
+
+class GroupingIsDirectionAgnostic(unittest.TestCase):
+    """The sheet holds rows BOTH ways for several people; neither direction
+    may decide whether someone is retired."""
+
+    GROUPS = [{"rondawson", "ronalddawson"},
+              {"maxamadaden", "maxamedaden"},
+              {"abeldraper", "abelben"}]
+
+    def test_collapse_keeps_the_board_spelling(self):
+        from automations.icd_sales_board import enrollment as EN
+        with mock.patch.object(P, "load", return_value={"Abel Draper": None}):
+            got = EN._collapse(["Abel (Ben)", "Abel Draper"], self.GROUPS)
+        self.assertEqual(got, ["Abel Draper"])
+
+    def test_collapse_keeps_one_even_when_the_board_knows_neither(self):
+        from automations.icd_sales_board import enrollment as EN
+        with mock.patch.object(P, "load", return_value={}):
+            got = EN._collapse(["Maxamad Aden", "Maxamed Aden"], self.GROUPS)
+        self.assertEqual(len(got), 1)
+
+    def test_an_ungrouped_name_is_left_alone(self):
+        from automations.icd_sales_board import enrollment as EN
+        with mock.patch.object(P, "load", return_value={}):
+            got = EN._collapse(["Kash Rai", "Cyrus Wade"], self.GROUPS)
+        self.assertEqual(got, ["Cyrus Wade", "Kash Rai"])
+
+    def test_groups_merge_transitively(self):
+        from automations.icd_sales_board import enrollment as EN
+        table = {"Salik Mallick": ["Salik Waqar"],
+                 "Salik Waqar": ["Salik Hammad"]}
+        with mock.patch.object(EN, "_aliases", return_value=table):
+            groups = EN._name_groups()
+        hit = [g for g in groups if "salikmallick" in g]
+        self.assertEqual(len(hit), 1)
+        self.assertTrue({"salikwaqar", "salikhammad"} <= hit[0])
 
 
 if __name__ == "__main__":

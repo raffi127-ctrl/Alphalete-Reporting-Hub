@@ -370,6 +370,48 @@ def reading_tone(stamp: str, office=None, now=None) -> str:
     return "good"
 
 
+def _name_groups() -> list:
+    """Every spelling of one person, as one set of letter-keys.
+
+    The ICD Aliases sheet holds rows BOTH ways for several people
+    ('Maxamad Aden' is an alias of 'Maxamed Aden' AND the reverse), so
+    resolving a name through alias_to_canonical gives A->B while B->A and
+    neither ever meets the retired list. Grouping sidesteps direction
+    entirely: the GROUP is what gets judged and what gets collapsed.
+    """
+    groups: list = []
+    for canon, al in (_aliases() or {}).items():
+        g = {_letters(x) for x in ([canon] + list(al)) if x}
+        hit = next((e for e in groups if e & g), None)
+        if hit is None:
+            groups.append(set(g))
+        else:
+            hit |= g
+    return groups
+
+
+def _collapse(names, groups) -> list:
+    """One row per person. The SALES BOARD's spelling wins, because that is
+    the name the rest of the Hub prints -- not whichever alias row was
+    typed last."""
+    from automations.icd_sales_board import profiles as _P
+    try:
+        board = {_letters(n) for n in _P.load()}
+    except Exception:   # noqa: BLE001
+        board = set()
+
+    def group_of(k):
+        return frozenset(next((g for g in groups if k in g), {k}))
+
+    pick: dict = {}
+    for n in names:
+        g = group_of(_letters(n))
+        cur = pick.get(g)
+        if cur is None or (_letters(n) in board and _letters(cur) not in board):
+            pick[g] = n
+    return sorted(set(pick.values()))
+
+
 def _aliases() -> dict:
     """The ICD Aliases table, cached: it is a Sheets read like any other."""
     key = "aliases"
@@ -838,6 +880,14 @@ def rows(icds=None, admin: bool = False) -> list:
         from automations.icd_sales_board import eco_feeds as E
         from automations.icd_sales_board import profiles as P
         from automations.icd_sales_board import rollout as RO
+        # CANONICALISE THE BASE LIST TOO, not just what gets appended to it.
+        # The board calls him 'Ron Dawson' and the retired list says 'Ronald
+        # Dawson', so he survived a filter that was working perfectly -- and
+        # the test asserting 'ronald dawson' was absent passed while the
+        # page showed him (Megan 2026-10-06: "still not updated!!"). Same
+        # for 'Cinthya' vs 'Cinthya Reyes', and it is what left 'Hammad
+        # Haque' and 'Muhammad Haque' as two rows when the alias sheet has
+        # joined them all along.
         names = sorted(icds if icds is not None else P.load())
         bulletin_campaign = {}
         if icds is None:
@@ -932,11 +982,23 @@ def rows(icds=None, admin: bool = False) -> list:
             # Active ICD = YES on the bulletin walked straight back onto the
             # public page (Ronald Dawson, Megan 2026-10-06). Filtered LAST,
             # after every source has had its say.
+            # COLLAPSE LAST, after the bulletin, the ad-photo config and the
+            # sign-ups have each added their own spelling -- collapsing only
+            # the base list left 'Abel (Ben)' beside 'Abel Draper' because
+            # the bulletin appended its own after the merge had run.
+            _groups = _name_groups()
+            names = _collapse(names, _groups)
             try:
-                _gone = P.retired_names()
+                _gone = {_letters(n) for n in P.retired_names()}
                 if _gone:
-                    names = [n for n in names
-                             if (n or "").strip().lower() not in _gone]
+                    # EVERY SPELLING OF A RETIRED PERSON IS RETIRED. The
+                    # list says 'Ronald Dawson' and the board says 'Ron
+                    # Dawson'; matching one string kept him on a public
+                    # page after he was asked to be removed, twice.
+                    for _g in _groups:
+                        if _g & _gone:
+                            _gone |= _g
+                    names = [n for n in names if _letters(n) not in _gone]
             except Exception:   # noqa: BLE001
                 pass
         chan = _channels()
