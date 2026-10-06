@@ -121,5 +121,55 @@ class SignupsReachTheRoster(unittest.TestCase):
             self.assertNotIn("Ronald Dawson", self._names())
 
 
+class OnePersonOneRow(unittest.TestCase):
+    """The roster resolves names through the ICD Aliases sheet.
+
+    The org bulletin calls him 'Salik Waqar'; every other registry calls him
+    'Salik Mallick' (his own address is salikmallick6@). He arrived as two
+    offices, and a third -- 'Salik Hammad' -- came from ad_photo_threads,
+    which labels his thread with both names because the room is shared.
+    The alias sheet already held every one of those spellings; nothing on
+    the page was reading it (Megan 2026-10-06: "this is the same person").
+    """
+
+    def test_the_alias_sheet_resolves_every_known_spelling(self):
+        from automations.focus_office_att import aliases as AL
+        raw = AL.load_aliases()
+        if not raw:
+            self.skipTest("alias sheet unreadable here")
+        for spelling in ("Salik Waqar", "Salik Hammad", "Salik Malick",
+                         "Salik Mallick"):
+            self.assertEqual(AL.alias_to_canonical(spelling, raw),
+                             "Salik Mallick", spelling)
+
+    def test_canon_leaves_an_unknown_name_alone(self):
+        from automations.icd_sales_board import enrollment as EN
+        self.assertEqual(EN._canon("Nobody Inparticular"),
+                         "Nobody Inparticular")
+
+    def test_he_is_one_row_on_the_roster(self):
+        from automations.icd_sales_board import enrollment as EN
+        got = EN.rows()
+        if not got:
+            self.skipTest("registries unreadable here")
+        hits = [r for r in got
+                if "salik" in (r.get("ICD") or "").lower()]
+        self.assertEqual([r["ICD"] for r in hits], ["Salik Mallick"])
+
+    def test_the_merged_row_keeps_what_each_source_knew(self):
+        """The bulletin's campaign has to survive the rename, or merging
+        him silently blanks the column it came from."""
+        from automations.icd_sales_board import enrollment as EN
+        got = EN.rows()
+        if not got:
+            self.skipTest("registries unreadable here")
+        r = next((r for r in got if r.get("ICD") == "Salik Mallick"), None)
+        self.assertIsNotNone(r)
+        self.assertTrue(r.get("Campaigns"),
+                        "campaign came from the bulletin row and was lost")
+        self.assertEqual(r.get("Ad Photo Threads"), EN.ENROLLED,
+                         "his ad thread is live under a third spelling")
+
+
 if __name__ == "__main__":
     unittest.main()

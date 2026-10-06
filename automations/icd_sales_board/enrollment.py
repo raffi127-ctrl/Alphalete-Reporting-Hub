@@ -370,6 +370,37 @@ def reading_tone(stamp: str, office=None, now=None) -> str:
     return "good"
 
 
+def _aliases() -> dict:
+    """The ICD Aliases table, cached: it is a Sheets read like any other."""
+    key = "aliases"
+    now = time.time()
+    if key in _CACHE and now - _CACHE[key][0] < _TTL:
+        return _CACHE[key][1]
+    try:
+        from automations.focus_office_att import aliases as _AL
+        raw = _AL.load_aliases()
+    except Exception:   # noqa: BLE001 — unreadable: every name stands as-is
+        raw = {}
+    _CACHE[key] = (now, raw)
+    return raw
+
+
+def _canon(name: str) -> str:
+    """One person, one spelling — through the sheet that already decides it.
+
+    The org bulletin calls him 'Salik Waqar' and every other registry calls
+    him 'Salik Mallick' (his own address is salikmallick6@), so he arrived
+    on the page as two offices (Megan 2026-10-06: "this is the same
+    person"). Resolved against 'ICD Aliases', which is where a spelling
+    mismatch belongs, so the next variant needs no code change here.
+    """
+    try:
+        from automations.focus_office_att import aliases as _AL
+        return _AL.alias_to_canonical(name, _aliases()) or name
+    except Exception:   # noqa: BLE001
+        return name
+
+
 def _with_where(schedule: str, names) -> str:
     """'1pm-8:30pm M-F' / '11am-5pm Sat' / '#everforward-sales'."""
     if not schedule:
@@ -843,6 +874,10 @@ def rows(icds=None, admin: bool = False) -> list:
                     if len(bits) > 2 and len(bits[-1]) == 2 and bits[-1].isupper():
                         bare = " ".join(bits[:-1])
                     camp = (_r[2] or "").strip() if len(_r) > 2 else ""
+                    # Canonicalised FIRST, so the campaign is filed under the
+                    # spelling that survives -- key it under the bulletin's
+                    # own and the merged row reads a blank campaign.
+                    bare = _canon(bare)
                     if camp:
                         bulletin_campaign.setdefault(_letters(bare), camp)
                     if _letters(bare) in have:
@@ -856,6 +891,7 @@ def rows(icds=None, admin: bool = False) -> list:
                 have = {_letters(n) for n in names}
                 for o in _APC.OFFICES:
                     own = (o.get("owner") or "").strip()
+                    own = _canon(own) if own else own
                     if o.get("live") and own and _letters(own) not in have:
                         names.append(own)
                         have.add(_letters(own))
@@ -880,6 +916,7 @@ def rows(icds=None, admin: bool = False) -> list:
                     own = (getattr(_s, "owner", "") or "").strip()
                     if not own or (getattr(_s, "status", "") or "") == "declined":
                         continue
+                    own = _canon(own)
                     if _letters(own) in have:
                         continue
                     names.append(own)
@@ -1038,7 +1075,11 @@ def rows(icds=None, admin: bool = False) -> list:
             # 'rafael' and the relay calls it 'rafael_hidalgo', so a key join
             # said he was not on his own ad threads when he has three of them.
             from automations.ad_photo_threads import config as APC
-            ads = {_letters(o.get("owner")) for o in APC.OFFICES
+            # THROUGH THE ALIAS SHEET, like the roster itself. This registry
+            # names Salik's thread 'Salik Hammad' -- the room is shared with
+            # Hammad -- so a raw-letters join left the real owner reading
+            # Not Enrolled on an ad thread that is live (Megan 2026-10-06).
+            ads = {_letters(_canon(o.get("owner"))) for o in APC.OFFICES
                    if o.get("live") and o.get("owner")}
         except Exception:   # noqa: BLE001
             ads = set()
