@@ -235,6 +235,7 @@ def upload_pdf(pdf: Path, verbose: bool = True,
     from being public. Same reasoning as captainship_drafts.review_gate.
     """
     from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
     from googleapiclient.http import MediaFileUpload
 
     from automations.fiber_activations import drive_auth
@@ -275,12 +276,20 @@ def upload_pdf(pdf: Path, verbose: bool = True,
                     body={"name": pdf.name, "parents": [fid]},
                     media_body=media, fields="id").execute()["id"]
             break
-        except (socket.timeout, TimeoutError, ConnectionError):
+        except (socket.timeout, TimeoutError, ConnectionError,
+                HttpError) as e:
+            # Drive also answers 502/503 "try again in 30 seconds" — the
+            # headcount board died on one mid-retry on 2026-10-06. Retry
+            # those too; a 4xx is a real error and still raises.
+            if isinstance(e, HttpError) and e.resp.status not in (
+                    429, 500, 502, 503, 504):
+                raise
             if attempt == 2:
                 raise
             if verbose:
-                print(f"  Drive upload timed out — retry {attempt + 2}/3",
-                      flush=True)
+                why = (f"Drive {e.resp.status}" if isinstance(e, HttpError)
+                       else "Drive upload timed out")
+                print(f"  {why} — retry {attempt + 2}/3", flush=True)
             time.sleep(10 * (attempt + 1))
 
     link = svc.files().get(fileId=file_id,
