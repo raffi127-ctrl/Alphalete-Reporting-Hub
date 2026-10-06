@@ -90,9 +90,11 @@ def _hand_session_to_the_reader(urls, log=print) -> None:
                 from automations.icd_alerts import sara_read as _SR
                 _SR._remember_session(root)
                 log("  Handing this signed-in session to the automatic reads.")
-            except Exception:  # noqa: BLE001 -- never cost the person their sign-in
-                pass
+                _LAST_VERDICT.append("session handed to the reader: %s" % root)
+            except Exception as e:  # noqa: BLE001 -- never cost the person their sign-in
+                _LAST_VERDICT.append("could not hand the session over: %s" % type(e).__name__)
             return
+    _LAST_VERDICT.append("no session root in the window's urls: %s" % ", ".join(urls or [])[:300])
 
 
 def run(log=print) -> int:
@@ -168,7 +170,17 @@ _LAST_VERDICT: list = []
 def _tell_upstream(verdict: str, detail: str = "", log=print) -> None:
     try:
         from automations.icd_alerts import relay as RL
-        RL.report_fault("probe-signin-saraplus", "SaraPlus sign-in window: %s" % verdict,
+        try:
+            from automations.icd_alerts import selfupdate as SU
+            release = SU.applied_release() or "?"
+        except Exception:  # noqa: BLE001
+            release = "?"
+        # STAMPED, so every run is its own row with its own detail: the
+        # relay folds same-summary rows together and keeps the FIRST detail,
+        # which is how Eveliz's third run read like her first (2026-10-05).
+        stamp = dt.datetime.now().strftime("%H:%M")
+        RL.report_fault("probe-signin-saraplus",
+                        "SaraPlus sign-in window %s (release %s): %s" % (stamp, release, verdict),
                         detail=detail, log=None)
     except Exception:  # noqa: BLE001 -- telling us must never cost the person
         pass
@@ -179,9 +191,12 @@ def verify_hidden_read(log=print) -> int:
     from automations.icd_alerts import sara_read as SR
     log("")
     log("  Now checking the automatic reads can get in too (about a minute)...")
+    said: list = []
     try:
-        got = SR.check_account(headless=True, log=lambda *_a: None)
+        got = SR.check_account(headless=True,
+                               log=lambda *a: said.append(" ".join(str(x) for x in a)[:200]))
     except SR.AccountProblem as e:
+        _LAST_VERDICT.extend(["hidden log: " + l for l in said[-12:]])
         _LAST_VERDICT.extend([str(e)[:300]] + ["hidden: " + l for l in (getattr(e, "presented", None) or [])])
         log("")
         log("  NOT YET. The automatic read was stopped:")

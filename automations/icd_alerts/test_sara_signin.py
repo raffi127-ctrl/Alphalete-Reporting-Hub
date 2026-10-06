@@ -447,3 +447,19 @@ class TheWindowHandsItsSessionToTheReader(unittest.TestCase):
         import inspect
         src = inspect.getsource(X._window)
         self.assertEqual(src.count("_hand_session_to_the_reader("), 2)
+
+
+class EveryRunFilesItsOwnVerdict(unittest.TestCase):
+    def test_the_summary_carries_time_and_release(self):
+        from automations.icd_alerts import relay as RL, selfupdate as SU
+        filed = []
+        with mock.patch.object(RL, "report_fault", lambda stage, summary, **kw: filed.append(summary) or True), \
+             mock.patch.object(SU, "applied_release", lambda: "2026.10.05.5"):
+            X._tell_upstream("done -- hidden read passed", log=lambda *a: None)
+        self.assertIn("release 2026.10.05.5", filed[0])
+        self.assertRegex(filed[0], r"window \d\d:\d\d")
+
+    def test_a_window_with_no_session_root_says_so(self):
+        X._LAST_VERDICT[:] = []
+        X._hand_session_to_the_reader(["https://ui.saraplus.com/"], log=lambda *a: None)
+        self.assertTrue(any("no session root" in l for l in X._LAST_VERDICT))
