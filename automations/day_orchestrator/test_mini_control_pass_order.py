@@ -69,3 +69,59 @@ class PlumbingGoesFirst(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PlumbingQueuedMidPassJumpsTheRest(unittest.TestCase):
+    """2026-10-05: a fleet `update` reached Lucy 2/3/4 in minutes and sat queued
+    on Lucy 1 behind reports its poller had read BEFORE the update was queued —
+    _pass_order only reorders what the pass saw when it started."""
+
+    def _run(self, start, queued_later, lane="main"):
+        from unittest import mock
+        from automations.day_orchestrator import mini_control as mc
+
+        sheet = [dict(r) for r in start]
+        ran = []
+
+        class _WS:
+            reads = 0
+
+            def get_all_records(self):
+                _WS.reads += 1
+                if _WS.reads == 2:          # first peek after a report: the
+                    sheet.extend(dict(r) for r in queued_later)  # update lands
+                return [dict(r) for r in sheet]
+
+        def _set(_ws, rownum, status, *_a, **_k):
+            sheet[rownum - 2]["Status"] = status
+
+        def handler(_args):
+            return True, "ok"
+        actions = {a: handler for a in ("rerun", "update", "ping")}
+        mc._REPOLL_NOW = False
+        with mock.patch.object(mc, "_open", lambda *a, **k: _WS()), \
+             mock.patch.object(mc, "_set", _set), \
+             mock.patch.object(mc, "ACTIONS", actions), \
+             mock.patch.object(mc, "_reclaim_orphans", lambda *a, **k: 0), \
+             mock.patch.object(mc, "_restart_hold_active", lambda: False), \
+             mock.patch.object(mc, "_daily_cap", lambda: 999):
+            mc.poll_once(lane=lane)
+        repoll = mc._REPOLL_NOW
+        mc._REPOLL_NOW = False
+        return [r["Status"] for r in sheet], repoll
+
+    def test_the_pass_stops_after_the_running_report(self):
+        statuses, repoll = self._run(_rows("rerun", "rerun", "rerun"),
+                                     _rows("update"))
+        self.assertEqual(statuses, ["done", "queued", "queued", "queued"])
+        self.assertTrue(repoll, "the loop would sleep 2 min before the update")
+
+    def test_without_plumbing_the_backfill_runs_straight_through(self):
+        statuses, repoll = self._run(_rows("rerun", "rerun", "rerun"), [])
+        self.assertEqual(statuses, ["done", "done", "done"])
+        self.assertFalse(repoll)
+
+    def test_plumbing_rows_never_cut_their_own_pass(self):
+        statuses, repoll = self._run(_rows("update", "ping"), _rows("update"))
+        self.assertEqual(statuses[:2], ["done", "done"])
+        self.assertFalse(repoll)

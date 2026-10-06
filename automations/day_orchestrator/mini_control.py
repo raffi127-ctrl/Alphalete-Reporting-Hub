@@ -8760,6 +8760,26 @@ def _pass_order(rows: list) -> list:
                   .lower() in PLUMBING_ACTIONS else 1)
 
 
+def _plumbing_waiting(ws, lane: str) -> bool:
+    """Is a PLUMBING row (update, restart_poller, ping…) sitting queued for this
+    lane right now? Re-reads the Sheet, so call it between rows, not per row
+    read. Best-effort: a read hiccup answers False and the pass carries on."""
+    if lane != LANE_MAIN:
+        return False
+    try:
+        rows = ws.get_all_records()
+    except Exception:  # noqa: BLE001 — never stall the pass on a peek
+        return False
+    return any(str(r.get("Status", "")).strip().lower() == "queued"
+               and str(r.get("Action", "")).strip().lower() in PLUMBING_ACTIONS
+               for r in rows)
+
+
+#: Set by poll_once when it cut a pass short for plumbing; poll_loop then polls
+#: again AT ONCE instead of sleeping (see _plumbing_waiting's caller).
+_REPOLL_NOW = False
+
+
 def poll_once(*, dry_run: bool = False, sandbox: bool = False,
               machine: str | None = None, lane: str = LANE_MAIN) -> int:
     """One poll pass: run every 'queued' row's whitelisted action. Returns the
@@ -8860,6 +8880,23 @@ def poll_once(*, dry_run: bool = False, sandbox: bool = False,
                       f"({type(e).__name__}) — clear it by hand")
         print(f"[mini_control]   -> {'done' if ok else 'FAILED'}: {result[:160]}")
         acted += 1
+        # PLUMBING QUEUED MID-PASS JUMPS THE REST OF THE PASS (2026-10-05).
+        # _pass_order puts plumbing first, but only among the rows read when the
+        # pass STARTED. An `update` queued after that waited for every report the
+        # pass had already seen: at 19:25 a fleet deploy reached Lucy 2/3/4 in
+        # minutes and sat queued on Lucy 1 behind a delta_lastweek_backfill rerun
+        # — which read as "Lucy 1 doesn't drain updates". So after each report,
+        # peek: if plumbing is now waiting, end the pass and let poll_loop poll
+        # again at once — where an `update` that moved HEAD also reloads the
+        # poller BEFORE the next report runs on stale code. Reports keep their
+        # FIFO order; they just resume one poll later.
+        if (action.strip().lower() not in PLUMBING_ACTIONS
+                and _plumbing_waiting(ws, lane)):
+            print("[mini_control] plumbing queued mid-pass — ending this pass "
+                  "so it runs next", flush=True)
+            global _REPOLL_NOW
+            _REPOLL_NOW = True
+            break
     return acted
 
 
@@ -8970,6 +9007,10 @@ def poll_loop(interval_s: int = 120, *, dry_run: bool = False, sandbox: bool = F
         if not (dry_run or sandbox) and lane == LANE_MAIN:
             _maybe_reconcile_schedules()
             _maybe_appstream_watch(mach)
+        global _REPOLL_NOW
+        if _REPOLL_NOW:
+            _REPOLL_NOW = False
+            continue      # plumbing is waiting — straight to the next poll
         time.sleep(interval_s)
 
 
