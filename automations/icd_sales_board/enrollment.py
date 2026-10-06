@@ -253,7 +253,13 @@ EXPLAINS = {
 def cell_tone(column: str, value) -> str:
     """'good' | 'bad' | 'wait' | '' for one cell."""
     v = str(value or "").strip()
-    if column in UNCOLOURED or column in ADMIN_EXTRA or not v:
+    if column in UNCOLOURED or not v:
+        return ""
+    if column == "On latest update":
+        # Green on the current agent, amber on an older one — an office
+        # reporting on a stale build is a thing to chase, not a failure.
+        return "good" if v.lower() in ("yes", "y") else "wait"
+    if column in ADMIN_EXTRA:
         return ""
     if v in BAD_WORDS:
         return "bad"

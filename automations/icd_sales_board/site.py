@@ -2153,16 +2153,9 @@ def _rollout_section() -> None:
     The goal is every ICD on LucyECO with their own live board (Megan
     2026-09-22); this is read entirely from what the machines already report,
     so nobody has to be asked where they are."""
-    from automations.icd_sales_board import rollout as RO
-    rows = _rollout_rows()
-    n = RO.counts(rows)
-    on = len(rows) - n[RO.NONE]
-    st.subheader(f"{on} of {len(rows)} offices on LucyEco")
-    st.caption(" · ".join(f"{k}: {v}" for k, v in n.items() if v))
-    tone = {RO.LIVE: "background-color:#D9EAD3",
-            RO.UPDATE: "background-color:#FFF2CC",
-            RO.QUIET: "background-color:#F4CCCC",
-            RO.WAITING: "background-color:#FCE5CD"}
+    # The heading counts THE TABLE BELOW IT. It used to count the ORG sales
+    # board's offices while the table listed everyone we run anything for,
+    # so it read '16 of 30' above 47 rows.
     # ONE TABLE (Megan 2026-10-06: "I don't want 2 different sections").
     # This view used to draw the enrollment grid and then an admin grid
     # underneath, which is two answers to one question and sent you to the
@@ -2174,6 +2167,11 @@ def _rollout_section() -> None:
         if not erows:
             st.info("Couldn't read the registries just now.", icon="🚧")
             return
+        import collections as _c
+        state = _c.Counter(r.get("LucyECO", "") for r in erows)
+        st.subheader(f"{state.get('Active', 0)} of {len(erows)} offices "
+                     f"on LucyECO")
+        st.caption(" · ".join(f"{k}: {v}" for k, v in state.most_common() if k))
         cols = EN.admin_columns(erows)
         st.html(EN.html_table([{c: r.get(c, "") for c in cols} for r in erows],
                               cols))
