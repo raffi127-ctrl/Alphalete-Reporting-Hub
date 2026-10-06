@@ -173,8 +173,15 @@ def _mdy(day: dt.date) -> str:
     return day.strftime("%m/%d/%Y")
 
 
+def _read(ws_call, *args):
+    """Every Sheets READ goes through the 429/5xx retry (10/6: a bare
+    get_all_values hit Google's per-minute quota and failed the run)."""
+    from automations.recruiting_report.fill import _retry
+    return _retry(ws_call, *args)
+
+
 def counts_att(sh, day: dt.date) -> dict[str, float]:
-    rows = sh.worksheet(DATA_TAB_ATT).get_all_values()
+    rows = _read(sh.worksheet(DATA_TAB_ATT).get_all_values)
     h = rows[0]
     i_rep, i_date = h.index("Rep"), h.index("sp.Order Date (copy)")
     i_units = h.index("Unit Count")
@@ -193,7 +200,7 @@ def counts_att(sh, day: dt.date) -> dict[str, float]:
 
 
 def counts_box(sh, day: dt.date) -> dict[str, float]:
-    rows = sh.worksheet(DATA_TAB_BOX).get_all_values()
+    rows = _read(sh.worksheet(DATA_TAB_BOX).get_all_values)
     h = rows[0]
     i_rep, i_date = h.index("Rep Name"), h.index("Sale Date")
     i_st, i_sub = h.index("Status"), h.index("Contr. Sub-status")
@@ -219,7 +226,7 @@ def covers(sh, campaign: str, day: dt.date) -> bool:
     accepted: a genuinely zero-sales day looks exactly like a stale tab, so it
     holds until the fail-open floor and then correctly writes nothing."""
     tab, date_col = COVERAGE_TABS[campaign]
-    rows = sh.worksheet(tab).get_all_values()
+    rows = _read(sh.worksheet(tab).get_all_values)
     i = rows[0].index(date_col)
     want = _mdy(day)
     return any(r[i].strip() == want for r in rows[1:])
