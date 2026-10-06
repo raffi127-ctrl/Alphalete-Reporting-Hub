@@ -2163,14 +2163,6 @@ def _rollout_section() -> None:
             RO.UPDATE: "background-color:#FFF2CC",
             RO.QUIET: "background-color:#F4CCCC",
             RO.WAITING: "background-color:#FCE5CD"}
-    frame = pd.DataFrame(rows, columns=["ICD", "Status", "Board shows",
-                                        "Campaign", "Last reading",
-                                        "On latest update"])
-    st.dataframe(
-        frame.style.apply(lambda col: [tone.get(v, "") for v in col],
-                          subset=["Status"]),
-        use_container_width=True, hide_index=True,
-        height=_grid_height(len(rows)))
     # THE SAME TABLE AS THE PUBLIC PAGE, not a second answer. Two screens
     # both called LucyEco is how somebody ends up reading last week's wording
     # and reporting it as a bug (Megan 2026-10-06, looking at this one):
@@ -2192,10 +2184,19 @@ def _rollout_section() -> None:
                    f"{taken.hour % 12 or 12}:{taken.minute:02d}"
                    f"{'am' if taken.hour < 12 else 'pm'}." if taken else ""))
             st.divider()
-            st.markdown("**Agent detail**")
+            st.markdown("**Agent detail** — last reading and agent version, "
+                        "which only matter when chasing an install.")
     except Exception as e:   # noqa: BLE001 — the rollout list still stands
         st.caption(f"Enrollment table unavailable ({type(e).__name__}).")
 
+    frame = pd.DataFrame(rows, columns=["ICD", "Status", "Board shows",
+                                        "Campaign", "Last reading",
+                                        "On latest update"])
+    st.dataframe(
+        frame.style.apply(lambda col: [tone.get(v, "") for v in col],
+                          subset=["Status"]),
+        use_container_width=True, hide_index=True,
+        height=_grid_height(len(rows)))
     ready = sum(1 for r in rows if r.get("Board shows") != RO.SHOWS_NOTHING
                 and r.get("Board shows") != RO.SHOWS_OFFICE)
     st.caption(f"**{ready} ICDs have a board worth sending today** — live, or "
