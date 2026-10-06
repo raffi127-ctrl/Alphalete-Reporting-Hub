@@ -14,11 +14,15 @@ class SafetyTests(unittest.TestCase):
             self.assertEqual(extra, set(), f"{r.get('ICD')}: {extra}")
 
     def test_the_safe_list_names_nothing_sensitive(self):
-        banned = ("code", "password", "token", "phone", "email", "channel",
-                  "$", "profit", "payroll", "deposit", "override", "rep")
+        # WHOLE WORDS. A substring check called 'Weather Report' sensitive
+        # because 'rep' is inside 'Report'.
+        import re
+        banned = {"code", "password", "token", "phone", "email", "channel",
+                  "profit", "payroll", "deposit", "override", "rep", "pay"}
         for col in EN.SAFE_COLUMNS:
-            for b in banned:
-                self.assertNotIn(b, col.lower(), f"{col!r} looks sensitive")
+            words = set(re.findall(r"[a-z]+", col.lower()))
+            self.assertEqual(words & banned, set(), f"{col!r} looks sensitive")
+            self.assertNotIn("$", col)
 
     def test_the_rollout_list_no_longer_prints_board_codes(self):
         # It used to, while it was admin-only. This page makes that unsafe.
@@ -45,16 +49,33 @@ class JoinTests(unittest.TestCase):
     def test_the_round_the_clock_ones_just_say_active(self):
         # Noon to midnight plus a 2am catch-up is near enough 24/7 that the
         # window was noise in a column people scan for "do they have it?".
+        # An office that does not have it says so rather than sitting blank.
         rows = EN.rows()
         for col in ("Sara+ Alerts", "Text Scoreboard"):
-            on = [r[col] for r in rows if r[col]]
-            self.assertTrue(on, f"nobody on {col}")
-            self.assertEqual(set(on), {"Active"})
+            vals = {r[col] for r in rows}
+            self.assertIn("Active", vals, f"nobody on {col}")
+            self.assertEqual(vals - {"Active", EN.NOT_ON}, set())
 
     def test_counts_only_counts_features(self):
         got = EN.counts(EN.rows())
         for skip in ("ICD", "Campaigns", "LucyECO"):
             self.assertNotIn(skip, got)
+
+
+class ToneTests(unittest.TestCase):
+    def test_a_schedule_is_as_much_a_yes_as_the_word_enrolled(self):
+        # Colour by meaning, or every column carrying a time stays white.
+        self.assertEqual(EN.cell_tone("Call-outs", "11:30am–8:30pm"), "good")
+        self.assertEqual(EN.cell_tone("Metrics Thread", EN.ENROLLED), "good")
+
+    def test_not_enrolled_is_red_and_pending_is_amber(self):
+        self.assertEqual(EN.cell_tone("Resume Pushing", EN.NOT_ON), "bad")
+        self.assertEqual(EN.cell_tone("LucyECO", "Not on"), "bad")
+        self.assertEqual(EN.cell_tone("LucyECO", "Pending"), "wait")
+
+    def test_facts_about_the_office_are_never_coloured(self):
+        for col in EN.UNCOLOURED:
+            self.assertEqual(EN.cell_tone(col, "anything"), "")
 
 
 class EcoStateTests(unittest.TestCase):
@@ -83,7 +104,8 @@ class ResilienceTests(unittest.TestCase):
         with mock.patch.object(EN, "_channels", return_value={}):
             rows = EN.rows()
         self.assertTrue(rows)
-        self.assertEqual([r for r in rows if r["Sara+ Alerts"]], [])
+        # Every office reads 'Not Enrolled' — the page still draws.
+        self.assertEqual({r["Sara+ Alerts"] for r in rows}, {EN.NOT_ON})
 
 
 if __name__ == "__main__":

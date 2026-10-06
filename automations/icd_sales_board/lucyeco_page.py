@@ -73,10 +73,27 @@ def main() -> None:
     import pandas as pd
 
     frame = pd.DataFrame(rows, columns=safe)
-    green = "background-color:#DCFCE7;color:#065F46;font-weight:600"
+    # GREEN THEY HAVE IT · AMBER ON BUT NOT WORKING YET · RED THEY DO NOT.
+    # A schedule is as much a yes as the word Enrolled, so the rule is by
+    # meaning (enrollment.cell_tone) rather than by matching particular words
+    # — otherwise every column that carries a time would stay white.
+    TONE = {
+        "good": "background-color:#DCFCE7;color:#065F46;font-weight:600",
+        "wait": "background-color:#FEF3C7;color:#78350F;font-weight:600",
+        "bad": "background-color:#FEE2E2;color:#991B1B",
+    }
+    # CENTRED THROUGH column_config, PER COLUMN — these tables render to a
+    # canvas, so CSS cannot reach inside them and a table-wide rule does
+    # nothing. Same way the house boards do it (site._centered). The ICD name
+    # stays left: a column of centred names is hard to scan down.
+    cfg = {c: st.column_config.Column(alignment="center")
+           for c in safe if c != "ICD"}
+    def _tone(col):
+        return [TONE.get(EN.cell_tone(col.name, v), "") for v in col]
+
     st.dataframe(
-        frame.style.map(lambda v: green if str(v) in EN.GOOD_WORDS else ""),
-        use_container_width=True, hide_index=True,
+        frame.style.apply(_tone, axis=0),
+        use_container_width=True, hide_index=True, column_config=cfg,
         height=min(42 * (len(rows) + 1) + 8, 900))
 
     st.caption(
