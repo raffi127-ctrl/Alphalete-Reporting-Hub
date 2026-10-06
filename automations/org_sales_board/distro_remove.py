@@ -67,6 +67,10 @@ REMOVALS: dict = {
         # del Org Sales Board Y el Override Bulletin — Eve confirmo sacarla igual.
         # Sale tambien de distro_fallback.json.
         ("Ana Griffin", "griffinana313@gmail.com"),
+        # 2026-10-06 (Eve), regla de dos semanas: Brandon Stallkamp, 0 en WE 10.04
+        # y WE 09.27 en Retail JE. Eve confirmo sacarlo aunque deja de recibir
+        # el Override Bulletin. Sale tambien de distro_fallback.json.
+        ("Brandon Stallkamp", "bstallkamp10@gmail.com"),
     ],
     # Owners Call Reminder's distro — no code fallback, the live group is it.
     "Org. Call Invite": [
