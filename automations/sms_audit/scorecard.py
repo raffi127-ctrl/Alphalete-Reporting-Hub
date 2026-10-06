@@ -40,6 +40,9 @@ AI_NAMES = {"a messaging", "ai messaging", "lucy resume pushing", "system",
             "scheduled sms"}
 # Below this many texts in a week a rate is one bad morning, not a trend.
 MIN_TEXTS = 25
+# And below this many MATCHED bookings, a far-out percentage is noise: one
+# week of Aisha Ceron's read 100% off two bookings and the next read 0%.
+MIN_MATCHED = 10
 
 
 def key_of(name):
@@ -84,6 +87,7 @@ def week_stats(office, tag):
     out = collections.defaultdict(lambda: {
         "display": "", "booked": 0, "shown": 0, "texts": 0,
         "typing": 0, "house": 0, "dodged": 0, "replies": [],
+        "far_out": 0, "matched": 0,
         "issues": collections.Counter(), "examples": []})
 
     def slot(name):
@@ -124,8 +128,9 @@ def week_stats(office, tag):
         n = int(e.get("count") or 0)
         d["house"] += n
         d["issues"][e.get("issue") or "?"] += n
-        for ex in (e.get("examples") or [])[:2]:
-            d["examples"].append((e.get("issue") or "?", ex.get("body") or ""))
+        for ex in (e.get("examples") or [])[:3]:
+            d["examples"].append((e.get("issue") or "?", ex.get("hit") or "",
+                                  ex.get("body") or ""))
 
     for e in A.dodged_questions(convos):
         d = slot(e.get("sender"))
@@ -136,6 +141,21 @@ def week_stats(office, tag):
         d = slot(st.get("who"))
         if d is not None:
             d["replies"] = st
+
+    # How far ahead each person booked, from the confirmation text that set
+    # the appointment. Megan 2026-10-06 asked whether a falling show rate
+    # really was someone booking further out — without this the scorecard
+    # was asserting a cause it had not checked.
+    from automations.sms_audit import leadtime as LT
+    lead = LT.measure(oid, recs=recs, log=log)
+    if lead.get("ok"):
+        for row in lead["rows"]:
+            d = slot(row.get("by"))
+            if d is None:
+                continue
+            d["matched"] += 1
+            if LT.bucket_of(row["lead"]) == "more than a day":
+                d["far_out"] += 1
     return dict(out)
 
 
@@ -185,10 +205,24 @@ def work_on(person, weeks):
     show = _rate(now, "shown", "booked")
     if show is not None and (now.get("booked") or 0) >= 5:
         prev = _rate(before, "shown", "booked") if before else None
+        far = (_rate(now, "far_out", "matched")
+               if (now.get("matched") or 0) >= MIN_MATCHED else None)
+        farwas = (_rate(before, "far_out", "matched")
+                  if before and (before.get("matched") or 0) >= MIN_MATCHED
+                  else None)
+        if far is not None and farwas is not None and far - farwas >= 5:
+            why = ("You're booking further out than you were \u2014 {:.0f}% "
+                   "over a day ahead, was {:.0f}%. Use fear of loss and book "
+                   "them today.".format(far, farwas))
+        elif far is not None and far >= 25:
+            why = ("{:.0f}% of your bookings are over a day out. Use fear of "
+                   "loss and book them today.".format(far))
+        elif bot:
+            why = "Offer sooner interview times."
+        else:
+            why = "Not your booking lead \u2014 look at the texts below."
         add("Show rate", "{:.0f}%".format(show),
-            GC._band(show, 55, 48, 40),
-            "Offer sooner interview times." if bot
-            else "Book nearer the slot.",
+            GC._band(show, 55, 48, 40), why,
             "{:.0f}%".format(prev) if prev is not None else None)
 
     if (now.get("texts") or 0) >= MIN_TEXTS:
@@ -207,8 +241,7 @@ def work_on(person, weeks):
         worst = now["issues"].most_common(1)[0][0]
         add("House rules", "{} text{}".format(house, "" if house == 1 else "s"),
             GC._band(house, 0, 2, 6, higher_is_better=False),
-            "{}. {}".format(worst, "Edit it in AI Settings." if bot
-                            else "Use the approved wording."),
+            "{}. The exact texts are below.".format(worst),
             "{}".format((before or {}).get("house")) if before else None)
 
     sp = now.get("replies") or {}
@@ -264,6 +297,8 @@ tr.C td{background:#fff4e5}
 blockquote{margin:.4em 0 .4em 1em;padding:.3em .7em;border-left:3px solid #bbb;
            background:#f7f7f7;font-size:.95em}
 .none{color:#666;font-style:italic}
+.bad{color:#A8322A;font-weight:bold;background:#fdeaea}
+.asked{color:#555;font-size:.9em;font-style:italic}
 @media (max-width:640px){body{margin:1em auto;font-size:15px}}
 """
 
@@ -271,6 +306,63 @@ blockquote{margin:.4em 0 .4em 1em;padding:.3em .7em;border-left:3px solid #bbb;
 def esc(t):
     return (str(t).replace("&", "&amp;").replace("<", "&lt;")
             .replace(">", "&gt;"))
+
+
+ASKED = re.compile(r"^\s*they asked:\s*", re.I)
+
+
+def mark(body, hit):
+    """The message in full, with the part that broke the rule in red.
+
+    Megan 2026-10-06: "we want to see EXACTLY what the person is sending
+    and highlight in red what isn't approved". The hit is usually a literal
+    slice of the message; when it is the APPLICANT's question instead (the
+    hiring-manager rule records the question, not our words), the reply's
+    own deflection is marked, and the question is shown above it."""
+    body = body or ""
+    hit = (hit or "").strip()
+    asked = ""
+    if ASKED.match(hit):
+        asked = ASKED.sub("", hit)
+        hit = ""
+    span = None
+    if hit:
+        i = body.lower().find(hit.lower())
+        if i >= 0:
+            span = (i, i + len(hit))
+    if span is None:
+        from automations.sms_audit import rebuttals as _R
+        m = _R.REFUSES.search(body) or _R.DEFERS.search(body)
+        if m:
+            span = m.span()
+    if span is None:
+        out = esc(body)
+    else:
+        a, b = span
+        out = "{}<span class='bad'>{}</span>{}".format(
+            esc(body[:a]), esc(body[a:b]), esc(body[b:]))
+    if asked:
+        out = ("<span class='asked'>They asked: {}</span><br>{}".format(
+            esc(asked[:200]), out))
+    return out
+
+
+# Light red through to light green. Used per ROW, so each measure is
+# shaded against its own best and worst week rather than the whole table.
+_SHADES = ("#f7c5c0", "#fbdbd3", "#fdeee4", "#f3f6e6", "#dfeedb", "#c6e3c3")
+
+
+def shade(values, i, higher_is_better=True):
+    """Background for cell `i` of `values`, or '' when there is nothing to
+    compare it with."""
+    nums = [v for v in values if isinstance(v, (int, float))]
+    if len(set(nums)) < 2 or not isinstance(values[i], (int, float)):
+        return ""
+    lo, hi = min(nums), max(nums)
+    pos = (values[i] - lo) / float(hi - lo)
+    if not higher_is_better:
+        pos = 1.0 - pos
+    return _SHADES[min(len(_SHADES) - 1, int(pos * len(_SHADES)))]
 
 
 def render(person, office, weeks, path):
@@ -300,32 +392,48 @@ def render(person, office, weeks, path):
     add("</div>")
 
     add("<h2>Week over week</h2>")
+    # (label, the number to shade on, how to show it, is more better)
     rows = [
-        ("Interviews booked", lambda w: "{}".format(w.get("booked") or 0)),
-        ("Showed up", lambda w: ("{:.0f}%".format(_rate(w, "shown", "booked"))
-                                 if _rate(w, "shown", "booked") is not None
-                                 else "—")),
-        ("Texts sent", lambda w: "{:,}".format(w.get("texts") or 0)),
-        ("Usual reply", lambda w: A_mins((w.get("replies") or {}).get("median"))),
-        ("Typing mistakes", lambda w: "{}".format(w.get("typing") or 0)),
-        ("House rules broken", lambda w: "{}".format(w.get("house") or 0)),
-        ("Questions not answered", lambda w: "{}".format(w.get("dodged") or 0)),
+        ("Interviews booked", lambda w: w.get("booked") or 0,
+         lambda v: "{:,}".format(v), True),
+        ("Showed up", lambda w: _rate(w, "shown", "booked"),
+         lambda v: "{:.0f}%".format(v) if v is not None else "\u2014", True),
+        ("Texts sent", lambda w: w.get("texts") or 0,
+         lambda v: "{:,}".format(v), True),
+        ("Usual reply", lambda w: (w.get("replies") or {}).get("median"),
+         A_mins, False),
+        ("Typing mistakes", lambda w: w.get("typing") or 0,
+         lambda v: "{}".format(v), False),
+        ("House rules broken", lambda w: w.get("house") or 0,
+         lambda v: "{}".format(v), False),
+        ("Questions not answered", lambda w: w.get("dodged") or 0,
+         lambda v: "{}".format(v), False),
+        ("Booked over a day out",
+         lambda w: (_rate(w, "far_out", "matched")
+                    if (w.get("matched") or 0) >= MIN_MATCHED else None),
+         lambda v: "{:.0f}%".format(v) if v is not None else "\u2014", False),
     ]
     add("<div class='scroll'><table><tr><th></th>" + "".join(
         "<th>{}</th>".format(esc(R.week_label(t))) for t in got) + "</tr>")
-    for label, fn in rows:
-        add("<tr><td>{}</td>{}</tr>".format(
-            esc(label),
-            "".join("<td class='n'>{}</td>".format(esc(fn(d[t])))
-                    for t in got)))
+    for label, value_of, show, up_good in rows:
+        vals = [value_of(d[t]) for t in got]
+        cells = []
+        for i, v in enumerate(vals):
+            bg = shade(vals, i, up_good)
+            cells.append("<td class='n'{}>{}</td>".format(
+                " style=\"background:{}\"".format(bg) if bg else "",
+                esc(show(v))))
+        add("<tr><td>{}</td>{}</tr>".format(esc(label), "".join(cells)))
     add("</table></div>")
 
     last = d[got[-1]] if got else {}
     if last.get("examples"):
-        add("<h2>The messages behind it</h2>")
-        for issue, body in last["examples"][:8]:
+        add("<h2>What was actually sent</h2>")
+        add("<p class='none'>In full, exactly as it went out. The part that "
+            "broke the rule is in red.</p>")
+        for issue, hit, body in last["examples"][:10]:
             add("<blockquote><b>{}</b><br>{}</blockquote>".format(
-                esc(issue), esc(body)))
+                esc(issue), mark(body, hit)))
     add("</body></html>")
     path.write_text("\n".join(L), encoding="utf-8")
     return path
