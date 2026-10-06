@@ -187,8 +187,8 @@
     "report_id": "luke_metrics",
     "label": "Luke's B2B Office",
     "owner": "Luke Baldwin",
-    "channel_id": "U04G5HJBGFN",
-    "channel_name": "megan-dm (hold until the ECO sign-up names the channel)",
+    "channel_id": "C0C76005FJA",
+    "channel_name": "takeoff-b2b",
     "sheet_id": "12duBXmNj-afp25DVt0nUZpE-XUCmEC0ty_Fp6-IxNkc",
     "knocks_office": "Luke Baldwin",
     "ov_account": "20958",
@@ -221,11 +221,11 @@
     "per_office_views": {},
     "machine": "Lucy 2",
     "campaign": "",
-    "notes": "wired by hand 2026-10-06 (Megan: Luke Baldwin enrolling in Lucy ECO today, metrics + trackers right away); B2B like jamis; Pacific; channel filled from his ECO sign-up; Owner & Office member 'LUKE BALDWIN [takeoff enterprises, inc.]' confirmed in Tableau by Megan 2026-10-06 (NOT 'inc. 2nd' as OwnerVille spells it)",
+    "notes": "wired by hand 2026-10-06 (Megan: Luke Baldwin enrolling in Lucy ECO today, metrics + trackers right away); B2B like jamis; Pacific; channel #takeoff-b2b from his ECO sign-up (2026-10-06 15:36); Owner & Office member 'LUKE BALDWIN [takeoff enterprises, inc.]' confirmed in Tableau by Megan 2026-10-06 (NOT 'inc. 2nd' as OwnerVille spells it)",
     "channel_plans": [
       {
-        "channel_id": "U04G5HJBGFN",
-        "channel_name": "megan-dm (hold until the ECO sign-up names the channel)",
+        "channel_id": "C0C76005FJA",
+        "channel_name": "takeoff-b2b",
         "report_keys": [
           "b2b_sales",
           "b2b_activation",

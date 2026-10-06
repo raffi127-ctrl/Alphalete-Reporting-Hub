@@ -10858,8 +10858,8 @@
   "luke_metrics": {
    "order": 7.91,
    "machine": "Lucy 2",
-   "on_scheduler": false,
-   "display_name": "Luke's B2B Metrics (channel from ECO sign-up)",
+   "on_scheduler": true,
+   "display_name": "Luke's B2B Metrics (takeoff-b2b)",
    "source_type": "tableau",
    "data_sources": [
     "tableau:order_log"

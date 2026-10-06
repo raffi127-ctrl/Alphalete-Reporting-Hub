@@ -279,9 +279,11 @@
   },
   {
     "key": "luke",
-    "label": "Luke's B2B Office (channel from ECO sign-up)",
+    "label": "#takeoff-b2b",
     "owner": "Luke Baldwin",
-    "channel_ids": [],
+    "channel_ids": [
+      "C0C76005FJA"
+    ],
     "trackers": [
       "att_country",
       "att_country_internet_only",
