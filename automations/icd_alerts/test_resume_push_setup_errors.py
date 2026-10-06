@@ -155,5 +155,66 @@ class TheSummaryTable(unittest.TestCase):
         self.assertNotIn("stopped", out)
 
 
+NO_PROFILE = Error(
+    "BrowserType.connect_over_cdp: Protocol error (Browser.setDownloadBehavior):"
+    " Browser context management is not supported.\nCall log:\n"
+    "  - <ws disconnected> ws://127.0.0.1:9247/devtools/browser/x code=1000")
+
+
+class AWindowlessChromeIsBroughtBack(unittest.TestCase):
+    """Drew, 2026-10-06: Lucy's Chrome was running on 9247 with every window
+    closed. On a Mac that unloads the profile, and connect_over_cdp fails on
+    Browser.setDownloadBehavior. Opening a window brings it back."""
+
+    def setUp(self):
+        self.p = mock.Mock()
+        ctx = mock.Mock(pages=[mock.Mock()])
+        self.browser = mock.Mock(contexts=[ctx])
+        for name, val in (("_port_alive", mock.Mock(return_value=True)),
+                          ("launch_chrome", mock.Mock(return_value=True)),
+                          ("_log", mock.Mock())):
+            pt = mock.patch.object(RP, name, val)
+            pt.start()
+            self.addCleanup(pt.stop)
+
+    def connect(self, pages, side_effect):
+        self.p.chromium.connect_over_cdp.side_effect = side_effect
+        with mock.patch.object(RP, "_page_count", return_value=pages), \
+             mock.patch.object(RP, "_open_window", return_value=True) as ow:
+            got = RP._connect(self.p, background=False)
+        return got, ow
+
+    def test_no_window_gets_one_before_connecting(self):
+        got, ow = self.connect(0, [self.browser])
+        ow.assert_called_once()
+        self.assertIs(got[0], self.browser)
+
+    def test_a_chrome_with_a_window_is_left_alone(self):
+        got, ow = self.connect(2, [self.browser])
+        ow.assert_not_called()
+        self.assertEqual(self.p.chromium.connect_over_cdp.call_count, 1)
+
+    def test_the_error_itself_gets_a_window_and_one_retry(self):
+        got, ow = self.connect(1, [NO_PROFILE, self.browser])
+        ow.assert_called_once()
+        self.assertEqual(self.p.chromium.connect_over_cdp.call_count, 2)
+        self.assertIs(got[0], self.browser)
+
+    def test_any_other_connect_error_is_not_retried(self):
+        with self.assertRaises(Error):
+            self.connect(1, [NO_CDP, self.browser])
+        self.assertEqual(self.p.chromium.connect_over_cdp.call_count, 1)
+
+    def test_a_fresh_launch_is_not_second_guessed(self):
+        with mock.patch.object(RP, "_port_alive", return_value=False):
+            got, ow = self.connect(0, [self.browser])
+        ow.assert_not_called()
+
+    def test_if_it_still_fails_the_screen_says_why(self):
+        reason, hint = RP.explain_failure(NO_PROFILE)
+        self.assertIn("no window open", reason)
+        self.assertIn("Quit", hint)
+
+
 if __name__ == "__main__":
     unittest.main()

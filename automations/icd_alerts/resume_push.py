@@ -463,13 +463,67 @@ def sign_in(page, ctx, log=_log) -> bool:
     return False
 
 
+# A CHROME WITH NO WINDOW CANNOT BE DRIVEN. On a Mac, closing Lucy's last
+# Chrome window leaves Chrome running -- port 9247 still answers -- but Chrome
+# unloads the profile behind it, and connect_over_cdp then dies on its first
+# call: "Protocol error (Browser.setDownloadBehavior): Browser context
+# management is not supported." Drew, 2026-10-06; reproduced here on Chrome
+# 154 + patchright 1.60 (window open: fine; windows closed: that exact error).
+# Not a version mismatch, and nothing a password can fix.
+_NO_PROFILE = "context management is not supported"
+
+
+def _page_count() -> int:
+    """Open tabs in Lucy's Chrome; -1 when it cannot be asked."""
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:%d/json/list" % PORT,
+                                    timeout=5) as r:
+            return sum(1 for t in json.loads(r.read())
+                       if t.get("type") == "page")
+    except Exception:  # noqa: BLE001
+        return -1
+
+
+def _open_window(url: str) -> bool:
+    """Ask Lucy's Chrome for a new window over plain HTTP. That loads her
+    profile again, which is all connect_over_cdp was missing. Measured: it
+    brings a windowless Chrome back without restarting it, on any OS."""
+    import urllib.parse
+    try:
+        req = urllib.request.Request(
+            "http://127.0.0.1:%d/json/new?%s"
+            % (PORT, urllib.parse.quote(url, safe=":/?=&")), method="PUT")
+        with urllib.request.urlopen(req, timeout=10):
+            pass
+    except Exception:  # noqa: BLE001
+        return False
+    for _ in range(10):
+        if _page_count() > 0:
+            return True
+        time.sleep(0.5)
+    return False
+
+
 def _connect(p, background: bool, url: str = AS_BASE, guard=None):
     """(browser, ctx, page) on Lucy's Chrome, starting it if needed."""
     if guard:
         guard.expect(30)            # a cold Chrome takes a while to come up
-    if not _port_alive() and not launch_chrome(url, background):
+    if _port_alive():
+        if _page_count() == 0:
+            _log("Lucy's Chrome was open with no window -- opening one")
+            _open_window(url)
+    elif not launch_chrome(url, background):
         return None, None, None
-    browser = p.chromium.connect_over_cdp("http://127.0.0.1:%d" % PORT)
+    cdp = "http://127.0.0.1:%d" % PORT
+    try:
+        browser = p.chromium.connect_over_cdp(cdp)
+    except Exception as e:  # noqa: BLE001
+        # The window check above can lose a race with a window closing; the
+        # message is the proof, so give it one more window and one more try.
+        if _NO_PROFILE not in str(e).lower() or not _open_window(url):
+            raise
+        _log("Lucy's Chrome had no window -- opened one, connecting again")
+        browser = p.chromium.connect_over_cdp(cdp)
     ctx = browser.contexts[0] if browser.contexts else browser.new_context()
     page = ctx.pages[0] if ctx.pages else ctx.new_page()
     for extra in list(ctx.pages)[1:]:
@@ -531,6 +585,10 @@ def explain_failure(e: BaseException) -> "tuple[str, str]":
     """
     msg = str(e).strip()
     low = msg.lower()
+    if _NO_PROFILE in low:      # first: its call log can mention closing
+        return ("Lucy's Chrome was running with no window open",
+                "Quit Lucy's Chrome (right-click Chrome in the Dock > Quit), "
+                "then run this again.")
     if any(s in low for s in _CLOSED):
         return ("Lucy's Chrome window was closed before the check finished",
                 "Run this again and leave the Chrome window that opens alone "
