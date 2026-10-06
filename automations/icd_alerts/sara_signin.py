@@ -99,6 +99,7 @@ def run(log=print) -> int:
         except OSError:
             pass
     if rc != 0:
+        _tell_upstream("window closed or not signed in (rc %d)" % rc, log=log)
         return rc
     # THE WINDOW IS NOT THE THING THAT HAS TO WORK. Every sweep runs its own,
     # hidden browser, and on 2026-09-21 Khalil's visible window was trusted at
@@ -108,6 +109,9 @@ def run(log=print) -> int:
     # there something she can run now to make sure it's working before people
     # actually hit the field today??"
     rc = verify_hidden_read(log=log)
+    _tell_upstream("done -- hidden read passed" if rc == 0
+                   else "signed in, but the hidden read is still challenged (rc %d)" % rc,
+                   detail="\n".join(_LAST_VERDICT), log=log)
     if rc == 0:
         # THE PERSON'S FIX IS TRIED AT ONCE. hold_sara() stands the sweeps
         # down for 30 minutes after a wall; a code typed here at 11:45 that
@@ -122,6 +126,23 @@ def run(log=print) -> int:
     return rc
 
 
+# WHAT THE WINDOW DECIDED, FILED WHERE WE CAN READ IT. 2026-10-05: Rashad and
+# Eveliz both said they ran the link; both machines hit the wall again within
+# the hour, and the only record of what the window saw was on their screens.
+# A probe- stage is kept out of the channels (post.notify_faults skips them)
+# but lands on the ICD Faults tab with its detail.
+_LAST_VERDICT: list = []
+
+
+def _tell_upstream(verdict: str, detail: str = "", log=print) -> None:
+    try:
+        from automations.icd_alerts import relay as RL
+        RL.report_fault("probe-signin-saraplus", "SaraPlus sign-in window: %s" % verdict,
+                        detail=detail, log=None)
+    except Exception:  # noqa: BLE001 -- telling us must never cost the person
+        pass
+
+
 def verify_hidden_read(log=print) -> int:
     """One real scheduled-style SaraPlus sign-in, hidden, and a plain verdict."""
     from automations.icd_alerts import sara_read as SR
@@ -130,6 +151,7 @@ def verify_hidden_read(log=print) -> int:
     try:
         got = SR.check_account(headless=True, log=lambda *_a: None)
     except SR.AccountProblem as e:
+        _LAST_VERDICT[:] = [str(e)[:300]] + list(getattr(e, "presented", None) or [])
         log("")
         log("  NOT YET. The automatic read was stopped:")
         for line in str(e).splitlines()[:3]:

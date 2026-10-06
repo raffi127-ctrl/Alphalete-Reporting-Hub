@@ -378,3 +378,39 @@ class ATypedCodeClearsTheHoldAtOnce(unittest.TestCase):
              mock.patch.object(SR, "clear_sara_hold", lambda: cleared.append(1)):
             self.assertEqual(X.run(log=lambda *a: None), 1)
         self.assertEqual(cleared, [])
+
+
+class TheWindowsVerdictIsFiledUpstream(unittest.TestCase):
+    """2026-10-05: two owners said they ran it, both machines stayed walled,
+    and nothing recorded what the window saw. Now it files a probe- fault."""
+
+    def _run(self, window_rc, verify_rc):
+        from automations.icd_alerts import relay as RL
+        filed = []
+        with mock.patch.object(X, "_window", lambda log=print: window_rc), \
+             mock.patch.object(X, "verify_hidden_read", lambda log=print: verify_rc), \
+             mock.patch.object(X.C, "creds", lambda: {}), \
+             mock.patch.object(RL, "report_fault", lambda stage, summary, **kw: filed.append((stage, summary)) or True):
+            rc = X.run(log=lambda *a: None)
+        return rc, filed
+
+    def test_a_passed_check_is_filed_as_done(self):
+        rc, filed = self._run(0, 0)
+        self.assertEqual(rc, 0)
+        self.assertEqual(filed[0][0], "probe-signin-saraplus")
+        self.assertIn("done", filed[0][1])
+
+    def test_a_still_challenged_read_is_filed_as_such(self):
+        rc, filed = self._run(0, 1)
+        self.assertEqual(rc, 1)
+        self.assertIn("still challenged", filed[0][1])
+
+    def test_a_closed_window_is_filed(self):
+        rc, filed = self._run(1, 0)
+        self.assertEqual(rc, 1)
+        self.assertIn("not signed in", filed[0][1])
+
+    def test_probe_stages_stay_out_of_the_channels(self):
+        import inspect
+        from automations.icd_alerts import post as P
+        self.assertIn('startswith("probe-")', inspect.getsource(P.notify_faults))
