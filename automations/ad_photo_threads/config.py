@@ -279,6 +279,11 @@ _MORE = [
     # Romina, Lucia F. (ARS). Photos channel created by Eve 10/5.
     ("eveliz", "Eveliz Wright", SOUTH_SHORE, "Eveliz Wright", "18404", "Eveliz Wright",
      "C0C5TPWLR2R", "C0C6VCLRAUS", r"first\s*round\s*thread"),
+    # Jamis Garay (Carlos 10/6). Naiara posts ":m:*MIDSPIRE - 1st ROUNDS -
+    # 10/05*" in #jamis-office every day; the "*EOD REPORT - 10/05*" that
+    # follows doesn't match. Photos channel created 10/6.
+    ("jamis", "Jamis Garay", ARS_J_TO_L, "Jamis Garay new", "19592", "Midspire Inc",
+     "C0AJNRR4ZC7", "C0C7637NV42", r"midspire.*1st\s*round"),
 ]
 
 # Zones the office_tz table (knocks, by owner name) can't place, cross-checked
