@@ -142,7 +142,7 @@ def _booker_drops(moved):
         "Show rate by booker", "D",
         "{} down to {:.0f}% from {:.0f}%".format(
             worst[0], worst[1], worst[2]),
-        "no drop over {:.0f} pts".format(R.DROP),
+        "no drop over {:.0f}%".format(R.DROP),
         "Talk to {}.".format(worst[0])), None
 
 

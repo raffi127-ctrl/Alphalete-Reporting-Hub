@@ -45,7 +45,7 @@ WEEKS = ["w0821", "w0828", "w0904", "w0911", "w0918", "w0925"]
 # bookings at 20% is one person's bad morning, not a trend.
 MIN_N = 10
 # How far it has to fall below its own trailing average to be called out.
-DROP = 12.0
+DROP = 10.0
 
 
 def shown(r):
@@ -254,7 +254,7 @@ def main(argv=None):
         print("\nWHAT MOVED in the latest {} (own trailing average):".format(a.by))
         for b, rate, trail, n in moved:
             d = rate - trail
-            flag = "  <-- DOWN {:.0f} POINTS".format(-d) if d <= -DROP else ""
+            flag = "  <-- DOWN {:.0f}%".format(-d) if d <= -DROP else ""
             print("   {:<22} {:>5.0f}%  was {:>5.0f}%  on {:>4}{}".format(
                 b[:22], rate, trail, n, flag))
     return 0
