@@ -270,6 +270,16 @@ def _with_where(schedule: str, names) -> str:
     return "\n".join(lines)
 
 
+# Rooms no registry names, so the page would otherwise print a bare 'Slack'.
+# Each one cited where it is written down, because an id is unreadable and a
+# wrong name is worse than none.
+KNOWN_ROOMS = {
+    # tableau_screenshots/slack_post.py:42, new_start_followup, and the
+    # lvl1 mirror — Raf's private level-1 room.
+    "C09JG28CD27": "#alphalete-lvl1-chat",
+}
+
+
 def _room_name(channel_id: str) -> str:
     """A Slack room's name from its id, out of the registries that hold both.
     '' when nothing knows it — the caller then says 'Slack' and no more."""
@@ -281,7 +291,7 @@ def _room_name(channel_id: str) -> str:
     now = _t.time()
     if key in _CACHE and now - _CACHE[key][0] < _TTL:
         return _CACHE[key][1].get(cid, "")
-    byid = {}
+    byid = dict(KNOWN_ROOMS)
     try:
         from automations.office_metrics import offices as OM
         for o in OM.OFFICES.values():
