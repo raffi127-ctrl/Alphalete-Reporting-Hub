@@ -779,6 +779,46 @@ def rows(icds=None, admin: bool = False) -> list:
                 names = sorted(names)
             except Exception:   # noqa: BLE001
                 pass
+            # AN OFFICE THAT SIGNED UP IS AN OFFICE WE RUN SOMETHING FOR,
+            # even before it reaches the board or the bulletin. Luke Baldwin
+            # and Jennifer Figueroa both enrolled on 2026-10-06, both were
+            # installing that afternoon, and neither appeared here at all --
+            # the roster only knew the board, the bulletin and the ad-photo
+            # config, and a same-day sign-up is on none of them (Megan
+            # 2026-10-06: "we need to add luke baldwin"). Reading the
+            # sign-ups means the next one needs no code change.
+            #
+            # DECLINED IS LEFT OUT. A refused sign-up is not an office we
+            # run anything for, and this page is public.
+            try:
+                from automations.icd_signup import store as _SS
+                have = {_letters(n) for n in names}
+                for _s in _SS.all_signups(strict=True):
+                    own = (getattr(_s, "owner", "") or "").strip()
+                    if not own or (getattr(_s, "status", "") or "") == "declined":
+                        continue
+                    if _letters(own) in have:
+                        continue
+                    names.append(own)
+                    have.add(_letters(own))
+                names = sorted(names)
+            except Exception:   # noqa: BLE001
+                pass
+
+            # A RETIRED OFFICE STAYS GONE, whichever source named it.
+            # profiles.load() drops them, but the two blocks above append
+            # from the org bulletin and the ad-photo config and neither
+            # consults that list -- so a terminated owner still reading
+            # Active ICD = YES on the bulletin walked straight back onto the
+            # public page (Ronald Dawson, Megan 2026-10-06). Filtered LAST,
+            # after every source has had its say.
+            try:
+                _gone = P.retired_names()
+                if _gone:
+                    names = [n for n in names
+                             if (n or "").strip().lower() not in _gone]
+            except Exception:   # noqa: BLE001
+                pass
         chan = _channels()
         sched = _metrics_schedule()
 
