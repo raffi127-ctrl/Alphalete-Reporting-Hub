@@ -91,6 +91,26 @@ def main() -> None:
     def _tone(col):
         return [TONE.get(EN.cell_tone(col.name, v), "") for v in col]
 
+    # WHAT IS THIS COLUMN? (Megan 2026-10-05: "when I click on 'Text
+    # Scoreboard' I want an image example of what it is"). A dataframe header
+    # cannot be clicked — the table is drawn to a canvas — so the answer sits
+    # directly above it as one popover per feature, which is the same gesture
+    # and works on a phone.
+    st.caption("What each column means — click one:")
+    picks = [c for c in safe if c in EN.EXPLAINS]
+    for chunk in range(0, len(picks), 5):
+        for col, box in zip(picks[chunk:chunk + 5], st.columns(5)):
+            words, shot = EN.EXPLAINS[col]
+            with box.popover(col, use_container_width=True):
+                st.markdown(f"**{col}**")
+                st.write(words)
+                img = _ROOT / "resources" / "report-screenshots" / shot
+                if shot and img.exists():
+                    st.image(str(img), use_container_width=True)
+                else:
+                    st.caption("No example image for this one yet.")
+    st.write("")
+
     st.dataframe(
         frame.style.apply(_tone, axis=0),
         use_container_width=True, hide_index=True, column_config=cfg,

@@ -33,7 +33,8 @@ import time
 SAFE_COLUMNS = ["ICD", "Campaigns", "LucyECO", "Sara+ Alerts",
                 "Text Scoreboard", "Call-outs", "Knock & Dispo Boards",
                 "Weather Report", "Ad Photo Threads", "Resume Pushing",
-                "Metrics Thread", "Trackers", "Dispo Alerts", "Posts to"]
+                "Metrics Thread", "Tableau Trackers", "Dispo Alerts",
+                "Posts to"]
 
 # A feature an office does NOT have says so (Megan 2026-10-05: "not just
 # blank - should be light red"). A blank cell is ambiguous between "no" and
@@ -136,6 +137,46 @@ WAIT_WORDS = ("Pending", "Partial")
 # Columns that are a fact about the office rather than a yes/no, so they are
 # never coloured: a green name tells you nothing.
 UNCOLOURED = ("ICD", "Campaigns", "Posts to")
+
+# Everything downstream of the office's own machine. A channel can be
+# approved while nothing is coming through it — Eveliz and Rashad are both
+# signed up with rooms set up and have never relayed, and the page called
+# their alerts Active (Megan 2026-10-05: "doesn't have an active sara+ yet so
+# it should say pending"). Approved is not flowing, so when the office has
+# never reported these read Pending rather than Active. The ones WE run off
+# our own scrape — metrics, trackers — are unaffected.
+RELAY_FED = ("Sara+ Alerts", "Text Scoreboard", "Call-outs",
+             "Knock & Dispo Boards")
+
+
+# WHAT EACH COLUMN MEANS, and a picture where we have one. The screenshots
+# are the Hub's own card images, so they are the real thing rather than a
+# mock-up. A feature with no shot yet gets the words only — better than a
+# broken image, and dropping a PNG in `resources/report-screenshots/` under
+# the name below is all it takes to give it one.
+EXPLAINS = {
+    "Sara+ Alerts": ("Every sale and credit check off the office's own "
+                     "SaraPlus, posted to their room as it happens.", ""),
+    "Text Scoreboard": ("The running scoreboard texted to the office's "
+                        "iMessage group through the day.", ""),
+    "Call-outs": ("Lucy calling out a rep who has gone quiet, and praising "
+                  "a good pace, in the office's room.", ""),
+    "Knock & Dispo Boards": ("The knocks and dispositions board, posted on "
+                             "the office's own cadence.", "total-knocks.png"),
+    "Weather Report": ("The morning forecast for that office's city.",
+                       "lucy-weather-forecast.png"),
+    "Ad Photo Threads": ("Eve's daily 1st-round screenshots, one Slack "
+                         "thread per Indeed ad, with the ad's % removed and "
+                         "average star rating.", ""),
+    "Resume Pushing": ("Pulling resumes out of ApplicantStream and sending "
+                       "them to the AI.", "resume-pushing.png"),
+    "Metrics Thread": ("The office's daily metrics thread in Slack.",
+                       "office-metrics.png"),
+    "Tableau Trackers": ("The universal tracker boards, drawn from Tableau "
+                         "and posted to the office's room.", ""),
+    "Dispo Alerts": ("The KNOCKS & DISPOSITIONS card — reps over a 15 "
+                     "minute gap — texted through the day.", ""),
+}
 
 
 def cell_tone(column: str, value) -> str:
@@ -454,7 +495,7 @@ def rows(icds=None) -> list:
                     f.key in ads for f in feeds) else "",
                 "Resume Pushing": ENROLLED if me in resume else "",
                 "Metrics Thread": ENROLLED if mkey else "",
-                "Trackers": ENROLLED if mkey else "",
+                "Tableau Trackers": ENROLLED if mkey else "",
                 # A short key is a PREFIX of the full name ('rafael' ->
                 # 'rafaelhidalgo'), which is how that registry names an office.
                 "Dispo Alerts": DISPO_WINDOW if any(
@@ -466,9 +507,15 @@ def rows(icds=None) -> list:
                 # this page has no business carrying.
                 "Posts to": _rooms(feeds, chan, approved_rooms),
             })
-        # A blank reads as "we did not check"; say no out loud.
         skip = {"ICD", "Campaigns", "LucyECO", "Posts to"}
         for r in out:
+            # Nothing has come through this office's machine yet, so anything
+            # that rides it is set up and waiting, not running.
+            if r.get("LucyECO") == "Pending":
+                for c in RELAY_FED:
+                    if r.get(c):
+                        r[c] = "Pending"
+            # A blank reads as "we did not check"; say no out loud.
             for c in SAFE_COLUMNS:
                 if c not in skip and not r.get(c):
                     r[c] = NOT_ON
