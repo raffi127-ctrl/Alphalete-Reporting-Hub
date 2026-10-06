@@ -254,7 +254,7 @@ def main(argv=None):
         print("\nWHAT MOVED in the latest {} (own trailing average):".format(a.by))
         for b, rate, trail, n in moved:
             d = rate - trail
-            flag = "  <-- DOWN {:.0f}%".format(-d) if d <= -DROP else ""
+            flag = "  <-- DOWN {:.0f} POINTS".format(-d) if d <= -DROP else ""
             print("   {:<22} {:>5.0f}%  was {:>5.0f}%  on {:>4}{}".format(
                 b[:22], rate, trail, n, flag))
     return 0

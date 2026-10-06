@@ -578,8 +578,8 @@ def write_report(office, tmpl, msgs, moved, tab, path,
         real = [m for m in (moved or []) if abs(m[1] - m[2]) >= R.DROP]
         add("<h3>What changed in the latest week</h3>")
         if not real:
-            add("<p>Nobody moved more than {:.0f}% against their own "
-                "usual rate.</p>".format(R.DROP))
+            add("<p>Nobody moved more than {:.0f} points against their "
+                "own usual rate.</p>".format(R.DROP))
         else:
             # Megan 2026-10-06: "remove". Still true, and still what the
             # numbers below mean: each person is scored against their OWN
@@ -588,7 +588,7 @@ def write_report(office, tmpl, msgs, moved, tab, path,
             for b, rate, trail, n in real:
                 dd = rate - trail
                 add("<li><b>{}</b> &mdash; {:.0f}% this week against a usual "
-                    "{:.0f}%. <b class='{}'>{} {:.0f}%</b>, on {} "
+                    "{:.0f}%. <b class='{}'>{} {:.0f} points</b>, on {} "
                     "booking{}.</li>"
                     .format(esc(R.expand_name(b, names)), rate, trail,
                             "down" if dd < 0 else "up",
@@ -598,7 +598,7 @@ def write_report(office, tmpl, msgs, moved, tab, path,
             steady = len(moved or []) - len(real)
             if steady:
                 add("<p class='none'>{} other booker{} stayed within "
-                    "{:.0f}% of their usual.</p>".format(
+                    "{:.0f} points of their usual.</p>".format(
                         steady, "" if steady == 1 else "s", R.DROP))
 
     add("</body></html>")
