@@ -70,15 +70,28 @@ class LineTest(unittest.TestCase):
 
 
 class SpanishTest(unittest.TestCase):
-    def test_a_spanish_line_joins_with_y(self):
-        from unittest import mock
-        es = [t for t in G.LINES if G._is_spanish(t)]
-        self.assertGreaterEqual(len(es), 5)
-        with mock.patch.object(G, "LINES", (es[0],)):
-            s = G.line("x", [{"name": "Nick S", "mins": 30}, {"name": "Jose R", "mins": 25}], NOW)
-            self.assertIn("Nick y Jose", s)
-            big = G.line("x", [{"name": "R%d X" % i, "mins": 30} for i in range(5)], NOW)
-            self.assertIn("5 de ustedes", big)
+    """Megan 2026-10-06: English lines with a few Spanish phrases, never a
+    whole Spanish sentence. Names always join with "and"."""
+
+    PHRASES = ("¡Vamos!", "¡ándale!", "cafecito", "dinero", "¡a trabajar!", "eso es trabajo",
+               "¡Así se hace!", "recepcionista", "¿eh?", "Ojo")
+
+    def test_no_line_is_spanish_only(self):
+        for pool in (G.LINES, G.B2B_LINES, G.PACE_LINES, G.B2B_PACE_LINES):
+            for t in pool:
+                self.assertFalse(G._is_spanish(t), t)
+                self.assertNotIn("{unit_es}", t)
+                self.assertNotIn(" sin ", t)
+
+    def test_every_pool_still_sprinkles_spanish(self):
+        for pool in (G.LINES, G.B2B_LINES, G.PACE_LINES, G.B2B_PACE_LINES):
+            self.assertTrue(any(any(ph in t for ph in self.PHRASES) for t in pool))
+
+    def test_names_join_with_and_everywhere(self):
+        for h in range(24):
+            s = G.line("x", [{"name": "Nick S", "mins": 30}, {"name": "Jose R", "mins": 25}], NOW.replace(hour=h))
+            self.assertIn("Nick and Jose", s)
+            self.assertNotIn(" y ", s)
 
 
 class DueTest(unittest.TestCase):
@@ -202,8 +215,7 @@ class BoxOfficesGetB2BTalk(unittest.TestCase):
         for t in G.B2B_LINES:
             s = t.format(names="Ana y Jose" if G._is_spanish(t) else "Ana and Jose", m=30)
             self.assertIn("30+", s)
-        self.assertTrue(any(G._is_spanish(t) for t in G.B2B_LINES))
-        self.assertTrue(any(not G._is_spanish(t) for t in G.B2B_LINES))
+        self.assertFalse(any(G._is_spanish(t) for t in G.B2B_LINES))
 
     def test_run_passes_the_campaign(self):
         import inspect

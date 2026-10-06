@@ -103,12 +103,12 @@ LINES = (
     "{names} — {m}+ min quiet. If that's a sale being cooked 🍳 take your time. If not… 👀",
     # EN ESPAÑOL TAMBIÉN (Megan 2026-09-26: "make lucy bilingual"). Same
     # pool, so some hours land in Spanish and some in English.
-    "¡Snicklemeberries! 🫐 {names} — {m}+ min sin dispo. ¿Finger poppin' o tocando puertas? 🚪👀",
-    "{names}: {m}+ min sin tocar una puerta 🚪 Las puertas no se tocan solas 🤷",
-    "{names} — {m}+ min sin dispo y sin venta. ☕ Se acabó el cafecito — a buscar el dinero 💰",
-    "⏱️ {m}+ minutos y ni un dispo de {names}. Los estoy viendo 👀",
-    "{names} — {m}+ min callados 🤫 Si están cocinando una venta 🍳 tómense su tiempo. Si no… 👀",
-    "Ojo 👁️ {names}: {m}+ min sin puertas. ¿Trabajando una venta 💰 o de finger poppers? 🤌",
+    "¡Snicklemeberries! 🫐 {names} — {m}+ min without a dispo. Finger poppin' or knocking? ¡Vamos! 🚪👀",
+    "{names}: {m}+ min without a door 🚪 Doors don't knock themselves, ¡ándale! 🤷",
+    "{names} — {m}+ min, no dispo, no sale. ☕ Cafecito's over — go find the dinero 💰",
+    "⏱️ {m}+ minutes and not a single dispo from {names}. Lucy's watching, ¿eh? 👀",
+    "{names} — {m}+ min quiet 🤫 If you're cooking up a sale 🍳 take your time. If not… ¡a trabajar! 👀",
+    "Ojo 👁️ {names}: {m}+ min without a door. Working a sale 💰 or finger poppin'? 🤌",
 )
 
 # B2B / BOX TALK (Ryan McSpadden 2026-09-30: "Can we change these to more B2B
@@ -128,11 +128,11 @@ B2B_LINES = (
     "{names} — {m}+ min without a dispo. Must be in with the owner cooking up something good… right? 👨‍🍳🔥",
     "No dispo from {names} in {m}+ min. Sitting down with a decision maker? 💼",
     "{names} — {m}+ min without a dispo. Lucy sees you, finger poppers 👀🤌",
-    # EN ESPAÑOL TAMBIÉN, like LINES.
-    "¡Snicklemeberries! 🫐 {names} — {m}+ min sin dispo. ¿Finger poppin' o hablando con dueños? 🏢👀",
-    "{names} — {m}+ min sin dispo y sin venta. ¿Charlando con la recepcionista? 🚧",
-    "⏱️ {m}+ minutos y ni un dispo de {names}. Los estoy viendo 👀",
-    "{names} — {m}+ min callados 🤫 Si están con el dueño 💼 tómense su tiempo. Si no… 👀",
+    # ...and the same Spanish phrases sprinkled in, like LINES.
+    "¡Snicklemeberries! 🫐 {names} — {m}+ min without a dispo. Finger poppin' or talking to owners? ¡Vamos! 🏢👀",
+    "{names} — {m}+ min, no dispo, no sale. Chatting up the recepcionista? 🚧",
+    "⏱️ {m}+ minutes and not a single dispo from {names}. Lucy's watching, ¿eh? 👀",
+    "{names} — {m}+ min quiet 🤫 If you're in with the owner 💼 take your time. If not… ¡a trabajar! 👀",
 )
 
 
@@ -204,7 +204,14 @@ def pick(rows: List[Dict], records_now: Dict[str, int], records_prev: Dict[str, 
     return out
 
 
-_SPANISH_MARKERS = ("¡", "¿", " sin ", "puertas", "ustedes", "estoy", "Ojo,", "callados")
+# ENGLISH WITH A FEW SPANISH PHRASES, NOT SPANISH SENTENCES (Megan 2026-10-06:
+# "Lucy shouldn't talk in Spanish fully - just throw in a few Spanish
+# phrases"). Every line is English and reads with "and"; the Spanish rides as
+# a phrase (¡Vamos!, ¡ándale!, cafecito, dinero, ¡a trabajar!, eso es
+# trabajo). No marker makes a line Spanish-only any more, so the " y " joiner
+# and "N de ustedes" never fire; the code is kept so a Spanish-only line could
+# be added back deliberately.
+_SPANISH_MARKERS = ()
 
 
 def _is_spanish(template: str) -> bool:
@@ -314,8 +321,8 @@ PACE_LINES = (
     "{names} — {avg} {unit}/hr 🏃💨 Somebody's definitely not finger poppin' 🔥",
     "Pace check ⏱️ {names} at {avg} {unit} an hour. Keep that foot on the gas 🚀",
     "{avg} {unit}/hr from {names} 🚪🔥 The neighborhood knows your name by now 🏡",
-    "¡Snicklepop! ⚡ {names} con {avg} {unit_es} por hora 🚪🚪🚪 Así se hace 🔥",
-    "{names} a {avg} {unit_es} por hora 🏃💨 Eso no es finger poppin', eso es trabajo 💪",
+    "¡Snicklepop! ⚡ {names} averaging {avg} {unit} an hour 🚪🚪🚪 ¡Así se hace! 🔥",
+    "{names} at {avg} {unit}/hr 🏃💨 That's not finger poppin', eso es trabajo 💪",
 )
 
 # The same recognition in business talk for the Service Cloud offices (Megan
@@ -326,8 +333,8 @@ B2B_PACE_LINES = (
     "{names} — {avg} {unit}/hr 🏃💨 Somebody's definitely not finger poppin' 🔥",
     "Pace check ⏱️ {names} at {avg} {unit} an hour. Keep walking in 🚀",
     "{avg} {unit}/hr from {names} 🏢🔥 Every owner on the block knows your name by now 💼",
-    "¡Snicklepop! ⚡ {names} con {avg} {unit_es} por hora 🏢🏢🏢 Así se hace 🔥",
-    "{names} a {avg} {unit_es} por hora 🏃💨 Eso no es finger poppin', eso es trabajo 💪",
+    "¡Snicklepop! ⚡ {names} averaging {avg} {unit} an hour 🏢🏢🏢 ¡Así se hace! 🔥",
+    "{names} at {avg} {unit}/hr 🏃💨 That's not finger poppin', eso es trabajo 💪",
 )
 
 
