@@ -52,6 +52,14 @@ TOOLS = [
     ("automations/icd_sales_board/site.py", "sales-board", "Sales board",
      ":material/leaderboard:",
      "Owners — your office's board, by code", False),
+    # NO ACCESS CODE, deliberately (Megan 2026-10-05: "whoever has it can view
+    # it"). It carries office names, what each is enrolled in and when those
+    # run — no rep names, no production, no board codes. Unlisted because it
+    # is a link you send, not something an owner should wander onto from the
+    # front page looking for their own numbers.
+    ("automations/icd_sales_board/lucyeco_page.py", "lucyeco",
+     "Lucy ECOsystem", ":material/hub:",
+     "Who is enrolled in what, and on what schedule", False),
     ("disposition_signup/app.py", "daily-dispositions", "Daily Dispositions",
      ":material/schedule:",
      "Being replaced by Lucy ECOsystem — reachable by link only", False),

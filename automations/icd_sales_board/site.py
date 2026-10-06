@@ -2164,8 +2164,8 @@ def _rollout_section() -> None:
             RO.QUIET: "background-color:#F4CCCC",
             RO.WAITING: "background-color:#FCE5CD"}
     frame = pd.DataFrame(rows, columns=["ICD", "Status", "Board shows",
-                                        "Campaign", "Last reading", "Agent",
-                                        "Board code"])
+                                        "Campaign", "Last reading",
+                                        "On latest update"])
     st.dataframe(
         frame.style.apply(lambda col: [tone.get(v, "") for v in col],
                           subset=["Status"]),
@@ -2176,8 +2176,9 @@ def _rollout_section() -> None:
     st.caption(f"**{ready} ICDs have a board worth sending today** — live, or "
                f"at least yesterday's settled numbers from Tableau.")
     st.caption("To give an ICD their board: send "
-               "**lucyeco.streamlit.app/sales-board** and the code on their "
-               "row. Their code opens their office only.")
+               "**lucyeco.streamlit.app/sales-board** and their access code "
+               "from the Board Access tab. Their code opens their office "
+               "only, and is deliberately not printed here.")
     st.caption(f"Live = reported in the last day on the current agent "
                f"({RO.CURRENT_AGENT}). Needs update = reporting on an older "
                f"agent; it updates itself. Gone quiet = no reading for two "

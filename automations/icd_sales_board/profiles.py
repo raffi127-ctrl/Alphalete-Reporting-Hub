@@ -83,8 +83,15 @@ def load() -> dict:
         return {}
     raw = json.loads(_FILE.read_text(encoding="utf-8"))
     office_index = _office_index()
+    # RETIRED OFFICES ARE NOT ON THE BOARD. Hidden rather than deleted: their
+    # rows, tabs and history are untouched and putting one back is removing a
+    # name from this list. It has to live in the FILE, not in a caller, because
+    # refresh_from_board re-reads the ORG Sales Board and would otherwise hand
+    # every one of them back the next night (Megan 2026-10-05).
+    gone = {n.strip().lower() for n in (raw.get("retired") or [])}
     return {n: _build(n, secs, office_index)
-            for n, secs in sorted(raw.get("per_icd", {}).items())}
+            for n, secs in sorted(raw.get("per_icd", {}).items())
+            if n.strip().lower() not in gone}
 
 
 def get(name: str):
@@ -147,6 +154,15 @@ def refresh_from_board(*, tab: str = "", prune: bool = False) -> dict:
             previous = json.loads(_FILE.read_text()).get("per_icd") or {}
         except (ValueError, OSError):
             previous = {}
+    retired = []
+    if _FILE.exists():
+        try:
+            retired = json.loads(_FILE.read_text()).get("retired") or []
+        except (ValueError, OSError):
+            retired = []
+    gone = {n.strip().lower() for n in retired}
+    # A retired office the board still lists must not come back.
+    per_icd = {n: v for n, v in per_icd.items() if n.strip().lower() not in gone}
     missing = sorted(n for n in previous if n not in per_icd)
     if not prune:
         for name in missing:
@@ -156,6 +172,7 @@ def refresh_from_board(*, tab: str = "", prune: bool = False) -> dict:
     _FILE.write_text(json.dumps(
         {"source_tab": tab or PROD_TAB, "sections": sections,
          "extra_icds": dict(sorted(extra.items())),
+         "retired": sorted(retired),
          "per_icd": dict(sorted(per_icd.items()))},
         indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return per_icd

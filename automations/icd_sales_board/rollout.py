@@ -66,22 +66,23 @@ def _campaigns(feeds) -> str:
     return ", ".join(lab if n == 1 else f"{lab} ×{n}" for lab, n in seen.items())
 
 
-def status_rows(today: dt.date | None = None) -> list:
-    """[{ICD, Status, Campaign, Last reading, Agent, Board code}], worst first
-    within the ones that need attention, Live at the top."""
-    from automations.icd_sales_board import (board_access as BA,
-                                             eco_feeds as E, profiles as P,
+def status_rows(today: dt.date | None = None, light: bool = False) -> list:
+    """[{ICD, Status, Campaign, Last reading, On latest update}], worst first
+    within the ones that need attention, Live at the top.
+
+    NO BOARD CODE HERE (Megan 2026-10-05). It used to carry each office's
+    access code so one could be handed over without opening the Board Access
+    tab. That was fine while this list was admin-only and is not fine now that
+    it is becoming a link anyone can open — a code on a shared page is a code
+    that is no longer an access control."""
+    from automations.icd_sales_board import (eco_feeds as E, profiles as P,
                                              relay_read as RR)
     today = today or dt.date.today()
-    # THE CODE ITSELF, not "yes": this list is admin-only, and the code is the
-    # one thing needed to hand an ICD their board — copy it from the row
-    # instead of opening the Board Access tab to find it.
-    try:
-        code_of = {icd.strip().lower(): code for code, icd in BA.codes().items()}
-    except Exception:   # noqa: BLE001
-        code_of = {}
     want = _agent_n(CURRENT_AGENT)
-    per_rep, office = _tableau_owners()
+    # 'Board shows' costs two large Tableau-mirror reads. The enrollment page
+    # does not draw that column, and paying for a column you do not show is
+    # most of that page's first load.
+    per_rep, office = (set(), set()) if light else _tableau_owners()
     try:
         from automations.focus_office_att import aliases as A
         raw = A.load_aliases()
@@ -95,11 +96,10 @@ def status_rows(today: dt.date | None = None) -> list:
         settled = SHOWS_SETTLED if keys & per_rep else (
             SHOWS_OFFICE if keys & office else SHOWS_NOTHING)
         base = {"ICD": icd, "Campaign": _campaigns(feeds),
-                "Board shows": settled,
-                "Board code": code_of.get(icd.strip().lower(), "—")}
+                "Board shows": settled}
         if not feeds:
-            rows.append(dict(base, Status=NONE, **{"Last reading": "",
-                                                    "Agent": ""}))
+            rows.append(dict(base, Status=NONE,
+                             **{"Last reading": "", "On latest update": ""}))
             continue
         # The office's best feed decides: one working campaign is a working
         # office, and it is the one to look at first.
@@ -109,8 +109,9 @@ def status_rows(today: dt.date | None = None) -> list:
             if lr.get("day") and (best is None or lr["day"] > best["day"]):
                 best = dict(lr, key=f.key)
         if best is None:
-            rows.append(dict(base, Status=WAITING, **{"Last reading": "never",
-                                                       "Agent": ""}))
+            rows.append(dict(base, Status=WAITING,
+                             **{"Last reading": "never",
+                                "On latest update": ""}))
             continue
         age = (today - best["day"]).days
         agent = str(best.get("agent") or "")
@@ -126,9 +127,14 @@ def status_rows(today: dt.date | None = None) -> list:
         when = best.get("local_time") or best["day"].isoformat()
         if status in (LIVE, UPDATE):
             base["Board shows"] = SHOWS_LIVE
+        # WHETHER, not which: the version string said 'icd_alerts/4' and left
+        # you to remember what the current one is. The answer people want is
+        # yes or no, with the old version named only when it is NO.
+        on_latest = ("Yes" if agent == CURRENT_AGENT
+                     else (agent or "—") if agent else "—")
         rows.append(dict(base, Status=status,
                          **{"Last reading": str(when)[:16],
-                            "Agent": best.get("agent") or ""}))
+                            "On latest update": on_latest}))
     return sorted(rows, key=lambda r: (ORDER[r["Status"]], r["ICD"]))
 
 
