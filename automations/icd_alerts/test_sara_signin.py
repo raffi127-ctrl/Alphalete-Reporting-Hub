@@ -414,3 +414,36 @@ class TheWindowsVerdictIsFiledUpstream(unittest.TestCase):
         import inspect
         from automations.icd_alerts import post as P
         self.assertIn('startswith("probe-")', inspect.getsource(P.notify_faults))
+
+
+class TheWindowHandsItsSessionToTheReader(unittest.TestCase):
+    """Eveliz 2026-10-05: window trusted, hidden read challenged, identical
+    browsers. The hidden read resumes the window's URL session instead."""
+
+    def test_session_root(self):
+        self.assertEqual(X._session_root("https://www.saraplus.com/e/(S(abc))/DealerPages/Home.aspx"),
+                         "https://www.saraplus.com/e/(S(abc))/")
+        self.assertEqual(X._session_root("https://www.saraplus.com/e/(S(abc))/Reports/ReportingHub.aspx"),
+                         "https://www.saraplus.com/e/(S(abc))/")
+        self.assertEqual(X._session_root("https://ui.saraplus.com/"), "")
+
+    def test_a_signed_in_window_writes_the_session_for_the_reader(self):
+        from automations.icd_alerts import sara_read as SR
+        kept = []
+        with mock.patch.object(SR, "_remember_session", lambda root: kept.append(root)):
+            X._hand_session_to_the_reader(
+                ["https://www.saraplus.com/e/(S(zzz))/DealerPages/Home.aspx"], log=lambda *a: None)
+        self.assertEqual(kept, ["https://www.saraplus.com/e/(S(zzz))/"])
+
+    def test_a_challenged_window_hands_nothing(self):
+        from automations.icd_alerts import sara_read as SR
+        kept = []
+        with mock.patch.object(SR, "_remember_session", lambda root: kept.append(root)):
+            X._hand_session_to_the_reader(
+                ["https://www.saraplus.com/e/(S(zzz))/Security/VerifyPasscode.aspx"], log=lambda *a: None)
+        self.assertEqual(kept, [])
+
+    def test_the_window_code_calls_it_on_both_signed_in_paths(self):
+        import inspect
+        src = inspect.getsource(X._window)
+        self.assertEqual(src.count("_hand_session_to_the_reader("), 2)

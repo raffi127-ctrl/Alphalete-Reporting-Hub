@@ -64,6 +64,37 @@ def _still_challenged(url: str) -> bool:
     return S.SECURITY_PATH in (url or "").lower()
 
 
+def _session_root(url: str) -> str:
+    """'https://www.saraplus.com/e/(S(abc))/DealerPages/x.aspx' ->
+    'https://www.saraplus.com/e/(S(abc))/' -- the root the reader resumes."""
+    for marker in ("DealerPages/", "Reports/"):
+        i = (url or "").find(marker)
+        if i > 0:
+            return url[:i]
+    return ""
+
+
+def _hand_session_to_the_reader(urls, log=print) -> None:
+    """THE WINDOW'S SESSION IS THE READER'S SESSION. Eveliz, 2026-10-05: she
+    signed in and typed the code; the window was trusted; the hidden read,
+    presenting the identical browser, was challenged again -- and her photo
+    was the only record. SaraPlus keeps the session in the URL
+    (/e/(S(id))/), so the hidden reader does not need the trust the window
+    earned: it resumes the SAME session (saraplus.resume_session proves the
+    report page opens) and no login, and so no challenge, happens at all.
+    The reader forgets it on the first failed read, as always."""
+    for u in urls or []:
+        root = _session_root(u)
+        if root:
+            try:
+                from automations.icd_alerts import sara_read as _SR
+                _SR._remember_session(root)
+                log("  Handing this signed-in session to the automatic reads.")
+            except Exception:  # noqa: BLE001 -- never cost the person their sign-in
+                pass
+            return
+
+
 def run(log=print) -> int:
     from patchright.sync_api import sync_playwright
 
@@ -151,7 +182,7 @@ def verify_hidden_read(log=print) -> int:
     try:
         got = SR.check_account(headless=True, log=lambda *_a: None)
     except SR.AccountProblem as e:
-        _LAST_VERDICT[:] = [str(e)[:300]] + list(getattr(e, "presented", None) or [])
+        _LAST_VERDICT.extend([str(e)[:300]] + ["hidden: " + l for l in (getattr(e, "presented", None) or [])])
         log("")
         log("  NOT YET. The automatic read was stopped:")
         for line in str(e).splitlines()[:3]:
@@ -229,6 +260,7 @@ def _window(log=print) -> int:
                 except Exception:  # noqa: BLE001
                     pass
                 log("  This window is already signed in.")
+                _hand_session_to_the_reader(_live_urls(ctx), log=log)
                 return 0
 
             waited, said, url = 0, False, ""
@@ -254,6 +286,7 @@ def _window(log=print) -> int:
                     log("")
                     log("  Signed in. This browser is trusted now, so the")
                     log("  sweep can read sales again within a few minutes.")
+                    _hand_session_to_the_reader(urls, log=log)
                     # LET SARAPLUS FINISH. The window used to close the
                     # instant the address changed -- before any "remember
                     # this device" cookie set after landing could be written
@@ -263,7 +296,9 @@ def _window(log=print) -> int:
                         page.wait_for_timeout(SETTLE_SECONDS * 1000)
                         log("")
                         log("  This window presents:")
-                        for line in _SR.what_saraplus_sees(ctx, page):
+                        seen = _SR.what_saraplus_sees(ctx, page)
+                        _LAST_VERDICT[:] = ["window: " + l for l in seen]
+                        for line in seen:
                             log("    " + line)
                     except Exception:  # noqa: BLE001
                         pass
