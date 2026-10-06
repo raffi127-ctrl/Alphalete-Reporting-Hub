@@ -191,12 +191,37 @@ def main(argv=None) -> int:
                          f"({SHOT_TAB!r}) for the mini")
     ap.add_argument("--dm", default=None, metavar="U...,U...",
                     help="DM the PNG to these Slack user ids (as Lucy)")
+    ap.add_argument("--probe", action="store_true",
+                    help="print header + duplicate-row diagnosis, build nothing")
     a = ap.parse_args(argv)
     today = (dt.date.fromisoformat(a.today) if a.today else dt.date.today())
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     path = pull(today, verbose=False)
     header, rows = NO.load(path, a.owner)
+    if a.probe:
+        import collections as _c
+        print("PROBE header: " + " | ".join(header))
+        i_spm = NO._find(header, "sp.spm number", "spm")
+        i_tn = NO._find(header, "spe.tn", "customer phone")
+        i_od = NO._find(header, "sp.order date", "order date")
+        keyc = _c.Counter((NO._cell(r, i_spm), NO._cell(r, i_tn),
+                           NO._cell(r, i_od)) for r in rows)
+        hist = _c.Counter(keyc.values())
+        print(f"PROBE rows={len(rows)} multiplicity histogram "
+              f"{{rows-per-(spm,tn,date): count}}: {dict(hist)}")
+        for key, n in keyc.items():
+            if n > 1:
+                pair = [r for r in rows
+                        if (NO._cell(r, i_spm), NO._cell(r, i_tn),
+                            NO._cell(r, i_od)) == key][:2]
+                diff = [f"{header[i]}: {pair[0][i]!r} vs {pair[1][i]!r}"
+                        for i in range(min(len(pair[0]), len(pair[1])))
+                        if pair[0][i] != pair[1][i]]
+                print("PROBE dup pair differs in -> "
+                      + ("; ".join(diff) or "NOTHING (identical)"))
+                break
+        return 0
     if not rows:
         print(f"no rows for owner {a.owner!r} — check the Owner & Office "
               "spelling against the export")
