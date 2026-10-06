@@ -302,16 +302,21 @@ def att_day_ready(per_rep: dict, upto: dt.date,
     return now.time() >= ATT_EMPTY_DAY_IS_REAL_AFTER
 
 
-def load_priced(csv_path: Path, monday: dt.date, upto: dt.date):
-    """-> per-rep {'days': {date: $}, 'elig': n, 'payable': n}, unpriced."""
+def load_priced(csv_path: Path, monday: dt.date, upto: dt.date,
+                owner_prefix: str | None = None):
+    """-> per-rep {'days': {date: $}, 'elig': n, 'payable': n}, unpriced.
+
+    No owner_prefix = Vantura's board (reps on its Sales Board). With one
+    (e.g. 'JAMIS GARAY', 2026-10-06) = that ICD's own office, every rep the
+    export puts under it — his reps aren't on Vantura's Sales Board."""
     from automations.att_order_log import clean
-    reps_ok = board_b2b_reps()
+    reps_ok = None if owner_prefix else board_b2b_reps()
     out = collections.defaultdict(lambda: {"days": collections.defaultdict(float),
                                            "elig": 0.0, "payable": 0.0})
     unpriced = collections.Counter()
-    for r in clean.load_rows(str(csv_path), owner_prefix=None):
+    for r in clean.load_rows(str(csv_path), owner_prefix=owner_prefix):
         rep = _n(r.get("Rep"))
-        if not rep or norm_name(rep) not in reps_ok:
+        if not rep or (reps_ok is not None and norm_name(rep) not in reps_ok):
             continue
         try:
             u = float(r.get("Unit Count") or 0)
@@ -496,8 +501,8 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
 </style></head><body><div class="wrap">
  <div class="hdr"><div class="kick">{kick}</div>
   <div class="hrow"><h1>Revenue Board</h1>
-  <div class="date">Week of {monday.strftime('%b %-d')} — through
-  {upto.strftime('%A, %b %-d, %Y')}</div></div></div>
+  <div class="date">Week of {monday.strftime('%b')} {monday.day} — through
+  {upto.strftime('%A, %b')} {upto.day}, {upto.year}</div></div></div>
  <div class="cards">
   <div class="card"><div class="clab">OFFICE WEEK TOTAL</div>
    <div class="cval">{money(week_total)}</div></div>

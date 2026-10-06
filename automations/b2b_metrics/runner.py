@@ -465,6 +465,12 @@ def contents_text(o: B2BOffice) -> str:
                      for i in expected_items(o))
 
 
+# Offices that get the Revenue Board WITHOUT the rest of Carlos's rep_boards
+# set (Jamis 2026-10-06, via Carlos: "jamis said he asked for the revenue
+# board"). It's first in ITEMS, so it opens their thread like Carlos's.
+REVENUE_BOARD_OFFICES = {"jamis"}
+
+
 def expected_items(o: B2BOffice) -> list:
     """The sections this office's parent post ENUMERATES — the completeness
     contract. Used both to build the header and to reconcile expected-vs-actual,
@@ -481,7 +487,9 @@ def expected_items(o: B2BOffice) -> list:
     default = [i for i in ITEMS if i["id"] not in o.skip_views
                and (i["id"] not in ("churn_by_rep", "activation_revenue",
                                     "revenue_board", "pending_orders")
-                    or o.rep_boards)]
+                    or o.rep_boards
+                    or (i["id"] == "revenue_board"
+                        and o.key in REVENUE_BOARD_OFFICES))]
     # rep_boards offices post in CARLOS'S ORDER (2026-09-14, dictated in
     # full): money first, then activations, then churn (customer churn ahead
     # of the rate boards), then the log. sales_metrics went unmentioned in

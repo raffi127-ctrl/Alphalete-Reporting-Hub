@@ -339,7 +339,13 @@ def revenue_board_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
             and src_csv.stat().st_mtime > _time.time() - 3600):
         from automations.captainship_boards.run import pull_orderlog
         pull_orderlog(monday, upto, src_csv)
-    per_rep, _unpriced = rb.load_priced(src_csv, monday, upto)
+    # Carlos's board = Vantura's Sales Board reps; any other office (Jamis,
+    # 2026-10-06: "he asked for the revenue board") = its own rows in the
+    # same export, sliced on the owner name before the '['.
+    owner_prefix = (None if o is None or o.key == "carlos" else
+                    (o.owner_office or o.owner).split("[")[0].strip() or None)
+    per_rep, _unpriced = rb.load_priced(src_csv, monday, upto,
+                                        owner_prefix=owner_prefix)
     if not rb.att_day_ready(per_rep, upto):
         # A WAIT, not a failure (10/2 ticket): before 06:25 the export often
         # lacks yesterday's rows, and the 7:45 pass renders it fine. Raised as
@@ -352,7 +358,8 @@ def revenue_board_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
     out = Path(out_dir) / "Revenue Board {}.{}.png".format(upto.month,
                                                            upto.day)
     rb.render(rows, office, monday, upto, out)
-    log("   \u2713 revenue board [carlos]: priced + rendered for the thread")
+    log("   \u2713 revenue board [{}]: priced + rendered for the thread"
+        .format(o.key if o is not None else "carlos"))
     return out
 
 
