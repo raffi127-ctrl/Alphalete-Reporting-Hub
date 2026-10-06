@@ -94,7 +94,7 @@ LINES = (
     "⏱️ {m}+ minutes and not a single dispo from {names}. I'm watching 👀",
     "No doors 🚪 and no sales 💸 from {names} for {m}+ min. Everything okay, or just admiring the neighborhood? 🏡",
     "{names} — {m}+ min off the doors. The board's not going to fill itself 📋⚡",
-    "Quiet check 🤫 {names} — {m}+ min without a door. Y'all finger poppin' each other out there? 🤌🤌",
+    "Quiet check 🤫 {names} — {m}+ min without a door. Y'all finger poppin' out there? 🤌🤌",
     "{names} — {m}+ min without a dispo. Lucy sees you, finger poppers 👀🤌",
     # BENEFIT OF THE DOUBT (Megan 2026-09-26): a quiet rep may be inside with
     # a customer. Half the pool leaves that door open.
