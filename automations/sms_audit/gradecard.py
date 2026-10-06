@@ -20,6 +20,7 @@ Two rules it keeps:
 from __future__ import annotations  # Lucy runs Python 3.9 — keep lazy
 
 from automations.sms_audit import call_list as CL
+from automations.sms_audit import leadtime as LT
 from automations.sms_audit import retention as R
 
 # How many of the office's own texts a typing fault rate is worth reading at.
@@ -107,8 +108,34 @@ def _show_rate(rows):
     return _item(
         "Showed up", g, "{:.0f}% ({} of {})".format(rate, shown, n),
         "{:.0f}% across all accounts".format(SHOW_BENCHMARK),
-        "Bookings made more than a day ahead show at 40% against 64% inside "
-        "six hours. Book nearer the slot before coaching anyone."), None
+        "Read this with the booking lead time row, which carries this "
+        "office's own figures: booking nearer the slot moves it further "
+        "than coaching anyone."), None
+
+
+def _lead_time(res):
+    """How far ahead interviews are booked — the largest lever measured."""
+    if not res or not res.get("ok"):
+        return None, ("Booking lead time",
+                      (res or {}).get("why", "not measured"))
+    share = res["late_share"]
+    g = _band(share, LT.TARGET, LT.TARGET + 10, LT.TARGET + 20,
+              higher_is_better=False)
+    by = {b["label"]: b for b in res["buckets"]}
+    near = by.get("under 2 hrs") or by.get("2-6 hrs")
+    far = by.get("more than a day")
+    cost = ""
+    if near and far:
+        cost = (" Booked {}, {:.0f}% showed; booked more than a day ahead, "
+                "{:.0f}%.".format(near["label"], near["rate"], far["rate"]))
+    return _item(
+        "Booking lead time", g,
+        "{:.0f}% booked more than a day ahead ({} of {})".format(
+            share, res["late"], res["matched"]),
+        "under {:.0f}%".format(LT.TARGET),
+        "Book nearer the slot.{} Association, not proof — people who book "
+        "far ahead may differ — but it is the biggest gap in the "
+        "report.".format(cost)), None
 
 
 def _booker_drops(moved):
@@ -227,11 +254,12 @@ def _templates(tmpl):
 # ------------------------------------------------------------------- public
 
 def build(office, conv=None, msgs=None, ai=None, rows=None, moved=None,
-          tmpl=None, gaps=None):
+          tmpl=None, gaps=None, lead=None):
     """{'items': ranked findings, 'skipped': checks with no data, 'overall'}"""
     items, skipped = [], []
     for fn, arg in ((_conversion, conv), (_show_rate, rows),
-                    (_booker_drops, moved), (_templates, tmpl)):
+                    (_lead_time, lead), (_booker_drops, moved),
+                    (_templates, tmpl)):
         item, skip = fn(arg)
         if item:
             items.append(item)

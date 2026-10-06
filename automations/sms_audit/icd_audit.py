@@ -37,6 +37,7 @@ from automations.sms_audit import ai_settings as AIS
 from automations.sms_audit import call_list as CL
 from automations.sms_audit import escalations as ESC
 from automations.sms_audit import gradecard as GC
+from automations.sms_audit import leadtime as LT
 from automations.sms_audit import offices as O
 from automations.sms_audit import retention as R
 from automations.sms_audit import rebuttals as RB
@@ -184,7 +185,7 @@ def settings_findings(office, median_reply=None, template_names=None,
 
 def write_report(office, tmpl, msgs, moved, tab, path,
                  wlabels=None, conv=None, window=None, ai=None,
-                 rows=None):
+                 rows=None, lead=None):
     o = office
     L = []
     add = L.append
@@ -200,7 +201,7 @@ def write_report(office, tmpl, msgs, moved, tab, path,
     # things to address are". Everything below is already measured; the card
     # only ranks it, so the first thing read is the thing to fix.
     add(GC.render(GC.build(o, conv=conv, msgs=msgs, ai=ai, rows=rows,
-                           moved=moved, tmpl=tmpl,
+                           moved=moved, tmpl=tmpl, lead=lead,
                            gaps=O.missing_fields(o)), esc))
 
     # ---------------- templates ----------------
@@ -615,9 +616,10 @@ def main(argv=None):
         if tmpl and tmpl[1]:
             signs = list(tmpl[1])
         ai = settings_findings(o, median, signs, senders)
+        lead = LT.measure(o)
         write_report(o, tmpl, msgs, moved, tab, path,
                      R.week_labels(rows) if rows else {}, conv, window, ai,
-                     rows=rows)
+                     rows=rows, lead=lead)
         nt = len(tmpl[0]) if tmpl else 0
         nm = (len(msgs["errors"]) + len(msgs["dodged"])) if msgs else 0
         big = [m for m in moved if m[1] - m[2] <= -R.DROP]
