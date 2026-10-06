@@ -253,7 +253,12 @@ def main(argv=None):
             if a.probe:
                 _probe(page, tok, office)
                 continue
-            _open(page, tok)
+            # The fields are on the "settings" pane, NOT the default one.
+            # Probed 2026-10-06: default 4 labelled fields and 0 mapped,
+            # settings 19 and 14 mapped. Reading the default pane is why
+            # every pull reported "0 settings, 0 preferences" while the
+            # escalations table came back fine.
+            _open(page, tok, "settings")
             raw = scrape_settings(page) or {}
             fields = raw.get("fields") or {}
             info, prefs = {}, {}

@@ -77,7 +77,7 @@ class NotPulled(unittest.TestCase):
         self.assertEqual([i for i in got if i["area"] == "AI settings"], [])
         areas = [a for a, _why in skipped]
         self.assertIn("AI settings", areas)
-        self.assertIn("The AI's canned answers", areas)
+        self.assertIn("What the AI replies to applicants", areas)
         self.assertNotIn("Acceptance window", areas)
 
     def test_window_missing_from_a_page_we_did_pull_is_its_own_line(self):
@@ -103,7 +103,7 @@ class Build(unittest.TestCase):
                         conv={"ok": True, "rate": 95.0, "booked": 95,
                               "applied": 100},
                         rows=[("w", "d", "b", False)] * 10)
-        self.assertTrue(any(i["area"] == "Applied → booked"
+        self.assertTrue(any(i["area"] == "Call list retention"
                             for i in card["holding"]))
         self.assertTrue(any(i["area"] == "Showed up" for i in card["items"]))
 
@@ -113,7 +113,7 @@ class Build(unittest.TestCase):
                               "applied": 10},
                         msgs={"errors": ["a"], "dodged": {}, "people": 100,
                               "delivery": {}})
-        self.assertEqual(card["items"][0]["area"], "Applied → booked")
+        self.assertEqual(card["items"][0]["area"], "Call list retention")
 
     def test_a_skipped_check_blocks_a_clean_A(self):
         card = GC.build({"office": "x"}, gaps=["interview address"])

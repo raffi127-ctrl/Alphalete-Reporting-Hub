@@ -64,17 +64,17 @@ def _item(area, grade, number, target, action, level=None):
 # --------------------------------------------------------------- the checks
 
 def _conversion(conv):
-    """Applied -> booked. Megan: "the MAIN thing we need to get as high as
+    """Call list retention. Megan: "the MAIN thing we need to get as high as
     possible - goal at 80%+"."""
     if not conv or not conv.get("ok"):
-        return None, ("Applied → booked",
+        return None, ("Call list retention",
                       (conv or {}).get("why", "no call list or activity pull"))
     rate = conv.get("rate")
     if rate is None:
-        return None, ("Applied → booked", "no rate in the pull")
+        return None, ("Call list retention", "no rate in the pull")
     g = _band(rate, CL.GOAL, CL.GOAL - 10, CL.GOAL - 20)
     return _item(
-        "Applied → booked", g,
+        "Call list retention", g,
         "{:.0f}%".format(rate),
         "{:.0f}%".format(CL.GOAL),
         "Work the call list stage losing them."), None
@@ -217,11 +217,11 @@ def _settings(ai):
             "Fix in AI Settings. Listed below."))
     esc = [f for f in (ai.get("escalations") or []) if f and f[0] != "OK"]
     if any(f[0] == "NOT PULLED" for f in esc):
-        skipped.append(("The AI's canned answers",
+        skipped.append(("What the AI replies to applicants",
                         "escalation rows not pulled"))
     elif esc:
         out.append(_item(
-            "The AI's canned answers", "D", "{} to fix".format(len(esc)), "0",
+            "What the AI replies to applicants", "D", "{} to fix".format(len(esc)), "0",
             "Edit them in AI Settings, Escalations. Listed below."))
     return [o for o in out if o], skipped
 

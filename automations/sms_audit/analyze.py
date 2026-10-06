@@ -524,6 +524,8 @@ def _stat(vals):
         "p90": s[min(len(s) - 1, int(0.9 * len(s)))],
         "within_5": 100.0 * sum(1 for v in s if v <= 5) / len(s),
         "within_60": 100.0 * sum(1 for v in s if v <= 60) / len(s),
+        "within_120": 100.0 * sum(1 for v in s if v <= 120) / len(s),
+        "within_180": 100.0 * sum(1 for v in s if v <= 180) / len(s),
         "over_4h": 100.0 * sum(1 for v in s if v > 240) / len(s),
     }
 
