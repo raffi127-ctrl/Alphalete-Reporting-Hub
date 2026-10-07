@@ -55,7 +55,7 @@ OUT_DIR = REPO_ROOT / "output" / "daily_eod_appstream"
 ARS_MGMT_SHEET = "1l4Q0SreuddKZrgXwb9MytF-EdPZH-H1hLsa69epq-n8"   # ARS Management 2.0
 
 PROD_TO = ["camilahk@arsinterviewsservice.com"]
-TEST_TO = ["alphaletemarketing@gmail.com"]   # Eve, until Camila signs off
+TEST_TO = ["eve@alphaletemarketing.com"]   # Eve, until Camila signs off
 
 GREEN_AT = 50          # 2nd round %, as SHOWN (whole number): >= green, < red
 
