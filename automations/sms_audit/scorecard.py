@@ -125,6 +125,9 @@ def week_stats(office, tag):
             d["display"] = name
         return d
 
+    from automations.sms_audit import leadtime as LT
+    lead = LT.measure(oid, recs=recs, log=log)
+
     # Who actually spoke to us before the slot. Across Jorge Pena's 702
     # bookings the applicants who never replied showed at 19% and the
     # ones who sent 3+ messages at 65% — the single biggest split in the
@@ -135,6 +138,8 @@ def week_stats(office, tag):
         if ph:
             said[ph] = sum(1 for m in (c.get("msgs") or [])
                            if m.get("dir") == "In")
+    booked_here = {r["name"] for r in (lead.get("rows") or [])} \
+        if lead.get("ok") else set()
 
     for r in recs:
         d = slot(r.get("booked_by"))
@@ -145,7 +150,7 @@ def week_stats(office, tag):
         if shown_:
             d["shown"] += 1
         ph = re.sub(r"\D", "", r.get("phone") or "")[-10:]
-        if ph in said:
+        if ph in said and r.get("name") in booked_here:
             if said[ph]:
                 d["talked"] += 1
                 d["talked_shown"] += shown_
@@ -243,8 +248,6 @@ def week_stats(office, tag):
     # the appointment. Megan 2026-10-06 asked whether a falling show rate
     # really was someone booking further out — without this the scorecard
     # was asserting a cause it had not checked.
-    from automations.sms_audit import leadtime as LT
-    lead = LT.measure(oid, recs=recs, log=log)
     if lead.get("ok"):
         for row in lead["rows"]:
             d = slot(row.get("by"))
@@ -322,9 +325,10 @@ def work_on(person, weeks):
             why = ("{:.0f}% of your bookings are over a day out. Use fear of "
                    "loss and book them same or next day.".format(far))
         elif silent_share is not None and silent_share >= 25:
-            why = ("{:.0f}% of the people you booked never replied to a "
-                   "text. They show at {:.0f}%; the ones who talk to you "
-                   "show at {:.0f}%. Get a reply before you book."
+            why = ("{:.0f}% of your bookings never texted you at all \u2014 "
+                   "they were agreed on a call. Those show at {:.0f}%; the "
+                   "ones who text you show at {:.0f}%. After a call, get "
+                   "them to reply to a text before the day."
                    .format(silent_share, silent_rate, talked_rate))
         elif bot:
             why = "Offer sooner interview times."

@@ -604,10 +604,15 @@ class SilentBookings(unittest.TestCase):
                 return i["do"]
         return ""
 
-    def test_a_high_silent_share_is_named(self):
+    def test_a_high_silent_share_is_named_as_a_call_booking(self):
+        """Megan 2026-10-06: "get a reply? what does that mean? ... they
+        aren't being booked via text and a phone call is happening?" The
+        threads showed exactly that — a confirmation sent with no inbound
+        ever, so the booking was agreed on a call."""
         got = self._why(self._p())
-        self.assertIn("never replied", got)
-        self.assertIn("Get a reply before you book", got)
+        self.assertIn("never texted you", got)
+        self.assertIn("agreed on a call", got)
+        self.assertIn("reply to a text before the day", got)
 
     def test_both_show_rates_are_given(self):
         got = self._why(self._p())
@@ -617,9 +622,9 @@ class SilentBookings(unittest.TestCase):
     def test_a_low_silent_share_says_something_else(self):
         got = self._why(self._p(silent=5, silent_shown=1,
                                 talked=95, talked_shown=28))
-        self.assertNotIn("never replied", got)
+        self.assertNotIn("never texted you", got)
 
     def test_too_few_bookings_to_judge(self):
         got = self._why(self._p(booked=10, shown=3, silent=5, silent_shown=0,
                                 talked=5, talked_shown=3))
-        self.assertNotIn("never replied", got)
+        self.assertNotIn("never texted you", got)
