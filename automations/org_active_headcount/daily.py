@@ -137,17 +137,21 @@ def _last_number(vals) -> str:
 
 def carried(g, dl: dict, r: int, day_idx: int) -> Optional[int]:
     """The number an ICD's row carries INTO day `day_idx` (0 = Monday): the last
-    earlier day of the week with a number, else LAST WEEK'S (the closed week's
-    final, hidden black-on-black), else None.
+    earlier day of the week with a number, else None.
 
     Eve 2026-09-24: Brandon Stallkamp read 3 on Monday and '-' on Tuesday, and
     the '-' pulled his week down to nothing. A tracker that misses someone for a
-    day is not a headcount of zero or of unknown — he still has his 3."""
+    day is not a headcount of zero or of unknown — he still has his 3.
+
+    Never LAST WEEK'S (2026-10-07): the headcount starts over every Monday, so
+    last week's final is not a Monday number. Mon 10/5 the Fiber readings tied
+    for 7 ICDs and the carry wrote last week's (Kash 23, Rashad 25) where the
+    tracker said 10 and 8 — Rafael caught it in the mail."""
     for k in reversed(dl["days"][:day_idx]):
         v = _num(_c(g, r, k))
         if v is not None:
             return v
-    return _num(_c(g, r, dl["lastw"])) if dl.get("lastw") else None
+    return None
 
 
 def campaign_by_name(g) -> Dict[str, str]:
@@ -547,6 +551,15 @@ def pick_tracker(icd: str, tid: str, reading: Optional[dict], prev) -> object:
             by_gap = sorted(fits, key=lambda x: abs(x - prev))
             if abs(by_gap[0] - prev) < abs(by_gap[1] - prev):
                 return by_gap[0]
+    # Still tied: the tracker's own number goes in anyway — the strip reading
+    # (A), the full-resolution one the strips were built for. The tracker is
+    # posted EVERY day, sales or not, so a day always has its number (Eve
+    # 2026-10-07). Before this a tie went '-' and the carry wrote another
+    # day's figure: Mon 10/5 took last week's (Kash 23 / Rashad 25 vs 10 / 8).
+    if isinstance(a, int):
+        return a
+    if isinstance(b, int):
+        return b
     return "-"
 
 
