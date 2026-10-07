@@ -114,6 +114,7 @@ LINES = (
     "{names} — {m}+ min off the doors. Still looking for that pony? 🐴 It's behind a door 🚪",
     "{names}: {m}+ min. The pony's not in the car 🐴 Go find it 🚪",
     "{names}: {m}+ min. Volume negates luck — and right now there's no volume 🚪",
+    "{names} — {m}+ min off the doors. Obsessed or average? Your call 🚪 #BOBA",
     # BENEFIT OF THE DOUBT (Megan 2026-09-26): a quiet rep may be inside with
     # a customer. Half the pool leaves that door open.
     "{names} — {m}+ min without a dispo. Must be cooking up something good in there… right? 👨‍🍳🔥",
@@ -152,6 +153,7 @@ B2B_LINES = (
     "{names} — {m}+ min, no walk-ins. Mood's not the plan 🏢 #FYMFTP",
     "{names}: {m}+ min. The pony's not in the parking lot 🐴 It's inside 🏢",
     "{names}: {m}+ min. Volume negates luck — and right now there's no volume 🏢",
+    "{names} — {m}+ min, no walk-ins. Obsessed or average? Your call 🏢 #BOBA",
     # ...and the same Spanish phrases sprinkled in, like LINES.
     "¡Snicklemeberries! 🫐 {names} — {m}+ min without a dispo. Finger poppin' or talking to owners? ¡Vamos! 🏢👀",
     "{names} — {m}+ min, no dispo, no sale. Chatting up the recepcionista? 🚧",
@@ -420,6 +422,9 @@ PACE_LINES = (
     "{names} at {avg} {unit}/hr 🏃💨 That's not finger poppin', eso es trabajo 💪",
     # Alex Hormozi's (Megan 2026-10-07): volume negates luck.
     "{names} — {avg} {unit}/hr 🏃💨 Volume negates luck 🔥",
+    # Grant Cardone's, as the hashtag (Megan 2026-10-07: "we can use the #BOBA
+    # in places too"): Be Obsessed or Be Average.
+    "{names} at {avg} {unit}/hr 🔥 Obsessed, not average. #BOBA",
 )
 
 # The same recognition in business talk for the Service Cloud offices (Megan
@@ -433,6 +438,7 @@ B2B_PACE_LINES = (
     "¡Snicklepop! ⚡ {names} averaging {avg} {unit} an hour 🏢🏢🏢 ¡Así se hace! 🔥",
     "{names} at {avg} {unit}/hr 🏃💨 That's not finger poppin', eso es trabajo 💪",
     "{names} — {avg} {unit}/hr 🏃💨 Volume negates luck 🔥",
+    "{names} at {avg} {unit}/hr 🔥 Obsessed, not average. #BOBA",
 )
 
 
