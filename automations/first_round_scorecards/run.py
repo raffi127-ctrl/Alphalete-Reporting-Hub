@@ -141,7 +141,8 @@ def reply_text(m: Dict, result: Optional[Dict], *, skipped: str = "",
     if appstream.early_by(m):
         lines.append(f"⚠️ Started {appstream.early_by(m)} min before the scheduled time")
     lines += [f"*Score: {s['score']}/100* {emoji(s['score'])}",
-              f"🚩 Red flags: {s['red_hit']} of 5  ·  ✅ Must-dos: {s['musts_done']} of 6"]
+              f"🚩 Red flags: {s['red_hit']} of {s['n_red']}  ·  ✅ Must-dos: "
+              f"{s['musts_done']} of {s['n_must']}"]
     if tag and s["score"] <= FLAG_AT:
         lines.append(f"🔔 {FLAG_AT} pts or under: " + " ".join(f"<@{u}>" for u in FLAG_WHO))
     kind = {key: k for key, _, k in grade.ITEMS}

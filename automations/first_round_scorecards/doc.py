@@ -65,9 +65,13 @@ def build_html(m: Dict, name: str, result: Dict) -> str:
               if result.get("script_office") else
               "<p><b>Script:</b> standard (Rafael's)</p>" if "script_office" in result else ""),
            f'<h2>Scorecard: <span style="color:{col}">{s["score"]} / 100 {_emoji(s["score"])}</span></h2>',
-           f"<p>🚩 Red flags: <b>{s['red_hit']} of 5</b> happened · ✅ Must-dos: "
-           f"<b>{s['musts_done']} of 6</b> done</p>",
-           "<p><i>11 items (5 red flags + 6 must-dos). Score = % of items passed. Red flag: "
+           f"<p>🚩 Red flags: <b>{s['red_hit']} of {s['n_red']}</b> happened · ✅ Must-dos: "
+           f"<b>{s['musts_done']} of {s['n_must']}</b> done</p>",
+           f"<p><i>{s['n_red'] + s['n_must']} items ({s['n_red']} red flags + {s['n_must']} "
+           "must-dos"
+           + (f"; not counted, this office's script leaves it for the 2nd round: "
+              f"{', '.join(grade.SHORT[k] for k in s['na'])}" if s["na"] else "")
+           + "). Score = % of items passed. Red flag: "
            "YES = bad. Must-do: YES = good, only if fully done. Each script portion in "
            "incorrect verbiage: minus half an item. 90+ 🟢 · 70–89 🟡 · under 70 🔴</i></p>",
            "<p><b>Coaching points:</b></p><ul>"
@@ -97,6 +101,10 @@ def build_html(m: Dict, name: str, result: Dict) -> str:
             if k != kind:
                 continue
             n += 1
+            if key in s["na"]:
+                out.append(f"<h3>{n}. {html.escape(question)} — N/A</h3>"
+                           "<p>Not in this office's 1st round script (not counted).</p>")
+                continue
             it = (result.get("items") or {}).get(key) or {}
             yes = bool(it.get("happened"))
             good = (not yes) if kind == "red" else yes

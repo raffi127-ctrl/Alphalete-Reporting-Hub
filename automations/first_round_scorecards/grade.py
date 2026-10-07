@@ -5,6 +5,8 @@ The scorecard is the one Rafael signed off on in the manual pilot (Sep 22-24):
 strictly YES / NO -- partly done counts as NOT done (Rafael, 2026-09-22).
 Score = % of the 11 items passed, minus half an item for every script
 portion said in the wrong words ("incorrect verbiage", Rafael 2026-09-30).
+An office whose script leaves something for the 2nd round (pay, schedule,
+commute) isn't counted on it: % of the items that apply (FORMATS).
 90+ green, 70-89 yellow, under 70 red.
 
 The model only answers the questions; the score is counted here, so it can
@@ -91,10 +93,196 @@ OFFICES = {
                                "All of the positions we're currently hiring for are FULL "
                                "TIME, IN PERSON, DAY SHIFTS, with a minimum of 40 hours "
                                "per week."),
+    # 2026-10-07: the offices Eve wasn't in the channel of (Camila added her)
+    "Blue Mendoza": dict(_STD_PAY),
+    "Christopher Williams": dict(_STD_PAY),
+    "Cody Cannon": dict(_STD_PAY),
+    "JC Pascual": dict(_STD_PAY),
+    "Joe Logan": dict(_STD_PAY),
+    "Steve McElwee": dict(_STD_PAY),
+    "David Robinson": dict(_STD_PAY, schedule="The schedule is Monday through Friday "
+                                              "11:00AM to 8:00PM, Saturdays 9:00AM to "
+                                              "6:00PM."),
+    "Juan Botero": dict(_STD_PAY, schedule_check="Would that schedule work for you?",
+                        schedule="The schedule is Monday through Friday, from 10:00AM to "
+                                 "8:30PM, Saturdays 9:00AM to 6:00PM."),
+    "Tre Mitchell": dict(_STD_PAY, schedule_check="Would that schedule work for you?",
+                         schedule="The schedule is Monday through Friday, from 11:00AM to "
+                                  "8:30PM Saturdays 8:00 AM to 4:00 PM."),
+    # Scripts shaped differently from Rafael's -- see FORMATS below.
+    **{o: {"format": "profits"} for o in ("Eveliz Wright", "Colten Wright", "Jairo Ruiz",
+                                         "Drew Tepper", "George Delgado", "Samuel Acay")},
+    **{o: {"format": "highline"} for o in ("Roshan Ahmad", "Ryan McSpadden")},
+    "Ellen Dent": {"format": "ellen", "schedule_check": "Is that alright with you?",
+                   "schedule": "So regarding schedule, we work Mondays through Fridays "
+                               "8:00 to 6:00, Saturdays 9:00 to 6:00."},
+    "Carlos Hidalgo": {"format": "carlos", "entry": "$1200 - $2000", "assistant": "150k",
+                       "executive": "$250k a year", "executive_short": "$250k"},
 }
 # ZOOMS INFO spells some owners differently from the script's file name
 OWNER_ALIASES = {"raf hidalgo": "Rafael Hidalgo", "nii tagoe": "Nii Teiko",
-                 "max amed": "Max Aden"}
+                 "max amed": "Max Aden", "geoge delgado": "George Delgado",
+                 "joseph logan": "Joe Logan", "lamar mitchell": "Tre Mitchell"}
+
+# Offices whose script isn't Rafael's shape (Camila's PDFs, 2026-10-07). Each
+# one says which scorecard items its script doesn't have ("na": not counted,
+# so an interviewer isn't marked down for a part her script leaves to the 2nd
+# round), which script portions it drops, the lines that read differently, and
+# the rules that change. Score = % of the items that DO apply.
+#   profits  -- Profits Management (Eveliz, Colten, Jairo, Drew, George, Samuel):
+#               no pay in the 1st round, the 2nd round is booked on the call.
+#   highline -- Highline Management (Roshan, Ryan): pay, hours and commute all
+#               wait for the 2nd round.
+#   ellen    -- Ellen's: pay only if they ask ($1,000-2,500/wk), own hours.
+#   carlos   -- Carlos': own pay numbers, no schedule or commute in the 1st round,
+#               2nd round tomorrow in person in Grand Prairie.
+_PROFITS_WRAP = ("The second interview will be in person, so you can come to the office, "
+                 "meet the manager... Would you like to move forward with a second "
+                 "interview? Are you available tomorrow or the day after? ... Which time "
+                 "works best for you? ... You will receive all the important information, "
+                 "including the office address and interview details, by email and text "
+                 "message.")
+_NO_PAY_RULE = ("YES if she quoted any pay number at all -- this script leaves the pay "
+                "for the 2nd round. NO if she quoted none.")
+FORMATS = {
+    "profits": {
+        "na": {"pay"},
+        "drop": {"pay_entry", "pay_assistant", "pay_executive"},
+        "lines": {
+            "face_to_face": "All interactions with them are face to face, so we do not do "
+                            "call center work or anything like that.",
+            "management": "Ultimately we want to put someone into that management role "
+                          "within 6 months to oversee one of our big clients.",
+            "commute": "Remember that we are located in CITY (send the address via zoom "
+                       "chat), is that a sustainable commute for you for an everyday job?",
+            "check_ins": "Does this sound aligned with what you are looking for? / Is that "
+                         "alright with you?",
+            "wrap_up": _PROFITS_WRAP,
+        },
+        "keys": {
+            "face_to_face": "face to face with clients / not a call center",
+            "check_ins": "both questions",
+            "wrap_up": "offering the 2nd interview, booking a day and time for it, and "
+                       "that the address and details come by email and text",
+        },
+        "rules": {
+            "off_script_pay": _NO_PAY_RULE,
+            "management": "YES if she said the goal is a management role within about 6 "
+                          "months.",
+            "wrap_up": "YES only if she offered the 2nd interview, booked a day and time "
+                       "for it on the call, and said the details come by email and text. "
+                       "Missing any = NO.",
+            "check_ins": "YES only if she asked both check-in questions (aligned with what "
+                         "you're looking for? / schedule alright?). Missing any = NO.",
+        },
+    },
+    "highline": {
+        "na": {"pay", "schedule", "commute"},
+        "drop": {"pay_entry", "pay_assistant", "pay_executive", "schedule", "commute"},
+        "lines": {
+            "face_to_face": "We don't do any cold calls, blast emails, or snail mail. "
+                            "Everything we do is person to person, face to face.",
+            "management": "We are definitely looking for someone who wants to grow into "
+                          "higher level roles... in order to get to that management "
+                          "position, we only promote from within.",
+            "check_ins": "Is the face to face side of customer service, sales, and "
+                         "marketing, something you would be comfortable doing? / Is "
+                         "management something that aligns with your goals?",
+            "wrap_up": "If we are moving forward with your profile, we will be reaching out "
+                       "today before 5 p.m. in order to book this second interview with "
+                       "you... have your phone on you... If you don't receive a call/text "
+                       "back it does mean we decided to move in a different direction.",
+        },
+        "keys": {
+            "face_to_face": "everything is person to person, face to face (no cold calls)",
+            "management": "growing into management, promoting from within",
+            "check_ins": "both questions",
+            "wrap_up": "the call or text before 5pm today to book the 2nd interview, and "
+                       "'if you don't hear back we went a different direction'",
+        },
+        "rules": {
+            "off_script_pay": _NO_PAY_RULE,
+            "management": "YES if she said they promote from within and the goal is to grow "
+                          "into management.",
+            "wrap_up": "YES only if she said they reach out before 5pm today to book the 2nd "
+                       "interview and that no call/text means a different direction. "
+                       "Missing any = NO.",
+            "check_ins": "YES only if she asked both (comfortable with the face to face "
+                         "side? / does management align with your goals?). Missing any = NO.",
+        },
+    },
+    "ellen": {
+        "na": {"pay"},
+        "drop": {"face_to_face", "pay_entry", "pay_assistant", "pay_executive"},
+        "lines": {
+            "management": "We're looking for someone that can start off entry-level and be "
+                          "trained into a management role within the first six months of "
+                          "being with us.",
+            "check_ins": "Does this sound aligned with what you are looking for? / Is that "
+                         "alright with you?",
+        },
+        "keys": {"check_ins": "both questions"},
+        "rules": {
+            "off_script_pay": "YES if any pay number she quoted differs from the script (paid "
+                              "training, then performance-based, averaging $1,000-2,500 a "
+                              "week, uncapped -- said only if they ask). NO if she quoted no "
+                              "numbers at all.",
+            "management": "YES if she said the goal is a management role within about 6 "
+                          "months.",
+            "check_ins": "YES only if she asked both check-in questions (aligned with what "
+                         "you're looking for? / schedule alright?). Missing any = NO.",
+        },
+    },
+    "carlos": {
+        "na": {"schedule", "commute"},
+        "drop": {"face_to_face", "schedule", "commute"},
+        "lines": {
+            "management": "Ultimately we want to put someone into that management role "
+                          "within 6 months to oversee one of our big clients.",
+            "pay_entry": "For entry level team members and account managers on average they "
+                         "make about $1200 to $2000 a week and people get paid weekly. Which "
+                         "translates into $57k - $96k a year just starting off.",
+            "pay_assistant": "As soon as someone gets into that assistant manager position "
+                             "they make about 150k a year.",
+            "pay_executive": "At the management position it is $250k a year.",
+            "check_ins": "Overall, is that a comfortable compensation rate for you? / "
+                         "Overall is this an industry that aligns with what you're looking "
+                         "for?",
+            "wrap_up": "We are conducting these interviews tomorrow in person at our Grand "
+                       "Prairie office. If you were to be selected would you be able to make "
+                       "it? ... I would recommend dressing business professional for that and "
+                       "bringing a notebook and pen. If you are selected you'll get a phone "
+                       "call before 5pm. If you don't get a phone call it just means we went "
+                       "a different direction.",
+        },
+        "keys": {
+            "pay_entry": "the $1,200-2,000 weekly average",
+            "pay_assistant": "the $150k for assistant manager",
+            "check_ins": "both questions",
+            "wrap_up": "the 2nd interview tomorrow in person in Grand Prairie, business "
+                       "professional attire, notebook and pen, the call before 5pm, and "
+                       "'if you don't get a call we went a different direction'",
+        },
+        "rules": {
+            "base_pay": "YES if she promised a fixed base pay, hourly pay or salary for the "
+                        "ENTRY-LEVEL role. The script's answer when asked -- \"there is "
+                        "potential for a base salary based on background and experience, "
+                        "plus bonuses and commission\" -- is NOT a flag.",
+            "off_script_pay": "YES if any pay number she quoted differs from the script "
+                              "(entry $1,200-2,000 a week = $57-96k a year, Assistant Manager "
+                              "$150k, management $250k). NO if she quoted no numbers at all.",
+            "management": "YES if she said the goal is a management role within about 6 "
+                          "months.",
+            "wrap_up": "YES only if she said the 2nd interview is tomorrow in person in Grand "
+                       "Prairie, business professional attire, notebook and pen, the call "
+                       "before 5pm, and no call = different direction. Missing any = NO.",
+            "check_ins": "YES only if she asked both (comfortable compensation? / does the "
+                         "industry align with what you're looking for?). Missing any = NO.",
+            "pay": "YES if she explained the pay for the entry-level role (the $1,200-2,000 "
+                   "weekly average, paid weekly). NO if pay was never explained.",
+        },
+    },
+}
 
 
 def office_for(owner: str) -> str:
@@ -109,6 +297,8 @@ def office_for(owner: str) -> str:
 
 def _money(x: str) -> str:
     """'$900 - $1200' -> '$900-1,200', '65k - 75k' -> '$65-75k' (for the rules)."""
+    if "-" not in x:                                    # one number ('150k')
+        return "$" + x.strip().lstrip("$")
     a, b = [p.strip().lstrip("$") for p in x.split("-")]
     if a.endswith("k") and b.endswith("k"):
         return f"${a[:-1]}-{b}"
@@ -155,8 +345,13 @@ def build(office: str = "") -> Dict:
                     "and pen. If you don't get a phone call it just means we went a "
                     "different direction."),
     ]
+    fmt = FORMATS.get(o.get("format", ""), {})
+    if fmt:
+        portions = [(k, fmt.get("lines", {}).get(k, text)) for k, text in portions
+                    if k not in fmt.get("drop", ())]
     line = dict(portions)
-    script = f"""\
+    if not fmt:
+        script = f"""\
 COMPANY BACKGROUND (key lines)
 - "The positions we are looking to fill are in-person, full time ... {line['face_to_face']}"
 - "{line['management']}" -> then check-in: "Does this sound aligned with what you are looking for?"
@@ -175,28 +370,54 @@ WRAP UP
 - "If you are selected you'll get a phone call before 5pm today from our recruitment team in order to schedule a 2nd interview. I would recommend dressing business professional attire for that and bringing a notebook and pen."
 - "If you don't get a phone call it just means we went a different direction."
 """
-    mon_fri = ("- mon_fri: NO -- this office's script itself says Monday to Friday, so "
+    else:
+        # a differently shaped script: its key lines in order, and what it
+        # leaves for the 2nd round (those items aren't counted)
+        later = [SHORT[k] for k, _, _ in ITEMS if k in fmt["na"]]
+        script = ("KEY LINES (in order)\n"
+                  + "".join(f'- "{text}"\n' for _, text in portions)
+                  + f"This script does NOT cover these in the 1st round: {', '.join(later)}.\n")
+    mon_fri = ("NO -- this office's script itself says Monday to Friday, so "
                "saying it is following the script." if o["mon_fri_ok"] else
-               "- mon_fri: YES if she said Monday to Friday only.")
+               "YES if she said Monday to Friday only.")
     sched_rule = ("YES only if she covered full time, in person / day shifts and the 40 "
                   "hours (Saturdays for bonuses)" if o["schedule"] == _STD_40 else
                   "YES only if she covered the schedule as the script says it (the days "
                   "and the hours)")
-    rules = f"""\
-How to answer each item (strictly YES or NO; partly done = NO):
-- retail: YES only if she said the job is inside a retail store.
-- base_pay: YES if she offered a base pay, hourly pay or salary for the ENTRY-LEVEL role. "Salary" for the Assistant Manager role is the script wording -- that is NOT a flag.
-- nine_to_five: YES if she said the hours are 9 to 5.
-{mon_fri}
-- off_script_pay: YES if any pay number she quoted differs from the script (entry {_money(o['entry'])} average weekly paycheck, Assistant Manager {_money(o['assistant'])} a year, Executive Manager {o['executive_short']}+). NO if she quoted no numbers at all.
-- management: YES if she said the goal is a management role within about 6-8 months ("six months" is close enough).
-- commute: YES only if she asked whether the commute works for an EVERYDAY job. Asking only about getting to the 2nd interview = NO.
-- schedule: {sched_rule}. Skipped or partial = NO.
-- wrap_up: YES only if she said the call comes before 5pm today, business professional attire, notebook and pen, and "if you don't get a call we went a different direction". Missing any = NO.
-- check_ins: YES only if she asked the 3 check-in questions (aligned with what you're looking for? / comfortable compensation? / schedule alright?). Missing any = NO.
-- pay: YES if she explained the pay for the entry-level role (performance-based weekly paycheck, bonuses and commission). NO if pay was never explained.
-Applicants asking indirect questions still count (e.g. "are we going to be on the field?" = asking if it's door to door).
-"""
+    rule = {
+        "retail": "YES only if she said the job is inside a retail store.",
+        "base_pay": "YES if she offered a base pay, hourly pay or salary for the "
+                    "ENTRY-LEVEL role. \"Salary\" for the Assistant Manager role is the "
+                    "script wording -- that is NOT a flag.",
+        "nine_to_five": "YES if she said the hours are 9 to 5.",
+        "mon_fri": mon_fri,
+        "off_script_pay": "YES if any pay number she quoted differs from the script (entry "
+                          f"{_money(o['entry'])} average weekly paycheck, Assistant Manager "
+                          f"{_money(o['assistant'])} a year, Executive Manager "
+                          f"{o['executive_short']}+). NO if she quoted no numbers at all.",
+        "management": "YES if she said the goal is a management role within about 6-8 "
+                      "months (\"six months\" is close enough).",
+        "commute": "YES only if she asked whether the commute works for an EVERYDAY job. "
+                   "Asking only about getting to the 2nd interview = NO.",
+        "schedule": f"{sched_rule}. Skipped or partial = NO.",
+        "wrap_up": "YES only if she said the call comes before 5pm today, business "
+                   "professional attire, notebook and pen, and \"if you don't get a call we "
+                   "went a different direction\". Missing any = NO.",
+        "check_ins": "YES only if she asked the 3 check-in questions (aligned with what "
+                     "you're looking for? / comfortable compensation? / schedule alright?). "
+                     "Missing any = NO.",
+        "pay": "YES if she explained the pay for the entry-level role (performance-based "
+               "weekly paycheck, bonuses and commission). NO if pay was never explained.",
+    }
+    rule.update(fmt.get("rules", {}))
+    na = set(fmt.get("na", ()))
+    for k in na:
+        rule[k] = ("NO -- this office's script leaves it for the 2nd round, so it isn't "
+                   "counted. Note: \"Not in this office's 1st round script.\"")
+    rules = ("How to answer each item (strictly YES or NO; partly done = NO):\n"
+             + "".join(f"- {k}: {rule[k]}\n" for k, _, _ in ITEMS)
+             + "Applicants asking indirect questions still count (e.g. \"are we going to "
+               "be on the field?\" = asking if it's door to door).\n")
     # What makes a portion "said" at all. Missing one of these = skipped; all of
     # them there but the rest dropped or worded differently = incorrect verbiage.
     # (9/30 first run: the right $65-80k without "within 4-6 months" came back
@@ -213,6 +434,8 @@ Applicants asking indirect questions still count (e.g. "are we going to be on th
         "wrap_up": "the call before 5pm today, business professional attire, notebook and "
                    "pen, and 'if you don't get a call we went a different direction'",
     }
+    key_pieces.update(fmt.get("keys", {}))
+    key_pieces = {k: key_pieces[k] for k, _ in portions}
     portion_keys = "\n".join(f"- {k}: {key_pieces[k]}" for k, _ in portions)
     whose = (f"This interview is for {office}'s office: grade it against THEIR script "
              "below (the pay numbers and the schedule are that office's own).\n\n"
@@ -239,7 +462,7 @@ Plain, simple words -- the readers are not technical.
 
 If the recording is not a 1st round interview (empty, a test, a different kind of meeting, or it stops before the interview really starts), set is_interview to false and explain in not_interview_reason."""
     return {"portions": portions, "script": script, "rules": rules,
-            "key_pieces": key_pieces, "system": system}
+            "key_pieces": key_pieces, "system": system, "na": na}
 
 
 # The default (Rafael's script) -- what an office with no script is graded on
@@ -289,8 +512,10 @@ def score(result: Dict) -> Dict:
     """Count the score from the model's answers -> {score, passed, red_hit,
     musts_done, verbiage, missed: [keys that lost points]}."""
     items = result.get("items") or {}
+    na = build(result.get("script_office") or "")["na"]
+    counted = [(k, q, kind) for k, q, kind in ITEMS if k not in na]
     passed, red_hit, musts_done, missed = 0, 0, 0, []
-    for key, _, kind in ITEMS:
+    for key, _, kind in counted:
         happened = bool((items.get(key) or {}).get("happened"))
         ok = (not happened) if kind == "red" else happened
         if kind == "red" and happened:
@@ -303,9 +528,12 @@ def score(result: Dict) -> Dict:
             missed.append(key)
     wrong_words = len(verbiage(result))
     pts = max(0.0, passed - VERBIAGE_COST * wrong_words)
-    return {"score": round(100 * pts / len(ITEMS)), "passed": passed,
+    # items the office's script leaves for the 2nd round aren't counted either way
+    return {"score": round(100 * pts / len(counted)), "passed": passed,
             "red_hit": red_hit, "musts_done": musts_done, "verbiage": wrong_words,
-            "missed": missed}
+            "missed": missed, "na": sorted(na),
+            "n_red": sum(kind == "red" for _, _, kind in counted),
+            "n_must": sum(kind == "must" for _, _, kind in counted)}
 
 
 def _gaps(result: Dict, kind: str) -> List[tuple]:

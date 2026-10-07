@@ -144,11 +144,12 @@ class OfficeScriptTest(unittest.TestCase):
         self.assertEqual(grade.office_for("Raf Hidalgo\n2nd funnel"), "Rafael Hidalgo")
         self.assertEqual(grade.office_for("Nii Tagoe"), "Nii Teiko")
         self.assertEqual(grade.office_for(" jacob  dover "), "Jacob Dover")
-        self.assertEqual(grade.office_for("Joe Logan"), "")     # no script of their own
+        self.assertEqual(grade.office_for("Salik Mallick"), "")  # no script of their own
+        self.assertEqual(grade.office_for("Geoge Delgado"), "George Delgado")
         self.assertEqual(grade.office_for(""), "")
 
     def test_no_script_is_rafaels(self):
-        self.assertEqual(grade.build("")["system"], grade.build("Joe Logan")["system"])
+        self.assertEqual(grade.build("")["system"], grade.build("Salik Mallick")["system"])
         self.assertIn("$1000 - $1500", grade.SYSTEM)
 
     def test_office_numbers_and_schedule_in_its_prompt(self):
@@ -170,6 +171,51 @@ class OfficeScriptTest(unittest.TestCase):
         self.assertIn("$900 - $1200", text)
         self.assertNotIn("$1000 - $1500", text)
         self.assertIn("Script:</b> Rashad Reed's office", doc.build_html(MEETING, "V", r))
+
+
+class ScriptFormatTest(unittest.TestCase):
+    """Scripts not shaped like Rafael's (Camila's PDFs, 2026-10-07): the items
+    they leave for the 2nd round aren't counted."""
+
+    def r(self, office, **kw):
+        r = result(**kw)
+        r["script_office"] = office
+        return r
+
+    def test_profits_management_doesnt_count_the_pay(self):
+        # Jairo's script has no pay in the 1st round: not explaining it is fine
+        s = grade.score(self.r("Jairo Ruiz", pay=False))
+        self.assertEqual((s["score"], s["n_must"], s["na"]), (100, 5, ["pay"]))
+        self.assertEqual(grade.score(self.r("Jairo Ruiz", commute=False))["score"], 90)
+        b = grade.build("Jairo Ruiz")
+        self.assertNotIn("pay_entry", dict(b["portions"]))
+        self.assertIn("send the address via zoom chat", b["system"])
+        self.assertIn("quoted any pay number at all", b["rules"])
+
+    def test_highline_leaves_pay_schedule_commute(self):
+        s = grade.score(self.r("Ryan McSpadden", pay=False, schedule=False, commute=False))
+        self.assertEqual((s["score"], s["n_red"] + s["n_must"]), (100, 8))
+        self.assertEqual(grade.office_for("Roshan Ahmad"), "Roshan Ahmad")
+
+    def test_carlos_own_pay_no_schedule(self):
+        b = grade.build("Carlos Hidalgo")
+        self.assertIn("$1200 to $2000 a week", b["system"])
+        self.assertIn("Grand Prairie", b["system"])
+        self.assertNotIn("schedule", dict(b["portions"]))
+        self.assertEqual(grade.score(self.r("Carlos Hidalgo", schedule=False))["score"], 100)
+
+    def test_na_item_in_the_doc_and_reply(self):
+        r = self.r("Jairo Ruiz", pay=False)
+        page = doc.build_html(MEETING, "Gonzalo", r)
+        self.assertIn("Did she explain the pay? — N/A", page)
+        self.assertIn("Must-dos: <b>5 of 5</b>", page)
+        text = run.reply_text(MEETING, r)
+        self.assertIn("Must-dos: 5 of 5", text)
+        self.assertNotIn("explaining the pay", text)
+
+    def test_standard_offices_unchanged(self):
+        self.assertEqual(grade.build("Rashad Reed")["na"], set())
+        self.assertIn("$900 - $1200", grade.build("Joe Logan")["system"])
 
 
 class VerbiageTest(unittest.TestCase):
