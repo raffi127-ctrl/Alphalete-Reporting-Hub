@@ -610,8 +610,8 @@ class SilentBookings(unittest.TestCase):
         threads showed exactly that — a confirmation sent with no inbound
         ever, so the booking was agreed on a call."""
         got = self._why(self._p())
-        self.assertIn("came off a call", got)
-        self.assertIn("The gap is the call itself", got)
+        self.assertIn("came from a phone call", got)
+        self.assertIn("building a relationship on the phone", got)
         # Megan 2026-10-06: the fix is the call, not chasing a text.
         self.assertNotIn("reply to a text", got)
 
@@ -623,12 +623,12 @@ class SilentBookings(unittest.TestCase):
     def test_a_low_silent_share_says_something_else(self):
         got = self._why(self._p(silent=5, silent_shown=1,
                                 talked=95, talked_shown=28))
-        self.assertNotIn("came off a call", got)
+        self.assertNotIn("came from a phone call", got)
 
     def test_too_few_bookings_to_judge(self):
         got = self._why(self._p(booked=10, shown=3, silent=5, silent_shown=0,
                                 talked=5, talked_shown=3))
-        self.assertNotIn("came off a call", got)
+        self.assertNotIn("came from a phone call", got)
 
 
 class DeflectionsCountedOnce(unittest.TestCase):

@@ -339,10 +339,12 @@ def work_on(person, weeks):
             why = ("{:.0f}% of your bookings are over a day out. Use fear of "
                    "loss and book them same or next day.".format(far))
         elif silent_share is not None and silent_share >= 25:
-            why = ("{:.0f}% of your bookings came off a call rather than a "
-                   "text \u2014 both are normal. But yours show at {:.0f}% "
-                   "when they come off a call, against {:.0f}% when they "
-                   "come off a conversation. The gap is the call itself."
+            why = ("{:.0f}% of your bookings came from a phone call. Your "
+                   "show up ratio for phone call bookings is {:.0f}%, "
+                   "against {:.0f}% when they book via text. You need to "
+                   "spend more time building a relationship on the phone to "
+                   "ensure the applicant sees value in attending the zoom "
+                   "meeting you're setting up."
                    .format(silent_share, silent_rate, talked_rate))
         elif bot:
             why = "Offer sooner interview times."
