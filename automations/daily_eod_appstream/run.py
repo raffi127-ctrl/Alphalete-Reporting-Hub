@@ -64,6 +64,11 @@ ARS_MGMT_SHEET = "1l4Q0SreuddKZrgXwb9MytF-EdPZH-H1hLsa69epq-n8"   # ARS Manageme
 PROD_TO = ["camilahk@arsinterviewsservice.com"]
 TEST_TO = ["eve@alphaletemarketing.com"]   # Eve, until Camila signs off
 
+# Camila wants it at 20:00 Argentina. launchd fires on the Lucy's LOCAL clock
+# at several hours; --scheduled lets through only the fire that lands on this
+# hour in Buenos Aires, so US daylight saving (Nov 1) needs no plist change.
+SEND_TZ, SEND_HOUR = "America/Argentina/Buenos_Aires", 20
+
 GREEN_AT = 50          # 2nd round %, as SHOWN (whole number): >= green, < red
 
 DAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
@@ -295,7 +300,15 @@ def main(argv=None) -> int:
     ap.add_argument("--dry-run", action="store_true", help="build the preview, send nothing")
     ap.add_argument("--production", action="store_true", help="send to Camila")
     ap.add_argument("--from-cache", help="reuse a raw_<date>.json instead of pulling")
+    ap.add_argument("--scheduled", action="store_true",
+                    help="the launchd pass: run only if it is SEND_HOUR in SEND_TZ")
     a = ap.parse_args(argv)
+    if a.scheduled:
+        from zoneinfo import ZoneInfo
+        now = dt.datetime.now(ZoneInfo(SEND_TZ))
+        if now.hour != SEND_HOUR:
+            print(f"  {now:%H:%M} in {SEND_TZ}, not {SEND_HOUR}:00 — nothing to do")
+            return 0
     if a.date:
         day = dt.date.fromisoformat(a.date)
     else:

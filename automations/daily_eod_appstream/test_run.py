@@ -49,6 +49,14 @@ class Math(unittest.TestCase):
         }
         self.assertEqual([o for o, _ in run.red_list(today)], ["abe", "Zed"])
 
+    def test_scheduled_off_hour_does_nothing(self):
+        from unittest import mock
+        fake = dt.datetime(2026, 10, 7, 19, 0)
+        with mock.patch.object(run.dt, "datetime") as m,                 mock.patch.object(run, "build_and_send") as send:
+            m.now.return_value = fake
+            self.assertEqual(run.main(["--scheduled"]), 0)
+            send.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
