@@ -467,7 +467,7 @@ def write_report(office, tmpl, msgs, moved, tab, path,
                 "person\u2019s next text back. Fastest first. Anyone with "
                 "fewer than 10 replies is left out.</p>")
             add("<div class='scroll'><table><tr><th>Who</th>"
-                "<th>Replies</th><th>Usual wait</th><th>Within 5 min</th>"
+                "<th>Replies</th><th>Avg Response Time</th><th>Within 5 min</th>"
                 "<th>Within 1 hr</th><th>Within 2 hrs</th>"
                 "<th>Within 3 hrs</th><th>Over 4 hours</th></tr>")
             for r in sp:

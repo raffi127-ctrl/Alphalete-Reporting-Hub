@@ -526,7 +526,7 @@ def did_well(person, weeks, limit=2):
           (before or {}).get("dodged"), False, num)
     moved("Typing and grammar", now.get("typing"),
           (before or {}).get("typing"), False, num)
-    moved("Usual reply", (now.get("replies") or {}).get("median"),
+    moved("Avg Response Time", (now.get("replies") or {}).get("median"),
           ((before or {}).get("replies") or {}).get("median"), False, A_mins)
     moved("Booked over a day out", _rate(now, "far_out", "matched"),
           _rate(before, "far_out", "matched") if before else None, False, pct)
@@ -601,14 +601,11 @@ def why_dodged(bucket, kind="", question="", reply="", entry=None):
         if m.get("dir") == "Out":
             break
         between += 1
-    tail = _chased(e)
+    again = reasked(e, bucket, q)
+    tail = _chased(e, again=again)
 
     # Three attempts and still no straight answer is not a slip, it is a
     # conversation nobody was steering.
-    try:
-        again = int(e.get("asked_again") or 0)
-    except (TypeError, ValueError):
-        again = 0
     if again >= 2 and str(e.get("answered_later")).lower() != "true":
         return ("This went round in circles \u2014 they asked {} times and "
                 "never got a straight answer.".format(again + 1))
@@ -638,12 +635,42 @@ def why_dodged(bucket, kind="", question="", reply="", entry=None):
             # count comes without the outcome repeated after it.
             return ("They told us they would walk away if the answer was "
                     "no, and never got a straight one.{}".format(
-                        _chased(e, say_outcome=False)))
+                        _chased(e, say_outcome=False, again=again)))
         return "Never said yes or no, only a vague answer.{}".format(tail)
     return "Doesn't answer {}.{}".format(topic, tail)
 
 
-def _chased(entry, say_outcome=True):
+IS_QUESTION = re.compile(r"^\s*(what|when|where|who|why|how|is|are|do|does|"
+                         r"did|can|could|will|would|should|has|have|am|any)"
+                         r"\b", re.I)
+
+
+def reasked(entry, bucket, question):
+    """How many times they asked THE SAME THING again, from the thread.
+
+    The audit's own asked_again counts any later message that lands in the
+    bucket, so Alexius Clark's "I was trying to apply for a store location
+    sorry" — a statement, and his last word on it — read as asking again.
+    Megan 2026-10-06: "she didn't ask twice." A re-ask has to look like a
+    question AND be about the same thing."""
+    ctx = (entry or {}).get("context") or []
+    seen, n = False, 0
+    for m in ctx:
+        body = (m.get("body") or "").strip()
+        if not seen:
+            seen = body == (question or "").strip()
+            continue
+        if m.get("dir") != "In" or not body:
+            continue
+        if "?" not in body and not IS_QUESTION.match(body):
+            continue
+        if bucket and bucket not in A.buckets_of(body):
+            continue
+        n += 1
+    return n
+
+
+def _chased(entry, say_outcome=True, again=None):
     """' They asked 2 more times, and never got an answer.' or ''.
 
     `say_outcome` is False when the sentence it attaches to has already
@@ -651,10 +678,11 @@ def _chased(entry, say_outcome=True):
     one. They asked 1 more time, and never got an answer": "same for
     this one"."""
     e = entry or {}
-    try:
-        again = int(e.get("asked_again") or 0)
-    except (TypeError, ValueError):
-        again = 0
+    if again is None:
+        try:
+            again = int(e.get("asked_again") or 0)
+        except (TypeError, ValueError):
+            again = 0
     if not again:
         return ""
     later = str(e.get("answered_later")).lower() == "true"
@@ -774,7 +802,7 @@ def render(person, office, weeks, path):
          lambda v: "{:.0f}%".format(v) if v is not None else "\u2014", True),
         ("Texts Sent", lambda w: w.get("texts") or 0,
          lambda v: "{:,}".format(v), True),
-        ("Usual Reply", lambda w: (w.get("replies") or {}).get("median"),
+        ("Avg Response Time", lambda w: (w.get("replies") or {}).get("median"),
          A_mins, False),
         ("Typing and Grammar Mistakes", lambda w: w.get("typing") or 0,
          lambda v: "{}".format(v), False),
@@ -903,7 +931,7 @@ def office_summary_html(people, weeks, include_ai=True):
                "<th align='left' style=\"border-bottom:2px solid #111\">"
                "{}</th>".format(h)
                for h in ("Recruiter", "Booked", "Showed", "Texts",
-                         "Usual reply", "To work on")) + "</tr>"]
+                         "Avg Response Time", "To work on")) + "</tr>"]
     for name, now, fixes in rows:
         show = _rate(now, "shown", "booked")
         top = fixes[0]["area"] if fixes else "nothing"

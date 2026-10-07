@@ -248,26 +248,56 @@ class DodgeContext(unittest.TestCase):
                            "This is a residential campaign", self._entry(ctx))
         self.assertNotIn("in a row", got)
 
+    def _thread(self, *laters):
+        """A thread: the question, our reply, then what they sent next."""
+        return ([{"dir": "In", "body": "Is it in a store?"},
+                 {"dir": "Out", "body": "This is a residential campaign"}]
+                + [{"dir": "In", "body": b} for b in laters])
+
     def test_having_to_ask_again_is_reported(self):
         got = S.why_dodged(self.REMOTE, "dodged", "Is it in a store?",
                            "This is a residential campaign",
-                           self._entry([], again=1))
+                           self._entry(self._thread("Is it in a store?")))
         self.assertIn("1 more time", got)
         self.assertIn("never got an answer", got)
+
+    def test_a_statement_afterwards_is_not_asking_again(self):
+        """Megan 2026-10-06 on Alexius Clark: "she didn't ask twice."
+        "I was trying to apply for a store location sorry" is his last
+        word on it, not a second question."""
+        got = S.why_dodged(
+            self.REMOTE, "dodged", "Is it in a store?",
+            "This is a residential campaign",
+            self._entry(self._thread(
+                "No thank you",
+                "I was trying to apply for a store location sorry")))
+        self.assertNotIn("more time", got)
+
+    def test_a_question_about_something_else_is_not_asking_again(self):
+        got = S.why_dodged(
+            self.REMOTE, "dodged", "Is it in a store?",
+            "This is a residential campaign",
+            self._entry(self._thread("How long is the interview?")))
+        self.assertNotIn("more time", got)
 
     def test_three_attempts_with_no_answer_is_a_circle(self):
         """Megan 2026-10-06 on Jason Horton: "this should be a real red
         flag- this convo goes in circles"."""
-        got = S.why_dodged(self.REMOTE, "dodged", "Is it in a store?",
-                           "Thank you for letting us know",
-                           self._entry([], again=2))
+        got = S.why_dodged(
+            self.REMOTE, "dodged", "Is it in a store?",
+            "Thank you for letting us know",
+            self._entry(self._thread("Is the position in a store?",
+                                     "Is it at a store location?")))
         self.assertIn("round in circles", got)
         self.assertIn("3 times", got)
 
     def test_answered_in_the_end_is_not_a_circle(self):
-        got = S.why_dodged(self.REMOTE, "dodged", "Is it in a store?",
-                           "This is a residential campaign",
-                           self._entry([], again=2, later=True))
+        got = S.why_dodged(
+            self.REMOTE, "dodged", "Is it in a store?",
+            "This is a residential campaign",
+            self._entry(self._thread("Is the position in a store?",
+                                     "Is it at a store location?"),
+                        later=True))
         self.assertNotIn("round in circles", got)
 
     def test_a_circle_outranks_the_other_faults(self):
@@ -277,9 +307,11 @@ class DodgeContext(unittest.TestCase):
         self.assertIn("round in circles", got)
 
     def test_answered_in_the_end_is_said_so(self):
-        got = S.why_dodged(self.REMOTE, "dodged", "Is it in a store?",
-                           "This is a residential campaign",
-                           self._entry([], again=1, later=True))
+        got = S.why_dodged(
+            self.REMOTE, "dodged", "Is it in a store?",
+            "This is a residential campaign",
+            self._entry(self._thread("Is the position in a store?"),
+                        later=True))
         self.assertIn("1 more time", got)
         self.assertNotIn("never got an answer", got)
 
@@ -344,11 +376,14 @@ class NotRepetitive(unittest.TestCase):
         self.assertEqual(S.worst_of([one]), one)
 
     def test_the_walk_away_line_says_the_outcome_once(self):
+        q = "Is it at a store location if not I'm not interested"
         got = S.why_dodged(
-            "Is this remote / where is the office?", "dodged",
-            "Is it at a store location if not I'm not interested",
+            "Is this remote / where is the office?", "dodged", q,
             "This would be a residential campaign",
-            {"asked_again": 1, "answered_later": "False", "context": []})
+            {"answered_later": "False", "context": [
+                {"dir": "In", "body": q},
+                {"dir": "Out", "body": "This would be a residential campaign"},
+                {"dir": "In", "body": "Is it in a store though?"}]})
         self.assertEqual(got.count("never got"), 1)
         self.assertIn("1 more time", got)
 
@@ -356,7 +391,10 @@ class NotRepetitive(unittest.TestCase):
         got = S.why_dodged(
             "What is the pay?", "dodged", "What does it pay?",
             "This is a residential campaign",
-            {"asked_again": 1, "answered_later": "False", "context": []})
+            {"answered_later": "False", "context": [
+                {"dir": "In", "body": "What does it pay?"},
+                {"dir": "Out", "body": "This is a residential campaign"},
+                {"dir": "In", "body": "How much is the pay?"}]})
         self.assertIn("never got an answer", got)
 
 
