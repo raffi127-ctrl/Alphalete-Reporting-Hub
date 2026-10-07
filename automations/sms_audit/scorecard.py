@@ -225,6 +225,13 @@ def week_stats(office, tag):
         # be in the pushed to hirring manager section?").
         if (e.get("kind") or "") == "deflected":
             continue
+        # Answered further down the thread is answered. Megan 2026-10-06
+        # on Jaysel Rosa, whose immediate reply was "Awesome!" but who
+        # got a real answer three messages later: "i feel like he did
+        # answer this one". 56% of what this section was reporting had
+        # been answered in the end.
+        if str(e.get("answered_later")).lower() == "true":
+            continue
         d["dodged"] += 1
         if not e.get("question"):
             continue

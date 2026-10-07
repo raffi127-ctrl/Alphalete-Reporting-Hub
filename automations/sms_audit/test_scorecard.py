@@ -658,3 +658,20 @@ class DeflectionsCountedOnce(unittest.TestCase):
             seen.append(e)
         self.assertEqual(len(seen), 1)
         self.assertEqual(seen[0]["kind"], "dodged")
+
+
+class AnsweredLater(unittest.TestCase):
+    """Megan 2026-10-06 on Jaysel Rosa: "i feel like he did answer this
+    one". The immediate reply was "Awesome!" but the real answer came
+    three messages later, and the audit's own answered_later said so.
+    56% of what the section reported had been answered in the end."""
+
+    def test_an_answered_later_entry_is_skipped(self):
+        entries = [{"kind": "dodged", "answered_later": "True"},
+                   {"kind": "dodged", "answered_later": "False"},
+                   {"kind": "deflected", "answered_later": "False"}]
+        kept = [e for e in entries
+                if (e.get("kind") or "") != "deflected"
+                and str(e.get("answered_later")).lower() != "true"]
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(kept[0]["answered_later"], "False")
