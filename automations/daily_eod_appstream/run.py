@@ -95,7 +95,8 @@ EXTRA_OFFICES = {
     "Raf Hidalgo 3rd F": "24065",
     "Ellen Dent": "21597",             # Lucy's lookup said 15825 (no access); Camila's
                                        # screenshot of Lucy Reports' offices: Vanguard 21597
-    "Salik Mallik": "23363",           # Eve 2026-10-07 (Hub had him sales-only)
+    "Salik Mallik": "21328",           # Muhammad UI Haque's AppStream (Camila + Eve
+                                       # 2026-10-07); Waqar 23363 is not open to Lucy
 }
 
 GREEN_BG, RED_BG = "#57bb8a", "#e06666"
