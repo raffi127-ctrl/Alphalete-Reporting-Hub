@@ -6,7 +6,8 @@ the screenshot being "the photos on the recruiting channel", i.e. the same
 
 Input = the LinkedIn rows of AppStream's Retention > "Sent to Call List"
 export (names + ad only, see linkedin_<week>.json). Output = one Slack thread:
-header with the counts, one reply per candidate who had a 1st round (their
+title only (no date: one thread for good, Eve 10/7); each week = a block
+reply with the week + counts, then one reply per candidate who had a 1st round (their
 cropped Zoom photo + stars / result / interviewer notes), and a last reply
 listing who never reached a 1st round.
 
@@ -89,13 +90,18 @@ def _md(d: dt.date) -> str:
     return f"{d.month}/{d.day}"
 
 
-def header(week_start: dt.date, week_end: dt.date, sent: int, rounds: int,
-           pilot: bool) -> str:
+def header(pilot: bool) -> str:
+    """One thread for good (Eve 10/7, like Carlos's ad threads): the title has
+    no date -- each week goes inside as its own block."""
+    return ("*LinkedIn candidates — sent to the call list*"
+            + ("  _(sample)_" if pilot else ""))
+
+
+def week_block(week_start: dt.date, week_end: dt.date, sent: int, rounds: int) -> str:
+    """The first reply of a week's block: the week + its counts."""
     rng = f"{week_start:%b} {week_start.day} – {week_end:%b} {week_end.day}"
-    return (f"*LinkedIn candidates — sent to the call list {rng}*"
-            + ("  _(sample)_" if pilot else "") + "\n"
-            f"{sent} sent · *{rounds} had a 1st round* · {sent - rounds} no 1st round yet\n"
-            "Photos in the thread 👇")
+    return (f"*📅 Week {rng}*\n"
+            f"{sent} sent · *{rounds} had a 1st round* · {sent - rounds} no 1st round yet")
 
 
 def reply(p: dict, h: dict) -> str:
@@ -120,7 +126,7 @@ def no_round_text(people: List[dict], hits: Dict[int, List[dict]]) -> str:
 
 
 def run(path: str, *, users: Optional[str] = None, channel: Optional[str] = None,
-        until: Optional[dt.date] = None) -> dict:
+        thread_ts: Optional[str] = None, until: Optional[dt.date] = None) -> dict:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     people = data["candidates"]
     start = dt.date.fromisoformat(data["week_start"])
@@ -130,8 +136,9 @@ def run(path: str, *, users: Optional[str] = None, channel: Optional[str] = None
     order = sorted(hits, key=lambda i: hits[i][0]["day"])
     pilot = bool(users)
 
-    head = header(start, end, len(people), len(hits), pilot)
-    print("\n" + head)
+    head = header(pilot)
+    block = week_block(start, end, len(people), len(hits))
+    print("\n" + head + "\n\n" + block)
     for i in order:
         print("\n" + reply(people[i], hits[i][0]))
     print("\n" + no_round_text(people, hits))
@@ -144,7 +151,10 @@ def run(path: str, *, users: Optional[str] = None, channel: Optional[str] = None
     # A channel (Raf 10/7: "post this on the headshot photos indeed channel")
     # is the real post; --dm is the [sample] preview.
     channel = channel or cl.conversations_open(users=users)["channel"]["id"]
-    ts = cl.chat_postMessage(channel=channel, text=head)["ts"]
+    # A later week goes under the same thread (--thread-ts); only the first
+    # week opens it.
+    ts = thread_ts or cl.chat_postMessage(channel=channel, text=head)["ts"]
+    cl.chat_postMessage(channel=channel, thread_ts=ts, text=block)
     photos = 0
     with tempfile.TemporaryDirectory() as tmp:
         for i in order:
