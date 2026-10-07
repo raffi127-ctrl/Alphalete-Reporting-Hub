@@ -711,8 +711,10 @@ class TooFewToJudge(unittest.TestCase):
         self.assertIn("%", self._row("1st Round Retention",
                                      self._week(25, 8)))
 
-    def test_the_far_out_row_uses_the_same_floor(self):
-        self.assertIn(S.TOO_FEW, self._row("Booked Over a Day Out",
+    def test_the_far_out_row_says_why_it_is_missing(self):
+        """Not "Too Few" — Max Jimenez booked 39 and it still could not be
+        read, because the lead comes from the confirmation text."""
+        self.assertIn(S.NO_TEXT, self._row("Booked Over a Day Out",
                                            self._week(25, 8, matched=4, far=1)))
         self.assertIn("%", self._row("Booked Over a Day Out",
                                      self._week(25, 8, matched=20, far=5)))
@@ -827,3 +829,99 @@ class ZeroReadsLikeEnglish(unittest.TestCase):
         got = self._lines({"house": 0}, {"house": 4})
         clean = [g for g in got if "house rules" in g]
         self.assertEqual(len(clean), 1, got)
+
+
+class PhoneBookingsAreVisible(unittest.TestCase):
+    """Megan 2026-10-06: "we need to put the count of booked via phone so
+    that we can see why his data here is missing"."""
+
+    def _html(self, week):
+        from pathlib import Path
+        import tempfile
+        out = Path(tempfile.mkdtemp()) / "c.html"
+        S.render({"display": "X", "weeks": {"w0925": week}}, "11280",
+                 ["w0925"], out)
+        return out.read_text(encoding="utf-8")
+
+    WEEK = {"texts": 6, "booked": 39, "shown": 10, "matched": 2,
+            "far_out": 0, "silent": 37, "talked": 2, "silent_shown": 9,
+            "talked_shown": 1, "house": 0, "dodged": 0, "typing": 0,
+            "issues": __import__("collections").Counter()}
+
+    def test_the_phone_booked_count_is_shown(self):
+        html = self._html(self.WEEK)
+        self.assertIn("Booked From a Call", html)
+        self.assertIn("37", html)
+
+    def test_the_lead_row_explains_itself(self):
+        html = self._html(self.WEEK)
+        self.assertIn(S.NO_TEXT, html)
+        self.assertIn("comes from the confirmation text", html)
+
+    def test_a_busy_texter_sees_neither_note(self):
+        html = self._html(dict(self.WEEK, texts=1500, matched=39, silent=0,
+                               talked=39, far_out=6))
+        self.assertNotIn(S.NO_TEXT, html.split("Booked From a Call")[-1])
+
+
+class WhatElseMoved(unittest.TestCase):
+    """Megan 2026-10-06: "we need to know what changed- not just to keep
+    doing it"."""
+
+    BASE = {"texts": 1000, "house": 0, "dodged": 0, "typing": 0,
+            "booked": 25, "shown": 16, "matched": 25, "far_out": 4,
+            "silent": 8, "talked": 17, "silent_shown": 2, "talked_shown": 14,
+            "replies": {"n": 40, "median": 11.0},
+            "issues": __import__("collections").Counter()}
+
+    def test_a_faster_reply_is_named(self):
+        before = dict(self.BASE, replies={"n": 40, "median": 16.0})
+        got = S.what_else_moved(self.BASE, before)
+        self.assertIn("replied faster", got)
+        self.assertIn("11 min", got)
+
+    def test_fewer_phone_bookings_are_named(self):
+        before = dict(self.BASE, silent=14, talked=11)
+        self.assertIn("fewer came from a call",
+                      S.what_else_moved(self.BASE, before))
+
+    def test_booking_nearer_is_named(self):
+        before = dict(self.BASE, far_out=14)
+        self.assertIn("booked nearer the slot",
+                      S.what_else_moved(self.BASE, before))
+
+    def test_two_things_read_as_a_list(self):
+        before = dict(self.BASE, silent=14, talked=11,
+                      replies={"n": 40, "median": 16.0})
+        got = S.what_else_moved(self.BASE, before)
+        self.assertIn(" and ", got)
+
+    def test_nothing_moving_says_so_rather_than_shrugging(self):
+        got = S.what_else_moved(self.BASE, dict(self.BASE))
+        self.assertIn("worth asking what you did differently", got)
+        self.assertNotIn("Keep doing whatever", got)
+
+    def test_no_previous_week_says_nothing(self):
+        self.assertEqual(S.what_else_moved(self.BASE, None), "")
+
+
+class BothBookingChannels(unittest.TestCase):
+    """Megan 2026-10-06: "we should have a section on every report card
+    the number booked via text and the number booked via phone"."""
+
+    def _html(self, week):
+        from pathlib import Path
+        import tempfile
+        out = Path(tempfile.mkdtemp()) / "c.html"
+        S.render({"display": "X", "weeks": {"w0925": week}}, "11280",
+                 ["w0925"], out)
+        return out.read_text(encoding="utf-8")
+
+    def test_both_channels_appear(self):
+        html = self._html({"texts": 6, "booked": 39, "shown": 10,
+                           "matched": 2, "far_out": 0, "silent": 37,
+                           "talked": 2, "house": 0, "dodged": 0, "typing": 0,
+                           "issues": __import__("collections").Counter()})
+        self.assertIn("Booked From a Text", html)
+        self.assertIn("Booked From a Call", html)
+        self.assertIn("37", html)

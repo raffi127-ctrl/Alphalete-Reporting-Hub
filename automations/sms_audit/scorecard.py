@@ -43,8 +43,13 @@ MIN_TEXTS = 25
 # And below this many MATCHED bookings, a far-out percentage is noise: one
 # week of Aisha Ceron's read 100% off two bookings and the next read 0%.
 MIN_MATCHED = 10
-# What a suppressed percentage says instead of a bare dash.
+# What a suppressed cell says instead of a bare dash. Two reasons, two
+# labels: not enough bookings to rate, versus a booking whose lead time
+# cannot be read because it was never set by a text. Megan 2026-10-06:
+# "max is marked too few booked but he has 39 booked" — he had, and he
+# sent six texts all week.
 TOO_FEW = "Too Few"
+NO_TEXT = "Booked by Phone"
 
 
 _FACTS_DONE = set()
@@ -667,6 +672,49 @@ SEVERITY = ("wrote last and never got a reply", "went round in circles",
             "Gave how long", "Gave a time", "vague", "Doesn't answer")
 
 
+def what_else_moved(now, before):
+    """' What also moved: ...' naming the measures that improved with it.
+
+    Megan 2026-10-06, on "Keep doing whatever changed": "we need to know
+    what changed- not just to keep doing it". These are the things that
+    moved the same week, not proven causes — the sentence says moved, not
+    caused."""
+    if not before:
+        return ""
+    bits = []
+    med_now = (now.get("replies") or {}).get("median")
+    med_was = (before.get("replies") or {}).get("median")
+    if med_now is not None and med_was is not None and med_was - med_now >= 2:
+        bits.append("you replied faster ({}, was {})".format(
+            A_mins(med_now), A_mins(med_was)))
+
+    def share(w):
+        tot = (w.get("silent") or 0) + (w.get("talked") or 0)
+        return (100.0 * w["silent"] / tot) if tot >= MIN_MATCHED else None
+
+    ph_now, ph_was = share(now), share(before)
+    if ph_now is not None and ph_was is not None and ph_was - ph_now >= 5:
+        bits.append("fewer came from a call ({:.0f}%, was {:.0f}%)".format(
+            ph_now, ph_was))
+
+    far_now = (_rate(now, "far_out", "matched")
+               if (now.get("matched") or 0) >= MIN_MATCHED else None)
+    far_was = (_rate(before, "far_out", "matched")
+               if (before.get("matched") or 0) >= MIN_MATCHED else None)
+    if far_now is not None and far_was is not None and far_was - far_now >= 5:
+        bits.append("you booked nearer the slot ({:.0f}% over a day out, was "
+                    "{:.0f}%)".format(far_now, far_was))
+
+    if not bits:
+        return (" Nothing else in these numbers moved with it, so it is "
+                "worth asking what you did differently.")
+    if len(bits) > 1:
+        bits[-1] = "and " + bits[-1]
+    return " What also moved: {}.".format(
+        (", " if len(bits) > 2 else " ").join(bits) if len(bits) > 1
+        else bits[0])
+
+
 def did_well(person, weeks, limit=2):
     """What went RIGHT this week, said as praise.
 
@@ -714,7 +762,7 @@ def did_well(person, weeks, limit=2):
     moved(_rate(now, "shown", "booked"),
           _rate(before, "shown", "booked") if before else None, True, pct,
           "More of your bookings turned up \u2014 {new} against {old} last "
-          "week. Keep doing whatever changed.", floor=5.0)
+          "week." + what_else_moved(now, before), floor=5.0)
     moved(now.get("house"), (before or {}).get("house"), False, num,
           "Good pull back on the house rules \u2014 {new} this week, down "
           "from {old}.", key="house",
@@ -1046,6 +1094,11 @@ def render(person, office, weeks, path):
     rows = [
         ("Interviews Booked", lambda w: w.get("booked") or 0,
          lambda v: "{:,}".format(v), True),
+        # Megan 2026-10-06: both channels on every card, under the total.
+        ("\u2003Booked From a Text", lambda w: w.get("talked"),
+         lambda v: "{:,}".format(v or 0), True),
+        ("\u2003Booked From a Call", lambda w: w.get("silent"),
+         lambda v: "{:,}".format(v or 0), False),
         ("1st Round Retention",
          lambda w: (_rate(w, "shown", "booked")
                     if (w.get("booked") or 0) >= MIN_MATCHED else None),
@@ -1063,7 +1116,7 @@ def render(person, office, weeks, path):
         ("Booked Over a Day Out",
          lambda w: (_rate(w, "far_out", "matched")
                     if (w.get("matched") or 0) >= MIN_MATCHED else None),
-         lambda v: "{:.0f}%".format(v) if v is not None else TOO_FEW, False),
+         lambda v: "{:.0f}%".format(v) if v is not None else NO_TEXT, False),
     ]
     add("<div class='scroll'><table><tr><th></th>" + "".join(
         "<th>{}</th>".format(esc(R.week_label(t))) for t in got) + "</tr>")
@@ -1085,6 +1138,11 @@ def render(person, office, weeks, path):
             "{} bookings \u2014 a percentage off a handful of them says "
             "nothing, so it is left out rather than shown.</p>".format(
                 MIN_MATCHED))
+    if any(NO_TEXT in c for c in all_cells):
+        add("<p class='none'>\u201cBooked by Phone\u201d means how far "
+            "ahead could not be read that week: it comes from the "
+            "confirmation text, and these bookings were agreed on a call "
+            "instead.</p>")
 
     last = d[got[-1]] if got else {}
     # Megan 2026-10-06: "Did not answer should be it's own dropdown
