@@ -256,10 +256,10 @@ def work_on(person, weeks):
     before = person["weeks"][got[-2]] if len(got) > 1 else None
     items = []
 
-    def add(area, value, grade, text, prev=None):
+    def add(area, value, grade, text, prev=None, goal=""):
         if grade:
             items.append({"area": area, "now": value, "before": prev,
-                          "grade": grade, "do": text})
+                          "grade": grade, "do": text, "goal": goal})
 
     show = _rate(now, "shown", "booked")
     if show is not None and (now.get("booked") or 0) >= 5:
@@ -282,7 +282,8 @@ def work_on(person, weeks):
             why = "Not your booking lead \u2014 look at the texts below."
         add("1st Round Retention", "{:.0f}%".format(show),
             GC._band(show, 55, 48, 40), why,
-            "{:.0f}%".format(prev) if prev is not None else None)
+            "{:.0f}%".format(prev) if prev is not None else None,
+            goal="55% or better")
 
     if (now.get("texts") or 0) >= MIN_TEXTS:
         per100 = 100.0 * (now.get("typing") or 0) / now["texts"]
@@ -292,7 +293,9 @@ def work_on(person, weeks):
             GC._band(per100, 0.5, 2, 5, higher_is_better=False),
             "Fix the wording in AppStream." if bot
             else "Read it back before sending.",
-            "{}".format(before.get("typing")) if before else None)
+            "{}".format(before.get("typing")) if before else None,
+            goal="no more than {:.0f} across {:,} texts".format(
+                0.5 * now["texts"] / 100.0, now["texts"]))
 
     # Megan 2026-10-06: "6 house rules out of 3k texts sent seems pretty
     # low....", and the same for unanswered questions. Both were graded on
@@ -312,7 +315,9 @@ def work_on(person, weeks):
             "{} in {:,} texts".format(house, texts_now),
             GC._band(per1k, 0.5, 3, 8, higher_is_better=False),
             "{}. The exact texts are below.".format(worst),
-            "{}".format((before or {}).get("house")) if before else None)
+            "{}".format((before or {}).get("house")) if before else None,
+            goal="no more than {:.0f} across {:,} texts".format(
+                0.5 * texts_now / 1000.0, texts_now))
 
     sp = now.get("replies") or {}
     if sp and sp.get("n", 0) >= 10:
@@ -321,7 +326,8 @@ def work_on(person, weeks):
         add("Reply speed", A_mins(med),
             GC._band(med, 5, 15, 45, higher_is_better=False),
             "Already instant." if bot else "Answer inside 5 minutes.",
-            A_mins(prevmed) if prevmed is not None else None)
+            A_mins(prevmed) if prevmed is not None else None,
+            goal="under 5 min")
 
     dodged = now.get("dodged") or 0
     if dodged and texts_now >= MIN_TEXTS:
@@ -331,7 +337,9 @@ def work_on(person, weeks):
             GC._band(dper1k, 0.5, 2.5, 4.5, higher_is_better=False),
             "Give it a real answer in AI Settings, Escalations." if bot
             else "Answer it, then book. The exact ones are below.",
-            str((before or {}).get("dodged")) if before else None)
+            str((before or {}).get("dodged")) if before else None,
+            goal="no more than {:.0f} across {:,} texts".format(
+                0.5 * texts_now / 1000.0, texts_now))
 
     items.sort(key=lambda i: "FDCBA".index(i["grade"]))
     return items
@@ -424,6 +432,11 @@ ol.focus li{margin:.6em 0}
 .letter.C{color:#8a6d00}
 .letter.D,.letter.F{color:#A8322A}
 .gradenote{color:#666}
+.goal{color:#156E46}
+td.gr{text-align:center;font-weight:bold}
+td.gr.A,td.gr.B{color:#156E46}
+td.gr.C{color:#8a6d00}
+td.gr.D,td.gr.F{color:#A8322A}
 .well{border:1px solid #156E46;background:#f1f7f1;border-radius:6px;
       padding:.7em 1em;margin:1.2em 0}
 .well h2{margin:0 0 .3em;border:0;color:#156E46;font-size:1em}
@@ -859,10 +872,24 @@ def render(person, office, weeks, path):
             if f["before"] and f["before"] != f["now"]:
                 moved = " <span class='moved'>{} last week</span>".format(
                     esc(f["before"]))
-            add("<li><b>{}: {}</b>{}<br>{}</li>".format(
-                esc(f["area"]), esc(f["now"]), moved, esc(f["do"])))
+            add("<li><b>{}: {}</b>{}<br>{}{}</li>".format(
+                esc(f["area"]), esc(f["now"]), moved, esc(f["do"]),
+                " <span class='goal'>For an A: {}.</span>".format(
+                    esc(f["goal"])) if f.get("goal") else ""))
         add("</ol>")
     add("</div>")
+
+    scored = work_on(person, weeks)
+    if scored:
+        add("<h2>What an A looks like</h2>")
+        add("<div class='scroll'><table><tr><th>What</th><th>You</th>"
+            "<th>Grade</th><th>For an A</th></tr>")
+        for i in sorted(scored, key=lambda x: "ABCDF".index(x["grade"])):
+            add("<tr><td>{}</td><td>{}</td><td class='gr {}'>{}</td>"
+                "<td>{}</td></tr>".format(
+                    esc(i["area"]), esc(i["now"]), i["grade"], i["grade"],
+                    esc(i.get("goal") or "\u2014")))
+        add("</table></div>")
 
     add("<h2>Week over week</h2>")
     # (label, the number to shade on, how to show it, is more better)

@@ -517,3 +517,41 @@ class RatesNotCounts(unittest.TestCase):
     def test_a_tiny_sample_is_not_graded_at_all(self):
         self.assertIsNone(
             self._area(self._week(texts=10, house=6), "House Rules Broken"))
+
+
+class Goals(unittest.TestCase):
+    """Megan 2026-10-06: "we should have the goal of what the numbers
+    should be so they know where they need to get to be in A ratings"."""
+
+    def _week(self, **kw):
+        base = {"texts": 3000, "house": 6, "dodged": 6, "typing": 4,
+                "booked": 50, "shown": 14, "matched": 40, "far_out": 5,
+                "replies": {"n": 50, "median": 8.0},
+                "issues": __import__("collections").Counter({"x": 1})}
+        base.update(kw)
+        return {"display": "X", "weeks": {"w0925": base}}
+
+    def _goals(self):
+        return {i["area"]: i.get("goal")
+                for i in S.work_on(self._week(), ["w0925"])}
+
+    def test_every_scored_area_carries_a_target(self):
+        for area, goal in self._goals().items():
+            self.assertTrue(goal, area)
+
+    def test_retention_names_the_percentage(self):
+        self.assertIn("55%", self._goals()["1st Round Retention"])
+
+    def test_a_rate_target_is_given_in_their_own_volume(self):
+        got = self._goals()["House Rules Broken"]
+        self.assertIn("3,000 texts", got)
+        self.assertIn("2", got)
+
+    def test_reply_speed_names_the_time(self):
+        self.assertIn("5 min", self._goals()["Reply speed"])
+
+    def test_a_bigger_sender_gets_a_bigger_allowance(self):
+        small = {i["area"]: i.get("goal")
+                 for i in S.work_on(self._week(texts=1000), ["w0925"])}
+        self.assertNotEqual(small["House Rules Broken"],
+                            self._goals()["House Rules Broken"])
