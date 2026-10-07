@@ -141,6 +141,114 @@ class WeeklyTest(unittest.TestCase):
         weekly.publish_week([mon], "C1", cl=cl, threads=threads, crop=False, history={})
         self.assertIn("WE 10.4 looks good", cl.thread(threads["frisco"]))
 
+    def test_tag_is_not_a_prefix_match(self):
+        self.assertTrue(weekly._tagged("*Monday · WE 11.1*", "WE 11.1"))
+        self.assertFalse(weekly._tagged("*Monday · WE 11.15*", "WE 11.1"))
+
+
+class LiveSlack(ThreadSlack):
+    """+ header edits and pins, for the nightly / redo."""
+
+    def __init__(self):
+        super().__init__()
+        self.pins, self.updates = [], {}
+
+    def chat_update(self, **kw):
+        self.updates[kw["ts"]] = kw["text"]
+        for m in self.msgs:
+            if m["ts"] == kw["ts"]:
+                m["text"] = kw["text"]
+
+    def pins_add(self, **kw):
+        self.pins.append(kw["timestamp"])
+
+
+def week_of(by_day):
+    """build() stand-in: {date: [cands]} -> a DayReport per asked day."""
+    def build(d, cl=None, cache=None):
+        return day(d, list(by_day.get(d, [])))
+    return build
+
+
+@mock.patch.object(post, "_uploads", fake_uploads)
+@mock.patch.object(weekly, "ad_history", lambda *a, **k: {})
+@mock.patch("automations.shared.slack_metrics_post.wait_for_share", lambda *a, **k: True)
+class LivePathTest(unittest.TestCase):
+    """Carlos 10/7: everyone in this layout, old threads redone."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        p = mock.patch.object(post, "STATE_PATH", Path(self.tmp.name) / "s.json")
+        p.start()
+        self.addCleanup(p.stop)
+
+    def _old_daily_thread(self, cl):
+        """An ad thread as the daily layout left it: header with numbers,
+        two daily replies by Lucy, one comment by a person."""
+        head = cl._new(None, "*ATT Sales Rep Frisco - 50% Removed / Avg 3⭐ WE 9.27*")
+        cl._new(head, "*Mon 9/21*\nAna", [{"id": "F1"}])
+        cl._new(head, "*Tue 9/22*\nBo", [{"id": "F2"}])
+        cl.msgs.append({"ts": "500.1", "thread_ts": head, "text": "Bo was great",
+                        "user": "URAF", "files": []})
+        post._save_state({"C1": {"done_days": ["2026-09-21", "2026-09-22"], "weeks": {
+            "forever": {"frisco": {"thread_ts": head, "days": ["2026-09-21", "2026-09-22"],
+                                   "pinned": True, "title": "ATT Sales Rep Frisco"}}}}})
+        return head
+
+    def test_redo_rewrites_the_same_thread_week_by_week(self):
+        cl = LiveSlack()
+        head = self._old_daily_thread(cl)
+        w1, w2 = MON - dt.timedelta(days=7), MON
+        build = week_of({w1: [cand("Ana")], w1 + dt.timedelta(days=1): [cand("Bo", ok=False)],
+                         w2: [cand("Cy")]})
+        got = weekly.redo_channel("C1", w2 + dt.timedelta(days=2), cl=cl, build=build, crop=False)
+        texts = cl.thread(head)
+        self.assertEqual(got["threads_new"], 0)                 # same thread, same link
+        self.assertEqual(got["weeks"], 2)
+        self.assertNotIn("*Mon 9/21*\nAna", texts)              # daily replies out
+        self.assertIn("Bo was great", texts)                    # the person's comment stays
+        self.assertEqual(cl.updates[head], "*ATT Sales Rep Frisco*")
+        blocks = [t for t in texts if t.startswith("*Monday")]
+        self.assertEqual(len(blocks), 2)
+        self.assertTrue(blocks[0].startswith("*Monday - Friday · WE 9.27*"))   # a past week = whole week
+        self.assertTrue(blocks[1].startswith("*Monday - Wednesday · WE 10.4*"))  # week 1 NOT cleared by week 2
+        st = post._load_state()["C1"]
+        self.assertTrue(st["weekly"])
+        self.assertNotIn("redo", st)
+        self.assertEqual(st["since"], "2026-09-21")
+        self.assertTrue(weekly.is_weekly("C1"))
+
+    def test_redo_never_clears_a_thread_it_opened(self):
+        cl = LiveSlack()
+        post._save_state({"C1": {"done_days": ["2026-09-21"]}})
+        w1, w2 = MON - dt.timedelta(days=7), MON
+        weekly.redo_channel("C1", w2, cl=cl, crop=False,
+                            build=week_of({w1: [cand("Ana")], w2: [cand("Cy")]}))
+        ts = post._load_state()["C1"]["weeks"]["forever"]["frisco"]["thread_ts"]
+        blocks = [t for t in cl.thread(ts) if t.startswith("*Monday")]
+        self.assertEqual(len(blocks), 2)
+        self.assertIn(ts, cl.pins)                              # a new ad's thread is pinned
+
+    def test_nightly_refreshes_only_what_changed(self):
+        cl = LiveSlack()
+        self._old_daily_thread(cl)
+        tue = MON + dt.timedelta(days=1)
+        by_day = {MON: [cand("Ana")]}
+        weekly.redo_channel("C1", MON, since=MON, cl=cl, build=week_of(by_day), crop=False)
+        n = len(cl.msgs)
+        got = weekly.publish_nightly(tue, "C1", cl=cl, build=week_of(by_day), crop=False)
+        self.assertEqual(got["blocks"], 0)                      # nobody new: no Slack calls
+        self.assertEqual(len(cl.msgs), n)
+        by_day[tue] = [cand("Bo", ok=False)]
+        got = weekly.publish_nightly(tue, "C1", cl=cl, build=week_of(by_day), crop=False)
+        self.assertEqual((got["blocks"], got["cleared"]), (1, 2))
+        ad = post._load_state()["C1"]["weeks"]["forever"]["frisco"]
+        self.assertIn(tue.isoformat(), ad["days"])              # reconcile_pins reads days
+        self.assertEqual(ad["stats"][tue.isoformat()]["removed"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

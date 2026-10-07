@@ -1,4 +1,4 @@
-"""Weekly roll-up layout for the ad threads (Carlos 2026-10-05, SAMPLE only).
+"""Weekly roll-up layout for the ad threads (Carlos 2026-10-05).
 
 What Carlos asked for on the phone with Eve:
   - the thread header is just the ad title: no "% Removed / Avg ⭐ WE 9.20";
@@ -10,9 +10,16 @@ What Carlos asked for on the phone with Eve:
   - the block's photos are not split by day, and right under them goes the
     week so far: people seen, invited back (✅), removed (❌), avg rating.
 
-Nothing here is on the nightly path yet: `run.py --weekly-sample` posts it as
-extra "SAMPLE" threads in Carlos's own indeed-photos channel (Eve 10/5), next
-to the real ones -- those are not touched, and the samples are never pinned.
+Carlos 10/7 on SAMPLE 2: "yes can everyone get this format and can we have
+lucy redo everyones so we view it like this". So:
+  - `redo_channel` (run.py --redo-weekly) rewrites an office's existing ad
+    threads in this layout: Lucy's daily replies come out of each thread (a
+    person's replies never do) and every week since the office's first day
+    goes back in as one block. Same threads, same pins, same links. It flags
+    the channel "weekly" in state.json;
+  - from then on the nightly tick calls `publish_nightly` for that channel
+    instead of post.publish -- one office at a time, as each is redone.
+`run.py --weekly-sample` still posts the "SAMPLE" threads (never pinned).
 
 Every message of a week's block starts with the week's tag ("WE 10.4"), and the
 refresh deletes Lucy's replies that carry that tag -- no message ids to keep,
@@ -23,6 +30,8 @@ Python 3.9-safe (runs on the mini): no runtime `X | Y`, no 3.10+ syntax.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
+import re
 import tempfile
 from typing import Dict, List, Optional
 
@@ -88,19 +97,21 @@ def totals_text(history: List[tuple]) -> str:
             + stats_text([c for _, c in history]))
 
 
-def ad_history(book, since: dt.date, through: dt.date, sh=None
-               ) -> Dict[str, List[tuple]]:
+def ad_history(book, since: dt.date, through: dt.date, sh=None,
+               cache: Optional[dict] = None) -> Dict[str, List[tuple]]:
     """Every sheet row from `since` to `through`, by ad key -- read straight
     from the interviewers' sheet (no Slack), resolved with the newest week's
-    TitleBook so the totals fold spellings exactly like the threads do."""
+    TitleBook so the totals fold spellings exactly like the threads do.
+    `cache` = the one collect.build filled, so the sheet isn't read twice."""
     from automations.recruiting_report.fill import open_by_key
-    sh = sh or open_by_key(config.SHEET_ID)
-    have = {w.title for w in sh.worksheets()}
+    if cache is None or "_tabs" not in cache:
+        sh = sh or open_by_key(config.SHEET_ID)
+    tabs = collect.read_tabs(sh, cache)
     out: Dict[str, List[tuple]] = {}
     for src in config.SOURCES:
-        if src["tab"] not in have:
+        if src["tab"] not in tabs:
             continue
-        for r in collect._read_tab(sh, src["tab"]):
+        for r in tabs[src["tab"]]:
             d = collect._parse_date(r[config.COL_DATE])
             if not d or not (since <= d <= through) or not r[config.COL_NAME]:
                 continue
@@ -137,28 +148,53 @@ def plan_week(reports: List[collect.DayReport]) -> List[dict]:
     The title comes from the newest day's book (same TitleBook every day)."""
     groups: Dict[str, List[collect.Candidate]] = {}
     titles: Dict[str, str] = {}
+    days: Dict[str, Dict[str, List[collect.Candidate]]] = {}
     for rep in reports:
         for key, cs in rep.by_ad().items():
             if not key:
                 continue
             groups.setdefault(key, []).extend(cs)
             titles[key] = rep.book.display(key)
+            days.setdefault(key, {})[rep.day.isoformat()] = cs
     keys = sorted(groups, key=lambda k: -len(groups[k]))
-    return [{"key": k, "title": titles[k], "cands": groups[k],
+    return [{"key": k, "title": titles[k], "cands": groups[k], "days": days[k],
              "shots": post._shots(groups[k]),
              "images": post._unique_images(groups[k])} for k in keys]
 
 
-def _clear_week(cl, channel: str, thread_ts: str, me: str, tag: str) -> int:
-    """Delete Lucy's replies (and their photos) that belong to this week's
-    block -- the previous evening's version. Returns how many went."""
+def signature(cands: List[collect.Candidate]) -> str:
+    """What a week's block shows, as a short hash: the nightly re-posts an
+    ad's block only when this changed (a new day, a late photo, a ✅ turned
+    ❌) -- an ad nobody interviewed from today costs no Slack calls."""
+    parts = sorted("|".join([c.name, c.qualify or "", c.stars or "", c.interviewer or "",
+                             ",".join(sorted(f.get("id", "") for f in c.images)),
+                             "/".join(c.notes)]) for c in cands)
+    return hashlib.sha1("\n".join(parts).encode("utf-8")).hexdigest()[:12]
+
+
+def _tagged(text: str, tag: str) -> bool:
+    """"WE 11.1" must not match "WE 11.15"."""
+    return re.search(re.escape(tag) + r"(?!\d)", text or "") is not None
+
+
+def _lucy_replies(cl, channel: str, thread_ts: str, me: str) -> List[dict]:
+    """Every reply Lucy posted in the thread (not the header), all pages."""
+    out, cursor = [], None
+    while True:
+        kw = {"channel": channel, "ts": thread_ts, "limit": 200}
+        if cursor:
+            kw["cursor"] = cursor
+        r = cl.conversations_replies(**kw)
+        out += [m for m in r.get("messages") or []
+                if m.get("ts") != thread_ts and m.get("user") == me]
+        cursor = (r.get("response_metadata") or {}).get("next_cursor")
+        if not cursor:
+            return out
+
+
+def _delete(cl, channel: str, msgs: List[dict]) -> int:
     gone = 0
-    r = cl.conversations_replies(channel=channel, ts=thread_ts, limit=200)
-    for m in r.get("messages") or []:
-        if m.get("ts") == thread_ts or m.get("user") != me:
-            continue
-        if tag not in (m.get("text") or ""):
-            continue
+    for m in msgs:
         for f in m.get("files") or []:
             try:
                 cl.files_delete(file=f["id"])
@@ -173,12 +209,20 @@ def _clear_week(cl, channel: str, thread_ts: str, me: str, tag: str) -> int:
     return gone
 
 
+def _clear_week(cl, channel: str, thread_ts: str, me: str, tag: str) -> int:
+    """Delete Lucy's replies (and their photos) that belong to this week's
+    block -- the previous evening's version. Returns how many went."""
+    return _delete(cl, channel, [m for m in _lucy_replies(cl, channel, thread_ts, me)
+                                 if _tagged(m.get("text") or "", tag)])
+
+
 def publish_week(reports: List[collect.DayReport], channel: str, *, cl=None,
                  prefix: str = "", max_ads: Optional[int] = None,
                  crop: bool = True, threads: Optional[Dict[str, str]] = None,
                  only_keys: Optional[List[str]] = None,
-                 history: Optional[Dict[str, List[tuple]]] = None
-                 ) -> Dict[str, object]:
+                 history: Optional[Dict[str, List[tuple]]] = None,
+                 skip=None, before_first=None, title_header: bool = False,
+                 on_done=None) -> Dict[str, object]:
     """Post (or re-post) one week's block in each ad's thread.
 
     `history` = ad_history() for the "Total stats for this ad" lines; left
@@ -186,7 +230,16 @@ def publish_week(reports: List[collect.DayReport], channel: str, *, cl=None,
 
     `reports` are the week's days so far (Monday first). `threads` maps ad key
     -> thread ts and is filled in as headers are opened, so several weeks can
-    go into the same threads in one pass. Order inside the block: the list +
+    go into the same threads in one pass.
+
+    `skip(item)` True = leave that ad's block as it is (the nightly: nothing
+    changed since last evening). `before_first(key, ts)` runs before an
+    EXISTING thread gets a block (the redo: clear the old daily replies, once).
+    `title_header` edits an existing header down to just the title (the old
+    "- 50% Removed / Avg 3⭐ WE 9.20" headers) and opens a new thread when
+    the header was deleted, rather than loose replies in the channel.
+    `on_done(item, ts, new)` runs after each ad's block is up, so the caller
+    can save state ad by ad (a pass that dies halfway keeps what it did). Order inside the block: the list +
     photos, then the numbers -- each upload waits until it is visible in the
     thread so Slack can't shuffle them (project memory: upload order race)."""
     from automations.shared.slack_metrics_post import _uploaded_file_id, wait_for_share
@@ -201,19 +254,36 @@ def publish_week(reports: List[collect.DayReport], channel: str, *, cl=None,
         items = [i for i in items if i["key"] in only_keys]
     elif max_ads:
         items = [i for i in items if i["images"]][:max_ads]
+    if skip is not None:
+        items = [i for i in items if not skip(i)]
     counts = {"threads_new": 0, "blocks": 0, "cleared": 0, "photos": 0,
-              "keys": [i["key"] for i in items]}
+              "keys": [i["key"] for i in items], "new_keys": [], "items": items}
+    if not items:
+        return counts
     if history is None:
         history = ad_history(reports[-1].book,
                              dt.date.fromisoformat(config.THREADS_SINCE), through)
 
     for item in items:
         ts = threads.get(item["key"])
-        if not ts:
+        if ts and title_header and not post._thread_alive(cl, channel, ts):
+            print(f"  thread for {item['title']!r} is gone; opening a new one")
+            ts = None
+        if ts:
+            if before_first is not None:
+                counts["cleared"] += before_first(item["key"], ts) or 0
+            if title_header:
+                try:
+                    cl.chat_update(channel=channel, ts=ts,
+                                   text=header_text(item["title"], prefix))
+                except Exception as e:           # noqa: BLE001 — never costs the photos
+                    print(f"  header update failed for {item['title']!r}: {str(e)[:160]}")
+        else:
             ts = cl.chat_postMessage(channel=channel,
                                      text=header_text(item["title"], prefix))["ts"]
             threads[item["key"]] = ts
             counts["threads_new"] += 1
+            counts["new_keys"].append(item["key"])
         counts["cleared"] += _clear_week(cl, channel, ts, me, tag)
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -237,7 +307,189 @@ def publish_week(reports: List[collect.DayReport], channel: str, *, cl=None,
             stats += "\n\n" + totals_text(history[item["key"]])
         cl.chat_postMessage(channel=channel, thread_ts=ts, text=stats)
         counts["blocks"] += 1
+        if on_done is not None:
+            on_done(item, ts, item["key"] in counts["new_keys"])
     return counts
+
+
+# ---- the live path: nightly + redo -------------------------------------------
+def is_weekly(channel: str) -> bool:
+    """Has this channel been redone in the weekly layout (redo_channel)?"""
+    return bool(post._load_state().get(channel, {}).get("weekly"))
+
+
+def week_days(monday: dt.date, through: dt.date,
+              since: Optional[dt.date] = None) -> List[dt.date]:
+    """The posting days of `monday`'s week up to `through` (and from `since`)."""
+    out = []
+    for i in range(7):
+        d = monday + dt.timedelta(days=i)
+        if d.weekday() in config.POST_WEEKDAYS and d <= through and (since is None or d >= since):
+            out.append(d)
+    return out
+
+
+def _forever(state: dict, channel: str) -> dict:
+    return state.setdefault(channel, {}).setdefault("weeks", {}).setdefault(post.FOREVER, {})
+
+
+def _threads(wk: dict) -> Dict[str, str]:
+    return {k: ad["thread_ts"] for k, ad in wk.items() if ad.get("thread_ts")}
+
+
+def _recorder(channel: str, monday: dt.date, cl, out: dict, pin: bool = True):
+    """on_done for publish_week: write the ad's thread, days, per-day stats
+    (reconcile_pins and the pin reminder read `days`) and this week's block
+    signature into state.json; pin a thread that was just opened."""
+    def done(item: dict, ts: str, new: bool) -> None:
+        state = post._load_state()
+        ad = _forever(state, channel).setdefault(
+            item["key"], {"thread_ts": "", "days": [], "pinned": False})
+        if ad.get("thread_ts") != ts:
+            ad.update(thread_ts=ts, pinned=False)
+        ad["title"] = item["title"]
+        for d, cs in item["days"].items():
+            if d not in ad["days"]:
+                ad["days"].append(d)
+            ad.setdefault("stats", {})[d] = post.day_stats(cs)
+        ad["days"].sort()
+        ad.setdefault("week_sig", {})[monday.isoformat()] = signature(item["cands"])
+        if new and pin:
+            err = post._pin(cl, channel, ts, True)
+            ad["pinned"] = err is None
+            if err:
+                out["pin_errors"] += 1
+                out["to_pin"].append((item["title"], ts))
+                ad["pin_reminded"] = True
+                print(f"  pin failed for {item['title']!r}: {err}")
+        post._save_state(state)
+    return done
+
+
+def publish_nightly(day: dt.date, channel: str, *, cl=None, build=None,
+                    crop: bool = True, cache: Optional[dict] = None
+                    ) -> Dict[str, object]:
+    """The evening post for a weekly channel: this week's days so far are
+    read (the sheet once), and every ad whose block changed since last
+    evening gets it re-posted (Monday's "Monday", Tuesday's "Monday -
+    Tuesday", ...). Same counts keys post.publish returns, for the pin DM."""
+    build = build or collect.build
+    cl = cl or collect._client()
+    monday = post.week_monday(day)
+    out = {"threads_new": 0, "blocks": 0, "cleared": 0, "photos": 0,
+           "pin_errors": 0, "to_pin": [], "to_unpin": []}
+    days = week_days(monday, day)
+    if not days:
+        return out
+    cache = {} if cache is None else cache
+    reports = [build(d, cl=cl, cache=cache) for d in days]
+    state = post._load_state()
+    wk = _forever(state, channel)
+    since = dt.date.fromisoformat(state[channel].get("since") or config.THREADS_SINCE)
+    threads = _threads(wk)
+    week = monday.isoformat()
+
+    def unchanged(item: dict) -> bool:
+        ad = wk.get(item["key"]) or {}
+        return (item["key"] in threads
+                and (ad.get("week_sig") or {}).get(week) == signature(item["cands"]))
+
+    got = publish_week(reports, channel, cl=cl, threads=threads, crop=crop,
+                       history=ad_history(reports[-1].book, since, day, cache=cache),
+                       skip=unchanged, title_header=True,
+                       on_done=_recorder(channel, monday, cl, out))
+    for k in ("threads_new", "blocks", "cleared", "photos"):
+        out[k] += got[k]
+    return out
+
+
+def redo_channel(channel: str, through: dt.date, *, since: Optional[dt.date] = None,
+                 cl=None, build=None, crop: bool = True) -> Dict[str, object]:
+    """Carlos 10/7: "can we have lucy redo everyones so we view it like this".
+    Every week from `since` (default: the channel's first posted day) through
+    `through` goes into the ad's EXISTING thread as one weekly block; the
+    first time a thread is touched, Lucy's old daily replies (and their
+    photos) come out of it. People's replies are never deleted, headers are
+    edited down to the title, pins and links stay. An ad with no thread yet
+    gets one (pinned).
+
+    Resumable: the threads already cleared and the weeks already posted are
+    kept in state ("redo"), so a pass that dies is just run again -- a thread
+    is never cleared twice (that would take the new blocks down too).
+    At the end the channel is flagged "weekly" and the nightly switches over.
+
+    Threads in state that no week touched are left exactly as they are and
+    listed in "untouched" (an ad that stopped before `since`, or a title the
+    book now reads differently -- look at those before calling it done)."""
+    build = build or collect.build
+    cl = cl or collect._client()
+    me = cl.auth_test()["user_id"]
+    state = post._load_state()
+    ch_state = state.setdefault(channel, {})
+    if since is None:
+        first = ch_state.get("since") or min(ch_state.get("done_days") or [config.THREADS_SINCE])
+        since = dt.date.fromisoformat(first)
+    ch_state["since"] = since.isoformat()
+    redo = ch_state.setdefault("redo", {"cleared": [], "weeks": []})
+    post._save_state(state)
+
+    out = {"weeks": 0, "blocks": 0, "cleared": 0, "threads_new": 0, "photos": 0,
+           "pin_errors": 0, "to_pin": [], "to_unpin": [], "touched": set()}
+
+    def clear_once(key: str, ts: str) -> int:
+        st = post._load_state()
+        r = st[channel]["redo"]
+        if ts in r["cleared"]:
+            return 0
+        n = _delete(cl, channel, _lucy_replies(cl, channel, ts, me))
+        st = post._load_state()
+        st[channel]["redo"]["cleared"].append(ts)
+        post._save_state(st)
+        return n
+
+    def recorded(monday: dt.date):
+        rec = _recorder(channel, monday, cl, out)
+
+        def done(item: dict, ts: str, new: bool) -> None:
+            rec(item, ts, new)
+            if new:              # opened by this redo: never "clear" it later
+                st = post._load_state()
+                st[channel]["redo"]["cleared"].append(ts)
+                post._save_state(st)
+        return done
+
+    cache: dict = {}
+    monday = post.week_monday(since)
+    while monday <= through:
+        days = week_days(monday, through, since)
+        if days and monday.isoformat() not in redo["weeks"]:
+            reports = [build(d, cl=cl, cache=cache) for d in days]
+            threads = _threads(_forever(post._load_state(), channel))
+            got = publish_week(reports, channel, cl=cl, threads=threads, crop=crop,
+                               history=ad_history(reports[-1].book, since, days[-1], cache=cache),
+                               before_first=clear_once, title_header=True,
+                               on_done=recorded(monday))
+            for k in ("blocks", "cleared", "threads_new", "photos"):
+                out[k] += got[k]
+            out["touched"].update(threads[k] for k in got["keys"] if k in threads)
+            out["weeks"] += 1
+            st = post._load_state()
+            st[channel]["redo"]["weeks"].append(monday.isoformat())
+            post._save_state(st)
+            redo = st[channel]["redo"]
+            print(f"  week {monday:%m/%d}: {got['blocks']} block(s), "
+                  f"{got['threads_new']} new thread(s), {got['cleared']} old repl(ies) out")
+        monday += dt.timedelta(days=7)
+
+    state = post._load_state()
+    ch_state = state[channel]
+    done = set(ch_state["redo"]["cleared"]) | out.pop("touched")
+    out["untouched"] = sorted((ad.get("title") or k) for k, ad in _forever(state, channel).items()
+                              if ad.get("thread_ts") and ad["thread_ts"] not in done)
+    ch_state["weekly"] = True
+    ch_state.pop("redo", None)
+    post._save_state(state)
+    return out
 
 
 def sample(mondays: List[dt.date], channel: str, *, max_ads: int = 3,

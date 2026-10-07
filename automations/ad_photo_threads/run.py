@@ -32,6 +32,12 @@
     # those days into the forever threads):
     python -m automations.ad_photo_threads.run --office rafael --retire-week 2026-09-14
 
+    # Carlos 10/7: rewrite an office's threads in the weekly layout (one block
+    # per week, Lucy's daily replies out, people's replies kept); the nightly
+    # switches that channel to weekly when it finishes. --date = through
+    # (default today), --since = first day (default the channel's first):
+    python -m automations.ad_photo_threads.run --office carlos --redo-weekly
+
     # take this report's threads back out of a channel (moving channels):
     python -m automations.ad_photo_threads.run --retire-channel C0AUAS88FGW
 
@@ -164,7 +170,14 @@ def _scheduled_merges() -> None:
             continue
         o = config.office(key)
         config.use(o)
-        got = post.merge_dups(o["live_channel"], today)
+        from automations.ad_photo_threads import weekly
+        if weekly.is_weekly(o["live_channel"]):
+            # merge_dups moves daily replies; a weekly channel folds a
+            # duplicate with an alias + --redo-weekly instead.
+            print(f"[scheduled merge] {key}: weekly channel, skipped (alias + --redo-weekly)")
+            got = {}
+        else:
+            got = post.merge_dups(o["live_channel"], today)
         # One line per thread: `lucy logtail` cuts a long line before the
         # reason (Khalil 9/25: the whole dict on one line hid why one stayed).
         print(f"[scheduled merge] {key}: {len(got)} thread(s)")
@@ -192,10 +205,17 @@ def _nightly_office(o: dict, day: Optional[dt.date], explicit_date: bool) -> Non
     channel = config.LIVE_CHANNEL_ID
     if post.day_done(channel, day):
         return
-    rep = collect.build(day)
-    print(f"[{now:%Y-%m-%d %H:%M} {now.tzname()}] nightly — {o['owner']}")
+    from automations.ad_photo_threads import weekly
+    weekly_layout = weekly.is_weekly(channel)
+    cache: dict = {}                          # weekly: the sheet read once
+    rep = collect.build(day, cache=cache)
+    print(f"[{now:%Y-%m-%d %H:%M} {now.tzname()}] nightly — {o['owner']}"
+          + (" (weekly)" if weekly_layout else ""))
     print(summary(rep))
-    counts = post.publish(rep, channel)
+    if weekly_layout:
+        counts = weekly.publish_nightly(day, channel, cache=cache)
+    else:
+        counts = post.publish(rep, channel)
     print("\nPosted:", counts)
     try:
         if post.send_pin_reminder(channel, day, counts):
@@ -207,7 +227,9 @@ def _nightly_office(o: dict, day: Optional[dt.date], explicit_date: bool) -> Non
     if rep.candidates:
         post.mark_day_done(channel, day)
     try:
-        late = post.retry_late(channel, day)
+        # Weekly: tomorrow's refresh re-reads the whole week, so a late photo
+        # gets in on its own -- retry_late would add a daily-style reply.
+        late = {} if weekly_layout else post.retry_late(channel, day)
         if late:
             print("Late photos:", late)
     except Exception as e:                    # noqa: BLE001 — never costs the post
@@ -278,6 +300,13 @@ def main(argv=None) -> int:
                            "threads in the office's live channel (or --channel / "
                            "--dm): comma-separated Mondays, oldest first. "
                            "--max-ads = how many ads (default 3). Never pins.")
+    mode.add_argument("--redo-weekly", action="store_true",
+                      help="Rewrite the office's ad threads in the weekly layout "
+                           "(Carlos 10/7): Lucy's daily replies out, one block per "
+                           "week back in, same threads. --date = through, --since "
+                           "= first day. The nightly goes weekly for that channel after.")
+    ap.add_argument("--since", help="With --redo-weekly: first day YYYY-MM-DD "
+                                    "(default: the channel's first posted day).")
     mode.add_argument("--nightly", action="store_true",
                       help="The scheduled tick: post today to the live channel "
                            "once it's past config.POST_AFTER_CT; otherwise no-op.")
@@ -341,6 +370,24 @@ def main(argv=None) -> int:
             mondays, channel, max_ads=a.max_ads or 3,
             crop=not a.no_crop, name=a.sample_name))
         return 0
+    if a.redo_weekly:
+        from automations.ad_photo_threads import weekly
+        print(f"Redo weekly — {config.office(a.office or 'rafael')['owner']} through {day}")
+        got = weekly.redo_channel(
+            a.channel or config.LIVE_CHANNEL_ID, day,
+            since=dt.date.fromisoformat(a.since) if a.since else None,
+            crop=not a.no_crop)
+        print("Redo weekly:", {k: v for k, v in got.items() if k != "untouched"})
+        for t in got["untouched"]:
+            print(f"  untouched (old layout kept): {t}")
+        return 0
+    if a.add_photo or a.add_notes or a.unmerge or a.merge_dups or a.watch:
+        from automations.ad_photo_threads import weekly
+        if weekly.is_weekly(a.channel or config.LIVE_CHANNEL_ID):
+            print("This channel is in the weekly layout: the evening refresh "
+                  "re-posts the week (late photos and notes included). A "
+                  "duplicate thread: add an alias, then --redo-weekly.")
+            return 1
     if a.watch:
         from automations.ad_photo_threads import config, post
         names = [n.strip() for n in a.watch.split(",") if n.strip()]

@@ -280,14 +280,31 @@ def _add_note(c: Candidate, text: str, book: Optional[TitleBook] = None) -> None
 
 
 # ---- the day -----------------------------------------------------------------
-def build(day: dt.date, *, sh=None, cl=None) -> DayReport:
+def read_tabs(sh, cache: Optional[dict] = None) -> Dict[str, List[Dict[str, str]]]:
+    """The office's source tabs that exist, {tab: rows}. With `cache` (a dict
+    kept by the caller) the sheet is read once for a whole week of days --
+    the weekly layout builds Monday..today every evening (Sheets quota)."""
+    if cache is not None and "_tabs" in cache:
+        return cache["_tabs"]
+    have = {w.title for w in sh.worksheets()}
+    tabs = {s["tab"]: _read_tab(sh, s["tab"]) for s in config.SOURCES if s["tab"] in have}
+    if cache is not None:
+        cache["_tabs"] = tabs
+    return tabs
+
+
+def build(day: dt.date, *, sh=None, cl=None, cache: Optional[dict] = None) -> DayReport:
     from automations.recruiting_report.fill import open_by_key
+    if cache is not None and "_tabs" in cache:
+        sh = sh or cache.get("_sh")
     sh = sh or open_by_key(config.SHEET_ID)
+    if cache is not None:
+        cache["_sh"] = sh
     cl = cl or _client()
 
-    have = {w.title for w in sh.worksheets()}
+    tabs = read_tabs(sh, cache)
+    have = set(tabs)
     sources = [s for s in config.SOURCES if s["tab"] in have]
-    tabs = {s["tab"]: _read_tab(sh, s["tab"]) for s in sources}
     since = day - dt.timedelta(days=config.TITLE_LOOKBACK_DAYS)
     book = TitleBook(
         (r[config.COL_TITLE] for rows in tabs.values() for r in rows
