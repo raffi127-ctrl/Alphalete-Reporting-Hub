@@ -743,7 +743,11 @@ RECIPIENTS: dict = {
         "georgedelgadod2d@gmail.com",
         "josevelasquezlsm@gmail.com",
         "josephdelgadosc@gmail.com", "coastalcreativeconcepts@yahoo.com",
-        "campas.kyle@gmail.com", "lajaviusbrown@yahoo.com",
+        # OUT 2026-10-07 (Colten, por mail "Can we remove Kyle Campas from this
+        # moving forward?"): Kyle Campas (campas.kyle@gmail.com) sale del
+        # reporte de la capitania de Colten. Sale de aca Y del grupo vivo
+        # "Colten's Captainship" — seed_groups rehace el grupo desde esta lista.
+        "lajaviusbrown@yahoo.com",
         "logan.waite24@gmail.com",
         # OUT 2026-08-27 (Eve): Marcos Barbosa (marcosbarbosa.entrepeneur@gmail.com)
         # comes off Colten's captainship — and out from under Colten's org in the

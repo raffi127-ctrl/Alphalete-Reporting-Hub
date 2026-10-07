@@ -215,6 +215,11 @@ REMOVALS: dict = {
         # NO es compartido con el mail del Org Sales Board; sigue siendo ICD
         # NDS del org (oficina 22604) en todo lo demas.
         ("Fernando Munoz", "fernandomunoz710@icloud.com"),
+        # 2026-10-07 (Colten, por mail): Kyle Campas sale del reporte de la
+        # capitania de Colten. Fuera tambien de config.RECIPIENTS["colten"] y
+        # pinneado en shared/captainship_pins bajo "Colten". Grupo NO compartido
+        # con el mail del Org Sales Board.
+        ("Kyle Campas", "campas.kyle@gmail.com"),
     ],
     # 2026-09-15 (Eve), regla de dos semanas: Max Powell sale de la capitania de
     # Luis (B2B - All Units, cero en WE 09.13 y WE 09.06). Su direccion sale

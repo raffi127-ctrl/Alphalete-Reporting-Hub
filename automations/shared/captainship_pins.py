@@ -118,6 +118,12 @@ from typing import Dict, Iterable, Optional
 # Log ALLREPS 8/02-10/01, sin ventas despues. Romeo Hise: 0 ventas en 60 dias,
 # desactivado de Slack el 2026-10-01 (Terminated Reps de Raf). Las vistas NI de
 # Pat los soltaron el 10/6 y la tab los marcaba "went dark".
+#
+# 2026-10-07 (Colten, por mail): Kyle Campas sale de la capitania de Colten —
+# misma forma que Milan / Marcos / Fernando. Tableau lo sigue filando bajo
+# "Colten's Team", asi que sin el pin el pull de churn le rearma las filas y el
+# gate lo vuelve a ofrecer. Sigue siendo ICD NDS del org (oficina 23230, Palm
+# City Management, tab 'Kyle Campas - NDS') — el pin es solo de Colten.
 NOT_ON_TEAM: Dict[str, tuple] = {
     "Raf": ("Steve McElwee",),
     "Sahil": ("Jeremiah Minor",),
@@ -125,7 +131,7 @@ NOT_ON_TEAM: Dict[str, tuple] = {
             "Romeo Hise"),
     "Jess": ("Angel Arias", "Mary Maya"),
     "Colten": ("Milan Godbolt", "Marcos Barbosa", "Fernando Munoz",
-               "Fernando Muñoz"),
+               "Fernando Muñoz", "Kyle Campas"),
     "Eveliz": ("Lizette Ruiz", "Lizette Ruiz-Conejo"),
     # 2026-10-01 (Eve): Cruz Venegas paso a la capitania de Luke Baldwin. La
     # vista de churn de Luis (B2BLuis_Churn) lo sigue trayendo mientras
