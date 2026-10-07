@@ -1287,9 +1287,106 @@ def email_icd(office, people, weeks, paths, to, dry_run=True, logfn=print):
         dry_run=dry_run, logfn=logfn)
 
 
+INDEX_CSS = CSS + """
+table.idx{width:100%;font-size:.95em}
+table.idx td.g{text-align:center;font-weight:bold;width:3em}
+td.g.A,td.g.B{color:#156E46}
+td.g.C{color:#8a6d00}
+td.g.D,td.g.F{color:#A8322A}
+tr.off td{background:#f2f2f2;font-weight:bold}
+a{color:#111}
+"""
+
+
+def write_index(rows, path):
+    """One page listing every card, worst grade first within each office.
+
+    Megan 2026-10-07 wanted the six completed weeks across all four
+    accounts "so we have a starting point" — a hundred cards is a folder,
+    not a starting point, until something indexes them."""
+    L = ["<!doctype html><html><head><meta charset='utf-8'>",
+         "<title>Recruiting scorecards</title>",
+         "<style>{}</style></head><body>".format(INDEX_CSS),
+         "<h1>Recruiting scorecards</h1>",
+         "<p class='date'>Six weeks to {} \u00b7 {} people across {} "
+         "accounts</p>".format(
+             R.week_label(R.WEEKS[-1]), len(rows),
+             len({r["office"] for r in rows})),
+         "<div class='scroll'><table class='idx'>",
+         "<tr><th>Who</th><th>Grade</th><th>Booked</th><th>Retention</th>"
+         "<th>First thing to work on</th></tr>"]
+    order = {"F": 0, "D": 1, "C": 2, "B": 3, "A": 4}
+    for office in sorted({r["office"] for r in rows}):
+        mine = sorted([r for r in rows if r["office"] == office],
+                      key=lambda r: (order.get(r["grade"], 9), -r["booked"]))
+        L.append("<tr class='off'><td colspan='5'>Account {}</td></tr>"
+                 .format(esc(office)))
+        for r in mine:
+            L.append(
+                "<tr><td><a href='{}'>{}</a></td><td class='g {}'>{}</td>"
+                "<td class='n'>{:,}</td><td class='n'>{}</td><td>{}</td></tr>"
+                .format(esc(r["file"]), esc(r["name"]), r["grade"],
+                        r["grade"], r["booked"], esc(r["retention"]),
+                        esc(r["focus"])))
+    L.append("</table></div>")
+    L.append("<p class='none'>Grades weight 1st Round Retention heaviest, "
+             "then house rules and unanswered questions. A person with too "
+             "little traffic to judge is left out.</p>")
+    L.append("</body></html>")
+    path.write_text("\n".join(L), encoding="utf-8")
+    return path
+
+
+def _one_office(oid, weeks, a, want=False):
+    """Write every card for one office, and return a row per person for
+    the index. With `want`, also hand back the people and their paths so
+    main can still build the ICD email."""
+    people = collect(oid, weeks)
+    if not people:
+        print("[scorecard] nothing pulled for {} in {}".format(
+            oid, ", ".join(weeks)))
+        return (None, None, []) if want else []
+    OUTPUT.mkdir(exist_ok=True)
+    paths, rows = {}, []
+    for key, person in sorted(people.items(),
+                              key=lambda kv: -sum(
+                                  w.get("texts", 0)
+                                  for w in kv[1]["weeks"].values())):
+        if is_ai(person["display"]) and getattr(a, "no_ai", False):
+            continue
+        total = sum(w.get("texts", 0) for w in person["weeks"].values())
+        if total < MIN_TEXTS:
+            continue
+        path = OUTPUT / "scorecard-{}-{}.html".format(
+            oid, re.sub(r"[^a-z0-9]+", "-", key.lower()).strip("-"))
+        render(person, oid, weeks, path)
+        paths[person["display"]] = path
+        fixes = failing(work_on(person, weeks))
+        got = [w for w in weeks if w in person["weeks"]]
+        last = person["weeks"][got[-1]] if got else {}
+        ret = _rate(last, "shown", "booked")
+        rows.append({
+            "office": oid, "name": person["display"], "file": path.name,
+            "grade": grade_of(person, weeks) or "-",
+            "booked": sum((person["weeks"][w].get("booked") or 0)
+                          for w in got),
+            "retention": ("{:.0f}%".format(ret)
+                          if ret is not None
+                          and (last.get("booked") or 0) >= MIN_MATCHED
+                          else TOO_FEW),
+            "focus": fixes[0]["area"] if fixes else "nothing",
+        })
+        print("   {:<24} {:>6,} texts, {} to work on -> {}".format(
+            person["display"][:24], total, len(fixes), path.name), flush=True)
+    print("[scorecard] {} scorecard(s) for {}".format(len(rows), oid))
+    return (people, paths, rows) if want else rows
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--office", default="11280")
+    ap.add_argument("--all", action="store_true",
+                    help="every active office, plus an index page")
     ap.add_argument("--email", action="store_true",
                     help="build the ICD email; writes a preview and sends "
                          "NOTHING unless --send is given too")
@@ -1304,32 +1401,19 @@ def main(argv=None):
     a = ap.parse_args(argv)
 
     weeks = [w.strip() for w in a.weeks.split(",") if w.strip()] or R.WEEKS
-    people = collect(a.office, weeks)
-    if not people:
-        print("[scorecard] nothing pulled for {} in {}".format(
-            a.office, ", ".join(weeks)))
+    if a.all:
+        offices = [o["office"] for o in (O.load()[0] or [])]
+        index = []
+        for oid in offices:
+            print("[scorecard] {}".format(oid), flush=True)
+            index.extend(_one_office(oid, weeks, a))
+        if index:
+            path = write_index(index, OUTPUT / "scorecards-index.html")
+            print("[scorecard] {} cards -> {}".format(len(index), path.name))
+        return 0
+    people, paths, _rows = _one_office(a.office, weeks, a, want=True)
+    if people is None:
         return 1
-    OUTPUT.mkdir(exist_ok=True)
-    made = 0
-    paths = {}
-    for key, person in sorted(people.items(),
-                              key=lambda kv: -sum(
-                                  w.get("texts", 0)
-                                  for w in kv[1]["weeks"].values())):
-        if is_ai(person["display"]) and a.no_ai:
-            continue
-        total = sum(w.get("texts", 0) for w in person["weeks"].values())
-        if total < MIN_TEXTS:
-            continue
-        path = OUTPUT / "scorecard-{}-{}.html".format(
-            a.office, re.sub(r"[^a-z0-9]+", "-", key.lower()).strip("-"))
-        render(person, a.office, weeks, path)
-        paths[person["display"]] = path
-        fixes = work_on(person, weeks)
-        print("   {:<24} {:>6,} texts · {} to work on -> {}".format(
-            person["display"][:24], total, len(fixes), path.name), flush=True)
-        made += 1
-    print("[scorecard] {} scorecard(s) for {}".format(made, a.office))
 
     if not a.email:
         return 0

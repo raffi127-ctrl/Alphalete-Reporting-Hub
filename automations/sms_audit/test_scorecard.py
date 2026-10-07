@@ -925,3 +925,47 @@ class BothBookingChannels(unittest.TestCase):
         self.assertIn("Booked From a Text", html)
         self.assertIn("Booked From a Call", html)
         self.assertIn("37", html)
+
+
+class Index(unittest.TestCase):
+    """Megan 2026-10-07 wanted every account's six weeks "so we have a
+    starting point". Sixty-one files is a folder, not a starting point."""
+
+    ROWS = [
+        {"office": "11280", "name": "Jorge Pena", "file": "a.html",
+         "grade": "C", "booked": 702, "retention": "29%",
+         "focus": "1st Round Retention"},
+        {"office": "11280", "name": "Dani Pena", "file": "b.html",
+         "grade": "A", "booked": 147, "retention": "64%",
+         "focus": "nothing"},
+        {"office": "11580", "name": "Erika Gonzalez", "file": "c.html",
+         "grade": "D", "booked": 90, "retention": "31%",
+         "focus": "House Rules Broken"},
+    ]
+
+    def _html(self):
+        from pathlib import Path
+        import tempfile
+        out = Path(tempfile.mkdtemp()) / "i.html"
+        S.write_index(self.ROWS, out)
+        return out.read_text(encoding="utf-8")
+
+    def test_every_person_is_listed_and_linked(self):
+        html = self._html()
+        for r in self.ROWS:
+            self.assertIn(r["name"], html)
+            self.assertIn(r["file"], html)
+
+    def test_offices_are_grouped(self):
+        html = self._html()
+        self.assertIn("Account 11280", html)
+        self.assertIn("Account 11580", html)
+
+    def test_worst_grade_comes_first_in_its_office(self):
+        html = self._html()
+        self.assertLess(html.index("Jorge Pena"), html.index("Dani Pena"))
+
+    def test_the_header_counts_people_and_accounts(self):
+        html = self._html()
+        self.assertIn("3 people", html)
+        self.assertIn("2 accounts", html)
