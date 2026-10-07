@@ -1196,19 +1196,18 @@ def main(argv: list[str] | None = None) -> int:
         def _plog(msg):
             _log(msg)
             _probe_lines.append(str(msg))
-        out = REPO_ROOT / "output" / "vantura_payroll" / "dd_owner_probe.csv"
+        out = REPO_ROOT / "output" / "vantura_payroll" / "dd_owner_probe.xlsx"
         out.parent.mkdir(parents=True, exist_ok=True)
         if out.exists():
             out.unlink()
-        url = ("https://us-east-1.online.tableau.com/t/sci/views/"
-               "DirectDepositICDVIEWVersion2_0/DDDETAILORG.csv?:refresh=yes")
-        cdp_pull.download_views([], log=_log,
-                                csv_fetches=[(url, str(out))])
+        url = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+               "DirectDepositICDVIEWVersion2_0/DDDETAILORG?:iid=1")
+        cdp_pull.download_views([(url, "ORG DD Detail", str(out))], log=_log)
         if not out.exists():
-            _log("owner-probe: no CSV landed")
+            _log("owner-probe: no crosstab landed")
             return 4
-        rows = list(_csv.reader(open(out, encoding="utf-8-sig",
-                                     errors="replace")))
+        _h, _d = _read_export(out)
+        rows = [list(_h)] + [list(r) for r in _d]
         if len(rows) < 2:
             _log(f"owner-probe: CSV has {len(rows)} row(s) — nothing to read")
             return 4
