@@ -35,7 +35,8 @@ import time
 SAFE_COLUMNS = ["ICD", "Campaigns", "LucyECO", "Sara+ Alerts",
                 "Text Scoreboard", "Call-outs", "Knock & Dispo Boards",
                 "Gap Alerts", "Weather Report", "Ad Photo Threads",
-                "Resume Pushing", "Metrics Thread", "Tableau Trackers"]
+                "Resume Pushing", "Metrics Thread", "Tableau Trackers",
+                "Last reading", "On latest update"]
 
 # Separates the columns inside one cell. The page splits on it to build a
 # small aligned table; anything reading these as plain text still gets a
@@ -79,7 +80,13 @@ HEADER_TINT = {
 # Two columns the gated sales board adds and the public page never does.
 # They are about chasing an INSTALL, not about what an office receives, and
 # 'last reading' on an open page is a liveness probe of someone's laptop.
-ADMIN_EXTRA = ["Last reading", "On latest update"]
+# ON EVERY SURFACE NOW (Megan 2026-10-06: "we lost the last relay time and
+# if it's on the latest update"). They were held back from the ungated page
+# when 'Gone quiet' still read as Partial enrolment — the column said the
+# machine was down and these would have said it twice. Now that enrolment
+# and health are separate, the health has to be SOMEWHERE, and a timestamp
+# plus a yes/no about our own agent is not rep data.
+ADMIN_EXTRA: list = []
 
 # Schedules that are the same wherever the feature is switched on. Each is
 # read off the module that enforces it rather than retyped from memory; where
@@ -197,7 +204,7 @@ BOARD_WHEN = ENROLLED
 ECO_STATE = {
     "Live": "Active",
     "Needs update": "Partial",
-    "Gone quiet": "Partial",
+    "Gone quiet": "Active",
     "Signed up — not reporting": "Pending",
     "Not on LucyECO": "Not on",
 }
@@ -1315,7 +1322,7 @@ def rows(icds=None, admin: bool = False) -> list:
                     "_reading_tone": reading_tone(
                         st.get("Last reading", ""),
                         _first_office(feeds, alert_office))}
-                   if admin else {}),
+                   if True else {}),
                 "Tableau Trackers": (
                     "Emailed Daily" if mkey in emailed else
                     _with_where(ENROLLED, [metrics_room[mkey]])
@@ -1419,6 +1426,23 @@ SNAPSHOT = (pathlib.Path(__file__).resolve().parents[2]
             / "output" / "lucyeco-enrollment.json")
 SNAPSHOT_FRESH_MIN = 30
 
+# THE COPY THAT SHIPS WITH THE CODE. output/ is gitignored, so a hosted app
+# starts with no snapshot at all and every single visitor pays a cold read —
+# about forty Sheets calls, serial, against a quota the whole Hub shares.
+# The deployed page sat on "Reading the registries…" for minutes (Megan
+# 2026-10-06), which is survivable for one person and hopeless for a link
+# sent to every ICD at once.
+#
+# So a snapshot lives BESIDE THE CODE and is deployed with it: the page
+# renders instantly from it and says when it was taken, and the live read
+# only happens when it is old. Refresh it with
+#   python -m automations.icd_sales_board.publish_snapshot
+PUBLISHED = pathlib.Path(__file__).resolve().parent / "lucyeco-published.json"
+# How old the shipped copy may be before a visitor waits for a live read.
+# Enrollment changes a few times a week, so half a day is generous and
+# still means nobody looks at last month.
+PUBLISHED_MAX_HOURS = 12
+
 
 def _code_stamp() -> str:
     """Changes whenever this module does."""
@@ -1475,12 +1499,54 @@ def rows_cached(max_age_min: int = SNAPSHOT_FRESH_MIN):
     if got and taken and (dt.datetime.now() - taken
                           <= dt.timedelta(minutes=max_age_min)):
         return got, taken
+    # THE SHIPPED COPY, BEFORE PAYING FOR A LIVE READ. This is what makes a
+    # hosted page open instantly instead of making each visitor wait on
+    # forty serial Sheets calls.
+    pub, pub_taken = _read_published()
+    if pub and pub_taken and (dt.datetime.now() - pub_taken
+                              <= dt.timedelta(hours=PUBLISHED_MAX_HOURS)):
+        return pub, pub_taken
     fresh = rows()
     if fresh:
         _write_snapshot(fresh)
         return fresh, dt.datetime.now()
-    # A failed read must not throw away a good snapshot.
-    return (got or []), taken
+    # A failed read must not throw away a good answer — the local snapshot
+    # if there is one, otherwise whatever shipped, however old.
+    if got:
+        return got, taken
+    return (pub or []), pub_taken
+
+
+def _read_published():
+    """(rows, taken_at) from the copy that ships with the code."""
+    try:
+        blob = json.loads(PUBLISHED.read_text())
+        return (blob.get("rows") or [],
+                dt.datetime.fromisoformat(blob["taken"]))
+    except Exception:   # noqa: BLE001 — absent or unreadable: just read live
+        return [], None
+
+
+def publish_snapshot(path=None) -> int:
+    """Write the shipped snapshot. Returns how many offices it holds.
+
+    PUBLIC ROWS ONLY. This file is committed and deployed, so it must carry
+    exactly what the ungated page may show and nothing else — the same
+    contract SAFE_COLUMNS enforces at render.
+    """
+    path = pathlib.Path(path) if path else PUBLISHED
+    got = rows()
+    if not got:
+        raise SystemExit("refusing to publish an empty snapshot")
+    safe = [{c: r.get(c, "") for c in SAFE_COLUMNS if c in r} for r in got]
+    for r in safe:
+        for k in list(r):
+            if str(k).startswith("_") or k not in SAFE_COLUMNS:
+                r.pop(k, None)
+    path.write_text(json.dumps(
+        {"taken": dt.datetime.now().isoformat(timespec="seconds"),
+         "rows": safe}, indent=1, ensure_ascii=False) + "\n")
+    return len(safe)
 
 
 _CSS = """<style>

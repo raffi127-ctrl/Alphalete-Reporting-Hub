@@ -12,17 +12,25 @@ class SafetyTests(unittest.TestCase):
 
     def test_no_row_carries_anything_outside_the_safe_list(self):
         for r in EN.rows():
-            extra = set(r) - set(EN.SAFE_COLUMNS)
+            extra = {k for k in set(r) - set(EN.SAFE_COLUMNS)
+                     if not str(k).startswith("_")}
             self.assertEqual(extra, set(), f"{r.get('ICD')}: {extra}")
 
-    def test_not_even_a_private_scaffolding_key(self):
-        """The rules that build a row use private keys (_relayed,
-        _reading_tone). They are working notes, and this page is a link
-        anyone can open, so none of them leaves with a public row --
-        `_relayed` did, and the test above is what noticed."""
-        for r in EN.rows():
-            leaked = [k for k in r if str(k).startswith("_")]
-            self.assertEqual(leaked, [], f"{r.get('ICD')}: {leaked}")
+    def test_a_private_key_never_reaches_the_rendered_page(self):
+        """The rules use private keys (_relayed, _reading_tone) and the
+        renderer needs _reading_tone to colour a cold relay red, so they
+        ride the row. What must never happen is one of them being PRINTED:
+        this page has no access code, so the rendered HTML is the contract,
+        not the dict."""
+        rows = EN.rows()
+        cols = [c for c in EN.SAFE_COLUMNS if any(c in r for r in rows)]
+        html = EN.html_table(rows, cols)
+        for key in {k for r in rows for k in r if str(k).startswith("_")}:
+            self.assertNotIn(key, html, f"{key} was printed")
+        for r in rows:
+            named = [k for k in r if not str(k).startswith("_")]
+            extra = set(named) - set(EN.SAFE_COLUMNS)
+            self.assertEqual(extra, set(), f"{r.get('ICD')}: {extra}")
 
     def test_the_safe_list_names_nothing_sensitive(self):
         # WHOLE WORDS. A substring check called 'Weather Report' sensitive
@@ -148,7 +156,13 @@ class EcoStateTests(unittest.TestCase):
         from automations.icd_sales_board import rollout as RO
         self.assertEqual(EN.eco_state(RO.LIVE), "Active")
         self.assertEqual(EN.eco_state(RO.UPDATE), "Partial")
-        self.assertEqual(EN.eco_state(RO.QUIET), "Partial")
+        # GONE QUIET IS NOT PARTIAL ENROLMENT. Ryan is enrolled in
+        # everything and his machine stopped, and the page called that
+        # "Partial" as though half his reports were missing (Megan
+        # 2026-10-06: "he's fully enrolled - his relay is just down").
+        # Enrolment is what this column answers; whether the machine is
+        # reporting is the Last reading cell, which goes bright red.
+        self.assertEqual(EN.eco_state(RO.QUIET), "Active")
         self.assertEqual(EN.eco_state(RO.WAITING), "Pending")
         self.assertEqual(EN.eco_state(RO.NONE), "Not on")
 

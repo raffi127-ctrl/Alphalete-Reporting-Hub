@@ -51,6 +51,11 @@ def main() -> None:
     st.title("Lucy ECOsystem")
     st.caption("Every office, what it is enrolled in, and when each one runs. "
                "Read-only — nothing here changes anything.")
+    # WHERE TO ASK. The page tells an owner what they could have and then
+    # left them with nowhere to go (Megan 2026-10-06).
+    st.caption("Want something switched on for your office, or something "
+               "changed? **DM Megan or Eve on Slack** and they will set "
+               "it up.")
 
     rows, taken = _rows()
     if not rows:
@@ -62,7 +67,13 @@ def main() -> None:
     # that nothing extra reached it happens here rather than being left to
     # whoever edits enrollment.py next.
     safe = [c for c in EN.SAFE_COLUMNS if any(c in r for r in rows)]
-    rows = [{c: r.get(c, "") for c in safe} for r in rows]
+    # The underscored keys are the renderer's working notes — they decide
+    # the colour of a cell and are never printed as a column. Narrowing
+    # them away is what left a 22-hour-cold relay painted green on the
+    # board (Megan 2026-10-06: "RYAN STILL ISN'T RED").
+    rows = [{**{c: r.get(c, "") for c in safe},
+             **{k: v for k, v in r.items() if str(k).startswith("_")}}
+            for r in rows]
 
     counts = EN.counts(rows)
     live = sum(1 for r in rows if r.get("LucyECO") == "Active")
@@ -89,22 +100,10 @@ def main() -> None:
     # every time-carrying column white.
     st.html(EN.html_table(rows, safe))
 
-    st.caption(
-        "A cell shows WHEN that report runs for that office; blank means the "
-        "office is not enrolled. Times are the office's own local time where "
-        "the report is scheduled that way. "
-        + " · ".join(f"**{k}** {v}" for k, v in sorted(counts.items())
-                     if v))
-    # Built from ints, never %-I: that flag is Mac-only and this has to run
-    # on Windows too.
-    when = (f"{taken:%b %d}, {taken.hour % 12 or 12}:{taken.minute:02d}"
-            f"{'am' if taken.hour < 12 else 'pm'}") if taken else ""
-    st.caption((f"Read {when} " if when else "Read ")
-               + "from the registries that run these reports — not a list "
-                 "anybody maintains by "
-               f"hand, so it cannot drift from what actually runs. To change "
-               f"what an office gets, change it where it is set and this "
-               f"follows.")
+    # The colour key, the counts and the "read at" line are gone (Megan
+    # 2026-10-06, twice — once for the board and again here). The
+    # explainers above already say what each column is, and the table is
+    # the point of the page.
 
 
 main()
