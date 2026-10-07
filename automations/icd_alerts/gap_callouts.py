@@ -109,6 +109,10 @@ LINES = (
     # out is not Lucy's voice in every office's room.
     "{names} — {m}+ min off the doors. Not feeling it? Doesn't matter. #FYMFTP 🚪",
     "Mood says couch, plan says doors 🚪 {names}: {m}+ min. #FYMFTP",
+    # The pony (Megan 2026-10-07): a sale is "found their pony", so a gap is
+    # still digging for it.
+    "{names} — {m}+ min off the doors. Still digging for that pony? 🐴 It's behind a door 🚪",
+    "{names}: {m}+ min. The pony's not in the car 🐴 Go find it 🚪",
     # BENEFIT OF THE DOUBT (Megan 2026-09-26): a quiet rep may be inside with
     # a customer. Half the pool leaves that door open.
     "{names} — {m}+ min without a dispo. Must be cooking up something good in there… right? 👨‍🍳🔥",
@@ -145,6 +149,7 @@ B2B_LINES = (
     "{names}, bestie 💅 {m}+ min without a walk-in. The owners miss you 🏢",
     "It's giving long lunch 🥗💅 {names} — {m}+ min, no dispo. Cute. Now walk in 🏢",
     "{names} — {m}+ min, no walk-ins. Mood's not the plan 🏢 #FYMFTP",
+    "{names}: {m}+ min. The pony's not in the parking lot 🐴 It's inside 🏢",
     # ...and the same Spanish phrases sprinkled in, like LINES.
     "¡Snicklemeberries! 🫐 {names} — {m}+ min without a dispo. Finger poppin' or talking to owners? ¡Vamos! 🏢👀",
     "{names} — {m}+ min, no dispo, no sale. Chatting up the recepcionista? 🚧",
