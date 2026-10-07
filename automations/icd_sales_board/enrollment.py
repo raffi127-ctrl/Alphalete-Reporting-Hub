@@ -215,7 +215,12 @@ UNCOLOURED = ("ICD", "Campaigns")
 # never reported these read Pending rather than Active. The ones WE run off
 # our own scrape — metrics, trackers — are unaffected.
 RELAY_FED = ("Sara+ Alerts", "Text Scoreboard", "Call-outs",
-             "Knock & Dispo Boards")
+             "Knock & Dispo Boards",
+             # The gap list RIDES THE BOARD POST, so it rides the office's
+             # machine too -- Rashad read a live gap schedule having never
+             # relayed (2026-10-06). Raf is unaffected: his gaps come from
+             # the gap_alerts module, and HOUSE_RUN keeps him Active.
+             "Gap Alerts")
 
 # OFFICES WE RUN FROM OUR OWN MACHINES, not from an agent on theirs. The page
 # was built out of the ECO registries, so the two biggest offices came back
@@ -702,14 +707,29 @@ def _knock_names(raw: str) -> list:
     return out
 
 
-def _gap_lines(raw: str) -> list:
-    """'Every 60 Min · Slack #palace-sales' for each destination with gaps on.
+def _gap_lines(raw: str, default_on: bool = False) -> list:
+    """'Every 60 Min · Slack #palace-sales' for each destination with gaps.
 
     AN ECO OFFICE TURNS GAPS ON PER DESTINATION, as `gaps_min` beside the
     board's own cadence — not through the gap_alerts module, which only knows
     the four offices hardcoded in it. Reading only that module showed Raf and
     nobody else, when Kash has had gaps hourly in his Slack all along (Megan
-    2026-10-05)."""
+    2026-10-05).
+
+    BUT `gaps_min` IS THE SLACK OPT-IN ONLY, and reading it as the whole
+    answer was wrong: knocks_post skips text destinations before it ever
+    checks the flag (`if P.is_text_dest(cid): continue`), because the typed
+    list has ALWAYS gone to iMessage groups — the flag was added so a Slack
+    room could have one too (Kash, 2026-09-24). So every approved text group
+    gets gaps, with no opt-in, and this column called them Not Enrolled:
+    Luke and Jamis were both receiving the list while the page denied it
+    (Megan 2026-10-06). `default_on` is how the caller says which side of
+    that line a destination list sits on.
+
+    The cadence shown is the one that destination actually gets: the list
+    rides the board post, so for a text group that is its own cadence_min,
+    and for a Slack room it is the slower `gaps_min` clock it opted into.
+    """
     import json
     try:
         dests = json.loads(raw or "[]")
@@ -724,12 +744,25 @@ def _gap_lines(raw: str) -> list:
             mins = int(d.get("gaps_min") or 0)
         except (TypeError, ValueError):
             mins = 0
+        if not mins and default_on:
+            # A text group's list rides its board, so it runs on the board's
+            # own clock rather than a separate gaps_min.
+            try:
+                mins = int(d.get("cadence_min") or 0)
+            except (TypeError, ValueError):
+                mins = 0
         if not mins:
             continue
         cid = str(d.get("channel_id") or "")
         nm = str(d.get("channel_name") or d.get("group") or "").strip()
+        # A TEXT GROUP CARRIES NO CHANNEL ID, so is_text_dest("") is False
+        # and every iMessage group was labelled Slack -- 'Slack Indelible
+        # Lvl 1🔥', 'Slack A Players B2B'. The `group` key is what marks a
+        # text destination in this registry; default_on only ever covers
+        # text lists, so it says the same thing.
+        is_text = bool(d.get("group")) or default_on or P.is_text_dest(cid)
         where = ("iMessage " + (nm or P.text_group_of(cid))
-                 if P.is_text_dest(cid) else ("Slack " + nm) if nm else "")
+                 if is_text else ("Slack " + nm) if nm else "")
         line = f"Every {mins} Min{FIELD}{where}" if where \
             else f"Every {mins} Min"
         if line not in out:
@@ -851,7 +884,8 @@ def _channels() -> dict:
                     or (r[P.CH_KN_JSON] if len(r) > P.CH_KN_JSON else ""))
                 + _gap_lines(
                     (r[P.CH_TX_APPROVED_JSON]
-                     if len(r) > P.CH_TX_APPROVED_JSON else "")),
+                     if len(r) > P.CH_TX_APPROVED_JSON else ""),
+                    default_on=True),
                 "knock_lines": _knock_lines(
                     (r[P.CH_KN_APPROVED_JSON]
                      if len(r) > P.CH_KN_APPROVED_JSON else "")
