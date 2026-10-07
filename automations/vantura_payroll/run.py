@@ -209,7 +209,11 @@ RAF_DD_REPS = (
 # filter's field name as the URL param. A value that matches no member resets
 # EVERY filter on the view (blank board, empty export) — the loader detects
 # both that and an ignored param and warns instead of loading garbage.
-RAF_DD_OWNER = "Rafael Hidalgo"   # cl.ICD Owner Name value (Slack: raffi127)
+RAF_DD_OWNER = ""   # DISABLED 10/7: Lucy's Tableau login is row-level
+# locked to Carlos's own ICD in the DD workbook (owner-probe proved the
+# export holds ONLY 'Carlos Hidalgo'), so no owner value can reach Raf's
+# DD from this session. Re-enable by setting Raf's exact cl.ICD Owner
+# Name once a Raf-side Tableau session or export exists.
 RAF_DD_FILTER_FIELD = "cl.ICD Owner Name"
 
 
