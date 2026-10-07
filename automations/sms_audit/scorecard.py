@@ -44,7 +44,7 @@ MIN_TEXTS = 25
 # week of Aisha Ceron's read 100% off two bookings and the next read 0%.
 MIN_MATCHED = 10
 # What a suppressed percentage says instead of a bare dash.
-TOO_FEW = "too few"
+TOO_FEW = "Too Few"
 
 
 _FACTS_DONE = set()
@@ -1068,7 +1068,7 @@ def render(person, office, weeks, path):
         add("<tr><td>{}</td>{}</tr>".format(esc(label), "".join(cells)))
     add("</table></div>")
     if any(TOO_FEW in c for c in all_cells):
-        add("<p class='none'>\u201ctoo few\u201d means that week had under "
+        add("<p class='none'>\u201cToo Few\u201d means that week had under "
             "{} bookings \u2014 a percentage off a handful of them says "
             "nothing, so it is left out rather than shown.</p>".format(
                 MIN_MATCHED))

@@ -782,9 +782,9 @@ class TooFewIsExplained(unittest.TestCase):
 
     def test_the_note_appears_when_something_was_suppressed(self):
         html = self._html(self.THIN)
-        self.assertIn("too few", html)
+        self.assertIn(S.TOO_FEW, html)
         self.assertIn("under 10 bookings", html.replace("&#x2014;", ""))
 
     def test_no_note_when_every_week_is_big_enough(self):
         html = self._html(self.FULL)
-        self.assertNotIn("too few", html)
+        self.assertNotIn(S.TOO_FEW, html)
