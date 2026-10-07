@@ -418,40 +418,44 @@ RECOVERY = {
     # The ARS doc's own answer (line 149 and the D2D rebuttal at 228),
     # which already ends with a question back. Megan 2026-10-06: "we
     # wouldn't say 'this is in the field'" — that phrasing was mine.
-    # NOTE: the doc's other version of this answer leans on "we work with
-    # LEADS", which Megan rejected on 2026-10-01, so it is left out.
+    # NOTE: the doc's other version leans on "we work with LEADS", which
+    # Megan rejected on 2026-10-01, so it is left out.
     "Is this remote / where is the office?":
-        "It is in person and face to face with clients \u2014 not a call "
-        "centre and not inside a retailer. Name the office, then ask if "
-        "that is something they are comfortable with and offer two times.",
+        "Tell them it is in person, face to face with customers \u2014 not "
+        "a call centre and not inside a store. Tell them where the office "
+        "is. Ask if that drive works for them, and offer two interview "
+        "times.",
     "What is the pay?":
-        "Give the weekly range, then ask what they were hoping for and "
-        "offer two times.",
+        "Tell them the weekly range. Ask what they were hoping for, and "
+        "offer two interview times.",
     "What is the job / what do you do?":
-        "Say what the day actually looks like in one line, then ask if that "
-        "sounds like them and offer two times.",
+        "Tell them what a day looks like in one sentence. Ask if that "
+        "sounds like them, and offer two interview times.",
     "Which role / which company is this?":
-        "Name the role and where they applied, then offer two times.",
+        "Tell them the job title they applied to and that it was through "
+        "Indeed. Offer two interview times.",
     "Hours, training, is it paid?":
-        "Answer the hours and that training is paid, then offer two times.",
+        "Tell them the hours and that training is paid. Offer two "
+        "interview times.",
     # The templates say "Business Casual" in one place and "Dress to
-    # Impress" in another, so the advice names the round's own wording
+    # Impress" in another, so this points at the office's own wording
     # rather than picking a side.
     "What should I wear / bring?":
-        "Give the dress code this office's confirmation text uses, then "
-        "confirm the time.",
+        "Tell them the dress code this office's confirmation text uses. "
+        "Confirm their time.",
     "How long is the interview / what's next?":
-        "Give the length and what happens after, then confirm the time.",
+        "Tell them how long it takes and what happens after. Confirm their "
+        "time.",
     "Is this a real job / who are you?":
-        "Name yourself and the company, offer the website, then offer two "
-        "times.",
+        "Tell them your name and that you are with Alphalete Marketing, "
+        "and give them the website. Offer two interview times.",
 }
 
 
 def recovery_for(bucket):
     return RECOVERY.get(bucket) or (
-        "Answer it in one line, then ask a question back and offer two "
-        "times.")
+        "Answer it in one sentence. Ask them a question back, and offer "
+        "two interview times.")
 
 
 def is_weak(question, reply):
