@@ -1177,10 +1177,9 @@ def card_body(person, office, weeks, anchor=""):
             "nothing, so it is left out rather than shown.</p>".format(
                 MIN_MATCHED))
     if any(NO_TEXT in c for c in all_cells):
-        add("<p class='none'>\u201cBooked by Phone\u201d means how far "
-            "ahead could not be read that week: it comes from the "
-            "confirmation text, and these bookings were agreed on a call "
-            "instead.</p>")
+        add("<p class='none'>\u201cBooked by Phone\u201d \u2014 those "
+            "interviews were set on a call, so nothing records how far "
+            "out they were booked.</p>")
 
     last = d[got[-1]] if got else {}
     # Megan 2026-10-06: "Did not answer should be it's own dropdown
@@ -1324,6 +1323,20 @@ def email_icd(office, people, weeks, paths, to, dry_run=True, logfn=print):
 
 
 INDEX_CSS = CSS + """
+.hdr,details.row>summary{display:flex;gap:.6em;align-items:baseline;
+  padding:.45em .6em;border-bottom:1px solid #e3e3e3}
+.hdr{font-weight:bold;background:#f2f2f2;border-bottom:2px solid #111;
+  font-size:.9em}
+details.row{border:0;border-radius:0;padding:0;background:#fff;margin:0}
+details.row>summary{cursor:pointer;font-weight:normal}
+details.row[open]>summary{background:#f7f7f4;font-weight:bold}
+details.row>summary::marker{color:#aaa}
+.hdr .who,details.row .who{flex:1 1 13em;min-width:9em}
+.hdr .gr,details.row .gr{flex:0 0 3.4em;text-align:center;font-weight:bold}
+.hdr .num,details.row .num{flex:0 0 5.2em;text-align:right}
+.hdr .fix,details.row .fix{flex:1 1 13em;color:#444}
+.card-in{padding:.2em 1em 1.4em;border-bottom:2px solid #ddd}
+.card-in h1{font-size:1.25em;margin-top:.8em}
 table.idx{width:100%;font-size:.95em}
 table.idx td.g{text-align:center;font-weight:bold;width:3em}
 td.g.A,td.g.B{color:#156E46}
@@ -1354,43 +1367,51 @@ def office_label(oid):
 
 
 def write_index(rows, path, cards=None):
-    """One page listing every card, worst grade first within each office.
+    """Every card on one page, each behind the person's own name.
 
-    Megan 2026-10-07 wanted the six completed weeks across all four
-    accounts "so we have a starting point" — a hundred cards is a folder,
-    not a starting point, until something indexes them."""
+    Megan 2026-10-07: "when I click a name it still doesn't open their
+    card". They were anchor links, and an anchor does not navigate inside
+    the viewer this is read in. So the name IS the control now - a
+    <details> summary that opens the breakdown in place, the same
+    mechanism the cards already use for their own sections."""
+    by_anchor = {}
+    for row, body in zip(rows, cards or []):
+        by_anchor[row["anchor"]] = body
     L = ["<!doctype html><html><head><meta charset='utf-8'>",
          "<title>Recruiting scorecards</title>",
          "<style>{}</style></head><body>".format(INDEX_CSS),
          "<h1 id='top'>Recruiting scorecards</h1>",
          "<p class='date'>Six weeks to {} \u00b7 {} people across {} "
-         "accounts</p>".format(
+         "accounts \u00b7 click a name to open their breakdown</p>".format(
              R.week_label(R.WEEKS[-1]), len(rows),
-             len({r["office"] for r in rows})),
-         "<div class='scroll'><table class='idx'>",
-         "<tr><th>Who</th><th>Grade</th><th>Booked</th><th>Retention</th>"
-         "<th>First thing to work on</th></tr>"]
+             len({r["office"] for r in rows}))]
     order = {"F": 0, "D": 1, "C": 2, "B": 3, "A": 4}
     for office in sorted({r["office"] for r in rows}):
         mine = sorted([r for r in rows if r["office"] == office],
                       key=lambda r: (order.get(r["grade"], 9), -r["booked"]))
-        L.append("<tr class='off'><td colspan='5'>{}</td></tr>"
-                 .format(esc(office_label(office))))
+        L.append("<h2>{}</h2>".format(esc(office_label(office))))
+        L.append("<div class='hdr'><span class='who'>Who</span>"
+                 "<span class='gr'>Grade</span>"
+                 "<span class='num'>Booked</span>"
+                 "<span class='num'>Retention</span>"
+                 "<span class='fix'>First thing to work on</span></div>")
         for r in mine:
-            L.append(
-                "<tr><td><a href='#{}'>{}</a></td><td class='g {}'>{}</td>"
-                "<td class='n'>{:,}</td><td class='n'>{}</td><td>{}</td></tr>"
-                .format(esc(r["anchor"]), esc(r["name"]), r["grade"],
-                        r["grade"], r["booked"], esc(r["retention"]),
-                        esc(r["focus"])))
-    L.append("</table></div>")
+            L.append("<details class='row'><summary>"
+                     "<span class='who'>{}</span>"
+                     "<span class='gr {}'>{}</span>"
+                     "<span class='num'>{:,}</span>"
+                     "<span class='num'>{}</span>"
+                     "<span class='fix'>{}</span></summary>".format(
+                         esc(r["name"]), r["grade"], r["grade"],
+                         r["booked"], esc(r["retention"]), esc(r["focus"])))
+            L.append("<div class='card-in'>")
+            L.extend(by_anchor.get(r["anchor"]) or
+                     ["<p class='none'>No breakdown built.</p>"])
+            L.append("</div></details>")
     L.append("<p class='none'>Grades weight 1st Round Retention heaviest, "
              "then house rules and unanswered questions. Anyone who booked "
              "fewer than {} that week is left out.</p>".format(
                  MIN_BOOKED_WEEK))
-    for body in (cards or []):
-        L.append("<hr>")
-        L.extend(body)
     L.append("</body></html>")
     path.write_text("\n".join(L), encoding="utf-8")
     return path

@@ -856,7 +856,7 @@ class PhoneBookingsAreVisible(unittest.TestCase):
     def test_the_lead_row_explains_itself(self):
         html = self._html(self.WEEK)
         self.assertIn(S.NO_TEXT, html)
-        self.assertIn("comes from the confirmation text", html)
+        self.assertIn("nothing records how far out they were booked", html)
 
     def test_a_busy_texter_sees_neither_note(self):
         html = self._html(dict(self.WEEK, texts=1500, matched=39, silent=0,
@@ -950,11 +950,15 @@ class Index(unittest.TestCase):
         S.write_index(self.ROWS, out)
         return out.read_text(encoding="utf-8")
 
-    def test_every_person_is_listed_and_linked(self):
+    def test_every_person_is_listed_and_opens_in_place(self):
+        """Megan 2026-10-07: "when I click a name it still doesn't open
+        their card". Anchors do not navigate in the viewer, so the name
+        is a <details> summary now."""
         html = self._html()
         for r in self.ROWS:
             self.assertIn(r["name"], html)
-            self.assertIn(r["anchor"], html)
+        self.assertEqual(html.count("<details class='row'>"), len(self.ROWS))
+        self.assertNotIn("href='#", html)
 
     def test_offices_are_grouped(self):
         html = self._html()
