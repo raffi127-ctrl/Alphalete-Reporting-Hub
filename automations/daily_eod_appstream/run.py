@@ -78,11 +78,15 @@ FIELDS = {
     "second_showed": "s2",
 }
 
-# Owners the shared lookup misses, kept HERE so the Below the Mark board does
-# not start pulling them as a side effect. Ids per megan-overrides.md ruling 6.
+# Owner -> office id, checked BEFORE the shared lookup: owners it misses, and
+# ones where it points at an office Lucy Reports cannot open. Kept HERE so the
+# Below the Mark board is not changed as a side effect. Raf's ids per
+# megan-overrides.md ruling 6.
 EXTRA_OFFICES = {
     "Raf Hildago 2nd F": "23965",      # sic — the roster tab's spelling
     "Raf Hidalgo 3rd F": "24065",
+    "Ellen Dent": "21597",             # Lucy's lookup said 15825 (no access); Camila's
+                                       # screenshot of Lucy Reports' offices: Vanguard 21597
     "Salik Mallik": "23363",           # Eve 2026-10-07 (Hub had him sales-only)
 }
 
@@ -218,9 +222,8 @@ def pull(owners: List[str], week_start: dt.date, *, logfn=print
     gaps: List[str] = []
     targets = []
     for owner in owners:
-        hit = apst.resolve_office(owner, index)
-        if hit is None and owner in EXTRA_OFFICES:
-            hit = (EXTRA_OFFICES[owner], "")
+        hit = ((EXTRA_OFFICES[owner], "") if owner in EXTRA_OFFICES
+               else apst.resolve_office(owner, index))
         if hit is None:
             gaps.append(f"{owner}: no AppStream office id")
         else:
