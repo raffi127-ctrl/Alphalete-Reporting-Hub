@@ -1239,7 +1239,8 @@ def main(argv: list[str] | None = None) -> int:
                                     else "torre", []).append(_n)
         _near = Counter()
         for r in rows[1:]:
-            nm = r[31] if len(r) > 31 else ""
+            _ri = hdr.index("REP.Full Name") if "REP.Full Name" in hdr else 30
+            nm = r[_ri] if len(r) > _ri else ""
             if not nm or _on_allowlist(nm):
                 continue
             toks = _rep_tokens(nm)
