@@ -23,11 +23,22 @@ class Math(unittest.TestCase):
         self.assertEqual(run.whole_pct(run.pct(r["b2nd"], r["s1"])), 14)
         self.assertEqual(run.whole_pct(run.pct(r["s2"], r["b2"])), 63)
 
-    def test_week_sums_sunday_through_the_day(self):
-        raw = _raw(sunday=(1, 1, 0, 0, 0), monday=(10, 5, 2, 4, 2),
-                   tuesday=(10, 5, 2, 4, 2), wednesday=(99, 99, 99, 99, 99))
-        tue = dt.date(2026, 10, 6)
-        self.assertEqual(run.week_row(raw, tue)["b1"], 21)
+    def test_report_day_is_yesterday_and_monday_reports_saturday(self):
+        self.assertEqual(run.report_day_for(dt.date(2026, 10, 7)), dt.date(2026, 10, 6))
+        self.assertEqual(run.report_day_for(dt.date(2026, 10, 12)), dt.date(2026, 10, 10))
+        self.assertEqual(run.report_day_for(dt.date(2026, 10, 6)), dt.date(2026, 10, 5))
+
+    def test_days_accumulate_monday_to_report_day(self):
+        self.assertEqual(run.shown_days(dt.date(2026, 10, 5)), [dt.date(2026, 10, 5)])
+        sat = run.shown_days(dt.date(2026, 10, 10))
+        self.assertEqual((sat[0], sat[-1], len(sat)), (dt.date(2026, 10, 5), sat[-1], 6))
+
+    def test_table_has_one_group_per_day_plus_totals(self):
+        row = {"b1": 10, "s1": 5, "b2nd": 2, "b2": 4, "s2": 1}
+        out = run.table_html([("Monday 10/5", {"A": row}), ("Tuesday 10/6", {"A": row}),
+                              ("WEEKLY TOTALS", {"A": run.sum_rows([row, row])})])
+        self.assertIn("WEEKLY TOTALS", out)
+        self.assertIn(">20<", out)                      # 10 + 10 1st B
 
     def test_red_is_under_50_and_no_booked_is_not_red(self):
         today = {

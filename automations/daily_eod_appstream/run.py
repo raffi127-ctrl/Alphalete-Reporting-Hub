@@ -2,7 +2,7 @@
 
 Replaces the 'DAILY EOD APPSTREAM' sheet Perli fills by hand and sends to
 Camila every evening as a screenshot plus a list of the offices in red.
-One email, ~20:00 Argentina (18:00 CT while the US is on daylight time).
+One email a day.
 
 Camila's ask, in her words: "1st round showed, # booked to 2nd porcentaje de
 eso y despues 2nd round retention con porcentaje. Arriba de 50% en verde,
@@ -26,8 +26,15 @@ WHICH OFFICES: the owners in the newest weekly block of
 'Interviewers Retention (Interviewer)' (ARS Management 2.0) — the same roster
 the Below the Mark board uses — and the same owner -> office id lookup.
 
-THE RED LIST is today's 2nd round % under 50%, alphabetical, the way Perli
-writes it. An office with no 2nd rounds booked today has no % and is not red.
+A DIA VENCIDO (Camila, same day): the mail reports YESTERDAY, and the columns
+accumulate -- Monday .. yesterday, one 8-col group per day, then WEEKLY TOTALS
+(the sum of the days shown). Monday's mail reports Saturday, i.e. last week
+complete. Every run re-pulls the whole week, so a late AppStream edit to an
+earlier day shows up in the next mail. Nothing is stored between runs.
+
+THE RED LIST is the report day's 2nd round % under 50%, alphabetical, the way
+Perli writes it. An office with no 2nd rounds booked that day has no % and is
+not red.
 
     python -m automations.daily_eod_appstream.run --dry-run       # preview only
     python -m automations.daily_eod_appstream.run                 # mail to TEST_TO
@@ -93,18 +100,26 @@ def day_row(raw: Dict[str, Dict[str, Optional[float]]], day: str) -> Dict[str, i
     return {f: int((raw.get(m) or {}).get(day) or 0) for m, f in FIELDS.items()}
 
 
-def week_row(raw: Dict[str, Dict[str, Optional[float]]], upto: dt.date) -> Dict[str, int]:
-    """Sum Sunday .. `upto` (AppStream's week starts Sunday)."""
-    last = (upto.weekday() + 1) % 7               # 0 = Sunday
-    tot = {f: 0 for f in FIELDS.values()}
-    for day in DAYS[:last + 1]:
-        for f, v in day_row(raw, day).items():
-            tot[f] += v
-    return tot
+def report_day_for(today: dt.date) -> dt.date:
+    """The day the mail reports on: yesterday ("a dia vencido", Camila 10/7).
+    Sunday is skipped -- nobody interviews -- so Monday reports Saturday."""
+    d = today - dt.timedelta(days=1)
+    return d - dt.timedelta(days=1) if d.weekday() == 6 else d
+
+
+def shown_days(report_day: dt.date) -> List[dt.date]:
+    """Monday .. report_day of that AppStream (Sun-Sat) week -- the columns
+    accumulate through the week, like Perli's sheet."""
+    monday = report_day - dt.timedelta(days=report_day.weekday())
+    return [monday + dt.timedelta(days=i) for i in range(report_day.weekday() + 1)]
+
+
+def sum_rows(rows: List[Dict[str, int]]) -> Dict[str, int]:
+    return {f: sum(r[f] for r in rows) for f in FIELDS.values()}
 
 
 def red_list(today: Dict[str, Dict[str, int]]) -> List[Tuple[str, float]]:
-    """Owners whose 2nd round % today is under GREEN_AT, alphabetical."""
+    """Owners whose 2nd round % that day is under GREEN_AT, alphabetical."""
     out = []
     for owner in sorted(today, key=str.lower):
         p = pct(today[owner]["s2"], today[owner]["b2"])
@@ -138,37 +153,37 @@ def _cells(r: Dict[str, int]) -> str:
     return out
 
 
-def table_html(today: Dict[str, Dict[str, int]], week: Dict[str, Dict[str, int]],
-               day: dt.date) -> str:
+def table_html(blocks: List[Tuple[str, Dict[str, Dict[str, int]]]]) -> str:
+    """blocks: [(header, {owner: row}), ...] laid side by side, one 8-col group each."""
     heads = ["1st B", "1st S", "%", "B to 2nd", "%", "2nd B", "2nd S", "%"]
     th = ("border:1px solid #999;padding:3px 6px;background:#d9d9d9;"
           "font-size:12px;white-space:nowrap")
-    sub = "".join(f'<th style="{th}">{h}</th>' for h in heads) * 2
+    top = "".join(f'<th style="{th};background:#00ffff" colspan="8">{html.escape(h)}</th>'
+                  for h, _ in blocks)
+    sub = "".join(f'<th style="{th}">{h}</th>' for h in heads) * len(blocks)
+    owners = sorted(blocks[0][1], key=str.lower)
     rows = []
-    for owner in sorted(today, key=str.lower):
+    for owner in owners:
         rows.append(f'<tr><td style="{_TD};text-align:left;font-weight:bold">'
-                    f'{html.escape(owner)}</td>{_cells(today[owner])}'
-                    f'{_cells(week[owner])}</tr>')
-    tot_t = {f: sum(r[f] for r in today.values()) for f in FIELDS.values()}
-    tot_w = {f: sum(r[f] for r in week.values()) for f in FIELDS.values()}
+                    f'{html.escape(owner)}</td>'
+                    + "".join(_cells(b[owner]) for _, b in blocks) + '</tr>')
     rows.append(f'<tr><td style="{_TD};text-align:left;font-weight:bold;'
-                f'background:#eee">TOTAL</td>{_cells(tot_t)}{_cells(tot_w)}</tr>')
-    return (
-        '<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;'
-        'font-family:Arial,Helvetica,sans-serif">'
-        f'<tr><th style="{th}" rowspan="2">Office</th>'
-        f'<th style="{th};background:#00ffff" colspan="8">{day:%A} {day.month}/{day.day}'
-        f'</th><th style="{th};background:#00ffff" colspan="8">WEEK SO FAR</th></tr>'
-        f'<tr>{sub}</tr>' + "".join(rows) + '</table>')
+                f'background:#eee">TOTAL</td>'
+                + "".join(_cells(sum_rows(list(b.values()))) for _, b in blocks) + '</tr>')
+    return ('<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;'
+            'font-family:Arial,Helvetica,sans-serif">'
+            f'<tr><th style="{th}" rowspan="2">Office</th>{top}</tr>'
+            f'<tr>{sub}</tr>' + "".join(rows) + '</table>')
 
 
-def red_html(reds: List[Tuple[str, float]]) -> str:
+def red_html(reds: List[Tuple[str, float]], day: dt.date) -> str:
+    when = f"{day:%A} {day.month}/{day.day}"
     if not reds:
-        return ('<p style="font-size:14px"><b>2nd round under 50% today:</b> '
+        return (f'<p style="font-size:14px"><b>2nd round under 50% — {when}:</b> '
                 'none 🎉</p>')
     items = "".join(f"<li>{html.escape(o)} {whole_pct(p)}%</li>" for o, p in reds)
     return ('<p style="font-size:14px;margin:0 0 4px"><b>2nd round under 50% '
-            f'today ({len(reds)}):</b></p><ul style="font-size:14px;margin:0 0 12px">'
+            f'— {when} ({len(reds)}):</b></p><ul style="font-size:14px;margin:0 0 12px">'
             f'{items}</ul>')
 
 
@@ -229,6 +244,7 @@ def pull(owners: List[str], week_start: dt.date, *, logfn=print
 # --------------------------------------------------------------------- main
 def build_and_send(day: dt.date, *, production: bool, dry_run: bool,
                    from_cache: Optional[Path] = None, logfn=print) -> int:
+    """`day` = the REPORT day (yesterday, by default), not the send day."""
     from automations.shared import report_email
 
     week_start = day - dt.timedelta(days=(day.weekday() + 1) % 7)
@@ -247,17 +263,20 @@ def build_and_send(day: dt.date, *, production: bool, dry_run: bool,
         logfn("  nothing pulled — not sending an empty report")
         return 1
 
-    key = DAYS[(day.weekday() + 1) % 7]
-    today = {o: day_row(r, key) for o, r in raw.items()}
-    week = {o: week_row(r, day) for o, r in raw.items()}
-    reds = red_list(today)
+    days = shown_days(day)
+    per_day = [(d, {o: day_row(r, DAYS[(d.weekday() + 1) % 7]) for o, r in raw.items()})
+               for d in days]
+    week = {o: sum_rows([b[o] for _, b in per_day]) for o in raw}
+    blocks = [(f"{d:%A} {d.month}/{d.day}", b) for d, b in per_day]
+    blocks.append(("WEEKLY TOTALS", week))
+    reds = red_list(per_day[-1][1])
 
-    body = red_html(reds) + table_html(today, week, day) + gaps_html(gaps)
+    body = red_html(reds, day) + table_html(blocks) + gaps_html(gaps)
     (OUT_DIR / f"preview_{day.isoformat()}.html").write_text(
         f"<html><body>{body}</body></html>", encoding="utf-8")
-    logfn(f"  red today: {', '.join(f'{o} {whole_pct(p)}%' for o, p in reds) or 'none'}")
-    if gaps:
-        logfn(f"  gaps: {len(gaps)}")
+    logfn(f"  report day {day}: red {', '.join(f'{o} {whole_pct(p)}%' for o, p in reds) or 'none'}")
+    for g in gaps:
+        logfn(f"  gap: {g}")
 
     to = PROD_TO if production else TEST_TO
     res = report_email.send_boards(
@@ -269,7 +288,7 @@ def build_and_send(day: dt.date, *, production: bool, dry_run: bool,
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--date", help="YYYY-MM-DD (default: today, Central time)")
+    ap.add_argument("--date", help="REPORT day YYYY-MM-DD (default: yesterday CT; Monday -> Saturday)")
     ap.add_argument("--dry-run", action="store_true", help="build the preview, send nothing")
     ap.add_argument("--production", action="store_true", help="send to Camila")
     ap.add_argument("--from-cache", help="reuse a raw_<date>.json instead of pulling")
@@ -278,7 +297,7 @@ def main(argv=None) -> int:
         day = dt.date.fromisoformat(a.date)
     else:
         from zoneinfo import ZoneInfo
-        day = dt.datetime.now(ZoneInfo("America/Chicago")).date()
+        day = report_day_for(dt.datetime.now(ZoneInfo("America/Chicago")).date())
     return build_and_send(day, production=a.production, dry_run=a.dry_run,
                           from_cache=Path(a.from_cache) if a.from_cache else None)
 
