@@ -1519,6 +1519,7 @@ def rows_cached(max_age_min: int = SNAPSHOT_FRESH_MIN):
 
 def _read_published():
     """(rows, taken_at) from the copy that ships with the code."""
+    import json
     try:
         blob = json.loads(PUBLISHED.read_text())
         return (blob.get("rows") or [],
@@ -1534,6 +1535,7 @@ def publish_snapshot(path=None) -> int:
     exactly what the ungated page may show and nothing else — the same
     contract SAFE_COLUMNS enforces at render.
     """
+    import json
     path = pathlib.Path(path) if path else PUBLISHED
     got = rows()
     if not got:
