@@ -37,6 +37,11 @@ from automations.icd_alerts import config as C
 from automations.shared import ownerville_knocks as K
 
 
+# Bump with every release that changes what this module does or reports; it
+# is what a KnocksProblem's summary carries (see the stamp note below).
+CODE_RELEASE = "2026.10.06.7"
+
+
 class KnocksProblem(RuntimeError):
     """Phrased for whoever is reading it on an owner's laptop."""
 
@@ -126,6 +131,15 @@ def _page_evidence(page, seen: List[str]) -> str:
                     .map(s => '#' + (s.id || s.name || '-') + '[' + Array.from(s.options)
                         .map(o => o.value + '=' + (o.text || '').trim()).slice(0, 6).join(',') + ']')
                     .slice(0, 6).join(' | ');
+                const dlgs = Array.from(document.querySelectorAll(
+                        '[role=dialog], .modal, .swal2-popup, .ui-dialog, dialog'))
+                    .filter(d => d.offsetParent !== null || d.open)
+                    .map(d => '<' + d.tagName.toLowerCase() + '#' + (d.id || '-') + '.'
+                        + (d.className || '-') + '> ' + (d.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 160)
+                        + ' clickables[' + Array.from(d.querySelectorAll('button, a, li, [onclick], input[type=radio], input[type=button]'))
+                            .map(b => (b.tagName.toLowerCase() + '#' + (b.id || '-') + '.' + (b.className || '-') + ':' + (b.innerText || b.value || '').trim().slice(0, 30)))
+                            .slice(0, 10).join(' ; ') + ']')
+                    .slice(0, 3).join(' || ');
                 const c = document.body ? document.body.cloneNode(true) : null;
                 if (c) c.querySelectorAll(
                     'nav, header, footer, script, style, #sidebar, .sidebar, '
@@ -133,11 +147,12 @@ def _page_evidence(page, seen: List[str]) -> str:
                     .forEach(e => e.remove());
                 const text = (c ? (c.innerText || c.textContent || '') : '')
                     .replace(/\\s+/g, ' ').trim().slice(0, 700);
-                return {tables, frames, selects, text};
+                return {tables, frames, selects, dlgs, text};
             }""")
         out.append("tables: %s" % (shape.get("tables") or "none"))
         out.append("iframes: %s" % (shape.get("frames") or "none"))
         out.append("selects: %s" % (shape.get("selects") or "none"))
+        out.append("dialogs: %s" % (shape.get("dlgs") or "none"))
         out.append("content text: %s" % (shape.get("text") or ""))
     except Exception:  # noqa: BLE001
         pass
@@ -268,14 +283,13 @@ def read_knocks(day: Optional[dt.date] = None, *, headless: bool = True,
                 # faults and keeps the FIRST detail, so a new release's
                 # evidence would otherwise land under the old release's
                 # cut-off text. One row per release, not one per sweep.
-                try:
-                    from automations.icd_alerts import selfupdate as SU
-                    release = SU.applied_release() or "?"
-                except Exception:  # noqa: BLE001
-                    release = "?"
+                # THE CODE'S OWN STAMP, not the release file on disk: twice
+                # today (.4, .6) an update landed while a sweep was mid-read,
+                # the stamp came from the new file and the evidence from the
+                # old code, and the one row that release gets was spent on it.
                 problem = KnocksProblem(
                     "%s (what the page showed is in the fault detail, "
-                    "release %s)" % (e, release))
+                    "code %s)" % (e, CODE_RELEASE))
                 problem.seen = _page_evidence(page, seen)
                 raise problem
             # Never fatal: the disposition half is still worth handing over,
