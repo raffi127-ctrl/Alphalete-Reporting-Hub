@@ -41,6 +41,59 @@ class KnocksProblem(RuntimeError):
     """Phrased for whoever is reading it on an owner's laptop."""
 
 
+# What the campaigns are called in OwnerVille's own client picker, for the
+# fallback when the option values are not the ids. Seen on Jamis's page
+# (2026-10-06): "B2B AT&T SBS" (id 2) and "B2B-BOX-Energy" (id 16).
+_CLIENT_WORDS = {"b2b_att": ("at&t", "att"), "att": ("at&t", "att"),
+                 "nds": ("nds", "at&t"), "b2b_box": ("box",), "energy": ("energy",)}
+
+
+def _choose_client(page, cid: str, campaign: str, *, log=print) -> bool:
+    """Pick this campaign in the page's own client <select>, if there is one.
+
+    By option VALUE first (the ids OwnerVille uses everywhere else), then by
+    the campaign's name words. Fires a change event so the page reloads its
+    grid the way a click would. Returns False when nothing on the page could
+    be picked -- the caller then raises the original error, with evidence."""
+    words = list(_CLIENT_WORDS.get((campaign or "").strip().lower(), ()))
+    try:
+        picked = page.evaluate(
+            """([cid, words]) => {
+                const sels = Array.from(document.querySelectorAll('select'));
+                const pick = (s, o) => {
+                    s.value = o.value;
+                    s.dispatchEvent(new Event('change', {bubbles: true}));
+                    return (s.id || s.name || 'select') + ' -> ' + o.text.trim()
+                        + ' (' + o.value + ')';
+                };
+                if (cid) for (const s of sels) {
+                    const o = Array.from(s.options).find(o => o.value == cid);
+                    if (o) return pick(s, o);
+                }
+                for (const s of sels) {
+                    const o = Array.from(s.options).find(o => {
+                        const t = (o.text || '').toLowerCase();
+                        return t && !/choose/.test(t) && words.some(w => t.includes(w));
+                    });
+                    if (o) return pick(s, o);
+                }
+                return '';
+            }""", [str(cid or ""), words])
+    except Exception as e:  # noqa: BLE001 — no picker is an answer, not a crash
+        log("client picker check failed: %s" % type(e).__name__)
+        return False
+    if not picked:
+        log("no client picker on the page")
+        return False
+    log("chose client in the page's own picker: %s" % picked)
+    try:
+        page.wait_for_load_state("networkidle", timeout=15_000)
+    except Exception:  # noqa: BLE001
+        pass
+    page.wait_for_timeout(1500)
+    return True
+
+
 def _page_evidence(page, seen: List[str]) -> str:
     """The read's own log lines plus where the page ended up and what it says.
 
@@ -69,6 +122,10 @@ def _page_evidence(page, seen: List[str]) -> str:
                     .slice(0, 12).join(' | ');
                 const frames = Array.from(document.querySelectorAll('iframe'))
                     .map(f => f.id || f.name || f.src || '?').slice(0, 6).join(' | ');
+                const selects = Array.from(document.querySelectorAll('select'))
+                    .map(s => '#' + (s.id || s.name || '-') + '[' + Array.from(s.options)
+                        .map(o => o.value + '=' + (o.text || '').trim()).slice(0, 6).join(',') + ']')
+                    .slice(0, 6).join(' | ');
                 const c = document.body ? document.body.cloneNode(true) : null;
                 if (c) c.querySelectorAll(
                     'nav, header, footer, script, style, #sidebar, .sidebar, '
@@ -76,10 +133,11 @@ def _page_evidence(page, seen: List[str]) -> str:
                     .forEach(e => e.remove());
                 const text = (c ? (c.innerText || c.textContent || '') : '')
                     .replace(/\\s+/g, ' ').trim().slice(0, 700);
-                return {tables, frames, text};
+                return {tables, frames, selects, text};
             }""")
         out.append("tables: %s" % (shape.get("tables") or "none"))
         out.append("iframes: %s" % (shape.get("frames") or "none"))
+        out.append("selects: %s" % (shape.get("selects") or "none"))
         out.append("content text: %s" % (shape.get("text") or ""))
     except Exception:  # noqa: BLE001
         pass
@@ -191,7 +249,20 @@ def read_knocks(day: Optional[dt.date] = None, *, headless: bool = True,
                 K.pin_campaign(page, rqst, cid, log=_l)
             K.navigate(page, rqst, mdy, log=_l)
             try:
-                rows = K.read_rows(page, log=_l)
+                try:
+                    rows = K.read_rows(page, log=_l)
+                except K.OwnervilleError:
+                    # HIS OWNERVILLE ASKS ON THE PAGE. Jamis (2026-10-06):
+                    # signed in, campaign pinned through p=88, and the page
+                    # rendered "Choose a Client -- B2B AT&T SBS / B2B-BOX-
+                    # Energy" with no table at all, for four hours. On that
+                    # build the pin is not enough; the client has to be
+                    # picked in the page's own selector. So pick it, land
+                    # on the page once more, and read again.
+                    if not _choose_client(page, cid, campaign, log=_l):
+                        raise
+                    K.navigate(page, rqst, mdy, attempts=1, log=_l)
+                    rows = K.read_rows(page, log=_l)
             except K.OwnervilleError as e:
                 # STAMPED WITH THE RELEASE: the relay folds same-summary
                 # faults and keeps the FIRST detail, so a new release's

@@ -57,3 +57,38 @@ class EvidenceTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class _PickerPage:
+    """A page whose evaluate() plays the client picker."""
+    def __init__(self, answer):
+        self.answer = answer
+        self.calls = []
+
+    def evaluate(self, js, arg=None):
+        self.calls.append(arg)
+        return self.answer
+
+    def wait_for_load_state(self, *_a, **_k):
+        pass
+
+    def wait_for_timeout(self, *_a):
+        pass
+
+
+class ChooseClientTest(unittest.TestCase):
+    def test_picks_by_id_and_reports_what_it_chose(self):
+        pg = _PickerPage("clientSel -> B2B AT&T SBS (2)")
+        self.assertTrue(ov_read._choose_client(pg, "2", "b2b_att", log=lambda m: None))
+        self.assertEqual(pg.calls[0][0], "2")
+        self.assertIn("at&t", pg.calls[0][1])
+
+    def test_no_picker_means_false(self):
+        pg = _PickerPage("")
+        self.assertFalse(ov_read._choose_client(pg, "16", "b2b_box", log=lambda m: None))
+
+    def test_a_dead_page_means_false_not_a_crash(self):
+        class Dead(_PickerPage):
+            def evaluate(self, js, arg=None):
+                raise RuntimeError("target closed")
+        self.assertFalse(ov_read._choose_client(Dead(""), "2", "att", log=lambda m: None))
