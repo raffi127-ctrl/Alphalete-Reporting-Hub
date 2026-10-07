@@ -112,7 +112,9 @@ def _paused_offices() -> set:
     return out
 
 
-def build_report() -> str:
+def build_report(unreadable=None) -> str:
+    """The DM text. `unreadable`, when given, collects the offices whose diag
+    tab could not be read — their line says so, but the numbers are missing."""
     from automations.recruiting_report import fill as _fill
     sh = _fill._client().open_by_key(CONTROL_SHEET)
     now = dt.datetime.now()
@@ -125,6 +127,8 @@ def build_report() -> str:
             vals = sh.worksheet(tab).get_all_values()
         except Exception as e:  # noqa: BLE001
             lines.append("%s: diag tab unreadable (%s)" % (label, type(e).__name__))
+            if unreadable is not None:
+                unreadable.append(label)
             continue
         rows = [r for r in vals if r and r[0].startswith(today)]
         sent = 0
@@ -193,6 +197,33 @@ def build_report() -> str:
     return ("*Push report %s*\n" % _hm12(now.strftime("%H:%M"))) + "\n".join(lines)
 
 
+REPORT_ID = "push_hourly_report"
+
+
+def record_delivery(unreadable, ch):
+    """Today's run manifest — the proof a clean send closes its ticket with.
+
+    2026-10-07: open since 9/24 as "ran clean, but nothing can confirm it
+    DELIVERED". Eve: an exit-0 rule isn't enough, runs often leave info
+    unfilled. So it is written only AFTER Slack confirmed the post, and an
+    office whose diag tab couldn't be read is a named failed part — the DM
+    went out without its numbers. A walk that is down or an office with no
+    runs is NOT a failure here: the report said so, which is its job.
+    Never raises."""
+    try:
+        from automations.shared import run_manifest
+        done = [l for _t, l, _m in OFFICES if l not in unreadable]
+        run_manifest.write_manifest(
+            REPORT_ID, succeeded=done,
+            failed=["%s: diag tab unreadable" % l for l in unreadable],
+            note="posted to %s; %d office(s) reported, %d unreadable"
+                 % (ch, len(done), len(unreadable)))
+    except Exception as e:  # noqa: BLE001
+        print("[push_report] couldn't write the run manifest (%s: %s) — the "
+              "DM is sent, but the ticket won't close itself"
+              % (type(e).__name__, e))
+
+
 def _shots_dirs():
     import glob
     import os
@@ -204,7 +235,8 @@ def _shots_dirs():
 
 def main(argv=None) -> int:
     args = argv if argv is not None else sys.argv[1:]
-    text = build_report()
+    unreadable = []
+    text = build_report(unreadable)
     print(text)
     if "--dry-run" in args:
         return 0
@@ -231,8 +263,13 @@ def main(argv=None) -> int:
         ch = client.conversations_open(users=",".join(GROUP))["channel"]["id"]
     if not ch:
         ch = client.conversations_open(users=CARLOS)["channel"]["id"]
-    client.chat_postMessage(channel=ch, text=text)
+    resp = client.chat_postMessage(channel=ch, text=text)
     print("[push_report] posted to %s" % ch)
+    if resp is not None and resp.get("ok") is False:
+        print("[push_report] Slack did NOT accept the post: %s"
+              % resp.get("error"))
+        return 1
+    record_delivery(unreadable, ch)
     if "--with-shots" in args:
         import glob
         import os
