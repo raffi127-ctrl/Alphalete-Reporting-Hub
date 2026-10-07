@@ -969,3 +969,17 @@ class Index(unittest.TestCase):
         html = self._html()
         self.assertIn("3 people", html)
         self.assertIn("2 accounts", html)
+
+
+class DormantAccountsLeftOff(unittest.TestCase):
+    """Megan 2026-10-07: "if they only booked 7 interviews or less on the
+    account that week they can be left off"."""
+
+    def test_the_floor_is_eight(self):
+        self.assertEqual(S.MIN_BOOKED_WEEK, 8)
+
+    def test_seven_is_below_the_floor(self):
+        self.assertLess(7, S.MIN_BOOKED_WEEK)
+
+    def test_eight_clears_it(self):
+        self.assertGreaterEqual(8, S.MIN_BOOKED_WEEK)

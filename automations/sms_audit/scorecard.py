@@ -43,6 +43,10 @@ MIN_TEXTS = 25
 # And below this many MATCHED bookings, a far-out percentage is noise: one
 # week of Aisha Ceron's read 100% off two bookings and the next read 0%.
 MIN_MATCHED = 10
+# Megan 2026-10-07: "if they only booked 7 interviews or less on the
+# account that week they can be left off". Fourteen rows on 11280 were
+# dormant accounts reading as a clean A.
+MIN_BOOKED_WEEK = 8
 # What a suppressed cell says instead of a bare dash. Two reasons, two
 # labels: not enough bookings to rate, versus a booking whose lead time
 # cannot be read because it was never set by a text. Megan 2026-10-06:
@@ -1356,6 +1360,10 @@ def _one_office(oid, weeks, a, want=False):
             continue
         total = sum(w.get("texts", 0) for w in person["weeks"].values())
         if total < MIN_TEXTS:
+            continue
+        got_w = [w for w in weeks if w in person["weeks"]]
+        last_w = person["weeks"][got_w[-1]] if got_w else {}
+        if (last_w.get("booked") or 0) < MIN_BOOKED_WEEK:
             continue
         path = OUTPUT / "scorecard-{}-{}.html".format(
             oid, re.sub(r"[^a-z0-9]+", "-", key.lower()).strip("-"))
