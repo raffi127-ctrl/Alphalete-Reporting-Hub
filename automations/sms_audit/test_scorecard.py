@@ -703,16 +703,17 @@ class TooFewToJudge(unittest.TestCase):
         return cells[0]
 
     def test_one_booking_shows_no_retention_percentage(self):
-        self.assertIn("—", self._row("1st Round Retention",
-                                     self._week(1, 1)))
+        got = self._row("1st Round Retention", self._week(1, 1))
+        self.assertIn(S.TOO_FEW, got)
+        self.assertNotIn("%", got)
 
     def test_plenty_of_bookings_does_show_it(self):
         self.assertIn("%", self._row("1st Round Retention",
                                      self._week(25, 8)))
 
     def test_the_far_out_row_uses_the_same_floor(self):
-        self.assertIn("—", self._row("Booked Over a Day Out",
-                                     self._week(25, 8, matched=4, far=1)))
+        self.assertIn(S.TOO_FEW, self._row("Booked Over a Day Out",
+                                           self._week(25, 8, matched=4, far=1)))
         self.assertIn("%", self._row("Booked Over a Day Out",
                                      self._week(25, 8, matched=20, far=5)))
 
@@ -758,3 +759,32 @@ class ProofWeek(unittest.TestCase):
             "w0925": self._wk(20, 6, 20, 12)}}
         self.assertIsNone(
             S.best_near_week(person, ["w0918", "w0925"], 60.0, 30.0))
+
+
+class TooFewIsExplained(unittest.TestCase):
+    """Megan 2026-10-06: "we need to have something explaining that the
+    number of bookings is too low to have retention factored"."""
+
+    def _html(self, week):
+        from pathlib import Path
+        import tempfile
+        out = Path(tempfile.mkdtemp()) / "c.html"
+        S.render({"display": "X", "weeks": {"w0925": week}}, "11280",
+                 ["w0925"], out)
+        return out.read_text(encoding="utf-8")
+
+    THIN = {"texts": 1500, "booked": 2, "shown": 1, "matched": 2,
+            "far_out": 1, "house": 0, "dodged": 0, "typing": 0,
+            "issues": __import__("collections").Counter()}
+    FULL = {"texts": 1500, "booked": 40, "shown": 20, "matched": 40,
+            "far_out": 8, "house": 0, "dodged": 0, "typing": 0,
+            "issues": __import__("collections").Counter()}
+
+    def test_the_note_appears_when_something_was_suppressed(self):
+        html = self._html(self.THIN)
+        self.assertIn("too few", html)
+        self.assertIn("under 10 bookings", html.replace("&#x2014;", ""))
+
+    def test_no_note_when_every_week_is_big_enough(self):
+        html = self._html(self.FULL)
+        self.assertNotIn("too few", html)

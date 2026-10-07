@@ -43,6 +43,8 @@ MIN_TEXTS = 25
 # And below this many MATCHED bookings, a far-out percentage is noise: one
 # week of Aisha Ceron's read 100% off two bookings and the next read 0%.
 MIN_MATCHED = 10
+# What a suppressed percentage says instead of a bare dash.
+TOO_FEW = "too few"
 
 
 _FACTS_DONE = set()
@@ -1034,7 +1036,7 @@ def render(person, office, weeks, path):
         ("1st Round Retention",
          lambda w: (_rate(w, "shown", "booked")
                     if (w.get("booked") or 0) >= MIN_MATCHED else None),
-         lambda v: "{:.0f}%".format(v) if v is not None else "\u2014", True),
+         lambda v: "{:.0f}%".format(v) if v is not None else TOO_FEW, True),
         ("Texts Sent", lambda w: w.get("texts") or 0,
          lambda v: "{:,}".format(v), True),
         ("Median Response Time", lambda w: (w.get("replies") or {}).get("median"),
@@ -1048,20 +1050,28 @@ def render(person, office, weeks, path):
         ("Booked Over a Day Out",
          lambda w: (_rate(w, "far_out", "matched")
                     if (w.get("matched") or 0) >= MIN_MATCHED else None),
-         lambda v: "{:.0f}%".format(v) if v is not None else "\u2014", False),
+         lambda v: "{:.0f}%".format(v) if v is not None else TOO_FEW, False),
     ]
     add("<div class='scroll'><table><tr><th></th>" + "".join(
         "<th>{}</th>".format(esc(R.week_label(t))) for t in got) + "</tr>")
+    all_cells = []
     for label, value_of, show, up_good in rows:
         vals = [value_of(d[t]) for t in got]
         cells = []
         for i, v in enumerate(vals):
             bg = shade(vals, i, up_good)
+            text = show(v)
+            all_cells.append(text)
             cells.append("<td class='n'{}>{}</td>".format(
                 " style=\"background:{}\"".format(bg) if bg else "",
-                esc(show(v))))
+                esc(text)))
         add("<tr><td>{}</td>{}</tr>".format(esc(label), "".join(cells)))
     add("</table></div>")
+    if any(TOO_FEW in c for c in all_cells):
+        add("<p class='none'>\u201ctoo few\u201d means that week had under "
+            "{} bookings \u2014 a percentage off a handful of them says "
+            "nothing, so it is left out rather than shown.</p>".format(
+                MIN_MATCHED))
 
     last = d[got[-1]] if got else {}
     # Megan 2026-10-06: "Did not answer should be it's own dropdown
