@@ -110,6 +110,7 @@ def week_stats(office, tag):
         "display": "", "booked": 0, "shown": 0, "texts": 0,
         "typing": 0, "house": 0, "dodged": 0, "replies": [],
         "far_out": 0, "matched": 0,
+        "silent": 0, "silent_shown": 0, "talked": 0, "talked_shown": 0,
         "issues": collections.Counter(), "examples": [], "asked": [],
         "weak": [], "kinds": collections.Counter(), "typos": []})
 
@@ -124,13 +125,33 @@ def week_stats(office, tag):
             d["display"] = name
         return d
 
+    # Who actually spoke to us before the slot. Across Jorge Pena's 702
+    # bookings the applicants who never replied showed at 19% and the
+    # ones who sent 3+ messages at 65% — the single biggest split in the
+    # data, and it is the thing a recruiter can act on.
+    said = {}
+    for c in convos.values():
+        ph = re.sub(r"\D", "", c.get("phone") or "")[-10:]
+        if ph:
+            said[ph] = sum(1 for m in (c.get("msgs") or [])
+                           if m.get("dir") == "In")
+
     for r in recs:
         d = slot(r.get("booked_by"))
         if d is None:
             continue
         d["booked"] += 1
-        if "No Show" not in (r.get("status") or ""):
+        shown_ = "No Show" not in (r.get("status") or "")
+        if shown_:
             d["shown"] += 1
+        ph = re.sub(r"\D", "", r.get("phone") or "")[-10:]
+        if ph in said:
+            if said[ph]:
+                d["talked"] += 1
+                d["talked_shown"] += shown_
+            else:
+                d["silent"] += 1
+                d["silent_shown"] += shown_
 
     for row in log:
         if (row.get("type") or "").strip() != "Out":
@@ -161,6 +182,21 @@ def week_stats(office, tag):
     def applicant(body):
         return who_said.get(" ".join((body or "").split()), "")
 
+    # The WHOLE conversation per applicant, not the audit's context
+    # window. Megan 2026-10-06: "what happened to diego's convo on the
+    # card??" — the window cut off before the part that mattered. Diego
+    # Sandoval rescheduled four times over a time zone, was turned away
+    # from the waiting room, then wrote again the next day and got
+    # nothing back; the card showed none of that.
+    threads = {}
+    for c in convos.values():
+        name = c.get("name") or ""
+        msgs = sorted(c.get("msgs") or [], key=lambda m: m["when"])
+        if name and len(msgs) > len(threads.get(name, ())):
+            threads[name] = [(m.get("dir"), " ".join((m.get("body") or "")
+                                                     .split()))
+                             for m in msgs]
+
     for e in A.who_to_talk_to(convos, oid):
         d = slot(e.get("sender"))
         if d is None:
@@ -168,7 +204,7 @@ def week_stats(office, tag):
         n = int(e.get("count") or 0)
         d["house"] += n
         d["issues"][e.get("issue") or "?"] += n
-        for ex in (e.get("examples") or [])[:3]:
+        for ex in (e.get("examples") or [])[:8]:
             d["examples"].append((e.get("issue") or "?", ex.get("hit") or "",
                                   ex.get("body") or "",
                                   applicant(ex.get("body")), "", []))
@@ -184,15 +220,17 @@ def week_stats(office, tag):
         # are kept apart (Megan 2026-10-06).
         slotname = ("weak" if is_weak(e.get("question"), e.get("reply"))
                     else "asked")
-        if len(d[slotname]) < 8:
+        if len(d[slotname]) < 20:
             d[slotname].append((
                 "{}: {}".format(
                     "Weak answer" if slotname == "weak" else "Did not answer",
                     e.get("bucket") or "a question"),
                 "they asked: {}".format(e["question"]),
                 e.get("reply") or "", e.get("name") or "",
+                left_hanging(threads.get(e.get("name") or "")) or
                 why_dodged(e.get("bucket"), e.get("kind"),
                            e.get("question"), e.get("reply"), e),
+                threads.get(e.get("name") or "") or
                 [(m.get("dir"), (m.get("body") or "").strip())
                  for m in (e.get("context") or [])]))
 
@@ -264,6 +302,13 @@ def work_on(person, weeks):
     show = _rate(now, "shown", "booked")
     if show is not None and (now.get("booked") or 0) >= 5:
         prev = _rate(before, "shown", "booked") if before else None
+        booked_n = (now.get("silent") or 0) + (now.get("talked") or 0)
+        silent_share = (100.0 * now["silent"] / booked_n
+                        if booked_n >= 20 else None)
+        silent_rate = _rate(now, "silent_shown", "silent")
+        talked_rate = _rate(now, "talked_shown", "talked")
+        if silent_rate is None or talked_rate is None:
+            silent_share = None
         far = (_rate(now, "far_out", "matched")
                if (now.get("matched") or 0) >= MIN_MATCHED else None)
         farwas = (_rate(before, "far_out", "matched")
@@ -276,6 +321,11 @@ def work_on(person, weeks):
         elif far is not None and far >= 25:
             why = ("{:.0f}% of your bookings are over a day out. Use fear of "
                    "loss and book them same or next day.".format(far))
+        elif silent_share is not None and silent_share >= 25:
+            why = ("{:.0f}% of the people you booked never replied to a "
+                   "text. They show at {:.0f}%; the ones who talk to you "
+                   "show at {:.0f}%. Get a reply before you book."
+                   .format(silent_share, silent_rate, talked_rate))
         elif bot:
             why = "Offer sooner interview times."
         else:
@@ -556,7 +606,8 @@ def is_weak(question, reply):
 
 # Worst first. Two faults in one thread do not need two sentences; the
 # one that cost the most is the one to read.
-SEVERITY = ("went round in circles", "walk away", "in a row",
+SEVERITY = ("wrote last and never got a reply", "went round in circles",
+            "walk away", "in a row",
             "Gave how long", "Gave a time", "vague", "Doesn't answer")
 
 
@@ -652,6 +703,27 @@ def worst_of(whys):
         return len(SEVERITY)
 
     return sorted(lines, key=lambda h: (rank(h), -len(h)))[0]
+
+
+def left_hanging(thread):
+    """'' unless the applicant wrote last and nobody answered.
+
+    Megan 2026-10-06, reading Diego Sandoval's thread: "was there any
+    more follow up to this convo? that would be the real red flag". There
+    was — he wrote again the next day, after four reschedules and being
+    turned away from the waiting room, and got nothing back. A
+    conversation that ends on their message is the worst thing on a
+    card, so it outranks every other verdict."""
+    msgs = [m for m in (thread or []) if (m[1] or "").strip()]
+    if len(msgs) < 2 or msgs[-1][0] != "In":
+        return ""
+    trailing = 0
+    for dirn, _body in reversed(msgs):
+        if dirn != "In":
+            break
+        trailing += 1
+    return ("They wrote last and never got a reply \u2014 {} message{} left "
+            "hanging.".format(trailing, "" if trailing == 1 else "s"))
 
 
 def why_dodged(bucket, kind="", question="", reply="", entry=None):

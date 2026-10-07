@@ -555,3 +555,71 @@ class Goals(unittest.TestCase):
                  for i in S.work_on(self._week(texts=1000), ["w0925"])}
         self.assertNotEqual(small["House Rules Broken"],
                             self._goals()["House Rules Broken"])
+
+
+class LeftHanging(unittest.TestCase):
+    """Megan 2026-10-06 on Diego Sandoval: "was there any more follow up
+    to this convo? that would be the real red flag"."""
+
+    def test_their_message_last_is_flagged(self):
+        got = S.left_hanging([("Out", "we are all set"),
+                              ("In", "I really did try to be available")])
+        self.assertIn("never got a reply", got)
+
+    def test_several_left_hanging_are_counted(self):
+        got = S.left_hanging([("Out", "a"), ("In", "b"), ("In", "c")])
+        self.assertIn("2 messages", got)
+
+    def test_our_message_last_is_fine(self):
+        self.assertEqual(
+            S.left_hanging([("In", "ok"), ("Out", "see you then")]), "")
+
+    def test_an_empty_trailing_message_does_not_count(self):
+        self.assertEqual(
+            S.left_hanging([("In", "ok"), ("Out", "bye"), ("In", "  ")]), "")
+
+    def test_it_outranks_every_other_verdict(self):
+        got = S.worst_of([
+            "This went round in circles — they asked 3 times.",
+            "They wrote last and never got a reply — 1 message left "
+            "hanging."])
+        self.assertIn("wrote last", got)
+
+
+class SilentBookings(unittest.TestCase):
+    """The biggest split in the data: did they ever reply before the slot."""
+
+    def _p(self, **kw):
+        base = {"texts": 900, "house": 0, "dodged": 0, "typing": 0,
+                "booked": 100, "shown": 29, "matched": 40, "far_out": 4,
+                "silent": 48, "silent_shown": 5,
+                "talked": 52, "talked_shown": 24,
+                "issues": __import__("collections").Counter()}
+        base.update(kw)
+        return {"display": "X", "weeks": {"w0925": base}}
+
+    def _why(self, person):
+        for i in S.work_on(person, ["w0925"]):
+            if i["area"] == "1st Round Retention":
+                return i["do"]
+        return ""
+
+    def test_a_high_silent_share_is_named(self):
+        got = self._why(self._p())
+        self.assertIn("never replied", got)
+        self.assertIn("Get a reply before you book", got)
+
+    def test_both_show_rates_are_given(self):
+        got = self._why(self._p())
+        self.assertIn("10%", got)
+        self.assertIn("46%", got)
+
+    def test_a_low_silent_share_says_something_else(self):
+        got = self._why(self._p(silent=5, silent_shown=1,
+                                talked=95, talked_shown=28))
+        self.assertNotIn("never replied", got)
+
+    def test_too_few_bookings_to_judge(self):
+        got = self._why(self._p(booked=10, shown=3, silent=5, silent_shown=0,
+                                talked=5, talked_shown=3))
+        self.assertNotIn("never replied", got)
