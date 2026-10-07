@@ -628,3 +628,32 @@ class SilentBookings(unittest.TestCase):
         got = self._why(self._p(booked=10, shown=3, silent=5, silent_shown=0,
                                 talked=5, talked_shown=3))
         self.assertNotIn("never texted you", got)
+
+
+class DeflectionsCountedOnce(unittest.TestCase):
+    """Megan 2026-10-06, seeing a hiring-manager push filed under
+    Questions Not Answered: "this should be in the pushed to hirring
+    manager section?" It was in BOTH — who_to_talk_to already records a
+    deflection as the house rule."""
+
+    def test_a_deflection_does_not_also_count_as_unanswered(self):
+        import collections
+        from automations.sms_audit import analyze as A
+
+        convos = {"c": {"name": "Itza", "phone": "9995551234", "msgs": []}}
+        deflected = [{"sender": "Jorge Pena", "kind": "deflected",
+                      "bucket": "(other)", "name": "Itza",
+                      "question": "is it all over Arlington?",
+                      "reply": "Those are questions the Hiring Manager can "
+                               "answer on the Zoom interviews.",
+                      "context": [], "asked_again": 0,
+                      "answered_later": "False"}]
+        real = dict(deflected[0], kind="dodged")
+
+        seen = []
+        for e in deflected + [real]:
+            if (e.get("kind") or "") == "deflected":
+                continue
+            seen.append(e)
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(seen[0]["kind"], "dodged")

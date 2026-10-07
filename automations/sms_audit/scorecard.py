@@ -218,6 +218,13 @@ def week_stats(office, tag):
         d = slot(e.get("sender"))
         if d is None:
             continue
+        # A deflection is already the house rule "Pushed a job question
+        # to the hiring manager" — who_to_talk_to owns it. Counting it
+        # here too put Itza Castrejon's thread in both sections and
+        # inflated the unanswered total (Megan 2026-10-06: "this should
+        # be in the pushed to hirring manager section?").
+        if (e.get("kind") or "") == "deflected":
+            continue
         d["dodged"] += 1
         if not e.get("question"):
             continue
