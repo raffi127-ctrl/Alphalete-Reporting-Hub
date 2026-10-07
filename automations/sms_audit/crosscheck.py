@@ -160,8 +160,18 @@ def main(argv=None):
         for office in offices:
             # On a failed switch the page still shows the PREVIOUS office,
             # and its counts would be compared against this one's files.
-            if not fo._switch_office(page, office, OWNERS.get(office, ""),
-                                     confirm_denial=True):
+            # AppStream hangs a click now and then (10/7: the office picker
+            # timed out at 30s and took the whole run down with it, so no
+            # office was checked). One office's hang is that office's miss.
+            try:
+                switched = fo._switch_office(page, office,
+                                             OWNERS.get(office, ""),
+                                             confirm_denial=True)
+            except Exception as e:  # noqa: BLE001
+                print("[crosscheck] {}: office switch FAILED {}".format(
+                    office, type(e).__name__), flush=True)
+                switched = False
+            if not switched:
                 print("[crosscheck] {}: NOT COMPARED — could not switch to the "
                       "office".format(office), flush=True)
                 skipped.append(office)
@@ -169,11 +179,19 @@ def main(argv=None):
                 continue
             page.wait_for_timeout(1500)
             sch = su = 0
-            for sun, idxs in slices:
-                _load_as_week(page, sun)
-                s, u = totals(_parse(page), idxs)
-                sch += s
-                su += u
+            try:
+                for sun, idxs in slices:
+                    _load_as_week(page, sun)
+                    s, u = totals(_parse(page), idxs)
+                    sch += s
+                    su += u
+            except Exception as e:  # noqa: BLE001
+                print("[crosscheck] {}: NOT COMPARED — p=701 failed to load "
+                      "({})".format(office, type(e).__name__), flush=True)
+                skipped.append(office)
+                problems.append("{}: AppStream's report page failed to load"
+                                .format(office))
+                continue
             mine, shown, src = ours(office, lo, hi, a.suffix)
             if mine is None:
                 print("[crosscheck] {}: NOT COMPARED — no local pull for this "

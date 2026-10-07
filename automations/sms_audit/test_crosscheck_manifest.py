@@ -27,7 +27,8 @@ def _session(**_kw):
     yield _Page()
 
 
-def _main(ours, appstream=(10, 8), switch=True, offices="11280,11580"):
+def _main(ours, appstream=(10, 8), switch=True, offices="11280,11580",
+          switch_err=None):
     """ours: {office: (booked, shown) or None}. AppStream splits its totals
     across the two week slices, so each slice returns half."""
     half = (appstream[0] // 2, appstream[1] // 2)
@@ -37,7 +38,8 @@ def _main(ours, appstream=(10, 8), switch=True, offices="11280,11580"):
         return (got[0], got[1], "file") if got else (None, None, "no file")
 
     with mock.patch.object(C, "appstream_direct_session", _session), \
-            mock.patch.object(C.fo, "_switch_office", return_value=switch), \
+            mock.patch.object(C.fo, "_switch_office", return_value=switch,
+                              side_effect=switch_err), \
             mock.patch.object(C, "_load_as_week"), \
             mock.patch.object(C, "_parse", return_value={}), \
             mock.patch.object(C, "totals", return_value=half), \
@@ -73,6 +75,19 @@ class Verdicts(unittest.TestCase):
         rc, wm = _main({"11280": (10, 8)}, switch=False, offices="11280")
         self.assertEqual(rc, 1)
         self.assertIn("could not switch", wm.call_args.kwargs["failed"][0])
+
+    def test_hung_click_misses_one_office_not_the_run(self):
+        calls = []
+
+        def err(page, office, *a, **k):
+            calls.append(office)
+            if office == "11280":
+                raise TimeoutError("Locator.click: Timeout 30000ms exceeded.")
+            return True
+        _rc, wm = _main({"11280": (10, 8), "11580": (10, 8)}, switch_err=err)
+        self.assertEqual(calls, ["11280", "11580"])
+        self.assertEqual(list(wm.call_args.kwargs["succeeded"]), ["11580"])
+        self.assertIn("11280: could not switch", wm.call_args.kwargs["failed"][0])
 
     def test_manifest_error_never_raises(self):
         with mock.patch.object(run_manifest, "write_manifest",
