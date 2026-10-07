@@ -3989,6 +3989,26 @@
     "report_id": "daily-focus"
    }
   },
+  "daily_eod_appstream": {
+   "hand_run_only": true,
+   "on_scheduler": false,
+   "_note": "Camila 2026-10-07: replaces the 'DAILY EOD APPSTREAM' sheet Perli fills by hand. Per office (roster = newest block of 'Interviewers Retention (Interviewer)', ARS Management 2.0), AppStream p=701 today + week so far: 1st B / 1st S / % / B to 2nd / % / 2nd B / 2nd S / %, 2nd round % green >=50 red <50, plus a list of today's red offices. ONE email. TESTING: default recipient is Eve; --production sends to Camila. Wanted ~20:00 Argentina. No clock yet. `lucy rerun daily_eod_appstream` (add --dry-run to send nothing).",
+   "display_name": "Daily EOD AppStream — 2nd round retention email",
+   "source_type": "appstream",
+   "command": [
+    "automations.daily_eod_appstream.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "freshness_target": null,
+   "priority": "P2",
+   "timeout_minutes": 45,
+   "verify": null
+  },
   "below_the_mark": {
    "hand_run_only": true,
    "on_scheduler": true,
