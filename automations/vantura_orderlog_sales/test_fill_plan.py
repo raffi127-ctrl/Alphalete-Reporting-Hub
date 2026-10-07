@@ -104,3 +104,18 @@ class D2DRepsNotFlaggedTest(unittest.TestCase):
         self.assertEqual(keep, [("nobody anywhere", 1)])
         self.assertEqual([k for k, _n in on_d2d],
                          ["giovanni monreal", "luis valenciano"])
+
+class OffBoardOwnerNotFlaggedTest(unittest.TestCase):
+    """10/7: Carlos Hidalgo (the owner) sold 1 B2B under his own name — not a
+    missing rep."""
+
+    def test_owner_is_not_unmatched(self):
+        keep, off = run.split_off_board(
+            [("carlos hidalgo", 1), ("nobody anywhere", 2)])
+        self.assertEqual(keep, [("nobody anywhere", 2)])
+        self.assertEqual(off, [("carlos hidalgo", 1)])
+
+    def test_another_carlos_is_still_flagged(self):
+        keep, _off = run.split_off_board([("carlos elias gonzalez", 1)])
+        self.assertEqual(keep, [("carlos elias gonzalez", 1)])
+
