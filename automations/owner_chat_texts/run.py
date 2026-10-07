@@ -70,6 +70,11 @@ def _marker(key: str, day: dt.date) -> Path:
     return cfg.OUTPUT_DIR / day.isoformat() / ("%s.sent" % key)
 
 
+def _slug(name: str) -> str:
+    """A chat name as a marker-file-safe token."""
+    return "".join(c if c.isalnum() else "_" for c in (name or "").lower()).strip("_")
+
+
 def _send_item(key: str, caption: str, png: Path, groups: list, day: dt.date,
                dry_run: bool, out: dict, resend: bool = False) -> None:
     """Send one captioned image to its groups; record per-group results.
@@ -95,15 +100,29 @@ def _send_item(key: str, caption: str, png: Path, groups: list, day: dt.date,
                               m.read_text().strip()[:19]))
     ok = True
     for group in groups:
+        # A group is a name needle or a participant-pinned dest dict.
+        name = group.get("group", "") if isinstance(group, dict) else group
+        # PER-GROUP marker too (2026-10-07, adding Colten's chats): a retry
+        # after ONE group failed used to re-text every group that had already
+        # got it, since only the item marker existed and it needs all of them.
+        gm = _marker("%s__%s" % (key, _slug(name)), day)
+        if gm.exists() and not dry_run and not resend:
+            out["skipped"].append("%s -> %s (already sent %s)" % (
+                key, name, gm.read_text().strip()[:19]))
+            continue
         try:
-            res = tp.send_to_group(group, caption, [png], dry_run=dry_run)
+            res = tp.send_to_group(name, caption, [png], dry_run=dry_run,
+                                   dest=group if isinstance(group, dict) else None)
             out["sent"].append("%s %s -> %s (chat %s, %s participants)" % (
-                "WOULD TEXT" if dry_run else "TEXTED", key, group,
+                "WOULD TEXT" if dry_run else "TEXTED", key, name,
                 res.get("chat_id"), res.get("participants")))
+            if not dry_run:
+                gm.parent.mkdir(parents=True, exist_ok=True)
+                gm.write_text(dt.datetime.now().isoformat(timespec="seconds"))
         except Exception as e:  # noqa: BLE001 — one group never blocks the rest
             ok = False
             out["errors"].append("%s -> %s: %s: %s" % (
-                key, group, type(e).__name__, str(e)[:200]))
+                key, name, type(e).__name__, str(e)[:200]))
     if ok and not dry_run:
         m.parent.mkdir(parents=True, exist_ok=True)
         m.write_text(dt.datetime.now().isoformat(timespec="seconds"))

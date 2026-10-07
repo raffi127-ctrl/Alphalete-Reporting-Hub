@@ -3,6 +3,8 @@
     Alphalete owners - Real CHAT : all the trackers + the Org WOW sales board
     Knocking Chat A-Players      : the Org WOW sales board only
                                    (was the A-Team chat until Raf, 2026-09-28)
+    Colten's A Players + SOUTHSHORE ORG : the Org WOW sales board only
+                                   (Colten, 2026-10-07)
 
 RUNS ON LUCY 1 — Messages there is signed in as alphaletereporting@gmail.com
 (Megan 2026-08-23). This is a THIRD iMessage machine: Lucy 2 texts the B2B
@@ -38,9 +40,28 @@ GROUP_A_TEAM = "Alphalete A-Team Chat"
 # moves to his new "Knocking Chat A-Players" room -- "all of it".
 GROUP_KNOCKING = "Knocking Chat A-Players"
 
-# Routing.
+# Colten Wright 2026-10-07 (Slack DM with Megan + Eve): the board every morning
+# in his own two org chats too. Lucy 1 is already a member of both (his
+# screenshots; she texts "A Players" the ICD standings from this machine).
+#
+# "A Players" is pinned by its PEOPLE, not its name -- the exact destination
+# the ICD poster already texts: ICD Relay workbook -> 'Office Channels' ->
+# row `colten` -> 'Texts Approved JSON'. A bare "A Players" needle would also
+# hit any other chat with that in its name. If Colten's group changes, update
+# both places.
+GROUP_COLTEN_A_PLAYERS = {
+    "group": "A Players",
+    "chat_guid": "any;+;9da0dbee269e4010a1fa0ebbe9a37e2f",
+    "require_handles": ["+17867976902", "+14407893938",
+                        "+18176299630", "+17863655377"],
+}
+GROUP_SOUTHSHORE_ORG = "SOUTHSHORE ORG"
+
+# Routing. An entry is a chat-name needle, or a participant-pinned dest dict
+# (text_post.resolve_dest).
 TRACKER_GROUPS = [GROUP_OWNERS_REAL]
-BOARD_GROUPS = [GROUP_OWNERS_REAL, GROUP_KNOCKING]
+BOARD_GROUPS = [GROUP_OWNERS_REAL, GROUP_KNOCKING,
+                GROUP_COLTEN_A_PLAYERS, GROUP_SOUTHSHORE_ORG]
 
 # "All the Trackers" = exactly what #alphalete-sales carries each morning: the
 # default org-wide set, in post order. Read from tableau_screenshots so a
