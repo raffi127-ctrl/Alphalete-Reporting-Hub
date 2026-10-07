@@ -294,14 +294,23 @@ def work_on(person, weeks):
             else "Read it back before sending.",
             "{}".format(before.get("typing")) if before else None)
 
+    # Megan 2026-10-06: "6 house rules out of 3k texts sent seems pretty
+    # low....", and the same for unanswered questions. Both were graded on
+    # the RAW COUNT, so whoever sent most texts looked worst. Measured per
+    # 1,000 texts the spread is median 0, 75th percentile 5, worst 124 —
+    # Leticia Robinson's 2.0 was scoring the same band as Maria Quintero's
+    # 57.6. Bands below are set off that distribution.
     house = now.get("house") or 0
-    if house:
+    texts_now = now.get("texts") or 0
+    if house and texts_now >= MIN_TEXTS:
         # .get: a week dict from a partial source has no counter, and a
         # missing breakdown is not worth crashing a scorecard over.
         counts = now.get("issues") or collections.Counter()
         worst = counts.most_common(1)[0][0] if counts else "House rules"
-        add("House Rules Broken", "{}".format(house),
-            GC._band(house, 0, 2, 6, higher_is_better=False),
+        per1k = 1000.0 * house / texts_now
+        add("House Rules Broken",
+            "{} in {:,} texts".format(house, texts_now),
+            GC._band(per1k, 0.5, 3, 8, higher_is_better=False),
             "{}. The exact texts are below.".format(worst),
             "{}".format((before or {}).get("house")) if before else None)
 
@@ -315,9 +324,11 @@ def work_on(person, weeks):
             A_mins(prevmed) if prevmed is not None else None)
 
     dodged = now.get("dodged") or 0
-    if dodged:
-        add("Questions Not Answered", str(dodged),
-            GC._band(dodged, 0, 2, 6, higher_is_better=False),
+    if dodged and texts_now >= MIN_TEXTS:
+        dper1k = 1000.0 * dodged / texts_now
+        add("Questions Not Answered",
+            "{} in {:,} texts".format(dodged, texts_now),
+            GC._band(dper1k, 0.5, 2.5, 4.5, higher_is_better=False),
             "Give it a real answer in AI Settings, Escalations." if bot
             else "Answer it, then book. The exact ones are below.",
             str((before or {}).get("dodged")) if before else None)
@@ -331,17 +342,35 @@ def failing(items):
     return [i for i in items if i["grade"] not in "AB"]
 
 
-def grade_of(person, weeks):
-    """One letter for the week: the worst area that was measured.
+# What each area is worth in the overall grade. Retention is the outcome
+# everything else feeds, so it carries most; a typo is real but it is not
+# why someone did not show up.
+WEIGHTS = {"1st Round Retention": 3, "House Rules Broken": 2,
+           "Questions Not Answered": 2}
+POINTS = {"A": 4, "B": 3, "C": 2, "D": 1, "F": 0}
 
-    Megan 2026-10-06: "they should get a 'grade' on this report card".
-    Worst-of rather than an average, the same convention the office grade
-    card uses — an average lets a bad week hide behind volume."""
+
+def grade_of(person, weeks):
+    """One letter for the week, weighted across every area measured.
+
+    Megan 2026-10-06: "I dont think this is a D scorecard. How are you
+    coming to such a low grade?" It was the WORST single area — a rule
+    copied from the office card, where "fix the worst thing" is the right
+    instinct. On a person it is not: Leticia Robinson improved on three
+    of five measures and still read D off one.
+
+    A flat average is no better: it put Leticia and Aisha Ceron both on C
+    when Aisha was failing three areas to Leticia's one. Weighted, they
+    separate."""
     items = work_on(person, weeks)
     if not items:
         return None
-    return sorted(items, key=lambda i: "FDCBA".index(i["grade"]))[0]["grade"]
-
+    total = weight = 0
+    for i in items:
+        w = WEIGHTS.get(i["area"], 1)
+        total += POINTS[i["grade"]] * w
+        weight += w
+    return "FDCBA"[min(4, int(round(float(total) / weight)))]
 
 def A_mins(m):
     if m is None:

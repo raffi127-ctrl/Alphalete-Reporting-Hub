@@ -455,9 +455,18 @@ class Grade(unittest.TestCase):
     def test_a_bad_week_grades_badly(self):
         self.assertIn(S.grade_of(self._person(self.BAD), ["w0925"]), "DF")
 
-    def test_the_worst_area_sets_the_grade(self):
-        mixed = dict(self.GOOD, house=20)
-        self.assertNotIn(S.grade_of(self._person(mixed), ["w0925"]), "AB")
+    def test_one_weak_area_does_not_set_the_whole_grade(self):
+        """Megan 2026-10-06: "I dont think this is a D scorecard."
+        One bad area pulls the letter down, it does not become it."""
+        clean = S.grade_of(self._person(self.GOOD), ["w0925"])
+        mixed = S.grade_of(self._person(dict(self.GOOD, house=20)), ["w0925"])
+        self.assertNotEqual(mixed, clean)
+        self.assertIn(mixed, "ABC")
+
+    def test_failing_several_areas_does_grade_badly(self):
+        self.assertIn(
+            S.grade_of(self._person(dict(self.GOOD, house=20, dodged=30,
+                                         shown=5)), ["w0925"]), "DF")
 
     def test_nothing_measured_is_no_grade(self):
         self.assertIsNone(S.grade_of({"display": "X", "weeks": {}}, ["w0925"]))
@@ -466,3 +475,45 @@ class Grade(unittest.TestCase):
         items = S.work_on(self._person(dict(self.GOOD, house=20)), ["w0925"])
         self.assertTrue(items)
         self.assertTrue(all(i["grade"] not in "AB" for i in S.failing(items)))
+
+
+class RatesNotCounts(unittest.TestCase):
+    """Megan 2026-10-06: "6 house rules out of 3k texts sent seems pretty
+    low....", and the same for unanswered questions. Both were graded on
+    the raw count, so the busiest person always looked the worst."""
+
+    def _week(self, **kw):
+        base = {"texts": 3000, "house": 0, "dodged": 0, "typing": 0,
+                "booked": 50, "shown": 24, "matched": 40, "far_out": 5,
+                "issues": __import__("collections").Counter({"x": 1})}
+        base.update(kw)
+        return {"display": "X", "weeks": {"w0925": base}}
+
+    def _area(self, person, name):
+        for i in S.work_on(person, ["w0925"]):
+            if i["area"] == name:
+                return i
+        return None
+
+    def test_six_in_three_thousand_is_not_a_bad_week(self):
+        got = self._area(self._week(house=6), "House Rules Broken")
+        self.assertIn(got["grade"], "AB")
+
+    def test_the_same_six_in_two_hundred_texts_is(self):
+        got = self._area(self._week(texts=200, house=6), "House Rules Broken")
+        self.assertIn(got["grade"], "DF")
+
+    def test_the_volume_is_shown_beside_the_count(self):
+        got = self._area(self._week(house=6), "House Rules Broken")
+        self.assertIn("3,000 texts", got["now"])
+
+    def test_unanswered_questions_are_a_rate_too(self):
+        low = self._area(self._week(dodged=6), "Questions Not Answered")
+        high = self._area(self._week(texts=300, dodged=6),
+                          "Questions Not Answered")
+        self.assertIn(low["grade"], "AB")
+        self.assertIn(high["grade"], "DF")
+
+    def test_a_tiny_sample_is_not_graded_at_all(self):
+        self.assertIsNone(
+            self._area(self._week(texts=10, house=6), "House Rules Broken"))
