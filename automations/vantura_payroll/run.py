@@ -438,8 +438,9 @@ def _pull_raf_dd(week: dt.date, log=_log) -> Path:
     """Download the DD DETAIL crosstab sliced to Raf's owner — same mechanics
     as _pull_icd_dd_detail, different URL + filename."""
     from automations.vantura_churn import cdp_pull
-    out = (Path(tempfile.gettempdir()) /
+    out = (REPO_ROOT / "output" / "vantura_payroll" /
            f"ICD dd Detail RAF {week.isoformat()}.xlsx")
+    out.parent.mkdir(parents=True, exist_ok=True)
     if out.exists():
         out.unlink()
     log(f"pulling RAF-owner DD DETAIL crosstab -> {out}")
