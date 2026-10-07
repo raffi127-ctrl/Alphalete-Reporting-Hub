@@ -82,7 +82,22 @@ def apply_address_history(office):
                 continue
     RB.set_address_history(office["office"], cur,
                            prev if changed else None, changed)
+    apply_office_facts(office)
     return changed
+
+
+def apply_office_facts(office):
+    """The rest of what this office told us, into the checks that need it.
+
+    Megan 2026-10-06: "the house rules will need to adapt per office. We
+    will need to get their location/how they conduct interviews/zoom
+    links/ect". Each setter is silent when the fact is blank, so an office
+    that has not filled its row is never scored against someone else's
+    answer — offices.missing_fields reports the gap instead."""
+    oid = office["office"]
+    RB.set_zoom(oid, [office.get("zoom_id"), office.get("zoom"),
+                      office.get("zoom2_id"), office.get("zoom2")])
+    RB.set_pay(oid, office.get("pay_low"), office.get("pay_high"))
 
 
 def message_findings(office):

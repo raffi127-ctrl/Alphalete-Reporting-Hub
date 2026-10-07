@@ -122,3 +122,28 @@ class Needle(unittest.TestCase):
         got = S.mark("We don't have a exact 9am but we can do a 9:15",
                      S.needle_of("a exact (a → an)"))
         self.assertIn("<span class='bad'>a exact</span>", got)
+
+
+class WhyDodged(unittest.TestCase):
+    """Megan 2026-10-06: say why it is wrong, in red."""
+
+    def test_a_known_bucket_names_the_topic(self):
+        got = S.why_dodged("Is this remote / where is the office?")
+        self.assertIn("whether the job is remote and where the office is", got)
+        self.assertIn("isn't relevant to what was asked", got)
+
+    def test_a_deflection_reads_differently_from_a_dodge(self):
+        got = S.why_dodged("What is the pay?", "deflected")
+        self.assertIn("someone else", got)
+        self.assertNotIn("isn't relevant", got)
+
+    def test_shorthand_has_its_own_line(self):
+        self.assertIn("shorthand", S.why_dodged("What is the pay?", "informal"))
+
+    def test_an_unknown_bucket_still_reads_as_english(self):
+        got = S.why_dodged("Something We Have Not Seen?")
+        self.assertIn("something we have not seen", got)
+        self.assertNotIn("?.", got)
+
+    def test_no_bucket_at_all(self):
+        self.assertIn("the question", S.why_dodged(None))

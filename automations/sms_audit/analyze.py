@@ -2276,6 +2276,13 @@ COACHING = (
     ("Shouted in capitals",
      lambda o, b, w: __import__("automations.sms_audit.rebuttals", fromlist=["x"])
      .shouts(b)),
+    # Per-office facts, silent until that office supplies them.
+    ("Sent the wrong Zoom link",
+     lambda o, b, w: __import__("automations.sms_audit.rebuttals", fromlist=["x"])
+     .wrong_zoom(o, b, w)),
+    ("Quoted pay this office does not pay",
+     lambda o, b, w: __import__("automations.sms_audit.rebuttals", fromlist=["x"])
+     .pay_outside_range(o, b, w)),
 )
 
 

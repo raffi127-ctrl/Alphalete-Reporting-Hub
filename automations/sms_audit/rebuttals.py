@@ -356,3 +356,97 @@ def wrong_address(office, text, when=None):
     if unit and unit.group(2).lower() not in want.lower():
         return m.group(0).strip()
     return None
+
+
+# ---------------------------------------------------------------- Zoom
+
+# Which meeting this office actually uses, per round. Set from the office
+# tab (set_zoom) rather than hardcoded: Megan 2026-10-06, "the house rules
+# will need to adapt per office. We will need to get their location/how
+# they conduct interviews/zoom links/ect".
+OFFICE_ZOOM = {}
+
+# A Zoom meeting is 9-11 digits. Match the id wherever it appears — in the
+# link, after "Meeting ID:", with or without the spaces Zoom prints.
+_ZOOM_LINK = re.compile(r"https?://[\w.-]*zoom\.us/\S*?(\d[\d\s]{8,14}\d)",
+                        re.I)
+_ZOOM_ID = re.compile(r"meeting\s*id[:\s]*(\d[\d\s]{8,14}\d)", re.I)
+
+
+def _digits(s):
+    return re.sub(r"\D", "", s or "")
+
+
+def set_zoom(office, ids):
+    """Record the meeting ids this office is allowed to send."""
+    good = {_digits(i) for i in (ids or []) if _digits(i)}
+    if good:
+        OFFICE_ZOOM[office] = good
+    else:
+        OFFICE_ZOOM.pop(office, None)
+
+
+def wrong_zoom(office, text, when=None):
+    """A Zoom meeting in this message that is not one of the office's.
+
+    Silent when the office has not told us its links — a fact nobody
+    supplied is never a pass, and `offices.missing_fields` already reports
+    the gap. Without that guard every office with a blank config row would
+    have every Zoom link it ever sent flagged."""
+    good = OFFICE_ZOOM.get(office)
+    if not good:
+        return None
+    body = " ".join((text or "").split())
+    for pat in (_ZOOM_LINK, _ZOOM_ID):
+        for m in pat.finditer(body):
+            if _digits(m.group(1)) not in good:
+                return m.group(0).strip()
+    return None
+
+
+# --------------------------------------------------------------- pay range
+
+# What this office actually pays, so the figure check is theirs and not
+# Raf's. The WORD "base" is ruled out everywhere (Megan 2026-09-27) and
+# stays global; only the numbers are per office.
+OFFICE_PAY = {}
+
+
+def set_pay(office, low=None, high=None):
+    try:
+        lo = float(str(low).replace(",", "").replace("$", "")) if low else None
+        hi = float(str(high).replace(",", "").replace("$", "")) if high else None
+    except ValueError:
+        return
+    if lo or hi:
+        OFFICE_PAY[office] = (lo, hi)
+    else:
+        OFFICE_PAY.pop(office, None)
+
+
+_WEEKLY_FIGURE = re.compile(
+    r"\$\s?([\d,]{3,7})(?:\s*(?:-|to|–)\s*\$?\s?([\d,]{3,7}))?"
+    r"(?=[^.?!]{0,40}\b(?:a|per|each|/)\s*week\b|[^.?!]{0,20}\bweekly\b)",
+    re.I)
+
+
+def pay_outside_range(office, text, when=None):
+    """A weekly figure this office does not actually pay, or None."""
+    rng = OFFICE_PAY.get(office)
+    if not rng:
+        return None
+    lo, hi = rng
+    body = " ".join((text or "").split())
+    for m in _WEEKLY_FIGURE.search(body), None:
+        if not m:
+            break
+        for grp in (m.group(1), m.group(2)):
+            if not grp:
+                continue
+            try:
+                v = float(grp.replace(",", ""))
+            except ValueError:
+                continue
+            if (lo and v < lo) or (hi and v > hi):
+                return m.group(0).strip()
+    return None

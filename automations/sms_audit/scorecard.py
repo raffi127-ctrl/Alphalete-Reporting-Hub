@@ -45,6 +45,27 @@ MIN_TEXTS = 25
 MIN_MATCHED = 10
 
 
+_FACTS_DONE = set()
+
+
+def _load_office_facts(oid):
+    """Point the per-office checks at THIS office before scoring its texts.
+
+    The scorecard scores the same messages as the audit, so it needs the
+    same facts; without them every office is marked against whichever one
+    was configured last."""
+    if oid in _FACTS_DONE:
+        return
+    _FACTS_DONE.add(oid)
+    try:
+        from automations.sms_audit import icd_audit as IA
+        row = [o for o in (O.load()[0] or []) if o.get("office") == oid]
+        if row:
+            IA.apply_address_history(row[0])
+    except Exception:  # noqa: BLE001 — a missing config is a gap, not a crash
+        pass
+
+
 def key_of(name):
     """'L. Robinson' and 'Leticia Robinson' -> the same key.
 
@@ -78,6 +99,7 @@ def _median(xs):
 def week_stats(office, tag):
     """{key: {...}} for one week, or {} when that week was not pulled."""
     oid = office if isinstance(office, str) else office["office"]
+    _load_office_facts(oid)
     recs, _s = A.load_office(oid, tag)
     log, _s2 = A.load_log(oid, tag)
     if not recs or not log:
@@ -126,7 +148,8 @@ def week_stats(office, tag):
         d["kinds"][kind] += 1
         if len(d["typos"]) < 40:
             d["typos"].append((kind.capitalize(), needle_of(e.get("detail")),
-                               e.get("body") or "", e.get("name") or ""))
+                               e.get("body") or "", e.get("name") or "",
+                               ""))
 
     who_said = {}
     for c in convos.values():
@@ -148,7 +171,7 @@ def week_stats(office, tag):
         for ex in (e.get("examples") or [])[:3]:
             d["examples"].append((e.get("issue") or "?", ex.get("hit") or "",
                                   ex.get("body") or "",
-                                  applicant(ex.get("body"))))
+                                  applicant(ex.get("body")), ""))
 
     for e in A.dodged_questions(convos):
         d = slot(e.get("sender"))
@@ -159,7 +182,8 @@ def week_stats(office, tag):
             d["asked"].append((
                 "Did not answer: {}".format(e.get("bucket") or "a question"),
                 "they asked: {}".format(e["question"]),
-                e.get("reply") or "", e.get("name") or ""))
+                e.get("reply") or "", e.get("name") or "",
+                why_dodged(e.get("bucket"), e.get("kind"))))
 
     for st in A.reply_speed_by_sender(convos, min_n=1):
         d = slot(st.get("who"))
@@ -324,6 +348,7 @@ blockquote{margin:.4em 0 .4em 1em;padding:.3em .7em;border-left:3px solid #bbb;
 .bad{color:#A8322A;font-weight:bold;background:#fdeaea}
 .asked{color:#555;font-size:.9em;font-style:italic}
 .who{color:#555;font-weight:normal}
+.why{color:#A8322A;font-weight:bold;margin-top:.35em}
 details{margin:.35em 0;border:1px solid #ddd;border-radius:4px;
         padding:.4em .7em;background:#fafafa}
 details[open]{background:#fff}
@@ -339,6 +364,46 @@ def esc(t):
 
 
 ASKED = re.compile(r"^\s*they asked:\s*", re.I)
+
+
+# What each question bucket is actually ASKING, so the fault can be stated
+# in words rather than left for the reader to work out. Megan 2026-10-06:
+# "we need why this is wrong in red ... Didn't answer the driving question
+# or where the location was. Answer isn't relevant to what was asked."
+TOPICS = {
+    "Is this remote / where is the office?":
+        "whether the job is remote and where the office is",
+    "What is the pay?": "the pay",
+    "Which role / which company is this?": "which role and company this is",
+    "What is the job / what do you do?": "what the job actually is",
+    "Hours, training, is it paid?":
+        "the hours and whether training is paid",
+    "How long is the interview / what's next?":
+        "how long the interview is",
+    "What should I wear / bring?": "what to wear or bring",
+    "When will you call me / what number?": "when we would call",
+    "How do I join the Zoom / link trouble?": "how to join the Zoom",
+    "Can we reschedule / a different time?": "a different time",
+    "I can't make it / I'm sick / running late":
+        "that they could not make it",
+    "Is this a real job / who are you?": "whether this is a real job",
+    "I never got the email": "the email they never got",
+    "Am I still being considered?":
+        "whether they are still being considered",
+    "Are you there? (chasing us for a reply)": "their chase for a reply",
+}
+
+
+def why_dodged(bucket, kind=""):
+    """One red line saying what went wrong with this reply."""
+    topic = TOPICS.get(bucket) or (bucket or "the question").rstrip("?").lower()
+    if kind == "deflected":
+        return ("Pushed {} to someone else instead of answering it."
+                .format(topic))
+    if kind == "informal":
+        return "Texting shorthand going out under the company's name."
+    return ("Didn't answer {}. The reply isn't relevant to what was asked."
+            .format(topic))
 
 
 def needle_of(detail):
@@ -487,18 +552,20 @@ def render(person, office, weeks, path):
         if not items:
             continue
         groups = collections.OrderedDict()
-        for issue, hit, body, name in items:
+        for issue, hit, body, name, why in items:
             label = issue[len(strip):] if strip and issue.startswith(strip) \
                 else issue
-            groups.setdefault(label, []).append((hit, body, name))
+            groups.setdefault(label, []).append((hit, body, name, why))
         add("<h2>{} \u2014 {}</h2>".format(esc(heading), len(items)))
         for label, rows_ in sorted(groups.items(), key=lambda kv: -len(kv[1])):
             add("<details><summary>{} \u2014 {}</summary>".format(
                 esc(label), len(rows_)))
-            for hit, body, name in rows_:
-                add("<blockquote>{}{}</blockquote>".format(
+            for hit, body, name, why in rows_:
+                add("<blockquote>{}{}{}</blockquote>".format(
                     "<span class='who'>{}</span><br>".format(esc(name))
-                    if name else "", mark(body, hit)))
+                    if name else "", mark(body, hit),
+                    "<div class='why'>{}</div>".format(esc(why))
+                    if why else ""))
             add("</details>")
     add("</body></html>")
     path.write_text("\n".join(L), encoding="utf-8")

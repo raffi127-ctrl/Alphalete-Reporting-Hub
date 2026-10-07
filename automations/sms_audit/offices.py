@@ -53,6 +53,7 @@ TAB = "Recruiting Audit Offices"
 CACHE = Path(__file__).resolve().parents[2] / "output" / "audit_offices.json"
 COLUMNS = ["office", "icd_name", "owner", "address",
            "address_prev", "address_changed", "phone", "campaign",
+           "pay_low", "pay_high",
            "r1_mode", "zoom", "zoom_id",
            "r2_mode", "zoom2", "zoom2_id",
            "job_ad_cities", "active", "email", "slack_user", "updated"]
@@ -233,6 +234,9 @@ def missing_fields(office):
         gaps.append("interview address — cannot check the address in templates")
     if not office.get("phone"):
         gaps.append("recruiting phone — cannot check the number in templates")
+    if not (office.get("pay_low") or office.get("pay_high")):
+        gaps.append("weekly pay range — cannot tell a wrong figure from a "
+                    "right one, so only the word \"base\" is checked")
     for label, mode, link, _lid in rounds(office):
         if not mode:
             gaps.append("{} — not told whether it is in person or Zoom"
