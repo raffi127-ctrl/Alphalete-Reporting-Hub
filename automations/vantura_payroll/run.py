@@ -189,6 +189,54 @@ DD_DETAIL_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
                  "DirectDepositICDVIEWVersion2_0/DDDETAIL?:iid=1")
 DD_DETAIL_SHEET = "ICD dd Detail"
 
+# ---- Raf-owner DD slice (Carlos 2026-10-07) -------------------------------
+# The AT&T NDS program pays through Raf's ICD, so those reps' DD lines live
+# under HIS owner filter — Carlos's default pull never sees them (that's how
+# Eduardo Alvarez's 9.27 apps went unpaid). Each week we pull the same DD
+# DETAIL view sliced to Raf's owner, keep ONLY the reps on the allowlist
+# below, dedupe against rows already in the week's RAW block, and append.
+# Any failure here warns in the kickoff DM and never blocks the main payroll.
+# Allowlist maintained by Carlos (sent 10/7); names match by token subset so
+# "Jorge Gramajo" still hits the board's "Jorge Luis Gramajo".
+RAF_DD_REPS = (
+    "Jorge Gramajo", "Rodolfo Bazan", "Christian Perez", "Jose Pimentel Lugo",
+    "Nicholas Smedra", "Aaron De La Torre", "Diego Del Pozo Borres",
+    "Yariel Caban", "Eduardo Alvarez", "Fernando Salazar", "Gavin Natividad",
+    "Andrew De La Torre", "Danniel Alvarenga", "Luis Servellon",
+    "Jacob Ortega", "Sebastian Avellaneda",
+)
+# Exact value of the DD DETAIL Owner quick-filter for Raf's slice, and the
+# filter's field name as the URL param. A value that matches no member resets
+# EVERY filter on the view (blank board, empty export) — the loader detects
+# both that and an ignored param and warns instead of loading garbage.
+RAF_DD_OWNER = "Rafael Hidalgo"   # cl.ICD Owner Name value (Slack: raffi127)
+RAF_DD_FILTER_FIELD = "cl.ICD Owner Name"
+
+
+def _raf_dd_url() -> str:
+    # Raw-paren style per the working slices in b2b_metrics/offices.py:
+    # encode spaces only; percent-encoding parens/slashes breaks Tableau.
+    val = RAF_DD_OWNER.replace(" ", "%20")
+    fld = RAF_DD_FILTER_FIELD.replace(" ", "%20")
+    base = DD_DETAIL_URL.split("?")[0]
+    return f"{base}?{fld}={val}&:iid=1"
+
+
+def _rep_tokens(name: str) -> frozenset:
+    import re as _re
+    s = str(name).lower().replace("-", " ")
+    return frozenset(_re.sub(r"[^a-z ]", "", s).split())
+
+
+def _on_allowlist(rep: str) -> bool:
+    t = _rep_tokens(rep)
+    if len(t) < 2:   # a one-token name would subset-match half the list
+        return False
+    return any(a <= t or t <= a for a in _RAF_TOKENS)
+
+
+_RAF_TOKENS = tuple(_rep_tokens(n) for n in RAF_DD_REPS)
+
 
 def _pull_icd_dd_detail(week: dt.date, log=_log) -> Path:
     """Download this week's ICD dd Detail crosstab from Tableau — unattended.
@@ -384,6 +432,124 @@ def _load_raw(xlsx: Path, week: dt.date, *, write: bool, sheet_id: str, log=_log
     raw.update(f"J{start}:N{end}", jn_rows, value_input_option="USER_ENTERED")
     log(f"  WROTE RAW A{start}:H{end} and J{start}:N{end}")
     return (start, end)
+
+
+def _pull_raf_dd(week: dt.date, log=_log) -> Path:
+    """Download the DD DETAIL crosstab sliced to Raf's owner — same mechanics
+    as _pull_icd_dd_detail, different URL + filename."""
+    from automations.vantura_churn import cdp_pull
+    out = (Path(tempfile.gettempdir()) /
+           f"ICD dd Detail RAF {week.isoformat()}.xlsx")
+    if out.exists():
+        out.unlink()
+    log(f"pulling RAF-owner DD DETAIL crosstab -> {out}")
+    log(f"  url: {_raf_dd_url()}")
+    cdp_pull.download_views([(_raf_dd_url(), DD_DETAIL_SHEET, str(out))],
+                            log=log)
+    if not out.exists():
+        raise FileNotFoundError("Raf DD pull did not produce the export file.")
+    return out
+
+
+def _dd_norm(v) -> str:
+    """Normalize one cell for cross-source row identity: numbers to 2dp,
+    dates to ISO, text to lowercase/stripped. Export cells (openpyxl datetimes,
+    floats) and sheet cells ('9/29/2026', '$450.00') must collide."""
+    if isinstance(v, dt.datetime):
+        return v.date().isoformat()
+    if isinstance(v, dt.date):
+        return v.isoformat()
+    s = str(v if v is not None else "").strip()
+    t = s.replace("$", "").replace(",", "")
+    try:
+        return f"{float(t):.2f}"
+    except ValueError:
+        pass
+    for fmt in ("%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d"):
+        try:
+            return dt.datetime.strptime(s, fmt).date().isoformat()
+        except ValueError:
+            continue
+    return s.lower()
+
+
+def _load_raf_extra(week: dt.date, raw_range: tuple[int, int], *, write: bool,
+                    sheet_id: str, log=_log) -> tuple[tuple[int, int], str]:
+    """Pull Raf's DD slice, keep allowlisted reps' rows, dedupe against the
+    week's RAW block, append below it. Returns (extended raw_range, a one-line
+    status for the DM). Raises on pull/guard failures — the caller catches and
+    turns it into a DM warning; the main payroll is never blocked."""
+    if not RAF_DD_OWNER:
+        return raw_range, "Raf DD slice: DISABLED (owner value not set)"
+    xlsx = _pull_raf_dd(week, log=log)
+    headers, data = _read_export(xlsx, log=log)
+    cmap = _map_columns(headers, log=log)
+    # same grand-total guard as the main load, but tolerant: an empty export
+    # means the owner slice matched nothing (filter reset) — warn, load nothing.
+    if data:
+        first = [str(c).strip() for c in data[0]]
+        rep_i = cmap["B"]
+        if not (first[rep_i] if rep_i < len(first) else "") or \
+                any("total" in c.lower() for c in first):
+            data = data[1:]
+    if not data:
+        raise RuntimeError(
+            "Raf DD export came back empty — wrong owner value resets every "
+            "filter on the view; fix RAF_DD_OWNER.")
+
+    kept = [r for r in data
+            if _on_allowlist(str(r[cmap["B"]] if cmap["B"] < len(r) else ""))]
+    log(f"Raf DD slice: {len(data)} rows, {len(kept)} match the allowlist")
+    if not kept:
+        return raw_range, (f"Raf DD slice: 0 of {len(data)} rows matched the "
+                           "16-rep allowlist (nothing to add)")
+
+    from automations.recruiting_report.fill import open_by_key
+    sh = open_by_key(sheet_id)
+    raw = sh.worksheet("RAW")
+    first_row, last_row = raw_range
+    if raw.get(f"A{last_row + 1}"):
+        raise RuntimeError(
+            f"RAW has data below the week block (row {last_row + 1}) — "
+            "refusing to append the Raf slice out of place.")
+    block = raw.get(f"A{first_row}:H{last_row}")
+    seen = {tuple(_dd_norm(c) for c in
+                  ((r[1] if len(r) > 1 else ""), (r[2] if len(r) > 2 else ""),
+                   (r[6] if len(r) > 6 else ""), (r[7] if len(r) > 7 else "")))
+            for r in block}
+    wnum = _week_num(week)
+    out_rows, jn_rows, dups = [], [], 0
+    for r in kept:
+        def cell(col):
+            i = cmap.get(col)
+            if i is None:
+                return ""
+            return r[i] if i < len(r) else ""
+        key = tuple(_dd_norm(cell(c)) for c in ("B", "C", "G", "H"))
+        if key in seen:
+            dups += 1
+            continue
+        seen.add(key)
+        out_rows.append([wnum, cell("B"), cell("C"), cell("D"),
+                         cell("E"), cell("F"), cell("G"), cell("H")])
+        jn_rows.append([cell("J"), cell("K"), cell("L"), cell("M"), cell("N")])
+    note = (f"Raf DD slice: +{len(out_rows)} row(s) for the allowlist reps"
+            f" ({dups} already present)")
+    if not out_rows:
+        return raw_range, note
+    start, end = last_row + 1, last_row + len(out_rows)
+    log(f"Raf append: A{start}:H{end}")
+    for _r in out_rows[:3]:
+        log(f"  + {_r}")
+    if not write:
+        log("  (dry-run: nothing written)")
+        return (first_row, end), note + " [dry-run]"
+    if raw.row_count < end:
+        raw.add_rows(end - raw.row_count + 5)
+    raw.update(f"A{start}:H{end}", out_rows, value_input_option="USER_ENTERED")
+    raw.update(f"J{start}:N{end}", jn_rows, value_input_option="USER_ENTERED")
+    log(f"  WROTE RAW A{start}:H{end} and J{start}:N{end}")
+    return (first_row, end), note
 
 
 def _set_week(week: dt.date, *, write: bool, sheet_id: str, log=_log) -> None:
@@ -1006,7 +1172,36 @@ def main(argv: list[str] | None = None) -> int:
                     help="ONLY backfill RAW L:N (Commission Type/Category/Tier) "
                          "for an already-loaded week, then exit. Respects "
                          "--dry-run/--live; verifies row alignment first.")
+    ap.add_argument("--raf-test", action="store_true",
+                    help="ONLY pull the Raf-owner DD slice and print what the "
+                         "allowlist reps brought in. Never writes.")
     args = ap.parse_args(argv)
+
+    if args.raf_test:
+        wk = (dt.datetime.strptime(args.week, "%Y-%m-%d").date()
+              if args.week else week_ending())
+        xlsx = _pull_raf_dd(wk)
+        headers, data = _read_export(xlsx)
+        cmap = _map_columns(headers)
+        if data and not str(data[0][cmap["B"]] if cmap["B"] < len(data[0])
+                            else "").strip():
+            data = data[1:]
+        _log(f"raf-test: {len(data)} data rows in the Raf slice")
+        per = {}
+        for r in data:
+            nm = str(r[cmap["B"]] if cmap["B"] < len(r) else "").strip()
+            try:
+                amt = float(str(r[cmap["H"]] if cmap["H"] < len(r) else 0)
+                            .replace("$", "").replace(",", "") or 0)
+            except ValueError:
+                amt = 0.0
+            if nm:
+                c, s = per.get(nm, (0, 0.0))
+                per[nm] = (c + 1, s + amt)
+        for nm, (c, s) in sorted(per.items(), key=lambda kv: -kv[1][1]):
+            _log(f"  {'*' if _on_allowlist(nm) else ' '} {nm}: {c} line(s), "
+                 f"${s:,.2f}   ('*' = on the 16-rep allowlist)")
+        return 0
 
     live = bool(args.live)
     sandbox = bool(args.sandbox)
@@ -1032,6 +1227,16 @@ def main(argv: list[str] | None = None) -> int:
             _log(f"enrich-cols done for rows {rng[0]}-{rng[1]}.")
             return 0
         raw_range = _load_raw(xlsx, week, write=write, sheet_id=sheet_id)
+        # Raf-owner slice BEFORE _repoint_pnl: the appended rows must sit
+        # inside the RAW range the week's P&L formulas get pinned to.
+        raf_note = ""
+        try:
+            raw_range, raf_note = _load_raf_extra(
+                week, raw_range, write=write, sheet_id=sheet_id)
+            _log(raf_note)
+        except Exception as exc:  # noqa: BLE001 — never block payroll on it
+            raf_note = f"Raf DD slice FAILED ({exc!r}) — add those reps by hand"
+            _log(raf_note)
         _set_week(week, write=write, sheet_id=sheet_id)
         # Level-2 bonuses BEFORE the refresh so _rebuildCore picks them up.
         try:
@@ -1042,6 +1247,8 @@ def main(argv: list[str] | None = None) -> int:
         result = _refresh_and_check(week, raw_range, write=write,
                                     sheet_id=sheet_id)
         summary, checks = result.get("summary"), result.get("checks")
+        if raf_note:
+            checks = (f"{checks} | " if checks else "") + raf_note
         # Re-render the clean 'P&L 2026' presentation tab LAST, so it picks up
         # this week's new block and re-resolves the working tab's row positions
         # (they drift every time roster rows are added). Never fail the payroll
