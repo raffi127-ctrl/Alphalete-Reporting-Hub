@@ -415,9 +415,15 @@ SAYS_YES_NO = re.compile(r"\b(yes|yep|yeah|no|nope|not|isn'?t|aren'?t|"
 # recommendation of how to keep the convo going to get the interview
 # booked".
 RECOVERY = {
+    # The ARS doc's own answer (line 149 and the D2D rebuttal at 228),
+    # which already ends with a question back. Megan 2026-10-06: "we
+    # wouldn't say 'this is in the field'" — that phrasing was mine.
+    # NOTE: the doc's other version of this answer leans on "we work with
+    # LEADS", which Megan rejected on 2026-10-01, so it is left out.
     "Is this remote / where is the office?":
-        "Say plainly it is in the field, not a store, name the office, then "
-        "ask if that commute works and offer two times.",
+        "It is in person and face to face with clients \u2014 not a call "
+        "centre and not inside a retailer. Name the office, then ask if "
+        "that is something they are comfortable with and offer two times.",
     "What is the pay?":
         "Give the weekly range, then ask what they were hoping for and "
         "offer two times.",
@@ -428,9 +434,12 @@ RECOVERY = {
         "Name the role and where they applied, then offer two times.",
     "Hours, training, is it paid?":
         "Answer the hours and that training is paid, then offer two times.",
+    # The templates say "Business Casual" in one place and "Dress to
+    # Impress" in another, so the advice names the round's own wording
+    # rather than picking a side.
     "What should I wear / bring?":
-        "Say business casual and that nothing is needed, then confirm the "
-        "time.",
+        "Give the dress code this office's confirmation text uses, then "
+        "confirm the time.",
     "How long is the interview / what's next?":
         "Give the length and what happens after, then confirm the time.",
     "Is this a real job / who are you?":
