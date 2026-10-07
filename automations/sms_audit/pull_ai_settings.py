@@ -223,6 +223,55 @@ def _probe(page, tok, office):
         print("    tabs/buttons: {}".format(", ".join(tabs[:20])), flush=True)
 
 
+REPORT_ID = "sms_ai_settings"
+INFO_KEYS = sorted({k for k in FIELDS.values()
+                    if not k.endswith(("_buffer", "_threshold"))})
+
+
+def office_holes(info, prefs, rows):
+    """Why this office's pull can't be trusted as COMPLETE — [] when it is.
+
+    What the audit can't run without: both timeslot buffers (the window
+    check is skipped, not passed, without them), the escalation table, and
+    most of Office Info — under half of it means the labels moved, not that
+    the office left them blank. A FEW blank Office Info fields are a finding
+    for the audit itself, so they are reported, not failed."""
+    holes = []
+    missing = [b for b in ("offered_buffer", "accepted_buffer")
+               if not str((prefs or {}).get(b, "")).strip()]
+    if missing:
+        holes.append("no {} — the window check can't run".format(
+            " / ".join(missing)))
+    if not rows:
+        holes.append("escalations table came back empty")
+    got = [k for k in INFO_KEYS if str((info or {}).get(k, "")).strip()]
+    if len(got) * 2 < len(INFO_KEYS):
+        holes.append("only {} of {} Office Info fields read — the page's "
+                     "labels may have moved".format(len(got), len(INFO_KEYS)))
+    return holes
+
+
+def record_delivery(done, bad, retry_args, note=""):
+    """Today's run manifest — the proof a clean run closes its ticket with.
+
+    2026-10-07: open since 10/6 as "ran clean, but nothing can confirm it
+    DELIVERED". Eve: an exit-0 rule isn't enough, runs often leave info
+    unfilled. So an office only counts when its tab was written with what
+    the audit needs (office_holes); anything short is a named failed part
+    and the ticket stays open. Never raises."""
+    try:
+        from automations.shared import run_manifest
+        run_manifest.write_manifest(
+            REPORT_ID, succeeded=done, failed=bad,
+            retry_args=retry_args if bad else [],
+            note=note or "{} office(s) complete, {} not".format(
+                len(done), len(bad)))
+    except Exception as e:  # noqa: BLE001
+        print("[ai_settings] couldn't write the run manifest ({}: {}) — the "
+              "tabs are written, but the ticket won't close itself".format(
+                  type(e).__name__, e), flush=True)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--office", default="11280", help="one id or a comma list")
@@ -238,6 +287,12 @@ def main(argv=None):
     offices = [o.strip() for o in str(a.office).split(",") if o.strip()]
     OUTPUT_DIR.mkdir(exist_ok=True)
     rc = 0
+    done, bad, bad_offices, blanks = [], [], [], []
+
+    def _miss(office, why):
+        bad.append("{}: {}".format(office, why))
+        if office not in bad_offices:
+            bad_offices.append(office)
     # Step aside rather than queue behind a report. An audit is never
     # worth making a live pull wait for the one AppStream session.
     with appstream_direct_session(verbose=True, yield_if_busy=True) as page:
@@ -280,6 +335,7 @@ def main(argv=None):
                 print("[ai_settings] {}: nothing scraped — the page shape "
                       "changed, or the office never loaded".format(office),
                       flush=True)
+                _miss(office, "nothing scraped")
                 rc = 1
                 continue
 
@@ -321,6 +377,24 @@ def main(argv=None):
             except Exception as e:  # noqa: BLE001
                 print("[ai_settings]   tab write failed, local JSON is "
                       "written: {}".format(e), flush=True)
+                _miss(office, "tab write failed — {}".format(type(e).__name__))
+                continue
+            holes = office_holes(info, prefs, rows)
+            for h in holes:
+                print("[ai_settings] {}: INCOMPLETE — {}".format(office, h),
+                      flush=True)
+                _miss(office, h)
+            if not holes:
+                done.append(office)
+            empty = [k for k in INFO_KEYS if not str(info.get(k, "")).strip()]
+            if empty:
+                blanks.append("{} blank on AppStream: {}".format(
+                    office, ", ".join(empty)))
+    if not a.dry_run and not a.probe:
+        note = "{} office(s) complete, {} not".format(len(done), len(bad_offices))
+        if blanks:
+            note += " · " + " · ".join(blanks)
+        record_delivery(done, bad, ["--office", ",".join(bad_offices)], note)
     return rc
 
 
