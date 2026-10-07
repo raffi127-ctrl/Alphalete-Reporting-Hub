@@ -351,6 +351,15 @@ def work_on(person, weeks):
             items.append({"area": area, "now": value, "before": prev,
                           "grade": grade, "do": text, "goal": goal})
 
+    booked_now = now.get("booked") or 0
+    if booked_now:
+        add("Interviews Booked", "{:,}".format(booked_now),
+            GC._band(booked_now, 87, 39, 22),
+            "Book more. The middle of the team books 39 a week."
+            if booked_now < 39 else "Keep the volume up.",
+            "{:,}".format(before.get("booked")) if before else None,
+            goal="87 a week")
+
     show = _rate(now, "shown", "booked")
     if show is not None and (now.get("booked") or 0) >= 5:
         prev = _rate(before, "shown", "booked") if before else None
@@ -462,8 +471,18 @@ def work_on(person, weeks):
 
 
 def failing(items):
-    """Only what is off target — the three a person is coached on."""
-    return [i for i in items if i["grade"] not in "AB"]
+    """What is off target — and never an empty list when there is
+    something measured.
+
+    Megan 2026-10-07, on a card reading "nothing": Dani Pena "should not
+    have 'nothing' to work on - he should book more", and the AI "also
+    not nothing- needs 1st round retention increased". Nobody is finished;
+    if no area is failing, the weakest one is still the one to work on."""
+    bad = [i for i in items if i["grade"] not in "AB"]
+    if bad or not items:
+        return bad
+    return [sorted(items, key=lambda i: ("FDCBA".index(i["grade"]),
+                                         i["area"] != "1st Round Retention"))[0]]
 
 
 # What each area is worth in the overall grade. Retention is the outcome
@@ -1041,14 +1060,29 @@ def shade(values, i, higher_is_better=True):
 
 
 def render(person, office, weeks, path):
+    """One card as its own page."""
+    L = ["<!doctype html><html><head><meta charset='utf-8'>",
+         "<title>Scorecard \u2014 {}</title>".format(esc(person["display"])),
+         "<style>{}</style></head><body>".format(CSS)]
+    L.extend(card_body(person, office, weeks))
+    L.append("</body></html>")
+    path.write_text("\n".join(L), encoding="utf-8")
+    return path
+
+
+def card_body(person, office, weeks, anchor=""):
+    """The card with no document around it, so the index can hold every
+    one of them inline. Megan 2026-10-07: "I want to be able to click on
+    their name and get their individual breakdown" - a relative link does
+    not resolve when the page is opened on its own."""
     d = person["weeks"]
     got = [w for w in weeks if w in d]
-    L = ["<!doctype html><html><head><meta charset='utf-8'>",
-         "<title>Scorecard — {}</title>".format(esc(person["display"])),
-         "<style>{}</style></head><body>".format(CSS),
-         "<h1>{}</h1>".format(esc(person["display"])),
-         "<p class='date'>Account {} · week ending {}</p>".format(
-             esc(office), esc(R.week_label(got[-1]) if got else "—"))]
+    L = ["<h1{}>{}</h1>".format(
+             " id='" + esc(anchor) + "'" if anchor else "",
+             esc(person["display"])),
+         "<p class='date'>Account {} \u00b7 week ending {}</p>".format(
+             esc(office), esc(R.week_label(got[-1]) if got else "\u2014")),
+         "<p class='date'><a href='#top'>\u2191 back to the list</a></p>"]
     add = L.append
 
     # Megan 2026-10-06: "they should get a 'grade' on this report card".
@@ -1217,9 +1251,7 @@ def render(person, office, weeks, path):
                     add("<div class='why'>{}</div>".format(esc(verdict)))
                 add("</blockquote>")
             add("</details>")
-    add("</body></html>")
-    path.write_text("\n".join(L), encoding="utf-8")
-    return path
+    return L
 
 
 def office_summary_html(people, weeks, include_ai=True):
@@ -1302,7 +1334,26 @@ a{color:#111}
 """
 
 
-def write_index(rows, path):
+def office_label(oid):
+    """'11280 — Rafael Hidalgo, Alphalete Marketing' from the office tab."""
+    try:
+        row = [o for o in (O.load()[0] or []) if o.get("office") == oid]
+    except Exception:  # noqa: BLE001 — a label is not worth a crash
+        row = []
+    if not row:
+        return "Account {}".format(oid)
+    bits = [b for b in (row[0].get("owner"), row[0].get("icd_name"))
+            if b and b.strip()]
+    seen, named = set(), []
+    for b in bits:
+        if b.lower() not in seen:
+            seen.add(b.lower())
+            named.append(b)
+    return "Account {}{}".format(
+        oid, " \u2014 " + ", ".join(named) if named else "")
+
+
+def write_index(rows, path, cards=None):
     """One page listing every card, worst grade first within each office.
 
     Megan 2026-10-07 wanted the six completed weeks across all four
@@ -1311,7 +1362,7 @@ def write_index(rows, path):
     L = ["<!doctype html><html><head><meta charset='utf-8'>",
          "<title>Recruiting scorecards</title>",
          "<style>{}</style></head><body>".format(INDEX_CSS),
-         "<h1>Recruiting scorecards</h1>",
+         "<h1 id='top'>Recruiting scorecards</h1>",
          "<p class='date'>Six weeks to {} \u00b7 {} people across {} "
          "accounts</p>".format(
              R.week_label(R.WEEKS[-1]), len(rows),
@@ -1323,19 +1374,23 @@ def write_index(rows, path):
     for office in sorted({r["office"] for r in rows}):
         mine = sorted([r for r in rows if r["office"] == office],
                       key=lambda r: (order.get(r["grade"], 9), -r["booked"]))
-        L.append("<tr class='off'><td colspan='5'>Account {}</td></tr>"
-                 .format(esc(office)))
+        L.append("<tr class='off'><td colspan='5'>{}</td></tr>"
+                 .format(esc(office_label(office))))
         for r in mine:
             L.append(
-                "<tr><td><a href='{}'>{}</a></td><td class='g {}'>{}</td>"
+                "<tr><td><a href='#{}'>{}</a></td><td class='g {}'>{}</td>"
                 "<td class='n'>{:,}</td><td class='n'>{}</td><td>{}</td></tr>"
-                .format(esc(r["file"]), esc(r["name"]), r["grade"],
+                .format(esc(r["anchor"]), esc(r["name"]), r["grade"],
                         r["grade"], r["booked"], esc(r["retention"]),
                         esc(r["focus"])))
     L.append("</table></div>")
     L.append("<p class='none'>Grades weight 1st Round Retention heaviest, "
-             "then house rules and unanswered questions. A person with too "
-             "little traffic to judge is left out.</p>")
+             "then house rules and unanswered questions. Anyone who booked "
+             "fewer than {} that week is left out.</p>".format(
+                 MIN_BOOKED_WEEK))
+    for body in (cards or []):
+        L.append("<hr>")
+        L.extend(body)
     L.append("</body></html>")
     path.write_text("\n".join(L), encoding="utf-8")
     return path
@@ -1349,9 +1404,9 @@ def _one_office(oid, weeks, a, want=False):
     if not people:
         print("[scorecard] nothing pulled for {} in {}".format(
             oid, ", ".join(weeks)))
-        return (None, None, []) if want else []
+        return (None, None, [], []) if want else ([], [])
     OUTPUT.mkdir(exist_ok=True)
-    paths, rows = {}, []
+    paths, rows, bodies = {}, [], []
     for key, person in sorted(people.items(),
                               key=lambda kv: -sum(
                                   w.get("texts", 0)
@@ -1373,8 +1428,12 @@ def _one_office(oid, weeks, a, want=False):
         got = [w for w in weeks if w in person["weeks"]]
         last = person["weeks"][got[-1]] if got else {}
         ret = _rate(last, "shown", "booked")
+        anchor = "{}-{}".format(oid, re.sub(r"[^a-z0-9]+", "-",
+                                            key.lower()).strip("-"))
+        bodies.append(card_body(person, oid, weeks, anchor=anchor))
         rows.append({
             "office": oid, "name": person["display"], "file": path.name,
+            "anchor": anchor,
             "grade": grade_of(person, weeks) or "-",
             "booked": sum((person["weeks"][w].get("booked") or 0)
                           for w in got),
@@ -1387,7 +1446,7 @@ def _one_office(oid, weeks, a, want=False):
         print("   {:<24} {:>6,} texts, {} to work on -> {}".format(
             person["display"][:24], total, len(fixes), path.name), flush=True)
     print("[scorecard] {} scorecard(s) for {}".format(len(rows), oid))
-    return (people, paths, rows) if want else rows
+    return (people, paths, rows, bodies) if want else (rows, bodies)
 
 
 def main(argv=None):
@@ -1411,15 +1470,19 @@ def main(argv=None):
     weeks = [w.strip() for w in a.weeks.split(",") if w.strip()] or R.WEEKS
     if a.all:
         offices = [o["office"] for o in (O.load()[0] or [])]
-        index = []
+        index, cards = [], []
         for oid in offices:
             print("[scorecard] {}".format(oid), flush=True)
-            index.extend(_one_office(oid, weeks, a))
+            got_rows, got_bodies = _one_office(oid, weeks, a)
+            index.extend(got_rows)
+            cards.extend(got_bodies)
         if index:
-            path = write_index(index, OUTPUT / "scorecards-index.html")
+            path = write_index(index, OUTPUT / "scorecards-index.html",
+                               cards=cards)
             print("[scorecard] {} cards -> {}".format(len(index), path.name))
         return 0
-    people, paths, _rows = _one_office(a.office, weeks, a, want=True)
+    people, paths, _rows, _bodies = _one_office(a.office, weeks, a,
+                                                want=True)
     if people is None:
         return 1
 

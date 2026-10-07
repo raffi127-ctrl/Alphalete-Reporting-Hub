@@ -934,13 +934,13 @@ class Index(unittest.TestCase):
     ROWS = [
         {"office": "11280", "name": "Jorge Pena", "file": "a.html",
          "grade": "C", "booked": 702, "retention": "29%",
-         "focus": "1st Round Retention"},
+         "anchor": "11280-j-pena", "focus": "1st Round Retention"},
         {"office": "11280", "name": "Dani Pena", "file": "b.html",
          "grade": "A", "booked": 147, "retention": "64%",
-         "focus": "nothing"},
+         "anchor": "11280-d-pena", "focus": "Interviews Booked"},
         {"office": "11580", "name": "Erika Gonzalez", "file": "c.html",
          "grade": "D", "booked": 90, "retention": "31%",
-         "focus": "House Rules Broken"},
+         "anchor": "11580-e-gonzalez", "focus": "House Rules Broken"},
     ]
 
     def _html(self):
@@ -954,7 +954,7 @@ class Index(unittest.TestCase):
         html = self._html()
         for r in self.ROWS:
             self.assertIn(r["name"], html)
-            self.assertIn(r["file"], html)
+            self.assertIn(r["anchor"], html)
 
     def test_offices_are_grouped(self):
         html = self._html()
