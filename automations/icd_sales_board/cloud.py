@@ -33,6 +33,10 @@ from pathlib import Path
 
 ADMIN = "__ALL__"
 _SECRET_TOKEN = "sheets_oauth_token"
+# fill._client() CHECKS FOR THE CLIENT JSON BEFORE IT EVER READS THE TOKEN
+# and raises if it is missing, so materialising the token alone still left a
+# hosted app unable to open a single sheet.
+_SECRET_CLIENT = "sheets_oauth_client"
 _SECRET_CODES = "office_codes"
 
 
@@ -70,6 +74,27 @@ def ensure_sheets_credentials() -> bool:
 
     OAUTH_TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
     OAUTH_TOKEN_PATH.write_text(data, encoding="utf-8")
+    _ensure_client_json()
+    return True
+
+
+def _ensure_client_json() -> bool:
+    """The other half: fill._client() raises on a missing client JSON before
+    it looks at the token at all."""
+    from automations.recruiting_report.fill import OAUTH_CLIENT_PATH
+
+    if OAUTH_CLIENT_PATH.exists():
+        return True
+    raw = _secret(_SECRET_CLIENT) or os.environ.get("SHEETS_OAUTH_CLIENT")
+    if not raw:
+        return False
+    try:
+        data = raw if isinstance(raw, str) else json.dumps(dict(raw))
+        json.loads(data)
+    except (TypeError, ValueError):
+        return False
+    OAUTH_CLIENT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    OAUTH_CLIENT_PATH.write_text(data, encoding="utf-8")
     return True
 
 
