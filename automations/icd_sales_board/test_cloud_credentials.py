@@ -71,6 +71,59 @@ class MaterialisingCredentials(unittest.TestCase):
             self.assertFalse((tmp / "oauth-token.json").exists())
 
 
+class TheSecretsThatAreActuallyThere(unittest.TestCase):
+    """This app's secrets already carry OAuth as a [gcp_oauth] table.
+
+    Asking for a second copy under another name would be two things to
+    rotate and two ways to be out of date. The table's keys ARE Google's
+    authorized-user format, so it is read straight through.
+    """
+
+    TABLE = {"token": "ya29.x", "refresh_token": "1//x",
+             "token_uri": "https://oauth2.googleapis.com/token",
+             "client_id": "x.apps.googleusercontent.com",
+             "client_secret": "GOCSPX-x",
+             "scopes": ["https://www.googleapis.com/auth/spreadsheets"]}
+
+    def _run(self, table):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            with mock.patch("automations.recruiting_report.fill."
+                            "OAUTH_TOKEN_PATH", tmp / "t.json"), \
+                 mock.patch("automations.recruiting_report.fill."
+                            "OAUTH_CLIENT_PATH", tmp / "c.json"), \
+                 mock.patch.object(
+                     cloud, "_secret",
+                     lambda n, dflt=None: table if n == "gcp_oauth" else None):
+                ok = cloud.ensure_sheets_credentials()
+            tok = (json.loads((tmp / "t.json").read_text())
+                   if (tmp / "t.json").exists() else None)
+            return ok, tok
+
+    def test_the_table_alone_is_enough(self):
+        ok, tok = self._run(self.TABLE)
+        self.assertTrue(ok, "her existing secrets must need no additions")
+        self.assertEqual(tok["refresh_token"], "1//x")
+
+    def test_google_accepts_what_we_write(self):
+        from google.oauth2.credentials import Credentials
+        _ok, tok = self._run(self.TABLE)
+        creds = Credentials.from_authorized_user_info(tok, tok.get("scopes"))
+        self.assertTrue(creds.refresh_token)
+
+    def test_the_scope_is_the_one_the_code_asks_for(self):
+        from automations.recruiting_report import fill
+        self.assertEqual(list(self.TABLE["scopes"]), list(fill.SCOPES))
+
+    def test_a_table_missing_a_refresh_token_is_refused(self):
+        bad = dict(self.TABLE)
+        bad.pop("refresh_token")
+        ok, tok = self._run(bad)
+        self.assertFalse(ok)
+        self.assertIsNone(tok, "half a credentials file is worse than none")
+
+
 class TheEntrypointCallsIt(unittest.TestCase):
 
     def test_streamlit_app_wires_it_up(self):
