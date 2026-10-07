@@ -58,5 +58,25 @@ class Math(unittest.TestCase):
             send.assert_not_called()
 
 
+class Sheet(unittest.TestCase):
+    def test_find_block_by_label_not_row(self):
+        from automations.daily_eod_appstream import sheet
+        new, old = sheet.week_label(dt.date(2026, 10, 12)), sheet.week_label(dt.date(2026, 10, 5))
+        col_a = [sheet.TITLE, "", new, "A", "TOTAL", "",
+                 sheet.TITLE, "", old, "A", "B", "TOTAL", ""]
+        self.assertEqual(sheet.find_block(col_a, new), (1, 6))
+        self.assertEqual(sheet.find_block(col_a, old), (7, 13))
+        self.assertIsNone(sheet.find_block(col_a, "Mon 1/1 – Sat 1/6"))
+
+    def test_future_days_are_blank_not_div0(self):
+        from automations.daily_eod_appstream import sheet
+        row = {"b1": 10, "s1": 5, "b2nd": 2, "b2": 4, "s2": 1}
+        rows, _ = sheet.build_block(dt.date(2026, 10, 5), [{"A": row}] + [None] * 5,
+                                    {"A": row}, pct=run.pct, whole_pct=run.whole_pct,
+                                    sum_rows=run.sum_rows)
+        self.assertEqual(rows[3][9:17], [""] * 8)          # Tuesday, not reached
+        self.assertEqual(len(rows[3]), sheet.N_COLS)
+
+
 if __name__ == "__main__":
     unittest.main()

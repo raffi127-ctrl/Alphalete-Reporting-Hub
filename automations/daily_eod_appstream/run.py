@@ -255,7 +255,8 @@ def pull(owners: List[str], week_start: dt.date, *, logfn=print
 
 # --------------------------------------------------------------------- main
 def build_and_send(day: dt.date, *, production: bool, dry_run: bool,
-                   from_cache: Optional[Path] = None, logfn=print) -> int:
+                   from_cache: Optional[Path] = None, email: bool = True,
+                   tab: Optional[str] = None, logfn=print) -> int:
     """`day` = the REPORT day (yesterday, by default), not the send day."""
     from automations.shared import report_email
 
@@ -283,19 +284,41 @@ def build_and_send(day: dt.date, *, production: bool, dry_run: bool,
     blocks.append(("WEEKLY TOTALS", week))
     reds = red_list(per_day[-1][1])
 
+    # The Sheet copy (ARS Management 2.0 -> 'Daily EOD AppStream'). A Sheets
+    # hiccup must not cost Camila the email, so it is caught and the run exits 1.
+    sheet_ok, link = True, ""
+    if not dry_run:
+        from automations.daily_eod_appstream import sheet
+        monday = days[0]
+        by_day = {d: b for d, b in per_day}
+        six = [by_day.get(monday + dt.timedelta(days=i)) for i in range(6)]
+        try:
+            link = sheet.write_week(monday, six, week, pct=pct, whole_pct=whole_pct,
+                                    sum_rows=sum_rows, green_at=GREEN_AT,
+                                    tab=tab or sheet.TAB, logfn=logfn)
+        except Exception as exc:                          # noqa: BLE001
+            sheet_ok = False
+            logfn(f"  sheet: FAILED {type(exc).__name__}: {exc}")
+
     body = red_html(reds, day) + table_html(blocks) + gaps_html(gaps)
+    if link:
+        body += (f'<p style="font-size:12px;margin-top:12px">Every week, in the Sheet: '
+                 f'<a href="{link}">ARS Management 2.0 → Daily EOD AppStream</a></p>')
     (OUT_DIR / f"preview_{day.isoformat()}.html").write_text(
         f"<html><body>{body}</body></html>", encoding="utf-8")
     logfn(f"  report day {day}: red {', '.join(f'{o} {whole_pct(p)}%' for o, p in reds) or 'none'}")
     for g in gaps:
         logfn(f"  gap: {g}")
 
+    if not email:
+        logfn("  --no-email: not sending")
+        return 0 if sheet_ok else 1
     to = PROD_TO if production else TEST_TO
     res = report_email.send_boards(
         subject=f"Daily EOD AppStream — {day:%A} {day.month}/{day.day}",
         to=to, title="DAILY EOD APPSTREAM", blocks=[], intro_html=body,
         dry_run=dry_run, preview_dir=OUT_DIR, logfn=logfn)
-    return 0 if res.get("ok", dry_run) else 1
+    return 0 if (res.get("ok", dry_run) and sheet_ok) else 1
 
 
 def main(argv=None) -> int:
@@ -304,6 +327,8 @@ def main(argv=None) -> int:
     ap.add_argument("--dry-run", action="store_true", help="build the preview, send nothing")
     ap.add_argument("--production", action="store_true", help="send to Camila")
     ap.add_argument("--from-cache", help="reuse a raw_<date>.json instead of pulling")
+    ap.add_argument("--no-email", action="store_true", help="write the Sheet only")
+    ap.add_argument("--tab", help="write a different tab (e.g. a SANDBOX copy)")
     ap.add_argument("--scheduled", action="store_true",
                     help="the launchd pass: run only if it is SEND_HOUR in SEND_TZ")
     a = ap.parse_args(argv)
@@ -319,7 +344,8 @@ def main(argv=None) -> int:
         from zoneinfo import ZoneInfo
         day = report_day_for(dt.datetime.now(ZoneInfo("America/Chicago")).date())
     return build_and_send(day, production=a.production, dry_run=a.dry_run,
-                          from_cache=Path(a.from_cache) if a.from_cache else None)
+                          from_cache=Path(a.from_cache) if a.from_cache else None,
+                          email=not a.no_email, tab=a.tab)
 
 
 if __name__ == "__main__":
