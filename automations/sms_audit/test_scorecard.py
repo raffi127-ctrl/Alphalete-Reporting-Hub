@@ -610,9 +610,10 @@ class SilentBookings(unittest.TestCase):
         threads showed exactly that — a confirmation sent with no inbound
         ever, so the booking was agreed on a call."""
         got = self._why(self._p())
-        self.assertIn("never texted you", got)
         self.assertIn("agreed on a call", got)
-        self.assertIn("reply to a text before the day", got)
+        self.assertIn("The call is where you are losing them", got)
+        # Megan 2026-10-06: the fix is the call, not chasing a text.
+        self.assertNotIn("reply to a text", got)
 
     def test_both_show_rates_are_given(self):
         got = self._why(self._p())
@@ -622,12 +623,12 @@ class SilentBookings(unittest.TestCase):
     def test_a_low_silent_share_says_something_else(self):
         got = self._why(self._p(silent=5, silent_shown=1,
                                 talked=95, talked_shown=28))
-        self.assertNotIn("never texted you", got)
+        self.assertNotIn("agreed on a call", got)
 
     def test_too_few_bookings_to_judge(self):
         got = self._why(self._p(booked=10, shown=3, silent=5, silent_shown=0,
                                 talked=5, talked_shown=3))
-        self.assertNotIn("never texted you", got)
+        self.assertNotIn("agreed on a call", got)
 
 
 class DeflectionsCountedOnce(unittest.TestCase):
