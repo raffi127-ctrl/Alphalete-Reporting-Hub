@@ -526,7 +526,7 @@ def did_well(person, weeks, limit=2):
           (before or {}).get("dodged"), False, num)
     moved("Typing and grammar", now.get("typing"),
           (before or {}).get("typing"), False, num)
-    moved("Avg Response Time", (now.get("replies") or {}).get("median"),
+    moved("Median Response Time", (now.get("replies") or {}).get("median"),
           ((before or {}).get("replies") or {}).get("median"), False, A_mins)
     moved("Booked over a day out", _rate(now, "far_out", "matched"),
           _rate(before, "far_out", "matched") if before else None, False, pct)
@@ -802,7 +802,7 @@ def render(person, office, weeks, path):
          lambda v: "{:.0f}%".format(v) if v is not None else "\u2014", True),
         ("Texts Sent", lambda w: w.get("texts") or 0,
          lambda v: "{:,}".format(v), True),
-        ("Avg Response Time", lambda w: (w.get("replies") or {}).get("median"),
+        ("Median Response Time", lambda w: (w.get("replies") or {}).get("median"),
          A_mins, False),
         ("Typing and Grammar Mistakes", lambda w: w.get("typing") or 0,
          lambda v: "{}".format(v), False),
@@ -931,7 +931,7 @@ def office_summary_html(people, weeks, include_ai=True):
                "<th align='left' style=\"border-bottom:2px solid #111\">"
                "{}</th>".format(h)
                for h in ("Recruiter", "Booked", "Showed", "Texts",
-                         "Avg Response Time", "To work on")) + "</tr>"]
+                         "Median Response Time", "To work on")) + "</tr>"]
     for name, now, fixes in rows:
         show = _rate(now, "shown", "booked")
         top = fixes[0]["area"] if fixes else "nothing"
