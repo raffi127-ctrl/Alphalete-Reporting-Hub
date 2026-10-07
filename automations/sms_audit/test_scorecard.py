@@ -251,9 +251,30 @@ class DodgeContext(unittest.TestCase):
     def test_having_to_ask_again_is_reported(self):
         got = S.why_dodged(self.REMOTE, "dodged", "Is it in a store?",
                            "This is a residential campaign",
-                           self._entry([], again=2))
-        self.assertIn("2 more times", got)
+                           self._entry([], again=1))
+        self.assertIn("1 more time", got)
         self.assertIn("never got an answer", got)
+
+    def test_three_attempts_with_no_answer_is_a_circle(self):
+        """Megan 2026-10-06 on Jason Horton: "this should be a real red
+        flag- this convo goes in circles"."""
+        got = S.why_dodged(self.REMOTE, "dodged", "Is it in a store?",
+                           "Thank you for letting us know",
+                           self._entry([], again=2))
+        self.assertIn("round in circles", got)
+        self.assertIn("3 times", got)
+
+    def test_answered_in_the_end_is_not_a_circle(self):
+        got = S.why_dodged(self.REMOTE, "dodged", "Is it in a store?",
+                           "This is a residential campaign",
+                           self._entry([], again=2, later=True))
+        self.assertNotIn("round in circles", got)
+
+    def test_a_circle_outranks_the_other_faults(self):
+        got = S.worst_of(["Never said yes or no, only a vague answer.",
+                          "This went round in circles \u2014 they asked 3 "
+                          "times and never got a straight answer."])
+        self.assertIn("round in circles", got)
 
     def test_answered_in_the_end_is_said_so(self):
         got = S.why_dodged(self.REMOTE, "dodged", "Is it in a store?",
@@ -299,8 +320,8 @@ class WeakAnswers(unittest.TestCase):
                              "interested",
                              "This would be a residential campaign")
         self.assertNotEqual(plain, walks)
-        self.assertIn("drop out", walks)
-        self.assertNotIn("drop out", plain)
+        self.assertIn("walk away", walks)
+        self.assertNotIn("walk away", plain)
 
     def test_an_unknown_bucket_still_gets_advice(self):
         self.assertTrue(S.recovery_for("Something new?"))

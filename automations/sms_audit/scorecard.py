@@ -366,6 +366,9 @@ blockquote{margin:.4em 0 .4em 1em;padding:.3em .7em;border-left:3px solid #bbb;
 .thread .them{color:#333}
 .thread .us{color:#000}
 .thread b{color:#777;font-weight:normal;font-size:.9em}
+ol.focus{margin:.4em 0 0;padding-left:1.3em}
+ol.focus li{margin:.6em 0}
+.moved{color:#777;font-weight:normal;font-size:.9em}
 details{margin:.35em 0;border:1px solid #ddd;border-radius:4px;
         padding:.4em .7em;background:#fafafa}
 details[open]{background:#fff}
@@ -438,8 +441,9 @@ RECOVERY = {
     # version leans on "we work with LEADS", which Megan rejected on
     # 2026-10-01, so that is left out.
     "Is this remote / where is the office?":
-        "Say it is in person with customers, not a store. Ask if the "
-        "drive works.",
+        "Say it is in person with customers but not at a retail location. "
+        "Give the office address and ask if that is a commute they can "
+        "commit to.",
     "What is the pay?":
         "Give the weekly range. Ask what they were hoping for.",
     "What is the job / what do you do?":
@@ -475,6 +479,32 @@ def is_weak(question, reply):
     q, r = (question or "").strip(), reply or ""
     return bool(YES_NO.match(q) and not SAYS_YES_NO.search(r)
                 and "?" not in r)
+
+
+# Worst first. Two faults in one thread do not need two sentences; the
+# one that cost the most is the one to read.
+SEVERITY = ("went round in circles", "walk away", "in a row",
+            "Gave how long", "Gave a time", "vague", "Doesn't answer")
+
+
+def worst_of(whys):
+    """One line out of several for the same applicant, chase count once."""
+    heads, tails = [], []
+    for why in whys:
+        head, sep, tail = (why or "").partition(" They asked ")
+        if head and head not in heads:
+            heads.append(head)
+        if sep:
+            tails.append(" They asked " + tail)
+    if not heads:
+        return ""
+    def rank(h):
+        for i, key in enumerate(SEVERITY):
+            if key in h:
+                return i
+        return len(SEVERITY)
+    heads.sort(key=rank)
+    return heads[0] + (max(tails, key=len) if tails else "")
 
 
 def why_dodged(bucket, kind="", question="", reply="", entry=None):
@@ -513,6 +543,17 @@ def why_dodged(bucket, kind="", question="", reply="", entry=None):
             break
         between += 1
     tail = _chased(e)
+
+    # Three attempts and still no straight answer is not a slip, it is a
+    # conversation nobody was steering.
+    try:
+        again = int(e.get("asked_again") or 0)
+    except (TypeError, ValueError):
+        again = 0
+    if again >= 2 and str(e.get("answered_later")).lower() != "true":
+        return ("This went round in circles \u2014 they asked {} times and "
+                "never got a straight answer.".format(again + 1))
+
     if between:
         # Say only what is visible: several questions in a row, one reply.
         # Claiming the reply ANSWERED one of the others was wrong on
@@ -534,8 +575,8 @@ def why_dodged(bucket, kind="", question="", reply="", entry=None):
     # say what to do — the same shape as ruling 3, answer then reassure.
     if is_weak(q, r):
         if WALKS.search(q):
-            return ("They said they would drop out if the answer was no, "
-                    "and this never said yes or no.{}".format(tail))
+            return ("They told us they would walk away if the answer was "
+                    "no, and never got a straight one.{}".format(tail))
         return "Never said yes or no, only a vague answer.{}".format(tail)
     return "Doesn't answer {}.{}".format(topic, tail)
 
@@ -634,19 +675,20 @@ def render(person, office, weeks, path):
              esc(office), esc(R.week_label(got[-1]) if got else "—"))]
     add = L.append
 
-    fixes = work_on(person, weeks)
-    add("<div class='fix'><h2>Work on this</h2>")
+    fixes = work_on(person, weeks)[:3]
+    add("<div class='fix'><h2>Work on this week</h2>")
     if not fixes:
         add("<p>Nothing above the line this week.</p>")
     else:
-        add("<div class='scroll'><table><tr><th>What</th><th>This week</th>"
-            "<th>Last week</th><th>Do this</th></tr>")
+        add("<ol class='focus'>")
         for f in fixes:
-            add("<tr class='{}'><td>{}</td><td>{}</td><td>{}</td>"
-                "<td>{}</td></tr>".format(
-                    f["grade"], esc(f["area"]), esc(f["now"]),
-                    esc(f["before"] or "—"), esc(f["do"])))
-        add("</table></div>")
+            moved = ""
+            if f["before"] and f["before"] != f["now"]:
+                moved = " <span class='moved'>{} last week</span>".format(
+                    esc(f["before"]))
+            add("<li><b>{}: {}</b>{}<br>{}</li>".format(
+                esc(f["area"]), esc(f["now"]), moved, esc(f["do"])))
+        add("</ol>")
     add("</div>")
 
     add("<h2>Week over week</h2>")
@@ -743,13 +785,14 @@ def render(person, office, weeks, path):
                             continue
                         add("<div class='{}'><b>{}</b> {}</div>".format(
                             "them" if dirn == "In" else "us",
-                            "They:" if dirn == "In" else "Us:", esc(line)))
+                            "Them:" if dirn == "In" else "Us:", esc(line)))
                     add("</div>")
                 else:
                     for hit, body in one["quotes"]:
                         add("<div>{}</div>".format(mark(body, hit)))
-                for why in one["why"]:
-                    add("<div class='why'>{}</div>".format(esc(why)))
+                verdict = worst_of(one["why"])
+                if verdict:
+                    add("<div class='why'>{}</div>".format(esc(verdict)))
                 add("</blockquote>")
             add("</details>")
     add("</body></html>")
