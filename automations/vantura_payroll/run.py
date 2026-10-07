@@ -1176,7 +1176,56 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--raf-test", action="store_true",
                     help="ONLY pull the Raf-owner DD slice and print what the "
                          "allowlist reps brought in. Never writes.")
+    ap.add_argument("--owner-probe", action="store_true",
+                    help="ONLY fetch the DD dashboard's direct CSV (all "
+                         "owners) and log every cl.ICD Owner Name value plus "
+                         "which allowlist reps appear under which owner. "
+                         "Never writes.")
     args = ap.parse_args(argv)
+
+    if args.owner_probe:
+        import csv as _csv
+        from collections import Counter
+        from automations.vantura_churn import cdp_pull
+        out = REPO_ROOT / "output" / "vantura_payroll" / "dd_owner_probe.csv"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        if out.exists():
+            out.unlink()
+        url = ("https://us-east-1.online.tableau.com/t/sci/views/"
+               "DirectDepositICDVIEWVersion2_0/DDDETAIL.csv?:refresh=yes")
+        cdp_pull.download_views([], log=_log,
+                                csv_fetches=[(url, str(out))])
+        if not out.exists():
+            _log("owner-probe: no CSV landed")
+            return 4
+        rows = list(_csv.reader(open(out, encoding="utf-8-sig",
+                                     errors="replace")))
+        if len(rows) < 2:
+            _log(f"owner-probe: CSV has {len(rows)} row(s) — nothing to read")
+            return 4
+        hdr = [h.strip() for h in rows[0]]
+        _log(f"owner-probe: {len(rows) - 1} rows")
+        for _i in range(0, len(hdr), 6):
+            _log("  col[%02d]: %s" % (_i, " | ".join(hdr[_i:_i + 6])))
+        oc = next((i for i, h in enumerate(hdr) if "owner" in h.lower()), None)
+        if oc is not None:
+            cnt = Counter(r[oc] for r in rows[1:] if len(r) > oc and r[oc])
+            _log(f"owner values in {hdr[oc]!r}:")
+            for v, c in cnt.most_common(50):
+                _log(f"  owner {v!r}: {c} line(s)")
+        for ri, h in enumerate(hdr):
+            if "rep" not in h.lower() or "name" not in h.lower():
+                continue
+            hits = Counter()
+            for r in rows[1:]:
+                nm = r[ri] if len(r) > ri else ""
+                if nm and _on_allowlist(nm):
+                    own = r[oc] if oc is not None and len(r) > oc else "?"
+                    hits[(nm, own)] += 1
+            _log(f"allowlist matches via column {h!r}: {len(hits)}")
+            for (nm, own), c in hits.most_common(60):
+                _log(f"    {nm}  under  {own!r}: {c} line(s)")
+        return 0
 
     if args.raf_test:
         wk = (dt.datetime.strptime(args.week, "%Y-%m-%d").date()
