@@ -332,24 +332,25 @@ def work_on(person, weeks):
                   if before and (before.get("matched") or 0) >= MIN_MATCHED
                   else None)
         if far is not None and farwas is not None and far - farwas >= 5:
-            why = ("You're booking further out than you were \u2014 {:.0f}% "
-                   "over a day ahead, was {:.0f}%. Use fear of loss and book "
-                   "them same or next day.".format(far, farwas))
+            why = ("You're booking further out than you were: {:.0f}% more "
+                   "than a day ahead, up from {:.0f}%. Book them same or "
+                   "next day, while the interest is still fresh."
+                   .format(far, farwas))
         elif far is not None and far >= 25:
-            why = ("{:.0f}% of your bookings are over a day out. Use fear of "
-                   "loss and book them same or next day.".format(far))
+            why = ("{:.0f}% of your bookings are more than a day out. Book "
+                   "them same or next day, while the interest is still "
+                   "fresh.".format(far))
         elif silent_share is not None and silent_share >= 25:
-            why = ("{:.0f}% of your bookings came from a phone call. Your "
-                   "show up ratio for phone call bookings is {:.0f}%, "
-                   "against {:.0f}% when they book via text. You need to "
-                   "spend more time building a relationship on the phone to "
-                   "ensure the applicant sees value in attending the zoom "
-                   "meeting you're setting up."
+            why = ("{:.0f}% of your bookings come from a phone call, and "
+                   "only {:.0f}% of those show up \u2014 against {:.0f}% when "
+                   "they book by text. Spend longer on the call building "
+                   "the relationship, so they can see why the Zoom is worth "
+                   "their time."
                    .format(silent_share, silent_rate, talked_rate))
         elif bot:
             why = "Offer sooner interview times."
         else:
-            why = ("Your bookings aren't too far out, so it is the "
+            why = ("Your booking times are fine, so the drop is in the "
                    "conversations. Read them below.")
         add("1st Round Retention", "{:.0f}%".format(show),
             GC._band(show, 55, 48, 40), why,
