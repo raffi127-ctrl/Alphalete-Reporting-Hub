@@ -27,7 +27,8 @@ six of the next, and it takes two pulls to assemble:
 Getting that wrong by one day is the same mistake the report is checking for,
 so the days are named in the output and printed beside the totals.
 
-READ-ONLY. Writes nothing — not the sheet, not Slack, not a tab.
+READ-ONLY on AppStream and the sheet. The one thing it writes is its own
+run manifest (output/), so a clean check can close its ticket.
 
 WHERE IT CAN RUN. The AppStream session lives on Lucy 2; the per-week booking
 files are written wherever the backfill ran. So a run on Lucy 2 can only
@@ -109,6 +110,31 @@ def ours(office, lo, hi, suffix=""):
     return booked, shown, src
 
 
+REPORT_ID = "sms_crosscheck"
+
+
+def record_delivery(agreed, problems, retry_args):
+    """Today's run manifest — the proof a clean check closes its ticket with.
+
+    2026-10-07: open since 9/27 as "ran clean, but nothing can confirm it
+    DELIVERED". Eve: an exit-0 rule isn't enough. A check only counts for the
+    offices it actually COMPARED and found agreeing; an office it skipped (no
+    local pull for the week), couldn't switch to, or found disagreeing is a
+    named failed part, so a run that checked one office of four can't close
+    the ticket for all four. Never raises."""
+    try:
+        from automations.shared import run_manifest
+        run_manifest.write_manifest(
+            REPORT_ID, succeeded=agreed, failed=problems,
+            retry_args=retry_args if problems else [],
+            note="{} office(s) agree with AppStream, {} not checked or not "
+                 "agreeing".format(len(agreed), len(problems)))
+    except Exception as e:  # noqa: BLE001
+        print("[crosscheck] couldn't write the run manifest ({}: {}) — the "
+              "ticket won't close itself".format(type(e).__name__, e),
+              flush=True)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--office", default="11280,23965,24065,11580")
@@ -127,11 +153,20 @@ def main(argv=None):
 
     bad = 0
     compared, skipped = [], []
+    agreed, problems = [], []
     with appstream_direct_session(verbose=True) as page:
         page.wait_for_timeout(3000)
         page.wait_for_selector("#searchMC", timeout=20000)
         for office in offices:
-            fo._switch_office(page, office, OWNERS.get(office, ""))
+            # On a failed switch the page still shows the PREVIOUS office,
+            # and its counts would be compared against this one's files.
+            if not fo._switch_office(page, office, OWNERS.get(office, ""),
+                                     confirm_denial=True):
+                print("[crosscheck] {}: NOT COMPARED — could not switch to the "
+                      "office".format(office), flush=True)
+                skipped.append(office)
+                problems.append("{}: could not switch to the office".format(office))
+                continue
             page.wait_for_timeout(1500)
             sch = su = 0
             for sun, idxs in slices:
@@ -144,6 +179,8 @@ def main(argv=None):
                 print("[crosscheck] {}: NOT COMPARED — no local pull for this "
                       "week ({})".format(office, src), flush=True)
                 skipped.append(office)
+                problems.append("{}: not compared — no local pull for the "
+                                "week".format(office))
                 continue
             compared.append(office)
             ok_b = abs(sch - mine) <= TOLERANCE
@@ -155,12 +192,21 @@ def main(argv=None):
             print("             {}  showed: AppStream {} vs ours {}  {}"
                   .format(" " * len(office), su, shown,
                           "ok" if ok_s else "MISMATCH"), flush=True)
+            if ok_b and ok_s:
+                agreed.append(office)
+            else:
+                problems.append("{}: booked {} vs {}, showed {} vs {}".format(
+                    office, sch, mine, su, shown))
     # Say what was actually checked. "Every office agrees" printed on its own
     # reads identically whether four offices matched or none were compared at
     # all, and a run that compared nothing is the one most worth noticing.
     print("\n[crosscheck] compared {} ({}), skipped {} ({})".format(
         len(compared), ", ".join(compared) or "none",
         len(skipped), ", ".join(skipped) or "none"), flush=True)
+    bad_offices = [p.split(":")[0] for p in problems]
+    record_delivery(agreed, problems,
+                    ["--office", ",".join(bad_offices), "--week", str(a.week)]
+                    + (["--suffix", a.suffix] if a.suffix else []))
     if bad:
         print("[crosscheck] {} figure(s) DISAGREE — the pull is missing or "
               "double-counting days".format(bad), flush=True)
