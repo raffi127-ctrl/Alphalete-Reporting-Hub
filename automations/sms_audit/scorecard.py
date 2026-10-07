@@ -296,6 +296,30 @@ def _rate(d, num, den):
     return (100.0 * n / t) if t else None
 
 
+def best_near_week(person, weeks, far_now, show_now):
+    """(tag, retention, far) for their best week that booked nearer, or None.
+
+    Only returns a week where BOTH numbers are solid: enough bookings to
+    rate, and enough matched confirmations to know the lead. Without that
+    guard this would quote a 100% week built on one booking."""
+    best = None
+    for tag in weeks:
+        w = person["weeks"].get(tag)
+        if not w or (w.get("booked") or 0) < MIN_MATCHED:
+            continue
+        if (w.get("matched") or 0) < MIN_MATCHED:
+            continue
+        ret = _rate(w, "shown", "booked")
+        f = _rate(w, "far_out", "matched")
+        if ret is None or f is None:
+            continue
+        if ret <= show_now or f >= far_now - 5:
+            continue
+        if best is None or ret > best[1]:
+            best = (tag, ret, f)
+    return best
+
+
 def work_on(person, weeks):
     """[(area, now, before, grade, what to do)] worst first.
 
@@ -340,6 +364,15 @@ def work_on(person, weeks):
             why = ("{:.0f}% of your bookings are more than a day out. Book "
                    "them same or next day, while the interest is still "
                    "fresh.".format(far))
+            # Megan 2026-10-06: "56% last week when you didn't book far
+            # out - or something like that should be added if that's the
+            # case". Only when it IS the case: their own best week where
+            # the far-out share was measurable and lower.
+            proof = best_near_week(person, weeks, far, show)
+            if proof:
+                why += (" You were at {:.0f}% in the week to {} when only "
+                        "{:.0f}% were that far out."
+                        .format(proof[1], R.week_label(proof[0]), proof[2]))
         elif silent_share is not None and silent_share >= 25:
             why = ("{:.0f}% of your bookings come from a phone call, and "
                    "only {:.0f}% of those show up \u2014 against {:.0f}% when "
@@ -998,7 +1031,9 @@ def render(person, office, weeks, path):
     rows = [
         ("Interviews Booked", lambda w: w.get("booked") or 0,
          lambda v: "{:,}".format(v), True),
-        ("1st Round Retention", lambda w: _rate(w, "shown", "booked"),
+        ("1st Round Retention",
+         lambda w: (_rate(w, "shown", "booked")
+                    if (w.get("booked") or 0) >= MIN_MATCHED else None),
          lambda v: "{:.0f}%".format(v) if v is not None else "\u2014", True),
         ("Texts Sent", lambda w: w.get("texts") or 0,
          lambda v: "{:,}".format(v), True),

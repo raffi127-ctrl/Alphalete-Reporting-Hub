@@ -675,3 +675,86 @@ class AnsweredLater(unittest.TestCase):
                 and str(e.get("answered_later")).lower() != "true"]
         self.assertEqual(len(kept), 1)
         self.assertEqual(kept[0]["answered_later"], "False")
+
+
+class TooFewToJudge(unittest.TestCase):
+    """Megan 2026-10-06: "why is booked over a day out blank here?"
+    Because a percentage off a handful of bookings is noise. The
+    retention row was not applying the same floor and printed 100% off
+    one booking and 0% off four in the same table."""
+
+    def _week(self, booked, shown, matched=0, far=0):
+        return {"texts": 1500, "booked": booked, "shown": shown,
+                "matched": matched, "far_out": far, "house": 0,
+                "dodged": 0, "typing": 0,
+                "issues": __import__("collections").Counter()}
+
+    def _row(self, label, week):
+        person = {"display": "X", "weeks": {"w0925": week}}
+        import re as _re
+        from pathlib import Path
+        import tempfile
+        out = Path(tempfile.mkdtemp()) / "c.html"
+        S.render(person, "11280", ["w0925"], out)
+        html = out.read_text(encoding="utf-8")
+        m = _re.search(r"<tr><td>" + _re.escape(label) + r"</td>(.*?)</tr>",
+                       html, _re.S)
+        cells = _re.findall(r"<td[^>]*>(.*?)</td>", m.group(1), _re.S)
+        return cells[0]
+
+    def test_one_booking_shows_no_retention_percentage(self):
+        self.assertIn("—", self._row("1st Round Retention",
+                                     self._week(1, 1)))
+
+    def test_plenty_of_bookings_does_show_it(self):
+        self.assertIn("%", self._row("1st Round Retention",
+                                     self._week(25, 8)))
+
+    def test_the_far_out_row_uses_the_same_floor(self):
+        self.assertIn("—", self._row("Booked Over a Day Out",
+                                     self._week(25, 8, matched=4, far=1)))
+        self.assertIn("%", self._row("Booked Over a Day Out",
+                                     self._week(25, 8, matched=20, far=5)))
+
+
+class ProofWeek(unittest.TestCase):
+    """Megan 2026-10-06: "56% last week when you didn't book far out - or
+    something like that should be added IF THAT'S THE CASE". The guard is
+    the point: it quotes an earlier week only when both numbers are solid
+    and actually better."""
+
+    def _wk(self, booked, shown, matched, far):
+        return {"texts": 1500, "booked": booked, "shown": shown,
+                "matched": matched, "far_out": far, "house": 0, "dodged": 0,
+                "typing": 0, "silent": 0, "talked": booked,
+                "silent_shown": 0, "talked_shown": shown,
+                "issues": __import__("collections").Counter()}
+
+    def test_a_better_earlier_week_is_quoted(self):
+        person = {"display": "X", "weeks": {
+            "w0918": self._wk(20, 12, 20, 5),     # 60% at 25% far out
+            "w0925": self._wk(20, 6, 20, 12)}}    # 30% at 60% far out
+        got = S.best_near_week(person, ["w0918", "w0925"], 60.0, 30.0)
+        self.assertEqual(got[0], "w0918")
+
+    def test_a_tiny_week_is_never_quoted(self):
+        """Aisha Ceron's 56% week was nine bookings."""
+        person = {"display": "X", "weeks": {
+            "w0918": self._wk(9, 5, 8, 1),
+            "w0925": self._wk(20, 6, 20, 12)}}
+        self.assertIsNone(
+            S.best_near_week(person, ["w0918", "w0925"], 60.0, 30.0))
+
+    def test_a_week_that_booked_just_as_far_out_is_not_proof(self):
+        person = {"display": "X", "weeks": {
+            "w0918": self._wk(20, 14, 20, 11),
+            "w0925": self._wk(20, 6, 20, 12)}}
+        self.assertIsNone(
+            S.best_near_week(person, ["w0918", "w0925"], 60.0, 30.0))
+
+    def test_a_worse_week_is_not_proof(self):
+        person = {"display": "X", "weeks": {
+            "w0918": self._wk(20, 4, 20, 2),
+            "w0925": self._wk(20, 6, 20, 12)}}
+        self.assertIsNone(
+            S.best_near_week(person, ["w0918", "w0925"], 60.0, 30.0))
