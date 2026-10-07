@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import re
 import os
 import sys
 import zlib
@@ -96,6 +97,13 @@ LINES = (
     "{names} — {m}+ min off the doors. The board's not going to fill itself 📋⚡",
     "Quiet check 🤫 {names} — {m}+ min without a door. Y'all finger poppin' out there? 🤌🤌",
     "{names} — {m}+ min without a dispo. Lucy sees you, finger poppers 👀🤌",
+    # Megan 2026-10-07: "I like this one".
+    "{names}: {m}+ min. The doors are right there. I can see them from here 👀🚪",
+    # GIRLY ONES (Megan 2026-10-07: "we need some girly ones too"). Lucy's a she.
+    "{names}, bestie 💅 {m}+ min without a door. The doors miss you 🚪",
+    "It's giving coffee break ☕💅 {names} — {m}+ min, no dispo. Cute. Now knock 🚪",
+    "Hi {names} 👋💁‍♀️ {m}+ min quiet. Not mad, just disappointed 😌 Knock something",
+    "{names} — {m}+ min off the doors. Not to be dramatic but 💅 the board is waiting 📋",
     # BENEFIT OF THE DOUBT (Megan 2026-09-26): a quiet rep may be inside with
     # a customer. Half the pool leaves that door open.
     "{names} — {m}+ min without a dispo. Must be cooking up something good in there… right? 👨‍🍳🔥",
@@ -128,6 +136,9 @@ B2B_LINES = (
     "{names} — {m}+ min without a dispo. Must be in with the owner cooking up something good… right? 👨‍🍳🔥",
     "No dispo from {names} in {m}+ min. Sitting down with a decision maker? 💼",
     "{names} — {m}+ min without a dispo. Lucy sees you, finger poppers 👀🤌",
+    "{names}: {m}+ min. The storefronts are right there. I can see them from here 👀🏢",
+    "{names}, bestie 💅 {m}+ min without a walk-in. The owners miss you 🏢",
+    "It's giving long lunch 🥗💅 {names} — {m}+ min, no dispo. Cute. Now walk in 🏢",
     # ...and the same Spanish phrases sprinkled in, like LINES.
     "¡Snicklemeberries! 🫐 {names} — {m}+ min without a dispo. Finger poppin' or talking to owners? ¡Vamos! 🏢👀",
     "{names} — {m}+ min, no dispo, no sale. Chatting up the recepcionista? 🚧",
@@ -245,6 +256,75 @@ def line(office_key: str, callouts: List[Dict], now: dt.datetime, campaign=None)
     head = template.format(names=crowd, m=m)
     bullets = ["• %s — %d min" % (_first(c["name"]), c["mins"]) for c in callouts]
     return head + "\n" + "\n".join(bullets)
+
+
+# RECEIPTS (Megan 2026-10-07, "do 1"): reps answer the call-outs like a
+# person -- "Lucy im in a cc chill", "I makin a sale", "Lucy you a liar" -- and
+# their teammates pile on. When a rep Lucy called out last tick has a credit
+# check (AT&T) or a sale (any campaign) behind the quiet by the next tick, she
+# says so, by name, before anything else. It is the only line that makes her
+# both funnier and more credible: the argument they already start, she now
+# lets them win. Same voice, same seed-by-hour choice as LINES, English with a
+# Spanish phrase here and there.
+RECEIPT_LINES = (
+    "Told you I was watching 👀 {names} just ran a credit check. Carry on 🫡",
+    "{names} said 'I'm working'… and the board agrees 📋💰 Receipts. Respect 🫡",
+    "Receipts are in 🧾 {names} had a credit check behind that quiet. Lucy stands corrected 🙌",
+    "Called it quiet, {names} called it a pitch 🏠 Credit check's on the board. ¡Eso! 🔥",
+    "{names}: quiet on the doors, loud on the board 📋💰 My bad, carry on 🫡",
+    "Okay okay 🙌 {names} was in a house, not finger poppin'. Lucy takes it back… this time 👀",
+    "Update: {names} wasn't admiring the neighborhood 🏡 Credit check ran. ¡Bien hecho! 🔥",
+    "{names} just ran a credit check 📋 Called it too soon — now go get the sale 💰",
+    "You showed me 🫡 {names} — credit check behind the quiet. ¡Así se hace! 💰",
+    "Okay {names}, I see you 💅 Credit check behind the quiet. Period. 💰",
+    "Say less 💁‍♀️ {names} was working the whole time. Lucy apologizes 🫡",
+    "{names} proved me wrong 🧾 and I love being wrong 🫡 Credit check's on the board — go close it 💰",
+)
+# The same idea for a business office: no credit checks on Box, so what moves
+# is a sale.
+B2B_RECEIPT_LINES = (
+    "Told you I was watching 👀 {names} just put one on the board. Carry on 🫡",
+    "{names} said 'I'm with the owner'… and walked out with a sale 💼💰 Receipts. Respect 🫡",
+    "Receipts are in 🧾 {names} had a deal behind that quiet. Lucy stands corrected 🙌",
+    "Okay okay 🙌 {names} was with a decision maker, not finger poppin'. Lucy takes it back… this time 👀",
+    "{names}: quiet on the storefronts, loud on the board 📋💰 My bad, carry on 🫡",
+    "You showed me 🫡 {names} — a sale behind the quiet. ¡Así se hace! 💼",
+    "Okay {names}, I see you 💅 Deal behind the quiet. Period. 💼",
+    "{names} proved me wrong 🧾 and I love being wrong 🫡 Deal's on the board 💼",
+)
+
+
+def receipt_lines_for(campaign=None):
+    return B2B_RECEIPT_LINES if is_b2b(campaign) else RECEIPT_LINES
+
+
+def receipts(called: List[str], records_now: Dict[str, int], records_prev: Dict[str, int]) -> List[str]:
+    """Who, of the reps called out LAST tick, has activity now that they did
+    not have then. Pure. Order kept from the call-out (longest gap first)."""
+    now_n = {_key(k): int(v or 0) for k, v in (records_now or {}).items()}
+    prev_n = {_key(k): int(v or 0) for k, v in (records_prev or {}).items()}
+    out = []
+    for name in called or []:
+        n = str(name or "").strip()
+        if n and now_n.get(_key(n), 0) > prev_n.get(_key(n), 0):
+            out.append(n)
+    return out
+
+
+def receipt_line(office_key: str, names: List[str], now: dt.datetime, campaign=None) -> str:
+    """One receipts sentence, in the house voice, seeded like line()."""
+    firsts = []
+    for n in names or []:
+        f = _first(n)
+        if f and f not in firsts:
+            firsts.append(f)
+    if not firsts:
+        return ""
+    pool = receipt_lines_for(campaign)
+    seed = "receipt|%s|%s|%d" % (office_key, now.date().isoformat(), now.hour)
+    template = pool[zlib.crc32(seed.encode("utf-8")) % len(pool)]
+    joined = firsts[0] if len(firsts) == 1 else ", ".join(firsts[:-1]) + " and " + firsts[-1]
+    return template.format(names=joined)
 
 
 def pick_from_gaps(gaps: List[Dict], records_now: Dict[str, int], records_prev: Dict[str, int]) -> List[Dict]:
@@ -705,6 +785,12 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
         # The B2B offices -- Carlos's two, Ryan's and Roshan's Box -- are out.
         if key in CALLOUT_OPT_OUT:
             continue
+        # A RETIRED KEY STILL HAS AN APPROVAL ROW. Jennifer's form minted
+        # jennifer + jennifer-att into one room; the duplicate key was retired
+        # 2026-10-06, yet the loop ran it off the sibling's relay row and
+        # #figspire got every call-out twice. Only live offices speak.
+        if not getattr(office, "active", True):
+            continue
         if (str(getattr(office, "campaign", "") or "att").strip().lower() not in CALLOUT_CAMPAIGNS
                 and key not in CALLOUT_EXTRA_OFFICES):
             continue
@@ -740,25 +826,32 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
         # against it -- judge on the gap alone. Comparing against {} instead
         # exempted everyone with a single credit check all morning.
         prev = (st.get("records") or {}) if st.get("day") == now.date().isoformat() else dict(records)
+        # RECEIPTS FIRST: whoever Lucy named last tick and who has since run a
+        # credit check or put up a sale gets told so, before today's list.
+        called_before = list(st.get("called") or []) if st.get("day") == now.date().isoformat() else []
+        proven = receipts(called_before, records, prev)
+        receipt = receipt_line(key, proven, now, getattr(office, "campaign", None))
         callouts = pick(rows, records, prev, now)
         text = line(key, callouts, now, getattr(office, "campaign", None))
         state[key] = {"day": now.date().isoformat(), "last_at": now.isoformat(timespec="seconds"),
-                      "records": records}
+                      "records": records, "called": [c["name"] for c in callouts]}
         if send:
             _remember(key, state[key])
-        if not text:
-            log("%-14s nobody over %d min without a credit check -- nothing to say" % (key, GAP_MIN))
-            continue
         dests = [c.id for c in (approved_ch.get(key) or [])]
-        log("%-14s -> %s: %s" % (key, ", ".join(dests) or "-", text))
-        said.append(text)
-        if not send:
-            continue
-        for ch in dests:
-            try:
-                _say(ch, text, now, log)
-            except Exception as e:  # noqa: BLE001
-                log("%-14s FAILED to post to %s: %s" % (key, ch, type(e).__name__))
+        for msg in (receipt, text):
+            if not msg:
+                continue
+            log("%-14s -> %s: %s" % (key, ", ".join(dests) or "-", msg))
+            said.append(msg)
+            if not send:
+                continue
+            for ch in dests:
+                try:
+                    _say(ch, msg, now, log)
+                except Exception as e:  # noqa: BLE001
+                    log("%-14s FAILED to post to %s: %s" % (key, ch, type(e).__name__))
+        if not text and not receipt:
+            log("%-14s nobody over %d min without a credit check -- nothing to say" % (key, GAP_MIN))
     # THE POSITIVE ONE, at the end of the day: the day's numbers, once a day --
     # in the last minutes before the cutoff, or after the bell when the day
     # ends earlier than that (praise_window).
@@ -766,7 +859,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
         if only and key != only:
             continue
         office = O.get(key)
-        if key in CALLOUT_OPT_OUT:
+        if key in CALLOUT_OPT_OUT or not getattr(office, "active", True):
             continue
         if not office or (str(getattr(office, "campaign", "") or "att").strip().lower() not in CALLOUT_CAMPAIGNS
                           and key not in CALLOUT_EXTRA_OFFICES):
@@ -798,6 +891,13 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
                     _say(ch, praise, now, log)
                 except Exception as e:  # noqa: BLE001
                     log("%-14s FAILED to post to %s: %s" % (key, ch, type(e).__name__))
+    # ANSWER BACK, last: a rep who replied "snitch" or "liar" under a recent
+    # call-out hears from Lucy once in that thread. Read-only on Slack except
+    # for that one reply; never blocks the call-outs above.
+    try:
+        said.extend(answer_back(dt.datetime.now(), send=send, log=log))
+    except Exception as e:  # noqa: BLE001
+        log("answer_back skipped: %s" % type(e).__name__)
     # NO SNAPSHOT SAVE HERE. Every marker was written the moment it was
     # decided (_remember), off a fresh read; saving this run's top-of-run
     # snapshot now would put yesterday's pace markers back (2026-09-28).
@@ -812,6 +912,135 @@ def run(day: Optional[dt.date] = None, *, send: bool = False, book=None,
 # file cannot stop a race it is written from inside of. post.py has held a
 # pid lock since day one; this leg never did. An exclusive lock on one file,
 # held for the run: a second copy finds it taken and leaves without posting.
+# ANSWERING BACK (Megan 2026-10-07, "do 4 ... 'Not snitching, HYPING! Keep
+# going!' or 'giving you an intro'"). Reps reply to the call-outs -- "lucy
+# snitched already", "Lucy you a liar", "Lucy u lying on me" -- and their
+# teammates pile on. When a reply under one of Lucy's call-outs says so, she
+# answers ONCE in that thread, in the same voice. Never top-level, never
+# twice, never to herself.
+SNITCH_TRIGGER = re.compile(r"\bsnitch", re.I)
+LIAR_TRIGGER = re.compile(r"\b(liar|lying|lyin|lie|cap|capping|cappin)\b", re.I)
+SNITCH_REPLIES = (
+    "Not snitching, HYPING 📣 Keep going! 🔥",
+    "Not snitching — giving you an intro 🚪😉 Now go close it 💰",
+    "Snitch? Nah. Hype man 📣",
+    "Lucy doesn't snitch. Lucy announces 📣 Your move 💰",
+    "¡Tranquilo! Not snitching, hyping 📣 Go knock another! 🚪",
+    "Not snitching, hyping, bestie 💅📣 Keep going!",
+)
+# A business room hears the same, minus the doors.
+SNITCH_REPLIES_B2B = tuple(
+    t.replace("Go knock another! 🚪", "Go get another one! 🏢").replace(" 🚪😉", " 😉")
+    for t in SNITCH_REPLIES)
+LIAR_REPLIES = (
+    "Not lying, just reading the board 📋 Show me 👀💰",
+    "The board said it, not me 📋🤷‍♀️ Put one up and I'll say so 🫡",
+    "Lucy's never lied, Lucy's just early 😌 Go make me say receipts 🧾",
+    "¡Ojo! Not lying — the board moves when you do 📋💰 Show me",
+    "Me? Lie? 💅 The board doesn't lie 📋 Show me 👀",
+)
+ANSWER_BACK_EVERY_MIN = 10        # how often the threads are scanned
+ANSWER_BACK_LOOKBACK_MIN = 180    # how far back a call-out can be answered
+
+
+def answer_for(reply_text: str, seed: str, campaign=None) -> str:
+    """The one-line answer a rep's reply earns, or "" when it earns none."""
+    t = str(reply_text or "")
+    if SNITCH_TRIGGER.search(t):
+        pool = SNITCH_REPLIES_B2B if is_b2b(campaign) else SNITCH_REPLIES
+    elif LIAR_TRIGGER.search(t):
+        pool = LIAR_REPLIES
+    else:
+        return ""
+    return pool[zlib.crc32(seed.encode("utf-8")) % len(pool)]
+
+
+def _is_ours(msg: Dict, me: str) -> bool:
+    return bool(msg.get("bot_id")) or (bool(me) and msg.get("user") == me)
+
+
+def answer_back(now: dt.datetime, *, send: bool, log=print, channels=None, client=None) -> List[str]:
+    """Scan Lucy's recent call-outs in every live room for a reply that calls
+    her a snitch or a liar, and answer once per thread. Returns what it said
+    (or would say). Throttled to ANSWER_BACK_EVERY_MIN; state keeps the
+    threads already answered so a second scan never doubles up."""
+    state = _state()
+    st = state.get("answer_back") or {}
+    last = P._parse_when(st.get("last_at") or "")
+    if send and last is not None and (now - last) < dt.timedelta(minutes=ANSWER_BACK_EVERY_MIN):
+        return []
+    answered = dict(st.get("answered") or {})
+    cutoff = (now - dt.timedelta(minutes=ANSWER_BACK_LOOKBACK_MIN * 2)).isoformat(timespec="seconds")
+    answered = {k: v for k, v in answered.items() if str(v) >= cutoff}
+    try:
+        if client is None:
+            from automations.shared import slack_metrics_post as smp
+            client = smp._client()
+        me = ""
+        try:
+            me = (client.auth_test() or {}).get("user_id") or ""
+        except Exception:  # noqa: BLE001
+            pass
+    except Exception as e:  # noqa: BLE001
+        log("answer_back: no Slack client (%s) -- skipped" % type(e).__name__)
+        return []
+    approved_all = P.approved_channels()
+    if channels is None:
+        channels = sorted({c.id for k, cs in approved_all.items()
+                           if cs and O.is_enrolled(k) for c in cs})
+    # Which campaign a room belongs to, for the wording (doors vs. storefronts).
+    room_campaign: Dict[str, str] = {}
+    for k, cs in approved_all.items():
+        office = O.get(k)
+        if not cs or not office or not getattr(office, "active", True):
+            continue
+        for c in cs:
+            room_campaign.setdefault(c.id, str(getattr(office, "campaign", "") or "att"))
+    said = []
+    oldest = str((now - dt.timedelta(minutes=ANSWER_BACK_LOOKBACK_MIN)).timestamp())
+    for ch in channels:
+        try:
+            res = client.conversations_history(channel=ch, oldest=oldest, limit=40) or {}
+        except Exception as e:  # noqa: BLE001
+            log("answer_back: cannot read %s (%s)" % (ch, type(e).__name__))
+            continue
+        for m in res.get("messages") or []:
+            ts = str(m.get("ts") or "")
+            if not ts or not _is_ours(m, me) or int(m.get("reply_count") or 0) == 0:
+                continue
+            tkey = "%s:%s" % (ch, ts)
+            if tkey in answered:
+                continue
+            try:
+                rep = client.conversations_replies(channel=ch, ts=ts, limit=30) or {}
+            except Exception as e:  # noqa: BLE001
+                log("answer_back: cannot read thread %s (%s)" % (tkey, type(e).__name__))
+                continue
+            replies = [r for r in (rep.get("messages") or []) if str(r.get("ts")) != ts]
+            if any(_is_ours(r, me) for r in replies):
+                answered[tkey] = now.isoformat(timespec="seconds")   # already spoke here
+                continue
+            answer = ""
+            for r in replies:
+                answer = answer_for(r.get("text") or "", "answer|%s|%s" % (ch, ts),
+                                    room_campaign.get(ch))
+                if answer:
+                    break
+            if not answer:
+                continue
+            log("answer_back %s -> %s" % (tkey, answer))
+            said.append(answer)
+            if send:
+                try:
+                    P._slack(ch, answer, thread_ts=ts)
+                    answered[tkey] = now.isoformat(timespec="seconds")
+                except Exception as e:  # noqa: BLE001
+                    log("answer_back: FAILED to reply in %s (%s)" % (tkey, type(e).__name__))
+    if send:
+        _remember("answer_back", {"last_at": now.isoformat(timespec="seconds"), "answered": answered})
+    return said
+
+
 LOCK_PATH = Path.home() / ".config" / "recruiting-report" / "icd_gap_callouts.lock"
 
 

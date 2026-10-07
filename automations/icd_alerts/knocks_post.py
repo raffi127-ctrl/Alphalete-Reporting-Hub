@@ -607,8 +607,13 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                 listed_gaps[cid] = _gaps_text(office, rows_for_board, now,
                                               dest=cid, slack=True,
                                               remember=send)
-            head = (_final_comment(now) if final_due(d, posted_at.get(cid), now)
-                    else comment)
+            if final_due(d, posted_at.get(cid), now):
+                head = _final_comment(now)
+                last_call = _last_call(office, rows_for_board, now)
+                if last_call:
+                    head = head + "\n" + last_call
+            else:
+                head = comment
             captions[cid] = caption_for(head, listed_gaps.get(cid, ""))
 
         if not send:
@@ -649,10 +654,14 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                     # cannot be found by name at all (its members rename it
                     # hourly), and `dest=` keys the ⏰ state on the stable
                     # address rather than a name that churns.
-                    _text(d, boards,
-                          "" if key in NO_GAP_LIST_IN_TEXTS else
-                          _gaps_text(office, rows_for_board, now,
-                                     dest=d["channel_id"]))
+                    body = ("" if key in NO_GAP_LIST_IN_TEXTS else
+                            _gaps_text(office, rows_for_board, now,
+                                       dest=d["channel_id"]))
+                    if final_due(d, posted_at.get(cid), now):
+                        last_call = _last_call(office, rows_for_board, now)
+                        if last_call:
+                            body = (last_call + "\n\n" + body) if body else last_call
+                    _text(d, boards, body)
                     # When the picture last went to this group. Read only by
                     # board_rides() for a group with board_min; harmless
                     # bookkeeping for the rest.
@@ -854,6 +863,65 @@ def _final_comment(now: dt.datetime) -> str:
     this is the board to break the day down from, not another hourly."""
     return "*Final %s — %s*  ·  ranked by total knocks" % (_card_title(),
                                                            _clock(now))
+
+
+# LAST CALL (Megan 2026-10-07, "do 7"): the day's final board carries one
+# more sentence -- whoever is still off the doors, told to finish strong.
+LAST_CALL_LINES = (
+    "Last call 🔔 {names} still off the doors — finish strong, ¡dale! 🚪💰",
+    "Final stretch 🏁 {names} — no doors in a bit. Close it out, ¡vamos! 🚪",
+    "Last call 🔔 {names}: the day's not over till the board says so 📋 Finish strong 💪",
+)
+LAST_CALL_ALL = (
+    "Last call 🔔 Everybody's knocking — finish strong, ¡dale! 🚪💰",
+    "Final stretch 🏁 Nobody off the doors — close it out, ¡vamos! 🔥",
+)
+# The same for a business office: storefronts and owners, not doors.
+LAST_CALL_B2B_LINES = (
+    "Last call 🔔 {names} — time for one more business before the day's out. Finish strong, ¡dale! 🏢💰",
+    "Final stretch 🏁 {names} — one more owner before the day's out. Close it out, ¡vamos! 💼",
+)
+LAST_CALL_B2B_ALL = (
+    "Last call 🔔 Everybody's still walking in — finish strong, ¡dale! 🏢💰",
+    "Final stretch 🏁 Nobody's parked — close it out, ¡vamos! 🔥",
+)
+
+
+def _last_call(office, rows: List[Dict], now: dt.datetime) -> str:
+    """One sentence for the final board: the reps over the gap line right now,
+    or a clean 'everybody's knocking' when nobody is."""
+    try:
+        from automations.gap_alerts import config as gc
+        from automations.shared.sale_hype import _first
+    except Exception:  # noqa: BLE001
+        return ""
+    names = []
+    for r in rows or []:
+        name = str(r.get("Rep") or "").strip()
+        last = str(r.get("Last Knock") or "").strip()
+        if not name or not last:
+            continue
+        mins = _minutes_since(last, now)
+        if mins is not None and mins >= gc.GAP_THRESHOLD_MIN:
+            names.append((mins, _first(name) or name))
+    seed = "lastcall|%s|%s" % (getattr(office, "key", "") or "-", now.date().isoformat())
+    import zlib
+    try:
+        from automations.icd_alerts import gap_callouts as G
+        b2b = G.is_b2b(getattr(office, "campaign", None))
+    except Exception:  # noqa: BLE001
+        b2b = False
+    pool_all = LAST_CALL_B2B_ALL if b2b else LAST_CALL_ALL
+    pool = LAST_CALL_B2B_LINES if b2b else LAST_CALL_LINES
+    if not names:
+        return pool_all[zlib.crc32(seed.encode("utf-8")) % len(pool_all)]
+    names.sort(key=lambda x: -x[0])
+    firsts = []
+    for _, f in names:
+        if f not in firsts:
+            firsts.append(f)
+    joined = firsts[0] if len(firsts) == 1 else ", ".join(firsts[:-1]) + " and " + firsts[-1]
+    return pool[zlib.crc32(seed.encode("utf-8")) % len(pool)].format(names=joined)
 
 
 def _gaps_text(office, rows: List[Dict], now: dt.datetime, *,

@@ -1349,8 +1349,16 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
             # of five lines read "WHO'S NEXT" one under the other on
             # 2026-09-18, and two posts in a row both read "just put one on
             # the board" an hour later.
+            # THE OFFICE'S FIRST SALE OF THE DAY (Megan 2026-10-07): nobody
+            # had anything on the board before this post, so the first rep's
+            # line is the first-sale line. `now` turns on back-to-back.
+            office_first = not sales_baseline and all(
+                H.shape(office.campaign).total(m or {}) == 0
+                for m in (last_sales or {}).values())
             hype_lines = H.hype_batch(sold, sales, day, office.campaign,
-                                      show=show, room=key)
+                                      show=show, room=key,
+                                      office_first=office_first,
+                                      now=dt.datetime.now())
             hype_lines, gifs_used = _within_gif_budget(hype_lines, day, key)
         # NO STANDINGS BOARD TO SLACK ON A FIRST READ. Tried for one afternoon
         # (2026-10-06, Eveliz's empty channel) and pulled the same day: Megan,

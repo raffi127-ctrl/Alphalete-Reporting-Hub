@@ -77,14 +77,16 @@ class SpanishTest(unittest.TestCase):
                "¡Así se hace!", "recepcionista", "¿eh?", "Ojo")
 
     def test_no_line_is_spanish_only(self):
-        for pool in (G.LINES, G.B2B_LINES, G.PACE_LINES, G.B2B_PACE_LINES):
+        for pool in (G.LINES, G.B2B_LINES, G.PACE_LINES, G.B2B_PACE_LINES,
+                     G.RECEIPT_LINES, G.B2B_RECEIPT_LINES):
             for t in pool:
                 self.assertFalse(G._is_spanish(t), t)
                 self.assertNotIn("{unit_es}", t)
                 self.assertNotIn(" sin ", t)
 
     def test_every_pool_still_sprinkles_spanish(self):
-        for pool in (G.LINES, G.B2B_LINES, G.PACE_LINES, G.B2B_PACE_LINES):
+        for pool in (G.LINES, G.B2B_LINES, G.PACE_LINES, G.B2B_PACE_LINES,
+                     G.RECEIPT_LINES, G.B2B_RECEIPT_LINES):
             self.assertTrue(any(any(ph in t for ph in self.PHRASES) for t in pool))
 
     def test_names_join_with_and_everywhere(self):
@@ -672,3 +674,101 @@ class TheWordingFollowsTheServiceCloudAccount(unittest.TestCase):
             if s:
                 for bad in ("door", "puerta", "neighborhood", "🚪"):
                     self.assertNotIn(bad, s.lower(), s)
+
+
+class ReceiptsTest(unittest.TestCase):
+    """Megan 2026-10-07 ("do 1"): a rep called out last tick who has a credit
+    check or a sale behind the quiet by this tick gets told so, by name. The
+    "you showed me" moment -- never a tally, never a league table."""
+
+    def test_only_the_called_who_moved(self):
+        called = ["Tyrone Barnett", "Nashly Paul", "Hank Tran"]
+        prev = {"tyrone barnett": 2, "nashly paul": 0, "hank tran": 1}
+        now = {"tyrone barnett": 3, "nashly paul": 0, "hank tran": 1, "someone else": 9}
+        self.assertEqual(G.receipts(called, now, prev), ["Tyrone Barnett"])
+
+    def test_nobody_called_means_nobody_proven(self):
+        self.assertEqual(G.receipts([], {"a b": 5}, {}), [])
+
+    def test_line_names_first_names_and_reads_in_english(self):
+        s = G.receipt_line("x", ["Tyrone Barnett", "Nashly Paul"], NOW)
+        self.assertIn("Tyrone and Nashly", s)
+        self.assertNotIn(" y ", s)
+        self.assertNotIn("{names}", s)
+
+    def test_same_hour_repeats_next_hour_differs(self):
+        a = G.receipt_line("x", ["Tyrone B"], NOW)
+        self.assertEqual(a, G.receipt_line("x", ["Tyrone B"], NOW))
+        pool_size = len(G.RECEIPT_LINES)
+        others = {G.receipt_line("x", ["Tyrone B"], NOW.replace(hour=h)) for h in range(24)}
+        self.assertGreater(len(others), min(3, pool_size - 1))
+
+    def test_box_office_gets_sale_wording_not_credit_checks(self):
+        s = G.receipt_line("ryan", ["Miguel R"], NOW, campaign="b2b_box")
+        self.assertNotIn("credit check", s.lower())
+        self.assertIn("Miguel", s)
+
+    def test_no_names_is_no_message(self):
+        self.assertEqual(G.receipt_line("x", [], NOW), "")
+
+
+class AnswerBackTest(unittest.TestCase):
+    """Megan 2026-10-07 ("do 4"): a reply that calls a call-out snitching or
+    lying earns ONE answer in that thread, in the house voice."""
+
+    def test_snitch_gets_the_hype_answer(self):
+        a = G.answer_for("lucy snitched already bro", "s1")
+        self.assertIn(a, G.SNITCH_REPLIES)
+
+    def test_liar_gets_the_board_answer(self):
+        a = G.answer_for("Lucy u lying on me", "s1")
+        self.assertIn(a, G.LIAR_REPLIES)
+        self.assertIn(G.answer_for("Lucy you a liar", "s2"), G.LIAR_REPLIES)
+
+    def test_anything_else_earns_nothing(self):
+        self.assertEqual(G.answer_for("I'm in a cc chill", "s1"), "")
+        self.assertEqual(G.answer_for("Ok Lucy", "s1"), "")
+        self.assertEqual(G.answer_for("", "s1"), "")
+
+    def test_same_thread_same_answer(self):
+        self.assertEqual(G.answer_for("snitch", "x"), G.answer_for("SNITCHING", "x"))
+
+    def test_answers_once_per_thread_and_never_itself(self):
+        class Client:
+            def __init__(self):
+                self.posted = []
+            def auth_test(self):
+                return {"user_id": "ULUCY"}
+            def conversations_history(self, channel, oldest, limit):
+                return {"messages": [
+                    {"ts": "1.0", "user": "ULUCY", "reply_count": 2, "text": "Snicklemeberries ..."},
+                    {"ts": "2.0", "user": "ULUCY", "reply_count": 1, "text": "another call-out"},
+                    {"ts": "3.0", "user": "UREP", "reply_count": 3, "text": "a rep's own post"},
+                ]}
+            def conversations_replies(self, channel, ts, limit):
+                if ts == "1.0":
+                    return {"messages": [{"ts": "1.0", "user": "ULUCY"},
+                                         {"ts": "1.1", "user": "UREP", "text": "lucy snitched"}]}
+                return {"messages": [{"ts": "2.0", "user": "ULUCY"},
+                                     {"ts": "2.1", "user": "UREP", "text": "liar"},
+                                     {"ts": "2.2", "user": "ULUCY", "text": "already answered"}]}
+        posted = []
+        with mock.patch.object(G, "_state", return_value={}), \
+             mock.patch.object(G, "_remember", lambda k, v: None), \
+             mock.patch.object(G.P, "_slack", lambda ch, text, thread_ts=None: posted.append((ch, thread_ts, text))):
+            said = G.answer_back(NOW, send=True, log=lambda m: None, channels=["C1"], client=Client())
+        self.assertEqual(len(said), 1)
+        self.assertEqual(len(posted), 1)
+        self.assertEqual(posted[0][1], "1.0")
+        self.assertIn(posted[0][2], G.SNITCH_REPLIES)
+
+
+class AnswerBackB2BTest(unittest.TestCase):
+    def test_a_business_room_never_hears_about_doors(self):
+        for h in range(40):
+            a = G.answer_for("snitch", "seed%d" % h, campaign="b2b_box")
+            self.assertNotIn("knock", a.lower(), a)
+            self.assertIn(a, G.SNITCH_REPLIES_B2B)
+
+    def test_a_door_room_keeps_the_knock_line(self):
+        self.assertIn("¡Tranquilo! Not snitching, hyping 📣 Go knock another! 🚪", G.SNITCH_REPLIES)

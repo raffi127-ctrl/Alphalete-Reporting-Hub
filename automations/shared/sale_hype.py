@@ -15,7 +15,7 @@ import json
 import re
 import zlib
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List, Optional
 
 # Imports nothing itself, which is why it is safe on the ICD laptops' hot path.
 from automations.shared.name_case import titlecase_name
@@ -927,9 +927,89 @@ def record_lines(day: dt.date, room: str, used) -> None:
         pass
 
 
+# FIRST SALE OF THE DAY FOR THE OFFICE (Megan 2026-10-07: "I like 1st sale
+# call out and back to back sale call out"). Reps say it themselves -- "I'm
+# tryna get otb" -- so the first one on the board gets told so, once a day,
+# ahead of the regular hype line.
+FIRST_SALE_LINES = (
+    "{first} is OTB 💰 First one up for the office today — who's next? 🔥",
+    "And we're on the board 📋💰 {first} opens the day. ¡Vamos! Who's next? 👀",
+    "First blood 🩸💰 {first} gets the office on the board. Everybody else: your move 🚪",
+    "{first} just broke the seal 💰 Day's open. ¡Dale! Who's riding with them? 🔥",
+    "{first} opened the day 💅💰 OTB. Everybody else, it's giving 'who's next' 👀",
+)
+# BACK TO BACK: the same rep again inside BACK_TO_BACK_MIN of their last one.
+BACK_TO_BACK_MIN = 30
+BACK_TO_BACK_LINES = (
+    "{first} again?! Two in {n} min 🔥🔥 {first} está on fire — somebody check the water 🚒",
+    "Back to back 💰💰 {first}, {n} minutes apart. That's a heater 🔥 Keep it rolling ¡dale!",
+    "{first} is cooking 👨‍🍳🔥 Two sales in {n} min. Nobody touch the stove",
+    "Oh it's a streak now 🔥 {first} — two in {n} min. ¡Eso! Who's next to run one back? 👀",
+)
+SALE_TIMES_PATH = (Path.home() / ".config" / "recruiting-report"
+                   / "icd_sale_times.json")
+
+
+def _sale_times(day: dt.date) -> Dict:
+    try:
+        data = json.loads(SALE_TIMES_PATH.read_text())
+        d = data.get(day.isoformat()) or {}
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
+def last_sale_at(day: dt.date, room: str, rep: str) -> Optional[dt.datetime]:
+    """When this rep's previous sale was announced in this room today."""
+    raw = ((_sale_times(day).get(room) or {}).get(rep) or "")
+    try:
+        return dt.datetime.fromisoformat(raw) if raw else None
+    except ValueError:
+        return None
+
+
+def record_sale_times(day: dt.date, room: str, reps, now: dt.datetime) -> None:
+    """Remember when each of these reps last sold, for back-to-back. Today's
+    day only is kept, so the file never grows."""
+    try:
+        data = json.loads(SALE_TIMES_PATH.read_text())
+    except (OSError, ValueError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    data = {day.isoformat(): data.get(day.isoformat()) or {}}
+    per_room = data[day.isoformat()].setdefault(room, {})
+    for rep in reps:
+        per_room[rep] = now.isoformat(timespec="seconds")
+    try:
+        SALE_TIMES_PATH.parent.mkdir(parents=True, exist_ok=True)
+        SALE_TIMES_PATH.write_text(json.dumps(data, indent=2, sort_keys=True))
+    except OSError:
+        pass
+
+
+def first_sale_line(name: str, day: dt.date, room: str = "") -> str:
+    seed = "first|%s|%s" % (room or "-", day.isoformat())
+    pool = FIRST_SALE_LINES
+    return pool[zlib.crc32(seed.encode("utf-8")) % len(pool)].format(first=_first(name))
+
+
+def back_to_back_line(name: str, minutes: int, day: dt.date, room: str = "") -> str:
+    seed = "b2b|%s|%s|%s|%d" % (room or "-", day.isoformat(), _first(name), minutes)
+    pool = BACK_TO_BACK_LINES
+    return pool[zlib.crc32(seed.encode("utf-8")) % len(pool)].format(
+        first=_first(name), n=max(1, int(minutes)))
+
+
 def hype_batch(reps, sales, day, campaign=None, show=None,
-               room=None) -> List[str]:
+               room=None, office_first: bool = False,
+               now: Optional[dt.datetime] = None) -> List[str]:
     """One line per rep, repeating neither inside the post nor after it.
+
+    `office_first`: this post carries the office's FIRST sale of the day, so
+    the first rep's line is the first-sale line. `now` (with `room`) turns on
+    back-to-back: a rep whose previous sale in this room was inside
+    BACK_TO_BACK_MIN gets the streak line instead of a regular one.
 
     The caller used to build these with a comprehension, which cannot know
     what the line before it said -- nor what the channel heard a minute ago.
@@ -942,9 +1022,19 @@ def hype_batch(reps, sales, day, campaign=None, show=None,
     # differently too, then add each line as it is chosen.
     used = set(recent_lines(day, room) if room else ())
     fresh = []
-    for rep in reps:
+    for i, rep in enumerate(reps):
         metrics = (sales or {}).get(rep) or {}
         name = show(rep) if show else rep
+        if office_first and i == 0:
+            out.append(first_sale_line(name, day, room or ""))
+            continue
+        if room and now is not None:
+            prev = last_sale_at(day, room, rep)
+            if prev is not None:
+                gap = int((now - prev).total_seconds() // 60)
+                if 0 <= gap <= BACK_TO_BACK_MIN:
+                    out.append(back_to_back_line(name, gap, day, room))
+                    continue
         line = hype(name, metrics, day, campaign, avoid=used,
                     alone=len(reps) == 1)
         # Record the TEMPLATE, not the formatted line: two different reps
@@ -969,6 +1059,8 @@ def hype_batch(reps, sales, day, campaign=None, show=None,
         out.append(line)
     if room and fresh:
         record_lines(day, room, fresh)
+    if room and now is not None and reps:
+        record_sale_times(day, room, list(reps), now)
     return out
 
 
