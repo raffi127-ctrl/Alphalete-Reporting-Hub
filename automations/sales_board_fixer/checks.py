@@ -46,6 +46,7 @@ KIND_LABEL = {
     "row_added_wrong": "fila agregada sin las fórmulas",
     "error_value": "celda con error",
     "font": "fuente / tamaño de letra distinto",
+    "number_format": "formato de número distinto (%, decimales)",
     "roll_call_blank": "X/T en Int con la Roll Call vacía",
     "cf_broken": "regla de formato condicional rota (#REF!)",
     "cf_foreign": "regla de formato condicional que apunta fuera de la tab",
@@ -240,11 +241,31 @@ def check_fonts(tab: str, sheet_id: int, values, fonts) -> List[Finding]:
     the basic filter hides, and the 'Extra' template rows ARE hidden -- they
     are where the new-start rows are copied from, so a bad font there is the
     one that keeps coming back every Monday."""
+    return _column_format(
+        tab, sheet_id, values, fonts, "font", lambda f: bool(f[0]),
+        lambda f: "%s %s" % f,
+        lambda f: {"textFormat": {"fontFamily": f[0], "fontSize": f[1]}},
+        "userEnteredFormat.textFormat.fontFamily,userEnteredFormat.textFormat.fontSize")
+
+
+def check_number_formats(tab: str, sheet_id: int, values, numfmts) -> List[Finding]:
+    """numfmts[r-1][c-1] = (type, pattern). A formula put back into a cell
+    that was formatted as % shows '5.6%' where its column shows '0.1' -- the
+    value is right and still reads wrong. Same majority rule as fonts."""
+    return _column_format(
+        tab, sheet_id, values, numfmts, "number_format", lambda f: True,
+        lambda f: f[1] or f[0] or "automático",
+        lambda f: {"numberFormat": {"type": f[0], "pattern": f[1]}} if f[0]
+        else {"numberFormat": {}},
+        "userEnteredFormat.numberFormat")
+
+
+def _column_format(tab, sheet_id, values, grid, kind, usable, show, fmt, fields):
     first, last = block_rows(values)
     n = last - first + 1
     if n < MIN_ROWS:
         return []
-    width = max((len(r) for r in fonts[first - 1:last]), default=0)
+    width = max((len(r) for r in grid[first - 1:last]), default=0)
     out = []
     for c in range(1, width + 1):
         if c <= B.NAME_COL or not (_g(values, B.SUB_ROW, c).strip()
@@ -252,31 +273,77 @@ def check_fonts(tab: str, sheet_id: int, values, fonts) -> List[Finding]:
             continue          # A/B carry group labels and ranks, styled by hand
         col = {}
         for r in range(first, last + 1):
-            row = fonts[r - 1] if r - 1 < len(fonts) else []
-            if c - 1 < len(row) and row[c - 1]:
+            row = grid[r - 1] if r - 1 < len(grid) else []
+            if c - 1 < len(row) and row[c - 1] is not None:
                 col[r] = tuple(row[c - 1])
         if len(col) < MIN_ROWS:
             continue
         top, hits = collections.Counter(col.values()).most_common(1)[0]
-        if hits < MAJORITY * len(col) or not top[0]:
+        if hits < MAJORITY * len(col) or not usable(top):
             continue
         for r, f in col.items():
             if f == top:
                 continue
             out.append(Finding(
-                "font", tab, a1(r, c),
-                "%s, columna %s" % (KIND_LABEL["font"], header(values, c)),
+                kind, tab, a1(r, c),
+                "%s, columna %s" % (KIND_LABEL[kind], header(values, c)),
                 row=r, name=_g(values, r, B.NAME_COL).strip(),
-                before="%s %s" % f, after="%s %s" % top,
+                before=show(f), after=show(top),
                 request={"updateCells": {
-                    "range": {"sheetId": sheet_id, "startRowIndex": r - 1,
-                              "endRowIndex": r, "startColumnIndex": c - 1,
-                              "endColumnIndex": c},
-                    "rows": [{"values": [{"userEnteredFormat": {"textFormat": {
-                        "fontFamily": top[0], "fontSize": top[1]}}}]}],
-                    "fields": "userEnteredFormat.textFormat.fontFamily,"
-                              "userEnteredFormat.textFormat.fontSize"}}))
+                    "range": _cell_range(sheet_id, r, c),
+                    "rows": [{"values": [{"userEnteredFormat": fmt(top)}]}],
+                    "fields": fields}}))
     return out
+
+
+def _cell_range(sheet_id: int, r: int, c: int) -> dict:
+    return {"sheetId": sheet_id, "startRowIndex": r - 1, "endRowIndex": r,
+            "startColumnIndex": c - 1, "endColumnIndex": c}
+
+
+# --- notes -----------------------------------------------------------------
+
+# What the note on a touched cell says. English: the owners read these.
+NOTE_LABEL = {
+    "x_over_formula": "an X/letter was typed over this formula",
+    "typed_over_formula": "a number was typed over this formula",
+    "missing_formula": "this formula had been deleted",
+    "different_formula": "this formula didn't match the rest of the column",
+    "row_added_wrong": "this row was added without its formulas",
+    "font": "font/size didn't match the column",
+    "number_format": "number format didn't match the column",
+    "roll_call_blank": "Int had the status but the Roll Call was blank",
+}
+
+
+def note_requests(found: List[Finding], sheet_id: int, notes, when: str) -> List[dict]:
+    """One note per touched cell: what was wrong, what it was, what it is now.
+    A note somebody already left is KEPT -- ours goes underneath it."""
+    per_cell: Dict[str, List[Finding]] = {}
+    for x in found:
+        if x.fixable and x.kind in NOTE_LABEL:
+            per_cell.setdefault(x.where, []).append(x)
+    out = []
+    for where, xs in per_cell.items():
+        m = re.match(r"^([A-Z]+)(\d+)$", where)
+        r, c = int(m.group(2)), col_index(m.group(1))
+        lines = ["Lucy fixed this (%s):" % when]
+        for x in xs:
+            lines.append("- %s. Was: %s. Now: %s." % (NOTE_LABEL[x.kind], _short(x.before),
+                                                       _short(x.after)))
+        old = ""
+        if r - 1 < len(notes) and c - 1 < len(notes[r - 1]):
+            old = notes[r - 1][c - 1] or ""
+        text = (old.rstrip() + "\n\n" if old.strip() else "") + "\n".join(lines)
+        out.append({"updateCells": {"range": _cell_range(sheet_id, r, c),
+                                    "rows": [{"values": [{"note": text}]}],
+                                    "fields": "note"}})
+    return out
+
+
+def _short(s: str) -> str:
+    s = str(s or "")
+    return s if len(s) <= 60 else s[:57] + "..."
 
 
 # --- roll call -------------------------------------------------------------

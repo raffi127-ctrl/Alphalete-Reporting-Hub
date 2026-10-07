@@ -69,10 +69,32 @@ def _book(sheet_id: str):
     return open_by_key(sheet_id)
 
 
+def _tabs(sh) -> dict:
+    """{title: sheetId} read fresh -- open_by_key memoises worksheets(), and a
+    tab deleted or created a second ago must not be served from that memo."""
+    meta = sh.fetch_sheet_metadata({"fields": "sheets(properties(sheetId,title))"})
+    return {s["properties"]["title"]: s["properties"]["sheetId"] for s in meta["sheets"]}
+
+
+def refresh_sandbox(sh, titles, stamp: str) -> None:
+    """Throw a twin away so make_sandbox copies it again from the live tab.
+    Backed up to the output folder first: Eve may have marked something on it."""
+    have = _tabs(sh)
+    for t in titles:
+        twin = SANDBOX_PREFIX + t
+        if twin in have:
+            print("  backup:", backup(load(sh, twin), stamp + "_refresh"))
+            sh.batch_update({"requests": [{"deleteSheet": {"sheetId": have[twin]}}]})
+            # open_by_key memoises title -> Worksheet; the copy made next has
+            # the same title and a NEW id, so the old handle must go
+            (getattr(sh, "_memo_ws", None) or {}).pop(twin, None)
+            print("  borrada para recopiar: %s" % twin)
+
+
 def make_sandbox(sh, titles) -> list:
     """Duplicate each live tab into 'SANDBOX — <title>' at the END of the
     workbook. An existing twin is left alone: it may carry Eve's own edits."""
-    have = {ws.title: ws for ws in sh.worksheets()}
+    have = _tabs(sh)
     made = []
     for t in titles:
         twin = SANDBOX_PREFIX + t
@@ -83,7 +105,7 @@ def make_sandbox(sh, titles) -> list:
             print("  no existe la tab %r -- salteada" % t)
             continue
         sh.batch_update({"requests": [{"duplicateSheet": {
-            "sourceSheetId": have[t].id, "insertSheetIndex": len(have) + len(made),
+            "sourceSheetId": have[t], "insertSheetIndex": len(have) + len(made),
             "newSheetName": twin}}]})
         made.append(twin)
         print("  creada: %s" % twin)
@@ -98,20 +120,23 @@ def load(sh, title: str) -> dict:
         "fields": "sheets(properties(sheetId,title,gridProperties),conditionalFormats)"})
     sheet = next(s for s in meta["sheets"] if s["properties"]["title"] == title)
     ncols = sheet["properties"]["gridProperties"]["columnCount"]
-    fonts = []
+    fonts, numfmts, notes = [], [], []
     if title_kind(title) == "board":
         _, last = K.block_rows(values)
         rng = "'%s'!A1:%s%d" % (title, K.col_letter(ncols), last)
         grid = sh.fetch_sheet_metadata({
             "includeGridData": True, "ranges": [rng],
             "fields": "sheets(data(rowData(values(effectiveFormat("
-                      "textFormat(fontFamily,fontSize))))))"})
+                      "textFormat(fontFamily,fontSize),numberFormat),note))))"})
         rows = grid["sheets"][0]["data"][0].get("rowData", [])
         for rd in rows:
-            fonts.append([_font(v) for v in rd.get("values", [])])
+            vs = rd.get("values", [])
+            fonts.append([_font(v) for v in vs])
+            numfmts.append([_numfmt(v) for v in vs])
+            notes.append([(v or {}).get("note", "") for v in vs])
     return {"ws": ws, "title": title, "sheet_id": ws.id, "values": values,
             "formulas": formulas, "rules": sheet.get("conditionalFormats", []),
-            "ncols": ncols, "fonts": fonts}
+            "ncols": ncols, "fonts": fonts, "numfmts": numfmts, "notes": notes}
 
 
 def _font(v: dict):
@@ -119,6 +144,13 @@ def _font(v: dict):
     if not tf.get("fontFamily"):
         return None
     return (tf["fontFamily"], tf.get("fontSize"))
+
+
+def _numfmt(v: dict):
+    nf = ((v or {}).get("effectiveFormat") or {}).get("numberFormat") or {}
+    kind, pat = nf.get("type", ""), nf.get("pattern", "")
+    # 'm/d/yyyy' and 'M/d/yyyy' print the same date -- not a difference
+    return (kind, pat.lower() if kind.startswith("DATE") else pat)
 
 
 def title_kind(title: str) -> str:
@@ -132,7 +164,8 @@ def audit(t: dict) -> list:
     title, v, f = t["title"], t["values"], t["formulas"]
     if title_kind(title) == "board":
         found = (K.check_formulas(title, v, f) + K.check_roll_call(title, v)
-                 + K.check_fonts(title, t["sheet_id"], v, t["fonts"]))
+                 + K.check_fonts(title, t["sheet_id"], v, t["fonts"])
+                 + K.check_number_formats(title, t["sheet_id"], v, t["numfmts"]))
         first, last = K.block_rows(v)
         fixed_cells = {x.where for x in found if x.value is not None}
         found += [e for e in K.check_errors(title, v, f) if e.where not in fixed_cells]
@@ -176,6 +209,9 @@ def apply(sh, t: dict, found: list) -> list:
         ws.batch_update([{"range": x.where, "values": [[x.value]]} for x in cells],
                         value_input_option="USER_ENTERED")
     fmt = [x.request for x in todo if x.request and "updateCells" in x.request]
+    # a note on every touched cell, so a person can hover and see what changed
+    fmt += K.note_requests(todo, t["sheet_id"], t.get("notes") or [],
+                           dt.date.today().strftime("%m/%d"))
     # rule deletes last, highest index first (checks.py already sorted them)
     dels = [x.request for x in todo if x.request and "deleteConditionalFormatRule" in x.request]
     if fmt or dels:
@@ -223,6 +259,9 @@ def main(argv=None) -> int:
                     help="tab a revisar (repetible). Default: las dos SANDBOX de esta semana")
     ap.add_argument("--make-sandbox", action="store_true",
                     help="duplicar el Sales Board y el Line Up de esta semana como SANDBOX")
+    ap.add_argument("--refresh-sandbox", action="store_true",
+                    help="borrar las SANDBOX y volver a copiarlas de las reales (pide --force)")
+    ap.add_argument("--force", action="store_true")
     ap.add_argument("--apply", action="store_true", help="arreglar (sólo tabs SANDBOX)")
     ap.add_argument("--sheet-id", default=SHEET_ID)
     ap.add_argument("--date", help="YYYY-MM-DD dentro de la semana (default: hoy)")
@@ -231,11 +270,15 @@ def main(argv=None) -> int:
     today = dt.date.fromisoformat(a.date) if a.date else dt.date.today()
     live = list(week_tabs(today))
     sh = _book(a.sheet_id)
-    if a.make_sandbox:
+    stamp = dt.datetime.now().strftime("%Y-%m-%d_%H%M")
+    if a.refresh_sandbox:
+        if not a.force:
+            raise SystemExit("--refresh-sandbox borra las tabs SANDBOX: agregá --force")
+        refresh_sandbox(sh, live, stamp)
+    if a.make_sandbox or a.refresh_sandbox:
         make_sandbox(sh, live)
     titles = a.tab or [SANDBOX_PREFIX + t for t in live]
 
-    stamp = dt.datetime.now().strftime("%Y-%m-%d_%H%M")
     results = {}
     for title in titles:
         t = load(sh, title)

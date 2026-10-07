@@ -70,6 +70,27 @@ class Fonts(unittest.TestCase):
         self.assertIn("updateCells", found[0].request)
 
 
+class Notes(unittest.TestCase):
+    def test_note_says_what_changed_and_keeps_an_existing_note(self):
+        rows = [("Rep %d" % i, GOOD, "1", "Here") for i in range(6)]
+        rows[2] = ("Rep 2", GOOD, "x", "")
+        v, _ = board(rows)
+        found = K.check_roll_call("t", v)
+        notes = [[""] * 7 for _ in range(12)]
+        notes[5][6] = "Raf: call him"
+        reqs = K.note_requests(found, 7, notes, "10/07")
+        self.assertEqual(len(reqs), 1)
+        text = reqs[0]["updateCells"]["rows"][0]["values"][0]["note"]
+        self.assertTrue(text.startswith("Raf: call him\n\nLucy fixed this (10/07):"))
+        self.assertIn("Now: Off.", text)
+        self.assertEqual(reqs[0]["updateCells"]["fields"], "note")
+
+    def test_rule_deletes_get_no_note(self):
+        rule = Conditional.rule(None, "=COUNTIF(#REF!,A4)>0")
+        found = K.check_conditional("t", 7, [rule], ncols=36)
+        self.assertEqual(K.note_requests(found, 7, [], "10/07"), [])
+
+
 class Conditional(unittest.TestCase):
     def rule(self, formula, rows=(3, 40), cols=(2, 5), color=1):
         return {"ranges": [{"sheetId": 7, "startRowIndex": rows[0], "endRowIndex": rows[1],
