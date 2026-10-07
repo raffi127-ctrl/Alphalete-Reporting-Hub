@@ -300,9 +300,9 @@
   },
   {
     "key": "tre",
-    "label": "Tre's Local Office (channel from ECO sign-up)",
+    "label": "Tre's Local Office",
     "owner": "Tre Mitchell",
-    "channel_ids": [],
+    "channel_ids": ["C0C7GKSRTQW"],
     "trackers": [
       "att_country",
       "att_country_internet_only",
