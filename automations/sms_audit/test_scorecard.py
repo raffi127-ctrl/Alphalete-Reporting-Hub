@@ -159,7 +159,7 @@ class WhyDodged(unittest.TestCase):
         dodgy, should ask something back"."""
         got = S.why_dodged(self.REMOTE, "dodged", "Is the position in a store?",
                            "This is a residential campaign")
-        self.assertIn("vaguely", got)
+        self.assertIn("vague", got)
         self.assertNotIn("Doesn't answer", got)
         # The how-to-fix lives on the section, not on every quote.
         self.assertIn("ask", S.recovery_for(self.REMOTE).lower())
@@ -172,18 +172,20 @@ class WhyDodged(unittest.TestCase):
             "require employees to drive to different job sites?",
             "This is a residential campaign")
         self.assertIn("Doesn't answer", got)
-        self.assertIn("Nothing asked back", got)
 
-    def test_a_reply_that_does_ask_back_is_not_nagged_about_it(self):
+    def test_the_red_line_states_the_fault_and_does_not_coach(self):
+        """Megan 2026-10-06: "that's a weird way to coach that" — the
+        coaching belongs in the green Instead: box, not the red line."""
         got = S.why_dodged(self.REMOTE, "dodged",
                            "I had a question about the role. Where is it?",
-                           "It moves around DFW. Does that work for you?")
-        self.assertNotIn("Nothing asked back", got)
+                           "This is a residential campaign")
+        self.assertNotIn("asked back", got)
+        self.assertNotIn("Say ", got)
 
     def test_a_straight_no_is_not_called_vague(self):
         got = S.why_dodged(self.REMOTE, "dodged", "Is the position in a store?",
                            "No, it is not in a store")
-        self.assertNotIn("vaguely", got)
+        self.assertNotIn("vague", got)
 
     def test_a_reply_giving_a_time_when_none_was_asked_for(self):
         got = S.why_dodged(self.REMOTE, "dodged", "Is this in a store?",
@@ -274,9 +276,30 @@ class WeakAnswers(unittest.TestCase):
         self.assertFalse(S.is_weak("Is the position in a store?",
                                    "It is residential. Does that work?"))
 
-    def test_every_bucket_has_a_way_back_to_a_booking(self):
+    def test_every_bucket_has_real_advice(self):
         for bucket in S.TOPICS:
-            self.assertIn("times", S.recovery_for(bucket).lower() + " times")
+            advice = S.recovery_for(bucket)
+            self.assertGreater(len(advice), 30, bucket)
+            self.assertTrue(advice.endswith("."), bucket)
+
+    def test_the_which_role_advice_is_megans(self):
+        got = S.recovery_for("Which role / which company is this?")
+        self.assertIn("sounds familiar", got)
+        self.assertIn("still looking for work", got)
+
+    def test_a_walk_away_warning_reads_differently(self):
+        """Megan 2026-10-06: "these can't be the same"."""
+        plain = S.why_dodged("Is this remote / where is the office?",
+                             "dodged", "Is the position in a store?",
+                             "This is a residential campaign")
+        walks = S.why_dodged("Is this remote / where is the office?",
+                             "dodged",
+                             "Is it at a store location if not I'm not "
+                             "interested",
+                             "This would be a residential campaign")
+        self.assertNotEqual(plain, walks)
+        self.assertIn("drop out", walks)
+        self.assertNotIn("drop out", plain)
 
     def test_an_unknown_bucket_still_gets_advice(self):
         self.assertTrue(S.recovery_for("Something new?"))

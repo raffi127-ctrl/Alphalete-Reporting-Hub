@@ -404,6 +404,14 @@ TOPICS = {
 }
 
 
+# They have told us the answer decides it: "if not I'm not interested",
+# "otherwise I'll pass". A vague reply to THAT is not the same fault as a
+# vague reply to an idle question — Megan 2026-10-06, shown both carrying
+# one line: "these can't be the same".
+WALKS = re.compile(r"(if not[, ]|otherwise|or else|then)?[^.?!]{0,24}"
+                   r"\b(not interested|no longer interested|i'?ll pass|"
+                   r"i'?m out|don'?t bother|forget it|lose interest)\b", re.I)
+
 YES_NO = re.compile(r"^\s*(is|are|was|were|do|does|did|can|could|will|would|"
                     r"should|has|have|am)\b", re.I)
 SAYS_YES_NO = re.compile(r"\b(yes|yep|yeah|no|nope|not|isn'?t|aren'?t|"
@@ -432,8 +440,8 @@ RECOVERY = {
         "Tell them what a day looks like in one sentence. Ask if that "
         "sounds like them, and offer two interview times.",
     "Which role / which company is this?":
-        "Tell them the job title they applied to and that it was through "
-        "Indeed. Offer two interview times.",
+        "Tell them the job they applied to. Ask if that sounds familiar, "
+        "and if they are still looking for work.",
     "Hours, training, is it paid?":
         "Tell them the hours and that training is paid. Offer two "
         "interview times.",
@@ -525,11 +533,11 @@ def why_dodged(bucket, kind="", question="", reply="", entry=None):
     # something back". So name it as vague rather than as unanswered, and
     # say what to do — the same shape as ruling 3, answer then reassure.
     if is_weak(q, r):
-        return ("Answers it vaguely and asks nothing back.{}".format(tail))
-    out = "Doesn't answer {}.".format(topic)
-    if "?" not in r:
-        out += " Nothing asked back, either."
-    return out + tail
+        if WALKS.search(q):
+            return ("They said they would drop out if the answer was no, "
+                    "and this never said yes or no.{}".format(tail))
+        return "Never said yes or no, only a vague answer.{}".format(tail)
+    return "Doesn't answer {}.{}".format(topic, tail)
 
 
 def _chased(entry):
@@ -703,10 +711,13 @@ def render(person, office, weeks, path):
             add("<p class='none'>Technically answered, but nothing said "
                 "plainly and nothing asked back \u2014 so the conversation "
                 "stops instead of becoming a booking.</p>")
+        elif heading == "Questions not answered":
+            add("<p class='none'>They asked, and it never came back to "
+                "them.</p>")
         for label, rows_ in sorted(groups.items(), key=lambda kv: -len(kv[1])):
             add("<details><summary>{} \u2014 {}</summary>".format(
                 esc(label), len(rows_)))
-            if heading == "Weak answers":
+            if heading in ("Weak answers", "Questions not answered"):
                 add("<p class='fixit'>Instead: {}</p>".format(
                     esc(recovery_for(label))))
             for hit, body, name, why in rows_:
