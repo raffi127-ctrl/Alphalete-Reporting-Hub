@@ -1850,3 +1850,52 @@ class BucketFalsePositives(unittest.TestCase):
     def test_the_plain_dress_questions_still_count(self):
         for q in ("what should i wear", "is it business casual?"):
             self.assertIn("What should I wear / bring?", A.buckets_of(q), q)
+
+
+class GenericWordFalsePositives(unittest.TestCase):
+    """A bare word anywhere in a message is not a question about us.
+
+    Megan 2026-10-06: "does breija ask about remote?" — she was asking
+    about direct deposit forms and mentioned her BANK having no physical
+    location. Then "same thing here?" on Grayson Holly, who said "sorry I
+    was just at the store" while asking about his hours."""
+
+    BREIJA = ("I know you guys asked us to bring out bank info but my bank "
+              "does not have direct deposit forms and I won't be able to get "
+              "a void check due to the bank no longer having a physical "
+              "location")
+    GRAYSON = ("Yes, sorry I was just at the store. I will be there for sure "
+               "that day. Will I be there everyday after that day at that "
+               "same time 1:30pm, or what would be the hours I need to be "
+               "there each day?")
+
+    def test_a_bank_with_no_physical_location_is_not_asking_about_ours(self):
+        self.assertEqual(A.buckets_of(self.BREIJA), [])
+
+    def test_being_at_the_store_is_not_asking_if_the_job_is_in_one(self):
+        self.assertNotIn("Is this remote / where is the office?",
+                         A.buckets_of(self.GRAYSON))
+
+    def test_that_question_is_about_hours(self):
+        self.assertIn("Hours, training, is it paid?",
+                      A.buckets_of(self.GRAYSON))
+
+    def test_the_real_store_question_still_counts(self):
+        for q in ("is this in a store?",
+                  "Is it at a store location if not I'm not interested"):
+            self.assertIn("Is this remote / where is the office?",
+                          A.buckets_of(q), q)
+
+    def test_the_real_location_questions_still_count(self):
+        for q in ("what location is this for", "what is your location",
+                  "is this remote", "where is the office located"):
+            self.assertIn("Is this remote / where is the office?",
+                          A.buckets_of(q), q)
+
+    def test_bringing_bank_info_is_not_asking_what_to_bring(self):
+        self.assertNotIn("What should I wear / bring?",
+                         A.buckets_of(self.BREIJA))
+
+    def test_really_asking_what_to_bring_still_counts(self):
+        for q in ("should i bring a resume", "do i need to bring anything"):
+            self.assertIn("What should I wear / bring?", A.buckets_of(q), q)

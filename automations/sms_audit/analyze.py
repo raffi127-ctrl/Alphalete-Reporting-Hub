@@ -97,12 +97,16 @@ QUESTION_BUCKETS = [
      r"message|invite)|where (was|did) it (sent|go)|check (my|your) spam|"
      r"pertaining to the email|thru indeed|through indeed|via indeed)"),
     ("Hours, training, is it paid?",
-     r"\b(what (are|is) the hours|how many hours|hours for this|schedule like|"
+     r"\b(what[^.?!]{0,14}the hours|how many hours|hours for this|schedule like|"
      r"full[- ]time|part[- ]time|training (work|paid|be)|is (the )?training|"
      r"(be|any|have) training|is it paid|paid training|benefits)"),
     ("Is this remote / where is the office?",
-     r"\b(remote|virtual|in[- ]person|onsite|on[- ]site|location|where\b.*\b(office|located|interview)|"
-     r"address|directions?|how far|located in|at a store|in a store|the store|"
+     r"\b(remote|virtual|in[- ]person|onsite|on[- ]site"
+     r"|(your|the|this|what|which|job|office|work|interview)\s+location"
+     r"|location\s+(of|is|for)\b"
+     r"|where\b.*\b(office|located|interview)|"
+     r"address|directions?|how far|located in|at a store|in a store|"
+     r"a store location|"
      r"which (area|city|location)|actual office|working at a)"),
     ("What is the pay?",
      r"\b(pay|salary|hourly|commission|comission|compensation|how much|wage|\$\d)"),
@@ -112,7 +116,8 @@ QUESTION_BUCKETS = [
      r"more (detail|info)|what.{0,12}job about|give me detail|job details|"
      r"what (the )?job entail|learning more)"),
     ("I can't make it / I'm sick / running late",
-     r"\b(can'?t make|running late|be late|won'?t be able|something came up|"
+     r"\b(can'?t make|running late|be late|something came up|"
+     r"won'?t be able to (make|attend|come|join|be there|do)|"
      r"miss (my|the)|sick|under the weather|not feeling|emergency|"
      r"car (trouble|broke)|flat tire)"),
     ("Can we reschedule / a different time?",
@@ -125,7 +130,9 @@ QUESTION_BUCKETS = [
      r"connect after|what day and time|could we do it|would .{0,12}(work|be a good)|"
      r"^\s*(is|was) it \d|\b\d{1,2}(:\d{2})?\s*(am|pm)\b)"),
     ("What should I wear / bring?",
-     r"\b(wear|dress|attire|bring|business (casual|professional)"
+     r"\b(wear|dress|attire|business (casual|professional)"
+     r"|bring\s+(any|a |my |the )?(resume|cv|id|notebook|pen|anything"
+     r"|something|documents?)"
      r"|(bring|need|should i have|take)[^.?!]{0,20}\bresum)"),
     ("How long is the interview / what's next?",
      r"\b(how long|next step|hear back|when will|what happens|second interview|follow up)"),
