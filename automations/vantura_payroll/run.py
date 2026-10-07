@@ -115,7 +115,7 @@ def week_ending(today: dt.date | None = None) -> dt.date:
 # Name, cl.Description, …); later ones are fuzzy fallbacks. Sale/Act date
 # headers are unconfirmed — a miss fails loud and prints the real headers.
 RAW_TARGETS = {
-    "B": ("Rep Name", ("rep.full name", "rep name", "rep", "icd name")),
+    "B": ("Rep Name", ("rep.full name", "rep.name", "rep name", "rep", "icd name")),
     "C": ("Sale Date", ("cl.sale date", "sale date", "sold date")),
     "D": ("Activation Date", ("cl.activation date", "activation date", "activated")),
     "E": ("Description", ("cl.description", "description")),
@@ -209,21 +209,14 @@ RAF_DD_REPS = (
 # filter's field name as the URL param. A value that matches no member resets
 # EVERY filter on the view (blank board, empty export) — the loader detects
 # both that and an ignored param and warns instead of loading garbage.
-RAF_DD_OWNER = ""   # DISABLED 10/7: Lucy's Tableau login is row-level
-# locked to Carlos's own ICD in the DD workbook (owner-probe proved the
-# export holds ONLY 'Carlos Hidalgo'), so no owner value can reach Raf's
-# DD from this session. Re-enable by setting Raf's exact cl.ICD Owner
-# Name once a Raf-side Tableau session or export exists.
-RAF_DD_FILTER_FIELD = "cl.ICD Owner Name"
-
-
-def _raf_dd_url() -> str:
-    # Raw-paren style per the working slices in b2b_metrics/offices.py:
-    # encode spaces only; percent-encoding parens/slashes breaks Tableau.
-    val = RAF_DD_OWNER.replace(" ", "%20")
-    fld = RAF_DD_FILTER_FIELD.replace(" ", "%20")
-    base = DD_DETAIL_URL.split("?")[0]
-    return f"{base}?{fld}={val}&:iid=1"
+# The org-wide DD view (same workbook, ALL owners — the view Carlos calls
+# "Raf's direct deposit"). The personal DDDETAIL view above only ever returns
+# Carlos's own ICD; pay_structure/dd_pull.py has pulled this ORG view for
+# months. Unfiltered it defaults to the LATEST DD week(s) — exactly the
+# payroll window.
+ORG_DD_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+              "DirectDepositICDVIEWVersion2_0/DDDETAILORG?:iid=1")
+ORG_DD_SHEET = "ORG DD Detail"
 
 
 def _rep_tokens(name: str) -> frozenset:
@@ -439,21 +432,26 @@ def _load_raw(xlsx: Path, week: dt.date, *, write: bool, sheet_id: str, log=_log
 
 
 def _pull_raf_dd(week: dt.date, log=_log) -> Path:
-    """Download the DD DETAIL crosstab sliced to Raf's owner — same mechanics
-    as _pull_icd_dd_detail, different URL + filename."""
+    """Download the ORG DD Detail crosstab (all owners, latest DD weeks) —
+    same mechanics as _pull_icd_dd_detail, different view + filename."""
     from automations.vantura_churn import cdp_pull
     out = (REPO_ROOT / "output" / "vantura_payroll" /
-           f"ICD dd Detail RAF {week.isoformat()}.xlsx")
+           f"ORG DD Detail {week.isoformat()}.xlsx")
     out.parent.mkdir(parents=True, exist_ok=True)
     if out.exists():
         out.unlink()
-    log(f"pulling RAF-owner DD DETAIL crosstab -> {out}")
-    log(f"  url: {_raf_dd_url()}")
-    cdp_pull.download_views([(_raf_dd_url(), DD_DETAIL_SHEET, str(out))],
-                            log=log)
+    log(f"pulling ORG DD Detail crosstab -> {out}")
+    cdp_pull.download_views([(ORG_DD_URL, ORG_DD_SHEET, str(out))], log=log)
     if not out.exists():
-        raise FileNotFoundError("Raf DD pull did not produce the export file.")
+        raise FileNotFoundError("ORG DD pull did not produce the export file.")
     return out
+
+
+def _dd_week_strs(week: dt.date) -> set:
+    """The ORG view labels a payroll week's rows with the DD Saturday AND the
+    Sunday (both seen live 10/7: '10/3/2026' + '10/4/2026' for WE 10/4)."""
+    sat = week - dt.timedelta(days=1)
+    return {f"{d.month}/{d.day}/{d.year}" for d in (sat, week)}
 
 
 def _dd_norm(v) -> str:
@@ -484,13 +482,18 @@ def _load_raf_extra(week: dt.date, raw_range: tuple[int, int], *, write: bool,
     week's RAW block, append below it. Returns (extended raw_range, a one-line
     status for the DM). Raises on pull/guard failures — the caller catches and
     turns it into a DM warning; the main payroll is never blocked."""
-    if not RAF_DD_OWNER:
-        return raw_range, "Raf DD slice: DISABLED (owner value not set)"
+    if not RAF_DD_REPS:
+        return raw_range, "ORG DD sweep: DISABLED (allowlist empty)"
     xlsx = _pull_raf_dd(week, log=log)
     headers, data = _read_export(xlsx, log=log)
     cmap = _map_columns(headers, log=log)
-    # same grand-total guard as the main load, but tolerant: an empty export
-    # means the owner slice matched nothing (filter reset) — warn, load nothing.
+    hl = [str(h).strip().lower() for h in headers]
+    try:
+        own_i = hl.index("cl.icd owner name")
+        wk_i = hl.index("cl.dd week")
+    except ValueError:
+        raise RuntimeError(
+            f"ORG DD export missing owner/week columns — headers: {headers}")
     if data:
         first = [str(c).strip() for c in data[0]]
         rep_i = cmap["B"]
@@ -498,13 +501,23 @@ def _load_raf_extra(week: dt.date, raw_range: tuple[int, int], *, write: bool,
                 any("total" in c.lower() for c in first):
             data = data[1:]
     if not data:
-        raise RuntimeError(
-            "Raf DD export came back empty — wrong owner value resets every "
-            "filter on the view; fix RAF_DD_OWNER.")
+        raise RuntimeError("ORG DD export came back empty — view changed?")
 
-    kept = [r for r in data
-            if _on_allowlist(str(r[cmap["B"]] if cmap["B"] < len(r) else ""))]
-    log(f"Raf DD slice: {len(data)} rows, {len(kept)} match the allowlist")
+    weeks = _dd_week_strs(week)
+    in_week = [r for r in data
+               if str(r[wk_i] if wk_i < len(r) else "").strip() in weeks]
+    if not in_week:
+        seen_wks = sorted({str(r[wk_i]).strip() for r in data
+                           if wk_i < len(r)})[:6]
+        raise RuntimeError(
+            f"ORG DD export has no rows for DD week(s) {sorted(weeks)} — "
+            f"it shows {seen_wks}; the view's default week moved on.")
+    kept = [r for r in in_week
+            if _on_allowlist(str(r[cmap["B"]] if cmap["B"] < len(r) else ""))
+            and "carlos hidalgo" not in
+            str(r[own_i] if own_i < len(r) else "").strip().lower()]
+    log(f"ORG DD sweep: {len(data)} rows, {len(in_week)} in week, "
+        f"{len(kept)} = allowlist reps under a non-Carlos owner")
     if not kept:
         return raw_range, (f"Raf DD slice: 0 of {len(data)} rows matched the "
                            "16-rep allowlist (nothing to add)")
@@ -538,8 +551,8 @@ def _load_raf_extra(week: dt.date, raw_range: tuple[int, int], *, write: bool,
         out_rows.append([wnum, cell("B"), cell("C"), cell("D"),
                          cell("E"), cell("F"), cell("G"), cell("H")])
         jn_rows.append([cell("J"), cell("K"), cell("L"), cell("M"), cell("N")])
-    note = (f"Raf DD slice: +{len(out_rows)} row(s) for the allowlist reps"
-            f" ({dups} already present)")
+    note = (f"ORG DD sweep: +{len(out_rows)} row(s) for allowlist reps under "
+            f"other owners ({dups} already present)")
     if not out_rows:
         return raw_range, note
     start, end = last_row + 1, last_row + len(out_rows)
@@ -1282,24 +1295,32 @@ def main(argv: list[str] | None = None) -> int:
         xlsx = _pull_raf_dd(wk)
         headers, data = _read_export(xlsx)
         cmap = _map_columns(headers)
-        if data and not str(data[0][cmap["B"]] if cmap["B"] < len(data[0])
-                            else "").strip():
-            data = data[1:]
-        _log(f"raf-test: {len(data)} data rows in the Raf slice")
+        hl = [str(h).strip().lower() for h in headers]
+        own_i = hl.index("cl.icd owner name") if "cl.icd owner name" in hl else None
+        wk_i = hl.index("cl.dd week") if "cl.dd week" in hl else None
+        weeks = _dd_week_strs(wk)
         per = {}
         for r in data:
             nm = str(r[cmap["B"]] if cmap["B"] < len(r) else "").strip()
+            if not nm or "total" in nm.lower():
+                continue
+            if wk_i is not None and str(r[wk_i] if wk_i < len(r)
+                                        else "").strip() not in weeks:
+                continue
+            own = str(r[own_i] if own_i is not None and own_i < len(r)
+                      else "?").strip()
             try:
                 amt = float(str(r[cmap["H"]] if cmap["H"] < len(r) else 0)
                             .replace("$", "").replace(",", "") or 0)
             except ValueError:
                 amt = 0.0
-            if nm:
-                c, s = per.get(nm, (0, 0.0))
-                per[nm] = (c + 1, s + amt)
-        for nm, (c, s) in sorted(per.items(), key=lambda kv: -kv[1][1]):
-            _log(f"  {'*' if _on_allowlist(nm) else ' '} {nm}: {c} line(s), "
-                 f"${s:,.2f}   ('*' = on the 16-rep allowlist)")
+            c, t = per.get((nm, own), (0, 0.0))
+            per[(nm, own)] = (c + 1, t + amt)
+        _log(f"raf-test: DD week(s) {sorted(weeks)} — per rep/owner "
+             f"('*' = on the 16-rep allowlist):")
+        for (nm, own), (c, t) in sorted(per.items(), key=lambda kv: -kv[1][1]):
+            if _on_allowlist(nm):
+                _log(f"  * {nm} [{own}]: {c} line(s), ${t:,.2f}")
         return 0
 
     live = bool(args.live)
@@ -1334,7 +1355,7 @@ def main(argv: list[str] | None = None) -> int:
                 week, raw_range, write=write, sheet_id=sheet_id)
             _log(raf_note)
         except Exception as exc:  # noqa: BLE001 — never block payroll on it
-            raf_note = f"Raf DD slice FAILED ({exc!r}) — add those reps by hand"
+            raf_note = f"ORG DD sweep FAILED ({exc!r}) — check those reps by hand"
             _log(raf_note)
         _set_week(week, write=write, sheet_id=sheet_id)
         # Level-2 bonuses BEFORE the refresh so _rebuildCore picks them up.
