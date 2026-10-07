@@ -345,6 +345,43 @@ def pull_office(page, tok, office, owner, lo, hi, diag=False):
     return rows, (total, incoming, outgoing)
 
 
+REPORT_ID = "sms_log"
+
+
+def short_read(scraped, total):
+    """Why this office's log can't be trusted as COMPLETE, or None.
+
+    The page's own Total is the only outside count we have. Fewer rows than
+    it means a column moved or a row shape changed; no Total at all means
+    there is nothing to check the read against — either way the tab may hold
+    part of a week, and a quietly short log reads as "nobody texted them"."""
+    if total is None:
+        return "the page showed no Total to check the read against"
+    if scraped < total:
+        return "scraped {} of the page's {} texts".format(scraped, total)
+    return None
+
+
+def record_delivery(done, bad, retry_args):
+    """Today's run manifest — the proof a clean run closes its ticket with.
+
+    2026-10-07: open since 9/27 as "ran clean, but nothing can confirm it
+    DELIVERED". Eve: an exit-0 rule isn't enough, runs often leave info
+    unfilled. So an office only counts when its tab was written with EVERY
+    text the page says exists; a failed, empty, short or unwritten office is
+    a named failed part and the ticket stays open. Never raises."""
+    try:
+        from automations.shared import run_manifest
+        run_manifest.write_manifest(
+            REPORT_ID, succeeded=done, failed=bad,
+            retry_args=retry_args if bad else [],
+            note="{} office(s) complete, {} not".format(len(done), len(bad)))
+    except Exception as e:  # noqa: BLE001
+        print("[sms_log] couldn't write the run manifest ({}: {}) — the tabs "
+              "are written, but the ticket won't close itself".format(
+                  type(e).__name__, e), flush=True)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--office", default="11280",
@@ -375,6 +412,12 @@ def main(argv=None):
 
     OUTPUT_DIR.mkdir(exist_ok=True)
     rc = 0
+    done, bad, bad_offices = [], [], []
+
+    def _miss(office, why):
+        bad.append("{}: {}".format(office, why))
+        bad_offices.append(office)
+
     with appstream_direct_session(verbose=True) as page:
         page.wait_for_timeout(3000)
         tok = _rqst(page)
@@ -385,8 +428,10 @@ def main(argv=None):
                 rows, totals = pull_office(page, tok, office, a.owner, lo, hi,
                                            diag=a.diagnose)
             except Exception as e:  # noqa: BLE001 — one office must not kill the rest
-                print("[sms_log] {}: FAILED {}: {}".format(
-                    office, type(e).__name__, str(e).splitlines()[0][:200]), flush=True)
+                why = "{}: {}".format(type(e).__name__,
+                                      (str(e).splitlines() or [""])[0][:200])
+                print("[sms_log] {}: FAILED {}".format(office, why), flush=True)
+                _miss(office, "pull failed — " + why)
                 rc = 1
                 continue
             (OUTPUT_DIR / "sms_log_{}.json".format(office)).write_text(
@@ -400,10 +445,26 @@ def main(argv=None):
             if not rows:
                 print("[sms_log] {}: nothing scraped — tab left alone".format(office),
                       flush=True)
+                _miss(office, "nothing scraped")
                 rc = 1
                 continue
-            tab, n = _write_tab(rows, meta, office)
+            try:
+                tab, n = _write_tab(rows, meta, office)
+            except Exception as e:  # noqa: BLE001 — the next office still runs
+                print("[sms_log] {}: sheet write FAILED {}: {}".format(
+                    office, type(e).__name__, e), flush=True)
+                _miss(office, "sheet write failed — {}".format(type(e).__name__))
+                rc = 1
+                continue
             print("[sms_log] {}: {} rows → tab '{}'".format(office, n, tab), flush=True)
+            why = short_read(len(rows), totals[0])
+            if why:
+                _miss(office, why)
+            else:
+                done.append(office)
+    if not a.dry_run:
+        record_delivery(done, bad, ["--office", ",".join(bad_offices),
+                                    "--dates", "{},{}".format(lo, hi)])
     return rc
 
 
