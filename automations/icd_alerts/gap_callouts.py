@@ -285,7 +285,6 @@ RECEIPT_LINES = (
     "Okay {names}, I see you 💅 Credit check behind the quiet. Period. 💰",
     "Say less 💁‍♀️ {names} was working the whole time. Lucy apologizes 🫡",
     "{names} proved me wrong 🧾 and I love being wrong 🫡 Credit check's on the board — go close it 💰",
-    "{names} didn't feel like it and did it anyway 🫡 Credit check's on the board. #FYMFTP 💰",
 )
 # The same idea for a business office: no credit checks on Box, so what moves
 # is a sale.
@@ -298,7 +297,6 @@ B2B_RECEIPT_LINES = (
     "You showed me 🫡 {names} — a sale behind the quiet. ¡Así se hace! 💼",
     "Okay {names}, I see you 💅 Deal behind the quiet. Period. 💼",
     "{names} proved me wrong 🧾 and I love being wrong 🫡 Deal's on the board 💼",
-    "{names} didn't feel like it and did it anyway 🫡 Deal's on the board. #FYMFTP 💼",
 )
 
 
