@@ -13113,6 +13113,45 @@
    "_onboarded": true,
    "_note": "Office metrics for jenny (Jennifer Figueroa, Figspire Management, Eastern). Wired by hand 2026-10-06 (no form). AT&T Fiber D2D like jacob. on_scheduler false until a dry run on Lucy 4 proves data on every board; channel comes from her Lucy ECO sign-up. Hub: the shared office-metrics card."
   },
+  "tre_metrics": {
+   "order": 36.8,
+   "machine": "Lucy 4",
+   "on_scheduler": false,
+   "display_name": "Tre's Daily Metrics (channel from ECO sign-up)",
+   "source_type": "tableau",
+   "data_sources": [
+    "tableau:order_log"
+   ],
+   "command": [
+    "automations.office_metrics.runner"
+   ],
+   "base_args": [
+    "--office",
+    "tre",
+    "--live"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P1",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 60,
+   "verify": {
+    "type": "manifest",
+    "report_id": "tre_metrics"
+   },
+   "_onboarded": true,
+   "_note": "Office metrics for tre (Tre Mitchell = AppStream/OV owner Lamar Mitchell III, Mission III Management, Houston, Central). Wired by hand 2026-10-07 (no form). AT&T Fiber D2D like jacob/jenny. on_scheduler false until a dry run on Lucy 4 proves data on every board; channel comes from his Lucy ECO sign-up. Sheet 'Lucy Metrics (Mission III Management)' 1rso9lZwzKci_9QllltsdROeKEoFWEaly-VvasBywR9E copied from the Master Metrics Templates. Hub: the shared office-metrics card."
+  },
   "icd_knocks_board_now": {
    "on_scheduler": false,
    "_off_scheduler_note": "Post ONE office's knocks board right now, to every approved destination, ignoring cadence and field hours: `lucy rerun icd_knocks_board_now --office aya --machine \"Lucy 1\"`. Built 2026-09-22 (Megan: 'send Aya's final knock board now please') -- the day's last board had gone from Lucy 3, which her group does not receive. Lucy 1 because texts must leave from there.",

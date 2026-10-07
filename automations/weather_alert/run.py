@@ -122,6 +122,7 @@ METRICS_CITY = {
     "nii": "wilkes_barre", "jacob": "memphis",
     "jairo": "miami",           # Profits Management, Miami (305)
     "jenny": "louisville",      # Figspire Management (metrics key; ECO key is jennifer)
+    "tre": "houston",           # Mission III Management, Houston (office script doc); skipped while held to Megan's DM
 }
 
 
