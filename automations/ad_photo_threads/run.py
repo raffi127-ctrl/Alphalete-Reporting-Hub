@@ -154,6 +154,46 @@ def nightly(day: Optional[dt.date] = None, explicit_date: bool = False,
     return 1 if failed else 0
 
 
+REDO_BUDGET_MIN = 35
+
+
+def redo_all(through: dt.date, crop: bool = True) -> int:
+    """`--office all --redo-weekly` (Eve 10/7, after Carlos's): every live
+    office still in the daily layout, one after another, as ONE queue job.
+    An office already weekly is skipped, so a job that died is just queued
+    again; one office failing never stops the next."""
+    import time
+    from automations.ad_photo_threads import config, weekly
+    failed, left, t0 = [], [], time.monotonic()
+    for o in [o for o in config.OFFICES if o.get("live")]:
+        config.use(o)
+        channel = config.LIVE_CHANNEL_ID
+        if weekly.is_weekly(channel):
+            print(f"[{o['key']}] already weekly")
+            continue
+        # The rerun's timeout (schedule_config, 75 min) must never cut an
+        # office in half: past REDO_BUDGET_MIN no new office starts; queue
+        # the job again for the rest.
+        if time.monotonic() - t0 > REDO_BUDGET_MIN * 60:
+            left.append(o["key"])
+            continue
+        print(f"[{o['key']}] redo weekly — {o['owner']} through {through}")
+        try:
+            got = weekly.redo_channel(channel, through, crop=crop)
+        except Exception as e:                # noqa: BLE001 — next office still runs
+            failed.append(o["key"])
+            print(f"[{o['key']}] FAILED: {type(e).__name__}: {str(e)[:300]}")
+            continue
+        print(f"[{o['key']}] done: {got['weeks']} week(s), {got['blocks']} block(s), "
+              f"{got['threads_new']} new thread(s), {len(got['untouched'])} untouched")
+        for t in got["untouched"]:
+            print(f"[{o['key']}]   untouched (old layout kept): {t}")
+    if left:
+        print(f"redo all: time's up, still daily: {', '.join(left)} -- queue it again")
+    print(f"redo all: {'FAILED ' + ', '.join(failed) if failed else 'no failures'}")
+    return 1 if failed else 0
+
+
 def _scheduled_merges() -> None:
     """config.SCHEDULED_MERGES, {office key: "YYYY-MM-DD"}: on the first tick
     on/after that date (Central), fold that office's duplicate threads once.
@@ -355,6 +395,9 @@ def main(argv=None) -> int:
     if a.nightly:
         day = dt.date.fromisoformat(a.date) if a.date else None
         return nightly(day, explicit_date=bool(a.date), only=a.office)
+    if a.redo_weekly and a.office == "all":
+        return redo_all(dt.date.fromisoformat(a.date) if a.date else collect.central_today(),
+                        crop=not a.no_crop)
     from automations.ad_photo_threads import config
     config.use(config.office(a.office or "rafael"))
     day = dt.date.fromisoformat(a.date) if a.date else collect.central_today()

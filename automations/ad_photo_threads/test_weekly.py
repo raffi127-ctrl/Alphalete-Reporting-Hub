@@ -250,5 +250,23 @@ class LivePathTest(unittest.TestCase):
         self.assertEqual(ad["stats"][tue.isoformat()]["removed"], 1)
 
 
+class RedoAllTest(unittest.TestCase):
+    def test_skips_weekly_offices_and_keeps_going_after_a_failure(self):
+        from automations.ad_photo_threads import config, run
+        offices = [{"key": k, "owner": k, "live": True, "live_channel": "C" + k}
+                   for k in ("a", "b", "c")]
+        done = []
+
+        def redo(ch, through, crop=True):
+            if ch == "Cb":
+                raise RuntimeError("boom")
+            done.append(ch)
+            return {"weeks": 1, "blocks": 1, "threads_new": 0, "untouched": []}
+        with mock.patch.object(config, "OFFICES", offices),                 mock.patch.object(config, "use", lambda o: setattr(config, "LIVE_CHANNEL_ID", o["live_channel"])),                 mock.patch.object(weekly, "is_weekly", lambda ch: ch == "Ca"),                 mock.patch.object(weekly, "redo_channel", redo):
+            rc = run.redo_all(MON)
+        self.assertEqual(rc, 1)
+        self.assertEqual(done, ["Cc"])
+
+
 if __name__ == "__main__":
     unittest.main()
