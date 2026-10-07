@@ -13320,6 +13320,28 @@
    "timeout_minutes": 30,
    "verify": null
   },
+  "first_round_office_scorecards": {
+   "hand_run_only": true,
+   "on_scheduler": false,
+   "_note": "Rafael via Camila 2026-10-07: each office's 1st round scorecard for a day (average, each interviewer's score, red flags, 2 coaching tips, audit links). Base args = the SAMPLE to the group DM Rafael + Camila + Eve; add --date YYYY-MM-DD. The daily post to each office's recruiting channel runs from first_round_scorecards once office_post.LIVE is on.",
+   "display_name": "1st Round Scorecards — office scorecards sample",
+   "source_type": "api",
+   "command": [
+    "automations.first_round_scorecards.office_post"
+   ],
+   "base_args": [
+    "--sample"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "timeout_minutes": 20,
+   "verify": null
+  },
   "install_first_round_scorecards_agent": {
    "on_scheduler": false,
    "_note": "One-shot installer for com.alphalete.first-round-scorecards \u2014 see first_round_scorecards. Run `lucy rerun install_first_round_scorecards_agent` after `lucy update`.",

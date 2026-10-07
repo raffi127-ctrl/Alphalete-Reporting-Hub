@@ -130,7 +130,7 @@ def scores(week_of: dt.date, svc=None) -> List[Dict]:
                     print(f"  no score in {person['name']}/{day['name']}/{d['name']} - left out")
                     continue
                 t = _TIME.search(d["name"])
-                out.append({"interviewer": person["name"], "date": day["name"],
+                out.append({"interviewer": person["name"], "date": day["name"], "doc": d["id"],
                             "time": (dt.datetime.strptime(t.group(1), "%I:%M %p").strftime("%H:%M")
                                      if t else ""),
                             **{k: hit.get(k) or ([] if k in ("flags", "missed", "coaching") else "")
