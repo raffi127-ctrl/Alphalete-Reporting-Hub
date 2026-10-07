@@ -99,7 +99,7 @@ QUESTION_BUCKETS = [
     ("Hours, training, is it paid?",
      r"\b(what (are|is) the hours|how many hours|hours for this|schedule like|"
      r"full[- ]time|part[- ]time|training (work|paid|be)|is (the )?training|"
-     r"is it paid|paid training|benefits)"),
+     r"(be|any|have) training|is it paid|paid training|benefits)"),
     ("Is this remote / where is the office?",
      r"\b(remote|virtual|in[- ]person|onsite|on[- ]site|location|where\b.*\b(office|located|interview)|"
      r"address|directions?|how far|located in|at a store|in a store|the store|"
@@ -125,7 +125,8 @@ QUESTION_BUCKETS = [
      r"connect after|what day and time|could we do it|would .{0,12}(work|be a good)|"
      r"^\s*(is|was) it \d|\b\d{1,2}(:\d{2})?\s*(am|pm)\b)"),
     ("What should I wear / bring?",
-     r"\b(wear|dress|attire|bring|resume|business (casual|professional))"),
+     r"\b(wear|dress|attire|bring|business (casual|professional)"
+     r"|(bring|need|should i have|take)[^.?!]{0,20}\bresum)"),
     ("How long is the interview / what's next?",
      r"\b(how long|next step|hear back|when will|what happens|second interview|follow up)"),
     ("Is this a real job / who are you?",

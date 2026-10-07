@@ -279,7 +279,8 @@ def work_on(person, weeks):
         elif bot:
             why = "Offer sooner interview times."
         else:
-            why = "Not your booking lead \u2014 look at the texts below."
+            why = ("Your bookings aren't too far out, so it is the "
+                   "conversations. Read them below.")
         add("1st Round Retention", "{:.0f}%".format(show),
             GC._band(show, 55, 48, 40), why,
             "{:.0f}%".format(prev) if prev is not None else None,
@@ -295,7 +296,7 @@ def work_on(person, weeks):
             else "Read it back before sending.",
             "{}".format(before.get("typing")) if before else None,
             goal="no more than {:.0f} across {:,} texts".format(
-                0.5 * now["texts"] / 100.0, now["texts"]))
+                max(1, round(0.5 * now["texts"] / 100.0)), now["texts"]))
 
     # Megan 2026-10-06: "6 house rules out of 3k texts sent seems pretty
     # low....", and the same for unanswered questions. Both were graded on
@@ -317,7 +318,7 @@ def work_on(person, weeks):
             "{}. The exact texts are below.".format(worst),
             "{}".format((before or {}).get("house")) if before else None,
             goal="no more than {:.0f} across {:,} texts".format(
-                0.5 * texts_now / 1000.0, texts_now))
+                max(1, round(0.5 * texts_now / 1000.0)), texts_now))
 
     sp = now.get("replies") or {}
     if sp and sp.get("n", 0) >= 10:
@@ -339,7 +340,7 @@ def work_on(person, weeks):
             else "Answer it, then book. The exact ones are below.",
             str((before or {}).get("dodged")) if before else None,
             goal="no more than {:.0f} across {:,} texts".format(
-                0.5 * texts_now / 1000.0, texts_now))
+                max(1, round(0.5 * texts_now / 1000.0)), texts_now))
 
     items.sort(key=lambda i: "FDCBA".index(i["grade"]))
     return items
@@ -574,13 +575,23 @@ def did_well(person, weeks, limit=2):
     before = person["weeks"][got[-2]] if len(got) > 1 else None
     out = []
 
-    def moved(new, old, up_good, show, praise):
+    # Megan 2026-10-06, on "only 4 missed, down from 5": "from 5 to 4
+    # isn't a big difference". It was praising any improvement at all,
+    # however small, and calling it "a lot more". A move has to clear
+    # BOTH a quarter of where they started and a floor that means
+    # something, or it is this week's noise.
+    MIN_REL = 0.25
+
+    def moved(new, old, up_good, show, praise, floor=2.0):
         if new is None or old is None:
             return
         better = (new > old) if up_good else (new < old)
         if not better:
             return
-        out.append((abs(new - old) / max(abs(old), 1.0),
+        gap = abs(new - old)
+        if gap < floor or gap < MIN_REL * max(abs(old), 1.0):
+            return
+        out.append((gap / max(abs(old), 1.0),
                     praise.format(new=show(new), old=show(old))))
 
     pct = lambda v: "{:.0f}%".format(v)
@@ -589,7 +600,7 @@ def did_well(person, weeks, limit=2):
     moved(_rate(now, "shown", "booked"),
           _rate(before, "shown", "booked") if before else None, True, pct,
           "More of your bookings turned up \u2014 {new} against {old} last "
-          "week. Keep doing whatever changed.")
+          "week. Keep doing whatever changed.", floor=5.0)
     moved(now.get("house"), (before or {}).get("house"), False, num,
           "Good pull back on the house rules \u2014 {new} this week, down "
           "from {old}.")
@@ -601,11 +612,11 @@ def did_well(person, weeks, limit=2):
     moved((now.get("replies") or {}).get("median"),
           ((before or {}).get("replies") or {}).get("median"), False, A_mins,
           "You got back to people faster \u2014 {new}, down from {old}. That "
-          "is the one applicants feel most.")
+          "is the one applicants feel most.", floor=2.0)
     moved(_rate(now, "far_out", "matched"),
           _rate(before, "far_out", "matched") if before else None, False, pct,
           "You booked people closer to the slot \u2014 {new} more than a day "
-          "out, down from {old}.")
+          "out, down from {old}.", floor=5.0)
 
     texts = now.get("texts") or 0
     if texts >= MIN_TEXTS:
@@ -872,10 +883,8 @@ def render(person, office, weeks, path):
             if f["before"] and f["before"] != f["now"]:
                 moved = " <span class='moved'>{} last week</span>".format(
                     esc(f["before"]))
-            add("<li><b>{}: {}</b>{}<br>{}{}</li>".format(
-                esc(f["area"]), esc(f["now"]), moved, esc(f["do"]),
-                " <span class='goal'>For an A: {}.</span>".format(
-                    esc(f["goal"])) if f.get("goal") else ""))
+            add("<li><b>{}: {}</b>{}<br>{}</li>".format(
+                esc(f["area"]), esc(f["now"]), moved, esc(f["do"])))
         add("</ol>")
     add("</div>")
 

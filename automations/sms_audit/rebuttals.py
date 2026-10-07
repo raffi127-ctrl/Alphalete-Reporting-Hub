@@ -293,9 +293,15 @@ OFFICE_ADDRESS = {
     # Confirmed by Megan in her own words, 2026-09-27.
     "11580": "1901 N Highway 360, Suite 610, Grand Prairie, Texas 75050",
 }
-_STREET = re.compile(r"(\d{3,5})\s+([A-Za-z0-9.' ]{3,28}?)\s*"
-                     r"(Dr|Drive|St|Street|Rd|Road|Blvd|Hwy|Highway|Ln|Lane)\b"
-                     r"[^.!?\n]{0,40}", re.I)
+# \b on BOTH sides of the suffix. Without the leading one, "Rd" matched
+# the "rd" inside "forward", so "Meeting ID: 293 507 7152 We look forward
+# to speaking with you" was read as a street address and counted against
+# the office's wrong-address rule (Megan 2026-10-06: "last one isn't an
+# address"). A Zoom meeting id is five figures and a sentence away from
+# looking like one.
+_STREET = re.compile(r"(\d{3,5})\s+([A-Za-z0-9.' ]{1,28}?)\s*"
+                     r"\b(Dr|Drive|St|Street|Rd|Road|Blvd|Hwy|Highway|Ln|Lane)"
+                     r"\b[^.!?\n]{0,40}", re.I)
 _UNIT = re.compile(r"(Unit|Suite|Ste\.?)\s*(\w+)", re.I)
 
 

@@ -1828,3 +1828,25 @@ class LinksAreNotProse(unittest.TestCase):
     def test_a_real_lowercase_i_still_fires(self):
         self.assertIn(("lowercase i", "i on its own"),
                       A.proofread("No i do not have you on the schedule"))
+
+
+class BucketFalsePositives(unittest.TestCase):
+    """Megan 2026-10-06 on Kevin Isik: "he didnt ask what to wear or
+    bring?" He had not — the bucket fired on the bare word "resume"."""
+
+    KEVIN = ("kevin.isik200@gmail.com and question, will my work dates be "
+             "the ones i provided on my resume and will their be training?")
+
+    def test_mentioning_a_resume_is_not_asking_what_to_bring(self):
+        self.assertNotIn("What should I wear / bring?", A.buckets_of(self.KEVIN))
+
+    def test_that_question_is_about_training(self):
+        self.assertIn("Hours, training, is it paid?", A.buckets_of(self.KEVIN))
+
+    def test_actually_asking_to_bring_a_resume_still_counts(self):
+        for q in ("Should I bring a resume?", "do i need to bring my resume"):
+            self.assertIn("What should I wear / bring?", A.buckets_of(q), q)
+
+    def test_the_plain_dress_questions_still_count(self):
+        for q in ("what should i wear", "is it business casual?"):
+            self.assertIn("What should I wear / bring?", A.buckets_of(q), q)

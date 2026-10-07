@@ -79,3 +79,43 @@ class Pay(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StreetBoundary(unittest.TestCase):
+    """A street suffix has to be a word, not the end of one.
+
+    Megan 2026-10-06, shown a Zoom confirmation flagged as a wrong
+    address: "last one isn't an address". "Rd" was matching the "rd" in
+    "forward", so a meeting id plus a sentence read as a street."""
+
+    def setUp(self):
+        RB.ADDRESS_HISTORY.clear()
+        RB.set_address_history(
+            "11280", "5217 Tennyson Pkwy, Suite 100, Plano, Texas 75024",
+            "3100 Premier Drive, Suite 207, Irving, Texas 75063")
+
+    def test_a_meeting_id_is_not_an_address(self):
+        self.assertIsNone(RB.wrong_address(
+            "11280", "Meeting ID: 293 507 7152 We look forward to "
+                     "speaking with you!"))
+
+    def test_forward_does_not_become_a_road(self):
+        self.assertIsNone(RB.wrong_address(
+            "11280", "I look forward to it, 1234 is my code"))
+
+    def test_a_genuinely_wrong_address_still_fires(self):
+        self.assertTrue(RB.wrong_address(
+            "11280", "Our office is at 3100 Premier Drive, Suite 232 "
+                     "Irving, TX 75063"))
+
+    def test_the_old_street_after_the_move_still_fires(self):
+        self.assertTrue(RB.wrong_address(
+            "11280", "Come to 3100 Premier Dr, Irving TX"))
+
+    def test_the_current_address_is_clean(self):
+        self.assertIsNone(RB.wrong_address(
+            "11280", "We are at 5217 Tennyson Pkwy Suite 100 Plano, TX"))
+
+    def test_a_street_named_in_full_is_not_split(self):
+        self.assertTrue(RB.wrong_address(
+            "11280", "We're at 1901 N Highway 360, Grand Prairie"))
