@@ -195,10 +195,14 @@ def _mark_day_done(day: dt.date) -> None:
     _save(data)
 
 
-def watch_text(day: dt.date, graded: Dict[str, List], email: str, label: str) -> str:
+def watch_text(day: dt.date, graded: Dict[str, List], email: str, label: str,
+               earlier: int = 0) -> str:
+    """`earlier` = that Zoom's interviews an EARLIER tick of the day already
+    posted: `graded` only holds what this run did, so a later retry tick
+    (21:39 on 10/6) saw none of Carlos' and said "0 entrevistas"."""
     rows = [(m, r) for rs in graded.values() for m, r, _ in rs
             if ((m.get("recorded_by") or {}).get("email") or "").lower() == email]
-    audited = sum(1 for _, r in rows if r)
+    audited = sum(1 for _, r in rows if r) + earlier
     when = f"{day.month}/{day.day}"
     if audited:
         return (f"✅ {label[:1].upper() + label[1:]} ({when}): {audited} entrevista(s) auditada(s), "
@@ -210,6 +214,24 @@ def watch_text(day: dt.date, graded: Dict[str, List], email: str, label: str) ->
             "de esa cuenta. Revisar con Camila si se grabó.")
 
 
+def _posted_earlier(day: dt.date, graded: Dict[str, List], email: str) -> int:
+    """That Zoom's interviews of `day` already in the ledger, not in `graded`."""
+    data = _ledger()
+    posted = {k for k, v in data.items() if isinstance(v, dict) and v.get("date") == day.isoformat()}
+    if not posted:
+        return 0
+    here = {str(m.get("recording_id")) for rs in graded.values() for m, _, _ in rs}
+    try:
+        meetings = fathom.meetings_on(day)
+    except Exception as exc:  # noqa: BLE001
+        print(f"WATCH: couldn't re-list the day ({type(exc).__name__}: {exc})")
+        return 0
+    return sum(1 for m in meetings
+               if ((m.get("recorded_by") or {}).get("email") or "").lower() == email
+               and str(m.get("recording_id")) in posted - here
+               and len(m.get("transcript") or []) >= MIN_TRANSCRIPT_LINES)
+
+
 def _watch_dm(day: dt.date, graded: Dict[str, List]) -> None:
     """Eve's one-time DM for each WATCH Zoom whose day this is."""
     sent = _ledger().get("_watch_sent", [])
@@ -217,7 +239,7 @@ def _watch_dm(day: dt.date, graded: Dict[str, List]) -> None:
         tag = f"{email} {on}"
         if on != day.isoformat() or tag in sent:
             continue
-        text = watch_text(day, graded, email, label)
+        text = watch_text(day, graded, email, label, _posted_earlier(day, graded, email))
         try:
             from automations.shared import slack_metrics_post as smp
             client = smp._client()
@@ -350,7 +372,8 @@ def _grade_one(m: Dict, do_grade: bool):
         return name, (m, None, "(not graded: --no-grade)")
     speaker = (m.get("recorded_by") or {}).get("name") or ""
     try:
-        result = grade.grade(fathom.transcript_text(m), interviewer_speaker=speaker)
+        result = grade.grade(fathom.transcript_text(m), interviewer_speaker=speaker,
+                             owner=m.get("owner") or "")
     except Exception as exc:  # noqa: BLE001
         # one bad grade must not sink the other ~100: it's left out (not
         # posted, so not in the ledger) and the next tick grades it again
@@ -378,6 +401,19 @@ def _add_scheduled(day: dt.date, graded: Dict[str, List]) -> None:
     for m, r in rows:
         m["scheduled_ct"] = appstream.scheduled_for(
             r.get("applicants") or [], bookings, fathom.start_ct(m)) or ""
+    # not in Raf's three funnels (Carlos' office books in 11580): every other
+    # office, read only when something is still unplaced
+    if any(not m["scheduled_ct"] for m, _ in rows):
+        try:
+            bookings = appstream.booked(day, appstream.other_offices())
+        except Exception as exc:  # noqa: BLE001
+            print(f"AppStream other offices not read ({type(exc).__name__}: {exc})")
+            return
+        print(f"AppStream other offices: {len(bookings)} 1st rounds booked on {day}")
+        for m, r in rows:
+            if not m["scheduled_ct"]:
+                m["scheduled_ct"] = appstream.scheduled_for(
+                    r.get("applicants") or [], bookings, fathom.start_ct(m)) or ""
 
 
 def _dm_channel(client) -> str:

@@ -762,6 +762,35 @@ class IncidentThreadTest(unittest.TestCase):
                                              client=self.c))
         self.assertNotIn((first["ts"], "pending"), self.c.reactions)
 
+    # --- waiting on its source (Eve 2026-10-06) -------------------------------
+
+    def test_waiting_swaps_pending_for_purple(self):
+        """A ticket somebody checked and found nothing to fix — Tableau just
+        hadn't loaded the week. ONE status mark at a time: the purple replaces
+        the :pending:, it doesn't sit beside it."""
+        day = dt.date.today()
+        first = self._open(day)
+        inc.mark_working("failure-r", channel="C1", day=day, client=self.c)
+        inc._HISTORY_CACHE.clear()
+        self.assertTrue(inc.mark_waiting("failure-r", channel="C1", day=day,
+                                         client=self.c))
+        self.assertIn((first["ts"], "large_purple_circle"), self.c.reactions)
+        self.assertNotIn((first["ts"], "pending"), self.c.reactions)
+        self.assertIn("· open ", self.c.top_level[0])
+
+    def test_working_again_takes_the_purple_off(self):
+        day = dt.date.today()
+        first = self._open(day)
+        inc.mark_waiting("failure-r", channel="C1", day=day, client=self.c)
+        inc._HISTORY_CACHE.clear()
+        inc.mark_working("failure-r", channel="C1", day=day, client=self.c)
+        self.assertIn((first["ts"], "pending"), self.c.reactions)
+        self.assertNotIn((first["ts"], "large_purple_circle"), self.c.reactions)
+
+    def test_waiting_on_nothing_open_is_a_no_op(self):
+        self.assertFalse(inc.mark_waiting("r", channel="C1", client=self.c))
+        self.assertEqual(self.c.reactions, [])
+
     def test_unmarking_something_that_was_never_posted_is_a_no_op(self):
         self.assertFalse(inc.mark_not_working("failure-nope", channel="C1",
                                               client=self.c))

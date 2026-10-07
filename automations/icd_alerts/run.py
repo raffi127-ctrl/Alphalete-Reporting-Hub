@@ -171,6 +171,15 @@ def _report(stage: str, e: Exception, detail: str = "",
                    log=_log, office_key=office_key)
 
 
+def _is_code_wall(e: Exception) -> bool:
+    """True when SaraPlus took the password but wants its emailed code."""
+    wall = getattr(sara_read.S, "SaraPasscodeWall", None)
+    cause = getattr(e, "__cause__", None)
+    if wall is not None and isinstance(cause, wall):
+        return True
+    return "code it emails" in str(e)
+
+
 def cmd_once(headless: bool, dry_run: bool, day: dt.date,
              sales_only: bool = False) -> int:
     # FIRST, AND ONCE A DAY. Getting a fix onto an office's machine used to
@@ -233,7 +242,13 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date,
         return 1
     except sara_read.AccountProblem as e:
         print("\n%s" % e)
-        _report("sweep", e, office_key=att_key)
+        # THE EMAILED-CODE WALL IS A SIGN-IN, not a laptop fault. Filed as
+        # "sweep" it went to the corrections room saying "the office was not
+        # asked to send anything" -- and the one person who could clear it was
+        # never told (Eveliz, 2026-10-03..06). As signin-saraplus the poster
+        # DMs the owner, their helpers, Megan & Eve, once a day.
+        stage = "signin-saraplus" if _is_code_wall(e) else "sweep"
+        _report(stage, e, office_key=att_key)
         sara_read.hold_sara(log=_log)
         # SAME AS THE BOX PATH, and for the SAME reason. Khalil's machine hit
         # SaraPlus's passcode wall 115 times on 2026-09-17 -- five hours of
@@ -463,7 +478,15 @@ def cmd_knocks(headless: bool, dry_run: bool, day: dt.date) -> int:
             continue
         except ov_read.KnocksProblem as e:
             print("\n%s" % e)
-            _report("knocks", e, office_key=key)
+            # EVIDENCE FIRST. The relay trims the detail, and a traceback is
+            # long enough to push the page's URL, title and text off the end
+            # (Jamis 2026-10-06: the first evidence row stopped at "page
+            # url: ...p=89&"). The traceback is the same every time; the
+            # evidence is the part nobody has seen.
+            seen = getattr(e, "seen", "")
+            _report("knocks", e, office_key=key,
+                    detail=(seen + "\n\n" + traceback.format_exc())
+                    if seen else "")
             worst = 1
             continue
         except RuntimeError as e:
@@ -575,6 +598,18 @@ def main(argv=None) -> int:
         if args.if_due and not (alerting or C.in_sales_window()):
             # Quiet on purpose. This fires every 15 minutes on somebody's
             # laptop; a line per skip would be the only thing in the log.
+            # EXCEPT THE SARAPLUS SESSION, which must not idle out overnight:
+            # an expired one means a fresh login at the 2am close-out, and on
+            # some accounts every fresh login is an emailed-code wall
+            # (Eveliz, 2026-10-06). See sara_read.keep_session_alive.
+            if not args.dry_run and not sara_read.sara_held_until():
+                try:
+                    did = sara_read.keep_session_alive(headless=headless,
+                                                       log=_log)
+                    if did in ("kept", "lost"):
+                        _log("SaraPlus keep-alive: %s" % did)
+                except Exception:  # noqa: BLE001 — never lose a tick to this
+                    pass
             return 0
         sales_only = bool(args.if_due and not alerting)
         # BOTH, INDEPENDENTLY. SaraPlus and OwnerVille are different systems

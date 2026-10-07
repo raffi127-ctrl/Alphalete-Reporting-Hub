@@ -42,11 +42,23 @@ COLUMNS = ("Digi Docs", "Onboarding Quizzes", "Headshot Photo", "UID Request",
 # THAT is the bug to fix -- do not just switch un-ticking on.
 NEVER_UNTICK = ("Owner Submit",)
 
-# UN-TICKING IS GATED (Megan 2026-09-28: "you can uncheck if it's not true").
-# While False the run REPORTS every stale tick and changes nothing, so the first
-# list is read by a person before any box is cleared. Ticking the wrong box on
-# is a no-op; clearing the wrong box erases work somebody did.
-UNTICK_STALE_LIVE = False
+# UN-TICKING (Megan 2026-09-28: "you can uncheck if it's not true"; LIVE from
+# 2026-10-05: "flip the untick gate on").
+#
+# While it was False the run reported every stale tick and changed nothing. Live,
+# a box the sheet claims and OwnerVille denies is cleared -- and the values
+# cleared are written to output/obcl-unticks-<tab>-<stamp>.json FIRST, because
+# nobody can tell from the tab what a box said an hour ago.
+#
+# THE ONE THING TO WATCH, and the reason this was gated at all: Headshot Photo
+# has a SECOND WRITER. The Headshot Bot ticks it every 5 minutes for photos that
+# came through Slack. If it ever ticks without its upload showing in OwnerVille's
+# Upload Documents, that box will FLIP on a 5-minute cycle -- cleared here,
+# re-ticked there, a Sheets write each way. If Headshot Photo starts appearing
+# in the un-tick list every single run, that is the symptom: the two sources
+# disagree systematically, and the fix is in the bot's upload, not here. Set this
+# back to False while that is sorted.
+UNTICK_STALE_LIVE = True
 
 # Final Status words that mean this person is not going through onboarding —
 # no point spending an OwnerVille lookup on them. "Owner submitted" is skipped

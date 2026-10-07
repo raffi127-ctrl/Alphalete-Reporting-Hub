@@ -69,6 +69,15 @@ CITIES = {
     "austin": ("Austin, TX", 30.2672, -97.7431, "America/Chicago"),
     "wilkes_barre": ("Wilkes-Barre, PA", 41.2459, -75.8813, "America/New_York"),
     "memphis": ("Memphis, TN", 35.1495, -90.0490, "America/Chicago"),
+    # jamis / Midspire: "Chicago Business Development Consulting" is the
+    # company's own site title (midspireinc.com, 2026-10-06).
+    "chicago": ("Chicago, IL", 41.8781, -87.6298, "America/Chicago"),
+    # jenny / Figspire Management: Louisville, KY (Megan, 2026-10-06).
+    "louisville": ("Louisville, KY", 38.2527, -85.7585, "America/New_York"),
+    # luke / Takeoff Enterprises: Santa Clara, CA -- the company's own site
+    # (takeoffenterprise.com) and its CA filing, 2026-10-06. OwnerVille could
+    # not find him under Raf's login (not on the Office Access list).
+    "santa_clara": ("Santa Clara, CA", 37.3541, -121.9552, "America/Los_Angeles"),
 }
 OFFICE_CITY = {
     "kash": "dfw", "cyrus": "dfw", "carlos": "dfw", "carlos-b2batt": "dfw",
@@ -84,6 +93,21 @@ OFFICE_CITY = {
     # the same #maximal-sales, and both are approved. Listing both would post
     # the forecast twice into one room. Re-key if his machine relays as -nds.
     "maxamad": "san_antonio",
+    # Jamis Garay / Midspire, Chicago -- #jamis-sales (Megan 2026-10-06: "Jamis
+    # is missing weather report"). ONE key only: he runs Box (jamis10) and
+    # AT&T (jamis) on one Mac into the same room; listing both would post the
+    # forecast twice. His B2B metrics + trackers moved into this same room on
+    # 2026-10-06 (Megan); b2b_metrics is not in the metrics fan-out below, so
+    # the room still gets exactly one forecast.
+    "jamis": "chicago",
+    # Jennifer Figueroa / Figspire, Louisville -- #figspire (2026-10-06). ONE
+    # key: her form minted jennifer + jennifer-att into the same room.
+    "jennifer": "louisville",
+    # Luke Baldwin / Takeoff Enterprises, Santa Clara -- #takeoff-b2b
+    # (2026-10-06). ONE key: his form minted luke + luke-b2batt + luke2 into
+    # the same room; his metrics office (also `luke`) posts to that room too,
+    # and the per-room de-dupe below keeps it to one forecast.
+    "luke": "santa_clara",
 }
 
 # EVERY METRICS CHANNEL GETS IT TOO (Megan 2026-09-29: "all metrics channels
@@ -97,6 +121,8 @@ METRICS_CITY = {
     "cody": "corpus_christi", "haytham": "austin", "trang": "san_antonio",
     "nii": "wilkes_barre", "jacob": "memphis",
     "jairo": "miami",           # Profits Management, Miami (305)
+    "jenny": "louisville",      # Figspire Management (metrics key; ECO key is jennifer)
+    "tre": "houston",           # Mission III Management, Houston (office script doc); skipped while held to Megan's DM
 }
 
 
@@ -273,6 +299,13 @@ def metrics_posts() -> list:
     for key, o in O.OFFICES.items():
         if not o.channel_id:
             continue                      # email-only office
+        if not str(o.channel_id).startswith("C"):
+            # HELD TO A PERSON, NOT A ROOM. A new office whose ECO sign-up has
+            # not named its channel yet parks on Megan's DM (jenny, luke,
+            # 2026-10-06); a daily forecast to her DM is noise, and a test
+            # that demands a city for it is asking for a city nobody knows yet.
+            print(f"[weather] {key}: destination is a DM hold, not a channel -- skipped", flush=True)
+            continue
         city = OFFICE_CITY.get(key) or METRICS_CITY.get(key)
         if not city:
             print(f"[weather] {key}: metrics office with no city -- skipped", flush=True)

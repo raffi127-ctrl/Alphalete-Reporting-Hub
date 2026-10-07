@@ -458,8 +458,97 @@ def sign_in(page, ctx, log=_log) -> bool:
             log("AppStream is signed in")
             return True
         page.wait_for_timeout(5000)
-    log("the AppStream office page never opened -- usually a mistyped "
-        "username or password")
+    global LAST_SIGNIN_PAGE
+    LAST_SIGNIN_PAGE = describe_page(page, ctx)
+    log("Lucy could not confirm the AppStream office page. What her Chrome "
+        "showed:")
+    for line in LAST_SIGNIN_PAGE.splitlines():
+        log("  " + line)
+    return False
+
+
+# WHAT THE PAGE WAS, WHEN THE PROOF FAILS. Drew, 2026-10-06: Lucy signed in --
+# he watched AppStream open -- and the check still said "never opened". The
+# proof is #searchMC, the office SWITCHER, and every account it was learned on
+# sees many offices; an office's own login sees one. Whether that page has no
+# switcher is a guess until we see it, so a failure now says what was there.
+LAST_SIGNIN_PAGE = ""
+SIGNIN_SHOT = C.APP_DIR / "resume-push-signin.png"
+
+
+def _no_tokens(url: str) -> str:
+    """rqst is a live session token: it never leaves the machine."""
+    import re
+    return re.sub(r"(rqst=)[^&#]+", r"\1<hidden>", url or "")
+
+
+def describe_page(page, ctx) -> str:
+    """URL (token hidden), title, the markers that decide signed-in, and the
+    opening text. Never raises; a screenshot stays on this computer."""
+    from automations.shared import ownerville_knocks as K
+    out = []
+
+    def add(label, fn):
+        try:
+            out.append("%s: %s" % (label, fn()))
+        except Exception as e:  # noqa: BLE001
+            out.append("%s: ? (%s)" % (label, type(e).__name__))
+
+    add("url", lambda: _no_tokens(page.url))
+    add("title", lambda: page.title())
+    add("office switcher #searchMC", lambda: page.locator(CONSOLE).count())
+    add("password box", lambda: page.locator(K._PASSWORD_SELECTOR).count())
+    add("security check frame", lambda: page.locator(
+        'iframe[src*="challenges.cloudflare"]').count())
+    add("session cookies (rqst_)", lambda: len(_rqst_tokens(ctx)))
+    add("tabs", lambda: len(ctx.pages))
+    add("text", lambda: " ".join(page.inner_text("body").split())[:300])
+    try:
+        page.screenshot(path=str(SIGNIN_SHOT))
+        out.append("screenshot on this computer: %s" % SIGNIN_SHOT)
+    except Exception:  # noqa: BLE001
+        pass
+    return "\n".join(out)
+
+
+# A CHROME WITH NO WINDOW CANNOT BE DRIVEN. On a Mac, closing Lucy's last
+# Chrome window leaves Chrome running -- port 9247 still answers -- but Chrome
+# unloads the profile behind it, and connect_over_cdp then dies on its first
+# call: "Protocol error (Browser.setDownloadBehavior): Browser context
+# management is not supported." Drew, 2026-10-06; reproduced here on Chrome
+# 154 + patchright 1.60 (window open: fine; windows closed: that exact error).
+# Not a version mismatch, and nothing a password can fix.
+_NO_PROFILE = "context management is not supported"
+
+
+def _page_count() -> int:
+    """Open tabs in Lucy's Chrome; -1 when it cannot be asked."""
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:%d/json/list" % PORT,
+                                    timeout=5) as r:
+            return sum(1 for t in json.loads(r.read())
+                       if t.get("type") == "page")
+    except Exception:  # noqa: BLE001
+        return -1
+
+
+def _open_window(url: str) -> bool:
+    """Ask Lucy's Chrome for a new window over plain HTTP. That loads her
+    profile again, which is all connect_over_cdp was missing. Measured: it
+    brings a windowless Chrome back without restarting it, on any OS."""
+    import urllib.parse
+    try:
+        req = urllib.request.Request(
+            "http://127.0.0.1:%d/json/new?%s"
+            % (PORT, urllib.parse.quote(url, safe=":/?=&")), method="PUT")
+        with urllib.request.urlopen(req, timeout=10):
+            pass
+    except Exception:  # noqa: BLE001
+        return False
+    for _ in range(10):
+        if _page_count() > 0:
+            return True
+        time.sleep(0.5)
     return False
 
 
@@ -467,9 +556,22 @@ def _connect(p, background: bool, url: str = AS_BASE, guard=None):
     """(browser, ctx, page) on Lucy's Chrome, starting it if needed."""
     if guard:
         guard.expect(30)            # a cold Chrome takes a while to come up
-    if not _port_alive() and not launch_chrome(url, background):
+    if _port_alive():
+        if _page_count() == 0:
+            _log("Lucy's Chrome was open with no window -- opening one")
+            _open_window(url)
+    elif not launch_chrome(url, background):
         return None, None, None
-    browser = p.chromium.connect_over_cdp("http://127.0.0.1:%d" % PORT)
+    cdp = "http://127.0.0.1:%d" % PORT
+    try:
+        browser = p.chromium.connect_over_cdp(cdp)
+    except Exception as e:  # noqa: BLE001
+        # The window check above can lose a race with a window closing; the
+        # message is the proof, so give it one more window and one more try.
+        if _NO_PROFILE not in str(e).lower() or not _open_window(url):
+            raise
+        _log("Lucy's Chrome had no window -- opened one, connecting again")
+        browser = p.chromium.connect_over_cdp(cdp)
     ctx = browser.contexts[0] if browser.contexts else browser.new_context()
     page = ctx.pages[0] if ctx.pages else ctx.new_page()
     for extra in list(ctx.pages)[1:]:
@@ -496,8 +598,12 @@ def _connect(p, background: bool, url: str = AS_BASE, guard=None):
 
 
 # --- the jobs ------------------------------------------------------------------
+NO_CHROME = 3
+
+
 def check_login(log=_log) -> int:
-    """For the installer: sign in where they can see it. 0 ok, 1 no, 2 none."""
+    """For the installer: sign in where they can see it. 0 ok, 1 no, 2 none,
+    3 Lucy's Chrome would not open (so the login was never even tried)."""
     if not C.appstream_creds():
         log("no AppStream login saved on this computer")
         return 2
@@ -505,8 +611,58 @@ def check_login(log=_log) -> int:
     with sync_playwright() as p:
         browser, ctx, page = _connect(p, background=False)
         if not page:
-            return 1
+            return NO_CHROME
         return 0 if sign_in(page, ctx, log) else 1
+
+
+# --- when the setup check fails ------------------------------------------------
+# Drew, 2026-10-06: the setup screen said "Resume pushing  failed (Error)" and
+# nothing else. "Error" is patchright's base class -- it named the library,
+# not the problem -- and the message holding the real reason was thrown away,
+# with nothing sent to us. Raf was sure the login was right, and it probably
+# was: a wrong login says "still needs signing in", never "failed".
+_CLOSED = ("has been closed", "target closed", "browser closed",
+           "connection closed", "browser has disconnected")
+
+
+def explain_failure(e: BaseException) -> "tuple[str, str]":
+    """(reason, hint) for a crash in the setup check, in plain words.
+
+    The reason goes on the summary line; the hint says what to do. A cause we
+    do not recognise keeps its own full message -- a guess would hide it.
+    """
+    msg = str(e).strip()
+    low = msg.lower()
+    if _NO_PROFILE in low:      # first: its call log can mention closing
+        return ("Lucy's Chrome was running with no window open",
+                "Quit Lucy's Chrome (right-click Chrome in the Dock > Quit), "
+                "then run this again.")
+    if any(s in low for s in _CLOSED):
+        return ("Lucy's Chrome window was closed before the check finished",
+                "Run this again and leave the Chrome window that opens alone "
+                "until this screen says it is done.")
+    if "connect_over_cdp" in low or ("127.0.0.1:%d" % PORT) in low:
+        return ("could not take control of Lucy's Chrome (port %d)" % PORT,
+                "Quit every Chrome window Lucy opened (right-click Chrome in "
+                "the Dock > Quit), then run this again.")
+    first = msg.splitlines()[0].strip() if msg else ""
+    return ("%s: %s" % (type(e).__name__, first) if first
+            else type(e).__name__, "")
+
+
+def report_setup_failure(summary: str, detail: str = "", log=_log) -> bool:
+    """File a failed setup check to #claudecorrections-and-requests, the same
+    road the scheduled push's faults take. Not de-duplicated like those: a
+    person runs setup by hand, so every failed run is news. Never raises."""
+    try:
+        from automations.icd_alerts import relay as R
+        return R.report_fault("resume_push",
+                              "Resume pushing setup failed: %s" % summary,
+                              detail, log=log,
+                              office_key=str(push_record().get("office_key")
+                                             or ""))
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def setup_extension(log=_log, wait_seconds: int = 300) -> bool:
@@ -585,7 +741,8 @@ def push(live: bool, scheduled: bool = False) -> int:
             if not sign_in(page, ctx):
                 result = "login"
                 _report_once(result, "AppStream sign-in failed on the office "
-                                     "machine; resumes are not being pushed")
+                                     "machine; resumes are not being pushed",
+                             LAST_SIGNIN_PAGE)
                 return 1
             try:
                 out = B.run_batch(page, dry_run=not live)
@@ -649,7 +806,10 @@ def main(argv=None) -> int:
     if args.setup:
         return 0 if setup_extension() else 1
     if args.check_login:
-        return check_login()
+        rc = check_login()
+        if rc == NO_CHROME:
+            _log("could not open Lucy's Chrome, so the login was not tried")
+        return rc
     return push(live=args.live, scheduled=args.scheduled)
 
 

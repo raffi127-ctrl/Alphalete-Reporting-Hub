@@ -25,6 +25,8 @@ what runs, and when. `SAFE_COLUMNS` is the whole contract and a test pins it.
 """
 from __future__ import annotations
 
+import datetime as dt
+import pathlib
 import re
 import time
 
@@ -32,8 +34,9 @@ import time
 # test that checks it is the point of the list existing.
 SAFE_COLUMNS = ["ICD", "Campaigns", "LucyECO", "Sara+ Alerts",
                 "Text Scoreboard", "Call-outs", "Knock & Dispo Boards",
-                "Weather Report", "Ad Photo Threads", "Resume Pushing",
-                "Metrics Thread", "Tableau Trackers", "Gap Alerts"]
+                "Gap Alerts", "Weather Report", "Ad Photo Threads",
+                "Resume Pushing", "Metrics Thread", "Tableau Trackers",
+                "Last reading", "On latest update"]
 
 # Separates the columns inside one cell. The page splits on it to build a
 # small aligned table; anything reading these as plain text still gets a
@@ -44,6 +47,53 @@ FIELD = " \u00b7 "
 # blank - should be light red"). A blank cell is ambiguous between "no" and
 # "we did not check".
 NOT_ON = "Not Enrolled"
+
+# EVERYTHING THE OFFICE'S OWN MACHINE FEEDS, headed in one colour so the
+# block reads as a block (Megan 2026-10-06). These are the columns that go
+# Pending together when a machine has not reported, and the ones an owner
+# asks about as a set; the rest are things we run for them from our side.
+ECO_GROUP = ("LucyECO", "Sara+ Alerts", "Text Scoreboard", "Call-outs",
+             "Knock & Dispo Boards", "Gap Alerts")
+
+# HEADER TINTS. The relay-fed block shares one so it reads as a block; the
+# two admin columns share green; everything else gets its own, because they
+# are unrelated reports that happen to sit side by side and a single grey
+# run made them look like one more group (Megan 2026-10-06). These are
+# header colours only — the cells keep green/amber/red for status, and these
+# are deliberately paler so the two languages do not collide.
+# NO HEADER MAY SIT NEAR A STATUS COLOUR, and no two may sit near each
+# other. Resume Pushing's rose read as the red the cells use for Not
+# Enrolled, and Weather's sky blue was a shade off the group's blue (Megan
+# 2026-10-06). So: one blue for the block, green for the admin pair because
+# that was asked for, then violet / pink / slate / yellow / orange — all far
+# apart in hue, and none of them red.
+HEADER_TINT = {
+    **{c: "#DBEAFE" for c in ECO_GROUP},          # the office's own machine
+    "Last reading": "#BBF7D0", "On latest update": "#BBF7D0",
+    "Weather Report": "#E9D5FF",                  # violet
+    "Ad Photo Threads": "#FBCFE8",                # pink
+    "Resume Pushing": "#E2E8F0",                  # slate — never rose
+    "Metrics Thread": "#FEF08A",                  # yellow
+    "Tableau Trackers": "#FED7AA",                # orange
+}
+
+# Two columns the gated sales board adds and the public page never does.
+# They are about chasing an INSTALL, not about what an office receives, and
+# 'last reading' on an open page is a liveness probe of someone's laptop.
+# ON EVERY SURFACE NOW (Megan 2026-10-06: "we lost the last relay time and
+# if it's on the latest update"). They were held back from the ungated page
+# when 'Gone quiet' still read as Partial enrolment — the column said the
+# machine was down and these would have said it twice. Now that enrolment
+# and health are separate, the health has to be SOMEWHERE, and a timestamp
+# plus a yes/no about our own agent is not rep data.
+ADMIN_EXTRA: list = []
+
+# NOT FEATURES. Every other column answers "is this office enrolled?", so a
+# blank there is filled with Not Enrolled. These two answer "is the machine
+# reporting?", where a blank means there is no reading to show -- and the
+# fill turned 21 offices' Last reading into the words "Not Enrolled", which
+# reads as though readings were something you opt into.
+STATUS_COLUMNS = ["Last reading", "On latest update"]
 
 # Schedules that are the same wherever the feature is switched on. Each is
 # read off the module that enforces it rather than retyped from memory; where
@@ -106,12 +156,46 @@ CALLOUT_SAT_CUT = (17, 0)
 # gap_alerts' own wrapper gate. Named Gap Alerts on the page, not 'Dispo
 # Alerts': it is the reps-over-a-15-minute-gap card, and sitting next to
 # 'Knock & Dispo Boards' the old name read like the same thing twice.
+def _gap_tick() -> int:
+    try:
+        from automations.gap_alerts import config as GCW
+        return int(getattr(GCW, "TICK_MINUTES", 15) or 15)
+    except Exception:   # noqa: BLE001
+        return 15
+
+
+def _gap_module_window() -> str:
+    """'1:30pm-10pm M-F' / '10:45am-8pm Sat', from gap_alerts' own config
+    rather than retyped — it has moved twice. The cadence rides each
+    DESTINATION line, the way every other column does it, instead of
+    floating on a line of its own."""
+    try:
+        from automations.gap_alerts import config as GCW
+        wk, sat = GCW.window_for(0), GCW.window_for(5)
+        bits = []
+        if wk:
+            bits.append(f"{_ampm(wk[0])}-{_ampm(wk[1])} M-F")
+        if sat:
+            bits.append(f"{_ampm(sat[0])}-{_ampm(sat[1])} Sat")
+        return "\n".join(bits)
+    except Exception:   # noqa: BLE001
+        return "every 15 min, Mon–Sat"
+
+
 DISPO_WINDOW = "every 15 min, Mon–Sat"
 # "daily" told nobody anything — every one of these runs daily, so the column
 # was a wall of the same word (Megan 2026-10-05: "instead of daily it should
 # say Enrolled and be in green"). The ones with a real time keep it; these
 # three just say whether the office has them.
 ENROLLED = "Enrolled"
+
+# NOT THE SAME AS "YOU DO NOT HAVE THIS". Resume Pushing is built and live
+# for nobody -- applicant_push lists 11 offices and every scheduler entry is
+# off -- so a red 'Not Enrolled' told every owner they were missing out on
+# something that does not run for anyone yet (Megan 2026-10-06: "we need to
+# put a coming soon note on the resume pushing"). Amber, because it is the
+# same kind of answer as Pending: real, set up, not running.
+COMING_SOON = "Coming Soon"
 BOARD_WHEN = ENROLLED
 
 # HOW LucyECO READS ON THIS PAGE (Megan 2026-10-05: "it should be active /
@@ -127,7 +211,7 @@ BOARD_WHEN = ENROLLED
 ECO_STATE = {
     "Live": "Active",
     "Needs update": "Partial",
-    "Gone quiet": "Partial",
+    "Gone quiet": "Active",
     "Signed up — not reporting": "Pending",
     "Not on LucyECO": "Not on",
 }
@@ -140,7 +224,7 @@ ECO_STATE = {
 # that mean "on, but not working yet".
 GOOD_WORDS = (ALWAYS_ON, ENROLLED)
 BAD_WORDS = (NOT_ON, "Not on")
-WAIT_WORDS = ("Pending", "Partial")
+WAIT_WORDS = ("Pending", "Partial", "Coming Soon")
 # Columns that are a fact about the office rather than a yes/no, so they are
 # never coloured: a green name tells you nothing.
 UNCOLOURED = ("ICD", "Campaigns")
@@ -153,36 +237,72 @@ UNCOLOURED = ("ICD", "Campaigns")
 # never reported these read Pending rather than Active. The ones WE run off
 # our own scrape — metrics, trackers — are unaffected.
 RELAY_FED = ("Sara+ Alerts", "Text Scoreboard", "Call-outs",
-             "Knock & Dispo Boards")
+             "Knock & Dispo Boards",
+             # The gap list RIDES THE BOARD POST, so it rides the office's
+             # machine too -- Rashad read a live gap schedule having never
+             # relayed (2026-10-06). Raf is unaffected: his gaps come from
+             # the gap_alerts module, and HOUSE_RUN keeps him Active.
+             "Gap Alerts")
+
+# OFFICES WE RUN FROM OUR OWN MACHINES, not from an agent on theirs. The page
+# was built out of the ECO registries, so the two biggest offices came back
+# nearly empty: Raf has no ECO agent at all (the Alphalete sweep relays for
+# him) and Carlos's metrics come from b2b_metrics rather than the generic
+# office_metrics runner. Megan 2026-10-05: "carlos has metrics thread and
+# tableau", "raf also has nothing filled out and is active for almost all".
+#
+# Each entry cites the module that actually does it, so this stays checkable
+# rather than becoming a list someone keeps by hand.
+HOUSE_RUN = {
+    "rafaelhidalgo": {
+        # alphalete_sales_board's 5-minute SaraPlus sweep, noon-midnight.
+        "Sara+ Alerts": ALWAYS_ON,
+        # Its half-hour snapshot text to the Partners chat (project
+        # times_of_sales).
+        "Text Scoreboard": (ALWAYS_ON, ["iMessage Alphalete Partners"]),
+        # total_knocks posts the board into the Metrics thread each morning.
+        # total_knocks runs inside daily_metrics, the morning batch.
+        "Knock & Dispo Boards": ("Daily, morning batch",
+                                 ["Slack #alphalete-sales"]),
+    },
+}
 
 
-# WHAT EACH COLUMN MEANS, and a picture where we have one. The screenshots
+# WHAT EACH COLUMN MEANS, and a picture — or two — where we have them. The screenshots
 # are the Hub's own card images, so they are the real thing rather than a
 # mock-up. A feature with no shot yet gets the words only — better than a
 # broken image, and dropping a PNG in `resources/report-screenshots/` under
 # the name below is all it takes to give it one.
 EXPLAINS = {
     "Sara+ Alerts": ("Every sale and credit check off the office's own "
-                     "SaraPlus, posted to their room as it happens.", ""),
+                     "SaraPlus, posted as it happens live.",
+                     "sara-plus-alerts.png"),
     "Text Scoreboard": ("The running scoreboard texted to the office's "
-                        "iMessage group through the day.", ""),
+                        "iMessage group through the day.",
+                        "text-scoreboard.png"),
     "Call-outs": ("Lucy calling out a rep who has gone quiet, and praising "
-                  "a good pace, in the office's room.", ""),
+                  "a good pace, in the office's room.",
+                  ["sara-plus-callouts.png",
+                   "sara-plus-callouts-positive.png"]),
     "Knock & Dispo Boards": ("The knocks and dispositions board, posted on "
-                             "the office's own cadence.", "total-knocks.png"),
+                             "the office's own cadence.",
+                             "knock-dispo-boards.png"),
     "Weather Report": ("The morning forecast for that office's city.",
-                       "lucy-weather-forecast.png"),
-    "Ad Photo Threads": ("Eve's daily 1st-round screenshots, one Slack "
-                         "thread per Indeed ad, with the ad's % removed and "
-                         "average star rating.", ""),
+                       "weather-report.png"),
+    "Ad Photo Threads": ("One Slack thread per Indeed ad, headed with that "
+                         "ad's % removed and average star rating. Inside the "
+                         "thread: a reply per day with each candidate "
+                         "interviewed, their rating, their interviewer and "
+                         "the Zoom screenshot cropped to them.",
+                         "ad-photo-threads.png"),
     "Resume Pushing": ("Pulling resumes out of ApplicantStream and sending "
                        "them to the AI.", "resume-pushing.png"),
     "Metrics Thread": ("The office's daily metrics thread in Slack.",
-                       "office-metrics.png"),
-    "Tableau Trackers": ("The universal tracker boards, drawn from Tableau "
-                         "and posted to the office's room.", ""),
-    "Gap Alerts": ("The KNOCKS & DISPOSITIONS card — reps over a 15 "
-                     "minute gap — texted through the day.", ""),
+                       "office-metrics-thread.png"),
+    "Tableau Trackers": ("The tracker boards, drawn from Tableau.",
+                         "tableau-trackers.png"),
+    "Gap Alerts": ("Reps over a 15 minute gap.",
+                     "gap-alerts-card.png"),
 }
 
 
@@ -191,11 +311,198 @@ def cell_tone(column: str, value) -> str:
     v = str(value or "").strip()
     if column in UNCOLOURED or not v:
         return ""
+    # A NO IS A NO, WHATEVER COLUMN IT IS IN. These two have their own
+    # rules below, and those rules answered "is there a value?" -- so the
+    # words "Not Enrolled", left in a Last reading cell by an older
+    # snapshot, came out GREEN, and amber in On latest update (Megan
+    # 2026-10-06: "these not enrolled are still green"). Checked first so
+    # no column-specific rule can ever paint a refusal as a yes.
+    if v in BAD_WORDS:
+        return "bad"
+    if column == "On latest update":
+        # Green on the current agent, amber on an older one — an office
+        # reporting on a stale build is a thing to chase, not a failure.
+        return "good" if v.lower() in ("yes", "y") else "wait"
+    if column == "Last reading":
+        # A reading at all is the good state; an office with none shows
+        # blank, which the caller already reads as nothing to say.
+        return "good"
     if v in BAD_WORDS:
         return "bad"
     if v in WAIT_WORDS:
         return "wait"
     return "good"
+
+
+STALE_AFTER_MIN = 120
+
+
+def reading_tone(stamp: str, office=None, now=None) -> str:
+    """'down' when a relay has gone quiet for over two hours IN SELLING HOURS.
+
+    Megan 2026-10-06: "if the last read time is over 2 hours (if during
+    posting times) then it should go bright red so we know it's down".
+
+    BOTH SIDES OF THIS COMPARISON ARE ON THE OFFICE'S OWN CLOCK. The stamp
+    the relay records is office-local, checked across three timezones on
+    2026-10-06: Aya and Colten read 18:09 while Cyrus, Kash and Maxamad read
+    17:0x at the same instant. Judged against one shared clock every Eastern
+    office would look an hour fresher than it is and every Central one an
+    hour staler -- an hour either side of a two-hour rule decides whether a
+    cell is red.
+
+    OUTSIDE SELLING HOURS A QUIET RELAY IS NOT A FAULT. The machine is quiet
+    because the office is shut, and a column that goes red every evening and
+    all day Sunday is a column nobody reads by Tuesday.
+
+    A blank or unparseable stamp is left to the caller: an office that has
+    never relayed is a different thing from one that stopped, and its
+    LucyECO cell already says Pending.
+    """
+    import datetime as _dt
+    v = str(stamp or "").strip()
+    if not v or v in ("-", "—"):
+        return ""                       # nothing to say: no reading column
+    if v.lower() == "never":
+        # NEVER IS NOT A QUIET EVENING. A machine that has reported before
+        # and stopped is judged against selling hours, because the office
+        # being shut is a fine reason to be quiet. One that has NEVER
+        # reported is a standing fact at any hour, and it sat there in
+        # green (Megan 2026-10-06: "rashad's never should be in red").
+        return "down"
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            when = _dt.datetime.strptime(v, fmt)
+            break
+        except ValueError:
+            when = None
+    if when is None:
+        return ""
+    if now is None:
+        try:
+            from automations.icd_alerts import offices as _O
+            now = _O.office_now(office) if office is not None \
+                else _dt.datetime.now()
+        except Exception:   # noqa: BLE001
+            now = _dt.datetime.now()
+
+    def _hm(val, default):
+        try:
+            bits = str(val).split(":")
+            return int(bits[0]), int(bits[1])
+        except Exception:   # noqa: BLE001
+            return default
+
+    start, end = (9, 0), (21, 0)        # a wide default, never a narrow guess
+    sat = True
+    if office is not None:
+        if now.weekday() == 5:          # Saturday keeps its own hours
+            start = _hm(getattr(office, "sat_start", ""), start)
+            end = _hm(getattr(office, "sat_end", ""), end)
+            sat = bool(getattr(office, "saturday", True))
+        else:
+            start = _hm(getattr(office, "day_start", ""), start)
+            end = _hm(getattr(office, "day_end", ""), end)
+    if now.weekday() == 6 or (now.weekday() == 5 and not sat):
+        return "good"                   # shut today: quiet is expected
+    if not (start <= (now.hour, now.minute) <= end):
+        return "good"                   # before open or after close
+    if (now - when).total_seconds() > STALE_AFTER_MIN * 60:
+        return "down"
+    return "good"
+
+
+def _name_groups() -> list:
+    """Every spelling of one person, as one set of letter-keys.
+
+    The ICD Aliases sheet holds rows BOTH ways for several people
+    ('Maxamad Aden' is an alias of 'Maxamed Aden' AND the reverse), so
+    resolving a name through alias_to_canonical gives A->B while B->A and
+    neither ever meets the retired list. Grouping sidesteps direction
+    entirely: the GROUP is what gets judged and what gets collapsed.
+    """
+    groups: list = []
+    for canon, al in (_aliases() or {}).items():
+        g = {_letters(x) for x in ([canon] + list(al)) if x}
+        hit = next((e for e in groups if e & g), None)
+        if hit is None:
+            groups.append(set(g))
+        else:
+            hit |= g
+    return groups
+
+
+def _collapse(names, groups) -> list:
+    """One row per person. The SALES BOARD's spelling wins, because that is
+    the name the rest of the Hub prints -- not whichever alias row was
+    typed last."""
+    from automations.icd_sales_board import profiles as _P
+    try:
+        board = {_letters(n) for n in _P.load()}
+    except Exception:   # noqa: BLE001
+        board = set()
+
+    def group_of(k):
+        return frozenset(next((g for g in groups if k in g), {k}))
+
+    pick: dict = {}
+    for n in names:
+        g = group_of(_letters(n))
+        cur = pick.get(g)
+        if cur is None or (_letters(n) in board and _letters(cur) not in board):
+            pick[g] = n
+    return sorted(set(pick.values()))
+
+
+def _has_relayed(feeds, st=None) -> bool:
+    """Has ANY of this office's machines ever checked in?
+
+    An owner can run two feeds (Jamis runs AT&T and Box off one Mac); one
+    of them reporting means the machine is alive. Falls back to the status
+    row's reading, which is how an office with no feed key of its own
+    (Raf, relayed by our sweep) still answers True.
+    """
+    try:
+        from automations.icd_sales_board import relay_read as _RR
+        for f in (feeds or []):
+            key = getattr(f, "key", "") or ""
+            if key and (_RR.last_reading(key) or {}).get("day"):
+                return True
+    except Exception:   # noqa: BLE001
+        pass
+    v = ((st or {}).get("Last reading") or "").strip().lower()
+    return bool(v) and v not in ("never", "-", "—")
+
+
+def _aliases() -> dict:
+    """The ICD Aliases table, cached: it is a Sheets read like any other."""
+    key = "aliases"
+    now = time.time()
+    if key in _CACHE and now - _CACHE[key][0] < _TTL:
+        return _CACHE[key][1]
+    try:
+        from automations.focus_office_att import aliases as _AL
+        raw = _AL.load_aliases()
+    except Exception:   # noqa: BLE001 — unreadable: every name stands as-is
+        raw = {}
+    _CACHE[key] = (now, raw)
+    return raw
+
+
+def _canon(name: str) -> str:
+    """One person, one spelling — through the sheet that already decides it.
+
+    The org bulletin calls him 'Salik Waqar' and every other registry calls
+    him 'Salik Mallick' (his own address is salikmallick6@), so he arrived
+    on the page as two offices (Megan 2026-10-06: "this is the same
+    person"). Resolved against 'ICD Aliases', which is where a spelling
+    mismatch belongs, so the next variant needs no code change here.
+    """
+    try:
+        from automations.focus_office_att import aliases as _AL
+        return _AL.alias_to_canonical(name, _aliases()) or name
+    except Exception:   # noqa: BLE001
+        return name
 
 
 def _with_where(schedule: str, names) -> str:
@@ -204,6 +511,57 @@ def _with_where(schedule: str, names) -> str:
         return ""
     lines = [schedule] + [n for n in (names or []) if n]
     return "\n".join(lines)
+
+
+# Rooms no registry names, so the page would otherwise print a bare 'Slack'.
+# Each one cited where it is written down, because an id is unreadable and a
+# wrong name is worse than none.
+KNOWN_ROOMS = {
+    # tableau_screenshots/slack_post.py:42, new_start_followup, and the
+    # lvl1 mirror — Raf's private level-1 room.
+    "C09JG28CD27": "#alphalete-lvl1-chat",
+}
+
+
+def _room_name(channel_id: str) -> str:
+    """A Slack room's name from its id, out of the registries that hold both.
+    '' when nothing knows it — the caller then says 'Slack' and no more."""
+    cid = (channel_id or "").strip()
+    if not cid:
+        return ""
+    key = ("rooms", "byid")
+    import time as _t
+    now = _t.time()
+    if key in _CACHE and now - _CACHE[key][0] < _TTL:
+        return _CACHE[key][1].get(cid, "")
+    byid = dict(KNOWN_ROOMS)
+    try:
+        from automations.office_metrics import offices as OM
+        for o in OM.OFFICES.values():
+            if getattr(o, "channel_id", "") and getattr(o, "channel_name", ""):
+                byid[o.channel_id] = o.channel_name
+    except Exception:   # noqa: BLE001
+        pass
+    try:
+        from automations.icd_alerts import post as AP3
+        for chans in (AP3.approved_channels() or {}).values():
+            for c in chans:
+                cid2 = (getattr(c, "id", "") or "").strip()
+                nm = (getattr(c, "name", "") or "").strip()
+                if cid2 and nm:
+                    byid[cid2] = nm
+    except Exception:   # noqa: BLE001
+        pass
+    _CACHE[key] = (now, byid)
+    return byid.get(cid, "")
+
+
+def _gap_rooms(me: str, gap_dests: dict) -> list:
+    """Where this office's gap card goes, each with the tick it goes on."""
+    for key, names in (gap_dests or {}).items():
+        if key == me or (len(key) >= 5 and me.startswith(key)):
+            return [f"Every {_gap_tick()} Min{FIELD}{n}" for n in names]
+    return []
 
 
 def _first_office(feeds, alert_office):
@@ -224,9 +582,18 @@ def _names_of(feeds, chan, field) -> list:
     ROOM keeps the pair together instead of interleaving four rooms."""
     seen = {}
     order = []
+    plain = []
     for f in feeds:
         for ln in (chan.get(f.key, {}).get(field) or []):
-            when, _, where = ln.partition(FIELD)
+            when, sep, where = ln.partition(FIELD)
+            if not sep:
+                # No cadence on this one — it is a destination on its own
+                # (the text scoreboard goes out live). Merging those as if
+                # they were cadences for one room ran Carlos's three groups
+                # together as 'A & B & C'.
+                if ln not in plain:
+                    plain.append(ln)
+                continue
             if where not in seen:
                 seen[where] = []
                 order.append(where)
@@ -235,7 +602,7 @@ def _names_of(feeds, chan, field) -> list:
     # ONE ROW PER ROOM. An owner running two campaigns into the same room
     # produced that room twice, once per cadence — Carlos had four lines for
     # two rooms. The cadences merge onto the room's own row instead.
-    out = []
+    out = list(plain)
     for where in sorted(order):
         whens = seen[where]
         def _n(w):
@@ -251,12 +618,16 @@ def _names_of(feeds, chan, field) -> list:
 
 
 def _rooms_for(feeds, approved_rooms) -> list:
+    """The alert rooms, each said to be Slack — same reason as _knock_lines."""
     out = []
     for f in feeds:
         for c in (approved_rooms.get(f.key) or []):
             nm = (getattr(c, "name", "") or "").strip()
-            if nm and nm not in out:
-                out.append(nm)
+            if nm:
+                nm = nm if nm.lower().startswith(("slack", "imessage")) \
+                    else "Slack " + nm
+                if nm not in out:
+                    out.append(nm)
     return out
 
 
@@ -274,6 +645,9 @@ def _rooms(feeds, chan, approved_rooms) -> str:
     return ", ".join(names)
 
 
+NOT_ON_ECO = "Not on"
+
+
 def eco_state(status: str) -> str:
     """One of Active / Partial / Pending / Not on."""
     return ECO_STATE.get((status or "").strip(), "Not on")
@@ -284,6 +658,52 @@ _TTL = 600
 
 def _letters(s: str) -> str:
     return re.sub(r"[^a-z]", "", (s or "").lower())
+
+
+def _label_dest(name: str, cid: str) -> str:
+    """'Slack #room' or 'iMessage Group' — never a bare name."""
+    from automations.icd_alerts import post as P
+    if P.is_text_dest(cid or ""):
+        return "iMessage " + (name or P.text_group_of(cid or ""))
+    return ("Slack " + name) if name else ""
+
+
+def _text_lines(raw: str) -> list:
+    """'Every 15 Min · iMessage RSW A-players' for each approved text group.
+
+    A TEXT DESTINATION KEYS ITS NAME UNDER `group`, not `channel_name` —
+    which is why the Text Scoreboard column said Active and nothing else for
+    every office that has one (Megan 2026-10-05: "I still don't see text
+    groups").
+
+    ONLY THE GROUP NAME LEAVES THIS FUNCTION. That blob also carries
+    `chat_guid` and `require_handles`, which is a list of PHONE NUMBERS, and
+    this page is served without an access code."""
+    import json
+    try:
+        dests = json.loads(raw or "[]")
+    except ValueError:
+        return []
+    out = []
+    for d in dests:
+        if not isinstance(d, dict):
+            continue
+        name = str(d.get("group") or d.get("channel_name")
+                   or d.get("name") or "").strip()
+        if not name:
+            continue
+        try:
+            mins = int(d.get("cadence_min") or 0)
+        except (TypeError, ValueError):
+            mins = 0
+        # NO CADENCE HERE. The scoreboard goes out as the sales happen, so a
+        # cadence on it was describing the board that shares the same group,
+        # not the scoreboard (Megan 2026-10-05: "they happen live - should
+        # just say active and where it posts").
+        line = "iMessage " + name
+        if line not in out:
+            out.append(line)
+    return out
 
 
 def _dest_names(raw: str) -> list:
@@ -301,7 +721,9 @@ def _dest_names(raw: str) -> list:
     for d in dests:
         if not isinstance(d, dict):
             continue
-        nm = str(d.get("channel_name") or d.get("name") or "").strip()
+        nm = _label_dest(
+            str(d.get("channel_name") or d.get("name") or "").strip(),
+            str(d.get("channel_id") or ""))
         if nm and nm not in out:
             out.append(nm)
     return out
@@ -320,6 +742,82 @@ def _knock_names(raw: str) -> list:
         if nm and nm not in out:
             out.append(nm)
     return out
+
+
+def _gap_lines(raw: str, default_on: bool = False) -> list:
+    """'Every 60 Min · Slack #palace-sales' for each destination with gaps.
+
+    AN ECO OFFICE TURNS GAPS ON PER DESTINATION, as `gaps_min` beside the
+    board's own cadence — not through the gap_alerts module, which only knows
+    the four offices hardcoded in it. Reading only that module showed Raf and
+    nobody else, when Kash has had gaps hourly in his Slack all along (Megan
+    2026-10-05).
+
+    BUT `gaps_min` IS THE SLACK OPT-IN ONLY, and reading it as the whole
+    answer was wrong: knocks_post skips text destinations before it ever
+    checks the flag (`if P.is_text_dest(cid): continue`), because the typed
+    list has ALWAYS gone to iMessage groups — the flag was added so a Slack
+    room could have one too (Kash, 2026-09-24). So every approved text group
+    gets gaps, with no opt-in, and this column called them Not Enrolled:
+    Luke and Jamis were both receiving the list while the page denied it
+    (Megan 2026-10-06). `default_on` is how the caller says which side of
+    that line a destination list sits on.
+
+    The cadence shown is the one that destination actually gets: the list
+    rides the board post, so for a text group that is its own cadence_min,
+    and for a Slack room it is the slower `gaps_min` clock it opted into.
+    """
+    import json
+    try:
+        dests = json.loads(raw or "[]")
+    except ValueError:
+        return []
+    from automations.icd_alerts import post as P
+    out = []
+    for d in dests:
+        if not isinstance(d, dict):
+            continue
+        try:
+            mins = int(d.get("gaps_min") or 0)
+        except (TypeError, ValueError):
+            mins = 0
+        if not mins and default_on:
+            # A text group's list rides its board, so it runs on the board's
+            # own clock rather than a separate gaps_min.
+            try:
+                mins = int(d.get("cadence_min") or 0)
+            except (TypeError, ValueError):
+                mins = 0
+        if not mins:
+            continue
+        cid = str(d.get("channel_id") or "")
+        nm = str(d.get("channel_name") or d.get("group") or "").strip()
+        # A TEXT GROUP CARRIES NO CHANNEL ID, so is_text_dest("") is False
+        # and every iMessage group was labelled Slack -- 'Slack Indelible
+        # Lvl 1🔥', 'Slack A Players B2B'. The `group` key is what marks a
+        # text destination in this registry; default_on only ever covers
+        # text lists, so it says the same thing.
+        is_text = bool(d.get("group")) or default_on or P.is_text_dest(cid)
+        where = ("iMessage " + (nm or P.text_group_of(cid))
+                 if is_text else ("Slack " + nm) if nm else "")
+        line = f"Every {mins} Min{FIELD}{where}" if where \
+            else f"Every {mins} Min"
+        if line not in out:
+            out.append(line)
+    return out
+
+
+def _slot_times() -> str:
+    """'2pm, 5:15pm, 9pm' — the fixed slots, from the schedule that runs them.
+
+    'Set times' told nobody anything (Megan 2026-10-05: "nothing should say
+    set times - it should say the times"). Read from knocks_intraday rather
+    than typed here, so moving a slot moves this."""
+    try:
+        from automations.knocks_intraday.schedule import SLOTS
+        return ", ".join(_ampm((s.hour, s.minute)) for s in SLOTS)
+    except Exception:   # noqa: BLE001
+        return "set times"
 
 
 def _knock_lines(raw: str) -> list:
@@ -347,13 +845,33 @@ def _knock_lines(raw: str) -> list:
             continue
         cid = str(d.get("channel_id") or "")
         name = str(d.get("channel_name") or d.get("name") or "").strip()
+        # SAY WHICH IT IS. A leading '#' is the only thing that marked a
+        # Slack room apart from an iMessage group, and nobody should have to
+        # know that convention to read the page (Megan 2026-10-05: "this is
+        # confusing - should say slack or iMessage"). The label goes in
+        # FRONT, so the column reads Slack/Slack/iMessage down its left edge
+        # rather than hiding the kind at the end of a long room name.
         if P.is_text_dest(cid):
-            name = (name or P.text_group_of(cid)) + " iMessage"
+            grp = (name or P.text_group_of(cid) or "").strip()
+            # '"iMessage " + ""' is truthy and printed a label with no group.
+            name = ("iMessage " + grp) if grp else ""
+        elif name:
+            name = "Slack " + name
+        # A CADENCE WITH NOWHERE TO GO IS NOT A DESTINATION. Jamis runs two
+        # campaigns off one Mac (Megan 2026-10-06) and the second one has no
+        # approved room yet, so his column carried a bare 'Every 30 Min'
+        # beside the real 'Every 30 Min · Slack #jamis-sales'. That tells a
+        # reader nothing and breaks the rule that every destination says
+        # which app it is. Skipped rather than guessed: this column is where
+        # boards ACTUALLY post, and an office with nothing approved reads as
+        # not enrolled, which is the truth.
+        if not name:
+            continue
         try:
             mins = int(d.get("cadence_min") or 0)
         except (TypeError, ValueError):
             mins = 0
-        when = f"Every {mins} Min" if mins else "Each slot"
+        when = f"Every {mins} Min" if mins else _slot_times()
         # TWO FIELDS, not one string: the page lays these out as columns so
         # the cadences line up under each other and the room names line up
         # under each other. Run together with a '·' they wrapped mid-name and
@@ -389,7 +907,7 @@ def _channels() -> dict:
                 "alerts": yes(r, P.CH_APPROVED),
                 "knocks": yes(r, P.CH_KN_APPROVED),
                 "texts": yes(r, P.CH_TX_APPROVED),
-                "text_names": _dest_names(
+                "text_names": _text_lines(
                     (r[P.CH_TX_APPROVED_JSON]
                      if len(r) > P.CH_TX_APPROVED_JSON else "")
                     or (r[P.CH_TX_JSON] if len(r) > P.CH_TX_JSON else "")),
@@ -397,6 +915,14 @@ def _channels() -> dict:
                     (r[P.CH_KN_APPROVED_JSON]
                      if len(r) > P.CH_KN_APPROVED_JSON else "")
                     or (r[P.CH_KN_JSON] if len(r) > P.CH_KN_JSON else "")),
+                "gap_lines": _gap_lines(
+                    (r[P.CH_KN_APPROVED_JSON]
+                     if len(r) > P.CH_KN_APPROVED_JSON else "")
+                    or (r[P.CH_KN_JSON] if len(r) > P.CH_KN_JSON else ""))
+                + _gap_lines(
+                    (r[P.CH_TX_APPROVED_JSON]
+                     if len(r) > P.CH_TX_APPROVED_JSON else ""),
+                    default_on=True),
                 "knock_lines": _knock_lines(
                     (r[P.CH_KN_APPROVED_JSON]
                      if len(r) > P.CH_KN_APPROVED_JSON else "")
@@ -436,14 +962,139 @@ def _by_owner(pairs) -> dict:
     return {_letters(o): v for o, v in pairs if _letters(o)}
 
 
-def rows(icds=None) -> list:
-    """One row per ICD, every cell a schedule or blank. Never raises."""
+def rows(icds=None, admin: bool = False) -> list:
+    """One row per ICD, every cell a schedule or blank. Never raises.
+
+    `admin` adds ADMIN_EXTRA — the sales board shows one table with them, the
+    public page one without, rather than two tables saying different halves
+    of the same thing (Megan 2026-10-06: "I don't want 2 different
+    sections")."""
     out = []
     try:
         from automations.icd_sales_board import eco_feeds as E
         from automations.icd_sales_board import profiles as P
         from automations.icd_sales_board import rollout as RO
+        # CANONICALISE THE BASE LIST TOO, not just what gets appended to it.
+        # The board calls him 'Ron Dawson' and the retired list says 'Ronald
+        # Dawson', so he survived a filter that was working perfectly -- and
+        # the test asserting 'ronald dawson' was absent passed while the
+        # page showed him (Megan 2026-10-06: "still not updated!!"). Same
+        # for 'Cinthya' vs 'Cinthya Reyes', and it is what left 'Hammad
+        # Haque' and 'Muhammad Haque' as two rows when the alias sheet has
+        # joined them all along.
         names = sorted(icds if icds is not None else P.load())
+        bulletin_campaign = {}
+        if icds is None:
+            # ANYONE WE RUN SOMETHING FOR BELONGS HERE, not only the offices
+            # on the ORG sales board (Megan 2026-10-05: "anyone getting ad
+            # photo threads should be on this list"). Three were missing —
+            # Salik Hammad, Samuel Acay and Jose Velasquez — because the
+            # roster came from the board alone.
+            # EVERY ACTIVE ICD ON THE ORG BULLETIN, which is also every ICD
+            # in a captainship — the bulletin's ORG column IS the captainship
+            # grouping (Raf 9, Carlos 12, Colten 5 …), so one source answers
+            # both (Megan 2026-10-06). 42 of them against the board's 30.
+            try:
+                from automations.icd_sales_board import org_money as _OM2
+                from automations.recruiting_report.fill import (open_by_key,
+                                                                _retry)
+                _g = _retry(open_by_key(_OM2.BOOK)
+                            .worksheet(_OM2.DD_TAB).get_all_values)
+                have = {_letters(n) for n in names}
+                # The bulletin names each ICD's campaign. An office with no
+                # ECO feed had a blank Campaigns cell — Abel, Roshan and
+                # everyone else we do not relay for (Megan 2026-10-06).
+                bulletin_campaign = {}
+                for _r in _g[1:]:
+                    if len(_r) < 2 or not (_r[0] or "").strip():
+                        continue
+                    if (_r[1] or "").strip().upper() != "YES":
+                        continue
+                    nm = " ".join((_r[0] or "").split())
+                    # The bulletin suffixes some with a state — 'Rafael
+                    # Hidalgo TX' is the same person as 'Rafael Hidalgo'.
+                    bare = nm
+                    bits = nm.split()
+                    if len(bits) > 2 and len(bits[-1]) == 2 and bits[-1].isupper():
+                        bare = " ".join(bits[:-1])
+                    camp = (_r[2] or "").strip() if len(_r) > 2 else ""
+                    # Canonicalised FIRST, so the campaign is filed under the
+                    # spelling that survives -- key it under the bulletin's
+                    # own and the merged row reads a blank campaign.
+                    bare = _canon(bare)
+                    if camp:
+                        bulletin_campaign.setdefault(_letters(bare), camp)
+                    if _letters(bare) in have:
+                        continue
+                    names.append(bare)
+                    have.add(_letters(bare))
+            except Exception:   # noqa: BLE001
+                bulletin_campaign = {}
+            try:
+                from automations.ad_photo_threads import config as _APC
+                have = {_letters(n) for n in names}
+                for o in _APC.OFFICES:
+                    own = (o.get("owner") or "").strip()
+                    own = _canon(own) if own else own
+                    if o.get("live") and own and _letters(own) not in have:
+                        names.append(own)
+                        have.add(_letters(own))
+                names = sorted(names)
+            except Exception:   # noqa: BLE001
+                pass
+            # AN OFFICE THAT SIGNED UP IS AN OFFICE WE RUN SOMETHING FOR,
+            # even before it reaches the board or the bulletin. Luke Baldwin
+            # and Jennifer Figueroa both enrolled on 2026-10-06, both were
+            # installing that afternoon, and neither appeared here at all --
+            # the roster only knew the board, the bulletin and the ad-photo
+            # config, and a same-day sign-up is on none of them (Megan
+            # 2026-10-06: "we need to add luke baldwin"). Reading the
+            # sign-ups means the next one needs no code change.
+            #
+            # DECLINED IS LEFT OUT. A refused sign-up is not an office we
+            # run anything for, and this page is public.
+            try:
+                from automations.icd_signup import store as _SS
+                have = {_letters(n) for n in names}
+                for _s in _SS.all_signups(strict=True):
+                    own = (getattr(_s, "owner", "") or "").strip()
+                    if not own or (getattr(_s, "status", "") or "") == "declined":
+                        continue
+                    own = _canon(own)
+                    if _letters(own) in have:
+                        continue
+                    names.append(own)
+                    have.add(_letters(own))
+                names = sorted(names)
+            except Exception:   # noqa: BLE001
+                pass
+
+            # A RETIRED OFFICE STAYS GONE, whichever source named it.
+            # profiles.load() drops them, but the two blocks above append
+            # from the org bulletin and the ad-photo config and neither
+            # consults that list -- so a terminated owner still reading
+            # Active ICD = YES on the bulletin walked straight back onto the
+            # public page (Ronald Dawson, Megan 2026-10-06). Filtered LAST,
+            # after every source has had its say.
+            # COLLAPSE LAST, after the bulletin, the ad-photo config and the
+            # sign-ups have each added their own spelling -- collapsing only
+            # the base list left 'Abel (Ben)' beside 'Abel Draper' because
+            # the bulletin appended its own after the merge had run.
+            _groups = _name_groups()
+            names = _collapse(names, _groups)
+            try:
+                _gone = {_letters(n) for n in P.retired_names()}
+                if _gone:
+                    # EVERY SPELLING OF A RETIRED PERSON IS RETIRED. The
+                    # list says 'Ronald Dawson' and the board says 'Ron
+                    # Dawson'; matching one string kept him on a public
+                    # page after he was asked to be removed, twice.
+                    for _g in _groups:
+                        if _g & _gone:
+                            _gone |= _g
+                    names = [n for n in names if _letters(n) not in _gone]
+            except Exception:   # noqa: BLE001
+                pass
         chan = _channels()
         sched = _metrics_schedule()
 
@@ -453,6 +1104,40 @@ def rows(icds=None) -> list:
         try:
             from automations.office_metrics import offices as OM
             metrics = _by_owner((o.owner, k) for k, o in OM.OFFICES.items())
+            # THREE RUNNERS POST A METRICS THREAD, not one. office_metrics is
+            # the generic one; Carlos, Atef, Jamis, Sabrina and Eveliz come
+            # from b2b_metrics, and Raf from daily_metrics. Reading only the
+            # first called Carlos and Raf un-enrolled.
+            try:
+                from automations.b2b_metrics import offices as BM
+                for k, o in BM.OFFICES.items():
+                    own = getattr(o, "owner", None) or (
+                        o.get("owner") if isinstance(o, dict) else "")
+                    if own:
+                        metrics.setdefault(_letters(own), k)
+            except Exception:   # noqa: BLE001
+                pass
+            metrics.setdefault(_letters("Rafael Hidalgo"), "daily_metrics")
+            emailed = {k for k, o in OM.OFFICES.items()
+                       if getattr(o, "emails_only", False)}
+            # WHICH ROOM (Megan 2026-10-05: "metrics and trackers need to say
+            # what channel"). Some rows carry the '#', some do not.
+            metrics_room = {}
+            for k, o in OM.OFFICES.items():
+                nm = (getattr(o, "channel_name", "") or "").strip()
+                if nm:
+                    metrics_room[k] = "Slack " + (nm if nm.startswith("#")
+                                                  else "#" + nm)
+            # ROSHAN AND ABEL GET THEIRS BY EMAIL, 7-8am, off the per-owner
+            # BOX order log — which also fills their metrics sheet. They are
+            # in no metrics registry, so the page called them un-enrolled
+            # while they have had a mail every morning (Megan 2026-10-05).
+            for owner_key in ("roshan", "abel"):
+                for icd in names:
+                    if _letters(icd).startswith(owner_key):
+                        metrics.setdefault(_letters(icd),
+                                           "box_order_log_" + owner_key)
+                        emailed.add("box_order_log_" + owner_key)
             try:
                 from automations.focus_office_att import aliases as _AL
                 _raw = _AL.load_aliases()
@@ -466,7 +1151,7 @@ def rows(icds=None) -> list:
             except Exception:   # noqa: BLE001
                 pass
         except Exception:   # noqa: BLE001
-            metrics = {}
+            metrics, emailed, metrics_room = {}, set(), {}
         # RESUME PUSHING: CONFIGURED IS NOT RUNNING. applicant_push lists 11
         # offices, and every one of its schedule entries is on_scheduler
         # False — it has only just launched and is live for nobody (Megan
@@ -504,10 +1189,54 @@ def rows(icds=None) -> list:
         except Exception:   # noqa: BLE001
             dispo = set()
         try:
+            # Where the gap card actually lands, by name — it was the one
+            # feature saying only WHEN (Megan 2026-10-05).
+            from automations.gap_alerts import config as GC2
+            gap_dests = {}
+            for o in GC2.OFFICES:
+                key = _letters((o.get("key") if isinstance(o, dict)
+                                else getattr(o, "key", "")) or "")
+                # NOT `names` — that is the list of ICDs this function is
+                # looping over, and reusing it here emptied it: the loop ran
+                # zero times and the whole page came back blank with no error
+                # to show for it.
+                dests = []
+                for d in ((o.get("destinations") if isinstance(o, dict)
+                           else getattr(o, "destinations", None)) or []):
+                    nm = _label_dest(str(d.get("name") or "").strip(),
+                                     "imessage:" if d.get("kind") == "imessage"
+                                     else "")
+                    if d.get("kind") == "slack" and not d.get("name"):
+                        # NEVER THE RAW ID. gap_alerts stores this room by id
+                        # with no name, and printing 'Slack C09JG28CD27' put
+                        # exactly the thing this page promises not to carry on
+                        # a link anyone can open. Resolved to a name where we
+                        # know one, and just 'Slack' where we do not — the
+                        # answer people want is which room, and an id is not
+                        # that answer anyway.
+                        nm = "Slack " + _room_name(
+                            str(d.get("channel_id") or "")) \
+                            if _room_name(str(d.get("channel_id") or "")) \
+                            else "Slack"
+                    if nm and nm not in dests:
+                        dests.append(nm)
+                if key:
+                    gap_dests[key] = dests
+        except Exception:   # noqa: BLE001
+            gap_dests = {}
+        try:
             # Eve's ad photo threads — the daily 1st-round screenshots, one
             # Slack thread per Indeed ad. Only the offices switched on.
+            # BY OWNER, not by feed key. ad_photo_threads calls Raf's office
+            # 'rafael' and the relay calls it 'rafael_hidalgo', so a key join
+            # said he was not on his own ad threads when he has three of them.
             from automations.ad_photo_threads import config as APC
-            ads = {o.get("key") for o in APC.OFFICES if o.get("live")}
+            # THROUGH THE ALIAS SHEET, like the roster itself. This registry
+            # names Salik's thread 'Salik Hammad' -- the room is shared with
+            # Hammad -- so a raw-letters join left the real owner reading
+            # Not Enrolled on an ad thread that is live (Megan 2026-10-06).
+            ads = {_letters(_canon(o.get("owner"))) for o in APC.OFFICES
+                   if o.get("live") and o.get("owner")}
         except Exception:   # noqa: BLE001
             ads = set()
         try:
@@ -554,7 +1283,10 @@ def rows(icds=None) -> list:
             st = status.get(icd, {})
             out.append({
                 "ICD": icd,
-                "Campaigns": st.get("Campaign", ""),
+                # The relay knows the campaign for an office we relay for;
+                # for everyone else the bulletin does.
+                "Campaigns": (st.get("Campaign", "")
+                              or bulletin_campaign.get(me, "")),
                 "LucyECO": eco_state(st.get("Status", "")),
                 "Sara+ Alerts": _with_where(
                     ALWAYS_ON if on("alerts") else "",
@@ -581,23 +1313,107 @@ def rows(icds=None) -> list:
                     _names_of(feeds, chan, "knock_lines")),
                 "Weather Report": ENROLLED if any(
                     f.key in weather for f in feeds) else "",
-                "Ad Photo Threads": ENROLLED if any(
-                    f.key in ads for f in feeds) else "",
-                "Resume Pushing": ENROLLED if me in resume else "",
-                "Metrics Thread": ENROLLED if mkey else "",
-                "Tableau Trackers": ENROLLED if mkey else "",
+                "Ad Photo Threads": ENROLLED if me in ads else "",
+                # Coming Soon rather than blank: blank becomes 'Not
+                # Enrolled' below, and nobody is enrolled BECAUSE it has
+                # not launched, not because they were left out.
+                "Resume Pushing": ENROLLED if me in resume else COMING_SOON,
+                # An office with no Slack gets the same numbers as one
+                # email a day (office_metrics emails_only) — 'Enrolled' hid
+                # the one thing an owner would ask about it.
+                "Metrics Thread": (
+                    "Emailed Daily" if mkey in emailed else
+                    _with_where(ENROLLED, [metrics_room[mkey]])
+                    if mkey in metrics_room else ENROLLED) if mkey else "",
+                # The trackers ride the same room as the metrics thread; an
+                # email-only office gets them in that same daily mail.
+                # NOT A COLUMN. Whether this office's machine has ever
+                # checked in -- the evidence the Pending rule below needs,
+                # and the public rows have to carry it too.
+                # Asked of the FEED KEYS, not the office name. The status
+                # row is joined by name and misses Jamis entirely, so a
+                # name-based answer called a machine relaying every few
+                # minutes "never relayed" -- the same lie as calling a dead
+                # one Active, just pointing the other way.
+                "_relayed": _has_relayed(feeds, st),
+                **({"Last reading": st.get("Last reading", ""),
+                    "On latest update": st.get("On latest update", ""),
+                    # NOT A COLUMN -- html_table reads it to colour the cell,
+                    # and it is only ever built on the admin rows, so the
+                    # ungated page cannot pick it up.
+                    "_reading_tone": reading_tone(
+                        st.get("Last reading", ""),
+                        _first_office(feeds, alert_office))}
+                   if True else {}),
+                "Tableau Trackers": (
+                    "Emailed Daily" if mkey in emailed else
+                    _with_where(ENROLLED, [metrics_room[mkey]])
+                    if mkey in metrics_room else ENROLLED) if mkey else "",
                 # A short key is a PREFIX of the full name ('rafael' ->
                 # 'rafaelhidalgo'), which is how that registry names an office.
-                "Gap Alerts": DISPO_WINDOW if any(
-                    d == me or (len(d) >= 5 and me.startswith(d))
-                    for d in dispo) else "",
+                # Two ways an office gets these: the gap_alerts module (its
+                # four hardcoded offices) or `gaps_min` on an ECO
+                # destination. Either counts.
+                "Gap Alerts": _with_where(
+                    _gap_module_window() if any(
+                        d == me or (len(d) >= 5 and me.startswith(d))
+                        for d in dispo)
+                    else (_window(_first_office(feeds, alert_office))
+                          if _names_of(feeds, chan, "gap_lines") else ""),
+                    _gap_rooms(me, gap_dests)
+                    or _names_of(feeds, chan, "gap_lines")),
                 # WHERE IT ALL LANDS, by name (Megan 2026-10-05: "the name of
                 # the slack and imessage chat names on there so they know
                 # where they are"). Names only — never the channel ids, which
                 # this page has no business carrying.
             })
-        skip = {"ICD", "Campaigns", "LucyECO", "Posts to"}
         for r in out:
+            house = HOUSE_RUN.get(_letters(r["ICD"]))
+            if not house:
+                continue
+            for col, val in house.items():
+                if r.get(col):
+                    continue          # the registry already answered
+                if isinstance(val, tuple):
+                    r[col] = _with_where(val[0], val[1])
+                else:
+                    r[col] = val
+
+        skip = ({"ICD", "Campaigns", "LucyECO", "Posts to"}
+                | set(ADMIN_EXTRA) | set(STATUS_COLUMNS))
+        for r in out:
+            # NOTHING RIDING A MACHINE CAN BE ACTIVE BEFORE THE MACHINE IS
+            # (Megan 2026-10-06: "luke can't be active for sara alerts if
+            # eco isn't on"). Luke and Jennifer signed up, were approved and
+            # had their rooms set up the same afternoon, so every relay-fed
+            # column read Active with a full schedule -- while their agents
+            # had never once checked in.
+            #
+            # An office with rooms configured and no status at all is not
+            # 'Not on', which reads as nobody ever asked: it is signed up
+            # and waiting on its own machine, exactly like Rashad, who did
+            # read Pending only because he happens to carry a status row.
+            # HOUSE_RUN is exempt -- Raf has no ECO agent and never will,
+            # because our own sweep relays for him.
+            # A MACHINE THAT IS CHECKING IN IS ON, whatever the status
+            # cell says. Jamis and Jennifer both enrolled on 2026-10-06 and
+            # were relaying within the hour, while the status registry --
+            # joined by name, which misses them -- still read 'Not on'.
+            # The reading is first-hand evidence; the cell is a cache of
+            # somebody else's write. Partial and Pending are left alone,
+            # because those say something this cannot.
+            if r.get("_relayed") and r.get("LucyECO") == NOT_ON_ECO:
+                r["LucyECO"] = "Active"
+            # ONLY WHEN THE MACHINE HAS NEVER CHECKED IN. Jamis enrolled
+            # the same day and his status row had not caught up, so a rule
+            # keyed on "no status" called a machine that was relaying every
+            # few minutes Pending -- which is the same lie in the other
+            # direction. The reading is the evidence, not the status cell.
+            if (r.get("LucyECO") not in ("Active", "Pending")
+                    and not r.get("_relayed")
+                    and _letters(r.get("ICD") or "") not in HOUSE_RUN
+                    and any(r.get(c) for c in RELAY_FED)):
+                r["LucyECO"] = "Pending"
             # Nothing has come through this office's machine yet, so anything
             # that rides it is set up and waiting, not running.
             if r.get("LucyECO") == "Pending":
@@ -608,9 +1424,306 @@ def rows(icds=None) -> list:
             for c in SAFE_COLUMNS:
                 if c not in skip and not r.get(c):
                     r[c] = NOT_ON
+            # _relayed WAS SCAFFOLDING FOR THE RULES ABOVE and has no
+            # business leaving with the row. The public page has no access
+            # code, so "a row carries nothing outside the safe list" is a
+            # real control and not a tidiness rule -- it caught this.
+            # Admin rows keep it: that surface is gated, and the invariant
+            # tests read it.
+            if not admin:
+                r.pop("_relayed", None)
     except Exception:   # noqa: BLE001
         return out
     return out
+
+
+# A COLD READ IS ABOUT SEVENTY SECONDS — eight Sheets reads, serial, each one
+# subject to the per-user rate cap. That is fine for a page nobody is waiting
+# on and awful for a link people open; and the app restarts on every deploy,
+# so somebody always pays it. The last good answer is kept on disk and served
+# instantly while it is recent, which turns the usual visit into no wait at
+# all. It is a CACHE, not a source: if it is missing or stale the registries
+# are read as before.
+SNAPSHOT = (pathlib.Path(__file__).resolve().parents[2]
+            / "output" / "lucyeco-enrollment.json")
+SNAPSHOT_FRESH_MIN = 30
+
+# THE COPY THAT SHIPS WITH THE CODE. output/ is gitignored, so a hosted app
+# starts with no snapshot at all and every single visitor pays a cold read —
+# about forty Sheets calls, serial, against a quota the whole Hub shares.
+# The deployed page sat on "Reading the registries…" for minutes (Megan
+# 2026-10-06), which is survivable for one person and hopeless for a link
+# sent to every ICD at once.
+#
+# So a snapshot lives BESIDE THE CODE and is deployed with it: the page
+# renders instantly from it and says when it was taken, and the live read
+# only happens when it is old. Refresh it with
+#   python -m automations.icd_sales_board.publish_snapshot
+PUBLISHED = pathlib.Path(__file__).resolve().parent / "lucyeco-published.json"
+# How old the shipped copy may be before a visitor waits for a live read.
+# Enrollment changes a few times a week, so half a day is generous and
+# still means nobody looks at last month.
+PUBLISHED_MAX_HOURS = 12
+
+
+def _code_stamp() -> str:
+    """Changes whenever this module does."""
+    try:
+        return str(int(pathlib.Path(__file__).stat().st_mtime))
+    except Exception:   # noqa: BLE001
+        return "0"
+
+
+def _read_snapshot():
+    """(rows, taken_at) from disk, or (None, None).
+
+    A SNAPSHOT FROM OLDER CODE IS NOT SERVED. The cache made the page fast
+    and also made it show yesterday's WORDING for half an hour after a
+    change — Megan was still seeing 'Set times' minutes after it stopped
+    saying that. The file carries the module's stamp; a mismatch means the
+    snapshot predates the change and is ignored."""
+    try:
+        import json
+        blob = json.loads(SNAPSHOT.read_text())
+        if blob.get("code") != _code_stamp():
+            return None, None
+        taken = dt.datetime.fromisoformat(blob["taken_at"])
+        return blob.get("rows") or None, taken
+    except Exception:   # noqa: BLE001 — no snapshot is not an error
+        return None, None
+
+
+def _write_snapshot(rows_: list) -> None:
+    try:
+        import json
+        SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
+        tmp = SNAPSHOT.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(
+            {"taken_at": dt.datetime.now().isoformat(timespec="seconds"),
+             "code": _code_stamp(), "rows": rows_}, indent=1))
+        tmp.replace(SNAPSHOT)      # atomic: a half-written file reads as none
+    except Exception:   # noqa: BLE001 — a cache we cannot write is not fatal
+        pass
+
+
+def admin_columns(rows_: list) -> list:
+    """The column order for the gated view: the public set, then the two."""
+    return [c for c in SAFE_COLUMNS if any(c in r for r in rows_)] + \
+        [c for c in ADMIN_EXTRA if any(c in r for r in rows_)]
+
+
+def rows_cached(max_age_min: int = SNAPSHOT_FRESH_MIN):
+    """(rows, taken_at). The snapshot while it is recent, else a fresh read.
+
+    `taken_at` is handed back so the page can say how old the answer is —
+    a cached page that does not admit it is a page people stop trusting."""
+    got, taken = _read_snapshot()
+    if got and taken and (dt.datetime.now() - taken
+                          <= dt.timedelta(minutes=max_age_min)):
+        return got, taken
+    # THE SHIPPED COPY, BEFORE PAYING FOR A LIVE READ. This is what makes a
+    # hosted page open instantly instead of making each visitor wait on
+    # forty serial Sheets calls.
+    pub, pub_taken = _read_published()
+    if pub and pub_taken and (dt.datetime.now() - pub_taken
+                              <= dt.timedelta(hours=PUBLISHED_MAX_HOURS)):
+        return pub, pub_taken
+    fresh = rows()
+    if fresh:
+        _write_snapshot(fresh)
+        return fresh, dt.datetime.now()
+    # A failed read must not throw away a good answer — the local snapshot
+    # if there is one, otherwise whatever shipped, however old.
+    if got:
+        return got, taken
+    return (pub or []), pub_taken
+
+
+def _read_published():
+    """(rows, taken_at) from the copy that ships with the code."""
+    import json
+    try:
+        blob = json.loads(PUBLISHED.read_text())
+        return (blob.get("rows") or [],
+                dt.datetime.fromisoformat(blob["taken"]))
+    except Exception:   # noqa: BLE001 — absent or unreadable: just read live
+        return [], None
+
+
+def publish_snapshot(path=None) -> int:
+    """Write the shipped snapshot. Returns how many offices it holds.
+
+    PUBLIC ROWS ONLY. This file is committed and deployed, so it must carry
+    exactly what the ungated page may show and nothing else — the same
+    contract SAFE_COLUMNS enforces at render.
+    """
+    import json
+    path = pathlib.Path(path) if path else PUBLISHED
+    got = rows()
+    if not got:
+        raise SystemExit("refusing to publish an empty snapshot")
+    safe = [{c: r.get(c, "") for c in SAFE_COLUMNS if c in r} for r in got]
+    for r in safe:
+        for k in list(r):
+            if str(k).startswith("_") or k not in SAFE_COLUMNS:
+                r.pop(k, None)
+    path.write_text(json.dumps(
+        {"taken": dt.datetime.now().isoformat(timespec="seconds"),
+         "rows": safe}, indent=1, ensure_ascii=False) + "\n")
+    return len(safe)
+
+
+_CSS = """<style>
+.eco{border-collapse:collapse;font-size:12.5px;width:100%}
+.eco th,.eco td{border:1px solid #CBD5E1;padding:4px 7px;text-align:center;
+  vertical-align:middle;line-height:1.35;white-space:nowrap}
+.eco th{background:#F1F5F9;font-weight:700;font-size:11.5px}
+/* Header tints are set inline per column (HEADER_TINT) — they group and
+   separate the columns; they never grade a value. */
+.eco td.name{text-align:left;font-weight:600;white-space:nowrap}
+.eco tr:nth-child(even) td{background-image:linear-gradient(rgba(0,0,0,.02),
+  rgba(0,0,0,.02))}
+/* Each line is already as short as it can be, so nothing wraps mid-word —
+   '#a-players-b2b' split across two lines was the last thing making this
+   look uncondensed. The table scrolls sideways instead, which keeps a row
+   readable. */
+/* The two-column layout inside one cell: cadence on the left, where it
+   lands on the right, so several destinations read as rows rather than as a
+   paragraph. Borderless — the outer cell is already the box. */
+.sub{border-collapse:collapse;margin:0 auto}
+.sub td{border:0;padding:0 4px;white-space:nowrap}
+.sub td.k{text-align:right;opacity:.85}
+.sub td.v{text-align:left;font-weight:600}
+.sub td.w{text-align:center;padding-bottom:1px}
+.eco-wrap{overflow-x:auto}
+</style>"""
+
+_TONE_CSS = {
+    "good": "background:#DCFCE7;color:#065F46;font-weight:600",
+    "wait": "background:#FEF3C7;color:#78350F;font-weight:600",
+    # DEEPER, AND BOLD LIKE THE OTHER TWO. good and wait were both
+    # font-weight 600 and this was not, so "Not Enrolled" read as a washed
+    # out grey-pink beside them and did not look like a no at all (Megan
+    # 2026-10-06: "any not enrolled should be red"). Still clearly apart
+    # from `down`, which is a solid alarm red on white text and means
+    # something is BROKEN rather than simply switched off.
+    "bad": "background:#FECACA;color:#7F1D1D;font-weight:600",
+    # BRIGHT red, not the pale one 'bad' uses: this is the only cell on the
+    # table that means something is broken RIGHT NOW (Megan 2026-10-06:
+    # "bright red so we know it's down").
+    "down": "background:#DC2626;color:#FFFFFF;font-weight:700",
+}
+
+
+def _cell_html(value) -> str:
+    """A cell's lines, with any two-field line laid out as columns.
+
+    enrollment separates a cadence from the room it posts to, so they can sit
+    under each other instead of running together and wrapping mid-name. Lines
+    with no separator (a window, a bare status) span the whole cell."""
+    lines = str(value or "").split("\n")
+    if not any(FIELD in ln for ln in lines):
+        return _esc(value)
+    out = []
+    for ln in lines:
+        left, sep, right = ln.partition(FIELD)
+        if sep:
+            out.append(f'<tr><td class="k">{_esc(left)}</td>'
+                       f'<td class="v">{_esc(right)}</td></tr>')
+        else:
+            out.append(f'<tr><td class="w" colspan="2">{_esc(ln)}</td></tr>')
+    return '<table class="sub">' + "".join(out) + "</table>"
+
+
+def _esc(text: str) -> str:
+    """Escape, THEN turn newlines into breaks — never the other way round, or
+    the breaks get escaped along with the content."""
+    import html
+    return html.escape(str(text or "")).replace("\n", "<br>")
+
+
+def render_explainers(st, cols: list, root=None) -> int:
+    """'What each column means — click one', as one popover per feature.
+
+    ONE IMPLEMENTATION, TWO SURFACES. This lived only in lucyeco_page, so
+    when the board's LucyEco view became the same table it came up without
+    them and Megan lost "the previews at the top of what things are"
+    (2026-10-06). A table header cannot be clicked, so the answer sits
+    directly above the table — same gesture, and it works on a phone.
+
+    Returns how many were drawn, so a caller can tell nothing-to-show from
+    a registry that failed.
+    """
+    import pathlib as _pl
+    root = root or _pl.Path(__file__).resolve().parents[2]
+    picks = [c for c in cols if c in EXPLAINS]
+    if not picks:
+        return 0
+    st.caption("What each column means — click one:")
+    for chunk in range(0, len(picks), 5):
+        for col, box in zip(picks[chunk:chunk + 5], st.columns(5)):
+            words, shots = EXPLAINS[col]
+            # One name or several — call-outs are two different messages,
+            # the nudge and the praise, and one of them explains half.
+            shots = [shots] if isinstance(shots, str) else list(shots or [])
+            with box.popover(col, use_container_width=True):
+                st.markdown("**%s**" % col)
+                st.write(words)
+                shown = 0
+                for shot in shots:
+                    img = root / "resources" / "report-screenshots" / shot
+                    if shot and img.exists():
+                        st.image(str(img), use_container_width=True)
+                        shown += 1
+                if not shown:
+                    st.caption("No example image for this one yet.")
+    st.write("")
+    return len(picks)
+
+
+def html_table(rows: list, cols: list) -> str:
+    """The table as HTML — shared by the public page and the
+    sales board's LucyEco view, so the two cannot drift."""
+    head = "".join(
+        f'<th style="background:{HEADER_TINT[c]}">{_esc(c)}</th>'
+        if c in HEADER_TINT else f"<th>{_esc(c)}</th>" for c in cols)
+    body = []
+    for r in rows:
+        cells = []
+        for c in cols:
+            v = r.get(c, "")
+            # A tone the ROW worked out wins: staleness needs the office's
+            # clock and selling hours, which cell_tone cannot see from a
+            # column name and a string.
+            tone = (r.get("_reading_tone") or "") if c == "Last reading" \
+                else ""
+            css = _TONE_CSS.get(tone or cell_tone(c, v), "")
+            klass = ' class="name"' if c == "ICD" else ""
+            cells.append(f'<td{klass} style="{css}">{_cell_html(v)}</td>')
+        body.append("<tr>" + "".join(cells) + "</tr>")
+    return (_CSS + '<div class="eco-wrap"><table class="eco"><thead><tr>'
+            + head + "</tr></thead><tbody>" + "".join(body)
+            + "</tbody></table></div>")
+
+
+
+def rows_cached_admin(max_age_min: int = SNAPSHOT_FRESH_MIN):
+    """rows_cached, with the two admin columns. Its own snapshot file, so the
+    public one can never pick up a row that carries them."""
+    global SNAPSHOT
+    pub, SNAPSHOT = SNAPSHOT, SNAPSHOT.with_name("lucyeco-enrollment-admin.json")
+    try:
+        got, taken = _read_snapshot()
+        if got and taken and (dt.datetime.now() - taken
+                              <= dt.timedelta(minutes=max_age_min)):
+            return got, taken
+        fresh = rows(admin=True)
+        if fresh:
+            _write_snapshot(fresh)
+            return fresh, dt.datetime.now()
+        return (got or []), taken
+    finally:
+        SNAPSHOT = pub
 
 
 def counts(rows_: list) -> dict:

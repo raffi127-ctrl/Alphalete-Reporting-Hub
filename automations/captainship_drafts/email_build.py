@@ -151,6 +151,18 @@ def _no_data(what: str, detail: str = "") -> str:
             f'margin:4px 0 10px">{what}: no data available{tail}.</div>')
 
 
+def _week_fallback_note(week_ending: dt.date) -> str:
+    """Team Stats board shown on an EARLIER week because this team has no
+    activations yet in the current one (tableau_shot._empty_week_fallback).
+    Grey and without PENDING_MARK: nothing is broken, the new week is just
+    empty — every Tuesday, since Monday opens it (10/6, Jairo/Khalil/Colten)."""
+    return (f'<div style="font-size:12px;color:#555;background:#f4f4f4;'
+            f'border:1px solid #ddd;border-radius:4px;padding:8px 10px;'
+            f'margin:4px 0 10px">Captain Team Stats: no activations yet this '
+            f'week — showing the week ending {week_ending.month}/'
+            f'{week_ending.day}.</div>')
+
+
 def _not_available(what: str) -> str:
     """For a section whose SOURCE DOES NOT EXIST YET — a known, accepted state,
     not a failure.
@@ -269,6 +281,10 @@ def _section_html(captain: Captain, heading: str, kind: str, n: int,
     elif kind == "teamstats_tableau":
         ts = bundle.get("teamstats_tableau")
         if ts:
+            from automations.captainship_drafts.tableau_shot import fallback_week
+            wk = fallback_week(ts)
+            if wk:
+                body += _week_fallback_note(wk)
             body += imgs.img(ts, slot="team-stats")
         elif not _teamstats_configured(captain):
             # No source wired for this captain yet — say so plainly and let the

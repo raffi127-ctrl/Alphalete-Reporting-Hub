@@ -186,9 +186,100 @@ def scrape_escalations(page):
     }""")
 
 
+# The panes p=1504 is known to carry. Probed in order; the first that
+# yields the buffers is the one the puller should be reading.
+PANES = ("", "settings", "preferences", "office", "escalations")
+
+
+def _probe(page, tok, office):
+    """Print what each pane actually exposes. Writes nothing.
+
+    Added 2026-10-06: the pull came back "0 settings, 0 preferences, 50
+    escalation rows", which says the page loaded and the FIELDS mapping
+    matched nothing. Only the page can say whether the labels were renamed
+    or the fields live on another pane, so ask it rather than guess."""
+    for pane in PANES:
+        try:
+            _open(page, tok, pane)
+            raw = scrape_settings(page) or {}
+        except Exception as e:  # noqa: BLE001
+            print("[probe] {} pane {!r}: FAILED {}".format(office, pane, e),
+                  flush=True)
+            continue
+        fields = raw.get("fields") or {}
+        mapped = {FIELDS[k]: v for k, v in fields.items() if k in FIELDS}
+        print("[probe] {} pane {!r}: {} labelled fields, {} of them mapped"
+              .format(office, pane or "(default)", len(fields), len(mapped)),
+              flush=True)
+        for label in sorted(fields):
+            print("    {:<58} = {:<22} {}".format(
+                label[:58], str(fields[label])[:22],
+                "-> " + FIELDS[label] if label in FIELDS else "UNMAPPED"),
+                flush=True)
+        tabs = page.evaluate(
+            "() => Array.from(document.querySelectorAll("
+            "'a,button,[role=tab]')).map(e => (e.textContent||'').trim())"
+            ".filter(t => t && t.length < 32).slice(0, 40)") or []
+        print("    tabs/buttons: {}".format(", ".join(tabs[:20])), flush=True)
+
+
+REPORT_ID = "sms_ai_settings"
+INFO_KEYS = sorted({k for k in FIELDS.values()
+                    if not k.endswith(("_buffer", "_threshold"))})
+
+
+def office_holes(info, prefs, rows):
+    """Why this office's pull can't be trusted as COMPLETE — [] when it is.
+
+    What the audit can't run without: both timeslot buffers (the window
+    check is skipped, not passed, without them), the escalation table, and
+    most of Office Info — under half of it means the labels moved, not that
+    the office left them blank. A FEW blank Office Info fields are a finding
+    for the audit itself, so they are reported, not failed."""
+    holes = []
+    missing = [b for b in ("offered_buffer", "accepted_buffer")
+               if not str((prefs or {}).get(b, "")).strip()]
+    if missing:
+        holes.append("no {} — the window check can't run".format(
+            " / ".join(missing)))
+    if not rows:
+        holes.append("escalations table came back empty")
+    got = [k for k in INFO_KEYS if str((info or {}).get(k, "")).strip()]
+    if len(got) * 2 < len(INFO_KEYS):
+        holes.append("only {} of {} Office Info fields read — the page's "
+                     "labels may have moved".format(len(got), len(INFO_KEYS)))
+    return holes
+
+
+def record_delivery(done, bad, retry_args, note=""):
+    """Today's run manifest — the proof a clean run closes its ticket with.
+
+    2026-10-07: open since 10/6 as "ran clean, but nothing can confirm it
+    DELIVERED". Eve: an exit-0 rule isn't enough, runs often leave info
+    unfilled. So an office only counts when its tab was written with what
+    the audit needs (office_holes); anything short is a named failed part
+    and the ticket stays open. Never raises."""
+    try:
+        from automations.shared import run_manifest
+        run_manifest.write_manifest(
+            REPORT_ID, succeeded=done, failed=bad,
+            retry_args=retry_args if bad else [],
+            note=note or "{} office(s) complete, {} not".format(
+                len(done), len(bad)))
+    except Exception as e:  # noqa: BLE001
+        print("[ai_settings] couldn't write the run manifest ({}: {}) — the "
+              "tabs are written, but the ticket won't close itself".format(
+                  type(e).__name__, e), flush=True)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--office", default="11280", help="one id or a comma list")
+    ap.add_argument("--probe", action="store_true",
+                    help="print every label the page exposes, per pane, and "
+                         "write nothing — for when the mapping comes back "
+                         "empty and guessing at label names is the "
+                         "alternative")
     ap.add_argument("--dry-run", action="store_true",
                     help="scrape and print, write nothing")
     a = ap.parse_args(argv)
@@ -196,6 +287,12 @@ def main(argv=None):
     offices = [o.strip() for o in str(a.office).split(",") if o.strip()]
     OUTPUT_DIR.mkdir(exist_ok=True)
     rc = 0
+    done, bad, bad_offices, blanks = [], [], [], []
+
+    def _miss(office, why):
+        bad.append("{}: {}".format(office, why))
+        if office not in bad_offices:
+            bad_offices.append(office)
     # Step aside rather than queue behind a report. An audit is never
     # worth making a live pull wait for the one AppStream session.
     with appstream_direct_session(verbose=True, yield_if_busy=True) as page:
@@ -208,7 +305,15 @@ def main(argv=None):
             page.wait_for_timeout(1500)
             tok = _rqst(page) or tok
 
-            _open(page, tok)
+            if a.probe:
+                _probe(page, tok, office)
+                continue
+            # The fields are on the "settings" pane, NOT the default one.
+            # Probed 2026-10-06: default 4 labelled fields and 0 mapped,
+            # settings 19 and 14 mapped. Reading the default pane is why
+            # every pull reported "0 settings, 0 preferences" while the
+            # escalations table came back fine.
+            _open(page, tok, "settings")
             raw = scrape_settings(page) or {}
             fields = raw.get("fields") or {}
             info, prefs = {}, {}
@@ -230,6 +335,7 @@ def main(argv=None):
                 print("[ai_settings] {}: nothing scraped — the page shape "
                       "changed, or the office never loaded".format(office),
                       flush=True)
+                _miss(office, "nothing scraped")
                 rc = 1
                 continue
 
@@ -260,6 +366,35 @@ def main(argv=None):
                            ensure_ascii=False, indent=2), encoding="utf-8")
             (OUTPUT_DIR / "escalations_{}.json".format(office)).write_text(
                 json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+            # The JSON above only ever exists on the machine that pulled, and
+            # that is always Lucy 2. The tab is what every other machine
+            # reads, so a clean run is visible everywhere.
+            try:
+                from automations.sms_audit import ai_settings_tab as TAB
+                tab, n = TAB.write(office, info, prefs, rows)
+                print("[ai_settings]   -> {} ({} rows)".format(tab, n),
+                      flush=True)
+            except Exception as e:  # noqa: BLE001
+                print("[ai_settings]   tab write failed, local JSON is "
+                      "written: {}".format(e), flush=True)
+                _miss(office, "tab write failed — {}".format(type(e).__name__))
+                continue
+            holes = office_holes(info, prefs, rows)
+            for h in holes:
+                print("[ai_settings] {}: INCOMPLETE — {}".format(office, h),
+                      flush=True)
+                _miss(office, h)
+            if not holes:
+                done.append(office)
+            empty = [k for k in INFO_KEYS if not str(info.get(k, "")).strip()]
+            if empty:
+                blanks.append("{} blank on AppStream: {}".format(
+                    office, ", ".join(empty)))
+    if not a.dry_run and not a.probe:
+        note = "{} office(s) complete, {} not".format(len(done), len(bad_offices))
+        if blanks:
+            note += " · " + " · ".join(blanks)
+        record_delivery(done, bad, ["--office", ",".join(bad_offices)], note)
     return rc
 
 

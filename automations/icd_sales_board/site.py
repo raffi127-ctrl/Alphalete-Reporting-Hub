@@ -2153,38 +2153,45 @@ def _rollout_section() -> None:
     The goal is every ICD on LucyECO with their own live board (Megan
     2026-09-22); this is read entirely from what the machines already report,
     so nobody has to be asked where they are."""
-    from automations.icd_sales_board import rollout as RO
-    rows = _rollout_rows()
-    n = RO.counts(rows)
-    on = len(rows) - n[RO.NONE]
-    st.subheader(f"{on} of {len(rows)} offices on LucyEco")
-    st.caption(" · ".join(f"{k}: {v}" for k, v in n.items() if v))
-    tone = {RO.LIVE: "background-color:#D9EAD3",
-            RO.UPDATE: "background-color:#FFF2CC",
-            RO.QUIET: "background-color:#F4CCCC",
-            RO.WAITING: "background-color:#FCE5CD"}
-    frame = pd.DataFrame(rows, columns=["ICD", "Status", "Board shows",
-                                        "Campaign", "Last reading",
-                                        "On latest update"])
-    st.dataframe(
-        frame.style.apply(lambda col: [tone.get(v, "") for v in col],
-                          subset=["Status"]),
-        use_container_width=True, hide_index=True,
-        height=_grid_height(len(rows)))
-    ready = sum(1 for r in rows if r.get("Board shows") != RO.SHOWS_NOTHING
-                and r.get("Board shows") != RO.SHOWS_OFFICE)
-    st.caption(f"**{ready} ICDs have a board worth sending today** — live, or "
-               f"at least yesterday's settled numbers from Tableau.")
-    st.caption("To give an ICD their board: send "
-               "**lucyeco.streamlit.app/sales-board** and their access code "
-               "from the Board Access tab. Their code opens their office "
-               "only, and is deliberately not printed here.")
-    st.caption(f"Live = reported in the last day on the current agent "
-               f"({RO.CURRENT_AGENT}). Needs update = reporting on an older "
-               f"agent; it updates itself. Gone quiet = no reading for two "
-               f"days or more — check that machine.")
-
-
+    # The heading counts THE TABLE BELOW IT. It used to count the ORG sales
+    # board's offices while the table listed everyone we run anything for,
+    # so it read '16 of 30' above 47 rows.
+    # ONE TABLE (Megan 2026-10-06: "I don't want 2 different sections").
+    # This view used to draw the enrollment grid and then an admin grid
+    # underneath, which is two answers to one question and sent you to the
+    # older-looking one first. Same table as the public page, plus the two
+    # columns that page must not carry.
+    try:
+        from automations.icd_sales_board import enrollment as EN
+        erows, taken = EN.rows_cached_admin()
+        if not erows:
+            st.info("Couldn't read the registries just now.", icon="🚧")
+            return
+        import collections as _c
+        state = _c.Counter(r.get("LucyECO", "") for r in erows)
+        st.subheader(f"{state.get('Active', 0)} of {len(erows)} offices "
+                     f"on LucyECO")
+        st.caption(" · ".join(f"{k}: {v}" for k, v in state.most_common() if k))
+        cols = EN.admin_columns(erows)
+        # The same explainers the public page carries -- one implementation,
+        # so the two surfaces cannot drift apart again.
+        EN.render_explainers(st, cols)
+        # CARRY THE PRIVATE KEYS THROUGH. Narrowing each row to the visible
+        # columns dropped `_reading_tone`, so html_table fell back to the
+        # plain rule and painted every reading green -- Ryan sat there in
+        # green while 22 hours cold (Megan 2026-10-06: "RYAN STILL ISN'T RED
+        # ON MY VIEW"). Anything underscored is for the renderer, never a
+        # column, so it is kept and never printed.
+        st.html(EN.html_table(
+            [{**{c: r.get(c, "") for c in cols},
+              **{k: v for k, v in r.items() if k.startswith("_")}}
+             for r in erows], cols))
+        # The two captions that sat here are gone (Megan 2026-10-06). The
+        # colour key and the note about the public page were explaining a
+        # table she reads every day, and the explainers above already say
+        # what each column is.
+    except Exception as e:   # noqa: BLE001
+        st.caption(f"Enrollment table unavailable ({type(e).__name__}: {e})")
 def _paint(html: str) -> None:
     """Put the board on the page WITHOUT a markdown pass.
 

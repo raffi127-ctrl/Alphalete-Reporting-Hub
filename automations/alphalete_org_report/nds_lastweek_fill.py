@@ -140,43 +140,80 @@ def run(sheet_id: str, week: dt.date | None = None, dry_run: bool = False,
     sh = rfill.open_by_key(sheet_id)
     tabs = [w for w in sh.worksheets() if w.title.endswith(" - NDS")]
     filled, skipped, data = [], [], []
+    complete, holes = [], []
     for ws in tabs:
         owner = opt_nds._norm_owner(ws.title[: -len(" - NDS")])
         rec = detail.get(owner)
-        if rec is None:
-            skipped.append(f"{ws.title}: not on the tracker")
-            continue
         grid = rfill._retry(ws.get_all_values)
         cols = rfill.find_sunday_columns(grid, header_row_idx=0)
         col = cols.get(week)
         if col is None:
             skipped.append(f"{ws.title}: no {week} column")
+            holes.append(f"{ws.title}: no {week} column")
             continue
-        wrote = []
+        if rec is None:
+            skipped.append(f"{ws.title}: not on the tracker")
+        wrote, blank = [], []
         for label, key in ROWS.items():
-            value = str(rec.get(key, "")).strip()
-            if not value:
-                continue
             row = _row_for_label(grid, label)
             if row is None:
+                blank.append(f"no '{label}' row")
                 continue
             current = grid[row - 1][col - 1] if len(grid[row - 1]) >= col else ""
             if str(current).strip():
                 continue          # already filled - never overwrite
+            value = str((rec or {}).get(key, "")).strip()
+            if not value:
+                blank.append(label)
+                continue
             data.append({"range": f"'{ws.title}'!{_a1(row, col)}",
                          "values": [[value]]})
             wrote.append(f"{label}={value}")
+        if blank:
+            why = "" if rec else " (not on the tracker)"
+            holes.append(f"{ws.title}: {', '.join(blank)} still blank{why}")
+        else:
+            complete.append(ws.title)
         if wrote:
             filled.append(ws.title)
             logfn(f"  [{'DRY' if dry_run else 'OK'}] {ws.title}: {', '.join(wrote)}")
-        else:
+        elif rec is not None:
             skipped.append(f"{ws.title}: nothing empty to fill")
     if data and not dry_run:
         sh.values_batch_update({"valueInputOption": "RAW", "data": data})
     logfn(f"NDS (LW): {len(data)} cell(s) on {len(filled)} tab(s); "
           f"{len(skipped)} tab(s) untouched")
+    logfn(f"NDS (LW): WE {week} complete on {len(complete)} of {len(tabs)} "
+          f"tab(s)")
+    for h in holes:
+        logfn(f"  ! {h}")
+    if not dry_run:
+        record_delivery(week, complete, holes, len(data), logfn=logfn)
     return {"filled": filled, "skipped": skipped, "cells": len(data),
-            "week": week}
+            "week": week, "complete": complete, "holes": holes}
+
+
+REPORT_ID = "nds_lastweek_fill"
+
+
+def record_delivery(week, complete, holes, cells, logfn=print) -> None:
+    """Today's run manifest — the proof a clean run closes its ticket with.
+
+    2026-10-07: open since 9/22 as "ran clean, but nothing can confirm it
+    DELIVERED". Eve: an exit-0 rule isn't enough, runs often leave info
+    unfilled. So the proof is the SHEET, not the exit code: after the write,
+    every '- NDS' tab must have all four rows filled for the week. A tab with
+    a blank left (or no column for the week) is a failed part, named, and
+    the ticket stays open. Never raises."""
+    try:
+        from automations.shared import run_manifest
+        run_manifest.write_manifest(
+            REPORT_ID, succeeded=complete, failed=holes,
+            note=(f"WE {week}: {cells} cell(s) written; {len(complete)} tab(s) "
+                  f"complete, {len(holes)} with blanks"))
+    except Exception as e:  # noqa: BLE001
+        logfn(f"NDS (LW): couldn't write the run manifest ({type(e).__name__}: "
+              f"{e}) - the sheet is written, but the ticket won't close itself")
 
 
 def _describe_export(path: Path, logfn=print) -> None:
@@ -235,5 +272,7 @@ if __name__ == "__main__":
               skip_download=args.skip_download)
     print(f"\nWeek in the export: {res['week']}; "
           f"tabs filled: {len(res['filled'])}; cells: {res['cells']}")
-    if not res["cells"]:
+    # Nothing written is only a failure when something is still blank: a
+    # re-run over a week that is already full has nothing left to do.
+    if res["week"] is None or (not res["cells"] and res.get("holes")):
         raise SystemExit(1)

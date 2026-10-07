@@ -36,6 +36,8 @@ from automations.sms_audit import analyze as A
 from automations.sms_audit import ai_settings as AIS
 from automations.sms_audit import call_list as CL
 from automations.sms_audit import escalations as ESC
+from automations.sms_audit import gradecard as GC
+from automations.sms_audit import leadtime as LT
 from automations.sms_audit import offices as O
 from automations.sms_audit import retention as R
 from automations.sms_audit import rebuttals as RB
@@ -80,7 +82,22 @@ def apply_address_history(office):
                 continue
     RB.set_address_history(office["office"], cur,
                            prev if changed else None, changed)
+    apply_office_facts(office)
     return changed
+
+
+def apply_office_facts(office):
+    """The rest of what this office told us, into the checks that need it.
+
+    Megan 2026-10-06: "the house rules will need to adapt per office. We
+    will need to get their location/how they conduct interviews/zoom
+    links/ect". Each setter is silent when the fact is blank, so an office
+    that has not filled its row is never scored against someone else's
+    answer — offices.missing_fields reports the gap instead."""
+    oid = office["office"]
+    RB.set_zoom(oid, [office.get("zoom_id"), office.get("zoom"),
+                      office.get("zoom2_id"), office.get("zoom2")])
+    RB.set_pay(oid, office.get("pay_low"), office.get("pay_high"))
 
 
 def message_findings(office):
@@ -147,7 +164,10 @@ blockquote .hit{display:block;color:#a00;font-size:.85em;margin-bottom:.2em}
 .big.ok{color:#156E46}
 .big.miss{color:#A8322A}
 .lede{margin:.2em 0 .8em}
-"""
+b.down{color:#A8322A}
+b.up{color:#156E46}
+.byai{color:#666;font-size:.85em;font-style:normal}
+""" + GC.CSS
 
 
 def _mins(m):
@@ -182,7 +202,8 @@ def settings_findings(office, median_reply=None, template_names=None,
 
 
 def write_report(office, tmpl, msgs, moved, tab, path,
-                 wlabels=None, conv=None, window=None, ai=None):
+                 wlabels=None, conv=None, window=None, ai=None,
+                 rows=None, lead=None):
     o = office
     L = []
     add = L.append
@@ -194,22 +215,20 @@ def write_report(office, tmpl, msgs, moved, tab, path,
     add("<p class='date'>Account {} · {:%d %b %Y}</p>".format(
         esc(o["office"]), dt.date.today()))
 
-    gaps = O.missing_fields(o)
-    if gaps:
-        add("<h2>Checks NOT run</h2>")
-        add("<div class='gap'><p class='lede'>Nobody has told the auditor "
-            "what is correct for this office, so these are skipped rather "
-            "than passed:</p><ul>")
-        for g in gaps:
-            add("<li>{}</li>".format(esc(g)))
-        add("</ul><p>Run the command again and fill these in, and they start "
-            "running.</p></div>")
+    # Megan 2026-10-06: "the top should breakdown what the most important
+    # things to address are". Everything below is already measured; the card
+    # only ranks it, so the first thing read is the thing to fix.
+    add(GC.render(GC.build(o, conv=conv, msgs=msgs, ai=ai, rows=rows,
+                           moved=moved, tmpl=tmpl, lead=lead,
+                           gaps=O.missing_fields(o)), esc))
 
     # ---------------- templates ----------------
     # Megan 2026-10-01: "This is the MAIN thing we need to get as high as
     # possible - goal at 80%+". So it opens the document, above everything
     # else the auditor found.
-    add("<h2>Resumes received &rarr; 1st rounds booked</h2>")
+    add("<h2>Call list retention</h2>")
+    add("<p class='lede'>Of the people whose resume came in, how many "
+        "we booked an interview with.</p>")
     if not conv or not conv.get("ok"):
         add("<p class='none'>Not measured: {}.</p>".format(
             esc((conv or {}).get("why", "no data"))))
@@ -239,14 +258,14 @@ def write_report(office, tmpl, msgs, moved, tab, path,
                     "<td class='n'>{:.0f}%</td></tr>".format(
                         esc(r["status"]), r["n"], r["share"]))
             add("</table></div>")
-        add("<p class='none'>Booked = First Interview Date rows in the "
-            "AppStream Activity Report (p=704). Resumes received = the "
-            "people still on the Call List export (p=4000 &rarr; Export, "
-            "pulled {:%d %b}) plus the ones booked \u2014 everyone is saved "
-            "to the call list when their resume arrives and comes off it "
-            "once they are booked. <b>That last part is an assumption:</b> "
-            "if this office also clears people off the list by hand, the "
-            "percentage reads higher than it is.</p>".format(conv["pulled"]))
+        # Megan 2026-10-06: "remove". The source trail and the caveat that
+        # went with it are out of the document at her instruction. Keeping
+        # them here so the next reader of this code still knows: booked is
+        # First Interview Date rows on p=704, resumes received is the Call
+        # List export (p=4000) plus the booked, and that second part
+        # ASSUMES people come off the list once booked \u2014 an office that
+        # also clears it by hand reads higher than it is.
+        pass
     add("")
 
     # The AI's own settings and canned answers come before the templates:
@@ -256,7 +275,8 @@ def write_report(office, tmpl, msgs, moved, tab, path,
         add("<p class='none'>Not pulled for this office yet.</p>")
     else:
         for label, items, why in (("Settings", ai["settings"], AIS.WHY),
-                                  ("Its canned answers", ai["escalations"],
+                                  ("What it replies to applicants",
+                                   ai["escalations"],
                                    ESC.WHY)):
             add("<h3>{}</h3>".format(esc(label)))
             if not items:
@@ -333,14 +353,56 @@ def write_report(office, tmpl, msgs, moved, tab, path,
         ek = collections.Counter(e["kind"] for e in msgs["errors"])
         dk = collections.Counter(e["kind"] for e in msgs["dodged"])
         if ek or dk:
-            add("<div class='scroll'><table><tr><th>What</th>"
-                "<th>How many</th></tr>")
-            for k, n in ek.most_common():
-                add("<tr><td>{}</td><td class='n'>{}</td></tr>".format(esc(k), n))
-            for k, n in dk.most_common():
-                add("<tr><td>questions {}</td><td class='n'>{}</td></tr>".format(
-                    esc(k), n))
-            add("</table></div>")
+            # Megan 2026-10-06: "this should be able to be expanded to see
+            # these questions. We need to know if it's a person or AI so
+            # that we can get it corrected" — a count alone cannot be acted
+            # on, and the fix is a different one for each: a person gets
+            # coached, the AI gets its message edited in AppStream.
+            humans = set(msgs.get("human_senders") or [])
+
+            def who_sent(sender):
+                sender = (sender or "").strip()
+                if not sender:
+                    return "unknown", "unknown"
+                return sender, ("a person" if sender in humans else "the AI")
+
+            def fault_block(label, entries):
+                people = collections.Counter()
+                for e in entries:
+                    people[who_sent(e.get("sender"))[1]] += 1
+                mix = ", ".join("{} by {}".format(c, w)
+                                for w, c in people.most_common())
+                add("<details><summary>{} &mdash; {} ({})</summary>".format
+                    (esc(label), len(entries), esc(mix)))
+                for e in entries[:12]:
+                    sender, kind = who_sent(e.get("sender"))
+                    add("<blockquote><span class='hit'>{}</span>"
+                        "<span class='byai'>{} &middot; {}</span><br>".format(
+                            esc(e.get("detail") or e.get("bucket") or ""),
+                            esc(sender), esc(kind)))
+                    if e.get("question"):
+                        # A dodge is only legible as the pair: what they
+                        # asked, and what they got back instead.
+                        add("<b>They asked:</b> {}<br>"
+                            "<b>We replied:</b> {}".format(
+                                esc(e["question"]), esc(e.get("reply") or "")))
+                    else:
+                        add(esc(e.get("body") or ""))
+                    add("</blockquote>")
+                if len(entries) > 12:
+                    add("<p class='none'>&hellip; and {} more.</p>".format(
+                        len(entries) - 12))
+                add("</details>")
+
+            by_kind = collections.defaultdict(list)
+            for e in msgs["errors"]:
+                by_kind[e["kind"]].append(e)
+            for e in msgs["dodged"]:
+                by_kind["questions " + e["kind"]].append(e)
+            for label, _n in (ek + dk).most_common():
+                key = label if label in by_kind else "questions " + label
+                if by_kind.get(key):
+                    fault_block(key, by_kind[key])
         else:
             add("<p>Nothing flagged.</p>")
 
@@ -405,14 +467,19 @@ def write_report(office, tmpl, msgs, moved, tab, path,
                 "person\u2019s next text back. Fastest first. Anyone with "
                 "fewer than 10 replies is left out.</p>")
             add("<div class='scroll'><table><tr><th>Who</th>"
-                "<th>Replies</th><th>Usual wait</th><th>Within 5 min</th>"
-                "<th>Over 4 hours</th></tr>")
+                "<th>Replies</th><th>Median Response Time</th><th>Within 5 min</th>"
+                "<th>Within 1 hr</th><th>Within 2 hrs</th>"
+                "<th>Within 3 hrs</th><th>Over 4 hours</th></tr>")
             for r in sp:
                 add("<tr><td>{}</td><td class='n'>{:,}</td>"
                     "<td class='n'>{}</td><td class='n'>{:.0f}%</td>"
+                    "<td class='n'>{:.0f}%</td><td class='n'>{:.0f}%</td>"
+                    "<td class='n'>{:.0f}%</td>"
                     "<td class='n'>{:.0f}%</td></tr>".format(
                         esc(r["who"]), r["n"], _mins(r["median"]),
-                        r["within_5"], r["over_4h"]))
+                        r["within_5"], r.get("within_60", 0),
+                        r.get("within_120", 0), r.get("within_180", 0),
+                        r["over_4h"]))
             add("</table></div>")
             slow = [r for r in sp if r["over_4h"] >= 10]
             if slow:
@@ -494,18 +561,10 @@ def write_report(office, tmpl, msgs, moved, tab, path,
             n = tab[p][(b, "n")]
             return "{:.0f}%".format(100.0 * tab[p][(b, "s")] / n) if n else "&mdash;"
 
-        add("<p class='lede'>Every row is one person who books interviews. "
-            "Every number is <b>the share of the 1st-round interviews they "
-            "booked where the applicant actually turned up</b> &mdash; so "
-            "AI Messaging&rsquo;s 45% means 45 out of every 100 interviews "
-            "the bot booked that week were attended.</p>")
-        add("<p class='none'>Columns are recruiting weeks, Monday to Friday. "
-            "An interview counts as attended unless AppStream marks it "
-            "<i>No Show</i>; Interview Completed and Brought on Board both "
-            "count as attended. From the AppStream Retention Report "
-            "(p=701), pulled weekly to "
-            "output/sms_thread_dump_{}_&lt;week&gt;.json.</p>".format(
-                esc(o["office"])))
+        # Megan 2026-10-06: "remove". For the next reader of this code:
+        # every number is the share of that booker's 1st rounds where the
+        # applicant turned up; columns are recruiting weeks Mon-Fri; an
+        # interview counts as attended unless AppStream says No Show.
         add("<div class='scroll'><table><tr><th>Who booked it</th>" +
             "".join("<th>{}</th>".format(esc(wl.get(p) or R.week_label(p)))
                     for p in periods) + "</tr>")
@@ -534,24 +593,27 @@ def write_report(office, tmpl, msgs, moved, tab, path,
         real = [m for m in (moved or []) if abs(m[1] - m[2]) >= R.DROP]
         add("<h3>What changed in the latest week</h3>")
         if not real:
-            add("<p>Nobody moved more than {:.0f} points against their own "
-                "usual rate.</p>".format(R.DROP))
+            add("<p>Nobody moved more than {:.0f} points against their "
+                "own usual rate.</p>".format(R.DROP))
         else:
-            add("<p class='lede'>Each person against their OWN usual rate, "
-                "not against each other &mdash; bookers differ permanently, "
-                "so only a change is news.</p><ul>")
+            # Megan 2026-10-06: "remove". Still true, and still what the
+            # numbers below mean: each person is scored against their OWN
+            # trailing rate, never against each other.
+            add("<ul>")
             for b, rate, trail, n in real:
                 dd = rate - trail
                 add("<li><b>{}</b> &mdash; {:.0f}% this week against a usual "
-                    "{:.0f}%. <b>{} {:.0f} points</b>, on {} booking{}.</li>"
+                    "{:.0f}%. <b class='{}'>{} {:.0f} points</b>, on {} "
+                    "booking{}.</li>"
                     .format(esc(R.expand_name(b, names)), rate, trail,
+                            "down" if dd < 0 else "up",
                             "Down" if dd < 0 else "Up", abs(dd), n,
                             "" if n == 1 else "s"))
             add("</ul>")
             steady = len(moved or []) - len(real)
             if steady:
-                add("<p class='none'>{} other booker{} stayed within {:.0f} "
-                    "points of their usual.</p>".format(
+                add("<p class='none'>{} other booker{} stayed within "
+                    "{:.0f} points of their usual.</p>".format(
                         steady, "" if steady == 1 else "s", R.DROP))
 
     add("</body></html>")
@@ -617,8 +679,10 @@ def main(argv=None):
         if tmpl and tmpl[1]:
             signs = list(tmpl[1])
         ai = settings_findings(o, median, signs, senders)
+        lead = LT.measure(o)
         write_report(o, tmpl, msgs, moved, tab, path,
-                     R.week_labels(rows) if rows else {}, conv, window, ai)
+                     R.week_labels(rows) if rows else {}, conv, window, ai,
+                     rows=rows, lead=lead)
         nt = len(tmpl[0]) if tmpl else 0
         nm = (len(msgs["errors"]) + len(msgs["dodged"])) if msgs else 0
         big = [m for m in moved if m[1] - m[2] <= -R.DROP]

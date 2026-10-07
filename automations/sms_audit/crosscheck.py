@@ -27,7 +27,8 @@ six of the next, and it takes two pulls to assemble:
 Getting that wrong by one day is the same mistake the report is checking for,
 so the days are named in the output and printed beside the totals.
 
-READ-ONLY. Writes nothing — not the sheet, not Slack, not a tab.
+READ-ONLY on AppStream and the sheet. The one thing it writes is its own
+run manifest (output/), so a clean check can close its ticket.
 
 WHERE IT CAN RUN. The AppStream session lives on Lucy 2; the per-week booking
 files are written wherever the backfill ran. So a run on Lucy 2 can only
@@ -48,7 +49,7 @@ except Exception:
 
 from automations.shared.tableau_patchright import appstream_direct_session
 from automations.recruiting_report import fetch_office as fo
-from automations.recruiter_retention.run import _parse, _load_as_week
+from automations.recruiter_retention.run import _parse, _load_as_week, _rqst
 from automations.sms_thread_dump.run import _recruiting_week
 from automations.sms_audit import analyze as A
 
@@ -109,6 +110,48 @@ def ours(office, lo, hi, suffix=""):
     return booked, shown, src
 
 
+REPORT_ID = "sms_crosscheck"
+
+
+def _hop_to(page, office):
+    """Switch by the console's own newOfficeId link — the hop pull_log uses.
+
+    The #searchMC picker can't reach the office the session is ALREADY on:
+    on 10/7, 11280 (first in the list, and where Lucy 2's console sits)
+    failed "could not switch" on two runs in a row while the three offices
+    after it compared fine. Returns False when there's no rqst token."""
+    tok = _rqst(page)
+    if not tok:
+        return False
+    page.goto("https://www.applicantstream.com/index.cfm?p=104&rqst={}"
+              "&newOfficeId={}".format(tok, office),
+              wait_until="domcontentloaded", timeout=40000)
+    page.wait_for_timeout(1500)
+    return True
+
+
+def record_delivery(agreed, problems, retry_args):
+    """Today's run manifest — the proof a clean check closes its ticket with.
+
+    2026-10-07: open since 9/27 as "ran clean, but nothing can confirm it
+    DELIVERED". Eve: an exit-0 rule isn't enough. A check only counts for the
+    offices it actually COMPARED and found agreeing; an office it skipped (no
+    local pull for the week), couldn't switch to, or found disagreeing is a
+    named failed part, so a run that checked one office of four can't close
+    the ticket for all four. Never raises."""
+    try:
+        from automations.shared import run_manifest
+        run_manifest.write_manifest(
+            REPORT_ID, succeeded=agreed, failed=problems,
+            retry_args=retry_args if problems else [],
+            note="{} office(s) agree with AppStream, {} not checked or not "
+                 "agreeing".format(len(agreed), len(problems)))
+    except Exception as e:  # noqa: BLE001
+        print("[crosscheck] couldn't write the run manifest ({}: {}) — the "
+              "ticket won't close itself".format(type(e).__name__, e),
+              flush=True)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--office", default="11280,23965,24065,11580")
@@ -127,23 +170,63 @@ def main(argv=None):
 
     bad = 0
     compared, skipped = [], []
+    agreed, problems = [], []
     with appstream_direct_session(verbose=True) as page:
         page.wait_for_timeout(3000)
         page.wait_for_selector("#searchMC", timeout=20000)
         for office in offices:
-            fo._switch_office(page, office, OWNERS.get(office, ""))
+            # On a failed switch the page still shows the PREVIOUS office,
+            # and its counts would be compared against this one's files.
+            # AppStream hangs a click now and then (10/7: the office picker
+            # timed out at 30s and took the whole run down with it, so no
+            # office was checked). One office's hang is that office's miss.
+            try:
+                switched = fo._switch_office(page, office,
+                                             OWNERS.get(office, ""),
+                                             confirm_denial=True)
+            except Exception as e:  # noqa: BLE001
+                print("[crosscheck] {}: office switch FAILED {}".format(
+                    office, type(e).__name__), flush=True)
+                switched = False
+            if not switched:
+                try:
+                    switched = _hop_to(page, office)
+                    if switched:
+                        print("[crosscheck] {}: picker had no row for it — "
+                              "switched by the direct link".format(office),
+                              flush=True)
+                except Exception as e:  # noqa: BLE001
+                    print("[crosscheck] {}: direct link FAILED {}".format(
+                        office, type(e).__name__), flush=True)
+                    switched = False
+            if not switched:
+                print("[crosscheck] {}: NOT COMPARED — could not switch to the "
+                      "office".format(office), flush=True)
+                skipped.append(office)
+                problems.append("{}: could not switch to the office".format(office))
+                continue
             page.wait_for_timeout(1500)
             sch = su = 0
-            for sun, idxs in slices:
-                _load_as_week(page, sun)
-                s, u = totals(_parse(page), idxs)
-                sch += s
-                su += u
+            try:
+                for sun, idxs in slices:
+                    _load_as_week(page, sun)
+                    s, u = totals(_parse(page), idxs)
+                    sch += s
+                    su += u
+            except Exception as e:  # noqa: BLE001
+                print("[crosscheck] {}: NOT COMPARED — p=701 failed to load "
+                      "({})".format(office, type(e).__name__), flush=True)
+                skipped.append(office)
+                problems.append("{}: AppStream's report page failed to load"
+                                .format(office))
+                continue
             mine, shown, src = ours(office, lo, hi, a.suffix)
             if mine is None:
                 print("[crosscheck] {}: NOT COMPARED — no local pull for this "
                       "week ({})".format(office, src), flush=True)
                 skipped.append(office)
+                problems.append("{}: not compared — no local pull for the "
+                                "week".format(office))
                 continue
             compared.append(office)
             ok_b = abs(sch - mine) <= TOLERANCE
@@ -155,12 +238,21 @@ def main(argv=None):
             print("             {}  showed: AppStream {} vs ours {}  {}"
                   .format(" " * len(office), su, shown,
                           "ok" if ok_s else "MISMATCH"), flush=True)
+            if ok_b and ok_s:
+                agreed.append(office)
+            else:
+                problems.append("{}: booked {} vs {}, showed {} vs {}".format(
+                    office, sch, mine, su, shown))
     # Say what was actually checked. "Every office agrees" printed on its own
     # reads identically whether four offices matched or none were compared at
     # all, and a run that compared nothing is the one most worth noticing.
     print("\n[crosscheck] compared {} ({}), skipped {} ({})".format(
         len(compared), ", ".join(compared) or "none",
         len(skipped), ", ".join(skipped) or "none"), flush=True)
+    bad_offices = [p.split(":")[0] for p in problems]
+    record_delivery(agreed, problems,
+                    ["--office", ",".join(bad_offices), "--week", str(a.week)]
+                    + (["--suffix", a.suffix] if a.suffix else []))
     if bad:
         print("[crosscheck] {} figure(s) DISAGREE — the pull is missing or "
               "double-counting days".format(bad), flush=True)

@@ -59,6 +59,8 @@ class OfficeWeatherTest(unittest.TestCase):
         for key, o in O.OFFICES.items():
             if not o.channel_id:
                 continue                  # email-only office
+            if not str(o.channel_id).startswith("C"):
+                continue                  # held to a DM until the sign-up names a room
             city = W.OFFICE_CITY.get(key) or W.METRICS_CITY.get(key)
             self.assertIsNotNone(city, f"{key}: add it to METRICS_CITY")
             self.assertIn(city, W.CITIES, key)
@@ -67,7 +69,7 @@ class OfficeWeatherTest(unittest.TestCase):
         from automations.office_metrics import offices as O
         rooms = {ch for _k, _c, chans, *_ in W.metrics_posts() for ch in chans}
         for key, o in O.OFFICES.items():
-            if o.channel_id:
+            if o.channel_id and str(o.channel_id).startswith("C"):
                 self.assertIn(o.channel_id, rooms, key)
 
     def test_other_workspace_room_uses_its_own_token(self):

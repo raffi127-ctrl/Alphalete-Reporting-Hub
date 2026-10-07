@@ -1,0 +1,182 @@
+"""A relay that has gone quiet in selling hours goes bright red.
+
+Megan 2026-10-06: "if the last read time is over 2 hours (if during posting
+times) then it should go bright red so we know it's down". Ryan Mcspadden
+was the first one it caught -- last reading 2026-10-05 20:10, found on the
+Tuesday afternoon, about 21 hours cold.
+
+Pure function, no network: every clock here is passed in.
+"""
+from __future__ import annotations
+
+import datetime as dt
+import unittest
+
+from automations.icd_sales_board import enrollment as EN
+
+
+class _Office:
+    """Only the fields reading_tone looks at."""
+
+    def __init__(self, tz="America/Chicago", day="13:00", end="20:30",
+                 saturday=True, sat_start="11:00", sat_end="17:00"):
+        self.timezone, self.day_start, self.day_end = tz, day, end
+        self.saturday, self.sat_start, self.sat_end = saturday, sat_start, sat_end
+
+
+TUE_AFTERNOON = dt.datetime(2026, 10, 6, 17, 0)     # a Tuesday, mid-shift
+TUE_LATE = dt.datetime(2026, 10, 6, 23, 30)         # after close
+SUNDAY = dt.datetime(2026, 10, 4, 15, 0)
+SATURDAY = dt.datetime(2026, 10, 3, 15, 0)
+
+
+class InSellingHours(unittest.TestCase):
+
+    def test_a_fresh_reading_is_good(self):
+        self.assertEqual(
+            EN.reading_tone("2026-10-06 16:50", _Office(), now=TUE_AFTERNOON),
+            "good")
+
+    def test_just_under_two_hours_is_still_good(self):
+        self.assertEqual(
+            EN.reading_tone("2026-10-06 15:05", _Office(), now=TUE_AFTERNOON),
+            "good")
+
+    def test_over_two_hours_is_down(self):
+        self.assertEqual(
+            EN.reading_tone("2026-10-06 14:30", _Office(), now=TUE_AFTERNOON),
+            "down")
+
+    def test_ryans_actual_reading(self):
+        """The one this was built for: yesterday evening, found Tuesday."""
+        self.assertEqual(
+            EN.reading_tone("2026-10-05 20:10", _Office(), now=TUE_AFTERNOON),
+            "down")
+
+
+class OutsideSellingHours(unittest.TestCase):
+    """A shut office is quiet on purpose; red every night means nothing."""
+
+    def test_after_close_a_cold_relay_is_not_a_fault(self):
+        self.assertEqual(
+            EN.reading_tone("2026-10-06 14:30", _Office(), now=TUE_LATE),
+            "good")
+
+    def test_sunday_is_never_red(self):
+        self.assertEqual(
+            EN.reading_tone("2026-10-02 14:30", _Office(), now=SUNDAY),
+            "good")
+
+    def test_saturday_uses_its_own_hours(self):
+        o = _Office(sat_start="11:00", sat_end="17:00")
+        # 14:30 against a 15:00 Saturday clock: half an hour old, inside
+        # the 11-5 window, so good. (11:30 would be 3h30 cold -- down.)
+        self.assertEqual(EN.reading_tone("2026-10-03 14:30", o, now=SATURDAY),
+                         "good")
+        self.assertEqual(EN.reading_tone("2026-10-03 09:00", o, now=SATURDAY),
+                         "down")
+
+    def test_an_office_shut_on_saturday_is_not_red(self):
+        o = _Office(saturday=False)
+        self.assertEqual(EN.reading_tone("2026-10-02 09:00", o, now=SATURDAY),
+                         "good")
+
+
+class TheOfficesOwnClock(unittest.TestCase):
+    """The claim the whole rule rests on."""
+
+    def test_the_same_stamp_differs_by_timezone(self):
+        # 15:30 local. For a Central office it is 90 minutes old at 17:00
+        # Central; the stamp an Eastern office wrote at 15:30 ITS time is
+        # already 2h30 old when its own clock says 18:00.
+        central = EN.reading_tone("2026-10-06 15:30", _Office("America/Chicago"),
+                                  now=dt.datetime(2026, 10, 6, 17, 0))
+        eastern = EN.reading_tone("2026-10-06 15:30",
+                                  _Office("America/New_York"),
+                                  now=dt.datetime(2026, 10, 6, 18, 0))
+        self.assertEqual(central, "good")
+        self.assertEqual(eastern, "down")
+
+
+class NothingToJudge(unittest.TestCase):
+
+    def test_a_blank_is_left_to_the_caller(self):
+        """No reading column at all — nothing to colour."""
+        for v in ("", "-", "—", None):
+            self.assertEqual(EN.reading_tone(v, _Office(), now=TUE_AFTERNOON),
+                             "", repr(v))
+
+    def test_never_is_red_at_any_hour(self):
+        """A machine that stopped is judged against selling hours, because
+        a shut office is a fine reason to be quiet. One that has NEVER
+        reported is a standing fact (Megan 2026-10-06: "rashad's never
+        should be in red not green")."""
+        self.assertEqual(EN.reading_tone("never", _Office(),
+                                         now=TUE_AFTERNOON), "down")
+        self.assertEqual(EN.reading_tone("never", _Office(), now=TUE_LATE),
+                         "down")
+        self.assertEqual(EN.reading_tone("NEVER", _Office(), now=SUNDAY),
+                         "down")
+
+    def test_an_unparseable_stamp_does_not_raise(self):
+        self.assertEqual(
+            EN.reading_tone("yesterday-ish", _Office(), now=TUE_AFTERNOON), "")
+
+    def test_no_office_still_answers(self):
+        self.assertIn(EN.reading_tone("2026-10-06 16:50", None,
+                                      now=TUE_AFTERNOON), ("good", "down"))
+
+
+class TheRedIsDistinct(unittest.TestCase):
+
+    def test_down_is_not_the_pale_bad_red(self):
+        self.assertIn("down", EN._TONE_CSS)
+        self.assertNotEqual(EN._TONE_CSS["down"], EN._TONE_CSS["bad"])
+        self.assertIn("#DC2626", EN._TONE_CSS["down"])
+
+    def test_the_marker_is_not_a_public_column(self):
+        self.assertNotIn("_reading_tone", EN.SAFE_COLUMNS)
+        self.assertNotIn("_reading_tone", EN.ADMIN_EXTRA)
+
+
+class TheRenderPathKeepsIt(unittest.TestCase):
+    """Computing the tone is not enough -- it has to survive to the table.
+
+    The sales board narrowed every row to its visible columns before
+    drawing, which dropped _reading_tone, so html_table fell back to the
+    plain rule and painted a 22-hour-cold relay green. Ryan sat there in
+    green through three rounds of "it still isn't red".
+    """
+
+    COLS = ["ICD", "Last reading"]
+
+    def _row(self, tone):
+        return {"ICD": "Ryan Mcspadden", "Last reading": "2026-10-05 20:10",
+                "_reading_tone": tone}
+
+    def test_html_table_uses_the_rows_own_tone(self):
+        html = EN.html_table([self._row("down")], self.COLS)
+        self.assertIn("#DC2626", html)
+
+    def test_without_it_the_cell_is_not_red(self):
+        """Why the renderer must carry it: the plain rule cannot know."""
+        bare = {c: self._row("down")[c] for c in self.COLS}
+        self.assertNotIn("#DC2626", EN.html_table([bare], self.COLS))
+
+    def test_narrowing_to_columns_alone_loses_it(self):
+        """The exact mistake, pinned: this is what the board used to do."""
+        r = self._row("down")
+        narrowed = {c: r.get(c, "") for c in self.COLS}
+        self.assertNotIn("_reading_tone", narrowed)
+        kept = {**narrowed,
+                **{k: v for k, v in r.items() if k.startswith("_")}}
+        self.assertEqual(kept.get("_reading_tone"), "down")
+        self.assertIn("#DC2626", EN.html_table([kept], self.COLS))
+
+    def test_a_private_key_is_never_printed_as_a_column(self):
+        html = EN.html_table([self._row("down")], self.COLS)
+        self.assertNotIn("_reading_tone", html)
+
+
+if __name__ == "__main__":
+    unittest.main()

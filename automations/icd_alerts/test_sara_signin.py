@@ -378,3 +378,88 @@ class ATypedCodeClearsTheHoldAtOnce(unittest.TestCase):
              mock.patch.object(SR, "clear_sara_hold", lambda: cleared.append(1)):
             self.assertEqual(X.run(log=lambda *a: None), 1)
         self.assertEqual(cleared, [])
+
+
+class TheWindowsVerdictIsFiledUpstream(unittest.TestCase):
+    """2026-10-05: two owners said they ran it, both machines stayed walled,
+    and nothing recorded what the window saw. Now it files a probe- fault."""
+
+    def _run(self, window_rc, verify_rc):
+        from automations.icd_alerts import relay as RL
+        filed = []
+        with mock.patch.object(X, "_window", lambda log=print: window_rc), \
+             mock.patch.object(X, "verify_hidden_read", lambda log=print: verify_rc), \
+             mock.patch.object(X.C, "creds", lambda: {}), \
+             mock.patch.object(RL, "report_fault", lambda stage, summary, **kw: filed.append((stage, summary)) or True):
+            rc = X.run(log=lambda *a: None)
+        return rc, filed
+
+    def test_a_passed_check_is_filed_as_done(self):
+        rc, filed = self._run(0, 0)
+        self.assertEqual(rc, 0)
+        self.assertEqual(filed[0][0], "probe-signin-saraplus")
+        self.assertIn("done", filed[0][1])
+
+    def test_a_still_challenged_read_is_filed_as_such(self):
+        rc, filed = self._run(0, 1)
+        self.assertEqual(rc, 1)
+        self.assertIn("still challenged", filed[0][1])
+
+    def test_a_closed_window_is_filed(self):
+        rc, filed = self._run(1, 0)
+        self.assertEqual(rc, 1)
+        self.assertIn("not signed in", filed[0][1])
+
+    def test_probe_stages_stay_out_of_the_channels(self):
+        import inspect
+        from automations.icd_alerts import post as P
+        self.assertIn('startswith("probe-")', inspect.getsource(P.notify_faults))
+
+
+class TheWindowHandsItsSessionToTheReader(unittest.TestCase):
+    """Eveliz 2026-10-05: window trusted, hidden read challenged, identical
+    browsers. The hidden read resumes the window's URL session instead."""
+
+    def test_session_root(self):
+        self.assertEqual(X._session_root("https://www.saraplus.com/e/(S(abc))/DealerPages/Home.aspx"),
+                         "https://www.saraplus.com/e/(S(abc))/")
+        self.assertEqual(X._session_root("https://www.saraplus.com/e/(S(abc))/Reports/ReportingHub.aspx"),
+                         "https://www.saraplus.com/e/(S(abc))/")
+        self.assertEqual(X._session_root("https://ui.saraplus.com/"), "")
+
+    def test_a_signed_in_window_writes_the_session_for_the_reader(self):
+        from automations.icd_alerts import sara_read as SR
+        kept = []
+        with mock.patch.object(SR, "_remember_session", lambda root: kept.append(root)):
+            X._hand_session_to_the_reader(
+                ["https://www.saraplus.com/e/(S(zzz))/DealerPages/Home.aspx"], log=lambda *a: None)
+        self.assertEqual(kept, ["https://www.saraplus.com/e/(S(zzz))/"])
+
+    def test_a_challenged_window_hands_nothing(self):
+        from automations.icd_alerts import sara_read as SR
+        kept = []
+        with mock.patch.object(SR, "_remember_session", lambda root: kept.append(root)):
+            X._hand_session_to_the_reader(
+                ["https://www.saraplus.com/e/(S(zzz))/Security/VerifyPasscode.aspx"], log=lambda *a: None)
+        self.assertEqual(kept, [])
+
+    def test_the_window_code_calls_it_on_both_signed_in_paths(self):
+        import inspect
+        src = inspect.getsource(X._window)
+        self.assertEqual(src.count("_hand_session_to_the_reader("), 2)
+
+
+class EveryRunFilesItsOwnVerdict(unittest.TestCase):
+    def test_the_summary_carries_time_and_release(self):
+        from automations.icd_alerts import relay as RL, selfupdate as SU
+        filed = []
+        with mock.patch.object(RL, "report_fault", lambda stage, summary, **kw: filed.append(summary) or True), \
+             mock.patch.object(SU, "applied_release", lambda: "2026.10.05.5"):
+            X._tell_upstream("done -- hidden read passed", log=lambda *a: None)
+        self.assertIn("release 2026.10.05.5", filed[0])
+        self.assertRegex(filed[0], r"window \d\d:\d\d")
+
+    def test_a_window_with_no_session_root_says_so(self):
+        X._LAST_VERDICT[:] = []
+        X._hand_session_to_the_reader(["https://ui.saraplus.com/"], log=lambda *a: None)
+        self.assertTrue(any("no session root" in l for l in X._LAST_VERDICT))

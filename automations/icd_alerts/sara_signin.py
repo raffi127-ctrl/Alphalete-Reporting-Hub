@@ -64,6 +64,39 @@ def _still_challenged(url: str) -> bool:
     return S.SECURITY_PATH in (url or "").lower()
 
 
+def _session_root(url: str) -> str:
+    """'https://www.saraplus.com/e/(S(abc))/DealerPages/x.aspx' ->
+    'https://www.saraplus.com/e/(S(abc))/' -- the root the reader resumes."""
+    for marker in ("DealerPages/", "Reports/"):
+        i = (url or "").find(marker)
+        if i > 0:
+            return url[:i]
+    return ""
+
+
+def _hand_session_to_the_reader(urls, log=print) -> None:
+    """THE WINDOW'S SESSION IS THE READER'S SESSION. Eveliz, 2026-10-05: she
+    signed in and typed the code; the window was trusted; the hidden read,
+    presenting the identical browser, was challenged again -- and her photo
+    was the only record. SaraPlus keeps the session in the URL
+    (/e/(S(id))/), so the hidden reader does not need the trust the window
+    earned: it resumes the SAME session (saraplus.resume_session proves the
+    report page opens) and no login, and so no challenge, happens at all.
+    The reader forgets it on the first failed read, as always."""
+    for u in urls or []:
+        root = _session_root(u)
+        if root:
+            try:
+                from automations.icd_alerts import sara_read as _SR
+                _SR._remember_session(root)
+                log("  Handing this signed-in session to the automatic reads.")
+                _LAST_VERDICT.append("session handed to the reader: %s" % root)
+            except Exception as e:  # noqa: BLE001 -- never cost the person their sign-in
+                _LAST_VERDICT.append("could not hand the session over: %s" % type(e).__name__)
+            return
+    _LAST_VERDICT.append("no session root in the window's urls: %s" % ", ".join(urls or [])[:300])
+
+
 def run(log=print) -> int:
     from patchright.sync_api import sync_playwright
 
@@ -99,6 +132,7 @@ def run(log=print) -> int:
         except OSError:
             pass
     if rc != 0:
+        _tell_upstream("window closed or not signed in (rc %d)" % rc, log=log)
         return rc
     # THE WINDOW IS NOT THE THING THAT HAS TO WORK. Every sweep runs its own,
     # hidden browser, and on 2026-09-21 Khalil's visible window was trusted at
@@ -108,6 +142,9 @@ def run(log=print) -> int:
     # there something she can run now to make sure it's working before people
     # actually hit the field today??"
     rc = verify_hidden_read(log=log)
+    _tell_upstream("done -- hidden read passed" if rc == 0
+                   else "signed in, but the hidden read is still challenged (rc %d)" % rc,
+                   detail="\n".join(_LAST_VERDICT), log=log)
     if rc == 0:
         # THE PERSON'S FIX IS TRIED AT ONCE. hold_sara() stands the sweeps
         # down for 30 minutes after a wall; a code typed here at 11:45 that
@@ -122,14 +159,45 @@ def run(log=print) -> int:
     return rc
 
 
+# WHAT THE WINDOW DECIDED, FILED WHERE WE CAN READ IT. 2026-10-05: Rashad and
+# Eveliz both said they ran the link; both machines hit the wall again within
+# the hour, and the only record of what the window saw was on their screens.
+# A probe- stage is kept out of the channels (post.notify_faults skips them)
+# but lands on the ICD Faults tab with its detail.
+_LAST_VERDICT: list = []
+
+
+def _tell_upstream(verdict: str, detail: str = "", log=print) -> None:
+    try:
+        from automations.icd_alerts import relay as RL
+        try:
+            from automations.icd_alerts import selfupdate as SU
+            release = SU.applied_release() or "?"
+        except Exception:  # noqa: BLE001
+            release = "?"
+        # STAMPED, so every run is its own row with its own detail: the
+        # relay folds same-summary rows together and keeps the FIRST detail,
+        # which is how Eveliz's third run read like her first (2026-10-05).
+        stamp = dt.datetime.now().strftime("%H:%M")
+        RL.report_fault("probe-signin-saraplus",
+                        "SaraPlus sign-in window %s (release %s): %s" % (stamp, release, verdict),
+                        detail=detail, log=None)
+    except Exception:  # noqa: BLE001 -- telling us must never cost the person
+        pass
+
+
 def verify_hidden_read(log=print) -> int:
     """One real scheduled-style SaraPlus sign-in, hidden, and a plain verdict."""
     from automations.icd_alerts import sara_read as SR
     log("")
     log("  Now checking the automatic reads can get in too (about a minute)...")
+    said: list = []
     try:
-        got = SR.check_account(headless=True, log=lambda *_a: None)
+        got = SR.check_account(headless=True,
+                               log=lambda *a: said.append(" ".join(str(x) for x in a)[:200]))
     except SR.AccountProblem as e:
+        _LAST_VERDICT.extend(["hidden log: " + l for l in said[-12:]])
+        _LAST_VERDICT.extend([str(e)[:300]] + ["hidden: " + l for l in (getattr(e, "presented", None) or [])])
         log("")
         log("  NOT YET. The automatic read was stopped:")
         for line in str(e).splitlines()[:3]:
@@ -207,6 +275,7 @@ def _window(log=print) -> int:
                 except Exception:  # noqa: BLE001
                     pass
                 log("  This window is already signed in.")
+                _hand_session_to_the_reader(_live_urls(ctx), log=log)
                 return 0
 
             waited, said, url = 0, False, ""
@@ -232,6 +301,7 @@ def _window(log=print) -> int:
                     log("")
                     log("  Signed in. This browser is trusted now, so the")
                     log("  sweep can read sales again within a few minutes.")
+                    _hand_session_to_the_reader(urls, log=log)
                     # LET SARAPLUS FINISH. The window used to close the
                     # instant the address changed -- before any "remember
                     # this device" cookie set after landing could be written
@@ -241,7 +311,9 @@ def _window(log=print) -> int:
                         page.wait_for_timeout(SETTLE_SECONDS * 1000)
                         log("")
                         log("  This window presents:")
-                        for line in _SR.what_saraplus_sees(ctx, page):
+                        seen = _SR.what_saraplus_sees(ctx, page)
+                        _LAST_VERDICT[:] = ["window: " + l for l in seen]
+                        for line in seen:
                             log("    " + line)
                     except Exception:  # noqa: BLE001
                         pass

@@ -137,6 +137,41 @@ class KeyPiecesTest(unittest.TestCase):
             self.assertIn(f"- {k}: {grade.KEY_PIECES[k]}", grade.SYSTEM)
 
 
+class OfficeScriptTest(unittest.TestCase):
+    """Each office's own pay + schedule (Camila's scripts, 2026-10-06)."""
+
+    def test_owner_as_zooms_info_writes_it(self):
+        self.assertEqual(grade.office_for("Raf Hidalgo\n2nd funnel"), "Rafael Hidalgo")
+        self.assertEqual(grade.office_for("Nii Tagoe"), "Nii Teiko")
+        self.assertEqual(grade.office_for(" jacob  dover "), "Jacob Dover")
+        self.assertEqual(grade.office_for("Joe Logan"), "")     # no script of their own
+        self.assertEqual(grade.office_for(""), "")
+
+    def test_no_script_is_rafaels(self):
+        self.assertEqual(grade.build("")["system"], grade.build("Joe Logan")["system"])
+        self.assertIn("$1000 - $1500", grade.SYSTEM)
+
+    def test_office_numbers_and_schedule_in_its_prompt(self):
+        system = grade.build("Jacob Dover")["system"]
+        self.assertIn("Jacob Dover's office", system)
+        self.assertIn("entry $900-1,200 average weekly paycheck, Assistant Manager $65-75k",
+                      system)
+        self.assertIn("Monday through Friday, from 9:00AM to 8:00PM", system)
+        self.assertNotIn("$1000 - $1500", system)
+
+    def test_monday_friday_not_a_flag_when_the_script_says_it(self):
+        self.assertIn("mon_fri: NO", grade.build("Nii Teiko")["rules"])
+        self.assertIn("mon_fri: YES", grade.build("Jacob Dover")["rules"])
+
+    def test_skipped_line_quotes_the_offices_script(self):
+        r = result(said={"pay_entry": False})
+        r["script_office"] = "Rashad Reed"
+        text = run.reply_text(MEETING, r)
+        self.assertIn("$900 - $1200", text)
+        self.assertNotIn("$1000 - $1500", text)
+        self.assertIn("Script:</b> Rashad Reed's office", doc.build_html(MEETING, "V", r))
+
+
 class VerbiageTest(unittest.TestCase):
     def test_nakechia_as_rafael_counted_it(self):
         # 5 skipped + 2 in the wrong words: the 2 are NOT skips, and they cost
@@ -200,6 +235,40 @@ class ScheduledTest(unittest.TestCase):
                       run.reply_text(dict(MEETING, scheduled_ct=""), result()))
         self.assertNotIn("scheduled", run.reply_text(MEETING, result()))
 
+
+    def test_other_offices_only_for_the_unplaced(self):
+        """Carlos' office books in 11580, not Raf's three funnels (Eve 10/7)."""
+        from unittest import mock
+        carlos = dict(MEETING, recording_id=1, recording_start_time="2026-09-29T15:47:15Z")
+        raf = dict(MEETING, recording_id=2, recording_start_time="2026-09-29T15:47:15Z")
+        graded = {"Isabella": [(carlos, dict(result(), applicants=["Keila Ruiz"]), "")],
+                  "Valentina": [(raf, dict(result(), applicants=["Nakechia Miller"]), "")]}
+        calls = []
+
+        def booked(day, offices=appstream.OFFICES):
+            calls.append(list(offices))
+            if offices == appstream.OFFICES:
+                return self.BOOKED
+            return [{"office": "11580", "time": "10:45 AM", "name": "Keila Ruiz"}]
+        with mock.patch.object(appstream, "booked", side_effect=booked),                 mock.patch.object(appstream, "other_offices", return_value=["11580"]):
+            run._add_scheduled(dt.date(2026, 9, 29), graded)
+        self.assertEqual(calls, [appstream.OFFICES, ["11580"]])
+        self.assertEqual(carlos["scheduled_ct"].strftime("%H:%M"), "10:45")
+        self.assertEqual(raf["scheduled_ct"].strftime("%H:%M"), "10:45")
+
+    def test_all_placed_reads_no_other_office(self):
+        from unittest import mock
+        raf = dict(MEETING, recording_id=2, recording_start_time="2026-09-29T15:47:15Z")
+        graded = {"Valentina": [(raf, dict(result(), applicants=["Nakechia Miller"]), "")]}
+        with mock.patch.object(appstream, "booked", return_value=self.BOOKED) as b:
+            run._add_scheduled(dt.date(2026, 9, 29), graded)
+        self.assertEqual(b.call_count, 1)
+
+    def test_other_offices_skip_the_funnels(self):
+        others = appstream.other_offices()
+        self.assertIn("11580", others)                        # Carlos Hidalgo
+        self.assertFalse(set(others) & set(appstream.OFFICES))
+        self.assertEqual(len(others), len(set(others)))
 
 class RefreshTest(unittest.TestCase):
     """--refresh edits the reply already in the thread instead of adding one."""
@@ -342,6 +411,22 @@ class WatchTest(unittest.TestCase):
         self.assertIn("0 entrevistas", run.watch_text(self.DAY, {}, self.EMAIL, "x"))
         ungraded = {"Carlos": [(self._carlos(1), None, "empty")]}
         self.assertIn("ninguna auditada", run.watch_text(self.DAY, ungraded, self.EMAIL, "x"))
+
+    def test_a_later_tick_counts_what_an_earlier_one_posted(self):
+        """10/6 21:39: the retry tick had none of Carlos' left (6 PM posted
+        them) and DMed "0 entrevistas"."""
+        from unittest import mock
+        run._remember(1, self.DAY, "C1", "1.1")
+        run._remember(2, self.DAY, "C1", "1.2")
+        run._remember(9, dt.date(2026, 10, 5), "C1", "1.3")      # other day
+        lines = [{}] * run.MIN_TRANSCRIPT_LINES
+        day = [dict(self._carlos(1), transcript=lines), dict(self._carlos(2), transcript=lines),
+               dict(self._carlos(9), transcript=lines), dict(MEETING, recording_id=3)]
+        with mock.patch.object(run.fathom, "meetings_on", return_value=day):
+            n = run._posted_earlier(self.DAY, {}, self.EMAIL)
+        self.assertEqual(n, 2)
+        self.assertIn("2 entrevista(s) auditada(s)",
+                      run.watch_text(self.DAY, {}, self.EMAIL, "x", earlier=n))
 
     def test_sent_once_and_only_that_day(self):
         from unittest import mock

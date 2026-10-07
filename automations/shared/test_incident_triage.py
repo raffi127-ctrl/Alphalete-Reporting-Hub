@@ -170,6 +170,20 @@ class NobodyIsComingBackForIt(unittest.TestCase):
                        key="failure-org_sales_board", tail="no board posted")
         self.assertEqual(v.bucket, tri.WAITING)
 
+    def test_a_readiness_probe_does_not_retry_a_run_that_errored(self):
+        """2026-10-06: org_active_headcount_email (api, two slack: probes) died
+        on a Drive 502 and the thread said "Lucy has this … re-runs it every 25
+        minutes". The probe only re-checks a HELD report; a run that errored is
+        terminal, so nothing came back for it."""
+        v = self._with({"org_active_headcount_email": {
+                            "source_type": "api",
+                            "data_sources": ["slack:org_board_posted"]}},
+                       key="failure-org_active_headcount_email",
+                       tail="Drive upload timed out — retry 2/3")
+        self.assertEqual(v.bucket, tri.NEEDS_YOU)
+        self.assertIn("lucy rerun org_active_headcount_email",
+                      tri.line_for(v))
+
     def test_a_dropped_part_still_gets_the_parts_retry(self):
         """`drop-` = it ran and missed a part (INCOMPLETE). The orchestrator
         does press 'retry failed only' on those, so the promise is true."""

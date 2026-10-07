@@ -33,6 +33,10 @@ from pathlib import Path
 
 ADMIN = "__ALL__"
 _SECRET_TOKEN = "sheets_oauth_token"
+# fill._client() CHECKS FOR THE CLIENT JSON BEFORE IT EVER READS THE TOKEN
+# and raises if it is missing, so materialising the token alone still left a
+# hosted app unable to open a single sheet.
+_SECRET_CLIENT = "sheets_oauth_client"
 _SECRET_CODES = "office_codes"
 
 
@@ -45,6 +49,40 @@ def _secret(name: str, default=None):
     except Exception:
         pass
     return default
+
+
+_SECRET_TABLE = "gcp_oauth"
+# Exactly what google.oauth2.credentials.Credentials.from_authorized_user_file
+# reads. token_uri and scopes have sane defaults; the rest must be present.
+_AU_REQUIRED = ("refresh_token", "client_id", "client_secret")
+_AU_OPTIONAL = ("token", "token_uri", "scopes", "expiry", "universe_domain")
+
+
+def _authorized_user_from_table():
+    """The [gcp_oauth] secrets table as an authorized-user JSON string.
+
+    Returns None when the table is absent or missing a field that would
+    make the file unusable -- writing a half file would turn a clear
+    "no credentials" into a confusing auth error on the first sheet read.
+    """
+    tbl = _secret(_SECRET_TABLE)
+    if not tbl:
+        return None
+    try:
+        tbl = dict(tbl)
+    except (TypeError, ValueError):
+        return None
+    if any(not tbl.get(k) for k in _AU_REQUIRED):
+        return None
+    out = {k: tbl[k] for k in _AU_REQUIRED}
+    for k in _AU_OPTIONAL:
+        if tbl.get(k):
+            out[k] = list(tbl[k]) if k == "scopes" else tbl[k]
+    out.setdefault("token_uri", "https://oauth2.googleapis.com/token")
+    try:
+        return json.dumps(out)
+    except (TypeError, ValueError):
+        return None
 
 
 def ensure_sheets_credentials() -> bool:
@@ -60,6 +98,12 @@ def ensure_sheets_credentials() -> bool:
 
     raw = _secret(_SECRET_TOKEN) or os.environ.get("SHEETS_OAUTH_TOKEN")
     if not raw:
+        # THE SECRETS THAT ARE ALREADY THERE. This app's secrets carry the
+        # OAuth credentials as a [gcp_oauth] table, whose keys are exactly
+        # Google's authorized-user format -- asking for a second copy under
+        # a different name would be two things to rotate instead of one.
+        raw = _authorized_user_from_table()
+    if not raw:
         return False
     try:
         # accept either a JSON string or an already-parsed mapping
@@ -70,6 +114,43 @@ def ensure_sheets_credentials() -> bool:
 
     OAUTH_TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
     OAUTH_TOKEN_PATH.write_text(data, encoding="utf-8")
+    _ensure_client_json()
+    return True
+
+
+def _ensure_client_json() -> bool:
+    """The other half: fill._client() raises on a missing client JSON before
+    it looks at the token at all."""
+    from automations.recruiting_report.fill import OAUTH_CLIENT_PATH
+
+    if OAUTH_CLIENT_PATH.exists():
+        return True
+    raw = _secret(_SECRET_CLIENT) or os.environ.get("SHEETS_OAUTH_CLIENT")
+    if not raw:
+        # _client() only checks that this file EXISTS -- the credentials it
+        # actually uses come from the token. Built from the same table so
+        # there is one place to rotate.
+        tbl = _secret(_SECRET_TABLE)
+        try:
+            tbl = dict(tbl or {})
+        except (TypeError, ValueError):
+            tbl = {}
+        if tbl.get("client_id") and tbl.get("client_secret"):
+            raw = json.dumps({"installed": {
+                "client_id": tbl["client_id"],
+                "client_secret": tbl["client_secret"],
+                "token_uri": tbl.get("token_uri",
+                                     "https://oauth2.googleapis.com/token"),
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth"}})
+    if not raw:
+        return False
+    try:
+        data = raw if isinstance(raw, str) else json.dumps(dict(raw))
+        json.loads(data)
+    except (TypeError, ValueError):
+        return False
+    OAUTH_CLIENT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    OAUTH_CLIENT_PATH.write_text(data, encoding="utf-8")
     return True
 
 

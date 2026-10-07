@@ -317,8 +317,8 @@ SECTION_OVERRIDES: dict = {
     # lists exactly these; cancels/disconnects post "No new ... orders" on empty
     # days. Rep Activations + Order Log are SEPARATE boards (Megan 2026-08-07 —
     # both shown, not combined).
-    "isaiah": ("knocks_gaps", "churn", "rep_activations", "order_log",
-               "cancels", "disconnects"),
+    "isaiah": ("knocks_gaps", "churn", "rep_activations", "activation_rate",
+               "order_log", "cancels", "disconnects"),
     # drew (Precision, #precisionmanagement-nds-sales) is WIRELESS/NDS — owner
     # "DREW TEPPER[precision management team, inc.]" in the NDS-SN workbook (572
     # wireless orders, verified 2026-08-12). Wired like isaiah. Churn = per-rep,
@@ -329,7 +329,8 @@ SECTION_OVERRIDES: dict = {
     # BACK 2026-09-28 in #precision-management-att-sales (C0C4YKN7QGJ); the
     # same boards as isaiah/khalil MINUS Time Gaps -- he does not disposition
     # in OwnerVille, so there are no knocks to draw (Megan 2026-09-28).
-    "drew": ("churn", "rep_activations", "order_log", "cancels", "disconnects"),
+    "drew": ("churn", "rep_activations", "activation_rate", "order_log",
+             "cancels", "disconnects"),
 }
 
 # Onboarded office keys whose metrics come from the NDS-SN (RES-ATT-OOF) workbook
@@ -449,6 +450,9 @@ OFFICE_TIMEZONES: dict = {
     "colten":  "America/New_York",             # Hollywood, FL — EASTERN (ECO sign-up)
     "drew":    "America/New_York",             # Maitland (Orlando), FL — EASTERN
     "maxamad": "America/Chicago",              # Central (ECO sign-up + Slack profile)
+    "jenny":   "America/New_York",             # Figspire Management — EASTERN (Slack profile, 2026-10-06)
+    "tre":     "America/Chicago",              # Mission III Management, Houston — CENTRAL (Slack profile, 2026-10-07)
+    "luke":    "America/Los_Angeles",          # Takeoff Enterprises — PACIFIC (Slack profile, 2026-10-06)
     "jairo":   "America/New_York",             # Miami, FL — EASTERN (ECO sign-up, 305 number)
 }
 
@@ -511,6 +515,12 @@ def _merge_onboarded() -> None:
             _slugs = tuple(_NDS_KEY_TO_SLUG[k]
                            for k in (r.get("enrolled_reports") or [])
                            if k in _NDS_KEY_TO_SLUG)
+            # Activation Rate by Rep rides with Rep Activations: no form
+            # checkbox exists for it, and every NDS thread gets it (Megan
+            # 2026-10-05: "add it to all NDS threads").
+            if "rep_activations" in _slugs:
+                i = _slugs.index("rep_activations") + 1
+                _slugs = _slugs[:i] + ("activation_rate",) + _slugs[i:]
             if _slugs:
                 SECTION_OVERRIDES[key] = _slugs
         for rk, url in (r.get("per_office_views") or {}).items():

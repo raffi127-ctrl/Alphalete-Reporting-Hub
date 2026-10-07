@@ -1789,3 +1789,113 @@ class OfficeHeaderMigrationTest(unittest.TestCase):
         before = [list(r) for r in ws.rows]
         self.assertEqual(O._migrate(ws, list(O.COLUMNS)), list(O.COLUMNS))
         self.assertEqual(ws.rows, before)
+
+
+class LinksAreNotProse(unittest.TestCase):
+    """A URL must not be proofread.
+
+    The survey link every office sends ends ".../AlphaleteFirstRound?
+    OfficeID=11280", which NO_SPACE reads as "nd?Of". On 2026-10-06 that
+    put Miroslava Santos, Alphalete Floater and Alphalete Interviewers at
+    the top of the recruiter typing table on nothing but their own link."""
+
+    SURVEY = "https://www.surveymonkey.com/r/AlphaleteFirstRound?OfficeID=11280"
+
+    def test_the_survey_link_is_clean(self):
+        self.assertEqual(A.proofread(self.SURVEY), [])
+
+    def test_a_zoom_link_is_clean(self):
+        self.assertEqual(
+            A.proofread("Zoom: https://us02web.zoom.us/j/2935077152"), [])
+
+    def test_an_email_address_is_clean(self):
+        self.assertEqual(
+            A.proofread("Email me at first.Last@alphalete.com please"), [])
+
+    def test_a_real_missing_space_still_fires(self):
+        self.assertIn(
+            ("missing space", "ow.Go"),
+            A.proofread("Thank you for letting us know.Good luck!"))
+
+    def test_a_real_fault_beside_a_link_still_fires(self):
+        self.assertIn(
+            ("missing space", "re.Ne"),
+            A.proofread("See https://x.co/a?Bc here.Next week works"))
+
+    def test_a_lowercase_i_in_a_link_is_not_a_fault(self):
+        self.assertEqual(A.proofread("Join https://zoom.us/i/99 now"), [])
+
+    def test_a_real_lowercase_i_still_fires(self):
+        self.assertIn(("lowercase i", "i on its own"),
+                      A.proofread("No i do not have you on the schedule"))
+
+
+class BucketFalsePositives(unittest.TestCase):
+    """Megan 2026-10-06 on Kevin Isik: "he didnt ask what to wear or
+    bring?" He had not — the bucket fired on the bare word "resume"."""
+
+    KEVIN = ("kevin.isik200@gmail.com and question, will my work dates be "
+             "the ones i provided on my resume and will their be training?")
+
+    def test_mentioning_a_resume_is_not_asking_what_to_bring(self):
+        self.assertNotIn("What should I wear / bring?", A.buckets_of(self.KEVIN))
+
+    def test_that_question_is_about_training(self):
+        self.assertIn("Hours, training, is it paid?", A.buckets_of(self.KEVIN))
+
+    def test_actually_asking_to_bring_a_resume_still_counts(self):
+        for q in ("Should I bring a resume?", "do i need to bring my resume"):
+            self.assertIn("What should I wear / bring?", A.buckets_of(q), q)
+
+    def test_the_plain_dress_questions_still_count(self):
+        for q in ("what should i wear", "is it business casual?"):
+            self.assertIn("What should I wear / bring?", A.buckets_of(q), q)
+
+
+class GenericWordFalsePositives(unittest.TestCase):
+    """A bare word anywhere in a message is not a question about us.
+
+    Megan 2026-10-06: "does breija ask about remote?" — she was asking
+    about direct deposit forms and mentioned her BANK having no physical
+    location. Then "same thing here?" on Grayson Holly, who said "sorry I
+    was just at the store" while asking about his hours."""
+
+    BREIJA = ("I know you guys asked us to bring out bank info but my bank "
+              "does not have direct deposit forms and I won't be able to get "
+              "a void check due to the bank no longer having a physical "
+              "location")
+    GRAYSON = ("Yes, sorry I was just at the store. I will be there for sure "
+               "that day. Will I be there everyday after that day at that "
+               "same time 1:30pm, or what would be the hours I need to be "
+               "there each day?")
+
+    def test_a_bank_with_no_physical_location_is_not_asking_about_ours(self):
+        self.assertEqual(A.buckets_of(self.BREIJA), [])
+
+    def test_being_at_the_store_is_not_asking_if_the_job_is_in_one(self):
+        self.assertNotIn("Is this remote / where is the office?",
+                         A.buckets_of(self.GRAYSON))
+
+    def test_that_question_is_about_hours(self):
+        self.assertIn("Hours, training, is it paid?",
+                      A.buckets_of(self.GRAYSON))
+
+    def test_the_real_store_question_still_counts(self):
+        for q in ("is this in a store?",
+                  "Is it at a store location if not I'm not interested"):
+            self.assertIn("Is this remote / where is the office?",
+                          A.buckets_of(q), q)
+
+    def test_the_real_location_questions_still_count(self):
+        for q in ("what location is this for", "what is your location",
+                  "is this remote", "where is the office located"):
+            self.assertIn("Is this remote / where is the office?",
+                          A.buckets_of(q), q)
+
+    def test_bringing_bank_info_is_not_asking_what_to_bring(self):
+        self.assertNotIn("What should I wear / bring?",
+                         A.buckets_of(self.BREIJA))
+
+    def test_really_asking_what_to_bring_still_counts(self):
+        for q in ("should i bring a resume", "do i need to bring anything"):
+            self.assertIn("What should I wear / bring?", A.buckets_of(q), q)

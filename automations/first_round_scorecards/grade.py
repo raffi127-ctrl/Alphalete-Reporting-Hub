@@ -45,109 +45,192 @@ SHORT = {                      # how a missed item reads in the Slack post
     "pay": "explaining the pay",
 }
 
-# The script, cut into the portions an interviewer can skip (Rafael,
-# 2026-09-30: "skipped portions: 5", each with the script line she skipped).
-# Same granularity he counted by hand: the three check-ins are ONE portion,
-# the whole wrap-up is ONE. A portion said only in part counts as skipped,
-# like the must-dos. Not scored -- it's the list she re-reads before the next
-# interview. The line shown is copied from here, never written by the model.
-PORTIONS = [
-    ("face_to_face", "All interactions with them are face to face, so we do not do "
-                     "call center or inside of a retailer type of work."),
-    ("management", "Ultimately we want to put someone into a Management role within "
-                   "6-8 months to manage their own team and clients."),
-    ("pay_entry", "For entry level team members we start with a weekly paycheck, this "
-                  "is a performance based-role with an average paycheck from $1000 - "
-                  "$1500 plus bonuses and commission."),
-    ("pay_assistant", "As soon as someone gets into that assistant manager position "
-                      "(within the first 4-6 months) we move to a salary role, "
-                      "between 65k - 80k a year."),
-    ("pay_executive", "At the Executive Manager position ... we are talking about $250k "
-                      "plus bonuses and commission plus the profits from the revenue."),
-    ("schedule", "All the positions we are looking to fill in are FULL TIME, IN PERSON, "
-                 "DAY SHIFTS. We are talking about a minimum of 40 hours a week, with the "
-                 "possibility of working on Saturdays to make more bonuses."),
-    ("commute", "Remember that we are located in (CITY), is that a sustainable commute "
-                "for you for an everyday job?"),
-    ("check_ins", "Does this sound aligned with what you are looking for? / Overall, is "
-                  "this a comfortable compensation rate for you? / Is that alright with you?"),
-    ("wrap_up", "If you are selected you'll get a phone call before 5pm today from our "
-                "recruitment team in order to schedule a 2nd interview. I would recommend "
-                "dressing business professional attire for that and bringing a notebook "
-                "and pen. If you don't get a phone call it just means we went a "
-                "different direction."),
-]
+# Each office has its own script (Camila, 2026-10-06: Slack folder "1st ROUNDS
+# SCRIPT" in every office channel; PDFs + text in output/1st-round-scripts/).
+# Intro, company, management, commute and wrap-up are word for word the same
+# in all of them -- only the PAY numbers and the SCHEDULE line change. So an
+# office is just those few lines; everything else is shared. An owner with
+# no script of their own is graded on Rafael's (the one used since 9/22).
+#   mon_fri_ok: the script itself says Monday-Friday with no Saturdays, so
+#               saying it is NOT the "Monday-Friday only" red flag.
+_STD_40 = ("All the positions we are looking to fill in are FULL TIME, IN PERSON, DAY "
+           "SHIFTS. We are talking about a minimum of 40 hours a week, with the "
+           "possibility of working on Saturdays to make more bonuses.")
+_STD_PAY = {"entry": "$900 - $1200", "assistant": "65k - 75k",
+            "executive": "between $110k - $150k plus bonuses and commission and the "
+                         "profits from the team", "executive_short": "$110-150k"}
+DEFAULT = {"entry": "$1000 - $1500", "assistant": "65k - 80k",
+           "executive": "$250k plus bonuses and commission plus the profits from the revenue",
+           "executive_short": "$250k", "schedule": _STD_40,
+           "schedule_check": "Is that alright with you?", "mon_fri_ok": False}
+OFFICES = {
+    "Rafael Hidalgo": {},
+    "Atef Choudhury": dict(_STD_PAY),
+    "Aya Al-Khafaji": dict(_STD_PAY),
+    "Cyrus Wade": dict(_STD_PAY),
+    "Jamis Garay": dict(_STD_PAY),
+    "Kash Rai": dict(_STD_PAY),
+    "Khalil Mansour": dict(_STD_PAY),
+    "Max Aden": dict(_STD_PAY),
+    "Isaiah Revelle": dict(_STD_PAY, schedule=(
+        "All the positions we are looking to fill in are FULL TIME, IN PERSON, DAY "
+        "SHIFTS. We are talking about an 11am to 8pm schedule with the possibility of "
+        "working on Saturdays 9 to 4 to make more bonuses.")),
+    "Haytham Nagi": dict(_STD_PAY, schedule_check="Would that schedule work for you?",
+                         schedule="The schedule is Monday through Friday, from 10:30AM "
+                                  "to 8:30PM, Saturdays 10:00AM to 7:00PM."),
+    "Jacob Dover": dict(_STD_PAY, schedule_check="Would that schedule work for you?",
+                        schedule="The schedule is Monday through Friday, from 9:00AM to "
+                                 "8:00PM, Saturdays 9:00AM to 7:00PM."),
+    "Rashad Reed": dict(_STD_PAY, schedule_check="Would that schedule work for you?",
+                        schedule="The schedule is Monday through Friday, from 11:00 AM "
+                                 "to 8:30 PM and Saturdays 9:00 AM to 4:00 PM."),
+    "Nii Teiko": dict(_STD_PAY, schedule_check="Would that schedule work for you?",
+                      mon_fri_ok=True,
+                      schedule="The schedule is Monday through Friday, from 10:30 to 8pm. "
+                               "All of the positions we're currently hiring for are FULL "
+                               "TIME, IN PERSON, DAY SHIFTS, with a minimum of 40 hours "
+                               "per week."),
+}
+# ZOOMS INFO spells some owners differently from the script's file name
+OWNER_ALIASES = {"raf hidalgo": "Rafael Hidalgo", "nii tagoe": "Nii Teiko",
+                 "max amed": "Max Aden"}
+
+
+def office_for(owner: str) -> str:
+    """The OFFICES key for an owner as ZOOMS INFO writes it ('Raf Hidalgo\\n2nd
+    funnel', 'Nii Tagoe'), or '' when that office has no script of its own."""
+    lines = (owner or "").strip().splitlines()
+    first = " ".join(lines[0].lower().split()) if lines else ""
+    if first in OWNER_ALIASES:
+        return OWNER_ALIASES[first]
+    return next((k for k in OFFICES if k.lower() == first), "")
+
+
+def _money(x: str) -> str:
+    """'$900 - $1200' -> '$900-1,200', '65k - 75k' -> '$65-75k' (for the rules)."""
+    a, b = [p.strip().lstrip("$") for p in x.split("-")]
+    if a.endswith("k") and b.endswith("k"):
+        return f"${a[:-1]}-{b}"
+    return f"${int(a):,}-{int(b):,}"
+
 
 VERBIAGE_COST = 0.5                 # items lost per portion in the wrong words
 
-SCRIPT = """\
+
+def build(office: str = "") -> Dict:
+    """The script portions, prompt pieces and system prompt for one office
+    ('' or an office with no script of its own = Rafael's)."""
+    office = office if office in OFFICES else ""
+    o = {**DEFAULT, **OFFICES.get(office, {})}
+    sched_bits = ("day shifts, 40 hours a week and Saturdays" if o["schedule"] == _STD_40
+                  else "the days and hours of this schedule")
+    # The script, cut into the portions an interviewer can skip (Rafael,
+    # 2026-09-30: "skipped portions: 5", each with the script line she skipped).
+    # Same granularity he counted by hand: the three check-ins are ONE portion,
+    # the whole wrap-up is ONE. A portion said only in part counts as skipped,
+    # like the must-dos. Not scored -- it's the list she re-reads before the
+    # next interview. The line shown is copied from here, never written by the model.
+    portions = [
+        ("face_to_face", "All interactions with them are face to face, so we do not do "
+                         "call center or inside of a retailer type of work."),
+        ("management", "Ultimately we want to put someone into a Management role within "
+                       "6-8 months to manage their own team and clients."),
+        ("pay_entry", "For entry level team members we start with a weekly paycheck, this "
+                      "is a performance based-role with an average paycheck from "
+                      f"{o['entry']} plus bonuses and commission."),
+        ("pay_assistant", "As soon as someone gets into that assistant manager position "
+                          "(within the first 4-6 months) we move to a salary role, "
+                          f"between {o['assistant']} a year."),
+        ("pay_executive", "At the Executive Manager position ... we are talking about "
+                          f"{o['executive']}."),
+        ("schedule", o["schedule"]),
+        ("commute", "Remember that we are located in (CITY), is that a sustainable commute "
+                    "for you for an everyday job?"),
+        ("check_ins", "Does this sound aligned with what you are looking for? / Overall, is "
+                      f"this a comfortable compensation rate for you? / {o['schedule_check']}"),
+        ("wrap_up", "If you are selected you'll get a phone call before 5pm today from our "
+                    "recruitment team in order to schedule a 2nd interview. I would recommend "
+                    "dressing business professional attire for that and bringing a notebook "
+                    "and pen. If you don't get a phone call it just means we went a "
+                    "different direction."),
+    ]
+    line = dict(portions)
+    script = f"""\
 COMPANY BACKGROUND (key lines)
-- "The positions we are looking to fill are in-person, full time ... All interactions with them are face to face, so we do not do call center or inside of a retailer type of work."
-- "Ultimately we want to put someone into a Management role within 6-8 months to manage their own team and clients." -> then check-in: "Does this sound aligned with what you are looking for?"
+- "The positions we are looking to fill are in-person, full time ... {line['face_to_face']}"
+- "{line['management']}" -> then check-in: "Does this sound aligned with what you are looking for?"
 
 PAY STRUCTURE
-- "For entry level team members we start with a weekly paycheck, this is a performance based-role with an average paycheck from $1000 - $1500 plus bonuses and commission."
-- "As soon as someone gets into that assistant manager position (within the first 4-6 months) we move to a salary role, between 65k - 80k a year."
-- "At the Executive Manager position ... we are talking about $250k plus bonuses and commission plus the profits from the revenue."
+- "{line['pay_entry']}"
+- "{line['pay_assistant']}"
+- "{line['pay_executive']}"
 - check-in: "Overall, is this a comfortable compensation rate for you?"
 
 SCHEDULE
-- "All the positions we are looking to fill in are FULL TIME, IN PERSON, DAY SHIFTS. We are talking about a minimum of 40 hours a week, with the possibility of working on Saturdays to make more bonuses. Is that alright with you?"
-- "Remember that we are located in (CITY), is that a sustainable commute for you for an everyday job?"
+- "{o['schedule']} {o['schedule_check']}"
+- "{line['commute']}"
 
 WRAP UP
 - "If you are selected you'll get a phone call before 5pm today from our recruitment team in order to schedule a 2nd interview. I would recommend dressing business professional attire for that and bringing a notebook and pen."
 - "If you don't get a phone call it just means we went a different direction."
 """
-
-RULES = """\
+    mon_fri = ("- mon_fri: NO -- this office's script itself says Monday to Friday, so "
+               "saying it is following the script." if o["mon_fri_ok"] else
+               "- mon_fri: YES if she said Monday to Friday only.")
+    sched_rule = ("YES only if she covered full time, in person / day shifts and the 40 "
+                  "hours (Saturdays for bonuses)" if o["schedule"] == _STD_40 else
+                  "YES only if she covered the schedule as the script says it (the days "
+                  "and the hours)")
+    rules = f"""\
 How to answer each item (strictly YES or NO; partly done = NO):
 - retail: YES only if she said the job is inside a retail store.
 - base_pay: YES if she offered a base pay, hourly pay or salary for the ENTRY-LEVEL role. "Salary" for the Assistant Manager role is the script wording -- that is NOT a flag.
 - nine_to_five: YES if she said the hours are 9 to 5.
-- mon_fri: YES if she said Monday to Friday only.
-- off_script_pay: YES if any pay number she quoted differs from the script (entry $1,000-1,500 average weekly paycheck, Assistant Manager $65-80k a year, Executive Manager $250k+). NO if she quoted no numbers at all.
+{mon_fri}
+- off_script_pay: YES if any pay number she quoted differs from the script (entry {_money(o['entry'])} average weekly paycheck, Assistant Manager {_money(o['assistant'])} a year, Executive Manager {o['executive_short']}+). NO if she quoted no numbers at all.
 - management: YES if she said the goal is a management role within about 6-8 months ("six months" is close enough).
 - commute: YES only if she asked whether the commute works for an EVERYDAY job. Asking only about getting to the 2nd interview = NO.
-- schedule: YES only if she covered full time, in person / day shifts and the 40 hours (Saturdays for bonuses). Skipped or partial = NO.
+- schedule: {sched_rule}. Skipped or partial = NO.
 - wrap_up: YES only if she said the call comes before 5pm today, business professional attire, notebook and pen, and "if you don't get a call we went a different direction". Missing any = NO.
 - check_ins: YES only if she asked the 3 check-in questions (aligned with what you're looking for? / comfortable compensation? / schedule alright?). Missing any = NO.
 - pay: YES if she explained the pay for the entry-level role (performance-based weekly paycheck, bonuses and commission). NO if pay was never explained.
 Applicants asking indirect questions still count (e.g. "are we going to be on the field?" = asking if it's door to door).
 """
-
-# What makes a portion "said" at all. Missing one of these = skipped; all of
-# them there but the rest dropped or worded differently = incorrect verbiage.
-# (9/30 first run: the right $65-80k without "within 4-6 months" came back
-# as a skip -- Rafael counts that as said, just not word for word.)
-KEY_PIECES = {
-    "face_to_face": "face to face with clients / not a call center or retail job",
-    "management": "a management role, with a time frame",
-    "pay_entry": "a weekly, performance-based paycheck with the $1,000-1,500 average",
-    "pay_assistant": "the $65-80k salary for assistant manager",
-    "pay_executive": "the $250k for the top position",
-    "schedule": "day shifts, 40 hours a week and Saturdays",
-    "commute": "asking if the commute works for an EVERYDAY job",
-    "check_ins": "each of the three questions",
-    "wrap_up": "the call before 5pm today, business professional attire, notebook and "
-               "pen, and 'if you don't get a call we went a different direction'",
-}
-PORTION_KEYS = "\n".join(f"- {k}: {KEY_PIECES[k]}" for k, _ in PORTIONS)
-
-SYSTEM = f"""You audit 1st round group job interviews (Zoom, recorded by Fathom) for a door-to-door sales company. The interviewer follows a script; you check the transcript against it for the hiring manager, who uses it to coach the interviewer.
+    # What makes a portion "said" at all. Missing one of these = skipped; all of
+    # them there but the rest dropped or worded differently = incorrect verbiage.
+    # (9/30 first run: the right $65-80k without "within 4-6 months" came back
+    # as a skip -- Rafael counts that as said, just not word for word.)
+    key_pieces = {
+        "face_to_face": "face to face with clients / not a call center or retail job",
+        "management": "a management role, with a time frame",
+        "pay_entry": f"a weekly, performance-based paycheck with the {_money(o['entry'])} average",
+        "pay_assistant": f"the {_money(o['assistant'])} salary for assistant manager",
+        "pay_executive": f"the {o['executive_short']} for the top position",
+        "schedule": sched_bits,
+        "commute": "asking if the commute works for an EVERYDAY job",
+        "check_ins": "each of the three questions",
+        "wrap_up": "the call before 5pm today, business professional attire, notebook and "
+                   "pen, and 'if you don't get a call we went a different direction'",
+    }
+    portion_keys = "\n".join(f"- {k}: {key_pieces[k]}" for k, _ in portions)
+    whose = (f"This interview is for {office}'s office: grade it against THEIR script "
+             "below (the pay numbers and the schedule are that office's own).\n\n"
+             if office else "")
+    system = f"""You audit 1st round group job interviews (Zoom, recorded by Fathom) for a door-to-door sales company. The interviewer follows a script; you check the transcript against it for the hiring manager, who uses it to coach the interviewer.
 
 The interviewer is the speaker named in the request (the Zoom account name, e.g. "ARS ZOOM 12"). Everyone else is an applicant. Several interviewers can share one Zoom account, so put the interviewer's first name in interviewer_name as she introduces herself ("My name is ___, I'm one of the hiring managers"); leave it empty if she never says it -- never guess. The transcript is machine-made: names and numbers can be misheard, so judge by meaning, not exact words.
 
-THE SCRIPT
-{SCRIPT}
-{RULES}
+{whose}THE SCRIPT
+{script}
+{rules}
 For every item write a note of 1-3 sentences in plain English: what she actually said, as a quote with its timestamp (like @12:29), and -- when it falls short -- what the script says instead. If the item never came up, say so. Then 2 or 3 short coaching points for the interviewer: most important first, what to fix and what to keep doing.
 
 Then list in skipped_portions every script portion she did not say the way the script says it, by its key, with a kind. Each portion's KEY pieces:
-{PORTION_KEYS}
+{portion_keys}
 Kinds:
 - skipped: she never said it, or left out one of its KEY pieces.
-- incorrect_verbiage: every KEY piece is there, but something else in the portion is wrong or left out -- a different number, time frame or title, or a detail of the script line dropped (e.g. "six months" for "6-8 months", "management role" for "Executive Manager", the $65-80k without "within the first 4-6 months"). Ordinary rephrasing that keeps every fact of the line is NOT incorrect verbiage: leave it off the list.
+- incorrect_verbiage: every KEY piece is there, but something else in the portion is wrong or left out -- a different number, time frame or title, or a detail of the script line dropped (e.g. "six months" for "6-8 months", "management role" for "Executive Manager", the assistant manager salary without "within the first 4-6 months"). Ordinary rephrasing that keeps every fact of the line is NOT incorrect verbiage: leave it off the list.
 note = one short sentence: for skipped, what she said instead or that it never came up; for incorrect_verbiage, her exact words as a quote. Always with the timestamp. Empty list if she said every portion right.
 
 Also list the applicants' questions on these topics, each with the interviewer's answer as said (quote + timestamp): door to door / field work, benefits, flexible schedule, is this a scam, hourly pay, working in a specific city. Leave the list empty if none came up.
@@ -155,6 +238,17 @@ Also list the applicants' questions on these topics, each with the interviewer's
 Plain, simple words -- the readers are not technical.
 
 If the recording is not a 1st round interview (empty, a test, a different kind of meeting, or it stops before the interview really starts), set is_interview to false and explain in not_interview_reason."""
+    return {"portions": portions, "script": script, "rules": rules,
+            "key_pieces": key_pieces, "system": system}
+
+
+# The default (Rafael's script) -- what an office with no script is graded on
+_DEFAULT = build()
+PORTIONS = _DEFAULT["portions"]
+SCRIPT = _DEFAULT["script"]
+RULES = _DEFAULT["rules"]
+KEY_PIECES = _DEFAULT["key_pieces"]
+SYSTEM = _DEFAULT["system"]
 
 _ITEM_SCHEMA = {"type": "object", "additionalProperties": False,
                 "required": ["happened", "note"],
@@ -224,7 +318,8 @@ def _gaps(result: Dict, kind: str) -> List[tuple]:
         k, gk = g.get("portion"), g.get("kind") or "skipped"
         if k not in got or gk == "skipped":
             got[k] = (gk, g.get("note") or "")
-    return [(k, line, got[k][1]) for k, line in PORTIONS
+    portions = build(result.get("script_office") or "")["portions"]
+    return [(k, line, got[k][1]) for k, line in portions
             if k in got and got[k][0] == kind]
 
 
@@ -237,12 +332,16 @@ def verbiage(result: Dict) -> List[tuple]:
     return _gaps(result, "incorrect_verbiage")
 
 
-def grade(transcript: str, *, interviewer_speaker: str, client=None) -> Dict:
-    """Ask the model; returns the parsed JSON answer (see SCHEMA)."""
+def grade(transcript: str, *, interviewer_speaker: str, owner: str = "",
+          client=None) -> Dict:
+    """Ask the model; returns the parsed JSON answer (see SCHEMA) plus
+    script_office = whose script it was graded on ('' = the default one)."""
     import anthropic
     if client is None:
         from automations.brand_audit import credentials
         client = anthropic.Anthropic(api_key=credentials.anthropic_api_key())
+    office = office_for(owner)
+    system = build(office)["system"]
     body = {"output_config": {"effort": "high",
                               "format": {"type": "json_schema", "schema": SCHEMA}}}
     messages = [{"role": "user", "content":
@@ -251,19 +350,21 @@ def grade(transcript: str, *, interviewer_speaker: str, client=None) -> Dict:
     # sends them. On a refusal the API re-runs it on a fallback model.
     try:
         resp = client.messages.create(
-            model=MODEL, max_tokens=16000, system=SYSTEM, messages=messages,
+            model=MODEL, max_tokens=16000, system=system, messages=messages,
             extra_headers={"anthropic-beta": "server-side-fallback-2026-07-01"},
             extra_body={**body, "fallbacks": "default"})
     except anthropic.BadRequestError:
         # the fallback option is the only optional piece -- try once without it
-        resp = client.messages.create(model=MODEL, max_tokens=16000, system=SYSTEM,
+        resp = client.messages.create(model=MODEL, max_tokens=16000, system=system,
                                       messages=messages, extra_body=body)
     if resp.stop_reason == "refusal":
         raise RuntimeError("the model declined to grade this transcript")
     if resp.stop_reason == "max_tokens":
         raise RuntimeError("the grade was cut off (max_tokens)")
     text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
-    return json.loads(text)
+    result = json.loads(text)
+    result["script_office"] = office
+    return result
 
 
 def questions() -> List[str]:

@@ -361,6 +361,48 @@ if submitted:
         for p in problems:
             st.error(p)
     else:
+        # ALREADY SIGNED UP FOR THIS CAMPAIGN? SAY SO, AND SHOW THE LINK
+        # THEY ALREADY HAVE. Jamis filled this form 13 times and Jairo 17,
+        # each one minting a live key, because nothing here ever told them
+        # the first one had worked -- so they pressed it again. The store
+        # refuses the twin either way; this is the half that stops the
+        # pressing.
+        already = store.existing_signup(owner, campaign)
+        if already is not None:
+            st.success("You are already signed up, %s — nothing more to fill "
+                       "in." % (owner.split()[0] if owner else "thanks"))
+            back = ""
+            try:
+                # Hands back the key they have. It only mints when their
+                # relay row is missing, which is a repair, not a twin.
+                back = store.setup_link(store.mint_and_record_key(
+                    already.office_key, already.owner))
+            except Exception:  # noqa: BLE001
+                back = ""
+            if back:
+                st.markdown("### Your setup link")
+                st.markdown(
+                    "Open this on the **desktop in your office**. If you "
+                    "already set that computer up, you are done — there is "
+                    "nothing to do here.")
+                st.link_button("Open my setup page", back, type="primary")
+                st.caption("Same link as before — signing up again does not "
+                           "make a new one.")
+            else:
+                st.info("Ask Megan or Eve to send your setup link again.")
+            st.info(
+                "**Run a second campaign?** Pick the other campaign above "
+                "and submit — that one is a separate enrolment and does get "
+                "its own link. Re-submitting the same campaign does not.")
+            # THE ONE REASON SOMEBODY RE-SUBMITS ON PURPOSE. They cannot
+            # edit their own row from here, and a form that just says "you
+            # are already in" sends them away still needing the change.
+            st.caption(
+                "Need to change your hours, your channels or your cadence? "
+                "Tell Megan or Eve — they can edit it. Filling this in again "
+                "does not update it.")
+            st.stop()
+
         saved, link, landed = store.submit_and_key(rec)
 
         if not landed:

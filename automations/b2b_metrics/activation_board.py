@@ -65,6 +65,10 @@ class Board:
     reps: list = field(default_factory=list)         # [(rep_name, {window: Cell})]
     grand_total: dict = field(default_factory=dict)  # {window: Cell}
     national: dict = field(default_factory=dict)     # {window: Cell}
+    # A filtered variant (Fiber CRU, Eveliz 2026-10-06) names its own title
+    # and shows the filter values it was pulled with on the chips.
+    title: str = "ACTIVATION RATES"
+    chips: dict = field(default_factory=dict)        # {chip label: value}
 
 
 # --------------------------------------------------------------------------- #
@@ -91,6 +95,7 @@ def parse_grid(grid: list, owner_prefix: str) -> Board:
         raise RuntimeError(
             f"activation grid missing window columns: found {sorted(wcol)}")
 
+    others: set = set()      # every owner name in the grid
     reps: dict = {}          # rep -> {window: Cell}
     order: list = []         # first-appearance order = Tableau's 0-7-desc sort
     grand: dict = {w: Cell() for w in WINDOWS}
@@ -125,7 +130,10 @@ def parse_grid(grid: list, owner_prefix: str) -> Board:
                     _touch(grand, w, measure, v, color)
             continue
 
-        if not _owner(owner).startswith(owner_prefix.upper()):
+        others.add(_owner(owner).split("[")[0].strip())
+        # EXACT name match (the part before " [office]") — a prefix match
+        # could pull a similarly named owner into this office's board.
+        if _owner(owner).split("[")[0].strip() != owner_prefix.upper().strip():
             continue
         if not owner_office:
             owner_office = owner.replace("\r", " ").replace("\n", " ").strip()
@@ -141,6 +149,21 @@ def parse_grid(grid: list, owner_prefix: str) -> Board:
     if not order:
         raise RuntimeError(f"activation grid: no rep rows for {owner_prefix!r}")
 
+    if len(others) > 1:
+        # The saved view holds OTHER owners too (Eveliz's EvelizEXP has 5,
+        # Jamis's 11 — found 2026-10-06), so Tableau's Grand Total row is the
+        # whole view's, not this office's: it posted team numbers into her
+        # channel. Rebuild the office total from this owner's own rep rows.
+        # Colour comes from apply_office_colors (this owner's row in the
+        # office-totals CSV), never from the team row.
+        grand = {}
+        for w in WINDOWS:
+            num = sum((reps[r].get(w).num or 0) for r in order
+                      if reps[r].get(w) and reps[r].get(w).den)
+            den = sum((reps[r].get(w).den or 0) for r in order
+                      if reps[r].get(w) and reps[r].get(w).den)
+            grand[w] = (Cell(num=num, den=den, pct=num / den) if den
+                        else Cell())
     b = Board(owner_office=owner_office, grand_total=grand)
     b.reps = [(rep, reps[rep]) for rep in order]
     return b
@@ -162,7 +185,7 @@ def apply_office_colors(board: Board, totals_csv_rows: list, owner_prefix: str):
     for r in totals_csv_rows[1:]:
         if len(r) <= max(ci_bucket, ci_owner, ci_color):
             continue
-        if not _owner(r[ci_owner]).startswith(owner_prefix.upper()):
+        if _owner(r[ci_owner]).split("[")[0].strip() != owner_prefix.upper().strip():
             continue
         w = str(r[ci_bucket] or "").strip()
         color = str(r[ci_color] or "").strip()
@@ -278,6 +301,7 @@ def render_html(board: Board, title_date: str = "") -> str:
         ("Order Has VOIP", "All"),
         ("Activation vs U..", "Activation"),
     ]
+    chips = [(k, board.chips.get(k, v)) for k, v in chips]
     chip_html = "".join(
         f'<div class="chip"><div class="chip-k">{k}</div>'
         f'<div class="chip-v">{v}</div></div>' for k, v in chips)
@@ -288,7 +312,9 @@ def render_html(board: Board, title_date: str = "") -> str:
     nat_cells = "".join(_cell_html(board.national.get(w)) for w in WINDOWS)
 
     # Owner (+/-) Rep table
-    grand_row = _row_html('<td class="lbl grand">Grand Total</td>',
+    # colspan=2: the table has Owner AND Rep columns; one label cell shifted
+    # every Grand Total number one window to the left (2026-10-06).
+    grand_row = _row_html('<td class="lbl grand" colspan="2">Grand Total</td>',
                           board.grand_total, "grandrow")
     rep_rows = []
     n = len(board.reps)
@@ -335,7 +361,7 @@ def render_html(board: Board, title_date: str = "") -> str:
 </style></head><body>
   <div class="board">
     <div class="titlebar">
-      <div class="t1">ACTIVATION RATES</div>
+      <div class="t1">{board.title}</div>
       <div class="t2">(Activations/Sales)</div>
     </div>
     <div class="chips">{chip_html}</div>

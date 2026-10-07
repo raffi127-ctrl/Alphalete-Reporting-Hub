@@ -173,8 +173,15 @@ def _mdy(day: dt.date) -> str:
     return day.strftime("%m/%d/%Y")
 
 
+def _read(ws_call, *args):
+    """Every Sheets READ goes through the 429/5xx retry (10/6: a bare
+    get_all_values hit Google's per-minute quota and failed the run)."""
+    from automations.recruiting_report.fill import _retry
+    return _retry(ws_call, *args)
+
+
 def counts_att(sh, day: dt.date) -> dict[str, float]:
-    rows = sh.worksheet(DATA_TAB_ATT).get_all_values()
+    rows = _read(sh.worksheet(DATA_TAB_ATT).get_all_values)
     h = rows[0]
     i_rep, i_date = h.index("Rep"), h.index("sp.Order Date (copy)")
     i_units = h.index("Unit Count")
@@ -193,7 +200,7 @@ def counts_att(sh, day: dt.date) -> dict[str, float]:
 
 
 def counts_box(sh, day: dt.date) -> dict[str, float]:
-    rows = sh.worksheet(DATA_TAB_BOX).get_all_values()
+    rows = _read(sh.worksheet(DATA_TAB_BOX).get_all_values)
     h = rows[0]
     i_rep, i_date = h.index("Rep Name"), h.index("Sale Date")
     i_st, i_sub = h.index("Status"), h.index("Contr. Sub-status")
@@ -219,7 +226,7 @@ def covers(sh, campaign: str, day: dt.date) -> bool:
     accepted: a genuinely zero-sales day looks exactly like a stale tab, so it
     holds until the fail-open floor and then correctly writes nothing."""
     tab, date_col = COVERAGE_TABS[campaign]
-    rows = sh.worksheet(tab).get_all_values()
+    rows = _read(sh.worksheet(tab).get_all_values)
     i = rows[0].index(date_col)
     want = _mdy(day)
     return any(r[i].strip() == want for r in rows[1:])
@@ -282,6 +289,25 @@ def d2d_reps(sh) -> dict[str, int]:
             for r in read_board(board_ws(sh, "Verizon"))}
 
 
+# People who sell under their own name but have no board row ON PURPOSE.
+# Carlos Hidalgo owns the office (Roll Call: Base / Floater — Base isn't on
+# the board since 2026-08-13); on 10/6 he rang 1 B2B fiber under his own ID
+# and the pass flagged him as a missing rep. An owner's odd sale is not a
+# hole to chase: logged, never alerted. A real rep never goes here.
+OFF_BOARD = {
+    "carlos hidalgo",
+}
+
+
+def split_off_board(unmatched):
+    """(still unmatched, deliberately off the board)."""
+    keep, off = [], []
+    for key, n in unmatched:
+        (off if match_rep(key, dict.fromkeys(OFF_BOARD, 0)) else keep).append(
+            (key, n))
+    return keep, off
+
+
 def split_d2d(unmatched, d2d: dict[str, int]):
     """(still unmatched, on the D2D board) — matched the same way as the
     Sales Board (exact or first+last token)."""
@@ -331,6 +357,7 @@ def run_campaign(sh, grids, day: dt.date, campaign: str, counts_fn=None,
         else:
             unmatched.append((key, int(n)))
     unmatched, on_d2d = split_d2d(unmatched, d2d or {})
+    unmatched, off_board = split_off_board(unmatched)
 
     _log("")
     _log(f"--- {campaign} — {_md(day)} (order log) ---")
@@ -351,6 +378,8 @@ def run_campaign(sh, grids, day: dt.date, campaign: str, counts_fn=None,
         _log(f"  {_cell(g, row, NAME_COL):<28} {n:>2}{delta}")
     for key, n in on_d2d:
         _log(f"  (on the D2D/Verizon board, not filled: {key} — {n})")
+    for key, n in off_board:
+        _log(f"  (owner / off the board on purpose, not filled: {key} — {n})")
     for key, n in unmatched:
         _log(f"  ! IN THE LOG BUT ON NO {campaign} ROW: {key} — {n}. "
              "IN NO TOTAL until the rep is added to the board.")

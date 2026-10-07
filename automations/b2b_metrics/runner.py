@@ -77,6 +77,17 @@ def _tableau_shot(view_key: str):
     return cap
 
 
+def _churn(o: B2BOffice, out_dir: Path, log, today=None):
+    """Churn Rates: the shared-pull board for CHURN_BOARD_OFFICES (Megan
+    2026-10-06), the Tableau screenshot for everyone else (Carlos, Atef — their
+    personal saved views are captured as-is)."""
+    from automations.b2b_metrics import capture
+    if o.key in capture.CHURN_BOARD_OFFICES:
+        return capture.churn_board_image(o, out_dir, log=log)
+    return capture.tableau_image(o, "churn_wireless", out_dir, log=log,
+                                 today=today)
+
+
 def _sheet_shot(which: str):
     def cap(o: B2BOffice, out_dir: Path, log, today=None):
         from automations.b2b_metrics import capture
@@ -124,6 +135,11 @@ def _activation_board(o: B2BOffice, out_dir: Path, log, today=None):
     return capture.activation_board_image(o, out_dir, log=log)
 
 
+def _fiber_cru_activation(o: B2BOffice, out_dir: Path, log, today=None):
+    from automations.b2b_metrics import capture
+    return capture.fiber_cru_activation_image(o, out_dir, log=log)
+
+
 def _order_log(o: B2BOffice, out_dir: Path, log, today=None):
     from automations.b2b_metrics import capture
     return capture.order_log_workbook(o, out_dir, log=log)
@@ -144,13 +160,16 @@ ITEMS = [
          capture=_tableau_shot("sales_metrics")),
     dict(id="activation_rate", emoji="\U000026A1", title="Activation Rate",
          capture=_activation_board),
+    # Opt-in per office (FIBER_CRU_OFFICES) — Eveliz 2026-10-06.
+    dict(id="fiber_cru_activation", emoji="\U0001F310",
+         title="Fiber CRU Activation Rate", capture=_fiber_cru_activation),
     # Consolidated 2026-09-05 (Carlos): Tableau merged the churn products into
     # ONE board (AIR/AWB + BYOD/NON BYOD wireless + New Internet), so the old
     # churn_int / churn_air sections are RETIRED and this one shot carries all
     # four. The id stays 'churn_wireless' so office overrides, manifests and
     # thread history keep working.
     dict(id="churn_wireless", emoji="\U0001F4C9", title="Churn Rates",
-         capture=_tableau_shot("churn_wireless")),
+         capture=_churn),
     # rep_boards offices only (expected_items drops it elsewhere) — Carlos
     # 2026-09-05: the activation-by-rep board's sibling, every churn bucket,
     # active reps only, office total = the TRUE office total.
@@ -465,6 +484,16 @@ def contents_text(o: B2BOffice) -> str:
                      for i in expected_items(o))
 
 
+# Offices that get the Revenue Board WITHOUT the rest of Carlos's rep_boards
+# set (Jamis 2026-10-06, via Carlos: "jamis said he asked for the revenue
+# board"). It's first in ITEMS, so it opens their thread like Carlos's.
+REVENUE_BOARD_OFFICES = {"jamis"}
+
+# Offices that asked for the Fiber CRU Activation Rate section (activation
+# board filtered to NEW INTERNET + CRU). Eveliz 2026-10-06.
+FIBER_CRU_OFFICES = {"eveliz"}
+
+
 def expected_items(o: B2BOffice) -> list:
     """The sections this office's parent post ENUMERATES — the completeness
     contract. Used both to build the header and to reconcile expected-vs-actual,
@@ -481,7 +510,11 @@ def expected_items(o: B2BOffice) -> list:
     default = [i for i in ITEMS if i["id"] not in o.skip_views
                and (i["id"] not in ("churn_by_rep", "activation_revenue",
                                     "revenue_board", "pending_orders")
-                    or o.rep_boards)]
+                    or o.rep_boards
+                    or (i["id"] == "revenue_board"
+                        and o.key in REVENUE_BOARD_OFFICES))
+               and (i["id"] != "fiber_cru_activation"
+                    or o.key in FIBER_CRU_OFFICES)]
     # rep_boards offices post in CARLOS'S ORDER (2026-09-14, dictated in
     # full): money first, then activations, then churn (customer churn ahead
     # of the rate boards), then the log. sales_metrics went unmentioned in

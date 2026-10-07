@@ -38,6 +38,7 @@ from automations.shared.tableau_patchright import (
     tableau_session, download_crosstab_patchright)
 from automations.owners_metrics_churn import pull, fill
 from automations.shared import captainship_pins as _pins
+from automations.shared import churn_mix_guard as _mix
 from automations.new_internet_churn import pull as _ni_pull
 from automations.focus_office_att.aliases import load_aliases, alias_to_canonical
 
@@ -304,6 +305,21 @@ def _backfill_moved_owners(program: str, dark_names: list, aliases: dict) -> dic
                      for v in allreps[k].values()):
             got[nm] = allreps[k]
     return got
+
+
+def _wireless_mixed_slugs(parsed_by_slug: dict) -> set:
+    """NI slugs whose captainship total is their '-wl' twin's in disguise —
+    the NI view is serving the wireless numbers (see shared.churn_mix_guard).
+    Needs both pulls in the same run; a lone NI or WL run can't be checked."""
+    out = set()
+    for slug, parsed in parsed_by_slug.items():
+        twin = parsed_by_slug.get(f"{slug}-wl")
+        if slug.endswith("-wl") or twin is None:
+            continue
+        if _mix.looks_like_wireless(parsed.get("office_total"),
+                                    twin.get("office_total")):
+            out.add(slug)
+    return out
 
 
 def _run_fill_phase(label: str, open_ws_fn, parsed: dict, periods: tuple,
@@ -597,19 +613,43 @@ def main(argv=None) -> int:
         print(f"  Loaded {sum(len(v) for v in aliases.values())} aliases "
               f"({len(aliases)} canonical names).")
 
-    all_reps: set = set()
-    went_dark_all: dict = {}      # {tab label: {period: [rep names]}}
-    went_dark_program: dict = {}  # {tab label: program} — for the manifest remediation
-    for slug, label, _fetch_fn, open_ws_fn, _csv_name, parse_fn, periods in selected:
+    # Parse every pull BEFORE filling any tab: the New Internet tab of a fiber
+    # captain fills before his '-wl' tab, and the wireless-mix guard below
+    # needs both totals side by side.
+    parsed_by_slug: dict = {}
+    for slug, label, _fetch_fn, _open_ws_fn, _csv_name, parse_fn, _periods in selected:
         if slug not in csvs:
             continue   # pull failed/skipped above — already flagged
         try:
-            parsed = parse_fn(csvs[slug])
+            parsed_by_slug[slug] = parse_fn(csvs[slug])
         except Exception as e:  # noqa: BLE001 — one tab must not kill the rest
             print(f"  ⚠ {label}: parse FAILED — skipping (the rest continue). "
                   f"{str(e).splitlines()[0][:160]}")
             failed.append(label)
-            continue
+
+    # 2026-10-06: every fiber NEW INTERNET view came back with the WIRELESS
+    # numbers (Pat NI 40/1,235 = Pat Wireless 40/1,235, denominators ~1/3 of the
+    # day before) — the saved views' 'Churn View' parameter had flipped in
+    # Tableau. The run wrote them into the NI tabs and only flagged two
+    # wireless-less reps as went-dark. An NI total identical to the same
+    # captain's wireless total is never real data: don't write it.
+    wireless_mix = _wireless_mixed_slugs(parsed_by_slug)
+    wireless_mix_labels: list = []
+    for slug, label, *_ in selected:
+        if slug in wireless_mix:
+            print(f"  ⚠ {label}: New Internet pull matches the wireless "
+                  f"pull ({slug}-wl) — the Tableau view is showing Wireless. "
+                  f"NOT writing it.")
+            failed.append(label)
+            wireless_mix_labels.append(label)
+
+    all_reps: set = set()
+    went_dark_all: dict = {}      # {tab label: {period: [rep names]}}
+    went_dark_program: dict = {}  # {tab label: program} — for the manifest remediation
+    for slug, label, _fetch_fn, open_ws_fn, _csv_name, parse_fn, periods in selected:
+        if slug not in parsed_by_slug or slug in wireless_mix:
+            continue   # failed/skipped above — already flagged
+        parsed = parsed_by_slug[slug]
         _raw_names = sorted(parsed.get("reps", {}).keys())
         parsed = _apply_aliases(parsed, aliases)
         _aliased_names = sorted(parsed.get("reps", {}).keys())
@@ -694,14 +734,36 @@ def main(argv=None) -> int:
             if failed:
                 _slug_by_label = {label: slug for slug, label, *_ in selected}
                 _fslugs = [_slug_by_label[l] for l in failed if l in _slug_by_label]
+                # A wireless-mix retry has to re-pull the '-wl' twin too, or
+                # the guard has nothing to compare against and lets it through.
+                _fslugs += [f"{_slug_by_label[l]}-wl" for l in wireless_mix_labels
+                            if l in _slug_by_label]
+                _mix_note = ("New Internet view(s) showing the WIRELESS numbers "
+                             "— not written: " + ", ".join(wireless_mix_labels)
+                             if wireless_mix_labels else None)
                 _rm.write_manifest(
                     "owners-metrics-churn", failed=list(failed),
                     retry_args=(["--only", ",".join(_fslugs)] if _fslugs else []),
                     kind="captainship",
                     note=f"{len(failed)} captainship churn pull(s) failed."
+                         + (f" ⚠ {_mix_note}" if _mix_note else "")
                          + (f" ⚠ {_dark_note}" if _dark_note else "")
                          + (f" ⚠ {_term_note}" if _term_note else ""),
                     remediation=_rm.make_remediation(
+                        reason=_mix_note + ". Each one's captainship total "
+                               "matches that captain's wireless total.",
+                        fix="Not a flaky pull — a re-run alone will NOT fix it. "
+                            "Open each captain's saved New Internet churn view "
+                            "in Tableau, set 'Churn View' back to New Internet, "
+                            "re-save it under the same name, then re-run.",
+                        link="https://us-east-1.online.tableau.com/#/site/sci/"
+                             "views/ATTTRACKER2_1-D2D/CHURN",
+                        message="The New Internet churn views in Tableau are "
+                                "showing the Wireless numbers today: "
+                                + ", ".join(wireless_mix_labels) + ". Can "
+                                "someone set 'Churn View' back to New Internet "
+                                "on those saved views?")
+                    if wireless_mix_labels else _rm.make_remediation(
                         reason=f"{len(failed)} captainship churn pull(s) failed "
                                f"in Tableau: {', '.join(failed)}.",
                         fix="Usually a flaky/slow Tableau load (a re-run often "

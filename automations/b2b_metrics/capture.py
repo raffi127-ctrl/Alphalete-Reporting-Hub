@@ -339,7 +339,13 @@ def revenue_board_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
             and src_csv.stat().st_mtime > _time.time() - 3600):
         from automations.captainship_boards.run import pull_orderlog
         pull_orderlog(monday, upto, src_csv)
-    per_rep, _unpriced = rb.load_priced(src_csv, monday, upto)
+    # Carlos's board = Vantura's Sales Board reps; any other office (Jamis,
+    # 2026-10-06: "he asked for the revenue board") = its own rows in the
+    # same export, sliced on the owner name before the '['.
+    owner_prefix = (None if o is None or o.key == "carlos" else
+                    (o.owner_office or o.owner).split("[")[0].strip() or None)
+    per_rep, _unpriced = rb.load_priced(src_csv, monday, upto,
+                                        owner_prefix=owner_prefix)
     if not rb.att_day_ready(per_rep, upto):
         # A WAIT, not a failure (10/2 ticket): before 06:25 the export often
         # lacks yesterday's rows, and the 7:45 pass renders it fine. Raised as
@@ -348,11 +354,16 @@ def revenue_board_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
         days = [d for rec in per_rep.values() for d, v in rec["days"].items()
                 if v]
         raise OrderLogNotFresh(max(days) if days else None, upto)
-    rows, office = rb.build_rows(per_rep, monday, upto)
+    # Tiers are CARLOS'S comp sheet. Other offices aren't on it (Jamis
+    # 2026-10-06, Carlos: "we can just do the base comp for him") — base
+    # line prices only, no Tier / Next Tier columns.
+    tiered = owner_prefix is None
+    rows, office = rb.build_rows(per_rep, monday, upto, tiered=tiered)
     out = Path(out_dir) / "Revenue Board {}.{}.png".format(upto.month,
                                                            upto.day)
-    rb.render(rows, office, monday, upto, out)
-    log("   \u2713 revenue board [carlos]: priced + rendered for the thread")
+    rb.render(rows, office, monday, upto, out, tiered=tiered)
+    log("   \u2713 revenue board [{}]: priced + rendered for the thread"
+        .format(o.key if o is not None else "carlos"))
     return out
 
 
@@ -645,21 +656,91 @@ def drive_owner(page, want: str, log=print) -> bool:
             except Exception:  # noqa: BLE001
                 return False
 
-        ok = _set(pick, True)
-        for j, t in enumerate(texts):
-            if j != pick and t:
-                _set(j, False)
+        def _mouse(j):
+            # A real mouse click at the row — what proved out on Lucy 2
+            # 2026-10-06. (.click() is swallowed by the click-capture overlay;
+            # the keyboard toggles flipped aria-checked but never armed Apply.)
+            el = loc.nth(j)
+            el.scroll_into_view_if_needed(timeout=5_000)
+            bb = el.bounding_box()
+            page.mouse.click(bb["x"] + 8, bb["y"] + bb["height"] / 2)
+            page.wait_for_timeout(1_200)
+
+        # Work on the OPEN menu only. `loc` above spans every checkbox in the
+        # frame, including the hidden lists of boxes opened (and closed) while
+        # hunting for the owner box — indexing into those clicked nothing on
+        # 2026-10-06 and left the slice at "(All)". Re-read the visible rows.
         try:
-            ap = fr.locator("button:has-text('Apply')")
-            if ap.count():
-                ap.first.click(timeout=5_000)
-        except Exception:  # noqa: BLE001
+            vis = fr.locator('[role="checkbox"]:visible')
+            vtexts = [" ".join((vis.nth(j).inner_text(timeout=2_000) or "")
+                               .split()).lstrip("✓").strip()
+                      for j in range(min(vis.count(), 300))]
+            vpick = next(j for j, t in enumerate(vtexts)
+                         if t and want.lower() in t.lower())
+            loc, texts, pick = vis, vtexts, vpick
+        except Exception:  # noqa: BLE001 — keep the full-frame read
             pass
+        all_idx = next((j for j, t in enumerate(texts) if t == "(All)"), None)
+        try:
+            # Clear everything via "(All)", then tick the one owner.
+            if all_idx is not None and loc.nth(all_idx).get_attribute(
+                    "aria-checked") == "true":
+                _mouse(all_idx)
+            if loc.nth(pick).get_attribute("aria-checked") != "true":
+                _mouse(pick)
+            ok = loc.nth(pick).get_attribute("aria-checked") == "true"
+        except Exception as e:  # noqa: BLE001 — old keyboard path below
+            log("   [owner] mouse toggle failed ({}); keyboard fallback"
+                .format(e))
+            ok = _set(pick, True)
+            for j, t in enumerate(texts):
+                if j != pick and t:
+                    _set(j, False)
+        # Tableau's Apply is NOT a <button> — it is
+        # <div class="tab-button tab-widget apply"><span class="label">Apply
+        # (probed on Lucy 2, 2026-10-06). The old `button:has-text('Apply')`
+        # matched nothing, _dismiss_menus' Escape then CANCELLED the pending
+        # ticks, and the box stayed "(All)": Jamis, Sabrina and Eveliz all
+        # posted the whole-org churn board (Atef's block on top) while this
+        # logged "ok". Click the real control.
+        # Click the Apply of THIS menu. When an earlier box's menu refuses to
+        # close (_dismiss_menus' "STILL visible"), two Apply buttons are on
+        # screen and .first hit the other one (2026-10-06, Lucy 2) — so take
+        # the visible Apply horizontally nearest the owner row we ticked.
+        try:
+            px = loc.nth(pick).bounding_box()["x"]
+        except Exception:  # noqa: BLE001
+            px = None
+        for sel in (".tab-button.apply:not(.disabled):visible",
+                    ".tab-button.apply:visible",
+                    "button:has-text('Apply'):visible"):
+            try:
+                ap = fr.locator(sel)
+                n_ap = ap.count()
+                if not n_ap:
+                    continue
+                best = 0
+                if px is not None and n_ap > 1:
+                    best = min(range(n_ap), key=lambda k: abs(
+                        (ap.nth(k).bounding_box() or {"x": 1e9})["x"] - px))
+                ap.nth(best).click(timeout=5_000)
+                break
+            except Exception:  # noqa: BLE001
+                continue
         _dismiss_menus(page)
         page.wait_for_timeout(12_000)          # let the viz redraw
-        log("   [owner] dropdown -> {!r} ({})".format(
-            texts[pick], "ok" if ok else "TOGGLE UNVERIFIED"))
-        return ok
+        # VERIFY the slice took — the box's own caption must now name the
+        # owner. aria-checked inside the open menu only proves the PENDING
+        # tick, which Escape can still throw away.
+        try:
+            shown = " ".join((boxes.nth(i).inner_text(timeout=5_000) or "")
+                             .split())
+        except Exception:  # noqa: BLE001
+            shown = ""
+        applied = want.lower() in shown.lower()
+        log("   [owner] dropdown -> {!r} (box now shows {!r}: {})".format(
+            texts[pick], shown, "ok" if applied else "NOT APPLIED"))
+        return ok and applied
     log("   [owner] no combo box offered an owner-style member list")
     return False
 
@@ -1828,7 +1909,24 @@ def probe_week(o: B2BOffice, view_key: str = "out_of_bounds",
     return 0
 
 
-def activation_board_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
+# Fiber CRU Activation Rate (Eveliz 2026-10-06: "also fiber CRU activation
+# rate please"). The SAME recreated board, pulled with two plain-value URL
+# filters on ACTIVATIONRATES — proven on Lucy 2 the same day: her rows came
+# back narrowed to fiber CRU (31-60: 36/56) vs 81% unfiltered. Plain-value
+# filters slice fine here; only "Owner & Office" ever needed the dropdown.
+FIBER_CRU_FILTERS = "Product%20Type%20(Broken%20Out)=NEW%20INTERNET&CRU%2FIRU=CRU"
+
+
+def fiber_cru_activation_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
+    return activation_board_image(
+        o, out_dir, log=log, filters=FIBER_CRU_FILTERS,
+        name="fiber_cru_activation", title="FIBER CRU ACTIVATION RATES",
+        chips={"CRU/IRU": "CRU", "Product Type (..": "NEW INTERNET"})
+
+
+def activation_board_image(o: B2BOffice, out_dir: Path, log=print,
+                           filters: str = "", name: str = "activation_rate",
+                           title: str = "", chips: dict = None) -> Path:
     """#2 Activation Rate — RECREATED full-height board (every rep), not Tableau's
     scroll-clipped Download→Image.
 
@@ -1844,7 +1942,7 @@ def activation_board_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
     office with no cfg, or any pull/parse failure, FALLS BACK to the old
     Download→Image so the section still posts — logged loudly, since the fallback
     can be clipped."""
-    out = out_dir / "activation_rate.png"
+    out = out_dir / "{}.png".format(name)
     try:
         import datetime as _dt
         import csv as _csv
@@ -1857,13 +1955,21 @@ def activation_board_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
         if not cfg:
             raise RuntimeError("no activation cfg for office {!r}".format(o.key))
         view_url, _cv, owner_prefix = cfg
-        grid_path = out_dir / "activation_office_{}.csv".format(o.key)
-        totals_path = out_dir / "activation_totals_{}.csv".format(o.key)
+        csv_url = _ar.CSV_URL
+        if filters:
+            view_url = view_url.split("?")[0] + "?" + filters
+            csv_url = csv_url + ("&" if "?" in csv_url else "?") + filters
+        sfx = "" if name == "activation_rate" else "_" + name
+        grid_path = out_dir / "activation_office_{}{}.csv".format(o.key, sfx)
+        totals_path = out_dir / "activation_totals_{}{}.csv".format(o.key, sfx)
         with _cdp._cdp_lock(label="b2b activation board {}".format(o.key), log=log):
             _cdp.download_views([(view_url, _ar.REP_SHEET, grid_path)],
                                 today=_dt.date.today(), verbose=False, log=log,
-                                csv_fetches=[(_ar.CSV_URL, totals_path)])
+                                csv_fetches=[(csv_url, totals_path)])
         board = _ab.parse_grid(_compute._load_grid(grid_path), owner_prefix)
+        if title:
+            board.title = title
+        board.chips = dict(chips or {})
         with open(totals_path, encoding="utf-8-sig", errors="replace") as fh:
             totals = list(_csv.reader(fh))
         _ab.apply_office_colors(board, totals, owner_prefix)
@@ -1873,7 +1979,78 @@ def activation_board_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
             o.key, len(board.reps)))
         return out
     except Exception as e:  # noqa: BLE001 — must still post SOMETHING
+        if filters:
+            # No Tableau-image fallback for a filtered board: the fallback
+            # would be the UNFILTERED activation view under a fiber title.
+            raise
         log("   ⚠ activation board [{}] failed ({}: {}) — falling back to "
             "Download→Image (MAY BE CLIPPED)".format(
                 o.key, type(e).__name__, str(e).splitlines()[0][:120]))
         return tableau_image(o, "activation_rate", out_dir, log=log)
+
+
+# ---------------------------------------------------------------------------
+# Churn board from ONE shared pull (Megan 2026-10-06). Offices listed here get
+# their Churn Rates section rebuilt from Raf's 'lucyexp' CHURNRATES saved view
+# instead of the Owner & Office dropdown click — see churn_board's docstring.
+# The view holds exactly these offices; adding one = tick its owner in lucyexp
+# (Owner & Office), re-save the view, and add the key here.
+# ---------------------------------------------------------------------------
+CHURN_BOARD_OFFICES = {"eveliz", "jamis", "sabrina"}
+CHURN_BOARD_URL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/"
+    "CHURNRATES/7df57dae-9db2-4997-b2b8-25d746d3ec0c/lucyexp"
+    # Saved wireless-only; the product filter brings AIR + NEW INTERNET back
+    # (plain-value URL filters work on this workbook — proven 2026-10-06).
+    "?Product%20Type%20(Broken%20Out)=AIR,AIR/AWB,WIRELESS,NEW%20INTERNET")
+CHURN_REP_SHEET = "ICD Churn"
+CHURN_NAT_SHEET = "Churn National Average"
+
+
+def _churn_board_files(log=print):
+    """Today's two crosstabs, pulled ONCE and shared by every office in
+    CHURN_BOARD_OFFICES (the first office to need them downloads; the rest
+    read the cached files)."""
+    import datetime as _dt
+    from automations.vantura_churn import cdp_pull as _cdp
+    shared = REPO_ROOT / "output" / "b2b_metrics" / "_shared"
+    shared.mkdir(parents=True, exist_ok=True)
+    day = _dt.date.today().isoformat()
+    rep_path = shared / "churn_icd_{}.csv".format(day)
+    nat_path = shared / "churn_national_{}.csv".format(day)
+    if not (rep_path.exists() and nat_path.exists()):
+        with _cdp._cdp_lock(label="b2b churn board pull", log=log):
+            _cdp.download_views(
+                [(CHURN_BOARD_URL, CHURN_REP_SHEET, rep_path),
+                 (CHURN_BOARD_URL, CHURN_NAT_SHEET, nat_path)],
+                today=_dt.date.today(), verbose=False, log=log)
+    else:
+        log("   [churn board] reusing today's shared pull")
+    return rep_path, nat_path
+
+
+def churn_board_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
+    """Churn Rates for a CHURN_BOARD_OFFICES office — its reps only, rebuilt
+    from the shared pull. No Tableau-screenshot fallback: that path is the
+    dropdown click this replaces, so a failure raises and the section is
+    flagged as missing rather than posting another office's board."""
+    from automations.vantura_churn import compute as _compute
+    from automations.b2b_metrics import churn_board as _cb
+    rep_path, nat_path = _churn_board_files(log=log)
+    if not o.owner_office:
+        raise RuntimeError("{}: churn board needs owner_office (the exact "
+                           "'NAME [office]' member) — not guessing".format(o.key))
+    grid = _compute._load_grid(rep_path)
+    _cb.reconcile(grid)
+    board = _cb.parse_office(grid, o.owner_office)
+    # The board must hold this owner and nobody else.
+    if " ".join(board.owner_office.split()).upper() != " ".join(
+            o.owner_office.split()).upper():
+        raise RuntimeError("{}: churn board owner {!r} != {!r}".format(
+            o.key, board.owner_office, o.owner_office))
+    board.national = _cb.parse_national(_compute._load_grid(nat_path))
+    out = out_dir / "churn_wireless.png"
+    _cb.render_png(board, out)
+    log("   ✓ churn board [{}]: {} reps (one shared pull)".format(
+        o.key, len(board.reps)))
+    return out

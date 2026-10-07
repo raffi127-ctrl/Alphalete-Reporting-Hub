@@ -97,12 +97,16 @@ QUESTION_BUCKETS = [
      r"message|invite)|where (was|did) it (sent|go)|check (my|your) spam|"
      r"pertaining to the email|thru indeed|through indeed|via indeed)"),
     ("Hours, training, is it paid?",
-     r"\b(what (are|is) the hours|how many hours|hours for this|schedule like|"
+     r"\b(what[^.?!]{0,14}the hours|how many hours|hours for this|schedule like|"
      r"full[- ]time|part[- ]time|training (work|paid|be)|is (the )?training|"
-     r"is it paid|paid training|benefits)"),
+     r"(be|any|have) training|is it paid|paid training|benefits)"),
     ("Is this remote / where is the office?",
-     r"\b(remote|virtual|in[- ]person|onsite|on[- ]site|location|where\b.*\b(office|located|interview)|"
-     r"address|directions?|how far|located in|at a store|in a store|the store|"
+     r"\b(remote|virtual|in[- ]person|onsite|on[- ]site"
+     r"|(your|the|this|what|which|job|office|work|interview)\s+location"
+     r"|location\s+(of|is|for)\b"
+     r"|where\b.*\b(office|located|interview)|"
+     r"address|directions?|how far|located in|at a store|in a store|"
+     r"a store location|"
      r"which (area|city|location)|actual office|working at a)"),
     ("What is the pay?",
      r"\b(pay|salary|hourly|commission|comission|compensation|how much|wage|\$\d)"),
@@ -112,7 +116,8 @@ QUESTION_BUCKETS = [
      r"more (detail|info)|what.{0,12}job about|give me detail|job details|"
      r"what (the )?job entail|learning more)"),
     ("I can't make it / I'm sick / running late",
-     r"\b(can'?t make|running late|be late|won'?t be able|something came up|"
+     r"\b(can'?t make|running late|be late|something came up|"
+     r"won'?t be able to (make|attend|come|join|be there|do)|"
      r"miss (my|the)|sick|under the weather|not feeling|emergency|"
      r"car (trouble|broke)|flat tire)"),
     ("Can we reschedule / a different time?",
@@ -125,7 +130,10 @@ QUESTION_BUCKETS = [
      r"connect after|what day and time|could we do it|would .{0,12}(work|be a good)|"
      r"^\s*(is|was) it \d|\b\d{1,2}(:\d{2})?\s*(am|pm)\b)"),
     ("What should I wear / bring?",
-     r"\b(wear|dress|attire|bring|resume|business (casual|professional))"),
+     r"\b(wear|dress|attire|business (casual|professional)"
+     r"|bring\s+(any|a |my |the )?(resume|cv|id|notebook|pen|anything"
+     r"|something|documents?)"
+     r"|(bring|need|should i have|take)[^.?!]{0,20}\bresum)"),
     ("How long is the interview / what's next?",
      r"\b(how long|next step|hear back|when will|what happens|second interview|follow up)"),
     ("Is this a real job / who are you?",
@@ -524,6 +532,8 @@ def _stat(vals):
         "p90": s[min(len(s) - 1, int(0.9 * len(s)))],
         "within_5": 100.0 * sum(1 for v in s if v <= 5) / len(s),
         "within_60": 100.0 * sum(1 for v in s if v <= 60) / len(s),
+        "within_120": 100.0 * sum(1 for v in s if v <= 120) / len(s),
+        "within_180": 100.0 * sum(1 for v in s if v <= 180) / len(s),
         "over_4h": 100.0 * sum(1 for v in s if v > 240) / len(s),
     }
 
@@ -1444,6 +1454,17 @@ def _real_doubled(text):
         return m
     return None
 NO_SPACE = re.compile(r"[a-z]{2}[.!?][A-Z][a-z]")
+# A URL is not prose and must not be proofread. The survey link every
+# office sends — ".../r/AlphaleteFirstRound?OfficeID=11280" — reads as a
+# missing space ("nd?Of") and the "/i/" in a link reads as a lowercase
+# "i", which between them put three senders at the top of the 2026-10-06
+# recruiter table on nothing but their own survey link.
+_URLISH = re.compile(r"https?://\S+|www\.\S+|\S+@\S+", re.I)
+
+
+def strip_links(body):
+    """`body` with URLs and email addresses blanked, for the typing checks."""
+    return _URLISH.sub(" ", body or "")
 LONE_I = re.compile(r"(?<![\w'])i(?![\w'])")
 # "the base salary is determine on your experience" — a participle left bare
 # Common written-English slips, each one high-precision on purpose: a
@@ -1725,12 +1746,13 @@ def text_errors(convos):
         if d:
             found.append({"kind": "doubled word", "sender": who, "body": body,
                           "detail": d.group(0), "name": c.get("name", "")})
-        if NO_SPACE.search(body):
+        prose = strip_links(body)
+        if NO_SPACE.search(prose):
             found.append({"kind": "missing space", "sender": who, "body": body,
-                          "detail": NO_SPACE.search(body).group(0),
+                          "detail": NO_SPACE.search(prose).group(0),
                           "name": c.get("name", "")})
         for pat, label in GRAMMAR_PATTERNS:
-            g = re.search(pat, body, re.I)
+            g = re.search(pat, prose, re.I)
             if g:
                 found.append({"kind": "grammar", "sender": who, "body": body,
                               "detail": "{} ({})".format(g.group(0), label),
@@ -1770,19 +1792,21 @@ def proofread(body):
     body = " ".join((body or "").split())
     if not body:
         return out
-    d = _real_doubled(body)
+    # Links are not prose \u2014 see strip_links.
+    prose = strip_links(body)
+    d = _real_doubled(prose)
     if d:
         out.append(("doubled word", d.group(0)))
-    if NO_SPACE.search(body):
-        out.append(("missing space", NO_SPACE.search(body).group(0)))
+    if NO_SPACE.search(prose):
+        out.append(("missing space", NO_SPACE.search(prose).group(0)))
     for pat, label in GRAMMAR_PATTERNS:
-        g = re.search(pat, body, re.I)
+        g = re.search(pat, prose, re.I)
         if g:
             out.append(("grammar", "{} ({})".format(g.group(0), label)))
-    bv = BARE_VERB.search(body)
+    bv = BARE_VERB.search(prose)
     if bv:
         out.append(("verb form", "{} \u2192 {}d".format(bv.group(0), bv.group(0))))
-    if LONE_I.search(body):
+    if LONE_I.search(prose):
         out.append(("lowercase i", "i on its own"))
     m = MIDCAP.search(body)
     if m:
@@ -2260,6 +2284,13 @@ COACHING = (
     ("Shouted in capitals",
      lambda o, b, w: __import__("automations.sms_audit.rebuttals", fromlist=["x"])
      .shouts(b)),
+    # Per-office facts, silent until that office supplies them.
+    ("Sent the wrong Zoom link",
+     lambda o, b, w: __import__("automations.sms_audit.rebuttals", fromlist=["x"])
+     .wrong_zoom(o, b, w)),
+    ("Quoted pay this office does not pay",
+     lambda o, b, w: __import__("automations.sms_audit.rebuttals", fromlist=["x"])
+     .pay_outside_range(o, b, w)),
 )
 
 

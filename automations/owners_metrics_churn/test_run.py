@@ -258,9 +258,6 @@ class ReconcileRunsBeforeTheWentDarkCheck(unittest.TestCase):
             self.assertEqual(omc._reconcile({}, {"reps": {}}), {})
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class TestProgramOf(unittest.TestCase):
     """A REPORTS parse_fn must resolve to the all-teams view of its OWN program.
@@ -288,3 +285,72 @@ class TestProgramOf(unittest.TestCase):
             prog = omc._program_of(parse_fn)
             self.assertIn(prog, omc_pull.ALLTEAMS_CHURN_SOURCE,
                           f"{slug} ({label}) -> unknown program {prog!r}")
+
+
+def _tot(pairs):
+    return {"office_total": {p: {"pct": f"{n / d:.2%}", "num": n, "denom": d}
+                             for p, (n, d) in pairs.items()},
+            "reps": {}}
+
+
+# Pat's real totals on 2026-10-06 (NI view serving Wireless) and 2026-10-05.
+_PAT_NI_MIXED = _tot({"0-30": (40, 1235), "30": (51, 1164),
+                      "60": (81, 1318), "90": (156, 1395)})
+_PAT_WL = _tot({"0-30": (40, 1235), "30": (51, 1169),
+                "60": (81, 1337), "90": (156, 1431)})
+_PAT_NI_REAL = _tot({"0-30": (83, 3362), "30": (126, 3901),
+                     "60": (234, 4309), "90": (225, 3613)})
+
+
+class WirelessMixGuard(unittest.TestCase):
+    """2026-10-06: every fiber NI view came back with the wireless numbers and
+    the run wrote them into the NI tabs."""
+
+    def test_ni_matching_its_wireless_twin_is_flagged(self):
+        got = omc._wireless_mixed_slugs({"pat": _PAT_NI_MIXED, "pat-wl": _PAT_WL})
+        self.assertEqual(got, {"pat"})
+
+    def test_real_ni_is_not_flagged(self):
+        got = omc._wireless_mixed_slugs({"pat": _PAT_NI_REAL, "pat-wl": _PAT_WL})
+        self.assertEqual(got, set())
+
+    def test_lone_ni_pull_cannot_be_checked(self):
+        self.assertEqual(omc._wireless_mixed_slugs({"pat": _PAT_NI_MIXED}), set())
+
+    def test_one_period_differing_clears_it(self):
+        ni = _tot({"0-30": (40, 1235), "30": (126, 3901)})
+        wl = _tot({"0-30": (40, 1235), "30": (51, 1169)})
+        self.assertEqual(omc._wireless_mixed_slugs({"pat": ni, "pat-wl": wl}), set())
+
+    def test_mixed_tab_is_not_written_and_retry_includes_twin(self):
+        reports = [
+            ("pat", "Pat Thompson (ATT Fiber)", _fake_fetch, _fake_open_ws,
+             "a.csv", lambda _c: _PAT_NI_MIXED, ("0-30", "30", "60", "90")),
+            ("pat-wl", "Pat Thompson (ATT Fiber) — Wireless", _fake_fetch,
+             _fake_open_ws, "b.csv", lambda _c: _PAT_WL,
+             ("0-30", "30", "60", "90")),
+        ]
+        filled = []
+        with contextlib.ExitStack() as st:
+            st.enter_context(mock.patch.object(omc, "REPORTS", reports))
+            st.enter_context(mock.patch.object(omc, "tableau_session", _dummy_session))
+            st.enter_context(mock.patch.object(omc, "load_aliases", lambda: {}))
+            st.enter_context(mock.patch.object(
+                omc, "_run_fill_phase",
+                lambda label, *a, **k: filled.append(label) or {}))
+            st.enter_context(mock.patch(
+                "automations.shared.terminated_icds.alert_terminated",
+                return_value=([], False)))
+            wm = st.enter_context(
+                mock.patch("automations.shared.run_manifest.write_manifest"))
+            rc = omc.main([])
+        self.assertEqual(rc, 1)
+        self.assertEqual(filled, ["Pat Thompson (ATT Fiber) — Wireless"])
+        kw = wm.call_args.kwargs
+        self.assertEqual(kw["failed"], ["Pat Thompson (ATT Fiber)"])
+        self.assertEqual(kw["retry_args"], ["--only", "pat,pat-wl"])
+        self.assertIn("WIRELESS", kw["note"])
+
+
+if __name__ == "__main__":
+    unittest.main()

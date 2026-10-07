@@ -1099,8 +1099,12 @@ def hold_weekend(parent: dict, block: "config.Block", reason: str,
     return True
 
 
+DEFER_REBUILD = "needs a rebuild after the build that is running"
+
+
 def auto_check(today: dt.date, blocks: Sequence["config.Block"],
-               done: Set[str], *, act: bool = True, verbose: bool = True
+               done: Set[str], *, act: bool = True, verbose: bool = True,
+               rebuild: bool = True
                ) -> Tuple[Set[str], Dict[str, List[str]], Dict[str, List[str]]]:
     """Revisa a cada capitan todavia sin mandar de `blocks`.
 
@@ -1135,6 +1139,13 @@ def auto_check(today: dt.date, blocks: Sequence["config.Block"],
                        verbose=verbose)
     fixed: Dict[str, List[str]] = {}
     fix = [k for k, v in verdicts.items() if v.fixable and not v.blocked]
+    if fix and act and not rebuild:
+        # `rebuild=False` (hay un armado corriendo): ni se re-arma ni se frena.
+        A.save_state(today, state)
+        ok = {k for k, v in verdicts.items() if v.send}
+        held = {k: ([DEFER_REBUILD] if k in fix else v.reasons())
+                for k, v in verdicts.items() if not v.send}
+        return ok, held, {}
     if fix and act:
         A.rebuild(today, fix)
         tb = set(state.get("tableau_rebuilt") or [])
@@ -1170,7 +1181,8 @@ def _post_link(today: dt.date, block: "config.Block", parent: Optional[dict],
 
 def auto_day(today: dt.date, blocks: Sequence["config.Block"],
              channel: Optional[str] = None, *, act: bool = True,
-             verbose: bool = True) -> int:
+             verbose: bool = True, building_since: Optional[float] = None
+             ) -> int:
     """EL ENVIO AUTOMATICO (Eve 2026-10-05): los Captainship Reports salen solos.
 
     Eve: "no me tiene que llegar link de revision a no ser que algo de lo que
@@ -1190,6 +1202,15 @@ def auto_day(today: dt.date, blocks: Sequence["config.Block"],
     ANTES DE LAS 10:00 un capitan sin borrador todavia no se juzga: lo esta
     armando la cadena de la manana o el agente de las 07:15 (--ensure-posted).
     Despues de las 10:00 un borrador que falta es una falla como cualquiera.
+
+    MIENTRAS SE ARMA (`building_since`, Eve 2026-10-06: "que vayan saliendo a
+    medida que se va cerrando cada capitania"). El armado va bloque por bloque,
+    asi que el que ya termino puede salir sin esperar a los demas. Solo cuenta
+    un .eml que escribio ESTE armado y ya se asento; el resto espera, a
+    cualquier hora (un borrador que todavia se esta armando no es una falla).
+    Y no se re-arma nada: correr otro run.py al lado del que esta corriendo
+    pelea por el mismo Chrome/Tableau. Lo que haria falta re-armar espera al
+    primer chequeo despues del armado.
     Devuelve 1 mientras alguno siga esperando (para que el .sh recuerde)."""
     from automations.captainship_drafts import auto_send as A
     parent = _find_post(today, channel)
@@ -1203,7 +1224,17 @@ def auto_day(today: dt.date, blocks: Sequence["config.Block"],
     now = dt.datetime.now()
     early = today == now.date() and (now.hour, now.minute) < (10, 0)
     waiting: list = []
-    if early:
+    if building_since is not None:
+        waiting = [b for b in cands
+                   if any(not A.fresh_from_build(today, k, building_since)
+                          for k in b.captains if k not in done)]
+        if waiting and verbose:
+            print(f"  auto-send: build still running, not finished yet: "
+                  f"{', '.join(b.key for b in waiting)}", flush=True)
+        cands = [b for b in cands if b not in waiting]
+        if not cands:
+            return 1 if waiting else 0
+    elif early:
         waiting = [b for b in cands
                    if any(not A._eml(today, k).exists()
                           for k in b.captains if k not in done)]
@@ -1215,7 +1246,17 @@ def auto_day(today: dt.date, blocks: Sequence["config.Block"],
             return 1 if waiting else 0
     if not cands:
         return 0
-    ok, held, fixed = auto_check(today, cands, done, act=act, verbose=verbose)
+    ok, held, fixed = auto_check(today, cands, done, act=act, verbose=verbose,
+                                 rebuild=building_since is None)
+    if building_since is not None:
+        # Los que pedian re-armar no estan frenados: esperan al armado.
+        deferred = [k for k, why in held.items() if why == [DEFER_REBUILD]]
+        for k in deferred:
+            held.pop(k)
+        if deferred:
+            waiting.extend(config.block_of(k) for k in deferred)
+            print(f"  auto-send: needs a rebuild once the build ends: "
+                  f"{', '.join(sorted(deferred))}", flush=True)
     print(f"  auto-send: {len(ok)} ready, {len(held)} held, "
           f"{len(fixed)} rebuilt", flush=True)
     if not act:
@@ -1824,6 +1865,11 @@ def main(argv=None) -> int:
                     help="con --check: no acotar. Si algo fallo, frena a los "
                          "trece como antes en vez de mandar a los que no "
                          "estan tocados.")
+    ap.add_argument("--building", action="store_true",
+                    help="con --check, mientras un armado de capitanias sigue "
+                         "corriendo: el envio automatico manda solo a los que "
+                         "ese armado ya termino, sin re-armar ni tocar el "
+                         "resto (deploy/captainship_review.sh).")
     ap.add_argument("--no-auto", action="store_true",
                     help="never release without a checkmark, not even on the "
                          "weekend (weekend_release).")
@@ -2000,6 +2046,17 @@ def main(argv=None) -> int:
         from automations.captainship_drafts import auto_send as _A
         auto_on = _A.is_on(today, enabled=not args.no_auto)
         rc_auto = 0
+        if args.building:
+            # Solo el envio automatico, y solo lo que el armado ya cerro. El
+            # resto del --check (✅ humanos, recordatorios) espera al armado,
+            # como siempre.
+            since = _A.build_started() if auto_on else None
+            if since is None:
+                print("— a captainship build is running; nothing to send "
+                      "until it ends", flush=True)
+                return 1
+            return auto_day(today, blocks, args.channel, act=args.send,
+                            building_since=since)
         if auto_on:
             rc_auto = auto_day(today, blocks, args.channel, act=args.send)
         parent = _find_post(today, args.channel)

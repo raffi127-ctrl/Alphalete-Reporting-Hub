@@ -578,8 +578,17 @@ def login_until_it_works(attempts=3):
     """
     ask_for_login()
     for attempt in range(1, attempts + 1):
-        if check_account():
+        verdict = check_account_verdict()
+        if verdict == "ok":
             return True
+        if verdict == "wall":
+            # NOT a typo, so no "type it again". The code has to be typed in
+            # Lucy's browser; do that here, now, with the person present.
+            if clear_passcode_wall():
+                return True
+            say("      Not confirmed yet. Finish it any time with the setup")
+            say("      link -- it opens the same window. Your password is saved.")
+            return False
         if attempt == attempts:
             break
         try:
@@ -914,7 +923,23 @@ def _ask_field_hours(rec):
     return ""
 
 
+PASSCODE_WALL_MARK = "code it emails"
+
+
 def check_account() -> bool:
+    return check_account_verdict() == "ok"
+
+
+def check_account_verdict() -> str:
+    """'ok', 'wall' (SaraPlus accepted the password but wants its emailed
+    code typed in Lucy's own browser) or 'bad' (anything else).
+
+    THE WALL IS NOT A WRONG PASSWORD. Jamis, 2026-10-06: the check printed
+    "SaraPlus wants to confirm this computer with a code it emails you. Your
+    password is fine" and the very next dialog said "SaraPlus did not accept
+    that email and password" -- and asked him to retype a password that
+    worked. The agent's own message is the signal; read it.
+    """
     say("      signing in to SaraPlus to make sure it works...")
     proc = subprocess.run(
         [str(venv_python()), "-m", "automations.icd_alerts.run", "--check"],
@@ -923,6 +948,28 @@ def check_account() -> bool:
     for line in out.splitlines():
         if line.strip() and not line.startswith("[icd_alerts]"):
             say("      " + line.strip())
+    if proc.returncode == 0:
+        return "ok"
+    return "wall" if PASSCODE_WALL_MARK in out else "bad"
+
+
+def clear_passcode_wall() -> bool:
+    """Open Lucy's own SaraPlus window so the person sitting here can type
+    the emailed code now, while they are here. Returns True when the window's
+    own hidden check passes afterwards."""
+    say("      SaraPlus wants to confirm this computer with a code it emails")
+    say("      you. Your password is fine. Opening Lucy's SaraPlus window --")
+    say("      sign in there and type the code when it arrives.")
+    try:
+        ask.message("Your password is fine — SaraPlus just wants to confirm "
+                    "this computer with a code it emails you.\n\nA SaraPlus "
+                    "window opens next: sign in there and type that code, then "
+                    "leave it until this setup says done.")
+    except Exception:  # noqa: BLE001 -- the dialog is a courtesy
+        pass
+    proc = subprocess.run(
+        [str(venv_python()), "-m", "automations.icd_alerts.sara_signin"],
+        cwd=str(APP_DIR))
     return proc.returncode == 0
 
 

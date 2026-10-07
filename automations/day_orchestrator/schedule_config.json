@@ -2888,6 +2888,7 @@
   },
   "probe_quantum_views": {
    "on_scheduler": true,
+   "hand_run_only": true,
    "_note": "MANUAL, READ-ONLY: `lucy rerun probe_quantum_views --inspect` lists every view of the AT&T Quantum Fiber Sales Tracker workbook (RES-LumenSalesTrackervMZ) via the vizportal API, scrapes each view's Download \u2192 Data grid and prints its columns + the rows matching --needle (default padilla / azul = the Angel Padilla tab, ex-Shealey Miller). Question it answers (Eve 2026-09-14): does any Quantum view give the Office Metrics by WEEK, or only 30-day rolling? Writes no Sheet, sends nothing, own browser profile. Read the result with `lucy logtail rerun probe_quantum_views 400`. weekdays [] = manual only.",
    "display_name": "Probe Quantum Fiber views",
    "source_type": "local",
@@ -3987,6 +3988,47 @@
     "type": "manifest",
     "report_id": "daily-focus"
    }
+  },
+  "daily_eod_appstream": {
+   "hand_run_only": true,
+   "on_scheduler": false,
+   "_note": "Camila 2026-10-07: replaces the 'DAILY EOD APPSTREAM' sheet Perli fills by hand. A DIA VENCIDO: reports YESTERDAY (Monday -> Saturday), columns accumulate Mon..yesterday + WEEKLY TOTALS; per office (roster = newest block of 'Interviewers Retention (Interviewer)', ARS Management 2.0), AppStream p=701: 1st B / 1st S / % / B to 2nd / % / 2nd B / 2nd S / %, 2nd round % green >=50 red <50, plus a list of the red offices. ONE email, and the same numbers kept in ARS Management 2.0 -> tab 'Daily EOD AppStream' (one block per week, newest on top, current week rewritten each run; Perli's 'EOD Report ApplicantStream' tab is never touched). --no-email writes the Sheet only. Real clock = deploy/com.alphalete.daily-eod-appstream.plist on Lucy 1 (fires 16-19 local Mon-Sat; --scheduled sends only at 18:00 CENTRAL = 20:00 Argentina now, 21:00 after Nov 1, Eve's call). LIVE since 2026-10-07: the scheduled pass sends --production (Camila + Eve copied); a bare hand run mails Eve only. `lucy rerun daily_eod_appstream` (add --dry-run to send nothing).",
+   "display_name": "Daily EOD AppStream — 2nd round retention email",
+   "source_type": "appstream",
+   "command": [
+    "automations.daily_eod_appstream.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "freshness_target": null,
+   "priority": "P2",
+   "timeout_minutes": 45,
+   "verify": null
+  },
+  "install_daily_eod_appstream_agent": {
+   "on_scheduler": true,
+   "_note": "NOT a report — one-shot LaunchAgent installer, run via `lucy rerun install_daily_eod_appstream_agent` on Lucy 1. Bootstraps com.alphalete.daily-eod-appstream from the committed plist (Camila's 6 PM Central email, Mon-Sat). Must land on a machine holding the AppStream session.",
+   "display_name": "Install daily-eod-appstream agent",
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "daily-eod-appstream"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "source_type": "local",
+   "timeout_minutes": 5,
+   "verify": null
   },
   "below_the_mark": {
    "hand_run_only": true,
@@ -6851,7 +6893,8 @@
    "priority": "P2",
    "freshness_target": null,
    "depends_on": [],
-   "timeout_minutes": 30,
+   "timeout_minutes": 60,
+   "_timeout_note": "30 -> 60 on 2026-10-07. Killed at 30m on 10/7 while on the LAST office (eveliz, onboarded 10/5): five offices no longer fit in 30. Nothing was hung (no orphan Chrome). b2b_metrics + att_churn depend_on this, so a kill here also holds them back. RAISE THIS WHEN AN OFFICE IS ADDED - budget ~10 min per office.",
    "verify": {
     "type": "manifest",
     "report_id": "vantura-churn"
@@ -7273,6 +7316,8 @@
    "verify": {
     "type": "not_configured"
    },
+   "close_on": "exit_zero",
+   "_close_on_note": "Eve 2026-10-06: a clean exit means the review link is up in #revision-emails. The email itself goes out later on a checkmark via the watcher, not this run.",
    "timeout_minutes": 20
   },
   "hc_retail_daily": {
@@ -10816,7 +10861,7 @@
   "jamis_metrics": {
    "order": 7.9,
    "on_scheduler": true,
-   "display_name": "Jamis's B2B Metrics (Jamis-leaders)",
+   "display_name": "Jamis's B2B Metrics (jamis-sales)",
    "source_type": "tableau",
    "data_sources": [
     "tableau:order_log"
@@ -10848,9 +10893,48 @@
     "type": "manifest",
     "report_id": "jamis_metrics"
    },
-   "_note": "Office metrics for jamis -> Jamis-leaders. Onboarded via office_onboarding on 2026-07-31 22:33 UTC. Machine Lucy 2 (view owners).",
+   "_note": "Office metrics for jamis -> #jamis-sales (moved from Jamis-leaders 2026-10-06, Megan). Onboarded via office_onboarding on 2026-07-31 22:33 UTC. Machine Lucy 2 (view owners).",
    "_onboarded": true,
    "machine": "Lucy 2"
+  },
+  "luke_metrics": {
+   "order": 7.91,
+   "machine": "Lucy 2",
+   "on_scheduler": true,
+   "display_name": "Luke's B2B Metrics (takeoff-b2b)",
+   "source_type": "tableau",
+   "data_sources": [
+    "tableau:order_log"
+   ],
+   "command": [
+    "automations.b2b_metrics.runner"
+   ],
+   "base_args": [
+    "--office",
+    "luke",
+    "--post"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P1",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 60,
+   "verify": {
+    "type": "manifest",
+    "report_id": "luke_metrics"
+   },
+   "_onboarded": true,
+   "_note": "B2B metrics for luke (Luke Baldwin, Takeoff Enterprises, Pacific). Wired by hand 2026-10-06 (no form), modelled on jamis_metrics. on_scheduler false until a dry run on Lucy 2 proves it; channel comes from his Lucy ECO sign-up; per-office Tableau views pending Carlos. Hub: the consolidated b2b-metrics card."
   },
   "trang_metrics": {
    "order": 35,
@@ -13011,6 +13095,84 @@
    "_note": "Office metrics for jacob -> rockstar-world-sales (C0BMX2V2XRT). Wired by hand 2026-09-28 (no form). AT&T Fiber D2D office (campaign fiber_d2d), all 11 D2D boards. Switched ON 2026-09-28 after the Lucy 1 dry run: 9 boards with real data (499-row order log, 22/18 churn reps, 16-rep ongoing cancel, ABP 28/28, Tableau Metrics); knocks + 6+ were REAL zeros for Sunday 9/27 (6+ now posts a one-line 'none' only when the export proves the day loaded). Sheet 'Jacob Dover - Lucy Metrics (Rockstarworld)' 1CeF9wVJt720jA0w2s_Zw1fO51PajDOtWVsS2EYqtMT0 copied from the Master Metrics Templates.",
    "_onboarded": true
   },
+  "jenny_metrics": {
+   "order": 36.7,
+   "machine": "Lucy 4",
+   "on_scheduler": true,
+   "display_name": "Jenny's Daily Metrics (figspire)",
+   "source_type": "tableau",
+   "data_sources": [
+    "tableau:order_log"
+   ],
+   "command": [
+    "automations.office_metrics.runner"
+   ],
+   "base_args": [
+    "--office",
+    "jenny",
+    "--live"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P1",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 60,
+   "verify": {
+    "type": "manifest",
+    "report_id": "jenny_metrics"
+   },
+   "_onboarded": true,
+   "_note": "Office metrics for jenny (Jennifer Figueroa, Figspire Management, Eastern). Wired by hand 2026-10-06 (no form). AT&T Fiber D2D like jacob. on_scheduler false until a dry run on Lucy 4 proves data on every board; channel comes from her Lucy ECO sign-up. Hub: the shared office-metrics card."
+  },
+  "tre_metrics": {
+   "order": 36.8,
+   "machine": "Lucy 4",
+   "on_scheduler": false,
+   "display_name": "Tre's Daily Metrics (channel from ECO sign-up)",
+   "source_type": "tableau",
+   "data_sources": [
+    "tableau:order_log"
+   ],
+   "command": [
+    "automations.office_metrics.runner"
+   ],
+   "base_args": [
+    "--office",
+    "tre",
+    "--live"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P1",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 60,
+   "verify": {
+    "type": "manifest",
+    "report_id": "tre_metrics"
+   },
+   "_onboarded": true,
+   "_note": "Office metrics for tre (Tre Mitchell = AppStream/OV owner Lamar Mitchell III, Mission III Management, Houston, Central). Wired by hand 2026-10-07 (no form). AT&T Fiber D2D like jacob/jenny. on_scheduler false until a dry run on Lucy 4 proves data on every board; channel comes from his Lucy ECO sign-up. Sheet 'Lucy Metrics (Mission III Management)' 1rso9lZwzKci_9QllltsdROeKEoFWEaly-VvasBywR9E copied from the Master Metrics Templates. Hub: the shared office-metrics card."
+  },
   "icd_knocks_board_now": {
    "on_scheduler": false,
    "_off_scheduler_note": "Post ONE office's knocks board right now, to every approved destination, ignoring cadence and field hours: `lucy rerun icd_knocks_board_now --office aya --machine \"Lucy 1\"`. Built 2026-09-22 (Megan: 'send Aya's final knock board now please') -- the day's last board had gone from Lucy 3, which her group does not receive. Lucy 1 because texts must leave from there.",
@@ -13180,28 +13342,6 @@
    "priority": "P2",
    "freshness_target": null,
    "depends_on": []
-  },
-  "nds_activation_by_rep": {
-   "on_scheduler": false,
-   "_note": "MANUAL-ONLY (Carlos 2026-10-05): Activation Rate by Rep for an NDS owner (default Khalil Mansour), computed from the NDS-SN (RES-ATT-OOF) ORDER LOG .csv export with our own 60-day Order Date window (the view's saved window is pinned stale). sold = all lines incl cancels; activated = DTR Active Date present or status Posted/Disconnected; bands = the B2B board's (vantura_churn.fill.BANDS). --push base64s the PNG to the control sheet 'NDS AR Shot'; --dm U...,U... DMs it as Lucy. `lucy rerun nds_activation_by_rep` then `lucy rerun nds_activation_by_rep --dm <ids>` once the shot is verified.",
-   "display_name": "NDS Activation Rate by Rep (Khalil)",
-   "source_type": "local",
-   "data_sources": [],
-   "command": [
-    "automations.nds_activation_by_rep.run"
-   ],
-   "base_args": [
-    "--push"
-   ],
-   "cadence": {
-    "weekdays": []
-   },
-   "priority": "P3",
-   "freshness_target": null,
-   "depends_on": [],
-   "verify": null,
-   "timeout_minutes": 20,
-   "machine": "Lucy 2"
   }
  },
  "read_only_standalone": {

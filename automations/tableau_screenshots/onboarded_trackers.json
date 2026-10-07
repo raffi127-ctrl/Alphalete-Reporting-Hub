@@ -259,5 +259,60 @@
       "quantum_fiber",
       "vzftr"
     ]
+  },
+  {
+    "key": "jenny",
+    "label": "#figspire",
+    "owner": "Jennifer Figueroa",
+    "channel_ids": [
+      "C0C7807CHMG"
+    ],
+    "trackers": [
+      "att_country",
+      "att_country_internet_only",
+      "nds",
+      "b2b_att_country",
+      "b2b_att_country_cru",
+      "b2b_d2d_consolidated",
+      "b2b_box",
+      "quantum_fiber",
+      "vzftr"
+    ]
+  },
+  {
+    "key": "luke",
+    "label": "#takeoff-b2b",
+    "owner": "Luke Baldwin",
+    "channel_ids": [
+      "C0C76005FJA"
+    ],
+    "trackers": [
+      "att_country",
+      "att_country_internet_only",
+      "nds",
+      "b2b_att_country",
+      "b2b_att_country_cru",
+      "b2b_d2d_consolidated",
+      "b2b_box",
+      "quantum_fiber",
+      "vzftr"
+    ]
+  },
+  {
+    "key": "tre",
+    "label": "Tre's Local Office (channel from ECO sign-up)",
+    "owner": "Tre Mitchell",
+    "channel_ids": [],
+    "trackers": [
+      "att_country",
+      "att_country_internet_only",
+      "nds",
+      "b2b_att_country",
+      "b2b_att_country_cru",
+      "b2b_d2d_consolidated",
+      "b2b_box",
+      "quantum_fiber",
+      "vzftr"
+    ]
   }
 ]

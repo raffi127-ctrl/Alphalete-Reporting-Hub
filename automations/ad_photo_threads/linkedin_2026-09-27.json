@@ -1,0 +1,457 @@
+{
+ "week_start": "2026-09-27",
+ "week_end": "2026-10-03",
+ "source": "AppStream Retention > Sent to Call List export (Raf, Slack 10/6)",
+ "candidates": [
+  {
+   "first": "Sophia",
+   "last": "Montes",
+   "sent": "09/27/2026",
+   "ad": "Junior Marketing - Entry Level"
+  },
+  {
+   "first": "Daisy",
+   "last": "Yu",
+   "sent": "10/02/2026",
+   "ad": "Junior Marketing - Entry Level"
+  },
+  {
+   "first": "Noah",
+   "last": "Nothrop",
+   "sent": "09/27/2026",
+   "ad": "Junior Marketing Trainee - Entry Level"
+  },
+  {
+   "first": "Julian",
+   "last": "Cisneros",
+   "sent": "09/27/2026",
+   "ad": "Sales and Marketing - Entry Level"
+  },
+  {
+   "first": "Alivia",
+   "last": "Koch",
+   "sent": "09/28/2026",
+   "ad": "Entry Level Marketing Rep"
+  },
+  {
+   "first": "Gabriel",
+   "last": "Gillespie",
+   "sent": "09/28/2026",
+   "ad": "Junior Marketing and Sales - Entry Level"
+  },
+  {
+   "first": "Victoria",
+   "last": "Valdez",
+   "sent": "09/28/2026",
+   "ad": "Marketing Trainee - Entry Level"
+  },
+  {
+   "first": "Mohammed",
+   "last": "Hani",
+   "sent": "09/28/2026",
+   "ad": "Junior Marketing and Sales - Entry Level"
+  },
+  {
+   "first": "Veronica",
+   "last": "James",
+   "sent": "09/28/2026",
+   "ad": "Marketing Representative - Entry Level"
+  },
+  {
+   "first": "Rebekah",
+   "last": "Kurecka",
+   "sent": "09/28/2026",
+   "ad": "Marketing and Promotions - Entry Level"
+  },
+  {
+   "first": "Elsie",
+   "last": "Brown",
+   "sent": "09/28/2026",
+   "ad": "Marketing Campaigns - Entry Level"
+  },
+  {
+   "first": "Tyler",
+   "last": "Moates",
+   "sent": "09/28/2026",
+   "ad": "Junior Marketing and Sales - Entry Level"
+  },
+  {
+   "first": "Ziyan",
+   "last": "Li",
+   "sent": "09/28/2026",
+   "ad": "Entry Level Marketing"
+  },
+  {
+   "first": "Bryan",
+   "last": "Murillo",
+   "sent": "09/28/2026",
+   "ad": "Entry Level Marketing Rep"
+  },
+  {
+   "first": "Ella",
+   "last": "Lambert",
+   "sent": "09/28/2026",
+   "ad": "Marketing Campaigns - Entry Level"
+  },
+  {
+   "first": "Jennifer",
+   "last": "Fobe",
+   "sent": "09/29/2026",
+   "ad": "Junior Marketing and Sales - Entry Level"
+  },
+  {
+   "first": "Vivian",
+   "last": "Akyirem",
+   "sent": "09/29/2026",
+   "ad": "Marketing and Promotions - Entry Level"
+  },
+  {
+   "first": "Sarah",
+   "last": "Coxon",
+   "sent": "09/29/2026",
+   "ad": "Entry Level Marketing Rep"
+  },
+  {
+   "first": "Darel",
+   "last": "Tayang",
+   "sent": "09/29/2026",
+   "ad": "Marketing and Promotions - Entry Level"
+  },
+  {
+   "first": "Cameron",
+   "last": "Andrews",
+   "sent": "09/30/2026",
+   "ad": "Marketing Representative - Entry Level"
+  },
+  {
+   "first": "Joseph",
+   "last": "Nagus",
+   "sent": "09/30/2026",
+   "ad": "Entry Level Marketing Rep"
+  },
+  {
+   "first": "Silas",
+   "last": "Fuchs",
+   "sent": "09/30/2026",
+   "ad": "Junior Marketing Trainee - Entry Level"
+  },
+  {
+   "first": "Shourya",
+   "last": "Kasliwal",
+   "sent": "09/30/2026",
+   "ad": "Junior Marketing and Sales - Entry Level"
+  },
+  {
+   "first": "Hema Venkata Sai",
+   "last": "Teja",
+   "sent": "09/30/2026",
+   "ad": "Junior Marketing - Entry Level"
+  },
+  {
+   "first": "Davon",
+   "last": "Graham Ii",
+   "sent": "09/30/2026",
+   "ad": "Sales and Marketing - Entry Level"
+  },
+  {
+   "first": "Natalia",
+   "last": "Prias Marzan",
+   "sent": "10/01/2026",
+   "ad": "Marketing Campaigns - Entry Level"
+  },
+  {
+   "first": "Jared",
+   "last": "Keck",
+   "sent": "10/01/2026",
+   "ad": "Sales and Marketing - Entry Level"
+  },
+  {
+   "first": "Megan",
+   "last": "Wartell",
+   "sent": "10/01/2026",
+   "ad": "Marketing Trainee - Entry Level"
+  },
+  {
+   "first": "Kimmy",
+   "last": "Tran",
+   "sent": "10/01/2026",
+   "ad": "Marketing Trainee - Entry Level"
+  },
+  {
+   "first": "Arielle",
+   "last": "Sumners",
+   "sent": "10/01/2026",
+   "ad": "Junior Marketing - Entry Level"
+  },
+  {
+   "first": "Mohammed",
+   "last": "Sifatullah",
+   "sent": "10/01/2026",
+   "ad": "Sales and Marketing - Entry Level"
+  },
+  {
+   "first": "Tyshon",
+   "last": "Baker",
+   "sent": "10/01/2026",
+   "ad": "Marketing Representative - Entry Level"
+  },
+  {
+   "first": "Maheen",
+   "last": "Nadeem",
+   "sent": "10/02/2026",
+   "ad": "Marketing Trainee - Entry Level"
+  },
+  {
+   "first": "Davontay",
+   "last": "Kennedy",
+   "sent": "10/02/2026",
+   "ad": "Junior Marketing - Entry Level"
+  },
+  {
+   "first": "Jaylen",
+   "last": "Livingston",
+   "sent": "10/02/2026",
+   "ad": "Sales and Marketing - Entry Level"
+  },
+  {
+   "first": "Abby",
+   "last": "Seton",
+   "sent": "10/02/2026",
+   "ad": "Junior Marketing and Sales - Entry Level"
+  },
+  {
+   "first": "Ahsan",
+   "last": "Ahmed",
+   "sent": "10/03/2026",
+   "ad": "Junior Marketing Trainee - Entry Level"
+  },
+  {
+   "first": "Alejandra",
+   "last": "Villegas",
+   "sent": "09/27/2026",
+   "ad": "Marketing and Promotions - Entry Level"
+  },
+  {
+   "first": "Seoyoung",
+   "last": "Kong",
+   "sent": "09/27/2026",
+   "ad": "Sales and Marketing - Entry Level"
+  },
+  {
+   "first": "Baylor",
+   "last": "Coffman",
+   "sent": "09/28/2026",
+   "ad": "Junior Marketing and Sales - Entry Level"
+  },
+  {
+   "first": "Marlee",
+   "last": "Garcia",
+   "sent": "09/28/2026",
+   "ad": "Junior Marketing and Sales - Entry Level"
+  },
+  {
+   "first": "Raghuveer",
+   "last": "Tanna",
+   "sent": "09/28/2026",
+   "ad": "Marketing and Promotions - Entry Level"
+  },
+  {
+   "first": "Daniel",
+   "last": "Gil - Cardenas",
+   "sent": "09/28/2026",
+   "ad": "Marketing Campaigns - Entry Level"
+  },
+  {
+   "first": "Jocelyne",
+   "last": "Patino De Leon",
+   "sent": "09/28/2026",
+   "ad": "Marketing Representative - Entry Level"
+  },
+  {
+   "first": "Ashleigh",
+   "last": "Roder",
+   "sent": "09/28/2026",
+   "ad": "Entry Level Marketing"
+  },
+  {
+   "first": "Giovanni",
+   "last": "Salas",
+   "sent": "09/28/2026",
+   "ad": "Junior Marketing Trainee - Entry Level"
+  },
+  {
+   "first": "Rabia",
+   "last": "Kounta",
+   "sent": "09/29/2026",
+   "ad": "Entry Level Marketing"
+  },
+  {
+   "first": "Arzoo",
+   "last": "Jha",
+   "sent": "09/29/2026",
+   "ad": "Sales and Marketing - Entry Level"
+  },
+  {
+   "first": "Jefferson",
+   "last": "Zulmar",
+   "sent": "09/29/2026",
+   "ad": "Junior Marketing and Sales - Entry Level"
+  },
+  {
+   "first": "Jake",
+   "last": "Randall",
+   "sent": "09/29/2026",
+   "ad": "Sales and Marketing - Entry Level"
+  },
+  {
+   "first": "Hannah",
+   "last": "Wiltgen",
+   "sent": "09/29/2026",
+   "ad": "Junior Marketing and Sales - Entry Level"
+  },
+  {
+   "first": "Mohammed",
+   "last": "Sajet",
+   "sent": "09/29/2026",
+   "ad": "Junior Marketing and Sales - Entry Level"
+  },
+  {
+   "first": "Amber",
+   "last": "Eaglin",
+   "sent": "09/29/2026",
+   "ad": "Marketing Campaigns - Entry Level"
+  },
+  {
+   "first": "Tahniyat",
+   "last": "Syeda",
+   "sent": "09/29/2026",
+   "ad": "Marketing Representative - Entry Level"
+  },
+  {
+   "first": "Jackson",
+   "last": "Ciolek",
+   "sent": "09/29/2026",
+   "ad": "Entry Level Marketing Rep"
+  },
+  {
+   "first": "Lelia",
+   "last": "Clemmons",
+   "sent": "09/29/2026",
+   "ad": "Entry Level Marketing Rep"
+  },
+  {
+   "first": "Javier",
+   "last": "Orta",
+   "sent": "09/29/2026",
+   "ad": "Marketing and Promotions - Entry Level"
+  },
+  {
+   "first": "Aly",
+   "last": "Bean",
+   "sent": "09/29/2026",
+   "ad": "Marketing Campaigns - Entry Level"
+  },
+  {
+   "first": "Christopher",
+   "last": "Ganley",
+   "sent": "09/30/2026",
+   "ad": "Junior Marketing and Sales - Entry Level"
+  },
+  {
+   "first": "Marisol",
+   "last": "Allala",
+   "sent": "09/30/2026",
+   "ad": "Junior Marketing and Sales - Entry Level"
+  },
+  {
+   "first": "Ashley",
+   "last": "Bass",
+   "sent": "09/30/2026",
+   "ad": "Junior Marketing - Entry Level"
+  },
+  {
+   "first": "Venaisa",
+   "last": "Beckford",
+   "sent": "09/30/2026",
+   "ad": "Marketing Representative - Entry Level"
+  },
+  {
+   "first": "Neketha",
+   "last": "Suresh",
+   "sent": "09/30/2026",
+   "ad": "Junior Marketing Trainee - Entry Level"
+  },
+  {
+   "first": "Omar",
+   "last": "Hernandez",
+   "sent": "09/30/2026",
+   "ad": "Sales and Marketing - Entry Level"
+  },
+  {
+   "first": "Olivia",
+   "last": "Wilson",
+   "sent": "09/30/2026",
+   "ad": "Entry Level Marketing Rep"
+  },
+  {
+   "first": "Riley",
+   "last": "Birkenholtz",
+   "sent": "09/30/2026",
+   "ad": "Junior Marketing - Entry Level"
+  },
+  {
+   "first": "Tsedey",
+   "last": "Nidaw",
+   "sent": "09/30/2026",
+   "ad": "Entry Level Marketing Rep"
+  },
+  {
+   "first": "Lena",
+   "last": "Viramontes",
+   "sent": "09/30/2026",
+   "ad": "Marketing Campaigns - Entry Level"
+  },
+  {
+   "first": "Steven",
+   "last": "Nguyen",
+   "sent": "10/01/2026",
+   "ad": "Marketing Campaigns - Entry Level"
+  },
+  {
+   "first": "Kristina",
+   "last": "Ibeh",
+   "sent": "10/01/2026",
+   "ad": "Marketing Trainee - Entry Level"
+  },
+  {
+   "first": "Maxwell",
+   "last": "Stewart",
+   "sent": "10/01/2026",
+   "ad": "Sales and Marketing - Entry Level"
+  },
+  {
+   "first": "Amanda",
+   "last": "Kehoe",
+   "sent": "10/01/2026",
+   "ad": "Marketing Campaigns - Entry Level"
+  },
+  {
+   "first": "Sinam",
+   "last": "Pokhrel",
+   "sent": "10/02/2026",
+   "ad": "Junior Marketing and Sales - Entry Level"
+  },
+  {
+   "first": "Camila",
+   "last": "Rodebaugh",
+   "sent": "10/02/2026",
+   "ad": "Junior Marketing and Sales - Entry Level"
+  },
+  {
+   "first": "Alexis",
+   "last": "Diaz",
+   "sent": "10/03/2026",
+   "ad": "Entry Level Marketing Rep"
+  }
+ ]
+}

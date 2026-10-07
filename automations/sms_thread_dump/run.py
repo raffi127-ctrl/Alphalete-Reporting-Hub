@@ -320,10 +320,14 @@ def _write_tab(records, meta: str, office: str):
     return tab, len(rows)
 
 
-def _scrape_office(page, tok, office, dates, date_strs, limit, bookings_only=False):
+def _scrape_office(page, tok, office, dates, date_strs, limit, bookings_only=False,
+                   misses=None):
     """Everything for ONE office: switch to it, walk each date's table, scrape.
     Dates in different calendar weeks are handled — the banner is re-checked
-    per date, so a window that straddles a Sunday still reads clean."""
+    per date, so a window that straddles a Sunday still reads clean.
+
+    `misses`, when given, collects every day whose table showed fewer rows
+    than its own 'Applicants: N' header — the read is short there."""
     page.goto("https://www.applicantstream.com/index.cfm?p=104&rqst={}&newOfficeId={}"
               .format(tok, office))
     page.wait_for_load_state("networkidle")
@@ -344,6 +348,9 @@ def _scrape_office(page, tok, office, dates, date_strs, limit, bookings_only=Fal
         rows = _day_rows(page, ds)
         print("[sms_dump] {} {}: header says {}, table rows {}"
               .format(office, ds, n, len(rows)), flush=True)
+        if misses is not None and len(rows) < n:
+            misses.append("{}: table showed {} of {} applicants".format(
+                ds, len(rows), n))
         for row in rows:
             if limit and scraped >= limit:
                 break
@@ -394,6 +401,47 @@ def _scrape_office(page, tok, office, dates, date_strs, limit, bookings_only=Fal
     return records
 
 
+REPORT_ID = "sms_thread_dump"
+
+
+def office_holes(records, day_misses, bookings_only):
+    """Why this office's dump isn't COMPLETE — [] when it is.
+
+    A day whose table is shorter than its own header, or an applicant whose
+    chat dialog threw, leaves people out of the dump; a dump missing people
+    reads as "nobody texted them". 'no chat table' alone is not counted: an
+    applicant with no texts at all shows exactly that."""
+    holes = list(day_misses)
+    if not bookings_only:
+        broke = [r for r in records
+                 if r.get("error") and r["error"] != "no chat table"]
+        if broke:
+            holes.append("{} applicant(s) whose chat could not be read: {}"
+                         .format(len(broke),
+                                 ", ".join(r.get("name", "?") for r in broke[:5])))
+    return holes
+
+
+def record_delivery(done, bad, retry_args):
+    """Today's run manifest — the proof a clean run closes its ticket with.
+
+    2026-10-07: open since 9/27 as "ran clean, but nothing can confirm it
+    DELIVERED". Eve: an exit-0 rule isn't enough, runs often leave info
+    unfilled. So an office only counts when every booking the calendar lists
+    is in its tab with a readable chat; anything short is a named failed
+    part and the ticket stays open. Never raises."""
+    try:
+        from automations.shared import run_manifest
+        run_manifest.write_manifest(
+            REPORT_ID, succeeded=done, failed=bad,
+            retry_args=retry_args if bad else [],
+            note="{} office(s) complete, {} not".format(len(done), len(bad)))
+    except Exception as e:  # noqa: BLE001
+        print("[sms_dump] couldn't write the run manifest ({}: {}) — the tabs "
+              "are written, but the ticket won't close itself".format(
+                  type(e).__name__, e), flush=True)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--office", default="11580",
@@ -429,18 +477,21 @@ def main(argv=None):
     date_strs = [_fmt(d) for d in dates]
     print("[sms_dump] offices {}, dates {}".format(offices, date_strs), flush=True)
 
-    per_office = {}
+    per_office, day_misses = {}, {}
     with appstream_direct_session(verbose=True) as page:
         tok = _rqst(page)
         if not tok:
             raise RuntimeError("no rqst token on the console page")
         for office in offices:
+            day_misses[office] = []
             per_office[office] = _scrape_office(page, tok, office, dates,
                                                 date_strs, a.limit,
-                                                bookings_only=a.bookings_only)
+                                                bookings_only=a.bookings_only,
+                                                misses=day_misses[office])
 
     OUTPUT_DIR.mkdir(exist_ok=True)
     rc = 0
+    done, bad, bad_offices = [], [], []
     for office, records in per_office.items():
         (OUTPUT_DIR / "sms_thread_dump_{}.json".format(office)).write_text(
             json.dumps(records, indent=1, ensure_ascii=False))
@@ -454,11 +505,38 @@ def main(argv=None):
         if not records:
             print("[sms_dump] {}: nothing scraped — tab left alone".format(office),
                   flush=True)
+            bad.append("{}: nothing scraped".format(office))
+            bad_offices.append(office)
             rc = 1
             continue
-        tab, nrows = _write_tab(records, meta, office)
+        try:
+            tab, nrows = _write_tab(records, meta, office)
+        except Exception as e:  # noqa: BLE001 — the next office still writes
+            print("[sms_dump] {}: sheet write FAILED {}: {}".format(
+                office, type(e).__name__, e), flush=True)
+            bad.append("{}: sheet write failed — {}".format(
+                office, type(e).__name__))
+            bad_offices.append(office)
+            rc = 1
+            continue
         print("[sms_dump] {}: {} applicants ({} with SMS), {} rows → tab '{}'"
               .format(office, len(records), with_thread, nrows, tab), flush=True)
+        holes = office_holes(records, day_misses.get(office, []),
+                             a.bookings_only)
+        for h in holes:
+            print("[sms_dump] {}: INCOMPLETE — {}".format(office, h), flush=True)
+            bad.append("{}: {}".format(office, h))
+        if holes:
+            bad_offices.append(office)
+        else:
+            done.append(office)
+    # A --limit run is a probe, never the full read: no proof either way.
+    if not a.dry_run and not a.limit:
+        retry = ["--office", ",".join(bad_offices),
+                 "--dates", ",".join(date_strs)]
+        if a.bookings_only:
+            retry.append("--bookings-only")
+        record_delivery(done, bad, retry)
     return rc
 
 

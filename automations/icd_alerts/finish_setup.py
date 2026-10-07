@@ -225,15 +225,60 @@ def _resume_push(log) -> str:
         C.save_appstream_creds(user, pwd)
     log("")
     log("  Checking your AppStream sign-in (about a minute).")
-    if RP.check_login(log=log) != 0:
+    try:
+        rc = RP.check_login(log=log)
+    except Exception as e:  # noqa: BLE001 — said in full, and sent to us
+        return _resume_push_crashed(RP, "signing in to AppStream", e, log)
+    if rc == RP.NO_CHROME:
+        RP.report_setup_failure("Lucy's Chrome would not open on this "
+                                "computer, so the AppStream login was never "
+                                "tried", log=log)
+        return "still needs Lucy's Chrome to open"
+    if rc != 0:
+        RP.report_setup_failure("Lucy could not confirm the AppStream office "
+                                "page after signing in (page details in the "
+                                "thread)",
+                                getattr(RP, "LAST_SIGNIN_PAGE", ""), log=log)
         return "still needs signing in"
     if not RP.extension_installed():
         log("")
         log("  Lucy's Chrome needs the Resume Helper extension once.")
         log("  Click 'Add to Chrome' in the window that opens.")
-        if not RP.setup_extension(log=log):
+        try:
+            added = RP.setup_extension(log=log)
+        except Exception as e:  # noqa: BLE001
+            return _resume_push_crashed(RP, "adding Resume Helper", e, log)
+        if not added:
+            RP.report_setup_failure("Resume Helper was not added to Lucy's "
+                                    "Chrome", log=log)
             return "still needs Resume Helper added"
     return "done"
+
+
+def _resume_push_crashed(RP, step: str, e: BaseException, log) -> str:
+    """Say what really happened, and send it to us.
+
+    "failed (Error)" was all Drew's screen said on 2026-10-06 -- the reason
+    was in the exception's message, which nobody printed and nobody sent.
+    """
+    import traceback
+    reason, hint = RP.explain_failure(e)
+    log("")
+    log("  Resume pushing stopped while %s:" % step)
+    for line in (str(e).strip() or type(e).__name__).splitlines()[:12]:
+        log("    " + line)
+    if hint:
+        log("  " + hint)
+    RP.report_setup_failure("%s (while %s)" % (reason, step),
+                            traceback.format_exc(), log=log)
+    return "failed — %s" % reason
+
+
+def _short_reason(e: BaseException) -> str:
+    """The first line of what went wrong, not just its class name."""
+    first = (str(e).strip().splitlines() or [""])[0].strip()
+    return "%s: %s" % (type(e).__name__, first[:120]) if first \
+        else type(e).__name__
 
 
 def run(log=print) -> int:
@@ -255,7 +300,11 @@ def run(log=print) -> int:
         except Exception as e:  # noqa: BLE001 — ONE STEP MUST NOT COST THE
             # OTHERS. A machine that needs two things fixed and gets one
             # would look fixed, and the second would be found the slow way.
-            results.append((name, "failed (%s)" % type(e).__name__))
+            # THE MESSAGE, NOT JUST THE CLASS: "failed (Error)" told nobody
+            # anything (Drew, 2026-10-06).
+            log("")
+            log("  %s stopped: %s" % (name, str(e).strip() or type(e).__name__))
+            results.append((name, "failed — %s" % _short_reason(e)))
 
     log("")
     log("  " + "-" * 44)

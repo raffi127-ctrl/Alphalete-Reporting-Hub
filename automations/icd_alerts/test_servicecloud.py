@@ -474,11 +474,16 @@ class TheFixIsDifferentForEachSystem(unittest.TestCase):
         self.assertNotIn("new password", m,
                          "it tells them to change a password they cannot fix")
 
-    def test_saraplus_sends_them_to_the_installer(self):
+    def test_saraplus_sends_them_to_the_code_window(self):
+        # SINCE 2026-10-06 only the emailed-code wall is filed as
+        # signin-saraplus; a changed password stays a sweep fault. So this
+        # one names the code and setup.html, and must not blame the password.
         m = self._msg("saraplus")
-        self.assertIn("new password", m)
+        self.assertIn("code", m)
+        self.assertIn("setup.html", m)
+        self.assertNotIn("new password", m)
         self.assertNotIn("signin.html", m,
-                         "a browser sign-in fixes nothing for SaraPlus")
+                         "that page is Service Cloud's, not SaraPlus's")
 
     def test_ownerville_names_the_board_not_the_sales(self):
         m = self._msg("ownerville")

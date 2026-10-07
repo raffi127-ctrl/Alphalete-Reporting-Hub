@@ -81,6 +81,9 @@ GREYBG = {"red": 0.9, "green": 0.9, "blue": 0.9}
 
 # ------------------------------------------------------------------ scrape
 def _load_week(page, sunday):
+    """Open p=701 on `sunday`'s week. Returns False when the week could not
+    be set — the page then shows ANOTHER week, and its rows must not be filed
+    under this one's date."""
     rqst = _rqst(page)
     url = f"https://applicantstream.com/index.cfm?rqst={rqst}&p=701"
     last_err = None
@@ -96,10 +99,12 @@ def _load_week(page, sunday):
     if last_err is not None:
         raise last_err
     _admin_on(page)
+    week_ok = True
     try:
         fo._set_week_and_submit(page, sunday)
     except Exception as e:  # noqa: BLE001
         print(f"  [warn] week set {sunday}: {e}", flush=True)
+        week_ok = False
     page.wait_for_timeout(1200)
     if not page.evaluate("() => !!document.querySelector('tr.adminRow')"):
         _admin_on(page)
@@ -111,6 +116,7 @@ def _load_week(page, sunday):
         except Exception:
             pass
         page.wait_for_timeout(1200)
+    return week_ok
 
 
 def _parse(page):
@@ -150,10 +156,14 @@ def year_weeks(today):
     return out
 
 
-def pull(weeks, offices, verbose=True, base=None):
+def pull(weeks, offices, verbose=True, base=None, misses=None):
     """Scrape the given weeks. base = previously cached raw to merge into,
     so a partial (--recent) pull never clobbers the full-year cache — the
-    per-office checkpoint always writes the merged result."""
+    per-office checkpoint always writes the merged result.
+
+    `misses`, when given, collects (office, why) for every office or week
+    this pull could NOT refresh — the board then still shows the cached
+    numbers for it, which look exactly like fresh ones."""
     from automations.shared.tableau_patchright import appstream_direct_session
     raw = {oid: dict((base or {}).get(oid, {})) for oid, _ in offices}
     with appstream_direct_session(verbose=verbose) as page:
@@ -162,14 +172,30 @@ def pull(weeks, offices, verbose=True, base=None):
         for oid, owner in offices:
             if not fo._switch_office(page, oid, owner, confirm_denial=True):
                 print(f"⚠ cannot reach office {oid} ({owner}) — skipped", flush=True)
+                if misses is not None:
+                    misses.append((owner, "office could not be reached — "
+                                          "board still shows old numbers"))
                 continue
             page.wait_for_timeout(1200)
             for sun in weeks:
-                _load_week(page, sun)
+                if not _load_week(page, sun):
+                    # Keep the cached week rather than file another week's
+                    # rows under this date.
+                    if misses is not None:
+                        misses.append((owner, f"week {sun} could not be set "
+                                              "— not refreshed"))
+                    continue
                 raw[oid][sun.isoformat()] = _parse(page)
+                n = sum(len(s["admins"]) for s in raw[oid][sun.isoformat()].values())
                 if verbose:
-                    n = sum(len(s["admins"]) for s in raw[oid][sun.isoformat()].values())
                     print(f"  {owner} {sun}: {n} admin rows", flush=True)
+                # The week in progress can honestly have nobody on it yet
+                # (a Sunday morning); a finished week with no admin rows
+                # means the admin breakdown never switched on.
+                if (misses is not None and not n
+                        and sun + dt.timedelta(days=6) < dt.date.today()):
+                    misses.append((owner, f"week {sun}: 0 admin rows — the "
+                                          "admin breakdown didn't load"))
             RAW_PATH.parent.mkdir(parents=True, exist_ok=True)
             RAW_PATH.write_text(json.dumps(raw))       # checkpoint per office
     return raw
@@ -526,6 +552,33 @@ def build(raw, weeks, offices, dry=False):
           f"{max_rows} data rows", flush=True)
 
 
+REPORT_ID = "recruiter_stats"
+
+
+def record_delivery(offices, misses):
+    """Today's run manifest — the proof a clean run closes its ticket with.
+
+    2026-10-07: open since 10/3 as "ran clean, but nothing can confirm it
+    DELIVERED". Eve: an exit-0 rule isn't enough, runs often leave info
+    unfilled. Here the trap is the cache: an office that couldn't be reached,
+    or a week whose page didn't switch, still shows LAST run's numbers on the
+    board and looks fresh. Each of those is a named failed part, so the
+    ticket stays open. Never raises."""
+    try:
+        from automations.shared import run_manifest
+        bad_owners = {o for o, _ in misses}
+        run_manifest.write_manifest(
+            REPORT_ID,
+            succeeded=[o for _, o in offices if o not in bad_owners],
+            failed=["{}: {}".format(o, why) for o, why in misses],
+            note="{} office(s) fully refreshed, {} not".format(
+                len(offices) - len(bad_owners), len(bad_owners)))
+    except Exception as e:  # noqa: BLE001
+        print(f"couldn't write the run manifest ({type(e).__name__}: {e}) — "
+              "the board is written, but the ticket won't close itself",
+              flush=True)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="recruiter_stats")
     ap.add_argument("--dry-run", action="store_true")
@@ -543,17 +596,25 @@ def main(argv=None):
     print(f"=== Recruiter Stats — {len(weeks)} weeks "
           f"({weeks[0]}..{weeks[-1]}), {len(OFFICES)} offices ===", flush=True)
 
+    misses = []
+    pulled = True
     if args.no_pull and RAW_PATH.exists():
         raw = json.loads(RAW_PATH.read_text())
+        pulled = False
     elif args.recent and RAW_PATH.exists():
         base = json.loads(RAW_PATH.read_text())
         print(f"(incremental: pulling last {args.recent} week(s), "
               f"keeping {sum(len(w) for w in base.values())} cached office-weeks)",
               flush=True)
-        raw = pull(weeks[-args.recent:], OFFICES, base=base)
+        raw = pull(weeks[-args.recent:], OFFICES, base=base, misses=misses)
     else:
-        raw = pull(weeks, OFFICES)
+        raw = pull(weeks, OFFICES, misses=misses)
     build(raw, weeks, OFFICES, dry=args.dry_run)
+    for owner, why in misses:
+        print(f"INCOMPLETE — {owner}: {why}", flush=True)
+    # A --no-pull rebuild refreshes nothing, so it proves nothing either way.
+    if pulled and not args.dry_run:
+        record_delivery(OFFICES, misses)
     return 0
 
 

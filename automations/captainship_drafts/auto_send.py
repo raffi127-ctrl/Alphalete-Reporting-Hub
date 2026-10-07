@@ -38,9 +38,11 @@ import datetime as dt
 import hashlib
 import io
 import json
+import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
@@ -136,6 +138,65 @@ def mark_local_sent(today: dt.date, keys) -> None:
 
 def _eml(today: dt.date, key: str) -> Path:
     return _OUTPUT_DIR / f"captainship_draft_{key}_{today:%Y%m%d}.eml"
+
+
+# --------------------------------------------------------------------------
+# mientras se arma: salen los que ya terminaron (Eve 2026-10-06)
+# --------------------------------------------------------------------------
+# Un .eml recién escrito puede estar a medio escribir (el .html va después).
+SETTLE_SECONDS = 90
+
+
+def _etime_seconds(etime: str) -> Optional[int]:
+    """`ps -o etime` → segundos: [[dd-]hh:]mm:ss."""
+    try:
+        days, _, rest = etime.strip().rpartition("-")
+        parts = [int(x) for x in rest.split(":")]
+        while len(parts) < 3:
+            parts.insert(0, 0)
+        h, m, s = parts
+        return (int(days) if days else 0) * 86400 + h * 3600 + m * 60 + s
+    except ValueError:
+        return None
+
+
+def build_started(ps_output: Optional[str] = None) -> Optional[float]:
+    """Cuándo arrancó el armado de capitanías que está corriendo (epoch), o None
+    si no hay ninguno / no se pudo leer. El más viejo manda: el agente de las
+    07:15 (`review_gate --ensure-posted`) es el padre de cada `run.py` que lanza,
+    y un .eml escrito antes de que él arrancara puede ser de un intento que
+    estaba mal (Eve 2026-10-06: ese día la cadena de las 4 AM no los dejó)."""
+    if ps_output is None:
+        try:
+            ps_output = subprocess.run(
+                ["ps", "-axo", "pid=,etime=,command="], capture_output=True,
+                text=True, timeout=20).stdout
+        except Exception:  # noqa: BLE001 — sin ps = no se sabe = esperar
+            return None
+    oldest = None
+    for line in ps_output.splitlines():
+        bits = line.split(None, 2)
+        if len(bits) < 3 or "automations.captainship_drafts" not in bits[2]:
+            continue
+        # El chequeo mismo (y lo que lanza para mandar) no es un armado.
+        if bits[0] == str(os.getpid()) or "--check" in bits[2] \
+                or "--send-reviewed" in bits[2]:
+            continue
+        secs = _etime_seconds(bits[1])
+        if secs is not None and (oldest is None or secs > oldest):
+            oldest = secs
+    return None if oldest is None else time.time() - oldest
+
+
+def fresh_from_build(today: dt.date, key: str, since: float,
+                     now: Optional[float] = None) -> bool:
+    """¿El .eml de este capitán lo escribió el armado en curso y ya se asentó?"""
+    p = _eml(today, key)
+    if not p.exists():
+        return False
+    mtime = p.stat().st_mtime
+    now = time.time() if now is None else now
+    return mtime >= since and now - mtime >= SETTLE_SECONDS
 
 
 def eml_sha(today: dt.date, key: str) -> Optional[str]:
@@ -318,15 +379,27 @@ alignment clearly differ from the other boxes of the same kind in this email \
 (looks pasted in from somewhere else), overlapping or clipped text, unreadably \
 small text, a header row that lost its colour band.
 
+5. COPIED NUMBERS (blocker): two sections that measure different things must \
+not show the same figures. Always compare New Internet churn with Wireless \
+churn for the same bucket (0-30, 30, 60, 90): if the REPORT_DAY column of one \
+repeats the other cell for cell (same %, same counts, same reps), that is a \
+blocker — the data source served the wrong view.
+
 ACCEPTED, never an issue: grey notes saying "no data available" or "not \
-available yet"; zero values that are formatted like their neighbours; a \
+available yet"; a Captain Team Stats board under a grey note saying it shows \
+an earlier week because there are no activations yet this week (its tables \
+end on that week, not on REPORT_DAY, and that is correct); zero values that are formatted like their neighbours; a \
 consistent house style you merely would have designed differently.
 
 Report blockers (would refuse to send) and minors (would mention but still \
 send). ok = true when there are no blockers. Refer to images by their number \
 and name the section they sit under. Be concrete: "Cancel Rate box ends on \
 10/3, no 10/4 column", not "dates look off". Write every section name and \
-problem in English, short (one sentence each) — they are posted to Slack as is."""
+problem in English, and keep each problem to ~12 words: say WHAT is wrong, \
+not the proof (no averages, unit counts, per-rep numbers) — they are posted to \
+Slack as is. When several columns or boxes of one section share the same fault, \
+report it ONCE ("NI 0-30/30/60/90 columns for 10/6 copy the Wireless ones"), \
+not once per column."""
 
 
 # The cache of a visual review is keyed by the draft AND the rules it was judged
@@ -395,15 +468,29 @@ def _visual_content(today: dt.date, key: str) -> list:
     return content
 
 
-def visual_review(today: dt.date, key: str, *, client=None) -> dict:
-    """{'ok': bool, 'issues': [...]} — o una excepción si no se pudo revisar."""
+def visual_review(today: dt.date, key: str, *, client=None,
+                  prior: Sequence[str] = ()) -> dict:
+    """{'ok': bool, 'issues': [...]} — o una excepción si no se pudo revisar.
+
+    `prior` = los bloqueos que una revisión anterior de HOY le encontró a este
+    capitán. Se le piden de vuelta uno por uno: el 10/6 Wayne, Chan y Sahil
+    tenían el churn NI copiado de Wireless, se re-armaron con la misma fuente
+    mala, y la segunda mirada (sin saber qué buscar) los dejó salir."""
     if client is None:
         anthropic, client = _api_client()
     else:
         anthropic = None
     body = {"output_config": {"effort": "high", "format": {
         "type": "json_schema", "schema": _SCHEMA}}}
-    messages = [{"role": "user", "content": _visual_content(today, key)}]
+    content = _visual_content(today, key)
+    if prior:
+        content.insert(1, {"type": "text", "text": (
+            "AN EARLIER REVIEW OF THIS REPORT TODAY FOUND THESE BLOCKERS. It was "
+            "rebuilt since, but a rebuild re-reads the same sources and often "
+            "fixes nothing. Check each one again specifically; if it is still "
+            "there, report it again as a blocker:\n- "
+            + "\n- ".join(prior))})
+    messages = [{"role": "user", "content": content}]
     try:
         resp = client.messages.create(
             model=MODEL, max_tokens=8000, system=_SYSTEM, messages=messages,
@@ -474,6 +561,7 @@ def judge(today: dt.date, keys: Sequence[str], *, state: dict,
     vis_cache = state.setdefault("visual", {})
     rebuilt = state.setdefault("rebuilds", {})
     tableau_rebuilt = set(state.setdefault("tableau_rebuilt", []))
+    flagged = state.setdefault("visual_flagged", {})
     out: Dict[str, Verdict] = {}
     to_look: List[str] = []
     for key in keys:
@@ -523,7 +611,9 @@ def judge(today: dt.date, keys: Sequence[str], *, state: dict,
 
         def _one(k):
             try:
-                return k, visual(today, k)
+                prior = flagged.get(k) or []
+                return k, (visual(today, k, prior=prior) if prior
+                           else visual(today, k))
             except Exception as e:  # noqa: BLE001 - falla cerrado
                 return k, e
         with ThreadPoolExecutor(max_workers=min(4, len(need))) as pool:
@@ -547,6 +637,7 @@ def judge(today: dt.date, keys: Sequence[str], *, state: dict,
         if bad:
             (v.blocked if rebuilt.get(key, 0) >= MAX_REBUILDS
              else v.fixable).extend(bad)
+            flagged[key] = list(dict.fromkeys((flagged.get(key) or []) + bad))
     if verbose:
         for k, v in out.items():
             print(f"  auto-check {k}: "
@@ -575,14 +666,20 @@ def _short(text: str) -> str:
 
 def hold_text(heading: str, reasons: Sequence[str], mentions: str,
               rebuilt: bool) -> str:
-    tail = ("It was already rebuilt once automatically and it is still "
-            "wrong, so it is not a one-off." if rebuilt else "")
-    return (f"{mentions} ⚠️ *{heading}* — NOT sent automatically:\n"
-            + "\n".join(f"• {r}" for r in reasons)
-            + (f"\n{tail}" if tail else "")
-            + "\nIf it looks fine to you, ✅ its link and it goes out as is. "
-              "Otherwise fix the source and rebuild it (same link) — the next "
-              "check reviews it again and sends it if it comes out clean.")
+    # Una viñeta por sección: varios motivos de la misma caja van juntos, no
+    # repitiendo "5. New Internet Ongoing Churn Metrics:" en cada línea.
+    by_sec: Dict[str, List[str]] = {}
+    for r in reasons:
+        sec, sep, prob = r.partition(": ")
+        if not sep:
+            sec, prob = "", r
+        by_sec.setdefault(sec, []).append(prob)
+    bullets = [f"• {sec + ': ' if sec else ''}{'; '.join(probs)}"
+               for sec, probs in by_sec.items()]
+    tail = "Rebuilt once, still wrong. " if rebuilt else ""
+    return (f"{mentions} ⚠️ *{heading}* — held:\n" + "\n".join(bullets)
+            + f"\n_{tail}✅ the link to send as is, or fix + rebuild "
+              "(same link)._")
 
 
 def alert_corrections(today: dt.date, held: Dict[str, Tuple[str, List[str], bool]],

@@ -87,6 +87,20 @@ STATUS_DECLINED = "declined"
 # and reports back.
 STATUS_APPROVE_REQUESTED = "approve_requested"
 
+# WHICH ROW SPEAKS FOR A KEY WHEN THE TAB HOLDS SEVERAL (2026-10-05). Jairo
+# hit submit ~15 times in 20 minutes and some keys landed on two or three
+# rows. The decline only reached the FIRST one, readers took the LAST, and
+# five keys he never installed came back on -- one relay from any of them and
+# his alerts would have landed in Megan's DM. A human's answer beats a
+# waiting row whatever order they sit in; a decline beats everything, because
+# switching something off by mistake gets noticed and switching it on does not.
+STATUS_RANK = {STATUS_PENDING: 0, STATUS_APPROVE_REQUESTED: 1,
+               STATUS_APPROVED: 2, STATUS_DECLINED: 3}
+
+
+def status_rank(status) -> int:
+    return STATUS_RANK.get(str(status or "").strip().lower(), 0)
+
 # The same picker the installer shows, so the answer means the same thing in
 # both places and nobody has to translate it later.
 KNOCKS_CHOICES = (

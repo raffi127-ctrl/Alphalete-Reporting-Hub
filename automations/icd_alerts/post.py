@@ -324,6 +324,23 @@ def _box_scoreboard(sales: Dict, fired: List[str], show=None) -> str:
     return "\n".join(lines)
 
 
+def first_read_board(merged_sales: Dict, campaign=None, show=None) -> List[str]:
+    """ONE board to Slack on the first read of a day that already carries
+    sales -- the same picture the text group gets, labelled as a snapshot.
+
+    Megan 2026-10-06, Eveliz: her first good read landed mid-afternoon, the
+    text group got the standings, and #south-shore-b2b-sales got nothing,
+    because a baseline announces no sales (it must not: they are hours old
+    and would read as fresh). A labelled board is not an announcement, and a
+    channel that gets nothing while the texts get a board reads as broken.
+    No hype lines, no flames, no gif. Empty when nobody has sold yet
+    (scoreboard_text returns "" then), so a 10am first read with zeros posts
+    nothing -- never a blank board [[feedback_never_post_blank]].
+    """
+    board = scoreboard_text(merged_sales, [], campaign, show)
+    return ["_Today so far:_\n" + board] if board else []
+
+
 def scoreboard_text(sales: Dict, fired: List[str], campaign=None,
                     show=None) -> str:
     """The day's standings for an office's TEXT GROUP -- Raf's partner-chat
@@ -1335,6 +1352,12 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
             hype_lines = H.hype_batch(sold, sales, day, office.campaign,
                                       show=show, room=key)
             hype_lines, gifs_used = _within_gif_budget(hype_lines, day, key)
+        # NO STANDINGS BOARD TO SLACK ON A FIRST READ. Tried for one afternoon
+        # (2026-10-06, Eveliz's empty channel) and pulled the same day: Megan,
+        # seeing it land in #figspire -- "I don't think we are supposed to be
+        # putting the scoreboard in slack". The standings are the TEXT
+        # GROUP's board (Raf's partner-chat shape); Slack gets the per-sale
+        # lines as they happen. first_read_board() stays for the texts path.
 
         if baseline:
             log("%-10s first relay of %s -- recording %d rep(s), posting nothing"
@@ -1508,13 +1531,18 @@ SYSTEMS = {
         "why": "",
         "how": "Open this on that computer and press the button:\n" + SIGNIN_PAGE,
     },
+    # ONLY THE EMAILED-CODE WALL is filed as signin-saraplus (run.cmd_once).
+    # A refused password stays a sweep fault and gets the password box on the
+    # machine, so this must not say "the password changed": that is what had
+    # Rashad retype a working password three times (2026-10-01).
     "saraplus": {
         "name": "SaraPlus",
         "what": "Credit checks and sales",
-        "why": " The saved password is not being accepted — it has probably "
-               "changed.",
-        "how": "Open this on that computer and run it again; it will ask for "
-               "the new password:\n" + INSTALL_PAGE,
+        "why": " SaraPlus wants to confirm that computer with a code it "
+               "emails you. The password is fine — do NOT change it.",
+        "how": "On that computer, open this and press the button. A SaraPlus "
+               "window opens: sign in there and type the emailed code:\n"
+               + FINISH_SETUP_PAGE,
     },
     "ownerville": {
         "name": "OwnerVille",
@@ -1947,6 +1975,28 @@ def fault_headline(label: str, stage: str) -> str:
     return ":rotating_light: *%s* — something broke %s." % (label, where)
 
 
+# WHO HAS TO DO SOMETHING, said first. Eve could not tell a post she had to act
+# on from one that clears itself (2026-10-06: "no se darme cuenta cuando yo
+# debo hacer algo"). Matched on the summary, which is the office-facing text
+# from sara_read/box_read/ov_read -- those phrases are the contract.
+_OWNER_MUST_ACT = ("code it emails", "emailed code", "new password",
+                   "did not accept")
+_CLAUDE_MUST_ACT = ("this one is ours", "ours to fix", "ours to look at",
+                    "without saying why")
+
+
+def what_to_do(label: str, summary: str) -> str:
+    """One line on top of a fault post: nothing, the office, or Claude."""
+    s = (summary or "").lower()
+    if any(p in s for p in _OWNER_MUST_ACT):
+        return (":point_right: *Do this:* send this to %s. Only they can fix "
+                "it, on their office computer." % label)
+    if any(p in s for p in _CLAUDE_MUST_ACT):
+        return ":wrench: *Do this:* paste it to Claude. It won't fix itself."
+    return (":large_green_circle: *Nothing to do.* It usually fixes itself. "
+            "No ✅ within an hour? Paste it to Claude.")
+
+
 def stage_words(stage: str) -> str:
     """'knocks-slow' -> 'reading OwnerVille (slow)'. Used for the "Also ...:"
     line when a second problem joins an office's thread."""
@@ -2265,7 +2315,8 @@ def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
         parent = threads.get(key_for(f))
         head = (fault_headline(label, f["stage"]) if not parent else
                 "*Also %s:*" % where)
-        body = [head, "> %s" % f["summary"]]
+        body = [what_to_do(label, f["summary"]), head,
+                "> %s" % f["summary"]]
         if f["count"] and f["count"] not in ("1", ""):
             body.append("_Happened %s times, first at %s._"
                         % (f["count"], f["first"] or "?"))

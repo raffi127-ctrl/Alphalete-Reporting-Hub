@@ -535,7 +535,8 @@ class UnTickingStaleBoxes(unittest.TestCase):
         p = self._person({"UID Request": True}, cols={"Digi Docs": 5})
         self.assertEqual(sweep.stale_ticks(p, {"UID Request": False}), [])
 
-    def test_it_ships_gated(self):
-        """The first list of un-ticks is read by a person before anything is
-        cleared."""
-        self.assertFalse(config.UNTICK_STALE_LIVE)
+    def test_un_ticking_is_live(self):
+        """Gated while it was built, live from 2026-10-05 (Megan: "flip the
+        untick gate on"). Owner Submit stays out of it whatever this says."""
+        self.assertTrue(config.UNTICK_STALE_LIVE)
+        self.assertEqual(config.NEVER_UNTICK, ("Owner Submit",))

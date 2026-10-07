@@ -80,6 +80,17 @@ def home():
         st.write("")
 
 
+# CREDENTIALS BEFORE ANY PAGE OPENS A SHEET. cloud.ensure_sheets_credentials
+# existed and was called from NOWHERE, so every hosted page that reads a
+# registry failed and the public page showed "Couldn't read the registries
+# just now" (Megan 2026-10-06). It is a no-op locally: it never overwrites a
+# token that is already on the machine.
+try:
+    from automations.icd_sales_board import cloud as _cloud
+    _cloud.ensure_sheets_credentials()
+except Exception:   # noqa: BLE001 — a page that needs no sheet must still run
+    pass
+
 pages = [st.Page(home, title="Home", icon=":material/home:", default=True)]
 pages += [st.Page(p, title=t, icon=i, url_path=u)
           for p, u, t, i, _who, _listed in TOOLS]

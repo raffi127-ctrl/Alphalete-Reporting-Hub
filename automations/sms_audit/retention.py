@@ -45,7 +45,7 @@ WEEKS = ["w0821", "w0828", "w0904", "w0911", "w0918", "w0925"]
 # bookings at 20% is one person's bad morning, not a trend.
 MIN_N = 10
 # How far it has to fall below its own trailing average to be called out.
-DROP = 12.0
+DROP = 10.0
 
 
 def shown(r):

@@ -202,6 +202,7 @@ _HUB_CARD = {
     # auto-registering a standalone library card (Megan 2026-08-02: "the 1 hub card
     # says who they are running for"). Add an onboarded office = one line here.
     "jamis_metrics": "b2b-metrics",
+    "luke_metrics": "b2b-metrics",         # 2026-10-06, Luke Baldwin, same card
     # Weekly Promotion Check-In posts BOTH its passes (Mon 6pm + 7:15pm final)
     # under report_id "promo_checkin", and that card counts them via daily_runs:2
     # (the 2-phase pill). The Mon/Final install-agent plists got scanned into their
@@ -272,6 +273,8 @@ _HUB_CARD = {
     "drew_metrics": "office-metrics",
     "maxamad_metrics": "office-metrics",   # 2026-09-28, same card as everyone
     "jairo_metrics": "office-metrics",     # 2026-09-29, same card as everyone
+    "jenny_metrics": "office-metrics",     # 2026-10-06, Jennifer Figueroa, same card
+    "tre_metrics": "office-metrics",       # 2026-10-07, Tre Mitchell, same card
     # nii + trang had self-registered their own Report Library cards; folded
     # onto the one card 2026-09-28 (Megan: "consolidate"). Their library rows
     # were deleted.

@@ -158,6 +158,7 @@
       "b2b_order_log_att": 7
     },
     "per_office_views": {
+      "b2b_sales": "https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/B2BATTSalesMetrics/4a1c404e-54e1-4325-a1a8-61e361f8fd12/CarlosEXP?:iid=1",
       "b2b_churn_wireless": "https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/CHURNRATES/16d47259-17b6-4ad0-8fd7-2de5081945b0/ALLTEAMWireless?Product%20Type%20(Broken%20Out)=AIR/AWB,WIRELESS,NEW%20INTERNET",
       "b2b_churn_int": "https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/CHURNRATES/16d47259-17b6-4ad0-8fd7-2de5081945b0/ALLTEAMWireless?Product%20Type%20(Broken%20Out)=NEW%20INTERNET",
       "b2b_churn_air": "https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/CHURNRATES/16d47259-17b6-4ad0-8fd7-2de5081945b0/ALLTEAMWireless?Product%20Type%20(Broken%20Out)=AIR%2FAWB"
@@ -169,6 +170,63 @@
       {
         "channel_id": "C0C5XCW3WFQ",
         "channel_name": "south-shore-b2b-sales",
+        "report_keys": [
+          "b2b_sales",
+          "b2b_activation",
+          "b2b_churn_wireless",
+          "b2b_churn_int",
+          "b2b_churn_air",
+          "b2b_customer_churn",
+          "b2b_order_log_att"
+        ],
+        "header_label": ""
+      }
+    ]
+  },
+  {
+    "key": "luke",
+    "report_id": "luke_metrics",
+    "label": "Luke's B2B Office",
+    "owner": "Luke Baldwin",
+    "channel_id": "C0C76005FJA",
+    "channel_name": "takeoff-b2b",
+    "sheet_id": "12duBXmNj-afp25DVt0nUZpE-XUCmEC0ty_Fp6-IxNkc",
+    "knocks_office": "Luke Baldwin",
+    "ov_account": "20958",
+    "owner_office": "LUKE BALDWIN [takeoff enterprises, inc.]",
+    "business_name": "Takeoff Enterprises",
+    "website": "",
+    "header_label": "",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "b2b_sales",
+      "b2b_activation",
+      "b2b_churn_wireless",
+      "b2b_churn_int",
+      "b2b_churn_air",
+      "b2b_customer_churn",
+      "b2b_order_log_att"
+    ],
+    "report_order": {
+      "b2b_sales": 1,
+      "b2b_activation": 2,
+      "b2b_churn_wireless": 3,
+      "b2b_churn_int": 4,
+      "b2b_churn_air": 5,
+      "b2b_customer_churn": 6,
+      "b2b_order_log_att": 7
+    },
+    "per_office_views": {},
+    "machine": "Lucy 2",
+    "campaign": "",
+    "notes": "wired by hand 2026-10-06 (Megan: Luke Baldwin enrolling in Lucy ECO today, metrics + trackers right away); B2B like jamis; Pacific; channel #takeoff-b2b from his ECO sign-up (2026-10-06 15:36); Owner & Office member 'LUKE BALDWIN [takeoff enterprises, inc.]' confirmed in Tableau by Megan 2026-10-06 (NOT 'inc. 2nd' as OwnerVille spells it)",
+    "channel_plans": [
+      {
+        "channel_id": "C0C76005FJA",
+        "channel_name": "takeoff-b2b",
         "report_keys": [
           "b2b_sales",
           "b2b_activation",

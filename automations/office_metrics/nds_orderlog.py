@@ -59,6 +59,11 @@ BOARDS = {
     "order_log":   ("📋 Order Log", "clipboard"),
     "cancels":     ("🚫 Canceled Orders", "no_entry_sign"),
     "disconnects": ("❎ Disconnected Orders", "negative_squared_cross_mark"),
+    # Activation Rate by Rep (Khalil 2026-10-05, after seeing Carlos's B2B
+    # board): per rep, wireless lines activated / lines sold, 0-30 and 31-60
+    # days by Order Date, plus an office total. Carlos's formula ("how many are
+    # activated out of all sales made"), off this same NDS ORDER LOG.
+    "activation_rate": ("📈 Activation Rate by Rep", "chart_with_upwards_trend"),
 }
 # Board -> the status keyword its rows must contain (order status values seen live:
 # Canceled / Confirmed / Disconnected / Posted / Shipped). 6+ days out was dropped:
@@ -75,7 +80,8 @@ def _norm_h(s: str) -> str:
     return " ".join((s or "").strip().lower().split())
 
 
-def pull(out_path: Path | None = None, verbose: bool = False) -> Path:
+def pull(out_path: Path | None = None, verbose: bool = False,
+         days: int | None = None) -> Path:
     """Download the NDS ORDER LOG .csv export — ONCE PER DAY, shared by all three
     boards (order_log/cancels/disconnects each run as a separate subprocess). The
     first to pull writes a dated cache; the others reuse it — so the export runs
@@ -83,9 +89,12 @@ def pull(out_path: Path | None = None, verbose: bool = False) -> Path:
     the export a few times to ride out a transient non-200/empty response."""
     from automations.rep_activations.aggregate import week_bounds
     last_start, _last_end, _this_start, this_end = week_bounds(dt.date.today())
+    if days:   # a longer look-back (activation_rate) — its OWN daily cache
+        last_start, this_end = dt.date.today() - dt.timedelta(days=days), dt.date.today()
     url = _orderlog_url(last_start, this_end)
     today = dt.date.today().isoformat()
-    cache = Path(tempfile.gettempdir()) / f"nds_orderlog_{today}.csv"
+    tag = f"_{days}d" if days else ""
+    cache = Path(tempfile.gettempdir()) / f"nds_orderlog{tag}_{today}.csv"
     if cache.exists() and cache.stat().st_size > 500:
         if verbose:
             print(f"[nds_orderlog] reusing today's cached export "
@@ -431,6 +440,155 @@ def _render_status_orders(owner, header, rows, target, out_dir, keyword, label, 
             len(lines))
 
 
+# Activation bands — the SAME floors Carlos's B2B board uses
+# (vantura_churn.fill.BANDS), so the colors mean the same thing in both offices.
+_ACT_WINDOWS = (("0-30 Day", 0, 30), ("31-60 Day", 31, 60))
+_ACT_BANDS = {"0-30 Day": ((0.75, "Green"), (0.65, "Yellow"), (0.0, "Red")),
+              "31-60 Day": ((0.80, "Green"), (0.70, "Yellow"), (0.0, "Red"))}
+ACT_LOOKBACK_DAYS = 60
+
+
+def _parse_date(raw: str) -> dt.date | None:
+    for fmt in ("%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d"):
+        try:
+            return dt.datetime.strptime(raw, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def activation_by_rep(header, rows, target):
+    """{rep: {window: (activated, sold)}} plus an "__office__" entry.
+
+    One LINE = one 'Unit Count' row (the crosstab repeats every line once per
+    measure). Activated = the line has a DTR Active Date — it turned on, even if
+    it was disconnected later (checked against Tableau's NDS ACTIVATIONRATES for
+    Khalil 2026-10-05: 0-7 days 72/257 here vs 73/259 there)."""
+    rep_i = _find(header, "rep")
+    meas_i = _find(header, "measure names")
+    odate_i = _find(header, "sp.order date", "order date")
+    act_i = _find(header, "dtr active date")
+    if None in (rep_i, odate_i, act_i):
+        raise RuntimeError("NDS ORDER LOG is missing Rep / Order Date / "
+                           f"DTR Active Date columns: {header}")
+    out: dict = {}
+    for r in rows:
+        if meas_i is not None and _cell(r, meas_i).lower() != "unit count":
+            continue
+        d = _parse_date(_cell(r, odate_i))
+        if d is None:
+            continue
+        age = (target - d).days
+        for name, lo, hi in _ACT_WINDOWS:
+            if lo <= age <= hi:
+                activated = 1 if _cell(r, act_i) else 0
+                for who in (_cell(r, rep_i) or "(no rep)", "__office__"):
+                    a, n = out.setdefault(who, {}).get(name, (0, 0))
+                    out[who][name] = (a + activated, n + 1)
+    return out
+
+
+# Tableau's own NDS activation view — owner level, buckets 0-7 / 8-14 / 15-30 /
+# 30-60 / 60+ Days. The OFFICE TOTAL row comes from here, the way Carlos's B2B
+# board takes its total from ATTTRACKER-B2B ACTIVATIONRATES. Why not the order
+# log: on 2026-10-05 Carlos compared Khalil's total to Tableau and it was off —
+# the order log carries far fewer of the older lines (31-60: 276 sold there vs
+# 673 in this view; an Aug 5-Sep 4 pull alone still gave 281, so it is not our
+# window). Recent windows agree (0-7: 257 vs 259), so rep rows stay order-log.
+ACT_VIEW_CSV = ("https://us-east-1.online.tableau.com/t/sci/views/"
+                "DropshipV_2/ACTIVATIONRATES.csv?:refresh=yes")
+_TOTAL_BUCKETS = {"0-30 Day": ("0-7 Days", "8-14 Days", "15-30 Days"),
+                  "31-60 Day": ("30-60 Days",)}
+
+
+def _office_totals(owner: str, verbose: bool = False) -> dict:
+    """{window: (activated, sold)} for one owner from the NDS ACTIVATIONRATES
+    view (pulled once a day, shared by every office). {} if unavailable."""
+    today = dt.date.today().isoformat()
+    cache = Path(tempfile.gettempdir()) / f"nds_activationrates_{today}.csv"
+    if not (cache.exists() and cache.stat().st_size > 200):
+        try:
+            with tableau_session(verbose=verbose) as page:
+                r = page.context.request.get(ACT_VIEW_CSV, timeout=300_000)
+                body = r.body() or b""
+            if r.status != 200 or len(body) < 200:
+                print(f"[nds_orderlog:activation_rate] ACTIVATIONRATES export "
+                      f"status={r.status} bytes={len(body)}", flush=True)
+                return {}
+            cache.write_bytes(body)
+        except Exception as e:  # noqa: BLE001
+            print(f"[nds_orderlog:activation_rate] ACTIVATIONRATES pull failed: {e}",
+                  flush=True)
+            return {}
+    grid = _read_csv(cache)
+    if not grid:
+        return {}
+    h = grid[0]
+    own_i, b_i = _find(h, "owner & office"), _find(h, "sales date bucket")
+    a_i, n_i = _find(h, "activated wireless lines"), _find(h, "wireless lines")
+    if n_i == a_i:   # 'wireless lines' substring-matches the activated column
+        n_i = next((i for i, x in enumerate(h)
+                    if _norm_h(x) == "wireless lines"), None)
+    if None in (own_i, b_i, a_i, n_i):
+        print(f"[nds_orderlog:activation_rate] ACTIVATIONRATES header changed: {h}",
+              flush=True)
+        return {}
+    want = _norm_owner(owner)
+    by_bucket = {}
+    for r in grid[1:]:
+        if _norm_owner(_cell(r, own_i)) != want:
+            continue
+        try:
+            by_bucket[_cell(r, b_i)] = (int(_cell(r, a_i).replace(",", "")),
+                                        int(_cell(r, n_i).replace(",", "")))
+        except ValueError:
+            continue
+    out = {}
+    for window, buckets in _TOTAL_BUCKETS.items():
+        got = [by_bucket[b] for b in buckets if b in by_bucket]
+        if len(got) == len(buckets):
+            out[window] = (sum(a for a, _ in got), sum(n for _, n in got))
+    return out
+
+
+def _render_activation_rate(owner, header, rows, target, out_dir):
+    from automations.b2b_metrics.rep_boards import render_table_png
+    data = activation_by_rep(header, rows, target)
+    cols = [w[0] for w in _ACT_WINDOWS]
+
+    def _cellfor(window, an):
+        if not an or not an[1]:
+            return {}
+        a, n = an
+        rate = a / n
+        color = next(c for floor, c in _ACT_BANDS[window] if rate >= floor)
+        # rep_boards prints '(disc/act)' — feed it activated/sold.
+        return {"disc": str(a), "act": str(n),
+                "rate": f"{round(rate * 100, 1)}%", "color": color}
+
+    office = data.pop("__office__", {})
+    tableau = _office_totals(owner)
+    for c in cols:   # Tableau's total wins; order-log total only as a fallback
+        if c in tableau:
+            office[c] = tableau[c]
+        else:
+            print(f"[nds_orderlog:activation_rate] {owner}: no Tableau total for "
+                  f"{c} — using the order-log total", flush=True)
+    table = [("Office Total (all reps)", "", True,
+              {c: _cellfor(c, office.get(c)) for c in cols})]
+    for rep in sorted(data, key=lambda k: k.lower()):
+        table.append((rep, "", False,
+                      {c: _cellfor(c, data[rep].get(c)) for c in cols}))
+    slug = "_".join(owner.lower().split())
+    out = out_dir / f"nds_activation_rate_{slug}_{target.isoformat()}.png"
+    render_table_png(
+        "ACTIVATION RATES BY REP",
+        f"{owner} — {target.strftime('%B')} {target.day}, {target.year} "
+        "(wireless lines activated/sold; office total = Tableau Activation Rates)",
+        cols, table, out)
+    return out, len(table) - 1
+
+
 def run(owner: str, board: str, *, target: dt.date | None = None,
         dry_run: bool = False, out_dir: Path | None = None,
         verbose: bool = False) -> int:
@@ -439,7 +597,8 @@ def run(owner: str, board: str, *, target: dt.date | None = None,
                           / "nds_orderlog")
     out_dir.mkdir(parents=True, exist_ok=True)
     label, emoji = BOARDS[board]
-    csv_path = pull(verbose=verbose)
+    csv_path = pull(verbose=verbose,
+                    days=ACT_LOOKBACK_DAYS if board == "activation_rate" else None)
     header, rows = load(csv_path, owner)
     rows = _wireless(rows, header)
     print(f"[nds_orderlog:{board}] {owner} — {len(rows)} wireless order row(s)",
@@ -453,6 +612,8 @@ def run(owner: str, board: str, *, target: dt.date | None = None,
     is_file = False        # order_log posts an .xlsx file; the rest post images
     if board == "rep_summary":
         img, count = _render_rep_summary(owner, header, rows, target, out_dir), len(rows)
+    elif board == "activation_rate":
+        img, count = _render_activation_rate(owner, header, rows, target, out_dir)
     elif board == "order_log":
         img, count = _render_order_log(owner, header, rows, target, out_dir)
         is_file = True

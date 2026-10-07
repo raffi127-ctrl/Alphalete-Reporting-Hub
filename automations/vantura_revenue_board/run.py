@@ -302,16 +302,21 @@ def att_day_ready(per_rep: dict, upto: dt.date,
     return now.time() >= ATT_EMPTY_DAY_IS_REAL_AFTER
 
 
-def load_priced(csv_path: Path, monday: dt.date, upto: dt.date):
-    """-> per-rep {'days': {date: $}, 'elig': n, 'payable': n}, unpriced."""
+def load_priced(csv_path: Path, monday: dt.date, upto: dt.date,
+                owner_prefix: str | None = None):
+    """-> per-rep {'days': {date: $}, 'elig': n, 'payable': n}, unpriced.
+
+    No owner_prefix = Vantura's board (reps on its Sales Board). With one
+    (e.g. 'JAMIS GARAY', 2026-10-06) = that ICD's own office, every rep the
+    export puts under it — his reps aren't on Vantura's Sales Board."""
     from automations.att_order_log import clean
-    reps_ok = board_b2b_reps()
+    reps_ok = None if owner_prefix else board_b2b_reps()
     out = collections.defaultdict(lambda: {"days": collections.defaultdict(float),
                                            "elig": 0.0, "payable": 0.0})
     unpriced = collections.Counter()
-    for r in clean.load_rows(str(csv_path), owner_prefix=None):
+    for r in clean.load_rows(str(csv_path), owner_prefix=owner_prefix):
         rep = _n(r.get("Rep"))
-        if not rep or norm_name(rep) not in reps_ok:
+        if not rep or (reps_ok is not None and norm_name(rep) not in reps_ok):
             continue
         try:
             u = float(r.get("Unit Count") or 0)
@@ -342,18 +347,23 @@ def load_priced(csv_path: Path, monday: dt.date, upto: dt.date):
 
 
 def build_rows(per_rep, monday: dt.date, upto: dt.date, tier_fn=tier_for,
-               tiers=TIERS):
+               tiers=TIERS, tiered: bool = True):
+    """tiered=False = BASE COMP ONLY: line prices, no Tiered Volume bonus and
+    no Next Tier (Jamis 2026-10-06 — Carlos: "no [same comp sheet / tiers]
+    ... we can just do the base comp for him")."""
     rows, office = [], {"days": collections.defaultdict(float), "bonus": 0.0,
                         "ntotal": 0.0}
     for rep, rec in per_rep.items():
         base = sum(rec["days"].values())
-        tname, rate = tier_fn(int(rec["elig"]))
+        tname, rate = (tier_fn(int(rec["elig"])) if tiered else ("", 0))
         bonus = rate * rec["payable"]
         # Next tier (Carlos 2026-09-05): what THIS WEEK'S units would pay at
         # the next tier's bonus rate — the carrot, not a forecast (the extra
         # sales needed to get there would add on top of this number).
         above = [t for t in tiers if t[0] > int(rec["elig"])]
-        if above:
+        if not tiered:
+            ntotal, nxt = base, ""
+        elif above:
             nf, nn, nr = min(above, key=lambda t: t[0])
             need = nf - int(rec["elig"])
             ntotal = base + nr * rec["payable"]
@@ -384,23 +394,26 @@ _TIER_CHIP = {"T0": ("#eef1f4", "#5b6770"), "T1": ("#e8f0fb", "#1d4f91"),
 
 
 def render(rows, office, monday: dt.date, upto: dt.date, dest: Path,
-           board_name: str = "Vantura B2B Revenue") -> Path:
+           board_name: str = "Vantura B2B Revenue",
+           tiered: bool = True) -> Path:
     """Styled board (Carlos 2026-09-08: 'i want the revenue board to be easier
     to see', with his Daily Sales Board mock as the example): dark header,
     stat cards, tier chips, Mon-Sun day cells, office day totals in the
     footer. Falls back to the old PIL table if headless Chrome is unavailable
     — a plain board beats no board at 5:20am."""
     try:
-        return _render_html(rows, office, monday, upto, dest, board_name)
+        return _render_html(rows, office, monday, upto, dest, board_name,
+                            tiered)
     except Exception as e:  # noqa: BLE001
         print(f"  styled render failed ({type(e).__name__}: "
               f"{str(e).splitlines()[0][:90]}) — falling back to the plain "
               "table", flush=True)
-        return _render_pil(rows, office, monday, upto, dest, board_name)
+        return _render_pil(rows, office, monday, upto, dest, board_name,
+                           tiered)
 
 
 def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
-                 board_name: str) -> Path:
+                 board_name: str, tiered: bool = True) -> Path:
     kick = ("BOX LEADERS" if "box" in board_name.lower()
             else "AT&T B2B LEADERS")
     week_total = sum(r["total"] for r in rows)
@@ -429,14 +442,16 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
                 days.append(f'<td class="day">{money(v)}</td>')
         nxt = row.get("next", "")
         nxt_cls = "max" if nxt == "MAX" else ""
+        chip = (f'<td><span class="chip" style="background:{chip_bg};'
+                f'color:{chip_fg}">{row["tier"]}</span></td>' if tiered
+                else "")
         trs.append(
             f'<tr><td class="rk">{i}</td>'
             f'<td class="rep">{row["rep"].upper()}</td>'
             f'<td class="tot">{money(row["total"])}</td>'
-            f'<td><span class="chip" style="background:{chip_bg};'
-            f'color:{chip_fg}">{row["tier"]}</span></td>'
-            + "".join(days)
-            + f'<td class="nxt {nxt_cls}">{nxt}</td></tr>')
+            + chip + "".join(days)
+            + (f'<td class="nxt {nxt_cls}">{nxt}</td>' if tiered else "")
+            + '</tr>')
 
     # Office totals close the table (Carlos 2026-09-08: "the total at the
     # bottom of the monday list") — each day column sums at its foot.
@@ -446,13 +461,20 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
     trs.append(
         '<tr class="totrow"><td class="rk"></td>'
         '<td class="rep">OFFICE TOTAL</td>'
-        f'<td class="tot">{money(week_total)}</td><td></td>'
-        + tot_days + '<td class="nxt"></td></tr>')
+        f'<td class="tot">{money(week_total)}</td>'
+        + ('<td></td>' if tiered else '')
+        + tot_days + ('<td class="nxt"></td>' if tiered else '') + '</tr>')
 
     day_ths = "".join(
         f'<th class="dh{" cur" if d == upto else ""}">{c}<br>'
         f'<span class="dd">{d.month}/{d.day}</span></th>'
         for c, d in shown)
+
+    next_card = ('<div class="card"><div class="clab">OFFICE AT NEXT TIER'
+                 f'</div><div class="cval">{money(next_total)}</div></div>'
+                 if tiered else "")
+    tier_th = '<th style="text-align:left">TIER</th>' if tiered else ""
+    next_th = "<th>NEXT TIER</th>" if tiered else ""
 
     html = f"""<html><head><meta charset="utf-8"><style>
  body{{margin:0;font-family:'Helvetica Neue',Arial,sans-serif;background:#f4f6f8}}
@@ -496,18 +518,17 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
 </style></head><body><div class="wrap">
  <div class="hdr"><div class="kick">{kick}</div>
   <div class="hrow"><h1>Revenue Board</h1>
-  <div class="date">Week of {monday.strftime('%b %-d')} — through
-  {upto.strftime('%A, %b %-d, %Y')}</div></div></div>
+  <div class="date">Week of {monday.strftime('%b')} {monday.day} — through
+  {upto.strftime('%A, %b')} {upto.day}, {upto.year}</div></div></div>
  <div class="cards">
   <div class="card"><div class="clab">OFFICE WEEK TOTAL</div>
    <div class="cval">{money(week_total)}</div></div>
   <div class="card"><div class="clab">REPS ON THE BOARD</div>
    <div class="cval">{len(rows)}</div></div>
-  <div class="card"><div class="clab">OFFICE AT NEXT TIER</div>
-   <div class="cval">{money(next_total)}</div></div>
+ {next_card}
  </div>
  <table><tr><th class="lh">#</th><th class="lh">REP</th><th>WEEK TOTAL</th>
- <th style="text-align:left">TIER</th>{day_ths}<th>NEXT TIER</th></tr>
+ {tier_th}{day_ths}{next_th}</tr>
  {''.join(trs)}</table>
  <div class="foot"><div><span class="lab">{kick}</span></div>
  <div style="color:#cfd6dc;font-size:13px">{len(rows)} reps on the board</div>
@@ -538,7 +559,8 @@ def _render_html(rows, office, monday: dt.date, upto: dt.date, dest: Path,
 
 
 def _render_pil(rows, office, monday: dt.date, upto: dt.date, dest: Path,
-                board_name: str = "Vantura B2B Revenue") -> Path:
+                board_name: str = "Vantura B2B Revenue",
+                tiered: bool = True) -> Path:
     from PIL import Image, ImageDraw
     from automations.box_order_log.png import _font
 
@@ -549,7 +571,8 @@ def _render_pil(rows, office, monday: dt.date, upto: dt.date, dest: Path,
     ft = _font(14 * S, bold=True)
 
     # Week Total rides right after the name (Carlos, first preview).
-    cols = ["Rep", "Week Total"] + list(DAYS) + ["Tier", "Next Tier"]
+    cols = (["Rep", "Week Total"] + list(DAYS)
+            + (["Tier", "Next Tier"] if tiered else []))
 
     def cell(row, c):
         if c == "Rep":

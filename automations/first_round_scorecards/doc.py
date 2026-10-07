@@ -58,7 +58,12 @@ def build_html(m: Dict, name: str, result: Dict) -> str:
            f'<a href="{share}">Fathom recording</a></p>' + early,
            f"<p><b>Interviewer:</b> {html.escape(name)} ({html.escape(speaker)}) · "
            + (f"<b>Office:</b> {html.escape(m['owner'])} · " if m.get("owner") else "")
-           + f"<b>Applicants:</b> {html.escape(who)}</p>",
+           + f"<b>Applicants:</b> {html.escape(who)}</p>"
+           # whose script the score was counted against (each office has its own
+           # pay + schedule, 2026-10-06); older docs never had it
+           + (f"<p><b>Script:</b> {html.escape(result['script_office'])}'s office</p>"
+              if result.get("script_office") else
+              "<p><b>Script:</b> standard (Rafael's)</p>" if "script_office" in result else ""),
            f'<h2>Scorecard: <span style="color:{col}">{s["score"]} / 100 {_emoji(s["score"])}</span></h2>',
            f"<p>🚩 Red flags: <b>{s['red_hit']} of 5</b> happened · ✅ Must-dos: "
            f"<b>{s['musts_done']} of 6</b> done</p>",

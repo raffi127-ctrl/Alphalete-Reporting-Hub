@@ -11,7 +11,9 @@ Fija las tres condiciones que puso Eve y la regla de qué se re-arma y qué fren
 from __future__ import annotations
 
 import datetime as dt
+import os
 import tempfile
+import time
 import unittest
 from email.message import EmailMessage
 from pathlib import Path
@@ -127,9 +129,13 @@ class TestJudge(Base):
 
     def test_visual_blocker_rebuilds_then_holds(self):
         _write_eml(self.tmp, self.b2b)
-        bad = lambda _t, _k: {"ok": False, "issues": [
-            {"image": 3, "section": "Luke's box", "problem": "different font",
-             "severity": "blocker"}]}
+        asked = []
+
+        def bad(_t, _k, prior=()):
+            asked.append(list(prior))
+            return {"ok": False, "issues": [
+                {"image": 3, "section": "Luke's box", "problem": "different font",
+                 "severity": "blocker"}]}
         state = {}
         v = A.judge(DAY, [self.b2b], state=state, visual=bad,
                     tableau=_no_tableau, verbose=False)[self.b2b]
@@ -139,6 +145,37 @@ class TestJudge(Base):
         v = A.judge(DAY, [self.b2b], state=state, visual=bad,
                     tableau=_no_tableau, verbose=False)[self.b2b]
         self.assertEqual(v.blocked, ["Luke's box: different font"])
+        # La segunda mirada sabe qué buscar (10/6: sin eso salió Wayne).
+        self.assertEqual(asked, [[], ["Luke's box: different font"]])
+
+    def test_rebuilt_draft_is_rechecked_for_what_was_found_before(self):
+        _write_eml(self.tmp, self.b2b)
+        state = {"visual_flagged": {self.b2b: ["5. NI churn: copies Wireless"]}}
+        asked = []
+
+        def look(_t, _k, prior=()):
+            asked.append(list(prior))
+            return {"ok": True, "issues": []}
+        A.judge(DAY, [self.b2b], state=state, visual=look,
+                tableau=_no_tableau, verbose=False)
+        self.assertEqual(asked, [["5. NI churn: copies Wireless"]])
+
+    def test_prior_blockers_go_into_the_prompt(self):
+        _write_eml(self.tmp, self.b2b)
+        sent = {}
+        client = mock.Mock()
+
+        def create(**kw):
+            sent.update(kw)
+            r = mock.Mock(stop_reason="end_turn")
+            r.content = [mock.Mock(type="text", text='{"ok": true, "issues": []}')]
+            return r
+        client.messages.create.side_effect = create
+        A.visual_review(DAY, self.b2b, client=client,
+                        prior=["NI churn copies Wireless"])
+        texts = [c["text"] for c in sent["messages"][0]["content"]
+                 if c["type"] == "text"]
+        self.assertTrue(any("NI churn copies Wireless" in t for t in texts))
 
     def test_minor_issue_still_sends(self):
         _write_eml(self.tmp, self.b2b)
@@ -246,12 +283,13 @@ class TestGateFlow(Base):
         return [config.block_of(k) for k in keys]
 
     def _run(self, keys, tab=_no_tableau, rebuild=lambda *a: 0, act=True,
-             ticks=1):
+             ticks=1, building_since=None):
         with mock.patch.object(A, "rebuild", rebuild), \
                 mock.patch.dict(A.judge.__kwdefaults__,
                                 {"visual": _clean_visual, "tableau": tab}):
             for _ in range(ticks):
-                rc = self.rg.auto_day(DAY, self._blocks(*keys), act=act)
+                rc = self.rg.auto_day(DAY, self._blocks(*keys), act=act,
+                                      building_since=building_since)
         return rc
 
     def test_clean_day_sends_and_posts_nothing(self):
@@ -317,6 +355,91 @@ class TestGateFlow(Base):
         self._run([self.fiber], rebuild=lambda t, k: rebuilt.append(k),
                   act=False)
         self.assertEqual((rebuilt, self.posted, self.sent), ([], [], []))
+
+
+def _age(out: Path, key: str, seconds_ago: float):
+    p = out / f"captainship_draft_{key}_{DAY:%Y%m%d}.eml"
+    t = time.time() - seconds_ago
+    os.utime(p, (t, t))
+
+
+class TestWhileBuilding(TestGateFlow):
+    """Eve 2026-10-06: "que vayan saliendo a medida que se va cerrando cada
+    capitania". Con un armado corriendo sale el que ese armado ya cerro; el que
+    falta, el viejo o el recien escrito esperan; nada se re-arma ni se frena."""
+
+    def setUp(self):
+        super().setUp()
+        self.since = time.time() - 3600          # el armado arranco hace 1 h
+
+    def test_finished_one_goes_the_rest_waits(self):
+        _write_eml(self.tmp, self.fiber)
+        _age(self.tmp, self.fiber, 600)          # lo cerro hace 10 min
+        rc = self._run([self.fiber, self.b2b], building_since=self.since)
+        self.assertEqual(rc, 1)                  # b2b sigue esperando
+        self.assertEqual(self.sent, [self.fiber])
+        self.assertEqual((self.posted, self.alerts), ([], []))
+
+    def test_missing_draft_is_not_a_failure_after_ten(self):
+        late = mock.Mock(wraps=dt.datetime)
+        late.now = lambda: dt.datetime(2026, 10, 6, 11)
+        with mock.patch.object(self.rg.dt, "datetime", late):
+            rc = self._run([self.b2b], building_since=self.since)
+        self.assertEqual(rc, 1)
+        self.assertEqual((self.sent, self.posted, self.alerts), ([], [], []))
+
+    def test_draft_from_before_this_build_waits(self):
+        _write_eml(self.tmp, self.fiber)
+        _age(self.tmp, self.fiber, 7200)         # de antes que arrancara
+        self._run([self.fiber], building_since=self.since)
+        self.assertEqual(self.sent, [])
+
+    def test_draft_still_being_written_waits(self):
+        _write_eml(self.tmp, self.fiber)         # mtime = ahora
+        self._run([self.fiber], building_since=self.since)
+        self.assertEqual(self.sent, [])
+
+    def test_needs_rebuild_waits_without_rebuilding_or_holding(self):
+        _write_eml(self.tmp, self.fiber, pending="Fiber Activations PNG")
+        _age(self.tmp, self.fiber, 600)
+        rebuilt = []
+        rc = self._run([self.fiber], building_since=self.since,
+                       rebuild=lambda t, k: rebuilt.append(k))
+        self.assertEqual(rc, 1)
+        self.assertEqual((rebuilt, self.sent, self.posted, self.alerts),
+                         ([], [], [], []))
+
+    def test_tableau_behind_still_holds(self):
+        _write_eml(self.tmp, self.fiber)
+        _age(self.tmp, self.fiber, 600)
+        tab = lambda _t: ({"tableau:tracker_att": "behind"}, {}, [])
+        self._run([self.fiber], tab=tab, building_since=self.since)
+        self.assertEqual(self.sent, [])
+        self.assertEqual(list(self.alerts[0]), [self.fiber])
+
+
+class TestBuildStarted(unittest.TestCase):
+    PS = ("  101  01:12:30 python -m automations.captainship_drafts.review_gate"
+          " --ensure-posted\n"
+          "  102     05:10 python -m automations.captainship_drafts.run"
+          " --dry-run --block luke\n"
+          "  103     00:02 python -m automations.captainship_drafts.review_gate"
+          " --check --send --building\n"
+          "  104  1-00:00:00 /usr/sbin/cron\n")
+
+    def test_oldest_build_process_wins(self):
+        got = A.build_started(self.PS)
+        self.assertAlmostEqual(time.time() - got, 4350, delta=5)
+
+    def test_the_check_itself_is_not_a_build(self):
+        ps = ("  103  00:02 python -m automations.captainship_drafts.review_gate"
+              " --check --building\n")
+        self.assertIsNone(A.build_started(ps))
+
+    def test_etime_shapes(self):
+        self.assertEqual(A._etime_seconds("05:10"), 310)
+        self.assertEqual(A._etime_seconds("01:12:30"), 4350)
+        self.assertEqual(A._etime_seconds("2-01:00:00"), 176400)
 
 
 if __name__ == "__main__":

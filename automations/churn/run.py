@@ -29,6 +29,7 @@ import tempfile
 import time
 from pathlib import Path
 
+from automations.shared import tableau_patchright
 from automations.shared.tableau_patchright import tableau_session
 from automations.shared.slack_metrics_post import (
     post_reply_with_file, SlackPostError,
@@ -290,7 +291,15 @@ def main(argv=None) -> int:
     # --- Phase 2: parse + fill each ---
     print("\nPhase 2: fill destination tabs")
     for slug, label, pull_mod, fill_mod in selected:
-        parsed = pull_mod.parse(csvs[slug])
+        try:
+            parsed = pull_mod.parse(csvs[slug])
+        except ValueError:
+            # A schema-broken crosstab (e.g. 'Rep Name' missing after the saved
+            # view reset, 10/6) was cached on the way in. Evict it, or every
+            # re-run today re-reads the same bad file after the view is fixed.
+            tableau_patchright.xtab_cache_evict(pull_mod.VIEW_URL,
+                                                pull_mod.WORKSHEET)
+            raise
         _run_fill_phase(label, pull_mod, fill_mod, parsed, today, args)
 
     # --- Phase 3: render 4 multi-week PNGs per report + post to Slack ---

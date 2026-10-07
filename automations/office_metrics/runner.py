@@ -206,6 +206,14 @@ def _nds_metrics(o: Office) -> list[dict]:
              module="automations.office_metrics.nds_orderlog",
              owner_args=["--owner", o.owner, "--board", "rep_summary"], env={},
              dry_flag="--dry-run", post_flag="--live"),
+        # 📈 Activation Rate by Rep — per rep, wireless lines activated / sold,
+        # 0-30 and 31-60 days, off a 60-day NDS ORDER LOG pull (Khalil asked
+        # 2026-10-05 after seeing Carlos's B2B board; Megan: "add it to all NDS
+        # threads").
+        dict(slug="activation_rate", label="📈 Activation Rate by Rep",
+             module="automations.office_metrics.nds_orderlog",
+             owner_args=["--owner", o.owner, "--board", "activation_rate"], env={},
+             dry_flag="--dry-run", post_flag="--live"),
         # 📋 Order Log — the raw wireless order list (kept SEPARATE from Rep
         # Activations per Megan 2026-08-07; every office shows both). Same current
         # window pull.

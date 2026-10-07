@@ -66,11 +66,21 @@ if [ "$HOUR" -lt "$START_HOUR" ]; then
 fi
 
 # Overlap guard: mailing 12 reports takes a while and must not be fought by the
-# next tick — that is how a captain gets the same report twice.
-if pgrep -f "automations.captainship_drafts" > /dev/null 2>&1; then
-    echo "[$(date)] captainship review SKIPPED — a captainship run is still going"
+# next tick — that is how a captain gets the same report twice. A check or a
+# send still running from the last tick = skip, always.
+if pgrep -f "captainship_drafts.review_gate.*--check|--send-reviewed" > /dev/null 2>&1; then
+    echo "[$(date)] captainship review SKIPPED — the last check is still going"
     exit 0
 fi
+# A BUILD still running is different (Eve 2026-10-06: "que vayan saliendo a
+# medida que se va cerrando cada capitania"). It goes block by block, so the
+# captains it already finished can go out now instead of waiting for the last
+# one — on 10/6 the 4am chain left no drafts, the 07:15 agent built all of them
+# itself until ~09:15, and every tick in between was skipped. `--building` sends
+# only drafts THIS build wrote, rebuilds nothing, and leaves human checkmarks
+# and reminders to the first tick after the build, as before.
+BUILDING=0
+pgrep -f "automations.captainship_drafts" > /dev/null 2>&1 && BUILDING=1
 
 VENV_PY=".venv/bin/python3.14"
 [ -x "$VENV_PY" ] || VENV_PY=".venv/bin/python"
@@ -101,6 +111,15 @@ LOG_FILE="$LOG_DIR/captainship-review-$(date +%Y-%m-%d).log"
 if [ "$HOUR" -ge "$END_HOUR" ]; then
     echo "[$(date)] past ${END_HOUR}:00 — closing the day" >> "$LOG_FILE"
     "$VENV_PY" -u -m automations.captainship_drafts.review_gate --close-day >> "$LOG_FILE" 2>&1
+    exit 0
+fi
+
+# A build is running (see the overlap guard): send only what it already
+# finished, and skip the deadline below — it would start a second build.
+if [ "$BUILDING" = "1" ]; then
+    echo "[$(date)] check while a build runs (mode: ${MODE:-report-only})" >> "$LOG_FILE"
+    "$VENV_PY" -u -m automations.captainship_drafts.review_gate --check --building $MODE >> "$LOG_FILE" 2>&1
+    echo "[$(date)] finished (building) exit=$?" >> "$LOG_FILE"
     exit 0
 fi
 

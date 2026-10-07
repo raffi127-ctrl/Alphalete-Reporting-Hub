@@ -17,13 +17,19 @@ import datetime as dt
 import re
 import time
 import unicodedata
+import json
 from difflib import SequenceMatcher
+from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 # Rafael's three 1st round funnels (1 = 11280, 2 = 23965, 3 = 24065; Eve
 # 2026-09-29). Every one is read, so it doesn't matter which funnel a Zoom
 # account interviews for.
 OFFICES = ["11280", "23965", "24065"]
+# Every other office's calendar too (Eve 2026-10-07: Carlos' office books in
+# 11580, so his interviews read "not on AppStream"). Read only for the
+# interviews the three funnels didn't place -- ~130 offices is minutes.
+MAPPINGS = Path(__file__).resolve().parents[1] / "recruiting_report"
 NAME_MATCH = 0.8               # 0-1 closeness of a transcript name to a booked one
 
 
@@ -38,15 +44,35 @@ def booked(day: dt.date, offices: Iterable[str] = OFFICES) -> List[Dict]:
         if not tok:
             raise RuntimeError("no rqst token on the AppStream console page")
         for office in offices:
-            page.goto(f"https://www.applicantstream.com/index.cfm?p=104&rqst={tok}"
-                      f"&newOfficeId={office}")
-            page.wait_for_load_state("networkidle")
-            time.sleep(1.0)
-            dump._goto_week_containing(page, tok, day)
-            if dump._expand_day(page, ds) < 0:
-                continue
-            for r in dump._day_rows(page, ds):
-                out.append({"office": office, "time": r["time"], "name": r["name"]})
+            try:
+                page.goto(f"https://www.applicantstream.com/index.cfm?p=104&rqst={tok}"
+                          f"&newOfficeId={office}")
+                page.wait_for_load_state("networkidle")
+                time.sleep(1.0)
+                dump._goto_week_containing(page, tok, day)
+                if dump._expand_day(page, ds) < 0:
+                    continue
+                for r in dump._day_rows(page, ds):
+                    out.append({"office": office, "time": r["time"], "name": r["name"]})
+            except Exception as exc:  # noqa: BLE001 -- one office can't hold the rest
+                print(f"AppStream office {office} not read ({type(exc).__name__}: {exc})")
+    return out
+
+
+def other_offices() -> List[str]:
+    """Every confirmed office in the recruiting report's mappings, minus the
+    three funnels, in file order, no repeats."""
+    seen, out = set(OFFICES), []
+    for f in sorted(MAPPINGS.glob("office-mapping*.json")):
+        try:
+            rows = json.loads(f.read_text(encoding="utf-8")).get("confirmed") or []
+        except (OSError, ValueError, AttributeError):
+            continue
+        for r in rows:
+            oid = str((r or {}).get("office_id") or "").strip()
+            if oid and oid not in seen:
+                seen.add(oid)
+                out.append(oid)
     return out
 
 

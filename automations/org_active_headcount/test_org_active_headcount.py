@@ -340,11 +340,19 @@ class PickTrackerTie(unittest.TestCase):
                    "B": [{"owner": "HAMMAD HAQUE", "rep_count": 18}]}
         self.assertEqual(pick_tracker("Muhammad Haque", "att_country", reading, 8), 8)
 
-    def test_equal_gap_is_dash(self):
+    def test_monday_tie_takes_the_strip_reading(self):
+        """No yesterday on a Monday: the tracker's number still goes in (Kash Mon 10/5)."""
+        from automations.org_active_headcount.daily import pick_tracker
+        reading = {"A": [{"owner": "KASH RAI", "rep_count": 10}],
+                   "B": [{"owner": "KASH RAI", "rep_count": 16}]}
+        self.assertEqual(pick_tracker("Kash Rai", "att_country", reading, None), 10)
+
+    def test_equal_gap_takes_the_strip_reading(self):
+        """The tracker is posted every day: a tie still writes its number, never '-'."""
         from automations.org_active_headcount.daily import pick_tracker
         reading = {"A": [{"owner": "HAMMAD HAQUE", "rep_count": 7}],
                    "B": [{"owner": "HAMMAD HAQUE", "rep_count": 9}]}
-        self.assertEqual(pick_tracker("Muhammad Haque", "att_country", reading, 8), "-")
+        self.assertEqual(pick_tracker("Muhammad Haque", "att_country", reading, 8), 7)
 
 
 if __name__ == "__main__":
@@ -477,11 +485,13 @@ class MissingDayCarriesTheLastNumber(unittest.TestCase):
                           trackers={}, retail={}, je={}))
         self.assertEqual(w["D19"], 10)
 
-    def test_a_monday_dash_takes_last_weeks(self):
+    def test_a_monday_dash_never_takes_last_weeks(self):
+        """The week starts over on Monday: last week's final is not a Monday
+        number (Mon 10/5: Kash 23 / Rashad 25 written where the tracker said 10/8)."""
         from automations.org_active_headcount.daily import plan_day
         w = dict(plan_day(self._g(), dt.date(2026, 9, 14), dt.date(2026, 9, 17),
                           trackers={}, retail={}, je={}))
-        self.assertEqual(w["C20"], 41)             # LAST WEEK'S column
+        self.assertNotIn("C20", w)
 
     def test_a_tracker_that_misses_the_icd_carries_too(self):
         from automations.org_active_headcount.daily import plan_day

@@ -94,6 +94,24 @@ def load() -> dict:
             if n.strip().lower() not in gone}
 
 
+def retired_names() -> set:
+    """The offices hidden from every surface, lower-cased for comparison.
+
+    load() already drops them, but the LucyEco roster is assembled from MORE
+    than load(): the org bulletin and the ad-photo config append names of
+    their own and neither knows this list exists. Ronald Dawson was retired
+    and came back on the public page the same day, because the bulletin
+    still reads Active ICD = YES for him (Megan 2026-10-06). Exposed here
+    rather than re-read by each caller so there is one list, not three.
+    """
+    try:
+        raw = json.loads(_FILE.read_text())
+    except Exception:  # noqa: BLE001 -- no file, no retirements to apply
+        return set()
+    return {(n or "").strip().lower()
+            for n in (raw.get("retired") or []) if (n or "").strip()}
+
+
 def get(name: str):
     return load().get(name)
 
