@@ -160,8 +160,9 @@ class WhyDodged(unittest.TestCase):
         got = S.why_dodged(self.REMOTE, "dodged", "Is the position in a store?",
                            "This is a residential campaign")
         self.assertIn("vaguely", got)
-        self.assertIn("ask a question", got)
         self.assertNotIn("Doesn't answer", got)
+        # The how-to-fix lives on the section, not on every quote.
+        self.assertIn("ask", S.recovery_for(self.REMOTE).lower())
 
     def test_a_long_question_that_really_was_not_answered(self):
         """Lizbeth Gonzalez's: not a bare yes/no, and genuinely unanswered."""
@@ -209,3 +210,73 @@ class WhyDodged(unittest.TestCase):
 
     def test_no_bucket_at_all(self):
         self.assertIn("the question", S.why_dodged(None))
+
+
+class DodgeContext(unittest.TestCase):
+    """The reason reads the surrounding messages, not just the pair."""
+
+    REMOTE = "Is this remote / where is the office?"
+
+    def _entry(self, ctx, again=0, later=False):
+        return {"context": ctx, "asked_again": again,
+                "answered_later": str(later)}
+
+    def test_several_questions_in_a_row_are_named_as_that(self):
+        ctx = [{"dir": "In", "body": "Is this in a store?"},
+               {"dir": "In", "body": "How long is the interview?"},
+               {"dir": "Out", "body": "A quick 15-20 minutes"}]
+        got = S.why_dodged(self.REMOTE, "dodged", "Is this in a store?",
+                           "A quick 15-20 minutes", self._entry(ctx))
+        self.assertIn("2 things in a row", got)
+
+    def test_it_does_not_claim_the_reply_answered_one_of_them(self):
+        """"Thank you for letting us know" answers none of them."""
+        ctx = [{"dir": "In", "body": "Can you verify?"},
+               {"dir": "In", "body": "I have not applied"},
+               {"dir": "Out", "body": "Thank you for letting us know"}]
+        got = S.why_dodged("Which role / which company is this?", "dodged",
+                           "Can you verify?", "Thank you for letting us know",
+                           self._entry(ctx))
+        self.assertNotIn("answers the other", got)
+
+    def test_a_single_question_is_not_called_a_pile_up(self):
+        ctx = [{"dir": "In", "body": "Is this in a store?"},
+               {"dir": "Out", "body": "This is a residential campaign"}]
+        got = S.why_dodged(self.REMOTE, "dodged", "Is this in a store?",
+                           "This is a residential campaign", self._entry(ctx))
+        self.assertNotIn("in a row", got)
+
+    def test_having_to_ask_again_is_reported(self):
+        got = S.why_dodged(self.REMOTE, "dodged", "Is it in a store?",
+                           "This is a residential campaign",
+                           self._entry([], again=2))
+        self.assertIn("2 more times", got)
+        self.assertIn("never got an answer", got)
+
+    def test_answered_in_the_end_is_said_so(self):
+        got = S.why_dodged(self.REMOTE, "dodged", "Is it in a store?",
+                           "This is a residential campaign",
+                           self._entry([], again=1, later=True))
+        self.assertIn("1 more time", got)
+        self.assertNotIn("never got an answer", got)
+
+
+class WeakAnswers(unittest.TestCase):
+    def test_a_vague_yes_no_reply_is_weak(self):
+        self.assertTrue(S.is_weak("Is the position in a store?",
+                                  "This is a residential campaign"))
+
+    def test_a_plain_answer_is_not_weak(self):
+        self.assertFalse(S.is_weak("Is the position in a store?",
+                                   "No, it is door to door."))
+
+    def test_a_reply_that_asks_back_is_not_weak(self):
+        self.assertFalse(S.is_weak("Is the position in a store?",
+                                   "It is residential. Does that work?"))
+
+    def test_every_bucket_has_a_way_back_to_a_booking(self):
+        for bucket in S.TOPICS:
+            self.assertIn("times", S.recovery_for(bucket).lower() + " times")
+
+    def test_an_unknown_bucket_still_gets_advice(self):
+        self.assertTrue(S.recovery_for("Something new?"))

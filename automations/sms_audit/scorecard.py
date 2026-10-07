@@ -111,7 +111,7 @@ def week_stats(office, tag):
         "typing": 0, "house": 0, "dodged": 0, "replies": [],
         "far_out": 0, "matched": 0,
         "issues": collections.Counter(), "examples": [], "asked": [],
-        "kinds": collections.Counter(), "typos": []})
+        "weak": [], "kinds": collections.Counter(), "typos": []})
 
     def slot(name):
         k = key_of(name)
@@ -178,13 +178,21 @@ def week_stats(office, tag):
         if d is None:
             continue
         d["dodged"] += 1
-        if e.get("question") and len(d["asked"]) < 6:
-            d["asked"].append((
-                "Did not answer: {}".format(e.get("bucket") or "a question"),
+        if not e.get("question"):
+            continue
+        # A weak answer and a non-answer need different coaching, so they
+        # are kept apart (Megan 2026-10-06).
+        slotname = ("weak" if is_weak(e.get("question"), e.get("reply"))
+                    else "asked")
+        if len(d[slotname]) < 8:
+            d[slotname].append((
+                "{}: {}".format(
+                    "Weak answer" if slotname == "weak" else "Did not answer",
+                    e.get("bucket") or "a question"),
                 "they asked: {}".format(e["question"]),
                 e.get("reply") or "", e.get("name") or "",
                 why_dodged(e.get("bucket"), e.get("kind"),
-                           e.get("question"), e.get("reply"))))
+                           e.get("question"), e.get("reply"), e)))
 
     for st in A.reply_speed_by_sender(convos, min_n=1):
         d = slot(st.get("who"))
@@ -349,6 +357,8 @@ blockquote{margin:.4em 0 .4em 1em;padding:.3em .7em;border-left:3px solid #bbb;
 .asked{color:#555;font-size:.9em;font-style:italic}
 .who{color:#555;font-weight:normal}
 .why{color:#A8322A;font-weight:bold;margin-top:.35em}
+.fixit{background:#eef5ee;border-left:3px solid #156E46;padding:.4em .7em;
+       margin:.4em 0;font-size:.95em}
 details{margin:.35em 0;border:1px solid #ddd;border-radius:4px;
         padding:.4em .7em;background:#fafafa}
 details[open]{background:#fff}
@@ -400,7 +410,53 @@ SAYS_YES_NO = re.compile(r"\b(yes|yep|yeah|no|nope|not|isn'?t|aren'?t|"
                          r"doesn'?t|don'?t|won'?t|correct|incorrect)\b", re.I)
 
 
-def why_dodged(bucket, kind="", question="", reply=""):
+# How to get the conversation back to a booking, per topic. Megan
+# 2026-10-06: "if they are weak then it should be it's own section with a
+# recommendation of how to keep the convo going to get the interview
+# booked".
+RECOVERY = {
+    "Is this remote / where is the office?":
+        "Say plainly it is in the field, not a store, name the office, then "
+        "ask if that commute works and offer two times.",
+    "What is the pay?":
+        "Give the weekly range, then ask what they were hoping for and "
+        "offer two times.",
+    "What is the job / what do you do?":
+        "Say what the day actually looks like in one line, then ask if that "
+        "sounds like them and offer two times.",
+    "Which role / which company is this?":
+        "Name the role and where they applied, then offer two times.",
+    "Hours, training, is it paid?":
+        "Answer the hours and that training is paid, then offer two times.",
+    "What should I wear / bring?":
+        "Say business casual and that nothing is needed, then confirm the "
+        "time.",
+    "How long is the interview / what's next?":
+        "Give the length and what happens after, then confirm the time.",
+    "Is this a real job / who are you?":
+        "Name yourself and the company, offer the website, then offer two "
+        "times.",
+}
+
+
+def recovery_for(bucket):
+    return RECOVERY.get(bucket) or (
+        "Answer it in one line, then ask a question back and offer two "
+        "times.")
+
+
+def is_weak(question, reply):
+    """True when the reply technically answers but says nothing plainly.
+
+    Megan 2026-10-06 on "Is the position in a store?" -> "This is a
+    residential campaign": "technically this does answer but is a bit
+    dodgy, should ask something back"."""
+    q, r = (question or "").strip(), reply or ""
+    return bool(YES_NO.match(q) and not SAYS_YES_NO.search(r)
+                and "?" not in r)
+
+
+def why_dodged(bucket, kind="", question="", reply="", entry=None):
     """One red line saying what went wrong with THIS reply.
 
     Megan 2026-10-06, shown four dodges carrying one identical sentence:
@@ -417,24 +473,65 @@ def why_dodged(bucket, kind="", question="", reply=""):
         return "Texting shorthand going out under the company's name."
 
     q, r = question or "", reply or ""
+    e = entry or {}
+
+    # Two questions at once, and the reply picks up the other one. The
+    # Janel Mills case: "Is this in a store?" and "How long is the
+    # interview?" a second apart, answered "A quick 15-20 minutes".
+    # Calling that a wrong-topic reply misread it — it answered, just not
+    # this.
+    between = 0
+    ctx = e.get("context") or []
+    seen = False
+    for m in ctx:
+        body = (m.get("body") or "").strip()
+        if not seen:
+            seen = body == q.strip()
+            continue
+        if m.get("dir") == "Out":
+            break
+        between += 1
+    tail = _chased(e)
+    if between:
+        # Say only what is visible: several questions in a row, one reply.
+        # Claiming the reply ANSWERED one of the others was wrong on
+        # "Can you verify? I have not applied for AT&T" -> "Thank you for
+        # letting us know", which answers none of them.
+        return ("They asked {} things in a row and only got one reply.{}"
+                .format(between + 1, tail))
+
     # Answered a different question entirely.
     if A.GIVES_DURATION.search(r) and not A.ASKS_DURATION.search(q):
-        return ("Gave how long the interview is. They asked about {}."
-                .format(topic))
+        return ("Gave how long the interview is. They asked about {}.{}"
+                .format(topic, tail))
     if A.GIVES_TIME.search(r) and not A.ASKS_WHEN.search(q):
-        return "Gave a time. They asked about {}.".format(topic)
+        return "Gave a time. They asked about {}.{}".format(topic, tail)
     # A yes-or-no question answered sideways. Megan 2026-10-06 on "Is the
     # position in a store?" -> "This is a residential campaign":
     # "technically this does answer but is a bit dodgy, should ask
     # something back". So name it as vague rather than as unanswered, and
     # say what to do — the same shape as ruling 3, answer then reassure.
-    if YES_NO.match(q.strip()) and not SAYS_YES_NO.search(r):
-        return ("Answers it vaguely and asks nothing back. Say yes or no, "
-                "then ask a question.")
+    if is_weak(q, r):
+        return ("Answers it vaguely and asks nothing back.{}".format(tail))
     out = "Doesn't answer {}.".format(topic)
     if "?" not in r:
         out += " Nothing asked back, either."
-    return out
+    return out + tail
+
+
+def _chased(entry):
+    """' They asked 2 more times, and never got an answer.' or ''."""
+    e = entry or {}
+    try:
+        again = int(e.get("asked_again") or 0)
+    except (TypeError, ValueError):
+        again = 0
+    if not again:
+        return ""
+    later = str(e.get("answered_later")).lower() == "true"
+    return (" They asked {} more time{}{}.".format(
+        again, "" if again == 1 else "s",
+        "" if later else ", and never got an answer"))
 
 
 def needle_of(detail):
@@ -574,6 +671,7 @@ def render(person, office, weeks, path):
         ("House rules broken", last.get("examples") or [], ""),
         ("Questions not answered", last.get("asked") or [],
          "Did not answer: "),
+        ("Weak answers", last.get("weak") or [], "Weak answer: "),
         ("Typing and grammar", last.get("typos") or [], ""),
     )
     if any(items for _h, items, _p in sections):
@@ -588,9 +686,16 @@ def render(person, office, weeks, path):
                 else issue
             groups.setdefault(label, []).append((hit, body, name, why))
         add("<h2>{} \u2014 {}</h2>".format(esc(heading), len(items)))
+        if heading == "Weak answers":
+            add("<p class='none'>Technically answered, but nothing said "
+                "plainly and nothing asked back \u2014 so the conversation "
+                "stops instead of becoming a booking.</p>")
         for label, rows_ in sorted(groups.items(), key=lambda kv: -len(kv[1])):
             add("<details><summary>{} \u2014 {}</summary>".format(
                 esc(label), len(rows_)))
+            if heading == "Weak answers":
+                add("<p class='fixit'>Instead: {}</p>".format(
+                    esc(recovery_for(label))))
             for hit, body, name, why in rows_:
                 add("<blockquote>{}{}{}</blockquote>".format(
                     "<span class='who'>{}</span><br>".format(esc(name))
