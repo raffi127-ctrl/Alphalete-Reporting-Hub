@@ -130,6 +130,10 @@ OWNER_EMAILS: Dict[str, str] = {
 # his 23858 office, so he gets her board too.
 EXTRA_RECIPIENTS: Dict[str, List[str]] = {
     "Shealey Miller": ["padilla10x2001@gmail.com"],   # Angel Padilla
+    # Starr 2026-10-07 (Raf forwarded, "Can we get this for Gabe please?"):
+    # "can I get sent this sheet for Gabe's office please every night" —
+    # office 22189, on Pat's captainship, so Starr's own mail never had it.
+    "Gabe Perez": ["starr.novamanagement@gmail.com"],  # Starr Rodenhurst
 }
 
 
