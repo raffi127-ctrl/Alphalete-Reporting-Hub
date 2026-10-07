@@ -39,7 +39,7 @@ from automations.shared import ownerville_knocks as K
 
 # Bump with every release that changes what this module does or reports; it
 # is what a KnocksProblem's summary carries (see the stamp note below).
-CODE_RELEASE = "2026.10.06.8"
+CODE_RELEASE = "2026.10.06.9"
 
 
 class KnocksProblem(RuntimeError):
@@ -99,12 +99,15 @@ def _choose_client(page, cid: str, campaign: str, *, log=print) -> bool:
     return True
 
 
-def _page_evidence(page, seen: List[str]) -> str:
+def _page_evidence(page, seen: List[str], wire: Optional[List[str]] = None) -> str:
     """The read's own log lines plus where the page ended up and what it says.
 
     Best effort on every line: this runs inside a failure, and a probe that
     itself throws would replace a diagnosable fault with a crash."""
     out = ["what the read saw:"] + ["  " + ln for ln in seen[-15:]]
+    if wire:
+        out.append("wire (last %d of %d): %s" % (min(len(wire), 14), len(wire),
+                   " ; ".join(wire[-14:])))
     try:
         out.append("page url: %s" % page.url)
     except Exception:  # noqa: BLE001
@@ -153,14 +156,14 @@ def _page_evidence(page, seen: List[str]) -> str:
                         + (e.href ? ' href=' + e.href : '') + (e.getAttribute('onclick') ? ' onclick=' + e.getAttribute('onclick').slice(0, 60) : '')
                         + (e.dataset && Object.keys(e.dataset).length ? ' data=' + JSON.stringify(e.dataset).slice(0, 60) : '')
                         + '> ' + (e.innerText || '').trim().slice(0, 40))
-                    .slice(0, 14).join(' ; ');
+                    .slice(0, 6).join(' ; ');
                 const c = document.body ? document.body.cloneNode(true) : null;
                 if (c) c.querySelectorAll(
                     'nav, header, footer, script, style, #sidebar, .sidebar, '
                     + '.navbar, .nav, .menu, #menu, .topbar, #header, #footer')
                     .forEach(e => e.remove());
                 const text = (c ? (c.innerText || c.textContent || '') : '')
-                    .replace(/\\s+/g, ' ').trim().slice(0, 300);
+                    .replace(/\\s+/g, ' ').trim().slice(0, 120);
                 return {tables, frames, selects, dlgs, hits, text};
             }""")
         out.append("tables: %s" % (shape.get("tables") or "none"))
@@ -264,8 +267,37 @@ def read_knocks(day: Optional[dt.date] = None, *, headless: bool = True,
             seen.append(str(msg))
             log(msg)
 
+        # WHAT THE PAGE ASKED THE SERVER FOR. On Jamis's new-UI account the
+        # dispositions page lands on the right client (D2DClientDropdown
+        # currentId = the pin) and still renders no grid; the grid is filled
+        # by an AJAX call, so the calls and their statuses are the next thing
+        # to read -- and the data call's URL is what would let this reader
+        # fetch rows on either UI.
+        wire: List[str] = []
+
+        def _on_response(resp):
+            try:
+                url = resp.url
+                if "ownerville" not in url or any(
+                        url.split("?")[0].lower().endswith(x) for x in
+                        (".js", ".css", ".png", ".gif", ".svg", ".woff", ".woff2",
+                         ".ico", ".jpg", ".ttf", ".map")):
+                    return
+                wire.append("%s %s" % (resp.status, url[:150]))
+            except Exception:  # noqa: BLE001
+                pass
+
+        def _on_console(msg):
+            try:
+                if msg.type in ("error", "warning"):
+                    wire.append("console %s: %s" % (msg.type, msg.text[:140]))
+            except Exception:  # noqa: BLE001
+                pass
+
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            page.on("response", _on_response)
+            page.on("console", _on_console)
             rqst = _session(page, log=_l)
             # PIN THE CAMPAIGN FIRST. The campaign is a sticky session-global
             # in OwnerVille, so an unpinned read on a multi-campaign owner
@@ -305,7 +337,7 @@ def read_knocks(day: Optional[dt.date] = None, *, headless: bool = True,
                 problem = KnocksProblem(
                     "%s (what the page showed is in the fault detail, "
                     "code %s)" % (e, CODE_RELEASE))
-                problem.seen = _page_evidence(page, seen)
+                problem.seen = _page_evidence(page, seen, wire)
                 raise problem
             # Never fatal: the disposition half is still worth handing over,
             # and losing the whole board because the gaps endpoint blipped
