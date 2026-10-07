@@ -332,11 +332,10 @@ def work_on(person, weeks):
             why = ("{:.0f}% of your bookings are over a day out. Use fear of "
                    "loss and book them same or next day.".format(far))
         elif silent_share is not None and silent_share >= 25:
-            why = ("{:.0f}% of your bookings were agreed on a call and "
-                   "nothing more. Those show at {:.0f}%, against {:.0f}% "
-                   "for the ones who stay in a conversation. The call is "
-                   "where you are losing them \u2014 they agree to a time and "
-                   "turn up for nothing."
+            why = ("{:.0f}% of your bookings came off a call rather than a "
+                   "text \u2014 both are normal. But yours show at {:.0f}% "
+                   "when they come off a call, against {:.0f}% when they "
+                   "come off a conversation. The gap is the call itself."
                    .format(silent_share, silent_rate, talked_rate))
         elif bot:
             why = "Offer sooner interview times."
