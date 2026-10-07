@@ -939,6 +939,7 @@ FIRST_SALE_LINES = (
     "First blood 🩸💰 {first} gets the office on the board. Everybody else: your move 🚪",
     "{first} just broke the seal 💰 Day's open. ¡Dale! Who's riding with them? 🔥",
     "{first} opened the day 💅💰 OTB. Everybody else, it's giving 'who's next' 👀",
+    "{first} is OTB 💰 Undeniable proof. Who's next? 👀",
 )
 # BACK TO BACK: the same rep again inside BACK_TO_BACK_MIN of their last one.
 BACK_TO_BACK_MIN = 30

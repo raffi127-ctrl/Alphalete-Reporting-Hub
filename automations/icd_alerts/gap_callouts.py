@@ -113,6 +113,7 @@ LINES = (
     # still digging for it.
     "{names} — {m}+ min off the doors. Still looking for that pony? 🐴 It's behind a door 🚪",
     "{names}: {m}+ min. The pony's not in the car 🐴 Go find it 🚪",
+    "{names}: {m}+ min. Volume negates luck — and right now there's no volume 🚪",
     # BENEFIT OF THE DOUBT (Megan 2026-09-26): a quiet rep may be inside with
     # a customer. Half the pool leaves that door open.
     "{names} — {m}+ min without a dispo. Must be cooking up something good in there… right? 👨‍🍳🔥",
@@ -150,6 +151,7 @@ B2B_LINES = (
     "It's giving long lunch 🥗💅 {names} — {m}+ min, no dispo. Cute. Now walk in 🏢",
     "{names} — {m}+ min, no walk-ins. Mood's not the plan 🏢 #FYMFTP",
     "{names}: {m}+ min. The pony's not in the parking lot 🐴 It's inside 🏢",
+    "{names}: {m}+ min. Volume negates luck — and right now there's no volume 🏢",
     # ...and the same Spanish phrases sprinkled in, like LINES.
     "¡Snicklemeberries! 🫐 {names} — {m}+ min without a dispo. Finger poppin' or talking to owners? ¡Vamos! 🏢👀",
     "{names} — {m}+ min, no dispo, no sale. Chatting up the recepcionista? 🚧",
@@ -290,6 +292,7 @@ RECEIPT_LINES = (
     "Okay {names}, I see you 💅 Credit check behind the quiet. Period. 💰",
     "Say less 💁‍♀️ {names} was working the whole time. Lucy apologizes 🫡",
     "{names} proved me wrong 🧾 and I love being wrong 🫡 Credit check's on the board — go close it 💰",
+    "{names} — credit check behind the quiet. The work works 🫡💰",
 )
 # The same idea for a business office: no credit checks on Box, so what moves
 # is a sale.
@@ -302,6 +305,7 @@ B2B_RECEIPT_LINES = (
     "You showed me 🫡 {names} — a sale behind the quiet. ¡Así se hace! 💼",
     "Okay {names}, I see you 💅 Deal behind the quiet. Period. 💼",
     "{names} proved me wrong 🧾 and I love being wrong 🫡 Deal's on the board 💼",
+    "{names} — deal behind the quiet. The work works 🫡💼",
 )
 
 
@@ -414,6 +418,8 @@ PACE_LINES = (
     "{avg} {unit}/hr from {names} 🚪🔥 The neighborhood knows your name by now 🏡",
     "¡Snicklepop! ⚡ {names} averaging {avg} {unit} an hour 🚪🚪🚪 ¡Así se hace! 🔥",
     "{names} at {avg} {unit}/hr 🏃💨 That's not finger poppin', eso es trabajo 💪",
+    # Alex Hormozi's (Megan 2026-10-07): volume negates luck.
+    "{names} — {avg} {unit}/hr 🏃💨 Volume negates luck 🔥",
 )
 
 # The same recognition in business talk for the Service Cloud offices (Megan
@@ -426,6 +432,7 @@ B2B_PACE_LINES = (
     "{avg} {unit}/hr from {names} 🏢🔥 Every owner on the block knows your name by now 💼",
     "¡Snicklepop! ⚡ {names} averaging {avg} {unit} an hour 🏢🏢🏢 ¡Así se hace! 🔥",
     "{names} at {avg} {unit}/hr 🏃💨 That's not finger poppin', eso es trabajo 💪",
+    "{names} — {avg} {unit}/hr 🏃💨 Volume negates luck 🔥",
 )
 
 
