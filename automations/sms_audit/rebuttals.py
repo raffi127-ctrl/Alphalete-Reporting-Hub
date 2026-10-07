@@ -302,7 +302,12 @@ OFFICE_ADDRESS = {
 _STREET = re.compile(r"(\d{3,5})\s+([A-Za-z0-9.' ]{1,28}?)\s*"
                      r"\b(Dr|Drive|St|Street|Rd|Road|Blvd|Hwy|Highway|Ln|Lane)"
                      r"\b[^.!?\n]{0,40}", re.I)
-_UNIT = re.compile(r"(Unit|Suite|Ste\.?)\s*(\w+)", re.I)
+# \b before the keyword, or "Ste" matches inside "yesterday" and captures
+# "rday" as the suite number — which is how "The text and email I sent
+# yesterday has 3100 Premier Drive Suite 207 Irving" was reported as the
+# WRONG address in a week when it was the right one (Megan 2026-10-06:
+# "this address was correct on this week").
+_UNIT = re.compile(r"\b(Unit|Suite|Ste\.?)\s*(\w+)", re.I)
 
 
 # An office that MOVES makes every past message wrong overnight unless the

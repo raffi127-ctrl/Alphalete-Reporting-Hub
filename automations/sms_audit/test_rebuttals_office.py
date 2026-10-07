@@ -119,3 +119,41 @@ class StreetBoundary(unittest.TestCase):
     def test_a_street_named_in_full_is_not_split(self):
         self.assertTrue(RB.wrong_address(
             "11280", "We're at 1901 N Highway 360, Grand Prairie"))
+
+
+class UnitBoundary(unittest.TestCase):
+    """A suite keyword has to be a word of its own.
+
+    Megan 2026-10-06, shown September texts carrying the September
+    address: "this address was correct on this week". "Ste" was matching
+    inside "yesterday" and capturing "rday" as the suite number, so a
+    correct address failed the suite check."""
+
+    SEP = __import__("datetime").date(2026, 9, 22)
+    OCT = __import__("datetime").date(2026, 10, 3)
+
+    def setUp(self):
+        RB.ADDRESS_HISTORY.clear()
+        RB.set_address_history(
+            "11280", "5217 Tennyson Pkwy, Suite 100, Plano, Texas 75024",
+            "3100 Premier Drive, Suite 207, Irving, Texas 75063",
+            self.OCT.replace(day=2))
+
+    YESTERDAY = ("The text and email I sent yesterday has 3100 Premier "
+                 "Drive Suite 207 Irving, Texas 75063")
+
+    def test_yesterday_is_not_a_suite(self):
+        self.assertIsNone(RB.wrong_address("11280", self.YESTERDAY, self.SEP))
+
+    def test_the_same_text_after_the_move_is_wrong(self):
+        self.assertTrue(RB.wrong_address("11280", self.YESTERDAY, self.OCT))
+
+    def test_the_right_address_in_its_own_week_is_clean(self):
+        self.assertIsNone(RB.wrong_address(
+            "11280", "Our office is at 3100 Premier Drive, Suite 207, "
+                     "Irving, TX", self.SEP))
+
+    def test_a_genuinely_wrong_suite_still_fires_in_that_week(self):
+        self.assertTrue(RB.wrong_address(
+            "11280", "Our office is at 3100 Premier Drive, Suite 232 "
+                     "Irving, TX", self.SEP))
