@@ -257,7 +257,7 @@ def work_on(person, weeks):
     items = []
 
     def add(area, value, grade, text, prev=None):
-        if grade and grade not in "AB":
+        if grade:
             items.append({"area": area, "now": value, "before": prev,
                           "grade": grade, "do": text})
 
@@ -296,7 +296,10 @@ def work_on(person, weeks):
 
     house = now.get("house") or 0
     if house:
-        worst = now["issues"].most_common(1)[0][0]
+        # .get: a week dict from a partial source has no counter, and a
+        # missing breakdown is not worth crashing a scorecard over.
+        counts = now.get("issues") or collections.Counter()
+        worst = counts.most_common(1)[0][0] if counts else "House rules"
         add("House Rules Broken", "{}".format(house),
             GC._band(house, 0, 2, 6, higher_is_better=False),
             "{}. The exact texts are below.".format(worst),
@@ -321,6 +324,23 @@ def work_on(person, weeks):
 
     items.sort(key=lambda i: "FDCBA".index(i["grade"]))
     return items
+
+
+def failing(items):
+    """Only what is off target — the three a person is coached on."""
+    return [i for i in items if i["grade"] not in "AB"]
+
+
+def grade_of(person, weeks):
+    """One letter for the week: the worst area that was measured.
+
+    Megan 2026-10-06: "they should get a 'grade' on this report card".
+    Worst-of rather than an average, the same convention the office grade
+    card uses — an average lets a bad week hide behind volume."""
+    items = work_on(person, weeks)
+    if not items:
+        return None
+    return sorted(items, key=lambda i: "FDCBA".index(i["grade"]))[0]["grade"]
 
 
 def A_mins(m):
@@ -369,6 +389,12 @@ blockquote{margin:.4em 0 .4em 1em;padding:.3em .7em;border-left:3px solid #bbb;
 ol.focus{margin:.4em 0 0;padding-left:1.3em}
 ol.focus li{margin:.6em 0}
 .moved{color:#777;font-weight:normal;font-size:.9em}
+.gradebox{display:flex;gap:.7em;align-items:baseline;margin:0 0 1em}
+.letter{font-size:3em;font-weight:bold;line-height:1}
+.letter.A,.letter.B{color:#156E46}
+.letter.C{color:#8a6d00}
+.letter.D,.letter.F{color:#A8322A}
+.gradenote{color:#666}
 .well{border:1px solid #156E46;background:#f1f7f1;border-radius:6px;
       padding:.7em 1em;margin:1.2em 0}
 .well h2{margin:0 0 .3em;border:0;color:#156E46;font-size:1em}
@@ -492,12 +518,13 @@ SEVERITY = ("went round in circles", "walk away", "in a row",
 
 
 def did_well(person, weeks, limit=2):
-    """What went RIGHT this week, out of the same week-over-week numbers.
+    """What went RIGHT this week, said as praise.
 
     Megan 2026-10-06: "we should also have some highlight of something
-    they did well". Only things the data shows — a measure that moved the
-    right way against last week, or a clean sheet on real volume. Nothing
-    invented, and nothing when there is nothing."""
+    they did well", then "this needs to be more encouraging- we want to
+    praise them". So each line is written to be read by the person it is
+    about. Still only things the numbers show: a measure that moved the
+    right way against last week, or a clean sheet on real volume."""
     got = [w for w in weeks if w in person["weeks"]]
     if not got:
         return []
@@ -505,41 +532,49 @@ def did_well(person, weeks, limit=2):
     before = person["weeks"][got[-2]] if len(got) > 1 else None
     out = []
 
-    def moved(label, new, old, up_good, show):
+    def moved(new, old, up_good, show, praise):
         if new is None or old is None:
             return
         better = (new > old) if up_good else (new < old)
         if not better:
             return
-        gap = abs(new - old)
-        out.append((gap / max(abs(old), 1.0),
-                    "{}: {} \u2014 was {}.".format(label, show(new),
-                                                   show(old))))
+        out.append((abs(new - old) / max(abs(old), 1.0),
+                    praise.format(new=show(new), old=show(old))))
 
     pct = lambda v: "{:.0f}%".format(v)
     num = lambda v: "{:.0f}".format(v)
-    moved("1st Round Retention", _rate(now, "shown", "booked"),
-          _rate(before, "shown", "booked") if before else None, True, pct)
-    moved("House rules broken", now.get("house"),
-          (before or {}).get("house"), False, num)
-    moved("Questions not answered", now.get("dodged"),
-          (before or {}).get("dodged"), False, num)
-    moved("Typing and grammar", now.get("typing"),
-          (before or {}).get("typing"), False, num)
-    moved("Median Response Time", (now.get("replies") or {}).get("median"),
-          ((before or {}).get("replies") or {}).get("median"), False, A_mins)
-    moved("Booked over a day out", _rate(now, "far_out", "matched"),
-          _rate(before, "far_out", "matched") if before else None, False, pct)
+
+    moved(_rate(now, "shown", "booked"),
+          _rate(before, "shown", "booked") if before else None, True, pct,
+          "More of your bookings turned up \u2014 {new} against {old} last "
+          "week. Keep doing whatever changed.")
+    moved(now.get("house"), (before or {}).get("house"), False, num,
+          "Good pull back on the house rules \u2014 {new} this week, down "
+          "from {old}.")
+    moved(now.get("dodged"), (before or {}).get("dodged"), False, num,
+          "You answered a lot more of what applicants asked \u2014 only "
+          "{new} missed, down from {old}.")
+    moved(now.get("typing"), (before or {}).get("typing"), False, num,
+          "Tidier writing this week \u2014 {new} against {old}.")
+    moved((now.get("replies") or {}).get("median"),
+          ((before or {}).get("replies") or {}).get("median"), False, A_mins,
+          "You got back to people faster \u2014 {new}, down from {old}. That "
+          "is the one applicants feel most.")
+    moved(_rate(now, "far_out", "matched"),
+          _rate(before, "far_out", "matched") if before else None, False, pct,
+          "You booked people closer to the slot \u2014 {new} more than a day "
+          "out, down from {old}.")
 
     texts = now.get("texts") or 0
     if texts >= MIN_TEXTS:
         if not now.get("typing"):
-            out.append((0.4, "No typing or grammar mistakes in {:,} "
+            out.append((0.4, "Not one typing or grammar mistake in {:,} "
                              "texts.".format(texts)))
         if not now.get("house"):
-            out.append((0.4, "No house rules broken."))
+            out.append((0.4, "A clean week on the house rules \u2014 nothing "
+                             "broken."))
     if not now.get("dodged") and (now.get("booked") or 0) >= 5:
-        out.append((0.3, "Every question got an answer."))
+        out.append((0.3, "Every question an applicant asked got an answer."))
 
     out.sort(key=lambda t: -t[0])
     return [line for _w, line in out[:limit]]
@@ -770,6 +805,13 @@ def render(person, office, weeks, path):
              esc(office), esc(R.week_label(got[-1]) if got else "—"))]
     add = L.append
 
+    # Megan 2026-10-06: "they should get a 'grade' on this report card".
+    mark_ = grade_of(person, weeks)
+    if mark_:
+        add("<div class='gradebox'><div class='letter {0}'>{0}</div>"
+            "<div class='gradenote'>This week's grade</div></div>".format(
+                mark_))
+
     wins = did_well(person, weeks)
     if wins:
         add("<div class='well'><h2>Went well</h2><ul>")
@@ -777,7 +819,7 @@ def render(person, office, weeks, path):
             add("<li>{}</li>".format(esc(w)))
         add("</ul></div>")
 
-    fixes = work_on(person, weeks)[:3]
+    fixes = failing(work_on(person, weeks))[:3]
     add("<div class='fix'><h2>Work on this week</h2>")
     if not fixes:
         add("<p>Nothing above the line this week.</p>")
@@ -919,7 +961,7 @@ def office_summary_html(people, weeks, include_ai=True):
         now = p["weeks"][got[-1]]
         if (now.get("texts") or 0) < MIN_TEXTS:
             continue
-        fixes = work_on(p, weeks)
+        fixes = failing(work_on(p, weeks))
         rows.append((p["display"], now, fixes))
     rows.sort(key=lambda r: (-len(r[2]),
                              -(r[2][0]["grade"] == "F" if r[2] else 0)))

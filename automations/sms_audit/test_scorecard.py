@@ -407,12 +407,12 @@ class WentWell(unittest.TestCase):
         return {"display": "X", "weeks": {k: v for k, v in weeks.items() if v}}
 
     def test_an_improvement_is_picked_up(self):
-        got = did = S.did_well(self._person(
+        got = S.did_well(self._person(
             {"texts": 500, "house": 6, "dodged": 6, "typing": 4,
              "booked": 50, "shown": 20},
             {"texts": 500, "house": 10, "dodged": 13, "typing": 8,
              "booked": 50, "shown": 20}), ["w0918", "w0925"])
-        self.assertTrue(any("Questions not answered" in g for g in got))
+        self.assertTrue(any("answered a lot more" in g for g in got), got)
 
     def test_a_clean_sheet_counts(self):
         got = S.did_well(self._person(
@@ -435,3 +435,34 @@ class WentWell(unittest.TestCase):
             {"texts": 500, "house": 9, "dodged": 9, "typing": 9,
              "booked": 50, "shown": 10}), ["w0918", "w0925"])
         self.assertLessEqual(len(got), 2)
+
+
+class Grade(unittest.TestCase):
+    """Megan 2026-10-06: "they should get a 'grade' on this report card"."""
+
+    def _person(self, now, before=None):
+        wk = {"w0918": before or {}, "w0925": now}
+        return {"display": "X", "weeks": {k: v for k, v in wk.items() if v}}
+
+    GOOD = {"texts": 500, "house": 0, "dodged": 0, "typing": 0,
+            "booked": 50, "shown": 35, "matched": 40, "far_out": 2}
+    BAD = {"texts": 500, "house": 20, "dodged": 30, "typing": 30,
+           "booked": 50, "shown": 5, "matched": 40, "far_out": 30}
+
+    def test_a_clean_week_grades_well(self):
+        self.assertIn(S.grade_of(self._person(self.GOOD), ["w0925"]), "AB")
+
+    def test_a_bad_week_grades_badly(self):
+        self.assertIn(S.grade_of(self._person(self.BAD), ["w0925"]), "DF")
+
+    def test_the_worst_area_sets_the_grade(self):
+        mixed = dict(self.GOOD, house=20)
+        self.assertNotIn(S.grade_of(self._person(mixed), ["w0925"]), "AB")
+
+    def test_nothing_measured_is_no_grade(self):
+        self.assertIsNone(S.grade_of({"display": "X", "weeks": {}}, ["w0925"]))
+
+    def test_failing_keeps_only_what_is_off_target(self):
+        items = S.work_on(self._person(dict(self.GOOD, house=20)), ["w0925"])
+        self.assertTrue(items)
+        self.assertTrue(all(i["grade"] not in "AB" for i in S.failing(items)))
