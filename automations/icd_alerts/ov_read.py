@@ -39,7 +39,7 @@ from automations.shared import ownerville_knocks as K
 
 # Bump with every release that changes what this module does or reports; it
 # is what a KnocksProblem's summary carries (see the stamp note below).
-CODE_RELEASE = "2026.10.06.9"
+CODE_RELEASE = "2026.10.06.10"
 
 
 class KnocksProblem(RuntimeError):
@@ -88,7 +88,40 @@ def _choose_client(page, cid: str, campaign: str, *, log=print) -> bool:
         log("client picker check failed: %s" % type(e).__name__)
         return False
     if not picked:
-        log("no client picker on the page")
+        # NOT A <select> ON HIS BUILD. Code .8/.9 evidence (Jamis): the body
+        # shows "Choose a Client" with the two clients as LINKS, the header
+        # dropdown already says the pinned client, and the page makes no
+        # data call at all -- so the server wants the choice made through
+        # its own link. Click the link whose text names this campaign,
+        # preferring one that carries the id and one that is NOT inside the
+        # header dropdown.
+        try:
+            picked = page.evaluate(
+                """([cid, words]) => {
+                    const all = Array.from(document.querySelectorAll('a, li, button, [onclick]'));
+                    const cands = all.filter(e => {
+                        const t = (e.innerText || '').trim().toLowerCase();
+                        return t && t.length < 40 && !/choose/.test(t) && words.some(w => t.includes(w));
+                    });
+                    const tag = e => '<' + e.tagName.toLowerCase() + '#' + (e.id || '-') + '.' + (String(e.className) || '-')
+                        + (e.href ? ' href=' + e.href.slice(0, 120) : '')
+                        + (e.getAttribute('onclick') ? ' onclick=' + e.getAttribute('onclick').slice(0, 80) : '')
+                        + '> ' + (e.innerText || '').trim().slice(0, 30);
+                    const carries = e => cid && ((e.href || '') + (e.getAttribute('onclick') || '')).includes(cid);
+                    const inHeader = e => !!e.closest('.D2DClientDropdown, .dropdown-menu, .navbar, nav, header');
+                    const el = cands.find(e => carries(e) && !inHeader(e))
+                        || cands.find(e => !inHeader(e))
+                        || cands.find(carries) || cands[0];
+                    if (!el) return '';
+                    const d = 'link ' + tag(el);
+                    el.click();
+                    return d;
+                }""", [str(cid or ""), words])
+        except Exception as e:  # noqa: BLE001
+            log("client link check failed: %s" % type(e).__name__)
+            return False
+    if not picked:
+        log("no client picker or client link on the page")
         return False
     log("chose client in the page's own picker: %s" % picked)
     try:
@@ -106,8 +139,13 @@ def _page_evidence(page, seen: List[str], wire: Optional[List[str]] = None) -> s
     itself throws would replace a diagnosable fault with a crash."""
     out = ["what the read saw:"] + ["  " + ln for ln in seen[-15:]]
     if wire:
-        out.append("wire (last %d of %d): %s" % (min(len(wire), 14), len(wire),
-                   " ; ".join(wire[-14:])))
+        # Code .9 showed the whole wire for his page: index.cfm?p=89 200,
+        # dashboard/wizard.cfc 200, releaseManagement.cfc 200, cdn-cgi/rum
+        # 204 -- and NO data call. Keep only what is not that: failures,
+        # anything under /telemapper/, console errors.
+        odd = [w for w in wire if not w.startswith("200 ") or "/telemapper/" in w
+               or w.startswith("console")]
+        out.append("wire: %d call(s); of note: %s" % (len(wire), " ; ".join(odd[-8:]) or "none"))
     try:
         out.append("page url: %s" % page.url)
     except Exception:  # noqa: BLE001
@@ -149,14 +187,14 @@ def _page_evidence(page, seen: List[str], wire: Optional[List[str]] = None) -> s
                 // Client / B2B AT&T SBS / B2B-BOX-Energy" is a menu of links or
                 // list items, and the page is the NEW (V2) OwnerVille, whose
                 // grid is not #table-dispositions (zero <table> elements).
-                const want = /return to v1|back to v1|switch to v1|classic|v1 |choose a client|b2b at&t|b2b-box|disposition/i;
+                const want = /return to v1|back to v1|switch to v1|classic|choose a client|b2b at&t|b2b-box|at&t sbs|energy/i;
                 const hits = Array.from(document.querySelectorAll('a, button, li, span, label, div[onclick], [data-client], [data-id]'))
                     .filter(e => { const t = (e.innerText || '').trim(); return t && t.length < 60 && want.test(t); })
                     .map(e => '<' + e.tagName.toLowerCase() + '#' + (e.id || '-') + '.' + (String(e.className) || '-')
-                        + (e.href ? ' href=' + e.href : '') + (e.getAttribute('onclick') ? ' onclick=' + e.getAttribute('onclick').slice(0, 60) : '')
+                        + (e.href ? ' href=' + e.href.slice(0, 150) : '') + (e.getAttribute('onclick') ? ' onclick=' + e.getAttribute('onclick').slice(0, 120) : '')
                         + (e.dataset && Object.keys(e.dataset).length ? ' data=' + JSON.stringify(e.dataset).slice(0, 60) : '')
                         + '> ' + (e.innerText || '').trim().slice(0, 40))
-                    .slice(0, 6).join(' ; ');
+                    .slice(0, 8).join(' ; ');
                 const c = document.body ? document.body.cloneNode(true) : null;
                 if (c) c.querySelectorAll(
                     'nav, header, footer, script, style, #sidebar, .sidebar, '
