@@ -1201,7 +1201,7 @@ def main(argv: list[str] | None = None) -> int:
         if out.exists():
             out.unlink()
         url = ("https://us-east-1.online.tableau.com/t/sci/views/"
-               "DirectDepositICDVIEWVersion2_0/DDDETAIL.csv?:refresh=yes")
+               "DirectDepositICDVIEWVersion2_0/DDDETAILORG.csv?:refresh=yes")
         cdp_pull.download_views([], log=_log,
                                 csv_fetches=[(url, str(out))])
         if not out.exists():
@@ -1216,6 +1216,12 @@ def main(argv: list[str] | None = None) -> int:
         _plog(f"owner-probe: {len(rows) - 1} rows")
         for _i in range(0, len(hdr), 6):
             _plog("  col[%02d]: %s" % (_i, " | ".join(hdr[_i:_i + 6])))
+        wc = next((i for i, h in enumerate(hdr) if "dd week" in h.lower()), None)
+        if wc is not None:
+            wcnt = Counter(r[wc] for r in rows[1:] if len(r) > wc and r[wc])
+            _plog(f"DD week values in {hdr[wc]!r}:")
+            for v, c in wcnt.most_common(8):
+                _plog(f"  week {v!r}: {c} line(s)")
         oc = next((i for i, h in enumerate(hdr) if "owner" in h.lower()), None)
         if oc is not None:
             cnt = Counter(r[oc] for r in rows[1:] if len(r) > oc and r[oc])
