@@ -111,7 +111,7 @@ LINES = (
     "Mood says couch, plan says doors 🚪 {names}: {m}+ min. #FYMFTP",
     # The pony (Megan 2026-10-07): a sale is "found their pony", so a gap is
     # still digging for it.
-    "{names} — {m}+ min off the doors. Still digging for that pony? 🐴 It's behind a door 🚪",
+    "{names} — {m}+ min off the doors. Still looking for that pony? 🐴 It's behind a door 🚪",
     "{names}: {m}+ min. The pony's not in the car 🐴 Go find it 🚪",
     # BENEFIT OF THE DOUBT (Megan 2026-09-26): a quiet rep may be inside with
     # a customer. Half the pool leaves that door open.
