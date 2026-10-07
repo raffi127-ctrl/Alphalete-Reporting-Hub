@@ -296,6 +296,60 @@ def _poke_rollcall_flip():
               "- the 9am trigger will cover it")
 
 
+def plan_archive(all_reps, wd_grid, old_we):
+    """What WeekData needs for the closing week: (new_rows, updates, current).
+
+    `wd_grid` is WeekData A:H as read (row 1 = header). A key's FIRST row is
+    the one the boards' MATCH finds, so that is the row compared and updated;
+    a name on two boards archives once (first board wins); a row that already
+    reads exactly as the board is left alone. Values are compared as the
+    sheet displays them ('2', 'X', '') - the board grid is read the same way."""
+    first = {}
+    for i, row in enumerate(wd_grid, start=1):
+        key = str(row[0]).strip() if row else ""
+        if i > 1 and key and key not in first:
+            first[key] = (i, [str(c).strip() for c in (list(row[1:8]) + [""] * 7)[:7]])
+    new_rows, updates, current, seen = [], [], 0, set()
+    for r in all_reps:
+        key = "%s|%s" % (r["name"], old_we)
+        if key in seen:
+            continue
+        seen.add(key)
+        vals = [as_number(v) for v in r["days"]]
+        if key in first:
+            i, was = first[key]
+            if was == [str(d).strip() for d in r["days"]]:
+                current += 1
+            else:
+                updates.append((i, vals, was))
+        else:
+            new_rows.append([key] + vals)
+    return new_rows, updates, current
+
+
+def archive_mismatches(all_reps, wd_grid, old_we):
+    """[(tab, name, board_days, archive_days)] for every rep whose first
+    WeekData row for `old_we` does not read exactly as the board - the
+    pre-flight that runs before any board cell is reset."""
+    _new, updates, _cur = plan_archive(all_reps, wd_grid, old_we)
+    bad_rows = {i for i, _v, _w in updates}
+    first = {}
+    for i, row in enumerate(wd_grid, start=1):
+        key = str(row[0]).strip() if row else ""
+        if i > 1 and key and key not in first:
+            first[key] = (i, [str(c).strip() for c in (list(row[1:8]) + [""] * 7)[:7]])
+    out, seen = [], set()
+    for r in all_reps:
+        key = "%s|%s" % (r["name"], old_we)
+        if key in seen:
+            continue
+        seen.add(key)
+        hit = first.get(key)
+        if hit is None or hit[0] in bad_rows:
+            out.append((r["tab"], r["name"], r["days"], hit[1] if hit else None))
+    return out
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Roll the Vantura Sales Boards "
                                              "onto the new week.")
@@ -389,18 +443,18 @@ def main(argv=None) -> int:
         print("\n!! %s\n   --force given, continuing." % msg)
 
     # ------------------------------------------------------------- 1. archive
-    have = set(k.strip() for k in _retry(wd.col_values, 1))
-    new_rows = []
-    for r in all_reps:
-        key = "%s|%s" % (r["name"], old_we)
-        if key in have:
-            continue                 # already archived - or on two boards
-        have.add(key)
-        new_rows.append([key] + [as_number(v) for v in r["days"]])
-    print("\n1. archive %s: %d new WeekData row(s), %d already there"
-          % (old_we, len(new_rows), len(all_reps) - len(new_rows)))
+    # A key that is already in WeekData is UPDATED when its row differs from
+    # the board (2026-10-05: the 10/2 board split had archived 18 reps mid-week;
+    # the old "already archived - skip" left those rows stale, the day cells
+    # were reset onto them, and the readback refused the flip at 5:17am).
+    wd_grid = _retry(wd.get, "A1:H")
+    new_rows, updates, current = plan_archive(all_reps, wd_grid, old_we)
+    print("\n1. archive %s: %d new WeekData row(s), %d to update, %d already "
+          "current" % (old_we, len(new_rows), len(updates), current))
     for row in new_rows[:3]:
         print("     e.g.", row)
+    for i, vals, was in updates[:5]:
+        print("     update row %d: %s -> %s" % (i, was, vals))
 
     # --------------------------------------------------- 2. 'Last Wk' per rep
     # Per board: each one is its own range on its own tab.
@@ -481,6 +535,26 @@ def main(argv=None) -> int:
         _retry(wd.append_rows, new_rows, value_input_option="USER_ENTERED",
                table_range="A1")
         print("WROTE %d archive row(s) into %s" % (len(new_rows), WEEKDATA))
+    if updates:
+        _retry(wd.batch_update,
+               [{"range": "B%d:H%d" % (i, i), "values": [vals]}
+                for i, vals, _was in updates],
+               value_input_option="USER_ENTERED")
+        print("UPDATED %d stale archive row(s) in %s" % (len(updates), WEEKDATA))
+
+    # The archive has to read back as the board BEFORE a single board cell
+    # moves: the day cells are about to become formulas over these rows.
+    wd_grid = _retry(wd.get, "A1:H")
+    stale = archive_mismatches(all_reps, wd_grid, old_we)
+    if stale:
+        print("\n!! %d rep row(s) are not in WeekData the way the board shows "
+              "them - STOPPING BEFORE TOUCHING THE BOARD; %s is still what it "
+              "shows, nothing was changed on it." % (len(stale), old_we))
+        for tab, name, board_days, wd_days in stale[:8]:
+            print("   %-16s %-28s board %s -> archive %s"
+                  % (tab, name, board_days, wd_days))
+        return 3
+    print("archive verified: every rep's %s row reads as the board" % old_we)
 
     for camp, (d_rng, d_vals) in d_writes.items():
         _retry(tabs[camp].update, values=d_vals, range_name=d_rng,

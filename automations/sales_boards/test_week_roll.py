@@ -229,6 +229,57 @@ def test_a_pre_rename_board_still_parses_as_nds():
     assert tab_for("B2B") == tab_for("NDS") == "NDS Sales Board"
 
 
+def _reps(*rows):
+    return [{"row": 5 + i, "name": n, "days": d, "this_wk": "", "last_wk": "",
+             "campaign": "NDS", "tab": "NDS Sales Board"}
+            for i, (n, d) in enumerate(rows)]
+
+
+def test_archive_updates_a_stale_row_and_appends_the_missing_one():
+    """2026-10-05: a mid-week archive (the 10/2 board split) had left
+    'Name|10.4' rows that no longer read as the board. 'already archived -
+    skip' reset the day cells onto those stale rows and the readback refused
+    the flip at 5:17am. Existing rows are compared and updated now."""
+    grid = [["Key", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+            ["Kyara|10.4", "", "", "", "", "", "", ""],          # stale blanks
+            ["Jacob Ortega|10.4", "2", "0", "4", "2", "0", "5", ""]]
+    reps = _reps(("Kyara", ["0", "0", "0", "0", "0", "0", ""]),
+                 ("Jacob Ortega", ["2", "0", "4", "2", "0", "5", ""]),
+                 ("Nico", ["X", "X", "1", "", "", "", ""]))
+    new, upd, cur = W.plan_archive(reps, grid, "10.4")
+    assert new == [["Nico|10.4", "X", "X", 1, "", "", "", ""]], new
+    assert upd == [(2, [0, 0, 0, 0, 0, 0, ""], ["", "", "", "", "", "", ""])], upd
+    assert cur == 1
+
+
+def test_archive_compares_the_first_row_of_a_duplicate_key():
+    """MATCH finds the first row, so that is the one that must agree."""
+    grid = [["Key"], ["Kyara|10.4", "1"], ["Kyara|10.4", "0"]]
+    reps = _reps(("Kyara", ["0", "", "", "", "", "", ""]))
+    new, upd, cur = W.plan_archive(reps, grid, "10.4")
+    assert not new and cur == 0
+    assert upd[0][0] == 2 and upd[0][1] == [0, "", "", "", "", "", ""], upd
+
+
+def test_a_name_on_two_boards_archives_once():
+    reps = _reps(("Nico", ["1", "", "", "", "", "", ""]))
+    reps.append(dict(reps[0], tab="Verizon Sales Board", row=9))
+    new, upd, cur = W.plan_archive(reps, [["Key"]], "10.4")
+    assert len(new) == 1 and not upd
+
+
+def test_mismatches_name_the_rows_that_do_not_read_as_the_board():
+    grid = [["Key", "Mon"], ["Kyara|10.4", "1"]]
+    reps = _reps(("Kyara", ["0", "", "", "", "", "", ""]),
+                 ("Nico", ["", "", "", "", "", "", ""]))
+    bad = W.archive_mismatches(reps, grid, "10.4")
+    assert [(b[1], b[3]) for b in bad] == [("Kyara", ["1", "", "", "", "", "", ""]),
+                                           ("Nico", None)], bad
+    grid[1] = ["Kyara|10.4", "0"]
+    grid.append(["Nico|10.4"])
+    assert W.archive_mismatches(reps, grid, "10.4") == []
+
+
 def _main() -> int:
     fails = 0
     for name, fn in sorted(globals().items()):

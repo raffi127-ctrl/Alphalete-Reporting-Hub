@@ -491,7 +491,8 @@ def _roll_cols(roll, log=_log):
 
 
 def _close_terminations(ws, roll, cols, resolved, write, log=_log,
-                        board_terms=None, alias=None, store_terms=None):
+                        board_terms=None, alias=None, store_terms=None,
+                        on_board=None):
     """Flip Roll Call Status -> 'Terminated' for anyone already recorded as gone.
 
     THREE signals, in priority order:
@@ -519,8 +520,20 @@ def _close_terminations(ws, roll, cols, resolved, write, log=_log,
     st, nm, gn = cols["status"], cols["name"], cols["gone"]
     board_terms, alias = board_terms or {}, alias or {}
     store_terms = store_terms or {}
+    on_board = on_board or set()      # normalised names sitting on a board today
     gone_fill = {}                    # roll row -> M/D/YYYY to write in col M
     today = dt.date.today()
+
+    def _still_on_board(n):
+        """A rep with a row on a sales board and NO 'T' there is working: the
+        store signal must not close them. 2026-10-05/07: Jayden, Diego and
+        Edgar were rehired onto the Verizon board; the Monday flip snapshotted
+        their still-Terminated roll rows into RollCallData, and every 4am
+        audit after that flipped the rows a human had set back to Active —
+        until the next flip deleted them from the board."""
+        if n in on_board:
+            return True
+        return any(other in on_board for other in alias.get(n, ()))
 
     def _board_mark(n):
         """The board's 'T' for this roll name, through Name Aliases — the board
@@ -564,6 +577,11 @@ def _close_terminations(ws, roll, cols, resolved, write, log=_log,
                 if other in store_terms:
                     hit = store_terms[other]
                     break
+        if hit and _still_on_board(_norm(who)):
+            held.append((ri, who, gone, f"RollCallData {hit[0]} says "
+                         f"{TERMINATED} but {who} has a live board row with no "
+                         f"{TERM_MARK!r} — rehire, store row ignored"))
+            continue
         if hit:
             label, gone_d = hit
             why = f"RollCallData {label} closed the week {TERMINATED}"
@@ -879,9 +897,11 @@ def audit(write: bool, log=_log, auto_close: bool = True,
         store_terms = {}
         log(f"{STORE_TAB} unreadable ({type(e).__name__}) — store close "
             "signal OFF this run")
+    on_board = _with_aliases({_norm(n) for _, _, n in reps}, alias) - set(board_terms)
     closed, still_open = _close_terminations(
         roll_ws, roll, roll_cols, roll_hdr_ok, write and auto_close, log=log,
-        board_terms=board_terms, alias=alias, store_terms=store_terms)
+        board_terms=board_terms, alias=alias, store_terms=store_terms,
+        on_board=on_board)
     if still_open:
         who = "; ".join(f"{nm} (r{ri}, gone {g})" for ri, nm, g, _ in still_open)
         why = sorted({w for _, _, _, w in still_open if w})

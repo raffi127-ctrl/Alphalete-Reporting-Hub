@@ -1435,5 +1435,56 @@ class StationsRollFilters(unittest.TestCase):
                             for f in found), found)
 
 
+class RehireOnBoardIsNotReterminated(unittest.TestCase):
+    """2026-10-06/07: Jayden, Diego and Edgar were put back on the Verizon board
+    while their roll rows still said Terminated; the Monday flip snapshotted
+    that into RollCallData, and the next two 4am audits flipped the rows a
+    human had set back to Active (store signal 1b). A rep with a live board
+    row and no 'T' on it is working — the store row is ignored for them."""
+
+    _run = ExitCodeSemantics._run
+
+    def _sheet(self, board_rows, roll, store):
+        bv, bf, wk = _board_with_days(board_rows, "8.16")
+        st_v, st_f = _stations_clean()
+        return _FakeSheet({
+            "NDS Sales Board": _FakeWS(bv, bf, b2=wk),
+            "Roll Call": _FakeWS(roll),
+            "Report an Issue": _FakeWS([]),
+            "Stations": _FakeWS(st_v, st_f),
+            "RollCallData": _FakeWS(store),
+        })
+
+    def _roll(self, name):
+        row = _pad([""], 14)
+        row[1], row[3] = "Active", name
+        return [_roll_header(), row]
+
+    def _closed_store(self, name):
+        import datetime as dt
+        today = dt.date.today()
+        we = today - dt.timedelta(days=today.weekday() + 1)   # last closed Sunday
+        return [["Key", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Status", "Weeks"],
+                ["%s|%d.%d" % (name, we.month, we.day), "", "", "", "", "", "",
+                 "Terminated", ""]]
+
+    def test_live_board_row_without_a_T_keeps_the_roll_row_active(self):
+        sheet = self._sheet([("Edgar Camunez", [""] * 7)],
+                            self._roll("Edgar Camunez"),
+                            self._closed_store("Edgar Camunez"))
+        rc, _, _ = self._run(sheet, [])
+        self.assertEqual(rc, 0)
+        self.assertNotIn(("B2", "Terminated"),
+                         sheet.worksheet("Roll Call").written,
+                         "a rehire on the board must not be closed from the store")
+
+    def test_a_T_on_the_board_still_closes(self):
+        sheet = self._sheet([("Edgar Camunez", ["T"] * 7)],
+                            self._roll("Edgar Camunez"),
+                            self._closed_store("Edgar Camunez"))
+        self._run(sheet, [])
+        self.assertIn(("B2", "Terminated"), sheet.worksheet("Roll Call").written)
+
+
 if __name__ == "__main__":
     unittest.main()
