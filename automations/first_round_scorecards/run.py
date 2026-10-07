@@ -401,6 +401,19 @@ def _add_scheduled(day: dt.date, graded: Dict[str, List]) -> None:
     for m, r in rows:
         m["scheduled_ct"] = appstream.scheduled_for(
             r.get("applicants") or [], bookings, fathom.start_ct(m)) or ""
+    # not in Raf's three funnels (Carlos' office books in 11580): every other
+    # office, read only when something is still unplaced
+    if any(not m["scheduled_ct"] for m, _ in rows):
+        try:
+            bookings = appstream.booked(day, appstream.other_offices())
+        except Exception as exc:  # noqa: BLE001
+            print(f"AppStream other offices not read ({type(exc).__name__}: {exc})")
+            return
+        print(f"AppStream other offices: {len(bookings)} 1st rounds booked on {day}")
+        for m, r in rows:
+            if not m["scheduled_ct"]:
+                m["scheduled_ct"] = appstream.scheduled_for(
+                    r.get("applicants") or [], bookings, fathom.start_ct(m)) or ""
 
 
 def _dm_channel(client) -> str:

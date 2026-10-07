@@ -236,6 +236,40 @@ class ScheduledTest(unittest.TestCase):
         self.assertNotIn("scheduled", run.reply_text(MEETING, result()))
 
 
+    def test_other_offices_only_for_the_unplaced(self):
+        """Carlos' office books in 11580, not Raf's three funnels (Eve 10/7)."""
+        from unittest import mock
+        carlos = dict(MEETING, recording_id=1, recording_start_time="2026-09-29T15:47:15Z")
+        raf = dict(MEETING, recording_id=2, recording_start_time="2026-09-29T15:47:15Z")
+        graded = {"Isabella": [(carlos, dict(result(), applicants=["Keila Ruiz"]), "")],
+                  "Valentina": [(raf, dict(result(), applicants=["Nakechia Miller"]), "")]}
+        calls = []
+
+        def booked(day, offices=appstream.OFFICES):
+            calls.append(list(offices))
+            if offices == appstream.OFFICES:
+                return self.BOOKED
+            return [{"office": "11580", "time": "10:45 AM", "name": "Keila Ruiz"}]
+        with mock.patch.object(appstream, "booked", side_effect=booked),                 mock.patch.object(appstream, "other_offices", return_value=["11580"]):
+            run._add_scheduled(dt.date(2026, 9, 29), graded)
+        self.assertEqual(calls, [appstream.OFFICES, ["11580"]])
+        self.assertEqual(carlos["scheduled_ct"].strftime("%H:%M"), "10:45")
+        self.assertEqual(raf["scheduled_ct"].strftime("%H:%M"), "10:45")
+
+    def test_all_placed_reads_no_other_office(self):
+        from unittest import mock
+        raf = dict(MEETING, recording_id=2, recording_start_time="2026-09-29T15:47:15Z")
+        graded = {"Valentina": [(raf, dict(result(), applicants=["Nakechia Miller"]), "")]}
+        with mock.patch.object(appstream, "booked", return_value=self.BOOKED) as b:
+            run._add_scheduled(dt.date(2026, 9, 29), graded)
+        self.assertEqual(b.call_count, 1)
+
+    def test_other_offices_skip_the_funnels(self):
+        others = appstream.other_offices()
+        self.assertIn("11580", others)                        # Carlos Hidalgo
+        self.assertFalse(set(others) & set(appstream.OFFICES))
+        self.assertEqual(len(others), len(set(others)))
+
 class RefreshTest(unittest.TestCase):
     """--refresh edits the reply already in the thread instead of adding one."""
     def setUp(self):
