@@ -307,13 +307,15 @@ def main(argv=None) -> int:
                     help="Text summary only; skip downloading the screenshots.")
     ap.add_argument("--linkedin", metavar="FILE",
                     help="LinkedIn call-list candidates' 1st-round photos in one "
-                         "thread (linkedin.py). With --dry-run prints; with --post --dm posts.")
+                         "thread (linkedin.py). With --dry-run prints; with --post --dm (sample) or --channel posts.")
     ap.add_argument("--show-posts", action="store_true",
                     help="With --dry-run: print the exact Slack text per ad.")
     a = ap.parse_args(argv)
     if a.linkedin:
         from automations.ad_photo_threads import linkedin
-        print("\nLinkedIn:", linkedin.run(a.linkedin, users=a.dm if a.post else None))
+        print("\nLinkedIn:", linkedin.run(
+            a.linkedin, users=a.dm if a.post else None,
+            channel=a.channel if a.post else None))
         return 0
     if a.post and not (a.channel or a.test_dm or a.dm):
         ap.error("--post needs --channel, --test-dm or --dm")

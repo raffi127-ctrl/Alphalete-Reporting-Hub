@@ -119,7 +119,8 @@ def no_round_text(people: List[dict], hits: Dict[int, List[dict]]) -> str:
     return f"*No 1st round yet ({len(left)}):*\n" + ", ".join(left)
 
 
-def run(path: str, *, users: Optional[str] = None, until: Optional[dt.date] = None) -> dict:
+def run(path: str, *, users: Optional[str] = None, channel: Optional[str] = None,
+        until: Optional[dt.date] = None) -> dict:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     people = data["candidates"]
     start = dt.date.fromisoformat(data["week_start"])
@@ -134,13 +135,15 @@ def run(path: str, *, users: Optional[str] = None, until: Optional[dt.date] = No
     for i in order:
         print("\n" + reply(people[i], hits[i][0]))
     print("\n" + no_round_text(people, hits))
-    if not users:
+    if not (users or channel):
         return {"sent": len(people), "rounds": len(hits), "posted": False}
 
     from automations.sara_down.run import _download_image
     from automations.ad_photo_threads import crop as cropper
     cl = collect._client()
-    channel = cl.conversations_open(users=users)["channel"]["id"]
+    # A channel (Raf 10/7: "post this on the headshot photos indeed channel")
+    # is the real post; --dm is the [sample] preview.
+    channel = channel or cl.conversations_open(users=users)["channel"]["id"]
     ts = cl.chat_postMessage(channel=channel, text=head)["ts"]
     photos = 0
     with tempfile.TemporaryDirectory() as tmp:
