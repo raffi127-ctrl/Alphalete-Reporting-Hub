@@ -378,6 +378,22 @@ class WatchTest(unittest.TestCase):
         ungraded = {"Carlos": [(self._carlos(1), None, "empty")]}
         self.assertIn("ninguna auditada", run.watch_text(self.DAY, ungraded, self.EMAIL, "x"))
 
+    def test_a_later_tick_counts_what_an_earlier_one_posted(self):
+        """10/6 21:39: the retry tick had none of Carlos' left (6 PM posted
+        them) and DMed "0 entrevistas"."""
+        from unittest import mock
+        run._remember(1, self.DAY, "C1", "1.1")
+        run._remember(2, self.DAY, "C1", "1.2")
+        run._remember(9, dt.date(2026, 10, 5), "C1", "1.3")      # other day
+        lines = [{}] * run.MIN_TRANSCRIPT_LINES
+        day = [dict(self._carlos(1), transcript=lines), dict(self._carlos(2), transcript=lines),
+               dict(self._carlos(9), transcript=lines), dict(MEETING, recording_id=3)]
+        with mock.patch.object(run.fathom, "meetings_on", return_value=day):
+            n = run._posted_earlier(self.DAY, {}, self.EMAIL)
+        self.assertEqual(n, 2)
+        self.assertIn("2 entrevista(s) auditada(s)",
+                      run.watch_text(self.DAY, {}, self.EMAIL, "x", earlier=n))
+
     def test_sent_once_and_only_that_day(self):
         from unittest import mock
         from automations.shared import slack_metrics_post as smp
