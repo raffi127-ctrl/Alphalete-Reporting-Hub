@@ -158,6 +158,7 @@
       "b2b_order_log_att": 7
     },
     "per_office_views": {
+      "b2b_sales": "https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/B2BATTSalesMetrics/4a1c404e-54e1-4325-a1a8-61e361f8fd12/CarlosEXP?:iid=1",
       "b2b_churn_wireless": "https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/CHURNRATES/16d47259-17b6-4ad0-8fd7-2de5081945b0/ALLTEAMWireless?Product%20Type%20(Broken%20Out)=AIR/AWB,WIRELESS,NEW%20INTERNET",
       "b2b_churn_int": "https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/CHURNRATES/16d47259-17b6-4ad0-8fd7-2de5081945b0/ALLTEAMWireless?Product%20Type%20(Broken%20Out)=NEW%20INTERNET",
       "b2b_churn_air": "https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/CHURNRATES/16d47259-17b6-4ad0-8fd7-2de5081945b0/ALLTEAMWireless?Product%20Type%20(Broken%20Out)=AIR%2FAWB"
