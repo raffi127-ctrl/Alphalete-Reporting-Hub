@@ -45,6 +45,8 @@ from automations.shared import review_approval as RA
 # Sat/Sun policy: a clean day releases itself, because nobody is in the channel
 # to tick it. One module for all four gates, so the weekend rule can't drift.
 from automations.shared import weekend_release as wr
+# Weekdays too since 2026-10-07: the auto-check sends a clean day by itself.
+from automations.board_emails import auto_send as A
 
 # The private channel where the day's email is reviewed — THE SAME ONE THE
 # CAPTAINSHIP DRAFTS USE (Eve, 2026-07-29). One channel, one review habit: the
@@ -324,7 +326,7 @@ def _channel(channel: Optional[str] = None) -> str:
 
 
 def post_review(link: str, today: dt.date, channel: Optional[str] = None,
-                verbose: bool = True) -> str:
+                verbose: bool = True, fyi: bool = False) -> str:
     """Post the day's link. Returns the message ts.
 
     RUN THIS ON THE MINI — the token there is Lucy's, and that is the only
@@ -336,10 +338,15 @@ def post_review(link: str, today: dt.date, channel: Optional[str] = None,
     # same as the captainship post that shares this channel.
     # The mentions come from APPROVERS, so changing who approves can't leave the
     # message pinging the old list.
+    # fyi: the auto-check already released it (board_emails.auto_send) and
+    # the link is only here so Eve can look — asking for a ✅ would be a lie.
+    ask = ("it passed the auto-check and is going out on its own — link "
+           "here so you can look." if fyi else
+           "please review and react with :white_check_mark: to send it. "
+           "Nothing goes out until then.")
     text = (f"*{_title(today)}*\n"
             f"{link}\n\n"
-            f"{_mentions()} — please review and react with "
-            f":white_check_mark: to send it. Nothing goes out until then.")
+            f"{_mentions()} — {ask}")
     cli = _client()
     olds = _all_posts(today, channel)
 
@@ -594,6 +601,12 @@ def remind(today: dt.date, after_hours: float = REMIND_AFTER_HOURS,
         if verbose:
             print("— already reminded once", flush=True)
         return False
+    # An auto-sent day can carry a post with no checkmark (a new owner on a
+    # weekend, a rebuild): it went out, there is nothing to chase.
+    if _said(replies, SENT_MARK, SENT_MARK_LEGACY):
+        if verbose:
+            print("— already sent; nothing to chase", flush=True)
+        return False
     # Must keep containing REMIND_MARK — that is what stops it repeating.
     _client().chat_postMessage(
         channel=_channel(channel), thread_ts=msg["ts"],
@@ -640,6 +653,48 @@ def send_reviewed(today: dt.date, distro: bool = False,
     if verbose:
         print(f"→ {' '.join(cmd)}", flush=True)
     return subprocess.call(cmd)
+
+
+def _auto_hooks(today: dt.date, args) -> "A.Hooks":
+    """This gate's own Slack + send functions, handed to the auto-check."""
+    from automations.org_sales_board import screenshot_email as se
+
+    def pdf() -> Path:
+        p = se.out_dir_for(today) / f"org_sales_board_email_{today:%Y%m%d}.pdf"
+        return p if p.exists() else build_pdf(today)
+
+    def reply(text: str, mark: str) -> bool:
+        msg = _find_post(today, args.channel)
+        if msg is None:
+            return False
+        replies = _client().conversations_replies(
+            channel=_channel(args.channel), ts=msg["ts"],
+            limit=50).get("messages", [])
+        if _said(replies, mark):
+            return False
+        _client().chat_postMessage(channel=_channel(args.channel),
+                                   thread_ts=msg["ts"], text=text)
+        return True
+
+    def rebuild() -> None:
+        p = build_pdf(today, build_preview(today))
+        if _find_post(today, args.channel) is not None:
+            upload_pdf(p)                  # same name: the posted link updates
+
+    to_note = ("Alphalete Org Owners distro" if args.distro
+               else "proving list (Rafael + Megan)")
+    return A.Hooks(
+        has_post=lambda: _find_post(today, args.channel) is not None,
+        post_link=lambda fyi: post_review(upload_pdf(pdf()), today,
+                                          args.channel, fyi=fyi),
+        reply=reply,
+        rebuild=rebuild,
+        send=lambda: send_reviewed(today, args.distro),
+        confirm=lambda who: confirm_sent(today, who, to_note=to_note,
+                                         channel=args.channel),
+        record=lambda who: RA.ensure_recorded(HUB_CARD_ID, HUB_CARD_NAME, who,
+                                              day=today),
+        mentions=_mentions())
 
 
 def main(argv=None) -> int:
@@ -727,6 +782,13 @@ def main(argv=None) -> int:
             report_failure(today, rc, args.channel)
         return rc
     if args.post:
+        if A.is_on(today, enabled=not args.no_auto):
+            # Auto-send (Eve 2026-10-07): build only. The link goes up when the
+            # auto-check holds it, rebuilds it, or finds a new owner.
+            build_pdf(today, build_preview(today))
+            print("✓ built — the auto-check (--check) decides whether it "
+                  "needs a review post", flush=True)
+            return 0
         post_review(upload_pdf(build_pdf(today, build_preview(today))),
                     today, args.channel)
         return 0
@@ -736,7 +798,7 @@ def main(argv=None) -> int:
         close_day(today, args.channel)
         return 0
     if args.check:
-        if already_sent(today, args.channel):
+        if A.local_sent(A.ORG, today) or already_sent(today, args.channel):
             print("— already sent today, nothing to do", flush=True)
             # Repair a missing approval row (the Hub pill) without costing a
             # Slack call on the other ~40 passes of the day: the lookup only
@@ -747,6 +809,10 @@ def main(argv=None) -> int:
                                day=today)
             return 0
         who = find_approval(today, args.channel)
+        if not who and A.is_on(today, enabled=not args.no_auto):
+            # Eve 2026-10-07: no gate — the auto-check decides, every day.
+            return A.run(A.ORG, today, _auto_hooks(today, args),
+                         send=args.send)
         if not who:
             # Sat/Sun there is nobody in the channel to tick it, and a report
             # that built cleanly should not die waiting for a reader who isn't
@@ -777,6 +843,7 @@ def main(argv=None) -> int:
                          to_note=("Alphalete Org Owners distro" if args.distro
                                   else "proving list (Rafael + Megan)"),
                          channel=args.channel)
+            A._close(A.ORG, today)
         else:
             report_failure(today, rc, args.channel)
         return rc

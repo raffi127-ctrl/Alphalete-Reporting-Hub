@@ -49,6 +49,8 @@ from automations.shared import review_approval as RA
 # Sat/Sun: a clean day releases itself. Same module as the other gates, so the
 # weekend rule is one rule.
 from automations.shared import weekend_release as wr
+# Weekdays too since 2026-10-07: the auto-check sends a clean day by itself.
+from automations.board_emails import auto_send as A
 
 SENT_MARK = "Sent — approved by"
 REMIND_MARK = "reminder: this board email"
@@ -158,12 +160,19 @@ def _approver_of(msg: dict) -> Optional[Tuple[str, str]]:
 
 
 def post_review(board: B.Board, link: str, run_day: dt.date,
-                channel: Optional[str] = None, verbose: bool = True) -> str:
-    """Post the day's link. Returns the message ts. RUN THIS ON THE MINI."""
+                channel: Optional[str] = None, verbose: bool = True,
+                fyi: bool = False) -> str:
+    """Post the day's link. Returns the message ts. RUN THIS ON THE MINI.
+
+    fyi: the auto-check already released it (auto_send) and the link is only
+    there so Eve can look — asking for a ✅ would be a lie."""
+    ask = ("it passed the auto-check and is going out on its own — link "
+           "here so you can look." if fyi else
+           "please review and react with :white_check_mark: to send it. "
+           "Nothing goes out until then.")
     text = (f"*{_title(board, run_day)}*\n"
             f"{link}\n\n"
-            f"{_mentions()} — please review and react with "
-            f":white_check_mark: to send it. Nothing goes out until then.")
+            f"{_mentions()} — {ask}")
     cli = _client()
     olds = _all_posts(board, run_day, channel)
 
@@ -273,6 +282,12 @@ def remind(board: B.Board, run_day: dt.date,
     if _said(replies, REMIND_MARK):
         if verbose:
             print("— already reminded once", flush=True)
+        return False
+    # An auto-sent day can carry a post with no checkmark (a new owner on a
+    # weekend, a rebuild): it went out, there is nothing to chase.
+    if _said(replies, SENT_MARK):
+        if verbose:
+            print("— already sent; nothing to chase", flush=True)
         return False
     _client().chat_postMessage(
         channel=_channel(channel), thread_ts=msg["ts"],
@@ -384,6 +399,53 @@ def send_reviewed(board: B.Board, run_day: dt.date, verbose: bool = True) -> int
     return subprocess.call(cmd)
 
 
+def _auto(board: B.Board, run_day: dt.date, args) -> bool:
+    """Does the auto-check own this board today? Only the boards auto_send
+    knows (Country — Headcount still waits for its ✅)."""
+    return (board.key in A.TARGETS
+            and A.is_on(run_day, enabled=not args.no_auto))
+
+
+def _auto_hooks(board: B.Board, run_day: dt.date, args) -> "A.Hooks":
+    """This gate's own Slack + send functions, handed to the auto-check."""
+    def pdf() -> Path:
+        p = es.out_dir_for(board, run_day) / f"{board.key}_email_{run_day:%Y%m%d}.pdf"
+        return p if p.exists() else build_pdf(board, run_day)
+
+    def reply(text: str, mark: str) -> bool:
+        msg = _find_post(board, run_day, args.channel)
+        if msg is None:
+            return False
+        replies = _client().conversations_replies(
+            channel=_channel(args.channel), ts=msg["ts"],
+            limit=50).get("messages", [])
+        if _said(replies, mark):
+            return False
+        _client().chat_postMessage(channel=_channel(args.channel),
+                                   thread_ts=msg["ts"], text=text)
+        return True
+
+    def rebuild() -> None:
+        p = build_pdf(board, run_day, build_preview(board, run_day))
+        if _find_post(board, run_day, args.channel) is not None:
+            upload_pdf(p, folder_name=board.drive_folder)   # same link
+
+    return A.Hooks(
+        has_post=lambda: _find_post(board, run_day, args.channel) is not None,
+        post_link=lambda fyi: post_review(
+            board, upload_pdf(pdf(), folder_name=board.drive_folder),
+            run_day, args.channel, fyi=fyi),
+        reply=reply,
+        rebuild=rebuild,
+        send=lambda: send_reviewed(board, run_day),
+        confirm=lambda who: confirm_sent(board, run_day, who,
+                                         to_note=B.who(board),
+                                         channel=args.channel),
+        record=lambda who: RA.ensure_recorded(board.report_id, board.hub_name,
+                                              who, day=run_day),
+        mentions=_mentions())
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--board", required=True, choices=B.KEYS)
@@ -452,6 +514,13 @@ def main(argv=None) -> int:
                   f"checkmark was put on the PREVIOUS PDF. Tell Eve.", flush=True)
         return 0
     if args.post:
+        if _auto(board, run_day, args):
+            # Auto-send (Eve 2026-10-07): build only. The link goes up when the
+            # auto-check holds it, rebuilds it, or finds a new owner.
+            build_pdf(board, run_day, build_preview(board, run_day))
+            print("✓ built — the auto-check (--check) decides whether it "
+                  "needs a review post", flush=True)
+            return 0
         pdf = build_pdf(board, run_day, build_preview(board, run_day))
         post_review(board, upload_pdf(pdf, folder_name=board.drive_folder),
                     run_day, args.channel)
@@ -462,7 +531,9 @@ def main(argv=None) -> int:
     if args.remind:
         return 0 if remind(board, run_day, args.after_hours, args.channel) else 1
     if args.check:
-        if already_sent(board, run_day, args.channel):
+        target = A.TARGETS.get(board.key)
+        if ((target is not None and A.local_sent(target, run_day))
+                or already_sent(board, run_day, args.channel)):
             print("— already sent today, nothing to do", flush=True)
             # Repair a missing approval row (the Hub pill) without costing a
             # Slack call on the other ~40 passes of the day: the lookup only
@@ -473,6 +544,10 @@ def main(argv=None) -> int:
                                day=run_day)
             return 0
         who = find_approval(board, run_day, args.channel)
+        if not who and _auto(board, run_day, args):
+            # Eve 2026-10-07: no gate — the auto-check decides, every day.
+            return A.run(target, run_day, _auto_hooks(board, run_day, args),
+                         send=args.send)
         if not who:
             # Sat/Sun nobody is in the channel to tick it, so a clean day
             # releases itself and a dirty one keeps waiting (Eve 2026-08-12).
@@ -497,6 +572,8 @@ def main(argv=None) -> int:
         if rc == 0:
             confirm_sent(board, run_day, who[1],
                          to_note=B.who(board), channel=args.channel)
+            if target is not None:
+                A._close(target, run_day)
         else:
             report_failure(board, run_day, rc, args.channel)
         return rc
