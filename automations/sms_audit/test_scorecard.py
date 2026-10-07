@@ -325,3 +325,75 @@ class WeakAnswers(unittest.TestCase):
 
     def test_an_unknown_bucket_still_gets_advice(self):
         self.assertTrue(S.recovery_for("Something new?"))
+
+
+class NotRepetitive(unittest.TestCase):
+    """Megan 2026-10-06, twice: "still redundant/repetitive"."""
+
+    def test_the_circles_line_does_not_borrow_a_chase_count(self):
+        got = S.worst_of([
+            "This went round in circles — they asked 3 times and never "
+            "got a straight answer.",
+            "Never said yes or no, only a vague answer. They asked 1 more "
+            "time, and never got an answer."])
+        self.assertIn("round in circles", got)
+        self.assertNotIn("1 more time", got)
+
+    def test_a_verdict_is_returned_whole(self):
+        one = "Doesn't answer the pay. They asked 1 more time."
+        self.assertEqual(S.worst_of([one]), one)
+
+    def test_the_walk_away_line_says_the_outcome_once(self):
+        got = S.why_dodged(
+            "Is this remote / where is the office?", "dodged",
+            "Is it at a store location if not I'm not interested",
+            "This would be a residential campaign",
+            {"asked_again": 1, "answered_later": "False", "context": []})
+        self.assertEqual(got.count("never got"), 1)
+        self.assertIn("1 more time", got)
+
+    def test_other_lines_still_say_the_outcome(self):
+        got = S.why_dodged(
+            "What is the pay?", "dodged", "What does it pay?",
+            "This is a residential campaign",
+            {"asked_again": 1, "answered_later": "False", "context": []})
+        self.assertIn("never got an answer", got)
+
+
+class WentWell(unittest.TestCase):
+    """Megan 2026-10-06: "we should also have some highlight of something
+    they did well"."""
+
+    def _person(self, now, before=None):
+        weeks = {"w0918": before or {}, "w0925": now}
+        return {"display": "X", "weeks": {k: v for k, v in weeks.items() if v}}
+
+    def test_an_improvement_is_picked_up(self):
+        got = did = S.did_well(self._person(
+            {"texts": 500, "house": 6, "dodged": 6, "typing": 4,
+             "booked": 50, "shown": 20},
+            {"texts": 500, "house": 10, "dodged": 13, "typing": 8,
+             "booked": 50, "shown": 20}), ["w0918", "w0925"])
+        self.assertTrue(any("Questions not answered" in g for g in got))
+
+    def test_a_clean_sheet_counts(self):
+        got = S.did_well(self._person(
+            {"texts": 500, "house": 0, "dodged": 0, "typing": 0,
+             "booked": 50, "shown": 30}), ["w0925"])
+        self.assertTrue(got)
+
+    def test_nothing_good_means_nothing_said(self):
+        got = S.did_well(self._person(
+            {"texts": 500, "house": 9, "dodged": 9, "typing": 9,
+             "booked": 50, "shown": 10},
+            {"texts": 500, "house": 1, "dodged": 1, "typing": 1,
+             "booked": 50, "shown": 40}), ["w0918", "w0925"])
+        self.assertEqual(got, [])
+
+    def test_it_stops_at_two(self):
+        got = S.did_well(self._person(
+            {"texts": 500, "house": 0, "dodged": 0, "typing": 0,
+             "booked": 50, "shown": 40},
+            {"texts": 500, "house": 9, "dodged": 9, "typing": 9,
+             "booked": 50, "shown": 10}), ["w0918", "w0925"])
+        self.assertLessEqual(len(got), 2)

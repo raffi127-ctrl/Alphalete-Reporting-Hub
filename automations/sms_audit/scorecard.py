@@ -280,7 +280,7 @@ def work_on(person, weeks):
             why = "Offer sooner interview times."
         else:
             why = "Not your booking lead \u2014 look at the texts below."
-        add("Show rate", "{:.0f}%".format(show),
+        add("1st Round Retention", "{:.0f}%".format(show),
             GC._band(show, 55, 48, 40), why,
             "{:.0f}%".format(prev) if prev is not None else None)
 
@@ -288,7 +288,7 @@ def work_on(person, weeks):
         per100 = 100.0 * (now.get("typing") or 0) / now["texts"]
         prevp = (100.0 * (before.get("typing") or 0) / before["texts"]
                  if before and before.get("texts") else None)
-        add("Typing and grammar", "{}".format(now.get("typing")),
+        add("Typing and Grammar", "{}".format(now.get("typing")),
             GC._band(per100, 0.5, 2, 5, higher_is_better=False),
             "Fix the wording in AppStream." if bot
             else "Read it back before sending.",
@@ -297,7 +297,7 @@ def work_on(person, weeks):
     house = now.get("house") or 0
     if house:
         worst = now["issues"].most_common(1)[0][0]
-        add("House rules", "{}".format(house),
+        add("House Rules Broken", "{}".format(house),
             GC._band(house, 0, 2, 6, higher_is_better=False),
             "{}. The exact texts are below.".format(worst),
             "{}".format((before or {}).get("house")) if before else None)
@@ -313,7 +313,7 @@ def work_on(person, weeks):
 
     dodged = now.get("dodged") or 0
     if dodged:
-        add("Questions not answered", str(dodged),
+        add("Questions Not Answered", str(dodged),
             GC._band(dodged, 0, 2, 6, higher_is_better=False),
             "Give it a real answer in AI Settings, Escalations." if bot
             else "Answer it, then book. The exact ones are below.",
@@ -369,6 +369,10 @@ blockquote{margin:.4em 0 .4em 1em;padding:.3em .7em;border-left:3px solid #bbb;
 ol.focus{margin:.4em 0 0;padding-left:1.3em}
 ol.focus li{margin:.6em 0}
 .moved{color:#777;font-weight:normal;font-size:.9em}
+.well{border:1px solid #156E46;background:#f1f7f1;border-radius:6px;
+      padding:.7em 1em;margin:1.2em 0}
+.well h2{margin:0 0 .3em;border:0;color:#156E46;font-size:1em}
+.well ul{margin:.2em 0;padding-left:1.2em}
 details{margin:.35em 0;border:1px solid #ddd;border-radius:4px;
         padding:.4em .7em;background:#fafafa}
 details[open]{background:#fff}
@@ -487,24 +491,79 @@ SEVERITY = ("went round in circles", "walk away", "in a row",
             "Gave how long", "Gave a time", "vague", "Doesn't answer")
 
 
+def did_well(person, weeks, limit=2):
+    """What went RIGHT this week, out of the same week-over-week numbers.
+
+    Megan 2026-10-06: "we should also have some highlight of something
+    they did well". Only things the data shows — a measure that moved the
+    right way against last week, or a clean sheet on real volume. Nothing
+    invented, and nothing when there is nothing."""
+    got = [w for w in weeks if w in person["weeks"]]
+    if not got:
+        return []
+    now = person["weeks"][got[-1]]
+    before = person["weeks"][got[-2]] if len(got) > 1 else None
+    out = []
+
+    def moved(label, new, old, up_good, show):
+        if new is None or old is None:
+            return
+        better = (new > old) if up_good else (new < old)
+        if not better:
+            return
+        gap = abs(new - old)
+        out.append((gap / max(abs(old), 1.0),
+                    "{}: {} \u2014 was {}.".format(label, show(new),
+                                                   show(old))))
+
+    pct = lambda v: "{:.0f}%".format(v)
+    num = lambda v: "{:.0f}".format(v)
+    moved("1st Round Retention", _rate(now, "shown", "booked"),
+          _rate(before, "shown", "booked") if before else None, True, pct)
+    moved("House rules broken", now.get("house"),
+          (before or {}).get("house"), False, num)
+    moved("Questions not answered", now.get("dodged"),
+          (before or {}).get("dodged"), False, num)
+    moved("Typing and grammar", now.get("typing"),
+          (before or {}).get("typing"), False, num)
+    moved("Usual reply", (now.get("replies") or {}).get("median"),
+          ((before or {}).get("replies") or {}).get("median"), False, A_mins)
+    moved("Booked over a day out", _rate(now, "far_out", "matched"),
+          _rate(before, "far_out", "matched") if before else None, False, pct)
+
+    texts = now.get("texts") or 0
+    if texts >= MIN_TEXTS:
+        if not now.get("typing"):
+            out.append((0.4, "No typing or grammar mistakes in {:,} "
+                             "texts.".format(texts)))
+        if not now.get("house"):
+            out.append((0.4, "No house rules broken."))
+    if not now.get("dodged") and (now.get("booked") or 0) >= 5:
+        out.append((0.3, "Every question got an answer."))
+
+    out.sort(key=lambda t: -t[0])
+    return [line for _w, line in out[:limit]]
+
+
 def worst_of(whys):
-    """One line out of several for the same applicant, chase count once."""
-    heads, tails = [], []
-    for why in whys:
-        head, sep, tail = (why or "").partition(" They asked ")
-        if head and head not in heads:
-            heads.append(head)
-        if sep:
-            tails.append(" They asked " + tail)
-    if not heads:
+    """The single worst verdict, whole.
+
+    Megan 2026-10-06: "still redundant/repetitive". An earlier version
+    split each line into a head and a chase count and recombined them,
+    which stapled one question's "They asked 1 more time" onto the
+    circles line that already said "they asked 3 times". Each verdict is
+    already a complete sentence — pick one, do not assemble."""
+    lines = [w for w in whys if w]
+    if not lines:
         return ""
+
     def rank(h):
         for i, key in enumerate(SEVERITY):
             if key in h:
                 return i
         return len(SEVERITY)
-    heads.sort(key=rank)
-    return heads[0] + (max(tails, key=len) if tails else "")
+
+    return sorted(lines, key=lambda h: (rank(h), -len(h)))[0]
 
 
 def why_dodged(bucket, kind="", question="", reply="", entry=None):
@@ -575,14 +634,22 @@ def why_dodged(bucket, kind="", question="", reply="", entry=None):
     # say what to do — the same shape as ruling 3, answer then reassure.
     if is_weak(q, r):
         if WALKS.search(q):
+            # The sentence already says they got nothing, so the chase
+            # count comes without the outcome repeated after it.
             return ("They told us they would walk away if the answer was "
-                    "no, and never got a straight one.{}".format(tail))
+                    "no, and never got a straight one.{}".format(
+                        _chased(e, say_outcome=False)))
         return "Never said yes or no, only a vague answer.{}".format(tail)
     return "Doesn't answer {}.{}".format(topic, tail)
 
 
-def _chased(entry):
-    """' They asked 2 more times, and never got an answer.' or ''."""
+def _chased(entry, say_outcome=True):
+    """' They asked 2 more times, and never got an answer.' or ''.
+
+    `say_outcome` is False when the sentence it attaches to has already
+    said they got nothing — Megan 2026-10-06 on "never got a straight
+    one. They asked 1 more time, and never got an answer": "same for
+    this one"."""
     e = entry or {}
     try:
         again = int(e.get("asked_again") or 0)
@@ -591,9 +658,9 @@ def _chased(entry):
     if not again:
         return ""
     later = str(e.get("answered_later")).lower() == "true"
-    return (" They asked {} more time{}{}.".format(
-        again, "" if again == 1 else "s",
-        "" if later else ", and never got an answer"))
+    outcome = "" if (later or not say_outcome) else ", and never got an answer"
+    return " They asked {} more time{}{}.".format(
+        again, "" if again == 1 else "s", outcome)
 
 
 def needle_of(detail):
@@ -675,6 +742,13 @@ def render(person, office, weeks, path):
              esc(office), esc(R.week_label(got[-1]) if got else "—"))]
     add = L.append
 
+    wins = did_well(person, weeks)
+    if wins:
+        add("<div class='well'><h2>Went well</h2><ul>")
+        for w in wins:
+            add("<li>{}</li>".format(esc(w)))
+        add("</ul></div>")
+
     fixes = work_on(person, weeks)[:3]
     add("<div class='fix'><h2>Work on this week</h2>")
     if not fixes:
@@ -694,21 +768,21 @@ def render(person, office, weeks, path):
     add("<h2>Week over week</h2>")
     # (label, the number to shade on, how to show it, is more better)
     rows = [
-        ("Interviews booked", lambda w: w.get("booked") or 0,
+        ("Interviews Booked", lambda w: w.get("booked") or 0,
          lambda v: "{:,}".format(v), True),
-        ("Showed up", lambda w: _rate(w, "shown", "booked"),
+        ("1st Round Retention", lambda w: _rate(w, "shown", "booked"),
          lambda v: "{:.0f}%".format(v) if v is not None else "\u2014", True),
-        ("Texts sent", lambda w: w.get("texts") or 0,
+        ("Texts Sent", lambda w: w.get("texts") or 0,
          lambda v: "{:,}".format(v), True),
-        ("Usual reply", lambda w: (w.get("replies") or {}).get("median"),
+        ("Usual Reply", lambda w: (w.get("replies") or {}).get("median"),
          A_mins, False),
-        ("Typing and grammar mistakes", lambda w: w.get("typing") or 0,
+        ("Typing and Grammar Mistakes", lambda w: w.get("typing") or 0,
          lambda v: "{}".format(v), False),
-        ("House rules broken", lambda w: w.get("house") or 0,
+        ("House Rules Broken", lambda w: w.get("house") or 0,
          lambda v: "{}".format(v), False),
-        ("Questions not answered", lambda w: w.get("dodged") or 0,
+        ("Questions Not Answered", lambda w: w.get("dodged") or 0,
          lambda v: "{}".format(v), False),
-        ("Booked over a day out",
+        ("Booked Over a Day Out",
          lambda w: (_rate(w, "far_out", "matched")
                     if (w.get("matched") or 0) >= MIN_MATCHED else None),
          lambda v: "{:.0f}%".format(v) if v is not None else "\u2014", False),
@@ -731,11 +805,11 @@ def render(person, office, weeks, path):
     # section". Three kinds of fault, three fixes, three sections — mixed
     # together they read as one undifferentiated pile.
     sections = (
-        ("House rules broken", last.get("examples") or [], ""),
-        ("Questions not answered", last.get("asked") or [],
+        ("House Rules Broken", last.get("examples") or [], ""),
+        ("Questions Not Answered", last.get("asked") or [],
          "Did not answer: "),
-        ("Weak answers", last.get("weak") or [], "Weak answer: "),
-        ("Typing and grammar", last.get("typos") or [], ""),
+        ("Weak Answers", last.get("weak") or [], "Weak answer: "),
+        ("Typing and Grammar", last.get("typos") or [], ""),
     )
     if any(items for _h, items, _p in sections):
         add("<p class='none'>Open any one to read the texts in full, exactly "
@@ -749,17 +823,17 @@ def render(person, office, weeks, path):
                 else issue
             groups.setdefault(label, []).append((hit, body, name, why, ctx))
         add("<h2>{} \u2014 {}</h2>".format(esc(heading), len(items)))
-        if heading == "Weak answers":
+        if heading == "Weak Answers":
             add("<p class='none'>Technically answered, but nothing said "
                 "plainly and nothing asked back \u2014 so the conversation "
                 "stops instead of becoming a booking.</p>")
-        elif heading == "Questions not answered":
+        elif heading == "Questions Not Answered":
             add("<p class='none'>They asked, and it never came back to "
                 "them.</p>")
         for label, rows_ in sorted(groups.items(), key=lambda kv: -len(kv[1])):
             add("<details><summary>{} \u2014 {}</summary>".format(
                 esc(label), len(rows_)))
-            if heading in ("Weak answers", "Questions not answered"):
+            if heading in ("Weak Answers", "Questions Not Answered"):
                 add("<p class='fixit'>Instead: {}</p>".format(
                     esc(recovery_for(label))))
             # Megan 2026-10-06: "same applicant ... should show the full

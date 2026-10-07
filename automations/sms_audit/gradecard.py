@@ -67,14 +67,14 @@ def _conversion(conv):
     """Call list retention. Megan: "the MAIN thing we need to get as high as
     possible - goal at 80%+"."""
     if not conv or not conv.get("ok"):
-        return None, ("Call list retention",
+        return None, ("Call List Retention",
                       (conv or {}).get("why", "no call list or activity pull"))
     rate = conv.get("rate")
     if rate is None:
-        return None, ("Call list retention", "no rate in the pull")
+        return None, ("Call List Retention", "no rate in the pull")
     g = _band(rate, CL.GOAL, CL.GOAL - 10, CL.GOAL - 20)
     return _item(
-        "Call list retention", g,
+        "Call List Retention", g,
         "{:.0f}%".format(rate),
         "{:.0f}%".format(CL.GOAL),
         "Work the call list stage losing them."), None
@@ -83,7 +83,7 @@ def _conversion(conv):
 def _show_rate(rows):
     """Did the people we booked turn up."""
     if not rows:
-        return None, ("Showed up", "no bookings pulled")
+        return None, ("1st Round Retention", "no bookings pulled")
     # retention.load gives tuples ending in the shown flag; a raw thread dump
     # gives dicts with a status. Find the flag by TYPE, not by position — the
     # tuple grew a date column and its docstring still says three fields, so
@@ -96,15 +96,15 @@ def _show_rate(rows):
     marks = [_shown(r) for r in rows]
     marks = [m for m in marks if m is not None]
     if not marks:
-        return None, ("Showed up", "no show/no-show flag")
+        return None, ("1st Round Retention", "no show/no-show flag")
     shown = sum(1 for m in marks if m)
     n = len(marks)
     if not n:
-        return None, ("Showed up", "no bookings in the window")
+        return None, ("1st Round Retention", "no bookings in the window")
     rate = 100.0 * shown / n
     g = _band(rate, SHOW_BENCHMARK + 7, SHOW_BENCHMARK, SHOW_BENCHMARK - 8)
     return _item(
-        "Showed up", g, "{:.0f}%".format(rate),
+        "1st Round Retention", g, "{:.0f}%".format(rate),
         "{:.0f}% (all accounts)".format(SHOW_BENCHMARK),
         "Book them sooner. See booking lead time below."), None
 
@@ -125,7 +125,7 @@ def _lead_time(res):
         cost = ("Booking too far out. Book them same or next day: {:.0f}% show up "
                 "against {:.0f}%.".format(near["rate"], far["rate"]))
     return _item(
-        "Booking lead time", g,
+        "Booking Lead Time", g,
         "{:.0f}% booked over a day ahead".format(share),
         "under {:.0f}%".format(LT.TARGET), cost), None
 
@@ -162,7 +162,7 @@ def _messages(msgs):
     # were not on the card at all. Two different faults with two different
     # fixes: a typo is coached, a wrong address is a saved reply to edit.
     out.append(_item(
-        "Typing and grammar mistakes", g,
+        "Typing and Grammar Mistakes", g,
         "{} message{}".format(len(errs), "" if len(errs) == 1 else "s"), "0",
         "Coach the sender. Listed below."))
 
@@ -172,7 +172,7 @@ def _messages(msgs):
         g = _band(nh, 0, 2, 6, higher_is_better=False)
         worst = max(coaching, key=lambda e: e.get("count") or 0, default=None)
         out.append(_item(
-            "House rules broken", g,
+            "House Rules Broken", g,
             "{} text{}".format(nh, "" if nh == 1 else "s"), "0",
             "{}. Fix the saved reply.".format(worst["issue"]) if worst
             else "Fix the saved replies."))
@@ -183,7 +183,7 @@ def _messages(msgs):
     if rate is not None:
         g = _band(rate, 2, 5, 12, higher_is_better=False)
         out.append(_item(
-            "Questions answered", g,
+            "Questions Answered", g,
             "{} unanswered".format(nd), "under 2%",
             "Write a standard answer for each."))
 

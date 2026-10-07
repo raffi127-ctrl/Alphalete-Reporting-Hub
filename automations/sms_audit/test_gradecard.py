@@ -103,9 +103,9 @@ class Build(unittest.TestCase):
                         conv={"ok": True, "rate": 95.0, "booked": 95,
                               "applied": 100},
                         rows=[("w", "d", "b", False)] * 10)
-        self.assertTrue(any(i["area"] == "Call list retention"
+        self.assertTrue(any(i["area"] == "Call List Retention"
                             for i in card["holding"]))
-        self.assertTrue(any(i["area"] == "Showed up" for i in card["items"]))
+        self.assertTrue(any(i["area"] == "1st Round Retention" for i in card["items"]))
 
     def test_misses_are_ranked_worst_first(self):
         card = GC.build({"office": "x"},
@@ -113,7 +113,7 @@ class Build(unittest.TestCase):
                               "applied": 10},
                         msgs={"errors": ["a"], "dodged": {}, "people": 100,
                               "delivery": {}})
-        self.assertEqual(card["items"][0]["area"], "Call list retention")
+        self.assertEqual(card["items"][0]["area"], "Call List Retention")
 
     def test_a_skipped_check_blocks_a_clean_A(self):
         card = GC.build({"office": "x"}, gaps=["interview address"])
@@ -170,20 +170,20 @@ class TypingVersusHouseRules(unittest.TestCase):
         return {i["area"]: i for i in got}
 
     def test_typing_counts_the_typos_not_the_house_rules(self):
-        self.assertIn("2 messages", self._areas()["Typing and grammar mistakes"]["number"])
+        self.assertIn("2 messages", self._areas()["Typing and Grammar Mistakes"]["number"])
 
     def test_house_rules_counts_the_breaches_not_the_typos(self):
-        self.assertIn("7 texts", self._areas()["House rules broken"]["number"])
+        self.assertIn("7 texts", self._areas()["House Rules Broken"]["number"])
 
     def test_house_rules_names_the_worst_one(self):
         self.assertIn("wrong office address",
-                      self._areas()["House rules broken"]["action"])
+                      self._areas()["House Rules Broken"]["action"])
 
     def test_typing_says_coach_not_edit_a_template(self):
-        self.assertIn("Coach", self._areas()["Typing and grammar mistakes"]["action"])
+        self.assertIn("Coach", self._areas()["Typing and Grammar Mistakes"]["action"])
 
     def test_no_coaching_still_reports_the_row_as_clean(self):
         msgs = dict(self.MSGS, coaching=[])
         got, _ = GC._messages(msgs)
-        row = [i for i in got if i["area"] == "House rules broken"][0]
+        row = [i for i in got if i["area"] == "House Rules Broken"][0]
         self.assertEqual(row["grade"], "A")
