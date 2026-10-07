@@ -28,7 +28,7 @@ def _session(**_kw):
 
 
 def _main(ours, appstream=(10, 8), switch=True, offices="11280,11580",
-          switch_err=None):
+          switch_err=None, hop=False):
     """ours: {office: (booked, shown) or None}. AppStream splits its totals
     across the two week slices, so each slice returns half."""
     half = (appstream[0] // 2, appstream[1] // 2)
@@ -40,6 +40,7 @@ def _main(ours, appstream=(10, 8), switch=True, offices="11280,11580",
     with mock.patch.object(C, "appstream_direct_session", _session), \
             mock.patch.object(C.fo, "_switch_office", return_value=switch,
                               side_effect=switch_err), \
+            mock.patch.object(C, "_hop_to", return_value=hop), \
             mock.patch.object(C, "_load_as_week"), \
             mock.patch.object(C, "_parse", return_value={}), \
             mock.patch.object(C, "totals", return_value=half), \
@@ -88,6 +89,12 @@ class Verdicts(unittest.TestCase):
         self.assertEqual(calls, ["11280", "11580"])
         self.assertEqual(list(wm.call_args.kwargs["succeeded"]), ["11580"])
         self.assertIn("11280: could not switch", wm.call_args.kwargs["failed"][0])
+
+    def test_picker_miss_falls_back_to_the_direct_link(self):
+        rc, wm = _main({"11280": (10, 8)}, switch=False, offices="11280",
+                       hop=True)
+        self.assertEqual(rc, 0)
+        self.assertEqual(list(wm.call_args.kwargs["succeeded"]), ["11280"])
 
     def test_manifest_error_never_raises(self):
         with mock.patch.object(run_manifest, "write_manifest",

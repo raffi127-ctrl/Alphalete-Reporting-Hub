@@ -49,7 +49,7 @@ except Exception:
 
 from automations.shared.tableau_patchright import appstream_direct_session
 from automations.recruiting_report import fetch_office as fo
-from automations.recruiter_retention.run import _parse, _load_as_week
+from automations.recruiter_retention.run import _parse, _load_as_week, _rqst
 from automations.sms_thread_dump.run import _recruiting_week
 from automations.sms_audit import analyze as A
 
@@ -113,6 +113,23 @@ def ours(office, lo, hi, suffix=""):
 REPORT_ID = "sms_crosscheck"
 
 
+def _hop_to(page, office):
+    """Switch by the console's own newOfficeId link — the hop pull_log uses.
+
+    The #searchMC picker can't reach the office the session is ALREADY on:
+    on 10/7, 11280 (first in the list, and where Lucy 2's console sits)
+    failed "could not switch" on two runs in a row while the three offices
+    after it compared fine. Returns False when there's no rqst token."""
+    tok = _rqst(page)
+    if not tok:
+        return False
+    page.goto("https://www.applicantstream.com/index.cfm?p=104&rqst={}"
+              "&newOfficeId={}".format(tok, office),
+              wait_until="domcontentloaded", timeout=40000)
+    page.wait_for_timeout(1500)
+    return True
+
+
 def record_delivery(agreed, problems, retry_args):
     """Today's run manifest — the proof a clean check closes its ticket with.
 
@@ -171,6 +188,17 @@ def main(argv=None):
                 print("[crosscheck] {}: office switch FAILED {}".format(
                     office, type(e).__name__), flush=True)
                 switched = False
+            if not switched:
+                try:
+                    switched = _hop_to(page, office)
+                    if switched:
+                        print("[crosscheck] {}: picker had no row for it — "
+                              "switched by the direct link".format(office),
+                              flush=True)
+                except Exception as e:  # noqa: BLE001
+                    print("[crosscheck] {}: direct link FAILED {}".format(
+                        office, type(e).__name__), flush=True)
+                    switched = False
             if not switched:
                 print("[crosscheck] {}: NOT COMPARED — could not switch to the "
                       "office".format(office), flush=True)
