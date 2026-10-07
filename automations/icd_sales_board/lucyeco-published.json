@@ -1,5 +1,5 @@
 {
- "taken": "2026-10-06T21:21:15",
+ "taken": "2026-10-06T21:32:58",
  "rows": [
   {
    "ICD": "Abel Draper",
@@ -15,8 +15,8 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Emailed Daily",
    "Tableau Trackers": "Emailed Daily",
-   "Last reading": "Not Enrolled",
-   "On latest update": "Not Enrolled"
+   "Last reading": "",
+   "On latest update": ""
   },
   {
    "ICD": "Akib Chowdhury",
@@ -32,8 +32,8 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Not Enrolled",
    "Tableau Trackers": "Not Enrolled",
-   "Last reading": "Not Enrolled",
-   "On latest update": "Not Enrolled"
+   "Last reading": "",
+   "On latest update": ""
   },
   {
    "ICD": "Alex Nicholas",
@@ -49,8 +49,8 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Not Enrolled",
    "Tableau Trackers": "Not Enrolled",
-   "Last reading": "Not Enrolled",
-   "On latest update": "Not Enrolled"
+   "Last reading": "",
+   "On latest update": ""
   },
   {
    "ICD": "Amjad Malhas",
@@ -66,8 +66,8 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Not Enrolled",
    "Tableau Trackers": "Not Enrolled",
-   "Last reading": "Not Enrolled",
-   "On latest update": "Not Enrolled"
+   "Last reading": "",
+   "On latest update": ""
   },
   {
    "ICD": "Atef Choudhury",
@@ -83,8 +83,8 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Enrolled",
    "Tableau Trackers": "Enrolled",
-   "Last reading": "Not Enrolled",
-   "On latest update": "Not Enrolled"
+   "Last reading": "",
+   "On latest update": ""
   },
   {
    "ICD": "Aya Al-Khafaji",
@@ -100,7 +100,7 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Enrolled\nSlack #indelible-sales",
    "Tableau Trackers": "Enrolled\nSlack #indelible-sales",
-   "Last reading": "2026-10-06 22:18",
+   "Last reading": "2026-10-06 22:31",
    "On latest update": "Yes"
   },
   {
@@ -117,7 +117,7 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Enrolled",
    "Tableau Trackers": "Enrolled",
-   "Last reading": "2026-10-06 21:21",
+   "Last reading": "2026-10-06 21:32",
    "On latest update": "Yes"
   },
   {
@@ -134,8 +134,8 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Enrolled\nSlack #aeon-sales",
    "Tableau Trackers": "Enrolled\nSlack #aeon-sales",
-   "Last reading": "Not Enrolled",
-   "On latest update": "Not Enrolled"
+   "Last reading": "",
+   "On latest update": ""
   },
   {
    "ICD": "Colten Wright",
@@ -168,7 +168,7 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Enrolled\nSlack #ambient-sales-1",
    "Tableau Trackers": "Enrolled\nSlack #ambient-sales-1",
-   "Last reading": "2026-10-06 21:20",
+   "Last reading": "2026-10-06 21:29",
    "On latest update": "Yes"
   },
   {
@@ -185,7 +185,7 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Enrolled\nSlack #precision-management-att-sales",
    "Tableau Trackers": "Enrolled\nSlack #precision-management-att-sales",
-   "Last reading": "2026-10-06 22:19",
+   "Last reading": "2026-10-06 22:30",
    "On latest update": "Yes"
   },
   {
@@ -202,7 +202,7 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Enrolled",
    "Tableau Trackers": "Enrolled",
-   "Last reading": "2026-10-06 22:20",
+   "Last reading": "2026-10-06 22:31",
    "On latest update": "Yes"
   },
   {
@@ -219,8 +219,8 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Not Enrolled",
    "Tableau Trackers": "Not Enrolled",
-   "Last reading": "Not Enrolled",
-   "On latest update": "Not Enrolled"
+   "Last reading": "",
+   "On latest update": ""
   },
   {
    "ICD": "George Delgado",
@@ -236,8 +236,8 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Not Enrolled",
    "Tableau Trackers": "Not Enrolled",
-   "Last reading": "Not Enrolled",
-   "On latest update": "Not Enrolled"
+   "Last reading": "",
+   "On latest update": ""
   },
   {
    "ICD": "Haytham Nagi",
@@ -253,8 +253,8 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Enrolled\nSlack #horizon-edge-sales",
    "Tableau Trackers": "Enrolled\nSlack #horizon-edge-sales",
-   "Last reading": "Not Enrolled",
-   "On latest update": "Not Enrolled"
+   "Last reading": "",
+   "On latest update": ""
   },
   {
    "ICD": "Isaiah Revelle",
@@ -270,7 +270,7 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Enrolled\nSlack #everforward-sales",
    "Tableau Trackers": "Enrolled\nSlack #everforward-sales",
-   "Last reading": "2026-10-06 21:19",
+   "Last reading": "2026-10-06 21:32",
    "On latest update": "Yes"
   },
   {
@@ -287,7 +287,7 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Enrolled\nSlack #rockstar-world-sales",
    "Tableau Trackers": "Enrolled\nSlack #rockstar-world-sales",
-   "Last reading": "2026-10-06 21:19",
+   "Last reading": "2026-10-06 21:32",
    "On latest update": "Yes"
   },
   {
@@ -304,8 +304,8 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Not Enrolled",
    "Tableau Trackers": "Not Enrolled",
-   "Last reading": "Not Enrolled",
-   "On latest update": "Not Enrolled"
+   "Last reading": "",
+   "On latest update": ""
   },
   {
    "ICD": "Jairo Ruiz",
@@ -321,7 +321,7 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Enrolled\nSlack #profitsmanagement-att-sales",
    "Tableau Trackers": "Enrolled\nSlack #profitsmanagement-att-sales",
-   "Last reading": "2026-10-06 22:17",
+   "Last reading": "2026-10-06 22:32",
    "On latest update": "Yes"
   },
   {
@@ -338,8 +338,8 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Enrolled",
    "Tableau Trackers": "Enrolled",
-   "Last reading": "Not Enrolled",
-   "On latest update": "Not Enrolled"
+   "Last reading": "",
+   "On latest update": ""
   },
   {
    "ICD": "Jennifer Figueroa",
@@ -355,8 +355,8 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Enrolled\nSlack #figspire",
    "Tableau Trackers": "Enrolled\nSlack #figspire",
-   "Last reading": "Not Enrolled",
-   "On latest update": "Not Enrolled"
+   "Last reading": "",
+   "On latest update": ""
   },
   {
    "ICD": "Joseph Delgado",
@@ -372,8 +372,8 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Not Enrolled",
    "Tableau Trackers": "Not Enrolled",
-   "Last reading": "Not Enrolled",
-   "On latest update": "Not Enrolled"
+   "Last reading": "",
+   "On latest update": ""
   },
   {
    "ICD": "Kash Rai",
@@ -389,7 +389,7 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Enrolled\nSlack #palace-sales",
    "Tableau Trackers": "Enrolled\nSlack #palace-sales",
-   "Last reading": "2026-10-06 21:18",
+   "Last reading": "2026-10-06 21:31",
    "On latest update": "Yes"
   },
   {
@@ -406,7 +406,7 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Enrolled\nSlack #everforward-sales",
    "Tableau Trackers": "Enrolled\nSlack #everforward-sales",
-   "Last reading": "2026-10-06 21:20",
+   "Last reading": "2026-10-06 21:32",
    "On latest update": "Yes"
   },
   {
@@ -423,8 +423,8 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Enrolled",
    "Tableau Trackers": "Enrolled",
-   "Last reading": "Not Enrolled",
-   "On latest update": "Not Enrolled"
+   "Last reading": "",
+   "On latest update": ""
   },
   {
    "ICD": "Maxamad Aden",
@@ -440,7 +440,7 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Enrolled\nSlack #maximal-sales",
    "Tableau Trackers": "Enrolled\nSlack #maximal-sales",
-   "Last reading": "2026-10-06 21:19",
+   "Last reading": "2026-10-06 21:31",
    "On latest update": "Yes"
   },
   {
@@ -457,8 +457,8 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Enrolled\nSlack #elite-prime-sales",
    "Tableau Trackers": "Enrolled\nSlack #elite-prime-sales",
-   "Last reading": "Not Enrolled",
-   "On latest update": "Not Enrolled"
+   "Last reading": "",
+   "On latest update": ""
   },
   {
    "ICD": "Nii Tagoe",
@@ -474,8 +474,8 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Enrolled\nSlack #nii-teiko-tagoe-office",
    "Tableau Trackers": "Enrolled\nSlack #nii-teiko-tagoe-office",
-   "Last reading": "Not Enrolled",
-   "On latest update": "Not Enrolled"
+   "Last reading": "",
+   "On latest update": ""
   },
   {
    "ICD": "Rafael Hidalgo",
@@ -491,7 +491,7 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Enrolled",
    "Tableau Trackers": "Enrolled",
-   "Last reading": "2026-10-06 21:10",
+   "Last reading": "2026-10-06 21:31",
    "On latest update": "alphalete_sweep"
   },
   {
@@ -509,7 +509,7 @@
    "Metrics Thread": "Enrolled\nSlack #elevate-sales",
    "Tableau Trackers": "Enrolled\nSlack #elevate-sales",
    "Last reading": "never",
-   "On latest update": "Not Enrolled"
+   "On latest update": ""
   },
   {
    "ICD": "Roshan Amin Ahmad",
@@ -525,7 +525,7 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Emailed Daily",
    "Tableau Trackers": "Emailed Daily",
-   "Last reading": "2026-10-06 21:20",
+   "Last reading": "2026-10-06 21:32",
    "On latest update": "Yes"
   },
   {
@@ -559,8 +559,8 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Enrolled\nSlack #elite-prime-sales",
    "Tableau Trackers": "Enrolled\nSlack #elite-prime-sales",
-   "Last reading": "Not Enrolled",
-   "On latest update": "Not Enrolled"
+   "Last reading": "",
+   "On latest update": ""
   },
   {
    "ICD": "Samuel Acay",
@@ -576,8 +576,8 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Not Enrolled",
    "Tableau Trackers": "Not Enrolled",
-   "Last reading": "Not Enrolled",
-   "On latest update": "Not Enrolled"
+   "Last reading": "",
+   "On latest update": ""
   },
   {
    "ICD": "Tevin Sterling",
@@ -593,8 +593,8 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Not Enrolled",
    "Tableau Trackers": "Not Enrolled",
-   "Last reading": "Not Enrolled",
-   "On latest update": "Not Enrolled"
+   "Last reading": "",
+   "On latest update": ""
   },
   {
    "ICD": "Trang Canavan",
@@ -610,8 +610,8 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Enrolled\nSlack #freshsuccess-all-leaders",
    "Tableau Trackers": "Enrolled\nSlack #freshsuccess-all-leaders",
-   "Last reading": "Not Enrolled",
-   "On latest update": "Not Enrolled"
+   "Last reading": "",
+   "On latest update": ""
   },
   {
    "ICD": "Valeria Tristan",
@@ -627,8 +627,8 @@
    "Resume Pushing": "Coming Soon",
    "Metrics Thread": "Not Enrolled",
    "Tableau Trackers": "Not Enrolled",
-   "Last reading": "Not Enrolled",
-   "On latest update": "Not Enrolled"
+   "Last reading": "",
+   "On latest update": ""
   }
  ]
 }

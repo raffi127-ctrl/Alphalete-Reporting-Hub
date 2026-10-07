@@ -100,10 +100,23 @@ class TheOfficesOwnClock(unittest.TestCase):
 
 class NothingToJudge(unittest.TestCase):
 
-    def test_never_is_left_to_the_caller(self):
-        for v in ("", "never", "-", "—", None):
+    def test_a_blank_is_left_to_the_caller(self):
+        """No reading column at all — nothing to colour."""
+        for v in ("", "-", "—", None):
             self.assertEqual(EN.reading_tone(v, _Office(), now=TUE_AFTERNOON),
                              "", repr(v))
+
+    def test_never_is_red_at_any_hour(self):
+        """A machine that stopped is judged against selling hours, because
+        a shut office is a fine reason to be quiet. One that has NEVER
+        reported is a standing fact (Megan 2026-10-06: "rashad's never
+        should be in red not green")."""
+        self.assertEqual(EN.reading_tone("never", _Office(),
+                                         now=TUE_AFTERNOON), "down")
+        self.assertEqual(EN.reading_tone("never", _Office(), now=TUE_LATE),
+                         "down")
+        self.assertEqual(EN.reading_tone("NEVER", _Office(), now=SUNDAY),
+                         "down")
 
     def test_an_unparseable_stamp_does_not_raise(self):
         self.assertEqual(

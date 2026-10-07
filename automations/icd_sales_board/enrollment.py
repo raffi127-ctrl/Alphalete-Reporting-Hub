@@ -88,6 +88,13 @@ HEADER_TINT = {
 # plus a yes/no about our own agent is not rep data.
 ADMIN_EXTRA: list = []
 
+# NOT FEATURES. Every other column answers "is this office enrolled?", so a
+# blank there is filled with Not Enrolled. These two answer "is the machine
+# reporting?", where a blank means there is no reading to show -- and the
+# fill turned 21 offices' Last reading into the words "Not Enrolled", which
+# reads as though readings were something you opt into.
+STATUS_COLUMNS = ["Last reading", "On latest update"]
+
 # Schedules that are the same wherever the feature is switched on. Each is
 # read off the module that enforces it rather than retyped from memory; where
 # that module holds the hours as config, the comment says which.
@@ -304,6 +311,14 @@ def cell_tone(column: str, value) -> str:
     v = str(value or "").strip()
     if column in UNCOLOURED or not v:
         return ""
+    # A NO IS A NO, WHATEVER COLUMN IT IS IN. These two have their own
+    # rules below, and those rules answered "is there a value?" -- so the
+    # words "Not Enrolled", left in a Last reading cell by an older
+    # snapshot, came out GREEN, and amber in On latest update (Megan
+    # 2026-10-06: "these not enrolled are still green"). Checked first so
+    # no column-specific rule can ever paint a refusal as a yes.
+    if v in BAD_WORDS:
+        return "bad"
     if column == "On latest update":
         # Green on the current agent, amber on an older one — an office
         # reporting on a stale build is a thing to chase, not a failure.
@@ -346,8 +361,15 @@ def reading_tone(stamp: str, office=None, now=None) -> str:
     """
     import datetime as _dt
     v = str(stamp or "").strip()
-    if not v or v.lower() in ("never", "-", "—"):
-        return ""
+    if not v or v in ("-", "—"):
+        return ""                       # nothing to say: no reading column
+    if v.lower() == "never":
+        # NEVER IS NOT A QUIET EVENING. A machine that has reported before
+        # and stopped is judged against selling hours, because the office
+        # being shut is a fine reason to be quiet. One that has NEVER
+        # reported is a standing fact at any hour, and it sat there in
+        # green (Megan 2026-10-06: "rashad's never should be in red").
+        return "down"
     for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
         try:
             when = _dt.datetime.strptime(v, fmt)
@@ -1358,7 +1380,7 @@ def rows(icds=None, admin: bool = False) -> list:
                     r[col] = val
 
         skip = ({"ICD", "Campaigns", "LucyECO", "Posts to"}
-                | set(ADMIN_EXTRA))
+                | set(ADMIN_EXTRA) | set(STATUS_COLUMNS))
         for r in out:
             # NOTHING RIDING A MACHINE CAN BE ACTIVE BEFORE THE MACHINE IS
             # (Megan 2026-10-06: "luke can't be active for sara alerts if
@@ -1579,7 +1601,13 @@ _CSS = """<style>
 _TONE_CSS = {
     "good": "background:#DCFCE7;color:#065F46;font-weight:600",
     "wait": "background:#FEF3C7;color:#78350F;font-weight:600",
-    "bad": "background:#FEE2E2;color:#991B1B",
+    # DEEPER, AND BOLD LIKE THE OTHER TWO. good and wait were both
+    # font-weight 600 and this was not, so "Not Enrolled" read as a washed
+    # out grey-pink beside them and did not look like a no at all (Megan
+    # 2026-10-06: "any not enrolled should be red"). Still clearly apart
+    # from `down`, which is a solid alarm red on white text and means
+    # something is BROKEN rather than simply switched off.
+    "bad": "background:#FECACA;color:#7F1D1D;font-weight:600",
     # BRIGHT red, not the pale one 'bad' uses: this is the only cell on the
     # table that means something is broken RIGHT NOW (Megan 2026-10-06:
     # "bright red so we know it's down").
