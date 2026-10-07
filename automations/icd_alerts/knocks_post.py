@@ -871,15 +871,18 @@ LAST_CALL_LINES = (
     "Last call 🔔 {names} still off the doors — finish strong, ¡dale! 🚪💰",
     "Final stretch 🏁 {names} — no doors in a bit. Close it out, ¡vamos! 🚪",
     "Last call 🔔 {names}: the day's not over till the board says so 📋 Finish strong 💪",
+    "Last call 🔔 {names} — mood says stop, plan says finish 🚪💰 #FYMFTP",
 )
 LAST_CALL_ALL = (
     "Last call 🔔 Everybody's knocking — finish strong, ¡dale! 🚪💰",
     "Final stretch 🏁 Nobody off the doors — close it out, ¡vamos! 🔥",
+    "Last call 🔔 Everybody still out there 💪 That's the plan. #FYMFTP",
 )
 # The same for a business office: storefronts and owners, not doors.
 LAST_CALL_B2B_LINES = (
     "Last call 🔔 {names} — time for one more business before the day's out. Finish strong, ¡dale! 🏢💰",
     "Final stretch 🏁 {names} — one more owner before the day's out. Close it out, ¡vamos! 💼",
+    "Last call 🔔 {names} — mood says stop, plan says one more 🏢💰 #FYMFTP",
 )
 LAST_CALL_B2B_ALL = (
     "Last call 🔔 Everybody's still walking in — finish strong, ¡dale! 🏢💰",

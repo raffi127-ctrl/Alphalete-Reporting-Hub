@@ -104,6 +104,11 @@ LINES = (
     "It's giving coffee break ☕💅 {names} — {m}+ min, no dispo. Cute. Now knock 🚪",
     "Hi {names} 👋💁‍♀️ {m}+ min quiet. Not mad, just disappointed 😌 Knock something",
     "{names} — {m}+ min off the doors. Not to be dramatic but 💅 the board is waiting 📋",
+    # Leila Hormozi's line, as the hashtag only (Megan 2026-10-07: "Lucy should
+    # also use the #FYMFTP somewhere"). The acronym is the brand; spelling it
+    # out is not Lucy's voice in every office's room.
+    "{names} — {m}+ min off the doors. Not feeling it? Doesn't matter. #FYMFTP 🚪",
+    "Mood says couch, plan says doors 🚪 {names}: {m}+ min. #FYMFTP",
     # BENEFIT OF THE DOUBT (Megan 2026-09-26): a quiet rep may be inside with
     # a customer. Half the pool leaves that door open.
     "{names} — {m}+ min without a dispo. Must be cooking up something good in there… right? 👨‍🍳🔥",
@@ -139,6 +144,7 @@ B2B_LINES = (
     "{names}: {m}+ min. The storefronts are right there. I can see them from here 👀🏢",
     "{names}, bestie 💅 {m}+ min without a walk-in. The owners miss you 🏢",
     "It's giving long lunch 🥗💅 {names} — {m}+ min, no dispo. Cute. Now walk in 🏢",
+    "{names} — {m}+ min, no walk-ins. Mood's not the plan 🏢 #FYMFTP",
     # ...and the same Spanish phrases sprinkled in, like LINES.
     "¡Snicklemeberries! 🫐 {names} — {m}+ min without a dispo. Finger poppin' or talking to owners? ¡Vamos! 🏢👀",
     "{names} — {m}+ min, no dispo, no sale. Chatting up the recepcionista? 🚧",
@@ -279,6 +285,7 @@ RECEIPT_LINES = (
     "Okay {names}, I see you 💅 Credit check behind the quiet. Period. 💰",
     "Say less 💁‍♀️ {names} was working the whole time. Lucy apologizes 🫡",
     "{names} proved me wrong 🧾 and I love being wrong 🫡 Credit check's on the board — go close it 💰",
+    "{names} didn't feel like it and did it anyway 🫡 Credit check's on the board. #FYMFTP 💰",
 )
 # The same idea for a business office: no credit checks on Box, so what moves
 # is a sale.
@@ -291,6 +298,7 @@ B2B_RECEIPT_LINES = (
     "You showed me 🫡 {names} — a sale behind the quiet. ¡Así se hace! 💼",
     "Okay {names}, I see you 💅 Deal behind the quiet. Period. 💼",
     "{names} proved me wrong 🧾 and I love being wrong 🫡 Deal's on the board 💼",
+    "{names} didn't feel like it and did it anyway 🫡 Deal's on the board. #FYMFTP 💼",
 )
 
 
