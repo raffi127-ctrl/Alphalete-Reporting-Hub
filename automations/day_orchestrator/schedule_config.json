@@ -6927,8 +6927,8 @@
    "priority": "P2",
    "freshness_target": null,
    "depends_on": [],
-   "timeout_minutes": 60,
-   "_timeout_note": "30 -> 60 on 2026-10-07. Killed at 30m on 10/7 while on the LAST office (eveliz, onboarded 10/5): five offices no longer fit in 30. Nothing was hung (no orphan Chrome). b2b_metrics + att_churn depend_on this, so a kill here also holds them back. RAISE THIS WHEN AN OFFICE IS ADDED - budget ~10 min per office.",
+   "timeout_minutes": 70,
+   "_timeout_note": "60 -> 70 on 2026-10-07 for luke, the sixth office. 30 -> 60 on 2026-10-07. Killed at 30m on 10/7 while on the LAST office (eveliz, onboarded 10/5): five offices no longer fit in 30. Nothing was hung (no orphan Chrome). b2b_metrics + att_churn depend_on this, so a kill here also holds them back. RAISE THIS WHEN AN OFFICE IS ADDED - budget ~10 min per office.",
    "verify": {
     "type": "manifest",
     "report_id": "vantura-churn"
@@ -10961,7 +10961,9 @@
    },
    "priority": "P1",
    "freshness_target": null,
-   "depends_on": [],
+   "depends_on": [
+    "vantura_churn"
+   ],
    "timeout_minutes": 60,
    "verify": {
     "type": "manifest",

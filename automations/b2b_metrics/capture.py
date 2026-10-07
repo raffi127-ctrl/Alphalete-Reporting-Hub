@@ -1991,41 +1991,55 @@ def activation_board_image(o: B2BOffice, out_dir: Path, log=print,
 
 # ---------------------------------------------------------------------------
 # Churn board from ONE shared pull (Megan 2026-10-06). Offices listed here get
-# their Churn Rates section rebuilt from Raf's 'lucyexp' CHURNRATES saved view
-# instead of the Owner & Office dropdown click — see churn_board's docstring.
-# The view holds exactly these offices; adding one = tick its owner in lucyexp
-# (Owner & Office), re-save the view, and add the key here.
+# their Churn Rates section rebuilt from a saved CHURNRATES view instead of the
+# Owner & Office dropdown click — see churn_board's docstring. Offices that
+# share a view share one pull (eveliz/jamis/sabrina all ride Raf's 'lucyexp').
+# Adding an office = tick its owner in lucyexp and re-save, OR save its own
+# view and point its key at it here.
 # ---------------------------------------------------------------------------
-CHURN_BOARD_OFFICES = {"eveliz", "jamis", "sabrina"}
-CHURN_BOARD_URL = (
-    "https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/"
-    "CHURNRATES/7df57dae-9db2-4997-b2b8-25d746d3ec0c/lucyexp"
-    # Saved wireless-only; the product filter brings AIR + NEW INTERNET back
-    # (plain-value URL filters work on this workbook — proven 2026-10-06).
-    "?Product%20Type%20(Broken%20Out)=AIR,AIR/AWB,WIRELESS,NEW%20INTERNET")
+_CHURN_VIEWS = "https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/CHURNRATES/"
+# Saved wireless-only; the product filter brings AIR + NEW INTERNET back
+# (plain-value URL filters work on this workbook — proven 2026-10-06).
+_CHURN_PRODUCTS = "?Product%20Type%20(Broken%20Out)=AIR,AIR/AWB,WIRELESS,NEW%20INTERNET"
+CHURN_BOARD_URL = (_CHURN_VIEWS + "7df57dae-9db2-4997-b2b8-25d746d3ec0c/lucyexp"
+                   + _CHURN_PRODUCTS)
+# office key -> (cache name, view url)
+CHURN_BOARD_VIEWS = {
+    "eveliz": ("lucyexp", CHURN_BOARD_URL),
+    "jamis": ("lucyexp", CHURN_BOARD_URL),
+    "sabrina": ("lucyexp", CHURN_BOARD_URL),
+    # Luke (2026-10-07): his own 'lukeexp' (Megan) rather than a lucyexp tick.
+    # Verified on Lucy 2 the same day: ICD Churn = LUKE BALDWIN only, 65 reps.
+    "luke": ("lukeexp", _CHURN_VIEWS + "06ce4261-fc91-4bb8-b738-ebbd8c5cc40c/"
+             "lukeexp" + _CHURN_PRODUCTS),
+}
+CHURN_BOARD_OFFICES = set(CHURN_BOARD_VIEWS)
 CHURN_REP_SHEET = "ICD Churn"
 CHURN_NAT_SHEET = "Churn National Average"
 
 
-def _churn_board_files(log=print):
-    """Today's two crosstabs, pulled ONCE and shared by every office in
-    CHURN_BOARD_OFFICES (the first office to need them downloads; the rest
-    read the cached files)."""
+def _churn_board_files(key: str, log=print):
+    """Today's two crosstabs for this office's view, pulled ONCE per view and
+    shared by every office on it (the first office to need them downloads; the
+    rest read the cached files)."""
     import datetime as _dt
     from automations.vantura_churn import cdp_pull as _cdp
+    name, url = CHURN_BOARD_VIEWS[key]
+    # lucyexp keeps its original file names so a same-day cache still hits.
+    tag = "" if name == "lucyexp" else name + "_"
     shared = REPO_ROOT / "output" / "b2b_metrics" / "_shared"
     shared.mkdir(parents=True, exist_ok=True)
     day = _dt.date.today().isoformat()
-    rep_path = shared / "churn_icd_{}.csv".format(day)
-    nat_path = shared / "churn_national_{}.csv".format(day)
+    rep_path = shared / "churn_icd_{}{}.csv".format(tag, day)
+    nat_path = shared / "churn_national_{}{}.csv".format(tag, day)
     if not (rep_path.exists() and nat_path.exists()):
         with _cdp._cdp_lock(label="b2b churn board pull", log=log):
             _cdp.download_views(
-                [(CHURN_BOARD_URL, CHURN_REP_SHEET, rep_path),
-                 (CHURN_BOARD_URL, CHURN_NAT_SHEET, nat_path)],
+                [(url, CHURN_REP_SHEET, rep_path),
+                 (url, CHURN_NAT_SHEET, nat_path)],
                 today=_dt.date.today(), verbose=False, log=log)
     else:
-        log("   [churn board] reusing today's shared pull")
+        log("   [churn board] reusing today's shared pull ({})".format(name))
     return rep_path, nat_path
 
 
@@ -2036,7 +2050,7 @@ def churn_board_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
     flagged as missing rather than posting another office's board."""
     from automations.vantura_churn import compute as _compute
     from automations.b2b_metrics import churn_board as _cb
-    rep_path, nat_path = _churn_board_files(log=log)
+    rep_path, nat_path = _churn_board_files(o.key, log=log)
     if not o.owner_office:
         raise RuntimeError("{}: churn board needs owner_office (the exact "
                            "'NAME [office]' member) — not guessing".format(o.key))

@@ -53,6 +53,10 @@ SABRINA_SHEET_ID = "1tR3Bhp-o0kxq6p39ilhdQck6FPwqlBjVOjIx5LMuiMk"
 # whose churn tab is 'Lucy Churn'.
 EVELIZ_SHEET_ID = "1iDjxnqQm3l65XHefHFk8CIn3lx_Yz1mvI-60bCMRwBk"
 
+# Luke Baldwin (Takeoff Enterprises) -- onboarded 2026-10-06, "Lucy Metrics
+# (Takeoff Enterprises)" copied from the Master Metrics Templates ('Lucy Churn').
+LUKE_SHEET_ID = "12duBXmNj-afp25DVt0nUZpE-XUCmEC0ty_Fp6-IxNkc"
+
 OWNER_CFG = [
     # (key, owner-name prefix in the crosstab, sheet id, churn tab, has-activations)
     ("carlos", "CARLOS HIDALGO", fill.SHEET_ID, fill.TAB_CHURN_CARLOS, True),
@@ -60,6 +64,7 @@ OWNER_CFG = [
     ("jamis", "JAMIS GARAY", JAMIS_SHEET_ID, "Lucy Churn", False),
     ("sabrina", "SABRINA ALICEA", SABRINA_SHEET_ID, "Lucy Churn", False),
     ("eveliz", "EVELIZ WRIGHT", EVELIZ_SHEET_ID, "Lucy Churn", False),
+    ("luke", "LUKE BALDWIN", LUKE_SHEET_ID, "Lucy Churn", False),
 ]
 
 # Offices NOT yet in the default `--owner both` daily run. They are fully
@@ -184,6 +189,15 @@ def _activation_cfg():
                    "ATTTRACKER-B2B/ACTIVATIONRATES/"
                    "009740e6-6f85-4f81-b037-9e600fd82d25/EvelizEXP?:iid=1",
                    "EvelizEXP", "EVELIZ WRIGHT"),
+        # LUKE (2026-10-07) -- Lukeexp, saved by Megan the day his first metrics
+        # posted without it. VERIFIED on Lucy 2 the same day: 'Activation
+        # Office' carries LUKE BALDWIN only (37 reps), grand total 0-7/8-14/
+        # 15-30/31-60 = 35/93/189/362 of 137/145/275/470, matching his row in
+        # the all-ICD totals .csv. No other saved view had him.
+        "luke": ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+                 "ATTTRACKER-B2B/ACTIVATIONRATES/"
+                 "413feb5a-63aa-4452-b332-fe84dd791f83/Lukeexp?:iid=1",
+                 "Lukeexp", "LUKE BALDWIN"),
     }
 
 
