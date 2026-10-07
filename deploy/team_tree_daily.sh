@@ -28,6 +28,13 @@ else
     echo "[$(date)] team-tree daily run" > "$LOG_FILE"
     "$VENV_PY" -u -m automations.team_tree.run >> "$LOG_FILE" 2>&1
     ST=$?
+    # Verizon-only tree rides the same 6am slot (Carlos 2026-10-07: "send
+    # this verizon one every morning"), tagged to Nico Murrugarra.
+    echo "[$(date)] team-tree VERIZON run" >> "$LOG_FILE"
+    "$VENV_PY" -u -m automations.team_tree.run --verizon --tag U047D64M0RW \
+        >> "$LOG_FILE" 2>&1
+    VZ=$?
+    [ $ST -eq 0 ] && ST=$VZ
 fi
 echo "[$(date)] team-tree finished exit=$ST" >> "$LOG_FILE"
 exit $ST
