@@ -39,7 +39,7 @@ from automations.shared import ownerville_knocks as K
 
 # Bump with every release that changes what this module does or reports; it
 # is what a KnocksProblem's summary carries (see the stamp note below).
-CODE_RELEASE = "2026.10.06.7"
+CODE_RELEASE = "2026.10.06.8"
 
 
 class KnocksProblem(RuntimeError):
@@ -140,19 +140,34 @@ def _page_evidence(page, seen: List[str]) -> str:
                             .map(b => (b.tagName.toLowerCase() + '#' + (b.id || '-') + '.' + (b.className || '-') + ':' + (b.innerText || b.value || '').trim().slice(0, 30)))
                             .slice(0, 10).join(' ; ') + ']')
                     .slice(0, 3).join(' || ');
+                // THE CLIENT SWITCHER AND THE V1/V2 TOGGLE, wherever they live.
+                // Jamis's page (code .6 evidence): "no client picker" -- the
+                // only <select> was the V2-feedback module list; "Choose a
+                // Client / B2B AT&T SBS / B2B-BOX-Energy" is a menu of links or
+                // list items, and the page is the NEW (V2) OwnerVille, whose
+                // grid is not #table-dispositions (zero <table> elements).
+                const want = /return to v1|back to v1|switch to v1|classic|v1 |choose a client|b2b at&t|b2b-box|disposition/i;
+                const hits = Array.from(document.querySelectorAll('a, button, li, span, label, div[onclick], [data-client], [data-id]'))
+                    .filter(e => { const t = (e.innerText || '').trim(); return t && t.length < 60 && want.test(t); })
+                    .map(e => '<' + e.tagName.toLowerCase() + '#' + (e.id || '-') + '.' + (String(e.className) || '-')
+                        + (e.href ? ' href=' + e.href : '') + (e.getAttribute('onclick') ? ' onclick=' + e.getAttribute('onclick').slice(0, 60) : '')
+                        + (e.dataset && Object.keys(e.dataset).length ? ' data=' + JSON.stringify(e.dataset).slice(0, 60) : '')
+                        + '> ' + (e.innerText || '').trim().slice(0, 40))
+                    .slice(0, 14).join(' ; ');
                 const c = document.body ? document.body.cloneNode(true) : null;
                 if (c) c.querySelectorAll(
                     'nav, header, footer, script, style, #sidebar, .sidebar, '
                     + '.navbar, .nav, .menu, #menu, .topbar, #header, #footer')
                     .forEach(e => e.remove());
                 const text = (c ? (c.innerText || c.textContent || '') : '')
-                    .replace(/\\s+/g, ' ').trim().slice(0, 700);
-                return {tables, frames, selects, dlgs, text};
+                    .replace(/\\s+/g, ' ').trim().slice(0, 300);
+                return {tables, frames, selects, dlgs, hits, text};
             }""")
         out.append("tables: %s" % (shape.get("tables") or "none"))
         out.append("iframes: %s" % (shape.get("frames") or "none"))
         out.append("selects: %s" % (shape.get("selects") or "none"))
         out.append("dialogs: %s" % (shape.get("dlgs") or "none"))
+        out.append("controls: %s" % (shape.get("hits") or "none"))
         out.append("content text: %s" % (shape.get("text") or ""))
     except Exception:  # noqa: BLE001
         pass
