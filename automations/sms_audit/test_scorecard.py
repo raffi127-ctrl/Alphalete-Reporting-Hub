@@ -285,7 +285,8 @@ class WeakAnswers(unittest.TestCase):
     def test_the_which_role_advice_is_megans(self):
         got = S.recovery_for("Which role / which company is this?")
         self.assertIn("sounds familiar", got)
-        self.assertIn("still looking for work", got)
+        # Megan 2026-10-06: "employement - not work".
+        self.assertIn("still looking for employment", got)
 
     def test_a_walk_away_warning_reads_differently(self):
         """Megan 2026-10-06: "these can't be the same"."""

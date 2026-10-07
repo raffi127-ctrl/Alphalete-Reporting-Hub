@@ -149,7 +149,7 @@ def week_stats(office, tag):
         if len(d["typos"]) < 40:
             d["typos"].append((kind.capitalize(), needle_of(e.get("detail")),
                                e.get("body") or "", e.get("name") or "",
-                               ""))
+                               "", []))
 
     who_said = {}
     for c in convos.values():
@@ -171,7 +171,7 @@ def week_stats(office, tag):
         for ex in (e.get("examples") or [])[:3]:
             d["examples"].append((e.get("issue") or "?", ex.get("hit") or "",
                                   ex.get("body") or "",
-                                  applicant(ex.get("body")), ""))
+                                  applicant(ex.get("body")), "", []))
 
     for e in A.dodged_questions(convos):
         d = slot(e.get("sender"))
@@ -192,7 +192,9 @@ def week_stats(office, tag):
                 "they asked: {}".format(e["question"]),
                 e.get("reply") or "", e.get("name") or "",
                 why_dodged(e.get("bucket"), e.get("kind"),
-                           e.get("question"), e.get("reply"), e)))
+                           e.get("question"), e.get("reply"), e),
+                [(m.get("dir"), (m.get("body") or "").strip())
+                 for m in (e.get("context") or [])]))
 
     for st in A.reply_speed_by_sender(convos, min_n=1):
         d = slot(st.get("who"))
@@ -359,6 +361,11 @@ blockquote{margin:.4em 0 .4em 1em;padding:.3em .7em;border-left:3px solid #bbb;
 .why{color:#A8322A;font-weight:bold;margin-top:.35em}
 .fixit{background:#eef5ee;border-left:3px solid #156E46;padding:.4em .7em;
        margin:.4em 0;font-size:.95em}
+.thread{margin:.3em 0}
+.thread div{margin:.15em 0}
+.thread .them{color:#333}
+.thread .us{color:#000}
+.thread b{color:#777;font-weight:normal;font-size:.9em}
 details{margin:.35em 0;border:1px solid #ddd;border-radius:4px;
         padding:.4em .7em;background:#fafafa}
 details[open]{background:#fff}
@@ -423,47 +430,40 @@ SAYS_YES_NO = re.compile(r"\b(yes|yep|yeah|no|nope|not|isn'?t|aren'?t|"
 # recommendation of how to keep the convo going to get the interview
 # booked".
 RECOVERY = {
-    # The ARS doc's own answer (line 149 and the D2D rebuttal at 228),
-    # which already ends with a question back. Megan 2026-10-06: "we
-    # wouldn't say 'this is in the field'" — that phrasing was mine.
-    # NOTE: the doc's other version leans on "we work with LEADS", which
-    # Megan rejected on 2026-10-01, so it is left out.
+    # One short line each. Megan 2026-10-06 cut these twice for being too
+    # much direction, and ruled out offering interview times: answer and
+    # keep them talking, booking is a separate step.
+    #
+    # The store answer is the ARS doc's (line 149), not mine. Its other
+    # version leans on "we work with LEADS", which Megan rejected on
+    # 2026-10-01, so that is left out.
     "Is this remote / where is the office?":
-        "Tell them it is in person, face to face with customers \u2014 not "
-        "a call centre and not inside a store. Tell them where the office "
-        "is. Ask if that drive works for them, and offer two interview "
-        "times.",
+        "Say it is in person with customers, not a store. Ask if the "
+        "drive works.",
     "What is the pay?":
-        "Tell them the weekly range. Ask what they were hoping for, and "
-        "offer two interview times.",
+        "Give the weekly range. Ask what they were hoping for.",
     "What is the job / what do you do?":
-        "Tell them what a day looks like in one sentence. Ask if that "
-        "sounds like them, and offer two interview times.",
+        "Say what a day looks like. Ask if that sounds like them.",
+    # Megan's own words, including "employment" rather than "work".
     "Which role / which company is this?":
         "Tell them the job they applied to. Ask if that sounds familiar, "
-        "and if they are still looking for work.",
+        "and if they are still looking for employment.",
     "Hours, training, is it paid?":
-        "Tell them the hours and that training is paid. Offer two "
-        "interview times.",
+        "Give the hours and say the training is paid.",
     # The templates say "Business Casual" in one place and "Dress to
-    # Impress" in another, so this points at the office's own wording
-    # rather than picking a side.
+    # Impress" in another, so point at the office's own wording.
     "What should I wear / bring?":
-        "Tell them the dress code this office's confirmation text uses. "
-        "Confirm their time.",
+        "Give the dress code from the confirmation text.",
     "How long is the interview / what's next?":
-        "Tell them how long it takes and what happens after. Confirm their "
-        "time.",
+        "Say how long it takes and what happens after.",
     "Is this a real job / who are you?":
-        "Tell them your name and that you are with Alphalete Marketing, "
-        "and give them the website. Offer two interview times.",
+        "Give your name, the company and the website.",
 }
 
 
 def recovery_for(bucket):
     return RECOVERY.get(bucket) or (
-        "Answer it in one sentence. Ask them a question back, and offer "
-        "two interview times.")
+        "Answer it, then ask them something back.")
 
 
 def is_weak(question, reply):
@@ -702,10 +702,10 @@ def render(person, office, weeks, path):
         if not items:
             continue
         groups = collections.OrderedDict()
-        for issue, hit, body, name, why in items:
+        for issue, hit, body, name, why, ctx in items:
             label = issue[len(strip):] if strip and issue.startswith(strip) \
                 else issue
-            groups.setdefault(label, []).append((hit, body, name, why))
+            groups.setdefault(label, []).append((hit, body, name, why, ctx))
         add("<h2>{} \u2014 {}</h2>".format(esc(heading), len(items)))
         if heading == "Weak answers":
             add("<p class='none'>Technically answered, but nothing said "
@@ -720,12 +720,37 @@ def render(person, office, weeks, path):
             if heading in ("Weak answers", "Questions not answered"):
                 add("<p class='fixit'>Instead: {}</p>".format(
                     esc(recovery_for(label))))
-            for hit, body, name, why in rows_:
-                add("<blockquote>{}{}{}</blockquote>".format(
-                    "<span class='who'>{}</span><br>".format(esc(name))
-                    if name else "", mark(body, hit),
-                    "<div class='why'>{}</div>".format(esc(why))
-                    if why else ""))
+            # Megan 2026-10-06: "same applicant ... should show the full
+            # convo of her asking twice". One block per person, their
+            # thread once, then every fault found in it.
+            per = collections.OrderedDict()
+            for hit, body, name, why, ctx in rows_:
+                cur = per.setdefault(name, {"ctx": [], "why": [],
+                                            "quotes": []})
+                if len(ctx) > len(cur["ctx"]):
+                    cur["ctx"] = ctx
+                if why and why not in cur["why"]:
+                    cur["why"].append(why)
+                cur["quotes"].append((hit, body))
+            for name, one in per.items():
+                add("<blockquote>")
+                if name:
+                    add("<span class='who'>{}</span>".format(esc(name)))
+                if one["ctx"]:
+                    add("<div class='thread'>")
+                    for dirn, line in one["ctx"]:
+                        if not line:
+                            continue
+                        add("<div class='{}'><b>{}</b> {}</div>".format(
+                            "them" if dirn == "In" else "us",
+                            "They:" if dirn == "In" else "Us:", esc(line)))
+                    add("</div>")
+                else:
+                    for hit, body in one["quotes"]:
+                        add("<div>{}</div>".format(mark(body, hit)))
+                for why in one["why"]:
+                    add("<div class='why'>{}</div>".format(esc(why)))
+                add("</blockquote>")
             add("</details>")
     add("</body></html>")
     path.write_text("\n".join(L), encoding="utf-8")
