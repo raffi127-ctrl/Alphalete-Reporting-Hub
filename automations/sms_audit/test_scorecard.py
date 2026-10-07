@@ -127,10 +127,52 @@ class Needle(unittest.TestCase):
 class WhyDodged(unittest.TestCase):
     """Megan 2026-10-06: say why it is wrong, in red."""
 
+    REMOTE = "Is this remote / where is the office?"
+
     def test_a_known_bucket_names_the_topic(self):
-        got = S.why_dodged("Is this remote / where is the office?")
+        got = S.why_dodged(self.REMOTE)
         self.assertIn("whether the job is remote and where the office is", got)
-        self.assertIn("isn't relevant to what was asked", got)
+
+    def test_four_dodges_do_not_get_one_sentence(self):
+        """Megan 2026-10-06: "this isn't all the same..." — they were not."""
+        pairs = [
+            ("Does the position require employees to drive to different job "
+             "sites, or is the work based out of the Irving office?",
+             "This is a residential campaign"),
+            ("Is this in a store?", "A quick 15-20 minutes"),
+            ("Is the position in a store?", "This is a residential campaign"),
+        ]
+        said = [S.why_dodged(self.REMOTE, "dodged", q, r) for q, r in pairs]
+        # Not one sentence for all of them. Two of the three ARE the same
+        # fault — a yes-or-no question answered with neither — and saying
+        # so twice is right; the third is a reply about something else.
+        self.assertGreater(len(set(said)), 1)
+        self.assertIn("how long the interview is", said[1])
+
+    def test_a_reply_about_the_interview_length_is_named_as_that(self):
+        got = S.why_dodged(self.REMOTE, "dodged", "Is this in a store?",
+                           "A quick 15-20 minutes")
+        self.assertIn("how long the interview is", got)
+
+    def test_a_yes_no_question_with_no_yes_or_no(self):
+        got = S.why_dodged(self.REMOTE, "dodged", "Is the position in a store?",
+                           "This is a residential campaign")
+        self.assertIn("yes or no", got)
+
+    def test_a_yes_no_question_that_got_a_no_is_not_called_out_for_that(self):
+        got = S.why_dodged(self.REMOTE, "dodged", "Is the position in a store?",
+                           "No, it is not in a store")
+        self.assertNotIn("yes or no", got)
+
+    def test_a_reply_giving_a_time_when_none_was_asked_for(self):
+        got = S.why_dodged(self.REMOTE, "dodged", "Is this in a store?",
+                           "Tomorrow at 9:15")
+        self.assertIn("Gave a time", got)
+
+    def test_a_duration_reply_to_a_duration_question_is_not_a_wrong_topic(self):
+        got = S.why_dodged("How long is the interview / what's next?",
+                           "dodged", "How long is it?", "About 20 minutes")
+        self.assertNotIn("Gave how long", got)
 
     def test_a_deflection_reads_differently_from_a_dodge(self):
         got = S.why_dodged("What is the pay?", "deflected")

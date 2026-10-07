@@ -183,7 +183,8 @@ def week_stats(office, tag):
                 "Did not answer: {}".format(e.get("bucket") or "a question"),
                 "they asked: {}".format(e["question"]),
                 e.get("reply") or "", e.get("name") or "",
-                why_dodged(e.get("bucket"), e.get("kind"))))
+                why_dodged(e.get("bucket"), e.get("kind"),
+                           e.get("question"), e.get("reply"))))
 
     for st in A.reply_speed_by_sender(convos, min_n=1):
         d = slot(st.get("who"))
@@ -277,17 +278,16 @@ def work_on(person, weeks):
         per100 = 100.0 * (now.get("typing") or 0) / now["texts"]
         prevp = (100.0 * (before.get("typing") or 0) / before["texts"]
                  if before and before.get("texts") else None)
-        add("Typing and grammar", "{} in {} texts".format(now.get("typing"), now["texts"]),
+        add("Typing and grammar", "{}".format(now.get("typing")),
             GC._band(per100, 0.5, 2, 5, higher_is_better=False),
             "Fix the wording in AppStream." if bot
             else "Read it back before sending.",
-            "{} in {}".format(before.get("typing"), before.get("texts"))
-            if before else None)
+            "{}".format(before.get("typing")) if before else None)
 
     house = now.get("house") or 0
     if house:
         worst = now["issues"].most_common(1)[0][0]
-        add("House rules", "{} text{}".format(house, "" if house == 1 else "s"),
+        add("House rules", "{}".format(house),
             GC._band(house, 0, 2, 6, higher_is_better=False),
             "{}. The exact texts are below.".format(worst),
             "{}".format((before or {}).get("house")) if before else None)
@@ -394,16 +394,40 @@ TOPICS = {
 }
 
 
-def why_dodged(bucket, kind=""):
-    """One red line saying what went wrong with this reply."""
+YES_NO = re.compile(r"^\s*(is|are|was|were|do|does|did|can|could|will|would|"
+                    r"should|has|have|am)\b", re.I)
+SAYS_YES_NO = re.compile(r"\b(yes|yep|yeah|no|nope|not|isn'?t|aren'?t|"
+                         r"doesn'?t|don'?t|won'?t|correct|incorrect)\b", re.I)
+
+
+def why_dodged(bucket, kind="", question="", reply=""):
+    """One red line saying what went wrong with THIS reply.
+
+    Megan 2026-10-06, shown four dodges carrying one identical sentence:
+    "this isn't all the same...". They were not. One reply gave the
+    interview length to someone asking where the job is; two answered a
+    yes-or-no question without saying yes or no. The line is derived from
+    what the reply actually does, and falls back to the weakest honest
+    claim rather than asserting irrelevance it cannot show."""
     topic = TOPICS.get(bucket) or (bucket or "the question").rstrip("?").lower()
     if kind == "deflected":
         return ("Pushed {} to someone else instead of answering it."
                 .format(topic))
     if kind == "informal":
         return "Texting shorthand going out under the company's name."
-    return ("Didn't answer {}. The reply isn't relevant to what was asked."
-            .format(topic))
+
+    q, r = question or "", reply or ""
+    # Answered a different question entirely.
+    if A.GIVES_DURATION.search(r) and not A.ASKS_DURATION.search(q):
+        return ("Gave how long the interview is. They asked about {}."
+                .format(topic))
+    if A.GIVES_TIME.search(r) and not A.ASKS_WHEN.search(q):
+        return "Gave a time. They asked about {}.".format(topic)
+    # A yes-or-no question that got neither.
+    if YES_NO.match(q.strip()) and not SAYS_YES_NO.search(r):
+        return ("They asked a yes or no question and the reply gives "
+                "neither.")
+    return "Doesn't answer {}.".format(topic)
 
 
 def needle_of(detail):
