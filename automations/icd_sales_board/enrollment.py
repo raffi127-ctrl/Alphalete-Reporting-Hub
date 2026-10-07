@@ -454,6 +454,32 @@ def _collapse(names, groups) -> list:
     return sorted(set(pick.values()))
 
 
+def _last_reading_of(feeds, st=None) -> str:
+    """The freshest reading across this office's machines, as it is shown.
+
+    ASKED OF THE FEED KEYS, like _has_relayed. The status registry is
+    joined by NAME and misses offices outright -- Tre Mitchell relayed at
+    15:48 and his row showed a blank Last reading while LucyECO said
+    Active, because those two were answered from different places. An
+    owner can run two machines, so the freshest of them is the answer.
+    """
+    best = None
+    try:
+        from automations.icd_sales_board import relay_read as _RR
+        for f in (feeds or []):
+            key = getattr(f, "key", "") or ""
+            if not key:
+                continue
+            got = (_RR.last_reading(key) or {}).get("local_time")
+            if got and (best is None or str(got) > str(best)):
+                best = str(got)
+    except Exception:   # noqa: BLE001
+        pass
+    if best:
+        return best[:16]            # 'YYYY-MM-DD HH:MM', seconds are noise
+    return ((st or {}).get("Last reading") or "").strip()
+
+
 def _has_relayed(feeds, st=None) -> bool:
     """Has ANY of this office's machines ever checked in?
 
@@ -1336,7 +1362,7 @@ def rows(icds=None, admin: bool = False) -> list:
                 # minutes "never relayed" -- the same lie as calling a dead
                 # one Active, just pointing the other way.
                 "_relayed": _has_relayed(feeds, st),
-                **({"Last reading": st.get("Last reading", ""),
+                **({"Last reading": _last_reading_of(feeds, st),
                     "On latest update": st.get("On latest update", ""),
                     # NOT A COLUMN -- html_table reads it to colour the cell,
                     # and it is only ever built on the admin rows, so the

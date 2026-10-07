@@ -58,6 +58,54 @@ class HasRelayed(unittest.TestCase):
             self.assertFalse(EN._has_relayed(None, None))
 
 
+class LastReadingComesFromTheSamePlace(unittest.TestCase):
+    """LucyECO and Last reading must not be answered from different sources.
+
+    Tre Mitchell relayed at 15:48 and his row read Active with a BLANK
+    Last reading, because enrolment asked his feed keys and the column
+    asked the status registry, which is joined by name and misses him
+    (Megan 2026-10-07). Jamis and Rashad had it too.
+    """
+
+    def _with(self, readings):
+        from automations.icd_sales_board import relay_read as RR
+        return mock.patch.object(
+            RR, "last_reading", lambda k: readings.get(k, {}))
+
+    def test_it_reads_the_feed_key(self):
+        with self._with({"tre": {"local_time": "2026-10-07 15:48:51"}}):
+            self.assertEqual(EN._last_reading_of([_Feed("tre")]),
+                             "2026-10-07 15:48")
+
+    def test_the_freshest_of_two_machines_wins(self):
+        with self._with({"jamis": {"local_time": "2026-10-07 09:00:00"},
+                         "jamis10": {"local_time": "2026-10-07 15:55:43"}}):
+            self.assertEqual(
+                EN._last_reading_of([_Feed("jamis"), _Feed("jamis10")]),
+                "2026-10-07 15:55")
+
+    def test_it_falls_back_to_the_status_row(self):
+        """Raf has no feed key of his own; the sweep relays for him."""
+        with self._with({}):
+            self.assertEqual(
+                EN._last_reading_of([], {"Last reading": "2026-10-07 15:40"}),
+                "2026-10-07 15:40")
+
+    def test_no_feeds_and_no_status_is_blank(self):
+        with self._with({}):
+            self.assertEqual(EN._last_reading_of(None, None), "")
+
+    def test_an_active_office_never_shows_a_blank_reading(self):
+        """End to end: the two answers have to agree."""
+        got = EN.rows()
+        if not got:
+            self.skipTest("registries unreadable here")
+        for r in got:
+            if r.get("LucyECO") == "Active":
+                self.assertTrue((r.get("Last reading") or "").strip(),
+                                "%s is Active with no reading" % r.get("ICD"))
+
+
 class TheInvariantHolds(unittest.TestCase):
     """End to end, against the real registries."""
 
