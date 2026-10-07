@@ -1187,6 +1187,11 @@ def main(argv: list[str] | None = None) -> int:
         import csv as _csv
         from collections import Counter
         from automations.vantura_churn import cdp_pull
+        _probe_lines = []
+
+        def _plog(msg):
+            _log(msg)
+            _probe_lines.append(str(msg))
         out = REPO_ROOT / "output" / "vantura_payroll" / "dd_owner_probe.csv"
         out.parent.mkdir(parents=True, exist_ok=True)
         if out.exists():
@@ -1204,15 +1209,15 @@ def main(argv: list[str] | None = None) -> int:
             _log(f"owner-probe: CSV has {len(rows)} row(s) — nothing to read")
             return 4
         hdr = [h.strip() for h in rows[0]]
-        _log(f"owner-probe: {len(rows) - 1} rows")
+        _plog(f"owner-probe: {len(rows) - 1} rows")
         for _i in range(0, len(hdr), 6):
-            _log("  col[%02d]: %s" % (_i, " | ".join(hdr[_i:_i + 6])))
+            _plog("  col[%02d]: %s" % (_i, " | ".join(hdr[_i:_i + 6])))
         oc = next((i for i, h in enumerate(hdr) if "owner" in h.lower()), None)
         if oc is not None:
             cnt = Counter(r[oc] for r in rows[1:] if len(r) > oc and r[oc])
-            _log(f"owner values in {hdr[oc]!r}:")
+            _plog(f"owner values in {hdr[oc]!r}:")
             for v, c in cnt.most_common(50):
-                _log(f"  owner {v!r}: {c} line(s)")
+                _plog(f"  owner {v!r}: {c} line(s)")
         for ri, h in enumerate(hdr):
             if "rep" not in h.lower() or "name" not in h.lower():
                 continue
@@ -1222,9 +1227,24 @@ def main(argv: list[str] | None = None) -> int:
                 if nm and _on_allowlist(nm):
                     own = r[oc] if oc is not None and len(r) > oc else "?"
                     hits[(nm, own)] += 1
-            _log(f"allowlist matches via column {h!r}: {len(hits)}")
+            _plog(f"allowlist matches via column {h!r}: {len(hits)}")
             for (nm, own), c in hits.most_common(60):
-                _log(f"    {nm}  under  {own!r}: {c} line(s)")
+                _plog(f"    {nm}  under  {own!r}: {c} line(s)")
+
+        try:
+            from automations.recruiting_report import fill as _f
+            _ctl = _f._client().open_by_key(
+                "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw")
+            try:
+                _tab = _ctl.worksheet("DD Probe")
+                _tab.clear()
+            except Exception:
+                _tab = _ctl.add_worksheet("DD Probe", rows=400, cols=2)
+            _tab.update("A1", [[ln] for ln in _probe_lines[:380]],
+                        value_input_option="RAW")
+            _log(f"owner-probe: {len(_probe_lines)} line(s) -> 'DD Probe' tab")
+        except Exception as _e:
+            _log(f"owner-probe: DD Probe tab write failed ({_e!r})")
         return 0
 
     if args.raf_test:
