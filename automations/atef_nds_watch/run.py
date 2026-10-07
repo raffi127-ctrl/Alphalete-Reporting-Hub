@@ -17,9 +17,13 @@ A BLANK READ IS NOT "NOT THERE YET": if the weekly metrics don't carry a known
 NDS owner (Colten Wright) the read is broken, and it exits 1 instead of quietly
 saying "nothing yet" forever.
 
-ONE DM, EVER. State lives in output/atef_nds_watch/announced.json. The DM goes
-out the first pass that sees any of them; later passes only log. `--again`
-re-sends on purpose.
+TWO DMs AT MOST. State lives in output/atef_nds_watch/announced.json.
+  1. first sighting ("sent") — the first pass that sees ANY of them. Says "not
+     yet": on 2026-10-07 only Atef showed up (no Sabrina/Dhyey/team), and
+     switching then would blank the captainship reports.
+  2. complete ("complete_sent") — all three people AND "Atef's Team". THIS is
+     the "go switch now" DM.
+Later passes only log. `--again` re-sends the current stage on purpose.
 
 WHERE IT RUNS: a Lucy (the Windows machine shuts down at night, and its Slack
 token is a person, not Lucy). From Windows it prints and refuses to send.
@@ -117,9 +121,16 @@ def find(owners_csv: str, teams_csv: str) -> Dict[str, object]:
     }
 
 
+def complete(found: Dict[str, object]) -> bool:
+    """Everything the switch needs: all three people and the captain team."""
+    return bool(found["team"]) and all(n in found["people"] for n in PEOPLE)
+
+
 def message(found: Dict[str, object], today: dt.date) -> str:
     people = found["people"]
-    lines = [f"*Atef ya aparece en Tableau NDS* ({today.isoformat()})", ""]
+    title = ("Capitania de Atef COMPLETA en Tableau NDS" if complete(found)
+             else "Atef ya aparece en Tableau NDS")
+    lines = [f"*{title}* ({today.isoformat()})", ""]
     for name in PEOPLE:
         lines.append(f"- {name}: {'SI' if name in people else 'todavia no'}")
     lines.append(f"- \"Atef's Team\" en NDS Captain Teams: "
@@ -127,10 +138,15 @@ def message(found: Dict[str, object], today: dt.date) -> str:
     lines += ["",
               "Fuente: Tableau > NDS-SNRES-ATT-OOFWorkbook > NDSWeeklyMetricsRep "
               "(Owner & Office) y CaptainsTeam.",
-              "Ya se puede pasar la capitania de B2B a NDS (lista en memoria: "
-              "project_atef-switch-to-nds-pending). Pedile a Claude que lo haga.",
-              "Despues avisale a Cesar Castillo: mientras tanto el postea los "
-              "trackers NDS a mano y pidio que le avisemos (10/5)."]
+              ""]
+    if complete(found):
+        lines += ["Ya se puede pasar la capitania de B2B a NDS (lista en memoria: "
+                  "project_atef-switch-to-nds-pending). Pedile a Claude que lo haga.",
+                  "Despues avisale a Cesar Castillo: mientras tanto el postea los "
+                  "trackers NDS a mano y pidio que le avisemos (10/5)."]
+    else:
+        lines += ["Todavia NO pases la capitania: sin el equipo completo los "
+                  "reportes quedan vacios. Te aviso de nuevo cuando esten todos."]
     return "\n".join(lines)
 
 
@@ -221,8 +237,9 @@ def main(argv=None) -> int:
         return 0
 
     state = load_state()
-    if state.get("sent") and not a.again:
-        print(f"already told Eve on {state.get('sent')} - no DM")
+    key = "complete_sent" if complete(found) else "sent"
+    if state.get(key) and not a.again:
+        print(f"already told Eve ({key}) on {state.get(key)} - no DM")
         return 0
 
     text = message(found, dt.date.today())
@@ -230,8 +247,9 @@ def main(argv=None) -> int:
         print("\n--- would DM Eve ---\n" + text)
         return 0
     if send(text):
-        save_state({"sent": dt.date.today().isoformat(),
-                    "people": found["people"], "team": found["team"]})
+        state.update({key: dt.date.today().isoformat(),
+                      "people": found["people"], "team": found["team"]})
+        save_state(state)
         return 0
     return 1
 

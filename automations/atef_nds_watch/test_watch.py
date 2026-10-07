@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
 from automations.atef_nds_watch import run as R
 
@@ -49,7 +50,56 @@ class Find(unittest.TestCase):
         txt = R.message(f, R.dt.date(2026, 10, 6))
         self.assertIn("Sabrina Alicea: SI", txt)
         self.assertIn("NDSWeeklyMetricsRep", txt)
+
+    def test_only_atef_is_not_complete_and_says_wait(self):
+        # 2026-10-07: Atef showed up alone — switching then blanks everything.
+        owners = OWNERS_NOW + (
+            "Next Up %-,ATEF CHOUDHURY[domin8 acquisitions, inc.],All,0.3\n")
+        f = R.find(owners, TEAMS_NOW)
+        self.assertFalse(R.complete(f))
+        txt = R.message(f, R.dt.date(2026, 10, 7))
+        self.assertIn("NO pases", txt)
+        self.assertNotIn("Cesar Castillo", txt)
+
+    def test_all_three_plus_team_is_complete_and_says_go(self):
+        owners = OWNERS_NOW + (
+            "x,ATEF CHOUDHURY[domin8 acquisitions, inc.],All,0.3\n"
+            "x,SABRINA ALICEA[x],All,1\n")
+        teams = TEAMS_NOW + "Atef's Team,CRU,DHYEY PATEL,0.6\n"
+        f = R.find(owners, teams)
+        self.assertTrue(R.complete(f))
+        txt = R.message(f, R.dt.date(2026, 10, 9))
+        self.assertIn("COMPLETA", txt)
         self.assertIn("Cesar Castillo", txt)
+
+
+class Stages(unittest.TestCase):
+    """The 10/7 first-sighting DM must not swallow the 'complete' DM."""
+
+    def _run(self, owners, teams, state):
+        saved, sent = {}, []
+        with mock.patch.object(R, "pull", return_value={
+                R.VIEW_OWNERS: owners, R.VIEW_TEAMS: teams}), \
+             mock.patch.object(R, "load_state", return_value=dict(state)), \
+             mock.patch.object(R, "save_state", side_effect=saved.update), \
+             mock.patch.object(R, "send", side_effect=lambda t: sent.append(t) or True):
+            R.main(["--post"])
+        return sent, saved
+
+    def test_complete_dm_goes_out_after_first_sighting(self):
+        owners = OWNERS_NOW + ("x,ATEF CHOUDHURY[d],All,1\n"
+                               "x,SABRINA ALICEA[x],All,1\n")
+        teams = TEAMS_NOW + "Atef's Team,CRU,DHYEY PATEL,0.6\n"
+        sent, saved = self._run(owners, teams, {"sent": "2026-10-07"})
+        self.assertEqual(len(sent), 1)
+        self.assertIn("COMPLETA", sent[0])
+        self.assertEqual(saved["sent"], "2026-10-07")
+        self.assertIn("complete_sent", saved)
+
+    def test_partial_again_stays_quiet(self):
+        owners = OWNERS_NOW + "x,ATEF CHOUDHURY[d],All,1\n"
+        sent, _ = self._run(owners, TEAMS_NOW, {"sent": "2026-10-07"})
+        self.assertEqual(sent, [])
 
 
 if __name__ == "__main__":
