@@ -689,7 +689,11 @@ def did_well(person, weeks, limit=2):
     # something, or it is this week's noise.
     MIN_REL = 0.25
 
-    def moved(new, old, up_good, show, praise, floor=2.0):
+    done = set()
+
+    def moved(new, old, up_good, show, praise, floor=2.0, zero="", key=""):
+        """`zero` is used when the new value is none at all — "only 0
+        missed" is not English (Megan 2026-10-06)."""
         if new is None or old is None:
             return
         better = (new > old) if up_good else (new < old)
@@ -698,8 +702,11 @@ def did_well(person, weeks, limit=2):
         gap = abs(new - old)
         if gap < floor or gap < MIN_REL * max(abs(old), 1.0):
             return
+        line = (zero or praise) if (zero and not new) else praise
+        if key:
+            done.add(key)
         out.append((gap / max(abs(old), 1.0),
-                    praise.format(new=show(new), old=show(old))))
+                    line.format(new=show(new), old=show(old))))
 
     pct = lambda v: "{:.0f}%".format(v)
     num = lambda v: "{:.0f}".format(v)
@@ -710,12 +717,17 @@ def did_well(person, weeks, limit=2):
           "week. Keep doing whatever changed.", floor=5.0)
     moved(now.get("house"), (before or {}).get("house"), False, num,
           "Good pull back on the house rules \u2014 {new} this week, down "
-          "from {old}.")
+          "from {old}.", key="house",
+          zero="A clean week on the house rules \u2014 nothing broken, down "
+               "from {old} last week.")
     moved(now.get("dodged"), (before or {}).get("dodged"), False, num,
           "You answered a lot more of what applicants asked \u2014 only "
-          "{new} missed, down from {old}.")
+          "{new} missed, down from {old}.", key="dodged",
+          zero="Every question an applicant asked got an answer, down from "
+               "{old} missed last week.")
     moved(now.get("typing"), (before or {}).get("typing"), False, num,
-          "Tidier writing this week \u2014 {new} against {old}.")
+          "Tidier writing this week \u2014 {new} against {old}.", key="typing",
+          zero="Not a typo or a grammar slip all week, down from {old}.")
     moved((now.get("replies") or {}).get("median"),
           ((before or {}).get("replies") or {}).get("median"), False, A_mins,
           "You got back to people faster \u2014 {new}, down from {old}. That "
@@ -727,13 +739,14 @@ def did_well(person, weeks, limit=2):
 
     texts = now.get("texts") or 0
     if texts >= MIN_TEXTS:
-        if not now.get("typing"):
+        if not now.get("typing") and "typing" not in done:
             out.append((0.4, "Not one typing or grammar mistake in {:,} "
                              "texts.".format(texts)))
-        if not now.get("house"):
+        if not now.get("house") and "house" not in done:
             out.append((0.4, "A clean week on the house rules \u2014 nothing "
                              "broken."))
-    if not now.get("dodged") and (now.get("booked") or 0) >= 5:
+    if (not now.get("dodged") and "dodged" not in done
+            and (now.get("booked") or 0) >= 5):
         out.append((0.3, "Every question an applicant asked got an answer."))
 
     out.sort(key=lambda t: -t[0])

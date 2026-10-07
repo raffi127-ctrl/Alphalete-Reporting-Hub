@@ -788,3 +788,42 @@ class TooFewIsExplained(unittest.TestCase):
     def test_no_note_when_every_week_is_big_enough(self):
         html = self._html(self.FULL)
         self.assertNotIn(S.TOO_FEW, html)
+
+
+class ZeroReadsLikeEnglish(unittest.TestCase):
+    """Megan 2026-10-06: "only 0 missed - doesn't make sense"."""
+
+    def _p(self, now, before):
+        base = {"texts": 1500, "house": 0, "dodged": 0, "typing": 0,
+                "booked": 40, "shown": 16, "matched": 40, "far_out": 8,
+                "issues": __import__("collections").Counter()}
+        return {"display": "X",
+                "weeks": {"w0918": dict(base, **before),
+                          "w0925": dict(base, **now)}}
+
+    def _lines(self, now, before):
+        return S.did_well(self._p(now, before), ["w0918", "w0925"], limit=5)
+
+    def test_zero_unanswered_does_not_say_only_zero(self):
+        got = " ".join(self._lines({"dodged": 0}, {"dodged": 2}))
+        self.assertNotIn("only 0", got)
+        self.assertIn("Every question an applicant asked got an answer", got)
+        self.assertIn("down from 2", got)
+
+    def test_zero_house_rules_reads_as_a_clean_week(self):
+        got = " ".join(self._lines({"house": 0}, {"house": 4}))
+        self.assertIn("nothing broken", got)
+        self.assertIn("down from 4", got)
+
+    def test_zero_typing_reads_as_not_a_typo(self):
+        got = " ".join(self._lines({"typing": 0}, {"typing": 3}))
+        self.assertIn("Not a typo", got)
+
+    def test_a_non_zero_improvement_keeps_the_number(self):
+        got = " ".join(self._lines({"dodged": 6}, {"dodged": 13}))
+        self.assertIn("only 6 missed", got)
+
+    def test_the_clean_sheet_line_is_not_said_twice(self):
+        got = self._lines({"house": 0}, {"house": 4})
+        clean = [g for g in got if "house rules" in g]
+        self.assertEqual(len(clean), 1, got)
