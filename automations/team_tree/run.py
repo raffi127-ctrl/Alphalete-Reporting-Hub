@@ -139,7 +139,11 @@ def _parse_date(s: str, today: dt.date) -> "dt.date | None":
         return None
 
 
-def build(today: dt.date):
+def build(today: dt.date, verizon_only: bool = False):
+    """verizon_only (Carlos 2026-10-07: "do it for the verizon people"):
+    one tree of ONLY the Verizon Sales Board reps — roll-call new starts and
+    scheduled orientations filtered to the Verizon campaign too. Internally
+    they keep the 'B2B' tree key so every downstream piece works."""
     sh = _open_sheet()
 
     # ---- Sales Boards: the active roster, all three tabs ---------------
@@ -151,7 +155,10 @@ def build(today: dt.date):
         if status == "terminated" or _norm(name) in EXCLUDED:
             continue
         # Two trees only: BOX, and everything else (B2B + Verizon) on B2B.
-        camp = "BOX" if rep["campaign"].strip().upper() == "BOX" else "B2B"
+        raw_camp = rep["campaign"].strip().upper()
+        if verizon_only and not raw_camp.startswith("VER"):
+            continue
+        camp = "BOX" if raw_camp == "BOX" else "B2B"
         reps.append(Rep(name, camp, rep["trainer"], status))
 
     by_norm = {_norm(r.name): r for r in reps}
@@ -168,6 +175,8 @@ def build(today: dt.date):
                 continue
             name, camp, trainer = row[4].strip(), row[3].strip().upper(), row[6]
             if not name or _norm(name) in by_norm:
+                continue
+            if verizon_only and not camp.startswith("VER"):
                 continue
             ns = Rep(name, "BOX" if camp == "BOX" else "B2B", trainer.strip(),
                      "new start")
@@ -207,6 +216,8 @@ def build(today: dt.date):
             continue
         when = _parse_date(row[lay["orient"]], today)
         if not when or when < today:
+            continue
+        if verizon_only and "ver" not in _norm(row[lay["campaign"]]):
             continue
         camp = "BOX" if "box" in _norm(row[lay["campaign"]]) else "B2B"
         second = _resolve(row[lay["second"]], by_norm)
@@ -265,11 +276,12 @@ def _branch_html(r: Rep) -> str:
             f'{_node(r)}{inner}</div>')
 
 
-def render_html(week, reps, roots, scheduled) -> str:
+def render_html(week, reps, roots, scheduled, campaigns=None) -> str:
     css = (Path(__file__).parent / "style.css").read_text()
+    campaigns = campaigns or (("B2B", "Alphalete AT&amp;T NDS"),
+                              ("BOX", "Alphalete BOX"))
     sections = []
-    for camp, title in (("B2B", "Alphalete AT&amp;T NDS"),
-                        ("BOX", "Alphalete BOX")):
+    for camp, title in campaigns:
         branches = "".join(_branch_html(r) for r in roots
                            if r.campaign == camp)
         sections.append(f"""<section>
@@ -295,7 +307,7 @@ def render_html(week, reps, roots, scheduled) -> str:
   <dt>NS scheduled</dt><dd>{ns}</dd></dl></div>""")
 
     boxes = []
-    for camp in ("B2B", "BOX"):
+    for camp in [c for c, _t in campaigns]:
         sub = [r for r in reps if r.campaign == camp]
         active, lead, training = stats(sub)
         ns = sum(1 for _, c, _ in scheduled if c == camp)
@@ -446,7 +458,7 @@ def _trim(png_path: Path, pad: int = 60) -> None:
              min(im.height, bottom + pad))).save(png_path)
 
 
-def post(png: Path, week: str, *, dm: bool) -> dict:
+def post(png: Path, week: str, *, dm: bool, comment: str = None) -> dict:
     from automations.shared.slack_metrics_post import _client
     client = _client()
     if dm:
@@ -457,9 +469,10 @@ def post(png: Path, week: str, *, dm: bool) -> dict:
     resp = client.files_upload_v2(
         channel=channel, file=str(png),
         filename=f"alphalete-team-tree-{week or 'week'}.png",
-        initial_comment=(f"Alphalete team tree — week ending {week}: "
-                         "AT&T NDS + BOX by trainer, color = leadership "
-                         "status, Level 2+ leader stats and office totals."))
+        initial_comment=comment or (
+            f"Alphalete team tree — week ending {week}: "
+            "AT&T NDS + BOX by trainer, color = leadership "
+            "status, Level 2+ leader stats and office totals."))
     return {"ok": resp.get("ok"), "channel": channel}
 
 
@@ -469,10 +482,14 @@ def main(argv=None) -> int:
                     help="build + render only, post nothing")
     ap.add_argument("--dm", action="store_true",
                     help="post to Carlos's DM instead of the channel")
+    ap.add_argument("--verizon", action="store_true",
+                    help="one tree of only the Verizon Sales Board reps")
+    ap.add_argument("--tag", default=None, metavar="U...,U...",
+                    help="Slack user ids to @-mention in the post comment")
     args = ap.parse_args(argv)
 
     today = dt.date.today()
-    week, reps, roots, scheduled = build(today)
+    week, reps, roots, scheduled = build(today, verizon_only=args.verizon)
     print(f"  board week {week!r}: {len(reps)} reps "
           f"({sum(1 for r in reps if r.is_new_start)} new starts), "
           f"{len(roots)} branches, {len(scheduled)} scheduled orientations")
@@ -480,7 +497,11 @@ def main(argv=None) -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     html_path = OUT_DIR / "team_tree.html"
     png_path = OUT_DIR / "team_tree.png"
-    html_path.write_text(render_html(week, reps, roots, scheduled),
+    campaigns = ((("B2B", "Alphalete VERIZON"),) if args.verizon else None)
+    if args.verizon:
+        TREE_LABEL["B2B"] = "Verizon"     # leader-card tags in this one-off
+    html_path.write_text(render_html(week, reps, roots, scheduled,
+                                     campaigns=campaigns),
                          encoding="utf-8")
     render_png(html_path, png_path)
     print(f"  rendered {png_path} ({png_path.stat().st_size:,} bytes)")
@@ -488,7 +509,13 @@ def main(argv=None) -> int:
     if args.dry_run:
         print("  dry-run: not posting")
         return 0
-    out = post(png_path, week, dm=args.dm)
+    comment = None
+    if args.verizon:
+        tags = " ".join(f"<@{u.strip()}>" for u in (args.tag or "").split(",")
+                        if u.strip())
+        comment = (f"Verizon team tree — week ending {week}: by trainer, "
+                   f"color = leadership status. {tags}").strip()
+    out = post(png_path, week, dm=args.dm, comment=comment)
     dest = "Carlos DM" if args.dm else CHANNEL[0]
     print(f"  posted to {dest}: {out}")
     return 0 if out.get("ok") else 1
