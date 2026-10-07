@@ -1231,6 +1231,25 @@ def main(argv: list[str] | None = None) -> int:
             for (nm, own), c in hits.most_common(60):
                 _plog(f"    {nm}  under  {own!r}: {c} line(s)")
 
+        lastname = {}
+        for _n in RAF_DD_REPS:
+            _t = sorted(_rep_tokens(_n))
+            if _t:
+                lastname.setdefault(_t[-1] if _t[-1] not in ("torre",)
+                                    else "torre", []).append(_n)
+        _near = Counter()
+        for r in rows[1:]:
+            nm = r[31] if len(r) > 31 else ""
+            if not nm or _on_allowlist(nm):
+                continue
+            toks = _rep_tokens(nm)
+            for ln in lastname:
+                if ln in toks:
+                    _near[nm] += 1
+                    break
+        _plog(f"near-miss reps sharing a surname with the allowlist: {len(_near)}")
+        for nm, c in _near.most_common(40):
+            _plog(f"    near: {nm}: {c} line(s)")
         try:
             from automations.recruiting_report import fill as _f
             _ctl = _f._client().open_by_key(
