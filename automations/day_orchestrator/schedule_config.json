@@ -3992,7 +3992,7 @@
   "daily_eod_appstream": {
    "hand_run_only": true,
    "on_scheduler": false,
-   "_note": "Camila 2026-10-07: replaces the 'DAILY EOD APPSTREAM' sheet Perli fills by hand. A DIA VENCIDO: reports YESTERDAY (Monday -> Saturday), columns accumulate Mon..yesterday + WEEKLY TOTALS; per office (roster = newest block of 'Interviewers Retention (Interviewer)', ARS Management 2.0), AppStream p=701: 1st B / 1st S / % / B to 2nd / % / 2nd B / 2nd S / %, 2nd round % green >=50 red <50, plus a list of the red offices. ONE email. Real clock = deploy/com.alphalete.daily-eod-appstream.plist on Lucy 1 (fires 16-19 local Mon-Sat; --scheduled sends only at 20:00 Buenos Aires). TESTING: default recipient is Eve; --production sends to Camila. `lucy rerun daily_eod_appstream` (add --dry-run to send nothing).",
+   "_note": "Camila 2026-10-07: replaces the 'DAILY EOD APPSTREAM' sheet Perli fills by hand. A DIA VENCIDO: reports YESTERDAY (Monday -> Saturday), columns accumulate Mon..yesterday + WEEKLY TOTALS; per office (roster = newest block of 'Interviewers Retention (Interviewer)', ARS Management 2.0), AppStream p=701: 1st B / 1st S / % / B to 2nd / % / 2nd B / 2nd S / %, 2nd round % green >=50 red <50, plus a list of the red offices. ONE email. Real clock = deploy/com.alphalete.daily-eod-appstream.plist on Lucy 1 (fires 16-19 local Mon-Sat; --scheduled sends only at 18:00 CENTRAL = 20:00 Argentina now, 21:00 after Nov 1, Eve's call). LIVE since 2026-10-07: the scheduled pass sends --production (Camila + Eve copied); a bare hand run mails Eve only. `lucy rerun daily_eod_appstream` (add --dry-run to send nothing).",
    "display_name": "Daily EOD AppStream — 2nd round retention email",
    "source_type": "appstream",
    "command": [
@@ -4011,7 +4011,7 @@
   },
   "install_daily_eod_appstream_agent": {
    "on_scheduler": true,
-   "_note": "NOT a report — one-shot LaunchAgent installer, run via `lucy rerun install_daily_eod_appstream_agent` on Lucy 1. Bootstraps com.alphalete.daily-eod-appstream from the committed plist (Camila's 20:00 Argentina email, Mon-Sat). Must land on a machine holding the AppStream session.",
+   "_note": "NOT a report — one-shot LaunchAgent installer, run via `lucy rerun install_daily_eod_appstream_agent` on Lucy 1. Bootstraps com.alphalete.daily-eod-appstream from the committed plist (Camila's 6 PM Central email, Mon-Sat). Must land on a machine holding the AppStream session.",
    "display_name": "Install daily-eod-appstream agent",
    "command": [
     "automations.day_orchestrator.install_agent"

@@ -2,7 +2,7 @@
 
 Replaces the 'DAILY EOD APPSTREAM' sheet Perli fills by hand and sends to
 Camila every evening as a screenshot plus a list of the offices in red.
-One email a day.
+One email a day, Mon-Sat, 6 PM Central; LIVE to Camila since 2026-10-07.
 
 Camila's ask, in her words: "1st round showed, # booked to 2nd porcentaje de
 eso y despues 2nd round retention con porcentaje. Arriba de 50% en verde,
@@ -37,8 +37,9 @@ Perli writes it. An office with no 2nd rounds booked that day has no % and is
 not red.
 
     python -m automations.daily_eod_appstream.run --dry-run       # preview only
-    python -m automations.daily_eod_appstream.run                 # mail to TEST_TO
+    python -m automations.daily_eod_appstream.run                 # mail to TEST_TO (Eve)
     python -m automations.daily_eod_appstream.run --production    # mail to Camila
+    python -m automations.daily_eod_appstream.run --scheduled --production   # the 6 PM CT pass
     python -m automations.daily_eod_appstream.run --date 2026-10-06 --dry-run
 """
 from __future__ import annotations
@@ -61,13 +62,15 @@ OUT_DIR = REPO_ROOT / "output" / "daily_eod_appstream"
 
 ARS_MGMT_SHEET = "1l4Q0SreuddKZrgXwb9MytF-EdPZH-H1hLsa69epq-n8"   # ARS Management 2.0
 
-PROD_TO = ["camilahk@arsinterviewsservice.com"]
-TEST_TO = ["eve@alphaletemarketing.com"]   # Eve, until Camila signs off
+PROD_TO = ["camilahk@arsinterviewsservice.com",
+           "eve@alphaletemarketing.com"]      # Eve copied to watch it go out
+TEST_TO = ["eve@alphaletemarketing.com"]   # hand runs without --production
 
-# Camila wants it at 20:00 Argentina. launchd fires on the Lucy's LOCAL clock
-# at several hours; --scheduled lets through only the fire that lands on this
-# hour in Buenos Aires, so US daylight saving (Nov 1) needs no plist change.
-SEND_TZ, SEND_HOUR = "America/Argentina/Buenos_Aires", 20
+# 6 PM CENTRAL, always (Eve 2026-10-07): 20:00 Argentina while the US is on
+# daylight time, 21:00 Argentina after Nov 1. launchd fires on the Lucy's LOCAL
+# clock at several hours; --scheduled lets through only the fire that is this
+# hour in Central, so it is right whatever zone the machine's clock is set to.
+SEND_TZ, SEND_HOUR = "America/Chicago", 18
 
 GREEN_AT = 50          # 2nd round %, as SHOWN (whole number): >= green, < red
 

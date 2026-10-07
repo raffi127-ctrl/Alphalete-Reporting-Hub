@@ -5,10 +5,10 @@
     <key>Label</key>
     <string>com.alphalete.daily-eod-appstream</string>
 
-    <!-- Daily EOD AppStream: Camila's email at 20:00 Argentina, Mon-Sat
+    <!-- Daily EOD AppStream: Camila's email at 6 PM CENTRAL, Mon-Sat
          (2026-10-07). Fires at 16-19 on the LOCAL clock; the module's
-         scheduled gate runs only the fire that is 20:00 in Buenos Aires
-         (18:00 CDT now, 17:00 CST after Nov 1), so no edit at the DST switch.
+         scheduled gate runs only the fire that is 18:00 Central, whatever
+         zone this machine's clock is on.
          Path is the laptop placeholder; install_agent.py rewrites it:
          python -m automations.day_orchestrator.install_agent daily-eod-appstream -->
     <key>ProgramArguments</key>
