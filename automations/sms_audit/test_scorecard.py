@@ -154,15 +154,35 @@ class WhyDodged(unittest.TestCase):
                            "A quick 15-20 minutes")
         self.assertIn("how long the interview is", got)
 
-    def test_a_yes_no_question_with_no_yes_or_no(self):
+    def test_a_vague_answer_is_named_as_vague_not_as_missing(self):
+        """Megan 2026-10-06: "technically this does answer but is a bit
+        dodgy, should ask something back"."""
         got = S.why_dodged(self.REMOTE, "dodged", "Is the position in a store?",
                            "This is a residential campaign")
-        self.assertIn("yes or no", got)
+        self.assertIn("vaguely", got)
+        self.assertIn("ask a question", got)
+        self.assertNotIn("Doesn't answer", got)
 
-    def test_a_yes_no_question_that_got_a_no_is_not_called_out_for_that(self):
+    def test_a_long_question_that_really_was_not_answered(self):
+        """Lizbeth Gonzalez's: not a bare yes/no, and genuinely unanswered."""
+        got = S.why_dodged(
+            self.REMOTE, "dodged",
+            "I had one quick question regarding the role. Does the position "
+            "require employees to drive to different job sites?",
+            "This is a residential campaign")
+        self.assertIn("Doesn't answer", got)
+        self.assertIn("Nothing asked back", got)
+
+    def test_a_reply_that_does_ask_back_is_not_nagged_about_it(self):
+        got = S.why_dodged(self.REMOTE, "dodged",
+                           "I had a question about the role. Where is it?",
+                           "It moves around DFW. Does that work for you?")
+        self.assertNotIn("Nothing asked back", got)
+
+    def test_a_straight_no_is_not_called_vague(self):
         got = S.why_dodged(self.REMOTE, "dodged", "Is the position in a store?",
                            "No, it is not in a store")
-        self.assertNotIn("yes or no", got)
+        self.assertNotIn("vaguely", got)
 
     def test_a_reply_giving_a_time_when_none_was_asked_for(self):
         got = S.why_dodged(self.REMOTE, "dodged", "Is this in a store?",

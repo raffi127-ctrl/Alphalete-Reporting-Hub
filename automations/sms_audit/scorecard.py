@@ -423,11 +423,18 @@ def why_dodged(bucket, kind="", question="", reply=""):
                 .format(topic))
     if A.GIVES_TIME.search(r) and not A.ASKS_WHEN.search(q):
         return "Gave a time. They asked about {}.".format(topic)
-    # A yes-or-no question that got neither.
+    # A yes-or-no question answered sideways. Megan 2026-10-06 on "Is the
+    # position in a store?" -> "This is a residential campaign":
+    # "technically this does answer but is a bit dodgy, should ask
+    # something back". So name it as vague rather than as unanswered, and
+    # say what to do — the same shape as ruling 3, answer then reassure.
     if YES_NO.match(q.strip()) and not SAYS_YES_NO.search(r):
-        return ("They asked a yes or no question and the reply gives "
-                "neither.")
-    return "Doesn't answer {}.".format(topic)
+        return ("Answers it vaguely and asks nothing back. Say yes or no, "
+                "then ask a question.")
+    out = "Doesn't answer {}.".format(topic)
+    if "?" not in r:
+        out += " Nothing asked back, either."
+    return out
 
 
 def needle_of(detail):
