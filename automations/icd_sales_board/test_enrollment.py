@@ -15,6 +15,15 @@ class SafetyTests(unittest.TestCase):
             extra = set(r) - set(EN.SAFE_COLUMNS)
             self.assertEqual(extra, set(), f"{r.get('ICD')}: {extra}")
 
+    def test_not_even_a_private_scaffolding_key(self):
+        """The rules that build a row use private keys (_relayed,
+        _reading_tone). They are working notes, and this page is a link
+        anyone can open, so none of them leaves with a public row --
+        `_relayed` did, and the test above is what noticed."""
+        for r in EN.rows():
+            leaked = [k for k in r if str(k).startswith("_")]
+            self.assertEqual(leaked, [], f"{r.get('ICD')}: {leaked}")
+
     def test_the_safe_list_names_nothing_sensitive(self):
         # WHOLE WORDS. A substring check called 'Weather Report' sensitive
         # because 'rep' is inside 'Report'.

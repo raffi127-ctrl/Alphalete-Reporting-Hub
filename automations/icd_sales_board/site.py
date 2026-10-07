@@ -2173,6 +2173,9 @@ def _rollout_section() -> None:
                      f"on LucyECO")
         st.caption(" · ".join(f"{k}: {v}" for k, v in state.most_common() if k))
         cols = EN.admin_columns(erows)
+        # The same explainers the public page carries -- one implementation,
+        # so the two surfaces cannot drift apart again.
+        EN.render_explainers(st, cols)
         # CARRY THE PRIVATE KEYS THROUGH. Narrowing each row to the visible
         # columns dropped `_reading_tone`, so html_table fell back to the
         # plain rule and painted every reading green -- Ryan sat there in
@@ -2183,17 +2186,10 @@ def _rollout_section() -> None:
             [{**{c: r.get(c, "") for c in cols},
               **{k: v for k, v in r.items() if k.startswith("_")}}
              for r in erows], cols))
-        st.caption(
-            "The same table as **lucyeco.streamlit.app/lucyeco** — the link "
-            "to send someone, which needs no access code — plus the last "
-            "reading and whether the agent is current, which that page "
-            "deliberately leaves off. "
-            + (f"Read {taken:%b %d}, {taken.hour % 12 or 12}:"
-               f"{taken.minute:02d}{'am' if taken.hour < 12 else 'pm'}."
-               if taken else ""))
-        st.caption("A cell says WHEN that report runs and WHERE it lands. "
-                   "Green they have it, amber on but not working yet, red "
-                   "they do not.")
+        # The two captions that sat here are gone (Megan 2026-10-06). The
+        # colour key and the note about the public page were explaining a
+        # table she reads every day, and the explainers above already say
+        # what each column is.
     except Exception as e:   # noqa: BLE001
         st.caption(f"Enrollment table unavailable ({type(e).__name__}: {e})")
 def _paint(html: str) -> None:

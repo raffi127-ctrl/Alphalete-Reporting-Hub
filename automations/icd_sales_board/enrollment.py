@@ -174,6 +174,14 @@ DISPO_WINDOW = "every 15 min, Mon–Sat"
 # say Enrolled and be in green"). The ones with a real time keep it; these
 # three just say whether the office has them.
 ENROLLED = "Enrolled"
+
+# NOT THE SAME AS "YOU DO NOT HAVE THIS". Resume Pushing is built and live
+# for nobody -- applicant_push lists 11 offices and every scheduler entry is
+# off -- so a red 'Not Enrolled' told every owner they were missing out on
+# something that does not run for anyone yet (Megan 2026-10-06: "we need to
+# put a coming soon note on the resume pushing"). Amber, because it is the
+# same kind of answer as Pending: real, set up, not running.
+COMING_SOON = "Coming Soon"
 BOARD_WHEN = ENROLLED
 
 # HOW LucyECO READS ON THIS PAGE (Megan 2026-10-05: "it should be active /
@@ -202,7 +210,7 @@ ECO_STATE = {
 # that mean "on, but not working yet".
 GOOD_WORDS = (ALWAYS_ON, ENROLLED)
 BAD_WORDS = (NOT_ON, "Not on")
-WAIT_WORDS = ("Pending", "Partial")
+WAIT_WORDS = ("Pending", "Partial", "Coming Soon")
 # Columns that are a fact about the office rather than a yes/no, so they are
 # never coloured: a green name tells you nothing.
 UNCOLOURED = ("ICD", "Campaigns")
@@ -1277,7 +1285,10 @@ def rows(icds=None, admin: bool = False) -> list:
                 "Weather Report": ENROLLED if any(
                     f.key in weather for f in feeds) else "",
                 "Ad Photo Threads": ENROLLED if me in ads else "",
-                "Resume Pushing": ENROLLED if me in resume else "",
+                # Coming Soon rather than blank: blank becomes 'Not
+                # Enrolled' below, and nobody is enrolled BECAUSE it has
+                # not launched, not because they were left out.
+                "Resume Pushing": ENROLLED if me in resume else COMING_SOON,
                 # An office with no Slack gets the same numbers as one
                 # email a day (office_metrics emails_only) — 'Enrolled' hid
                 # the one thing an owner would ask about it.
@@ -1384,6 +1395,14 @@ def rows(icds=None, admin: bool = False) -> list:
             for c in SAFE_COLUMNS:
                 if c not in skip and not r.get(c):
                     r[c] = NOT_ON
+            # _relayed WAS SCAFFOLDING FOR THE RULES ABOVE and has no
+            # business leaving with the row. The public page has no access
+            # code, so "a row carries nothing outside the safe list" is a
+            # real control and not a tidiness rule -- it caught this.
+            # Admin rows keep it: that surface is gated, and the invariant
+            # tests read it.
+            if not admin:
+                r.pop("_relayed", None)
     except Exception:   # noqa: BLE001
         return out
     return out
@@ -1525,6 +1544,45 @@ def _esc(text: str) -> str:
     the breaks get escaped along with the content."""
     import html
     return html.escape(str(text or "")).replace("\n", "<br>")
+
+
+def render_explainers(st, cols: list, root=None) -> int:
+    """'What each column means — click one', as one popover per feature.
+
+    ONE IMPLEMENTATION, TWO SURFACES. This lived only in lucyeco_page, so
+    when the board's LucyEco view became the same table it came up without
+    them and Megan lost "the previews at the top of what things are"
+    (2026-10-06). A table header cannot be clicked, so the answer sits
+    directly above the table — same gesture, and it works on a phone.
+
+    Returns how many were drawn, so a caller can tell nothing-to-show from
+    a registry that failed.
+    """
+    import pathlib as _pl
+    root = root or _pl.Path(__file__).resolve().parents[2]
+    picks = [c for c in cols if c in EXPLAINS]
+    if not picks:
+        return 0
+    st.caption("What each column means — click one:")
+    for chunk in range(0, len(picks), 5):
+        for col, box in zip(picks[chunk:chunk + 5], st.columns(5)):
+            words, shots = EXPLAINS[col]
+            # One name or several — call-outs are two different messages,
+            # the nudge and the praise, and one of them explains half.
+            shots = [shots] if isinstance(shots, str) else list(shots or [])
+            with box.popover(col, use_container_width=True):
+                st.markdown("**%s**" % col)
+                st.write(words)
+                shown = 0
+                for shot in shots:
+                    img = root / "resources" / "report-screenshots" / shot
+                    if shot and img.exists():
+                        st.image(str(img), use_container_width=True)
+                        shown += 1
+                if not shown:
+                    st.caption("No example image for this one yet.")
+    st.write("")
+    return len(picks)
 
 
 def html_table(rows: list, cols: list) -> str:
