@@ -71,7 +71,7 @@ def _in_week(d: Optional[dt.date], start: dt.date, end: dt.date) -> bool:
 
 
 def build_week_tables(sales: Sequence, today: Optional[dt.date] = None,
-                      money_fn=None, bonus_fn=None) -> Dict:
+                      money_fn=None, bonus_fn=None, core_fn=None) -> Dict:
     """Roll the collapsed sales into the two weekly payout tables.
 
     Returns {"last": {"label", "rows"}, "this": {"label", "rows"}} where each
@@ -104,7 +104,9 @@ def build_week_tables(sales: Sequence, today: Optional[dt.date] = None,
             "pending": 0, "submitted": 0, "posted_last": 0, "posted_this": 0,
             "canceled_last": 0, "canceled_this": 0,
             "n_posted_last": 0, "n_posted_this": 0,
+            "c_posted_last": 0, "c_posted_this": 0,
         })
+        is_core = bool(core_fn(s)) if core_fn is not None else True
         # Accepted Date for a paid sale; for a dead one fall back to the sale
         # date so a cancel still lands in a week rather than vanishing.
         paid_on = s.accepted_date
@@ -114,9 +116,11 @@ def build_week_tables(sales: Sequence, today: Optional[dt.date] = None,
             if _in_week(paid_on, last_start, last_end):
                 agg["posted_last"] += unit
                 agg["n_posted_last"] += 1
+                agg["c_posted_last"] += 1 if is_core else 0
             if _in_week(paid_on, this_start, this_end):
                 agg["posted_this"] += unit
                 agg["n_posted_this"] += 1
+                agg["c_posted_this"] += 1 if is_core else 0
         elif s.status in CANCEL_STATUSES:
             if _in_week(dead_on, last_start, last_end):
                 agg["canceled_last"] += unit
@@ -140,7 +144,10 @@ def build_week_tables(sales: Sequence, today: Optional[dt.date] = None,
                 # tier yet. bonus_fn(week_end, n) picks the SCALE — the new
                 # Texas payout starts with sales as of 9/7 (Carlos), so the
                 # week that straddles the cutover pays on the right card.
-                n = a["n_" + posted_key]
+                # With core_fn (10/8, Esmeralda reconcile): SCI pays the
+                # volume bonus on CORE deals only — Ancillary never got it —
+                # so n counts only the week's Core deals.
+                n = a[("c_" if core_fn is not None else "n_") + posted_key]
                 week_end = (last_end if posted_key == "posted_last"
                             else this_end)
                 if bonus_fn is not None:

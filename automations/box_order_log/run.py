@@ -147,10 +147,13 @@ def _probe_filters(url: str) -> int:
 
 
 REVENUE_LINE = ":moneybag: BOX Revenue by Status"
-REVENUE_SUBTITLE = ("Dollars on the New Compensation grid (base by BF tier + "
-                    "term + kWh). Accepted INCLUDES the weekly Volume bonus "
-                    "at the rep's tier for that week; Still Open / Submitted "
-                    "are all-time, per-deal, no bonus. Weeks are Mon-Sun.")
+REVENUE_SUBTITLE = ("Dollars on the New Compensation grid. Core deals "
+                    "(BF 1, or BF 2 with 50k+ usage) pay base + term + kWh; "
+                    "Ancillary deals (BF 3/4, small BF 2) pay base + term. "
+                    "Accepted INCLUDES the weekly Volume bonus on Core deals "
+                    "only, at the Core-count tier; Still Open / Submitted "
+                    "are all-time, per-deal, no bonus. Weeks are Mon-Sun by "
+                    "accepted-by-supplier date.")
 
 
 def _post_thread(client, channel: str, text: str, xlsx_path: Path,
@@ -953,7 +956,8 @@ def main(argv: Optional[list] = None) -> int:
         if "revenue" in sections:
             try:
                 from automations.vantura_revenue_board.run import (
-                    price_box, price_box_tx, box_tier_for, TX_TIERS)
+                    price_box, price_box_tx, box_tier_for, TX_TIERS,
+                    box_is_core)
                 # THE 9/7 CUTOVER (Carlos 2026-09-13: "the new Texas payout
                 # was started from sales as of 9/7"): deals SOLD before 9/7
                 # pay on the old TX Grid — exactly what the WE 9.6 DD showed,
@@ -980,9 +984,17 @@ def main(argv: Optional[list] = None) -> int:
 
                 out_revenue = OUTPUT_DIR / "BOX Revenue by Status {}.png".format(
                     today.strftime("%m-%d-%Y"))
+                def _core(s):
+                    # Pre-cutover weeks paid on the TX grid with no
+                    # Core/Ancillary split — every deal counts there.
+                    if s.sale_date and s.sale_date < CUTOVER:
+                        return True
+                    return box_is_core(s.fields)
+
                 rtables = payout.build_week_tables(sales, today,
                                                    money_fn=_price,
-                                                   bonus_fn=_bonus)
+                                                   bonus_fn=_bonus,
+                                                   core_fn=_core)
                 try:
                     rtables = payout.filter_active(
                         rtables, _ract, _rterm, _act_roster._names_match)
