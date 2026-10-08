@@ -70,6 +70,7 @@ HYPE_REGULAR = (
     "{first} closed it. The art of the deal :dollar:",
     "{first} is on the board. Tremendous :dollar:",
     "{first} caught another one :fishing_pole_and_fish::dollar: Gotta catch 'em all",
+    "{first} closed it. Anyone can do the job, nobody does it like {first} :dollar:",
     "Closer!! {first} is on the board :fire:",
     "WINNER!! {first} is on the board :money_with_wings:",
     "{first} is on the board! Who's next :eyes::eyes::eyes:",
@@ -559,6 +560,7 @@ class _Box(Shape):
         "{first} closed it. The art of the deal :moneybag:",
         "{first} closed one. Tremendous :moneybag:",
         "{first} caught another one :fishing_pole_and_fish::moneybag: Gotta catch 'em all",
+        "{first} closed it. Anyone can do the job, nobody does it like {first} :moneybag:",
         "Closer!! {first} closed one :fire:",
         "WINNER!! {first} closed one :money_with_wings:",
         "{first} closed one! Who's next :eyes::eyes::eyes:",
@@ -953,6 +955,7 @@ FIRST_SALE_LINES = (
     "{first} is OTB 💰 Committed first, figured it out. Who's next? 👀",
     "{first} is OTB 💰 Step one: prove it's possible. Done. Who's next? 🔥",
     "{first} is OTB 💰 That's my ninja way. Who's next? 🥷",
+    "{first} is OTB 💰 It's not bragging if it's true. Who's next? 👀",
 )
 # BACK TO BACK: the same rep again inside BACK_TO_BACK_MIN of their last one.
 BACK_TO_BACK_MIN = 30

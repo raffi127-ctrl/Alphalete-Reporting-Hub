@@ -881,6 +881,7 @@ LAST_CALL_LINES = (
     "Last call 🔔 {names} — nobody's forcing you to stop. Persistence 🚪💪",
     "Last call 🔔 {names} — go take some souls before the bell 🚪🔥",
     "Last call 🔔 {names} — we reap if we don't give up 🚪💰",
+    "Last call 🔔 {names} — lose small or win big? 🚪💰",
 )
 LAST_CALL_ALL = (
     "Last call 🔔 Everybody's knocking — finish strong, ¡dale! 🚪💰",
@@ -893,6 +894,7 @@ LAST_CALL_ALL = (
     "Last call 🔔 Nobody's forcing you to stop. Persistence 💪🔥",
     "Last call 🔔 Everybody's out there taking souls 🔥 Finish it",
     "Last call 🔔 We reap if we don't give up 💰🔥",
+    "Last call 🔔 Lose small or win big? 💰🔥",
 )
 # The same for a business office: storefronts and owners, not doors.
 LAST_CALL_B2B_LINES = (
@@ -907,6 +909,7 @@ LAST_CALL_B2B_LINES = (
     "Last call 🔔 {names} — nobody's forcing you to stop. Persistence 🏢💪",
     "Last call 🔔 {names} — go take some souls before the bell 🏢🔥",
     "Last call 🔔 {names} — we reap if we don't give up 🏢💰",
+    "Last call 🔔 {names} — lose small or win big? 🏢💰",
 )
 LAST_CALL_B2B_ALL = (
     "Last call 🔔 Everybody's still walking in — finish strong, ¡dale! 🏢💰",
