@@ -111,15 +111,17 @@ FIBER_JESS_URL = (
 # STARSTEAMCHURN custom-view filter, so Starr's own pull dropped him. Same
 # 'ICD Churn' worksheet + parse() as the per-captain Fiber pulls.
 #
-# 2026-10-06..08: el default de 'Churn View' de este tablero quedó en Wireless y
-# la fila de Alex Touati (entra por acá, captainship_pins.ADOPTED) salió en las
-# pestañas NI de Pat con sus números de WIRELESS. Probamos fijar el parámetro en
-# la URL (&Churn%20View=New%20Internet%20Churn%20View) y la vista no cargó
-# ("saw 0 thumb(s)", 3/3 intentos, 2026-10-08) — así que la URL queda pelada y
-# el freno está en run._export_is_wireless: si viene Wireless, no se rellena.
+# VISTA GUARDADA 'AllTeamsNI' DESDE 2026-10-08 (Eve). El 10/6 el default de
+# 'Churn View' de la vista pelada CHURN quedó en Wireless y la fila de Alex
+# Touati (entra por acá, captainship_pins.ADOPTED) salió en las pestañas NI de
+# Pat con sus números de WIRELESS. Fijar el parámetro en la URL no cargó
+# ("saw 0 thumb(s)"), así que Eve guardó esta vista con Churn View = New
+# Internet + Captain's Bonus Teams = (All). Si igual llega Wireless,
+# run._export_is_wireless frena el relleno.
 FIBER_ALLTEAM_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
-    "ATTTRACKER2_1-D2D/CHURN?:iid=1"
+    "ATTTRACKER2_1-D2D/CHURN/"
+    "64b2e285-d823-47db-8ba6-3c23ae9376b2/AllTeamsNI?:iid=1"
 )
 
 WORKSHEET = "ICD Churn"
