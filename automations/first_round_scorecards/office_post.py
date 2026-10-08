@@ -84,6 +84,7 @@ CHANNELS: Dict[str, str] = {
     "Juan Botero": "C0BEULL42LA",
     "Steve McElwee": "C0AUCJ65UFP",
     "Tre Mitchell": "C0AUG0B5SKC",            # Lamar (Tre) Mitchell
+    "Nii Tagoe": "C0AVA8LSGLQ",               # #23275-next-horizon-group-inc-nii-tagoe (Eve, 2026-10-08)
 }
 # Several ZOOMS INFO owners, one office: one post, under this name
 SAME_OFFICE = {"Raf Hidalgo 2nd funnel": "Rafael Hidalgo",
