@@ -632,8 +632,112 @@ def build_churn_rates_png(cols, crew, today, log=print) -> Path:
         list(BUCKETS), rows, OUT_DIR / "fiber_churn_rates.png")
 
 
+def build_activation_overview(cols, crew, today, log=print) -> Path:
+    """#4 Activation Report Overview — the two weekly tables (Posted /
+    Pending / Cancelled per rep), UNITS not orders (each order fanned out by
+    its Wireless Line Count — Carlos's B2B counting rule), from Raf's
+    SaraPlus relay. No Tableau fallback on purpose: a days-stale 'overview'
+    reads as fresh and lies; a skipped section is honest."""
+    from automations.att_order_log import payout as ap
+    from automations.box_order_log import png as bpng
+    soh = load_soh(log=log)
+    if not soh:
+        raise RuntimeError("activation overview needs the SaraPlus relay — "
+                           "run fiber_sara_pull on Lucy 1 first")
+    ix, orders, pulled_at = soh
+    lines = []
+    for r in orders:
+        st = _soh_cell(ix, r, "Wireless Status").lower()
+        status = ("active" if st == "active"
+                  else "canceled" if ("cancel" in st or "disconnect" in st)
+                  else (st or "pending"))
+        try:
+            n = max(1, int(float(_soh_cell(ix, r, "Wireless Line Count")
+                                 or 1)))
+        except ValueError:
+            n = 1
+        base = {"Rep": _soh_cell(ix, r, "User Name"),
+                ap.POSTED_DATE_COL: _soh_cell(ix, r, "Wireless Active Date"),
+                "DTR Status (enriched)": status}
+        lines.extend(dict(base) for _ in range(n))
+    tables = ap.build_week_tables(lines, today=today)
+    out = OUT_DIR / "fiber_activation_overview.png"
+    bpng.render(tables, out,
+                subtitle="Fiber — Carlos's crew on Raf's SaraPlus (pulled "
+                         f"{pulled_at:%H:%M}); units = wireless lines per "
+                         "order; Active = posted.")
+    log(f"[fiber] activation overview (SARAPLUS): {len(lines)} unit(s)")
+    return out
+
+
+def build_churn_by_rep_png(cols, crew, today, log=print) -> Path:
+    """#11 Churn by Rep — disconnects / activated per rep per bucket, from
+    the 60-day D2D log (churn needs the longer lookback SaraPlus lacks)."""
+    from automations.b2b_metrics.rep_boards import render_table_png
+    i_od = cols.need("order date", "sp.order date")
+    i_st = cols.find("dtr status", "spe.status")
+    i_rep = cols.need("rep", "rep")
+    i_prod = cols.find("product type (broken out)", "product")
+    agg: Dict[tuple, dict] = {}
+    prods = set()
+    for r in crew:
+        od = _parse_date(_c(cols, r, i_od))
+        if od is None:
+            continue
+        age = (today - od).days
+        bucket = ("0-30 Day" if 0 <= age <= 30
+                  else "31-60 Day" if 31 <= age <= 60 else None)
+        if bucket is None:
+            continue
+        st = _c(cols, r, i_st).lower()
+        if not (st in POSTED or st == "disconnected"):
+            continue
+        rep = _c(cols, r, i_rep) or "(no rep)"
+        prod = _c(cols, r, i_prod) or "(unknown)"
+        prods.add(prod)
+        for key in ((rep, prod), ("__TOTAL__", "")):
+            c = agg.setdefault(key, {b: {"act": 0, "disc": 0}
+                                     for b in BUCKETS})[bucket]
+            c["act"] += 1
+            if st == "disconnected":
+                c["disc"] += 1
+
+    def _cells(d):
+        cells = {}
+        for b in BUCKETS:
+            c = d.get(b) or {}
+            if not c.get("act"):
+                cells[b] = {}
+                continue
+            rate = c["disc"] / c["act"]
+            cells[b] = {"act": str(c["act"]), "disc": str(c["disc"]),
+                        "rate": f"{round(rate * 100, 1)}%",
+                        "color": ("Green" if rate < 0.04 else
+                                  "Yellow" if rate < 0.06 else "Red")}
+        return cells
+
+    multi = len(prods) > 1
+    rows = [("Crew Total (all reps)", "All products" if multi else "", True,
+             _cells(agg.get(("__TOTAL__", ""), {})))]
+    last_rep = None
+    for (rep, prod) in sorted(k for k in agg if k[0] != "__TOTAL__"):
+        rows.append((rep if rep != last_rep else "",
+                     prod if multi else "", False, _cells(agg[(rep, prod)])))
+        last_rep = rep
+    log(f"[fiber] churn by rep: {len(rows) - 1} row(s), "
+        f"{len(prods)} product(s)")
+    return render_table_png(
+        "FIBER — CHURN BY REP",
+        f"Carlos's crew under Raf's code — {today.strftime('%B %d, %Y')} "
+        "(disconnects ÷ activated by sale-date age, from the D2D order "
+        "log; provisional bands green<4% yellow<6%)",
+        list(BUCKETS), rows, OUT_DIR / "fiber_churn_by_rep.png")
+
+
 SECTIONS = [
     ("order_log", "\U0001F4C4", "Fiber Order Log", build_order_log),
+    ("activation_overview", "\U0001F4B5", "Fiber Activation Report Overview",
+     build_activation_overview),
     ("activation_by_rep", "\U0001F4C8", "Fiber Activation Rate by Rep",
      build_activation_png),
     ("pending_orders", "⏳", "Fiber Pending Orders", build_pending_png),
@@ -641,6 +745,8 @@ SECTIONS = [
     # build_churn_rolloff_png stays importable for reference only.
     ("churn_rates", "\U0001F4C9", "Fiber Churn Rates",
      build_churn_rates_png),
+    ("churn_by_rep", "\U0001F4C9", "Fiber Churn by Rep",
+     build_churn_by_rep_png),
 ]
 
 
