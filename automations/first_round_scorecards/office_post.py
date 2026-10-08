@@ -5,8 +5,9 @@ of that office with the score and the feedback of the day". Eve: the office's
 recruiting channel; the sample goes first to a group DM with Rafael, Camila
 and Eve.
 
-One post per office per day, after the day's audits are done: the office's
-average, then each interviewer's average with that day's red flags, most
+One THREAD per office per day, after the day's audits are done: the office's
+average up top, then one reply per interviewer (lowest score first, Eve
+2026-10-08), each with that day's red flags, most
 missed must-dos, 2 coaching tips (her latest interview) and a link to every
 full audit. #ars-recruiting-numbers keeps the per-interview detail.
 
@@ -116,35 +117,50 @@ def by_office(rows: List[Dict], day: dt.date) -> Dict[str, List[Dict]]:
     return out
 
 
-def office_text(office: str, rows: List[Dict], day: dt.date) -> str:
-    scores = [int(r["score"]) for r in rows]
-    avg = board._avg(scores)
-    lines = [f"📋 *1st Round Scorecard — {office}'s office — {day:%a} {day.month}/{day.day}*",
-             f"Office average: *{avg}/100* {emoji(avg)}  ·  {len(rows)} interview"
-             f"{'s' if len(rows) != 1 else ''}"]
+DIVIDER = "━━━━━━━━━━━━━━━━━━━━"
+
+
+def _plural(n: int) -> str:
+    return f"{n} interview{'s' if n != 1 else ''}"
+
+
+def interviewers(rows: List[Dict]) -> List[tuple]:
+    """[(name, average, her rows)] lowest average first (Eve, 2026-10-08: the
+    weak ones are what to see first); an unnamed Zoom goes last."""
     people: Dict[str, List[Dict]] = {}
     for r in rows:
         people.setdefault(r["interviewer"], []).append(r)
-    order = sorted(people, key=lambda p: (bool(board._NOT_A_PERSON.match(p)),
-                                          -board._avg([int(r["score"]) for r in people[p]]), p))
-    for name in order:
-        mine = people[name]
-        a = board._avg([int(r["score"]) for r in mine])
-        lines += ["", f"*{name}* — {a}/100 {emoji(a)}  ·  {len(mine)} interview"
-                      f"{'s' if len(mine) != 1 else ''}"]
-        flags = [f for r in mine for f in r.get("flags") or []]
-        missed = [m for r in mine for m in r.get("missed") or []]
-        if flags:
-            lines.append(f"🚩 Red flags: {_top(flags)}")
-        if missed:
-            lines.append(f"❌ Most missed: {_top(missed)}")
-        tips = next((r["coaching"] for r in reversed(mine) if r.get("coaching")), [])
-        if tips:
-            lines.append("💡 *Feedback:*")
-            lines += [f"• {board._first_sentence(t)}" for t in tips[:2]]
-        audits = [f"<{_doc_url(r['doc'])}|{_clock(r.get('time'))}>" for r in mine if r.get("doc")]
-        if audits:
-            lines.append("📄 Full audits: " + " · ".join(audits))
+    out = [(n, board._avg([int(r["score"]) for r in mine]), mine) for n, mine in people.items()]
+    return sorted(out, key=lambda p: (bool(board._NOT_A_PERSON.match(p[0])), p[1], p[0]))
+
+
+def head_text(office: str, rows: List[Dict], day: dt.date) -> str:
+    """The thread's parent: the office's day at a glance."""
+    avg = board._avg([int(r["score"]) for r in rows])
+    people = interviewers(rows)
+    lines = [f"📋 *1st Round Scorecards — {office}'s office — {day:%a} {day.month}/{day.day}*",
+             f"Office average: *{avg}/100* {emoji(avg)}  ·  {_plural(len(rows))}",
+             "  ·  ".join(f"{emoji(a)} {n} {a}" for n, a, _ in people),
+             "_Each interviewer's scorecard is in the thread, lowest score first_ 👇"]
+    return "\n".join(lines)
+
+
+def person_text(name: str, avg: int, mine: List[Dict]) -> str:
+    """One interviewer's scorecard = one reply in the thread, behind a divider."""
+    lines = [DIVIDER, f"*{name}* — {avg}/100 {emoji(avg)}  ·  {_plural(len(mine))}"]
+    flags = [f for r in mine for f in r.get("flags") or []]
+    missed = [m for r in mine for m in r.get("missed") or []]
+    if flags:
+        lines.append(f"🚩 Red flags: {_top(flags)}")
+    if missed:
+        lines.append(f"❌ Most missed: {_top(missed)}")
+    tips = next((r["coaching"] for r in reversed(mine) if r.get("coaching")), [])
+    if tips:
+        lines.append("💡 *Feedback:*")
+        lines += [f"• {board._first_sentence(t)}" for t in tips[:2]]
+    audits = [f"<{_doc_url(r['doc'])}|{_clock(r.get('time'))}>" for r in mine if r.get("doc")]
+    if audits:
+        lines.append("📄 Full audits: " + " · ".join(audits))
     return "\n".join(lines)
 
 
@@ -155,10 +171,12 @@ def _clock(hhmm: str) -> str:
 
 
 def posts(rows: List[Dict], day: dt.date) -> List[tuple]:
-    """[(office, channel or '', text)] for the day, offices by name."""
+    """[(office, channel or '', parent text, [(interviewer, reply text)])] for
+    the day, offices by name."""
     out = []
     for office, mine in sorted(by_office(rows, day).items()):
-        out.append((office, CHANNELS.get(office, ""), office_text(office, mine, day)))
+        out.append((office, CHANNELS.get(office, ""), head_text(office, mine, day),
+                    [(n, person_text(n, a, r)) for n, a, r in interviewers(mine)]))
     return out
 
 
@@ -169,10 +187,16 @@ def _ledger() -> Dict:
         return {}
 
 
+def _save(data: Dict) -> None:
+    LEDGER.parent.mkdir(parents=True, exist_ok=True)
+    LEDGER.write_text(json.dumps(data, indent=1), encoding="utf-8")
+
+
 def post_day(rows: List[Dict], day: dt.date, *, sample: bool) -> int:
-    """Each office's scorecard in its channel (or all of them in the sample
-    group DM). A channel already posted that day is skipped, so a re-run
-    never posts an office twice. Returns 1 if any post failed."""
+    """Each office's thread in its channel (or every office's in the sample
+    group DM). The thread and each reply are kept in the ledger, so a re-run
+    after a failure finishes the same thread and never posts one twice.
+    Returns 1 if any post failed."""
     from automations.shared import slack_metrics_post as smp
     # Lucy's user token on purpose (lucy_reporting), like the day's post
     client = smp._client()
@@ -184,36 +208,75 @@ def post_day(rows: List[Dict], day: dt.date, *, sample: bool) -> int:
     if sample:
         dm = client.conversations_open(users=",".join(SAMPLE_TO))["channel"]["id"]
         client.chat_postMessage(channel=dm, text=(
-            f"👀 *Sample — 1st Round office scorecards for {day:%a} {day.month}/{day.day}*\n"
-            "Each message below goes to that office's recruiting channel every day after "
-            "6 PM, once the day is audited. Nothing has gone to the offices yet."))
-    done = set(_ledger().get("_office_posted", []))
+            f"👀 *Sample v2 — 1st Round office scorecards for {day:%a} {day.month}/{day.day}*\n"
+            "Each office gets ONE thread like the ones below in its recruiting channel, every "
+            "day after 6 PM once the day is audited. Open the thread for each interviewer's "
+            "scorecard (lowest score first). Nothing has gone to the offices yet."))
     failed = 0
-    for office, channel, text in todo:
+    for office, channel, head, replies in todo:
         if not sample and not channel:
             print(f"  {office}: NO CHANNEL - not posted (add it to office_post.CHANNELS)")
             continue
+        where = dm or channel
         key = f"{day.isoformat()} {channel}"
-        if not sample and key in done:
-            print(f"  {office}: already posted")
-            continue
         try:
-            resp = client.chat_postMessage(channel=dm or channel, text=text,
-                                           unfurl_links=False, unfurl_media=False)
+            ts = None if sample else _ledger().get("_office_threads", {}).get(key)
+            if not ts:
+                resp = client.chat_postMessage(channel=where, text=head,
+                                               unfurl_links=False, unfurl_media=False)
+                ts = resp.get("ts") if resp.get("ok") else None
+                if not ts:
+                    raise RuntimeError("no thread")
+                if not sample:
+                    data = _ledger()
+                    data["_office_threads"] = dict(list({**data.get("_office_threads", {}),
+                                                         key: ts}.items())[-300:])
+                    _save(data)
+            done = set(_ledger().get("_office_posted", []))
+            for name, text in replies:
+                rkey = f"{key} {name}"
+                if not sample and rkey in done:
+                    continue
+                resp = client.chat_postMessage(channel=where, thread_ts=ts, text=text,
+                                               unfurl_links=False, unfurl_media=False)
+                if not resp.get("ok"):
+                    raise RuntimeError(f"reply {name} not posted")
+                if not sample:
+                    data = _ledger()
+                    data["_office_posted"] = (data.get("_office_posted", []) + [rkey])[-1500:]
+                    _save(data)
         except Exception as exc:  # noqa: BLE001
             print(f"  {office}: FAILED {type(exc).__name__}: {exc}")
             failed += 1
             continue
-        if not resp.get("ok"):
-            failed += 1
-            continue
-        print(f"  {office}: posted{' (sample)' if sample else ''}")
-        if not sample:
-            data = _ledger()
-            data["_office_posted"] = (data.get("_office_posted", []) + [key])[-400:]
-            LEDGER.parent.mkdir(parents=True, exist_ok=True)
-            LEDGER.write_text(json.dumps(data, indent=1), encoding="utf-8")
+        print(f"  {office}: thread + {len(replies)} scorecard(s){' (sample)' if sample else ''}")
     return 1 if failed else 0
+
+
+SAMPLE_MARKS = ("👀 *Sample", "📋 *1st Round Scorecard")
+
+
+def clear_sample() -> int:
+    """Delete the samples Lucy posted in the group DM (Eve, 2026-10-08: the
+    old format goes before the new one is sent). Only Lucy's own messages that
+    start like a sample, thread replies included; anything a person wrote stays."""
+    from automations.shared import slack_metrics_post as smp
+    client = smp._client()
+    me = client.auth_test()["user_id"]
+    dm = client.conversations_open(users=",".join(SAMPLE_TO))["channel"]["id"]
+    gone = 0
+    for m in client.conversations_history(channel=dm, limit=200).get("messages", []):
+        if m.get("user") != me or not (m.get("text") or "").startswith(SAMPLE_MARKS):
+            continue
+        if m.get("reply_count"):
+            for r in client.conversations_replies(channel=dm, ts=m["ts"], limit=200)["messages"][1:]:
+                if r.get("user") == me:
+                    client.chat_delete(channel=dm, ts=r["ts"])
+                    gone += 1
+        client.chat_delete(channel=dm, ts=m["ts"])
+        gone += 1
+    print(f"SAMPLE CLEARED: {gone} message(s) deleted in the group DM")
+    return gone
 
 
 def day_rows(day: dt.date) -> List[Dict]:
@@ -228,12 +291,18 @@ def main(argv=None) -> int:
     ap.add_argument("--sample", action="store_true",
                     help="post every office's scorecard in the group DM Rafael + Camila + Eve")
     ap.add_argument("--post", action="store_true", help="LIVE: each office's channel")
+    ap.add_argument("--clear-sample", action="store_true",
+                    help="first delete the earlier samples Lucy posted in that group DM")
     args = ap.parse_args(argv)
     day = (dt.date.fromisoformat(args.date) if args.date
            else dt.datetime.now(dt.timezone.utc).astimezone(fathom.CT).date())
+    if args.clear_sample:
+        clear_sample()
     rows = day_rows(day)
-    for office, channel, text in posts(rows, day):
-        print(f"\n=== {office} -> {channel or 'NO CHANNEL'} ===\n{text}")
+    for office, channel, head, replies in posts(rows, day):
+        print(f"\n=== {office} -> {channel or 'NO CHANNEL'} ===\n{head}")
+        for _, text in replies:
+            print(f"  ↳ {text}")
     if not (args.sample or args.post):
         print("\nDRY-RUN: nothing posted")
         return 0

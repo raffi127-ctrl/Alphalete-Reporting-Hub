@@ -13,28 +13,40 @@ def row(interviewer, office, score, time="09:00", date="2026-10-06", **kw):
 
 
 class OfficePostTest(unittest.TestCase):
-    def test_raf_funnels_are_one_office_post(self):
+    def test_raf_funnels_are_one_office_thread(self):
         rows = [row("Ana", "Rafael Hidalgo", 60), row("Bo", "Raf Hidalgo 2nd funnel", 40),
                 row("Cy", "Raf Hidalgo 3rd funnel", 50)]
         posts = op.posts(rows, DAY)
-        self.assertEqual([(o, c) for o, c, _ in posts], [("Rafael Hidalgo", "C0AUAS88FGW")])
+        self.assertEqual([(o, c) for o, c, _, _ in posts], [("Rafael Hidalgo", "C0AUAS88FGW")])
         self.assertIn("Office average: *50/100* 🔵", posts[0][2])
+
+    def test_lowest_score_first_unnamed_zoom_last(self):
+        rows = [row("Ana", "Jairo Ruiz", 80), row("ZOOM 19", "Jairo Ruiz", 10),
+                row("Bo", "Jairo Ruiz", 30), row("Cy", "Jairo Ruiz", 55)]
+        _, _, head, replies = op.posts(rows, DAY)[0]
+        self.assertEqual([n for n, _ in replies], ["Bo", "Cy", "Ana", "ZOOM 19"])
+        self.assertIn("🔴 Bo 30  ·  🟢 Cy 55  ·  🟢 Ana 80", head)
+
+    def test_each_reply_starts_with_a_divider(self):
+        _, _, _, replies = op.posts([row("Ana", "Jairo Ruiz", 80), row("Bo", "Jairo Ruiz", 30)], DAY)[0]
+        self.assertTrue(all(t.startswith(op.DIVIDER + "\n*") for _, t in replies))
 
     def test_only_that_day_and_rows_with_an_office(self):
         rows = [row("Ana", "Jairo Ruiz", 60), row("Ana", "Jairo Ruiz", 10, date="2026-10-05"),
                 row("Zed", "", 30)]
         posts = op.posts(rows, DAY)
         self.assertEqual(len(posts), 1)
-        self.assertIn("1 interview\n", posts[0][2] + "\n")
+        self.assertIn("1 interview\n", posts[0][2])
 
-    def test_text_has_score_flags_feedback_and_links(self):
+    def test_reply_has_score_flags_feedback_and_links(self):
         rows = [row("Gonzalo", "Jairo Ruiz", 45, time="10:31", doc="X1",
                     flags=["pay different from the script"], missed=["wrap-up script"],
                     coaching=["Explain the pay. More detail.", "Say the wrap-up."]),
                 row("Gonzalo", "Jairo Ruiz", 55, time="13:01", doc="X2",
                     coaching=["Latest tip. More.", "Second tip."])]
-        text = op.office_text("Jairo Ruiz", rows, DAY)
-        self.assertIn("Jairo Ruiz's office — Tue 10/6", text)
+        head = op.head_text("Jairo Ruiz", rows, DAY)
+        self.assertIn("Jairo Ruiz's office — Tue 10/6", head)
+        text = op.person_text("Gonzalo", 50, rows)
         self.assertIn("*Gonzalo* — 50/100 🔵", text)
         self.assertIn("🚩 Red flags: pay different from the script ×1", text)
         self.assertIn("❌ Most missed: wrap-up script ×1", text)
@@ -44,6 +56,10 @@ class OfficePostTest(unittest.TestCase):
 
     def test_colors_match_the_board(self):
         self.assertEqual((op.emoji(49), op.emoji(50), op.emoji(51)), ("🔴", "🔵", "🟢"))
+
+    def test_sample_marks_cover_both_formats(self):
+        self.assertTrue("📋 *1st Round Scorecard — X".startswith(op.SAMPLE_MARKS))
+        self.assertTrue(op.head_text("X", [row("A", "X", 60)], DAY).startswith(op.SAMPLE_MARKS))
 
     def test_off_until_the_sample_is_approved(self):
         self.assertFalse(op.LIVE)
