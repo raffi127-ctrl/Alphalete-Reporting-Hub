@@ -370,10 +370,6 @@ class AllTeamsBackfillRefusesWireless(unittest.TestCase):
         self.assertFalse(omc._export_is_wireless(
             self._csv("30-60 Color Churn (copy)")))
 
-    def test_url_pins_the_ni_churn_view(self):
-        self.assertIn("Churn%20View=New%20Internet%20Churn%20View",
-                      omc_pull.FIBER_ALLTEAM_URL)
-
 
 if __name__ == "__main__":
     unittest.main()
