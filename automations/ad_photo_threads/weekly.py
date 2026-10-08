@@ -177,6 +177,38 @@ def _tagged(text: str, tag: str) -> bool:
     return re.search(re.escape(tag) + r"(?!\d)", text or "") is not None
 
 
+_DAILY = re.compile(r"^\*(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) (\d{1,2})/(\d{1,2})\*")
+
+
+def _daily_before(m: dict, since: dt.date) -> bool:
+    """A daily-layout reply ("*Thu 9/18* ...") for a day before `since`: the
+    redo leaves it (Drew 10/8: those days' source channel is gone, so they
+    can't be posted again). Year = since's, or the one before for a December
+    reply in an early-year redo. Weekly blocks and anything else: False."""
+    g = _DAILY.match(m.get("text") or "")
+    if not g:
+        return False
+    mo, d = int(g.group(1)), int(g.group(2))
+    y = since.year - (1 if mo > since.month + 6 else 0)
+    try:
+        return dt.date(y, mo, d) < since
+    except ValueError:
+        return False
+
+
+def _to_clear(msgs: List[dict], since: dt.date) -> List[dict]:
+    """Lucy's replies the redo deletes: all but the daily ones before `since`.
+    A photos-only reply (the 2nd batch of a day with 10+ photos, no text)
+    goes with the reply before it."""
+    out, keep = [], False
+    for m in sorted(msgs, key=lambda m: float(m["ts"])):
+        if (m.get("text") or "").strip() or not m.get("files"):
+            keep = _daily_before(m, since)
+        if not keep:
+            out.append(m)
+    return out
+
+
 def _lucy_replies(cl, channel: str, thread_ts: str, me: str) -> List[dict]:
     """Every reply Lucy posted in the thread (not the header), all pages."""
     out, cursor = [], None
@@ -409,7 +441,8 @@ def redo_channel(channel: str, through: dt.date, *, since: Optional[dt.date] = N
     Every week from `since` (default: the channel's first posted day) through
     `through` goes into the ad's EXISTING thread as one weekly block; the
     first time a thread is touched, Lucy's old daily replies (and their
-    photos) come out of it. People's replies are never deleted, headers are
+    photos) come out of it -- the ones for days from `since` on; earlier
+    days' replies stay as they are. People's replies are never deleted, headers are
     edited down to the title, pins and links stay. An ad with no thread yet
     gets one (pinned).
 
@@ -441,7 +474,7 @@ def redo_channel(channel: str, through: dt.date, *, since: Optional[dt.date] = N
         r = st[channel]["redo"]
         if ts in r["cleared"]:
             return 0
-        n = _delete(cl, channel, _lucy_replies(cl, channel, ts, me))
+        n = _delete(cl, channel, _to_clear(_lucy_replies(cl, channel, ts, me), since))
         st = post._load_state()
         st[channel]["redo"]["cleared"].append(ts)
         post._save_state(st)

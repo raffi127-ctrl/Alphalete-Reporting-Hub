@@ -249,6 +249,17 @@ class LivePathTest(unittest.TestCase):
         self.assertIn(tue.isoformat(), ad["days"])              # reconcile_pins reads days
         self.assertEqual(ad["stats"][tue.isoformat()]["removed"], 1)
 
+    def test_redo_since_keeps_earlier_daily_replies(self):
+        """Drew 10/8: the old source channel is gone, so --since 9/28 keeps
+        the 9/14-9/25 daily replies (and their photo batches) as they are."""
+        since = dt.date(2026, 9, 28)
+        msgs = [{"ts": "1.0", "text": "*Thu 9/24*\nAna", "files": [{"id": "a"}]},
+                {"ts": "1.1", "text": "", "files": [{"id": "b"}]},
+                {"ts": "1.2", "text": "*Mon 9/28*\nBo", "files": [{"id": "c"}]},
+                {"ts": "1.3", "text": "", "files": [{"id": "d"}]},
+                {"ts": "1.4", "text": "*Monday · WE 10.4*", "files": []}]
+        self.assertEqual([m["ts"] for m in weekly._to_clear(msgs, since)], ["1.2", "1.3", "1.4"])
+
 
 class RedoAllTest(unittest.TestCase):
     def test_skips_weekly_offices_and_keeps_going_after_a_failure(self):

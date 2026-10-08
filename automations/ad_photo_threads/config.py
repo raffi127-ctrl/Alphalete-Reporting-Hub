@@ -265,8 +265,12 @@ _MORE = [
     # post a "FIRST ROUND THREAD: 09/23 please post photo, ..." thread; Jose's
     # started 9/22 (nothing posted before). Joseph Delgado's tab has no Ad
     # Title column and no rows since 9/14, so he isn't here yet.
+    # Drew's 1st rounds moved to #drew-tepper-recruiting-22583 (C0C532LA6JY,
+    # Eve 10/8); the old C0AUKGJAX8C answers channel_not_found since ~9/26 and
+    # nothing posted after 9/25. Only the new one is read: the old days are
+    # already in the threads (redo_channel keeps them, --since 2026-09-28).
     ("drew", "Drew Tepper", SOUTH_SHORE, " Drew Tepper New", "22583", "Precision Management",
-     "C0AUKGJAX8C", "C0C3XGN1W9G", r"precision\s*management.*1st\s*round"),
+     "C0C532LA6JY", "C0C3XGN1W9G", r"(precision\s*management|drew|tepper).*1st\s*round"),
     ("samuel", "Samuel Acay", SOUTH_SHORE, "Samuel Acay", "23751", "Samuel Acay",
      "C0BHAAAKASJ", "C0C3G96BU6B", r"first\s*round\s*thread"),
     ("jose", "Jose Velasquez", SOUTH_SHORE, "José Velasquez", "22434", "Jose Velasquez",
