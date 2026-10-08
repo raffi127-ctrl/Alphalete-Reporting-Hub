@@ -257,20 +257,43 @@ def probe_card(start: dt.date, end: dt.date, *, headless: bool = True,
                      return p ? p.innerText.trim().slice(0, 200) : '(no pager)';
                    }""")
             log("pager: %r" % pager)
-            before_url = page.url
-            _dump_customer_view(ctx, page, links, log)
+            # The row's link is onclick="OpenCustomer('<custid>')" (seen on
+            # the first probe) — read the function itself: if it just
+            # window.open()s a URL, the harvest can goto it directly.
+            try:
+                src = page.evaluate("() => (window.OpenCustomer || '')"
+                                    ".toString().slice(0, 500)")
+                log("OpenCustomer source: %s" % src)
+            except Exception as e:  # noqa: BLE001
+                log("OpenCustomer source unavailable: %s" % e)
+            m = None
+            for l in links:
+                m = _re.search(r"OpenCustomer\('(\d+)'\)",
+                               l.get("onclick") or "")
+                if m:
+                    break
+            if m:
+                cid = m.group(1)
+                log("calling OpenCustomer(%r) ..." % cid)
+                page.evaluate("(id) => OpenCustomer(id)", cid)
+                page.wait_for_timeout(4000)
+            else:
+                log("no OpenCustomer onclick found — falling back to click")
+                _dump_customer_view(ctx, page, links, log)
             for pg in ctx.pages:
-                if pg.url != before_url:
-                    log("card URL: %s" % pg.url)
-            for pg in ctx.pages:
-                try:
-                    text = pg.inner_text("body", timeout=5000)
-                except Exception:  # noqa: BLE001
-                    continue
-                nums = sorted({m for m in _re.findall(
-                    r"\(?\b\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b", text)})
-                log("page %s: %d phone-shaped string(s): %s"
-                    % (pg.url[-60:], len(nums), nums[:12]))
+                log("open page: %s" % pg.url[-90:])
+                frames = pg.frames
+                for fr in frames:
+                    try:
+                        text = fr.inner_text("body", timeout=4000)
+                    except Exception:  # noqa: BLE001
+                        continue
+                    nums = sorted({m2 for m2 in _re.findall(
+                        r"\(?\b\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b", text)})
+                    if nums or fr is pg.main_frame:
+                        log("  frame %s: %d phone-shaped: %s"
+                            % ((fr.url or "(inline)")[-70:], len(nums),
+                               nums[:12]))
         finally:
             ctx.close()
     print("=== done ===", flush=True)
