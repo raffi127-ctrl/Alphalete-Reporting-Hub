@@ -245,8 +245,8 @@
     "report_id": "valeria_metrics",
     "label": "Valeria's B2B Office",
     "owner": "Valeria Tristan",
-    "channel_id": "U04G5HJBGFN",
-    "channel_name": "megan-dm (hold until the ECO sign-up names the channel)",
+    "channel_id": "C0C6YD71JMQ",
+    "channel_name": "altura-sales",
     "sheet_id": "1KYRIovo_Ava5-7MomkdoW7XK-0yHSCjlwtBSGXTfOtc",
     "knocks_office": "Valeria Tristan",
     "ov_account": "22850",
@@ -279,11 +279,11 @@
     "per_office_views": {},
     "machine": "Lucy 2",
     "campaign": "",
-    "notes": "wired by hand 2026-10-08 (Megan: Valeria T ready to enroll; metrics + trackers + weather); B2B like luke/jamis; OwnerVille office 22850 (Altura Marketing, Inc.), Alphalete Org Focus Report tab 'Valeria Tristan - B2B'; sheet copied from Master Metrics Templates and shared to alphaletereporting@gmail.com; owner_office is a GUESS at Tableau's spelling -- confirm in the Owner & Office dropdown before the dry run (Luke's needed a fix); channel held on Megan's DM until her Lucy ECO sign-up names the room",
+    "notes": "wired by hand 2026-10-08 (Megan: Valeria T ready to enroll; metrics + trackers + weather); B2B like luke/jamis; OwnerVille office 22850 (Altura Marketing, Inc.), Alphalete Org Focus Report tab 'Valeria Tristan - B2B'; sheet copied from Master Metrics Templates and shared to alphaletereporting@gmail.com; owner_office is a GUESS at Tableau's spelling -- confirm in the Owner & Office dropdown before the dry run (Luke's needed a fix); channel #altura-sales C0C6YD71JMQ from her Lucy ECO sign-up (2026-10-08 16:29)",
     "channel_plans": [
       {
-        "channel_id": "U04G5HJBGFN",
-        "channel_name": "megan-dm (hold)",
+        "channel_id": "C0C6YD71JMQ",
+        "channel_name": "altura-sales",
         "report_keys": [
           "b2b_sales",
           "b2b_activation",

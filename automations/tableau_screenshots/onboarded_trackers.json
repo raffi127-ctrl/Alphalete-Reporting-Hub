@@ -319,9 +319,11 @@
   },
   {
     "key": "valeria",
-    "label": "Valeria's B2B Office (channel from ECO sign-up)",
+    "label": "#altura-sales",
     "owner": "Valeria Tristan",
-    "channel_ids": [],
+    "channel_ids": [
+      "C0C6YD71JMQ"
+    ],
     "trackers": [
       "att_country",
       "att_country_internet_only",
