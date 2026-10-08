@@ -455,6 +455,8 @@ PACE_LINES = (
     "{names} — {avg} {unit}/hr. So much winning 🔥",
     # Naruto (Megan 2026-10-07).
     "{names} at {avg} {unit}/hr. Hokage pace 🍥🔥",
+    # Suits (Megan 2026-10-07).
+    "{names} — {avg} {unit}/hr. No dreams, just goals 🔥",
 )
 
 # The same recognition in business talk for the Service Cloud offices (Megan
@@ -475,6 +477,7 @@ B2B_PACE_LINES = (
     "{names} at {avg} {unit}/hr. Taking souls 🔥",
     "{names} — {avg} {unit}/hr. So much winning 🔥",
     "{names} at {avg} {unit}/hr. Hokage pace 🍥🔥",
+    "{names} — {avg} {unit}/hr. No dreams, just goals 🔥",
 )
 
 
