@@ -940,6 +940,9 @@ FIRST_SALE_LINES = (
     "{first} just broke the seal 💰 Day's open. ¡Dale! Who's riding with them? 🔥",
     "{first} opened the day 💅💰 OTB. Everybody else, it's giving 'who's next' 👀",
     "{first} is OTB 💰 Undeniable proof. Who's next? 👀",
+    "{first} is OTB 💰 You have to start to be great — day's started. Who's next? 🔥",
+    "{first} is OTB 💰 Win the day starts now 💪 Who's next?",
+    "{first} is OTB 💰 Committed first, figured it out. Who's next? 👀",
 )
 # BACK TO BACK: the same rep again inside BACK_TO_BACK_MIN of their last one.
 BACK_TO_BACK_MIN = 30
@@ -948,6 +951,8 @@ BACK_TO_BACK_LINES = (
     "Back to back 💰💰 {first}, {n} minutes apart. That's a heater 🔥 Keep it rolling ¡dale!",
     "{first} is cooking 👨‍🍳🔥 Two sales in {n} min. Nobody touch the stove",
     "Oh it's a streak now 🔥 {first} — two in {n} min. ¡Eso! Who's next to run one back? 👀",
+    "Two in {n} min 🔥 {first} said one more and meant it 💪",
+    "Two in {n} min 🔥🔥 {first} is 10X-ing it. Keep going!",
 )
 SALE_TIMES_PATH = (Path.home() / ".config" / "recruiting-report"
                    / "icd_sale_times.json")
