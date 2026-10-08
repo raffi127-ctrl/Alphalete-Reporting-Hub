@@ -1677,7 +1677,7 @@
   "sales_board_fixer": {
    "on_scheduler": true,
    "machine": "Lucy 1",
-   "_note": "Lucy Salesboard Fixer, SANDBOX STAGE (Raf's ask 2026-10-06; Eve 2026-10-07). Every morning: backs up and re-copies 'SANDBOX — Sales Board WE m.d' + 'SANDBOX — Line Up WE m.d' from the live tabs of Alphalete SALES BOARD 2025, then fixes ONLY the twins (formulas put back, font/size + number format to the column majority, Roll Call filled under an X/T, dead conditional-format rules deleted) and leaves a hover note on every touched cell for Eve to review. --apply refuses any tab that is not a SANDBOX twin, so the live board is never written. Lucy 1 because the SaraPlus sweep that mirrors sales onto the twin lives here too. Pure Sheets API, no browser.",
+   "_note": "Lucy Salesboard Fixer, SANDBOX STAGE (Raf's ask 2026-10-06; Eve 2026-10-07). Every morning: backs up and re-copies 'SANDBOX \u2014 Sales Board WE m.d' + 'SANDBOX \u2014 Line Up WE m.d' from the live tabs of Alphalete SALES BOARD 2025, then fixes ONLY the twins (formulas put back, font/size + number format to the column majority, Roll Call filled under an X/T, dead conditional-format rules deleted) and leaves a hover note on every touched cell for Eve to review. --apply refuses any tab that is not a SANDBOX twin, so the live board is never written. Lucy 1 because the SaraPlus sweep that mirrors sales onto the twin lives here too. Pure Sheets API, no browser.",
    "order": 4.85,
    "display_name": "Lucy Salesboard Fixer (sandbox)",
    "source_type": "local",
@@ -13511,6 +13511,26 @@
    "priority": "P2",
    "freshness_target": null,
    "depends_on": []
+  },
+  "fiber_metrics_probe": {
+   "on_scheduler": false,
+   "_note": "READ-ONLY probe (Carlos 2026-10-08, Fiber Metrics build phase 0): proves the three data legs for remaking his B2B Metrics reports on Raf's/Fiber side \u2014 D2D order log header + crew match (total_knocks.guests), Raf's ORG DD Detail header, and the Production-Lookup join rate the per-unit payout derivation needs. Prints only; posts nothing.",
+   "display_name": "Fiber Metrics probe (phase 0)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.fiber_metrics.probe"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 20,
+   "machine": "Lucy 2"
   }
  },
  "read_only_standalone": {
