@@ -270,3 +270,50 @@ def texted(messages: List[dict], phone: str, names: List[str]) -> bool:
             if body and any(n in body for n in needles):
                 return True
     return False
+
+
+# --- sending (the wrap-up group texts, Carlos 2026-10-08) ---------------------
+
+def sender_number(token: str) -> str:
+    """Taylor's SMS-capable direct number — asked of the API rather than
+    hardcoded, so a number swap on the account never sends from a dead line.
+    The flyer's 945-337-2199 is the expected answer."""
+    data = _get(token, "/restapi/v1.0/account/~/extension/~/phone-number")
+    for rec in data.get("records", []):
+        if "SmsSender" in (rec.get("features") or []):
+            return str(rec.get("phoneNumber") or "")
+    raise RCError("no SMS-capable number on this extension — cannot send")
+
+
+def send_group_mms(token: str, from_number: str, to_numbers: List[str],
+                   text: str, attachment: Optional[Tuple[str, bytes, str]] = None
+                   ) -> dict:
+    """ONE group thread: from Taylor's line to [customer, rep] (multiple
+    `to` numbers = a group conversation, exactly the manual flow — the rep
+    starts a group text with the customer and Taylor). With `attachment`
+    (name, bytes, mime) it goes as MMS so the flyer rides along."""
+    body = {"from": {"phoneNumber": e164(from_number)},
+            "to": [{"phoneNumber": e164(n)} for n in to_numbers],
+            "text": text}
+    hdr = {"Authorization": "Bearer %s" % token}
+    if attachment:
+        url = "%s/restapi/v1.0/account/~/extension/~/mms" % C.RC_BASE_URL
+        import json as _json
+        files = [("json", ("request.json", _json.dumps(body),
+                           "application/json")),
+                 ("attachment", attachment)]
+        req = dict(files=files)
+    else:
+        url = "%s/restapi/v1.0/account/~/extension/~/sms" % C.RC_BASE_URL
+        hdr["Content-Type"] = "application/json"
+        req = dict(json=body)
+    for _ in range(5):
+        r = requests.post(url, headers=hdr, timeout=40, **req)
+        if r.status_code == 429:
+            time.sleep(int(r.headers.get("Retry-After", 20)))
+            continue
+        if not r.ok:
+            raise RCError("send to %s failed (%s): %s"
+                          % (to_numbers, r.status_code, r.text[:300]))
+        return r.json()
+    raise RCError("send to %s kept rate-limiting" % (to_numbers,))
