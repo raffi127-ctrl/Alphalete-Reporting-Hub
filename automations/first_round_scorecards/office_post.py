@@ -28,6 +28,8 @@ import argparse
 import datetime as dt
 import json
 import sys
+import time
+import time
 from pathlib import Path
 from typing import Dict, List
 
@@ -88,6 +90,29 @@ SAME_OFFICE = {"Raf Hidalgo 2nd funnel": "Rafael Hidalgo",
                "Raf Hidalgo 3rd funnel": "Rafael Hidalgo",
                "Geoge Delgado": "George Delgado"}
 LEDGER = Path(__file__).resolve().parents[2] / "output" / "first_round_scorecards" / "posted.json"
+# ~30 threads + ~40 replies in one go: the first v2 sample (10/8) hit Slack's
+# 'ratelimited' halfway. Wait out Retry-After, and pace the posts and deletes.
+PAUSE_S = 1.2
+
+
+def _client():
+    """Lucy's user token on purpose (lucy_reporting), like the day's post,
+    retrying when Slack rate-limits."""
+    from slack_sdk.http_retry.builtin_handlers import RateLimitErrorRetryHandler
+    from automations.shared import slack_metrics_post as smp
+    client = smp._client()
+    client.retry_handlers.append(RateLimitErrorRetryHandler(max_retry_count=6))
+    return client
+
+
+def _say(client, **kw):
+    time.sleep(PAUSE_S)
+    return client.chat_postMessage(unfurl_links=False, unfurl_media=False, **kw)
+
+
+def _drop(client, channel: str, ts: str) -> None:
+    time.sleep(PAUSE_S)
+    client.chat_delete(channel=channel, ts=ts)
 
 
 def office_name(office: str) -> str:
@@ -197,9 +222,7 @@ def post_day(rows: List[Dict], day: dt.date, *, sample: bool) -> int:
     group DM). The thread and each reply are kept in the ledger, so a re-run
     after a failure finishes the same thread and never posts one twice.
     Returns 1 if any post failed."""
-    from automations.shared import slack_metrics_post as smp
-    # Lucy's user token on purpose (lucy_reporting), like the day's post
-    client = smp._client()
+    client = _client()
     todo = posts(rows, day)
     if not todo:
         print("OFFICE POSTS: no audited interview with an office that day")
@@ -207,7 +230,7 @@ def post_day(rows: List[Dict], day: dt.date, *, sample: bool) -> int:
     dm = ""
     if sample:
         dm = client.conversations_open(users=",".join(SAMPLE_TO))["channel"]["id"]
-        client.chat_postMessage(channel=dm, text=(
+        _say(client, channel=dm, text=(
             f"👀 *Sample v2 — 1st Round office scorecards for {day:%a} {day.month}/{day.day}*\n"
             "Each office gets ONE thread like the ones below in its recruiting channel, every "
             "day after 6 PM once the day is audited. Open the thread for each interviewer's "
@@ -222,8 +245,7 @@ def post_day(rows: List[Dict], day: dt.date, *, sample: bool) -> int:
         try:
             ts = None if sample else _ledger().get("_office_threads", {}).get(key)
             if not ts:
-                resp = client.chat_postMessage(channel=where, text=head,
-                                               unfurl_links=False, unfurl_media=False)
+                resp = _say(client, channel=where, text=head)
                 ts = resp.get("ts") if resp.get("ok") else None
                 if not ts:
                     raise RuntimeError("no thread")
@@ -237,8 +259,7 @@ def post_day(rows: List[Dict], day: dt.date, *, sample: bool) -> int:
                 rkey = f"{key} {name}"
                 if not sample and rkey in done:
                     continue
-                resp = client.chat_postMessage(channel=where, thread_ts=ts, text=text,
-                                               unfurl_links=False, unfurl_media=False)
+                resp = _say(client, channel=where, thread_ts=ts, text=text)
                 if not resp.get("ok"):
                     raise RuntimeError(f"reply {name} not posted")
                 if not sample:
@@ -260,8 +281,7 @@ def clear_sample() -> int:
     """Delete the samples Lucy posted in the group DM (Eve, 2026-10-08: the
     old format goes before the new one is sent). Only Lucy's own messages that
     start like a sample, thread replies included; anything a person wrote stays."""
-    from automations.shared import slack_metrics_post as smp
-    client = smp._client()
+    client = _client()
     me = client.auth_test()["user_id"]
     dm = client.conversations_open(users=",".join(SAMPLE_TO))["channel"]["id"]
     gone = 0
@@ -271,9 +291,9 @@ def clear_sample() -> int:
         if m.get("reply_count"):
             for r in client.conversations_replies(channel=dm, ts=m["ts"], limit=200)["messages"][1:]:
                 if r.get("user") == me:
-                    client.chat_delete(channel=dm, ts=r["ts"])
+                    _drop(client, dm, r["ts"])
                     gone += 1
-        client.chat_delete(channel=dm, ts=m["ts"])
+        _drop(client, dm, m["ts"])
         gone += 1
     print(f"SAMPLE CLEARED: {gone} message(s) deleted in the group DM")
     return gone
