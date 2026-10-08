@@ -120,6 +120,9 @@ LINES = (
     "{names}: {m}+ min. Discipline equals freedom — and freedom's behind a door 🚪",
     "{names}: {m}+ min. Where focus goes, energy flows. Focus on a door 🚪",
     "{names}: {m}+ min. Discomfort builds the callous. Knock 🚪",
+    # Megan 2026-10-07 (approved 1 and 3 of the scripture set).
+    "{names} — {m}+ min. Knock and the door will be opened 🚪",
+    "{names}: {m}+ min. Faith without works is dead 🚪 Go do the works",
     # BENEFIT OF THE DOUBT (Megan 2026-09-26): a quiet rep may be inside with
     # a customer. Half the pool leaves that door open.
     "{names} — {m}+ min without a dispo. Must be cooking up something good in there… right? 👨‍🍳🔥",
@@ -164,6 +167,8 @@ B2B_LINES = (
     "{names}: {m}+ min. Discipline equals freedom — and freedom's inside a business 🏢",
     "{names}: {m}+ min. Where focus goes, energy flows. Focus on a storefront 🏢",
     "{names}: {m}+ min. Discomfort builds the callous. Walk in 🏢",
+    "{names} — {m}+ min. Knock and the door will be opened 🏢",
+    "{names}: {m}+ min. Faith without works is dead 🏢 Go do the works",
     # ...and the same Spanish phrases sprinkled in, like LINES.
     "¡Snicklemeberries! 🫐 {names} — {m}+ min without a dispo. Finger poppin' or talking to owners? ¡Vamos! 🏢👀",
     "{names} — {m}+ min, no dispo, no sale. Chatting up the recepcionista? 🚧",
