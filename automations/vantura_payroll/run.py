@@ -1220,6 +1220,10 @@ def _enrich_cols(xlsx: Path, week: dt.date, *, write: bool, sheet_id: str,
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Vantura weekly payroll prep (Lucy 2).")
+    ap.add_argument("--refresh-only", action="store_true",
+                    help="just trigger 'Refresh commission sheets' on the board "
+                         "(apiRefresh via the web app) and exit -- after hand-"
+                         "written Adjustments (Carlos 2026-10-08: 'do it now')")
     ap.add_argument("--week", help="week ending YYYY-MM-DD (default: computed)")
     ap.add_argument("--file", help="explicit ICD dd Detail .xlsx (skips the Tableau pull)")
     mode = ap.add_mutually_exclusive_group()
@@ -1240,6 +1244,16 @@ def main(argv: list[str] | None = None) -> int:
                          "which allowlist reps appear under which owner. "
                          "Never writes.")
     args = ap.parse_args(argv)
+    if getattr(args, "refresh_only", False):
+        url = _webapp_url()
+        if not url:
+            _log("refresh NOT triggered -- no web-app URL on this machine")
+            return 1
+        import requests
+        resp = requests.get(url, params={"action": "refresh"}, timeout=600)
+        resp.raise_for_status()
+        _log(f"refresh -> {resp.text[:200]}")
+        return 0
 
     if args.owner_probe:
         import csv as _csv
