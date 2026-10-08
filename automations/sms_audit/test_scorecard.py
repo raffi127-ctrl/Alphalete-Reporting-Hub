@@ -610,7 +610,8 @@ class SilentBookings(unittest.TestCase):
         threads showed exactly that — a confirmation sent with no inbound
         ever, so the booking was agreed on a call."""
         got = self._why(self._p())
-        self.assertIn("come from a phone call", got)
+        self.assertIn("Your weak point is the phone call", got)
+        self.assertIn("come from one", got)
         self.assertIn("building the relationship", got)
         # Megan 2026-10-06: the fix is the call, not chasing a text.
         self.assertNotIn("reply to a text", got)
@@ -623,12 +624,94 @@ class SilentBookings(unittest.TestCase):
     def test_a_low_silent_share_says_something_else(self):
         got = self._why(self._p(silent=5, silent_shown=1,
                                 talked=95, talked_shown=28))
-        self.assertNotIn("come from a phone call", got)
+        self.assertNotIn("weak point is the phone call", got)
+
+    def test_the_fallback_does_not_say_booking_times(self):
+        """Megan 2026-10-07: "idk what 'your booking times are
+        fine' means"."""
+        got = self._why(self._p(silent=5, silent_shown=1,
+                                talked=95, talked_shown=28))
+        self.assertNotIn("booking times", got)
+        self.assertIn("Nothing in how you book explains this drop", got)
+        self.assertIn("in the conversations themselves", got)
 
     def test_too_few_bookings_to_judge(self):
         got = self._why(self._p(booked=10, shown=3, silent=5, silent_shown=0,
                                 talked=5, talked_shown=3))
-        self.assertNotIn("come from a phone call", got)
+        self.assertNotIn("weak point is the phone call", got)
+
+
+class NothingPointsAtAnEmptySection(unittest.TestCase):
+    """Megan 2026-10-07: "this says read convos below and there are
+    none". A coaching line may only say "below" when card_body will
+    actually render that section."""
+
+    EX = [("House rules", "hit", "body", "Ann", "why", "ctx")]
+
+    def _p(self, **kw):
+        base = {"texts": 900, "house": 0, "dodged": 0, "typing": 0,
+                "booked": 100, "shown": 29, "matched": 40, "far_out": 4,
+                "silent": 5, "silent_shown": 1,
+                "talked": 95, "talked_shown": 28,
+                "issues": __import__("collections").Counter()}
+        base.update(kw)
+        return {"display": "X", "weeks": {"w0925": base}}
+
+    def _do(self, area, **kw):
+        for i in S.work_on(self._p(**kw), ["w0925"]):
+            if i["area"] == area:
+                return i["do"]
+        return ""
+
+    def test_retention_without_convos_does_not_say_read_below(self):
+        got = self._do("1st Round Retention")
+        self.assertNotIn("below", got)
+        self.assertIn("calls and the pitch", got)
+
+    def test_retention_with_convos_does_say_read_below(self):
+        got = self._do("1st Round Retention", typos=self.EX)
+        self.assertIn("Read the ones below.", got)
+        self.assertNotIn("calls and the pitch", got)
+
+    def test_house_rules_without_examples_promises_nothing(self):
+        got = self._do("House Rules Broken", house=4)
+        self.assertTrue(got)
+        self.assertNotIn("below", got)
+
+    def test_house_rules_with_examples_points_below(self):
+        got = self._do("House Rules Broken", house=4, examples=self.EX)
+        self.assertIn("The exact texts are below.", got)
+
+    def test_unanswered_without_the_list_promises_nothing(self):
+        got = self._do("Questions Not Answered", dodged=4)
+        self.assertIn("Answer it, then book.", got)
+        self.assertNotIn("below", got)
+
+    def test_unanswered_with_the_list_points_below(self):
+        got = self._do("Questions Not Answered", dodged=4, asked=self.EX)
+        self.assertIn("The exact ones are below.", got)
+
+
+class VolumeNoteReadsPlainly(unittest.TestCase):
+    """Megan 2026-10-07: "this is worded weird" on "Book more. The
+    middle of the team books 39 a week."""
+
+    def test_the_median_is_not_called_the_middle_of_the_team(self):
+        got = S._volume_note(37, {"booked": 40})
+        self.assertNotIn("middle of the team", got)
+        self.assertIn("a typical week on this team is 39", got)
+
+    def test_a_big_drop_is_named(self):
+        got = S._volume_note(37, {"booked": 108})
+        self.assertIn("fewer than last week", got)
+
+    def test_at_or_above_typical_says_keep_it_up(self):
+        self.assertEqual(S._volume_note(39, {"booked": 20}),
+                         "Keep the volume up.")
+
+    def test_no_previous_week_still_reads(self):
+        got = S._volume_note(20, None)
+        self.assertIn("Book more", got)
 
 
 class DeflectionsCountedOnce(unittest.TestCase):
@@ -806,6 +889,15 @@ class ZeroReadsLikeEnglish(unittest.TestCase):
     def _lines(self, now, before):
         return S.did_well(self._p(now, before), ["w0918", "w0925"], limit=5)
 
+    def test_nobody_booked_far_out_does_not_say_zero_percent(self):
+        """Megan 2026-10-07: "this 0% verbiage doesn't make sense"
+        on "0% more than a day out, down from 12%"."""
+        got = " ".join(self._lines({"far_out": 0}, {"far_out": 8}))
+        self.assertNotIn("0% more than a day", got)
+        self.assertNotIn("only 0%", got)
+        self.assertIn("Nobody got booked more than a day out", got)
+        self.assertIn("down from 20%", got)
+
     def test_zero_unanswered_does_not_say_only_zero(self):
         got = " ".join(self._lines({"dodged": 0}, {"dodged": 2}))
         self.assertNotIn("only 0", got)
@@ -829,6 +921,150 @@ class ZeroReadsLikeEnglish(unittest.TestCase):
         got = self._lines({"house": 0}, {"house": 4})
         clean = [g for g in got if "house rules" in g]
         self.assertEqual(len(clean), 1, got)
+
+
+class TheWeakerChannelIsCoached(unittest.TestCase):
+    """Megan 2026-10-07: "so this should be your stronger via text so
+    your phone call needs improvement"."""
+
+    def _items(self, **over):
+        base = {"texts": 800, "house": 0, "dodged": 0, "typing": 0,
+                "booked": 50, "shown": 32, "matched": 50, "far_out": 2,
+                "silent": 16, "silent_shown": 2,
+                "talked": 34, "talked_shown": 30,
+                "issues": __import__("collections").Counter()}
+        base.update(over)
+        return {i["area"]: i for i
+                in S.work_on({"display": "X", "weeks": {"w0925": base}},
+                             ["w0925"])}
+
+    def test_a_good_week_still_names_the_weak_channel(self):
+        it = self._items()
+        self.assertIn("Bookings From a Call", it)
+        do = it["Bookings From a Call"]["do"]
+        self.assertIn("Text is your stronger channel", do)
+        self.assertIn("phone call is what needs work", do)
+
+    def test_it_is_not_said_twice(self):
+        """When retention itself is the problem the branch above
+        already says it, so this must not pile on."""
+        it = self._items(shown=12, silent=30, silent_shown=3,
+                         talked=20, talked_shown=9)
+        self.assertIn("weak point is the phone call",
+                      it["1st Round Retention"]["do"])
+        self.assertNotIn("Bookings From a Call", it)
+
+    def test_a_small_gap_is_left_alone(self):
+        it = self._items(silent=20, silent_shown=11,
+                         talked=30, talked_shown=18)
+        self.assertNotIn("Bookings From a Call", it)
+
+    def test_too_few_call_bookings_to_judge(self):
+        it = self._items(silent=4, silent_shown=0,
+                         talked=46, talked_shown=32)
+        self.assertNotIn("Bookings From a Call", it)
+
+
+class BookingLeadPraise(unittest.TestCase):
+    """Megan 2026-10-07: "7% still isn't a high number - this is just
+    a great job at being consistent in not booking more than 24 hours
+    out"."""
+
+    def _lines(self, *far_outs):
+        base = {"texts": 800, "house": 1, "dodged": 1, "typing": 1,
+                "booked": 40, "shown": 14, "matched": 100,
+                "issues": __import__("collections").Counter()}
+        wk, names = {}, []
+        for i, f in enumerate(far_outs):
+            k = "w09{:02d}".format(11 + i * 7)
+            wk[k] = dict(base, far_out=f)
+            names.append(k)
+        return " ".join(S.did_well({"display": "X", "weeks": wk},
+                                   names, limit=5))
+
+    def test_a_move_inside_the_good_band_is_not_called_an_improvement(self):
+        got = self._lines(7, 0)
+        self.assertNotIn("down from 7%", got)
+
+    def test_it_praises_the_consistency_instead(self):
+        got = self._lines(7, 0)
+        self.assertIn("consistent about booking inside a day", got)
+        self.assertIn("2 weeks running", got)
+
+    def test_a_real_drop_out_of_the_bad_band_is_still_praised(self):
+        got = self._lines(30, 10)
+        self.assertIn("down from 30%", got)
+        self.assertNotIn("consistent about booking inside a day", got)
+
+    def test_a_bad_week_breaks_the_streak(self):
+        got = self._lines(5, 40, 5)
+        self.assertNotIn("weeks running", got)
+
+
+class RetentionSplitByChannel(unittest.TestCase):
+    """Megan 2026-10-07: "we need to see their retention % of call vs
+    text"."""
+
+    def _row(self, label, **over):
+        base = {"texts": 800, "house": 0, "dodged": 0, "typing": 0,
+                "booked": 40, "shown": 14, "matched": 40, "far_out": 4,
+                "silent": 20, "silent_shown": 3,
+                "talked": 20, "talked_shown": 11,
+                "issues": __import__("collections").Counter()}
+        base.update(over)
+        person = {"display": "X", "weeks": {"w0925": base}}
+        html = "\n".join(S.card_body(person, "11280", ["w0925"]))
+        return [l for l in html.splitlines() if label in l][0]
+
+    def test_both_channels_get_their_own_row(self):
+        self.assertIn("55%", self._row("Retention From a Text"))
+        self.assertIn("15%", self._row("Retention From a Call"))
+
+    def test_a_channel_nobody_booked_through_is_a_dash(self):
+        row = self._row("Retention From a Call", silent=0,
+                        silent_shown=0, talked=40, talked_shown=14)
+        self.assertIn(S.NO_BOOKINGS, row)
+        self.assertNotIn("%", row)
+
+    def test_a_handful_of_bookings_is_too_few(self):
+        row = self._row("Retention From a Call", silent=3,
+                        silent_shown=0, talked=37, talked_shown=14)
+        self.assertIn(S.TOO_FEW, row)
+
+
+class AWeekWithNoBookings(unittest.TestCase):
+    """Megan 2026-10-07: "this says booked by phone when 0 interviews
+    were booked"."""
+
+    def _html(self, *weeks):
+        base = {"texts": 0, "house": 0, "dodged": 0, "typing": 0,
+                "booked": 0, "shown": 0, "matched": 0, "far_out": 0,
+                "issues": __import__("collections").Counter()}
+        wk = {}
+        for i, over in enumerate(weeks):
+            wk["w09{:02d}".format(11 + i * 7)] = dict(base, **over)
+        person = {"display": "X", "weeks": wk}
+        return "\n".join(S.card_body(person, "11280", sorted(wk)))
+
+    def test_no_bookings_is_a_dash_not_booked_by_phone(self):
+        html = self._html({}, {"booked": 14, "shown": 6, "matched": 14,
+                               "far_out": 4, "texts": 800})
+        row = [l for l in html.splitlines()
+               if "Booked Over a Day Out" in l][0]
+        self.assertIn(S.NO_BOOKINGS, row)
+        self.assertNotIn(S.NO_TEXT, row)
+
+    def test_the_phone_footnote_stays_away(self):
+        html = self._html({}, {"booked": 14, "shown": 6, "matched": 14,
+                               "far_out": 4, "texts": 800})
+        self.assertNotIn("those interviews were set on a call", html)
+
+    def test_bookings_we_could_not_read_still_say_booked_by_phone(self):
+        html = self._html({"booked": 14, "shown": 6, "matched": 0,
+                           "texts": 800})
+        row = [l for l in html.splitlines()
+               if "Booked Over a Day Out" in l][0]
+        self.assertIn(S.NO_TEXT, row)
 
 
 class PhoneBookingsAreVisible(unittest.TestCase):
@@ -889,6 +1125,12 @@ class WhatElseMoved(unittest.TestCase):
         before = dict(self.BASE, far_out=14)
         self.assertIn("booked nearer the slot",
                       S.what_else_moved(self.BASE, before))
+
+    def test_booking_nobody_far_out_is_not_zero_percent(self):
+        before = dict(self.BASE, far_out=14)
+        got = S.what_else_moved(dict(self.BASE, far_out=0), before)
+        self.assertIn("nothing over a day out", got)
+        self.assertNotIn("0% over a day out", got)
 
     def test_two_things_read_as_a_list(self):
         before = dict(self.BASE, silent=14, talked=11,

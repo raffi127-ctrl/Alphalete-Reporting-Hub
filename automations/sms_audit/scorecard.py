@@ -54,6 +54,10 @@ MIN_BOOKED_WEEK = 8
 # sent six texts all week.
 TOO_FEW = "Too Few"
 NO_TEXT = "Booked by Phone"
+# Megan 2026-10-07: "this says booked by phone when 0 interviews were
+# booked". A week with no bookings at all is not a week we failed to
+# read — there was nothing to read. Its own cell, not a guess.
+NO_BOOKINGS = "\u2014"
 
 
 _FACTS_DONE = set()
@@ -241,7 +245,10 @@ def week_stats(office, tag):
         # got a real answer three messages later: "i feel like he did
         # answer this one". 56% of what this section was reporting had
         # been answered in the end.
-        if str(e.get("answered_later")).lower() == "true":
+        # ...and said before they asked counts too (Megan 2026-10-07,
+        # Nathan Heydon: "technically the position was given here").
+        if (str(e.get("answered_later")).lower() == "true"
+                or str(e.get("answered_before")).lower() == "true"):
             continue
         d["dodged"] += 1
         if not e.get("question"):
@@ -331,6 +338,50 @@ def best_near_week(person, weeks, far_now, show_now):
     return best
 
 
+# A typical week on these accounts: median 39 bookings, p75 87 (the six
+# weeks to 25 Sep, 25 people across the four accounts).
+TYPICAL_WEEK = 39
+# Booking lead. Over this share more than a day out is the thing to
+# fix; at or under FAR_OUT_FINE it is already where it should be, so
+# a move inside that band is noise, not an improvement (Megan
+# 2026-10-07: "7% still isn't a high number - this is just a great
+# job at being consistent in not booking more than 24 hours out").
+FAR_OUT_BAD = 25.0
+FAR_OUT_FINE = 10.0
+# How far text retention has to beat call retention before the gap
+# is the thing to coach rather than week-to-week noise.
+CHANNEL_GAP = 15.0
+
+
+def _volume_note(now, before):
+    """Megan 2026-10-07: "this is worded weird" on "The middle of the
+    team books 39 a week". The card already prints the two numbers, so
+    this says what to do about them, not what they are."""
+    was = (before or {}).get("booked") or 0
+    if now >= TYPICAL_WEEK:
+        return "Keep the volume up."
+    if was and now <= was * 0.75:
+        return ("You booked a lot fewer than last week. A typical week on "
+                "this team is {}, so get the volume back first \u2014 "
+                "everything else follows it.".format(TYPICAL_WEEK))
+    return ("Book more \u2014 a typical week on this team is {}."
+            .format(TYPICAL_WEEK))
+
+
+# The four lists card_body renders as readable conversations. A coaching
+# line may only point "below" at one of these when it is actually there:
+# Megan 2026-10-07, "this says read convos below and there are none".
+CONVO_LISTS = ("examples", "asked", "weak", "typos")
+
+
+def has_convos(week, *only):
+    """True when card_body will render a conversation section for `week`.
+
+    Pass `only` to ask about particular lists (the house-rules line cares
+    about "examples", not about typos)."""
+    return any(week.get(k) for k in (only or CONVO_LISTS))
+
+
 def work_on(person, weeks):
     """[(area, now, before, grade, what to do)] worst first.
 
@@ -355,11 +406,11 @@ def work_on(person, weeks):
     if booked_now:
         add("Interviews Booked", "{:,}".format(booked_now),
             GC._band(booked_now, 87, 39, 22),
-            "Book more. The middle of the team books 39 a week."
-            if booked_now < 39 else "Keep the volume up.",
+            _volume_note(booked_now, before),
             "{:,}".format(before.get("booked")) if before else None,
             goal="87 a week")
 
+    said_the_call = False
     show = _rate(now, "shown", "booked")
     if show is not None and (now.get("booked") or 0) >= 5:
         prev = _rate(before, "shown", "booked") if before else None
@@ -380,7 +431,7 @@ def work_on(person, weeks):
                    "than a day ahead, up from {:.0f}%. Book them same or "
                    "next day, while the interest is still fresh."
                    .format(far, farwas))
-        elif far is not None and far >= 25:
+        elif far is not None and far >= FAR_OUT_BAD:
             why = ("{:.0f}% of your bookings are more than a day out. Book "
                    "them same or next day, while the interest is still "
                    "fresh.".format(far))
@@ -394,21 +445,61 @@ def work_on(person, weeks):
                         "{:.0f}% were that far out."
                         .format(proof[1], R.week_label(proof[0]), proof[2]))
         elif silent_share is not None and silent_share >= 25:
-            why = ("{:.0f}% of your bookings come from a phone call, and "
-                   "only {:.0f}% of those show up \u2014 against {:.0f}% when "
-                   "they book by text. Spend longer on the call building "
-                   "the relationship, so they can see why the Zoom is worth "
-                   "their time."
+            # Megan 2026-10-07: "this should say something like - your
+            # 'weak point' is the phone call". Lead with the verdict;
+            # the numbers are the evidence for it, not the headline.
+            why = ("Your weak point is the phone call. {:.0f}% of your "
+                   "bookings come from one, and only {:.0f}% of those show "
+                   "up \u2014 against {:.0f}% when they book by text. Spend "
+                   "longer on the call building the relationship, so they "
+                   "can see why the Zoom is worth their time."
                    .format(silent_share, silent_rate, talked_rate))
+            said_the_call = True
         elif bot:
             why = "Offer sooner interview times."
         else:
-            why = ("Your booking times are fine, so the drop is in the "
-                   "conversations. Read them below.")
+            # Megan 2026-10-07: "idk what 'your booking times are
+            # fine' means". This is the branch where neither how far
+            # out they book nor how many came off a call explains the
+            # drop — so say that, in the words of the thing it leaves.
+            why = ("Nothing in how you book explains this drop \u2014 "
+                   "not how far out, not how many came off a call. It "
+                   "is in the conversations themselves. ")
+            why += ("Read the ones below." if has_convos(now) else
+                    "Your texts did not trip a single flag this week "
+                    "either, so it is the calls and the pitch, not "
+                    "the writing.")
         add("1st Round Retention", "{:.0f}%".format(show),
             GC._band(show, 55, 48, 40), why,
             "{:.0f}%".format(prev) if prev is not None else None,
             goal="55% or better")
+
+        # Megan 2026-10-07: "so this should be your stronger via text
+        # so your phone call needs improvement". A week where
+        # retention went UP never reaches the branch above, so the
+        # weaker channel went unsaid — praised, even, as "fewer came
+        # from a call". The gap is worth coaching on its own terms.
+        # ...unless the retention item itself is failing AND already
+        # says it. A retention item that grades A or B is dropped by
+        # failing(), taking its diagnosis with it — which is exactly
+        # the week this item exists for.
+        shown_above = said_the_call and GC._band(
+            show, 55, 48, 40) not in "AB"
+        if (not shown_above and not bot
+                and silent_rate is not None and talked_rate is not None
+                and (now.get("silent") or 0) >= MIN_MATCHED
+                and talked_rate - silent_rate >= CHANNEL_GAP):
+            add("Bookings From a Call", "{:.0f}%".format(silent_rate),
+                GC._band(silent_rate, 55, 48, 40),
+                "Text is your stronger channel by a mile \u2014 {:.0f}% "
+                "of text bookings show up against {:.0f}% off a call. "
+                "The phone call is what needs work: build more of the "
+                "relationship before you set the Zoom, so they turn up "
+                "for it.".format(talked_rate, silent_rate),
+                "{:.0f}%".format(_rate(before, "silent_shown", "silent"))
+                if before and _rate(before, "silent_shown",
+                                    "silent") is not None else None,
+                goal="within 10 points of your text bookings")
 
     if (now.get("texts") or 0) >= MIN_TEXTS:
         per100 = 100.0 * (now.get("typing") or 0) / now["texts"]
@@ -439,7 +530,8 @@ def work_on(person, weeks):
         add("House Rules Broken",
             "{} in {:,} texts".format(house, texts_now),
             GC._band(per1k, 0.5, 3, 8, higher_is_better=False),
-            "{}. The exact texts are below.".format(worst),
+            "{}.{}".format(worst, " The exact texts are below."
+                           if has_convos(now, "examples") else ""),
             "{}".format((before or {}).get("house")) if before else None,
             goal="no more than {:.0f} across {:,} texts".format(
                 max(1, round(0.5 * texts_now / 1000.0)), texts_now))
@@ -461,7 +553,9 @@ def work_on(person, weeks):
             "{} in {:,} texts".format(dodged, texts_now),
             GC._band(dper1k, 0.5, 2.5, 4.5, higher_is_better=False),
             "Give it a real answer in AI Settings, Escalations." if bot
-            else "Answer it, then book. The exact ones are below.",
+            else "Answer it, then book." + (" The exact ones are below."
+                                           if has_convos(now, "asked")
+                                           else ""),
             str((before or {}).get("dodged")) if before else None,
             goal="no more than {:.0f} across {:,} texts".format(
                 max(1, round(0.5 * texts_now / 1000.0)), texts_now))
@@ -725,8 +819,10 @@ def what_else_moved(now, before):
     far_was = (_rate(before, "far_out", "matched")
                if (before.get("matched") or 0) >= MIN_MATCHED else None)
     if far_now is not None and far_was is not None and far_was - far_now >= 5:
-        bits.append("you booked nearer the slot ({:.0f}% over a day out, was "
-                    "{:.0f}%)".format(far_now, far_was))
+        bits.append("you booked nearer the slot ({} over a day out, was "
+                    "{:.0f}%)".format(
+                        "nothing" if not far_now
+                        else "{:.0f}%".format(far_now), far_was))
 
     if not bits:
         return (" Nothing else in these numbers moved with it, so it is "
@@ -736,6 +832,23 @@ def what_else_moved(now, before):
     return " What also moved: {}.".format(
         (", " if len(bits) > 2 else " ").join(bits) if len(bits) > 1
         else bits[0])
+
+
+def steady_near(person, weeks):
+    """How many weeks in a row, ending this one, they kept the share
+    booked more than a day out at or under FAR_OUT_FINE.
+
+    Weeks where the share cannot be read break nothing: they are skipped,
+    not counted, so a quiet week does not reset a real streak."""
+    run = 0
+    for w in reversed([w for w in weeks if w in person["weeks"]]):
+        far = _rate(person["weeks"][w], "far_out", "matched")
+        if far is None:
+            continue
+        if far > FAR_OUT_FINE:
+            break
+        run += 1
+    return run
 
 
 def did_well(person, weeks, limit=2):
@@ -803,10 +916,23 @@ def did_well(person, weeks, limit=2):
           ((before or {}).get("replies") or {}).get("median"), False, A_mins,
           "You got back to people faster \u2014 {new}, down from {old}. That "
           "is the one applicants feel most.", floor=2.0)
-    moved(_rate(now, "far_out", "matched"),
-          _rate(before, "far_out", "matched") if before else None, False, pct,
-          "You booked people closer to the slot \u2014 {new} more than a day "
-          "out, down from {old}.", floor=5.0)
+    # Only a drop OUT of the bad band is an improvement worth praising.
+    # 7% to 0% is not somebody fixing anything; it is somebody who was
+    # already doing it right, which is praised as consistency below.
+    far_before = _rate(before, "far_out", "matched") if before else None
+    if far_before is not None and far_before > FAR_OUT_FINE:
+        moved(_rate(now, "far_out", "matched"), far_before, False, pct,
+              "You booked people closer to the slot \u2014 only {new} of "
+              "your bookings were more than a day out, down from {old}.",
+              floor=5.0, key="far",
+              zero="Nobody got booked more than a day out this week, "
+                   "down from {old}.")
+    if "far" not in done:
+        run = steady_near(person, weeks)
+        if run >= 2:
+            out.append((0.45, "You are consistent about booking inside "
+                              "a day \u2014 {} weeks running with barely "
+                              "anything further out.".format(run)))
 
     texts = now.get("texts") or 0
     if texts >= MIN_TEXTS:
@@ -906,7 +1032,8 @@ def why_dodged(bucket, kind="", question="", reply="", entry=None):
 
     # Three attempts and still no straight answer is not a slip, it is a
     # conversation nobody was steering.
-    if again >= 2 and str(e.get("answered_later")).lower() != "true":
+    if again >= 2 and str(e.get("answered_later")).lower() != "true" \
+            and str(e.get("answered_before")).lower() != "true":
         return ("This went round in circles \u2014 they asked {} times and "
                 "never got a straight answer.".format(again + 1))
 
@@ -985,7 +1112,8 @@ def _chased(entry, say_outcome=True, again=None):
             again = 0
     if not again:
         return ""
-    later = str(e.get("answered_later")).lower() == "true"
+    later = (str(e.get("answered_later")).lower() == "true"
+             or str(e.get("answered_before")).lower() == "true")
     outcome = "" if (later or not say_outcome) else ", and never got an answer"
     return " They asked {} more time{}{}.".format(
         again, "" if again == 1 else "s", outcome)
@@ -1044,6 +1172,26 @@ def mark(body, hit):
 # Light red through to light green. Used per ROW, so each measure is
 # shaded against its own best and worst week rather than the whole table.
 _SHADES = ("#f7c5c0", "#fbdbd3", "#fdeee4", "#f3f6e6", "#dfeedb", "#c6e3c3")
+
+
+def _chan_rate(chan):
+    """Show rate for one booking channel, with the same three states as
+    the rest of the table: a number, "Too Few", or a dash for a week
+    where that channel booked nobody at all."""
+    def of(w):
+        n = w.get(chan) or 0
+        if not n:
+            return NO_BOOKINGS
+        if n < MIN_MATCHED:
+            return None
+        return _rate(w, chan + "_shown", chan)
+    return of
+
+
+def _chan_show(v):
+    if isinstance(v, str):
+        return v
+    return "{:.0f}%".format(v) if v is not None else TOO_FEW
 
 
 def shade(values, i, higher_is_better=True):
@@ -1141,6 +1289,13 @@ def card_body(person, office, weeks, anchor=""):
          lambda w: (_rate(w, "shown", "booked")
                     if (w.get("booked") or 0) >= MIN_MATCHED else None),
          lambda v: "{:.0f}%".format(v) if v is not None else TOO_FEW, True),
+        # Megan 2026-10-07: "we need to see their retention % of call
+        # vs text". The split is the whole diagnosis on most cards, so
+        # it belongs in the table and not only in the coaching line.
+        ("\u2003Retention From a Text", _chan_rate("talked"),
+         _chan_show, True),
+        ("\u2003Retention From a Call", _chan_rate("silent"),
+         _chan_show, True),
         ("Texts Sent", lambda w: w.get("texts") or 0,
          lambda v: "{:,}".format(v), True),
         ("Median Response Time", lambda w: (w.get("replies") or {}).get("median"),
@@ -1152,9 +1307,11 @@ def card_body(person, office, weeks, anchor=""):
         ("Questions Not Answered", lambda w: w.get("dodged") or 0,
          lambda v: "{}".format(v), False),
         ("Booked Over a Day Out",
-         lambda w: (_rate(w, "far_out", "matched")
+         lambda w: (NO_BOOKINGS if not (w.get("booked") or 0)
+                    else _rate(w, "far_out", "matched")
                     if (w.get("matched") or 0) >= MIN_MATCHED else None),
-         lambda v: "{:.0f}%".format(v) if v is not None else NO_TEXT, False),
+         lambda v: v if isinstance(v, str)
+         else "{:.0f}%".format(v) if v is not None else NO_TEXT, False),
     ]
     add("<div class='scroll'><table><tr><th></th>" + "".join(
         "<th>{}</th>".format(esc(R.week_label(t))) for t in got) + "</tr>")

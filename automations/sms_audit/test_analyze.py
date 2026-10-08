@@ -957,6 +957,40 @@ class DodgedQuestionTest(unittest.TestCase):
                            "template": "", "body": a, "sent_by": who,
                            "source": "", "status": "Delivered"}]}}
 
+    def _with_opener(self, opener, q, a, who="Dani Pena"):
+        base = dt.datetime(2026, 9, 21, 9, 0)
+        def m(off, d, body, by=""):
+            return {"when": base + dt.timedelta(minutes=off), "dir": d,
+                    "template": "", "body": body, "sent_by": by,
+                    "source": "", "status": "Delivered"}
+        return {"a": {"phone": "1", "name": "Nathan Heydon",
+                      "booked": False, "booked_by": "", "outcome": "",
+                      "msgs": [m(0, "Out", opener, who),
+                               m(5, "In", q),
+                               m(9, "Out", a, who)]}}
+
+    def test_said_before_they_asked_counts_as_answered(self):
+        """Megan 2026-10-07: "technically the position was given
+        here" — the opener named the role before Nathan asked."""
+        out = A.dodged_questions(self._with_opener(
+            "Hey Nathan, this is Dani Pena. You applied for our AT&T "
+            "role here via Indeed. I am going to give you a call soon "
+            "to go over your application!",
+            "Which position was this? I will be available at 9",
+            "Thanks for letting me know. 9:00 AM isn't available "
+            "today. I have 9:45 AM, 10:15 AM, or times from 12:15 PM "
+            "to 3:15 PM. Would any of those work?"))
+        self.assertTrue(out, "expected the question to still be listed")
+        self.assertTrue(out[0]["answered_before"])
+
+    def test_an_opener_that_names_nothing_leaves_it_unanswered(self):
+        out = A.dodged_questions(self._with_opener(
+            "Hey Nathan, give me a call back when you get a chance!",
+            "Which position was this? I will be available at 9",
+            "I have 9:45 AM or 10:15 AM. Would either of those work?"))
+        self.assertTrue(out)
+        self.assertFalse(out[0]["answered_before"])
+
     def test_an_off_topic_answer_is_a_dodge(self):
         out = A.dodged_questions(self._convos(
             "Is this position salary based or commission based?",

@@ -2072,6 +2072,23 @@ def dodged_questions(convos):
                        for b in buckets_of(body)):
                     later = True
                     break
+            # And the symmetric case: we said it BEFORE they asked.
+            # Megan 2026-10-07 on Nathan Heydon, who asked "Which
+            # position was this?" after an opener that named the role:
+            # "technically the position was given here". Answered is
+            # answered whichever side of the question it landed on.
+            earlier = False
+            for x in reversed(msgs[:i]):
+                if x["dir"] != "Out":
+                    continue
+                if (m["when"] - x["when"]).total_seconds() > 7 * 86400:
+                    break
+                xb = " ".join((x["body"] or "").split())
+                xn = re.sub(r"\s*-\s*", "-", xb)
+                if any(_answers(b, xn, xn.replace("-", "").replace(" ", ""))
+                       for b in buckets_of(body)):
+                    earlier = True
+                    break
             asked_again = sum(
                 1 for x in msgs[i + 1:]
                 if x["dir"] == "In" and bucket_of(
@@ -2080,7 +2097,8 @@ def dodged_questions(convos):
                    "reply": " ".join(rb.split()),
                    "sender": who, "bucket": bucket or "(other)",
                    "name": c.get("name", ""), "context": ctx,
-                   "answered_later": later, "asked_again": asked_again}
+                   "answered_later": later, "asked_again": asked_again,
+                   "answered_before": earlier}
             choice = re.search(r"\b(is|are|do|does|will|would|should)\b"
                                r"[^?]{0,70}\bor\b[^?]{0,50}\?", body, re.I)
             short_yes = len(rb) <= 90 and AFFIRMS.search(rb) and not choice
