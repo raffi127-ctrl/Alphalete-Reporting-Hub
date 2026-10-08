@@ -2650,6 +2650,17 @@ def run_opt_phase(we_sunday: Optional[dt.date] = None, only: Optional[str] = Non
         except Exception as e:
             logfn(f"OPT: DD Boxes failed: {type(e).__name__}: {e}")
 
+    # ----- Badged Reps (OwnerVille CEO Dashboard, last 4 weeks re-read) ----
+    # Raf 2026-10-07. Only Raf's ATT Program sheet carries the rows.
+    if not dry_run and not skip_breakdowns and fill.CAPTAINSHIP == "Raf":
+        try:
+            from automations.recruiting_report import badged
+            logfn("")
+            logfn("===== Badged Reps =====")
+            badged.main([])
+        except Exception as e:
+            logfn(f"OPT: Badged Reps failed: {type(e).__name__}: {e}")
+
     return {"filled": filled, "skipped": skipped, "gaps": all_gaps}
 
 
