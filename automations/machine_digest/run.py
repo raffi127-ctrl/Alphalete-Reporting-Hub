@@ -1087,6 +1087,17 @@ def _historical_expected(rows, target_date, lookback_weeks: int = 3, min_days: i
     return out
 
 
+def _ran_here(machine) -> bool:
+    """Did this run happen on THIS computer? Unknown machine answers True, so
+    the old behaviour holds whenever the row can't say."""
+    import socket
+    m = str(machine or "").strip().lower()
+    if not m:
+        return True
+    me = socket.gethostname().strip().lower().split(".")[0]
+    return bool(me) and me in m
+
+
 def _close_recovered_incidents(cfg, reports, dry_run: bool, ts: str) -> int:
     """Close the incident thread of any standalone report whose latest run today
     is clean. Returns how many were closed.
@@ -1156,6 +1167,15 @@ def _close_recovered_incidents(cfg, reports, dry_run: bool, ts: str) -> int:
             if not _is_nudge:
                 print(f"[{ts}] watch: {rid} ran clean but delivery {_verdict} "
                       f"({_why}) — leaving its thread open", flush=True)
+                # A manifest is MACHINE-LOCAL. When the run happened on another
+                # Lucy, "no manifest here" proves nothing — that machine closes
+                # its own ticket off its own manifest (publish_done). Saying
+                # "nothing can confirm it DELIVERED" here landed right under
+                # Lucy 2's ✅ on vantura_orderlog_sales (10/6, 10/7).
+                if _verdict == "unknown" and not _ran_here(r.get("machine")):
+                    print(f"[{ts}] watch: {rid} ran on {r.get('machine')} — "
+                          "its manifest lives there, not noting", flush=True)
+                    continue
                 if _verdict == "unknown":
                     inc.note_delivery_unverified(rid, what=r.get("name") or rid,
                                                  why=_why, dry_run=dry_run)
