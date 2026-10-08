@@ -274,6 +274,64 @@ def post_day(rows: List[Dict], day: dt.date, *, sample: bool) -> int:
     return 1 if failed else 0
 
 
+SUMMARY_CHANNEL = "C0C42793AKS"     # #ars-recruiting-numbers: Camila + Perla, every office
+
+
+def summary_text(rows: List[Dict], day: dt.date) -> str:
+    """Camila, 2026-10-08: "one big summary with everyone in red, blue and
+    green each day". Every interviewer of the day, every office, grouped by
+    color, lowest first; each with her office and how many interviews."""
+    today = [r for r in rows if r.get("date") == day.isoformat() and r.get("score") is not None]
+    if not today:
+        return ""
+    avg = board._avg([int(r["score"]) for r in today])
+    people = interviewers(today)
+    lines = [f"📊 *1st Round Summary — {day:%a} {day.month}/{day.day}*",
+             f"Everyone's average: *{avg}/100* {emoji(avg)}  ·  {_plural(len(today))}  ·  "
+             f"{len(people)} interviewer{'s' if len(people) != 1 else ''}"]
+    for dot, label, keep in (("🔴", "Under 50", lambda a: a < 50),
+                             ("🔵", "50", lambda a: a == 50),
+                             ("🟢", "Over 50", lambda a: a > 50)):
+        group = [(n, a, mine) for n, a, mine in people if keep(a)]
+        if not group:
+            continue
+        lines += ["", f"{dot} *{label}* ({len(group)})"]
+        for n, a, mine in group:
+            offices = sorted({office_name(r["office"]) for r in mine if r.get("office")})
+            where = f" · {', '.join(offices)}" if offices else ""
+            lines.append(f"• *{n}* {a}{where} · {_plural(len(mine))}")
+    return "\n".join(lines)
+
+
+def post_summary(rows: List[Dict], day: dt.date, *, sample: bool) -> int:
+    """The day's big summary: #ars-recruiting-numbers once a day, or the group DM."""
+    text = summary_text(rows, day)
+    if not text:
+        print("SUMMARY: no audited interview that day")
+        return 0
+    key = day.isoformat()
+    if not sample and key in _ledger().get("_summary_posted", []):
+        print("SUMMARY: already posted")
+        return 0
+    client = _client()
+    where = (client.conversations_open(users=",".join(SAMPLE_TO))["channel"]["id"]
+             if sample else SUMMARY_CHANNEL)
+    try:
+        ok = _say(client, channel=where, text=text).get("ok")
+    except Exception as exc:  # noqa: BLE001
+        print(f"SUMMARY FAILED {type(exc).__name__}: {exc}")
+        return 1
+    if not ok:
+        print("SUMMARY FAILED")
+        return 1
+    print(f"SUMMARY: posted{' (sample)' if sample else ''}")
+    if not sample:
+        data = _ledger()
+        data["_summary_posted"] = (data.get("_summary_posted", []) + [key])[-60:]
+        _save(data)
+    return 0
+
+
 SAMPLE_MARKS = ("👀 *Sample", "📋 *1st Round Scorecard")
 
 
@@ -313,12 +371,20 @@ def main(argv=None) -> int:
     ap.add_argument("--post", action="store_true", help="LIVE: each office's channel")
     ap.add_argument("--clear-sample", action="store_true",
                     help="first delete the earlier samples Lucy posted in that group DM")
+    ap.add_argument("--summary-only", action="store_true",
+                    help="only the day's big summary (with --sample: in the group DM)")
     args = ap.parse_args(argv)
     day = (dt.date.fromisoformat(args.date) if args.date
            else dt.datetime.now(dt.timezone.utc).astimezone(fathom.CT).date())
     if args.clear_sample:
         clear_sample()
     rows = day_rows(day)
+    print(summary_text(rows, day))
+    if args.summary_only:
+        if not (args.sample or args.post):
+            print("\nDRY-RUN: nothing posted")
+            return 0
+        return post_summary(rows, day, sample=args.sample)
     for office, channel, head, replies in posts(rows, day):
         print(f"\n=== {office} -> {channel or 'NO CHANNEL'} ===\n{head}")
         for _, text in replies:
@@ -326,7 +392,8 @@ def main(argv=None) -> int:
     if not (args.sample or args.post):
         print("\nDRY-RUN: nothing posted")
         return 0
-    return post_day(rows, day, sample=args.sample)
+    rc = post_day(rows, day, sample=args.sample)
+    return post_summary(rows, day, sample=args.sample) or rc
 
 
 if __name__ == "__main__":

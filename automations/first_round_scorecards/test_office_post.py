@@ -61,6 +61,21 @@ class OfficePostTest(unittest.TestCase):
         self.assertTrue("📋 *1st Round Scorecard — X".startswith(op.SAMPLE_MARKS))
         self.assertTrue(op.head_text("X", [row("A", "X", 60)], DAY).startswith(op.SAMPLE_MARKS))
 
+    def test_summary_groups_everyone_by_color_lowest_first(self):
+        rows = [row("Ana", "Jairo Ruiz", 80), row("Bo", "Blue Mendoza", 30),
+                row("Cy", "Raf Hidalgo 2nd funnel", 50), row("Di", "", 45),
+                row("Ed", "Ellen Dent", 60, date="2026-10-05")]
+        text = op.summary_text(rows, DAY)
+        self.assertIn("📊 *1st Round Summary — Tue 10/6*", text)
+        self.assertNotIn("Ed", text)                       # another day
+        red, blue, green = (text.index("🔴 *Under 50* (2)"), text.index("🔵 *50* (1)"),
+                            text.index("🟢 *Over 50* (1)"))
+        self.assertLess(red, blue)
+        self.assertLess(blue, green)
+        self.assertLess(text.index("*Bo* 30 · Blue Mendoza"), text.index("*Di* 45 · 1 interview"))
+        self.assertIn("*Cy* 50 · Rafael Hidalgo", text)
+        self.assertEqual(op.summary_text(rows, dt.date(2026, 10, 9)), "")
+
     def test_off_until_the_sample_is_approved(self):
         self.assertFalse(op.LIVE)
 

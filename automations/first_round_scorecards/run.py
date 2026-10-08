@@ -584,6 +584,7 @@ def main(argv=None) -> int:
                 if office_post.LIVE:
                     try:
                         office_post.post_day(board.LAST_ROWS, day, sample=False)
+                        office_post.post_summary(board.LAST_ROWS, day, sample=False)
                     except Exception as exc:  # noqa: BLE001
                         print(f"OFFICE POSTS FAILED {type(exc).__name__}: {exc}")
     return rc
