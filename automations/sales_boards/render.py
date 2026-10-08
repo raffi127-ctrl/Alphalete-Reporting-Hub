@@ -1,8 +1,9 @@
-"""Rendering core for the program Sales Boards (B2B / Base / JE / BOX).
+"""Rendering core for the program Sales Boards (B2B / Base / JE / BOX / Verizon).
 
 Produces the VA's two images per program off that program's board tab
 ("NDS Sales Board" for B2B — the AT&T program is NDS on the sheet since
-2026-10-03 — "BOX Sales Board" for BOX; vantura_boards.tab_for):
+2026-10-03 — "BOX Sales Board" for BOX, "Verizon Sales Board" for Verizon;
+vantura_boards.tab_for):
   (a) WEEKLY   — # / REP / Current Week / Last Wk, ranked by Current Week desc
   (b) HIGHROLLERS — # / REP / <yesterday's day>, only reps who sold that day,
       ranked by that day's count
@@ -23,8 +24,10 @@ is kept: a rep mis-filed onto the wrong tab still renders on the right board.
 
 THE TOTALS BLOCK is per tab: "AT&T NDS" .. "TOTAL" on the main board (the old
 "AT&T (B2B)" label still counts, for the backup copy), "BOX" .. "TOTAL" on the
-BOX board (and "Verizon" .. "TOTAL" on the Verizon board, which this report
-does not post).
+BOX board and "Verizon" .. "TOTAL" on the Verizon board (posted since
+2026-10-08 — Carlos: a Verizon metrics thread every morning, like B2B's).
+totals_range takes whichever of those labels the tab carries, so the three
+boards render through the one code path.
 
 CAMPAIGN LABELS are compared through vantura_boards.canon_campaign: program
 "B2B" matches a col-L "NDS" (today's spelling) and a "B2B" (a row from before
@@ -56,8 +59,10 @@ FIRST_DAY_COL, LAST_DAY_COL = 5, 11    # cols E..K
 # "BOX" / "Verizon" on the others.
 TOTALS_TOPS = tuple(sorted(STAT_LABELS - {"total"}))
 TOTALS_TOP, TOTALS_BOTTOM = SUBTOTAL_LABELS[MAIN_CAMPAIGN], "TOTAL"
-PROGRAMS = ["B2B", "Base", "JE", "BOX"]
-# The col-L spellings those programs match (B2B -> NDS on the sheet).
+PROGRAMS = ["B2B", "Base", "JE", "BOX", "Verizon"]
+# The col-L spellings those programs match (B2B -> NDS on the sheet). Also
+# what rep_region accepts as a rep row — before Verizon joined this list the
+# Verizon tab had no recognisable rep rows at all and could not render.
 PROGRAM_CAMPAIGNS = {canon_campaign(p) for p in PROGRAMS}
 
 

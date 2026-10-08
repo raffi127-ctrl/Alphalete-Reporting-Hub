@@ -9,7 +9,8 @@ is written back onto the temp copy.
 Since the three-board split (2026-10-02) the snapshot carries every board's
 reps, each tagged with its tab, and a temp copy of ONE tab only takes the
 reps that belong to it. A snapshot from before the 2026-10-03 rename tags
-the old titles ("Sales Board" / "D2D Sales Board"); they still match.
+the old titles ("Sales Board" / "D2D Sales Board"); they still match. The
+Verizon board posts since 2026-10-08, so its copy is rewound the same way.
 
 Run:  python -m automations.sales_boards.test_rolled_forward
 """
@@ -146,6 +147,81 @@ def test_a_snapshot_tagged_with_the_old_tab_titles_still_rewinds():
     assert R.same_tab("Sales Board", "NDS Sales Board")
     assert R.same_tab("D2D Sales Board", "Verizon Sales Board")
     assert not R.same_tab("BOX Sales Board", "NDS Sales Board")
+
+
+def _verizon_grid():
+    """The Verizon board, rolled: same geometry, but the subtotal row reads
+    'Verizon' (not 'AT&T NDS' / 'BOX') and TOTAL follows it."""
+    return [
+        [""],
+        ["WE", "9.20"],
+        ["#", "REP", "Current Week", "Last Wk"] + DAYS + ["Campaign"],
+        ["1", "DIEGO", "0", "8"] + [""] * 7 + ["Verizon"],
+        ["2", "NEW GUY", "0", ""] + [""] * 7 + ["Verizon"],
+        ["", "Verizon", "0", "9"] + [""] * 7 + [""],
+        ["", "TOTAL", "0", "9"],
+        ["", "% on the Board", "Mon"],        # stats block: never written
+    ]
+
+
+SNAP_VZ = dict(
+    SNAP,
+    reps=SNAP["reps"] + [
+        {"name": "DIEGO", "days": ["3", "", "", "", "", "", ""],
+         "last_wk": "2", "campaign": "Verizon", "tab": "Verizon Sales Board"}],
+    campaigns=dict(SNAP["campaigns"],
+                   Verizon={"row": 23, "name": "Verizon", "last_wk": "11",
+                            "tab": "Verizon Sales Board"}),
+    tabs=dict(SNAP["tabs"], Verizon="Verizon Sales Board"),
+)
+
+
+def test_rewind_the_verizon_board_takes_only_verizon_reps():
+    """Verizon posts since 2026-10-08, so a Monday pass that meets a rolled
+    board rewinds ITS temp copy too: DIEGO and the 'Verizon' subtotal come
+    back, the NDS / BOX reps are neither written nor 'missing'."""
+    writes, gone = R.rewind_writes(_verizon_grid(), SNAP_VZ,
+                                   tab="Verizon Sales Board")
+    got = {w["range"]: w["values"] for w in writes}
+    assert got["E4:K4"] == [[3, "", "", "", "", "", ""]], got
+    assert got["D4"] == [[2]], got
+    assert got["D6"] == [[11]], got           # the Verizon subtotal's Last Wk
+    assert gone == [], gone                   # ANA / BEA / CAL / GONE: other boards
+    assert not any(w["range"].endswith("5") for w in writes), writes
+    assert "D7" not in got and "D8" not in got, got   # TOTAL + stats untouched
+
+
+def test_a_snapshot_tagged_d2d_sales_board_still_rewinds_the_verizon_copy():
+    """A roll from before the 2026-10-03 rename tagged the Verizon reps
+    'D2D Sales Board'; the temp copy is duplicated from 'Verizon Sales
+    Board'. Same board."""
+    old = dict(
+        SNAP_VZ,
+        reps=[dict(r, tab=("D2D Sales Board" if r["tab"] == "Verizon Sales Board"
+                           else r["tab"])) for r in SNAP_VZ["reps"]],
+        campaigns=dict(SNAP_VZ["campaigns"],
+                       Verizon=dict(SNAP_VZ["campaigns"]["Verizon"],
+                                    tab="D2D Sales Board")),
+    )
+    writes, gone = R.rewind_writes(_verizon_grid(), old, tab="Verizon Sales Board")
+    got = {w["range"]: w["values"] for w in writes}
+    assert got["E4:K4"] == [[3, "", "", "", "", "", ""]], got
+    assert got["D6"] == [[11]], got
+    assert gone == [], gone
+
+
+def test_the_box_copy_does_not_take_the_verizon_reps():
+    writes, gone = R.rewind_writes(_grid(), SNAP_VZ, tab="BOX Sales Board")
+    got = {w["range"]: w["values"] for w in writes}
+    assert got["E4:K4"] == [["", "", "", "", "", "", 5]], got
+    assert gone == ["GONE"], gone             # DIEGO is not 'missing' here
+    assert all(v != [[11]] for v in got.values()), got
+
+
+def test_verizon_is_a_posted_program():
+    """The 2026-10-08 posting set, in reply order."""
+    assert R.PROGRAMS == ["B2B", "BOX", "Verizon"], R.PROGRAMS
+    assert R.PROGRAM_EMOJI["Verizon"] == ":satellite_antenna:"
 
 
 def _write(d: Path, name: str, blob) -> None:
