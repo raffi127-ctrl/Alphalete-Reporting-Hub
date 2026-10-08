@@ -1238,6 +1238,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--raf-test", action="store_true",
                     help="ONLY pull the Raf-owner DD slice and print what the "
                          "allowlist reps brought in. Never writes.")
+    ap.add_argument("--raf-list", action="store_true",
+                    help="ONLY list every rep paid in the DD under a "
+                         "'Hidalgo' owner that is not Carlos (current window, "
+                         "then the Period fallback). Never writes.")
     ap.add_argument("--owner-probe", action="store_true",
                     help="ONLY fetch the DD dashboard's direct CSV (all "
                          "owners) and log every cl.ICD Owner Name value plus "
@@ -1253,6 +1257,84 @@ def main(argv: list[str] | None = None) -> int:
         resp = requests.get(url, params={"action": "refresh"}, timeout=600)
         resp.raise_for_status()
         _log(f"refresh -> {resp.text[:200]}")
+        return 0
+
+    if args.raf_list:
+        from collections import Counter, defaultdict
+        from automations.vantura_churn import cdp_pull
+        rep_lines = []
+
+        def rlog(msg):
+            _log(msg)
+            rep_lines.append(str(msg))
+
+        def analyze(tag, xlsx):
+            headers, data = _read_export(xlsx)
+            hl = [str(h).strip().lower() for h in headers]
+            oi = hl.index("cl.icd owner name")
+            ri = hl.index("rep.name") if "rep.name" in hl else hl.index("rep.full name")
+            wi = hl.index("cl.dd week")
+            hi = hl.index("total $ to icd")
+            owners = Counter(str(r[oi]).strip() for r in data
+                             if len(r) > oi and str(r[oi]).strip())
+            rlog(f"[{tag}] {len(data)} rows; owners: "
+                 + ", ".join(f"{o} ({c})" for o, c in owners.most_common(20)))
+            raf = [r for r in data if len(r) > oi
+                   and "hidalgo" in str(r[oi]).lower()
+                   and "carlos" not in str(r[oi]).lower()]
+            rlog(f"[{tag}] rows under a non-Carlos Hidalgo owner: {len(raf)}")
+            per = defaultdict(float)
+            wks = Counter()
+            for r in raf:
+                rep = str(r[ri]).strip() if len(r) > ri else ""
+                try:
+                    amt = float(str(r[hi] if len(r) > hi else 0)
+                                .replace("$", "").replace(",", "") or 0)
+                except ValueError:
+                    amt = 0.0
+                per[rep or "(no rep)"] += amt
+                wks[str(r[wi]).strip() if len(r) > wi else "?"] += 1
+            if raf:
+                rlog(f"[{tag}] their DD weeks: {dict(wks)}")
+                for rep, amt in sorted(per.items(), key=lambda kv: -kv[1]):
+                    rlog(f"[{tag}]   {rep}: ${amt:,.2f}")
+            return len(raf)
+
+        wk = (dt.datetime.strptime(args.week, "%Y-%m-%d").date()
+              if args.week else week_ending())
+        n = analyze("current window", _pull_raf_dd(wk))
+        if n == 0:
+            from automations.override_bulletin.pulls import (_with_filter,
+                                                             period_candidates)
+            out2 = (REPO_ROOT / "output" / "vantura_payroll" /
+                    "ORG DD Detail period.xlsx")
+            if out2.exists():
+                out2.unlink()
+            period = f"Period {wk.year}-{wk.month}"
+            for cand in period_candidates(period):
+                try:
+                    url = _with_filter(ORG_DD_URL, "Period", cand)
+                    cdp_pull.download_views([(url, ORG_DD_SHEET, str(out2))],
+                                            log=_log)
+                    if out2.exists():
+                        if analyze(f"Period {cand!r}", out2) >= 0:
+                            break
+                except Exception as e:  # noqa: BLE001
+                    rlog(f"Period {cand!r} failed: {str(e)[:90]}")
+        try:
+            from automations.recruiting_report import fill as _f
+            _ctl = _f._client().open_by_key(
+                "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw")
+            try:
+                _tab = _ctl.worksheet("DD Probe")
+                _tab.clear()
+            except Exception:
+                _tab = _ctl.add_worksheet("DD Probe", rows=400, cols=2)
+            _tab.update([[ln] for ln in rep_lines[:380]], "A1",
+                        value_input_option="RAW")
+            _log(f"raf-list: {len(rep_lines)} line(s) -> 'DD Probe' tab")
+        except Exception as _e:
+            _log(f"raf-list: DD Probe write failed ({_e!r})")
         return 0
 
     if args.owner_probe:
