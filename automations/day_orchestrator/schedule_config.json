@@ -3832,7 +3832,7 @@
   },
   "rc_wrapup": {
    "on_scheduler": false,
-   "_off_scheduler_note": "MANUAL-ONLY wrap-up group-text sender (Carlos 2026-10-08: send the D2D Wrap Up canvas content to the guest customers who never got the wrap-up text — one INDIVIDUAL group per customer: Taylor's line + the sales rep + the customer, never one big thread). Text = the #alphalete-gp-sales 'D2D Wrap Up' canvas (F095EC26XHQ) with Order # ('Wireless Order #') and BAN ('Wireless Acct #') filled per customer off the Lucy 1 raf_guest envelope; PIN is not in SaraPlus, the line says the rep will confirm it in the thread. Rep numbers resolve from Taylor's RingCentral contact list by name (unique-hit matcher; unresolved rep = customer SKIPPED, listed). DRY RUN by default and it uploads the complete plan to the control sheet's 'Wrapup Preview' tab for the mini; `-- --live` sends (state file rc-wrapup-sent.json: one wrap-up per customer EVER, re-runs are safe). `-- --fetch-flyer` downloads the canvas flyer image to the config area first; without it the text goes alone. SENDS TEXTS TO CUSTOMERS — never add --live without Carlos having seen the preview.",
+   "_off_scheduler_note": "MANUAL-ONLY wrap-up group-text sender (Carlos 2026-10-08: send the D2D Wrap Up canvas content to the guest customers who never got the wrap-up text \u2014 one INDIVIDUAL group per customer: Taylor's line + the sales rep + the customer, never one big thread). Text = the #alphalete-gp-sales 'D2D Wrap Up' canvas (F095EC26XHQ) with Order # ('Wireless Order #') and BAN ('Wireless Acct #') filled per customer off the Lucy 1 raf_guest envelope; PIN is not in SaraPlus, the line says the rep will confirm it in the thread. Rep numbers resolve from Taylor's RingCentral contact list by name (unique-hit matcher; unresolved rep = customer SKIPPED, listed). DRY RUN by default and it uploads the complete plan to the control sheet's 'Wrapup Preview' tab for the mini; `-- --live` sends (state file rc-wrapup-sent.json: one wrap-up per customer EVER, re-runs are safe). `-- --fetch-flyer` downloads the canvas flyer image to the config area first; without it the text goes alone. SENDS TEXTS TO CUSTOMERS \u2014 never add --live without Carlos having seen the preview.",
    "display_name": "D2D wrap-up group texts (Raf-code guests)",
    "source_type": "api",
    "data_sources": [],
@@ -13684,6 +13684,47 @@
    "verify": null,
    "timeout_minutes": 25,
    "machine": "Lucy 2"
+  },
+  "valeria_metrics": {
+   "order": 7.92,
+   "machine": "Lucy 2",
+   "on_scheduler": false,
+   "display_name": "Valeria's B2B Metrics (channel from ECO sign-up)",
+   "source_type": "tableau",
+   "data_sources": [
+    "tableau:order_log"
+   ],
+   "command": [
+    "automations.b2b_metrics.runner"
+   ],
+   "base_args": [
+    "--office",
+    "valeria",
+    "--post"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P1",
+   "freshness_target": null,
+   "depends_on": [
+    "vantura_churn"
+   ],
+   "timeout_minutes": 60,
+   "verify": {
+    "type": "manifest",
+    "report_id": "valeria_metrics"
+   },
+   "_onboarded": true,
+   "_note": "B2B metrics for valeria (Valeria Tristan, Altura Marketing). Wired by hand 2026-10-08, modelled on luke_metrics. on_scheduler false until a dry run on Lucy 2 proves it; channel comes from her Lucy ECO sign-up. Hub: the consolidated b2b-metrics card."
   }
  },
  "read_only_standalone": {

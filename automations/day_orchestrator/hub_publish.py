@@ -203,6 +203,7 @@ _HUB_CARD = {
     # says who they are running for"). Add an onboarded office = one line here.
     "jamis_metrics": "b2b-metrics",
     "luke_metrics": "b2b-metrics",         # 2026-10-06, Luke Baldwin, same card
+    "valeria_metrics": "b2b-metrics",      # 2026-10-08, Valeria Tristan, same card
     # Weekly Promotion Check-In posts BOTH its passes (Mon 6pm + 7:15pm final)
     # under report_id "promo_checkin", and that card counts them via daily_runs:2
     # (the 2-phase pill). The Mon/Final install-agent plists got scanned into their

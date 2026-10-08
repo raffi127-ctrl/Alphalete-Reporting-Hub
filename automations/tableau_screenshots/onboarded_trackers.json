@@ -316,5 +316,22 @@
       "quantum_fiber",
       "vzftr"
     ]
+  },
+  {
+    "key": "valeria",
+    "label": "Valeria's B2B Office (channel from ECO sign-up)",
+    "owner": "Valeria Tristan",
+    "channel_ids": [],
+    "trackers": [
+      "att_country",
+      "att_country_internet_only",
+      "nds",
+      "b2b_att_country",
+      "b2b_att_country_cru",
+      "b2b_d2d_consolidated",
+      "b2b_box",
+      "quantum_fiber",
+      "vzftr"
+    ]
   }
 ]
