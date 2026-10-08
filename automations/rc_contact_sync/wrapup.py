@@ -137,6 +137,46 @@ def resolve_reps(book: List[dict], rep_names: List[str],
     return out
 
 
+def resolve_reps_google(rep_names: List[str], log=print) -> Dict[str, str]:
+    """{rep: phone} off alphaletegp@gmail.com's Google Contacts — Carlos
+    2026-10-08: "you have access to the alphaletegp contact list. you add my
+    new starts on there" (vantura_contacts_sync is the writer; this is the
+    read-back). Display names carry "(CAMPAIGN)" suffixes, so parentheticals
+    are stripped before the same unique-hit matcher runs. Rep numbers also
+    live on OwnerVille if this list ever goes stale."""
+    from automations.fiber_owners_distro import contacts_write as cw
+    from automations.total_knocks import guests
+    from automations.total_knocks.pull import COL_REP
+    from automations.vantura_contacts_sync.run import _strip_parens
+
+    svc = cw._service("alphaletegp")
+    people: List[Dict[str, str]] = []
+    page = None
+    while True:
+        resp = cw._retry(lambda t=page: svc.people().connections().list(
+            resourceName="people/me", personFields="names,phoneNumbers",
+            pageSize=1000, pageToken=t).execute())
+        for p in resp.get("connections", []) or []:
+            name = (p.get("names") or [{}])[0].get("displayName", "")
+            phone = ""
+            for ph in (p.get("phoneNumbers") or []):
+                if ph.get("value"):
+                    phone = ph["value"]
+                    break
+            if name and phone:
+                people.append({"name": _strip_parens(name), "phone": phone})
+        page = resp.get("nextPageToken")
+        if not page:
+            break
+    log("alphaletegp contacts: %d with a number" % len(people))
+    rows = [{COL_REP: p["name"]} for p in people]
+    claimed, missing = guests.match_rows(rows, rep_names)
+    out = {rep: people[i]["phone"] for i, rep in claimed.items()}
+    for rep in missing:
+        log("  ✗ %r not in the alphaletegp contact list either" % rep)
+    return out
+
+
 def guest_fields(since: dt.date, until: dt.date, log=print) -> List[Dict]:
     """The guest customers plus the flyer's fill-ins (order #, BAN) straight
     off the envelope's raw rows."""
@@ -232,6 +272,17 @@ def run(since: dt.date, until: dt.date, *, live: bool = False,
     book = RC.address_book(token, contacts_ext)
     rep_names = sorted({c["rep"] for c in missing})
     reps = resolve_reps(book, rep_names, log=log)
+    # Taylor's RC book answered 0 of 10 on the first run (it holds the
+    # CUSTOMERS this pipeline adds, not the crew) — the alphaletegp Google
+    # contact list is where Carlos's new starts actually live.
+    unresolved = [r for r in rep_names if r not in reps]
+    if unresolved:
+        try:
+            for rep, phone in resolve_reps_google(unresolved, log=log).items():
+                reps.setdefault(rep, phone)
+        except Exception as e:  # noqa: BLE001
+            log("  (alphaletegp lookup failed: %s: %s)"
+                % (type(e).__name__, str(e)[:160]))
     if find_reps_only:
         for rep, phone in sorted(reps.items()):
             log("  %-28s %s" % (titlecase_name(rep), phone))
