@@ -9,12 +9,20 @@ the thread where their audience already reads:
         creates it at 5:10 if the metrics runner hasn't yet — which is what
         makes the board the thread's FIRST screenshot), followed at 5:20 by
         the :moneybag: Revenue Board (vantura_revenue_board).
+    :satellite_antenna: Verizon Sales Board -> the day's VERIZON METRICS
+        thread ("*Verizon Metrics MM/DD/YYYY*" — Carlos 2026-10-08: "a Verizon
+        metrics thread that gets posted every morning just like the B2B
+        metrics thread"). Same 5:10 pass, same two rooms. This run is the ONLY
+        thing that opens that parent; its day|channel -> ts record lives in
+        output/sales_boards/verizon_thread_state.json, a sibling of (never
+        the same file as) b2b_quality's thread_state.json.
     :package: BOX Sales Board    -> the day's BOX ORDER LOG thread (7:00) —
         posted by vantura_revenue_board's 7:25 pass (--program BOX here),
         after the 7:15 order-log confirm has corrected the cells.
 
 Both in #alphalete-gp-sales AND #a-players-b2b; Zero Streaks ride the
-A-Players B2B Metrics thread.
+A-Players B2B Metrics thread (NDS + BOX reps — the Verizon board is not part
+of that callout; see ZEROS_PROGRAMS).
 
 THREE BOARD TABS (2026-10-02): the reps live on per-campaign tabs with the
 same geometry — "NDS Sales Board" (the AT&T program, called NDS on the sheet
@@ -30,8 +38,9 @@ Reads the PROD sheet as of go-live (2026-07-18); set SALES_BOARD_SHEET_ID to the
 sandbox id to build against a copy. DRY-RUN by default — posting needs --post.
 
 Usage:
-  python -m automations.sales_boards.run                  # dry-run, all 4
-  python -m automations.sales_boards.run --program JE     # one program
+  python -m automations.sales_boards.run                  # dry-run: B2B + Verizon
+  python -m automations.sales_boards.run --dry-run        # the same, spelled out
+  python -m automations.sales_boards.run --program Verizon  # one program
   python -m automations.sales_boards.run --post           # post to the channel
   python -m automations.sales_boards.run --post --dm U…   # post to a DM (test)
 """
@@ -68,10 +77,16 @@ TEMP_TAB = "_sb_render_tmp"          # ephemeral copy we create + delete
 # the base campaign, so ⚡ Base Sales Board should stop posting on both channels).
 # (render.PROGRAMS stays full: it also drives rep-row detection in render.py.)
 PROGRAMS = [p for p in R.PROGRAMS if p not in ("JE", "Base")]
+# The boards the Zero Streak images read (zeros.render_zeros stacks one block
+# per tab). Verizon joined PROGRAMS on 2026-10-08 for its OWN thread; the
+# Zero Streak callout stays what the A-Players B2B thread has always carried
+# (NDS + BOX). Add "Verizon" here to stack its reps in as a third block.
+ZEROS_PROGRAMS = [p for p in PROGRAMS if p != "Verizon"]
 # The VA's per-program emoji, kept so the thread reads the way the channel is
 # used to: ":briefcase: *B2B Sales Board 7.17*".
 PROGRAM_EMOJI = {"B2B": ":briefcase:", "Base": ":zap:",
-                 "JE": ":bulb:", "BOX": ":package:"}
+                 "JE": ":bulb:", "BOX": ":package:",
+                 "Verizon": ":satellite_antenna:"}
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "sales_boards"
 CHANNEL = ("#alphalete-gp-sales", "C07J46MQNUX")
 
@@ -312,6 +327,31 @@ def _b2b_header(today) -> str:
     return MR.header_text(MO.OFFICES["carlos"], today)
 
 
+def _find_parent_ts(client, chan: str, today, header: str,
+                    label: str) -> Optional[str]:
+    """READ-ONLY: ts of today's parent in `chan` whose text starts with
+    `header`, or None. Only top-level messages count (a reply quoting the
+    title is not a parent), and the OLDEST hit wins — that is the real thread
+    if a stray duplicate ever got posted after it. Never posts. Degrades to
+    None when the history read fails (`label` names the thread in the log)."""
+    header = header.strip()
+    oldest = dt.datetime.combine(today, dt.time.min).timestamp()
+    try:
+        resp = client.conversations_history(channel=chan, oldest=str(oldest),
+                                            limit=200)
+    except Exception as e:  # noqa: BLE001
+        print(f"    ({label} thread lookup unavailable in {chan} — "
+              f"{type(e).__name__})")
+        return None
+    import html as _html
+    hits = [m for m in resp.get("messages", [])
+            if not m.get("thread_ts") or m.get("thread_ts") == m.get("ts")
+            if _html.unescape(m.get("text") or "").strip().startswith(header)]
+    if not hits:
+        return None
+    return min(hits, key=lambda m: float(m["ts"]))["ts"]
+
+
 def find_b2b_metrics_thread_ts(client, chan: str, today) -> Optional[str]:
     """READ-ONLY: ts of the day's 'B2B Metrics' thread in `chan`, or None.
     Never posts, never writes thread_state.json — safe to call from anywhere.
@@ -322,22 +362,101 @@ def find_b2b_metrics_thread_ts(client, chan: str, today) -> Optional[str]:
     ts = bq._load_state(today, chan).get("thread_ts")
     if ts:
         return ts
-    header = _b2b_header(today).strip()
-    oldest = dt.datetime.combine(today, dt.time.min).timestamp()
+    return _find_parent_ts(client, chan, today, _b2b_header(today),
+                           "b2b-metrics")
+
+
+# ---- the Verizon Metrics thread (Carlos 2026-10-08) -------------------------
+# Same shape as the B2B one, with ONE difference: nobody else posts into it.
+# b2b_metrics / b2b_quality never see it, so it gets its OWN state file —
+# a Verizon lookup or opener never reads, creates or rewrites b2b_quality's
+# thread_state.json (which the metrics runner is also writing at this hour),
+# and the B2B file's 10-key retention is not eaten by Verizon entries.
+VERIZON_THREAD_TITLE = "Verizon Metrics"
+VERIZON_STATE_FILE = OUT_DIR / "verizon_thread_state.json"
+
+
+def verizon_header_title(day) -> str:
+    """Parent's first line — the needle the lookup matches. Same spelling as
+    b2b_metrics.runner.header_title: '<title> MM/DD/YYYY'."""
+    return "{} {:02d}/{:02d}/{}".format(VERIZON_THREAD_TITLE, day.month,
+                                        day.day, day.year)
+
+
+def _verizon_header(today) -> str:
+    """The parent message: the bare bold title+date, exactly the shape
+    b2b_metrics.runner.header_text gives Carlos's (short_header) office —
+    no board lines under the title."""
+    return "*{}*".format(verizon_header_title(today))
+
+
+def _load_verizon_state(day, channel: str) -> dict:
+    """Today's {thread_ts, posted} for this channel, or {}. Mirrors
+    b2b_quality.run._load_state on VERIZON_STATE_FILE; a missing or corrupt
+    file reads as "no state", never as an error."""
     try:
-        resp = client.conversations_history(channel=chan, oldest=str(oldest),
-                                            limit=200)
-    except Exception as e:  # noqa: BLE001
-        print(f"    (b2b-metrics thread lookup unavailable in {chan} — "
-              f"{type(e).__name__})")
-        return None
-    import html as _html
-    hits = [m for m in resp.get("messages", [])
-            if not m.get("thread_ts") or m.get("thread_ts") == m.get("ts")
-            if _html.unescape(m.get("text") or "").strip().startswith(header)]
-    if not hits:
-        return None
-    return min(hits, key=lambda m: float(m["ts"]))["ts"]
+        blob = json.loads(VERIZON_STATE_FILE.read_text())
+    except Exception:  # noqa: BLE001 — missing/corrupt state must not block a post
+        return {}
+    entry = blob.get(f"{day.isoformat()}|{channel}")
+    return entry if isinstance(entry, dict) else {}
+
+
+def _save_verizon_state(day, channel: str, thread_ts: str, posted: list) -> None:
+    """Best-effort persist — a state write failure never loses the post.
+    Keeps the last ~10 day|channel keys, like the B2B file."""
+    try:
+        try:
+            blob = json.loads(VERIZON_STATE_FILE.read_text())
+        except Exception:  # noqa: BLE001
+            blob = {}
+        blob[f"{day.isoformat()}|{channel}"] = {"thread_ts": thread_ts,
+                                                "posted": sorted(set(posted))}
+        for k in sorted(blob)[:-10]:
+            blob.pop(k, None)
+        VERIZON_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        VERIZON_STATE_FILE.write_text(json.dumps(blob, indent=2))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def find_verizon_metrics_thread_ts(client, chan: str, today) -> Optional[str]:
+    """READ-ONLY: ts of the day's 'Verizon Metrics' thread in `chan`, or
+    None. Never posts, never writes any state file — safe to call from
+    anywhere (the 2026-09-21 double-parent rule applies here unchanged). Own
+    state file first, then today's channel history, oldest parent wins."""
+    ts = _load_verizon_state(today, chan).get("thread_ts")
+    if ts:
+        return ts
+    return _find_parent_ts(client, chan, today, _verizon_header(today),
+                           "verizon-metrics")
+
+
+def open_verizon_metrics_thread(client, chan: str, today) -> str:
+    """POSTS: the day's 'Verizon Metrics' thread in `chan`, creating the
+    parent only when neither the state file nor Slack knows one. This is the
+    only code that creates it. Only posting paths call this."""
+    state = _load_verizon_state(today, chan)
+    ts = find_verizon_metrics_thread_ts(client, chan, today)
+    if not ts:
+        ts = client.chat_postMessage(channel=chan,
+                                     text=_verizon_header(today)).get("ts")
+        print(f"    opened Verizon Metrics thread in {chan} ts={ts}")
+    if state.get("thread_ts") != ts:
+        _save_verizon_state(today, chan, ts, list(state.get("posted") or []))
+    return ts
+
+
+def thread_kind(plain: str) -> str:
+    """Which daily thread a reply belongs in, from its plain caption:
+    'BOX Sales Board …' -> 'box' (BOX Order Log / Box Metrics thread),
+    'Verizon Sales Board …' -> 'verizon', everything else (the B2B board and
+    the Zero Streaks) -> 'b2b'."""
+    if plain.startswith("BOX "):
+        return "box"
+    if plain.startswith("Verizon "):
+        return "verizon"
+    return "b2b"
 
 
 def open_b2b_metrics_thread(client, chan: str, today) -> str:
@@ -386,10 +505,12 @@ def post_thread(imgs: dict, zeros: dict, day, yday, dry_run: bool,
                 dm_user: str = "", corrected: bool = False) -> list:
     """Route each program's images into ITS thread (Carlos 2026-08-30):
     B2B -> the day's B2B Metrics thread (created here if absent, so the board
-    is the thread's first screenshot); BOX -> the day's BOX Order Log thread
-    (never created here — box_order_log owns it; missing = hold). Zero Streaks
-    ride the A-Players B2B Metrics thread, where their audience already is.
-    dm_user still routes everything into one DM for a test."""
+    is the thread's first screenshot); Verizon -> the day's Verizon Metrics
+    thread (Carlos 2026-10-08; created here, and only here); BOX -> the day's
+    BOX Order Log thread (never created here — box_order_log owns it;
+    missing = hold). Zero Streaks ride the A-Players B2B Metrics thread,
+    where their audience already is. dm_user still routes everything into
+    one DM for a test."""
     tag = f"{yday.month}.{yday.day}"
     scratch = os.environ.get("SALES_BOARD_CHANNEL_ID")
     targets = ([(f"scratch ({scratch})", scratch, True)] if scratch
@@ -397,7 +518,8 @@ def post_thread(imgs: dict, zeros: dict, day, yday, dry_run: bool,
 
     if dry_run:
         return [{"dry_run": True, "channel": name, "id": cid,
-                 "header": "(joins B2B Metrics / BOX Order Log threads)",
+                 "header": "(joins B2B Metrics / Verizon Metrics / "
+                           "BOX Order Log threads)",
                  "replies": [(cap, [f for _, f in ups])
                              for _, cap, ups in _replies(imgs, zeros, tag, wz,
                                                          corrected)]}
@@ -418,10 +540,12 @@ def post_thread(imgs: dict, zeros: dict, day, yday, dry_run: bool,
         def _ts_for(plain: str):
             if dm_user:
                 return "dm"
-            kind = "box" if plain.startswith("BOX ") else "b2b"
+            kind = thread_kind(plain)
             if kind not in ts_cache:
                 if kind == "box":
                     ts_cache[kind] = box_thread_ts(client, cid, day)
+                elif kind == "verizon":
+                    ts_cache[kind] = open_verizon_metrics_thread(client, cid, day)
                 else:
                     ts_cache[kind] = open_b2b_metrics_thread(client, cid, day)
             return ts_cache[kind]
@@ -431,7 +555,9 @@ def post_thread(imgs: dict, zeros: dict, day, yday, dry_run: bool,
             ts = _ts_for(plain)
             if ts is None:
                 out.append({"channel": name, "reply": plain,
-                            "held": "no BOX Order Log thread yet"})
+                            "held": ("no BOX Order Log thread yet"
+                                     if thread_kind(plain) == "box"
+                                     else f"no {thread_kind(plain)} thread")})
                 held = True
                 continue
             if ts != "dm" and _already_replied(client, cid, ts, plain):
@@ -621,14 +747,22 @@ def _day_already_posted(day, yday, programs, corrected=False) -> bool:
         import automations.b2b_quality.run as bq
         client = smp._client()
         for name, cid, _wz in targets:
-            # Post-restructure the boards live in TWO threads: B2B in the B2B
-            # Metrics thread (ts from the shared state file — never create it
-            # from a checker), BOX in the BOX Order Log thread.
+            # Post-restructure the boards live in THREE threads: B2B in the
+            # B2B Metrics thread (ts from the shared state file — never
+            # create it from a checker), Verizon in the Verizon Metrics
+            # thread (its own state file, same rule), BOX in the BOX Order
+            # Log thread.
             for prog in [p for p in programs if p != "BOX"]:
-                ts = bq._load_state(day, cid).get("thread_ts")
-                if not ts:
-                    print(f"    ({name}: no B2B Metrics thread today)")
-                    return False
+                if prog == "Verizon":
+                    ts = _load_verizon_state(day, cid).get("thread_ts")
+                    if not ts:
+                        print(f"    ({name}: no Verizon Metrics thread today)")
+                        return False
+                else:
+                    ts = bq._load_state(day, cid).get("thread_ts")
+                    if not ts:
+                        print(f"    ({name}: no B2B Metrics thread today)")
+                        return False
                 plain = f"{prog} Sales Board {tag}{suffix}"
                 if not _already_replied(client, cid, ts, plain):
                     print(f"    ({name}: {plain!r} is not in today's thread)")
@@ -710,6 +844,9 @@ def main(argv=None) -> int:
     ap.add_argument("--program", choices=PROGRAMS, help="just one program")
     ap.add_argument("--post", action="store_true",
                     help="ACTUALLY post to Slack (default dry-run)")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="render only, post nothing — the default, spelled "
+                         "out; wins over --post if both are given")
     ap.add_argument("--dm", metavar="USER_ID",
                     help="post the thread to a DM instead of the channel (test run)")
     ap.add_argument("--only-zeros", action="store_true",
@@ -719,20 +856,24 @@ def main(argv=None) -> int:
                          "carry '(corrected)' (so the morning reply doesn't "
                          "dedupe them away) and Zero Streaks are skipped")
     args = ap.parse_args(argv)
+    if args.dry_run:
+        args.post = False
 
     today = dt.date.today()
     yday = today - dt.timedelta(days=1)
-    # The 5:10 run posts B2B only: the BOX images move to the BOX Order Log
-    # thread, which doesn't exist until box_order_log's 7:00 post — the
-    # vantura_revenue_board 7:25 pass posts them (with corrected data, since
-    # the 7:15 order-log confirm has run by then). --program BOX still works
-    # for that pass and for the corrected re-post.
+    # The 5:10 run posts B2B and Verizon (each into its own Metrics thread):
+    # the BOX images move to the BOX Order Log thread, which doesn't exist
+    # until box_order_log's 7:00 post — the vantura_revenue_board 7:25 pass
+    # posts them (with corrected data, since the 7:15 order-log confirm has
+    # run by then). --program BOX still works for that pass and for the
+    # corrected re-post.
     programs = [args.program] if args.program else \
         [p for p in PROGRAMS if p != "BOX"]
 
     sh = open_by_key(SHEET_ID)
     # One tab per program (vantura_boards): B2B off "NDS Sales Board", BOX
-    # off "BOX Sales Board". The gold week cell is on the main tab only.
+    # off "BOX Sales Board", Verizon off "Verizon Sales Board". The gold week
+    # cell is on the main tab only.
     # board_ws falls back to a tab's pre-rename title, so a board that is
     # not renamed yet still renders.
     tabs = {p: tab_for(p) for p in programs}
@@ -801,14 +942,15 @@ def main(argv=None) -> int:
             sh.del_worksheet(w)
     # Zeros render on their OWN throwaway tabs — they overwrite the day columns
     # with a cross-week window, which would corrupt the boards if the two shared
-    # a copy. They read EVERY program's board (NDS + BOX), whichever program
-    # this pass renders, so the one grouped-by-campaign image per level
-    # (Carlos 7/23) survives the split; a later pass dedupes on the caption.
-    # (Not on a rolled board: zeros read the live gold cell, which has moved
-    # on. The 5:10 pass posts them before the roll anyway.)
+    # a copy. They read the ZEROS_PROGRAMS boards (NDS + BOX), whichever
+    # program this pass renders, so the one grouped-by-campaign image per
+    # level (Carlos 7/23) survives the split; a later pass dedupes on the
+    # caption. (Not on a rolled board: zeros read the live gold cell, which
+    # has moved on. The 5:10 pass posts them before the roll anyway.)
     zrs = {} if (args.corrected or snap) else \
         Z.render_zeros(sh, [board_ws(sh, t)
-                            for t in dict.fromkeys(tab_for(p) for p in PROGRAMS)],
+                            for t in dict.fromkeys(tab_for(p)
+                                                   for p in ZEROS_PROGRAMS)],
                        SHEET_ID, _token(), yday, OUT_DIR)
 
     imgs = {p: {} for p in programs}

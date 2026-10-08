@@ -8,6 +8,11 @@ so a ladder pass could never reach "done" and the false alarm came back on
 2026-09-07: B2B was in both rooms since 05:10, and 07:15 still opened an
 incident whose fix line would have undone the morning's week roll.
 
+Since 2026-10-08 the ladder posts a THIRD board, Verizon, into its own
+"Verizon Metrics" thread with its own state file — the checker reads that
+record for the Verizon reply and the B2B record for the B2B one, never one
+for the other.
+
 Run:  python -m automations.sales_boards.test_posted_check
 """
 from __future__ import annotations
@@ -26,13 +31,17 @@ class _Client:
         self.replies = replies
 
 
-def _patch(monkey, *, posted, box_ts="box-ts", b2b_ts="b2b-ts"):
-    """Stand in for Slack + b2b_quality's thread state. `posted` is the set of
-    plain needles that made it into a thread."""
+def _patch(monkey, *, posted, box_ts="box-ts", b2b_ts="b2b-ts",
+           vz_ts="vz-ts"):
+    """Stand in for Slack + b2b_quality's thread state (+ this module's own
+    Verizon thread state). `posted` is the set of plain needles that made it
+    into a thread."""
     import types
 
     bq = types.ModuleType("automations.b2b_quality.run")
     bq._load_state = lambda day, cid: {"thread_ts": b2b_ts} if b2b_ts else {}
+    monkey["run"]._load_verizon_state = \
+        lambda day, cid: {"thread_ts": vz_ts} if vz_ts else {}
     pkg = types.ModuleType("automations.b2b_quality")
     pkg.run = bq                       # `import a.b.c as x` reads the ATTRIBUTE
     smp = types.ModuleType("automations.shared.slack_metrics_post")
@@ -52,21 +61,23 @@ def _patch(monkey, *, posted, box_ts="box-ts", b2b_ts="b2b-ts"):
         lambda client, cid, ts, plain: plain in posted
 
 
-def _run(posted, programs, *, corrected=False, box_ts="box-ts", b2b_ts="b2b-ts"):
+def _run(posted, programs, *, corrected=False, box_ts="box-ts", b2b_ts="b2b-ts",
+         vz_ts="vz-ts"):
     import sys
     import automations as _pkg
 
-    saved = (R.box_thread_ts, R._already_replied,
+    saved = (R.box_thread_ts, R._already_replied, R._load_verizon_state,
              sys.modules.get("automations.b2b_quality.run"),
              sys.modules.get("automations.shared.slack_metrics_post"),
              sys.modules.get("automations.b2b_quality"),
              getattr(_pkg, "b2b_quality", None))
     try:
         _patch({"sys": sys, "run": R}, posted=posted, box_ts=box_ts,
-               b2b_ts=b2b_ts)
+               b2b_ts=b2b_ts, vz_ts=vz_ts)
         return R._day_already_posted(DAY, YDAY, programs, corrected)
     finally:
-        (R.box_thread_ts, R._already_replied, m1, m2, m3, attr) = saved
+        (R.box_thread_ts, R._already_replied, R._load_verizon_state,
+         m1, m2, m3, attr) = saved
         for name, mod in (("automations.b2b_quality.run", m1),
                           ("automations.shared.slack_metrics_post", m2),
                           ("automations.b2b_quality", m3)):
@@ -116,6 +127,42 @@ def test_corrected_pass_looks_for_the_name_it_will_write():
 
 def test_no_b2b_metrics_thread_yet_is_not_done():
     assert _run(B2B_IN, ["B2B"], b2b_ts=None) is False
+
+
+# --- the Verizon board (Carlos 2026-10-08): its own thread, its own state ---
+VZ_IN = {"Verizon Sales Board 9.6"}
+
+
+def test_ladder_pass_needs_both_of_its_boards():
+    """Since 2026-10-08 the 5:10 ladder posts B2B AND Verizon — it is done
+    only when both replies are in, each in its own thread."""
+    assert _run(B2B_IN, ["B2B", "Verizon"]) is False
+    assert _run(VZ_IN, ["B2B", "Verizon"]) is False
+    assert _run(B2B_IN | VZ_IN, ["B2B", "Verizon"]) is True
+
+
+def test_verizon_pass_is_done_on_its_own_board():
+    assert _run(VZ_IN, ["Verizon"]) is True
+    assert _run(set(), ["Verizon"]) is False
+    assert _run(B2B_IN, ["Verizon"]) is False       # the B2B reply is not it
+
+
+def test_no_verizon_metrics_thread_yet_is_not_done():
+    assert _run(VZ_IN, ["Verizon"], vz_ts=None) is False
+
+
+def test_verizon_reads_its_own_thread_state_not_the_b2b_one():
+    """The two threads have separate state files: a Verizon pass is judged on
+    the Verizon record alone (no B2B thread today does not hold it), and a
+    missing Verizon record is not papered over by the B2B one."""
+    assert _run(VZ_IN, ["Verizon"], b2b_ts=None) is True
+    assert _run(B2B_IN | VZ_IN, ["B2B", "Verizon"], vz_ts=None) is False
+
+
+def test_corrected_verizon_pass_looks_for_the_corrected_name():
+    assert _run(VZ_IN, ["Verizon"], corrected=True) is False
+    assert _run(VZ_IN | {"Verizon Sales Board 9.6 (corrected)"}, ["Verizon"],
+                corrected=True) is True
 
 
 def _main() -> int:
