@@ -151,9 +151,9 @@ RC_BASE_URL = "https://platform.ringcentral.com"
 #   * the contacts land in the address book of the line that actually texts
 #     these customers, so a reply comes in with a name on it instead of an
 #     unknown number;
-#   * her message store is the one we read, and a RingCentral JWT authenticates
+#   * his message store is the one we read, and a RingCentral JWT authenticates
 #     ONE user -- signing in as Carlos would have meant a second JWT minted on
-#     Taylor just to read her texts.
+#     Taylor just to read his texts.
 # Both calls therefore address extension '~' (whoever the token is), never a
 # hardcoded id: an extension number is a thing that gets reassigned.
 RC_LOGIN_EMAIL = "taylormkmiller7@gmail.com"

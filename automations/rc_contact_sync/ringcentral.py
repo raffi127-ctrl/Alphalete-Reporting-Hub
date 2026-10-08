@@ -2,7 +2,7 @@
 
 ONE IDENTITY DOES BOTH JOBS. We sign in as Taylor
 (taylormkmiller7@gmail.com, ext 134 -- Megan 2026-09-02), so the contacts go
-into the address book of the line that texts these customers AND her message
+into the address book of the line that texts these customers AND his message
 store is the one we read. Both calls address extension '~' -- whoever the
 token is -- rather than an extension number, which is a thing that gets
 reassigned.

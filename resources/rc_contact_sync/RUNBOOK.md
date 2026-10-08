@@ -24,7 +24,7 @@ Module: `automations/rc_contact_sync/` · Hub card: **B2B Customer Contacts
 2. Each row gives everything: the **rep** (`User Name`), the **business**
    (`Business Name`), the **customer** (`Customer Name`) and the **phone**
    (`Phone`). No "View Customer" click — see below.
-3. **RingCentral** (signed in as **Taylor**) → one contact in her address
+3. **RingCentral** (signed in as **Taylor**) → one contact in his address
    book per customer:
    `Company` = business name · phone = primary phone (Mobile) ·
    `Notes` = `Rep Name: <rep>`.
@@ -96,7 +96,7 @@ the mailbox, find the real email, and tighten `VERIFY_QUERY` in `config.py`
 That is the whole file. **One identity does both jobs** (Megan, 2026-09-02:
 *"the ring central account we're using is with this email
 taylormkmiller7@gmail.com"*): the contacts go into Taylor's address book — the
-line that texts these customers, so a reply arrives with a name on it — and her
+line that texts these customers, so a reply arrives with a name on it — and his
 message store is the one the follow-up check reads. Both calls address
 extension `~`, whoever the token is, rather than a hardcoded extension number.
 

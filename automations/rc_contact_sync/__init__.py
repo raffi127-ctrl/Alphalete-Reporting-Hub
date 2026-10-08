@@ -53,7 +53,7 @@ IDENTITY MATTERS TWICE HERE and both are easy to get wrong silently:
     in as Taylor is what makes this one identity instead of two: the contacts
     land on the line that texts these customers, and that same line's inbox is
     the one the follow-up check reads. ringcentral.assert_identity() refuses
-    to write until the token proves it is her.
+    to write until the token proves it is him.
 
 Nothing here writes a Sheet.
 """
