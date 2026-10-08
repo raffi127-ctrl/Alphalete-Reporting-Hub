@@ -177,6 +177,35 @@ def resolve_reps_google(rep_names: List[str], log=print) -> Dict[str, str]:
     return out
 
 
+def resolve_reps_daily_update(rep_names: List[str], log=print) -> Dict[str, str]:
+    """{rep: phone} off the Vantura Master's Daily Update — the sheet the
+    alphaletegp contact sync itself reads, so it's the freshest copy of a
+    rep's number (found Aaron De La Torre + Rodolfo Bazan here on 2026-10-08
+    when both contact lists missed them)."""
+    from automations.recruiting_report import fill as _fill
+    from automations.total_knocks import guests
+    from automations.total_knocks.pull import COL_REP
+    from automations.vantura_contacts_sync.run import (
+        DU_TAB, SHEET_ID, _strip_parens, du_resolve)
+
+    du = _fill._client().open_by_key(SHEET_ID).worksheet(DU_TAB).get_all_values()
+    lay = du_resolve(du[0] if du else [])
+    people = []
+    for r in du[2:]:
+        if len(r) <= lay["phone"]:
+            continue
+        name = _strip_parens(r[lay["name"]]).strip()
+        phone = str(r[lay["phone"]]).strip()
+        if name and phone:
+            people.append({"name": name, "phone": phone})
+    rows = [{COL_REP: p["name"]} for p in people]
+    claimed, missing = guests.match_rows(rows, rep_names)
+    out = {rep: people[i]["phone"] for i, rep in claimed.items()}
+    for rep in missing:
+        log("  ✗ %r not on the Daily Update either" % rep)
+    return out
+
+
 def guest_fields(since: dt.date, until: dt.date, log=print) -> List[Dict]:
     """The guest customers plus the flyer's fill-ins (order #, BAN) straight
     off the envelope's raw rows."""
@@ -275,14 +304,19 @@ def run(since: dt.date, until: dt.date, *, live: bool = False,
     # Taylor's RC book answered 0 of 10 on the first run (it holds the
     # CUSTOMERS this pipeline adds, not the crew) — the alphaletegp Google
     # contact list is where Carlos's new starts actually live.
-    unresolved = [r for r in rep_names if r not in reps]
-    if unresolved:
+    for source, resolver in (("alphaletegp contacts", resolve_reps_google),
+                             ("Vantura Daily Update",
+                              resolve_reps_daily_update)):
+        unresolved = [r for r in rep_names if r not in reps]
+        if not unresolved:
+            break
         try:
-            for rep, phone in resolve_reps_google(unresolved, log=log).items():
+            for rep, phone in resolver(unresolved, log=log).items():
                 reps.setdefault(rep, phone)
+                log("  rep %r resolved via %s" % (rep, source))
         except Exception as e:  # noqa: BLE001
-            log("  (alphaletegp lookup failed: %s: %s)"
-                % (type(e).__name__, str(e)[:160]))
+            log("  (%s lookup failed: %s: %s)"
+                % (source, type(e).__name__, str(e)[:160]))
     if find_reps_only:
         for rep, phone in sorted(reps.items()):
             log("  %-28s %s" % (titlecase_name(rep), phone))
