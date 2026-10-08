@@ -1264,7 +1264,7 @@
     "daily_focus"
    ],
    "verify": null,
-   "timeout_minutes": 25,
+   "timeout_minutes": 35,
    "machine": "Lucy 1",
    "_order_note": "Megan's master sequence 2026-08-20 (drag-and-drop board): integer slots 1-60, one shared order across all days"
   },

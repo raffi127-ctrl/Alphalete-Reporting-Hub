@@ -505,11 +505,33 @@ def _reports() -> dict:
 # test) that swaps the config in must not keep answering out of the old index.
 _KEY_INDEX: Tuple[int, Dict[str, str]] = (0, {})
 
+# THREADS FILED UNDER A CUSTOM KEY, and the report each one belongs to.
+#
+# Some producers open one thread per KIND of problem with a key of their own
+# (incident_thread.candidate_keys lists them). Those keys canon to nothing in the
+# schedule, so reruns_itself took the unknown-id branch and promised a retry.
+# 2026-10-08: `applicant-tracker-gaps` (3 of 16 offices missed at 4:49am) got
+# "Lucy has this … re-runs it about every 25 minutes until noon". Nothing did —
+# applicant_sync is appstream with no probe, and a 'partial' run isn't even a
+# failure the loop could retry — and Megan found it still open three hours on.
+#
+# Value: (schedule key, the `lucy rerun` instruction that actually fixes it). The
+# second part exists because the bare key would hand people a command that
+# errors (applicant_sync REQUIRES the phase).
+_CUSTOM_KEYS: Dict[str, Tuple[str, str]] = {
+    "applicant-tracker-gaps": (
+        "applicant_sync",
+        "`lucy rerun applicant_sync morning --office <id>` for each office "
+        "above (add `--skip-call-list` if its Call List already landed)"),
+}
+
 
 def schedule_key(rid: str) -> Optional[str]:
     """The schedule_config key `rid` names, whatever spelling it arrives in, or
     None when it names nothing in the schedule (a source, a manifest-only id)."""
     global _KEY_INDEX
+    if rid in _CUSTOM_KEYS:
+        return _CUSTOM_KEYS[rid][0]
     reports = _reports()
     if _KEY_INDEX[0] != id(reports):
         _KEY_INDEX = (id(reports), {inc._canon(k): k for k in reports})
@@ -779,10 +801,11 @@ def _if_it_reruns(key: str, rid: str, bucket: str, reason: str) -> Verdict:
     # argument by exact dict lookup (registry.resolve_report), so the dashed
     # manifest id off a `drop-` key comes back "unknown report_id". A line that
     # hands somebody a command that errors is worse than no line.
+    cmd = (_CUSTOM_KEYS[rid][1] if rid in _CUSTOM_KEYS
+           else "`lucy rerun {}`".format(schedule_key(rid) or rid))
     return Verdict(key, NEEDS_YOU, reason,
                    line=("*Needs one of you.* {} Nothing re-runs it on its "
-                         "own — `lucy rerun {}`.".format(
-                             reason, schedule_key(rid) or rid)))
+                         "own — {}.".format(reason, cmd)))
 
 
 # --------------------------------------------------------------- the line ----

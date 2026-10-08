@@ -80,9 +80,23 @@ FIRST_DAY_LIVE = False
 # Typical office is well under a minute (the card budgets 12m for all 17), so
 # 2m means "clearly stuck", not "a bit slow". Overridable for a manual catch-up
 # run that wants a longer leash.
+#
+# 2026-10-08: 16 offices no longer fit in 20m — Rashad Reed (23411, added last,
+# so last in line) was "never started" at 4:49am, and nothing re-ran him. The
+# offices average ~70s each; 30m leaves room for a couple of slow ones. The
+# orchestrator's timeout_minutes for applicant_sync_morning moved 25 -> 35 to
+# stay above HARD_BUDGET_S, which is the whole point of the watchdog.
 OFFICE_BUDGET_S = int(os.environ.get("APPLICANT_OFFICE_BUDGET_S", 120))
-RUN_BUDGET_S = int(os.environ.get("APPLICANT_RUN_BUDGET_S", 20 * 60))
-HARD_BUDGET_S = int(os.environ.get("APPLICANT_HARD_BUDGET_S", 23 * 60))
+RUN_BUDGET_S = int(os.environ.get("APPLICANT_RUN_BUDGET_S", 30 * 60))
+HARD_BUDGET_S = int(os.environ.get("APPLICANT_HARD_BUDGET_S", 33 * 60))
+# Once an office has WRITTEN its Call List it gets this long again to finish
+# 2R status, instead of being abandoned on the slice it already spent. Same day:
+# Cyrus Wade (+64 rows) and Ryan McSpadden (+144) both wrote, then timed out
+# "before 'read 2R roster'". Abandoning AFTER a write is the worst place to
+# stop — the Call List has no de-dupe, so nothing can retry the office and a
+# person has to repair it with --skip-call-list. A big Call List is slow, not
+# stuck; the run budget above still bounds the sweep.
+FINISH_AFTER_WRITE_S = int(os.environ.get("APPLICANT_FINISH_AFTER_WRITE_S", 120))
 
 # What the run is doing right now, for the watchdog to name. Written by
 # _Clock.check on every step; read from the watchdog thread.
@@ -230,6 +244,7 @@ def _morning_office(app, ws_call, ws_2r, office_id: str, header: str,
         sheets.paste_block(ws_call, start, "B", call_rows)
         print(f"  [{office_id}] {owner}: Call List +{len(call_rows)} (row {start})",
               flush=True)
+        clock.budget_s = max(clock.budget_s, clock.elapsed + FINISH_AFTER_WRITE_S)
         # The Ad is the LAST data col. A whole office landing with a blank Ad is
         # how the 7-vs-8 column miss hid for days — nobody sees a silently
         # narrow paste. Flag it so the next column the site adds gets caught the

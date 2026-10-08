@@ -201,6 +201,20 @@ class NobodyIsComingBackForIt(unittest.TestCase):
                        key="failure-aya_metrics", tail="connection reset")
         self.assertEqual(v.bucket, tri.NEEDS_YOU)
 
+    def test_a_custom_keyed_thread_finds_its_report(self):
+        """2026-10-08: `applicant-tracker-gaps` canons to nothing in the
+        schedule, took the unknown-id branch, and told the channel "Lucy has
+        this … re-runs it about every 25 minutes until noon". Nothing re-runs
+        applicant_sync; it sat three hours. And the command it hands over must
+        carry the phase — a bare `lucy rerun applicant_sync` errors."""
+        v = self._with({"applicant_sync": {"source_type": "appstream",
+                                           "data_sources": []}},
+                       key="applicant-tracker-gaps", tail="")
+        self.assertEqual(v.bucket, tri.NEEDS_YOU)
+        line = tri.line_for(v)
+        self.assertIn("lucy rerun applicant_sync morning --office", line)
+        self.assertIn("--skip-call-list", line)
+
     def test_an_id_thats_not_a_report_is_left_alone(self):
         """A `drop-` key can name a SOURCE. Inventing a rerun command for it is
         worse than the promise we're removing."""
