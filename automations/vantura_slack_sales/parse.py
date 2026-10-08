@@ -8,7 +8,12 @@ Carlos confirmed 2026-07-23 that ALL of it comes from the channel.
   Base        residential energy, door-to-door  ("D2D … 1,390 kwh … Base #1")
   BOX         business energy                   ("B2B :package: … BF 1 … Box #2")
   B2B         AT&T lines and fiber              ("B2B (Business) … NL 1 … NL 2")
+  Verizon     Verizon lines, door-to-door       ("VERIZON D2D … NL #1 … NL #2")
   JE          dropped — the office stopped running the campaign
+
+Base retired 2026-08-30. Verizon joined 2026-10-08 (Carlos: "update this
+board based off what they post on Slack"); its reps sit on the "Verizon
+Sales Board" tab since the 2026-10-02 three-tab split.
 
 THE TWO COUNTING MODES (getting this wrong is the whole game):
 
@@ -17,10 +22,19 @@ THE TWO COUNTING MODES (getting this wrong is the whole game):
   afternoon: 3 sales, not 6. Miguel puts "Base #1 / #2 / #3" in ONE post: also
   3. So take the MAX marker per rep per day.
 
-  UNITS (B2B) — the line numbering RESTARTS every post, so each marker is its
-  own unit and they SUM. Jacob posts NL1-NL5, later a Fiber, later another
-  "NL 1": that is 7 for the day, and max() would have said 5. Each NL, Fiber
-  and Inseego is one unit — verified against the board, which had him at 7.
+  UNITS (B2B, Verizon) — the line numbering RESTARTS every post, so each
+  marker is its own unit and they SUM. Jacob posts NL1-NL5, later a Fiber,
+  later another "NL 1": that is 7 for the day, and max() would have said 5.
+  Each NL, Fiber and Inseego is one unit — verified against the board, which
+  had him at 7. Verizon numbers the same way (William Bautista 2026-10-07:
+  "NL #1..#3", then "NL #4..#9" — 3 + 6 = 9, the board's 9).
+
+VERIZON IS THE WORD (Carlos 2026-10-08): a sale post is Verizon when its text
+says "Verizon" and it is not the office's tally line — "VERIZON D2D", "D2D
+(Verizon)", "VERIZON (D2D)". Nothing else separates it from AT&T: the reps use
+the same NL / Auto Pay / Wrap Text / Cx / BYOD vocabulary, and a bare "D2D" is
+NOT Verizon (the AT&T program sells door to door too: "D2D AT&T", "AT&T D2D").
+A Verizon post is worth its NL items, and ONE sale when it has none.
 
 WHY kWh CANNOT IDENTIFY THE CAMPAIGN: Base and BOX both quote kWh and "CX n"
 (residential vs business energy). The header and the contract fields are what
@@ -55,13 +69,14 @@ GOALS_RE = re.compile(r"todays? goals|goal hit|goal passed", re.I)
 CHATTER_RE = re.compile(r"^\s*(line\s*up|who ?i?s next|wait for him)", re.I)
 BOT_AUTHORS = {"Lucy Reporting", "Slackbot", "Alphalete GP", "Jolie Calinagan"}
 
-# The office's own running tally: "A&T - 16/20", "Box - 10/12", "Base -4/15".
-# Those numbers are the WHOLE DAY's totals, so a tally post read as a sale would
-# credit one rep with the entire office. Every one seen so far also carries
-# "Todays Goals" and dies on GOALS_RE, but the AT&T header rule below makes a
-# bare tally post reachable, so it gets its own guard.
+# The office's own running tally: "A&T - 16/20", "Box - 10/12", "Base -4/15",
+# "Verizon - 16/15". Those numbers are the WHOLE DAY's totals, so a tally post
+# read as a sale would credit one rep with the entire office. Every one seen so
+# far also carries "Todays Goals" and dies on GOALS_RE, but the AT&T header
+# rule below (and the Verizon word rule) makes a bare tally post reachable, so
+# it gets its own guard.
 TALLY_LINE_RE = re.compile(
-    r"(?mi)^[ \t>*_]*(?:a[ \t]*&[ \t]*t|at[ \t]*&?[ \t]*t|att|box|base)\b"
+    r"(?mi)^[ \t>*_]*(?:a[ \t]*&[ \t]*t|at[ \t]*&?[ \t]*t|att|box|base|verizon)\b"
     r"[^\n]{0,24}?-[ \t]*\d*[ \t]*/[ \t]*\d+")
 
 # --- shared marker shapes -------------------------------------------------
@@ -209,6 +224,37 @@ def count_box_contracts(text: str) -> int:
     return max(len(_BF_TOKEN.findall(text)), len(_BILL_SUBMITTED.findall(text)))
 
 
+# --- Verizon (door-to-door Verizon lines) ----------------------------------
+# THE WORD IS THE CAMPAIGN (Carlos 2026-10-08, see the module docstring).
+# Deliberately NOT anchored to a line start the way _ATT_HEADER is: the rule
+# Carlos gave is "the post says Verizon", and every post seen so far puts it in
+# the header anyway ("*VERIZON D2D*", "D2D (Verizon)", "*VERIZON (D2D)*").
+_VERIZON = re.compile(r"\bverizon\b", re.I)
+
+# One NL item = one line, however the number is attached: "NL #1", "NL#2 BYOD",
+# "NL 3", "NL4", "NL - 1", "1 NL". NUMBERED items only — the number is what
+# makes it a line item. "CX1" is the customer index, "BYOD" / "16e" are line
+# attributes; neither is a sale.
+_VZ_NL_ITEM = re.compile(r"\bnl\s*(?:[-#:]\s*)?\d+|\b\d+\s*nl\b", re.I)
+
+# A regex that matches nothing — for a campaign with no exclusions.
+_NEVER = re.compile(r"(?!)")
+
+
+def count_verizon(text: str) -> int:
+    """Verizon sales in one post = its NL items.
+
+    UNITS mode, like AT&T: the numbering continues ACROSS a rep's posts
+    (William Bautista 2026-10-07: "NL #1..#3" at 18:23, "NL #4..#9" at 19:58
+    — 3 + 6 = 9, and the board had him at 9), so each post's items are summed,
+    never max()ed. A Verizon post with no NL item at all is ONE sale: that is
+    sale_markers' evidence path, where the word Verizon is the evidence, and
+    the log flags it ("counted as 1"). The early posts looked like "VERIZON
+    :grey_heart: :fire: S/o MY DAWGS …" with the line count nowhere.
+    """
+    return len(_VZ_NL_ITEM.findall(text))
+
+
 @dataclass
 class Campaign:
     """How one campaign is recognised and counted.
@@ -248,7 +294,9 @@ CAMPAIGNS = [
         include=_BOX_SIGNAL,
         # PRODUCTS only, not _ATT_SIGNAL: "Autopay" and "Wrap up text" appear on
         # energy posts too, and excluding on them handed the post to AT&T.
-        exclude=re.compile(_ATT_PRODUCT.pattern + r"|\bd2d\b", re.I),
+        # "verizon" is belt and braces: the Verizon override below already
+        # takes such a post, but a BOX-shaped post naming Verizon is Verizon.
+        exclude=re.compile(_ATT_PRODUCT.pattern + r"|\bd2d\b|\bverizon\b", re.I),
         override=re.compile(r"\bbox\s*#?\s*\d", re.I),
         mode="running",
         markers=[re.compile(r"\bbox\s*#?\s*(\d{1,2})(?!\d)", re.I), _CX],
@@ -261,7 +309,11 @@ CAMPAIGNS = [
         # BYOD (or a product we've never seen) is still recognised as AT&T.
         include=re.compile(_ATT_SIGNAL.pattern + "|" + _ATT_HEADER_PAT,
                            re.I | re.M),
-        exclude=re.compile(r"\bd2d\b|\bbox\s*#?\s*\d|\bbill submitted\b", re.I),
+        # "verizon": a Verizon post carries the same NL / Auto Pay words, and
+        # one without a D2D header used to land here (Jayden Willingham
+        # 2026-10-06, "VERIZON … NL 1..NL5", read as 5 AT&T sales).
+        exclude=re.compile(r"\bd2d\b|\bbox\s*#?\s*\d|\bbill submitted\b"
+                           r"|\bverizon\b", re.I),
         override=None,
         mode="units",
         # Counting lives in count_att — NL lines + Fiber + standalone Inseego
@@ -270,6 +322,25 @@ CAMPAIGNS = [
         counter=count_att,
         fallback=att_fallback_count,
         evidence=re.compile(_CX_EVID, re.I),
+    ),
+    Campaign(
+        name="Verizon",
+        # The word is the campaign, so it is the override as well as the
+        # include: a Verizon post also says NL / Auto Pay / D2D, and without
+        # the override those markers would hand it to AT&T (or, with a D2D
+        # header, to nobody at all — every 2026-10-07 Verizon post read as
+        # chatter before this). Last in the list on purpose: BOX and B2B keep
+        # first refusal and the run's log sections keep their order.
+        include=_VERIZON,
+        exclude=_NEVER,
+        override=_VERIZON,
+        mode="units",
+        markers=[],
+        counter=count_verizon,
+        # No numbered-lines fallback: a Verizon post with no NL item is one
+        # sale (Carlos 2026-10-08), so the evidence IS the word.
+        fallback=None,
+        evidence=_VERIZON,
     ),
 ]
 BY_NAME = {c.name: c for c in CAMPAIGNS}
@@ -290,6 +361,7 @@ class PostRead:
     flags: list[str] = field(default_factory=list)
     skipped: bool = False          # looked like a campaign, read as chatter
     text: str = ""
+    files: int = 0                 # attachments — an image-only post has text ""
 
     @property
     def excerpt(self) -> str:
@@ -322,10 +394,10 @@ def is_sale_post(author: str, text: str) -> bool:
 def campaign_of(text: str) -> Campaign | None:
     """Which campaign a post belongs to, or None.
 
-    An unambiguous marker ("Base #2", "Box #3") wins outright; otherwise a
-    post carrying another campaign's markers is left alone. Checked in
-    CAMPAIGNS order, so the two energy campaigns get first refusal on a post
-    quoting kWh before the AT&T rules see it.
+    An unambiguous marker ("Base #2", "Box #3", the word "Verizon") wins
+    outright; otherwise a post carrying another campaign's markers is left
+    alone. Checked in CAMPAIGNS order, so the energy campaign gets first
+    refusal on a post quoting kWh before the AT&T rules see it.
     """
     for c in CAMPAIGNS:
         if c.override and c.override.search(text):
@@ -396,9 +468,9 @@ def sale_markers(c: Campaign, text: str) -> tuple[list[int], list[str]]:
 
 
 def read_post(ts: str, when: dt.datetime, author: str, author_id: str,
-              text: str) -> PostRead:
+              text: str, files: int = 0) -> PostRead:
     post = PostRead(ts=ts, when=when, author=author, author_id=author_id,
-                    sales_day=sales_day(when, text), text=text)
+                    sales_day=sales_day(when, text), text=text, files=files)
     if not is_sale_post(author, text):
         return post
     c = campaign_of(text)

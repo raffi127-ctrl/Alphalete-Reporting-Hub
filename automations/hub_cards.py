@@ -5560,13 +5560,14 @@ AUTOMATED_REPORTS = [
         "color": "#F59E0B",
         # 📊 Metrics (not Ops) so it lands in ⏰ TIME SET REPORTS.
         "category": "📊 Metrics",
-        "description": "Counts every Base, BOX and AT&T sale the reps post in #alphalete-gp-sales and fills the day column on the Vantura Sales Board — the hand-count the VA used to do each morning.",
+        "description": "Counts every BOX, AT&T (NDS) and Verizon sale the reps post in #alphalete-gp-sales and fills the day column on each campaign's Vantura board tab — the hand-count the VA used to do each morning.",
         "breakdown": (
             "WHAT IT DOES\n"
             "Reads the sales reps post in **#alphalete-gp-sales** — counting "
-            "**Base, BOX and AT&T** per rep — and fills that day's column on "
-            "the Vantura **Sales Board**. This feeds the 5:10am Sales Boards "
-            "post, so it has to fill the board first.\n\n"
+            "**BOX, AT&T (NDS) and Verizon** per rep — and fills that day's "
+            "column on each campaign's board tab (**BOX / NDS / Verizon Sales "
+            "Board**). This feeds the 5:10am Sales Boards post, so it has to "
+            "fill the board first.\n\n"
             "WHEN IT RUNS\n"
             "**Every hour 4–9pm** (board stays live through the evening), then "
             "a **5am** close-out sweep. Every pass recounts the whole day, so "
