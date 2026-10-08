@@ -150,8 +150,202 @@ def _c(cols: Cols, r, i: Optional[int]) -> str:
 
 # ---------------------------------------------------------------- boards --
 
+SOH_TAB = "FIB SOH"
+SOH_MAX_AGE_H = 24
+
+
+def load_soh(log=print):
+    """Raf's SaraPlus Sales Order History, relayed by Lucy 1 (sara_pull) to
+    the control tab — decoded, crew-filtered. -> (ix, crew_orders, pulled_at)
+    or None when missing/stale, in which case the Tableau path carries the
+    board (near-live when it can be, never silent about which it was)."""
+    import base64
+    import csv as _csv
+    import io
+    from automations.recruiting_report import fill as _fill
+    from automations.total_knocks import guests
+    try:
+        ws = _fill._client().open_by_key(
+            "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw").worksheet(SOH_TAB)
+        data = base64.b64decode("".join(
+            r[0] for r in ws.get_all_values() if r and r[0]))
+    except Exception as e:  # noqa: BLE001
+        log(f"[fiber] SOH relay unavailable ({e}) — Tableau fallback")
+        return None
+    text = data.decode("utf-8-sig", errors="replace")
+    pulled_at = None
+    if text.startswith("#pulled="):
+        stamp, _, text = text.partition("\n")
+        try:
+            pulled_at = dt.datetime.fromisoformat(stamp[len("#pulled="):])
+        except ValueError:
+            pass
+    if pulled_at is None or (dt.datetime.now() - pulled_at
+                             > dt.timedelta(hours=SOH_MAX_AGE_H)):
+        log(f"[fiber] SOH relay stale/unstamped (pulled {pulled_at}) — "
+            "Tableau fallback")
+        return None
+    rows = list(_csv.reader(io.StringIO(text)))
+    hdr = [h.strip() for h in rows[0]]
+    ix = {h: i for i, h in enumerate(hdr)}
+    for need in ("User Name", "Order Date", "Customer Name",
+                 "Wireless Status", "Wireless Active Date",
+                 "Wireless Line Count"):
+        if need not in ix:
+            log(f"[fiber] SOH missing column {need!r} — Tableau fallback")
+            return None
+    crew_names = guests.roster("Rafael Hidalgo", "Carlos Hidalgo")
+    toks = [guests._tokens(n) for n in crew_names]
+
+    def _is_crew(n):
+        t = guests._tokens(n)
+        return any(guests._subseq(ct, t) or guests._subseq(t, ct)
+                   for ct in toks)
+
+    crew = [r for r in rows[1:] if len(r) > ix["User Name"]
+            and _is_crew(r[ix["User Name"]].strip())]
+    log(f"[fiber] SOH relay: {len(rows) - 1} orders, crew {len(crew)}, "
+        f"pulled {pulled_at:%m/%d %H:%M}")
+    return ix, crew, pulled_at
+
+
+def _soh_cell(ix, r, col):
+    i = ix.get(col)
+    return (str(r[i]).strip() if i is not None and len(r) > i and r[i]
+            else "")
+
+
+def build_order_log_soh(ix, crew, today, pulled_at, log=print) -> Path:
+    """The crew's ORDERS off Raf's SaraPlus — near-live, one row per order."""
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill
+    cols = ["Rep", "Order Date", "Customer", "Phone", "Lines", "BYOD",
+            "Wireless Status", "Active Date", "TPV", "City"]
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Fiber Order Log (SaraPlus)"
+    ws.append(cols)
+    for c in ws[1]:
+        c.font = Font(bold=True)
+    rows = sorted(crew, key=lambda r: (_soh_cell(ix, r, "User Name"),
+                                       _parse_date(_soh_cell(
+                                           ix, r, "Order Date"))
+                                       or dt.date.min))
+    for r in rows:
+        st = _soh_cell(ix, r, "Wireless Status")
+        ws.append([
+            _soh_cell(ix, r, "User Name"),
+            _soh_cell(ix, r, "Order Date"),
+            _soh_cell(ix, r, "Customer Name"),
+            _soh_cell(ix, r, "Phone"),
+            _soh_cell(ix, r, "Wireless Line Count"),
+            _soh_cell(ix, r, "BYOD Line Count"),
+            st, _soh_cell(ix, r, "Wireless Active Date"),
+            _soh_cell(ix, r, "TPV Status"),
+            _soh_cell(ix, r, "City"),
+        ])
+        sl = st.lower()
+        fill = ("C6EFCE" if sl == "active"
+                else "FFC7CE" if "cancel" in sl or "disconnect" in sl
+                else "FFF2CC" if sl else None)
+        if fill:
+            for cell in ws[ws.max_row]:
+                cell.fill = PatternFill("solid", fgColor=fill)
+    for col_cells in ws.columns:
+        w = max((len(str(c.value or "")) for c in col_cells), default=8)
+        ws.column_dimensions[col_cells[0].column_letter].width = min(
+            max(w + 2, 9), 34)
+    ws.freeze_panes = "A2"
+    out = OUT_DIR / "Fiber Order Log {}.xlsx".format(
+        today.strftime("%m-%d-%Y"))
+    wb.save(out)
+    log(f"[fiber] order log (SARAPLUS, pulled {pulled_at:%H:%M}): "
+        f"{len(rows)} order(s)")
+    return out
+
+
+def build_pending_soh(ix, crew, today, pulled_at, log=print):
+    """Chase list off Raf's SaraPlus: no Wireless Active Date, not dead.
+    Splits into two images past 20 rows (Carlos's B2B rule) — both returned,
+    posted as one message."""
+    from automations.box_order_log import pending_png
+    from automations.box_order_log import pending as bp
+    COLS = ("Customer", "Order Date", "Days Waiting", "Lines", "Status")
+
+    class _Row:
+        def __init__(self, cells, status, rep, sale_date, business):
+            self.cells, self.status = cells, status
+            self.history = ()
+            self.rep, self.sale_date = rep, sale_date
+            self.fields = {"Rep Name": rep, "Business Name": business}
+
+    rows = []
+    for r in crew:
+        st = _soh_cell(ix, r, "Wireless Status")
+        sl = st.lower()
+        if _soh_cell(ix, r, "Wireless Active Date") or sl == "active" \
+                or "cancel" in sl or "disconnect" in sl:
+            continue
+        od = _parse_date(_soh_cell(ix, r, "Order Date"))
+        cust = _soh_cell(ix, r, "Customer Name")
+        rows.append(_Row((cust,
+                          od.strftime("%m/%d/%Y") if od else "",
+                          str((today - od).days) if od else "",
+                          _soh_cell(ix, r, "Wireless Line Count"),
+                          st or "\u2014"),
+                         sl, _soh_cell(ix, r, "User Name"), od, cust))
+    n = len(rows)
+    base = {"today": today,
+            "title": "Fiber — pending orders, not yet activated",
+            "columns": COLS,
+            "color_fn": lambda st, _h: "FFF2CC" if st else "",
+            }
+    sub = ("Crew orders on Raf's SaraPlus with no activation yet — {} as "
+           "of {} (pulled {}). Active and canceled excluded."
+           .format("{} order{}".format(n, bp.plural(n)) if n
+                   else "none right now",
+                   today.strftime("%B %d, %Y"), f"{pulled_at:%H:%M}"))
+    reps = bp.by_rep(rows)
+    outs = []
+    if n <= 20 or len(reps) < 2:
+        work = dict(base, count=n, subtitle=sub,
+                    sections=[{"key": "p", "title": None, "rows": rows,
+                               "reps": reps, "empty_note":
+                               "Nothing pending — every crew order is "
+                               "activated or closed."}])
+        out = OUT_DIR / "fiber_pending_orders.png"
+        pending_png.render(work, out)
+        outs = [out]
+    else:
+        acc, cut = 0, 1
+        for i, (_rep, rr) in enumerate(reps):
+            acc += len(rr)
+            if acc >= n / 2:
+                cut = i + 1
+                break
+        cut = min(cut, len(reps) - 1)
+        for i, part in enumerate((reps[:cut], reps[cut:]), 1):
+            prows = [x for _rep, rr in part for x in rr]
+            work = dict(base, count=len(prows),
+                        title=base["title"] + f" ({i} of 2)",
+                        subtitle=sub + f"  Part {i} of 2.",
+                        sections=[{"key": "p", "title": None,
+                                   "rows": prows, "reps": part,
+                                   "empty_note": ""}])
+            out = OUT_DIR / f"fiber_pending_orders_{i}.png"
+            pending_png.render(work, out)
+            outs.append(out)
+    log(f"[fiber] pending (SARAPLUS): {n} order(s), {len(outs)} image(s)")
+    return outs if len(outs) > 1 else outs[0]
+
+
 def build_order_log(cols, crew, today, log=print) -> Path:
-    """The crew's lines as a status-colored workbook."""
+    """The crew's lines as a status-colored workbook. SaraPlus relay first
+    (Carlos 2026-10-08: "lets make this come from sara plus instead"),
+    Tableau when the relay is missing or stale."""
+    soh = load_soh(log=log)
+    if soh:
+        return build_order_log_soh(soh[0], soh[1], today, soh[2], log=log)
     import openpyxl
     from openpyxl.styles import Font, PatternFill
 
@@ -272,8 +466,12 @@ def build_activation_png(cols, crew, today, log=print) -> Path:
         list(BUCKETS), rows, OUT_DIR / "fiber_activation_by_rep.png")
 
 
-def build_pending_png(cols, crew, today, log=print) -> Path:
-    """Chase list: sold in the last 31 days, not activated, not dead."""
+def build_pending_png(cols, crew, today, log=print):
+    """Chase list: sold in the last 31 days, not activated, not dead.
+    SaraPlus relay first; Tableau fallback."""
+    soh = load_soh(log=log)
+    if soh:
+        return build_pending_soh(soh[0], soh[1], today, soh[2], log=log)
     from automations.box_order_log import pending_png
     from automations.box_order_log import pending as bp
     i_od = cols.need("order date", "sp.order date")
@@ -471,9 +669,12 @@ def post_thread(artifacts, today, log=print) -> None:
         path = artifacts.get(sid)
         if not path or sid in state["posted"]:
             continue
-        client.files_upload_v2(channel=CHANNEL[1], thread_ts=ts,
-                               file=str(path), filename=Path(path).name,
-                               initial_comment=f"{emoji} *{title}*")
+        paths = list(path) if isinstance(path, (list, tuple)) else [path]
+        client.files_upload_v2(
+            channel=CHANNEL[1], thread_ts=ts,
+            initial_comment=f"{emoji} *{title}*",
+            file_uploads=[{"file": str(pp), "filename": Path(pp).name}
+                          for pp in paths])
         state["posted"].append(sid)
         sp.write_text(json.dumps(state))
         log(f"[fiber] posted {sid}")
@@ -485,10 +686,11 @@ def dm_previews(artifacts, user, log=print) -> None:
         path = artifacts.get(sid)
         if not path:
             continue
-        smp.dm_user_with_file(
-            Path(path), user=user, file_name=Path(path).name,
-            comment=f"{emoji} *{title}* — Fiber Metrics PREVIEW (crew only, "
-                    "not posted).")
+        for pp in (path if isinstance(path, (list, tuple)) else [path]):
+            smp.dm_user_with_file(
+                Path(pp), user=user, file_name=Path(pp).name,
+                comment=f"{emoji} *{title}* — Fiber Metrics PREVIEW (crew "
+                        "only, not posted).")
         log(f"[fiber] DM'd {sid}")
 
 

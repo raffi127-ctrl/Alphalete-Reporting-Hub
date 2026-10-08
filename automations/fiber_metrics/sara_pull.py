@@ -215,7 +215,9 @@ def main(argv=None) -> int:
     describe(data)
     if not a.no_push:
         from automations.rc_contact_sync.status_probe import _upload_bytes
-        ok = _upload_bytes(data, SOH_TAB, log=print)
+        stamped = (b"#pulled=" + dt.datetime.now().isoformat().encode()
+                   + b"\n" + data)
+        ok = _upload_bytes(stamped, SOH_TAB, log=print)
         print(f"[fib-sara] relay -> {SOH_TAB!r}: {ok}")
     print("=== done ===", flush=True)
     return 0
