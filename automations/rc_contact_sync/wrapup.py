@@ -230,10 +230,32 @@ def run(since: dt.date, until: dt.date, *, live: bool = False,
         % (len(customers), len(missing)))
 
     book = RC.address_book(token, contacts_ext)
-    reps = resolve_reps(book, sorted({c["rep"] for c in missing}), log=log)
+    rep_names = sorted({c["rep"] for c in missing})
+    reps = resolve_reps(book, rep_names, log=log)
     if find_reps_only:
         for rep, phone in sorted(reps.items()):
             log("  %-28s %s" % (titlecase_name(rep), phone))
+        # For every rep the book could NOT answer, show what it holds that
+        # shares a name token — the 0-of-21 run (2026-10-08) needs eyes on
+        # whether the reps are in there under other spellings or not at all.
+        unresolved = [r for r in rep_names if r not in reps]
+        if unresolved:
+            log("--- near matches for the unresolved (%d contact(s) in "
+                "the book) ---" % len(book))
+            toks = {w.lower() for r in unresolved for w in r.split()
+                    if len(w) >= 4}
+            hits = 0
+            for c in book:
+                name = _contact_name(c)
+                if any(t in name.lower() for t in toks):
+                    log("  book: %-30s %s" % (name, _contact_phone(c) or
+                                              "(no phone)"))
+                    hits += 1
+                    if hits >= 25:
+                        log("  … (capped at 25)")
+                        break
+            if not hits:
+                log("  (nothing in the book shares a name token with them)")
         print("=== done ===", flush=True)
         return 0
 
