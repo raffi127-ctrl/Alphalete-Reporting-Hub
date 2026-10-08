@@ -106,6 +106,28 @@ COL_BOX_DO_NOT_DISTURB  = "Do Not Disturb"
 # Both B2B grids carry this one, and it is NOT a talk-to: the lead was wrong,
 # so there was nobody there to talk to.
 COL_B2B_INACCURATE_LEAD = "Inaccurate Lead"
+# --- B2B, THE SECOND VOCABULARY (2026-10-08) --------------------------------
+# Overnight 10/7 -> 10/8 OwnerVille/TeleMapper replaced BOTH B2B grids'
+# disposition sets. Read off the live grids that morning (Roshan, Carlos and
+# Eveliz's machines relayed them; Raf's classic session served the same; Megan
+# confirmed on Carlos's own account, Column Visibility listing only these):
+#   B2B-BOX-Energy (16): Talk To, Come Back, Inaccessible, Inaccurate, DNK,
+#                        Sale, Presentation, Close
+#   B2B AT&T SBS (2):    Talk To, Presentation, Come Back, Client Acquired,
+#                        Inaccurate, DNK, No Contact, Qualifying Questions,
+#                        Close, Sara Plus, Customer Gave Review
+# The old constants above stay: every board before 10/8 was relayed in that
+# vocabulary and still has to render. Come Back / Sale / Inaccessible /
+# Presentation reuse the house constants (same strings after _norm).
+COL_TALK_TO             = "Talk To"              # plain, not "- Not Interested"
+COL_B2B_INACCURATE      = "Inaccurate"
+COL_DNK                 = "DNK"
+COL_CLOSE               = "Close"
+COL_B2B_CLIENT_ACQUIRED = "Client Acquired"
+COL_B2B_NO_CONTACT      = "No Contact"
+COL_B2B_QUALIFYING_QS   = "Qualifying Questions"
+COL_B2B_SARA_PLUS       = "Sara Plus"
+COL_B2B_CUSTOMER_REVIEW = "Customer Gave Review"
 # From Time Tracker (p=510 JSON), merged onto the disposition rows by badge ID.
 COL_GAPS                = "Gaps"               # count of gaps
 COL_TOTAL_GAPS          = "Total Gaps (min)"   # total gap minutes (int)
@@ -141,6 +163,11 @@ TALK_TO_PARTS = [
 COUNT_COLUMNS = {
     COL_TOTAL_LEADS_KNOCKED, COL_TOTAL_KNOCKS, COL_NO_ANSWER, COL_TALK_TO_NI,
     COL_PRES_NI, COL_COME_BACK, COL_SALE, COL_INACCESSIBLE, COL_DO_NOT_KNOCK,
+    # The 2026-10-08 B2B buckets: a rep who logged none shows 0 like every
+    # other disposition, not a blank cell (the first v2 board drew blanks).
+    COL_TALK_TO, COL_B2B_INACCURATE, COL_DNK, COL_CLOSE, COL_PRESENTATION,
+    COL_B2B_CLIENT_ACQUIRED, COL_B2B_NO_CONTACT, COL_B2B_QUALIFYING_QS,
+    COL_B2B_SARA_PLUS, COL_B2B_CUSTOMER_REVIEW,
 }
 
 DISP_TABLE = "table#table-dispositions"

@@ -37,17 +37,39 @@ def _cols(rows: List[Dict]) -> set:
     return seen
 
 
-def _signatures() -> Dict[str, Tuple[str, str]]:
-    """{campaign key: (label, the column only that campaign's grid carries)}.
+def _signatures() -> Dict[str, Tuple[str, Tuple[str, ...]]]:
+    """{campaign key: (label, columns ANY ONE of which proves this campaign)}.
 
-    Taken from the live grids that rashad_metrics captured, not invented here.
-    A campaign absent from this map is unverifiable and is allowed through.
+    Taken from the live grids, not invented here: the 2026-09-02 captures
+    (rashad_metrics) and the 2026-10-08 vocabulary OwnerVille replaced them
+    with (total_knocks.pull). A campaign absent from this map is unverifiable
+    and is allowed through.
     """
     from automations.total_knocks import pull as K
     return {
-        "b2b_att": ("B2B AT&T SBS", K.COL_B2B_CORP_NO_OPP),
-        "b2b_box": ("B2B-BOX-Energy", K.COL_BOX_OWNER_TALKED_TO),
+        "b2b_att": ("B2B AT&T SBS", (K.COL_B2B_CORP_NO_OPP,
+                                     K.COL_B2B_CLIENT_ACQUIRED,
+                                     K.COL_B2B_QUALIFYING_QS)),
+        "b2b_box": ("B2B-BOX-Energy", (K.COL_BOX_OWNER_TALKED_TO,
+                                       K.COL_BOX_CORP_NO_OPP)),
     }
+
+
+def _looks_like(campaign_key: str, have: set) -> bool:
+    """Does this column set carry one of the campaign's own columns? Box's
+    2026-10-08 grid has no column of its own -- its signature is DNK + plain
+    Talk To + Inaccessible with none of AT&T SBS's buckets."""
+    from automations.total_knocks.pull import _norm
+    from automations.total_knocks import pull as K
+    label, cols = _signatures()[campaign_key]
+    if any(_norm(c) in have for c in cols):
+        return True
+    if campaign_key == "b2b_box":
+        att_cols = _signatures()["b2b_att"][1]
+        return (_norm(K.COL_DNK) in have and _norm(K.COL_TALK_TO) in have
+                and _norm(K.COL_INACCESSIBLE) in have
+                and not any(_norm(c) in have for c in att_cols))
+    return False
 
 
 def check(campaign_key: str, rows: List[Dict]) -> Optional[str]:
@@ -59,25 +81,25 @@ def check(campaign_key: str, rows: List[Dict]) -> Optional[str]:
     if not rows:
         return None
     sigs = _signatures()
-    want = sigs.get((campaign_key or "").strip().lower())
+    key = (campaign_key or "").strip().lower()
+    want = sigs.get(key)
     if not want:
         return None                      # nothing we can prove
-    from automations.total_knocks.pull import _norm
-    label, column = want
+    label = want[0]
     have = _cols(rows)
     if not have:
         # Rows we could not read columns out of at all. That is a malformed
         # relay, not a campaign mismatch, and calling it one would blame the
         # wrong thing -- this refuses only what it can PROVE.
         return None
-    if _norm(column) in have:
+    if _looks_like(key, have):
         return None
 
     # Which campaign IS this, if we can tell? Naming it is the difference
     # between "something is wrong" and a person knowing what happened.
     got = "a grid with none of the campaign signatures we know"
-    for key, (other_label, other_col) in sigs.items():
-        if key != campaign_key and _norm(other_col) in have:
+    for other, (other_label, _) in sigs.items():
+        if other != key and _looks_like(other, have):
             got = "%s-shaped" % other_label
             break
     return ("this office is enrolled as %s, but the rows it relayed are %s. "

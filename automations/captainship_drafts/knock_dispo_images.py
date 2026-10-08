@@ -715,8 +715,8 @@ def render_owner_daily_board(target: dt.date, rows: list, board_rows: list,
                            R.WIRELESS_KNOCKS_HEADERS),
         R.SHAPE_ENERGYWELL: (R.ENERGYWELL_KNOCKS_COLUMNS,
                              R.ENERGYWELL_KNOCKS_HEADERS),
-        R.SHAPE_B2B_ATT: (R.B2B_ATT_KNOCKS_COLUMNS, R.B2B_ATT_KNOCKS_HEADERS),
-        R.SHAPE_B2B_BOX: (R.B2B_BOX_KNOCKS_COLUMNS, R.B2B_BOX_KNOCKS_HEADERS),
+        R.SHAPE_B2B_ATT: R.b2b_columns(shape, rows),
+        R.SHAPE_B2B_BOX: R.b2b_columns(shape, rows),
     }.get(shape)
     if cols is None:
         return R.render_total_knocks(

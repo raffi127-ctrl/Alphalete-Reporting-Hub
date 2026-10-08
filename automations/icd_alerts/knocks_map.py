@@ -100,8 +100,14 @@ def talk_to_parts(rec: Dict) -> "list | None":
     None means "this shape has no talk-to number", which is a real answer for
     a wireless or gaps-only grid -- not a failure to recognise it.
     """
-    from automations.total_knocks.render import knocks_shape
-    return _parts_by_shape().get(knocks_shape([rec]))
+    from automations.total_knocks.render import knocks_shape, b2b_vocab
+    from automations.total_knocks.render import SHAPE_B2B_ATT, SHAPE_B2B_BOX
+    shape = knocks_shape([rec])
+    if shape in (SHAPE_B2B_ATT, SHAPE_B2B_BOX) and b2b_vocab([rec]) == "v2":
+        from automations.rashad_metrics import knocks_pull as KP
+        return list(KP._B2B_ATT_TALK_TO_PARTS_V2 if shape == SHAPE_B2B_ATT
+                    else KP._B2B_BOX_TALK_TO_PARTS_V2)
+    return _parts_by_shape().get(shape)
 
 
 def to_rows(raw: List[Dict[str, str]],

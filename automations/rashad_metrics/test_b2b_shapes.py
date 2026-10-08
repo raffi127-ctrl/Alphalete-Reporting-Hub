@@ -432,9 +432,13 @@ def test_the_box_board_draws_ryans_order():
     """Positional, not just 'contains' -- the whole request was the ORDER."""
     # The "#" column is prepended by number_rows after the reorder, which is
     # exactly where Ryan asked for it ("# of Reps" first).
+    drawn = _drawn_box_header()
+    # The order list also names the 2026-10-08 vocabulary's buckets, which a
+    # v1 board does not carry -- so the check is the ORDER of what is drawn.
     want = [R.COL_NUM_HEADER] + [R.COMBINED_KNOCKS_DISPLAY.get(c, c)
-                                 for c in R.BOX_BOARD_ORDER]
-    assert _drawn_box_header() == want
+                                 for c in R.BOX_BOARD_ORDER
+                                 if R.COMBINED_KNOCKS_DISPLAY.get(c, c) in drawn]
+    assert drawn == want
 
 
 def test_avg_doors_per_rep_is_gone_from_box_only():

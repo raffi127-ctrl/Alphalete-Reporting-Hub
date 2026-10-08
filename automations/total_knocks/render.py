@@ -40,6 +40,9 @@ from automations.total_knocks.pull import (
     COL_BOX_TALKED_TO, COL_BOX_OWNER_TALKED_TO, COL_BOX_CONTRACT_SIGNED,
     COL_BOX_BILL_NO_SALE, COL_BOX_AM_COME_BACK, COL_BOX_CORP_NO_OPP,
     COL_BOX_DO_NOT_DISTURB,
+    COL_TALK_TO, COL_B2B_INACCURATE, COL_DNK, COL_CLOSE, COL_PRESENTATION,
+    COL_B2B_CLIENT_ACQUIRED, COL_B2B_NO_CONTACT, COL_B2B_QUALIFYING_QS,
+    COL_B2B_SARA_PLUS, COL_B2B_CUSTOMER_REVIEW,
     SHEET_COLUMNS,
     _norm,
 )
@@ -539,6 +542,52 @@ B2B_BOX_KNOCKS_HEADERS.insert(
     B2B_BOX_KNOCKS_HEADERS.index(COL_TALK_TO_PER_REP) + 1,
     COL_BOX_ACTUAL_TALK_TO_PER_REP)
 
+# THE SECOND VOCABULARY (2026-10-08). OwnerVille replaced both B2B grids'
+# disposition sets overnight; see total_knocks.pull for the live headers. The
+# v1 lists above stay for every board relayed before that morning. Same
+# derived columns, same Box-only Actual Talk To's; the subtrahends are the
+# no-contact buckets this vocabulary has (Inaccessible, Inaccurate -- there
+# is no Corp bucket any more). The subtraction below reads whichever of the
+# two lists the row shape actually carries.
+B2B_ATT_KNOCKS_COLUMNS_V2 = [COL_REP, COL_TOTAL_LEADS_KNOCKED,
+                             COL_TOTAL_KNOCKS, COL_TOTAL_TALK_TO,
+                             COL_FIRST_KNOCK, COL_LAST_KNOCK,
+                             COL_GAPS, COL_TOTAL_GAPS,
+                             COL_TALK_TO, COL_PRESENTATION,
+                             COL_B2B_QUALIFYING_QS, COL_B2B_CLIENT_ACQUIRED,
+                             COL_CLOSE, COL_B2B_SARA_PLUS,
+                             COL_B2B_CUSTOMER_REVIEW, COL_COME_BACK,
+                             COL_B2B_NO_CONTACT, COL_B2B_INACCURATE, COL_DNK]
+B2B_ATT_KNOCKS_HEADERS_V2 = _with_derived(B2B_ATT_KNOCKS_COLUMNS_V2)
+B2B_BOX_KNOCKS_COLUMNS_V2 = [COL_REP, COL_TOTAL_LEADS_KNOCKED,
+                             COL_TOTAL_KNOCKS, COL_TOTAL_TALK_TO,
+                             COL_FIRST_KNOCK, COL_LAST_KNOCK,
+                             COL_GAPS, COL_TOTAL_GAPS,
+                             COL_TALK_TO, COL_PRESENTATION, COL_CLOSE,
+                             COL_SALE, COL_COME_BACK, COL_INACCESSIBLE,
+                             COL_B2B_INACCURATE, COL_DNK]
+BOX_ACTUAL_TALK_TO_SUBTRAHENDS_V2 = [COL_INACCESSIBLE, COL_B2B_INACCURATE]
+B2B_BOX_KNOCKS_HEADERS_V2 = _with_derived(B2B_BOX_KNOCKS_COLUMNS_V2)
+B2B_BOX_KNOCKS_HEADERS_V2.insert(
+    B2B_BOX_KNOCKS_HEADERS_V2.index(COL_TOTAL_KNOCKS) + 1, COL_BOX_ACTUAL_TALK_TO)
+B2B_BOX_KNOCKS_HEADERS_V2.insert(
+    B2B_BOX_KNOCKS_HEADERS_V2.index(COL_TALK_TO_PER_REP) + 1,
+    COL_BOX_ACTUAL_TALK_TO_PER_REP)
+
+
+def _box_subtrahends_present(have) -> list:
+    """The no-contact buckets to take off Total Knocks, on whichever
+    vocabulary these columns are. `have` is any container of column names."""
+    v1 = [c for c in BOX_ACTUAL_TALK_TO_SUBTRAHENDS if c in have]
+    v2 = [c for c in BOX_ACTUAL_TALK_TO_SUBTRAHENDS_V2 if c in have]
+    # A v1 grid carries all three v1 buckets; a v2 grid carries both v2 ones
+    # and Inaccessible is in both lists -- so prefer the complete set.
+    if len(v1) == len(BOX_ACTUAL_TALK_TO_SUBTRAHENDS):
+        return v1
+    if len(v2) == len(BOX_ACTUAL_TALK_TO_SUBTRAHENDS_V2):
+        return v2
+    return v1 or v2
+
 # THE BOX BOARD'S LEFT-TO-RIGHT ORDER (Ryan McSpadden, 2026-09-15, typed out
 # column by column; Megan: "you can do whatever you want -- Carlos / Abel /
 # Roshan all get what you do", so it is every Box board, not just his).
@@ -572,6 +621,12 @@ BOX_BOARD_ORDER = [
     COL_BOX_OWNER_TALKED_TO,
     COL_BOX_BILL_NO_SALE,
     COL_BOX_CONTRACT_SIGNED,
+    # 2026-10-08 vocabulary, slotted where their v1 cousins sat; Ryan has not
+    # re-typed the order for these yet.
+    COL_TALK_TO,
+    COL_PRESENTATION,
+    COL_CLOSE,
+    COL_SALE,
     COL_GAPS,
     COL_TOTAL_GAPS,
     COL_HRS_KNOCKING,
@@ -582,6 +637,8 @@ BOX_BOARD_ORDER = [
     COL_NOT_INTERESTED,
     COL_BOX_DO_NOT_DISTURB,
     COL_BOX_AM_COME_BACK,
+    COL_B2B_INACCURATE,
+    COL_DNK,
 ]
 # "Average doors per rep we can remove for Box I think?" (Ryan, same message).
 # Dropped for BOX ONLY -- every other board still carries it.
@@ -1785,8 +1842,8 @@ def _actual_talk_to(base: list, src: dict) -> str:
     negative, the grid disagrees with itself and the board should say so
     rather than round it away to a plausible 0.
     """
-    need = [COL_TOTAL_KNOCKS] + BOX_ACTUAL_TALK_TO_SUBTRAHENDS
-    if any(c not in src for c in need):
+    subs = _box_subtrahends_present(src)
+    if COL_TOTAL_KNOCKS not in src or not subs:
         return ""
     def _n(c) -> int:
         v = str(base[src[c]]).strip().replace(",", "")
@@ -1794,8 +1851,7 @@ def _actual_talk_to(base: list, src: dict) -> str:
             return int(float(v)) if v else 0
         except ValueError:
             return 0
-    return str(_n(COL_TOTAL_KNOCKS)
-               - sum(_n(c) for c in BOX_ACTUAL_TALK_TO_SUBTRAHENDS))
+    return str(_n(COL_TOTAL_KNOCKS) - sum(_n(c) for c in subs))
 
 
 def _combined_sub(header: list[str], rows: list[list[str]],
@@ -1947,7 +2003,7 @@ def _box_actual_total(sub: list, out_cols: list) -> "int | str":
         return (sum(_i(r[out_cols.index(k)]) for r in sub)
                 if k in out_cols else 0)
     return _col(COL_TOTAL_KNOCKS) - sum(
-        _col(k) for k in BOX_ACTUAL_TALK_TO_SUBTRAHENDS)
+        _col(k) for k in _box_subtrahends_present(out_cols))
 
 
 def _combined_totals(label: str, sub: list[list[str]],
@@ -2144,6 +2200,24 @@ SHAPE_B2B_ATT = "b2b_att"      # B2B AT&T SBS (2): Corp Franchise buckets
 SHAPE_B2B_BOX = "b2b_box"      # B2B-BOX-Energy (16): Owner Talked To, Contract
 
 
+def b2b_vocab(rows: "list[dict]") -> str:
+    """"v2" when the rows carry the 2026-10-08 buckets, else "v1"."""
+    first = rows[0] if rows else {}
+    return "v2" if (COL_DNK in first or COL_B2B_CLIENT_ACQUIRED in first
+                    or COL_B2B_INACCURATE in first) else "v1"
+
+
+def b2b_columns(shape: str, rows: "list[dict]") -> "tuple[list, list]":
+    """(base columns, output headers) for a B2B shape, on the vocabulary the
+    rows were relayed in."""
+    v2 = b2b_vocab(rows) == "v2"
+    if shape == SHAPE_B2B_ATT:
+        return ((B2B_ATT_KNOCKS_COLUMNS_V2, B2B_ATT_KNOCKS_HEADERS_V2) if v2
+                else (B2B_ATT_KNOCKS_COLUMNS, B2B_ATT_KNOCKS_HEADERS))
+    return ((B2B_BOX_KNOCKS_COLUMNS_V2, B2B_BOX_KNOCKS_HEADERS_V2) if v2
+            else (B2B_BOX_KNOCKS_COLUMNS, B2B_BOX_KNOCKS_HEADERS))
+
+
 def knocks_shape(rows: "list[dict]") -> str:
     """Which of the three board shapes `rows` is.
 
@@ -2164,6 +2238,13 @@ def knocks_shape(rows: "list[dict]") -> str:
     if COL_B2B_CORP_NO_OPP in first:
         return SHAPE_B2B_ATT
     if COL_BOX_OWNER_TALKED_TO in first or COL_BOX_CORP_NO_OPP in first:
+        return SHAPE_B2B_BOX
+    # The 2026-10-08 vocabulary: AT&T SBS by its own buckets; Box by DNK +
+    # plain Talk To + Inaccessible without any of those (the house grid says
+    # "Do Not Knock" and "Talk To - Not Interested", so it never matches).
+    if COL_B2B_CLIENT_ACQUIRED in first or COL_B2B_QUALIFYING_QS in first:
+        return SHAPE_B2B_ATT
+    if COL_DNK in first and COL_TALK_TO in first and COL_INACCESSIBLE in first:
         return SHAPE_B2B_BOX
     # Energy Wells NEXT: it has no Talk-To split either, so the wireless test
     # below would claim it and its board would lose VL and Presentation.
@@ -2264,10 +2345,7 @@ def render_knocks_boards(target: dt.date, *, rows: "list[dict]",
         # numbers have no column to sit under on a B2B board (config.compares
         # is False for form-enrolled offices anyway, so this is belt and
         # braces).
-        base = (B2B_ATT_KNOCKS_COLUMNS if shape == SHAPE_B2B_ATT
-                else B2B_BOX_KNOCKS_COLUMNS)
-        out = (B2B_ATT_KNOCKS_HEADERS if shape == SHAPE_B2B_ATT
-               else B2B_BOX_KNOCKS_HEADERS)
+        base, out = b2b_columns(shape, rows)
         return ([render_total_knocks(
             target, rows=rows, out_dir=out_dir, rate_columns=rate_columns,
             knocks_green_at=knocks_green_at,
