@@ -36,7 +36,8 @@ def main(argv=None) -> int:
                  if any("rep" in str(c).strip().lower() for c in r))
     header = [str(c).strip() for c in rows[hdr_i]]
     data = rows[hdr_i + 1:]
-    print("OL HEADER: " + " | ".join(header))
+    for i in range(0, len(header), 6):
+        print(f"OLH{i // 6}: " + " | ".join(header[i:i + 6]))
     norm = [h.lower() for h in header]
 
     def col(*cands):
@@ -57,7 +58,21 @@ def main(argv=None) -> int:
 
     crew = guests.roster("Rafael Hidalgo", "Carlos Hidalgo")
     print(f"CREW list ({len(crew)}): {', '.join(crew)}")
-    mine, rest = guests.match_rows(raf, crew) if raf else ([], [])
+
+    # guests.match_rows wants OWNERVILLE dict rows; these are csv lists —
+    # match the Rep cell with the same token tolerance (middle names etc.).
+    crew_toks = [guests._tokens(n) for n in crew]
+
+    def _is_crew(name: str) -> bool:
+        t = guests._tokens(name)
+        return any(guests._subseq(ct, t) or guests._subseq(t, ct)
+                   for ct in crew_toks)
+
+    mine, rest = [], []
+    for r in raf:
+        nm = str(r[i_rep]).strip() if i_rep is not None and len(r) > i_rep \
+            else ""
+        (mine if nm and _is_crew(nm) else rest).append(r)
     per = collections.Counter(str(r[i_rep]).strip() for r in mine
                               if i_rep is not None and len(r) > i_rep)
     print(f"CREW rows={len(mine)} (other rafael rows={len(rest)})")
@@ -81,7 +96,8 @@ def main(argv=None) -> int:
                     if any("total $" in str(c).lower() for c in r))
     dd_header = [str(c).strip() for c in dd_rows[dd_hdr_i]]
     dd_data = dd_rows[dd_hdr_i + 1:]
-    print("DD HEADER: " + " | ".join(dd_header))
+    for i in range(0, len(dd_header), 6):
+        print(f"DDH{i // 6}: " + " | ".join(dd_header[i:i + 6]))
     print(f"DD rows={len(dd_data)}")
 
     # ---- leg 3: Production Lookup join ---------------------------------
