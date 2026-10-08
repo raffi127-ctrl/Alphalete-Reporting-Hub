@@ -965,6 +965,77 @@ class TheWeakerChannelIsCoached(unittest.TestCase):
         self.assertNotIn("Bookings From a Call", it)
 
 
+class TheChannelGapOverTheRun(unittest.TestCase):
+    """Megan 2026-10-08. Dani Pena booked 8, 10, 10, 8 off calls, so
+    the single-week floor withheld the coaching every week while the
+    run said the same thing six weeks straight."""
+
+    WEEKS = ["w0904", "w0911", "w0918", "w0925"]
+
+    def _person(self, *per_week):
+        base = {"texts": 800, "house": 0, "dodged": 0, "typing": 0,
+                "far_out": 2, "matched": 30,
+                "issues": __import__("collections").Counter()}
+        wk = {}
+        for name, over in zip(self.WEEKS, per_week):
+            d = dict(base, **over)
+            d["booked"] = d["silent"] + d["talked"]
+            d["shown"] = d["silent_shown"] + d["talked_shown"]
+            wk[name] = d
+        return {"display": "X", "weeks": wk}
+
+    THIN = {"silent": 8, "silent_shown": 1, "talked": 20,
+            "talked_shown": 13}
+
+    def _items(self, person):
+        return {i["area"]: i for i in S.work_on(person, self.WEEKS)}
+
+    def test_a_thin_week_alone_says_nothing(self):
+        """One week of 8 call bookings is not evidence."""
+        one = {"display": "X", "weeks":
+               {k: v for k, v in self._person(self.THIN)["weeks"].items()}}
+        got = {i["area"]: i for i in S.work_on(one, self.WEEKS[:1])}
+        self.assertNotIn("Bookings From a Call", got)
+
+    def test_the_same_thin_weeks_pooled_do_say_it(self):
+        it = self._items(self._person(*[self.THIN] * 4))
+        self.assertIn("Bookings From a Call", it)
+        do = it["Bookings From a Call"]["do"]
+        self.assertIn("Text is your stronger channel", do)
+        self.assertIn("4 of the 4 weeks", do)
+
+    def test_it_counts_the_weeks_rather_than_claiming_all_of_them(self):
+        """A week that ran the other way must not be papered over."""
+        # Retention still grades well that week, or the retention
+        # item carries the diagnosis and this one is suppressed.
+        flipped = dict(self.THIN, silent_shown=7, talked_shown=10)
+        it = self._items(self._person(self.THIN, self.THIN,
+                                      self.THIN, flipped))
+        do = it["Bookings From a Call"]["do"]
+        self.assertIn("3 of the 4 weeks", do)
+
+    def test_a_run_with_no_real_gap_is_left_alone(self):
+        even = {"silent": 10, "silent_shown": 6, "talked": 20,
+                "talked_shown": 13}
+        self.assertNotIn("Bookings From a Call",
+                         self._items(self._person(*[even] * 4)))
+
+    def test_too_few_calls_even_pooled_stays_quiet(self):
+        rare = {"silent": 1, "silent_shown": 0, "talked": 25,
+                "talked_shown": 16}
+        self.assertNotIn("Bookings From a Call",
+                         self._items(self._person(*[rare] * 4)))
+
+    def test_a_fat_week_still_uses_that_week_not_the_run(self):
+        fat = {"silent": 30, "silent_shown": 9, "talked": 30,
+               "talked_shown": 27}
+        do = self._items(self._person(self.THIN, self.THIN,
+                                      self.THIN, fat))
+        self.assertIn("by a mile", do["Bookings From a Call"]["do"])
+        self.assertNotIn("Across the last",
+                         do["Bookings From a Call"]["do"])
+
+
 class BookingLeadPraise(unittest.TestCase):
     """Megan 2026-10-07: "7% still isn't a high number - this is just
     a great job at being consistent in not booking more than 24 hours

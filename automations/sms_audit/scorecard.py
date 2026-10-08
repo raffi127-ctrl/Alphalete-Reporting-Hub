@@ -382,6 +382,50 @@ def has_convos(week, *only):
     return any(week.get(k) for k in (only or CONVO_LISTS))
 
 
+def channel_run(person, weeks):
+    """Call vs text show rates pooled over every week we have.
+
+    Megan 2026-10-08. One week is often too thin to judge a channel:
+    Dani Pena booked 8, 10, 10, 8 off calls, so the single-week test
+    (MIN_MATCHED) withheld the coaching every time, while his run said
+    the same thing six weeks straight - 30% and 20% by call against
+    53%, 65% and 76% by text. Pooling counts, not averaging rates, so a
+    busy week carries the weight it should.
+
+    Returns None when the pooled call bookings are still too few to
+    mean anything. [[feedback_empty_means_proven_zero]]"""
+    tot = {"silent": 0, "silent_shown": 0, "talked": 0, "talked_shown": 0}
+    span = 0
+    for w in weeks:
+        d = person["weeks"].get(w)
+        if not d:
+            continue
+        span += 1
+        for k in tot:
+            tot[k] += d.get(k) or 0
+    if tot["silent"] < MIN_MATCHED or tot["talked"] < MIN_MATCHED:
+        return None
+    # How often it ran the same way, counted rather than assumed.
+    # "The gap held every week" is a claim about every week, and
+    # pooled totals cannot support it. [[feedback_read_actual_content]]
+    same, of = 0, 0
+    for w in weeks:
+        d = person["weeks"].get(w)
+        if not d or not (d.get("silent") and d.get("talked")):
+            continue
+        c = _rate(d, "silent_shown", "silent")
+        t = _rate(d, "talked_shown", "talked")
+        if c is None or t is None:
+            continue
+        of += 1
+        if t > c:
+            same += 1
+    return {"call": _rate(tot, "silent_shown", "silent"),
+            "text": _rate(tot, "talked_shown", "talked"),
+            "calls": tot["silent"], "weeks": span,
+            "same_way": same, "measurable": of}
+
+
 def work_on(person, weeks):
     """[(area, now, before, grade, what to do)] worst first.
 
@@ -500,6 +544,27 @@ def work_on(person, weeks):
                 if before and _rate(before, "silent_shown",
                                     "silent") is not None else None,
                 goal="within 10 points of your text bookings")
+        elif not shown_above and not bot:
+            # Too thin THIS week. The run is not: a gap that holds
+            # for six weeks is more evidence than one week of it,
+            # not less (Megan 2026-10-08).
+            run = channel_run(person, got)
+            if run and run["text"] - run["call"] >= CHANNEL_GAP:
+                add("Bookings From a Call",
+                    "{:.0f}% over {} weeks".format(run["call"],
+                                                   run["weeks"]),
+                    GC._band(run["call"], 55, 48, 40),
+                    "Text is your stronger channel. Across the last "
+                    "{} weeks {:.0f}% of your text bookings showed up "
+                    "against {:.0f}% off a call. No single week has "
+                    "enough calls to judge on its own, and it ran that "
+                    "way in {} of the {} weeks there were both. The "
+                    "phone call is what needs work: build more of the "
+                    "relationship before you set the Zoom, so they turn "
+                    "up for it.".format(
+                        run["weeks"], run["text"], run["call"],
+                        run["same_way"], run["measurable"]),
+                    goal="within 10 points of your text bookings")
 
     if (now.get("texts") or 0) >= MIN_TEXTS:
         per100 = 100.0 * (now.get("typing") or 0) / now["texts"]
