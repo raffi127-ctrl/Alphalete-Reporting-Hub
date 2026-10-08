@@ -70,6 +70,17 @@ CHANNELS: Dict[str, str] = {
     "Ryan McSpadden": "C0794R5TLG5",          # #ryan-mcspaddens-office-recruiting-22820
     "Salik Mallick": "C05BPNNJGE7",           # #salik-hammad-recruiting-office-21328
     "Samuel Acay": "C0C6YEBS550",             # #samuel-acay-recruiting
+    # Eve, 2026-10-07 (the channels where Camila filed each script)
+    "Blue Mendoza": "C0BF3GWFJ73",
+    "Christopher Williams": "C0AUE5NCE90",
+    "Cody Cannon": "C0ATYN2L73R",
+    "David Robinson": "C0C4WPPHD99",          # Dana Iverson's office
+    "Ellen Dent": "C0BFQSP25T7",
+    "JC Pascual": "C0AUG01KCN6",
+    "Joe Logan": "C0AT40DEA3G",
+    "Juan Botero": "C0BEULL42LA",
+    "Steve McElwee": "C0AUCJ65UFP",
+    "Tre Mitchell": "C0AUG0B5SKC",            # Lamar (Tre) Mitchell
 }
 # Several ZOOMS INFO owners, one office: one post, under this name
 SAME_OFFICE = {"Raf Hidalgo 2nd funnel": "Rafael Hidalgo",
