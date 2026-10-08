@@ -112,6 +112,8 @@ def main(argv=None) -> int:
                  for r in dd_data if len(r) > i_pl and str(r[i_pl]).strip()]
         hit = sum(1 for v in dd_pl if v in ol_spm)
         print(f"JOIN: {hit}/{len(dd_pl)} DD rows match an order-log SPM")
+        print("JOINSAMPLE dd_pl: " + " ; ".join(sorted(dd_pl)[:4]))
+        print("JOINSAMPLE ol_spm: " + " ; ".join(sorted(ol_spm)[:4]))
     else:
         print(f"JOIN: columns missing (Production Lookup={i_pl}, SPM={i_spm})")
     print("=== done ===", flush=True)
