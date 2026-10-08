@@ -302,7 +302,9 @@
     "key": "tre",
     "label": "Tre's Local Office",
     "owner": "Tre Mitchell",
-    "channel_ids": ["C0C7GKSRTQW"],
+    "channel_ids": [
+      "C0C7GKSRTQW"
+    ],
     "trackers": [
       "att_country",
       "att_country_internet_only",
