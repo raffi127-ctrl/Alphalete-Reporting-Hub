@@ -13688,7 +13688,7 @@
   "valeria_metrics": {
    "order": 7.92,
    "machine": "Lucy 2",
-   "on_scheduler": false,
+   "on_scheduler": true,
    "display_name": "Valeria's B2B Metrics (altura-sales)",
    "source_type": "tableau",
    "data_sources": [
@@ -13724,7 +13724,7 @@
     "report_id": "valeria_metrics"
    },
    "_onboarded": true,
-   "_note": "B2B metrics for valeria (Valeria Tristan, Altura Marketing). Wired by hand 2026-10-08, modelled on luke_metrics. on_scheduler false until a dry run on Lucy 2 proves it; channel comes from her Lucy ECO sign-up. Hub: the consolidated b2b-metrics card."
+   "_note": "B2B metrics for valeria (Valeria Tristan, Altura Marketing). Wired by hand 2026-10-08, modelled on luke_metrics. on_scheduler true after the 2026-10-08 16:19 capture run on Lucy 2 rendered 5 of 7 boards (activation_rate: no data yet; churn boards come from the shared churn pull once she is added there); channel comes from her Lucy ECO sign-up. Hub: the consolidated b2b-metrics card."
   }
  },
  "read_only_standalone": {
