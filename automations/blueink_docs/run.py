@@ -741,8 +741,7 @@ def _main(argv=None) -> int:
                       "Blue Ink, so MONDAY'S SEND would fail. Raising it now "
                       "rather than on Monday morning.")
                 session_alert.alert_dead(
-                    exc, what_failed="Monday's 7:30am send (the sweep itself "
-                                     "is unaffected -- it reads via the API)",
+                    exc, what_failed="Monday's 7:30am send",
                     send_at_risk=True, dry_run=not args.slack)
             else:
                 print(f"\n(couldn't check send-readiness: {exc})")

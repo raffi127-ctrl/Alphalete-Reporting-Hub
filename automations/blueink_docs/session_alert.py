@@ -99,7 +99,7 @@ def alert_dead(exc: BaseException, *, what_failed: str,
             title="Blue Ink session on %s has expired" % machine,
             channel_line="*Blue Ink* — the session on %s expired" % machine,
             body=[
-                "%s can't read Blue Ink, so **%s is doing nothing** and will "
+                "%s can't read Blue Ink, so *%s is doing nothing* and will "
                 "keep doing nothing until somebody signs in again." % (
                     machine, what_failed),
                 _STAKES_SEND if send_at_risk else _STAKES_SWEEP,
