@@ -8185,6 +8185,117 @@
    },
    "_timeout_note": "was 20m. TIMEOUT RAISED 2026-09-07 (Megan): a full run is 151 image uploads across 18 channels plus the capture of 9 Tableau views. The old cap allowed ~17s per upload and nothing for the capture, so a slow-Slack morning killed the run partway through the channel list and the boards that never posted raised no alert at all (only the ONE that did posted an incident). Measured that morning: ~58s per upload, i.e. ~146 min for a full run. Same fix and same reasoning as alphalete_production 3ccbf12 ('35 min, que es lo que tarda subir 18 imagenes a dos canales'). The cap is a ceiling, not a schedule: a healthy morning still finishes in ~20 min and returns the queue immediately."
   },
+  "tableau_screenshots_settle_0830": {
+   "order": 25.1,
+   "on_scheduler": true,
+   "machine": "Lucy 3",
+   "_note": "Half-hourly EARLY retry for boards the MORNING run held (Megan 2026-10-08: \"we need it to run sooner not after 10\"). 10/8 and 10/1: quantum_fiber held at dawn with Wednesday half-loaded; at 10:12 it read 83 of a normal 173, i.e. the data was trickling in all morning while the first settle pass waited until 10:00. These slots close the 08:00-10:00 gap left after the Box catch-up. Not before 08:30 on purpose: --settle is a late-only run and also selects Box, so it must not fire before Box's own gated catch-up (08:00 fail-open floor); order 25.x sorts it behind tableau_screenshots_box for the same reason. A pass with nothing held is a no-op. Shares the settle Hub card via hub_publish.",
+   "display_name": "Tableau Country Trackers \u2014 settle (8:30am)",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.tableau_screenshots.run"
+   ],
+   "base_args": [
+    "--settle",
+    "--text-trackers"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ],
+    "not_before": "08:30"
+   },
+   "priority": "P2",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 45,
+   "verify": {
+    "type": "manifest",
+    "report_id": "tableau-screenshots-settle"
+   },
+   "_timeout_note": "was 20m. TIMEOUT RAISED 2026-09-07 (Megan): a full run is 151 image uploads across 18 channels plus the capture of 9 Tableau views. The old cap allowed ~17s per upload and nothing for the capture, so a slow-Slack morning killed the run partway through the channel list and the boards that never posted raised no alert at all (only the ONE that did posted an incident). Measured that morning: ~58s per upload, i.e. ~146 min for a full run. Same fix and same reasoning as alphalete_production 3ccbf12 ('35 min, que es lo que tarda subir 18 imagenes a dos canales'). The cap is a ceiling, not a schedule: a healthy morning still finishes in ~20 min and returns the queue immediately."
+  },
+  "tableau_screenshots_settle_09": {
+   "order": 25.2,
+   "on_scheduler": true,
+   "machine": "Lucy 3",
+   "_note": "Half-hourly EARLY retry for boards the MORNING run held (Megan 2026-10-08: \"we need it to run sooner not after 10\"). 10/8 and 10/1: quantum_fiber held at dawn with Wednesday half-loaded; at 10:12 it read 83 of a normal 173, i.e. the data was trickling in all morning while the first settle pass waited until 10:00. These slots close the 08:00-10:00 gap left after the Box catch-up. Not before 08:30 on purpose: --settle is a late-only run and also selects Box, so it must not fire before Box's own gated catch-up (08:00 fail-open floor); order 25.x sorts it behind tableau_screenshots_box for the same reason. A pass with nothing held is a no-op. Shares the settle Hub card via hub_publish.",
+   "display_name": "Tableau Country Trackers \u2014 settle (9am)",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.tableau_screenshots.run"
+   ],
+   "base_args": [
+    "--settle",
+    "--text-trackers"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ],
+    "not_before": "09:00"
+   },
+   "priority": "P2",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 45,
+   "verify": {
+    "type": "manifest",
+    "report_id": "tableau-screenshots-settle"
+   },
+   "_timeout_note": "was 20m. TIMEOUT RAISED 2026-09-07 (Megan): a full run is 151 image uploads across 18 channels plus the capture of 9 Tableau views. The old cap allowed ~17s per upload and nothing for the capture, so a slow-Slack morning killed the run partway through the channel list and the boards that never posted raised no alert at all (only the ONE that did posted an incident). Measured that morning: ~58s per upload, i.e. ~146 min for a full run. Same fix and same reasoning as alphalete_production 3ccbf12 ('35 min, que es lo que tarda subir 18 imagenes a dos canales'). The cap is a ceiling, not a schedule: a healthy morning still finishes in ~20 min and returns the queue immediately."
+  },
+  "tableau_screenshots_settle_0930": {
+   "order": 25.3,
+   "on_scheduler": true,
+   "machine": "Lucy 3",
+   "_note": "Half-hourly EARLY retry for boards the MORNING run held (Megan 2026-10-08: \"we need it to run sooner not after 10\"). 10/8 and 10/1: quantum_fiber held at dawn with Wednesday half-loaded; at 10:12 it read 83 of a normal 173, i.e. the data was trickling in all morning while the first settle pass waited until 10:00. These slots close the 08:00-10:00 gap left after the Box catch-up. Not before 08:30 on purpose: --settle is a late-only run and also selects Box, so it must not fire before Box's own gated catch-up (08:00 fail-open floor); order 25.x sorts it behind tableau_screenshots_box for the same reason. A pass with nothing held is a no-op. Shares the settle Hub card via hub_publish.",
+   "display_name": "Tableau Country Trackers \u2014 settle (9:30am)",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.tableau_screenshots.run"
+   ],
+   "base_args": [
+    "--settle",
+    "--text-trackers"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ],
+    "not_before": "09:30"
+   },
+   "priority": "P2",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 45,
+   "verify": {
+    "type": "manifest",
+    "report_id": "tableau-screenshots-settle"
+   },
+   "_timeout_note": "was 20m. TIMEOUT RAISED 2026-09-07 (Megan): a full run is 151 image uploads across 18 channels plus the capture of 9 Tableau views. The old cap allowed ~17s per upload and nothing for the capture, so a slow-Slack morning killed the run partway through the channel list and the boards that never posted raised no alert at all (only the ONE that did posted an incident). Measured that morning: ~58s per upload, i.e. ~146 min for a full run. Same fix and same reasoning as alphalete_production 3ccbf12 ('35 min, que es lo que tarda subir 18 imagenes a dos canales'). The cap is a ceiling, not a schedule: a healthy morning still finishes in ~20 min and returns the queue immediately."
+  },
   "tableau_preview": {
    "hand_run_only": true,
    "on_scheduler": true,

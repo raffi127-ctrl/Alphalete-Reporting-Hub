@@ -81,7 +81,7 @@ REPORT_ID = "tableau-screenshots"
 LATE_DUE_HHMM = "09:00"
 
 # Before this, a board the morning run HELD for a stale extract may still be
-# coming: the settle passes run hourly 10:00-14:00 (schedule_config
+# coming: the settle passes run 08:30-09:30 half-hourly, then hourly 10:00-14:00 (schedule_config
 # tableau_screenshots_settle_*). After the last one, nobody is coming.
 SETTLE_DONE_HHMM = "14:30"
 

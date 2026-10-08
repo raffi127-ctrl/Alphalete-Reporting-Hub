@@ -388,7 +388,7 @@ _HUB_CARD = {
 
     # THE HOURLY TRACKER SETTLE SWEEP IS ONE JOB, NOT FIVE (Megan 2026-08-30:
     # "consolidate"). Cadence has no interval vocabulary, so retrying hourly
-    # 10am-2pm needs one schedule_config entry per hour — but five near-identical
+    # 8:30am-2pm needs one schedule_config entry per slot — but five near-identical
     # auto-registered cards is exactly the Hub clutter that makes a real red pill
     # easy to skim past. All five publish to the ONE card, which therefore shows
     # five runs a day (the last one wins the pill, which is the right answer: it
@@ -397,6 +397,9 @@ _HUB_CARD = {
     # The card id keeps its "_am" suffix because it already carries this
     # report's run history; renaming it would orphan that. Its DISPLAY name is
     # curated in hub_coverage._REPORT_CARD_COPY and drops the hour entirely.
+    "tableau_screenshots_settle_0830": "tableau_screenshots_settle_am",
+    "tableau_screenshots_settle_09": "tableau_screenshots_settle_am",
+    "tableau_screenshots_settle_0930": "tableau_screenshots_settle_am",
     "tableau_screenshots_settle_pm": "tableau_screenshots_settle_am",
     "tableau_screenshots_settle_12": "tableau_screenshots_settle_am",
     "tableau_screenshots_settle_13": "tableau_screenshots_settle_am",
