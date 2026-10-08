@@ -191,6 +191,8 @@ KNOWN_USERS = {
     # board's Monday column names them one for one — Gary 1 (BOX), 8 for
     # Fernando, 3 for Fran — and the threads agree.
     "U0BUMUYQAGZ": "Gary Van Whitaker",     # BOX then, Verizon since the
+    "U0C3CG64482": "Alexa Marie Munoz",    # BOX; posted 10/6-10/7 under an id the fill could not name
+    "U0BTFSN2BU7": "Annett Michell Climaco", # BOX; 5 sales on 10/6 landed in TOTAL but on no row
     # 10/2 board split; posts as "Gary Vanwhitaker"; thread: "DAMNNN GARY"
     "U0BRWL2DW9L": "Fernando Salazar",      # thread: "YES FERNANDOOOO"
     "U0BSBNSK9L2": "Francisco Escamilla",   # thread: "FRAN FRAN FRAN".
