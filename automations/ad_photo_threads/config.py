@@ -288,6 +288,14 @@ _MORE = [
     # follows doesn't match. Photos channel created 10/6.
     ("jamis", "Jamis Garay", ARS_J_TO_L, "Jamis Garay new", "19592", "Midspire Inc",
      "C0AJNRR4ZC7", "C0C7637NV42", r"midspire.*1st\s*round"),
+    # Jairo Ruiz (Drew's org) and George Delgado (Colten's), Colten asked via
+    # Camila 10/8. Both South Shore tabs with Ad Title; both recruiting rooms
+    # post the same "FIRST ROUND THREAD: mm/dd" thread as Colten (Jairo's
+    # since 10/2, George's since 10/6). Photos channels created by Eve 10/8.
+    ("jairo", "Jairo Ruiz", SOUTH_SHORE, "Jairo Ruiz", "21270", "Profits Management, Inc.",
+     "C0C69Q2QWF4", "C0C7T8SMSSJ", r"first\s*round\s*thread"),
+    ("george", "George Delgado", SOUTH_SHORE, "George Delgado", "22477", "Skyline Elite, Inc.",
+     "C0C81LUN0KS", "C0C7X614BPB", r"first\s*round\s*thread"),
 ]
 
 # Zones the office_tz table (knocks, by owner name) can't place, cross-checked
@@ -300,6 +308,8 @@ _TZ = {
     "atef": "America/Denver",          # ads: Denver / Lakewood / Aurora, CO
     "roshan": "America/Chicago",       # ads: Houston / League City, TX
     "ryan": "America/Chicago",         # ads: Arlington / Plano / Dallas, TX
+    "jairo": "America/New_York",       # ads: Miami / Kendall Lakes, FL
+    "george": "America/New_York",      # ads: Fort Myers / Lehigh Acres, FL
 }
 
 # Offices whose channel is loaded 9/14 onward, checked and pinned; the rest

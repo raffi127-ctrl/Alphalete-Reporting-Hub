@@ -87,6 +87,14 @@ def _read_tab(sh, tab: str) -> List[Dict[str, str]]:
     from automations.recruiting_report.fill import _retry
     rows = _retry(lambda: sh.worksheet(tab).get_all_values())
     head = [h.strip() for h in rows[0]]
+    # Jairo Ruiz's tab (10/8) has the names in the column after "1st Round
+    # Interviewer" -- where every other South Shore tab says "Full Name" --
+    # with its header left blank. Read a blank header there as Full Name
+    # rather than editing someone else's tab.
+    if config.COL_NAME not in head and config.COL_INTERVIEWER in head:
+        i = head.index(config.COL_INTERVIEWER) + 1
+        if i < len(head) and not head[i]:
+            head[i] = config.COL_NAME
     need = [config.COL_DATE, config.COL_NAME, config.COL_TITLE]
     for h in need:
         if h not in head:
