@@ -439,8 +439,8 @@ SECTIONS = [
     ("activation_by_rep", "\U0001F4C8", "Fiber Activation Rate by Rep",
      build_activation_png),
     ("pending_orders", "⏳", "Fiber Pending Orders", build_pending_png),
-    ("customer_churn", "\U0001F43A", "Fiber Customer Churn",
-     build_churn_rolloff_png),
+    # customer_churn: DISCONTINUED for Fiber (Carlos 2026-10-08 scope list);
+    # build_churn_rolloff_png stays importable for reference only.
     ("churn_rates", "\U0001F4C9", "Fiber Churn Rates",
      build_churn_rates_png),
 ]
