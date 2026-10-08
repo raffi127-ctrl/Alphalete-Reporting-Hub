@@ -3809,7 +3809,7 @@
   },
   "rc_guest_backfill": {
    "on_scheduler": false,
-   "_off_scheduler_note": "MANUAL-ONLY backfill handle (Carlos 2026-10-08: 'My guys started selling under Rafael's code last Tuesday [9/29], so go ahead and check everything as of last Tuesday… add all those customers into the contact list'). Runs rc_contact_sync with --since 2026-09-29: shapes the guest reps' orders from the Lucy 1 'Raf Guest Orders' handoff (NO SaraPlus login on this box), adds the missing RingCentral contacts, checks Taylor's line for the wrap-up text since 9/29, and posts ONE range-labelled reply into the usual channels. DRY by default — `lucy rerun rc_guest_backfill --machine \"Lucy 2\"` previews, append `-- --live` for the real pass. Run raf_guest_orders on Lucy 1 first (the handoff must be <26h old). Re-runs are safe: contacts dedup by state key AND by phone.",
+   "_off_scheduler_note": "MANUAL-ONLY backfill handle (Carlos 2026-10-08: 'My guys started selling under Rafael's code last Tuesday [9/29], so go ahead and check everything as of last Tuesday\u2026 add all those customers into the contact list'). Runs rc_contact_sync with --since 2026-09-29: shapes the guest reps' orders from the Lucy 1 'Raf Guest Orders' handoff (NO SaraPlus login on this box), adds the missing RingCentral contacts, checks Taylor's line for the wrap-up text since 9/29, and posts ONE range-labelled reply into the usual channels. DRY by default \u2014 `lucy rerun rc_guest_backfill --machine \"Lucy 2\"` previews, append `-- --live` for the real pass. Run raf_guest_orders on Lucy 1 first (the handoff must be <26h old). Re-runs are safe: contacts dedup by state key AND by phone.",
    "display_name": "RC contacts backfill (Raf-code sales since 9/29)",
    "source_type": "api",
    "data_sources": [],
@@ -13641,6 +13641,26 @@
    "verify": null,
    "timeout_minutes": 30,
    "machine": "Lucy 1"
+  },
+  "fiber_dd_rates": {
+   "on_scheduler": false,
+   "_note": "READ-ONLY derivation (Carlos 2026-10-08: 'go through Raf's direct deposit to find out what the payout is on every unit'): latest ORG DD Detail joined to the D2D A.Order Log on cl.Production Lookup <-> spe.Name; prints/DMs the histogram of Commission Base to ICD per product group for Carlos to bless before the Fiber dollar boards build. `lucy rerun fiber_dd_rates -- --dm U046G04P5LG`.",
+   "display_name": "Fiber DD per-unit payout derivation",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.fiber_metrics.dd_rates"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 25,
+   "machine": "Lucy 2"
   }
  },
  "read_only_standalone": {
