@@ -882,6 +882,7 @@ LAST_CALL_LINES = (
     "Last call 🔔 {names} — go take some souls before the bell 🚪🔥",
     "Last call 🔔 {names} — we reap if we don't give up 🚪💰",
     "Last call 🔔 {names} — lose small or win big? 🚪💰",
+    "Last call 🔔 {names} — prioritize future success. One more door 🚪💰",
 )
 LAST_CALL_ALL = (
     "Last call 🔔 Everybody's knocking — finish strong, ¡dale! 🚪💰",
@@ -911,6 +912,7 @@ LAST_CALL_B2B_LINES = (
     "Last call 🔔 {names} — go take some souls before the bell 🏢🔥",
     "Last call 🔔 {names} — we reap if we don't give up 🏢💰",
     "Last call 🔔 {names} — lose small or win big? 🏢💰",
+    "Last call 🔔 {names} — prioritize future success. One more business 🏢💰",
 )
 LAST_CALL_B2B_ALL = (
     "Last call 🔔 Everybody's still walking in — finish strong, ¡dale! 🏢💰",

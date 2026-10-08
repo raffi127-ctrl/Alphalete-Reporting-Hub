@@ -129,6 +129,9 @@ LINES = (
     "{names}: {m}+ min. Sell me this pen 🖊️ Actually — sell somebody anything 🚪",
     "{names} — {m}+ min. The only thing between you and the sale is the story you're telling yourself 🚪",
     "{names}: {m}+ min. Knock the door and start pitching 🚪",
+    # From the Earn Mentorship poster + Beyoncé (Megan 2026-10-07).
+    "{names}: {m}+ min. Atmo's where we make our money — the doors are where we earn it 🚪",
+    "{names}: {m}+ min. To the left, to the left… is the next door 🚪",
     # BENEFIT OF THE DOUBT (Megan 2026-09-26): a quiet rep may be inside with
     # a customer. Half the pool leaves that door open.
     "{names} — {m}+ min without a dispo. Must be cooking up something good in there… right? 👨‍🍳🔥",
@@ -180,6 +183,8 @@ B2B_LINES = (
     "{names}: {m}+ min. Sell me this pen 🖊️ Actually — sell somebody anything 🏢",
     "{names} — {m}+ min. The only thing between you and the sale is the story you're telling yourself 🏢",
     "{names}: {m}+ min. Walk in and start pitching 🏢",
+    "{names}: {m}+ min. Atmo's where we make our money — the businesses are where we earn it 🏢",
+    "{names}: {m}+ min. To the left, to the left… is the next storefront 🏢",
     # ...and the same Spanish phrases sprinkled in, like LINES.
     "¡Snicklemeberries! 🫐 {names} — {m}+ min without a dispo. Finger poppin' or talking to owners? ¡Vamos! 🏢👀",
     "{names} — {m}+ min, no dispo, no sale. Chatting up the recepcionista? 🚧",
@@ -326,6 +331,7 @@ RECEIPT_LINES = (
     "{names} had a credit check behind the quiet. Ordinary people choosing extraordinary 🫡",
     "{names} had a credit check behind the quiet. Doesn't play the odds, plays the door 🫡",
     "{names} had a credit check behind the quiet. Honoring the partnership 🤝🫡",
+    "{names} showed up on the board. 100% attendance 🫡",
 )
 # The same idea for a business office: no credit checks on Box, so what moves
 # is a sale.
@@ -344,6 +350,7 @@ B2B_RECEIPT_LINES = (
     "{names} had a deal behind the quiet. Ordinary people choosing extraordinary 🫡",
     "{names} had a deal behind the quiet. Doesn't play the odds, plays the room 🫡",
     "{names} had a deal behind the quiet. Honoring the partnership 🤝🫡",
+    "{names} showed up on the board. 100% attendance 🫡",
 )
 
 
@@ -478,6 +485,8 @@ PACE_LINES = (
     "{names} at {avg} {unit}/hr 🤝 That's honoring the partnership 🔥",
     "{names} — {avg} {unit}/hr. Leading by example 🔥",
     "{names} at {avg} {unit}/hr. No nobility in poverty — plenty in {avg} an hour 🔥",
+    "{names} at {avg} {unit}/hr. Reaching up constantly 🔥",
+    "{names} — {avg} {unit}/hr. Running the place already 🔥",
 )
 
 # The same recognition in business talk for the Service Cloud offices (Megan
@@ -503,6 +512,8 @@ B2B_PACE_LINES = (
     "{names} at {avg} {unit}/hr 🤝 That's honoring the partnership 🔥",
     "{names} — {avg} {unit}/hr. Leading by example 🔥",
     "{names} at {avg} {unit}/hr. No nobility in poverty — plenty in {avg} an hour 🔥",
+    "{names} at {avg} {unit}/hr. Reaching up constantly 🔥",
+    "{names} — {avg} {unit}/hr. Running the place already 🔥",
 )
 
 
