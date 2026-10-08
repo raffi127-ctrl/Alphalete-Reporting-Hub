@@ -179,10 +179,25 @@ def pull(start: dt.date, end: dt.date, *, headless: bool = True,
             sara.open_order_history_panel(page, log=log)
             sara._set_telerik_date(page, C.FIELD_START, start)
             sara._set_telerik_date(page, C.FIELD_END, end)
-            sara._set_customer_type(page, C.CUSTOMER_TYPE_BOTH, log=log)
-            # Customer Type autoposts back and can reset the dates.
-            sara._set_telerik_date(page, C.FIELD_START, start)
-            sara._set_telerik_date(page, C.FIELD_END, end)
+            # Customer Type: on CARLOS's dealer this must be forced to Both
+            # (defaulting to Residential loses every B2B order). On RAF's
+            # dealer the combo is DISABLED — readonly input pinned to
+            # 'Residential' (seen on the first live run, 2026-10-08), and
+            # clicking it retries until the whole pull dies. A locked combo
+            # means the dealer only HAS one customer type, so the pinned
+            # value already covers everything; skip the step instead.
+            combo = "#%s_Input" % C.COMBO_CUSTOMER_TYPE
+            locked = page.evaluate(
+                "(s) => { const e = document.querySelector(s);"
+                "         return !e || e.disabled || e.readOnly; }", combo)
+            if locked:
+                log("  customer type combo is locked on this dealer — "
+                    "left as-is")
+            else:
+                sara._set_customer_type(page, C.CUSTOMER_TYPE_BOTH, log=log)
+                # Customer Type autoposts back and can reset the dates.
+                sara._set_telerik_date(page, C.FIELD_START, start)
+                sara._set_telerik_date(page, C.FIELD_END, end)
             sara._submit(page, log=log)
             data = _export_csv(page, log)
             if data is None:
