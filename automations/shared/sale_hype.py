@@ -970,6 +970,7 @@ BACK_TO_BACK_LINES = (
     "Two in {n} min 🔥 {first} is out here taking souls",
     "{first} is evolving 🔥 Two in {n} min",
     "Two in {n} min 🥷 Shadow clone jutsu? Believe it! {first}",
+    "Two in {n} min 🔥 {first} is not leaving",
 )
 SALE_TIMES_PATH = (Path.home() / ".config" / "recruiting-report"
                    / "icd_sale_times.json")

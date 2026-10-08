@@ -125,6 +125,10 @@ LINES = (
     "{names}: {m}+ min. Faith without works is dead 🚪 Go do the works",
     "{names}: {m}+ min. Winners don't make excuses 🚪",
     "{names} — {m}+ min off the doors. Honor the partnership 🤝 Knock 🚪",
+    # Wolf of Wall Street (Megan 2026-10-07), profanity trimmed.
+    "{names}: {m}+ min. Sell me this pen 🖊️ Actually — sell somebody anything 🚪",
+    "{names} — {m}+ min. The only thing between you and the sale is the story you're telling yourself 🚪",
+    "{names}: {m}+ min. Knock the door and start pitching 🚪",
     # BENEFIT OF THE DOUBT (Megan 2026-09-26): a quiet rep may be inside with
     # a customer. Half the pool leaves that door open.
     "{names} — {m}+ min without a dispo. Must be cooking up something good in there… right? 👨‍🍳🔥",
@@ -173,6 +177,9 @@ B2B_LINES = (
     "{names}: {m}+ min. Faith without works is dead 🏢 Go do the works",
     "{names}: {m}+ min. Winners don't make excuses 🏢",
     "{names} — {m}+ min, no walk-ins. Honor the partnership 🤝 Walk in 🏢",
+    "{names}: {m}+ min. Sell me this pen 🖊️ Actually — sell somebody anything 🏢",
+    "{names} — {m}+ min. The only thing between you and the sale is the story you're telling yourself 🏢",
+    "{names}: {m}+ min. Walk in and start pitching 🏢",
     # ...and the same Spanish phrases sprinkled in, like LINES.
     "¡Snicklemeberries! 🫐 {names} — {m}+ min without a dispo. Finger poppin' or talking to owners? ¡Vamos! 🏢👀",
     "{names} — {m}+ min, no dispo, no sale. Chatting up the recepcionista? 🚧",
@@ -470,6 +477,7 @@ PACE_LINES = (
     # partnership' — we should use some of it").
     "{names} at {avg} {unit}/hr 🤝 That's honoring the partnership 🔥",
     "{names} — {avg} {unit}/hr. Leading by example 🔥",
+    "{names} at {avg} {unit}/hr. No nobility in poverty — plenty in {avg} an hour 🔥",
 )
 
 # The same recognition in business talk for the Service Cloud offices (Megan
@@ -494,6 +502,7 @@ B2B_PACE_LINES = (
     "{names} at {avg} {unit}/hr. Every owner on the block knows the name 🔥",
     "{names} at {avg} {unit}/hr 🤝 That's honoring the partnership 🔥",
     "{names} — {avg} {unit}/hr. Leading by example 🔥",
+    "{names} at {avg} {unit}/hr. No nobility in poverty — plenty in {avg} an hour 🔥",
 )
 
 
