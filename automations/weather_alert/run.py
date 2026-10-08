@@ -78,6 +78,9 @@ CITIES = {
     # (takeoffenterprise.com) and its CA filing, 2026-10-06. OwnerVille could
     # not find him under Raf's login (not on the Office Access list).
     "santa_clara": ("Santa Clara, CA", 37.3541, -121.9552, "America/Los_Angeles"),
+    # valeria / Altura Marketing: Tampa, FL -- the company's own site
+    # (alturamarketinginc.com, 410 S Ware Blvd), 2026-10-08.
+    "tampa": ("Tampa, FL", 27.9506, -82.4572, "America/New_York"),
 }
 OFFICE_CITY = {
     "kash": "dfw", "cyrus": "dfw", "carlos": "dfw", "carlos-b2batt": "dfw",
@@ -108,6 +111,9 @@ OFFICE_CITY = {
     # the same room; his metrics office (also `luke`) posts to that room too,
     # and the per-room de-dupe below keeps it to one forecast.
     "luke": "santa_clara",
+    # Valeria Tristan / Altura Marketing, Tampa (2026-10-08). Her ECO key;
+    # her metrics office is B2B, which the metrics fan-out does not cover.
+    "valeria": "tampa",
 }
 
 # EVERY METRICS CHANNEL GETS IT TOO (Megan 2026-09-29: "all metrics channels
