@@ -302,6 +302,19 @@ class PureTest(unittest.TestCase):
         self.assertEqual(se.grand_total(acb, "All Units"), 1841)
         self.assertIsNone(se.grand_total(acb, "Nope"))
 
+    def test_org_totals_unreadable_or_missing_holds(self):
+        from automations.org_sales_board import screenshot_email as se
+        for got, want in ((None, "not recorded"),
+                          ({"org": 1886, "all_units": None}, "All Units"),
+                          ({"org": 1886, "all_units": 1841}, "1841"),
+                          ({"org": 1886, "all_units": 1886}, None)):
+            with mock.patch.object(se, "captured_totals", return_value=got):
+                out = A._org_totals(THU)
+            if want is None:
+                self.assertEqual(out, [])
+            else:
+                self.assertTrue(out and want in out[0], (got, out))
+
     def test_off_before_the_start_date(self):
         self.assertFalse(A.is_on(dt.date(2026, 10, 7)))
         self.assertTrue(A.is_on(THU))

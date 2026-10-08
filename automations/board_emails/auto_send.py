@@ -158,8 +158,15 @@ def _org_totals(run_day: dt.date) -> List[str]:
     before its post-BOX re-fill. A rebuild re-shoots both from the Sheet."""
     from automations.org_sales_board import screenshot_email as se
     t = se.captured_totals(run_day)
-    if not t or t.get("org") is None or t.get("all_units") is None:
-        return []
+    # Can't read a total = can't vouch for it: hold (Eve 2026-10-08).
+    if not t:
+        return ["the board totals were not recorded at capture — can't check "
+                "that All Units matches the Org board"]
+    missing = [n for k, n in (("org", "Org board"), ("all_units", "All Units"))
+               if t.get(k) is None]
+    if missing:
+        return [f"could not read the {' or '.join(missing)} grand total — "
+                f"can't check that they match"]
     if t["org"] == t["all_units"]:
         return []
     return [f"All Units total ({t['all_units']}) doesn't match the Org board "
