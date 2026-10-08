@@ -76,6 +76,8 @@ def main(argv=None) -> int:
     i_owner = ocol("owner name", "owner")
     i_prov = ocol("spe.provider")
     i_rep = ocol("rep")
+    i_tn = ocol("spe.tn type", "tn type")
+    i_byod = ocol("wireless installment plan", "byod")
     if i_spe is None:
         print("OL header has no spe.Name — header: " + " | ".join(ol_hdr))
         return 1
@@ -138,7 +140,21 @@ def main(argv=None) -> int:
         base = _money(r[d_base] if len(r) > d_base else 0)
         prod = oc(ol, i_prod) or "(no product)"
         prov = oc(ol, i_prov)
+        # Grand-total rows join to the export's own Total line — never a
+        # rate (first run surfaced a $242,794.50 'base'). Skip, loudly.
+        if "total" in prod.lower() or "total" in oc(ol, i_rep).lower():
+            matched -= 1
+            lines.append(f"  (skipped a Total row: base "
+                         f"${base:,.2f} — aggregate, not a rate)")
+            continue
         key = f"{prod}" + (f" / {prov}" if prov else "")
+        if prod.upper() == "WIRELESS":
+            tn = oc(ol, i_tn)
+            byod = oc(ol, i_byod)
+            if tn:
+                key += f" / {tn}"
+            if byod:
+                key += f" / {byod}"
         groups[key][round(base, 2)] += 1
         for lbl, di in (("EC bonus", d_ec), ("Bonuses", d_bon),
                         ("Adjustments", d_adj)):
