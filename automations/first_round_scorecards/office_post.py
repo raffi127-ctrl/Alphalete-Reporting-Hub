@@ -41,8 +41,8 @@ except Exception:  # noqa: BLE001
 from automations.first_round_scorecards import board, fathom
 
 # run.py posts to the office channels after the day's post only while this is
-# on. Off until Rafael / Camila / Eve OK the sample (Eve, 2026-10-07).
-LIVE = False
+# on. Rafael + Camila OK'd the sample (Eve, 2026-10-08): live for every office.
+LIVE = True
 SAMPLE_TO = ("U045Z8N0ZQC",       # Rafael Hidalgo
              "U07FWSYP3NV",       # Camila Hornos Kraschinsky
              "U088E2KJEV8")       # Eve (Evelyn)

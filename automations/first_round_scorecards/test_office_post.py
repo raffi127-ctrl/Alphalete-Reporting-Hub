@@ -76,8 +76,8 @@ class OfficePostTest(unittest.TestCase):
         self.assertIn("*Cy* 50 · Rafael Hidalgo", text)
         self.assertEqual(op.summary_text(rows, dt.date(2026, 10, 9)), "")
 
-    def test_off_until_the_sample_is_approved(self):
-        self.assertFalse(op.LIVE)
+    def test_live_since_the_sample_was_approved(self):
+        self.assertTrue(op.LIVE)
 
 
 if __name__ == "__main__":
