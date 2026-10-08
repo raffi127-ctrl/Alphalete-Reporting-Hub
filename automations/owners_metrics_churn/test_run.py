@@ -352,5 +352,28 @@ class WirelessMixGuard(unittest.TestCase):
         self.assertIn("WIRELESS", kw["note"])
 
 
+class AllTeamsBackfillRefusesWireless(unittest.TestCase):
+    """2026-10-08: the fiber all-teams NI view came back as Wireless and Alex
+    Touati's NI row on Pat's tab got his wireless numbers for three days."""
+
+    def _csv(self, color_col):
+        import tempfile, pathlib
+        d = pathlib.Path(tempfile.mkdtemp())
+        f = d / "x.csv"
+        f.write_text("﻿Rep Name\t" + color_col + "\t\t0-30 Day Churn\n",
+                     encoding="utf-16-le")
+        return f
+
+    def test_header_tells_the_views_apart(self):
+        self.assertTrue(omc._export_is_wireless(
+            self._csv("30-60 Color Churn (Wireless)")))
+        self.assertFalse(omc._export_is_wireless(
+            self._csv("30-60 Color Churn (copy)")))
+
+    def test_url_pins_the_ni_churn_view(self):
+        self.assertIn("Churn%20View=New%20Internet%20Churn%20View",
+                      omc_pull.FIBER_ALLTEAM_URL)
+
+
 if __name__ == "__main__":
     unittest.main()

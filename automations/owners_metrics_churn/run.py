@@ -259,6 +259,18 @@ def _program_of(parse_fn) -> str:
     return "fiber"
 
 
+def _export_is_wireless(csv_path: Path) -> bool:
+    """True when a churn crosstab export is the Wireless Churn View: its color
+    column is '30-60 Color Churn (Wireless)' (NI: '... (copy)'). See
+    new_internet_churn.pull.parse."""
+    try:
+        with open(csv_path, "r", encoding="utf-16-le") as f:
+            header = f.readline()
+    except (OSError, UnicodeError):
+        return False
+    return "Color Churn (Wireless)" in header
+
+
 def _backfill_moved_owners(program: str, dark_names: list, aliases: dict) -> dict:
     """Return {display_name: periods} for went-dark owners found in the program's
     all-teams churn view — reps who moved SFDC captainships but are still on their
@@ -284,6 +296,13 @@ def _backfill_moved_owners(program: str, dark_names: list, aliases: dict) -> dic
                       f"{BACKFILL_PULL_TRIES}) to backfill moved rep(s): "
                       f"{', '.join(dark_names)}")
                 download_crosstab_patchright(url, worksheet, out, verbose=False)
+                if program == "fiber" and _export_is_wireless(out):
+                    # NI backfill que vino con la vista Wireless (Touati, 10/6-10/8):
+                    # mejor la fila en blanco + went-dark que números de otra métrica.
+                    print("  ⚠ fiber all-teams churn came back as the WIRELESS "
+                          "view — not backfilling from it")
+                    parsed_all = {"reps": {}}
+                    break
                 parsed_all = _apply_aliases(parse_fn(out), aliases)
                 if parsed_all.get("reps"):
                     break   # got names — good pull, stop retrying

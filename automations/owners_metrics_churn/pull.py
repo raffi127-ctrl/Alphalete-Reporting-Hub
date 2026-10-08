@@ -110,9 +110,17 @@ FIBER_JESS_URL = (
 # view: Blue Mendoza is a new rep on Starr's team who never got added to the
 # STARSTEAMCHURN custom-view filter, so Starr's own pull dropped him. Same
 # 'ICD Churn' worksheet + parse() as the per-captain Fiber pulls.
+#
+# 'Churn View' VA EN LA URL (Eve, 2026-10-08). El 10/6 el parámetro del tablero
+# quedó en Wireless; se arreglaron las vistas guardadas de cada capitán pero no
+# ésta, que es la vista pelada y toma lo que diga el default del tablero. Desde
+# el 10/6 la fila de Alex Touati (que entra por acá, captainship_pins.ADOPTED)
+# salió en las pestañas de NI de Pat con sus números de WIRELESS. Fijarlo en la
+# URL hace que no dependa del default.
 FIBER_ALLTEAM_URL = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER2_1-D2D/CHURN?:iid=1"
+    "&Churn%20View=New%20Internet%20Churn%20View"
 )
 
 WORKSHEET = "ICD Churn"
