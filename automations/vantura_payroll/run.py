@@ -1238,6 +1238,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--raf-test", action="store_true",
                     help="ONLY pull the Raf-owner DD slice and print what the "
                          "allowlist reps brought in. Never writes.")
+    ap.add_argument("--dd-diff", action="store_true",
+                    help="ONLY pull a fresh personal DD crosstab and diff it "
+                         "against the week's loaded RAW block (totals, "
+                         "per-rep, new/changed lines). Never writes.")
     ap.add_argument("--raf-list", action="store_true",
                     help="ONLY list every rep paid in the DD under a "
                          "'Hidalgo' owner that is not Carlos (current window, "
@@ -1257,6 +1261,100 @@ def main(argv: list[str] | None = None) -> int:
         resp = requests.get(url, params={"action": "refresh"}, timeout=600)
         resp.raise_for_status()
         _log(f"refresh -> {resp.text[:200]}")
+        return 0
+
+    if args.dd_diff:
+        from collections import defaultdict
+        dl = []
+
+        def dlog(msg):
+            _log(msg)
+            dl.append(str(msg))
+
+        wk = (dt.datetime.strptime(args.week, "%Y-%m-%d").date()
+              if args.week else week_ending())
+        wnum = _week_num(wk)
+        xlsx = _pull_icd_dd_detail(wk)
+        headers, data = _read_export(xlsx)
+        cmap = _map_columns(headers)
+        if data:
+            first = [str(c).strip() for c in data[0]]
+            rep_i = cmap["B"]
+            if not (first[rep_i] if rep_i < len(first) else "") or \
+                    any("total" in c.lower() for c in first):
+                data = data[1:]
+
+        def amt(v):
+            try:
+                return float(str(v).replace("$", "").replace(",", "") or 0)
+            except ValueError:
+                return 0.0
+
+        fresh_per = defaultdict(float)
+        fresh_keys = defaultdict(int)
+        fresh_tot = 0.0
+        for r in data:
+            def cell(col):
+                i = cmap.get(col)
+                return r[i] if i is not None and i < len(r) else ""
+            a = amt(cell("H"))
+            rep = str(cell("B")).strip() or "(captain/no rep)"
+            fresh_per[rep] += a
+            fresh_tot += a
+            fresh_keys[tuple(_dd_norm(cell(c)) for c in ("B", "C", "G", "H"))] += 1
+        dlog(f"fresh DD: {len(data)} lines, total ${fresh_tot:,.2f}")
+
+        from automations.recruiting_report.fill import open_by_key
+        sh2 = open_by_key(SHEET_ID)
+        raw = sh2.worksheet("RAW")
+        colA = raw.get("A2:A20000")
+        wkrows = [i + 2 for i, r in enumerate(colA)
+                  if r and str(r[0]) == str(wnum)]
+        lo, hi = min(wkrows), max(wkrows)
+        block = raw.get(f"A{lo}:H{hi}")
+        raw_per = defaultdict(float)
+        raw_keys = defaultdict(int)
+        raw_tot = 0.0
+        for r in block:
+            a = amt(r[7] if len(r) > 7 else 0)
+            rep = str(r[1]).strip() if len(r) > 1 else ""
+            raw_per[rep or "(captain/no rep)"] += a
+            raw_tot += a
+            raw_keys[tuple(_dd_norm(x) for x in
+                           ((r[1] if len(r) > 1 else ""),
+                            (r[2] if len(r) > 2 else ""),
+                            (r[6] if len(r) > 6 else ""),
+                            (r[7] if len(r) > 7 else "")))] += 1
+        dlog(f"RAW block rows {lo}-{hi}: {len(block)} lines, "
+             f"total ${raw_tot:,.2f}")
+        dlog(f"DELTA fresh - RAW: ${fresh_tot - raw_tot:,.2f}")
+        names = sorted(set(fresh_per) | set(raw_per),
+                       key=lambda n: -(fresh_per.get(n, 0) - raw_per.get(n, 0)))
+        for n in names:
+            d = fresh_per.get(n, 0) - raw_per.get(n, 0)
+            if abs(d) >= 0.01:
+                dlog(f"  {n}: fresh ${fresh_per.get(n, 0):,.2f} vs RAW "
+                     f"${raw_per.get(n, 0):,.2f}  ({'+' if d > 0 else ''}{d:,.2f})")
+        new_lines = sum(c for k, c in fresh_keys.items()
+                        if c > raw_keys.get(k, 0))
+        gone = sum(c for k, c in raw_keys.items() if c > fresh_keys.get(k, 0))
+        dlog(f"lines in fresh not in RAW: {new_lines}; "
+             f"in RAW not in fresh: {gone}")
+        try:
+            import gspread
+            from automations.recruiting_report import fill as _f
+            _ctl = _f._client().open_by_key(
+                "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw")
+            try:
+                _tab = _ctl.worksheet("DD Diff")
+                _tab.clear()
+            except gspread.WorksheetNotFound:
+                _tab = _ctl.add_worksheet("DD Diff", rows=400, cols=2)
+            _tab.update([[ln] for ln in dl[:380]], "A1",
+                        value_input_option="RAW")
+            _log(f"dd-diff: {len(dl)} line(s) -> 'DD Diff' tab")
+        except Exception as _e:
+            _log(f"dd-diff: tab write failed ({_e!r})")
         return 0
 
     if args.raf_list:
