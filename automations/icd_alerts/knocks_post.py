@@ -175,13 +175,13 @@ _hm = O._hm
 
 
 def is_due(dest: Dict, last_posted: Optional[dt.datetime],
-           now: dt.datetime) -> bool:
+           now: dt.datetime, office=None) -> bool:
     """Is THIS room due for a board?
 
     Never posted = due. That is what makes an approval take effect on the next
     tick rather than an hour later.
     """
-    if final_due(dest, last_posted, now):
+    if final_due(dest, last_posted, now, office):
         return True
     if "times" in dest:
         return _slot_due(last_posted, now, dest["times"])
@@ -333,22 +333,42 @@ def _slot_due(last_posted: Optional[dt.datetime], now: dt.datetime,
 FINAL_KEY = "final_at"
 
 
-def _final_slot(dest: Dict, now: dt.datetime) -> Optional[dt.datetime]:
-    """Today's final-board moment for this room, or None if it has none."""
+def _final_slot(dest: Dict, now: dt.datetime, office=None) -> Optional[dt.datetime]:
+    """Today's final-board moment for this room, or None if it has none.
+
+    A room with its own `final_at` keeps it. A room WITHOUT one takes the
+    office's day end (Megan 2026-10-08: "tie last call to each office's day
+    end") -- weekdays from day_end, Saturday from sat_end when the office
+    works Saturdays, never on Sunday -- so every room gets one final board
+    with the last-call line, not just the handful with a set final time."""
     text = (dest.get(FINAL_KEY) or "").strip()
-    if not text or now.weekday() >= 5:
+    if text:
+        if now.weekday() >= 5:
+            return None
+        try:
+            h, m = _hm(text)
+        except Exception:  # noqa: BLE001 — a typo in the tab is no final, not a crash
+            return None
+        return now.replace(hour=h, minute=m, second=0, microsecond=0)
+    if office is None or now.weekday() == 6:
         return None
+    if now.weekday() == 5:
+        if not getattr(office, "saturday", True):
+            return None
+        text = getattr(office, "sat_end", "") or ""
+    else:
+        text = getattr(office, "day_end", "") or ""
     try:
         h, m = _hm(text)
-    except Exception:  # noqa: BLE001 — a typo in the tab is no final, not a crash
+    except Exception:  # noqa: BLE001
         return None
     return now.replace(hour=h, minute=m, second=0, microsecond=0)
 
 
 def final_due(dest: Dict, last_posted: Optional[dt.datetime],
-              now: dt.datetime) -> bool:
+              now: dt.datetime, office=None) -> bool:
     """Just past this room's final time, and nothing posted there since it."""
-    slot = _final_slot(dest, now)
+    slot = _final_slot(dest, now, office)
     if slot is None:
         return False
     if not (slot <= now <= slot + dt.timedelta(minutes=SLOT_GRACE_MIN)):
@@ -517,7 +537,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         # that room: the rest of the office's rooms still stop at the bell.
         last = _posted_map(row[KN_POSTED])
         finals = [d for d in dests
-                  if final_due(d, last.get(d["channel_id"]), now)]
+                  if final_due(d, last.get(d["channel_id"]), now, office)]
         after_bell = not in_field_hours(office, now)
         if after_bell and finals and not recap and not force:
             dests = finals
@@ -543,7 +563,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
         posted_at = _posted_map(row[KN_POSTED])
 
         due = [d for d in dests
-               if force or is_due(d, posted_at.get(d["channel_id"]), now)]
+               if force or is_due(d, posted_at.get(d["channel_id"]), now, office)]
         if not due:
             log("%-10s %d rep(s) -- nothing due" % (key, len(rows_for_board)))
             continue
@@ -607,7 +627,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                 listed_gaps[cid] = _gaps_text(office, rows_for_board, now,
                                               dest=cid, slack=True,
                                               remember=send)
-            if final_due(d, posted_at.get(cid), now):
+            if final_due(d, posted_at.get(cid), now, office):
                 head = _final_comment(now)
                 last_call = _last_call(office, rows_for_board, now)
                 if last_call:
@@ -657,7 +677,7 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                     body = ("" if key in NO_GAP_LIST_IN_TEXTS else
                             _gaps_text(office, rows_for_board, now,
                                        dest=d["channel_id"]))
-                    if final_due(d, posted_at.get(cid), now):
+                    if final_due(d, posted_at.get(cid), now, office):
                         last_call = _last_call(office, rows_for_board, now)
                         if last_call:
                             body = (last_call + "\n\n" + body) if body else last_call

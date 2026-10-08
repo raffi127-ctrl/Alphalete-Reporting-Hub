@@ -99,3 +99,42 @@ class SetFinalTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EveryRoomGetsADayEndFinal(unittest.TestCase):
+    """Megan 2026-10-08: "tie last call to each office's day end". A room with
+    no final_at takes the office's day_end (sat_end on a Saturday the office
+    works), so the last-call line reaches every office, not just the rooms
+    with a set final time."""
+
+    class Office:
+        day_end = "20:45"
+        sat_end = "18:00"
+        saturday = True
+
+    PLAIN = {"channel_id": "C1", "cadence_min": 30}
+
+    def test_due_just_past_the_day_end(self):
+        o = self.Office()
+        self.assertTrue(K.final_due(self.PLAIN, _at(WED, 20, 20), _at(WED, 20, 50), o))
+        self.assertTrue(K.is_due(self.PLAIN, _at(WED, 20, 40), _at(WED, 20, 46), o))
+
+    def test_not_before_and_not_twice(self):
+        o = self.Office()
+        self.assertFalse(K.final_due(self.PLAIN, None, _at(WED, 20, 30), o))
+        self.assertFalse(K.final_due(self.PLAIN, _at(WED, 20, 47), _at(WED, 20, 55), o))
+
+    def test_saturday_uses_sat_end_and_sunday_never(self):
+        o = self.Office()
+        self.assertTrue(K.final_due(self.PLAIN, None, _at(SAT, 18, 5), o))
+        self.assertFalse(K.final_due(self.PLAIN, None, _at(SUN, 20, 50), o))
+        o.saturday = False
+        self.assertFalse(K.final_due(self.PLAIN, None, _at(SAT, 18, 5), o))
+
+    def test_a_set_final_time_still_wins(self):
+        o = self.Office()
+        self.assertTrue(K.final_due(ROOM, None, _at(WED, 19, 5), o))
+        self.assertFalse(K.final_due(ROOM, None, _at(WED, 20, 50), o))
+
+    def test_without_an_office_nothing_changes(self):
+        self.assertFalse(K.final_due(self.PLAIN, None, _at(WED, 20, 50)))
