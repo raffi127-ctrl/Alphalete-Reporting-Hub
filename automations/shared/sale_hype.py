@@ -66,6 +66,7 @@ HYPE_REGULAR = (
     "Snicklepop!! {first} is on the board :zap:",
     "{first} found the money! :dollar:",
     "{first} found their pony! :horse::dollar:",
+    "{first} is on the board. Taking souls :fire:",
     "Closer!! {first} is on the board :fire:",
     "WINNER!! {first} is on the board :money_with_wings:",
     "{first} is on the board! Who's next :eyes::eyes::eyes:",
@@ -551,6 +552,7 @@ class _Box(Shape):
         "Snicklepop!! {first} got one done :zap:",
         "{first} found the money! :moneybag:",
         "{first} found their pony! :horse::moneybag:",
+        "{first} closed one. Taking souls :fire:",
         "Closer!! {first} closed one :fire:",
         "WINNER!! {first} closed one :money_with_wings:",
         "{first} closed one! Who's next :eyes::eyes::eyes:",
@@ -954,6 +956,7 @@ BACK_TO_BACK_LINES = (
     "Oh it's a streak now 🔥 {first} — two in {n} min. ¡Eso! Who's next to run one back? 👀",
     "Two in {n} min 🔥 {first} said one more and meant it 💪",
     "Two in {n} min 🔥🔥 {first} is 10X-ing it. Keep going!",
+    "Two in {n} min 🔥 {first} is out here taking souls",
 )
 SALE_TIMES_PATH = (Path.home() / ".config" / "recruiting-report"
                    / "icd_sale_times.json")

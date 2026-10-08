@@ -119,6 +119,7 @@ LINES = (
     "{names} — {m}+ min off the doors. Average is a failing formula 🚪",
     "{names}: {m}+ min. Discipline equals freedom — and freedom's behind a door 🚪",
     "{names}: {m}+ min. Where focus goes, energy flows. Focus on a door 🚪",
+    "{names}: {m}+ min. Discomfort builds the callous. Knock 🚪",
     # BENEFIT OF THE DOUBT (Megan 2026-09-26): a quiet rep may be inside with
     # a customer. Half the pool leaves that door open.
     "{names} — {m}+ min without a dispo. Must be cooking up something good in there… right? 👨‍🍳🔥",
@@ -162,6 +163,7 @@ B2B_LINES = (
     "{names} — {m}+ min, no walk-ins. Average is a failing formula 🏢",
     "{names}: {m}+ min. Discipline equals freedom — and freedom's inside a business 🏢",
     "{names}: {m}+ min. Where focus goes, energy flows. Focus on a storefront 🏢",
+    "{names}: {m}+ min. Discomfort builds the callous. Walk in 🏢",
     # ...and the same Spanish phrases sprinkled in, like LINES.
     "¡Snicklemeberries! 🫐 {names} — {m}+ min without a dispo. Finger poppin' or talking to owners? ¡Vamos! 🏢👀",
     "{names} — {m}+ min, no dispo, no sale. Chatting up the recepcionista? 🚧",
@@ -443,6 +445,8 @@ PACE_LINES = (
     "{names} — {avg} {unit}/hr 🏃💨 That's 10X energy 🔥",
     "{names} at {avg} {unit}/hr. Wanting it as bad as you want to breathe 🔥",
     "{names} — {avg} {unit}/hr 🚣🔥 Who's gonna carry the boats? You are.",
+    # Goggins (Megan 2026-10-07: "taking souls for sure").
+    "{names} at {avg} {unit}/hr. Taking souls 🔥",
 )
 
 # The same recognition in business talk for the Service Cloud offices (Megan
@@ -460,6 +464,7 @@ B2B_PACE_LINES = (
     "{names} — {avg} {unit}/hr 🏃💨 That's 10X energy 🔥",
     "{names} at {avg} {unit}/hr. Wanting it as bad as you want to breathe 🔥",
     "{names} — {avg} {unit}/hr 🚣🔥 Who's gonna carry the boats? You are.",
+    "{names} at {avg} {unit}/hr. Taking souls 🔥",
 )
 
 
