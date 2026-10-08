@@ -13435,7 +13435,7 @@
    "hand_run_only": true,
    "on_scheduler": false,
    "_note": "Rafael via Camila 2026-10-07: each office's 1st round scorecard for a day (average, each interviewer's score, red flags, 2 coaching tips, audit links). Base args = the SAMPLE to the group DM Rafael + Camila + Eve; add --date YYYY-MM-DD. The daily post to each office's recruiting channel runs from first_round_scorecards once office_post.LIVE is on.",
-   "display_name": "1st Round Scorecards — office scorecards sample",
+   "display_name": "1st Round Scorecards \u2014 office scorecards sample",
    "source_type": "api",
    "command": [
     "automations.first_round_scorecards.office_post"
@@ -13530,6 +13530,26 @@
    "depends_on": [],
    "verify": null,
    "timeout_minutes": 20,
+   "machine": "Lucy 2"
+  },
+  "fiber_metrics": {
+   "on_scheduler": false,
+   "_note": "MANUAL for now (Carlos 2026-10-08): the Fiber Metrics boards \u2014 Carlos's crew under Raf's code, from one 60-day pull of the D2D A.Order Log, crew-filtered via total_knocks.guests. Sections: order_log xlsx, activation_by_rep, pending_orders, customer_churn rolloff, churn_rates (computed). `--dm U...` sends previews only; `--post` opens/extends the daily 'Fiber Metrics' thread in #alphalete-gp-sales. Dollar boards wait on the DD-derived per-unit payouts (phase 2). Goes on a schedule once Carlos approves the previews.",
+   "display_name": "Fiber Metrics (Carlos's crew)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.fiber_metrics.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 25,
    "machine": "Lucy 2"
   }
  },
