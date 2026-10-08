@@ -859,6 +859,160 @@ def build_activation_revenue(cols, crew, today, log=print) -> Path:
 
 
 def build_revenue_board(cols, crew, today, log=print) -> Path:
+    """#1 Revenue Board — the SAME styled dark board as Carlos's B2B one
+    (Carlos 2026-10-09: "the fiber board looks ugly tho. make it look like
+    the b2b one"), in its base-comp mode (tiered=False — the D2D SOW has no
+    volume tiers): per-day crew $ by SALE date, growing day columns, crew
+    day totals in the footer. SaraPlus orders at SOW base comp."""
+    from automations.vantura_revenue_board.run import (build_rows, render,
+                                                       week_of)
+    soh = load_soh(log=log)
+    if not soh:
+        raise RuntimeError("revenue board needs the SaraPlus relay")
+    ix, orders, pulled_at = soh
+    monday = week_of(today)
+    per_rep: Dict[str, dict] = {}
+    for r in orders:
+        od = _parse_date(_soh_cell(ix, r, "Order Date"))
+        rep = _soh_cell(ix, r, "User Name")
+        if not rep or od is None or not (monday <= od <= today):
+            continue
+        rec = per_rep.setdefault(rep, {"days": {}, "elig": 0, "payable": 0})
+        rec["days"][od] = rec["days"].get(od, 0.0) + price_order(ix, r)
+    rows, office = build_rows(per_rep, monday, today, tiered=False)
+    out = render(rows, office, monday, today,
+                 OUT_DIR / "fiber_revenue_board.png",
+                 board_name="Fiber Revenue Board", tiered=False)
+    log(f"[fiber] revenue board (styled, SARAPLUS {pulled_at:%H:%M}): "
+        f"{len(rows)} rep(s), crew "
+        f"${sum(r['total'] for r in rows):,.0f}")
+    return out
+
+
+def build_sales_metrics(cols, crew, today, log=print) -> Path:
+    """#2 Sales Metrics — the D2D 'Metrics' view shot, scoped to Rafael
+    Hidalgo (the office Carlos's crew sells under). A view screenshot can't
+    slice to the crew, so this is RAF'S WHOLE OFFICE, said on the caption.
+    Reuses office_metrics' per-day shot cache (every office's shot is
+    captured in one session each morning); captures fresh only if today's
+    isn't there yet."""
+    import shutil
+    from automations.office_metrics import metrics_shot as MS
+    out = OUT_DIR / "fiber_sales_metrics.png"
+    shot = MS.cached_shot(MS.MAIN_OWNER)
+    if shot is None:
+        log("[fiber] no cached Metrics shot yet today — capturing")
+        shot = MS.capture(MS.MAIN_OWNER, out_dir=OUT_DIR,
+                          filter_field=MS.DEFAULT_FILTER_FIELD,
+                          headless=True)
+    shutil.copyfile(shot, out)
+    log(f"[fiber] sales metrics shot: {Path(shot).name}")
+    return out
+
+
+_SOW = None
+
+
+def sow_rates():
+    global _SOW
+    if _SOW is None:
+        import json as _json
+        _SOW = _json.loads((Path(__file__).parent
+                            / "sow_rates.json").read_text())
+    return _SOW
+
+
+def price_order(ix, r) -> float:
+    """One SaraPlus order priced on the ATT-D2D-OOF Schedule A at BASE COMP
+    (Tier 3-3 — Carlos 2026-10-09: 'assume base comp for now'). OOF rates
+    (this IS the OOF program; the export carries no IF/OOF flag). BYOD lines
+    are priced as BYOD PORTS (ports dominate; the export doesn't split BYOD
+    new vs port). Add-ons (Next Up / Unlimited / Protect) aren't in the
+    export yet — stated on every board that shows these dollars."""
+    sw = sow_rates()["wireless"]
+
+    def _n(col):
+        try:
+            return max(0, int(float(_soh_cell(ix, r, col) or 0)))
+        except ValueError:
+            return 0
+
+    port = _n("Port Line Count")
+    byod = _n("BYOD Line Count")
+    new = _n("New Line Count")
+    upg = _n("Upgrade Line Count")
+    port_nb = max(0, port - byod)
+    byod_paid = min(byod, port) if port else byod
+    return (port_nb * sw["port_nonbyod"]["OOF"]
+            + byod_paid * sw["port_byod"]["OOF"]
+            + max(0, byod - byod_paid) * sw["port_byod"]["OOF"]
+            + new * sw["new_line"]
+            + upg * sw["upgrade_voice"])
+
+
+def build_activation_revenue(cols, crew, today, log=print) -> Path:
+    """#5 Activation Revenue Overview — activated $ per rep by activation
+    week, SaraPlus orders priced on the SOW at base comp."""
+    from automations.att_order_log import payout as ap
+    from automations.box_order_log import png as bpng
+    soh = load_soh(log=log)
+    if not soh:
+        raise RuntimeError("activation revenue needs the SaraPlus relay")
+    ix, orders, pulled_at = soh
+    ls, le, ts, te = ap.week_bounds(today)
+    reps: Dict[str, dict] = {}
+    for r in orders:
+        rep = _soh_cell(ix, r, "User Name")
+        if not rep:
+            continue
+        a = reps.setdefault(rep, {"posted_last": 0.0, "posted_this": 0.0,
+                                  "open": 0.0, "can_last": 0.0,
+                                  "can_this": 0.0})
+        amt = price_order(ix, r)
+        st = _soh_cell(ix, r, "Wireless Status").lower()
+        act = _parse_date(_soh_cell(ix, r, "Wireless Active Date"))
+        if "cancel" in st or "disconnect" in st:
+            which = "can_last" if (act and ls <= act <= le) else "can_this"
+            a[which] += amt
+        elif act is None:
+            a["open"] += amt
+        elif ls <= act <= le:
+            a["posted_last"] += amt
+        elif ts <= act <= te:
+            a["posted_this"] += amt
+
+    def _table(start, end, pk, ck):
+        rows = [{"rep": rep, "posted": round(a[pk]),
+                 "pending": round(a["open"]), "canceled": round(a[ck])}
+                for rep, a in reps.items()]
+        rows.sort(key=lambda x: (-x["posted"], x["rep"].lower()))
+        totals = {k: sum(x[k] for x in rows)
+                  for k in ("posted", "pending", "canceled")}
+        return {"label": ap.label(start, end), "rows": rows,
+                "totals": totals}
+
+    tables = {"last": _table(ls, le, "posted_last", "can_last"),
+              "this": _table(ts, te, "posted_this", "can_this")}
+    out = OUT_DIR / "fiber_activation_revenue.png"
+    saved = list(bpng.COLS)
+    bpng.COLS[:] = [("Rep Name", "rep", "left"),
+                    ("Posted $", "posted", "center"),
+                    ("Cancelled $", "canceled", "center"),
+                    ("Still Open $", "pending", "center")]
+    try:
+        bpng.render(tables, out, money=True,
+                    subtitle="Fiber — activated $ by activation week, "
+                             "ATT-D2D-OOF SOW at BASE COMP (Tier 3-3, OOF "
+                             "rates; BYOD priced as BYOD port; add-ons not "
+                             f"in the export). SaraPlus pulled "
+                             f"{pulled_at:%H:%M}.")
+    finally:
+        bpng.COLS[:] = saved
+    log("[fiber] activation revenue (SARAPLUS + SOW base comp)")
+    return out
+
+
+def build_revenue_board(cols, crew, today, log=print) -> Path:
     """#1 Revenue Board — per-day crew $ this week by SALE date (days grow
     as the week does, Carlos's B2B rule), SOW base comp."""
     from automations.b2b_metrics.rep_boards import render_table_png
