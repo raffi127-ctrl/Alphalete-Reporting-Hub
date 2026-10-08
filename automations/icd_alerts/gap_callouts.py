@@ -305,6 +305,7 @@ RECEIPT_LINES = (
     "{names} — credit check behind the quiet. The work works 🫡💰",
     "{names} had a credit check behind the quiet. Good. 🫡",
     "{names} executed 📋💰 The board agrees. Ideas are easy, execution is everything 🫡",
+    "{names} had a credit check behind the quiet. Ordinary people choosing extraordinary 🫡",
 )
 # The same idea for a business office: no credit checks on Box, so what moves
 # is a sale.
@@ -320,6 +321,7 @@ B2B_RECEIPT_LINES = (
     "{names} — deal behind the quiet. The work works 🫡💼",
     "{names} had a deal behind the quiet. Good. 🫡",
     "{names} executed 📋💼 The board agrees. Ideas are easy, execution is everything 🫡",
+    "{names} had a deal behind the quiet. Ordinary people choosing extraordinary 🫡",
 )
 
 
