@@ -207,24 +207,11 @@ def resolve_reps_daily_update(rep_names: List[str], log=print) -> Dict[str, str]
 
 
 def guest_fields(since: dt.date, until: dt.date, log=print) -> List[Dict]:
-    """The guest customers plus the flyer's fill-ins (order #, BAN) straight
-    off the envelope's raw rows."""
-    import base64
-    import csv
-    import io
-
+    """The guest customers — guest_customers() already carries the flyer's
+    fill-ins (wireless_order, ban) and the card's alt_phones."""
     from automations.rc_contact_sync import guest
-    from automations.sp_order_log import raf_guest
 
-    customers = guest.guest_customers(since, until, log=lambda *a, **k: None)
-    env = raf_guest.fetch(log=log)
-    raw = {r.get("Order ID", "").strip(): r for r in csv.DictReader(
-        io.StringIO(base64.b64decode(env["csv"]).decode("utf-8-sig")))}
-    for c in customers:
-        r = raw.get(c["order_id"], {})
-        c["wireless_order"] = (r.get("Wireless Order #", "") or "").strip()
-        c["ban"] = (r.get("Wireless Acct #", "") or "").strip()
-    return customers
+    return guest.guest_customers(since, until, log=lambda *a, **k: None)
 
 
 def build_text(cust: Dict) -> str:
@@ -291,10 +278,16 @@ def run(since: dt.date, until: dt.date, *, live: bool = False,
         watch_token = RC.token(creds, jwt=creds["watch_jwt"])
 
     msgs = RC.sms_since(watch_token, watch_ext, since)
+    # All the numbers we know for the customer (card numbers ride in via
+    # the envelope's alt_phones when the Lucy 1 pull has harvested them),
+    # plus the order's own long digit strings — reps don't always text the
+    # primary number (Carlos 2026-10-08).
     missing = [c for c in customers
-               if not RC.texted(msgs, c["phone"],
-                                [c.get("customer_name", ""),
-                                 c.get("business", "")])]
+               if not RC.texted_any(
+                   msgs,
+                   [c["phone"]] + list(c.get("alt_phones") or []),
+                   [c.get("customer_name", ""), c.get("business", "")],
+                   [c.get("wireless_order", ""), c.get("ban", "")])]
     log("%d customer(s) in window, %d never messaged"
         % (len(customers), len(missing)))
 

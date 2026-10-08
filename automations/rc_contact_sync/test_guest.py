@@ -46,6 +46,8 @@ class TestGuestCustomers(unittest.TestCase):
             "order_date": "10/6/2026", "rep": "JORGE GRAMAJO",
             "business": "ACME LLC", "customer_name": "JANE DOE",
             "phone": "(210) 555-0101",
+            # the texted() widening fields ride on every row
+            "alt_phones": [], "wireless_order": "", "ban": "",
         }])
 
     def test_window_bounds(self):

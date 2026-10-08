@@ -262,10 +262,17 @@ def run(day: Optional[dt.date] = None, *, dry_run: bool = True,
     msgs = RC.sms_since(watch_token, watch_ext, sms_from or day)
     log("%s's line: %d SMS since %s"
         % (C.WATCH_OWNER_NAME, len(msgs), sms_from or day))
+    # texted_any: every number we know for the customer (guest rows carry
+    # the card's alt_phones once the Lucy 1 pull harvests them) plus the
+    # order's own long digit strings — reps don't always text the primary
+    # number (Carlos 2026-10-08). Plain scrape rows have none of the extra
+    # fields and degrade to the old check.
     missing = [c for c in customers
-               if not RC.texted(msgs, c["phone"],
-                                [c.get("customer_name", ""),
-                                 c.get("business", "")])]
+               if not RC.texted_any(
+                   msgs,
+                   [c["phone"]] + list(c.get("alt_phones") or []),
+                   [c.get("customer_name", ""), c.get("business", "")],
+                   [c.get("wireless_order", ""), c.get("ban", "")])]
     log("never messaged: %d of %d" % (len(missing), len(customers)))
 
     slack_failed: List[str] = []

@@ -124,8 +124,9 @@ def guest_customers(since: dt.date, until: dt.date,
             continue
         if not (since <= d <= until):
             continue
+        oid = _norm(r.get(cols["order_id"], ""))
         out.append({
-            "order_id": _norm(r.get(cols["order_id"], "")),
+            "order_id": oid,
             "day": d.isoformat(),
             "order_date": _norm(r.get(cols["order_date"], "")),
             "rep": _norm(r.get(cols["rep"], "")),
@@ -134,6 +135,12 @@ def guest_customers(since: dt.date, until: dt.date,
             "customer_name": _norm(r.get(cols["customer_name"], "")),
             "phone": _norm(r.get(cols.get("phone", ""), ""))
             if cols.get("phone") else "",
+            # the texted() widening (Carlos 2026-10-08: reps don't always
+            # use the primary number): every other number the pull knows
+            # for this customer, and the order's own long digit strings.
+            "alt_phones": list((env.get("phones") or {}).get(oid, [])),
+            "wireless_order": _norm(r.get("Wireless Order #", "")),
+            "ban": _norm(r.get("Wireless Acct #", "")),
         })
     if skipped_dates:
         log("guest rows: %d row(s) had an unreadable Order Date — left out"

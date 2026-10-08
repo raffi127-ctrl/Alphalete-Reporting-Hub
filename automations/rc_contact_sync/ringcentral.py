@@ -317,3 +317,27 @@ def send_group_mms(token: str, from_number: str, to_numbers: List[str],
                           % (to_numbers, r.status_code, r.text[:300]))
         return r.json()
     raise RCError("send to %s kept rate-limiting" % (to_numbers,))
+
+
+def texted_any(messages: List[dict], phones: List[str], names: List[str],
+               digit_needles: List[str] = ()) -> bool:
+    """texted(), widened (Carlos 2026-10-08: "check all the phone numbers on
+    the account because they don't always use the primary number"): any of
+    the customer's KNOWN numbers counts, and so does an outbound body that
+    quotes one of the order's own long digit strings (order #, BAN) — a
+    wrap-up that cites the order reached the customer no matter which number
+    it rode to. Digit needles under 9 digits are ignored: short runs match
+    half the traffic."""
+    for p in phones:
+        if texted(messages, p, []):
+            return True
+    if texted(messages, "", names):
+        return True
+    needles = [re.sub(r"\D", "", str(n or "")) for n in digit_needles]
+    needles = [n for n in needles if len(n) >= 9]
+    if needles:
+        for m in messages:
+            body = re.sub(r"\D", "", m.get("subject", "") or "")
+            if body and any(n in body for n in needles):
+                return True
+    return False

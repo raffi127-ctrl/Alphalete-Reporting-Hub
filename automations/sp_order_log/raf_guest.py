@@ -218,6 +218,65 @@ def upload(filtered: bytes, start: dt.date, end: dt.date, rows: int,
     return _upload_bytes(json.dumps(env).encode(), TAB, log=log)
 
 
+def probe_card(start: dt.date, end: dt.date, *, headless: bool = True,
+               log=print) -> int:
+    """READ-ONLY recon for the customer-card phone harvest (Carlos
+    2026-10-08: the wrap-up check must cover ALL the account's numbers, and
+    the extra numbers live on the View Customer card): open Raf's SOH grid,
+    dump the first data row's anchors (href/onclick → is the card a direct
+    URL?), the pager's shape, then open the first row's View link and dump
+    the resulting URL + every phone-shaped string on the card."""
+    import re as _re
+
+    from patchright.sync_api import sync_playwright
+
+    from automations.alphalete_sales_board import config as AC
+    from automations.rc_contact_sync import config as C
+    from automations.rc_contact_sync import sara
+    from automations.rc_contact_sync.status_probe import (
+        _dump_customer_view, _dump_first_row_links)
+    from automations.shared import saraplus as _sp
+
+    cr = AC.creds()
+    with sync_playwright() as p:
+        ctx, page, base = _sp.login_healing(
+            p, AC.PROFILE_DIR, cr["email"], cr["password"],
+            headless=headless, creds_hint=str(AC.CREDS_PATH), log=log)
+        try:
+            page.goto(base + C.HUB_PATH, wait_until="networkidle",
+                      timeout=C.NAV_TIMEOUT_MS)
+            sara.open_order_history_panel(page, log=log)
+            sara._set_telerik_date(page, C.FIELD_START, start)
+            sara._set_telerik_date(page, C.FIELD_END, end)
+            sara._submit(page, log=log)
+            links = _dump_first_row_links(page, log)
+            pager = page.evaluate(
+                """() => {
+                     const p = document.querySelector('.rgPager, .rgPagerCell,'
+                               + ' [id*="Pager"], .rgWrap.rgInfoPart');
+                     return p ? p.innerText.trim().slice(0, 200) : '(no pager)';
+                   }""")
+            log("pager: %r" % pager)
+            before_url = page.url
+            _dump_customer_view(ctx, page, links, log)
+            for pg in ctx.pages:
+                if pg.url != before_url:
+                    log("card URL: %s" % pg.url)
+            for pg in ctx.pages:
+                try:
+                    text = pg.inner_text("body", timeout=5000)
+                except Exception:  # noqa: BLE001
+                    continue
+                nums = sorted({m for m in _re.findall(
+                    r"\(?\b\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b", text)})
+                log("page %s: %d phone-shaped string(s): %s"
+                    % (pg.url[-60:], len(nums), nums[:12]))
+        finally:
+            ctx.close()
+    print("=== done ===", flush=True)
+    return 0
+
+
 # --- Lucy 2: fetch + merge ----------------------------------------------------
 
 def fetch(log=print) -> Optional[Dict]:
@@ -326,7 +385,14 @@ def main(argv=None) -> int:
     ap.add_argument("--no-upload", action="store_true",
                     help="with --pull / --from-file: filter and report, "
                          "write nothing to the sheet")
+    ap.add_argument("--probe-card", action="store_true",
+                    help="READ-ONLY: dump the SOH grid's row links, pager "
+                         "and the first customer card's URL + numbers")
     args = ap.parse_args(argv)
+    if args.probe_card:
+        today_ = dt.date.today()
+        return probe_card(today_ - dt.timedelta(days=7), today_,
+                          headless=not args.headed)
 
     today = dt.date.today()
     start = (dt.date.fromisoformat(args.start) if args.start
