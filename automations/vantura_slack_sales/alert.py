@@ -116,9 +116,10 @@ def build_message(log_path: str, exit_code: str) -> list[str]:
         head = [
             f":rotating_light: *{REPORT_NAME}* failed — exit {exit_code}",
             "",
-            "The BOX / AT&T day columns (BOX Sales Board / NDS Sales Board tabs) "
-            "did NOT get filled. If this was the *5:00am* pass, the *5:10am* "
-            "Sales Boards post will render an unfilled day.",
+            "The BOX / AT&T / Verizon day columns (BOX Sales Board / NDS Sales "
+            "Board / Verizon Sales Board tabs) did NOT get filled. If this was "
+            "the *5:00am* pass, the *5:10am* Sales Boards post will render an "
+            "unfilled day.",
         ]
     return head + [
         "",

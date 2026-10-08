@@ -1,6 +1,10 @@
-"""Vantura Sales Board fill — counts BOX and AT&T sales from Slack.
+"""Vantura Sales Board fill — counts BOX, AT&T and Verizon sales from Slack.
 
 Base RETIRED 2026-08-30 (Carlos) — the campaign ended; nothing looks for it.
+Verizon ADDED 2026-10-08 (Carlos: "update this board based off what they post
+on Slack"): same passes, same raise-only writes, same tally reconciliation and
+the same unknown-rep reporting, on the "Verizon Sales Board" tab. Which posts
+are Verizon, and how they count, is parse.py's business.
 
 Three of the four campaigns on Carlos's Sales Board are reported nowhere but
 #alphalete-gp-sales, so the VA opens the channel every morning, sorts the reps
@@ -186,11 +190,32 @@ KNOWN_USERS = {
     # because somebody had already typed them on the board by hand. The
     # board's Monday column names them one for one — Gary 1 (BOX), 8 for
     # Fernando, 3 for Fran — and the threads agree.
-    "U0BUMUYQAGZ": "Gary Van Whitaker",     # BOX; thread: "DAMNNN GARY"
+    "U0BUMUYQAGZ": "Gary Van Whitaker",     # BOX then, Verizon since the
+    # 10/2 board split; posts as "Gary Vanwhitaker"; thread: "DAMNNN GARY"
     "U0BRWL2DW9L": "Fernando Salazar",      # thread: "YES FERNANDOOOO"
     "U0BSBNSK9L2": "Francisco Escamilla",   # thread: "FRAN FRAN FRAN".
     # NOT Francisco Javier Jimenez, whose threads also shout "FRANNNNNN":
     # Jimenez has no row on the board and Escamilla's row carried the 3.
+    # Verizon (door to door) — joined the Slack fill 2026-10-08. Ids read off
+    # Slack's own "<@id|Display Name>" rendering in the Verizon crew's
+    # shout-out lists (Jayden 10/6, Gary and Yariel 10/7), and the per-day
+    # counts land on the Verizon board row for row (10/6: Diego 6, Thais 1;
+    # 10/7: Yariel 2). Will, Giovanni, Luis, Edgar, Richard, Jayden, Gary,
+    # Kyara, Nico and Eric are already above — same ids, new board.
+    "U0A6XE8S36E": "Diego Chacon",
+    "U0C2KSMN7Q8": "Yariel Martin Caban",       # posts as "Yariel caban"
+    "U0BAYDXHXB7": "Thais Alvarez Aragon",      # posts as "Thais"
+    "U09EA9XL9NZ": "Hamid Asim",
+    "U0C5XCVMMS4": "Angel Rivera",
+    "U0C3DJBDRMG": "Gavin Dimitri Natividad",   # Slack spells him "gavin natividaf"
+    # NOT on the board (yet): Giovanni's 10/7 post says he went "ON THE BOARD
+    # ON HIS FIRST DAY". Named so a sale of his own reads "NOT A Verizon REP
+    # ON THE BOARD: Alexis Alejo" instead of a bare id.
+    "U0C6YL2U9UH": "Alexis Alejo",
+    # "U0AQPH8BBUH" posts as just "Jose" — probably the Verizon row "Jose
+    # Manuel Rojas", but the NDS board has a "Jose Manuel Pimentel Lugo" too
+    # (U0C1K970J1H, "Jose Pimentel"). Left out on purpose: a sale of his
+    # surfaces as an unknown id with thread hints, which is the safe failure.
     # Not reps, but they post here — named so a mis-parse points at a person.
     "U0BCG8F9B5Z": "Lucy Reporting",
     "U046G04P5LG": "Carlos Hidalgo",
@@ -202,7 +227,8 @@ KNOWN_USERS = {
 # Slack display name -> board REP name, where normalising can't bridge the two.
 # Keep this list as short as it can be; everything else matches on name.
 NAME_ALIASES = {
-    "edgar camunez": "Edgar",
+    # "edgar camunez" -> "Edgar" RETIRED 2026-10-08: that was his Base row, and
+    # it hid him on the Verizon board, where the row carries his full name.
     "ibukunoluwa ogunlola": "IBK",
     "adrian alonso leos": "Adrian Leos",
     "juan miranda": "Juan Jose Miranda",
@@ -225,12 +251,24 @@ NAME_ALIASES = {
     "tara ecklof": "Tara Lynn Ecklof",
     "francisco jimenez": "Francisco Javier Jimenez",
     "adabella amaya": "Adabella Amaya Gallegos",
+    # Verizon (2026-10-08) — Slack's display names vs the Verizon board rows.
+    # KNOWN_USERS carries the board spelling today, so these only matter once
+    # users.info works; "Will Bautista", "Luis Valenciano" and "Kyara" are
+    # already covered above.
+    "yariel caban": "Yariel Martin Caban",
+    "gary vanwhitaker": "Gary Van Whitaker",
+    "thais": "Thais Alvarez Aragon",
+    "gavin natividaf": "Gavin Dimitri Natividad",
+    "jayden luna": "Jayden Willingham",     # his Slack name; the board row was
+    # renamed Willingham 2026-09-03 (KNOWN_USERS already says so for his id)
 }
 
-# The office's own running tally, e.g. "A&T - 21/16", "Box - 6/8", "Base -12/20".
+# The office's own running tally, e.g. "A&T - 21/16", "Box - 6/8", "Base -12/20",
+# "Verizon - 16/15".
 TALLY_RE = {
     "BOX": re.compile(r"box\s*-?\s*(\d+)\s*/\s*\d+", re.I),
     "B2B": re.compile(r"a\s*&?\s*t\s*-?\s*(\d+)\s*/\s*\d+", re.I),
+    "Verizon": re.compile(r"verizon\s*-?\s*(\d+)\s*/\s*\d+", re.I),
 }
 
 
@@ -421,7 +459,8 @@ def fetch_posts(oldest: dt.datetime, latest: dt.datetime):
         # Slack escapes &, < and > in message text, so the office's own
         # "A&T - 21/16" tally arrives as "A&amp;T" and silently stops matching.
         posts.append(P.read_post(m["ts"], when, author, uid,
-                                 html.unescape(m.get("text", ""))))
+                                 html.unescape(m.get("text", "")),
+                                 files=len(m.get("files") or [])))
     posts.sort(key=lambda p: float(p.ts))
     return posts, directory, scope_ok
 
@@ -579,18 +618,27 @@ def day_column(g, day: dt.date):
 
 
 def match_rep(author: str, rows: dict[str, int]):
-    """Slack author -> board row key. Alias, then exact, then first+last."""
+    """Slack author -> board row key. Alias, then exact, then first+last.
+
+    The alias is tried FIRST and the raw name AFTER it, so an alias that
+    points at a row this board does not have cannot hide a rep whose own name
+    is on it: "Edgar Camunez" was aliased to his old Base row "Edgar" until
+    2026-10-08 and matched nothing on the Verizon board, where the row says
+    "Edgar Camunez". Boards that have the alias's row behave as before.
+    """
     key = _norm(author)
+    cands = [key]
     if key in NAME_ALIASES:
-        key = _norm(NAME_ALIASES[key])
-    if key in rows:
-        return key
-    parts = key.split()
-    if len(parts) >= 2:
-        for cand in rows:
-            cp = cand.split()
-            if cp and cp[0] == parts[0] and cp[-1] == parts[-1]:
-                return cand
+        cands.insert(0, _norm(NAME_ALIASES[key]))
+    for cand in cands:
+        if cand in rows:
+            return cand
+        parts = cand.split()
+        if len(parts) >= 2:
+            for row in rows:
+                rp = row.split()
+                if rp and rp[0] == parts[0] and rp[-1] == parts[-1]:
+                    return row
     return None
 
 
@@ -646,6 +694,23 @@ def run_campaign(posts, g, day: dt.date, campaign: str, log=_log) -> dict:
                 f"{rec['count']}")
         for p in rec["posts"]:
             log(f"      {p.when.astimezone(TZ).strftime('%H:%M')}  {p.excerpt}")
+
+    # A post with no words at all — a photo of the contract and nothing typed
+    # (Edgar Camunez, Verizon, 2026-10-07 18:32: Carlos confirmed he simply
+    # forgot to write the post). There is nothing to count and nothing is
+    # written; the board keeps whatever the manager typed, because the fill
+    # only ever raises. Said out loud so the day's numbers can be traced, and
+    # only for THIS board's reps — a rep sits on one board, so the note lands
+    # under their own campaign.
+    for p in posts:
+        if p.sales_day != day or p.text.strip() or not p.files:
+            continue
+        key = match_rep(p.author, rows)
+        if key:
+            log(f"  ! {campaign} post with no text/count from "
+                f"{_cell(g, rows[key], NAME_COL)} "
+                f"({p.when.astimezone(TZ).strftime('%H:%M')}, {p.files} "
+                f"file(s), no words) — nothing counted; board number kept")
 
     total = sum(r["count"] for r in matched.values()) \
         + sum(r["count"] for _, r in unmatched)
