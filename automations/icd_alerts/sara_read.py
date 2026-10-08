@@ -165,6 +165,11 @@ def _sign_in_raw(page, log=print) -> str:
         if base:
             return base
         _forget_session()
+    if _RESUME_ONLY["on"]:
+        raise SessionLost(
+            "SaraPlus session expired (%s) and this read must not log in"
+            % ("was %s old" % _age_text(_session_since()) if _session_since()
+               else "none remembered"))
     try:
         base = S._login(page, cr["email"], cr["password"],
                         creds_hint="the SaraPlus login saved on this computer",
@@ -239,12 +244,40 @@ def _remembered_session() -> str:
         return ""
 
 
+SESSION_SINCE_PATH = C.APP_DIR / "saraplus-session-since.txt"
+
+
 def _remember_session(base: str) -> None:
     try:
         SESSION_PATH.parent.mkdir(parents=True, exist_ok=True)
         SESSION_PATH.write_text(base or "")
+        # WHEN THIS SESSION WAS BORN, so a wall can say how old the session
+        # it replaced was -- the one fact that tells an idle timeout from a
+        # hard lifetime (2026-10-08: every office's wall lands 2-4am and
+        # nobody could say whether the keep-alive had been touching it).
+        SESSION_SINCE_PATH.write_text(dt.datetime.now().isoformat(timespec="seconds"))
     except OSError:
         pass
+
+
+def _session_since() -> Optional[dt.datetime]:
+    try:
+        return dt.datetime.fromisoformat(SESSION_SINCE_PATH.read_text().strip())
+    except (OSError, ValueError):
+        return None
+
+
+# RESUME ONLY, NEVER A LOGIN -- for the overnight catch-up. A fresh headless
+# login at 2am is exactly what earns the emailed-code wall with nobody at the
+# Mac (Luke 01:37 / 04:00 / 04:33, Rashad 02:02, Carlos 02:00, 2026-10-07/08).
+# read_day(resume_only=True) makes _sign_in_raw raise SessionLost instead of
+# typing the password; the catch-up stays owed and runs on the first sweep of
+# the day, when a wall at least opens the window in front of a person.
+_RESUME_ONLY = {"on": False}
+
+
+class SessionLost(RuntimeError):
+    """The remembered session is gone and this read was told not to log in."""
 
 
 def _forget_session() -> None:
@@ -554,6 +587,54 @@ def _report_sales_fault(summary: str, log=print) -> None:
 
 KEEPALIVE_PATH = C.APP_DIR / "saraplus-keepalive.txt"
 KEEPALIVE_EVERY_MIN = 10
+# What every keep-alive did, newest last, so a wall can show the night.
+KEEPALIVE_LOG_PATH = C.APP_DIR / "saraplus-keepalive-log.json"
+KEEPALIVE_LOG_KEEP = 60
+
+
+def _age_text(since: Optional[dt.datetime], now: Optional[dt.datetime] = None) -> str:
+    if since is None:
+        return "?"
+    mins = int(((now or dt.datetime.now()) - since).total_seconds() // 60)
+    return "%dh%02dm" % divmod(max(mins, 0), 60)
+
+
+def _note_keepalive(result: str, now: dt.datetime) -> None:
+    try:
+        import json
+        try:
+            rows = json.loads(KEEPALIVE_LOG_PATH.read_text())
+        except (OSError, ValueError):
+            rows = []
+        if not isinstance(rows, list):
+            rows = []
+        rows.append({"t": now.isoformat(timespec="seconds"), "r": result,
+                     "age": _age_text(_session_since(), now)})
+        KEEPALIVE_LOG_PATH.write_text(json.dumps(rows[-KEEPALIVE_LOG_KEEP:]))
+    except OSError:
+        pass
+
+
+def session_evidence(now: Optional[dt.datetime] = None) -> str:
+    """For a fault's detail: how old the session is (or was) and what the
+    keep-alive did lately. Best effort, never raises."""
+    now = now or dt.datetime.now()
+    out = ["session evidence:"]
+    since = _session_since()
+    out.append("  remembered session: %s (since %s)"
+               % ("yes" if _remembered_session() else "no",
+                  since.isoformat(timespec="minutes") if since else "?"))
+    if since:
+        out.append("  session age: %s" % _age_text(since, now))
+    try:
+        import json
+        rows = json.loads(KEEPALIVE_LOG_PATH.read_text())
+        tail = rows[-14:] if isinstance(rows, list) else []
+        out.append("  keep-alive (last %d): %s" % (len(tail), ", ".join(
+            "%s %s@%s" % (r.get("t", "")[11:16], r.get("r"), r.get("age")) for r in tail)))
+    except (OSError, ValueError):
+        out.append("  keep-alive: no log")
+    return "\n".join(out)
 
 
 def keep_session_alive(*, headless: bool = True, log=print,
@@ -607,16 +688,19 @@ def keep_session_alive(*, headless: bool = True, log=print,
                     pass
     except Exception as e:  # noqa: BLE001 -- housekeeping must never fail a tick
         log("SaraPlus keep-alive skipped: %s" % type(e).__name__)
+        _note_keepalive("error", now)
         return "error"
     if base:
+        _note_keepalive("kept", now)
         return "kept"
+    _note_keepalive("lost", now)
     _forget_session()
     log("SaraPlus session expired overnight -- the next read will log in")
     return "lost"
 
 
 def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
-             log=print) -> Dict:
+             log=print, resume_only: bool = False) -> Dict:
     """{'records': {REP: credit checks}, 'sales': {REP: {Int, Int Up, DTV, NL}}}.
 
     ONE SESSION, THREE PASSES. A failure in the sales half must not cost the

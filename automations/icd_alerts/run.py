@@ -180,8 +180,13 @@ def _is_code_wall(e: Exception) -> bool:
     return "code it emails" in str(e)
 
 
+# cmd_once's answer when the overnight catch-up had no session to resume and
+# was told not to log in: sales_closeout leaves the day owed on this code.
+CATCHUP_DEFERRED = 3
+
+
 def cmd_once(headless: bool, dry_run: bool, day: dt.date,
-             sales_only: bool = False) -> int:
+             sales_only: bool = False, resume_only: bool = False) -> int:
     # FIRST, AND ONCE A DAY. Getting a fix onto an office's machine used to
     # mean messaging a person and hoping they pasted a line -- which is how
     # Kash ran a whole day on the first agent with no sales at all. The files
@@ -228,9 +233,17 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date,
         # afternoon, and the numbers are cumulative so nothing is lost.
         read = W.timed("sweep",
                        lambda: sara_read.read_day(day, headless=headless,
-                                                  log=_log),
+                                                  log=_log,
+                                                  resume_only=resume_only),
                        log=_log, report=_report, office_key=att_key)
         current, sales = read["records"], read["sales"]
+    except sara_read.SessionLost as e:
+        # THE OVERNIGHT CATCH-UP FOUND NO SESSION. Not a fault and not a
+        # login: a headless login now is the emailed-code wall at 2am with
+        # nobody there (every office's wall of 10/7-10/8 landed 2-4am). The
+        # catch-up stays owed and runs on the first sweep of the day.
+        _log("catch-up deferred: %s -- not logging in headless at this hour" % e)
+        return CATCHUP_DEFERRED
     except sara_read.SignInInProgress:
         # Somebody is at the keyboard finishing a sign-in. Send NOTHING: an
         # empty read relayed here is a day of zeros written over the real
@@ -248,7 +261,10 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date,
         # never told (Eveliz, 2026-10-03..06). As signin-saraplus the poster
         # DMs the owner, their helpers, Megan & Eve, once a day.
         stage = "signin-saraplus" if _is_code_wall(e) else "sweep"
-        _report(stage, e, office_key=att_key)
+        # WITH THE NIGHT'S EVIDENCE: how old the session was and what the
+        # keep-alive did, so the wall tells idle-expiry from a hard lifetime.
+        _report(stage, e, office_key=att_key,
+                detail=traceback.format_exc() + "\n\n" + sara_read.session_evidence())
         sara_read.hold_sara(log=_log)
         # SAME AS THE BOX PATH, and for the SAME reason. Khalil's machine hit
         # SaraPlus's passcode wall 115 times on 2026-09-17 -- five hours of
@@ -577,7 +593,8 @@ def main(argv=None) -> int:
         try:
             from automations.icd_alerts import sales_closeout
             sales_closeout.maybe_run(
-                lambda d: (cmd_once(headless, args.dry_run, d, sales_only=True)
+                lambda d: (cmd_once(headless, args.dry_run, d, sales_only=True,
+                                    resume_only=True)
                            or cmd_box(headless, args.dry_run, d)),
                 log=_log)
         except Exception as e:  # noqa: BLE001 — never lose a sweep to this

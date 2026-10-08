@@ -21,6 +21,10 @@ from typing import Callable, Optional
 
 STATE = Path.home() / ".config" / "lucy-reports" / "sales_closeout.json"
 MAX_ATTEMPTS = 6
+# run.cmd_once returns this when the catch-up found no session to resume and
+# was told not to log in (run.CATCHUP_DEFERRED). Kept here so this module
+# needs nothing from run.
+DEFERRED = 3
 
 
 def _read() -> dict:
@@ -82,6 +86,12 @@ def maybe_run(read_day: Callable[[dt.date], int], *,
         _record(day, done=False)
         log("could not finish %s's sales (%s); the evening numbers stand."
             % (day.isoformat(), type(e).__name__))
+        return None
+    if rc == DEFERRED:
+        # No session overnight and no headless login allowed: not an attempt,
+        # not a failure. Still owed; the first sweep of the day takes it.
+        log("final sales read for %s deferred until a session exists."
+            % day.isoformat())
         return None
     _record(day, done=(rc == 0))
     log(("sales for %s finalised ✅" if rc == 0 else
