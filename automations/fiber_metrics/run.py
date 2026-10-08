@@ -660,13 +660,14 @@ def build_activation_overview(cols, crew, today, log=print) -> Path:
                 ap.POSTED_DATE_COL: _soh_cell(ix, r, "Wireless Active Date"),
                 "DTR Status (enriched)": status}
         lines.extend(dict(base) for _ in range(n))
-    tables = ap.build_week_tables(lines, today=today)
-    out = OUT_DIR / "fiber_activation_overview.png"
-    bpng.render(tables, out,
-                subtitle="Fiber — Carlos's crew on Raf's SaraPlus (pulled "
-                         f"{pulled_at:%H:%M}); units = wireless lines per "
-                         "order; Active = posted.")
-    log(f"[fiber] activation overview (SARAPLUS): {len(lines)} unit(s)")
+    # sp_order_log's builder owns the activated->posted/open->pending remap
+    # and the COLS override (KeyError:'posted' on the first fiber render) —
+    # one builder, both campaigns.
+    from automations.sp_order_log.run import build_overview_png
+    out = build_overview_png(lines, today, log=log,
+                             out_path=OUT_DIR / "fiber_activation_overview.png")
+    log(f"[fiber] activation overview (SARAPLUS, pulled {pulled_at:%H:%M}): "
+        f"{len(lines)} unit(s)")
     return out
 
 
