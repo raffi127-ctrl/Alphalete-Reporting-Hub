@@ -369,22 +369,22 @@ class RefreshTest(unittest.TestCase):
 
 
 class FlagTest(unittest.TestCase):
-    def test_low_score_tags_camila_and_perla(self):
+    def test_low_score_flags_without_tagging(self):
         low = result(schedule=False, off_script_pay=True, retail=True, nine_to_five=True,
                      mon_fri=True, base_pay=True)
         self.assertLessEqual(grade.score(low)["score"], run.FLAG_AT)
-        text = run.reply_text(MEETING, low, tag=True)
-        self.assertIn("<@U07FWSYP3NV> <@U07R68ZGHT6>", text)
-        # the preview DM never tags
-        self.assertNotIn("<@", run.reply_text(MEETING, low, tag=False))
+        text = run.reply_text(MEETING, low)
+        self.assertIn("🔔", text)
+        # Camila 10/8: no @ -- they read every thread anyway
+        self.assertNotIn("<@", text)
 
-    def test_exactly_50_is_tagged_51_is_not(self):
+    def test_exactly_50_is_flagged_51_is_not(self):
         from unittest import mock
         base = grade.score(result())
-        for pts, tagged in ((50, True), (51, False)):
+        for pts, flagged in ((50, True), (51, False)):
             with mock.patch.object(run.grade, "score", return_value=dict(base, score=pts)):
-                text = run.reply_text(MEETING, result(), tag=True)
-            self.assertEqual("<@U07FWSYP3NV>" in text, tagged, pts)
+                text = run.reply_text(MEETING, result())
+            self.assertEqual("🔔" in text, flagged, pts)
 
 
 class DocTest(unittest.TestCase):
@@ -510,10 +510,9 @@ class BoardPostTest(unittest.TestCase):
         self.assertEqual(run.low_scorers(self.ROWS, self.DAY),
                          [("Nakechia", 36, 1), ("Valentina", 48, 2)])
 
-    def test_day_reply_tags_and_lists(self):
+    def test_day_reply_lists_without_tagging(self):
         text = run.board_day_text(self.DAY, self.ROWS)
-        self.assertIn("<@U07FWSYP3NV>", text)
-        self.assertIn("<@U07R68ZGHT6>", text)
+        self.assertNotIn("<@", text)
         self.assertIn("Mon 10/5", text)
         self.assertIn("49 pts or under", text)
         self.assertIn("• Nakechia — 36 pts (1 interview)", text)

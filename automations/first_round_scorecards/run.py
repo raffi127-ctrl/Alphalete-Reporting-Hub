@@ -48,12 +48,12 @@ from automations.first_round_scorecards import appstream, doc, fathom, grade, zo
 
 CHANNEL_ID = "C0C42793AKS"          # #ars-recruiting-numbers (Eve, 2026-09-29)
 EVE_USER_ID = "U088E2KJEV8"         # preview DMs
-# A score of this or less tags them in that interview's reply, so the low ones
-# stand out among every interview of the day (Camila via Eve, 2026-09-30;
-# Eve: "50 o menos").
+# A score of this or less gets a 🔔 line in that interview's reply, so the low
+# ones stand out among every interview of the day (Camila via Eve, 2026-09-30;
+# Eve: "50 o menos"). No @ anymore: Camila + Perla read every thread anyway
+# (Camila, #ars-recruiting-numbers 2026-10-08: "lo que sí le sacaría es el
+# etiquetarnos").
 FLAG_AT = 50
-FLAG_WHO = ("U07FWSYP3NV",          # Camila Hornos Kraschinsky
-            "U07R68ZGHT6")          # Perla Falabella
 # The daily reply in the board's weekly thread lists who averaged under this
 # for the day (Eve, 2026-10-05: "49 o menos").
 BOARD_LOW_UNDER = 50
@@ -121,7 +121,7 @@ def emoji(score: int) -> str:
 
 
 def reply_text(m: Dict, result: Optional[Dict], *, skipped: str = "",
-               doc_link: str = "", tag: bool = False) -> str:
+               doc_link: str = "") -> str:
     """One interview = one reply. Short on purpose: the score, what was missed,
     the coaching, then the full audit (a Google Doc) and the recording."""
     head = f"*Started {_clock(fathom.start_ct(m))} CT*"
@@ -143,8 +143,8 @@ def reply_text(m: Dict, result: Optional[Dict], *, skipped: str = "",
     lines += [f"*Score: {s['score']}/100* {emoji(s['score'])}",
               f"🚩 Red flags: {s['red_hit']} of {s['n_red']}  ·  ✅ Must-dos: "
               f"{s['musts_done']} of {s['n_must']}"]
-    if tag and s["score"] <= FLAG_AT:
-        lines.append(f"🔔 {FLAG_AT} pts or under: " + " ".join(f"<@{u}>" for u in FLAG_WHO))
+    if s["score"] <= FLAG_AT:
+        lines.append(f"🔔 {FLAG_AT} pts or under")
     kind = {key: k for key, _, k in grade.ITEMS}
     red = [grade.SHORT[k] for k in s["missed"] if kind[k] == "red"]
     miss = [grade.SHORT[k] for k in s["missed"] if kind[k] == "must"]
@@ -275,9 +275,8 @@ def board_week_text(day: dt.date, link: str) -> str:
 
 def board_day_text(day: dt.date, rows: List[Dict]) -> str:
     when = f"{day:%a} {day.month}/{day.day}"
-    tags = " ".join(f"<@{u}>" for u in FLAG_WHO)
     low = low_scorers(rows, day)
-    lines = [f"✅ {when}: every interview is audited and on the board {tags}"]
+    lines = [f"✅ {when}: every interview is audited and on the board"]
     if low:
         lines.append(f"*Interviewers at {BOARD_LOW_UNDER - 1} pts or under:*")
         lines += [f"• {n} — {avg} pts ({k} interview{'s' if k > 1 else ''})" for n, avg, k in low]
@@ -287,10 +286,10 @@ def board_day_text(day: dt.date, rows: List[Dict]) -> str:
 
 
 def _board_post(day: dt.date, link: str, rows: List[Dict]) -> None:
-    """The board lives in Drive only, so Camila asked to be tagged on it (Eve,
-    2026-10-05: not a new post every day with the same link). One pinned
-    thread per week with the board link; each day one reply in it tags
-    Camila + Perla once the day is audited, with who scored low."""
+    """The board lives in Drive only (Eve, 2026-10-05: not a new post every
+    day with the same link). One pinned thread per week with the board link;
+    each day one reply in it once the day is audited, with who scored low.
+    No @ since 2026-10-08 (Camila)."""
     data = _ledger()
     if not link or day.isoformat() in data.get("_board_posted", []):
         return
@@ -328,7 +327,7 @@ def _board_post(day: dt.date, link: str, rows: List[Dict]) -> None:
     if not resp.get("ok"):
         print("BOARD POST FAILED")
         return
-    print("BOARD POST: tagged Camila + Perla in the week's thread")
+    print("BOARD POST: day reply in the week's thread")
     data = _ledger()
     data["_board_posted"] = (data.get("_board_posted", []) + [day.isoformat()])[-60:]
     _save(data)
@@ -457,9 +456,7 @@ def post(day: dt.date, graded: Dict[str, List], *, preview: bool,
                           f"{type(exc).__name__}: {exc} - not posted")
                     failed += 1
                     continue
-            # no tags in Eve's preview DM: they'd ping for a draft
-            text = reply_text(m, result, skipped=skipped, doc_link=doc_link,
-                              tag=not preview)
+            text = reply_text(m, result, skipped=skipped, doc_link=doc_link)
             was = done.get(str(m.get("recording_id"))) if refresh and not preview else None
             if was:
                 # already in the thread: edit that reply, don't add a second one
