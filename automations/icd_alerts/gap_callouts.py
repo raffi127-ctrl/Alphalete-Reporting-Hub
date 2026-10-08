@@ -448,6 +448,8 @@ PACE_LINES = (
     # Goggins (Megan 2026-10-07: "taking souls for sure").
     "{names} at {avg} {unit}/hr. Taking souls 🔥",
     "{names} — {avg} {unit}/hr. So much winning 🔥",
+    # Naruto (Megan 2026-10-07).
+    "{names} at {avg} {unit}/hr. Hokage pace 🍥🔥",
 )
 
 # The same recognition in business talk for the Service Cloud offices (Megan
@@ -467,6 +469,7 @@ B2B_PACE_LINES = (
     "{names} — {avg} {unit}/hr 🚣🔥 Who's gonna carry the boats? You are.",
     "{names} at {avg} {unit}/hr. Taking souls 🔥",
     "{names} — {avg} {unit}/hr. So much winning 🔥",
+    "{names} at {avg} {unit}/hr. Hokage pace 🍥🔥",
 )
 
 

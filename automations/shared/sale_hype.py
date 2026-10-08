@@ -69,6 +69,7 @@ HYPE_REGULAR = (
     "{first} is on the board. Taking souls :fire:",
     "{first} closed it. The art of the deal :dollar:",
     "{first} is on the board. Tremendous :dollar:",
+    "{first} caught another one :fishing_pole_and_fish::dollar: Gotta catch 'em all",
     "Closer!! {first} is on the board :fire:",
     "WINNER!! {first} is on the board :money_with_wings:",
     "{first} is on the board! Who's next :eyes::eyes::eyes:",
@@ -557,6 +558,7 @@ class _Box(Shape):
         "{first} closed one. Taking souls :fire:",
         "{first} closed it. The art of the deal :moneybag:",
         "{first} closed one. Tremendous :moneybag:",
+        "{first} caught another one :fishing_pole_and_fish::moneybag: Gotta catch 'em all",
         "Closer!! {first} closed one :fire:",
         "WINNER!! {first} closed one :money_with_wings:",
         "{first} closed one! Who's next :eyes::eyes::eyes:",
@@ -950,6 +952,7 @@ FIRST_SALE_LINES = (
     "{first} is OTB 💰 Win the day starts now 💪 Who's next?",
     "{first} is OTB 💰 Committed first, figured it out. Who's next? 👀",
     "{first} is OTB 💰 Step one: prove it's possible. Done. Who's next? 🔥",
+    "{first} is OTB 💰 That's my ninja way. Who's next? 🥷",
 )
 # BACK TO BACK: the same rep again inside BACK_TO_BACK_MIN of their last one.
 BACK_TO_BACK_MIN = 30
@@ -961,6 +964,8 @@ BACK_TO_BACK_LINES = (
     "Two in {n} min 🔥 {first} said one more and meant it 💪",
     "Two in {n} min 🔥🔥 {first} is 10X-ing it. Keep going!",
     "Two in {n} min 🔥 {first} is out here taking souls",
+    "{first} is evolving 🔥 Two in {n} min",
+    "Two in {n} min 🥷 Shadow clone jutsu? Believe it! {first}",
 )
 SALE_TIMES_PATH = (Path.home() / ".config" / "recruiting-report"
                    / "icd_sale_times.json")
