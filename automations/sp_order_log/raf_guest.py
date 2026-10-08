@@ -272,14 +272,27 @@ def probe_card(start: dt.date, end: dt.date, *, headless: bool = True,
                                l.get("onclick") or "")
                 if m:
                     break
+            for fr in page.frames:
+                try:
+                    has = fr.evaluate(
+                        "() => typeof OpenCustomer === 'function'")
+                except Exception:  # noqa: BLE001
+                    has = False
+                log("frame %s has OpenCustomer: %s"
+                    % ((fr.url or "(inline)")[-60:], has))
+            opened = False
             if m:
                 cid = m.group(1)
                 log("calling OpenCustomer(%r) ..." % cid)
-                page.evaluate("(id) => OpenCustomer(id)", cid)
-                page.wait_for_timeout(4000)
-            else:
-                log("no OpenCustomer onclick found — falling back to click")
+                try:
+                    page.evaluate("(id) => OpenCustomer(id)", cid)
+                    opened = True
+                except Exception as e:  # noqa: BLE001
+                    log("  direct call failed (%s) — clicking the link "
+                        "instead" % str(e)[:120])
+            if not opened:
                 _dump_customer_view(ctx, page, links, log)
+            page.wait_for_timeout(4000)
             for pg in ctx.pages:
                 log("open page: %s" % pg.url[-90:])
                 frames = pg.frames
