@@ -299,6 +299,49 @@ def _manifest(failed: List[str], *, dry_run: bool, note: str = "") -> None:
         print("  (manifest not written: %s: %s)" % (type(e).__name__, str(e)[:120]))
 
 
+def show_wrapups(since: dt.date, until: dt.date, log=print) -> int:
+    """READ-ONLY: print the distinct OUTBOUND bodies Taylor's line sent to
+    the guest customers in the window — the actual wrap-up text, read off
+    the wire instead of guessed. Carlos 2026-10-08 asked to send 'what we're
+    suppose to send' to the ones who never got it; the repo has no template
+    on file, but the 19 customers who DID get one are carrying it."""
+    from automations.rc_contact_sync import guest
+
+    customers = guest.guest_customers(since, until, log=lambda *a, **k: None)
+    creds = C.rc_creds()
+    info = RC.token_info(creds)
+    token = info["access_token"]
+    watch_token = token
+    if creds.get("watch_jwt"):
+        watch_token = RC.token(creds, jwt=creds["watch_jwt"])
+    msgs = RC.sms_since(watch_token, str(creds["watch_extension_id"]), since)
+    log("%d SMS on the line since %s; %d guest customer(s) in window"
+        % (len(msgs), since, len(customers)))
+    bodies: Dict[str, List[str]] = {}
+    for c in customers:
+        want = RC.norm_phone(c["phone"])
+        if not want:
+            continue
+        for m in msgs:
+            if str(m.get("direction", "")) != "Outbound":
+                continue
+            if want in RC._msg_numbers(m):
+                body = " ".join((m.get("subject") or "").split())
+                if body:
+                    bodies.setdefault(body, []).append(
+                        titlecase_name(c["customer_name"]))
+    if not bodies:
+        log("NO outbound bodies found to any guest customer — the wrap-ups "
+            "may go out from a different line than the watch extension")
+        return 1
+    for i, (body, who) in enumerate(
+            sorted(bodies.items(), key=lambda kv: -len(kv[1]))[:5], 1):
+        log("WRAPUP#%d sent to %d customer(s) (e.g. %s):" % (i, len(who), who[0]))
+        log("WRAPUP#%d BODY: %s" % (i, body))
+    print("=== done ===", flush=True)
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         prog="rc_contact_sync",
@@ -318,6 +361,10 @@ def main(argv=None) -> int:
                     help="only the first N orders (for a careful first --live)")
     ap.add_argument("--no-slack", action="store_true",
                     help="do everything except the Slack post")
+    ap.add_argument("--show-wrapups", action="store_true",
+                    help="with --since: READ-ONLY dump of the distinct "
+                         "outbound wrap-up bodies sent to the guest "
+                         "customers in the window")
     ap.add_argument("--since", default=None, metavar="YYYY-MM-DD",
                     help="BACKFILL the guest reps' sales under Raf's code "
                          "from this date through yesterday (or the "
@@ -341,6 +388,8 @@ def main(argv=None) -> int:
         from automations.rc_contact_sync import guest
         since = dt.datetime.strptime(args.since, "%Y-%m-%d").date()
         until = day or C.yesterday()
+        if args.show_wrapups:
+            return show_wrapups(since, until)
         if since > until:
             print("✗ --since %s is after %s." % (since, until))
             return 2
