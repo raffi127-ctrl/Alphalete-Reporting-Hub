@@ -1039,6 +1039,47 @@ def _refresh_and_check(week: dt.date, raw_range: tuple[int, int], *,
     return {"summary": parts[0], "checks": checks}
 
 
+def payroll_holes(summary: str, checks: str, raf_note: str,
+                  l2_err: str) -> list:
+    """What this run left undone for Carlos — [] when the week is ready.
+
+    2026-10-08: the 10/7 ticket stayed open after a clean re-run ("nothing can
+    confirm it DELIVERED"). Not exit 0 (Eve 10/7): a run that loads RAW but
+    skips the refresh, or whose Commission tab doesn't tie to the P&L, hands
+    Carlos a wrong pack. Orphan payouts / few spare rows are findings he reads
+    in the DM, not a failed run."""
+    s, c, r = summary or "", checks or "", raf_note or ""
+    holes = []
+    if "SKIPPED" in s or not s.startswith("refresh"):
+        holes.append("refresh not triggered")
+    if "tie-out FAILED" in c:
+        holes.append("Commission does not tie to the P&L")
+    if "tie-out check errored" in c:
+        holes.append("tie-out check could not run")
+    if "ORG DD sweep FAILED" in r:
+        holes.append("ORG DD sweep failed")
+    if l2_err:
+        holes.append("Level-2 bonuses not added")
+    return holes
+
+
+def _record_delivery(week: dt.date, summary, checks, raf_note, l2_err) -> None:
+    """Today's run manifest — what lets a clean live run close its ticket.
+    Only after the kickoff DM went out. Never raises."""
+    try:
+        from automations.shared import run_manifest
+        holes = payroll_holes(summary, checks, raf_note, l2_err)
+        wk = f"week ending {week:%m/%d}"
+        run_manifest.write_manifest(
+            REPORT_ID, succeeded=[] if holes else [wk], failed=holes,
+            note=(f"{wk}: " + ("; ".join(holes) if holes
+                               else "loaded, refreshed, tied out, Carlos DM'd")))
+        _log(f"manifest: {'; '.join(holes) or 'clean'}")
+    except Exception as e:  # noqa: BLE001
+        _log(f"couldn't write the run manifest ({type(e).__name__}: {e}) — "
+             "payroll is done, but the ticket won't close itself")
+
+
 def _kickoff_dm(week: dt.date, raw_range, summary, checks, *, send: bool, log=_log) -> None:
     """DM Carlos as Lucy that the week is loaded and refreshed, and what's left
     for him (bonuses/no-pay/rates, verify, print; auto-locks Thu)."""
@@ -1359,9 +1400,11 @@ def main(argv: list[str] | None = None) -> int:
             _log(raf_note)
         _set_week(week, write=write, sheet_id=sheet_id)
         # Level-2 bonuses BEFORE the refresh so _rebuildCore picks them up.
+        l2_err = ""
         try:
             _level2_bonus(week, raw_range, write=write, sheet_id=sheet_id)
         except Exception as exc:  # noqa: BLE001 — never block payroll on a bonus
+            l2_err = repr(exc)
             _log(f"level2 bonus step FAILED ({exc!r}) — continuing; add by hand")
         _repoint_pnl(week, raw_range, write=write, sheet_id=sheet_id)
         result = _refresh_and_check(week, raw_range, write=write,
@@ -1381,6 +1424,8 @@ def main(argv: list[str] | None = None) -> int:
             except Exception as e:  # noqa: BLE001
                 _log(f"clean P&L tab SKIPPED ({e!r}) — payroll itself is fine")
         _kickoff_dm(week, raw_range, summary, checks, send=send)
+        if send and sheet_id == SHEET_ID:
+            _record_delivery(week, summary, checks, raf_note, l2_err)
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         _log(f"STOP: {e}")
         return 4
