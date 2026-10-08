@@ -13551,6 +13551,26 @@
    "verify": null,
    "timeout_minutes": 25,
    "machine": "Lucy 2"
+  },
+  "fiber_sara_pull": {
+   "on_scheduler": false,
+   "_note": "MANUAL for now (Carlos 2026-10-08: 'lets make this come from sara plus instead'): pulls Raf's SaraPlus Sales Order History (last 31d) on LUCY 1 using the sales-board sweep's own dealer login/profile (waits for its pid lock instead of stacking Chrome), prints the export header + crew-row count (probe discipline), and base64-relays the csv to the control tab 'FIB SOH' for Lucy 2's fiber_metrics to build the Order Log + Pending Orders from. Tableau stays the fallback.",
+   "display_name": "Fiber SaraPlus SOH pull (Raf's dealer)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.fiber_metrics.sara_pull"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 30,
+   "machine": "Lucy 1"
   }
  },
  "read_only_standalone": {
