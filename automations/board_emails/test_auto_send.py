@@ -256,6 +256,29 @@ class AutoSendTest(unittest.TestCase):
         self.assertEqual(rc, 3)
         self.assertFalse(A.local_sent(f.target, THU))
 
+    def test_totals_that_disagree_rebuild_once_then_hold(self):
+        # 2026-10-08: Org 1886 beside All Units 1841 went out unnoticed.
+        f = Fake(self.tmp, THU)
+        self.seed_roster(f)
+        f.target.totals = lambda day: ["All Units total (1841) doesn't match"]
+        self.assertEqual(self.run_once(f, THU), 1)
+        self.assertEqual(f.kinds(), ["rebuild"])
+        f.calls.clear()
+        self.assertEqual(self.run_once(f, THU), 1)
+        self.assertNotIn("send", f.kinds())
+        self.assertTrue(self.alert.called)
+
+    def test_totals_that_agree_after_the_rebuild_send(self):
+        f = Fake(self.tmp, THU)
+        self.seed_roster(f)
+        state = {"bad": True}
+        f.target.totals = lambda day: (["mismatch"] if state["bad"] else [])
+        self.run_once(f, THU)
+        state["bad"] = False
+        f.calls.clear()
+        self.assertEqual(self.run_once(f, THU), 0)
+        self.assertIn("send", f.kinds())
+
     def test_image_from_yesterday_is_a_problem(self):
         f = Fake(self.tmp, THU)
         old = time.mktime(dt.datetime(2026, 10, 7, 9).timetuple())
@@ -267,6 +290,17 @@ class AutoSendTest(unittest.TestCase):
 class PureTest(unittest.TestCase):
     def test_owner_names_only_ranked_rows(self):
         self.assertEqual(A.owner_names(GRID), {"Chan Park", "Wayne Rude"})
+
+    def test_grand_total_found_by_header_and_label(self):
+        from automations.org_sales_board import screenshot_email as se
+        org = [["", "Product Summary"],
+               ["", "Product Type", "Monday", "Grand Total"],
+               ["", "BOX", "31", "114"], ["", "Grand Total", "631", "1,886"]]
+        acb = [["", "Product Type", "Monday", "Grand\nTotal"],
+               ["", "All Units", "631", "1841"]]
+        self.assertEqual(se.grand_total(org, "Grand Total"), 1886)
+        self.assertEqual(se.grand_total(acb, "All Units"), 1841)
+        self.assertIsNone(se.grand_total(acb, "Nope"))
 
     def test_off_before_the_start_date(self):
         self.assertFalse(A.is_on(dt.date(2026, 10, 7)))

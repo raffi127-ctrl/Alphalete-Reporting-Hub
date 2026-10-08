@@ -137,6 +137,8 @@ class Target:
     report_id: str                 # scheduler id whose chain must be clean
     images: Callable[[dt.date], List[Tuple[str, Path]]]   # the manifest
     grid: Callable[[], List[List[str]]]                   # the live board tab
+    # numbers in the captured images that must agree; [] = nothing to compare
+    totals: Callable[[dt.date], List[str]] = lambda day: []
 
 
 def _org_images(run_day: dt.date) -> List[Tuple[str, Path]]:
@@ -148,6 +150,21 @@ def _org_grid() -> List[List[str]]:
     from automations.recruiting_report.fill import open_by_key
     from automations.org_sales_board.run import SHEET_ID, SANDBOX_TAB
     return open_by_key(SHEET_ID).worksheet(SANDBOX_TAB).get_all_values()
+
+
+def _org_totals(run_day: dt.date) -> List[str]:
+    """The Org board and its All Units section must show the same week total.
+    2026-10-08 they went out 1886 vs 1841: the All Units tab was photographed
+    before its post-BOX re-fill. A rebuild re-shoots both from the Sheet."""
+    from automations.org_sales_board import screenshot_email as se
+    t = se.captured_totals(run_day)
+    if not t or t.get("org") is None or t.get("all_units") is None:
+        return []
+    if t["org"] == t["all_units"]:
+        return []
+    return [f"All Units total ({t['all_units']}) doesn't match the Org board "
+            f"total ({t['org']}) — the All Units tab was captured before it "
+            f"caught up"]
 
 
 def _country_images(run_day: dt.date) -> List[Tuple[str, Path]]:
@@ -164,7 +181,7 @@ def _country_grid() -> List[List[str]]:
 
 
 ORG = Target("org", "Org Sales Board", "org_sales_board_email",
-             _org_images, _org_grid)
+             _org_images, _org_grid, _org_totals)
 COUNTRY = Target("country", "Country Sales Board", "country-sales-board-email",
                  _country_images, _country_grid)
 TARGETS = {t.key: t for t in (ORG, COUNTRY)}
@@ -463,6 +480,12 @@ def judge(t: Target, day: dt.date, state: dict, *,
         return _log(t, v, verbose)
 
     struct = structural_issues(t, day)
+    if not struct:
+        try:
+            struct = t.totals(day)
+        except Exception as e:  # noqa: BLE001 — can't compare: say so, hold
+            struct = [f"could not compare the board totals "
+                      f"({type(e).__name__}: {str(e)[:100]})"]
     if struct:
         (v.blocked if rebuilds >= MAX_REBUILDS else v.fixable).extend(struct)
         return _log(t, v, verbose)

@@ -661,8 +661,62 @@ def capture(out_dir: Path) -> List[Tuple[str, Path, int]]:
         rehide = [(a + 1, b) for (a, b) in spans if b > a]   # keep 1st week visible
         if rehide:
             _set_rows_hidden(sh, gid, rehide, hidden=True)
+    # Read BOTH grand totals now, before the All Units blocks are shot: the
+    # auto-send compares them (auto_send.totals_issues). 2026-10-08 the email
+    # carried the Org board at 1886 (BOX top-off in) beside an All Units board
+    # at 1841 — that tab is only re-filled AFTER the top-off, and the capture
+    # landed in between (Wednesday 561 vs 606 = BOX's 45).
+    _write_totals(out_dir, sh)
     out.extend(capture_all_units(out_dir))
     return out
+
+
+TOTALS_FILE = "totals.json"
+
+
+def grand_total(g, row_label: str) -> Optional[int]:
+    """The Product Summary's 'Grand Total' for the row labelled `row_label` in
+    col B. Found by the header, never by index (templates move)."""
+    for hr in range(1, len(g) + 1):
+        row = g[hr - 1]
+        gc = next((c + 1 for c, v in enumerate(row)
+                   if " ".join(str(v).split()).lower() == "grand total"), None)
+        if not gc:
+            continue
+        for r in range(hr + 1, len(g) + 1):
+            if _cell(g, r, 2).lower() == row_label.lower():
+                try:
+                    return int(float(_cell(g, r, gc).replace(",", "")))
+                except ValueError:
+                    return None
+        return None
+    return None
+
+
+def _write_totals(out_dir: Path, sh) -> None:
+    """Never fatal: a missing file only means the auto-send can't compare."""
+    import json
+    try:
+        from automations.all_campaigns_board.slack_post import _find_ws
+        org = grand_total(_retry(sh.worksheet(SANDBOX_TAB).get_all_values),
+                          "Grand Total")
+        au = grand_total(_retry(_find_ws(sh).get_all_values), "All Units")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / TOTALS_FILE).write_text(
+            json.dumps({"org": org, "all_units": au}), encoding="utf-8")
+        print(f"[screenshot_email] totals at capture: Org {org} · "
+              f"All Units {au}", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"[screenshot_email] ⚠ totals not recorded "
+              f"({type(e).__name__}: {e})", flush=True)
+
+
+def captured_totals(day: dt.date) -> Optional[dict]:
+    import json
+    p = out_dir_for(day) / TOTALS_FILE
+    if not p.exists():
+        return None
+    return json.loads(p.read_text(encoding="utf-8"))
 
 
 def capture_all_units(out_dir: Path) -> List[Tuple[str, Path, int]]:
