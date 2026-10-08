@@ -101,10 +101,19 @@ def _ensure_named_parent(prefix: str, today: dt.date, log) -> Optional[str]:
     return out.get("thread_ts")
 
 
+FIBER_BOARD_THREAD = "Fiber Knocks Board"
+
+
 def _yesterday_box_board(client, yday: dt.date, log) -> Optional[Path]:
-    """Yesterday's LAST 'Box Knocks Board' picture, as Lucy 1 posted it here
-    (knocks_post posts it loose or into that day's thread). Downloaded with
-    the bot token; None when there isn't one."""
+    return _yesterday_last_board(client, yday, BOX_BOARD_THREAD, "Box Knocks", log)
+
+
+def _yesterday_last_board(client, yday: dt.date, thread_prefix: str,
+                          text_match: str, log) -> Optional[Path]:
+    """Yesterday's LAST board picture under `thread_prefix` (the Box board
+    from knocks_post, the Fiber board from gap_alerts), found in that day's
+    thread or loose, and downloaded with the bot token. None when there
+    isn't one."""
     import requests
     oldest = dt.datetime.combine(yday, dt.time.min).timestamp()
     latest = dt.datetime.combine(yday, dt.time.max).timestamp()
@@ -117,7 +126,7 @@ def _yesterday_box_board(client, yday: dt.date, log) -> Optional[Path]:
     msgs = list(hist.get("messages", []))
     # The boards may be replies inside yesterday's thread.
     for m in list(msgs):
-        if BOX_BOARD_THREAD in (m.get("text") or "") and m.get("reply_count"):
+        if thread_prefix in (m.get("text") or "") and m.get("reply_count"):
             try:
                 rep = client.conversations_replies(channel=CHANNEL, ts=m["ts"],
                                                    limit=200)
@@ -125,9 +134,9 @@ def _yesterday_box_board(client, yday: dt.date, log) -> Optional[Path]:
             except Exception:  # noqa: BLE001
                 pass
     cands = [m for m in msgs
-             if "Box Knocks" in (m.get("text") or "") and m.get("files")]
+             if text_match in (m.get("text") or "") and m.get("files")]
     if not cands:
-        log("  yesterday's board: none found in the room")
+        log("  yesterday's %s: none found in the room" % thread_prefix)
         return None
     last = max(cands, key=lambda m: float(m.get("ts") or 0))
     f = last["files"][0]
@@ -138,7 +147,8 @@ def _yesterday_box_board(client, yday: dt.date, log) -> Optional[Path]:
     if not r.content.startswith(b"\x89PNG"):
         log("  yesterday's board: download was not a PNG (token lacks files:read?)")
         return None
-    out = OUTPUT_DIR / yday.strftime("%Y-%m-%d") / "box_knocks_board_final.png"
+    out = (OUTPUT_DIR / yday.strftime("%Y-%m-%d")
+           / ("%s_final.png" % thread_prefix.lower().replace(" ", "_")))
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(r.content)
     return out
@@ -222,6 +232,15 @@ def run(today: Optional[dt.date] = None, *, send: bool, log=print) -> int:
             log("  posted yesterday's final Box board")
     except Exception as e:  # noqa: BLE001
         log("  yesterday's board skipped: %s: %s" % (type(e).__name__, str(e)[:120]))
+    # Yesterday's final Fiber board into today's Fiber Knocks Board thread
+    # (Carlos 2026-10-08: "shouldnt this mornings Fiber knocks board thread
+    # have all of yesterdays?").
+    try:
+        if FIBER_BOARD_THREAD in _OPENED and parents.get(FIBER_BOARD_THREAD):
+            _post_yesterday(client, yday, FIBER_BOARD_THREAD, "Fiber Knocks Board",
+                            parents[FIBER_BOARD_THREAD], log)
+    except Exception as e:  # noqa: BLE001
+        log("  yesterday's Fiber board skipped: %s: %s" % (type(e).__name__, str(e)[:120]))
     # Yesterday's territory pictures into today's Territory Stats thread.
     try:
         terrs = (_yesterday_territories(yday)
@@ -281,3 +300,32 @@ def delete_loose(prefix: str, today: Optional[dt.date] = None, *, send: bool,
             log("  NOT deleted (%s): %s" % (str(e)[:80], head))
     log("%d loose post(s) matched %r today" % (len(hits), prefix))
     return 0
+
+
+def _post_yesterday(client, yday: dt.date, thread_prefix: str, text_match: str,
+                    parent_ts: str, log) -> bool:
+    board = _yesterday_last_board(client, yday, thread_prefix, text_match, log)
+    if not board:
+        return False
+    client.files_upload_v2(channel=CHANNEL, file=str(board), filename=board.name,
+                           initial_comment="*Final board — %s*" % sp._short_mdy(yday),
+                           thread_ts=parent_ts)
+    log("  posted yesterday's final %s" % thread_prefix)
+    return True
+
+
+def backfill_yesterday(thread_prefix: str, today: Optional[dt.date] = None, *,
+                       send: bool, log=print) -> int:
+    """Hand run: put yesterday's final board of `thread_prefix` into TODAY's
+    thread of the same name (named-thread style), e.g. after the morning job
+    opened the thread without it."""
+    today = today or dt.date.today()
+    yday = today - dt.timedelta(days=1)
+    client = smp._client()
+    text_match = "Box Knocks" if thread_prefix == BOX_BOARD_THREAD else thread_prefix
+    if not send:
+        board = _yesterday_last_board(client, yday, thread_prefix, text_match, log)
+        log("DRY RUN — would post %s into today's '%s' thread" % (board, thread_prefix))
+        return 0
+    ts = smp.ensure_named_thread(thread_prefix, today, channel_id=CHANNEL).get("thread_ts")
+    return 0 if _post_yesterday(client, yday, thread_prefix, text_match, ts, log) else 1
