@@ -59,6 +59,75 @@ def _wait_for_profile(log=print, max_wait_s: int = 1200):
         waited += 30
 
 
+def _open_soh_panel(page, log=print) -> None:
+    """Dealer-agnostic 'Detail Reports -> Sales Order History'.
+
+    The B2B helper posts a tab index captured off the wire for THAT dealer
+    ("3:0"); Raf's hub orders its tabs differently (first probe 2026-10-08:
+    panel never appeared). Same postback mechanic, but the index is READ
+    from the tab strip by text, every run."""
+    from automations.rc_contact_sync import config as RC
+    from automations.rc_contact_sync import sara
+
+    if sara.panel_loaded(page):
+        return
+    tabs = page.evaluate(
+        """() => {
+             const out = [];
+             const tops = document.querySelectorAll(
+                 '.RadTabStrip .rtsUL > .rtsLI');
+             tops.forEach((li, i) => {
+               const t = li.querySelector('.rtsTxt');
+               out.push([String(i), t ? t.textContent.trim() : '']);
+               li.querySelectorAll('.rtsUL .rtsLI').forEach((c, j) => {
+                 const ct = c.querySelector('.rtsTxt');
+                 out.push([i + ':' + j, ct ? ct.textContent.trim() : '']);
+               });
+             });
+             return out;
+           }""")
+    for ix, txt in tabs:
+        log(f"  TAB {ix}: {txt}")
+    hit = next((ix for ix, txt in tabs
+                if ":" in ix and "order history" in txt.lower()), None)
+    if hit is None:
+        # child tabs may not be in the DOM until the parent expands — fall
+        # back to probing every parent's first few children blind.
+        parents = [ix for ix, _t in tabs if ":" not in ix]
+        cands = [f"{p}:{c}" for p in parents for c in range(3)]
+    else:
+        cands = [hit]
+    for arg_ix in cands:
+        posted = page.evaluate(
+            """(cfg) => {
+                 const t = document.getElementsByName('__EVENTTARGET')[0];
+                 const a = document.getElementsByName('__EVENTARGUMENT')[0];
+                 if (!t || !a) return 'no fields';
+                 t.value = cfg.target;
+                 a.value = JSON.stringify({type: 0, index: cfg.ix});
+                 const f = document.getElementById(cfg.form)
+                       || document.forms[0];
+                 f.submit();
+                 return 'posted';
+               }""",
+            {"target": RC.TAB_POSTBACK_TARGET, "ix": arg_ix,
+             "form": RC.FORM_ID})
+        if posted != "posted":
+            continue
+        try:
+            page.wait_for_load_state("networkidle",
+                                     timeout=RC.NAV_TIMEOUT_MS)
+        except Exception:  # noqa: BLE001
+            pass
+        page.wait_for_timeout(1500)
+        if sara.panel_loaded(page):
+            log(f"  Sales Order History panel loaded (tab {arg_ix})")
+            return
+        log(f"  tab {arg_ix}: not the SOH panel — next")
+    raise RuntimeError("Sales Order History tab not found on this hub — "
+                       "see the TAB list above")
+
+
 def pull(start: dt.date, end: dt.date, *, headless: bool = True,
          log=print) -> bytes:
     from patchright.sync_api import sync_playwright
@@ -80,7 +149,7 @@ def pull(start: dt.date, end: dt.date, *, headless: bool = True,
                 log(f"[fib-sara] logged in as {cr['email']}")
                 page.goto(base + RC.HUB_PATH, wait_until="networkidle",
                           timeout=RC.NAV_TIMEOUT_MS)
-                sara.open_order_history_panel(page, log=log)
+                _open_soh_panel(page, log=log)
                 sara._set_telerik_date(page, RC.FIELD_START, start)
                 sara._set_telerik_date(page, RC.FIELD_END, end)
                 try:
