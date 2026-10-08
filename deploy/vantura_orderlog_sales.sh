@@ -56,13 +56,17 @@ echo "[$(date)] vantura-orderlog-sales finished exit=$ST" >> "$LOG_FILE"
 
 # Done-marker + Hub pill, same contract as vantura_slack_sales.sh: marker =
 # "a pass ran today"; the Hub card is how a silent launchd miss gets seen.
-# exit 75 = wrong-week HOLD (nothing written, correct behaviour) -> amber.
+# exit 75 = wrong-week HOLD (sales really missed the board) -> amber + alert.
+# exit 76 = still WAITING for the order-log tab, a later ladder pass retries ->
+# `skipped` (a healthy no-op: no ticket). Until 10/8 this was 75/partial too
+# and opened a "ran partial on Lucy 2" ticket every morning at 05:02.
 if [ "${1:-}" != "--dry" ]; then
     touch "$LOG_DIR/.vantura-orderlog-sales-done-$(date +%Y-%m-%d)"
     find "$LOG_DIR" -name ".vantura-orderlog-sales-done-*" -mtime +3 -delete 2>/dev/null
     case "$ST" in
         0)  _PUB=success ;;
         75) _PUB=partial ;;
+        76) _PUB=skipped ;;
         *)  _PUB=failed  ;;
     esac
     "$VENV_PY" -c "from automations.day_orchestrator import hub_publish; hub_publish.publish_done('vantura_orderlog_sales','Sales Board Fill (order log)','$_PUB')" >> "$LOG_FILE" 2>&1 || true

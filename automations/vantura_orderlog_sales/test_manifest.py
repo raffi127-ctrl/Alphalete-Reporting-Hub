@@ -35,7 +35,9 @@ class ManifestTest(unittest.TestCase):
                 mock.patch.object(run, "board_grid",
                                   return_value=(mock.Mock(), [])), \
                 mock.patch.object(run, "covers", return_value=covered), \
-                mock.patch.object(run, "week_ok", return_value=week_ok), \
+                mock.patch.object(run, "week_ok",
+                                  side_effect=lambda g, d: week_ok
+                                  if d <= DAY else (False, "", "")), \
                 mock.patch.object(run, "run_campaign",
                                   side_effect=lambda sh, g, d, c, fn=None,
                                   d2d=None: _result(c)), \
@@ -66,6 +68,15 @@ class ManifestTest(unittest.TestCase):
         rc, wm = self._main(["--fill", "--yes"],
                             week_ok=(False, "9.13", "9.20"))
         self.assertEqual(rc, 75)
+        wm.assert_not_called()
+
+    def test_waiting_for_the_log_is_its_own_quiet_code(self):
+        # 05:02, tab not written yet: a hold the ladder retries, not a
+        # wrong-week miss — 76, so the wrapper publishes it without a ticket.
+        never = dt.time.max            # every pass is before the floor
+        with mock.patch.object(run, "B2B_FAILOPEN", never),                 mock.patch.dict(run.FAILOPEN, {"B2B": never, "BOX": never}):
+            rc, wm = self._main(["--fill", "--yes"], covered=False)
+        self.assertEqual(rc, run.EXIT_WAITING)
         wm.assert_not_called()
 
 

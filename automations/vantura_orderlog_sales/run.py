@@ -75,7 +75,7 @@ BOX_START = dt.date(2026, 9, 1)
 # circles back while it doesn't, and fail-opens past a floor rather than ever
 # skipping. Same rule here, per campaign, read off the log tabs themselves:
 # a campaign is filled only when its data tab HAS rows for the target day.
-# Not there yet -> exit 75 (HOLD) and the LaunchAgent ladder retries; past the
+# Not there yet -> exit 76 (WAITING) and the LaunchAgent ladder retries; past the
 # campaign's fail-open floor the pass writes whatever the tab holds (raise-only
 # makes that harmless — the next covered pass tops it up).
 #
@@ -90,6 +90,16 @@ BOX_START = dt.date(2026, 9, 1)
 #                holding until the tab really has the day; 08:45 rides the
 #                8:30 refresh and 09:30 fail-opens.
 B2B_FAILOPEN = dt.time(6, 45)
+
+# Two kinds of hold, two exit codes (2026-10-08). The 05:02 pass holds most
+# mornings because the order-log tab isn't written yet — that is the ladder
+# doing its job, but as exit 75 the wrapper published it `partial` and the
+# corrections channel got a "ran partial on Lucy 2" ticket every day (10/6,
+# 10/7, 10/8) that the 05:48 pass then closed. WAITING (freshness, retries
+# coming) is quiet; WRONG_WEEK (sales that really missed the board) still
+# alerts.
+EXIT_WRONG_WEEK = 75
+EXIT_WAITING = 76
 BOX_ATTEMPT_FROM = dt.time(7, 10)
 BOX_FAILOPEN = dt.time(9, 30)
 FAILOPEN = {"B2B": B2B_FAILOPEN, "BOX": BOX_FAILOPEN}
@@ -546,7 +556,7 @@ def main(argv=None) -> int:
                               and res["day"] == days[-1])
 
     if not a.fill:
-        return 75 if held_fresh else 0
+        return EXIT_WAITING if held_fresh else 0
 
     _log("")
     held = False
@@ -617,7 +627,7 @@ def main(argv=None) -> int:
         except Exception as e:  # noqa: BLE001 — the fill itself succeeded
             _log(f"  ! corrected re-post failed to launch: {e!r}")
 
-    rc = 75 if (held or held_fresh) else 0
+    rc = (EXIT_WRONG_WEEK if held else EXIT_WAITING if held_fresh else 0)
     if rc == 0 and a.fill and a.yes:
         _record_delivery(results, days[-1])
     return rc
@@ -632,7 +642,7 @@ def _record_delivery(results, day: dt.date) -> None:
     DELIVERED" — because this report has no verify and wrote no manifest.
 
     Only on a live (--fill --yes) exit 0: a dry run wrote nothing, and a hold
-    (75) or crash already alerts, so neither writes. That includes a pass with
+    (75/76) or crash already alerts, so neither writes. That includes a pass with
     0 cells to change (the board already matched the log) and the Monday
     "rolled past, nothing to close out" — both are the job done. A later pass
     that holds never writes, so it can't erase an earlier pass's proof.

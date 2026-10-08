@@ -24,7 +24,7 @@
     </dict>
 
     <!-- DAILY incl. weekends — a RETRY LADDER, not one shot, mirroring the
-         country trackers' circle-back (the module holds with exit 75 while a
+         country trackers' circle-back (the module holds with exit 76 while a
          campaign's log tab has no rows for the target day, and fail-opens
          past its floor):
            05:02              B2B first try — after att_order_log's 4am-batch
