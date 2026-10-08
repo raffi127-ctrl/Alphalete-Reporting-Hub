@@ -33,10 +33,12 @@ def _rec(name, **kw):
 
 def _main(scraped, extra=(), write=None):
     """scraped: {office: (records, [day misses])}."""
-    def scrape(page, tok, office, *a, misses=None, **k):
-        recs, miss = scraped[office]
+    def scrape(page, tok, office, *a, misses=None, empty_days=None, **k):
+        recs, miss, *no_section = scraped[office]
         if misses is not None:
             misses.extend(miss)
+        if empty_days is not None and no_section:
+            empty_days.extend(no_section[0])
         return recs
 
     with mock.patch.object(R, "appstream_direct_session", _session), \
@@ -94,6 +96,15 @@ class Incomplete(unittest.TestCase):
 
 
 class NoProof(unittest.TestCase):
+    def test_office_with_no_first_interviews_is_complete(self):
+        # Raf's funnels 2/3, 10/7: the calendar loaded, nobody was booked.
+        rc, wm = _main({"23965": ([], [], ["10-02-2026"]),
+                        "11580": ([_rec("A")], [])})
+        self.assertEqual(rc, 0)
+        self.assertEqual(sorted(wm.call_args.kwargs["succeeded"]),
+                         ["11580", "23965"])
+        self.assertEqual(list(wm.call_args.kwargs["failed"]), [])
+
     def test_dry_run_writes_no_manifest(self):
         _rc, wm = _main({"11580": ([_rec("A")], [])}, extra=["--dry-run"])
         wm.assert_not_called()

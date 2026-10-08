@@ -262,8 +262,8 @@ def _dialog_state(page) -> str:
 
 def _scrape_thread(page):
     """In the open dialog: click SMS Sent, scrape Chat History rows."""
-    page.get_by_text("SMS Sent", exact=True).first.click()
-    page.wait_for_selector("text=Chat History", timeout=15000)
+    page.locator("text=SMS Sent >> visible=true").first.click()
+    page.wait_for_selector("text=Chat History >> visible=true", timeout=15000)
     time.sleep(0.6)
     return page.evaluate(
         """() => {
@@ -282,18 +282,38 @@ def _scrape_thread(page):
            }""")
 
 
-def _close_dialog(page):
-    for sel in ("button:has-text('Close')",
-                ".ui-dialog-titlebar-close",
-                "[class*='dialog'] [class*='close']"):
+def _visible_dialogs(page) -> int:
+    return page.evaluate(
+        """() => [...document.querySelectorAll('.ui-dialog, [role=dialog]')]
+                   .filter(d => d.offsetParent !== null).length""")
+
+
+def _close_dialog(page) -> bool:
+    """Close the OPEN dialog; True when none is left on screen.
+
+    VISIBLE ONLY (2026-10-08). Closed dialogs stay in the DOM, hidden, so a
+    bare `.first` can aim at an old one. On 10/7 one applicant's dialog
+    (Iwarue Owekha, 11280) never closed and every row after it failed against
+    that same stuck dialog — 49 of 147 chats lost to one."""
+    for sel in ("button:has-text('Close') >> visible=true",
+                ".ui-dialog-titlebar-close >> visible=true",
+                "[class*='dialog'] [class*='close'] >> visible=true"):
         try:
             page.locator(sel).first.click(timeout=3000)
             time.sleep(0.5)
-            return
+        except Exception:
+            pass
+        try:
+            if not _visible_dialogs(page):
+                return True
         except Exception:
             pass
     page.keyboard.press("Escape")
     time.sleep(0.5)
+    try:
+        return not _visible_dialogs(page)
+    except Exception:
+        return False
 
 
 def _write_tab(records, meta: str, office: str):
@@ -321,13 +341,15 @@ def _write_tab(records, meta: str, office: str):
 
 
 def _scrape_office(page, tok, office, dates, date_strs, limit, bookings_only=False,
-                   misses=None):
+                   misses=None, empty_days=None):
     """Everything for ONE office: switch to it, walk each date's table, scrape.
     Dates in different calendar weeks are handled — the banner is re-checked
     per date, so a window that straddles a Sunday still reads clean.
 
     `misses`, when given, collects every day whose table showed fewer rows
-    than its own 'Applicants: N' header — the read is short there."""
+    than its own 'Applicants: N' header — the read is short there.
+    `empty_days`, when given, collects every day the calendar (banner reached)
+    shows with no First Interview section at all — nobody booked."""
     page.goto("https://www.applicantstream.com/index.cfm?p=104&rqst={}&newOfficeId={}"
               .format(tok, office))
     page.wait_for_load_state("networkidle")
@@ -344,6 +366,8 @@ def _scrape_office(page, tok, office, dates, date_strs, limit, bookings_only=Fal
         if n < 0:
             print("[sms_dump] {} {}: no First Interview section — skipped"
                   .format(office, ds), flush=True)
+            if empty_days is not None:
+                empty_days.append(ds)
             continue
         rows = _day_rows(page, ds)
         print("[sms_dump] {} {}: header says {}, table rows {}"
@@ -371,7 +395,8 @@ def _scrape_office(page, tok, office, dates, date_strs, limit, bookings_only=Fal
             try:
                 if not _open_history(page, row):
                     raise RuntimeError("history link not found")
-                page.wait_for_selector("text=Applicant History for", timeout=15000)
+                page.wait_for_selector("text=Applicant History for >> visible=true",
+                                       timeout=15000)
                 thread = _scrape_thread(page)
                 rec["thread"] = thread or []
                 if not thread:
@@ -386,7 +411,13 @@ def _scrape_office(page, tok, office, dates, date_strs, limit, bookings_only=Fal
                     type(e).__name__, str(e).splitlines()[0][:120], state)
                 print("[sms_dump]   {}: {}".format(row["name"], rec["error"]), flush=True)
             finally:
-                _close_dialog(page)
+                if not _close_dialog(page):
+                    # A dialog that won't close poisons every row after it.
+                    # Reload the calendar onto this day and carry on.
+                    print("[sms_dump]   dialog stuck open after {} — reloading "
+                          "{}".format(row["name"], ds), flush=True)
+                    _goto_week_containing(page, tok, d)
+                    _expand_day(page, ds)
             records.append(rec)
             scraped += 1
             if scraped % 10 == 0:
@@ -477,17 +508,18 @@ def main(argv=None):
     date_strs = [_fmt(d) for d in dates]
     print("[sms_dump] offices {}, dates {}".format(offices, date_strs), flush=True)
 
-    per_office, day_misses = {}, {}
+    per_office, day_misses, empty = {}, {}, {}
     with appstream_direct_session(verbose=True) as page:
         tok = _rqst(page)
         if not tok:
             raise RuntimeError("no rqst token on the console page")
         for office in offices:
-            day_misses[office] = []
+            day_misses[office], empty[office] = [], []
             per_office[office] = _scrape_office(page, tok, office, dates,
                                                 date_strs, a.limit,
                                                 bookings_only=a.bookings_only,
-                                                misses=day_misses[office])
+                                                misses=day_misses[office],
+                                                empty_days=empty[office])
 
     OUTPUT_DIR.mkdir(exist_ok=True)
     rc = 0
@@ -501,6 +533,14 @@ def main(argv=None):
                                      len(records), with_thread))
         if a.dry_run:
             print("[sms_dump] DRY RUN — no sheet write. " + meta, flush=True)
+            continue
+        if not records and len(empty[office]) == len(date_strs):
+            # Raf's funnels 2/3 on 9/26 + 10/2 (2026-10-08): the calendar
+            # loaded and no day had a First Interview section. Nobody booked
+            # is a complete answer, not a failed read.
+            print("[sms_dump] {}: no First Interviews on {} — nothing to dump"
+                  .format(office, ", ".join(date_strs)), flush=True)
+            done.append(office)
             continue
         if not records:
             print("[sms_dump] {}: nothing scraped — tab left alone".format(office),
