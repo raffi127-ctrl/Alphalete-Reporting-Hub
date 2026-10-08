@@ -124,6 +124,7 @@ LINES = (
     "{names} — {m}+ min. Knock and the door will be opened 🚪",
     "{names}: {m}+ min. Faith without works is dead 🚪 Go do the works",
     "{names}: {m}+ min. Winners don't make excuses 🚪",
+    "{names} — {m}+ min off the doors. Honor the partnership 🤝 Knock 🚪",
     # BENEFIT OF THE DOUBT (Megan 2026-09-26): a quiet rep may be inside with
     # a customer. Half the pool leaves that door open.
     "{names} — {m}+ min without a dispo. Must be cooking up something good in there… right? 👨‍🍳🔥",
@@ -171,6 +172,7 @@ B2B_LINES = (
     "{names} — {m}+ min. Knock and the door will be opened 🏢",
     "{names}: {m}+ min. Faith without works is dead 🏢 Go do the works",
     "{names}: {m}+ min. Winners don't make excuses 🏢",
+    "{names} — {m}+ min, no walk-ins. Honor the partnership 🤝 Walk in 🏢",
     # ...and the same Spanish phrases sprinkled in, like LINES.
     "¡Snicklemeberries! 🫐 {names} — {m}+ min without a dispo. Finger poppin' or talking to owners? ¡Vamos! 🏢👀",
     "{names} — {m}+ min, no dispo, no sale. Chatting up the recepcionista? 🚧",
@@ -316,6 +318,7 @@ RECEIPT_LINES = (
     "{names} executed 📋💰 The board agrees. Ideas are easy, execution is everything 🫡",
     "{names} had a credit check behind the quiet. Ordinary people choosing extraordinary 🫡",
     "{names} had a credit check behind the quiet. Doesn't play the odds, plays the door 🫡",
+    "{names} had a credit check behind the quiet. Honoring the partnership 🤝🫡",
 )
 # The same idea for a business office: no credit checks on Box, so what moves
 # is a sale.
@@ -333,6 +336,7 @@ B2B_RECEIPT_LINES = (
     "{names} executed 📋💼 The board agrees. Ideas are easy, execution is everything 🫡",
     "{names} had a deal behind the quiet. Ordinary people choosing extraordinary 🫡",
     "{names} had a deal behind the quiet. Doesn't play the odds, plays the room 🫡",
+    "{names} had a deal behind the quiet. Honoring the partnership 🤝🫡",
 )
 
 
@@ -462,6 +466,10 @@ PACE_LINES = (
     # Suits (Megan 2026-10-07).
     "{names} — {avg} {unit}/hr. No dreams, just goals 🔥",
     "{names} at {avg} {unit}/hr. The neighborhood knows the name 🔥",
+    # Alphalete's own words (Megan 2026-10-07: "we call this 'Honoring the
+    # partnership' — we should use some of it").
+    "{names} at {avg} {unit}/hr 🤝 That's honoring the partnership 🔥",
+    "{names} — {avg} {unit}/hr. Leading by example 🔥",
 )
 
 # The same recognition in business talk for the Service Cloud offices (Megan
@@ -484,6 +492,8 @@ B2B_PACE_LINES = (
     "{names} at {avg} {unit}/hr. Hokage pace 🍥🔥",
     "{names} — {avg} {unit}/hr. No dreams, just goals 🔥",
     "{names} at {avg} {unit}/hr. Every owner on the block knows the name 🔥",
+    "{names} at {avg} {unit}/hr 🤝 That's honoring the partnership 🔥",
+    "{names} — {avg} {unit}/hr. Leading by example 🔥",
 )
 
 

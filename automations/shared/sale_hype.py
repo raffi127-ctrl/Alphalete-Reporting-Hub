@@ -956,6 +956,7 @@ FIRST_SALE_LINES = (
     "{first} is OTB 💰 Step one: prove it's possible. Done. Who's next? 🔥",
     "{first} is OTB 💰 That's my ninja way. Who's next? 🥷",
     "{first} is OTB 💰 It's not bragging if it's true. Who's next? 👀",
+    "{first} is OTB 💰 Honoring the partnership 🤝 Who's next?",
 )
 # BACK TO BACK: the same rep again inside BACK_TO_BACK_MIN of their last one.
 BACK_TO_BACK_MIN = 30
