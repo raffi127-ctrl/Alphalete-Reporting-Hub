@@ -56,6 +56,9 @@ EVELIZ_SHEET_ID = "1iDjxnqQm3l65XHefHFk8CIn3lx_Yz1mvI-60bCMRwBk"
 # Luke Baldwin (Takeoff Enterprises) -- onboarded 2026-10-06, "Lucy Metrics
 # (Takeoff Enterprises)" copied from the Master Metrics Templates ('Lucy Churn').
 LUKE_SHEET_ID = "12duBXmNj-afp25DVt0nUZpE-XUCmEC0ty_Fp6-IxNkc"
+# Valeria Tristan (Altura Marketing) -- onboarded 2026-10-08, "Lucy Metrics
+# (Altura Marketing)" copied from the Master Metrics Templates ('Lucy Churn').
+VALERIA_SHEET_ID = "1KYRIovo_Ava5-7MomkdoW7XK-0yHSCjlwtBSGXTfOtc"
 
 OWNER_CFG = [
     # (key, owner-name prefix in the crosstab, sheet id, churn tab, has-activations)
@@ -65,6 +68,7 @@ OWNER_CFG = [
     ("sabrina", "SABRINA ALICEA", SABRINA_SHEET_ID, "Lucy Churn", False),
     ("eveliz", "EVELIZ WRIGHT", EVELIZ_SHEET_ID, "Lucy Churn", False),
     ("luke", "LUKE BALDWIN", LUKE_SHEET_ID, "Lucy Churn", False),
+    ("valeria", "VALERIA TRISTAN", VALERIA_SHEET_ID, "Lucy Churn", False),
 ]
 
 # Offices NOT yet in the default `--owner both` daily run. They are fully
@@ -107,7 +111,10 @@ OWNER_CFG = [
 # eveliz was promoted 2026-10-05 (Eve), the day she was staged: on Lucy 2
 # `--dump-rep-grid eveliz` listed EVELIZ WRIGHT off her EvelizEXP view and
 # `--owner eveliz --dry-run` closed exit 0 with both activation files in.
-STAGED: set = set()
+# valeria (2026-10-08): staged on arrival. Promote after `--dump-rep-grid
+# valeria` shows VALERIA TRISTAN off her Valexp view and `--owner valeria
+# --dry-run` reconciles on Lucy 2.
+STAGED: set = {"valeria"}
 
 
 def _activation_cfg():
@@ -198,6 +205,14 @@ def _activation_cfg():
                  "ATTTRACKER-B2B/ACTIVATIONRATES/"
                  "413feb5a-63aa-4452-b332-fe84dd791f83/Lukeexp?:iid=1",
                  "Lukeexp", "LUKE BALDWIN"),
+        # VALERIA (2026-10-08) -- Valexp, saved by Megan the day she enrolled.
+        # UNVERIFIED until `--dump-rep-grid valeria` on Lucy 2 shows her
+        # 'Activation Office' rows; the owner prefix is how the all-ICD .csv
+        # and the grid are both narrowed to her.
+        "valeria": ("https://us-east-1.online.tableau.com/#/site/sci/views/"
+                    "ATTTRACKER-B2B/ACTIVATIONRATES/"
+                    "df549f1a-d2d8-4ed5-a719-ce5b628e2bbd/Valexp?:iid=1",
+                    "Valexp", "VALERIA TRISTAN"),
     }
 
 

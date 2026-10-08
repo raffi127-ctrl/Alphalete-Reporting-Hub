@@ -674,13 +674,13 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                     # cannot be found by name at all (its members rename it
                     # hourly), and `dest=` keys the ⏰ state on the stable
                     # address rather than a name that churns.
+                    # NO LAST-CALL LINE IN A TEXT (Megan 2026-10-08, seeing
+                    # Valeria's 6:30 text: "should only be going in slack -
+                    # not in texts"). The texts stay the board and the gap
+                    # list; the last call rides the Slack caption only.
                     body = ("" if key in NO_GAP_LIST_IN_TEXTS else
                             _gaps_text(office, rows_for_board, now,
                                        dest=d["channel_id"]))
-                    if final_due(d, posted_at.get(cid), now, office):
-                        last_call = _last_call(office, rows_for_board, now)
-                        if last_call:
-                            body = (last_call + "\n\n" + body) if body else last_call
                     _text(d, boards, body)
                     # When the picture last went to this group. Read only by
                     # board_rides() for a group with board_min; harmless
