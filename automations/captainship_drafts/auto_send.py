@@ -676,10 +676,11 @@ def hold_text(heading: str, reasons: Sequence[str], mentions: str,
         by_sec.setdefault(sec, []).append(prob)
     bullets = [f"• {sec + ': ' if sec else ''}{'; '.join(probs)}"
                for sec, probs in by_sec.items()]
-    tail = "Rebuilt once, still wrong. " if rebuilt else ""
-    return (f"{mentions} ⚠️ *{heading}* — held:\n" + "\n".join(bullets)
-            + f"\n_{tail}✅ the link to send as is, or fix + rebuild "
-              "(same link)._")
+    # CORTO (Eve, 2026-10-08): "held / Rebuilt once, still wrong / fix +
+    # rebuild (same link)" no se entendía — parecía que ya estaba arreglado.
+    tail = "Already rebuilt, still the same. " if rebuilt else ""
+    return (f"{mentions} ⚠️ *{heading}* — NOT sent:\n" + "\n".join(bullets)
+            + f"\n_{tail}✅ the link above to send it anyway._")
 
 
 def alert_corrections(today: dt.date, held: Dict[str, Tuple[str, List[str], bool]],

@@ -564,14 +564,15 @@ def ensure_parent(today: dt.date, channel: Optional[str] = None,
     # SHORT on purpose (Eve, 2026-09-23): no roster of who is in what — every
     # link below already names its captain.
     from automations.captainship_drafts import auto_send as _A
-    how = ("Every other captain's report already went out on its own; only "
-           "the ones that need a look are posted here. React "
-           ":white_check_mark: on a link to send it as is."
+    how = ("Everyone else already got theirs. ✅ a link to send it anyway."
            if _A.is_on(today) else
            "React :white_check_mark: on a link to send just that one. "
            "Nothing goes out until then.")
     text = (f"*Captainship Reports — {reported.month}/{reported.day}*\n"
-            f"{_mentions()} — one link per captainship below. {how}\n"
+            f"{_mentions()} — "
+            + ("these were NOT sent: the auto-check found a problem. "
+               if _A.is_on(today) else "one link per captainship below. ")
+            + f"{how}\n"
             f"`{MARKER} {today:%Y-%m-%d}`")
     r = _client().chat_postMessage(channel=_channel(channel), text=text,
                                    unfurl_links=False)
