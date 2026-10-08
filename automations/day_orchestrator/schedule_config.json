@@ -3807,6 +3807,76 @@
    "timeout_minutes": 20,
    "machine": "Lucy 2"
   },
+  "rc_guest_backfill": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "MANUAL-ONLY backfill handle (Carlos 2026-10-08: 'My guys started selling under Rafael's code last Tuesday [9/29], so go ahead and check everything as of last Tuesday… add all those customers into the contact list'). Runs rc_contact_sync with --since 2026-09-29: shapes the guest reps' orders from the Lucy 1 'Raf Guest Orders' handoff (NO SaraPlus login on this box), adds the missing RingCentral contacts, checks Taylor's line for the wrap-up text since 9/29, and posts ONE range-labelled reply into the usual channels. DRY by default — `lucy rerun rc_guest_backfill --machine \"Lucy 2\"` previews, append `-- --live` for the real pass. Run raf_guest_orders on Lucy 1 first (the handoff must be <26h old). Re-runs are safe: contacts dedup by state key AND by phone.",
+   "display_name": "RC contacts backfill (Raf-code sales since 9/29)",
+   "source_type": "api",
+   "data_sources": [],
+   "command": [
+    "automations.rc_contact_sync.run"
+   ],
+   "base_args": [
+    "--since",
+    "2026-09-29"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 20,
+   "machine": "Lucy 2"
+  },
+  "raf_guest_orders": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "Carlos's guest reps' orders off RAF'S SaraPlus (Carlos 2026-10-08: his reps sell ONLY under Raf's code until they move to his own AT&T NDS code ~a week out, so his own dealer's Sales Order History reads them all as zero and the B2B Metrics thread's #8 order log + #9 activation overview go out missing his whole crew). on_scheduler:false = NOT in the 4am batch; the real schedule is the STANDALONE com.alphalete.raf-guest-orders LaunchAgent on LUCY 1 (03:45/04:15 before Lucy 2's 4am batch needs the rows (rc_contact_sync at order 11.5, then b2b_metrics' sections), 06:30 catch-up, 12:45 for midday reruns -- deploy/raf_guest_orders.sh). Logs in with the sales-board sweep's machinery (Raf's saraplus-creds.json + the verified .saraplus_profile, login_healing -- his account has NO emailed-passcode step, which is exactly why this runs on Lucy 1 and not where sp_order_log lives), pulls the same 31-day Sales Order History CSV, keeps ONLY the rows whose User Name matches the guest roster (total_knocks.guests.GUEST_REPS, the same 3-pass unique-hit matcher the knock boards split on), and base64s a dated envelope into the control sheet's 'Raf Guest Orders' tab. Lucy 2's sp_order_log.run merges those rows into Carlos's export before shape_lines (raf_guest.merge -- never raises, refuses a pull older than 26h LOUDLY and continues with Carlos's rows only). TEMPORARY: when the reps move onto Carlos's own code, bootout the agent -- the merge fail-opens past the stale tab by itself. `lucy rerun raf_guest_orders --machine \"Lucy 1\"` (base_args carry --pull).",
+   "display_name": "Raf guest orders pull (Carlos's reps on Raf's code)",
+   "source_type": "local",
+   "_source_note": "'local': patchright's own Chromium on alphalete_sales_board's .saraplus_profile -- the shared real-Chrome guard has nothing to protect (same reasoning as sp_order_log). The wrapper pid-guards against the 5-minute sales-board sweep, which owns the same profile from 07:00.",
+   "data_sources": [],
+   "command": [
+    "automations.sp_order_log.raf_guest"
+   ],
+   "base_args": [
+    "--pull"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 15,
+   "machine": "Lucy 1"
+  },
+  "install_raf_guest_orders_agent": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_raf_guest_orders_agent --machine \"Lucy 1\"` can install the STANDALONE com.alphalete.raf-guest-orders LaunchAgent on LUCY 1 (03:45/04:15/06:30/12:45, deploy/raf_guest_orders.sh, --pull). Read-only w.r.t. any Sheet/report data; only (un)loads the plist. Re-run after the plist changes.",
+   "display_name": "Install Raf guest orders agent (3:45am)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "raf-guest-orders"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   },
+   "timeout_minutes": 5,
+   "machine": "Lucy 1"
+  },
   "sp_status_probe": {
    "hand_run_only": true,
    "on_scheduler": false,

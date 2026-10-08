@@ -108,7 +108,7 @@ def _save_thread_ts(day: dt.date, chan: str, ts: str) -> None:
 
 
 def post_missing(day: dt.date, missing: List[Dict[str, str]], total: int,
-                 *, dry_run: bool, log=print) -> List[str]:
+                 *, dry_run: bool, prefix: str = "", log=print) -> List[str]:
     """Post the header, then the names as a reply IN ITS THREAD.
 
     Two messages, not one: Megan 2026-09-03 asked for the names to sit in the
@@ -121,6 +121,8 @@ def post_missing(day: dt.date, missing: List[Dict[str, str]], total: int,
 
     title = thread_title()
     body = missing_names_reply(missing, total)
+    if prefix:
+        body = prefix + "\n" + body
     failed: List[str] = []
     for chan in C.CHANNELS:
         label = C.CHANNEL_LABEL.get(chan, chan)
@@ -153,16 +155,35 @@ def post_missing(day: dt.date, missing: List[Dict[str, str]], total: int,
 
 def run(day: Optional[dt.date] = None, *, dry_run: bool = True,
         limit: Optional[int] = None, headless: bool = True,
-        skip_slack: bool = False, log=print) -> int:
+        skip_slack: bool = False, customers: Optional[List[Dict[str, str]]] = None,
+        sms_from: Optional[dt.date] = None, prefix: str = "",
+        log=print) -> int:
+    """`customers=None` is the daily shape: scrape Carlos's dealer for `day`
+    and append the guest reps' orders off Raf's dealer (guest.for_day — his
+    reps sell under Raf's code right now, Carlos 2026-10-08). A caller may
+    instead hand in the customer list ready-made (the --since backfill does),
+    and everything from RingCentral on is the same pipeline either way.
+    `sms_from` widens the texted() window for backfills; `prefix` leads the
+    Slack reply so a backfill post says what range it covers."""
     day = day or C.yesterday()
     log("B2B Customer Contacts — %s%s" % (day, "  (DRY RUN)" if dry_run else ""))
 
-    # 1. SaraPlus. Carlos's login only.
-    customers = sara.scrape(day, headless=headless, limit=limit, log=log)
+    guest_err: Optional[str] = None
+    if customers is None:
+        # 1. SaraPlus. Carlos's login for his dealer…
+        customers = sara.scrape(day, headless=headless, limit=limit, log=log)
+        # …plus his reps' sales under RAF's code, off the Lucy 1 handoff
+        # (no second login; fail-open so a lost pull can't sink the rest,
+        # but it DOES flag the run — a quietly guest-less morning would
+        # read as "all texted" to the team).
+        from automations.rc_contact_sync import guest
+        g, guest_err = guest.for_day(day, log=log)
+        customers = customers + g
     if not customers:
         log("No orders on %s — nothing to add, nothing to chase." % day)
-        _manifest([], dry_run=dry_run, note="no orders on %s" % day)
-        return 0
+        _manifest(["guest rows: " + guest_err] if guest_err else [],
+                  dry_run=dry_run, note="no orders on %s" % day)
+        return 1 if guest_err else 0
 
     # 2. RingCentral: who am I, and is it the right person? A wrong-but-valid
     #    token writes into the wrong address book and reads the wrong inbox,
@@ -238,8 +259,9 @@ def run(day: Optional[dt.date] = None, *, dry_run: bool = True,
     watch_token = token
     if creds.get("watch_jwt"):
         watch_token = RC.token(creds, jwt=creds["watch_jwt"])
-    msgs = RC.sms_since(watch_token, watch_ext, day)
-    log("%s's line: %d SMS since %s" % (C.WATCH_OWNER_NAME, len(msgs), day))
+    msgs = RC.sms_since(watch_token, watch_ext, sms_from or day)
+    log("%s's line: %d SMS since %s"
+        % (C.WATCH_OWNER_NAME, len(msgs), sms_from or day))
     missing = [c for c in customers
                if not RC.texted(msgs, c["phone"],
                                 [c.get("customer_name", ""),
@@ -251,9 +273,11 @@ def run(day: Optional[dt.date] = None, *, dry_run: bool = True,
         log("--no-slack: skipping the post")
     else:
         slack_failed = post_missing(day, missing, len(customers),
-                                    dry_run=dry_run, log=log)
+                                    dry_run=dry_run, prefix=prefix, log=log)
 
     failed = failed_rows + slack_failed
+    if guest_err:
+        failed = failed + ["guest rows: " + guest_err]
     _manifest(failed, dry_run=dry_run,
               note="%d customers, %d contacts added, %d never messaged"
                    % (len(customers), len(added), len(missing)))
@@ -294,6 +318,13 @@ def main(argv=None) -> int:
                     help="only the first N orders (for a careful first --live)")
     ap.add_argument("--no-slack", action="store_true",
                     help="do everything except the Slack post")
+    ap.add_argument("--since", default=None, metavar="YYYY-MM-DD",
+                    help="BACKFILL the guest reps' sales under Raf's code "
+                         "from this date through yesterday (or the "
+                         "positional date): contacts + one wrap-up-text "
+                         "post for the whole range. No SaraPlus login — "
+                         "reads the Lucy 1 'Raf Guest Orders' handoff, so "
+                         "run raf_guest_orders on Lucy 1 first.")
     ap.add_argument("--headed", action="store_true",
                     help="show the browser (debugging)")
     args = ap.parse_args(argv)
@@ -306,6 +337,20 @@ def main(argv=None) -> int:
     if args.probe:
         sara.probe(day, headless=not args.headed)
         return 0
+    if args.since:
+        from automations.rc_contact_sync import guest
+        since = dt.datetime.strptime(args.since, "%Y-%m-%d").date()
+        until = day or C.yesterday()
+        if since > until:
+            print("✗ --since %s is after %s." % (since, until))
+            return 2
+        customers = guest.guest_customers(since, until)
+        if args.limit:
+            customers = customers[:args.limit]
+        return run(until, dry_run=not args.live, skip_slack=args.no_slack,
+                   customers=customers, sms_from=since,
+                   prefix="Sales under Raf's SaraPlus code, %d/%d – %d/%d:"
+                          % (since.month, since.day, until.month, until.day))
     return run(day, dry_run=not args.live, limit=args.limit,
                headless=not args.headed, skip_slack=args.no_slack)
 

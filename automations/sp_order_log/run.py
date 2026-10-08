@@ -812,6 +812,11 @@ def build_artifacts(out_dir: Optional[Path] = None,
     log("SaraPlus pull %s..%s (Customer Type Both)" % (start, today))
     data, wl_bytes = pull_csv(start, today)
     (OUT_DIR / "sp_export_{}.csv".format(today.isoformat())).write_bytes(data)
+    # Carlos's reps sell under RAF's code right now (2026-10-08) — their rows
+    # ride in from Raf's dealer via the Lucy 1 handoff. Never raises; a
+    # missing pull costs the guest rows (loudly), not the artifacts.
+    from automations.sp_order_log import raf_guest
+    data = raf_guest.merge(data, log=log)
     wl_parsed, act_dates = track_lines(data, wl_bytes, today, log=log)
     lines = shape_lines(data, log=log, wl_lines=wl_parsed, act_dates=act_dates)
     if not lines:
@@ -878,6 +883,9 @@ def main(argv=None) -> int:
         raw = OUT_DIR / "sp_export_{}.csv".format(today.isoformat())
         raw.write_bytes(data)
         print("export saved: %s (%s bytes)" % (raw.name, "{:,}".format(len(data))))
+        # The guest reps' rows from Raf's dealer (see raf_guest.py).
+        from automations.sp_order_log import raf_guest
+        data = raf_guest.merge(data)
 
     wl_parsed, act_dates = track_lines(data, wl_bytes, today, log=print)
     lines = shape_lines(data, wl_lines=wl_parsed, act_dates=act_dates)

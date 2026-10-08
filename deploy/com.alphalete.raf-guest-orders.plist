@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.raf-guest-orders</string>
+
+    <!-- Path is the laptop placeholder; install_agent.py rewrites it to the
+         installing machine's repo path. Runs on LUCY 1 — Raf's SaraPlus
+         creds + the verified .saraplus_profile only exist there (and his
+         login has no emailed-passcode step, unlike Carlos's B2B one). -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/raf_guest_orders.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- 03:45 / 04:15: land the guest rows BEFORE Lucy 2's 4am batch needs
+         them — rc_contact_sync sits at order 11.5 and can fire within
+         minutes of 4:00, and b2b_metrics' #8/#9 sections follow later (the
+         pull's 31-day window ends today, and today has no sales at 3:45, so
+         the pass is already complete for the morning artifacts). 06:30:
+         catch-up if both early passes lost to SaraPlus. 12:45: so a midday
+         `lucy rerun` merges a same-day pull. All passes idempotent — one
+         tab, cleared and rewritten. Hour/Minute are machine LOCAL time;
+         Lucy 1 is Central. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>15</integer></dict>
+        <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>45</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/raf-guest-orders.launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/megan/1st Claude Folder/output/logs/raf-guest-orders.launchd.err.log</string>
+</dict>
+</plist>

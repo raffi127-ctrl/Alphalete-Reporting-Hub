@@ -27,6 +27,12 @@ class MainRecordsDelivery(unittest.TestCase):
             mock.patch.object(run, "_push", side_effect=list(pushes)),
             mock.patch.object(run, "OUT_DIR", mock.MagicMock()),
             mock.patch.object(Path, "read_bytes", return_value=b"x"),
+            # raf_guest.merge reads the control sheet on a live pull; in the
+            # stubbed world it must stay offline (and hand back what it got).
+            mock.patch("automations.sp_order_log.raf_guest.merge",
+                       side_effect=lambda d, **k: d),
+            # write_manifest stays LAST — _main returns ms[-1] as the mock
+            # the tests assert on.
             mock.patch.object(run_manifest, "write_manifest"),
         ]
         ms = [x.start() for x in p]
