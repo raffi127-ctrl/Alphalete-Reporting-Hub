@@ -735,7 +735,30 @@ def build_churn_by_rep_png(cols, crew, today, log=print) -> Path:
         list(BUCKETS), rows, OUT_DIR / "fiber_churn_by_rep.png")
 
 
+def build_sales_metrics(cols, crew, today, log=print) -> Path:
+    """#2 Sales Metrics — the D2D 'Metrics' view shot, scoped to Rafael
+    Hidalgo (the office Carlos's crew sells under). A view screenshot can't
+    slice to the crew, so this is RAF'S WHOLE OFFICE, said on the caption.
+    Reuses office_metrics' per-day shot cache (every office's shot is
+    captured in one session each morning); captures fresh only if today's
+    isn't there yet."""
+    import shutil
+    from automations.office_metrics import metrics_shot as MS
+    out = OUT_DIR / "fiber_sales_metrics.png"
+    shot = MS.cached_shot(MS.MAIN_OWNER)
+    if shot is None:
+        log("[fiber] no cached Metrics shot yet today — capturing")
+        shot = MS.capture(MS.MAIN_OWNER, out_dir=OUT_DIR,
+                          filter_field=MS.DEFAULT_FILTER_FIELD,
+                          headless=True)
+    shutil.copyfile(shot, out)
+    log(f"[fiber] sales metrics shot: {Path(shot).name}")
+    return out
+
+
 SECTIONS = [
+    ("sales_metrics", "\U0001F4CA", "Fiber Sales Metrics (Raf's office)",
+     build_sales_metrics),
     ("order_log", "\U0001F4C4", "Fiber Order Log", build_order_log),
     ("activation_overview", "\U0001F4B5", "Fiber Activation Report Overview",
      build_activation_overview),
