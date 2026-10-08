@@ -39,7 +39,7 @@ from automations.shared import ownerville_knocks as K
 
 # Bump with every release that changes what this module does or reports; it
 # is what a KnocksProblem's summary carries (see the stamp note below).
-CODE_RELEASE = "2026.10.06.10"
+CODE_RELEASE = "2026.10.08.1"
 
 
 class KnocksProblem(RuntimeError):
@@ -51,6 +51,17 @@ class KnocksProblem(RuntimeError):
 # (2026-10-06): "B2B AT&T SBS" (id 2) and "B2B-BOX-Energy" (id 16).
 _CLIENT_WORDS = {"b2b_att": ("at&t", "att"), "att": ("at&t", "att"),
                  "nds": ("nds", "at&t"), "b2b_box": ("box",), "energy": ("energy",)}
+
+
+def _is_v2(page) -> bool:
+    """Is this the new OwnerVille interface? Its pages carry the client
+    switcher `a.D2DClientDropdown` (seen on Jamis's build, 2026-10-06); the
+    classic pages do not."""
+    try:
+        return bool(page.evaluate(
+            "() => !!document.querySelector('.D2DClientDropdown, [data-current-id]')"))
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def _choose_client(page, cid: str, campaign: str, *, log=print) -> bool:
@@ -348,6 +359,15 @@ def read_knocks(day: Optional[dt.date] = None, *, headless: bool = True,
             if cid:
                 K.pin_campaign(page, rqst, cid, log=_l)
             K.navigate(page, rqst, mdy, log=_l)
+            # THE NEW OWNERVILLE (V2) IGNORES THE p=88 PIN SERVER-SIDE. Jamis
+            # (2026-10-06) got no grid at all; Roshan (2026-10-08, pinned to
+            # Box) got the AT&T grid and the poster withheld her board. On a
+            # page that carries the V2 client switcher, choose the client
+            # through the page's own control every read, then land again.
+            if cid and _is_v2(page):
+                _l("new-interface page: choosing the client through its own switcher")
+                if _choose_client(page, cid, campaign, log=_l):
+                    K.navigate(page, rqst, mdy, attempts=1, log=_l)
             try:
                 try:
                     rows = K.read_rows(page, log=_l)

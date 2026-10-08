@@ -92,3 +92,27 @@ class ChooseClientTest(unittest.TestCase):
             def evaluate(self, js, arg=None):
                 raise RuntimeError("target closed")
         self.assertFalse(ov_read._choose_client(Dead(""), "2", "att", log=lambda m: None))
+
+
+class V2ChoosesEveryReadTest(unittest.TestCase):
+    """Roshan 2026-10-08: pinned to Box, OwnerVille's new interface served the
+    AT&T grid anyway and the board was withheld. On a V2 page the client is
+    chosen through the page's own switcher on every read."""
+
+    def test_v2_detected_by_the_switcher(self):
+        class P:
+            def evaluate(self, js):
+                return True
+        self.assertTrue(ov_read._is_v2(P()))
+
+    def test_classic_page_is_not_v2(self):
+        class P:
+            def evaluate(self, js):
+                return False
+        self.assertFalse(ov_read._is_v2(P()))
+
+    def test_a_dead_page_is_not_v2(self):
+        class P:
+            def evaluate(self, js):
+                raise RuntimeError("closed")
+        self.assertFalse(ov_read._is_v2(P()))
