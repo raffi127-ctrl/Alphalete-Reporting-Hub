@@ -82,6 +82,9 @@ TEMPLATE = """Hi {first}, thank you for choosing AT&T! Here's your order wrap-up
 • ATT To-Do List: {todo}"""
 
 PIN_FALLBACK = "your rep will confirm your 4-digit PIN here"
+# Taylor's VIP line as the canvas publishes it — the send-from when the API
+# can't be asked (no ReadAccounts scope on this app).
+TAYLOR_SMS_NUMBER = "945-337-2199"
 
 
 # --- pieces -------------------------------------------------------------------
@@ -234,7 +237,15 @@ def run(since: dt.date, until: dt.date, *, live: bool = False,
         print("=== done ===", flush=True)
         return 0
 
-    from_number = RC.sender_number(token)
+    # Asking the API for the line needs the ReadAccounts scope this app
+    # doesn't have (CMN-401 on the first live try, 2026-10-08) — so the
+    # canvas's published number is the authority and the API is a bonus.
+    try:
+        from_number = RC.sender_number(token)
+    except RC.RCError as e:
+        from_number = TAYLOR_SMS_NUMBER
+        log("phone-number endpoint unavailable (%s) — using the canvas's %s"
+            % (str(e)[:80], from_number))
     log("sending from %s (Taylor's line)" % from_number)
 
     flyer = None
