@@ -110,3 +110,17 @@ class TestForDay(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestResidentialHeader(unittest.TestCase):
+    def test_no_business_column_is_fine(self):
+        fields = tuple(f for f in FIELDS if f != "Business Name")
+        row = {k: v for k, v in ROW.items() if k != "Business Name"}
+        env = _env(_csv([row], fields))
+        with mock.patch("automations.sp_order_log.raf_guest.fetch",
+                        return_value=env):
+            out = G.guest_customers(dt.date(2026, 9, 29),
+                                    dt.date(2026, 10, 7),
+                                    log=lambda *a, **k: None)
+        self.assertEqual(out[0]["business"], "")
+        self.assertEqual(out[0]["customer_name"], "JANE DOE")

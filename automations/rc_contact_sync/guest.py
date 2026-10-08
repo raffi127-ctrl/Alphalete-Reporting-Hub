@@ -54,7 +54,11 @@ def _header_map(fieldnames: List[str], log=print) -> Dict[str, str]:
             if _key(c) in by_key:
                 out[ours] = by_key[_key(c)]
                 break
-    missing = [k for k in _COLS if k not in out and k != "phone"]
+    # business is OPTIONAL: Raf's fiber export is residential and carries no
+    # business column at all (seen live 2026-10-08) — the contact just gets
+    # no Company, and run.py's label falls back to the customer's name.
+    missing = [k for k in _COLS if k not in out and k not in ("phone",
+                                                             "business")]
     if missing:
         raise RuntimeError(
             "Raf guest export is missing column(s) %s — header was: %r"
@@ -125,7 +129,8 @@ def guest_customers(since: dt.date, until: dt.date,
             "day": d.isoformat(),
             "order_date": _norm(r.get(cols["order_date"], "")),
             "rep": _norm(r.get(cols["rep"], "")),
-            "business": _norm(r.get(cols["business"], "")),
+            "business": _norm(r.get(cols.get("business", ""), ""))
+            if cols.get("business") else "",
             "customer_name": _norm(r.get(cols["customer_name"], "")),
             "phone": _norm(r.get(cols.get("phone", ""), ""))
             if cols.get("phone") else "",
