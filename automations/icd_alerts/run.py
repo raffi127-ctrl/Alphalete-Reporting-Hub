@@ -263,8 +263,16 @@ def cmd_once(headless: bool, dry_run: bool, day: dt.date,
         stage = "signin-saraplus" if _is_code_wall(e) else "sweep"
         # WITH THE NIGHT'S EVIDENCE: how old the session was and what the
         # keep-alive did, so the wall tells idle-expiry from a hard lifetime.
+        # EVIDENCE FIRST: the relay keeps 1500 characters of detail and the
+        # traceback alone fills them (Luke's 02:00 wall of 10/9 arrived with
+        # the evidence cut off). The traceback's tail is the least useful part.
         _report(stage, e, office_key=att_key,
-                detail=traceback.format_exc() + "\n\n" + sara_read.session_evidence())
+                detail=("read: sales_only=%s resume_only=%s selling_window=%s "
+                        "sales_window=%s\n" % (sales_only, resume_only,
+                                                C.in_selling_window(),
+                                                C.in_sales_window()))
+                       + sara_read.session_evidence() + "\n\n"
+                       + traceback.format_exc())
         sara_read.hold_sara(log=_log)
         # SAME AS THE BOX PATH, and for the SAME reason. Khalil's machine hit
         # SaraPlus's passcode wall 115 times on 2026-09-17 -- five hours of
@@ -629,6 +637,13 @@ def main(argv=None) -> int:
                     pass
             return 0
         sales_only = bool(args.if_due and not alerting)
+        # OUTSIDE THE ALERT WINDOW, NEVER TYPE THE PASSWORD. Nobody is at the
+        # Mac to clear the emailed-code wall a fresh headless login earns, so
+        # an evening or overnight read only resumes the session it has; a lost
+        # one waits for the first in-window sweep, when the wall opens in
+        # front of a person (Luke's 02:00 PT wall of 10/9 came through this
+        # path on release 2026.10.08.2, not the catch-up).
+        resume_only = sales_only
         # BOTH, INDEPENDENTLY. SaraPlus and OwnerVille are different systems
         # with different outages, and a credit-check sweep that worked must not
         # be thrown away because OwnerVille was slow -- nor the reverse. Each
@@ -637,7 +652,10 @@ def main(argv=None) -> int:
         # OwnerVille have different outages, and a read that worked must not
         # be thrown away because another was slow. Each reports its own
         # failure and the run ends unhappy if any did.
-        rc = cmd_once(headless, args.dry_run, day, sales_only=sales_only)
+        rc = cmd_once(headless, args.dry_run, day, sales_only=sales_only,
+                      resume_only=resume_only)
+        if rc == CATCHUP_DEFERRED:
+            rc = 0          # nothing read, nothing wrong: not a failed tick
         rb = cmd_box(headless, args.dry_run, day)
         # Knocks keep the selling window; the knocks close-out above delivers
         # the finished day either way.
