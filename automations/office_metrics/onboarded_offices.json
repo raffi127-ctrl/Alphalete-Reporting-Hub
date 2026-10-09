@@ -781,5 +781,45 @@
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%"
+  },
+  {
+    "key": "frank",
+    "report_id": "frank_metrics",
+    "label": "Frank's Local Office",
+    "owner": "Frank Matos",
+    "channel_id": "C0C5WU4S65T",
+    "channel_name": "peakmanagement-att-sales",
+    "sheet_id": "16CI8yYZ2se6-V2uXadilS8kFYv_dAddrBLjh7MGtj8k",
+    "knocks_office": "Frank Matos",
+    "ov_account": "23221",
+    "owner_office": "",
+    "business_name": "Peak Management, Inc.",
+    "website": "",
+    "header_label": "",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "order_log",
+      "cancels",
+      "disconnects",
+      "churn_wl",
+      "activations"
+    ],
+    "report_order": {
+      "order_log": 1,
+      "cancels": 2,
+      "disconnects": 3,
+      "churn_wl": 4,
+      "activations": 5
+    },
+    "per_office_views": {},
+    "machine": "Lucy 4",
+    "campaign": "nds_d2d",
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%",
+    "notes": "wired by hand 2026-10-09 (Megan: Frank Matos is enrolling; metrics + trackers + weather). NDS wireless like colten/jairo (South Shore org, Peak Management, Inc., OwnerVille/AppStream 23221, Tableau name Frank Matos); same 5 boards as jairo, knocks held back until his ECO relay shows knock rows. Channel #peakmanagement-att-sales (C0C5WU4S65T) from his Lucy ECO sign-up 2026-10-09 19:44 UTC (Eastern, 13:30-20:30, Sat 11:45-19:15); sheet 'Frank Matos - Lucy Metrics' copied from the Master Metrics Templates. Schedule off until a dry run on Lucy 4 shows data on every board."
   }
 ]

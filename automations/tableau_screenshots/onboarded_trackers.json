@@ -367,5 +367,25 @@
       "b2b_box"
     ],
     "notes": "wired by hand 2026-10-09 (Megan: wire up Ryan McSpadden's metrics and trackers). Box-only office (Service Cloud), so just the B2B Box Tracker; channel = his Lucy ECO alerts/knocks room."
+  },
+  {
+    "key": "frank",
+    "label": "#peakmanagement-att-sales",
+    "owner": "Frank Matos",
+    "channel_ids": [
+      "C0C5WU4S65T"
+    ],
+    "trackers": [
+      "att_country",
+      "att_country_internet_only",
+      "nds",
+      "b2b_att_country",
+      "b2b_att_country_cru",
+      "b2b_d2d_consolidated",
+      "b2b_box",
+      "quantum_fiber",
+      "vzftr"
+    ],
+    "notes": "wired by hand 2026-10-09; all 9 trackers like colten/jairo; channel #peakmanagement-att-sales from his Lucy ECO sign-up 2026-10-09."
   }
 ]

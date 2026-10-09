@@ -13658,7 +13658,7 @@
    "hand_run_only": true,
    "on_scheduler": false,
    "_note": "Carlos Hidalgo 2026-10-09: re-write an office thread Lucy ALREADY posted into today's format, edited in place (same thread, same link, nothing new posted). Add --date YYYY-MM-DD --restyle <office first name, e.g. carlos>.",
-   "display_name": "1st Round Scorecards — re-format a posted office thread",
+   "display_name": "1st Round Scorecards \u2014 re-format a posted office thread",
    "source_type": "api",
    "command": [
     "automations.first_round_scorecards.office_post"
@@ -13853,6 +13853,45 @@
    },
    "_onboarded": true,
    "_note": "B2B metrics for valeria (Valeria Tristan, Altura Marketing). Wired by hand 2026-10-08, modelled on luke_metrics. on_scheduler true after the 2026-10-08 16:19 capture run on Lucy 2 rendered 5 of 7 boards (activation_rate: no data yet; churn boards come from the shared churn pull once she is added there); channel comes from her Lucy ECO sign-up. Hub: the consolidated b2b-metrics card."
+  },
+  "frank_metrics": {
+   "order": 26.8,
+   "machine": "Lucy 4",
+   "on_scheduler": false,
+   "display_name": "Frank's Daily Metrics (peakmanagement-att-sales)",
+   "source_type": "tableau",
+   "data_sources": [
+    "tableau:order_log"
+   ],
+   "command": [
+    "automations.office_metrics.runner"
+   ],
+   "base_args": [
+    "--office",
+    "frank",
+    "--live"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P1",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 60,
+   "verify": {
+    "type": "manifest",
+    "report_id": "frank_metrics"
+   },
+   "_note": "Office metrics for frank (Frank Matos, Peak Management, Inc.; South Shore org). Wired by hand 2026-10-09 (Megan: he is enrolling; metrics + trackers + weather). NDS/wireless office (campaign nds_d2d), same five boards as jairo; knocks held until his ECO relay shows knock rows. OFF until a dry run on Lucy 4 (`lucy rerun frank_metrics --dry-run`) shows data on every board (channel #peakmanagement-att-sales C0C5WU4S65T from his ECO sign-up 2026-10-09) -- Megan's rule: never a blank first post.",
+   "_onboarded": true
   }
  },
  "read_only_standalone": {

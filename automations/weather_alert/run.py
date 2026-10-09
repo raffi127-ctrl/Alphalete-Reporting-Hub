@@ -81,6 +81,7 @@ CITIES = {
     # valeria / Altura Marketing: Tampa, FL -- the company's own site
     # (alturamarketinginc.com, 410 S Ware Blvd), 2026-10-08.
     "tampa": ("Tampa, FL", 27.9506, -82.4572, "America/New_York"),
+    "deerfield_beach": ("Deerfield Beach, FL", 26.3184, -80.0998, "America/New_York"),
 }
 OFFICE_CITY = {
     "kash": "dfw", "cyrus": "dfw", "carlos": "dfw", "carlos-b2batt": "dfw",
@@ -127,6 +128,7 @@ METRICS_CITY = {
     "cody": "corpus_christi", "haytham": "austin", "trang": "san_antonio",
     "nii": "wilkes_barre", "jacob": "memphis",
     "jairo": "miami",           # Profits Management, Miami (305)
+    "frank": "deerfield_beach", # Peak Management, Deerfield Beach FL (Megan 2026-10-09); ECO key frank
     "jenny": "louisville",      # Figspire Management (metrics key; ECO key is jennifer)
     "tre": "houston",           # Mission III Management, Houston -- #mission-iii-sales (2026-10-07)
 }
