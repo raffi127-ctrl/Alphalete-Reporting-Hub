@@ -38,7 +38,21 @@ from pathlib import Path
 
 import requests
 
+# THE KEY'S PREFIX PICKS THE HOST. Ringover is regional and the region
+# lives in a SUBDOMAIN, not a TLD: a key beginning "US_" only works
+# against public-api-us.ringover.com. Sent to the global host it
+# authenticates far enough to be parsed and then fails with
+# 401 {"error":"Invalid user"} — which reads like a permissions
+# problem and is not one. Cost a day and a support ticket on
+# 2026-10-08/09; Ringover support found it.
 BASE = "https://public-api.ringover.com/v2"
+REGION_HOSTS = {"US": "https://public-api-us.ringover.com/v2"}
+
+
+def base_for(key):
+    """The host this key belongs to, read off its prefix."""
+    prefix = (key or "").split("_", 1)[0].upper()
+    return REGION_HOSTS.get(prefix, BASE)
 CREDS_PATH = (Path.home() / ".config" / "recruiting-report"
               / "ringover-key.json")
 TIMEOUT_S = 45
@@ -77,13 +91,17 @@ def norm_phone(v):
 
 
 def _get(path, params=None, key=None):
-    r = requests.get(BASE + path, params=params or {},
-                     headers={"Authorization": key or api_key()},
+    key = key or api_key()
+    r = requests.get(base_for(key) + path, params=params or {},
+                     headers={"Authorization": key},
                      timeout=TIMEOUT_S)
     if r.status_code == 401:
         raise RingoverError(
-            "Ringover rejected the key (401). Check it was copied whole and "
-            "that it is still listed under Dashboard > Developer > API key.")
+            "Ringover rejected the key (401) on {}: {}. \"Invalid user\" "
+            "here usually means the key belongs to another region — the "
+            "prefix before the underscore picks the host, and only US_ is "
+            "mapped so far. Anything else falls back to the global host."
+            .format(base_for(key), (r.text or "").strip()[:120]))
     if r.status_code == 403:
         raise RingoverError(
             "the key authenticated but is not allowed {} (403). Its Rights "
@@ -143,13 +161,30 @@ def empower_moments(uuid, key=None):
     return _get("/empower/call/{}/moments".format(uuid), key=key)
 
 
-def uuid_of(call):
-    """The id the Empower routes want.
+_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}"
+                   r"-[0-9a-f]{12}", re.I)
 
-    The call list carries both a numeric call_id and a UUID, and only the
-    UUID works on /empower/call/. Which key holds it differs by plan, so
-    this reads the spellings rather than betting on one."""
-    return _first(call, "cdr_uuid", "call_uuid", "uuid", "channel_id")
+
+def uuid_of(call):
+    """The id the Empower routes want, which is NOT on the call row.
+
+    /calls returns call_id, cdr_id and channel_id — all numeric, all
+    rejected by /empower/call/ with "expected string to be RFC 4122
+    uuid". The real UUID is only ever seen embedded in the recording
+    URL:
+
+      https://cdn-us.ringover.com/records/1584209/
+        ba127b5f-a5b1-4f48-a2e7-a10714cd8412-09-10-26-17h26-1469....mp3
+
+    So a call with no recording has no Empower id either, and returns
+    None rather than a numeric field that would 400."""
+    for field in ("cdr_uuid", "call_uuid", "uuid"):
+        v = call.get(field)
+        if v and _UUID.match(str(v)):
+            return str(v)
+    rec = _first(call, "record", "recording", "record_url")
+    found = _UUID.search(str(rec or ""))
+    return found.group(0) if found else None
 
 
 def describe(call):

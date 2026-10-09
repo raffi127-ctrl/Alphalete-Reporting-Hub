@@ -77,17 +77,49 @@ class TheKeyIsNeverAssumed(unittest.TestCase):
 
 
 
+class RegionComesFromTheKey(unittest.TestCase):
+    """Ringover support, 2026-10-09: a US_ key only works against
+    public-api-us.ringover.com. Sent to the global host it fails with
+    401 "Invalid user", which reads like a permissions problem."""
+
+    def test_a_us_key_goes_to_the_us_host(self):
+        self.assertEqual(RO.base_for("US_abc123"),
+                         "https://public-api-us.ringover.com/v2")
+
+    def test_an_unprefixed_key_goes_to_the_global_host(self):
+        self.assertEqual(RO.base_for("abc123"), RO.BASE)
+
+    def test_an_unknown_region_falls_back_rather_than_crashing(self):
+        self.assertEqual(RO.base_for("ZZ_abc123"), RO.BASE)
+
+
 class Empower(unittest.TestCase):
     """Ringover's own transcription. Seen on Megan's screen 2026-10-08:
     summary, recording player and a speaker-separated transcript. The
     routes take the call's UUID, never its numeric call_id."""
 
-    def test_the_uuid_is_found_whatever_it_is_called(self):
-        for field in ("cdr_uuid", "call_uuid", "uuid", "channel_id"):
-            self.assertEqual(RO.uuid_of({field: "abc-123"}), "abc-123", field)
+    REC = ("https://cdn-us.ringover.com/records/1584209/"
+           "ba127b5f-a5b1-4f48-a2e7-a10714cd8412-09-10-26-17h26-1469.mp3")
+    UID = "ba127b5f-a5b1-4f48-a2e7-a10714cd8412"
 
-    def test_a_numeric_call_id_is_not_mistaken_for_the_uuid(self):
-        self.assertIsNone(RO.uuid_of({"call_id": 147857741000173100}))
+    def test_the_uuid_comes_out_of_the_recording_url(self):
+        """It is on no field of its own — /calls returns only numeric
+        ids, which /empower/call/ rejects as not RFC 4122."""
+        self.assertEqual(RO.uuid_of({"record": self.REC}), self.UID)
+
+    def test_a_real_uuid_field_still_wins_if_one_appears(self):
+        self.assertEqual(RO.uuid_of({"cdr_uuid": self.UID,
+                                     "record": self.REC}), self.UID)
+
+    def test_no_numeric_id_is_ever_returned(self):
+        """channel_id is 19 digits and 400s. Returning it looks like
+        success and fails one layer later."""
+        self.assertIsNone(RO.uuid_of({"call_id": 13198599287917008381,
+                                      "cdr_id": 202571242,
+                                      "channel_id": "16390226718014117149"}))
+
+    def test_a_call_with_no_recording_has_no_empower_id(self):
+        self.assertIsNone(RO.uuid_of({"record": None}))
 
 
 if __name__ == "__main__":
