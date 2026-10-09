@@ -506,6 +506,14 @@ def _merge_onboarded() -> None:
                            "channel_name": p.get("channel_name", ""),
                            "report_keys": p.get("report_keys") or p.get("slugs") or []})
         _cp = tuple(_plans) if (_ok and len(_plans) > 1) else tuple()
+        # `baked_views` (2026-10-09): overrides that are ALREADY this one
+        # office's saved view (owner filter baked in, like Atef's AtefExp) —
+        # captured as-is, never re-sliced. Valeria's ValChurnEXP is the first
+        # onboarded one: re-slicing it clicked the Owner & Office dropdown,
+        # which won't take on a pre-filtered view ("box now shows '(All)'"),
+        # and her churn_wireless dropped from the 10/9 thread. Accepts the
+        # owner-facing key (b2b_churn_wireless) or the item id (churn_wireless).
+        _baked = {_B2B_VIEW_FIELD.get(k, k) for k in (r.get("baked_views") or [])}
         # Board TAB NAMES are per-office: an onboarded board is a hand-made
         # duplicate, so its churn / order-log tabs can be spelled differently
         # (Jamis's is 'Lucy Churn', not 'LUCY CHURN'). Carry them from the JSON
@@ -537,7 +545,7 @@ def _merge_onboarded() -> None:
                 # Harmless for an override that IS already personal: re-slicing
                 # on the same value changes nothing (the reasoning
                 # slice_overrides was written on for Carlos's CarlosEXP).
-                slice_overrides=frozenset(overrides),
+                slice_overrides=frozenset(overrides) - _baked,
                 channel_plans=_cp)
             ex = {"thresholds": r.get("thresholds", {}), "notes": r.get("notes", "")}
             if unmapped:

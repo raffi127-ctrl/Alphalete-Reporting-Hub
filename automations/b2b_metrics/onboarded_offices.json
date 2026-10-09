@@ -282,6 +282,11 @@
       "b2b_churn_int": "https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/CHURNRATES/8b72d907-b5a1-4b08-888b-ae007b1ec6ab/ValChurnEXP?Product%20Type%20(Broken%20Out)=NEW%20INTERNET",
       "b2b_churn_air": "https://us-east-1.online.tableau.com/#/site/sci/views/ATTTRACKER-B2B/CHURNRATES/8b72d907-b5a1-4b08-888b-ae007b1ec6ab/ValChurnEXP?Product%20Type%20(Broken%20Out)=AIR%2FAWB"
     },
+    "baked_views": [
+      "b2b_churn_wireless",
+      "b2b_churn_int",
+      "b2b_churn_air"
+    ],
     "machine": "Lucy 2",
     "campaign": "",
     "notes": "wired by hand 2026-10-08 (Megan: Valeria T ready to enroll; metrics + trackers + weather); B2B like luke/jamis; OwnerVille office 22850 (Altura Marketing, Inc.), Alphalete Org Focus Report tab 'Valeria Tristan - B2B'; sheet copied from Master Metrics Templates and shared to alphaletereporting@gmail.com; owner_office is a GUESS at Tableau's spelling -- confirm in the Owner & Office dropdown before the dry run (Luke's needed a fix); channel #altura-sales C0C6YD71JMQ from her Lucy ECO sign-up (2026-10-08 16:29); per-office views Valexp (activation) + ValChurnEXP (churn) saved by Megan 2026-10-08",
