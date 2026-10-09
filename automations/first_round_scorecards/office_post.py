@@ -17,7 +17,7 @@ board and the docs say, names already merged ('Same person?' tab).
     python -m automations.first_round_scorecards.office_post --date 2026-10-06            # print only
     python -m automations.first_round_scorecards.office_post --date 2026-10-06 --sample   # group DM Raf+Camila+Eve
     python -m automations.first_round_scorecards.office_post --date 2026-10-06 --post     # the office channels
-    python -m automations.first_round_scorecards.office_post --date 2026-10-08 --restyle carlos  # re-format a posted thread
+    python -m automations.first_round_scorecards.office_post --date 2026-10-08 --restyle carlos  # re-format a posted thread (or: all)
 
 run.py posts the day by itself once LIVE is on (after Eve's OK to the sample).
 An office with no channel here is left out (printed), it still has
@@ -433,6 +433,24 @@ def restyle(rows: List[Dict], day: dt.date, office: str, *, channel: str = "") -
     return 0
 
 
+def restyle_all(rows: List[Dict], day: dt.date) -> int:
+    """Every office's thread for the day, one pass, one read of the audits
+    (Eve, 2026-10-09: the 10/8 threads of every office, not just Carlos's).
+    An office that fails is printed and the rest go on. Returns 1 if any failed."""
+    failed = 0
+    for office in sorted(by_office(rows, day)):
+        if not CHANNELS.get(office):
+            print(f"  {office}: NO CHANNEL - nothing to edit")
+            continue
+        try:
+            failed += restyle(rows, day, office)
+        except Exception as exc:  # noqa: BLE001
+            print(f"  {office}: FAILED {type(exc).__name__}: {exc}")
+            failed += 1
+    print(f"RESTYLE ALL: done, {failed} office(s) not edited")
+    return 1 if failed else 0
+
+
 def day_rows(day: dt.date) -> List[Dict]:
     """The week's audit rows with the 'Same person?' merges, like the board."""
     rows = board.scores(board.monday(day))
@@ -451,12 +469,14 @@ def main(argv=None) -> int:
                     help="only the day's big summary (with --sample: in the group DM)")
     ap.add_argument("--restyle", metavar="OFFICE",
                     help="edit that office's already-posted thread for --date into today's "
-                         "format (e.g. carlos); posts nothing new")
+                         "format (e.g. carlos, or all); posts nothing new")
     args = ap.parse_args(argv)
     day = (dt.date.fromisoformat(args.date) if args.date
            else dt.datetime.now(dt.timezone.utc).astimezone(fathom.CT).date())
     if args.restyle:
         rows = day_rows(day)
+        if args.restyle.lower() == "all":
+            return restyle_all(rows, day)
         return restyle(rows, day, find_office(args.restyle, by_office(rows, day)))
     if args.clear_sample:
         clear_sample()

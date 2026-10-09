@@ -125,6 +125,24 @@ class OfficePostTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             op.find_office("c", offices)
 
+    def test_restyle_all_goes_on_after_a_failure_and_skips_no_channel(self):
+        rows = [row("Ana", "Carlos Hidalgo", 60), row("Bo", "Cody Cannon", 40),
+                row("Cy", "Nowhere Office", 50)]
+        seen = []
+
+        def fake(rows_, day, office, **kw):
+            seen.append(office)
+            if office == "Carlos Hidalgo":
+                raise RuntimeError("slack down")
+            return 0
+
+        orig, op.restyle = op.restyle, fake
+        try:
+            self.assertEqual(op.restyle_all(rows, DAY), 1)
+        finally:
+            op.restyle = orig
+        self.assertEqual(seen, ["Carlos Hidalgo", "Cody Cannon"])
+
 
 if __name__ == "__main__":
     unittest.main()

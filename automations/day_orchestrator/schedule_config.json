@@ -13671,7 +13671,7 @@
    "depends_on": [],
    "freshness_target": null,
    "priority": "P3",
-   "timeout_minutes": 10,
+   "timeout_minutes": 30,
    "verify": null
   },
   "install_first_round_scorecards_agent": {
