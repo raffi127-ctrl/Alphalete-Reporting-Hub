@@ -904,6 +904,17 @@ def main(argv=None) -> int:
                     print(f"  (re-check skipped: {type(e).__name__}) — keeping "
                           f"this morning's note", flush=True)
                     still_behind = dict(held)
+                # A board that opts into post_when_behind goes out anyway, with
+                # its note in the caption (quantum_fiber, Eve 2026-10-09: its
+                # extract now runs a day late, so withholding meant no board).
+                for bid in list(still_behind):
+                    note = _fr.post_when_behind(bid)
+                    spec = pages_mod.by_id(bid)
+                    if note and spec is not None:
+                        spec["caption_note"] = note
+                        del still_behind[bid]
+                        print(f"  ↗ {spec['title']} is still behind — sending "
+                              f"it anyway, captioned {note!r}", flush=True)
                 for bid in still_behind:
                     title = (pages_mod.by_id(bid) or {}).get("title") or bid
                     print(f"  ⚠ {title} is STILL behind — it will be reported in "

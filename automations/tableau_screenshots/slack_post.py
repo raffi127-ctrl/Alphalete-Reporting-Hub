@@ -386,8 +386,11 @@ def header_text(pages: list, today: dt.date, pending_late=(), note: str = "",
 
 
 def reply_caption(spec: dict, today: dt.date) -> str:
-    """'*AT&T Internet Country Sales Tracker - Jul 4*' -- bold, name + date."""
-    return f"*{spec['title']} - {today.strftime('%b')} {today.day}*"
+    """'*AT&T Internet Country Sales Tracker - Jul 4*' -- bold, name + date.
+    A board sent while its extract is behind adds its note after the bold
+    part; _reply_matches looks for the title + date only, so it still matches."""
+    cap = f"*{spec['title']} - {today.strftime('%b')} {today.day}*"
+    return f"{cap} {spec['caption_note']}" if spec.get("caption_note") else cap
 
 
 # Carlos 2026-09-05 ("I don't like how long that message is"): channels where

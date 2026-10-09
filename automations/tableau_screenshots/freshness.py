@@ -106,6 +106,11 @@ HELD_FILE = OUT_DIR / "_held_today.json"
 # regardless of what the probe says. Never skip — that is the whole rule.
 DEFAULT_FALLBACK_HHMM = "06:30"
 
+# Caption note for a board whose extract opts into `post_when_behind`: the
+# catch-up sends it while still behind instead of withholding it. Channel text,
+# so English.
+PARTIAL_DAY_NOTE = "(yesterday isn't fully loaded in Tableau yet)"
+
 
 # extract id -> how to probe it + which boards ride on it.
 #   spec        (module, attribute) of the org_sales_board ScrapeSpec to reuse.
@@ -204,6 +209,13 @@ EXTRACTS = {
         # Coverage alone caught 8/26 (the workbook said 8/24 outright) but passed
         # 10/1's half-loaded Wednesday — hence history_floor above.
         "fallback_hhmm": DEFAULT_FALLBACK_HHMM,
+        # Since ~10/5 this extract loads "yesterday" a full day late (10/9: Wed
+        # read 7 at 05:41 and at 14:05 on 10/8, 83 the next morning), and
+        # Quantum volume is about half its 6-week median, so even a complete day
+        # can miss the 50% floor. The catch-up withheld it every day: 4 days
+        # with no Fiber board at all. Eve 2026-10-09: post it anyway, with a
+        # note in the caption saying yesterday isn't complete yet.
+        "post_when_behind": PARTIAL_DAY_NOTE,
         "boards": ["quantum_fiber"],
     },
 }
@@ -222,6 +234,13 @@ def extract_for_board(board_id: str) -> Optional[str]:
         if board_id in e["boards"]:
             return eid
     return None
+
+
+def post_when_behind(board_id: str) -> Optional[str]:
+    """The caption note when `board_id` posts even while its extract is behind,
+    else None (the default: a still-behind board is withheld)."""
+    eid = extract_for_board(board_id)
+    return EXTRACTS[eid].get("post_when_behind") if eid else None
 
 
 def extracts_for_boards(board_ids) -> List[str]:
