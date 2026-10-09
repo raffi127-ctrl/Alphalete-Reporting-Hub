@@ -12764,6 +12764,81 @@
    "_note": "Office metrics for christian -> email: resoundinc@gmail.com. Onboarded via office_onboarding on 2026-09-07 14:55 UTC. Machine Lucy 1 (view owners).",
    "_onboarded": true
   },
+  "lajahnik_metrics": {
+   "order": 36.58,
+   "machine": "Lucy 4",
+   "on_scheduler": true,
+   "display_name": "Lala's Daily Metrics (email: lajahnikv@gmail.com)",
+   "source_type": "tableau",
+   "data_sources": [
+    "tableau:order_log"
+   ],
+   "command": [
+    "automations.office_metrics.runner"
+   ],
+   "base_args": [
+    "--office",
+    "lajahnik",
+    "--live"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P1",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 60,
+   "verify": {
+    "type": "manifest",
+    "report_id": "lajahnik_metrics"
+   },
+   "_note": "Office metrics for lajahnik (Lajahnik 'Lala' Valentine, Aventis Consulting, Inc.) -> email: lajahnikv@gmail.com. Wired by hand 2026-10-09 from Raf's 10/8 email 'Metrics reporting': she came from Lumen into AT&T fiber, no captainship, and gets every board we post on Slack, by email (same shape as christian/joseph). Same machine as the other email offices.",
+   "_onboarded": true
+  },
+  "lajahnik_dispositions_morning": {
+   "order": 36.59,
+   "machine": "Lucy 1",
+   "on_scheduler": true,
+   "display_name": "Lala's Morning Dispositions (email: lajahnikv@gmail.com)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.gap_alerts.run"
+   ],
+   "base_args": [
+    "--only",
+    "lajahnik",
+    "--date",
+    "yesterday",
+    "--force",
+    "--send"
+   ],
+   "cadence": {
+    "weekdays": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ],
+    "not_before": "08:30"
+   },
+   "priority": "P2",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 20,
+   "verify": null,
+   "_note": "Raf 2026-10-08: 'send out a dispositions email for her every night and every morning'. NIGHT = gap_alerts.config.LALA's 9 PM Mountain slot (the regular gap-alerts LaunchAgent on Lucy 1). MORNING = this entry: YESTERDAY's full KNOCKS & DISPOSITIONS board, emailed. Tue-Sun so it covers Mon-Sat (Sunday is not a selling day; Sunday's run also covers Saturday, which has no night mail because the Saturday field ends at 8 PM). Lucy 1 because her office is impersonated from Raf's OwnerVille login there. 08:30 CT, after the morning batch's heavy OwnerVille wave: a busy session makes the tick stand down (OwnervilleBusy) without sending."
+  },
   "raf_todo_rollup": {
    "on_scheduler": false,
    "machine": "Lucy 4",

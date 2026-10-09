@@ -311,6 +311,61 @@
     "abp_tab": "Lucy New INT ABP%"
   },
   {
+    "key": "lajahnik",
+    "report_id": "lajahnik_metrics",
+    "label": "Lala's Local Office",
+    "owner": "Lajahnik Valentine",
+    "channel_id": "",
+    "channel_name": "",
+    "sheet_id": "1dUgoZMpI55kTUp269KUR7jXItHlEPshup4UzhAcG48I",
+    "knocks_office": "Lajahnik Valentine",
+    "ov_account": "",
+    "owner_office": "",
+    "business_name": "Aventis Consulting, Inc.",
+    "website": "",
+    "header_label": "",
+    "thresholds": {
+      "green": 85,
+      "yellow": 75
+    },
+    "enrolled_reports": [
+      "knocks",
+      "order_log",
+      "sales_6plus",
+      "cancels",
+      "ongoing_cancel",
+      "disconnects",
+      "churn_ni",
+      "churn_wl",
+      "activations",
+      "abp",
+      "tableau_shot"
+    ],
+    "report_order": {
+      "knocks": 1,
+      "order_log": 2,
+      "sales_6plus": 3,
+      "cancels": 4,
+      "ongoing_cancel": 5,
+      "disconnects": 6,
+      "churn_ni": 7,
+      "churn_wl": 8,
+      "activations": 9,
+      "abp": 10,
+      "tableau_shot": 11
+    },
+    "per_office_views": {},
+    "machine": "Lucy 1",
+    "campaign": "fiber_d2d",
+    "notes": "Raf 2026-10-08 (email 'Metrics reporting'): Lala came from Lumen into AT&T fiber, no captainship; wants every metric we post on Slack, by email. Sheet = copy of Master Metrics Templates made 2026-10-09.",
+    "email_to": [
+      "lajahnikv@gmail.com"
+    ],
+    "churn_ni_tab": "Lucy New INT Churn",
+    "churn_wl_tab": "Lucy Wireless Churn",
+    "abp_tab": "Lucy New INT ABP%"
+  },
+  {
     "key": "christian",
     "report_id": "christian_metrics",
     "label": "Christian's Local Office",

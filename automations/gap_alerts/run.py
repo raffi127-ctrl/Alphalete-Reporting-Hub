@@ -2448,7 +2448,7 @@ def main(argv=None) -> int:
                     help="explicit preview (the default; here for the house flag)")
     ap.add_argument("--only", default="",
                     help="comma-separated office keys (default: all enabled)")
-    ap.add_argument("--date", help="YYYY-MM-DD (default today)")
+    ap.add_argument("--date", help="YYYY-MM-DD or 'yesterday' (default today)")
     ap.add_argument("--force", action="store_true",
                     help="run outside the selling-day window")
     ap.add_argument("--headed", action="store_true", help="show the browser")
@@ -2491,8 +2491,15 @@ def main(argv=None) -> int:
                                                          channel))
         return 0
 
-    day = (dt.datetime.strptime(args.date, "%Y-%m-%d").date()
-           if args.date else dt.date.today())
+    # "yesterday" is for a SCHEDULED recap: a schedule entry's args are fixed
+    # text, so it cannot spell out a date. Lala's morning email (Raf
+    # 2026-10-08: "a dispositions email every night and every morning") is
+    # yesterday's full board, sent before the field is out.
+    if (args.date or "").strip().lower() == "yesterday":
+        day = dt.date.today() - dt.timedelta(days=1)
+    else:
+        day = (dt.datetime.strptime(args.date, "%Y-%m-%d").date()
+               if args.date else dt.date.today())
     send = args.send and not args.dry_run
     global PREVIEW_DM, RATES_OVERRIDE
     PREVIEW_DM = bool(getattr(args, "preview_dm", False))

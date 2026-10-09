@@ -128,6 +128,26 @@
     "_note": "delivered BY EMAIL \u2014 Joseph Logan has no Slack account, so this row carries `emails` and NO channel_ids (a row with both is refused). Megan 2026-09-13, 'he can get all trackers for now'."
   },
   {
+    "key": "lajahnik",
+    "label": "Lajahnik Valentine",
+    "owner": "Lajahnik Valentine",
+    "emails": [
+      "lajahnikv@gmail.com"
+    ],
+    "trackers": [
+      "att_country",
+      "att_country_internet_only",
+      "nds",
+      "b2b_att_country",
+      "b2b_att_country_cru",
+      "b2b_d2d_consolidated",
+      "b2b_box",
+      "quantum_fiber",
+      "vzftr"
+    ],
+    "_note": "delivered BY EMAIL -- Lala (Aventis Consulting) is coming from Lumen into AT&T fiber and gets her boards by email (Raf 2026-10-08: 'an email with all the metrics reporting that we typically post on Slack'). Same full set as Joseph."
+  },
+  {
     "key": "colten",
     "label": "#southshore-d2d-sales",
     "owner": "Colten Wright",

@@ -336,7 +336,37 @@ JAY_EW = {
 # real, and a gap list whose people are not on this office's board is not this
 # office's gap list. A fall-through now produces NO board for Jay instead of
 # Raf's board with Jay's name on it.
-OFFICES: List[Dict] = [RAF, CALVIN, JAY_ATT, JAY_EW]
+# Lajahnik "Lala" Valentine — Aventis Consulting, Inc. (Utah). Owner coming
+# from Lumen into AT&T fiber, under no captainship. Raf 2026-10-08 (email
+# "Metrics reporting"): "send out a dispositions email for her every night and
+# every morning". She has no channel or chat with us, so the board goes to her
+# INBOX only:
+#   * NIGHT — one fixed slot, 9:00 PM on HER clock (Mountain = 10 PM Central,
+#     the last tick the weekday wrapper admits). Saturday's field ends at 8 PM,
+#     so there is no Saturday night mail; Sunday's morning recap covers it.
+#   * MORNING — not a slot here: the selling-day window never opens in the
+#     morning. Schedule entry `lajahnik_dispositions_morning` re-sends
+#     YESTERDAY's full board with --date yesterday --force.
+# Impersonation needs Office Access from her in OwnerVille, same as Jay. A
+# fall-through to Raf's office is caught by the identity check in run.py (no
+# board rather than Raf's board with her name on it).
+LALA = {
+    "key": "lajahnik",
+    "name": "Lajahnik Valentine",
+    "ov": "impersonate",
+    "campaign_id": "3",              # RES AT&T — she sells AT&T fiber
+    "label": "Lala",
+    "campaign_label": "AT&T",
+    "tz": "America/Denver",
+    "destinations": [
+        {"kind": "email", "name": "", "channel_id": "",
+         "emails": ["lajahnikv@gmail.com"],
+         # 0 = SLOT_CADENCE (defined below): fixed times, read `slots`.
+         "cadence_min": 0, "slots": ["21:00"]},
+    ],
+}
+
+OFFICES: List[Dict] = [RAF, CALVIN, JAY_ATT, JAY_EW, LALA]
 
 # --- self-serve enrollments ---------------------------------------------------
 # Offices that signed themselves up through the Daily Dispositions link
