@@ -820,6 +820,6 @@
     "churn_ni_tab": "Lucy New INT Churn",
     "churn_wl_tab": "Lucy Wireless Churn",
     "abp_tab": "Lucy New INT ABP%",
-    "notes": "wired by hand 2026-10-09 (Megan: Frank Matos is enrolling; metrics + trackers + weather). NDS wireless like colten/jairo (South Shore org, Peak Management, Inc., OwnerVille/AppStream 23221, Tableau name Frank Matos); same 5 boards as jairo, knocks held back until his ECO relay shows knock rows. Channel #peakmanagement-att-sales (C0C5WU4S65T) from his Lucy ECO sign-up 2026-10-09 19:44 UTC (Eastern, 13:30-20:30, Sat 11:45-19:15); sheet 'Frank Matos - Lucy Metrics' copied from the Master Metrics Templates. Schedule off until a dry run on Lucy 4 shows data on every board."
+    "notes": "wired by hand 2026-10-09 (Megan: Frank Matos is enrolling; metrics + trackers + weather). NDS wireless like colten/jairo (South Shore org, Peak Management, Inc., OwnerVille/AppStream 23221, Tableau name Frank Matos); same 5 boards as jairo, knocks held back until his ECO relay shows knock rows. Channel #peakmanagement-att-sales (C0C5WU4S65T) from his Lucy ECO sign-up 2026-10-09 19:44 UTC (Eastern, 13:30-20:30, Sat 11:45-19:15); sheet 'Frank Matos - Lucy Metrics' copied from the Master Metrics Templates. Schedule ON 2026-10-09 after the Lucy 4 dry run showed data on every board. ECO paused (relay key off) per Megan 2026-10-09; metrics/trackers/weather only."
   }
 ]

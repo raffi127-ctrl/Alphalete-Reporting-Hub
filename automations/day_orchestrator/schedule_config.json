@@ -13857,7 +13857,7 @@
   "frank_metrics": {
    "order": 26.8,
    "machine": "Lucy 4",
-   "on_scheduler": false,
+   "on_scheduler": true,
    "display_name": "Frank's Daily Metrics (peakmanagement-att-sales)",
    "source_type": "tableau",
    "data_sources": [
@@ -13890,7 +13890,7 @@
     "type": "manifest",
     "report_id": "frank_metrics"
    },
-   "_note": "Office metrics for frank (Frank Matos, Peak Management, Inc.; South Shore org). Wired by hand 2026-10-09 (Megan: he is enrolling; metrics + trackers + weather). NDS/wireless office (campaign nds_d2d), same five boards as jairo; knocks held until his ECO relay shows knock rows. OFF until a dry run on Lucy 4 (`lucy rerun frank_metrics --dry-run`) shows data on every board (channel #peakmanagement-att-sales C0C5WU4S65T from his ECO sign-up 2026-10-09) -- Megan's rule: never a blank first post.",
+   "_note": "Office metrics for frank (Frank Matos, Peak Management, Inc.; South Shore org). Wired by hand 2026-10-09 (Megan: he is enrolling; metrics + trackers + weather). NDS/wireless office (campaign nds_d2d), same five boards as jairo; knocks held until his ECO relay shows knock rows. OFF until a dry run on Lucy 4 (`lucy rerun frank_metrics --dry-run`) shows data on every board (channel #peakmanagement-att-sales C0C5WU4S65T from his ECO sign-up 2026-10-09) -- Megan's rule: never a blank first post. SWITCHED ON 2026-10-09 15:05 CT after the Lucy 4 dry run (rerun-2026-10-09-144945) rendered every board with data: order log 412 rows, cancels 8, disconnects 4, activation rate 34, rep activations 824, 'All wired metrics ok'. ECO itself is PAUSED (relay key Active FALSE, Megan 2026-10-09) -- metrics/trackers/weather only.",
    "_onboarded": true
   }
  },
