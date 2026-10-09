@@ -69,5 +69,17 @@ class ATableThatNeverComesStillEnds(unittest.TestCase):
         self.assertLessEqual(p.slept, 12000)
 
 
+class TheOvernightPassGetsFiveMinutes(unittest.TestCase):
+
+    def test_table_after_three_minutes_is_found(self):
+        """The 2026-10-09 shape: Raf's 1 AM report outlives the old 120s."""
+        p = _Page([0] * 90 + [230, 230])
+        self.assertEqual(
+            fetch._wait_for_table(p, timeout=fetch.TABLE_WAIT_MS), 230)
+
+    def test_budget_is_wider_than_the_load_timeout(self):
+        self.assertGreaterEqual(fetch.TABLE_WAIT_MS, 300000)
+
+
 if __name__ == "__main__":
     unittest.main()

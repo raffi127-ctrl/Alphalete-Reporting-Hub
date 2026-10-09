@@ -113,6 +113,32 @@ _TABLE_ROWS_JS = """() => {
 }"""
 
 
+# THE TABLE GETS ITS OWN BUDGET (2026-10-09). The 10-02 poll above reused the
+# 120s load timeout, and Rafael Hidalgo (11280) still dropped at 1 AM on 10-07
+# and 10-09 (10-08 only made it on the retry). It is never a 1 PM miss: the 1 PM
+# pass runs the whole roster in ~5 min, the 1 AM pass takes ~18, and his report
+# is the biggest on it (~230 raw rows, twice the next office). AppStream is just
+# slower overnight than 30s click + networkidle + 120s. Five minutes only costs
+# time on an office whose table has not arrived; a ready table still returns on
+# the second poll.
+TABLE_WAIT_MS = 300000
+
+
+def _page_says(page):
+    """One line on what the page showed when no table came back — so a miss is
+    evidence (an error page? the form again? a login?) and not a guess."""
+    try:
+        url = page.url
+    except Exception:  # noqa: BLE001
+        url = "?"
+    try:
+        txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
+    except Exception:  # noqa: BLE001
+        txt = ""
+    txt = " ".join((txt or "").split())[:160]
+    return "url=%s page=%r" % (url.split("rqst=")[0], txt)
+
+
 def _wait_for_table(page, timeout, poll=2000):
     """Wait until the Source Report table is on the page AND has stopped growing.
 
@@ -185,13 +211,14 @@ def _one_pass(page, tok, start, end, timeout):
     page.eval_on_selector("#endDate2", 'e=>e.value="%s"' % end.replace("-", "/"))
     _submit(page, timeout=30000)
     page.wait_for_load_state("networkidle", timeout=timeout)
-    _wait_for_table(page, timeout)
+    _wait_for_table(page, max(timeout, TABLE_WAIT_MS))
     best, n = None, 0
     for t in page.query_selector_all("table"):
         rows = len(t.query_selector_all("tr"))
         if rows > n and "Email Subject" in (t.inner_text() or ""):
             best, n = t, rows
     if best is None:
+        print("     no table — %s" % _page_says(page), flush=True)
         raise RuntimeError("no Source Report table came back")
     return "<table>" + best.inner_html() + "</table>", owner, n
 
