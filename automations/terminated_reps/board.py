@@ -103,6 +103,15 @@ TERM_MARKS = {"t", "terminated"}
 # instead of filed. [[see Check]]
 NEUTRAL_MARKS = {"", "x", "-", "--", "n/a", "na", "true", "false", "0"}
 
+# WHAT ACTUALLY MAKES A 'T' DOUBTFUL (Eve, 2026-10-09). Knocks, talk-tos and a
+# roll call on the T day mean nothing — a rep can go out that day and be let go
+# at the end of it. Only two things are worth a question:
+#   * a SALE on the T day (these day-block columns, matched by header), and
+#   * KNOCKS on a LATER day — a terminated rep shouldn't be in the field.
+# Everything else in the block is ignored and the row is filed.
+SALES_HEADERS = {"apps", "int", "int up", "dtv", "nl"}
+KNOCKS_HEADER = "tk"
+
 # How a new start's FIRST 'Terminated' weekday maps to the date and day count
 # Eve files. 0 = take the column at face value; 1 = the day after it.
 #
@@ -171,10 +180,9 @@ class Check:
 
     Two things produce one, both of them 'the board contradicts itself':
 
-      * MIXED DAY. The first day marked 'T' also holds a cell that says the rep
-        was working — a real roll-call status or a non-zero metric. Kaleb
-        Muvunyi on WE 8.23 has Roll Call 'T' on Wednesday and Thursday while
-        Apps and Int both read 1 on those same days.
+      * DOUBTFUL T. A sale on the first day marked 'T', or knocks on a later
+        day (Eve, 2026-10-09 — knocks/talk-tos/roll call on the T day itself
+        no longer count; see SALES_HEADERS).
       * DATE DISAGREEMENT. The row has a Termination Date AND T marks, and they
         point at days more than 24h apart (Caleb Rink, WE 8.2: date column says
         8/2, the T marks start 7/27).
@@ -563,6 +571,33 @@ def _marked_days(grid: list, row: int, lay: Layout) -> str:
     return "; ".join(bits)
 
 
+def _md(d: dt.date) -> str:
+    return f"{d.month}/{d.day}"
+
+
+def _t_doubt(grid: list, lay, r: int, first: DayMark,
+             monday: dt.date) -> str:
+    """Why a 'T' row needs Eve's look, or '' when it should just be filed.
+    See SALES_HEADERS."""
+    def header(c: int) -> str:
+        return _norm(_cell(grid, lay.header_row, c))
+
+    sales = [c for c, _ in first.conflicts if header(c) in SALES_HEADERS]
+    if sales:
+        return "has sales that day — terminated or FFP?"
+    for off, c0, c1 in lay.day_blocks:
+        if off <= first.offset:
+            continue
+        for c in range(c0, c1 + 1):
+            if header(c) != KNOCKS_HEADER:
+                continue
+            v = _mark(_cell(grid, r, c))
+            if v not in NEUTRAL_MARKS and v not in TERM_MARKS:
+                later = monday + dt.timedelta(days=off)
+                return f"has knocks for {_md(later)} — terminated or FFP?"
+    return ""
+
+
 def _roster_t_row(grid: list, lay, r: int, name: str, marked: dt.date,
                   tab: str) -> Termination:
     """The termination a bare 'T' states, on the roster.
@@ -623,16 +658,13 @@ def scan_grid(grid: list, tab: str,
         if not marks:
             continue
         first = marks[0]
-        if first.conflicts:
-            # A 'T' next to a real roll call or a non-zero metric on the SAME
-            # day. Not filed and not dated — the whole point of the flag.
-            shown = ", ".join(
-                f"{str(_cell(grid, lay.header_row, c) or f'col {c}').strip()}={v}"
-                for c, v in first.conflicts[:4])
+        doubt = _t_doubt(grid, lay, r, first, monday)
+        if doubt:
+            # A sale on the T day, or knocks after it. Not filed — a ✅ files
+            # it as terminated, a 🔵 as FFP.
             checks.append(Check(
                 name=name, tab=tab, row=r,
-                reason=(f"marked T on {_fmt(marked)} but the same day still "
-                        f"reads {shown} — not filed, tell me which it is."),
+                reason=f"was terminated on {_md(marked)} but {doubt}",
                 marked_date=marked, board_date=None,
                 proposed=_roster_t_row(grid, lay, r, name, marked, tab)))
             continue

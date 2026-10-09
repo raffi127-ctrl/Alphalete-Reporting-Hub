@@ -259,15 +259,9 @@ def render_check(c: Check) -> str:
                 f":large_blue_circle: if it's *FFP* and the next run writes "
                 f"that in Notes. Fix the board instead and the next run picks "
                 f"the change up. {_mentions()}")
-    p = c.proposed
-    days = ("day count unknown" if p.days_worked is None
-            else f"{p.days_worked} day{'' if p.days_worked == 1 else 's'} worked")
-    return (f"{head}\n*Not filed.* React :white_check_mark: to confirm the "
-            f"termination and the next run files it as "
-            f"*{p.term_date.month}/{p.term_date.day}* ({days}). "
-            f"Or :large_blue_circle: for *FFP* — same row, Notes says FFP, and "
-            f"they keep OwnerVille and Slack (channels only). "
-            f"Leave it alone and nothing happens. {_mentions()}")
+    # A doubtful 'T' (Eve, 2026-10-09: one short line). ✅ = terminated,
+    # 🔵 = FFP — both file the row; she knows the drill, so no instructions.
+    return f"{FLAG} {c.name} — {c.reason} {_mentions()}"
 
 
 def render_checks(checks: list[Check]) -> list[str]:
