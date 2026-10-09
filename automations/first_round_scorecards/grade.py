@@ -106,9 +106,8 @@ OFFICES = {
     "Juan Botero": dict(_STD_PAY, schedule_check="Would that schedule work for you?",
                         schedule="The schedule is Monday through Friday, from 10:00AM to "
                                  "8:30PM, Saturdays 9:00AM to 6:00PM."),
-    "Tre Mitchell": dict(_STD_PAY, schedule_check="Would that schedule work for you?",
-                         schedule="The schedule is Monday through Friday, from 11:00AM to "
-                                  "8:30PM Saturdays 8:00 AM to 4:00 PM."),
+    # 2026-10-09: Tre's new script (Eve) -- no pay, 40 hrs + Saturdays, North Houston
+    "Tre Mitchell": {"format": "tre"},
     # Scripts shaped differently from Rafael's -- see FORMATS below.
     **{o: {"format": "profits"} for o in ("Eveliz Wright", "Colten Wright", "Jairo Ruiz",
                                          "Drew Tepper", "George Delgado", "Samuel Acay")},
@@ -134,6 +133,8 @@ OWNER_ALIASES = {"raf hidalgo": "Rafael Hidalgo", "nii tagoe": "Nii Teiko",
 #   highline -- Highline Management (Roshan, Ryan): pay, hours and commute all
 #               wait for the 2nd round.
 #   ellen    -- Ellen's: pay only if they ask ($1,000-2,500/wk), own hours.
+#   tre      -- Tre's (2026-10-09): pay waits for the 2nd round, standard 40 hrs
+#               + Saturdays, North Houston, wrap-up without attire/notebook.
 #   carlos   -- Carlos': own pay numbers, no schedule or commute in the 1st round,
 #               2nd round tomorrow in person in Grand Prairie.
 _PROFITS_WRAP = ("The second interview will be in person, so you can come to the office, "
@@ -229,6 +230,34 @@ FORMATS = {
                               "numbers at all.",
             "management": "YES if she said the goal is a management role within about 6 "
                           "months.",
+            "check_ins": "YES only if she asked both check-in questions (aligned with what "
+                         "you're looking for? / schedule alright?). Missing any = NO.",
+        },
+    },
+    "tre": {
+        "na": {"pay"},
+        "drop": {"pay_entry", "pay_assistant", "pay_executive"},
+        "lines": {
+            "face_to_face": "All interactions with them are face to face.",
+            "commute": "Remember that we are located in North Houston, is that a "
+                       "sustainable commute for you for an everyday job?",
+            "check_ins": "Does this sound aligned with what you are looking for? / Is that "
+                         "alright with you?",
+            "wrap_up": "If you are selected you'll get a phone call before 5pm today from our "
+                       "recruitment team in order to schedule a 2nd interview. If you don't "
+                       "get a phone call it just means we went a different direction.",
+        },
+        "keys": {
+            "face_to_face": "all interactions with clients are face to face",
+            "check_ins": "both questions",
+            "wrap_up": "the call before 5pm today to schedule the 2nd interview, and 'if you "
+                       "don't get a call we went a different direction'",
+        },
+        "rules": {
+            "off_script_pay": _NO_PAY_RULE,
+            "wrap_up": "YES only if she said the call comes before 5pm today to schedule the "
+                       "2nd interview and \"if you don't get a call we went a different "
+                       "direction\". Missing any = NO.",
             "check_ins": "YES only if she asked both check-in questions (aligned with what "
                          "you're looking for? / schedule alright?). Missing any = NO.",
         },

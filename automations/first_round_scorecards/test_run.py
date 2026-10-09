@@ -213,6 +213,16 @@ class ScriptFormatTest(unittest.TestCase):
         self.assertIn("Must-dos: 5 of 5", text)
         self.assertNotIn("explaining the pay", text)
 
+    def test_tre_new_script_no_pay(self):
+        # 2026-10-09: Tre's script leaves pay for the 2nd round, North Houston
+        s = grade.score(self.r("Tre Mitchell", pay=False))
+        self.assertEqual((s["score"], s["na"]), (100, ["pay"]))
+        b = grade.build("Tre Mitchell")
+        self.assertNotIn("pay_entry", dict(b["portions"]))
+        self.assertIn("North Houston", b["system"])
+        self.assertNotIn("notebook", dict(b["portions"])["wrap_up"])
+        self.assertEqual(grade.office_for("Lamar Mitchell"), "Tre Mitchell")
+
     def test_standard_offices_unchanged(self):
         self.assertEqual(grade.build("Rashad Reed")["na"], set())
         self.assertIn("$900 - $1200", grade.build("Joe Logan")["system"])
