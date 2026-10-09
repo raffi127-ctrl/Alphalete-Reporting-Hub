@@ -26,8 +26,10 @@ GROUP_ALL = b2b.TEXT_GROUP_ALL      # "NEW A Players"
 #   "B2B ATT tracker (the first one posted) in the 'ATT B2B leaders' text chain &
 #    'New A Players' text chain"     -> b2b_att_country
 #   "B2B Box Tracker in the 'New A Players' & the 'Box B2B' chat" -> b2b_box
+# Carlos 2026-10-09: "text us the NDS tracker instead of the b2b att tracker" in
+#   those same two chains -> nds replaces b2b_att_country (Box unchanged).
 ROUTES = {
-    "b2b_att_country": [GROUP_ATT, GROUP_ALL],
+    "nds":             [GROUP_ATT, GROUP_ALL],
     "b2b_box":         [GROUP_BOX, GROUP_ALL],
 }
 

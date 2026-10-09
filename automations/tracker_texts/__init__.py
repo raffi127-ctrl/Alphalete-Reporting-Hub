@@ -3,7 +3,7 @@
 Carlos asked (2026-08-09, #l10-alphalete) for the B2B AT&T tracker and the B2B
 Box tracker — the images Lucy already posts in the "Tableau Country Trackers"
 thread — to also go out as texts, at the same time they hit Slack:
-  * B2B AT&T  -> "ATT B2B Leaders" + "New A Players"
+  * NDS       -> "ATT B2B Leaders" + "New A Players"  (was B2B AT&T until Carlos 2026-10-09)
   * B2B Box   -> "Box B2B"         + "New A Players"
 
 WHY THIS IS ITS OWN MODULE and not a mode of b2b_dispositions:
