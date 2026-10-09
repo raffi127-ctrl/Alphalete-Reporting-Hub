@@ -75,6 +75,11 @@ def box_offices() -> List[Dict[str, str]]:
         out.append({"key": r.get("key", ""),
                     "owner_office": (r.get("owner_office") or "").strip(),
                     "channel_id": cid, "channel_name": cname,
+                    # The office's OWN metrics workbook: run.py reads its TPV
+                    # memory from --sheet-id and defaults to Carlos's board,
+                    # so without this every per-office run read Carlos's
+                    # (Ryan's enrolment, 2026-10-09).
+                    "sheet_id": (r.get("sheet_id") or "").strip(),
                     "sections": [s for k, s in BOX_SECTION_KEYS.items()
                                  if k in box_keys] + ALWAYS})
     return out
@@ -181,7 +186,7 @@ def _ensure_team_export(from_file: str, verbose: bool) -> Path:
 
 
 def run_all(*, post: bool = False, weeks: int = 6, from_file: str = "",
-            verbose: bool = True) -> int:
+            verbose: bool = True, require_fresh: bool = False) -> int:
     offs = box_offices()
     if not offs:
         print("[box per-office] no onboarded B2B office enrolled the Box order log "
@@ -223,6 +228,16 @@ def run_all(*, post: bool = False, weeks: int = 6, from_file: str = "",
                                       ["order_log", "accepted", "pending",
                                        "tier_bonus"]),
                "--weeks", str(weeks), "--xlsx"]
+        if o.get("sheet_id"):
+            # Its own workbook: TPV memory is read from it, and the rolling
+            # 'Lucy Box Order Log' tab is written there -- the same --sheet
+            # the per-owner emails use for Roshan and Abel, never Carlos's.
+            cmd += ["--sheet-id", o["sheet_id"], "--sheet"]
+        if require_fresh:
+            # 7:00 pass: run.py answers 3 when the Box extract has not landed
+            # yet, and the 8:30 pass (without this) posts once it has -- the
+            # same two-pass shape as box_order_log_owners.sh.
+            cmd.append("--require-fresh")
         if post:
             cmd.append("--post")
         print("\n[box per-office] === {} -> {} ===".format(o["key"], o["channel_name"]))
@@ -241,11 +256,15 @@ def main(argv=None) -> int:
     ap.add_argument("--from-file", metavar="CSV",
                     help="use an existing TEAM export instead of pulling")
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--require-fresh", action="store_true",
+                    help="pass through to run.py: exit 3 instead of posting "
+                         "when the Box extract has not refreshed yet")
     args = ap.parse_args(argv)
     if args.probe:
         return probe(from_file=(args.from_file or ""), verbose=not args.quiet)
     return run_all(post=args.post, weeks=args.weeks,
-                   from_file=(args.from_file or ""), verbose=not args.quiet)
+                   from_file=(args.from_file or ""), verbose=not args.quiet,
+                   require_fresh=args.require_fresh)
 
 
 if __name__ == "__main__":

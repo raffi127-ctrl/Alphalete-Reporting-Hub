@@ -5802,6 +5802,82 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "box-order-log-per-office",
+        # Channels come from each office's registry row; the tile appends
+        # "· 7:00 AM CST" from `schedule`.
+        "name": "BOX Order Log (per office) → each Box office's own channel",
+        "creator": "Megan",
+        "emoji": "📦",
+        "color": "#0EA5E9",
+        "category": "📊 Metrics",
+        "description": "The BOX order log for every ONBOARDED Box office that is not Carlos — one Slack thread per office in that office's own channel, carrying only that office's production: workbook, payout image, pending orders and the Box Tier Bonus board. First office: Ryan McSpadden → #highline-b2b-box-sales (2026-10-09).",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Pulls the TEAM **Box Order Log** view (every Box owner "
+            "org-wide) ONCE, then slices it to each enrolled office's exact "
+            "Tableau **Owner & Office** name — an office that is not in the "
+            "export gets nothing, never another office's numbers.\n"
+            "**•** Writes the rolling 6-week **Lucy Box Order Log** tab on that "
+            "office's OWN metrics sheet.\n"
+            "**•** Posts one dated **Box Metrics** thread in the office's own "
+            "channel: workbook, payout image (last week + this week), "
+            "**Pending Orders**, and the **Box Tier Bonus Rep Level** board.\n\n"
+            "WHO GETS IT\n"
+            "Any office whose Metrics Onboarding row enrols **Box Order Log**, "
+            "**Accepted by Supplier** or **Box Tier Bonus** "
+            "(automations/b2b_metrics/onboarded_offices.json). Carlos's own "
+            "log is the separate **BOX Order Log** card; Roshan and Abel get "
+            "theirs by email.\n\n"
+            "WHEN IT RUNS\n"
+            "**Twice a day, 7:00am and 8:30am CST, on Lucy 1** (the mini — the "
+            "only machine whose Tableau session sees every Box owner). The "
+            "7:00 pass waits for a fresh Box extract and posts; if the extract "
+            "is late, 8:30 posts instead. Exactly one thread per office per "
+            "day.\n\n"
+            "IF SOMETHING FAILS\n"
+            "A thread that does not land files under this card's own id in "
+            "**#claudecorrections-and-requests**, separately from Carlos's."
+        ),
+        "assignees": ["Lucy 1"],
+        "run_machine": "Lucy 1",
+        "run_rerun_id": "box_order_log_per_office",
+        "self_scheduled": True,
+        # 7:00 + 8:30 both report via hub_activity (run._report_to_hub, under
+        # box-order-log-per-office when --owner-office is set).
+        "daily_runs": 2,
+        "schedule": {
+            "frequency": "daily",
+            "time": "7:00 AM",
+            "time_label": "7 AM + 8:30 AM CST",
+            "estimated_minutes": 4,
+        },
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Per-office BOX Order Log threads posted.",
+            "message_failed": "❌ Run failed. Check the log above, then run again.",
+        },
+        "actions": [
+            {
+                "label": "Dry run — build, post nothing",
+                "icon": "▶",
+                "primary": True,
+                "help": "Pulls the team view and builds every enrolled office's "
+                        "workbook + images. Does NOT post to Slack.",
+                "module": "automations.box_order_log.per_office",
+                "args_fn": lambda: [],
+            },
+            {
+                "label": "Full run — post each office's thread",
+                "icon": "📣",
+                "help": "Everything the 7:00am run does: writes each office's "
+                        "sheet and posts today's thread in each office's own "
+                        "channel.",
+                "module": "automations.box_order_log.per_office",
+                "args_fn": lambda: ["--post"],
+            },
+        ],
+    },
+    {
         "id": "brand-health-audit",
         # No cadence in the name — self_scheduled, so the tile appends
         # "· 12:00 PM CST" itself (it read "(12 CST Daily) · 12:00 PM CST").

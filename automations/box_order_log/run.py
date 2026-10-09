@@ -578,6 +578,13 @@ def main(argv: Optional[list] = None) -> int:
                          "menu shows when opened, then exit. No export, no "
                          "sheet, no post.")
     args = ap.parse_args(argv)
+    # A per-office run (--owner-office, via per_office.py) files its manifest,
+    # drop alerts and Hub activity under its OWN id, so Carlos's card and
+    # delivery check never read another office's morning as his (2026-10-09,
+    # Ryan McSpadden's enrolment).
+    global MANIFEST_ID
+    if args.owner_office:
+        MANIFEST_ID = "box-order-log-per-office"
     if args.probe_filters:
         return _probe_filters(args.view_url or VIEW_URL)
     sections = {s.strip() for s in args.sections.split(",") if s.strip()}
@@ -614,7 +621,11 @@ def main(argv: Optional[list] = None) -> int:
         if os.environ.get("HUB_RUN"):
             return
         from automations.shared import hub_activity
-        ok = hub_activity.log_completed("box-order-log", "BOX Order Log")
+        # A per-office run (--owner-office) is its own Hub card: logging it as
+        # Carlos's would turn his tile green on a morning only Ryan's posted.
+        ok = hub_activity.log_completed(
+            MANIFEST_ID, "BOX Order Log (per office)" if args.owner_office
+            else "BOX Order Log")
         if loud and not ok:
             print("  (couldn't record this run on the Hub — tile may not "
                   "turn green; the report itself is fine)")
@@ -887,7 +898,13 @@ def main(argv: Optional[list] = None) -> int:
     if args.sheet and not args.no_sheet:
         from . import sheet
         try:
-            sheet.push(window_sales, today=today, weeks_back=args.weeks)
+            # --sheet-id governs the WRITE too. Before 2026-10-09 only the
+            # TPV-memory reads honoured it, so a per-office run with --sheet
+            # wrote Ryan McSpadden's 471 sales into Carlos's board (Box Sales
+            # Log + Lucy Box Data + the view's rep list) -- caught on the dry
+            # run, rows removed by hand.
+            sheet.push(window_sales, today=today, weeks_back=args.weeks,
+                       sheet_id=args.sheet_id or None)
         except Exception as exc:
             print("✗ Sheet write failed: {}".format(exc), file=sys.stderr)
             traceback.print_exc()
@@ -899,7 +916,7 @@ def main(argv: Optional[list] = None) -> int:
         # the post or the main tab it rides along with.
         try:
             from . import flat_log
-            flat_log.push(sales, today=today)
+            flat_log.push(sales, today=today, sheet_id=args.sheet_id or None)
         except Exception as exc:
             print("✗ Box Sales Log write failed (main tab + post "
                   "unaffected): {}".format(exc), file=sys.stderr)
@@ -1164,7 +1181,7 @@ def main(argv: Optional[list] = None) -> int:
             # reports. Whoever fails first opens it; the rest reply. So the
             # OFFICE has to be inside the line: the headline can no longer say
             # whose numbers are missing.
-            sda.alert(report_id="box-order-log",
+            sda.alert(report_id=MANIFEST_ID,
                       failed=["Carlos Hidalgo — {}".format(_detail)],
                       kind="capped", day=today)
         except Exception:
@@ -1240,7 +1257,7 @@ def main(argv: Optional[list] = None) -> int:
         if not args.dm:
             try:
                 from automations.shared import section_drop_alert as sda
-                sda.alert(report_id="box-order-log", failed=failed_channels,
+                sda.alert(report_id=MANIFEST_ID, failed=failed_channels,
                           kind="section", day=today)
             except Exception:
                 pass
@@ -1255,7 +1272,7 @@ def main(argv: Optional[list] = None) -> int:
               file=sys.stderr, flush=True)
         try:
             from automations.shared import section_drop_alert as sda
-            sda.alert(report_id="box-order-log", failed=failed_channels,
+            sda.alert(report_id=MANIFEST_ID, failed=failed_channels,
                       kind="section", day=today)
         except Exception:
             pass
@@ -1284,7 +1301,7 @@ def main(argv: Optional[list] = None) -> int:
         if not args.dm:
             try:
                 from automations.shared import section_drop_alert as sda
-                sda.alert(report_id="box-order-log",
+                sda.alert(report_id=MANIFEST_ID,
                           failed=["{} ({}) — {}".format(
                               tier_bonus.BOARD_NAME, tier_owner, tier_note)],
                           kind="section", day=today)
@@ -1296,7 +1313,7 @@ def main(argv: Optional[list] = None) -> int:
         try:
             from automations.shared import section_drop_alert as sda
             from . import rep_lvl as _rl_alert
-            sda.alert(report_id="box-order-log",
+            sda.alert(report_id=MANIFEST_ID,
                       failed=["{} — {}".format(_rl_alert.BOARD_NAME,
                                                rep_lvl_res["note"])],
                       kind="section", day=today)

@@ -355,5 +355,17 @@
       "quantum_fiber",
       "vzftr"
     ]
+  },
+  {
+    "key": "ryan",
+    "label": "#highline-b2b-box-sales",
+    "owner": "Ryan McSpadden",
+    "channel_ids": [
+      "C0A32EEEG4Q"
+    ],
+    "trackers": [
+      "b2b_box"
+    ],
+    "notes": "wired by hand 2026-10-09 (Megan: wire up Ryan McSpadden's metrics and trackers). Box-only office (Service Cloud), so just the B2B Box Tracker; channel = his Lucy ECO alerts/knocks room."
   }
 ]
