@@ -230,3 +230,26 @@ if __name__ == "__main__":
             fn()
             n += 1
     print("ok -- %d tests" % n)
+
+
+
+# BYOD = new lines (Eve 2026-10-09, form row 198: 'Other' + "BYOD - 6").
+def _fm(product, qty=""):
+    return T.form_metrics({"product": product, "notes": "", "qty": qty})
+
+
+def test_other_with_byod_quantity_is_new_lines():
+    assert _fm("Other", "BYOD - 4") == ({"NL": 4}, "")
+
+
+def test_byod_ticked_is_a_new_line():
+    assert _fm("BYOD") == ({"NL": 1}, "")
+
+
+def test_other_beside_a_product_adds_what_the_quantity_names():
+    assert _fm("New Internet, Other", "Int - 1 | BYOD - 2") == ({"Int": 1, "NL": 2}, "")
+
+
+def test_other_alone_is_still_left_for_a_person():
+    assert not _fm("Other")[0]
+    assert not _fm("Other", "4")[0]

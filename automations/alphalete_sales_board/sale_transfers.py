@@ -29,6 +29,10 @@ while it exists, so the two keep agreeing).
 
     New Internet -> Int      Upgrade -> Int Up      DTV -> DTV
     New Line     -> NL  (x the number of lines in Notes, else 1)
+    BYOD         -> NL  (bring-your-own-device lines ARE new lines, Eve
+                         2026-10-09: Bryan Castillo <- Jordan Ruiz, 10/2)
+    Other        -> whatever the quantity answer names ('Other' + "BYOD - 4"
+                    is 4 NL); with no quantity answer it is left for a person
 
 WHAT IT WILL NOT DO -- every one of these is REPORTED instead, for a person:
   * move a sale the FROM row does not have (moving it anyway would invent a
@@ -129,7 +133,12 @@ PRODUCTS = (
     ("directv", "DTV"),
     ("line", "NL"),
     ("wireless", "NL"),
+    ("byod", "NL"),
 )
+
+# Ticked on the form but says nothing by itself -- the quantity answer names
+# the product ('Other' + "BYOD - 4").
+VAGUE = ("other",)
 
 # The last closing slot of a sale day: 08:00 the next morning (deploy/
 # sale_transfers.sh runs 05:00, 06:00, 08:00). A form submitted after it was
@@ -216,7 +225,7 @@ QTY_WORDS = (
     (r"upg\w*|up", "Int Up"),
     (r"int\w*|fiber", "Int"),
     (r"dtv|directv|tv|video", "DTV"),
-    (r"nl|lines?|phones?|wireless", "NL"),
+    (r"nl|lines?|phones?|wireless|byod", "NL"),
 )
 
 
@@ -233,13 +242,16 @@ def _by_number(part: str) -> List[str]:
     return chunks
 
 
-def quantities(text: str, ticked: Dict[str, int]) -> Tuple[Dict[str, int], str]:
+def quantities(text: str, ticked: Dict[str, int], vague: bool = False
+               ) -> Tuple[Dict[str, int], str]:
     """({metric: qty}, problem) from the quantity answer. problem != '' means
-    it could not be read for sure -- the row is then not moved at all."""
+    it could not be read for sure -- the row is then not moved at all.
+    vague: 'Other' was ticked too, so the answer may name products beyond the
+    ticked ones (it must still cover every ticked one)."""
     raw = _clean(text)
     low = re.sub(r"\d+\s*gig\w*", " ", raw.lower())   # '1 gig' is a plan, not a count
     if re.fullmatch(r"\d+", low.strip()):
-        if len(ticked) == 1:
+        if len(ticked) == 1 and not vague:
             return {next(iter(ticked)): int(low)}, ""
         return {}, "quantity %r does not say which product" % raw
     out: Dict[str, int] = {}
@@ -255,7 +267,7 @@ def quantities(text: str, ticked: Dict[str, int]) -> Tuple[Dict[str, int], str]:
         covered.add(metric)
         if int(nums[0]):
             out[metric] = out.get(metric, 0) + int(nums[0])
-    if covered != set(ticked):
+    if (not set(ticked) <= covered) if vague else covered != set(ticked):
         return {}, ("quantity %r does not match the products ticked (%s)"
                     % (raw, ", ".join(sorted(ticked))))
     return out, ""
@@ -265,6 +277,13 @@ def form_metrics(t: Dict) -> Tuple[Dict[str, int], str]:
     """({metric: qty}, problem) for one form row: the ticked products, with
     the quantity answer when there is one."""
     m, unknown = products(t["product"], t["notes"])
+    vague = any(u in VAGUE for u in unknown)
+    unknown = [u for u in unknown if u not in VAGUE]
+    if vague and t.get("qty") and not unknown:
+        out, problem = quantities(t["qty"], m, vague=True)
+        if problem or not out:
+            return {}, "product %r: %s" % (t["product"], problem or "quantity names nothing")
+        return out, ""
     if unknown or not m:
         return {}, "product %r not understood" % t["product"]
     if t.get("qty"):
