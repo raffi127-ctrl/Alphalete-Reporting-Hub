@@ -150,6 +150,12 @@ INACTIVE_ICDS: dict[str, str] = {
     # stays in "ATT Fiber Owners". Rows stay for the history.
     "roberto luconi": "off Pat's captainship 2026-09-08 (two-week zero rule); "
                       "out of the Metrics view since 2026-09-19 (Eve)",
+    # Wayne's Team. New owner: 0.00% on 0-30 for 10/3-10/5, blank from 10/6
+    # on. 2026-10-09 the live Metrics view had him under no team at all (not
+    # Wayne's, not "Unassigned"). Eve 2026-10-09: off Wayne's captainship.
+    # Row stays for the history.
+    "elijah armstrong": "off Wayne's captainship (Eve 2026-10-09); out of "
+                        "the Metrics view since 2026-10-06",
 }
 
 

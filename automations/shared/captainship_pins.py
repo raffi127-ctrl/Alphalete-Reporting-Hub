@@ -334,6 +334,11 @@ def drop_expected_absent(went_dark: dict, slug: str, logfn=None) -> dict:
 # by routing: Eve, "empezá a tomar sus métricas desde la capitanía de Pat hasta
 # que lo transfieran a Chan". Delete the entry the day SmartCircle moves him.
 #
+# 2026-10-09: SmartCircle took him OFF Pat's Team, but not onto Chan's: the
+# Metrics view now files him under "Unassigned" (13.6% 0-30, same number as
+# 10/8). Every one of his Chan rows went blank that morning on Cancel AND
+# Activation. Source re-pointed to "Unassigned"; the rest still holds.
+#
 # WHAT THIS CANNOT FIX — the same limit NOT_ON_TEAM has, in reverse: the
 # "Captainship Avg" / office-total row on each tab is Tableau's OWN per-team
 # roll-up, so it still EXCLUDES an adopted rep (and still includes him in his
@@ -370,7 +375,7 @@ def drop_expected_absent(went_dark: dict, slug: str, logfn=None) -> dict:
 #
 # team the report is BUILDING -> {rep: the team Tableau currently files them under}
 ADOPTED: Dict[str, Dict[str, str]] = {
-    "Chan": {"Ja Mosley": "Pat's Team"},
+    "Chan": {"Ja Mosley": "Unassigned"},
     "Pat": {"Alex Touati": "Tony's Team"},
 }
 
