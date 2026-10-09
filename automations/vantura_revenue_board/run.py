@@ -125,28 +125,20 @@ def board_box_reps():
 
 
 def box_is_core(fields) -> bool:
-    """Core vs Ancillary schedule. SCI pays every electric deal on one of two
-    schedules and the export carries no flag; the rule is read off Esmeralda's
-    own deposit tags (12 deals, reconciled 10/8): BF 1 always pays Core,
-    BF 3/4 always pay Ancillary, and BF 2 pays Core only with very large
-    usage (154k Core vs 30k/4k Ancillary — 50k is the threshold that fits).
-    A missing BF tier falls back to the old 10k+ usage gate. The volume
-    bonus follows the same split: Core deals 7-for-7, Ancillary 0-for-5."""
-    import re as _re
+    """Core vs Ancillary schedule. SCI pays every electric deal on one of
+    two schedules; the export carries no flag and (per the 10/8 reconciles
+    of Esmeralda AND Tara) no export field fully decides it — Tara has BF 1
+    deals paid Ancillary at 6.8k, 1.8k and even 316k usage, a BF 4 paid
+    Core, and SCI re-tiers deals vs the export. What held for BOTH reps:
+    every under-10k-usage deal paid Ancillary, and the volume bonus went
+    only to Core deals. So the gate is usage; the durable fix is pricing
+    funded deals from the DD itself."""
     try:
         vol = float((fields.get("Sales (All) kWH+Therms") or "0")
                     .replace(",", ""))
     except ValueError:
         vol = 0.0
-    m = _re.search(r"(\d)", fields.get("BF Tier") or "")
-    if not m or int(m.group(1)) not in (1, 2, 3, 4):
-        return vol >= 10_000
-    bf = int(m.group(1))
-    if bf == 1:
-        return True
-    if bf == 2:
-        return vol >= 50_000
-    return False
+    return vol >= 10_000
 
 
 def price_box(sale):
