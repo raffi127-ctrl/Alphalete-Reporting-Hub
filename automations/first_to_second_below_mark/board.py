@@ -111,6 +111,11 @@ ROW_PX = 21
 TITLE_ROW_PX = 36
 HEADER_ROW_PX = 48          # only if the template's own height cannot be read
 
+# Only each week's TOTAL, no Monday..Friday sections (Rafael, 2026-10-08: "we
+# just need the week prior and then current week"). lay_out(days=True) still
+# draws the day-by-day board.
+SHOW_DAYS = False
+
 DAY_BG = {"red": 0.263, "green": 0.263, "blue": 0.263}
 WEEK_BG = {"red": 0.4, "green": 0.4, "blue": 0.4}
 WHITE = {"red": 1.0, "green": 1.0, "blue": 1.0}
@@ -172,13 +177,15 @@ def _assemble(owner: src.Owner, headers: List[str], as_row: Optional[dict],
 
     put("owner", owner.name)
     put("goal", owner.goal)
+    put("qualified_ret_goal", rep.qualify_goal(owner.goal))
+    put("answer_ret_goal", rep.ANSWER_GOAL)
     for fld, value in (as_row or {}).items():
         put(fld, value)
     if day_data is not None:
         put("interviewer", day_data.interviewer_label or None)
         for fld in ("qualified", "disqualified", "declined", "qualified_ret",
-                    "declined_ret", "ab_qualified", "booked", "not_contacted",
-                    "booked_ret", "not_contacted_ret"):
+                    "declined_ret", "ab_qualified", "answered", "booked", "not_contacted",
+                    "answer_ret", "booked_ret", "not_contacted_ret"):
             put(fld, getattr(day_data, fld))
     return row
 
@@ -305,6 +312,7 @@ def week_total(rows: List[list], headers: List[str]) -> list:
         retention        1st showed up booked 2nd / 1st interviews showed up
         qualified %      qualified / (qualified + disqualified + declined)
         declined %       (disqualified + declined) / the same
+        answered %       answered / qualified (answered block)
         booked %         booked / qualified (answered block)
         not contacted %  not contacted / qualified (answered block)"""
     col = cols.resolve(headers)
@@ -326,7 +334,10 @@ def week_total(rows: List[list], headers: List[str]) -> list:
         return num / den if num is not None and den else None
 
     put("owner", cell(rows[0], "owner") if rows else None)
-    put("goal", next((cell(r, "goal") for r in rows if cell(r, "goal") != ""), None))
+    goal = next((cell(r, "goal") for r in rows if cell(r, "goal") != ""), None)
+    put("goal", goal)
+    put("qualified_ret_goal", rep.qualify_goal(_n(goal)))
+    put("answer_ret_goal", rep.ANSWER_GOAL)
     names: List[str] = []
     for r in rows:
         for n in str(cell(r, "interviewer") or "").split(","):
@@ -343,6 +354,7 @@ def week_total(rows: List[list], headers: List[str]) -> list:
     if sums.get("disqualified") is not None or sums.get("declined") is not None:
         put("declined_ret", ratio((sums.get("disqualified") or 0) + (sums.get("declined") or 0),
                                   screened))
+    put("answer_ret", ratio(sums.get("answered"), sums.get("ab_qualified")))
     put("booked_ret", ratio(sums.get("booked"), sums.get("ab_qualified")))
     put("not_contacted_ret", ratio(sums.get("not_contacted"), sums.get("ab_qualified")))
     return out
@@ -621,7 +633,7 @@ class Layout:
 
 def lay_out(results: List[WeekResult], headers: List[str], status: str,
             notes: Dict[Tuple[str, str, str], Tuple[str, str]],
-            show_all: bool) -> Layout:
+            show_all: bool, days: bool = SHOW_DAYS) -> Layout:
     width = len(headers)
     total = width * len(results) + GAP_COLS * (len(results) - 1)
     col = cols.resolve(headers)
@@ -648,7 +660,7 @@ def lay_out(results: List[WeekResult], headers: List[str], status: str,
     grid.append(blank())                 # headers: pasted from the template
 
     bands, data, msgs, cell_notes = [], [], [], []
-    for day in WEEK_DAYS:
+    for day in (WEEK_DAYS if days else []):
         band = blank()
         for k, wr in enumerate(results):
             moved = [note for (wk, d, _), (_, note) in notes.items()
@@ -803,7 +815,7 @@ def format_requests(sid: int, tsid: int, t_hrow: int, headers: List[str],
     # so a blank cell read as a good number. Every real value gets its colour
     # from the conditional rules instead -- each band has a red catch-all, so
     # nothing with a number can stay white.
-    cf_cols = [col[f] for f in ("retention", "qualified_ret", "declined_ret",
+    cf_cols = [col[f] for f in ("retention", "qualified_ret", "declined_ret", "answer_ret",
                                 "booked_ret", "not_contacted_ret") if f in col]
     for r, c0 in layout.data_rows:
         for i in cf_cols:
@@ -879,11 +891,13 @@ def cf_requests(sid: int, existing: List[dict], headers: List[str],
 
 
 # ------------------------------------------------------------------- the run
-def _template(sh, logfn=print):
+def _template(sh, logfn=print, tab: str = TEMPLATE_TAB):
     """(worksheet, header row, headers, column widths) from the live tab."""
     try:
-        tws = fill.worksheet_ci(sh, TEMPLATE_TAB)
+        tws = fill.worksheet_ci(sh, tab)
     except Exception:                                     # noqa: BLE001
+        if tab != TEMPLATE_TAB:
+            raise
         tws = fill.worksheet_ci(sh, TEMPLATE_TAB_OLD)
     top = tws.get("A1:AZ25")
     hrow = rep.find_header_row(top)
@@ -994,11 +1008,15 @@ def run(*, week_label_: Optional[str] = None, tab: str = BOARD_TAB,
         dry_run: bool = False, show_all: bool = False, use_appstream: bool = True,
         refresh_index: bool = False, today: Optional[dt.date] = None,
         due: bool = False, zone: Optional[str] = None,
-        now: Optional[dt.datetime] = None, logfn=print) -> dict:
+        now: Optional[dt.datetime] = None, template: str = TEMPLATE_TAB,
+        logfn=print) -> dict:
     now = (now or dt.datetime.now(dt.timezone.utc)).astimezone(rep.CT)
     today = today or now.date()
     sh = fill.open_by_key(rep.SHEET_ID)
-    tws, t_hrow, headers, widths, head_heights = _template(sh, logfn)
+    tws, t_hrow, headers, widths, head_heights = _template(sh, logfn, template)
+    # Any other tab is a preview: it never feeds the DATA store or the picture
+    # the scheduled post is taken from.
+    preview = tab != BOARD_TAB
     width = len(headers)
 
     if week_label_:
@@ -1049,6 +1067,15 @@ def run(*, week_label_: Optional[str] = None, tab: str = BOARD_TAB,
                               use_appstream=use_appstream, refresh_index=refresh_index,
                               only=to_pull, logfn=logfn)
     stamp = f"{now:%a} {now.month}/{now.day} {now:%H:%M}"
+    if not use_appstream:
+        # No AppStream here (Windows, a preview): keep C/D/E from the last pass
+        # that had it instead of blanking them.
+        col = cols.resolve(headers)
+        for k, row in fresh.items():
+            for f in ("first_showed", "booked_2nd", "retention"):
+                i = col.get(f)
+                if i is not None and k in stored and row[i] in ("", None):
+                    row[i] = stored[k][i]
     rows = dict(stored)
     rows.update(fresh)
     pulled_at = {k: v for k, v in pulled_at.items() if k in rows}
@@ -1103,6 +1130,9 @@ def run(*, week_label_: Optional[str] = None, tab: str = BOARD_TAB,
 
     _write_tab(sh, tab, tws, t_hrow, headers, widths, head_heights, layout,
                len(results), logfn)
+    if preview:
+        return {"written": True, "tab": tab, "rows": layout.last_row,
+                "moved": len(moved), "scope": scope, "notes": notes}
     if use_appstream:
         # A run without AppStream has blank C/D/E; storing that would wipe the
         # real numbers of every office it pulled.
@@ -1117,7 +1147,10 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="first_to_second_below_mark.board")
     ap.add_argument("--week", default=None,
                     help="the week to show as THIS week, e.g. 9/13 (default: the current one)")
-    ap.add_argument("--tab", default=BOARD_TAB)
+    ap.add_argument("--tab", default=BOARD_TAB,
+                    help="any other tab is a preview: no DATA store, no picture tab")
+    ap.add_argument("--template", default=TEMPLATE_TAB,
+                    help="the tab the look and the columns are copied from")
     ap.add_argument("--all", dest="show_all", action="store_true",
                     help="list every office, not only those at or under the mark")
     ap.add_argument("--due", action="store_true",
@@ -1135,7 +1168,8 @@ def main(argv=None) -> int:
            if args.at else None)
     res = run(week_label_=args.week, tab=args.tab, dry_run=args.dry_run,
               show_all=args.show_all, use_appstream=args.use_appstream,
-              refresh_index=args.refresh_index, due=args.due, zone=args.zone, now=now)
+              refresh_index=args.refresh_index, due=args.due, zone=args.zone, now=now,
+              template=args.template)
     print(f"OK - { {k: v for k, v in res.items() if k != 'notes'} }")
     if res.get("due") == 0:
         return NOTHING_DUE

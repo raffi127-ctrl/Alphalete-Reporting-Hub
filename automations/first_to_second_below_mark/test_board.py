@@ -54,7 +54,7 @@ class Layout(unittest.TestCase):
         })
 
     def test_weeks_sit_side_by_side_and_days_line_up(self):
-        lay = b.lay_out([self.this, self.last], H, "status", {}, False)
+        lay = b.lay_out([self.this, self.last], H, "status", {}, False, days=True)
         g = lay.values
         self.assertTrue(g[0][0].startswith("THIS WEEK"))
         self.assertTrue(g[0][W + b.GAP_COLS].startswith("LAST WEEK"))
@@ -69,7 +69,7 @@ class Layout(unittest.TestCase):
     def test_a_quiet_day_says_so_and_a_future_one_says_not_yet(self):
         this = week("9/13", dt.date(2026, 9, 13), {
             "Tuesday": [row("Bob", 10, 0.5)]}, future_from=dt.date(2026, 9, 18))
-        lay = b.lay_out([this, self.last], H, "s", {}, False)
+        lay = b.lay_out([this, self.last], H, "s", {}, False, days=True)
         tue = lay.band_rows[1] - 1
         self.assertIn("0 of 1", lay.values[tue][0])
         self.assertTrue(lay.values[tue + 1][0].startswith("No office"))
@@ -83,7 +83,7 @@ class Moved(unittest.TestCase):
             "Monday": [row("Ann", 10, 0.3), row("Bob", 10, 0.35), row("Cid", 10, 0.5)]},
             future_from=dt.date(2026, 9, 19))
         last = week("9/6", dt.date(2026, 9, 6), {})
-        lay = b.lay_out([first, last], H, "x · checked Thu 9/17 18:30 CT", {}, False)
+        lay = b.lay_out([first, last], H, "x · checked Thu 9/17 18:30 CT", {}, False, days=True)
         prior = b.read_prior(lay.values, W, H)
         self.assertEqual(prior.stamp, "Thu 9/17 18:30")
         self.assertEqual(prior.listed[("9/13", "Monday")], {"Ann": 0.3, "Bob": 0.35})
@@ -96,7 +96,7 @@ class Moved(unittest.TestCase):
         self.assertEqual(moved[("9/13", "Monday", "Ann")], ("retention", "Ann (was 30%)"))
         self.assertEqual(moved[("9/13", "Monday", "Cid")][0], "owner")
         self.assertEqual(again.days["Monday"].risen, ["Bob (35% -> 45%)"])
-        lay2 = b.lay_out([again, last], H, "s", moved, False)
+        lay2 = b.lay_out([again, last], H, "s", moved, False, days=True)
         band = lay2.values[lay2.band_rows[0] - 1][0]
         self.assertIn("back above 40%: Bob (35% -> 45%)", band)
         self.assertIn("changed since last check: ", band)
@@ -174,7 +174,7 @@ class EveLayout(unittest.TestCase):
     def _reqs(self):
         wk = week("9/13", dt.date(2026, 9, 13), {"Monday": [row("Ann", 10, 0.3)]},
                   future_from=dt.date(2026, 9, 19))
-        lay = b.lay_out([wk, week("9/6", dt.date(2026, 9, 6), {})], H, "s", {}, False)
+        lay = b.lay_out([wk, week("9/6", dt.date(2026, 9, 6), {})], H, "s", {}, False, days=True)
         return lay, b.format_requests(1, 2, 3, H, lay, 2, [100] * W)
 
     def test_rows_3_and_4_are_one_box_before_the_group_banners(self):
@@ -213,7 +213,7 @@ class Screenshot(unittest.TestCase):
         this = week("9/13", dt.date(2026, 9, 13), {
             "Friday": [row("Ann", 10, 0.3), row("Bob", 10, 0.2)]})
         last = week("9/6", dt.date(2026, 9, 6), {"Friday": [row("Dee", 10, 0.1)]})
-        self.grid = b.lay_out([this, last], H, "s", {}, False).values
+        self.grid = b.lay_out([this, last], H, "s", {}, False, days=True).values
         # the merged header box: the header text sits on row 3
         self.grid[2][0] = self.grid[2][W + 1] = "Owner Name"
 
@@ -292,7 +292,7 @@ class Weekdays(unittest.TestCase):
     def test_the_week_runs_to_friday(self):
         self.assertEqual(b.WEEK_DAYS[-1], "Friday")
         self.assertEqual(b.day_date(dt.date(2026, 9, 13), "Friday"), dt.date(2026, 9, 18))
-        lay = b.lay_out([week("9/13", dt.date(2026, 9, 13), {})], H, "s", {}, False)
+        lay = b.lay_out([week("9/13", dt.date(2026, 9, 13), {})], H, "s", {}, False, days=True)
         self.assertEqual(len(lay.band_rows), 6)          # five days + the week's total
         self.assertTrue(lay.values[lay.band_rows[-2] - 1][0].startswith("FRIDAY 9/18"))
         self.assertTrue(lay.values[lay.band_rows[-1] - 1][0].startswith(b.TOTAL_BAND))
@@ -341,7 +341,7 @@ class WholeWeek(unittest.TestCase):
 
     def test_total_block_under_friday_and_in_the_picture(self):
         from automations.first_to_second_below_mark import board_shot as bs
-        lay = b.lay_out(self.res * 2, H, "s", {}, False)
+        lay = b.lay_out(self.res * 2, H, "s", {}, False, days=True)
         tot = lay.band_rows[-1] - 1
         self.assertEqual(lay.values[tot][0],
                          "TOTAL FOR THE WEEK  ·  Mon 9/21 – Wed 9/23 combined  ·  "
@@ -388,6 +388,94 @@ class Store(unittest.TestCase):
         self.assertTrue(res[0].days["Tuesday"].future)
 
 
+
+# The board's header row since 2026-10-08: goals + Answered / Answer Retention.
+H2 = (H[:H.index("Declined Retention")] + ["Qualified Retention\nGoal"]
+      + H[H.index("Declined Retention"):H.index("Booked")] + ["Answered"]
+      + H[H.index("Booked"):H.index("Booked\nRetention")]
+      + ["Answer\nRetention", "Answer Retention\nGoal"] + H[H.index("Booked\nRetention"):])
+
+
+class TotalsOnly(unittest.TestCase):
+    """Rafael (2026-10-08): no Monday..Friday sections, just last week and this
+    week -- each week's total."""
+
+    def setUp(self):
+        from automations.first_to_second_below_mark import board_shot as bs
+        from automations.first_to_second_below_mark import source as src
+        self.bs, self.src = bs, src
+
+    def _results(self):
+        rows = {("9/20", "Monday", "Ann"): row("Ann", 10, 0.3),
+                ("9/20", "Tuesday", "Ann"): row("Ann", 10, 0.5),
+                ("9/13", "Friday", "Dee"): row("Dee", 10, 0.1)}
+        weeks = [self.src.Week(label="9/20", header_row=0, owners=[self.src.Owner(name="Ann")]),
+                 self.src.Week(label="9/13", header_row=0, owners=[self.src.Owner(name="Dee")])]
+        return b.build_results(weeks, [dt.date(2026, 9, 20), dt.date(2026, 9, 13)], H, rows,
+                               today=dt.date(2026, 9, 22))
+
+    def test_only_the_totals_are_laid_out(self):
+        lay = b.lay_out(self._results(), H, "s", {}, False)
+        self.assertEqual(len(lay.band_rows), 1)
+        band = lay.values[lay.band_rows[0] - 1]
+        self.assertTrue(band[0].startswith("TOTAL FOR THE WEEK  ·  Mon 9/21 – Tue 9/22"))
+        self.assertTrue(band[W + b.GAP_COLS].startswith("TOTAL FOR THE WEEK  ·  Mon 9/14 – Fri 9/18"))
+        self.assertEqual(lay.values[lay.band_rows[0]][0], "Ann")
+        self.assertFalse(any(str(r[0]).startswith("MONDAY") for r in lay.values))
+
+    def test_picture_is_last_week_then_this_week(self):
+        grid = b.lay_out(self._results(), H, "s", {}, False).values
+        grid[2][0] = grid[2][W + 1] = "Owner Name"
+        blocks = self.bs.plan(grid, dt.date(2026, 9, 22))
+        self.assertEqual([k["caption"] for k in blocks],
+                         ["LAST WEEK  ·  TOTAL FOR THE WEEK  ·  MON 9/14 – FRI 9/18  ·  FINAL",
+                          "THIS WEEK  ·  TOTAL FOR THE WEEK  ·  MON 9/21 – TUE 9/22 (TODAY)"])
+        r = b.FIRST_BODY_ROW
+        self.assertEqual(blocks[1]["body"], f"A{r}:{b.ars.a1col(W)}{r + 1}")
+
+
+class NewColumns(unittest.TestCase):
+    def test_answered_does_not_take_the_answered_groups_qualified(self):
+        c = b.cols.resolve(H2)
+        self.assertEqual(H2[c["ab_qualified"]], "Qualified")
+        self.assertEqual(H2[c["answered"]], "Answered")
+        self.assertEqual(c["ab_qualified"] + 1, c["answered"])
+        self.assertEqual(H2[c["qualified"]], "Qualified")
+        self.assertLess(c["qualified"], c["ab_qualified"])
+        for f in ("qualified_ret_goal", "answer_ret", "answer_ret_goal"):
+            self.assertIn(f, c)
+
+    def test_the_old_header_row_still_resolves(self):
+        c = b.cols.resolve(H)
+        self.assertEqual(c["ab_qualified"] + 1, c["booked"])
+        self.assertNotIn("answered", c)
+
+    def test_goals_come_from_the_kpi_sheet(self):
+        self.assertEqual(rep.qualify_goal(0.5), 0.65)
+        self.assertEqual(rep.qualify_goal(0.6), 0.75)
+        self.assertIsNone(rep.qualify_goal(None))
+        self.assertEqual(rep.ANSWER_GOAL, 0.8)
+
+    def test_week_total_answer_retention_and_goals(self):
+        c = b.cols.resolve(H2)
+
+        def r(q, a, bk):
+            x = [""] * len(H2)
+            x[c["owner"]], x[c["goal"]] = "Ann", 0.6
+            x[c["ab_qualified"]], x[c["answered"]], x[c["booked"]] = q, a, bk
+            return x
+        tot = b.week_total([r(10, 9, 8), r(10, 7, 6)], H2)
+        self.assertEqual(tot[c["answered"]], 16)
+        self.assertAlmostEqual(tot[c["answer_ret"]], 0.8)
+        self.assertEqual(tot[c["qualified_ret_goal"]], 0.75)
+        self.assertEqual(tot[c["answer_ret_goal"]], 0.8)
+
+    def test_answer_retention_is_coloured_like_booked(self):
+        plan = dict(rep.cf_plan(H2, 5))
+        c = b.cols.resolve(H2)
+        self.assertIn(c["answer_ret"], plan)
+        self.assertNotIn(c["answer_ret_goal"], plan)
+
 class PicturePlan(unittest.TestCase):
     def setUp(self):
         from automations.first_to_second_below_mark import board_shot as bs
@@ -398,7 +486,7 @@ class PicturePlan(unittest.TestCase):
         this.days["Tuesday"].today = True
         last = week("9/13", dt.date(2026, 9, 13), {
             "Thursday": [row("Eve", 4, 0.25)], "Friday": [row("Dee", 10, 0.1)]})
-        self.grid = b.lay_out([this, last], H, "s", {}, False).values
+        self.grid = b.lay_out([this, last], H, "s", {}, False, days=True).values
         self.grid[2][0] = self.grid[2][W + 1] = "Owner Name"
 
     def test_tuesday_is_this_week_monday_to_today(self):

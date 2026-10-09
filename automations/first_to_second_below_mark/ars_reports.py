@@ -386,6 +386,8 @@ class OwnerDay:
     qualified_ret: Optional[float] = None   #                        QR
     declined_ret: Optional[float] = None    #                        DR
     ab_qualified: Optional[float] = None    # ANSWERED / BOOKED    -> Q
+    answered: Optional[float] = None        #                        A  (not in SOUTH SHORE)
+    answer_ret: Optional[float] = None      #                        AR = A / Q
     booked: Optional[float] = None          #                        B
     not_contacted: Optional[float] = None   #                        NC
     booked_ret: Optional[float] = None      #                        BR
@@ -463,12 +465,16 @@ def _owner_day_from_boxes(boxes, q_col, q_end, q_box, a_col, a_end, a_box, *,
             out.ab_qualified = total(keep, "q")
             out.booked = total(keep, "b")
             out.not_contacted = total(keep, "nc")
+            out.answered = total(keep, "a")
             if len(keep) == 1:
                 out.booked_ret = _as_number(keep[0].get("br"))
                 out.not_contacted_ret = _as_number(keep[0].get("ncr"))
+                out.answer_ret = _as_number(keep[0].get("ar"))
             elif out.ab_qualified:
                 out.booked_ret = (out.booked or 0) / out.ab_qualified
                 out.not_contacted_ret = (out.not_contacted or 0) / out.ab_qualified
+                if out.answered is not None:
+                    out.answer_ret = out.answered / out.ab_qualified
 
     # C, D and E are deliberately NOT derived here. They looked derivable --
     # Q+Di+De reproduced the '1st interviews showed up' in Eve's sample row and

@@ -5,10 +5,13 @@ What each pass sends, top to bottom:
     RETENTION: FIRST SHOWED UP → BOOKED SECOND     <- what the numbers are
     Eastern offices · 11:00 AM local update · ...   <- whose, and when
     (Mondays only)
-    LAST WEEK · MON 9/14 – FRI 9/18 · FINAL         <- the whole week just closed
-    <header rows 3-4>  <Monday .. Friday>
-    THIS WEEK · MON 9/21 – MON 9/21 (TODAY)         <- the week so far
-    <header rows 3-4>  <Monday .. today>
+    LAST WEEK · TOTAL FOR THE WEEK · MON 9/14 – FRI 9/18 · FINAL
+    <header rows 3-4>  <each office, the week added up>
+    THIS WEEK · TOTAL FOR THE WEEK · MON 9/21 – WED 9/23 (TODAY)
+    <header rows 3-4>  <each office, Monday to today added up>
+
+Only the totals, every day, since 2026-10-08 (Rafael: "we just need the week
+prior and then current week").
 
 Rafael (2026-09-21): the numbers of earlier days keep moving -- by Monday 11 AM
 Friday's callbacks are in -- so every picture carries the whole week so far,
@@ -132,12 +135,40 @@ def subtitle(status: str) -> str:
 def plan(values: List[List], today: dt.date) -> List[dict]:
     """The week blocks of the picture, top to bottom.
 
-    Monday: last week whole (Mon-Sat, final), then this week's Monday. Any
-    other day: this week, Monday to today."""
+    Since 2026-10-08 (Rafael: "we just need the week prior and then current
+    week"): LAST WEEK's total, then THIS WEEK's total so far, every day. The
+    day-by-day plan below is what a board drawn with days=True still gets."""
     right = block_start(values)
     if right is None:
         raise SystemExit("cannot find the second week's 'Owner Name' header")
     width = right - b.GAP_COLS
+    if find_day(values, "Monday", 0) is not None:
+        return _plan_days(values, today, right, width)
+    blocks = []
+    for c0, label, bg in ((right, "LAST WEEK", CAPTION_BG), (0, "THIS WEEK", TODAY_BG)):
+        tot = find_day(values, b.TOTAL_BAND, c0)
+        if tot is None:
+            raise SystemExit(f"no {b.TOTAL_BAND} band in the {label.lower()} block")
+        parts = tot[2].split("  ·  ")
+        span = (parts[1] if len(parts) > 1 else "").replace(" combined", "").upper()
+        if label == "LAST WEEK":
+            span += "  ·  FINAL"
+        elif today.weekday() < len(b.WEEK_DAYS) and span.endswith(
+                f"{today:%a} {today.month}/{today.day}".upper()):
+            span += " (TODAY)"
+        first_col, last_col = ars.a1col(c0 + 1), ars.a1col(c0 + width)
+        blocks.append({
+            "caption": f"{label}  ·  {b.TOTAL_BAND}  ·  {span}", "bg": bg,
+            "header": f"{first_col}{b.BANNER_ROW}:{last_col}{b.HEADER_ROW}",
+            "body": f"{first_col}{tot[0]}:{last_col}{tot[1]}",
+            "days": [(b.TOTAL_BAND, tot[2])]})
+    return blocks
+
+
+def _plan_days(values: List[List], today: dt.date, right: int, width: int) -> List[dict]:
+    """The day-by-day picture (2026-09-21 .. 2026-10-08). Monday: last week
+    whole (final), then this week's Monday. Any other day: this week, Monday
+    to today, each with its week's total under it."""
     last_day = shown_day(today)
     blocks = []
     wanted = [(0, "THIS WEEK", b.WEEK_DAYS[:b.WEEK_DAYS.index(last_day) + 1], TODAY_BG)]

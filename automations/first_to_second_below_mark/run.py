@@ -125,9 +125,25 @@ THRESHOLD = 0.40
 # Which columns are percentages and which are counts, by FIELD name so the
 # formats follow a column if the tab is ever reordered.
 PERCENT_FIELDS = ("retention", "goal", "qualified_ret", "declined_ret",
-                  "booked_ret", "not_contacted_ret")
+                  "booked_ret", "not_contacted_ret", "qualified_ret_goal",
+                  "answer_ret", "answer_ret_goal")
 COUNT_FIELDS = ("first_showed", "booked_2nd", "qualified", "disqualified",
-                "declined", "ab_qualified", "booked", "not_contacted")
+                "declined", "ab_qualified", "answered", "booked", "not_contacted")
+
+# The goals next to each retention (Rafael, 2026-10-08), from his KPI sheet
+# (ARS Management 2.0, screenshot 2026-10-08 in the "1st to 2nd rd reporting"
+# thread): "Qualify %" is 65% for an office whose 1st-to-2nd goal is 50% and
+# 75% for one on 60%; "Answer/Book Ratio" is 80% across the board.
+QUALIFY_GOAL_50, QUALIFY_GOAL_60 = 0.65, 0.75
+ANSWER_GOAL = 0.80
+
+
+def qualify_goal(office_goal) -> Optional[float]:
+    """The office's Qualified Retention goal, from its 1st-to-2nd goal. Told
+    apart at 55% for the same reason GOAL_LOW is (0.6 is not exact)."""
+    if not isinstance(office_goal, (int, float)) or isinstance(office_goal, bool):
+        return None
+    return QUALIFY_GOAL_50 if office_goal < 0.55 else QUALIFY_GOAL_60
 
 OWNER_HEADER = "Owner Name"
 PCT_HEADER = "Retention first showed up booked second"
@@ -575,6 +591,7 @@ def cf_plan(headers: List[str], first_data_row: int) -> List[tuple]:
     for field, build in (("retention", _alert_rules),
                          ("qualified_ret", None),
                          ("declined_ret", None),
+                         ("answer_ret", _answer_book_rules),
                          ("booked_ret", _answer_book_rules),
                          ("not_contacted_ret", _answer_book_rules)):
         i, cell = at(field)
