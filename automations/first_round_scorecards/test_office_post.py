@@ -80,6 +80,51 @@ class OfficePostTest(unittest.TestCase):
     def test_live_since_the_sample_was_approved(self):
         self.assertTrue(op.LIVE)
 
+    def test_restyle_edits_lucys_thread_in_place(self):
+        rows = [row("Ana", "Carlos Hidalgo", 60), row("Bo", "Carlos Hidalgo", 40)]
+        head = op.head_text("Carlos Hidalgo", rows, DAY)
+        # Slack returns the emoji as a shortcode
+        old_head = head.split("\n")[0].replace("📋", ":clipboard:") + "\nOffice average: *50/100* 🔵"
+
+        class Fake:
+            def __init__(self):
+                self.updates = []
+
+            def auth_test(self):
+                return {"user_id": "LUCY"}
+
+            def conversations_history(self, **kw):
+                return {"messages": [{"user": "LUCY", "ts": "1.0", "text": old_head},
+                                     {"user": "CARLOS", "ts": "2.0", "text": old_head}]}
+
+            def conversations_replies(self, **kw):
+                return {"messages": [{"ts": "1.0"},
+                                     {"user": "LUCY", "ts": "1.1", "text": op.DIVIDER + "\n*Bo* — 40/100 🔴"},
+                                     {"user": "CARLOS", "ts": "1.2", "text": "*Ana* — great"}]}
+
+            def chat_update(self, **kw):
+                self.updates.append((kw["ts"], kw["text"]))
+
+            def chat_postMessage(self, **kw):
+                raise AssertionError("restyle never posts")
+
+        fake = Fake()
+        orig, op._client, op.PAUSE_S = op._client, (lambda: fake), 0
+        try:
+            self.assertEqual(op.restyle(rows, DAY, "Carlos Hidalgo"), 0)
+        finally:
+            op._client = orig
+        self.assertEqual([ts for ts, _ in fake.updates], ["1.0", "1.1"])   # never Carlos's own
+        self.assertEqual(fake.updates[0][1], head)
+        self.assertEqual(fake.updates[1][1], op.person_text("Bo", 40, [rows[1]]))
+
+    def test_restyle_office_from_one_word(self):
+        offices = ["Carlos Hidalgo", "Cody Cannon"]
+        self.assertEqual(op.find_office("carlos", offices), "Carlos Hidalgo")
+        self.assertEqual(op.find_office("Carlos-Hidalgo", offices), "Carlos Hidalgo")
+        with self.assertRaises(SystemExit):
+            op.find_office("c", offices)
+
 
 if __name__ == "__main__":
     unittest.main()

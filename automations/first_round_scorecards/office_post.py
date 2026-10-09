@@ -17,6 +17,7 @@ board and the docs say, names already merged ('Same person?' tab).
     python -m automations.first_round_scorecards.office_post --date 2026-10-06            # print only
     python -m automations.first_round_scorecards.office_post --date 2026-10-06 --sample   # group DM Raf+Camila+Eve
     python -m automations.first_round_scorecards.office_post --date 2026-10-06 --post     # the office channels
+    python -m automations.first_round_scorecards.office_post --date 2026-10-08 --restyle carlos  # re-format a posted thread
 
 run.py posts the day by itself once LIVE is on (after Eve's OK to the sample).
 An office with no channel here is left out (printed), it still has
@@ -368,6 +369,70 @@ def clear_sample() -> int:
     return gone
 
 
+def _squash(s: str) -> str:
+    return "".join(c for c in s.lower() if c.isalnum())
+
+
+def find_office(name: str, offices) -> str:
+    """'carlos', 'Carlos-Hidalgo', 'carloshidalgo' -> 'Carlos Hidalgo' (one
+    word, no spaces, so it survives the mini queue's Args cell)."""
+    hits = [o for o in offices if _squash(o).startswith(_squash(name))]
+    if len(hits) != 1:
+        raise SystemExit(f"--restyle {name!r}: matches {hits or 'no office'}")
+    return hits[0]
+
+
+def _reply_name(text: str) -> str:
+    """'━━━…\\n*Miroslava* — 62/100 …' -> 'Miroslava' (old and new format)."""
+    for line in text.split("\n"):
+        if line.startswith("*") and "* — " in line:
+            return line[1:line.index("* — ")]
+    return ""
+
+
+def restyle(rows: List[Dict], day: dt.date, office: str, *, channel: str = "") -> int:
+    """Re-write an office thread Lucy ALREADY posted in today's format: same
+    thread, same link, edited in place, nothing new posted (Carlos Hidalgo,
+    2026-10-09, wanted the 10/8 one spaced out too). Only Lucy's own messages;
+    an interviewer without a reply in that thread is left out, not added."""
+    mine = by_office(rows, day).get(office)
+    if not mine:
+        print(f"RESTYLE: no audited interview for {office} on {day}")
+        return 1
+    channel = channel or CHANNELS.get(office, "")
+    head = head_text(office, mine, day)
+    new = {n: person_text(n, a, r) for n, a, r in interviewers(mine)}
+    client = _client()
+    me = client.auth_test()["user_id"]
+    start = dt.datetime.combine(day, dt.time(), tzinfo=fathom.CT).timestamp()
+    # Slack hands the emoji back as ':clipboard:', so match the title after it
+    title = head.split("\n")[0].split(" ", 1)[1]
+    found = [m for m in client.conversations_history(
+                 channel=channel, oldest=str(start), latest=str(start + 3 * 86400),
+                 limit=200).get("messages", [])
+             if m.get("user") == me and title in (m.get("text") or "").split("\n")[0]]
+    if len(found) != 1:
+        print(f"RESTYLE: {len(found)} thread(s) for {office} {day} in {channel} - nothing edited")
+        return 1
+    ts = found[0]["ts"]
+    time.sleep(PAUSE_S)
+    client.chat_update(channel=channel, ts=ts, text=head)
+    print(f"  {office}: thread edited")
+    edited = set()
+    for r in client.conversations_replies(channel=channel, ts=ts, limit=200)["messages"][1:]:
+        name = _reply_name(r.get("text") or "")
+        if r.get("user") != me or name not in new:
+            continue
+        time.sleep(PAUSE_S)
+        client.chat_update(channel=channel, ts=r["ts"], text=new[name])
+        edited.add(name)
+        print(f"  {office}: {name} edited")
+    for name in new:
+        if name not in edited:
+            print(f"  {office}: {name} has no reply in that thread - left out")
+    return 0
+
+
 def day_rows(day: dt.date) -> List[Dict]:
     """The week's audit rows with the 'Same person?' merges, like the board."""
     rows = board.scores(board.monday(day))
@@ -384,9 +449,15 @@ def main(argv=None) -> int:
                     help="first delete the earlier samples Lucy posted in that group DM")
     ap.add_argument("--summary-only", action="store_true",
                     help="only the day's big summary (with --sample: in the group DM)")
+    ap.add_argument("--restyle", metavar="OFFICE",
+                    help="edit that office's already-posted thread for --date into today's "
+                         "format (e.g. carlos); posts nothing new")
     args = ap.parse_args(argv)
     day = (dt.date.fromisoformat(args.date) if args.date
            else dt.datetime.now(dt.timezone.utc).astimezone(fathom.CT).date())
+    if args.restyle:
+        rows = day_rows(day)
+        return restyle(rows, day, find_office(args.restyle, by_office(rows, day)))
     if args.clear_sample:
         clear_sample()
     rows = day_rows(day)
