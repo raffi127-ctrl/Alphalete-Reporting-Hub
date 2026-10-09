@@ -163,6 +163,23 @@ def _week_fallback_note(week_ending: dt.date) -> str:
             f'{week_ending.day}.</div>')
 
 
+def _activation_lag_note(day: dt.date) -> str:
+    """Grey legend over every Team Stats board shown on its current week.
+
+    Those tables count ACTIVATIONS, and Tableau loads a day's activations a day
+    late: on 10/8 and 10/9 the NDS board had no column (Khalil, Jairo) or an
+    all-blank one (Colten) for the day reported, and the auto-send held all
+    three. Eve (2026-10-09): never hold the report or drop the section for it —
+    send the screenshot as it shows, with a note that says why. Conditional
+    wording because nothing here knows whether that day loaded yet; the
+    auto-send prompt accepts a missing/blank REPORT_DAY column under it."""
+    return (f'<div style="font-size:12px;color:#555;background:#f4f4f4;'
+            f'border:1px solid #ddd;border-radius:4px;padding:8px 10px;'
+            f'margin:4px 0 10px">Captain Team Stats: Tableau loads activations '
+            f'a day late — if the {day.month}/{day.day} column is blank or '
+            f'missing, that day has not loaded yet.</div>')
+
+
 def _not_available(what: str) -> str:
     """For a section whose SOURCE DOES NOT EXIST YET — a known, accepted state,
     not a failure.
@@ -245,7 +262,8 @@ def _teamstats_configured(captain) -> bool:
 
 
 def _section_html(captain: Captain, heading: str, kind: str, n: int,
-                  bundle: dict, imgs: _Images) -> str:
+                  bundle: dict, imgs: _Images,
+                  today: Optional[dt.date] = None) -> str:
     head = (f'<div style="font-size:16px;font-weight:bold;margin:18px 0 6px">'
             f'{n}. {heading}</div>')
     # Why this section's capture failed, keyed by bundle key — run.py fills it
@@ -285,6 +303,8 @@ def _section_html(captain: Captain, heading: str, kind: str, n: int,
             wk = fallback_week(ts)
             if wk:
                 body += _week_fallback_note(wk)
+            elif today is not None:
+                body += _activation_lag_note(reported_date(today))
             body += imgs.img(ts, slot="team-stats")
         elif not _teamstats_configured(captain):
             # No source wired for this captain yet — say so plainly and let the
@@ -469,7 +489,7 @@ def build(captain: Captain, bundle: dict, today: dt.date) -> EmailMessage:
 
     imgs = _Images()
     sections_html = "".join(
-        _section_html(captain, heading, kind, n, bundle, imgs)
+        _section_html(captain, heading, kind, n, bundle, imgs, today)
         for n, (heading, kind) in enumerate(
             captain.body_sections_on(today), 1))
 

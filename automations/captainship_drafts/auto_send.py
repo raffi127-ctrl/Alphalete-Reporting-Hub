@@ -388,7 +388,10 @@ blocker — the data source served the wrong view.
 ACCEPTED, never an issue: grey notes saying "no data available" or "not \
 available yet"; a Captain Team Stats board under a grey note saying it shows \
 an earlier week because there are no activations yet this week (its tables \
-end on that week, not on REPORT_DAY, and that is correct); zero values that are formatted like their neighbours; a \
+end on that week, not on REPORT_DAY, and that is correct); a Captain Team \
+Stats board under a grey note saying Tableau loads activations a day late, \
+whose REPORT_DAY column is missing or blank (the day before REPORT_DAY must \
+still be there — ending earlier than that is still a blocker); zero values that are formatted like their neighbours; a \
 consistent house style you merely would have designed differently.
 
 Report blockers (would refuse to send) and minors (would mention but still \

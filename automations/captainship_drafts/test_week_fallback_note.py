@@ -13,7 +13,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from automations.captainship_drafts import email_build, tableau_shot
+from automations.captainship_drafts import config, email_build, tableau_shot
 
 
 class TestWeekFallbackNote(unittest.TestCase):
@@ -35,6 +35,41 @@ class TestWeekFallbackNote(unittest.TestCase):
         self.assertIn("week ending 10/4", note)
         self.assertIn("no activations yet", note)
         self.assertNotIn(email_build.PENDING_MARK, note)
+
+
+
+class TestActivationLagNote(unittest.TestCase):
+    """10/8 y 10/9: el board NDS sin la columna del día reportado (activaciones
+    cargan un día tarde) frenó a Khalil, Colten y Jairo. Eve: sale igual, con
+    la imagen como está y una nota gris (2026-10-09)."""
+
+    def setUp(self):
+        self.png = Path(tempfile.mkdtemp()) / "team-stats.png"
+        self.png.write_bytes(b"x")
+        self.imgs = email_build._Images()
+        self.cap = config.BY_KEY["colten"]
+
+    def _html(self, today):
+        return email_build._section_html(
+            self.cap, "Captain Team Stats Breakout", "teamstats_tableau", 1,
+            {"teamstats_tableau": self.png}, self.imgs, today)
+
+    def test_current_week_board_carries_the_lag_note(self):
+        html = self._html(dt.date(2026, 10, 9))
+        self.assertIn("activations a day late", html)
+        self.assertIn("10/8 column", html)
+        self.assertNotIn(email_build.PENDING_MARK, html)
+
+    def test_week_fallback_keeps_its_own_note_only(self):
+        tableau_shot.week_note_path(self.png).write_text("2026-10-04",
+                                                         encoding="utf-8")
+        html = self._html(dt.date(2026, 10, 6))
+        self.assertIn("week ending 10/4", html)
+        self.assertNotIn("activations a day late", html)
+
+    def test_prompt_accepts_the_note(self):
+        from automations.captainship_drafts import auto_send
+        self.assertIn("loads activations a day late", auto_send._SYSTEM)
 
 
 if __name__ == "__main__":
