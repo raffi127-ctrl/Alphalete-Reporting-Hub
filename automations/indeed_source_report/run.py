@@ -34,6 +34,15 @@ CARD_NAME = "Source Report - Indeed (Source Report)"
 # Same key = one thread, whichever side speaks first, and a clean run here
 # closes the watcher's post too.
 INCIDENT_KEY = "standalone-indeed-source-report"
+LABEL = "*Indeed Source Report*"
+# deploy/indeed_source_report.sh runs this twice back to back: Alphalete, then
+# SCI (INDEED_SOURCE_SPREADSHEET_ID pointed at SCI's workbook). On ONE key, the
+# SCI pass's clean run closed the Alphalete pass's failure a few minutes after
+# it opened — 10/9: "1 of 17 did not refresh" (Rafael Hidalgo 11280) went ✅
+# while his rows were still stale. Each pass gets its own thread.
+if sheet.SPREADSHEET_ID != sheet.DEFAULT_SPREADSHEET_ID:
+    INCIDENT_KEY += "-sci"
+    LABEL = "*Indeed Source Report (SCI)*"
 
 
 def _publish_outcome(status, headline, details, *, started_at=None,
@@ -59,13 +68,13 @@ def _publish_outcome(status, headline, details, *, started_at=None,
     try:
         if status == "success":
             from automations.shared import incident_thread as _inc
-            _inc.resolve_if_open(INCIDENT_KEY, what="*Indeed Source Report*",
+            _inc.resolve_if_open(INCIDENT_KEY, what=LABEL,
                                  detail="Clean refresh — every office wrote.")
         else:
             from automations.day_orchestrator import notify
             notify.post_alert(headline, details, tag=INCIDENT_KEY,
                               incident=INCIDENT_KEY,
-                              label="*Indeed Source Report*")
+                              label=LABEL)
     except Exception as e:  # noqa: BLE001 — Slack must not fail the run
         print("  (corrections post skipped: %s)" % e, flush=True)
 

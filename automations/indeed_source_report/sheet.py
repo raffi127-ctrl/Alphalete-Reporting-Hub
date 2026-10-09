@@ -22,8 +22,9 @@ from google.auth.transport.requests import AuthorizedSession, Request
 # opens. NOTE: this workbook has a hard 10,000,000-cell ceiling and shares it
 # with 2R / Call List / Apps, which append daily — see README before adding
 # anything wide here.
-SPREADSHEET_ID = os.environ.get(
-    "INDEED_SOURCE_SPREADSHEET_ID", "111Bmxx1JvT1UFXaLin7gPH53149WBZhMe0r7CHirHbA")
+DEFAULT_SPREADSHEET_ID = "111Bmxx1JvT1UFXaLin7gPH53149WBZhMe0r7CHirHbA"
+SPREADSHEET_ID = os.environ.get("INDEED_SOURCE_SPREADSHEET_ID",
+                                DEFAULT_SPREADSHEET_ID)
 DATA_TAB = os.environ.get("INDEED_SOURCE_DATA_TAB", "Indeed Ad Data")
 
 
