@@ -25,7 +25,7 @@ class OfficePostTest(unittest.TestCase):
                 row("Bo", "Jairo Ruiz", 30), row("Cy", "Jairo Ruiz", 55)]
         _, _, head, replies = op.posts(rows, DAY)[0]
         self.assertEqual([n for n, _ in replies], ["Bo", "Cy", "Ana", "ZOOM 19"])
-        self.assertIn("🔴 Bo 30  ·  🟢 Cy 55  ·  🟢 Ana 80", head)
+        self.assertIn("\n\n🔴  Bo — *30*\n🟢  Cy — *55*\n🟢  Ana — *80*\n🔴  ZOOM 19 — *10*\n\n", head)
 
     def test_each_reply_starts_with_a_divider(self):
         _, _, _, replies = op.posts([row("Ana", "Jairo Ruiz", 80), row("Bo", "Jairo Ruiz", 30)], DAY)[0]
@@ -48,9 +48,10 @@ class OfficePostTest(unittest.TestCase):
         self.assertIn("Jairo Ruiz's office — Tue 10/6", head)
         text = op.person_text("Gonzalo", 50, rows)
         self.assertIn("*Gonzalo* — 50/100 🔵", text)
-        self.assertIn("🚩 Red flags: pay different from the script ×1", text)
-        self.assertIn("❌ Most missed: wrap-up script ×1", text)
-        self.assertIn("• Latest tip.", text)          # the latest interview's tips
+        # spaced out: a blank line between sections and between the 2 tips (Carlos, 10/9)
+        self.assertIn("\n\n🚩 *Red flags*\n• pay different from the script ×1\n\n"
+                      "❌ *Most missed*\n• wrap-up script ×1\n\n"
+                      "💡 *Feedback*\n• Latest tip.\n\n• Second tip.\n\n📄 *Full audits:*", text)
         self.assertNotIn("Explain the pay", text)
         self.assertIn("<https://docs.google.com/document/d/X1/edit|10:31 AM>", text)
 

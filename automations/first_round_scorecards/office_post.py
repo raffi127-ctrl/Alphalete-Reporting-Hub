@@ -161,33 +161,43 @@ def interviewers(rows: List[Dict]) -> List[tuple]:
 
 
 def head_text(office: str, rows: List[Dict], day: dt.date) -> str:
-    """The thread's parent: the office's day at a glance."""
+    """The thread's parent: the office's day at a glance, spaced out, one
+    interviewer per line (Carlos Hidalgo, 2026-10-09: "spaced out more so it's
+    visibly more appealing and easier to read")."""
     avg = board._avg([int(r["score"]) for r in rows])
     people = interviewers(rows)
     lines = [f"📋 *1st Round Scorecards — {office}'s office — {day:%a} {day.month}/{day.day}*",
+             "",
              f"Office average: *{avg}/100* {emoji(avg)}  ·  {_plural(len(rows))}",
-             "  ·  ".join(f"{emoji(a)} {n} {a}" for n, a, _ in people),
-             "_Each interviewer's scorecard is in the thread, lowest score first_ 👇"]
+             ""]
+    lines += [f"{emoji(a)}  {n} — *{a}*" for n, a, _ in people]
+    lines += ["", "_Each interviewer's scorecard is in the thread, lowest score first_ 👇"]
     return "\n".join(lines)
+
+
+def _bullets(tally: str) -> List[str]:
+    return [f"• {t}" for t in tally.split(", ")]
 
 
 def person_text(name: str, avg: int, mine: List[Dict]) -> str:
-    """One interviewer's scorecard = one reply in the thread, behind a divider."""
-    lines = [DIVIDER, f"*{name}* — {avg}/100 {emoji(avg)}  ·  {_plural(len(mine))}"]
+    """One interviewer's scorecard = one reply in the thread, behind a divider.
+    Each section is its own block, one item per line, a blank line between."""
+    blocks = [[DIVIDER, f"*{name}* — {avg}/100 {emoji(avg)}  ·  {_plural(len(mine))}"]]
     flags = [f for r in mine for f in r.get("flags") or []]
     missed = [m for r in mine for m in r.get("missed") or []]
     if flags:
-        lines.append(f"🚩 Red flags: {_top(flags)}")
+        blocks.append(["🚩 *Red flags*"] + _bullets(_top(flags)))
     if missed:
-        lines.append(f"❌ Most missed: {_top(missed)}")
+        blocks.append(["❌ *Most missed*"] + _bullets(_top(missed)))
     tips = next((r["coaching"] for r in reversed(mine) if r.get("coaching")), [])
     if tips:
-        lines.append("💡 *Feedback:*")
-        lines += [f"• {board._first_sentence(t)}" for t in tips[:2]]
+        tips = [f"• {board._first_sentence(t)}" for t in tips[:2]]
+        # a blank line between tips too: each is a long sentence
+        blocks.append(["💡 *Feedback*"] + [x for t in tips for x in ("", t)][1:])
     audits = [f"<{_doc_url(r['doc'])}|{_clock(r.get('time'))}>" for r in mine if r.get("doc")]
     if audits:
-        lines.append("📄 Full audits: " + " · ".join(audits))
-    return "\n".join(lines)
+        blocks.append(["📄 *Full audits:*  " + "  ·  ".join(audits)])
+    return "\n\n".join("\n".join(b) for b in blocks)
 
 
 def _clock(hhmm: str) -> str:
