@@ -100,12 +100,20 @@ def _connect() -> imaplib.IMAP4_SSL:
     return M
 
 
+# Names the by-day PDF has gone by. WE 9.26.2026 (sent 10/5) renamed
+# "… - Campaign Totals By Day.pdf" to "Daily Production W.E. 9.26.26.pdf" —
+# same table, same columns, and the run failed "no usable PDFs" until this
+# knew the new name.
+_BYDAY_NAMES = ("totals by day", "daily production")
+
+
 def _is_byday(fn: str) -> bool:
-    return fn.lower().endswith(".pdf") and "totals by day" in fn.lower()
+    low = fn.lower()
+    return low.endswith(".pdf") and any(n in low for n in _BYDAY_NAMES)
 
 
 def _is_main(fn: str) -> bool:
-    return fn.lower().endswith(".pdf") and "totals by day" not in fn.lower()
+    return fn.lower().endswith(".pdf") and not _is_byday(fn)
 
 
 def available_weeks(since_days: int = 400) -> Dict[dt.date, str]:
