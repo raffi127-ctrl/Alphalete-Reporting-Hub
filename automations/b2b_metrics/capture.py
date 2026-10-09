@@ -858,6 +858,63 @@ def _crop_to_last_colored_row(png: Path, leading: bool = False,
         return False
 
 
+def _collapse_blank_bands(png: Path, min_gap: int = 200, keep: int = 40,
+                          verbose: bool = False) -> bool:
+    """Shrink every all-white horizontal band taller than `min_gap` px to `keep`
+    px — mid-image or trailing. Nothing with ink is ever removed.
+
+    WHY (2026-10-09): a per-office SAVED churn view (Valeria's ValChurnEXP,
+    Atef's AtefExp) exports the dashboard at its fixed height, so a short rep
+    list leaves Tableau's empty pane in the PNG — 2,440px of white between
+    Valeria's rep table and the Disconnect Reason table, 4,188px trailing on
+    Atef's. The shared-pull boards (jamis/sabrina/eveliz/luke) have no such
+    band, so this is a no-op for them. Best-effort: any doubt -> keep as is."""
+    try:
+        from PIL import Image
+    except ImportError:
+        return False
+    try:
+        im = Image.open(png).convert("RGB")
+        W, H = im.size
+        px = im.load()
+
+        def blank(y):
+            return all(min(px[x, y]) >= 245 for x in range(0, W, 2))
+
+        bands, start = [], None
+        for y in range(H + 1):
+            b = y < H and blank(y)
+            if b and start is None:
+                start = y
+            elif not b and start is not None:
+                if y - start > min_gap:
+                    bands.append((start, y))
+                start = None
+        if not bands:
+            return False
+        pieces, y0 = [], 0
+        for s, e in bands:
+            pieces.append(im.crop((0, y0, W, s + keep)))
+            y0 = e if e < H else H
+        if y0 < H:
+            pieces.append(im.crop((0, y0, W, H)))
+        out = Image.new("RGB", (W, sum(p.size[1] for p in pieces)), "white")
+        y = 0
+        for p in pieces:
+            out.paste(p, (0, y))
+            y += p.size[1]
+        out.save(png)
+        if verbose:
+            print("   ✂ collapsed {} blank band(s) ({} -> {}px)".format(
+                len(bands), H, out.size[1]), flush=True)
+        return True
+    except Exception as e:  # noqa: BLE001 — never lose the image over a trim
+        if verbose:
+            print("   ⚠ blank-band trim failed ({}) — kept as is".format(
+                type(e).__name__), flush=True)
+        return False
+
+
 def _select_week(page, want, log=print) -> bool:
     """Drive the dashboard's week dropdown to `want`. Returns True if it moved.
 
@@ -1493,6 +1550,8 @@ def tableau_image(o: B2BOffice, view_key: str, out_dir: Path, log=print,
                 _crop_to_last_colored_row(
                     out, leading=(meta.get("crop_mode") == "leading"),
                     verbose=True)
+            if view_key == "churn_wireless":
+                _collapse_blank_bands(out, verbose=True)
             verified_week, dom_rows = False, None
             if meta.get("week_filter"):
                 # Raises WeekFilterNotApplied -> the runner skips + flags the
