@@ -979,8 +979,12 @@ def main(argv: Optional[list] = None) -> int:
                             if n >= floor:
                                 return rate * n
                         return 0
-                    _t, rate = box_tier_for(n)
-                    return rate * n
+                    # 10/8 reconcile (Esmeralda + Tara): SCI pays the volume
+                    # bonus per CORE deal at the rep's own weekly tier, which
+                    # is NOT the deal count (3 deals paid Tier 1 one week and
+                    # Tier 2 another). $75 x core-count matched both reps'
+                    # deposits within $75; the count-tier scale was $400 off.
+                    return 75 * n
 
                 out_revenue = OUTPUT_DIR / "BOX Revenue by Status {}.png".format(
                     today.strftime("%m-%d-%Y"))
