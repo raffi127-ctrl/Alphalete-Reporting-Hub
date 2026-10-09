@@ -114,7 +114,11 @@ OWNER_CFG = [
 # valeria (2026-10-08): staged on arrival. Promote after `--dump-rep-grid
 # valeria` shows VALERIA TRISTAN off her Valexp view and `--owner valeria
 # --dry-run` reconciles on Lucy 2.
-STAGED: set = {"valeria"}
+# valeria was promoted 2026-10-08 (Eve), the evening she was staged: on Lucy 2
+# `--owner valeria --dry-run` closed exit 0, computed 3/145 = 2.1% against the
+# dashboard's base=145 rate=2.1%, and RATES came in for 13 reps (0-30
+# 123/207, 31-60 94/134) with no warning.
+STAGED: set = set()
 
 
 def _activation_cfg():
