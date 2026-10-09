@@ -214,9 +214,13 @@ def for_day(rows: list[Termination], day: dt.date) -> list[Termination]:
 
 
 def render_reply(rows: list[Termination], day: dt.date) -> str:
-    """One day's entry inside the weekly thread."""
+    """One day's entry inside the weekly thread.
+
+    The heading @-tags the approvers (Eve, 2026-10-09): the tag is her
+    reminder to go deactivate them. It sits on the heading, never on a '•'
+    line, so already_posted() still reads the names cleanly."""
     lines = [f"*{day.strftime('%a')} {day.month}/{day.day}* — "
-             f"{len(rows)} terminated"]
+             f"{len(rows)} terminated {_mentions()}"]
     for t in rows:
         days = ("days worked not on the board" if t.days_worked is None
                 else f"{t.days_worked} day{'' if t.days_worked == 1 else 's'} worked")
