@@ -957,6 +957,68 @@ def set_knocks_final(office_key: str, hhmm: str, book=None,
     return False
 
 
+def set_text_handles(office_key: str, handles, book=None, group: str = "",
+                     chat_guid: str = "", dry_run: bool = True):
+    """Re-pin a participant-pinned text group to the people in it NOW.
+
+    The pinned set is who a group is found BY. When the owner takes those
+    numbers out of the chat, no chat holds them and every send refuses --
+    Jenny's FIGSPIRE A-TEAM, 2026-10-08 22:26, when its creator removed three
+    of the four pinned numbers and the boards stopped. Read the chat's current
+    members with `lucy group_members "<name>"` on the sending box, then pin
+    to them here.
+
+    Same contract as set_text_cadence, for the same reasons: OUR COLUMN ONLY
+    (P, the approved JSON -- never the office's own N/O), never the approval
+    flag, DRY RUN BY DEFAULT, returns (changed, before, after). `chat_guid`
+    is written alongside when given: it only ever breaks a tie, never decides.
+
+    THE ADDRESS MOVES WITH THE PINS (text_dest_address is built from them),
+    so the group's cadence marker starts fresh and its next board goes on the
+    next tick. One extra board, once -- not a storm.
+    """
+    pins = [str(h).strip() for h in (handles or []) if str(h).strip()]
+    if not pins:
+        raise ValueError("set_text_handles needs at least one number -- an "
+                         "empty pin would turn this into a by-NAME group")
+    if book is None:
+        from automations.recruiting_report.fill import open_by_key
+        book = open_by_key(RELAY_SPREADSHEET_ID)
+    tab = book.worksheet(CHANNELS_TAB)
+    key = office_key.strip().lower()
+    want = (group or "").strip().lower()
+    for i, row in enumerate(tab.get_all_values()[1:], start=2):
+        if (row[CH_OFFICE] or "").strip().lower() != key:
+            continue
+        before = row[CH_TX_APPROVED_JSON] or ""
+        try:
+            groups = json.loads(before or "[]")
+        except ValueError:
+            return False, before, before
+        hit = False
+        for g in groups:
+            if not isinstance(g, dict):
+                continue
+            if want and (g.get("group") or "").strip().lower() != want:
+                continue
+            if not g.get("require_handles"):
+                # A BY-NAME GROUP STAYS BY NAME. Pinning one is a decision
+                # (seven live groups depend on their name-keyed marker), not
+                # a side effect of a re-pin aimed at another room.
+                continue
+            hit = True
+            g["require_handles"] = pins
+            if chat_guid:
+                g["chat_guid"] = chat_guid
+        if not hit:
+            return False, before, before
+        after = json.dumps(groups)
+        if not dry_run:
+            tab.update(values=[[after]], range_name="P%d" % i)
+        return True, before, after
+    return False, "", ""
+
+
 def set_text_cadence(office_key: str, minutes: int, book=None,
                      group: str = "", dry_run: bool = True):
     """How often an office's TEXT destination sends. OUR COLUMN ONLY.
@@ -1597,35 +1659,7 @@ def ask_office_to_sign_in(office_key: str, when: str = "", *,
     # Eve, and I NOT the entire team channel"). A signed-out session is not
     # the sales floor's business, and putting it in their channel is noise in
     # the one room the boards are meant to own.
-    owner = getattr(office, "slack_user_id", "") or ""
-    # AND WHOEVER ACTUALLY WALKS TO THAT MACHINE. Francia did every sign-in
-    # step on Khalil's computer for two days while this DM went to him and to
-    # us -- the one person who could act was the only one not told.
-    helpers = list(O.helpers_for(office_key))
-    people = []
-    for uid in [owner] + helpers + list(O.APPROVERS):
-        if uid and uid not in people:
-            people.append(uid)
-    # ONE GROUP DM, NOT A DM EACH (Megan 2026-09-30: "should have been dmd to
-    # Me/Roshan/Eve so that she could fix it without me"). Separate DMs meant
-    # Eve saw it alone, with no thread the owner was in -- so walking the
-    # owner through it went through Megan. Falls back to one-by-one only if
-    # Slack will not open the group.
-    try:
-        _group_dm(people, text)
-    except Exception as e:  # noqa: BLE001
-        log("could not open the group DM (%s) — sending one by one"
-            % type(e).__name__)
-        for uid in people:
-            try:
-                _dm(uid, text)
-            except Exception as e2:  # noqa: BLE001 — one failed DM must not stop
-                log("could not DM %s: %s" % (uid, type(e2).__name__))
-    if not owner:
-        # WORTH SAYING. Without the owner's Slack id this reached us and not
-        # the person who has to walk to the machine.
-        log("no slack id on record for %s — only Megan and Eve were told"
-            % office_key)
+    dm_office_people(office_key, text, log=log)
     return True
 
 
@@ -3290,6 +3324,47 @@ def _group_dm(user_ids: List[str], text: str) -> None:
         users=",".join(user_ids))["channel"]["id"]
     client.chat_postMessage(channel=channel, text=text,
                             unfurl_links=False, unfurl_media=False)
+
+
+def dm_office_people(office_key: str, text: str, *, log=print) -> List[str]:
+    """One group DM: the office's owner, whoever walks to their machine, and
+    Megan + Eve. Returns the Slack ids it was addressed to.
+
+    THE OWNER AND THE HELPERS, then APPROVERS. Francia did every sign-in step
+    on Khalil's computer for two days while the DM went to him and to us --
+    the one person who could act was the only one not told.
+
+    ONE GROUP DM, NOT A DM EACH (Megan 2026-09-30: "should have been dmd to
+    Me/Roshan/Eve so that she could fix it without me"). Separate DMs meant
+    Eve saw it alone, with no thread the owner was in -- so walking the owner
+    through it went through Megan. Falls back to one-by-one only if Slack
+    will not open the group.
+
+    Never raises: the DM is the telling, never the work.
+    """
+    office = O.get(office_key)
+    owner = getattr(office, "slack_user_id", "") or ""
+    people = []
+    for uid in [owner] + list(O.helpers_for(office_key)) + list(O.APPROVERS):
+        if uid and uid not in people:
+            people.append(uid)
+    try:
+        _group_dm(people, text)
+    except Exception as e:  # noqa: BLE001
+        log("could not open the group DM (%s) — sending one by one"
+            % type(e).__name__)
+        for uid in people:
+            try:
+                _dm(uid, text)
+            except Exception as e2:  # noqa: BLE001 — one failed DM must not stop
+                log("could not DM %s: %s" % (uid, type(e2).__name__))
+    if not owner:
+        # WORTH SAYING. Without the owner's Slack id this reached us and not
+        # the person who has to act. Fill slack_user_id on their ICD Signup
+        # row (`python -m automations.icd_alerts.whois "<name>"`).
+        log("no slack id on record for %s — only Megan and Eve were told"
+            % office_key)
+    return people
 
 
 def main(argv=None) -> int:

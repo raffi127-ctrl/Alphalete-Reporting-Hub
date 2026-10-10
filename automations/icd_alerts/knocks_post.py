@@ -709,22 +709,48 @@ def run(day: Optional[dt.date] = None, *, send: bool = False,
                     # machine that approves it, and a near-miss delivers
                     # nothing. So this goes where a person will see it rather
                     # than into a log.
+                    msg = _text_failed_msg(office.label, where, d, e)
                     try:
-                        P._slack(O.OPS_CHANNEL,
-                                 ":speech_balloon: *%s* — could not text "
-                                 "their board to \u201c%s\u201d.\n> %s\n"
-                                 "> Their Slack channels are unaffected. "
-                                 "Check the group name is exactly right and "
-                                 "that Lucy is in the chat."
-                                 % (office.label, where, str(e)[:200]))
+                        P._slack(O.OPS_CHANNEL, msg)
                     except Exception:  # noqa: BLE001
                         pass
+                    # AND TO THE PEOPLE WHO CAN FIX IT (Megan 2026-10-10, on
+                    # Jenny's FIGSPIRE A-TEAM going dark: "should also be
+                    # being sent in a DM with Jenny/Eve/Megan not just into
+                    # the corrections channel"). Only the owner knows whether
+                    # people left the group on purpose, and the channel is
+                    # not a place they read.
+                    P.dm_office_people(key, msg, log=log)
         tab.update_cell(i, KN_POSTED + 1, json.dumps(
             {k: v.isoformat(timespec="seconds") for k, v in posted_at.items()}))
 
     if not send:
         log("\nDRY RUN -- nothing posted and nothing recorded.")
     return {"posted": posted_total}
+
+
+def _text_failed_msg(label: str, where: str, dest: Dict, err: Exception) -> str:
+    """What the channel and the owner's DM say when a group text fails.
+
+    THE WHOLE REASON, NOT ITS FIRST 200 CHARACTERS. Jenny's 2026-10-10 alert
+    was cut off at "The display name is de" -- mid-word, in the one sentence
+    that said what was NOT the cause.
+
+    THE FIX DEPENDS ON HOW THE GROUP IS FOUND. A group pinned to its people
+    never reads its name, so "check the group name" sends somebody hunting a
+    typo that cannot matter. For those the cause is membership: somebody
+    removed Lucy or the pinned numbers, and either they go back in, or we
+    re-pin to who is in it now (`P.set_text_handles`).
+    """
+    if dest.get("require_handles"):
+        fix = ("If those people were taken out on purpose, tell us who "
+               "should get the board now and we'll re-point it. Otherwise, "
+               "add them (and Lucy) back to the group.")
+    else:
+        fix = "Check the group name is exactly right and that Lucy is in the chat."
+    return (":speech_balloon: *%s* — could not text their board to "
+            "\u201c%s\u201d.\n> %s\n> Their Slack channels are unaffected. %s"
+            % (label, where, str(err)[:600], fix))
 
 
 def _said_already(kind: str, key: str, day: dt.date, detail: str) -> bool:
