@@ -63,7 +63,12 @@ EMPTY_MAX_PX = 400
 def view_url(owner: str) -> str:
     """The board's URL sliced to one owner via the Owner Name quick filter."""
     from urllib.parse import quote
-    return "{}?Owner%20Name={}&:iid=1".format(VIEW_URL, quote(owner))
+    # `Rep Name=` (EMPTY) resets that single-value quick filter to (All). The
+    # filter state is sticky per Tableau login: on Lucy 1 it sat on
+    # "(Akili Powell)", a rep from another office, and every capture for
+    # Ryan McSpadden rendered an empty board (2026-10-10). "(All)" as a value
+    # does not reset it; the empty value does.
+    return "{}?Owner%20Name={}&Rep%20Name=&:iid=1".format(VIEW_URL, quote(owner))
 
 
 def _spec(owner: str, day) -> dict:

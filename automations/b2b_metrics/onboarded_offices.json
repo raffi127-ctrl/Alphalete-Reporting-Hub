@@ -328,15 +328,17 @@
     },
     "enrolled_reports": [
       "b2b_order_log_box",
-      "b2b_box_accepted"
+      "b2b_box_accepted",
+      "b2b_box_tier_bonus"
     ],
     "report_order": {
       "b2b_order_log_box": 1,
-      "b2b_box_accepted": 2
+      "b2b_box_accepted": 2,
+      "b2b_box_tier_bonus": 3
     },
     "machine": "Lucy 1",
     "campaign": "b2b_box",
     "channel_plans": [],
-    "notes": "wired by hand 2026-10-09 (Megan: wire up Ryan McSpadden's metrics and trackers). BOX-ONLY office (Service Cloud; Lucy ECO key ryan, #highline-b2b-box-sales), so no B2B AT&T metrics thread: his metrics are the per-office BOX Order Log thread (box_order_log.per_office on Lucy 1, 7:00/8:30) with order log + accepted + tier bonus + pending. owner_office is the exact Tableau 'Owner & Office' string from the ALLEXPORDERLOG probe on Lucy 1, 2026-10-09 06:58. Sheet = 'Metrics - Ryan McSpadden' (Lucy Box Order Log tab from the master template). Trackers: b2b_box only. | 2026-10-10: Box Tier Bonus HELD OUT of his thread -- neither 'Ryan McSpadden' (3 timeouts) nor 'Ryan Mcspadden' (board rendered Owner Name=None, blank) is the tier board's Owner Name value; re-enrol b2b_box_tier_bonus once the exact value is known and a capture shows his reps."
+    "notes": "wired by hand 2026-10-09 (Megan: wire up Ryan McSpadden's metrics and trackers). BOX-ONLY office (Service Cloud; Lucy ECO key ryan, #highline-b2b-box-sales), so no B2B AT&T metrics thread: his metrics are the per-office BOX Order Log thread (box_order_log.per_office on Lucy 1, 7:00/8:30) with order log + accepted + tier bonus + pending. owner_office is the exact Tableau 'Owner & Office' string from the ALLEXPORDERLOG probe on Lucy 1, 2026-10-09 06:58. Sheet = 'Metrics - Ryan McSpadden' (Lucy Box Order Log tab from the master template). Trackers: b2b_box only. | 2026-10-10: tier board back in: owner value IS 'Ryan McSpadden'; the blank captures were the sticky Rep Name filter on Lucy 1's Tableau login, now reset by Rep%20Name= in tier_bonus.view_url."
   }
 ]
