@@ -146,3 +146,55 @@ class AppendDayGuardTests(unittest.TestCase):
                            ["2026-09-21", "Kash Rai", "A"]], "Akashdeep Rai")
         self.assertEqual(n, 1)
         ws.append_rows.assert_called_once()
+
+
+class AppendDaysBatchTests(unittest.TestCase):
+    """The 2026-10-10 timeout: one read and one write for the whole run, not
+    one full-tab read per office-day — with the same double-write guard."""
+
+    D1, D2 = dt.date(2026, 10, 8), dt.date(2026, 10, 9)
+
+    def _run(self, existing, entries):
+        from automations.icd_sales_board import knocks_log as KL
+        ws = mock.Mock()
+        ws.get_all_values.return_value = existing
+        book = mock.Mock()
+        book.worksheet.return_value = ws
+        kept = []
+        with mock.patch(
+                "automations.recruiting_report.fill.open_by_key",
+                return_value=book), \
+             mock.patch.object(KL, "_columns",
+                               return_value=["Date", "Office", "Rep"]), \
+             mock.patch.object(KL, "_load_aliases", return_value={}) as la:
+            n = KL.append_days(entries, verbose=False, kept=kept)
+        return n, ws, kept, la
+
+    def test_many_days_are_one_read_and_one_write(self):
+        n, ws, kept, la = self._run(
+            [["Date", "Office", "Rep"]],
+            [(self.D1, "A", [{"Rep": "x"}]),
+             (self.D2, "A", [{"Rep": "x"}, {"Rep": "y"}]),
+             (self.D2, "B", [{"Rep": "z"}])])
+        self.assertEqual(n, 4)
+        ws.get_all_values.assert_called_once()
+        ws.append_rows.assert_called_once()
+        la.assert_called_once()
+        self.assertEqual(len(kept), 3)
+
+    def test_a_day_on_the_tab_and_a_repeat_in_the_batch_are_skipped(self):
+        n, _ws, kept, _la = self._run(
+            [["Date", "Office", "Rep"], ["2026-10-09", "A", "x"]],
+            [(self.D2, "A", [{"Rep": "x"}]),
+             (self.D1, "B", [{"Rep": "z"}]),
+             (self.D1, "B", [{"Rep": "z"}])])
+        self.assertEqual(n, 1)
+        self.assertEqual(kept, [(self.D1, "B")])
+
+    def test_nothing_new_writes_nothing(self):
+        n, ws, kept, _la = self._run(
+            [["Date", "Office", "Rep"], ["2026-10-09", "A", "x"]],
+            [(self.D2, "A", [{"Rep": "x"}])])
+        self.assertEqual(n, 0)
+        ws.append_rows.assert_not_called()
+        self.assertEqual(kept, [])

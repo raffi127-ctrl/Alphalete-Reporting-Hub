@@ -115,7 +115,8 @@ def _logged(grid: list) -> dict:
     return out
 
 
-def already_have(have: dict, name: str, day: dt.date) -> str:
+def already_have(have: dict, name: str, day: dt.date,
+                 aliases: dict | None = None) -> str:
     """The spelling this day is ALREADY filed under, or ''.
 
     MATCHED THE WAY THE READERS MATCH, not on the exact string — because a
@@ -129,7 +130,7 @@ def already_have(have: dict, name: str, day: dt.date) -> str:
     exact-string check saw nothing and would have written all eight of his days
     a second time (caught in a dry run, 2026-09-22)."""
     from automations.icd_sales_board import knocks_log as KL
-    wanted = KL._wanted(name)
+    wanted = KL._wanted(name, aliases)
     for cell in have.get(day.isoformat(), ()):
         if any(w == cell or w in cell or cell in w for w in wanted):
             return cell
@@ -204,6 +205,10 @@ def run(days: int = WINDOW_DAYS, end: dt.date | None = None,
             f"({type(e).__name__}: {e}) — refusing to write blind.")
         return 0
     have = _logged(grid)
+    # ONE alias read for the run. already_have asks about every office-day in
+    # the window (fifty-plus), and each ask was its own Sheets read — enough on
+    # its own to hit the per-user read cap and sleep (2026-10-10 timeout).
+    aliases = KL._load_aliases()
 
     written = 0
     by_day = _relay_days(values, window)
@@ -218,6 +223,7 @@ def run(days: int = WINDOW_DAYS, end: dt.date | None = None,
     # start, so without this a second feed for the same day would not see the
     # first one land.
     done: set = set()
+    pending: list = []
     for key, day in sorted(by_day):
         office = offices.get(key)
         name = names.get(key) or ""
@@ -226,7 +232,7 @@ def run(days: int = WINDOW_DAYS, end: dt.date | None = None,
             continue
         if (name.lower(), day) in done:
             continue
-        under = already_have(have, name, day)
+        under = already_have(have, name, day, aliases)
         if under:
             continue          # already on the tab, under this or another spelling
         try:
@@ -243,19 +249,21 @@ def run(days: int = WINDOW_DAYS, end: dt.date | None = None,
             continue
         if dry_run:
             log(f"[knocks-backfill] would log {name} {day}: {len(rows)} rep(s)")
-            done.add((name.lower(), day))
-            written += 1
-            continue
-        try:
-            n = KL.append_day(day, name, rows, verbose=False)
-        except Exception as e:   # noqa: BLE001
-            log(f"[knocks-backfill] {name} {day}: write failed "
-                f"({type(e).__name__}: {e})")
-            continue
-        if n:
-            log(f"[knocks-backfill] {name} {day}: {n} rep(s) kept")
-            done.add((name.lower(), day))
-            written += 1
+        done.add((name.lower(), day))
+        pending.append((day, name, rows))
+    # ONE WRITE FOR THE RUN. Writing per office-day re-downloaded the whole
+    # history tab each time, and the run outgrew its 15 minutes on 2026-10-10
+    # with 17 days to file. append_days re-checks every entry against one
+    # fresh read just before the write, so a scrape that landed a day while
+    # this was mapping still wins.
+    if pending and not dry_run:
+        # verbose: it prints a line per office-day, kept or skipped, so the
+        # log says exactly what landed.
+        kept: list = []
+        KL.append_days(pending, verbose=True, aliases=aliases, kept=kept)
+        written = len(kept)
+    elif dry_run:
+        written = len(pending)
     log(f"[knocks-backfill] {written} office-day(s) added to the history.")
     return written
 

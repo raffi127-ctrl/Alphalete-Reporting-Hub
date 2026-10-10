@@ -49,7 +49,26 @@ def append_day(day: dt.date, office: str, records: list,
 
     Rows are written in the pull's own column order, so this is a passthrough
     and nothing has to be re-mapped when a column is added upstream."""
-    if not records:
+    return append_days([(day, office, records)], sheet_id=sheet_id,
+                       verbose=verbose)
+
+
+def append_days(entries: list, sheet_id: str = SHEET_ID,
+                verbose: bool = True, aliases: dict | None = None,
+                kept: list | None = None) -> int:
+    """Append several (day, office, records) at once: ONE read, ONE write.
+
+    THE ONE PLACE ROWS ARE WRITTEN — append_day is this with one entry. It
+    exists because the backfill called append_day per office-day, and each
+    call re-downloaded the whole tab (and the alias sheet) first: 17 days was
+    17 full reads of a tab that only grows, plus the per-user read cap's quota
+    sleeps, and on 2026-10-10 it ran past its 15-minute kill with days still
+    to write. The guard is unchanged — it is just applied to every entry
+    against the same fresh read, and to the entries ahead of it in the batch.
+    Returns the number of rows written (0 = none); `kept`, if given, collects
+    the (day, office) of each entry that was written rather than skipped."""
+    entries = [(d, o, r) for d, o, r in entries if r]
+    if not entries:
         return 0
     try:
         from automations.recruiting_report.fill import open_by_key, _retry
@@ -57,39 +76,54 @@ def append_day(day: dt.date, office: str, records: list,
         sh = open_by_key(sheet_id)
         ws = sh.worksheet(TAB)
         existing = _retry(ws.get_all_values)
+        if aliases is None and len(entries) > 1:
+            aliases = _load_aliases()
 
-        key_day, key_office = day.isoformat(), (office or "").strip()
-        # ALIAS-AWARE, NOT EXACT-STRING. The readers gather an office by alias
-        # and by substring, so two spellings of one office are SUMMED — which
-        # makes a second write of a day already on the tab not a wasted row but
-        # every number on that office's board doubled.
-        #
-        # It happened on 2026-09-23, to Kash. The backfill ran at 04:30 and
-        # filed his 22 reps as 'Kash Rai'; the scrape ran after and filed the
-        # same 22 reps as 'Akashdeep Rai', because this check only ever looked
-        # for its own spelling. His board read 3,630 knocks against a real
-        # 1,815. The backfill had the alias-aware check and the scrape did not,
-        # which is exactly why it belongs HERE, at the one place rows are
-        # written, instead of in whichever caller thought of it.
-        mine = _wanted(key_office)
+        on_tab: dict = {}
         for r in existing[1:]:
-            if len(r) < 2 or (r[0] or "").strip()[:10] != key_day:
-                continue
-            cell = (r[1] or "").strip().lower()
-            if any(w == cell or w in cell or cell in w for w in mine):
+            if len(r) > 1:
+                on_tab.setdefault((r[0] or "").strip()[:10], set()).add(
+                    (r[1] or "").strip().lower())
+
+        out, accepted = [], []
+        for day, office, records in entries:
+            key_day, key_office = day.isoformat(), (office or "").strip()
+            # ALIAS-AWARE, NOT EXACT-STRING. The readers gather an office by
+            # alias and by substring, so two spellings of one office are
+            # SUMMED — which makes a second write of a day already on the tab
+            # not a wasted row but every number on that office's board doubled.
+            #
+            # It happened on 2026-09-23, to Kash. The backfill ran at 04:30 and
+            # filed his 22 reps as 'Kash Rai'; the scrape ran after and filed
+            # the same 22 reps as 'Akashdeep Rai', because this check only ever
+            # looked for its own spelling. His board read 3,630 knocks against
+            # a real 1,815. The backfill had the alias-aware check and the
+            # scrape did not, which is exactly why it belongs HERE, at the one
+            # place rows are written, instead of in whichever caller thought
+            # of it.
+            mine = _wanted(key_office, aliases)
+            hit = next((c for c in on_tab.get(key_day, ())
+                        if any(w == c or w in c or c in w for w in mine)), "")
+            if hit:
                 if verbose:
-                    under = ("" if cell == key_office.lower()
-                             else f" (as {r[1].strip()!r})")
+                    under = ("" if hit == key_office.lower()
+                             else f" (as {hit!r})")
                     print(f"   knocks log: {key_office} {key_day} already "
                           f"logged{under} - skipped")
-                return 0
-
-        out = []
-        for rec in records:
-            out.append([key_day, key_office] + [_cell(rec, c) for c in cols[2:]])
-        _retry(ws.append_rows, out, value_input_option="USER_ENTERED")
-        if verbose:
-            print(f"   knocks log: +{len(out)} rows for {key_office} {key_day}")
+                continue
+            for rec in records:
+                out.append([key_day, key_office]
+                           + [_cell(rec, c) for c in cols[2:]])
+            # Counts as on the tab for the entries after it in this batch.
+            on_tab.setdefault(key_day, set()).add(key_office.lower())
+            accepted.append((day, key_office))
+            if verbose:
+                print(f"   knocks log: +{len(records)} rows for "
+                      f"{key_office} {key_day}")
+        if out:
+            _retry(ws.append_rows, out, value_input_option="USER_ENTERED")
+            if kept is not None:
+                kept.extend(accepted)
         return len(out)
     except Exception as e:                      # never fail the post
         if verbose:
@@ -188,18 +222,31 @@ def roster_for(office: str, start=None, end=None,
         return set()
 
 
-def _wanted(office: str) -> set:
+def _load_aliases() -> dict:
+    """The ICD alias table, or {} — read ONCE by a caller that asks about many
+    offices, then handed to _wanted, which otherwise reads it per call."""
+    try:
+        from automations.focus_office_att import aliases as _al
+        return _al.load_aliases()
+    except Exception:  # noqa: BLE001 — aliases are a nicety here
+        return {}
+
+
+def _wanted(office: str, aliases: dict | None = None) -> set:
     """Every spelling this office goes by on the tab, lower case.
 
     Shared by every reader here: this tab spells owners its own way
     ('Akashdeep Rai', 'Muhammad UI Haque'), and an office cell can carry the
     company AND the owner ('Next Horizon Group, Inc. Nii Tagoe'), which is why
-    callers substring-match rather than compare."""
+    callers substring-match rather than compare. Pass `aliases` (from
+    _load_aliases) when asking about many offices: without it every call is a
+    Sheets read."""
     out = {(office or "").strip().lower()}
     try:
         from automations.focus_office_att import aliases as _al
+        table = _load_aliases() if aliases is None else aliases
         out |= {n.strip().lower() for n in
-                _al.get_search_candidates(office, _al.load_aliases()) if n}
+                _al.get_search_candidates(office, table) if n}
     except Exception:  # noqa: BLE001 — aliases are a nicety here
         pass
     return {w for w in out if w}
