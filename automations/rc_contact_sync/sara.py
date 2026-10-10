@@ -73,6 +73,28 @@ def _on_passcode_page(page) -> bool:
     return "passcode" in url or "verifycode" in url or "/security/" in url
 
 
+def _settle(page, timeout_ms: int = 30_000) -> None:
+    """Wait until the page has LEFT the passcode URL or has something on it.
+
+    networkidle after typing the code is not proof the next page is there:
+    2026-10-10 on Lucy 2 the run read a page with no HTML at all (still the
+    VerifyPasscode url, mid-reload), took 'still on the passcode page' at
+    face value, went round for a fresh code on that blank page, found no
+    Email button and died. A blank page is not an answer -- wait for one."""
+    deadline = dt.datetime.now() + dt.timedelta(milliseconds=timeout_ms)
+    while dt.datetime.now() < deadline:
+        if not _on_passcode_page(page):
+            return
+        try:
+            text = (page.evaluate(
+                "() => (document.body && document.body.innerText) || ''") or "")
+        except Exception:                                  # noqa: BLE001
+            text = ""                                      # navigating
+        if text.strip():
+            return
+        page.wait_for_timeout(1000)
+
+
 def _needs_code(page) -> bool:
     """Is this login being asked to prove the browser? Judged on the PAGE, not
     on finding a text box -- the first screen is a destination picker that has
@@ -316,6 +338,7 @@ def _submit_code(page, field: str, code: str) -> None:
         page.keyboard.press("Enter")
     page.wait_for_load_state("networkidle", timeout=C.NAV_TIMEOUT_MS)
     page.wait_for_timeout(1000)
+    _settle(page)
 
 
 def _verify_browser(page, attempts: int = 3, log=print) -> None:
@@ -342,6 +365,10 @@ def _verify_browser(page, attempts: int = 3, log=print) -> None:
         # clock and Gmail's are not identical, and a code discarded for being
         # a second too old looks exactly like a code that never arrived.
         since = dt.datetime.now().astimezone() - dt.timedelta(seconds=30)
+        _settle(page)
+        if not _on_passcode_page(page) and attempt > 1:
+            log("  browser verified (attempt %d, page caught up)" % (attempt - 1))
+            return
         if not _request_code(page, log=log):
             log("  nothing to press for a code on attempt %d" % attempt)
         try:
