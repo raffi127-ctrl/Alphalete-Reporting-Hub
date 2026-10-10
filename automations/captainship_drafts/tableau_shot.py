@@ -45,8 +45,12 @@ from automations.captainship_drafts.config import BY_KEY
 # lost §2; the workbook had been restructured and the sheet is gone (Eve).
 # Pointing at the BASE view instead of a saved one is also what NDS does, and it
 # is the arrangement that survives a republish — a custom view does not.
+#
+# On 2026-10-10 B2B1-PAGER_CaptainView went the same way ("That page could not
+# be accessed", 2 x 150s) and all four B2B captains were held from auto-send.
+# Eve pointed it at the workbook's CaptainsTeam base view, which is live.
 _B2B_VIEW = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
-             "ATTTRACKER-B2B/B2B1-PAGER_CaptainView")
+             "ATTTRACKER-B2B/CaptainsTeam")
 # teamstats (nds): the CaptainsTeam base view.
 _NDS_VIEW = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
              "NDS-SNRES-ATT-OOFWorkbook/CaptainsTeam")
