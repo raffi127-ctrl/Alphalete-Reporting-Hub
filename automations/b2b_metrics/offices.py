@@ -461,6 +461,13 @@ B2B_OWNER_KEY_TO_ITEMS = {
 
 ONBOARDED_EXTRA: dict = {}
 
+# The owner-facing keys that belong to the standalone Box report
+# (box_order_log.per_office.BOX_SECTION_KEYS), none of which is a section of
+# this thread. An office enrolled in ONLY these is a Box office with no AT&T
+# thread at all.
+BOX_ONLY_KEYS = frozenset({"b2b_order_log_box", "b2b_box_accepted",
+                           "b2b_box_tier_bonus"})
+
 
 def items_for_report_keys(report_keys) -> set:
     """Translate owner-facing B2B ReportKind keys to the internal item ids they
@@ -485,6 +492,18 @@ def _merge_onboarded() -> None:
     for r in rows:
         key = (r.get("key") or "").strip()
         if not key or key in OFFICES:
+            continue
+        # A BOX-ONLY OFFICE HAS NO AT&T THREAD. Its enrolled reports (Box
+        # order log / accepted / tier bonus) map to zero sections here -- they
+        # are the standalone box_order_log.per_office report, which reads the
+        # registry row itself. Left in OFFICES, the 4am `--all --post` posted
+        # Ryan McSpadden a 'B2B Metrics' thread of an empty AT&T order log,
+        # blank overview and three 'no data yet' lines beside his real Box
+        # thread (2026-10-10). Enrolled-but-nothing-here means: not a thread.
+        _enrolled = list(r.get("enrolled_reports") or [])
+        for _p in (r.get("channel_plans") or []):
+            _enrolled += list(_p.get("report_keys") or [])
+        if _enrolled and set(_enrolled) <= BOX_ONLY_KEYS:
             continue
         pov = r.get("per_office_views") or {}
         overrides, unmapped = {}, []
