@@ -5,8 +5,10 @@ of that office with the score and the feedback of the day". Eve: the office's
 recruiting channel; the sample goes first to a group DM with Rafael, Camila
 and Eve.
 
-One THREAD per office per day, after the day's audits are done: the office's
-average up top, then one reply per interviewer (lowest score first, Eve
+One THREAD per office per day, after the day's audits are done: just the
+title up top (Rafael, 2026-10-09: "less verbiage on the title of the thread,
+and more instead of the thread"), the office's average + everyone's score as
+the first reply, then one reply per interviewer (lowest score first, Eve
 2026-10-08), each with that day's red flags, most
 missed must-dos, 2 coaching tips (her latest interview) and a link to every
 full audit. #ars-recruiting-numbers keeps the per-interview detail.
@@ -161,18 +163,22 @@ def interviewers(rows: List[Dict]) -> List[tuple]:
     return sorted(out, key=lambda p: (bool(board._NOT_A_PERSON.match(p[0])), p[1], p[0]))
 
 
-def head_text(office: str, rows: List[Dict], day: dt.date) -> str:
-    """The thread's parent: the office's day at a glance, spaced out, one
-    interviewer per line (Carlos Hidalgo, 2026-10-09: "spaced out more so it's
-    visibly more appealing and easier to read")."""
+def head_text(office: str, day: dt.date) -> str:
+    """The thread's parent: the title alone (Rafael, 2026-10-09: "less
+    verbiage on the title of the thread, and more instead of the thread")."""
+    return f"📋 *1st Round Scorecards — {office}'s office — {day:%a} {day.month}/{day.day}*"
+
+
+OVERVIEW = "_overview"      # the overview reply's name in posts() and the ledger
+OVERVIEW_START = "Office average"
+
+
+def overview_text(rows: List[Dict]) -> str:
+    """The thread's first reply: the office's day at a glance, one interviewer
+    per line, lowest first (Carlos Hidalgo, 2026-10-09: "spaced out more")."""
     avg = board._avg([int(r["score"]) for r in rows])
-    people = interviewers(rows)
-    lines = [f"📋 *1st Round Scorecards — {office}'s office — {day:%a} {day.month}/{day.day}*",
-             "",
-             f"Office average: *{avg}/100* {emoji(avg)}  ·  {_plural(len(rows))}",
-             ""]
-    lines += [f"{emoji(a)}  {n} — *{a}*" for n, a, _ in people]
-    lines += ["", "_Each interviewer's scorecard is in the thread, lowest score first_ 👇"]
+    lines = [f"{OVERVIEW_START}: *{avg}/100* {emoji(avg)}  ·  {_plural(len(rows))}", ""]
+    lines += [f"{emoji(a)}  {n} — *{a}*" for n, a, _ in interviewers(rows)]
     return "\n".join(lines)
 
 
@@ -209,11 +215,12 @@ def _clock(hhmm: str) -> str:
 
 def posts(rows: List[Dict], day: dt.date) -> List[tuple]:
     """[(office, channel or '', parent text, [(interviewer, reply text)])] for
-    the day, offices by name."""
+    the day, offices by name. The first reply is the overview (OVERVIEW)."""
     out = []
     for office, mine in sorted(by_office(rows, day).items()):
-        out.append((office, CHANNELS.get(office, ""), head_text(office, mine, day),
-                    [(n, person_text(n, a, r)) for n, a, r in interviewers(mine)]))
+        out.append((office, CHANNELS.get(office, ""), head_text(office, day),
+                    [(OVERVIEW, overview_text(mine))]
+                    + [(n, person_text(n, a, r)) for n, a, r in interviewers(mine)]))
     return out
 
 
@@ -282,7 +289,7 @@ def post_day(rows: List[Dict], day: dt.date, *, sample: bool) -> int:
             print(f"  {office}: FAILED {type(exc).__name__}: {exc}")
             failed += 1
             continue
-        print(f"  {office}: thread + {len(replies)} scorecard(s){' (sample)' if sample else ''}")
+        print(f"  {office}: thread + {len(replies) - 1} scorecard(s){' (sample)' if sample else ''}")
     return 1 if failed else 0
 
 
@@ -394,13 +401,16 @@ def restyle(rows: List[Dict], day: dt.date, office: str, *, channel: str = "") -
     """Re-write an office thread Lucy ALREADY posted in today's format: same
     thread, same link, edited in place, nothing new posted (Carlos Hidalgo,
     2026-10-09, wanted the 10/8 one spaced out too). Only Lucy's own messages;
-    an interviewer without a reply in that thread is left out, not added."""
+    an interviewer without a reply in that thread is left out, not added.
+    A thread from before the title-only parent (10/9) has no overview reply:
+    the overview goes on top of its first reply instead of a new message."""
     mine = by_office(rows, day).get(office)
     if not mine:
         print(f"RESTYLE: no audited interview for {office} on {day}")
         return 1
     channel = channel or CHANNELS.get(office, "")
-    head = head_text(office, mine, day)
+    head = head_text(office, day)
+    top = overview_text(mine)
     new = {n: person_text(n, a, r) for n, a, r in interviewers(mine)}
     client = _client()
     me = client.auth_test()["user_id"]
@@ -419,14 +429,23 @@ def restyle(rows: List[Dict], day: dt.date, office: str, *, channel: str = "") -
     client.chat_update(channel=channel, ts=ts, text=head)
     print(f"  {office}: thread edited")
     edited = set()
-    for r in client.conversations_replies(channel=channel, ts=ts, limit=200)["messages"][1:]:
-        name = _reply_name(r.get("text") or "")
-        if r.get("user") != me or name not in new:
+    replies = [r for r in client.conversations_replies(channel=channel, ts=ts, limit=200)
+               ["messages"][1:] if r.get("user") == me]
+    old_thread = not any((r.get("text") or "").startswith(OVERVIEW_START) for r in replies)
+    for i, r in enumerate(replies):
+        text = r.get("text") or ""
+        name = _reply_name(text)
+        with_top = text.startswith(OVERVIEW_START) or (old_thread and i == 0 and name in new)
+        if not with_top and name not in new:
             continue
+        body = new.get(name, "")
+        if with_top:
+            body = top + (f"\n\n{body}" if body else "")
         time.sleep(PAUSE_S)
-        client.chat_update(channel=channel, ts=r["ts"], text=new[name])
-        edited.add(name)
-        print(f"  {office}: {name} edited")
+        client.chat_update(channel=channel, ts=r["ts"], text=body)
+        if name in new:
+            edited.add(name)
+        print(f"  {office}: {name or 'overview'} edited")
     for name in new:
         if name not in edited:
             print(f"  {office}: {name} has no reply in that thread - left out")

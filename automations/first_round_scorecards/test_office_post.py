@@ -18,25 +18,33 @@ class OfficePostTest(unittest.TestCase):
                 row("Cy", "Raf Hidalgo 3rd funnel", 50)]
         posts = op.posts(rows, DAY)
         self.assertEqual([(o, c) for o, c, _, _ in posts], [("Rafael Hidalgo", "C0AUAS88FGW")])
-        self.assertIn("Office average: *50/100* 🔵", posts[0][2])
+        self.assertEqual(posts[0][3][0][0], op.OVERVIEW)
+        self.assertIn("Office average: *50/100* 🔵", posts[0][3][0][1])
+
+    def test_parent_is_the_title_alone(self):
+        # Rafael, 10/9: "less verbiage on the title of the thread, and more in the thread"
+        day = dt.date(2026, 10, 9)
+        _, _, head, _ = op.posts([row("Ana", "Rafael Hidalgo", 60, date="2026-10-09")], day)[0]
+        self.assertEqual(head,"📋 *1st Round Scorecards — Rafael Hidalgo's office — Fri 10/9*")
 
     def test_lowest_score_first_unnamed_zoom_last(self):
         rows = [row("Ana", "Jairo Ruiz", 80), row("ZOOM 19", "Jairo Ruiz", 10),
                 row("Bo", "Jairo Ruiz", 30), row("Cy", "Jairo Ruiz", 55)]
         _, _, head, replies = op.posts(rows, DAY)[0]
-        self.assertEqual([n for n, _ in replies], ["Bo", "Cy", "Ana", "ZOOM 19"])
-        self.assertIn("\n\n🔴  Bo — *30*\n🟢  Cy — *55*\n🟢  Ana — *80*\n🔴  ZOOM 19 — *10*\n\n", head)
+        self.assertEqual([n for n, _ in replies], [op.OVERVIEW, "Bo", "Cy", "Ana", "ZOOM 19"])
+        self.assertTrue(replies[0][1].endswith(
+            "\n\n🔴  Bo — *30*\n🟢  Cy — *55*\n🟢  Ana — *80*\n🔴  ZOOM 19 — *10*"))
 
     def test_each_reply_starts_with_a_divider(self):
         _, _, _, replies = op.posts([row("Ana", "Jairo Ruiz", 80), row("Bo", "Jairo Ruiz", 30)], DAY)[0]
-        self.assertTrue(all(t.startswith(op.DIVIDER + "\n*") for _, t in replies))
+        self.assertTrue(all(t.startswith(op.DIVIDER + "\n*") for _, t in replies[1:]))
 
     def test_only_that_day_and_rows_with_an_office(self):
         rows = [row("Ana", "Jairo Ruiz", 60), row("Ana", "Jairo Ruiz", 10, date="2026-10-05"),
                 row("Zed", "", 30)]
         posts = op.posts(rows, DAY)
         self.assertEqual(len(posts), 1)
-        self.assertIn("1 interview\n", posts[0][2])
+        self.assertIn("1 interview\n", posts[0][3][0][1])
 
     def test_reply_has_score_flags_feedback_and_links(self):
         rows = [row("Gonzalo", "Jairo Ruiz", 45, time="10:31", doc="X1",
@@ -44,7 +52,7 @@ class OfficePostTest(unittest.TestCase):
                     coaching=["Explain the pay. More detail.", "Say the wrap-up."]),
                 row("Gonzalo", "Jairo Ruiz", 55, time="13:01", doc="X2",
                     coaching=["Latest tip. More.", "Second tip."])]
-        head = op.head_text("Jairo Ruiz", rows, DAY)
+        head = op.head_text("Jairo Ruiz", DAY)
         self.assertIn("Jairo Ruiz's office — Tue 10/6", head)
         text = op.person_text("Gonzalo", 50, rows)
         self.assertIn("*Gonzalo* — 50/100 🔵", text)
@@ -60,7 +68,7 @@ class OfficePostTest(unittest.TestCase):
 
     def test_sample_marks_cover_both_formats(self):
         self.assertTrue("📋 *1st Round Scorecard — X".startswith(op.SAMPLE_MARKS))
-        self.assertTrue(op.head_text("X", [row("A", "X", 60)], DAY).startswith(op.SAMPLE_MARKS))
+        self.assertTrue(op.head_text("X", DAY).startswith(op.SAMPLE_MARKS))
 
     def test_summary_groups_everyone_by_color_lowest_first(self):
         rows = [row("Ana", "Jairo Ruiz", 80), row("Bo", "Blue Mendoza", 30),
@@ -82,7 +90,7 @@ class OfficePostTest(unittest.TestCase):
 
     def test_restyle_edits_lucys_thread_in_place(self):
         rows = [row("Ana", "Carlos Hidalgo", 60), row("Bo", "Carlos Hidalgo", 40)]
-        head = op.head_text("Carlos Hidalgo", rows, DAY)
+        head = op.head_text("Carlos Hidalgo", DAY)
         # Slack returns the emoji as a shortcode
         old_head = head.split("\n")[0].replace("📋", ":clipboard:") + "\nOffice average: *50/100* 🔵"
 
@@ -116,7 +124,9 @@ class OfficePostTest(unittest.TestCase):
             op._client = orig
         self.assertEqual([ts for ts, _ in fake.updates], ["1.0", "1.1"])   # never Carlos's own
         self.assertEqual(fake.updates[0][1], head)
-        self.assertEqual(fake.updates[1][1], op.person_text("Bo", 40, [rows[1]]))
+        # a thread from before 10/9: the overview goes on top of its first reply
+        self.assertEqual(fake.updates[1][1], op.overview_text(rows) + "\n\n"
+                         + op.person_text("Bo", 40, [rows[1]]))
 
     def test_restyle_office_from_one_word(self):
         offices = ["Carlos Hidalgo", "Cody Cannon"]
