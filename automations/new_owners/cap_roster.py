@@ -16,24 +16,12 @@ WHAT IS WIRED, AND WHAT IS NOT (measured, not assumed):
   nds   ✅ the URL filter narrows the export. `ProductSalesSummaryRep` +
         `?NDS Captain Teams=Colten's Team` returns exactly Colten's 12 owners,
         the same roster his board block carries.
-  b2b   ✅ but by the OTHER route — a saved custom view per captain, because
-        the filter could not be made to reach the export:
-          · the captain-scoped sheets live on a separate workbook tab,
-            `B2B 1-PAGER_Captain View`
-            (`…/views/ATTTRACKER-B2B/B2B1-PAGER_CaptainView`).
-          · even there, "B2B Captain's Teams" driven to Carlos's Team — by URL
-            param AND by clicking the options (the checked set really does end
-            up `["Carlos's Team"]`) — still exported all 74 program owners, and
-            the dropdown snapped back to "(All)". The workbook opens on a
-            default custom view (`ALLTEAMsALLREPS`), the likeliest culprit.
-          · so Eve saved `Roser-Carlos` / `Roster-Eveliz` / `Roster-Luis` on
-            that tab with the team already picked. The URL IS the roster:
-            nothing to drive, nothing to re-impose. Verified 2026-08-10 —
-            Carlos 10, Eveliz 6, Luis 5 owners, all already on the board.
-        (Also seen on the way: the b2b `ALL TEAMS` custom view now errors with
-        "An error occurred while loading the custom view" —
-        [[project_broken-custom-view-failure-mode]] — worth re-creating, it is
-        the view the daily board pull uses.)
+  b2b   ✅ the URL filter narrows the export too, since 2026-10-10:
+        `ATTTRACKER-B2B/CaptainsTeam` + sheet `CB-Owner Sales` +
+        `?B2B Captain's Teams (SFDC)=Carlos's Team` returns his 11 owners.
+        (Until then it was one saved custom view per captain on
+        `B2B1-PAGER_CaptainView`, because there the filter never reached the
+        export; that view died 2026-10-10 and took the saved views with it.)
   fiber — deliberately not scanned: its six captainships are already detected
         every day by their own per-captain reports (Cancel Rate, Activation
         Rate, ABP & 6 days, Raf Metrics), so scanning here pays twice for the
@@ -168,22 +156,18 @@ PROGRAM_PULLS: Dict[str, dict] = {
         "sheet": "Sales By ICD (Weekly View)",
         "field": "NDS Captain Teams",
     },
-    # b2b takes the OTHER route: one SAVED CUSTOM VIEW per captain on the
-    # 'B2B 1-PAGER_Captain View' tab, each with the team filter already applied
-    # (Eve, 2026-08-10). No filter to drive, nothing to re-impose it — the URL
-    # IS the roster. Same pattern the fiber program pulls already use.
-    # URLs verbatim from Eve, typo and all ('Roser-Carlos'): they are opaque
-    # handles, and "fixing" the spelling would 404.
+    # b2b: one BASE view + the URL filter, same as nds, since 2026-10-10. The
+    # old route (one saved custom view per captain on B2B1-PAGER_CaptainView,
+    # Eve 2026-08-10) died with that view — "That page could not be accessed".
+    # CaptainsTeam is back with its pre-08-13 worksheets, and on it the filter
+    # DOES reach the export: CB-Owner Sales + Carlos's Team -> his 11 owners,
+    # team column included (probe_carlos_bonus_sheets on Lucy 3, 2026-10-10).
+    # That sheet calls the column 'Owner Name', not the board's 'ICD Owner Name'.
     "b2b": {
-        "sheet": "Sales By ICD (ATT) (V2)_Captain View",
-        "views": {
-            "Carlos": _V + ("ATTTRACKER-B2B/B2B1-PAGER_CaptainView/"
-                            "7d74d841-5467-4ef1-87de-54cbb476e007/Roser-Carlos"),
-            "Eveliz": _V + ("ATTTRACKER-B2B/B2B1-PAGER_CaptainView/"
-                            "168540a3-c27d-42d0-af6a-975d4b363c9c/Roster-Eveliz"),
-            "Luis": _V + ("ATTTRACKER-B2B/B2B1-PAGER_CaptainView/"
-                          "0df08a61-b352-4c37-9ec1-d890f69f1289/Roster-Luis"),
-        },
+        "view": _V + "ATTTRACKER-B2B/CaptainsTeam",
+        "sheet": "CB-Owner Sales",
+        "field": "B2B Captain's Teams (SFDC)",
+        "owner_col": "Owner Name",
     },
     # "fiber": covered by the per-captain reports; add here if that ever changes.
 }
@@ -201,6 +185,10 @@ TEAMS: Dict[str, tuple] = {
     "Carlos": ("b2b", "Carlos's Team"),
     "Eveliz": ("b2b", "Eveliz's Team"),
     "Luis":   ("b2b", "Luis's Team"),
+    # Atef, 2026-10-10 (Eve). "Atef's Team" has been in the SFDC filter since
+    # 2026-09-03; the saved-view route needed a view per captain and nobody saved
+    # his, so he was never scanned.
+    "Atef":   ("b2b", "Atef's Team"),
     "Khalil": ("nds", "Khalil's Team"),
     "Colten": ("nds", "Colten's Team"),
     "Jairo":  ("nds", "Jairo's Team"),
@@ -292,7 +280,9 @@ def roster_for(captain: str, page, *, today: Optional[dt.date] = None,
     else:                                    # one view + a URL filter
         url = f"{pull['view']}?{quote(pull['field'])}={quote(team)}"
         how = f"{pull['field']}={team!r}"
-    spec = cap._spec(f"ROSTER_{captain}", url, t["parse"], t["metric"])
+    parse = dict(t["parse"], **({"owner_col": pull["owner_col"]}
+                                if "owner_col" in pull else {}))
+    spec = cap._spec(f"ROSTER_{captain}", url, parse, t["metric"])
     out = out_dir / f"new_owners_roster_{prog}_{captain.lower()}.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
     from automations.shared.tableau_patchright import download_crosstab_patchright
