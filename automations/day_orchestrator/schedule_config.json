@@ -9462,7 +9462,8 @@
    "after": [
     "vantura_churn"
    ],
-   "timeout_minutes": 20,
+   "timeout_minutes": 45,
+   "_timeout_note": "20 -> 45 on 2026-10-10. One run fills EVERY B2B office (onboarded_offices.json merges in), and each office costs ~3-4 min of Sheet write+format across 3 products. 4 offices = ~15 min (10/1-10/6); 6 offices = 19 min (10/8, barely); 8 offices killed at 20m twice a day 10/9 and 10/10 while still on New INT, AIR never reached. Nothing was hung (log kept advancing; no orphan Chrome). RAISE THIS WHEN AN OFFICE IS ADDED - budget ~4 min per office plus ~5 for the pull.",
    "verify": {
     "type": "manifest",
     "report_id": "att_churn"
