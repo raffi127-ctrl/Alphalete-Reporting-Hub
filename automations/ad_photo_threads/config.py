@@ -473,9 +473,9 @@ SECOND_ROUNDS_OWNER = ""      # set by use(); "" = no 2nd-round lines
 # The ad scorecard (Raf 10/9): "a weekly scorecard maybe on Friday ... as
 # you're testing, posting more frequently so we're going back and forth".
 # Posted after the evening ad threads on these weekdays (0 = Monday) in the
-# office's photos channel, for offices with "scorecard": True. TESTING: every
-# weekday; once Raf likes it -> {4} (Friday). Starts on SCORECARD_FROM.
-SCORECARD_WEEKDAYS = {0, 1, 2, 3, 4}
+# office's photos channel, for offices with "scorecard": True. Raf approved it
+# 10/10 ("This looks great") -> Fridays only. Starts on SCORECARD_FROM.
+SCORECARD_WEEKDAYS = {4}
 SCORECARD_FROM = "2026-10-12"
 # The scorecard tab in the office's `scorecard_book` (ours: rewritten whole).
 SCORECARD_TAB = "Ad Scorecard"
