@@ -30,6 +30,7 @@ from __future__ import annotations  # Lucy 2 runs Python 3.9 — keep lazy
 
 import argparse
 import datetime as dt
+import io
 import json
 import re
 import sys
@@ -272,6 +273,11 @@ def main(argv=None):
     ap.add_argument("--max-pages", type=int, default=250,
                     help="scroll steps; the hub adds ~20 rows a step, so "
                          "1,300 applicants needs ~70")
+    # Accepted and ignored: weekly_run hands every pull --week, and this one
+    # rejecting it killed the 2026-10-10 Saturday run before it opened a
+    # page. The call list is a snapshot of each applicant's CURRENT status
+    # (LM1/LM2/Open...), not a dated log, so there is no week to filter.
+    ap.add_argument("--week", type=int, nargs="?", const=1, default=0)
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
 

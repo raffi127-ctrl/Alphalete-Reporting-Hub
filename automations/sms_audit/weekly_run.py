@@ -55,6 +55,11 @@ def run(module, args):
     tail = [l for l in (r.stdout or "").splitlines() if l.strip()][-2:]
     for l in tail:
         print("      {}".format(l[:150]), flush=True)
+    if r.returncode != 0:
+        # the cause is usually on stderr (argparse, a traceback) — without
+        # this the log says FAILED and nothing about why
+        for l in [l for l in (r.stderr or "").splitlines() if l.strip()][-3:]:
+            print("      ! {}".format(l[:150]), flush=True)
     return r.returncode == 0
 
 
