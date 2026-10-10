@@ -32,3 +32,23 @@ class PostWhenBehindTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OwedHoldsTest(unittest.TestCase):
+    """quantum_fiber's daily hold is the plan, not a miss (Megan 2026-10-10:
+    "this error keeps happening daily and multiple times")."""
+
+    HELD = {"quantum_fiber": "DROP Fri", "nds": "behind"}
+
+    def test_morning_drops_post_when_behind_board(self):
+        from automations.tableau_screenshots import run as run_mod
+        self.assertEqual(run_mod.owed_holds(self.HELD, {}, late_only=False),
+                         {"nds": "behind"})
+
+    def test_late_pass_reports_only_what_it_withheld(self):
+        from automations.tableau_screenshots import run as run_mod
+        # quantum_fiber was sent captioned, so it is no longer in still_behind
+        self.assertEqual(run_mod.owed_holds(self.HELD, {"nds": "behind"},
+                                            late_only=True),
+                         {"nds": "behind"})
+        self.assertEqual(run_mod.owed_holds(self.HELD, {}, late_only=True), {})

@@ -377,7 +377,11 @@ def _hold_stale_boards(today: dt.date, *, dry_run: bool,
             title = (pages_mod.by_id(bid) or {}).get("title") or bid
             print(f"  ⏸ HOLDING {title} — {why}", flush=True)
         print(f"  {handoff}", flush=True)
-        _alert_held(today, held, dry_run=dry_run)
+        # A post_when_behind board (quantum_fiber) is held every morning by
+        # design and always goes out with the catch-up — not news. See owed_holds.
+        alert = owed_holds(held, {}, late_only=False)
+        if alert:
+            _alert_held(today, alert, dry_run=dry_run)
     return held
 
 
@@ -501,6 +505,25 @@ def _alert_held(today: dt.date, held: dict, *, dry_run: bool) -> None:
     except Exception as e:                            # noqa: BLE001
         print(f"  (corrections alert failed: {type(e).__name__}: {str(e)[:120]})",
               flush=True)
+
+
+def owed_holds(held: dict, still_behind: dict, *, late_only: bool) -> dict:
+    """The held boards this run must REPORT as missing — a subset of `held`.
+
+    WHY (Megan 2026-10-10: "this error keeps happening daily and multiple
+    times"). Since quantum_fiber opted into post_when_behind (Eve 2026-10-09)
+    its extract is a day late by design, so the morning hold is the plan, not a
+    miss — yet every morning raised two incidents for it, and every settle pass
+    re-reported it AFTER posting it, because the late path reported this
+    morning's `held` instead of what it actually withheld.
+      morning run  drop boards that opt into post_when_behind: the catch-up
+                   sends them no matter what, captioned.
+      late/settle  only what is STILL withheld (`still_behind`, from which the
+                   post_when_behind boards were already removed and sent)."""
+    if late_only:
+        return {b: r for b, r in held.items() if b in still_behind}
+    from automations.tableau_screenshots import freshness as _fr
+    return {b: r for b, r in held.items() if not _fr.post_when_behind(b)}
 
 
 def withhold_still_behind(selected: list, still_behind: dict) -> list:
@@ -1454,6 +1477,8 @@ def main(argv=None) -> int:
     # match what we posted and print a clean "7 of 7" over a board we deliberately
     # held: exactly the silent pass that let 7/29's stale thread go out.
     total_morning = len([p for p in pages_mod.PAGES if not p.get("late")])
+    # Only what this run actually leaves missing — see owed_holds.
+    held = owed_holds(held, still_behind, late_only=bool(args.late_only))
     held_titles = [(pages_mod.by_id(i) or {}).get("title") or i for i in held]
     # A held board makes the run INCOMPLETE, never FAILED: ok=False + exit 0 is
     # the soft path (Hub flags it, reconcile can self-heal, no 4:31am page), and
