@@ -176,3 +176,102 @@ def has_pct(slot: Optional[dict]) -> bool:
     (0% is DATA: the rep sold but none on AutoPay). Mirrors churn's
     _has_pct visibility rule."""
     return bool(slot and (slot.get("pct") or "").strip())
+
+
+# --- Fallback: owner missing from the Metrics view → the Order Log ------------
+# Some owners exist in the org Order Log but NOT in the Metrics data source (Lala
+# / Lajahnik Valentine, new from Lumen with no captainship: absent from ALLEXP on
+# 2026-10-10, so ABP had nothing to fill). The ORDERLOG ALLREPS view — same ATT
+# TRACKER 2.1 workbook — carries 'Auto Bill Pay' Y/N on every order, so the mix
+# can be rebuilt from it. PROVEN 2026-10-10 against that day's ALLEXP: counting
+# NEW INTERNET orders with an order date Mon→today (every status — cancels
+# included) reproduced Tableau's count AND % for 64/65 offices and 976/977 reps;
+# the one miss was an order placed that morning, past the then-yesterday end date
+# (so this pull ends TODAY). A different window (Sunday start, cancels dropped)
+# matched ≤25/65 — don't "tidy" either rule.
+ORDER_LOG_SHEET = "A.Order Log"
+ORDER_LOG_VIEW_TMPL = (
+    "https://us-east-1.online.tableau.com/#/site/sci/views/"
+    "ATTTRACKER2_1-D2D/ORDERLOG/"
+    "117748c0-9487-45e8-a5d4-c447093718d5/ALLREPS?:iid=1"
+    "&Start%20Date={start}&End%20Date={end}"
+)
+
+
+def owner_in_view(csv_path: Path, owner: Optional[str] = None) -> bool:
+    """True if the Metrics crosstab has ANY row for this owner — the line
+    between 'this office sold nothing' and 'this office isn't in the view'."""
+    owner = (owner or OWNER).upper()
+    with open(csv_path, "r", encoding="utf-16-le") as f:
+        rows = list(csv.reader(f, delimiter="\t"))
+    if not rows:
+        return False
+    header = [h.lstrip("﻿").strip() for h in rows[0]]
+    if OWNER_COL not in header:
+        return False
+    oi = header.index(OWNER_COL)
+    return any(len(r) > oi and r[oi].strip().upper() == owner for r in rows[1:])
+
+
+def fetch_order_log(today, out_path: Optional[Path] = None,
+                    verbose: bool = False) -> Path:
+    """The org-wide Order Log crosstab for this ABP week (Monday → today)."""
+    import datetime as _dt
+    monday = today - _dt.timedelta(days=today.weekday())
+    out_path = out_path or (
+        Path(tempfile.gettempdir()) / "new_internet_abp_order_log.csv")
+    url = ORDER_LOG_VIEW_TMPL.format(start=monday.isoformat(),
+                                     end=today.isoformat())
+    download_crosstab_patchright(url, ORDER_LOG_SHEET, out_path,
+                                 verbose=verbose)
+    return out_path
+
+
+def parse_order_log(csv_path: Path, today, owner: Optional[str] = None) -> dict:
+    """Same shape as parse(), rebuilt from Order Log rows (see the proof above)."""
+    import datetime as _dt
+    owner = (owner or OWNER).upper()
+    monday = today - _dt.timedelta(days=today.weekday())
+    with open(csv_path, "r", encoding="utf-16") as f:
+        lines = list(csv.reader(f, delimiter="\t"))
+    hi = next((i for i, r in enumerate(lines)
+               if any(c.strip().strip('"') == "Owner Name" for c in r)), None)
+    if hi is None:
+        return {"office_total": {}, "reps": {}}
+    header = [c.strip().strip('"').lstrip("﻿") for c in lines[hi]]
+    for col in ("Owner Name", "Rep", "sp.Order Date (copy)",
+                "Product Type (Broken Out)", "Auto Bill Pay"):
+        if col not in header:
+            raise ValueError(f"Column {col!r} missing from Order Log header "
+                             f"{header}. The Tableau view schema changed.")
+    oi, ri = header.index("Owner Name"), header.index("Rep")
+    di = header.index("sp.Order Date (copy)")
+    pti = header.index("Product Type (Broken Out)")
+    ai = header.index("Auto Bill Pay")
+    need = max(oi, ri, di, pti, ai)
+    counts: dict = {}
+    for r in lines[hi + 1:]:
+        if len(r) <= need or r[oi].strip().upper() != owner:
+            continue
+        if r[pti].strip().upper() != "NEW INTERNET":
+            continue
+        try:
+            od = _dt.datetime.strptime(r[di].strip(), "%m/%d/%Y").date()
+        except ValueError:
+            continue
+        if not (monday <= od <= today):
+            continue
+        rep = r[ri].strip()
+        if not rep:
+            continue
+        c = counts.setdefault(rep, [0, 0])
+        c[0] += 1
+        c[1] += r[ai].strip().upper() == "Y"
+
+    def slot(n: int, y: int) -> dict:
+        return {"pct": f"{100.0 * y / n:.1f}%", "num": y, "denom": n}
+
+    reps = {rep: slot(n, y) for rep, (n, y) in counts.items()}
+    tn = sum(n for n, _ in counts.values())
+    ty = sum(y for _, y in counts.values())
+    return {"office_total": slot(tn, ty) if tn else {}, "reps": reps}

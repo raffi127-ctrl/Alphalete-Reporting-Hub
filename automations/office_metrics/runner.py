@@ -1544,7 +1544,16 @@ def main(argv=None, *, office_key: str | None = None) -> int:
     # rendered at all — send_for_office refuses a blank day
     # [[feedback_never_post_blank]].
     email_note = ""
-    if o.emails_only and mode == "live":
+    # A scoped re-run (--only) where every metric failed again rendered NOTHING
+    # new: the owner already has this morning's email, and re-sending it is the
+    # same boards again (Lala got the same 14-board email 3x on 2026-10-10 from
+    # two `--only abp` retries that both failed).
+    _rerun_added_nothing = bool(args.only) and not any(
+        ok for *_x, ok, _ in results)
+    if _rerun_added_nothing and o.emails_only and mode == "live":
+        print("\n  ✉️  not re-sent — this re-run added no new board "
+              "(the owner already has today's email)", flush=True)
+    elif o.emails_only and mode == "live":
         from automations.office_metrics import email_digest as _digest
         try:
             _res = _digest.send_for_office(o, to=review_to or None)

@@ -85,6 +85,13 @@ def main(argv=None) -> int:
         print(f"  ✓ {csv_path}")
 
     parsed = pull.parse(csv_path)
+    if not pull.owner_in_view(csv_path):
+        # Not "sold nothing" — the owner isn't in the Metrics data at all. Rebuild
+        # the same numbers from the Order Log (proof in pull.py, 2026-10-10).
+        print(f"  ↪ {pull.OWNER} isn't in the Metrics view — computing ABP "
+              f"from the Order Log (ALLREPS, Mon→today) instead")
+        ol_path = pull.fetch_order_log(today)
+        parsed = pull.parse_order_log(ol_path, today)
     office = parsed["office_total"]
     reps = parsed["reps"]
     n_data = sum(1 for s in reps.values() if pull.has_pct(s))

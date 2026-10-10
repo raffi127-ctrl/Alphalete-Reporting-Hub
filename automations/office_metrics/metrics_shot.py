@@ -107,6 +107,24 @@ def cached_shot(owner: str) -> Path | None:
     return p if p.exists() and p.stat().st_size > 0 else None
 
 
+def _looks_blank(png: Path) -> bool:
+    """True when the board under the filter row has no data drawn in it.
+
+    A real board has ~10% dark pixels below the filters; an owner missing from
+    the view renders filter captions and white space — 0.000% (measured on all
+    24 shots, 2026-10-10). 0.5% sits far from both."""
+    try:
+        from PIL import Image
+        im = Image.open(png).convert("L")
+    except Exception:  # noqa: BLE001 — can't judge it, don't block on it
+        return False
+    w, h = im.size
+    body = im.crop((0, int(h * 0.18), w, int(h * 0.88)))
+    hist = body.histogram()
+    dark = sum(hist[:200])
+    return dark / max(1, sum(hist)) < 0.005
+
+
 def _slug(owner: str) -> str:
     return owner.lower().replace(" ", "_").replace("/", "-")
 
@@ -247,6 +265,13 @@ def main(argv=None) -> int:
         print(f"✗ no shot produced for {args.owner!r}")
         return 1
     print(f"✓ captured: {png}  ({png.stat().st_size // 1024} KB)", flush=True)
+    if not args.no_filter and _looks_blank(png):
+        # The owner isn't in the Metrics view's "ICD Owner Name (rep)" list, so
+        # the filter lands on "None" and the board renders headers only. That
+        # image went to Lala's inbox on 2026-10-10 [[feedback_never_post_blank]].
+        print(f"✗ the Metrics board is EMPTY for {args.owner!r} — the owner "
+              f"isn't in the view's ICD Owner Name (rep) list; NOT posting")
+        return 1
 
     # Preview DM — image goes to one person, never a channel.
     if args.dm:
