@@ -52,14 +52,27 @@ def ad_row(title: str, pairs: List[tuple], seconds: Optional[list]) -> dict:
 
 def table(history: Dict[str, List[tuple]], titles: Dict[str, str],
           start: dt.date, end: dt.date, seconds: Optional[list]) -> List[dict]:
-    """One row per ad with 1st rounds in [start, end], most people first."""
+    """One row per ad with 1st rounds in [start, end]. Eve 10/9 (to Raf):
+    "sorting them from highest to lowest on 2nd retention" -- best retention
+    first, more people who showed breaking a tie (so 6 of 6 beats 1 of 1), ads
+    with no 2nd rounds yet at the bottom, most people seen first."""
     rows = []
     for key, hist in history.items():
         pairs = [(d, c) for d, c in hist if start <= d <= end]
         if pairs:
             rows.append(ad_row(titles.get(key, key), pairs, seconds))
-    rows.sort(key=lambda r: (-r["seen"], r["title"].lower()))
+    rows.sort(key=_rank)
     return rows
+
+
+def _ret(r: dict) -> Optional[float]:
+    return sr.retention(r["second"]) if r["second"] is not None else None
+
+
+def _rank(r: dict) -> tuple:
+    ret = _ret(r)
+    showed = r["second"]["showed"] if r["second"] is not None else 0
+    return (ret is None, -(ret or 0), -showed, -r["seen"], r["title"].lower())
 
 
 def total_row(history: Dict[str, List[tuple]], start: dt.date, end: dt.date,
@@ -78,7 +91,9 @@ def cells(r: dict) -> List[str]:
         r2 = ["-", "-", "-"]
     else:
         ret = sr.retention(k)
-        r2 = [str(k["scheduled"]), str(k["showed"]),
+        # Only 2nd rounds already marked show / no-show, so sched - showed =
+        # no-shows and the % adds up (the text says "counted through ...").
+        r2 = [str(k["scheduled"] - k["pending"]), str(k["showed"]),
               f"{ret:.0f}%" if ret is not None else "-"]
     return [r["title"], str(r["seen"]), _pct(r["back"], r["seen"]),
             _pct(r["removed"], r["seen"]),
@@ -116,14 +131,30 @@ MUTED = (108, 117, 125)
 HEAD_BG = (31, 58, 96)
 ALT_BG = (244, 247, 251)
 TOTAL_BG = (226, 234, 245)
-GOOD, BAD = (25, 135, 84), (200, 35, 51)
+# Eve 10/9: "a little colour would help identify higher retention %". Each
+# row is tinted by its 2nd retention band, the retention cell carries the
+# band's strong colour, and a legend under the title says what they mean.
+# (band floor, strong cell bg, cell text, light row tint, legend label)
+BANDS = [
+    (70, (30, 132, 73), (255, 255, 255), (226, 244, 232), "70%+"),
+    (50, (130, 201, 146), (20, 70, 35), (240, 249, 242), "50-69%"),
+    (30, (246, 190, 92), (110, 60, 0), (254, 246, 230), "30-49%"),
+    (0, (226, 86, 86), (255, 255, 255), (252, 234, 234), "under 30%"),
+]
+LEGEND_H = 30
+
+
+def band(ret: Optional[float]) -> Optional[tuple]:
+    if ret is None:
+        return None
+    return next(b for b in BANDS if ret >= b[0])
 ROW_H, PAD = 30, 20
 
 
 def render(sections: List[tuple], heading: str, sub: str, out: Path) -> Path:
     """`sections` = [(label, rows, total)]; one table per section."""
     width = sum(w for _, w in COLS) + PAD * 2
-    height = PAD + 40 + 28 + sum(44 + ROW_H * (len(rows) + 2) + 16
+    height = PAD + 40 + 28 + LEGEND_H + sum(44 + ROW_H * (len(rows) + 2) + 16
                                  for _, rows, _ in sections) + PAD
     img = Image.new("RGB", (width, height), "white")
     d = ImageDraw.Draw(img)
@@ -131,6 +162,17 @@ def render(sections: List[tuple], heading: str, sub: str, out: Path) -> Path:
     d.text((PAD, PAD), heading, font=_font(24, True), fill=INK)
     d.text((PAD, PAD + 38), sub, font=_font(14), fill=MUTED)
     y = PAD + 40 + 28
+    lf = _font(14, True)
+    x = PAD
+    d.text((x, y + 4), "2nd retention:", font=lf, fill=INK)
+    x += d.textlength("2nd retention:", font=lf) + 12
+    for _, strong, ink, _, name in BANDS:
+        w = d.textlength(name, font=lf) + 20
+        d.rounded_rectangle([x, y, x + w, y + 24], radius=5, fill=strong)
+        d.text((x + 10, y + 4), name, font=lf, fill=ink)
+        x += w + 8
+    d.text((x + 4, y + 4), "white = no 2nd rounds yet", font=_font(14), fill=MUTED)
+    y += LEGEND_H
     for label, rows, total in sections:
         y += 12
         d.text((PAD, y), label, font=_font(17, True), fill=HEAD_BG)
@@ -144,15 +186,21 @@ def render(sections: List[tuple], heading: str, sub: str, out: Path) -> Path:
         y += ROW_H
         for n, r in enumerate(rows + [total]):
             last = n == len(rows)
-            if last or n % 2:
-                d.rectangle([PAD, y, width - PAD, y + ROW_H],
-                            fill=TOTAL_BG if last else ALT_BG)
+            b = band(_ret(r))
+            if last:
+                d.rectangle([PAD, y, width - PAD, y + ROW_H], fill=TOTAL_BG)
+            elif b:
+                d.rectangle([PAD, y, width - PAD, y + ROW_H], fill=b[3])
+                d.rectangle([PAD, y, PAD + 5, y + ROW_H], fill=b[1])
+            d.line([PAD, y + ROW_H, width - PAD, y + ROW_H], fill=(225, 229, 234))
             x = PAD
             for i, (text, (_, w)) in enumerate(zip(cells(r), COLS)):
                 font = fb if last else f
                 color = INK
-                if i == len(COLS) - 1 and text.endswith("%"):
-                    color = GOOD if float(text[:-1]) >= 50 else BAD
+                if i == len(COLS) - 1 and b:
+                    d.rounded_rectangle([x + 14, y + 3, x + w - 2, y + ROW_H - 3],
+                                        radius=5, fill=b[1])
+                    color, font = b[2], fb
                 if i == 0:
                     d.text((x + 8, y + 7), _fit(d, text, font, w - 16), font=font, fill=color)
                 else:
