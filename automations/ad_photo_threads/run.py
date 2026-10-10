@@ -41,6 +41,8 @@
     # Raf 10/9: the ad scorecard (week + month, one row per ad). No --dm /
     # --channel = just the PNG in output/ad_photo_threads + the text:
     python -m automations.ad_photo_threads.run --office rafael --scorecard --dm U088E2KJEV8
+    # + write it into a tab of his All in One (the nightly does 'Ad Scorecard'):
+    python -m automations.ad_photo_threads.run --office rafael --scorecard --sheet-tab "Ad Scorecard"
 
     # take this report's threads back out of a channel (moving channels):
     python -m automations.ad_photo_threads.run --retire-channel C0AUAS88FGW
@@ -250,6 +252,7 @@ def _nightly_office(o: dict, day: Optional[dt.date], explicit_date: bool) -> Non
     if post.day_done(channel, day):
         if not explicit_date:
             _scorecard_if_due(o, channel, day)
+            _scorecard_sheet_if_due(o, day)
         return
     from automations.ad_photo_threads import weekly
     weekly_layout = weekly.is_weekly(channel)
@@ -274,6 +277,7 @@ def _nightly_office(o: dict, day: Optional[dt.date], explicit_date: bool) -> Non
         post.mark_day_done(channel, day)
         if not explicit_date:
             _scorecard_if_due(o, channel, day)
+            _scorecard_sheet_if_due(o, day)
     try:
         # Weekly: tomorrow's refresh re-reads the whole week, so a late photo
         # gets in on its own -- retry_late would add a daily-style reply.
@@ -307,6 +311,25 @@ def _scorecard_if_due(o: dict, channel: str, day: dt.date) -> None:
         print(f"Scorecard posted ({day}).")
     except Exception as e:                    # noqa: BLE001
         print(f"scorecard failed: {type(e).__name__}: {str(e)[:200]}")
+
+
+def _scorecard_sheet_if_due(o: dict, day: dt.date) -> None:
+    """Raf 10/10: the scorecard as a tab in his All in One (config
+    "scorecard_book" / SCORECARD_TAB), rewritten once every posting night.
+    Not tied to the Slack post's days: the tab is always this week + month."""
+    book = o.get("scorecard_book")
+    if not book:
+        return
+    from automations.ad_photo_threads import config, scorecard
+    if scorecard.sheet_done(book, day):
+        return
+    try:
+        url = scorecard.write_sheet(scorecard.build(day), o["owner"], book,
+                                    config.SCORECARD_TAB)
+        scorecard.mark_sheet_done(book, day)
+        print(f"Scorecard tab written ({day}): {url}")
+    except Exception as e:                    # noqa: BLE001 — retried next tick
+        print(f"scorecard tab failed: {type(e).__name__}: {str(e)[:200]}")
 
 
 def main(argv=None) -> int:
@@ -372,6 +395,9 @@ def main(argv=None) -> int:
     mode.add_argument("--scorecard", action="store_true",
                       help="Raf 10/9: the ad scorecard PNG (week + month). Posts only "
                            "with --dm / --channel; otherwise saves it and prints the text.")
+    ap.add_argument("--sheet-tab", metavar="TAB",
+                    help="With --scorecard: also write it into this tab of the "
+                         "office's scorecard_book (e.g. 'Ad Scorecard').")
     mode.add_argument("--nightly", action="store_true",
                       help="The scheduled tick: post today to the live channel "
                            "once it's past config.POST_AFTER_CT; otherwise no-op.")
@@ -438,6 +464,13 @@ def main(argv=None) -> int:
             msg, png = scorecard.make(day, owner)
             print(msg)
             print("PNG:", png)
+        if a.sheet_tab:
+            book = config.office(a.office or "rafael").get("scorecard_book")
+            if not book:
+                print("This office has no scorecard_book in config.")
+                return 1
+            print("Tab:", scorecard.write_sheet(scorecard.build(day), owner, book,
+                                                a.sheet_tab))
         return 0
     if a.weekly_sample:
         from automations.ad_photo_threads import weekly

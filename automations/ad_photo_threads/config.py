@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import re
 
+from automations.shared.workbooks import ALL_IN_ONE_RAF
+
 # ARS REPORT (5) - R to Z — shared with the runners' Sheets account 2026-09-21.
 SHEET_ID = "16UruNs3bHGJ_pBvmD6T9KEqMAtDNNyuKArA_es6f0LE"
 
@@ -161,6 +163,9 @@ OFFICES = [
         # the ad scorecard post (scorecard.py). Funnel 1 only for now.
         "second_rounds_owner": "Rafael Hidalgo",
         "scorecard": True,
+        # Raf 10/10: the scorecard also as a tab in his "All in One Local
+        # Office - Raf" workbook, rewritten every weekday night.
+        "scorecard_book": ALL_IN_ONE_RAF,
         "sheet_id": SHEET_ID,
         "source_channel": SOURCE_CHANNEL_ID,
         "live_channel": LIVE_CHANNEL_ID,
@@ -472,6 +477,8 @@ SECOND_ROUNDS_OWNER = ""      # set by use(); "" = no 2nd-round lines
 # weekday; once Raf likes it -> {4} (Friday). Starts on SCORECARD_FROM.
 SCORECARD_WEEKDAYS = {0, 1, 2, 3, 4}
 SCORECARD_FROM = "2026-10-12"
+# The scorecard tab in the office's `scorecard_book` (ours: rewritten whole).
+SCORECARD_TAB = "Ad Scorecard"
 
 # One-shot duplicate-thread merges the 30-minute agent runs on the first tick
 # on/after the date (Central) -- off the Mini Control queue and its daily limit.

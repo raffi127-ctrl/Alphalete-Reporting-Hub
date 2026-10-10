@@ -22,6 +22,7 @@ Python 3.9-safe (runs on the mini).
 from __future__ import annotations
 
 import datetime as dt
+import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -34,9 +35,10 @@ from automations.ad_photo_threads import weekly
 REPO = Path(__file__).resolve().parents[2]
 OUT_DIR = REPO / "output" / "ad_photo_threads"
 
-COLS = [("Ad title", 520), ("Seen", 70), ("Invited back", 120), ("Removed", 110),
+# Raf 10/10: "Can we label the ads 1, 2, 3" + "a column for city please".
+COLS = [("#", 40), ("Ad title", 430), ("City", 160), ("Seen", 70), ("Invited back", 120), ("Removed", 110),
         ("Avg stars", 90), ("2nd sched.", 95), ("2nd showed", 100), ("2nd retention", 120)]
-NUM_COLS = len(COLS) - 1
+LEFT = {1, 2}          # title + city read left to right; numbers right-aligned
 
 
 # ---- numbers -----------------------------------------------------------------
@@ -48,6 +50,38 @@ def ad_row(title: str, pairs: List[tuple], seconds: Optional[list]) -> dict:
     return {"title": title, "seen": n, "back": n - removed, "removed": removed,
             "avg": (sum(s["stars"]) / len(s["stars"])) if s["stars"] else None,
             "second": k}
+
+
+# Where the ad runs, as the title spells it at the end:
+#   "AT&T Sales Agent – McKinney TX"                    -> McKinney, TX
+#   "Entry level Sales Manager, Allen, TX"              -> Allen, TX
+#   "Wireless Service Associate - Spanish Required – Mesquite TX (Dallas County)"
+#                                                       -> Mesquite, TX
+#   "Marketing Campaigns - Entry Level at Alphalete Marketing · Dallas-Fort Worth Metroplex"
+#                                                       -> Dallas-Fort Worth
+#   "Event Marketing & Sales Assistant (Spanish Required) – 2 locations" -> 2 locations
+# A city is 1-4 capitalised words after " – " / " - " / ","; a title with
+# no city at its end keeps its whole name and a blank city.
+_CITY_ST = re.compile(
+    r"(?:\s+[–-]\s+|\s*,\s*)"
+    r"([A-Z][A-Za-z.']*(?:[ -][A-Za-z.']+){0,3}),?\s+([A-Z]{2})"
+    r"(?:\s*\([^)]*\)?)?[\s,]*$")
+_CITY_DOT = re.compile(r"\s+·\s+([^·]+?)\s*$")
+_LOCATIONS = re.compile(r"\s+[–-]\s+(\d+\s+locations?)\s*$", re.I)
+
+
+def split_city(title: str) -> tuple:
+    """(title without its city, city) -- city "" when the title names none."""
+    t = (title or "").strip()
+    m = _CITY_ST.search(t)
+    if m and m.start() > 0:
+        return t[:m.start()].rstrip(" ,–-"), f"{m.group(1)}, {m.group(2)}"
+    for rx in (_CITY_DOT, _LOCATIONS):
+        m = rx.search(t)
+        if m and m.start() > 0:
+            return (t[:m.start()].rstrip(" ,–-"),
+                    re.sub(r"\s+metroplex$", "", m.group(1).strip(), flags=re.I))
+    return t, ""
 
 
 def table(history: Dict[str, List[tuple]], titles: Dict[str, str],
@@ -85,7 +119,8 @@ def _pct(k: int, n: int) -> str:
     return f"{k} ({round(100.0 * k / n):.0f}%)" if n else str(k)
 
 
-def cells(r: dict) -> List[str]:
+def cells(r: dict, n: Optional[int] = None) -> List[str]:
+    """One row as shown; `n` = the ad's number in its table (None = TOTAL)."""
     k = r["second"]
     if k is None:
         r2 = ["-", "-", "-"]
@@ -95,7 +130,8 @@ def cells(r: dict) -> List[str]:
         # no-shows and the % adds up (the text says "counted through ...").
         r2 = [str(k["scheduled"] - k["pending"]), str(k["showed"]),
               f"{ret:.0f}%" if ret is not None else "-"]
-    return [r["title"], str(r["seen"]), _pct(r["back"], r["seen"]),
+    title, city = split_city(r["title"]) if n is not None else (r["title"], "")
+    return [str(n) if n is not None else "", title, city, str(r["seen"]), _pct(r["back"], r["seen"]),
             _pct(r["removed"], r["seen"]),
             f"{r['avg']:.1f}" if r["avg"] is not None else "-"] + r2
 
@@ -180,7 +216,7 @@ def render(sections: List[tuple], heading: str, sub: str, out: Path) -> Path:
         x = PAD
         d.rectangle([PAD, y, width - PAD, y + ROW_H], fill=HEAD_BG)
         for i, (name, w) in enumerate(COLS):
-            tx = x + 8 if i == 0 else x + w - 8 - d.textlength(name, font=fb)
+            tx = x + 8 if i in LEFT else x + w - 8 - d.textlength(name, font=fb)
             d.text((tx, y + 7), name, font=fb, fill="white")
             x += w
         y += ROW_H
@@ -194,14 +230,15 @@ def render(sections: List[tuple], heading: str, sub: str, out: Path) -> Path:
                 d.rectangle([PAD, y, PAD + 5, y + ROW_H], fill=b[1])
             d.line([PAD, y + ROW_H, width - PAD, y + ROW_H], fill=(225, 229, 234))
             x = PAD
-            for i, (text, (_, w)) in enumerate(zip(cells(r), COLS)):
+            for i, (text, (_, w)) in enumerate(zip(cells(r, None if last else n + 1),
+                                                   COLS)):
                 font = fb if last else f
                 color = INK
                 if i == len(COLS) - 1 and b:
                     d.rounded_rectangle([x + 14, y + 3, x + w - 2, y + ROW_H - 3],
                                         radius=5, fill=b[1])
                     color, font = b[2], fb
-                if i == 0:
+                if i in LEFT:
                     d.text((x + 8, y + 7), _fit(d, text, font, w - 16), font=font, fill=color)
                 else:
                     d.text((x + w - 8 - d.textlength(text, font=font), y + 7), text,
@@ -261,6 +298,163 @@ def make(day: dt.date, owner: str, out_dir: Path = OUT_DIR, *, cache=None) -> tu
                  f"1st rounds from the interviewers' sheet · 2nd rounds from ApplicantStream",
                  out_dir / f"scorecard_{config.LIVE_CHANNEL_ID}_{day.isoformat()}.png")
     return text(sc, owner), png
+
+
+# ---- the spreadsheet tab ------------------------------------------------------
+# Raf 10/10: "Can we add this in a spreadsheet format to my 'all in one local
+# office' spreadsheet please?" Same two tables as the PNG, in the office's
+# `scorecard_book`, tab config.SCORECARD_TAB. The tab is OURS: every run
+# rewrites it whole (values + colours), so it always shows this week + this
+# month. Numbers go in as numbers and % as real percents, so it sorts/sums.
+SHEET_HEAD = ["#", "Ad title", "City", "Seen", "Invited back", "Invited back %",
+              "Removed", "Removed %", "Avg stars", "2nd sched.", "2nd showed",
+              "2nd retention"]
+_PCT_COLS = (5, 7, 11)
+_SHEET_WIDTHS = [40, 430, 170, 60, 80, 95, 75, 85, 75, 80, 85, 95]
+
+
+def sheet_row(r: dict, n: Optional[int]) -> list:
+    """One row as numbers; `n` = the ad's number (None = TOTAL)."""
+    k = r["second"]
+    title, city = split_city(r["title"]) if n is not None else (r["title"], "")
+    seen = r["seen"]
+    if k is None:
+        r2 = ["", "", ""]
+    else:
+        ret = sr.retention(k)
+        r2 = [k["scheduled"] - k["pending"], k["showed"],
+              round(ret / 100.0, 4) if ret is not None else ""]
+    return [n if n is not None else "", title, city, seen, r["back"],
+            round(r["back"] / seen, 4) if seen else "", r["removed"],
+            round(r["removed"] / seen, 4) if seen else "",
+            round(r["avg"], 1) if r["avg"] is not None else ""] + r2
+
+
+def _rgb(c: tuple) -> dict:
+    return {"red": c[0] / 255.0, "green": c[1] / 255.0, "blue": c[2] / 255.0}
+
+
+def sheet_grid(sc: dict, owner: str) -> tuple:
+    """(rows of values, [(row index, kind, band)]); kind = title / sub /
+    legend / blank / section / head / ad / total. Pure, so it's testable."""
+    day, monday, first = sc["day"], sc["monday"], sc["first"]
+    rows, kinds = [], []
+
+    def add(values, kind, b=None):
+        rows.append(list(values) + [""] * (len(SHEET_HEAD) - len(values)))
+        kinds.append((len(rows) - 1, kind, b))
+
+    add([f"Ad Scorecard · {owner}"], "title")
+    sub = f"Updated {_md(day)} · 1st rounds from the interviewers' sheet"
+    if sc["seconds"] is not None:
+        sub += (f" · 2nd rounds from ApplicantStream, counted through "
+                f"{_md(day - dt.timedelta(days=1))}")
+    add([sub], "sub")
+    add(["", "2nd retention colours:", ""] + [b[4] for b in BANDS]
+        + ["white = no 2nd rounds yet"], "legend")
+    for label, ads, total in (
+            (f"THIS WEEK · {_md(monday)} - {_md(day)} · {len(sc['week'])} ad titles",
+             sc["week"], sc["week_total"]),
+            (f"THIS MONTH · {first:%B} 1 - {day.day} · {len(sc['month'])} ad titles",
+             sc["month"], sc["month_total"])):
+        add([], "blank")
+        add(["", label], "section")
+        add(SHEET_HEAD, "head")
+        for n, r in enumerate(ads, 1):
+            add(sheet_row(r, n), "ad", band(_ret(r)))
+        add(sheet_row(total, None), "total", band(_ret(total)))
+    return rows, kinds
+
+
+def write_sheet(sc: dict, owner: str, book_id: str, tab: str) -> str:
+    """Rewrite `tab` in workbook `book_id` (added as the book's first tab if
+    missing). Returns the tab's URL."""
+    from automations.recruiting_report.fill import open_by_key
+    rows, kinds = sheet_grid(sc, owner)
+    ncol = len(SHEET_HEAD)
+    sh = open_by_key(book_id)
+    try:
+        ws = sh.worksheet(tab)
+    except Exception:                          # noqa: BLE001 — WorksheetNotFound
+        ws = sh.add_worksheet(title=tab, rows=len(rows) + 20, cols=ncol, index=0)
+    if ws.row_count < len(rows) + 5:
+        ws.add_rows(len(rows) + 5 - ws.row_count)
+    if ws.col_count < ncol:
+        ws.add_cols(ncol - ws.col_count)
+    gid = ws.id
+    whole = {"sheetId": gid, "startRowIndex": 0, "endRowIndex": ws.row_count,
+             "startColumnIndex": 0, "endColumnIndex": ws.col_count}
+    reqs = [{"unmergeCells": {"range": whole}},
+            {"repeatCell": {"range": whole, "cell": {"userEnteredFormat": {}},
+                            "fields": "userEnteredFormat"}}]
+
+    def paint(r, fmt, c0=0, c1=ncol):
+        reqs.append({"repeatCell": {
+            "range": {"sheetId": gid, "startRowIndex": r, "endRowIndex": r + 1,
+                      "startColumnIndex": c0, "endColumnIndex": c1},
+            "cell": {"userEnteredFormat": fmt},
+            "fields": "userEnteredFormat(" + ",".join(fmt) + ")"}})
+
+    def strong(r, b, c0, c1):
+        paint(r, {"backgroundColor": _rgb(b[1]), "horizontalAlignment": "CENTER",
+                  "textFormat": {"bold": True, "foregroundColor": _rgb(b[2])}}, c0, c1)
+
+    for r, kind, b in kinds:
+        if kind == "title":
+            paint(r, {"textFormat": {"bold": True, "fontSize": 16,
+                                     "foregroundColor": _rgb(INK)}})
+        elif kind == "sub":
+            paint(r, {"textFormat": {"italic": True, "foregroundColor": _rgb(MUTED)}})
+        elif kind == "legend":
+            paint(r, {"textFormat": {"bold": True}}, 1, 2)
+            for i, bb in enumerate(BANDS):
+                strong(r, bb, 3 + i, 4 + i)
+            paint(r, {"textFormat": {"italic": True, "foregroundColor": _rgb(MUTED)}},
+                  3 + len(BANDS), 4 + len(BANDS))
+        elif kind == "section":
+            paint(r, {"textFormat": {"bold": True, "fontSize": 12,
+                                     "foregroundColor": _rgb(HEAD_BG)}})
+        elif kind == "head":
+            paint(r, {"backgroundColor": _rgb(HEAD_BG), "wrapStrategy": "WRAP",
+                      "verticalAlignment": "MIDDLE", "horizontalAlignment": "CENTER",
+                      "textFormat": {"bold": True, "foregroundColor": _rgb((255, 255, 255))}})
+        elif kind in ("ad", "total"):
+            if kind == "total":
+                paint(r, {"backgroundColor": _rgb(TOTAL_BG), "textFormat": {"bold": True}})
+            elif b:
+                paint(r, {"backgroundColor": _rgb(b[3])})
+                paint(r, {"backgroundColor": _rgb(b[1])}, 0, 1)
+            paint(r, {"horizontalAlignment": "CENTER"}, 0, 1)
+            for c in _PCT_COLS:
+                paint(r, {"numberFormat": {"type": "PERCENT", "pattern": "0%"}}, c, c + 1)
+            paint(r, {"numberFormat": {"type": "NUMBER", "pattern": "0.0"}}, 8, 9)
+            if b:
+                strong(r, b, ncol - 1, ncol)
+                paint(r, {"numberFormat": {"type": "PERCENT", "pattern": "0%"}},
+                      ncol - 1, ncol)
+    for c, w in enumerate(_SHEET_WIDTHS):
+        reqs.append({"updateDimensionProperties": {
+            "range": {"sheetId": gid, "dimension": "COLUMNS",
+                      "startIndex": c, "endIndex": c + 1},
+            "properties": {"pixelSize": w}, "fields": "pixelSize"}})
+    ws.clear()
+    sh.batch_update({"requests": reqs})
+    ws.update(values=rows, range_name="A1", value_input_option="RAW")
+    return f"https://docs.google.com/spreadsheets/d/{book_id}/edit#gid={gid}"
+
+
+def sheet_done(book_id: str, day: dt.date) -> bool:
+    return day.isoformat() in (post._load_state().get("_scorecard_sheets", {})
+                               .get(book_id) or [])
+
+
+def mark_sheet_done(book_id: str, day: dt.date) -> None:
+    state = post._load_state()
+    got = state.setdefault("_scorecard_sheets", {}).setdefault(book_id, [])
+    if day.isoformat() not in got:
+        got.append(day.isoformat())
+        del got[:-14]
+    post._save_state(state)
 
 
 def done(channel: str, day: dt.date) -> bool:
