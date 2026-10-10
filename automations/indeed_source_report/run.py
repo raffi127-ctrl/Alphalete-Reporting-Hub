@@ -217,6 +217,28 @@ def rows_for(manager, period, ads):
     return out
 
 
+# How long the end-of-pass retry waits before asking AppStream again for the
+# offices it turned away (see fetch.AppStreamBusy).
+LATE_RETRY_PAUSE_MS = 180000
+
+
+def _with_late_retry(targets, busy, page, pause_ms=None):
+    """Yield every office, then — once the roster is done — each office that
+    landed in `busy` while it ran, after a pause. `busy` is filled by the loop
+    body as it goes, so the second round sees exactly the offices AppStream
+    refused, and an office refused again on that round is a real FAIL."""
+    for t in targets:
+        yield t
+    if not busy:
+        return
+    pause = LATE_RETRY_PAUSE_MS if pause_ms is None else pause_ms
+    print("  …waiting %ds, then retrying %d office(s) AppStream turned away"
+          % (pause // 1000, len(busy)), flush=True)
+    page.wait_for_timeout(pause)
+    for t in list(busy):
+        yield t
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
@@ -301,7 +323,8 @@ def main(argv=None):
     with appstream_direct_session(headless=not a.headed, verbose=False,
                                   allow_form_login=a.headed) as page:
         tok = fetch.token(page)
-        for oid, name in targets:
+        busy = []                 # offices AppStream turned away — tried again last
+        for oid, name in _with_late_retry(targets, busy, page):
             try:
                 fetch.select_office(page, tok, oid)
                 o_end = end_full if name in FULL_MONTH_MANAGERS else end
@@ -318,6 +341,14 @@ def main(argv=None):
                     flags.append((name, period) + f)
                 print("  OK   %-38s owner=%-22s raw=%-4d ads=%d"
                       % (name, owner[:22], nrows, len(ads)), flush=True)
+            except fetch.AppStreamBusy as e:
+                if (oid, name) not in busy:
+                    busy.append((oid, name))
+                    print("  LATER %-37s %s — trying again at the end"
+                          % (name, _headline(e)[:60]), flush=True)
+                    continue
+                failures.append((oid, name, _headline(e)))
+                print("  FAIL %-38s %s" % (name, _headline(e)[:70]), flush=True)
             except Exception as e:  # noqa: BLE001 — one office must not kill the run
                 failures.append((oid, name, _headline(e)))
                 print("  FAIL %-38s %s" % (name, _headline(e)[:70]), flush=True)

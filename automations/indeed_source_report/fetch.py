@@ -166,6 +166,33 @@ def _wait_for_table(page, timeout, poll=2000):
     return last
 
 
+# APPSTREAM'S OWN ERROR PAGE, NOT OURS (2026-10-10). The 10-09 five-minute wait
+# did its job — and showed the 1 AM miss was never a slow table. On Rafael
+# Hidalgo (11280) AppStream answers the post with "The request can not be
+# processed! ... Please try again later", both attempts, 2.5s apart. It is
+# overnight-only (1 AM failed or needed a retry on 10-05/07/08/09/10; 1 PM never
+# has) and his report is the biggest on the roster: their server gives up on it
+# under night load. Retrying 2.5s later just asks again into the same load, so
+# this error gets its own exception: the retry below waits a minute, and run.py
+# gives every office that hit it one more try at the END of the pass.
+BUSY_TEXT = "the request can not be processed"
+BUSY_PAUSE_MS = 60000
+
+
+class AppStreamBusy(RuntimeError):
+    """AppStream returned its 'request can not be processed' page."""
+
+
+def _no_table_error(page):
+    """Log what the page showed and return the right exception for it."""
+    says = _page_says(page)
+    print("     no table — %s" % says, flush=True)
+    if BUSY_TEXT in says.lower():
+        return AppStreamBusy("AppStream answered with its own error page "
+                             "(\"The request can not be processed\")")
+    return RuntimeError("no Source Report table came back")
+
+
 # Group the report by Original Subject as well (Carlos 2026-10-02): subjects
 # carry the posting's location, so same-title ads in different cities stay
 # separate rows — "once the location changes it's a new ad". Off by default;
@@ -218,8 +245,7 @@ def _one_pass(page, tok, start, end, timeout):
         if rows > n and "Email Subject" in (t.inner_text() or ""):
             best, n = t, rows
     if best is None:
-        print("     no table — %s" % _page_says(page), flush=True)
-        raise RuntimeError("no Source Report table came back")
+        raise _no_table_error(page)
     return "<table>" + best.inner_html() + "</table>", owner, n
 
 
@@ -242,5 +268,6 @@ def source_report(page, tok, start, end, timeout=120000, attempts=2):
             if i + 1 < attempts:
                 print("     retry %d/%d after: %s"
                       % (i + 1, attempts - 1, str(e).splitlines()[0][:90]), flush=True)
-                page.wait_for_timeout(2500)
+                page.wait_for_timeout(
+                    BUSY_PAUSE_MS if isinstance(e, AppStreamBusy) else 2500)
     raise last
