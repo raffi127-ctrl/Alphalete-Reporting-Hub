@@ -77,8 +77,8 @@ def main(argv=None) -> int:
         print("[watchdog] outside selling hours — nothing to check")
         return 0
     # Don't cry at 10:01 because the first sweep of the day hasn't landed yet.
-    start = now.replace(hour=C.DAY_START_HHMM[0], minute=C.DAY_START_HHMM[1],
-                        second=0, microsecond=0)
+    sh, sm = C.day_start(now.weekday())
+    start = now.replace(hour=sh, minute=sm, second=0, microsecond=0)
     if (now - start).total_seconds() / 60.0 < STALE_MINUTES:
         print("[watchdog] day just started — too early to judge")
         return 0

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Alphalete Sales Board — SaraPlus sweep every 5 minutes of the selling day
-# (every day 12:00-23:59, Megan 2026-09-22),
+# (every day 12:00-23:59, Megan 2026-09-22; Saturday from 10:30, Raf 2026-10-10),
 # on LUCY 1 via launchd (com.alphalete.alphalete-sales-board).
 #
 #   bash deploy/alphalete_sales_board_5min.sh              # PREVIEW, writes nothing
@@ -23,6 +23,14 @@ cd "$(dirname "$0")/.." || exit 1
 
 HOUR=$(date +%H)
 HOUR=${HOUR#0}
+HHMM=$(date +%H%M)
+DOW=$(date +%u)          # 1=Mon .. 6=Sat 7=Sun
+# Mirrors config.DAY_START_HHMM / DAY_START_BY_WEEKDAY -- test_window pins
+# that these two numbers match config. SATURDAY STARTS AT 10:30 (Raf
+# 2026-10-10); every other day at noon.
+START=1200
+SAT_START=1030
+[ "$DOW" -eq 6 ] && START=$SAT_START
 # Mirrors config.in_selling_window: NOON TO MIDNIGHT, EVERY DAY (Megan
 # 2026-09-22 -- apps entered after the old 21:30 / Sat 17:00 stop never reached
 # the board, and Sunday never ran at all). Kept in bash as well so an
@@ -32,7 +40,8 @@ HOUR=${HOUR#0}
 #
 # THE 2AM REFRESH (Megan 2026-09-22): for one hour before dawn every tick runs
 # the previous-day top-up only. Must match config.REFRESH_HOUR.
-if [ "$HOUR" -eq 2 ]; then set -- --refresh "$@"; else [ "$HOUR" -lt 12 ] && exit 0; fi
+# 10#: a leading-zero HHMM like 0959 would otherwise read as octal.
+if [ "$HOUR" -eq 2 ]; then set -- --refresh "$@"; else [ $((10#$HHMM)) -lt "$START" ] && exit 0; fi
 
 VENV_PY=".venv/bin/python"
 [ -x "$VENV_PY" ] || VENV_PY="python3"

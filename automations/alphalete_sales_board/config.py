@@ -19,7 +19,7 @@ import datetime as dt
 import json
 import os
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 # --- SaraPlus ---------------------------------------------------------------
 LOGIN_URL = "https://ui.saraplus.com"
@@ -173,6 +173,18 @@ LVL1_WINDOW_MINUTES = 60
 # and every hour cut off the front saves 12 logins and browser launches on
 # Lucy 1. Move this if the field starts earlier; nothing else depends on it.
 DAY_START_HHMM = (12, 0)
+# SATURDAY STARTS AT 10:30 (Raf 2026-10-10: "Start it at 10:30 on Saturday").
+# The field is out from ~10:45 on Saturdays (gap_alerts' own Saturday start),
+# and on 10/10 six reps had sold and fourteen had run credit checks before the
+# noon sweep -- all of it read as the day's baseline, so none of it reached
+# Slack. Other days keep noon. deploy/alphalete_sales_board_5min.sh carries
+# the SAME times (START / SAT_START) and test_window pins that they agree.
+DAY_START_BY_WEEKDAY = {5: (10, 30)}
+
+
+def day_start(weekday: int) -> Tuple[int, int]:
+    """(hour, minute) the sweep starts on this weekday (Mon=0)."""
+    return DAY_START_BY_WEEKDAY.get(weekday, DAY_START_HHMM)
 
 # EVERY DAY RUNS TO MIDNIGHT (Rafael 2026-09-22: "Reminder of Sara+ checking
 # all night. Today theirs 8 apps missing that were done after Sara+ stopped
@@ -227,8 +239,8 @@ def in_selling_window(now: Optional[dt.datetime] = None) -> bool:
     now = now or dt.datetime.now()
     if now.weekday() not in WEEKDAYS:
         return False
-    start = now.replace(hour=DAY_START_HHMM[0], minute=DAY_START_HHMM[1],
-                        second=0, microsecond=0)
+    sh, sm = day_start(now.weekday())
+    start = now.replace(hour=sh, minute=sm, second=0, microsecond=0)
     end = now.replace(hour=DAY_END_HHMM[0], minute=DAY_END_HHMM[1],
                       second=0, microsecond=0)
     return start <= now <= end

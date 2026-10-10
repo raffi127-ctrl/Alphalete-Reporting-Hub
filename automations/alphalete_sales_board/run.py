@@ -514,7 +514,9 @@ def sweep(day: dt.date, *, apply_writes: bool, send: bool,
     # hours ago. So the first sweep of a day SETTLES rather than celebrates: one
     # leaderboard with the true picture, no flames, no per-sale hype, no credit
     # -check pings. From the next sweep on, deltas mean what they say.
-    baseline = not (data.get(day.isoformat()) or {})
+    # ONCE a day: S.day_started counts credit checks and empty sweeps too, so
+    # an early credit check or the day's first sale is never a second baseline.
+    baseline = not S.day_started(data, day)
     if baseline and (gained or rec_gained):
         _log("BASELINE pass (no state for %s yet): sending the standings once, "
              "with no per-sale hype for %d rep(s) and no credit-check pings for "
@@ -839,8 +841,9 @@ def main(argv=None) -> int:
     # drifting apart again (it once bought back Saturday's 5:30-6:30 snapshots
     # when the board's sweep stopped at 17:00).
     if not args.force and not C.in_selling_window() and not times_label:
-        _log("outside the selling day (%s-%s, every day) -- nothing to do"
-             % ("%02d:%02d" % C.DAY_START_HHMM, "%02d:%02d" % C.DAY_END_HHMM))
+        _log("outside the selling day (%s-%s today) -- nothing to do"
+             % ("%02d:%02d" % C.day_start(dt.date.today().weekday()),
+                "%02d:%02d" % C.DAY_END_HHMM))
         return 0
     if times_label and not C.in_selling_window():
         _log("outside the sweep window, but %s is a Times of Sales slot "

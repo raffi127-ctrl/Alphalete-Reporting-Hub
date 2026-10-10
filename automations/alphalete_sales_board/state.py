@@ -64,7 +64,7 @@ def prune(data: Dict, keep: int = KEEP_DAYS) -> Dict:
     # this report on 2026-08-26, more than any other report on the Hub, all of
     # them the same first-sweep-of-the-day row over and over.
     for section in ("_records", "_lvl1_sent", "_added", "_times_sent",
-                    "_hub", "_catchup", "_guest_sales"):
+                    "_hub", "_catchup", "_guest_sales", "_started"):
         sub = data.get(section) or {}
         keys = sorted(sub)[-keep:]
         if keys:
@@ -115,7 +115,25 @@ def remember(data: Dict, day: dt.date, current: Dict[str, Dict[str, int]],
     for rep, n in records.items():
         recs[rep] = max(int(n), int(recs.get(rep, 0)))
     data.setdefault("_records", {})[key] = recs
+    data.setdefault("_started", {})[key] = True
     return data
+
+
+def day_started(data: Dict, day: dt.date) -> bool:
+    """True once ANY sweep has settled this day -- so the baseline pass runs
+    once a day, not once per sweep until the first sale.
+
+    Until 2026-10-10 the test was "are there sales stored for today", and
+    credit checks live under '_records', so they never counted: every sweep
+    before the day's first sale was another baseline, swallowing each early
+    credit-check ping AND the first sale's hype (10/8: four baselines,
+    12:01-13:35). Now remember() stamps '_started' on every applied sweep,
+    even an empty one. Sales or credit checks already on file count too, so
+    a state file written before the marker existed is not re-baselined."""
+    key = day.isoformat()
+    return bool((data.get("_started") or {}).get(key)
+                or data.get(key)
+                or (data.get("_records") or {}).get(key))
 
 
 def lvl1_sent(data: Dict, day: dt.date) -> bool:
