@@ -301,6 +301,16 @@ def read_tabs(sh, cache: Optional[dict] = None) -> Dict[str, List[Dict[str, str]
     return tabs
 
 
+def make_book(tabs: Dict[str, List[Dict[str, str]]], day: dt.date) -> TitleBook:
+    """The ads as of `day`: every title typed in the last TITLE_LOOKBACK_DAYS."""
+    since = day - dt.timedelta(days=config.TITLE_LOOKBACK_DAYS)
+    return TitleBook(
+        (r[config.COL_TITLE] for rows in tabs.values() for r in rows
+         if (_parse_date(r[config.COL_DATE]) or dt.date.min) >= since),
+        aliases=getattr(config, "TITLE_ALIASES", None),
+        only=getattr(config, "TITLE_ONLY", None))
+
+
 def build(day: dt.date, *, sh=None, cl=None, cache: Optional[dict] = None) -> DayReport:
     from automations.recruiting_report.fill import open_by_key
     if cache is not None and "_tabs" in cache:
@@ -313,12 +323,7 @@ def build(day: dt.date, *, sh=None, cl=None, cache: Optional[dict] = None) -> Da
     tabs = read_tabs(sh, cache)
     have = set(tabs)
     sources = [s for s in config.SOURCES if s["tab"] in have]
-    since = day - dt.timedelta(days=config.TITLE_LOOKBACK_DAYS)
-    book = TitleBook(
-        (r[config.COL_TITLE] for rows in tabs.values() for r in rows
-         if (_parse_date(r[config.COL_DATE]) or dt.date.min) >= since),
-        aliases=getattr(config, "TITLE_ALIASES", None),
-        only=getattr(config, "TITLE_ONLY", None))
+    book = make_book(tabs, day)
     rep = DayReport(day=day, book=book)
     rep.missing_tabs = [s["label"] for s in config.SOURCES if s["tab"] not in have]
 

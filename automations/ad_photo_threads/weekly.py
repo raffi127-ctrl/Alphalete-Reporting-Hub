@@ -36,6 +36,7 @@ import tempfile
 from typing import Dict, List, Optional
 
 from automations.ad_photo_threads import collect, config, post
+from automations.ad_photo_threads import second_rounds as sr
 
 DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
              "Saturday", "Sunday"]
@@ -70,7 +71,7 @@ def declined(c: collect.Candidate) -> bool:
     return "declin" in (c.qualify or "").lower()
 
 
-def stats_text(cands: List[collect.Candidate]) -> str:
+def stats_text(cands: List[collect.Candidate], second: Optional[dict] = None) -> str:
     """The numbers under the photos. ✅ = invited back to the 2nd round; ❌ is
     split into DQ and Declined (Maddie 10/5: "if there are a lot of removals
     we can see if there's more DQ's or more Declines")."""
@@ -86,15 +87,92 @@ def stats_text(cands: List[collect.Candidate]) -> str:
              f"      • Declined: *{dec}*"]
     if s["stars"]:
         lines.append(f"⭐ Avg rating: *{sum(s['stars']) / len(s['stars']):.1f}*")
+    if second is not None:
+        lines += sr.lines(second)
     return "\n".join(lines)
 
 
-def totals_text(history: List[tuple]) -> str:
+def totals_text(history: List[tuple], seconds: Optional[list] = None) -> str:
     """Carlos 10/5: right under the week, "Total Stats for this AD" -- every
     week of the thread together. `history` is [(day, candidate)]."""
     first = min(d for d, _ in history)
+    second = sr.counts(history, seconds) if seconds is not None else None
     return (f"*Total stats for this ad* _(since {first.month}/{first.day})_\n"
-            + stats_text([c for _, c in history]))
+            + stats_text([c for _, c in history], second))
+
+
+# ---- 2nd rounds (Raf 10/9) ---------------------------------------------------
+def load_seconds() -> Optional[list]:
+    """The office's 2nd rounds, or None when the office doesn't show them
+    (config "second_rounds_owner"). A failed read costs the lines, never
+    the post."""
+    if not config.SECOND_ROUNDS_OWNER:
+        return None
+    try:
+        return sr.load(config.SECOND_ROUNDS_OWNER)
+    except Exception as e:                       # noqa: BLE001
+        print(f"  2nd rounds not read: {type(e).__name__}: {str(e)[:160]}")
+        return None
+
+
+def week_pairs(history: List[tuple], monday: dt.date) -> List[tuple]:
+    sunday = monday + dt.timedelta(days=6)
+    return [(d, c) for d, c in history if monday <= d <= sunday]
+
+
+_R2_PREFIXES = ("📅 2nd round", "🙋 2nd round", "📈 2nd round")
+_TOTALS = "\n\n*Total stats for this ad*"
+
+
+def swap_seconds(text: str, week: dict, total: Optional[dict]) -> str:
+    """The posted week-stats message with its 2nd-round lines redone (added
+    if it had none). Everything else stays as posted."""
+    def redo(part: str, k: Optional[dict]) -> str:
+        keep = [ln for ln in part.split("\n") if not ln.startswith(_R2_PREFIXES)]
+        return "\n".join(keep + (sr.lines(k) if k is not None else []))
+    head, sep, tail = text.partition(_TOTALS)
+    out = redo(head, week)
+    if sep:
+        out += sep + redo(tail, total)
+    return out
+
+
+def refresh_seconds(channel: str, threads: Dict[str, str], day: dt.date,
+                    history: Dict[str, List[tuple]], seconds: list, *, cl=None,
+                    weeks: int = 2) -> int:
+    """2nd rounds land days after the 1st round, so a block nobody touched
+    tonight still has numbers to move: this week's and last week's stats
+    message in every thread gets its 2nd-round lines edited in place
+    (chat_update, no re-post). Returns how many messages changed."""
+    cl = cl or collect._client()
+    me = cl.auth_test()["user_id"]
+    mondays = [post.week_monday(day) - dt.timedelta(days=7 * i) for i in range(weeks)]
+    changed = 0
+    for key, ts in threads.items():
+        hist = history.get(key) or []
+        todo = [m for m in mondays if week_pairs(hist, m)]
+        if not todo:
+            continue
+        total = sr.counts(hist, seconds)
+        try:
+            msgs = _lucy_replies(cl, channel, ts, me)
+        except Exception as e:                   # noqa: BLE001
+            print(f"  2nd rounds: thread {ts} not read: {str(e)[:120]}")
+            continue
+        for monday in todo:
+            tag = week_tag(monday)
+            for m in msgs:
+                text = m.get("text") or ""
+                if not (text.startswith("*Week") and _tagged(text.split("\n", 1)[0], tag)):
+                    continue
+                new = swap_seconds(text, sr.counts(week_pairs(hist, monday), seconds), total)
+                if new != text:
+                    try:
+                        cl.chat_update(channel=channel, ts=m["ts"], text=new)
+                        changed += 1
+                    except Exception as e:       # noqa: BLE001
+                        print(f"  2nd rounds: {ts}/{m['ts']} not edited: {str(e)[:120]}")
+    return changed
 
 
 def ad_history(book, since: dt.date, through: dt.date, sh=None,
@@ -295,6 +373,7 @@ def publish_week(reports: List[collect.DayReport], channel: str, *, cl=None,
     if history is None:
         history = ad_history(reports[-1].book,
                              dt.date.fromisoformat(config.THREADS_SINCE), through)
+    seconds = load_seconds()
 
     for item in items:
         ts = threads.get(item["key"])
@@ -334,9 +413,11 @@ def publish_week(reports: List[collect.DayReport], channel: str, *, cl=None,
             counts["photos"] += len(uploads)
         # One message, so the week's tag (in the first line) takes the
         # totals down with it on tomorrow's refresh.
-        stats = stats_header(monday, through) + "\n" + stats_text(item["cands"])
-        if history.get(item["key"]):
-            stats += "\n\n" + totals_text(history[item["key"]])
+        hist = history.get(item["key"]) or []
+        second = sr.counts(week_pairs(hist, monday), seconds) if seconds is not None else None
+        stats = stats_header(monday, through) + "\n" + stats_text(item["cands"], second)
+        if hist:
+            stats += "\n\n" + totals_text(hist, seconds)
         cl.chat_postMessage(channel=channel, thread_ts=ts, text=stats)
         counts["blocks"] += 1
         if on_done is not None:
@@ -426,12 +507,19 @@ def publish_nightly(day: dt.date, channel: str, *, cl=None, build=None,
         return (item["key"] in threads
                 and (ad.get("week_sig") or {}).get(week) == signature(item["cands"]))
 
+    history = ad_history(reports[-1].book, since, day, cache=cache)
     got = publish_week(reports, channel, cl=cl, threads=threads, crop=crop,
-                       history=ad_history(reports[-1].book, since, day, cache=cache),
-                       skip=unchanged, title_header=True,
+                       history=history, skip=unchanged, title_header=True,
                        on_done=_recorder(channel, monday, cl, out))
     for k in ("threads_new", "blocks", "cleared", "photos"):
         out[k] += got[k]
+    seconds = load_seconds()
+    if seconds is not None:
+        try:
+            out["seconds_edited"] = refresh_seconds(channel, threads, day, history,
+                                                    seconds, cl=cl)
+        except Exception as e:                   # noqa: BLE001 — never costs the post
+            print(f"  2nd-round refresh failed: {type(e).__name__}: {str(e)[:160]}")
     return out
 
 

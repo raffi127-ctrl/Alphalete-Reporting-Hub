@@ -156,6 +156,11 @@ OFFICES = [
         "owner": "Rafael Hidalgo",
         "tz": "America/Chicago",
         "live": True,
+        # Raf 10/9: 2nd round scheduled / showed / retention under each ad
+        # (AppStream owner name in the tracker's 2R tab; second_rounds.py) and
+        # the ad scorecard post (scorecard.py). Funnel 1 only for now.
+        "second_rounds_owner": "Rafael Hidalgo",
+        "scorecard": True,
         "sheet_id": SHEET_ID,
         "source_channel": SOURCE_CHANNEL_ID,
         "live_channel": LIVE_CHANNEL_ID,
@@ -458,6 +463,15 @@ def office_zone(o: dict) -> str:
 
 TITLE_ALIASES: dict = {}
 TITLE_ONLY: dict = {}
+SECOND_ROUNDS_OWNER = ""      # set by use(); "" = no 2nd-round lines
+
+# The ad scorecard (Raf 10/9): "a weekly scorecard maybe on Friday ... as
+# you're testing, posting more frequently so we're going back and forth".
+# Posted after the evening ad threads on these weekdays (0 = Monday) in the
+# office's photos channel, for offices with "scorecard": True. TESTING: every
+# weekday; once Raf likes it -> {4} (Friday). Starts on SCORECARD_FROM.
+SCORECARD_WEEKDAYS = {0, 1, 2, 3, 4}
+SCORECARD_FROM = "2026-10-12"
 
 # One-shot duplicate-thread merges the 30-minute agent runs on the first tick
 # on/after the date (Central) -- off the Mini Control queue and its daily limit.
@@ -474,7 +488,8 @@ SCHEDULED_MERGES = {
 def use(o: dict) -> None:
     """Point this module's globals at office `o` for the rest of the pass."""
     global SHEET_ID, SOURCE_CHANNEL_ID, LIVE_CHANNEL_ID, NIGHTLY_PAUSED_BEFORE, SOURCES
-    global TITLE_ALIASES, TITLE_ONLY
+    global TITLE_ALIASES, TITLE_ONLY, SECOND_ROUNDS_OWNER
+    SECOND_ROUNDS_OWNER = o.get("second_rounds_owner") or ""
     TITLE_ALIASES = o.get("title_aliases") or {}
     TITLE_ONLY = o.get("title_only") or {}
     SHEET_ID = o["sheet_id"]

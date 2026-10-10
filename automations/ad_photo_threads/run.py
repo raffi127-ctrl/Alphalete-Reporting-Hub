@@ -38,6 +38,10 @@
     # (default today), --since = first day (default the channel's first):
     python -m automations.ad_photo_threads.run --office carlos --redo-weekly
 
+    # Raf 10/9: the ad scorecard (week + month, one row per ad). No --dm /
+    # --channel = just the PNG in output/ad_photo_threads + the text:
+    python -m automations.ad_photo_threads.run --office rafael --scorecard --dm U088E2KJEV8
+
     # take this report's threads back out of a channel (moving channels):
     python -m automations.ad_photo_threads.run --retire-channel C0AUAS88FGW
 
@@ -244,6 +248,8 @@ def _nightly_office(o: dict, day: Optional[dt.date], explicit_date: bool) -> Non
     config.use(o)
     channel = config.LIVE_CHANNEL_ID
     if post.day_done(channel, day):
+        if not explicit_date:
+            _scorecard_if_due(o, channel, day)
         return
     from automations.ad_photo_threads import weekly
     weekly_layout = weekly.is_weekly(channel)
@@ -266,6 +272,8 @@ def _nightly_office(o: dict, day: Optional[dt.date], explicit_date: bool) -> Non
     # (interviewers late to log) gets re-read on the next tick.
     if rep.candidates:
         post.mark_day_done(channel, day)
+        if not explicit_date:
+            _scorecard_if_due(o, channel, day)
     try:
         # Weekly: tomorrow's refresh re-reads the whole week, so a late photo
         # gets in on its own -- retry_late would add a daily-style reply.
@@ -285,6 +293,20 @@ def _nightly_office(o: dict, day: Optional[dt.date], explicit_date: bool) -> Non
             print("Pins: +%d / -%d" % (len(r["pinned"]), len(r["unpinned"])))
     except Exception as e:                    # noqa: BLE001 — never costs the post
         print(f"pin reconcile failed: {type(e).__name__}: {str(e)[:160]}")
+
+
+def _scorecard_if_due(o: dict, channel: str, day: dt.date) -> None:
+    """Raf 10/9: the ad scorecard, after the evening threads (config
+    SCORECARD_WEEKDAYS). Once per day; a failure is retried on the next tick
+    and never costs the threads."""
+    from automations.ad_photo_threads import scorecard
+    if not scorecard.due(o, day) or scorecard.done(channel, day):
+        return
+    try:
+        scorecard.publish(day, channel, o["owner"])
+        print(f"Scorecard posted ({day}).")
+    except Exception as e:                    # noqa: BLE001
+        print(f"scorecard failed: {type(e).__name__}: {str(e)[:200]}")
 
 
 def main(argv=None) -> int:
@@ -347,6 +369,9 @@ def main(argv=None) -> int:
                            "= first day. The nightly goes weekly for that channel after.")
     ap.add_argument("--since", help="With --redo-weekly: first day YYYY-MM-DD "
                                     "(default: the channel's first posted day).")
+    mode.add_argument("--scorecard", action="store_true",
+                      help="Raf 10/9: the ad scorecard PNG (week + month). Posts only "
+                           "with --dm / --channel; otherwise saves it and prints the text.")
     mode.add_argument("--nightly", action="store_true",
                       help="The scheduled tick: post today to the live channel "
                            "once it's past config.POST_AFTER_CT; otherwise no-op.")
@@ -402,6 +427,18 @@ def main(argv=None) -> int:
     config.use(config.office(a.office or "rafael"))
     day = dt.date.fromisoformat(a.date) if a.date else collect.central_today()
 
+    if a.scorecard:
+        from automations.ad_photo_threads import scorecard
+        owner = config.office(a.office or "rafael")["owner"]
+        if a.dm or a.channel:
+            channel = a.channel or collect._client().conversations_open(
+                users=a.dm)["channel"]["id"]
+            print("Scorecard posted:", scorecard.publish(day, channel, owner, record=False))
+        else:
+            msg, png = scorecard.make(day, owner)
+            print(msg)
+            print("PNG:", png)
+        return 0
     if a.weekly_sample:
         from automations.ad_photo_threads import weekly
         mondays = [dt.date.fromisoformat(m.strip())
