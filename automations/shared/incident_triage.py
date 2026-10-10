@@ -525,6 +525,31 @@ _CUSTOM_KEYS: Dict[str, Tuple[str, str]] = {
         "above (add `--skip-call-list` if its Call List already landed)"),
 }
 
+# REPORTS ON THEIR OWN LAUNCHAGENT THAT AREN'T IN THE SCHEDULE AT ALL.
+#
+# A shell wrapper can publish a run (hub_publish) without a schedule_config
+# entry, so its `failure-` key took the unknown-id branch and promised a retry.
+# 2026-10-10: the 1am recruiting_chain failed on one Indeed office and got
+# "Lucy has this … re-runs it about every 25 minutes until noon". Nothing re-ran
+# it — the orchestrator's loop only retries schedule entries, and the chain's
+# next pass is the 1pm refresh. So an unscheduled `failure-` id now answers
+# "nothing re-runs it" UNLESS it is listed here as firing again on its own
+# through the morning (checked against the plists 2026-10-10).
+_UNSCHEDULED_RERUNS = frozenset({
+    "bg_check_sync",   # com.alphalete.bg-check-sync: every hour 08:00-21:00
+    "headshots",       # com.alphalete.headshots-tick: every 5 minutes
+})
+
+# …and what to tell people for the ones that don't. `lucy rerun <id>` would
+# error on these (registry.resolve_report knows only schedule keys), so the
+# line points at the card's own re-run button unless a better route is named.
+_UNSCHEDULED_FIX: Dict[str, str] = {
+    "recruiting_chain": (
+        "Nothing re-runs it before 1 PM. The 1 PM refresh redoes Indeed + Ad "
+        "Sales only — if Funnel Board is the step that failed, re-run it from "
+        "the Funnel Board card."),
+}
+
 
 def schedule_key(rid: str) -> Optional[str]:
     """The schedule_config key `rid` names, whatever spelling it arrives in, or
@@ -541,7 +566,7 @@ def schedule_key(rid: str) -> Optional[str]:
 
 
 def reruns_itself(rid: str, *, partial: bool = False,
-                  held: bool = True) -> bool:
+                  held: bool = True, failed: bool = False) -> bool:
     """Will anything re-run `rid` today without a person asking?
 
     `partial` is the `drop-` case — the report ran and MISSED a part, so it is
@@ -554,9 +579,16 @@ def reruns_itself(rid: str, *, partial: bool = False,
     Unknown ids (a `drop-` key naming a source, a manifest id) answer True: this
     only ever DOWNGRADES a promise, and inventing work for an id we can't even
     find in the schedule is the more expensive mistake.
+
+    EXCEPT a `failure-` key (`failed`): that id DID close a run of its own, so it
+    is a report — one on its own LaunchAgent, which the orchestrator's loop never
+    retries. See _UNSCHEDULED_RERUNS.
     """
     r = _reports().get(schedule_key(rid) or rid)
     if not isinstance(r, dict):
+        if failed:
+            return inc._canon(rid) in {inc._canon(x)
+                                       for x in _UNSCHEDULED_RERUNS}
         return True
     if r.get("source_type") == "tableau":
         return True
@@ -795,8 +827,14 @@ def _if_it_reruns(key: str, rid: str, bucket: str, reason: str) -> Verdict:
     and for a report the orchestrator never retries, walking away IS the outage.
     """
     if reruns_itself(rid, partial=key.startswith("drop-"),
-                     held=(bucket == WAITING)):
+                     held=(bucket == WAITING),
+                     failed=key.startswith("failure-")):
         return Verdict(key, bucket, reason)
+    if rid not in _CUSTOM_KEYS and not schedule_key(rid):
+        fix = _UNSCHEDULED_FIX.get(rid, "Nothing re-runs it on its own — "
+                                        "re-run it from its Hub card.")
+        return Verdict(key, NEEDS_YOU, reason,
+                       line="*Needs one of you.* {} {}".format(reason, fix))
     # The command has to carry the SCHEDULE key: `lucy rerun` resolves its
     # argument by exact dict lookup (registry.resolve_report), so the dashed
     # manifest id off a `drop-` key comes back "unknown report_id". A line that

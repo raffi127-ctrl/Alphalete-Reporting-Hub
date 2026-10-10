@@ -17,7 +17,11 @@ DAY = dt.date(2026, 8, 26)
 
 def _classify(key="failure-x", tail="", opened=DAY.isoformat(), repeats=0,
               hour=6, needs_human=False):
-    with mock.patch.object(tri, "_log_tail", return_value=tail.lower()):
+    # `x` stands in for a report something DOES re-run — the bucket tests are
+    # about the tail and the clock, not whether a rerun path exists.
+    with mock.patch.object(tri, "_log_tail", return_value=tail.lower()), \
+         mock.patch.object(tri, "_UNSCHEDULED_RERUNS",
+                           tri._UNSCHEDULED_RERUNS | {"x"}):
         return tri.classify(key, day=DAY, opened=opened, repeats=repeats,
                             now_hour=hour, needs_human=needs_human)
 
@@ -219,6 +223,30 @@ class NobodyIsComingBackForIt(unittest.TestCase):
         """A `drop-` key can name a SOURCE. Inventing a rerun command for it is
         worse than the promise we're removing."""
         v = self._with({}, key="drop-box-order-log", tail="connection reset")
+        self.assertEqual(v.bucket, tri.LUCY)
+
+    def test_an_unscheduled_wrapper_that_failed_is_yours(self):
+        """2026-10-10: recruiting_chain (its own LaunchAgent, no schedule entry)
+        failed at 1am and got "Lucy has this … re-runs it about every 25
+        minutes until noon". Nothing did; its next pass is the 1pm refresh."""
+        v = self._with({}, key="failure-recruiting_chain", tail="")
+        self.assertEqual(v.bucket, tri.NEEDS_YOU)
+        line = tri.line_for(v)
+        self.assertNotIn("25 minutes", line)
+        self.assertIn("1 PM", line)
+        self.assertNotIn("lucy rerun recruiting_chain", line)
+
+    def test_an_unknown_wrapper_gets_the_hub_card_not_a_bad_command(self):
+        """`lucy rerun` only knows schedule keys — never hand out one that errors."""
+        v = self._with({}, key="failure-vantura_churn_daily", tail="")
+        self.assertEqual(v.bucket, tri.NEEDS_YOU)
+        self.assertIn("re-run it from its Hub card", tri.line_for(v))
+        self.assertNotIn("lucy rerun", tri.line_for(v))
+
+    def test_an_unscheduled_agent_that_fires_again_is_still_lucys(self):
+        """bg_check_sync runs every hour 8am-9pm on its own agent — that IS a
+        re-run, and asking a person for it is the opposite false alarm."""
+        v = self._with({}, key="failure-bg_check_sync", tail="connection reset")
         self.assertEqual(v.bucket, tri.LUCY)
 
     # THE DASHED-ID CASES. Every test above hands the classifier a key spelled
