@@ -565,8 +565,27 @@ def schedule_key(rid: str) -> Optional[str]:
     return idx.get(c) or idx.get(inc._root(c))
 
 
+def _failed_for_good_today(rid: str, day: Optional[dt.date]) -> bool:
+    """Has the orchestrator already closed `rid` as FAILED today?
+
+    Its tableau retry is MID-PASS only: up to MAX_RUN_RETRIES for a flake,
+    MAX_TIMEOUT_RETRIES (2) for a timeout kill, then terminal FAILED and the
+    loop never comes back. Read straight from output/day_state/<date>.json —
+    the orchestrator's own record — so this can't drift from run.py's caps.
+    Unreadable/absent state answers False (keep the old, optimistic verdict)."""
+    from automations.day_orchestrator import state as day_state
+    try:
+        raw = json.loads(day_state._state_path(
+            (day or dt.date.today()).isoformat()).read_text())
+    except Exception:  # noqa: BLE001 — no state on this machine today
+        return False
+    rs = (raw.get("reports") or {}).get(schedule_key(rid) or rid) or {}
+    return rs.get("status") == day_state.FAILED
+
+
 def reruns_itself(rid: str, *, partial: bool = False,
-                  held: bool = True, failed: bool = False) -> bool:
+                  held: bool = True, failed: bool = False,
+                  day: Optional[dt.date] = None) -> bool:
     """Will anything re-run `rid` today without a person asking?
 
     `partial` is the `drop-` case — the report ran and MISSED a part, so it is
@@ -591,7 +610,11 @@ def reruns_itself(rid: str, *, partial: bool = False,
                                        for x in _UNSCHEDULED_RERUNS}
         return True
     if r.get("source_type") == "tableau":
-        return True
+        # 2026-10-10: new_owners_scan timed out 2x by 07:24, the orchestrator
+        # logged "not retrying again", and at 08:15 the thread still said
+        # "Lucy has this … re-runs it about every 25 minutes until noon".
+        # Tableau's retry is mid-pass; once FAILED, nothing comes back for it.
+        return not (failed and _failed_for_good_today(rid, day))
     # `data_sources` is a readiness probe: it re-checks a report HELD before it
     # ran. It does nothing for one that RAN and errored — that is terminal
     # FAILED on attempt one unless it is tableau. org_active_headcount_email
@@ -798,10 +821,10 @@ def classify(key: str, *, day: Optional[dt.date] = None,
     # 5) Before the backstop: waiting on a source, or mid-retry.
     reason = _match(tail, _WAITING_ON)
     if reason:
-        return _if_it_reruns(key, rid, WAITING, reason)
+        return _if_it_reruns(key, rid, WAITING, reason, day)
     reason = _match(tail, _TRANSIENT)
     if reason:
-        return _if_it_reruns(key, rid, LUCY, reason)
+        return _if_it_reruns(key, rid, LUCY, reason, day)
 
     # 6) No signature, still early. The loop has budget left, so let it spend
     #    it — this becomes NEEDS_YOU on its own at noon via (4).
@@ -815,10 +838,11 @@ def classify(key: str, *, day: Optional[dt.date] = None,
     return _if_it_reruns(
         key, rid, LUCY,
         "It failed and the reason isn't in the log." if tail
-        else "It failed and there's no log for it on this machine.")
+        else "It failed and there's no log for it on this machine.", day)
 
 
-def _if_it_reruns(key: str, rid: str, bucket: str, reason: str) -> Verdict:
+def _if_it_reruns(key: str, rid: str, bucket: str, reason: str,
+                  day: Optional[dt.date] = None) -> Verdict:
     """`bucket` if something will re-run it on its own; otherwise it is a
     person's — and the line says the one command that fixes it.
 
@@ -828,7 +852,7 @@ def _if_it_reruns(key: str, rid: str, bucket: str, reason: str) -> Verdict:
     """
     if reruns_itself(rid, partial=key.startswith("drop-"),
                      held=(bucket == WAITING),
-                     failed=key.startswith("failure-")):
+                     failed=key.startswith("failure-"), day=day):
         return Verdict(key, bucket, reason)
     if rid not in _CUSTOM_KEYS and not schedule_key(rid):
         fix = _UNSCHEDULED_FIX.get(rid, "Nothing re-runs it on its own — "

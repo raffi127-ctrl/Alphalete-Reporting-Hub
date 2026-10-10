@@ -188,6 +188,32 @@ class NobodyIsComingBackForIt(unittest.TestCase):
         self.assertIn("lucy rerun org_active_headcount_email",
                       tri.line_for(v))
 
+    def _day_status(self, rid, status):
+        """Today's orchestrator day_state says `rid` is `status`."""
+        from automations.day_orchestrator import state as _st
+        return mock.patch.object(tri, "_failed_for_good_today",
+                                 lambda r, d: status == _st.FAILED)
+
+    def test_a_tableau_report_the_loop_gave_up_on_is_yours(self):
+        """2026-10-10: new_owners_scan timed out 2x by 07:24 and the
+        orchestrator logged "not retrying again"; at 08:15 the thread said
+        "Lucy has this … re-runs it about every 25 minutes until noon".
+        Tableau's retry is mid-pass — once FAILED, nothing comes back."""
+        with self._day_status("new_owners_scan", "FAILED"):
+            v = self._with({"new_owners_scan": {"source_type": "tableau",
+                                                "data_sources": []}},
+                           key="failure-new_owners_scan", tail="timed out")
+        self.assertEqual(v.bucket, tri.NEEDS_YOU)
+        self.assertIn("lucy rerun new_owners_scan", tri.line_for(v))
+
+    def test_a_tableau_report_still_mid_retry_is_lucys(self):
+        """Attempt 1 timed out, attempt 2 is queued: that one IS coming back."""
+        with self._day_status("new_owners_scan", "STILL_TRYING"):
+            v = self._with({"new_owners_scan": {"source_type": "tableau",
+                                                "data_sources": []}},
+                           key="failure-new_owners_scan", tail="timed out")
+        self.assertEqual(v.bucket, tri.LUCY)
+
     def test_a_dropped_part_still_gets_the_parts_retry(self):
         """`drop-` = it ran and missed a part (INCOMPLETE). The orchestrator
         does press 'retry failed only' on those, so the promise is true."""
