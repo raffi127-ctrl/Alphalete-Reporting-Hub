@@ -19,19 +19,20 @@ class SheetIdTest(unittest.TestCase):
         return p
 
     def test_box_office_carries_its_sheet(self):
-        p = self._rows([{"key": "ryan", "owner_office": "RYAN M [x]",
+        p = self._rows([{"key": "ryan", "owner": "Ryan M", "owner_office": "RYAN M [x]",
                          "channel_id": "C1", "channel_name": "room",
                          "sheet_id": "SHEET-RYAN",
                          "enrolled_reports": ["b2b_order_log_box"]}])
         with mock.patch.object(bo, "_ONBOARDED_FILE", p):
             offs = per_office.box_offices()
         self.assertEqual(offs[0]["sheet_id"], "SHEET-RYAN")
+        self.assertEqual(offs[0]["owner"], "Ryan M")
         self.assertEqual(offs[0]["sections"], ["order_log", "pending"])
 
     def test_run_all_passes_sheet_id_only_when_present(self):
         calls = []
-        offs = [{"key": "a", "owner_office": "A [x]", "channel_id": "C1",
-                 "channel_name": "r", "sections": ["order_log", "pending"],
+        offs = [{"key": "a", "owner": "A Owner", "owner_office": "A [x]", "channel_id": "C1",
+                 "channel_name": "r", "sections": ["order_log", "tier_bonus", "pending"],
                  "sheet_id": "S-A"},
                 {"key": "b", "owner_office": "B [y]", "channel_id": "C2",
                  "channel_name": "r2", "sections": ["order_log", "pending"],
@@ -45,6 +46,8 @@ class SheetIdTest(unittest.TestCase):
         self.assertIn("--sheet-id", calls[0]); self.assertIn("S-A", calls[0])
         self.assertIn("--sheet", calls[0])
         self.assertNotIn("--sheet-id", calls[1]); self.assertNotIn("--sheet", calls[1])
+        self.assertIn("--tier-owner", calls[0]); self.assertIn("A Owner", calls[0])
+        self.assertNotIn("--tier-owner", calls[1])
 
 
 if __name__ == "__main__":

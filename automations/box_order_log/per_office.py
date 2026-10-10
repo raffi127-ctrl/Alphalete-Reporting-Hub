@@ -80,6 +80,12 @@ def box_offices() -> List[Dict[str, str]]:
                     # so without this every per-office run read Carlos's
                     # (Ryan's enrolment, 2026-10-09).
                     "sheet_id": (r.get("sheet_id") or "").strip(),
+                    # The Box Tier Bonus board slices on Tableau's "Owner
+                    # Name" quick filter, not Owner & Office: run.py has NO
+                    # default owner on a per-office run and skips the board
+                    # unless told whose it is (Ryan's first thread, 2026-10-10,
+                    # went out without it).
+                    "owner": (r.get("owner") or "").strip(),
                     "sections": [s for k, s in BOX_SECTION_KEYS.items()
                                  if k in box_keys] + ALWAYS})
     return out
@@ -233,6 +239,8 @@ def run_all(*, post: bool = False, weeks: int = 6, from_file: str = "",
             # 'Lucy Box Order Log' tab is written there -- the same --sheet
             # the per-owner emails use for Roshan and Abel, never Carlos's.
             cmd += ["--sheet-id", o["sheet_id"], "--sheet"]
+        if "tier_bonus" in (o.get("sections") or []) and o.get("owner"):
+            cmd += ["--tier-owner", o["owner"]]
         if require_fresh:
             # 7:00 pass: run.py answers 3 when the Box extract has not landed
             # yet, and the 8:30 pass (without this) posts once it has -- the
