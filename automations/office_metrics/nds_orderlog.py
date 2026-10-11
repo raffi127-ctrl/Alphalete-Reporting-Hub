@@ -206,6 +206,9 @@ _PENDING_SUBS = [
     ("porting", "Porting Issue", {"porting issue"}),
 ]
 
+# Red font on these (Raf 2026-10-11): the rep has to act on them.
+_ALERT_SUBS = ("pvp", "porting")
+
 
 def _one_row_per_line(header, rows):
     """The export repeats every order line once PER MEASURE ("Unit Count" +
@@ -244,6 +247,7 @@ def _render_rep_summary(owner, header, rows, target, out_dir):
         "Install Date": _cell(r, sdate_i),      # fallback bucket for cancels
     } for r in _one_row_per_line(header, rows)])
     summary = build_week_tables(df, target, pending_subs=_PENDING_SUBS)
+    summary["alert_cols"] = _ALERT_SUBS
     out = out_dir / f"nds_rep_activations_{target.isoformat()}.png"
     return _house_render(summary, out)
 

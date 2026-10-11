@@ -58,6 +58,9 @@ HEADER_BG = (242, 242, 242)
 GRID = (0, 0, 0)
 TEXT = (0, 0, 0)
 WHITE = (255, 255, 255)
+# Action-needed columns (summary["alert_cols"]) — Raf 2026-10-11: red font on
+# Pending Valid Payment / Porting Issue so the rep knows to do something.
+ALERT = (192, 0, 0)
 
 
 def _font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
@@ -111,7 +114,8 @@ def _cols(extra=None) -> list:
     return COLS[:i] + [(h, k, "center") for k, h in extra] + COLS[i:]
 
 
-def _build_table(title: str, table: dict, fonts, cols=COLS) -> Image.Image:
+def _build_table(title: str, table: dict, fonts, cols=COLS,
+                 alert=frozenset()) -> Image.Image:
     f_title, f_head, f_cell, f_rep = fonts
     rows = table["rows"]
 
@@ -145,7 +149,8 @@ def _build_table(title: str, table: dict, fonts, cols=COLS) -> Image.Image:
     y, x = title_h, 0
     for (header, key, _align), w in zip(cols, col_w):
         _cell(d, x, y, w, header_h, header, f_head,
-              "left" if key == "rep" else "center", HEADER_BG)
+              "left" if key == "rep" else "center", HEADER_BG,
+              ALERT if key in alert else TEXT)
         x += w
 
     # Data rows.
@@ -160,7 +165,9 @@ def _build_table(title: str, table: dict, fonts, cols=COLS) -> Image.Image:
             if key == "rep":
                 _cell(d, x, y, w, row_h, val, f_rep, "left", band)
             else:
-                _cell(d, x, y, w, row_h, val, f_cell, "center", band)
+                red = key in alert and int(r[key] or 0) > 0   # a 0 needs no action
+                _cell(d, x, y, w, row_h, val, f_rep if red else f_cell, "center",
+                      band, ALERT if red else TEXT)
             x += w
         y += row_h
 
@@ -173,7 +180,8 @@ def _build_table(title: str, table: dict, fonts, cols=COLS) -> Image.Image:
                 _cell(d, x, y, w, row_h, "TOTAL", f_rep, "left", HEADER_BG)
             else:
                 tot = sum(int(r.get(key) or 0) for r in rows)
-                _cell(d, x, y, w, row_h, str(tot), f_head, "center", HEADER_BG)
+                _cell(d, x, y, w, row_h, str(tot), f_head, "center", HEADER_BG,
+                      ALERT if key in alert and tot > 0 else TEXT)
             x += w
 
     return img
@@ -185,10 +193,11 @@ def render(summary: dict, out_path) -> Path:
              _font(12 * S), _font(12 * S, bold=True))
 
     cols = _cols(summary.get("pending_cols"))
+    alert = frozenset(summary.get("alert_cols") or ())
     left = _build_table(f"Last Week: {summary['last']['label']}",
-                        summary["last"], fonts, cols)
+                        summary["last"], fonts, cols, alert)
     right = _build_table(f"This Week: {summary['this']['label']}",
-                         summary["this"], fonts, cols)
+                         summary["this"], fonts, cols, alert)
 
     canvas_w = PAD * S + left.width + GAP * S + right.width + PAD * S
     canvas_h = PAD * S + max(left.height, right.height) + PAD * S
