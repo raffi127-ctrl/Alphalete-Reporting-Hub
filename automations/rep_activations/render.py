@@ -102,7 +102,16 @@ def _cell(d: ImageDraw.ImageDraw, x: int, y: int, w: int, h: int, text: str,
     d.text((tx, ty), text, font=font, fill=fg)
 
 
-def _build_table(title: str, table: dict, fonts) -> Image.Image:
+def _cols(extra=None) -> list:
+    """COLS, with any Pending sub-columns (NDS: Shipped, Delivered, ...)
+    inserted right after Pending."""
+    if not extra:
+        return COLS
+    i = [k for _h, k, _a in COLS].index("pending") + 1
+    return COLS[:i] + [(h, k, "center") for k, h in extra] + COLS[i:]
+
+
+def _build_table(title: str, table: dict, fonts, cols=COLS) -> Image.Image:
     f_title, f_head, f_cell, f_rep = fonts
     rows = table["rows"]
 
@@ -114,7 +123,7 @@ def _build_table(title: str, table: dict, fonts) -> Image.Image:
                     int(probe.textlength(r["rep"], font=f_rep)) + 2 * CELL_PAD * S)
 
     col_w = [rep_w]
-    for header, _key, _align in COLS[1:]:
+    for header, _key, _align in cols[1:]:
         col_w.append(max(NUM_W * S,
                          int(probe.textlength(header, font=f_head)) + 2 * CELL_PAD * S))
     table_w = sum(col_w)
@@ -134,7 +143,7 @@ def _build_table(title: str, table: dict, fonts) -> Image.Image:
 
     # Header row.
     y, x = title_h, 0
-    for (header, key, _align), w in zip(COLS, col_w):
+    for (header, key, _align), w in zip(cols, col_w):
         _cell(d, x, y, w, header_h, header, f_head,
               "left" if key == "rep" else "center", HEADER_BG)
         x += w
@@ -146,7 +155,7 @@ def _build_table(title: str, table: dict, fonts) -> Image.Image:
     for r in rows:
         band = _band(r["total"])
         x = 0
-        for (_header, key, _align), w in zip(COLS, col_w):
+        for (_header, key, _align), w in zip(cols, col_w):
             val = str(r[key])
             if key == "rep":
                 _cell(d, x, y, w, row_h, val, f_rep, "left", band)
@@ -159,7 +168,7 @@ def _build_table(title: str, table: dict, fonts) -> Image.Image:
     # tables, bold on the header gray so it reads as a footer, not a rep.
     if rows:
         x = 0
-        for (_header, key, _align), w in zip(COLS, col_w):
+        for (_header, key, _align), w in zip(cols, col_w):
             if key == "rep":
                 _cell(d, x, y, w, row_h, "TOTAL", f_rep, "left", HEADER_BG)
             else:
@@ -175,10 +184,11 @@ def render(summary: dict, out_path) -> Path:
     fonts = (_font(16 * S, bold=True), _font(12 * S, bold=True),
              _font(12 * S), _font(12 * S, bold=True))
 
+    cols = _cols(summary.get("pending_cols"))
     left = _build_table(f"Last Week: {summary['last']['label']}",
-                        summary["last"], fonts)
+                        summary["last"], fonts, cols)
     right = _build_table(f"This Week: {summary['this']['label']}",
-                         summary["this"], fonts)
+                         summary["this"], fonts, cols)
 
     canvas_w = PAD * S + left.width + GAP * S + right.width + PAD * S
     canvas_h = PAD * S + max(left.height, right.height) + PAD * S

@@ -86,15 +86,25 @@ def _in_week(d: Optional[dt.date], start: dt.date, end: dt.date) -> bool:
     return d is not None and start <= d <= end
 
 
-def build_week_tables(df: pd.DataFrame, today: dt.date) -> dict:
+def build_week_tables(df: pd.DataFrame, today: dt.date,
+                      pending_subs: Optional[list] = None) -> dict:
     """Roll the cleaned order DataFrame up into the two weekly tables.
 
     Returns ``{"last": {"label": str, "rows": [...]},
                "this": {"label": str, "rows": [...]}}`` where each row is
     ``{"rep", "posted", "pending", "total", "canceled"}``, sorted by total
     descending (rep name as the tiebreak).
+
+    ``pending_subs`` (opt-in, NDS wireless — Colten 2026-10-10: "pending
+    what?") splits Pending into columns: a list of ``(key, header,
+    {normalized sub-statuses})`` read from the df's "Sub Status" column.
+    Pending orders matching none land in ``pending_other`` so the split
+    always adds back up to Pending. The summary then carries
+    ``"pending_cols": [(key, header), ...]`` for the renderer. Without it
+    the output is unchanged.
     """
     last_start, last_end, this_start, this_end = week_bounds(today)
+    subs = list(pending_subs or [])
 
     reps: dict[str, dict] = {}
     for _, row in df.iterrows():
@@ -109,6 +119,8 @@ def build_week_tables(df: pd.DataFrame, today: dt.date) -> dict:
         agg = reps.setdefault(rep, {
             "pending": 0, "posted_last": 0, "posted_this": 0,
             "canceled_last": 0, "canceled_this": 0,
+            **{k: 0 for k, _h, _st in subs},
+            **({"pending_other": 0} if subs else {}),
         })
 
         if status in POSTED_STATUSES:
@@ -123,6 +135,11 @@ def build_week_tables(df: pd.DataFrame, today: dt.date) -> dict:
                 agg["canceled_this"] += 1
         elif status:
             agg["pending"] += 1
+            if subs:
+                sub = _norm_status(row.get("Sub Status"))
+                key = next((k for k, _h, st in subs if sub in st),
+                           "pending_other")
+                agg[key] += 1
 
     def make_rows(posted_key: str, canceled_key: str) -> list[dict]:
         rows = []
@@ -135,11 +152,13 @@ def build_week_tables(df: pd.DataFrame, today: dt.date) -> dict:
                 "pending": pending,
                 "total": posted + pending,
                 "canceled": a[canceled_key],
+                **{k: a[k] for k, _h, _st in subs},
+                **({"pending_other": a["pending_other"]} if subs else {}),
             })
         rows.sort(key=lambda r: (-r["total"], r["rep"].lower()))
         return rows
 
-    return {
+    out = {
         "last": {
             "label": _label(last_start, last_end),
             "rows": make_rows("posted_last", "canceled_last"),
@@ -149,3 +168,7 @@ def build_week_tables(df: pd.DataFrame, today: dt.date) -> dict:
             "rows": make_rows("posted_this", "canceled_this"),
         },
     }
+    if subs:
+        out["pending_cols"] = ([(k, h) for k, h, _st in subs]
+                               + [("pending_other", "Other Pending")])
+    return out

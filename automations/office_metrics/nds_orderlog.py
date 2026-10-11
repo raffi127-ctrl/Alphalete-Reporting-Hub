@@ -195,6 +195,34 @@ def _house_status(dtr: str) -> str:
     return s or "pending"
 
 
+# Pending split into the line's own spe.Status (Colten 2026-10-10, Raf: wireless
+# only, so NDS boards only). Values seen live 2026-10-11: Shipped, Delivered,
+# Pending Valid Payment, Porting Issue — plus Backordered / Pending Shipment /
+# Port Approved / BYOD / blank, which fall into "Other Pending".
+_PENDING_SUBS = [
+    ("shipped", "Shipped", {"shipped"}),
+    ("delivered", "Delivered", {"delivered"}),
+    ("pvp", "Pending Valid Payment", {"pending valid payment"}),
+    ("porting", "Porting Issue", {"porting issue"}),
+]
+
+
+def _one_row_per_line(header, rows):
+    """The export repeats every order line once PER MEASURE ("Unit Count" +
+    "Sales (All)"), so counting raw rows doubles every number. Keep one row per
+    line item (SPM + spe.Name + TN) — same key the order_log board uses."""
+    keys = [_find(header, "sp.spm number", "spm number", "spm"),
+            _find(header, "spe.name"), _find(header, "spe.tn", "customer phone")]
+    seen, out = set(), []
+    for r in rows:
+        k = tuple(_cell(r, i) for i in keys)
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(r)
+    return out
+
+
 def _render_rep_summary(owner, header, rows, target, out_dir):
     """The standard combined 'Order Log / Rep Activations' board, rendered by the
     house rep_activations pipeline (build_week_tables + render) so it's identical
@@ -207,13 +235,15 @@ def _render_rep_summary(owner, header, rows, target, out_dir):
     st_i = _find(header, "dtr status", "order status", "status")
     odate_i = _find(header, "sp.order date", "order date")
     sdate_i = _find(header, "status date")
+    spe_i = _find(header, "spe.status")
     df = pd.DataFrame([{
         "Rep": _cell(r, rep_i),
         "Status": _house_status(_cell(r, st_i)),
+        "Sub Status": _cell(r, spe_i),          # line status -> Pending split
         "Activation Date": _cell(r, odate_i),   # Order Date = when rep sold it
         "Install Date": _cell(r, sdate_i),      # fallback bucket for cancels
-    } for r in rows])
-    summary = build_week_tables(df, target)
+    } for r in _one_row_per_line(header, rows)])
+    summary = build_week_tables(df, target, pending_subs=_PENDING_SUBS)
     out = out_dir / f"nds_rep_activations_{target.isoformat()}.png"
     return _house_render(summary, out)
 
