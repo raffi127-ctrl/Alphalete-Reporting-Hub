@@ -8580,6 +8580,33 @@ ACTIONS = {
 # Enqueue + poll
 # ---------------------------------------------------------------------------
 
+def _rerun_home(args: str) -> str | None:
+    """The runner that owns the report a `rerun` row names, or None for Lucy 1.
+
+    A rerun with no --machine used to land on Lucy 1 whatever the report was.
+    2026-10-10: the failure post said `lucy rerun rc_contact_sync`, that went
+    to Lucy 1, and Lucy 1 has no B2B SaraPlus login -- it died in a second and
+    the post counted it as 'failed again'. 230 reports live on Lucy 2/3/4, and
+    their credentials and browser sessions live there with them. An explicit
+    --machine still wins; this only fills in the one nobody named."""
+    try:
+        parts = shlex.split(args or "")
+    except ValueError:
+        parts = (args or "").split()
+    if not parts:
+        return None
+    try:
+        r = registry.resolve_report(registry.load_config(), parts[0])
+    except Exception:  # noqa: BLE001 — routing must never sink the rerun
+        return None
+    home = (getattr(r, "machine", None) or "").strip() if r else ""
+    if not home or home == DEFAULT_MACHINE:
+        return None
+    print("[mini_control] {} lives on {} — queuing it there".format(
+        parts[0], home), flush=True)
+    return home
+
+
 def enqueue(action: str, args: str = "", by: str = "Eve", *, sandbox: bool = False,
             machine: str | None = None, auto: bool = False) -> None:
     """Add a fix request to the queue (called by Eve / Megan / the orchestrator).
@@ -8593,6 +8620,8 @@ def enqueue(action: str, args: str = "", by: str = "Eve", *, sandbox: bool = Fal
     ⏳, which the daily sweep clears."""
     if auto and not str(by).startswith(AUTO_BY_PREFIX):
         by = "{}{}".format(AUTO_BY_PREFIX, by)
+    if action == "rerun" and machine is None:
+        machine = _rerun_home(args)
     # NOTE _tab_is_live (module level) is what "a runner reads this tab" means.
     # An EXPLICIT --machine target whose tab doesn't exist is a typo, not a new
     # machine: _open would silently create a tab no poller reads and the row
