@@ -478,6 +478,8 @@ def publish(day: dt.date, channel: str, owner: str, *, cl=None, record: bool = T
     """Post the scorecard (text + PNG) as its own message in `channel`."""
     cl = cl or collect._client()
     msg, png = make(day, owner)
+    if config.SCORECARD_TAG:                   # Eve 10/11: tag Colten / Eveliz
+        msg = f"<@{config.SCORECARD_TAG}> {msg}"
     r = cl.files_upload_v2(channel=channel, file=str(png), filename=png.name,
                            title=f"Ad Scorecard {day.isoformat()}", initial_comment=msg)
     if record:
