@@ -208,6 +208,8 @@ _PENDING_SUBS = [
 
 # Red font on these (Raf 2026-10-11): the rep has to act on them.
 _ALERT_SUBS = ("pvp", "porting")
+# The day the corrected board was re-posted with an "updated formatting" note.
+_UPDATED_NOTE_DAY = dt.date(2026, 10, 11)
 
 
 def _one_row_per_line(header, rows):
@@ -672,6 +674,17 @@ def run(owner: str, board: str, *, target: dt.date | None = None,
         return 0
 
     comment = f"{label} — {target.strftime('%b')} {target.day}"
+    # One-day re-post of the new Rep Activations format (Megan 2026-10-11): the
+    # 5am boards went out in the old layout, so today's --only re-run carries a
+    # note and the old reply stays. Date-gated so it can never tag a later post.
+    # Never post loose in the channel: no thread today -> skip this office.
+    if board == "rep_summary" and target == _UPDATED_NOTE_DAY:
+        from automations.shared import slack_metrics_post as _smp
+        if not _smp.find_metrics_thread_ts(_smp._client(), target):
+            print(f"[nds_orderlog:{board}] no Metrics thread today — "
+                  f"NOT posting the updated board", flush=True)
+            return 1
+        comment = f"🔄 *THIS IS UPDATED FORMATTING* — {comment}"
     if empty_note:
         from automations.shared.slack_metrics_post import post_reply_text_only
         resp = post_reply_text_only(empty_note, react_emoji=emoji)
