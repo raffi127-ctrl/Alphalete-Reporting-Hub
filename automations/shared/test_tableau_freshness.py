@@ -115,6 +115,16 @@ class WeeklyBar(unittest.TestCase):
         self.assertFalse(tf.is_weekly_source(
             "OverridesICDView/NETSUITESECURITYLEDGERSFDC → Transaction Details"))
 
+    def test_security_ledger_details_are_weekday_only(self):
+        # 2026-10-11 (Sun): asked for Sat 10/10, a day NetSuite never posts.
+        label = "OverridesICDView/NETSUITESECURITYLEDGERSFDC → Transaction Details"
+        self.assertTrue(tf.is_weekday_only_source(label))
+        self.assertFalse(tf.is_weekday_only_source(
+            "OverridesICDView/NETSUITESECURITYLEDGERSFDC → SFDC Total Balance"))
+        sun = dt.date(2026, 10, 11)
+        self.assertEqual(tf.business_needs(sun, 1, skip_saturday=True),
+                         dt.date(2026, 10, 9))     # Fri is still owed
+
     def test_needs_is_the_sunday_before_the_one_that_just_ended(self):
         # Wed 2026-08-19: week just ended 8/16, so one week of lag = 8/09.
         self.assertEqual(tf.weekly_needs(dt.date(2026, 8, 19)),
