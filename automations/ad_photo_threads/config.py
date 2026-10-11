@@ -438,18 +438,18 @@ _PAUSED_BEFORE = {"khalil": "2026-10-03"}
 
 # Colten 10/10 asked for the Ad Scorecard for his funnel and Eveliz's; Raf
 # 10/11: "put it in his all in one". One tab each in Maud's "All In One -
-# Colten/Eveliz", rewritten every weekday night. No Slack post (no
-# "scorecard": True). 2nd rounds come from their interviewers' own columns
+# Colten/Eveliz", rewritten every weekday night. Eve 10/11: the Friday post
+# too, in each one's own indeed-photos channel. 2nd rounds come from their interviewers' own columns
 # (second_rounds.from_sheet): their AppStream offices (14733 / 18404) aren't
 # in applicant_tracker's 2R sync. Scorecard only -- the threads don't change.
 ALL_IN_ONE_COLTEN_EVELIZ = "1pavl-LA-wqsH3-scimTsqfSwPVPZGzXuWoo3ilAZO3w"
 _SCORECARD_TABS = {
     "colten": {"scorecard_book": ALL_IN_ONE_COLTEN_EVELIZ,
                "scorecard_tab": "Colten (D2D) - Ad Scorecard",
-               "scorecard_seconds_from_sheet": True},
+               "scorecard_seconds_from_sheet": True, "scorecard": True},
     "eveliz": {"scorecard_book": ALL_IN_ONE_COLTEN_EVELIZ,
                "scorecard_tab": "Eveliz (B2B) - Ad Scorecard",
-               "scorecard_seconds_from_sheet": True},
+               "scorecard_seconds_from_sheet": True, "scorecard": True},
 }
 
 OFFICES += [
