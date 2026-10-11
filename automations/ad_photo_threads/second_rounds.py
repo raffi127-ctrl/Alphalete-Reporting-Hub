@@ -31,7 +31,7 @@ import difflib
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Tuple
 
-from automations.ad_photo_threads import collect
+from automations.ad_photo_threads import collect, config
 
 WINDOW_DAYS = 21
 
@@ -148,6 +148,37 @@ def load(owner: str, today: Optional[dt.date] = None, sh=None) -> List[Second]:
     got = parse([r[:3] for r in rows], [r[3:] for r in rows], owner, today)
     _CACHE[owner] = got
     return got
+
+
+# Colten / Eveliz (10/11): South Shore's interviewers mark the 2nd round on
+# the 1st-round row itself -- "Booked to 2nd Rd" / "Date 2nd Rd" / "Showed Up
+# to 2nd Round" -- so the scorecard reads it there (their AppStream offices
+# aren't in the 2R sync). Booked + "Showed" = showed; "No Show" / "Cancelled"
+# = didn't show; "Reschedule Requested" or not marked yet = pending.
+S_BOOKED, S_DATE, S_SHOWED = "Booked to 2nd Rd", "Date 2nd Rd", "Showed Up to 2nd Round"
+_NO_SHOW = {"no show", "cancelled", "canceled"}
+
+
+def from_sheet(tabs: Dict[str, List[Dict[str, str]]], today: dt.date) -> List[Second]:
+    """2nd rounds from the interviewers' own tabs (collect.read_tabs rows)."""
+    out = []
+    for rows in tabs.values():
+        for r in rows:
+            if (r.get(S_BOOKED) or "").strip().lower() != "booked":
+                continue
+            name = (r.get(config.COL_NAME) or "").strip()
+            day = (_when(r.get(S_DATE, "")) or _when(r.get(config.COL_DATE, "")))
+            if not name or not day:
+                continue
+            mark = (r.get(S_SHOWED) or "").strip().lower()
+            if mark == "showed":
+                status = "showed"
+            elif mark in _NO_SHOW and day < today:
+                status = "no show"
+            else:
+                status = "pending"
+            out.append(Second(name=name, day=day, status=status))
+    return out
 
 
 def counts(pairs: Iterable[tuple], seconds: List[Second]) -> dict:

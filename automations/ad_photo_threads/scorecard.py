@@ -267,7 +267,8 @@ def build(day: dt.date, *, sh=None, cache: Optional[dict] = None) -> dict:
     monday, first = post.week_monday(day), day.replace(day=1)
     history = weekly.ad_history(book, min(monday, first), day, cache=cache)
     titles = {k: book.display(k) for k in history}
-    seconds = weekly.load_seconds()
+    seconds = (sr.from_sheet(tabs, day) if config.SCORECARD_SECONDS_FROM_SHEET
+               else weekly.load_seconds())
     week = table(history, titles, monday, day, seconds)
     month = table(history, titles, first, day, seconds)
     return {"day": day, "monday": monday, "first": first, "seconds": seconds,
@@ -281,7 +282,7 @@ def text(sc: dict, owner: str) -> str:
     lines = [f"*📊 Ad Scorecard · {owner} · {weekly.week_tag(monday)}*",
              f"📋 *{len(sc['week'])} ad titles* had 1st rounds this week "
              f"({_md(monday)}-{_md(day)}) · *{len(sc['month'])}* this month"]
-    if sc["seconds"] is not None:
+    if sc["seconds"] is not None and not config.SCORECARD_SECONDS_FROM_SHEET:
         lines.append(f"_2nd rounds counted through {_md(day - dt.timedelta(days=1))} "
                      f"(AppStream marks show / no-show the next morning)._")
     return "\n".join(lines)
@@ -295,7 +296,9 @@ def make(day: dt.date, owner: str, out_dir: Path = OUT_DIR, *, cache=None) -> tu
     png = render([(week_label, sc["week"], sc["week_total"]),
                   (month_label, sc["month"], sc["month_total"])],
                  f"Ad Scorecard · {owner}",
-                 f"1st rounds from the interviewers' sheet · 2nd rounds from ApplicantStream",
+                 "1st rounds from the interviewers' sheet · 2nd rounds from "
+                 + ("the same sheet" if config.SCORECARD_SECONDS_FROM_SHEET
+                    else "ApplicantStream"),
                  out_dir / f"scorecard_{config.LIVE_CHANNEL_ID}_{day.isoformat()}.png")
     return text(sc, owner), png
 
@@ -346,7 +349,9 @@ def sheet_grid(sc: dict, owner: str) -> tuple:
 
     add([f"Ad Scorecard · {owner}"], "title")
     sub = f"Updated {_md(day)} · 1st rounds from the interviewers' sheet"
-    if sc["seconds"] is not None:
+    if sc["seconds"] is not None and config.SCORECARD_SECONDS_FROM_SHEET:
+        sub += " · 2nd rounds from the same sheet (Showed Up to 2nd Round)"
+    elif sc["seconds"] is not None:
         sub += (f" · 2nd rounds from ApplicantStream, counted through "
                 f"{_md(day - dt.timedelta(days=1))}")
     add([sub], "sub")
