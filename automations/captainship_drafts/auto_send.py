@@ -650,12 +650,30 @@ def judge(today: dt.date, keys: Sequence[str], *, state: dict,
     return out
 
 
-def rebuild(today: dt.date, keys: Sequence[str]) -> int:
+def needs_fresh_knocks(reasons: Sequence[str]) -> bool:
+    """¿Alguno de los motivos es un tablero de Knocks que no se capturó?
+
+    El manifiesto de knock_dispo_images guarda las fallas del día como "sin
+    imagen" y un re-armado normal lo REUSA: vuelve a armar el mismo hueco. El
+    11/10 la sesión de ownerville estuvo tomada los 30 min del armado, Colten
+    salió sin ningún Daily Knocks y el re-armado automático (y uno a mano)
+    repitió la falla — quedó frenado todo el día."""
+    return any(r.startswith("missing section:") and "knock" in r.lower()
+               for r in reasons)
+
+
+def rebuild(today: dt.date, keys: Sequence[str], *,
+            fresh_knocks: bool = False) -> int:
     """Re-arma esos capitanes. run.py --dry-run re-sella solo el PDF de revisión
     (refresh_stale_blocks), así que el link que ya está en el hilo muestra la
-    versión nueva y el envío no se niega por huella distinta."""
+    versión nueva y el envío no se niega por huella distinta.
+
+    `fresh_knocks` = vuelve a bajar los tableros de Knocks en vez de reusar la
+    captura de la mañana (ver needs_fresh_knocks)."""
     cmd = [sys.executable, "-u", "-m", "automations.captainship_drafts.run",
            "--dry-run", "--only", ",".join(keys), "--date", today.isoformat()]
+    if fresh_knocks:
+        cmd.append("--fresh-knocks")
     print(f"→ {' '.join(cmd)}", flush=True)
     return subprocess.call(cmd)
 

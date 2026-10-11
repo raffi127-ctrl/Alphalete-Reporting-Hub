@@ -282,7 +282,7 @@ class TestGateFlow(Base):
     def _blocks(self, *keys):
         return [config.block_of(k) for k in keys]
 
-    def _run(self, keys, tab=_no_tableau, rebuild=lambda *a: 0, act=True,
+    def _run(self, keys, tab=_no_tableau, rebuild=lambda *a, **kw: 0, act=True,
              ticks=1, building_since=None):
         with mock.patch.object(A, "rebuild", rebuild), \
                 mock.patch.dict(A.judge.__kwdefaults__,
@@ -307,7 +307,7 @@ class TestGateFlow(Base):
         _write_eml(self.tmp, self.fiber, pending="Fiber Activations PNG")
         _write_eml(self.tmp, self.b2b)
 
-        def fake_rebuild(_t, keys):
+        def fake_rebuild(_t, keys, **_kw):
             for k in keys:
                 _write_eml(self.tmp, k)
             return 0
@@ -316,6 +316,23 @@ class TestGateFlow(Base):
         self.assertEqual(self.links, [config.block_of(self.fiber).key])
         self.assertTrue(any("rebuilt automatically" in t for t in self.posted))
         self.assertEqual(self.alerts, [])
+
+    def test_missing_knocks_board_rebuilds_with_fresh_pull(self):
+        # 2026-10-11: the reuse manifest kept the morning's failed knocks
+        # capture, so a plain rebuild shipped the same hole all day.
+        _write_eml(self.tmp, self.fiber,
+                   pending="Colten Wright's Daily Knocks board")
+        calls = []
+        self._run([self.fiber],
+                  rebuild=lambda t, k, **kw: calls.append(kw) or 0)
+        self.assertEqual(calls, [{"fresh_knocks": True}])
+
+    def test_other_missing_section_rebuilds_without_fresh_pull(self):
+        _write_eml(self.tmp, self.fiber, pending="Fiber Activations PNG")
+        calls = []
+        self._run([self.fiber],
+                  rebuild=lambda t, k, **kw: calls.append(kw) or 0)
+        self.assertEqual(calls, [{"fresh_knocks": False}])
 
     def test_held_gets_link_note_and_one_alert(self):
         _write_eml(self.tmp, self.fiber)
@@ -352,7 +369,7 @@ class TestGateFlow(Base):
     def test_dry_mode_posts_sends_and_rebuilds_nothing(self):
         _write_eml(self.tmp, self.fiber, pending="Fiber Activations PNG")
         rebuilt = []
-        self._run([self.fiber], rebuild=lambda t, k: rebuilt.append(k),
+        self._run([self.fiber], rebuild=lambda t, k, **kw: rebuilt.append(k),
                   act=False)
         self.assertEqual((rebuilt, self.posted, self.sent), ([], [], []))
 
@@ -404,7 +421,7 @@ class TestWhileBuilding(TestGateFlow):
         _age(self.tmp, self.fiber, 600)
         rebuilt = []
         rc = self._run([self.fiber], building_since=self.since,
-                       rebuild=lambda t, k: rebuilt.append(k))
+                       rebuild=lambda t, k, **kw: rebuilt.append(k))
         self.assertEqual(rc, 1)
         self.assertEqual((rebuilt, self.sent, self.posted, self.alerts),
                          ([], [], [], []))

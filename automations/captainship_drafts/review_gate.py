@@ -1148,7 +1148,8 @@ def auto_check(today: dt.date, blocks: Sequence["config.Block"],
                 for k, v in verdicts.items() if not v.send}
         return ok, held, {}
     if fix and act:
-        A.rebuild(today, fix)
+        A.rebuild(today, fix, fresh_knocks=A.needs_fresh_knocks(
+            [r for k in fix for r in verdicts[k].fixable]))
         tb = set(state.get("tableau_rebuilt") or [])
         for k in fix:
             fixed[k] = list(verdicts[k].fixable)
