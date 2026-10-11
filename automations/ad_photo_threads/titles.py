@@ -32,7 +32,10 @@ MIN_SEEN = 3          # a spelling seen this often in the lookback is an ad
 TYPO_RATIO = 0.92     # difflib ratio that counts as the same ad mistyped
 MIN_PREFIX = 12       # shorter cut-offs ("at&t role") say too little to fold
 
-_LEAD_JUNK = re.compile(r"^\s*(new application for|indeed\s*/)\s*", re.I)
+# Colten's interviewers (10/11) paste Indeed's whole email subject:
+# "[Action required] New application for AT&T Sales Consultant - Kendall, FL".
+_LEAD_JUNK = re.compile(
+    r"^\s*(?:\[\s*action required\s*\]\s*)?(?:new application for|indeed\s*/)?\s*", re.I)
 
 
 # The company tacked on at the end (Carlos 9/23: "Event Marketing & Sales

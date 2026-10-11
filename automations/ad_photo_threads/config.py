@@ -436,6 +436,19 @@ _TITLE_ONLY = {
 # land it above September.
 _PAUSED_BEFORE = {"khalil": "2026-10-03"}
 
+# Colten 10/10 asked for the Ad Scorecard for his funnel and Eveliz's; Raf
+# 10/11: "put it in his all in one". One tab each in Maud's "All In One -
+# Colten/Eveliz", rewritten every weekday night. No Slack post (no
+# "scorecard": True) and no 2nd-round columns yet: their AppStream offices
+# (14733 / 18404) aren't in applicant_tracker's 2R sync.
+ALL_IN_ONE_COLTEN_EVELIZ = "1pavl-LA-wqsH3-scimTsqfSwPVPZGzXuWoo3ilAZO3w"
+_SCORECARD_TABS = {
+    "colten": {"scorecard_book": ALL_IN_ONE_COLTEN_EVELIZ,
+               "scorecard_tab": "Colten (D2D) - Ad Scorecard"},
+    "eveliz": {"scorecard_book": ALL_IN_ONE_COLTEN_EVELIZ,
+               "scorecard_tab": "Eveliz (B2B) - Ad Scorecard"},
+}
+
 OFFICES += [
     {
         "key": key, "owner": owner, "tz": _TZ.get(key), "live": key in _LIVE,
@@ -445,6 +458,7 @@ OFFICES += [
         "paused_before": _PAUSED_BEFORE.get(key, ""),
         "sources": [{"office_id": oid, "stream": company, "label": company,
                      "tab": tab, "thread_re": re.compile(rx, re.I)}],
+        **_SCORECARD_TABS.get(key, {}),
     }
     for key, owner, book, tab, oid, company, src, live, rx in _MORE
 ]

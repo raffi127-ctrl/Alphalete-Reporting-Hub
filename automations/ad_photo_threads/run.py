@@ -321,12 +321,12 @@ def _scorecard_sheet_if_due(o: dict, day: dt.date) -> None:
     if not book:
         return
     from automations.ad_photo_threads import config, scorecard
-    if scorecard.sheet_done(book, day):
+    tab = o.get("scorecard_tab") or config.SCORECARD_TAB
+    if scorecard.sheet_done(book, day, tab):
         return
     try:
-        url = scorecard.write_sheet(scorecard.build(day), o["owner"], book,
-                                    config.SCORECARD_TAB)
-        scorecard.mark_sheet_done(book, day)
+        url = scorecard.write_sheet(scorecard.build(day), o["owner"], book, tab)
+        scorecard.mark_sheet_done(book, day, tab)
         print(f"Scorecard tab written ({day}): {url}")
     except Exception as e:                    # noqa: BLE001 — retried next tick
         print(f"scorecard tab failed: {type(e).__name__}: {str(e)[:200]}")

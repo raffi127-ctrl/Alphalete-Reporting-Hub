@@ -25,6 +25,9 @@ class TitleTests(unittest.TestCase):
         self.assertEqual(a, self.book.resolve("AT&T Sales Agent ? Arlington TX"))
         self.assertEqual(a, self.book.resolve("New application for AT&T Sales Agent, Arlington, TX,"))
         self.assertEqual(a, self.book.resolve("AT&amp;T Sales Agent ? Arlington TX"))
+        # Colten 10/11: the whole Indeed email subject pasted as the title
+        self.assertEqual(a, self.book.resolve(
+            "[Action required] New application for AT&T Sales Agent, Arlington, TX,"))
 
     def test_cut_off_paste_folds_onto_its_one_ad(self):
         self.assertEqual(self.book.resolve("AT&T Sales Agent, Arlington, T"),

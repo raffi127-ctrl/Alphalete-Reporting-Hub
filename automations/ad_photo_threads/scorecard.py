@@ -443,14 +443,22 @@ def write_sheet(sc: dict, owner: str, book_id: str, tab: str) -> str:
     return f"https://docs.google.com/spreadsheets/d/{book_id}/edit#gid={gid}"
 
 
-def sheet_done(book_id: str, day: dt.date) -> bool:
+def _sheet_key(book_id: str, tab: str) -> str:
+    """Raf's book has one tab (key = the bare book id, as saved since 10/10);
+    a book holding two offices' tabs (Colten + Eveliz) keys each tab."""
+    return book_id if tab == config.SCORECARD_TAB else f"{book_id}#{tab}"
+
+
+def sheet_done(book_id: str, day: dt.date, tab: str = "") -> bool:
+    key = _sheet_key(book_id, tab or config.SCORECARD_TAB)
     return day.isoformat() in (post._load_state().get("_scorecard_sheets", {})
-                               .get(book_id) or [])
+                               .get(key) or [])
 
 
-def mark_sheet_done(book_id: str, day: dt.date) -> None:
+def mark_sheet_done(book_id: str, day: dt.date, tab: str = "") -> None:
     state = post._load_state()
-    got = state.setdefault("_scorecard_sheets", {}).setdefault(book_id, [])
+    key = _sheet_key(book_id, tab or config.SCORECARD_TAB)
+    got = state.setdefault("_scorecard_sheets", {}).setdefault(key, [])
     if day.isoformat() not in got:
         got.append(day.isoformat())
         del got[:-14]
