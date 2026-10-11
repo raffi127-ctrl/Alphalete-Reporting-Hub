@@ -134,9 +134,18 @@ def _merge_onboarded():
         rows = _json.loads(f.read_text())
     except Exception:
         return
+    from automations.b2b_metrics.offices import BOX_ONLY_KEYS
     for r in rows:
         key = (r.get("key") or "").strip()
         if not key or key in OFFICES:
+            continue
+        # A BOX-ONLY office has no AT&T churn: the AT&T churn views never carry
+        # its owner, so including it only raised a daily 'source gap' alert for
+        # Ryan McSpadden (2026-10-10). Same rule b2b_metrics.offices uses.
+        enrolled = list(r.get("enrolled_reports") or [])
+        for p in (r.get("channel_plans") or []):
+            enrolled += list(p.get("report_keys") or [])
+        if enrolled and set(enrolled) <= BOX_ONLY_KEYS:
             continue
         owner = (r.get("owner") or "").strip().upper()
         sid = r.get("sheet_id") or ""
