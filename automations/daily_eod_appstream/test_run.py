@@ -49,6 +49,12 @@ class Math(unittest.TestCase):
         }
         self.assertEqual([o for o, _ in run.red_list(today)], ["abe", "Zed"])
 
+    def test_weekly_slack_text_lists_reds(self):
+        txt = run.red_slack_text([("Andre Burton", 0.47)], dt.date(2026, 10, 10))
+        self.assertIn("Mon 10/5 – Sat 10/10", txt)
+        self.assertIn("• Andre Burton 47%", txt)
+        self.assertIn("🎉", run.red_slack_text([], dt.date(2026, 10, 6)))
+
     def test_scheduled_off_hour_does_nothing(self):
         from unittest import mock
         fake = dt.datetime(2026, 10, 7, 17, 0)

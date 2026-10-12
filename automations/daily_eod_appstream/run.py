@@ -36,6 +36,12 @@ THE RED LIST is the report day's 2nd round % under 50%, alphabetical, the way
 Perli writes it. An office with no 2nd rounds booked that day has no % and is
 not red.
 
+THE WEEKLY RED LIST (Camila, 2026-10-12: "que me mande un mensaje con las
+oficinas que estan en rojo en el weekly total cada dia") is the same rule on
+the WEEKLY TOTALS column (Monday .. report day). It goes on top of the mail and
+as a Slack DM from Lucy to Camila + Eve; a hand run without --production DMs
+Eve only. A Slack hiccup never costs the mail.
+
     python -m automations.daily_eod_appstream.run --dry-run       # preview only
     python -m automations.daily_eod_appstream.run                 # mail to TEST_TO (Eve)
     python -m automations.daily_eod_appstream.run --production    # mail to Camila
@@ -65,6 +71,10 @@ ARS_MGMT_SHEET = "1l4Q0SreuddKZrgXwb9MytF-EdPZH-H1hLsa69epq-n8"   # ARS Manageme
 PROD_TO = ["camilahk@arsinterviewsservice.com",
            "eve@alphaletemarketing.com"]      # Eve copied to watch it go out
 TEST_TO = ["eve@alphaletemarketing.com"]   # hand runs without --production
+
+SLACK_PROD = ("U088E2KJEV8",       # Eve (Evelyn)
+              "U07FWSYP3NV")       # Camila Hornos Kraschinsky
+SLACK_TEST = ("U088E2KJEV8",)
 
 # 6 PM CENTRAL, always (Eve 2026-10-07): 20:00 Argentina while the US is on
 # daylight time, 21:00 Argentina after Nov 1. launchd fires on the Lucy's LOCAL
@@ -189,8 +199,14 @@ def table_html(blocks: List[Tuple[str, Dict[str, Dict[str, int]]]]) -> str:
             f'<tr>{sub}</tr>' + "".join(rows) + '</table>')
 
 
-def red_html(reds: List[Tuple[str, float]], day: dt.date) -> str:
-    when = f"{day:%A} {day.month}/{day.day}"
+def week_when(day: dt.date) -> str:
+    """'Mon 10/5 – Sat 10/10': the days the WEEKLY TOTALS column adds up."""
+    monday = shown_days(day)[0]
+    return f"Mon {monday.month}/{monday.day} – {day:%a} {day.month}/{day.day}"
+
+
+def red_html(reds: List[Tuple[str, float]], day: dt.date, when: str = "") -> str:
+    when = when or f"{day:%A} {day.month}/{day.day}"
     if not reds:
         return (f'<p style="font-size:14px"><b>2nd round under 50% — {when}:</b> '
                 'none 🎉</p>')
@@ -198,6 +214,27 @@ def red_html(reds: List[Tuple[str, float]], day: dt.date) -> str:
     return ('<p style="font-size:14px;margin:0 0 4px"><b>2nd round under 50% '
             f'— {when} ({len(reds)}):</b></p><ul style="font-size:14px;margin:0 0 12px">'
             f'{items}</ul>')
+
+
+def red_slack_text(reds: List[Tuple[str, float]], day: dt.date) -> str:
+    head = f"*Daily EOD AppStream — weekly total, {week_when(day)}*"
+    if not reds:
+        return f"{head}\nNo office under 50% on 2nd round 🎉"
+    lines = "\n".join(f"• {o} {whole_pct(p)}%" for o, p in reds)
+    return f"{head}\n2nd round under 50% ({len(reds)}):\n{lines}"
+
+
+def send_slack(text: str, users, *, logfn=print) -> bool:
+    try:
+        from automations.shared import slack_metrics_post as smp
+        client = smp._client()
+        dm = client.conversations_open(users=",".join(users))["channel"]["id"]
+        client.chat_postMessage(channel=dm, text=text, unfurl_links=False)
+        logfn(f"  slack: DM sent to {len(users)} people")
+        return True
+    except Exception as exc:                              # noqa: BLE001
+        logfn(f"  slack: FAILED {type(exc).__name__}: {exc}")
+        return False
 
 
 def gaps_html(gaps: List[str]) -> str:
@@ -256,7 +293,7 @@ def pull(owners: List[str], week_start: dt.date, *, logfn=print
 # --------------------------------------------------------------------- main
 def build_and_send(day: dt.date, *, production: bool, dry_run: bool,
                    from_cache: Optional[Path] = None, email: bool = True,
-                   tab: Optional[str] = None, logfn=print) -> int:
+                   tab: Optional[str] = None, slack: bool = True, logfn=print) -> int:
     """`day` = the REPORT day (yesterday, by default), not the send day."""
     from automations.shared import report_email
 
@@ -283,6 +320,7 @@ def build_and_send(day: dt.date, *, production: bool, dry_run: bool,
     blocks = [(f"{d:%A} {d.month}/{d.day}", b) for d, b in per_day]
     blocks.append(("WEEKLY TOTALS", week))
     reds = red_list(per_day[-1][1])
+    week_reds = red_list(week)
 
     # The Sheet copy (ARS Management 2.0 -> 'Daily EOD AppStream'). A Sheets
     # hiccup must not cost Camila the email, so it is caught and the run exits 1.
@@ -300,13 +338,17 @@ def build_and_send(day: dt.date, *, production: bool, dry_run: bool,
             sheet_ok = False
             logfn(f"  sheet: FAILED {type(exc).__name__}: {exc}")
 
-    body = red_html(reds, day) + table_html(blocks) + gaps_html(gaps)
+    body = (red_html(week_reds, day, f"weekly total, {week_when(day)}")
+            + red_html(reds, day) + table_html(blocks) + gaps_html(gaps))
     if link:
         body += (f'<p style="font-size:12px;margin-top:12px">Every week, in the Sheet: '
                  f'<a href="{link}">ARS Management 2.0 → Daily EOD AppStream</a></p>')
     (OUT_DIR / f"preview_{day.isoformat()}.html").write_text(
         f"<html><body>{body}</body></html>", encoding="utf-8")
     logfn(f"  report day {day}: red {', '.join(f'{o} {whole_pct(p)}%' for o, p in reds) or 'none'}")
+    logfn(f"  weekly total: red {', '.join(f'{o} {whole_pct(p)}%' for o, p in week_reds) or 'none'}")
+    slack_text = red_slack_text(week_reds, day)
+    (OUT_DIR / f"slack_{day.isoformat()}.txt").write_text(slack_text, encoding="utf-8")
     for g in gaps:
         logfn(f"  gap: {g}")
 
@@ -318,7 +360,11 @@ def build_and_send(day: dt.date, *, production: bool, dry_run: bool,
         subject=f"Daily EOD AppStream — {day:%A} {day.month}/{day.day}",
         to=to, title="DAILY EOD APPSTREAM", blocks=[], intro_html=body,
         dry_run=dry_run, preview_dir=OUT_DIR, logfn=logfn)
-    return 0 if (res.get("ok", dry_run) and sheet_ok) else 1
+    slack_ok = True
+    if slack and not dry_run:
+        slack_ok = send_slack(slack_text, SLACK_PROD if production else SLACK_TEST,
+                              logfn=logfn)
+    return 0 if (res.get("ok", dry_run) and sheet_ok and slack_ok) else 1
 
 
 def main(argv=None) -> int:
@@ -328,6 +374,7 @@ def main(argv=None) -> int:
     ap.add_argument("--production", action="store_true", help="send to Camila")
     ap.add_argument("--from-cache", help="reuse a raw_<date>.json instead of pulling")
     ap.add_argument("--no-email", action="store_true", help="write the Sheet only")
+    ap.add_argument("--no-slack", action="store_true", help="skip the weekly-red Slack DM")
     ap.add_argument("--tab", help="write a different tab (e.g. a SANDBOX copy)")
     ap.add_argument("--scheduled", action="store_true",
                     help="the launchd pass: run only if it is SEND_HOUR in SEND_TZ")
@@ -345,7 +392,7 @@ def main(argv=None) -> int:
         day = report_day_for(dt.datetime.now(ZoneInfo("America/Chicago")).date())
     return build_and_send(day, production=a.production, dry_run=a.dry_run,
                           from_cache=Path(a.from_cache) if a.from_cache else None,
-                          email=not a.no_email, tab=a.tab)
+                          email=not a.no_email, tab=a.tab, slack=not a.no_slack)
 
 
 if __name__ == "__main__":
