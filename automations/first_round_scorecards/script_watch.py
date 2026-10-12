@@ -109,10 +109,45 @@ def _channel_files(client, channel: str) -> List[Dict]:
             and (f.get("filetype") or "").lower() in READABLE]
 
 
-def find(client, channel: str) -> Optional[Dict]:
+def _all_script_files(client) -> List[Dict]:
+    """Every script file Lucy can see, once per run. A file Camila put ONLY in
+    the tab folder doesn't come back from files.list for the channel (Jairo's,
+    2026-10-12), so it's matched by the channels it's shared in or by the
+    owner's name in it ("JAIRO RUIZ - Script.pdf")."""
+    if getattr(client, "_script_files", None) is None:
+        out: List[Dict] = []
+        for page in range(1, 6):
+            resp = client.api_call("files.list", params={"count": 200, "page": page})
+            out += [f for f in resp.get("files") or []
+                    if FOLDER.search(f"{f.get('name') or ''} {f.get('title') or ''}")
+                    and (f.get("filetype") or "").lower() in READABLE]
+            if page >= ((resp.get("paging") or {}).get("pages") or 1):
+                break
+        client._script_files = out          # once per run
+    return client._script_files
+
+
+def _where(f: Dict) -> set:
+    shares = f.get("shares") or {}
+    return set(f.get("channels") or []) | set(f.get("groups") or [])         | set(shares.get("public") or {}) | set(shares.get("private") or {})
+
+
+def _owner_files(client, channel: str, office: str) -> List[Dict]:
+    name = " ".join(office.lower().split())
+    return [{"id": f["id"], "title": f.get("name") or f.get("title") or "", "entity_id": f["id"],
+             "date_created": f.get("created") or 0, "date_updated": f.get("updated") or 0}
+            for f in _all_script_files(client)
+            if channel in _where(f)
+            or (name and name in " ".join(re.sub(r"[^a-z ]", " ",
+                                                 (f.get("name") or "").lower()).split()))]
+
+
+def find(client, channel: str, office: str = "") -> Optional[Dict]:
     """This channel's script now: the bookmark folder if Slack shows it, else
-    the newest script file shared in the channel."""
-    return pick(_bookmarks(client, channel)) or pick(_channel_files(client, channel))
+    the newest script file shared in the channel, else the newest script file
+    anywhere that's shared there or carries the owner's name."""
+    return (pick(_bookmarks(client, channel)) or pick(_channel_files(client, channel))
+            or pick(_owner_files(client, channel, office)))
 
 
 def _download(client, file_id: str) -> tuple:
@@ -322,7 +357,7 @@ def check(*, client=None, today: Optional[dt.date] = None) -> int:
     n = 0
     for ch, office in channels().items():
         try:
-            b = find(client, ch)
+            b = find(client, ch, office)
         except Exception as exc:  # noqa: BLE001
             print(f"script watch: {office}: bookmarks not read ({type(exc).__name__}: {exc})")
             continue
@@ -396,6 +431,11 @@ def main(argv=None) -> int:
             files = []
         b = pick(bms) or pick(files)
         if not b:
+            try:
+                b = pick(_owner_files(client, ch, office))
+            except Exception as exc:  # noqa: BLE001
+                print(f"{office} ({ch}): files.list (all) FAILED {type(exc).__name__}: {exc}")
+        if not b:
             missing.append(office)
         print(f"{office} ({ch}): script = {b.get('title') if b else 'NONE FOUND'} "
               f"({len(bms)} bookmarks, {len(files)} script files)")
@@ -403,7 +443,8 @@ def main(argv=None) -> int:
             print(f"    {x.get('id')} parent={x.get('parent_id')} type={x.get('type')} "
                   f"file={_file_id(x) or '-'} {x.get('title')!r}")
     # last line = what the Mini Control status shows
-    print(f"NO SCRIPT FOUND ({len(missing)}): {', '.join(missing) or 'none'}")
+    print(f"NO SCRIPT ({len(missing)}): "
+          f"{','.join(o.split()[0] for o in missing) or 'none'}")
     return 0
 
 

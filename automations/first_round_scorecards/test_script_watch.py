@@ -45,6 +45,16 @@ class PickTest(unittest.TestCase):
              "created": 200}])
         self.assertEqual(sw._file_id(sw.find(slack, "C1")), "F0BBBBBBBB2")
 
+    def test_file_only_in_the_tab_is_matched_by_owner_name(self):
+        slack = FakeSlack([], everywhere=[
+            {"id": "F0AAAAAAAA1", "name": "JAIRO RUIZ - Script.pdf", "filetype": "pdf",
+             "created": 100},
+            {"id": "F0BBBBBBBB2", "name": "Tre Mitchell- Script.pdf", "filetype": "pdf",
+             "created": 200, "groups": ["C9"]}])
+        self.assertEqual(sw._file_id(sw.find(slack, "C1", "Jairo Ruiz")), "F0AAAAAAAA1")
+        self.assertEqual(sw._file_id(sw.find(slack, "C9", "Tre Mitchell")), "F0BBBBBBBB2")
+        self.assertIsNone(sw.find(slack, "C2", "Ellen Dent"))
+
     def test_no_script_file(self):
         self.assertIsNone(sw.pick([{"id": "B", "title": "1st ROUNDS SCRIPT"},
                                    {"id": "C", "title": "Zoom link", "link": "https://zoom.us"}]))
@@ -82,12 +92,12 @@ class OverrideTest(unittest.TestCase):
 class FakeSlack:
     token = "xoxp-test"
 
-    def __init__(self, bms, files=()):
-        self.bms, self.files, self.dms = bms, list(files), []
+    def __init__(self, bms, files=(), everywhere=()):
+        self.bms, self.files, self.everywhere, self.dms = bms, list(files), list(everywhere), []
 
     def api_call(self, method, params=None):
         if method == "files.list":
-            return {"files": self.files}
+            return {"files": self.files if "channel" in (params or {}) else self.everywhere}
         return {"bookmarks": self.bms}
 
     def conversations_open(self, users):
