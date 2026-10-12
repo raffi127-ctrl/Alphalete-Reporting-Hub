@@ -366,7 +366,31 @@ LALA = {
     ],
 }
 
-OFFICES: List[Dict] = [RAF, CALVIN, JAY_ATT, JAY_EW, LALA]
+# Lala's QUANTUM FIBER reps — the same office on a second campaign, same
+# shape as Jay's two. She asked 2026-10-12 ("will this only share the AT&T
+# people? I have people on Quantum Fiber as well"). Probed that morning on
+# Lucy 1 (rerun-2026-10-12-070813-gap_alerts.log): campaign 7 is on her
+# office (invD2DClientId 7 x11 in the page links), its grid has battery /
+# device / coverage columns AT&T's does not, and the scraper reads it as-is.
+# Its own email, so each board says which team it is.
+# PREVIEW: goes to Eve's inbox until she OKs it — then swap in Lala's address
+# and add the key to the `lajahnik_dispositions_morning` schedule entry.
+LALA_QF = {
+    "key": "lajahnik_qf",
+    "name": "Lajahnik Valentine",
+    "ov": "impersonate",
+    "campaign_id": "7",              # RES-ATT-Quantum Fiber
+    "label": "Lala",
+    "campaign_label": "Quantum Fiber",
+    "tz": "America/Denver",
+    "destinations": [
+        {"kind": "email", "name": "", "channel_id": "",
+         "emails": ["alphaletemarketing@gmail.com"],
+         "cadence_min": 0, "slots": ["21:00"]},
+    ],
+}
+
+OFFICES: List[Dict] = [RAF, CALVIN, JAY_ATT, JAY_EW, LALA, LALA_QF]
 
 # --- self-serve enrollments ---------------------------------------------------
 # Offices that signed themselves up through the Daily Dispositions link
