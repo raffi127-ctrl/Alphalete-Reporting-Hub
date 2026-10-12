@@ -526,6 +526,14 @@ def main(argv=None) -> int:
     live = args.post and not args.preview_to_eve and not args.no_grade and not args.docs_only
 
     print(f"1st Round Scorecards for {day:%a %b %d, %Y}")
+    if live and not args.date:
+        # a script Camila changed in Slack today is graded on today (Camila,
+        # 2026-10-12); a failure here never holds the post
+        from automations.first_round_scorecards import script_watch
+        try:
+            script_watch.check(today=day)
+        except Exception as exc:  # noqa: BLE001
+            print(f"SCRIPT WATCH FAILED {type(exc).__name__}: {exc}")
     # every Zoom in Camila's sheet: dry-runs + Eve's preview always, the
     # channel while fathom.SHEET_KEYS_LIVE is on
     graded = build(day, do_grade=not args.no_grade,

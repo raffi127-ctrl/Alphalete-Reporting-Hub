@@ -15,6 +15,7 @@ never drift from the rule above.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Dict, List
 
 MODEL = "claude-opus-5-5"
@@ -312,6 +313,31 @@ FORMATS = {
         },
     },
 }
+
+# A script changed in Slack (script_watch.py, Camila 2026-10-12) -> the model's
+# reading of it, saved on the machine that grades. Wins over the lines above
+# for that office; delete its entry to go back to the hand-written one.
+OVERRIDES = Path(__file__).resolve().parents[2] / "output" / "first_round_scorecards" \
+    / "script_overrides.json"
+_HAND_OFFICES = dict(OFFICES)
+
+
+def load_overrides() -> None:
+    try:
+        saved = json.loads(OVERRIDES.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        saved = {}
+    OFFICES.clear()
+    OFFICES.update(_HAND_OFFICES)
+    for office, o in saved.items():
+        if office in OFFICES:
+            OFFICES[office] = {"format": f"auto:{office}", "mon_fri_ok": o.get("mon_fri_ok", False)}
+            FORMATS[f"auto:{office}"] = {"na": set(o["na"]), "drop": set(o["drop"]),
+                                         "lines": o["lines"], "keys": o["keys"],
+                                         "rules": o["rules"]}
+
+
+load_overrides()
 
 
 def office_for(owner: str) -> str:

@@ -13675,6 +13675,28 @@
    "timeout_minutes": 30,
    "verify": null
   },
+  "first_round_script_watch": {
+   "hand_run_only": true,
+   "on_scheduler": false,
+   "_note": "Camila 2026-10-12: a 1st round script changed in an office channel's '1st ROUNDS SCRIPT' bookmark folder is graded on from that day (runs on its own inside first_round_scorecards before the 6 PM grading). This handle: base args = --list (what Lucy sees in every channel, nothing saved). --check = the daily pass by hand (saves + DMs Eve and Camila). --office \"Jairo Ruiz\" --file <path> = dry-run one file.",
+   "display_name": "1st Round Scorecards — script watch",
+   "source_type": "api",
+   "command": [
+    "automations.first_round_scorecards.script_watch"
+   ],
+   "base_args": [
+    "--list"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "data_sources": [],
+   "depends_on": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "timeout_minutes": 20,
+   "verify": null
+  },
   "install_first_round_scorecards_agent": {
    "on_scheduler": false,
    "_note": "One-shot installer for com.alphalete.first-round-scorecards \u2014 see first_round_scorecards. Run `lucy rerun install_first_round_scorecards_agent` after `lucy update`.",
