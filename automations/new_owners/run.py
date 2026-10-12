@@ -58,9 +58,11 @@ def _scan(ss, args) -> int:
         rosters = cap_roster.scan(page, captains, logfn=print)
 
     fresh_total = 0
+    failed = []
     for captain, res in rosters.items():
         if res.get("error"):
             print(f"  ⚠ {captain}: {res['error']}")
+            failed.append(captain)
             continue
         owners = res["owners"]
         try:
@@ -68,6 +70,7 @@ def _scan(ss, args) -> int:
         except Exception as e:  # noqa: BLE001
             print(f"  ⚠ {captain}: can't read the board block "
                   f"({type(e).__name__}) — skipped")
+            failed.append(captain)
             continue
         on_board = set()
         for t in tables:
@@ -83,6 +86,12 @@ def _scan(ss, args) -> int:
                 fresh, captain=captain, source="Tableau captain filter",
                 ss=ss, dry_run=args.dry_run, logfn=print))
     print(f"\n{fresh_total} new rep(s) waiting for a ✅ from this scan.")
+    # Exit 0 is this report's delivery (schedule_config close_on: exit_zero), so
+    # it has to mean EVERY captain was scanned. A skipped captain is a run that
+    # can't say "nobody new" for that team — it fails, and its ticket stays open.
+    if failed:
+        print(f"⚠ {len(failed)} captainship(s) not scanned: {', '.join(failed)}")
+        return 1
     return 0
 
 

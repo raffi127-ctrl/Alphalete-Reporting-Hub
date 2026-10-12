@@ -4685,6 +4685,8 @@
    "order": 43,
    "on_scheduler": true,
    "_note": "Rosters every non-fiber captainship straight from Tableau and asks for a \u2705 in #revision-emails on anyone who has no row in that captainship's tables on the Org Sales Board. Read-only against the board: it PROPOSES, it never inserts \u2014 the rows appear when Evelyn tick the line and the next captainship run (org_sales_board --with-captainships) resolves it. Runs at 15.4, right after the per-captain fills (Cancel Rate / Activation Rate / ABP / Raf Metrics), which already detect the six FIBER captainships during their own pulls \u2014 so this covers what they can't: NDS (Khalil, Colten, Jairo) via the URL filter '?NDS Captain Teams=<X>'s Team', and B2B (Carlos, Eveliz, Luis) via one saved custom view per captain on the 'B2B 1-PAGER_Captain View' tab. NOT folded into the 4am board fill on purpose: six crosstab exports is ~6 minutes and the board must not wait on them. A rep already in the 'New Owners Log' tab \u2014 pending OR added \u2014 is never proposed twice, so a re-run is silent. Fiber can be added with --programs all once its rosters are worth the extra six pulls.",
+   "close_on": "exit_zero",
+   "_close_on_note": "Read-only scan: it writes no cells and posts only when someone is new, so there is nothing outside to verify. Exit 0 means every captain was rostered and compared (run.py returns 1 if any captain failed). Megan 2026-10-12.",
    "display_name": "New Owners \u2014 captainship roster scan",
    "source_type": "tableau",
    "data_sources": [],
