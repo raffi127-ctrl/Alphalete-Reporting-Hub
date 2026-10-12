@@ -16,12 +16,17 @@ WHAT IS WIRED, AND WHAT IS NOT (measured, not assumed):
   nds   ✅ the URL filter narrows the export. `ProductSalesSummaryRep` +
         `?NDS Captain Teams=Colten's Team` returns exactly Colten's 12 owners,
         the same roster his board block carries.
-  b2b   ✅ the URL filter narrows the export too, since 2026-10-10:
-        `ATTTRACKER-B2B/CaptainsTeam` + sheet `CB-Owner Sales` +
-        `?B2B Captain's Teams (SFDC)=Carlos's Team` returns his 11 owners.
-        (Until then it was one saved custom view per captain on
-        `B2B1-PAGER_CaptainView`, because there the filter never reached the
-        export; that view died 2026-10-10 and took the saved views with it.)
+  b2b   ✅ TWO pulls since 2026-10-12, because no B2B sheet carries both the
+        team and this week's sales any more:
+          · WHO IS ON THE TEAM: `ATTTRACKER-B2B/CaptainsTeam` + sheet
+            `CB-Owner Metrics` + `?B2B Captain's Teams (SFDC)=<X>'s Team`
+            (team | owner | two rate %s — no sales count).
+          · WHO SOLD: the board's own B2B sales pull (section_pull.B2B_SPEC,
+            'Sales By ICD (ATT) (V2)', week-pinned) — once per scan, to its
+            own file. A team member is kept only if they sold that week.
+        History: saved views on `B2B1-PAGER_CaptainView` (died 2026-10-10),
+        then `CB-Owner Sales` on CaptainsTeam (gone 2026-10-12; the view now
+        offers CB-Owner Metrics, CB-Owners Non PMT, Captain Team Check (2)/(4)).
   fiber — deliberately not scanned: its six captainships are already detected
         every day by their own per-captain reports (Cancel Rate, Activation
         Rate, ABP & 6 days, Raf Metrics), so scanning here pays twice for the
@@ -163,11 +168,19 @@ PROGRAM_PULLS: Dict[str, dict] = {
     # DOES reach the export: CB-Owner Sales + Carlos's Team -> his 11 owners,
     # team column included (probe_carlos_bonus_sheets on Lucy 3, 2026-10-10).
     # That sheet calls the column 'Owner Name', not the board's 'ICD Owner Name'.
+    # 2026-10-12: CB-Owner Sales vanished from CaptainsTeam overnight (same
+    # churn as 08-13). CB-Owner Metrics is the team list, with no sales in it,
+    # so `sold_this_week` intersects it with the board's B2B sales pull.
     "b2b": {
         "view": _V + "ATTTRACKER-B2B/CaptainsTeam",
-        "sheet": "CB-Owner Sales",
+        "sheet": "CB-Owner Metrics",
         "field": "B2B Captain's Teams (SFDC)",
-        "owner_col": "Owner Name",
+        # Its owner column has NO header: the export is
+        # ['', '', 'Churn Rate (0-30 days)', 'Activation Rate (31-60 days)'] then
+        # ["Carlos's Team", 'Carlos Hidalgo', '8.1%', '72.6%'] — so the owner
+        # is read as the cell beside the team cell (_team_list_owners).
+        "team_list": True,
+        "sold_this_week": True,
     },
     # "fiber": covered by the per-captain reports; add here if that ever changes.
 }
@@ -242,12 +255,14 @@ def _raw_owners(spec, path: Path) -> Dict[str, str]:
         return {}
     hdr_i = next((i for i, r in enumerate(rows[:8])
                   if any((c or "").strip() == spec.owner_col for c in r)), None)
-    if hdr_i is None:
-        return {}
-    header = [(c or "").strip() for c in rows[hdr_i]]
-    oi = tableau_http.col_idx(header, spec.owner_col)
+    header = [(c or "").strip() for c in rows[hdr_i]] if hdr_i is not None else []
+    oi = tableau_http.col_idx(header, spec.owner_col) if header else None
     if oi is None:
-        return {}
+        # A renamed column must FAIL, never read as "nobody on this team" —
+        # an empty roster is a silent "0 new reps". [[feedback_empty_means_proven_zero]]
+        raise RuntimeError(
+            f"no {spec.owner_col!r} column in {path.name} — first rows: "
+            f"{[r[:5] for r in rows[:3]]}")
     skip = {s.lower() for s in (spec.skip_owners or ())} | {"", "total",
                                                             "grand total"}
     out: Dict[str, str] = {}
@@ -259,6 +274,64 @@ def _raw_owners(spec, path: Path) -> Dict[str, str]:
         if key and key not in skip:
             out.setdefault(key, _display(raw))
     return out
+
+
+def _team_list_owners(path: Path, team: str) -> Dict[str, str]:
+    """{normalized owner -> display} from a headerless team list: each data row
+    is `<team> | <owner> | …`. Every row must carry the team we asked for — a
+    row from another team means the URL filter didn't take, and reading on
+    would propose the whole program."""
+    from automations.org_sales_board import sara_pull
+    rows = sara_pull._read_rows(path)
+    out: Dict[str, str] = {}
+    other = set()
+    for r in rows:
+        cells = [(c or "").strip() for c in r]
+        if len(cells) < 2 or not _TEAM_OPTION.match(cells[0]):
+            continue
+        if cells[0].replace("’", "'").lower() != team.replace("’", "'").lower():
+            other.add(cells[0])
+            continue
+        raw = cells[1]
+        if not raw or raw.lower() in ("total", "grand total"):
+            continue
+        key = sp._norm_section_owner(raw, False)
+        if key:
+            out.setdefault(key, _display(raw))
+    if other:
+        raise RuntimeError(f"the team filter didn't take — export also has "
+                           f"{sorted(other)}")
+    if not out:
+        raise RuntimeError(f"no '<team> | <owner>' rows for {team!r} in "
+                           f"{path.name} — first rows: "
+                           f"{[r[:4] for r in rows[:3]]}")
+    return out
+
+
+_SELLERS: Dict[tuple, set] = {}
+
+
+def _b2b_sellers(page, today: dt.date, out_dir: Path, logfn=print) -> set:
+    """Normalized owners with B2B sales in the board's reporting week — ONE
+    pull per scan, shared by every b2b captain. Same spec, week pin and parser
+    as the board's B2B section, written to this report's own file."""
+    key = (today, str(out_dir))
+    if key in _SELLERS:
+        return _SELLERS[key]
+    import dataclasses
+    spec = dataclasses.replace(sp.B2B_SPEC, out_name="new_owners_b2b_sales.csv")
+    logfn("  pulling who sold B2B this week (board's B2B sales sheet)…")
+    path = sp.pull_section_byday(spec, out_dir, page, logfn=lambda *_: None,
+                                 today=today)
+    per = sp.parse_byday(spec, path, today)
+    sellers = {o for o, m in per.items()
+               if sum(int(v or 0) for v in (m.get(spec.metric) or {}).values()) > 0}
+    if not sellers:
+        raise RuntimeError("the B2B sales pull came back with nobody selling — "
+                           "refusing to call every b2b captain 'nobody new'")
+    logfn(f"    {len(sellers)} B2B owner(s) with sales this week")
+    _SELLERS[key] = sellers
+    return sellers
 
 
 def roster_for(captain: str, page, *, today: Optional[dt.date] = None,
@@ -289,7 +362,17 @@ def roster_for(captain: str, page, *, today: Optional[dt.date] = None,
     logfn(f"  pulling {captain}'s roster ({prog}, {how})…")
     download_crosstab_patchright(url, pull["sheet"], out, page=page,
                                  verbose=False)
-    owners = _raw_owners(spec, out)
+    owners = (_team_list_owners(out, team) if pull.get("team_list")
+              else _raw_owners(spec, out))
+    if pull.get("sold_this_week"):
+        if not owners:
+            raise RuntimeError(f"{captain}'s team list came back empty")
+        sold = _b2b_sellers(page, today, out_dir, logfn)
+        on_team = len(owners)
+        owners = {k: v for k, v in owners.items() if k in sold}
+        logfn(f"    {on_team} on {captain}'s team, {len(owners)} with sales "
+              f"this week")
+        return owners
     logfn(f"    {len(owners)} owner(s) with sales this week under {captain}")
     return owners
 
@@ -301,7 +384,12 @@ def scan(page, captains: Optional[List[str]] = None, *,
     as 'nobody new'."""
     today = today or dt.date.today()
     out: Dict[str, dict] = {}
-    for captain in (captains or captains_for()):
+    # NDS first. A B2B pull that dies on its dialog (10/10, 10/12) can leave the
+    # Tableau session half signed-out, and the NDS pull behind it then hangs
+    # until the 20m kill — so one broken B2B sheet cost every roster.
+    order = sorted(captains or captains_for(),
+                   key=lambda c: TEAMS.get(c, ("",))[0] != "nds")
+    for captain in order:
         if captain not in TEAMS:
             out[captain] = {"error": "not a captainship in TEAMS"}
             continue
@@ -309,7 +397,9 @@ def scan(page, captains: Optional[List[str]] = None, *,
             out[captain] = {"owners": roster_for(captain, page, today=today,
                                                  logfn=logfn)}
         except Exception as e:  # noqa: BLE001 — one captain must not stop the scan
+            # Full text: a "Couldn't find the sheet" error carries the dialog's
+            # sheet list, and that list is the whole fix when Tableau renames.
             logfn(f"    ⚠ {captain}: roster pull FAILED "
-                  f"({type(e).__name__}: {str(e)[:100]})")
+                  f"({type(e).__name__}: {str(e)[:600]})")
             out[captain] = {"error": f"{type(e).__name__}: {str(e)[:120]}"}
     return out
