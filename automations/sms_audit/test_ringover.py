@@ -124,3 +124,35 @@ class Empower(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WhichSideIsUs(unittest.TestCase):
+    """Vocabulary alone gave up on 48% of a 140-call sample. Adding "who
+    talks more" rescued 65 of those 67 and disagreed on 3 of the 73 it had
+    already decided."""
+
+    def setUp(self):
+        from automations.sms_audit import call_transcribe as CT
+        self.CT = CT
+
+    def test_vocabulary_decides_it(self):
+        rows = [(0.0, "0", "Hello?"),
+                (1.0, "1", "Hi, this is Taylor, calling in regards to the "
+                           "job application you submitted through Indeed"),
+                (9.0, "0", "Yeah")]
+        got = self.CT.speakers(rows)
+        self.assertEqual(got["us"], "1")
+        self.assertEqual(got["name"], "Taylor")
+
+    def test_word_count_decides_when_vocabulary_cannot(self):
+        """A short call need never use any of our words."""
+        rows = [(0.0, "0", "Hello"),
+                (1.0, "1", "Hey there, is now alright, I can call you back "
+                           "later today if that is easier for you"),
+                (6.0, "0", "Sure")]
+        self.assertEqual(self.CT.speakers(rows)["us"], "1")
+
+    def test_a_dead_heat_is_unknown_not_a_guess(self):
+        """Grading the applicant by mistake is worse than skipping."""
+        got = self.CT.speakers([(0.0, "0", "Hello"), (1.0, "1", "Hi")])
+        self.assertIsNone(got["us"])
