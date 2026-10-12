@@ -84,6 +84,13 @@ def split_city(title: str) -> tuple:
     return t, ""
 
 
+def title_city(title: str) -> tuple:
+    """split_city, but a title with no city of its own takes the office's
+    config.SCORECARD_CITIES entry (one ad run in several cities)."""
+    t, city = split_city(title)
+    return t, city or config.SCORECARD_CITIES.get(t, "")
+
+
 def table(history: Dict[str, List[tuple]], titles: Dict[str, str],
           start: dt.date, end: dt.date, seconds: Optional[list]) -> List[dict]:
     """One row per ad with 1st rounds in [start, end]. Eve 10/9 (to Raf):
@@ -130,7 +137,7 @@ def cells(r: dict, n: Optional[int] = None) -> List[str]:
         # no-shows and the % adds up (the text says "counted through ...").
         r2 = [str(k["scheduled"] - k["pending"]), str(k["showed"]),
               f"{ret:.0f}%" if ret is not None else "-"]
-    title, city = split_city(r["title"]) if n is not None else (r["title"], "")
+    title, city = title_city(r["title"]) if n is not None else (r["title"], "")
     return [str(n) if n is not None else "", title, city, str(r["seen"]), _pct(r["back"], r["seen"]),
             _pct(r["removed"], r["seen"]),
             f"{r['avg']:.1f}" if r["avg"] is not None else "-"] + r2
@@ -319,7 +326,7 @@ _SHEET_WIDTHS = [40, 430, 170, 60, 80, 95, 75, 85, 75, 80, 85, 95]
 def sheet_row(r: dict, n: Optional[int]) -> list:
     """One row as numbers; `n` = the ad's number (None = TOTAL)."""
     k = r["second"]
-    title, city = split_city(r["title"]) if n is not None else (r["title"], "")
+    title, city = title_city(r["title"]) if n is not None else (r["title"], "")
     seen = r["seen"]
     if k is None:
         r2 = ["", "", ""]

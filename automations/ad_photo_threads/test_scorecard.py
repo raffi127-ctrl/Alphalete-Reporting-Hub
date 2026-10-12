@@ -25,6 +25,18 @@ class SplitCity(unittest.TestCase):
         for title, want in cases.items():
             self.assertEqual(sc.split_city(title), want, title)
 
+    def test_one_ad_several_cities(self):
+        # Valeria 10/12: Colten's Assistant Manager ad = Doral + Princeton.
+        old = sc.config.SCORECARD_CITIES
+        sc.config.SCORECARD_CITIES = {"Entry Level Assistant Manager": "Doral + Princeton, FL"}
+        try:
+            self.assertEqual(sc.title_city("Entry Level Assistant Manager"),
+                             ("Entry Level Assistant Manager", "Doral + Princeton, FL"))
+            self.assertEqual(sc.title_city("AT&T Sales Agent – Miami FL"),
+                             ("AT&T Sales Agent", "Miami, FL"))
+        finally:
+            sc.config.SCORECARD_CITIES = old
+
 
 def _row(title, seen, removed, second):
     return {"title": title, "seen": seen, "back": seen - removed, "removed": removed,

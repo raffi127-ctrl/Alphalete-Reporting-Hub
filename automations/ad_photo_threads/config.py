@@ -447,7 +447,11 @@ _SCORECARD_TABS = {
     "colten": {"scorecard_book": ALL_IN_ONE_COLTEN_EVELIZ,
                "scorecard_tab": "Colten (D2D) - Ad Scorecard",
                "scorecard_seconds_from_sheet": True, "scorecard": True,
-               "scorecard_tag": "U047M3AAN0G"},
+               "scorecard_tag": "U047M3AAN0G",
+               # Valeria 10/12 (scorecard thread): the Assistant Manager ad
+               # runs in Doral AND Princeton -- one row (see _ALIASES), both
+               # cities in its City cell instead of a blank.
+               "scorecard_cities": {"Entry Level Assistant Manager": "Doral + Princeton, FL"}},
     "eveliz": {"scorecard_book": ALL_IN_ONE_COLTEN_EVELIZ,
                "scorecard_tab": "Eveliz (B2B) - Ad Scorecard",
                "scorecard_seconds_from_sheet": True, "scorecard": True,
@@ -490,6 +494,7 @@ TITLE_ONLY: dict = {}
 SECOND_ROUNDS_OWNER = ""      # set by use(); "" = no 2nd-round lines
 SCORECARD_SECONDS_FROM_SHEET = False   # set by use()
 SCORECARD_TAG = ""            # set by use(); Slack user tagged on the post
+SCORECARD_CITIES: dict = {}   # set by use(); {ad title: City cell} for a city-less title
 
 # The ad scorecard (Raf 10/9): "a weekly scorecard maybe on Friday ... as
 # you're testing, posting more frequently so we're going back and forth".
@@ -517,10 +522,11 @@ def use(o: dict) -> None:
     """Point this module's globals at office `o` for the rest of the pass."""
     global SHEET_ID, SOURCE_CHANNEL_ID, LIVE_CHANNEL_ID, NIGHTLY_PAUSED_BEFORE, SOURCES
     global TITLE_ALIASES, TITLE_ONLY, SECOND_ROUNDS_OWNER, SCORECARD_SECONDS_FROM_SHEET
-    global SCORECARD_TAG
+    global SCORECARD_TAG, SCORECARD_CITIES
     SECOND_ROUNDS_OWNER = o.get("second_rounds_owner") or ""
     SCORECARD_SECONDS_FROM_SHEET = bool(o.get("scorecard_seconds_from_sheet"))
     SCORECARD_TAG = o.get("scorecard_tag") or ""
+    SCORECARD_CITIES = o.get("scorecard_cities") or {}
     TITLE_ALIASES = o.get("title_aliases") or {}
     TITLE_ONLY = o.get("title_only") or {}
     SHEET_ID = o["sheet_id"]
