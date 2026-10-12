@@ -34,6 +34,10 @@ ROSTER_SUBJECT = "Owner Roster"          # IMAP SUBJECT substring match
 # Which tabs feed which campaign. Raf 2026-07-26: Hybrid rolls up under Fiber (it
 # is not its own campaign). Wireless (= NDS) and B2B are intentionally ignored.
 FIBER_TABS = ("Fiber", "Hybrid")
+# Other names a tab has shipped under. Kelly's 10.9.26 roster renamed Fiber →
+# 'RES ATT' (next to 'RES ATT OOF' = NDS, 'Quantum Fiber', 'Kinetic Cross Sell',
+# 'SBS Owners') and the missing 'Fiber' tab killed the whole sync on 10/10.
+TAB_ALIASES = {"Fiber": ("RES ATT",)}
 
 EMAIL_RE = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 # A single Email cell can hold several addresses ("a@x.com; b@y.com") and stray
@@ -151,8 +155,9 @@ def parse_tab(xlsx_path: Path, tab: str) -> List[Owner]:
     wb = openpyxl.load_workbook(str(xlsx_path), read_only=True, data_only=True)
     # Match by label, not exact string: Kelly's 9.18.26 roster shipped the tab
     # as 'Hybrid ' (trailing space) and the exact lookup killed the whole sync.
-    actual = next((n for n in wb.sheetnames
-                   if n.strip().lower() == tab.strip().lower()), None)
+    wanted = [t.strip().lower() for t in (tab,) + TAB_ALIASES.get(tab, ())]
+    actual = next((n for w in wanted for n in wb.sheetnames
+                   if n.strip().lower() == w), None)
     if actual is None:
         raise RuntimeError(f"Tab {tab!r} not in roster (tabs: {wb.sheetnames}).")
     ws = wb[actual]

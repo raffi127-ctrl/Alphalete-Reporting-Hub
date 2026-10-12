@@ -624,6 +624,7 @@
    "freshness_target": null,
    "depends_on": [],
    "verify": null,
+   "close_on": "exit_zero",
    "timeout_minutes": 180,
    "machine": "Lucy 2"
   },
@@ -12607,6 +12608,7 @@
    "depends_on": [],
    "timeout_minutes": 15,
    "verify": null,
+   "close_on": "exit_zero",
    "assignee": "Claude",
    "_order_note": "After the ICD posters have had the night to finish their days, and before anyone opens a board in the morning."
   },
