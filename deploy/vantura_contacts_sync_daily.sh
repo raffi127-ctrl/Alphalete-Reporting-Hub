@@ -29,7 +29,7 @@ try:
                       ["```"] + tail + ["```",
                        'Re-run: `lucy rerun vantura_contacts_sync --machine "Lucy 2"`'],
                       tag="vantura_contacts_sync-failed", cfg=load_config(),
-                      incident="vantura-contacts-sync-failed")
+                      incident="standalone-vantura_contacts_sync")
 except Exception as e:
     print("alert failed:", e)
 PY

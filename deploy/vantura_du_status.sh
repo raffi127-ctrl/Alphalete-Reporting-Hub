@@ -27,7 +27,7 @@ try:
                       ["```"] + tail + ["```",
                        'Re-run: `lucy rerun vantura_du_status --machine "Lucy 2"`'],
                       tag="vantura_du_status-failed", cfg=load_config(),
-                      incident="vantura-du-status-failed")
+                      incident="standalone-vantura_du_status")
 except Exception as e:
     print("alert failed:", e)
 PY

@@ -53,7 +53,10 @@ try:
                       ["```"] + tail + ["```",
                        "Re-run: `%s`" % sys.argv[2]],
                       tag="org_campaign_metrics-failed", cfg=load_config(),
-                      incident="org-campaign-metrics-failed")
+                      # standalone-<report id>: the family a clean re-run's
+                      # resolve_report("org_campaign_metrics") can find. The old
+                      # free-text key never closed itself (10/12).
+                      incident="standalone-org_campaign_metrics")
 except Exception as e:
     print("alert failed:", e)
 PY
