@@ -724,9 +724,10 @@ def is_sunday_quiet_source(label: str) -> bool:
 # 2026-10-08, needs 2026-10-10"): 6,266 rows back to 2022-10-31, Sat 41 in four
 # years, and since 9/06 not one weekend row — every weekday 8/31-10/09 has rows.
 # The daily bar asked Sunday for SATURDAY, a day this ledger never carries. Fri
-# is still owed: Lucy 2's pull that morning had only Thu 10/08 (Fri's 9 rows
-# landed later), and that is still caught. Name the SHEET — SFDC Total Balance
-# sits under WEEKLY_SOURCE_MARKERS instead.
+# is still owed. (Lucy 2's "newest 10/08" was NOT a late load: that login is
+# Carlos's and sees only his rows — carlos_security_ledger now skips the judge
+# for its own pull.) Name the SHEET — SFDC Total Balance sits under
+# WEEKLY_SOURCE_MARKERS instead.
 WEEKDAY_ONLY_MARKERS = (
     "dropstracker",
     "netsuitesecurityledgersfdc → transaction details",

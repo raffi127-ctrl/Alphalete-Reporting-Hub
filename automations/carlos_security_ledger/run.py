@@ -98,7 +98,15 @@ def pull_hub() -> tuple[list[list], float]:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     det = OUT_DIR / "Transaction_Details.csv"
     bal = OUT_DIR / "SFDC_Total_Balance.csv"
-    download_crosstab_patchright(VIEW, "Transaction Details", det, verbose=False)
+    # Lucy 2's Tableau login is Carlos's, so this export is HIS slice, not all ICDs: its newest
+    # date is his last transaction (8-16 day gaps), not the feed's. 10/11 + 10/12 both alerted
+    # "newest 10/08" while the all-ICD view already had Fri 10/09 (7 other offices). Skip the
+    # date judge for this one sheet only; override_bulletin's all-ICD pull still owes it.
+    os.environ["ALPHALETE_SKIP_FRESHNESS"] = "1"
+    try:
+        download_crosstab_patchright(VIEW, "Transaction Details", det, verbose=False)
+    finally:
+        os.environ.pop("ALPHALETE_SKIP_FRESHNESS", None)
     download_crosstab_patchright(VIEW, "SFDC Total Balance", bal, verbose=False)
     try:
         download_crosstab_patchright(DD_ORG_VIEW, "ORG DD Detail", OUT_DIR / "DD_Detail.csv", verbose=False)
