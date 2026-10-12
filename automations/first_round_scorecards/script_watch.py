@@ -382,6 +382,7 @@ def main(argv=None) -> int:
         return 0
     from automations.shared import slack_metrics_post as smp
     client = smp._client()
+    missing = []
     for ch, office in channels().items():
         try:
             bms = _bookmarks(client, ch)
@@ -394,11 +395,15 @@ def main(argv=None) -> int:
             print(f"{office} ({ch}): files.list FAILED {type(exc).__name__}: {exc}")
             files = []
         b = pick(bms) or pick(files)
+        if not b:
+            missing.append(office)
         print(f"{office} ({ch}): script = {b.get('title') if b else 'NONE FOUND'} "
               f"({len(bms)} bookmarks, {len(files)} script files)")
         for x in bms + files:
             print(f"    {x.get('id')} parent={x.get('parent_id')} type={x.get('type')} "
                   f"file={_file_id(x) or '-'} {x.get('title')!r}")
+    # last line = what the Mini Control status shows
+    print(f"NO SCRIPT FOUND ({len(missing)}): {', '.join(missing) or 'none'}")
     return 0
 
 
