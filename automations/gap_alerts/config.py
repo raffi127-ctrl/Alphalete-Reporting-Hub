@@ -373,8 +373,9 @@ LALA = {
 # office (invD2DClientId 7 x11 in the page links), its grid has battery /
 # device / coverage columns AT&T's does not, and the scraper reads it as-is.
 # Its own email, so each board says which team it is.
-# PREVIEW: goes to Eve's inbox until she OKs it — then swap in Lala's address
-# and add the key to the `lajahnik_dispositions_morning` schedule entry.
+# Previewed to Eve's inbox on 10/11 data (3 reps: Biancy Torres Rojas, Paris
+# Spaulding, Oakleigh Harbaugh — none on her AT&T board), live to Lala
+# 2026-10-12. Also rides `lajahnik_dispositions_morning`.
 LALA_QF = {
     "key": "lajahnik_qf",
     "name": "Lajahnik Valentine",
@@ -385,7 +386,7 @@ LALA_QF = {
     "tz": "America/Denver",
     "destinations": [
         {"kind": "email", "name": "", "channel_id": "",
-         "emails": ["alphaletemarketing@gmail.com"],
+         "emails": ["lajahnikv@gmail.com"],
          "cadence_min": 0, "slots": ["21:00"]},
     ],
 }

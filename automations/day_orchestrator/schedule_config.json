@@ -12841,7 +12841,7 @@
    "order": 36.59,
    "machine": "Lucy 1",
    "on_scheduler": true,
-   "display_name": "Lala's Morning Dispositions (email: lajahnikv@gmail.com)",
+   "display_name": "Lala's Morning Dispositions — AT&T + Quantum Fiber (email: lajahnikv@gmail.com)",
    "source_type": "local",
    "data_sources": [],
    "command": [
@@ -12849,7 +12849,7 @@
    ],
    "base_args": [
     "--only",
-    "lajahnik",
+    "lajahnik,lajahnik_qf",
     "--date",
     "yesterday",
     "--force",
