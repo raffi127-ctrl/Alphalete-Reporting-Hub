@@ -90,7 +90,18 @@ def main(argv=None) -> int:
         # the same numbers from the Order Log (proof in pull.py, 2026-10-10).
         print(f"  ↪ {pull.OWNER} isn't in the Metrics view — computing ABP "
               f"from the Order Log (ALLREPS, Mon→today) instead")
-        ol_path = pull.fetch_order_log(today)
+        try:
+            ol_path = pull.fetch_order_log(today)
+        except RuntimeError as e:
+            # Monday morning the Mon→today window is just today, often still
+            # empty — Tableau then serves only 'Last Refresh'. That's "no orders
+            # yet this week", not a broken view (any other day it still fails).
+            if today.weekday() == 0 and "Last Refresh" in str(e):
+                print("  ↪ no orders in the Order Log yet this week (Monday) "
+                      "— nothing to fill today")
+                print("=== done ===")
+                return 0
+            raise
         parsed = pull.parse_order_log(ol_path, today)
     office = parsed["office_total"]
     reps = parsed["reps"]

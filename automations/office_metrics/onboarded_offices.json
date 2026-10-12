@@ -338,8 +338,7 @@
       "churn_ni",
       "churn_wl",
       "activations",
-      "abp",
-      "tableau_shot"
+      "abp"
     ],
     "report_order": {
       "knocks": 1,
@@ -351,13 +350,12 @@
       "churn_ni": 7,
       "churn_wl": 8,
       "activations": 9,
-      "abp": 10,
-      "tableau_shot": 11
+      "abp": 10
     },
     "per_office_views": {},
     "machine": "Lucy 1",
     "campaign": "fiber_d2d",
-    "notes": "Raf 2026-10-08 (email 'Metrics reporting'): Lala came from Lumen into AT&T fiber, no captainship; wants every metric we post on Slack, by email. Sheet = copy of Master Metrics Templates made 2026-10-09.",
+    "notes": "Raf 2026-10-08 (email 'Metrics reporting'): Lala came from Lumen into AT&T fiber, no captainship; wants every metric we post on Slack, by email. Sheet = copy of Master Metrics Templates made 2026-10-09. tableau_shot PAUSED 2026-10-12 (Eve): she is not in the Tableau Metrics view yet, so the shot is blank and failed every day -- put it back in enrolled_reports + report_order once Tableau has her.",
     "email_to": [
       "lajahnikv@gmail.com"
     ],
