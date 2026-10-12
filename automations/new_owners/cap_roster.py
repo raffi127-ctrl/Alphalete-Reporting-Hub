@@ -389,6 +389,18 @@ def scan(page, captains: Optional[List[str]] = None, *,
     # until the 20m kill — so one broken B2B sheet cost every roster.
     order = sorted(captains or captains_for(),
                    key=lambda c: TEAMS.get(c, ("",))[0] != "nds")
+    # The B2B sales list goes FIRST, on the fresh page. Pulled after a
+    # CaptainsTeam team-list download in the same session, the browser closed
+    # on the next goto/save_as every time (laptop, 2026-10-12, 3 of 3); pulled
+    # first it came back clean (74 sellers). A failure here is left for
+    # roster_for to re-raise per b2b captain.
+    if any(PROGRAM_PULLS.get(TEAMS.get(c, ("",))[0], {}).get("sold_this_week")
+           for c in order):
+        try:
+            _b2b_sellers(page, today, Path("output"), logfn)
+        except Exception as e:  # noqa: BLE001
+            logfn(f"    ⚠ B2B sales pull FAILED ({type(e).__name__}: "
+                  f"{str(e)[:100]})")
     for captain in order:
         if captain not in TEAMS:
             out[captain] = {"error": "not a captainship in TEAMS"}
