@@ -76,11 +76,19 @@ def _fetch_csv(page, url: str, log=print) -> bytes:
     """GET the ORDERLOG export, retried in the SAME authed session.
 
     Raises the last error when every attempt failed, so the caller's behaviour on
-    a genuine outage is unchanged — this only rescues a transient timeout."""
+    a genuine outage is unchanged — this only rescues a transient timeout.
+
+    One exception to "the last error": if any attempt got Tableau's empty answer
+    (200, tiny body), THAT is raised. On 2026-10-12 a Monday today-only window
+    came back 200/1 byte twice, then a one-off 500 on the third try; raising the
+    500 hid "no rows yet" from the callers' status=200 guards (pull_b2b,
+    captainship_boards), and the SCI pass dropped every b2b value — closed week
+    included. A 500 after Tableau already said "empty" is noise, not an outage."""
     import time
 
     started = time.time()
     last = None
+    empty = None
     for attempt in range(1, _CSV_ATTEMPTS + 1):
         try:
             r = page.context.request.get(url, timeout=300_000)
@@ -92,6 +100,8 @@ def _fetch_csv(page, url: str, log=print) -> bytes:
             last = RuntimeError(
                 "order-log export failed: status={} bytes={}".format(
                     r.status, len(body)))
+            if r.status == 200:
+                empty = last
         except Exception as e:  # noqa: BLE001 — retry, then re-raise the last one
             last = e
             log("  [csv] attempt {}/{} FAILED ({}: {})".format(
@@ -105,7 +115,7 @@ def _fetch_csv(page, url: str, log=print) -> bytes:
                     time.time() - started, attempt + 1))
             break
         time.sleep(_CSV_RETRY_WAIT)
-    raise last
+    raise empty or last
 
 
 def _pull(today: dt.date, dest: Path, log=print) -> Path:

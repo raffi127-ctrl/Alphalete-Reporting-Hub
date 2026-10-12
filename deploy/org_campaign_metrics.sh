@@ -30,13 +30,19 @@ ST=$?
 # both books is harmless by design. Sequential: one Campaign Log writer at a
 # time per the README, and these are different books anyway.
 echo "[$(date)] org-campaign-metrics SCI pass starting" >> "$LOG_FILE"
-ORG_CAMPAIGN_SSID="1aWWdtMtv1ivZa8fv10cbEzJJUNrO7h9YA8fVvfiRqlg" \
+ORG_SCI_SSID="1aWWdtMtv1ivZa8fv10cbEzJJUNrO7h9YA8fVvfiRqlg"
+ORG_CAMPAIGN_SSID="$ORG_SCI_SSID" \
     "$VENV_PY" -u -m automations.org_campaign_metrics.run --write >> "$LOG_FILE" 2>&1
 ST_SCI=$?
 echo "[$(date)] org-campaign-metrics SCI pass finished exit=$ST_SCI" >> "$LOG_FILE"
+# The re-run line names the pass that failed: a bare `lucy rerun` only writes
+# the Alphalete book, so on 10/12 the suggested fix could not repair the SCI one.
+RERUN=""
+[ $ST -ne 0 ] && RERUN="lucy rerun org_campaign_metrics --write"
+[ $ST_SCI -ne 0 ] && RERUN="${RERUN:+$RERUN  +  }lucy rerun org_campaign_metrics --write --ssid $ORG_SCI_SSID"
 [ $ST -eq 0 ] && ST=$ST_SCI
 if [ $ST -ne 0 ]; then
-    "$VENV_PY" - "$LOG_FILE" <<'PY'
+    "$VENV_PY" - "$LOG_FILE" "$RERUN" <<'PY'
 import sys
 from pathlib import Path
 try:
@@ -45,7 +51,7 @@ try:
     tail = Path(sys.argv[1]).read_text().splitlines()[-15:]
     notify.post_alert(":rotating_light: *Org Focus Report campaign stamper* failed",
                       ["```"] + tail + ["```",
-                       'Re-run: `lucy rerun org_campaign_metrics --write`'],
+                       "Re-run: `%s`" % sys.argv[2]],
                       tag="org_campaign_metrics-failed", cfg=load_config(),
                       incident="org-campaign-metrics-failed")
 except Exception as e:

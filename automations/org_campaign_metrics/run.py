@@ -110,8 +110,14 @@ def main(argv=None):
     ap.add_argument("--skip-tableau", action="store_true",
                     help="skip every pull (all three campaigns need the "
                          "browser now) — layout sync only")
+    ap.add_argument("--ssid", help="target workbook id (same as exporting "
+                    "ORG_CAMPAIGN_SSID). Exists so `lucy rerun` — which cannot "
+                    "set env vars — can redo the SCI pass (2026-10-12).")
     a = ap.parse_args(argv)
     dry = not a.write
+    if a.ssid:
+        CL.SSID = a.ssid
+        CL.API = "https://sheets.googleapis.com/v4/spreadsheets/" + a.ssid
     today = dt.datetime.now(TZ).date()
     log = print
 
