@@ -77,12 +77,22 @@ SLOT_GRACE_MIN = 40
 # table does, so this needs no sheet edit -- and it is one place to look.
 # "sat" is Saturday (his rule: nothing after 5:30 on a Saturday); Sunday is
 # never. Keys: "slack" = every Slack room the office is approved for,
-# "text" = every text group.
+# "text" = every text group. A kind LEFT OUT keeps its own cadence.
+#
+# Valeria (2026-10-12: "change the knocks and dispos notifications to the
+# custom 3 times") is the form's 2:00/5:15/9:00, but here rather than
+# cadence 0 on the sheet: her day ends 6:30 PM, and a sheet slot more than
+# RECAP_AFTER_MIN past the bell never posts, so 9:00 would silently vanish.
+# Her LEADERS text stays on its own every-30.
 SET_TIMES: Dict[str, Dict[str, Dict[str, List[str]]]] = {
     "carlos": {
         "slack": {"weekday": ["12:00", "14:00", "16:00", "18:00"],
                   "sat": ["12:00", "14:00", "16:00"]},
         "text": {"weekday": ["18:00"], "sat": ["16:00"]},
+    },
+    "valeria": {
+        "slack": {"weekday": ["14:00", "17:15", "21:00"],
+                  "sat": ["14:00", "17:15"]},
     },
 }
 # Offices whose board is NOT texted at all. Slack is untouched.
@@ -113,6 +123,9 @@ def _apply_set_times(key: str, dests: List[Dict], now: dt.datetime) -> List[Dict
     out = []
     for d in dests:
         kind = "text" if P.is_text_dest(d["channel_id"]) else "slack"
+        if kind not in plan:
+            out.append(d)
+            continue
         d = dict(d)
         d["times"] = list(((plan.get(kind) or {}).get(day)) or [])
         if _wd(now) == 6:
