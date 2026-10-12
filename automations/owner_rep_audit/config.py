@@ -10,7 +10,10 @@ THE FLOW (Rafael 2026-09-19, design Eve 2026-10-01, cadence + escalation Eve
              Slack workspace (and retired in OwnerVille once that step exists).
              No approval from Eve -- "el dueño es quien sabe" (Eve 10/1).
   day 4      owners with no reply (or a reply Lucy couldn't read) get ONE
-             reminder, to the owner.
+             reminder, to the owner -- and Evelyn gets a DM with the same
+             owners, so she can write to them herself before the close
+             (Eve 2026-10-12: "me mandes un aviso a mí para poder escribirle
+             personalmente").
   day 8      CLOSE: the month's summary in #l10-alphalete, and the lists still
              pending are posted in the same thread TAGGING EVELYN, so she can
              chase those owners in person (Eve 10/2: "que vuelva a mí cuando
@@ -27,7 +30,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 STATE_DIR = REPO_ROOT / "output" / "owner_rep_audit"
 
 CHANNEL = "C075PCEL92M"          # #l10-alphalete (informative, Rafael reads it)
-EVELYN = "U088E2KJEV8"           # tagged on the owners who didn't answer
+EVELYN = "U088E2KJEV8"           # day-4 DM + tagged on the owners who didn't answer
 
 # Days of the month. The cycle starts on the first run on/after SEND_DAY.
 SEND_DAY = 1

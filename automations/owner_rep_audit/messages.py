@@ -59,6 +59,24 @@ def reminder(owner: str) -> str:
             "above: reply with the numbers of anyone who left, or `none`.")
 
 
+def heads_up_for_evelyn(offices: List[Dict]) -> str:
+    """Day 4, a DM to Evelyn (Eve 10/12): the owners who haven't finished, so
+    she can write to them personally before the close. Names only -- their rep
+    lists come in the day-8 thread post.
+
+    offices: [{owner, office, slack_id, status}]"""
+    out = ["Heads-up: these owners haven't answered the monthly roster check "
+           "yet. Reminder sent today; a personal message from you would help:"]
+    for o in offices:
+        why = {"no_slack": "no Slack account found, Lucy couldn't DM them",
+               "unclear": "answered, but unclear",
+               "selected": f"picked names, never sent {C.CONFIRM_WORD}"
+               }.get(o["status"], "no reply")
+        tag = f" <@{o['slack_id']}>" if o.get("slack_id") else ""
+        out.append(f"• *{o['owner']}* ({o['office']}){tag} · {why}")
+    return "\n".join(out)
+
+
 def thread_title(month: str) -> str:
     return C.THREAD_TITLE.format(month=month)
 

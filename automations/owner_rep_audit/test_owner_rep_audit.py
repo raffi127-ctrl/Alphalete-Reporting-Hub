@@ -79,6 +79,37 @@ class Posts(unittest.TestCase):
         self.assertIn("> 2. Bo Diaz", text)
         self.assertIn("no Slack account found", text)
 
+    def test_day4_heads_up_for_evelyn(self):
+        text = M.heads_up_for_evelyn([
+            {"owner": "Kash Rai", "office": "22177", "slack_id": "U1",
+             "status": "sent"},
+            {"owner": "Jo Doe", "office": "1", "status": "no_slack"}])
+        self.assertIn("• *Kash Rai* (22177) <@U1> · no reply", text)
+        self.assertIn("Lucy couldn't DM them", text)
+
+    def test_remind_dms_evelyn_only_about_quiet_owners(self):
+        sent = []
+
+        class FakeOut:
+            def dm(self, uid, text, label):
+                sent.append((uid, text))
+
+            def reply_dm(self, o, text):
+                sent.append((o["owner"], text))
+
+        st = {"offices": {
+            "1": {"owner": "Quiet Owner", "office": "1", "status": "sent",
+                  "slack_id": "U1", "dm_channel": "D1"},
+            "2": {"owner": "Done Owner", "office": "2", "status": "done"},
+            "3": {"owner": "No Slack", "office": "3", "status": "no_slack"}}}
+        run.remind(st, FakeOut())
+        to_eve = [t for uid, t in sent if uid == C.EVELYN]
+        self.assertEqual(len(to_eve), 1)
+        self.assertIn("Quiet Owner", to_eve[0])
+        self.assertIn("No Slack", to_eve[0])
+        self.assertNotIn("Done Owner", to_eve[0])
+        self.assertTrue(st["reminded"])
+
     def test_summary(self):
         text = M.summary([
             {"owner": "A", "office": "1", "status": "done",

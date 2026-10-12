@@ -11,7 +11,8 @@ Each run, in order (state in output/owner_rep_audit/<YYYY-MM>.json):
              open the month's thread in #l10-alphalete.
   2. POLL    read new DM replies and act (numbers -> confirm prompt,
              REMOVE -> deactivate in Slack, none -> done, else -> ask again).
-  3. REMIND  once, on/after REMIND_DAY, to owners who haven't finished.
+  3. REMIND  once, on/after REMIND_DAY, to owners who haven't finished, plus
+             one DM to Evelyn listing those owners (she writes them herself).
   4. SUMMARY the thread's results reply, edited in place.
   5. CLOSE   once, on/after CLOSE_DAY: post the unfinished owners' lists in
              the thread tagging Evelyn.
@@ -243,6 +244,12 @@ def remind(st: dict, out: Out) -> None:
                 out.reply_dm(o, text)
             else:
                 out.dm(o["slack_id"], text, o["owner"])
+    # Owners Lucy couldn't DM at all (no Slack match) never got the list, so
+    # they belong on Evelyn's heads-up too.
+    quiet = [o for o in st["offices"].values()
+             if o.get("status") in ACTIVE + ("no_slack",)]
+    if quiet:
+        out.dm(C.EVELYN, M.heads_up_for_evelyn(quiet), "Evelyn")
     st["reminded"] = True
 
 
