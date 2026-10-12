@@ -65,5 +65,41 @@ class Grid(unittest.TestCase):
         self.assertTrue(all(len(r) == len(sc.SHEET_HEAD) for r in rows))
 
 
+class Replaced(unittest.TestCase):
+    """Maddie 10/12: "There were 4 replacements last week"."""
+
+    def setUp(self):
+        self.old = sc.config.SCORECARD_REPLACED
+        sc.config.SCORECARD_REPLACED = {"2026-10-05": [
+            "Entry Level Associate (AT&T)", "AT&T Sales Agent, McKinney, TX"]}
+
+    def tearDown(self):
+        sc.config.SCORECARD_REPLACED = self.old
+
+    def test_which_tables(self):
+        t = "Entry Level Associate (AT&T) – Arlington TX"
+        oct5, oct9 = dt.date(2026, 10, 5), dt.date(2026, 10, 9)
+        self.assertTrue(sc.replaced(t, oct5, oct9))                                   # that week
+        self.assertTrue(sc.replaced(t, dt.date(2026, 10, 1), dt.date(2026, 10, 16)))  # the month
+        self.assertFalse(sc.replaced(t, dt.date(2026, 10, 12), dt.date(2026, 10, 16)))  # next week
+
+    def test_title_with_city(self):
+        oct5, oct9 = dt.date(2026, 10, 5), dt.date(2026, 10, 9)
+        self.assertTrue(sc.replaced("AT&T Sales Agent – McKinney TX", oct5, oct9))
+        self.assertFalse(sc.replaced("AT&T Sales Agent – Arlington TX", oct5, oct9))
+
+    def test_grey_at_the_bottom(self):
+        gone = dict(_row("X – Allen TX", 3, 0, {"scheduled": 3, "pending": 0, "showed": 3}),
+                    replaced=True)
+        low = _row("Y – Plano TX", 3, 0, {"scheduled": 3, "pending": 0, "showed": 0})
+        rows = sorted([gone, low], key=sc._rank)
+        self.assertEqual(rows[-1], gone)
+        self.assertEqual(sc.row_band(gone), sc.REPLACED)
+        self.assertEqual(sc.cells(gone, 2)[1], "REPLACED · X")
+        self.assertEqual(sc.sheet_row(gone, 2)[1], "REPLACED · X")
+        self.assertEqual(sc.count_label(rows), "2 ad titles · 1 replaced")
+        self.assertEqual(sc.count_label([low]), "1 ad titles")
+
+
 if __name__ == "__main__":
     unittest.main()

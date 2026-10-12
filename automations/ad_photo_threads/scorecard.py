@@ -91,17 +91,40 @@ def title_city(title: str) -> tuple:
     return t, city or config.SCORECARD_CITIES.get(t, "")
 
 
+def _plain(title: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[–—]", "-", title or "")).strip().lower()
+
+
+def replaced(title: str, start: dt.date, end: dt.date) -> bool:
+    """Maddie 10/12 ("There were 4 replacements last week"): the ad's title
+    (without its city, or "title, City, ST" when one title runs in several
+    cities) is on config.SCORECARD_REPLACED for a week that overlaps
+    [start, end] -- so the month table keeps the flag, a later week (maybe a
+    new ad under the same title) doesn't."""
+    bare, city = title_city(title)
+    mine = {_plain(bare), _plain(f"{bare}, {city}")}
+    for monday, names in config.SCORECARD_REPLACED.items():
+        m = dt.date.fromisoformat(monday)
+        if m <= end and start <= m + dt.timedelta(days=6) \
+                and mine & {_plain(n) for n in names}:
+            return True
+    return False
+
+
 def table(history: Dict[str, List[tuple]], titles: Dict[str, str],
           start: dt.date, end: dt.date, seconds: Optional[list]) -> List[dict]:
     """One row per ad with 1st rounds in [start, end]. Eve 10/9 (to Raf):
     "sorting them from highest to lowest on 2nd retention" -- best retention
     first, more people who showed breaking a tie (so 6 of 6 beats 1 of 1), ads
-    with no 2nd rounds yet at the bottom, most people seen first."""
+    with no 2nd rounds yet at the bottom, most people seen first. Replaced ads
+    (Eve 10/12) go under all of those, grey."""
     rows = []
     for key, hist in history.items():
         pairs = [(d, c) for d, c in hist if start <= d <= end]
         if pairs:
-            rows.append(ad_row(titles.get(key, key), pairs, seconds))
+            r = ad_row(titles.get(key, key), pairs, seconds)
+            r["replaced"] = replaced(r["title"], start, end)
+            rows.append(r)
     rows.sort(key=_rank)
     return rows
 
@@ -113,7 +136,8 @@ def _ret(r: dict) -> Optional[float]:
 def _rank(r: dict) -> tuple:
     ret = _ret(r)
     showed = r["second"]["showed"] if r["second"] is not None else 0
-    return (ret is None, -(ret or 0), -showed, -r["seen"], r["title"].lower())
+    return (bool(r.get("replaced")), ret is None, -(ret or 0), -showed, -r["seen"],
+            r["title"].lower())
 
 
 def total_row(history: Dict[str, List[tuple]], start: dt.date, end: dt.date,
@@ -138,6 +162,8 @@ def cells(r: dict, n: Optional[int] = None) -> List[str]:
         r2 = [str(k["scheduled"] - k["pending"]), str(k["showed"]),
               f"{ret:.0f}%" if ret is not None else "-"]
     title, city = title_city(r["title"]) if n is not None else (r["title"], "")
+    if r.get("replaced"):
+        title = "REPLACED · " + title
     return [str(n) if n is not None else "", title, city, str(r["seen"]), _pct(r["back"], r["seen"]),
             _pct(r["removed"], r["seen"]),
             f"{r['avg']:.1f}" if r["avg"] is not None else "-"] + r2
@@ -185,12 +211,25 @@ BANDS = [
     (0, (226, 86, 86), (255, 255, 255), (252, 234, 234), "under 30%"),
 ]
 LEGEND_H = 30
+# Eve 10/12: a replaced ad stays on the scorecard, grey, under the rest.
+# Same shape as a band so the row / cell painting doesn't change.
+REPLACED = (0, (150, 156, 163), (255, 255, 255), (236, 238, 241), "replaced ad")
 
 
 def band(ret: Optional[float]) -> Optional[tuple]:
     if ret is None:
         return None
     return next(b for b in BANDS if ret >= b[0])
+
+
+def row_band(r: dict) -> Optional[tuple]:
+    return REPLACED if r.get("replaced") else band(_ret(r))
+
+
+def count_label(rows: List[dict]) -> str:
+    """"41 ad titles" / "41 ad titles · 4 replaced"."""
+    gone = sum(1 for r in rows if r.get("replaced"))
+    return f"{len(rows)} ad titles" + (f" · {gone} replaced" if gone else "")
 ROW_H, PAD = 30, 20
 
 
@@ -215,6 +254,11 @@ def render(sections: List[tuple], heading: str, sub: str, out: Path) -> Path:
         d.text((x + 10, y + 4), name, font=lf, fill=ink)
         x += w + 8
     d.text((x + 4, y + 4), "white = no 2nd rounds yet", font=_font(14), fill=MUTED)
+    if any(r.get("replaced") for _, rows, _ in sections for r in rows):
+        x += 4 + d.textlength("white = no 2nd rounds yet", font=_font(14)) + 14
+        w = d.textlength(REPLACED[4], font=lf) + 20
+        d.rounded_rectangle([x, y, x + w, y + 24], radius=5, fill=REPLACED[1])
+        d.text((x + 10, y + 4), REPLACED[4], font=lf, fill=REPLACED[2])
     y += LEGEND_H
     for label, rows, total in sections:
         y += 12
@@ -229,7 +273,7 @@ def render(sections: List[tuple], heading: str, sub: str, out: Path) -> Path:
         y += ROW_H
         for n, r in enumerate(rows + [total]):
             last = n == len(rows)
-            b = band(_ret(r))
+            b = band(_ret(r)) if last else row_band(r)
             if last:
                 d.rectangle([PAD, y, width - PAD, y + ROW_H], fill=TOTAL_BG)
             elif b:
@@ -287,8 +331,8 @@ def build(day: dt.date, *, sh=None, cache: Optional[dict] = None) -> dict:
 def text(sc: dict, owner: str) -> str:
     day, monday = sc["day"], sc["monday"]
     lines = [f"*📊 Ad Scorecard · {owner} · {weekly.week_tag(monday)}*",
-             f"📋 *{len(sc['week'])} ad titles* had 1st rounds this week "
-             f"({_md(monday)}-{_md(day)}) · *{len(sc['month'])}* this month"]
+             f"📋 *{count_label(sc['week'])}* had 1st rounds this week "
+             f"({_md(monday)}-{_md(day)}) · *{count_label(sc['month'])}* this month"]
     if sc["seconds"] is not None and not config.SCORECARD_SECONDS_FROM_SHEET:
         lines.append(f"_2nd rounds counted through {_md(day - dt.timedelta(days=1))} "
                      f"(AppStream marks show / no-show the next morning)._")
@@ -298,8 +342,8 @@ def text(sc: dict, owner: str) -> str:
 def make(day: dt.date, owner: str, out_dir: Path = OUT_DIR, *, cache=None) -> tuple:
     sc = build(day, cache=cache)
     monday, first = sc["monday"], sc["first"]
-    week_label = f"THIS WEEK · {_md(monday)} - {_md(day)} · {len(sc['week'])} ad titles"
-    month_label = f"THIS MONTH · {first:%B} 1 - {day.day} · {len(sc['month'])} ad titles"
+    week_label = f"THIS WEEK · {_md(monday)} - {_md(day)} · {count_label(sc['week'])}"
+    month_label = f"THIS MONTH · {first:%B} 1 - {day.day} · {count_label(sc['month'])}"
     png = render([(week_label, sc["week"], sc["week_total"]),
                   (month_label, sc["month"], sc["month_total"])],
                  f"Ad Scorecard · {owner}",
@@ -327,6 +371,8 @@ def sheet_row(r: dict, n: Optional[int]) -> list:
     """One row as numbers; `n` = the ad's number (None = TOTAL)."""
     k = r["second"]
     title, city = title_city(r["title"]) if n is not None else (r["title"], "")
+    if r.get("replaced"):
+        title = "REPLACED · " + title
     seen = r["seen"]
     if k is None:
         r2 = ["", "", ""]
@@ -362,18 +408,21 @@ def sheet_grid(sc: dict, owner: str) -> tuple:
         sub += (f" · 2nd rounds from ApplicantStream, counted through "
                 f"{_md(day - dt.timedelta(days=1))}")
     add([sub], "sub")
-    add(["", "2nd retention colours:", ""] + [b[4] for b in BANDS]
-        + ["white = no 2nd rounds yet"], "legend")
+    legend = ["", "2nd retention colours:", ""] + [b[4] for b in BANDS] \
+        + ["white = no 2nd rounds yet"]
+    if any(r.get("replaced") for r in sc["week"] + sc["month"]):
+        legend.append(REPLACED[4])
+    add(legend, "legend")
     for label, ads, total in (
-            (f"THIS WEEK · {_md(monday)} - {_md(day)} · {len(sc['week'])} ad titles",
+            (f"THIS WEEK · {_md(monday)} - {_md(day)} · {count_label(sc['week'])}",
              sc["week"], sc["week_total"]),
-            (f"THIS MONTH · {first:%B} 1 - {day.day} · {len(sc['month'])} ad titles",
+            (f"THIS MONTH · {first:%B} 1 - {day.day} · {count_label(sc['month'])}",
              sc["month"], sc["month_total"])):
         add([], "blank")
         add(["", label], "section")
         add(SHEET_HEAD, "head")
         for n, r in enumerate(ads, 1):
-            add(sheet_row(r, n), "ad", band(_ret(r)))
+            add(sheet_row(r, n), "ad", row_band(r))
         add(sheet_row(total, None), "total", band(_ret(total)))
     return rows, kinds
 
@@ -423,6 +472,8 @@ def write_sheet(sc: dict, owner: str, book_id: str, tab: str) -> str:
                 strong(r, bb, 3 + i, 4 + i)
             paint(r, {"textFormat": {"italic": True, "foregroundColor": _rgb(MUTED)}},
                   3 + len(BANDS), 4 + len(BANDS))
+            if rows[r][4 + len(BANDS)]:
+                strong(r, REPLACED, 4 + len(BANDS), 5 + len(BANDS))
         elif kind == "section":
             paint(r, {"textFormat": {"bold": True, "fontSize": 12,
                                      "foregroundColor": _rgb(HEAD_BG)}})

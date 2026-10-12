@@ -166,6 +166,18 @@ OFFICES = [
         # Raf 10/10: the scorecard also as a tab in his "All in One Local
         # Office - Raf" workbook, rewritten every weekday night.
         "scorecard_book": ALL_IN_ONE_RAF,
+        # Maddie 10/12: ads replaced on Indeed, by the Monday of the week they
+        # were replaced. They stay on the scorecard, grey and at the bottom.
+        # A title Raf runs in two cities needs its city ("Title, City, ST"):
+        # her "AT&T Sales Agent" = Arlington (last 1st round 10/6; McKinney
+        # kept going). The Arabic one (Frisco, last 9/28) came back 10/7 as
+        # "AT&T Wireless Associate (Arabic Required)".
+        "scorecard_replaced": {"2026-10-05": [
+            "AT&T Sales Agent, Arlington, TX",
+            "Entry Level Associate (AT&T)",
+            "AT&T Sales Agent (Arabic Required)",
+            "Client Solutions Specialist - AT&T Services (Spanish Required)",
+        ]},
         "sheet_id": SHEET_ID,
         "source_channel": SOURCE_CHANNEL_ID,
         "live_channel": LIVE_CHANNEL_ID,
@@ -495,6 +507,7 @@ SECOND_ROUNDS_OWNER = ""      # set by use(); "" = no 2nd-round lines
 SCORECARD_SECONDS_FROM_SHEET = False   # set by use()
 SCORECARD_TAG = ""            # set by use(); Slack user tagged on the post
 SCORECARD_CITIES: dict = {}   # set by use(); {ad title: City cell} for a city-less title
+SCORECARD_REPLACED: dict = {}  # set by use(); {"YYYY-MM-DD" week Monday: [ad titles replaced]}
 
 # The ad scorecard (Raf 10/9): "a weekly scorecard maybe on Friday ... as
 # you're testing, posting more frequently so we're going back and forth".
@@ -522,11 +535,12 @@ def use(o: dict) -> None:
     """Point this module's globals at office `o` for the rest of the pass."""
     global SHEET_ID, SOURCE_CHANNEL_ID, LIVE_CHANNEL_ID, NIGHTLY_PAUSED_BEFORE, SOURCES
     global TITLE_ALIASES, TITLE_ONLY, SECOND_ROUNDS_OWNER, SCORECARD_SECONDS_FROM_SHEET
-    global SCORECARD_TAG, SCORECARD_CITIES
+    global SCORECARD_TAG, SCORECARD_CITIES, SCORECARD_REPLACED
     SECOND_ROUNDS_OWNER = o.get("second_rounds_owner") or ""
     SCORECARD_SECONDS_FROM_SHEET = bool(o.get("scorecard_seconds_from_sheet"))
     SCORECARD_TAG = o.get("scorecard_tag") or ""
     SCORECARD_CITIES = o.get("scorecard_cities") or {}
+    SCORECARD_REPLACED = o.get("scorecard_replaced") or {}
     TITLE_ALIASES = o.get("title_aliases") or {}
     TITLE_ONLY = o.get("title_only") or {}
     SHEET_ID = o["sheet_id"]
