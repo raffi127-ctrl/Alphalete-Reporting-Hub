@@ -75,7 +75,7 @@ def collect(week: dt.date) -> dict:
     means something went wrong."""
     sh = rfill.open_by_key(SHEET_ID)
     tabs = [w.title for w in sh.worksheets() if w.title.endswith(" - NDS")]
-    grids = sh.values_batch_get([f"'{t}'!A1:H60" for t in tabs])
+    grids = sh.values_batch_get([f"'{t}'!A1:AZ60" for t in tabs])
     confirmed = _with_appstream()
     prev_week = week - dt.timedelta(days=7)
     got: Dict[str, List[str]] = {k: [] for k in ROWS}
