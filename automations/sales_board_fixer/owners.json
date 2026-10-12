@@ -1,0 +1,14 @@
+{
+ "_note": "Owners' All-in-One workbooks the Salesboard Fixer checks (python -m automations.sales_board_fixer.run --owners). It picks the leftmost visible sales board that has reps on it ('boards': how many, default 1) plus every visible Line Up / Stations tab. 'apply': true switches writing on for that owner -- off until Eve approves the preview (2026-10-12).",
+ "owners": [
+  {"name": "Rashad Reed", "sheet_id": "1uaR15Qf_Q1SzA6hStnczkMba2NQmkbvR4VvR-g_3zpw", "apply": false},
+  {"name": "Jacob Dover", "sheet_id": "10ISMTZxmg4fp96tehPGmAIm_VheFhDa_D4yc0Ojnbcs", "boards": 2, "apply": false},
+  {"name": "Cody Cannon", "sheet_id": "1Emdb7DfQ40Xd262gVDZwAB1LAIi1rPicsr7nYmCnNRk", "apply": false},
+  {"name": "Isaiah Revelle", "sheet_id": "1vWdxtExivVlB_ehvywPSmddaXm5ek5ZyVWbMxQfuFLM", "apply": false},
+  {"name": "Kash Rai", "sheet_id": "1deXnrN1uHmiSD_P31qjCuS60-kKRlZ7vv7-SOlvyYk8", "apply": false},
+  {"name": "Cyrus Wade", "sheet_id": "113luPbGjbqDHvq7Yj5iVYnpYZkA-ajSUN-ATxEFigNc", "apply": false},
+  {"name": "Aya Alkhafaji", "sheet_id": "1t8dCKc5NX6zkBPzRFzD5hWFL3d8ll27XoMgY2PoRALE", "apply": false},
+  {"name": "Haytham Nagi", "sheet_id": "1le2wVPAeYsclQyP212IY9K92a9BAfoUWGd7n1DgIj8Y", "apply": false},
+  {"name": "Salik/Hammad", "sheet_id": "1-VoNbIdE36Q3SuPFA3nmI9kGVutLpHRA8a46mhJAamI", "apply": false}
+ ]
+}

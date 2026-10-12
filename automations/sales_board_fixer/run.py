@@ -44,10 +44,10 @@ except Exception:  # noqa: BLE001 -- Windows console, best effort
     pass
 
 from automations.sales_board_fixer import checks as K
-from automations.rep_sales_fill import board as B
 
 SHEET_ID = "1MC9pfKryQrRtcMthUBL2hOciDCaa83U059pz0N2CmHc"   # Alphalete SALES BOARD 2025
 STATIONS_TAB = "Stations"         # one tab, not per week
+MAX_FIXES = 300                   # more than this on one tab = misread, don't write
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = REPO_ROOT / "output" / "sales_board_fixer"
 
@@ -84,7 +84,7 @@ def load(sh, title: str) -> dict:
     sheet = next(s for s in meta["sheets"] if s["properties"]["title"] == title)
     ncols = sheet["properties"]["gridProperties"]["columnCount"]
     fonts, numfmts, notes = [], [], []
-    if title_kind(title) == "board":
+    if K.is_board(values):
         _, last = K.block_rows(values)
         rng = "'%s'!A1:%s%d" % (title, K.col_letter(ncols), last)
         grid = sh.fetch_sheet_metadata({
@@ -116,15 +116,9 @@ def _numfmt(v: dict):
     return (kind, pat.lower() if kind.startswith("DATE") else pat)
 
 
-def title_kind(title: str) -> str:
-    if re.match(r"^Sales Board WE\s", title, re.I):
-        return "board"
-    return "lineup"
-
-
 def audit(t: dict) -> list:
     title, v, f = t["title"], t["values"], t["formulas"]
-    if title_kind(title) == "board":
+    if K.is_board(v):
         found = (K.check_formulas(title, v, f) + K.check_roll_call(title, v)
                  + K.check_fonts(title, t["sheet_id"], v, t["fonts"])
                  + K.check_number_formats(title, t["sheet_id"], v, t["numfmts"]))
@@ -153,7 +147,7 @@ def apply(sh, t: dict, found: list) -> list:
     ws = t["ws"]
     # The board re-sorts during the day: re-read the names and drop any row
     # whose rep is no longer the one the finding was made for.
-    names_now = ws.col_values(B.NAME_COL)
+    names_now = ws.col_values(K.layout(t["values"]).name_col)
     def still_there(x):
         if x.row is None or not x.name:
             return True
@@ -220,7 +214,15 @@ def main(argv=None) -> int:
     ap.add_argument("--apply", action="store_true", help="arreglar (backup antes de escribir)")
     ap.add_argument("--sheet-id", default=SHEET_ID)
     ap.add_argument("--date", help="YYYY-MM-DD dentro de la semana (default: hoy)")
+    ap.add_argument("--owners", nargs="?", const="", default=None, metavar="NOMBRE",
+                    help="revisar los All-in-One de los dueños (owners.json); "
+                         "sólo escribe en los que tienen \"apply\": true")
     a = ap.parse_args(argv)
+    if a.owners is not None:
+        stamp = dt.datetime.now().strftime("%Y-%m-%d_%H%M") + "_owners"
+        results = run_owners(a.owners, a.apply, stamp)
+        print("reporte:", report(results, stamp, a.apply))
+        return 0
 
     today = dt.date.fromisoformat(a.date) if a.date else dt.date.today()
     sh = _book(a.sheet_id)
@@ -232,23 +234,75 @@ def main(argv=None) -> int:
     for title in [t for t in titles if t not in have]:
         print("  no existe %r todavía -- salteada" % title)
     titles = [t for t in titles if t in have]
+    results = run_tabs(sh, titles, stamp, a.apply)
+    print("reporte:", report(results, stamp, a.apply))
+    return 0
 
+
+def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "") -> dict:
     results = {}
     for title in titles:
         t = load(sh, title)
         found = audit(t)
-        print("%s: %d hallazgos (%d arreglables)" % (title, len(found),
-                                                     sum(1 for x in found if x.fixable)))
-        if a.apply:
+        n_fix = sum(1 for x in found if x.fixable)
+        print("%s%s: %d hallazgos (%d arreglables)" % (label, title, len(found), n_fix))
+        if do_apply and n_fix > MAX_FIXES:
+            # thousands of "fixes" means the tab was read wrong, not that it
+            # is that broken -- never write on a misread
+            print("  NO se escribe: %d arreglos es demasiado (tope %d), revisar a mano"
+                  % (n_fix, MAX_FIXES))
+        elif do_apply:
             print("  backup:", backup(t, stamp))
             done = apply(sh, t, found)
             print("  escritos: %d" % len(done))
             left = audit(load(sh, title))
             print("  después de arreglar quedan: %d (%d arreglables)"
                   % (len(left), sum(1 for x in left if x.fixable)))
-        results[title] = found
-    print("reporte:", report(results, stamp, a.apply))
-    return 0
+        results[label + title] = found
+    return results
+
+
+# --- owners' All-in-One workbooks (2026-10-12) -------------------------------
+
+OWNERS_FILE = Path(__file__).with_name("owners.json")
+BOARD_NAME = re.compile(r"sales\s*board|^\s*w\.?\s*e\b", re.I)
+SIDE_NAME = re.compile(r"line\s*up|stations", re.I)
+
+
+def owner_tabs(sh, boards: int = 1) -> list:
+    """The tabs to check in an owner's All-in-One: the leftmost visible sales
+    board(s) with reps on it -- owners keep the current week first, and name
+    it anything ('Sales Board', 'NEW Sales Board', 'Sales Board W.E 10.11') --
+    plus every visible Line Up / Stations tab."""
+    meta = sh.fetch_sheet_metadata({"fields": "sheets(properties(title,hidden))"})
+    visible = [s["properties"]["title"] for s in meta["sheets"]
+               if not s["properties"].get("hidden")]
+    picked = []
+    for title in visible:
+        if len(picked) >= boards:
+            break
+        if BOARD_NAME.search(title) and not title.lower().startswith("copy of"):
+            v = sh.worksheet(title).get_all_values()
+            first, last = K.block_rows(v)
+            if K.is_board(v) and any(K.name_at(v, r) for r in range(first, last + 1)):
+                picked.append(title)
+    return picked + [t for t in visible if SIDE_NAME.search(t)
+                     and not t.lower().startswith("copy of")]
+
+
+def run_owners(only, do_apply: bool, stamp: str) -> dict:
+    owners = json.loads(OWNERS_FILE.read_text(encoding="utf-8"))["owners"]
+    results = {}
+    for o in owners:
+        if only and only.lower() not in o["name"].lower():
+            continue
+        sh = _book(o["sheet_id"])
+        tabs = owner_tabs(sh, o.get("boards", 1))
+        print("== %s: %s" % (o["name"], tabs or "sin board en uso"))
+        # writing on an owner's sheet is switched on owner by owner, in owners.json
+        results.update(run_tabs(sh, tabs, stamp, do_apply and o.get("apply", False),
+                                label=o["name"] + " · "))
+    return results
 
 
 if __name__ == "__main__":

@@ -111,5 +111,57 @@ class Conditional(unittest.TestCase):
         self.assertFalse(K.check_conditional("t", 7, [self.rule('=$B4="ZZZ1"')], ncols=10))
 
 
+def owner_board(n_reps, blanks=6):
+    """An owner's All-in-One board: names in col B, 'TUE' banner, 'TOTAL'
+    label, blank numbered template rows under the reps.
+    Columns: A #, B name, C MON Apps, D Int, E Roll Call, F TUE Apps, G Int, H Roll Call."""
+    hdr1 = ["x", "Office", "MON", "", "", "TUE", "", ""]
+    hdr3 = ["#", "WE 6/8 - 6/14", "Apps", "Int", "Roll Call", "Apps", "Int", "Roll Call"]
+    vals = [hdr1, [""] * 8, hdr3]
+    for i in range(n_reps + blanks):
+        name = "Rep %d" % i if i < n_reps else ""
+        vals.append([str(i + 1), name, "0", "", "", "0", "", ""])
+    vals.append(["", "TOTAL", "0", "", "", "0", "", ""])
+    vals.append(["", "Team 1", "0", "", "", "", "", ""])     # teams box below
+    return vals
+
+
+class OwnerLayout(unittest.TestCase):
+    def test_names_in_col_b_total_label_and_tue(self):
+        v = owner_board(6)
+        lay = K.layout(v)
+        self.assertEqual((lay.name_col, lay.day_row, lay.sub_row, lay.last), (2, 1, 3, 15))
+        self.assertTrue(K.is_board(v))
+        self.assertEqual(sorted(K.roll_call_cols(v)), ["Monday", "Tuesday"])
+
+    def test_roll_call_names_come_from_col_b(self):
+        v = owner_board(6)
+        v[5][6] = "X"                                   # Rep 2, TUE Int
+        found = K.check_roll_call("t", v)
+        self.assertEqual([(y.where, y.name, y.value) for y in found], [("H6", "Rep 2", "Off")])
+
+    def test_blank_template_rows_dont_set_the_format(self):
+        v = owner_board(6, blanks=20)
+        fmts = [[None] * 8 for _ in range(3)]
+        for r in range(26):
+            fmts.append([("NUMBER", "0")] * 8 if r < 6 else [("", "")] * 8)
+        self.assertEqual(K.check_number_formats("t", 7, v, fmts), [])
+
+    def test_hand_numbered_rank_and_spacer_rows_are_left_alone(self):
+        v = owner_board(8, blanks=0)
+        f = [list(r) for r in v]
+        for r in range(4, 12):
+            f[r - 1][2] = "=D%d+G%d" % (r, r)        # Apps formula
+            f[r - 1][0] = "=A%d+1" % (r - 1) if r > 4 else "1"
+        f[6][0] = "3"                                 # rank typed by hand
+        v[8][1] = ""                                  # row 9: spacer, no rep
+        f[8][1] = ""
+        f[8][2] = ""
+        self.assertEqual([y.where for y in K.check_formulas("t", v, f)], [])
+
+    def test_line_up_is_not_a_board(self):
+        self.assertFalse(K.is_board([["Trainer", "New Start"], ["Ana", "Bo"]]))
+
+
 if __name__ == "__main__":
     unittest.main()

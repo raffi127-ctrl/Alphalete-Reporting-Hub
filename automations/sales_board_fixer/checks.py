@@ -153,13 +153,94 @@ def _cell_pattern(formula: str, row: int) -> str:
     return "" if f.strip() == "" else "<typed>"
 
 
+# --- layout ----------------------------------------------------------------
+# Our board keeps the names in col C; the owners' All-in-One boards (2026-10-12)
+# keep them in col B and spell Tuesday 'TUE'. So the layout is READ off the
+# tab, never assumed.
+
+DAY_WORDS = {"MON": "Monday", "TUE": "Tuesday", "TUES": "Tuesday", "WED": "Wednesday",
+             "THU": "Thursday", "THUR": "Thursday", "THURS": "Thursday", "FRI": "Friday",
+             "SAT": "Saturday", "SUN": "Sunday"}
+SUB_WORDS = {"APPS", "INT"}
+
+
+@dataclass(frozen=True)
+class Layout:
+    name_col: int        # the rep names (and the TOTALS row label)
+    day_row: int         # MON / TUE / ... banners
+    sub_row: int         # Apps / Int / ... sub-headers
+    last: int            # last rep row (the row above TOTALS)
+
+
+_LAYOUT: Dict[int, Tuple[object, Layout]] = {}
+
+
+def layout(values) -> Layout:
+    """Where this tab keeps its names, banners and sub-headers.
+    sub_row = first of rows 1-6 with Apps/Int headers; day_row = the row above
+    it with day banners; name_col = the column (A-E) whose cell says TOTALS
+    under the sub-header. Falls back to our board's layout."""
+    hit = _LAYOUT.get(id(values))
+    if hit and hit[0] is values:
+        return hit[1]
+    sub = next((r for r in range(1, min(6, len(values)) + 1)
+                if sum(1 for x in values[r - 1]
+                       if " ".join(str(x).split()).upper() in SUB_WORDS) >= 2), B.SUB_ROW)
+    day = next((r for r in range(1, sub)
+                if any(str(x).strip().upper() in DAY_WORDS for x in values[r - 1])), B.DAY_ROW)
+    name_col, last = B.NAME_COL, len(values)
+    for r in range(sub + 1, len(values) + 1):
+        c = next((c for c in range(1, 6) if _g(values, r, c).strip().upper() in ("TOTALS", "TOTAL")), None)
+        if c:
+            name_col, last = c, r - 1
+            break
+    lay = Layout(name_col, day, sub, last)
+    _LAYOUT.clear()                     # one tab at a time
+    _LAYOUT[id(values)] = (values, lay)
+    return lay
+
+
+def is_board(values) -> bool:
+    """A sales board: Apps/Int sub-headers, day banners and a TOTALS row."""
+    if not values:
+        return False
+    lay = layout(values)
+    return lay.last < len(values) and bool(day_blocks(values))
+
+
+def day_blocks(values) -> Dict[str, Dict[str, int]]:
+    """{weekday: {header (lower case): column}} -- every sub-header under each
+    day banner, up to the next banner."""
+    lay = layout(values)
+    width = max((len(r) for r in values[:lay.sub_row]), default=0)
+    starts = [(c, DAY_WORDS[_g(values, lay.day_row, c).strip().upper()])
+              for c in range(1, width + 1)
+              if _g(values, lay.day_row, c).strip().upper() in DAY_WORDS]
+    out: Dict[str, Dict[str, int]] = {}
+    for i, (start, day) in enumerate(starts):
+        end = starts[i + 1][0] - 1 if i + 1 < len(starts) else width
+        cols: Dict[str, int] = {}
+        for c in range(start, end + 1):
+            h = " ".join(_g(values, lay.sub_row, c).split()).lower()
+            if h and h not in cols:
+                cols[h] = c
+        if cols:
+            out[day] = cols
+    return out
+
+
+def name_at(values, r: int) -> str:
+    return _g(values, r, layout(values).name_col).strip()
+
+
 def block_rows(values) -> Tuple[int, int]:
     """(first, last) row of the rep block: under the sub-header, above TOTALS."""
-    return B.SUB_ROW + 1, B.last_rep_row(values)
+    lay = layout(values)
+    return lay.sub_row + 1, lay.last
 
 
 def header(values, c: int) -> str:
-    h = " ".join(_g(values, B.SUB_ROW, c).split())
+    h = " ".join(_g(values, layout(values).sub_row, c).split())
     return h or col_letter(c)
 
 
@@ -173,6 +254,7 @@ def check_formulas(tab: str, values, formulas) -> List[Finding]:
     if n < MIN_ROWS:
         return []
     width = max(len(r) for r in formulas[first - 1:last]) if formulas else 0
+    name_col = layout(values).name_col
     out: List[Finding] = []
     for c in range(1, width + 1):
         pats = {r: _cell_pattern(_g(formulas, r, c), r) for r in range(first, last + 1)}
@@ -181,6 +263,15 @@ def check_formulas(tab: str, values, formulas) -> List[Finding]:
             continue
         for r, p in pats.items():
             if p == top or not _inside(top, r, first, last):
+                continue
+            # an empty row with no rep is a spacer (Isaiah splits teams with
+            # them), not a row that lost its formulas
+            if p == "" and not name_at(values, r):
+                continue
+            # the '#' column left of the names: some owners number it by hand
+            # (Cody, 2026-10-12) -- a typed number there is theirs; only a
+            # broken chain (#REF!, pointing at the wrong row) gets fixed
+            if p == "<typed>" and c < name_col:
                 continue
             raw = _g(formulas, r, c)
             shown = _g(values, r, c).strip()
@@ -192,7 +283,7 @@ def check_formulas(tab: str, values, formulas) -> List[Finding]:
                 kind = "different_formula"
             out.append(Finding(
                 kind, tab, a1(r, c), "%s, columna %s" % (KIND_LABEL[kind], header(values, c)),
-                row=r, name=_g(values, r, B.NAME_COL).strip(),
+                row=r, name=name_at(values, r),
                 before=str(raw)[:120] if raw != "" else "(vacía)",
                 after=denormalize(top, r)[:120], value=denormalize(top, r)))
     return _group_added_rows(out)
@@ -226,7 +317,7 @@ def check_errors(tab: str, values, formulas) -> List[Finding]:
             if str(v).strip() in ERRORS:
                 out.append(Finding("error_value", tab, a1(r, c),
                                    "%s en %s" % (v, header(values, c)),
-                                   row=r, name=_g(values, r, B.NAME_COL).strip(),
+                                   row=r, name=name_at(values, r),
                                    before=str(_g(formulas, r, c))[:120]))
     return out
 
@@ -266,13 +357,18 @@ def _column_format(tab, sheet_id, values, grid, kind, usable, show, fmt, fields)
     if n < MIN_ROWS:
         return []
     width = max((len(r) for r in grid[first - 1:last]), default=0)
+    # Only rows with a rep on them vote: an owner's board can carry 27 reps
+    # over 100 blank template rows, and the blanks' format is not the norm.
+    named = [r for r in range(first, last + 1) if name_at(values, r)]
+    rows = named if len(named) >= MIN_ROWS else range(first, last + 1)
+    lay = layout(values)
     out = []
     for c in range(1, width + 1):
-        if c <= B.NAME_COL or not (_g(values, B.SUB_ROW, c).strip()
-                                   or _g(values, B.DAY_ROW, c).strip()):
+        if c <= lay.name_col or not (_g(values, lay.sub_row, c).strip()
+                                     or _g(values, lay.day_row, c).strip()):
             continue          # A/B carry group labels and ranks, styled by hand
         col = {}
-        for r in range(first, last + 1):
+        for r in rows:
             row = grid[r - 1] if r - 1 < len(grid) else []
             if c - 1 < len(row) and row[c - 1] is not None:
                 col[r] = tuple(row[c - 1])
@@ -287,7 +383,7 @@ def _column_format(tab, sheet_id, values, grid, kind, usable, show, fmt, fields)
             out.append(Finding(
                 kind, tab, a1(r, c),
                 "%s, columna %s" % (KIND_LABEL[kind], header(values, c)),
-                row=r, name=_g(values, r, B.NAME_COL).strip(),
+                row=r, name=name_at(values, r),
                 before=show(f), after=show(top),
                 request={"updateCells": {
                     "range": _cell_range(sheet_id, r, c),
@@ -351,18 +447,10 @@ def _short(s: str) -> str:
 def roll_call_cols(values) -> Dict[str, Tuple[int, int]]:
     """{weekday: (int_col, roll_call_col)} -- Roll Call is the block's own
     sub-header, found to the right of Int and before the next block."""
-    blocks = B.day_blocks(values)
-    starts = sorted(min(c.values()) for c in blocks.values())
-    width = max(len(r) for r in values[:B.SUB_ROW]) if values else 0
     out = {}
-    for day, cols in blocks.items():
-        ic = cols.get("Int")
-        if not ic:
-            continue
-        nxt = min([s for s in starts if s > ic], default=width + 1)
-        rc = next((c for c in range(ic + 1, nxt)
-                   if header(values, c).lower() == "roll call"), None)
-        if rc:
+    for day, cols in day_blocks(values).items():
+        ic, rc = cols.get("int"), cols.get("roll call")
+        if ic and rc and rc > ic:
             out[day] = (ic, rc)
     return out
 
@@ -374,7 +462,7 @@ def check_roll_call(tab: str, values) -> List[Finding]:
     out = []
     for day, (ic, rc) in roll_call_cols(values).items():
         for r in range(first, last + 1):
-            name = _g(values, r, B.NAME_COL).strip()
+            name = name_at(values, r)
             status = _g(values, r, ic).strip().upper()
             if not name or status not in ROLL_CALL_FOR or _g(values, r, rc).strip():
                 continue
