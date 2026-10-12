@@ -447,7 +447,14 @@ def _owner_day_from_boxes(boxes, q_col, q_end, q_box, a_col, a_end, a_box, *,
     # live interviewers they cannot simply be added, so we re-derive that case.
     if len(src_rows) == 1:
         out.qualified_ret = _as_number(src_rows[0].get("qr"))
-        out.declined_ret = _as_number(src_rows[0].get("dr"))
+        dr = _as_number(src_rows[0].get("dr"))
+        # Since 2026-10-12 (Rafael via Camila) a tab can carry DiR next to DR:
+        # DR then holds Declined ONLY and DiR the Disqualified share. Our
+        # 'Declined Retention' stays (Di+De)/total, so add the two back up.
+        if "dir" in src_rows[0].cells:
+            dir_ = _as_number(src_rows[0].get("dir"))
+            dr = None if dr is None and dir_ is None else (dr or 0) + (dir_ or 0)
+        out.declined_ret = dr
     else:
         shown = (out.qualified or 0) + (out.disqualified or 0) + (out.declined or 0)
         if shown:

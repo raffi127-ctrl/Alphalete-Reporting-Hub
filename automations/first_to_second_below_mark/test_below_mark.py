@@ -186,6 +186,20 @@ class ArsGeometry(unittest.TestCase):
             self.assertEqual(row.get("NC"), "0")
             self.assertEqual(row.get("BR"), "100%")
 
+    def test_declined_retention_stays_di_plus_de_once_a_tab_splits_dr(self):
+        """Since 10/12 a tab can read Q|Di|De|QR|DiR|DR with DR = Declined only.
+        The board's Declined Retention must still be (Di+De)/total."""
+        def declined_ret(per_day, cells):
+            win = _ars_box("9/20", {"Monday": [("Angela", cells)]}, per_day=per_day)
+            return ars._owner_day_from_boxes(
+                [win.values], 14, None, 45, None, None, None, owner="o",
+                workbook="w", tab="t", week_label="9/20", day="Monday").declined_ret
+        old = declined_ret(("Q", "Di", "De", "QR", "DR"), ["9", "2", "1", "75%", "25%"])
+        new = declined_ret(("Q", "Di", "De", "QR", "DiR", "DR"),
+                           ["9", "2", "1", "75%", "17%", "8%"])
+        self.assertAlmostEqual(old, 0.25)
+        self.assertAlmostEqual(new, 0.25)
+
     def test_an_extra_owner_row_is_read_not_cut_off(self):
         win = _ars_box("9/20", {"Monday": [("Gabriela", ["10", "2", "4", "63%", "38%"]),
                                            ("Nicole", ["9", "1", "6", "56%", "44%"]),
