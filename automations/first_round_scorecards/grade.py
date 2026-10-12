@@ -110,7 +110,9 @@ OFFICES = {
     # 2026-10-09: Tre's new script (Eve) -- no pay, 40 hrs + Saturdays, North Houston
     "Tre Mitchell": {"format": "tre"},
     # Scripts shaped differently from Rafael's -- see FORMATS below.
-    **{o: {"format": "profits"} for o in ("Eveliz Wright", "Colten Wright", "Jairo Ruiz",
+    # 2026-10-12: Colten's new script (Eve) -- Rafael's shape minus the pay
+    "Colten Wright": {"format": "colten"},
+    **{o: {"format": "profits"} for o in ("Eveliz Wright", "Jairo Ruiz",
                                          "Drew Tepper", "George Delgado", "Samuel Acay")},
     **{o: {"format": "highline"} for o in ("Roshan Ahmad", "Ryan McSpadden")},
     "Ellen Dent": {"format": "ellen", "schedule_check": "Is that alright with you?",
@@ -129,13 +131,15 @@ OWNER_ALIASES = {"raf hidalgo": "Rafael Hidalgo", "nii tagoe": "Nii Teiko",
 # so an interviewer isn't marked down for a part her script leaves to the 2nd
 # round), which script portions it drops, the lines that read differently, and
 # the rules that change. Score = % of the items that DO apply.
-#   profits  -- Profits Management (Eveliz, Colten, Jairo, Drew, George, Samuel):
+#   profits  -- Profits Management (Eveliz, Jairo, Drew, George, Samuel):
 #               no pay in the 1st round, the 2nd round is booked on the call.
 #   highline -- Highline Management (Roshan, Ryan): pay, hours and commute all
 #               wait for the 2nd round.
 #   ellen    -- Ellen's: pay only if they ask ($1,000-2,500/wk), own hours.
 #   tre      -- Tre's (2026-10-09): pay waits for the 2nd round, standard 40 hrs
 #               + Saturdays, North Houston, wrap-up without attire/notebook.
+#   colten   -- Colten's (2026-10-12): Rafael's lines (6-8 months, call before 5pm,
+#               attire + notebook) but no pay in the 1st round; 2 check-ins.
 #   carlos   -- Carlos': own pay numbers, no schedule or commute in the 1st round,
 #               2nd round tomorrow in person in Grand Prairie.
 _PROFITS_WRAP = ("The second interview will be in person, so you can come to the office, "
@@ -259,6 +263,25 @@ FORMATS = {
             "wrap_up": "YES only if she said the call comes before 5pm today to schedule the "
                        "2nd interview and \"if you don't get a call we went a different "
                        "direction\". Missing any = NO.",
+            "check_ins": "YES only if she asked both check-in questions (aligned with what "
+                         "you're looking for? / schedule alright?). Missing any = NO.",
+        },
+    },
+    "colten": {
+        "na": {"pay"},
+        "drop": {"pay_entry", "pay_assistant", "pay_executive"},
+        "lines": {
+            "face_to_face": "All interactions with them are face to face, so we do not do "
+                            "call center work or anything like that.",
+            "check_ins": "Does this sound aligned with what you are looking for? / Is that "
+                         "alright with you?",
+        },
+        "keys": {
+            "face_to_face": "face to face with clients / not a call center",
+            "check_ins": "both questions",
+        },
+        "rules": {
+            "off_script_pay": _NO_PAY_RULE,
             "check_ins": "YES only if she asked both check-in questions (aligned with what "
                          "you're looking for? / schedule alright?). Missing any = NO.",
         },
