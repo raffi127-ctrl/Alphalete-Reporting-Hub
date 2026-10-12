@@ -166,3 +166,43 @@ class Matching(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Sellers(unittest.TestCase):
+    """Reps with a sale in the last 30 days are never asked about (Eve 10/12)."""
+
+    def _csv(self, rows):
+        import tempfile
+        from pathlib import Path
+        d = Path(tempfile.mkdtemp())
+        p = d / "recent.csv"
+        hdr = ["Owner Name", "Rep", "sp.Order Date (copy)", "Install Date",
+               "Activatoin Date (order log)"]
+        p.write_text("\n".join("\t".join(r) for r in [hdr] + rows),
+                     encoding="utf-16")
+        return p
+
+    def test_recent_sellers_by_sale_date(self):
+        from automations.owner_rep_audit.sellers import recent_sellers
+        p = self._csv([["Kash Rai", "Ann Lee", "10/5/2026", "", ""],
+                       ["Kash Rai", "Old Timer", "8/1/2026", "", "10/2/2026"],
+                       ["Kash Rai", "Total", "10/5/2026", "", ""]])
+        got = recent_sellers(dt.date(2026, 10, 12), path=p, logfn=lambda *_: None)
+        self.assertEqual(got, {"Ann Lee"})
+
+    def test_missing_file_means_no_filter(self):
+        from pathlib import Path
+        from automations.owner_rep_audit.sellers import drop_sellers, recent_sellers
+        got = recent_sellers(dt.date(2026, 10, 12), path=Path("nope.csv"),
+                             logfn=lambda *_: None)
+        self.assertIsNone(got)
+        reps = [{"name": "Ann Lee", "email": ""}]
+        self.assertEqual(drop_sellers(reps, got), reps)
+
+    def test_drop_sellers_middle_name_and_handle(self):
+        from automations.owner_rep_audit.sellers import drop_sellers
+        reps = [{"name": "Justin G Carlos Avila", "email": ""},
+                {"name": "Eli Rodriguez", "email": "elijah.rodriguez166@x.com"},
+                {"name": "Still Asked", "email": "still@x.com"}]
+        left = drop_sellers(reps, {"Justin Avila", "Elijah Rodriguez"})
+        self.assertEqual([r["name"] for r in left], ["Still Asked"])

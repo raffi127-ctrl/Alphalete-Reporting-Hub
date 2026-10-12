@@ -165,6 +165,10 @@ def start(day: dt.date, out: Out, rosters_json: str = "", only=None) -> dict:
         print(f"  ⚠ couldn't list AO Slack members ({type(e).__name__}): "
               "owners can't be matched, so nobody gets a DM")
     from automations.owner_rep_audit.slack_ops import find_owner, in_slack
+    from automations.owner_rep_audit.sellers import drop_sellers, recent_sellers
+    sellers = recent_sellers(day)
+    if sellers is not None:
+        print(f"  {len(sellers)} reps sold in the last 30 days (Tableau order log)")
     st = {"month": month_label(day), "started": day.isoformat(),
           "mode": out.mode, "offices": {}}
     for r in rows:
@@ -183,8 +187,11 @@ def start(day: dt.date, out: Out, rosters_json: str = "", only=None) -> dict:
             continue
         ov_count = len(o["reps"])
         o["reps"] = in_slack(o["reps"], users, o["slack_id"])
+        in_sl = len(o["reps"])
+        o["reps"] = drop_sellers(o["reps"], sellers)
         print(f"  {o['office']} {o['owner']}: {ov_count} active in OwnerVille"
-              f" -> {len(o['reps'])} still in Slack")
+              f" -> {in_sl} still in Slack -> {len(o['reps'])} with no sale"
+              " in 30 days")
         if not o["reps"]:
             o["status"] = "done"           # nobody left in Slack, nothing to ask
             continue

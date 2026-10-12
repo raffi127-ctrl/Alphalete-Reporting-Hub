@@ -4,8 +4,9 @@ THE FLOW (Rafael 2026-09-19, design Eve 2026-10-01, cadence + escalation Eve
 2026-10-02):
 
   day 1      Lucy DMs every owner we have OwnerVille Office Access to a
-             numbered list of their reps who are ACTIVE in OwnerVille AND
-             still have an AO Slack account: "which of these are gone?"
+             numbered list of their reps who are ACTIVE in OwnerVille, still
+             have an AO Slack account, AND had no sale in 30 days (Tableau
+             order log, sellers.py; Eve 10/12): "which of these are gone?"
              The goal is a clean SLACK (Eve 2026-10-12: "nosotros necesitamos
              limpiar slack, como kash tenga su ownerville es un problema de
              él"). Kash's office alone has 631 active OwnerVille reps -- the
