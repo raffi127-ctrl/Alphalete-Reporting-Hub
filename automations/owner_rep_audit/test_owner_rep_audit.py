@@ -110,6 +110,10 @@ class Posts(unittest.TestCase):
         self.assertNotIn("Done Owner", to_eve[0])
         self.assertTrue(st["reminded"])
 
+    def test_live_waits_for_first_month(self):
+        # Returns before touching Slack or the state file.
+        self.assertEqual(run.main(["--live", "--date", "2026-10-31"]), 0)
+
     def test_summary(self):
         text = M.summary([
             {"owner": "A", "office": "1", "status": "done",

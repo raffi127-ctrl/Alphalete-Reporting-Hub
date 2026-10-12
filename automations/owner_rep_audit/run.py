@@ -303,6 +303,10 @@ def main(argv=None) -> int:
         # each other's answers. One office per rehearsal.
         print("--test-to needs --only with exactly ONE office number")
         return 2
+    if mode == "live" and month_key(today) < C.FIRST_LIVE_MONTH:
+        print(f"owner rep audit · {today} · live starts {C.FIRST_LIVE_MONTH} "
+              "— nothing to do yet")
+        return 0
     out = Out(mode, a.test_to)
     st = load_state(today) if mode != "dry" else None
     if st and st.get("mode") != mode:

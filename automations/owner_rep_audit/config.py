@@ -34,6 +34,13 @@ EVELYN = "U088E2KJEV8"           # day-4 DM + tagged on the owners who didn't an
 
 # Days of the month. The cycle starts on the first run on/after SEND_DAY.
 SEND_DAY = 1
+
+# The first month a LIVE run acts (Eve 2026-10-12: rehearse with Kash now,
+# start for real on November 1st). Before it, a --live run without --test-to
+# prints one line and exits 0, so the job can sit on the scheduler early
+# without DMing 26 owners mid-month -- or tripping over the rehearsal's
+# test-mode state file for October.
+FIRST_LIVE_MONTH = "2026-11"
 REMIND_DAY = 4
 CLOSE_DAY = 8
 
@@ -49,6 +56,7 @@ SKIP_OFFICES = {"11280"}
 # ambiguous or the owner's Slack name differs. Fill from Slack: profile ->
 # three dots -> Copy member ID.
 OWNER_SLACK = {
+    "Akashdeep Rai": "U046XBPN0G2",   # Kash Rai in Slack (rehearsal 10/12)
 }
 
 # Retiring a rep in OwnerVille has no known endpoint yet (the p=20 "retire"
