@@ -4,10 +4,15 @@ THE FLOW (Rafael 2026-09-19, design Eve 2026-10-01, cadence + escalation Eve
 2026-10-02):
 
   day 1      Lucy DMs every owner we have OwnerVille Office Access to a
-             numbered list of their ACTIVE reps: "which of these are gone?"
+             numbered list of their reps who are ACTIVE in OwnerVille AND
+             still have an AO Slack account: "which of these are gone?"
+             The goal is a clean SLACK (Eve 2026-10-12: "nosotros necesitamos
+             limpiar slack, como kash tenga su ownerville es un problema de
+             él"). Kash's office alone has 631 active OwnerVille reps -- the
+             Slack cross is what makes the list answerable.
   any day    owner answers with numbers -> Lucy repeats the names and asks for
              the word REMOVE. Only REMOVE acts: the rep is deactivated in the AO
-             Slack workspace (and retired in OwnerVille once that step exists).
+             Slack workspace. OwnerVille is left to the owner.
              No approval from Eve -- "el dueño es quien sabe" (Eve 10/1).
   day 4      owners with no reply (or a reply Lucy couldn't read) get ONE
              reminder, to the owner -- and Evelyn gets a DM with the same
@@ -58,11 +63,6 @@ SKIP_OFFICES = {"11280"}
 OWNER_SLACK = {
     "Akashdeep Rai": "U046XBPN0G2",   # Kash Rai in Slack (rehearsal 10/12)
 }
-
-# Retiring a rep in OwnerVille has no known endpoint yet (the p=20 "retire"
-# action was never mapped, see terminated_reps). Until it is, confirmed reps
-# are deactivated in Slack and LISTED in the summary as a hand step.
-OV_RETIRE_AUTOMATED = False
 
 # The one word that makes Lucy act. Anything else ("ok", "all good", a
 # sentence) removes nobody.

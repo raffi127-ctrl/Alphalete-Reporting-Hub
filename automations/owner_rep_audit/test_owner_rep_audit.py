@@ -7,7 +7,7 @@ from automations.owner_rep_audit import messages as M
 from automations.owner_rep_audit import replies as R
 from automations.owner_rep_audit import run
 from automations.owner_rep_audit.roster import granted
-from automations.owner_rep_audit.slack_ops import find_owner, find_rep
+from automations.owner_rep_audit.slack_ops import find_owner, find_rep, in_slack
 
 
 class Parse(unittest.TestCase):
@@ -117,8 +117,7 @@ class Posts(unittest.TestCase):
     def test_summary(self):
         text = M.summary([
             {"owner": "A", "office": "1", "status": "done",
-             "removed": ["X", "Y"], "confirmed_on": "11/3",
-             "ov_pending": ["X", "Y"]},
+             "removed": ["X", "Y"], "confirmed_on": "11/3"},
             {"owner": "B", "office": "2", "status": "done", "removed": []},
             {"owner": "C", "office": "3", "status": "sent", "removed": []}])
         self.assertTrue(text.startswith(
@@ -126,7 +125,7 @@ class Posts(unittest.TestCase):
         self.assertIn("> X", text)
         self.assertIn("✅ Nobody left: B (2)", text)
         self.assertIn("⚠️ No reply yet: C (3)", text)
-        self.assertIn("OwnerVille by hand: X, Y", text)
+        self.assertNotIn("OwnerVille", text)
 
     def test_monthly_title(self):
         self.assertEqual(M.thread_title(run.month_label(dt.date(2026, 10, 1))),
@@ -148,6 +147,15 @@ class Matching(unittest.TestCase):
                                   self.users)["id"], "U2")
         self.assertIsNone(find_rep({"name": "Ann Lee", "email": ""}, self.users))
         self.assertIsNone(find_rep({"name": "Old Rep", "email": ""}, self.users))
+
+    def test_only_reps_still_in_slack_are_listed(self):
+        reps = [{"name": "Ann Lee", "email": "ann@x.com"},    # in Slack
+                {"name": "Gone Guy", "email": "gone@x.com"},  # not in Slack
+                {"name": "Old Rep", "email": ""},             # deactivated
+                {"name": "Kash Rai", "email": "k@x.com"}]     # the owner
+        got = in_slack(reps, self.users, owner_id="U1")
+        self.assertEqual([(r["name"], r["slack_id"]) for r in got],
+                         [("Ann Lee", "U2")])
 
     def test_granted(self):
         self.assertTrue(granted("View"))

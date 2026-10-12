@@ -18,7 +18,7 @@ def first_name(owner: str) -> str:
 def owner_dm(owner: str, reps: List[str], month: str) -> str:
     lines = "\n".join(f"{i}. {r}" for i, r in enumerate(reps, 1))
     return (f"Hi {first_name(owner)}! Monthly roster check ({month}).\n"
-            f"These are the reps still ACTIVE in your OwnerVille:\n\n{lines}\n\n"
+            f"These reps from your office still have access to our Slack:\n\n{lines}\n\n"
             "Reply with the *numbers* of anyone who is no longer with you "
             "(e.g. `3, 7`). If everyone is still active, reply `none`.")
 
@@ -27,17 +27,14 @@ def confirm_prompt(names: List[str], bad: List[int]) -> str:
     who = "\n".join(f"• {n}" for n in names)
     extra = (f"\n_(ignored {', '.join(map(str, bad))}: not on the list)_"
              if bad else "")
-    return (f"Got it, these would be removed from Slack and OwnerVille:\n{who}"
+    return (f"Got it, these would be removed from Slack:\n{who}"
             f"{extra}\n\nReply *{C.CONFIRM_WORD}* to confirm, or send the "
             "numbers again to change the list.")
 
 
 def done(names: List[str]) -> str:
-    # Says "OwnerVille will follow" because the OwnerVille retire is still a
-    # hand step (config.OV_RETIRE_AUTOMATED) -- never claim a removal that
-    # hasn't happened yet.
     return ("Done! Removed from Slack:\n" + "\n".join(f"• {n}" for n in names)
-            + "\nOwnerVille will follow. Thanks for keeping things clean!")
+            + "\nThanks for keeping things clean!")
 
 
 def none_ack() -> str:
@@ -83,8 +80,8 @@ def thread_title(month: str) -> str:
 
 def thread_intro(month: str) -> str:
     return (f"{thread_title(month)}\n_Informative only. Each owner confirms "
-            "their own terminations; Lucy removes them from Slack and "
-            "OwnerVille. Nothing to approve here._")
+            "their own terminations; Lucy removes them from Slack. "
+            "Nothing to approve here._")
 
 
 def summary(offices: List[Dict]) -> str:
@@ -107,9 +104,6 @@ def summary(offices: List[Dict]) -> str:
     if waiting:
         out.append("⚠️ No reply yet: " + ", ".join(
             f"{o['owner']} ({o['office']})" for o in waiting))
-    ov = [n for o in done_ for n in o.get("ov_pending", [])]
-    if ov:
-        out.append(f"📝 To retire in OwnerVille by hand: {', '.join(ov)}")
     return "\n".join(out)
 
 

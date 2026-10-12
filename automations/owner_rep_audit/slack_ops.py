@@ -49,6 +49,19 @@ def find_rep(rep: Dict, users: List[Dict]) -> Optional[Dict]:
     return hits[0] if len(hits) == 1 else None
 
 
+def in_slack(reps: List[Dict], users: List[Dict],
+             owner_id: str = "") -> List[Dict]:
+    """The OwnerVille reps who still have a live AO Slack account -- the only
+    ones this audit asks about (Eve 10/12: the job is cleaning SLACK). The
+    owner's own account is never on their list."""
+    out = []
+    for r in reps:
+        acct = find_rep(r, users)
+        if acct and acct["id"] != owner_id:
+            out.append(dict(r, slack_id=acct["id"]))
+    return out
+
+
 # ------------------------------------------------------------------ DMs (Lucy)
 
 def lucy():

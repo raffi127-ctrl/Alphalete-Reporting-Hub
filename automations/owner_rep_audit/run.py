@@ -164,26 +164,29 @@ def start(day: dt.date, out: Out, rosters_json: str = "", only=None) -> dict:
     except Exception as e:  # noqa: BLE001
         print(f"  ⚠ couldn't list AO Slack members ({type(e).__name__}): "
               "owners can't be matched, so nobody gets a DM")
-    from automations.owner_rep_audit.slack_ops import find_owner
+    from automations.owner_rep_audit.slack_ops import find_owner, in_slack
     st = {"month": month_label(day), "started": day.isoformat(),
           "mode": out.mode, "offices": {}}
     for r in rows:
         o = {k: r.get(k, "") for k in ("office", "owner", "company", "access",
                                          "note")}
-        o.update(reps=r.get("reps") or [], selected=[], removed=[],
-                 ov_pending=[], log=[])
+        o.update(reps=r.get("reps") or [], selected=[], removed=[], log=[])
         st["offices"][o["office"]] = o
         if o["access"] != "granted":
             o["status"] = "no_access"
-            continue
-        if not o["reps"]:
-            o["status"] = "done"           # nobody active, nothing to ask
             continue
         o["slack_id"] = find_owner(o["owner"], users) if users else None
         if not o["slack_id"]:
             o["status"] = "no_slack"
             print(f"  ⚠ {o['owner']} ({o['office']}): no unique Slack match "
                   "— add them to config.OWNER_SLACK")
+            continue
+        ov_count = len(o["reps"])
+        o["reps"] = in_slack(o["reps"], users, o["slack_id"])
+        print(f"  {o['office']} {o['owner']}: {ov_count} active in OwnerVille"
+              f" -> {len(o['reps'])} still in Slack")
+        if not o["reps"]:
+            o["status"] = "done"           # nobody left in Slack, nothing to ask
             continue
         sent = out.dm(o["slack_id"],
                       M.owner_dm(o["owner"], [x["name"] for x in o["reps"]],
@@ -210,8 +213,6 @@ def remove(o: dict, names: List[str], out: Out) -> None:
         else:
             res = S.deactivate(acct["id"])
         o["log"].append(f"{name}: slack {res}")
-        if not C.OV_RETIRE_AUTOMATED:
-            o["ov_pending"].append(name)
     o["removed"] = names
 
 
