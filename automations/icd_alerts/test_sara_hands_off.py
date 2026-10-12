@@ -28,6 +28,21 @@ class ResumeOnlyTest(unittest.TestCase):
     def test_session_lost_is_not_an_account_problem(self):
         self.assertFalse(issubclass(sara_read.SessionLost, sara_read.AccountProblem))
 
+    def test_read_day_turns_the_flag_on_for_the_login(self):
+        # The flag must be ON while _heal_and_login runs (that is where the
+        # login happens) -- the one assertion the 10/8 tests never made.
+        seen = {}
+        def fake_heal(p, headless, log=print):
+            seen["on"] = sara_read._RESUME_ONLY["on"]
+            raise sara_read.SessionLost("no session")
+        with mock.patch.object(sara_read, "_heal_and_login", fake_heal), \
+             mock.patch.object(sara_read, "sara_held_until", return_value=None, create=True), \
+             mock.patch.dict("sys.modules", {"patchright.sync_api": mock.MagicMock()}):
+            with self.assertRaises(sara_read.SessionLost):
+                sara_read.read_day(dt.date(2026, 10, 11), resume_only=True, log=lambda *_: None)
+        self.assertTrue(seen.get("on"), "resume_only never reached the login")
+        self.assertFalse(sara_read._RESUME_ONLY["on"])
+
     def test_read_day_resets_the_flag_even_when_it_raises(self):
         with mock.patch.object(sara_read, "_heal_and_login", side_effect=sara_read.SessionLost("x")), \
              mock.patch.object(sara_read, "sync_playwright", create=True) as sp:

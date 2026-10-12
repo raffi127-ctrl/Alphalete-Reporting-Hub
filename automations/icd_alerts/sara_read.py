@@ -735,7 +735,18 @@ def read_day(day: Optional[dt.date] = None, *, headless: bool = True,
         log("someone is signing in to SaraPlus — standing back this pass")
         raise SignInInProgress("a SaraPlus sign-in window is open")
     with sync_playwright() as p:
-        ctx, page, base = _heal_and_login(p, headless, log=log)
+        # resume_only reaches _sign_in_raw through this flag (it sits four
+        # calls down, behind the heal/retry). 2026-10-12: this line was
+        # MISSING -- the 10/8 patch died before writing it, so every
+        # "resume-only" overnight read still typed the password and walled
+        # (luke 01:42, carlos-b2batt 02:00, rashad 02:00 on 10/12, all with
+        # resume_only=True in their own evidence). Now it is set, and cleared
+        # again whatever happens.
+        _RESUME_ONLY["on"] = bool(resume_only)
+        try:
+            ctx, page, base = _heal_and_login(p, headless, log=log)
+        finally:
+            _RESUME_ONLY["on"] = False
         try:
 
             try:
