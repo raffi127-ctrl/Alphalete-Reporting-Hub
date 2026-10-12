@@ -1,13 +1,21 @@
 {
-  "confirmed_count": 24,
+  "confirmed_count": 25,
   "needs_review_count": 0,
-  "skip_count": 25,
+  "skip_count": 27,
   "confirmed": [
     {
       "sheet_tab": "Alex Guzman Benitez - NDS",
       "office_id": "9218",
       "as_owner": "Alex Guzman Benitez",
       "as_company": "BEYMARK, INC.",
+      "confidence": 1.0,
+      "campaign": "NDS"
+    },
+    {
+      "sheet_tab": "Atef Choudhury - NDS",
+      "office_id": "23467",
+      "as_owner": "Atef Choudhury",
+      "as_company": "Domin8 Acquisitions, Inc.",
       "confidence": 1.0,
       "campaign": "NDS"
     },
@@ -297,6 +305,14 @@
     {
       "sheet_tab": "Zaid Arabyat - NDS",
       "reason": "2026-09-22: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    },
+    {
+      "sheet_tab": "JC Lopez - NDS",
+      "reason": "2026-10-12: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
+    },
+    {
+      "sheet_tab": "Justin Clowdus - NDS",
+      "reason": "2026-10-12: no AppStream office visible to us (Rafael: don't ask for access). Tab carries 'No access to this office' in A22."
     }
   ]
 }
