@@ -290,8 +290,13 @@ TYPES = {
 TYPE_HINTS = {
     "RAF": "fiber", "WAYNE": "fiber", "STARR": "fiber",
     "CHAN": "fiber", "TONY": "fiber", "SAHIL": "fiber",
-    "CARLOS": "b2b", "EVELIZ": "b2b", "LUIS": "b2b", "ATEF": "b2b",
+    "CARLOS": "b2b", "EVELIZ": "b2b", "LUIS": "b2b",
     "KHALIL": "nds", "COLTEN": "nds", "JAIRO": "nds",
+    # Atef moved to NDS (Rafael, 2026-10-12: "his numbers are not being
+    # pulled"). B2B still carries a tail of his old sales (5 in WE 10/11 vs
+    # 141 in NDS) and the hint program wins when both have him, so his own row
+    # read the B2B tail. Sabrina is still B2B-only: per_for falls back for her.
+    "ATEF": "nds",
 }
 # Program tried first for a captainship with no hint. Fiber is the most common
 # and, regardless, per_for() still falls back across every program — so an
