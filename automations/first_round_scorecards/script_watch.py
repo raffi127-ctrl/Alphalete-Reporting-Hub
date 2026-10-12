@@ -15,7 +15,9 @@ changed. Nothing here can stop the grading: any failure is printed and
 DM'd, and the office keeps its old script.
 
 The first time a channel is read, its current file is only remembered (the
-code already grades on it). Needs bookmarks:read + files:read on Lucy's token.
+code already grades on it). Needs bookmarks:read + files:read on Lucy's token
+(added 2026-10-12). The folder is a channel TAB, so the file is found by
+files.list when bookmarks.list doesn't show it.
 
     python -m automations.first_round_scorecards.script_watch --list
         # what Lucy sees in each channel (bookmarks + the script picked)
@@ -91,6 +93,26 @@ def pick(bookmarks: List[Dict]) -> Optional[Dict]:
     if not files:
         return None
     return max(files, key=lambda b: (b.get("date_updated") or b.get("date_created") or 0))
+
+
+def _channel_files(client, channel: str) -> List[Dict]:
+    """The channel's script files as bookmark-shaped rows. The "1st ROUND
+    SCRIPT" folder is a channel TAB (Eve's screenshot 2026-10-12) and
+    bookmarks.list came back without it, but the file in it is shared in the
+    channel, so files.list sees it."""
+    files = client.api_call("files.list", params={"channel": channel, "count": 100}) \
+        .get("files") or []
+    return [{"id": f["id"], "title": f.get("name") or f.get("title") or "", "entity_id": f["id"],
+             "date_created": f.get("created") or 0, "date_updated": f.get("updated") or 0}
+            for f in files
+            if FOLDER.search(f"{f.get('name') or ''} {f.get('title') or ''}")
+            and (f.get("filetype") or "").lower() in READABLE]
+
+
+def find(client, channel: str) -> Optional[Dict]:
+    """This channel's script now: the bookmark folder if Slack shows it, else
+    the newest script file shared in the channel."""
+    return pick(_bookmarks(client, channel)) or pick(_channel_files(client, channel))
 
 
 def _download(client, file_id: str) -> tuple:
@@ -300,7 +322,7 @@ def check(*, client=None, today: Optional[dt.date] = None) -> int:
     n = 0
     for ch, office in channels().items():
         try:
-            b = pick(_bookmarks(client, ch))
+            b = find(client, ch)
         except Exception as exc:  # noqa: BLE001
             print(f"script watch: {office}: bookmarks not read ({type(exc).__name__}: {exc})")
             continue
@@ -366,9 +388,15 @@ def main(argv=None) -> int:
         except Exception as exc:  # noqa: BLE001
             print(f"{office} ({ch}): FAILED {type(exc).__name__}: {exc}")
             continue
-        b = pick(bms)
-        print(f"{office} ({ch}): script = {b.get('title') if b else 'NONE FOUND'}")
-        for x in bms:
+        try:
+            files = _channel_files(client, ch)
+        except Exception as exc:  # noqa: BLE001
+            print(f"{office} ({ch}): files.list FAILED {type(exc).__name__}: {exc}")
+            files = []
+        b = pick(bms) or pick(files)
+        print(f"{office} ({ch}): script = {b.get('title') if b else 'NONE FOUND'} "
+              f"({len(bms)} bookmarks, {len(files)} script files)")
+        for x in bms + files:
             print(f"    {x.get('id')} parent={x.get('parent_id')} type={x.get('type')} "
                   f"file={_file_id(x) or '-'} {x.get('title')!r}")
     return 0

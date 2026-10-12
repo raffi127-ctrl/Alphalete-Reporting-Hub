@@ -36,6 +36,15 @@ class PickTest(unittest.TestCase):
         self.assertEqual(sw.pick(bms)["id"], "Bk3")
         self.assertEqual(sw._file_id(sw.pick(bms)), "F0BBBBBBBB2")
 
+    def test_channel_tab_folder_falls_back_to_the_channel_files(self):
+        slack = FakeSlack([], files=[
+            {"id": "F0AAAAAAAA1", "name": "JAIRO RUIZ - Script.pdf", "filetype": "pdf",
+             "created": 100},
+            {"id": "F0CCCCCCCC3", "name": "Screenshot.png", "filetype": "png", "created": 300},
+            {"id": "F0BBBBBBBB2", "name": "JAIRO RUIZ - Script v2.pdf", "filetype": "pdf",
+             "created": 200}])
+        self.assertEqual(sw._file_id(sw.find(slack, "C1")), "F0BBBBBBBB2")
+
     def test_no_script_file(self):
         self.assertIsNone(sw.pick([{"id": "B", "title": "1st ROUNDS SCRIPT"},
                                    {"id": "C", "title": "Zoom link", "link": "https://zoom.us"}]))
@@ -73,10 +82,12 @@ class OverrideTest(unittest.TestCase):
 class FakeSlack:
     token = "xoxp-test"
 
-    def __init__(self, bms):
-        self.bms, self.dms = bms, []
+    def __init__(self, bms, files=()):
+        self.bms, self.files, self.dms = bms, list(files), []
 
     def api_call(self, method, params=None):
+        if method == "files.list":
+            return {"files": self.files}
         return {"bookmarks": self.bms}
 
     def conversations_open(self, users):
