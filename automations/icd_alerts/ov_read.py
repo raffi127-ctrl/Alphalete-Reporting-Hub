@@ -39,7 +39,7 @@ from automations.shared import ownerville_knocks as K
 
 # Bump with every release that changes what this module does or reports; it
 # is what a KnocksProblem's summary carries (see the stamp note below).
-CODE_RELEASE = "2026.10.12.1"
+CODE_RELEASE = "2026.10.12.2"
 
 
 class KnocksProblem(RuntimeError):
