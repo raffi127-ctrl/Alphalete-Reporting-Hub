@@ -216,6 +216,29 @@ def _recipients(board: B.Board, override: Optional[str],
     return list(board.to)
 
 
+def _record_delivery(board: B.Board, to: List[str], subject: str) -> None:
+    """Today's run manifest under "<report id>-approved" — the PROOF of delivery
+    shared/delivery_check looks for.
+
+    Eve 2026-10-13 ("todos los dias el mismo aviso y el mail una vez que se
+    aprueba siempre llega"): when the ✅ comes after ~noon the watcher opens a
+    `standalone-org-active-headcount-email-approved` WAITING ticket, the ✅
+    releases the mail, and the close asked delivery_check about
+    `org-active-headcount-email-approved` — which found no verify and no
+    manifest, so every day ended "ran clean, but nothing can confirm it
+    DELIVERED" over a mail that had gone out. Written only after a real SMTP
+    send. Never raises."""
+    try:
+        from automations.shared import run_manifest, review_approval
+        run_manifest.write_manifest(
+            review_approval.phase_id(board.report_id), succeeded=list(to),
+            note=f"emailed '{subject}' to {len(to)}")
+    except Exception as e:  # noqa: BLE001 — the mail already went out
+        print(f"[board_emails] couldn't write the run manifest "
+              f"({type(e).__name__}: {e}) — sent, but its ticket won't close "
+              "itself", flush=True)
+
+
 def _publish_sent(board: B.Board) -> None:
     """Tell the Hub this email actually went out today, from whatever machine
     sent it — the send is a separate review-gate run from the morning build, so
@@ -279,6 +302,7 @@ def main(argv=None) -> int:
             return 0
         _smtp_send(msg)
         print(f"[board_emails] sent to {to}", flush=True)
+        _record_delivery(board, to, str(msg["Subject"]))
         _publish_sent(board)
         print("=== done ===", flush=True)
         return 0
@@ -312,6 +336,7 @@ def main(argv=None) -> int:
 
     _smtp_send(msg)
     print(f"[board_emails] sent to {to}", flush=True)
+    _record_delivery(board, to, str(msg["Subject"]))
     _publish_sent(board)
     print("=== done ===", flush=True)
     return 0
