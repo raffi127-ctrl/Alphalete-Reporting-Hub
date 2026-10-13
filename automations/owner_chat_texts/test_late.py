@@ -81,6 +81,14 @@ class LateTrackers(unittest.TestCase):
         self.assertTrue(out["ok"])
         self.assertEqual(run.read_late_pending(DAY), ["NDS Tracker"])
 
+    def test_owe_seeds_a_day_that_predates_the_late_pass(self):
+        run._marker("trackers_pdf", DAY).parent.mkdir(parents=True, exist_ok=True)
+        run._marker("trackers_pdf", DAY).write_text("x")       # no pending file
+        with mock.patch("automations.owner_chat_texts.slack_fetch.fetch_tracker_pngs",
+                        return_value=([], ["NDS Tracker"])):
+            run.run("late", day=DAY, dry_run=False, owe=["NDS Tracker"])
+        self.assertEqual(run.read_late_pending(DAY), ["NDS Tracker"])
+
 
 if __name__ == "__main__":
     unittest.main()

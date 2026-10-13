@@ -219,7 +219,7 @@ def _run_late(day: dt.date, out_dir: Path, dry_run: bool, out: dict) -> None:
 
 def run(only: Optional[str] = None, *, day: Optional[dt.date] = None,
         dry_run: bool = True, force: bool = False,
-        resend: bool = False) -> dict:
+        resend: bool = False, owe: Optional[list] = None) -> dict:
     day = day or _today()
     out_dir = cfg.OUTPUT_DIR / day.isoformat()
     out = {"day": day.isoformat(), "dry_run": dry_run,
@@ -259,6 +259,11 @@ def run(only: Optional[str] = None, *, day: Optional[dt.date] = None,
                                                        str(e)[:240]))
 
     if only == "late":
+        # --owe: mark trackers as owed by hand — for a day whose partial PDF
+        # went out before the late pass existed (Carlos 2026-10-13, NDS).
+        if owe and not dry_run and _marker("trackers_pdf", day).exists():
+            have = read_late_pending(day) or []
+            _write_late_pending(day, have + [t for t in owe if t not in have])
         _run_late(day, out_dir, dry_run, out)
 
     if only in (None, "board"):
@@ -323,6 +328,10 @@ def main(argv=None) -> int:
                          "a second text is a duplicate to every owner in the "
                          "chat, never a silent one.")
     ap.add_argument("--day", default=None, help="YYYY-MM-DD (default: today Central)")
+    ap.add_argument("--owe", action="append", default=None, metavar="TITLE",
+                    help="with --only late --send: mark a tracker title (e.g. "
+                         "'NDS Tracker') as owed to the chat today, so the late "
+                         "pass sends it once it posts. Repeatable.")
     args = ap.parse_args(argv)
 
     day = dt.date.fromisoformat(args.day) if args.day else _today()
@@ -332,7 +341,7 @@ def main(argv=None) -> int:
         " only=%s" % args.only if args.only else ""), flush=True)
 
     res = run(args.only, day=day, dry_run=dry, force=args.force,
-              resend=args.resend)
+              resend=args.resend, owe=args.owe)
     for line in res["sent"]:
         print("  " + line, flush=True)
     for line in res["skipped"]:
