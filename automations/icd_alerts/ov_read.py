@@ -282,6 +282,12 @@ def needs_password_box() -> bool:
     return _read_hold().get("reason") in ("locked", "bad_login")
 
 
+def held_on_lock() -> bool:
+    """True when the last sign-in stopped on OwnerVille's LOCKED page --
+    the one failure a retyped password cannot fix."""
+    return _read_hold().get("reason") == "locked"
+
+
 def _creds_fp(cr: Dict[str, str]) -> str:
     import hashlib
     raw = ("%s\n%s" % (cr.get("username", ""), cr.get("password", "")))

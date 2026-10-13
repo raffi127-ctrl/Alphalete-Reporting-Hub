@@ -182,6 +182,19 @@ def cmd_set_ownerville_login() -> int:
                         "within a few minutes.\n\nNothing else to do.")
             print("OK")
             return 0
+        # LOCKED IS NOT A WRONG PASSWORD. Jenny (Figspire) 2026-10-13 typed
+        # hers twice into this box and got "that did not work either": the
+        # account was locked, so no password could have worked, and asking
+        # her to retype it only told her the password was the problem.
+        if ov_read.held_on_lock():
+            ask.message(
+                "OwnerVille has LOCKED this account (too many failed "
+                "sign-ins). Your password is not the problem -- typing it "
+                "again will not help.\n\nEmail onboarding@ownerville.com and "
+                "ask them to unlock %s. Lucy notices the unlock by herself; "
+                "nothing else to do.\n\nQuestions: DM Megan & Eve." % user,
+                error=True)
+            return 1
         if attempt == 2:
             break
         try:

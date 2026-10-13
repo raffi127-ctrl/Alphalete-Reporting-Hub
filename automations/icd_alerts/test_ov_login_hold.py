@@ -145,3 +145,51 @@ class OvPasswordBoxTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PasswordBoxStopsOnALockTest(unittest.TestCase):
+    """Jenny (Figspire) 2026-10-13: the box asked for her password twice and
+    ended on "that did not work either" -- the account was locked, so the
+    password was never the problem. A lock ends the box at once and says
+    who unlocks it."""
+
+    def test_lock_ends_the_box_after_one_try_and_names_the_unlock(self):
+        from automations.icd_alerts import dialogs as ask, run as R
+        said, typed = [], []
+
+        def _text(*a, **k):
+            typed.append(1)
+            return "J*Figueroa28"
+
+        def _read(*a, **k):
+            raise OV.KnocksProblem("locked")
+
+        with mock.patch.object(ask, "text", _text), \
+                mock.patch.object(ask, "password", lambda *a, **k: "pw"), \
+                mock.patch.object(ask, "message",
+                                  lambda m, **k: said.append(m)), \
+                mock.patch.object(ask, "choose",
+                                  side_effect=AssertionError("asked again")), \
+                mock.patch.object(C, "save_ownerville_creds", quiet), \
+                mock.patch.object(C, "ownerville_creds",
+                                  lambda: dict(CREDS)), \
+                mock.patch.object(C, "OV_SIGNIN_LOCK",
+                                  pathlib.Path(tempfile.mkdtemp()) / "lock"), \
+                mock.patch.object(OV, "read_knocks", _read), \
+                mock.patch.object(OV, "held_on_lock", lambda: True):
+            self.assertEqual(R.cmd_set_ownerville_login(), 1)
+        self.assertEqual(len(typed), 1)
+        self.assertEqual(len(said), 1)
+        self.assertIn("LOCKED", said[0])
+        self.assertIn("onboarding@ownerville.com", said[0])
+        self.assertIn("J*Figueroa28", said[0])
+        self.assertNotIn("did not work either", said[0])
+
+    def test_held_on_lock_reads_the_hold(self):
+        d = pathlib.Path(tempfile.mkdtemp())
+        with mock.patch.object(C, "OV_HOLD_PATH", d / "hold.json"):
+            self.assertFalse(OV.held_on_lock())
+            OV._write_hold({"reason": "locked"})
+            self.assertTrue(OV.held_on_lock())
+            OV._write_hold({"reason": "bad_login"})
+            self.assertFalse(OV.held_on_lock())
