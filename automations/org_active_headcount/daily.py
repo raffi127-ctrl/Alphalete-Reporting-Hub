@@ -48,6 +48,14 @@ A BOARD TABLEAU HELD PAST THE MORNING (Eve 2026-10-13, NDS: 12 owners at 0):
   queues `rerun org_active_headcount_daily --late` here, so the day fills the
   same morning instead of the next one, and the review link is rebuilt in place.
 
+A TRACKER THAT HAS NOT POSTED BY THE MORNING RUN (Eve 2026-10-13: "como regla
+podemos poner que se completen con los numeros del dia anterior"):
+  its ICDs take the PREVIOUS DAY'S number instead of an empty cell the boxes read
+  as 0 -- on a Monday that is last Sunday's, the 'LAST WEEK'S TOTALS' column (Eve
+  chose it over leaving Monday empty, knowing it runs high). Each such cell gets a
+  'STAND-IN' note naming the tracker; when that tracker posts, the --late re-fill
+  replaces the number and drops the note. A cell somebody retyped is left alone.
+
     python -m automations.org_active_headcount.daily            # dry run
     python -m automations.org_active_headcount.daily --apply
 Python 3.9-safe (Lucy runtime).
@@ -631,10 +639,76 @@ def je_values(today: dt.date, icds: List[str], logfn=print) -> Dict[str, object]
 
 # ------------------------------------------------------------------- fill --
 
+STAND_IN = "STAND-IN"
+TRACKER_LABEL = {"att_country": "Fiber", "nds": "NDS", "b2b_att_country": "B2B",
+                 "b2b_box": "BOX"}
+
+
+def stand_in_note(value, trackers: List[str]) -> str:
+    return (f"{STAND_IN} {value}: the {' + '.join(trackers)} tracker had not posted, "
+            f"so this is the previous day's number. The real one replaces it when "
+            f"the tracker posts.")
+
+
+def stand_in_value(g, dl: dict, r: int, day_idx: int) -> Optional[int]:
+    """The previous day's number for row r: the last earlier day of this week
+    with one, and on a Monday last Sunday's (the 'LAST WEEK'S TOTALS' column)."""
+    if day_idx:
+        return carried(g, dl, r, day_idx)
+    return _num(_c(g, r, dl["lastw"])) if dl.get("lastw") else None
+
+
+def is_stand_in(cell: str, note: str) -> bool:
+    """Still the number the stand-in wrote -- a cell somebody retyped is theirs."""
+    m = re.match(rf"^{STAND_IN}\s+(-?\d+)\b", note or "")
+    return bool(m) and _num(cell) == int(m.group(1))
+
+
+def read_notes(ws, dl: dict) -> Dict[str, str]:
+    """{a1: note} of the daily block's day cells that carry one."""
+    c0, c1 = dl["days"][0], dl["days"][-1]
+    r0, r1 = dl["rows"][0][0], dl["rows"][-1][0]
+    meta = ws.spreadsheet.fetch_sheet_metadata({
+        "ranges": [f"'{ws.title}'!{A(c0)}{r0}:{A(c1)}{r1}"],
+        "fields": "sheets(data(startRow,startColumn,rowData(values(note))))"})
+    out: Dict[str, str] = {}
+    for d in meta["sheets"][0].get("data", []):
+        sr, sc = d.get("startRow", 0), d.get("startColumn", 0)
+        for i, row in enumerate(d.get("rowData", [])):
+            for j, v in enumerate(row.get("values", [])):
+                if v.get("note"):
+                    out[f"{A(sc + j + 1)}{sr + i + 1}"] = v["note"]
+    return out
+
+
+def note_requests(sheet_id: int, notes: Dict[str, str]) -> List[dict]:
+    reqs = []
+    for a1, text in notes.items():
+        m = re.match(r"^([A-Z]+)(\d+)$", a1)
+        col = 0
+        for ch in m.group(1):
+            col = col * 26 + ord(ch) - 64
+        row = int(m.group(2))
+        reqs.append({"updateCells": {
+            "range": {"sheetId": sheet_id, "startRowIndex": row - 1, "endRowIndex": row,
+                      "startColumnIndex": col - 1, "endColumnIndex": col},
+            "rows": [{"values": [{"note": text}]}], "fields": "note"}})
+    return reqs
+
+
 def plan_day(V, day: dt.date, today: dt.date, logfn=print,
-             trackers=None, retail=None, je=None) -> List[Tuple[str, object]]:
+             trackers=None, retail=None, je=None, stand_in: bool = False,
+             notes: Optional[Dict[str, str]] = None,
+             notes_out: Optional[Dict[str, str]] = None) -> List[Tuple[str, object]]:
     """[(a1, value)] for the EMPTY cells of `day`'s column. Sources are fetched
-    only when an empty cell needs them (and can be injected for tests)."""
+    only when an empty cell needs them (and can be injected for tests).
+
+    `stand_in`: a tracker that has not posted fills its cells with the previous
+    day's number (stand_in_value) instead of leaving them empty. `notes` is the
+    tab's {a1: note}; a cell still holding its stand-in is re-asked like an
+    empty one. Note changes (set / cleared) go into `notes_out`."""
+    notes = notes or {}
+    notes_out = notes_out if notes_out is not None else {}
     dl = find_daily(V)
     col = dl["days"][day.weekday()]
     if _num(_c(V, dl["daynum"], col)) != day.day:
@@ -645,7 +719,10 @@ def plan_day(V, day: dt.date, today: dt.date, logfn=print,
     # day just takes the last number the row had.
     out = [(f"{A(col)}{r}", carried(V, dl, r, i)) for r, _, _ in dl["rows"]
            if _c(V, r, col) == "-" and carried(V, dl, r, i) is not None]
-    empty = [(r, name, camp) for r, name, camp in dl["rows"] if _c(V, r, col) == ""]
+    standing = {f"{A(col)}{r}" for r, _, _ in dl["rows"]
+                if is_stand_in(_c(V, r, col), notes.get(f"{A(col)}{r}", ""))}
+    empty = [(r, name, camp) for r, name, camp in dl["rows"]
+             if _c(V, r, col) == "" or f"{A(col)}{r}" in standing]
     if not empty:
         return out
     need = {CAMPAIGN_SOURCE.get(camp) for _, _, camp in empty} | \
@@ -669,13 +746,26 @@ def plan_day(V, day: dt.date, today: dt.date, logfn=print,
             if s == "je":
                 return (je or {}).get(name, "-") if day == today - dt.timedelta(days=1) else "-"
             return None
+        a1 = f"{A(col)}{r}"
         parts = pick_dual(pick, srcs, prev) if len(srcs) > 1 else [pick(srcs[0], prev)]
         if any(p is None for p in parts):
-            continue                        # a source not there yet: a later run fills it
+            # a source not there yet: a later run fills it. A TRACKER that has
+            # not posted gets the previous day's number meanwhile (stand_in).
+            late = [TRACKER_LABEL[s] for s, p in zip(srcs, parts)
+                    if p is None and s in TRACKER_LABEL]
+            if (stand_in and a1 not in standing and late
+                    and len(late) == sum(p is None for p in parts)):
+                v = stand_in_value(V, dl, r, i)
+                if v is not None:
+                    out.append((a1, v))
+                    notes_out[a1] = stand_in_note(v, late)
+            continue
         v = "-" if any(p == "-" for p in parts) else sum(int(p) for p in parts)
         if v == "-" and carried(V, dl, r, i) is not None:
             v = carried(V, dl, r, i)
-        out.append((f"{A(col)}{r}", v))
+        out.append((a1, v))
+        if notes.get(a1, "").startswith(STAND_IN):
+            notes_out[a1] = ""              # the real number: the stand-in note goes
     return out
 
 
@@ -928,22 +1018,36 @@ def run(apply_changes: bool = False, today: Optional[dt.date] = None,
         V = ws.get_all_values()
     total = 0
     broken = []
+    try:
+        notes = read_notes(ws, find_daily(V))
+    except Exception as e:                                         # noqa: BLE001
+        # without the notes a stand-in looks like a real number and would never
+        # be replaced, so no new stand-ins either this run
+        logfn(f"  cell notes NOT read ({type(e).__name__}: {e}) -- no stand-ins this run")
+        notes = None
     for day in completed_days(today):
         if day > today - dt.timedelta(days=1):
             continue
+        note_ups: Dict[str, str] = {}
         try:
-            ups = plan_day(V, day, today, logfn=logfn)
+            ups = plan_day(V, day, today, logfn=logfn, stand_in=notes is not None,
+                           notes=notes or {}, notes_out=note_ups)
         except Exception as e:                                     # noqa: BLE001
             logfn(f"  {day}: NOT filled — {type(e).__name__}: {e}")
             broken.append(day)
             continue
         logfn(f"  {day:%a %m/%d}: {len(ups)} cell(s)" + ("" if ups else " (nothing empty)"))
         for a1, v in ups:
-            logfn(f"      {a1:>5} <- {v}")
+            logfn(f"      {a1:>5} <- {v}"
+                  + (" (stand-in: tracker not posted)" if note_ups.get(a1) else ""))
         if apply_changes and ups:
             _retry(ws.batch_update, [{"range": a, "values": [[v]]} for a, v in ups],
                    value_input_option="USER_ENTERED")
             V = ws.get_all_values()
+        if apply_changes and note_ups:
+            _retry(ws.spreadsheet.batch_update,
+                   {"requests": note_requests(ws.id, note_ups)})
+            notes.update(note_ups)
         total += len(ups)
     logfn(f"{'wrote' if apply_changes else 'would write'} {total} day cell(s)")
 
@@ -1014,9 +1118,9 @@ def refresh_review(logfn=print) -> None:
             notify.post_alert("", [
                 "*Org Active Headcount — corrected after it was approved*",
                 f"A tracker posted late, so the tab got numbers it was missing "
-                f"(they read 0 before). {who[1]} had already approved today's "
-                f"PDF; the link now shows the corrected one. If the email "
-                f"already went out, it went with the 0s.",
+                f"(they read 0, or the previous day's stand-in, before). {who[1]} had "
+                f"already approved today's PDF; the link now shows the corrected "
+                f"one. If the email already went out, it went with the old numbers.",
             ], tag="headcount-late-refill", dry_run=False,
                 incident="headcount-late-refill")
         except Exception as e:                                     # noqa: BLE001

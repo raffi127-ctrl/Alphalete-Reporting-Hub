@@ -519,6 +519,86 @@ class MissingDayCarriesTheLastNumber(unittest.TestCase):
         self.assertEqual(w[f"{A(dx['last'][1])}{r}"], 10)   # Tue '-' -> Mon 10
 
 
+class TrackerNotPostedTakesThePreviousDay(unittest.TestCase):
+    """Eve 2026-10-13: the NDS Tracker never posted and its 12 owners read 0 all
+    day. A tracker that has not posted fills with the previous day's number --
+    Monday takes last Sunday's ('LAST WEEK'S TOTALS'), Eve's call -- noted as a
+    STAND-IN so the real number replaces it when the tracker posts."""
+
+    def _g(self):
+        g = _hc_grid(week_cols=True)
+        g[19 - 1][2:5] = ["10", "20", ""]          # Rafael (Fiber): Mon 10, Tue 20
+        g[20 - 1][2:5] = ["", "", ""]              # Jairo  (NDS):   nothing yet
+        return g
+
+    def _plan(self, g, day, trackers, notes=None):
+        from automations.org_active_headcount.daily import plan_day
+        out = {}
+        w = dict(plan_day(g, day, dt.date(2026, 9, 17), trackers=trackers,
+                          retail={}, je={}, stand_in=True, notes=notes or {},
+                          notes_out=out))
+        return w, out
+
+    def test_monday_takes_last_sunday(self):
+        w, notes = self._plan(self._g(), dt.date(2026, 9, 14), {"nds": None})
+        self.assertEqual(w["C20"], 41)             # LAST WEEK'S TOTALS
+        self.assertTrue(notes["C20"].startswith("STAND-IN 41"))
+        self.assertIn("NDS", notes["C20"])
+
+    def test_a_later_day_takes_the_day_before(self):
+        g = self._g()
+        w, notes = self._plan(g, dt.date(2026, 9, 16), {"att_country": None})
+        self.assertEqual(w["E19"], 20)             # Wed <- Tue 20
+        self.assertIn("Fiber", notes["E19"])
+
+    def test_off_by_default(self):
+        from automations.org_active_headcount.daily import plan_day
+        w = dict(plan_day(self._g(), dt.date(2026, 9, 14), dt.date(2026, 9, 17),
+                          trackers={"nds": None}, retail={}, je={}))
+        self.assertNotIn("C20", w)
+
+    def test_the_real_number_replaces_the_stand_in_and_drops_the_note(self):
+        from automations.org_active_headcount import daily
+        g = self._g()
+        g[20 - 1][2] = "41"
+        notes = {"C20": daily.stand_in_note(41, ["NDS"])}
+        orig = daily.pick_tracker
+        daily.pick_tracker = lambda *a, **k: 7
+        try:
+            w, out = self._plan(g, dt.date(2026, 9, 14), {"nds": {}}, notes)
+        finally:
+            daily.pick_tracker = orig
+        self.assertEqual(w["C20"], 7)
+        self.assertEqual(out["C20"], "")
+
+    def test_still_not_posted_leaves_the_stand_in_alone(self):
+        from automations.org_active_headcount import daily
+        g = self._g()
+        g[20 - 1][2] = "41"
+        notes = {"C20": daily.stand_in_note(41, ["NDS"])}
+        w, out = self._plan(g, dt.date(2026, 9, 14), {"nds": None}, notes)
+        self.assertNotIn("C20", w)
+        self.assertNotIn("C20", out)
+
+    def test_a_retyped_cell_is_not_replaced(self):
+        from automations.org_active_headcount import daily
+        g = self._g()
+        g[20 - 1][2] = "9"                         # somebody typed 9 over the 41
+        notes = {"C20": daily.stand_in_note(41, ["NDS"])}
+        orig = daily.pick_tracker
+        daily.pick_tracker = lambda *a, **k: 7
+        try:
+            w, _ = self._plan(g, dt.date(2026, 9, 14), {"nds": {}}, notes)
+        finally:
+            daily.pick_tracker = orig
+        self.assertNotIn("C20", w)
+
+    def test_note_request_targets_the_cell(self):
+        from automations.org_active_headcount.daily import note_requests
+        rq = note_requests(5, {"AB20": "x"})[0]["updateCells"]["range"]
+        self.assertEqual((rq["startRowIndex"], rq["startColumnIndex"]), (19, 27))
+
+
 class HelpersThatMoved(unittest.TestCase):
     """The two cells whose text a person is expected to change."""
 
