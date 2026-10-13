@@ -138,6 +138,21 @@ def _first(d, *names):
 
 
 # --- Empower: Ringover's own transcription -----------------------------------
+# NOT LICENSED ON THIS ACCOUNT. Ringover support, 2026-10-13: "As of now,
+# there are no licences of Empower on your side." So every route below
+# returns 403 "insufficient permissions" and will keep doing so until
+# somebody buys it. Left in place because the code is right and the day it
+# is licensed it works, but DO NOT debug the 403 again — it is a product
+# we do not own, not a setting.
+#
+# The documented flow is also not the one below: channel_id from /calls,
+# POST public/empower/platform/:name/channel/:channelID to get the
+# calluuid, then GET public/empower/call/:calluuid. uuid_of()'s trick of
+# reading the uuid out of the recording URL was a workaround for not
+# having that POST.
+#
+# We transcribe the recordings ourselves instead, for nothing:
+# automations/sms_audit/call_transcribe.py --------------------------------
 # Seen on Megan's screen 2026-10-08: a call detail panel carrying an AI
 # Summary, a Recording player, and a speaker-separated Transcript with
 # timestamps ("(313) 550-9905: Come on!" / "RH Alphalete Marketing: Hello,

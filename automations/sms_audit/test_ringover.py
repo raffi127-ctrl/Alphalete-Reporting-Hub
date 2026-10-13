@@ -122,8 +122,6 @@ class Empower(unittest.TestCase):
         self.assertIsNone(RO.uuid_of({"record": None}))
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class WhichSideIsUs(unittest.TestCase):
@@ -156,3 +154,7 @@ class WhichSideIsUs(unittest.TestCase):
         """Grading the applicant by mistake is worse than skipping."""
         got = self.CT.speakers([(0.0, "0", "Hello"), (1.0, "1", "Hi")])
         self.assertIsNone(got["us"])
+
+
+if __name__ == "__main__":
+    unittest.main()
