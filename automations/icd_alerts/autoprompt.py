@@ -60,6 +60,16 @@ SYSTEMS = {
         "stamp": "sara-password-autoprompt.txt",
         "name": "SaraPlus password",
     },
+    # Same box for OwnerVille. Jenny (Figspire) 2026-10-12: 134 failed
+    # sign-ins in a day, a "locked" page on her screen every few minutes, and
+    # a message telling her to "open Lucy Reports" -- which is not a thing
+    # she can open. Offered only once ov_read has stopped trying.
+    "ownerville_password": {
+        "module": "automations.icd_alerts.run",
+        "args": ["--set-ownerville-login"],
+        "stamp": "ov-password-autoprompt.txt",
+        "name": "OwnerVille password",
+    },
 }
 
 

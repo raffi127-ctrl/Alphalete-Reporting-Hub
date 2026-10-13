@@ -22,6 +22,11 @@ from typing import Dict, List, Optional
 APP_DIR = Path.home() / ".config" / "lucy-reports"
 CREDS_PATH = APP_DIR / "saraplus-creds.json"
 OV_CREDS_PATH = APP_DIR / "ownerville-creds.json"
+# Set by ov_read when signing in is on hold (failed / locked login).
+OV_HOLD_PATH = APP_DIR / "ownerville-login-hold.json"
+# Present while the OwnerVille password box is checking a new login, so the
+# scheduled knocks read does not open the same browser profile at once.
+OV_SIGNIN_LOCK = APP_DIR / "ownerville-signin-in-progress"
 # My Service Cloud: what a Box office uses for sales, as AT&T uses SaraPlus.
 # Same contract as the other two -- written on the office's own machine, never
 # sent anywhere.
@@ -271,6 +276,12 @@ def save_ownerville_creds(username: str, password: str) -> Path:
                                          "password": password}))
     try:
         OV_CREDS_PATH.chmod(0o600)
+    except OSError:
+        pass
+    # A person just entered the login: try it now, even if it is the same
+    # password -- that is what they do after OwnerVille unlocks the account.
+    try:
+        OV_HOLD_PATH.unlink()
     except OSError:
         pass
     return OV_CREDS_PATH

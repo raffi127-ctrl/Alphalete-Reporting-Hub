@@ -58,6 +58,30 @@ class OwnervilleError(RuntimeError):
     """Phrased for whoever is reading it on an owner's laptop."""
 
 
+class AccountLocked(OwnervilleError):
+    """The login page itself says the account is locked. Only OwnerVille
+    support can undo it, and every further attempt is one more strike."""
+
+
+# THE LOCK SHOWS ON THE PASSWORD STEP, before anything is submitted. Jenny
+# (Figspire) 2026-10-12: "Account Permanently Locked -- Your account has been
+# locked due to excessive failed login attempts. Admin unlock required." and
+# the submit button reads "LOCKED - CONTACT SUPPORT". Her laptop kept opening
+# that window every sweep, because nothing here read the page.
+LOCKED_RE = re.compile(
+    r"account (?:permanently )?locked|locked due to excessive"
+    r"|admin unlock required|locked\s*[-–—]\s*contact support",
+    re.IGNORECASE)
+
+
+def page_says_locked(page) -> bool:
+    try:
+        text = page.inner_text("body", timeout=5_000)
+    except Exception:  # noqa: BLE001
+        return False
+    return bool(LOCKED_RE.search(text or ""))
+
+
 def _norm(s) -> str:
     return re.sub(r"\s+", " ", str(s or "")).strip().lower()
 
@@ -85,6 +109,8 @@ def login(page, username: str, password: str, *, log=print,
     page.fill(_USERNAME_SELECTOR, username)
     page.get_by_role("button", name=_NEXT_BUTTON_NAME).first.click()
     page.wait_for_selector(_PASSWORD_SELECTOR, timeout=60_000)
+    if page_says_locked(page):
+        raise AccountLocked("the sign-in page says this account is locked")
 
     log("waiting %ds for the security check to clear itself"
         % (CLOUDFLARE_WAIT_MS // 1000))
@@ -102,6 +128,8 @@ def login(page, username: str, password: str, *, log=print,
         pass
     page.wait_for_load_state("domcontentloaded")
     page.wait_for_timeout(5_000)
+    if page_says_locked(page):
+        raise AccountLocked("the sign-in page says this account is locked")
 
 
 def capture_rqst(page) -> Optional[str]:

@@ -39,7 +39,7 @@ from automations.shared import ownerville_knocks as K
 
 # Bump with every release that changes what this module does or reports; it
 # is what a KnocksProblem's summary carries (see the stamp note below).
-CODE_RELEASE = "2026.10.08.1"
+CODE_RELEASE = "2026.10.12.1"
 
 
 class KnocksProblem(RuntimeError):
@@ -236,11 +236,142 @@ def _context(p, headless: bool):
     return ctx
 
 
+# STOP SIGNING IN WHEN SIGNING IN IS WHAT HURTS. Jenny (Figspire) 2026-10-12:
+# her saved login kept failing, the agent tried again every sweep, and
+# Lucy's window landed on OwnerVille's "Account Permanently Locked -- Admin
+# unlock required" page and kept opening it on her screen: 134 failed
+# sign-ins that day. Yet Jenny herself could still sign in (Megan: "it's not
+# locked for her") -- so the lock was this BROWSER's, not the account's, and
+# the message must not tell her it is. Same lesson as
+# sara_read.hold_sara (Khalil, 123 refused logins in a day).
+#
+# So: a failed sign-in holds the next one for an hour; a SECOND failure on
+# the same saved password holds until somebody enters the password again
+# (retrying a password that failed twice only spends strikes). A locked
+# account is re-checked every few hours -- harmless, the lock shows on the
+# password step and nothing is submitted -- so support's unlock gets noticed.
+# Saving a new login (the OwnerVille password box, run --set-ownerville-login)
+# clears any hold at once.
+OV_RETRY_MINUTES = 60
+OV_LOCKED_RECHECK_MINUTES = 180
+
+# WHERE THE PASSWORD GOES. These used to say "open Lucy Reports and re-enter
+# it" -- there is no such thing to open on an owner's Mac (Megan 2026-10-12:
+# 'what is "open Lucy Reports"??'). The fix comes to them instead: once the
+# sign-in is on hold, a box asking for the OwnerVille password pops up on
+# that computer when somebody is at it (autoprompt "ownerville_password").
+_PASSWORD_BOX = ("A box asking for your OwnerVille password will pop up on "
+                 "this computer -- type it there and Lucy starts again.")
+_LOCKED_MSG = (
+    "OwnerVille showed Lucy's sign-in window a LOCKED page (too many failed "
+    "sign-ins from this computer). Lucy has stopped trying and wiped her "
+    "OwnerVille cookies so her next try starts clean. " + _PASSWORD_BOX +
+    " Only if OwnerVille says locked for you too: email "
+    "onboarding@ownerville.com to unlock %s.")
+_BAD_LOGIN_MSG = (
+    "Lucy could not sign in to OwnerVille with the saved password twice in a "
+    "row, so she has stopped trying (more tries can lock the account). "
+    + _PASSWORD_BOX)
+
+
+def needs_password_box() -> bool:
+    """True while signing in is held on something only a person can fix:
+    a locked page, or a password that failed twice."""
+    if not ov_hold_message():
+        return False
+    return _read_hold().get("reason") in ("locked", "bad_login")
+
+
+def _creds_fp(cr: Dict[str, str]) -> str:
+    import hashlib
+    raw = ("%s\n%s" % (cr.get("username", ""), cr.get("password", "")))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def _read_hold() -> Dict:
+    import json
+    try:
+        return json.loads(C.OV_HOLD_PATH.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_hold(hold: Dict) -> None:
+    import json
+    try:
+        C.OV_HOLD_PATH.parent.mkdir(parents=True, exist_ok=True)
+        C.OV_HOLD_PATH.write_text(json.dumps(hold))
+    except OSError:
+        pass
+
+
+def clear_ov_hold() -> None:
+    try:
+        C.OV_HOLD_PATH.unlink()
+    except OSError:
+        pass
+
+
+def ov_hold_message() -> str:
+    """Why signing in is on hold right now, or '' when it is not.
+
+    A hold set against a different saved login is stale -- somebody entered
+    a new password -- and is dropped here."""
+    hold = _read_hold()
+    if not hold:
+        return ""
+    try:
+        cr = C.ownerville_creds()
+    except RuntimeError:
+        return ""
+    if hold.get("fp") != _creds_fp(cr):
+        clear_ov_hold()
+        return ""
+    until = hold.get("until")
+    if until:
+        try:
+            if dt.datetime.fromisoformat(until) <= dt.datetime.now():
+                return ""
+        except ValueError:
+            return ""
+    if hold.get("reason") == "locked":
+        return _LOCKED_MSG % cr["username"]
+    if not until:
+        return _BAD_LOGIN_MSG
+    return ("The last OwnerVille sign-in failed; Lucy will try once more "
+            "after %s." % dt.datetime.fromisoformat(until).strftime("%H:%M"))
+
+
+def _note_failure(cr: Dict[str, str], locked: bool, log=print) -> None:
+    fp = _creds_fp(cr)
+    prev = _read_hold()
+    fails = (int(prev.get("fails", 0)) if prev.get("fp") == fp else 0) + 1
+    now = dt.datetime.now()
+    if locked:
+        until = now + dt.timedelta(minutes=OV_LOCKED_RECHECK_MINUTES)
+        hold = {"fp": fp, "reason": "locked", "fails": fails,
+                "until": until.isoformat(timespec="seconds")}
+        log("OwnerVille says this account is locked; not trying until %s"
+            % until.strftime("%H:%M"))
+    elif fails >= 2:
+        hold = {"fp": fp, "reason": "bad_login", "fails": fails, "until": ""}
+        log("OwnerVille sign-in failed %d times on this password; holding "
+            "until it is re-entered" % fails)
+    else:
+        until = now + dt.timedelta(minutes=OV_RETRY_MINUTES)
+        hold = {"fp": fp, "reason": "failed", "fails": fails,
+                "until": until.isoformat(timespec="seconds")}
+        log("OwnerVille sign-in failed; not trying again until %s"
+            % until.strftime("%H:%M"))
+    _write_hold(hold)
+
+
 def _session(page, log=print) -> str:
     """An rqst token, signing in only if the profile's session has lapsed."""
     rqst = K.capture_rqst(page)
     if rqst:
         log("OwnerVille session still good")
+        clear_ov_hold()
         return rqst
 
     try:
@@ -248,20 +379,43 @@ def _session(page, log=print) -> str:
     except RuntimeError as e:
         raise KnocksProblem(str(e))
 
+    held = ov_hold_message()
+    if held:
+        raise KnocksProblem(held)
+
     log("OwnerVille session has lapsed — signing in")
     try:
         K.login(page, cr["username"], cr["password"], log=log)
+    except K.AccountLocked:
+        _note_failure(cr, locked=True, log=log)
+        problem = KnocksProblem(_LOCKED_MSG % cr["username"])
+        problem.seen = _page_evidence(page, [])
+        # The lock lives with this browser (Jenny could sign in herself), so
+        # the next try goes in as a browser OwnerVille has not seen fail.
+        try:
+            page.context.clear_cookies()
+        except Exception:  # noqa: BLE001
+            pass
+        raise problem
     except Exception as e:  # noqa: BLE001
-        raise KnocksProblem(
-            "Could not sign in to OwnerVille. If you recently changed your "
-            "OwnerVille password, open Lucy Reports and enter the new one. "
-            "(%s)" % type(e).__name__)
+        _note_failure(cr, locked=False, log=log)
+        problem = KnocksProblem(
+            "Could not sign in to OwnerVille (%s). Lucy waits an hour before "
+            "trying again." % type(e).__name__)
+        problem.seen = _page_evidence(page, [])
+        raise problem
 
     rqst = K.capture_rqst(page)
     if not rqst:
-        raise KnocksProblem(
+        _note_failure(cr, locked=False, log=log)
+        # WHAT THE SIGN-IN LANDED ON. 79 of these on Jenny's laptop
+        # (2026-10-12) and not one said what the page showed.
+        problem = KnocksProblem(
             "Signed in to OwnerVille but it did not open a working session. "
-            "Nothing is lost — the next run tries again.")
+            "Lucy waits an hour before trying again.")
+        problem.seen = _page_evidence(page, [])
+        raise problem
+    clear_ov_hold()
     return rqst
 
 
@@ -301,6 +455,12 @@ def read_knocks(day: Optional[dt.date] = None, *, headless: bool = True,
         # rare case, and making every sweep visible would put a browser on the
         # owner's screen four times an hour for no reason.
         show = headless and not _has_session(p, log=log)
+        if show:
+            # No window at all while signing in is on hold: the window IS
+            # the popup the owner keeps closing (Jenny, 2026-10-12).
+            held = ov_hold_message()
+            if held:
+                raise KnocksProblem(held)
         if show:
             log("OwnerVille needs signing in again — opening a window briefly")
         ctx = _context(p, headless and not show)

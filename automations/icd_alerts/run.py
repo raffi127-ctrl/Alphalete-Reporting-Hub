@@ -132,6 +132,73 @@ def cmd_set_login(headless: bool = True) -> int:
     return 1
 
 
+def cmd_set_ownerville_login() -> int:
+    """Take the OwnerVille login in a box and PROVE it with a real knocks read.
+
+    Twice at most, not three times like SaraPlus: every wrong try here is one
+    more strike toward OwnerVille locking the account, and the box only ever
+    appears because the saved one already failed.
+    """
+    from automations.icd_alerts import dialogs as ask
+
+    try:
+        current = C.ownerville_creds().get("username", "")
+    except RuntimeError:
+        current = ""
+
+    for attempt in (1, 2):
+        try:
+            user = ask.text(
+                "Lucy can't sign in to OwnerVille.\n\nYour OwnerVille "
+                "username:%s" % ("\n\n(currently %s -- leave blank to keep it)"
+                                 % current if current else "")).strip()
+            user = user or current
+            password = ask.password("Your OwnerVille password:")
+        except ask.Cancelled:
+            print("Nothing was changed.")
+            return 1
+        if not user or not password:
+            print("Nothing entered; nothing changed.")
+            return 1
+
+        C.save_ownerville_creds(user, password)     # also clears the hold
+        _log("checking it against OwnerVille (about a minute)...")
+        try:
+            C.OV_SIGNIN_LOCK.write_text(dt.datetime.now().isoformat())
+        except OSError:
+            pass
+        try:
+            ov_read.read_knocks(C.today(), log=_log)
+            ok, why = True, ""
+        except Exception as e:  # noqa: BLE001
+            ok, why = False, str(e)
+        finally:
+            try:
+                C.OV_SIGNIN_LOCK.unlink()
+            except OSError:
+                pass
+        if ok:
+            ask.message("That worked -- your knocks board will start again "
+                        "within a few minutes.\n\nNothing else to do.")
+            print("OK")
+            return 0
+        if attempt == 2:
+            break
+        try:
+            again = ask.choose(
+                "OwnerVille did not take that.\n\n%s\n\nTry again?" % why[:300],
+                ["Yes, let me retype it", "No, I'll sort it out later"])
+        except ask.Cancelled:
+            return 1
+        if not again.startswith("Yes"):
+            return 1
+
+    ask.message("That did not work either, so Lucy has stopped trying (more "
+                "tries can lock your account).\n\nPlease DM Megan & Eve.",
+                error=True)
+    return 1
+
+
 def cmd_check(headless: bool) -> int:
     try:
         result = sara_read.check_account(headless=headless, log=_log,
@@ -483,6 +550,15 @@ def cmd_knocks(headless: bool, dry_run: bool, day: dt.date) -> int:
                 "at all. The install needs to be run again."))
         return 0
 
+    try:
+        started = dt.datetime.fromisoformat(C.OV_SIGNIN_LOCK.read_text().strip())
+        if dt.datetime.now() - started < dt.timedelta(minutes=5):
+            _log("the OwnerVille password box is checking a new login — "
+                 "skipping knocks this time")
+            return 0
+    except (OSError, ValueError):
+        pass
+
     rows_of = C.enrollments() or [{}]
     worst = 0
     for rec in rows_of:
@@ -511,6 +587,14 @@ def cmd_knocks(headless: bool, dry_run: bool, day: dt.date) -> int:
             _report("knocks", e, office_key=key,
                     detail=(seen + "\n\n" + traceback.format_exc())
                     if seen else "")
+            # Signing in is on hold for something only a person can fix:
+            # put the password box in front of whoever is at the Mac.
+            try:
+                if ov_read.needs_password_box():
+                    from automations.icd_alerts import autoprompt
+                    autoprompt.offer("ownerville_password", log=_log)
+            except Exception:  # noqa: BLE001 — never cost the fault report
+                pass
             worst = 1
             continue
         except RuntimeError as e:
@@ -543,6 +627,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="ICD credit-check alerts agent")
     ap.add_argument("--set-login", action="store_true",
                     help="change the saved SaraPlus password, and check it")
+    ap.add_argument("--set-ownerville-login", action="store_true",
+                    help="change the saved OwnerVille login, and check it")
     ap.add_argument("--check", action="store_true",
                     help="step one: confirm this account can read reports")
     ap.add_argument("--once", action="store_true",
@@ -573,6 +659,8 @@ def main(argv=None) -> int:
 
     if args.set_login:
         return cmd_set_login(headless)
+    if args.set_ownerville_login:
+        return cmd_set_ownerville_login()
     if args.check:
         return cmd_check(headless)
     if args.knocks:
