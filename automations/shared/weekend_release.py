@@ -64,6 +64,29 @@ NO_REVIEW_DAYS: Set[dt.date] = {
     dt.date(2026, 9, 4),   # viernes: día libre de Eve (pedido 2026-09-03)
 }
 
+# DÍAS DE VIAJE: sin revisores Y con la vara más baja. Eve 2026-10-13: "el
+# jueves y viernes 15 y 16 de octubre vamos a estar de viaje laboral… que se
+# envíen solos, a no ser que presenten alguna falla masiva o sean reportes cuya
+# falla afecte a cómo se vea el reporte al día siguiente; si es una falla que al
+# otro día se ve corregida, podemos pasarla por alto".
+#
+# Qué cambia respecto de un sábado, y solo para reportes DIARIOS:
+#   • una falla o un faltante AGUAS ARRIBA ya no frena — el board de mañana se
+#     rehace entero y la tapa; el correo sale y el motivo nombra lo que se pasó
+#     por alto, así queda escrito en el hilo;
+#   • salvo que sea MASIVA: la mitad o más de lo de arriba roto (con al menos
+#     2), o sea un correo armado casi sin datos frescos.
+# Lo que NO cambia: el entregable propio (`verify()` / la pierna propia) tiene
+# que estar completo, y sin estado del día no se manda. `strict=True` deja la
+# regla de siempre para un gate que la necesite. Los boletines semanales (DD y
+# Override) NO pasan por acá: tienen su propio `auto_approval`, y ahí un hueco
+# tampoco frena — Eve lo backfillea en la tab manual la semana siguiente.
+TRAVEL_DAYS: Set[dt.date] = {
+    dt.date(2026, 10, 15),  # jueves: viaje laboral
+    dt.date(2026, 10, 16),  # viernes: viaje laboral
+}
+NO_REVIEW_DAYS |= TRAVEL_DAYS
+
 # Perilla de apagado, para volver al gate manual los 7 días sin tocar los gates.
 ENABLED = True
 
@@ -118,6 +141,24 @@ def is_no_review_day(today: Optional[dt.date] = None) -> bool:
     return today in NO_REVIEW_DAYS
 
 
+def is_travel_day(today: Optional[dt.date] = None) -> bool:
+    """Día sin revisores donde una falla que mañana se corrige sola no frena."""
+    today = today or dt.datetime.now(CENTRAL).date()
+    return today in TRAVEL_DAYS
+
+
+def _travel_overlooks(today: dt.date, strict: bool, upstream: Sequence[str],
+                      bad: Sequence[str]) -> bool:
+    """¿Este día de viaje deja pasar estas fallas de aguas arriba?
+
+    Sí, salvo gate semanal (`strict`) o falla masiva: la mitad o más de lo de
+    arriba roto, con al menos 2 (un correo casi sin datos frescos)."""
+    if strict or not is_travel_day(today) or not bad:
+        return False
+    massive = len(bad) >= 2 and len(bad) * 2 >= max(len(upstream), 1)
+    return not massive
+
+
 def is_auto_send_day(today: Optional[dt.date] = None) -> bool:
     """¿Hoy el gate puede abrirse solo si el día está limpio?
 
@@ -134,6 +175,9 @@ def auto_who(today: Optional[dt.date] = None) -> str:
     today = today or dt.datetime.now(CENTRAL).date()
     if is_weekend(today):
         return "envío automático de fin de semana (nadie revisa sáb/dom)"
+    if is_travel_day(today):
+        return (f"envío automático ({today.isoformat()}: viaje, nadie "
+                f"revisa)")
     if is_no_review_day(today):
         return (f"envío automático ({today.isoformat()}: día libre avisado, "
                 f"nadie revisa)")
@@ -146,6 +190,8 @@ def day_label(today: Optional[dt.date] = None) -> str:
     today = today or dt.datetime.now(CENTRAL).date()
     if is_weekend(today):
         return "fin de semana sin revisores"
+    if is_travel_day(today):
+        return f"{today.isoformat()} es día de viaje sin revisores"
     if is_no_review_day(today):
         return (f"{today.isoformat()} es día sin revisores "
                 f"(avisado de antemano)")
@@ -228,7 +274,8 @@ def day_is_clean(report_ids: Sequence[str],
                  today: Optional[dt.date] = None,
                  *,
                  own_ids: Optional[Sequence[str]] = None,
-                 verify: Optional[Callable[[], Tuple[bool, str]]] = None) -> Tuple[bool, str]:
+                 verify: Optional[Callable[[], Tuple[bool, str]]] = None,
+                 strict: bool = False) -> Tuple[bool, str]:
     """Puede este correo salir sin que nadie lo mire? (ok, motivo).
 
     La regla, en el orden en que se pregunta (Eve 2026-08-21):
@@ -262,6 +309,19 @@ def day_is_clean(report_ids: Sequence[str],
     own = _resolve_ids(own_ids if own_ids is not None else report_ids)
     upstream = [r for r in chain if r not in own]
 
+    # ---- 0. día de viaje: lo de arriba que mañana se rehace no frena ---------
+    overlooked = ""
+    if is_travel_day(today) and not strict:
+        bad_up = [r for r in (blocking_reports(report_ids, today,
+                                               own_ids=own_ids,
+                                               strict=True) or [])
+                  if r not in own]
+        if _travel_overlooks(today, strict, upstream, bad_up):
+            overlooked = (f" (día de viaje: se pasa por alto "
+                          f"{', '.join(bad_up)} — mañana se rehace)")
+            chain = [r for r in chain if r not in bad_up]
+            upstream = [r for r in upstream if r not in bad_up]
+
     # ---- 1. una falla de verdad, este donde este -----------------------------
     broken = sorted(f"{r} ({reports[r].get('status')})" for r in chain
                     if (reports.get(r) or {}).get("status") in HARD_FAIL)
@@ -292,7 +352,7 @@ def day_is_clean(report_ids: Sequence[str],
         ok, why = verify()
         if not ok:
             return False, f"el reporte no esta completo: {why}"
-        return True, f"dia sin fallas y {why}"
+        return True, f"dia sin fallas y {why}{overlooked}"
 
     own_bad = sorted(f"{r} ({reports[r].get('status')})" for r in own
                      if r in reports
@@ -301,13 +361,14 @@ def day_is_clean(report_ids: Sequence[str],
         return False, (f"no esta todo en DONE: {', '.join(own_bad)} "
                        f"(este gate no sabe revisar su entregable)")
     return True, (f"dia limpio: {len(chain)} job(s) sin fallas "
-                  f"({', '.join(sorted(chain))})")
+                  f"({', '.join(sorted(chain))}){overlooked}")
 
 
 def blocking_reports(report_ids: Sequence[str],
                      today: Optional[dt.date] = None,
                      *,
-                     own_ids: Optional[Sequence[str]] = None
+                     own_ids: Optional[Sequence[str]] = None,
+                     strict: bool = False
                      ) -> Optional[List[str]]:
     """QUE ids frenan el dia (los mismos que mira `day_is_clean`), o None.
 
@@ -345,14 +406,22 @@ def blocking_reports(report_ids: Sequence[str],
             out.append(rid)
     # Orden estable y sin repetidos: un id puede caer por dos motivos a la vez
     # (FAILED y ademas con alerta) y es UN solo reporte que arreglar.
-    return sorted(set(out))
+    out = sorted(set(out))
+    # Día de viaje: lo de arriba que mañana se rehace deja de frenar (la pierna
+    # propia sí sigue frenando). Ver TRAVEL_DAYS.
+    bad_up = [r for r in out if r not in own]
+    if _travel_overlooks(today, strict, upstream, bad_up):
+        out = [r for r in out if r in own]
+    return out
 
 
 def auto_release(report_ids: Sequence[str], today: Optional[dt.date] = None,
                  *, enabled: bool = True,
                  own_ids: Optional[Sequence[str]] = None,
-                 verify: Optional[Callable[[], Tuple[bool, str]]] = None) -> Tuple[bool, str]:
-    """¿Se libera solo? (ok, motivo). El motivo se imprime SIEMPRE — un día que
+                 verify: Optional[Callable[[], Tuple[bool, str]]] = None,
+                 strict: bool = False) -> Tuple[bool, str]:
+    """¿Se libera solo? (ok, motivo). `strict` = reporte semanal: en un día de
+    viaje no se relaja nada (ver TRAVEL_DAYS). El motivo se imprime SIEMPRE — un día que
     no se auto-envía tiene que decir por qué, en el log y en el hilo."""
     today = today or dt.datetime.now(CENTRAL).date()
     if not (enabled and ENABLED):
@@ -361,7 +430,7 @@ def auto_release(report_ids: Sequence[str], today: Optional[dt.date] = None,
         return False, (f"{today.isoformat()} es "
                        f"{today.strftime('%A').lower()}: día hábil, el ✅ manda")
     ok, why = day_is_clean(report_ids, today, own_ids=own_ids,
-                           verify=verify)
+                           verify=verify, strict=strict)
     label = day_label(today)
     if not ok:
         return False, f"{label}, pero {why}"
@@ -373,6 +442,8 @@ def held_note(reason: str, what: str,
     """El texto de la nota que se deja cuando el día NO libera solo."""
     today = today or dt.datetime.now(CENTRAL).date()
     when = ("hoy es fin de semana" if is_weekend(today)
+            else f"hoy ({today.isoformat()}) no hay revisores (viaje)"
+            if is_travel_day(today)
             else f"hoy ({today.isoformat()}) no hay revisores")
     # EL MOTIVO YA VIENE CON EL DÍA PUESTO. Los tres gates le pasan acá el `why`
     # de `auto_release`, que lo arma como "<day_label>, pero <motivo>" — y esta

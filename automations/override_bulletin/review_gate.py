@@ -48,6 +48,7 @@ from typing import Optional, Tuple
 
 from automations.override_bulletin import dd_build as DB
 from automations.override_bulletin import dd_data as D
+from automations.shared import weekend_release as wr
 
 # The private channel the other three gates already use (#revision-emails).
 # Hardcoded for the same reason they hardcode it: the reporting token can
@@ -75,6 +76,12 @@ REMIND_MARK = "reminder: the Organization Bulletin"
 SENT_MARK = "Sent — approved by"
 FAILED_MARK = "Could not send"
 CLOSED_MARK = "Not sent — nobody approved"
+# The once-only note when a no-review day does NOT release itself.
+AUTO_HELD_MARK = "Auto-send held"
+# The once-only note naming the gaps an auto-send went out with anyway.
+AUTO_OVERLOOKED_MARK = "Auto-sent with gaps"
+# Who the Sent reply names when nobody ticked it (English: Slack posts are).
+AUTO_WHO = "auto-send (no reviewers today)"
 REMIND_AFTER_HOURS = 3.0
 
 DRIVE_FOLDER_NAME = "Organization Bulletin - para revisar"
@@ -599,6 +606,72 @@ def close_day(today: Optional[dt.date] = None, channel: Optional[str] = None,
 # --------------------------------------------------------------------------
 # 4. the send
 # --------------------------------------------------------------------------
+def overlooked_note_once(msg: dict, what: str,
+                         channel: Optional[str] = None) -> None:
+    """Say ONCE in the thread what an auto-send went out with anyway, so the
+    gap is on record for the manual backfill the week after."""
+    replies = _client().conversations_replies(
+        channel=_channel(channel), ts=msg["ts"], limit=50).get("messages", [])
+    if _said(replies, AUTO_OVERLOOKED_MARK):
+        return
+    _client().chat_postMessage(
+        channel=_channel(channel), thread_ts=msg["ts"],
+        text=(f"{_mentions()} — {AUTO_OVERLOOKED_MARK}: nobody is reviewing "
+              f"today, so this went out with: {what}. Backfill it on the manual "
+              f"tab next week."))
+
+
+def held_note_once(msg: dict, reason: str,
+                   channel: Optional[str] = None) -> None:
+    """Say ONCE in the thread why a no-review day did not send itself."""
+    replies = _client().conversations_replies(
+        channel=_channel(channel), ts=msg["ts"], limit=50).get("messages", [])
+    if _said(replies, AUTO_HELD_MARK):
+        return
+    _client().chat_postMessage(
+        channel=_channel(channel), thread_ts=msg["ts"],
+        text=(f"{_mentions()} — {AUTO_HELD_MARK}: nobody is reviewing today, "
+              f"but this did not send itself because {reason}. It waits for a "
+              f":white_check_mark: as usual."))
+
+
+def auto_approval(today: Optional[dt.date] = None,
+                  channel: Optional[str] = None) -> Optional[Tuple[str, str]]:
+    """On a no-review day (weekend_release.NO_REVIEW_DAYS — e.g. the 10/15-16
+    trip) a COMPLETE bulletin approves itself. (id, name) or None.
+
+    A GAP DOES NOT HOLD (Eve 2026-10-13: "no se corrige solo pero a la semana
+    siguiente yo lo armo en la tab manual y backfilleo"). `blocking` items go out
+    — the same thing `--notify` does on the human path — and are named once in
+    the thread so the backfill has a list. What still holds: the wrong week
+    (that republishes a week that already went out) and `hard_block`, which
+    send.py refuses anyway. Those leave a note and wait for a checkmark."""
+    today = today or dt.datetime.now(wr.CENTRAL).date()
+    if not (wr.ENABLED and wr.is_auto_send_day(today)):
+        return None
+    msg = _find_post(today, channel)
+    if msg is None:
+        return None          # nothing posted yet — --post holds on its own
+    try:
+        _, d = build_preview(verbose=False)
+        have = (d["weeks"] or [""])[0]
+        problems = [str(p) for p in (d.get("hard_block") or [])]
+        gaps = [str(p) for p in (d.get("blocking") or [])]
+        if have != week_label(today):
+            problems.insert(0, f"the newest week is {have or '(none)'}, not "
+                               f"{week_label(today)}")
+    except Exception as e:  # noqa: BLE001 — can't prove it's complete: hold
+        problems = [f"the data could not be re-read ({e})"]
+    if problems:
+        print(f"— no-review day, auto-send HELD: {'; '.join(problems)}",
+              flush=True)
+        held_note_once(msg, "; ".join(problems), channel)
+        return None
+    if gaps:
+        overlooked_note_once(msg, "; ".join(gaps), channel)
+    return wr.AUTO_ID, AUTO_WHO
+
+
 def send_reviewed(distro: bool = False, force: bool = False,
                   verbose: bool = True) -> int:
     """Shell out to send.py. A separate process on purpose: the sender stays the
@@ -805,7 +878,8 @@ def main(argv=None) -> int:
         if already_sent(today, args.channel):
             print("— already sent this week, nothing to do", flush=True)
             return 0
-        who = find_approval(today, args.channel)
+        who = (find_approval(today, args.channel)
+               or auto_approval(today, args.channel))
         if not who:
             return 1
         print(f"✓ approved by {who[1]}", flush=True)

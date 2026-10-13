@@ -51,6 +51,7 @@ from automations.override_bulletin import fill as F
 # approvers, ONE review channel and ONE Drive token — a change to who-can-approve
 # happens in one place, never in two that quietly diverge.
 from automations.override_bulletin import review_gate as RG
+from automations.shared import weekend_release as wr
 
 # The first line of the post, and how --check finds it. PREFIX-matched, and the
 # gates share #revision-emails, so this must not be a prefix of — nor start with —
@@ -420,6 +421,39 @@ def upload_pdf(pdf: Path, verbose: bool = True) -> str:
     return RG.upload_pdf(pdf, verbose=verbose, folder_name=DRIVE_FOLDER_NAME)
 
 
+def auto_approval(wk: str, tab: str = None,
+                  channel: Optional[str] = None) -> Optional[Tuple[str, str]]:
+    """On a no-review day (weekend_release.NO_REVIEW_DAYS — e.g. the 10/15-16
+    trip) a COMPLETE bulletin approves itself. (id, name) or None.
+
+    Same rule as the DD gate: a gap does NOT hold — it goes out and is named
+    once in the thread for next week's manual backfill (Eve 2026-10-13). Only
+    the wrong week holds."""
+    today = dt.datetime.now(wr.CENTRAL).date()
+    if not (wr.ENABLED and wr.is_auto_send_day(today)):
+        return None
+    msg = _find_post(wk, channel)
+    if msg is None:
+        return None
+    try:
+        _, wk_now, gaps = build_preview(tab, verbose=False)
+        problems = []
+        if wk_now != wk:
+            problems.insert(0, f"the newest week is {wk_now or '(none)'}, "
+                               f"not {wk}")
+    except Exception as e:  # noqa: BLE001 — can't prove it's complete: hold
+        problems = [f"the sheet could not be re-read ({e})"]
+    if problems:
+        print(f"— no-review day, auto-send HELD: {'; '.join(problems)}",
+              flush=True)
+        RG.held_note_once(msg, "; ".join(problems), channel)
+        return None
+    if gaps:
+        RG.overlooked_note_once(msg, f"not sourced yet: {', '.join(gaps)}",
+                                channel)
+    return wr.AUTO_ID, RG.AUTO_WHO
+
+
 def send_reviewed(distro: bool = False, force: bool = False,
                   verbose: bool = True) -> int:
     """Shell out to send.py — a separate process on purpose, so the sender stays
@@ -500,7 +534,8 @@ def main(argv=None) -> int:
         if already_sent(html_path_wk, args.channel):
             print("— already sent this week, nothing to do", flush=True)
             return 0
-        who = find_approval(html_path_wk, args.channel)
+        who = (find_approval(html_path_wk, args.channel)
+               or auto_approval(html_path_wk, args.tab, args.channel))
         if not who:
             return 1
         print(f"✓ approved by {who[1]}", flush=True)
