@@ -1307,12 +1307,23 @@ def auto_day(today: dt.date, blocks: Sequence["config.Block"],
                       f"({type(e).__name__}: {e})", flush=True)
                 if parent is None:
                     parent = ensure_parent(today, channel)
-            rebuilt = state.get("rebuilds", {}).get(k, 0) >= A.MAX_REBUILDS
+            fresh[k] = (block.heading, reasons, True)
+        # Cada uno con su link (el ✅ es por capitán), pero UNA nota por motivo
+        # con todos los afectados (Eve 2026-10-13). La nota lleva la marca de
+        # cada uno, así el próximo tick no vuelve a anunciar a ninguno.
+        for keys, reasons in A.same_reasons({k: r for k, (_h, r, _nh)
+                                             in fresh.items()}):
+            tags = [f"{k}:{A._short('|'.join(reasons))}" for k in keys]
+            rebuilt = all(state.get("rebuilds", {}).get(k, 0) >= A.MAX_REBUILDS
+                          for k in keys)
+            heading = (fresh[keys[0]][0] if len(keys) == 1 else
+                       A.who_line([fresh[k][0] for k in keys]))
             _client().chat_postMessage(
                 channel=_channel(channel), thread_ts=parent["ts"],
-                text=(A.hold_text(block.heading, reasons, _mentions(), rebuilt)
-                      + f"\n`{_tagged(A.HELD_MARKER, tag)}`"))
-            fresh[k] = (block.heading, reasons, True)
+                text=(A.hold_text(heading, reasons, _mentions(), rebuilt,
+                                  many=len(keys) if len(keys) > 1 else 0)
+                      + "\n" + " ".join(f"`{_tagged(A.HELD_MARKER, t)}`"
+                                        for t in tags)))
         if fresh:
             A.alert_corrections(today, fresh)
     return 1 if held or waiting else 0

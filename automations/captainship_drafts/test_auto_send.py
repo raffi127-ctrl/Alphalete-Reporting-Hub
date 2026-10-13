@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+import sys
 import tempfile
 import time
 import unittest
@@ -346,6 +347,24 @@ class TestGateFlow(Base):
         self.assertEqual(len(self.alerts), 1)
         self.assertEqual(list(self.alerts[0]), [self.fiber])
 
+    def test_same_reason_is_one_note_naming_everyone(self):
+        # 2026-10-12: five B2B captains held on the same tracker = five copies
+        # of the same note. Now: a link each (the ✅ is per captain), ONE note.
+        b2bs = [c.key for c in config.CAPTAINS if c.flavor == "b2b"][:3]
+        for k in b2bs:
+            _write_eml(self.tmp, k)
+        tab = lambda _t: ({"tableau:tracker_b2b": "behind"}, {}, [])
+        self._run(b2bs, tab=tab, ticks=2)
+        self.assertEqual(sorted(self.links),
+                         sorted(config.block_of(k).key for k in b2bs))
+        notes = [t for t in self.posted if A.HELD_MARKER in t]
+        self.assertEqual(len(notes), 1)
+        self.assertIn(f"{len(b2bs)} NOT sent", notes[0])
+        for k in b2bs:
+            self.assertIn(f"{A.HELD_MARKER} {k}:", notes[0])
+        self.assertEqual(len(self.alerts), 1)
+        self.assertEqual(sorted(self.alerts[0]), sorted(b2bs))
+
     def test_upstream_reason_reaches_slack_in_english(self):
         _write_eml(self.tmp, self.fiber)
         with mock.patch.object(self.rg, "scope_today",
@@ -461,3 +480,30 @@ class TestBuildStarted(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestGroupedCorrections(unittest.TestCase):
+    """alert_corrections: one bullet per REASON with who it hit (Eve 10/13)."""
+
+    def test_one_bullet_per_reason(self):
+        got = {}
+        fake = mock.Mock()
+        fake.open_or_followup.side_effect = lambda **kw: got.update(kw)
+        b2b = "Tableau not updated: the `tracker_b2b` tracker is still behind (x)"
+        nds = "Tableau not updated: the `tracker_nds` tracker is still behind (y)"
+        held = {"carlos": ("B2B — Carlos", [b2b], True),
+                "luis": ("B2B — Luis", [b2b], True),
+                "khalil": ("NDS — Khalil", [nds], True)}
+        with mock.patch.dict(sys.modules,
+                             {"automations.shared.incident_thread": fake}), \
+                mock.patch("automations.shared.incident_thread", fake,
+                           create=True), \
+                mock.patch.object(A, "_mark_alerted", lambda _t: None):
+            A.alert_corrections(DAY, held)
+        body = "\n".join(got["body"])
+        self.assertEqual(body.count(b2b), 1)
+        self.assertEqual(body.count(nds), 1)
+        self.assertIn("B2B: Carlos, Luis", body)
+        self.assertIn("NDS: Khalil", body)
+        self.assertIn("Nothing to re-run", body)
+        self.assertNotIn("lucy rerun", body)

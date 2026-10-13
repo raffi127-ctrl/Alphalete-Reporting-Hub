@@ -685,8 +685,36 @@ def _short(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:8]
 
 
+def same_reasons(held: Dict[str, Sequence[str]]
+                 ) -> List[Tuple[List[str], List[str]]]:
+    """Agrupa a los frenados que fallaron por LO MISMO: [(claves, motivos)].
+
+    Eve 2026-10-13: el 10/12 ocho capitanes frenaron por dos motivos (tracker
+    B2B y tracker NDS atrasados) y el canal tuvo la misma nota ocho veces —
+    "es un loquero leer la misma nota veinte veces". Un grupo = una nota con
+    los afectados. Mantiene el orden en que llegaron."""
+    groups: Dict[Tuple[str, ...], List[str]] = {}
+    for k, reasons in held.items():
+        groups.setdefault(tuple(reasons), []).append(k)
+    return [(keys, list(reasons)) for reasons, keys in groups.items()]
+
+
+def who_line(headings: Sequence[str]) -> str:
+    """"B2B: Carlos, Eveliz · NDS: Khalil" — los encabezados "Programa — Nombre"
+    juntados por programa, para no repetir "B2B —" cinco veces."""
+    by_prog: Dict[str, List[str]] = {}
+    for h in headings:
+        prog, sep, name = h.partition(" — ")
+        if sep:
+            by_prog.setdefault(prog, []).append(name)
+        else:
+            by_prog.setdefault("", []).append(h)
+    return " · ".join((f"{p}: " if p else "") + ", ".join(ns)
+                      for p, ns in by_prog.items())
+
+
 def hold_text(heading: str, reasons: Sequence[str], mentions: str,
-              rebuilt: bool) -> str:
+              rebuilt: bool, *, many: int = 0) -> str:
     # Una viñeta por sección: varios motivos de la misma caja van juntos, no
     # repitiendo "5. New Internet Ongoing Churn Metrics:" en cada línea.
     by_sec: Dict[str, List[str]] = {}
@@ -700,6 +728,11 @@ def hold_text(heading: str, reasons: Sequence[str], mentions: str,
     # CORTO (Eve, 2026-10-08): "held / Rebuilt once, still wrong / fix +
     # rebuild (same link)" no se entendía — parecía que ya estaba arreglado.
     tail = "Already rebuilt, still the same. " if rebuilt else ""
+    if many:
+        # Una nota para varios: cada uno tiene su propio link (el ✅ va ahí).
+        return (f"{mentions} ⚠️ *{heading}* — {many} NOT sent, same reason:\n"
+                + "\n".join(bullets)
+                + f"\n_{tail}✅ each one's link above to send it anyway._")
     return (f"{mentions} ⚠️ *{heading}* — NOT sent:\n" + "\n".join(bullets)
             + f"\n_{tail}✅ the link above to send it anyway._")
 
@@ -717,21 +750,32 @@ def alert_corrections(today: dt.date, held: Dict[str, Tuple[str, List[str], bool
     try:
         from automations.shared import incident_thread as it
         d = email_build.reported_date(today)
+        # UNA viñeta por motivo con los afectados, no una por capitán con el
+        # mismo motivo copiado (Eve 2026-10-13, ver same_reasons).
         lines = []
-        for _k, (heading, reasons, _nh) in held.items():
-            lines.append(f"• *{heading}* — " + "; ".join(reasons))
+        for keys, reasons in same_reasons({k: r for k, (_h, r, _nh)
+                                           in held.items()}):
+            lines.append("• " + "; ".join(reasons))
+            lines.append(f"    _Affected ({len(keys)}):_ "
+                         + who_line([held[k][0] for k in keys]))
+        all_tableau = all(r.startswith("Tableau not updated")
+                          for _h, rs, _nh in held.values() for r in rs)
+        fix = ("*Nothing to re-run:* Tableau is behind. They rebuild and send "
+               "on their own once the extract loads."
+               if all_tableau else
+               "*To fix it, ON LUCY 3:* `lucy rerun captainship_drafts --only "
+               "<captain> --dry-run` (rebuilds and re-seals the same link); the "
+               "15-minute check reviews it again and sends it if it comes out "
+               "clean. If it is Tableau being behind, there is nothing to re-run "
+               "until the extract loads — it rebuilds on its own once it does.")
         lines += [
             "",
             "*What this means:* these captains' reports were NOT sent "
             "automatically; every other captain's was. Each one's link is in "
             "today's thread in #revision-emails — a ✅ there sends it as is.",
-            "*To fix it, ON LUCY 3:* `lucy rerun captainship_drafts --only "
-            "<captain> --dry-run` (rebuilds and re-seals the same link); the "
-            "15-minute check reviews it again and sends it if it comes out "
-            "clean. If it is Tableau being behind, there is nothing to re-run "
-            "until the extract loads — it rebuilds on its own once it does.",
+            fix,
         ]
-        subjects = [f"{h}: {'; '.join(r)[:140]}" for h, r, _nh in held.values()]
+        subjects = [h for h, _r, _nh in held.values()]
         it.open_or_followup(
             key=incident_key(today),
             title=(f"✉️ *Captainship Reports {d.month}/{d.day}* — "
