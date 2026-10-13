@@ -2,7 +2,7 @@
 
 Replaces the 'DAILY EOD APPSTREAM' sheet Perli fills by hand and sends to
 Camila every evening as a screenshot plus a list of the offices in red.
-Two emails a day (full report, then the weekly red list), Mon-Sat, 6 PM Central; LIVE to Camila since 2026-10-07.
+ONE email a day (weekly red list, day's red list, table — each in its own box), Mon-Sat, 6 PM Central; LIVE to Camila since 2026-10-07.
 
 Camila's ask, in her words: "1st round showed, # booked to 2nd porcentaje de
 eso y despues 2nd round retention con porcentaje. Arriba de 50% en verde,
@@ -38,8 +38,9 @@ not red.
 
 THE WEEKLY RED LIST (Camila, 2026-10-12: "que me mande un mensaje con las
 oficinas que estan en rojo en el weekly total cada dia") is the same rule on
-the WEEKLY TOTALS column (Monday .. report day), sent as its OWN second
-email right after the full one (Eve, 2026-10-13). Email
+the WEEKLY TOTALS column (Monday .. report day). It went out as a second
+email for one day; since 2026-10-13 (Eve: "en un mismo mail, pero cuadros
+separados") it is its own BOX at the top of the one email. Email
 only -- Camila does not want it on Slack (Eve, 2026-10-12).
 
     python -m automations.daily_eod_appstream.run --dry-run       # preview only
@@ -212,6 +213,23 @@ def red_html(reds: List[Tuple[str, float]], day: dt.date, when: str = "") -> str
             f'{items}</ul>')
 
 
+def red_items_html(reds: List[Tuple[str, float]]) -> str:
+    """Just the red offices, for inside a box whose title already says what/when."""
+    if not reds:
+        return '<p style="font-size:14px;margin:0">None under 50% 🎉</p>'
+    items = "".join(f"<li>{html.escape(o)} {whole_pct(p)}%</li>" for o, p in reds)
+    return f'<ul style="font-size:14px;margin:0;padding-left:20px">{items}</ul>'
+
+
+def box_html(title: str, inner: str, color: str = "#555") -> str:
+    """One bordered section of the mail, so each part reads as its own box."""
+    return ('<table cellpadding="0" cellspacing="0" style="border:2px solid '
+            f'{color};border-radius:6px;margin:0 0 16px;border-collapse:separate">'
+            f'<tr><td style="background:{color};color:#fff;font-size:14px;'
+            f'font-weight:bold;padding:6px 10px">{html.escape(title)}</td></tr>'
+            f'<tr><td style="padding:10px">{inner}</td></tr></table>')
+
+
 def gaps_html(gaps: List[str]) -> str:
     if not gaps:
         return ""
@@ -313,13 +331,18 @@ def build_and_send(day: dt.date, *, production: bool, dry_run: bool,
             sheet_ok = False
             logfn(f"  sheet: FAILED {type(exc).__name__}: {exc}")
 
-    body = red_html(reds, day) + table_html(blocks) + gaps_html(gaps)
-    # The weekly red list is its OWN mail, right after the full one (Eve 10/13:
-    # "no tenían que ser dos?" — Camila was told "después del otro").
-    red_body = red_html(week_reds, day, f"weekly total, {week_when(day)}")
+    # ONE mail, three boxes (Eve 10/13: "en un mismo mail, pero cuadros
+    # separados"): weekly-total reds on top (Camila 10/12), the day's reds, the table.
+    RED = "#b00000"
+    table = table_html(blocks) + gaps_html(gaps)
     if link:
-        body += (f'<p style="font-size:12px;margin-top:12px">Every week, in the Sheet: '
-                 f'<a href="{link}">ARS Management 2.0 → Daily EOD AppStream</a></p>')
+        table += (f'<p style="font-size:12px;margin-top:12px">Every week, in the Sheet: '
+                  f'<a href="{link}">ARS Management 2.0 → Daily EOD AppStream</a></p>')
+    body = (box_html(f"Offices in red — weekly total, {week_when(day)} ({len(week_reds)})",
+                     red_items_html(week_reds), RED)
+            + box_html(f"Offices in red — {day:%A} {day.month}/{day.day} ({len(reds)})",
+                       red_items_html(reds), RED)
+            + box_html("Full report", table))
     (OUT_DIR / f"preview_{day.isoformat()}.html").write_text(
         f"<html><body>{body}</body></html>", encoding="utf-8")
     logfn(f"  report day {day}: red {', '.join(f'{o} {whole_pct(p)}%' for o, p in reds) or 'none'}")
@@ -335,11 +358,7 @@ def build_and_send(day: dt.date, *, production: bool, dry_run: bool,
         subject=f"Daily EOD AppStream — {day:%A} {day.month}/{day.day}",
         to=to, title="DAILY EOD APPSTREAM", blocks=[], intro_html=body,
         dry_run=dry_run, preview_dir=OUT_DIR, logfn=logfn)
-    res_red = report_email.send_boards(
-        subject=f"Offices in red (weekly total) — {week_when(day)}",
-        to=to, title="OFFICES IN RED — WEEKLY TOTAL", blocks=[], intro_html=red_body,
-        dry_run=dry_run, preview_dir=OUT_DIR, logfn=logfn)
-    sent = res.get("ok", dry_run) and res_red.get("ok", dry_run)
+    sent = res.get("ok", dry_run)
     return 0 if (sent and sheet_ok) else 1
 
 

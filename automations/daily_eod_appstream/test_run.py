@@ -64,7 +64,7 @@ class Math(unittest.TestCase):
             send.assert_not_called()
 
 
-    def test_two_mails_full_then_weekly_reds_only(self):
+    def test_one_mail_three_boxes(self):
         import json
         import tempfile
         from pathlib import Path
@@ -82,13 +82,16 @@ class Math(unittest.TestCase):
                                         dry_run=True, from_cache=cache,
                                         logfn=lambda *_: None)
         self.assertEqual(rc, 0)
-        self.assertEqual(send.call_count, 2)
-        full, red = (c.kwargs for c in send.call_args_list)
-        self.assertIn("WEEKLY TOTALS", full["intro_html"])
-        self.assertIn("Offices in red", red["subject"])
-        self.assertIn("Andre Burton 40%", red["intro_html"])
-        self.assertNotIn("Aya", red["intro_html"])
-        self.assertNotIn("<table", red["intro_html"])
+        self.assertEqual(send.call_count, 1)
+        body = send.call_args.kwargs["intro_html"]
+        weekly = body.index("Offices in red — weekly total")
+        daily = body.index("Offices in red — Monday 10/5")
+        full = body.index("Full report")
+        self.assertLess(weekly, daily)
+        self.assertLess(daily, full)
+        self.assertIn("Andre Burton 40%", body[weekly:daily])
+        self.assertNotIn("Aya", body[weekly:full])
+        self.assertIn("WEEKLY TOTALS", body[full:])
 
 
 class Sheet(unittest.TestCase):
