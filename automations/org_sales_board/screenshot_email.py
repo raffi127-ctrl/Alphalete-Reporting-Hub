@@ -471,7 +471,7 @@ def _export_png(gid: int, rng: str, out_path: Path, token: str,
     base = (f"https://docs.google.com/spreadsheets/d/"
             f"{spreadsheet_id or SHEET_ID}/export?format=pdf"
             f"&gid={gid}&range={rng}&gridlines=false&sheetnames=false"
-            f"&printtitle=false&pagenumbers=false&fzr=false"
+            f"&printtitle=false&pagenumbers=false&fzr=false&printnotes=false"
             f"&top_margin=0.05&bottom_margin=0.05&left_margin=0.05&right_margin=0.05")
 
     def _fetch(extra):
