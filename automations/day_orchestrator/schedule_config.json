@@ -1735,6 +1735,39 @@
    "verify": null,
    "close_on": "exit_zero"
   },
+  "sales_board_fixer_owners": {
+   "on_scheduler": true,
+   "machine": "Lucy 1",
+   "_note": "Lucy Salesboard Fixer on the OWNERS' boards (Eve approved 2026-10-13). Reads automations/sales_board_fixer/owners.json and writes only where \"apply\": true (8 owners with a live board). Only broken formulas + broken color rules, no hover notes, no fonts / Roll Call; backup to output/sales_board_fixer first. Same fix 3 days in a row -> Lucy DMs Eve (owner_repeats.json). Last in the batch, far from sales_board_fixer: back to back they hit the Sheets read quota (429). Pure Sheets API, no browser.",
+   "order": 63,
+   "display_name": "Lucy Salesboard Fixer (owners)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.sales_board_fixer.run"
+   ],
+   "base_args": [
+    "--owners",
+    "--apply"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 30,
+   "verify": null,
+   "close_on": "exit_zero"
+  },
   "install_vantura_payroll_agent": {
    "on_scheduler": false,
    "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_vantura_payroll_agent` can install/refresh the STANDALONE com.alphalete.vantura-payroll-wed LaunchAgent on Lucy 2, which runs the Vantura payroll PREP (automations.vantura_payroll.run) Wednesday 11:00am machine-local time via deploy/vantura_payroll_wed.sh. The wrapper passes --live (LIVE since 2026-07-15 \u2014 it writes the board), and now also publishes to the vantura-payroll Hub card. install_agent is read-only w.r.t. any Sheet/report data; it only reloads the plist. Re-run this after the plist changes.",
