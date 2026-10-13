@@ -174,5 +174,25 @@ class OwnerTabs(unittest.TestCase):
                          ["10.12 Linep", "10.12 Stations", "Territory Line Up"])
 
 
+class OwnerRepeats(unittest.TestCase):
+    def test_eve_hears_on_the_third_day_in_a_row_only(self):
+        import datetime as dt
+        from automations.sales_board_fixer.run import repeats
+        h, k = {}, ["Cody · Sales Board | D5 | missing_formula"]
+        d = dt.date(2026, 10, 13)
+        self.assertEqual(repeats(h, k, d), [])
+        self.assertEqual(repeats(h, k, d + dt.timedelta(1)), [])
+        self.assertEqual(repeats(h, k, d + dt.timedelta(2)), k)
+        self.assertEqual(repeats(h, k, d + dt.timedelta(3)), [])   # once, not daily
+
+    def test_a_skipped_day_starts_over(self):
+        import datetime as dt
+        from automations.sales_board_fixer.run import repeats
+        h, k = {}, ["x"]
+        d = dt.date(2026, 10, 13)
+        repeats(h, k, d); repeats(h, k, d + dt.timedelta(2))
+        self.assertEqual(repeats(h, k, d + dt.timedelta(3)), [])
+
+
 if __name__ == "__main__":
     unittest.main()

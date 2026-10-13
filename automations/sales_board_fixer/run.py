@@ -161,8 +161,9 @@ def backup(t: dict, stamp: str) -> Path:
     return p
 
 
-def apply(sh, t: dict, found: list) -> list:
-    """Write the fixable findings. Returns the ones actually written."""
+def apply(sh, t: dict, found: list, notes: bool = True) -> list:
+    """Write the fixable findings. Returns the ones actually written.
+    notes=False: no hover notes (owners' boards, Eve 2026-10-12)."""
     ws = t["ws"]
     # The board re-sorts during the day: re-read the names and drop any row
     # whose rep is no longer the one the finding was made for.
@@ -183,8 +184,9 @@ def apply(sh, t: dict, found: list) -> list:
                         value_input_option="USER_ENTERED")
     fmt = [x.request for x in todo if x.request and "updateCells" in x.request]
     # a note on every touched cell, so a person can hover and see what changed
-    fmt += K.note_requests(todo, t["sheet_id"], t.get("notes") or [],
-                           dt.date.today().strftime("%m/%d"))
+    if notes:
+        fmt += K.note_requests(todo, t["sheet_id"], t.get("notes") or [],
+                               dt.date.today().strftime("%m/%d"))
     # rule deletes last, highest index first (checks.py already sorted them)
     dels = [x.request for x in todo if x.request and "deleteConditionalFormatRule" in x.request]
     if fmt or dels:
@@ -259,7 +261,9 @@ def main(argv=None) -> int:
 
 
 def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "",
-             tenure=None) -> dict:
+             tenure=None, kinds=None) -> dict:
+    """kinds: only these finding kinds get written, the rest is just reported
+    (owners' boards: OWNER_KINDS, no notes)."""
     results = {}
     for title in titles:
         t = load(sh, title)
@@ -274,6 +278,11 @@ def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "",
                 print("  filtro ampliado: %s -> %s" % (widened[0].before, widened[0].after))
                 t = load(sh, title)
         found = audit(t, tenure)
+        if kinds is not None:
+            name_col = K.layout(t["values"]).name_col if K.is_board(t["values"]) else 0
+            for x in found:
+                if x.kind not in kinds or _owners_rank_cell(x, name_col):   # report only
+                    x.value = x.request = None
         n_fix = sum(1 for x in found if x.fixable)
         print("%s%s: %d hallazgos (%d arreglables)" % (label, title, len(found), n_fix))
         if do_apply and n_fix > MAX_FIXES:
@@ -283,9 +292,10 @@ def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "",
                   % (n_fix, MAX_FIXES))
         elif do_apply:
             print("  backup:", backup(t, stamp))
-            done = apply(sh, t, found)
+            done = apply(sh, t, found, notes=kinds is None)
             print("  escritos: %d" % len(done))
-            left = audit(load(sh, title), tenure)
+            left = [x for x in audit(load(sh, title), tenure)
+                    if kinds is None or x.kind in kinds]
             print("  después de arreglar quedan: %d (%d arreglables)"
                   % (len(left), sum(1 for x in left if x.fixable)))
         results[label + title] = widened + found
@@ -338,18 +348,100 @@ def owner_tabs(sh, boards: int = 1) -> list:
     return picked + side_tabs(visible, picked)
 
 
+# What Lucy writes on an OWNER's board (Eve, 2026-10-12): broken formulas and
+# broken color rules, nothing else -- no notes, no fonts / number formats, no
+# Roll Call. An X typed over a formula is only reported: on our board the
+# Roll Call fill keeps the X, on theirs restoring the formula would erase it.
+OWNER_KINDS = {"typed_over_formula", "missing_formula", "different_formula",
+               "row_added_wrong", "cf_broken", "cf_foreign", "cf_duplicate"}
+def _owners_rank_cell(x, name_col: int) -> bool:
+    """The '#' column left of the names. Owners write it their own way --
+    Rashad switched to =IF(B5<>"",ROW()-3,"") on purpose (2026-10-13) and a
+    column majority would put the old =A4+1 chain back. Only a #REF! gets fixed."""
+    m = re.match(r"([A-Z]+)\d+$", x.where or "")
+    if not m or not name_col or "#REF!" in (x.before or ""):
+        return False
+    col = 0
+    for ch in m.group(1):
+        col = col * 26 + ord(ch) - 64
+    return col < name_col
+
+
+REPEATS_FILE = OUT_DIR / "owner_repeats.json"
+REPEAT_DAYS = 3                   # same fix N days in a row -> tell Eve
+EVE_USER_ID = "U088E2KJEV8"       # Evelyn Sobrino
+
+
+def repeats(history: dict, written, today: dt.date) -> list:
+    """Record today's fixes in `history` ({key: [iso dates]}) and return the
+    keys fixed exactly REPEAT_DAYS days in a row ending today -- somebody keeps
+    putting it back by hand. Exactly, so Eve hears once, not every day after."""
+    days = [(today - dt.timedelta(days=i)).isoformat() for i in range(REPEAT_DAYS + 1)]
+    for key in written:
+        seen = history.setdefault(key, [])
+        if days[0] not in seen:
+            seen.append(days[0])
+    for key in list(history):                     # keep two weeks
+        history[key] = [d for d in history[key]
+                        if d >= (today - dt.timedelta(days=14)).isoformat()]
+        if not history[key]:
+            del history[key]
+    return [k for k in written
+            if all(d in history[k] for d in days[:REPEAT_DAYS])
+            and days[REPEAT_DAYS] not in history[k]]
+
+
+def _tell_eve(lines) -> None:
+    from automations.shared import slack_metrics_post as smp
+    client = smp._client()
+    try:
+        who = client.auth_test().get("user", "")
+    except Exception:  # noqa: BLE001
+        who = ""
+    if who and "lucy" not in who.lower():
+        print("! esta máquina postea como %s, no Lucy -- no mando el DM" % who)
+        return
+    text = ("Salesboard Fixer: Lucy fixed these %d days in a row -- someone keeps "
+            "changing them back by hand. Ask the owner if they want it that way:\n"
+            % REPEAT_DAYS) + "\n".join("• " + l for l in lines)
+    ch = client.conversations_open(users=EVE_USER_ID)["channel"]["id"]
+    client.chat_postMessage(channel=ch, text=text)
+    print("  DM a Eve: %d repetidos" % len(lines))
+
+
 def run_owners(only, do_apply: bool, stamp: str) -> dict:
     owners = json.loads(OWNERS_FILE.read_text(encoding="utf-8"))["owners"]
-    results = {}
+    results, written = {}, {}
     for o in owners:
         if only and only.lower() not in o["name"].lower():
             continue
-        sh = _book(o["sheet_id"])
-        tabs = owner_tabs(sh, o.get("boards", 1))
+        try:
+            sh = _book(o["sheet_id"])
+            tabs = owner_tabs(sh, o.get("boards", 1))
+        except Exception as e:  # noqa: BLE001 -- one owner's sheet never stops the rest
+            print("== %s: NO se pudo abrir (%s)" % (o["name"], type(e).__name__))
+            continue
         print("== %s: %s" % (o["name"], tabs or "sin board en uso"))
         # writing on an owner's sheet is switched on owner by owner, in owners.json
-        results.update(run_tabs(sh, tabs, stamp, do_apply and o.get("apply", False),
-                                label=o["name"] + " · "))
+        on = do_apply and o.get("apply", False)
+        res = run_tabs(sh, tabs, stamp, on, label=o["name"] + " · ", kinds=OWNER_KINDS)
+        results.update(res)
+        if on:
+            for tab, found in res.items():
+                for x in found:
+                    if x.fixable:
+                        written["%s | %s | %s" % (tab, x.where, x.kind)] = (
+                            "%s %s: %s" % (tab, x.where, K.KIND_LABEL.get(x.kind, x.kind)))
+    if written:
+        try:
+            history = json.loads(REPEATS_FILE.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            history = {}
+        again = repeats(history, list(written), dt.date.today())
+        OUT_DIR.mkdir(parents=True, exist_ok=True)
+        REPEATS_FILE.write_text(json.dumps(history, indent=1), encoding="utf-8")
+        if again:
+            _tell_eve([written[k] for k in again])
     return results
 
 
