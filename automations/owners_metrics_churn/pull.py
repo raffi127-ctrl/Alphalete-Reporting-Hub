@@ -540,10 +540,18 @@ B2B_ATEF_URL = _wireless(
 )
 
 
+# 2026-10-13: "Atef's Team" and "Carlos's Team" are GONE from the B2B
+# Captain's Teams filter (Eve checked the dropdown: Blake, Cody, Devin, Eveliz,
+# Luis, Luke, Ricky, Unassigned). Their saved views (B2B_ATEF_URL /
+# B2B_CARLOS_URL) now load with nothing to filter on, so the crosstab lacks
+# 'ICD Churn' and both tabs dropped. Eve chose to stop depending on the team
+# filter: both now read the all-teams wireless view cut to their Org Sales
+# Board block (make_b2b_board_roster_parser), the way Luke's does. Each to its
+# own file so the three never race the moved-rep backfill's copy.
 def fetch_b2b_atef(out_path=None, verbose: bool = False, page=None):
-    out_path = out_path or Path(tempfile.gettempdir()) / "owners_b2b_atef.csv"
-    _dl(B2B_ATEF_URL, WORKSHEET, out_path, verbose=verbose, page=page)
-    return out_path
+    return fetch_b2b_allteams(
+        out_path or Path(tempfile.gettempdir()) / "owners_b2b_atef.csv",
+        verbose=verbose, page=page)
 
 
 def fetch_b2b_allteams(out_path: Optional[Path] = None,
@@ -567,10 +575,10 @@ def fetch_b2b_luis(out_path: Optional[Path] = None,
 
 def fetch_b2b_carlos(out_path: Optional[Path] = None,
                      verbose: bool = False, page=None) -> Path:
-    out_path = out_path or Path(tempfile.gettempdir()) / "owners_b2b_carlos.csv"
-    _dl(B2B_CARLOS_URL, WORKSHEET, out_path,
-                                  verbose=verbose, page=page)
-    return out_path
+    """All-teams wireless view — see fetch_b2b_atef (2026-10-13)."""
+    return fetch_b2b_allteams(
+        out_path or Path(tempfile.gettempdir()) / "owners_b2b_carlos.csv",
+        verbose=verbose, page=page)
 
 
 def fetch_b2b_eveliz(out_path: Optional[Path] = None,

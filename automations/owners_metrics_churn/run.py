@@ -181,9 +181,13 @@ REPORTS = [
      "owners_fiber_wireless_org.csv", pull.make_wireless_parser("jess"),
      pull.PERIODS),
     # ----- B2B (Phase 2) -----
+    # Carlos (2026-10-13): "Carlos's Team" left Tableau's captain filter, so
+    # his saved view went blank — all-teams view cut to his board block, like
+    # Luke. See pull.fetch_b2b_atef.
     ("carlos", "Carlos Hidalgo (B2B)",
      pull.fetch_b2b_carlos, fill.open_ws_b2b_carlos,
-     "owners_b2b_carlos.csv", pull.parse_b2b, pull.B2B_PERIODS),
+     "owners_b2b_carlos.csv", pull.make_b2b_board_roster_parser("Carlos"),
+     pull.B2B_PERIODS),
     ("eveliz", "Eveliz Wright (B2B)",
      pull.fetch_b2b_eveliz, fill.open_ws_b2b_eveliz,
      "owners_b2b_eveliz.csv", pull.parse_b2b, pull.B2B_PERIODS),
@@ -198,9 +202,14 @@ REPORTS = [
     # carries its own Grand Total, so plain parse_b2b is correct and the roster
     # is no longer hardcoded here — a rep added to his captainship in Tableau
     # flows through on his own.
+    #
+    # 2026-10-13: "Atef's Team" is gone from that filter too (his move to NDS),
+    # so back to the all-teams view — cut to his Org Sales Board block this
+    # time instead of a typed roster.
     ("atef", "Atef Choudhury (B2B)",
      pull.fetch_b2b_atef, fill.open_ws_b2b_atef,
-     "owners_b2b_atef.csv", pull.parse_b2b, pull.B2B_PERIODS),
+     "owners_b2b_atef.csv", pull.make_b2b_board_roster_parser("Atef"),
+     pull.B2B_PERIODS),
     # Luke Baldwin (2026-10-01): no own view yet, so the all-teams wireless view
     # cut to the owners on his Org Sales Board block. No block yet → this tab
     # is skipped and flagged; the others fill as usual.
