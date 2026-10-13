@@ -400,6 +400,46 @@ def _no_office_access(office: str) -> Optional[str]:
     return f"{why} (knocks_access_watch snapshot {checked.date()})"
 
 
+def _capture_says_no_board(office: str, saturday: dt.date) -> Optional[str]:
+    """Why the captainship capture drew no weekly board for `office` when it
+    left them out ON PURPOSE (no Office Access, dropped in config, or a week
+    with no knocks or sales at all), or None.
+
+    The capture's own manifest is the first witness: it ran on THIS machine,
+    this week, a few minutes earlier, and its knock_dispo:<owner> note is the
+    exact reason it gave the email. The knocks_access_watch snapshot only backs
+    it up — it is refreshed on the mini, not here, and on 2026-10-12 Lucy 3's
+    copy was ten days old (past _ACCESS_MAX_AGE), so Austin Eldredge and Nigel
+    Gilbert went back to failing the sweep 69/72 although the capture had
+    skipped them for no access that same morning."""
+    from automations.captainship_drafts import config as CC
+    from automations.captainship_drafts import knock_dispo_images as KD
+    from automations.captainship_drafts.email_build import NO_DATA_MARK
+    from automations.focus_office_att.aliases import _norm_name
+    if _norm_name(office) in KD.dropped_owners():
+        return "dropped from the captainship knock boards on purpose"
+    wanted = _norm_name(office)
+    for man in Path(CC.RENDER_DIR).glob(
+            f"knocks_manifest_*_{saturday.isoformat()}.json"):
+        try:
+            errors = json.loads(man.read_text(encoding="utf-8")).get("errors") or {}
+        except Exception:  # noqa: BLE001 - an unreadable manifest has no opinion
+            continue
+        for key, note in errors.items():
+            kind, _, who = str(key).partition(":")
+            if (kind != "knock_dispo" or _norm_name(who) != wanted
+                    or not str(note).startswith(NO_DATA_MARK)):
+                continue
+            if "office access" in str(note).lower():
+                return f"no ownerville Office Access (capture {man.name})"
+            # A real zero: nobody knocked or sold all week, so the capture
+            # drew no board on purpose (Ja Mosley, WE 10/10). Nothing to write
+            # — the box stays blank, same as the email's grey note.
+            if "no knocks or sales recorded" in str(note).lower():
+                return f"no knocks or sales recorded this week (capture {man.name})"
+    return None
+
+
 def cache_weeks() -> List[dt.date]:
     """The Saturdays this machine still has an ownerville pull for, newest
     first. The cache keeps the newest three weeks (knock_week_cache.prune), so
@@ -530,7 +570,8 @@ def run_office(office: str, saturday: dt.date, tab: Optional[str],
     elif source == "captainship":
         data, png = _captainship_board(office, saturday)
         if data is None:
-            gap = _no_office_access(office)
+            gap = (_capture_says_no_board(office, saturday)
+                   or _no_office_access(office))
             if gap:
                 print(f"[wkf] ⤳ {office}: {gap} — the captainship capture "
                       "never drew a board for them, skipped.", flush=True)

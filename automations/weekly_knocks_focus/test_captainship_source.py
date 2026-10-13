@@ -87,12 +87,69 @@ class NoOfficeAccess(unittest.TestCase):
                 st.enter_context(mock.patch.object(
                     R, "_tab_for", return_value=office))
                 st.enter_context(mock.patch.object(
+                    R, "_capture_says_no_board", return_value=None))
+                st.enter_context(mock.patch.object(
                     R, "_no_office_access", return_value=why))
                 return R.run_office(office, SAT, None, True,
                                     skip_missing=True, source="captainship")
 
         self.assertTrue(_run("Nigel Gilbert", "not on the Office Access list"))
         self.assertFalse(_run("Eric Zech", None))
+
+
+class CaptureManifest(unittest.TestCase):
+    """The capture's own manifest says who it left out for no Office Access —
+    a stale access snapshot on Lucy 3 must not turn them back into failures
+    (2026-10-12: 69/72, Austin Eldredge + Nigel Gilbert)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        patcher = mock.patch.object(CC, "RENDER_DIR", self.root)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(self.tmp.cleanup)
+        drop = mock.patch.object(CC, "DROP_KNOCK_OWNERS", (), create=True)
+        drop.start()
+        self.addCleanup(drop.stop)
+
+    def _manifest(self, errors, saturday=SAT, captain="pat"):
+        p = self.root / (f"knocks_manifest_{captain}_"
+                         f"{(saturday + dt.timedelta(days=2)).isoformat()}_"
+                         f"{saturday.isoformat()}.json")
+        p.write_text(json.dumps({"kinds": ["knock_dispo"], "items": {},
+                                 "errors": errors}), encoding="utf-8")
+
+    def test_access_gap_in_manifest_is_a_skip(self):
+        from automations.captainship_drafts.email_build import NO_DATA_MARK
+        self._manifest({"knock_dispo:Austin  Eldredge": NO_DATA_MARK +
+                        "no ownerville office access for this owner on the "
+                        "reporting account"})
+        why = R._capture_says_no_board("austin eldredge", SAT)
+        self.assertIn("Office Access", why)
+
+    def test_real_error_other_week_or_daily_still_fail(self):
+        from automations.captainship_drafts.email_build import NO_DATA_MARK
+        gap = NO_DATA_MARK + "no ownerville office access"
+        self._manifest({"knock_dispo:Eric Zech": "TimeoutError: page.goto",
+                        "daily_knocks:Nigel Gilbert": gap})
+        self._manifest({"knock_dispo:Ja Mosley": gap},
+                       saturday=SAT - dt.timedelta(days=7), captain="chan")
+        self.assertIsNone(R._capture_says_no_board("Eric Zech", SAT))
+        self.assertIsNone(R._capture_says_no_board("Nigel Gilbert", SAT))
+        self.assertIsNone(R._capture_says_no_board("Ja Mosley", SAT))
+
+    def test_zero_week_is_a_skip(self):
+        from automations.captainship_drafts.email_build import NO_DATA_MARK
+        self._manifest({"knock_dispo:Ja Mosley": NO_DATA_MARK +
+                        "no knocks or sales recorded this week"}, captain="chan")
+        self.assertIn("no knocks", R._capture_says_no_board("Ja Mosley", SAT))
+
+    def test_dropped_owner_is_a_skip(self):
+        with mock.patch.object(CC, "DROP_KNOCK_OWNERS", ("Francisco Castillo",),
+                               create=True):
+            self.assertIn("on purpose",
+                          R._capture_says_no_board("Francisco Castillo", SAT))
 
 
 class CaptainshipBoard(unittest.TestCase):
