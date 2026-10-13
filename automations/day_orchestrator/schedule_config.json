@@ -115,6 +115,13 @@
     "send_anyway_after": "09:00"
    }
   },
+  "slack:owner_tracker_late": {
+   "label": "Trackers the 9:00 owner PDF went out without — now posted in today's #alphalete-sales thread",
+   "_note": "Carlos 2026-10-13: NDS was held for Tableau, the 9:00 partial PDF went without it, and nothing ever texted it after. readiness._probe_owner_tracker_late -> owner_chat_texts.run.late_status(): ready once an owed tracker lands, when nothing is owed (no-op run), or past config.LATE_CUTOFF (16:00). Fails OPEN.",
+   "probe": {
+    "type": "owner_tracker_late"
+   }
+  },
   "slack:headcount_tracker_pngs": {
    "label": "The 4 Country tracker PNGs the headcount daily reads (Fiber, NDS, B2B AT&T, BOX) \u2014 posted in today's #alphalete-sales thread",
    "_note": "Eve 2026-09-14. Same probe as slack:owner_tracker_pngs, limited to the 4 trackers org_active_headcount_daily opens. The full gate waits for EVERY routed tracker or 09:00: on 9/14 these 4 were in by 06:57 CT but the run only started 09:15, so Sunday was not on the tab at 7:40. These 4 landed 05:30-07:13 CT on 9/11-9/14. Still opens at 09:00 if one is missing; the daily leaves that board's cells empty and the next day's run fills them.",
@@ -1030,6 +1037,42 @@
     "not_before": "07:30"
    },
    "_note": "LIVE SEND (Megan 2026-08-23: 'trackers daily at 7:30am'). Forwards the tracker PNGs already posted in #alphalete-sales to the Alphalete Owners iMessage chat. WAITS IN READINESS, NOT IN AN EXIT CODE (2026-08-25): data_sources 'slack:owner_tracker_pngs' -> readiness._probe_owner_tracker_thread, ready once every routed tracker is in today's thread or once 09:00 passes (the partial-PDF backstop, config.PDF_PARTIAL_AFTER). The module still exits 1 while the PDF is WAITING and that is still correct for a manual run, but the orchestrator reads any non-zero but 75 as a crash \u2014 so before this gate a 07:30 pass ahead of a late Lucy 3 capture went FAILED, burned a retry, turned the pill red and posted an incident. Its twin owner_chat_texts_board did exactly that on 2026-08-25 and that is what surfaced this one. Gated in readiness it stays STILL_TRYING instead: re-probed each pass and on the service tick, no burnt retries, no alert, and the stragglers text as they land \u2014 per-day .sent markers make every retry duplicate-proof.",
+   "priority": "P2",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
+  },
+  "owner_chat_texts_late_send": {
+   "on_scheduler": true,
+   "machine": "Lucy 1",
+   "display_name": "Owner Chat Texts — Late Trackers (iMessage)",
+   "source_type": "api",
+   "data_sources": [
+    "slack:owner_tracker_late"
+   ],
+   "command": [
+    "automations.owner_chat_texts.run"
+   ],
+   "base_args": [
+    "--only",
+    "late",
+    "--send"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ],
+    "not_before": "09:05"
+   },
+   "_note": "Carlos 2026-10-13. Follow-up to owner_chat_texts_trackers: when the 9:00 PDF went out partial, this texts the trackers it was missing as ONE short PDF ('Country Trackers — Oct 13 — late: NDS Tracker') once they post. Waits in readiness (slack:owner_tracker_late), never in an exit code. One follow-up a day ('trackers_late' marker). No Hub card of its own (the _send suffix keeps hub_coverage from carding it) and it does not publish — the trackers pill already went green on the 9:00 PDF.",
    "priority": "P2",
    "freshness_target": null,
    "depends_on": [],

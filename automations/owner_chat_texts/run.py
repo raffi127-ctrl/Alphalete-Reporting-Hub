@@ -30,12 +30,16 @@ Usage
   python -m automations.owner_chat_texts.run --only trackers
   python -m automations.owner_chat_texts.run --only board
 
+  # trackers the 9:00 PDF went out without, once they post (one follow-up PDF)
+  python -m automations.owner_chat_texts.run --only late
+
 --send is the ONLY thing that texts anyone. Python 3.9-safe (Lucy runtime).
 """
 from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 import sys
 from pathlib import Path
 from typing import Optional
@@ -128,6 +132,91 @@ def _send_item(key: str, caption: str, png: Path, groups: list, day: dt.date,
         m.write_text(dt.datetime.now().isoformat(timespec="seconds"))
 
 
+def _late_pending_path(day: dt.date) -> Path:
+    return cfg.OUTPUT_DIR / day.isoformat() / "trackers_late_pending.json"
+
+
+def _write_late_pending(day: dt.date, titles: list) -> None:
+    p = _late_pending_path(day)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(list(titles)), encoding="utf-8")
+
+
+def read_late_pending(day: dt.date) -> Optional[list]:
+    """Tracker titles the 9:00 PDF went out WITHOUT and the chat hasn't got
+    yet. None = the main PDF hasn't been sent today (nothing to judge yet);
+    [] = nothing owed."""
+    if not _marker("trackers_pdf", day).exists():
+        return None
+    p = _late_pending_path(day)
+    if not p.exists():
+        return []
+    try:
+        return list(json.loads(p.read_text(encoding="utf-8")) or [])
+    except Exception:  # noqa: BLE001 — a corrupt file owes nothing
+        return []
+
+
+def late_status(day: dt.date) -> tuple:
+    """(ready, reason) for the late pass — what readiness asks before running
+    owner_chat_texts_late_send. Ready when a tracker the 9:00 PDF missed is now
+    in the Slack thread, when nothing is owed (the run is a no-op), or past
+    LATE_CUTOFF (it stops waiting). Not ready while the main PDF hasn't gone
+    out, or while every owed tracker is still missing."""
+    now = dt.datetime.now(_CENTRAL) if _CENTRAL else dt.datetime.now()
+    hh, mm = (int(x) for x in cfg.LATE_CUTOFF.split(":"))
+    past = day < now.date() or now.time() >= dt.time(hh, mm)
+    pending = read_late_pending(day)
+    if pending is None:
+        if past:
+            return True, "past %s — main tracker PDF never sent; nothing to follow up" % cfg.LATE_CUTOFF
+        return False, "main tracker PDF not sent yet"
+    if not pending:
+        return True, "the 9:00 PDF had every tracker — nothing late"
+    from automations.owner_chat_texts.slack_fetch import thread_status
+    present, _missing = thread_status(day)
+    landed = [t for t in pending if t in present]
+    if landed:
+        return True, "late tracker(s) posted: %s" % ", ".join(landed)
+    if past:
+        return True, "past %s — %s never posted; giving up for today" % (
+            cfg.LATE_CUTOFF, ", ".join(pending))
+    return False, "waiting on late %s (until %s)" % (", ".join(pending),
+                                                     cfg.LATE_CUTOFF)
+
+
+def _run_late(day: dt.date, out_dir: Path, dry_run: bool, out: dict) -> None:
+    """Text the trackers the 9:00 PDF was missing, as ONE short follow-up PDF,
+    once they're in the Slack thread. One follow-up a day (marker
+    'trackers_late'); whatever is still missing then stays missing."""
+    from automations.owner_chat_texts.slack_fetch import fetch_tracker_pngs
+    from automations.owner_chat_texts import pdf_build
+    pending = read_late_pending(day)
+    if pending is None:
+        out["skipped"].append("late (main tracker PDF not sent today)")
+        return
+    if not pending:
+        out["skipped"].append("late (nothing was missing from the 9:00 PDF)")
+        return
+    try:
+        found, missing = fetch_tracker_pngs(day, out_dir / "late")
+        late = [(s, p) for s, p in found
+                if (s.get("title") or s.get("id")) in pending]
+        out["missing"] = [t for t in pending if t in missing]
+        if not late:
+            out["skipped"].append("late (still not posted: %s)"
+                                  % ", ".join(pending))
+            return
+        titles = [s.get("title") or s.get("id") for s, _p in late]
+        pdf = pdf_build.build(late, out_dir / "late", day)
+        _send_item("trackers_late", cfg.late_pdf_caption(day, titles), pdf,
+                   cfg.TRACKER_GROUPS, day, dry_run, out)
+        if not dry_run and _marker("trackers_late", day).exists():
+            _write_late_pending(day, [t for t in pending if t not in titles])
+    except Exception as e:  # noqa: BLE001
+        out["errors"].append("late: %s: %s" % (type(e).__name__, str(e)[:240]))
+
+
 def run(only: Optional[str] = None, *, day: Optional[dt.date] = None,
         dry_run: bool = True, force: bool = False,
         resend: bool = False) -> dict:
@@ -157,13 +246,20 @@ def run(only: Optional[str] = None, *, day: Optional[dt.date] = None,
                         cfg.PDF_PARTIAL_AFTER))
             else:
                 pdf = pdf_build.build(found, out_dir, day)
+                was_sent = _marker("trackers_pdf", day).exists()
                 _send_item("trackers_pdf",
                            cfg.trackers_pdf_caption(day, missing), pdf,
                            cfg.TRACKER_GROUPS, day, dry_run, out,
                            resend=resend)
+                # What THIS send left out is what the late pass owes the chat.
+                if not was_sent and _marker("trackers_pdf", day).exists():
+                    _write_late_pending(day, missing)
         except Exception as e:  # noqa: BLE001 — trackers down must not block the board
             out["errors"].append("trackers: %s: %s" % (type(e).__name__,
                                                        str(e)[:240]))
+
+    if only == "late":
+        _run_late(day, out_dir, dry_run, out)
 
     if only in (None, "board"):
         # Same completeness rule as the board email: don't show the owners a
@@ -214,7 +310,9 @@ def main(argv=None) -> int:
                          "render, resolve groups, send nothing)")
     ap.add_argument("--dry-run", action="store_true",
                     help="already the default; --send wins if both are passed")
-    ap.add_argument("--only", choices=["trackers", "board"], default=None)
+    ap.add_argument("--only", choices=["trackers", "board", "late"], default=None,
+                    help="late = text the trackers the 9:00 PDF was missing, "
+                         "once they post (scheduler: owner_chat_texts_late_send)")
     ap.add_argument("--force", action="store_true",
                     help="skip the board data-completeness gate (testing)")
     ap.add_argument("--resend", action="store_true",
@@ -245,7 +343,9 @@ def main(argv=None) -> int:
     for line in res["errors"]:
         print("  ERROR %s" % line, flush=True)
 
-    if res["ok"] and not dry and res["sent"]:
+    # The late follow-up has no Hub half of its own: the trackers pill already
+    # went green on the 9:00 PDF.
+    if res["ok"] and not dry and res["sent"] and args.only != "late":
         try:  # the Hub must never fail a delivered text
             from automations.day_orchestrator import hub_publish
             # The Hub card is a PHASE card (Megan 2026-08-23: "2 colors"):

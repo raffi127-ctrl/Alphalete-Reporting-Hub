@@ -430,6 +430,9 @@ class ReadinessCache:
         if ptype == "owner_tracker_thread":
             return self._probe_owner_tracker_thread(source_id, probe)
 
+        if ptype == "owner_tracker_late":
+            return self._probe_owner_tracker_late(source_id, probe)
+
         if ptype == "dd_week":
             return self._probe_dd_week(source_id, probe)
 
@@ -627,6 +630,23 @@ class ReadinessCache:
         if self._past(after):
             return Readiness(True, f"past {after} — sending a partial PDF. {short}")
         return Readiness(False, f"{short} (holding until they land, or {after})")
+
+    def _probe_owner_tracker_late(self, source_id: str, probe: dict) -> Readiness:
+        """The late-tracker follow-up (owner_chat_texts_late_send, Carlos
+        2026-10-13). Ready once a tracker the 9:00 owner PDF went out without
+        lands in the Slack thread, when nothing is owed, or past
+        owner_chat_texts.config.LATE_CUTOFF. The decision lives in
+        owner_chat_texts.run.late_status so the report and its gate can't
+        disagree. Fails OPEN like its sibling: the run self-guards."""
+        try:
+            from automations.owner_chat_texts import run as oct_run
+            ok, why = oct_run.late_status(self.target_date)
+        except Exception as e:  # noqa: BLE001
+            if type(e).__name__ == "TrackerFetchError":
+                return Readiness(False, "no tracker thread yet")
+            return Readiness(True, f"late-tracker probe error ({type(e).__name__}) "
+                                   "— running; the report self-guards")
+        return Readiness(ok, why)
 
     def _past(self, hhmm: str) -> bool:
         """Is the local clock past HH:MM today? (The runners are on Central.)"""

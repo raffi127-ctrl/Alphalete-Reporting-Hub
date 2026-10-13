@@ -75,11 +75,20 @@ def source_channel() -> str:
     return ORG_CHANNELS[SOURCE_ORG][0]
 
 
+# PDF-only reorder: these trackers go to the END of the owners' PDF, in this
+# order. #alphalete-sales keeps its own order. Carlos 2026-10-13: "NDS tracker
+# the 3rd page and the b2b att tracker moved to the end" (NDS is already 3rd).
+PDF_LAST = ["b2b_att_country"]
+
+
 def tracker_specs() -> list:
-    """The tracker specs to forward, in the channel's post order."""
+    """The tracker specs to forward, in the PDF's page order: the channel's
+    post order with PDF_LAST moved to the back."""
     from automations.tableau_screenshots import pages as pages_mod
     from automations.tableau_screenshots.slack_post import tracker_ids_for
     ids = tracker_ids_for(SOURCE_ORG, pages_mod.PAGES)
+    ids = ([i for i in ids if i not in PDF_LAST]
+           + [i for i in PDF_LAST if i in ids])
     return [pages_mod.by_id(i) for i in ids if pages_mod.by_id(i)]
 
 
@@ -108,6 +117,20 @@ def trackers_pdf_caption(day, missing) -> str:
     if missing:
         cap += "  (not posted yet: %s)" % ", ".join(missing)
     return cap
+
+
+# LATE TRACKERS (Carlos 2026-10-13: NDS missing from the 9:00 PDF because
+# Tableau was behind, and nothing ever sent it after). When the 9:00 PDF goes
+# out partial, the trackers it was missing are written down; the separate
+# `--only late` pass (scheduler: owner_chat_texts_late_send) texts them as a
+# second, short PDF once they land in the Slack thread. Past this hour (CST)
+# it stops waiting — a tracker that never posts isn't coming today.
+LATE_CUTOFF = "16:00"
+
+
+def late_pdf_caption(day, titles) -> str:
+    return "Country Trackers — %s %d — late: %s" % (
+        day.strftime("%b"), day.day, ", ".join(titles))
 
 
 def board_caption(day) -> str:
