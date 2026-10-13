@@ -261,6 +261,39 @@
    "verify": null,
    "_note": "Appends new Tiller transactions to Carlos's P&L Ledger (manual category edits preserved) and rolls week/month columns. Idempotent; also runs 06:30/13:30 on Carlos's Mac. Added 2026-10-02."
   },
+  "sheet_format_audit": {
+   "on_scheduler": true,
+   "machine": "Lucy 1",
+   "display_name": "Sheet check — Raf 2nd rds %'s formulas + colors",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.sheet_format_audit.run"
+   ],
+   "base_args": [
+    "--fix",
+    "--post"
+   ],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "order": 37.6,
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 10,
+   "verify": null,
+   "close_on": "exit_zero",
+   "_note": "ADDED 2026-10-13 (Rafael Hidalgo, Daily Update thread: 'it gets messed up with the new months. AI should automatically audit the formulas'). Checks the CURRENT month block of 'All in One Local Office - Raf' > \"2nd rds %'s\": every % column must carry =iferror(num/den,0) on the right columns and paint the tab's own legend colors (Metric Goals rows 70-73). --fix ADDS color rules (never deletes one) and rewrites wrong % formulas / short TOTALS sums; a typed number is only reported. Posts to #claudecorrections-and-requests only when it fixed something or a NEW problem shows up. Closed months are skipped (--all-months to see them). Another owner's tab = one more Target in run.py."
+  },
   "local_1on1s_fill": {
    "on_scheduler": true,
    "machine": "Lucy 1",
