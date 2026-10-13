@@ -305,6 +305,35 @@ def main(argv: list = None) -> int:
                 print(f"(activity log skipped: {type(e).__name__}: {e})")
 
 
+def _is_quota(e: Exception) -> bool:
+    """A Sheets 429 'Read requests per minute per user' — the shared per-minute
+    read quota, not anything wrong with the data."""
+    status = getattr(getattr(e, "response", None), "status_code", None)
+    return status == 429 or "quota exceeded" in str(e).lower()
+
+
+def _leg(fn, *, waits=(65, 65, 65)):
+    """Run one leg, waiting out a Sheets read-quota 429 and trying again.
+
+    2026-10-13: the 03:15 pass went BLOCKED on 'dispositions' with a 429 and a
+    hand rerun at 11:27 hit it on 'metrics' + 'dispositions' — each leg makes
+    one burst of reads and gave up on the first refusal, while the quota is a
+    60-second window shared with every other job on the account. Every leg
+    regenerates its file from the tabs, so running it again is harmless. Any
+    other error, or a quota that is still full after the waits, raises as
+    before (and still reads BLOCKED)."""
+    import time
+    for wait in tuple(waits) + (None,):
+        try:
+            return fn()
+        except Exception as e:                        # noqa: BLE001
+            if wait is None or not _is_quota(e):
+                raise
+            print(f"  Sheets read quota full — waiting {wait}s, then retrying",
+                  flush=True)
+            time.sleep(wait)
+
+
 def _run(allow_deletions: bool = False) -> int:
     blocked = []
 
@@ -312,7 +341,7 @@ def _run(allow_deletions: bool = False) -> int:
     try:
         from automations.tracker_onboarding import apply as TA, store as TS
         TS.set_client(_client())
-        if TA.main(["--write"]) != 0:
+        if _leg(lambda: TA.main(["--write"])) != 0:
             blocked.append("trackers: apply refused (validation problems "
                            "above)")
     except Exception as e:                            # noqa: BLE001
@@ -322,7 +351,7 @@ def _run(allow_deletions: bool = False) -> int:
     try:
         from automations.office_onboarding import apply as MA, store as MS
         MS.set_client(_client())
-        if MA.main(["--write", "--registry-only"]) != 0:
+        if _leg(lambda: MA.main(["--write", "--registry-only"])) != 0:
             blocked.append("metrics: apply refused (validation problems "
                            "above)")
     except Exception as e:                            # noqa: BLE001
@@ -337,7 +366,7 @@ def _run(allow_deletions: bool = False) -> int:
     try:
         from automations.disposition_signup import apply as DA, store as DS
         DS.set_client(_client())
-        if DA.main(["--write"]) != 0:
+        if _leg(lambda: DA.main(["--write"])) != 0:
             blocked.append("dispositions: apply refused (validation problems "
                            "above)")
     except Exception as e:                            # noqa: BLE001
@@ -363,8 +392,7 @@ def _run(allow_deletions: bool = False) -> int:
             print(f"schedule self-heal: re-added missing entries "
                   f"{', '.join(healed)}")
     except Exception as e:                            # noqa: BLE001
-        _status = getattr(getattr(e, "response", None), "status_code", None)
-        if _status == 429 or "quota exceeded" in str(e).lower():
+        if _is_quota(e):
             print("SKIP — schedule-heal: Sheets read quota exhausted after "
                   "retries; add-only leg skipped, next run heals it")
         else:
