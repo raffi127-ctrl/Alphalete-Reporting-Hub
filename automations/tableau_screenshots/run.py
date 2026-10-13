@@ -692,6 +692,47 @@ def _queue_tracker_texts(captured_ids: set, posted_somewhere: bool,
                 pass
 
 
+def _queue_headcount_refill(captured_ids: set, posted_alphalete: bool) -> None:
+    """A held board that posts LATE re-runs the Org Active Headcount daily on Lucy 1.
+
+    WHY (Eve 2026-10-13: "hay muchas personas en 0 cuando sé que tienen gente").
+    The daily reads Fiber / NDS / B2B / BOX off this thread and runs once, when
+    its gate opens at 09:00 at the latest. A board Tableau held past that leaves
+    its ICDs' day EMPTY on purpose (no fake 0), and the boxes count an empty cell
+    as 0 — on 10/13 the NDS Tracker was held, and all 12 NDS owners read 0 /
+    -100% until the next morning's run. So when a catch-up / settle pass posts
+    one of those four boards to the Alphalete thread, the daily is queued again
+    (`--late`: it also refreshes the headcount review link already posted).
+
+    Only empty cells are written, so a re-run on a day that was already full is
+    a no-op. Best-effort: a queue failure must never fail the Slack post."""
+    from automations.org_active_headcount.tracker_readings import TRACKERS
+    hit = sorted(set(captured_ids) & set(TRACKERS))
+    if not hit or not posted_alphalete:
+        return
+    try:
+        from automations.day_orchestrator import mini_control as mc
+        mc.enqueue("rerun", "org_active_headcount_daily --late",
+                   by="tableau_screenshots", auto=True)
+        print(f"  → queued org_active_headcount_daily --late on Lucy 1 "
+              f"(late board(s): {', '.join(hit)})", flush=True)
+    except Exception as e:                                # noqa: BLE001
+        print(f"  ⚠ could NOT queue the headcount re-fill: "
+              f"{type(e).__name__}: {str(e)[:140]}", flush=True)
+        try:
+            from automations.day_orchestrator import notify
+            notify.post_alert("", [
+                "*Org Active Headcount re-fill not queued*",
+                f"{', '.join(hit)} posted late, but queueing the headcount re-run "
+                f"raised {type(e).__name__}: {str(e)[:160]}.",
+                "Those ICDs stay at 0 on the tab until tomorrow. By hand: "
+                "`lucy rerun org_active_headcount_daily --late`.",
+            ], tag="headcount-refill", dry_run=False,
+                incident="headcount-refill")
+        except Exception:                                 # noqa: BLE001
+            pass
+
+
 def _cross_ws_token_missing(org: str, label: str, token_file: str) -> str:
     """Why a cross-workspace org can't be posted from THIS machine, or "".
 
@@ -1548,6 +1589,12 @@ def main(argv=None) -> int:
         captured_ids = {spec["id"] for spec, _ in captures}
         posted_somewhere = (len(posted_ok) - n_noop) > 0
         _queue_tracker_texts(captured_ids, posted_somewhere, dry_run=False)
+
+    if args.late_only:
+        _queue_headcount_refill(
+            {spec["id"] for spec, _ in captures},
+            posted_alphalete=("alphalete" in posted_ok
+                              and "alphalete" not in noop_orgs))
 
     # EXIT CODE — hard failure ONLY when a channel genuinely failed to post (a
     # real "some org didn't get images" error): the orchestrator treats non-zero

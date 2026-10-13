@@ -43,6 +43,11 @@ RULES THAT SHAPE THE WRITE (Eve 2026-09-13):
   - the delta box keeps a BLANK (not '-') for a missing last-week day, because
     '-' would move its %.
 
+A BOARD TABLEAU HELD PAST THE MORNING (Eve 2026-10-13, NDS: 12 owners at 0):
+  when a catch-up / settle pass of the trackers finally posts it, that run
+  queues `rerun org_active_headcount_daily --late` here, so the day fills the
+  same morning instead of the next one, and the review link is rebuilt in place.
+
     python -m automations.org_active_headcount.daily            # dry run
     python -m automations.org_active_headcount.daily --apply
 Python 3.9-safe (Lucy runtime).
@@ -895,7 +900,7 @@ def sort_requests(sheet_id: int, g) -> List[dict]:
 
 
 def run(apply_changes: bool = False, today: Optional[dt.date] = None,
-        sandbox: bool = False, logfn=print) -> int:
+        sandbox: bool = False, late: bool = False, logfn=print) -> int:
     from automations.recruiting_report.fill import open_by_key, _retry
     from automations.org_sales_board.week import reporting_sunday, completed_days
     today = today or dt.date.today()
@@ -976,11 +981,46 @@ def run(apply_changes: bool = False, today: Optional[dt.date] = None,
     # here fires the orchestrator's alert AND holds the email, which
     # depends_on this run. A source that simply has not posted yet does not
     # land here — it leaves the cell empty without raising.
+    if late and apply_changes and not sandbox and total:
+        refresh_review(logfn=logfn)
     if broken:
         logfn(f"FAILED: {', '.join(f'{d:%a %m/%d}' if d else 'App Avg' for d in broken)} "
               "could not be read")
         return 1
     return 0
+
+
+def refresh_review(logfn=print) -> None:
+    """--late: the re-fill a LATE tracker queued (tableau_screenshots
+    _queue_headcount_refill) wrote cells after the morning run, so the
+    headcount review link may already be out with those ICDs at 0. Same link,
+    rebuilt in place (CLAUDE.md: never a second post). No post yet = nothing to
+    do: the scheduled email job builds it from the tab as it is now. A day that
+    already had its checkmark approved the OLD picture, and this runs unattended,
+    so that one is said in #claudecorrections instead of only in a log."""
+    from automations.board_emails import boards as B
+    from automations.board_emails import review_gate as rg
+    board = B.get("headcount")
+    run_day = rg.es.today_central()
+    post = rg._find_post(board, run_day)
+    if post is None:
+        logfn("  review link not posted yet — the email job builds it with these numbers")
+        return
+    rg.main(["--board", "headcount", "--refresh"])
+    who = rg._approver_of(post)
+    if who:
+        try:
+            from automations.day_orchestrator import notify
+            notify.post_alert("", [
+                "*Org Active Headcount — corrected after it was approved*",
+                f"A tracker posted late, so the tab got numbers it was missing "
+                f"(they read 0 before). {who[1]} had already approved today's "
+                f"PDF; the link now shows the corrected one. If the email "
+                f"already went out, it went with the 0s.",
+            ], tag="headcount-late-refill", dry_run=False,
+                incident="headcount-late-refill")
+        except Exception as e:                                     # noqa: BLE001
+            logfn(f"  (approved-day alert failed: {type(e).__name__}: {e})")
 
 
 def main(argv=None) -> int:
@@ -989,8 +1029,11 @@ def main(argv=None) -> int:
     ap.add_argument("--today", type=dt.date.fromisoformat, help="pretend today is this date")
     ap.add_argument("--sandbox", action="store_true",
                     help=f"write the {SANDBOX_TAB!r} copy instead of the live tab")
+    ap.add_argument("--late", action="store_true",
+                    help="queued by a tracker that posted late: also refresh the "
+                         "headcount review link if it is already out")
     a = ap.parse_args(argv)
-    return run(apply_changes=a.apply, today=a.today, sandbox=a.sandbox)
+    return run(apply_changes=a.apply, today=a.today, sandbox=a.sandbox, late=a.late)
 
 
 if __name__ == "__main__":
