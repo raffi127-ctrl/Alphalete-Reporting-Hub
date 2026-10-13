@@ -1622,7 +1622,55 @@ SYSTEMS = {
         "how": "Open this on that computer and run it again; it will ask for "
                "the new password:\n" + INSTALL_PAGE,
     },
+    # THE TWO A PERSON HAS TO FIX THAT USED TO GO TO THE CHANNEL ONLY (Eve
+    # 2026-10-13: Eveliz's refused SaraPlus password and Jennifer's locked
+    # OwnerVille sat in #claudecorrections, and nobody at either office was
+    # told). The laptop files them as plain "sweep" / "knocks" faults, so
+    # _signin_system() recognises them by their text — on the mini, with no
+    # wait for every office's laptop to update. Worded so it does not insist
+    # the password changed: Rashad retyped a working one three times on
+    # 2026-10-01 over a message that said so.
+    "saraplus_password": {
+        "name": "SaraPlus",
+        "what": "Credit checks and sales",
+        "why": " SaraPlus says the saved email/password is not valid — "
+               "usually because the password was changed.",
+        "how": "On that computer, a box asking for the SaraPlus password "
+               "should be open: type the current password there. If no box "
+               "is open, open this on that computer and run it again; it "
+               "will ask for it:\n" + INSTALL_PAGE,
+    },
+    "ownerville_locked": {
+        "name": "OwnerVille",
+        "what": "Your knocks board",
+        "why": " OwnerVille locked Lucy out after too many failed sign-ins "
+               "from that computer — usually because the password was "
+               "changed.",
+        "how": "On that computer, a box asking for the OwnerVille password "
+               "should be open: type the current password there. If "
+               "OwnerVille also says the account is locked when you sign in "
+               "yourself, reply here and we will get it unlocked.",
+    },
 }
+
+
+def _signin_system(fault: Dict) -> Optional[str]:
+    """The SYSTEMS key whose DM this fault needs, or None for a channel post.
+
+    A "signin-<system>" stage names it outright. Two plain faults are sign-in
+    problems too and are recognised by the laptop's own wording: a refused
+    SaraPlus password ("did not accept that email and password") and an
+    OwnerVille LOCKED sign-in page."""
+    stage = str(fault.get("stage") or "")
+    if stage.startswith("signin-"):
+        return stage.split("-", 1)[1]
+    text = " ".join(str(fault.get(k) or "")
+                    for k in ("summary", "detail")).lower()
+    if stage == "sweep" and "did not accept that email and password" in text:
+        return "saraplus_password"
+    if stage == "knocks" and "locked page" in text:
+        return "ownerville_locked"
+    return None
 
 
 def ask_office_to_sign_in(office_key: str, when: str = "", *,
@@ -2329,17 +2377,23 @@ def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
                 log("could not mark the probe row: %s" % type(e).__name__)
             continue
 
-        if str(f["stage"] or "").startswith("signin-"):
-            system = f["stage"].split("-", 1)[1]
+        system = _signin_system(f)
+        # A "signin-" stage is DM-only (Megan 2026-09-15). The refused
+        # password / locked page get the DM AND keep their channel post below
+        # (Eve 2026-10-13: "que lleguen al canal y a dm").
+        dm_only = str(f["stage"] or "").startswith("signin-")
+        if system:
             try:
                 ask_office_to_sign_in(f["office"], f.get("first") or "",
                                       system=system, send=True, book=book,
                                       log=log)
-                tab.update_cell(f["rownum"], F_POSTED + 1, stamp)
+                if dm_only:
+                    tab.update_cell(f["rownum"], F_POSTED + 1, stamp)
             except Exception as e:  # noqa: BLE001 — one must not stop the rest
                 log("could not ask %s to sign in: %s: %s"
                     % (f["office"], type(e).__name__, str(e)[:100]))
-            continue
+            if dm_only:
+                continue
 
         if waits_for_a_repeat(f):
             # Left UNPOSTED on purpose, so the next tick that hits it again

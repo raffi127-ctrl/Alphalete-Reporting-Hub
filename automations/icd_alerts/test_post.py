@@ -665,6 +665,34 @@ class FaultReporting(unittest.TestCase):
             self.assertEqual(asked[0]["system"], system, stage)
             self.assertIn(system, P.SYSTEMS, "no remedy text for " + system)
 
+    def test_refused_password_and_locked_page_dm_and_still_post(self):
+        """Eve 2026-10-13: Eveliz's refused SaraPlus password and Jennifer's
+        locked OwnerVille went to the channel only, and nobody at either
+        office was told. The laptop files them as plain sweep/knocks faults.
+        They now get the DM AND keep the channel post ("al canal y a dm")."""
+        for stage, summary, system in (
+                ("sweep", "AccountProblem: SaraPlus did not accept that email "
+                          "and password. If you recently changed it...",
+                 "saraplus_password"),
+                ("knocks", "KnocksProblem: OwnerVille showed Lucy's sign-in "
+                           "window a LOCKED page (too many failed sign-ins)",
+                 "ownerville_locked")):
+            asked = []
+            with mock.patch.object(P, "ask_office_to_sign_in",
+                                   lambda *a, **k: asked.append(k)):
+                _out, posts, _tab = self._run(
+                    [self._row(stage=stage, summary=summary, detail="")])
+            self.assertEqual([k["system"] for k in asked], [system], stage)
+            self.assertIn(system, P.SYSTEMS)
+            self.assertTrue(posts, stage + " must still reach the channel")
+
+    def test_an_ordinary_sweep_fault_still_posts(self):
+        self.assertIsNone(P._signin_system(
+            {"stage": "sweep", "summary": "TimeoutError: page.goto"}))
+        self.assertIsNone(P._signin_system(
+            {"stage": "knocks", "summary": "KnocksProblem: Signed in to "
+             "OwnerVille but it did not open a working session."}))
+
     def test_the_row_is_marked_so_it_is_not_repeated(self):
         _out, _posts, tab = self._run([self._row()])
         tab.update_cell.assert_called_once()
