@@ -265,15 +265,34 @@ def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "") -> dict:
 # --- owners' All-in-One workbooks (2026-10-12) -------------------------------
 
 OWNERS_FILE = Path(__file__).with_name("owners.json")
-BOARD_NAME = re.compile(r"sales\s*board|^\s*w\.?\s*e\b", re.I)
-SIDE_NAME = re.compile(r"line\s*up|stations", re.I)
+# a bare week date ('10.12') is a board too: Cyrus keeps one set of tabs per
+# week, '10.12' + '10.12 Linep' + '10.12 Stations' (2026-10-13)
+BOARD_NAME = re.compile(r"sales\s*board|^\s*w\.?\s*e\b|^\s*\d{1,2}\.\d{1,2}\s*$", re.I)
+SIDE_NAME = re.compile(r"line\s*u?p|stations", re.I)
+WEEK_PREFIX = re.compile(r"^\s*(\d{1,2}\.\d{1,2})\b")
+
+
+def side_tabs(visible, picked) -> list:
+    """Line Up / Stations tabs to check. One that starts with a week date
+    belongs to that week: only the picked board's week counts, not every old
+    week the owner left visible."""
+    weeks = {m.group(1) for m in map(WEEK_PREFIX.match, picked) if m}
+    out = []
+    for t in visible:
+        if not SIDE_NAME.search(t) or t.lower().startswith("copy of"):
+            continue
+        m = WEEK_PREFIX.match(t)
+        if m and m.group(1) not in weeks:
+            continue
+        out.append(t)
+    return out
 
 
 def owner_tabs(sh, boards: int = 1) -> list:
     """The tabs to check in an owner's All-in-One: the leftmost visible sales
     board(s) with reps on it -- owners keep the current week first, and name
     it anything ('Sales Board', 'NEW Sales Board', 'Sales Board W.E 10.11') --
-    plus every visible Line Up / Stations tab."""
+    plus the visible Line Up / Stations tabs (side_tabs)."""
     meta = sh.fetch_sheet_metadata({"fields": "sheets(properties(title,hidden))"})
     visible = [s["properties"]["title"] for s in meta["sheets"]
                if not s["properties"].get("hidden")]
@@ -286,8 +305,7 @@ def owner_tabs(sh, boards: int = 1) -> list:
             first, last = K.block_rows(v)
             if K.is_board(v) and any(K.name_at(v, r) for r in range(first, last + 1)):
                 picked.append(title)
-    return picked + [t for t in visible if SIDE_NAME.search(t)
-                     and not t.lower().startswith("copy of")]
+    return picked + side_tabs(visible, picked)
 
 
 def run_owners(only, do_apply: bool, stamp: str) -> dict:

@@ -163,5 +163,16 @@ class OwnerLayout(unittest.TestCase):
         self.assertFalse(K.is_board([["Trainer", "New Start"], ["Ana", "Bo"]]))
 
 
+class OwnerTabs(unittest.TestCase):
+    def test_week_dated_side_tabs_only_for_the_picked_week(self):
+        from automations.sales_board_fixer.run import side_tabs, BOARD_NAME
+        visible = ["GYR/Lanes", "10.12", "10.12 Linep", "10.12 Stations", "Lanes",
+                   "10.5", "10.5 Lineup", "10.5 Stations", "Territory Line Up"]
+        self.assertTrue(BOARD_NAME.search("10.12"))
+        self.assertFalse(BOARD_NAME.search("10.12 Stations"))
+        self.assertEqual(side_tabs(visible, ["10.12"]),
+                         ["10.12 Linep", "10.12 Stations", "Territory Line Up"])
+
+
 if __name__ == "__main__":
     unittest.main()
