@@ -73,8 +73,10 @@ def display_name(raw: str) -> str:
     return _TENURE.sub("", " ".join(str(raw or "").replace("\xa0", " ").split())).strip()
 
 
-def leaders_from_grid(grid: list) -> List[Leader]:
-    """One week tab -> its non-terminated leaders, in board order."""
+def leaders_from_grid(grid: list, levels: Sequence[str] = LEADER_LEVELS) -> List[Leader]:
+    """One week tab -> its non-terminated leaders, in board order. `levels`
+    lets another report draw the line elsewhere (raf_second_rounds adds
+    'level 3')."""
     lay = BD.find_layout(grid)
     titles = {BD._norm(v): i for i, v in enumerate(grid[0], 1) if BD._norm(v)}
     col = titles.get(COL_LEADERSHIP)
@@ -91,7 +93,7 @@ def leaders_from_grid(grid: list) -> List[Leader]:
         if not raw:
             continue
         level = BD._norm(BD._cell(grid, r, col))
-        if level not in LEADER_LEVELS:
+        if level not in levels:
             continue
         # Terminated, both ways the roster says it. A CONTRADICTED 'T' (what
         # terminated_reps files as a Check) still drops the tag: the board is
