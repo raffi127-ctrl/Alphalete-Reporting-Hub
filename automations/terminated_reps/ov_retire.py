@@ -113,6 +113,50 @@ def retire(page, button_id: str, note: str) -> None:
     page.wait_for_selector("#repModalDialog", state="hidden", timeout=20000)
 
 
+def open_p20(page) -> str:
+    """Land on p=20 and return the rqst token every v2 call needs. v2 pages
+    need the token the dashboard mints off the login cookie; a bare ?p=20
+    bounces to the login page."""
+    page.goto(V2, wait_until="domcontentloaded")
+    page.wait_for_timeout(6000)
+    m = _RQST.search(page.url or "") or _RQST.search(page.evaluate(
+        "() => { const a=[...document.querySelectorAll('a')]"
+        ".find(x=>/rqst=/.test(x.getAttribute('href')||''));"
+        " return a ? a.getAttribute('href') : ''; }") or "")
+    if not m:
+        raise RuntimeError("no rqst token on v2.ownerville.com")
+    rqst = m.group(1)
+    page.goto(f"{V2}?p=20&rqst={rqst}", wait_until="domcontentloaded")
+    page.wait_for_selector("#table-rep-user-list", timeout=60000)
+    time.sleep(3)
+    return rqst
+
+
+def retire_one(page, rqst: str, name: str, reps: list[dict], *, apply: bool,
+               note: str) -> tuple[str, list[dict]]:
+    """(status, hits) for one tracker name. Retires only on exactly one live
+    match; zero or several are left for a human -- an empty match is also what
+    a spelling difference looks like, and two live people with one name is not
+    a script's call."""
+    hits = matches(name, reps)
+    live = [h for h in hits if h["roster"] != "inactive"]
+    if live:
+        status = "ok" if len(live) == 1 else "several-live"
+    else:
+        status = "already-retired" if hits else "not-found"
+    if apply and status == "ok":
+        pk = live[0]["pk"]
+        ids = page.evaluate(_EMAIL_SEARCH_JS, live[0]["email"] or live[0]["name"],
+                            isolated_context=False)
+        if f"terminate_{pk}" not in ids:
+            return "button-missing", hits
+        retire(page, f"terminate_{pk}", note)
+        time.sleep(2)
+        still = [r for r in roster(page, rqst, inactive=False) if r["pk"] == pk]
+        status = "RETIRED" if not still else "retire-failed"
+    return status, hits
+
+
 def tick_ownerville(done: dict[int, str]) -> None:
     """Tick E for {row: name}, re-reading each row's name first -- the tab can
     gain rows between the read and this write."""
@@ -146,45 +190,12 @@ def main(argv=None) -> int:
         print("relogin:", refresh_ownerville(verbose=True), flush=True)
     report, done_rows = [], {}
     with ownerville_session(profile_dir=PROFILE_DIR) as page:
-        # v2 pages need the rqst token the dashboard mints off the login
-        # cookie; a bare ?p=20 bounces to the login page.
-        page.goto(V2, wait_until="domcontentloaded")
-        page.wait_for_timeout(6000)
-        m = _RQST.search(page.url or "") or _RQST.search(page.evaluate(
-            "() => { const a=[...document.querySelectorAll('a')]"
-            ".find(x=>/rqst=/.test(x.getAttribute('href')||''));"
-            " return a ? a.getAttribute('href') : ''; }") or "")
-        if not m:
-            raise RuntimeError("no rqst token on v2.ownerville.com")
-        rqst = m.group(1)
-        page.goto(f"{V2}?p=20&rqst={rqst}", wait_until="domcontentloaded")
-        page.wait_for_selector("#table-rep-user-list", timeout=60000)
-        time.sleep(3)
+        rqst = open_p20(page)
         reps = roster(page, rqst)
         print(f"ownerville roster: {len(reps)} records", flush=True)
         for p in todo:
-            hits = matches(p.name, reps)
-            live = [h for h in hits if h["roster"] != "inactive"]
-            # Not found / several live people are left for a human: an empty
-            # match is also what a spelling difference looks like, and two
-            # live people with one name is not a script's call.
-            if live:
-                status = "ok" if len(live) == 1 else "several-live"
-            else:
-                status = "already-retired" if hits else "not-found"
-            if a.apply and status == "ok":
-                pk = live[0]["pk"]
-                ids = page.evaluate(_EMAIL_SEARCH_JS, live[0]["email"] or live[0]["name"],
-                                    isolated_context=False)
-                if f"terminate_{pk}" not in ids:
-                    status = "button-missing"
-                else:
-                    retire(page, f"terminate_{pk}",
-                           NOTE.format(sunday=sunday.strftime("%m/%d")))
-                    time.sleep(2)
-                    still = [r for r in roster(page, rqst, inactive=False)
-                             if r["pk"] == pk]
-                    status = "RETIRED" if not still else "retire-failed"
+            status, hits = retire_one(page, rqst, p.name, reps, apply=a.apply,
+                                      note=NOTE.format(sunday=sunday.strftime("%m/%d")))
             if status in ("RETIRED", "already-retired"):
                 done_rows[p.row] = p.name
             report.append({"row": p.row, "name": p.name, "status": status, "hits": hits})

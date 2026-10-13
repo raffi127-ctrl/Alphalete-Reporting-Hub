@@ -499,7 +499,7 @@ def pending_by_week(rows: list[Termination],
     return [(s, sorted(weeks[s])) for s in sorted(weeks)]
 
 
-def render_pending(pending: list, sunday: dt.date) -> str:
+def render_pending(pending: list, sunday: dt.date, reasons: dict | None = None) -> str:
     """The week's deactivation checklist — ONE message per thread, rewritten in
     place every run (see deactivate.py). Names the two accounts separately
     because they are two different jobs and one is often done without the
@@ -524,10 +524,19 @@ def render_pending(pending: list, sunday: dt.date) -> str:
         return "\n".join(lines)
     lines = [f"{head} ({len(todo)})"]
     for p in todo:
+        # With auto-deactivation on, what's left is what it COULDN'T do, and
+        # the reason is the useful part (Eve 10/13: "reportámelo y lo hago
+        # manualmente").
+        why = (reasons or {}).get(p.row) or p.what
         lines.append(f"{TODO} {p.name} — terminated {p.term_date.month}/"
-                     f"{p.term_date.day} · {p.what}")
-    lines.append("_Tick Ownerville / Slack Deact on the tracker as you go — "
-                 "this list reads those two columns._")
+                     f"{p.term_date.day} · {why}")
+    if reasons is not None:
+        lines.append(f"_Couldn't do these automatically — {_mentions()} please "
+                     "do them by hand and tick Ownerville / Slack Deact on the "
+                     "tracker._")
+    else:
+        lines.append("_Tick Ownerville / Slack Deact on the tracker as you go — "
+                     "this list reads those two columns._")
     if ffp:
         lines.append(_ffp_line())
     return "\n".join(lines)
@@ -569,10 +578,11 @@ def pending_is_due(day: dt.date, sunday: dt.date) -> bool:
 
 
 def post_pending(client, thread_ts: str, sunday: dt.date, pending: list,
-                 channel: str = CHANNEL, logfn=print) -> str | None:
+                 channel: str = CHANNEL, logfn=print,
+                 reasons: dict | None = None) -> str | None:
     """Put the week's checklist in the thread, or bring the existing one up to
     date. Returns the message ts, or None when nothing was done."""
-    text = render_pending(pending, sunday)
+    text = render_pending(pending, sunday, reasons)
     ts = find_reply_ts(client, thread_ts, PENDING_TITLE, channel)
     if ts == "?":
         return None
@@ -764,3 +774,54 @@ def post(rows: list[Termination], day: dt.date, *, channel: str = CHANNEL,
 
     return {"posted": any(w["days"] or w["checks"] for w in out),
             "title": title, "channel": channel, "weeks": out}
+
+
+DONE_TITLE = "🔒 Deactivated"
+
+
+def render_done(done: list, day: dt.date) -> str:
+    """What this run retired / deactivated, one line per rep."""
+    lines = [f"*{DONE_TITLE}* — {day.month}/{day.day}"]
+    for o in done:
+        what = " · ".join(n for n, s in (("OwnerVille retired", o.ov),
+                                         ("Slack deactivated", o.slack))
+                          if s == "done")
+        lines.append(f"{BULLET} {o.name} — {what}")
+    return "\n".join(lines)
+
+
+def post_deactivations(outcomes: list, day: dt.date, *, pending_lookup,
+                       channel: str = CHANNEL, dry_run: bool = True,
+                       logfn=print) -> None:
+    """After auto_deactivate.run: one reply per week thread naming who was
+    deactivated THIS run, and the week's checklist rewritten DAILY with what's
+    left and why (Eve 10/13 — no longer held until Sunday: what's left is now
+    work only she can do)."""
+    by_week: dict = {}
+    for o in outcomes:
+        by_week.setdefault(week_sunday(o.term_date), []).append(o)
+    client = None if dry_run else smp._client()
+    for sunday in sorted(by_week):
+        outs = by_week[sunday]
+        done = [o for o in outs if "done" in (o.ov, o.slack)]
+        reasons = {o.row: o.todo_text() for o in outs if o.needs_eve}
+        wtitle = week_title(sunday)
+        if dry_run:
+            if done:
+                for line in render_done(done, day).splitlines():
+                    logfn(f"       {line}")
+            for o in outs:
+                if o.needs_eve:
+                    logfn(f"       {TODO} {o.name} · {o.todo_text()}")
+            continue
+        pending = pending_lookup(sunday)
+        thread_ts = find_thread_ts(client, wtitle, channel)
+        if not thread_ts:
+            thread_ts = client.chat_postMessage(
+                channel=channel, text=f"{EMOJI} *{wtitle}*").get("ts")
+        if done:
+            client.chat_postMessage(channel=channel, thread_ts=thread_ts,
+                                    text=render_done(done, day))
+            logfn(f"  {wtitle}: posted {len(done)} deactivation(s)")
+        post_pending(client, thread_ts, sunday, pending, channel, logfn,
+                     reasons=reasons)

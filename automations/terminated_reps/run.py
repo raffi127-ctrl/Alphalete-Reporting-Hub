@@ -100,6 +100,9 @@ def main(argv=None) -> int:
                     help="write the 'Still to deactivate' checklist even "
                          "mid-week (normally it only goes up once the week "
                          "closes, from its Sunday on)")
+    ap.add_argument("--no-deactivate", dest="no_deactivate", action="store_true",
+                    help="don't retire in OwnerVille / deactivate in Slack this "
+                         "run (auto_deactivate.py; on by default since 2026-10-13)")
     ap.add_argument("--back-weeks", dest="back_weeks", type=int, default=1,
                     help="how many PREVIOUS week tabs to read as well "
                          "(default 1 — Monday's new tab leaves the weekend's "
@@ -236,6 +239,18 @@ def main(argv=None) -> int:
     # reason — the post is derived from the board, not from the write.
     # A sandbox run stays out of the real channel unless --post says otherwise.
     post_dry = dry or args.no_post or (args.sandbox and not args.post)
+
+    # 2b — retire in OwnerVille + deactivate in Slack (Eve, 2026-10-13). Off
+    # the REAL tab only; a --dry-run looks everything up and changes nothing.
+    # Never fatal: the day's terminations still get posted, and whatever it
+    # couldn't do lands on the checklist with the reason.
+    outcomes = None
+    if not args.sandbox and not args.no_deactivate:
+        try:
+            from automations.terminated_reps import auto_deactivate
+            outcomes = auto_deactivate.run(today, apply=not dry)
+        except Exception as e:                                  # noqa: BLE001
+            print(f"  ⚠ auto-deactivation didn't run: {type(e).__name__}: {e}")
     try:
         # The week's deactivation checklist, read off the tracker's own
         # Ownerville / Slack Deact columns. Only from the REAL tab — a sandbox
@@ -243,12 +258,18 @@ def main(argv=None) -> int:
         # somebody else's data. It goes up once the week closes, not daily
         # (slack_post.pending_is_due); --pending-now overrides that.
         lookup = None
-        if not args.sandbox and not args.no_pending:
-            from automations.terminated_reps import deactivate
+        from automations.terminated_reps import deactivate
+        if not args.sandbox and not args.no_pending and outcomes is None:
             lookup = deactivate.pending_for_week
         slack_post.post(rows, today, channel=args.channel, dry_run=post_dry,
                         checks=checks, pending_lookup=lookup,
                         pending_now=args.pending_now)
+        # With auto-deactivation on, the checklist is daily and carries the
+        # reason for each name it couldn't do — see post_deactivations.
+        if outcomes:
+            slack_post.post_deactivations(
+                outcomes, today, channel=args.channel, dry_run=post_dry,
+                pending_lookup=deactivate.pending_for_week)
     except Exception as e:                                      # noqa: BLE001
         # The rows are already filed; a Slack hiccup must not make the run look
         # like the tracker write failed — but it IS a failure, nobody saw the
