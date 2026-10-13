@@ -44,6 +44,7 @@ except Exception:  # noqa: BLE001 -- Windows console, best effort
     pass
 
 from automations.sales_board_fixer import checks as K
+from automations.sales_board_fixer import tenure as T
 
 SHEET_ID = "1MC9pfKryQrRtcMthUBL2hOciDCaa83U059pz0N2CmHc"   # Alphalete SALES BOARD 2025
 STATIONS_TAB = "Stations"         # one tab, not per week
@@ -80,7 +81,7 @@ def load(sh, title: str) -> dict:
     values = ws.get_all_values()
     formulas = ws.get_all_values(value_render_option="FORMULA")
     meta = sh.fetch_sheet_metadata({
-        "fields": "sheets(properties(sheetId,title,gridProperties),conditionalFormats)"})
+        "fields": "sheets(properties(sheetId,title,gridProperties),conditionalFormats,basicFilter)"})
     sheet = next(s for s in meta["sheets"] if s["properties"]["title"] == title)
     ncols = sheet["properties"]["gridProperties"]["columnCount"]
     fonts, numfmts, notes = [], [], []
@@ -99,6 +100,7 @@ def load(sh, title: str) -> dict:
             notes.append([(v or {}).get("note", "") for v in vs])
     return {"ws": ws, "title": title, "sheet_id": ws.id, "values": values,
             "formulas": formulas, "rules": sheet.get("conditionalFormats", []),
+            "basic_filter": sheet.get("basicFilter"),
             "ncols": ncols, "fonts": fonts, "numfmts": numfmts, "notes": notes}
 
 
@@ -116,7 +118,8 @@ def _numfmt(v: dict):
     return (kind, pat.lower() if kind.startswith("DATE") else pat)
 
 
-def audit(t: dict) -> list:
+def audit(t: dict, tenure=None) -> list:
+    """tenure = (history, earliest sunday) from tenure_history(), or None."""
     title, v, f = t["title"], t["values"], t["formulas"]
     if K.is_board(v):
         found = (K.check_formulas(title, v, f) + K.check_roll_call(title, v)
@@ -127,17 +130,33 @@ def audit(t: dict) -> list:
         found += [e for e in K.check_errors(title, v, f) if e.where not in fixed_cells]
         found += K.check_conditional(title, t["sheet_id"], t["rules"], t["ncols"],
                                      block=(first, last))
+        if tenure and T.has_tenure(v):
+            found += T.audit(title, t["sheet_id"], v, f, t.get("basic_filter"), *tenure)
     else:
         found = K.check_errors(title, v, f)
         found += K.check_conditional(title, t["sheet_id"], t["rules"], t["ncols"])
     return found
 
 
+def tenure_history(sh, today: dt.date):
+    """(history, earliest sunday) off every 'Sales Board WE m.d' tab up to this
+    week -- one read. Unformatted, so dates come back as serials."""
+    from automations.terminated_reps.board import week_tabs as all_weeks
+    weeks = [(d, t) for d, t in all_weeks(sh, today) if d <= week_sunday(today)]
+    if not weeks:
+        return None
+    res = sh.values_batch_get(["'%s'" % t for _, t in weeks],
+                              params={"valueRenderOption": "UNFORMATTED_VALUE"})
+    grids = [(d, vr.get("values", [])) for (d, _), vr in zip(weeks, res["valueRanges"])]
+    return T.history(grids), weeks[0][0]
+
+
 def backup(t: dict, stamp: str) -> Path:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     p = OUT_DIR / ("backup_%s_%s.json" % (stamp, _slug(t["title"])))
     p.write_text(json.dumps({"title": t["title"], "values": t["values"],
-                             "formulas": t["formulas"], "rules": t["rules"]},
+                             "formulas": t["formulas"], "rules": t["rules"],
+                             "basic_filter": t.get("basic_filter")},
                             ensure_ascii=False), encoding="utf-8")
     return p
 
@@ -234,16 +253,27 @@ def main(argv=None) -> int:
     for title in [t for t in titles if t not in have]:
         print("  no existe %r todavía -- salteada" % title)
     titles = [t for t in titles if t in have]
-    results = run_tabs(sh, titles, stamp, a.apply)
+    results = run_tabs(sh, titles, stamp, a.apply, tenure=tenure_history(sh, today))
     print("reporte:", report(results, stamp, a.apply))
     return 0
 
 
-def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "") -> dict:
+def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "",
+             tenure=None) -> dict:
     results = {}
     for title in titles:
         t = load(sh, title)
-        found = audit(t)
+        widened = []
+        if do_apply and tenure:
+            # Widening the filter re-sorts the rows, so it goes first, alone,
+            # and everything else is read again after it.
+            widened = [x for x in audit(t, tenure) if x.kind == "filter_short"]
+            if widened:
+                print("  backup:", backup(t, stamp + "_prefilter"))
+                sh.batch_update({"requests": [x.request for x in widened]})
+                print("  filtro ampliado: %s -> %s" % (widened[0].before, widened[0].after))
+                t = load(sh, title)
+        found = audit(t, tenure)
         n_fix = sum(1 for x in found if x.fixable)
         print("%s%s: %d hallazgos (%d arreglables)" % (label, title, len(found), n_fix))
         if do_apply and n_fix > MAX_FIXES:
@@ -255,10 +285,10 @@ def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "") -> dict:
             print("  backup:", backup(t, stamp))
             done = apply(sh, t, found)
             print("  escritos: %d" % len(done))
-            left = audit(load(sh, title))
+            left = audit(load(sh, title), tenure)
             print("  después de arreglar quedan: %d (%d arreglables)"
                   % (len(left), sum(1 for x in left if x.fixable)))
-        results[label + title] = found
+        results[label + title] = widened + found
     return results
 
 

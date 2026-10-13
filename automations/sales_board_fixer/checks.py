@@ -53,6 +53,9 @@ KIND_LABEL = {
     "cf_duplicate": "regla de formato condicional repetida",
     "cf_short": "formato condicional que no llega a las últimas filas",
     "cf_fragmented": "regla de formato condicional partida en muchas copias",
+    "filter_short": "el filtro/orden no cubre las columnas del rep",
+    "start_date_moved": "Start Date de otro rep (quedó atrás al ordenar)",
+    "days_formula": "# Days Worked sin fórmula o apuntando a otra fila",
 }
 
 
@@ -255,8 +258,14 @@ def check_formulas(tab: str, values, formulas) -> List[Finding]:
         return []
     width = max(len(r) for r in formulas[first - 1:last]) if formulas else 0
     name_col = layout(values).name_col
+    # '# Days Worked' belongs to tenure.py: it only goes on rows WITH a start
+    # date (on an empty one it counts from 1899), which a column majority can't know
+    skip = {c for c, v in enumerate(values[0] if values else [], 1)
+            if " ".join(str(v).split()).lower() == "# days worked"}
     out: List[Finding] = []
     for c in range(1, width + 1):
+        if c in skip:
+            continue
         pats = {r: _cell_pattern(_g(formulas, r, c), r) for r in range(first, last + 1)}
         top, hits = collections.Counter(pats.values()).most_common(1)[0]
         if not top.startswith("=") or hits < max(MIN_ROWS, MAJORITY * n):
@@ -409,6 +418,8 @@ NOTE_LABEL = {
     "font": "font/size didn't match the column",
     "number_format": "number format didn't match the column",
     "roll_call_blank": "Int had the status but the Roll Call was blank",
+    "start_date_moved": "this was another rep's start date (left behind by a sort)",
+    "days_formula": "# Days Worked was missing or pointed at another row",
 }
 
 
