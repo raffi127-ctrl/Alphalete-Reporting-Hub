@@ -1454,10 +1454,24 @@ def _action_text_replies(args: str) -> tuple[bool, str]:
     minutes on Lucy 1) writes output/logs/text_replies.txt on its next tick
     and consumes the request. Built 2026-10-12."""
     parts = (args or "").split()
+    if parts and parts[0] == "fetch":
+        # `text_replies fetch [needle]` -- hand back the dump itself (newest
+        # first, capped to fit a Sheet cell) instead of logtail's two lines a
+        # page. Plain file read, no FDA needed.
+        out = REPO_ROOT / "output" / "logs" / "text_replies.txt"
+        if not out.exists():
+            return False, "no dump yet -- run `text_replies <days>` first and wait a tick"
+        needle = " ".join(parts[1:]).strip().lower()
+        lines = out.read_text(errors="replace").splitlines()
+        head, body = lines[:3], lines[3:]
+        if needle:
+            body = [l for l in body if needle in l.lower()]
+        text = "\n".join(head + ["%d line(s)%s" % (len(body), " matching %r" % needle if needle else "")] + body)
+        return True, text[:45000]
     try:
         days = int(parts[0]) if parts else 3
     except ValueError:
-        return False, "usage: text_replies <days> [needle]"
+        return False, "usage: text_replies <days> [needle]  |  text_replies fetch [needle]"
     needle = " ".join(parts[1:]).strip()
     req = Path.home() / ".config" / "recruiting-report" / "text_replies_request.json"
     try:
