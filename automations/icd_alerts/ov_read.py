@@ -39,7 +39,7 @@ from automations.shared import ownerville_knocks as K
 
 # Bump with every release that changes what this module does or reports; it
 # is what a KnocksProblem's summary carries (see the stamp note below).
-CODE_RELEASE = "2026.10.12.2"
+CODE_RELEASE = "2026.10.13.1"
 
 
 class KnocksProblem(RuntimeError):
@@ -254,6 +254,12 @@ def _context(p, headless: bool):
 # clears any hold at once.
 OV_RETRY_MINUTES = 60
 OV_LOCKED_RECHECK_MINUTES = 180
+# SEEN LOCKED TWICE = THE LOCK IS OWNERVILLE'S, not this browser's. Jenny
+# 2026-10-13: fresh cookies and a freshly typed password both landed on the
+# same "Admin unlock required" page. Only OwnerVille support undoes that, so
+# check once a day (the unlock gets noticed) and never ask for the password
+# -- a password cannot fix a lock.
+OV_LOCK_CONFIRMED_RECHECK_MINUTES = 24 * 60
 
 # WHERE THE PASSWORD GOES. These used to say "open Lucy Reports and re-enter
 # it" -- there is no such thing to open on an owner's Mac (Megan 2026-10-12:
@@ -262,12 +268,15 @@ OV_LOCKED_RECHECK_MINUTES = 180
 # that computer when somebody is at it (autoprompt "ownerville_password").
 _PASSWORD_BOX = ("A box asking for your OwnerVille password will pop up on "
                  "this computer -- type it there and Lucy starts again.")
+# KEEP "locked page" IN IT: post.py recognises this fault by those words on
+# the mini to DM the office (450f0d0), so rewording it silently ends the DM.
 _LOCKED_MSG = (
-    "OwnerVille showed Lucy's sign-in window a LOCKED page (too many failed "
-    "sign-ins from this computer). Lucy has stopped trying and wiped her "
-    "OwnerVille cookies so her next try starts clean. " + _PASSWORD_BOX +
-    " Only if OwnerVille says locked for you too: email "
-    "onboarding@ownerville.com to unlock %s.")
+    "OwnerVille shows Lucy a LOCKED page for the login %s (too many failed "
+    "sign-ins), so Lucy cannot read your knocks. Typing the password again will not fix it -- "
+    "only OwnerVille can. Email onboarding@ownerville.com and ask them to "
+    "unlock that login. Lucy has stopped trying and checks once a day, so "
+    "the board comes back by itself after the unlock. (If your own browser "
+    "still works, that is a sign-in from before the lock.)")
 _BAD_LOGIN_MSG = (
     "Lucy could not sign in to OwnerVille with the saved password twice in a "
     "row, so she has stopped trying (more tries can lock the account). "
@@ -275,11 +284,13 @@ _BAD_LOGIN_MSG = (
 
 
 def needs_password_box() -> bool:
-    """True while signing in is held on something only a person can fix:
-    a locked page, or a password that failed twice."""
+    """True while signing in is held on a password that failed twice.
+
+    NOT for a lock: the box was offered for one on 2026-10-13 and Jenny typed
+    her password into it twice for nothing -- the lock is OwnerVille's."""
     if not ov_hold_message():
         return False
-    return _read_hold().get("reason") in ("locked", "bad_login")
+    return _read_hold().get("reason") == "bad_login"
 
 
 def held_on_lock() -> bool:
@@ -354,7 +365,9 @@ def _note_failure(cr: Dict[str, str], locked: bool, log=print) -> None:
     fails = (int(prev.get("fails", 0)) if prev.get("fp") == fp else 0) + 1
     now = dt.datetime.now()
     if locked:
-        until = now + dt.timedelta(minutes=OV_LOCKED_RECHECK_MINUTES)
+        again = prev.get("fp") == fp and prev.get("reason") == "locked"
+        until = now + dt.timedelta(minutes=OV_LOCK_CONFIRMED_RECHECK_MINUTES
+                                   if again else OV_LOCKED_RECHECK_MINUTES)
         hold = {"fp": fp, "reason": "locked", "fails": fails,
                 "until": until.isoformat(timespec="seconds")}
         log("OwnerVille says this account is locked; not trying until %s"

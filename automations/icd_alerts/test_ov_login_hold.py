@@ -70,7 +70,7 @@ class OvLoginHoldTest(unittest.TestCase):
         n, msg = self._session(login_exc=K.AccountLocked("locked"))
         self.assertEqual(n, 0, "a held login must not be attempted again")
         self.assertIn("LOCKED", msg)
-        self.assertIn("box asking for your OwnerVille password", msg)
+        self.assertIn("onboarding@ownerville.com", msg)
 
     def test_one_failure_waits_an_hour_then_tries_once_more(self):
         n, _ = self._session(login_exc=RuntimeError("x"))
@@ -140,7 +140,32 @@ class OvPasswordBoxTest(unittest.TestCase):
             self.assertTrue(OV.needs_password_box())
             C.OV_HOLD_PATH.unlink()
             OV._note_failure(CREDS, locked=True, log=quiet)
-            self.assertTrue(OV.needs_password_box())
+            self.assertFalse(OV.needs_password_box(),
+                             "a password cannot fix a lock (Jenny 10/13)")
+
+    def test_locked_twice_rechecks_once_a_day(self):
+        d = pathlib.Path(tempfile.mkdtemp())
+        with mock.patch.object(C, "OV_HOLD_PATH", d / "h.json"):
+            OV._note_failure(CREDS, locked=True, log=quiet)
+            first = json.loads(C.OV_HOLD_PATH.read_text())["until"]
+            OV._note_failure(CREDS, locked=True, log=quiet)
+            second = json.loads(C.OV_HOLD_PATH.read_text())["until"]
+        hrs = (dt.datetime.fromisoformat(second)
+               - dt.datetime.fromisoformat(first)).total_seconds() / 3600
+        self.assertGreater(hrs, 20)
+
+    def test_the_mini_still_recognises_the_lock(self):
+        from automations.icd_alerts import post as P
+        self.assertIn("locked page", (OV._LOCKED_MSG % "x").lower())
+        self.assertEqual(P._signin_system({"stage": "knocks", "summary":
+                               "KnocksProblem: " + OV._LOCKED_MSG % "x"}),
+                         "ownerville_locked")
+
+    def test_the_box_stops_at_a_lock(self):
+        import inspect
+        from automations.icd_alerts import run as R
+        src = inspect.getsource(R.cmd_set_ownerville_login)
+        self.assertLess(src.index('held_on_lock()'), src.index("Try again?"))
 
 
 if __name__ == "__main__":
