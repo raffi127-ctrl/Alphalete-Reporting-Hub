@@ -41,7 +41,76 @@ NAME = r"[A-Za-z][\w'.\-]{0,30}(?: [A-Za-z][\w'.\-]{0,30}){0,2}"
 PAIR_RE = re.compile(r"^\s*(" + NAME + r")\s*={1,2}\s*(" + NAME + r")\s*[.!]?\s*$")
 
 
+REQUEST = os.path.expanduser("~/.config/recruiting-report/text_replies_request.json")
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPLIES_OUT = os.path.join(REPO, "output", "logs", "text_replies.txt")
+
+
+def dump_replies():
+    """ON REQUEST ONLY: incoming messages from every named iMessage group for
+    the last N days, written where `logtail text_replies.txt` can read them.
+    The queue action `text_replies` (mini_control) leaves the request file;
+    this is the one process on the box that may read chat.db, so the dump
+    happens here on the next tick and the request is consumed. 2026-10-12:
+    Megan asked how reps answer Lucy's texts; SSH only reaches a Lucy on the
+    office LAN, the queue reaches it anywhere."""
+    try:
+        with open(REQUEST) as fh:
+            req = json.load(fh)
+    except Exception:
+        return
+    days = int(req.get("days") or 3)
+    needle = (req.get("needle") or "").strip().lower()
+    import time
+    import datetime as dt
+    lines = []
+    try:
+        con = sqlite3.connect("file:%s?mode=ro" % DB, uri=True, timeout=10)
+        rows = con.execute(
+            """SELECT c.display_name, m.date/1000000000 + 978307200,
+                      COALESCE(h.id, ''), m.text, m.is_from_me
+                 FROM message m
+                 JOIN chat_message_join j ON j.message_id = m.ROWID
+                 JOIN chat c ON c.ROWID = j.chat_id
+                 LEFT JOIN handle h ON h.ROWID = m.handle_id
+                WHERE m.date/1000000000 + 978307200 > ?
+                  AND c.display_name <> '' AND m.text IS NOT NULL
+                ORDER BY m.date DESC""", (time.time() - days * 86400,)).fetchall()
+        con.close()
+    except sqlite3.Error as e:
+        lines = ["CANNOT read chat.db: %s" % e]
+        rows = []
+    groups = {}
+    for name, ts, who, text, mine in rows:
+        t = (text or "").replace("\n", " ").strip()
+        if not t:
+            continue
+        g = groups.setdefault(name, [0, 0])
+        g[1 if mine else 0] += 1
+        if mine or (needle and needle not in t.lower()):
+            continue
+        lines.append("%s | %s | %s | %s" % (
+            dt.datetime.fromtimestamp(ts).strftime("%m/%d %H:%M"), name[:28],
+            who[-4:], t[:200]))
+    head = ["text_replies dump %s -- last %d day(s)%s" % (
+                dt.datetime.now().strftime("%Y-%m-%d %H:%M"), days,
+                " needle=%r" % needle if needle else ""),
+            "groups (incoming/sent): " + "; ".join(
+                "%s %d/%d" % (n[:24], c[0], c[1]) for n, c in sorted(
+                    groups.items(), key=lambda kv: -kv[1][0])),
+            "%d incoming message(s):" % len(lines)]
+    try:
+        os.makedirs(os.path.dirname(REPLIES_OUT), exist_ok=True)
+        with open(REPLIES_OUT, "w") as fh:
+            fh.write("\n".join(head + lines[:1500]) + "\n")
+        os.remove(REQUEST)
+        print("text_replies: wrote %d line(s) to %s" % (len(lines), REPLIES_OUT))
+    except OSError as e:
+        print("text_replies: could not write dump: %s" % e)
+
+
 def main(argv):
+    dump_replies()
     needle = argv[1] if len(argv) > 1 else "Knocking Chat A-Players"
     out_path = argv[2] if len(argv) > 2 else OUT
     try:
