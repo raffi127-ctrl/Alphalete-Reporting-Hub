@@ -49,7 +49,7 @@ class Math(unittest.TestCase):
         }
         self.assertEqual([o for o, _ in run.red_list(today)], ["abe", "Zed"])
 
-    def test_weekly_red_list_on_top_of_mail(self):
+    def test_weekly_red_list_html(self):
         out = run.red_html([("Andre Burton", 0.47)], dt.date(2026, 10, 10),
                            f"weekly total, {run.week_when(dt.date(2026, 10, 10))}")
         self.assertIn("weekly total, Mon 10/5 – Sat 10/10", out)
@@ -62,6 +62,33 @@ class Math(unittest.TestCase):
             m.now.return_value = fake
             self.assertEqual(run.main(["--scheduled"]), 0)
             send.assert_not_called()
+
+
+    def test_two_mails_full_then_weekly_reds_only(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+        from automations.shared import report_email
+        raw = {"Andre Burton": _raw(monday=(10, 5, 2, 10, 4)),
+               "Aya": _raw(monday=(10, 5, 2, 10, 8))}
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp) / "raw.json"
+            cache.write_text(json.dumps({"raw": raw, "gaps": []}), encoding="utf-8")
+            with mock.patch.object(run, "OUT_DIR", Path(tmp)), \
+                 mock.patch.object(report_email, "send_boards",
+                                   return_value={"ok": True}) as send:
+                rc = run.build_and_send(dt.date(2026, 10, 5), production=False,
+                                        dry_run=True, from_cache=cache,
+                                        logfn=lambda *_: None)
+        self.assertEqual(rc, 0)
+        self.assertEqual(send.call_count, 2)
+        full, red = (c.kwargs for c in send.call_args_list)
+        self.assertIn("WEEKLY TOTALS", full["intro_html"])
+        self.assertIn("Offices in red", red["subject"])
+        self.assertIn("Andre Burton 40%", red["intro_html"])
+        self.assertNotIn("Aya", red["intro_html"])
+        self.assertNotIn("<table", red["intro_html"])
 
 
 class Sheet(unittest.TestCase):
