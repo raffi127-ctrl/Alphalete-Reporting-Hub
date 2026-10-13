@@ -1466,8 +1466,24 @@ def _action_text_replies(args: str) -> tuple[bool, str]:
         head, body = lines[:3], lines[3:]
         if needle:
             body = [l for l in body if needle in l.lower()]
-        text = "\n".join(head + ["%d line(s)%s" % (len(body), " matching %r" % needle if needle else "")] + body)
-        return True, text[:45000]
+        # The Result cell keeps ~480 characters, so the dump goes to its own
+        # tab of the control workbook instead (one line per row, cleared and
+        # rewritten each fetch); the laptop reads the tab with gspread.
+        try:
+            sh = _fill._client().open_by_key(CONTROL_SHEET_ID)
+            title = "text_replies (%s)" % _machine_profile()
+            try:
+                ws = sh.worksheet(title)
+                ws.clear()
+            except Exception:  # noqa: BLE001 -- worksheet-not-found
+                ws = sh.add_worksheet(title=title, rows=2000, cols=1)
+            rows = [[l[:4000]] for l in (head + body)][:1900]
+            ws.update("A1", rows, value_input_option="RAW")
+        except Exception as e:  # noqa: BLE001
+            return False, "dump read (%d lines) but the tab write failed: %s: %s" % (
+                len(body), type(e).__name__, str(e)[:120])
+        return True, ("%d line(s)%s written to the '%s' tab of the control workbook "
+                      "(newest first)" % (len(body), " matching %r" % needle if needle else "", title))
     try:
         days = int(parts[0]) if parts else 3
     except ValueError:
