@@ -287,7 +287,8 @@ READONLY_ACTIONS = {"push_appstream_fleet",
                     "slack_channel", "slack_find", "slack_thread",
                     "focus_dm_check",
                     # Messages lookups: they read the chat list and send nothing.
-                    "find_group", "group_members", "text_resolve"}
+                    "find_group", "group_members", "text_resolve",
+                    "text_replies"}
 
 # --- lanes --------------------------------------------------------------------
 # The queue is ONE serial worker, so a 2-second read waits behind whatever report
@@ -1436,6 +1437,59 @@ def _action_install_card_scheduler(args: str) -> tuple[bool, str]:
         return False, f"smoke ok; bootstrap FAILED: {(boot.stdout or '').strip()[:150]}"
     return True, (f"installed {label} · mode={'LIVE' if live else 'OBSERVE'} · "
                   f"{smoke[:110]}")
+
+
+def _action_text_replies(args: str) -> tuple[bool, str]:
+    """READ-ONLY: what people wrote back in this machine's iMessage GROUPS.
+
+      text_replies 5              # incoming group messages from the last 5 days
+      text_replies 5 Lucy         # only messages whose text mentions "Lucy"
+
+    Reads ~/Library/Messages/chat.db read-only (needs Full Disk Access) and
+    returns ONLY incoming (not-from-me) messages in named group chats, newest
+    first, capped at 300 lines. Built 2026-10-12 so Megan can see how reps
+    answer Lucy's texts without SSH (SSH only works on the office LAN)."""
+    import sqlite3
+    parts = (args or "").split()
+    try:
+        days = int(parts[0]) if parts else 3
+    except ValueError:
+        return False, "usage: text_replies <days> [needle]"
+    needle = " ".join(parts[1:]).strip().lower()
+    db = Path.home() / "Library" / "Messages" / "chat.db"
+    if not db.exists():
+        return False, "no Messages database on this machine"
+    try:
+        con = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=10)
+        rows = con.execute(
+            "SELECT c.display_name, m.date/1000000000 + 978307200, "
+            "COALESCE(h.id, ''), m.text, m.is_from_me "
+            "FROM message m JOIN chat_message_join j ON j.message_id = m.ROWID "
+            "JOIN chat c ON c.ROWID = j.chat_id "
+            "LEFT JOIN handle h ON h.ROWID = m.handle_id "
+            "WHERE m.date/1000000000 + 978307200 > ? AND c.display_name <> '' "
+            "AND m.text IS NOT NULL ORDER BY m.date DESC",
+            (time.time() - days * 86400,)).fetchall()
+        con.close()
+    except Exception as e:  # noqa: BLE001
+        return False, "could not read chat.db (%s: %s) -- Full Disk Access?" % (
+            type(e).__name__, str(e)[:80])
+    out, groups = [], {}
+    for name, ts, who, text, mine in rows:
+        t = (text or "").replace("\n", " ").strip()
+        if not t:
+            continue
+        groups.setdefault(name, [0, 0])[1 if mine else 0] += 1
+        if mine or (needle and needle not in t.lower()):
+            continue
+        out.append("%s | %s | %s | %s" % (
+            dt.datetime.fromtimestamp(ts).strftime("%m/%d %H:%M"), name[:28],
+            who[-4:], t[:160]))
+    head = ["groups (incoming/sent, last %d day(s)): " % days + "; ".join(
+        "%s %d/%d" % (n[:24], c[0], c[1]) for n, c in sorted(
+            groups.items(), key=lambda kv: -kv[1][0])[:25]),
+            "%d incoming message(s)%s:" % (len(out), " matching %r" % needle if needle else "")]
+    return True, "\n".join(head + out[:300])
 
 
 def _action_peek(args: str) -> tuple[bool, str]:
@@ -8512,6 +8566,7 @@ ACTIONS = {
     "install_lucy2_digest": _action_install_lucy2_digest,
     "install_card_scheduler": _action_install_card_scheduler,
     "peek": _action_peek,
+    "text_replies": _action_text_replies,
     "install_night_knocks": _action_install_night_knocks,
     "install_ad_photo_threads": _action_install_ad_photo_threads,
     "install_jiraiya": _action_install_jiraiya,
