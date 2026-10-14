@@ -103,6 +103,24 @@ class Stats(unittest.TestCase):
         by_day[dt.date(2026, 10, 13)] = day("2026-10-13", 1)          # today under
         self.assertEqual(S.streak("1", by_day, dt.date(2026, 10, 13)), 0)
 
+    def test_carry_over_needs_2_day_streak_within_2_days(self):
+        def day(d, fails, n=20, rid="1"):
+            return [k(f"{d} 12:{i:02d}:00", gps=FAR if i < fails else OK, kid=f"{d}{i}",
+                      rid=rid) for i in range(n)]
+        wed = dt.date(2026, 10, 14)
+        by_day = {dt.date(2026, 10, 12): day("2026-10-12", 8),
+                  dt.date(2026, 10, 13): day("2026-10-13", 8), wed: []}
+        self.assertEqual(S.today_streak("1", by_day, wed), (2, True))      # carried in
+        by_day[wed] = day("2026-10-14", 1)                                  # 20 doors, 5%
+        self.assertEqual(S.today_streak("1", by_day, wed), (0, False))     # broken
+        by_day[wed] = day("2026-10-14", 9)                                  # over again
+        self.assertEqual(S.today_streak("1", by_day, wed), (3, False))
+        by_day = {dt.date(2026, 10, 13): day("2026-10-13", 8), wed: []}     # 1 day only
+        self.assertEqual(S.today_streak("1", by_day, wed), (0, False))
+        by_day = {dt.date(2026, 10, 10): day("2026-10-10", 8),              # too long ago
+                  dt.date(2026, 10, 11): day("2026-10-11", 8), wed: []}
+        self.assertEqual(S.today_streak("1", by_day, wed), (0, False))
+
     def test_alert_counts_only_unseen_failures(self):
         rows = [k("2026-10-12 12:00:00", gps=FAR, kid=1),
                 k("2026-10-12 12:01:00", gps=OFF, kid=2),

@@ -78,6 +78,10 @@ def parent_text(rep: str, streak: int) -> str:
 
 def reply_text(s: dict, as_of: dt.datetime, alert: str) -> str:
     t = s["today"]
+    if s.get("carried"):
+        line = (f"{R._hm(as_of)} update — on a {s['streak']}-day GPS streak coming "
+                f"into today · {t['knocks']} door{'s' if t['knocks'] != 1 else ''} so far today")
+        return f"{line}\n{alert}" if alert else line
     line = (f"{R._hm(as_of)} update — GPS failed on {t['gps_fail']} of "
             f"{t['knocks']} doors today ({R._pct(t['gps_fail_pct'])})")
     return f"{line}\n{alert}" if alert else line
@@ -247,18 +251,25 @@ def main(argv=None) -> int:
     posted = skipped = failed = 0
     over = []
     reps = S.group_by_rep(week_knocks)
-    for rep_id in sorted(today_reps, key=lambda i: reps[i][0]["rep"].lower()):
-        s = S.rep_week(reps[rep_id], today)
+    # Reps knocking today + reps carrying a streak in from the last few days.
+    names = {r["rep_id"]: r["rep"] for d in days for r in by_day.get(d, [])}
+    recent = {r["rep_id"] for back in range(1, C.CARRY_DAYS + 1)
+              for r in by_day.get(today - dt.timedelta(days=back), [])}
+    candidates = today_reps | recent
+    for rep_id in sorted(candidates, key=lambda i: names.get(i, "").lower()):
+        s = S.rep_week(reps.get(rep_id, []), today)
+        s["rep"], s["rep_id"] = names.get(rep_id, s["rep"]), rep_id
         if not _match(a.rep, s):
             continue
         rs = ds["reps"].get(rep_id)
-        # Only reps over the line today. Once a rep's thread is up today it
-        # keeps updating for the rest of the day, even if they dip under.
-        if not s["flagged"] and not (rs and rs.get("thread_ts")):
+        s["streak"], carried = S.today_streak(rep_id, by_day, today)
+        # Over the line today, OR carrying a 2+ day streak in, OR already up
+        # today (a thread stays up and keeps updating for the rest of the day).
+        if not (s["flagged"] or carried or (rs and rs.get("thread_ts"))):
             continue
-        s["streak"] = S.streak(rep_id, by_day, today)
+        s["carried"] = carried
         over.append(f"{s['rep']} {R._pct(s['today']['gps_fail_pct'])} "
-                    f"{S.flags(s['streak'])}".rstrip())
+                    f"{S.flags(s['streak'])}{' (carried)' if carried else ''}".rstrip())
         rs = ds["reps"].setdefault(rep_id, {"rep": s["rep"]})
         if not a.force and rs.get("posted_count") == s["today"]["knocks"]:
             skipped += 1

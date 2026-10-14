@@ -159,18 +159,23 @@ def render(s: dict, *, as_of: dt.datetime, out: Path) -> Path:
     why = ", ".join(f"{c} {w.lower()}" for w, c in t["fail_reasons"][:2])
     streak_txt = (f"{s['streak']} day{'s' if s['streak'] != 1 else ''}"
                   if s["streak"] else "—")
+    # No doors yet today (a streak carried in from the morning reset) → dashes,
+    # not a misleading "0% verified".
+    tp = (lambda v: _pct(v)) if t["knocks"] else (lambda v: "—")
     y = _tiles(d, y, [
-        ("GPS failed today", _pct(t["gps_fail_pct"]),
+        ("GPS failed today", tp(t["gps_fail_pct"]),
          BAD_BG if s["flagged"] else (WARN_BG if t["gps_fail"] else STRIPE),
-         BAD if t["gps_fail"] else INK, f"{t['gps_fail']} of {t['knocks']} doors"),
+         BAD if t["gps_fail"] else INK,
+         f"{t['gps_fail']} of {t['knocks']} doors" if t["knocks"] else "no doors yet"),
         (f"Streak over {C.FLAG_FAIL_PCT:.0f}%", streak_txt,
          BAD_BG if s["streak"] else STRIPE, BAD if s["streak"] else INK,
          "in a row" if s["streak"] else ""),
         ("Doors today", f"{t['knocks']:,}", STRIPE, INK, ""),
         ("Avg min between doors", "—" if t["avg_gap"] is None else f"{t['avg_gap']:.1f}",
          STRIPE, INK, ""),
-        ("Talk-to %", _pct(t["talk_pct"]), STRIPE, INK, ""),
-        ("GPS verified", _pct(t["gps_ok_pct"]), GOOD_BG, GOOD, ""),
+        ("Talk-to %", tp(t["talk_pct"]), STRIPE, INK, ""),
+        ("GPS verified", tp(t["gps_ok_pct"]), GOOD_BG if t["knocks"] else STRIPE,
+         GOOD if t["knocks"] else INK, ""),
     ], f_lab, f_kpi)
     if why:
         d.text((PAD, y + 10), "Failures: " + why, font=f_lab, fill=BAD)

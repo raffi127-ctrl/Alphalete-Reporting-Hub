@@ -37,6 +37,14 @@ FLAG_MIN_KNOCKS = 10
 # this many days (finished days are cached, so only the first run pulls them).
 STREAK_LOOKBACK_DAYS = 14
 
+# CARRY-OVER (Megan 2026-10-14): a rep already on a streak of CARRY_MIN_STREAK+
+# days, whose last worked day was within the last CARRY_DAYS days, is posted at
+# the morning reset — before they knock — so the streak stays on the board. If
+# they then knock FLAG_MIN_KNOCKS+ doors today and stay under the line, the
+# streak breaks (the thread stays up for the day and keeps updating).
+CARRY_DAYS = 2
+CARRY_MIN_STREAK = 2
+
 # The door log covers the whole week so far, one block per day (newest day
 # first). Capped so a big week stays a readable image; the oldest doors drop.
 MAX_LOG_ROWS = 600

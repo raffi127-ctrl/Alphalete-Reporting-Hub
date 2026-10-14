@@ -140,6 +140,27 @@ def streak(rep_id: str, by_day: dict, today: dt.date) -> int:
     return n
 
 
+def carried_streak(rep_id: str, by_day: dict, today: dt.date) -> "tuple[int, dt.date | None]":
+    """(streak, its last day) ending on the rep's most recent worked day in the
+    last CARRY_DAYS days before today. (0, None) if none."""
+    for back in range(1, C.CARRY_DAYS + 1):
+        d = today - dt.timedelta(days=back)
+        if any(r["rep_id"] == rep_id for r in by_day.get(d, [])):
+            return streak(rep_id, by_day, d), d
+    return 0, None
+
+
+def today_streak(rep_id: str, by_day: dict, today: dt.date) -> "tuple[int, bool]":
+    """(streak to show, carried?). With enough doors today, today decides:
+    over → the streak including today, under → 0 (broken). Not enough doors
+    yet → the carried streak, if it's long enough to carry."""
+    mine = [r for r in by_day.get(today, []) if r["rep_id"] == rep_id]
+    if len(mine) >= C.FLAG_MIN_KNOCKS:
+        return streak(rep_id, by_day, today), False
+    n, _ = carried_streak(rep_id, by_day, today)
+    return (n, True) if n >= C.CARRY_MIN_STREAK else (0, False)
+
+
 def flags(n: int) -> str:
     return "🚩" * max(n, 0)
 
