@@ -58,6 +58,12 @@ CLIP_SUSPECT_PX = 1400
 # An empty board still draws the title bar, the three filter captions and the
 # table header — about 330px. A real board with even one rep clears 400.
 EMPTY_MAX_PX = 400
+# Both limits above are measured on a FULL-SCALE export, 2000px wide. The
+# export's scale follows the machine's screen: on 2026-10-13 Lucy 1 started
+# exporting at half size (1000x800), so Ryan's full 8-rep board came out 384px
+# tall and read as "empty" two mornings running. Heights are compared after
+# scaling to this width.
+REF_WIDTH_PX = 2000
 
 
 def view_url(owner: str) -> str:
@@ -118,7 +124,8 @@ def _check(path: Path, owner: str, shown: str = "") -> str:
     """
     from PIL import Image
     with Image.open(path) as im:
-        height = im.height
+        width, raw_height = im.size
+    height = round(raw_height * REF_WIDTH_PX / width) if width else raw_height
     if height <= EMPTY_MAX_PX:
         raise RuntimeError(
             "the Box Tier Bonus board came back empty for Owner Name={!r} "
