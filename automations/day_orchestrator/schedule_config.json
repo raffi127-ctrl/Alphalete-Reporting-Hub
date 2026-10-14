@@ -13253,6 +13253,51 @@
     "type": "not_configured"
    }
   },
+  "rep_knock_breakdown": {
+   "on_scheduler": false,
+   "machine": "Lucy 1",
+   "standalone_weekdays": [0, 1, 2, 3, 4, 5],
+   "_note": "Raf 2026-10-13 (Loom + #l10 thread): one Slack thread per rep per week in #alphalete-sales-knocking-data (C0C8KBT065D, private), an hourly picture of that rep's OwnerVille Today's Activity knock table (status colors + GPS Verified), and a text to the iMessage room 'Knocking Chat A-Players' when a rep has 3+ GPS failures in a row (once per streak). Real schedule = com.alphalete.rep-knock-breakdown on LUCY 1 (Raf's login, 11280, texting machine): :05 Mon-Fri 14-21, Sat 11-18. Dry-runs by default; --send = Slack, --text = iMessage. A rep whose numbers did not move since the last post is skipped.",
+   "display_name": "Rep Knock Breakdown (OwnerVille -> Slack)",
+   "source_type": "api",
+   "data_sources": [],
+   "command": [
+    "automations.rep_knock_breakdown.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": [],
+    "not_before": "14:00"
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 20,
+   "verify": null
+  },
+  "install_rep_knock_breakdown_agent": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "Install/refresh com.alphalete.rep-knock-breakdown on LUCY 1 (Raf's per-rep knock threads, hourly :05). install_agent only rewrites and reloads the plist; it touches no Sheet and no report data.",
+   "machine": "Lucy 1",
+   "display_name": "Install Rep Knock Breakdown agent (hourly)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "rep-knock-breakdown"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
+  },
   "install_b2b_dispositions_gaps_agent": {
    "on_scheduler": false,
    "_off_scheduler_note": "Install/refresh com.alphalete.b2b-dispositions-gaps on LUCY 2: Carlos's BOX-3, the Box 15-min gaps card (2026-09-29) to the 'Box 15 Min Gaps' Slack thread + the Box B2B text at Mon-Fri 12/2/4pm and Sat 12/2pm. The 6pm (Sat 4pm) gaps run rides the -hourly agent's --which all. install_agent only rewrites and reloads the plist.",
