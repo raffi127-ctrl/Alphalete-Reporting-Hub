@@ -12,7 +12,11 @@
     <array>
         <string>/bin/bash</string>
         <string>/Users/megan/1st Claude Folder/deploy/rep_knock_breakdown.sh</string>
-        <string>--send</string>
+        <!-- TEXT ONLY (Megan 2026-10-14): the Slack threads in
+             #alphalete-sales-knocking-data are rep_knock_threads' job (only reps
+             at 25%+ GPS failures, daily reset). This agent keeps Raf's
+             3-fails-in-a-row text to Knocking Chat A-Players. Do not add
+             -&#45;send back or the channel gets two sets of threads. -->
         <string>--text</string>
     </array>
 
