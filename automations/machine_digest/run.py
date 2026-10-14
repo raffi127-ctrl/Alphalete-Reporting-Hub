@@ -571,6 +571,13 @@ def _retired_ids() -> set:
         return set()
 
 
+# Approval phases that get NO "waiting for approval" reminder in the channel.
+# Eve 2026-10-13: "apaga también el recordatorio de aprobación" — the Org Active
+# Headcount mail is approved every day and always arrives; the reminder only
+# added a ticket to close. Its real failures (FAILED / STUCK) still alert.
+_NO_APPROVAL_REMINDER = frozenset({"org-active-headcount-email-approved"})
+
+
 def _paused_ids() -> set:
     """Ids the Hub declares STOOD DOWN (day_orchestrator.paused_reports).
 
@@ -1552,6 +1559,8 @@ def _run_watch(day: str, day_human: str, lucy2_hosts: str, dry_run: bool, ts: st
         # "<card>-approved" (review_gate.py / dashboard approval_phase), so the
         # suffix IS the declaration — no list to maintain.
         elif cid.endswith("-approved"):
+            if cid in _NO_APPROVAL_REMINDER:
+                continue
             kind = "WAITING"
             status = "waiting for approval"
         try:
