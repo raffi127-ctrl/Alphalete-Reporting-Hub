@@ -437,6 +437,10 @@ _ALIASES = {
         "Bilingual Customer Sales Representative Spanish?English": "Bilingual Customer Sales Representative – Spanish/English",
         # On her list but typed only twice in October: listed so it counts.
         "Entry Level Wireless Associate": "Entry Level Wireless Associate",
+        # Valeria 10/14 11:40 updated list: two new ads, listed so they count
+        # from their first row.
+        "Entry Level Sales Associate": "Entry Level Sales Associate",
+        "Customer Success Associate": "Customer Success Associate",
     },
 }
 
@@ -494,10 +498,15 @@ _SCORECARD_TABS = {
                # titles never carry the city, so each ad's city is here.
                "scorecard_cities": {
                    "AT&T Agent- Spanish/English Speaking": "Princeton, FL",
-                   "AT&T Assistant": "Miami-Dade, FL",
+                   # Updated list 10/14 11:40: Assistant moved to Miami
+                   # 33157, Customer Account Rep to Hialeah. Closed ads keep
+                   # their city for the weeks they ran.
+                   "AT&T Assistant": "Miami, FL",
                    "Sales Assistant (AT&T)": "Kendall Lakes, FL",
+                   "Entry Level Sales Associate": "Kendall Lakes, FL",
+                   "Customer Success Associate": "Kendall, FL",
                    "Entry Level Wireless Associate": "Hialeah Gardens, FL",
-                   "Customer Account Representative – Spanish/English": "Kendall, FL",
+                   "Customer Account Representative – Spanish/English": "Hialeah, FL",
                    "Bilingual AT&T Team Member": "Coral Gables, FL",
                    "AT&T Associate (Training Provided)": "Doral, FL",
                    "Customer Solutions Representative": "Miramar, FL",
