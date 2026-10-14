@@ -33,6 +33,8 @@ HUB_ACTIVITY_TAB = "Hub Activity"
 
 # orchestrator report_id -> Hub CARD id. Reports absent here have no Hub card.
 _HUB_CARD = {
+    "rep_knock_threads": "rep-knock-threads",
+    "rep_knock_threads_dry": "rep-knock-threads",
     "att_focus_raf": "recruiting",
     "carlos_focus": "recruiting-carlos",
     "alphalete_org_focus": "recruiting-alphalete-org",

@@ -6774,6 +6774,75 @@
    "timeout_minutes": 5,
    "verify": null
   },
+  "rep_knock_threads": {
+   "on_scheduler": true,
+   "hand_run_only": true,
+   "_note": "Rep Knock Threads (Raf Loom 2026-10-14): GPS red flags in #alphalete-sales-knocking-data (C0C8KBT065D): only reps with 25%+ GPS failures TODAY get a parent (name + one flag per day of streak) and an hourly chart in its thread; the first tick each day deletes the previous day's Lucy posts (Megan 2026-10-14). NOT a 4am-batch report: it fires from com.alphalete.rep-knock-threads on LUCY 3 (StartInterval 600; run.py posts once per clock hour 10 AM-9 PM CT). This entry is the manual push: `lucy rerun rep_knock_threads --machine \"Lucy 3\"` posts NOW for every rep whose door count changed (--force in base_args ignores the hours gate; reps already up to date are still re-posted). Source: OwnerVille V2 activityD2D.cfc getD2DKnocksReport (Raf's office 11280, every row office-checked).",
+   "display_name": "Rep Knock Threads \u2014 post now",
+   "base_args": [
+    "--send",
+    "--force"
+   ],
+   "timeout_minutes": 30,
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.rep_knock_threads.run"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "machine": "Lucy 3"
+  },
+  "rep_knock_threads_dry": {
+   "on_scheduler": true,
+   "hand_run_only": true,
+   "_note": "Dry-run for the Hub card's Run button: pulls + renders every rep's card to output/rep_knock_threads/preview/, posts NOTHING.",
+   "display_name": "Rep Knock Threads \u2014 dry run",
+   "base_args": [
+    "--force"
+   ],
+   "timeout_minutes": 20,
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.rep_knock_threads.run"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "machine": "Lucy 3"
+  },
+  "install_rep_knock_threads_agent": {
+   "on_scheduler": true,
+   "_note": "One-shot installer for com.alphalete.rep-knock-threads on LUCY 3 (Raf's OwnerVille). `lucy update` then `lucy rerun install_rep_knock_threads_agent`. cadence [] = never auto-run.",
+   "display_name": "Install: Rep Knock Threads LaunchAgent (Lucy 3)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "rep-knock-threads"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "timeout_minutes": 5,
+   "machine": "Lucy 3"
+  },
   "install_knocks_intraday_agent": {
    "on_scheduler": true,
    "_note": "NOT a report \u2014 a one-shot LaunchAgent installer, run via `lucy rerun install_knocks_intraday_agent` (same pattern as install_tracker_mirror_agent). Bootstraps com.alphalete.knocks-intraday on LUCY 3 from the committed plist. It TICKS every 5 minutes (StartInterval 300) and posts whatever is due; the slot times are NOT in the plist, they live in knocks_intraday/schedule.py in each office's OWN timezone \u2014 2:00 PM + 5:15 PM for Cody's channel only, 9:00 PM for every enrolled office, Mon-Sat. One calendar fire cannot serve two zones: four offices are Eastern (aya, hammad, salik, nii), so a single 21:00 Central fire reached them at 10 PM local. REPLACES install_knocks_9pm_agent (fb1e606, installed 2026-08-25): before installing this, UNLOAD the old label com.alphalete.knocks-9pm on Lucy 3 \u2014 leaving it loaded means both agents fire and every office gets its board twice. install_agent rewrites the committed laptop path to this machine's repo, so do NOT copy the plist by hand. on_scheduler:true ONLY so registry.load_config keeps it (rerun looks it up there); cadence.weekdays [] means the 4am orchestrator NEVER auto-runs it. Exempt from the didn't-run watcher via _ONESHOT_UTILITY_MODULES (install_agent).",

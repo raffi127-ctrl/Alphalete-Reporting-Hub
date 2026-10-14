@@ -896,6 +896,71 @@ AUTOMATED_REPORTS = [
             "message_failed": "❌ Intraday Knocks failed — see the log above.",
         },
     },
+    # Rep Knock Threads — its own LaunchAgent (com.alphalete.rep-knock-threads,
+    # Lucy 3, every 10 min; posts once per clock hour). Card id slug-matches
+    # report_id `rep_knock_threads` (deploy/rep_knock_threads.sh publishes it).
+    {
+        "id": "rep-knock-threads",
+        "name": "GPS Red Flags 🚩",
+        "category": "📊 Metrics",
+        "creator": "Raf & Claude",
+        "emoji": "🚩",
+        "color": "#B45309",
+        "assignees": ["Lucy 3"],
+        "run_machine": "Lucy 3",
+        # Run button = dry run (renders, posts nothing). A live push is
+        # `lucy rerun rep_knock_threads --machine "Lucy 3"`.
+        "run_rerun_id": "rep_knock_threads_dry",
+        "self_scheduled": True,
+        "schedule": {
+            "frequency": "daily",
+            "time": "9:00 PM",
+            "time_label": "Hourly 10 AM – 9 PM CT",
+            "estimated_minutes": 4,
+        },
+        "description": (
+            "GPS red flags in **#alphalete-sales-knocking-data**. Any rep whose "
+            "**GPS failures today reach 25%** gets a post with just their name, "
+            "and their chart goes in the thread — updated hourly. One 🚩 after "
+            "the name per day in a row they've been over. The list **resets "
+            "every morning**: yesterday's posts are deleted."
+        ),
+        "breakdown": (
+            "WHO GETS POSTED\n"
+            "**•** Only reps whose GPS failed on **25%+ of today's doors** "
+            "(10+ doors, so 1 out of 3 early doors can't post anyone). Everyone "
+            "else gets nothing.\n"
+            "**•** The post is the **rep's name + their streak**: 🚩 per worked "
+            "day in a row over 25% (a day off doesn't break it). Clean parent; "
+            "the chart is inside the thread.\n"
+            "**•** Once a rep is up for the day, their thread keeps updating "
+            "**every hour, 10 AM – 9 PM Central** whenever they log new doors. "
+            "New GPS failures add a 🚩 line to the update.\n\n"
+            "THE CHART (top to bottom)\n"
+            "**•** **Today:** GPS failed %, streak, doors, avg min between "
+            "doors, talk-to %, GPS verified %.\n"
+            "**•** **Ongoing vitals (Mon–Sun so far):** the same numbers for "
+            "the week, every disposition in OwnerVille's colors, and a "
+            "day-by-day grid.\n"
+            "**•** **Doors this week:** a bold banner per day (red when that "
+            "day was over 25%), then every door, newest first — GPS failures "
+            "in red (\"0.4 mi away\", \"Location turned off\").\n\n"
+            "DAILY RESET\n"
+            "**•** The first run each day deletes **Lucy's own** posts from the "
+            "day before (charts + names). A rep's or manager's reply in a "
+            "thread is never deleted.\n\n"
+            "WHERE THE NUMBERS COME FROM\n"
+            "**•** OwnerVille → TeleMapper Leads → Today's Activity → Lead "
+            "Knocks (**GPS Status** column), Raf's office 11280. Every row is "
+            "checked to be 11280 before anything posts.\n"
+            "**•** Avg min between doors leaves out gaps over 30 min. Talk-to "
+            "= every door except No Answer / Inaccessible."
+        ),
+        "post_run": {
+            "message_success": "✅ Rep Knock Threads — dry run rendered (nothing posted).",
+            "message_failed": "❌ Rep Knock Threads failed — see the log above.",
+        },
+    },
     # 🏢 Other Offices — LUCY ECO RELAY. The ICD-laptop ecosystem: an office
     # reads its OWN SaraPlus and Ownerville with its OWN credentials and relays
     # COUNTS ONLY to the relay workbook; Lucy 3 reads that and does the posting.
