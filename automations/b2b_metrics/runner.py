@@ -999,6 +999,12 @@ def main(argv=None) -> int:
                          "print the rows. Proves whether the week filter "
                          "applies on the data path (it can't inherit the "
                          "signed-in user's remembered view state).")
+    ap.add_argument("--probe-url", action="append", default=[],
+                    metavar="CSV_URL",
+                    help="DIAGNOSTIC: fetch this direct .csv view URL (repeat "
+                         "for more) and print its header + the rows matching "
+                         "--probe-needle. Posts nothing.")
+    ap.add_argument("--probe-needle", default="hidalgo")
     ap.add_argument("--new-thread", action="store_true",
                     help="abandon today's stored thread and open a fresh one "
                          "(use when the parent was deleted or the sections "
@@ -1048,6 +1054,10 @@ def main(argv=None) -> int:
         return 1 if problems else 0
 
     _off.assert_valid()
+
+    if args.probe_url:
+        from automations.b2b_metrics import capture as _cap
+        return _cap.probe_urls(args.probe_url, args.probe_needle)
 
     if args.probe_csv:
         from automations.b2b_metrics import capture as _cap

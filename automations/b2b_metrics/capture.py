@@ -1815,6 +1815,58 @@ def view_key_to_view(view_key: str) -> str:
     return TEAM[view_key].split("?")[0].rstrip("/").split("/")[-1]
 
 
+def probe_urls(urls, needle: str = "", log=print) -> int:
+    """DIAGNOSTIC, read-only: fetch each direct Tableau .csv URL and log its
+    header, row count and the rows containing `needle` (case-insensitive) —
+    to see which owner/team values a view really holds (2026-10-14: Carlos's
+    Owner Name slice went blank once Tableau dropped "Carlos's Team")."""
+    import time
+
+    from patchright.sync_api import sync_playwright
+
+    from automations.shared import tableau_patchright as tp
+    from automations.vantura_churn import cdp_pull
+
+    with cdp_pull._cdp_lock(label="b2b probe-urls", log=log):
+        cdp_pull._kill_ours()
+        proc = cdp_pull._launch()
+        time.sleep(20)
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.connect_over_cdp(
+                    "http://127.0.0.1:{}".format(cdp_pull.CDP_PORT))
+                ctx = (browser.contexts[0] if browser.contexts
+                       else browser.new_context())
+                page = ctx.pages[0] if ctx.pages else ctx.new_page()
+                tp._ensure_tableau_authenticated(page, verbose=False,
+                                                 allow_form_login=True)
+                for url in urls:
+                    log("URL| {}".format(url))
+                    try:
+                        r = page.context.request.get(url, timeout=300_000)
+                        body = (r.body() or b"").decode("utf-8-sig",
+                                                        errors="replace")
+                    except Exception as e:  # noqa: BLE001
+                        log("URL| ERROR {}".format(type(e).__name__))
+                        continue
+                    lines = [l for l in body.splitlines() if l.strip()]
+                    hits = [l for l in lines[1:]
+                            if needle and needle.lower() in l.lower()]
+                    log("URL| status={} rows={} hits={}".format(
+                        r.status, max(0, len(lines) - 1), len(hits)))
+                    if lines:
+                        log("URL|   HDR " + lines[0][:200])
+                    for l in hits[:8]:
+                        log("URL|   HIT " + l[:200])
+        finally:
+            try:
+                proc.terminate()
+            except Exception:  # noqa: BLE001
+                pass
+            cdp_pull._kill_ours()
+    return 0
+
+
 def probe_csv(o: B2BOffice, view_key: str = "out_of_bounds",
               today: dt.date = None, log=print) -> int:
     """Fetch the view's .csv for the target week, the week the viewer insists on,
