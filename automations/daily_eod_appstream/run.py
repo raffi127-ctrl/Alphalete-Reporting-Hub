@@ -69,7 +69,7 @@ OUT_DIR = REPO_ROOT / "output" / "daily_eod_appstream"
 
 ARS_MGMT_SHEET = "1l4Q0SreuddKZrgXwb9MytF-EdPZH-H1hLsa69epq-n8"   # ARS Management 2.0
 
-PROD_TO = ["camilahk@arsinterviewsservice.com",
+PROD_TO = ["camilahornosk@gmail.com",
            "eve@alphaletemarketing.com"]      # Eve copied to watch it go out
 TEST_TO = ["eve@alphaletemarketing.com"]   # hand runs without --production
 
