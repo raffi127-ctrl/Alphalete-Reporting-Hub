@@ -18,8 +18,10 @@ Automates what the recruiters do by hand every evening (Loom
      the next run (shared/slack_tag_learning). If a recruiter already posted
      the day's Daily Update, only the tags go into THEIR thread.
 
-Schedule: Report Library card, 5:00 PM CT Mon-Sat (Megan 2026-10-14) —
-`--write --post`.
+Schedule: Report Library card, 5:00 PM CT Mon-Sat (Megan 2026-10-14).
+TEST PHASE (Raf): `--write --test-sheet --post --channel C0BH637AM8F` —
+writes "Daily Update 2026 - LUCY" and posts in #org-indeed-accounts. The
+real sheet + #rafs-office-recruiting-11280 wait for Raf's go.
 
     python -m automations.raf_daily_update.run                        # dry: today
     python -m automations.raf_daily_update.run --date 2026-10-13 --compare-real
@@ -50,7 +52,10 @@ except Exception:  # noqa: BLE001
 CENTRAL = ZoneInfo("America/Chicago")
 OFFICE_ID = "11280"                                       # Rafael Hidalgo
 REAL_SHEET = "1hMdhHAFjFX9QJnXkFzH216Ti6aPbrmiO8DjUU1gaTnw"   # Raf's Daily Update
-TEST_SHEET = "15HUvyLJTyLTv_dxwQl2Hmxbs3KKdEZYbaccm8MDEw4o"   # copy made 10/14
+# Raf's test copy, "Daily Update 2026 - LUCY" (Megan 2026-10-14). Raf wants
+# a TEST first — the card writes this and posts in #org-indeed-accounts.
+TEST_SHEET = "1qFChT5PX2AU8Yu-0QmpZswV6zfhhi4u_72BWyiMPcZY"
+TEST_CHANNEL = "C0BH637AM8F"                    # #org-indeed-accounts
 CHANNEL = "C0AUAS88FGW"                       # #rafs-office-recruiting-11280
 # Who gets asked to tag a leader Lucy can't (Megan 2026-10-14).
 TAG_HELPERS = {"Aisha Ceron": "U083X5ZJWSH", "Rafael Hidalgo": "U045Z8N0ZQC"}
