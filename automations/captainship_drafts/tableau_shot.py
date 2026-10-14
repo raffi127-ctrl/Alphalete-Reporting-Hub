@@ -80,6 +80,14 @@ _TEAMSTATS: dict[str, Tuple[str, Optional[str], Optional[str]]] = {
     # SmartCircle can create one — nothing on our side could be built to work
     # around it. Eve confirmed the value is now in the dropdown, so he takes the
     # same base view and field as the other three.
+    #
+    # 2026-10-14: "Carlos's Team" and "Atef's Team" are GONE from the filter
+    # (dropdown: Blake, Cody, Devin, Eveliz, Luis, Luke, Ricky, Unassigned) —
+    # most of Carlos's owners and Atef sit in Unassigned now, Jackie LeRoy and
+    # Dhyey Patel in Blake's. Filtering on the old value rendered headers only
+    # and both were held from auto-send. They now filter on Owner Name = their
+    # Org Sales Board block instead (_BOARD_ROSTER below), the way
+    # owners_metrics_churn went on 10/13. The value here is unused for them.
     "atef":   (_B2B_VIEW, _B2B_FIELD, "Atef's Team"),
     "khalil": (_NDS_VIEW, _NDS_FIELD, "Khalil's Team"),
     "colten": (_NDS_VIEW, _NDS_FIELD, "Colten's Team"),
@@ -123,6 +131,50 @@ def _filtered_url(base: str, field: Optional[str], value: Optional[str]) -> str:
     if not field or value is None:
         return f"{base}?:iid=1"
     return f"{base}?{quote(field)}={quote(value)}&:iid=1"
+
+
+# Captains whose §2 filters on their Org Sales Board block (captain_key → board
+# captain name) instead of a team value Tableau no longer has. See _TEAMSTATS.
+_BOARD_ROSTER = {"carlos": "Carlos", "atef": "Atef"}
+# Every value of _B2B_FIELD as of 2026-10-14. The base view's saved team filter
+# leaves out Unassigned/Devin/Luke, so an Owner Name filter alone drops anyone
+# sitting there; listing all of them shows the board's "(Todo)". A team
+# SmartCircle adds later is NOT in here — an owner moved onto it vanishes from
+# the shot, so add it. (An empty value hangs the render — don't try it.)
+_B2B_ALL_TEAMS = ("Blake's Team", "Cody's Team", "Devin's Team", "Eveliz's Team",
+                  "Luis's Team", "Luke's Team", "Ricky's Team", "Unassigned")
+
+
+def _owner_filter_values(names, aliases: dict) -> list:
+    """Every spelling of each board name the ICD Aliases sheet knows, verbatim.
+    Tableau's URL filter is CASE-SENSITIVE ('Jackie Leroy' misses 'Jackie
+    LeRoy'), so case-only variants are kept — get_search_candidates folds those
+    away. Values Tableau doesn't have are ignored."""
+    from automations.focus_office_att.aliases import _norm_name
+    out = []
+    for name in names:
+        group = [name]
+        for canonical, alts in aliases.items():
+            if _norm_name(name) in {_norm_name(x) for x in (canonical, *alts)}:
+                group += [canonical, *alts]
+        for v in group:
+            v = v.strip()
+            if v and v not in out:
+                out.append(v)
+    return out
+
+
+def _board_roster_url(base: str, captain: str) -> str:
+    """The B2B view filtered to every team and to the captain's board owners.
+    Raises if the board block is missing/empty (board_roster refuses) — the
+    caller degrades that to the pending note, never an unfiltered board."""
+    from automations.carlos_captainship_headcount.roster import board_roster
+    from automations.focus_office_att.aliases import load_aliases
+    owners = _owner_filter_values(board_roster(captain), load_aliases())
+    teams = ",".join(quote(t) for t in _B2B_ALL_TEAMS)
+    names = ",".join(quote(n) for n in owners)
+    return (f"{base}?{quote(_B2B_FIELD)}={teams}"
+            f"&{quote('Owner Name')}={names}&:iid=1")
 
 
 def _spec_for(captain_key: str, flavor: str) -> Optional[dict]:
@@ -633,6 +685,12 @@ def captain_tableau_shot(captain_key: str, flavor: str, out_dir: Path, *,
     spec = _spec_for(captain_key, flavor)
     if spec is None:
         return None
+    if flavor in _TEAMSTATS_FLAVORS and captain_key in _BOARD_ROSTER:
+        # Resolved here, not in _spec_for: email_build calls that just to ask
+        # "is §2 configured?" and must not read the Org Sales Board for it.
+        spec["url"] = _board_roster_url(_TEAMSTATS[captain_key][0],
+                                        _BOARD_ROSTER[captain_key])
+        logfn(f"   · {captain_key} §2: board roster filter → {spec['url']}")
     from automations.shared.tableau_patchright import tableau_session
     from automations.tableau_screenshots import capture
     out_dir = Path(out_dir)
