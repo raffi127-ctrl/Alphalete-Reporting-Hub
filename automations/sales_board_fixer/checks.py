@@ -164,7 +164,7 @@ def _cell_pattern(formula: str, row: int) -> str:
 DAY_WORDS = {"MON": "Monday", "TUE": "Tuesday", "TUES": "Tuesday", "WED": "Wednesday",
              "THU": "Thursday", "THUR": "Thursday", "THURS": "Thursday", "FRI": "Friday",
              "SAT": "Saturday", "SUN": "Sunday"}
-SUB_WORDS = {"APPS", "INT"}
+SUB_WORDS = {"APPS", "UNITS", "INT"}   # B2B boards say Units (Eveliz, 2026-10-14)
 
 
 @dataclass(frozen=True)
@@ -197,6 +197,16 @@ def layout(values) -> Layout:
         if c:
             name_col, last = c, r - 1
             break
+    else:
+        # Eveliz's B2B board (2026-10-14) has no TOTALS label: its totals row
+        # is blank in the name column. Names sit left of the first day banner;
+        # the block ends at the first blank name.
+        first_day = next((c for c in range(1, len(values[day - 1]) + 1)
+                          if _g(values, day, c).strip().upper() in DAY_WORDS), 0)
+        if 1 < first_day <= 6 and _g(values, sub + 1, first_day - 1).strip():
+            name_col = first_day - 1
+            last = next((r - 1 for r in range(sub + 1, len(values) + 1)
+                         if not _g(values, r, name_col).strip()), len(values))
     lay = Layout(name_col, day, sub, last)
     _LAYOUT.clear()                     # one tab at a time
     _LAYOUT[id(values)] = (values, lay)

@@ -36,6 +36,7 @@ import datetime as dt
 import json
 import re
 import sys
+import time
 from pathlib import Path
 
 try:
@@ -305,11 +306,34 @@ def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "",
 # --- owners' All-in-One workbooks (2026-10-12) -------------------------------
 
 OWNERS_FILE = Path(__file__).with_name("owners.json")
-# a bare week date ('10.12') is a board too: Cyrus keeps one set of tabs per
-# week, '10.12' + '10.12 Linep' + '10.12 Stations' (2026-10-13)
-BOARD_NAME = re.compile(r"sales\s*board|^\s*w\.?\s*e\b|^\s*\d{1,2}\.\d{1,2}\s*$", re.I)
+# a bare week date ('10.12', '10/12') is a board too: Cyrus keeps one set of
+# tabs per week, '10.12' + '10.12 Linep' + '10.12 Stations' (2026-10-13);
+# Salik/Hammad one tab per Monday, '10/12', '10/5'... (2026-10-14)
+BOARD_NAME = re.compile(r"sales\s*board|^\s*w\.?\s*e\b|^\s*\d{1,2}[./]\d{1,2}\s*$", re.I)
 SIDE_NAME = re.compile(r"line\s*u?p|stations", re.I)
-WEEK_PREFIX = re.compile(r"^\s*(\d{1,2}\.\d{1,2})\b")
+WEEK_PREFIX = re.compile(r"^\s*(\d{1,2}[./]\d{1,2})\b")
+DATED_TAB = re.compile(r"^\s*(\d{1,2})[./](\d{1,2})\s*$")
+
+
+def this_weeks_tab(visible, today: dt.date):
+    """The bare-date tab ('10/12') dated in the last 7 days, newest wins.
+    Salik/Hammad keep a dead 'Fiber Sales Board' (WE 8/24) leftmost, so
+    leftmost-with-reps alone would pick the wrong board."""
+    best = None
+    for t in visible:
+        m = DATED_TAB.match(t)
+        if not m:
+            continue
+        try:
+            d = dt.date(today.year, int(m.group(1)), int(m.group(2)))
+        except ValueError:
+            continue
+        if d > today + dt.timedelta(days=6):  # a December tab read in January
+            d = d.replace(year=today.year - 1)
+        # tabs are named by Monday: next week's tab can exist by Sunday
+        if 0 <= (today - d).days <= 6 and (best is None or d > best[0]):
+            best = (d, t)
+    return best[1] if best else None
 
 
 def side_tabs(visible, picked) -> list:
@@ -332,12 +356,14 @@ def owner_tabs(sh, boards: int = 1) -> list:
     """The tabs to check in an owner's All-in-One: the leftmost visible sales
     board(s) with reps on it -- owners keep the current week first, and name
     it anything ('Sales Board', 'NEW Sales Board', 'Sales Board W.E 10.11') --
-    plus the visible Line Up / Stations tabs (side_tabs)."""
+    plus the visible Line Up / Stations tabs (side_tabs). A tab named with
+    this week's date ('10/12') goes ahead of the leftmost one."""
     meta = sh.fetch_sheet_metadata({"fields": "sheets(properties(title,hidden))"})
     visible = [s["properties"]["title"] for s in meta["sheets"]
                if not s["properties"].get("hidden")]
     picked = []
-    for title in visible:
+    dated = this_weeks_tab(visible, dt.date.today())
+    for title in ([dated] if dated else []) + [t for t in visible if t != dated]:
         if len(picked) >= boards:
             break
         if BOARD_NAME.search(title) and not title.lower().startswith("copy of"):
@@ -417,14 +443,30 @@ def run_owners(only, do_apply: bool, stamp: str) -> dict:
             continue
         try:
             sh = _book(o["sheet_id"])
-            tabs = owner_tabs(sh, o.get("boards", 1))
+            # one book shared by several owners names its tabs by owner
+            # ('COLTEN', 'JAIRO'): list them in owners.json (2026-10-14)
+            tabs = ([t for t in o["tabs"] if t in _tabs(sh)] if o.get("tabs")
+                    else owner_tabs(sh, o.get("boards", 1)))
         except Exception as e:  # noqa: BLE001 -- one owner's sheet never stops the rest
             print("== %s: NO se pudo abrir (%s)" % (o["name"], type(e).__name__))
             continue
         print("== %s: %s" % (o["name"], tabs or "sin board en uso"))
         # writing on an owner's sheet is switched on owner by owner, in owners.json
         on = do_apply and o.get("apply", False)
-        res = run_tabs(sh, tabs, stamp, on, label=o["name"] + " · ", kinds=OWNER_KINDS)
+        # Miami's big book (2026-10-14) ran the read quota out mid-owner: wait
+        # out the minute and redo that owner (a fix already written re-audits
+        # clean). Anything else skips the owner, never the rest of the run.
+        res = {}
+        for attempt in (1, 2):
+            try:
+                res = run_tabs(sh, tabs, stamp, on, label=o["name"] + " · ", kinds=OWNER_KINDS)
+                break
+            except Exception as e:  # noqa: BLE001
+                if attempt == 1 and "429" in str(e):
+                    print("  cuota de lectura de Google -- espero 70s y repito")
+                    time.sleep(70)
+                    continue
+                print("== %s: se cortó (%s)" % (o["name"], type(e).__name__))
         results.update(res)
         if on:
             for tab, found in res.items():

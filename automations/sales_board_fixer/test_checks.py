@@ -162,6 +162,19 @@ class OwnerLayout(unittest.TestCase):
     def test_line_up_is_not_a_board(self):
         self.assertFalse(K.is_board([["Trainer", "New Start"], ["Ana", "Bo"]]))
 
+    def test_b2b_board_units_and_no_totals_label(self):
+        # Eveliz's 'Sales Board Miami B2B': Units not Apps, totals row unlabeled
+        v = [[" ", "", "MON", "", "", "", "", "TUE"],
+             ["", "", "", "", "", "", "", ""],
+             ["", "RANKING SALES BOARD", "Units", "INT", "AIR", "VOIP", "NL", "Units"],
+             ["1", "Kenna Brito", "7.0", "", "1", "", "6", "8.0"],
+             ["2", "ZZ EXTRA", "0.0", "", "", "", "", "0.0"],
+             ["", "", "25.0", "", "", "", "", ""],
+             ["", "Last Week", "", "", "", "", "", ""]]
+        lay = K.layout(v)
+        self.assertEqual((lay.name_col, lay.sub_row, lay.last), (2, 3, 5))
+        self.assertTrue(K.is_board(v))
+
 
 class OwnerTabs(unittest.TestCase):
     def test_week_dated_side_tabs_only_for_the_picked_week(self):
@@ -172,6 +185,16 @@ class OwnerTabs(unittest.TestCase):
         self.assertFalse(BOARD_NAME.search("10.12 Stations"))
         self.assertEqual(side_tabs(visible, ["10.12"]),
                          ["10.12 Linep", "10.12 Stations", "Territory Line Up"])
+
+    def test_this_weeks_dated_tab_beats_a_dead_leftmost_board(self):
+        import datetime as dt
+        from automations.sales_board_fixer.run import this_weeks_tab, BOARD_NAME
+        visible = ["Fiber Sales Board", "10/12", "10/5", "9/28", "Line Up ", "Stations"]
+        self.assertTrue(BOARD_NAME.search("10/12"))
+        self.assertEqual(this_weeks_tab(visible, dt.date(2026, 10, 14)), "10/12")
+        self.assertEqual(this_weeks_tab(visible, dt.date(2026, 10, 11)), "10/5")
+        self.assertIsNone(this_weeks_tab(visible, dt.date(2026, 11, 20)))
+        self.assertEqual(this_weeks_tab(["12/28"], dt.date(2027, 1, 2)), "12/28")
 
 
 class OwnerRepeats(unittest.TestCase):
