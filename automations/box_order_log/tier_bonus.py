@@ -84,11 +84,37 @@ def _spec(owner: str, day) -> dict:
     }
 
 
-def _check(path: Path, owner: str) -> str:
+def _filter_text(page) -> str:
+    """The viz's filter captions as Tableau rendered them, on one line.
+
+    An empty board has more than one cause, and the old message guessed
+    "spelling" for all of them. 2026-10-14: Ryan's board came back empty on
+    Lucy 1 with the right name, while the same login on Megan's Mac rendered 8
+    reps — the only way to tell which filter sat wrong is to read what the
+    board itself says ("Selected Weekending …", "Rep Name (…)").
+    """
+    try:
+        from automations.tableau_screenshots.capture import _IFRAME
+        text = page.frame_locator(_IFRAME).locator("body").inner_text(
+            timeout=5_000)
+    except Exception:                                     # noqa: BLE001
+        return ""
+    lines = [ln.strip() for ln in text.split("Highlighted Reps")[0].splitlines()
+             if ln.strip()]
+    # The toolbar and the workbook's tab strip come first; keep only the view
+    # in use ("View: Original" vs a saved custom view) and the filter block.
+    view = next((ln for ln in lines if ln.startswith("View:")), "")
+    start = next((i for i, ln in enumerate(lines)
+                  if ln.startswith("Selected Weekending")), len(lines))
+    return " · ".join(([view] if view else []) + lines[start:])[:300]
+
+
+def _check(path: Path, owner: str, shown: str = "") -> str:
     """Return a warning string for a board that looks wrong, else "".
 
-    Raises on an empty board: that means the Owner Name slice missed, and an
-    empty tier board in the thread is worse than no tier board at all.
+    Raises on an empty board, quoting the filters the board showed (`shown`) so
+    the failure says WHICH one missed — an empty tier board in the thread is
+    worse than no tier board at all.
     """
     from PIL import Image
     with Image.open(path) as im:
@@ -96,9 +122,8 @@ def _check(path: Path, owner: str) -> str:
     if height <= EMPTY_MAX_PX:
         raise RuntimeError(
             "the Box Tier Bonus board came back empty for Owner Name={!r} "
-            "({}px tall). The filter value has to match the board's Owner Name "
-            "member exactly — check the spelling on the view.".format(
-                owner, height))
+            "({}px tall). The board showed: {}".format(
+                owner, height, shown or "(filter text not readable)"))
     if height >= CLIP_SUSPECT_PX:
         return ("the tier board ran to the bottom of its scroll region "
                 "({}px) — {} may now have more reps than fit in one image, so "
@@ -117,13 +142,22 @@ def capture(dest_dir: Path, owner: str = DEFAULT_OWNER, *,
     from automations.tableau_screenshots import capture as cap
     spec = _spec(owner, day or _dt.date.today())
     dest_dir = Path(dest_dir)
+    seen = {"text": ""}
+
+    def _read_filters(pg):
+        seen["text"] = _filter_text(pg)
+
     if page is not None:
-        out = cap.capture_page(page, spec, dest_dir, verbose=verbose)
+        out = cap.capture_page(page, spec, dest_dir, verbose=verbose,
+                               after_load=_read_filters)
     else:
         from automations.shared.tableau_patchright import tableau_session
         with tableau_session(verbose=verbose) as own_page:
-            out = cap.capture_page(own_page, spec, dest_dir, verbose=verbose)
-    warning = _check(out, owner)
+            out = cap.capture_page(own_page, spec, dest_dir, verbose=verbose,
+                                   after_load=_read_filters)
+    if verbose and seen["text"]:
+        print("   filters shown: {}".format(seen["text"]), flush=True)
+    warning = _check(out, owner, seen["text"])
     if warning and verbose:
         print("  ⚠ {}".format(warning), flush=True)
     return out, warning
@@ -141,7 +175,7 @@ def capture_quietly(dest_dir: Path, owner: str = DEFAULT_OWNER, *,
     try:
         return capture(dest_dir, owner, page=page, day=day, verbose=verbose)
     except Exception as exc:                              # noqa: BLE001
-        msg = "{}: {}".format(type(exc).__name__, str(exc).splitlines()[0][:200])
+        msg = "{}: {}".format(type(exc).__name__, str(exc).splitlines()[0][:450])
         if verbose:
             print("  ✗ Box Tier Bonus board not captured — {}".format(msg),
                   flush=True)
