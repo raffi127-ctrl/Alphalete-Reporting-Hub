@@ -15,9 +15,15 @@ per leader per month, newest month on top:
 
 and a slicer on the Month column is the dropdown. Picking a month hides the
 other months' rows; the recruiter types into the rows they see, same as today.
-The TOTALS row uses SUBTOTAL(109, ...), which skips rows the slicer hid, so it
-always totals the month on screen. Color rules cover the whole % columns once,
-so a new month can never come without them.
+
+Each month STARTS with its own TOTALS row and one row per team (Kind column =
+'sum'), SUMIFS over that month's leader rows. They carry the month in column A,
+so the picker shows and hides them together with the leaders. (First try had
+one TOTALS block above the table on SUBTOTAL(109): a slicer someone moves is
+their own private view, and formulas only ever see the shared one -- so
+TOTALS read 584, both months, while the screen showed October. 2026-10-14.)
+Color rules cover the whole % columns once, so a new month can never come
+without them.
 
 WHO GOES IN A NEW MONTH: every non-terminated leader on the sales board
 (Level 1 / 2 / 3 / Mastermind -- gap_alerts.leaders, which already knows the
@@ -47,6 +53,13 @@ ACCEPTED, BOB_PCT = "BOB # / Accepted", "BOB %"
 NS_SCHED, NS_SHOWED, NS_PCT = "New Start Scheduled", "New starts showed", "NS Showed %"
 HEADERS = [MONTH, TEAM, LEADER, CONDUCTED, OFFERED, OFFERED_PCT,
            ACCEPTED, BOB_PCT, NS_SCHED, NS_SHOWED, NS_PCT]
+# Hidden column right after the table: SUM on a month's TOTALS / team rows,
+# blank on a leader row. The summary formulas count only the blank ones.
+KIND, SUM = "Kind", "sum"
+TOTALS = "TOTALS"
+# Team rows a new month starts with, in this order; a team only shows up if
+# somebody in the month is on it. Any other team on the board goes after these.
+TEAMS = ["Alphaletes", "Ceaseless", "Hashiras", "Mindset Engine", "Se7en Sins"]
 COUNTS = [CONDUCTED, OFFERED, ACCEPTED, NS_SCHED, NS_SHOWED]
 # % column -> (numerator, denominator, green at/above, red below). Cuts are the
 # tab's own "Metric Goals" legend, same as sheet_format_audit.METRICS.
@@ -111,6 +124,7 @@ class Row:
     team: str
     name: str
     counts: Dict[str, str]
+    summary: bool = False          # a TOTALS / team row, not a leader
 
     def has_numbers(self) -> bool:
         return any(str(v).strip() not in ("", "0") for v in self.counts.values())
@@ -133,10 +147,20 @@ def missing_from_month(leaders: Sequence[Person], month_rows: Sequence[Row]) -> 
             if not any(same_person(p.name, r.name) for r in month_rows)]
 
 
+_COL = {h: i + 1 for i, h in enumerate(HEADERS + [KIND])}
+
+
+def pct_formula(h: str, row: int) -> str:
+    """Blank until the denominator has a number, so an empty row shows
+    nothing instead of a row of 0%s."""
+    num, den = (col_letter(_COL[x]) for x in PCTS[h][:2])
+    return '=if(n(%s%d)=0,"",%s%d/%s%d)' % (den, row, num, row, den, row)
+
+
 def row_values(month: str, p: Person, row: int,
                counts: Optional[Dict[str, object]] = None) -> List[object]:
-    """One full row: typed cells blank (or seeded), % cells as formulas."""
-    col = {h: i + 1 for i, h in enumerate(HEADERS)}
+    """One leader row: typed cells blank (or seeded), % cells as formulas.
+    Kind (last) stays blank -- that is what makes it a leader row."""
     counts = counts or {}
     out = []  # type: List[object]
     for h in HEADERS:
@@ -147,11 +171,47 @@ def row_values(month: str, p: Person, row: int,
         elif h == LEADER:
             out.append(clean_name(p.name))
         elif h in PCTS:
-            num, den = PCTS[h][0], PCTS[h][1]
-            out.append("=iferror(%s%d/%s%d,0)" % (col_letter(col[num]), row,
-                                                 col_letter(col[den]), row))
+            out.append(pct_formula(h, row))
         else:
             out.append(counts.get(h, ""))
+    return out + [""]
+
+
+def month_teams(people: Sequence[Person]) -> List[str]:
+    have = {p.team.strip() for p in people if p.team.strip()}
+    return [t for t in TEAMS if t in have] + sorted(have - set(TEAMS))
+
+
+def summary_values(month: str, teams: Sequence[str], row: int,
+                   top: int, end: int) -> List[List[object]]:
+    """The TOTALS row + one row per team that open a month, starting at sheet
+    row `row`. SUMIFS over rows top..end (top = the header row, so rows
+    inserted under it stay inside) where Month matches and Kind is blank."""
+    def c(h):
+        a = col_letter(_COL[h])
+        return "$%s$%d:$%s$%d" % (a, top, a, end)
+
+    out = []
+    for i, team in enumerate([TOTALS] + list(teams)):
+        r = row + i
+        where = "%s,$A%d,%s,\"<>%s\"" % (c(MONTH), r, c(KIND), SUM)
+        if team != TOTALS:
+            where += ",%s,$B%d" % (c(TEAM), r)
+        n = "COUNTIFS(%s)" % where
+        busy = 'COUNTIFS(%s,%s,">0")' % (where, c(CONDUCTED))
+        vals = []  # type: List[object]
+        for h in HEADERS:
+            if h == MONTH:
+                vals.append(month)
+            elif h == TEAM:
+                vals.append(team)
+            elif h == LEADER:
+                vals.append('=%s&" leaders · "&%s&" interviewing"' % (n, busy))
+            elif h in PCTS:
+                vals.append(pct_formula(h, r))
+            else:
+                vals.append("=SUMIFS(%s,%s)" % (c(h), where))
+        out.append(vals + [SUM])
     return out
 
 
@@ -165,6 +225,8 @@ def months_in(rows: Sequence[Row]) -> List[str]:
 
 
 def month_block(rows: Sequence[Row], month: str) -> Tuple[List[Row], Optional[int]]:
-    """(this month's rows, the sheet row just after its last one)."""
-    mine = [r for r in rows if r.month == month]
-    return mine, (max(r.row for r in mine) + 1 if mine else None)
+    """(this month's LEADER rows, the sheet row just after its last row of
+    any kind)."""
+    every = [r for r in rows if r.month == month]
+    return ([r for r in every if not r.summary],
+            max(r.row for r in every) + 1 if every else None)
