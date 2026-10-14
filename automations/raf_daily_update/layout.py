@@ -251,22 +251,35 @@ def hires_by_leader(rows: List[dict]) -> "OrderedDict[str, List[dict]]":
     return out
 
 
-def tag_text(rows: List[dict], slack_ids: Dict[str, str]) -> str:
+def tag_text(rows: List[dict], slack_ids: Dict[str, str],
+             helpers: Optional[List[str]] = None) -> str:
     """One line per leader who hired today: their tag (or bold name when we
-    have no Slack id) and who they hired, with the start date."""
+    have no Slack id) and who they hired, with the start date. Leaders we
+    can't tag are listed once more for `helpers` (Aisha, Raf) to tag by hand
+    — their tag is learned for next time."""
     groups = hires_by_leader(rows)
     if not groups:
         return ""
-    lines = ["*Your new hires today* — please text them and reply "
-             "“sent”:"]
+    lines = ["*Your new hires today* \u2014 please text them and reply "
+             "\u201csent\u201d:"]
+    missing = []
     for leader, hires in groups.items():
         sid = slack_ids.get(_norm(leader))
+        if not sid and leader != "No leader listed":
+            missing.append(leader)
         who = f"<@{sid}>" if sid else f"*{leader}*"
         names = ", ".join(
             f"{h['first']} {h['last']}".strip()
             + (f" (starts {h['bob_date']})" if h["bob_date"] else "")
             for h in hires)
-        lines.append(f"• {who}: {names}")
+        lines.append(f"\u2022 {who}: {names}")
+    if missing and helpers:
+        lines.append("")
+        lines.append(" ".join(f"<@{h}>" for h in helpers)
+                     + " \u2014 I couldn\u2019t tag "
+                     + ", ".join(f"*{m}*" for m in missing)
+                     + ". Can you tag them here? I\u2019ll remember them "
+                       "for next time.")
     return "\n".join(lines)
 
 

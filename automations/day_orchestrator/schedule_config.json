@@ -1949,7 +1949,7 @@
   "raf_daily_update": {
    "on_scheduler": false,
    "machine": "Lucy 2",
-   "_note": "Raf's Daily Update TEST (Raf, #l10-alphalete 2026-10-13). AppStream office 11280 Retention Details -> one row per 2nd-round candidate on the month tab of the TEST COPY of 'Daily Update & 2nd Round Retention 2026' (15HUvy...; the real sheet 1hMdhH... is READ ONLY, code refuses to write it) + a Slack thread (Daily Update M/D, congrats ask, pre-made text, picture of showed rows, tags per hiring leader) only with --post --channel. Reuses daily_update_fill.harvest_office. DRY-RUN default. `lucy rerun raf_daily_update --date 2026-10-13 --compare-real` grades AppStream against what the recruiters typed. Not scheduled until Raf signs off.",
+   "_note": "Raf's Daily Update (Raf, #l10-alphalete 2026-10-13; LIVE 2026-10-14, Megan). AppStream office 11280 Retention Details + calendar (outcome, start date, start time) -> one row per 2nd-round candidate on the month tab of Raf's 'Daily Update & 2nd Round Retention 2026' (1hMdhH...; skips anyone already typed) + the Daily Update thread in #rafs-office-recruiting-11280 (congrats ask, pre-made text, picture, a tag per hiring leader; untaggable leaders go to Aisha/Raf and are learned next run). If a recruiter already posted the day's Daily Update it only adds the tags to their thread. SCHEDULE: Report Library card raf_daily_update, 5:00 PM CT Mon-Sat on Lucy 2 (card_scheduler, --write --post). Matched the real sheet 33/33 (10/13), 34/34 (10/12). `lucy rerun raf_daily_update` = dry preview; --compare-real grades a day against the recruiters' rows.",
    "display_name": "Raf Daily Update (TEST)",
    "source_type": "appstream",
    "data_sources": [],

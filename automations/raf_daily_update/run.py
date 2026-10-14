@@ -1,38 +1,40 @@
-"""Raf's Daily Update — TEST automation (Raf, #l10-alphalete, 2026-10-13).
+"""Raf's Daily Update (Raf, #l10-alphalete, 2026-10-13; live 2026-10-14).
 
 Automates what the recruiters do by hand every evening (Loom
 49724e847c734b69beef6e17915bf81f):
 
   1. ApplicantStream → Reports → Retention Details New → the day's
-     2nd round interviews (office 11280).
-  2. One row per candidate on the month's tab of the Daily Update sheet:
+     2nd round interviews (office 11280), plus the calendar for each
+     person's outcome, start date and start time.
+  2. One row per candidate on the month's tab of Raf's Daily Update sheet:
      NO SHOW / Leader said no / BOB (+ start date, time) / LM / Letting me
-     know / Declined, sorted BOB → Declined → Leader said no → LM.
-  3. Slack: parent "Daily Update M/D", then in the thread the congrats ask,
-     the pre-made text, the picture of the day's showed rows, and a tag for
-     every leader who hired someone.
+     know / Declined, sorted BOB → Declined → Leader said no → LM. Anyone
+     already on the tab for that day is skipped (re-runs and hand entries
+     are safe).
+  3. Slack (#rafs-office-recruiting-11280): parent "Daily Update M/D", then
+     the congrats ask, the pre-made text, the picture of the day's showed
+     rows, and a tag for every leader who hired someone. A leader Lucy can't
+     tag is named for @Aisha and @Raf to tag; their hand-tag is learned on
+     the next run (shared/slack_tag_learning). If a recruiter already posted
+     the day's Daily Update, only the tags go into THEIR thread.
 
-TEST ONLY. It writes the TEST copy of the sheet and refuses the real one; it
-posts only with --post AND an explicit --channel. Raf: "I don't want it to
-impact my real one."
+Schedule: Report Library card, 5:00 PM CT Mon-Sat (Megan 2026-10-14) —
+`--write --post`.
 
     python -m automations.raf_daily_update.run                        # dry: today
     python -m automations.raf_daily_update.run --date 2026-10-13 --compare-real
-    python -m automations.raf_daily_update.run --write                # test sheet
-    python -m automations.raf_daily_update.run --write --post --channel C0XXXX
+    python -m automations.raf_daily_update.run --write --post         # the live run
+    python -m automations.raf_daily_update.run --write --test-sheet   # test copy
 
---seed-from-real reads the day's rows off the REAL sheet (read-only) instead
-of ApplicantStream — exercises the sheet + picture + Slack legs on a machine
-with no AppStream session.
-
-Needs (for the AppStream leg) the warm 'Lucy Reports' session — run on a Lucy:
-    lucy rerun raf_daily_update --date 2026-10-13 --compare-real
+--seed-from-real reads the day's rows off the real sheet (read-only) instead
+of ApplicantStream. Needs the warm 'Lucy Reports' AppStream session.
 """
 from __future__ import annotations
 
 import argparse
-import re
 import datetime as dt
+import json
+import re
 import sys
 from pathlib import Path
 from typing import Dict, List
@@ -47,9 +49,13 @@ except Exception:  # noqa: BLE001
 
 CENTRAL = ZoneInfo("America/Chicago")
 OFFICE_ID = "11280"                                       # Rafael Hidalgo
-REAL_SHEET = "1hMdhHAFjFX9QJnXkFzH216Ti6aPbrmiO8DjUU1gaTnw"   # READ ONLY
+REAL_SHEET = "1hMdhHAFjFX9QJnXkFzH216Ti6aPbrmiO8DjUU1gaTnw"   # Raf's Daily Update
 TEST_SHEET = "15HUvyLJTyLTv_dxwQl2Hmxbs3KKdEZYbaccm8MDEw4o"   # copy made 10/14
+CHANNEL = "C0AUAS88FGW"                       # #rafs-office-recruiting-11280
+# Who gets asked to tag a leader Lucy can't (Megan 2026-10-14).
+TAG_HELPERS = {"Aisha Ceron": "U083X5ZJWSH", "Rafael Hidalgo": "U045Z8N0ZQC"}
 OUT_DIR = Path(__file__).resolve().parents[2] / "output" / "raf_daily_update"
+STATE = OUT_DIR / "state.json"        # posted threads + names awaiting a tag
 
 
 def log(msg: str) -> None:
@@ -433,10 +439,12 @@ def compare(rows: List[dict], day: dt.date) -> int:
 
 # -------------------------------------------------------------------- write
 
-def write_test_sheet(rows: List[dict], day: dt.date, write: bool) -> int:
-    if TEST_SHEET == REAL_SHEET:                       # belt and braces
-        raise RuntimeError("refusing to write Raf's real Daily Update")
-    ws, lay, grid = read_tab(TEST_SHEET, day)
+def write_sheet(rows: List[dict], day: dt.date, write: bool,
+                sheet_id: str = REAL_SHEET) -> int:
+    """Append the day's rows nobody has typed yet, below the tab's last row.
+    Only the mapped cells are written — the MONTHLY TOTALS block right of
+    the table and every existing row are never touched."""
+    ws, lay, grid = read_tab(sheet_id, day)
     cols = sorted(lay.values())
     have = []
     last = 1
@@ -448,7 +456,8 @@ def write_test_sheet(rows: List[dict], day: dt.date, write: bool) -> int:
         if d:
             have.append(L.person_key(d, raw[lay["first"]], raw[lay["last"]]))
     add = L.new_rows(rows, have)
-    log(f"  test sheet tab {ws.title!r}: {len(rows)} for {day}, "
+    which = "test sheet" if sheet_id == TEST_SHEET else "sheet"
+    log(f"  {which} tab {ws.title!r}: {len(rows)} for {day}, "
         f"{len(rows) - len(add)} already there, appending {len(add)} "
         f"at row {last + 1}" + ("" if write else "  (dry-run)"))
     if not (write and add):
@@ -470,31 +479,117 @@ def write_test_sheet(rows: List[dict], day: dt.date, write: bool) -> int:
 
 # -------------------------------------------------------------------- slack
 
-def slack_ids(rows: List[dict], live: bool) -> Dict[str, str]:
-    """{leader name lower: Slack id}. The shared learned-tags list first; on
-    a live post, the workspace member list for anyone it lacks."""
+def _load_state() -> dict:
+    try:
+        return json.loads(STATE.read_text())
+    except Exception:  # noqa: BLE001
+        return {"posted": {}, "pending": []}
+
+
+def _save_state(st: dict) -> None:
+    STATE.parent.mkdir(parents=True, exist_ok=True)
+    STATE.write_text(json.dumps(st, indent=1))
+
+
+def learn_pending(client, st: dict) -> None:
+    """Read the threads where Lucy asked Aisha/Raf to tag someone; every
+    leader they hand-tagged since is learned for good. Asks older than two
+    weeks are dropped."""
     from automations.shared import slack_tag_learning as tags
-    out = {}
-    client = None
+    keep = []
+    cutoff = dt.date.today() - dt.timedelta(days=14)
+    for p in st.get("pending", []):
+        if dt.date.fromisoformat(p["day"]) < cutoff:
+            continue
+        try:
+            msgs = client.conversations_replies(
+                channel=p["channel"], ts=p["thread_ts"], limit=200)["messages"]
+        except Exception as e:  # noqa: BLE001
+            log(f"  !! couldn't read {p['day']} thread for tags: {e}")
+            keep.append(p)
+            continue
+        found = tags.learn_from_replies(client, msgs, p["names"],
+                                        after_ts=p["ask_ts"],
+                                        source="raf_daily_update")
+        for name, sid in found.items():
+            log(f"  learned tag: {name} -> {sid}")
+        p["names"] = [n for n in p["names"] if n not in found]
+        if p["names"]:
+            keep.append(p)
+    st["pending"] = keep
+
+
+def _workspace_ids(client) -> Dict[str, str]:
+    """{normalized name: id} for active people. EXACT names only — a name
+    two people share is dropped, never guessed."""
+    out: Dict[str, str] = {}
+    dup = set()
+    cursor = None
+    while True:
+        resp = client.users_list(limit=200, cursor=cursor)
+        for u in resp.get("members", []):
+            if u.get("deleted") or u.get("is_bot"):
+                continue
+            p = u.get("profile", {})
+            for n in {L._norm(x) for x in (u.get("real_name"), p.get("real_name"),
+                                          p.get("display_name")) if x}:
+                if n in out and out[n] != u["id"]:
+                    dup.add(n)
+                out[n] = u["id"]
+        cursor = (resp.get("response_metadata") or {}).get("next_cursor")
+        if not cursor:
+            break
+    for n in dup:
+        out.pop(n, None)
+    return out
+
+
+def slack_ids(rows: List[dict], client=None) -> Dict[str, str]:
+    """{leader name lower: Slack id}: the shared learned-tags list first,
+    then (live only) an exact name match in the workspace."""
+    from automations.shared import slack_tag_learning as tags
+    out, ws = {}, None
     for leader in L.hires_by_leader(rows):
         sid = tags.lookup(leader)
-        if not sid and live:
-            from automations.shared import slack_metrics_post as smp
-            client = client or smp._client()
-            try:
-                sid = smp._resolve_user_id(client, leader)
-            except Exception:  # noqa: BLE001
-                sid = None
+        if not sid and client is not None:
+            if ws is None:
+                try:
+                    ws = _workspace_ids(client)
+                except Exception as e:  # noqa: BLE001
+                    log(f"  !! workspace lookup failed: {e}")
+                    ws = {}
+            sid = ws.get(L._norm(leader))
         if sid:
             out[L._norm(leader)] = sid
     return out
 
 
+def _existing_parent(client, channel: str, day: dt.date) -> str:
+    """ts of a Daily Update M/D a recruiter already posted today, or ''."""
+    start = dt.datetime.combine(day, dt.time(0), CENTRAL).timestamp()
+    want = re.compile(rf"daily update\s+{day.month}/{day.day}\b", re.I)
+    try:
+        msgs = client.conversations_history(channel=channel, oldest=str(start),
+                                            limit=200)["messages"]
+    except Exception as e:  # noqa: BLE001
+        raise RuntimeError(f"couldn't read the channel before posting: {e}")
+    for m in msgs:
+        if want.search(m.get("text") or ""):
+            return m["ts"]
+    return ""
+
+
 def post(rows: List[dict], day: dt.date, image: Path, channel: str,
          live: bool) -> None:
     from automations.shared import slack_metrics_post as smp
-    ids = slack_ids(rows, live)
-    tag = L.tag_text(rows, ids)
+    client = smp._client() if live else None
+    st = _load_state()
+    if client is not None:
+        learn_pending(client, st)
+        _save_state(st)
+    ids = slack_ids(rows, client)
+    missing = [n for n in L.hires_by_leader(rows) if L._norm(n) not in ids]
+    tag = L.tag_text(rows, ids, helpers=list(TAG_HELPERS.values()))
     replies = [L.CONGRATS_ASK, L.CONGRATS_HOW, L.CONGRATS_TEXT]
     log(f"  slack -> {channel}" + ("" if live else "  (dry-run, not sent)"))
     log(f"    parent: {L.parent_text(day)}")
@@ -503,21 +598,38 @@ def post(rows: List[dict], day: dt.date, image: Path, channel: str,
     log(f"    image : {image}")
     for line in tag.splitlines():
         log(f"    tags  : {line}")
-    missing = [n for n in L.hires_by_leader(rows) if L._norm(n) not in ids]
-    if missing:
-        log(f"    (no Slack id yet for: {', '.join(missing)} — shown bold)")
     if not live:
         return
-    client = smp._client()
-    ts = client.chat_postMessage(channel=channel,
-                                 text=L.parent_text(day))["ts"]
-    for t in replies:
-        client.chat_postMessage(channel=channel, thread_ts=ts, text=t)
-    smp.post_reply_with_image(image, comment="", thread_ts=ts,
-                              channel_id=channel, today=day, mirror=False,
-                              wait_visible=True)
+    if st.get("posted", {}).get(day.isoformat()):
+        log(f"  already posted {day} (thread {st['posted'][day.isoformat()]})"
+            " — not posting again")
+        return
+    theirs = _existing_parent(client, channel, day)
+    if theirs:
+        # A recruiter beat us to it: don't post a second Daily Update — add
+        # only the leader tags (the part they don't post) to THEIR thread.
+        log(f"  recruiters already posted Daily Update {day.month}/{day.day} "
+            f"({theirs}) — adding only the tags to their thread")
+        ts = theirs
+    else:
+        ts = client.chat_postMessage(channel=channel,
+                                     text=L.parent_text(day))["ts"]
+        for t in replies:
+            client.chat_postMessage(channel=channel, thread_ts=ts, text=t)
+        smp.post_reply_with_image(image, comment="", thread_ts=ts,
+                                  channel_id=channel, today=day, mirror=False,
+                                  wait_visible=True)
+    st.setdefault("posted", {})[day.isoformat()] = ts
+    _save_state(st)
     if tag:
-        client.chat_postMessage(channel=channel, thread_ts=ts, text=tag)
+        ask_ts = client.chat_postMessage(channel=channel, thread_ts=ts,
+                                         text=tag)["ts"]
+        if missing:
+            st.setdefault("pending", []).append(
+                {"day": day.isoformat(), "channel": channel, "thread_ts": ts,
+                 "ask_ts": ask_ts, "names": missing})
+            _save_state(st)
+            log(f"  asked Aisha/Raf to tag: {', '.join(missing)}")
     log(f"  posted thread {ts}")
 
 
@@ -527,27 +639,33 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--date", default=None, help="YYYY-MM-DD (default today)")
     ap.add_argument("--write", action="store_true",
-                    help="append to the TEST sheet (never the real one)")
+                    help="append the day's rows to Raf's Daily Update sheet")
+    ap.add_argument("--test-sheet", action="store_true",
+                    help="write the TEST copy instead of the real sheet")
     ap.add_argument("--post", action="store_true",
-                    help="post the Slack thread (needs --channel)")
-    ap.add_argument("--channel", default=None, help="test Slack channel id")
+                    help="post the Slack thread")
+    ap.add_argument("--channel", default=CHANNEL,
+                    help="Slack channel id (default #rafs-office-recruiting-11280)")
     ap.add_argument("--compare-real", action="store_true",
                     help="grade against the recruiters' rows on the real sheet")
     ap.add_argument("--seed-from-real", action="store_true",
                     help="read the day off the real sheet, not ApplicantStream")
     ap.add_argument("--dry-run", action="store_true",
-                    help="accepted for the lucy queue; dry is the default")
+                    help="write and post nothing (the default without flags)")
     args = ap.parse_args(argv)
-    if args.post and not args.channel:
-        ap.error("--post needs an explicit --channel (test channel)")
     if args.dry_run:
         args.write = args.post = False
+    if args.seed_from_real and (args.write or args.post):
+        ap.error("--seed-from-real is for testing; it can't write or post")
 
     day = (dt.date.fromisoformat(args.date) if args.date
            else dt.datetime.now(CENTRAL).date())
-    log(f"=== raf daily update (TEST) | {day} | office {OFFICE_ID} | "
+    log(f"=== raf daily update | {day} | office {OFFICE_ID} | "
         f"{'WRITE' if args.write else 'DRY-RUN'}"
         f"{' + POST' if args.post else ''} ===")
+    if day.weekday() == 6 and not args.date:
+        log("  Sunday — no 2nd rounds, nothing to do")
+        return 0
 
     cands = seed_from_real(day) if args.seed_from_real else harvest(day)
     rows = L.build_rows(cands)
@@ -560,14 +678,15 @@ def main(argv=None) -> int:
     if not rows:
         log("  no 2nd rounds for this day — nothing to write or post")
         return 0
-    write_test_sheet(rows, day, args.write)
+    write_sheet(rows, day, args.write,
+                TEST_SHEET if args.test_sheet else REAL_SHEET)
 
     from automations.raf_daily_update.render import render
     image = render(rows, OUT_DIR / f"daily_update_{day.isoformat()}.png",
                    f"Daily Update {day.month}/{day.day}")
     log(f"  picture: {image}")
     if any(r["status"] != L.NO_SHOW for r in rows):
-        post(rows, day, image, args.channel or "(no channel)", args.post)
+        post(rows, day, image, args.channel, args.post)
     else:
         log("  nobody showed — no Slack post (never post blank)")
     return 1 if bad and args.compare_real and not args.seed_from_real else 0

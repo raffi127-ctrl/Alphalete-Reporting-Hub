@@ -64,6 +64,17 @@ class Layout(unittest.TestCase):
         self.assertNotIn("c X", t)
         self.assertEqual(L.tag_text(L.build_rows([cand("c", offered="N")]), {}), "")
 
+    def test_untaggable_leader_goes_to_helpers(self):
+        rows = L.build_rows([cand("a", bob="BOB"),
+                             cand("b", bob="BOB", second="Bill Hirwa")])
+        t = L.tag_text(rows, {"hank tran": "U1"}, helpers=["UA", "UR"])
+        self.assertIn("<@UA> <@UR>", t)
+        self.assertIn("couldn\u2019t tag *Bill Hirwa*", t)
+        self.assertNotIn("*Hank Tran*", t.split("\n")[-1])
+        self.assertNotIn("<@UA>", L.tag_text(rows, {"hank tran": "U1",
+                                                     "bill hirwa": "U2"},
+                                              helpers=["UA"]))
+
 
 if __name__ == "__main__":
     unittest.main()
