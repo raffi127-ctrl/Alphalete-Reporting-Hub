@@ -125,15 +125,24 @@ class TitleBook:
                 continue          # show the ad the way its own title is typed
             spellings.setdefault(norm(t), Counter())[t.strip()] += 1
         self._spelling = {k: c.most_common(1)[0][0] for k, c in spellings.items()}
+        # An ad whose every spelling is an alias (Eveliz 10/14: only broken
+        # pastes like "C ustomer Account Representative ? Spanish/En glish")
+        # shows as the alias target is written, not as its lowercase key.
+        for b in (aliases or {}).values():
+            self._spelling.setdefault(norm(b), b.strip())
 
         # Ads, biggest first; a smaller "ad" that is really a cut-off or typo
         # of a bigger one folds into it (e.g. "... mesquite tx (dallas county"
         # seen 3 times is the Mesquite ad missing its last bracket).
         self.ads: List[str] = []
         self._fold: Dict[str, str] = {}
+        # An alias target is an ad the office confirmed, so it counts even
+        # seen fewer than MIN_SEEN times (Eveliz 10/14: "Entry Level Wireless
+        # Associate", live, 2 people in October).
+        confirmed = set(self.aliases.values())
         for key, n in self.counts.most_common():
-            if n < MIN_SEEN:
-                break
+            if n < MIN_SEEN and key not in confirmed:
+                continue
             home = self._match(key, self.ads)
             if home:
                 self._fold[key] = home

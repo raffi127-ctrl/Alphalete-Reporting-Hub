@@ -416,6 +416,28 @@ _ALIASES = {
         "Entry Level AT&T Team Member": "Entry Level AT&T Team Member – Sterling Heights MI",
         "Entry Level Sales Representative -AT&T": "Entry Level Sales Representative -AT&T – Livonia MI",
     },
+    # Eveliz 10/14 (Valeria, her live ad list): the interviewers paste titles
+    # with broken spacing ("C ustomer ...", "Spanish/En glish") -- same ad as
+    # the clean one -- and AT&T Assistant / Sales Assistant with extras.
+    "eveliz": {
+        "C ustomer Account Representative ? Spanish/En glish": "Customer Account Representative – Spanish/English",
+        "C ustomer Account Representative ? Spanish/En glish.": "Customer Account Representative – Spanish/English",
+        "Customer Account Representative ? Spanish/En glish": "Customer Account Representative – Spanish/English",
+        "E ntry Level AT&T Associate ? Spanish/English": "Entry Level AT&T Associate – Spanish/English",
+        "E ntry Level Account Associate ? Spanish/Engl ish": "Entry Level Account Associate – Spanish/English",
+        "A T&T Account Representative ? Spanish/Englis h": "AT&T Account Representative – Spanish/English",
+        "B ilingual Customer Sales Representative ? Sp anish/English": "Bilingual Customer Sales Representative – Spanish/English",
+        "Urgently Hiring: AT&T Assistant": "AT&T Assistant",
+        "AT&T Assistant (Full time)": "AT&T Assistant",
+        "AT&T Assistant SPanish only ?.": "AT&T Assistant",
+        "AT&T Assistant Interview": "AT&T Assistant",
+        "Sales Assistant (ATT)": "Sales Assistant (AT&T)",
+        "Sales Assitant (AT&T)": "Sales Assistant (AT&T)",
+        "Associate (Training Provided)": "AT&T Associate (Training Provided)",
+        "Bilingual Customer Sales Representative Spanish?English": "Bilingual Customer Sales Representative – Spanish/English",
+        # On her list but typed only twice in October: listed so it counts.
+        "Entry Level Wireless Associate": "Entry Level Wireless Associate",
+    },
 }
 
 # Offices that want ONE thread per ad title, city left out, and only for the
@@ -467,7 +489,21 @@ _SCORECARD_TABS = {
     "eveliz": {"scorecard_book": ALL_IN_ONE_COLTEN_EVELIZ,
                "scorecard_tab": "Eveliz (B2B) - Ad Scorecard",
                "scorecard_seconds_from_sheet": True, "scorecard": True,
-               "scorecard_tag": "U048WU3EUFJ"},
+               "scorecard_tag": "U048WU3EUFJ",
+               # Valeria 10/14 (scorecard thread, her live ad list): the
+               # titles never carry the city, so each ad's city is here.
+               "scorecard_cities": {
+                   "AT&T Agent- Spanish/English Speaking": "Princeton, FL",
+                   "AT&T Assistant": "Miami-Dade, FL",
+                   "Sales Assistant (AT&T)": "Kendall Lakes, FL",
+                   "Entry Level Wireless Associate": "Hialeah Gardens, FL",
+                   "Customer Account Representative – Spanish/English": "Kendall, FL",
+                   "Bilingual AT&T Team Member": "Coral Gables, FL",
+                   "AT&T Associate (Training Provided)": "Doral, FL",
+                   "Customer Solutions Representative": "Miramar, FL",
+                   "Sales Representative (AT&T)": "Miami, FL",
+                   "AT&T Sales Associate": "Miami, FL",
+               }},
 }
 
 OFFICES += [
