@@ -116,9 +116,12 @@ def _log_groups(s: dict) -> list:
     return groups
 
 
-def render(s: dict, *, as_of: dt.datetime, out: Path) -> Path:
-    """Today's tiles → ongoing vitals (week so far) → every door this week,
-    one banner per day (Megan 2026-10-14)."""
+def render(s: dict, *, as_of: dt.datetime, out: Path) -> "list[Path]":
+    """Pages, so Slack shows them big enough to read (Megan 2026-10-14):
+      page 1   — Today's tiles + ongoing vitals (week so far)
+      page 2…  — every door this week, ~DOOR_ROWS_PER_PAGE per page, a banner
+                 per day (repeated as "cont." when a day spans two pages).
+    `out` is the base name; pages are saved as <stem>_p1.png, _p2.png, …"""
     f_title = _font(30, True)
     f_sub = _font(18)
     f_sec = _font(20, True)
@@ -135,22 +138,15 @@ def render(s: dict, *, as_of: dt.datetime, out: Path) -> Path:
     groups = _log_groups(s)
     today_h = 40 + 110 + 48
     vitals_h = 30 + 44 + 110 + 30 + max(44 + 30 * max(len(s["disp"]), 7), 44 + 30 * 8)
-    log_h = 30 + 34 + ROW_H + len(groups) * (BANNER_GAP + BANNER_H) \
-        + ROW_H * sum(len(g[1]) for g in groups) + 30 * sum(1 for g in groups if g[2]) \
-        + (ROW_H if not groups else 0)
-    H = 80 + 20 + today_h + vitals_h + log_h + 60
+    H = 80 + 20 + today_h + vitals_h + 70
+    fonts = {"title": f_title, "sub": f_sub, "sec": f_sec, "lab": f_lab,
+             "ban": f_ban, "f": f, "b": f_b}
 
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
 
-    # ── title ───────────────────────────────────────────────────────────
-    d.rectangle([0, 0, W, 80], fill=TITLE_BG)
-    d.text((PAD, 14), s["rep"], font=f_title, fill=(255, 255, 255))
-    d.text((PAD, 52), f"#{s['rep_id']} · Knocking Data", font=f_lab,
-           fill=(220, 210, 195))
-    right = f"{today:%a} {today.month}/{today.day}  ·  as of {_hm(as_of)} CT"
-    d.text((W - PAD - _tw(d, right, f_sub), 30), right, font=f_sub,
-           fill=(255, 255, 255))
+    n_pages = 1 + max(len(_paginate(_door_items(groups))), 1)
+    _title(d, s, today, as_of, fonts, f"Knocking Data · page 1 of {n_pages}")
     y = 100
 
     # ── TODAY ───────────────────────────────────────────────────────────
@@ -242,52 +238,25 @@ def render(s: dict, *, as_of: dt.datetime, out: Path) -> Path:
         yy += 30
     y = y + max(44 + 30 * max(len(s["disp"]), 7), 44 + 30 * 8)
 
-    # ── DOORS THIS WEEK, one block per day ──────────────────────────────
-    y += 30
-    d.text((PAD, y), "Doors this week — newest first", font=f_sec, fill=INK)
-    y += 34
-    d.rectangle([PAD, y - 4, W - PAD, y + ROW_H - 6], fill=TITLE_BG)
-    for name, x, _w in TCOLS:
-        d.text((x + 6, y), name, font=f_b, fill=(255, 255, 255))
-    y += ROW_H
-    if not groups:
-        d.text((PAD + 6, y + 4), "No doors yet this week.", font=f, fill=MUTED)
-        y += ROW_H
-    for day, drows, dropped in groups:
-        # Day banner — a full-width bar; red when that day was over the line.
-        y += BANNER_GAP
-        fp = 100.0 * day["fails"] / day["knocks"] if day["knocks"] else 0
-        d.rounded_rectangle([PAD, y, W - PAD, y + BANNER_H - 6], 6,
-                            fill=BAD if _day_over(day) else (90, 74, 60))
-        label = f"{day['date']:%A} {day['date'].month}/{day['date'].day}".upper() \
-            + ("  ·  TODAY" if day["date"] == today else "")
-        d.text((PAD + 14, y + 7), label, font=f_ban, fill=(255, 255, 255))
-        info = f"{day['knocks']} doors  ·  GPS failed {_pct(fp)} ({day['fails']})"
-        d.text((W - PAD - 14 - _tw(d, info, f_ban), y + 7), info, font=f_ban,
-               fill=(255, 255, 255))
-        y += BANNER_H
-        for i, r in enumerate(drows):
-            fail = gps_kind(r["gps"]) == "fail"
-            if fail:
-                d.rectangle([PAD, y - 2, W - PAD, y + ROW_H - 4], fill=BAD_BG)
-            elif i % 2:
-                d.rectangle([PAD, y - 2, W - PAD, y + ROW_H - 4], fill=STRIPE)
-            d.text((TCOLS[0][1] + 6, y + 3), _hm(parse_when(r["when"])), font=f, fill=INK)
-            d.text((TCOLS[1][1] + 6, y + 3), _clip(d, r["address"], f, TCOLS[1][2] - 12),
-                   font=f, fill=INK)
-            rgb = _hex(r["color"])
-            cx = TCOLS[2][1] + 6
-            lab = _clip(d, r["status"], f, TCOLS[2][2] - 30)
-            d.rounded_rectangle([cx, y, cx + _tw(d, lab, f) + 16, y + 24], 6, fill=rgb)
-            d.text((cx + 8, y + 3), lab, font=f, fill=_on(rgb))
-            d.text((TCOLS[3][1] + 6, y + 3), gps_short(r["gps"]), font=f_b if fail else f,
-                   fill=BAD if fail else (MUTED if gps_kind(r["gps"]) == "none" else GOOD))
-            y += ROW_H
-        if dropped:
-            d.text((PAD + 6, y + 4), f"+ {dropped} more doors this day not shown",
-                   font=f_lab, fill=MUTED)
-            y += 30
+    _footer(d, H, f_lab)
+    pages = [_save(img, out, 1)]
+    pages += _door_pages(s, groups, today, as_of, fonts, out)
+    return pages
 
+
+DOOR_ROWS_PER_PAGE = 40
+
+
+def _title(d, s: dict, today: dt.date, as_of: dt.datetime, fonts: dict, sub: str):
+    d.rectangle([0, 0, W, 80], fill=TITLE_BG)
+    d.text((PAD, 14), s["rep"], font=fonts["title"], fill=(255, 255, 255))
+    d.text((PAD, 52), f"#{s['rep_id']} · {sub}", font=fonts["lab"], fill=(220, 210, 195))
+    right = f"{today:%a} {today.month}/{today.day}  ·  as of {_hm(as_of)} CT"
+    d.text((W - PAD - _tw(d, right, fonts["sub"]), 30), right, font=fonts["sub"],
+           fill=(255, 255, 255))
+
+
+def _footer(d, H: int, f_lab):
     foot = ("Source: OwnerVille → TeleMapper Leads → Today's Activity → Lead Knocks "
             f"(GPS Status column). Posted when today's GPS failures reach "
             f"{C.FLAG_FAIL_PCT:.0f}% ({C.FLAG_MIN_KNOCKS}+ doors). Avg min between doors "
@@ -295,6 +264,107 @@ def render(s: dict, *, as_of: dt.datetime, out: Path) -> Path:
             "No Answer / Inaccessible.")
     d.text((PAD, H - 34), _clip(d, foot, f_lab, W - 2 * PAD), font=f_lab, fill=MUTED)
 
-    out.parent.mkdir(parents=True, exist_ok=True)
-    img.save(out, optimize=True)
-    return out
+
+def _save(img, out: Path, n: int) -> Path:
+    p = out.with_name(f"{out.stem}_p{n}.png")
+    p.parent.mkdir(parents=True, exist_ok=True)
+    img.save(p, optimize=True)
+    return p
+
+
+def _door_items(groups: list) -> list:
+    """Flatten to [("banner", day), ("row", r, i), ("more", day, n)…]."""
+    items = []
+    for day, drows, dropped in groups:
+        items.append(("banner", day))
+        items += [("row", r, i) for i, r in enumerate(drows)]
+        if dropped:
+            items.append(("more", day, dropped))
+    return items
+
+
+def _paginate(items: list) -> list:
+    """Split into pages of DOOR_ROWS_PER_PAGE rows (a banner counts as one).
+    A page that starts mid-day gets a "cont." banner first; a banner never
+    starts with fewer than 5 rows left on a page."""
+    pages, cur, day = [], [], None
+    for it in items:
+        if it[0] == "banner":
+            day = it[1]
+            if len(cur) >= DOOR_ROWS_PER_PAGE - 5:      # don't strand a banner
+                pages.append(cur)
+                cur = []
+            cur.append(("banner", day, False))
+            continue
+        if len(cur) >= DOOR_ROWS_PER_PAGE:
+            pages.append(cur)
+            cur = [("banner", day, True)]
+        cur.append(it)
+    if cur:
+        pages.append(cur)
+    return pages
+
+
+def _door_pages(s, groups, today, as_of, fonts, out) -> list:
+    f, f_b, f_ban, f_lab = fonts["f"], fonts["b"], fonts["ban"], fonts["lab"]
+    pages = _paginate(_door_items(groups)) or [[]]
+    paths = []
+    for n, page in enumerate(pages, start=1):
+        nb = sum(1 for it in page if it[0] == "banner")
+        nr = len(page) - nb
+        H = 80 + 30 + 34 + ROW_H + nb * (BANNER_GAP + BANNER_H) + nr * ROW_H \
+            + (ROW_H if not page else 0) + 60
+        img = Image.new("RGB", (W, H), BG)
+        d = ImageDraw.Draw(img)
+        _title(d, s, today, as_of, fonts,
+               f"Doors this week · page {n + 1} of {len(pages) + 1}")
+        y = 100
+        d.text((PAD, y), "Doors this week — newest first", font=fonts["sec"], fill=INK)
+        y += 34
+        d.rectangle([PAD, y - 4, W - PAD, y + ROW_H - 6], fill=TITLE_BG)
+        for name, x, _w in TCOLS:
+            d.text((x + 6, y), name, font=f_b, fill=(255, 255, 255))
+        y += ROW_H
+        if not page:
+            d.text((PAD + 6, y + 4), "No doors yet this week.", font=f, fill=MUTED)
+        for it in page:
+            if it[0] == "banner":
+                day, cont = it[1], it[2]
+                y += BANNER_GAP
+                fp = 100.0 * day["fails"] / day["knocks"] if day["knocks"] else 0
+                d.rounded_rectangle([PAD, y, W - PAD, y + BANNER_H - 6], 6,
+                                    fill=BAD if _day_over(day) else (90, 74, 60))
+                label = f"{day['date']:%A} {day['date'].month}/{day['date'].day}".upper() \
+                    + ("  ·  TODAY" if day["date"] == today else "") \
+                    + ("  (cont.)" if cont else "")
+                d.text((PAD + 14, y + 7), label, font=f_ban, fill=(255, 255, 255))
+                info = f"{day['knocks']} doors  ·  GPS failed {_pct(fp)} ({day['fails']})"
+                d.text((W - PAD - 14 - _tw(d, info, f_ban), y + 7), info, font=f_ban,
+                       fill=(255, 255, 255))
+                y += BANNER_H
+            elif it[0] == "more":
+                d.text((PAD + 6, y + 4), f"+ {it[2]} more doors this day not shown",
+                       font=f_lab, fill=MUTED)
+                y += ROW_H
+            else:
+                r, i = it[1], it[2]
+                fail = gps_kind(r["gps"]) == "fail"
+                if fail:
+                    d.rectangle([PAD, y - 2, W - PAD, y + ROW_H - 4], fill=BAD_BG)
+                elif i % 2:
+                    d.rectangle([PAD, y - 2, W - PAD, y + ROW_H - 4], fill=STRIPE)
+                d.text((TCOLS[0][1] + 6, y + 3), _hm(parse_when(r["when"])), font=f, fill=INK)
+                d.text((TCOLS[1][1] + 6, y + 3),
+                       _clip(d, r["address"], f, TCOLS[1][2] - 12), font=f, fill=INK)
+                rgb = _hex(r["color"])
+                cx = TCOLS[2][1] + 6
+                lab = _clip(d, r["status"], f, TCOLS[2][2] - 30)
+                d.rounded_rectangle([cx, y, cx + _tw(d, lab, f) + 16, y + 24], 6, fill=rgb)
+                d.text((cx + 8, y + 3), lab, font=f, fill=_on(rgb))
+                d.text((TCOLS[3][1] + 6, y + 3), gps_short(r["gps"]),
+                       font=f_b if fail else f,
+                       fill=BAD if fail else (MUTED if gps_kind(r["gps"]) == "none" else GOOD))
+                y += ROW_H
+        _footer(d, H, f_lab)
+        paths.append(_save(img, out, n + 1))
+    return paths

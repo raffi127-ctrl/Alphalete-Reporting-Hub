@@ -47,7 +47,7 @@ CARRY_MIN_STREAK = 2
 
 # The door log covers the whole week so far, one block per day (newest day
 # first). Capped so a big week stays a readable image; the oldest doors drop.
-MAX_LOG_ROWS = 600
+MAX_LOG_ROWS = 340   # 1 summary page + up to 9 door pages = Slack's 10-file limit
 
 # Seconds between uploads — ~60 reps an hour, kept under Slack's file limits.
 UPLOAD_PAUSE_S = 1.5

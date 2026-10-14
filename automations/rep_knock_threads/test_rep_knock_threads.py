@@ -167,8 +167,23 @@ class Run(unittest.TestCase):
                 for i in range(40)]
         s = S.rep_week(rows, dt.date(2026, 10, 13))
         with tempfile.TemporaryDirectory() as d:
-            out = R.render(s, as_of=dt.datetime(2026, 10, 13, 15), out=Path(d) / "c.png")
-            self.assertGreater(out.stat().st_size, 5000)
+            pages = R.render(s, as_of=dt.datetime(2026, 10, 13, 15), out=Path(d) / "c.png")
+            self.assertEqual([p.name for p in pages], ["c_p1.png", "c_p2.png", "c_p3.png"])   # summary + 41 door lines
+            self.assertTrue(all(p.stat().st_size > 5000 for p in pages))
+
+    def test_door_pages_split_and_continue_the_day_banner(self):
+        day = {"date": dt.date(2026, 10, 13)}
+        items = [("banner", day)] + [("row", {}, i) for i in range(95)]
+        pages = R._paginate(items)
+        self.assertEqual([len(p) for p in pages], [40, 40, 18])   # banner+39 / cont.+39 / cont.+17
+        self.assertEqual(pages[1][0], ("banner", day, True))
+        self.assertEqual(pages[0][0], ("banner", day, False))
+        # a second day's banner with <5 rows of room left starts a new page
+        day2 = {"date": dt.date(2026, 10, 12)}
+        items = [("banner", day)] + [("row", {}, i) for i in range(36)] \
+            + [("banner", day2)] + [("row", {}, i) for i in range(10)]
+        pages = R._paginate(items)
+        self.assertEqual(pages[1][0], ("banner", day2, False))
 
 
 if __name__ == "__main__":

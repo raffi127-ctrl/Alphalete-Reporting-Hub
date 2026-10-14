@@ -108,18 +108,26 @@ def post_parent(client, text: str) -> str:
     return r["ts"]
 
 
-def post_card(client, thread_ts: str, png, comment: str) -> bool:
+def post_card(client, thread_ts: str, pngs: list, comment: str) -> bool:
+    """All of a rep's pages as ONE thread reply (Slack takes up to 10 files per
+    message; more pages go in a follow-up). True only once every batch's first
+    image is visible in the thread."""
     from automations.shared.slack_metrics_post import (
         _uploaded_file_id, wait_for_share)
-    r = client.files_upload_v2(channel=C.CHANNEL_ID, thread_ts=thread_ts,
-                               file=str(png), filename=png.name,
-                               initial_comment=comment)
-    if not r.get("ok"):
-        return False
-    fid = _uploaded_file_id(r)
-    # GREEN MEANS DELIVERED: an accepted upload is not a landed image.
-    return bool(wait_for_share(client, C.CHANNEL_ID, thread_ts, fid or "",
-                               text=comment))
+    ok = True
+    for i in range(0, len(pngs), 10):
+        batch = pngs[i:i + 10]
+        r = client.files_upload_v2(
+            channel=C.CHANNEL_ID, thread_ts=thread_ts,
+            file_uploads=[{"file": str(p), "filename": p.name} for p in batch],
+            initial_comment=comment if i == 0 else None)
+        if not r.get("ok"):
+            return False
+        # GREEN MEANS DELIVERED: an accepted upload is not a landed image.
+        fid = _uploaded_file_id(r)
+        ok = bool(wait_for_share(client, C.CHANNEL_ID, thread_ts, fid or "",
+                                 text=comment if i == 0 else "")) and ok
+    return ok
 
 
 def clear_thread(client, thread_ts: str, my_uid: str) -> bool:
@@ -278,11 +286,11 @@ def main(argv=None) -> int:
         seen = set(rs.get("seen_fail_ids", []))
         fresh = S.new_failures(s["today_rows"], seen)
         alert = S.alert_line(fresh)
-        png = R.render(s, as_of=as_of, out=preview / f"{_slug(s['rep'])}_{rep_id}.png")
+        pngs = R.render(s, as_of=as_of, out=preview / f"{_slug(s['rep'])}_{rep_id}.png")
         comment = reply_text(s, as_of, alert)
 
         if not a.send:
-            print(f"  [dry-run] {parent_text(s['rep'], s['streak'])}  → {png.name}\n"
+            print(f"  [dry-run] {parent_text(s['rep'], s['streak'])}  → {len(pngs)} page(s)\n"
                   f"            {comment.replace(chr(10), ' | ')}")
             posted += 1
             continue
@@ -291,7 +299,7 @@ def main(argv=None) -> int:
             if not rs.get("thread_ts"):
                 rs["thread_ts"] = post_parent(client, parent_text(s["rep"], s["streak"]))
                 save_state(state)
-            ok = post_card(client, rs["thread_ts"], png, comment)
+            ok = post_card(client, rs["thread_ts"], pngs, comment)
         except Exception as e:
             ok = False
             print(f"  ✗ {s['rep']}: {e}")
