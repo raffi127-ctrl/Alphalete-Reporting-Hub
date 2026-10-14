@@ -1024,10 +1024,19 @@ def _refresh_and_check(week: dt.date, raw_range: tuple[int, int], *,
         if abs(d1) < 1 and abs(d2) < 1:
             parts.append(f"tie-out: Commission==P&L ✓ (spare roster rows: {spares})")
         else:
+            # 10/14 (WE 10/11): a $176 gap was five auto-added reps whose
+            # campaign cell (col C) was blank, so no campaign TOTAL counted
+            # them. Name them -- that's the fix, and it took a hand diff.
+            untagged = [
+                " ".join(str(x).strip() for x in (r[1:3] if r else [])).strip()
+                for r, c, b in zip(roster, camp, brought)
+                if not str(c).strip() and num(b)]
+            why = (f"no campaign in P&L col C: {', '.join(untagged)}"
+                   if untagged else "paid rep(s) missing a P&L roster row?")
             parts.append(
                 f"tie-out FAILED ⚠: Commission brought ${cb:,.2f} vs P&L ${pd:,.2f} "
                 f"(Δ ${d1:,.2f}); paid ${cc:,.2f} vs ${pp:,.2f} (Δ ${d2:,.2f}) — "
-                f"paid rep(s) missing a P&L roster row? spares left: {spares}")
+                f"{why}; spares left: {spares}")
         if spares <= 3:
             parts.append(f"⚠ only {spares} spare roster row(s) left — auto-add "
                          "goes silent at 0; extend the roster (see 9/6 playbook)")
