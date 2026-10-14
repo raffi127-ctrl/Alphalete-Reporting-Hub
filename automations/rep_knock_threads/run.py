@@ -130,7 +130,7 @@ def post_card(client, thread_ts: str, pngs: list, comment: str) -> bool:
     return ok
 
 
-def clear_thread(client, thread_ts: str, my_uid: str) -> bool:
+def clear_thread(client, thread_ts: str, my_uid: str, keep_parent: bool = False) -> bool:
     """Delete LUCY'S OWN messages in one thread (replies + their images, then
     the parent). Anyone else's reply is left alone. True when nothing of
     Lucy's is left."""
@@ -147,6 +147,8 @@ def clear_thread(client, thread_ts: str, my_uid: str) -> bool:
     # Lucy's images under a deleted parent.
     for m in sorted(msgs, key=lambda m: m.get("ts") == thread_ts):
         if m.get("user") != my_uid:
+            continue
+        if keep_parent and m.get("ts") == thread_ts:
             continue
         try:
             for f in m.get("files") or []:
@@ -214,6 +216,9 @@ def main(argv=None) -> int:
                     help="ignore the posting hours and re-post even if nothing changed")
     ap.add_argument("--tick", action="store_true",
                     help="LaunchAgent mode: post at most once per clock hour")
+    ap.add_argument("--repost", action="store_true",
+                    help="with --send: delete Lucy's chart replies in today's threads "
+                         "(names stay) and post fresh charts in their place")
     ap.add_argument("--headless", action="store_true")
     a = ap.parse_args(argv)
 
@@ -255,6 +260,18 @@ def main(argv=None) -> int:
         print(f"[rep_knocks] (terminated check skipped: {e})")
 
     ds = day_state(state, today)
+    if a.repost and a.send:
+        # Swap today's charts for a fresh render (e.g. a layout change):
+        # Lucy's replies go, the name post stays, and the loop below re-posts.
+        my_uid = client.auth_test()["user_id"]
+        for rid, r in ds["reps"].items():
+            if r.get("thread_ts"):
+                ok = clear_thread(client, r["thread_ts"], my_uid, keep_parent=True)
+                print(f"[rep_knocks] repost: cleared {r.get('rep', rid)}'s charts"
+                      + ("" if ok else " (PARTLY)"))
+                r.pop("posted_count", None)
+                r.pop("seen_fail_ids", None)
+        save_state(state)
     preview = C.OUT_DIR / "preview" / f"{today.isoformat()}_{as_of:%H%M}"
     posted = skipped = failed = 0
     over = []

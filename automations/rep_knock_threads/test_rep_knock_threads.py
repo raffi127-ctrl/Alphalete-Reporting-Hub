@@ -155,6 +155,19 @@ class Run(unittest.TestCase):
         self.assertEqual(c.deleted, ["1.1", "1.0"])
         self.assertEqual(c.files, ["F1"])
 
+    def test_repost_clear_keeps_the_name_post(self):
+        class Fake:
+            deleted = []
+            def conversations_replies(self, **kw):
+                return {"messages": [{"ts": "1.0", "user": "LUCY"},
+                                     {"ts": "1.1", "user": "LUCY"}]}
+            def files_delete(self, file): pass
+            def chat_delete(self, channel, ts): self.deleted.append(ts)
+        c = Fake()
+        RUN.time.sleep = lambda s: None
+        RUN.clear_thread(c, "1.0", "LUCY", keep_parent=True)
+        self.assertEqual(c.deleted, ["1.1"])
+
     def test_hours_window(self):
         at = lambda h: dt.datetime(2026, 10, 14, h, 0)
         self.assertFalse(RUN.in_window(at(9)))
