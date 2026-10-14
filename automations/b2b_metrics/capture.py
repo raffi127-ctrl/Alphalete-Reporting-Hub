@@ -446,6 +446,15 @@ def payout_image(o: B2BOffice, out_dir: Path, log=print) -> Path:
 
 # --- #1 / #2 / #3-5 / #8 : Tableau Download->Image, owner-sliced ------------
 def _sliced_url(o: B2BOffice, view_key: str, today: dt.date = None) -> str:
+    """See _owner_url; an `all_teams` office also opens the B2B team filter."""
+    url = _owner_url(o, view_key, today)
+    if getattr(o, "all_teams", False):
+        from automations.b2b_metrics.offices import with_all_teams
+        url = with_all_teams(url)
+    return url
+
+
+def _owner_url(o: B2BOffice, view_key: str, today: dt.date = None) -> str:
     """The URL to capture. A per-office OVERRIDE view is a saved view already
     filtered to the owner — captured as-is, no slice appended. Otherwise it's the
     shared team view with ?<field>=<value> appended (drops :iid, a tab index),

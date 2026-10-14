@@ -44,6 +44,10 @@ CHURN_VIEW = (
     "https://us-east-1.online.tableau.com/#/site/sci/views/"
     "ATTTRACKER-B2B/CHURNRATES/7419b960-0fb1-41d5-a11e-76f0e81c0547/"
     "CarlosLocalOfficeEXPANDEDCHURN")
+# "Carlos's Team" left Tableau's team filter 2026-10-13 and this saved view went
+# blank; every pull opens that filter to all teams (offices.with_all_teams).
+from automations.b2b_metrics.offices import with_all_teams  # noqa: E402
+
 CHURN_REP_SHEET = "1 Rep Churn"
 BUCKETS = ["0-30 Day", "30 Day", "60 Day", "90 Day", "120 Day"]
 
@@ -377,14 +381,16 @@ def _render_both(log=print) -> int:
                 # raw-paren house style, value with a raw slash.
                 for prod in PRODUCTS:
                     pv = FILTER_MEMBERS.get(prod, prod).replace(" ", "%20")
-                    purl = (CHURN_VIEW + "?" + BYOD_FIELD_URL + "=" + pv)
+                    purl = with_all_teams(
+                        CHURN_VIEW + "?" + BYOD_FIELD_URL + "=" + pv)
                     download_crosstab_patchright(
                         purl, CHURN_REP_SHEET,
                         OUT_DIR / f"rep_churn_{prod.replace('/', '_').replace(' ', '_')}.csv",
                         page=page, verbose=False)
                     log(f"  [churn] pulled rep sheet for {prod}")
                 icd_csv = OUT_DIR / "office_churn.csv"
-                download_crosstab_patchright(CHURN_VIEW, "ICD Churn",
+                download_crosstab_patchright(with_all_teams(CHURN_VIEW),
+                                             "ICD Churn",
                                              icd_csv, page=page,
                                              verbose=False)
                 # per-rep activation lives on the 'Activation Office'

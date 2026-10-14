@@ -96,6 +96,28 @@ WEEK_FIELD = "Sale Date Week Ending (mon-sun)"
 # Per-view, because this is a per-workbook accident, not a house convention.
 WEEK_FIELD_OOB = "Sale Date Week Ending (copy)_1603000001376837642"
 
+# B2B CAPTAIN'S TEAMS (2026-10-14). "Carlos's Team" left this Tableau filter on
+# 10/13 (values now: Blake, Cody, Devin, Eveliz, Luis, Luke, Ricky, Unassigned)
+# and most of Carlos's owners — Carlos included — sit in Unassigned. His saved
+# views and the base views keep a saved team filter that leaves Unassigned out,
+# so every Carlos section rendered BLANK from 10/13 while Jamis (still on a
+# team) kept posting. An office with `all_teams` gets every team value added to
+# each URL, so its owner filter decides what shows, not the team. Same fix as
+# captainship_drafts.tableau_shot._B2B_ALL_TEAMS — a team SmartCircle adds
+# later must go in BOTH lists. Views without the field ignore the param.
+B2B_TEAM_FIELD = "B2B Captain's Teams (SFDC)"
+B2B_ALL_TEAMS = ("Blake's Team", "Cody's Team", "Devin's Team", "Eveliz's Team",
+                 "Luis's Team", "Luke's Team", "Ricky's Team", "Unassigned")
+
+
+def with_all_teams(url: str) -> str:
+    """`url` with the B2B team filter set to every team (see B2B_ALL_TEAMS)."""
+    from urllib.parse import quote
+    teams = ",".join(quote(t) for t in B2B_ALL_TEAMS)
+    sep = "&" if "?" in url else "?"
+    return "{}{}{}={}".format(url, sep, quote(B2B_TEAM_FIELD), teams)
+
+
 # ---------------------------------------------------------------------------
 # SHARED TEAM VIEWS (Carlos 2026-07-21). All offices read these SAME views and
 # slice by owner — no per-office clones. Order of the 6 keys matches the thread.
@@ -283,6 +305,10 @@ class B2BOffice:
     # resolved channel_id (else the merge leaves this empty and the office mirrors).
     channel_plans: tuple = field(default_factory=tuple)
 
+    # True -> every Tableau URL gets the B2B team filter opened to all teams
+    # (with_all_teams). For an owner Tableau moved off a captain team.
+    all_teams: bool = False
+
     @property
     def channel_names(self) -> list:
         """Every channel this office posts into, primary first — for display."""
@@ -371,6 +397,8 @@ OFFICES: dict = {
         rep_boards=True,
         # Carlos 2026-09-05: crop the churn board after the rep table.
         churn_crop=True,
+        # 2026-10-14: "Carlos's Team" is gone from Tableau — see B2B_ALL_TEAMS.
+        all_teams=True,
     ),
     "atef": B2BOffice(
         key="atef",
