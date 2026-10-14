@@ -144,6 +144,17 @@ def main(argv=None) -> int:
 
     wrote = F.apply(ws, updates)
     print("  wrote %d cells to %r" % (wrote, ws.title))
+    # Wrote what it could, but a source wasn't there or the box had nobody in
+    # it -- say which in ONE line (it lands in the alert's log tail) and exit 1
+    # so the week reads as not done. `lucy rerun new_starts_box` once fixed.
+    missing = [n for n in tnotes + lnotes if n.startswith("MISSING:")]
+    if not counts["people"]:
+        missing.append("MISSING: the New Starts box on %r has no classroom "
+                       "names yet" % ws.title)
+    if missing:
+        print("NOT DONE -- " + "; ".join(m[len("MISSING: "):] for m in missing)
+              + ". Fill it in, then: lucy rerun new_starts_box")
+        return 1
     return 0
 
 

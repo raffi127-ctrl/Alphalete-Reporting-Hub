@@ -145,7 +145,16 @@ def locations(client, day: dt.date) -> Tuple[List[Tuple[str, str]], List[str]]:
     """([(full name, city)], notes) from the week's D2D OBCL tab."""
     title = C.obcl_tab(day)
     book = client.open_by_key(C.OBCL_BOOK_ID)
-    ws = open_tab(book, title, "the week's classroom intake")
+    # A MISSING TAB IS NOT A CRASH (2026-10-14). 'D2D OBCL 10.12' was never
+    # built that week, and the whole run died on a traceback -- taking
+    # Trainers and Team down with it, though neither needs this tab. Return
+    # nothing and say so; run.py fills the other two columns and still exits
+    # non-zero so the alert names the missing tab.
+    try:
+        ws = open_tab(book, title, "the week's classroom intake")
+    except RuntimeError:
+        return [], ["MISSING: no %r tab in %r -- Location left blank"
+                    % (title, book.title)]
     grid = ws.get_all_values()
     hrow, cols = _header(grid, (C.OBCL_FIRST_LABEL, C.OBCL_LAST_LABEL,
                                 C.OBCL_LOCATION_LABEL))

@@ -240,5 +240,28 @@ class TabTitles(unittest.TestCase):
         self.assertEqual(C.obcl_tab(sun), "D2D OBCL 9.7")
 
 
+class MissingClassroomTab(unittest.TestCase):
+    # 2026-10-14: 'D2D OBCL 10.12' was never built and the run died on a
+    # traceback. A missing classroom tab now costs Location only.
+    def test_missing_obcl_tab_returns_nothing_and_says_so(self):
+        class _WS:
+            title = "D2D OBCL 10.5"
+
+        class _Book:
+            title = "All in One Local Office - Raf"
+
+            def worksheets(self):
+                return [_WS()]
+
+        class _Client:
+            def open_by_key(self, _key):
+                return _Book()
+
+        pairs, notes = S.locations(_Client(), dt.date(2026, 10, 14))
+        self.assertEqual(pairs, [])
+        self.assertTrue(notes[0].startswith("MISSING:"))
+        self.assertIn("D2D OBCL 10.12", notes[0])
+
+
 if __name__ == "__main__":
     unittest.main()
