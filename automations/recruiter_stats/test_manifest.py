@@ -37,7 +37,10 @@ def _pull(weeks, reach=True, week_ok=True, parsed=ADMINS):
     misses = []
     with mock.patch("automations.shared.tableau_patchright."
                     "appstream_direct_session", _session), \
-            mock.patch.object(R.fo, "_switch_office", return_value=reach), \
+            mock.patch.object(R.fo, "_switch_office",
+                              **({"side_effect": reach}
+                                 if isinstance(reach, Exception)
+                                 else {"return_value": reach})), \
             mock.patch.object(R, "_load_week", return_value=week_ok), \
             mock.patch.object(R, "_parse", return_value=parsed), \
             mock.patch.object(R.Path, "write_text"), \
@@ -69,6 +72,35 @@ class PullMisses(unittest.TestCase):
     def test_week_in_progress_with_no_admins_is_fine(self):
         _raw, misses = _pull([NOW], parsed={})
         self.assertEqual(misses, [])
+
+    def test_page_that_never_loads_skips_office_not_the_run(self):
+        # 10/14: '#weekStart' timed out and the raise killed every office.
+        offices = [("11580", "Carlos Hidalgo"), ("23467", "Atef Choudhury")]
+        calls = []
+
+        def load(_page, sun):
+            calls.append(sun)
+            if len(calls) == 1:
+                raise TimeoutError("waiting for locator('#weekStart')")
+            return True
+        misses = []
+        with mock.patch("automations.shared.tableau_patchright."
+                        "appstream_direct_session", _session), \
+                mock.patch.object(R.fo, "_switch_office", return_value=True), \
+                mock.patch.object(R, "_load_week", side_effect=load), \
+                mock.patch.object(R, "_parse", return_value=ADMINS), \
+                mock.patch.object(R.Path, "write_text"), \
+                mock.patch("builtins.print"):
+            raw = R.pull([OLD, NOW], offices, misses=misses,
+                         base={"11580": {OLD.isoformat(): {"cached": 1}}})
+        self.assertEqual([m[0] for m in misses], ["Carlos Hidalgo"] * 2)
+        self.assertEqual(raw["11580"][OLD.isoformat()], {"cached": 1})
+        self.assertEqual(raw["23467"][NOW.isoformat()], ADMINS)
+
+    def test_switch_that_times_out_is_a_miss_not_a_crash(self):
+        raw, misses = _pull([OLD], reach=TimeoutError("Locator.click"))
+        self.assertIn("could not be reached", misses[0][1])
+        self.assertEqual(raw["11580"][OLD.isoformat()], {"cached": 1})
 
 
 def _main(misses, extra=()):

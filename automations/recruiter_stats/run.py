@@ -170,15 +170,40 @@ def pull(weeks, offices, verbose=True, base=None, misses=None):
         page.wait_for_timeout(3000)
         page.wait_for_selector("#searchMC", timeout=20000)
         for oid, owner in offices:
-            if not fo._switch_office(page, oid, owner, confirm_denial=True):
+            try:
+                reached = fo._switch_office(page, oid, owner,
+                                            confirm_denial=True)
+            except Exception as e:  # noqa: BLE001
+                # 10/14 rerun: the switcher's click timed out. Same rule as a
+                # page that won't load -- this office misses, the rest run.
+                print(f"⚠ {owner}: office switch failed "
+                      f"({type(e).__name__})", flush=True)
+                reached = False
+            if not reached:
                 print(f"⚠ cannot reach office {oid} ({owner}) — skipped", flush=True)
                 if misses is not None:
                     misses.append((owner, "office could not be reached — "
                                           "board still shows old numbers"))
                 continue
             page.wait_for_timeout(1200)
-            for sun in weeks:
-                if not _load_week(page, sun):
+            for i, sun in enumerate(weeks):
+                try:
+                    week_ok = _load_week(page, sun)
+                except Exception as e:  # noqa: BLE001
+                    # p=701 never rendered (10/3, 10/14: '#weekStart' timed
+                    # out 3x). Raising here threw away every office -- the
+                    # tabs were never rebuilt. Skip the rest of THIS office
+                    # and let the others refresh; the miss keeps the ticket
+                    # open.
+                    print(f"⚠ {owner}: p=701 would not load for {sun} "
+                          f"({type(e).__name__}) — rest of office skipped",
+                          flush=True)
+                    if misses is not None:
+                        misses.extend(
+                            (owner, f"week {s} — page would not load, "
+                                    "not refreshed") for s in weeks[i:])
+                    break
+                if not week_ok:
                     # Keep the cached week rather than file another week's
                     # rows under this date.
                     if misses is not None:
