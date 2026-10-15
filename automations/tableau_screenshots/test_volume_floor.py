@@ -108,6 +108,11 @@ class TestWiredIntoTheGate(unittest.TestCase):
     def setUp(self):
         self.calls = []
         fr._record_observation = lambda *a, **k: [("t1", 280.0), ("t2", 280.0)]
+        # The floor is what's under test, not today's calendar: pin the dated
+        # low-volume pause OFF so these hold whatever week they run in.
+        was = fr.DROP_CHECKS_OFF_THROUGH
+        self.addCleanup(setattr, fr, "DROP_CHECKS_OFF_THROUGH", was)
+        fr.DROP_CHECKS_OFF_THROUGH = None
 
     def test_stable_but_part_loaded_is_held(self):
         cfg = {"stable_total": {"view_url": "u", "sheet": "New/Port/Air"}}
@@ -133,6 +138,42 @@ class TestWiredIntoTheGate(unittest.TestCase):
         ok, why = fr._check_stable_total("tableau:tracker_nds", cfg, FRI,
                                          dt.date(2026, 8, 29))
         self.assertTrue(ok, why)
+
+
+class TestLowVolumePause(unittest.TestCase):
+    """Raf 2026-10-15: a genuinely low week posts; a still-loading day doesn't."""
+
+    def setUp(self):
+        import automations.shared.tableau_patchright as tp
+        tp.download_crosstab_patchright = lambda *a, **k: "/tmp/x.csv"
+        fr._read_crosstab_text = lambda p: ROWS
+        was = fr.DROP_CHECKS_OFF_THROUGH
+        self.addCleanup(setattr, fr, "DROP_CHECKS_OFF_THROUGH", was)
+        fr.DROP_CHECKS_OFF_THROUGH = dt.date(2026, 8, 30)
+        self.cfg = {"stable_total": {"view_url": "u", "sheet": "New/Port/Air",
+                                     "same_day_avg_frac": 0.85}}
+
+    def test_low_but_settled_posts_during_the_pause(self):
+        fr._record_observation = lambda *a, **k: [
+            ("2026-08-29T04:01:00", 280.0), ("2026-08-29T04:31:00", 280.0)]
+        ok, why = fr._check_stable_total("tableau:tracker_nds", self.cfg, FRI,
+                                         dt.date(2026, 8, 29))
+        self.assertTrue(ok, why)
+
+    def test_still_loading_is_held_during_the_pause(self):
+        fr._record_observation = lambda *a, **k: [
+            ("2026-08-29T04:01:00", 250.0), ("2026-08-29T04:31:00", 280.0)]
+        ok, why = fr._check_stable_total("tableau:tracker_nds", self.cfg, FRI,
+                                         dt.date(2026, 8, 29))
+        self.assertFalse(ok)
+        self.assertIn("still loading", why)
+
+    def test_the_pause_ends_by_itself(self):
+        fr._record_observation = lambda *a, **k: [
+            ("2026-08-31T04:01:00", 280.0), ("2026-08-31T04:31:00", 280.0)]
+        ok, _ = fr._check_stable_total("tableau:tracker_nds", self.cfg, FRI,
+                                       dt.date(2026, 8, 31))
+        self.assertFalse(ok, "the day after the pause, a low day holds again")
 
 
 if __name__ == "__main__":

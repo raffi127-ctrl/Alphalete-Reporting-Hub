@@ -378,6 +378,18 @@ STABILITY_FILE = OUT_DIR / "_stability.json"
 # flip this; ops can use TRACKER_STABILITY_SHARED_OFF=1.
 SHARED_SAMPLES = True
 
+# Through this date the LOW-VOLUME holds (week-median floor, same-day 4-wk avg,
+# avg sheet) are off; the "stopped loading" check still runs, so a half-loaded
+# day still can't post. Raf 2026-10-15: production is genuinely low this week
+# and the 4-wk-avg floors held AT&T Country + NDS on a number that was right.
+# Back on by itself Thursday 2026-10-22. None = always on.
+DROP_CHECKS_OFF_THROUGH: Optional[dt.date] = dt.date(2026, 10, 21)
+
+
+def drop_checks_off(today: dt.date) -> bool:
+    return DROP_CHECKS_OFF_THROUGH is not None and today <= DROP_CHECKS_OFF_THROUGH
+
+
 _WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
              "Saturday", "Sunday"]
 
@@ -755,12 +767,19 @@ def _check_stable_total(extract_id: str, cfg: dict, target: dt.date,
     # AFTER the sample is recorded so the day's history stays continuous whether
     # this holds or not — the run that finally sees good data still needs the
     # earlier samples to prove the number settled.
-    try:
-        short = volume_shortfall(
-            text, target, total,
-            frac=float(conf.get("weekday_floor_frac", WEEKDAY_FLOOR_FRAC)))
-    except Exception:                        # noqa: BLE001 — a floor bug must
-        short = None                         # never break the gate
+    if drop_checks_off(today):
+        log("low-volume holds off through %s — only checking it stopped loading"
+            % DROP_CHECKS_OFF_THROUGH.isoformat())
+        conf = {k: v for k, v in conf.items()
+                if k not in ("same_day_avg_frac", "avg_sheet")}
+    short = None
+    if not drop_checks_off(today):
+        try:
+            short = volume_shortfall(
+                text, target, total,
+                frac=float(conf.get("weekday_floor_frac", WEEKDAY_FLOOR_FRAC)))
+        except Exception:                    # noqa: BLE001 — a floor bug must
+            short = None                     # never break the gate
     if short:
         return False, short
     if conf.get("same_day_avg_frac"):
