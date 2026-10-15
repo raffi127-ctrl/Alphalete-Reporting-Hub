@@ -391,6 +391,15 @@ LALA_QF = {
     ],
 }
 
+# ENERGY WELLS DOMINATION — RETIRED 2026-10-15. Raf (Slack, 10/14 8:50 PM):
+# "We can turn this off, the guys are no longer going to be selling for energy
+# well". All THREE rows that feed that chat go off together — Jay's AT&T board
+# included, because that chat was its only destination — so nothing lands in
+# the room at all. Rows stay wired (not deleted) so /knocks history and the
+# shared-chat tests still describe them; flip enabled back to bring one home.
+for _retired in (CALVIN, JAY_ATT, JAY_EW):
+    _retired["enabled"] = False
+
 OFFICES: List[Dict] = [RAF, CALVIN, JAY_ATT, JAY_EW, LALA, LALA_QF]
 
 # --- self-serve enrollments ---------------------------------------------------
