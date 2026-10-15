@@ -1949,7 +1949,7 @@
   "raf_daily_update": {
    "on_scheduler": false,
    "machine": "Lucy 2",
-   "_note": "Raf's Daily Update (Raf, #l10-alphalete 2026-10-13; LIVE 2026-10-14, Megan). AppStream office 11280 Retention Details + calendar (outcome, start date, start time) -> one row per 2nd-round candidate on the month tab of Raf's 'Daily Update & 2nd Round Retention 2026' (1hMdhH...; skips anyone already typed) + the Daily Update thread in #rafs-office-recruiting-11280 (congrats ask, pre-made text, picture, a tag per hiring leader; untaggable leaders go to Aisha/Raf and are learned next run). If a recruiter already posted the day's Daily Update it only adds the tags to their thread. SCHEDULE: Report Library card raf_daily_update, 5:00 PM CT Mon-Sat on Lucy 2 (card_scheduler, --write --post). Matched the real sheet 33/33 (10/13), 34/34 (10/12). `lucy rerun raf_daily_update` = dry preview; --compare-real grades a day against the recruiters' rows.",
+   "_note": "Raf's Daily Update (Raf, #l10-alphalete 2026-10-13; LIVE 2026-10-14, Megan). AppStream office 11280 Retention Details + calendar (outcome, start date, start time) -> one row per 2nd-round candidate on the month tab of Raf's 'Daily Update & 2nd Round Retention 2026' (1hMdhH...; skips anyone already typed) + the Daily Update thread in #rafs-office-recruiting-11280 (congrats ask, pre-made text, picture, a tag per hiring leader; untaggable leaders go to Aisha/Raf and are learned next run). If a recruiter already posted the day's Daily Update it only adds the tags to their thread. SCHEDULE: standalone LaunchAgent com.alphalete.raf-daily-update on Lucy 2, Mon-Sat 5:00 PM CT (deploy/raf_daily_update.sh; install via `lucy rerun install_raf_daily_update_agent`). NOT the card scheduler - Lucy 2's runs observe-only (10/14 it only logged WOULD run). TEST PHASE: --write --test-sheet --post --channel C0BH637AM8F (Daily Update 2026 - LUCY + #org-indeed-accounts). Matched the real sheet 33/33 (10/13), 34/34 (10/12). `lucy rerun raf_daily_update` = dry preview; --compare-real grades a day against the recruiters' rows.",
    "display_name": "Raf Daily Update (TEST)",
    "source_type": "appstream",
    "data_sources": [],
@@ -1957,6 +1957,29 @@
     "automations.raf_daily_update.run"
    ],
    "base_args": []
+  },
+  "install_raf_daily_update_agent": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_raf_daily_update_agent` can install the STANDALONE com.alphalete.raf-daily-update LaunchAgent on LUCY 2 (Mon-Sat 17:00, deploy/raf_daily_update.sh). Read-only w.r.t. any Sheet/report data; only (un)loads the plist. Re-run after the plist changes.",
+   "display_name": "Install Raf Daily Update agent (Mon-Sat 5pm)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "raf-daily-update"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   },
+   "machine": "Lucy 2"
   },
   "org_campaign_metrics": {
    "on_scheduler": false,
