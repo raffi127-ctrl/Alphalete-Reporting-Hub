@@ -1472,6 +1472,97 @@ def _praise_tick(cfg: Dict, office_key: str,
     return bool(win) and _GC.praise_tick(local, office_key, win[1], C.TICK_MINUTES)
 
 
+def _floor_due(cfg: Dict, now: Optional[dt.datetime] = None) -> bool:
+    """Is the office's once-a-day under-N-knocks text owed? From `at` (sat_at
+    on Saturday), office clock, until it has gone out today -- so a tick lost
+    to a busy Ownerville session is caught up by the next one in the window."""
+    spec = cfg.get("floor_text") or {}
+    local = C.office_now(cfg, now)
+    at = spec.get("sat_at" if local.weekday() == C.SATURDAY else "at")
+    if not at or not C.office_window_on(cfg, local.date()):
+        return False
+    h, m = C._hhmm(at, (24, 0))
+    if h == 24 or (local.hour, local.minute) < (h, m):
+        return False
+    sent = (_state().get("_floor_sent") or {}).get(cfg["key"])
+    return sent != local.date().isoformat()
+
+
+def _knocks(row: Dict) -> int:
+    try:
+        return int(float(str(row.get("Total Knocks") or 0).replace(",", "")))
+    except ValueError:
+        return 0
+
+
+def floor_text(rows: List[Dict], teams, minimum: int, day: dt.date) -> str:
+    """Every rep on today's board under `minimum` doors, team by team, fewest
+    first. A team whose reps all made it says so, so the room can see the
+    whole office in one text. `teams` None (no sales board) = one list."""
+    from automations.weekly_knock_dispositions import teams as TEAMS
+    by_team: Dict[str, List] = {}
+    for r in rows:
+        name = str(r.get("Rep") or "").strip()
+        if not name:
+            continue
+        team = (teams.team_for(name) if teams else "") or TEAMS.UNASSIGNED
+        by_team.setdefault(team, []).append((name, _knocks(r)))
+    total = sum(len(v) for v in by_team.values())
+    under_all = sum(1 for v in by_team.values() for _n, k in v if k < minimum)
+    lines = ["Under %d doors today — %s %d/%d"
+             % (minimum, day.strftime("%a"), day.month, day.day), ""]
+    order = TEAMS.team_order(by_team) if teams else list(by_team)
+    for team in order:
+        reps = by_team[team]
+        under = sorted([x for x in reps if x[1] < minimum],
+                       key=lambda x: (x[1], x[0]))
+        label = team if teams else "All reps"
+        if not under:
+            lines += ["%s — ✅ all %d at %d+" % (label, len(reps), minimum), ""]
+            continue
+        lines.append("%s — %d of %d under" % (label, len(under), len(reps)))
+        lines += ["• %s — %d" % (n, k) for n, k in under]
+        lines.append("")
+    lines.append("Total: %d of %d reps under %d" % (under_all, total, minimum))
+    return "\n".join(lines)
+
+
+def _send_floor_text(cfg: Dict, rows: List[Dict], day: dt.date, *,
+                     send: bool, failures: List[str]) -> None:
+    """The under-N text, once a day, after the board. Stamped only when it
+    really went out, so a failed send is retried on the next tick."""
+    spec = cfg.get("floor_text") or {}
+    if day != dt.date.today() or not _floor_due(cfg):
+        return
+    if not rows:
+        _log("  %s: under-%s text held — no board rows yet"
+             % (cfg["key"], spec.get("min_knocks")))
+        return
+    if not C.can_text():
+        failures.append("%s under-%s text: %s cannot send iMessage"
+                        % (cfg["key"], spec.get("min_knocks"), C.this_machine()))
+        return
+    from automations.b2b_dispositions import text_post as tp
+    from automations.weekly_knock_dispositions import teams as TEAMS
+    body = floor_text(rows, TEAMS.for_office(cfg["name"], day),
+                      int(spec.get("min_knocks") or 0), day)
+    try:
+        res = tp.send_to_group(spec["group"], body, [], dry_run=not send,
+                               allow_textonly=True)
+    except Exception as e:  # noqa: BLE001
+        failures.append("%s under-%s text: %s: %s"
+                        % (cfg["key"], spec.get("min_knocks"),
+                           type(e).__name__, str(e)[:200]))
+        return
+    _log("  %s: under-%s text %s -> %r\n%s"
+         % (cfg["key"], spec.get("min_knocks"),
+            "TEXT" if send else "PREVIEW", res.get("resolved_name"), body))
+    if send:
+        data = _state()
+        data.setdefault("_floor_sent", {})[cfg["key"]] = day.isoformat()
+        _save_state(data)
+
+
 def _clock_now() -> str:
     now = C.office_now({})
     hour = now.hour % 12 or 12
@@ -1766,7 +1857,8 @@ def tick(day: dt.date, *, send: bool, only: str = "",
                   and ((only or force) or _dest_due(d, cfg=cfg))]
             if _d:
                 guest_due[_g] = _d
-        if not due and not guest_due:
+        floor_due = host_open and _floor_due(cfg)
+        if not due and not guest_due and not floor_due:
             _log("%s: nothing due at %s (%s) — skipping"
                  % (cfg["key"], slot,
                     ", ".join(
@@ -1782,7 +1874,9 @@ def tick(day: dt.date, *, send: bool, only: str = "",
             _log("%s: last board went out %.1f min ago — skipping this tick "
                  "(min gap %d min). The room already has this."
                  % (cfg["key"], recent, C.MIN_SEND_GAP_MINUTES))
-            continue
+            if not floor_due:
+                continue
+            due, guest_due = [], {}      # pulled for the under-N text only
         plan.append((cfg, slot, due, guest_due))
 
     if not plan:
@@ -2082,6 +2176,7 @@ def tick(day: dt.date, *, send: bool, only: str = "",
 
         _send_guest_boards(cfg, guest_due, guest_boards, all_gaps, day,
                            send=send, failures=failures)
+        _send_floor_text(cfg, rows, day, send=send, failures=failures)
 
         if send and delivered:
             # Both stamped only after a route actually took it: a failed send

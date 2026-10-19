@@ -109,6 +109,15 @@ RAF = {
     # leaders into its own room. The sign-up form never emits the key, so no
     # onboarded office can turn it on by accident.
     "leader_tags": True,
+    # UNDER-125 TEXT (Raf, 2026-10-19, #claudecorrections thread "Local office
+    # - Text Message of 125 doors knocked or less"): "in my A players chat at
+    # 9:00 CEN can I get a text broken down by each team, of every rep that
+    # doesn't have 125 doors knocked for the day". Once a day, typed (no
+    # flyer), teams from his sales board. `at` is the office clock; Saturday's
+    # window closes at 8pm (Megan's hard stop), so its text goes with the 8pm
+    # board -- the last pull of a Saturday.
+    "floor_text": {"min_knocks": 125, "at": "21:00", "sat_at": "20:00",
+                   "group": "Knocking Chat A-Players"},
     # REPS WHO KNOCK UNDER RAF BUT BELONG TO CARLOS (2026-09-25). They are
     # off Raf's board entirely — see total_knocks.guests — and their own board
     # goes to CARLOS'S rooms from here, because this is the job that already
