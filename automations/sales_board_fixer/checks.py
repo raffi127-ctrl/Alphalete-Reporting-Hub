@@ -61,7 +61,6 @@ KIND_LABEL = {
     "lane_range": "Lanes: carril leyendo otra semana o cortando antes de TOTALS",
     "lane_extra_lost": "Lanes: fórmula de la fila de carriles borrada (col M)",
     "lane_spill_blocked": "Lanes: algo escrito debajo de un carril (lo deja en blanco)",
-    "lane_dead_cond": "Lanes: condición que nunca saca a nadie",
     "lane_threshold": "Lanes: el corte de la fórmula no es el del título",
     "lane_twin_differs": "Lanes: Current Week y Last week filtran distinto",
 }

@@ -273,13 +273,9 @@ def _find_ws(book_ws, title: str):
 def _heal_lost(formulas: List[List[str]], values: List[List[str]]) -> Dict[str, int]:
     """Patch `formulas` in place with a healthy copy of every lost lane;
     returns {A1: col0} of the cells patched."""
-    import json
     from automations.sales_board_fixer import lanes_check as LC
-    from automations.sales_board_fixer.run import LANES_GOOD_FILE
-    try:
-        good = json.loads(LANES_GOOD_FILE.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        good = None
+    from automations.sales_board_fixer import run as FX
+    good = FX._lanes_good().get("%s|%s" % (FX.SHEET_ID, TAB))
     row0, _ = find_blocks(values)
     fixes = LC.restore_lost(formulas, values, good)
     while len(formulas) <= row0:

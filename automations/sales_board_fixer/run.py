@@ -54,6 +54,9 @@ SHEET_ID = "1MC9pfKryQrRtcMthUBL2hOciDCaa83U059pz0N2CmHc"   # Alphalete SALES BO
 STATIONS_TAB = "Stations"         # one tab, not per week
 LANES_TAB = LC.TAB                # 'Lanes' -- see lanes_check.py
 SANDBOX_PREFIX = "SANDBOX — "     # a test copy of a tab, checked like the real one
+# Lanes tabs on owners' sheets: 'Exit Lanes' (Frank, Drew), 'Lanes' (Cyrus),
+# 'Lanes JAIRO' (Miami) -- Eve 2026-10-19: "deben ser todos"
+LANE_NAME = re.compile(r"\blanes?\b", re.I)
 MAX_FIXES = 300                   # more than this on one tab = misread, don't write
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = REPO_ROOT / "output" / "sales_board_fixer"
@@ -109,15 +112,29 @@ def load(sh, title: str) -> dict:
          "formulas": formulas, "rules": sheet.get("conditionalFormats", []),
          "basic_filter": sheet.get("basicFilter"),
          "ncols": ncols, "fonts": fonts, "numfmts": numfmts, "notes": notes}
-    if title in (LANES_TAB, SANDBOX_PREFIX + LANES_TAB) and sh.id == SHEET_ID:
+    if LANE_NAME.search(title):
         t.update(load_lanes(sh, t))
     return t
 
 
+def _lanes_key(sh, title: str) -> str:
+    return "%s|%s" % (sh.id, title[len(SANDBOX_PREFIX):] if title.startswith(SANDBOX_PREFIX)
+                      else title)
+
+
+def _lanes_good() -> dict:
+    """{sheet|tab: healthy copy}. The first version (10/19) held only ours."""
+    try:
+        d = json.loads(LANES_GOOD_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {"%s|%s" % (SHEET_ID, LANES_TAB): d} if "formulas" in d else d
+
+
 def load_lanes(sh, t: dict) -> dict:
     """What lanes_check needs beyond the tab itself: which cells a person
-    typed (vs spilled), the two Sales Board tabs the lanes read, and where
-    lanes.py says they should point."""
+    typed (vs spilled), the board tabs the lanes read, and -- ours only --
+    where lanes.py says each week should point."""
     from automations.alphalete_sales_board import lanes as L
     from automations.alphalete_sales_board import fill
     v = t["values"]
@@ -129,10 +146,11 @@ def load_lanes(sh, t: dict) -> dict:
     entered = [[bool((c or {}).get("userEnteredValue")) for c in rd.get("values", [])]
                for rd in rows]
     notes = [[(c or {}).get("note", "") for c in rd.get("values", [])] for rd in rows]
-    anchor = L.lanes_week(dt.date.today())
     have = _tabs(sh)
-    boards, targets = {}, {}
-    for key, back in (("current", 0), ("last", 7)):
+    ours = sh.id == SHEET_ID
+    boards, targets = {}, ({} if ours else None)
+    anchor = L.lanes_week(dt.date.today())
+    for key, back in ((("current", 0), ("last", 7)) if ours else ()):
         title = fill.tab_title(anchor - dt.timedelta(days=back))
         if title not in have:
             continue
@@ -143,15 +161,25 @@ def load_lanes(sh, t: dict) -> dict:
     # the tabs the lanes point at today count too (Monday: last week's pair)
     for f in (t["formulas"][r][c] for r in range(min(len(t["formulas"]), 6))
               for c in range(len(t["formulas"][r]))):
-        for m in LC.RANGE_RE.finditer(str(f)):
-            if m.group(1) not in boards and m.group(1) in have:
-                boards[m.group(1)] = sh.worksheet(m.group(1)).get_all_values()
-    try:
-        good = json.loads(LANES_GOOD_FILE.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        good = None
+        for tab, *_ in LC.ranges(f):
+            if tab not in boards and tab in have:
+                boards[tab] = sh.worksheet(tab).get_all_values()
     return {"lanes": {"entered": entered, "boards": boards, "targets": targets,
-                      "good": good}, "notes": notes}
+                      "good": _lanes_good().get(_lanes_key(sh, t["title"]))},
+            "notes": notes}
+
+
+def lanes_findings(t: dict) -> list:
+    """lanes_check on a loaded tab; [] when it is not a lanes tab after all
+    (no 'Current Week' / 'Last week' banner) or our week tab isn't built yet."""
+    x = t["lanes"]
+    if x["targets"] is not None and len(x["targets"]) < 2:
+        return []                      # a week tab missing: lanes.py waits too
+    try:
+        return LC.check(t["formulas"], t["values"], x["entered"], x["boards"], x["good"],
+                        x["targets"], tab=t["title"])
+    except RuntimeError:
+        return []
 
 
 def _font(v: dict):
@@ -172,11 +200,7 @@ def audit(t: dict, tenure=None) -> list:
     """tenure = (history, earliest sunday) from tenure_history(), or None."""
     title, v, f = t["title"], t["values"], t["formulas"]
     if "lanes" in t:
-        x = t["lanes"]
-        if len(x["targets"]) < 2:      # a week tab missing: lanes.py waits too
-            found = []
-        else:
-            found = LC.check(f, v, x["entered"], x["boards"], x["targets"], x["good"])
+        found = lanes_findings(t)
         found += K.check_conditional(title, t["sheet_id"], t["rules"], t["ncols"])
     elif K.is_board(v):
         found = (K.check_formulas(title, v, f) + K.check_roll_call(title, v)
@@ -356,8 +380,8 @@ def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "",
                     if kinds is None or x.kind in kinds]
             print("  después de arreglar quedan: %d (%d arreglables)"
                   % (len(left), sum(1 for x in left if x.fixable)))
-        if title == LANES_TAB:      # never learn from a sandbox copy
-            remember_lanes(sh, title)
+        if LANE_NAME.search(title) and not title.startswith(SANDBOX_PREFIX):
+            remember_lanes(sh, title)       # never learn from a sandbox copy
         results[label + title] = widened + found
     return results
 
@@ -368,16 +392,21 @@ def remember_lanes(sh, title: str) -> None:
     formulas. That copy is what a deleted lane is rebuilt from."""
     t = load(sh, title)
     x = t["lanes"]
-    if len(x["targets"]) < 2:
+    if x["targets"] is not None and len(x["targets"]) < 2:
         return
-    left = [f for f in LC.check(t["formulas"], t["values"], x["entered"], x["boards"],
-                                x["targets"], x["good"])
-            if f.kind in ("lane_formula_lost", "lane_col_moved", "lane_range", "lane_extra_lost")]
-    if left:
+    try:
+        left = [f for f in LC.check(t["formulas"], t["values"], x["entered"], x["boards"],
+                                    x["good"], x["targets"], tab=title)
+                if f.kind in LC.REPAIRS]
+        good = LC.remember(t["formulas"], t["values"], x["boards"])
+    except RuntimeError:               # not a lanes tab
         return
+    if left or not good["formulas"]:
+        return
+    allgood = _lanes_good()
+    allgood[_lanes_key(sh, title)] = good
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    LANES_GOOD_FILE.write_text(json.dumps(LC.remember(t["formulas"], t["values"], x["boards"]),
-                                          ensure_ascii=False, indent=1), encoding="utf-8")
+    LANES_GOOD_FILE.write_text(json.dumps(allgood, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
 # --- owners' All-in-One workbooks (2026-10-12) -------------------------------
@@ -451,12 +480,30 @@ def owner_tabs(sh, boards: int = 1) -> list:
     return picked + side_tabs(visible, picked)
 
 
+def lane_tabs(sh, only_for=None) -> list:
+    """Visible Lanes tabs of an owner's sheet. A book shared by several owners
+    (Miami) names them by owner -- 'Lanes JAIRO' -- so with `only_for` (that
+    owner's tabs from owners.json) only the ones naming one of them count."""
+    meta = sh.fetch_sheet_metadata({"fields": "sheets(properties(title,hidden))"})
+    out = []
+    for s in meta["sheets"]:
+        t = s["properties"]["title"]
+        if s["properties"].get("hidden") or not LANE_NAME.search(t) \
+                or t.lower().startswith("copy of"):
+            continue
+        if only_for is not None and not any(o.strip().lower() in t.lower() for o in only_for):
+            continue
+        out.append(t)
+    return out
+
+
 # What Lucy writes on an OWNER's board (Eve, 2026-10-12): broken formulas and
 # broken color rules, nothing else -- no notes, no fonts / number formats, no
 # Roll Call. An X typed over a formula is only reported: on our board the
 # Roll Call fill keeps the X, on theirs restoring the formula would erase it.
 OWNER_KINDS = {"typed_over_formula", "missing_formula", "different_formula",
-               "row_added_wrong", "cf_broken", "cf_foreign", "cf_duplicate"}
+               "row_added_wrong", "cf_broken", "cf_foreign", "cf_duplicate",
+               *LC.REPAIRS}
 def _owners_rank_cell(x, name_col: int) -> bool:
     """The '#' column left of the names. Owners write it their own way --
     Rashad switched to =IF(B5<>"",ROW()-3,"") on purpose (2026-10-13) and a
@@ -524,6 +571,7 @@ def run_owners(only, do_apply: bool, stamp: str) -> dict:
             # ('COLTEN', 'JAIRO'): list them in owners.json (2026-10-14)
             tabs = ([t for t in o["tabs"] if t in _tabs(sh)] if o.get("tabs")
                     else owner_tabs(sh, o.get("boards", 1)))
+            tabs += [t for t in lane_tabs(sh, o.get("tabs")) if t not in tabs]
         except Exception as e:  # noqa: BLE001 -- one owner's sheet never stops the rest
             print("== %s: NO se pudo abrir (%s)" % (o["name"], type(e).__name__))
             continue
