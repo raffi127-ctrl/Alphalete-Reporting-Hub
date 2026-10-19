@@ -186,6 +186,41 @@ class KnocksPullFailed(RuntimeError):
     """
 
 
+class DispositionNotOpen(KnocksPullFailed):
+    """ownerville will not open Disposition by Rep (p=89) for this office at
+    all — it 302s the request to the Welcome page (`p=2&bounce=…`).
+
+    Ja Mosley, 2026-10-13 on (probe on Lucy 4, 2026-10-18): impersonation
+    lands on "Ja Mosley (23882 - Envision Collective, Inc.)", then p=89 AND
+    p=88 both redirect to `index.cfm?p=2&…&bounce=990`, title "… - Welcome".
+    Chan Park, same session, same minute: p=89 serves the grid (25 headers).
+    Until 10/12 his p=89 served an (empty) grid every day. So the module was
+    taken away from this office / from the reporting account's view of it.
+
+    That is a permission, not a stalled grid: re-navigating three times and
+    then saying "the scrape stalled" (what this used to read as, every day
+    for a week) sends people chasing a timing bug. The message carries the
+    words captainship_drafts.knock_dispo_images reads as an ACCESS GAP, so the
+    owner is left out of the email (Eve 2026-09-03) instead of a yellow box
+    holding the captain's autosend."""
+
+
+def bounced_off_dispositions(page) -> bool:
+    """True when the page asked for p=89 but ownerville parked it on the
+    Welcome page with a `bounce=` code. Tolerates pages with no url (fakes)."""
+    try:
+        url = str(getattr(page, "url", "") or "")
+    except Exception:  # noqa: BLE001
+        return False
+    return bool(re.search(r"[?&]p=2(&|$)", url)) and "bounce=" in url
+
+
+NOT_OPEN_MSG = ("Disposition by Rep is not open to this office on the "
+                "reporting account — ownerville redirects it to the Welcome "
+                "page (bounce). Nothing to read until someone restores that "
+                "module / access in ownerville; re-running changes nothing.")
+
+
 def _norm(s: str) -> str:
     """Normalize a header for matching: lowercase, drop every non-alphanumeric
     (so an en-dash, the mojibake '�', or extra spaces all collapse), then
@@ -262,6 +297,10 @@ def _navigate(page, rqst: str, target_mdy: str, *, attempts: int = 3) -> None:
             page.wait_for_selector("#table-dispositions thead th", timeout=15000)
             break
         except Exception:  # noqa: BLE001 — stalled grid, not a fatal state
+            if bounced_off_dispositions(page):
+                # Not a slow grid: the page is not ours to open. Retrying
+                # only buys the misleading "scrape stalled" note.
+                raise DispositionNotOpen(NOT_OPEN_MSG)
             if attempt == attempts:
                 # Out of retries: fall through and let _scrape_rows raise with
                 # the live-headers diagnostic, same as before this guard.

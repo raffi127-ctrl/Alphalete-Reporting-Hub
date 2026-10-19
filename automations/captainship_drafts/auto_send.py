@@ -289,6 +289,9 @@ def tableau_status(today: dt.date) -> Tuple[Dict[str, str], Dict[str, str],
         from automations.tableau_screenshots import freshness as fr
         held = fr.read_held(today)
         ready = fr._read_verdicts(today)
+        # att / nds / b2b never write READY (stability gate); the catch-up
+        # records them here instead once it re-measures them settled.
+        ready.update(getattr(fr, "read_caught_up", lambda _d: {})(today))
         for bid, why in held.items():
             eid = fr.extract_for_board(bid)
             if not eid:

@@ -202,6 +202,12 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     _log("Rep Knock Breakdown %s · %s · %s"
          % (day.isoformat(), _clock(now), "LIVE" if send else "preview"))
+    live = send or text
+    if live:
+        # START-OF-RUN SEED: 10/15 19:05-21:05 the pull died (the mini had no
+        # DNS) and nothing recorded it; without this an earlier hour's clean
+        # manifest would answer for the dead one. alert=False: not a failure.
+        _manifest(failed=["run did not finish"], note="started", seed=True)
     reps = pull(day, only=a.only)
     _log("%d rep(s) knocked on %s" % (len(reps), day.isoformat()))
 
@@ -211,6 +217,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     day_label = "%s %s" % (day.strftime("%a"), _md(day))
     asof = _clock(now) if day == now.date() else "end of day"
     errors = []
+    sent_texts = []
+    unsent_texts = []
     posted = skipped = 0
     for rep in sorted(reps, key=lambda r: r["name"].lower()):
         try:
@@ -246,6 +254,12 @@ def main(argv: Optional[List[str]] = None) -> int:
                                          C.TEXT_GROUP, body.replace("\n", " ")))
                 if text and res.get("ok"):
                     state.setdefault("texted", {})[alert["key"]] = now.isoformat()
+                    sent_texts.append(rep["name"])
+                elif text:
+                    # A text the room never got is NOT delivered: the manifest
+                    # says so (the exit code is unchanged — the next hour
+                    # retries it, as before).
+                    unsent_texts.append(rep["name"])
         except Exception as e:  # noqa: BLE001 — one rep, not the pass
             errors.append("%s: %s: %s" % (rep["name"], type(e).__name__, e))
             traceback.print_exc()
@@ -256,7 +270,29 @@ def main(argv: Optional[List[str]] = None) -> int:
     _log("done: %d posted, %d unchanged, %d failed" % (posted, skipped, len(errors)))
     for e in errors:
         _log("  FAILED " + e)
+    if live:
+        # THE DELIVERY RECORD delivery_check.may_close reads: ok=true only when
+        # every rep card and every GPS text this run owed went out. A run that
+        # owed nothing (no new streaks) delivered everything it had to.
+        _manifest(failed=[e.split(":", 1)[0] for e in errors]
+                  + ["%s (GPS text)" % n for n in unsent_texts],
+                  succeeded=sent_texts,
+                  note="%d posted, %d unchanged, %d text(s) sent, %d text(s) "
+                       "NOT sent, %d failed" % (posted, skipped, len(sent_texts),
+                                               len(unsent_texts), len(errors)))
     return 1 if errors else 0
+
+
+def _manifest(*, failed, succeeded=(), note="", seed=False) -> None:
+    """Today's run-manifest under the schedule id. Silent (alert=False): the
+    orchestrator's FAILED post already speaks for a bad run. Never raises."""
+    try:
+        from automations.shared.run_manifest import write_manifest
+        write_manifest("rep_knock_breakdown", failed=list(failed),
+                       succeeded=list(succeeded), kind="rep", note=note,
+                       alert=False, **({"ok": False} if seed else {}))
+    except Exception as e:  # noqa: BLE001
+        _log("(manifest not written: %s: %s)" % (type(e).__name__, e))
 
 
 if __name__ == "__main__":

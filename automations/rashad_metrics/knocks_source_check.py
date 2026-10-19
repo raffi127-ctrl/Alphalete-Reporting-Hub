@@ -242,6 +242,17 @@ def check_office(eco, metrics_row, day: dt.date, values=None,
         return out
 
     out["relayed"] = bool(rows)
+    if not rows and _relayed_empty(row):
+        # THE MACHINE CLOSED OUT AN EMPTY DAY — "[]" grid, "[]" tracker, 0
+        # reps. There was no data sitting there to use; knocks_relay scrapes
+        # on purpose so OwnerVille itself confirms the zero ("EMPTY IS NOT A
+        # QUIET DAY HERE"). Isaiah, 10/15-10/17: relay [] / [] and the Lucy 4
+        # scrape agreed ("Time Tracker: 200 OK, no rows"). Calling that OURS
+        # opened a red ticket every morning for a design working as built.
+        out["empty"] = True
+        out["why"] = ("closed out an EMPTY day (0 reps) — the board scraped "
+                      "to confirm the zero, by design")
+        return out
     if not rows:
         # THE DAY WAS THERE AND WE DID NOT USE IT. Ours to fix. Only once the
         # close-out is known to have beaten the board: data that arrived after
@@ -250,6 +261,18 @@ def check_office(eco, metrics_row, day: dt.date, values=None,
         out["why"] = ("the day was closed out but the board still fell back "
                       "to a scrape")
     return out
+
+
+def _relayed_empty(row) -> bool:
+    """Did the relayed row say, in so many words, that nobody knocked? Both
+    JSON cells parse to empty lists. Unreadable JSON is NOT empty — that is a
+    broken relay and stays a fault."""
+    import json
+    try:
+        return (json.loads(row[2] or "[]") == []
+                and json.loads(row[3] or "[]") == [])
+    except (ValueError, TypeError, IndexError):
+        return False
 
 
 def run(day: Optional[dt.date] = None, log=print) -> int:
@@ -287,7 +310,7 @@ def run(day: Optional[dt.date] = None, log=print) -> int:
     faults = [r for r in results if r["fault"]]
     late = [r for r in results if r["late"]]
     asleep = [r for r in results if not r["relayed"] and not r["fault"]
-              and not r["late"]]
+              and not r["late"] and not r.get("empty")]
     # Only where it would have changed the answer. An office that relayed
     # nothing is scraping whatever the board's clock says, and naming it here
     # too is the padding that makes the real line easy to skip.

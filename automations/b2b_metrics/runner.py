@@ -40,6 +40,7 @@ import datetime as dt
 import json
 import sys
 import time
+from typing import Optional
 import traceback
 from pathlib import Path
 
@@ -323,14 +324,32 @@ def _entry_base(entry: str) -> str:
     return entry[:-len(_CRASH_TAG)] if entry.endswith(_CRASH_TAG) else entry
 
 
-def _todays_manifest():
-    """Today's b2b_metrics manifest, or None if there isn't one from today.
+def _manifest_id(office: Optional[str]) -> str:
+    """Which manifest this run speaks for.
+
+    A per-office report (`jamis_metrics`, `luke_metrics`, … — base_args
+    `--office <key> --post`) is verified against ITS OWN manifest, so it must
+    write `<office>_metrics`; writing `b2b_metrics` left its verify pointing at a
+    file that never existed (every clean run read "can't confirm DELIVERED") and
+    clobbered the --all run's manifest. The orchestrator names the report it is
+    running in HUB_REPORT_ID; only when that is this office's own report does
+    the run switch. A repair of the --all report (`lucy rerun b2b_metrics
+    --office carlos --only X`) still merges into `b2b_metrics`."""
+    import os
+    rid = (os.environ.get("HUB_REPORT_ID") or "").strip()
+    if office and rid == "{}_metrics".format(office):
+        return rid
+    return "b2b_metrics"
+
+
+def _todays_manifest(manifest_id: str = "b2b_metrics"):
+    """Today's manifest for this run, or None if there isn't one from today.
 
     Yesterday's must never be merged into: it would resurrect yesterday's
     missing sections into today's verdict."""
     try:
         from automations.shared import run_manifest
-        m = run_manifest.read_manifest("b2b_metrics")
+        m = run_manifest.read_manifest(manifest_id)
     except Exception:  # noqa: BLE001
         return None
     if not m:
@@ -340,7 +359,8 @@ def _todays_manifest():
     return m
 
 
-def _write_manifest(per_office: list, *, scoped: bool = False) -> None:
+def _write_manifest(per_office: list, *, scoped: bool = False,
+                    office: Optional[str] = None) -> None:
     """Persist section-level completeness so the orchestrator's reconciler can
     turn a silent partial post into an INCOMPLETE alert (the AT&T Order Log went
     missing 2026-07-26 and nothing paged Megan). Additive: the runner already
@@ -390,7 +410,7 @@ def _write_manifest(per_office: list, *, scoped: bool = False) -> None:
                     else "{}: {}".format(key, sid)
                 failed.append(tag)
         if scoped:
-            prior = _todays_manifest()
+            prior = _todays_manifest(_manifest_id(office))
             if prior is None:
                 # Nothing from today to merge into — the full run never reached
                 # its summary. A one-section run can't vouch for the others, so
@@ -409,9 +429,12 @@ def _write_manifest(per_office: list, *, scoped: bool = False) -> None:
         if after:
             note += " — DEFERRED on ORDERLOG freshness; the 8:30 floor pass " \
                     "posts them (no alert before {})".format(after[11:16])
+        mid = _manifest_id(office)
+        retry = (["--office", office, "--post"] if mid != "b2b_metrics"
+                 else ["--all", "--post"])
         run_manifest.write_manifest(
-            "b2b_metrics", failed=failed, succeeded=succeeded,
-            retry_args=["--all", "--post"], kind="section", note=note,
+            mid, failed=failed, succeeded=succeeded,
+            retry_args=retry, kind="section", note=note,
             alert_after=after)
     except Exception:  # noqa: BLE001 — never let bookkeeping sink the report
         pass
@@ -1201,7 +1224,7 @@ def main(argv=None) -> int:
                                "failed": True})
             if not args.all_offices:      # single-office: fail loud as before
                 if records_manifest:
-                    _write_manifest(per_office, scoped=scoped)
+                    _write_manifest(per_office, scoped=scoped, office=args.office)
                 if publishable:
                     _publish_hub("failed")
                 raise
@@ -1215,7 +1238,7 @@ def main(argv=None) -> int:
     if records_manifest:
         # Record section-level completeness for the orchestrator's reconciler
         # (drives the INCOMPLETE / missing-section alert once verify is wired).
-        _write_manifest(per_office, scoped=scoped)
+        _write_manifest(per_office, scoped=scoped, office=args.office)
     if publishable:
         # Green only if EVERY office fully posted; orange if some did; red if none.
         if all(s == "success" for s in statuses):

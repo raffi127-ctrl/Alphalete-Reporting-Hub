@@ -70,7 +70,7 @@ def _run_main(*, budget_s, office_cost_s, argv=("--all", "--post")):
          mock.patch.dict("sys.modules", {"automations.thread_builder.sync": fake_tb}), \
          mock.patch.object(runner, "run", fake_run), \
          mock.patch.object(runner, "_write_manifest",
-                           lambda per_office, scoped=False: written.append(
+                           lambda per_office, scoped=False, office=None: written.append(
                                {"per_office": per_office, "scoped": scoped})), \
          mock.patch.object(runner, "_publish_hub", mock.Mock()), \
          mock.patch.object(runner, "_publish_running", mock.Mock()), \

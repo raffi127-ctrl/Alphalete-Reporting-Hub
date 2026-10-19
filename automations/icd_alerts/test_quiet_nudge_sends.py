@@ -82,5 +82,48 @@ class AnySignOfLifeCountsTest(unittest.TestCase):
         self.assertEqual(seen["roshan"], "9/21/2026 10:07:51")
 
 
+class SaturdayEveningIsNotQuietTest(unittest.TestCase):
+    """2026-10-17: six offices stopped at 16:58 local -- the agent's Saturday
+    end -- and were posted as quiet until 21:30. Each checked in again at its
+    midnight close-out. Saturday after 17:00 local is not a watch window."""
+
+    SAT, MON = dt.date(2026, 10, 17), dt.date(2026, 10, 12)
+
+    def _at(self, day, h, m):
+        return dt.datetime(day.year, day.month, day.day, h, m)
+
+    def test_saturday_closes_at_the_agents_own_end(self):
+        self.assertTrue(P.quiet_watch_open(self._at(self.SAT, 16, 59)))
+        self.assertFalse(P.quiet_watch_open(self._at(self.SAT, 17, 0)))
+        self.assertFalse(P.quiet_watch_open(self._at(self.SAT, 17, 45)))
+        self.assertFalse(P.quiet_watch_open(self._at(self.SAT, 21, 30)))
+
+    def test_weekdays_unchanged(self):
+        self.assertFalse(P.quiet_watch_open(self._at(self.MON, 10, 59)))
+        self.assertTrue(P.quiet_watch_open(self._at(self.MON, 11, 0)))
+        self.assertTrue(P.quiet_watch_open(self._at(self.MON, 17, 45)))
+        self.assertTrue(P.quiet_watch_open(self._at(self.MON, 21, 59)))
+        self.assertFalse(P.quiet_watch_open(self._at(self.MON, 22, 0)))
+
+    def test_no_post_for_a_saturday_1658_stop(self):
+        q = {"office": "rashad", "label": "Rashad's Local Office",
+             "last": "10/17/2026 16:59:57", "reason": "last checked in"}
+        now = self._at(self.SAT, 17, 45)
+        posts = []
+        with mock.patch.object(P, "quiet_offices", return_value=[q]), \
+             mock.patch.object(P, "_warned", return_value={}), \
+             mock.patch.object(P, "_save_warned", lambda *a, **k: None), \
+             mock.patch.object(P, "laptop_keys", return_value=set()), \
+             mock.patch.object(P, "restart_risks", return_value=[]), \
+             mock.patch.object(P, "_dm", side_effect=lambda *a: posts.append(a)), \
+             mock.patch.object(P, "_slack",
+                               side_effect=lambda *a, **k: posts.append(a)), \
+             mock.patch.object(P.O, "office_now", return_value=now):
+            got = P.warn_quiet(self.SAT, send=True, now=now,
+                               log=lambda *a, **k: None)
+        self.assertEqual(got, [])
+        self.assertEqual(posts, [])
+
+
 if __name__ == "__main__":
     unittest.main()

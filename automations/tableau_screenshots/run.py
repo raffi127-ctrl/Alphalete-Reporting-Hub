@@ -961,6 +961,7 @@ def main(argv=None) -> int:
                 # a 0-sales quantum_fiber board in front of 15 channels on
                 # 2026-08-26, three hours after the morning gate held it. A board
                 # nobody has refreshed is not a late board, it is a wrong one.
+                _v: dict = {}
                 try:
                     still_behind, _v = _fr.stale_boards(list(held), today,
                                                         verbose=True)
@@ -968,6 +969,15 @@ def main(argv=None) -> int:
                     print(f"  (re-check skipped: {type(e).__name__}) — keeping "
                           f"this morning's note", flush=True)
                     still_behind = dict(held)
+                # Tell captainship_drafts.auto_send the extract caught up. The
+                # stability extracts never write READY, so without this the B2B
+                # captains stayed "Tableau not updated" all day even after these
+                # boards posted (10/13, 10/15, 10/18). A probe error is "not
+                # held", not proof — only a real measurement counts.
+                if not args.dry_run:
+                    for eid, verdict in (_v or {}).items():
+                        if verdict.startswith("FRESH") and "not held" not in verdict:
+                            _fr.record_caught_up(today, eid, verdict)
                 # A board that opts into post_when_behind goes out anyway, with
                 # its note in the caption (quantum_fiber, Eve 2026-10-09: its
                 # extract now runs a day late, so withholding meant no board).
@@ -983,6 +993,20 @@ def main(argv=None) -> int:
                     title = (pages_mod.by_id(bid) or {}).get("title") or bid
                     print(f"  ⚠ {title} is STILL behind — it will be reported in "
                           f"the thread, not sent", flush=True)
+                # Everything the morning held has caught up → close the hold
+                # thread, same as the morning run does when nothing is held.
+                # Before this only a clean MORNING closed it, and B2B's first
+                # sample holds nearly every morning, so the thread never closed.
+                if not still_behind and not args.dry_run:
+                    try:
+                        from automations.shared import incident_thread as _inc
+                        _inc.resolve_if_open(
+                            "tracker-freshness", what="*Country Trackers*",
+                            detail="The catch-up re-measured every held extract "
+                                   "as settled — the held boards posted.",
+                            dry_run=args.dry_run)
+                    except Exception:  # noqa: BLE001 — closing never sinks a run
+                        pass
     elif not args.only:
         held = _hold_stale_boards(today, dry_run=args.dry_run,
                                   orgs=_select_orgs(args.orgs))

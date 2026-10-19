@@ -306,12 +306,14 @@ def main(argv=None) -> int:
     start = end - dt.timedelta(days=a.weeks * 7 - 1)
 
     total = 0
+    failed = []
     for office_id, owner in wanted:
         print(f"[{office_id}] {owner}", flush=True)
         try:
             dates = harvest(office_id, owner, start, end)
         except Exception as e:   # noqa: BLE001 — one office is not the run
             print(f"  FAILED ({type(e).__name__}: {e})", flush=True)
+            failed.append(owner)
             continue
         if a.dry_run:
             for rep, day in sorted(dates.items(), key=lambda kv: kv[1]):
@@ -320,6 +322,30 @@ def main(argv=None) -> int:
             continue
         total += store(owner, dates)
     print(f"done — {total} start date(s) written")
+    if failed:
+        print(f"  {len(failed)} of {len(wanted)} office(s) FAILED: "
+              + ", ".join(failed), flush=True)
+    # EVERY office failing is a failed run, not a clean one: on 2026-10-14 and
+    # 10-16 the mini had no DNS, all 16 offices timed out, 0 dates were
+    # written -- and this exited 0, so the Hub showed it green.
+    # [[feedback_green_means_delivered]]
+    if not a.dry_run:
+        # Its own account of what landed, so delivery_check can close (or
+        # hold) the ticket instead of answering UNKNOWN forever (10/16).
+        try:
+            from automations.shared import run_manifest
+            run_manifest.write_manifest(
+                "icd_start_dates", kind="office", alert=False,
+                failed=failed,
+                succeeded=[o for _i, o in wanted if o not in failed],
+                retry_args=[x for o in failed for x in
+                            ("--office", next(i for i, w in wanted if w == o))],
+                note="%d start date(s) written" % total)
+        except Exception as e:  # noqa: BLE001 — never fail the run on this
+            print(f"  (manifest write failed: {type(e).__name__})", flush=True)
+    if wanted and len(failed) == len(wanted):
+        print("NOTHING was read — every office failed. Exit 1.", flush=True)
+        return 1
     return 0
 
 

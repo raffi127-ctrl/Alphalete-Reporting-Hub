@@ -165,7 +165,7 @@ def late_status(day: dt.date) -> tuple:
     out, or while every owed tracker is still missing."""
     now = dt.datetime.now(_CENTRAL) if _CENTRAL else dt.datetime.now()
     hh, mm = (int(x) for x in cfg.LATE_CUTOFF.split(":"))
-    past = day < now.date() or now.time() >= dt.time(hh, mm)
+    past = day < now.date() or (day == now.date() and now.time() >= dt.time(hh, mm))
     pending = read_late_pending(day)
     if pending is None:
         if past:
@@ -307,6 +307,42 @@ def run(only: Optional[str] = None, *, day: Optional[dt.date] = None,
     return out
 
 
+LATE_REPORT_ID = "owner_chat_texts_late_send"
+
+
+def _late_manifest(res: dict) -> None:
+    """The late pass's own account of what it delivered, for delivery_check.
+
+    WHY (2026-10-17). It had no verify and wrote no manifest, so a clean run
+    could only answer UNKNOWN and failure-owner_chat_texts_late_send stayed
+    open on days it had nothing to do. Its job is ONLY what the 9:00 PDF left
+    out: nothing owed = delivered (nothing to send); owed and texted =
+    delivered; owed and still not in the Slack thread = NOT delivered (named,
+    alert=False -- the readiness gate already chases it). A run with errors
+    writes nothing and exits 1. Never allowed to fail the run."""
+    try:
+        from automations.shared import run_manifest
+        still = [s for s in res.get("skipped", [])
+                 if s.startswith("late (still not posted")]
+        if res.get("errors"):
+            return
+        if still:
+            run_manifest.write_manifest(
+                LATE_REPORT_ID, kind="tracker", alert=False,
+                failed=list(res.get("missing") or ["late tracker(s)"]),
+                note=still[0])
+            return
+        sent = list(res.get("sent") or [])
+        why = next((s for s in res.get("skipped", []) if s.startswith("late (")),
+                   "")
+        run_manifest.write_manifest(
+            LATE_REPORT_ID, kind="tracker", succeeded=sent,
+            note=("texted the late tracker(s)" if sent else why or "nothing owed"))
+    except Exception as e:  # noqa: BLE001
+        print("  (manifest write failed: %s — the run itself was fine)"
+              % type(e).__name__, flush=True)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         description="Text trackers + Org WOW board to the owner iMessage chats")
@@ -379,6 +415,8 @@ def main(argv=None) -> int:
                 hub_publish.publish_done(rid, title, status="success")
         except Exception:  # noqa: BLE001
             pass
+    if args.only == "late" and not dry:
+        _late_manifest(res)
     if res["ok"]:
         print("=== done%s ===" % (" (dry-run)" if dry else ""), flush=True)
     elif not res["errors"]:

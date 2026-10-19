@@ -90,7 +90,10 @@ def session(verbose=False):
 # credentials that were never the problem. Retry the transient statuses HERE, at
 # the single HTTP chokepoint, so they never reach the report. 403/404 are NOT in
 # the list — a real permission fault still fails on the first answer.
-_RETRY_STATUS = (429, 500, 502, 503, 504)
+# 409 = Sheets' ABORTED ("concurrent modification") -- the call did NOT apply,
+# so a retry is safe. It killed ad_sales_board's values:clear on Lucy 2
+# 2026-10-18 13:16 (recruiting_chain 1 PM refresh FAILED; 17:50 ran clean).
+_RETRY_STATUS = (409, 429, 500, 502, 503, 504)
 _RETRIES = 6                    # 1+2+4+8+16 ≈ 31s of blip ridden out
 _BACKOFF_CAP = 30.0
 

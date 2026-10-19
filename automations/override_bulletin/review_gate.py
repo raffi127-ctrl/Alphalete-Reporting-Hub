@@ -48,6 +48,7 @@ from typing import Optional, Tuple
 
 from automations.override_bulletin import dd_build as DB
 from automations.override_bulletin import dd_data as D
+from automations.shared import slack_retry
 from automations.shared import weekend_release as wr
 
 # The private channel the other three gates already use (#revision-emails).
@@ -326,7 +327,13 @@ def _all_posts(today: Optional[dt.date] = None,
     that merely CONTAINS this one be picked up here — and a checkmark meant for
     another report would release the bulletin."""
     want = _title(today)
-    hist = _client().conversations_history(channel=_channel(channel), limit=100)
+    # PAGED, not one limit=100 call: #revision-emails' last 100 posts are
+    # ~166 KB and the mini truncated that read at 66-75 KB on EVERY attempt
+    # all of 2026-10-15/16 (IncompleteRead) -- size, not a wobble, so only
+    # paging fixes it. 25 a page keeps each response near 42 KB.
+    # [[reference_slack_truncated_read]]
+    hist = slack_retry.read_paged(_client().conversations_history,
+                                  channel=_channel(channel), limit=100, page=25)
     return [m for m in hist.get("messages", [])
             if (m.get("text") or "").lstrip("*").startswith(want)]
 

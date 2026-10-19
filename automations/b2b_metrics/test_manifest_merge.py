@@ -231,5 +231,32 @@ class EntryIdentity(unittest.TestCase):
         self.assertEqual(runner._entry_base(plain), plain)
 
 
+class PerOfficeReportId(unittest.TestCase):
+    """jamis_metrics & co. verify `<office>_metrics` — the run must write it
+    (2026-10-18: every clean jamis_metrics run read "can't confirm DELIVERED"
+    because it only ever wrote b2b_metrics.json)."""
+
+    JAMIS = [{"key": "jamis", "present": ["sales_metrics"], "missed": []}]
+
+    def _write(self, rid, office):
+        w = _Written()
+        fake = mock.Mock(write_manifest=w,
+                         read_manifest=mock.Mock(return_value=None))
+        with _stubbed(fake), mock.patch.dict("os.environ",
+                                             {"HUB_REPORT_ID": rid}):
+            runner._write_manifest(self.JAMIS, scoped=False, office=office)
+        return w.last
+
+    def test_its_own_report_writes_its_own_manifest(self):
+        call = self._write("jamis_metrics", "jamis")
+        self.assertEqual(call["report_id"], "jamis_metrics")
+        self.assertEqual(call["retry_args"], ["--office", "jamis", "--post"])
+
+    def test_a_repair_of_the_all_run_still_writes_b2b_metrics(self):
+        call = self._write("b2b_metrics", "jamis")
+        self.assertEqual(call["report_id"], "b2b_metrics")
+        self.assertEqual(call["retry_args"], ["--all", "--post"])
+
+
 if __name__ == "__main__":
     unittest.main()

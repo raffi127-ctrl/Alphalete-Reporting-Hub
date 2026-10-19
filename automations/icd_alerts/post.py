@@ -126,6 +126,30 @@ QUIET_WARN_AFTER_HOUR = 11
 QUIET_WARN_UNTIL_HOUR = 21
 
 
+def quiet_watch_open(local: dt.datetime) -> bool:
+    """Is it a time of day when a silent office computer means something?
+
+    SATURDAY CLOSES AT THE AGENT'S OWN SATURDAY END (17:00 local), not 21:00.
+    After that the agent stops reading knocks and stops its sign-in probes;
+    the only thing left that can check in is a sales read, and that only
+    RESUMES a SaraPlus session -- it never signs in. So every office whose
+    session is not resumable (any office on the emailed-code wall, a refused
+    password, or a session that simply aged out) goes silent at 16:58 on
+    purpose and comes back at its midnight close-out. 2026-10-17 posted six
+    "alerts computer last checked in at 16:58" threads (Cyrus, Rashad, Tre,
+    Carlos B2B, Eveliz at 16:58 ET, Luke at 17:03 PT) that kept saying "still
+    quiet" until 21:30 -- every one of those machines checked in again at its
+    00:0x close-out. A watcher that cries wolf every Saturday is one people
+    stop reading.
+    """
+    from automations.icd_alerts import config as C
+    if local.weekday() == 5:
+        end_h, end_m = C.SATURDAY_END_HHMM
+        if (local.hour, local.minute) >= (end_h, end_m):
+            return False
+    return QUIET_WARN_AFTER_HOUR <= local.hour <= QUIET_WARN_UNTIL_HOUR
+
+
 class RelayNotConfigured(RuntimeError):
     pass
 
@@ -3153,7 +3177,7 @@ def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
         # further into its morning than a Central one, and a single shared
         # cutoff would nag one of them early and let the other slide.
         local = O.office_now(office) if office else now
-        if not (QUIET_WARN_AFTER_HOUR <= local.hour <= QUIET_WARN_UNTIL_HOUR):
+        if not quiet_watch_open(local):
             continue
         q["office_time"] = local.strftime("%H:%M")
         q["how_long"] = _quiet_phrase(q, now)

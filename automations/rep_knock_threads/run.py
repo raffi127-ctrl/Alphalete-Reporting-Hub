@@ -240,6 +240,12 @@ def main(argv=None) -> int:
     mode = "SEND" if a.send else "DRY-RUN"
     print(f"[rep_knocks] {mode} as of {as_of:%Y-%m-%d %H:%M} CT → {C.CHANNEL_NAME}")
 
+    if a.send:
+        # START-OF-RUN SEED: a run that dies after this line (OwnervilleBusy,
+        # 2026-10-14 21:01) must not leave an earlier hour's clean manifest
+        # standing in for it. alert=False: the seed is not a failure.
+        _manifest(failed=["run did not finish"], note="started", seed=True)
+
     client = _client() if a.send else None
     if client:
         check_channel(client)
@@ -274,6 +280,8 @@ def main(argv=None) -> int:
         save_state(state)
     preview = C.OUT_DIR / "preview" / f"{today.isoformat()}_{as_of:%H%M}"
     posted = skipped = failed = 0
+    failed_reps = []
+    landed_reps = []
     over = []
     reps = S.group_by_rep(week_knocks)
     # Reps knocking today + reps carrying a streak in from the last few days.
@@ -326,8 +334,10 @@ def main(argv=None) -> int:
             rs["seen_fail_ids"] = sorted(seen | {str(r["knock_id"]) for r in fresh})
             save_state(state)
             print(f"  ✓ {parent_text(s['rep'], s['streak'])}: {comment.splitlines()[0]}")
+            landed_reps.append(s["rep"])
         else:
             failed += 1
+            failed_reps.append(s["rep"])
             print(f"  ✗ {s['rep']}: chart did not land in the thread")
         time.sleep(C.UPLOAD_PAUSE_S)
 
@@ -341,7 +351,29 @@ def main(argv=None) -> int:
     print(f"[rep_knocks] {tag}posted={posted} skipped={skipped} failed={failed}")
     if not a.send and posted:
         print(f"[rep_knocks] previews: {preview}")
+    if a.send:
+        # THE DELIVERY RECORD delivery_check.may_close reads. `posted` only
+        # counts cards post_card confirmed IN the thread, so ok=true here means
+        # every card this hour owed landed (0 owed = nothing to deliver, also
+        # true). Without it a clean run can only say "ran" — the 10/14 ticket.
+        _manifest(failed=failed_reps, succeeded=landed_reps,
+                  note=f"posted={posted} skipped={skipped} failed={failed}")
     return 1 if failed else 0
+
+
+def _manifest(*, failed, succeeded=(), note="", seed=False) -> None:
+    """Write today's run-manifest under this report's schedule id. Silent
+    (alert=False) in both uses: the orchestrator's own FAILED post already
+    speaks for a bad run, and a second ping per hour would be noise. Never
+    raises — a manifest that cannot be written must not cost the posts."""
+    try:
+        from automations.shared.run_manifest import write_manifest
+        write_manifest("rep_knock_threads", failed=list(failed),
+                       succeeded=list(succeeded), kind="rep",
+                       note=note, alert=False,
+                       **({"ok": False} if seed else {}))
+    except Exception as e:  # noqa: BLE001
+        print(f"[rep_knocks] (manifest not written: {type(e).__name__}: {e})")
 
 
 if __name__ == "__main__":

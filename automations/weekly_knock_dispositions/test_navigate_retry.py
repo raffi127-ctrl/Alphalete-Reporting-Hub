@@ -85,5 +85,48 @@ class DailyNavigateTests(unittest.TestCase):
         self.assertEqual(page.gotos, 3)
 
 
+class BouncedPage(FakePage):
+    """p=89 parked on the Welcome page — Ja Mosley from 2026-10-13."""
+    url = "https://v2.ownerville.com/index.cfm?p=2&rqst=R&bounce=990"
+
+    def __init__(self):
+        super().__init__(grid=False)
+
+
+class NotOpenTests(unittest.TestCase):
+    """A bounce off Disposition by Rep is a permission, not a stalled grid:
+    raise at once with words the captainship capture reads as an access gap."""
+
+    def test_daily_raises_not_open_after_one_navigation(self):
+        page = BouncedPage()
+        with self.assertRaises(daily.DispositionNotOpen):
+            daily._navigate(page, "RQST", "10/17/2026")
+        self.assertEqual(page.gotos, 1)
+
+    def test_weekly_raises_not_open_after_one_navigation(self):
+        page = BouncedPage()
+        with self.assertRaises(daily.DispositionNotOpen):
+            weekly._navigate_day(page, "RQST", DAY, verbose=False)
+        self.assertEqual(page.gotos, 1)
+
+    def test_not_open_is_still_a_failed_pull_for_other_callers(self):
+        self.assertTrue(issubclass(daily.DispositionNotOpen,
+                                   daily.KnocksPullFailed))
+
+    def test_captainship_reads_it_as_an_access_gap(self):
+        from automations.captainship_drafts import knock_dispo_images as KD
+        from automations.captainship_drafts.email_build import NO_DATA_MARK
+        e = daily.DispositionNotOpen(daily.NOT_OPEN_MSG)
+        self.assertTrue(KD.is_access_gap(e))
+        self.assertTrue(KD._owner_error_note(e).startswith(NO_DATA_MARK))
+
+    def test_disposition_page_itself_is_not_a_bounce(self):
+        class P:
+            url = ("https://v2.ownerville.com/index.cfm?p=89&rqst=R"
+                   "&startDate=10/17/2026&endDate=10/17/2026")
+        self.assertFalse(daily.bounced_off_dispositions(P()))
+        self.assertFalse(daily.bounced_off_dispositions(FakePage()))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -274,8 +274,16 @@ def _drive_week_selection(label: str, verbose: bool = False):
         '(Multiple values)' / '(All)' — the state a re-saved view or an
         interrupted run leaves behind, and the exact state the old code could
         not recover from: it matched a DATE only, so it declared the dropdown
-        'not found' and pulled whatever weeks happened to be ticked."""
-        boxes = viz.locator('span.tabComboBox[role="combobox"]')
+        'not found' and pulled whatever weeks happened to be ticked.
+
+        ANY role (2026-10-18): Tableau Cloud's 10/12-10/13 update re-tagged the
+        filter boxes role="button" (was role="combobox"). The old
+        `[role="combobox"]` selector then matched NOTHING, every run logged
+        "dropdown not found", the view stayed on its saved 7/5/2026 week and
+        Retail JE was skipped all week of WE 10.18 — which the freshness gate
+        read as "JE frozen 6 days". The text checks below already reject any
+        box that is not a week / (All) / (Multiple values) / (None)."""
+        boxes = viz.locator("span.tabComboBox")
         for _ in range(20):   # poll ~20s for the filter control to hydrate
             dated = multi = None
             try:

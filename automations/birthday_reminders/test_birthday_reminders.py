@@ -456,11 +456,46 @@ class Sending(unittest.TestCase):
     def test_a_real_quiet_day_DOES_publish_success(self):
         """Ran and had nothing to do is a success — the pill must go green or
         the card reads as a miss every quiet day."""
+        from automations.shared import run_manifest
         patch, _ws = fake_store([["Ann Lee", "01/01", "", "", "", ""]])
-        calls = []
-        with patch, mock.patch.object(R, "_publish", lambda *a, **k: calls.append(a)):
+        calls, manifests = [], []
+        with patch, mock.patch.object(R, "_publish", lambda *a, **k: calls.append(a)), \
+             mock.patch.object(run_manifest, "write_manifest",
+                               lambda *a, **k: manifests.append((a, k))):
             R.run(today=dt.date(2026, 9, 13), dry_run=False, logfn=lambda *a: None)
         self.assertEqual([c[0] for c in calls], ["success"])
+        # ...and says so in a manifest, or delivery_check can only answer
+        # UNKNOWN and the ticket never closes (10/17).
+        self.assertEqual(manifests[0][0], ("birthday_reminders",))
+        self.assertEqual(manifests[0][1]["succeeded"], [])
+
+    def test_a_real_send_records_who_was_texted(self):
+        from automations.shared import run_manifest
+        from automations.b2b_dispositions import text_post
+        patch, _ws = fake_store([["Ann Lee", "09/14", "", "", "", ""]])
+        manifests = []
+        with patch, \
+             mock.patch.object(L, "read", lambda *a, **k: live(active={"ann lee"})), \
+             mock.patch.object(C, "GROUP_ADMIN_STAFF", "Admin Staff"), \
+             mock.patch.object(R, "_publish", lambda *a, **k: None), \
+             mock.patch.object(run_manifest, "write_manifest",
+                               lambda *a, **k: manifests.append(k)), \
+             mock.patch.object(text_post, "send_text_to_group",
+                               return_value={"resolved_name": "Admin Staff",
+                                             "participants": "9"}):
+            rc = R.run(today=dt.date(2026, 9, 13), dry_run=False, logfn=lambda *a: None)
+        self.assertEqual(rc, 0)
+        self.assertEqual(manifests[0]["succeeded"], ["Ann Lee"])
+
+    def test_a_dry_run_writes_no_manifest(self):
+        from automations.shared import run_manifest
+        patch, _ws = fake_store([["Ann Lee", "01/01", "", "", "", ""]])
+        manifests = []
+        with patch, mock.patch.object(R, "_publish", lambda *a, **k: None), \
+             mock.patch.object(run_manifest, "write_manifest",
+                               lambda *a, **k: manifests.append(k)):
+            R.run(today=dt.date(2026, 9, 13), dry_run=True, logfn=lambda *a: None)
+        self.assertEqual(manifests, [])
 
     def test_no_configured_chat_refuses_rather_than_guessing(self):
         """Megan is still getting the chat name. Until then: no send, exit 1."""

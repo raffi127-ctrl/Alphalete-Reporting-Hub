@@ -392,3 +392,20 @@ class TheRealScheduleStillWorks(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class WatchIdMatches(unittest.TestCase):
+    """failure-stf_field_check__watch (2026-10-17): the ticket is keyed by the
+    WATCH id, so the post-watch probe has to accept it, not only the bare id."""
+
+    def test_watch_id_finds_its_marker(self):
+        from automations.day_orchestrator import post_watch as pw
+        w = next(t for t in pw.WATCH_TARGETS if t.report_id == "stf_field_check")
+        with mock.patch.object(pw, "evaluate", return_value="ok"):
+            got = dc._from_post_watch(w.watch_id, DAY)
+        self.assertEqual(got[0], dc.DELIVERED)
+
+    def test_unrelated_id_still_finds_nothing(self):
+        from automations.day_orchestrator import post_watch as pw
+        with mock.patch.object(pw, "evaluate", return_value="ok"):
+            self.assertIsNone(dc._from_post_watch("nope__watch", DAY))

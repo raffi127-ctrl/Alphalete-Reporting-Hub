@@ -331,6 +331,23 @@ class WeekSelectionTest(unittest.TestCase):
         self.assertEqual(f.checked, {TARGET})
         self.assertEqual(f.clicks, 1, "the 'Only' link should be one click")
 
+    def test_finds_the_box_whatever_its_aria_role(self):
+        """2026-10-13..18: Tableau re-tagged the filter box role="button".
+        A selector pinned to role="combobox" matched nothing, the view sat on
+        its saved 7/5 week and Retail JE was skipped all week."""
+        f = FakeFilter(WEEKS, ["8/9/2026"])
+        orig = f.locator
+
+        def button_role_only(selector):
+            if 'role="combobox"' in selector:
+                return _Loc([])          # what Tableau renders since 10/13
+            return orig(selector)
+        f.locator = button_role_only
+        hook = je_pull._drive_week_selection(TARGET)
+        hook(FakePage(f), f)
+        self.assertFalse(hook.left_view_week, "the week box was not found")
+        self.assertEqual(f.checked, {TARGET})
+
     def test_already_on_target_is_a_noop(self):
         f = FakeFilter(WEEKS, [TARGET])
         _drive(f)
@@ -544,6 +561,55 @@ class OpenDropdownTest(unittest.TestCase):
         f = FakeFilter(WEEKS, ["8/9/2026"], combo_fails=99)
         _drive(f)
         self.assertLessEqual(f.combo_clicks, 3)
+
+
+class StaleWeekAdapterTest(unittest.TestCase):
+    """WE 10.18: the view sat on its saved 7/5/2026 week for six days and the
+    adapter skipped quietly each time ("JE hasn't posted this week yet") while
+    the summary listed Retail JE as filled. Only last week at the week's start
+    is JE being a day behind; anything else must fail the pull (loud)."""
+
+    def _ctx(self, today, week_ending, first_day):
+        import csv
+        import datetime as dt
+        import tempfile
+        from pathlib import Path
+        from automations.org_sales_board import orchestrate as O
+        days = [first_day + dt.timedelta(days=i) for i in range(7)]
+        we = f"{week_ending.month}/{week_ending.day}/{week_ending.year}"
+        fd = tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False,
+                                         newline="", encoding="utf-16-le")
+        with fd:
+            csv.writer(fd, delimiter="\t").writerows([
+                ["", ""] + [f"{d.month}/{d.day:02d} {d.strftime('%a')}"
+                            for d in days] + ["Total"],
+                ["ICD Office Name", "ICD Name "] + [we] * 7 + ["Total"],
+                ["Grand Total", "Total"] + ["1"] * 7 + ["7"],
+                ["Office A", "Ann"] + ["1"] * 7 + ["7"]])
+        self.addCleanup(lambda: Path(fd.name).unlink())
+        return O, O.AdapterContext(today=today, out_dir=Path(fd.name).parent,
+                                   from_csv=Path(fd.name), page=None,
+                                   logfn=lambda *_a: None)
+
+    def test_a_months_old_week_fails_the_pull(self):
+        import datetime as dt
+        O, ctx = self._ctx(dt.date(2026, 10, 18), dt.date(2026, 7, 5),
+                           dt.date(2026, 6, 29))
+        with self.assertRaises(RuntimeError):
+            O._adapter_je_retail(ctx)
+
+    def test_last_week_on_tuesday_is_a_quiet_wait(self):
+        import datetime as dt
+        O, ctx = self._ctx(dt.date(2026, 10, 13), dt.date(2026, 10, 11),
+                           dt.date(2026, 10, 5))
+        self.assertEqual(O._adapter_je_retail(ctx), {})
+
+    def test_last_week_on_friday_fails_the_pull(self):
+        import datetime as dt
+        O, ctx = self._ctx(dt.date(2026, 10, 16), dt.date(2026, 10, 11),
+                           dt.date(2026, 10, 5))
+        with self.assertRaises(RuntimeError):
+            O._adapter_je_retail(ctx)
 
 
 if __name__ == "__main__":

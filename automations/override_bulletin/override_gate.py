@@ -51,6 +51,7 @@ from automations.override_bulletin import fill as F
 # approvers, ONE review channel and ONE Drive token — a change to who-can-approve
 # happens in one place, never in two that quietly diverge.
 from automations.override_bulletin import review_gate as RG
+from automations.shared import slack_retry
 from automations.shared import weekend_release as wr
 
 # The first line of the post, and how --check finds it. PREFIX-matched, and the
@@ -182,8 +183,10 @@ def _all_posts(wk: str, channel: Optional[str] = None) -> list:
     never 'anywhere in the text' — the gates share this channel and a plain `in`
     would let another report's checkmark release this one."""
     want = _title(wk)
-    hist = RG._client().conversations_history(
-        channel=RG._channel(channel), limit=100)
+    # PAGED: the single limit=100 read truncated (IncompleteRead) on the mini
+    # 2026-10-16 12:35 and killed the post -- see review_gate._all_posts.
+    hist = slack_retry.read_paged(RG._client().conversations_history,
+                                  channel=RG._channel(channel), limit=100, page=25)
     return [m for m in hist.get("messages", [])
             if (m.get("text") or "").lstrip("*").startswith(want)]
 

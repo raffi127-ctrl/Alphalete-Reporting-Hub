@@ -90,7 +90,11 @@ def select_team_hook(team: str, logfn=print):
         page.wait_for_timeout(900)
 
     def pre_export(page, viz):
-        boxes = viz.locator('span.tabComboBox[role="combobox"]')
+        # ANY role (2026-10-18): Tableau Cloud re-tagged its filter boxes
+        # role="button" around 10/13, so the combobox-only selector matched
+        # nothing (same break as org_sales_board/je_pull). The _TEAM_OPTION
+        # check below already rejects a box that isn't the captain filter.
+        boxes = viz.locator('span.tabComboBox')
         for _ in range(20):                    # let the filter cards hydrate
             if boxes.count():
                 break

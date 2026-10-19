@@ -728,7 +728,10 @@ def main(argv=None) -> int:
     for t in late:
         why = ("%s -- NOT moved" % (t.get("problem") or "nothing to move")
                if missed_by_close(t) else
-               "sent in before that day closed; the closing run on Lucy 1 moved it")
+               # NOT "moved it": a row still missing from the record was
+               # NOT moved -- the closing run CHECKed it (row 218, 10/16-18).
+               "sent in before that day closed; the closing run handled it "
+               "(see that day's CHECK lines if it is still not moved)")
         print("  LATE   form row %d: %s <- %s, %s on %s -- %s"
               % (t["row"], t["to"], t["from"], t["product"], t["date_raw"], why))
     if problems:

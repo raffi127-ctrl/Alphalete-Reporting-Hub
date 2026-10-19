@@ -164,7 +164,13 @@ def parse_tab(xlsx_path: Path, tab: str) -> List[Owner]:
     rows = [r for r in ws.iter_rows(values_only=True)]
     if not rows:
         return []
-    hdr = rows[0]
+    # The header is FOUND by its label, not assumed to be row 1: the 10.9.26
+    # roster grew a title block (tab name / "ICD Roster | As of ..." / blank)
+    # and the header moved to row 4, so rows[0] killed the 10/17 sync.
+    hi = next((i for i, r in enumerate(rows[:15])
+               if _header_index(r, "Email", "E-mail", "Email Address") is not None),
+              0)
+    hdr = rows[hi]
     ci_email = _header_index(hdr, "Email", "E-mail", "Email Address")
     ci_name = _header_index(hdr, "ICD OWNER NAME", "Owner Name", "Owner")
     ci_co = _header_index(hdr, "ICD Company Name", "Company", "Company Name")
@@ -179,7 +185,7 @@ def parse_tab(xlsx_path: Path, tab: str) -> List[Owner]:
         return "" if idx is None or idx >= len(row) or row[idx] is None else str(row[idx]).strip()
 
     owners: List[Owner] = []
-    for row in rows[1:]:
+    for row in rows[hi + 1:]:
         emails = extract_emails(g(row, ci_email))
         if not emails:
             continue                        # skip blank / malformed rows

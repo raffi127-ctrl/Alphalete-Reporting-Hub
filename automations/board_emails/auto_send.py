@@ -267,6 +267,21 @@ def new_owners(t: Target, day: dt.date, names: Set[str]) -> List[str]:
 # --------------------------------------------------------------------------
 # 2. Tableau
 # --------------------------------------------------------------------------
+def _stale_why(st: dict) -> str:
+    """Why the freshness gate flagged a source, in words. Only DATED exports
+    carry 'newest'; a dateless crosstab is flagged by content ('frozen') or by
+    a filter we could not confirm — printing 'data only through ?' for those
+    (Org/Country board holds 10/16-10/18) read like a broken date read."""
+    if st.get("newest"):
+        return f"data only through {st['newest']}"
+    kind = st.get("kind")
+    if kind == "frozen":
+        return "same numbers several days running — the pull is stuck"
+    if kind == "unconfirmed-filter":
+        return "a filter on the view could not be confirmed"
+    return "flagged stale"
+
+
 def stale_sources(t: Target, day: dt.date) -> List[str]:
     """Tableau sources flagged stale today that one of THIS email's jobs read."""
     chain = set(wr.dependency_closure([t.report_id]))
@@ -283,8 +298,7 @@ def stale_sources(t: Target, day: dt.date) -> List[str]:
                 continue
             used = {str(r).replace("-", "_") for r in st.get("reports") or []}
             if used & want:
-                out.append(f"{st.get('view') or p.stem} (data only through "
-                           f"{st.get('newest') or '?'})")
+                out.append(f"{st.get('view') or p.stem} ({_stale_why(st)})")
     except Exception as e:  # noqa: BLE001
         print(f"  (Tableau sources: could not read the state — "
               f"{type(e).__name__}: {e})", flush=True)

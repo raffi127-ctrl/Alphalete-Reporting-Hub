@@ -478,9 +478,6 @@ class TestBuildStarted(unittest.TestCase):
         self.assertEqual(A._etime_seconds("2-01:00:00"), 176400)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class TestGroupedCorrections(unittest.TestCase):
     """alert_corrections: one bullet per REASON with who it hit (Eve 10/13)."""
@@ -507,3 +504,42 @@ class TestGroupedCorrections(unittest.TestCase):
         self.assertIn("NDS: Khalil", body)
         self.assertIn("Nothing to re-run", body)
         self.assertNotIn("lucy rerun", body)
+
+
+class TableauStatusCaughtUpTest(unittest.TestCase):
+    """2026-10-18: the stability extracts (att/nds/b2b) never write READY, so a
+    B2B tracker held at 06:36 stayed "still behind" all day even after the
+    catch-up re-measured it settled and posted the boards. The catch-up's
+    caught-up record has to count as recovered."""
+
+    def setUp(self):
+        from automations.tableau_screenshots import freshness as fr
+        self.fr = fr
+        tmp = Path(tempfile.mkdtemp())
+        for name in ("HELD_FILE", "VERDICT_FILE", "CAUGHT_UP_FILE"):
+            p = mock.patch.object(fr, name, tmp / (name.lower() + ".json"))
+            p.start()
+            self.addCleanup(p.stop)
+        fr.write_held(DAY, {"b2b_att_country": "first sample of the day"})
+
+    def test_held_and_never_remeasured_is_stale(self):
+        stale, recovered, _ = A.tableau_status(DAY)
+        self.assertIn("tableau:tracker_b2b", stale)
+        self.assertNotIn("tableau:tracker_b2b", recovered)
+
+    def test_catch_up_remeasured_fresh_is_recovered(self):
+        self.fr.record_caught_up(DAY, "tableau:tracker_b2b",
+                                 "FRESH — 2026-10-05 = 283, unchanged for 84m")
+        stale, recovered, _ = A.tableau_status(DAY)
+        self.assertNotIn("tableau:tracker_b2b", stale)
+        self.assertIn("tableau:tracker_b2b", recovered)
+
+    def test_yesterdays_caught_up_does_not_count(self):
+        self.fr.record_caught_up(DAY - dt.timedelta(days=1),
+                                 "tableau:tracker_b2b", "FRESH")
+        stale, _r, _ = A.tableau_status(DAY)
+        self.assertIn("tableau:tracker_b2b", stale)
+
+
+if __name__ == "__main__":
+    unittest.main()

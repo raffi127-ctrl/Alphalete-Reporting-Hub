@@ -380,8 +380,14 @@ def merge_apps(*sources) -> Optional[dict]:
 # the standing rule that a review email names the owners we can't scrape.
 # Matched on the impersonation failure text rather than a hardcoded name
 # list, so the next owner in this position is covered without a patch.
+# "disposition by rep is not open" = total_knocks.pull.DispositionNotOpen:
+# we CAN impersonate the office but ownerville bounces its Disposition page to
+# Welcome (Ja Mosley from 2026-10-13). Same class of problem — a permission
+# nobody fixes by re-running — so same treatment: left out, grey, autosend
+# not held. Before this it read as a stalled scrape and held Fiber 3: Chan
+# every day for a week.
 _NO_OFFICE_MARKERS = ("not found in ownerville", "couldn't impersonate",
-                      "couldnt impersonate")
+                      "couldnt impersonate", "disposition by rep is not open")
 
 
 def is_access_gap(exc) -> bool:
@@ -452,6 +458,12 @@ def _owner_error_note(exc) -> str:
     summary board's "(N of M ICDs)" label says how many are missing from the
     totals."""
     text = f"{type(exc).__name__}: {str(exc)[:200]}"
+    if "disposition by rep is not open" in str(exc).lower():
+        return (NO_DATA_MARK + "ownerville no longer opens this office's "
+                "Disposition by Rep page for the reporting account (it "
+                "redirects to Welcome) — nothing to pull until that is "
+                "restored in ownerville (not a failed run; re-running "
+                "changes nothing)")
     if any(m in str(exc).lower() for m in _NO_OFFICE_MARKERS):
         return (NO_DATA_MARK + "no ownerville office access for this owner on "
                 "the reporting account — nothing can be pulled until access "

@@ -130,6 +130,21 @@ def _adapter_je_retail(ctx: AdapterContext) -> PullDict:
     parsed = je_pull.parse(csv_path, today=ctx.today)
     we = parsed.get("week_ending")
     if not parsed.get("is_current_week"):
+        # "A day behind" only ever explains LAST week, and only at the week's
+        # start. Anything else is our pull stuck on the saved view's own week
+        # (WE 10.18: the week box went unfound and the view sat on 7/5/2026
+        # for six days, each run logging this "self-heals" line and the
+        # summary still listing Retail JE as filled). Fail the pull so the
+        # section is reported skipped — loud — instead of quietly blank.
+        from automations.org_sales_board import week as _wk
+        _today = ctx.today or dt.date.today()
+        _want = _wk.reporting_sunday(_today)
+        if (we is None or we < _want - dt.timedelta(days=7)
+                or len(_wk.completed_days(_today)) >= 3):
+            raise RuntimeError(
+                f"JE crosstab shows week ending {we}, expected {_want} — not "
+                f"JE running a day behind; the week filter was not driven "
+                f"(see the [je] lines above). Retail JE NOT filled.")
         ctx.logfn(
             f"  ⚠ JE shows week ending {we}, NOT the current week — JE hasn't "
             f"posted this week yet; skipping JE fill so stale numbers aren't "

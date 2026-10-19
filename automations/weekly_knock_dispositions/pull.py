@@ -214,6 +214,10 @@ def _navigate_day(page, rqst: str, day: dt.date,
                                    timeout=15000)
             break
         except Exception:  # noqa: BLE001 — stalled grid, not a fatal state
+            if knocks.bounced_off_dispositions(page):
+                # p=89 parked on the Welcome page: a permission, not a slow
+                # grid (Ja Mosley, 2026-10-13 on) — see DispositionNotOpen.
+                raise knocks.DispositionNotOpen(knocks.NOT_OPEN_MSG)
             if attempt == attempts:
                 if verbose:
                     print(f"[wkd] grid never built after {attempts} "

@@ -117,7 +117,10 @@ def read_today(today: dt.date) -> Optional[Dict[str, list]]:
             continue
         date, extract, at, total = (c.strip() for c in row[:4])
         if date != key:
-            stale = stale or bool(date)
+            # Only rows OLDER than the day asked about are prunable. A read for
+            # a past --date must never wipe today's samples (2026-10-18: a
+            # read-only look at 10/13 cleared the live day's rows).
+            stale = stale or (bool(date) and date < key)
             continue
         try:
             out.setdefault(extract, []).append([at, float(total)])
@@ -126,7 +129,7 @@ def read_today(today: dt.date) -> Optional[Dict[str, list]]:
     for series in out.values():
         series.sort(key=lambda s: s[0])
     _CACHE[key] = out
-    if stale:
+    if stale and key >= dt.date.today().isoformat():
         _prune(key)
     return out
 
@@ -154,7 +157,7 @@ def _prune(keep_date: str) -> None:
         ws = _ws()
         rows = ws.get_all_values()
         keep = [HEADERS] + [r for r in rows[1:]
-                            if len(r) > 0 and (r[0] or "").strip() == keep_date]
+                            if len(r) > 0 and (r[0] or "").strip() >= keep_date]
         if len(keep) == len(rows):
             return
         ws.clear()

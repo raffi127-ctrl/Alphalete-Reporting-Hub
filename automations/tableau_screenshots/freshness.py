@@ -1144,6 +1144,41 @@ def read_held(today: dt.date) -> Dict[str, str]:
     return dict(data.get("held") or {})
 
 
+# ---------------- "caught up later today" (for the captainship auto-send) ----
+#
+# WHY (2026-10-18). The stability extracts (att / nds / b2b) never write a READY
+# verdict — on purpose, see _check_stable_total. But captainship_drafts.auto_send
+# decided "Tableau caught up" ONLY from that READY cache, so once the morning run
+# held tracker_b2b ("first sample of the day", which it does nearly every day)
+# the B2B captains (Carlos, Eveliz, Luis, Atef, Luke) were judged "still behind"
+# for the rest of the day — even after the catch-up re-measured the extract as
+# settled and POSTED the boards (10/13, 10/15, 10/18). This file is the catch-up
+# saying so out loud. It is NOT a cache check_extract reads: it never vouches for
+# a capture, it only tells the auto-send that a held extract was re-measured fresh.
+CAUGHT_UP_FILE = OUT_DIR / "_caught_up_today.json"
+
+
+def record_caught_up(today: dt.date, extract_id: str, reason: str) -> None:
+    data = {"date": today.isoformat(), "caught_up": read_caught_up(today)}
+    data["caught_up"][extract_id] = reason
+    try:
+        CAUGHT_UP_FILE.parent.mkdir(parents=True, exist_ok=True)
+        CAUGHT_UP_FILE.write_text(json.dumps(data, indent=2))
+    except Exception:                       # noqa: BLE001 — best effort
+        pass
+
+
+def read_caught_up(today: dt.date) -> Dict[str, str]:
+    """{extract_id: why} re-measured fresh by a catch-up TODAY."""
+    try:
+        data = json.loads(CAUGHT_UP_FILE.read_text())
+    except Exception:                       # noqa: BLE001
+        return {}
+    if data.get("date") != today.isoformat():
+        return {}
+    return dict(data.get("caught_up") or {})
+
+
 # ---------------- worksheet discovery (for wiring quantum_fiber) ----------------
 
 def discover(board_id: str, *, verbose: bool = True) -> List[str]:

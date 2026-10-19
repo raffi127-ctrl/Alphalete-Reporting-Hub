@@ -1110,7 +1110,8 @@
    "freshness_target": null,
    "depends_on": [],
    "verify": {
-    "type": "not_configured"
+    "type": "manifest",
+    "report_id": "owner_chat_texts_late_send"
    }
   },
   "owner_chat_texts_board": {
@@ -5382,7 +5383,7 @@
    "report_id": "captainship-knock-access"
   },
   "knocks_source_check": {
-   "order": 36.65,
+   "order": 36.85,
    "_order_position_note": "AFTER EVERY per-office Daily Metrics job, because it reports on boards those runs have already posted. Asking earlier is asking before the answer exists. It sat at 36.2 from 2026-09-17, which was after the block as the block stood that day (27-36.1) \u2014 the block has since grown a tail (joseph 36.56, christian 36.57, colten 36.58, khalil 36.59), so from 2026-09-24 it runs at 36.595, after khalil and before weekly_dispo_pdf_slack (36.6). Grew again 2026-09-28 (drew/jacob 36.6, maxamad 36.61), so from 2026-09-29 it runs at 36.65, after maxamad and before weekly_knocks_focus (36.7). Colten was the one it caught: enrolled in ECO on 09-21, graded at 07:35 against a board his runner did not draw until 07:40, every morning.",
    "on_scheduler": true,
    "display_name": "Knocks Source Check (own machine vs scrape)",
@@ -6856,6 +6857,10 @@
    "verify": null
   },
   "rep_knock_threads": {
+   "verify": {
+    "type": "manifest",
+    "report_id": "rep_knock_threads"
+   },
    "on_scheduler": true,
    "hand_run_only": true,
    "_note": "Rep Knock Threads (Raf Loom 2026-10-14): GPS red flags in #alphalete-sales-knocking-data (C0C8KBT065D): only reps with 25%+ GPS failures TODAY get a parent (name + one flag per day of streak) and an hourly chart in its thread; the first tick each day deletes the previous day's Lucy posts (Megan 2026-10-14). NOT a 4am-batch report: it fires from com.alphalete.rep-knock-threads on LUCY 3 (StartInterval 600; run.py posts once per clock hour 10 AM-9 PM CT). This entry is the manual push: `lucy rerun rep_knock_threads --machine \"Lucy 3\"` posts NOW for every rep whose door count changed (--force in base_args ignores the hours gate; reps already up to date are still re-posted). Source: OwnerVille V2 activityD2D.cfc getD2DKnocksReport (Raf's office 11280, every row office-checked).",
@@ -10004,7 +10009,13 @@
    "freshness_target": null,
    "depends_on": [],
    "verify": {
-    "type": "not_configured"
+    "type": "slack_delivered",
+    "channels": [
+     "C068PH3RFSM",
+     "C09JG28CD27"
+    ],
+    "match": "override-bulletin",
+    "files_only": true
    },
    "machine": "Lucy 1"
   },
@@ -11573,6 +11584,7 @@
    "_note_timeout": "60: a normal pass is ~3 min; 60 leaves room for a small --weeks backfill. Was briefly 180 for the 2026-08-21 recovery backfill (34 weeks x 28 offices). If another full-history backfill is ever needed, raise it again first \u2014 at 45 the kill left state/run.lock behind and wedged the report (see funnel_board_unlock)."
   },
   "tracker_auto_commit": {
+   "close_on": "exit_zero",
    "on_scheduler": false,
    "_off_scheduler_note": "Manual trigger for the 03:15/17:30 launchd job (com.alphalete.tracker-auto-commit on Lucy 1): `lucy rerun tracker_auto_commit` runs the same auto-commit pass on demand \u2014 harmless when nothing is pending (prints 'Nothing to do', exit 0). Added 2026-08-21 so a run can be triggered/verified without waiting for the next clock slot; the module logs every run to Hub Activity under this same id.",
    "display_name": "Tracker Auto Commit",
@@ -11995,6 +12007,14 @@
    "verify": null
   },
   "gap_alerts": {
+   "standalone_weekdays": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
    "on_scheduler": false,
    "_off_scheduler_note": "on_scheduler:false = NOT in the 4am batch. Rep Gap Alerts runs ITSELF every 10 minutes of the selling day (Mon-Fri 13:30-20:30, Saturday 10:00-17:00, machine-local -- Saturday has its own START, not just its own end) from the standalone com.alphalete.gap-alerts LaunchAgent. The agent ticks every 60 SECONDS (StartInterval 60) and deploy/gap_alerts_5min.sh decides which minutes count -- it proceeds only when the minute is a multiple of 10 (or the :01 after), and exits in bash on every other minute and outside those hours. It is that way round because StartInterval counts from when the previous run EXITS, so the old StartInterval 300 stretched to 9-minute gaps whenever a browser launch was slow. The script's filename still says 5min: the installed plist points at that exact path, and the cadence moved to 10 (Raf, 2026-08-27) in code alone. Present here so `lucy rerun gap_alerts` works and so a Hub play from ANY machine routes the run to LUCY 1. base_args are deliberately EMPTY = preview: a hand rerun renders the card and RESOLVES the iMessage group but texts nobody. The LaunchAgent is the only thing that passes --send.",
    "machine": "Lucy 1",
@@ -12972,8 +12992,11 @@
    "priority": "P2",
    "freshness_target": null,
    "depends_on": [],
-   "verify": null,
-   "timeout_minutes": 45,
+   "verify": {
+    "type": "manifest",
+    "report_id": "icd_start_dates"
+   },
+   "timeout_minutes": 60,
    "machine": "Lucy 1"
   },
   "birthday_reminders": {
@@ -12997,7 +13020,8 @@
    "depends_on": [],
    "timeout_minutes": 10,
    "verify": {
-    "type": "not_configured"
+    "type": "manifest",
+    "report_id": "birthday_reminders"
    }
   },
   "joseph_metrics": {
@@ -13433,6 +13457,10 @@
    }
   },
   "rep_knock_breakdown": {
+   "verify": {
+    "type": "manifest",
+    "report_id": "rep_knock_breakdown"
+   },
    "on_scheduler": false,
    "machine": "Lucy 1",
    "standalone_weekdays": [0, 1, 2, 3, 4, 5],

@@ -90,5 +90,32 @@ class LateTrackers(unittest.TestCase):
         self.assertEqual(run.read_late_pending(DAY), ["NDS Tracker"])
 
 
+class LateManifest(unittest.TestCase):
+    """delivery_check reads this to close the ticket (10/17)."""
+
+    def _write(self, res):
+        from automations.shared import run_manifest
+        got = []
+        with mock.patch.object(run_manifest, "write_manifest",
+                               lambda *a, **k: got.append((a, k))):
+            run._late_manifest(res)
+        return got
+
+    def test_nothing_owed_is_delivered(self):
+        got = self._write({"sent": [], "errors": [], "missing": [],
+                           "skipped": ["late (nothing was missing from the 9:00 PDF)"]})
+        self.assertEqual(got[0][0], (run.LATE_REPORT_ID,))
+        self.assertNotIn("failed", got[0][1])
+
+    def test_owed_and_still_missing_is_not_delivered(self):
+        got = self._write({"sent": [], "errors": [], "missing": ["NDS Tracker"],
+                           "skipped": ["late (still not posted: NDS Tracker)"]})
+        self.assertEqual(got[0][1]["failed"], ["NDS Tracker"])
+        self.assertFalse(got[0][1]["alert"])
+
+    def test_errors_write_nothing(self):
+        self.assertEqual(self._write({"sent": [], "errors": ["x"], "skipped": []}), [])
+
+
 if __name__ == "__main__":
     unittest.main()

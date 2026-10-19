@@ -201,7 +201,11 @@ def _from_post_watch(report_id: str, day: dt.date) -> Optional[Tuple[str, str]]:
     try:
         from automations.day_orchestrator import post_watch as pw
         for w in pw.WATCH_TARGETS:
-            if w.report_id != report_id:
+            # The incident is keyed by the WATCH id ("stf_field_check__watch"),
+            # not the real report id -- matching report_id alone meant no watch
+            # ticket could ever read DELIVERED, so failure-stf_field_check__watch
+            # stayed open after the 10/17 23:00 run left its marker.
+            if report_id not in (w.report_id, w.watch_id):
                 continue
             if pw.evaluate(w, day, dt.datetime.now()) == "ok":
                 return DELIVERED, "post-watch done-marker present"

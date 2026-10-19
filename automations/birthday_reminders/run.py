@@ -122,9 +122,10 @@ def run(*, today: dt.date | None = None, dry_run: bool = True,
         # and a genuine 10am failure afterwards would be reading over a success.
         # The pill answers "did the scheduled run happen", so only the scheduled
         # run may paint it.
-        _publish_if_real(dry_run, "success",
-                         "no birthdays tomorrow" if not p["skip"]
-                         else "%d skipped, none to send" % len(p["skip"]))
+        note = ("no birthdays tomorrow" if not p["skip"]
+                else "%d skipped, none to send" % len(p["skip"]))
+        _manifest_if_real(dry_run, [], note)
+        _publish_if_real(dry_run, "success", note)
         return 0
 
     if not C.GROUP_ADMIN_STAFF:
@@ -158,8 +159,31 @@ def run(*, today: dt.date | None = None, dry_run: bool = True,
           % ("✅ Texted" if not dry_run else "(dry run) would text",
              ", ".join(v.name for v in p["send"]),
              res.get("resolved_name"), res.get("participants", "?")))
+    _manifest_if_real(dry_run, [v.name for v in p["send"]],
+                      "texted %d birthday(s) to %s"
+                      % (len(p["send"]), res.get("resolved_name")))
     _publish_if_real(dry_run, "success", "texted %d birthday(s)" % len(p["send"]))
     return 0
+
+
+def _manifest_if_real(dry_run: bool, sent: list, note: str) -> None:
+    """Record what this run DELIVERED, so delivery_check can close its ticket.
+
+    WHY (2026-10-17). No verify and no manifest meant a clean run could only
+    answer UNKNOWN -- standalone-birthday-reminders stayed open after the 10/17
+    run that did its whole job. Written ONLY after the text went out (or when
+    nobody has a birthday: then there is nothing to deliver, and saying so is
+    the honest answer). A failure path writes nothing and exits 1 instead.
+    Never on a dry run, and never allowed to fail the send."""
+    if dry_run:
+        return
+    try:
+        from automations.shared import run_manifest
+        run_manifest.write_manifest(C.HUB_REPORT_ID, kind="birthday",
+                                    succeeded=list(sent), note=note)
+    except Exception as e:  # noqa: BLE001
+        print("\u26a0 manifest write failed (%s) -- the run itself was fine."
+              % type(e).__name__, flush=True)
 
 
 def _publish_if_real(dry_run: bool, status: str, note: str) -> None:

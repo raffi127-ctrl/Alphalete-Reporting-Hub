@@ -495,6 +495,27 @@ class MorningSourceCheck(unittest.TestCase):
         self.assertFalse(got["relayed"])
         self.assertTrue(got["fault"])
 
+    def test_a_closed_out_EMPTY_day_that_scraped_is_not_a_fault(self):
+        """Isaiah 10/17: relay '[]' / '[]' / 0 reps, closed out at 00:03; the
+        scrape confirmed nobody clocked in. No data was there to use."""
+        office = _Office(key="kash")
+        values = [self.HEADER,
+                  self._row("kash", "2026-09-16", "9/16/2026 21:31:00",
+                            rows_json="[]")]
+        got = self.C.check_office(office, _Metrics(), WED, values=values)
+        self.assertTrue(got["closed_out"])
+        self.assertFalse(got["relayed"])
+        self.assertFalse(got["fault"])
+        self.assertTrue(got.get("empty"))
+
+    def test_unreadable_relay_json_is_still_a_fault(self):
+        office = _Office(key="kash")
+        values = [self.HEADER,
+                  self._row("kash", "2026-09-16", "9/16/2026 21:31:00",
+                            rows_json="{not json")]
+        got = self.C.check_office(office, _Metrics(), WED, values=values)
+        self.assertTrue(got["fault"])
+
     def test_a_close_out_that_beat_the_board_is_the_good_case(self):
         office = _Office(key="kash")
         values = [self.HEADER,
