@@ -382,6 +382,15 @@ _LIVE = {
 # Manager" runs in Doral AND Princeton (Valeria 9/24): the city-less copy can't
 # be told apart, so Eve 9/24 folded all three into ONE thread.
 _ALIASES = {
+    # Eve 10/19: every Omar ad gets its thread, even one seen 1-2 times (an
+    # alias target counts as a confirmed ad). Broken pastes shown fixed.
+    "omar": {
+        "AT&T Retail Sales Associate": "AT&T Retail Sales Associate",
+        "T&T Sales Agent": "AT&T Sales Agent",
+        "Entry Level Sales Representative -AT&T": "Entry Level Sales Representative – AT&T",
+        "Entry Level AT&T Team Member": "Entry Level AT&T Team Member",
+        "E ntry Level Assistant Manager ?  Sales (Span ish Preferred)": "Entry Level Assistant Manager – Sales (Spanish Preferred)",
+    },
     "colten": {
         "AT&T Brand Representative": "AT&T Brand Representative – Cutler Bay FL",
         "AT&T Sales Agent": "AT&T Sales Agent – Miami FL",
