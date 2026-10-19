@@ -126,9 +126,12 @@ TEAM: dict = {
     "sales_metrics": (_T + "ATTTRACKER-B2B/B2BATTSalesMetrics/"
                       "403c5051-5762-4dfd-a9eb-8a6188a69a03/"
                       "CarlosTeamExpandedMetrics?:iid=2"),
+    # 2026-10-18 (Megan): CarlosTeamViewExpanded lost its 'Activation Office'
+    # sheet ~10/13 — jamis's activation_rate blanked daily. All-teams view,
+    # sliced by owner like before.
     "activation_rate": (_T + "ATTTRACKER-B2B/ACTIVATIONRATES/"
-                        "3c5ad8dd-5c2b-43d1-96fe-63b945de10fb/"
-                        "CarlosTeamViewExpanded?:iid=1"),
+                        "5e6ceb67-1211-4814-97dd-4b35af67ad5f/"
+                        "ALLTEAMSEXPANDEDB2B?:iid=1"),
     # ONE consolidated churn view (Carlos 2026-09-05). Tableau restructured
     # CHURNRATES: the board now shows every product in one table (the display
     # dimension breaks WIRELESS out into BYOD/NON BYOD rows), so ONE capture

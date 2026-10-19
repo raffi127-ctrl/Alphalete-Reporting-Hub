@@ -159,11 +159,13 @@ def _activation_cfg():
         # it doesn't, parse_rep_rates fails loudly naming the missing columns —
         # the fix is then Carlos saving a JamisEXPANDED view (add-b2b-office.md,
         # "What Carlos makes") and swapping the URL on this one line.
+        # 2026-10-18 (Megan): Carlos Team View Expanded lost its 'Activation
+        # Office' sheet ~10/13 (republish) — moved to the all-teams view.
         "jamis": ("https://us-east-1.online.tableau.com/#/site/sci/views/"
                   "ATTTRACKER-B2B/ACTIVATIONRATES/"
-                  "3c5ad8dd-5c2b-43d1-96fe-63b945de10fb/"
-                  "CarlosTeamViewExpanded?:iid=1",
-                  "Carlos Team View Expanded", "JAMIS GARAY"),
+                  "5e6ceb67-1211-4814-97dd-4b35af67ad5f/"
+                  "ALLTEAMSEXPANDEDB2B?:iid=1",
+                  "ALL TEAMS EXPANDED B2B", "JAMIS GARAY"),
         # SABRINA (alisei) — onboarded 2026-08-26, activation cfg CORRECTED
         # 2026-08-27. She is in ATEF's captainship (split off Carlos's on
         # 2026-08-18: Atef + Sabrina Alicea + Dhyey Patel), so she rides ATEF's
