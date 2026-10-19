@@ -93,6 +93,9 @@ fluff. I need clear visuals and concise communications.
   patches. The "ICD Aliases" tab in the
   `PROJECT REQUESTS FROM REPORT HUB` workbook is canonical. Use
   `automations.focus_office_att.aliases.save_alias(canonical, alias)`.
+- **Slack IDs → `resources/owner-slack-ids.md`.** Every owner/team
+  member's Slack ID lives there (with the look-alike accounts flagged).
+  Look it up instead of asking Megan; add any newly confirmed ID to it.
 - **7-year-old-simple UI.** No clever syntax inputs. One input per
   concept. Pick the obvious default. Non-technical users run these.
 - **Don't touch user data without confirming.** Append or overwrite
