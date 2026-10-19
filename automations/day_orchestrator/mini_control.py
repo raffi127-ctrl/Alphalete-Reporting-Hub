@@ -265,6 +265,10 @@ PLUMBING_ACTIONS = {"ping", "screendrive", "update", "restart_poller", "restart_
                     "incident_waiting",
                     "incident_triage", "incident_close_stranded",
                     "find_group",
+                    # Audit-bot window (Lucy 1): a listing, a file copy into
+                    # output/logs, and one bounded move-aside. Diagnosing a
+                    # crash-looping bot must not spend the report budget.
+                    "audit_bot_ls", "audit_bot_peek", "audit_bot_quarantine",
                     # A HAND-SENT TEXT IS NOT REPORT CHURN: one message per row,
                     # typed by a person. On 2026-09-23 the cap (hit by a day of
                     # log reads + a backfill) held Khalil's group test until
@@ -1545,6 +1549,144 @@ def _action_peek(args: str) -> tuple[bool, str]:
     return True, (f"copied {raw} ({size} bytes, {lines} lines) -> "
                   f"{dest.name} · read it with `lucy logtail {dest.stem} "
                   f"<pattern> <n>`")
+
+
+# --- Raf's 2nd-round interview audit bot (Lucy 1) ------------------------------
+# The bot lives OUTSIDE the repo (~/2nd-rd-audits/.runtime, Colten's copy in
+# ~/2nd-rd-audits-colten/.runtime), so peek/logtail can't see it and SSH only
+# works from the office LAN. On 2026-10-19 its audit watcher crash-looped all
+# night while Megan was off-site and the queue was the only way in. These three
+# give the queue a window into that folder: list it, copy a file into
+# output/logs for `logtail`, and move ONE poison file aside. Nothing deletes.
+_AUDIT_BOT_SECRET_RE = re.compile(r"(^|/)\.env|token|secret|credential|key",
+                                  re.I)
+
+
+def _audit_bot_root(parts: list) -> tuple[Path, list, str]:
+    """Pop an optional leading `colten` and return (runtime root, rest, label)."""
+    if parts and parts[0].lower() == "colten":
+        return (Path.home() / "2nd-rd-audits-colten" / ".runtime", parts[1:],
+                "colten")
+    return Path.home() / "2nd-rd-audits" / ".runtime", parts, "raf"
+
+
+def _audit_bot_path(root: Path, raw: str) -> Path | None:
+    """`raw` resolved under `root`, or None if it escapes the bot folder."""
+    try:
+        target = (root / raw).resolve()
+        target.relative_to(root.resolve())
+    except Exception:  # noqa: BLE001
+        return None
+    return target
+
+
+def _audit_bot_dump(label: str, what: str, text: str) -> str:
+    stamp = dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    slug = re.sub(r"[^a-z0-9]+", "-", what.lower()).strip("-")[:50] or "root"
+    dest = REPO_ROOT / "output" / "logs" / f"auditbot-{label}-{slug}-{stamp}.log"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(text, encoding="utf-8")
+    return dest.stem
+
+
+def _action_audit_bot_ls(args: str) -> tuple[bool, str]:
+    """READ-ONLY: list a folder of the audit bot (newest first) plus its running
+    watcher processes, into output/logs for `logtail`.
+
+      audit_bot_ls                 Raf's .runtime folder
+      audit_bot_ls inbox           a subfolder
+      audit_bot_ls colten inbox    Colten's copy"""
+    root, rest, label = _audit_bot_root(shlex.split(args or ""))
+    sub = rest[0] if rest else "."
+    target = _audit_bot_path(root, sub)
+    if target is None:
+        return False, f"refused: {sub!r} is outside {root}"
+    if not target.is_dir():
+        return False, f"no such folder: {target}"
+    rows = []
+    for p in target.iterdir():
+        try:
+            st = p.stat()
+        except OSError:
+            continue
+        rows.append((st.st_mtime, p.name + ("/" if p.is_dir() else ""),
+                     st.st_size))
+    rows.sort(reverse=True)
+    out = [f"{target}  ({len(rows)} entries, newest first)"]
+    for mtime, name, size in rows:
+        when = dt.datetime.fromtimestamp(mtime).strftime("%m-%d %H:%M")
+        out.append(f"{when}  {size:>11,}  {name}")
+    try:
+        ps = subprocess.run(["ps", "-axo", "pid,lstart,command"],
+                            capture_output=True, text=True, timeout=15).stdout
+        procs = [l.strip() for l in ps.splitlines()
+                 if re.search(r"audit\.py|slack_watcher|heartbeat\.sh", l)
+                 and "ps -axo" not in l]
+    except Exception as e:  # noqa: BLE001
+        procs = [f"(ps failed: {e})"]
+    out += ["", "PROCESSES:"] + (procs or ["(none)"])
+    stem = _audit_bot_dump(label, "ls-" + sub, "\n".join(out) + "\n")
+    return True, (f"{len(rows)} entries in {sub}, {len(procs)} bot process(es) "
+                  f"-> `lucy logtail {stem} . 40`")
+
+
+def _action_audit_bot_peek(args: str) -> tuple[bool, str]:
+    """READ-ONLY: copy a text file from the audit bot folder into output/logs so
+    `logtail` can read it. Secrets files (.env, tokens, keys) are refused. A
+    file over 4 MB is copied as its LAST 4 MB (a log's end is what matters).
+
+      audit_bot_peek watcher.log
+      audit_bot_peek colten heartbeat.log"""
+    root, rest, label = _audit_bot_root(shlex.split(args or ""))
+    if not rest:
+        return False, "usage: audit_bot_peek [colten] <file under .runtime>"
+    raw = rest[0]
+    if _AUDIT_BOT_SECRET_RE.search(raw):
+        return False, f"refused: {raw!r} looks like a secrets file"
+    target = _audit_bot_path(root, raw)
+    if target is None:
+        return False, f"refused: {raw!r} is outside {root}"
+    if not target.is_file():
+        return False, f"no such file: {target}"
+    size = target.stat().st_size
+    cap = 4 * 1024 * 1024
+    with open(target, "rb") as fh:
+        if size > cap:
+            fh.seek(size - cap)
+        data = fh.read()
+    text = data.decode("utf-8", errors="replace")
+    stem = _audit_bot_dump(label, raw, text)
+    note = " (last 4 MB)" if size > cap else ""
+    return True, (f"copied {raw} ({size:,} bytes{note}) -> "
+                  f"`lucy logtail {stem} <pattern> <n>`")
+
+
+def _action_audit_bot_quarantine(args: str) -> tuple[bool, str]:
+    """MOVE one file out of the audit bot's way into .runtime/failed/ — the fix
+    for a poison inbox file the watcher re-audits (and dies on) every pass.
+    Never deletes, never overwrites: a name already in failed/ is refused.
+
+      audit_bot_quarantine inbox/slack-123_WhatsApp_Audio.mp4
+      audit_bot_quarantine colten inbox/<file>"""
+    root, rest, label = _audit_bot_root(shlex.split(args or ""))
+    if not rest:
+        return False, "usage: audit_bot_quarantine [colten] <file under .runtime>"
+    raw = rest[0]
+    src = _audit_bot_path(root, raw)
+    if src is None:
+        return False, f"refused: {raw!r} is outside {root}"
+    if not src.is_file():
+        return False, f"no such file: {src}"
+    failed = root / "failed"
+    if src.parent.resolve() == failed.resolve():
+        return False, f"{src.name} is already in failed/"
+    dest = failed / src.name
+    if dest.exists():
+        return False, f"refused: failed/{src.name} already exists"
+    failed.mkdir(exist_ok=True)
+    os.rename(src, dest)
+    return True, (f"[{label}] moved {raw} -> failed/{src.name} "
+                  f"({dest.stat().st_size:,} bytes, nothing deleted)")
 
 
 def _action_install_night_knocks(args: str) -> tuple[bool, str]:
@@ -8576,6 +8718,9 @@ ACTIONS = {
     "install_lucy2_digest": _action_install_lucy2_digest,
     "install_card_scheduler": _action_install_card_scheduler,
     "peek": _action_peek,
+    "audit_bot_ls": _action_audit_bot_ls,
+    "audit_bot_peek": _action_audit_bot_peek,
+    "audit_bot_quarantine": _action_audit_bot_quarantine,
     "text_replies": _action_text_replies,
     "install_night_knocks": _action_install_night_knocks,
     "install_ad_photo_threads": _action_install_ad_photo_threads,
