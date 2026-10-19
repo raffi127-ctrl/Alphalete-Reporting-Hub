@@ -10033,6 +10033,27 @@
    },
    "machine": "Lucy 1"
   },
+  "raf_special_probe": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "One-shot READ-ONLY probe (automations.override_bulletin.raf_special_probe): downloads every crosstab sheet of the Raf-wow special-override view for Periods 7-10 and dumps the rows to the throwaway `_raf_special_probe` tab, to explain why Rafael's special fell Aug -> Oct 2026. Runs on LUCY 1 (Raf's login). No fill, no send. `lucy rerun raf_special_probe`.",
+   "display_name": "Override — Raf special-override probe (one-shot)",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.override_bulletin.raf_special_probe"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   },
+   "machine": "Lucy 1"
+  },
   "override_validate": {
    "on_scheduler": false,
    "_off_scheduler_note": "Validate the override DD+NETSUITE pulls on Lucy 1; writes results to _validate_out. Read-only.",
