@@ -258,6 +258,9 @@ _HUB_CARD = {
     # 288 heartbeat rows/day would bury the activity log. A quiet card here means
     # "no Sara+ issues reported", which is the normal, healthy state.
     "sara_down": "sara-plus-issues",
+    # Lucy Broadcast: same 5-min poller shape — publishes only when a post
+    # actually goes out, so a quiet card = nothing new to send.
+    "lucy_broadcast": "lucy-broadcast",
     # Every per-office metrics feed publishes to the ONE consolidated card
     # (dashboard._office_metrics_card) — same as the Tableau trackers. The card's
     # per-office ✅/❌ checklist carries which office missed; the pill is the

@@ -2905,6 +2905,52 @@
     "type": "not_configured"
    }
   },
+  "lucy_broadcast": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "on_scheduler:false = NOT in the 4am batch. Lucy Broadcast runs ITSELF every 5 min, 24/7, via the STANDALONE com.alphalete.lucy-broadcast LaunchAgent (StartInterval 300) on Lucy 1 -- Lucy 1 because it re-sends each post to iMessage groups too, and Lucy 1 is the fleet's iMessage box. Present here so `lucy rerun lucy_broadcast` works and so a Hub 'play' routes to Lucy 1 (the per-destination dedupe state is PER-MACHINE; a laptop run could re-send). Reads the source channel in automations/lucy_broadcast/config.py and re-posts each new top-level post to SLACK_DESTINATIONS + IMESSAGE_GROUPS. Add --dry-run to preview with no send.",
+   "display_name": "Lucy Broadcast",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.lucy_broadcast.run"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "logs_on_event_only": true,
+   "_event_log_note": "logs_on_event_only: publishes to the Hub only when a post actually goes out, not on quiet 5-min ticks -- same reason as sara_down (sparse rows would teach the watcher a fake cadence).",
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   },
+   "machine": "Lucy 1"
+  },
+  "install_lucy_broadcast_agent": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_lucy_broadcast_agent --machine \"Lucy 1\"` installs/refreshes the STANDALONE com.alphalete.lucy-broadcast LaunchAgent (deploy/lucy_broadcast_5min.sh, StartInterval 300). FIRST live run BASELINES existing posts (sends nothing). Install only after config.py has its source channel + destinations.",
+   "display_name": "Install Lucy Broadcast agent (5-min)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "lucy-broadcast"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   },
+   "machine": "Lucy 1"
+  },
   "install_keep_awake_agent": {
    "hand_run_only": true,
    "on_scheduler": true,

@@ -1451,6 +1451,61 @@ AUTOMATED_REPORTS = [
         ],
     },
     {
+        "id": "lucy-broadcast",
+        "name": "Lucy Broadcast (Q 5 Min)",
+        "creator": "Raf & Claude",
+        "emoji": "📣",
+        # Amber = ongoing self-running job, like sara-plus-issues.
+        "color": "#F59E0B",
+        "category": "📲 Ops",
+        "assignees": ["Lucy 1"],
+        "description": "Post once in the broadcast Slack channel — Lucy sends it to every set Slack channel and iMessage group, then replies ✅ in the thread.",
+        "breakdown": (
+            "WHAT IT DOES\n"
+            "**•** Checks the broadcast Slack channel **every 5 minutes, "
+            "24/7**.\n"
+            "**•** Every new post (text, pictures, files) is sent **as Lucy** "
+            "to each Slack channel and iMessage group on the list.\n"
+            "**•** Replies ✅ in the thread listing where it went. If a spot "
+            "fails for 30 min it replies ⚠️ naming it.\n"
+            "**•** Never sends the same post twice.\n\n"
+            "HOW TO POST\n"
+            "Put the text **and** pictures in **ONE message**. Pictures added "
+            "as a thread reply are not sent. Fix a typo within a minute and "
+            "the fixed version goes out.\n\n"
+            "WHEN IT RUNS\n"
+            "**Continuously, every 5 minutes.** A quiet card means nothing "
+            "new was posted."
+        ),
+        "assignee_note": "Runs unattended on Lucy 1 (the mini) as a LaunchAgent.",
+        "self_scheduled": True,
+        "hide_schedule": True,
+        "schedule": {
+            "frequency": "daily",
+            "time": "12:00 AM",
+            "time_label": "24/7",
+            "estimated_minutes": 1,
+        },
+        # Per-machine dedupe state + iMessage = Lucy 1 only.
+        "run_machine": "Lucy 1",
+        "run_rerun_id": "lucy_broadcast",
+        "checklist": [],
+        "post_run": {
+            "message_success": "✅ Checked the broadcast channel. Any new post has been sent out.",
+            "message_failed": "❌ Check failed. See the log above — the 5-minute job keeps running regardless.",
+        },
+        "actions": [
+            {
+                "label": "Check Now",
+                "icon": "▶",
+                "primary": True,
+                "help": "Checks the broadcast channel right now instead of waiting for the next 5-minute run.",
+                "module": "automations.lucy_broadcast.run",
+                "args_fn": (lambda: []),
+            },
+        ],
+    },
+    {
         "id": "recruiting",
         "name": "ATT Program - Focus Report (Raf)",
         "creator": "Megan",
