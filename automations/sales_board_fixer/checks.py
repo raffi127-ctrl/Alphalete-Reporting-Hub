@@ -203,8 +203,16 @@ def layout(values) -> Layout:
         # the block ends at the first blank name.
         first_day = next((c for c in range(1, len(values[day - 1]) + 1)
                           if _g(values, day, c).strip().upper() in DAY_WORDS), 0)
+        # Drew's NDS board (2026-10-19) has no TOTALS label either, and keeps
+        # 12 week-total columns between the names (B) and MON: there the
+        # names are the first column of A-E that holds text, not a number.
         if 1 < first_day <= 6 and _g(values, sub + 1, first_day - 1).strip():
-            name_col = first_day - 1
+            col = first_day - 1
+        else:
+            col = next((c for c in range(1, 6)
+                        if re.search(r"[A-Za-z]", _g(values, sub + 1, c))), 0)
+        if col:
+            name_col = col
             last = next((r - 1 for r in range(sub + 1, len(values) + 1)
                          if not _g(values, r, name_col).strip()), len(values))
     lay = Layout(name_col, day, sub, last)

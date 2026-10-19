@@ -1782,7 +1782,7 @@
   },
   "sales_board_fixer": {
    "on_scheduler": true,
-   "machine": "Lucy 1",
+   "machine": "Lucy 4",
    "_note": "Lucy Salesboard Fixer, LIVE since 2026-10-12 (Raf's ask 2026-10-06; Eve 2026-10-12: production, sandbox twins deleted). Every morning: backs up and fixes this week's 'Sales Board WE m.d', 'Line Up WE m.d' and 'Stations' of Alphalete SALES BOARD 2025 (formulas put back, font/size + number format to the column majority, Roll Call filled under an X/T, dead conditional-format rules deleted) and leaves a hover note on every touched cell. A week tab that doesn't exist yet (Monday before the week roll) is skipped. Pure Sheets API, no browser.",
    "order": 4.85,
    "display_name": "Lucy Salesboard Fixer",
@@ -1814,7 +1814,7 @@
   },
   "sales_board_fixer_owners": {
    "on_scheduler": true,
-   "machine": "Lucy 1",
+   "machine": "Lucy 4",
    "_note": "Lucy Salesboard Fixer on the OWNERS' boards (Eve approved 2026-10-13). Reads automations/sales_board_fixer/owners.json and writes only where \"apply\": true (8 owners with a live board). Only broken formulas + broken color rules, no hover notes, no fonts / Roll Call; backup to output/sales_board_fixer first. Same fix 3 days in a row -> Lucy DMs Eve (owner_repeats.json). Last in the batch, far from sales_board_fixer: back to back they hit the Sheets read quota (429). Pure Sheets API, no browser.",
    "order": 63,
    "display_name": "Lucy Salesboard Fixer (owners)",

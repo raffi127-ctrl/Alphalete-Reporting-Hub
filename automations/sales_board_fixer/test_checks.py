@@ -175,6 +175,20 @@ class OwnerLayout(unittest.TestCase):
         self.assertEqual((lay.name_col, lay.sub_row, lay.last), (2, 3, 5))
         self.assertTrue(K.is_board(v))
 
+    def test_week_total_columns_between_names_and_mon(self):
+        # Drew's 'Sales Board NDS': no TOTALS label, week totals in C..F before MON
+        v = [[" ", "", "WEEK TOTALS", "", "", "", "MON", "Monday", "", "", ""],
+             ["", "", "", "", "", "", "", "12", "", "", ""],
+             ["", '"Results get Rewarded"', "Apps", "Cx Count", "NDS INT", "NDS NL",
+              "Apps", "Cx Count", "NDS INT", "NDS NL", "Roll Call"],
+             ["1", "Matthew Grant", "10.0", "4", "0", "10", "9.0", "3", "", "9", ""],
+             ["2", "ZZ EXTRA", "0.0", "0", "0", "0", "0.0", "", "", "", ""],
+             ["", "", "117.0", "57", "4", "113", "", "", "", "", ""],
+             ["", "Reps in the Field", "12", "", "", "", "", "", "", "", ""]]
+        lay = K.layout(v)
+        self.assertEqual((lay.name_col, lay.sub_row, lay.last), (2, 3, 5))
+        self.assertTrue(K.is_board(v))
+
 
 class OwnerTabs(unittest.TestCase):
     def test_week_dated_side_tabs_only_for_the_picked_week(self):
