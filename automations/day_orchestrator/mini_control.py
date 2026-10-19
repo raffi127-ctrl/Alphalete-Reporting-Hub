@@ -149,6 +149,10 @@ AUTO_BY_PREFIX = "auto:"
 _AUTO_BY = {"appstream_watch", "tableau_screenshots", "b2b_dispositions",
             "orchestrator", "day_orchestrator", "mini", "lucy"}
 _CURRENT_BY = ""
+# poll_once parks (worksheet, row number) of the row it is running here, so a
+# long rerun can look at its OWN row while it runs and stop if a person set it to
+# 'canceled' (see _current_row_canceled). None between rows.
+_CURRENT_ROW = None
 
 
 def is_manual(by: str = "") -> bool:
@@ -459,14 +463,112 @@ def _open(sandbox: bool = False, machine: str | None = None):
 # (ok, short_result). Add a new fix = add a function here; nothing else runs.
 # ---------------------------------------------------------------------------
 
+#: How often a running rerun re-reads its own queue row for a cancel. One Sheet
+#: read per 30s is well inside the 60-reads/min per-user cap.
+_CANCEL_POLL_S = 30
+#: Start of the Result text for a run stopped by a cancel. poll_once keys the
+#: row's final status off it, so keep the two in step.
+CANCELED_PREFIX = "canceled — stopped"
+
+
+def _current_row_canceled() -> bool:
+    """Has a person set the row poll_once is running to 'canceled'?
+
+    WHY (Megan 2026-10-19). Setting a RUNNING row to 'canceled' used to change
+    nothing but the label: `rerun ad_photo_threads --office cody` was canceled
+    on Lucy 1 a few minutes after it started at 15:33, kept running to its
+    75-minute timeout, and seven rows sat queued behind it. Nothing remote could
+    stop it either -- restart_poller is a main-lane row, so it queued behind the
+    very job it was meant to kill. Megan's rule: canceled means stopped, so the
+    rest can run.
+
+    Best-effort and fail-OPEN: a Sheet hiccup answers False and the run carries
+    on. Killing a report because the network blinked would be far worse than
+    letting a canceled one finish."""
+    row = _CURRENT_ROW
+    if not row:
+        return False
+    ws, rownum = row
+    try:
+        status = ws.cell(rownum, 5).value
+    except Exception:  # noqa: BLE001 — a read hiccup must never stop a run
+        return False
+    return str(status or "").strip().lower() in ("canceled", "cancelled")
+
+
+def _kill_tree(proc) -> None:
+    """Stop `proc` AND everything it started, then reap it.
+
+    A report is rarely one process: the browser reports launch Chrome, and a
+    Chrome left behind keeps the shared profile locked, so the NEXT row would
+    wait out the 30m profile lock (see chrome_guard). So kill the whole tree.
+    Children are found by parent pid rather than by giving the child its own
+    session, because a child in the poller's group is what lets a launchd
+    restart of the poller take its running report down with it -- that must keep
+    working. Cross-platform: taskkill /T on Windows; ps + signals elsewhere."""
+    pid = proc.pid
+    if os.name == "nt":
+        try:
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)],
+                           capture_output=True, timeout=30)
+        except Exception:  # noqa: BLE001
+            pass
+    else:
+        import signal
+        tree = [pid] + _descendants(pid)
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            for p in tree:
+                try:
+                    os.kill(p, sig)
+                except Exception:  # noqa: BLE001 — already gone is fine
+                    pass
+            if sig == signal.SIGTERM:
+                try:
+                    proc.wait(timeout=10)   # a clean exit gets 10s
+                except Exception:  # noqa: BLE001
+                    pass
+    try:
+        proc.kill()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _descendants(pid: int) -> list:
+    """Every process under `pid` (children, grandchildren…), from one `ps`
+    snapshot. [] when ps can't be read -- then only the direct child dies."""
+    try:
+        out = subprocess.run(["ps", "-A", "-o", "pid=,ppid="],
+                             capture_output=True, text=True, timeout=10).stdout
+    except Exception:  # noqa: BLE001
+        return []
+    kids: dict = {}
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+            kids.setdefault(int(parts[1]), []).append(int(parts[0]))
+    found, todo = [], [pid]
+    while todo:
+        for c in kids.get(todo.pop(), []):
+            if c not in found and c != pid:
+                found.append(c)
+                todo.append(c)
+    return found
+
+
 def _run_cmd(cmd: list[str], timeout_s: int = DEFAULT_TIMEOUT_S,
              log_name: str | None = None,
-             env: dict | None = None) -> tuple[bool, str]:
+             env: dict | None = None,
+             should_stop=None) -> tuple[bool, str]:
     """Run a command in the repo root; return (ok, 'exit N · <tail>').
 
     env: extra environment for the child (MERGED over os.environ, not a
     replacement) — for actions that target a module through an env var, like
     probe_knocks' KNOCKS_OFFICE. None (default) inherits unchanged.
+
+    should_stop: a no-arg callable checked every _CANCEL_POLL_S while the child
+    runs; when it answers True the child and its whole process tree are stopped
+    and the result starts with CANCELED_PREFIX. None (default) = never checked,
+    exactly the old behaviour.
 
     log_name: write the run's FULL output to output/logs/<log_name> so
     `lucy logtail <log_name>` can read it. The 3-line tail in the result cell is
@@ -485,24 +587,60 @@ def _run_cmd(cmd: list[str], timeout_s: int = DEFAULT_TIMEOUT_S,
             log_path = None
     child_env = dict(os.environ, **env) if env else None
     try:
-        proc = subprocess.run(cmd, cwd=str(REPO_ROOT), timeout=timeout_s,
-                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                              text=True, env=child_env)
-    except subprocess.TimeoutExpired as e:
-        # A timeout still produced output — persist it, or the slowest failures
-        # (the ones most worth debugging) are the ones with no log at all.
-        if log_path is not None:
-            out = e.stdout or ""
-            if isinstance(out, bytes):
-                out = out.decode("utf-8", "replace")
-            _write_log(log_path, cmd, out + f"\n\n*** TIMED OUT after {timeout_s}s ***")
-        return False, (f"timed out after {timeout_s // 60}m"
-                       + (f" · log: {log_path.name}" if log_path else ""))
+        proc = subprocess.Popen(cmd, cwd=str(REPO_ROOT),
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True, env=child_env)
     except Exception as e:
         return False, f"launch error: {str(e).splitlines()[0][:140]}"
+
+    def _rest() -> str:
+        # communicate() keeps what it already read across TimeoutExpired, so
+        # this returns the WHOLE output, not just what came after the kill.
+        try:
+            out, _ = proc.communicate(timeout=30)
+        except Exception:  # noqa: BLE001
+            out = ""
+        return out or ""
+
+    deadline = time.monotonic() + timeout_s
+    while True:
+        left = deadline - time.monotonic()
+        step = left if should_stop is None else min(_CANCEL_POLL_S, left)
+        try:
+            stdout, _ = proc.communicate(timeout=max(step, 0.01))
+            break
+        except subprocess.TimeoutExpired:
+            pass
+        if time.monotonic() >= deadline:
+            # A timeout still produced output — persist it, or the slowest
+            # failures (the ones most worth debugging) are the ones with no log.
+            proc.kill()
+            out = _rest()
+            if log_path is not None:
+                _write_log(log_path, cmd,
+                           out + f"\n\n*** TIMED OUT after {timeout_s}s ***")
+            return False, (f"timed out after {timeout_s // 60}m"
+                           + (f" · log: {log_path.name}" if log_path else ""))
+        stop = False
+        if should_stop is not None:
+            try:
+                stop = bool(should_stop())
+            except Exception:  # noqa: BLE001 — a broken check never kills a run
+                stop = False
+        if stop:
+            _kill_tree(proc)
+            out = _rest()
+            at = dt.datetime.now().strftime("%H:%M")
+            if log_path is not None:
+                _write_log(log_path, cmd,
+                           out + f"\n\n*** STOPPED at {at}: row set to canceled ***")
+            return False, (f"{CANCELED_PREFIX} at {at} (row set to canceled) — "
+                           "it may have written part of its output before it "
+                           "stopped"
+                           + (f" · log: {log_path.name}" if log_path else ""))
     if log_path is not None:
-        _write_log(log_path, cmd, proc.stdout or "")
-    tail = "\n".join((proc.stdout or "").splitlines()[-3:])[:280]
+        _write_log(log_path, cmd, stdout or "")
+    tail = "\n".join((stdout or "").splitlines()[-3:])[:280]
     return proc.returncode == 0, (
         f"exit {proc.returncode}"
         + (f" · log: {log_path.name}" if log_path else "")
@@ -668,10 +806,14 @@ def _action_rerun(args: str) -> tuple[bool, str]:
     # HUB_REPORT_TIMEOUT_S: same budget the timeout below enforces, so the
     # Chrome profile lock never waits longer than this rerun is allowed to live
     # (tableau_patchright._profile_wait_budget).
+    # should_stop: a person who sets this row to 'canceled' mid-run stops it
+    # within ~30s, so the rows behind it can run (Megan 2026-10-19).
     ok, result = _run_cmd(cmd, timeout_s,
                           log_name=f"rerun-{stamp}-{report_id}.log",
                           env={"HUB_REPORT_ID": str(report_id),
-                               "HUB_REPORT_TIMEOUT_S": str(timeout_s)})
+                               "HUB_REPORT_TIMEOUT_S": str(timeout_s)},
+                          should_stop=_current_row_canceled)
+    canceled = result.startswith(CANCELED_PREFIX)
 
     # A browser report killed at its timeout leaves its Chrome behind, still
     # holding the shared profile — so the NEXT rerun waits out the 30m profile
@@ -681,7 +823,7 @@ def _action_rerun(args: str) -> tuple[bool, str]:
     # real second chance, not a repeat of the same 30 minutes. Orphans only (PPID
     # 1): a run can time out BECAUSE another report legitimately holds the
     # profile, and that one must not be killed.
-    if not ok and result.startswith("timed out") \
+    if not ok and (result.startswith("timed out") or canceled) \
             and r.source_type in ("tableau", "appstream"):
         try:
             from automations.day_orchestrator import chrome_guard
@@ -698,9 +840,13 @@ def _action_rerun(args: str) -> tuple[bool, str]:
     # too. Best-effort; a no-op when the report has no Hub card.
     probe = _probe_reason(
         (cfg.raw.get("reports", {}) or {}).get(report_id) or {}, extra)
+    # A CANCELED run says nothing about the report either -- a person stopped
+    # it -- so, like a probe, it must not post "failed" to #claudecorrections
+    # or clear an open failure.
     _publish_rerun_done(report_id, getattr(r, "display_name", report_id),
-                        ok, hub_run_id, probe, manual=is_manual())
-    if probe:
+                        ok, hub_run_id, probe or ("canceled" if canceled else ""),
+                        manual=is_manual())
+    if probe and not canceled:
         # Say it in the result cell, where the person who queued the row reads:
         # otherwise "exit 0" on a probe looks exactly like a fix that landed —
         # and "exit 1" looks like a report that just broke.
@@ -9154,15 +9300,22 @@ def poll_once(*, dry_run: bool = False, sandbox: bool = False,
         cap_used += 1
         # Park who queued this for the handler to read (see _CURRENT_BY). Always
         # cleared, so a handler can never inherit the previous row's author.
-        global _CURRENT_BY
+        global _CURRENT_BY, _CURRENT_ROW
         _CURRENT_BY = str(row.get("By", "")).strip()
+        # And which row this is, so a rerun can see a cancel on it mid-run.
+        _CURRENT_ROW = (ws, rownum)
         try:
             ok, result = handler(args)
         except Exception as e:
             ok, result = False, f"handler error: {str(e).splitlines()[0][:160]}"
         finally:
             _CURRENT_BY = ""
-        _set(ws, rownum, "done" if ok else "failed", result, finished=True)
+            _CURRENT_ROW = None
+        # A run a person stopped stays 'canceled' -- writing 'failed' over the
+        # status they set would read as the report breaking.
+        final = ("canceled" if str(result).startswith(CANCELED_PREFIX)
+                 else "done" if ok else "failed")
+        _set(ws, rownum, final, result, finished=True)
         if action in SECRET_ACTIONS:
             # Blank the Args cell now that the secret has been consumed — pass or
             # fail, it must not stay in the Sheet. Best-effort: losing the redact
@@ -9173,7 +9326,8 @@ def poll_once(*, dry_run: bool = False, sandbox: bool = False,
             except Exception as e:  # noqa: BLE001
                 print(f"[mini_control]   ⚠ could NOT redact row {rownum}'s Args "
                       f"({type(e).__name__}) — clear it by hand")
-        print(f"[mini_control]   -> {'done' if ok else 'FAILED'}: {result[:160]}")
+        print(f"[mini_control]   -> {final if final != 'failed' else 'FAILED'}: "
+              f"{result[:160]}")
         acted += 1
         # PLUMBING QUEUED MID-PASS JUMPS THE REST OF THE PASS (2026-10-05).
         # _pass_order puts plumbing first, but only among the rows read when the
@@ -9344,7 +9498,8 @@ def print_status(n: int = 10, *, sandbox: bool = False, machine: str | None = No
         print("(no commands on the Mini Control queue yet)")
         return
     recent = rows[-n:]
-    icons = {"done": "✓", "failed": "✗", "running": "…", "queued": "•"}
+    icons = {"done": "✓", "failed": "✗", "running": "…", "queued": "•",
+             "canceled": "⊘"}
     print(f"Last {len(recent)} Mini Control command(s) — newest last:\n")
     for row in recent:
         status = str(row.get("Status", "")).strip()
