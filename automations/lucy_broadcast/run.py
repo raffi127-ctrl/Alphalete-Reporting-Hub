@@ -393,9 +393,11 @@ def scan(*, dry_run: bool = True, channel: Optional[str] = None,
     if no_dest:
         print("No destinations yet — reply in the how-it-works thread to add some.")
 
-    msgs = cl.conversations_history(channel=channel,
-                                    limit=limit or config.SCAN_LIMIT
-                                    ).get("messages", [])
+    # Paged (posts with files are big; one large read gets cut off on Lucy 1).
+    from automations.shared import slack_retry
+    msgs = slack_retry.read_paged(cl.conversations_history, channel=channel,
+                                  limit=limit or config.SCAN_LIMIT,
+                                  page=10).get("messages", [])
     # First live run on a machine: mark what's already there as done, send
     # nothing — installing must never re-blast old posts.
     baseline = not state.get("_baselined") and not dry_run

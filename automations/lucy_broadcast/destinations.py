@@ -151,16 +151,27 @@ def replay(replies: List[dict], channels: Dict[str, str], groups: List[str],
 
 
 # ---- live lookups -------------------------------------------------------------
+def _read(fn, **kw):
+    """One Slack read with the shared retry for a mid-body cut-off."""
+    try:
+        from automations.shared import slack_retry
+        return slack_retry.read(fn, **kw)
+    except ImportError:
+        return fn(**kw)
+
+
 def thread_replies(cl, channel: str, thread_ts: str, own_user: str) -> List[dict]:
     """Every human reply under the how-it-works post (not the post itself, not
     Lucy's own confirmations)."""
     out: List[dict] = []
     cursor = None
     while True:
-        kw = {"channel": channel, "ts": thread_ts, "limit": 200}
+        # Small pages: a big Slack response gets cut off mid-body on Lucy 1
+        # (IncompleteRead, ~74 KB ceiling) and no retry saves it.
+        kw = {"channel": channel, "ts": thread_ts, "limit": 50}
         if cursor:
             kw["cursor"] = cursor
-        resp = cl.conversations_replies(**kw)
+        resp = _read(cl.conversations_replies, **kw)
         for m in resp.get("messages", []):
             if m.get("ts") == thread_ts or m.get("bot_id"):
                 continue
@@ -179,11 +190,13 @@ def member_channels(cl) -> Dict[str, str]:
     out: Dict[str, str] = {}
     cursor = None
     while True:
+        # limit=1000 came back truncated on Lucy 1 (2026-10-18 first dry run:
+        # IncompleteRead 74352 of ~128k bytes) — Lucy is in a LOT of channels.
         kw = {"types": "public_channel,private_channel",
-              "exclude_archived": True, "limit": 1000}
+              "exclude_archived": True, "limit": 100}
         if cursor:
             kw["cursor"] = cursor
-        resp = cl.users_conversations(**kw)
+        resp = _read(cl.users_conversations, **kw)
         for c in resp.get("channels", []):
             out[c["id"]] = c.get("name") or c["id"]
         cursor = (resp.get("response_metadata") or {}).get("next_cursor")
