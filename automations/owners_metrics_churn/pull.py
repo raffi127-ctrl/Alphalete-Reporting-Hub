@@ -859,6 +859,69 @@ def fetch_nds_jairo(out_path: Optional[Path] = None,
     return out_path
 
 
+def fetch_nds_atef(out_path: Optional[Path] = None,
+                   verbose: bool = False, page=None) -> Path:
+    """Atef has no NDS captainship view: "Atef's Team" does not exist in NDS
+    Captain Teams yet (Tableau has him under Khalil's Team, 2026-10-19). So the
+    unfiltered all-teams CHURNRATES view, to its own file so it never races the
+    moved-rep backfill's copy; make_nds_board_roster_parser cuts it down."""
+    out_path = out_path or Path(tempfile.gettempdir()) / "owners_nds_atef.csv"
+    _dl(NDS_ALLTEAM_URL, NDS_WORKSHEET, out_path,
+                                  verbose=verbose, page=page)
+    return out_path
+
+
+def make_nds_board_roster_parser(captain: str):
+    """parse_nds cut to the owners on the captain's Org Sales Board block — the
+    NDS twin of make_b2b_board_roster_parser.
+
+    Atef Choudhury, 2026-10-19 (Eve): his numbers are NDS now, but Sabrina
+    Alicea and Dhyey Patel are still B2B and there is no "Atef's Team" in NDS.
+    Reading his block means today's tab holds Atef alone, and each of the other
+    two lands on it the morning Tableau moves them — no code edit. Owners on the
+    block that the NDS view doesn't have are simply not there yet.
+
+    The view's 'Office/Organization Average' is the whole NDS org, so
+    office_total is RECOMPUTED from the kept owners' own disconnects over their
+    own activations, same as the B2B roster parser."""
+    def _parse(csv_path: Path) -> dict:
+        from automations.carlos_captainship_headcount.roster import board_roster
+        from automations.focus_office_att.aliases import load_aliases
+        aliases = load_aliases()
+        canon = lambda n: " ".join(  # noqa: E731
+            str(alias_to_canonical(n, aliases) or n).lower().split())
+        roster = {canon(n) for n in board_roster(captain)}
+        parsed = parse_nds(csv_path)
+        reps = {n: d for n, d in parsed["reps"].items() if canon(n) in roster}
+        if not reps:
+            raise RuntimeError(
+                f"none of {captain}'s board owners are in the NDS all-teams "
+                f"churn file — a dead view or a spelling the ICD Aliases sheet "
+                f"doesn't cover; NOT filling his tab with nothing")
+        office: dict = {}
+        for period in NDS_PERIODS:
+            num = denom = 0
+            seen = False
+            for d in reps.values():
+                slot = d.get(period) or {}
+                if slot.get("num") is None and slot.get("denom") is None:
+                    continue
+                seen = True
+                num += slot.get("num") or 0
+                denom += slot.get("denom") or 0
+            if not seen:
+                continue
+            office[period] = {
+                "num": num, "denom": denom,
+                "pct": ("%.2f%%" % (100.0 * num / denom)) if denom else "0.00%",
+            }
+        return {"office_total": office, "reps": reps}
+
+    _parse.__name__ = f"parse_nds_board_{captain.lower()}"
+    _parse.program = "nds"
+    return _parse
+
+
 def parse_nds(csv_path: Path) -> dict:
     """Pivot the NDS Crosstab into office_total + per-ICD data.
 

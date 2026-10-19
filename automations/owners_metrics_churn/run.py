@@ -227,6 +227,13 @@ REPORTS = [
     ("jairo", "Jairo Ruiz (NDS)",
      pull.fetch_nds_jairo, fill.open_ws_nds_jairo,
      "owners_nds_jairo.csv", pull.parse_nds, pull.NDS_PERIODS),
+    # Atef (2026-10-19): his captainship is NDS now, but there is no "Atef's
+    # Team" in NDS yet, so the all-teams view cut to his Org Sales Board block.
+    # Slug 'atef-nds' because 'atef' is still his B2B tab.
+    ("atef-nds", "Atef Choudhury (NDS)",
+     pull.fetch_nds_atef, fill.open_ws_nds_atef,
+     "owners_nds_atef.csv", pull.make_nds_board_roster_parser("Atef"),
+     pull.NDS_PERIODS),
 ]
 
 
@@ -532,7 +539,7 @@ ONLY_GROUPS = {
     "wireless": ["wayne-wl", "starr-wl", "chan-wl", "tony-wl", "sahil-wl"],
     "fiber":    ["wayne", "starr", "chan", "tony", "sahil"],
     "b2b":      ["carlos", "eveliz", "luis", "atef", "luke"],
-    "nds":      ["khalil", "colten", "jairo"],
+    "nds":      ["khalil", "colten", "jairo", "atef-nds"],
 }
 
 

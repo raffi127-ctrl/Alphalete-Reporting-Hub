@@ -977,9 +977,8 @@ CAPTAINS: List[Captain] = [
                     title_prefix="WIRELESS CHURN"),
     ]),
     # Atef RETIRADO de B2B 2026-10-19 (Eve): "Atef's Team" ya no está en B2B
-    # Captain's Teams (SFDC) desde el 10/14 y su capitanía pasa a NDS. Cuando
-    # SmartCircle cree "Atef's Team" en NDS Captain Teams, vuelve como flavor
-    # "nds" (churn open_ws_nds_atef, fila NDS de _GROUPS) — ver atef_nds_watch.
+    # Captain's Teams (SFDC) desde el 10/14. Volvió el mismo día como flavor
+    # "nds" — ver su entrada en el bloque NDS de abajo.
     # Luke Baldwin, 2026-10-01: mismo correo que Carlos (3 secciones). Su churn
     # sale de la vista all-teams cortada por su caja del board
     # (owners_metrics_churn.pull.make_b2b_board_roster_parser); su §2 dice
@@ -998,6 +997,14 @@ CAPTAINS: List[Captain] = [
     ]),
     Captain("jairo", "Jairo", "nds", title_bg="#FBBC04", to=_to("jairo"), churn=[
         ChurnSource(_own.open_ws_nds_jairo, _ni_render, "New Internet Churn"),
+    ]),
+    # Atef DE VUELTA como NDS 2026-10-19 (Eve: "los numeros de el ya pertenecen
+    # a NDS, sino se va a quedar sin su reporte diario de ventas"). Sin esperar
+    # a "Atef's Team" en NDS: §2 y el churn leen las vistas NDS de todos los
+    # equipos cortadas a su caja del Org Sales Board, asi que hoy muestran solo
+    # a Atef y suman a Sabrina/Dhyey el dia que Tableau los pase a NDS.
+    Captain("atef", "Atef", "nds", title_bg="#00695C", to=_to("atef"), churn=[
+        ChurnSource(_own.open_ws_nds_atef, _ni_render, "New Internet Churn"),
     ]),
 ]
 
@@ -1064,7 +1071,7 @@ _GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("Fiber 3", ("tony", "chan", "sahil")),
     ("Fiber 4", ("pat", "jess")),
     ("B2B", ("eveliz", "luis", "luke")),
-    ("NDS", ("khalil", "colten", "jairo")),
+    ("NDS", ("khalil", "colten", "jairo", "atef")),
 )
 _PER_CAPTAIN = [
     Block(k, f"{wave} — {BY_KEY[k].display_name}", (k,))

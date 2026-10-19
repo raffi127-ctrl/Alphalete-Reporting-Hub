@@ -88,7 +88,13 @@ _TEAMSTATS: dict[str, Tuple[str, Optional[str], Optional[str]]] = {
     # and both were held from auto-send. They now filter on Owner Name = their
     # Org Sales Board block instead (_BOARD_ROSTER below), the way
     # owners_metrics_churn went on 10/13. The value here is unused for them.
-    "atef":   (_B2B_VIEW, _B2B_FIELD, "Atef's Team"),
+    #
+    # 2026-10-19 (Eve): Atef is back, as NDS, and has NO §2 for now — so no
+    # entry here, which renders 'Not available yet' and does not hold the send.
+    # The NDS CaptainsTeam dashboard does not have him at all yet: Owner Name
+    # 'Atef Choudhury' comes up struck through under every team, with BYOD on
+    # or off. Add "atef": (_NDS_VIEW, _NDS_FIELD, "Atef's Team") the day
+    # SmartCircle creates that team (atef_nds_watch DMs Eve).
     "khalil": (_NDS_VIEW, _NDS_FIELD, "Khalil's Team"),
     "colten": (_NDS_VIEW, _NDS_FIELD, "Colten's Team"),
     "jairo":  (_NDS_VIEW, _NDS_FIELD, "Jairo's Team"),
@@ -135,7 +141,7 @@ def _filtered_url(base: str, field: Optional[str], value: Optional[str]) -> str:
 
 # Captains whose §2 filters on their Org Sales Board block (captain_key → board
 # captain name) instead of a team value Tableau no longer has. See _TEAMSTATS.
-_BOARD_ROSTER = {"carlos": "Carlos", "atef": "Atef"}
+_BOARD_ROSTER = {"carlos": "Carlos"}
 # Every value of _B2B_FIELD as of 2026-10-14. The base view's saved team filter
 # leaves out Unassigned/Devin/Luke, so an Owner Name filter alone drops anyone
 # sitting there; listing all of them shows the board's "(Todo)". A team

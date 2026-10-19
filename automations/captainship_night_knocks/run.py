@@ -87,13 +87,18 @@ def default_captains() -> List[str]:
     try:
         from automations.captainship_drafts import config
         keys = [c.key for c in config.CAPTAINS
-                if c.flavor != "b2b"
+                if c.flavor != "b2b" and c.key not in HELD_OUT
                 and "daily_knocks" in {k for _h, k in c.sections}]
     except Exception:  # noqa: BLE001 — never a night with nobody in it
         keys = []
     if SAMPLE_CAPTAIN in keys:
         keys.remove(SAMPLE_CAPTAIN)
     return [SAMPLE_CAPTAIN] + keys
+
+# Captains whose flavor would pull them in but who were never asked for the 9 PM
+# mail. Atef (2026-10-19) went from b2b to nds only so his MORNING report reads
+# NDS numbers; his offices' zones and owner addresses are not loaded either.
+HELD_OUT = {"atef"}
 
 OUT_DIR = Path("output") / "night_knocks"
 # Our OWN Chrome profile: one browser per profile dir, and this runs in the

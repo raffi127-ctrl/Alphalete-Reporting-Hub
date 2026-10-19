@@ -144,6 +144,11 @@ def open_ws_b2b_luke():
 TAB_NDS_KHALIL = "Churn - Khalil Mansour (NDS)"
 TAB_NDS_COLTEN = "Churn - Colten Wright (NDS)"
 TAB_NDS_JAIRO  = "Churn - Jairo Ruiz (NDS)"
+# Atef's captainship moved to NDS 2026-10-19 (Eve). Copy of Khalil's tab cut
+# down to Atef's own row; the rest of his board block is inserted by the daily
+# run as Tableau moves them (pull.make_nds_board_roster_parser). His B2B tab
+# stays as it was.
+TAB_NDS_ATEF   = "Churn - Atef Choudhury (NDS)"
 
 
 def open_ws_nds_khalil():
@@ -156,6 +161,10 @@ def open_ws_nds_colten():
 
 def open_ws_nds_jairo():
     return _shared.open_by_key(SHEET_ID).worksheet(TAB_NDS_JAIRO)
+
+
+def open_ws_nds_atef():
+    return _shared.open_by_key(SHEET_ID).worksheet(TAB_NDS_ATEF)
 
 
 # Re-export shared fill operations under their canonical names so the
