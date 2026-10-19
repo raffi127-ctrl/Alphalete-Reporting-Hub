@@ -39,6 +39,19 @@ _CHAN_LINK = re.compile(r"<#([CG][A-Z0-9]+)(?:\|([^>]*))?>")
 _CHAN_TEXT = re.compile(r"(?<![\w<])#([a-z0-9][a-z0-9_\-]*)", re.I)
 
 
+# Words people put around a bare name that aren't part of it.
+# Includes the label words from Megan's examples ("Slack Channel: x",
+# "Imessage Group - x").
+_FILLER = ("please", "pls", "add", "send", "to", "the", "channel", "slack",
+           "also", "and", "from", "it", "this", "too", "imessage", "group",
+           "text", "chat")
+# Slack sends emoji as :fire: text; Messages names hold the real 🔥 (which
+# _norm drops). Strip the code so "Owners:fire:" == "Owners🔥".
+_EMOJI_CODE = re.compile(r":[a-z0-9_+\-]+:", re.I)
+# A reply SHOWING the format ("EXAMPLES: ...") is not a request.
+_EXAMPLE = re.compile(r"\bexamples?\b", re.I)
+
+
 def _norm(s: str) -> str:
     """Lowercase words only — 'A-Players 🔥 ' -> 'a players'."""
     return " ".join(re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).split())
@@ -57,6 +70,10 @@ def parse_reply(text: str, channels: Dict[str, str],
     Returns {"remove", "slack": [ids], "groups": [names],
              "not_member": [ids or #names Lucy isn't in]}."""
     text = text or ""
+    if _EXAMPLE.search(text):
+        return {"remove": False, "slack": [], "groups": [], "not_member": [],
+                "example": True}
+    text = _EMOJI_CODE.sub(" ", text)
     by_name = {n.lower(): cid for cid, n in channels.items()}
     slack: List[str] = []
     not_member: List[str] = []
@@ -92,6 +109,18 @@ def parse_reply(text: str, channels: Dict[str, str],
             hits.append((at, g))
             hay = hay.replace(needle, " " + "|" * (len(needle) - 2) + " ")
     found = [g for _, g in sorted(hits)]
+
+    # One-per-reply (Megan's thread rule): a reply that is JUST a channel name,
+    # typed without the #, e.g. "alphalete-sales" or "remove alphalete sales".
+    if not slack and not found and not not_member:
+        bare = " %s " % _norm(_REMOVE.sub(" ", stripped))
+        for w in _FILLER:
+            bare = bare.replace(" %s " % w, " ")
+        bare = bare.strip()
+        for cid, n in channels.items():
+            if bare and bare == _norm(n):
+                slack.append(cid)
+                break
     return {"remove": is_removal(text), "slack": slack, "groups": found,
             "not_member": not_member}
 

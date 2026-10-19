@@ -12,8 +12,8 @@ from unittest import mock
 from automations.lucy_broadcast import config, destinations as dz, run
 from automations.lucy_broadcast.test_run import NOW, FakeClient, post
 
-CHANS = {"C1": "alphalete-sales", "C2": "a-players-b2b", "CSRC": "lucy-broadcast"}
-GROUPS = ["A Players", "A Players Leaders", "Admin Staff"]
+CHANS = {"C7": "alphalete-gp-sales", "C1": "alphalete-sales", "C2": "a-players-b2b", "CSRC": "lucy-broadcast"}
+GROUPS = ["A Players", "A Players Leaders", "Admin Staff", "Alphalete Owners🔥"]
 THREAD = "1700000000.000100"
 
 
@@ -46,6 +46,35 @@ class TestParse(unittest.TestCase):
 
     def test_casual_words_dont_match(self):
         r = self.p("thanks! sales are looking great")
+        self.assertEqual((r["slack"], r["groups"]), ([], []))
+
+    def test_bare_channel_name_one_per_reply(self):
+        self.assertEqual(self.p("alphalete-sales")["slack"], ["C1"])
+        self.assertEqual(self.p("Please add the alphalete sales channel")["slack"], ["C1"])
+        r = self.p("remove alphalete-sales")
+        self.assertEqual((r["remove"], r["slack"]), (True, ["C1"]))
+        self.assertEqual(self.p("sales")["slack"], [])        # partial name: no
+
+    def test_megans_instruction_reply_adds_nothing(self):
+        r = self.p("REPLY here with one channel / imessage per reply so we can "
+                   "remove them- Lucy will read this thread EACH time so that "
+                   "any deleted or added channels are updated!")
+        self.assertEqual((r["slack"], r["groups"], r["not_member"]), ([], [], []))
+
+    def test_megans_label_format(self):
+        self.assertEqual(self.p("Slack Channel: alphalete-gp-sales")["slack"], ["C7"])
+        self.assertEqual(self.p("Imessage Group - Alphalete Owners:fire: - Real")["groups"],
+                         ["Alphalete Owners🔥"])
+        self.assertEqual(self.p("Imessage Group - Alphalete Owners:fire:")["groups"],
+                         ["Alphalete Owners🔥"])
+
+    def test_emoji_in_group_name_matches_slack_code(self):
+        r = dz.parse_reply("Owners Real:fire:", {}, ["Owners Real🔥"])
+        self.assertEqual(r["groups"], ["Owners Real🔥"])
+
+    def test_examples_reply_adds_nothing(self):
+        r = self.p("*EXAMPLES:* \n\nImessage Group - Alphalete Owners:fire: - Real"
+                   "\n\nSlack Channel: alphalete-gp-sales")
         self.assertEqual((r["slack"], r["groups"]), ([], []))
 
     def test_removal(self):

@@ -322,7 +322,7 @@ def resolve_destinations(cl, channel: str, own: str, state: dict, *,
             missing.extend(n for n in p["not_member"] if n not in missing)
             seen[r["ts"]] = (r.get("edited") or {}).get("ts", "1")
             if not names and not p["not_member"]:
-                if first:
+                if first or p.get("example"):
                     continue
                 unclear += 1
             emoji = "white_check_mark" if names else (
