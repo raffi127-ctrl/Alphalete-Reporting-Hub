@@ -10,11 +10,15 @@ Read straight from the audit docs the daily post already writes
 a --refresh that rewrote a doc shows up here, and any past week can be built.
 Already-read docs are cached by modifiedTime, so a re-run only exports the new
 ones. One tab per week ("WE 10.4", the Sunday it ends), newest first; a re-run rewrites
-only that week's tab and puts it back in date order.
+only that week's tab and puts it back in date order. In front of them, a
+"Week over Week" tab (Rafael, 2026-10-19: "like the focus report, to see WoW if
+they're getting better scores or worse"): one row per interviewer, her Week
+Avg from each weekly tab side by side, and the change from her week before.
 
     python -m automations.first_round_scorecards.board                 # this week, print only
     python -m automations.first_round_scorecards.board --write         # ... and write the Sheet tab
     python -m automations.first_round_scorecards.board --week 2026-09-21 --write
+    python -m automations.first_round_scorecards.board --wow-only --sheet <copy id>   # just the WoW tab
 
 BOARD_SHEET_ID is the real board (Eve, 2026-10-05: the test workbook became
 the real one, same link, "TEST" dropped from its name).
@@ -473,6 +477,208 @@ def write_same(new: List[List], svc=None, sheet_id: str = BOARD_SHEET_ID) -> Non
             insertDataOption="INSERT_ROWS", body={"values": new}).execute()
 
 
+# ---- "Week over Week" -----------------------------------------------------
+# Rafael 2026-10-19: see week over week whether each interviewer is getting
+# better or worse, like the Focus Report. Built from the weekly tabs' own
+# "Week Avg" / "Interviews" columns (found by header, not position), so it
+# shows exactly what each week's tab shows and needs no extra Drive reads.
+WOW_TAB = "Week over Week"
+WOW_WEEKS = 8                # most recent weekly tabs shown, oldest left
+WOW_REGULAR = 3              # fewer interviews than this in those weeks: listed below the regulars
+
+
+def read_weeks(svc=None, sheet_id: str = BOARD_SHEET_ID,
+               near: Optional[dt.date] = None) -> Dict[dt.date, Dict[str, Dict]]:
+    """{week Monday: {interviewer: {office, avg, n}}} from every 'WE m.d' tab;
+    the TEAM line is kept under "TEAM"."""
+    svc = svc or _sheets()
+    near = near or dt.date.today()
+    meta = svc.spreadsheets().get(spreadsheetId=sheet_id, fields="sheets.properties").execute()
+    weeks = {t: tab_week(t, near) for t in (s["properties"]["title"] for s in meta["sheets"])}
+    weeks = {t: w for t, w in weeks.items() if w}
+    if not weeks:
+        return {}
+    got = svc.spreadsheets().values().batchGet(
+        spreadsheetId=sheet_id, ranges=[f"'{t}'!A3:Z" for t in weeks]).execute()
+    out: Dict[dt.date, Dict[str, Dict]] = {}
+    for (title, week), vr in zip(weeks.items(), got.get("valueRanges", [])):
+        grid = vr.get("values", [])
+        if not grid:
+            continue
+        head = [h.strip() for h in grid[0]]
+        try:
+            c_name, c_avg, c_n = (head.index("Interviewer"), head.index("Week Avg"),
+                                  head.index("Interviews"))
+        except ValueError:
+            print(f"  {title}: no Interviewer / Week Avg / Interviews header - left out")
+            continue
+        c_off = head.index("Office") if "Office" in head else None
+        people: Dict[str, Dict] = {}
+        for row in grid[1:]:
+            row = row + [""] * (len(head) - len(row))
+            name = str(row[c_name]).strip()
+            try:
+                avg, n = int(float(row[c_avg])), int(float(row[c_n] or 0))
+            except (TypeError, ValueError):
+                continue
+            if name:
+                people[name] = {"office": str(row[c_off]).strip() if c_off is not None else "",
+                                "avg": avg, "n": n}
+        out[week] = people
+    return out
+
+
+def wow_lines(weeks: Dict[dt.date, Dict[str, Dict]], m: Optional[Dict[str, str]] = None,
+              last: int = WOW_WEEKS):
+    """(shown week Mondays oldest first, lines, team avgs). A line is
+    {name, office, avgs: [avg|None per week], n, change}: change = her latest
+    week with a score minus the week with a score before it (None with only
+    one). Names a "Same person?" YES folded are joined (weighted by
+    interviews). Best latest score first; names heard only once or twice
+    (mostly a misheard name) under the regulars, the unnamed Zooms last."""
+    m = m or {}
+    shown = sorted(weeks)[-last:]
+    by: Dict[str, Dict] = {}
+    for i, w in enumerate(shown):
+        for raw, p in weeks[w].items():
+            if raw == "TEAM":
+                continue
+            name = m.get(raw, raw)
+            b = by.setdefault(name, {"name": name, "office": "", "sum": [0] * len(shown),
+                                     "cnt": [0] * len(shown), "n": 0})
+            k = max(p["n"], 1)
+            b["sum"][i] += p["avg"] * k
+            b["cnt"][i] += k
+            b["n"] += p["n"]
+            if p["office"]:
+                b["office"] = p["office"]            # oldest first: the latest office wins
+    lines = []
+    for b in by.values():
+        avgs = [round(s / c) if c else None for s, c in zip(b["sum"], b["cnt"])]
+        had = [a for a in avgs if a is not None]
+        lines.append({"name": b["name"], "office": b["office"], "avgs": avgs, "n": b["n"],
+                      "change": had[-1] - had[-2] if len(had) >= 2 else None,
+                      "latest": had[-1] if had else 0})
+    lines.sort(key=lambda p: (bool(_NOT_A_PERSON.match(p["name"])), p["n"] < WOW_REGULAR,
+                              -p["latest"], p["name"]))
+    team = [weeks[w].get("TEAM", {}).get("avg") for w in shown]
+    return shown, lines, team
+
+
+def _change(c: Optional[int]) -> str:
+    if c is None:
+        return ""
+    return f"▲ +{c}" if c > 0 else (f"▼ {c}" if c < 0 else "= 0")
+
+
+def wow_values(shown: List[dt.date], lines: List[Dict], team: List) -> List[List]:
+    head = ["#", "Interviewer", "Office"] + [tab_name(w) for w in shown] + [
+        "Change vs her week before", "Interviews (all weeks shown)"]
+    out = [["1st Round Scorecards — Week over Week"],
+           ["Each interviewer's weekly average score (out of 100), oldest week left, newest "
+            "right — the newest week is still filling in. Over 50 green · 50 blue · under 50 red. "
+            "▲ = better than her week before, ▼ = worse."],
+           head]
+    for i, p in enumerate(lines, 1):
+        out.append([i, p["name"], p["office"]] + ["" if a is None else a for a in p["avgs"]]
+                   + [_change(p["change"]), p["n"]])
+    out.append(["", "TEAM", ""] + ["" if a is None else a for a in team]
+               + ["", sum(p["n"] for p in lines)])
+    return out
+
+
+def write_wow(grid: List[List], sheet_id: str = BOARD_SHEET_ID, svc=None) -> str:
+    """(Re)write the Week over Week tab as the FIRST tab -> its link."""
+    svc = svc or _sheets()
+    meta = svc.spreadsheets().get(spreadsheetId=sheet_id, fields="sheets.properties").execute()
+    tabs = {s["properties"]["title"]: s["properties"]["sheetId"] for s in meta["sheets"]}
+    gid = tabs.get(WOW_TAB)
+    if gid is None:
+        r = svc.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body={"requests": [
+            {"addSheet": {"properties": {"title": WOW_TAB, "index": 0,
+                                         "gridProperties": {"frozenRowCount": 3}}}}]}).execute()
+        gid = r["replies"][0]["addSheet"]["properties"]["sheetId"]
+    ncol, nrow = len(grid[2]), len(grid)
+    nweeks = ncol - 5
+    change_col = 3 + nweeks
+    rgb = lambda c: dict(zip(("red", "green", "blue"), c))  # noqa: E731
+
+    def cell(v, *, bold=False, bg=None, center=False, size=None, fg=None, italic=False,
+             wrap=False):
+        text = {"bold": bold, "italic": italic}
+        if size:
+            text["fontSize"] = size
+        if fg:
+            text["foregroundColor"] = rgb(fg)
+        fmt = {"textFormat": text, "verticalAlignment": "MIDDLE",
+               "horizontalAlignment": "CENTER" if center else "LEFT",
+               "wrapStrategy": "WRAP" if wrap else "OVERFLOW_CELL"}
+        if bg:
+            fmt["backgroundColor"] = rgb(bg)
+        val = {"numberValue": v} if isinstance(v, (int, float)) else {"stringValue": str(v)}
+        return {"userEnteredValue": val, "userEnteredFormat": fmt}
+
+    def rng(r0, r1, c0=0, c1=ncol):
+        return {"sheetId": gid, "startRowIndex": r0, "endRowIndex": r1,
+                "startColumnIndex": c0, "endColumnIndex": c1}
+
+    up, down = (0.05, 0.50, 0.15), (0.75, 0.10, 0.10)
+    rows = [{"values": [cell(grid[0][0], bold=True, size=14, fg=WHITE, bg=NAVY)]
+             + [cell("", bg=NAVY)] * (ncol - 1)},
+            {"values": [cell(grid[1][0], italic=True, fg=(0.35, 0.35, 0.35), bg=PALE, wrap=True)]
+             + [cell("", bg=PALE)] * (ncol - 1)},
+            {"values": [cell(h, bold=True, fg=WHITE, bg=BLUE, center=i not in (1, 2), wrap=True)
+                        for i, h in enumerate(grid[2])]}]
+    for j, line in enumerate(grid[3:]):
+        team = line[1] == "TEAM"
+        band = TEAM_BG if team else (BAND if j % 2 else WHITE)
+        vals = []
+        for i, v in enumerate(line):
+            fg = None
+            if i == change_col and isinstance(v, str):
+                fg = up if v.startswith("▲") else (down if v.startswith("▼") else None)
+            vals.append(cell(v, bold=team or i in (1, change_col), center=i not in (1, 2), fg=fg,
+                             bg=(_color(v) if 3 <= i < change_col else None) or band))
+        rows.append({"values": vals})
+    thin = {"style": "SOLID", "color": rgb((0.80, 0.80, 0.80))}
+    edge = {"style": "SOLID_MEDIUM", "color": rgb(NAVY)}
+    widths = [40, 150, 240] + [80] * nweeks + [130, 110]
+    reqs = [{"unmergeCells": {"range": {"sheetId": gid}}},
+            {"updateCells": {"range": {"sheetId": gid}, "fields": "*"}},
+            {"updateCells": {"start": {"sheetId": gid, "rowIndex": 0, "columnIndex": 0},
+                             "rows": rows, "fields": "*"}},
+            {"mergeCells": {"range": rng(0, 1), "mergeType": "MERGE_ALL"}},
+            {"mergeCells": {"range": rng(1, 2), "mergeType": "MERGE_ALL"}},
+            {"updateBorders": {"range": rng(2, nrow), "top": edge, "bottom": edge, "left": edge,
+                               "right": edge, "innerHorizontal": thin, "innerVertical": thin}},
+            {"updateBorders": {"range": rng(nrow - 1, nrow), "top": edge}},
+            {"updateSheetProperties": {"properties": {"sheetId": gid, "index": 0,
+                                                      "gridProperties": {"frozenRowCount": 3,
+                                                                         "hideGridlines": True}},
+                                       "fields": "index,gridProperties.frozenRowCount,"
+                                                 "gridProperties.hideGridlines"}},
+            *[{"updateDimensionProperties": {
+                "range": {"sheetId": gid, "dimension": "ROWS", "startIndex": a, "endIndex": a + 1},
+                "properties": {"pixelSize": px}, "fields": "pixelSize"}}
+              for a, px in ((0, 40), (1, 36), (2, 40))]]
+    reqs += [{"updateDimensionProperties": {
+        "range": {"sheetId": gid, "dimension": "COLUMNS", "startIndex": i, "endIndex": i + 1},
+        "properties": {"pixelSize": w}, "fields": "pixelSize"}} for i, w in enumerate(widths)]
+    svc.spreadsheets().batchUpdate(spreadsheetId=sheet_id, body={"requests": reqs}).execute()
+    return f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit#gid={gid}"
+
+
+def update_wow(answers: Optional[List[List[str]]] = None, sheet_id: str = BOARD_SHEET_ID,
+               write_sheet: bool = True) -> str:
+    svc = _sheets()
+    if answers is None:
+        answers = read_same(svc, sheet_id)
+    grid = wow_values(*wow_lines(read_weeks(svc, sheet_id), merges(answers)))
+    for line in grid:
+        print("  ".join("" if v is None else str(v) for v in line))
+    return write_wow(grid, sheet_id, svc) if write_sheet else ""
+
+
 # the week's rows the last update() read: run.py lists the day's low scorers
 # from them (every doc of the day, names already merged)
 LAST_ROWS: List[Dict] = []
@@ -495,6 +701,10 @@ def update(day: dt.date, *, write_sheet: bool = True) -> str:
     for c in new:
         print(f"  same person? {c[0]} / {c[1]} ({c[2]})")
     write_same(new)
+    try:                                   # the WoW tab never stops the weekly board
+        update_wow(answers)
+    except Exception as exc:  # noqa: BLE001
+        print(f"  Week over Week tab not updated: {exc}")
     return link
 
 
@@ -502,7 +712,14 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="first_round_scorecards.board")
     ap.add_argument("--week", help="any day of the week, YYYY-MM-DD (default: this week)")
     ap.add_argument("--write", action="store_true", help="write the Sheet tab (default: print only)")
+    ap.add_argument("--wow-only", action="store_true",
+                    help="only (re)build the Week over Week tab from the weekly tabs")
+    ap.add_argument("--sheet", default=BOARD_SHEET_ID, help="--wow-only: workbook id (a test copy)")
     args = ap.parse_args(argv)
+    if args.wow_only:
+        print(update_wow(sheet_id=args.sheet, write_sheet=args.write)
+              or "DRY-RUN: Sheet not written")
+        return 0
     day = (dt.date.fromisoformat(args.week) if args.week
            else dt.datetime.now(dt.timezone.utc).astimezone(fathom.CT).date())
     link = update(day, write_sheet=args.write)
