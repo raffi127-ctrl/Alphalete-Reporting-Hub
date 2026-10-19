@@ -142,12 +142,45 @@ RAF = {
     # "team" names a guest's posts: "Fiber Team Knocks — 3:00 PM" for the
     # board and "Fiber 15 min gaps — 3 PM" for the list (Carlos 2026-09-29).
     "guest_teams": {"Carlos Hidalgo": "Fiber"},
-    # FIBER REPORTS OFF (Carlos 2026-10-19): his crew's knocks board, gap
-    # list and call-outs now come from HIS Ownerville's RES AT&T OOF campaign
-    # (automations/nds_oof on Lucy 2). The roster (total_knocks.guests) stays
-    # so these reps are still kept off Raf's boards; no room gets a text.
-    "guest_teams": {"Carlos Hidalgo": "Fiber"},
-    "guests": {"Carlos Hidalgo": []},
+    "guests": {
+        # SATURDAY STOPS AT 5:30 (Carlos, 2026-09-27: "can lucy stop all
+        # disposition post/texts on saturdays by 530pm. unless its a sales
+        # post/text"). Raf's own window runs to 8pm, and these rooms rode it.
+        # `sat_stop` is the last minute a disposition board, gap list or
+        # call-out may leave for this room on a Saturday; sale alerts are a
+        # different job and are untouched.
+        "Carlos Hidalgo": [
+            # FIB-1 / FIB-3, 2PM TO 9PM, TEXT AND SLACK (Carlos 2026-09-29).
+            # The typed gap list (FIB-3) every 15 minutes; the knocks board
+            # (FIB-1) rides only once an hour (`board_every_min`). `start` is
+            # the first minute anything may leave; `stop` the last on a
+            # weekday, `sat_stop` on Saturday.
+            # SATURDAY STARTS AT 10:30 FOR HIS CREW (Carlos 2026-10-03:
+            # "saturday time gaps start earlier. they should start 1030am"
+            # "for my crew") -- BEFORE Raf's own 10:45 Saturday window, so
+            # tick() lets a guest room open the office on its own (see
+            # _guest_window_open); Raf's rooms stay on his window.
+            {"kind": "imessage", "name": "NEW A Players", "cadence_min": 15,
+             "board_every_min": 60, "start": "14:00", "sat_start": "10:30",
+             "stop": "21:00", "sat_stop": "17:30"},
+            {"kind": "imessage", "name": "ATT B2B Leaders", "cadence_min": 15,
+             "board_every_min": 60, "start": "14:00", "sat_start": "10:30",
+             "stop": "21:00", "sat_stop": "17:30"},
+            # The Slack copy goes to his sales room, where FIB-2 (the
+            # call-outs) already lands, as its OWN POSTS, not in a thread
+            # (Carlos 2026-09-29: "have the fiber team knocks outside of a
+            # thread"). `title` heads the post; a `thread_title` would thread it.
+            {"kind": "slack", "channel_id": "C07J46MQNUX",
+             "name": "#alphalete-gp-sales", "title": "Fiber Team Knocks",
+             # The gap LIST goes inside one thread a day, like Box's
+             # (Carlos 2026-10-03); the board stays a loose post.
+             "gaps_thread_title": "Fiber 15 Min Gaps",
+             "board_thread_title": "Fiber Knocks Board",
+             "cadence_min": 15, "board_every_min": 60,
+             "start": "14:00", "sat_start": "10:30", "stop": "21:00",
+             "sat_stop": "17:30"},
+        ],
+    },
     "destinations": [
         {"kind": "imessage", "name": "Knocking Chat A-Players",
          "cadence_min": 30},

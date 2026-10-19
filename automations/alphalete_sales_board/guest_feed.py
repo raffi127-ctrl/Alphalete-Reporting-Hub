@@ -36,9 +36,7 @@ from automations.shared.name_case import titlecase_name
 from automations.total_knocks import guests
 
 GUEST = "Carlos Hidalgo"
-# OFF since 2026-10-19 (Carlos: sales now read off HIS SaraPlus, not Raf's).
-# Put the two rooms back to resume: ["NEW A Players", "ATT B2B Leaders"].
-GROUPS: List[str] = []
+GROUPS = ["NEW A Players", "ATT B2B Leaders"]     # SAL-2's chats
 SECTION = "_guest_sales"                          # listed in state.prune
 HEADER = "Fiber Team Sales"
 

@@ -229,6 +229,9 @@ def main(argv=None) -> int:
                     help="capture + report only, post nothing (default)")
     ap.add_argument("--headless", action="store_true",
                     help="run the browser headless")
+    ap.add_argument("--probe-range", nargs=2, type=int, metavar=("LO", "HI"),
+                    help="with --probe-campaigns: scan invD2DClientId LO..HI "
+                         "instead of 1..30 (the OOF campaign sits above 30)")
     ap.add_argument("--probe-campaigns", action="store_true",
                     help="scan invD2DClientId ids and log which campaign each maps to")
     ap.add_argument("--probe-tt", action="store_true",
@@ -354,7 +357,8 @@ def main(argv=None) -> int:
             except Exception:
                 pass
             rqst = cap.capture_rqst(page)
-            for cid in range(1, 31):
+            lo, hi = (args.probe_range or (1, 30))
+            for cid in range(lo, hi + 1):
                 url = (f"https://v2.ownerville.com/index.cfm?p={cfg.PAGE_TIME_TRACKER}"
                        f"&rqst={rqst}&invD2DClientId={cid}")
                 try:
