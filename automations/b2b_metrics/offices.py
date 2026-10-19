@@ -382,10 +382,14 @@ OFFICES: dict = {
                                 "4c53fb7e-5a1b-4e8f-990e-0b2c8cf42309/"
                                 "CarlosLocalOfficeEXPANDED"),
         },
-        # churn_int/churn_air no longer exist as sections (consolidated into
-        # churn_wireless 2026-09-05); the old skip of them is moot. Kept empty
-        # rather than deleted so the field stays discoverable.
-        skip_views=frozenset(),
+        # CARLOS IS MOVING TO NDS (Megan 2026-10-18): his AT&T B2B sales
+        # stopped landing in ATT TRACKER - B2B around 10/7, so these four
+        # Tableau sections have come back blank every day since 10/15 and
+        # raised a section-drop alert each morning. Turned off — not expected,
+        # not alerted. The rest of his thread (order log, activations, churn,
+        # revenue board) still posts. Remove from this set if he comes back.
+        skip_views=frozenset({"sales_metrics", "order_tiered_bonus",
+                              "activation_by_rep", "churn_by_rep"}),
         # CarlosEXP is a whole-workbook saved view (expanded layout), NOT a
         # pre-filtered slice — keep the ?Owner Name= slice so both panels stay
         # scoped to Carlos's office, exactly as the old team view did.
