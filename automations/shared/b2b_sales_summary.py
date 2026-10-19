@@ -141,6 +141,69 @@ def _wait_for_dates(viz, page, start: dt.date, end: dt.date,
               f"{DATES_APPLY_TIMEOUT_MS // 1000}s — expanding anyway", flush=True)
 
 
+# Where to look for the '+': the left edge of the Owner->Rep table's header,
+# in CSS px from the viz box's top-left. Wide enough for both the Windows
+# (y~375) and the taller Mac rendering.
+_PLUS_SCAN_X = (30, 45, 60)
+_PLUS_SCAN_Y = range(330, 480, 6)
+_PLUS_CLIP = (0, 300, 240, 220)          # x, y, w, h inside the viz box
+
+
+def _find_plus(page, b, verbose: bool = True):
+    """Hover down the header column and return the page (x, y) where the
+    hierarchy '+' paints, or None.
+
+    WHY (2026-10-19): the '+' is canvas-painted, has no DOM node and only shows
+    on hover, and its height is NOT the same on every machine — measured at
+    CSS y=413 on Windows, while on the Macs neither 413 nor the August 434
+    expanded anything. So instead of a fixed point: screenshot the corner
+    with the mouse parked away, then hover point by point and look for a
+    SMALL cluster of pixels that turned dark (the icon's lines). A hover
+    highlight turns pixels light grey, and a tooltip is far bigger than 20px,
+    so neither passes. Never raises — None falls back to EXPAND_XY."""
+    try:
+        import io
+        from PIL import Image, ImageChops
+        cx0, cy0, cw, ch = _PLUS_CLIP
+        clip = {"x": b["x"] + cx0, "y": b["y"] + cy0, "width": cw, "height": ch}
+
+        def shot():
+            return Image.open(io.BytesIO(page.screenshot(clip=clip))).convert("L")
+
+        page.mouse.move(b["x"] + b["width"] - 20, b["y"] + 20)
+        page.wait_for_timeout(800)
+        base = shot()
+        for y in _PLUS_SCAN_Y:
+            for x in _PLUS_SCAN_X:
+                page.mouse.move(b["x"] + x, b["y"] + y)
+                page.wait_for_timeout(350)
+                cur = shot()
+                diff = ImageChops.difference(base, cur).load()
+                curp, basep = cur.load(), base.load()
+                pts = [(i, j) for j in range(ch) for i in range(cw)
+                       if diff[i, j] > 40 and curp[i, j] < 170
+                       and basep[i, j] > 200]
+                if not 6 <= len(pts) <= 300:
+                    continue
+                xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+                if max(xs) - min(xs) > 20 or max(ys) - min(ys) > 20:
+                    continue
+                px = b["x"] + cx0 + (min(xs) + max(xs)) / 2
+                py = b["y"] + cy0 + (min(ys) + max(ys)) / 2
+                if verbose:
+                    print(f"  -> '+' found at ({px:.0f}, {py:.0f}) while "
+                          f"hovering ({b['x'] + x:.0f}, {b['y'] + y:.0f})",
+                          flush=True)
+                return px, py
+        if verbose:
+            print("  ⚠ '+' not found by hover — using EXPAND_XY", flush=True)
+    except Exception as e:  # noqa: BLE001 — the fixed point is the fallback
+        if verbose:
+            print(f"  ⚠ '+' search failed ({type(e).__name__}: {str(e)[:120]})"
+                  f" — using EXPAND_XY", flush=True)
+    return None
+
+
 def expand_hook(start: dt.date, end: dt.date, verbose: bool = True):
     """Build a `pre_export(page, viz)` that pins the date window and expands the
     Owner→Rep hierarchy. Pass to drive_crosstab_dialog / the org module's
@@ -199,13 +262,18 @@ def expand_hook(start: dt.date, end: dt.date, verbose: bool = True):
                   f"~1408x606 EXPAND_XY was measured at — the expand click may "
                   f"miss and the export come back owner-level.", flush=True)
 
-        cx = b["x"] + b["width"] * EXPAND_XY[0]
-        cy = b["y"] + b["height"] * EXPAND_XY[1]
+        found = _find_plus(page, b, verbose)
+        if found:
+            cx, cy = found
+        else:
+            cx = b["x"] + b["width"] * EXPAND_XY[0]
+            cy = b["y"] + b["height"] * EXPAND_XY[1]
         page.mouse.move(cx, cy)
         page.wait_for_timeout(1200)      # the '+' only paints on hover
         page.mouse.click(cx, cy)
         if verbose:
             print(f"  -> expand click at ({cx:.0f}, {cy:.0f}) "
+                  f"({'found by hover' if found else 'fixed EXPAND_XY'}) "
                   f"[viz box {b['x']:.0f},{b['y']:.0f} {b['width']:.0f}x"
                   f"{b['height']:.0f}]; waiting {EXPAND_WAIT_MS // 1000}s",
                   flush=True)
