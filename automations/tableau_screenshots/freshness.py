@@ -382,8 +382,9 @@ SHARED_SAMPLES = True
 # avg sheet) are off; the "stopped loading" check still runs, so a half-loaded
 # day still can't post. Raf 2026-10-15: production is genuinely low this week
 # and the 4-wk-avg floors held AT&T Country + NDS on a number that was right.
-# Back on by itself Thursday 2026-10-22. None = always on.
-DROP_CHECKS_OFF_THROUGH: Optional[dt.date] = dt.date(2026, 10, 21)
+# Back on by itself Tuesday morning 2026-10-20 (Megan 10/18, moved up from
+# Thu 10/22). None = always on.
+DROP_CHECKS_OFF_THROUGH: Optional[dt.date] = dt.date(2026, 10, 19)
 
 
 def drop_checks_off(today: dt.date) -> bool:
