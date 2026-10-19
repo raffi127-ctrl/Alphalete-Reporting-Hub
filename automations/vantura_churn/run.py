@@ -125,7 +125,11 @@ STAGED: set = set()
 # carlos: moving to NDS (Megan 2026-10-18) — his B2B sales left ATT TRACKER -
 # B2B ~10/7, so his ACTIVATION RATES rows have no 0-7 Days bucket and the
 # section-drop alert fired every morning. Remove him to turn it back on.
-RATES_OFF = frozenset({"carlos"})
+# atef: same move — Eve 2026-10-19 "his numbers are nds now" (80f86b4). His
+# AtefEXP2 view still downloads, but since 10/16 it carries only 8-14 / 15-30 /
+# 31-60 Days (no B2B activations in the last week), so the rate is refused and
+# the drop alert fired daily. His churn tabs still fill.
+RATES_OFF = frozenset({"carlos", "atef"})
 
 
 def _activation_cfg():
