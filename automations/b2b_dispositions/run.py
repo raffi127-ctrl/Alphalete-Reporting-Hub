@@ -232,6 +232,9 @@ def main(argv=None) -> int:
     ap.add_argument("--probe-range", nargs=2, type=int, metavar=("LO", "HI"),
                     help="with --probe-campaigns: scan invD2DClientId LO..HI "
                          "instead of 1..30 (the OOF campaign sits above 30)")
+    ap.add_argument("--probe-picker", action="store_true",
+                    help="READ-ONLY: dump the campaign picker's own items "
+                         "(label + id) as the page renders them")
     ap.add_argument("--probe-campaigns", action="store_true",
                     help="scan invD2DClientId ids and log which campaign each maps to")
     ap.add_argument("--probe-tt", action="store_true",
@@ -347,6 +350,30 @@ def main(argv=None) -> int:
                 print(f"  keys={sorted(rows[0].keys())}", flush=True)
                 for r in rows[:3]:
                     print(f"  row={r}", flush=True)
+        return 0
+
+    if getattr(args, "probe_picker", False):
+        from automations.shared.tableau_patchright import ownerville_session
+        with ownerville_session(headless=args.headless) as page:
+            rqst = cap.capture_rqst(page)
+            cap._goto(page, cap._page_url(cfg.PAGE_TIME_TRACKER, rqst, cfg.CAMPAIGN_ATT))
+            items = page.evaluate(
+                "() => { const out = [];"
+                " const root = document.querySelector('.D2DClientDropdown,[data-current-id]');"
+                " const scope = root ? (root.closest('.dropdown,li,div') || root.parentElement || document) : document;"
+                " const els = [...scope.querySelectorAll('a,li,option,button,span,div')];"
+                " for (const e of els) { const t=(e.textContent||'').replace(/\\s+/g,' ').trim();"
+                "   const attrs=[...e.attributes].map(a=>a.name+'='+a.value).join(' ');"
+                "   if (t && t.length < 60 && (/invD2DClientId|data-id|data-value|data-current/i.test(attrs) || /AT&T|BOX|OOF|NDS|RES/i.test(t)))"
+                "     out.push({t, attrs: attrs.slice(0,160)}); }"
+                " return out.slice(0,80); }") or []
+            print(f"  picker items: {len(items)}", flush=True)
+            for it in items:
+                print(f"  item {it.get('t')!r} :: {it.get('attrs')}", flush=True)
+            html = page.evaluate(
+                "() => { const r=document.querySelector('.D2DClientDropdown,[data-current-id]');"
+                " const s = r ? (r.closest('.dropdown,li,div')||r) : null; return s ? s.outerHTML.slice(0,3000) : 'no picker root'; }")
+            print("  picker html: " + str(html).replace("\n", " ")[:3000], flush=True)
         return 0
 
     if args.probe_campaigns:
