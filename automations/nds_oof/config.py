@@ -17,7 +17,7 @@ TEAM = "NDS"                                   # the word in front of every post
 CAMPAIGN_LABEL = "RES AT&T OOF"                # as the Ownerville picker shows it
 # invD2DClientId of RES AT&T OOF on office 11580. Found by
 # `rerun b2b_dispositions --probe-campaigns` on Lucy 2 (2026-10-19).
-CAMPAIGN_ID = "__FILL__"
+CAMPAIGN_ID = "1"       # picker href on 2026-10-19: p=510&invD2DClientId=1
 
 # Where it goes (Carlos's rooms).
 TEXT_GROUPS = ["NEW A Players", "ATT B2B Leaders"]
