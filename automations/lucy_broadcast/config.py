@@ -5,9 +5,8 @@ iMessage groups.
 No secrets here: Slack uses the shared Lucy token (slack_metrics_post._client),
 iMessage uses Lucy 1's Messages app (b2b_dispositions.text_post).
 
-STATUS (2026-10-18): built, NOT live. Source = #lucy-broadcast; destinations are
-blank until Raf/Megan send them. With blanks a live run refuses with a clear
-message; --dry-run always works.
+STATUS (2026-10-18): built, NOT live. Source = #lucy-broadcast; destinations come
+from the replies in its how-it-works thread. --dry-run always works.
 """
 from __future__ import annotations
 
@@ -22,6 +21,13 @@ import os
 SOURCE_CHANNEL_ID = os.environ.get("LUCY_BROADCAST_CHANNEL_ID", "C0CA97W54D7")
 
 # --- 2) Where every post goes -------------------------------------------------
+# MAIN WAY (Megan 2026-10-18): people reply in the how-it-works thread
+# ("send to #alphalete-sales", "add the A Players text", "remove #x") and Lucy
+# rebuilds the list from that thread every tick — see destinations.py. This is
+# the ts of that thread's parent post in #lucy-broadcast. Blank = thread off.
+DESTINATIONS_THREAD_TS = "1792371709.906899"
+
+# Fixed extras that always get every post, on top of the thread's list.
 # Slack: channel IDs (C…/G…), one per line. Lucy must be in each private one.
 SLACK_DESTINATIONS: tuple[str, ...] = (
 )
@@ -41,6 +47,10 @@ APPROVED_POSTERS: tuple[str, ...] = ()
 # A post is only sent once it's this old, so someone who hits Enter and then
 # fixes a typo (edit) gets the FIXED version sent out.
 SETTLE_SECONDS = 60
+
+# A post older than this is never sent (e.g. it sat there while the list was
+# empty) — old news going out days late is worse than not at all.
+MAX_POST_AGE_HOURS = 12
 
 # How many recent channel messages to look at each run.
 SCAN_LIMIT = 20

@@ -55,6 +55,7 @@ class Base(unittest.TestCase):
             mock.patch.object(config, "SLACK_DESTINATIONS", ("C1", "C2")),
             mock.patch.object(config, "IMESSAGE_GROUPS", ("Leaders",)),
             mock.patch.object(config, "APPROVED_POSTERS", ()),
+            mock.patch.object(config, "DESTINATIONS_THREAD_TS", ""),
             mock.patch("automations.day_orchestrator.hub_publish.publish_done",
                        lambda *a, **k: None),
         ]
@@ -179,17 +180,28 @@ class TestScan(Base):
         self.assertEqual(acts[0]["action"], "ignored_unapproved")
         self.assertEqual(self.slack_sent, [])
 
-    def test_refuses_loop_and_empty_config(self):
+    def test_refuses_loop(self):
         with mock.patch.object(config, "SLACK_DESTINATIONS", ("CSRC",)):
-            with self.assertRaises(run.BroadcastError):
-                self.go(FakeClient([]))
-        with mock.patch.object(config, "SLACK_DESTINATIONS", ()), \
-                mock.patch.object(config, "IMESSAGE_GROUPS", ()):
             with self.assertRaises(run.BroadcastError):
                 self.go(FakeClient([]))
         with mock.patch.object(config, "SOURCE_CHANNEL_ID", ""):
             with self.assertRaises(run.BroadcastError):
                 run.scan(dry_run=True, channel="", cl=FakeClient([]))
+
+    def test_no_destinations_holds_post_until_one_is_added(self):
+        self.baseline()
+        cl = FakeClient([post(120)])
+        with mock.patch.object(config, "SLACK_DESTINATIONS", ()), \
+                mock.patch.object(config, "IMESSAGE_GROUPS", ()):
+            self.go(cl)
+        self.assertEqual(self.slack_sent + self.texts, [])
+        self.go(cl)                                 # list filled -> it goes
+        self.assertEqual(len(self.slack_sent), 2)
+
+    def test_old_post_never_sent(self):
+        self.baseline()
+        self.go(FakeClient([post((config.MAX_POST_AGE_HOURS + 1) * 3600)]))
+        self.assertEqual(self.slack_sent + self.texts, [])
 
     def test_dry_run_sends_and_saves_nothing(self):
         cl = FakeClient([post(120)])

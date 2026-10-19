@@ -275,38 +275,127 @@ def _fmt_when(ts: str) -> str:
     return datetime.fromtimestamp(float(ts)).strftime("%m/%d %I:%M %p").lstrip("0")
 
 
+# ---- destinations: config + the how-it-works thread ---------------------------
+def resolve_destinations(cl, channel: str, own: str, state: dict, *,
+                         dry_run: bool,
+                         groups_reader: Optional[Callable] = None
+                         ) -> Tuple[List[str], List[str], str]:
+    """(slack channel ids, iMessage group names, note) for THIS tick.
+
+    config lists are the fixed base; when DESTINATIONS_THREAD_TS is set the
+    thread's replies are replayed on top (see destinations.py). New replies get
+    a 👀/✅ reaction and ONE summary reply from Lucy (live runs only)."""
+    from automations.lucy_broadcast import destinations as dz
+    base_slack = [c for c in config.SLACK_DESTINATIONS if c]
+    base_groups = [g for g in config.IMESSAGE_GROUPS if g]
+    thread = config.DESTINATIONS_THREAD_TS
+    if not thread:
+        return base_slack, base_groups, ""
+    replies = dz.thread_replies(cl, channel, thread, own)
+    if not replies:
+        return base_slack, base_groups, ""
+    groups_known = (groups_reader or dz.imessage_groups)()
+    if groups_known is None and not dry_run:
+        # Can't see the text groups -> the list would silently lose them and
+        # posts would go out Slack-only, marked done. Send nothing this tick.
+        raise BroadcastError("Can't read the iMessage group list on this "
+                             "machine — run on Lucy 1 (Messages signed in).")
+    chans = dz.member_channels(cl)
+    slack, texts, per = dz.replay(replies, chans, groups_known or [],
+                                  base_slack, base_groups)
+    slack = [c for c in slack if c != channel]
+
+    # Tell people what changed — once per reply (re-done if they edit it).
+    # First live run: replies already there (e.g. Megan's own instructions)
+    # still count, but don't get a "couldn't tell" answer.
+    first = "_dest_replies" not in state
+    seen = state.setdefault("_dest_replies", {})
+    new = [r for r in replies
+           if seen.get(r["ts"]) != (r.get("edited") or {}).get("ts", "1")]
+    if new and not dry_run:
+        added, removed, missing, unclear = [], [], [], 0
+        for r in new:
+            p = per[r["ts"]]
+            names = (["#" + chans.get(c, c) for c in p["slack"]] + p["groups"])
+            (removed if p["remove"] else added).extend(
+                n for n in names if n not in (removed if p["remove"] else added))
+            missing.extend(n for n in p["not_member"] if n not in missing)
+            seen[r["ts"]] = (r.get("edited") or {}).get("ts", "1")
+            if not names and not p["not_member"]:
+                if first:
+                    continue
+                unclear += 1
+            emoji = "white_check_mark" if names else (
+                "warning" if p["not_member"] else "thinking_face")
+            try:
+                cl.reactions_add(channel=channel, timestamp=r["ts"], name=emoji)
+            except Exception:
+                pass
+        lines = []
+        if added:
+            lines.append("✅ *Added:* " + ", ".join(added))
+        if removed:
+            lines.append("➖ *Removed:* " + ", ".join(removed))
+        if missing:
+            lines.append("⚠️ *Lucy isn't in:* " + ", ".join(missing)
+                         + " — invite @Lucy Reporting there, then reply again.")
+        if unclear:
+            lines.append("🤔 Couldn't tell what to add from %d repl%s. For Slack, "
+                         "type # and pick the channel. For texts, write the "
+                         "group name exactly as it shows in Messages."
+                         % (unclear, "y" if unclear == 1 else "ies"))
+        if lines:
+            lines.append("")
+            lines.append(_dest_summary(slack, texts, chans))
+            try:
+                cl.chat_postMessage(channel=channel, thread_ts=thread,
+                                    text="\n".join(lines))
+            except Exception:
+                pass
+    return slack, texts, _dest_summary(slack, texts, chans)
+
+
+def _dest_summary(slack: List[str], texts: List[str],
+                  chans: Dict[str, str]) -> str:
+    s = ", ".join("#" + chans.get(c, c) for c in slack) or "none"
+    t = ", ".join(texts) or "none"
+    return "*Now sending to:*\n• Slack: %s\n• Texts: %s" % (s, t)
+
+
 # ---- the polled processor ----------------------------------------------------
 def scan(*, dry_run: bool = True, channel: Optional[str] = None,
          limit: Optional[int] = None, cl=None,
          slack_sender: Callable = send_slack,
          imessage_sender: Callable = send_imessage,
-         now: Optional[float] = None) -> List[dict]:
+         now: Optional[float] = None,
+         groups_reader: Optional[Callable] = None) -> List[dict]:
     """Relay every new post. Returns one action dict per post looked at."""
     channel = channel or config.SOURCE_CHANNEL_ID
     if not channel:
         raise BroadcastError(
             "No source channel yet. Put its ID in "
             "automations/lucy_broadcast/config.py (SOURCE_CHANNEL_ID).")
-    slack_dests = [c for c in config.SLACK_DESTINATIONS if c]
-    groups = [g for g in config.IMESSAGE_GROUPS if g]
-    if channel in slack_dests:
-        raise BroadcastError("The source channel is also listed as a "
-                             "destination — that would loop forever.")
-    if not slack_dests and not groups and not dry_run:
-        raise BroadcastError(
-            "No destinations yet. Add Slack channel IDs (SLACK_DESTINATIONS) "
-            "and/or iMessage group names (IMESSAGE_GROUPS) to config.py.")
-
     cl = cl or _client()
     now = now if now is not None else time.time()
     try:
         own = cl.auth_test().get("user_id", "")
     except Exception:
         own = ""
+    state = _load_state()
+    slack_dests, groups, dest_note = resolve_destinations(
+        cl, channel, own, state, dry_run=dry_run, groups_reader=groups_reader)
+    if channel in slack_dests:
+        raise BroadcastError("The source channel is also listed as a "
+                             "destination — that would loop forever.")
+    # Nothing to send to yet: posts are left untouched and go out once a
+    # destination is added (if still under MAX_POST_AGE_HOURS).
+    no_dest = not slack_dests and not groups
+    if no_dest:
+        print("No destinations yet — reply in the how-it-works thread to add some.")
+
     msgs = cl.conversations_history(channel=channel,
                                     limit=limit or config.SCAN_LIMIT
                                     ).get("messages", [])
-    state = _load_state()
     # First live run on a machine: mark what's already there as done, send
     # nothing — installing must never re-blast old posts.
     baseline = not state.get("_baselined") and not dry_run
@@ -320,6 +409,8 @@ def scan(*, dry_run: bool = True, channel: Optional[str] = None,
         st = state.get(ts) or {}
         if st.get("done") or st.get("gave_up"):
             continue
+        if now - float(ts) > config.MAX_POST_AGE_HOURS * 3600:
+            continue                        # too old to send now
         if config.APPROVED_POSTERS and m.get("user") not in config.APPROVED_POSTERS:
             actions.append({"ts": ts, "action": "ignored_unapproved",
                             "poster": m.get("user", "")})
@@ -327,6 +418,8 @@ def scan(*, dry_run: bool = True, channel: Optional[str] = None,
         if baseline:
             state[ts] = {"done": True, "baselined": True}
             actions.append({"ts": ts, "action": "baselined"})
+            continue
+        if no_dest and not dry_run:
             continue
 
         raw = m.get("text") or ""
@@ -386,7 +479,8 @@ def scan(*, dry_run: bool = True, channel: Optional[str] = None,
 
     if baseline:
         state["_baselined"] = True
-        _save_state(state)
+    if not dry_run:
+        _save_state(state)          # baseline + which thread replies were answered
     return actions
 
 
