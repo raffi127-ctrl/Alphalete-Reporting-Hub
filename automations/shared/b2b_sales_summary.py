@@ -26,6 +26,7 @@ param for them.
 from __future__ import annotations
 
 import datetime as dt
+import sys
 from typing import Dict, List, Optional
 
 VIEW_URL = ("https://us-east-1.online.tableau.com/#/site/sci/views/"
@@ -45,10 +46,13 @@ SHEET_MATCH = "Owner (+/-) Rep"
 # so it missed and the export came back owner-level. Hence VIEWPORT below: the
 # hook pins the window before measuring so the fraction means what it meant when
 # it was measured. ANCHOR_TEXT is tried FIRST and doesn't care about any of this.
-# Re-measured 2026-10-19: the table now sits higher and the '+' paints at CSS
-# (54, 413) in a 1408x607 box offset y=38 — the old 0.654 landed on the Grand
-# Total row. Both Org B2B and Carlos lost personal production that morning.
-EXPAND_XY = (0.038, 0.618)
+# The '+' sits at a different height per OS: fonts render differently, so the
+# header row is taller on the Macs. 0.654 is the August measurement (Mac, where
+# every scheduled run happens). 0.618 = CSS (54, 413), measured on Windows
+# 2026-10-19 — there 0.654 lands on the Grand Total row. That morning's Mac
+# failures were the click beating the date re-query (_wait_for_dates), not the
+# point: Lucy 3 clicked 413 with the wait in and still came back owner-level.
+EXPAND_XY = (0.038, 0.654) if sys.platform == "darwin" else (0.038, 0.618)
 VIEWPORT = {"width": 1408, "height": 646}
 
 # NO TEXT ANCHOR. Trying to find the header by its text looked like the
