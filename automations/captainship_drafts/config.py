@@ -472,6 +472,11 @@ class Captain:
                                # "To" box.
     churn: List[ChurnSource] = field(default_factory=list)
     boxes: List[BoxSource] = field(default_factory=list)
+    # Section kinds this ONE captain never gets, on top of the flavor's list
+    # (e.g. Atef's knocks: no Office Access on the reporting login and nobody
+    # asked for it — Eve 2026-10-19). Dropped in `sections`, so the capture,
+    # the body, the intro bullets and the PDF attachments all skip them.
+    skip_kinds: frozenset = frozenset()
 
     def recipients(self, *, logfn=print) -> str:
         """The LIVE To header: this captain's Gmail contact group, expanded at
@@ -501,7 +506,7 @@ class Captain:
         held = (set() if previews_on()
                 else PREVIEW_KINDS.get(self.flavor, set()))
         return [(h, k) for h, k in zip(items, SECTION_KINDS[self.flavor])
-                if k not in held]
+                if k not in held and k not in self.skip_kinds]
 
     def sections_on(self, today: dt.date) -> List[Tuple[str, str]]:
         """The sections that actually RUN on `today` — `sections` minus any
@@ -1003,9 +1008,13 @@ CAPTAINS: List[Captain] = [
     # a "Atef's Team" en NDS: §2 y el churn leen las vistas NDS de todos los
     # equipos cortadas a su caja del Org Sales Board, asi que hoy muestran solo
     # a Atef y suman a Sabrina/Dhyey el dia que Tableau los pase a NDS.
+    # Sin knocks (Eve 2026-10-19): el login de Raf no tiene Office Access a las
+    # oficinas de Atef/Dhey/Sabrina (Atef 23467 en "Request Sent" sin aceptar)
+    # y nadie lo pidio; asi el mail no muestra un hueco que parece un error.
+    # Cuando haya acceso y lo pidan, sacar skip_kinds.
     Captain("atef", "Atef", "nds", title_bg="#00695C", to=_to("atef"), churn=[
         ChurnSource(_own.open_ws_nds_atef, _ni_render, "New Internet Churn"),
-    ]),
+    ], skip_kinds=frozenset({"daily_knocks", "knock_dispo"})),
 ]
 
 BY_KEY = {c.key: c for c in CAPTAINS}
