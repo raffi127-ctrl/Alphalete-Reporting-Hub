@@ -962,10 +962,12 @@ CAPTAINS: List[Captain] = [
                     brand_title=False),
     ], boxes=_fiber_boxes("jess")),
     # ----- B2B (5 buckets incl 120) -----
-    Captain("carlos", "Carlos", "b2b", title_bg="#4CAF4F", to=_to("carlos"), churn=[
-        ChurnSource(_own.open_ws_b2b_carlos, _ni_render, "Wireless Churn",
-                    title_prefix="WIRELESS CHURN"),
-    ]),
+    # Carlos RETIRADO 2026-10-19: él mismo escribió (mail del 10/18 al reporte
+    # del 10/17) "im no longer a captain on b2b so this can be stopped for me".
+    # Tableau lo confirma: "Carlos's Team" ya no está en B2B Captain's Teams
+    # (SFDC) desde el 10/14. Para volver a mandarlo, reponer esta entrada y
+    # "carlos" en _GROUPS. Sigue en el To de los otros grupos (Luis/
+    # Khalil/Luke) — eso no lo pidió frenar.
     Captain("eveliz", "Eveliz", "b2b", title_bg="#A64D79", to=_to("eveliz"), churn=[
         ChurnSource(_own.open_ws_b2b_eveliz, _ni_render, "Wireless Churn",
                     title_prefix="WIRELESS CHURN"),
@@ -974,14 +976,10 @@ CAPTAINS: List[Captain] = [
         ChurnSource(_own.open_ws_b2b_luis, _ni_render, "Wireless Churn",
                     title_prefix="WIRELESS CHURN"),
     ]),
-    # Split off Carlos' captainship 2026-08-18 (Atef + Sabrina Alicea + Dhey
-    # Patel). His churn tab fills off the ALL-TEAMS view until Tableau adds him
-    # to the captain dropdown — see owners_metrics_churn.pull
-    # .make_b2b_captainship_parser. Nothing here changes when that happens.
-    Captain("atef", "Atef", "b2b", title_bg="#00695C", to=_to("atef"), churn=[
-        ChurnSource(_own.open_ws_b2b_atef, _ni_render, "Wireless Churn",
-                    title_prefix="WIRELESS CHURN"),
-    ]),
+    # Atef RETIRADO de B2B 2026-10-19 (Eve): "Atef's Team" ya no está en B2B
+    # Captain's Teams (SFDC) desde el 10/14 y su capitanía pasa a NDS. Cuando
+    # SmartCircle cree "Atef's Team" en NDS Captain Teams, vuelve como flavor
+    # "nds" (churn open_ws_nds_atef, fila NDS de _GROUPS) — ver atef_nds_watch.
     # Luke Baldwin, 2026-10-01: mismo correo que Carlos (3 secciones). Su churn
     # sale de la vista all-teams cortada por su caja del board
     # (owners_metrics_churn.pull.make_b2b_board_roster_parser); su §2 dice
@@ -1065,7 +1063,7 @@ _GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("Fiber 2", ("wayne", "starr")),
     ("Fiber 3", ("tony", "chan", "sahil")),
     ("Fiber 4", ("pat", "jess")),
-    ("B2B", ("carlos", "eveliz", "luis", "atef", "luke")),
+    ("B2B", ("eveliz", "luis", "luke")),
     ("NDS", ("khalil", "colten", "jairo")),
 )
 _PER_CAPTAIN = [
