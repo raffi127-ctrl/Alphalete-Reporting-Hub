@@ -69,12 +69,52 @@ class SlackLookup(unittest.TestCase):
         self.assertFalse(o.cleared)
 
 
+def _t(name="Ana Lopez (Wk 2)"):
+    from automations.terminated_reps.board import Termination
+    return Termination(name=name, term_date=D, days_worked=10, source="roster T",
+                       tab="Sales Board WE 10.18", row=5)
+
+
 class Render(unittest.TestCase):
-    def test_done_lines(self):
-        txt = slack_post.render_done([_o(ov="done", slack="done"),
-                                      _o(ov="done", slack="already")], D)
-        self.assertIn("OwnerVille retired · Slack deactivated", txt)
-        self.assertEqual(txt.count("Slack deactivated"), 1)
+    def test_all_done_one_line_no_tag(self):
+        txt = slack_post.render_reply([_t()], D,
+                                      [_o(name="Ana Lopez (Wk 2)", ov="done",
+                                          slack="already")])
+        self.assertIn("• Ana Lopez (Wk 2) — 10 days worked · roster T · "
+                      "✅ OwnerVille · ✅ Slack", txt)
+        self.assertNotIn("<@", txt)
+
+    def test_failure_says_which_and_why_and_tags(self):
+        txt = slack_post.render_reply([_t()], D,
+                                      [_o(ov="not found by name",
+                                          slack="no Slack account with a@x.com")])
+        self.assertIn("❌ OwnerVille: not found by name · ➖ Slack: no account", txt)
+        self.assertIn("<@U088E2KJEV8>", txt)
+
+    def test_without_deactivation_unchanged(self):
+        txt = slack_post.render_reply([_t()], D)
+        self.assertIn("<@U088E2KJEV8>", txt)
+        self.assertNotIn("OwnerVille", txt)
+
+    def test_later_run_edits_the_same_line(self):
+        old = ("*Thu 10/15* — 1 terminated <@U088E2KJEV8>\n"
+               "• Ana Lopez (Wk 2) — 10 days worked · roster T · "
+               ":x: OwnerVille: not found by name · ✅ Slack")
+        new = slack_post._restatus(old, [_o(name="Ana Lopez (Wk 2)",
+                                            ov="done", slack="")])
+        self.assertTrue(new.endswith("roster T · ✅ OwnerVille · ✅ Slack"))
+        self.assertEqual(new.count("OwnerVille"), 1)
+
+    def test_ticked_by_hand_turns_green(self):
+        old = ("*Thu 10/15* — 1 terminated\n"
+               "• Ana Lopez — 10 days worked · roster T · "
+               "❌ OwnerVille: not found by name · ✅ Slack")
+        self.assertIn("✅ OwnerVille · ✅ Slack", slack_post._restatus(old, []))
+
+    def test_old_line_without_status_gets_one(self):
+        old = "*Thu 10/15* — 1 terminated\n• Ana Lopez — 10 days worked · roster T"
+        new = slack_post._restatus(old, [_o(ov="done", slack="done")])
+        self.assertIn("roster T · ✅ OwnerVille · ✅ Slack", new)
 
     def test_checklist_carries_reason_and_tag(self):
         p = Pending("Ana Lopez", D, 10, True, True)

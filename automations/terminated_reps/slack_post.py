@@ -89,10 +89,11 @@ the flag being posted a second time.
 from __future__ import annotations
 
 import datetime as dt
+import re
 
 from automations.shared import slack_metrics_post as smp
-from automations.terminated_reps.board import (Check, Termination, norm_name,
-                                               week_sunday)
+from automations.terminated_reps.board import (Check, Termination, base_name,
+                                               norm_name, week_sunday)
 
 # #revision-emails. The id, not the name, so a channel rename can't silently
 # send this somewhere else.
@@ -168,6 +169,9 @@ SHORTCODES = {
     ":large_blue_circle:": "🔵",
     ":heavy_check_mark:": "✅",
     ":ballot_box_with_check:": "✅",
+    ":x:": "❌",
+    ":hourglass_flowing_sand:": "⏳",
+    ":heavy_minus_sign:": "➖",
 }
 
 
@@ -213,14 +217,21 @@ def for_day(rows: list[Termination], day: dt.date) -> list[Termination]:
                   key=lambda t: t.name.lower())
 
 
-def render_reply(rows: list[Termination], day: dt.date) -> str:
+def render_reply(rows: list[Termination], day: dt.date,
+                 outcomes: list | None = None) -> str:
     """One day's entry inside the weekly thread.
 
-    The heading @-tags the approvers (Eve, 2026-10-09): the tag is her
-    reminder to go deactivate them. It sits on the heading, never on a '•'
-    line, so already_posted() still reads the names cleanly."""
-    lines = [f"*{day.strftime('%a')} {day.month}/{day.day}* — "
-             f"{len(rows)} terminated {_mentions()}"]
+    With auto-deactivation on (`outcomes` = auto_deactivate.run's result),
+    each rep's line also says what happened to their OwnerVille and Slack —
+    ONE message per day instead of the day's list + a '🔒 Deactivated' reply
+    + a checklist (Eve, 2026-10-19). Later runs edit the same line
+    (update_statuses) instead of posting again.
+
+    The heading @-tags the approvers (Eve, 2026-10-09) — with outcomes, only
+    when something is left for her to do by hand. It sits on the heading,
+    never on a '•' line, so already_posted() still reads the names cleanly."""
+    lines = []
+    tag = outcomes is None
     for t in rows:
         days = ("days worked not on the board" if t.days_worked is None
                 else f"{t.days_worked} day{'' if t.days_worked == 1 else 's'} worked")
@@ -228,8 +239,117 @@ def render_reply(rows: list[Termination], day: dt.date) -> str:
         # where anyone reads what happened — a partial termination that looked
         # identical to a full one here would be read as "deactivate him".
         tail = f" · *{t.note}*" if t.note else ""
+        o = _outcome_for(t.name, outcomes)
+        if o is not None:
+            status = render_status(o)
+            tail += f" · {status}"
+            tag = tag or "❌" in status
         lines.append(f"{BULLET} {t.name} — {days} · {t.source}{tail}")
-    return "\n".join(lines)
+    head = (f"*{day.strftime('%a')} {day.month}/{day.day}* — "
+            f"{len(rows)} terminated" + (f" {_mentions()}" if tag else ""))
+    return "\n".join([head] + lines)
+
+
+# --------------------------------------------- OwnerVille / Slack status line
+
+# Where a '•' line's status starts — everything before it is the line as the
+# day posted it, so a later run can swap just this part.
+_STATUS_AT = re.compile(r" · (?:✅|❌|⏳|➖) OwnerVille")
+# A day's heading as render_reply writes it ('Thu 10/15* — 3 terminated …',
+# once _first_line has taken the leading '*' off).
+_DAY_HEAD = re.compile(r"^\w{3} \d{1,2}/\d{1,2}\*? — \d+ terminated")
+
+
+def _side(label: str, s: str) -> str:
+    """One account's state, short: ✅ done · ➖ nothing there · ⏳ retrying
+    tomorrow · ❌ do it by hand, and why."""
+    if s in ("", "done", "already"):
+        return f"✅ {label}"
+    if s.startswith("no Slack account"):
+        # Most new starts never had Slack — nothing to deactivate.
+        return f"➖ {label}: no account"
+    if "next run retries" in s:
+        return f"⏳ {label}: retrying tomorrow"
+    return f"❌ {label}: {s}"
+
+
+def render_status(o) -> str:
+    """'✅ OwnerVille · ❌ Slack: <why>' for one auto_deactivate.Outcome."""
+    return f"{_side('OwnerVille', o.ov)} · {_side('Slack', o.slack)}"
+
+
+def _outcome_for(name: str, outcomes: list | None):
+    """The Outcome for this board name — same folded name, or the same person
+    once the '(Wk n)' / nickname parentheticals come off."""
+    if not outcomes:
+        return None
+    n, b = norm_name(name), base_name(name)
+    for o in outcomes:
+        if norm_name(o.name) == n:
+            return o
+    for o in outcomes:
+        if base_name(o.name) == b:
+            return o
+    return None
+
+
+def _restatus(text: str, outcomes: list) -> str:
+    """A day's message with every rep's status brought up to date.
+
+    A line that already carries a status but whose rep is no longer pending
+    at all means both boxes got ticked on the tracker (by hand) → ✅ both."""
+    out = []
+    for line in _plain(text).splitlines():
+        if not line.strip().startswith(BULLET):
+            out.append(line)
+            continue
+        m = _STATUS_AT.search(line)
+        name = line.strip().lstrip(BULLET).split("—")[0].strip()
+        o = _outcome_for(name, outcomes)
+        if o is not None:
+            base = line[:m.start()] if m else line
+            out.append(f"{base} · {render_status(o)}")
+        elif m:
+            out.append(f"{line[:m.start()]} · ✅ OwnerVille · ✅ Slack")
+        else:
+            out.append(line)
+    return "\n".join(out)
+
+
+def update_statuses(outcomes: list, day: dt.date, *, channel: str = CHANNEL,
+                    dry_run: bool = True, logfn=print) -> int:
+    """Edit this week's and last week's day messages so each rep's line shows
+    where their OwnerVille / Slack stand NOW — a retry that worked, or a box
+    Eve ticked by hand, turns its ❌ into ✅ in the same message. No new posts.
+    Returns how many messages changed."""
+    sunday = week_sunday(day)
+    client = smp._client()
+    n = 0
+    for s in (sunday - dt.timedelta(days=7), sunday):
+        thread_ts = find_thread_ts(client, week_title(s), channel)
+        if not thread_ts:
+            continue
+        resp = client.conversations_replies(channel=channel, ts=thread_ts,
+                                            limit=200)
+        for msg in resp.get("messages", [])[1:]:
+            text = msg.get("text") or ""
+            # Only a day's list — not the old '🔒 Deactivated' replies
+            # (before 2026-10-19), which use '•' too.
+            if not _DAY_HEAD.match(_first_line(text)):
+                continue
+            new = _restatus(text, outcomes)
+            if new == _plain(text):
+                continue
+            n += 1
+            if dry_run:
+                logfn(f"    DRY-RUN — would update {week_title(s)}:")
+                for line in new.splitlines():
+                    logfn(f"       {line}")
+                continue
+            client.chat_update(channel=channel, ts=msg["ts"], text=new)
+    if n and not dry_run:
+        logfn(f"  updated the OwnerVille / Slack status on {n} message(s)")
+    return n
 
 
 def _mentions() -> str:
@@ -633,7 +753,8 @@ def checks_by_week(checks: list[Check],
 
 def post(rows: list[Termination], day: dt.date, *, channel: str = CHANNEL,
          dry_run: bool = True, checks: list[Check] | None = None,
-         pending_lookup=None, pending_now: bool = False, logfn=print) -> dict:
+         pending_lookup=None, pending_now: bool = False,
+         outcomes: list | None = None, logfn=print) -> dict:
     """Post every not-yet-posted day into the thread of the week it belongs to,
     plus any row the board contradicts itself about.
 
@@ -647,6 +768,9 @@ def post(rows: list[Termination], day: dt.date, *, channel: str = CHANNEL,
     the checkboxes it would be reporting on are the real tab's. It is only
     consulted once the week is closing (`pending_is_due`); `pending_now`
     forces it on any day.
+
+    `outcomes` (auto_deactivate.run) puts each rep's OwnerVille / Slack status
+    on their line — see render_reply.
     """
     title = week_title(day)
     checks = list(checks or [])
@@ -668,7 +792,8 @@ def post(rows: list[Termination], day: dt.date, *, channel: str = CHANNEL,
             by_day, undated = checks_by_day(flagged.get(sunday, []))
             for d in sorted(set(days) | set(by_day)):
                 if d in days:
-                    for line in render_reply(for_day(rows, d), d).splitlines():
+                    for line in render_reply(for_day(rows, d), d,
+                                             outcomes).splitlines():
                         logfn(f"       {line}")
                 for c in by_day.get(d, []):
                     for line in render_check(c).splitlines():
@@ -728,7 +853,7 @@ def post(rows: list[Termination], day: dt.date, *, channel: str = CHANNEL,
                       if d in days else [])
             if todays:
                 client.chat_postMessage(channel=channel, thread_ts=thread_ts,
-                                        text=render_reply(todays, d))
+                                        text=render_reply(todays, d, outcomes))
                 seen.update(norm_name(t.name) for t in todays)
                 posted.append((d, len(todays)))
                 logfn(f"  {wtitle}: posted {d.isoformat()}, {len(todays)} rep(s)")
@@ -775,53 +900,3 @@ def post(rows: list[Termination], day: dt.date, *, channel: str = CHANNEL,
     return {"posted": any(w["days"] or w["checks"] for w in out),
             "title": title, "channel": channel, "weeks": out}
 
-
-DONE_TITLE = "🔒 Deactivated"
-
-
-def render_done(done: list, day: dt.date) -> str:
-    """What this run retired / deactivated, one line per rep."""
-    lines = [f"*{DONE_TITLE}* — {day.month}/{day.day}"]
-    for o in done:
-        what = " · ".join(n for n, s in (("OwnerVille retired", o.ov),
-                                         ("Slack deactivated", o.slack))
-                          if s == "done")
-        lines.append(f"{BULLET} {o.name} — {what}")
-    return "\n".join(lines)
-
-
-def post_deactivations(outcomes: list, day: dt.date, *, pending_lookup,
-                       channel: str = CHANNEL, dry_run: bool = True,
-                       logfn=print) -> None:
-    """After auto_deactivate.run: one reply per week thread naming who was
-    deactivated THIS run, and the week's checklist rewritten DAILY with what's
-    left and why (Eve 10/13 — no longer held until Sunday: what's left is now
-    work only she can do)."""
-    by_week: dict = {}
-    for o in outcomes:
-        by_week.setdefault(week_sunday(o.term_date), []).append(o)
-    client = None if dry_run else smp._client()
-    for sunday in sorted(by_week):
-        outs = by_week[sunday]
-        done = [o for o in outs if "done" in (o.ov, o.slack)]
-        reasons = {o.row: o.todo_text() for o in outs if o.needs_eve}
-        wtitle = week_title(sunday)
-        if dry_run:
-            if done:
-                for line in render_done(done, day).splitlines():
-                    logfn(f"       {line}")
-            for o in outs:
-                if o.needs_eve:
-                    logfn(f"       {TODO} {o.name} · {o.todo_text()}")
-            continue
-        pending = pending_lookup(sunday)
-        thread_ts = find_thread_ts(client, wtitle, channel)
-        if not thread_ts:
-            thread_ts = client.chat_postMessage(
-                channel=channel, text=f"{EMOJI} *{wtitle}*").get("ts")
-        if done:
-            client.chat_postMessage(channel=channel, thread_ts=thread_ts,
-                                    text=render_done(done, day))
-            logfn(f"  {wtitle}: posted {len(done)} deactivation(s)")
-        post_pending(client, thread_ts, sunday, pending, channel, logfn,
-                     reasons=reasons)

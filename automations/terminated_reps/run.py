@@ -243,7 +243,7 @@ def main(argv=None) -> int:
     # 2b — retire in OwnerVille + deactivate in Slack (Eve, 2026-10-13). Off
     # the REAL tab only; a --dry-run looks everything up and changes nothing.
     # Never fatal: the day's terminations still get posted, and whatever it
-    # couldn't do lands on the checklist with the reason.
+    # couldn't do shows on the rep's line as ❌ with the reason.
     outcomes = None
     if not args.sandbox and not args.no_deactivate:
         try:
@@ -263,13 +263,18 @@ def main(argv=None) -> int:
             lookup = deactivate.pending_for_week
         slack_post.post(rows, today, channel=args.channel, dry_run=post_dry,
                         checks=checks, pending_lookup=lookup,
-                        pending_now=args.pending_now)
-        # With auto-deactivation on, the checklist is daily and carries the
-        # reason for each name it couldn't do — see post_deactivations.
-        if outcomes:
-            slack_post.post_deactivations(
-                outcomes, today, channel=args.channel, dry_run=post_dry,
-                pending_lookup=deactivate.pending_for_week)
+                        pending_now=args.pending_now, outcomes=outcomes)
+        # With auto-deactivation on, each rep's OwnerVille / Slack status rides
+        # on their own line in the day's message, and later runs EDIT that line
+        # — no '🔒 Deactivated' reply, no checklist (Eve, 2026-10-19).
+        if outcomes is not None:
+            try:
+                slack_post.update_statuses(outcomes, today,
+                                           channel=args.channel,
+                                           dry_run=post_dry)
+            except Exception as e:                              # noqa: BLE001
+                print(f"  ⚠ couldn't update the OwnerVille / Slack status "
+                      f"lines: {type(e).__name__}: {e}")
     except Exception as e:                                      # noqa: BLE001
         # The rows are already filed; a Slack hiccup must not make the run look
         # like the tracker write failed — but it IS a failure, nobody saw the
