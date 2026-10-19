@@ -9,7 +9,9 @@ first (Alphalete SALES BOARD 2025), on a SANDBOX twin, then roll out.
 LIVE since 2026-10-12 (Eve: "aplica en produccion y podes eliminar esas
 sandbox"). Every morning it audits and fixes this week's 'Sales Board WE m.d',
 'Line Up WE m.d' and 'Stations' -- so each new week's board is covered the day
-the week roll creates it. The SANDBOX twins (2026-10-07..10-11) are gone.
+the week roll creates it. Since 2026-10-19 also the 'Lanes' tab (Rafael's list
+of main spreadsheets, #2) -- what gets fixed there is in lanes_check.py.
+The SANDBOX twins (2026-10-07..10-11) are gone.
 
 WHAT GETS FIXED vs ONLY REPORTED -- see checks.py for the why of each:
   fixed     formula put back in a formula column (X / number typed over it,
@@ -45,13 +47,17 @@ except Exception:  # noqa: BLE001 -- Windows console, best effort
     pass
 
 from automations.sales_board_fixer import checks as K
+from automations.sales_board_fixer import lanes_check as LC
 from automations.sales_board_fixer import tenure as T
 
 SHEET_ID = "1MC9pfKryQrRtcMthUBL2hOciDCaa83U059pz0N2CmHc"   # Alphalete SALES BOARD 2025
 STATIONS_TAB = "Stations"         # one tab, not per week
+LANES_TAB = LC.TAB                # 'Lanes' -- see lanes_check.py
+SANDBOX_PREFIX = "SANDBOX — "     # a test copy of a tab, checked like the real one
 MAX_FIXES = 300                   # more than this on one tab = misread, don't write
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = REPO_ROOT / "output" / "sales_board_fixer"
+LANES_GOOD_FILE = OUT_DIR / "lanes_good.json"   # last healthy Lanes formulas + headers
 
 
 def week_sunday(today: dt.date) -> dt.date:
@@ -99,10 +105,53 @@ def load(sh, title: str) -> dict:
             fonts.append([_font(v) for v in vs])
             numfmts.append([_numfmt(v) for v in vs])
             notes.append([(v or {}).get("note", "") for v in vs])
-    return {"ws": ws, "title": title, "sheet_id": ws.id, "values": values,
-            "formulas": formulas, "rules": sheet.get("conditionalFormats", []),
-            "basic_filter": sheet.get("basicFilter"),
-            "ncols": ncols, "fonts": fonts, "numfmts": numfmts, "notes": notes}
+    t = {"ws": ws, "title": title, "sheet_id": ws.id, "values": values,
+         "formulas": formulas, "rules": sheet.get("conditionalFormats", []),
+         "basic_filter": sheet.get("basicFilter"),
+         "ncols": ncols, "fonts": fonts, "numfmts": numfmts, "notes": notes}
+    if title in (LANES_TAB, SANDBOX_PREFIX + LANES_TAB) and sh.id == SHEET_ID:
+        t.update(load_lanes(sh, t))
+    return t
+
+
+def load_lanes(sh, t: dict) -> dict:
+    """What lanes_check needs beyond the tab itself: which cells a person
+    typed (vs spilled), the two Sales Board tabs the lanes read, and where
+    lanes.py says they should point."""
+    from automations.alphalete_sales_board import lanes as L
+    from automations.alphalete_sales_board import fill
+    v = t["values"]
+    grid = sh.fetch_sheet_metadata({
+        "includeGridData": True, "ranges": ["'%s'!A1:%s%d" % (t["title"], K.col_letter(t["ncols"]),
+                                                             max(len(v), 1))],
+        "fields": "sheets(data(rowData(values(userEnteredValue,note))))"})
+    rows = grid["sheets"][0]["data"][0].get("rowData", [])
+    entered = [[bool((c or {}).get("userEnteredValue")) for c in rd.get("values", [])]
+               for rd in rows]
+    notes = [[(c or {}).get("note", "") for c in rd.get("values", [])] for rd in rows]
+    anchor = L.lanes_week(dt.date.today())
+    have = _tabs(sh)
+    boards, targets = {}, {}
+    for key, back in (("current", 0), ("last", 7)):
+        title = fill.tab_title(anchor - dt.timedelta(days=back))
+        if title not in have:
+            continue
+        g = sh.worksheet(title).get_all_values()
+        end = L.totals_row([r[2] if len(r) > 2 else "" for r in g])
+        if end:
+            boards[title], targets[key] = g, (title, end - 1)
+    # the tabs the lanes point at today count too (Monday: last week's pair)
+    for f in (t["formulas"][r][c] for r in range(min(len(t["formulas"]), 6))
+              for c in range(len(t["formulas"][r]))):
+        for m in LC.RANGE_RE.finditer(str(f)):
+            if m.group(1) not in boards and m.group(1) in have:
+                boards[m.group(1)] = sh.worksheet(m.group(1)).get_all_values()
+    try:
+        good = json.loads(LANES_GOOD_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        good = None
+    return {"lanes": {"entered": entered, "boards": boards, "targets": targets,
+                      "good": good}, "notes": notes}
 
 
 def _font(v: dict):
@@ -122,7 +171,14 @@ def _numfmt(v: dict):
 def audit(t: dict, tenure=None) -> list:
     """tenure = (history, earliest sunday) from tenure_history(), or None."""
     title, v, f = t["title"], t["values"], t["formulas"]
-    if K.is_board(v):
+    if "lanes" in t:
+        x = t["lanes"]
+        if len(x["targets"]) < 2:      # a week tab missing: lanes.py waits too
+            found = []
+        else:
+            found = LC.check(f, v, x["entered"], x["boards"], x["targets"], x["good"])
+        found += K.check_conditional(title, t["sheet_id"], t["rules"], t["ncols"])
+    elif K.is_board(v):
         found = (K.check_formulas(title, v, f) + K.check_roll_call(title, v)
                  + K.check_fonts(title, t["sheet_id"], v, t["fonts"])
                  + K.check_number_formats(title, t["sheet_id"], v, t["numfmts"]))
@@ -168,7 +224,8 @@ def apply(sh, t: dict, found: list, notes: bool = True) -> list:
     ws = t["ws"]
     # The board re-sorts during the day: re-read the names and drop any row
     # whose rep is no longer the one the finding was made for.
-    names_now = ws.col_values(K.layout(t["values"]).name_col)
+    names_now = (ws.col_values(K.layout(t["values"]).name_col)
+                 if any(x.row and x.name for x in found) else [])
     def still_there(x):
         if x.row is None or not x.name:
             return True
@@ -249,7 +306,7 @@ def main(argv=None) -> int:
     today = dt.date.fromisoformat(a.date) if a.date else dt.date.today()
     sh = _book(a.sheet_id)
     stamp = dt.datetime.now().strftime("%Y-%m-%d_%H%M")
-    titles = a.tab or list(week_tabs(today)) + [STATIONS_TAB]
+    titles = a.tab or list(week_tabs(today)) + [STATIONS_TAB, LANES_TAB]
     # Monday 04:xx runs before the week roll makes this week's Sales Board:
     # skip it (tomorrow's run picks it up), don't crash
     have = _tabs(sh)
@@ -299,8 +356,28 @@ def run_tabs(sh, titles, stamp: str, do_apply: bool, label: str = "",
                     if kinds is None or x.kind in kinds]
             print("  después de arreglar quedan: %d (%d arreglables)"
                   % (len(left), sum(1 for x in left if x.fixable)))
+        if title == LANES_TAB:      # never learn from a sandbox copy
+            remember_lanes(sh, title)
         results[label + title] = widened + found
     return results
+
+
+def remember_lanes(sh, title: str) -> None:
+    """Save the Lanes formulas + the headers they read as the healthy copy --
+    only when the tab, read again now, has nothing to fix or report on its
+    formulas. That copy is what a deleted lane is rebuilt from."""
+    t = load(sh, title)
+    x = t["lanes"]
+    if len(x["targets"]) < 2:
+        return
+    left = [f for f in LC.check(t["formulas"], t["values"], x["entered"], x["boards"],
+                                x["targets"], x["good"])
+            if f.kind in ("lane_formula_lost", "lane_col_moved", "lane_range", "lane_extra_lost")]
+    if left:
+        return
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    LANES_GOOD_FILE.write_text(json.dumps(LC.remember(t["formulas"], t["values"], x["boards"]),
+                                          ensure_ascii=False, indent=1), encoding="utf-8")
 
 
 # --- owners' All-in-One workbooks (2026-10-12) -------------------------------

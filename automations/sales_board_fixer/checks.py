@@ -56,6 +56,14 @@ KIND_LABEL = {
     "filter_short": "el filtro/orden no cubre las columnas del rep",
     "start_date_moved": "Start Date de otro rep (quedó atrás al ordenar)",
     "days_formula": "# Days Worked sin fórmula o apuntando a otra fila",
+    "lane_formula_lost": "Lanes: fórmula de un carril borrada o rota",
+    "lane_col_moved": "Lanes: el Sales Board movió una columna que el carril lee",
+    "lane_range": "Lanes: carril leyendo otra semana o cortando antes de TOTALS",
+    "lane_extra_lost": "Lanes: fórmula de la fila de carriles borrada (col M)",
+    "lane_spill_blocked": "Lanes: algo escrito debajo de un carril (lo deja en blanco)",
+    "lane_dead_cond": "Lanes: condición que nunca saca a nadie",
+    "lane_threshold": "Lanes: el corte de la fórmula no es el del título",
+    "lane_twin_differs": "Lanes: Current Week y Last week filtran distinto",
 }
 
 
@@ -438,6 +446,9 @@ NOTE_LABEL = {
     "roll_call_blank": "Int had the status but the Roll Call was blank",
     "start_date_moved": "this was another rep's start date (left behind by a sort)",
     "days_formula": "# Days Worked was missing or pointed at another row",
+    "lane_formula_lost": "this lane's formula had been deleted or broken",
+    "lane_col_moved": "a Sales Board column this lane reads had moved",
+    "lane_extra_lost": "this formula had been deleted or broken",
 }
 
 

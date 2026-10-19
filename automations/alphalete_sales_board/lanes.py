@@ -270,6 +270,28 @@ def _find_ws(book_ws, title: str):
     return None
 
 
+def _heal_lost(formulas: List[List[str]], values: List[List[str]]) -> Dict[str, int]:
+    """Patch `formulas` in place with a healthy copy of every lost lane;
+    returns {A1: col0} of the cells patched."""
+    import json
+    from automations.sales_board_fixer import lanes_check as LC
+    from automations.sales_board_fixer.run import LANES_GOOD_FILE
+    try:
+        good = json.loads(LANES_GOOD_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        good = None
+    row0, _ = find_blocks(values)
+    fixes = LC.restore_lost(formulas, values, good)
+    while len(formulas) <= row0:
+        formulas.append([])
+    for c, f in fixes.items():
+        formulas[row0] += [""] * (c + 1 - len(formulas[row0]))
+        formulas[row0][c] = f
+        _log("%s%d had no healthy lane formula -- borrowed one"
+             % (_col_letter(c), row0 + 1))
+    return {"%s%d" % (_col_letter(c), row0 + 1): c for c in fixes}
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--apply", action="store_true", help="write the formulas")
@@ -337,12 +359,28 @@ def main(argv=None) -> int:
     values = lanes.get_all_values()
     formulas = lanes.get("A1:Z%d" % max(len(values), 1),
                          value_render_option="FORMULA")
+    # A lane deleted / typed over / #REF! used to stop the whole job here.
+    # Borrow it from the same lane in the other block (or the Salesboard
+    # Fixer's last healthy copy); the repoint below aims it at this block's
+    # week. Eve 2026-10-19.
+    try:
+        healed = _heal_lost(formulas, values)
+    except RuntimeError as e:
+        _log("REFUSED: %s" % e)
+        return 2
     try:
         updates = plan(formulas, values, targets, excluded,
                        exclude_terminated=EXCLUDE_TERMINATED)
     except (RuntimeError, ValueError) as e:
         _log("REFUSED: %s" % e)
         return 2
+    # a healed cell whose borrowed copy already pointed at the right week
+    # produced no update above -- it still has to be written
+    row0, _ = find_blocks(values)
+    for a1, c in healed.items():
+        if a1 not in [u["range"] for u in updates]:
+            updates.append({"range": a1, "values": [[formulas[row0][c]]],
+                            "old": "(lost)"})
 
     if not updates:
         _log("lanes already on the right weeks -- nothing to change")
