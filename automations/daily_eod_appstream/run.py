@@ -158,8 +158,11 @@ def _fmt_pct(p: Optional[float]) -> str:
     return "" if p is None else f"{whole_pct(p)}%"
 
 
-_TD = ("border:1px solid #999;padding:3px 6px;text-align:center;"
-       "font-size:12px;white-space:nowrap")
+# Cells carry NO inline style: border, padding, size and alignment come from the
+# <table>/<tr> attributes. Styling every cell made the mail ~310 KB, past
+# Gmail's 102 KB clip — Gmail cut it and hung the signature photo below as a
+# "noname" attachment (Eve 10/19). Keep it that way.
+MAX_HTML_BYTES = 102_000
 
 
 def _cells(r: Dict[str, int]) -> str:
@@ -168,8 +171,8 @@ def _cells(r: Dict[str, int]) -> str:
     vals = [r["b1"], r["s1"], _fmt_pct(pct(r["s1"], r["b1"])),
             r["b2nd"], _fmt_pct(pct(r["b2nd"], r["s1"])),
             r["b2"], r["s2"]]
-    out = "".join(f'<td style="{_TD}">{v}</td>' for v in vals)
-    out += f'<td style="{_TD};background:{bg or "#fff"};font-weight:bold">{_fmt_pct(p2)}</td>'
+    out = "".join(f'<td>{v}</td>' for v in vals)
+    out += f'<td bgcolor="{bg or "#fff"}"><b>{_fmt_pct(p2)}</b></td>'
     return out
 
 
@@ -184,13 +187,13 @@ def table_html(blocks: List[Tuple[str, Dict[str, Dict[str, int]]]]) -> str:
     owners = sorted(blocks[0][1], key=str.lower)
     rows = []
     for owner in owners:
-        rows.append(f'<tr><td style="{_TD};text-align:left;font-weight:bold">'
-                    f'{html.escape(owner)}</td>'
+        rows.append(f'<tr align="center"><td align="left"><b>'
+                    f'{html.escape(owner)}</b></td>'
                     + "".join(_cells(b[owner]) for _, b in blocks) + '</tr>')
-    rows.append(f'<tr><td style="{_TD};text-align:left;font-weight:bold;'
-                f'background:#eee">TOTAL</td>'
+    rows.append(f'<tr align="center"><td align="left" bgcolor="#eeeeee"><b>TOTAL</b></td>'
                 + "".join(_cells(sum_rows(list(b.values()))) for _, b in blocks) + '</tr>')
-    return ('<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;'
+    return ('<table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;'
+            'border-color:#999;font-size:12px;white-space:nowrap;'
             'font-family:Arial,Helvetica,sans-serif">'
             f'<tr><th style="{th}" rowspan="2">Office</th>{top}</tr>'
             f'<tr>{sub}</tr>' + "".join(rows) + '</table>')
@@ -364,6 +367,10 @@ def build_and_send(day: dt.date, *, production: bool, dry_run: bool,
             + box_html("Interview quality — 1st Round Scorecards", scorecards_html(), "#1f3b6b"))
     (OUT_DIR / f"preview_{day.isoformat()}.html").write_text(
         f"<html><body>{body}</body></html>", encoding="utf-8")
+    size = len(body.encode("utf-8"))
+    logfn(f"  html {size // 1000} KB"
+          + ("" if size < MAX_HTML_BYTES else
+             f" — OVER Gmail's {MAX_HTML_BYTES // 1000} KB clip: the mail will be cut"))
     logfn(f"  report day {day}: red {', '.join(f'{o} {whole_pct(p)}%' for o, p in reds) or 'none'}")
     logfn(f"  weekly total: red {', '.join(f'{o} {whole_pct(p)}%' for o, p in week_reds) or 'none'}")
     for g in gaps:
