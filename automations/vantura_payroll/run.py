@@ -1313,10 +1313,29 @@ def main(argv: list[str] | None = None) -> int:
             per = Counter(str(r.get("Rep", "")).strip() for r in mine)
             for rep, n in per.most_common(20):
                 flog(f"  {rep}: {n} order(s)")
-            keys = [k for k in hdr if k and len(k) < 40][:14]
-            for r in mine[:80]:
-                flog("  | " + " | ".join(
-                    f"{str(r.get(k, ''))[:24]}" for k in keys))
+            money = 0.0
+            for rep in sorted(per):
+                rrows = [r for r in mine
+                         if str(r.get("Rep", "")).strip() == rep]
+                orders = {str(r.get("sp.SPM Number", "")).strip()
+                          for r in rrows}
+                stat = Counter(str(r.get("DTR Status", "")).strip() or "-"
+                               for r in rrows)
+                pay = Counter(str(r.get("Pay Eligibility", "")).strip() or "-"
+                              for r in rrows)
+                amt = 0.0
+                for r in rrows:
+                    try:
+                        amt += float(str(r.get("Bonus Eligible $", "") or 0)
+                                     .replace("$", "").replace(",", "") or 0)
+                    except ValueError:
+                        pass
+                money += amt
+                flog(f"REP {rep}: {len(orders)} order(s), {len(rrows)} line(s)")
+                flog(f"   DTR status: {dict(stat.most_common(6))}")
+                flog(f"   Pay eligibility: {dict(pay.most_common(5))}")
+                flog(f"   Bonus Eligible $: ${amt:,.2f}")
+            flog(f"ALLOWLIST TOTAL Bonus Eligible $: ${money:,.2f}")
         try:
             import gspread
             from automations.recruiting_report import fill as _f
