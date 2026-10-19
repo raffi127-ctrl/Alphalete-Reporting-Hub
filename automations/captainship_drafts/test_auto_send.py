@@ -541,5 +541,28 @@ class TableauStatusCaughtUpTest(unittest.TestCase):
         self.assertIn("tableau:tracker_b2b", stale)
 
 
+class CloseOlderDays(unittest.TestCase):
+    """A full send closes earlier days' held threads too (Megan 2026-10-19)."""
+
+    def test_closes_today_and_older_not_newer(self):
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+        from automations.shared import incident_thread as it
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            for day in ("2026-10-15", "2026-10-19", "2026-10-20"):
+                (root / f"{day}.alerted").write_text("")
+            closed = []
+            with mock.patch.object(A, "STATE_DIR", root), \
+                    mock.patch.object(it, "ensure_closed",
+                                      side_effect=lambda k, **kw: closed.append(k) or True):
+                A.close_incident(dt.date(2026, 10, 19))
+            self.assertEqual(closed, ["captainship-autosend-2026-10-15",
+                                      "captainship-autosend-2026-10-19"])
+            self.assertEqual([p.name for p in root.iterdir()],
+                             ["2026-10-20.alerted"])
+
+
 if __name__ == "__main__":
     unittest.main()

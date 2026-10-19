@@ -258,6 +258,35 @@ def _pull_icd_dd_detail(week: dt.date, log=_log) -> Path:
     return out
 
 
+def _hold_if_stale(xlsx: Path, week: dt.date, log=_log) -> None:
+    """Refuse to load a DD export that hasn't reached this week's DD Saturday.
+
+    The DD DETAIL view has no date filter from us — it shows its LATEST DD
+    week. When Tableau hasn't published the new week, the export is last
+    week's rows unchanged (2026-10-18: byte-for-byte the 10/11 pull, newest
+    activation 10/10), and loading it would stamp last week's pay as this
+    week's. Hold instead, the way the Order Log does. An export with no
+    readable date says nothing and is let through (the column map still
+    guards it). Override: pass --file with a known-good export."""
+    from automations.shared import tableau_freshness as tf
+    try:
+        got = tf.newest_date(xlsx)
+    except Exception:  # noqa: BLE001
+        return
+    newest = got[0] if isinstance(got, tuple) else got
+    if not newest:
+        return
+    dd_saturday = week - dt.timedelta(days=1)
+    if newest < dd_saturday - dt.timedelta(days=1):
+        raise RuntimeError(
+            f"Tableau's DD DETAIL hasn't published week ending "
+            f"{week.isoformat()} yet: its newest activation is "
+            f"{newest.isoformat()}, it should reach {dd_saturday.isoformat()}. "
+            "Nothing was loaded (it would be last week's DD again). Re-run once "
+            "Tableau has the new week, or pass --file with a good export.")
+    log(f"DD export is current: newest activation {newest.isoformat()}")
+
+
 def _read_export(path: Path, log=_log) -> tuple[list[str], list[list]]:
     """Read the crosstab export -> (headers, data_rows). Handles BOTH formats
     (same as vantura_churn f2e21c3): a MANUAL download is a real .xlsx, but the
@@ -1486,6 +1515,12 @@ def main(argv: list[str] | None = None) -> int:
         colA = raw.get("A2:A20000")
         wkrows = [i + 2 for i, r in enumerate(colA)
                   if r and str(r[0]) == str(wnum)]
+        if not wkrows:
+            # Nothing loaded for this week yet — there is nothing to diff
+            # against (crashed with min() of an empty list, 2026-10-18).
+            dlog(f"RAW has no rows for week {wnum} yet — nothing to compare. "
+                 "Run the payroll prep for this week first.")
+            return 0
         lo, hi = min(wkrows), max(wkrows)
         block = raw.get(f"A{lo}:H{hi}")
         raw_per = defaultdict(float)
@@ -1753,6 +1788,8 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         xlsx = Path(args.file) if args.file else _pull_icd_dd_detail(week)
+        if not args.file:
+            _hold_if_stale(xlsx, week)
         if args.enrich_cols:
             rng = _enrich_cols(xlsx, week, write=write, sheet_id=sheet_id)
             _log(f"enrich-cols done for rows {rng[0]}-{rng[1]}.")

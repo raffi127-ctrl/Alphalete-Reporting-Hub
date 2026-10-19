@@ -675,14 +675,33 @@ def _alert(t: Target, day: dt.date, reasons: Sequence[str]) -> None:
 
 
 def _close(t: Target, day: dt.date) -> None:
-    marker = STATE_DIR / t.key / f"{day.isoformat()}.alerted"
-    if not marker.exists():
-        return
+    """Close today's held-email thread AND any earlier day's still left open.
+
+    An earlier day's hold used to close only if THAT day's email was sent. Once
+    a newer email goes out, the old one is never sent (it would be stale), so
+    its thread sat on "Needs one of you" for days after the cause was fixed —
+    10/17 and 10/18 were still open on 10/19 after a clean send (Megan
+    2026-10-19). A clean send today is the proof the hold is over."""
     try:
         from automations.shared import incident_thread as it
-        if it.ensure_closed(incident_key(t, day),
-                            what=f"*{t.name} Email* — sent",
-                            detail="_The held email went out._"):
-            marker.unlink()
     except Exception as e:  # noqa: BLE001
         print(f"  (could not close the corrections thread: {e})", flush=True)
+        return
+    for marker in sorted((STATE_DIR / t.key).glob("*.alerted")):
+        try:
+            mday = dt.date.fromisoformat(marker.stem)
+        except ValueError:
+            continue
+        if mday > day:
+            continue
+        detail = ("_The held email went out._" if mday == day else
+                  f"_Superseded: the {day.month}/{day.day} email went out "
+                  "clean. This older held copy was not re-sent — it would be "
+                  "stale._")
+        try:
+            if it.ensure_closed(incident_key(t, mday),
+                                what=f"*{t.name} Email* — sent",
+                                detail=detail):
+                marker.unlink()
+        except Exception as e:  # noqa: BLE001
+            print(f"  (could not close the corrections thread: {e})", flush=True)

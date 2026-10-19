@@ -214,6 +214,32 @@ def _from_post_watch(report_id: str, day: dt.date) -> Optional[Tuple[str, str]]:
     return None
 
 
+# A review-gated board email's "-approved" phase. The gate writes that Hub row
+# when it FINDS the checkmark, before it mails, so the row proves approval, not
+# delivery; the gate's own `sent` stamp (board_autosend/<kind>/<day>.json,
+# written only after the send returns 0) is the delivery proof. Without this
+# probe a clean 7:16 send left its ticket reading "nothing can confirm" all day
+# (2026-10-19).
+_GATED_EMAILS = {
+    "sales-board-screenshot-email-approved": "org",
+    "country-sales-board-email-approved": "country",
+}
+
+
+def _from_review_gate(report_id: str, day: dt.date) -> Optional[Tuple[str, str]]:
+    key = _GATED_EMAILS.get(report_id)
+    if not key:
+        return None
+    try:
+        from automations.board_emails import auto_send as A
+        if A.local_sent(A.TARGETS[key], day):
+            return DELIVERED, "the review gate stamped today's email sent"
+    except Exception:  # noqa: BLE001
+        return None
+    # Not stamped on THIS box claims nothing: the gate runs on Lucy 1 only.
+    return None
+
+
 # The Hub Activity log, read at most once a minute per process.
 #
 # WHY A TTL AND NOT A PLAIN CACHE: the only multi-phase question worth asking is
@@ -294,7 +320,7 @@ def verdict(report_id: str, day: Optional[dt.date] = None, *,
         if declared_exit_zero(report_id):
             return DELIVERED, "declared close_on: exit_zero in schedule_config"
         for probe in (_from_phases, _from_verifier, _from_manifest,
-                      _from_post_watch):
+                      _from_post_watch, _from_review_gate):
             got = probe(report_id, day)
             if got:
                 return got

@@ -40,19 +40,33 @@ DEPLOY = REPO_ROOT / "deploy"
 SELF_LABEL = "com.alphalete.orchestrator-schedule-guard"
 
 
-def _loaded_labels() -> list[str]:
-    """Every com.alphalete.* LaunchAgent currently loaded in this user's domain."""
+def _launchctl_list() -> dict:
+    """{label: pid or None} for every com.alphalete.* job loaded in this user's
+    domain. `launchctl list` prints "PID<TAB>Status<TAB>Label"; PID is "-" when
+    the job is not running right now."""
     try:
         out = subprocess.run(["launchctl", "list"], capture_output=True,
                              text=True, timeout=30).stdout
     except Exception:  # noqa: BLE001
-        return []
-    labels = []
+        return {}
+    jobs = {}
     for line in out.splitlines():
-        lbl = line.split("\t")[-1].strip()
+        parts = line.split("\t")
+        lbl = parts[-1].strip()
         if lbl.startswith("com.alphalete."):
-            labels.append(lbl)
-    return labels
+            pid = parts[0].strip() if len(parts) >= 3 else "-"
+            jobs[lbl] = int(pid) if pid.isdigit() else None
+    return jobs
+
+
+def _loaded_labels() -> list[str]:
+    """Every com.alphalete.* LaunchAgent currently loaded in this user's domain."""
+    return list(_launchctl_list())
+
+
+def running_labels() -> set:
+    """Loaded jobs that have a live process RIGHT NOW."""
+    return {lbl for lbl, pid in _launchctl_list().items() if pid}
 
 
 # An XML comment may not contain "--", but several committed plists document
@@ -137,8 +151,22 @@ def main() -> int:
     if "--audit" in sys.argv[1:]:
         return audit()
     jobs = _timed_jobs()
+    # NEVER RELOAD A JOB THAT IS RUNNING (2026-10-19). A reload is bootout ->
+    # confirm gone -> bootstrap, and "confirm gone" means launchd KILLS whatever
+    # the job is doing. On Lucy 2 the 01:10 recruiting chain was still running
+    # at 02:45 on slow AppStream nights; the guard killed it mid ad-sales pass,
+    # it never logged a finish, and the 4am check said "didn't run today"
+    # (10/7, 10/10, 10/15, 10/19). A running job is skipped, and tomorrow's
+    # pass reloads it. Being one day late on a schedule refresh costs nothing;
+    # killing a live report costs that report.
+    busy = running_labels()
     results = []
-    for _label, name, entries in jobs:
+    for label, name, entries in jobs:
+        if label in busy:
+            results.append((True, name, _fmt(entries),
+                            "running right now — left alone (a reload would "
+                            "kill it); tomorrow's pass reloads it"))
+            continue
         try:
             ok, msg = install_agent.install(name)
         except Exception as e:  # noqa: BLE001 — one bad job must not stop the rest

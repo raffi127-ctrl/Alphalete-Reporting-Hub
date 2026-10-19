@@ -390,6 +390,26 @@ class TheRealScheduleStillWorks(unittest.TestCase):
         self.assertNotEqual(v.get("type"), "not_configured")
 
 
+class ReviewGateProbe(unittest.TestCase):
+    """The '-approved' phase is delivered once the gate stamps it sent
+    (2026-10-19: a clean 7:16 send read 'nothing can confirm' all day)."""
+
+    def test_sent_stamp_is_delivered(self):
+        from automations.board_emails import auto_send as A
+        with mock.patch.object(A, "local_sent", return_value=True):
+            got = dc._from_review_gate("sales-board-screenshot-email-approved", DAY)
+        self.assertEqual(got[0], dc.DELIVERED)
+
+    def test_no_stamp_claims_nothing(self):
+        from automations.board_emails import auto_send as A
+        with mock.patch.object(A, "local_sent", return_value=False):
+            self.assertIsNone(
+                dc._from_review_gate("country-sales-board-email-approved", DAY))
+
+    def test_other_ids_ignored(self):
+        self.assertIsNone(dc._from_review_gate("org_sales_board", DAY))
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
 

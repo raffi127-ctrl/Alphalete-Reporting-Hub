@@ -324,6 +324,7 @@ def main(argv=None):
                                   allow_form_login=a.headed) as page:
         tok = fetch.token(page)
         busy = []                 # offices AppStream turned away — tried again last
+        relogins = 0
         for oid, name in _with_late_retry(targets, busy, page):
             try:
                 fetch.select_office(page, tok, oid)
@@ -341,6 +342,19 @@ def main(argv=None):
                     flags.append((name, period) + f)
                 print("  OK   %-38s owner=%-22s raw=%-4d ads=%d"
                       % (name, owner[:22], nrows, len(ads)), flush=True)
+            except fetch.AppStreamLoggedOut as e:
+                # Session died mid-run: log back in once (twice at most) and
+                # try this office again at the end (see fetch.AppStreamLoggedOut).
+                if relogins < 2 and (oid, name) not in busy:
+                    try:
+                        tok = fetch.relogin(page)
+                        relogins += 1
+                        busy.append((oid, name))
+                        continue
+                    except Exception as e2:  # noqa: BLE001
+                        e = e2
+                failures.append((oid, name, _headline(e)))
+                print("  FAIL %-38s %s" % (name, _headline(e)[:70]), flush=True)
             except fetch.AppStreamBusy as e:
                 if (oid, name) not in busy:
                     busy.append((oid, name))

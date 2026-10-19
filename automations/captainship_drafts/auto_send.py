@@ -807,15 +807,32 @@ def _mark_alerted(today: dt.date) -> None:
 
 def close_incident(today: dt.date) -> None:
     """Todos salieron (solos o con ✅): cerrar el hilo del día en corrections.
-    Sólo pregunta a Slack si esta máquina abrió uno hoy."""
-    marker = _alerted_marker(today)
-    if not marker.exists():
-        return
+    Sólo pregunta a Slack si esta máquina abrió uno hoy.
+
+    Also closes an EARLIER day's thread this machine left open: a day whose
+    held reports were never sent is replaced by today's full send, and nobody
+    re-sends a stale day. Before this, 10/15's thread was still open on 10/19
+    after three later days went out (Megan 2026-10-19)."""
     try:
         from automations.shared import incident_thread as it
-        if it.ensure_closed(incident_key(today),
-                            what="*Captainship Reports* — every captain is out",
-                            detail="_The held reports went out._"):
-            marker.unlink()
     except Exception as e:  # noqa: BLE001
         print(f"  (no pude cerrar el hilo de corrections: {e})", flush=True)
+        return
+    for marker in sorted(STATE_DIR.glob("*.alerted")):
+        try:
+            mday = dt.date.fromisoformat(marker.stem)
+        except ValueError:
+            continue
+        if mday > today:
+            continue
+        detail = ("_The held reports went out._" if mday == today else
+                  f"_Superseded: every captain's {today.month}/{today.day} "
+                  "report went out. The older held copies were not re-sent — "
+                  "they would be stale._")
+        try:
+            if it.ensure_closed(incident_key(mday),
+                                what="*Captainship Reports* — every captain is out",
+                                detail=detail):
+                marker.unlink()
+        except Exception as e:  # noqa: BLE001
+            print(f"  (no pude cerrar el hilo de corrections: {e})", flush=True)

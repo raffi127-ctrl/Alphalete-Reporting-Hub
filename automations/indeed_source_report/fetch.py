@@ -183,10 +183,46 @@ class AppStreamBusy(RuntimeError):
     """AppStream returned its 'request can not be processed' page."""
 
 
+# THE SESSION DIED MID-RUN (2026-10-19, also 10/12 + 10/15). At ~02:30 the
+# AppStream login timed out partway through the roster. Every office after
+# that landed on "Your login is timed out" instead of the p=702 form, and was
+# reported as "Group-by-Original-Subject checkbox not found" — 6 of 17 offices,
+# a message that sends whoever reads it hunting for an AppStream page change
+# that never happened. Name it, and let the caller log back in once.
+LOGGED_OUT_TEXT = "login is timed out"
+
+
+class AppStreamLoggedOut(RuntimeError):
+    """The AppStream session expired mid-run (the 'login is timed out' page)."""
+
+
+def _logged_out(page):
+    try:
+        txt = page.evaluate("() => (document.body ? document.body.innerText : '')")
+    except Exception:  # noqa: BLE001
+        return False
+    return LOGGED_OUT_TEXT in (txt or "").lower()
+
+
+def relogin(page, verbose=False):
+    """Restore the saved AppStream session on this page and return a fresh
+    rqst token. Raises AppStreamLoggedOut when the saved session is dead too —
+    then only a re-seed fixes it."""
+    from automations.shared.tableau_patchright import (
+        _reuse_appstream_storage_state)
+    if not _reuse_appstream_storage_state(page.context, page, verbose):
+        raise AppStreamLoggedOut("AppStream session timed out mid-run and the "
+                                 "saved session would not restore — re-seed it")
+    print("     (AppStream session timed out — logged back in)", flush=True)
+    return token(page)
+
+
 def _no_table_error(page):
     """Log what the page showed and return the right exception for it."""
     says = _page_says(page)
     print("     no table — %s" % says, flush=True)
+    if LOGGED_OUT_TEXT in says.lower():
+        return AppStreamLoggedOut("AppStream session timed out mid-run")
     if BUSY_TEXT in says.lower():
         return AppStreamBusy("AppStream answered with its own error page "
                              "(\"The request can not be processed\")")
@@ -205,6 +241,8 @@ def _one_pass(page, tok, start, end, timeout):
     page.goto("%s?p=702&rqst=%s" % (BASE, tok), timeout=60000)
     page.wait_for_load_state("networkidle", timeout=45000)
     page.wait_for_timeout(900)
+    if _logged_out(page):
+        raise AppStreamLoggedOut("AppStream session timed out mid-run")
     owner = owner_name(page)
     # Checkboxes BEFORE the dates (Carlos, 2026-10-02): toggling them after
     # can reset the period fields on some office schemas.
@@ -263,6 +301,8 @@ def source_report(page, tok, start, end, timeout=120000, attempts=2):
     for i in range(max(1, attempts)):
         try:
             return _one_pass(page, tok, start, end, timeout)
+        except AppStreamLoggedOut:
+            raise                   # a retry on a dead token can't help
         except Exception as e:  # noqa: BLE001 — the retry is the whole point
             last = e
             if i + 1 < attempts:

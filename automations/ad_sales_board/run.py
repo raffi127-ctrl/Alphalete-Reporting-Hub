@@ -413,7 +413,9 @@ def main(argv=None):
     with appstream_direct_session(headless=not a.headed, verbose=False,
                                   allow_form_login=a.headed) as page:
         tok = fetch.token(page)
-        for oid, name in targets:
+        queue, relogins = list(targets), 0
+        while queue:
+            oid, name = queue.pop(0)
             try:
                 fetch.select_office(page, tok, oid)
                 agnostic = name in CITY_AGNOSTIC and not SPLIT_CITIES
@@ -603,6 +605,20 @@ def main(argv=None):
                              sum(g["rec"]["apps"] for g in ads), len(wk_names),
                              "  (+%d wrapped subjects kept)" % rescued if rescued else ""),
                           flush=True)
+            except fetch.AppStreamLoggedOut as e:
+                # The session died mid-roster (fetch.AppStreamLoggedOut). Log
+                # back in once (twice at most per run) and redo this office;
+                # without it every office after the expiry failed (10/19).
+                if relogins < 2:
+                    try:
+                        tok = fetch.relogin(page)
+                        relogins += 1
+                        queue.insert(0, (oid, name))
+                        continue
+                    except Exception as e2:  # noqa: BLE001
+                        e = e2
+                failures.append((oid, name, _headline(e)))
+                print("  FAIL %-38s %s" % (name, _headline(e)[:70]), flush=True)
             except Exception as e:  # noqa: BLE001 — one office must not kill the run
                 failures.append((oid, name, _headline(e)))
                 print("  FAIL %-24s %s" % (name, _headline(e)[:70]), flush=True)

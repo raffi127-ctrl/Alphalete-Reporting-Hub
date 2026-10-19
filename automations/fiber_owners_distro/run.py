@@ -208,6 +208,8 @@ def phase_post_all(xlsx: Path, edate: dt.datetime, dry_run: bool = True,
           f"targets: {', '.join(a for a, _ in targets)}")
 
     dep_index: Dict[str, dict] = {}          # canonical email -> combined departure
+    synced: List[str] = []
+    skipped: List[str] = []
     for account, group in targets:
         svc = contacts_write._service(account)
         grp = contacts_write.find_group(svc, group)
@@ -219,6 +221,7 @@ def phase_post_all(xlsx: Path, edate: dt.datetime, dry_run: bool = True,
             else:
                 print(f"  {account}: group {group!r} not found — pass --create-group "
                       "to create it. Skipping this target.")
+                skipped.append(account)
                 continue
         plan = contacts_write.plan_sync(svc, grp, target, protect)
         print(f"  {account}: +{len(plan['add'])} add, "
@@ -227,6 +230,7 @@ def phase_post_all(xlsx: Path, edate: dt.datetime, dry_run: bool = True,
         if not dry_run:
             contacts_write.apply_adds(svc, grp, plan["add"])
             contacts_write.remove_members(svc, grp, plan["stale_duplicates"])
+            synced.append(account)
         for m in plan["true_departures"]:
             canons = {roster.canonical(e) for e in m["emails"]}
             hit = next((dep_index[c] for c in canons if c in dep_index), None)
@@ -254,6 +258,12 @@ def phase_post_all(xlsx: Path, edate: dt.datetime, dry_run: bool = True,
             "candidates": posted["candidates"]}, indent=2), encoding="utf-8")
         print(f"  posted {len(posted['candidates'])} ICD line(s) w/ ✅/❌ across "
               f"{len(targets)} list(s); window open 24h.")
+    if not dry_run:
+        # The delivery proof `verify: manifest` reads. Without it a clean run
+        # left its corrections thread open forever (2026-10-17 → 10/19).
+        from automations.shared.run_manifest import write_manifest
+        write_manifest("fiber_owners_distro_post", failed=skipped,
+                       succeeded=synced, ok=bool(synced) and not skipped)
     return 0
 
 

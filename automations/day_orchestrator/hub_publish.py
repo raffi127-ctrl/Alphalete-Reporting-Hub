@@ -599,17 +599,55 @@ def ran_ok_today(report_id: str, day: str = "") -> bool:
         card = hub_card_id(report_id)
         if not card:
             return False
+        # A SHARED card answers for a sibling too (2026-10-15): dd_week_roll
+        # publishes to the dd_populate card, so its 9:21 success read as
+        # "dd_populate already ran" and the noon backstop adopted a DONE for a
+        # report that never ran — the DD Bulletin then built on an empty week
+        # ($0 headline). On a shared card only a row under THIS report's own
+        # name counts; no known name answers False (never invent a DONE).
+        want_name = None
+        if _card_shared(report_id, card):
+            want_name = _display_name(report_id)
+            if not want_name:
+                return False
         day = day or _dt.date.today().isoformat()
         for r in _ws().get_all_records():
             if str(r.get("Report ID") or "").strip() != card:
                 continue
             if not str(r.get("Started At") or "").startswith(day):
                 continue
+            if (want_name is not None and
+                    _name_key(r.get("Report Name")) != _name_key(want_name)):
+                continue
             if str(r.get("Status") or "").strip().lower() in ("success", "done"):
                 return True
     except Exception:  # noqa: BLE001 — never let a lookup change a verdict
         return False
     return False
+
+
+def _card_shared(report_id: str, card: str) -> bool:
+    """Does another report publish to `card` as well?"""
+    if any(c == card and rid != report_id for rid, c in _HUB_CARD.items()):
+        return True
+    # The card is named after a DIFFERENT report that publishes to it itself.
+    return card != report_id and _display_name(card) is not None
+
+
+def _name_key(name) -> str:
+    """Letters + digits only: b2b_metrics' own agent publishes "B2B Metrics →
+    office channels" while the config says "->"; both must read as one name."""
+    return "".join(ch for ch in str(name or "").lower() if ch.isalnum())
+
+
+def _display_name(report_id: str):
+    """The name the orchestrator publishes `report_id` under, or None."""
+    try:
+        from automations.day_orchestrator import registry
+        rep = registry.resolve_report(registry.load_config(), report_id)
+        return (rep.display_name or "").strip() or None if rep else None
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _find_open_row_for_card(ws, card: str, report_name: str = ""):

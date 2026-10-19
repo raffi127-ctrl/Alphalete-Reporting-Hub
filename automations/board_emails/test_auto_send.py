@@ -321,5 +321,30 @@ class PureTest(unittest.TestCase):
         self.assertFalse(A.is_on(THU, enabled=False))
 
 
+class CloseOlderHolds(unittest.TestCase):
+    """A clean send closes EARLIER days' held threads too (Megan 2026-10-19:
+    10/17 + 10/18 sat open after the 10/19 email went out clean)."""
+
+    def test_closes_today_and_older_not_newer(self):
+        from unittest import mock
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "org").mkdir()
+            for day in ("2026-10-17", "2026-10-18", "2026-10-19", "2026-10-20"):
+                (root / "org" / f"{day}.alerted").write_text("")
+            closed = []
+            from automations.shared import incident_thread as it
+            with mock.patch.object(A, "STATE_DIR", root), \
+                    mock.patch.object(it, "ensure_closed",
+                                      side_effect=lambda k, **kw: closed.append(k) or True):
+                A._close(A.ORG, dt.date(2026, 10, 19))
+            self.assertEqual(closed, ["board-autosend-org-2026-10-17",
+                                      "board-autosend-org-2026-10-18",
+                                      "board-autosend-org-2026-10-19"])
+            left = sorted(p.name for p in (root / "org").iterdir())
+            self.assertEqual(left, ["2026-10-20.alerted"])
+
+
 if __name__ == "__main__":
     unittest.main()
