@@ -55,7 +55,9 @@ ICD_LIST_COLUMN = 22  # col V
 # name here finds the matching tab. Each captain owns their tab's col V
 # list — add a name here to include that captain's tab in the run.
 DAILY_FOCUS_SPREADSHEET_ID = "11FRYGG1hvuxcbWiYtDv7LzVss6ujZE_SOpqfhrQrVAo"
-CAPTAINSHIPS = ["Raf", "Carlos", "Sahil Multani", "Chan Park", "Jose Antonio Chavez",
+# "Carlos" out 2026-10-19 (Eve): no longer a B2B captain. His tab stays in
+# the Sheet as it was; it just stops filling.
+CAPTAINSHIPS = ["Raf", "Sahil Multani", "Chan Park", "Jose Antonio Chavez",
                 "Colten Wright", "Jairo Ruiz"]
 DEFAULT_CAPTAINSHIP = "Raf"
 

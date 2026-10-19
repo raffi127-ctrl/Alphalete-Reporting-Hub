@@ -253,6 +253,12 @@ _RETIRED: frozenset = frozenset({
     "carlos_captainship_headcount_mon",
     "carlos-bonus-projection",
     "carlos_bonus_projection",
+    # Captainship Boards Daily Fill (the owner boards of Carlos's B2B
+    # captainship). Eve, 2026-10-19: Carlos is no longer a B2B captain and
+    # asked for everything of his captainship to stop. on_scheduler:false +
+    # weekdays [] in schedule_config. Both spellings as above.
+    "captainship-boards",
+    "captainship_boards",
     # Car-Rides Cleanup. Carlos, 2026-09-29: "can we turn it off for now
     # please". PAUSED, not deleted: the Lucy 2 LaunchAgent was removed via
     # `lucy rerun install_car_rides_agent --remove`; cadence weekdays [] in
