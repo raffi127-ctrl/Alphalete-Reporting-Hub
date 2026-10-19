@@ -1368,6 +1368,23 @@ def main(argv: list[str] | None = None) -> int:
                 flog(f"DOWNLINE {wklbl}: {len(t2) - 1} rows")
                 oi = h2.index("cl.ICD Owner Name") if "cl.ICD Owner Name" in h2 else 1
                 si = h2.index("Sales Rep") if "Sales Rep" in h2 else 2
+                from collections import defaultdict as _dd2
+                osum = _dd2(float)
+                for r in t2[1:]:
+                    if "Total $" not in " ".join(str(x) for x in r):
+                        continue
+                    if str(r[si]).strip() != "Total" and "Total" not in str(
+                            r[3] if len(r) > 3 else ""):
+                        continue
+                    own = str(r[oi]).strip() if len(r) > oi else "?"
+                    for cell in r[7:]:
+                        try:
+                            osum[own] += float(str(cell).replace("$", "")
+                                               .replace(",", "") or 0)
+                        except ValueError:
+                            pass
+                for own, amt in sorted(osum.items(), key=lambda kv: -kv[1])[:15]:
+                    flog(f"  OWNERTOTAL {wklbl} | {own}: ${amt:,.2f}")
                 for r in t2[1:]:
                     rep = str(r[si]).strip() if len(r) > si else ""
                     if _on_allowlist(rep) and "Total" in " ".join(
