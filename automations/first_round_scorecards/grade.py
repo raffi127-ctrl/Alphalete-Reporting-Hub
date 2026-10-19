@@ -107,6 +107,9 @@ OFFICES = {
     "Juan Botero": dict(_STD_PAY, schedule_check="Would that schedule work for you?",
                         schedule="The schedule is Monday through Friday, from 10:00AM to "
                                  "8:30PM, Saturdays 9:00AM to 6:00PM."),
+    # 2026-10-19 (Camila): Omar's script (Kalkan Marketing, 24153) is Rafael's word
+    # for word -- same pay, 40 hrs + Saturdays, call before 5pm, attire + notebook
+    "Omar Mohammad": {},
     # 2026-10-09: Tre's new script (Eve) -- no pay, 40 hrs + Saturdays, North Houston
     "Tre Mitchell": {"format": "tre"},
     # Scripts shaped differently from Rafael's -- see FORMATS below.

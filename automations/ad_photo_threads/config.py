@@ -318,6 +318,13 @@ _MORE = [
      "C0C69Q2QWF4", "C0C7T8SMSSJ", r"first\s*round\s*thread"),
     ("george", "George Delgado", SOUTH_SHORE, "George Delgado", "22477", "Skyline Elite, Inc.",
      "C0C81LUN0KS", "C0C7X614BPB", r"first\s*round\s*thread"),
+    # Omar Mohammad (Camila 10/19), office in Dearborn MI. Interviewers post
+    # "*KALKAN MARKETING - 10/08 - 1st Rounds*" every day since 10/7; the
+    # "KALKAN MARKETING - EOD - INTERVIEWERS REPORT" after doesn't match.
+    # Photos channel #indeed-photos-omar-mohammads-office created 10/19 (Lucy +
+    # Lucy Reporting invited).
+    ("omar", "Omar Mohammad", ARS_M_TO_Q, "Omar Mohammad", "24153", "Kalkan Marketing",
+     "C0C6HKZ63EK", "C0C9X8Y56R5", r"kalkan\s*marketing\s*-\s*\d.*1st\s*round"),
 ]
 
 # Zones the office_tz table (knocks, by owner name) can't place, cross-checked
@@ -332,6 +339,7 @@ _TZ = {
     "ryan": "America/Chicago",         # ads: Arlington / Plano / Dallas, TX
     "jairo": "America/New_York",       # ads: Miami / Kendall Lakes, FL
     "george": "America/New_York",      # ads: Fort Myers / Lehigh Acres, FL
+    "omar": "America/Detroit",         # ads: Dearborn, MI (slots in EST)
 }
 
 # Offices whose channel is loaded 9/14 onward, checked and pinned; the rest
