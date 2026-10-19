@@ -217,6 +217,26 @@ for s in "${STEPS[@]}"; do
     [ $RC -ne 0 ] && FAILED+=("$s")
 done
 
+# THE CHAIN'S OWN ACCOUNT OF WHAT IT DID (2026-10-19). Without a manifest a
+# clean chain could never prove it delivered, so delivery_check answered
+# "unknown" and standalone-recruiting-chain stranded open every time (10/7,
+# 10/10, 10/15). The steps already exit non-zero on a partial pass (ad sales
+# rc=2), so the per-step result IS the delivery record. Written BEFORE
+# _publish, because _publish is what asks delivery_check whether to close.
+if [ "$PUBLISH" -eq 1 ]; then
+    OK_STEPS=()
+    for s in "${STEPS[@]}"; do
+        case " ${FAILED[*]:-} " in *" $s "*) ;; *) OK_STEPS+=("$s") ;; esac
+    done
+    "$VENV_PY" -c "import sys
+from automations.shared.run_manifest import write_manifest
+f = [x for x in sys.argv[1].split(',') if x]
+ok = [x for x in sys.argv[2].split(',') if x]
+write_manifest('recruiting_chain', failed=f, succeeded=ok)" \
+        "$(IFS=,; echo "${FAILED[*]:-}")" "$(IFS=,; echo "${OK_STEPS[*]:-}")" \
+        >> "$LOG" 2>&1 || true
+fi
+
 if [ "${#FAILED[@]}" -gt 0 ]; then
     echo "[$(date)] recruiting-chain FINISHED with ${#FAILED[@]} failure(s): ${FAILED[*]}" | tee -a "$LOG"
     _publish failed
