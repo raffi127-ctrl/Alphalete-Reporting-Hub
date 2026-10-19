@@ -1350,6 +1350,7 @@ def main(argv: list[str] | None = None) -> int:
         # WHO was credited for the allowlist reps' paid lines each week.
         from automations.alphalete_org_report.opt_nds import (ORG_DD_URL as _DLURL,
                                                               ORG_DD_SHEET as _DLSHEET)
+        _allreps = []
         for wklbl in ("10/3/2026", "10/10/2026"):
             out2 = REPO_ROOT / "output" / "vantura_payroll" / (
                 "downline_dd_" + wklbl.replace("/", "-") + ".csv")
@@ -1386,6 +1387,23 @@ def main(argv: list[str] | None = None) -> int:
                 for own, amt in sorted(osum.items(), key=lambda kv: -kv[1])[:15]:
                     flog(f"  OWNERTOTAL {wklbl} | {own}: ${amt:,.2f}")
                 for r in t2[1:]:
+                    joined = " ".join(str(x) for x in r)
+                    if "Total $" not in joined:
+                        continue
+                    rep = str(r[si]).strip() if len(r) > si else ""
+                    sa = str(r[3]).strip() if len(r) > 3 else ""
+                    if not rep or rep == "Total" or sa != "Total":
+                        continue
+                    own = str(r[oi]).strip() if len(r) > oi else "?"
+                    amt = 0.0
+                    for cell in r[7:]:
+                        try:
+                            amt += float(str(cell).replace("$", "")
+                                         .replace(",", "") or 0)
+                        except ValueError:
+                            pass
+                    _allreps.append([wklbl, rep, own, round(amt, 2)])
+                for r in t2[1:]:
                     rep = str(r[si]).strip() if len(r) > si else ""
                     if _on_allowlist(rep) and "Total" in " ".join(
                             str(x) for x in r[3:7]):
@@ -1407,7 +1425,16 @@ def main(argv: list[str] | None = None) -> int:
                 _tab = _ctl.add_worksheet("DD Probe", rows=400, cols=2)
             _tab.update([[ln] for ln in fp[:380]], "A1",
                         value_input_option="RAW")
-            _log(f"fiber-probe: {len(fp)} line(s) -> 'DD Probe' tab")
+            try:
+                _t2 = _ctl.worksheet("DD Reps")
+                _t2.clear()
+            except gspread.WorksheetNotFound:
+                _t2 = _ctl.add_worksheet("DD Reps", rows=2000, cols=4)
+            if _allreps:
+                _t2.update([["week", "rep", "owner", "total"]]
+                           + _allreps[:1900], "A1", value_input_option="RAW")
+            _log(f"fiber-probe: {len(fp)} line(s) -> 'DD Probe'; "
+                 f"{len(_allreps)} rep totals -> 'DD Reps'")
         except Exception as _e:
             _log(f"fiber-probe: tab write failed ({_e!r})")
         return 0
