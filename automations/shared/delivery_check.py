@@ -266,10 +266,11 @@ def _last_failed_at(report_id: str, day: dt.date) -> dt.datetime:
         return start
 
 
-# OFF until Megan/Raf say go (2026-10-19). While off, the ledger is still
-# written and still READ — the "can't confirm" line names the delivery it saw —
-# so the evidence can be checked against the channel before it closes anything.
-LEDGER_CLOSES = False
+# ON since 2026-10-19 (Megan: "we need to fix EVERYTHING"). The ledger closes a
+# ticket only when nothing better has an opinion (no phase count, verify,
+# manifest or post-watch) and only on a delivery made after the last failure.
+# Set False to go back to "names the delivery it saw, stays open".
+LEDGER_CLOSES = True
 
 
 def _from_ledger(report_id: str, day: dt.date) -> Optional[Tuple[str, str]]:
