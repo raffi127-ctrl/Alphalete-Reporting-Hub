@@ -1336,6 +1336,33 @@ def main(argv: list[str] | None = None) -> int:
                 flog(f"   Pay eligibility: {dict(pay.most_common(5))}")
                 flog(f"   Bonus Eligible $: ${amt:,.2f}")
             flog(f"ALLOWLIST TOTAL Bonus Eligible $: ${money:,.2f}")
+            for rep in sorted(per):
+                rrows = [r for r in mine
+                         if str(r.get("Rep", "")).strip() == rep]
+                ddates = Counter(str(r.get("cl.DD Date", "")).strip() or "-"
+                                 for r in rrows
+                                 if str(r.get("Pay Eligibility", "")).strip()
+                                 == "Already Paid")
+                if ddates:
+                    flog(f"PAYWEEK {rep}: {dict(ddates.most_common(8))}")
+        # Per-rep deposit dollars: the org DOWNLINEVIEW grid (every campaign,
+        # each rep as their own ICD line) — the canonical DD per opt_nds.
+        from automations.alphalete_org_report.opt_nds import (ORG_DD_URL as _DLURL,
+                                                              ORG_DD_SHEET as _DLSHEET)
+        out2 = REPO_ROOT / "output" / "vantura_payroll" / "downline_dd.csv"
+        if out2.exists():
+            out2.unlink()
+        try:
+            download_crosstab_patchright(_DLURL, _DLSHEET, out2)
+            t2 = read_crosstab(out2)
+            h2 = [str(x).strip() for x in t2[0]]
+            flog(f"DOWNLINE DD: {len(t2) - 1} rows; cols: {h2}")
+            for r in t2[1:]:
+                joined = " ".join(str(x) for x in r[:3])
+                if _on_allowlist(joined):
+                    flog("  DL | " + " | ".join(str(x)[:26] for x in r))
+        except Exception as e2:  # noqa: BLE001
+            flog(f"DOWNLINE DD pull failed: {str(e2)[:140]}")
         try:
             import gspread
             from automations.recruiting_report import fill as _f
