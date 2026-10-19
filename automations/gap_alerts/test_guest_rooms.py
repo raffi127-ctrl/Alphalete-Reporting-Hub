@@ -21,7 +21,25 @@ from automations.gap_alerts import run as R
 DAY = dt.date(2026, 9, 25)
 GUEST = "Carlos Hidalgo"
 
-RAF = next(c for c in C.OFFICES if c["key"] == "rafael")
+# THE ROOMS AS THEY WERE WIRED (Fiber, until 2026-10-19). Production now has
+# Carlos's guest rooms EMPTY (his crew moved to NDS on his own Ownerville),
+# so these tests pin the guest-room mechanics on a fixture rather than on
+# the live config.
+RAF = dict(C.RAF, guest_teams={"Carlos Hidalgo": "Fiber"}, guests={
+    "Carlos Hidalgo": [
+        {"kind": "imessage", "name": "NEW A Players", "cadence_min": 15,
+         "board_every_min": 60, "start": "14:00", "sat_start": "10:30",
+         "stop": "21:00", "sat_stop": "17:30"},
+        {"kind": "imessage", "name": "ATT B2B Leaders", "cadence_min": 15,
+         "board_every_min": 60, "start": "14:00", "sat_start": "10:30",
+         "stop": "21:00", "sat_stop": "17:30"},
+        {"kind": "slack", "channel_id": "C07J46MQNUX",
+         "name": "#alphalete-gp-sales", "title": "Fiber Knocks Board",
+         "gaps_thread_title": "Fiber 15 Min Gaps",
+         "board_thread_title": "Fiber Knocks Board",
+         "cadence_min": 15, "board_every_min": 60,
+         "start": "14:00", "sat_start": "10:30", "stop": "21:00",
+         "sat_stop": "17:30"}]})
 HOST_ROWS = [{"Rep": "Hank Tran"}, {"Rep": "Andrew Sanborn"}]
 GUEST_ROWS = [{"Rep": "Christian Perez"}, {"Rep": "Nicholas Smedra"}]
 GAPS = [{"name": "Hank Tran", "minutesSinceLastKnock": 40},

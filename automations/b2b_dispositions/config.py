@@ -166,6 +166,11 @@ TEXT_ROUTES = {
     # ON (Carlos 2026-09-29): the Box gaps card texts Box B2B every run.
     (CAMPAIGN_BOX, POST_GAPS): [TEXT_GROUP_BOX],
     (CAMPAIGN_ATT, POST_GAPS): [],
+    # NDS (RES AT&T OOF) board + gaps from automations/nds_oof (Carlos
+    # 2026-10-19): his crew's two rooms. The manifests ride this module's
+    # text handoff, so the routes live here.
+    ("RES AT&T OOF", "nds_board"): [TEXT_GROUP_ALL, TEXT_GROUP_ATT],
+    ("RES AT&T OOF", "nds_gaps"): [TEXT_GROUP_ALL, TEXT_GROUP_ATT],
 }
 
 # Seconds to wait after handing Messages an image. TdB proved a group image send

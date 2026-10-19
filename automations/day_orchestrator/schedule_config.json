@@ -13618,6 +13618,51 @@
     "type": "not_configured"
    }
   },
+  "nds_oof": {
+    "on_scheduler": false,
+    "machine": "Lucy 2",
+    "standalone_weekdays": [0, 1, 2, 3, 4, 5],
+    "_note": "NDS (RES AT&T OOF) knocks board + 15-min gaps + call-outs for Carlos's crew, from HIS Ownerville on Lucy 2 (Carlos 2026-10-19; replaces the Fiber reports off Raf's login). Slack: 'NDS Knocks Board' / 'NDS 15 Min Gaps' threads in #alphalete-gp-sales; texts to NEW A Players + ATT B2B Leaders via the b2b_dispositions manifest handoff. Real schedule = com.alphalete.nds-oof (every 15 min; code gates Mon-Fri 2-9pm, Sat 10:30-5:30). Dry-runs by default; --send is the only flag that posts.",
+    "display_name": "NDS Knocks + Gaps (Carlos's crew, OOF)",
+    "source_type": "api",
+    "data_sources": [],
+    "command": [
+      "automations.nds_oof.run"
+    ],
+    "base_args": [],
+    "cadence": {
+      "weekdays": [],
+      "not_before": "14:00"
+    },
+    "priority": "P3",
+    "freshness_target": null,
+    "depends_on": [],
+    "timeout_minutes": 20,
+    "verify": null
+  },
+  "install_nds_oof_agent": {
+    "on_scheduler": false,
+    "_off_scheduler_note": "Install/refresh com.alphalete.nds-oof on LUCY 2 (every 15 min, deploy/nds_oof.sh --send). install_agent only rewrites and reloads the plist.",
+    "machine": "Lucy 2",
+    "display_name": "Install NDS Knocks + Gaps agent (Lucy 2)",
+    "source_type": "local",
+    "data_sources": [],
+    "command": [
+      "automations.day_orchestrator.install_agent"
+    ],
+    "base_args": [
+      "nds-oof"
+    ],
+    "cadence": {
+      "weekdays": []
+    },
+    "priority": "P3",
+    "freshness_target": null,
+    "depends_on": [],
+    "verify": {
+      "type": "not_configured"
+    }
+  },
   "remove_b2b_dispositions_final_agent": {
    "on_scheduler": false,
    "_off_scheduler_note": "Unload + delete com.alphalete.b2b-dispositions-final on LUCY 2 (retired 2026-09-29: Carlos moved everything to one 6pm post, which the -hourly agent now does). Leaving it loaded would post a second time at 7pm.",

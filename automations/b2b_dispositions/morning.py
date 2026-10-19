@@ -51,7 +51,7 @@ CHANNEL = "C07J46MQNUX"                      # #alphalete-gp-sales
 # b2b_dispositions-style threads: "<prefix> M/D/YY"
 DAY_THREADS = [cfg.THREAD_HOURLY, cfg.THREAD_GAPS, cfg.THREAD_DISPOSITIONS]
 # shared-style threads: "<prefix> — Month Dth YYYY" (what Lucy 1 looks up)
-NAMED_THREADS = ["Box Knocks Board", "Fiber Knocks Board", "Fiber 15 Min Gaps"]
+NAMED_THREADS = ["Box Knocks Board", "NDS Knocks Board", "NDS 15 Min Gaps"]
 # Old thread names still in the room today -> retitled in place rather than
 # left as an empty twin (Carlos 2026-10-03: "you just posted something called
 # hourly activity with nothing in it").
@@ -62,7 +62,7 @@ BOX_BOARD_THREAD = "Box Knocks Board"
 # Order of the parents in the room, top to bottom.
 ORDER = [("named", BOX_BOARD_THREAD), ("day", cfg.THREAD_DISPOSITIONS),
          ("day", cfg.THREAD_HOURLY), ("day", cfg.THREAD_GAPS),
-         ("named", "Fiber Knocks Board"), ("named", "Fiber 15 Min Gaps")]
+         ("named", "NDS Knocks Board"), ("named", "NDS 15 Min Gaps")]
 ALL_PREFIXES = DAY_THREADS + NAMED_THREADS + list(RENAMED)
 
 
@@ -101,7 +101,7 @@ def _ensure_named_parent(prefix: str, today: dt.date, log) -> Optional[str]:
     return out.get("thread_ts")
 
 
-FIBER_BOARD_THREAD = "Fiber Knocks Board"
+FIBER_BOARD_THREAD = "NDS Knocks Board"   # was Fiber; NDS since 2026-10-19
 
 
 def _yesterday_box_board(client, yday: dt.date, log) -> Optional[Path]:
@@ -237,7 +237,7 @@ def run(today: Optional[dt.date] = None, *, send: bool, log=print) -> int:
     # have all of yesterdays?").
     try:
         if FIBER_BOARD_THREAD in _OPENED and parents.get(FIBER_BOARD_THREAD):
-            _post_yesterday(client, yday, FIBER_BOARD_THREAD, "Fiber Knocks Board",
+            _post_yesterday(client, yday, FIBER_BOARD_THREAD, "NDS Knocks Board",
                             parents[FIBER_BOARD_THREAD], log)
     except Exception as e:  # noqa: BLE001
         log("  yesterday's Fiber board skipped: %s: %s" % (type(e).__name__, str(e)[:120]))
