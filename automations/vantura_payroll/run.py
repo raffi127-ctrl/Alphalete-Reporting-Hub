@@ -1247,6 +1247,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--raf-test", action="store_true",
                     help="ONLY pull the Raf-owner DD slice and print what the "
                          "allowlist reps brought in. Never writes.")
+    ap.add_argument("--fiber-probe", action="store_true",
+                    help="ONLY pull the org-wide D2D ORDERLOG (SalesBoard"
+                         "Original, the fiber order log) for sales since 9/28 "
+                         "and dump the 16 allowlist reps' orders + statuses "
+                         "to the 'DD Probe' tab. Never writes boards.")
     ap.add_argument("--dd-diff", action="store_true",
                     help="ONLY pull a fresh personal DD crosstab and diff it "
                          "against the week's loaded RAW block (totals, "
@@ -1270,6 +1275,63 @@ def main(argv: list[str] | None = None) -> int:
         resp = requests.get(url, params={"action": "refresh"}, timeout=600)
         resp.raise_for_status()
         _log(f"refresh -> {resp.text[:200]}")
+        return 0
+
+    if args.fiber_probe:
+        from collections import Counter
+        from automations.scheduled_6_days_out.pull import ALLREPS_VIEW_URL_TMPL, WORKSHEET
+        from automations.shared.tableau_patchright import download_crosstab_patchright
+        from automations.override_bulletin.pulls import read_crosstab
+        fp = []
+
+        def flog(msg):
+            _log(msg)
+            fp.append(str(msg))
+
+        end = dt.date.today()
+        start = dt.date(2026, 9, 28)
+        url = ALLREPS_VIEW_URL_TMPL.format(start=start.isoformat(),
+                                           end=end.isoformat())
+        out = REPO_ROOT / "output" / "vantura_payroll" / "fiber_orderlog.csv"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        if out.exists():
+            out.unlink()
+        download_crosstab_patchright(url, WORKSHEET, out)
+        table = read_crosstab(out)
+        if not table or len(table) < 2:
+            flog("fiber-probe: EMPTY crosstab")
+        else:
+            hdr = [str(h).strip() for h in table[0]]
+            flog(f"fiber-probe: {len(table) - 1} rows, sales {start}..{end}")
+            for _i in range(0, len(hdr), 6):
+                flog("  col[%02d]: %s" % (_i, " | ".join(hdr[_i:_i + 6])))
+            ri = hdr.index("Rep") if "Rep" in hdr else 1
+            rows = [dict(zip(hdr, r)) for r in table[1:]]
+            mine = [r for r in rows
+                    if _on_allowlist(str(r.get("Rep", "")).strip())]
+            flog(f"allowlist reps' orders: {len(mine)}")
+            per = Counter(str(r.get("Rep", "")).strip() for r in mine)
+            for rep, n in per.most_common(20):
+                flog(f"  {rep}: {n} order(s)")
+            keys = [k for k in hdr if k and len(k) < 40][:14]
+            for r in mine[:80]:
+                flog("  | " + " | ".join(
+                    f"{str(r.get(k, ''))[:24]}" for k in keys))
+        try:
+            import gspread
+            from automations.recruiting_report import fill as _f
+            _ctl = _f._client().open_by_key(
+                "1eJ3-BeOvbGaWV5XZ8BNgJT9QrgbaToAf9W2PdMABTAw")
+            try:
+                _tab = _ctl.worksheet("DD Probe")
+                _tab.clear()
+            except gspread.WorksheetNotFound:
+                _tab = _ctl.add_worksheet("DD Probe", rows=400, cols=2)
+            _tab.update([[ln] for ln in fp[:380]], "A1",
+                        value_input_option="RAW")
+            _log(f"fiber-probe: {len(fp)} line(s) -> 'DD Probe' tab")
+        except Exception as _e:
+            _log(f"fiber-probe: tab write failed ({_e!r})")
         return 0
 
     if args.dd_diff:
