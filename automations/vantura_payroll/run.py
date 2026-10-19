@@ -1346,23 +1346,38 @@ def main(argv: list[str] | None = None) -> int:
                 if ddates:
                     flog(f"PAYWEEK {rep}: {dict(ddates.most_common(8))}")
         # Per-rep deposit dollars: the org DOWNLINEVIEW grid (every campaign,
-        # each rep as their own ICD line) — the canonical DD per opt_nds.
+        # each rep as their own ICD line), pinned per DD week so we can see
+        # WHO was credited for the allowlist reps' paid lines each week.
         from automations.alphalete_org_report.opt_nds import (ORG_DD_URL as _DLURL,
                                                               ORG_DD_SHEET as _DLSHEET)
-        out2 = REPO_ROOT / "output" / "vantura_payroll" / "downline_dd.csv"
-        if out2.exists():
-            out2.unlink()
-        try:
-            download_crosstab_patchright(_DLURL, _DLSHEET, out2)
-            t2 = read_crosstab(out2)
-            h2 = [str(x).strip() for x in t2[0]]
-            flog(f"DOWNLINE DD: {len(t2) - 1} rows; cols: {h2}")
-            for r in t2[1:]:
-                joined = " ".join(str(x) for x in r[:3])
-                if _on_allowlist(joined):
-                    flog("  DL | " + " | ".join(str(x)[:26] for x in r))
-        except Exception as e2:  # noqa: BLE001
-            flog(f"DOWNLINE DD pull failed: {str(e2)[:140]}")
+        for wklbl in ("10/3/2026", "10/10/2026"):
+            out2 = REPO_ROOT / "output" / "vantura_payroll" / (
+                "downline_dd_" + wklbl.replace("/", "-") + ".csv")
+            if out2.exists():
+                out2.unlink()
+            try:
+                u = _DLURL.replace("?:iid=1",
+                                   "?cl.DD%20Date=" + wklbl.replace("/", "%2F")
+                                   + "&:iid=1")
+                download_crosstab_patchright(u, _DLSHEET, out2)
+                t2 = read_crosstab(out2)
+                if not t2 or len(t2) < 2:
+                    flog(f"DOWNLINE {wklbl}: EMPTY (filter may have reset)")
+                    continue
+                h2 = [str(x).strip() for x in t2[0]]
+                flog(f"DOWNLINE {wklbl}: {len(t2) - 1} rows")
+                oi = h2.index("cl.ICD Owner Name") if "cl.ICD Owner Name" in h2 else 1
+                si = h2.index("Sales Rep") if "Sales Rep" in h2 else 2
+                for r in t2[1:]:
+                    rep = str(r[si]).strip() if len(r) > si else ""
+                    if _on_allowlist(rep) and "Total" in " ".join(
+                            str(x) for x in r[3:7]):
+                        if "Total $" in " ".join(str(x) for x in r):
+                            own = str(r[oi]).strip() if len(r) > oi else "?"
+                            amts = [str(x) for x in r[7:] if str(x).strip()]
+                            flog(f"  {wklbl} | {rep} | owner {own} | {amts}")
+            except Exception as e2:  # noqa: BLE001
+                flog(f"DOWNLINE {wklbl} pull failed: {str(e2)[:140]}")
         try:
             import gspread
             from automations.recruiting_report import fill as _f
