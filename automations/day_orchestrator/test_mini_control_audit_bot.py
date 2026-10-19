@@ -23,10 +23,11 @@ class AuditBotWindow(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.home = Path(self.tmp.name)
-        self.rt = self.home / "2nd-rd-audits" / ".runtime"
+        self.rt = self.home / "2nd-rd-audits"
         (self.rt / "inbox").mkdir(parents=True)
-        (self.rt / "watcher.log").write_text("line1\nTraceback: boom\n")
-        (self.rt / ".env").write_text("SLACK_BOT_TOKEN=xoxb-secret\n")
+        (self.rt / ".runtime").mkdir()
+        (self.rt / ".runtime" / "watcher.log").write_text("line1\nTraceback: boom\n")
+        (self.rt / ".runtime" / ".env").write_text("SLACK_BOT_TOKEN=xoxb-secret\n")
         (self.rt / "inbox" / "poison.mp4").write_bytes(b"\0" * 10)
         p = mock.patch.object(mc.Path, "home", return_value=self.home)
         p.start()
@@ -48,14 +49,14 @@ class AuditBotWindow(unittest.TestCase):
         self.assertIn("poison.mp4", dump)
 
     def test_peek_copies_log(self):
-        ok, msg = mc._action_audit_bot_peek("watcher.log")
+        ok, msg = mc._action_audit_bot_peek(".runtime/watcher.log")
         self._track(msg)
         self.assertTrue(ok, msg)
         stem = msg.split("logtail ")[1].split()[0]
         self.assertIn("Traceback: boom", (LOGS / f"{stem}.log").read_text())
 
     def test_peek_refuses_secrets_and_escapes(self):
-        self.assertFalse(mc._action_audit_bot_peek(".env")[0])
+        self.assertFalse(mc._action_audit_bot_peek(".runtime/.env")[0])
         self.assertFalse(mc._action_audit_bot_peek("../../.ssh/id_ed25519")[0])
 
     def test_quarantine_moves_never_deletes(self):

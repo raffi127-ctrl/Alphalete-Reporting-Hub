@@ -1698,8 +1698,8 @@ def _action_peek(args: str) -> tuple[bool, str]:
 
 
 # --- Raf's 2nd-round interview audit bot (Lucy 1) ------------------------------
-# The bot lives OUTSIDE the repo (~/2nd-rd-audits/.runtime, Colten's copy in
-# ~/2nd-rd-audits-colten/.runtime), so peek/logtail can't see it and SSH only
+# The bot lives OUTSIDE the repo (~/2nd-rd-audits, Colten's copy in
+# ~/2nd-rd-audits-colten), so peek/logtail can't see it and SSH only
 # works from the office LAN. On 2026-10-19 its audit watcher crash-looped all
 # night while Megan was off-site and the queue was the only way in. These three
 # give the queue a window into that folder: list it, copy a file into
@@ -1709,11 +1709,12 @@ _AUDIT_BOT_SECRET_RE = re.compile(r"(^|/)\.env|token|secret|credential|key",
 
 
 def _audit_bot_root(parts: list) -> tuple[Path, list, str]:
-    """Pop an optional leading `colten` and return (runtime root, rest, label)."""
+    """Pop an optional leading `colten` and return (bot folder, rest, label)."""
+    # The WHOLE bot folder, not just .runtime: the audio queue (inbox/,
+    # processed/) sits beside .runtime, and the poison file is in inbox/.
     if parts and parts[0].lower() == "colten":
-        return (Path.home() / "2nd-rd-audits-colten" / ".runtime", parts[1:],
-                "colten")
-    return Path.home() / "2nd-rd-audits" / ".runtime", parts, "raf"
+        return Path.home() / "2nd-rd-audits-colten", parts[1:], "colten"
+    return Path.home() / "2nd-rd-audits", parts, "raf"
 
 
 def _audit_bot_path(root: Path, raw: str) -> Path | None:
@@ -1739,7 +1740,7 @@ def _action_audit_bot_ls(args: str) -> tuple[bool, str]:
     """READ-ONLY: list a folder of the audit bot (newest first) plus its running
     watcher processes, into output/logs for `logtail`.
 
-      audit_bot_ls                 Raf's .runtime folder
+      audit_bot_ls                 Raf's bot folder
       audit_bot_ls inbox           a subfolder
       audit_bot_ls colten inbox    Colten's copy"""
     root, rest, label = _audit_bot_root(shlex.split(args or ""))
@@ -1781,11 +1782,11 @@ def _action_audit_bot_peek(args: str) -> tuple[bool, str]:
     `logtail` can read it. Secrets files (.env, tokens, keys) are refused. A
     file over 4 MB is copied as its LAST 4 MB (a log's end is what matters).
 
-      audit_bot_peek watcher.log
-      audit_bot_peek colten heartbeat.log"""
+      audit_bot_peek .runtime/watcher.log
+      audit_bot_peek colten .runtime/heartbeat.log"""
     root, rest, label = _audit_bot_root(shlex.split(args or ""))
     if not rest:
-        return False, "usage: audit_bot_peek [colten] <file under .runtime>"
+        return False, "usage: audit_bot_peek [colten] <file under the bot folder>"
     raw = rest[0]
     if _AUDIT_BOT_SECRET_RE.search(raw):
         return False, f"refused: {raw!r} looks like a secrets file"
@@ -1808,7 +1809,7 @@ def _action_audit_bot_peek(args: str) -> tuple[bool, str]:
 
 
 def _action_audit_bot_quarantine(args: str) -> tuple[bool, str]:
-    """MOVE one file out of the audit bot's way into .runtime/failed/ — the fix
+    """MOVE one file out of the audit bot's way into <bot folder>/failed/ — the fix
     for a poison inbox file the watcher re-audits (and dies on) every pass.
     Never deletes, never overwrites: a name already in failed/ is refused.
 
@@ -1816,7 +1817,7 @@ def _action_audit_bot_quarantine(args: str) -> tuple[bool, str]:
       audit_bot_quarantine colten inbox/<file>"""
     root, rest, label = _audit_bot_root(shlex.split(args or ""))
     if not rest:
-        return False, "usage: audit_bot_quarantine [colten] <file under .runtime>"
+        return False, "usage: audit_bot_quarantine [colten] <file under the bot folder>"
     raw = rest[0]
     src = _audit_bot_path(root, raw)
     if src is None:
