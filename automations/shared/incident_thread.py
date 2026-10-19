@@ -566,6 +566,10 @@ def _clear_in_progress(client, channel: str, ts: str) -> None:
         _react(client, channel, ts, r, remove=True)
 
 
+_HANDOFF_STAMP = REPO_ROOT / "output" / "state" / "close_stranded_handoff.stamp"
+_HANDOFF_EVERY_S = 15 * 60
+
+
 def _hand_off_stranded(key: str, ts: str, owner: str) -> None:
     """The parent edit was refused — ask the machine that OWNS the post to finish
     it, instead of leaving it for somebody to notice by hand.
@@ -584,10 +588,30 @@ def _hand_off_stranded(key: str, ts: str, owner: str) -> None:
               "`python -m automations.shared.incident_thread --close-stranded` "
               "there.".format(key, owner))
         return
+    # ONE PASS FIXES THEM ALL — so queue at most one per window (2026-10-19:
+    # 15 identical `incident_close_stranded` rows queued in two minutes when a
+    # non-Lucy machine closed a batch of tickets, and every one of them sat in
+    # the mini's serial queue in front of real work). close_stranded sweeps
+    # every stranded parent it owns, so the first job covers the rest.
+    stamp = _HANDOFF_STAMP
+    try:
+        import time as _t
+        if stamp.exists() and _t.time() - stamp.stat().st_mtime < _HANDOFF_EVERY_S:
+            print("  - {}: parent edit refused here; a close-stranded pass is "
+                  "already queued on the mini and will finish this one too "
+                  "({}).".format(key, ts))
+            return
+    except OSError:
+        pass
     try:
         from automations.day_orchestrator import mini_control as mc
         mc.enqueue("incident_close_stranded", "",
                    by="incident_thread-resolve", machine=mc.DEFAULT_MACHINE)
+        try:
+            stamp.parent.mkdir(parents=True, exist_ok=True)
+            stamp.write_text(key, encoding="utf-8")
+        except OSError:
+            pass
         print("  - {}: parent edit refused here; queued "
               "`incident_close_stranded` on the mini to finish the text "
               "({}).".format(key, ts))
@@ -2352,6 +2376,26 @@ def close_stranded(*, channel: str = CHANNEL, client=None,
                     out.setdefault("checked", []).append(key)
                     print("  {} ({}) — said RESOLVED with no check; ✅ put on"
                           .format(key, ts))
+            # THIRD DIRECTION (Raf 2026-10-19). Closed and wearing its ✅ — and
+            # still wearing a 🔴 "needs you" (or ⏳ / 🟣) beside it.
+            # standalone-ad-sales-board read ✅+🔴 all afternoon: triage graded
+            # it red, then a run on another box closed it and could not take
+            # off a mark it never put on. A closed ticket must read as plainly
+            # green, so take the leftovers off from here.
+            elif (mark.group("state") == "resolved"
+                    and DONE_REACTION in reactions
+                    and _days_open(mark.group("date"), day) <= max_age_days):
+                left = [r for r in (WORKING_REACTION, WAITING_REACTION,
+                                    NEEDS_HUMAN_REACTION) if r in reactions]
+                if left:
+                    key, ts = mark.group("key"), m.get("ts") or ""
+                    if dry_run:
+                        print("  DRY-RUN — would clear {} off {} ({})".format(
+                            ", ".join(left), key, ts))
+                    else:
+                        for r in left:
+                            _react(client, channel, ts, r, remove=True)
+                    out.setdefault("tidied", []).append(key)
             continue
         # The ✅ is the proof the fix landed. Without it this is just an open
         # incident, and closing it would erase a real problem from the board.

@@ -1404,6 +1404,54 @@ class AHumanCheckIsAClose(unittest.TestCase):
         self.assertEqual(again["ts"], first["ts"])
 
 
+class StrandedHandOffQueuesOnce(unittest.TestCase):
+    """One close-stranded pass finishes every stranded parent, so a batch of
+    refused edits queues ONE job, not one each (15 in two minutes, 2026-10-19)."""
+
+    def test_batch_queues_one_job(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        from automations.day_orchestrator import mini_control as mc
+        with mock.patch.object(inc, "_HANDOFF_STAMP",
+                               Path(tmp.name) / "handoff.stamp"), \
+                mock.patch.object(mc, "enqueue") as enq:
+            for i in range(5):
+                inc._hand_off_stranded("failure-r{}".format(i), "1.0",
+                                       inc.LUCY_USER_ID)
+        self.assertEqual(enq.call_count, 1)
+
+    def test_a_persons_post_is_never_queued(self):
+        from automations.day_orchestrator import mini_control as mc
+        with mock.patch.object(mc, "enqueue") as enq:
+            inc._hand_off_stranded("failure-r", "1.0", "U_SOMEONE")
+        enq.assert_not_called()
+
+
+class AClosedTicketReadsGreen(unittest.TestCase):
+    """✅ + 🔴 on one closed post: the sweep takes the leftover marks off."""
+
+    def setUp(self):
+        IncidentThreadTest.setUp(self)
+
+    def test_leftover_marks_cleared_on_resolved_post(self):
+        day = dt.date(2026, 10, 19)
+        self.c.posts.append((None, "*Ad Sales* — RESOLVED\n\n"
+                             + inc.marker("standalone-ad-sales-board", "resolved", day)))
+        self.c.reactions += [("1.0000", inc.DONE_REACTION),
+                             ("1.0000", inc.NEEDS_HUMAN_REACTION)]
+        out = inc.close_stranded(channel="C1", client=self.c, day=day)
+        self.assertEqual(self.c.reactions, [("1.0000", inc.DONE_REACTION)])
+        self.assertIn("standalone-ad-sales-board", out.get("tidied", []))
+
+    def test_open_post_marks_untouched(self):
+        day = dt.date(2026, 10, 19)
+        self.c.posts.append((None, "*X* — broke\n\n"
+                             + inc.marker("failure-x", "open", day)))
+        self.c.reactions += [("1.0000", inc.NEEDS_HUMAN_REACTION)]
+        inc.close_stranded(channel="C1", client=self.c, day=day)
+        self.assertEqual(self.c.reactions, [("1.0000", inc.NEEDS_HUMAN_REACTION)])
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
 
