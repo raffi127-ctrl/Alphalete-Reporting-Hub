@@ -2,7 +2,7 @@
 
 Replaces the 'DAILY EOD APPSTREAM' sheet Perli fills by hand and sends to
 Camila every evening as a screenshot plus a list of the offices in red.
-ONE email a day (weekly red list, day's red list, table — each in its own box), Mon-Sat, 6 PM Central; LIVE to Camila since 2026-10-07.
+ONE email a day (weekly red list, day's red list, table, 1st round scorecards link — each in its own box), Mon-Sat, 6 PM Central; LIVE to Camila since 2026-10-07.
 
 Camila's ask, in her words: "1st round showed, # booked to 2nd porcentaje de
 eso y despues 2nd round retention con porcentaje. Arriba de 50% en verde,
@@ -230,6 +230,23 @@ def box_html(title: str, inner: str, color: str = "#555") -> str:
             f'<tr><td style="padding:10px">{inner}</td></tr></table>')
 
 
+# Eve 2026-10-19: the numbers above say HOW MANY move on; the 1st Round
+# Scorecards Board says how well each interviewer ran the call. Same mail,
+# its own box at the bottom, link straight to its Week over Week tab
+# (first_round_scorecards.board rewrites that tab in place every day, so the gid holds).
+SCORECARDS_LINK = ("https://docs.google.com/spreadsheets/d/"
+                   "1bPPYSr73QWwfzsW3BziyJyXysnj-segpCGUE1P447-s/edit#gid=1971109225")
+
+
+def scorecards_html() -> str:
+    return ('<p style="margin:0 0 6px">How well each interviewer runs the 1st round: '
+            "Lucy scores every recorded interview out of 100 against that office's script. "
+            "The <b>Week over Week</b> tab shows each interviewer's weekly score side by side "
+            '(▲ better / ▼ worse than her week before). Updated every day.</p>'
+            f'<p style="margin:0"><a href="{SCORECARDS_LINK}">'
+            '1st Round Scorecards Board → Week over Week</a></p>')
+
+
 def gaps_html(gaps: List[str]) -> str:
     if not gaps:
         return ""
@@ -331,8 +348,9 @@ def build_and_send(day: dt.date, *, production: bool, dry_run: bool,
             sheet_ok = False
             logfn(f"  sheet: FAILED {type(exc).__name__}: {exc}")
 
-    # ONE mail, three boxes (Eve 10/13: "en un mismo mail, pero cuadros
-    # separados"): weekly-total reds on top (Camila 10/12), the day's reds, the table.
+    # ONE mail, separate boxes (Eve 10/13: "en un mismo mail, pero cuadros
+    # separados"): weekly-total reds on top (Camila 10/12), the day's reds, the
+    # table, then the scorecards board link (Eve 10/19).
     RED = "#b00000"
     table = table_html(blocks) + gaps_html(gaps)
     if link:
@@ -342,7 +360,8 @@ def build_and_send(day: dt.date, *, production: bool, dry_run: bool,
                      red_items_html(week_reds), RED)
             + box_html(f"Offices in red — {day:%A} {day.month}/{day.day} ({len(reds)})",
                        red_items_html(reds), RED)
-            + box_html("Full report", table))
+            + box_html("Full report", table)
+            + box_html("Interview quality — 1st Round Scorecards", scorecards_html(), "#1f3b6b"))
     (OUT_DIR / f"preview_{day.isoformat()}.html").write_text(
         f"<html><body>{body}</body></html>", encoding="utf-8")
     logfn(f"  report day {day}: red {', '.join(f'{o} {whole_pct(p)}%' for o, p in reds) or 'none'}")

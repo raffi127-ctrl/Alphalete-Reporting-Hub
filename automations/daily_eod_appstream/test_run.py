@@ -92,6 +92,9 @@ class Math(unittest.TestCase):
         self.assertIn("Andre Burton 40%", body[weekly:daily])
         self.assertNotIn("Aya", body[weekly:full])
         self.assertIn("WEEKLY TOTALS", body[full:])
+        quality = body.index("Interview quality — 1st Round Scorecards")
+        self.assertLess(full, quality)
+        self.assertIn(run.SCORECARDS_LINK, body[quality:])
 
 
 class Sheet(unittest.TestCase):
