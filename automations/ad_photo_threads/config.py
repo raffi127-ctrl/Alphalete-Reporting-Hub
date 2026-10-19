@@ -325,6 +325,13 @@ _MORE = [
     # Lucy Reporting invited).
     ("omar", "Omar Mohammad", ARS_M_TO_Q, "Omar Mohammad", "24153", "Kalkan Marketing",
      "C0C6HKZ63EK", "C0C9X8Y56R5", r"kalkan\s*marketing\s*-\s*\d.*1st\s*round"),
+    # Cody Cannon (Maddie 10/19), Corpus Christi TX. Lucia posts
+    # "*AEON - October 19th - 1st rounds*" in his recruiting room every day
+    # (since 8/31); the "*AEON* *EOD - 10/16 - Interviewers Daily Report*"
+    # after doesn't match. ARS A to C, tab "Cody Cannon". Photos channel created
+    # by Eve 10/19 (Lucy Reporting invited).
+    ("cody", "Cody Cannon", ARS_A_TO_C, "Cody Cannon", "21151", "Aeon Specialized Consulting, Inc",
+     "C0ATYN2L73R", "C0CAFPXAFB4", r"aeon\s*-.*1st\s*round"),
 ]
 
 # Zones the office_tz table (knocks, by owner name) can't place, cross-checked
