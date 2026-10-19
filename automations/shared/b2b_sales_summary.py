@@ -45,7 +45,10 @@ SHEET_MATCH = "Owner (+/-) Rep"
 # so it missed and the export came back owner-level. Hence VIEWPORT below: the
 # hook pins the window before measuring so the fraction means what it meant when
 # it was measured. ANCHOR_TEXT is tried FIRST and doesn't care about any of this.
-EXPAND_XY = (0.038, 0.654)
+# Re-measured 2026-10-19: the table now sits higher and the '+' paints at CSS
+# (54, 413) in a 1408x607 box offset y=38 — the old 0.654 landed on the Grand
+# Total row. Both Org B2B and Carlos lost personal production that morning.
+EXPAND_XY = (0.038, 0.618)
 VIEWPORT = {"width": 1408, "height": 646}
 
 # NO TEXT ANCHOR. Trying to find the header by its text looked like the
@@ -92,6 +95,48 @@ def _fmt(d: dt.date) -> str:
     return f"{d.month}/{d.day}/{d.year}"
 
 
+# How long to wait for the new window to actually apply before clicking.
+DATES_APPLY_TIMEOUT_MS = 60_000
+
+
+def _box_value(viz, label: str) -> str:
+    for sel in (f'textarea[aria-label="{label}"]', f'input[aria-label="{label}"]'):
+        try:
+            loc = viz.locator(sel).first
+            if loc.count():
+                return (loc.input_value(timeout=2_000) or "").strip()
+        except Exception:  # noqa: BLE001 — mid re-render; read again next poll
+            continue
+    return ""
+
+
+def _wait_for_dates(viz, page, start: dt.date, end: dt.date,
+                    verbose: bool = True) -> None:
+    """Block until both date boxes READ the window we typed, twice in a row.
+
+    THE CLICK WAS LANDING ON A VIEW STILL LOADING (2026-10-19). The fixed 6s
+    was no longer enough: at the moment of the expand click the Start Date box
+    still read the OLD date (Tableau re-renders the filter while the query
+    runs), so the click hit the table that was about to be replaced and the
+    export came back owner-level — no REP column, personal production blank
+    for Org B2B and Carlos. Read the boxes back instead of guessing a delay.
+    Never raises: on timeout it says so and the caller clicks anyway (the
+    parser already refuses an owner-level export)."""
+    want = (_fmt(start), _fmt(end))
+    waited, hits = 0, 0
+    while waited < DATES_APPLY_TIMEOUT_MS:
+        got = (_box_value(viz, "Start Date"), _box_value(viz, "End Date"))
+        hits = hits + 1 if got == want else 0
+        if hits >= 2:
+            page.wait_for_timeout(3_000)   # the table repaints after the boxes
+            return
+        page.wait_for_timeout(1_500)
+        waited += 1_500
+    if verbose:
+        print(f"  ⚠ SALES SUMMARY dates still read {got}, not {want}, after "
+              f"{DATES_APPLY_TIMEOUT_MS // 1000}s — expanding anyway", flush=True)
+
+
 def expand_hook(start: dt.date, end: dt.date, verbose: bool = True):
     """Build a `pre_export(page, viz)` that pins the date window and expands the
     Owner→Rep hierarchy. Pass to drive_crosstab_dialog / the org module's
@@ -132,6 +177,7 @@ def expand_hook(start: dt.date, end: dt.date, verbose: bool = True):
             box.press("Enter")
             page.wait_for_timeout(1200)
         page.wait_for_timeout(6000)      # let the window re-query
+        _wait_for_dates(viz, page, start, end, verbose)
 
         # Expand Owner -> Rep. Canvas-painted, hover-only: move first, click second.
         frame_el = page.query_selector('iframe[title="Data Visualization"]')
