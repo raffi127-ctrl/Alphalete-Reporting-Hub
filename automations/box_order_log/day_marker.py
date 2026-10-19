@@ -51,6 +51,14 @@ def owner_stem(owner_key: str) -> str:
     return ".box-order-log-owner-{}-posted-".format(owner_key)
 
 
+def office_post_stem(channel_id: str) -> str:
+    """Per-office Slack thread marker (per_office.py runs, keyed by the office's
+    channel). Before 2026-10-19 those runs claimed POST_STEM — Carlos's own
+    marker — so on a machine where Carlos's thread had already gone out, every
+    other office's thread read as "already went out today" and was skipped."""
+    return ".box-order-log-office-{}-posted-".format(channel_id)
+
+
 def path(stem: str, day: Optional[dt.date] = None) -> Path:
     day = day or dt.date.today()
     return LOG_DIR / "{}{}".format(stem, day.isoformat())

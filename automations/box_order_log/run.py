@@ -605,6 +605,13 @@ def main(argv: Optional[list] = None) -> int:
         targets = list(TARGETS)
     chan_id = targets[0][1]
     chan_name = " + ".join(name for name, _ in targets)
+    # A per-office run owns its own day marker and its own name in alerts;
+    # POST_STEM and "Carlos Hidalgo" are Carlos's (2026-10-19: Ryan's held post
+    # was reported as Carlos's, and on Lucy 2 Carlos's marker would skip Ryan).
+    post_stem = (day_marker.office_post_stem(chan_id) if args.owner_office
+                 else day_marker.POST_STEM)
+    office_label = (args.owner_office.split("[")[0].strip().title()
+                    if args.owner_office else "Carlos Hidalgo")
 
     verbose = not args.quiet
     today = dt.date.today()
@@ -790,6 +797,16 @@ def main(argv: Optional[list] = None) -> int:
             if day not in _org_seen:
                 _org_seen[day] = _tb.org_sold_on(day, verbose=verbose)
             return _org_seen[day]
+    elif args.owner_office:
+        # A per-office run reads today's TEAM export via --from-file (one pull
+        # serves every office), and that file already holds the whole org — so
+        # it can answer the question itself. Without this, Ryan's empty weekend
+        # read as a stale feed on Mon 10/19 and his thread was held, while
+        # Roshan's 10/18 sales sat in the very same file.
+        _team_days = {s.sale_date for s in clean.load(src)[0] if s.sale_date}
+
+        def _org_sold(day):
+            return day in _team_days
 
     if args.require_fresh and args.post:
         expected = today - dt.timedelta(days=1)      # prior day's finalised sales
@@ -1112,7 +1129,7 @@ def main(argv: Optional[list] = None) -> int:
         # earlier — that is exactly the 8:30 refresh behind the day-marker. Say
         # so, or delivery_check reads the last pass of a morning that went fine
         # as UNKNOWN and holds the ticket open all day.
-        if day_marker.already_done(day_marker.POST_STEM, today):
+        if day_marker.already_done(post_stem, today):
             _file_marker_manifest(
                 today, "sheet refresh; the thread was already live")
         if verbose:
@@ -1139,9 +1156,9 @@ def main(argv: Optional[list] = None) -> int:
     # belongs next to the post, where every caller has to pass it. --dm is exempt
     # (that's a preview to one person, not the channel feed).
     if args.post and not args.dm and not args.resend and \
-            day_marker.already_done(day_marker.POST_STEM, today):
+            day_marker.already_done(post_stem, today):
         print("\n  " + day_marker.skip_message(
-            "the BOX Order Log thread", day_marker.POST_STEM, today), flush=True)
+            "the BOX Order Log thread", post_stem, today), flush=True)
         # A deliberate no-op is a completed pass: tell the Hub it ran, same rule
         # the 7:00 deferral follows, so the card doesn't sit amber for the day.
         _report_to_hub(started_at, verbose)
@@ -1182,7 +1199,7 @@ def main(argv: Optional[list] = None) -> int:
             # OFFICE has to be inside the line: the headline can no longer say
             # whose numbers are missing.
             sda.alert(report_id=MANIFEST_ID,
-                      failed=["Carlos Hidalgo — {}".format(_detail)],
+                      failed=["{} — {}".format(office_label, _detail)],
                       kind="capped", day=today)
         except Exception:
             pass
@@ -1287,7 +1304,7 @@ def main(argv: Optional[list] = None) -> int:
     # entry point no-ops. The wrapper touches this same file on exit 0; whichever
     # gets there first satisfies both. Not for --dm (a preview isn't the feed).
     if not args.dm:
-        day_marker.mark_done(day_marker.POST_STEM, today)
+        day_marker.mark_done(post_stem, today)
     # Two ways the tier board can leave the thread short of the truth: it wasn't
     # captured at all, or it was captured clipped (reps cut off the bottom).
     # Both look FINE in the channel — the log and payout are right there — so
