@@ -121,6 +121,13 @@ OWNER_CFG = [
 STAGED: set = set()
 
 
+# Offices whose activation rates are NOT pulled (their churn tabs still are).
+# carlos: moving to NDS (Megan 2026-10-18) — his B2B sales left ATT TRACKER -
+# B2B ~10/7, so his ACTIVATION RATES rows have no 0-7 Days bucket and the
+# section-drop alert fired every morning. Remove him to turn it back on.
+RATES_OFF = frozenset({"carlos"})
+
+
 def _activation_cfg():
     """Per-office activation-rates source for E5/F5 + the AE:AF rep list.
     key -> (view_url, custom_view_name, owner_prefix). Each office's server-side
@@ -623,7 +630,8 @@ def main(argv=None) -> int:
     # Activation rates now run per office (each with its own saved view).
     _act_cfg = _activation_cfg()
     rate_keys = ([] if args.skip_rates
-                 else [k for k, *_ in owners if k in _act_cfg])
+                 else [k for k, *_ in owners
+                       if k in _act_cfg and k not in RATES_OFF])
     ar_paths: dict = {}   # office key -> (reps_csv, office_totals_csv)
     rate_source_down: dict = {}   # office key -> why its rates didn't download
     if args.from_files:
