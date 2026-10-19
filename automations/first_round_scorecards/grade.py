@@ -117,7 +117,9 @@ OFFICES = {
     "Colten Wright": {"format": "colten"},
     **{o: {"format": "profits"} for o in ("Eveliz Wright", "Jairo Ruiz",
                                          "Drew Tepper", "George Delgado", "Samuel Acay")},
-    **{o: {"format": "highline"} for o in ("Roshan Ahmad", "Ryan McSpadden")},
+    "Roshan Ahmad": {"format": "highline"},
+    # 2026-10-19 (Camila): Priscilla's revised script, Highline in Plano
+    "Ryan McSpadden": {"format": "highline_ryan"},
     "Ellen Dent": {"format": "ellen", "schedule_check": "Is that alright with you?",
                    "schedule": "So regarding schedule, we work Mondays through Fridays "
                                "8:00 to 6:00, Saturdays 9:00 to 6:00."},
@@ -136,8 +138,10 @@ OWNER_ALIASES = {"raf hidalgo": "Rafael Hidalgo", "nii tagoe": "Nii Teiko",
 # the rules that change. Score = % of the items that DO apply.
 #   profits  -- Profits Management (Eveliz, Jairo, Drew, George, Samuel):
 #               no pay in the 1st round, the 2nd round is booked on the call.
-#   highline -- Highline Management (Roshan, Ryan): pay, hours and commute all
+#   highline -- Highline Management (Roshan): pay, hours and commute all
 #               wait for the 2nd round.
+#   highline_ryan -- Priscilla's revised Highline script (Ryan, 2026-10-19):
+#               same shape, B2B energy pitch, 3 check-ins, promote from within.
 #   ellen    -- Ellen's: pay only if they ask ($1,000-2,500/wk), own hours.
 #   tre      -- Tre's (2026-10-09): pay waits for the 2nd round, standard 40 hrs
 #               + Saturdays, North Houston, wrap-up without attire/notebook.
@@ -218,6 +222,47 @@ FORMATS = {
                        "Missing any = NO.",
             "check_ins": "YES only if she asked both (comfortable with the face to face "
                          "side? / does management align with your goals?). Missing any = NO.",
+        },
+    },
+    "highline_ryan": {
+        "na": {"pay", "schedule", "commute"},
+        "drop": {"pay_entry", "pay_assistant", "pay_executive", "schedule", "commute"},
+        "lines": {
+            "face_to_face": "One of our biggest differentiators is that we are face-to-face "
+                            "with business owners securing contracts that otherwise wouldn't "
+                            "be acquired.",
+            "management": "We only promote from within the company, just on a much faster "
+                          "track [If they ask, 6-12 months]. We don't hire any outside "
+                          "managers...",
+            "check_ins": "Do you feel like face-to-face conversations with business owners "
+                         "would be something you feel comfortable with? / Is management and "
+                         "leadership something that aligns with your long-term goals? / Do "
+                         "you feel like this is something you could see yourself doing with "
+                         "the proper training?",
+            "wrap_up": "If we do decide to move forward with your application, we will be "
+                       "reaching out later today before 5 p.m. to set up a second-round "
+                       "interview... have your phone on you for the next couple of hours... "
+                       "If you don't receive a call/text back, it means we decided to move "
+                       "in a different direction.",
+        },
+        "keys": {
+            "face_to_face": "face to face with business owners",
+            "management": "promoting from within (no outside managers)",
+            "check_ins": "each of the three questions",
+            "wrap_up": "reaching out before 5pm today to set up the 2nd round, and 'if you "
+                       "don't get a call/text we went a different direction'",
+        },
+        "rules": {
+            "off_script_pay": _NO_PAY_RULE,
+            "management": "YES if she said they only promote from within and the goal is to "
+                          "grow into management / leadership (the 6-12 months only if asked).",
+            "wrap_up": "YES only if she said they reach out before 5pm today to set up the "
+                       "2nd round and that no call/text means a different direction. "
+                       "Missing any = NO.",
+            "check_ins": "YES only if she asked all three (comfortable face to face with "
+                         "business owners? / management and leadership align with your "
+                         "goals? / see yourself doing it with the proper training?). "
+                         "Missing any = NO.",
         },
     },
     "ellen": {
