@@ -1600,6 +1600,14 @@ INSTALL_PAGE = "https://raffi127-ctrl.github.io/Alphalete-Reporting-Hub/"
 # power back on. NOT startup.html -- that one installs only the boot job.
 FINISH_SETUP_PAGE = ("https://raffi127-ctrl.github.io/Alphalete-Reporting-Hub/"
                 "setup.html")
+# The two SaraPlus pages (2026-10-18, Megan: "we cannot keep sending ICDs
+# incorrect things"). Neither needs the office code. INSTALL_PAGE does — sent
+# bare it only says "This link is missing your office code" — and setup.html
+# never clears the emailed-code check. Both were what these alerts sent.
+SARA_SIGNIN_PAGE = ("https://raffi127-ctrl.github.io/Alphalete-Reporting-Hub/"
+                    "sara-signin.html")
+SARA_PASSWORD_PAGE = ("https://raffi127-ctrl.github.io/Alphalete-Reporting-Hub/"
+                      "sara-password.html")
 
 # THE FIX IS NOT THE SAME FOR ALL THREE, so the message must not pretend it
 # is (Megan 2026-09-15: "we should build this alert message for sara+ and OV
@@ -1634,9 +1642,8 @@ SYSTEMS = {
         "what": "Credit checks and sales",
         "why": " SaraPlus wants to confirm that computer with a code it "
                "emails you. The password is fine — do NOT change it.",
-        "how": "On that computer, open this and press the button. A SaraPlus "
-               "window opens: sign in there and type the emailed code:\n"
-               + FINISH_SETUP_PAGE,
+        "how": "On that computer, open this and follow the steps on the "
+               "page (about 1 minute):\n" + SARA_SIGNIN_PAGE,
     },
     "ownerville": {
         "name": "OwnerVille",
@@ -1659,10 +1666,8 @@ SYSTEMS = {
         "what": "Credit checks and sales",
         "why": " SaraPlus says the saved email/password is not valid — "
                "usually because the password was changed.",
-        "how": "On that computer, a box asking for the SaraPlus password "
-               "should be open: type the current password there. If no box "
-               "is open, open this on that computer and run it again; it "
-               "will ask for it:\n" + INSTALL_PAGE,
+        "how": "On that computer, open this and follow the steps on the "
+               "page (about 1 minute):\n" + SARA_PASSWORD_PAGE,
     },
     "ownerville_locked": {
         "name": "OwnerVille",

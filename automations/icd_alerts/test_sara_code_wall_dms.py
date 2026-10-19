@@ -38,7 +38,7 @@ class CodeWallIsASignIn(unittest.TestCase):
         self.assertNotIn("changed", text)
         self.assertNotIn("new password", text)
         self.assertIn("code", text)
-        self.assertIn(P.FINISH_SETUP_PAGE, text)
+        self.assertIn(P.SARA_SIGNIN_PAGE, text)
 
 
 if __name__ == "__main__":
