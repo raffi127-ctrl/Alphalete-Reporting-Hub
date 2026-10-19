@@ -210,6 +210,16 @@ class OwnerTabs(unittest.TestCase):
         self.assertIsNone(this_weeks_tab(visible, dt.date(2026, 11, 20)))
         self.assertEqual(this_weeks_tab(["12/28"], dt.date(2027, 1, 2)), "12/28")
 
+    def test_last_years_same_name_tab_and_week_ending_names(self):
+        import datetime as dt
+        from automations.sales_board_fixer.run import this_weeks_tab
+        # Palace: newest on the left, named by Sunday, a year of old tabs to the right
+        palace = ["10.18", "10.11", "10.4", "1026", "10.19", "10.12"]
+        self.assertIsNone(this_weeks_tab(palace, dt.date(2026, 10, 19), week_end=True))
+        self.assertEqual(this_weeks_tab(palace, dt.date(2026, 10, 15), week_end=True), "10.18")
+        self.assertEqual(this_weeks_tab(["10.25"] + palace, dt.date(2026, 10, 20),
+                                        week_end=True), "10.25")
+
 
 class OwnerRepeats(unittest.TestCase):
     def test_eve_hears_on_the_third_day_in_a_row_only(self):

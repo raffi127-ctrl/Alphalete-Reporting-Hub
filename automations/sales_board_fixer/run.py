@@ -421,11 +421,15 @@ WEEK_PREFIX = re.compile(r"^\s*(\d{1,2}[./]\d{1,2})\b")
 DATED_TAB = re.compile(r"^\s*(\d{1,2})[./](\d{1,2})\s*$")
 
 
-def this_weeks_tab(visible, today: dt.date):
+def this_weeks_tab(visible, today: dt.date, week_end: bool = False):
     """The bare-date tab ('10/12') dated in the last 7 days, newest wins.
     Salik/Hammad keep a dead 'Fiber Sales Board' (WE 8/24) leftmost, so
-    leftmost-with-reps alone would pick the wrong board."""
-    best = None
+    leftmost-with-reps alone would pick the wrong board.
+    week_end: the tab is named by the week's Sunday, not its Monday (Kash's
+    Palace board, '10.18' = 10/12-10/18).
+    Owners add each new week on the LEFT, so a tab dated later than one left
+    of it is last year's (Palace keeps a year of '10.19'-style tabs, 2026-10-19)."""
+    best, left = None, None
     for t in visible:
         m = DATED_TAB.match(t)
         if not m:
@@ -434,8 +438,13 @@ def this_weeks_tab(visible, today: dt.date):
             d = dt.date(today.year, int(m.group(1)), int(m.group(2)))
         except ValueError:
             continue
+        if week_end:
+            d -= dt.timedelta(days=6)
         if d > today + dt.timedelta(days=6):  # a December tab read in January
             d = d.replace(year=today.year - 1)
+        if left is not None and d > left:
+            continue
+        left = d
         # tabs are named by Monday: next week's tab can exist by Sunday
         if 0 <= (today - d).days <= 6 and (best is None or d > best[0]):
             best = (d, t)
@@ -458,7 +467,7 @@ def side_tabs(visible, picked) -> list:
     return out
 
 
-def owner_tabs(sh, boards: int = 1) -> list:
+def owner_tabs(sh, boards: int = 1, week_end: bool = False) -> list:
     """The tabs to check in an owner's All-in-One: the leftmost visible sales
     board(s) with reps on it -- owners keep the current week first, and name
     it anything ('Sales Board', 'NEW Sales Board', 'Sales Board W.E 10.11') --
@@ -468,7 +477,7 @@ def owner_tabs(sh, boards: int = 1) -> list:
     visible = [s["properties"]["title"] for s in meta["sheets"]
                if not s["properties"].get("hidden")]
     picked = []
-    dated = this_weeks_tab(visible, dt.date.today())
+    dated = this_weeks_tab(visible, dt.date.today(), week_end)
     for title in ([dated] if dated else []) + [t for t in visible if t != dated]:
         if len(picked) >= boards:
             break
@@ -570,7 +579,7 @@ def run_owners(only, do_apply: bool, stamp: str) -> dict:
             # one book shared by several owners names its tabs by owner
             # ('COLTEN', 'JAIRO'): list them in owners.json (2026-10-14)
             tabs = ([t for t in o["tabs"] if t in _tabs(sh)] if o.get("tabs")
-                    else owner_tabs(sh, o.get("boards", 1)))
+                    else owner_tabs(sh, o.get("boards", 1), o.get("week_end", False)))
             tabs += [t for t in lane_tabs(sh, o.get("tabs")) if t not in tabs]
         except Exception as e:  # noqa: BLE001 -- one owner's sheet never stops the rest
             print("== %s: NO se pudo abrir (%s)" % (o["name"], type(e).__name__))
