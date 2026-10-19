@@ -261,6 +261,44 @@ for _hb_machine in _fleet.MORNING_CLOCK_MACHINES:
     }
 del _hb_machine
 
+# --- each runner's Mini Control queue -----------------------------------------
+# 2026-10-19: Lucy 1 stopped taking ANY queued row at ~08:40 CT — both lanes,
+# even a `ping` — and nothing said so; we found out an hour later because a
+# rerun never started. The queue is how every remote fix reaches a runner, so a
+# dead poller (or a dead box) is invisible until someone happens to wait on it.
+#
+# The READ lane stamps the beat (mini_control._maybe_pulse, every 10 min). Not
+# the main lane: that one is serial and a legit rerun can hold it for an hour,
+# which would read as "dead" exactly while it is working. The read lane answers
+# in seconds whatever main is doing, so silence from it means the poller or the
+# box is gone.
+#
+# WHO WATCHES. The 10-minute watcher (machine_digest --watch) lives on Lucy 1,
+# so it cannot report Lucy 1 itself dying. `watched_by` hands that one row to
+# Lucy 3's read lane (watch_peers); every other row stays with the mini.
+_PULSE_WATCHER = {"Lucy 1": "Lucy 3"}
+for _mc_machine in _fleet.RUNNERS:
+    JOBS["mini_control_%s" % _mc_machine.lower().replace(" ", "_")] = {
+        "name": "Mini Control queue (%s)" % _mc_machine,
+        "machine": _mc_machine,
+        "first_by": "00:30",       # beats all day; a quiet midnight is fine
+        "max_gap_min": 25,         # beat every 10 min: two missed + slack
+        "active_until": None,
+        "weekdays": None,
+        "watch_from": "2026-10-20",   # one day to pull + restart the pollers
+        "watched_by": _PULSE_WATCHER.get(_mc_machine),
+        "means": ("%s is not taking anything from its Mini Control queue: "
+                  "reruns, updates and fixes sent to it sit as 'queued' and "
+                  "never start. Its scheduled reports may still run. Either the "
+                  "machine is off / asleep / offline, or its queue poller died."
+                  % _mc_machine),
+        "fix": ("someone at %s: check it is on and online, then in Terminal: "
+                "launchctl kickstart -k gui/$(id -u)/com.alphalete.mini-control "
+                "&& launchctl kickstart -k gui/$(id -u)/com.alphalete.mini-control-read"
+                % _mc_machine),
+    }
+del _mc_machine
+
 
 def job_id_for_machine(base: str, machine: Optional[str] = None) -> str:
     """`base` + this machine's profile slug — the per-machine key for a job that
@@ -347,18 +385,25 @@ def read_beats() -> Dict[str, dict]:
 
 # ----------------------------------------------------------------- the check
 def overdue(now: Optional[dt.datetime] = None,
-            beats: Optional[Dict[str, dict]] = None) -> List[dict]:
+            beats: Optional[Dict[str, dict]] = None,
+            watcher: Optional[str] = None) -> List[dict]:
     """Jobs that should have checked in by now and haven't.
 
     Two independent ways to be late, because the two jobs fail differently:
     a once-a-morning job is late when TODAY has produced no beat by its
     deadline, and a repeating job is late when it has gone quiet for longer
-    than its cadence allows. Either one alone would miss the other's stall."""
+    than its cadence allows. Either one alone would miss the other's stall.
+
+    `watcher` picks whose rows these are: None = the mini's machine_digest
+    (every job without a `watched_by`), "Lucy 3" = only the rows handed to it.
+    One owner per row, so a dead Lucy 1 is reported once, not twice."""
     now = now or dt.datetime.now()
     beats = read_beats() if beats is None else beats
     today = now.date()
     late: List[dict] = []
     for jid, spec in JOBS.items():
+        if spec.get("watched_by") != watcher:
+            continue
         wd = spec.get("weekdays")
         if wd is not None and now.weekday() not in wd:
             continue
@@ -408,13 +453,67 @@ def overdue(now: Optional[dt.datetime] = None,
 
 
 def healthy(now: Optional[dt.datetime] = None,
-            beats: Optional[Dict[str, dict]] = None) -> List[str]:
+            beats: Optional[Dict[str, dict]] = None,
+            watcher: Optional[str] = None) -> List[str]:
     """Job ids that are currently checking in as they should — the set whose
     incident threads should be closed."""
     now = now or dt.datetime.now()
     beats = read_beats() if beats is None else beats
-    bad = {j["job_id"] for j in overdue(now, beats)}
-    return [j for j in JOBS if j not in bad and (beats.get(j) or {}).get("last_seen")]
+    bad = {j["job_id"] for j in overdue(now, beats, watcher)}
+    return [j for j, spec in JOBS.items()
+            if spec.get("watched_by") == watcher and j not in bad
+            and (beats.get(j) or {}).get("last_seen")]
+
+
+def watch_peers(me: str, *, now: Optional[dt.datetime] = None,
+                beats: Optional[Dict[str, dict]] = None,
+                dry_run: bool = False) -> int:
+    """The check for the rows this machine watches (`watched_by == me`).
+
+    Runs from mini_control's read lane on that machine. Same incident key and
+    channel as machine_digest uses (`standalone-<job_id>`), opened ONCE — a
+    still-open key is left alone, so a 10-minute cadence never spams the
+    thread — and closed again the moment the beat is current. Returns how many
+    alerts it opened. Never raises: the poller calling it must keep polling."""
+    if not any(s.get("watched_by") == me for s in JOBS.values()):
+        return 0
+    try:
+        from automations.day_orchestrator import notify, registry as _reg
+        from automations.shared import incident_thread as inc
+        cfg = _reg.load_config()
+        ch = notify._corrections_channel(cfg)
+        if not ch:
+            return 0
+        now = now or dt.datetime.now()
+        beats = read_beats() if beats is None else beats
+        open_now = set(inc.open_keys())
+        opened = 0
+        for job in overdue(now, beats, watcher=me):
+            key = "standalone-%s" % job["job_id"]
+            if key in open_now:
+                continue
+            seen = job["last_seen"]
+            last = "never" if seen is None else seen.strftime("%a %H:%M")
+            title = (":rotating_light: *%s* — no sign of life since %s"
+                     % (job["name"], last))
+            notify._incident_post(
+                cfg, key=key, title=title,
+                body=["*What it means:* %s" % job["means"]],
+                details=["*Fix:* %s" % job["fix"],
+                         "_Checked from %s. This closes itself when %s checks "
+                         "in again._" % (me, job["machine"])],
+                followup=[title], label="*%s*" % job["name"],
+                dry_run=dry_run, tag=key)
+            opened += 1
+        for jid in healthy(now, beats, watcher=me):
+            inc.resolve_if_open("standalone-%s" % jid,
+                                what="*%s* is checking in again"
+                                     % JOBS[jid]["name"],
+                                channel=ch, dry_run=dry_run)
+        return opened
+    except Exception as e:  # noqa: BLE001 — a watcher hiccup must not stop polling
+        print("watch_peers(%s) failed: %s: %s" % (me, type(e).__name__, e))
+        return 0
 
 
 # ------------------------------------------------------------------- runners
@@ -456,7 +555,9 @@ def main(argv=None) -> int:
     if args.status or args.check:
         beats = read_beats()
         now = dt.datetime.now()
-        late = {j["job_id"]: j for j in overdue(now, beats)}
+        late = {j["job_id"]: j
+                for w in {s.get("watched_by") for s in JOBS.values()}
+                for j in overdue(now, beats, w)}
         for jid, spec in sorted(JOBS.items()):
             seen = (beats.get(jid) or {}).get("last_seen")
             flag = ("OVERDUE — %s" % late[jid]["why"]) if jid in late else "ok"

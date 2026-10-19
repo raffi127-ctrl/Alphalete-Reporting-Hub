@@ -9117,6 +9117,29 @@ def _maybe_reconcile_schedules() -> None:
         print(f"[mini_control]   reconcile error: {type(e).__name__}: {str(e)[:160]}")
 
 
+# Every 10 min the READ lane says "this runner's queue is alive" and, on the box
+# that watches a peer, checks that peer (silent_job_watch: mini_control_<slug>,
+# watch_peers). Read lane only: main is serial and a long rerun would look like
+# a dead queue. 2026-10-19: Lucy 1 stopped polling at ~08:40 and nobody knew.
+_PULSE_EVERY_S = 600
+_last_pulse = 0.0
+
+
+def _maybe_pulse(mach: str) -> None:
+    """Best-effort and never raises — a heartbeat must not stall polling."""
+    global _last_pulse
+    now = time.monotonic()
+    if _last_pulse and now - _last_pulse < _PULSE_EVERY_S:
+        return
+    _last_pulse = now
+    try:
+        from automations.shared import silent_job_watch as _sjw
+        _sjw.beat(_sjw.job_id_for_machine("mini_control", mach))
+        _sjw.watch_peers(mach)
+    except Exception as e:  # noqa: BLE001
+        print(f"[mini_control] pulse error (continuing): {type(e).__name__}: {str(e)[:160]}")
+
+
 def poll_loop(interval_s: int = 120, *, dry_run: bool = False, sandbox: bool = False,
               machine: str | None = None, lane: str = LANE_MAIN) -> None:
     mach = _machine_profile(machine)
@@ -9157,6 +9180,8 @@ def poll_loop(interval_s: int = 120, *, dry_run: bool = False, sandbox: bool = F
         if not (dry_run or sandbox) and lane == LANE_MAIN:
             _maybe_reconcile_schedules()
             _maybe_appstream_watch(mach)
+        if not (dry_run or sandbox) and lane == LANE_READ:
+            _maybe_pulse(mach)
         global _REPOLL_NOW
         if _REPOLL_NOW:
             _REPOLL_NOW = False

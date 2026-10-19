@@ -223,14 +223,20 @@ class TheRegistryStaysHonest(unittest.TestCase):
         second form honest — a key whose slug doesn't match the machine it
         claims to run on still fails here."""
         from pathlib import Path
-        deploy = Path(sjw.__file__).resolve().parents[2] / "deploy"
+        root = Path(sjw.__file__).resolve().parents[2]
+        deploy = root / "deploy"
         blob = "\n".join(p.read_text(encoding="utf-8", errors="replace")
                          for p in deploy.glob("*.sh"))
+        # The one beat stamped from Python, not a wrapper: mini_control's read
+        # lane (2026-10-19). Same rule — its base must resolve to the job id.
+        poller = (root / "automations" / "day_orchestrator" /
+                  "mini_control.py").read_text(encoding="utf-8", errors="replace")
+        py_bases = re.findall(r'job_id_for_machine\("([A-Za-z0-9_]+)", mach\)', poller)
         for jid, spec in sjw.JOBS.items():
             with self.subTest(job=jid):
                 if "--beat %s" % jid in blob:
                     continue
-                bases = re.findall(r"--beat-machine\s+([A-Za-z0-9_]+)", blob)
+                bases = re.findall(r"--beat-machine\s+([A-Za-z0-9_]+)", blob) + py_bases
                 derived = {sjw.job_id_for_machine(b, spec["machine"])
                            for b in bases}
                 self.assertIn(
@@ -239,6 +245,51 @@ class TheRegistryStaysHonest(unittest.TestCase):
                     f"`--beat {jid}`, and no --beat-machine base in deploy/*.sh "
                     f"({sorted(bases) or 'none found'}) resolves to it on "
                     f"{spec['machine']!r}")
+
+
+class EachQueueIsWatchedOnce(unittest.TestCase):
+    """mini_control_<lucy>: the read lane beats every 10 min (2026-10-19, Lucy 1
+    stopped polling and nothing said so). Lucy 3 watches Lucy 1 — the mini's
+    own watcher can't report the mini dying — and every other row stays with
+    the mini, so no outage is reported twice."""
+
+    L1, L2 = "mini_control_lucy_1", "mini_control_lucy_2"
+    DAY = "2026-10-21"
+
+    def _late(self, now, watcher=None, **seen):
+        return {j["job_id"] for j in sjw.overdue(now, _beats(**seen), watcher)}
+
+    def test_a_queue_beating_every_ten_minutes_is_fine(self):
+        now = _at(self.DAY, "10:00")
+        fresh = now - dt.timedelta(minutes=10)
+        self.assertNotIn(self.L1, self._late(now, "Lucy 3", **{self.L1: fresh}))
+
+    def test_a_queue_silent_for_half_an_hour_is_late(self):
+        now = _at(self.DAY, "10:10")
+        self.assertIn(self.L1, self._late(now, "Lucy 3",
+                                          **{self.L1: _at(self.DAY, "09:35")}))
+
+    def test_lucy_1_is_lucy_3s_row_not_the_minis(self):
+        now = _at(self.DAY, "10:10")
+        stale = _at(self.DAY, "08:40")
+        self.assertNotIn(self.L1, self._late(now, None, **{self.L1: stale}))
+        self.assertIn(self.L2, self._late(now, None, **{self.L2: stale}))
+        self.assertNotIn(self.L2, self._late(now, "Lucy 3", **{self.L2: stale}))
+
+    def test_healthy_is_split_the_same_way(self):
+        now = _at(self.DAY, "10:00")
+        fresh = now - dt.timedelta(minutes=5)
+        beats = _beats(**{self.L1: fresh, self.L2: fresh})
+        self.assertIn(self.L1, sjw.healthy(now, beats, "Lucy 3"))
+        self.assertNotIn(self.L1, sjw.healthy(now, beats))
+        self.assertIn(self.L2, sjw.healthy(now, beats))
+
+    def test_not_armed_before_the_pollers_have_the_code(self):
+        now = _at("2026-10-19", "10:10")
+        self.assertFalse(self._late(now, "Lucy 3", **{self.L1: None}))
+
+    def test_a_machine_that_watches_nothing_does_nothing(self):
+        self.assertEqual(sjw.watch_peers("Lucy 2", beats={}), 0)
 
 
 if __name__ == "__main__":
