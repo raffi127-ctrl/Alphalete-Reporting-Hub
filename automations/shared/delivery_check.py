@@ -56,6 +56,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -240,6 +241,58 @@ def _from_review_gate(report_id: str, day: dt.date) -> Optional[Tuple[str, str]]
     return None
 
 
+def _ledger_ids(report_id: str) -> list:
+    """Every id a delivery could have been recorded under: the manifest
+    spellings plus the module the report runs (`automations.X.run` -> X),
+    which is what an un-tagged standalone run records itself as."""
+    ids = list(manifest_ids(report_id))
+    for part in (_report(report_id).get("command") or [])[:1]:
+        m = re.match(r"automations\.([a-z0-9_]+)", str(part))
+        if m and m.group(1) not in ids:
+            ids.append(m.group(1))
+    return ids
+
+
+def _last_failed_at(report_id: str, day: dt.date) -> dt.datetime:
+    """When this report last alerted today (the failure stamp hub_publish
+    writes), else the start of the day. A delivery only counts if it came
+    AFTER the failure it is meant to answer."""
+    start = dt.datetime.combine(day, dt.time.min)
+    try:
+        p = REPO_ROOT / "output" / "logs" / f".failalert-{report_id}"
+        at = dt.datetime.fromtimestamp(p.stat().st_mtime)
+        return at if at.date() == day and at > start else start
+    except OSError:
+        return start
+
+
+# OFF until Megan/Raf say go (2026-10-19). While off, the ledger is still
+# written and still READ — the "can't confirm" line names the delivery it saw —
+# so the evidence can be checked against the channel before it closes anything.
+LEDGER_CLOSES = False
+
+
+def _from_ledger(report_id: str, day: dt.date) -> Optional[Tuple[str, str]]:
+    """The delivery ledger: did this report put something in front of its
+    audience (a real Slack channel, an email) since it last failed?
+
+    LAST probe on purpose: a manifest naming failed parts, a verifier, a phase
+    count all outrank it. It exists for the reports that have none of those —
+    20 of the 137 tickets stranded 2026-09-28..10-19 were exactly "ran clean,
+    nothing can confirm" on reports that had in fact delivered (Raf
+    2026-10-19). Absence claims nothing: UNKNOWN stays UNKNOWN."""
+    try:
+        from automations.shared import delivery_ledger
+        rec = delivery_ledger.delivered_since(
+            _ledger_ids(report_id), _last_failed_at(report_id, day))
+    except Exception:  # noqa: BLE001
+        return None
+    if not rec:
+        return None
+    return DELIVERED, "delivered {} to {} at {}".format(
+        rec.get("kind"), rec.get("dest"), str(rec.get("at"))[11:16])
+
+
 # The Hub Activity log, read at most once a minute per process.
 #
 # WHY A TTL AND NOT A PLAIN CACHE: the only multi-phase question worth asking is
@@ -316,6 +369,7 @@ def verdict(report_id: str, day: Optional[dt.date] = None, *,
         return DELIVERED, "the run confirmed its own delivery"
     if delivered is False:
         return NOT_DELIVERED, "the run reported it delivered nothing"
+    led = None
     try:
         if declared_exit_zero(report_id):
             return DELIVERED, "declared close_on: exit_zero in schedule_config"
@@ -324,8 +378,14 @@ def verdict(report_id: str, day: Optional[dt.date] = None, *,
             got = probe(report_id, day)
             if got:
                 return got
+        led = _from_ledger(report_id, day)
+        if led and LEDGER_CLOSES:
+            return led
     except Exception as e:  # noqa: BLE001
         return UNKNOWN, "delivery check errored ({})".format(type(e).__name__)
+    if led:
+        return UNKNOWN, ("its own check isn't wired, but it {} — if that is the "
+                         "whole report, put a ✅ on this post".format(led[1]))
     return UNKNOWN, ("nothing can confirm this report delivered — its `verify` "
                      "is not wired and it wrote no manifest today")
 

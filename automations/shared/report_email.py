@@ -323,6 +323,12 @@ def send_message(msg: EmailMessage) -> None:
     with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ctx) as s:
         s.login(FROM_ADDR, app_password())
         s.send_message(msg)
+    try:  # the evidence that closes this report's corrections ticket
+        from automations.shared import delivery_ledger
+        delivery_ledger.record("email", str(msg.get("To", "")),
+                               detail=str(msg.get("Subject", "")))
+    except Exception:  # noqa: BLE001 — never break a send
+        pass
 
 
 def send_boards(*, subject: str, to: Sequence[str], title: str,

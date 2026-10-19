@@ -1368,6 +1368,42 @@ class AFindingDidNotFail(unittest.TestCase):
                               "failure-daily_focus")
         self.assertIn("Failed again today", line)
 
+class AHumanCheckIsAClose(unittest.TestCase):
+    """A ✅ a PERSON puts on a parent closes it — the next failure opens a
+    fresh post instead of threading under a green one (Raf 2026-10-19)."""
+
+    setUp = IncidentThreadTest.setUp
+    _open = IncidentThreadTest._open
+
+    def _human_check(self, ts):
+        self.c.reactions.append((ts, inc.DONE_REACTION))
+
+    def test_next_failure_opens_fresh_post_after_human_check(self):
+        day = dt.date(2026, 10, 19)
+        first = self._open(day)
+        self._human_check(first["ts"])          # Eve ✅s it by hand
+        again = self._open(day)                 # same report breaks again
+        self.assertTrue(again["new"])
+        self.assertNotEqual(again["ts"], first["ts"])
+        self.assertEqual(len(self.c.top_level), 2)
+
+    def test_channel_scan_skips_checked_parent(self):
+        day = dt.date(2026, 10, 19)
+        first = self._open(day)
+        self._human_check(first["ts"])
+        inc.STATE_PATH.unlink()                 # another machine: no index
+        inc._HISTORY_CACHE.clear()
+        self.assertIsNone(inc.find("failure-r", channel="C1", client=self.c,
+                                   day=day, skip_checked=True))
+
+    def test_unchecked_thread_still_followed_up(self):
+        day = dt.date(2026, 10, 19)
+        first = self._open(day)
+        again = self._open(day)
+        self.assertFalse(again["new"])
+        self.assertEqual(again["ts"], first["ts"])
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
 

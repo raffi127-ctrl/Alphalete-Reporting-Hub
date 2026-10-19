@@ -312,8 +312,10 @@ class TheUnverifiedNoteIsSaidOnceADay(unittest.TestCase):
         said = c.chat_postMessage.call_args.kwargs
         self.assertEqual(said["thread_ts"], "1.0")
         self.assertIn("nothing can confirm it DELIVERED", said["text"])
-        self.assertIn("close_on", said["text"], "name the way out, not just the "
-                                                "problem")
+        # Name the way out, not just the problem — the person's (a ✅ closes
+        # it, Raf 2026-10-19) and the code's (wire `verify`).
+        self.assertIn("Put a ✅ on this post", said["text"])
+        self.assertIn("wire `verify`", said["text"])
 
     def test_a_second_clean_run_the_same_day_says_nothing(self):
         c = mock.MagicMock()

@@ -734,7 +734,8 @@ def _days_open(opened: str, day: dt.date) -> int:
 def find(key: str, *, channel: str = CHANNEL, client=None,
          day: Optional[dt.date] = None, family: bool = True,
          trust_index: bool = True,
-         ignore_closed: bool = False) -> Optional[dict]:
+         ignore_closed: bool = False,
+         skip_checked: bool = False) -> Optional[dict]:
     """The OPEN incident for `key`, or None. Index first (no API call), then a
     channel scan so an incident opened on another machine is still found.
 
@@ -798,6 +799,19 @@ def find(key: str, *, channel: str = CHANNEL, client=None,
     for msg in _history(client, channel):
         m = _MARK_RE.search(msg.get("text") or "")
         if not m or m.group("state") != "open" or msg.get("ts") in closed_ts:
+            continue
+        # A ✅ ON THE PARENT IS A CLOSE, whoever put it there (Raf 2026-10-19:
+        # "if they got resolved then they should have marked green"). When Eve
+        # or Raf ✅s a fixed ticket by hand, the marker text still reads `open`
+        # (only Lucy can edit Lucy's post, and close_stranded catches up later)
+        # — and this scan used to hand that green thread back as the live one,
+        # so the report's NEXT failure was threaded under a ✅ and read as
+        # fixed. triage already ranks the ✅ over the text; so does this now.
+        # `skip_checked` is the POSTING question ("where does a new failure
+        # go?"). resolve() asks the other one and must still see a ✅'d thread
+        # with a stale marker, to answer "already closed" instead of "nothing".
+        if skip_checked and DONE_REACTION in [
+                r.get("name") for r in (msg.get("reactions") or [])]:
             continue
         open_by_key.setdefault(m.group("key"), (msg, m))
 
@@ -1233,10 +1247,21 @@ def open_or_followup(*, key: str, title: str, body: Sequence[str],
     # allowed to open a post: look once more at the channel as it is NOW.
     # Costs one fetch, only on the path that was about to double-post.
     had_cache = channel in _HISTORY_CACHE
-    inc = find(key, channel=channel, client=client, day=day)
+    inc = find(key, channel=channel, client=client, day=day, skip_checked=True)
     if inc is None and had_cache:
         _forget_history(channel)
-        inc = find(key, channel=channel, client=client, day=day)
+        inc = find(key, channel=channel, client=client, day=day,
+                   skip_checked=True)
+
+    # The index fast path cannot see a ✅ a PERSON added by hand: ask the post
+    # itself before threading more under it. One read, only on the path that
+    # is about to follow up. A closed ticket is never re-used — the new failure
+    # gets a fresh post.
+    if inc and inc.get("source") == "index" and not dry_run:
+        _now = reactions_now(client, channel, inc["ts"])
+        if _now is not None and DONE_REACTION in _now:
+            _mark_resolved_in_index(key)
+            inc = None
 
     # A thread from a PREVIOUS day is rolled over: one line saying where it went,
     # and today opens a fresh post (see MAX_AGE_DAYS).
@@ -2187,10 +2212,12 @@ def note_delivery_unverified(report_id: str, *, what: str = "", why: str = "",
                 "stays open. {}"
                 .format(what or report_id,
                         why or "Its `verify` is not wired."))
-        line += ("\nTo make a clean run close this by itself: wire `verify` for "
-                 "`{}` in schedule_config, or — if what it does genuinely "
-                 "cannot be checked from the outside — declare "
-                 "`\"close_on\": \"exit_zero\"` on it.".format(report_id))
+        # The PERSON's way out first, in plain words (Raf 2026-10-19): a ✅ on
+        # the post closes it for good (find() honours a hand ✅). The code fix
+        # stays, second, for whoever wires the report.
+        line += ("\nChecked that it went out? Put a ✅ on this post — that "
+                 "closes it.\n_For a fix that closes it by itself next time: "
+                 "wire `verify` for `{}` in schedule_config._".format(report_id))
         if dry_run:
             print("[incident] DRY-RUN — would note unverified delivery for {}:\n"
                   "{}".format(report_id, line))

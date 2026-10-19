@@ -114,6 +114,11 @@ def send_message(msg: EmailMessage, *, dry_run: bool = False,
         userId="me", body={"raw": raw}).execute()
     result = {"message_id": sent.get("id"), "thread_id": sent.get("threadId")}
     logfn(f"  ✓ SENT to {to}: id={result['message_id']} subj={subject!r}")
+    try:  # the evidence that closes this report's corrections ticket
+        from automations.shared import delivery_ledger
+        delivery_ledger.record("email", str(to), detail=str(subject))
+    except Exception:  # noqa: BLE001 — never break a send
+        pass
     return result
 
 

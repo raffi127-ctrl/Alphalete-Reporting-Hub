@@ -178,12 +178,40 @@ def _retry_handlers():
     return _RETRY_HANDLERS
 
 
+def _recording_client_class():
+    """WebClient that notes every successful send to a real channel in the
+    delivery ledger — the evidence delivery_check needs to close a ticket on a
+    report with no `verify` of its own (Raf 2026-10-19). Never alters a call."""
+    global _RECORDING_CLIENT
+    if _RECORDING_CLIENT is None:
+        from slack_sdk import WebClient
+
+        class _RecordingWebClient(WebClient):
+            def api_call(self, api_method, **kw):
+                resp = super().api_call(api_method, **kw)
+                try:
+                    from automations.shared import delivery_ledger
+                    merged = {}
+                    for part in ("params", "data", "json"):
+                        if isinstance(kw.get(part), dict):
+                            merged.update(kw[part])
+                    delivery_ledger.record_slack_response(api_method, merged, resp)
+                except Exception:  # noqa: BLE001 — never break a send
+                    pass
+                return resp
+
+        _RECORDING_CLIENT = _RecordingWebClient
+    return _RECORDING_CLIENT
+
+
+_RECORDING_CLIENT = None
+
+
 def _client():
     import certifi
-    from slack_sdk import WebClient
     ctx = ssl.create_default_context(cafile=certifi.where())
-    return WebClient(token=_load_token(), ssl=ctx,
-                     retry_handlers=_retry_handlers())
+    return _recording_client_class()(token=_load_token(), ssl=ctx,
+                                     retry_handlers=_retry_handlers())
 
 
 def _load_bot_token() -> str:
@@ -203,10 +231,9 @@ def _load_bot_token() -> str:
 
 def _bot_client():
     import certifi
-    from slack_sdk import WebClient
     ctx = ssl.create_default_context(cafile=certifi.where())
-    return WebClient(token=_load_bot_token(), ssl=ctx,
-                     retry_handlers=_retry_handlers())
+    return _recording_client_class()(token=_load_bot_token(), ssl=ctx,
+                                     retry_handlers=_retry_handlers())
 
 
 def _resolve_user_id(client, query: str) -> str:
