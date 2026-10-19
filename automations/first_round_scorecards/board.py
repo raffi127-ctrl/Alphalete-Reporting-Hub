@@ -705,6 +705,11 @@ def update(day: dt.date, *, write_sheet: bool = True) -> str:
         update_wow(answers)
     except Exception as exc:  # noqa: BLE001
         print(f"  Week over Week tab not updated: {exc}")
+    try:                                   # nor does the 2nd round retention tab
+        from automations.first_round_scorecards import retention
+        retention.update()
+    except Exception as exc:  # noqa: BLE001
+        print(f"  2nd Rd Retention tab not updated: {exc}")
     return link
 
 
