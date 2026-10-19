@@ -187,8 +187,9 @@ class TestScan(Base):
                 mock.patch.object(config, "IMESSAGE_GROUPS", ()):
             with self.assertRaises(run.BroadcastError):
                 self.go(FakeClient([]))
-        with self.assertRaises(run.BroadcastError):
-            run.scan(dry_run=True, channel="", cl=FakeClient([]))
+        with mock.patch.object(config, "SOURCE_CHANNEL_ID", ""):
+            with self.assertRaises(run.BroadcastError):
+                run.scan(dry_run=True, channel="", cl=FakeClient([]))
 
     def test_dry_run_sends_and_saves_nothing(self):
         cl = FakeClient([post(120)])
