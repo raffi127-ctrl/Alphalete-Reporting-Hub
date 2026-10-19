@@ -10781,6 +10781,35 @@
    },
    "machine": "Lucy 1"
   },
+  "credico_login_watch": {
+   "on_scheduler": true,
+   "display_name": "Credico login - warn the day before it runs out",
+   "_note": "Megan 2026-10-18: alert the day before the Credico login expires so nothing fails. Reads the saved login's expiry (no browser, no Credico call); within 48h it posts in #claudecorrections tagging Eve + Megan, and closes that post once a new login lands. Exit 0 is its delivery.",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.credico.login_watch"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "close_on": "exit_zero",
+   "timeout_minutes": 5,
+   "machine": "Lucy 1",
+   "order": 51.9
+  },
   "credico_fetch": {
    "on_scheduler": true,
    "_off_scheduler_note": "Download the weekly Fee Report file(s) from Credico for the target week (Reports -> Fee Reports -> Saturday -> office). Megan approved the download 2026-07-24. Read-only on Credico's side; files land in output/credico/ and a summary on the '_credico_discover' tab. Pass --week M.D.YY to target a week; defaults to 7.19.26.",
