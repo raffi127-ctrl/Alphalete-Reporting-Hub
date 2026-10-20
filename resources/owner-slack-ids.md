@@ -49,7 +49,7 @@ detail in the thread. [[feedback_short_header_posts]]
 | Account | Owner | Channel ID | Notes |
 |---|---|---|---|
 | 11280 | Rafael Hidalgo (main) | C0AUAS88FGW | Confirmed by Megan 2026-10-20 |
-| 11580 | Carlos Hidalgo | | not given yet |
+| 11580 | Carlos Hidalgo | C09L1S3MQ1E | Confirmed by Megan 2026-10-20 |
 | 23965 | Rafael 2nd Funnel | | not given yet |
 | 24065 | Raf New Recruiter | | not given yet |
 
