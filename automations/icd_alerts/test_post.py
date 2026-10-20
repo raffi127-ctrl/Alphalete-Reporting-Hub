@@ -305,11 +305,10 @@ class NudgeTests(unittest.TestCase):
         # different one in the plist is a promise people check and we break.
         self.assertIn("picks itself up", text)
         self.assertNotIn("15 minutes", text)
-        # It must send them to a PERSON. "Reply here" points at a bot DM that
-        # nobody reads, which for the one message asking for help is the one
-        # place it must not point.
-        self.assertIn("Megan & Eve", text)
-        self.assertNotIn("reply here", text)
+        # It must send them to a PERSON. "Reply here" used to point at a bot
+        # DM nobody read; since 2026-10-20 the nudge is a group DM that Megan
+        # and Eve are IN, so replying there is reaching them.
+        self.assertIn("reply here and Megan or Eve", text)
 
     def test_a_machine_that_ran_and_stopped_is_not_told_it_never_started(self):
         """Cyrus's laptop ran all morning and stopped at 10:56. Telling him it
@@ -426,18 +425,20 @@ class SalesBacklogOnEnrolment(unittest.TestCase):
 
 
 class QuietNudgeThreading(unittest.TestCase):
-    """One thread per ICD, however long the laptop stays down.
+    """A quiet machine is a GROUP DM, never the alerts channel.
 
-    Cyrus's machine went down at 10:56 on 2026-09-12 and the nudge posted as a
-    fresh top-level message every 30 minutes -- three identical warnings by
-    13:21, pushing real incidents off the screen. Megan: "1 thread per ICD so
-    it's not clogging up the channel."
+    2026-09-12: one thread per ICD in the channel (Cyrus had three identical
+    top-level warnings by 13:21). 2026-10-20, Megan: "eve and i aren't in a DM
+    with Cy on this which is what should be happening - and it shouldn't go in
+    the slack alert channel". Now the owner, Megan and Eve share one DM that
+    carries the nudge, the repeats and the all-clear.
     """
 
     def setUp(self):
         import tempfile, pathlib
         self.tmp = pathlib.Path(tempfile.mkdtemp()) / "warned.json"
-        self.posts = []          # (text, thread_ts) in order
+        self.posts = []          # channel posts -- must stay empty
+        self.dms = []            # (ids, text) per group DM
 
         def fake_slack(channel, text, thread_ts=None):
             self.posts.append((text, thread_ts))
@@ -456,62 +457,64 @@ class QuietNudgeThreading(unittest.TestCase):
         with mock.patch.object(P, "WARNED_PATH", self.tmp), \
              mock.patch.object(P, "_slack", self.fake_slack), \
              mock.patch.object(P, "_dm", lambda *a, **k: None), \
+             mock.patch.object(P, "_group_dm",
+                               lambda ids, text: self.dms.append((list(ids), text))), \
              mock.patch.object(P, "restart_risks", lambda *a, **k: []), \
              mock.patch.object(P, "quiet_offices",
                                lambda *a, **k: [dict(q) for q in self.quiet]), \
              mock.patch.object(P, "check_ins",
                                lambda *a, **k: (dict(self.seen), set(self.seen))), \
              mock.patch.object(P.O, "get", lambda k: office), \
+             mock.patch.object(P.O, "helpers_for", lambda k: ()), \
              mock.patch.object(P.O, "office_now", lambda o: now):
             return P.warn_quiet(day=dt.date(2026, 9, 12), send=True, now=now,
                                 log=lambda *a, **k: None)
 
-    def test_first_nudge_opens_a_thread(self):
+    def test_first_nudge_is_one_group_dm_and_no_channel_post(self):
         self._run(dt.datetime(2026, 9, 12, 12, 18))
-        self.assertEqual(len(self.posts), 1)
-        text, thread = self.posts[0]
-        self.assertIsNone(thread, "the first one is top-level")
-        self.assertIn("Cyrus's Local Office", text)
-
-    def test_repeats_reply_instead_of_posting_again(self):
-        self._run(dt.datetime(2026, 9, 12, 12, 18))
-        self._run(dt.datetime(2026, 9, 12, 12, 50))
-        self._run(dt.datetime(2026, 9, 12, 13, 21))
-        self.assertEqual(len(self.posts), 3)
-        tops = [t for _txt, t in self.posts if t is None]
-        self.assertEqual(len(tops), 1,
-                         "only ONE top-level post for this office all day")
-        for _txt, thread in self.posts[1:]:
-            self.assertEqual(thread, "ts1", "repeats hang off the first one")
+        self.assertEqual(self.posts, [], "nothing goes to the alerts channel")
+        self.assertEqual(len(self.dms), 1)
+        ids, text = self.dms[0]
+        self.assertIn("U06A1QA642X", ids, "the owner is in it")
+        for uid in O.APPROVERS:
+            self.assertIn(uid, ids, "Megan and Eve are in it")
+        self.assertIn("Hi Cyrus", text)
 
     def test_the_repeat_is_terse(self):
-        self._run(dt.datetime(2026, 9, 12, 12, 18))
-        self._run(dt.datetime(2026, 9, 12, 12, 50))
-        reply = self.posts[1][0]
-        self.assertIn("still quiet", reply)
-        self.assertNotIn("Nothing is lost", reply,
-                         "the parent already said it")
+        self._run(dt.datetime(2026, 9, 12, 11, 18))
+        self._run(dt.datetime(2026, 9, 12, 15, 18))
+        self.assertEqual(len(self.dms), 2)
+        reply = self.dms[1][1]
+        self.assertIn("Still quiet", reply)
+        self.assertNotIn("almost always", reply, "the first one already said it")
 
-    def test_an_old_string_state_still_opens_a_thread(self):
-        # The state file outlives its own format; a pre-threading entry must
-        # not crash and must not silently thread onto nothing.
+    def test_repeats_every_4_hours_not_every_30_min(self):
+        """Megan 2026-10-20: "as soon as it goes down we should report and
+        then every 4 hours not every 30 min"."""
+        # 9/12/2026 is a Saturday: the watch closes at 17:00.
+        for h, m in ((11, 18), (11, 50), (13, 30), (15, 17), (15, 18),
+                     (16, 59)):
+            self._run(dt.datetime(2026, 9, 12, h, m))
+        self.assertEqual(len(self.dms), 2, "11:18, then not again until 15:18")
+        self.assertIn("Hi Cyrus", self.dms[0][1])
+        self.assertIn("Still quiet", self.dms[1][1])
+
+    def test_an_old_string_state_still_gets_the_full_nudge(self):
         import json
         self.tmp.parent.mkdir(parents=True, exist_ok=True)
         self.tmp.write_text(json.dumps(
             {"2026-09-12": {"cyrus": "2026-09-12T09:00:00"}}))
         self._run(dt.datetime(2026, 9, 12, 12, 18))
-        self.assertEqual(self.posts[0][1], None)
+        self.assertIn("Hi Cyrus", self.dms[0][1])
 
     def test_the_alert_says_the_gap_not_a_second_clock(self):
-        """Eve 2026-09-14: "last checked in 9/14/2026 17:34:21 (18:19 their
-        time)" read like the check-in converted to their zone. It was the clock
-        NOW. Say how long it has been instead."""
-        self._run(dt.datetime(2026, 9, 12, 12, 18))
-        parent = self.posts[0][0]
-        self.assertIn("last checked in at 10:56, 1 h 21 min ago", parent)
-        self.assertNotIn("their time", parent)
-        self._run(dt.datetime(2026, 9, 12, 12, 50))
-        self.assertIn("10:56, 1 h 53 min ago", self.posts[1][0])
+        """Eve 2026-09-14: a second clock read like the check-in converted to
+        their zone. Say how long it has been instead."""
+        self._run(dt.datetime(2026, 9, 12, 11, 20))
+        self.assertIn("10:56", self.dms[0][1])
+        self.assertNotIn("their time", self.dms[0][1])
+        self._run(dt.datetime(2026, 9, 12, 15, 20))
+        self.assertIn("10:56, 4 h 23 min ago", self.dms[1][1])
 
     def _go_quiet_then_come_back(self):
         self._run(dt.datetime(2026, 9, 12, 12, 18))
@@ -519,13 +522,11 @@ class QuietNudgeThreading(unittest.TestCase):
         self.seen = {"cyrus": "9/12/2026 13:31:05"}
         self._run(dt.datetime(2026, 9, 12, 13, 35))
 
-    def test_coming_back_is_said_in_the_thread(self):
-        """The parent promises updates "until it is back". A thread that just
-        stops reads the same as a watcher that died."""
+    def test_coming_back_is_said_in_the_same_dm(self):
         self._go_quiet_then_come_back()
-        self.assertEqual(len(self.posts), 2)
-        text, thread = self.posts[1]
-        self.assertEqual(thread, "ts1", "the all-clear lands in the thread")
+        self.assertEqual(self.posts, [])
+        self.assertEqual(len(self.dms), 2)
+        text = self.dms[1][1]
         self.assertIn("back online", text)
         self.assertIn("13:31", text)
         self.assertIn("quiet for 2 h 34 min", text)
@@ -534,28 +535,39 @@ class QuietNudgeThreading(unittest.TestCase):
         self._go_quiet_then_come_back()
         self._run(dt.datetime(2026, 9, 12, 13, 37))
         self._run(dt.datetime(2026, 9, 12, 14, 30))
-        self.assertEqual(len(self.posts), 2)
+        self.assertEqual(len(self.dms), 2)
 
-    def test_a_second_outage_reuses_the_thread_and_gets_its_own_all_clear(self):
+    def test_a_second_outage_gets_a_fresh_nudge_and_its_own_all_clear(self):
         self._go_quiet_then_come_back()
         self.quiet = [{"office": "cyrus", "label": "Cyrus's Local Office",
                        "reason": "last checked in 9/12/2026 14:10:00",
                        "last": "9/12/2026 14:10:00"}]
         self._run(dt.datetime(2026, 9, 12, 15, 0))
-        self.assertEqual(self.posts[2][1], "ts1")
-        self.assertIn("quiet again", self.posts[2][0])
+        self.assertIn("Hi Cyrus", self.dms[2][1])
         self.quiet = []
         self.seen = {"cyrus": "9/12/2026 15:05:00"}
         self._run(dt.datetime(2026, 9, 12, 15, 7))
-        self.assertEqual(self.posts[3][1], "ts1")
-        self.assertIn("back online", self.posts[3][0])
-        self.assertIn("quiet for 55 min", self.posts[3][0])
+        self.assertIn("back online", self.dms[3][1])
+        self.assertIn("quiet for 55 min", self.dms[3][1])
 
-    def test_an_office_that_never_had_a_thread_gets_no_all_clear(self):
+    def test_an_outage_from_before_the_change_closes_in_its_channel_thread(self):
+        import json
+        self.tmp.parent.mkdir(parents=True, exist_ok=True)
+        self.tmp.write_text(json.dumps({"2026-09-12": {"cyrus": {
+            "at": "2026-09-12T12:18:00", "ts": "OLD",
+            "last": "9/12/2026 10:56:34"}}}))
+        self.quiet = []
+        self.seen = {"cyrus": "9/12/2026 13:31:05"}
+        self._run(dt.datetime(2026, 9, 12, 13, 35))
+        self.assertEqual(self.posts[0][1], "OLD")
+        self.assertIn("back online", self.posts[0][0])
+
+    def test_an_office_that_was_never_nudged_gets_no_all_clear(self):
         self.quiet = []
         self.seen = {"cyrus": "9/12/2026 13:31:05"}
         self._run(dt.datetime(2026, 9, 12, 13, 35))
         self.assertEqual(self.posts, [])
+        self.assertEqual(self.dms, [])
 
 
 class FaultReporting(unittest.TestCase):

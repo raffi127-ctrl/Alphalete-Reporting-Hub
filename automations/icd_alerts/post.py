@@ -123,6 +123,12 @@ NUDGE_REPEAT_MIN = 30
 # and it is early enough that a nudge still saves the day rather than reporting
 # on a lost one. Nobody is helped by "they have not checked in" at 10:05.
 QUIET_WARN_AFTER_HOUR = 11
+
+# WHEN A STILL-QUIET MACHINE IS MENTIONED AGAIN (Megan 2026-10-20: "as soon
+# as it goes down we should report and then every 4 hours not every 30 min").
+# Every 30 minutes was fine for a channel post nobody had to answer; in a
+# group DM with the owner it is nagging. The first nudge is not delayed.
+NUDGE_STILL_QUIET_MIN = 240
 QUIET_WARN_UNTIL_HOUR = 21
 
 
@@ -2420,6 +2426,117 @@ def close_recovered_faults(day: Optional[dt.date] = None, *, send: bool = False,
     return closed
 
 
+SIGNIN_FIXED_PATH = (Path.home() / ".config" / "recruiting-report"
+                     / "icd_signin_fixed.json")
+
+# Which relay proves each sign-in is working again (see _RECOVERY_PROOF).
+_SIGNIN_PROOF = {"saraplus": "relay", "saraplus_password": "relay",
+                 "servicecloud": "relay", "ownerville": "knocks",
+                 "ownerville_locked": "knocks"}
+
+
+def confirm_signins_fixed(day: Optional[dt.date] = None, *, send: bool = False,
+                          book=None, log=print,
+                          now: Optional[dt.datetime] = None) -> List[str]:
+    """"Good to go" in the same group DM that asked them to sign back in.
+
+    Megan 2026-10-20: "when they correct the issue Lucy should send a DM
+    saying 'Good to go' ... Right now they don't know if they got it
+    corrected or not". The ask went out (ask_office_to_sign_in) and then
+    nothing -- the owner signed in and had no way to tell it had worked.
+
+    PROVED, NOT ASSUMED: the system's own relay must take a row in AFTER the
+    last time the sign-in failed, with RECOVERY_GRACE_MIN of quiet since --
+    the same rule that ✅s a fault thread. Once per ask per day.
+    """
+    from automations.recruiting_report.fill import open_by_key
+    from automations.icd_alerts import knocks_post as _KP
+    day = day or dt.date.today()
+    now = now or dt.datetime.now()
+    prefix = "%s|signin|" % day.isoformat()
+    try:
+        asked = json.loads(SIGNIN_WARNED_PATH.read_text())
+    except (OSError, ValueError):
+        asked = {}
+    try:
+        fixed = json.loads(SIGNIN_FIXED_PATH.read_text())
+    except (OSError, ValueError):
+        fixed = {}
+    todo = []
+    for k in sorted(asked):
+        if not k.startswith(prefix):
+            continue
+        office_key, _, system = k[len(prefix):].partition("|")
+        if office_key and system in _SIGNIN_PROOF and not fixed.get(k):
+            todo.append((k, office_key, system))
+    if not todo:
+        return []
+
+    book = book or open_by_key(RELAY_SPREADSHEET_ID)
+    try:
+        frows = book.worksheet(FAULTS_TAB).get_all_values()
+        rrows = book.worksheet(RELAY_TAB).get_all_values()
+        krows = book.worksheet(KNOCKS_TAB).get_all_values()
+    except Exception as e:  # noqa: BLE001
+        log("could not read the relay tabs: %s" % type(e).__name__)
+        return []
+
+    def _latest(rows, col, office_key):
+        best = None
+        for row in rows[1:]:
+            if len(row) <= col or _day_key(row[1] if len(row) > 1 else "") != day.isoformat():
+                continue
+            key = (row[0] or "").strip().lower()
+            # An office whose keys differ (khalil / khalil-nds) proves itself on either.
+            if not key or not (key.startswith(office_key) or office_key.startswith(key)):
+                continue
+            when = _KP._received_at(row[col])
+            if when and (best is None or when > best):
+                best = when
+        return best
+
+    done = []
+    for k, office_key, system in todo:
+        last = None
+        for r in frows[1:]:
+            if len(r) <= F_LAST or (r[F_OFFICE] or "").strip().lower() != office_key:
+                continue
+            if _day_key(r[F_DAY]) != day.isoformat():
+                continue
+            f = {"stage": r[F_STAGE], "summary": r[F_SUMMARY],
+                 "detail": r[F_DETAIL] if len(r) > F_DETAIL else ""}
+            if _signin_system(f) != system:
+                continue
+            when = _KP._received_at(r[F_LAST])
+            if when and (last is None or when > last):
+                last = when
+        proof = (_latest(rrows, COL_RECEIVED, office_key)
+                 if _SIGNIN_PROOF[system] == "relay"
+                 else _latest(krows, _KP.KN_RECEIVED, office_key))
+        if not (last and proof and proof > last
+                and (now - last) >= dt.timedelta(minutes=RECOVERY_GRACE_MIN)):
+            continue
+        spec = SYSTEMS.get(system) or {}
+        office = O.get(office_key)
+        label = getattr(office, "label", None) or office_key
+        text = (":white_check_mark: *Good to go — %s.* Lucy is signed back "
+                "into %s and your numbers are updating again (since %s). "
+                "Thanks for fixing it!"
+                % (label, spec.get("name", system),
+                   proof.strftime("%I:%M %p").lstrip("0")))   # no %-I: Windows
+        log("SIGNED BACK IN: %-10s %s" % (office_key, system))
+        if not send:
+            continue
+        dm_office_people(office_key, text, log=log)
+        fixed[k] = now.isoformat(timespec="seconds")
+        done.append(office_key)
+    if done:
+        fixed = {k: v for k, v in fixed.items() if k.startswith(day.isoformat())}
+        SIGNIN_FIXED_PATH.parent.mkdir(parents=True, exist_ok=True)
+        SIGNIN_FIXED_PATH.write_text(json.dumps(fixed, indent=2, sort_keys=True))
+    return done
+
+
 def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
                   book=None, log=print) -> List[Dict]:
     """Put what broke on an ICD laptop in front of us, once per fault.
@@ -3155,8 +3272,8 @@ OWNER_NUDGE = (
     "  • %s\n"
     "  • it's off wifi\n\n"
     "Sort any of those and it picks itself up within a few minutes. Nothing is "
-    "lost in the meantime. If it's none of those, please DM Megan & Eve to "
-    "help with troubleshooting.")
+    "lost in the meantime. If it's none of those, reply here and Megan or Eve "
+    "will help troubleshoot.")
 
 
 def sales_system_for(office) -> str:
@@ -3269,7 +3386,8 @@ def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
     # again, so a second outage the same day gets its own all-clear.
     quiet_keys = {q["office"] for q in quiet}
     recovered = [k for k, v in sent.items()
-                 if _thread_of(v) and not v.get("back") and k not in quiet_keys]
+                 if (_thread_of(v) or (isinstance(v, dict) and v.get("dm")))
+                 and not v.get("back") and k not in quiet_keys]
     changed = False
     if recovered:
         seen, _ever = check_ins(day)
@@ -3279,17 +3397,25 @@ def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
                 continue
             went = _parse_received(sent[key].get("last") or "")
             came = _parse_received(raw)
+            # "GOOD TO GO" (Megan 2026-10-20: "Right now they don't know if
+            # they got it corrected or not"). The owner fixed something on
+            # the strength of the nudge; this is the answer that it worked.
             if went and came and came > went:
-                text = (":white_check_mark: back online — checked in at %s "
-                        "(quiet for %s)." % (_clock(raw), _span(came - went)))
+                text = (":white_check_mark: *Good to go!* The computer is back "
+                        "online — checked in at %s (quiet for %s). Thanks for "
+                        "fixing it." % (_clock(raw), _span(came - went)))
             else:
-                text = (":white_check_mark: back online — checked in at %s."
+                text = (":white_check_mark: *Good to go!* The computer is back "
+                        "online — checked in at %s. Thanks for fixing it."
                         % _clock(raw))
             log("BACK: %-10s %s" % (key, text))
             if not send:
                 continue
             try:
-                _slack(O.OPS_CHANNEL, text, thread_ts=_thread_of(sent[key]))
+                if sent[key].get("dm"):
+                    dm_office_people(key, text, log=log)
+                else:   # an outage announced in the channel before 10/20
+                    _slack(O.OPS_CHANNEL, text, thread_ts=_thread_of(sent[key]))
             except Exception as e:  # noqa: BLE001 — one office must not stop the rest
                 log("could not post back-online for %s: %s: %s"
                     % (key, type(e).__name__, str(e)[:100]))
@@ -3313,6 +3439,12 @@ def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
         local = O.office_now(office) if office else now
         if not quiet_watch_open(local):
             continue
+        prev = sent.get(q["office"])
+        still_open = (isinstance(prev, dict) and (prev.get("dm") or prev.get("ts"))
+                      and not prev.get("back"))
+        if (still_open and last and (now - last)
+                < dt.timedelta(minutes=NUDGE_STILL_QUIET_MIN)):
+            continue
         q["office_time"] = local.strftime("%H:%M")
         q["how_long"] = _quiet_phrase(q, now)
         fresh.append(q)
@@ -3324,42 +3456,13 @@ def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
             _save_warned(data, day, sent)
         return fresh
 
-    nudged = []
-    for q in fresh:
-        # BOUND HERE. The lines below used `key` without it, so every nudge
-        # since 2026-09-18 died on UnboundLocalError, was swallowed, and the
-        # post then claimed "No Slack id on file" for offices that have one
-        # (Khalil, 2026-09-21). Worse, if the recovery loop above had run,
-        # `key` held ANOTHER office -- and its laptop wording and helpers
-        # would have been used for this one.
-        key = q["office"]
-        office = O.get(key)
-        if not (office and office.slack_user_id):
-            continue
-        first = (office.owner or "").split()[0] if office.owner else "there"
-        try:
-            _dm(office.slack_user_id, _nudge_text(first, q, key in laptops))
-            # SAME FOR THE HELPER, who may be the only one near the machine.
-            for uid in O.helpers_for(key):
-                try:
-                    _dm(uid, _nudge_text(first, q, key in laptops))
-                except Exception as e:  # noqa: BLE001 — one DM must not cost the rest
-                    log("could not DM helper %s: %s" % (uid, type(e).__name__))
-            nudged.append(q["office"])
-        except Exception as e:  # noqa: BLE001 — a failed nudge must still reach us
-            log("could not DM %s: %s: %s" % (q["office"], type(e).__name__,
-                                             str(e)[:100]))
-
-    # ONE THREAD PER OFFICE PER DAY (Megan 2026-09-12: "1 thread per ICD so
-    # it's not clogging up the channel"). A laptop that stays down all
-    # afternoon produced a top-level post every 30 minutes -- Cyrus had three
-    # identical ones by 13:21, and they pushed real incidents off the screen.
-    # The first nudge for an office opens a thread; every repeat lands under
-    # it, so the channel shows ONE line per office no matter how long it is
-    # down, and the history is all in one place.
-    # WAS THIS MACHINE ALREADY KNOWN NOT TO RECOVER? Read once, and only on
-    # a tick that is actually posting. Turns "it went quiet" into "it went
-    # quiet and it will NOT come back by itself" -- a different urgency.
+    # A GROUP DM, NOT THE CHANNEL (Megan 2026-10-20: "eve and i aren't in a
+    # DM with Cy on this which is what should be happening - and it shouldn't
+    # go in the slack alert channel"). The owner got a private DM and the
+    # channel got the post, so the only people who could talk it through
+    # with them were never in the same conversation. Now one group DM --
+    # owner, whoever is near the machine, Megan, Eve -- carries the nudge,
+    # every repeat, and the all-clear. Nothing goes to the alerts channel.
     try:
         risk_by = {}
         for r in restart_risks(day):
@@ -3369,36 +3472,35 @@ def warn_quiet(day: Optional[dt.date] = None, *, send: bool = False,
 
     stamp = now.isoformat(timespec="seconds")
     for q in fresh:
+        # BOUND HERE, per office: a `key` left over from another loop once
+        # sent one office's wording to another (Khalil, 2026-09-21).
         key = q["office"]
-        parent = _thread_of(sent.get(key))
-        tail = ("  _Nudged them._" if key in nudged
-                else "  _No Slack id on file — nudge them yourself._")
-        if parent:
-            # A REPLY, and deliberately terse: the parent already explains
-            # what this is, and a thread of identical paragraphs is the same
-            # noise one level down.
-            was_back = isinstance(sent.get(key), dict) and sent[key].get("back")
-            text = ("%s — %s.%s" % ("quiet again" if was_back else "still quiet",
-                                    q["how_long"], tail))
+        office = O.get(key)
+        prev = sent.get(key)
+        repeat = (isinstance(prev, dict) and (prev.get("dm") or prev.get("ts"))
+                  and not prev.get("back"))
+        if repeat:
+            # TERSE: the first message already explains what to check.
+            text = "Still quiet — %s." % q["how_long"]
         else:
-            text = ("\n\n".join([
-                ":warning: *%s* — the alerts computer %s.%s"
-                % (q["label"], q["how_long"], tail),
-                "_Nothing is lost: %s is cumulative, so whatever it "
-                "missed arrives when the %s is back online._"
-                % (sales_system_for(O.get(key)),
-                   machine_words(key in laptops)["noun"]),
-                "_Updates follow in this thread until it is back._"]
-                + ([_risk_note(risk_by[key])] if risk_by.get(key) else [])))
+            first = ((office.owner or "").split()[0]
+                     if office and office.owner else "there")
+            parts = [_nudge_text(first, q, key in laptops)]
+            if not (office and office.slack_user_id):
+                parts.append("_(No Slack id on file for %s — Megan/Eve, "
+                             "please reach them.)_" % q["label"])
+            if risk_by.get(key):
+                parts.append(_risk_note(risk_by[key]))
+            text = "\n\n".join(parts)
         try:
-            ts = _slack(O.OPS_CHANNEL, text, thread_ts=parent)
+            dm_office_people(key, text, log=log)
         except Exception as e:  # noqa: BLE001 — one office must not stop the rest
-            log("could not post quiet notice for %s: %s: %s"
-                % (key, type(e).__name__, str(e)[:100]))
+            log("could not DM %s: %s: %s" % (key, type(e).__name__,
+                                             str(e)[:100]))
             continue
         # "last" is the check-in the outage started after, so the all-clear
         # can say how long it lasted. No "back" key: this outage is open.
-        sent[key] = {"at": stamp, "ts": parent or ts, "last": q.get("last")}
+        sent[key] = {"at": stamp, "dm": True, "last": q.get("last")}
 
     _save_warned(data, day, sent)
     return fresh
@@ -3623,6 +3725,11 @@ def main(argv=None) -> int:
                 notify_pending(send=args.send)
                 notify_faults(day, send=args.send)
                 close_recovered_faults(day, send=args.send)
+                try:
+                    confirm_signins_fixed(day, send=args.send)
+                except Exception as e:  # noqa: BLE001 — a "good to go" must never cost the alerts
+                    print("could not check sign-ins: %s: %s"
+                          % (type(e).__name__, str(e)[:100]))
                 warn_quiet(day, send=args.send)
                 warn_stale_machines(day, send=args.send)
                 # BOTH OF THESE EXISTED AND NOTHING CALLED THEM. A machine

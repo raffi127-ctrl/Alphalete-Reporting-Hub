@@ -27,6 +27,8 @@ class TheNudgeIsSentTest(unittest.TestCase):
              mock.patch.object(P, "laptop_keys", return_value=set()), \
              mock.patch.object(P, "restart_risks", return_value=[]), \
              mock.patch.object(P, "_dm", side_effect=lambda u, t: dms.append(u)), \
+             mock.patch.object(P, "_group_dm",
+                               side_effect=lambda us, t: dms.extend(us)), \
              mock.patch.object(P, "_slack", return_value="1.1"), \
              mock.patch.object(P.O, "helpers_for",
                                side_effect=lambda k: (helpers or {}).get(k, ())), \
