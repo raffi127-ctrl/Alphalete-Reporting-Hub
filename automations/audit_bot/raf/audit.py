@@ -268,6 +268,81 @@ def _write_rejection(audio_path: Path, reason: str, **extras) -> None:
         log(f"  rejection log write failed: {e}")
 
 
+# ---------- unreadable recordings ----------
+#
+# 2026-10-19: a WhatsApp export Gemini couldn't open sat in inbox/ all night.
+# audit_file() returned None and left it there, the watcher went quiet, and the
+# heartbeat killed + restarted it every ~10 min — each restart re-tried the same
+# file. Now an unreadable file is moved to rejected/ (never deleted) and the rep
+# gets ONE plain reply telling them what to send instead (wording approved by
+# Megan, 2026-10-20). Deliberately NOT written to completions.jsonl, so
+# slack_watcher's own rejection replies can't double-post.
+
+UNREADABLE_REPLY = (
+    ":studio_microphone: *I couldn't open this recording, so there's no audit yet.*\n\n"
+    "Please send it again as one of these:\n"
+    ":white_check_mark: A *Voice Memo* from your iPhone\n"
+    ":white_check_mark: An *.m4a*, *.mp3* or *.wav* file\n\n"
+    ":x: WhatsApp audio doesn't work.\n\n"
+    "Just upload the new file here and I'll start the audit."
+)
+UNREADABLE_LOG = RUNTIME_DIR / "unreadable.jsonl"
+
+
+def _slack_key(audio_path: Path) -> str | None:
+    """'slack-1790092430_000400_WhatsApp_….mp4' -> 'slack-1790092430_000400'
+    (the slack_pending.json key slack_watcher writes on download)."""
+    parts = audio_path.name.split("_")
+    if not audio_path.name.startswith("slack-") or len(parts) < 2:
+        return None
+    return f"{parts[0]}_{parts[1]}"
+
+
+def _reply_unreadable(audio_path: Path) -> str:
+    """Post UNREADABLE_REPLY in the thread the recording came from. Best-effort:
+    returns what happened, never raises."""
+    key = _slack_key(audio_path)
+    if not key:
+        return "not a Slack upload — no reply"
+    try:
+        pending = json.loads((RUNTIME_DIR / "slack_pending.json").read_text())
+        dest = pending[key]
+    except Exception as e:  # noqa: BLE001
+        return f"no Slack thread on file for {key} ({type(e).__name__})"
+    try:
+        sys.path.insert(0, str(RUNTIME_DIR))
+        from slack_watcher import web  # same client heartbeat.py uses
+        web.chat_postMessage(channel=dest["channel"], thread_ts=dest.get("thread_ts"),
+                             text=UNREADABLE_REPLY)
+        return f"replied in {dest['channel']}"
+    except Exception as e:  # noqa: BLE001
+        return f"reply failed: {type(e).__name__}: {e}"
+
+
+def _reject_unreadable(audio_path: Path, why: str) -> None:
+    """Move an unreadable recording out of inbox/ into rejected/ and tell the rep."""
+    REJECTED.mkdir(parents=True, exist_ok=True)
+    target = REJECTED / audio_path.name
+    counter = 2
+    while target.exists():
+        target = REJECTED / f"{audio_path.stem}_{counter}{audio_path.suffix}"
+        counter += 1
+    try:
+        audio_path.rename(target)
+        moved = f"moved to rejected/{target.name}"
+    except OSError as e:
+        moved = f"move FAILED: {e}"
+    replied = _reply_unreadable(audio_path)
+    log(f"  UNREADABLE ({why}): {moved}; {replied}")
+    try:
+        with open(UNREADABLE_LOG, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": datetime.now().isoformat(),
+                                "audio_filename": audio_path.name, "why": why,
+                                "moved": moved, "replied": replied}) + "\n")
+    except OSError:
+        pass
+
+
 def audit_file(audio_path: Path) -> Path | None:
     """Run one audit. Returns path to the report, or None on failure."""
 
@@ -322,6 +397,7 @@ def audit_file(audio_path: Path) -> Path | None:
         except Exception as e:
             log(f"  conversion failed: {e}")
             mac_notify("Audit FAILED", f"{audio_path.name} — format conversion error")
+            _reject_unreadable(audio_path, "conversion failed")
             return None
 
     # 1b. Sanitize filename if it has non-ASCII (Gemini SDK breaks on those)
@@ -364,6 +440,11 @@ def audit_file(audio_path: Path) -> Path | None:
         if uploaded.state.name == "FAILED":
             log("Gemini reports file FAILED to process")
             mac_notify("Audit FAILED", f"{audio_path.name} — Gemini couldn't process audio")
+            if temp_converted and temp_converted.exists():
+                temp_converted.unlink(missing_ok=True)
+            if upload_via_temp and upload_via_temp.exists():
+                upload_via_temp.unlink(missing_ok=True)
+            _reject_unreadable(audio_path, "Gemini could not process it")
             return None
         time.sleep(3)
         uploaded = client.files.get(name=uploaded.name)
