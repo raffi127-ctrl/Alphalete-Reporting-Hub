@@ -30,13 +30,43 @@ try:
 except Exception:                                          # noqa: BLE001
     pass
 
+from automations.shared.name_case import titlecase_name
 from automations.rc_contact_sync_raf import config as C
 from automations.rc_contact_sync_raf import customers as cust
 from automations.rc_contact_sync import ringcentral as RC
-# The reply body (grouped-by-rep) is identical to the B2B report's — reuse it.
-from automations.rc_contact_sync.run import missing_names_reply
 
 REPORT_ID = "rc_contact_sync_raf"
+NO_REP = "(no rep on the order)"
+
+
+def missing_names_reply(missing: List[Dict[str, str]], total: int) -> str:
+    """The threaded reply: the un-texted customers, grouped by the rep who
+    sold them, each with their phone and their product categories.
+
+    Based on rc_contact_sync.run.missing_names_reply (grouped by rep, bold
+    names not @mentions — no rep→Slack-id map for these reps, and duplicate
+    first names in this workspace), extended per Dylan 2026-10-20 to carry the
+    customer's phone and products (Internet / TV / Wireless)."""
+    if not missing:
+        return ("The 1 customer was messaged. :white_check_mark:" if total == 1
+                else "All %d customers were messaged. :white_check_mark:" % total)
+    by_rep: Dict[str, List[Dict[str, str]]] = {}
+    for m in missing:
+        by_rep.setdefault(titlecase_name(m.get("rep", "")) or NO_REP,
+                          []).append(m)
+    lines = ["%d of %d customer%s never got a message:"
+             % (len(missing), total, "" if total == 1 else "s")]
+    for rep in sorted(by_rep):
+        lines.append("*%s*" % rep)
+        for m in by_rep[rep]:
+            who = titlecase_name(m.get("business", "")) or \
+                  titlecase_name(m.get("customer_name", "")) or "(no name)"
+            extra = titlecase_name(m.get("customer_name", ""))
+            tail = " — %s" % extra if extra and extra != who else ""
+            phone = m.get("phone") or "no phone on file"
+            prods = ", ".join(m.get("products") or []) or "no product on file"
+            lines.append("  • %s%s — %s — %s" % (who, tail, phone, prods))
+    return "\n".join(lines)
 
 
 class IdentityError(RuntimeError):

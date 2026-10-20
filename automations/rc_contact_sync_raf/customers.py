@@ -77,8 +77,26 @@ def all_customers(since: dt.date, until: dt.date,
     # The "Order Type" column (New / Upgrade), found tolerantly. Absent on an
     # export that doesn't carry it → no rows are dropped as upgrades.
     by_key = {_key(f): f for f in fieldnames}
-    otype_col = next((by_key[_key(c)] for c in C.ORDER_TYPE_COLS
-                      if _key(c) in by_key), None)
+
+    def _col(cands):
+        return next((by_key[_key(c)] for c in cands if _key(c) in by_key), None)
+
+    otype_col = _col(C.ORDER_TYPE_COLS)
+    int_col = _col(C.PRODUCT_INTERNET_COLS)
+    tv_col = _col(C.PRODUCT_TV_COLS)
+    wl_col = _col(C.PRODUCT_WIRELESS_COUNT_COLS)
+
+    def _products(r) -> List[str]:
+        tags: List[str] = []
+        if int_col and (r.get(int_col, "") or "").strip():
+            tags.append("Internet")
+        if tv_col and (r.get(tv_col, "") or "").strip():
+            tags.append("TV")
+        if wl_col:
+            n = (r.get(wl_col, "") or "").strip()
+            if n and n != "0":
+                tags.append("Wireless")
+        return tags
 
     out: List[Dict[str, str]] = []
     skipped_dates = 0
@@ -106,6 +124,8 @@ def all_customers(since: dt.date, until: dt.date,
             "customer_name": _norm(r.get(cols["customer_name"], "")),
             "phone": _norm(r.get(cols.get("phone", ""), ""))
             if cols.get("phone") else "",
+            # Internet / TV / Wireless, for the report line.
+            "products": _products(r),
             # No customer-card harvest on this report, so no alt numbers — the
             # texted() check degrades to the primary number + the name, which
             # is exactly the B2B report's original behaviour.

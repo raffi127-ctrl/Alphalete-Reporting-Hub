@@ -39,6 +39,15 @@ PULL_WINDOW_DAYS = 7
 ORDER_TYPE_COLS = ("Order Type",)
 EXCLUDE_ORDER_TYPES = {"upgrade"}
 
+# Product categories on the report (Dylan 2026-10-20: show each customer's
+# products as just Internet / TV / Wireless, not the package names). A category
+# is tagged when its column is populated on the order: Internet = a non-empty
+# "Internet Package", TV = a non-empty "Video Package" (DirecTV), Wireless = a
+# "Wireless Line Count" above zero. Columns looked up tolerantly.
+PRODUCT_INTERNET_COLS = ("Internet Package",)
+PRODUCT_TV_COLS = ("Video Package",)
+PRODUCT_WIRELESS_COUNT_COLS = ("Wireless Line Count",)
+
 # --- RingCentral (DYLAN's account — rc_autoread's, NOT Taylor's) -------------
 # The app, JWT and watched line all come from automations/rc_autoread/run.py
 # so there is exactly one copy of those secrets. owner_id (the JWT's `sub`) is

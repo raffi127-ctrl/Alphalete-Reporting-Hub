@@ -49,7 +49,7 @@ class TestAllCustomers(unittest.TestCase):
             "order_id": "RAF-1", "day": "2026-10-19",
             "order_date": "10/19/2026", "rep": "WILLIE HENDERSON",
             "business": "", "customer_name": "JANE DOE",
-            "phone": "(214) 555-0101",
+            "phone": "(214) 555-0101", "products": [],
             "alt_phones": [], "wireless_order": "", "ban": "",
         }])
 
@@ -126,6 +126,44 @@ class TestUpgradeExclusion(unittest.TestCase):
                                    dt.date(2026, 10, 19),
                                    log=lambda *a, **k: None)
         self.assertEqual(len(out), 1)
+
+
+class TestProductTags(unittest.TestCase):
+    FIELDS_P = FIELDS + ("Internet Package", "Video Package",
+                         "Wireless Line Count")
+
+    def _run(self, row):
+        with mock.patch(
+                "automations.rc_contact_sync_raf.customers._fetch",
+                return_value=_env(_csv([row], self.FIELDS_P))):
+            return CU.all_customers(dt.date(2026, 10, 13),
+                                    dt.date(2026, 10, 19),
+                                    log=lambda *a, **k: None)[0]["products"]
+
+    def test_all_three(self):
+        row = dict(ROW, **{"Internet Package": "Internet 1000 (Fiber 1 GIG)",
+                           "Video Package": "DIRECTV CHOICE",
+                           "Wireless Line Count": "2"})
+        self.assertEqual(self._run(row), ["Internet", "TV", "Wireless"])
+
+    def test_internet_only(self):
+        row = dict(ROW, **{"Internet Package": "Internet 500",
+                           "Video Package": "", "Wireless Line Count": "0"})
+        self.assertEqual(self._run(row), ["Internet"])
+
+    def test_wireless_zero_is_not_tagged(self):
+        row = dict(ROW, **{"Internet Package": "", "Video Package": "",
+                           "Wireless Line Count": "0"})
+        self.assertEqual(self._run(row), [])
+
+    def test_no_product_columns_empty(self):
+        with mock.patch(
+                "automations.rc_contact_sync_raf.customers._fetch",
+                return_value=_env(_csv([ROW], FIELDS))):
+            out = CU.all_customers(dt.date(2026, 10, 13),
+                                   dt.date(2026, 10, 19),
+                                   log=lambda *a, **k: None)
+        self.assertEqual(out[0]["products"], [])
 
 
 class TestConfigWiring(unittest.TestCase):
