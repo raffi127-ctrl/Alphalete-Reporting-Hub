@@ -721,7 +721,12 @@ RECIPIENTS: dict = {
     # same afternoon and picked up with no code change, which is the point.
     "atef": [
         "atefchoudhury349@gmail.com", "CarlosHidalgo349@gmail.com",
-        "maudmiller4@gmail.com", "pateldhyeyb@gmail.com",
+        # OUT 2026-10-20 (Eve): Dhey Patel (pateldhyeyb@gmail.com) sale de la
+        # capitania de Atef — Tableau lo pone en Blake's Team y sus filas
+        # salieron de la caja de Atef en el Org Sales Board el mismo dia
+        # (new_owners/captain_gate EXCLUDE). Salio tambien del grupo vivo
+        # "Atef's Captainship": seed_groups rehace el grupo desde aca.
+        "maudmiller4@gmail.com",
         "raffi127@gmail.com", "sabrinaalicea2021@gmail.com",
     ],
     "khalil": [
