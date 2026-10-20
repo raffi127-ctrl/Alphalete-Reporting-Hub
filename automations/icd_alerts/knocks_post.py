@@ -1215,6 +1215,8 @@ THREAD_TITLE = "Knocks and Dispositions"
 THREAD_TITLES = {"C0AJQA8P716": THREAD_TITLE,          # #a-players-b2b
                  "C07J46MQNUX": "Box Knocks Board"}    # #alphalete-gp-sales
 THREADED_CHANNELS = set(THREAD_TITLES)
+# Rooms whose day-thread is the metrics job's morning parent, not ours.
+METRICS_THREAD_CHANNELS = {"C07J46MQNUX"}
 
 
 def _day_thread_ts(smp, channel_id: str) -> Optional[str]:
@@ -1223,6 +1225,15 @@ def _day_thread_ts(smp, channel_id: str) -> Optional[str]:
     if channel_id not in THREADED_CHANNELS:
         return None
     try:
+        if channel_id in METRICS_THREAD_CHANNELS:
+            # THE MORNING "Box Metrics — <Month D, YYYY>" THREAD (Carlos
+            # 2026-10-19: "lets just post them in the metrics thread"). Its
+            # own "Box Knocks Board" parent is the fallback when the metrics
+            # job has not posted yet.
+            from automations.b2b_dispositions import slack_post as _bsp
+            ts = _bsp.box_metrics_parent_ts(smp._client(), channel_id, dt.date.today())
+            if ts:
+                return ts
         return smp.ensure_named_thread(THREAD_TITLES[channel_id], dt.date.today(),
                                        channel_id=channel_id).get("thread_ts")
     except Exception as e:  # noqa: BLE001

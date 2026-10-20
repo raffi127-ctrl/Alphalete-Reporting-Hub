@@ -325,12 +325,12 @@ def post_daily_thread(prefix: str, slot: str, paths: List,
                 results.append({"channel": clabel, "ok": False,
                                 "error": "no image files"})
                 continue
-            ts = _find_parent_ts(client, channel, title, today)
-            if ts is None:
-                parent = client.chat_postMessage(channel=channel,
-                                                 text=f"*{title}*")
-                ts = parent.get("ts")
-            elif _reply_exists(client, channel, ts, slot_key):
+            ts = _parent_for(client, channel, title, today)
+            # In the shared Box Metrics thread the caption names the report,
+            # so a 6 PM Today's Activity and a 6 PM gaps list stay distinct.
+            caption = "%s — %s" % (prefix, caption) if cfg.USE_BOX_METRICS_THREAD else caption
+            slot_key = "%s — %s" % (prefix, slot_key) if cfg.USE_BOX_METRICS_THREAD else slot_key
+            if _reply_exists(client, channel, ts, slot_key):
                 results.append({"channel": clabel, "skipped": True, "ok": True})
                 continue
             up = _upload_reply(client, channel, ts, uploads, caption, slot_key)
@@ -371,11 +371,17 @@ def post_thread(title: str, paths: List, today: Optional[dt.date] = None, *,
                                 "error": "no image files"})
                 continue
             ts = None
-            if repost:
-                ts = _find_parent_ts(client, channel, title, today)
-            elif _title_exists(client, channel, title, today):
-                results.append({"channel": clabel, "skipped": True, "ok": True})
-                continue
+            if cfg.USE_BOX_METRICS_THREAD:
+                ts = box_metrics_parent_ts(client, channel, today)
+                if ts and not repost and _reply_exists(client, channel, ts, title):
+                    results.append({"channel": clabel, "skipped": True, "ok": True})
+                    continue
+            if ts is None:
+                if repost:
+                    ts = _find_parent_ts(client, channel, title, today)
+                elif _title_exists(client, channel, title, today):
+                    results.append({"channel": clabel, "skipped": True, "ok": True})
+                    continue
             if ts is None:
                 parent = client.chat_postMessage(channel=channel, text=f"*{title}*")
                 ts = parent.get("ts")
@@ -383,8 +389,10 @@ def post_thread(title: str, paths: List, today: Optional[dt.date] = None, *,
             # is one picture per territory (2026-09-29) — so batches of 10.
             up_ok = True
             for k in range(0, len(uploads), 10):
-                up = client.files_upload_v2(file_uploads=uploads[k:k + 10],
-                                            channel=channel, thread_ts=ts)
+                up = client.files_upload_v2(
+                    file_uploads=uploads[k:k + 10], channel=channel, thread_ts=ts,
+                    # Named inside the shared Box Metrics thread (dedupe key).
+                    initial_comment=(f"*{title}*" if cfg.USE_BOX_METRICS_THREAD and k == 0 else None))
                 up_ok = up_ok and up.get("ok", True)
             results.append({"channel": clabel, "ts": ts,
                             "ok": up_ok,
@@ -410,7 +418,7 @@ def post_daily_thread_text(prefix: str, slot: str, body: str,
     title = day_title(prefix, today)
     caption = reply_caption(slot, mentions)
     slot_key = (slot or "").replace(":00", "")
-    text = caption + "\n\n" + body
+    text = body if cfg.USE_BOX_METRICS_THREAD else caption + "\n\n" + body
     if dry_run:
         return {"dry_run": True, "title": title, "text": text,
                 "channels": [cfg.CHANNEL_LABEL.get(c, c) for c in channels]}
@@ -419,11 +427,12 @@ def post_daily_thread_text(prefix: str, slot: str, body: str,
     for channel in channels:
         clabel = cfg.CHANNEL_LABEL.get(channel, channel)
         try:
-            ts = _find_parent_ts(client, channel, title, today)
-            if ts is None:
-                ts = client.chat_postMessage(channel=channel,
-                                             text=f"*{title}*").get("ts")
-            elif _reply_exists(client, channel, ts, slot_key):
+            ts = _parent_for(client, channel, title, today)
+            # The typed list's own first line ("Box 15 min gaps — 2 PM") is
+            # the dedupe key inside the shared thread.
+            if cfg.USE_BOX_METRICS_THREAD:
+                slot_key = body.splitlines()[0] if body else slot_key
+            if _reply_exists(client, channel, ts, slot_key):
                 results.append({"channel": clabel, "skipped": True, "ok": True})
                 continue
             resp = client.chat_postMessage(channel=channel, text=text,
@@ -435,3 +444,35 @@ def post_daily_thread_text(prefix: str, slot: str, body: str,
                             "error": f"{type(e).__name__}: {str(e)[:140]}"})
     return {"title": title, "ok": all(r.get("ok") for r in results),
             "channels": results}
+
+
+def box_metrics_parent_ts(client, channel: str, today: Optional[dt.date] = None):
+    """ts of today's morning "*Box Metrics — October 19, 2026*" parent in
+    `channel` (posted ~7:15 by the metrics job), or None. Matched on the
+    prefix + the month name, so the day's zero-padding does not matter."""
+    today = today or dt.date.today()
+    oldest = dt.datetime.combine(today, dt.time.min).timestamp()
+    try:
+        resp = client.conversations_history(channel=channel, oldest=str(oldest), limit=300)
+    except Exception:  # noqa: BLE001
+        return None
+    month = today.strftime("%B")
+    for m in resp.get("messages", []):
+        text = (m.get("text") or "").replace("*", "")
+        if text.startswith(cfg.BOX_METRICS_TITLE) and month in text:
+            return m.get("thread_ts") or m.get("ts")
+    return None
+
+
+def _parent_for(client, channel: str, own_title: str, today: dt.date):
+    """The parent the Box posts reply into: the morning Box Metrics thread when
+    USE_BOX_METRICS_THREAD and it exists, else this report's own dated parent
+    (found or opened)."""
+    if cfg.USE_BOX_METRICS_THREAD:
+        ts = box_metrics_parent_ts(client, channel, today)
+        if ts:
+            return ts
+    ts = _find_parent_ts(client, channel, own_title, today)
+    if ts is None:
+        ts = client.chat_postMessage(channel=channel, text=f"*{own_title}*").get("ts")
+    return ts

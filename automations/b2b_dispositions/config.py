@@ -81,6 +81,14 @@ CHANNEL_LABEL = {
 #     image so Slack stays clean (Megan wanted fewer, taller images for mobile).
 #   * "B2B Dispositions" — one Territory Stats image PER territory, at 6:30pm.
 THREAD_HOURLY = "Box Today's Activity"   # was "Hourly Activity" (Carlos 2026-10-03: campaign first)
+# ALL THE BOX POSTS RIDE THE MORNING "Box Metrics — <Month D, YYYY>" THREAD
+# (Carlos 2026-10-19: "instead of making a thread for all of these lets just
+# post them in the metrics thread that gets posted in the morning"). The
+# titles below are only the FALLBACK parents, opened if that thread is not
+# in the room yet. Set False to go back to one thread per report.
+USE_BOX_METRICS_THREAD = True
+BOX_METRICS_TITLE = "Box Metrics —"
+
 # Renamed "B2B Dispositions" -> "Territory Stats" (Carlos 2026-09-29), and
 # the territories now post one picture each instead of one tall stack.
 THREAD_DISPOSITIONS = "Box Territory Stats"   # Carlos 2026-10-03

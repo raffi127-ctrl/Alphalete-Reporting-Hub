@@ -60,9 +60,14 @@ RENAMED = {"Hourly Activity": cfg.THREAD_HOURLY}
 # icd_alerts.knocks_post.THREAD_TITLES["C07J46MQNUX"].
 BOX_BOARD_THREAD = "Box Knocks Board"
 # Order of the parents in the room, top to bottom.
-ORDER = [("named", BOX_BOARD_THREAD), ("day", cfg.THREAD_DISPOSITIONS),
-         ("day", cfg.THREAD_HOURLY), ("day", cfg.THREAD_GAPS),
-         ("named", "NDS Knocks Board"), ("named", "NDS 15 Min Gaps")]
+# The four Box reports ride the morning "Box Metrics" thread since 2026-10-19
+# (Carlos), so only the NDS threads are opened here; the Box parents in
+# DAY_THREADS/BOX_BOARD_THREAD are fallbacks the posters open themselves if
+# the metrics thread is missing.
+ORDER = ([] if cfg.USE_BOX_METRICS_THREAD else
+         [("named", BOX_BOARD_THREAD), ("day", cfg.THREAD_DISPOSITIONS),
+          ("day", cfg.THREAD_HOURLY), ("day", cfg.THREAD_GAPS)]) + \
+        [("named", "NDS Knocks Board"), ("named", "NDS 15 Min Gaps")]
 ALL_PREFIXES = DAY_THREADS + NAMED_THREADS + list(RENAMED)
 
 
@@ -220,6 +225,19 @@ def run(today: Optional[dt.date] = None, *, send: bool, log=print) -> int:
                 parents[prefix] = ts
         except Exception as e:  # noqa: BLE001
             log("  %s: FAILED to open (%s: %s)" % (prefix, type(e).__name__, str(e)[:120]))
+    # The shared Box Metrics thread takes yesterday's Box board + territory
+    # pictures (and gets pinned with the rest). Found, never opened, by us.
+    if cfg.USE_BOX_METRICS_THREAD:
+        mts = sp.box_metrics_parent_ts(client, CHANNEL, today)
+        if mts:
+            parents[BOX_BOARD_THREAD] = mts
+            parents[cfg.THREAD_DISPOSITIONS] = mts
+            if not _said_today(client, mts, "Final board"):
+                _OPENED.add(BOX_BOARD_THREAD)
+                _OPENED.add(cfg.THREAD_DISPOSITIONS)
+            log("  Box Metrics thread: found (%s)" % mts)
+        else:
+            log("  Box Metrics thread: not in the room yet -- Box items skipped")
     # Yesterday's final Box board into today's Box Knocks Board thread.
     try:
         board = (_yesterday_box_board(client, yday, log)
@@ -329,3 +347,13 @@ def backfill_yesterday(thread_prefix: str, today: Optional[dt.date] = None, *,
         return 0
     ts = smp.ensure_named_thread(thread_prefix, today, channel_id=CHANNEL).get("thread_ts")
     return 0 if _post_yesterday(client, yday, thread_prefix, text_match, ts, log) else 1
+
+
+def _said_today(client, parent_ts: str, needle: str) -> bool:
+    """Is a reply containing `needle` already under this parent?"""
+    try:
+        rep = client.conversations_replies(channel=CHANNEL, ts=parent_ts, limit=200)
+    except Exception:  # noqa: BLE001
+        return False
+    return any(needle in (m.get("text") or "") for m in rep.get("messages", [])
+               if m.get("ts") != parent_ts)
