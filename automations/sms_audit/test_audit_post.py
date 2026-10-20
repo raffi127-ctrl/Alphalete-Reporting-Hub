@@ -150,10 +150,10 @@ class RepeatOffenders(unittest.TestCase):
                 + [rec(said="Noisy", wrong_place="Irving") for _ in range(9)])
         replies = AP.compose(rows, {"Streaky": 4, "Noisy": 1})
         self.assertIn("Streaky", replies[1])
-        self.assertIn(AP.STREAK_DOT * 4, replies[1])
+        self.assertIn(AP.STREAK_MARK * 4, replies[1])
         # the two counts must not share a word or a symbol
         self.assertIn("days in a row", replies[1])
-        self.assertIn("issues today", replies[1])
+        self.assertIn("flags today", replies[1])
         self.assertNotIn("\U0001F6A9", replies[1])
         self.assertIn("Noisy", replies[2])
 
