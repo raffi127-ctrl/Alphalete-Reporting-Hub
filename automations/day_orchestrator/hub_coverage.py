@@ -102,6 +102,7 @@ _NOT_A_REPORT = frozenset({
     # on the agent name.
     "sales_board_fixer", "sales-board-fixer",
     "sales_board_fixer_owners", "sales-board-fixer-owners",
+    "sales_board_city_check", "sales-board-city-check",
     "focus_report_fixer", "focus-report-fixer",
     # Local Office 1on1s knock backfill (2026-09-29): scheduled Sun+Mon only
     # because local_1on1s_fill depends_on it. It fills a cache, nothing a

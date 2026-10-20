@@ -47,6 +47,7 @@ from automations.rep_sales_fill import board as B
 from automations.terminated_reps.board import base_name
 
 LOCATION = "location"
+HUB_PHASE = "sales-board-city-check"
 
 
 class Change(NamedTuple):
@@ -234,6 +235,9 @@ def main(argv=None) -> int:
     if a.apply and changes:
         done = apply(sh, ws, col, changes)
         print("  escritas: %d" % len(done))
+    if a.apply and a.sheet_id == R.SHEET_ID and not a.date:
+        # a step on the Sales Board card, like the rest of the fixer
+        R.hub_phase(HUB_PHASE, "Lucy Salesboard Fixer — rep cities", True)
     return 0
 
 

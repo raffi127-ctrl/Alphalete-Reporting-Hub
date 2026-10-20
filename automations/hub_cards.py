@@ -4464,9 +4464,10 @@ AUTOMATED_REPORTS = [
         "id": "alphalete-sales-board",
         # + the Salesboard Fixer (4am, Lucy 4) on this board and on the
         # owners' boards: gates behind the fill, not cards of their own
-        # (Eve 2026-10-19).
+        # (Eve 2026-10-19). + the rep-city check against Blue Ink (Tuesday
+        # 4am, Lucy 2 -- the Blue Ink key lives there; Eve 2026-10-20).
         "phases": ["alphalete-sales-board", "sales-board-fixer",
-                   "sales-board-fixer-owners"],
+                   "sales-board-fixer-owners", "sales-board-city-check"],
         # Named for what a person SEES it do: it texts the chats. "Alphalete
         # Sales Board sweep" read like a board fill and nobody could place it
         # when its alert appeared in #claudecorrections (Megan 2026-08-26).
