@@ -91,14 +91,34 @@ def _same(a: str, b: str) -> bool:
     return k(a) == k(b)
 
 
+def _near(a: str, b: str) -> bool:
+    """Same city spelled two ways ('Arlington' / 'Arlingotn')."""
+    from difflib import SequenceMatcher
+    return SequenceMatcher(None, a.lower(), b.lower()).ratio() >= 0.8
+
+
 def plan(rows: List[tuple], cities: Dict[str, str]):
-    """(changes, missing). cities = {name as written: Blue Ink city or ''}."""
+    """(changes, missing). cities = {name as written: Blue Ink city or ''}.
+
+    A TYPO IS NOT A MOVE. People misspell their own city on the packet too:
+    the first look (2026-10-20) would have turned Hank Tran's 'Arlington' into
+    Blue Ink's 'Arlingotn'. When the two are the same city spelled differently,
+    the spelling that shows up more often across the board and Blue Ink wins
+    (a tie goes to Blue Ink) -- so 'Mckinny' still becomes 'McKinney'."""
+    seen: Dict[str, int] = {}
+    for v in [now for _, _, now in rows] + list(cities.values()):
+        v = tidy_city(v)
+        if v:
+            seen[v] = seen.get(v, 0) + 1
     changes, missing = [], []
     for r, name, now in rows:
         city = tidy_city(cities.get(name, ""))
         if not city:
             missing.append((r, name, now))
-        elif not _same(now, city):
+            continue
+        if now and _near(now, city) and seen.get(tidy_city(now), 0) > seen.get(city, 0):
+            city = tidy_city(now)
+        if not _same(now, city):
             changes.append(Change(r, name, now, city))
     return changes, missing
 

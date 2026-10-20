@@ -31,6 +31,21 @@ def test_blank_is_filled_same_is_left_typo_is_fixed():
     assert [n for _, n, _ in missing] == ["Lian Reyes"]
 
 
+def test_a_typo_on_the_packet_does_not_beat_the_board():
+    # 2026-10-20: Blue Ink said 'Arlingotn' for Hank Tran
+    g = _grid([("Hank Tran", "Arlington"), ("Zoria Johnson", "Fort Worth"),
+               ("Kayla Sprague", ""), ("Savannah Moreno", "Carrolton"),
+               ("Alexis Renteria", "")])
+    changes, _ = CC.plan(CC.reps(g, 6), {
+        "Hank Tran": "Arlingotn", "Zoria Johnson": "Arlington",
+        "Kayla Sprague": "Arlington", "Savannah Moreno": "Carrollton",
+        "Alexis Renteria": "Carrollton"})
+    got = {c.name: c.after for c in changes}
+    assert "Hank Tran" not in got
+    assert got["Zoria Johnson"] == "Arlington"          # a real move still moves
+    assert got["Savannah Moreno"] == "Carrollton"       # the board's typo is fixed
+
+
 def test_rows_point_at_the_rep():
     g = _grid([("A One", ""), ("B Two", "Plano")])
     assert CC.reps(g, 6) == [(4, "A One", ""), (5, "B Two", "Plano")]
