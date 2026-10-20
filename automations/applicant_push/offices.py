@@ -589,9 +589,18 @@ ROTATION = ["11580", "23467", "11901", "23965", "11280", "24065"]
 # batches share.
 ROTATION_BY_MACHINE = {
     # 2026-09-27 (Carlos): Raf's 2nd + 3rd funnels back in — full rotation.
-    "Lucy 2": ["11580", "23467", "11901"],
+    # 2026-10-20 (Megan, "just take it live"): 11580 left Lucy 2 for Carlos's
+    # own computer.
+    "Lucy 2": ["23467", "11901"],
     "Lucy 4": ["11280", "23965", "24065"],
+    # NOT A LUCY. An office's own relay computer, pushing its own queue one app
+    # at a time (automations/icd_alerts/resume_push.py, PUSH_OFFICES "live").
+    # Listed here so "one office, one machine" stays checkable in one place;
+    # rotation_for() never matches it, because no Lucy is named this.
+    "Carlos's office computer (relay)": ["11580"],
 }
+# Machines in ROTATION_BY_MACHINE that are office relay computers, not Lucys.
+RELAY_MACHINES = {"Carlos's office computer (relay)"}
 
 
 def rotation_for(machine: str = None) -> list:

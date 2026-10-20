@@ -173,9 +173,10 @@ JOBS: Dict[str, dict] = {
         # Grace: the beat ships in deploy/applicant_push.sh, which Lucy 2 has to
         # pull. Armed the day after so the agent gets one clean day to prove it.
         "watch_from": "2026-09-14",
-        "means": ("Carlos (11580), Atef (23467) and Khalil (11901) stop being "
-                  "pushed to the AI call list entirely — those three share this "
-                  "agent. The Hub cards keep showing this morning's green, so "
+        "means": ("Atef (23467) and Khalil (11901) stop being "
+                  "pushed to the AI call list entirely — those two share this "
+                  "agent (Carlos's 11580 pushes from his own computer since "
+                  "10/20). The Hub cards keep showing this morning's green, so "
                   "nothing else will tell you."),
         "fix": "lucy rerun install_applicant_push_agent --machine \"Lucy 2\"",
     },
