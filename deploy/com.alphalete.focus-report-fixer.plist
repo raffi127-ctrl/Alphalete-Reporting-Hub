@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.focus-report-fixer</string>
+
+    <!-- Lucy Focus Report Fixer: Mondays at the end of the day on Lucy 4
+         (Eve, 2026-10-19). Its own agent because an evening start can't sit
+         in the 4am batch (test_schedule_config). Path is the laptop
+         placeholder; install_agent.py rewrites it:
+         python -m automations.day_orchestrator.install_agent focus-report-fixer -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/focus_report_fixer.sh</string>
+        <string>--all-tabs</string>
+        <string>--apply</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- Machine LOCAL time (the mini runs on Central). Weekday 1 = Monday.
+         StartCalendarInterval, not StartInterval: StartInterval counts from
+         LOAD time. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key><integer>1</integer>
+        <key>Hour</key><integer>18</integer>
+        <key>Minute</key><integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/com.alphalete.focus-report-fixer.out</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/com.alphalete.focus-report-fixer.err</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

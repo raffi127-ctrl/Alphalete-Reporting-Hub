@@ -1846,9 +1846,10 @@
    "close_on": "exit_zero"
   },
   "focus_report_fixer": {
+   "hand_run_only": true,
    "on_scheduler": true,
    "machine": "Lucy 4",
-   "_note": "Lucy Focus Report Fixer (Rafael's list #5; Eve rolled out 2026-10-19). Every morning: audits every office tab of the four Focus Report books (ATT Program, Alphalete Org 1on1s, NDS Program, Carlos 1on1s; Eve OK'd writing all of them 2026-10-19) and fixes only the safe things -- #REF! formulas put back from the row's own majority (template as fallback), holes in a formula row, broken/duplicate conditional-format rules. Raf Hidalgo's tab is report-only. Backup of each written tab + a plain-Spanish report to output/focus_report_fixer. More than 400 fixes on one tab = read wrong, nothing written. Between the two Salesboard Fixer runs so they don't share the Sheets read quota. Pure Sheets API, no browser.",
+   "_note": "Lucy Focus Report Fixer (Rafael's list #5; Eve rolled out 2026-10-19). Mondays 18:00 (Eve 2026-10-19: \"con que se chequeen los lunes al final del día está bien\"): audits every office tab of the four Focus Report books (ATT Program, Alphalete Org 1on1s, NDS Program, Carlos 1on1s; Eve OK'd writing all of them 2026-10-19) and fixes only the safe things -- #REF! formulas put back from the row's own majority (template as fallback), holes in a formula row, broken/duplicate conditional-format rules. Raf Hidalgo's tab is report-only. Backup of each written tab + a plain-Spanish report to output/focus_report_fixer. More than 400 fixes on one tab = read wrong, nothing written. weekdays [] + hand_run_only because the real clock is deploy/com.alphalete.focus-report-fixer.plist (install: `lucy rerun install_focus_report_fixer_agent`); this entry is the `lucy rerun focus_report_fixer` handle. Pure Sheets API, no browser.",
    "order": 34,
    "display_name": "Lucy Focus Report Fixer",
    "source_type": "local",
@@ -1861,15 +1862,7 @@
     "--apply"
    ],
    "cadence": {
-    "weekdays": [
-     0,
-     1,
-     2,
-     3,
-     4,
-     5,
-     6
-    ]
+    "weekdays": []
    },
    "priority": "P3",
    "freshness_target": null,
@@ -1877,6 +1870,29 @@
    "timeout_minutes": 30,
    "verify": null,
    "close_on": "exit_zero"
+  },
+  "install_focus_report_fixer_agent": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Installs or refreshes the standalone com.alphalete.focus-report-fixer LaunchAgent on Lucy 4: Mondays 18:00 machine-local it runs deploy/focus_report_fixer.sh --all-tabs --apply (the Lucy Focus Report Fixer over the four Focus Report books). install_agent only rewrites and reloads the plist; it touches no Sheet and no report data.",
+   "machine": "Lucy 4",
+   "display_name": "Install Focus Report Fixer agent (Mon 18:00)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "focus-report-fixer"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   }
   },
   "install_vantura_payroll_agent": {
    "on_scheduler": false,
