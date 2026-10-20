@@ -10181,6 +10181,29 @@
    },
    "machine": "Lucy 1"
   },
+  "audit_bot_tool": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "On-demand tool for Raf's 2nd-round interview audit bot on Lucy 1 (~/2nd-rd-audits): snapshot its code into automations/audit_bot/, deploy a repo file back, list/peek/quarantine. A rerun so it always runs fresh code. `lucy rerun audit_bot_tool snapshot` / `deploy audit.py`.",
+   "display_name": "Audit bot — remote tool (on demand)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.audit_bot.tool"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   },
+   "machine": "Lucy 1",
+   "close_on": "exit_zero",
+   "_close_on_note": "on-demand tool: no deliverable (2026-10-20)"
+  },
   "raf_special_probe": {
    "on_scheduler": false,
    "_off_scheduler_note": "One-shot READ-ONLY probe (automations.override_bulletin.raf_special_probe): downloads every crosstab sheet of the Raf-wow special-override view for Periods 7-10 and dumps the rows to the throwaway `_raf_special_probe` tab, to explain why Rafael's special fell Aug -> Oct 2026. Runs on LUCY 1 (Raf's login). No fill, no send. `lucy rerun raf_special_probe`.",
