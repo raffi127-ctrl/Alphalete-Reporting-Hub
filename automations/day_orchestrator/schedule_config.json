@@ -10173,6 +10173,27 @@
    },
    "machine": "Lucy 1"
   },
+  "raf_regular_probe": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "One-shot READ-ONLY probe (automations.override_bulletin.raf_regular_probe): downloads every crosstab sheet of the ORG Override Summary view for Period 2026-9/10 (or periods passed as args) and dumps Rafael's block to the throwaway `_raf_regular_probe` tab, to show what makes up his regular override. Runs on LUCY 1 (Raf's login). No fill, no send. `lucy rerun raf_regular_probe`.",
+   "display_name": "Override — Raf regular-override probe (one-shot)",
+   "source_type": "tableau",
+   "data_sources": [],
+   "command": [
+    "automations.override_bulletin.raf_regular_probe"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": {
+    "type": "not_configured"
+   },
+   "machine": "Lucy 1"
+  },
   "override_validate": {
    "on_scheduler": false,
    "_off_scheduler_note": "Validate the override DD+NETSUITE pulls on Lucy 1; writes results to _validate_out. Read-only.",
