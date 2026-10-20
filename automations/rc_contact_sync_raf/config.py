@@ -64,12 +64,12 @@ WATCH_LINE_LABEL = "Dylan's line (+1 214-845-6450)"
 CHANNELS = ["C068PH3RFSM"]
 CHANNEL_LABEL = {"C068PH3RFSM": "#alphalete-sales"}
 
-# THE POST'S WORDING — the same sentence as the B2B report (Carlos 2026-09-02,
-# answering "what do you want it to say"). The header NAMES the post; the check
-# underneath is still "was the customer EVER messaged on the line", not a
-# wrap-up-phrase match. No asterisks: ensure_named_thread bolds the title and
-# appends the date, so markup here would double the stars.
-SLACK_HEADER = ":telephone_receiver: Customers who didn\'t receive wrap up text"
+# THE POST'S WORDING (Dylan 2026-10-20: "reps that didn't send wrap ups" — it
+# reads from the rep's side, since the parent post lists the reps and the whole
+# point is accountability). The check underneath is still "was the customer
+# EVER messaged on the line". No asterisks: ensure_named_thread bolds the title
+# and appends the date, so markup here would double the stars.
+SLACK_HEADER = ":telephone_receiver: Reps that didn\'t send wrap ups"
 
 # --- state -------------------------------------------------------------------
 # Header already posted per "day|channel" -> thread_ts, so a same-day rerun

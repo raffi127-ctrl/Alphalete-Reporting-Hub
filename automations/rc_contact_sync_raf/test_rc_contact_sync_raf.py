@@ -194,6 +194,14 @@ class TestReplyTagging(unittest.TestCase):
         self.assertNotIn("<@", out)
         self.assertIn("No Slack match to tag: Alexis Renteria", out)
 
+    def test_parent_lists_unique_sorted_rep_names(self):
+        from automations.rc_contact_sync_raf import run as R
+        missing = [self._cust("Jordan Ruiz", "Yani"),
+                   self._cust("Hank Tran", "Rebecca"),
+                   self._cust("Jordan Ruiz", "Someone Else")]
+        self.assertEqual(R.missing_rep_lines(missing),
+                         ["• Hank Tran", "• Jordan Ruiz"])
+
     def test_line_has_phone_and_products(self):
         out = self._reply(
             [self._cust("Hank Tran", "Rebecca Alcantara", "469-343-5714",
