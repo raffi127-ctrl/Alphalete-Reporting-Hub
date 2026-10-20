@@ -31,10 +31,11 @@ from typing import List
 
 from automations.office_metrics.offices import ONBOARDED_EXTRA, OFFICES, Office
 
-# The two afternoon slots are Cody's alone (Megan 2026-08-25). Widening this is
-# a one-line change: the schedule, the pull and the posting are all already
-# multi-office, because the 9 PM slot exercises that path every night.
-INTRADAY_KEYS = ("cody",)
+# The two afternoon slots started as Cody's alone (Megan 2026-08-25). Joseph
+# Logan added 2026-10-20 (Eve) when his #logan-legacy-sales channel opened.
+# The schedule, the pull and the posting are all multi-office, because the
+# 9 PM slot exercises that path every night.
+INTRADAY_KEYS = ("cody", "joseph")
 
 # HOURLY offices: instead of the three fixed slots, they get the full-day board
 # EVERY HOUR of the working day (schedule.HOURLY_SLOTS, 12 PM–9 PM office-local),

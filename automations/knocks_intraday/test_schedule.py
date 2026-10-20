@@ -200,10 +200,10 @@ class RosterRaf(unittest.TestCase):
         self.assertIn("raf", {o.key for o in roster.enrolled("eod")})
 
     def test_raf_is_not_in_the_afternoon_slots(self):
-        """2 PM and 5:15 PM stay Cody's alone."""
+        """2 PM and 5:15 PM are Cody's and Joseph's only."""
         from automations.knocks_intraday import roster
         for slot in ("first", "money"):
-            self.assertEqual([o.key for o in roster.enrolled(slot)], ["cody"], slot)
+            self.assertEqual([o.key for o in roster.enrolled(slot)], ["cody", "joseph"], slot)
 
     def test_raf_routes_to_the_master_pull(self):
         """His knocks_office must match what is_master_office compares against,
