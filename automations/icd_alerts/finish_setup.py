@@ -281,7 +281,21 @@ def _short_reason(e: BaseException) -> str:
         else type(e).__name__
 
 
-def run(log=print) -> int:
+def _service_cloud_deferred(log) -> str:
+    """`--skip-box`: leave My Service Cloud for later, on purpose. Carlos's
+    authenticator stopped matching the account (2026-10-20, "The One-Time
+    Password was incorrect" on a code that is right) and the account side has
+    to fix that; waiting on it would have held up resume pushing, which needs
+    nothing from Service Cloud. Worded so the summary does not count it as
+    something still owed -- the Box sweeps keep filing their own fault."""
+    log("")
+    log("  Box sales sign-in left for later (--skip-box). The Box sales read")
+    log("  keeps asking for it on its own; run this again without the flag")
+    log("  once the account's authenticator works.")
+    return "left for later on purpose (--skip-box)"
+
+
+def run(log=print, skip_box: bool = False) -> int:
     log("")
     log("  Getting this computer fully set up. Anything already done is")
     log("  skipped — it is safe to run this whenever you like.")
@@ -291,7 +305,8 @@ def run(log=print) -> int:
                    ("Starts on its own", _boot_job),
                    ("Never sleeps", _never_sleeps),
                    ("SaraPlus sign-in", _saraplus),
-                   ("Box sales sign-in", _service_cloud),
+                   ("Box sales sign-in",
+                    _service_cloud_deferred if skip_box else _service_cloud),
                    ("Resume pushing", _resume_push)]
     results = []
     for name, fn in steps:
@@ -322,7 +337,15 @@ def run(log=print) -> int:
 
 
 def main(argv=None) -> int:
-    return run()
+    import argparse
+    ap = argparse.ArgumentParser(
+        description="Get this computer fully set up for Lucy ECO.")
+    ap.add_argument("--skip-box", action="store_true",
+                    help="leave the My Service Cloud sign-in for later and "
+                         "carry on with resume pushing (the Box sweeps keep "
+                         "asking for the sign-in on their own)")
+    args = ap.parse_args(argv)
+    return run(skip_box=args.skip_box)
 
 
 if __name__ == "__main__":
