@@ -148,6 +148,16 @@ def main(argv=None) -> int:
     # it -- say which in ONE line (it lands in the alert's log tail) and exit 1
     # so the week reads as not done. `lucy rerun new_starts_box` once fixed.
     missing = [n for n in tnotes + lnotes if n.startswith("MISSING:")]
+    # A WEEK WITH NO NEW STARTS IS NOT A FAILURE (Megan 2026-10-20). The week
+    # of 10/12 had no classroom (the team was in Cancun), so there was no
+    # 'D2D OBCL 10.12' tab and nobody in the box -- and the run failed, opening
+    # a ticket that sat open a week. No OBCL tab AND an empty box is simply a
+    # quiet week. A missing tab with people in the box still fails.
+    obcl_missing = any("D2D OBCL" in n or "OBCL" in n for n in missing)
+    if not counts["people"] and obcl_missing:
+        print("  no new starts this week (no OBCL tab, nobody in the box) -- "
+              "nothing to fill")
+        return 0
     if not counts["people"]:
         missing.append("MISSING: the New Starts box on %r has no classroom "
                        "names yet" % ws.title)
