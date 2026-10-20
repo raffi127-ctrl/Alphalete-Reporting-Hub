@@ -1813,9 +1813,9 @@
    "close_on": "exit_zero"
   },
   "sales_board_city_check": {
-   "on_scheduler": false,
+   "on_scheduler": true,
    "machine": "Lucy 2",
-   "_note": "Rep city ('Location' col) on this week's 'Sales Board WE m.d' of Alphalete SALES BOARD 2025, checked against each rep's signed Blue Ink packet (Raf, Slack 2026-10-18; Eve 2026-10-20: Blue Ink is the truth). With --apply: blank -> Blue Ink's city; different -> Blue Ink's city + hover note with the old one; no packet -> listed, untouched. Lucy 2 because blueink-creds.json only lives there. PREVIEW ONLY for now: on_scheduler false + base_args empty = `lucy rerun sales_board_city_check` looks and writes nothing. Turn on (weekly, --apply) after Eve checks the first list. Report + backup: output/sales_board_fixer/city_*.json.",
+   "_note": "Rep city ('Location' col) on this week's 'Sales Board WE m.d' of Alphalete SALES BOARD 2025, checked against each rep's signed Blue Ink packet (Raf, Slack 2026-10-18; Eve 2026-10-20: Blue Ink is the truth). With --apply: blank -> Blue Ink's city; different -> Blue Ink's city + hover note with the old one; no packet -> listed, untouched. Lucy 2 because blueink-creds.json only lives there. ON since 2026-10-20 (Eve ok after the first look): Tuesday 4am batch, --apply. A same-city typo doesn't beat the board (Hank Tran 'Arlingotn'). Report + backup: output/sales_board_fixer/city_*.json.",
    "order": 4.86,
    "display_name": "Sales Board city check (Blue Ink)",
    "source_type": "local",
@@ -1823,9 +1823,13 @@
    "command": [
     "automations.sales_board_fixer.city_check"
    ],
-   "base_args": [],
+   "base_args": [
+    "--apply"
+   ],
    "cadence": {
-    "weekdays": []
+    "weekdays": [
+     1
+    ]
    },
    "priority": "P3",
    "freshness_target": null,
