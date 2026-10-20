@@ -131,7 +131,20 @@ Lucy 2, **daily 7:50am** (`deploy/com.alphalete.ad-sales-board.plist`,
 installed via `lucy rerun install_ad_sales_board_agent`). 7:50 is deliberate:
 applicant_tracker's morning phase (Lucy 1, 6:45am Mon–Sat) must land
 yesterday's call-list names first, and the 4am AppStream cluster is long done.
-A full 28-office × 2-week pass is ~25 minutes.
+A full 28-office × 2-week pass is ~25 minutes. (History: every two hours
+07:50–21:50 from 2026-08-27 to 2026-10-20, then back to once daily — Carlos:
+"lets have the 17 org offices update only once a day and mine update every
+30 mins".)
+
+**Carlos fast lane** (2026-10-20): `com.alphalete.ad-sales-board-carlos`, same
+machine, every 30 minutes 07:05–21:35 (`deploy/ad_sales_board_carlos.sh`,
+installed via `lucy rerun install_ad_sales_board_carlos_agent`). It runs
+`--office 11580 --today --no-activity`: Carlos's office only (the freeze rule
+keeps the other 27 untouched), plus today's partial day report so the
+in-progress AC..AI cell shows live numbers between daily passes — each pass
+replaces it, and the next day's normal yesterday-pull writes the final count.
+No SCI pass; captainship refreshes once a day with the full agent. Its pgrep
+guard steps aside while any other ad_sales_board pass runs.
 
 ## One-time setup
 

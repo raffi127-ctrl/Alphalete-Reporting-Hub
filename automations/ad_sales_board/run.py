@@ -37,6 +37,10 @@ METRIC_FIELDS = ("removed", "b1", "s1", "b2", "s2", "tb", "ts", "nb", "ns")
 # anywhere in the run, including rows_for and the carry read.
 SPLIT_CITIES = False
 
+# --no-activity sets this: the 30-minute Carlos agent must not write a hub
+# activity row per pass (~30/day). Failure alerts are unaffected.
+NO_ACTIVITY = False
+
 CARD_ID = "ad-sales-board"
 CARD_NAME = "Ad Sales Board (weekly Source Report)"
 # Same `standalone-` family prefix as the monthly job, for the same reason: the
@@ -51,7 +55,7 @@ def _publish_outcome(status, headline, details, *, started_at=None, dry_run=Fals
     if dry_run:
         return
     import os
-    if not os.environ.get("HUB_REPORT_ID"):
+    if not os.environ.get("HUB_REPORT_ID") and not NO_ACTIVITY:
         try:
             from automations.shared import hub_activity
             hub_activity.log_completed(CARD_ID, CARD_NAME, status=status,
@@ -271,6 +275,20 @@ def main(argv=None):
     ap.add_argument("--day", action="append",
                     help="one-day received pull(s) mm-dd-yyyy (fills that day's "
                          "AC..AI slot; default: yesterday, unless --anchor is used)")
+    ap.add_argument("--today", action="store_true",
+                    help="ALSO pull today's (partial) day report, so the "
+                         "in-progress day's AC..AI slot shows live numbers "
+                         "instead of staying blank until tomorrow. Each pass "
+                         "replaces the slot; the next day's normal yesterday "
+                         "pull writes the final count. Meant for the "
+                         "high-frequency single-office agent "
+                         "(deploy/ad_sales_board_carlos.sh), not the daily "
+                         "all-office pass — a 7:50am partial would sit stale "
+                         "on everyone's board all day.")
+    ap.add_argument("--no-activity", action="store_true",
+                    help="skip the hub activity row for this run — a 30-minute "
+                         "cadence would put ~30 rows a day in the activity "
+                         "log. Failure alerts still post (incident-threaded).")
     ap.add_argument("--allow-shrink", action="store_true",
                     help="accept a pull whose weekly total is LOWER than what "
                          "is stored (normally rejected as a short pull — pass "
@@ -294,7 +312,8 @@ def main(argv=None):
     ap.add_argument("--no-group-subject", dest="group_subject",
                     action="store_false", help="legacy merged pull")
     a = ap.parse_args(argv)
-    global SPLIT_CITIES
+    global SPLIT_CITIES, NO_ACTIVITY
+    NO_ACTIVITY = a.no_activity
     if a.group_subject:
         fetch.GROUP_SUBJECT = True
         SPLIT_CITIES = True
@@ -320,6 +339,13 @@ def main(argv=None):
         day_targets = [today - dt.timedelta(days=1)]
     else:
         day_targets = []
+    # --today: pull the in-progress day too. Safe to repeat all day long —
+    # pulled_slots clears a re-read slot before applying, so each pass simply
+    # REPLACES today's partial with a newer partial, and tomorrow's normal
+    # yesterday-pull writes the final count. The self-heal pass already skips
+    # d >= today, so a partial today is never mistaken for a short day.
+    if a.today and today not in day_targets:
+        day_targets.append(today)
     have = {s for _l, s, _e in wins}
     for d in day_targets:
         anc = weeks.anchor_for(d)

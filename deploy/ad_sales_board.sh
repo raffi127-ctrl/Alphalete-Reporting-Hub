@@ -1,8 +1,11 @@
 #!/bin/bash
 # Ad Sales Board — the Source Report week by week (pull + names), refreshed
-# EVERY TWO HOURS 07:50-21:50 (Carlos 2026-08-27). The 07:50 anchor is kept
-# because it lands after applicant_tracker's 6:45 morning import puts yesterday's
-# names in; the later passes pick up the day as it fills.
+# ONCE DAILY at 07:50 (Carlos 2026-10-20: "lets have the 17 org offices update
+# only once a day and mine update every 30 mins"; every-2h 07:50-21:50 before
+# that, from 2026-08-27). The 07:50 anchor is kept because it lands after
+# applicant_tracker's 6:45 morning import puts yesterday's names in. Carlos's
+# own office (11580) stays fresh through deploy/ad_sales_board_carlos.sh — a
+# separate 30-minute agent pulling just that office (+ today's partial day).
 #
 # Rewrites ONLY the current + previous ad-week (Wed→Tue) per office; older
 # weeks on 'Ad Sales Data' stay frozen. On Wednesdays it also flips the visible

@@ -12267,6 +12267,28 @@
    "timeout_minutes": 10,
    "verify": null
   },
+  "install_ad_sales_board_carlos_agent": {
+   "on_scheduler": false,
+   "machine": "Lucy 2",
+   "_off_scheduler_note": "on_scheduler:false so it is NOT in the 4am batch. Present only so `lucy rerun install_ad_sales_board_carlos_agent --machine \"Lucy 2\"` can install/refresh the STANDALONE com.alphalete.ad-sales-board-carlos LaunchAgent on Lucy 2 \u2014 the CARLOS FAST LANE of the Ad Sales Board (Carlos 2026-10-20: \"lets have the 17 org offices update only once a day and mine update every 30 mins\"). Every 30 minutes 07:05-21:35 it runs deploy/ad_sales_board_carlos.sh: office 11580 ONLY, plus --today (today's partial day report, so the in-progress AC..AI cell shows live numbers) and --no-activity (no hub activity row per pass). No SCI pass \u2014 captainship rides the once-daily full agent (com.alphalete.ad-sales-board, 07:50). run.py's freeze rule keeps the other 27 offices' rows untouched, and the wrapper's pgrep guard makes it step aside while any other ad_sales_board pass is running. install_agent is read-only w.r.t. any Sheet data; it only loads the plist.",
+   "display_name": "Install Ad Sales Board Carlos fast-lane agent (every 30 min)",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.install_agent"
+   ],
+   "base_args": [
+    "ad-sales-board-carlos"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "depends_on": [],
+   "freshness_target": null,
+   "priority": "P3",
+   "timeout_minutes": 10,
+   "verify": null
+  },
   "alphalete_sales_board": {
    "on_scheduler": false,
    "_off_scheduler_note": "on_scheduler:false = NOT in the 4am batch. The Alphalete Sales Board sweep runs ITSELF every 5 minutes of the selling day (Mon-Sat, 10:00 until 21:30 - and only until 17:00 on Saturdays - machine-local; the authority is alphalete_sales_board.config.in_selling_window / WEEKDAYS / DAY_START_HHMM / DAY_END_HHMM / SATURDAY_END_HHMM, NOT the coarser hour-granularity gate in the wrapper, which bails early only to save a Python start-up) from the standalone com.alphalete.alphalete-sales-board LaunchAgent (StartInterval 300; deploy/alphalete_sales_board_5min.sh exits in bash outside those hours). Present here so `lucy rerun alphalete_sales_board` works and so a Hub play from ANY machine routes the run to LUCY 1 -- that routing is REQUIRED twice over: the delta state file is per-machine (running it elsewhere would re-announce sales this box already texted), and the two iMessage groups only exist in Lucy 1's Messages. base_args are deliberately EMPTY = preview: a hand rerun shows what would change and sends nothing. The LaunchAgent passes --apply (and --send once Megan clears the two chats).",
@@ -12790,6 +12812,27 @@
    "depends_on": [],
    "verify": null,
    "_note": "Retire standalone Ad Sales Board agent (now inside the recruiting chain)"
+  },
+  "disable_ad_sales_board_carlos_agent": {
+   "on_scheduler": false,
+   "machine": "Lucy 2",
+   "display_name": "Retire the Ad Sales Board Carlos fast-lane agent",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.day_orchestrator.disable_agent"
+   ],
+   "base_args": [
+    "ad-sales-board-carlos"
+   ],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "verify": null,
+   "_note": "Turn OFF the 30-minute Carlos-only Ad Sales Board agent remotely (com.alphalete.ad-sales-board-carlos on Lucy 2) if the cadence ever needs to stop; the once-daily full agent is untouched. Re-enable with `lucy rerun install_ad_sales_board_carlos_agent`."
   },
   "install_appstream_selfheal_agent": {
    "on_scheduler": true,

@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alphalete.ad-sales-board-carlos</string>
+
+    <!-- Ad Sales Board, Carlos fast lane: office 11580 only, every 30 minutes
+         (Carlos 2026-10-20: "mine update every 30 mins"). Path is the laptop
+         placeholder; install_agent.py rewrites it to the installing machine's
+         repo path:
+         lucy rerun install_ad_sales_board_carlos_agent  (machine: Lucy 2) -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/megan/1st Claude Folder/deploy/ad_sales_board_carlos.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/megan/1st Claude Folder</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/megan/1st Claude Folder</string>
+    </dict>
+
+    <!-- Every 30 minutes, 07:05-21:35 machine-local (Lucy 2 is Central).
+         :05/:35 on purpose: clear of the daily full-org pass at 07:50 (whose
+         first minutes matter most) and of applicant_tracker's :45 imports.
+         No overnight ticks — the applicant push window is 7am-10pm, and the
+         1am recruiting chain owns the AppStream session at night. A tick that
+         lands while the full-org pass (or any ad_sales_board run) is going
+         exits on the wrapper's pgrep guard; the next one is 30 min away.
+
+         TIME KNOB: edit this array, then re-install:
+           lucy rerun install_ad_sales_board_carlos_agent  (machine: Lucy 2) -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>35</integer></dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>35</integer></dict>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>35</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>35</integer></dict>
+        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>35</integer></dict>
+        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>35</integer></dict>
+        <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>35</integer></dict>
+        <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>35</integer></dict>
+        <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>35</integer></dict>
+        <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>35</integer></dict>
+        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>35</integer></dict>
+        <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>35</integer></dict>
+        <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>35</integer></dict>
+        <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>35</integer></dict>
+        <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>5</integer></dict>
+        <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>35</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/com.alphalete.ad-sales-board-carlos.out</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/com.alphalete.ad-sales-board-carlos.err</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
