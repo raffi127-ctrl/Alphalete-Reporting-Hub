@@ -1841,7 +1841,7 @@
   "sales_board_fixer_owners": {
    "on_scheduler": true,
    "machine": "Lucy 4",
-   "_note": "Lucy Salesboard Fixer on the OWNERS' boards (Eve approved 2026-10-13). Reads automations/sales_board_fixer/owners.json and writes only where \"apply\": true (8 owners with a live board). Only broken formulas + broken color rules, no hover notes, no fonts / Roll Call; backup to output/sales_board_fixer first. Same fix 3 days in a row -> Lucy DMs Eve (owner_repeats.json). Last in the batch, far from sales_board_fixer: back to back they hit the Sheets read quota (429). Pure Sheets API, no browser.",
+   "_note": "Lucy Salesboard Fixer on the OWNERS' boards (Eve approved 2026-10-13). Reads automations/sales_board_fixer/owners.json and writes only where \"apply\": true. Since 2026-10-20 (Eve: roll out) the same fixes as our board -- fonts, number formats, Roll Call, hover notes -- each judged by that board's own majority / Roll Call word; Lucy's notes from before this Monday are cleared; backup to output/sales_board_fixer first. Same fix 3 days in a row -> Lucy DMs Eve (owner_repeats.json). Last in the batch, far from sales_board_fixer: back to back they hit the Sheets read quota (429). Pure Sheets API, no browser.",
    "order": 63,
    "display_name": "Lucy Salesboard Fixer (owners)",
    "source_type": "local",
@@ -1868,6 +1868,32 @@
    "freshness_target": null,
    "depends_on": [],
    "timeout_minutes": 30,
+   "verify": null,
+   "close_on": "exit_zero"
+  },
+  "office_expenses_fixer": {
+   "on_scheduler": true,
+   "machine": "Lucy 4",
+   "_note": "Lucy Office Expenses Fixer (Rafael's list #6; Eve 2026-10-20: once a week). Mondays in the 4am batch: the 'Office Expenses' tab of the 12 owners' All-in-One books in automations/office_expenses_fixer/books.json. Fixes only: a TOTAL =SUM() that leaves expense rows out (stretched, never shrunk), an amount typed as text that SUM skips, a lost TOTAL / Monthly / Weekly formula that the offices of the same tab shape agree on. Everything else is reported in output/office_expenses_fixer. Backup before writing, a hover note on each touched cell. No Hub card of its own (hub_coverage._NOT_A_REPORT): a red exit means a book it could not write. Pure Sheets API, no browser.",
+   "order": 64,
+   "display_name": "Lucy Office Expenses Fixer",
+   "source_type": "local",
+   "data_sources": [],
+   "command": [
+    "automations.office_expenses_fixer.run"
+   ],
+   "base_args": [
+    "--apply"
+   ],
+   "cadence": {
+    "weekdays": [
+     0
+    ]
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 20,
    "verify": null,
    "close_on": "exit_zero"
   },

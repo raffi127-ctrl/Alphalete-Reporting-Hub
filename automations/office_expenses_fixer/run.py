@@ -7,8 +7,9 @@ Eve 2026-10-20: "luego seguí con office expenses" -- each office its own way:
 the rows under TOTAL are compared with the OTHER offices (and the template)
 that have the same row, never with one fixed layout.
 
-PREVIEW FIRST (CLAUDE.md): a book is written only with "apply": true in
-books.json, or when named with --owner together with --apply.
+A book is written only with "apply": true in books.json (all of them since
+Eve's OK, 2026-10-20), or when named with --owner together with --apply.
+Mondays 4am, Lucy 4 (Eve 2026-10-20: "una vez por semana").
 
 SAFETY. A backup of the tab's values + formulas goes to
 output/office_expenses_fixer/ before it is written; one batch per tab; a
@@ -158,7 +159,7 @@ def main(argv=None) -> int:
     tpl = tabs.get("TEMPLATE")
     inherited = C.template_errors(tpl["values"], tpl["formulas"]) if tpl else frozenset()
     stamp = dt.datetime.now().strftime("%Y-%m-%d_%H%M")
-    results = {}
+    results, failed = {}, []
     for b in books:
         name = b["name"]
         if a.owner and a.owner.lower() not in name.lower():
@@ -175,10 +176,16 @@ def main(argv=None) -> int:
             print("  NO se escribe: %d arreglos es demasiado (tope %d)" % (n_fix, MAX_FIXES))
         elif on and n_fix:
             print("  backup:", backup(name, t, stamp))
-            print("  escritos: %d" % len(apply(t, found)))
+            try:
+                print("  escritos: %d" % len(apply(t, found)))
+            except Exception as e:  # noqa: BLE001 -- e.g. no edit access: the rest still run
+                print("  NO se pudo escribir (%s: %s)" % (type(e).__name__, str(e)[:120]))
+                failed.append(name)
         results[name] = found
     print("reporte:", report(results, stamp, a.apply))
-    return 0
+    if failed:
+        print("sin poder escribir en: %s" % ", ".join(failed))
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

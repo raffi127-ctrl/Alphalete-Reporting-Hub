@@ -1,18 +1,18 @@
 {
- "_note": "Owners' All-in-One books whose 'Office Expenses' tab the Office Expenses Fixer checks (python -m automations.office_expenses_fixer.run). Some owners keep their Sales Board in another sheet: these are the All-in-One ids (memory owner-all-in-one-focus-report-update, 10/8). 'apply': true switches writing on for that book. TEMPLATE is read as one more office to compare with, never written.",
+ "_note": "Owners' All-in-One books whose 'Office Expenses' tab the Office Expenses Fixer checks (python -m automations.office_expenses_fixer.run). Some owners keep their Sales Board in another sheet: these are the All-in-One ids (memory owner-all-in-one-focus-report-update, 10/8). 'apply': true switches writing on for that book (all on: Eve 2026-10-20, weekly). TEMPLATE is read as one more office to compare with, never written.",
  "template": "1D7WTd-rAJuxcorIPHqQFNoH7lDD33ZJqPosxNtg1TLo",
  "books": [
-  {"name": "Rashad Reed", "sheet_id": "1uaR15Qf_Q1SzA6hStnczkMba2NQmkbvR4VvR-g_3zpw", "apply": false},
-  {"name": "Kash Rai", "sheet_id": "1deXnrN1uHmiSD_P31qjCuS60-kKRlZ7vv7-SOlvyYk8", "apply": false},
-  {"name": "Cyrus Wade", "sheet_id": "113luPbGjbqDHvq7Yj5iVYnpYZkA-ajSUN-ATxEFigNc", "apply": false},
-  {"name": "Salik/Hammad", "sheet_id": "1-VoNbIdE36Q3SuPFA3nmI9kGVutLpHRA8a46mhJAamI", "apply": false},
-  {"name": "Jacob Dover", "sheet_id": "10ISMTZxmg4fp96tehPGmAIm_VheFhDa_D4yc0Ojnbcs", "apply": false},
-  {"name": "Cody Cannon", "sheet_id": "1Emdb7DfQ40Xd262gVDZwAB1LAIi1rPicsr7nYmCnNRk", "apply": false},
-  {"name": "Isaiah Revelle", "sheet_id": "1vWdxtExivVlB_ehvywPSmddaXm5ek5ZyVWbMxQfuFLM", "apply": false},
-  {"name": "Aya Alkhafaji", "sheet_id": "1t8dCKc5NX6zkBPzRFzD5hWFL3d8ll27XoMgY2PoRALE", "apply": false},
-  {"name": "Haytham Nagi", "sheet_id": "1le2wVPAeYsclQyP212IY9K92a9BAfoUWGd7n1DgIj8Y", "apply": false},
-  {"name": "Frank Matos", "sheet_id": "13rnV2lIA_vdtjx98cjAkPjmAM3-1bc0fKY5ceggSudo", "apply": false},
-  {"name": "Drew", "sheet_id": "1Dfpu32rR4fvLp88zUZPw5UeFCVQnp1XI7-pNprmvPag", "apply": false},
-  {"name": "Valeria Tristan", "sheet_id": "1dmZgjafsVfhjbnRkal0VSV3ne0zGxBz-PifLWPFFS7g", "apply": false}
+  {"name": "Rashad Reed", "sheet_id": "1uaR15Qf_Q1SzA6hStnczkMba2NQmkbvR4VvR-g_3zpw", "apply": true},
+  {"name": "Kash Rai", "sheet_id": "1deXnrN1uHmiSD_P31qjCuS60-kKRlZ7vv7-SOlvyYk8", "apply": true},
+  {"name": "Cyrus Wade", "sheet_id": "113luPbGjbqDHvq7Yj5iVYnpYZkA-ajSUN-ATxEFigNc", "apply": true},
+  {"name": "Salik/Hammad", "sheet_id": "1-VoNbIdE36Q3SuPFA3nmI9kGVutLpHRA8a46mhJAamI", "apply": true},
+  {"name": "Jacob Dover", "sheet_id": "10ISMTZxmg4fp96tehPGmAIm_VheFhDa_D4yc0Ojnbcs", "apply": true},
+  {"name": "Cody Cannon", "sheet_id": "1Emdb7DfQ40Xd262gVDZwAB1LAIi1rPicsr7nYmCnNRk", "apply": true},
+  {"name": "Isaiah Revelle", "sheet_id": "1vWdxtExivVlB_ehvywPSmddaXm5ek5ZyVWbMxQfuFLM", "apply": true},
+  {"name": "Aya Alkhafaji", "sheet_id": "1t8dCKc5NX6zkBPzRFzD5hWFL3d8ll27XoMgY2PoRALE", "apply": true},
+  {"name": "Haytham Nagi", "sheet_id": "1le2wVPAeYsclQyP212IY9K92a9BAfoUWGd7n1DgIj8Y", "apply": true},
+  {"name": "Frank Matos", "sheet_id": "13rnV2lIA_vdtjx98cjAkPjmAM3-1bc0fKY5ceggSudo", "apply": true},
+  {"name": "Drew", "sheet_id": "1Dfpu32rR4fvLp88zUZPw5UeFCVQnp1XI7-pNprmvPag", "apply": true},
+  {"name": "Valeria Tristan", "sheet_id": "1dmZgjafsVfhjbnRkal0VSV3ne0zGxBz-PifLWPFFS7g", "apply": true}
  ]
 }
