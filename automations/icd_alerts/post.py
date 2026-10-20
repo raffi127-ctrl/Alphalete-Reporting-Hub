@@ -3619,10 +3619,27 @@ def _slack(channel_id: str, text: str,
         return (smp._client().chat_postMessage(**kw) or {}).get("ts")
 
 
+_AS_LUCY: Optional[bool] = None
+
+
+def _require_lucy() -> None:
+    """Owner DMs go out as LUCY or not at all (2026-10-20). The 13:31 nudge to
+    Khalil + Eve went out as Megan: the DM path never ran
+    assert_posting_as_lucy, so a run from the laptop DM'd an owner under her
+    name -- and kept its "who was nudged" state on the laptop, so the "Good to
+    go" follow-up could never fire from the Lucy that later saw him check in.
+    Checked once per process."""
+    global _AS_LUCY
+    if _AS_LUCY is None:
+        assert_posting_as_lucy(log=lambda *_: None)
+        _AS_LUCY = True
+
+
 def _dm(user_id: str, text: str) -> None:
     """Open a DM with one person and send. Opening is idempotent -- Slack
     returns the existing conversation rather than starting a second one."""
     from automations.shared import slack_metrics_post as smp
+    _require_lucy()
     client = smp._client()
     channel = client.conversations_open(users=user_id)["channel"]["id"]
     client.chat_postMessage(channel=channel, text=text)
@@ -3633,6 +3650,7 @@ def _group_dm(user_ids: List[str], text: str) -> None:
     conversations.open with several users returns the existing group DM for
     exactly that set, so the same office's alerts keep landing in one chat."""
     from automations.shared import slack_metrics_post as smp
+    _require_lucy()
     client = smp._client()
     channel = client.conversations_open(
         users=",".join(user_ids))["channel"]["id"]
