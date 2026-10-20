@@ -1,0 +1,42 @@
+"""City on the Sales Board vs Blue Ink: what gets written and what doesn't."""
+from __future__ import annotations
+
+from automations.sales_board_fixer import city_check as CC
+
+
+def _grid(rows):
+    # row 1 labels, row 2 blank, row 3 sub-headers, reps from row 4, TOTALS after
+    r1 = ["", "", "", "MON", "", "Location"]
+    g = [r1, [""] * 6, ["", "", "Rep", "Apps", "", "REP"]]
+    g += [["", "", n, "", "", city] for n, city in rows]
+    g += [["", "", "TOTALS", "", "", ""]]
+    return g
+
+
+def test_location_found_by_label():
+    assert CC.location_col(_grid([])) == 6
+    assert CC.location_col([["", "Where"]]) == 0
+
+
+def test_blank_is_filled_same_is_left_typo_is_fixed():
+    g = _grid([("Aundre Browder", ""), ("Hank Tran", "Arlington"),
+               ("Amjad (MJ) Malhas", "Mckinny"), ("Lian Reyes", "Richardson")])
+    rows = CC.reps(g, 6)
+    changes, missing = CC.plan(rows, {
+        "Aundre Browder": "DALLAS", "Hank Tran": "arlington ",
+        "Amjad (MJ) Malhas": "mckinney", "Lian Reyes": ""})
+    got = {c.name: (c.before, c.after) for c in changes}
+    assert got == {"Aundre Browder": ("", "Dallas"),
+                   "Amjad (MJ) Malhas": ("Mckinny", "McKinney")}
+    assert [n for _, n, _ in missing] == ["Lian Reyes"]
+
+
+def test_rows_point_at_the_rep():
+    g = _grid([("A One", ""), ("B Two", "Plano")])
+    assert CC.reps(g, 6) == [(4, "A One", ""), (5, "B Two", "Plano")]
+
+
+def test_tidy_city():
+    assert CC.tidy_city("  FORT   WORTH ") == "Fort Worth"
+    assert CC.tidy_city("mckinney") == "McKinney"
+    assert CC.tidy_city("Mc") == "Mc"
