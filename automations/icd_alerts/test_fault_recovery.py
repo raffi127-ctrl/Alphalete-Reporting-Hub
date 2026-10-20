@@ -96,6 +96,26 @@ class CloseRecoveredFaultsTest(unittest.TestCase):
         self.assertEqual(closed, [])
         self.assertEqual(posts, [])
 
+    def test_a_line_in_the_shared_thread_gets_its_tick_and_one_line_reply(self):
+        closed, posts, reacts, threads = self._run(self._book(), {
+            "2026-09-24|_calm|parent": "PARENT",
+            "2026-09-24|colten|calm": "LINE"})
+        self.assertEqual(closed, ["colten"])
+        self.assertEqual([r["timestamp"] for r in reacts], ["LINE", "PARENT"],
+                         "the office's line, then the parent once all are back")
+        self.assertEqual(posts[0][1], "PARENT", "the reply stays in the thread")
+        self.assertIn("is back", posts[0][0])
+        self.assertIn("2026-09-24|colten|calm|recovered", threads)
+        self.assertIn("2026-09-24|_calm|parent|done", threads)
+
+    def test_the_parent_waits_for_every_office(self):
+        _c, _p, reacts, threads = self._run(self._book(), {
+            "2026-09-24|_calm|parent": "PARENT",
+            "2026-09-24|colten|calm": "LINE",
+            "2026-09-24|drew|calm": "LINE2"})
+        self.assertNotIn("PARENT", [r["timestamp"] for r in reacts])
+        self.assertNotIn("2026-09-24|_calm|parent|done", threads)
+
     def test_dry_run_sends_nothing(self):
         closed, posts, reacts, threads = self._run(self._book(), {"2026-09-24|colten": "ts"}, send=False)
         self.assertEqual(posts, [])

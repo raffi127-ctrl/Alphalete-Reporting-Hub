@@ -574,7 +574,11 @@ class FaultReporting(unittest.TestCase):
     # count="2": these tests are about HOW a fault is posted (threading,
     # marking the row), and since 2026-09-21 a per-tick fault seen only once
     # is held until it repeats (test_faults_wait_for_repeat covers that).
-    def _row(self, office="kash", stage="sweep", summary="boom",
+    # The default summary is one Claude has to act on, so these tests see the
+    # full post; faults that fix themselves go in the shared thread instead
+    # (FaultsThatFixThemselves below).
+    def _row(self, office="kash", stage="sweep",
+             summary="boom -- this one is ours to look at",
              detail="Traceback...", count="2", posted=""):
         return [office, "2026-09-13", stage, summary, detail, count,
                 "9/13/2026 09:00", "9/13/2026 09:02", "", "icd_alerts/2",
@@ -626,7 +630,7 @@ class FaultReporting(unittest.TestCase):
     def test_two_faults_for_one_office_share_a_thread(self):
         out, posts, _tab = self._run([self._row(stage="sweep"),
                                       self._row(stage="knocks",
-                                                summary="ov down",
+                                                summary="ov down, ours to fix",
                                                 detail="")])
         tops = [t for _x, t in posts if t is None]
         self.assertEqual(len(tops), 1, "one top-level post per office")
@@ -708,6 +712,95 @@ class FaultReporting(unittest.TestCase):
         self.assertEqual(len(out), 1)
         self.assertEqual(posts, [])
         tab.update_cell.assert_not_called()
+
+
+class FaultsThatFixThemselves(FaultReporting):
+    """Megan 2026-10-20: Carlos and Drew each got a full red post with a call
+    log for an OwnerVille timeout that cleared by itself. One shared thread a
+    day says "nothing to do"; each office is one short line inside it."""
+
+    TIMEOUT = ("TimeoutError: Page.goto: Timeout 25000ms exceeded.\nCall log:"
+               "\n  - navigating to \"https://v2.ownerville.com/index.cfm?p=89\"")
+
+    def _run2(self, rows, threads=None):
+        import tempfile, pathlib, json
+        book, tab = self._book(rows)
+        posts = []
+
+        def fake_slack(channel, text, thread_ts=None):
+            posts.append((text, thread_ts))
+            return "ts%d" % len(posts)
+
+        tmp = pathlib.Path(tempfile.mkdtemp()) / "threads.json"
+        if threads:
+            tmp.write_text(json.dumps(threads))
+        labels = {"kash": "Kash's Local Office", "drew": "Drew's Local Office"}
+        get = lambda k: O.AlertOffice(key=k, owner="X Y", label=labels[k],   # noqa: E731
+                                      channels=(), timezone="America/Chicago")
+        client = mock.MagicMock()
+        with mock.patch.object(P, "_slack", fake_slack), \
+             mock.patch.object(P, "FAULT_THREADS_PATH", tmp), \
+             mock.patch("automations.shared.slack_metrics_post._client",
+                        return_value=client), \
+             mock.patch.object(P.O, "get", get):
+            P.notify_faults(dt.date(2026, 9, 13), send=True, book=book,
+                            log=lambda *a, **k: None)
+        return posts, tab, json.loads(tmp.read_text()), client
+
+    def test_two_offices_share_one_parent_with_one_line_each(self):
+        posts, tab, threads, _c = self._run2(
+            [self._row(stage="knocks", summary=self.TIMEOUT),
+             self._row(office="drew", stage="knocks", summary=self.TIMEOUT)])
+        tops = [t for t, ts in posts if ts is None]
+        self.assertEqual(len(tops), 1, "one parent for the day, not one per office")
+        self.assertIn("Nothing to do", tops[0])
+        lines = [t for t, ts in posts if ts == "ts1"]
+        self.assertEqual(len(lines), 2)
+        self.assertIn("Kash's Local Office", lines[0])
+        self.assertIn("OwnerVille timed out", lines[0])
+        self.assertIn("slow internet", lines[0])
+        self.assertEqual(threads["2026-09-13|kash|calm"], "ts2")
+        self.assertEqual(tab.update_cell.call_count, 2)
+
+    def test_no_call_log_url_or_traceback(self):
+        posts, _t, _th, _c = self._run2(
+            [self._row(stage="knocks", summary=self.TIMEOUT)])
+        text = "\n".join(t for t, _ts in posts)
+        for junk in ("Call log", "ownerville.com", "Darwin", "```",
+                     "reported this by itself", "Traceback"):
+            self.assertNotIn(junk, text, junk)
+
+    def test_a_later_tick_reuses_the_days_parent(self):
+        posts, _t, _th, _c = self._run2(
+            [self._row(stage="sweep", summary="TimeoutError: page.goto")],
+            threads={"2026-09-13|_calm|parent": "P1"})
+        self.assertEqual([ts for _x, ts in posts], ["P1"])
+        self.assertIn("SaraPlus timed out", posts[0][0])
+
+    def test_a_reopened_parent_loses_its_tick(self):
+        _p, _t, threads, client = self._run2(
+            [self._row(stage="knocks", summary=self.TIMEOUT)],
+            threads={"2026-09-13|_calm|parent": "P1",
+                     "2026-09-13|_calm|parent|done": "x"})
+        client.reactions_remove.assert_called_once()
+        self.assertNotIn("2026-09-13|_calm|parent|done", threads)
+
+    def test_one_that_needs_a_person_still_gets_its_own_post(self):
+        posts, _t, _th, _c = self._run2(
+            [self._row(stage="knocks", summary=self.TIMEOUT),
+             self._row(office="drew", stage="sweep",
+                       summary="AccountProblem: SaraPlus emailed code")])
+        tops = [t for t, ts in posts if ts is None]
+        self.assertEqual(len(tops), 2)
+        self.assertTrue(any("Do this" in t and "Drew" in t for t in tops))
+
+    def test_short_reasons(self):
+        self.assertEqual(P.short_reason("knocks-slow", ""),
+                         "OwnerVille was slow (it still finished)")
+        self.assertEqual(P.short_reason("box-timeout", ""),
+                         "My Service Cloud got stuck and was restarted")
+        self.assertEqual(P.short_reason("sweep", "KeyError: x"),
+                         "a hiccup reading SaraPlus")
 
 
 class SignUpsAreAnnouncedFromHere(unittest.TestCase):

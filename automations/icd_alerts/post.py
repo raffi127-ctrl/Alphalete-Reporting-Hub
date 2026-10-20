@@ -2116,6 +2116,56 @@ def what_to_do(label: str, summary: str) -> str:
             "No ✅ within an hour? Paste it to Claude.")
 
 
+def fixes_itself(label: str, summary: str) -> bool:
+    """True for the green "Nothing to do" faults -- the ones that go in the
+    day's shared thread instead of getting a post of their own."""
+    return what_to_do(label, summary).startswith(":large_green_circle:")
+
+
+# ONE SHARED THREAD FOR THE ONES THAT FIX THEMSELVES (Megan 2026-10-20).
+# Carlos and Drew each got a full red post with a call log for an OwnerVille
+# timeout that cleared by itself -- the channel filled with posts nobody had
+# to act on. Now: one parent a day says "nothing to do", each office is ONE
+# short line inside it. The full error is still on the 'ICD Faults' tab.
+CALM_PARENT_TEXT = (":large_green_circle: *Nothing to do — small hiccups "
+                    "today. They usually fix themselves.*\n"
+                    "Each office is listed in the thread. No ✅ on it within "
+                    "an hour? Paste it to Claude.")
+
+
+def _calm_parent_key(day: dt.date) -> str:
+    # Three parts, so close_recovered_faults never mistakes it for an office.
+    return "%s|_calm|parent" % day.isoformat()
+
+
+def short_reason(stage: str, summary: str) -> str:
+    """'TimeoutError: Page.goto: Timeout 25000ms...' on knocks ->
+    'OwnerVille timed out (slow internet or a slow site)'."""
+    base, _, kind = (stage or "").partition("-")
+    system = {"sweep": "SaraPlus", "knocks": "OwnerVille",
+              "box": "My Service Cloud"}.get(base)
+    s = (summary or "").lower()
+    if kind == "slow":
+        return "%s was slow (it still finished)" % (system or "a read")
+    if kind == "timeout":
+        return "%s got stuck and was restarted" % (system or "a read")
+    if "timeout" in s or "timed out" in s:
+        return "%s timed out (slow internet or a slow site)" % (
+            system or "the laptop")
+    if system:
+        return "a hiccup reading %s" % system
+    return "a hiccup %s" % stage_words(stage)
+
+
+def calm_line(label: str, f: Dict) -> str:
+    """The one line an office gets inside the shared thread."""
+    line = ":turtle: *%s* — %s." % (label, short_reason(f.get("stage"),
+                                                         f.get("summary")))
+    if f.get("count") and f["count"] not in ("1", ""):
+        line += " _%s times._" % f["count"]
+    return line
+
+
 def stage_words(stage: str) -> str:
     """'knocks-slow' -> 'reading OwnerVille (slow)'. Used for the "Also ...:"
     line when a second problem joins an office's thread."""
@@ -2265,8 +2315,13 @@ def close_recovered_faults(day: Optional[dt.date] = None, *, send: bool = False,
     day = day or dt.date.today()
     now = now or dt.datetime.now()
     threads = _fault_threads()
+    # Two kinds of thread: an office's own post ("<day>|<office>"), and its
+    # line inside the shared "fixes itself" thread ("<day>|<office>|calm").
+    calm_parent = threads.get(_calm_parent_key(day))
     todo = {k: ts for k, ts in threads.items()
-            if k.startswith(day.isoformat() + "|") and k.count("|") == 1
+            if k.startswith(day.isoformat() + "|")
+            and (k.count("|") == 1
+                 or (k.count("|") == 2 and k.endswith("|calm")))
             and not threads.get(k + "|recovered")}
     if not todo:
         return []
@@ -2294,7 +2349,10 @@ def close_recovered_faults(day: Optional[dt.date] = None, *, send: bool = False,
 
     closed = []
     for key, parent in sorted(todo.items()):
-        office_key = key.split("|", 1)[1]
+        office_key = key.split("|")[1]
+        is_calm = key.endswith("|calm")
+        if is_calm and not calm_parent:
+            continue
         faults = [{"stage": (r[F_STAGE] or "").strip(), "last": r[F_LAST] if len(r) > F_LAST else ""}
                   for r in frows[1:]
                   if len(r) > F_POSTED and (r[F_OFFICE] or "").strip().lower() == office_key
@@ -2321,18 +2379,42 @@ def close_recovered_faults(day: Optional[dt.date] = None, *, send: bool = False,
                                         name="white_check_mark")
         except Exception as e:  # noqa: BLE001 -- a duplicate reaction is fine
             log("could not ✅ %s: %s" % (office_key, type(e).__name__))
+        clock = since.strftime("%I:%M %p").lstrip("0")   # no %-I: Windows
         try:
-            _slack(O.OPS_CHANNEL,
-                   ":white_check_mark: *%s* is reading fine again — clean since %s "
-                   "(their time). Nothing was changed on our side."
-                   % (label, since.strftime("%I:%M %p").lstrip("0")),   # no %-I: Windows
-                   thread_ts=parent)
+            if is_calm:
+                # In the shared thread `parent` is the office's own line; the
+                # reply goes in the thread, kept to one line like the rest.
+                _slack(O.OPS_CHANNEL,
+                       ":white_check_mark: *%s* is back — fine since %s."
+                       % (label, clock), thread_ts=calm_parent)
+            else:
+                _slack(O.OPS_CHANNEL,
+                       ":white_check_mark: *%s* is reading fine again — clean since %s "
+                       "(their time). Nothing was changed on our side."
+                       % (label, clock), thread_ts=parent)
         except Exception as e:  # noqa: BLE001
             log("could not reply in %s's thread: %s" % (office_key, type(e).__name__))
             continue
         threads[key + "|recovered"] = now.isoformat(timespec="seconds")
         closed.append(office_key)
-    if closed:
+    # EVERY OFFICE IN THE SHARED THREAD IS BACK: the parent gets its ✅ too.
+    # _post_calm takes it off again if a new hiccup joins later.
+    pkey = _calm_parent_key(day)
+    calm_done = False
+    calm_keys = [k for k in threads if k.startswith(day.isoformat() + "|")
+                 and k.count("|") == 2 and k.endswith("|calm")]
+    if (send and calm_parent and calm_keys and not threads.get(pkey + "|done")
+            and all(threads.get(k + "|recovered") for k in calm_keys)):
+        try:
+            from automations.shared import slack_metrics_post as smp
+            smp._client().reactions_add(channel=O.OPS_CHANNEL,
+                                        timestamp=calm_parent,
+                                        name="white_check_mark")
+            threads[pkey + "|done"] = now.isoformat(timespec="seconds")
+            calm_done = True
+        except Exception as e:  # noqa: BLE001
+            log("could not ✅ the shared thread: %s" % type(e).__name__)
+    if closed or calm_done:
         FAULT_THREADS_PATH.parent.mkdir(parents=True, exist_ok=True)
         FAULT_THREADS_PATH.write_text(json.dumps(threads, indent=2, sort_keys=True))
     return closed
@@ -2436,6 +2518,20 @@ def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
 
         office = O.get(f["office"])
         label = office.label if office else f["office"]
+
+        if fixes_itself(label, f["summary"]):
+            try:
+                _post_calm(day, label, f, threads, log=log)
+            except Exception as e:  # noqa: BLE001 — one fault must not stop the rest
+                log("could not post fault for %s: %s: %s"
+                    % (f["office"], type(e).__name__, str(e)[:100]))
+                continue
+            try:
+                tab.update_cell(f["rownum"], F_POSTED + 1, stamp)
+            except Exception as e:  # noqa: BLE001
+                log("posted the fault but could not mark it: %s" % type(e).__name__)
+            continue
+
         where = stage_words(f["stage"])
         parent = threads.get(key_for(f))
         head = (fault_headline(label, f["stage"]) if not parent else
@@ -2476,6 +2572,39 @@ def notify_faults(day: Optional[dt.date] = None, *, send: bool = False,
     FAULT_THREADS_PATH.parent.mkdir(parents=True, exist_ok=True)
     FAULT_THREADS_PATH.write_text(json.dumps(threads, indent=2, sort_keys=True))
     return faults
+
+
+def _post_calm(day: dt.date, label: str, f: Dict, threads: Dict, *,
+               log=print) -> None:
+    """Put a fault that fixes itself in the day's shared thread.
+
+    The office's line ts is kept under "<day>|<office>|calm", which is what
+    close_recovered_faults ✅s when the office reads clean again. No
+    traceback here: it is on the 'ICD Faults' tab for whoever needs it.
+    """
+    pkey = _calm_parent_key(day)
+    parent = threads.get(pkey)
+    if not parent:
+        parent = _slack(O.OPS_CHANNEL, CALM_PARENT_TEXT)
+        if not parent:
+            raise RuntimeError("the shared thread did not post")
+        threads[pkey] = parent
+    elif threads.get(pkey + "|done"):
+        # Every office in it had come back; a new one means it is open again.
+        try:
+            from automations.shared import slack_metrics_post as smp
+            smp._client().reactions_remove(channel=O.OPS_CHANNEL,
+                                           timestamp=parent,
+                                           name="white_check_mark")
+        except Exception as e:  # noqa: BLE001 — a missing reaction is fine
+            log("could not clear the shared ✅: %s" % type(e).__name__)
+        threads.pop(pkey + "|done", None)
+    okey = "%s|%s|calm" % (day.isoformat(), f["office"])
+    ts = _slack(O.OPS_CHANNEL, calm_line(label, f), thread_ts=parent)
+    if ts:
+        threads[okey] = ts   # the newest line is the one that gets the ✅
+    # A new hiccup for an office that had come back reopens its line.
+    threads.pop(okey + "|recovered", None)
 
 
 SIGNUP_REPEAT_MIN = 60
