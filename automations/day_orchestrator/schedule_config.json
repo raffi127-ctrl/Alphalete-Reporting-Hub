@@ -1848,7 +1848,7 @@
   "focus_report_fixer": {
    "on_scheduler": true,
    "machine": "Lucy 4",
-   "_note": "Lucy Focus Report Fixer (Rafael's list #5; Eve rolled out 2026-10-19). Every morning: audits every office tab of ATT Program - Focus Report (writes there; the Org 1on1s / NDS / Carlos books are read with --book once Eve OKs writing them) and fixes only the safe things -- #REF! formulas put back from the row's own majority (template as fallback), holes in a formula row, broken/duplicate conditional-format rules. Raf Hidalgo's tab is report-only. Backup of each written tab + a plain-Spanish report to output/focus_report_fixer. More than 400 fixes on one tab = read wrong, nothing written. Between the two Salesboard Fixer runs so they don't share the Sheets read quota. Pure Sheets API, no browser.",
+   "_note": "Lucy Focus Report Fixer (Rafael's list #5; Eve rolled out 2026-10-19). Every morning: audits every office tab of the four Focus Report books (ATT Program, Alphalete Org 1on1s, NDS Program, Carlos 1on1s; Eve OK'd writing all of them 2026-10-19) and fixes only the safe things -- #REF! formulas put back from the row's own majority (template as fallback), holes in a formula row, broken/duplicate conditional-format rules. Raf Hidalgo's tab is report-only. Backup of each written tab + a plain-Spanish report to output/focus_report_fixer. More than 400 fixes on one tab = read wrong, nothing written. Between the two Salesboard Fixer runs so they don't share the Sheets read quota. Pure Sheets API, no browser.",
    "order": 34,
    "display_name": "Lucy Focus Report Fixer",
    "source_type": "local",
@@ -1857,8 +1857,6 @@
     "automations.focus_report_fixer.run"
    ],
    "base_args": [
-    "--book",
-    "att",
     "--all-tabs",
     "--apply"
    ],
