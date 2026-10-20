@@ -1,0 +1,1112 @@
+{
+  "_note": "Maps Slack user_id → rep info + assigned owner.",
+  "reps": {
+    "U045Z8N0ZQC": {
+      "first_name": "Rafael",
+      "last_name": "Hidalgo",
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-06-10T12:00:00",
+      "source": "preset"
+    },
+    "U0AQZ7Y2B3M": {
+      "first_name": "Jordan",
+      "last_name": "Castillo",
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-06-11T01:11:35.930312",
+      "source": "auto_backfilled"
+    },
+    "U08RNHP5WMD": {
+      "first_name": "Andrew",
+      "last_name": "Sanborn",
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-06-11T01:11:35.935677",
+      "source": "auto_backfilled"
+    },
+    "U0AUDRSAKMY": {
+      "first_name": "De’Avion",
+      "last_name": "Allen",
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-06-11T01:11:35.936902",
+      "source": "auto_backfilled"
+    },
+    "U0B02SXBS5T": {
+      "first_name": "Mustafa",
+      "last_name": "A",
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-06-11T01:11:35.937735",
+      "source": "auto_backfilled"
+    },
+    "U07EMBLBN5A": {
+      "first_name": "Anh",
+      "last_name": "Đinh",
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-06-11T01:11:35.940596",
+      "source": "auto_backfilled"
+    },
+    "U0B3JESDF29": {
+      "first_name": "Amber",
+      "last_name": "Chum",
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-06-11T01:11:35.943783",
+      "source": "auto_backfilled"
+    },
+    "U09E6T2EUUQ": {
+      "first_name": "chloe",
+      "last_name": "johnson",
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-06-11T01:11:35.947559",
+      "source": "auto_backfilled"
+    },
+    "U09MDLW0Z1B": {
+      "first_name": "Logan",
+      "last_name": "Edwards",
+      "owner_id": "kash_rai",
+      "set_at": "2026-06-11T01:17:56.515197",
+      "source": "admin_backfill"
+    },
+    "U0ACM3GLAG4": {
+      "first_name": "Ian",
+      "last_name": "Rodriguez",
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-06-11T01:11:35.951673",
+      "source": "auto_backfilled"
+    },
+    "U0A2NL08917": {
+      "first_name": "Roberto",
+      "last_name": "Rivera",
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-06-11T01:11:35.967903",
+      "source": "auto_backfilled"
+    },
+    "U060MNFQLJ1": {
+      "first_name": "Willie",
+      "last_name": "(mineiga) Henderson",
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-06-11T01:11:35.970453",
+      "source": "auto_backfilled"
+    },
+    "U0AME3NU5KQ": {
+      "first_name": "Pranish",
+      "last_name": "Shrestha",
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-06-11T01:11:35.971690",
+      "source": "auto_backfilled"
+    },
+    "U0B4792CCKS": {
+      "first_name": "Lujane",
+      "last_name": "Albatayneh",
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-06-11T01:11:35.978406",
+      "source": "auto_backfilled"
+    },
+    "U0B1ZDNQUKX": {
+      "first_name": "Benjamin",
+      "last_name": "Kushpit",
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-06-11T01:11:35.980547",
+      "source": "auto_backfilled"
+    },
+    "U095L0FG276": {
+      "first_name": "Samajai",
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-06-11T01:17:56.458267",
+      "source": "admin_backfill",
+      "last_name": "(Sosa) Hoy"
+    },
+    "U09852699J7": {
+      "first_name": "Orlando",
+      "owner_id": "khalil_mansour",
+      "set_at": "2026-06-11T01:17:56.468568",
+      "source": "admin_backfill",
+      "last_name": "Keenan"
+    },
+    "U0B7063T771": {
+      "first_name": "Nii",
+      "owner_id": "nii",
+      "set_at": "2026-06-11T01:17:56.474827",
+      "source": "admin_backfill"
+    },
+    "U096NEL0F0W": {
+      "first_name": "Nhan",
+      "last_name": "Phan",
+      "owner_id": "cyrus_wade",
+      "set_at": "2026-06-11T01:17:56.480793",
+      "source": "admin_backfill"
+    },
+    "U09GX6TQY12": {
+      "first_name": "Keegan",
+      "owner_id": "isaiah_revelle",
+      "set_at": "2026-06-11T01:17:56.486200",
+      "source": "admin_backfill",
+      "last_name": "Escamilla"
+    },
+    "U09KDLP7QA0": {
+      "first_name": "Brandon",
+      "last_name": "Childs",
+      "owner_id": "isaiah_revelle",
+      "set_at": "2026-06-11T01:17:56.491721",
+      "source": "admin_backfill"
+    },
+    "U08LSELLCGY": {
+      "first_name": "Zoria",
+      "last_name": "Johnson",
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-06-11T01:17:56.497090",
+      "source": "admin_backfill"
+    },
+    "U0B6EUZD13P": {
+      "first_name": "Melik",
+      "last_name": "El Jaiez",
+      "owner_id": "melik_el_jaiez",
+      "set_at": "2026-06-11T01:17:56.502284",
+      "source": "admin_backfill"
+    },
+    "U0B36GDTT6F": {
+      "first_name": "Jordan",
+      "last_name": "Ruiz",
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-06-11T01:17:56.506912",
+      "source": "admin_backfill"
+    },
+    "U0B1L2RURGE": {
+      "first_name": "Micah",
+      "last_name": "McGhee",
+      "owner_id": "cyrus_wade",
+      "set_at": "2026-06-11T01:17:56.511303",
+      "source": "admin_backfill"
+    },
+    "U0688MM9Y11": {
+      "first_name": "Big",
+      "last_name": "Glo",
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-06-11T01:17:56.519268",
+      "source": "admin_backfill",
+      "terminated": true,
+      "terminated_at": "2026-07-27T18:17:41.242310"
+    },
+    "U0B7D8JU14N": {
+      "owner_id": "cody_cannon",
+      "set_at": "2026-06-17T10:45:53.376224",
+      "source": "self_reported",
+      "first_name": "Edgar",
+      "last_name": "Muniz II"
+    },
+    "U0BHDUZT30S": {
+      "owner_id": "jacob_dover",
+      "set_at": "2026-07-15T10:09:13.152123",
+      "source": "self_reported",
+      "first_name": "Tytiera",
+      "last_name": "Franklin"
+    },
+    "U07G4TRPPNE": {
+      "owner_id": "joseph_delgado",
+      "set_at": "2026-07-21T10:53:54.079435",
+      "source": "self_reported",
+      "first_name": "Joseph",
+      "last_name": "Delgado"
+    },
+    "U047M3AAN0G": {
+      "first_name": "Colten",
+      "last_name": "Wright",
+      "owner_id": "colten_wright",
+      "set_at": "2026-07-24T10:11:46.104133",
+      "source": "admin_backfill_self_owner"
+    },
+    "U0B9924FHCL": {
+      "terminated": true,
+      "terminated_at": "2026-07-27T18:26:27.496777",
+      "first_name": "Tiffani",
+      "last_name": "Brown"
+    },
+    "U0B8N2Q83PS": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-07-28T10:36:00.149742",
+      "source": "self_reported"
+    },
+    "U09QT100QNN": {
+      "owner_id": "jacob_dover",
+      "set_at": "2026-07-28T11:50:43.783917",
+      "source": "self_reported"
+    },
+    "U0BGYJPQQGP": {
+      "owner_id": "jacob_dover",
+      "set_at": "2026-07-28T12:04:33.409348",
+      "source": "self_reported"
+    },
+    "U08M5S3BVMF": {
+      "owner_id": "jacob_dover",
+      "set_at": "2026-07-28T12:18:50.031463",
+      "source": "self_reported"
+    },
+    "U0BCRV9TA04": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-07-28T12:26:13.799536",
+      "source": "self_reported"
+    },
+    "U0BBV9NTLGY": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-07-29T09:04:15.369314",
+      "source": "self_reported"
+    },
+    "U0BJYP396UX": {
+      "owner_id": "esteban_villalta",
+      "set_at": "2026-07-29T11:17:59.109865",
+      "source": "self_reported_new"
+    },
+    "U0BLLBDT3SQ": {
+      "owner_id": "awais_iqbal",
+      "set_at": "2026-07-29T17:15:05.764865",
+      "source": "self_reported_new"
+    },
+    "U08R7H0MQ9Y": {
+      "owner_id": "jacob_dover",
+      "set_at": "2026-07-29T22:25:57.845651",
+      "source": "self_reported"
+    },
+    "U0BLXJL46Q2": {
+      "owner_id": "carlos_hidalgo",
+      "set_at": "2026-07-30T09:57:51.593190",
+      "source": "self_reported"
+    },
+    "U0BLG7NJZ0F": {
+      "owner_id": "carlos_hidalgo",
+      "set_at": "2026-07-30T10:00:51.145533",
+      "source": "self_reported"
+    },
+    "U08EW9QR9GX": {
+      "owner_id": "colten_wright",
+      "set_at": "2026-07-30T16:43:31.371622",
+      "source": "self_reported"
+    },
+    "U08GDFJ6GR4": {
+      "owner_id": "colten_wright",
+      "set_at": "2026-07-30T17:08:04.445978",
+      "source": "self_reported"
+    },
+    "U0BDAD4QEP6": {
+      "owner_id": "joseph_delgado",
+      "set_at": "2026-07-30T22:11:10.201220",
+      "source": "self_reported"
+    },
+    "U0B8YVCHJ2H": {
+      "owner_id": "colten_wright",
+      "set_at": "2026-07-31T08:56:55.644739",
+      "source": "self_reported"
+    },
+    "U07QVAZ8WP3": {
+      "owner_id": "puneh_nejad",
+      "set_at": "2026-07-31T09:26:05.702553",
+      "source": "self_reported_new"
+    },
+    "U0BM6SD594J": {
+      "owner_id": "carlos_hidalgo",
+      "set_at": "2026-07-31T09:49:59.504486",
+      "source": "self_reported"
+    },
+    "U0B8N3DNDJL": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-07-31T10:37:54.187350",
+      "source": "self_reported"
+    },
+    "U0BK1HKJKV5": {
+      "owner_id": "jacob_dover",
+      "set_at": "2026-08-03T12:39:33.011711",
+      "source": "self_reported"
+    },
+    "U09SDDHGWQH": {
+      "owner_id": "maxamad_aden",
+      "set_at": "2026-08-06T14:24:09.548046",
+      "source": "self_reported"
+    },
+    "U0BH2F6R6NN": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-08-07T11:56:26.040518",
+      "source": "self_reported"
+    },
+    "U0B3DC4ESDQ": {
+      "owner_id": "colten_wright",
+      "set_at": "2026-08-10T21:11:53.272457",
+      "source": "self_reported"
+    },
+    "U08LSELFTDW": {
+      "owner_id": "rashad_reed",
+      "set_at": "2026-08-11T09:37:13.682812",
+      "source": "self_reported"
+    },
+    "U0BAYF3705Q": {
+      "owner_id": "rashad_reed",
+      "set_at": "2026-08-11T09:44:35.626468",
+      "source": "self_reported"
+    },
+    "U0BA9SL74T1": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-08-11T10:51:37.438727",
+      "source": "self_reported"
+    },
+    "U07FLTR1FR9": {
+      "owner_id": "hasani_lynch",
+      "set_at": "2026-08-12T10:25:53.511112",
+      "source": "self_reported_new"
+    },
+    "U0BHJ2FR2CV": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-08-13T13:12:18.499207",
+      "source": "self_reported"
+    },
+    "U0BCXULLRR8": {
+      "owner_id": "maxamad_aden",
+      "set_at": "2026-08-13T13:16:49.053408",
+      "source": "self_reported"
+    },
+    "U0B9CN2GP3L": {
+      "owner_id": "khalil_mansour",
+      "set_at": "2026-08-14T12:37:24.832941",
+      "source": "self_reported"
+    },
+    "U0BASDJSYHY": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-08-14T13:49:38.520848",
+      "source": "self_reported"
+    },
+    "U0BG5MXP6HZ": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-08-14T19:34:06.797806",
+      "source": "self_reported"
+    },
+    "U09K1SXDZK2": {
+      "owner_id": "rashad_reed",
+      "set_at": "2026-08-14T21:09:05.259199",
+      "source": "self_reported"
+    },
+    "U0BQJ0L8C2V": {
+      "owner_id": "rudy_ochoa",
+      "set_at": "2026-08-15T12:21:11.858293",
+      "source": "self_reported_new"
+    },
+    "U0BQ10T764F": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-08-15T14:36:57.392046",
+      "source": "self_reported"
+    },
+    "U09H9F2UKPZ": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-08-15T17:36:36.565229",
+      "source": "self_reported"
+    },
+    "U08KP2V7ESK": {
+      "owner_id": "cody_cannon",
+      "set_at": "2026-08-15T18:27:07.041752",
+      "source": "self_reported"
+    },
+    "U0BQGSWBQ4S": {
+      "owner_id": "drew_tepper",
+      "set_at": "2026-08-15T19:05:52.621220",
+      "source": "self_reported"
+    },
+    "U0BQLJ9DK9S": {
+      "owner_id": "yes_confirm",
+      "set_at": "2026-08-15T19:09:09.499370",
+      "source": "self_reported_new"
+    },
+    "U0BRB80245N": {
+      "owner_id": "jose_velasquez",
+      "set_at": "2026-08-16T01:30:56.904599",
+      "source": "self_reported"
+    },
+    "U0BQJ9NT4F3": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-08-17T03:41:20.467608",
+      "source": "self_reported"
+    },
+    "U0BJFS5V5BR": {
+      "owner_id": "carlos_hidalgo",
+      "set_at": "2026-08-17T11:46:46.316035",
+      "source": "self_reported"
+    },
+    "U07QGHE463V": {
+      "owner_id": "lamine_khalfaoui",
+      "set_at": "2026-08-17T12:49:51.913456",
+      "source": "self_reported_new"
+    },
+    "U0BQGSY429G": {
+      "owner_id": "emilio_suggs",
+      "set_at": "2026-08-17T16:10:47.391649",
+      "source": "self_reported_new"
+    },
+    "U0BQCM60J5B": {
+      "owner_id": "drew_tepper",
+      "set_at": "2026-08-17T18:59:02.948599",
+      "source": "self_reported"
+    },
+    "U0BQZENMLLS": {
+      "owner_id": "cody_cannon",
+      "set_at": "2026-08-18T08:15:03.781783",
+      "source": "self_reported"
+    },
+    "U0BRTV20UBA": {
+      "owner_id": "cody_cannon",
+      "set_at": "2026-08-18T08:26:53.837512",
+      "source": "self_reported"
+    },
+    "U0BR1HY7PBK": {
+      "owner_id": "cody_cannon",
+      "set_at": "2026-08-18T08:37:40.854440",
+      "source": "self_reported"
+    },
+    "U0BQD80CVUM": {
+      "owner_id": "trevonn_gentry",
+      "set_at": "2026-08-18T09:05:08.680663",
+      "source": "self_reported_new"
+    },
+    "U0BB3TL37ND": {
+      "owner_id": "cody_cannon",
+      "set_at": "2026-08-18T09:38:41.771818",
+      "source": "self_reported"
+    },
+    "U0BQLK0NGQ4": {
+      "owner_id": "fatima_hussaini",
+      "set_at": "2026-08-18T09:56:05.070129",
+      "source": "self_reported_new"
+    },
+    "U07TYS3V32A": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-08-18T11:01:53.918751",
+      "source": "self_reported"
+    },
+    "U0BRB8QEHEC": {
+      "owner_id": "nabil_halik",
+      "set_at": "2026-08-18T11:38:13.528507",
+      "source": "self_reported_new"
+    },
+    "U0BQW7Z821H": {
+      "owner_id": "jose_velasquez",
+      "set_at": "2026-08-18T15:12:52.717527",
+      "source": "self_reported"
+    },
+    "U09JA62FGKZ": {
+      "owner_id": "yes_confirm",
+      "set_at": "2026-08-18T19:12:44.255446",
+      "source": "self_reported"
+    },
+    "U0BR578NS82": {
+      "owner_id": "stergios_kasapidis",
+      "set_at": "2026-08-18T21:44:15.475795",
+      "source": "self_reported_new"
+    },
+    "U0BR39F3D4N": {
+      "owner_id": "stergios_kasapidis",
+      "set_at": "2026-08-18T21:50:27.035804",
+      "source": "self_reported"
+    },
+    "U0BR2JVQXJ9": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-08-19T01:27:53.147472",
+      "source": "self_reported"
+    },
+    "U0BRA3100TW": {
+      "owner_id": "samatar_ali",
+      "set_at": "2026-08-19T01:37:56.387367",
+      "source": "self_reported_new"
+    },
+    "U0BQJRVH6HF": {
+      "owner_id": "ayman_fouzi",
+      "set_at": "2026-08-19T07:52:29.833876",
+      "source": "self_reported_new"
+    },
+    "U0BQD2GED9T": {
+      "owner_id": "nicholas_weldon",
+      "set_at": "2026-08-19T12:08:02.660520",
+      "source": "self_reported_new"
+    },
+    "U0BRW7X4B9N": {
+      "owner_id": "nabil_halik",
+      "set_at": "2026-08-19T12:10:31.719506",
+      "source": "self_reported"
+    },
+    "U0BS57YLANL": {
+      "owner_id": "samatar_ali",
+      "set_at": "2026-08-19T12:17:26.629658",
+      "source": "self_reported"
+    },
+    "U0BEUK74PCY": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-08-19T12:45:11.625980",
+      "source": "self_reported"
+    },
+    "U0BQUPW3W23": {
+      "owner_id": "nicholas_weldon",
+      "set_at": "2026-08-19T14:34:29.148375",
+      "source": "self_reported"
+    },
+    "U0B93EDHNGN": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-08-19T16:51:24.859018",
+      "source": "self_reported"
+    },
+    "U0BRZJSRSKA": {
+      "owner_id": "stergios_kasapidis",
+      "set_at": "2026-08-19T21:16:53.871568",
+      "source": "self_reported"
+    },
+    "U0BRA5YQVEW": {
+      "owner_id": "nicholas_weldon",
+      "set_at": "2026-08-19T21:17:39.189710",
+      "source": "self_reported"
+    },
+    "U0BRGPGES0H": {
+      "owner_id": "nicholas_weldon",
+      "set_at": "2026-08-19T21:33:23.597077",
+      "source": "self_reported"
+    },
+    "U075DEEK4BF": {
+      "owner_id": "cody_cannon",
+      "set_at": "2026-08-19T21:41:54.337646",
+      "source": "self_reported"
+    },
+    "U0BRE5JSHPE": {
+      "owner_id": "tre_mitchell",
+      "set_at": "2026-08-19T23:17:13.562906",
+      "source": "self_reported_new"
+    },
+    "U0BQAF94RSP": {
+      "owner_id": "nicholas_weldon",
+      "set_at": "2026-08-19T23:53:10.619762",
+      "source": "self_reported"
+    },
+    "U0BRB0BK3HB": {
+      "owner_id": "amjad_malhas",
+      "set_at": "2026-08-20T01:02:01.019811",
+      "source": "self_reported"
+    },
+    "U0BR611CZEZ": {
+      "owner_id": "ayman_fouzi",
+      "set_at": "2026-08-20T07:40:38.347982",
+      "source": "self_reported"
+    },
+    "U0BR1FPDBL5": {
+      "owner_id": "stergios_kasapidis",
+      "set_at": "2026-08-20T08:28:54.212838",
+      "source": "self_reported"
+    },
+    "U0BR1FQSD45": {
+      "owner_id": "stergios_kasapidis",
+      "set_at": "2026-08-20T08:51:15.134667",
+      "source": "self_reported"
+    },
+    "U0BR1FX03NH": {
+      "owner_id": "stergios_kasapidis",
+      "set_at": "2026-08-20T09:29:22.307629",
+      "source": "self_reported"
+    },
+    "U0BR9BASERL": {
+      "owner_id": "tre_mitchell",
+      "set_at": "2026-08-20T10:22:38.526156",
+      "source": "self_reported"
+    },
+    "U09DFATJEKB": {
+      "owner_id": "tre_mitchell",
+      "set_at": "2026-08-20T10:31:15.371774",
+      "source": "self_reported"
+    },
+    "U0BQGA4LWP4": {
+      "owner_id": "hector_cordova",
+      "set_at": "2026-08-21T00:01:32.189982",
+      "source": "self_reported_new"
+    },
+    "U0BSDFZANSU": {
+      "owner_id": "nabil_halik",
+      "set_at": "2026-08-21T08:57:35.199709",
+      "source": "self_reported"
+    },
+    "U0BRE1EHBHS": {
+      "owner_id": "nicholas_weldon",
+      "set_at": "2026-08-21T10:22:06.940086",
+      "source": "self_reported"
+    },
+    "U0B4HKKSMQA": {
+      "owner_id": "carlos_hidalgo",
+      "set_at": "2026-08-21T10:32:12.209270",
+      "source": "self_reported"
+    },
+    "U0APVP29QSD": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-08-21T10:34:49.240459",
+      "source": "self_reported"
+    },
+    "U0BHAND2W9L": {
+      "owner_id": "rashad_reed",
+      "set_at": "2026-08-21T10:43:34.488701",
+      "source": "self_reported"
+    },
+    "U0BFPFEEE4F": {
+      "owner_id": "stergios_kasapidis",
+      "set_at": "2026-08-21T11:55:07.257539",
+      "source": "self_reported"
+    },
+    "U0BS0M4HQ6M": {
+      "owner_id": "nabil_halik",
+      "set_at": "2026-08-21T21:14:53.672686",
+      "source": "self_reported"
+    },
+    "U0BRHCB8HGF": {
+      "owner_id": "nabil_halik",
+      "set_at": "2026-08-21T21:22:38.605927",
+      "source": "self_reported"
+    },
+    "U083XNMHD39": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-08-23T19:37:42.941004",
+      "source": "self_reported"
+    },
+    "U0BRDCVSE9J": {
+      "owner_id": "nabil_halik",
+      "set_at": "2026-08-24T08:12:55.768581",
+      "source": "self_reported"
+    },
+    "U0BR60NTTEZ": {
+      "owner_id": "nabil_halik",
+      "set_at": "2026-08-24T08:46:34.636906",
+      "source": "self_reported"
+    },
+    "U08GHBVQHMG": {
+      "owner_id": "i_m_the_owner_frank_matos",
+      "set_at": "2026-08-24T09:41:07.912189",
+      "source": "self_reported_new"
+    },
+    "U0BFERPLVPX": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-08-24T12:25:03.034527",
+      "source": "self_reported"
+    },
+    "U07QK5JDCBW": {
+      "owner_id": "tyler_hadden",
+      "set_at": "2026-08-24T13:12:30.866473",
+      "source": "self_reported_new"
+    },
+    "U0BRWS89MP1": {
+      "owner_id": "samatar_ali",
+      "set_at": "2026-08-24T21:58:08.412066",
+      "source": "self_reported"
+    },
+    "U0AK05E6S11": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-08-25T10:42:31.076538",
+      "source": "self_reported"
+    },
+    "U0BSLRKPEKF": {
+      "owner_id": "i_m_the_owner_frank_matos",
+      "set_at": "2026-08-25T21:11:50.627836",
+      "source": "self_reported"
+    },
+    "U0BHW6JP6MV": {
+      "owner_id": "samatar_ali",
+      "set_at": "2026-08-26T01:11:26.881815",
+      "source": "self_reported"
+    },
+    "U0BSDG37GF8": {
+      "owner_id": "joseph_delgado",
+      "set_at": "2026-08-26T08:25:10.750759",
+      "source": "self_reported"
+    },
+    "U0BSK4Z7EN8": {
+      "owner_id": "joseph_delgado",
+      "set_at": "2026-08-26T09:55:46.718636",
+      "source": "self_reported"
+    },
+    "U0BQZJ93DHQ": {
+      "owner_id": "i_m_the_owner_frank_matos",
+      "set_at": "2026-08-26T10:38:41.627764",
+      "source": "self_reported"
+    },
+    "U0BSR9F8LHZ": {
+      "owner_id": "i_m_the_owner_frank_matos",
+      "set_at": "2026-08-26T13:10:46.560737",
+      "source": "self_reported"
+    },
+    "U0BT58759G8": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-08-27T09:45:43.516616",
+      "source": "self_reported"
+    },
+    "U08LPKSUMD5": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-08-27T11:14:44.585761",
+      "source": "self_reported"
+    },
+    "U0BM89H68NA": {
+      "owner_id": "i_m_the_owner_frank_matos",
+      "set_at": "2026-08-27T21:10:30.836679",
+      "source": "self_reported"
+    },
+    "U0BTJNR1UKW": {
+      "owner_id": "samatar_ali",
+      "set_at": "2026-08-28T11:43:24.831089",
+      "source": "self_reported"
+    },
+    "U0BTK9JD6DA": {
+      "owner_id": "samatar_ali",
+      "set_at": "2026-08-28T11:51:20.658289",
+      "source": "self_reported"
+    },
+    "U0BT2BC21V3": {
+      "owner_id": "i_m_the_owner_frank_matos",
+      "set_at": "2026-08-29T01:01:39.295365",
+      "source": "self_reported"
+    },
+    "U0BTJGXD6P3": {
+      "owner_id": "i_m_the_owner_frank_matos",
+      "set_at": "2026-08-31T08:59:17.382063",
+      "source": "self_reported"
+    },
+    "U0BQE3P7BNJ": {
+      "owner_id": "i_m_the_owner_frank_matos",
+      "set_at": "2026-09-01T11:18:35.850462",
+      "source": "self_reported"
+    },
+    "U0BQHPW92EM": {
+      "owner_id": "i_m_the_owner_frank_matos",
+      "set_at": "2026-09-02T09:02:46.066356",
+      "source": "self_reported"
+    },
+    "U0BRUFXPG3S": {
+      "owner_id": "i_m_the_owner_frank_matos",
+      "set_at": "2026-09-03T09:52:11.812389",
+      "source": "self_reported"
+    },
+    "U08A243AV9Q": {
+      "owner_id": "valeria_tristan",
+      "set_at": "2026-09-03T14:36:24.982809",
+      "source": "self_reported"
+    },
+    "U0BQECA3DK8": {
+      "owner_id": "samatar_ali",
+      "set_at": "2026-09-04T11:34:51.322539",
+      "source": "self_reported"
+    },
+    "U0BUMN4LBBR": {
+      "owner_id": "samatar_ali",
+      "set_at": "2026-09-04T11:34:57.483779",
+      "source": "self_reported"
+    },
+    "U082RGDD3K5": {
+      "owner_id": "colten_wright",
+      "set_at": "2026-09-08T10:05:55.218366",
+      "source": "self_reported"
+    },
+    "U0BV4VA5M3P": {
+      "owner_id": "colten_wright",
+      "set_at": "2026-09-08T10:08:29.018669",
+      "source": "self_reported"
+    },
+    "U09U39BNN2Y": {
+      "owner_id": "rashad_reed",
+      "set_at": "2026-09-09T09:32:43.255756",
+      "source": "self_reported"
+    },
+    "U0B4T7FKM38": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-09-09T10:23:59.460378",
+      "source": "self_reported"
+    },
+    "U0BQSFD6PDL": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-09-09T10:30:15.988591",
+      "source": "self_reported"
+    },
+    "U0BV79NCNHX": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-09-10T00:34:45.455797",
+      "source": "self_reported"
+    },
+    "U0B397Z0HSR": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-09-10T10:17:54.197141",
+      "source": "self_reported"
+    },
+    "U048WU3EUFJ": {
+      "owner_id": "eveliz_wright",
+      "set_at": "2026-09-14T09:59:28.966138",
+      "source": "self_reported"
+    },
+    "U0BQV4A45PE": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-09-14T10:03:27.434224",
+      "source": "self_reported"
+    },
+    "U0C1SERJWBB": {
+      "owner_id": "marcellus_butler_jr",
+      "set_at": "2026-09-14T12:05:00.990420",
+      "source": "self_reported_new"
+    },
+    "U0C1QMTCR1Q": {
+      "owner_id": "jacob_dover",
+      "set_at": "2026-09-14T13:58:50.544661",
+      "source": "self_reported"
+    },
+    "U06UM7VKGLX": {
+      "owner_id": "isaiah_revelle",
+      "set_at": "2026-09-15T12:03:39.148503",
+      "source": "self_reported"
+    },
+    "U0BUMP39M1T": {
+      "owner_id": "colten_wright",
+      "set_at": "2026-09-16T09:19:41.457129",
+      "source": "self_reported"
+    },
+    "U0BU3214R1P": {
+      "owner_id": "colten_wright",
+      "set_at": "2026-09-16T09:37:15.052717",
+      "source": "self_reported"
+    },
+    "U0BUVHAFT32": {
+      "owner_id": "colten_wright",
+      "set_at": "2026-09-16T09:55:56.024385",
+      "source": "self_reported"
+    },
+    "U0C08FR1AF5": {
+      "owner_id": "colten_wright",
+      "set_at": "2026-09-16T09:58:49.387261",
+      "source": "self_reported"
+    },
+    "U0BUS2YHQLA": {
+      "owner_id": "colten_wright",
+      "set_at": "2026-09-16T10:30:17.835948",
+      "source": "self_reported"
+    },
+    "U0BTUSW8UEP": {
+      "owner_id": "colten_wright",
+      "set_at": "2026-09-17T08:51:16.070410",
+      "source": "self_reported"
+    },
+    "U0BVDC9NBCM": {
+      "owner_id": "colten_wright",
+      "set_at": "2026-09-17T09:42:42.376991",
+      "source": "self_reported"
+    },
+    "U0BRVG0U0QP": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-09-17T12:50:54.601479",
+      "source": "self_reported"
+    },
+    "U0C0XE6SK32": {
+      "owner_id": "colten_wright",
+      "set_at": "2026-09-18T08:44:47.331239",
+      "source": "self_reported"
+    },
+    "U0C30HT9ZQU": {
+      "owner_id": "i_m_the_owner_frank_matos",
+      "set_at": "2026-09-18T10:29:29.821928",
+      "source": "self_reported"
+    },
+    "U0C2S63BK9B": {
+      "owner_id": "i_m_the_owner_frank_matos",
+      "set_at": "2026-09-18T10:49:14.518373",
+      "source": "self_reported"
+    },
+    "U0C2QSPKVL3": {
+      "owner_id": "i_m_the_owner_frank_matos",
+      "set_at": "2026-09-18T10:53:52.703343",
+      "source": "self_reported"
+    },
+    "U0C2QM35LLB": {
+      "owner_id": "i_m_the_owner_frank_matos",
+      "set_at": "2026-09-18T10:56:41.802174",
+      "source": "self_reported"
+    },
+    "U0BQKNZEU2Y": {
+      "owner_id": "i_m_the_owner_frank_matos",
+      "set_at": "2026-09-20T12:26:18.718090",
+      "source": "self_reported"
+    },
+    "U0BUS2FRG3C": {
+      "owner_id": "colten_wright",
+      "set_at": "2026-09-22T09:37:31.863341",
+      "source": "self_reported"
+    },
+    "U0BUKRCFSLT": {
+      "owner_id": "colten_wright",
+      "set_at": "2026-09-22T09:47:20.234022",
+      "source": "self_reported"
+    },
+    "U0BHW67LRM5": {
+      "owner_id": "i_m_the_owner_frank_matos",
+      "set_at": "2026-09-22T15:52:57.324136",
+      "source": "self_reported"
+    },
+    "U0BUVNSC136": {
+      "owner_id": "colten_wright",
+      "set_at": "2026-09-23T08:45:45.728405",
+      "source": "self_reported"
+    },
+    "U0C3YMAN2PL": {
+      "owner_id": "i_m_the_owner_frank_matos",
+      "set_at": "2026-09-23T11:47:24.242990",
+      "source": "self_reported"
+    },
+    "U0C4S5YEDCG": {
+      "owner_id": "jacob_dover",
+      "set_at": "2026-09-23T18:48:09.061030",
+      "source": "self_reported"
+    },
+    "U0A5UATJ62X": {
+      "owner_id": "rashad_reed",
+      "set_at": "2026-09-24T10:26:43.379105",
+      "source": "self_reported"
+    },
+    "U0C144X8SBD": {
+      "owner_id": "rafael_hidalgo",
+      "set_at": "2026-09-24T15:56:42.912197",
+      "source": "self_reported"
+    },
+    "U0C38M69LSX": {
+      "owner_id": "i_m_the_owner_frank_matos",
+      "set_at": "2026-09-25T09:26:41.808385",
+      "source": "self_reported"
+    },
+    "U0BUS2AM2R0": {
+      "owner_id": "colten_wright",
+      "set_at": "2026-09-25T10:02:02.575910",
+      "source": "self_reported"
+    },
+    "U0C06GFCBLG": {
+      "owner_id": "colten_wright",
+      "set_at": "2026-09-25T10:11:59.026887",
+      "source": "self_reported"
+    },
+    "U0C4CLNGFJB": {
+      "owner_id": "jacob_dover",
+      "set_at": "2026-09-28T10:40:22.648183",
+      "source": "self_reported"
+    },
+    "U0C4LMSK5CH": {
+      "owner_id": "jacob_dover",
+      "set_at": "2026-09-28T10:41:44.143827",
+      "source": "self_reported"
+    },
+    "U0BQM8BJPU4": {
+      "owner_id": "i_m_the_owner_frank_matos",
+      "set_at": "2026-09-29T10:24:25.612111",
+      "source": "self_reported"
+    },
+    "U0BHE4MD258": {
+      "owner_id": "rashad_reed",
+      "set_at": "2026-09-29T10:52:06.858669",
+      "source": "self_reported"
+    },
+    "U0AUH09AHHP": {
+      "owner_id": "carlos_hidalgo",
+      "set_at": "2026-09-30T11:00:57.327658",
+      "source": "self_reported"
+    },
+    "U0BMDU0MP7U": {
+      "owner_id": "carlos_hidalgo",
+      "set_at": "2026-10-02T10:40:55.224057",
+      "source": "self_reported"
+    },
+    "U0BRA0FA7S4": {
+      "owner_id": "eveliz_wright",
+      "set_at": "2026-10-06T08:07:05.552130",
+      "source": "self_reported"
+    },
+    "U0C5XT54AES": {
+      "owner_id": "eveliz_wright",
+      "set_at": "2026-10-06T08:12:40.454526",
+      "source": "self_reported"
+    },
+    "U0C63GTKDHA": {
+      "owner_id": "eveliz_wright",
+      "set_at": "2026-10-06T08:14:35.054874",
+      "source": "self_reported"
+    },
+    "U07NNA8JLPM": {
+      "owner_id": "eveliz_wright",
+      "set_at": "2026-10-06T08:19:51.847543",
+      "source": "self_reported"
+    },
+    "U0BUAMDV1LP": {
+      "owner_id": "colten_wright",
+      "set_at": "2026-10-06T09:40:20.022274",
+      "source": "self_reported"
+    },
+    "U0C6TRPPG0Y": {
+      "owner_id": "eveliz_wright",
+      "set_at": "2026-10-07T05:21:38.810009",
+      "source": "self_reported"
+    },
+    "U0C7Y687MQQ": {
+      "owner_id": "valeria_tristan",
+      "set_at": "2026-10-07T07:29:32.587747",
+      "source": "self_reported"
+    },
+    "U0C635AMKBN": {
+      "owner_id": "joseph_delgado",
+      "set_at": "2026-10-07T09:41:53.395613",
+      "source": "self_reported"
+    },
+    "U0C5J2ZCG2K": {
+      "owner_id": "eveliz_wright",
+      "set_at": "2026-10-08T07:49:42.903230",
+      "source": "self_reported"
+    },
+    "U0C5Z3VN41G": {
+      "owner_id": "eveliz_wright",
+      "set_at": "2026-10-08T08:33:41.837365",
+      "source": "self_reported"
+    },
+    "U0C06ENH82U": {
+      "owner_id": "colten_wright",
+      "set_at": "2026-10-08T09:40:51.786104",
+      "source": "self_reported"
+    },
+    "U0BUVNTDRLL": {
+      "owner_id": "colten_wright",
+      "set_at": "2026-10-12T09:27:17.463808",
+      "source": "self_reported"
+    },
+    "U0BQDULAC48": {
+      "owner_id": "rashad_reed",
+      "set_at": "2026-10-13T10:01:05.913631",
+      "source": "self_reported"
+    },
+    "U0BJVNBE457": {
+      "owner_id": "joseph_delgado",
+      "set_at": "2026-10-13T10:04:49.614022",
+      "source": "self_reported"
+    },
+    "U0BN22U11UJ": {
+      "owner_id": "rashad_reed",
+      "set_at": "2026-10-13T10:57:50.275172",
+      "source": "self_reported"
+    },
+    "U0C6TNV0CCQ": {
+      "owner_id": "eveliz_wright",
+      "set_at": "2026-10-14T07:41:31.117517",
+      "source": "self_reported"
+    },
+    "U0C4VUJ6Z1V": {
+      "owner_id": "jacob_dover",
+      "set_at": "2026-10-14T11:32:54.904665",
+      "source": "self_reported"
+    },
+    "U0C4JB0H4DQ": {
+      "owner_id": "rashad_reed",
+      "set_at": "2026-10-15T09:41:13.627606",
+      "source": "self_reported"
+    },
+    "U0C56HP7MJQ": {
+      "owner_id": "antwone_stephens",
+      "set_at": "2026-10-16T12:23:05.306332",
+      "source": "self_reported_new"
+    },
+    "U089H518M40": {
+      "owner_id": "drew_tepper",
+      "set_at": "2026-10-19T16:39:12.252606",
+      "source": "self_reported"
+    },
+    "U0B6H18TN8M": {
+      "owner_id": "cyrus_wade",
+      "set_at": "2026-10-19T20:03:11.953118",
+      "source": "self_reported"
+    }
+  }
+}

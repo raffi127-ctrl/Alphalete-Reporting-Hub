@@ -1,0 +1,716 @@
+{
+  "2026-05-29": {
+    "audits": 6,
+    "cost_usd": 0.5208,
+    "input_tokens": 337300,
+    "output_tokens": 9929
+  },
+  "2026-05-31": {
+    "audits": 8,
+    "cost_usd": 0.6226,
+    "input_tokens": 366108,
+    "output_tokens": 16490
+  },
+  "2026-06-01": {
+    "audits": 3,
+    "cost_usd": 0.237,
+    "input_tokens": 140911,
+    "output_tokens": 6093
+  },
+  "2026-06-02": {
+    "audits": 1,
+    "cost_usd": 0.0713,
+    "input_tokens": 38680,
+    "output_tokens": 2297
+  },
+  "2026-06-03": {
+    "audits": 5,
+    "cost_usd": 0.4492,
+    "input_tokens": 279219,
+    "output_tokens": 10021
+  },
+  "2026-06-04": {
+    "audits": 11,
+    "cost_usd": 0.9132,
+    "input_tokens": 561232,
+    "output_tokens": 21175
+  },
+  "2026-06-05": {
+    "audits": 7,
+    "cost_usd": 0.6199,
+    "input_tokens": 390086,
+    "output_tokens": 13231
+  },
+  "2026-06-08": {
+    "audits": 17,
+    "cost_usd": 1.0713,
+    "input_tokens": 576900,
+    "output_tokens": 35000
+  },
+  "2026-06-09": {
+    "audits": 31,
+    "cost_usd": 2.3057,
+    "input_tokens": 1328133,
+    "output_tokens": 64538
+  },
+  "2026-06-10": {
+    "audits": 28,
+    "cost_usd": 2.2609,
+    "input_tokens": 1370997,
+    "output_tokens": 54715
+  },
+  "2026-06-11": {
+    "audits": 15,
+    "cost_usd": 1.3859,
+    "input_tokens": 864743,
+    "output_tokens": 30514
+  },
+  "2026-06-12": {
+    "audits": 26,
+    "cost_usd": 1.9685,
+    "input_tokens": 1149651,
+    "output_tokens": 53120
+  },
+  "2026-06-15": {
+    "audits": 15,
+    "cost_usd": 1.3565,
+    "input_tokens": 841671,
+    "output_tokens": 30452
+  },
+  "2026-06-16": {
+    "audits": 11,
+    "cost_usd": 1.1552,
+    "input_tokens": 737083,
+    "output_tokens": 23393
+  },
+  "2026-06-17": {
+    "audits": 17,
+    "cost_usd": 1.3763,
+    "input_tokens": 832629,
+    "output_tokens": 33570
+  },
+  "2026-06-18": {
+    "audits": 7,
+    "cost_usd": 0.5647,
+    "input_tokens": 347172,
+    "output_tokens": 13073
+  },
+  "2026-06-19": {
+    "audits": 13,
+    "cost_usd": 1.0495,
+    "input_tokens": 626389,
+    "output_tokens": 26652
+  },
+  "2026-06-20": {
+    "audits": 1,
+    "cost_usd": 0.0933,
+    "input_tokens": 54747,
+    "output_tokens": 2483
+  },
+  "2026-06-22": {
+    "audits": 12,
+    "cost_usd": 0.8147,
+    "input_tokens": 462285,
+    "output_tokens": 23695
+  },
+  "2026-06-23": {
+    "audits": 6,
+    "cost_usd": 0.4292,
+    "input_tokens": 255051,
+    "output_tokens": 11053
+  },
+  "2026-06-24": {
+    "audits": 14,
+    "cost_usd": 1.2291,
+    "input_tokens": 762312,
+    "output_tokens": 27620
+  },
+  "2026-06-25": {
+    "audits": 6,
+    "cost_usd": 0.4286,
+    "input_tokens": 249951,
+    "output_tokens": 11599
+  },
+  "2026-06-26": {
+    "audits": 11,
+    "cost_usd": 0.907,
+    "input_tokens": 561533,
+    "output_tokens": 20495
+  },
+  "2026-06-27": {
+    "audits": 3,
+    "cost_usd": 0.2667,
+    "input_tokens": 166485,
+    "output_tokens": 5858
+  },
+  "2026-06-28": {
+    "audits": 1,
+    "cost_usd": 0.0925,
+    "input_tokens": 58799,
+    "output_tokens": 1903
+  },
+  "2026-06-29": {
+    "audits": 7,
+    "cost_usd": 0.5502,
+    "input_tokens": 328384,
+    "output_tokens": 13962
+  },
+  "2026-06-30": {
+    "audits": 2,
+    "cost_usd": 0.2253,
+    "input_tokens": 151620,
+    "output_tokens": 3581
+  },
+  "2026-07-01": {
+    "audits": 14,
+    "cost_usd": 1.0669,
+    "input_tokens": 647650,
+    "output_tokens": 25741
+  },
+  "2026-07-02": {
+    "audits": 7,
+    "cost_usd": 0.4822,
+    "input_tokens": 276902,
+    "output_tokens": 13610
+  },
+  "2026-07-03": {
+    "audits": 8,
+    "cost_usd": 0.7052,
+    "input_tokens": 443341,
+    "output_tokens": 15096
+  },
+  "2026-07-04": {
+    "audits": 1,
+    "cost_usd": 0.083,
+    "input_tokens": 50440,
+    "output_tokens": 2000
+  },
+  "2026-07-06": {
+    "audits": 8,
+    "cost_usd": 0.568,
+    "input_tokens": 336741,
+    "output_tokens": 14708
+  },
+  "2026-07-07": {
+    "audits": 17,
+    "cost_usd": 1.3895,
+    "input_tokens": 844692,
+    "output_tokens": 33367
+  },
+  "2026-07-08": {
+    "audits": 9,
+    "cost_usd": 0.7223,
+    "input_tokens": 452279,
+    "output_tokens": 15693
+  },
+  "2026-07-09": {
+    "audits": 10,
+    "cost_usd": 0.8127,
+    "input_tokens": 497009,
+    "output_tokens": 19145
+  },
+  "2026-07-10": {
+    "audits": 1,
+    "cost_usd": 0.0929,
+    "input_tokens": 61498,
+    "output_tokens": 1599
+  },
+  "2026-07-12": {
+    "audits": 4,
+    "cost_usd": 0.4734,
+    "input_tokens": 317806,
+    "output_tokens": 7620
+  },
+  "2026-07-13": {
+    "audits": 15,
+    "cost_usd": 1.2134,
+    "input_tokens": 734141,
+    "output_tokens": 29582
+  },
+  "2026-07-14": {
+    "audits": 5,
+    "cost_usd": 0.3814,
+    "input_tokens": 232580,
+    "output_tokens": 9066
+  },
+  "2026-07-15": {
+    "audits": 9,
+    "cost_usd": 0.8035,
+    "input_tokens": 500071,
+    "output_tokens": 17837
+  },
+  "2026-07-16": {
+    "audits": 8,
+    "cost_usd": 0.5754,
+    "input_tokens": 337914,
+    "output_tokens": 15302
+  },
+  "2026-07-17": {
+    "audits": 16,
+    "cost_usd": 1.2271,
+    "input_tokens": 723091,
+    "output_tokens": 32323
+  },
+  "2026-07-18": {
+    "audits": 1,
+    "cost_usd": 0.0751,
+    "input_tokens": 45998,
+    "output_tokens": 1757
+  },
+  "2026-07-19": {
+    "audits": 1,
+    "cost_usd": 0.0915,
+    "input_tokens": 57643,
+    "output_tokens": 1944
+  },
+  "2026-07-20": {
+    "audits": 18,
+    "cost_usd": 1.2653,
+    "input_tokens": 716826,
+    "output_tokens": 36920
+  },
+  "2026-07-21": {
+    "audits": 14,
+    "cost_usd": 1.0244,
+    "input_tokens": 594444,
+    "output_tokens": 28153
+  },
+  "2026-07-22": {
+    "audits": 15,
+    "cost_usd": 1.3607,
+    "input_tokens": 851521,
+    "output_tokens": 29618
+  },
+  "2026-07-23": {
+    "audits": 19,
+    "cost_usd": 1.5556,
+    "input_tokens": 952958,
+    "output_tokens": 36447
+  },
+  "2026-07-24": {
+    "audits": 34,
+    "cost_usd": 3.5512,
+    "input_tokens": 2309558,
+    "output_tokens": 66398
+  },
+  "2026-07-26": {
+    "audits": 3,
+    "cost_usd": 0.3227,
+    "input_tokens": 213154,
+    "output_tokens": 5624
+  },
+  "2026-07-27": {
+    "audits": 15,
+    "cost_usd": 1.4352,
+    "input_tokens": 903844,
+    "output_tokens": 30548
+  },
+  "2026-07-28": {
+    "audits": 19,
+    "cost_usd": 1.6013,
+    "input_tokens": 1005859,
+    "output_tokens": 34406
+  },
+  "2026-07-29": {
+    "audits": 12,
+    "cost_usd": 1.04,
+    "input_tokens": 650765,
+    "output_tokens": 22665
+  },
+  "2026-07-30": {
+    "audits": 18,
+    "cost_usd": 1.7073,
+    "input_tokens": 1076319,
+    "output_tokens": 36184
+  },
+  "2026-07-31": {
+    "audits": 17,
+    "cost_usd": 1.4421,
+    "input_tokens": 899287,
+    "output_tokens": 31780
+  },
+  "2026-08-02": {
+    "audits": 1,
+    "cost_usd": 0.092,
+    "input_tokens": 58377,
+    "output_tokens": 1900
+  },
+  "2026-08-03": {
+    "audits": 8,
+    "cost_usd": 0.5745,
+    "input_tokens": 348061,
+    "output_tokens": 13935
+  },
+  "2026-08-04": {
+    "audits": 10,
+    "cost_usd": 0.965,
+    "input_tokens": 613639,
+    "output_tokens": 19800
+  },
+  "2026-08-06": {
+    "audits": 11,
+    "cost_usd": 0.8895,
+    "input_tokens": 544955,
+    "output_tokens": 20839
+  },
+  "2026-08-07": {
+    "audits": 14,
+    "cost_usd": 1.0982,
+    "input_tokens": 666711,
+    "output_tokens": 26462
+  },
+  "2026-08-10": {
+    "audits": 8,
+    "cost_usd": 0.6701,
+    "input_tokens": 411563,
+    "output_tokens": 15566
+  },
+  "2026-08-11": {
+    "audits": 11,
+    "cost_usd": 0.8729,
+    "input_tokens": 530681,
+    "output_tokens": 20958
+  },
+  "2026-08-12": {
+    "audits": 8,
+    "cost_usd": 0.6782,
+    "input_tokens": 416599,
+    "output_tokens": 15744
+  },
+  "2026-08-13": {
+    "audits": 7,
+    "cost_usd": 0.4885,
+    "input_tokens": 281391,
+    "output_tokens": 13683
+  },
+  "2026-08-14": {
+    "audits": 11,
+    "cost_usd": 0.9562,
+    "input_tokens": 583031,
+    "output_tokens": 22743
+  },
+  "2026-08-15": {
+    "audits": 12,
+    "cost_usd": 1.405,
+    "input_tokens": 935194,
+    "output_tokens": 23592
+  },
+  "2026-08-16": {
+    "audits": 1,
+    "cost_usd": 0.0456,
+    "input_tokens": 20284,
+    "output_tokens": 2028
+  },
+  "2026-08-17": {
+    "audits": 26,
+    "cost_usd": 2.2825,
+    "input_tokens": 1394023,
+    "output_tokens": 53987
+  },
+  "2026-08-18": {
+    "audits": 26,
+    "cost_usd": 2.6736,
+    "input_tokens": 1716983,
+    "output_tokens": 52764
+  },
+  "2026-08-19": {
+    "audits": 45,
+    "cost_usd": 3.8931,
+    "input_tokens": 2363670,
+    "output_tokens": 93853
+  },
+  "2026-08-20": {
+    "audits": 31,
+    "cost_usd": 3.6097,
+    "input_tokens": 2394191,
+    "output_tokens": 61685
+  },
+  "2026-08-21": {
+    "audits": 28,
+    "cost_usd": 2.5547,
+    "input_tokens": 1572195,
+    "output_tokens": 58957
+  },
+  "2026-08-23": {
+    "audits": 1,
+    "cost_usd": 0.0973,
+    "input_tokens": 61572,
+    "output_tokens": 2031
+  },
+  "2026-08-24": {
+    "audits": 22,
+    "cost_usd": 2.0455,
+    "input_tokens": 1258278,
+    "output_tokens": 47291
+  },
+  "2026-08-25": {
+    "audits": 18,
+    "cost_usd": 2.3479,
+    "input_tokens": 1593324,
+    "output_tokens": 35630
+  },
+  "2026-08-26": {
+    "audits": 22,
+    "cost_usd": 2.6515,
+    "input_tokens": 1782257,
+    "output_tokens": 42374
+  },
+  "2026-08-27": {
+    "audits": 22,
+    "cost_usd": 1.8182,
+    "input_tokens": 1093512,
+    "output_tokens": 45136
+  },
+  "2026-08-28": {
+    "audits": 21,
+    "cost_usd": 1.8269,
+    "input_tokens": 1110077,
+    "output_tokens": 43937
+  },
+  "2026-08-29": {
+    "audits": 2,
+    "cost_usd": 0.2458,
+    "input_tokens": 159513,
+    "output_tokens": 4635
+  },
+  "2026-08-31": {
+    "audits": 8,
+    "cost_usd": 0.7034,
+    "input_tokens": 439525,
+    "output_tokens": 15414
+  },
+  "2026-09-01": {
+    "audits": 22,
+    "cost_usd": 1.775,
+    "input_tokens": 1091260,
+    "output_tokens": 41088
+  },
+  "2026-09-02": {
+    "audits": 24,
+    "cost_usd": 3.8093,
+    "input_tokens": 2680300,
+    "output_tokens": 45867
+  },
+  "2026-09-03": {
+    "audits": 12,
+    "cost_usd": 1.206,
+    "input_tokens": 772240,
+    "output_tokens": 24080
+  },
+  "2026-09-04": {
+    "audits": 11,
+    "cost_usd": 1.0433,
+    "input_tokens": 655154,
+    "output_tokens": 22444
+  },
+  "2026-09-07": {
+    "audits": 3,
+    "cost_usd": 0.3687,
+    "input_tokens": 246667,
+    "output_tokens": 6037
+  },
+  "2026-09-08": {
+    "audits": 8,
+    "cost_usd": 0.6026,
+    "input_tokens": 353909,
+    "output_tokens": 16029
+  },
+  "2026-09-09": {
+    "audits": 19,
+    "cost_usd": 1.5247,
+    "input_tokens": 934094,
+    "output_tokens": 35690
+  },
+  "2026-09-10": {
+    "audits": 10,
+    "cost_usd": 0.7792,
+    "input_tokens": 469820,
+    "output_tokens": 19197
+  },
+  "2026-09-11": {
+    "audits": 14,
+    "cost_usd": 1.2323,
+    "input_tokens": 770195,
+    "output_tokens": 26964
+  },
+  "2026-09-12": {
+    "audits": 11,
+    "cost_usd": 0.6775,
+    "input_tokens": 380704,
+    "output_tokens": 20159
+  },
+  "2026-09-14": {
+    "audits": 12,
+    "cost_usd": 0.9556,
+    "input_tokens": 582563,
+    "output_tokens": 22747
+  },
+  "2026-09-15": {
+    "audits": 10,
+    "cost_usd": 0.6882,
+    "input_tokens": 398061,
+    "output_tokens": 19063
+  },
+  "2026-09-16": {
+    "audits": 21,
+    "cost_usd": 1.6131,
+    "input_tokens": 967144,
+    "output_tokens": 40409
+  },
+  "2026-09-17": {
+    "audits": 18,
+    "cost_usd": 1.4594,
+    "input_tokens": 890902,
+    "output_tokens": 34589
+  },
+  "2026-09-18": {
+    "audits": 17,
+    "cost_usd": 1.6372,
+    "input_tokens": 1041825,
+    "output_tokens": 33481
+  },
+  "2026-09-20": {
+    "audits": 1,
+    "cost_usd": 0.0914,
+    "input_tokens": 54305,
+    "output_tokens": 2351
+  },
+  "2026-09-21": {
+    "audits": 5,
+    "cost_usd": 0.3094,
+    "input_tokens": 176217,
+    "output_tokens": 8924
+  },
+  "2026-09-22": {
+    "audits": 20,
+    "cost_usd": 1.6572,
+    "input_tokens": 1017100,
+    "output_tokens": 38578
+  },
+  "2026-09-23": {
+    "audits": 11,
+    "cost_usd": 0.9367,
+    "input_tokens": 572439,
+    "output_tokens": 22115
+  },
+  "2026-09-24": {
+    "audits": 15,
+    "cost_usd": 1.2998,
+    "input_tokens": 813671,
+    "output_tokens": 28273
+  },
+  "2026-09-25": {
+    "audits": 16,
+    "cost_usd": 1.3917,
+    "input_tokens": 855480,
+    "output_tokens": 32249
+  },
+  "2026-09-26": {
+    "audits": 1,
+    "cost_usd": 0.1321,
+    "input_tokens": 85463,
+    "output_tokens": 2528
+  },
+  "2026-09-28": {
+    "audits": 17,
+    "cost_usd": 1.5301,
+    "input_tokens": 964304,
+    "output_tokens": 32488
+  },
+  "2026-09-29": {
+    "audits": 24,
+    "cost_usd": 2.1577,
+    "input_tokens": 1367780,
+    "output_tokens": 44810
+  },
+  "2026-09-30": {
+    "audits": 19,
+    "cost_usd": 1.5478,
+    "input_tokens": 945003,
+    "output_tokens": 36666
+  },
+  "2026-10-01": {
+    "audits": 18,
+    "cost_usd": 1.5206,
+    "input_tokens": 921101,
+    "output_tokens": 36910
+  },
+  "2026-10-02": {
+    "audits": 14,
+    "cost_usd": 1.2068,
+    "input_tokens": 749827,
+    "output_tokens": 26931
+  },
+  "2026-10-05": {
+    "audits": 24,
+    "cost_usd": 1.9469,
+    "input_tokens": 1202991,
+    "output_tokens": 44329
+  },
+  "2026-10-06": {
+    "audits": 23,
+    "cost_usd": 1.9026,
+    "input_tokens": 1158222,
+    "output_tokens": 45494
+  },
+  "2026-10-07": {
+    "audits": 16,
+    "cost_usd": 1.3267,
+    "input_tokens": 811266,
+    "output_tokens": 31276
+  },
+  "2026-10-08": {
+    "audits": 18,
+    "cost_usd": 1.5787,
+    "input_tokens": 980312,
+    "output_tokens": 35356
+  },
+  "2026-10-09": {
+    "audits": 29,
+    "cost_usd": 2.6076,
+    "input_tokens": 1641804,
+    "output_tokens": 55532
+  },
+  "2026-10-12": {
+    "audits": 16,
+    "cost_usd": 1.2616,
+    "input_tokens": 763667,
+    "output_tokens": 30721
+  },
+  "2026-10-13": {
+    "audits": 21,
+    "cost_usd": 1.9666,
+    "input_tokens": 1259026,
+    "output_tokens": 39272
+  },
+  "2026-10-14": {
+    "audits": 21,
+    "cost_usd": 1.6757,
+    "input_tokens": 1030843,
+    "output_tokens": 38722
+  },
+  "2026-10-15": {
+    "audits": 15,
+    "cost_usd": 1.285,
+    "input_tokens": 784263,
+    "output_tokens": 30455
+  },
+  "2026-10-16": {
+    "audits": 9,
+    "cost_usd": 0.7628,
+    "input_tokens": 486261,
+    "output_tokens": 15497
+  },
+  "2026-10-19": {
+    "audits": 7,
+    "cost_usd": 0.6393,
+    "input_tokens": 397893,
+    "output_tokens": 14200
+  },
+  "2026-10-20": {
+    "audits": 23,
+    "cost_usd": 1.9815,
+    "input_tokens": 1221613,
+    "output_tokens": 45441
+  }
+}

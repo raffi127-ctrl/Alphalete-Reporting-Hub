@@ -1,0 +1,497 @@
+{
+  "_note": "Canonical owner roster",
+  "owners": [
+    {
+      "id": "amjad_malhas",
+      "name": "Amjad Malhas",
+      "aliases": [
+        "amjad"
+      ]
+    },
+    {
+      "id": "ana_griffin",
+      "name": "Ana Griffin",
+      "aliases": [
+        "ana"
+      ]
+    },
+    {
+      "id": "akib_chowdhury",
+      "name": "Akib Chowdhury",
+      "aliases": [
+        "akib"
+      ]
+    },
+    {
+      "id": "ronald_dawson",
+      "name": "Ronald Dawson",
+      "aliases": [
+        "ron",
+        "ronald",
+        "ronnie d"
+      ]
+    },
+    {
+      "id": "rafael_hidalgo",
+      "name": "Rafael Hidalgo",
+      "aliases": [
+        "raf",
+        "rafa",
+        "raffi",
+        "raffy",
+        "rafael"
+      ]
+    },
+    {
+      "id": "kash_rai",
+      "name": "Kash Rai",
+      "aliases": [
+        "kash"
+      ]
+    },
+    {
+      "id": "cyrus_wade",
+      "name": "Cyrus Wade",
+      "aliases": [
+        "cyrus"
+      ]
+    },
+    {
+      "id": "haytham_nagi",
+      "name": "Haytham Nagi",
+      "aliases": [
+        "haytham"
+      ]
+    },
+    {
+      "id": "cody_cannon",
+      "name": "Cody Cannon",
+      "aliases": [
+        "cody"
+      ]
+    },
+    {
+      "id": "aya_al_khafaji",
+      "name": "Aya Al-Khafaji",
+      "aliases": [
+        "aya",
+        "aya al khafaji",
+        "aya alkhafaji"
+      ]
+    },
+    {
+      "id": "rashad_reed",
+      "name": "Rashad Reed",
+      "aliases": [
+        "rashad"
+      ]
+    },
+    {
+      "id": "muhammad_haque",
+      "name": "Muhammad Haque",
+      "aliases": [
+        "muhammad",
+        "mohammad haque",
+        "mo haque"
+      ]
+    },
+    {
+      "id": "jacob_dover",
+      "name": "Jacob Dover",
+      "aliases": [
+        "jacob",
+        "jake dover"
+      ]
+    },
+    {
+      "id": "salik_mallick",
+      "name": "Salik Mallick",
+      "aliases": [
+        "salik"
+      ]
+    },
+    {
+      "id": "david_martinez",
+      "name": "David Martinez",
+      "aliases": [
+        "david",
+        "dave martinez"
+      ]
+    },
+    {
+      "id": "cinthya_reyes",
+      "name": "Cinthya Reyes",
+      "aliases": [
+        "cinthya",
+        "cynthia reyes"
+      ]
+    },
+    {
+      "id": "aiysha_mariano",
+      "name": "Aiysha Mariano",
+      "aliases": [
+        "aiysha",
+        "ayesha mariano"
+      ]
+    },
+    {
+      "id": "paola_rodriguez",
+      "name": "Paola Rodriguez",
+      "aliases": [
+        "paola"
+      ]
+    },
+    {
+      "id": "jairo_ruiz",
+      "name": "Jairo Ruiz",
+      "aliases": [
+        "jairo"
+      ]
+    },
+    {
+      "id": "drew_tepper",
+      "name": "Drew Tepper",
+      "aliases": [
+        "drew"
+      ]
+    },
+    {
+      "id": "colten_wright",
+      "name": "Colten Wright",
+      "aliases": [
+        "colten",
+        "colton wright"
+      ]
+    },
+    {
+      "id": "khalil_mansour",
+      "name": "Khalil Mansour",
+      "aliases": [
+        "khalil"
+      ]
+    },
+    {
+      "id": "joseph_delgado",
+      "name": "Joseph Delgado",
+      "aliases": [
+        "joe delgado",
+        "joey delgado"
+      ]
+    },
+    {
+      "id": "george_delgado",
+      "name": "George Delgado",
+      "aliases": [
+        "george"
+      ]
+    },
+    {
+      "id": "isaiah_revelle",
+      "name": "Isaiah Revelle",
+      "aliases": [
+        "isaiah"
+      ]
+    },
+    {
+      "id": "maxamad_aden",
+      "name": "Maxamad Aden",
+      "aliases": [
+        "max aden",
+        "maxamad"
+      ]
+    },
+    {
+      "id": "jose_velasquez",
+      "name": "Jose Velasquez",
+      "aliases": [
+        "jose"
+      ]
+    },
+    {
+      "id": "selena_powers",
+      "name": "Selena Powers",
+      "aliases": [
+        "selena"
+      ]
+    },
+    {
+      "id": "atef_choudhury",
+      "name": "Atef Choudhury",
+      "aliases": [
+        "atef"
+      ]
+    },
+    {
+      "id": "carlos_hidalgo",
+      "name": "Carlos Hidalgo",
+      "aliases": [
+        "carlos"
+      ]
+    },
+    {
+      "id": "eveliz_wright",
+      "name": "Eveliz Wright",
+      "aliases": [
+        "eveliz"
+      ]
+    },
+    {
+      "id": "lizette_ruiz",
+      "name": "Lizette Ruiz",
+      "aliases": [
+        "lizette"
+      ]
+    },
+    {
+      "id": "kevin_driggs",
+      "name": "Kevin Driggs",
+      "aliases": [
+        "kevin"
+      ]
+    },
+    {
+      "id": "valeria_tristan",
+      "name": "Valeria Tristan",
+      "aliases": [
+        "valeria"
+      ]
+    },
+    {
+      "id": "ryan_mcspadden",
+      "name": "Ryan McSpadden",
+      "aliases": [
+        "ryan",
+        "ryan mcspadden"
+      ]
+    },
+    {
+      "id": "roshan_amin_ahmad",
+      "name": "Roshan Amin Ahmad",
+      "aliases": [
+        "roshan"
+      ]
+    },
+    {
+      "id": "benjamin_burden",
+      "name": "Benjamin Burden",
+      "aliases": [
+        "ben burden",
+        "benjamin"
+      ]
+    },
+    {
+      "id": "abel_draper",
+      "name": "Abel Draper",
+      "aliases": [
+        "abel"
+      ]
+    },
+    {
+      "id": "nii",
+      "name": "Nii",
+      "aliases": [
+        "nii"
+      ],
+      "added_at": "2026-06-11T01:17:56.473181",
+      "source": "auto"
+    },
+    {
+      "id": "melik_el_jaiez",
+      "name": "Melik El Jaiez",
+      "aliases": [
+        "melik"
+      ],
+      "added_at": "2026-06-11T01:17:56.501891",
+      "source": "auto"
+    },
+    {
+      "id": "esteban_villalta",
+      "name": "Esteban Villalta",
+      "aliases": [
+        "esteban"
+      ],
+      "added_at": "2026-07-29T11:17:59.105976",
+      "source": "auto"
+    },
+    {
+      "id": "awais_iqbal",
+      "name": "Awais Iqbal",
+      "aliases": [
+        "awais"
+      ],
+      "added_at": "2026-07-29T17:15:05.762228",
+      "source": "auto"
+    },
+    {
+      "id": "puneh_nejad",
+      "name": "Puneh Nejad",
+      "aliases": [
+        "puneh"
+      ],
+      "added_at": "2026-07-31T09:26:05.700942",
+      "source": "auto"
+    },
+    {
+      "id": "hasani_lynch",
+      "name": "Hasani Lynch",
+      "aliases": [
+        "hasani"
+      ],
+      "added_at": "2026-08-12T10:25:53.507027",
+      "source": "auto"
+    },
+    {
+      "id": "rudy_ochoa",
+      "name": "Rudy Ochoa",
+      "aliases": [
+        "rudy"
+      ],
+      "added_at": "2026-08-15T12:21:11.853902",
+      "source": "auto"
+    },
+    {
+      "id": "yes_confirm",
+      "name": "Yes confirm",
+      "aliases": [
+        "yes"
+      ],
+      "added_at": "2026-08-15T19:09:09.495393",
+      "source": "auto"
+    },
+    {
+      "id": "lamine_khalfaoui",
+      "name": "Lamine khalfaoui",
+      "aliases": [
+        "lamine"
+      ],
+      "added_at": "2026-08-17T12:49:51.909205",
+      "source": "auto"
+    },
+    {
+      "id": "emilio_suggs",
+      "name": "Emilio Suggs",
+      "aliases": [
+        "emilio"
+      ],
+      "added_at": "2026-08-17T16:10:47.389129",
+      "source": "auto"
+    },
+    {
+      "id": "trevonn_gentry",
+      "name": "Trevonn Gentry",
+      "aliases": [
+        "trevonn"
+      ],
+      "added_at": "2026-08-18T09:05:08.673141",
+      "source": "auto"
+    },
+    {
+      "id": "fatima_hussaini",
+      "name": "fatima hussaini",
+      "aliases": [
+        "fatima"
+      ],
+      "added_at": "2026-08-18T09:56:05.068694",
+      "source": "auto"
+    },
+    {
+      "id": "nabil_halik",
+      "name": "Nabil Halik",
+      "aliases": [
+        "nabil"
+      ],
+      "added_at": "2026-08-18T11:38:13.523584",
+      "source": "auto"
+    },
+    {
+      "id": "stergios_kasapidis",
+      "name": "Stergios Kasapidis",
+      "aliases": [
+        "stergios"
+      ],
+      "added_at": "2026-08-18T21:44:15.471434",
+      "source": "auto"
+    },
+    {
+      "id": "samatar_ali",
+      "name": "Samatar Ali",
+      "aliases": [
+        "samatar"
+      ],
+      "added_at": "2026-08-19T01:37:56.384627",
+      "source": "auto"
+    },
+    {
+      "id": "ayman_fouzi",
+      "name": "Ayman Fouzi",
+      "aliases": [
+        "ayman"
+      ],
+      "added_at": "2026-08-19T07:52:29.829408",
+      "source": "auto"
+    },
+    {
+      "id": "nicholas_weldon",
+      "name": "Nicholas Weldon",
+      "aliases": [
+        "nicholas"
+      ],
+      "added_at": "2026-08-19T12:08:02.657940",
+      "source": "auto"
+    },
+    {
+      "id": "tre_mitchell",
+      "name": "Tre Mitchell",
+      "aliases": [
+        "tre"
+      ],
+      "added_at": "2026-08-19T23:17:13.558962",
+      "source": "auto"
+    },
+    {
+      "id": "hector_cordova",
+      "name": "Hector Cordova",
+      "aliases": [
+        "hector"
+      ],
+      "added_at": "2026-08-21T00:01:32.187004",
+      "source": "auto"
+    },
+    {
+      "id": "i_m_the_owner_frank_matos",
+      "name": "I'm the owner, Frank Matos",
+      "aliases": [
+        "i'm"
+      ],
+      "added_at": "2026-08-24T09:41:07.909351",
+      "source": "auto"
+    },
+    {
+      "id": "tyler_hadden",
+      "name": "Tyler Hadden",
+      "aliases": [
+        "tyler"
+      ],
+      "added_at": "2026-08-24T13:12:30.861691",
+      "source": "auto"
+    },
+    {
+      "id": "marcellus_butler_jr",
+      "name": "Marcellus Butler Jr",
+      "aliases": [
+        "marcellus"
+      ],
+      "added_at": "2026-09-14T12:05:00.985622",
+      "source": "auto"
+    },
+    {
+      "id": "antwone_stephens",
+      "name": "Antwone Stephens",
+      "aliases": [
+        "antwone"
+      ],
+      "added_at": "2026-10-16T12:23:05.303630",
+      "source": "auto"
+    }
+  ]
+}
