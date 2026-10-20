@@ -97,3 +97,60 @@ class TheThreadStaysShort(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RepeatOffenders(unittest.TestCase):
+    """Megan 2026-10-20: "red flag emojis for how many days in a row they
+    have been flagged M-F so up to 5 flags and reset"."""
+
+    MON = __import__("datetime").date(2026, 9, 21)
+
+    def _fake(self, by_day):
+        """Patch load() so streaks() reads a made-up week."""
+        import datetime as dt
+        orig = AP.load
+
+        def fake(office, day=None):
+            if day is None:
+                return [r for rs in by_day.values() for r in rs]
+            return by_day.get(day, [])
+        AP.load = fake
+        self.addCleanup(lambda: setattr(AP, "load", orig))
+
+    def _day(self, n):
+        import datetime as dt
+        return self.MON + dt.timedelta(days=n)
+
+    def test_consecutive_days_count_up(self):
+        flagged = [rec(said="Danny", wrong_place="Irving") for _ in range(3)]
+        self._fake({self._day(i): flagged for i in range(4)})
+        self.assertEqual(AP.streaks("11280", self._day(3))["Danny"], 4)
+
+    def test_a_clean_day_breaks_the_run(self):
+        """Flagged Mon, Tue, clean Wed, flagged Thu is a streak of ONE —
+        the point is who is still doing it after being told."""
+        flagged = [rec(said="Danny", wrong_place="Irving") for _ in range(3)]
+        clean = [rec(said="Danny") for _ in range(3)]
+        self._fake({self._day(0): flagged, self._day(1): flagged,
+                    self._day(2): clean, self._day(3): flagged})
+        self.assertEqual(AP.streaks("11280", self._day(3))["Danny"], 1)
+
+    def test_it_stops_at_five(self):
+        flagged = [rec(said="Danny", wrong_place="Irving") for _ in range(3)]
+        self._fake({self._day(i): flagged for i in range(5)})
+        self.assertEqual(AP.streaks("11280", self._day(4))["Danny"], 5)
+
+    def test_the_week_is_monday_to_friday_only(self):
+        """Monday starts again — last week's run does not carry over."""
+        self.assertEqual(len(AP.week_days(self.MON)), 1)
+        self.assertEqual(len(AP.week_days(self._day(4))), 5)
+
+    def test_a_longer_streak_outranks_more_flags_today(self):
+        # both need >= MIN_CALLS so neither falls back to the line name
+        rows = ([rec(said="Streaky", wrong_place="Irving")
+                 for _ in range(3)]
+                + [rec(said="Noisy", wrong_place="Irving") for _ in range(9)])
+        replies = AP.compose(rows, {"Streaky": 4, "Noisy": 1})
+        self.assertIn("Streaky", replies[1])
+        self.assertIn("\U0001F6A9" * 4, replies[1])
+        self.assertIn("Noisy", replies[2])

@@ -145,6 +145,42 @@ def offenders(rows):
     return by
 
 
+def week_days(day):
+    """The Mon-Fri of `day`'s week, up to and including it."""
+    monday = day - dt.timedelta(days=day.weekday())
+    out = []
+    for i in range(5):                       # Mon..Fri only
+        d = monday + dt.timedelta(days=i)
+        if d <= day:
+            out.append(d)
+    return out
+
+
+def streaks(office, day):
+    """{person: days flagged IN A ROW ending today}, Mon-Fri, max 5.
+
+    Megan 2026-10-20: "red flag emojis for how many days in a row they
+    have been flagged M-F so up to 5 flags and reset". So the count is
+    a streak, not a tally: flagged Mon, Tue, clean Wed, flagged Thu is
+    a streak of ONE on Thursday, because the point is to show who is
+    still doing it after being told, not who has ever done it. It
+    starts again every Monday."""
+    days = week_days(day)
+    flagged_on = {}
+    for d in days:
+        flagged_on[d] = set(offenders(load(office, d)))
+    out = {}
+    for person in flagged_on.get(day, set()):
+        run = 0
+        for d in reversed(days):             # today backwards
+            if person in flagged_on[d]:
+                run += 1
+            else:
+                break
+        out[person] = min(run, 5)
+    return out
+
+
 def summary(rows):
     """The first reply: the day in a few lines, with the one number that
     actually predicts show-up rather than the rubric score."""
@@ -155,7 +191,11 @@ def summary(rows):
     clean = sum(1 for r in rows
                 if not any((r.get("items") or {}).get(k, {}).get("happened")
                            for k in FLAGS))
-    out = ["*{} calls audited* · {} caller{} · {} clean, {} with a flag"
+    # Labelled, because this thread is the whole recruiting audit, not
+    # just the calls: texts, AppStream settings and the
+    # confirmation-call check are sections that join it here.
+    out = ["*Booking calls* — {} audited · {} caller{} · {} clean, "
+           "{} with a flag"
            .format(n, people, "" if people == 1 else "s", clean, n - clean)]
     shown = [r for r in rows if r.get("shown") is not None]
     if shown:
@@ -168,13 +208,17 @@ def summary(rows):
     return "\n".join(out)
 
 
-def person_block(name, hits):
+def person_block(name, hits, streak=0):
     """One reply per flagged caller: what they said, and when they said it.
 
     The quote is the point. "You named a location on 3 calls" is an argument;
     "We are located in Irving, Texas, at 0:31" is a fact."""
-    lines = ["*{}* — {} flag{}".format(name, len(hits),
-                                       "" if len(hits) == 1 else "s")]
+    # One red flag per day in a row. Someone on their fourth day is a
+    # different conversation from someone on their first, and the row
+    # should say so before the name does.
+    lines = ["{}*{}* — {} flag{}".format(
+        ("\U0001F6A9" * streak + " ") if streak else "",
+        name, len(hits), "" if len(hits) == 1 else "s")]
     seen = collections.Counter(h[0] for h in hits)
     for key, cnt in seen.most_common():
         lines.append("• {}{}".format(G.SHORT.get(key, key),
@@ -186,29 +230,56 @@ def person_block(name, hits):
     return "\n".join(lines)
 
 
+def _ordinal(n):
+    if 10 <= n % 100 <= 20:
+        suf = "th"
+    else:
+        suf = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return "{}{}".format(n, suf)
+
+
+def header(office, day=None, weekly=False):
+    """Megan 2026-10-20: "Recruiting Audit Mon 18th - 11280 (Rafael
+    Hidalgo)". The date sits INSIDE the title, not appended after it,
+    so this does not use ensure_named_thread's dated header.
+
+    No leading emoji, deliberately. Slack stores a literal emoji as its
+    :shortcode:, the header lookup then never matches its own post, and
+    the report posts a fresh thread every run — five of them in this
+    same channel on 2026-09-07."""
+    day = day or dt.date.today()
+    owner, _ch = ACCOUNTS.get(office, (office, ""))
+    when = ("Week to {} {}".format(day.strftime("%b"), _ordinal(day.day))
+            if weekly else
+            "{} {}".format(day.strftime("%a"), _ordinal(day.day)))
+    return "Recruiting Audit {} - {} ({})".format(when, office, owner)
+
+
 def build(office, day=None, weekly=False):
     """(title, [reply, ...]) or (None, why) when there is nothing to post."""
-    owner, _ch = ACCOUNTS.get(office, (office, ""))
     rows = load(office, day)
     if not rows:
         return None, ("no graded calls for {} on {}"
                       .format(office, day or "the window"))
-    title = "{} Booking Call Audit — {} ({})".format(
-        "📅" if weekly else "📋", office, owner)
-    if weekly:
-        title = "📅 Weekly Booking Call Audit — {} ({})".format(office, owner)
-    return title, compose(rows)
+    title = header(office, day, weekly)
+    run = streaks(office, day) if (day and not weekly) else {}
+    return title, compose(rows, run)
 
 
-def compose(rows):
-    """The thread: the day in one reply, then the worst few callers."""
+def compose(rows, run=None):
+    """The thread: the day in one reply, then the worst few callers.
+
+    `run` is {person: days in a row flagged}; worst streak first, then
+    most flags today."""
+    run = run or {}
     replies = [summary(rows)]
     # Worst first, and capped. A thread with twenty replies is a long
     # post wearing a disguise, and nobody coaches twenty people in a
     # day. [[feedback_short_header_posts]]
-    ranked = sorted(offenders(rows).items(), key=lambda kv: -len(kv[1]))
+    ranked = sorted(offenders(rows).items(),
+                    key=lambda kv: (-run.get(kv[0], 0), -len(kv[1])))
     for name, hits in ranked[:MAX_PEOPLE]:
-        replies.append(person_block(name, hits))
+        replies.append(person_block(name, hits, run.get(name, 0)))
     rest = ranked[MAX_PEOPLE:]
     if rest:
         replies.append("_Also flagged, fewer each:_ {}".format(

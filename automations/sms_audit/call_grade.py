@@ -1,5 +1,9 @@
 """Grade one booking call against the quick-pitch scorecard.
 
+A grade record must carry the call's `when` alongside its items: the
+daily post filters on it, and 857 grades were written without it and had
+to be backfilled from the matched set before a single day could be read.
+
 The same shape as first_round_scorecards/grade.py, one step earlier in the
 pipeline: that grades the 1st round interview, this grades the call that
 books it. Strictly YES / NO per item, partly done counts as NOT done, score
