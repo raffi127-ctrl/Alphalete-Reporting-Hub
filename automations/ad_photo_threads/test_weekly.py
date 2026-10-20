@@ -274,6 +274,27 @@ class LivePathTest(unittest.TestCase):
                                build=week_of(by_day), crop=False, mark=True)
         self.assertEqual(cl.updates[ts], "✅ *ATT Sales Rep Frisco*")
 
+    def test_pinned_live_ads_message(self):
+        """Rafael 10/20 "Pinned live ads is a great idea": one pinned message
+        lists the ✅ threads; edited in place, re-posted if deleted."""
+        cl = LiveSlack()
+        by_day = {MON: [cand("Ana")]}
+        weekly.redo_channel("C1", MON, since=MON, cl=cl, build=week_of(by_day), crop=False)
+        ts = post._load_state()["C1"]["weeks"]["forever"]["frisco"]["thread_ts"]
+        weekly.publish_nightly(MON + dt.timedelta(days=1), "C1", cl=cl,
+                               build=week_of(by_day), crop=False, mark=True)
+        board = post._load_state()["C1"]["live_board"]
+        self.assertIn(board["ts"], cl.pins)
+        self.assertIn("ATT Sales Rep Frisco", board["text"])
+        self.assertIn(post.permalink("C1", ts), board["text"])
+        n = len(cl.updates_log)
+        weekly.live_board("C1", MON + dt.timedelta(days=1), cl=cl)
+        self.assertEqual(len(cl.updates_log), n)                          # same text: no call
+        weekly.live_board("C1", MON + dt.timedelta(days=7), cl=cl)        # closed now
+        self.assertEqual(cl.updates_log[-1], board["ts"])
+        self.assertNotIn("Frisco", cl.updates[board["ts"]])
+        self.assertIn("No live ads", cl.updates[board["ts"]])
+
     def test_redo_since_keeps_earlier_daily_replies(self):
         """Drew 10/8: the old source channel is gone, so --since 9/28 keeps
         the 9/14-9/25 daily replies (and their photo batches) as they are."""

@@ -518,6 +518,68 @@ def mark_status(channel: str, today: dt.date, *, cl=None, dry_run: bool = False,
     return out
 
 
+def live_ads(channel: str, today: dt.date) -> List[tuple]:
+    """(title, thread_ts) of the ads that are LIVE today -- the same rule
+    mark_status puts ✅ on -- in title order."""
+    out = []
+    for ad in _forever(post._load_state(), channel).values():
+        ts, title, last = ad.get("thread_ts"), ad.get("title"), post.last_active(ad)
+        if ts and title and last and (today - last).days < config.LIVE_AD_DAYS:
+            out.append((title, ts))
+    return sorted(out, key=lambda t: t[0].lower())
+
+
+def live_board_text(channel: str, today: dt.date, ads: List[tuple]) -> str:
+    lines = [f":pushpin: *Live ads* — a 1st round in the last {config.LIVE_AD_DAYS} days "
+             f"(updated {today:%a} {today.month}/{today.day})"]
+    lines += [f"• <{post.permalink(channel, ts)}|{title}>" for title, ts in ads]
+    if not ads:
+        lines.append("_No live ads right now._")
+    return "\n".join(lines)
+
+
+def live_board(channel: str, today: dt.date, *, cl=None,
+               dry_run: bool = False) -> Dict[str, object]:
+    """Rafael 10/20, "Pinned live ads is a great idea": instead of re-posting
+    the live threads under the closed ones (that would delete people's
+    comments), ONE pinned message per channel lists the ✅ ads with a link to
+    each thread. Posted + pinned the first time, edited in place after
+    (state "live_board"); posted again if someone deleted it. No edit when
+    the text didn't change."""
+    ads = live_ads(channel, today)
+    text = live_board_text(channel, today, ads)
+    state = post._load_state()
+    board = state.setdefault(channel, {}).setdefault("live_board", {})
+    out = {"ads": len(ads), "action": "unchanged", "error": ""}
+    if board.get("ts") and board.get("text") == text and board.get("pinned"):
+        return out
+    out["action"] = "edit" if board.get("ts") else "post"
+    if dry_run:
+        return out
+    cl = cl or collect._client()
+    if board.get("ts"):
+        try:
+            cl.chat_update(channel=channel, ts=board["ts"], text=text)
+        except Exception as e:                   # noqa: BLE001
+            if "message_not_found" not in str(e) and "cant_update" not in str(e):
+                out["error"] = str(e)[:160]
+                return out
+            board.pop("ts")                      # deleted by hand: post it again
+            out["action"] = "post"
+    if not board.get("ts"):
+        board["ts"] = cl.chat_postMessage(channel=channel, text=text,
+                                          unfurl_links=False)["ts"]
+        board["pinned"] = False
+    if not board.get("pinned"):                  # a failed pin is retried next night
+        err = post._pin(cl, channel, board["ts"], True)
+        board["pinned"] = err is None
+        if err:
+            out["error"] = f"pin: {err}"
+    board["text"] = text
+    post._save_state(state)
+    return out
+
+
 def publish_nightly(day: dt.date, channel: str, *, cl=None, build=None,
                     crop: bool = True, cache: Optional[dict] = None,
                     mark: bool = False) -> Dict[str, object]:
@@ -567,6 +629,13 @@ def publish_nightly(day: dt.date, channel: str, *, cl=None, build=None,
             out["marked"] = {k: len(v) for k, v in m.items()}
         except Exception as e:                   # noqa: BLE001 — never costs the post
             print(f"  live/closed marks failed: {type(e).__name__}: {str(e)[:160]}")
+        try:
+            b = live_board(channel, day, cl=cl)
+            out["live_board"] = b["action"]
+            if b["error"]:
+                print(f"  live ads message: {b['error']}")
+        except Exception as e:                   # noqa: BLE001 — never costs the post
+            print(f"  live ads message failed: {type(e).__name__}: {str(e)[:160]}")
     return out
 
 
