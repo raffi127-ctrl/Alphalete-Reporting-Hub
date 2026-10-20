@@ -7782,7 +7782,8 @@
    "freshness_target": null,
    "depends_on": [],
    "verify": {
-    "type": "not_configured"
+    "type": "manifest",
+    "report_id": "org_active_headcount_daily"
    },
    "timeout_minutes": 60
   },
@@ -9253,7 +9254,9 @@
    "verify": {
     "type": "not_configured"
    },
-   "_note": "Morning safety-net (Megan 2026-07-27). Posts to the corrections channel if an office enrollment is sitting in the 'Office Onboarding' sheet un-applied. Section EDITS (Thread Builder) auto-sync each morning, but a NEW office still needs a reviewed office_onboarding.apply --write + commit (it rewrites the committed registry + schedule_config \u2014 deliberately NOT auto-pushed at 4am). Best-effort: no creds / a read error = no-op exit 0, never blocks the flow. Apply the flagged ones via the apply_enrollments handle."
+   "_note": "Morning safety-net (Megan 2026-07-27). Posts to the corrections channel if an office enrollment is sitting in the 'Office Onboarding' sheet un-applied. Section EDITS (Thread Builder) auto-sync each morning, but a NEW office still needs a reviewed office_onboarding.apply --write + commit (it rewrites the committed registry + schedule_config \u2014 deliberately NOT auto-pushed at 4am). Best-effort: no creds / a read error = no-op exit 0, never blocks the flow. Apply the flagged ones via the apply_enrollments handle.",
+   "close_on": "exit_zero",
+   "_close_on_note": "a check that posts only when an office is waiting; exit 0 = checked, nothing owed (2026-10-20)"
   },
   "apply_enrollments": {
    "on_scheduler": false,
@@ -10197,7 +10200,9 @@
    "verify": {
     "type": "not_configured"
    },
-   "machine": "Lucy 1"
+   "machine": "Lucy 1",
+   "close_on": "exit_zero",
+   "_close_on_note": "one-shot read-only probe: no deliverable (2026-10-20)"
   },
   "raf_regular_probe": {
    "on_scheduler": false,
@@ -13174,7 +13179,11 @@
    },
    "priority": "P3",
    "freshness_target": null,
-   "assignee": "Claude"
+   "assignee": "Claude",
+   "verify": {
+    "type": "manifest",
+    "report_id": "icd_profiles_refresh"
+   }
   },
   "icd_start_dates": {
    "on_scheduler": true,
@@ -14360,7 +14369,9 @@
    "depends_on": [],
    "verify": null,
    "timeout_minutes": 20,
-   "machine": "Lucy 1"
+   "machine": "Lucy 1",
+   "close_on": "exit_zero",
+   "_close_on_note": "run-now handle for the photo scanner; posts only what approvers already ticked, so exit 0 = inbox processed (2026-10-20)"
   },
   "sci_recruiting": {
    "on_scheduler": false,

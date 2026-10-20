@@ -1104,6 +1104,17 @@ def run(apply_changes: bool = False, today: Optional[dt.date] = None,
         logfn(f"FAILED: {', '.join(f'{d:%a %m/%d}' if d else 'App Avg' for d in broken)} "
               "could not be read")
         return 1
+    # The delivery record (2026-10-20): this report writes cells and sends
+    # nothing, so without a manifest a clean run could never close its own
+    # corrections ticket ("ran clean, nothing can confirm it DELIVERED").
+    if apply_changes and not sandbox:
+        try:
+            from automations.shared.run_manifest import write_manifest
+            write_manifest("org_active_headcount_daily",
+                           succeeded=[f"{total} day cell(s)"],
+                           note=f"{total} day cell(s) written")
+        except Exception as e:  # noqa: BLE001 — never fail a good run over it
+            logfn(f"  (manifest not written: {type(e).__name__})")
     return 0
 
 

@@ -304,6 +304,18 @@ def resolve_dest(dest: Dict) -> Dict:
     return hits[0]
 
 
+def _record_delivery(group: str, text: str) -> None:
+    """Note a LIVE text to a group in the delivery ledger, so a text-only
+    report can prove it delivered and close its own corrections ticket
+    (2026-10-20: owner_chat_texts_board "ran clean, nothing can confirm" — the
+    ledger saw Slack and email but never iMessage). Never breaks a send."""
+    try:
+        from automations.shared import delivery_ledger
+        delivery_ledger.record("imessage", group, detail=(text or "")[:60])
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def send_to_group(name: str, text: str, image_paths: Sequence,
                   *, dry_run: bool = True,
                   allow_textonly: bool = False,
@@ -371,6 +383,7 @@ def send_to_group(name: str, text: str, image_paths: Sequence,
         result["sent_images"].append(str(img))
 
     result["ok"] = True
+    _record_delivery(name, text)
     return result
 
 
@@ -409,6 +422,7 @@ def send_text_to_group(name: str, text: str, *, dry_run: bool = True,
                '  send "%s" to theChat\n'
                'end tell' % (cid, safe))
     result["ok"] = True
+    _record_delivery(name, text)
     return result
 
 

@@ -152,6 +152,16 @@ def main(argv=None) -> int:
         if gone:
             print(("dropped (--prune): " if a.prune else
                    "not on the board today, KEPT: ") + ", ".join(gone))
+        # The delivery record (2026-10-20): a profile refresh writes and sends
+        # nothing, so a clean run could never close its own ticket.
+        try:
+            from automations.shared.run_manifest import write_manifest
+            write_manifest("icd_profiles_refresh", ok=bool(n),
+                           succeeded=[f"{len(n)} ICD profile(s)"] if n else [],
+                           failed=[] if n else ["no ICDs read off the board"],
+                           alert=False)
+        except Exception as e:  # noqa: BLE001
+            print(f"  (manifest not written: {type(e).__name__})")
     if a.campaigns:
         _campaigns()
     if a.icd:
