@@ -258,6 +258,10 @@ def _pull_icd_dd_detail(week: dt.date, log=_log) -> Path:
     return out
 
 
+class StaleDD(RuntimeError):
+    """Tableau has not published this week's DD yet — a HOLD, not a fault."""
+
+
 def _hold_if_stale(xlsx: Path, week: dt.date, log=_log) -> None:
     """Refuse to load a DD export that hasn't reached this week's DD Saturday.
 
@@ -278,7 +282,7 @@ def _hold_if_stale(xlsx: Path, week: dt.date, log=_log) -> None:
         return
     dd_saturday = week - dt.timedelta(days=1)
     if newest < dd_saturday - dt.timedelta(days=1):
-        raise RuntimeError(
+        raise StaleDD(
             f"Tableau's DD DETAIL hasn't published week ending "
             f"{week.isoformat()} yet: its newest activation is "
             f"{newest.isoformat()}, it should reach {dd_saturday.isoformat()}. "
@@ -1913,6 +1917,13 @@ def main(argv: list[str] | None = None) -> int:
         _kickoff_dm(week, raw_range, summary, checks, send=send)
         if send and sheet_id == SHEET_ID:
             _record_delivery(week, summary, checks, raf_note, l2_err)
+    except StaleDD as e:
+        _log(f"HOLD: {e}")
+        # A DRY RUN that holds is a correct answer, not a failure (2026-10-20:
+        # a check-only dry run opened "didn't run clean" and a "stale data was
+        # SENT" ticket though nothing was written or sent). The live run still
+        # exits non-zero so the Wednesday hold is heard.
+        return 0 if not write else 4
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         _log(f"STOP: {e}")
         return 4

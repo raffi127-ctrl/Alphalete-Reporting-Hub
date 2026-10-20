@@ -24,7 +24,7 @@ class HoldIfStale(unittest.TestCase):
             R._hold_if_stale(Path("x.xlsx"), WEEK, log=lambda *_: None)
 
     def test_last_weeks_export_holds(self):
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(R.StaleDD):
             self._check(dt.date(2026, 10, 10))
 
     def test_this_weeks_saturday_loads(self):
