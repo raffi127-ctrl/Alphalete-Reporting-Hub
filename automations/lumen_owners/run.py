@@ -24,6 +24,12 @@ WHAT EACH ROW SAYS.
     "Not on AT&T yet" — and their Lumen sales are what tells Raf how they are
     doing.
 
+THE SALES BOARD under the table (Raf, 2026-10-20: "can we also add the sales
+board similar to what we get on the captainship reports?"). The same New
+Internet + All Units boxes a fiber captain gets, owner x day Mon-Sun, built
+from the SAME fiber crosstab already pulled above — no second Tableau pull and
+no box on the shared Org Sales Board.
+
 Its own module on purpose: the Org Sales Board is shared and its captainship
 boxes feed every other captain's email; this touches none of it.
 """
@@ -100,16 +106,20 @@ def lumen_by_owner(rows: List[List[str]], weeks: List[dt.date]
     return out
 
 
-def att_for(owner: str, fiber: Dict[str, dict], aliases) -> Tuple[int, int]:
-    """(all units, new internets) week to date for this owner on the AT&T
-    fiber crosstab, matched the way the captainship fill matches. (0, 0) when
+def att_metrics(owner: str, fiber: Dict[str, dict], aliases) -> dict:
+    """This owner's {'Total': {date: n}, 'NewInternet': {date: n}} on the AT&T
+    fiber crosstab, matched the way the captainship fill matches. {} when
     absent — the crosstab omits owners with no sales."""
     from automations.org_sales_board.captainship import _candidates_for_name
     cands = _candidates_for_name(owner, aliases)
     k = next((x for x in fiber if x in cands), None)
-    if not k:
-        return 0, 0
-    m = fiber[k]
+    return fiber[k] if k else {}
+
+
+def att_for(owner: str, fiber: Dict[str, dict], aliases) -> Tuple[int, int]:
+    """(all units, new internets) week to date for this owner. (0, 0) when
+    absent."""
+    m = att_metrics(owner, fiber, aliases)
     return (sum((m.get("Total") or {}).values()),
             sum((m.get("NewInternet") or {}).values()))
 
@@ -120,9 +130,13 @@ def build_rows(lumen: Dict[str, dict], fiber: Dict[str, dict], aliases
     Not on AT&T yet (most Lumen sales first). Pure given its inputs."""
     rows = []
     for key, L in lumen.items():
-        units, ni = att_for(L["owner"], fiber, aliases)
+        m = att_metrics(L["owner"], fiber, aliases)
+        units = sum((m.get("Total") or {}).values())
+        ni = sum((m.get("NewInternet") or {}).values())
         rows.append({"owner": L["owner"], "office": L["office"],
                      "att_units": units, "att_ni": ni,
+                     "att_days": {"Total": dict(m.get("Total") or {}),
+                                  "NewInternet": dict(m.get("NewInternet") or {})},
                      "lumen": L["weeks"],
                      "status": ON_ATT if units > 0 else NOT_YET})
 
@@ -177,6 +191,52 @@ def table_html(rows: List[dict], weeks: List[dt.date], att_week: str) -> str:
               "&rarr; AllproductsALLTEAMS). Lumen = fiber sales per week "
               "(AT&amp;T Quantum Fiber Sales Tracker &rarr; RES-Quantum Fiber ICD "
               "Week Ending Sales).</p>")
+
+
+BOARD_BOXES = (("NewInternet", "NEW INTERNET"), ("Total", "ALL UNITS"))
+
+
+def sales_board_html(rows: List[dict], days: List[dt.date], today: dt.date,
+                     att_week: str) -> str:
+    """The captainship-style Sales Board: one box per metric (New Internet,
+    All Units), one line per Lumen owner, Mon-Sun + week total, team total on
+    the last line. Days still ahead stay blank (a 0 there would read as "sold
+    nothing"). Owners sorted by the box's week total, most first. Pure."""
+    th = ('style="padding:5px 8px;border:1px solid #ccc;background:#1f3864;'
+          'color:#fff;font-size:12px;text-align:center"')
+    td = 'style="padding:5px 8px;border:1px solid #ccc;font-size:12px;text-align:center"'
+    tdl = 'style="padding:5px 8px;border:1px solid #ccc;font-size:12px;text-align:left"'
+    tdt = ('style="padding:5px 8px;border:1px solid #ccc;font-size:12px;'
+           'text-align:center;font-weight:bold;background:#eef2f8"')
+    tdtl = ('style="padding:5px 8px;border:1px solid #ccc;font-size:12px;'
+            'text-align:left;font-weight:bold;background:#eef2f8"')
+    out = ['<div style="font-size:16px;font-weight:bold;margin:22px 0 6px">'
+           'AT&amp;T Sales Board &mdash; %s</div>' % html.escape(att_week)]
+    for metric, label in BOARD_BOXES:
+        head = ("<tr><th %s>%s</th>%s<th %s>Total</th></tr>"
+                % (th, label, "".join("<th %s>%s<br>%d/%d</th>"
+                                      % (th, d.strftime("%a"), d.month, d.day)
+                                      for d in days), th))
+
+        def _v(r, d):
+            return (r.get("att_days") or {}).get(metric, {}).get(d, 0)
+
+        ranked = sorted(rows, key=lambda r: (-sum(_v(r, d) for d in days),
+                                             r["owner"].casefold()))
+        body = []
+        for r in ranked:
+            cells = "".join("<td %s>%s</td>" % (td, _v(r, d) if d <= today else "")
+                            for d in days)
+            body.append("<tr><td %s>%s</td>%s<td %s>%d</td></tr>"
+                        % (tdl, html.escape(r["owner"]), cells, tdt,
+                           sum(_v(r, d) for d in days)))
+        tot = "".join("<td %s>%s</td>" % (tdt, sum(_v(r, d) for r in rows)
+                                          if d <= today else "") for d in days)
+        body.append("<tr><td %s>TEAM TOTAL</td>%s<td %s>%d</td></tr>"
+                    % (tdtl, tot, tdt, sum(_v(r, d) for r in rows for d in days)))
+        out.append('<table style="border-collapse:collapse;margin:0 0 14px">'
+                   + head + "".join(body) + "</table>")
+    return "".join(out)
 
 
 def _pull(today: dt.date):
@@ -242,7 +302,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     rows = build_rows(lumen, fiber, load_aliases())
     monday = _wk.reporting_monday(today)
     att_week = "week of %s" % monday.strftime("%m/%d")
-    body = table_html(rows, weeks, att_week)
+    body = (table_html(rows, weeks, att_week)
+            + sales_board_html(rows, _wk.reporting_week(today), today, att_week))
     for r in rows:
         print("ROW | %-28s | %-16s | AT&T %3d (NI %3d) | Lumen %s"
               % (r["owner"], r["status"], r["att_units"], r["att_ni"],

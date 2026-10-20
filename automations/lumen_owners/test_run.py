@@ -49,6 +49,28 @@ class LumenOwnersTest(unittest.TestCase):
         self.assertIn("Not on AT&amp;T yet", html)
         self.assertIn("Lumen WE 10/4", html)
 
+    def test_sales_board_boxes(self):
+        mon = dt.date(2026, 10, 19)
+        days = [mon + dt.timedelta(days=i) for i in range(7)]
+        tue = days[1]
+        rows = [
+            {"owner": "Low", "att_days": {"Total": {mon: 1},
+                                          "NewInternet": {}}},
+            {"owner": "High", "att_days": {"Total": {mon: 2, tue: 3},
+                                           "NewInternet": {tue: 2}}},
+            {"owner": "Zero", "att_days": {"Total": {}, "NewInternet": {}}},
+        ]
+        h = R.sales_board_html(rows, days, tue, "week of 10/19")
+        self.assertIn("NEW INTERNET", h)
+        self.assertIn("ALL UNITS", h)
+        allu = h.split("ALL UNITS", 1)[1]
+        self.assertLess(allu.index("High"), allu.index("Low"))  # most first
+        self.assertLess(allu.index("Low"), allu.index("Zero"))
+        self.assertIn(">6</td></tr>", allu)                     # team total
+        # Wed..Sun still ahead -> blank, not 0
+        self.assertIn("<td %s></td>" % 'style="padding:5px 8px;border:1px solid '
+                      '#ccc;font-size:12px;text-align:center"', allu)
+
 
 if __name__ == "__main__":
     unittest.main()
