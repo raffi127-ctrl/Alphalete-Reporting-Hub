@@ -302,8 +302,33 @@ def _switch_office(page: Page, office_id: str, owner_hint: str = "",
     # the 15s budget and surfaced as a per-ICD timeout every run (Megan 2026-06-25,
     # "running with no errors"). The office switch IS the navigation, so a ready
     # DOM is enough — the caller's week-set + table read wait on the data after.
-    with page.expect_navigation(timeout=30000, wait_until="domcontentloaded"):
-        target_item.click()
+    #
+    # A STALE ITEM MUST NOT HANG THE RUN (2026-10-20). The dropdown can
+    # re-render between finding the row and clicking it; the row we hold is
+    # then detached/hidden and click() waited its full 30s on every office --
+    # daily_focus ran out its 45-minute budget 5 times in two weeks on exactly
+    # "Locator.click: Timeout 30000ms ... waiting for element to be visible".
+    # Click with a short wait; if the row went stale, retype and click the
+    # FRESH row for this exact office id (still never the first item).
+    try:
+        with page.expect_navigation(timeout=30000, wait_until="domcontentloaded"):
+            target_item.click(timeout=8000)
+        return True
+    except PWTimeout:
+        print("[switch] office %s: dropdown row went stale before the click — "
+              "retyping once" % office_id, flush=True)
+    page.locator("#searchMC").fill("")
+    page.locator("#searchMC").type(office_id, delay=30)
+    fresh = page.locator(".ui-autocomplete li:visible, .ui-menu li:visible",
+                         has_text=office_id).first
+    try:
+        fresh.wait_for(state="visible", timeout=8000)
+        with page.expect_navigation(timeout=30000, wait_until="domcontentloaded"):
+            fresh.click(timeout=8000)
+    except PWTimeout:
+        raise PWTimeout("office %s: the switcher row would not take a click "
+                        "after a retype — transient, retried by the caller"
+                        % office_id)
     return True
 
 

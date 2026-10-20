@@ -48,8 +48,13 @@ class _Item:
     def inner_text(self):
         return self._text
 
-    def click(self):
+    def click(self, **kw):
+        if getattr(self, "stale", False):
+            raise PWTimeout("Locator.click: Timeout 8000ms exceeded.")
         self._clicked.append(self._text)
+
+    def wait_for(self, **kw):
+        return None
 
 
 class _Box:
@@ -101,9 +106,17 @@ class _FakePage:
     def move(self, *a, **kw):
         return None
 
-    def locator(self, selector):
+    def locator(self, selector, has_text=None):
         if selector == MENU_SELECTOR:
-            return _Box([_Item(t, self.clicked) for t in (self.menu or [])])
+            items = [_Item(t, self.clicked) for t in (self.menu or [])]
+            for it in items:
+                it.stale = getattr(self, "stale_first", False)
+            return _Box(items)
+        if has_text is not None:              # the fresh :visible retry row
+            hit = [t for t in (self.menu or []) if has_text in t]
+            row = _Item(hit[0] if hit else "", self.clicked)
+            row.stale = getattr(self, "stale_always", False)
+            return _FirstOf(row)
         return _Box()
 
     def wait_for_timeout(self, *a, **kw):
@@ -114,6 +127,33 @@ class _FakePage:
 
     def expect_navigation(self, **kw):
         return _Nav()
+
+
+class _FirstOf:
+    def __init__(self, row):
+        self.first = row
+
+
+def test_a_stale_row_is_retyped_not_waited_on():
+    """2026-10-20: the dropdown re-rendered between find and click; click()
+    waited 30s per office and daily_focus ran out its 45 minutes. The row is
+    retyped and the FRESH row for the same office id is clicked."""
+    page = _FakePage(menu=["22434\nJose Velasquez\nLegacy Shore"])
+    page.stale_first = True
+    assert _call(page, confirm_denial=True) is True
+    assert page.clicked == ["22434\nJose Velasquez\nLegacy Shore"]
+
+
+def test_a_row_that_never_takes_a_click_is_transient():
+    page = _FakePage(menu=["22434\nJose Velasquez\nLegacy Shore"])
+    page.stale_first = True
+    page.stale_always = True
+    try:
+        _call(page, confirm_denial=True)
+    except PWTimeout as e:
+        assert "would not take a click" in str(e)
+    else:
+        raise AssertionError("a stale row must raise (retryable)")
 
 
 def _call(page, office_id="22434", **kw):
