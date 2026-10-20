@@ -391,6 +391,39 @@ def drop_checks_off(today: dt.date) -> bool:
     return DROP_CHECKS_OFF_THROUGH is not None and today <= DROP_CHECKS_OFF_THROUGH
 
 
+# A LOW DAY THAT HAS STOPPED MOVING IS A REAL DAY (2026-10-20). The low-volume
+# floors exist to catch a PART-LOADED day — and a part-loaded day keeps
+# growing. On 10/20 AT&T Monday read 1,081 (86% of its 4-week Monday average)
+# in six samples from 09:01 to 11:38, unchanged: the day had finished, the
+# number was simply low (the same real low week Raf called on 10/15), and the
+# floor held 15 captainship reports + two country boards all morning. Once the
+# same total has held for this long, the floors stand down; the "stopped
+# loading" proof below still applies.
+LONG_SETTLE_MIN = 90
+
+
+def settled_for_minutes(series, total: float) -> float:
+    """Minutes the CURRENT total has held unchanged, from the earliest sample
+    of the unbroken run of `total` at the end of `series` to the latest."""
+    run = []
+    for at, val in reversed(list(series or [])):
+        try:
+            same = float(val) == float(total)
+        except (TypeError, ValueError):
+            same = False
+        if not same:
+            break
+        run.append(at)
+    if len(run) < 2:
+        return 0.0
+    try:
+        newest = dt.datetime.fromisoformat(str(run[0]))
+        oldest = dt.datetime.fromisoformat(str(run[-1]))
+    except ValueError:
+        return 0.0
+    return (newest - oldest).total_seconds() / 60.0
+
+
 _WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
              "Saturday", "Sunday"]
 
@@ -768,13 +801,18 @@ def _check_stable_total(extract_id: str, cfg: dict, target: dt.date,
     # AFTER the sample is recorded so the day's history stays continuous whether
     # this holds or not — the run that finally sees good data still needs the
     # earlier samples to prove the number settled.
-    if drop_checks_off(today):
-        log("low-volume holds off through %s — only checking it stopped loading"
-            % DROP_CHECKS_OFF_THROUGH.isoformat())
+    long_settled = settled_for_minutes(series, total) >= LONG_SETTLE_MIN
+    if long_settled:
+        log("%s = %g has held for %d+ min — a finished day, so the low-volume "
+            "floors stand down" % (target.isoformat(), total, LONG_SETTLE_MIN))
+    if drop_checks_off(today) or long_settled:
+        if drop_checks_off(today):
+            log("low-volume holds off through %s — only checking it stopped "
+                "loading" % DROP_CHECKS_OFF_THROUGH.isoformat())
         conf = {k: v for k, v in conf.items()
                 if k not in ("same_day_avg_frac", "avg_sheet")}
     short = None
-    if not drop_checks_off(today):
+    if not (drop_checks_off(today) or long_settled):
         try:
             short = volume_shortfall(
                 text, target, total,
