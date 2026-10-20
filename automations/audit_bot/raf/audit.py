@@ -284,7 +284,10 @@ UNREADABLE_REPLY = (
     ":white_check_mark: A *Voice Memo* from your iPhone\n"
     ":white_check_mark: An *.m4a*, *.mp3* or *.wav* file\n\n"
     ":x: WhatsApp audio doesn't work.\n\n"
-    "Just upload the new file here and I'll start the audit."
+    "Just upload the new file here and I'll start the audit.\n\n"
+    # Megan + Eve (resources/owner-slack-ids.md) — added at Megan's ask 2026-10-20.
+    ":raising_hand: *Still having trouble?* Send a DM to <@U04G5HJBGFN> or "
+    "<@U088E2KJEV8> and they'll help you."
 )
 UNREADABLE_LOG = RUNTIME_DIR / "unreadable.jsonl"
 
