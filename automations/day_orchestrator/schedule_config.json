@@ -2533,6 +2533,25 @@
    "timeout_minutes": 30,
    "verify": null
   },
+  "badged": {
+   "on_scheduler": false,
+   "_off_scheduler_note": "Badged Reps + Badged % on the ATT Program - Focus Report's ICD tabs (automations/recruiting_report/badged.py). on_scheduler:false = NOT in the 4am batch -- the weekly fill already runs as the LAST STEP of att_focus_raf's OPT phase. Present here so it can be re-run ALONE (Eve 2026-10-19: Lucy 1 died before the ATT run reached this step, and `lucy rerun opt_phase` timed out twice at 45 min before getting to it, so all 54 tabs sat blank for WE 10/18). Reads OwnerVille's CEO Dashboard onboarding JSON (no impersonation), so it needs the machine that holds the ownerville session. WRITES by default (rewrites the last 4 closed weeks every run, by design); add --dry-run to preview, --only \"Marcellus Butler\" for one tab.",
+   "display_name": "Badged Reps (Focus Report ICD tabs)",
+   "source_type": "ownerville",
+   "data_sources": [],
+   "command": [
+    "automations.recruiting_report.badged"
+   ],
+   "base_args": [],
+   "cadence": {
+    "weekdays": []
+   },
+   "priority": "P3",
+   "freshness_target": null,
+   "depends_on": [],
+   "timeout_minutes": 30,
+   "verify": null
+  },
   "stf_field_check": {
    "on_scheduler": false,
    "_off_scheduler_note": "STF Field Check. on_scheduler:false = NOT in the 4am batch; the nightly run is a STANDALONE 11pm LaunchAgent (com.alphalete.stf-field-check-11pm, installed via `lucy rerun install_stf_field_check_agent`). Present here so `lucy rerun stf_field_check` works. Reads the Sales Board WE tab, finds the day's reps marked STF, pulls that same day's ownerville Time Tracker (p=510, Raf's master view \u2014 no impersonation), and overwrites STF with X when worked (last knock \u2212 first knock) < 3:00 or the rep never showed. Runs on the MINI (ownerville is single-session; a laptop scrape knocks out the holder). DRY-RUN by default: `lucy rerun stf_field_check` (today) or `lucy rerun stf_field_check --date 2026-07-15` (backfill a past day). Add --write to actually flip the cells. The 11pm LaunchAgent passes --write. Registered 2026-07-17.",
