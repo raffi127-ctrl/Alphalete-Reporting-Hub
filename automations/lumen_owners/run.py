@@ -29,6 +29,9 @@ board similar to what we get on the captainship reports?"). The same New
 Internet + All Units boxes a fiber captain gets, owner x day Mon-Sun, built
 from the SAME fiber crosstab already pulled above — no second Tableau pull and
 no box on the shared Org Sales Board.
+Eve 2026-10-20: two more columns per box, the Org Sales Board's own pair —
+"Last Week Total" (the week before this one) and "Prior Week Total" (two
+weeks back) — pulled from the same crosstab pinned to those weeks.
 
 Its own module on purpose: the Org Sales Board is shared and its captainship
 boxes feed every other captain's email; this touches none of it.
@@ -124,19 +127,29 @@ def att_for(owner: str, fiber: Dict[str, dict], aliases) -> Tuple[int, int]:
             sum((m.get("NewInternet") or {}).values()))
 
 
-def build_rows(lumen: Dict[str, dict], fiber: Dict[str, dict], aliases
+def build_rows(lumen: Dict[str, dict], fiber: Dict[str, dict], aliases,
+               past: Optional[List[Optional[Dict[str, dict]]]] = None
                ) -> List[dict]:
     """One row per Lumen owner, On AT&T first (most AT&T units first), then
-    Not on AT&T yet (most Lumen sales first). Pure given its inputs."""
+    Not on AT&T yet (most Lumen sales first). `past` = the fiber pulls of the
+    earlier weeks, newest first; None for a week whose pull failed, so its
+    cell prints a dash instead of a 0 that looks real. Pure given its inputs."""
     rows = []
     for key, L in lumen.items():
         m = att_metrics(L["owner"], fiber, aliases)
+        prev = {}
+        for metric in ("Total", "NewInternet"):
+            prev[metric] = [
+                None if f is None else
+                sum((att_metrics(L["owner"], f, aliases).get(metric) or {}).values())
+                for f in (past or [])]
         units = sum((m.get("Total") or {}).values())
         ni = sum((m.get("NewInternet") or {}).values())
         rows.append({"owner": L["owner"], "office": L["office"],
                      "att_units": units, "att_ni": ni,
                      "att_days": {"Total": dict(m.get("Total") or {}),
                                   "NewInternet": dict(m.get("NewInternet") or {})},
+                     "att_past": prev,
                      "lumen": L["weeks"],
                      "status": ON_ATT if units > 0 else NOT_YET})
 
@@ -194,13 +207,14 @@ def table_html(rows: List[dict], weeks: List[dt.date], att_week: str) -> str:
 
 
 BOARD_BOXES = (("NewInternet", "NEW INTERNET"), ("Total", "ALL UNITS"))
+PAST_LABELS = ("Last Week Total", "Prior Week Total")
 
 
 def sales_board_html(rows: List[dict], days: List[dt.date], today: dt.date,
                      att_week: str) -> str:
     """The captainship-style Sales Board: one box per metric (New Internet,
-    All Units), one line per Lumen owner, Mon-Sun + week total, team total on
-    the last line. Days still ahead stay blank (a 0 there would read as "sold
+    All Units), one line per Lumen owner, Mon-Sun + week total + the two
+    earlier weeks' totals, team total on the last line. Days still ahead stay blank (a 0 there would read as "sold
     nothing"). Owners sorted by the box's week total, most first. Pure."""
     th = ('style="padding:5px 8px;border:1px solid #ccc;background:#1f3864;'
           'color:#fff;font-size:12px;text-align:center"')
@@ -213,10 +227,26 @@ def sales_board_html(rows: List[dict], days: List[dt.date], today: dt.date,
     out = ['<div style="font-size:16px;font-weight:bold;margin:22px 0 6px">'
            'AT&amp;T Sales Board &mdash; %s</div>' % html.escape(att_week)]
     for metric, label in BOARD_BOXES:
-        head = ("<tr><th %s>%s</th>%s<th %s>Total</th></tr>"
+        past_we = [days[-1] - dt.timedelta(days=7 * (i + 1))
+                   for i in range(len(PAST_LABELS))]
+        head = ("<tr><th %s>%s</th>%s<th %s>Total</th>%s</tr>"
                 % (th, label, "".join("<th %s>%s<br>%d/%d</th>"
                                       % (th, d.strftime("%a"), d.month, d.day)
-                                      for d in days), th))
+                                      for d in days), th,
+                   "".join("<th %s>%s<br>WE %d/%d</th>" % (th, lb, w.month, w.day)
+                           for lb, w in zip(PAST_LABELS, past_we))))
+
+        def _p(r, i):
+            vals = (r.get("att_past") or {}).get(metric) or []
+            return vals[i] if i < len(vals) else None
+
+        def _pcells(style, vals):
+            return "".join("<td %s>%s</td>" % (style, "&ndash;" if v is None else v)
+                           for v in vals)
+
+        def _ptot(i):
+            vals = [_p(r, i) for r in rows]
+            return None if any(v is None for v in vals) else sum(vals)
 
         def _v(r, d):
             return (r.get("att_days") or {}).get(metric, {}).get(d, 0)
@@ -227,20 +257,34 @@ def sales_board_html(rows: List[dict], days: List[dt.date], today: dt.date,
         for r in ranked:
             cells = "".join("<td %s>%s</td>" % (td, _v(r, d) if d <= today else "")
                             for d in days)
-            body.append("<tr><td %s>%s</td>%s<td %s>%d</td></tr>"
+            body.append("<tr><td %s>%s</td>%s<td %s>%d</td>%s</tr>"
                         % (tdl, html.escape(r["owner"]), cells, tdt,
-                           sum(_v(r, d) for d in days)))
+                           sum(_v(r, d) for d in days),
+                           _pcells(td, [_p(r, i) for i in range(len(PAST_LABELS))])))
         tot = "".join("<td %s>%s</td>" % (tdt, sum(_v(r, d) for r in rows)
                                           if d <= today else "") for d in days)
-        body.append("<tr><td %s>TEAM TOTAL</td>%s<td %s>%d</td></tr>"
-                    % (tdtl, tot, tdt, sum(_v(r, d) for r in rows for d in days)))
+        body.append("<tr><td %s>TEAM TOTAL</td>%s<td %s>%d</td>%s</tr>"
+                    % (tdtl, tot, tdt, sum(_v(r, d) for r in rows for d in days),
+                       _pcells(tdt, [_ptot(i) for i in range(len(PAST_LABELS))])))
         out.append('<table style="border-collapse:collapse;margin:0 0 14px">'
                    + head + "".join(body) + "</table>")
     return "".join(out)
 
 
+def _week_ok(fiber: Dict[str, dict], ref: dt.date) -> bool:
+    """True when every date in the pull falls in ref's reporting week. A view
+    that ignored the week pin and came back on another week is not that
+    week's answer (same guard as delta_lastweek_backfill). Pure."""
+    from automations.org_sales_board import week as _wk
+    want = set(_wk.reporting_week(ref))
+    got = {d for m in fiber.values() for per in m.values() for d in (per or {})}
+    return got <= want
+
+
 def _pull(today: dt.date):
-    """(quantum grid, fiber {owner: metrics}, failed) in ONE Tableau session."""
+    """(quantum grid, fiber {owner: metrics}, failed, past) in ONE Tableau
+    session. `past` = [last week's fiber, the week before's], None where that
+    pull failed or came back on the wrong week."""
     os.environ["ALPHALETE_SKIP_FRESHNESS"] = "1"
     OUT.mkdir(parents=True, exist_ok=True)
     from automations.shared.tableau_patchright import (
@@ -253,6 +297,20 @@ def _pull(today: dt.date):
     with tableau_session(verbose=False, profile_dir=OUT / ".profile") as page:
         prog, failed = pull_programs(page, today, programs=["fiber"],
                                      out_dir=OUT, out_prefix="lumen_owners_")
+        past = []
+        for i in range(1, len(PAST_LABELS) + 1):
+            ref = today - dt.timedelta(days=7 * i)
+            try:
+                p, f = pull_programs(page, ref, programs=["fiber"], out_dir=OUT,
+                                     out_prefix="lumen_owners_wk%d_" % i)
+            except Exception as e:  # noqa: BLE001 — a dash, not a dead email
+                print("[lumen] week -%d pull crashed: %s" % (i, e))
+                p, f = {}, ["fiber"]
+            fib = p.get("fiber", {})
+            ok = not f and _week_ok(fib, ref)
+            if not ok:
+                print("[lumen] week -%d pull unusable (failed=%s) — dashes" % (i, f))
+            past.append(fib if ok else None)
         page.goto(PQ.BASE + "/#/site/sci/workbooks", wait_until="domcontentloaded")
         page.wait_for_timeout(12_000)
         _, data = PQ._call(page, "getWorkbooks", {
@@ -272,7 +330,7 @@ def _pull(today: dt.date):
         download_crosstab_patchright(urls[SALES_VIEW], SALES_SHEET, out,
                                      verbose=False, page=page)
         grid = PQ._read_grid(out)
-    return grid, prog.get("fiber", {}), failed
+    return grid, prog.get("fiber", {}), failed, past
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -288,7 +346,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     from automations.shared import report_email as _mail
 
     today = dt.date.today()
-    grid, fiber, failed = _pull(today)
+    grid, fiber, failed, past = _pull(today)
     if failed:
         # An empty fiber pull would mark EVERY owner "Not on AT&T yet" — a
         # wrong answer that looks like a real one. Refuse instead.
@@ -299,7 +357,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not lumen:
         print("[lumen] Quantum view returned no owners — not sending")
         return 1
-    rows = build_rows(lumen, fiber, load_aliases())
+    rows = build_rows(lumen, fiber, load_aliases(), past)
     monday = _wk.reporting_monday(today)
     att_week = "week of %s" % monday.strftime("%m/%d")
     body = (table_html(rows, weeks, att_week)

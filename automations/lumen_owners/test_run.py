@@ -66,10 +66,43 @@ class LumenOwnersTest(unittest.TestCase):
         allu = h.split("ALL UNITS", 1)[1]
         self.assertLess(allu.index("High"), allu.index("Low"))  # most first
         self.assertLess(allu.index("Low"), allu.index("Zero"))
-        self.assertIn(">6</td></tr>", allu)                     # team total
+        self.assertIn(">6</td><td", allu)                       # team total
         # Wed..Sun still ahead -> blank, not 0
         self.assertIn("<td %s></td>" % 'style="padding:5px 8px;border:1px solid '
                       '#ccc;font-size:12px;text-align:center"', allu)
+
+    def test_sales_board_past_weeks(self):
+        mon = dt.date(2026, 10, 19)
+        days = [mon + dt.timedelta(days=i) for i in range(7)]
+        rows = [
+            {"owner": "A", "att_days": {"Total": {}, "NewInternet": {}},
+             "att_past": {"Total": [7, None], "NewInternet": [2, None]}},
+            {"owner": "B", "att_days": {"Total": {}, "NewInternet": {}},
+             "att_past": {"Total": [5, None], "NewInternet": [1, None]}},
+        ]
+        h = R.sales_board_html(rows, days, mon, "week of 10/19")
+        self.assertIn("Last Week Total<br>WE 10/18", h)
+        self.assertIn("Prior Week Total<br>WE 10/11", h)
+        allu = h.split("ALL UNITS", 1)[1]
+        self.assertIn(">12</td><td", allu)          # team last week = 7 + 5
+        self.assertIn("&ndash;", allu)              # failed week -> dash, not 0
+
+    def test_build_rows_past(self):
+        weeks = R.lumen_weeks(GRID, TODAY)
+        lumen = R.lumen_by_owner(GRID, weeks)
+        lw = {"nigel marshall": {"Total": {TODAY: 3}, "NewInternet": {TODAY: 1}}}
+        with mock.patch("automations.org_sales_board.captainship."
+                        "_candidates_for_name", _cands):
+            rows = R.build_rows(lumen, {}, {}, [lw, None])
+        nigel = next(r for r in rows if r["owner"] == "Nigel Marshall")
+        self.assertEqual(nigel["att_past"]["Total"], [3, None])
+        other = next(r for r in rows if r["owner"] == "Somebody Else")
+        self.assertEqual(other["att_past"]["NewInternet"], [0, None])
+
+    def test_week_ok(self):
+        ref = dt.date(2026, 10, 13)                 # week 10/12-10/18
+        self.assertTrue(R._week_ok({"x": {"Total": {dt.date(2026, 10, 14): 1}}}, ref))
+        self.assertFalse(R._week_ok({"x": {"Total": {dt.date(2026, 10, 20): 1}}}, ref))
 
 
 if __name__ == "__main__":
