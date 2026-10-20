@@ -178,11 +178,14 @@ class TestReplyTagging(unittest.TestCase):
                 "phone": phone, "products": list(products), "alt_phones": [],
                 "wireless_order": "", "ban": ""}
 
-    def test_resolved_rep_is_mentioned(self):
+    def test_resolved_rep_bold_header_and_tagged_at_bottom(self):
         out = self._reply([self._cust("Jordan Ruiz", "Yani Young")], 5,
                           {"Jordan Ruiz": "U0B36GDTT6F"})
+        # original look: a bold name header in the list…
+        self.assertIn("*Jordan Ruiz*", out)
+        # …and the @mention down at the bottom, after the customer lines.
         self.assertIn("<@U0B36GDTT6F>", out)
-        self.assertNotIn("*Jordan Ruiz*", out)
+        self.assertLess(out.index("Yani Young"), out.index("<@U0B36GDTT6F>"))
 
     def test_unresolved_rep_stays_bold_and_flagged(self):
         out = self._reply([self._cust("Alexis Renteria", "Jazmin Garcia")], 5,
