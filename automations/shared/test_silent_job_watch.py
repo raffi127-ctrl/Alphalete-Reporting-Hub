@@ -12,7 +12,7 @@ Activity rows and neither has ever written one.
 
 These tests drive `overdue()` with an injected clock and an injected heartbeat
 table — no Sheets, no Slack, nothing sent. `beat()` and `read_beats()` are the
-only functions that touch the network and neither is exercised here.
+only functions that touch the network; they run against a fake worksheet.
 """
 from __future__ import annotations
 
@@ -290,6 +290,50 @@ class EachQueueIsWatchedOnce(unittest.TestCase):
 
     def test_a_machine_that_watches_nothing_does_nothing(self):
         self.assertEqual(sjw.watch_peers("Lucy 2", beats={}), 0)
+
+
+class _FakeWs:
+    """Just enough of a gspread Worksheet for beat() / read_beats()."""
+
+    def __init__(self, recs, find_raises=False):
+        self.recs, self.find_raises, self.appended = recs, find_raises, []
+
+    def get_all_records(self):
+        return self.recs
+
+    def find(self, *_a, **_k):
+        if self.find_raises:
+            raise RuntimeError("429 quota")
+        return None
+
+    def append_row(self, row, **_k):
+        self.appended.append(row)
+
+
+class DuplicateRowsDontHideALiveJob(unittest.TestCase):
+    """2026-10-19 ~19:00: a failed find made beat() append a second row for
+    mini_control_lucy_2/3/4. Beats kept landing on the first row, the check read
+    the stale bottom one, and three live queues were reported dead all night."""
+
+    def _with(self, ws):
+        orig = sjw._ws
+        sjw._ws = lambda create=False: ws
+        self.addCleanup(setattr, sjw, "_ws", orig)
+
+    def test_the_newest_beat_wins_whatever_its_row(self):
+        jid = "mini_control_lucy_4"
+        self._with(_FakeWs([
+            {"Job ID": jid, "Last Seen": "2026-10-20T07:38:02", "Machine": "m", "Status": "ok"},
+            {"Job ID": jid, "Last Seen": "2026-10-19T19:09:05", "Machine": "m", "Status": "ok"},
+        ]))
+        self.assertEqual(sjw.read_beats()[jid]["last_seen"],
+                         _at("2026-10-20", "07:38") + dt.timedelta(seconds=2))
+
+    def test_a_failed_lookup_does_not_append_a_second_row(self):
+        ws = _FakeWs([], find_raises=True)
+        self._with(ws)
+        self.assertFalse(sjw.beat("mini_control_lucy_4"))
+        self.assertEqual(ws.appended, [])
 
 
 if __name__ == "__main__":

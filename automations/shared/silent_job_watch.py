@@ -344,10 +344,12 @@ def beat(job_id: str, *, ok: bool = True, note: str = "") -> bool:
         ws = _ws(create=True)
         row = [job_id, dt.datetime.now().isoformat(timespec="seconds"),
                socket.gethostname(), "ok" if ok else "failed", note]
-        try:
-            found = ws.find(job_id, in_column=1)
-        except Exception:
-            found = None
+        # A find that FAILED (a 429, a blip) is not "no row yet": appending then
+        # leaves a second row for the job, the beat keeps landing on the first,
+        # and the stale copy sits there. 2026-10-19 ~19:00 that duplicated
+        # mini_control_lucy_2/3/4 and all three read as dead for 13 hours while
+        # beating every 10 min. Skip this beat instead; the next one retries.
+        found = _retry(lambda: ws.find(job_id, in_column=1))
         if found:
             _retry(lambda: ws.update([row], "A%d:E%d" % (found.row, found.row),
                                      value_input_option="RAW"))
@@ -377,6 +379,11 @@ def read_beats() -> Dict[str, dict]:
             seen = dt.datetime.fromisoformat(str(r.get("Last Seen") or "").strip())
         except Exception:
             seen = None
+        # Duplicate rows (see beat) — the NEWEST beat is the truth, not the
+        # bottom row.
+        prev = out.get(jid)
+        if prev and prev["last_seen"] and (seen is None or seen < prev["last_seen"]):
+            continue
         out[jid] = {"last_seen": seen,
                     "machine": str(r.get("Machine") or ""),
                     "status": str(r.get("Status") or "").strip().lower()}
