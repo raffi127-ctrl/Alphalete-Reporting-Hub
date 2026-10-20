@@ -4364,6 +4364,8 @@
   },
   "daily_focus": {
    "order": 1,
+   "timeout_minutes": 75,
+   "_timeout_note": "75 since 2026-10-20 (was the 45 default): yesterday took 31m, today AppStream clicks kept timing out and the 4am run was cut at 45m while writing its last offices; two afternoon reruns died the same way.",
    "on_scheduler": true,
    "display_name": "Daily Recruiting Focus",
    "source_type": "appstream",
