@@ -437,6 +437,12 @@ def _capture_says_no_board(office: str, saturday: dt.date) -> Optional[str]:
             # — the box stays blank, same as the email's grey note.
             if "no knocks or sales recorded" in str(note).lower():
                 return f"no knocks or sales recorded this week (capture {man.name})"
+            # Any other grey note is the capture leaving them out on purpose
+            # as well — the email shows the same grey box. 2026-10-19 Ja
+            # Mosley: ownerville stopped opening his Disposition by Rep page,
+            # a note that never says "office access", so the sweep ended 70/72.
+            return (f"{str(note)[len(NO_DATA_MARK):][:120]} "
+                    f"(capture {man.name})")
     return None
 
 

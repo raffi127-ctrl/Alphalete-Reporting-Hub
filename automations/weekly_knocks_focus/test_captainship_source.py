@@ -145,6 +145,14 @@ class CaptureManifest(unittest.TestCase):
                         "no knocks or sales recorded this week"}, captain="chan")
         self.assertIn("no knocks", R._capture_says_no_board("Ja Mosley", SAT))
 
+    def test_dispo_page_not_open_is_a_skip(self):
+        from automations.captainship_drafts import knock_dispo_images as KD
+        note = KD._owner_error_note(
+            RuntimeError("Disposition by Rep is not open (redirects to Welcome)"))
+        self._manifest({"knock_dispo:Ja Mosley": note}, captain="chan")
+        self.assertIn("Disposition by Rep",
+                      R._capture_says_no_board("Ja Mosley", SAT))
+
     def test_dropped_owner_is_a_skip(self):
         with mock.patch.object(CC, "DROP_KNOCK_OWNERS", ("Francisco Castillo",),
                                create=True):
