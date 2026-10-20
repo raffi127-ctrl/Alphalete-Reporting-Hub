@@ -48,13 +48,16 @@ A BOARD TABLEAU HELD PAST THE MORNING (Eve 2026-10-13, NDS: 12 owners at 0):
   queues `rerun org_active_headcount_daily --late` here, so the day fills the
   same morning instead of the next one, and the review link is rebuilt in place.
 
-A TRACKER THAT HAS NOT POSTED BY THE MORNING RUN (Eve 2026-10-13: "como regla
+A SOURCE THAT HAS NOT POSTED BY THE MORNING RUN (Eve 2026-10-13: "como regla
 podemos poner que se completen con los numeros del dia anterior"):
   its ICDs take the PREVIOUS DAY'S number instead of an empty cell the boxes read
   as 0 -- on a Monday that is last Sunday's, the 'LAST WEEK'S TOTALS' column (Eve
   chose it over leaving Monday empty, knowing it runs high). Each such cell gets a
-  'STAND-IN' note naming the tracker; when that tracker posts, the --late re-fill
+  'STAND-IN' note naming the source; when that source posts, the --late re-fill
   replaces the number and drops the note. A cell somebody retyped is left alone.
+  Every source, not only the trackers: Mon 10/19 the Retail NL owners (SARA)
+  stayed empty and the JE owners went '-' (Eve 2026-10-20: "nunca puede quedar
+  vacío"). An owner a source does not list carries the same way, with no note.
 
     python -m automations.org_active_headcount.daily            # dry run
     python -m automations.org_active_headcount.daily --apply
@@ -150,21 +153,25 @@ def _last_number(vals) -> str:
 
 def carried(g, dl: dict, r: int, day_idx: int) -> Optional[int]:
     """The number an ICD's row carries INTO day `day_idx` (0 = Monday): the last
-    earlier day of the week with a number, else None.
+    earlier day of the week with a number, else last Sunday's (the hidden
+    'LAST WEEK'S TOTALS' column), else None.
 
     Eve 2026-09-24: Brandon Stallkamp read 3 on Monday and '-' on Tuesday, and
     the '-' pulled his week down to nothing. A tracker that misses someone for a
     day is not a headcount of zero or of unknown — he still has his 3.
 
-    Never LAST WEEK'S (2026-10-07): the headcount starts over every Monday, so
-    last week's final is not a Monday number. Mon 10/5 the Fiber readings tied
-    for 7 ICDs and the carry wrote last week's (Kash 23, Rashad 25) where the
-    tracker said 10 and 8 — Rafael caught it in the mail."""
+    MONDAY TAKES LAST SUNDAY'S (Eve 2026-10-20, again): Mon 10/19 the JE owners
+    went '-' and the Retail NL owners stayed empty, and the boxes read them as
+    0. "Nunca puede quedar vacío ... es la cantidad de gente que tiene
+    trabajando." From 10/7 to 10/20 Monday never carried, because Mon 10/5 a
+    Fiber TIE had carried last week's (Kash 23 / Rashad 25 vs the tracker's
+    10 / 8). A tie now writes the tracker's own number (pick_tracker), so only
+    an owner the source really does not have reaches this carry."""
     for k in reversed(dl["days"][:day_idx]):
         v = _num(_c(g, r, k))
         if v is not None:
             return v
-    return None
+    return _num(_c(g, r, dl["lastw"])) if dl.get("lastw") else None
 
 
 def campaign_by_name(g) -> Dict[str, str]:
@@ -642,20 +649,20 @@ def je_values(today: dt.date, icds: List[str], logfn=print) -> Dict[str, object]
 STAND_IN = "STAND-IN"
 TRACKER_LABEL = {"att_country": "Fiber", "nds": "NDS", "b2b_att_country": "B2B",
                  "b2b_box": "BOX"}
+# Every source that can be late, not only the trackers (Mon 10/19: SARA).
+SOURCE_LABEL = dict(TRACKER_LABEL, retail="Retail NL (SARA)", je="JE")
 
 
 def stand_in_note(value, trackers: List[str]) -> str:
-    return (f"{STAND_IN} {value}: the {' + '.join(trackers)} tracker had not posted, "
+    return (f"{STAND_IN} {value}: the {' + '.join(trackers)} source had not posted, "
             f"so this is the previous day's number. The real one replaces it when "
-            f"the tracker posts.")
+            f"it posts.")
 
 
 def stand_in_value(g, dl: dict, r: int, day_idx: int) -> Optional[int]:
     """The previous day's number for row r: the last earlier day of this week
     with one, and on a Monday last Sunday's (the 'LAST WEEK'S TOTALS' column)."""
-    if day_idx:
-        return carried(g, dl, r, day_idx)
-    return _num(_c(g, r, dl["lastw"])) if dl.get("lastw") else None
+    return carried(g, dl, r, day_idx)
 
 
 def is_stand_in(cell: str, note: str) -> bool:
@@ -703,10 +710,12 @@ def plan_day(V, day: dt.date, today: dt.date, logfn=print,
     """[(a1, value)] for the EMPTY cells of `day`'s column. Sources are fetched
     only when an empty cell needs them (and can be injected for tests).
 
-    `stand_in`: a tracker that has not posted fills its cells with the previous
-    day's number (stand_in_value) instead of leaving them empty. `notes` is the
-    tab's {a1: note}; a cell still holding its stand-in is re-asked like an
-    empty one. Note changes (set / cleared) go into `notes_out`."""
+    A source that has not posted fills its cells with the previous day's number
+    (stand_in_value) instead of leaving them empty -- always (Eve 2026-10-20).
+    `stand_in`: the tab's notes were read, so such a cell also gets its
+    STAND-IN note. `notes` is the tab's {a1: note}; a cell still holding its
+    stand-in is re-asked like an empty one. Note changes (set / cleared) go
+    into `notes_out`."""
     notes = notes or {}
     notes_out = notes_out if notes_out is not None else {}
     dl = find_daily(V)
@@ -749,15 +758,17 @@ def plan_day(V, day: dt.date, today: dt.date, logfn=print,
         a1 = f"{A(col)}{r}"
         parts = pick_dual(pick, srcs, prev) if len(srcs) > 1 else [pick(srcs[0], prev)]
         if any(p is None for p in parts):
-            # a source not there yet: a later run fills it. A TRACKER that has
-            # not posted gets the previous day's number meanwhile (stand_in).
-            late = [TRACKER_LABEL[s] for s, p in zip(srcs, parts)
-                    if p is None and s in TRACKER_LABEL]
-            if (stand_in and a1 not in standing and late
-                    and len(late) == sum(p is None for p in parts)):
-                v = stand_in_value(V, dl, r, i)
-                if v is not None:
-                    out.append((a1, v))
+            # a source not there yet (tracker, SARA, JE): the previous day's
+            # number meanwhile, never an empty cell; a later run fills the real
+            # one. Noted only when the notes were read (stand_in) -- without the
+            # note a later run cannot tell it from a real number.
+            if a1 in standing:
+                continue
+            late = [SOURCE_LABEL.get(s, str(s)) for s, p in zip(srcs, parts) if p is None]
+            v = stand_in_value(V, dl, r, i)
+            if v is not None:
+                out.append((a1, v))
+                if stand_in:
                     notes_out[a1] = stand_in_note(v, late)
             continue
         v = "-" if any(p == "-" for p in parts) else sum(int(p) for p in parts)
@@ -1021,9 +1032,11 @@ def run(apply_changes: bool = False, today: Optional[dt.date] = None,
     try:
         notes = read_notes(ws, find_daily(V))
     except Exception as e:                                         # noqa: BLE001
-        # without the notes a stand-in looks like a real number and would never
-        # be replaced, so no new stand-ins either this run
-        logfn(f"  cell notes NOT read ({type(e).__name__}: {e}) -- no stand-ins this run")
+        # without the notes a stand-in looks like a real number: the previous
+        # day's number still goes in (never blank), but un-noted, so a later
+        # run will not replace it
+        logfn(f"  cell notes NOT read ({type(e).__name__}: {e}) -- carries go in "
+              "WITHOUT their STAND-IN note this run")
         notes = None
     for day in completed_days(today):
         if day > today - dt.timedelta(days=1):
@@ -1039,7 +1052,7 @@ def run(apply_changes: bool = False, today: Optional[dt.date] = None,
         logfn(f"  {day:%a %m/%d}: {len(ups)} cell(s)" + ("" if ups else " (nothing empty)"))
         for a1, v in ups:
             logfn(f"      {a1:>5} <- {v}"
-                  + (" (stand-in: tracker not posted)" if note_ups.get(a1) else ""))
+                  + (" (stand-in: source not posted)" if note_ups.get(a1) else ""))
         if apply_changes and ups:
             _retry(ws.batch_update, [{"range": a, "values": [[v]]} for a, v in ups],
                    value_input_option="USER_ENTERED")

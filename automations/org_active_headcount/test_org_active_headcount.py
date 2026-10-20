@@ -485,13 +485,34 @@ class MissingDayCarriesTheLastNumber(unittest.TestCase):
                           trackers={}, retail={}, je={}))
         self.assertEqual(w["D19"], 10)
 
-    def test_a_monday_dash_never_takes_last_weeks(self):
-        """The week starts over on Monday: last week's final is not a Monday
-        number (Mon 10/5: Kash 23 / Rashad 25 written where the tracker said 10/8)."""
+    def test_a_monday_dash_takes_last_sunday(self):
+        """Eve 2026-10-20: Mon 10/19 the JE owners went '-' and the boxes read 0.
+        Monday carries last Sunday's ('LAST WEEK'S TOTALS'), never blank."""
         from automations.org_active_headcount.daily import plan_day
         w = dict(plan_day(self._g(), dt.date(2026, 9, 14), dt.date(2026, 9, 17),
                           trackers={}, retail={}, je={}))
-        self.assertNotIn("C20", w)
+        self.assertEqual(w["C20"], 41)             # LAST WEEK'S column
+
+    def test_a_monday_tie_still_writes_the_trackers_number(self):
+        """The 10/5 trap stays shut: a tie is the tracker's number, not a carry."""
+        from automations.org_active_headcount.daily import plan_day
+        g = self._g()
+        g[20 - 1][2] = ""
+        reading = {"A": [{"owner": "JAIRO RUIZ", "rep_count": 10}],
+                   "B": [{"owner": "JAIRO RUIZ", "rep_count": 16}]}
+        w = dict(plan_day(g, dt.date(2026, 9, 14), dt.date(2026, 9, 17),
+                          trackers={"nds": reading, "att_country": reading},
+                          retail={}, je={}))
+        self.assertEqual(w["C20"], 10)
+
+    def test_a_source_not_there_carries_even_without_notes(self):
+        """Retail NL Mon 10/19: SARA had nothing, the three owners stayed empty."""
+        from automations.org_active_headcount.daily import plan_day
+        g = self._g()
+        g[20 - 1][2] = ""
+        w = dict(plan_day(g, dt.date(2026, 9, 14), dt.date(2026, 9, 17),
+                          trackers={"nds": None, "att_country": None}, retail={}, je={}))
+        self.assertEqual(w["C20"], 41)
 
     def test_a_tracker_that_misses_the_icd_carries_too(self):
         from automations.org_active_headcount.daily import plan_day
@@ -499,7 +520,7 @@ class MissingDayCarriesTheLastNumber(unittest.TestCase):
         g[19 - 1][4] = ""                          # Rafael Wed empty
         w = dict(plan_day(g, dt.date(2026, 9, 16), dt.date(2026, 9, 17),
                           trackers={"att_country": None}, retail={}, je={}))
-        self.assertNotIn("E19", w)                 # not posted yet: left empty
+        self.assertEqual(w["E19"], 10)             # not posted yet: carries, never empty
         from automations.org_active_headcount import daily
         orig = daily.pick_tracker
         daily.pick_tracker = lambda *a, **k: "-"
@@ -551,11 +572,26 @@ class TrackerNotPostedTakesThePreviousDay(unittest.TestCase):
         self.assertEqual(w["E19"], 20)             # Wed <- Tue 20
         self.assertIn("Fiber", notes["E19"])
 
-    def test_off_by_default(self):
+    def test_retail_and_je_carry_too(self):
+        """Mon 10/19: Retail NL (SARA) empty, JE '-' -- both take last Sunday's."""
+        for camp, kw in (("Retail NL", {"retail": {}}), ("JE", {"je": {}})):
+            g = self._g()
+            g[20 - 1][-1] = camp
+            out = {}
+            from automations.org_active_headcount.daily import plan_day
+            args = dict(trackers={}, retail={}, je={})
+            args.update(kw)
+            w = dict(plan_day(g, dt.date(2026, 9, 14), dt.date(2026, 9, 17),
+                              stand_in=True, notes={}, notes_out=out, **args))
+            self.assertEqual(w["C20"], 41, camp)
+
+    def test_no_notes_still_fills_but_without_a_note(self):
         from automations.org_active_headcount.daily import plan_day
+        out = {}
         w = dict(plan_day(self._g(), dt.date(2026, 9, 14), dt.date(2026, 9, 17),
-                          trackers={"nds": None}, retail={}, je={}))
-        self.assertNotIn("C20", w)
+                          trackers={"nds": None}, retail={}, je={}, notes_out=out))
+        self.assertEqual(w["C20"], 41)
+        self.assertNotIn("C20", out)
 
     def test_the_real_number_replaces_the_stand_in_and_drops_the_note(self):
         from automations.org_active_headcount import daily
