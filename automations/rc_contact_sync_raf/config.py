@@ -31,6 +31,14 @@ MAX_AGE_H = 26
 # yesterday in full; the run then filters to the day it cares about.
 PULL_WINDOW_DAYS = 7
 
+# Order types to DROP before the wrap-up check (Dylan 2026-10-20: exclude
+# internet upgrades — they are an existing customer upgrading, not a fresh
+# sale that owes a wrap-up text). The SaraPlus export's "Order Type" column
+# holds exactly "New" / "Upgrade"; matched case-insensitively. Looked up
+# tolerantly so a spacing/casing change in the header still finds it.
+ORDER_TYPE_COLS = ("Order Type",)
+EXCLUDE_ORDER_TYPES = {"upgrade"}
+
 # --- RingCentral (DYLAN's account — rc_autoread's, NOT Taylor's) -------------
 # The app, JWT and watched line all come from automations/rc_autoread/run.py
 # so there is exactly one copy of those secrets. owner_id (the JWT's `sub`) is

@@ -97,6 +97,37 @@ class TestAllCustomers(unittest.TestCase):
             self._run(None)
 
 
+class TestUpgradeExclusion(unittest.TestCase):
+    FIELDS_OT = FIELDS + ("Order Type",)
+
+    def _run(self, rows, since=dt.date(2026, 10, 13),
+             until=dt.date(2026, 10, 19)):
+        with mock.patch(
+                "automations.rc_contact_sync_raf.customers._fetch",
+                return_value=_env(_csv(rows, self.FIELDS_OT))):
+            return CU.all_customers(since, until, log=lambda *a, **k: None)
+
+    def test_drops_upgrades_keeps_new(self):
+        rows = [dict(ROW, **{"Order ID": "N", "Order Type": "New"}),
+                dict(ROW, **{"Order ID": "U", "Order Type": "Upgrade"})]
+        out = self._run(rows)
+        self.assertEqual([c["order_id"] for c in out], ["N"])
+
+    def test_upgrade_match_is_case_insensitive(self):
+        rows = [dict(ROW, **{"Order ID": "U", "Order Type": "  upgrade "})]
+        self.assertEqual(self._run(rows), [])
+
+    def test_no_order_type_column_keeps_everything(self):
+        # The plain FIELDS set (no Order Type) → nothing dropped as an upgrade.
+        with mock.patch(
+                "automations.rc_contact_sync_raf.customers._fetch",
+                return_value=_env(_csv([ROW], FIELDS))):
+            out = CU.all_customers(dt.date(2026, 10, 13),
+                                   dt.date(2026, 10, 19),
+                                   log=lambda *a, **k: None)
+        self.assertEqual(len(out), 1)
+
+
 class TestConfigWiring(unittest.TestCase):
     def test_points_at_dylans_account(self):
         # The identity the run guards on is Dylan's rc_autoread extension,

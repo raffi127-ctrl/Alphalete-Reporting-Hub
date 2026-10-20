@@ -20,7 +20,7 @@ from typing import Dict, List, Optional
 from automations.rc_contact_sync_raf import config as C
 # Reuse the tolerant header map + date/whitespace helpers verbatim.
 from automations.rc_contact_sync.guest import (
-    _header_map, _parse_us_date, _norm)
+    _header_map, _parse_us_date, _norm, _key)
 
 
 def _fetch(log=print) -> Optional[Dict]:
@@ -71,16 +71,30 @@ def all_customers(since: dt.date, until: dt.date,
     reader = csv.DictReader(io.StringIO(
         data.decode("utf-8-sig", errors="replace")))
     rows = list(reader)
-    cols = _header_map(list(reader.fieldnames or []), log=log)
+    fieldnames = list(reader.fieldnames or [])
+    cols = _header_map(fieldnames, log=log)
+
+    # The "Order Type" column (New / Upgrade), found tolerantly. Absent on an
+    # export that doesn't carry it → no rows are dropped as upgrades.
+    by_key = {_key(f): f for f in fieldnames}
+    otype_col = next((by_key[_key(c)] for c in C.ORDER_TYPE_COLS
+                      if _key(c) in by_key), None)
 
     out: List[Dict[str, str]] = []
     skipped_dates = 0
+    skipped_upgrades = 0
     for r in rows:
         d = _parse_us_date(r.get(cols["order_date"], ""))
         if d is None:
             skipped_dates += 1
             continue
         if not (since <= d <= until):
+            continue
+        # Drop internet upgrades — an existing customer upgrading isn't a fresh
+        # sale that owes a wrap-up (Dylan 2026-10-20).
+        if otype_col and (r.get(otype_col, "") or "").strip().lower() \
+                in C.EXCLUDE_ORDER_TYPES:
+            skipped_upgrades += 1
             continue
         out.append({
             "order_id": _norm(r.get(cols["order_id"], "")),
@@ -102,6 +116,12 @@ def all_customers(since: dt.date, until: dt.date,
     if skipped_dates:
         log("raf-all: %d row(s) had an unreadable Order Date — left out"
             % skipped_dates)
-    log("raf-all orders: %d order(s) %s..%s, pull from %s"
+    if otype_col:
+        log("raf-all: excluded %d internet-upgrade order(s) (Order Type = "
+            "Upgrade)" % skipped_upgrades)
+    else:
+        log("raf-all: no 'Order Type' column in the export (tried %s) — NO "
+            "upgrade filter applied this run" % (C.ORDER_TYPE_COLS,))
+    log("raf-all orders: %d new-sale order(s) %s..%s, pull from %s"
         % (len(out), since, until, env.get("pulled")))
     return out
